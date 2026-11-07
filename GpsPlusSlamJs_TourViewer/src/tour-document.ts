@@ -56,6 +56,8 @@ import {
   type TourTextRule,
 } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
+import { tourBlockAssetIds } from "gps-plus-slam-app-framework/ar/tour-kinds";
+import { tourMediaTypeOf } from "gps-plus-slam-app-framework/ar/tour-media";
 import type {
   TourAsset,
   TourManifest,
@@ -119,6 +121,7 @@ import {
 import {
   automaticStationFrame,
   imageAssetIds,
+  isCapturedPhoto,
   keepsItself,
   objectAssetIds,
   stepAssetIds,
@@ -338,11 +341,13 @@ export interface TourDocumentState {
   /** What the file last written holds for each entry of `timings`
    *  (null: none). */
   readonly timingsWritten: Readonly<Record<string, string | null>>;
-  /** The voices (audio assets) brought in here: listed with the tour's
-   *  assets (`manifestNow`), where a write keeps the ones a narration or
-   *  a step of the history names (`withReferencedAssets`). Only grows
-   *  while the tour is open; their bytes are the page's (a side table). */
-  readonly voices: readonly TourAsset[];
+  /** The files (assets) brought in here - a voice, a model, a picture -
+   *  each once, by its content hash (`assetsAdded`): listed with the
+   *  tour's assets (`manifestNow`), where a write keeps the ones an item,
+   *  a narration or a step of the history names (`withReferencedAssets`).
+   *  Only grows while the tour is open; their bytes are the page's (its
+   *  files table) and the draft's. */
+  readonly addedAssets: readonly TourAsset[];
   /** The tour's codes and the hosted texts they are judged against
    *  (debug-captures plan M3a): no history step and no draft write, and
    *  not reset by `opened` or `closed` - the levels and `tour.json` are
@@ -588,7 +593,7 @@ export const initialTourDocumentState: TourDocumentState = {
   newStationArmed: false,
   timings: {},
   timingsWritten: {},
-  voices: [],
+  addedAssets: [],
   codes: NO_CODES,
 };
 
@@ -973,22 +978,22 @@ export function manifestNow(state: TourDocumentState): TourManifest | null {
   if (base === null) return null;
   return withDetails(
     withNeedsNoGps(
-      withVoices(withEffectiveImages(state, base), state.voices),
+      withAdded(withEffectiveImages(state, base), state.addedAssets),
       state.needsNoGps,
     ),
     effectiveDetails(state),
   );
 }
 
-/** `manifest` with the voices brought in here that it does not list yet;
+/** `manifest` with the files brought in here that it does not list yet;
  *  a write drops each one nothing names (`withReferencedAssets`). */
-function withVoices(
+function withAdded(
   manifest: TourManifest,
-  voices: readonly TourAsset[],
+  assets: readonly TourAsset[],
 ): TourManifest {
-  if (voices.length === 0) return manifest;
+  if (assets.length === 0) return manifest;
   const listed = new Set(manifest.assets.map((a) => a.id));
-  const added = voices.filter((v) => !listed.has(v.id));
+  const added = assets.filter((v) => !listed.has(v.id));
   return added.length === 0
     ? manifest
     : { ...manifest, assets: [...manifest.assets, ...added] };
@@ -1715,6 +1720,9 @@ interface TourRestore {
    *  seated afresh by the station rule against the opened tour's
    *  stations. */
   readonly rerun?: boolean;
+  /** The files a draft kept (`addedAssets` there): listed again before
+   *  the frames and objects naming them come back. */
+  readonly assets?: readonly TourAsset[];
 }
 
 /**
@@ -1870,9 +1878,67 @@ export interface NarrationEditPayload {
     readonly text: string | null;
     readonly previous: string | null;
   };
-  /** A voice brought in with it (the narration's new audio). */
-  readonly voice?: TourAsset;
   readonly what: string;
+}
+
+/** Whether every file `object` needs is among `held` (asset ids): a
+ *  record naming one held nowhere would make every save fail. A captured
+ *  photo's own picture comes with its record. */
+export function objectAssetsHeld(
+  object: TourObject,
+  held: ReadonlySet<string>,
+): boolean {
+  return (
+    isCapturedPhoto(object) ||
+    tourBlockAssetIds(object, true).every((id) => held.has(id))
+  );
+}
+
+/**
+ * `assets` among `before`'s added ones (`assetsAdded`, a restore): each
+ * once, none the written tour lists. Null when one is no asset the
+ * format takes - a path other than `content/<id>.<ext>` of an
+ * allowlisted extension of its kind - since the next save would fail.
+ */
+function withAddedAssets(
+  before: TourDocumentState,
+  assets: readonly TourAsset[],
+): readonly TourAsset[] | null {
+  const held = new Set(
+    [...(before.written?.assets ?? []), ...before.addedAssets].map((a) => a.id),
+  );
+  const added: TourAsset[] = [];
+  for (const asset of assets) {
+    const dot = asset.path.lastIndexOf(".");
+    const ext = asset.path.slice(dot + 1);
+    if (
+      dot < 0 ||
+      asset.path !== `content/${asset.id}.${ext}` ||
+      tourMediaTypeOf(ext)?.kind !== asset.kind
+    ) {
+      return null;
+    }
+    if (held.has(asset.id)) continue;
+    held.add(asset.id);
+    added.push(asset);
+  }
+  return added.length === 0
+    ? before.addedAssets
+    : [...before.addedAssets, ...added];
+}
+
+/** Files brought in (`assetsAdded`): listed, no step - the edit that
+ *  names one is the step, and an undo of it leaves the file listed for a
+ *  redo (a write drops what nothing names). */
+function assetsAdd(
+  before: TourDocumentState,
+  assets: readonly TourAsset[],
+): TourDocumentState {
+  if (before.written === null) return before;
+  const addedAssets = withAddedAssets(before, assets);
+  return addedAssets === null || addedAssets === before.addedAssets
+    ? before
+    : { ...before, addedAssets };
 }
 
 /** `state` with the read-along entry `entry` listed at `previous` (what
@@ -1904,11 +1970,11 @@ function withTimingListed(
 
 /**
  * A free long text's narration changed (`narrationEdited`), as one step:
- * its voice (a new one brought in: `voice`), whether it names its
- * read-along entry, and that entry's text. Refused, changing nothing: for
- * anything but a free long text of the document, a change of anything but
- * its narration, a voice the tour neither holds nor brings in (as audio,
- * under an id no asset has), a read-along entry other than its own
+ * its voice (a file the tour holds or one brought in first,
+ * `assetsAdded`), whether it names its read-along entry, and that entry's
+ * text. Refused, changing nothing: for anything but a free long text of
+ * the document, a change of anything but its narration, a voice the tour
+ * does not hold, a read-along entry other than its own
  * (`timing/<id>.json`), a text where the narration names no entry or none
  * where it does, and a change that changes nothing.
  */
@@ -1918,7 +1984,7 @@ function narrationEdit(
 ): TourDocumentState {
   const written = before.written;
   if (written === null) return before;
-  const { object, timing, voice } = payload;
+  const { object, timing } = payload;
   const was = documentObjects(before).find(
     (o) => o.object.id === object.id,
   )?.object;
@@ -1927,22 +1993,10 @@ function narrationEdit(
     return before;
   }
   const narration = object.narration;
-  const held = new Set([...written.assets, ...before.voices].map((a) => a.id));
-  if (
-    voice !== undefined &&
-    (voice.kind !== "audio" ||
-      held.has(voice.id) ||
-      narration?.audio !== voice.id)
-  ) {
-    return before;
-  }
-  if (
-    narration !== undefined &&
-    narration.audio !== voice?.id &&
-    !held.has(narration.audio)
-  ) {
-    return before;
-  }
+  const audio = [...written.assets, ...before.addedAssets].find(
+    (a) => a.id === narration?.audio,
+  );
+  if (narration !== undefined && audio?.kind !== "audio") return before;
   let entry: string;
   try {
     entry = tourTimingEntryName(object.id);
@@ -1964,20 +2018,12 @@ function narrationEdit(
     }
     timings = { ...base.timings, [entry]: timing.text };
   }
-  if (
-    voice === undefined &&
-    sameJson(was, object) &&
-    timings[entry] === base.timings[entry]
-  ) {
+  if (sameJson(was, object) && timings[entry] === base.timings[entry]) {
     return before;
   }
   return edited(
     base,
-    {
-      placed: upsertPlaced(base.placed, { object }),
-      timings,
-      voices: voice === undefined ? base.voices : [...base.voices, voice],
-    },
+    { placed: upsertPlaced(base.placed, { object }), timings },
     payload.what,
   );
 }
@@ -2911,6 +2957,12 @@ const narrationEdited = createAction<NarrationEditPayload>(
   "tourDocument/narrationEdited",
 );
 
+/** Files brought into the tour, before the edit that names them
+ *  (`assetsAdd`); beside the slice's actions for the same reason. */
+const assetsAdded = createAction<{ readonly assets: readonly TourAsset[] }>(
+  "tourDocument/assetsAdded",
+);
+
 const tourDocumentSlice = createSlice({
   name: "tourDocument",
   initialState: initialTourDocumentState,
@@ -3244,14 +3296,23 @@ const tourDocumentSlice = createSlice({
           const geo = poses.get(s.id);
           return geo === undefined ? s : { ...s, geo };
         });
-        const writtenAssets = new Set(
-          plainBefore.written.assets.map((a) => a.id),
+        // The files the draft kept, listed first: what follows may name
+        // them. A list the format would refuse lists none of them.
+        const addedAssets =
+          withAddedAssets(plainBefore, work.assets ?? []) ??
+          plainBefore.addedAssets;
+        const heldAssets = new Set(
+          [...plainBefore.written.assets, ...addedAssets].map((a) => a.id),
         );
         // A frame whose story needs an asset the tour lacks is left out:
         // the format refuses it, so every later save would fail. A picture
         // a long text body names is not needed (its alt text is read).
         const fits = (frame: StationFrame): boolean =>
-          stepRequiredAssetIds(frame).every((id) => writtenAssets.has(id));
+          stepRequiredAssetIds(frame).every((id) => heldAssets.has(id));
+        // An object likewise (a model whose file nothing holds); a
+        // captured photo's own picture comes with its record.
+        const objectHeld = (object: TourObject): boolean =>
+          objectAssetsHeld(object, heldAssets);
         const recorded = (work.frames ?? []).filter(fits);
         const replaced = new Map(recorded.map((f) => [f.id, f]));
         // A recorded frame the document carries is an edit beyond its pose:
@@ -3289,7 +3350,7 @@ const tourDocumentSlice = createSlice({
         for (const [i, given] of work.objects.entries()) {
           // The deletion of its id would hide it (as for a placement,
           // `canPlace`), and a station started for it would stand empty.
-          if (next.deleted.includes(given.id)) continue;
+          if (next.deleted.includes(given.id) || !objectHeld(given)) continue;
           const home = homeOf(next, given.id);
           left.push(home);
           const named = work.rerun === true ? undefined : given.station;
@@ -3326,6 +3387,7 @@ const tourDocumentSlice = createSlice({
             deletedStations: next.deletedStations,
             stations: withoutEmptied(next, left),
             handMade,
+            addedAssets,
             ...(work.stations === undefined ? {} : { stationsRecorded: true }),
             ...(recordsStations(work) ? { framesRecorded: true } : {}),
             ...(work.needsNoGps === undefined
@@ -3718,6 +3780,9 @@ const tourDocumentSlice = createSlice({
     builder.addCase(narrationEdited, (state, action) =>
       narrationEdit(plain(state), action.payload),
     );
+    builder.addCase(assetsAdded, (state, action) =>
+      assetsAdd(plain(state), action.payload.assets),
+    );
   },
 });
 
@@ -3726,6 +3791,7 @@ const tourDocumentSlice = createSlice({
 export const tourDocumentActions = {
   ...tourDocumentSlice.actions,
   narrationEdited,
+  assetsAdded,
 };
 
 export const tourDocumentReducer = tourDocumentSlice.reducer;

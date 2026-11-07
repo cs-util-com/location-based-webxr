@@ -112,7 +112,7 @@ interface TourSaveSnapshot {
   readonly timings: Readonly<Record<string, string | null>>;
   /** What the write carries besides the manifest and the photos, by path
    *  in the tour's folder: each read-along text set here that the written
-   *  file does not hold, and each voice brought in here that it does not
+   *  file does not hold, and each file brought in here that it does not
    *  list, with the bytes the page keeps. The rebuild writes the ones the
    *  written tour names. */
   readonly files: readonly {
@@ -174,11 +174,10 @@ export function createTourSaves(input: {
   readonly tour: TourSession;
   /** The open the saves belong to (`TourDocumentState.generation`). */
   readonly generation: number;
-  /** A photo's picture the page keeps (the side table: Blobs are never
-   *  state). */
-  readonly pictureOf: (id: string) => Blob | undefined;
-  /** A voice's bytes the page keeps (`TourDocumentState.voices`). */
-  readonly voiceOf?: (id: string) => Blob | undefined;
+  /** A file's bytes the page keeps, by asset id (its files table: Blobs
+   *  are never state) - a file brought in (`addedAssets`), a photo's
+   *  picture (a captured photo's id is its picture's). */
+  readonly fileOf: (id: string) => Blob | undefined;
   /** Settles once the pictures being read are read. */
   readonly picturesRead: () => Promise<unknown>;
 }): TourSaves {
@@ -195,7 +194,7 @@ export function createTourSaves(input: {
       placed: state.placed.map(({ object }) => {
         const blob =
           isCapturedPhoto(object) && hosted.key(object.id) === undefined
-            ? input.pictureOf(object.id)
+            ? input.fileOf(object.id)
             : undefined;
         return blob === undefined ? { object } : { object, blob };
       }),
@@ -210,7 +209,8 @@ export function createTourSaves(input: {
     };
   }
 
-  /** The snapshot's `files`: the texts and voices the written file lacks. */
+  /** The snapshot's `files`: the texts and the files brought in that the
+   *  written file lacks. */
   function filesOf(state: TourDocumentState): TourSaveSnapshot["files"] {
     const listed = new Set((state.written?.assets ?? []).map((a) => a.id));
     return [
@@ -219,11 +219,9 @@ export function createTourSaves(input: {
           ? []
           : [{ path, data: text }],
       ),
-      ...state.voices.flatMap((voice) => {
-        const blob = listed.has(voice.id)
-          ? undefined
-          : input.voiceOf?.(voice.id);
-        return blob === undefined ? [] : [{ path: voice.path, data: blob }];
+      ...state.addedAssets.flatMap((asset) => {
+        const blob = listed.has(asset.id) ? undefined : input.fileOf(asset.id);
+        return blob === undefined ? [] : [{ path: asset.path, data: blob }];
       }),
     ];
   }

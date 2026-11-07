@@ -183,4 +183,4 @@ const stop = store.listenToDocument({
 
 ## Narration in a draft
 
-`draftableObject(object, state)`: a long text whose narration needs what only this page holds (a voice brought in here, a read-along text set here and written nowhere yet) is drafted with the narration the written file gives it, or none. A draft keeps records, never a voice's bytes or a timing's text; a reload offering such a narration would name a file the tour lacks, and every save would fail.
+`draftableObject(object, state)`: a long text whose narration needs what the draft does not hold (a read-along text set here and written nowhere yet, or a voice that is neither in the written tour nor among the files brought in) is drafted with the narration the written file gives it, or none. A voice brought in is drafted: its bytes are kept by the draft (`editor-draft.ts`) before the record naming it. A reload offering a narration naming a file the tour lacks would fail every save.

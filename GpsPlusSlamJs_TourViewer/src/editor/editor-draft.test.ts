@@ -20,6 +20,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  type TourAsset,
   type TourManifest,
   type TourObject,
   type TourPicture,
@@ -1861,5 +1862,120 @@ describe("createEditorDraft, the stations the page created", () => {
     expect((await again.open(K1, opened)).offer).toBeNull();
     await again.idle();
     expect(b.spaces.get(editorDraftKey(K1))?.has(SETTINGS)).toBe(false);
+  });
+});
+
+/**
+ * Why these tests matter: a file brought into the tour (a
+ * voice, a model) exists nowhere but in this page until a save writes it.
+ * The draft keeps its bytes as `asset:<id>` beside a list of the assets,
+ * both before the record naming it, so a reload offers them back; a
+ * record whose file did not survive is left out and said, since every
+ * save of it would fail.
+ */
+describe("the files a draft keeps", () => {
+  const STATUE: TourAsset = {
+    id: "a".repeat(64),
+    path: `content/${"a".repeat(64)}.glb`,
+    kind: "model",
+  };
+  const MODEL: TourObject = {
+    id: "m",
+    kind: "model",
+    view: "placed",
+    station: "st-a",
+    asset: STATUE.id,
+    sizeM: 2,
+    createdAtIso: "2026-11-07T00:00:00.000Z",
+    geo: { lat: 48.5, lon: 9.0, alt: 340, rotation: [0, 0, 0, 1] },
+  };
+  const ASSET = `asset:${STATUE.id}`;
+
+  async function keptModel(b: ReturnType<typeof browser>): Promise<void> {
+    const draft = draftIn(b);
+    await draft.open(K1, tour(pin("a")));
+    expect(await draft.saveAsset(STATUE, new Blob(["glTF-statue"]))).toBe(true);
+    // The bytes and the list land before the record is asked for.
+    const space = b.spaces.get(editorDraftKey(K1));
+    expect(space?.has(ASSET)).toBe(true);
+    expect(space?.has("assets")).toBe(true);
+    await draft.saveObject(MODEL);
+    await draft.idle();
+    draft.close();
+  }
+
+  it("offers the file and the record naming it on the next open", async () => {
+    const b = browser();
+    await keptModel(b);
+    const again = draftIn(b);
+    const { offer } = await again.open(K1, tour(pin("a")));
+    expect(offer?.objects.map((o) => o.id)).toEqual(["m"]);
+    expect(offer?.files?.map((f) => f.asset)).toEqual([STATUE]);
+    expect(await offer?.files?.[0]?.blob.text()).toBe("glTF-statue");
+    expect(again.unread()).toBe(0);
+  });
+
+  // Why (follow-up: a draft model naming a missing asset): the file was
+  // cleared from storage but the record was not; offered, every save of
+  // the tour would fail with the parser's words.
+  it("leaves out a record whose file is gone, and says the draft did not read whole", async () => {
+    const b = browser();
+    await keptModel(b);
+    b.spaces.get(editorDraftKey(K1))?.delete(ASSET);
+    const again = draftIn(b);
+    const { offer } = await again.open(K1, tour(pin("a")));
+    expect(offer?.objects.map((o) => o.id) ?? []).not.toContain("m");
+    expect(offer?.files ?? []).toEqual([]);
+    expect(again.unread()).toBe(1);
+  });
+
+  it("says a file that did not land, as any write that did not", async () => {
+    const b = browser();
+    const draft = draftIn(b);
+    await draft.open(K1, tour(pin("a")));
+    b.failWrites = true;
+    expect(await draft.saveAsset(STATUE, new Blob(["x"]))).toBe(false);
+    expect(draft.said).toEqual(["storage"]);
+  });
+
+  it("drops a file once a save landed with it, and offers none the opened file lists", async () => {
+    const b = browser();
+    const draft = draftIn(b);
+    await draft.open(K1, tour(pin("a")));
+    await draft.saveAsset(STATUE, new Blob(["glTF-statue"]));
+    await draft.saveObject(MODEL);
+    const written = tourOf([pin("a"), MODEL], { assets: [STATUE] });
+    draft.writes().built(written);
+    draft.writes().landed(written, K1);
+    await draft.idle();
+    expect(b.spaces.get(editorDraftKey(K1))?.has(ASSET)).toBe(false);
+    draft.close();
+    const again = draftIn(b);
+    const { offer } = await again.open(K1, written);
+    expect(offer?.files ?? []).toEqual([]);
+  });
+
+  it("carries its files when a download moves the key", async () => {
+    const b = browser();
+    const draft = draftIn(b);
+    await draft.open(K1, tour(pin("a")));
+    await draft.saveAsset(STATUE, new Blob(["glTF-statue"]));
+    await draft.saveObject(MODEL);
+    draft.writes().moved(K2);
+    await draft.idle();
+    draft.close();
+    const { offer } = await draftIn(b).open(K2, tour(pin("a")));
+    expect(offer?.objects.map((o) => o.id)).toEqual(["m"]);
+    expect(offer?.files?.map((f) => f.asset.id)).toEqual([STATUE.id]);
+  });
+
+  it("drops the offered files a discard turns down", async () => {
+    const b = browser();
+    await keptModel(b);
+    const again = draftIn(b);
+    await again.open(K1, tour(pin("a")));
+    expect(await again.discard()).toBe(true);
+    await again.idle();
+    expect(b.spaces.get(editorDraftKey(K1))?.has(ASSET)).toBe(false);
   });
 });

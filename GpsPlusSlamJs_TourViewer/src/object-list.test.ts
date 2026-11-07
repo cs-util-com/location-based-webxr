@@ -193,6 +193,28 @@ describe("objectListModel on the page", () => {
 });
 
 describe("objectListModel in AR", () => {
+  // Why (pinning): a model is listed in AR as what it is, never with the
+  // photo's look or word over the camera; the rows of pins and photos were
+  // tested, the model's row was not.
+  it("never calls a selected model a photo", () => {
+    const statue: TourObject = {
+      id: "m",
+      kind: "model",
+      view: "placed",
+      asset: "statue",
+      sizeM: 2,
+      createdAtIso: "2026-09-30T00:00:00.000Z",
+      geo: { lat: 47.5, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
+    };
+    const model = objectListModel(
+      state({ inAr: true, selectedId: "m", entries: [entry(statue)] }),
+    );
+    expect(model.rows.map((r) => r.kind)).toEqual(["model"]);
+    expect(model.rows[0]?.title).not.toMatch(/photo/i);
+    expect(model.rows[0]?.detail).not.toMatch(/photo/i);
+    expect(model.rows[0]?.canMove).toBe(false);
+  });
+
   it("shows ONLY the selected object, with Move for a pin - nothing else over the camera", () => {
     // Why: the DOM overlay IS the screen and cannot be scrolled; a closed
     // disclosure of every object still laid its buttons out below the

@@ -151,6 +151,7 @@ import {
   type EditorSession,
   type NarrationChange,
 } from "./editor-session.js";
+import { videoPosterOf } from "./video-poster.js";
 import { waitForSaveSlot } from "gps-plus-slam-app-framework/storage/save-slot-wait";
 import { guardSlidersIn } from "gps-plus-slam-app-framework/utils/slider-scroll-guard";
 import {
@@ -1448,8 +1449,27 @@ async function writeNarrationEdit(
     toast(outcome.reason);
     return "refused";
   }
+  if (outcome.notBackedUp === true) toast(FILE_NOT_KEPT);
+  judgeAutosave();
   if (outcome.kind !== "unchanged") autosave.changed();
   return "written";
+}
+
+/** Said when a file brought in could not be kept in this browser: it is
+ *  in the tour, but a reload before a save would lose it. */
+const FILE_NOT_KEPT =
+  "The file is in the tour, but this browser could not keep a copy of it. Save the tour before you close this page.";
+
+/** A file brought in may take the tour over the autosave's cap: the cost
+ *  of an in-place save is the tour's whole size, judged on what it weighs
+ *  now (the written file and the files added since). Only ever turns the
+ *  autosave off: a save in place is what brings the size back down. */
+function judgeAutosave(): void {
+  if (editor === null || target === null || saveState().largeTour) return;
+  if (autosaveFits(editor.tourBytes(), autosaveMaxBytes)) return;
+  store.dispatch(tourDocumentActions.saveLimited({ largeTour: true }));
+  autosave.enable(false);
+  renderSaveState();
 }
 
 /** The tree's add in place and the palette's: a new item of `kind` in
@@ -2108,7 +2128,11 @@ async function attachTarget(
       // before the target came are saved once the delay has passed) -
       // unless every save of it would rewrite more than the cap (E2b-2
       // milestone review #3: the cost is linear in the file's size).
-      const largeTour = !autosaveFits(file.size, autosaveMaxBytes);
+      // The files brought in before the target came ride along too.
+      const largeTour = !autosaveFits(
+        file.size + mine.addedBytes(),
+        autosaveMaxBytes,
+      );
       store.dispatch(tourDocumentActions.saveLimited({ largeTour }));
       autosave.enable(!largeTour);
       renderSaveState();
@@ -2231,6 +2255,18 @@ async function openFile(
     draft: writes,
     // The page's store: the document the views read (D29).
     store,
+    // A model brought in is measured, and a video's poster minted, by the
+    // browser here: three's loader on first use, a video element.
+    fileReaders: {
+      measureModel: async (blob) => {
+        const [{ loadGlbModel }, { largestSide }] = await Promise.all([
+          import("../glb-model.js"),
+          import("../model-scale.js"),
+        ]);
+        return largestSide(await loadGlbModel(blob));
+      },
+      posterOf: (blob) => videoPosterOf(blob),
+    },
   });
   model = editor.model();
   openedLevels = outcome.levels;
@@ -3846,6 +3882,9 @@ let view3dFailureToast: HTMLElement | null = null;
 
 /** A content entry of the open tour, from the copy the page reads now. */
 function readContent(name: string): Promise<Blob> {
+  // A file brought in is held by the session until a save writes it.
+  const added = editor?.contentOf(name);
+  if (added !== undefined) return Promise.resolve(added);
   const open = photos.current() ?? session;
   if (open === null) return Promise.reject(new Error("no tour is open"));
   return open.loadContentEntry(name);

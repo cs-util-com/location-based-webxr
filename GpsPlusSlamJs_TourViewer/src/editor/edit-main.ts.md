@@ -907,4 +907,4 @@ on a desktop.
 
 ## Narration
 
-`writeNarrationEdit` runs a section's change through the session (`editNarration`), redraws, and says a refusal through the page's toast; the shell's `narration` command reads `EditorSession.narration`, and `voiceMaxBytes` hands the section the configured autosave cap (`autosaveMaxBytes`) as its voice file limit.
+`writeNarrationEdit` runs a section's change through the session (`editNarration`), redraws, and says a refusal through the page's toast, and a voice whose file the draft could not keep (`notBackedUp`) with `FILE_NOT_KEPT`; it then judges the autosave again (`judgeAutosave`: off once `tourBytes()` is over the cap, never back on). The session's `fileReaders` are three's loader with `largestSide` (imported on first use) and `videoPosterOf`; `readContent` reads a file brought in from the session (`contentOf`) before the opened file; the shell's `narration` command reads `EditorSession.narration`, and `voiceMaxBytes` hands the section the configured autosave cap (`autosaveMaxBytes`) as its voice file limit.

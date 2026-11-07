@@ -360,8 +360,9 @@ interface Holders {
  * `object` as a draft can keep it: a long text whose narration needs what
  * only this page holds - a voice brought in here, a read-along text set
  * here and written nowhere yet - keeps the narration the written file
- * gives it (none when it has none). A draft keeps records, never a
- * voice's bytes or a timing's text: a reload offering that narration
+ * gives it (none when it has none). A draft keeps the records and the
+ * files brought in (`addedAssets`, written before the records naming
+ * them), never a timing's text: a reload offering a narration naming one
  * would name a file the tour lacks, and every save would fail.
  */
 export function draftableObject(
@@ -372,7 +373,9 @@ export function draftableObject(
     return object;
   }
   const { audio, timing } = object.narration;
-  const assets = new Set((state.written?.assets ?? []).map((a) => a.id));
+  const assets = new Set(
+    [...(state.written?.assets ?? []), ...state.addedAssets].map((a) => a.id),
+  );
   const timingHeld =
     timing === undefined ||
     !Object.hasOwn(state.timingsWritten, timing) ||

@@ -280,6 +280,13 @@ editor's own namespace, one tab at a time. Design:
   re-adds after a save wrote its delete is backed up, but offered after a
   closed tab only when its record carries no `seen` base (above).
 
+## The files
+
+- A file brought in is kept as `asset:<id>` (its bytes) beside `assets` (the list of their `TourAsset`s), in that order, before the record naming it (`saveAsset(asset, blob)`, whether both landed; a write that did not land is said as any other: `noBackup("storage")`).
+- `open` reads the list and the bytes, skipping a file the opened manifest lists (its own now). A list that does not read, or a file it names that is missing, is told (`unreadDraft`, once), and an offered record naming a file held nowhere is left out (`objectAssetsHeld`). The offer carries `files`; with nothing offered they go, and every `asset:` entry the list does not name is removed.
+- A landed save drops the files its manifest lists; a discard drops the offered files this visit did not bring in again; a key move carries them.
+- Tests: `editor-draft.test.ts` ("the files a draft keeps").
+
 ## Examples
 
 ```ts

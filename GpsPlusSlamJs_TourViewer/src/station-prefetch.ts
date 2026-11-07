@@ -22,8 +22,8 @@
  *   asked again for the stations that asked (R4: offline, the guide's
  *   per-frame ticks retried it every frame); another station asking tries
  *   once more, and the story's own read always tries and says what failed;
- * - video is never prefetched (R3): K4 shows a video step's transcript, and
- *   a video may be as large as the tour's entry cap;
+ * - a video's file is never prefetched (R3): a video may be as large as
+ *   the tour's entry cap; its poster, one picture, is;
  * - the cache lives with the open tour (R15): kept across AR sessions,
  *   dropped when the tour closes or another opens.
  */
@@ -100,15 +100,16 @@ export async function decodeFigure<T>(
  *  (`scene-view.ts`): a figure in any view but the card (the stage or
  *  one of the character's story views), a model in its
  *  stage or placed view (a reached placed model stands in the world, B2b), a
- *  character's voice in either. Never a video (K4 review R3): a video
- *  block shows its transcript, and a video may be as large as the tour's
- *  entry cap allows; nor its poster, which nothing draws yet. Then the
+ *  character's voice in either. Never a video's file (K4 review R3): a
+ *  video may be as large as the tour's entry cap allows; its poster, the
+ *  picture the item shows before the video loads, is read. Then the
  *  files of the station's free models (each in a world view) (station blocks plan B2b,
  *  G2 follow-up 9): drawn with the station, they would otherwise be read
  *  from the archive on arrival. Then a free sound's file and a free
  *  character's image, model and voice, by the same rule as a story's: he
- *  stands from arrival, and a tap must not wait for his voice. Never a free
- *  video's file or poster, as above. Free pictures are read on their own. */
+ *  stands from arrival, and a tap must not wait for his voice. A free
+ *  video's poster, never its file, as above. Free pictures are read on
+ *  their own. */
 export function stationAssetIds(
   station: Pick<TourStation, "children">,
   characters: ReadonlyMap<string, TourCharacter> = new Map(),
@@ -118,7 +119,7 @@ export function stationAssetIds(
   );
   const free = tourFreeBlocks(station).flatMap((b) => {
     if (b.kind === "model") return [b.asset];
-    return b.kind === "audio" || b.kind === "character"
+    return b.kind === "audio" || b.kind === "character" || b.kind === "video"
       ? storyAssetIds(b, characters)
       : [];
   });
@@ -126,12 +127,13 @@ export function stationAssetIds(
 }
 
 /** The assets read ahead of showing `block` (`item-card.ts`): all but a
- *  video's. */
+ *  video's file - its poster is. */
 function storyAssetIds(
   block: TourBlock,
   characters: ReadonlyMap<string, TourCharacter>,
 ): readonly string[] {
-  return block.kind === "video" ? [] : itemAssets(block, characters);
+  if (block.kind !== "video") return itemAssets(block, characters);
+  return block.poster === undefined ? [] : [block.poster];
 }
 
 export interface StationPrefetch {

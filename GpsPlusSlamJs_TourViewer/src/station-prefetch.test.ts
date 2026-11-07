@@ -222,9 +222,11 @@ describe("stationAssetIds", () => {
     expect(of("speak", "nobody")).toEqual(["knight", "voice"]);
   });
 
-  it("never lists a video: K4 shows its transcript, and a video may be 256 MiB (R3)", () => {
+  it("never lists a video's file, only its poster: a video may be 256 MiB (R3)", () => {
     // Why this test matters (K4 review R3): the prefetch read video files
     // nothing played, up to the K0 entry cap each, over a phone's data.
+    // Its poster is one picture, minted when the video was brought in, and
+    // what the item shows before the video loads: read ahead like one.
     const base = station("gate", ["knight"]);
     const s: TourStation = {
       ...base,
@@ -246,7 +248,7 @@ describe("stationAssetIds", () => {
         ]),
       ]),
     };
-    expect(stationAssetIds(s)).toEqual(["knight"]);
+    expect(stationAssetIds(s)).toEqual(["big", "knight"]);
   });
 });
 
@@ -279,9 +281,9 @@ describe("stationAssetIds and the world (B2b)", () => {
 
   // Why: a free character stands from arrival and a tap must not wait for
   // his voice, and a free sound starts on a tap: both are read with the
-  // station. A free video stays out, as a story's does: its file may be as
-  // large as the tour's entry cap allows.
-  it("reads a free sound's and a free character's files, never a free video's", () => {
+  // station. A free video's file stays out, as a story's does: it may be
+  // as large as the tour's entry cap allows; its poster is read.
+  it("reads a free sound's and a free character's files and a free video's poster, never its file", () => {
     const POSE = {
       position: [0, 0, 0] as [number, number, number],
       rotation: [0, 0, 0, 1] as [number, number, number, number],
@@ -319,7 +321,12 @@ describe("stationAssetIds and the world (B2b)", () => {
         },
       ]),
     };
-    expect(stationAssetIds(s).sort()).toEqual(["ann", "ann-voice", "song"]);
+    expect(stationAssetIds(s).sort()).toEqual([
+      "ann",
+      "ann-voice",
+      "song",
+      "still",
+    ]);
   });
 
   // Why (B2b step 2): a placed model a story step reaches stands in the

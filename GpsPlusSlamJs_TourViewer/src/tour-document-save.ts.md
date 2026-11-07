@@ -15,16 +15,18 @@ phone's Finish does not yet: see "Not here yet" below.
 
 ## Public API
 
-- `createTourSaves({ tour, generation, pictureOf, picturesRead }): TourSaves`
+- `createTourSaves({ tour, generation, fileOf, picturesRead }): TourSaves`
   - one handle per open; it keeps the imperative resources only - the
     newest bytes (a Blob), the queue's tail.
   - `tour` - the open `TourSession` (the rebuild's reads, the file's
     name).
   - `generation` - the open the saves belong to
     (`TourDocumentState.generation`).
-  - `pictureOf(id)` - a photo's picture the page keeps (an undo brought
-    the photo back after a save took it out of the file); a snapshot
-    carries it for a photo the written file has no picture for.
+  - `fileOf(id)` - the bytes the session's files table holds for an asset
+    id: a photo's picture (an undo brought the photo back after a save
+    took it out of the file), carried for a photo the written file has no
+    picture for, and each file brought in (`addedAssets`) the written
+    tour does not list, written as a new entry at its path.
   - `picturesRead()` - settles once the pictures being read are read: a
     save waits for it, so a picture is read before a rebuild replaces the
     bytes it may be read from.
@@ -115,7 +117,7 @@ levels, a progress line and a stop check this handle does not take.
 const saves = createTourSaves({
   tour: session,
   generation: selectTourDocument(store.getState()).generation,
-  pictureOf: (id) => pictures.get(id),
+  fileOf: (id) => files.get(id),
   picturesRead: () => Promise.all(pictureReads),
 });
 const { finished, photos } = await dispatchThunk(
