@@ -1063,9 +1063,6 @@ describe("createStationsLayer", () => {
     layer.dispose();
   });
 
-  // Why: an item dragged, turned or (a model) resized is drawn at the
-  // drag's pose in its station's frame - a photo keeps the flat-or-upright
-  // morph, turned with it - and goes back when the drag is cleared.
   // Why: a move keeps an item in its station however far it goes, so the
   // ring is the one thing that tells the creator it is out while there is
   // still time to bring it back; by the Problems list's own measure, so
@@ -1105,6 +1102,9 @@ describe("createStationsLayer", () => {
     layer.dispose();
   });
 
+  // Why: an item dragged, turned or (a model) resized is drawn at the
+  // drag's pose in its station's frame - a photo keeps the flat-or-upright
+  // morph, turned with it - and goes back when the drag is cleared.
   it("draws an item's and a model's preview, and back when cleared", async () => {
     const { d } = deps();
     const layer = createStationsLayer(d);
