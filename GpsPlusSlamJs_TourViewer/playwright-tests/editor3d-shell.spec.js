@@ -1159,10 +1159,10 @@ test("the tree can be used from the keyboard alone", async ({ page }) => {
   await expect(gate.locator(".head .add")).toBeFocused();
   await page.keyboard.press("Shift+Tab");
   await page.keyboard.press("Shift+Tab");
-  await expect(gate.locator(".tw")).toBeFocused();
+  await expect(gate.locator(".head .tw")).toBeFocused();
   await page.keyboard.press("Space");
   await expect(gate.locator(".kids")).toHaveCount(0);
-  await expect(gate.locator(".tw")).toBeFocused();
+  await expect(gate.locator(".head .tw")).toBeFocused();
 });
 
 test("File's Add debug data opens the same add as the map's panel", async ({

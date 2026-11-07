@@ -233,9 +233,20 @@ test("the tree adds, reorders and deletes stations, each one step to undo", asyn
     .poll(() => order(page))
     .toEqual(["column", "gate", "steps", added]);
 
-  // The inspector's Delete: one step, its Undo in the toast.
+  // The inspector's Delete: asked once, then one step, its Undo in the
+  // toast.
+  /** @type {string[]} */
+  const asked = [];
+  page.once("dialog", (dialog) => {
+    asked.push(dialog.message());
+    void dialog.accept();
+  });
   await page.locator('#inspector-body [data-act="delete"]').click();
   await expect.poll(() => order(page)).toEqual(["column", "gate", "steps"]);
+  expect(asked).toHaveLength(1);
+  expect(asked[0]).toMatch(
+    /^Delete the station ".+"\? It has no content\. You can undo this\.$/,
+  );
   expect(await selected(page)).toBeNull();
   // The focus does not fall to the page: it goes to the card now in the
   // deleted station's place (at the end, the one before it).
@@ -397,6 +408,12 @@ test("a story is a folder of the tree: added, named, filled, its entry's texts s
     "/ The legend / Long text, entry 1",
   );
   await expect(
+    inspector.locator(`[data-field="block:${entry.id}:title"]`),
+  ).toHaveValue("New long text 1");
+  await expect(
+    inspector.locator(`[data-field="block:${entry.id}:body"]`),
+  ).toHaveValue("Write the text here.");
+  await expect(
     inspector.locator('[data-act="entry-advance:' + entry.id + ':tap"]'),
   ).toHaveAttribute("aria-pressed", "true");
 
@@ -451,6 +468,7 @@ test("a story's folder sits a step in from its station and its entries a step fu
     `${folder} ~ .kid.deep`,
     `${folder} ~ .kid.deep .ic`,
     '.card[data-station="gate"] .head',
+    '.card[data-station="gate"] .head .tw',
   ];
   /** @param {number} rowH */
   const pinned = async (rowH) => {
@@ -466,6 +484,10 @@ test("a story's folder sits a step in from its station and its entries a step fu
     expect(second.height).toBe(rowH);
     // Rows touch: one line after the other, no gap between entries.
     expect(second.y).toBeCloseTo(first.y + first.height, 0);
+    // The first entry starts where its folder's row ends.
+    expect(first.y).toBeCloseTo(row.y + row.height, 0);
+    // The folder's arrow a step in from its station's arrow.
+    expect(arrow.x - boxIn(l, sels[6]).x).toBeCloseTo(16, 0);
     // An indent of 16 px per level, as the prototype's rows.
     expect(entryIcon.x - icon.x).toBeCloseTo(16, 0);
     expect(icon.x - (arrow.x + arrow.width)).toBeCloseTo(4, 0);
@@ -739,7 +761,7 @@ test("a station copied with its photo is saved with a picture of its own, and op
   });
   // An unfolded station shows its picture under its row.
   for (const each of await next.locator("#tree-body .card").all()) {
-    const fold = each.locator(".tw");
+    const fold = each.locator(".head .tw");
     if ((await fold.getAttribute("aria-expanded")) !== "true") {
       await fold.click();
     }
@@ -813,7 +835,7 @@ test("a long text added in place is saved and opens again as it was made", async
   await openZip(next, readFileSync(saved), "one-photo.zip");
   const again = card(next, "fountain");
   await expect(again).toBeVisible({ timeout: 60_000 });
-  const fold = again.locator(".tw");
+  const fold = again.locator(".head .tw");
   if ((await fold.getAttribute("aria-expanded")) !== "true") await fold.click();
   await expect(
     again.locator(`[data-select="${made}"]`, { hasText: "New long text 1" }),
@@ -989,7 +1011,7 @@ test("add, reorder, split and delete come back whole from the draft after a relo
   await expect.poll(() => order(page)).toEqual(["a", "b", added, "c"]);
 
   // Split: b's pin into a station of its own, right after b.
-  await card(page, "b").locator(".tw").click();
+  await card(page, "b").locator(".head .tw").click();
   await card(page, "b").locator('[data-select="pb"]').click();
   await page.locator('#inspector-body [data-act="split"]').click();
   await expect.poll(async () => (await order(page)).length).toBe(5);
@@ -999,7 +1021,20 @@ test("add, reorder, split and delete come back whole from the draft after a relo
 
   // Delete: station a with its pin.
   await card(page, "a").locator(".pick").click();
+  /** @type {string[]} */
+  const asked = [];
+  page.once("dialog", (dialog) => {
+    asked.push(dialog.message());
+    void dialog.accept();
+  });
   await page.locator('#inspector-body [data-act="delete"]').click();
+  await expect
+    .poll(() => asked)
+    .toEqual([
+      expect.stringMatching(
+        /^Delete the station ".+"\? Its item goes with it: 1 free item\. You can undo this\.$/,
+      ),
+    ]);
   await expect.poll(() => order(page)).toEqual(["b", split, added, "c"]);
 
   await expect(page.locator("body")).toHaveAttribute("data-draft", "saved");
@@ -1062,7 +1097,8 @@ test("a station's picture is a strip under its row, and a tap on it selects the 
     const fountain = card(page, "fountain");
     await expect(fountain).toBeVisible();
     const strip = fountain.locator(".pic");
-    if ((await strip.count()) === 0) await fountain.locator(".tw").click();
+    if ((await strip.count()) === 0)
+      await fountain.locator(".head .tw").click();
     await expect(strip, at).toBeVisible();
     await expect
       .poll(() => strip.evaluate((e) => getComputedStyle(e).backgroundImage))
@@ -1331,8 +1367,8 @@ test("a folded station is one line, its number and name side by side; unfolded i
 
     // Unfolded: the picture under the row of the station that has one,
     // no picture for the one that has none; both list their items.
-    await card(page, "short").locator(".tw").click();
-    await card(page, "plain").locator(".tw").click();
+    await card(page, "short").locator(".head .tw").click();
+    await card(page, "plain").locator(".head .tw").click();
     const pic = card(page, "short").locator(".pic");
     await expect(pic).toBeVisible();
     await expect
@@ -1352,7 +1388,7 @@ test("a folded station is one line, its number and name side by side; unfolded i
     // Unfolded, a station is no longer one compact line: its long name
     // wraps (on a phone a folded name gets about 115 px), the arrow still
     // on the row's middle; folded again it is one line.
-    await card(page, "long").locator(".tw").click();
+    await card(page, "long").locator(".head .tw").click();
     const longHead = card(page, "long").locator(".head");
     const longName = await box(longHead.locator(".nm"));
     expect(longName.height, at).toBeGreaterThan(25);
@@ -1365,12 +1401,12 @@ test("a folded station is one line, its number and name side by side; unfolded i
       ),
       at,
     ).toBeLessThanOrEqual(1);
-    await card(page, "long").locator(".tw").click();
+    await card(page, "long").locator(".head .tw").click();
     await expect(card(page, "long").locator(".kids")).toHaveCount(0);
     expect((await box(longHead)).height, at).toBeCloseTo(rowPx, 0);
     await capture(page, test.info().outputPath(`rows-unfolded-${name}.png`));
-    await card(page, "short").locator(".tw").click();
-    await card(page, "plain").locator(".tw").click();
+    await card(page, "short").locator(".head .tw").click();
+    await card(page, "plain").locator(".head .tw").click();
     await expect(page.locator("#tree-body .kids")).toHaveCount(0);
   }
 });

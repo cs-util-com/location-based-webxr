@@ -149,6 +149,15 @@ type UndoOutcome =
   | { readonly kind: "nothing" }
   | EditorRefusal;
 
+/** The name of a new story among `stories`: "New story", or "New story
+ *  n" with the least n from 2 no story has. */
+function newStoryTitle(stories: readonly { readonly title: string }[]): string {
+  const taken = new Set(stories.map((s) => s.title));
+  let title = "New story";
+  for (let n = 2; taken.has(title); n += 1) title = `New story ${String(n)}`;
+  return title;
+}
+
 /** A copy's file name ("Save a copy…"): the tour's, with " copy" before
  *  its `.zip` (any case), so the copy is never taken for the tour's own
  *  file. */
@@ -524,8 +533,8 @@ export interface EditorSession {
   /** Delete a station with its items: one step.
    *  Refused for the tour's last station. */
   deleteStation(stationId: string): { kind: "deleted" } | EditorRefusal;
-  /** A new empty story "Story n", n one more than the station's stories,
-   *  after its stories: one step. */
+  /** A new empty story "New story" after the station's stories, "New
+   *  story n" with the least n from 2 while that name is taken: one step. */
   addStory(stationId: string): { kind: "added"; id: string } | EditorRefusal;
   /** A story's title: one step; refused for one the format cannot carry,
    *  `unchanged` for the same one. */
@@ -534,10 +543,12 @@ export interface EditorSession {
     title: string,
   ): { kind: "edited" | "unchanged" } | EditorRefusal;
   /** Delete a story with its children: one step; `children` says how many
-   *  went. */
+   *  went, `stationGone` whether its station went with it (an untitled
+   *  automatic station nothing else kept). */
   deleteStory(
     storyId: string,
-  ): { kind: "deleted"; children: number } | EditorRefusal;
+  ):
+    { kind: "deleted"; children: number; stationGone: boolean } | EditorRefusal;
   /** A new entry at the end of a story: one step. */
   addToStory(
     storyId: string,
@@ -1328,7 +1339,7 @@ export function createEditorSession(input: {
       );
       if (station === undefined) return noSuchStation;
       const id = newObjectId();
-      const title = `Story ${String(tourStories(station).length + 1)}`;
+      const title = newStoryTitle(tourStories(station));
       return took(() =>
         store.dispatch(
           tourDocumentActions.storyAdded({
@@ -1371,6 +1382,16 @@ export function createEditorSession(input: {
       if (story === undefined) {
         return { kind: "refused", reason: NO_SUCH_STORY };
       }
+      const stationId = manifestNow(state)?.stations.find((s) =>
+        tourStories(s).some((t) => t.id === storyId),
+      )?.id;
+      const stationGone = (): boolean => {
+        const after = mine();
+        return (
+          after !== null &&
+          !(manifestNow(after)?.stations ?? []).some((s) => s.id === stationId)
+        );
+      };
       return took(() =>
         store.dispatch(
           tourDocumentActions.storyDeleted({
@@ -1379,7 +1400,11 @@ export function createEditorSession(input: {
           }),
         ),
       )
-        ? { kind: "deleted", children: story.children.length }
+        ? {
+            kind: "deleted",
+            children: story.children.length,
+            stationGone: stationGone(),
+          }
         : notApplied;
     },
     addToStory(storyId, kind) {

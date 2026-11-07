@@ -14,7 +14,9 @@ import {
   parseTourManifest,
   serializeTourManifest,
   type TourManifest,
+  type TourPicture,
   type TourPin,
+  type TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   tourStories,
@@ -63,12 +65,85 @@ const line = (id: string) =>
     pose: POSE,
   }) as const;
 
-/** Two stations, the first with a story whose choice leads to its lines. */
+function photo(id: string, lat: number): TourPicture {
+  return {
+    id,
+    kind: "picture",
+    view: "plane",
+    image: id,
+    widthM: 1,
+    imageAsset: {
+      id,
+      path: `content/${id}.jpg`,
+      kind: "image",
+      width: 4,
+      height: 3,
+    },
+    createdAtIso: "2026-10-25T00:00:00.000Z",
+    geo: { lat, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
+  };
+}
+
+/** The image a character shows, an asset of the tour beside the photo's. */
+const CUTOUT = {
+  id: "cut",
+  path: "content/cut.png",
+  kind: "image",
+  width: 2,
+  height: 4,
+} as const;
+
+/** An untitled station of the file whose only content is a story with a
+ *  character and a quiz: nothing else keeps it, so it is an automatic
+ *  station, and deleting its story takes it too. */
+const LONE: TourStation = {
+  id: "lone",
+  geo: { lat: 48.5206, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
+  activateRadiusM: 50,
+  foundRadiusM: 25,
+  hint: "arrow",
+  ...stationContent([
+    storyOf("aside", [
+      {
+        id: "guard",
+        kind: "character",
+        view: "stage",
+        pose: POSE,
+        name: "The watchman",
+        image: "cut",
+        caption: "Halt!",
+      },
+      {
+        id: "age",
+        kind: "quiz",
+        question: "How old?",
+        points: 2,
+        answer: {
+          type: "single",
+          options: [
+            { id: "q1", label: "Old" },
+            { id: "q2", label: "New" },
+          ],
+          correct: "q1",
+        },
+      },
+    ]),
+  ]),
+};
+
+/** Stations of a pin, a pin and a photo, the first with a story whose
+ *  choice leads to its lines, and the automatic station `LONE`; the tour
+ *  carries the photo's image and the character's. */
 function storyTour(): TourManifest {
-  const base = tourOf([pin("a", 48.52), pin("b", 48.5203)]);
+  const base = tourOf(
+    [pin("a", 48.52), pin("b", 48.5203), photo("p", 48.5209)],
+    // A tour id of its own: a save mints one for a tour without, and two
+    // saves would mint two.
+    { assets: [CUTOUT], tourId: "0123456789abcdef0123456789abcdef" },
+  );
   return {
     ...base,
-    stations: base.stations.map((s, i) =>
+    stations: [...base.stations, LONE].map((s, i) =>
       i === 0
         ? {
             ...s,
@@ -104,6 +179,8 @@ async function opened(): Promise<{
   );
   const zip = await packFilesAsZip([
     { path: "tour.json", data: serializeTourManifest(manifest) },
+    { path: "content/p.jpg", data: new Uint8Array([0xff, 0xd8, 0xff, 0xd9]) },
+    { path: "content/cut.png", data: new Uint8Array([0x89, 0x50, 0x4e, 0x47]) },
   ]);
   const session = await openTourFile(
     new File([zip], "tour.zip", { type: "application/zip" }),
@@ -153,7 +230,12 @@ function storiesIn(tour: TourManifest | null): TourStory[] {
 describe("the tree's story commands", () => {
   // Why a property: an add, a delete and their undos interleave in any
   // order; a hand-written case covers the order its author thought of.
-  it("keep the tour writable after every step, and a draft reload equals it (property)", async () => {
+  // Every edit is one step (the revision rises by one), an undo gives back
+  // exactly the tour before the edit it takes back and a redo exactly the
+  // one after it, and the whole written tour (its assets, the quiz and the
+  // character of the automatic station a delete can take) comes back from
+  // the draft - so asset safety is checked, not only true by construction.
+  it("keep the tour writable after every step, each edit one step an undo takes back exactly, and a draft reload equals it (property)", async () => {
     const { session, manifest } = await opened();
     await fc.assert(
       fc.asyncProperty(
@@ -175,8 +257,14 @@ describe("the tree's story commands", () => {
             draft: draft.writes(),
           });
           const tour = () => manifestToWrite(store.getState().tourDocument);
+          /** The tours before each edit an undo can take back, and before
+           *  each undo a redo can take back again. */
+          const past: (TourManifest | null)[] = [];
+          const future: (TourManifest | null)[] = [];
           for (const c of commands) {
             const stories = storiesIn(tour());
+            const was = tour();
+            const revision = editor.revision();
             switch (c.kind) {
               case "add": {
                 const station = round(tour()?.stations ?? [], c.at);
@@ -215,6 +303,31 @@ describe("the tree's story commands", () => {
             }
             const now = tour();
             if (now === null) throw new Error(`no tour after ${c.kind}`);
+            const rose = editor.revision() - revision;
+            // An undo or a redo with nothing to take back is the only
+            // command that may leave the revision as it was.
+            const owed =
+              c.kind === "undo"
+                ? past.length
+                : c.kind === "redo"
+                  ? future.length
+                  : 0;
+            expect({ rose, owed }).toEqual(
+              rose === 0 ? { rose: 0, owed: 0 } : { rose: 1, owed },
+            );
+            let expected: TourManifest | null | undefined = was;
+            if (rose === 1 && c.kind === "undo") {
+              expected = past.pop();
+              future.push(was);
+            } else if (rose === 1 && c.kind === "redo") {
+              expected = future.pop();
+              past.push(was);
+            } else if (rose === 1) {
+              expected = now;
+              past.push(was);
+              future.length = 0;
+            }
+            expect(now).toEqual(expected);
             expect(() =>
               parseTourManifest(JSON.parse(serializeTourManifest(now))),
             ).not.toThrow();
@@ -242,13 +355,16 @@ describe("the tree's story commands", () => {
             (await reloaded.save({ keepScan: false })).blob,
           );
           again.close();
-          expect(after.stations).toEqual(before.stations);
+          expect(after).toEqual(before);
+          expect(before.assets).toEqual(manifest.assets);
         },
       ),
       { numRuns: 40 },
     );
     await session.close();
-  });
+    // Each run drives a session, two drafts and two saves: more than the
+    // default 5 s once the machine runs other gates.
+  }, 30_000);
 });
 
 describe("a story's delete", () => {
@@ -267,22 +383,86 @@ describe("a story's delete", () => {
     expect(editor.deleteStory("first")).toEqual({
       kind: "deleted",
       children: 2,
+      stationGone: false,
     });
     expect(editor.deleteStoryChild("l1").kind).toBe("refused");
     await session.close();
   });
 
-  // Why: an undo line says what it takes back in the creator's words.
-  it("names the story and the new one in the undo line", async () => {
+  // Why: the page's toast says when a delete took the story's station with
+  // it; an untitled station of the file that held only the story is gone,
+  // and a word about it is all that tells the creator where it went.
+  it("says when the station went with its only story", async () => {
     const { session, manifest } = await opened();
+    const store = createTourViewerStore();
     const editor = createEditorSession({
       session,
       manifest,
       levels: new Map(),
+      store,
+    });
+    const stationIds = () =>
+      (manifestToWrite(store.getState().tourDocument)?.stations ?? []).map(
+        (s) => s.id,
+      );
+    expect(stationIds()).toContain("lone");
+    expect(editor.deleteStory("aside")).toEqual({
+      kind: "deleted",
+      children: 2,
+      stationGone: true,
+    });
+    expect(stationIds()).not.toContain("lone");
+    expect(editor.undo().kind).toBe("undone");
+    expect(stationIds()).toContain("lone");
+    await session.close();
+  });
+
+  // Why: an undo line says what it takes back in the creator's words, and
+  // a new story's name must not repeat one the station already has: a
+  // count would name the next story "Story 3" again after the second of
+  // three was deleted.
+  it('names a new story "New story", numbered only while that name is taken', async () => {
+    const { session, manifest } = await opened();
+    const store = createTourViewerStore();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      store,
     });
     const stationId = manifest.stations[0]?.id ?? "";
-    expect(editor.addStory(stationId).kind).toBe("added");
-    expect(editor.undo()).toMatchObject({ what: 'the new story "Story 2"' });
+    const added = () => {
+      const out = editor.addStory(stationId);
+      if (out.kind !== "added") throw new Error("not added");
+      return out.id;
+    };
+    const titles = () => {
+      const station = manifestToWrite(
+        store.getState().tourDocument,
+      )?.stations.find((s) => s.id === stationId);
+      return station === undefined
+        ? []
+        : tourStories(station).map((s) => s.title);
+    };
+    added();
+    expect(editor.undo()).toMatchObject({ what: 'the new story "New story"' });
+    editor.redo();
+    const second = added();
+    added();
+    expect(titles()).toEqual([
+      "A story",
+      "New story",
+      "New story 2",
+      "New story 3",
+    ]);
+    editor.deleteStory(second);
+    added();
+    expect(titles()).toEqual([
+      "A story",
+      "New story",
+      "New story 3",
+      "New story 2",
+    ]);
     await session.close();
   });
 

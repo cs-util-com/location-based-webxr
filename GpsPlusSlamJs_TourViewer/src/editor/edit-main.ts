@@ -31,6 +31,7 @@ import {
   tourStories,
   type TourStory,
 } from "gps-plus-slam-app-framework/ar/tour-story";
+import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   downloadZip,
   requestPersistentStorage,
@@ -48,6 +49,7 @@ import {
 import {
   manifestToWrite,
   selectTourDocument,
+  stationDeleteRefusal,
   tourDocumentActions,
   type TourDocumentState,
   type TourSaveHolder,
@@ -1299,8 +1301,8 @@ const card = createEditorCard(
 
 /**
  * Delete a note, or a station with its notes (`station:<id>`; the 3D
- * view's Del): one step. The toast offers its Undo while it is the newest
- * edit; a refusal deletes nothing and is said.
+ * view's Del) once its creator said yes: one step. The toast offers its
+ * Undo while it is the newest edit; a refusal deletes nothing and is said.
  */
 function deleteSelection(id: string): void {
   if (editor === null) return;
@@ -1315,6 +1317,21 @@ function deleteSelection(id: string): void {
     return;
   }
   const item = model?.items.find((i) => i.id === id);
+  if (id.startsWith(STATION_PREFIX)) {
+    const stationId = id.slice(STATION_PREFIX.length);
+    const station = tour?.stations.find((s) => s.id === stationId);
+    // A delete the tour refuses (its last station) is not asked about:
+    // the refusal is said instead.
+    if (
+      station !== undefined &&
+      stationDeleteRefusal(store.getState().tourDocument, stationId) === null &&
+      !confirmPausingFrames(
+        stationDeleteQuestion(station, stationTitleOf(stationId)),
+      )
+    ) {
+      return;
+    }
+  }
   // One delete toast at a time: its Undo takes back the newest edit.
   endUndo();
   const outcome = id.startsWith(STATION_PREFIX)
@@ -1361,6 +1378,29 @@ function deleted(
   autosave.changed();
 }
 
+/** The question before a station's delete: what goes with it, by name for
+ *  its stories, by count for its free items. */
+function stationDeleteQuestion(station: TourStation, title: string): string {
+  const stories = tourStories(station);
+  const free = tourFreeBlocks(station).length;
+  const n = stories.length + free;
+  const parts = [
+    ...stories.map((s) => `the story "${s.title}"`),
+    ...(free === 0
+      ? []
+      : [free === 1 ? "1 free item" : `${String(free)} free items`]),
+  ];
+  const list =
+    parts.length < 2
+      ? parts.join("")
+      : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1] ?? ""}`;
+  const goes =
+    n === 0
+      ? "It has no content."
+      : `Its ${n === 1 ? "item goes" : `${String(n)} items go`} with it: ${list}.`;
+  return `Delete the station "${title}"? ${goes} You can undo this.`;
+}
+
 /** The story `id` of the tour as it stands. */
 function storyNamed(id: string): TourStory | undefined {
   return manifestToWrite(store.getState().tourDocument)
@@ -1388,7 +1428,15 @@ function deleteStorySelection(storyId: string): void {
     return;
   }
   endUndo();
-  deleted(editor.deleteStory(storyId), `Deleted the story "${story.title}"`);
+  const outcome = editor.deleteStory(storyId);
+  deleted(
+    outcome,
+    `Deleted the story "${story.title}"${
+      "stationGone" in outcome && outcome.stationGone
+        ? ", and its station, which held nothing else"
+        : ""
+    }`,
+  );
 }
 
 /** Delete an entry of `story`: one step; the toast says when answers that
