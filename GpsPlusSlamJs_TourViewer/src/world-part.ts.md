@@ -61,10 +61,13 @@ the reading sign (`reading-sign.ts`) are world parts too.
 - A hidden station's part is never offered to the pick.
 - The set is module-wide: every page that mounts parts (the visitor, the
   check pages) shares it, so a part must be unmounted by its `dispose`.
-- **Not done yet.** The editor does not build its previews through the
-  door with `mode: "edit"`: it still draws no part for a door kind, and
-  `edit` is so far only accepted by `worldEnv`. And `tap?()` takes no
-  hit: the part does not hear where on its `tapTarget` the tap landed.
+- **The editor builds through the same door.** Both 3D views hand the
+  stations layer `worldPartOf` (`editor3d/editor3d-drawings.ts`), which
+  it asks with `worldEnv("edit", ...)`: a door kind's part in the editor
+  is the object the visitor's page builds, at the same pose. There is no
+  second preview path.
+- **Not done yet.** `tap?()` takes no hit: the part does not hear where
+  on its `tapTarget` the tap landed.
 - Not in the set yet: the model views (`model-visitor.ts` keeps its own,
   with the model card's tap ahead of every part) and the story's figure
   (`free-items.ts`, whose object belongs to the scene stage shared with

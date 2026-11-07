@@ -16,7 +16,11 @@ ray (`pick`).
 - `StationsLayerDeps` - what the page hands in: `parent`, `ellipsoid`,
   `worldFromEcef`, `undulationAt`, `makeLabel`, `loadPhotoTexture`,
   the optional `makeLectern` (a long text's reading stand, the page's
-  `mountLectern`; absent, no stand is drawn), `loadContent`,
+  `mountLectern`; absent, no stand is drawn) and `makeReadingSign` (a
+  reading sign), the optional `worldPart(block, env)` (any other item's
+  part: the visitor's door, `play-kinds.ts` `worldPartOf`, asked with
+  `worldEnv("edit", ...)` over the tour's assets, files read through
+  `loadContent`; absent, no part is drawn), `loadContent`,
   `loadGlbModel`, `makeBillboard`, `makeCodeSquare` (the drawing is the
   page's: Node, where the tests run, has no canvas).
   Both views hand the item builders through one list,
@@ -190,7 +194,12 @@ printed size, focalPxOf(view))` times its printed size: `CODE_SCREEN_PX`
   stands keep their pose (a stand's meshes are no photo planes, so the
   morph never lays them flat; a preview moves and turns the stand's root,
   named `lectern`; a reading sign's root, `reading-sign`, is treated the
-  same, drawn by the optional `makeReadingSign`), and pins stand. `renderTourStation` skips placed models (and draws each
+  same, drawn by the optional `makeReadingSign`), and pins stand. A part
+  from the world door stands as the visitor's page stands it, at its
+  block's pose as it is, tilt included: its meshes are no photo planes
+  either, and a preview moves it and turns it by the dragged pose as it
+  is (a stand only by its turn about up). Clearing a preview puts back any
+  free block drawn, not only those the creator pages edit in the world. `renderTourStation` skips placed models (and draws each
   picture from the tour's assets, passed to it), so the layer adds the
   free blocks in their `placed` view at their pose, scaled to their size
   by `modelScale`; a model whose file cannot be read, or one without a
@@ -255,7 +264,10 @@ code stand, drawn or not; a station's and an item's (a model's) preview
 shown and taken back; a moved station, its items and the codes kept in
 the layer's frame after the world frame moved (the globe's nesting), also
 once deselected; the selected station's circle amber and a selected
-item's station lighter; what is under a ray; names and codes hidden and shown; everything removed on
+item's station lighter; a part from the world door built in the
+editor's mode from the block, at the pose, the visitor's page builds it
+at (tilt included), kept through the morph, picked, moved and turned by
+a preview and freed with the layer; what is under a ray; names and codes hidden and shown; everything removed on
 dispose; `codeQuaternionNue` for a heading and a full rotation;
 `focalPxOf`; `codeGrowth`'s size on screen, its printed size near, its
 flat weighting, bad input, and a property (at least 1, laid flat exactly

@@ -12,16 +12,18 @@ import { describe, expect, it } from "vitest";
 import { loadGlbModel } from "../glb-model.js";
 import { mountLectern } from "../lectern-view.js";
 import { createPinLabel } from "../pin-label.js";
+import { worldPartOf } from "../play-kinds.js";
 import { mountReadingSign } from "../reading-sign.js";
 import { editorDrawings } from "./editor3d-drawings.js";
 
 describe("editorDrawings", () => {
-  it("carries every item builder: pins, reading stands, reading signs and models", () => {
+  it("carries every item builder: pins, reading stands, reading signs, models and the world door", () => {
     const drawings = editorDrawings(() => Promise.resolve(new Blob([])));
     expect(drawings.makeLabel).toBe(createPinLabel);
     expect(drawings.makeLectern).toBe(mountLectern);
     expect(drawings.makeReadingSign).toBe(mountReadingSign);
     expect(drawings.loadGlbModel).toBe(loadGlbModel);
+    expect(drawings.worldPart).toBe(worldPartOf);
   });
 
   it("reads a photo and a content entry through the page's loader", async () => {

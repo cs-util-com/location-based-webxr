@@ -22,8 +22,13 @@ reading sign: a long text shown as a sign was drawn in the flat view only.
     decoded by `decodeFrameTexture`, measured against
     `TOUR_MAX_IMAGE_PIXELS` first, as the visitor's page does;
   - `loadContent(entry)` - forwarded to `loadContent`;
-  - `loadGlbModel` - `glb-model.ts`.
-- `EditorDrawings` - those six fields of `StationsLayerDeps`.
+  - `loadGlbModel` - `glb-model.ts`;
+  - `worldPart` - `worldPartOf` (`play-kinds.ts`), the visitor's world
+    door: any other item's part by its kind's row, which the layer asks in
+    the editor's mode (`worldEnv("edit", ...)`). There is no second
+    preview path: the editor shows a door kind's part as the visitor's
+    page builds it.
+- `EditorDrawings` - those seven fields of `StationsLayerDeps`.
 
 ## Invariants & assumptions
 
@@ -49,4 +54,6 @@ const layer = createStationsLayer({
 ## Tests
 
 `editor3d-drawings.test.ts`: every builder is the visitor's own, and a
-photo and a content entry are read through the given loader.
+photo and a content entry are read through the given loader. That the
+layer builds a part from the same block, at the same pose, as the
+visitor's page: `editor3d-stations.test.ts`.

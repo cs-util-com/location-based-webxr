@@ -12,6 +12,7 @@ import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/fr
 import { loadGlbModel } from "../glb-model.js";
 import { mountLectern } from "../lectern-view.js";
 import { createPinLabel } from "../pin-label.js";
+import { worldPartOf } from "../play-kinds.js";
 import { mountReadingSign } from "../reading-sign.js";
 import type { StationsLayerDeps } from "./editor3d-stations.js";
 
@@ -24,6 +25,7 @@ export type EditorDrawings = Pick<
   | "loadPhotoTexture"
   | "loadContent"
   | "loadGlbModel"
+  | "worldPart"
 >;
 
 /** The item builders, the tour's files read through `loadContent` (a
@@ -41,5 +43,8 @@ export function editorDrawings(
       }),
     loadContent: (entry) => loadContent(entry),
     loadGlbModel,
+    // Any other item, by its kind's row: the visitor's door, asked by
+    // the layer in the editor's mode.
+    worldPart: worldPartOf,
   };
 }
