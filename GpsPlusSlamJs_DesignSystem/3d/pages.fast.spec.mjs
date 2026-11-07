@@ -39,7 +39,15 @@ const READY = {
   "/labs/globe-terrain/index.html": "__terrainCarrier",
   "/labs/terrain/index.html": "__terrainLab",
   "/labs/terrain/compare.html": "__terrainCompare",
+  "/labs/city-look/index.html": null,
 };
+
+/**
+ * The city look gallery's variant pages: one folder each, added in parallel,
+ * all on one harness and so all with one ready signal. Their own smoke opens
+ * them (labs/city-look/city-look.smoke.spec.mjs).
+ */
+const CITY_LOOK_VARIANT = /^\/labs\/city-look\/[^/]+\/index\.html$/;
 
 /**
  * A screenshot's largest channel standard deviation must exceed this to
@@ -106,7 +114,9 @@ async function drawnStdev(page) {
 
 test("every deployable page has a ready signal here @pr", () => {
   const pages = ["/index.html", ...discoverEntries(ROOT)];
-  expect(pages.filter((p) => !(p in READY))).toEqual([]);
+  expect(
+    pages.filter((p) => !(p in READY) && !CITY_LOOK_VARIANT.test(p)),
+  ).toEqual([]);
 });
 
 test("the catalog page opens without errors @pr", async ({ page }) => {

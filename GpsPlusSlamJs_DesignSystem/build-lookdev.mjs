@@ -116,8 +116,9 @@ const escapeHtml = (text) =>
  * The deployable pages under `packageRoot`, as URL paths: the main page
  * first (when present), then every `labs/<name>/index.html`, sorted, each
  * followed by its lab's further top-level pages (`*.html`, sorted; e.g.
- * the terrain lab's `compare.html`). A folder without an index page is not
- * a lab.
+ * the terrain lab's `compare.html`) and its folders' index pages (sorted;
+ * the city look gallery's `v0-today/index.html`, one level deep). A folder
+ * without an index page is not a lab.
  *
  * @param {string} packageRoot
  * @returns {string[]}
@@ -141,6 +142,12 @@ export function discoverEntries(packageRoot) {
         .filter((f) => f.endsWith(".html") && f !== "index.html")
         .sort()
         .map((f) => `/${LABS_DIR}/${name}/${f}`),
+      ...readdirSync(join(labs, name), { withFileTypes: true })
+        .filter((d) => d.isDirectory())
+        .map((d) => d.name)
+        .filter((sub) => existsSync(join(labs, name, sub, "index.html")))
+        .sort()
+        .map((sub) => `/${LABS_DIR}/${name}/${sub}/index.html`),
     ]),
   ];
 }
