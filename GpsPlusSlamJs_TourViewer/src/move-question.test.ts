@@ -8,6 +8,8 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
+import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
+
 import { askMove, moveNote, moveQuestion } from "./move-question.js";
 import {
   B_NORTH_M,
@@ -126,6 +128,40 @@ describe("moveNote", () => {
   it("says nothing for a move inside, or for one that changed nothing", () => {
     expect(moveNote(before, after(5), "p")).toBeNull();
     expect(moveNote(before, before, "p")).toBeNull();
+  });
+
+  // Why: a character, a video and a sound carry their own text in other
+  // fields than a pin's caption; the note must name them by it, and by
+  // their kind when they have none.
+  it.each([
+    [
+      { kind: "character", view: "stage", name: "The watchman" },
+      '"The watchman"',
+    ],
+    [{ kind: "character", view: "stage", name: "" }, "The character"],
+    [
+      { kind: "video", view: "card", video: "v", title: "Harbour" },
+      '"Harbour"',
+    ],
+    [{ kind: "video", view: "card", video: "v" }, "The video"],
+    [{ kind: "audio", view: "card", audio: "s", title: "Bells" }, '"Bells"'],
+    [{ kind: "audio", view: "card", audio: "s" }, "The sound"],
+  ])("names %o by its own text or its kind", (fields, name) => {
+    const object = {
+      id: "p",
+      createdAtIso: "2026-11-07T00:00:00.000Z",
+      geo: spot(0),
+      station: "a",
+      ...fields,
+    } as TourObject;
+    const swapped = reduce(before, act.moved({ object, what: "kind" }));
+    const out = reduce(
+      swapped,
+      act.moved({ object: { ...object, geo: spot(50) }, what: "m" }),
+    );
+    expect(moveNote(swapped, out, "p")).toBe(
+      `${name} stays in Gate, outside its circle`,
+    );
   });
 
   it("says nothing for a lift of an item already outside", () => {
