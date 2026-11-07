@@ -225,7 +225,7 @@ test("on a phone the controls smaller for a mouse take a finger", async ({
   await station(page, "The old gate").click();
   // A row to measure, whatever the sample's station holds, then back.
   await page.locator('#inspector-body [data-act="add-content"]').click();
-  await page.locator('#tree-add-menu [data-kind="pin"]').click();
+  await page.locator('#tree-add-menu [data-kind="shortText"]').click();
   await page.locator('#inspector-head [data-act="back"]').click();
   await station(page, "The old gate").click();
   const row = page.locator('#inspector-body [data-act^="goto:"]').first();
@@ -304,7 +304,7 @@ function outOfSight(page, fields, size) {
               field.contains(hit);
             if (!seen) {
               lost.push(
-                `${String(innerWidth)}x${String(innerHeight)} keyboard ${String(px)} share ${String(share)} ${selector} at ${String(Math.round(at.top))}-${String(Math.round(at.bottom))}`,
+                `${String(innerWidth)}x${String(innerHeight)} keyboard ${String(px)} share ${String(share)} ${selector} at ${String(Math.round(at.top))}-${String(Math.round(at.bottom))} under ${hit === null ? "nothing" : `${hit.tagName.toLowerCase()}.${String(hit.className)}${hit.id === "" ? "" : `#${hit.id}`}`}`,
               );
             }
           }
@@ -347,19 +347,13 @@ test("over a keyboard every field in use stays in sight, at every size and sheet
     );
   }
   // A long text's writer, the field a creator types most into: the
-  // sample's second station holds one, among its rows.
+  // sample's reading stand at the old gate, picked by its row.
   await page.setViewportSize(PORTRAIT);
   const writer = page.locator("#inspector-body .lw-writer textarea");
-  await page.locator("#shell-tree .card .pick").nth(1).click();
-  const rows = page.locator('#inspector-body [data-act^="goto:"]');
-  const count = await rows.count();
-  for (let i = 0; i < count && (await writer.count()) === 0; i += 1) {
-    await rows.nth(i).click();
-    if ((await writer.count()) === 0) {
-      await page.locator('#inspector-head [data-act="back"]').click();
-      await page.locator("#shell-tree .card .pick").nth(1).click();
-    }
-  }
+  await station(page, "The old gate").click();
+  await page
+    .locator('#inspector-body [data-act="goto:market-lectern"]')
+    .click();
   await expect(writer).toHaveCount(1);
   for (const size of KEYBOARD_SIZES) {
     await page.setViewportSize(size);

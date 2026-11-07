@@ -171,8 +171,11 @@ async function selectItemHiddenBySearch(page) {
   await page.locator("#add-palette-input").fill("short");
   await page.keyboard.press("Enter");
   await expect(card.locator(".kid.sel")).toBeVisible();
-  await card.locator(".tw").click();
-  await expect(card.locator(".tw")).toHaveAttribute("aria-expanded", "false");
+  await card.locator(".head .tw").click();
+  await expect(card.locator(".head .tw")).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
   const search = page.locator("#tree-search");
   await search.fill("town hall");
   await expect(cards).toHaveCount(1);
@@ -195,7 +198,10 @@ test("an item copied with Ctrl+D during a search is in the list, in its unfolded
     page.locator(".toast", { hasText: "Duplicated" }),
   ).not.toHaveCount(0);
   await expect(search).toHaveValue("");
-  await expect(card.locator(".tw")).toHaveAttribute("aria-expanded", "true");
+  await expect(card.locator(".head .tw")).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
   await expect(card.locator(".kid.sel")).toBeVisible();
 });
 

@@ -121,7 +121,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   on blur or Ctrl+Enter; an empty pin is refused in the phone's words),
   Move (the marker made draggable, Done applies the drop, Cancel or Esc
   puts it back; the card then says the height was kept), Delete with an
-  Undo toast for 8 s (the phone's hold, which holds autosave too). Codes and stations
+  Undo toast for 8 s (the phone's hold, which holds autosave too). The toast names
+  the item by its rail name, else by its own text, else by its kind's word
+  (`itemCalled`: "Deleted Video", never "Deleted the note" for a free video). Codes and stations
   stay read-only; the walk's debug camera captures are not items.
   The toast's Undo is the edit stack's (below): it runs while its delete
   is still the newest step (`editor.revision()` unchanged), also after a
@@ -837,6 +839,19 @@ The shell's and the 3D view's `model` edits go through
 `writeInspectorEdit` to the session's `editModel` (a refusal toasted).
 The dev hook adds `view3dModelParts()` and
 `view3dModelScreen(id, at)` for `editor3d-model.spec.js`.
+
+### Stories in the tree
+
+The tree's add makes a story (`addStoryTo`) or an entry (`addToStoryEntry`),
+selects it, says it in a toast, one step each. Deleting a story asks first
+(`confirmPausingFrames`, naming what goes with it: its entries, and its
+untitled automatic station by name when that goes too, `delete-questions.ts`
+`storyDeleteQuestion`), and its toast says when the station went with it;
+deleting a station asks the same way (`stationDeleteQuestion`: its stories
+by name, its free items by count), except when the tour refuses it (its last station), which
+is said instead; an entry goes without a
+question, the toast's Undo taking it back and saying how many answers no
+longer lead to it. Every delete shares `deleted`, the toast and its Undo.
 
 ## Tests
 

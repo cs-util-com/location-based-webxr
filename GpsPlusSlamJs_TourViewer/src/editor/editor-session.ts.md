@@ -189,6 +189,15 @@ imperative resources only - that handle and the pictures' side table
       copy's own `content/<id>.<ext>` and the draft keeps it. A station's
       copy mints a new id for every block of it, its story's too (block
       ids are unique across the tour).
+    - `addStory(stationId)` (named "New story", or "New story n" with the
+      least n from 2 while that name is taken, so a delete never makes a
+      name repeat), `renameStory(id, title)`, `deleteStory(id)` (says how
+      many children went and `stationGone` when its untitled automatic
+      station, kept by nothing else, went with it),
+      `addToStory(storyId, kind)`, `deleteStoryChild(id)` (says how many
+      answers no longer lead anywhere), `setStoryAdvance(id, advance)` - the
+      tree's and the inspector's story edits, each one step, a refusal said
+      in the creator's words.
     - `groundItems([{ id, alt }])` - "Put on the ground": the altitudes the
       page measured, ONE step for all; refused whole for an unknown id or
       a height beyond an item's reach of its station (`HEIGHT_REFUSED`).

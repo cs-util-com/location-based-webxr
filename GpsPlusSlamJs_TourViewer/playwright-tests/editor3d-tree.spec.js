@@ -233,9 +233,20 @@ test("the tree adds, reorders and deletes stations, each one step to undo", asyn
     .poll(() => order(page))
     .toEqual(["column", "gate", "steps", added]);
 
-  // The inspector's Delete: one step, its Undo in the toast.
+  // The inspector's Delete: asked once, then one step, its Undo in the
+  // toast.
+  /** @type {string[]} */
+  const asked = [];
+  page.once("dialog", (dialog) => {
+    asked.push(dialog.message());
+    void dialog.accept();
+  });
   await page.locator('#inspector-body [data-act="delete"]').click();
   await expect.poll(() => order(page)).toEqual(["column", "gate", "steps"]);
+  expect(asked).toHaveLength(1);
+  expect(asked[0]).toMatch(
+    /^Delete the station ".+"\? It has no content\. You can undo this\.$/,
+  );
   expect(await selected(page)).toBeNull();
   // The focus does not fall to the page: it goes to the card now in the
   // deleted station's place (at the end, the one before it).
@@ -278,7 +289,7 @@ test("a row's + adds a short or a long text in place, from the mouse and from th
   await plus.click();
   await expect(menu).toBeVisible();
   await expect(plus).toHaveAttribute("aria-expanded", "true");
-  await expect(menu.locator('[data-kind="pin"]')).toBeFocused();
+  await expect(menu.locator('[data-kind="shortText"]')).toBeFocused();
   await expect(menu.locator('[data-kind="picture"]')).toHaveAttribute(
     "aria-disabled",
     "true",
@@ -302,7 +313,7 @@ test("a row's + adds a short or a long text in place, from the mouse and from th
 
   // The keyboard: Enter on the "+", Escape back to it, then a short text.
   await page.keyboard.press("Enter");
-  await expect(menu.locator('[data-kind="pin"]')).toBeFocused();
+  await expect(menu.locator('[data-kind="shortText"]')).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(menu).toBeHidden();
   await expect(gate.locator(".head .add")).toBeFocused();
@@ -321,6 +332,174 @@ test("a row's + adds a short or a long text in place, from the mouse and from th
   await expect.poll(async () => (await gateBlocks()).length).toBe(before + 1);
   await page.keyboard.press("Control+z");
   await expect.poll(async () => (await gateBlocks()).length).toBe(before);
+});
+
+test("a story is a folder of the tree: added, named, filled, its entry's texts shown, deleted and undone", async ({
+  page,
+}) => {
+  // Why: a story stopped being a hidden part of its station. Only the page
+  // shows the row's "+", the type menu, the inspector's name, the folder
+  // and the delete's question working together, each edit one step of the
+  // history.
+  test.slow();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await answerHosts(page);
+  await openSampleIn3d(page);
+  await afterFrames(page, 3);
+  /** @returns {Promise<any[]>} */
+  const stories = async () =>
+    (await tourNow(page)).stations
+      .find((/** @type {any} */ s) => s.id === "gate")
+      .children.filter((/** @type {any} */ c) => c.kind === "story");
+  const before = (await stories()).length;
+  const start = await revision(page);
+  const gate = card(page, "gate");
+  const menu = page.locator("#tree-add-menu");
+  const inspector = page.locator("#shell-inspector");
+
+  // Add: the Story item of the station's menu; the name is ready to type.
+  await gate.locator(".head").hover();
+  await gate.locator(".head .add").click();
+  await menu.locator('[data-kind="story"]').click();
+  await expect(menu).toBeHidden();
+  await expect(
+    page.locator(".toast", { hasText: "Added a story to" }),
+  ).toBeVisible();
+  const name = inspector.locator('[data-field="story-title"]');
+  await expect(name).toBeFocused();
+  expect((await stories()).length).toBe(before + 1);
+  const chosen = await selected(page);
+  const id = chosen.slice("story:".length);
+  const made = () =>
+    stories().then((all) => all.find((/** @type {any} */ s) => s.id === id));
+  expect(await made()).toBeDefined();
+  expect(await revision(page)).toBe(start + 1);
+  await expect(inspector.locator(".kids")).toHaveCount(0);
+
+  // Rename, in the inspector's head; the folder follows.
+  await name.fill("The legend");
+  await name.press("Enter");
+  const folder = gate.locator(`.folder[data-story="${id}"]`);
+  await expect(folder.locator(".nm")).toHaveText("The legend");
+  await expect(folder.locator(".meta")).toHaveText("0");
+  expect(await revision(page)).toBe(start + 2);
+
+  // Fill: the story's "+" adds into it, and the menu says so.
+  await folder.locator(".add").click();
+  await expect(menu).toHaveAttribute(
+    "aria-label",
+    'Add to the story "The legend"',
+  );
+  await expect(menu.locator('[data-kind="story"]')).toBeHidden();
+  await menu.locator('[data-kind="longText"]').click();
+  await expect(
+    page.locator(".toast", { hasText: 'to the story "The legend"' }),
+  ).toBeVisible();
+  await expect(folder.locator(".meta")).toHaveText("1");
+  const entry = (await made()).children[0];
+  expect(await selected(page)).toBe(entry.id);
+  const row = gate.locator(`.kid[data-select="${entry.id}"]`);
+  await expect(row).toHaveAttribute("aria-pressed", "true");
+  await expect(row.locator(".meta")).toHaveText("1");
+  expect(await revision(page)).toBe(start + 3);
+
+  // A story block's texts are in its own inspector.
+  await expect(inspector.locator(".sub")).toContainText(
+    "/ The legend / Long text, entry 1",
+  );
+  await expect(
+    inspector.locator(`[data-field="block:${entry.id}:title"]`),
+  ).toHaveValue("New long text 1");
+  await expect(
+    inspector.locator(`[data-field="block:${entry.id}:body"]`),
+  ).toHaveValue("Write the text here.");
+  await expect(
+    inspector.locator('[data-act="entry-advance:' + entry.id + ':tap"]'),
+  ).toHaveAttribute("aria-pressed", "true");
+
+  // Delete: the question names what goes; Undo brings the story back whole.
+  await gate.locator(`.fname[data-select="story:${id}"]`).click();
+  await expect.poll(() => selected(page)).toBe(`story:${id}`);
+  /** @type {string[]} */
+  const asked = [];
+  page.once("dialog", (dialog) => {
+    asked.push(dialog.message());
+    void dialog.accept();
+  });
+  await inspector.locator('[data-act="delete"]').click();
+  await expect.poll(async () => (await stories()).length).toBe(before);
+  expect(asked).toEqual([
+    'Delete the story "The legend"? Its entry goes with it. You can undo this.',
+  ]);
+  expect(await selected(page)).toBeNull();
+  await page.locator(".toast button", { hasText: "Undo" }).click();
+  await expect.poll(async () => (await stories()).length).toBe(before + 1);
+  expect((await made()).children.map((/** @type {any} */ c) => c.id)).toEqual([
+    entry.id,
+  ]);
+});
+
+test("a story's folder sits a step in from its station and its entries a step further, at a phone and a desktop", async ({
+  page,
+}) => {
+  // Why: the explorer was chosen for its one-line rows and its plain
+  // indents. Presence would pass a folder set flush with the station, or
+  // entries as tall as cards, so this pins positions, heights and gaps.
+  test.slow();
+  await answerHosts(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openSampleIn3d(page);
+  await afterFrames(page, 3);
+  const gate = card(page, "gate");
+  await gate.locator(".head").hover();
+  await gate.locator(".head .add").click();
+  await page.locator('#tree-add-menu [data-kind="story"]').click();
+  const id = (await selected(page)).slice("story:".length);
+  const folder = `.folder[data-story="${id}"]`;
+  for (const _ of [1, 2]) {
+    await page.locator(`${folder} .add`).click();
+    await page.locator('#tree-add-menu [data-kind="shortText"]').click();
+  }
+  await expect(page.locator(`${folder} ~ .kid.deep`)).toHaveCount(2);
+  const sels = [
+    folder,
+    `${folder} .tw`,
+    `${folder} .ic`,
+    `${folder} ~ .kid.deep`,
+    `${folder} ~ .kid.deep .ic`,
+    '.card[data-station="gate"] .head',
+    '.card[data-station="gate"] .head .tw',
+  ];
+  /** @param {number} rowH */
+  const pinned = async (rowH) => {
+    const l = await layoutOf(page, sels);
+    const row = boxIn(l, sels[0]);
+    const arrow = boxIn(l, sels[1]);
+    const icon = boxIn(l, sels[2]);
+    const first = boxIn(l, sels[3], 0);
+    const second = boxIn(l, sels[3], 1);
+    const entryIcon = boxIn(l, sels[4], 0);
+    expect(row.height).toBe(rowH);
+    expect(first.height).toBe(rowH);
+    expect(second.height).toBe(rowH);
+    // Rows touch: one line after the other, no gap between entries.
+    expect(second.y).toBeCloseTo(first.y + first.height, 0);
+    // The first entry starts where its folder's row ends.
+    expect(first.y).toBeCloseTo(row.y + row.height, 0);
+    // The folder's arrow a step in from its station's arrow.
+    expect(arrow.x - boxIn(l, sels[6]).x).toBeCloseTo(16, 0);
+    // An indent of 16 px per level, as the prototype's rows.
+    expect(entryIcon.x - icon.x).toBeCloseTo(16, 0);
+    expect(icon.x - (arrow.x + arrow.width)).toBeCloseTo(4, 0);
+    expect(boxIn(l, sels[5]).x).toBe(row.x);
+  };
+  await pinned(26);
+  // The folders work in the phone's list sheet, its rows finger-sized.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator('#shell-inspector [data-act="close"]').click();
+  await page.locator("#studio-list").click();
+  await expect(page.locator(folder)).toBeVisible();
+  await pinned(32);
 });
 
 test("Ctrl+K adds a kind to a place named in one query, and leaves the long-text writer's Ctrl+K alone", async ({
@@ -584,7 +763,7 @@ test("a station copied with its photo is saved with a picture of its own, and op
   });
   // An unfolded station shows its picture under its row.
   for (const each of await next.locator("#tree-body .card").all()) {
-    const fold = each.locator(".tw");
+    const fold = each.locator(".head .tw");
     if ((await fold.getAttribute("aria-expanded")) !== "true") {
       await fold.click();
     }
@@ -660,7 +839,7 @@ test("a long text added in place is saved and opens again as it was made", async
   await openZip(next, readFileSync(saved), "one-photo.zip");
   const again = card(next, "fountain");
   await expect(again).toBeVisible({ timeout: 60_000 });
-  const fold = again.locator(".tw");
+  const fold = again.locator(".head .tw");
   if ((await fold.getAttribute("aria-expanded")) !== "true") await fold.click();
   await expect(
     again.locator(`[data-select="${made}"]`, { hasText: "New long text 1" }),
@@ -836,7 +1015,7 @@ test("add, reorder, split and delete come back whole from the draft after a relo
   await expect.poll(() => order(page)).toEqual(["a", "b", added, "c"]);
 
   // Split: b's pin into a station of its own, right after b.
-  await card(page, "b").locator(".tw").click();
+  await card(page, "b").locator(".head .tw").click();
   await card(page, "b").locator('[data-select="pb"]').click();
   await page.locator('#inspector-body [data-act="split"]').click();
   await expect.poll(async () => (await order(page)).length).toBe(5);
@@ -846,7 +1025,20 @@ test("add, reorder, split and delete come back whole from the draft after a relo
 
   // Delete: station a with its pin.
   await card(page, "a").locator(".pick").click();
+  /** @type {string[]} */
+  const asked = [];
+  page.once("dialog", (dialog) => {
+    asked.push(dialog.message());
+    void dialog.accept();
+  });
   await page.locator('#inspector-body [data-act="delete"]').click();
+  await expect
+    .poll(() => asked)
+    .toEqual([
+      expect.stringMatching(
+        /^Delete the station ".+"\? Its item goes with it: 1 free item\. You can undo this\.$/,
+      ),
+    ]);
   await expect.poll(() => order(page)).toEqual(["b", split, added, "c"]);
 
   await expect(page.locator("body")).toHaveAttribute("data-draft", "saved");
@@ -909,7 +1101,8 @@ test("a station's picture is a strip under its row, and a tap on it selects the 
     const fountain = card(page, "fountain");
     await expect(fountain).toBeVisible();
     const strip = fountain.locator(".pic");
-    if ((await strip.count()) === 0) await fountain.locator(".tw").click();
+    if ((await strip.count()) === 0)
+      await fountain.locator(".head .tw").click();
     await expect(strip, at).toBeVisible();
     await expect
       .poll(() => strip.evaluate((e) => getComputedStyle(e).backgroundImage))
@@ -1178,8 +1371,8 @@ test("a folded station is one line, its number and name side by side; unfolded i
 
     // Unfolded: the picture under the row of the station that has one,
     // no picture for the one that has none; both list their items.
-    await card(page, "short").locator(".tw").click();
-    await card(page, "plain").locator(".tw").click();
+    await card(page, "short").locator(".head .tw").click();
+    await card(page, "plain").locator(".head .tw").click();
     const pic = card(page, "short").locator(".pic");
     await expect(pic).toBeVisible();
     await expect
@@ -1199,7 +1392,7 @@ test("a folded station is one line, its number and name side by side; unfolded i
     // Unfolded, a station is no longer one compact line: its long name
     // wraps (on a phone a folded name gets about 115 px), the arrow still
     // on the row's middle; folded again it is one line.
-    await card(page, "long").locator(".tw").click();
+    await card(page, "long").locator(".head .tw").click();
     const longHead = card(page, "long").locator(".head");
     const longName = await box(longHead.locator(".nm"));
     expect(longName.height, at).toBeGreaterThan(25);
@@ -1212,12 +1405,12 @@ test("a folded station is one line, its number and name side by side; unfolded i
       ),
       at,
     ).toBeLessThanOrEqual(1);
-    await card(page, "long").locator(".tw").click();
+    await card(page, "long").locator(".head .tw").click();
     await expect(card(page, "long").locator(".kids")).toHaveCount(0);
     expect((await box(longHead)).height, at).toBeCloseTo(rowPx, 0);
     await capture(page, test.info().outputPath(`rows-unfolded-${name}.png`));
-    await card(page, "short").locator(".tw").click();
-    await card(page, "plain").locator(".tw").click();
+    await card(page, "short").locator(".head .tw").click();
+    await card(page, "plain").locator(".head .tw").click();
     await expect(page.locator("#tree-body .kids")).toHaveCount(0);
   }
 });

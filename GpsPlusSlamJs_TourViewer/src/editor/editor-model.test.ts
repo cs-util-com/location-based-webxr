@@ -21,6 +21,7 @@ import {
   filterItems,
   ON_CODE_M,
   photoSource,
+  selectedStationOf,
   type EditorModel,
 } from "./editor-model.js";
 import { createTourViewerStore } from "../tour-viewer-session.js";
@@ -371,5 +372,68 @@ describe("photoSource (E1 review #1)", () => {
       fileName: "tour.zip",
     });
     expect(photoSource(m.items[0]!)).toBeNull();
+  });
+});
+
+describe("selectedStationOf", () => {
+  const block = {
+    kind: "shortText",
+    view: "pin",
+    caption: "A pin",
+    pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+  } as const;
+  const manifest = {
+    stations: [
+      { id: "a", children: [{ ...block, id: "pin1" }] },
+      { id: "b", children: [{ ...block, id: "photo2" }] },
+    ],
+  };
+
+  // Why: the near-K rule always draws the selected station; the 2D page
+  // selects a station as `station:<id>`, and an item by its own id, whose
+  // station is the one to draw. A code, an unknown id or nothing selects
+  // no station.
+  it("names the selected station, or the station holding the selected item", () => {
+    expect(selectedStationOf("station:b", manifest)).toBe("b");
+    expect(selectedStationOf("pin1", manifest)).toBe("a");
+    expect(selectedStationOf("photo2", manifest)).toBe("b");
+    expect(selectedStationOf("station:gone", manifest)).toBeNull();
+    expect(selectedStationOf("code-7", manifest)).toBeNull();
+    expect(selectedStationOf(null, manifest)).toBeNull();
+    expect(selectedStationOf("station:a", null)).toBeNull();
+  });
+
+  // Why: a story and its choice or quiz are no blocks, and a selection of
+  // one must still say whose station it is: the shell's add and the near-K
+  // rule follow it.
+  it("finds the station of a story and of any of a story's children", () => {
+    const stories = {
+      stations: [
+        {
+          id: "s",
+          children: [
+            {
+              id: "legend",
+              kind: "story",
+              title: "A story",
+              children: [
+                {
+                  id: "way",
+                  kind: "choice",
+                  prompt: "Which?",
+                  options: [
+                    { id: "a", label: "A" },
+                    { id: "b", label: "B" },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    } as unknown as Parameters<typeof selectedStationOf>[1];
+    expect(selectedStationOf("story:legend", stories)).toBe("s");
+    expect(selectedStationOf("way", stories)).toBe("s");
+    expect(selectedStationOf("story:gone", stories)).toBeNull();
   });
 });

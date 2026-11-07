@@ -7,7 +7,8 @@ in the current text colour, as SVG elements.
 
 ## Public API
 
-- `ShellIcon` - the icon names (`pin`, `photo`, `text` (a long text's
+- `ShellIcon` - the icon names (`video`, `audio`, `character`, `story`,
+  `storyOpen`, `choice`, `quiz`, `pin`, `photo`, `text` (a long text's
   page of lines), `model`, `frame`, `top`,
   `undo`, `redo`, `help`, `qr`, `down`, `right`, `up`, `close`,
   `station`, `pencil`, `check`, `lock`, `unlock`, `walk`, `eye`, `folder`,

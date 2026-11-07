@@ -34,8 +34,10 @@ export function watchKeyboard(win: Window, host: HTMLElement): () => void {
   const viewport = win.visualViewport;
   if (viewport === null || viewport === undefined) return () => undefined;
   let up = false;
-  /** The keyboard's height last read; 0 for none. */
-  let shownPx = 0;
+  /** What the keyboard covered when last read. Read off the viewport's
+   *  height alone: a pan moves its offset, not the keyboard, and must not
+   *  count as a keyboard that grew. */
+  let shownCover = 0;
   const inSight = () => {
     const field = host.ownerDocument.activeElement;
     if (up && field instanceof HTMLElement && host.contains(field)) {
@@ -45,8 +47,9 @@ export function watchKeyboard(win: Window, host: HTMLElement): () => void {
   const update = () => {
     const px = keyboardPx(win.innerHeight, viewport);
     const { body } = host.ownerDocument;
-    const grew = px > shownPx;
-    shownPx = px;
+    const cover = Math.round(win.innerHeight - viewport.height);
+    const grew = cover > shownCover;
+    shownCover = cover;
     up = px > 0;
     if (up) {
       body.style.setProperty(KEYBOARD_VAR, `${String(px)}px`);

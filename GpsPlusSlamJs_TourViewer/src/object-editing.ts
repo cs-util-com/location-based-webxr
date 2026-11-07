@@ -28,8 +28,8 @@ import { Vector3, type Object3D } from "three";
 
 import type { CreatorObject } from "./creator-document.js";
 import type { UndoOffer } from "./creator-undo.js";
+import { kindNoun } from "./kinds/edit-kinds.js";
 import { moveNote, moveQuestion, type MoveQuestion } from "./move-question.js";
-import { kindNoun } from "./object-describe.js";
 import { objectListModel, type ObjectListView } from "./object-list.js";
 import {
   objectDeleted,

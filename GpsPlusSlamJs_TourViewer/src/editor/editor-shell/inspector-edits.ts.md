@@ -22,6 +22,10 @@ stationId, edit }` (a `StationEdit` of `tour-document.ts`). A radius
     `invalid` for a value that is no number; none for the facing he has
     (a whole turn round counts as the same, `shortTurn`) and for a block
     that is no character.
+  - A story's `story-title` (`story:<id>` selected): `{ kind: "story-title",
+id, title }`. A story's block selected: its texts and a character's facing
+    as below, its `entry-after:<id>` as `{ kind: "story-advance", id, advance }`.
+    A free block with no place in the world: its texts as `{ kind: "block" }`.
   - A story block's `block:<id>:<field>` on its station: `{ kind:
 "block", id, field, value }` for a block the station's story shows
     and a field of its `storyBlockFields`; none otherwise.

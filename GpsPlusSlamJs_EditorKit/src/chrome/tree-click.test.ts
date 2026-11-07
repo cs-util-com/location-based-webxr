@@ -15,6 +15,7 @@ import {
   TREE_DOUBLE_CLICK_MS,
   treeClick,
   treeClickPlan,
+  type TreeGroup,
 } from "./tree-click.js";
 
 const STATIONS = [
@@ -187,8 +188,9 @@ describe("treeClickPlan", () => {
   it("selects a station, unfolds it and flies there", () => {
     expect(treeClickPlan("select", "station:a", STATIONS, TOUR)).toEqual({
       select: "station:a",
-      unfold: "a",
+      unfold: ["a"],
       fold: null,
+      toggle: null,
       ungrouped: false,
       fly: true,
     });
@@ -197,7 +199,7 @@ describe("treeClickPlan", () => {
   it("unfolds the station of a selected item", () => {
     expect(treeClickPlan("select", "photo-1", STATIONS, TOUR)).toMatchObject({
       select: "photo-1",
-      unfold: "a",
+      unfold: ["a"],
       fly: true,
     });
   });
@@ -205,8 +207,9 @@ describe("treeClickPlan", () => {
   it("opens the codes for a selected code", () => {
     expect(treeClickPlan("select", "level-1", STATIONS, TOUR)).toEqual({
       select: "level-1",
-      unfold: null,
+      unfold: [],
       fold: null,
+      toggle: null,
       ungrouped: true,
       fly: true,
     });
@@ -215,8 +218,9 @@ describe("treeClickPlan", () => {
   it("deselects and folds a station, the camera staying", () => {
     expect(treeClickPlan("deselect", "station:a", STATIONS, TOUR)).toEqual({
       select: null,
-      unfold: null,
+      unfold: [],
       fold: "a",
+      toggle: null,
       ungrouped: false,
       fly: false,
     });
@@ -237,14 +241,14 @@ describe("treeClickPlan", () => {
     const folders = { groupPrefix: "folder:" };
     expect(
       treeClickPlan("select", "folder:a", STATIONS, folders),
-    ).toMatchObject({ select: "folder:a", unfold: "a", ungrouped: false });
+    ).toMatchObject({ select: "folder:a", unfold: ["a"], ungrouped: false });
     expect(treeClickPlan("select", "photo-1", STATIONS, folders)).toMatchObject(
-      { unfold: "a", ungrouped: false },
+      { unfold: ["a"], ungrouped: false },
     );
     // Another app's prefix means nothing under this one.
     expect(
       treeClickPlan("select", "station:a", STATIONS, folders),
-    ).toMatchObject({ unfold: null, ungrouped: true });
+    ).toMatchObject({ unfold: [], ungrouped: true });
     expect(() =>
       treeClickPlan("select", "a", STATIONS, { groupPrefix: "" }),
     ).toThrow(RangeError);
@@ -259,5 +263,93 @@ describe("treeClickPlan", () => {
       // @ts-expect-error the group prefix is the app's, and required
       treeClickPlan("select", "station:a", STATIONS),
     ).toThrow(RangeError);
+  });
+
+  // Why: an explorer nests folders. A group inside a group is named by its
+  // own selection (no prefix could tell it from its parent), and selecting
+  // something deep inside must open every folder on the way, or the row
+  // that was selected stays hidden.
+  describe("nested groups", () => {
+    const NESTED = [
+      {
+        id: "a",
+        children: ["pin-1"],
+        groups: [
+          {
+            id: "tale",
+            selection: "folder:tale",
+            children: ["line-1", "line-2"],
+          },
+        ],
+      },
+      { id: "b", children: [] },
+    ];
+
+    it("unfolds the whole chain to a child, outermost first", () => {
+      expect(treeClickPlan("select", "line-2", NESTED, TOUR)).toEqual({
+        select: "line-2",
+        unfold: ["a", "tale"],
+        fold: null,
+        toggle: null,
+        ungrouped: false,
+        fly: true,
+      });
+    });
+
+    it("unfolds what holds a nested group, leaving its own fold", () => {
+      expect(treeClickPlan("select", "folder:tale", NESTED, TOUR)).toEqual({
+        select: "folder:tale",
+        unfold: ["a"],
+        fold: null,
+        toggle: null,
+        ungrouped: false,
+        fly: true,
+      });
+    });
+
+    it("toggles a nested group's fold on a second click, the selection staying", () => {
+      expect(treeClickPlan("deselect", "folder:tale", NESTED, TOUR)).toEqual({
+        select: "folder:tale",
+        unfold: [],
+        fold: null,
+        toggle: "tale",
+        ungrouped: false,
+        fly: false,
+      });
+    });
+
+    it("still deselects a child of a nested group, folding nothing", () => {
+      expect(treeClickPlan("deselect", "line-1", NESTED, TOUR)).toMatchObject({
+        select: null,
+        fold: null,
+        toggle: null,
+      });
+    });
+
+    // Why: at any depth the chain is exactly the groups that hold the
+    // selection, so no folder on the way is skipped and none beside it opens.
+    it("gives the chain of holders at any depth", () => {
+      fc.assert(
+        fc.property(fc.integer({ min: 1, max: 6 }), (depth) => {
+          const ids = Array.from({ length: depth }, (_, i) => `g${String(i)}`);
+          const tree = ids.reduceRight<TreeGroup | null>(
+            (inner, id, i) => ({
+              id,
+              ...(i === 0 ? {} : { selection: `folder:${id}` }),
+              children: i === depth - 1 ? ["leaf"] : [],
+              groups: inner === null ? [] : [inner],
+            }),
+            null,
+          );
+          const plan = treeClickPlan(
+            "select",
+            "leaf",
+            [tree as TreeGroup],
+            TOUR,
+          );
+          expect(plan?.unfold).toEqual(ids);
+        }),
+      );
+    });
   });
 });

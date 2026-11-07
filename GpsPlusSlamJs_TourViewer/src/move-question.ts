@@ -10,6 +10,7 @@
  */
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
+import { KIND_EDIT } from "./kinds/edit-kinds.js";
 import { objectOwnText } from "./object-describe.js";
 import { stationTitle } from "./station-run.js";
 import { stationHolding } from "./station-assign.js";
@@ -30,21 +31,11 @@ export interface MoveQuestion {
   readonly declined: string;
 }
 
-const KIND_WORD: Readonly<Record<TourObject["kind"], string>> = {
-  shortText: "The pin",
-  longText: "The reading stand",
-  picture: "The photo",
-  model: "The 3D model",
-  video: "The video",
-  audio: "The sound",
-  character: "The character",
-};
-
 /** An item as a line names it: its own text (`objectOwnText`), shortened,
  *  else what it is. */
 function itemName(object: TourObject): string {
   const label = (objectOwnText(object) ?? "").replace(/\s+/g, " ").trim();
-  if (label === "") return KIND_WORD[object.kind];
+  if (label === "") return `The ${KIND_EDIT[object.kind].thing}`;
   return `"${truncated(label, 40)}"`;
 }
 

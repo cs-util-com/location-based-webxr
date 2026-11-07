@@ -22,14 +22,8 @@
 
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import {
-  BLOCK_KIND_LABEL,
-  codeDistanceLine,
-  hasLook,
-  objectLook,
-  objectTitle,
-  type ObjectLook,
-} from "./object-describe.js";
+import { isWorldKind, KIND_EDIT, type KindLook } from "./kinds/edit-kinds.js";
+import { codeDistanceLine, objectTitle } from "./object-describe.js";
 
 /** One object as the list sees it. */
 export interface ObjectListEntry {
@@ -72,7 +66,7 @@ interface ObjectListQuestion {
 
 interface ObjectRowModel {
   readonly id: string;
-  readonly kind: ObjectLook;
+  readonly kind: KindLook;
   /** The object's name (`objectTitle`). */
   readonly title: string;
   /** On the page: kind, where it stands (in the zip, changed, new) and the
@@ -136,18 +130,19 @@ function rowOf(
   state: ObjectListState,
 ): ObjectRowModel | null {
   const { object } = entry;
-  if (!hasLook(object)) return null;
+  // A kind the creator pages do not draw in the world has no row here.
+  if (!isWorldKind(object.kind)) return null;
   const busy = state.busy.get(object.id) ?? null;
   const title = objectTitle(object);
   const distance = codeDistanceLine(object, state.codes);
   return {
     id: object.id,
-    kind: objectLook(object.kind),
+    kind: KIND_EDIT[object.kind].look,
     title,
     detail: state.inAr
       ? distance
       : [
-          BLOCK_KIND_LABEL[object.kind],
+          KIND_EDIT[object.kind].label,
           standing(entry),
           ...(distance === "" ? [] : [distance]),
         ].join(" · "),

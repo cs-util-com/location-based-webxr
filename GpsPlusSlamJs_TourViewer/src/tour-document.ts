@@ -25,8 +25,17 @@ import {
   tourStories,
   type TourStory,
   type TourStoryBlock,
+  type TourStepAdvance,
   type TourStoryChild,
 } from "gps-plus-slam-app-framework/ar/tour-story";
+import {
+  newStory,
+  withoutStory,
+  withoutStoryChild,
+  withStory,
+  withStoryChild,
+  withStoryTitle,
+} from "./tour-story-edit.js";
 import {
   createAction,
   createSlice,
@@ -2103,6 +2112,16 @@ export interface StationEdit {
   /** A text of a block the station's story shows, typed in the station's
    *  inspector. */
   readonly storyText?: StationStoryTextEdit;
+  /** How the story block `block` moves on: on a tap, or by itself after
+   *  `afterS` seconds. */
+  readonly storyAdvance?: StationStoryAdvanceEdit;
+}
+
+/** How a story block that is no character moves on. A character has his
+ *  own (`StationCharacterEdit`), since only he can wait for his line. */
+export interface StationStoryAdvanceEdit {
+  readonly block: string;
+  readonly advance: Extract<TourStepAdvance, { mode: "tap" | "auto" }>;
 }
 
 /** One text field (`field`, a key of the format's `TOUR_BLOCK_TEXT_RULES`
@@ -2140,7 +2159,8 @@ export type StationEditChange =
         | "description"
         | "image"
         | "character"
-        | "storyText";
+        | "storyText"
+        | "storyAdvance";
     }
   | { readonly kind: "missing" };
 
@@ -2251,6 +2271,25 @@ function withStoryText(
   return withStoryBlock(frame, next as unknown as TourStoryBlock);
 }
 
+/** `frame` with its story block `edit.block` moving on as `edit` says;
+ *  null when the block is none of its stories', or the wait is no number
+ *  of seconds above 0. */
+function withStoryAdvance(
+  frame: StationFrame,
+  edit: StationStoryAdvanceEdit,
+): StationFrame | null {
+  const block = tourStationStoryBlocks(frame).find((b) => b.id === edit.block);
+  if (block === undefined) return null;
+  const { advance } = edit;
+  if (
+    advance.mode === "auto" &&
+    !(Number.isFinite(advance.afterS) && advance.afterS > 0)
+  ) {
+    return null;
+  }
+  return withStoryBlock(frame, { ...block, advance });
+}
+
 /**
  * What `edit` would make of the station `stationId`, by the format's rules
  * (both a page and the reducer ask it): a title of at most 80 characters
@@ -2304,6 +2343,11 @@ export function stationEditChange(
     const texted = withStoryText(next, edit.storyText);
     if (texted === null) return { kind: "refused", reason: "storyText" };
     next = texted;
+  }
+  if (edit.storyAdvance !== undefined) {
+    const moved = withStoryAdvance(next, edit.storyAdvance);
+    if (moved === null) return { kind: "refused", reason: "storyAdvance" };
+    next = moved;
   }
   return sameJson(next, frame)
     ? { kind: "unchanged" }
@@ -2536,8 +2580,19 @@ function stationEdit(
   const { stationId } = payload;
   const change = stationEditChange(before, stationId, payload.edit);
   if (change.kind !== "edited") return before;
+  return frameReplaced(before, change.frame, payload.what);
+}
+
+/** The frame of `frame.id` replaced by it, as one step: what a station's
+ *  edit and each story edit come to. */
+function frameReplaced(
+  before: TourDocumentState,
+  frame: StationFrame,
+  what: string,
+): TourDocumentState {
+  const stationId = frame.id;
   const frames = framesHolding(before, stationId).map((s) =>
-    s.id === stationId ? change.frame : s,
+    s.id === stationId ? frame : s,
   );
   const stations = withoutEmptied({ ...before, stations: frames }, [stationId]);
   const listed = (list: readonly StationFrame[]) =>
@@ -2550,8 +2605,87 @@ function stationEdit(
       touched: { ...before.touched, stations: true },
       framesRecorded: true,
     },
-    payload.what,
+    what,
   );
+}
+
+/** The frame that holds the story `id`, or the story child `id`. */
+function frameOfStory(
+  state: TourDocumentState,
+  id: string,
+): StationFrame | undefined {
+  return allFrames(state).find((f) =>
+    tourStories(f).some(
+      (s) => s.id === id || s.children.some((c) => c.id === id),
+    ),
+  );
+}
+
+/** A story added at the end of the stories of `stationId`
+ *  (`storyAdded`), as one step. */
+function storyAdd(
+  before: TourDocumentState,
+  payload: { stationId: string; id: string; title: string; what: string },
+): TourDocumentState {
+  if (before.written === null || !freeObjectId(before, payload.id)) {
+    return before;
+  }
+  const frame = allFrames(before).find((f) => f.id === payload.stationId);
+  const story = newStory(payload.id, payload.title);
+  if (frame === undefined || story === null) return before;
+  return frameReplaced(before, withStory(frame, story), payload.what);
+}
+
+/** A story's title set (`storyRenamed`), as one step. */
+function storyRename(
+  before: TourDocumentState,
+  payload: { story: string; title: string; what: string },
+): TourDocumentState {
+  const frame = frameOfStory(before, payload.story);
+  if (before.written === null || frame === undefined) return before;
+  const next = withStoryTitle(frame, payload.story, payload.title);
+  if (next === null || sameJson(next, frame)) return before;
+  return frameReplaced(before, next, payload.what);
+}
+
+/** A story taken out with its children (`storyDeleted`), as one step. */
+function storyDelete(
+  before: TourDocumentState,
+  payload: { story: string; what: string },
+): TourDocumentState {
+  const frame = frameOfStory(before, payload.story);
+  if (before.written === null || frame === undefined) return before;
+  const next = withoutStory(frame, payload.story);
+  return next === null ? before : frameReplaced(before, next, payload.what);
+}
+
+/** A child at the end of a story (`storyChildAdded`), as one step. */
+function storyChildAdd(
+  before: TourDocumentState,
+  payload: { story: string; child: TourStoryChild; what: string },
+): TourDocumentState {
+  const frame = frameOfStory(before, payload.story);
+  if (
+    before.written === null ||
+    frame === undefined ||
+    !freeObjectId(before, payload.child.id)
+  ) {
+    return before;
+  }
+  const next = withStoryChild(frame, payload.story, payload.child);
+  return next === null ? before : frameReplaced(before, next, payload.what);
+}
+
+/** A child taken out of its story, the `goto`s naming it gone with it
+ *  (`storyChildDeleted`), as one step. */
+function storyChildDelete(
+  before: TourDocumentState,
+  payload: { child: string; what: string },
+): TourDocumentState {
+  const frame = frameOfStory(before, payload.child);
+  if (before.written === null || frame === undefined) return before;
+  const out = withoutStoryChild(frame, payload.child);
+  return out === null ? before : frameReplaced(before, out.frame, payload.what);
 }
 
 /** A station added at `at` (`stationAdded`), as one step: untitled (named
@@ -3028,6 +3162,55 @@ const tourDocumentSlice = createSlice({
       }>,
     ) {
       return stationEdit(plain(state), action.payload);
+    },
+    /** A new empty story at the end of a station's stories. Its id is
+     *  minted outside the reducer; a taken id, a refused title or an
+     *  unknown station changes nothing. */
+    storyAdded(
+      state,
+      action: PayloadAction<{
+        stationId: string;
+        id: string;
+        title: string;
+        what: string;
+      }>,
+    ) {
+      return storyAdd(plain(state), action.payload);
+    },
+    /** A story's title: one step; a refused or unchanged title, or an
+     *  unknown story, changes nothing. */
+    storyRenamed(
+      state,
+      action: PayloadAction<{ story: string; title: string; what: string }>,
+    ) {
+      return storyRename(plain(state), action.payload);
+    },
+    /** A story deleted with its children: one step. */
+    storyDeleted(
+      state,
+      action: PayloadAction<{ story: string; what: string }>,
+    ) {
+      return storyDelete(plain(state), action.payload);
+    },
+    /** A child at the end of a story: one step; its id is minted outside
+     *  the reducer, and a taken id changes nothing. */
+    storyChildAdded(
+      state,
+      action: PayloadAction<{
+        story: string;
+        child: TourStoryChild;
+        what: string;
+      }>,
+    ) {
+      return storyChildAdd(plain(state), action.payload);
+    },
+    /** A story's child deleted, the answers that named it going on to the
+     *  next child: one step. */
+    storyChildDeleted(
+      state,
+      action: PayloadAction<{ child: string; what: string }>,
+    ) {
+      return storyChildDelete(plain(state), action.payload);
     },
     /** A station added at `at`, untitled (the tree names it by its
      *  number), with the automatic radii and nothing in it: it keeps
@@ -3726,6 +3909,11 @@ export const isDocumentEdit = isAnyOf(
   tourDocumentActions.deleted,
   tourDocumentActions.stationMoved,
   tourDocumentActions.stationEdited,
+  tourDocumentActions.storyAdded,
+  tourDocumentActions.storyRenamed,
+  tourDocumentActions.storyDeleted,
+  tourDocumentActions.storyChildAdded,
+  tourDocumentActions.storyChildDeleted,
   tourDocumentActions.stationAdded,
   tourDocumentActions.stationDeleted,
   tourDocumentActions.stationsReordered,

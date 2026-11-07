@@ -83,6 +83,12 @@ items on the ground, the card's picture, and a story
 character's view and advance chips (`characterChipEdit`: his station's
 `StationEdit.character`; the chip already pressed writes nothing).
 
+A story is a folder of the tree: its arrow folds it (`storyFolded`), its name
+selects it, its "+" and its empty line open the type menu for it, a click
+unfolds what holds a row. The inspector's `goto:` reveals the entry's folder,
+and a view that cannot fly to a story or an entry flies to its station. Added
+to a station, a story's name in the head takes the focus, selected.
+
 ## Public API
 
 - `createEditorShell(deps)` -> `EditorShell`, made once by `edit-main.ts`:

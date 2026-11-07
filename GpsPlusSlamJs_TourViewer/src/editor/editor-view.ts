@@ -136,6 +136,9 @@ export interface EditorViewState {
    *  by id, in the order they were unfolded; an id the tour no longer
    *  has is ignored by the tree. */
   readonly openStations: readonly string[];
+  /** The stories the tree lists the entries of, by id, in the order they
+   *  were unfolded; an id the tour no longer has is ignored by the tree. */
+  readonly openStories: readonly string[];
   /** The tree's sections: open, or folded to their header. */
   readonly openSections: Readonly<Record<TreeSection, boolean>>;
   /** A dock folded to its header. */
@@ -170,6 +173,7 @@ export const initialEditorViewState: EditorViewState = {
   view3dFailure: null,
   gesture: null,
   openStations: [],
+  openStories: [],
   openSections: { stations: true, codes: true, layers: true },
   foldedDocks: { tree: false, inspector: false },
   hiddenLayers: [],
@@ -309,6 +313,14 @@ const editorViewSlice = createSlice({
       if (open && at < 0) state.openStations.push(id);
       if (!open && at >= 0) state.openStations.splice(at, 1);
     },
+    /** A story of the tree unfolded (its entries listed) or folded. */
+    storyFolded(state, action: PayloadAction<{ id: string; open: boolean }>) {
+      const { id, open } = action.payload;
+      if (typeof id !== "string" || id === "" || !isFlag(open)) return;
+      const at = state.openStories.indexOf(id);
+      if (open && at < 0) state.openStories.push(id);
+      if (!open && at >= 0) state.openStories.splice(at, 1);
+    },
     sectionFolded(
       state,
       action: PayloadAction<{ section: TreeSection; open: boolean }>,
@@ -357,16 +369,18 @@ const editorViewSlice = createSlice({
     },
   },
   extraReducers: (builder) => {
-    // The unfolded stations are the open tour's ids: another tour, or
-    // none, starts with every station folded.
+    // The unfolded stations and stories are the open tour's ids: another
+    // tour, or none, starts with all of them folded.
     const foldAll = (state: {
       openStations: string[];
+      openStories: string[];
       gesture: EditorGesture | null;
       unlockedStations: string[];
       modelFocus: ModelFocus | null;
       modelPick: ModelPick | null;
     }) => {
       state.openStations = [];
+      state.openStories = [];
       // A gesture belongs to the tour it started on.
       state.gesture = null;
       // Another tour, or none: every station locked again.
