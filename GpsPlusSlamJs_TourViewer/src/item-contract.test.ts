@@ -24,7 +24,7 @@ import {
 } from "./checks/item-lab-kind";
 import { createFreeItems } from "./free-items";
 import { createNarrationPlayer } from "./narration-player";
-import { createSceneView } from "./scene-view";
+import { createSceneView, type SceneViewDeps } from "./scene-view";
 import { createVoiceFocus } from "./voice-focus";
 import { TOUR_BLOCK_VIEWS } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import { tourBlockAssetIds } from "gps-plus-slam-app-framework/ar/tour-kinds";
@@ -297,6 +297,20 @@ const flush = (): Promise<void> =>
     setTimeout(resolve, 0);
   });
 
+/** The card's own element: what an item put in it, until the host empties it. */
+function fakeSurface() {
+  const surface = {
+    held: [] as unknown[],
+    append(...nodes: unknown[]) {
+      surface.held.push(...nodes);
+    },
+    replaceChildren(...nodes: unknown[]) {
+      surface.held = nodes;
+    },
+  };
+  return surface as typeof surface & HTMLElement;
+}
+
 function panel(
   loadAsset: (path: string) => Promise<Blob> = (path) =>
     Promise.resolve(new Blob([path])),
@@ -347,6 +361,7 @@ function panel(
     choices: { replaceChildren: () => undefined },
     continueButton: { hidden: false },
     playNext: { hidden: true, textContent: "" },
+    surface: fakeSurface(),
   };
   const view = createSceneView({
     dom,
@@ -476,7 +491,7 @@ function freeSide(
 }
 
 describe("the table of kinds", () => {
-  // Why this test matters: the switches in item-card.ts stop a new kind at
+  // Why this test matters: the rows in play-kinds.ts stop a new kind at
   // the compiler, but the contract below only binds a kind with a row. A
   // kind the format gains must not pass this file by being absent from it.
   it("has a row for every kind the format knows", () => {
@@ -848,5 +863,59 @@ describe("itemAssets", () => {
         characters,
       ),
     ).toEqual(["clip", "still"]);
+  });
+});
+
+describe("the card's surface", () => {
+  // Why this test matters: a kind fills the surface with elements of its
+  // own, so the host must hand it over and take it back at the step's end,
+  // or the next step shows the last item's leftovers.
+  it("is offered to the item and emptied when the step changes", async () => {
+    const offered: unknown[] = [];
+    const { view, dom } = panel(undefined, undefined, (shown, host) => {
+      offered.push(host.surface);
+      host.surface?.append("its own");
+      showItemCard(shown, host);
+    });
+    view.offer(stationOf(ITEMS[0]?.fields ?? {}));
+    await flush();
+    expect(offered[0]).toBe(dom.surface);
+    expect(dom.surface.held).toEqual(["its own"]);
+    view.continueTapped();
+    expect(dom.surface.held).toEqual(["its own"]);
+    expect(offered).toHaveLength(2);
+    view.stopAll();
+    expect(dom.surface.held).toEqual([]);
+  });
+});
+
+describe("the stage's world doors", () => {
+  // Why this test matters: an item draws in the world through the doors
+  // it is handed and nothing else; the panel's own stage controls (clear,
+  // release, the voice, the bubble) are the host's, and a kind from the
+  // item lab is untyped code that could otherwise call them.
+  it("hands an item only the figure's and the model's doors", async () => {
+    const seen: string[][] = [];
+    const { view, stage } = panel(undefined, undefined, (_shown, host) => {
+      void host.stage?.stand("probe", async (world, place) => {
+        seen.push(Object.keys(world).sort());
+        await world.showModel?.(place.stationId, new Blob(["m"]));
+      });
+    });
+    view.offer(stationOf(ITEMS[0]?.fields ?? {}));
+    await flush();
+    expect(seen).toEqual([["showCharacter", "showModel"]]);
+    expect(stage.showModel).toHaveBeenCalledTimes(1);
+  });
+
+  // Why this test matters: a stage wired without the model's door would
+  // stand nothing for a model and say nothing; it must not compile.
+  it("refuses a stage without the model's door at compile time", () => {
+    // @ts-expect-error a stage needs both doors
+    const noModel: SceneViewDeps["stage"] = {
+      showCharacter: () => Promise.resolve(),
+      clear: () => undefined,
+    };
+    expect(noModel).toBeDefined();
   });
 });

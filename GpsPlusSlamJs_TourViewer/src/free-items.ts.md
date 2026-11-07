@@ -26,7 +26,8 @@ The free items' host: what a station shows that no story brings. It is the secon
 - A free `portrait` keeps his figure, name tag and ring and gains the bubble (`noCard`), since no card shows his line here. The story's portrait does not change.
 - His look follows his voice: `speaking` with what is left of it, `spoken` once it ran out, `idle` when held, paused or never heard.
 - A free video or sound has no look yet: it draws nothing and has no tap target here. `content-placement.ts` holds the seam for those looks, and the editor does not offer them.
-- A free figure's words are in his look, so the card's places are written and read by nobody.
+- A free figure's words are in his look, so the card's places are written and read by nobody, and no `surface` is offered.
+- Its stage gives an item only a figure's door (`ItemWorld.showCharacter`, his look marked `noCard`); no model door exists here, so a row that needs one stands nothing. Nothing waits for the visitor's position with a line, so `stand` passes no `onWaiting`.
 
 ## Examples
 
