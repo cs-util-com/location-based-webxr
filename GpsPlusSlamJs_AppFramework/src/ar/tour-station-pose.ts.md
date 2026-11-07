@@ -17,8 +17,9 @@ its station) - what a viewer places and a creator's drafts hold.
 - `itemGeoPose(pose, stationGeo): QrGeoPose` - the geo pose of a block at
   `pose` in the station, minted by `mintQrGeoPose` (so a near-vertical
   rotation also carries the compat `headingDeg`, as every minted pose).
-- `tourFreeBlocks(station): TourBlock[]` - the station's blocks no step
-  shows, in the file's order.
+- `tourFreeBlocks(station): TourBlock[]` - the station's free blocks: the
+  block children of the station itself, not those of its stories, in the
+  file's order.
 - `tourObjects({ stations, assets }): TourObject[]` - every free block in
   the world, with `station` set, in station order; a picture carries its
   image asset inline (`imageAsset`, looked up in `assets`).
