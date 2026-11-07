@@ -18,6 +18,10 @@ latitudes, longitudes and bearings of property tests.
   one place: a gate width that left no walkable step at some lattice alignments
   passed for months that way. Use `fc.double` only where the edge values near
   zero are what the property is about.
+- **Why `fc.noBias` around the integer.** By default `fc.integer` skews its
+  draws toward zero and the two bounds, so about one draw in eight landed within
+  1e-3 of an end of (0, 180). Wrapped in `fc.noBias` the draws are uniform over
+  the grid; `uniform-arbitrary.test.ts` measures that over 20 000 draws.
 - The grid is 1e-6 units: for degrees about 0.1 m, far finer than a res-13 H3
   cell, so no alignment the lattice can produce is skipped.
 - Test-only, like everything in `test-utils/`: excluded from the production
@@ -32,5 +36,6 @@ fc.property(uniformIn(0, 180), uniformIn(-60, 60), uniformIn(-179, 179),
 
 ## Tests
 
-Exercised by the property tests that use it (`mesh/barrier-gates.property.test.ts`,
+`uniform-arbitrary.test.ts` measures the distribution (end bands, sign split)
+and the range validation. Exercised by the property tests that use it (`mesh/barrier-gates.property.test.ts`,
 `nav/building-passages.property.test.ts`, `spatial/*.property.test.ts`).

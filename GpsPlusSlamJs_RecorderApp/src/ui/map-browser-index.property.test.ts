@@ -32,8 +32,11 @@ import type { RecordingCoverage } from './recording-index';
  * within 1e-6 of zero, so "any place" sampled one place.
  */
 function uniformIn(min: number, max: number): fc.Arbitrary<number> {
+  // noBias: by default fast-check skews integers toward zero and the bounds.
   return fc
-    .integer({ min: Math.round(min * 1e6), max: Math.round(max * 1e6) })
+    .noBias(
+      fc.integer({ min: Math.round(min * 1e6), max: Math.round(max * 1e6) })
+    )
     .map((micro) => micro / 1e6);
 }
 

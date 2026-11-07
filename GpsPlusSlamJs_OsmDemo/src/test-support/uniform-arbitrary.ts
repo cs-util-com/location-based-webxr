@@ -20,7 +20,10 @@ export function uniformIn(min: number, max: number): fc.Arbitrary<number> {
   if (!Number.isFinite(min) || !Number.isFinite(max) || min > max) {
     throw new RangeError(`uniformIn: bad range [${min}, ${max}]`);
   }
+  // noBias: by default fast-check skews integers toward zero and the bounds.
   return fc
-    .integer({ min: Math.round(min * 1e6), max: Math.round(max * 1e6) })
+    .noBias(
+      fc.integer({ min: Math.round(min * 1e6), max: Math.round(max * 1e6) }),
+    )
     .map((micro) => micro / 1e6);
 }
