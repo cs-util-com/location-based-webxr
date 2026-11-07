@@ -10,10 +10,7 @@
  */
 
 import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characters";
-import type {
-  TourBlock,
-  TourObject,
-} from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   parseTourMarkdown,
   plainTextOf,
@@ -23,7 +20,6 @@ import {
   isStageCharacterView,
   type StageCharacterView,
 } from "./character-views.js";
-import { blockBodyAssets } from "./long-text-body-assets.js";
 import type { StageCharacterLook } from "./scene-stage.js";
 
 /** What a card uses of its `<video>` element (`onended`: a `lineEnd` step
@@ -169,7 +165,7 @@ export function showItemCard(block: TourBlock, host: ItemCardHost): void {
       return;
     }
     case "character": {
-      slots.text.textContent = block.caption;
+      slots.text.textContent = block.caption ?? "";
       slots.speaker.textContent = block.name;
       slots.speaker.hidden = false;
       // A story view stands as a character look; `stage`
@@ -179,7 +175,7 @@ export function showItemCard(block: TourBlock, host: ItemCardHost): void {
         ? {
             view,
             name: block.name,
-            line: block.caption,
+            line: block.caption ?? "",
             voiced: view !== "bubble" && block.voice !== undefined,
             pose: block.pose,
           }
@@ -240,7 +236,7 @@ export function showItemCard(block: TourBlock, host: ItemCardHost): void {
       return;
     }
     case "audio":
-      slots.text.textContent = block.transcript;
+      slots.text.textContent = block.transcript ?? "";
       host.sound(block.audio);
       return;
     case "video": {
@@ -250,7 +246,7 @@ export function showItemCard(block: TourBlock, host: ItemCardHost): void {
       // something to play; until then - and for good when the clip
       // cannot be read, which the status line says (`asset`) - the
       // poster stands as a still picture.
-      slots.text.textContent = block.transcript;
+      slots.text.textContent = block.transcript ?? "";
       // The player does not start by itself: until the visitor starts
       // the clip a `lineEnd` step waits the transcript's reading time
       // (as for one that cannot be read); once it plays, its end.
@@ -349,44 +345,5 @@ export function itemAssets(
     case "shortText":
     case "longText":
       return [];
-  }
-}
-
-/** The files a tour keeps for `block`: its media, a video's poster, a
- *  character's image and voice, the pictures a long text's body names (shown
- *  or not: inline, past the cap) and its narration's voice (the timing is an
- *  entry, not an asset). A wider list than `itemAssets`: a write keeps what
- *  another view of the same item would read. A new kind fails to compile
- *  here until it says which files it keeps.
- *  `required`: only those the format requires the tour to carry, without
- *  the pictures a long text's body names (they may be missing; the
- *  visitor reads their alt text). */
-export function itemStoredAssets(
-  block: TourBlock | TourObject,
-  required = false,
-): readonly string[] {
-  switch (block.kind) {
-    case "shortText":
-      return [];
-    case "longText": {
-      const body = required ? [] : blockBodyAssets(block);
-      return block.narration === undefined
-        ? body
-        : [...body, block.narration.audio];
-    }
-    case "picture":
-      return [block.image];
-    case "video":
-      return block.poster === undefined
-        ? [block.video]
-        : [block.video, block.poster];
-    case "audio":
-      return [block.audio];
-    case "model":
-      return [block.asset];
-    case "character":
-      return block.voice === undefined
-        ? [block.image]
-        : [block.image, block.voice];
   }
 }
