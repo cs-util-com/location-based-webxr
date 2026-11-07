@@ -1293,10 +1293,18 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       const inFile = new Set(manifest.assets.map((a) => a.id));
       for (const asset of listed ?? []) {
         if (inFile.has(asset.id)) continue;
-        const blob = await store.getBlob(`${ASSET_PREFIX}${asset.id}`);
+        // Copied into memory now: the store hands out a snapshot of the
+        // entry, which a landed save or a key move later removes while
+        // the session still needs the bytes (a preview, an undo after a
+        // save). A file brought in this visit is held the same way.
+        const stored = await store.getBlob(`${ASSET_PREFIX}${asset.id}`);
+        const bytes = await stored?.arrayBuffer().catch(() => undefined);
         if (mine !== generation) return none;
-        if (blob === undefined) lost = true;
-        else files.set(asset.id, { asset, blob });
+        if (stored === undefined || bytes === undefined) lost = true;
+        else {
+          const blob = new Blob([bytes], { type: stored.type });
+          files.set(asset.id, { asset, blob });
+        }
       }
       /** Told once, for the settings and the files alike. */
       const sayUnread = (): void => {

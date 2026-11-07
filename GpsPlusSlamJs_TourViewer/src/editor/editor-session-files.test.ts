@@ -210,6 +210,56 @@ describe("the files across a reload", () => {
   });
 });
 
+/** Why this test matters: the draft hands its files back as the browser
+ *  stores them, a snapshot of an entry that a landed save then removes
+ *  (the written file holds the bytes now). The session must not depend on
+ *  that entry afterwards: a preview of the restored voice, and a later save
+ *  that needs it again (an undo bringing it back), must still have its
+ *  bytes. */
+describe("a restored file after the draft let it go", () => {
+  it("still reads, and is still saved, after a landed save removed its entry", async () => {
+    const session = await openedTour();
+    const stores = memoryDraftStores();
+    stores.snapshotBlobs = true;
+    const draft = draftOf(stores);
+    await draft.open(K, MANIFEST);
+    const { editor } = editorOf(session, draft);
+    await editor.editNarration("t1", {
+      kind: "voice",
+      file: new Blob(["RIFF-kept"]),
+      fileName: "kept.wav",
+    });
+    await draft.idle();
+    draft.close();
+
+    const again = draftOf(stores);
+    const { offer } = await again.open(K, MANIFEST);
+    const { editor: reloaded } = editorOf(session, again);
+    reloaded.restore(offer!);
+    const first = await reloaded.save({ keepScan: false });
+    again.writes().landed(first.written, K);
+    await again.idle();
+    const path = (await savedTour(first.blob)).tour.assets.find(
+      (a) => a.kind === "audio",
+    )?.path;
+    expect(path).toBeDefined();
+    expect(await reloaded.contentOf(path ?? "")?.text()).toBe("RIFF-kept");
+
+    await reloaded.editNarration("t1", { kind: "removeVoice" });
+    again
+      .writes()
+      .landed((await reloaded.save({ keepScan: false })).written, K);
+    reloaded.undo();
+    const { tour, bytes } = await savedTour(
+      (await reloaded.save({ keepScan: false })).blob,
+    );
+    const voice = tour.assets.find((a) => a.kind === "audio")?.path ?? "";
+    expect(entryText(bytes, voice)).toBe("RIFF-kept");
+    again.close();
+    await session.close();
+  });
+});
+
 /** Why this property matters: whatever mix of voices brought in, taken off
  *  and undone, the draft must hold a document that reloads as the one the
  *  page showed, and every file a record names must come back with it - a
