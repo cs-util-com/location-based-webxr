@@ -43,6 +43,11 @@ tabbed)` puts the focus on the control drawn under `name` (none, a
   a focus whose target a draw removed during `focusout` to the page.
   - Every head starts with "Back to the list" (`data-act="back"`), shown
     only on a phone (`editor-shell.css`), which drops the selection.
+  - The head's icon (`headLook`, one case per kind of selection, none
+    by default): a block's is its kind's look in the editor's list of
+    kinds (`../../kinds/edit-kinds.ts`), and so are the words of its
+    Delete (`kindNoun`). A story block's advance chips are worded by
+    `ADVANCE_WORDS`, keyed by the format's advance modes.
   - A station: its name as text in the head (`span.ttl`); "Station n
     of N"; its commands; then, first in its section, its **Name** to type
     (`input.tfield`, `data-field="title"`, its label "Name", the
@@ -70,10 +75,14 @@ content` (Chromium, the editor's browser; elsewhere it stays three
     position cannot be read has its Radius and that line in its fields,
     and says so. The radius sits with the position because both say where
     the station is felt; an item's disclosure stays "Position".
-  - A station whose story shows blocks: under "In its story", a
-    labelled list with a row per block, its kind and its name as text
-    (`ul.story-blocks`, `data-block` its id), and a note that they are
-    shown while the story runs. For each character of the story a section
+  - A story: its name to type in the head (`data-field="story-title"`, its
+    count under it), its "Entries" fold ("<n>, played in order"), a numbered
+    `.kids` row each, `goto:<id>`), "Add entry..." (`add-entry`) and
+    "Delete story" (with an entry count and "..." when it holds any).
+  - A story's block: its texts and, unless a character's, "Moves on" chips
+    (`entry-advance:<id>:tap`, `:auto`; `:lineEnd` shown only while it is
+    the block's), "After" in seconds (`data-field="entry-after:<id>"`) while
+    by itself; then "Delete entry". For a character a section
     (`div.isec.character`, `data-block` his id) under his name: "View"
     chips (`data-act="character-view:<id>:<view>"`), "Moves on" chips
     (`character-advance:<id>:tap` "On a tap", `:lineEnd` "When the line
@@ -92,6 +101,9 @@ content` (Chromium, the editor's browser; elsewhere it stays three
     `block:<id>:<field>` and drawn as an item's other texts are
     (`blockTextField`, its count under it). Where these controls sit is this build's choice, made before the
     owner's prototype round on the editor's character UI.
+  - A story's choice or quiz: its summary (`ul.steplines`), read here and
+    not edited, and "Delete choice" / "Delete quiz".
+  - A free video, audio or character: its texts and its Delete.
   - An item: what it is and its station (a pin's text to type in the
     head, "Pin text"), its commands, a model's Size to type, and under
     "Position" its Offset east and north, Height (up from the anchor)
@@ -133,7 +145,7 @@ content` (Chromium, the editor's browser; elsewhere it stays three
   (`ground-items`, its note "N off", off when none is) and "Delete
   station"; an item's "Move to a new station" (`split`), "Put on the
   ground" (`ground`, its note "x.x m up/down", off when on it) and
-  "Delete pin" / "Delete photo" / "Delete 3D model". The command `busy`
+  "Delete pin" / "Delete photo" / "Delete long text" / "Delete 3D model". The command `busy`
   names says "Waiting for the ground...", is `aria-disabled` (not
   `disabled`, so it keeps the keyboard's focus) and `aria-busy`. Each
   `.act` is a button with an icon and its words in `.lbl`; Delete is
@@ -199,8 +211,9 @@ opened again, and the fields' layout at four window sizes).
 
 `shell-inspector.test.ts` also covers the ground changing under a drawn station (only its ground button updated, the typed field and its focus kept), the lock button's place, state and words, and its absence for a station without a position; Earlier and Later beside a station's place, off at the ends; and the commands in words per kind (a station's Delete with its key, an item's two, none for a code).
 
-It also covers a station's story blocks, listed by kind and name as
-text under "In its story" (no list without a story), a story
+It also covers a story (its name, its numbered Entries, its Add entry and
+its Delete, an empty one), a choice's and a quiz's summary, a free block, a
+story block's moves-on chips and seconds, a story
 character's view and advance chips (the one in use pressed, each group
 named) and his facing, none for a long text, a story block's texts
 named `block:<id>:<field>` (a character's in his box, none for a

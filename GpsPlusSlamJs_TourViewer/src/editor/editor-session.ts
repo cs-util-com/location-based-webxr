@@ -9,8 +9,13 @@
  */
 
 import {
+  isTourStoryBlock,
+  tourChildPlace,
   tourStationChildIds,
   tourStationStoryBlocks,
+  tourStories,
+  type TourStory,
+  type TourStoryChild,
 } from "gps-plus-slam-app-framework/ar/tour-story";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
@@ -80,6 +85,7 @@ import {
   tourDocumentReducer,
   unsavedEntries,
   type StationEdit,
+  type StationStoryAdvanceEdit,
   type TourDocumentState,
 } from "../tour-document.js";
 import { newObjectId } from "../content-placement.js";
@@ -106,7 +112,8 @@ import {
   blockFields,
   storyBlockFields,
 } from "./block-fields.js";
-import { kindNoun, objectOwnText, objectTitle } from "../object-describe.js";
+import { kindWithArticle, type AddKind } from "../kinds/edit-kinds.js";
+import { objectOwnText, objectTitle } from "../object-describe.js";
 import { applyModelEdit, type ModelEdit } from "./model-edits.js";
 import { buildEditorModel, type EditorModel } from "./editor-model.js";
 import { STATION_LOCKED } from "./editor-view.js";
@@ -114,6 +121,8 @@ import { checkNoGps, type NoGpsCheck } from "./no-gps-check.js";
 import { readZipBlobEntry, zipBlobEntryNames } from "../zip-blob.js";
 import { truncated } from "../truncated.js";
 import { readTourFile, type TourFileContext } from "./tour-files.js";
+import { newStory, withoutStoryChild } from "../tour-story-edit.js";
+import { newStoryEntry } from "./new-pin.js";
 
 /** One of the tour's objects as it stands, with this page's entry. */
 type AuthoringObject = ReturnType<typeof documentObjects>[number];
@@ -132,7 +141,7 @@ const PICTURE_GONE =
 function objectName(object: TourObject): string {
   const label = (objectOwnText(object) ?? "").trim();
   if (label === "") {
-    return `${object.kind === "audio" ? "an" : "a"} ${kindNoun(object.kind)}`;
+    return kindWithArticle(object.kind);
   }
   return `"${truncated(label, 40)}"`;
 }
@@ -143,6 +152,15 @@ type UndoOutcome =
   | { readonly kind: "undone" | "redone"; readonly what: string }
   | { readonly kind: "nothing" }
   | EditorRefusal;
+
+/** The name of a new story among `stories`: "New story", or "New story
+ *  n" with the least n from 2 no story has. */
+function newStoryTitle(stories: readonly { readonly title: string }[]): string {
+  const taken = new Set(stories.map((s) => s.title));
+  let title = "New story";
+  for (let n = 2; taken.has(title); n += 1) title = `New story ${String(n)}`;
+  return title;
+}
 
 /** A copy's file name ("Save a copy…"): the tour's, with " copy" before
  *  its `.zip` (any case), so the copy is never taken for the tour's own
@@ -236,11 +254,23 @@ const ALREADY_IN_TOUR = "That note is already in this tour.";
 /** Said for a move of a station the tour does not carry. */
 const NO_SUCH_STATION = "That station is no longer in this tour.";
 
+/** Whether `object` at its new spot fits the station it would stand in:
+ *  `joinStation`, the creator's answer, or its own. */
+function fitsAnswer(
+  state: TourDocumentState,
+  object: TourObject,
+  joinStation: string | undefined,
+): boolean {
+  return objectFits(
+    state,
+    joinStation === undefined ? object : { ...object, station: joinStation },
+  );
+}
+
 /** Said for a move further from the note's station than a tour can carry
  *  (`TOUR_ITEM_MAX_OFFSET_M` per axis): the format would refuse the tour,
- *  so every later save failed with the parser's own words (the M5a
- *  milestone review L1). A note stays in its station however far it is
- *  moved (`tour-content.ts`). */
+ *  so every later save would fail with the parser's own words. A note
+ *  stays in its station however far it is moved (`tour-content.ts`). */
 export const TOO_FAR_FROM_STATION = `It cannot go that far: a note must stay within ${String(TOUR_ITEM_MAX_OFFSET_M / 1000)} km of its station.`;
 
 /** An edit, move or delete of an id the tour no longer carries, said in
@@ -285,7 +315,13 @@ interface EditorFileAdded {
 /** Said for a station's edit the format refuses, by the field. */
 const STATION_REFUSALS: Readonly<
   Record<
-    "title" | "radius" | "description" | "image" | "character" | "storyText",
+    | "title"
+    | "radius"
+    | "description"
+    | "image"
+    | "character"
+    | "storyText"
+    | "storyAdvance",
     string
   >
 > = {
@@ -298,7 +334,22 @@ const STATION_REFUSALS: Readonly<
     "A character of the station's story takes one of a character's views, moves on by a tap or when his line ends, and faces a heading in degrees.",
   storyText:
     "That text of a block of the station's story is not one the tour can carry.",
+  storyAdvance:
+    "A block of a story moves on by a tap, or by itself after a number of seconds above 0.",
 };
+
+/** Said for a story's title the format refuses. */
+const STORY_TITLE = "A story needs a name of at most 80 characters.";
+
+/** Said for a story or a story's child that is gone. */
+const NO_SUCH_STORY = "That is no longer in this tour.";
+
+/** What the document calls a story's child: a block by its text, a choice
+ *  by its prompt, a quiz by its question. */
+function storyChildName(child: TourStoryChild): string {
+  if (isTourStoryBlock(child)) return objectTitle(child);
+  return child.kind === "choice" ? child.prompt : child.question;
+}
 
 /** Said for a delete of the tour's last station. */
 const LAST_STATION =
@@ -481,12 +532,17 @@ export interface EditorSession {
     id: string,
     view: string,
   ): { kind: "edited" | "unchanged" } | EditorRefusal;
-  /** Move a note on the map (its height and facing kept): beyond its
-   *  station's found radius the station rule seats it anew - the station
-   *  holding its new spot, or a new one there - so no move is too far.
-   *  Refused for an id the tour no longer carries. Throws for a position
-   *  nobody can draw (`moveObjectTo`). */
-  move(id: string, lat: number, lon: number): { kind: "moved" } | EditorRefusal;
+  /** Move a note on the map (its height and facing kept): it keeps its
+   *  station, in or out of the circle, or changes to `joinStation`, the
+   *  creator's answer (`move-question.ts`). Refused for an id the tour no
+   *  longer carries and a spot its station cannot carry. Throws for a
+   *  position nobody can draw (`moveObjectTo`). */
+  move(
+    id: string,
+    lat: number,
+    lon: number,
+    options?: { readonly joinStation?: string },
+  ): { kind: "moved" } | EditorRefusal;
   /** Delete (undone by `undo`, also after a save wrote it: a photo's
    *  picture is kept for that). Refused, deleting nothing, for an id the
    *  tour no longer carries. */
@@ -519,6 +575,38 @@ export interface EditorSession {
   /** Delete a station with its items: one step.
    *  Refused for the tour's last station. */
   deleteStation(stationId: string): { kind: "deleted" } | EditorRefusal;
+  /** A new empty story "New story" after the station's stories, "New
+   *  story n" with the least n from 2 while that name is taken: one step. */
+  addStory(stationId: string): { kind: "added"; id: string } | EditorRefusal;
+  /** A story's title: one step; refused for one the format cannot carry,
+   *  `unchanged` for the same one. */
+  renameStory(
+    storyId: string,
+    title: string,
+  ): { kind: "edited" | "unchanged" } | EditorRefusal;
+  /** Delete a story with its children: one step; `children` says how many
+   *  went, `stationGone` whether its station went with it (an untitled
+   *  automatic station nothing else kept). */
+  deleteStory(
+    storyId: string,
+  ):
+    { kind: "deleted"; children: number; stationGone: boolean } | EditorRefusal;
+  /** A new entry at the end of a story: one step. */
+  addToStory(
+    storyId: string,
+    kind: AddKind,
+  ): { kind: "added"; id: string } | EditorRefusal;
+  /** Delete a story's child: one step; `answers` says how many answers
+   *  that led to it now go on to the next child. */
+  deleteStoryChild(
+    id: string,
+  ): { kind: "deleted"; answers: number } | EditorRefusal;
+  /** How a story's block moves on: on a tap, or by itself after `afterS`
+   *  seconds. One step. */
+  setStoryAdvance(
+    id: string,
+    advance: StationStoryAdvanceEdit["advance"],
+  ): { kind: "edited" | "unchanged" } | EditorRefusal;
   /** Put the stations in `order` (every station once): one step. */
   reorderStations(
     order: readonly string[],
@@ -575,13 +663,17 @@ export interface EditorSession {
     id: string,
     sizeM: number,
   ): { kind: "resized" | "unchanged" } | EditorRefusal;
-  /** Put an item at a whole pose (position, height and turn): beyond its
-   *  station's radius the station rule seats it anew; `newStation` starts
-   *  a station of its own where it stands. One step. */
+  /** Put an item at a whole pose (position, height and turn): it keeps
+   *  its station, or changes to `joinStation`; `newStation` starts a
+   *  station of its own where it stands. One step. Refused for a spot its
+   *  station cannot carry. */
   pose(
     id: string,
     geo: QrGeoPose,
-    options?: { readonly newStation?: boolean },
+    options?: {
+      readonly newStation?: boolean;
+      readonly joinStation?: string;
+    },
   ): { kind: "moved" } | EditorRefusal;
   /** Give an item a station of its own where it stands, turned as it is
    *  ("Move to a new station"): one step; says the station it made. */
@@ -979,6 +1071,16 @@ export function createEditorSession(input: {
     return applied ? { kind: "edited" } : { kind: "unchanged" };
   }
 
+  /** The story `id` of the tour as it stands. */
+  function storyNow(
+    state: TourDocumentState,
+    id: string,
+  ): TourStory | undefined {
+    return manifestNow(state)
+      ?.stations.flatMap((s) => tourStories(s))
+      .find((s) => s.id === id);
+  }
+
   /** `edit` dispatched, and whether the document took it (a reducer that
    *  refuses returns the state it had). */
   function took(edit: () => void): boolean {
@@ -1286,15 +1388,19 @@ export function createEditorSession(input: {
       );
       return applied ? { kind: "edited" } : notApplied;
     },
-    move(id, lat, lon) {
+    move(id, lat, lon, { joinStation } = {}) {
       const state = mine();
       if (state === null) return notInTour;
       const change = objectMoveChange(state, id, lat, lon);
       if (change.kind === "missing") return notInTour;
+      if (!fitsAnswer(state, change.after, joinStation)) {
+        return { kind: "refused", reason: TOO_FAR_FROM_STATION };
+      }
       store.dispatch(
         tourDocumentActions.moved({
           object: change.after,
           what: `the move of ${objectName(change.before)}`,
+          ...(joinStation === undefined ? {} : { joinStation }),
         }),
       );
       return { kind: "moved" };
@@ -1399,6 +1505,153 @@ export function createEditorSession(input: {
         ),
       )
         ? { kind: "deleted" }
+        : notApplied;
+    },
+    addStory(stationId) {
+      const state = mine();
+      if (state === null) return notInTour;
+      const station = manifestNow(state)?.stations.find(
+        (s) => s.id === stationId,
+      );
+      if (station === undefined) return noSuchStation;
+      const id = newObjectId();
+      const title = newStoryTitle(tourStories(station));
+      return took(() =>
+        store.dispatch(
+          tourDocumentActions.storyAdded({
+            stationId,
+            id,
+            title,
+            what: `the new story "${title}"`,
+          }),
+        ),
+      )
+        ? { kind: "added", id }
+        : notApplied;
+    },
+    renameStory(storyId, title) {
+      const state = mine();
+      if (state === null) return notInTour;
+      const story = storyNow(state, storyId);
+      if (story === undefined) {
+        return { kind: "refused", reason: NO_SUCH_STORY };
+      }
+      const made = newStory(storyId, title);
+      if (made === null) return { kind: "refused", reason: STORY_TITLE };
+      if (made.title === story.title) return { kind: "unchanged" };
+      return took(() =>
+        store.dispatch(
+          tourDocumentActions.storyRenamed({
+            story: storyId,
+            title,
+            what: `the name of the story "${story.title}"`,
+          }),
+        ),
+      )
+        ? { kind: "edited" }
+        : notApplied;
+    },
+    deleteStory(storyId) {
+      const state = mine();
+      if (state === null) return notInTour;
+      const story = storyNow(state, storyId);
+      if (story === undefined) {
+        return { kind: "refused", reason: NO_SUCH_STORY };
+      }
+      const stationId = manifestNow(state)?.stations.find((s) =>
+        tourStories(s).some((t) => t.id === storyId),
+      )?.id;
+      const stationGone = (): boolean => {
+        const after = mine();
+        return (
+          after !== null &&
+          !(manifestNow(after)?.stations ?? []).some((s) => s.id === stationId)
+        );
+      };
+      return took(() =>
+        store.dispatch(
+          tourDocumentActions.storyDeleted({
+            story: storyId,
+            what: `the delete of the story "${story.title}"`,
+          }),
+        ),
+      )
+        ? {
+            kind: "deleted",
+            children: story.children.length,
+            stationGone: stationGone(),
+          }
+        : notApplied;
+    },
+    addToStory(storyId, kind) {
+      const state = mine();
+      if (state === null) return notInTour;
+      const story = storyNow(state, storyId);
+      if (story === undefined) {
+        return { kind: "refused", reason: NO_SUCH_STORY };
+      }
+      const child = newStoryEntry(story, kind, newObjectId());
+      return took(() =>
+        store.dispatch(
+          tourDocumentActions.storyChildAdded({
+            story: storyId,
+            child,
+            what: `the new entry "${storyChildName(child)}"`,
+          }),
+        ),
+      )
+        ? { kind: "added", id: child.id }
+        : notApplied;
+    },
+    deleteStoryChild(id) {
+      const state = mine();
+      const manifest = state === null ? null : manifestNow(state);
+      if (manifest === null) return notInTour;
+      const place = tourChildPlace(manifest, id);
+      const child =
+        place?.story === undefined
+          ? undefined
+          : place.story.children[place.index];
+      const out =
+        place === null || child === undefined
+          ? null
+          : withoutStoryChild(place.station, id);
+      if (out === null || child === undefined) {
+        return { kind: "refused", reason: NO_SUCH_STORY };
+      }
+      return took(() =>
+        store.dispatch(
+          tourDocumentActions.storyChildDeleted({
+            child: id,
+            what: `the delete of "${storyChildName(child)}"`,
+          }),
+        ),
+      )
+        ? { kind: "deleted", answers: out.answers }
+        : notApplied;
+    },
+    setStoryAdvance(id, advance) {
+      const state = mine();
+      const manifest = state === null ? null : manifestNow(state);
+      if (state === null || manifest === null) return notInTour;
+      const place = tourChildPlace(manifest, id);
+      if (place === null) return { kind: "refused", reason: NO_SUCH_STORY };
+      const edit: StationEdit = { storyAdvance: { block: id, advance } };
+      const change = stationEditChange(state, place.station.id, edit);
+      if (change.kind === "refused") {
+        return { kind: "refused", reason: STATION_REFUSALS[change.reason] };
+      }
+      if (change.kind !== "edited") return { kind: "unchanged" };
+      return took(() =>
+        store.dispatch(
+          tourDocumentActions.stationEdited({
+            stationId: place.station.id,
+            edit,
+            what: "how an entry moves on",
+          }),
+        ),
+      )
+        ? { kind: "edited" }
         : notApplied;
     },
     reorderStations(order) {
@@ -1696,10 +1949,16 @@ export function createEditorSession(input: {
       ) {
         return { kind: "refused", reason: NOT_ON_MAP };
       }
+      const { newStation, joinStation } = options;
+      const object = { ...found.object, geo };
+      if (newStation !== true && !fitsAnswer(own(), object, joinStation)) {
+        return { kind: "refused", reason: TOO_FAR_FROM_STATION };
+      }
       store.dispatch(
         tourDocumentActions.moved({
-          object: { ...found.object, geo },
-          ...(options.newStation === true ? { newStation: true } : {}),
+          object,
+          ...(newStation === true ? { newStation: true } : {}),
+          ...(joinStation === undefined ? {} : { joinStation }),
           what: `the move of ${objectName(found.object)}`,
         }),
       );
@@ -1771,9 +2030,9 @@ export function createEditorSession(input: {
           JSON.stringify(frame.geo) !== JSON.stringify(pose.geo)
         );
       });
-      // An object its station cannot carry (a draft written before far
-      // moves re-ran the station rule) is seated by the rule as the
-      // restore puts it back (`restored`), never skipped. One the tour
+      // An object its station cannot carry (the station is gone, or an
+      // older draft) is seated by the rule as the restore puts it back
+      // (`restored`), never skipped. One the tour
       // does not carry is skipped unless the offer names it a copy made
       // here: that is put back with its picture (a photo without one is
       // not), unless deleted here since.

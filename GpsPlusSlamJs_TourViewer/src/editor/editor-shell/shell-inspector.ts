@@ -4,7 +4,10 @@
  * and the position folded away under a disclosure (a station's "Place",
  * its radius first, a slider beside its number (`radius-slider.ts`); an
  * item's "Position"), a station's items under its Contents
- * (`inspector-contents.ts`). Text only, never markup.
+ * (`inspector-contents.ts`). A story shows its Entries, a story's block its
+ * texts and how it moves on, a choice or a quiz a summary, a free block with
+ * no place in the world its texts, each with its Delete. Text only, never
+ * markup.
  *
  * The fields a creator types carry `data-field` (a station's `title` and
  * `description`, labelled Name and Description at the top of the body, the
@@ -25,8 +28,9 @@
  * at the ends), the card picture's choices (`image:<id>`, the shown one
  * pressed), and the selection's commands in words: a station's
  * `ground-items` and `delete`, its own `ground` under Place; an item's
- * `split` ("Move to a new station"), `ground` and `delete` - Delete
- * last, behind a separator. A command the
+ * `split` ("Move to a new station"), `ground` and `delete`; a story's
+ * `add-entry` and `delete`; a story block's `entry-advance:<id>:<mode>` -
+ * Delete last, behind a separator. A command the
  * shell is running (`busy`) shows as waiting.
  *
  * A long text shows its title in the head, typed there, with the
@@ -44,6 +48,11 @@ import {
   TOUR_MODEL_SECTION_RULES,
 } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import {
+  TOUR_STORY_TITLE_RULE,
+  type TourStepAdvance,
+} from "gps-plus-slam-app-framework/ar/tour-story";
+import { KIND_EDIT, kindNoun } from "../../kinds/edit-kinds.js";
+import {
   CHARACTER_VIEW_CHOICES,
   MODEL_VIEW_CHOICES,
   ON_GROUND_M,
@@ -52,7 +61,11 @@ import {
   type InspectorModelParts,
   type InspectorPosition,
 } from "./inspector-model.js";
-import { contentsBody, contentsSummary } from "./inspector-contents.js";
+import {
+  contentsBody,
+  contentsSummary,
+  entriesList,
+} from "./inspector-contents.js";
 import { radiusRange } from "./radius-slider.js";
 import { wirePinTextCounter, wireTextCounter } from "../../pin-text.js";
 import { blockFieldPlaceholder, type BlockField } from "../block-fields.js";
@@ -320,15 +333,6 @@ function lockButton(locked: boolean): HTMLButtonElement {
   return b;
 }
 
-/** An item's kind in a command's words: the one word every creator page
- *  uses for it (`object-describe.ts` `BLOCK_KIND_LABEL`). */
-const ITEM_WORD: Readonly<Record<string, string>> = {
-  pin: "pin",
-  photo: "photo",
-  text: "long text",
-  model: "3D model",
-};
-
 /** A block's text field to type (`block-fields.ts`), its count against
  *  the format's cap under it as it is typed. */
 function blockTextField(field: BlockField): HTMLElement[] {
@@ -416,15 +420,6 @@ function actions(buttons: readonly HTMLButtonElement[]): HTMLElement {
   return box;
 }
 
-const KIND_ICON: Readonly<Record<string, ShellIcon>> = {
-  station: "station",
-  code: "qr",
-  pin: "pin",
-  photo: "photo",
-  text: "text",
-  model: "model",
-};
-
 /** Whether `m` off the ground counts as on it (null: not known). */
 function onGround(m: number | null): boolean {
   return m !== null && Math.abs(m) <= ON_GROUND_M;
@@ -482,6 +477,10 @@ function actionInPlace(
 type StationModel = Extract<InspectorModel, { kind: "station" }>;
 type ItemModel = Extract<InspectorModel, { kind: "item" }>;
 type CodeModel = Extract<InspectorModel, { kind: "code" }>;
+type StoryModel = Extract<InspectorModel, { kind: "story" }>;
+type StoryEntryModel = Extract<InspectorModel, { kind: "storyEntry" }>;
+type StoryStepModel = Extract<InspectorModel, { kind: "storyStep" }>;
+type FreeBlockModel = Extract<InspectorModel, { kind: "freeBlock" }>;
 type ModelParts = InspectorModelParts;
 
 /** The card picture's choices: a button each, the shown one pressed. */
@@ -586,33 +585,6 @@ function stationPosition(
   ];
 }
 
-/** The blocks the station's story shows, a row each by kind and name:
- *  listed here, neither added, ordered nor removed (the story editor's);
- *  their texts are typed in a box each below (`storyBlockParts`). */
-function storyList(model: StationModel): HTMLElement {
-  const box = el("div", "isec story");
-  const tag = el("span", "flabel", "In its story");
-  tag.id = fieldId();
-  const list = el("ul", "story-blocks");
-  list.setAttribute("aria-labelledby", tag.id);
-  for (const block of model.story) {
-    const row = el("li", "");
-    row.dataset["block"] = block.id;
-    row.append(el("span", "kind", block.kind), el("span", "name", block.title));
-    list.append(row);
-  }
-  box.append(
-    tag,
-    list,
-    el(
-      "div",
-      "note",
-      "Shown while the station's story runs; their texts and characters are set below.",
-    ),
-  );
-  return box;
-}
-
 /** A group of chips named `label`, one per choice, the one `on` pressed;
  *  each acts as `act:<value>`. */
 function chipGroup(
@@ -674,7 +646,7 @@ function storyBox(id: string, className: string, head: string): HTMLElement {
 }
 
 /** A story block that is no character: its kind and name, its texts. */
-function storyBlockParts(block: StationModel["story"][number]): HTMLElement {
+function storyBlockParts(block: StoryEntryModel["block"]): HTMLElement {
   const box = storyBox(
     block.id,
     "isec story-text",
@@ -706,8 +678,8 @@ function characterParts(
       "Moves on",
       `character-advance:${id}`,
       [
-        { value: "tap", label: "On a tap" },
-        { value: "lineEnd", label: "When the line ends" },
+        { value: "tap", label: ADVANCE_WORDS.tap },
+        { value: "lineEnd", label: ADVANCE_WORDS.lineEnd },
       ],
       c.advance,
     ),
@@ -733,7 +705,7 @@ function stationContentsFold(
 ): HTMLElement[] {
   return disclosure(
     state.contentsOpen ?? true,
-    contentsSummary(model.contents.length),
+    contentsSummary(model.contents),
     () =>
       contentsBody(
         model.contents,
@@ -783,16 +755,6 @@ function stationParts(
     ]),
     section,
   ];
-  if (model.story.length > 0) parts.push(storyList(model));
-  for (const block of model.story) {
-    if (block.character !== undefined) {
-      parts.push(
-        characterParts(block.id, block.title, block.character, block.fields),
-      );
-    } else if (block.fields.length > 0) {
-      parts.push(storyBlockParts(block));
-    }
-  }
   const p = model.position;
   if (p === null) {
     // Nothing for the lock to keep still: the radius and the note stand
@@ -822,6 +784,122 @@ function stationParts(
     ...stationContentsFold(model, state),
   );
   return parts;
+}
+
+/** A story: its Entries in order, the way to add one, its Delete saying
+ *  what goes with it. */
+function storyParts(model: StoryModel, state: InspectorState): HTMLElement[] {
+  const n = model.entries.length;
+  const entries = disclosure(
+    state.contentsOpen ?? true,
+    `${String(n)}, played in order`,
+    () => [
+      n === 0
+        ? el("div", "note", "No entries yet.")
+        : entriesList(model.entries),
+      actions([action("add-entry", "plus", "Add entry...")]),
+    ],
+    {
+      label: "Entries",
+      title: "What this story plays",
+      act: "contents",
+      body: "contents",
+    },
+  );
+  const goes = n === 1 ? "1 entry" : `${String(n)} entries`;
+  return [
+    ...entries,
+    actions([
+      action(
+        "delete",
+        "trash",
+        n === 0 ? "Delete story" : `Delete story and its ${goes}...`,
+        { key: DELETE_KEY },
+      ),
+    ]),
+  ];
+}
+
+/** What a chip of how a block moves on says. */
+const ADVANCE_WORDS = {
+  tap: "On a tap",
+  auto: "After a while",
+  lineEnd: "When the line ends",
+} as const satisfies { readonly [M in TourStepAdvance["mode"]]: string };
+
+/** How a story's block moves on: chips, its seconds while automatic. A
+ *  mode the chips do not offer shows as its own chip, so none being
+ *  pressed never reads as meant. */
+function advanceParts(id: string, advance: StoryEntryModel["advance"]) {
+  const box = el("div", "isec");
+  const modes: TourStepAdvance["mode"][] = [
+    "tap",
+    "auto",
+    ...(advance.mode === "lineEnd" ? (["lineEnd"] as const) : []),
+  ];
+  box.append(
+    ...chipGroup(
+      "Moves on",
+      `entry-advance:${id}`,
+      modes.map((value) => ({ value, label: ADVANCE_WORDS[value] })),
+      advance.mode,
+    ),
+  );
+  if (advance.afterS !== null) {
+    box.append(
+      numberField("After", `entry-after:${id}`, String(advance.afterS), "s"),
+    );
+  }
+  return box;
+}
+
+/** A story's block: a character's parts, or its texts and how it moves on,
+ *  and its Delete. */
+function storyEntryParts(model: StoryEntryModel): HTMLElement[] {
+  const { block } = model;
+  const parts: HTMLElement[] = [];
+  if (block.character !== undefined) {
+    parts.push(
+      characterParts(block.id, block.title, block.character, block.fields),
+    );
+  } else {
+    if (block.fields.length > 0) parts.push(storyBlockParts(block));
+    parts.push(advanceParts(block.id, model.advance));
+  }
+  parts.push(
+    actions([action("delete", "trash", "Delete entry", { key: DELETE_KEY })]),
+  );
+  return parts;
+}
+
+/** A choice or a quiz: what it says and its Delete. */
+function storyStepParts(model: StoryStepModel): HTMLElement[] {
+  const box = el("div", "isec");
+  const list = el("ul", "steplines");
+  for (const line of model.lines) list.append(el("li", "", line));
+  box.append(el("div", "flabel", model.heading), list);
+  return [
+    box,
+    actions([
+      action("delete", "trash", `Delete ${model.stepKind}`, {
+        key: DELETE_KEY,
+      }),
+    ]),
+  ];
+}
+
+/** A free block with no place in the world: its texts and its Delete. */
+function freeBlockParts(model: FreeBlockModel): HTMLElement[] {
+  const box = el("div", "isec");
+  box.append(...model.fields.flatMap(blockTextField));
+  return [
+    box,
+    actions([
+      action("delete", "trash", `Delete ${kindNoun(model.itemKind)}`, {
+        key: DELETE_KEY,
+      }),
+    ]),
+  ];
 }
 
 /** A line of a model's part to type (a note's title, a section's name),
@@ -1043,7 +1121,7 @@ function itemParts(model: ItemModel, state: InspectorState): HTMLElement[] {
         note: offText(model.groundOffM),
         busy: state.busy,
       }),
-      action("delete", "trash", `Delete ${ITEM_WORD[model.itemKind]}`, {
+      action("delete", "trash", `Delete ${kindNoun(model.itemKind)}`, {
         key: DELETE_KEY,
       }),
     ]),
@@ -1301,9 +1379,16 @@ export function drawInspector(
   }
 }
 
-/** The head's title: a pin's text to type, else the title in words (a
- *  station's name is typed in its labelled field, AU-2). */
+/** The head's title: a pin's text or a story's name to type, else the
+ *  title in words (a station's name is typed in its labelled field,
+ *  AU-2). */
 function headTitle(model: InspectorModel): HTMLElement {
+  if (model.kind === "story") {
+    const input = typed("story-title", model.title, "ttlin");
+    input.setAttribute("aria-label", "Name of the story");
+    input.title = "The story's name (Enter keeps it)";
+    return input;
+  }
   if (model.kind === "item" && model.longText !== null) {
     const input = typed("title", model.longText.title, "ttlin");
     input.setAttribute("aria-label", "Title of the text");
@@ -1336,13 +1421,69 @@ function pinCount(
   model: InspectorModel,
   head: HTMLElement,
 ): HTMLElement | null {
-  if (model.kind !== "item" || model.text === null) return null;
+  const counted = model.kind === "story" || model.kind === "item";
+  if (!counted || (model.kind === "item" && model.text === null)) return null;
   if (!(head instanceof HTMLInputElement) || head.readOnly) return null;
   const out = el("output", "note pad");
   out.id = PIN_COUNT_ID;
   head.setAttribute("aria-describedby", PIN_COUNT_ID);
-  wirePinTextCounter(head, out);
+  if (model.kind === "story") {
+    const { max, unit } = TOUR_STORY_TITLE_RULE;
+    wireTextCounter(head, out, max, unit);
+  } else {
+    wirePinTextCounter(head, out);
+  }
   return out;
+}
+
+/** What the head shows of `model`: its look (the icon's style class)
+ *  and its icon. A block's are its kind's look (`KIND_EDIT`). */
+function headLook(model: InspectorModel): {
+  readonly look: string;
+  readonly icon: ShellIcon;
+} {
+  switch (model.kind) {
+    case "item":
+    case "freeBlock": {
+      const { look } = KIND_EDIT[model.itemKind];
+      return { look, icon: look };
+    }
+    case "storyEntry":
+      return { look: model.rowKind, icon: model.rowKind };
+    case "storyStep":
+      return { look: model.stepKind, icon: model.stepKind };
+    case "station":
+      return { look: "station", icon: "station" };
+    case "story":
+      return { look: "story", icon: "storyOpen" };
+    case "code":
+      return { look: "code", icon: "qr" };
+  }
+}
+
+/** The dock's parts for `model`, the station's commands beside `sub`. */
+function partsOf(
+  model: InspectorModel,
+  state: InspectorState,
+  pictures: ShellPictures,
+  sub: HTMLElement,
+): HTMLElement[] {
+  switch (model.kind) {
+    case "station":
+      return stationParts(model, state, pictures, sub);
+    case "item":
+      return itemParts(model, state);
+    case "story":
+      return storyParts(model, state);
+    case "storyEntry":
+      return storyEntryParts(model);
+    case "storyStep":
+      return storyStepParts(model);
+    case "freeBlock":
+      return freeBlockParts(model);
+    default:
+      return codeParts(model, state);
+  }
 }
 
 function drawDock(
@@ -1363,9 +1504,9 @@ function drawDock(
     return;
   }
   dock.root.classList.toggle("collapsed", state.folded);
-  const kind = model.kind === "item" ? model.itemKind : model.kind;
-  const icon = el("span", `hic ic ${kind}`);
-  icon.append(shellIcon(KIND_ICON[kind] ?? "station"));
+  const { look, icon: drawn } = headLook(model);
+  const icon = el("span", `hic ic ${look}`);
+  icon.append(shellIcon(drawn));
   const head = headTitle(model);
   const count = pinCount(model, head);
   const longText =
@@ -1386,12 +1527,7 @@ function drawDock(
   );
   const sub = el("div", "sub");
   sub.append(el("span", "", model.sub));
-  const parts =
-    model.kind === "station"
-      ? stationParts(model, state, pictures, sub)
-      : model.kind === "item"
-        ? itemParts(model, state)
-        : codeParts(model, state);
+  const parts = partsOf(model, state, pictures, sub);
   const before = [sub, ...(count === null ? [] : [count])];
   placeAround(dock.body, before, writer, parts);
 }

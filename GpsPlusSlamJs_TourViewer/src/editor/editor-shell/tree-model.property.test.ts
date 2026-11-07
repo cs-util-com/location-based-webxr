@@ -151,8 +151,17 @@ function run(stations: readonly TourStation[], steps: readonly Step[]) {
     });
     if (plan === null) continue;
     view = reduce(view, act.selected({ id: plan.select }));
-    if (plan.unfold !== null) {
-      view = reduce(view, act.stationFolded({ id: plan.unfold, open: true }));
+    plan.unfold.forEach((unfold, depth) => {
+      view = reduce(
+        view,
+        depth === 0
+          ? act.stationFolded({ id: unfold, open: true })
+          : act.storyFolded({ id: unfold, open: true }),
+      );
+    });
+    if (plan.toggle !== null) {
+      const open = view.openStories.includes(plan.toggle);
+      view = reduce(view, act.storyFolded({ id: plan.toggle, open: !open }));
     }
     if (plan.fold !== null) {
       view = reduce(view, act.stationFolded({ id: plan.fold, open: false }));

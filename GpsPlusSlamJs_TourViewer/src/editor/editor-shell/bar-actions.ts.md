@@ -29,6 +29,8 @@ deg` - metres east and north of the tour's centre and the height over
 
 ## Invariants & assumptions
 
+- A story, a story's entry and a free block with no place in the world have
+  no bar actions: nothing to copy, frame or turn.
 - Pure; the words are the prototype's ("Duplicate the selection
   (Ctrl+D)", "Turn it to face the way its station faces", "Copy the
   position and heading as text").

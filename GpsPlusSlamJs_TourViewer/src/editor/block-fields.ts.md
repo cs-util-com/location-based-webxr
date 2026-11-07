@@ -32,7 +32,7 @@ A block's text fields as the desktop editor's inspector edits them
   on every read).
 - How a block is named where it is listed is not this module's: the one
   rule is `../object-describe.ts`'s `objectTitle` (and its
-  `BLOCK_KIND_LABEL`).
+  `KIND_EDIT` label).
 - `blockFieldPlaceholder(field)` - the empty field's hint: "Required"
   for a field the block needs, else "Optional".
 - `blockFieldEdit(block, name, value)` - what typing `value` writes:

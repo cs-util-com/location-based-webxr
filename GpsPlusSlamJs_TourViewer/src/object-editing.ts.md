@@ -63,6 +63,15 @@ draft writes and history. Wired by `creator-setup.ts`, drawn by
 - **The slice's guards answer first** (`objectFits` for an edit or a
   move): a refused change is said in words ("could not be changed here",
   "That spot is too far from its station"), never applied.
+- **A Move that crosses into another station's circle asks in the list**
+  (`moveQuestion`, `move-question.ts`; `window.confirm` is unavailable in
+  an XR session): the row shows "Asking…", and nothing is written until
+  the answer, so a reload meanwhile finds the pin at its old spot. Yes
+  changes the station in one step, No keeps it where the reticle put it,
+  and the note says which (`moveNote`). A selection of another object, a
+  `reset`, an edit of the tour or a new visit under the question withdraw
+  the Move, unwritten and said. The visit's settle goes through
+  `creator-document.ts` and never asks.
 - **A move takes the settle's alignment** (`planMove`, `visit-settle.ts`):
   corrected through the code when this visit saw a stored code (D10b), so
   a pin moved in a later visit lands where the code says. The entry keeps

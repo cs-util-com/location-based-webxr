@@ -15,11 +15,9 @@ import type {
   TourPin,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
+import { KIND_EDIT, kindNoun } from "./kinds/edit-kinds.js";
 import {
-  BLOCK_KIND_LABEL,
   codeDistanceLine,
-  kindNoun,
-  objectLook,
   objectOwnText,
   objectTitle,
 } from "./object-describe.js";
@@ -102,8 +100,8 @@ describe("objectTitle", () => {
   // things. Every creator page names a kind from this one table, in the
   // words the phone's own buttons use ("Place a pin", "Take a photo").
   it("names the kinds a creator places in the phone's words: a pin and a photo", () => {
-    expect(BLOCK_KIND_LABEL.shortText).toBe("Pin");
-    expect(BLOCK_KIND_LABEL.picture).toBe("Photo");
+    expect(KIND_EDIT.shortText.label).toBe("Pin");
+    expect(KIND_EDIT.picture.label).toBe("Photo");
   });
 
   // Why: the phone's undo and refusal words named every object that is no
@@ -159,16 +157,16 @@ describe("objectOwnText", () => {
   });
 });
 
-describe("objectLook", () => {
+describe("a kind's look", () => {
   // Why: the look picks a block's icon, its command's word ("Delete long
   // text") and its handles' hint on every page that lists one. A free long
   // text (a reading stand, format minor 3) read as a 3D model: a model's
   // icon, "Delete 3D model" and a resize dot it does not have.
   it("gives each kind standing in the world its own look", () => {
-    expect(objectLook("shortText")).toBe("pin");
-    expect(objectLook("picture")).toBe("photo");
-    expect(objectLook("longText")).toBe("text");
-    expect(objectLook("model")).toBe("model");
+    expect(KIND_EDIT.shortText.look).toBe("pin");
+    expect(KIND_EDIT.picture.look).toBe("photo");
+    expect(KIND_EDIT.longText.look).toBe("text");
+    expect(KIND_EDIT.model.look).toBe("model");
   });
 });
 

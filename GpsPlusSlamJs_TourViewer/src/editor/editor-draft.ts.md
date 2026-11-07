@@ -36,8 +36,8 @@ editor's own namespace, one tab at a time. Design:
     (or from a build's value), removed once it does not; whether it landed.
     The record may also hold `handMadeStations` (compared like the other
     fields) and `createdStations`: a station the page created
-    (whole frames at their current poses: a note moved beyond its station's
-    radius starts one) that the compared file does not carry counts as a
+    (whole frames at their current poses: one made by "Move to a new
+    station", for one) that the compared file does not carry counts as a
     difference, so a record holding nothing else is kept: the draft's
     notes name it, and without it a reload would seat them again by the
     station rule under a new id. Such a record is offered only beside a

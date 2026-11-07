@@ -227,7 +227,9 @@ describe("the palette's kind chips and marks", () => {
   it("starts each open with no chip on", () => {
     const { palette, options } = opened();
     document
-      .querySelector<HTMLButtonElement>('#add-palette .pfil [data-pf="pin"]')
+      .querySelector<HTMLButtonElement>(
+        '#add-palette .pfil [data-pf="shortText"]',
+      )
       ?.click();
     palette.close(false);
     palette.open();

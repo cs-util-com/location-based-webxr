@@ -8,62 +8,11 @@
  * @see object-describe.ts.md
  */
 
-import type {
-  TourBlock,
-  TourBlockKind,
-} from "gps-plus-slam-app-framework/ar/tour-blocks";
+import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { horizontalM } from "./move-with-code.js";
-import type { WorldBlock } from "./tour-content.js";
-
-/** What an object in the world is, in the pages' words and icons: a short
- *  text is a pin, a picture a photo, a long text (its reading stand) a
- *  text, a model a model. */
-export type ObjectLook = "pin" | "photo" | "text" | "model";
-
-/** The kinds the creator pages draw and list (`WorldBlock`). */
-type LookKind = WorldBlock["kind"];
-
-const LOOK: Readonly<Record<LookKind, ObjectLook>> = {
-  shortText: "pin",
-  picture: "photo",
-  longText: "text",
-  model: "model",
-};
-
-export function objectLook(kind: LookKind): ObjectLook {
-  return LOOK[kind];
-}
-
-/** Whether a creator page has a look for `object`: a free video, sound or
- *  character has none yet, so no list names it. */
-export function hasLook(
-  object: TourObject,
-): object is Extract<TourObject, { readonly kind: LookKind }> {
-  return Object.hasOwn(LOOK, object.kind);
-}
-
-/** Each kind in the one word every creator page uses for it: what a block
- *  without a text of its own is called, the inspector's kind line, the
- *  lists' and the rail's second line. A short text and a picture are
- *  what the phone places as a pin and takes as a photo. */
-export const BLOCK_KIND_LABEL: Readonly<Record<TourBlockKind, string>> = {
-  shortText: "Pin",
-  longText: "Long text",
-  picture: "Photo",
-  video: "Video",
-  audio: "Audio",
-  model: "3D model",
-  character: "Character",
-};
-
-/** A kind's word inside a sentence ("the delete of the long text"): its
- *  `BLOCK_KIND_LABEL` with the first letter lower-cased ("3D" kept). */
-export function kindNoun(kind: TourBlockKind): string {
-  const label = BLOCK_KIND_LABEL[kind];
-  return label.charAt(0).toLowerCase() + label.slice(1);
-}
+import { KIND_EDIT } from "./kinds/edit-kinds.js";
 
 /** The texts a block may be named by, first found first: its title (a
  *  character's name), else its caption (a short text's own text). */
@@ -78,7 +27,7 @@ export function objectTitle(object: TourObject | TourBlock): string {
     const value = fields[name];
     if (typeof value === "string" && value.trim() !== "") return value.trim();
   }
-  return BLOCK_KIND_LABEL[object.kind];
+  return KIND_EDIT[object.kind].label;
 }
 
 /** The text a free block carries for its name, as a page edits it: a

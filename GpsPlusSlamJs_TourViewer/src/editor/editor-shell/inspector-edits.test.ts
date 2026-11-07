@@ -57,6 +57,97 @@ const STATIONS = [
   },
 ] as unknown as TourStation[];
 
+// Why: what is typed in a story's or an entry's inspector must reach that
+// story or entry: a selection of a story's child has no world pose, and a
+// field read as a world item's would write nothing, or the wrong thing.
+describe("a story's fields", () => {
+  const POSE = { position: [0, 0, 0], rotation: [0, 0, 0, 1] } as const;
+  const stations = [
+    {
+      ...STATIONS[0],
+      id: "s",
+      ...stationContent([
+        storyOf("legend", [
+          {
+            id: "kay",
+            kind: "character",
+            view: "speak",
+            name: "Sir Kay",
+            image: "cut",
+            caption: "Halt",
+            pose: POSE,
+          },
+          {
+            id: "intro",
+            kind: "longText",
+            view: "card",
+            title: "The siege",
+            body: "In 1632",
+            pose: POSE,
+            advance: { mode: "auto", afterS: 8 },
+          },
+        ]),
+        {
+          id: "clip",
+          kind: "video",
+          view: "card",
+          video: "v",
+          transcript: "",
+          title: "A clip",
+          pose: POSE,
+        },
+      ]),
+    },
+  ] as unknown as TourStation[];
+  const typed = (selected: string, field: string, value: string) =>
+    inspectorEdit({ selected, stations, origin: ORIGIN, field, value });
+
+  it("types a story's title as the story's", () => {
+    expect(typed("story:legend", "story-title", "The legend")).toEqual({
+      kind: "story-title",
+      id: "legend",
+      title: "The legend",
+    });
+    expect(typed("story:gone", "story-title", "x")).toEqual({ kind: "none" });
+    expect(typed("story:legend", "radius", "3")).toEqual({ kind: "none" });
+  });
+
+  it("types an entry's texts as that block's, its facing as its station's", () => {
+    expect(typed("intro", "block:intro:title", "A title")).toEqual({
+      kind: "block",
+      id: "intro",
+      field: "title",
+      value: "A title",
+    });
+    expect(typed("kay", "character-facing:kay", "45")).toEqual({
+      kind: "station",
+      stationId: "s",
+      edit: { character: { block: "kay", facingDeg: 45 } },
+    });
+    expect(typed("intro", "east", "3")).toEqual({ kind: "none" });
+  });
+
+  it("types an entry's seconds as how it moves on, and refuses a word", () => {
+    expect(typed("intro", "entry-after:intro", "12")).toEqual({
+      kind: "story-advance",
+      id: "intro",
+      advance: { mode: "auto", afterS: 12 },
+    });
+    expect(typed("intro", "entry-after:intro", "8")).toEqual({ kind: "none" });
+    expect(typed("intro", "entry-after:intro", "soon").kind).toBe("invalid");
+  });
+
+  it("types a free block's texts though it stands nowhere in the world", () => {
+    expect(typed("clip", "title", "Better")).toEqual({
+      kind: "block",
+      id: "clip",
+      field: "title",
+      value: "Better",
+    });
+    expect(typed("clip", "east", "3")).toEqual({ kind: "none" });
+  });
+});
+
 function edit(selected: string, field: string, value: string) {
   return inspectorEdit({
     selected,

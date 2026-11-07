@@ -113,7 +113,10 @@ import { mountLectern } from "../lectern-view.js";
 import { createPinLabel } from "../pin-label.js";
 import { manifestToWrite } from "../tour-document.js";
 import { isStationLocked } from "../editor/editor-view.js";
-import { STATION_PREFIX as STATION } from "../editor/editor-model.js";
+import {
+  STATION_PREFIX as STATION,
+  selectedStationOf,
+} from "../editor/editor-model.js";
 import { tourCentre, tourReach } from "../editor/tour-origin.js";
 import type { GlobeSwitch } from "../editor/globe-switch.js";
 import type {
@@ -141,7 +144,7 @@ import {
   drawnCounts,
   viewFailure,
 } from "./editor3d-view-parts.js";
-import { morphStanding, selectedStationOf } from "./editor3d-visibility.js";
+import { morphStanding } from "./editor3d-visibility.js";
 import {
   GLOBE_EDITOR_LOOK,
   aimView,
