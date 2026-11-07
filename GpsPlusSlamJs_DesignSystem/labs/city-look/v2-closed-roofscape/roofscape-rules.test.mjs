@@ -10,12 +10,7 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
-import { fileURLToPath } from "node:url";
-
-import {
-  ShapeUtils,
-  Vector2,
-} from "../../../../GpsPlusSlamJs_AppFramework/node_modules/three/build/three.module.js";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { appendHouse } from "./house-shell.js";
 import {
@@ -28,6 +23,17 @@ import {
   sharedWalls,
   simplifyRing,
 } from "./roofscape-rules.js";
+
+// three is loaded by its path, as labs/terrain's test does: the design
+// system lists no dependency on it, the page is served the framework's copy.
+const { ShapeUtils, Vector2 } = await import(
+  pathToFileURL(
+    join(
+      import.meta.dirname,
+      "../../../../GpsPlusSlamJs_AppFramework/node_modules/three/build/three.module.js",
+    ),
+  ).href
+);
 
 const vectors = (ring) => ring.map((p) => new Vector2(p.x, p.y));
 const triangulate = (contour, holes) =>
