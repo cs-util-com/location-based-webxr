@@ -32,9 +32,11 @@
       draws the clouds at the camera's altitude (`globe-cloud-step.ts`),
       the shell's share from the page (`shareClouds(flat)`, the relief
       mount's), the ground's soft shadow, then both volumes' update.
-    - `render({ weight })`: begins the scene depth's frame; with the
-      clouds on, the relief's depth while the ground sky shows
-      (`weight > 0`), then the slab and the shell.
+    - `render({ weight })`: begins the scene depth's frame; the relief's
+      depth while the ground sky shows (`weight > 0`), with the clouds
+      off too, then, with them on, the slab and the shell.
+    - `sceneDepth()`: the depth `render` draws, for the air's ground
+      veil.
     - `setOn(on)`: the switch (off is the lab's `cloudVolume=0`: no slab,
       no shell; the flat layer only weakens near the ground). Off keeps
       the render targets allocated: the switch saves frame time, not
@@ -76,3 +78,9 @@ mapFactor`, as the lab's: whole from orbit, gone below about 1,000 km
   none without the option; the switch off and on; dispose once; null without the ground sky.
   The drawing is checked in a browser by the Tour Viewer's
   `editor3d-globe.spec.js` (the switch) and the lab's own smokes.
+
+## The near clouds
+
+The old clouds stay the old path: without the near clouds, or after a failed bake (`nearLive()` false), `cloudNear` is 0, so the shell keeps its cover and the air fades its veil with the sky. A closed view stops the worker, and a bake arriving after that is dropped.
+
+With `near: { createWorker, autoQuality?, warn?, nowMs? }` in the options, `createGlobeCloudMarch` joins the parts and `GLOBE_VIEW_CLOUDS.cloudNear` is honoured. The bakes are asked of a worker when the clouds are made; until they arrive, or if they fail (reported once), the old clouds draw. The tier starts at `view.quality` and `autoQuality: false` holds it. `state().near` gives the share, pixel scale and tier, null without them. The life clock is `view.driftTimeS()`. The governor is fed only on frames where they draw.

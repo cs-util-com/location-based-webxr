@@ -102,7 +102,7 @@ uCarrierShare`, so above the band (share 0) the approved globe look is
       gradients: the shift is continuous and the map repeats, so it adds
       no seam; the clouds and their shadow through the B-spline's four
       taps, `globeCloudCubic`, so the texel grid no longer shows when the
-      map is magnified: round-3 plan M1; the program key is v12 since), and the clouds whitening `diffuseColor` by
+      map is magnified: round-3 plan M1; the program key went to v12 then), and the clouds whitening `diffuseColor` by
       `cloud * uCloudOpacity`;
     - after `roughnessmap_fragment`: water with no cloud takes
       `uWaterRoughness` (the sun's glint);
@@ -183,3 +183,10 @@ uCarrierShare`, so above the band (share 0) the approved globe look is
   one-time source mutants). `globe-sky.smoke.spec.mjs`: the drift offset at
   two pinned times and the drifted clouds in the pixels (none with the
   clouds off).
+
+- The sea: `GlobeSurfacePatchOptions.sea` (a tier's `{ waveOctaves,
+shortestWaveM }`) compiles `globe-sea.ts` right before
+  `#include <opaque_fragment>`, over the fully lit surface, with
+  `GLOBE_SEA` and `GLOBE_SEA_OCTAVES` defined; the program key gains
+  `-sea<n>` (key v13). Without the option the sea's code is not in the
+  program; its uniforms are in the one uniforms object either way.

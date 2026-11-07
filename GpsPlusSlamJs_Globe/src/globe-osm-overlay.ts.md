@@ -127,7 +127,7 @@ message }` of the last, or null). RangeError
     the gate would have let through beyond the limit (the next look's
     backlog).
   - `createGlobeOsmOverlay({ url, attribution, maxZoom, renderer, fadeM?,
-limits?, keep?, timeoutMs?, giveUpRetries?, gain?, gainMode? })` -> `{ credit, limits,
+fadeStartShare?, limits?, keep?, timeoutMs?, giveUpRetries?, gain?, gainMode? })` -> `{ credit, limits,
 overlay, plugin, uniforms, attach(terrain), setEnabled(on), setFadeM(m),
 update(pose), stats(), coverage(), mapLoad(), mapTiles(limit), retryNow(),
 lastRetry(), mapReady(tile) }` (`gain`
@@ -403,6 +403,9 @@ ceilingWaitS }`: the street map's loading state for an interface to
   });
   showCredit(osm.credit);
   ```
+
+- With the sea compiled (`GLOBE_SEA`) the fade also writes the map's alpha to
+  `globeMapShare`, and the sea stays under the drawn map by that share.
 
 - Tests: `globe-osm-overlay.test.ts` (the plan's limits, the credit from
   the framework's text, the active rule and unknowns, the hysteresis

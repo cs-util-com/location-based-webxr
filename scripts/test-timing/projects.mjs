@@ -618,6 +618,7 @@ export const PROJECTS = [
       ...demoAppStages([
         "./src/workers/occlusion-mesher.worker.ts",
         "./src/editor3d/globe-city-worker.ts",
+        "./src/editor3d/globe-cloud-bake-worker.ts",
       ]).map((stage) =>
         stage.name === "lint:css"
           ? {

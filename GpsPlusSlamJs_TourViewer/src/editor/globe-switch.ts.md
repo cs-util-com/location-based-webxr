@@ -16,6 +16,8 @@ it. An old `globe=1` link keeps opening the globe.
 
 - `GLOBE_SWITCH` - `param` `"globe"`; the knobs (`GlobeSwitchKnob`:
   `param`, `fallback`, `min`, `max`):
+  - `clouds` - `clouds`: `old` exactly is the way back to the old clouds near the ground; anything else, the new ones.
+  - `quality` - `quality`, no default here: the quality tier's name as the link wrote it, judged by `resolveGlobeQuality`. Null falls to the View menu's choice (`globe-quality-choice.ts`).
   - `grade` - `grade`, no default here: the colour grade's name, handed on
     as the link wrote it (`grade: string | null` in `GlobeSwitch`). This
     module carries none of the globe's code, so the Globe package's
