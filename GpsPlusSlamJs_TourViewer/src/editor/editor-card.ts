@@ -13,7 +13,7 @@
 
 import { pictureProblem } from "../image-cap.js";
 import { wirePinTextCounter } from "../pin-text.js";
-import { BLOCK_KIND_LABEL } from "../object-describe.js";
+import { KIND_EDIT } from "../kinds/edit-kinds.js";
 import { truncated } from "../truncated.js";
 import type { EditorItem } from "./editor-model.js";
 import { placePopover, type Box } from "gps-plus-slam-editor-kit/chrome";
@@ -91,8 +91,8 @@ export interface EditorCard {
 function kindLabel(item: EditorItem): string {
   if (item.kind === "code") return item.title;
   if (item.kind === "station") return "Station";
-  // The kind in the one rule's words (`object-describe.ts`).
-  return BLOCK_KIND_LABEL[item.kind === "photo" ? "picture" : "shortText"];
+  // The kind in the one list's words (`kinds/edit-kinds.ts`).
+  return KIND_EDIT[item.kind === "photo" ? "picture" : "shortText"].label;
 }
 
 export function createEditorCard(

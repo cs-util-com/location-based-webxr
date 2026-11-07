@@ -47,7 +47,11 @@ import {
   TOUR_MODEL_NOTE_RULES,
   TOUR_MODEL_SECTION_RULES,
 } from "gps-plus-slam-app-framework/ar/tour-blocks";
-import { TOUR_STORY_TITLE_RULE } from "gps-plus-slam-app-framework/ar/tour-story";
+import {
+  TOUR_STORY_TITLE_RULE,
+  type TourStepAdvance,
+} from "gps-plus-slam-app-framework/ar/tour-story";
+import { KIND_EDIT, kindNoun } from "../../kinds/edit-kinds.js";
 import {
   CHARACTER_VIEW_CHOICES,
   MODEL_VIEW_CHOICES,
@@ -329,15 +333,6 @@ function lockButton(locked: boolean): HTMLButtonElement {
   return b;
 }
 
-/** An item's kind in a command's words: the one word every creator page
- *  uses for it (`object-describe.ts` `BLOCK_KIND_LABEL`). */
-const ITEM_WORD: Readonly<Record<string, string>> = {
-  pin: "pin",
-  photo: "photo",
-  text: "long text",
-  model: "3D model",
-};
-
 /** A block's text field to type (`block-fields.ts`), its count against
  *  the format's cap under it as it is typed. */
 function blockTextField(field: BlockField): HTMLElement[] {
@@ -424,21 +419,6 @@ function actions(buttons: readonly HTMLButtonElement[]): HTMLElement {
   }
   return box;
 }
-
-const KIND_ICON: Readonly<Record<string, ShellIcon>> = {
-  station: "station",
-  code: "qr",
-  pin: "pin",
-  photo: "photo",
-  text: "text",
-  model: "model",
-  story: "storyOpen",
-  video: "video",
-  audio: "audio",
-  character: "character",
-  choice: "choice",
-  quiz: "quiz",
-};
 
 /** Whether `m` off the ground counts as on it (null: not known). */
 function onGround(m: number | null): boolean {
@@ -698,8 +678,8 @@ function characterParts(
       "Moves on",
       `character-advance:${id}`,
       [
-        { value: "tap", label: "On a tap" },
-        { value: "lineEnd", label: "When the line ends" },
+        { value: "tap", label: ADVANCE_WORDS.tap },
+        { value: "lineEnd", label: ADVANCE_WORDS.lineEnd },
       ],
       c.advance,
     ),
@@ -841,27 +821,27 @@ function storyParts(model: StoryModel, state: InspectorState): HTMLElement[] {
 }
 
 /** What a chip of how a block moves on says. */
-const ADVANCE_WORDS: Readonly<Record<string, string>> = {
+const ADVANCE_WORDS = {
   tap: "On a tap",
   auto: "After a while",
   lineEnd: "When the line ends",
-};
+} as const satisfies { readonly [M in TourStepAdvance["mode"]]: string };
 
 /** How a story's block moves on: chips, its seconds while automatic. A
  *  mode the chips do not offer shows as its own chip, so none being
  *  pressed never reads as meant. */
 function advanceParts(id: string, advance: StoryEntryModel["advance"]) {
   const box = el("div", "isec");
-  const modes = [
+  const modes: TourStepAdvance["mode"][] = [
     "tap",
     "auto",
-    ...(advance.mode === "lineEnd" ? ["lineEnd"] : []),
+    ...(advance.mode === "lineEnd" ? (["lineEnd"] as const) : []),
   ];
   box.append(
     ...chipGroup(
       "Moves on",
       `entry-advance:${id}`,
-      modes.map((value) => ({ value, label: ADVANCE_WORDS[value] ?? value })),
+      modes.map((value) => ({ value, label: ADVANCE_WORDS[value] })),
       advance.mode,
     ),
   );
@@ -915,7 +895,7 @@ function freeBlockParts(model: FreeBlockModel): HTMLElement[] {
   return [
     box,
     actions([
-      action("delete", "trash", `Delete ${model.itemKind}`, {
+      action("delete", "trash", `Delete ${kindNoun(model.itemKind)}`, {
         key: DELETE_KEY,
       }),
     ]),
@@ -1141,7 +1121,7 @@ function itemParts(model: ItemModel, state: InspectorState): HTMLElement[] {
         note: offText(model.groundOffM),
         busy: state.busy,
       }),
-      action("delete", "trash", `Delete ${ITEM_WORD[model.itemKind]}`, {
+      action("delete", "trash", `Delete ${kindNoun(model.itemKind)}`, {
         key: DELETE_KEY,
       }),
     ]),
@@ -1456,18 +1436,28 @@ function pinCount(
   return out;
 }
 
-/** The kind the head's icon shows. */
-function headKind(model: InspectorModel): string {
+/** What the head shows of `model`: its look (the icon's style class)
+ *  and its icon. A block's are its kind's look (`KIND_EDIT`). */
+function headLook(model: InspectorModel): {
+  readonly look: string;
+  readonly icon: ShellIcon;
+} {
   switch (model.kind) {
     case "item":
-    case "freeBlock":
-      return model.itemKind;
+    case "freeBlock": {
+      const { look } = KIND_EDIT[model.itemKind];
+      return { look, icon: look };
+    }
     case "storyEntry":
-      return model.rowKind;
+      return { look: model.rowKind, icon: model.rowKind };
     case "storyStep":
-      return model.stepKind;
-    default:
-      return model.kind;
+      return { look: model.stepKind, icon: model.stepKind };
+    case "station":
+      return { look: "station", icon: "station" };
+    case "story":
+      return { look: "story", icon: "storyOpen" };
+    case "code":
+      return { look: "code", icon: "qr" };
   }
 }
 
@@ -1514,9 +1504,9 @@ function drawDock(
     return;
   }
   dock.root.classList.toggle("collapsed", state.folded);
-  const kind = headKind(model);
-  const icon = el("span", `hic ic ${kind}`);
-  icon.append(shellIcon(KIND_ICON[kind] ?? "station"));
+  const { look, icon: drawn } = headLook(model);
+  const icon = el("span", `hic ic ${look}`);
+  icon.append(shellIcon(drawn));
   const head = headTitle(model);
   const count = pinCount(model, head);
   const longText =

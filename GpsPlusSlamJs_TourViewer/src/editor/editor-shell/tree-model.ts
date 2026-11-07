@@ -19,20 +19,13 @@ import type {
   TourAsset,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import {
-  objectLook,
-  objectTitle,
-  type ObjectLook,
-} from "../../object-describe.js";
+import { KIND_EDIT, type KindLook } from "../../kinds/edit-kinds.js";
+import { objectTitle } from "../../object-describe.js";
 import type { TreeGroup } from "gps-plus-slam-editor-kit/chrome";
 import { worldBlocks } from "../../tour-document.js";
 
 import { stationTitle } from "../../station-run.js";
-import {
-  KIND_SEARCH_WORDS,
-  matchesQuery,
-  STORY_PREFIX,
-} from "../editor-model.js";
+import { matchesQuery, STORY_PREFIX } from "../editor-model.js";
 import type {
   EditorViewState,
   ShellLayer,
@@ -48,25 +41,27 @@ const LAYER_LABELS: Readonly<Record<ShellLayer, string>> = {
   names: "Station names",
 };
 
-/** What a row of the tree is, which is its icon: a block by its look, a
- *  story's choice or quiz by its kind. */
-export type TreeRowKind =
-  ObjectLook | "video" | "audio" | "character" | "choice" | "quiz";
+/** A story's step that is no block: a choice or a quiz. */
+type StepKind = Exclude<TourStoryChild["kind"], TourBlock["kind"]>;
 
-/** The words the tree's search finds a row by besides its title: the
- *  2D rail's for a pin and a photo (`editor-model.ts`), each look's own
- *  word, and a long text's and a model's. */
-const ROW_SEARCH_WORDS: Readonly<Record<TreeRowKind, string>> = {
-  pin: `pin ${KIND_SEARCH_WORDS.pin}`,
-  photo: `photo ${KIND_SEARCH_WORDS.photo}`,
-  text: "long text reading sign",
-  model: "3d model",
-  video: "video film",
-  audio: "audio sound",
-  character: "character figure guide",
+/** What a row of the tree is, which is its icon: a block by its kind's
+ *  look (`KIND_EDIT`), a story's choice or quiz by its kind. */
+export type TreeRowKind = KindLook | StepKind;
+
+/** The words the tree's search finds a choice or a quiz by besides its
+ *  title; a block's are its kind's row's (`KIND_EDIT` `searchWords`). */
+const STEP_SEARCH_WORDS = {
   choice: "choice",
   quiz: "quiz question",
-};
+} as const satisfies { readonly [K in StepKind]: string };
+
+/** The words the tree's search finds a story's entry by besides its
+ *  title. */
+function entryWords(child: TourStoryChild): string {
+  return isTourStoryBlock(child)
+    ? KIND_EDIT[child.kind].searchWords
+    : STEP_SEARCH_WORDS[child.kind];
+}
 
 /** What a folder's row is found by besides its title. */
 const STORY_SEARCH_WORDS = "story folder";
@@ -104,15 +99,7 @@ export interface TreeFolder {
 
 /** A row's kind and name, for a block. */
 function blockRow(block: TourBlock): Pick<TreeChild, "kind" | "title"> {
-  const title = objectTitle(block);
-  switch (block.kind) {
-    case "video":
-    case "audio":
-    case "character":
-      return { kind: block.kind, title };
-    default:
-      return { kind: objectLook(block.kind), title };
-  }
+  return { kind: KIND_EDIT[block.kind].look, title: objectTitle(block) };
 }
 
 /** A row's kind and name, for a story's entry. */
@@ -281,9 +268,13 @@ function folderOf(
     whole || matchesQuery(query, [story.title, STORY_SEARCH_WORDS]);
   const found = listed
     ? entries
-    : entries.filter((c) =>
-        matchesQuery(query, [c.title, ROW_SEARCH_WORDS[c.kind]]),
-      );
+    : entries.filter((c, i) => {
+        const child = story.children[i];
+        return (
+          child !== undefined &&
+          matchesQuery(query, [c.title, entryWords(child)])
+        );
+      });
   if (!listed && found.length === 0) return null;
   return {
     id: story.id,
@@ -318,7 +309,8 @@ export function buildTree(input: TreeInput): TreeModel {
     const selection = `station:${station.id}`;
     const description = station.description?.trim() ?? "";
     const title = stationTitle(station, index + 1);
-    const items = tourFreeBlocks(station).map((block): TreeChild => ({
+    const blocks = tourFreeBlocks(station);
+    const items = blocks.map((block): TreeChild => ({
       id: block.id,
       ...blockRow(block),
       selected: block.id === view.selected,
@@ -326,9 +318,13 @@ export function buildTree(input: TreeInput): TreeModel {
     const stationFound = matchesQuery(query, [title, description]);
     const found = stationFound
       ? items
-      : items.filter((c) =>
-          matchesQuery(query, [c.title, ROW_SEARCH_WORDS[c.kind]]),
-        );
+      : items.filter((c, i) => {
+          const block = blocks[i];
+          return (
+            block !== undefined &&
+            matchesQuery(query, [c.title, KIND_EDIT[block.kind].searchWords])
+          );
+        });
     const folders = tourStories(station).flatMap((story) => {
       const folder = folderOf(story, stationFound, input, query);
       return folder === null ? [] : [folder];

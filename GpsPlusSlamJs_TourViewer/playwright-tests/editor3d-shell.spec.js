@@ -1352,7 +1352,7 @@ test("the dialogs, their fields and the toasts wear the studio's dark dress; an 
   // and the dotted underline at rest.
   await card(page, "The old gate").locator(".pick").click();
   await card(page, "The old gate").locator(".head .add").click();
-  await page.locator('#tree-add-menu [data-kind="pin"]').click();
+  await page.locator('#tree-add-menu [data-kind="shortText"]').click();
   const toast = page.locator(".toast", { hasText: "Added a pin" });
   await expect(toast).toBeVisible();
   await expect(toast).toHaveCSS("background-color", BG1);

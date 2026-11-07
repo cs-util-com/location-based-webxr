@@ -332,9 +332,9 @@ describe("the tree's add in place", () => {
     expect(menu()?.hidden).toBe(false);
     expect(menu()?.getAttribute("aria-label")).toBe("Add to Station c");
     document
-      .querySelector<HTMLElement>('#tree-add-menu [data-kind="pin"]')
+      .querySelector<HTMLElement>('#tree-add-menu [data-kind="shortText"]')
       ?.click();
-    expect(edits.addItem).toHaveBeenCalledWith("c", "pin");
+    expect(edits.addItem).toHaveBeenCalledWith("c", "shortText");
     shell.hide();
   });
 });
@@ -380,7 +380,7 @@ describe("the Ctrl+K palette", () => {
     ctrlK();
     typeQuery("pin 1");
     enter();
-    expect(edits.addItem).toHaveBeenLastCalledWith("a", "pin");
+    expect(edits.addItem).toHaveBeenLastCalledWith("a", "shortText");
     shell.hide();
   });
 
@@ -605,9 +605,9 @@ describe("the tree's search and its Fold every station", () => {
     const field = search("pin b");
     document.querySelector<HTMLElement>('#tree-body [data-add="b"]')?.click();
     document
-      .querySelector<HTMLElement>('#tree-add-menu [data-kind="pin"]')
+      .querySelector<HTMLElement>('#tree-add-menu [data-kind="shortText"]')
       ?.click();
-    expect(edits.addItem).toHaveBeenCalledWith("b", "pin");
+    expect(edits.addItem).toHaveBeenCalledWith("b", "shortText");
     expect(field.value).toBe("");
     expect(listed()).toEqual(["a", "b"]);
     shell.hide();
@@ -1276,8 +1276,8 @@ describe("a story's folder in the tree", () => {
     expect(menu?.querySelector(".mhead")?.textContent).toBe(
       'Add to the story "The legend"',
     );
-    menu?.querySelector<HTMLElement>('[data-kind="pin"]')?.click();
-    expect(edits.addToStory).toHaveBeenCalledWith("legend", "pin");
+    menu?.querySelector<HTMLElement>('[data-kind="shortText"]')?.click();
+    expect(edits.addToStory).toHaveBeenCalledWith("legend", "shortText");
     expect(edits.addItem).not.toHaveBeenCalled();
     shell.hide();
   });
@@ -1797,7 +1797,7 @@ describe("the inspector's station extras", () => {
       ),
     ][0];
     item?.click();
-    expect(edits.addItem).toHaveBeenCalledWith("a", "pin");
+    expect(edits.addItem).toHaveBeenCalledWith("a", "shortText");
     shell.hide();
   });
 });

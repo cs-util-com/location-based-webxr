@@ -16,12 +16,9 @@ import type {
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { tourStationChildIds } from "gps-plus-slam-app-framework/ar/tour-story";
+import { KIND_EDIT } from "../kinds/edit-kinds.js";
 import { horizontalM } from "../move-with-code.js";
-import {
-  BLOCK_KIND_LABEL,
-  codeDistanceLine,
-  objectTitle,
-} from "../object-describe.js";
+import { codeDistanceLine, objectTitle } from "../object-describe.js";
 import { stationTitle } from "../station-run.js";
 import {
   buildSummaryModel,
@@ -77,7 +74,7 @@ function noteMeta(object: TourObject, codes: readonly QrGeoPose[]): string {
   const distance = codeDistanceLine(object, codes);
   // The kind in the one rule's words (`object-describe.ts`), so no kind
   // is ever labelled as another.
-  const kind = BLOCK_KIND_LABEL[object.kind];
+  const kind = KIND_EDIT[object.kind].label;
   return distance === "" ? kind : `${kind} · ${distance}`;
 }
 
@@ -135,7 +132,7 @@ export function buildEditorModel(input: {
         title: objectTitle(object),
         meta:
           mark === undefined
-            ? `${BLOCK_KIND_LABEL[object.kind]} · no position`
+            ? `${KIND_EDIT[object.kind].label} · no position`
             : noteMeta(object, stored),
         at: mark === undefined ? null : { lat: mark.lat, lng: mark.lng },
         ...(object.kind === "picture" ? { image: object.imageAsset.path } : {}),
@@ -184,16 +181,15 @@ export function buildEditorModel(input: {
   };
 }
 
-/** The words a search finds an item by besides its own lines: "note"
- *  (the search box's word for a pin or a photo), and the words the 3D
- *  editor once used for those kinds, which a creator may still type.
- *  The kind's own word is in its second line already. */
-export const KIND_SEARCH_WORDS: Readonly<Record<EditorItemKind, string>> = {
+/** The words a search finds an item by besides its own lines: a pin's
+ *  and a photo's are their kind's row's (`KIND_EDIT` `searchWords`, the
+ *  3D tree's too: "note", the search box's word for either, among them). */
+const KIND_SEARCH_WORDS = {
   code: "",
-  pin: "note short text",
-  photo: "note picture",
+  pin: KIND_EDIT.shortText.searchWords,
+  photo: KIND_EDIT.picture.searchWords,
   station: "",
-};
+} as const satisfies { readonly [K in EditorItemKind]: string };
 
 /** A text folded for the search: one Unicode form (NFC), lower case. */
 export function foldForSearch(text: string): string {

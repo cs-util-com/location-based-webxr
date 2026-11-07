@@ -50,17 +50,18 @@ import {
   TOUR_MODEL_MAX_NOTES,
   TOUR_MODEL_MAX_SECTIONS,
   TOUR_MODEL_WORLD_VIEWS,
+  type TourBlockKind,
   type TourModelVector,
 } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import type { ModelFocus, ModelPick } from "../editor-view.js";
 import { facingDegOf } from "../../character-views.js";
 
 import {
-  BLOCK_KIND_LABEL,
-  objectLook,
-  objectTitle,
-  type ObjectLook,
-} from "../../object-describe.js";
+  isWorldKind,
+  KIND_EDIT,
+  type WorldKind,
+} from "../../kinds/edit-kinds.js";
+import { objectTitle } from "../../object-describe.js";
 import { readingSheetContent } from "../../reading-sign.js";
 import { stationTitle } from "../../station-run.js";
 import {
@@ -204,10 +205,11 @@ interface StoryStepInspector {
   readonly lines: readonly string[];
 }
 
-/** A free block with no place in the world. */
+/** A free block with no place in the world: of a kind its row does not
+ *  draw there (`KIND_EDIT` `inWorld`). */
 interface FreeBlockInspector {
   readonly kind: "freeBlock";
-  readonly itemKind: "video" | "audio" | "character";
+  readonly itemKind: Exclude<TourBlockKind, WorldKind>;
   readonly id: string;
   readonly stationId: string;
   readonly title: string;
@@ -260,7 +262,7 @@ export const CHARACTER_VIEW_CHOICES: readonly {
 function storyEntry(block: TourStoryBlock): InspectorStoryBlock {
   const entry = {
     id: block.id,
-    kind: BLOCK_KIND_LABEL[block.kind],
+    kind: KIND_EDIT[block.kind].label,
     title: objectTitle(block),
     fields: storyBlockFields(block),
   };
@@ -347,7 +349,7 @@ function textPictures(
 
 interface ItemInspector {
   readonly kind: "item";
-  readonly itemKind: ObjectLook;
+  readonly itemKind: WorldKind;
   readonly title: string;
   readonly sub: string;
   /** Its station's id. */
@@ -605,7 +607,7 @@ function storyChildInspector(
       stationId: station.id,
       rowKind: storyRows({ children: [child] })[0]?.kind ?? "text",
       title: objectTitle(child),
-      sub: `${crumb} / ${BLOCK_KIND_LABEL[child.kind]}, ${entry}`,
+      sub: `${crumb} / ${KIND_EDIT[child.kind].label}, ${entry}`,
       block: storyEntry(child),
       advance: {
         mode: child.advance.mode,
@@ -665,20 +667,17 @@ function freeBlockInspector(
 ): InspectorModel | null {
   for (const [index, station] of stations.entries()) {
     const block = tourFreeBlocks(station).find((b) => b.id === selected);
-    if (
-      block?.kind !== "video" &&
-      block?.kind !== "audio" &&
-      block?.kind !== "character"
-    ) {
-      continue;
-    }
+    if (block === undefined) continue;
+    const { kind } = block;
+    // A block the world draws has the item inspector instead.
+    if (isWorldKind(kind)) continue;
     return {
       kind: "freeBlock",
-      itemKind: block.kind,
+      itemKind: kind,
       id: block.id,
       stationId: station.id,
       title: objectTitle(block),
-      sub: `${BLOCK_KIND_LABEL[block.kind]} in ${stationTitle(station, index + 1)}`,
+      sub: `${KIND_EDIT[block.kind].label} in ${stationTitle(station, index + 1)}`,
       fields: blockFields(block),
     };
   }
@@ -757,9 +756,9 @@ export function buildInspector(input: {
     const [northM, upM, eastM] = item.pose.position;
     return {
       kind: "item",
-      itemKind: objectLook(item.kind),
+      itemKind: item.kind,
       title: objectTitle(item),
-      sub: `${BLOCK_KIND_LABEL[item.kind]} in ${stationTitle(station, index + 1)}`,
+      sub: `${KIND_EDIT[item.kind].label} in ${stationTitle(station, index + 1)}`,
       stationId: station.id,
       text: item.kind === "shortText" ? item.caption : null,
       sizeM: item.kind === "model" ? (item.sizeM ?? null) : null,

@@ -356,7 +356,7 @@ describe("buildInspector", () => {
   it("shows an item's kind, its station, its offset and its size", () => {
     expect(inspect("pin-1")).toEqual({
       kind: "item",
-      itemKind: "pin",
+      itemKind: "shortText",
       title: "Fountain, 1612",
       sub: "Pin in Market Square",
       stationId: "a",
@@ -485,7 +485,7 @@ describe("inspectorHint", () => {
       codes: CODES,
       unlockedStations: [],
     });
-    expect(model).toMatchObject({ kind: "item", itemKind: "text" });
+    expect(model).toMatchObject({ kind: "item", itemKind: "longText" });
     expect(inspectorHint(model)).toBe(
       "The siege - drag the middle to move along the ground, the round arrow to turn",
     );

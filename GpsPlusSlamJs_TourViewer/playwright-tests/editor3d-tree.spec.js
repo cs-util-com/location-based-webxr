@@ -289,7 +289,7 @@ test("a row's + adds a short or a long text in place, from the mouse and from th
   await plus.click();
   await expect(menu).toBeVisible();
   await expect(plus).toHaveAttribute("aria-expanded", "true");
-  await expect(menu.locator('[data-kind="pin"]')).toBeFocused();
+  await expect(menu.locator('[data-kind="shortText"]')).toBeFocused();
   await expect(menu.locator('[data-kind="picture"]')).toHaveAttribute(
     "aria-disabled",
     "true",
@@ -313,7 +313,7 @@ test("a row's + adds a short or a long text in place, from the mouse and from th
 
   // The keyboard: Enter on the "+", Escape back to it, then a short text.
   await page.keyboard.press("Enter");
-  await expect(menu.locator('[data-kind="pin"]')).toBeFocused();
+  await expect(menu.locator('[data-kind="shortText"]')).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(menu).toBeHidden();
   await expect(gate.locator(".head .add")).toBeFocused();
@@ -458,7 +458,7 @@ test("a story's folder sits a step in from its station and its entries a step fu
   const folder = `.folder[data-story="${id}"]`;
   for (const _ of [1, 2]) {
     await page.locator(`${folder} .add`).click();
-    await page.locator('#tree-add-menu [data-kind="pin"]').click();
+    await page.locator('#tree-add-menu [data-kind="shortText"]').click();
   }
   await expect(page.locator(`${folder} ~ .kid.deep`)).toHaveCount(2);
   const sels = [

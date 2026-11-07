@@ -120,7 +120,8 @@ import { wireRadiusSlider } from "./radius-slider.js";
 import { createShellPictures } from "./shell-pictures.js";
 import { tourProblems } from "./tour-problems.js";
 import { drawTree } from "./shell-tree.js";
-import { createTreeAddMenu, type AddKind } from "./tree-add-menu.js";
+import { createTreeAddMenu } from "./tree-add-menu.js";
+import type { AddKind } from "../../kinds/edit-kinds.js";
 import { createAddPalette, isPaletteKey } from "./add-palette.js";
 import { stationTitle } from "../../station-run.js";
 import {

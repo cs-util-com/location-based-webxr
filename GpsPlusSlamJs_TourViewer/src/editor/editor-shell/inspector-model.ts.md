@@ -46,7 +46,7 @@ view, advance, facingDeg }`) and `advance { mode, afterS }`;
     character: `itemKind`, `id`, `stationId`, `title`, `sub`, `fields`;
   - `ItemInspector` - `kind: "item"`, `itemKind`, title, `sub` naming
     its kind in the one word every creator page uses and its station ("Pin in
-    Market Square", "Photo in ...", "3D model in ...", `BLOCK_KIND_LABEL`; the
+    Market Square", "Photo in ...", "3D model in ...", `KIND_EDIT` label; the
     title by `objectTitle`), `stationId`, `text` (a pin's caption to edit; null for a
     photo or a model), `sizeM` (a model's, else null), `fields` (its
     other text fields to type, `blockFields` of `../block-fields.ts`:

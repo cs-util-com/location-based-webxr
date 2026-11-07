@@ -1,12 +1,9 @@
 /**
  * A block's text fields as the desktop editor's inspector edits them
- * (pure): per kind, the fields beside the one the head already types (a
- * short text's caption): a short text's description; a long text's title
- * and body; a picture's title, caption and alt text; a video's or an
- * audio's title and transcript; a model's title; a character's name and
- * caption. Every cap, unit and need is the format's
- * (`TOUR_BLOCK_TEXT_RULES`) and every count the format's
- * (`tourTextCount`), so the counter beside a field, the refusal and the
+ * (pure): per kind, the fields its row lists (`KIND_EDIT` `fields`), beside
+ * the one the head already types (a short text's caption). Every cap, unit
+ * and need is the format's (`TOUR_BLOCK_TEXT_RULES`) and every count the
+ * format's (`tourTextCount`), so the counter beside a field, the refusal and the
  * file's reader agree. How a block is named where it is listed is
  * `object-describe.ts`'s one rule (`objectTitle`).
  *
@@ -21,6 +18,8 @@ import {
   type TourTextUnit,
 } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
+
+import { KIND_EDIT, type FieldSpec } from "../kinds/edit-kinds.js";
 
 /** One text field of a block, as the inspector draws it. */
 export interface BlockField {
@@ -40,44 +39,13 @@ export interface BlockField {
   readonly prose: boolean;
 }
 
-interface FieldSpec {
-  readonly name: string;
-  readonly label: string;
-  readonly prose: boolean;
-}
-
 /** A block the inspector reads: a free one in the world or one a story
  *  shows. */
 type AnyBlock = TourObject | TourBlock;
 
-const TITLE: FieldSpec = { name: "title", label: "Title", prose: false };
-const TRANSCRIPT: FieldSpec = {
-  name: "transcript",
-  label: "Transcript",
-  prose: true,
-};
-
 /** A short text's caption: the head types it for a free one, the station's
  *  inspector for one its story shows. */
 const CAPTION: FieldSpec = { name: "caption", label: "Caption", prose: false };
-
-/** Each kind's fields in the inspector's order. */
-const FIELDS: Readonly<Record<TourBlockKind, readonly FieldSpec[]>> = {
-  shortText: [{ name: "description", label: "Description", prose: true }],
-  longText: [TITLE, { name: "body", label: "Body", prose: true }],
-  picture: [
-    TITLE,
-    { name: "caption", label: "Caption", prose: true },
-    { name: "alt", label: "Alt text", prose: true },
-  ],
-  video: [TITLE, TRANSCRIPT],
-  audio: [TITLE, TRANSCRIPT],
-  model: [TITLE],
-  character: [
-    { name: "name", label: "Name", prose: false },
-    { name: "caption", label: "Caption", prose: true },
-  ],
-};
 
 const NO_RULE: TourTextRule = { max: 0, unit: "codePoints", required: false };
 
@@ -96,7 +64,8 @@ function textOf(block: AnyBlock, name: string): string {
 /** The fields the inspector types for `block`, besides a short text's
  *  caption (the head's). */
 export function blockFields(block: AnyBlock): BlockField[] {
-  return FIELDS[block.kind].map((spec) => {
+  const own: readonly FieldSpec[] = KIND_EDIT[block.kind].fields;
+  return own.map((spec) => {
     const rule = ruleOf(block.kind, spec.name);
     return {
       ...spec,
@@ -148,10 +117,8 @@ export function blockFieldEdit<B extends AnyBlock>(
   | { readonly kind: "edited"; readonly after: B }
   | { readonly kind: "unchanged" }
   | { readonly kind: "refused"; readonly reason: string } {
-  const specs =
-    block.kind === "shortText"
-      ? [CAPTION, ...FIELDS.shortText]
-      : FIELDS[block.kind];
+  const own: readonly FieldSpec[] = KIND_EDIT[block.kind].fields;
+  const specs = block.kind === "shortText" ? [CAPTION, ...own] : own;
   const spec = specs.find((f) => f.name === name);
   if (spec === undefined) return { kind: "unchanged" };
   const text = value.trim();

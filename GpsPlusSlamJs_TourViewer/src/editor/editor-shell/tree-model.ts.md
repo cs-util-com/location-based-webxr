@@ -45,7 +45,7 @@ children }`), listed before them, a folder's `children` its entries with
   - an item's title: `../../object-describe.ts`'s `objectTitle`, the one
     naming rule of every page (a pin's caption, a picture's title, else
     its caption, a model's title), else its kind's word
-    (`BLOCK_KIND_LABEL`: "Photo", "3D model");
+    (`KIND_EDIT` label: "Photo", "3D model");
   - `TreeCode` - a code's row; `TreeChip` - `{ layer, label, on }`, on
     unless hidden.
 - `stationImagePath(station, assets)` - the card picture's asset path: a

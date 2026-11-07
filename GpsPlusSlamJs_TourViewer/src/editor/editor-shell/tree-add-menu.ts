@@ -1,10 +1,11 @@
 /**
  * The tree's type menu: what a station row's "+" (and its empty line's
- * "Add content") adds in place - a short text or a long text, at a free
- * spot of that station, or a story; a story row's "+" (and its empty line,
- * and its inspector's "Add entry...") adds a short or a long text into that
- * story; a picture is listed, off, with the reason (it is taken on site
- * with the phone). The head names the place. One menu for every row, opened
+ * "Add content") adds in place - a kind its row says is addable
+ * (`KIND_EDIT` `add`; today a short text or a long text), at a free spot
+ * of that station, or a story; a story row's "+" (and its empty line, and
+ * its inspector's "Add entry...") adds such a kind into that story; a kind
+ * listed but not addable (a picture: it is taken on site with the phone)
+ * is shown off, with the reason. The head names the place. One menu for every row, opened
  * under the
  * button pressed, the WAI-ARIA menu's keys inside it: the arrows, Home and
  * End move among its items (an item that is off keeps its place, said by
@@ -27,49 +28,7 @@ import {
   type ShellIcon,
 } from "gps-plus-slam-editor-kit/chrome";
 
-/** What a station's "+" adds: the kinds the editor can make from nothing. */
-export type AddKind = "pin" | "longText";
-
-/** One line of the menu (and of the Ctrl+K palette's kinds). */
-export interface AddChoice {
-  /** The kind it adds; `picture` adds nothing here. */
-  readonly kind: AddKind | "picture";
-  readonly label: string;
-  /** What it is, or for one that is off, why. */
-  readonly hint: string;
-  /** The words a search for it matches (its label among them). */
-  readonly words: string;
-  /** The shell icon drawn beside it. */
-  readonly icon: ShellIcon;
-  readonly addable: boolean;
-}
-
-export const ADD_CHOICES: readonly AddChoice[] = [
-  {
-    kind: "pin",
-    label: "Short text",
-    hint: "A pin with a caption",
-    words: "short text pin caption label note",
-    icon: "pin",
-    addable: true,
-  },
-  {
-    kind: "longText",
-    label: "Long text",
-    hint: "A reading sign: a title and its text",
-    words: "long text reading sign article body",
-    icon: "text",
-    addable: true,
-  },
-  {
-    kind: "picture",
-    label: "Picture",
-    hint: "Taken on site with the phone",
-    words: "picture photo image",
-    icon: "photo",
-    addable: false,
-  },
-];
+import { ADD_CHOICES, type AddKind } from "../../kinds/edit-kinds.js";
 
 export interface TreeAddMenu {
   /** Open under `anchor` for the station `stationId`, titled `title`, the
@@ -161,7 +120,7 @@ export function createTreeAddMenu(deps: {
     return item;
   };
   for (const choice of ADD_CHOICES) {
-    const item = itemOf(choice.kind, choice.label, choice.hint, choice.icon);
+    const item = itemOf(choice.kind, choice.label, choice.hint, choice.look);
     setItemDisabled(item, !choice.addable);
     menu.append(item);
   }

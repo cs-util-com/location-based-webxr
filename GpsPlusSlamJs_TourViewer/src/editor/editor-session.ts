@@ -110,7 +110,8 @@ import {
   blockFields,
   storyBlockFields,
 } from "./block-fields.js";
-import { kindNoun, objectOwnText, objectTitle } from "../object-describe.js";
+import { kindWithArticle, type AddKind } from "../kinds/edit-kinds.js";
+import { objectOwnText, objectTitle } from "../object-describe.js";
 import { applyModelEdit, type ModelEdit } from "./model-edits.js";
 import { buildEditorModel, type EditorModel } from "./editor-model.js";
 import { STATION_LOCKED } from "./editor-view.js";
@@ -118,7 +119,7 @@ import { checkNoGps, type NoGpsCheck } from "./no-gps-check.js";
 import { readZipBlobEntry, zipBlobEntryNames } from "../zip-blob.js";
 import { truncated } from "../truncated.js";
 import { newStory, withoutStoryChild } from "../tour-story-edit.js";
-import { newStoryEntry, type NewEntryKind } from "./new-pin.js";
+import { newStoryEntry } from "./new-pin.js";
 
 /** One of the tour's objects as it stands, with this page's entry. */
 type AuthoringObject = ReturnType<typeof documentObjects>[number];
@@ -137,7 +138,7 @@ const PICTURE_GONE =
 function objectName(object: TourObject): string {
   const label = (objectOwnText(object) ?? "").trim();
   if (label === "") {
-    return `${object.kind === "audio" ? "an" : "a"} ${kindNoun(object.kind)}`;
+    return kindWithArticle(object.kind);
   }
   return `"${truncated(label, 40)}"`;
 }
@@ -552,7 +553,7 @@ export interface EditorSession {
   /** A new entry at the end of a story: one step. */
   addToStory(
     storyId: string,
-    kind: NewEntryKind,
+    kind: AddKind,
   ): { kind: "added"; id: string } | EditorRefusal;
   /** Delete a story's child: one step; `answers` says how many answers
    *  that led to it now go on to the next child. */

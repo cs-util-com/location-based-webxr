@@ -609,7 +609,7 @@ test("Put items on the ground, Put on the ground, Add a pin, a pin's text and a 
   // Add a pin (the row's "+"): a new pin in b, selected and said; its
   // words typed in the head.
   await page.locator('#tree-body .card[data-station="b"] .head .add').click();
-  await page.locator('#tree-add-menu [data-kind="pin"]').click();
+  await page.locator('#tree-add-menu [data-kind="shortText"]').click();
   await expect(
     page.locator(".toast", { hasText: 'Added a pin to "Station B"' }),
   ).toBeVisible();

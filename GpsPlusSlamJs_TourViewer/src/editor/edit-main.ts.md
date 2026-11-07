@@ -121,7 +121,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   on blur or Ctrl+Enter; an empty pin is refused in the phone's words),
   Move (the marker made draggable, Done applies the drop, Cancel or Esc
   puts it back; the card then says the height was kept), Delete with an
-  Undo toast for 8 s (the phone's hold, which holds autosave too). Codes and stations
+  Undo toast for 8 s (the phone's hold, which holds autosave too). The toast names
+  the item by its rail name, else by its own text, else by its kind's word
+  (`itemCalled`: "Deleted Video", never "Deleted the note" for a free video). Codes and stations
   stay read-only; the walk's debug camera captures are not items.
   The toast's Undo is the edit stack's (below): it runs while its delete
   is still the newest step (`editor.revision()` unchanged), also after a

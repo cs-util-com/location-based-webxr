@@ -146,7 +146,7 @@ describe("addNewItem", () => {
         ...base,
         stations: [station([])],
         stationId: "gone",
-        kind: "pin",
+        kind: "shortText",
         place,
       }),
     ).toEqual({
@@ -232,7 +232,7 @@ describe("newLongText", () => {
 describe("newStoryEntry", () => {
   it("makes a card that moves on by a tap, numbered within its kind", () => {
     const story = { children: [{ kind: "shortText" }] } as never;
-    const pin = newStoryEntry(story, "pin", "p");
+    const pin = newStoryEntry(story, "shortText", "p");
     expect(pin).toMatchObject({
       id: "p",
       kind: "shortText",

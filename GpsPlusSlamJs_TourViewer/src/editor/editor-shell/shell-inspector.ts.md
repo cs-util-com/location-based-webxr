@@ -43,6 +43,11 @@ tabbed)` puts the focus on the control drawn under `name` (none, a
   a focus whose target a draw removed during `focusout` to the page.
   - Every head starts with "Back to the list" (`data-act="back"`), shown
     only on a phone (`editor-shell.css`), which drops the selection.
+  - The head's icon (`headLook`, one case per kind of selection, none
+    by default): a block's is its kind's look in the editor's list of
+    kinds (`../../kinds/edit-kinds.ts`), and so are the words of its
+    Delete (`kindNoun`). A story block's advance chips are worded by
+    `ADVANCE_WORDS`, keyed by the format's advance modes.
   - A station: its name as text in the head (`span.ttl`); "Station n
     of N"; its commands; then, first in its section, its **Name** to type
     (`input.tfield`, `data-field="title"`, its label "Name", the
@@ -140,7 +145,7 @@ content` (Chromium, the editor's browser; elsewhere it stays three
   (`ground-items`, its note "N off", off when none is) and "Delete
   station"; an item's "Move to a new station" (`split`), "Put on the
   ground" (`ground`, its note "x.x m up/down", off when on it) and
-  "Delete pin" / "Delete photo" / "Delete 3D model". The command `busy`
+  "Delete pin" / "Delete photo" / "Delete long text" / "Delete 3D model". The command `busy`
   names says "Waiting for the ground...", is `aria-disabled` (not
   `disabled`, so it keeps the keyboard's focus) and `aria-busy`. Each
   `.act` is a button with an icon and its words in `.lbl`; Delete is

@@ -57,7 +57,12 @@ import {
 import { describeIntegrityError, olderFormatRefusal } from "../open-errors.js";
 import { debugCapturesOf, type DebugCapture } from "../debug-captures.js";
 import { pictureProblem } from "../image-cap.js";
-import { objectLook } from "../object-describe.js";
+import {
+  kindNoun,
+  kindWithArticle,
+  type AddKind,
+} from "../kinds/edit-kinds.js";
+import { objectTitle } from "../object-describe.js";
 import { scanEntryNames } from "../tour-read-set.js";
 import { openDraftStore } from "../draft-store-root.js";
 import { DRAFT_PART_UNREAD } from "../tour-document-draft.js";
@@ -182,7 +187,6 @@ import {
   type TypedEditOutcome,
 } from "./editor-shell/editor-shell.js";
 import { addNewItem } from "./new-pin.js";
-import type { AddKind } from "./editor-shell/tree-add-menu.js";
 import { reseatOf, type Reseat } from "./reseat-note.js";
 import { newObjectId } from "../content-placement.js";
 import type { InspectorCode } from "./editor-shell/inspector-model.js";
@@ -1302,6 +1306,19 @@ const card = createEditorCard(
   },
 );
 
+/** What a toast calls `id`: its rail row's title (a pin, a photo, a
+ *  station), else, for a free block the rail does not list, its name by
+ *  the one rule (`objectTitle`: its own text, else its kind's word); "the
+ *  note" for an id the tour does not have. */
+function itemCalled(id: string): string {
+  const listed = model?.items.find((i) => i.id === id)?.title;
+  if (listed !== undefined) return listed;
+  const block = manifestToWrite(store.getState().tourDocument)
+    ?.stations.flatMap((s) => tourFreeBlocks(s))
+    .find((b) => b.id === id);
+  return block === undefined ? "the note" : objectTitle(block);
+}
+
 /**
  * Delete a note, or a station with its notes (`station:<id>`; the 3D
  * view's Del) once its creator said yes: one step. The toast offers its
@@ -1319,7 +1336,7 @@ function deleteSelection(id: string): void {
     deleteStoryEntry(id, place.story);
     return;
   }
-  const item = model?.items.find((i) => i.id === id);
+  const called = itemCalled(id);
   if (id.startsWith(STATION_PREFIX)) {
     const stationId = id.slice(STATION_PREFIX.length);
     const station = tour?.stations.find((s) => s.id === stationId);
@@ -1340,7 +1357,7 @@ function deleteSelection(id: string): void {
   const outcome = id.startsWith(STATION_PREFIX)
     ? editor.deleteStation(id.slice(STATION_PREFIX.length))
     : editor.remove(id);
-  deleted(outcome, `Deleted ${item?.title ?? "the note"}`);
+  deleted(outcome, `Deleted ${called}`);
 }
 
 /** After a delete: the selection gone, the page redrawn and the toast with
@@ -1432,7 +1449,7 @@ function deleteStoryEntry(id: string, story: TourStory): void {
 async function duplicateSelection(id: string): Promise<void> {
   const mine = editor;
   if (mine === null) return;
-  const item = model?.items.find((i) => i.id === id);
+  const called = itemCalled(id);
   endUndo();
   const outcome = id.startsWith(STATION_PREFIX)
     ? await mine.duplicateStation(id.slice(STATION_PREFIX.length))
@@ -1443,7 +1460,7 @@ async function duplicateSelection(id: string): Promise<void> {
     toast(outcome.reason);
     return;
   }
-  const said = `Duplicated ${item?.title ?? "the note"}`;
+  const said = `Duplicated ${called}`;
   if ("stationId" in outcome) {
     showNewStation(outcome.stationId, () => said);
     return;
@@ -1566,8 +1583,7 @@ function addItemTo(stationId: string, kind: AddKind): void {
     return;
   }
   select(outcome.item.id);
-  const what = kind === "pin" ? "a pin" : "a long text";
-  toast(`Added ${what} to "${stationTitleOf(stationId)}"`);
+  toast(`Added ${kindWithArticle(kind)} to "${stationTitleOf(stationId)}"`);
   autosave.changed();
 }
 
@@ -1600,8 +1616,9 @@ function addToStoryEntry(storyId: string, kind: AddKind): void {
     return;
   }
   select(outcome.id);
-  const what = kind === "pin" ? "a pin" : "a long text";
-  toast(`Added ${what} to the story "${storyNamed(storyId)?.title ?? ""}"`);
+  toast(
+    `Added ${kindWithArticle(kind)} to the story "${storyNamed(storyId)?.title ?? ""}"`,
+  );
   autosave.changed();
 }
 
@@ -1691,12 +1708,7 @@ function splitItem(id: string): void {
     return;
   }
   // The pages' word (a pin, a photo), never the file's block kind.
-  const word =
-    kind === "model"
-      ? "3D model"
-      : kind === "shortText" || kind === "picture"
-        ? objectLook(kind)
-        : "item";
+  const word = kind === undefined ? "item" : kindNoun(kind);
   showNewStation(
     outcome.stationId,
     (title) => `New station "${title}" with the ${word} in it`,

@@ -225,7 +225,7 @@ test("on a phone the controls smaller for a mouse take a finger", async ({
   await station(page, "The old gate").click();
   // The sample's stations start empty: a row to measure, then back.
   await page.locator('#inspector-body [data-act="add-content"]').click();
-  await page.locator('#tree-add-menu [data-kind="pin"]').click();
+  await page.locator('#tree-add-menu [data-kind="shortText"]').click();
   await page.locator('#inspector-head [data-act="back"]').click();
   await station(page, "The old gate").click();
   const row = page.locator('#inspector-body [data-act^="goto:"]').first();

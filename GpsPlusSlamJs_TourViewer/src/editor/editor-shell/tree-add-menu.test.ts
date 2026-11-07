@@ -12,12 +12,8 @@
 import fc from "fast-check";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  ADD_CHOICES,
-  addMenuSpot,
-  createTreeAddMenu,
-  type AddKind,
-} from "./tree-add-menu.js";
+import { ADD_CHOICES, type AddKind } from "../../kinds/edit-kinds.js";
+import { addMenuSpot, createTreeAddMenu } from "./tree-add-menu.js";
 
 /** A tree body with one station's "+". */
 function plusFor(body: HTMLElement, id: string): HTMLButtonElement {
@@ -116,7 +112,9 @@ describe("the menu for a story", () => {
       "picture",
     );
     key(root, "ArrowDown");
-    expect((document.activeElement as HTMLElement).dataset["kind"]).toBe("pin");
+    expect((document.activeElement as HTMLElement).dataset["kind"]).toBe(
+      "shortText",
+    );
   });
 
   it("offers a story again on a station's +", () => {
@@ -140,7 +138,7 @@ describe("createTreeAddMenu", () => {
     expect(root.querySelector(".mhead")?.textContent).toBe(
       "Add to The old gate",
     );
-    expect(document.activeElement).toBe(item("pin"));
+    expect(document.activeElement).toBe(item("shortText"));
     expect(
       document
         .querySelector('[data-add="gate"]')
@@ -166,11 +164,11 @@ describe("createTreeAddMenu", () => {
     key(root, "ArrowDown");
     expect(document.activeElement).toBe(item("story"));
     key(root, "ArrowDown");
-    expect(document.activeElement).toBe(item("pin"));
+    expect(document.activeElement).toBe(item("shortText"));
     key(root, "ArrowUp");
     expect(document.activeElement).toBe(item("story"));
     key(root, "Home");
-    expect(document.activeElement).toBe(item("pin"));
+    expect(document.activeElement).toBe(item("shortText"));
     key(root, "End");
     expect(document.activeElement).toBe(item("story"));
     key(root, "l");
@@ -178,7 +176,7 @@ describe("createTreeAddMenu", () => {
     key(root, "s");
     expect(document.activeElement).toBe(item("story"));
     key(root, "s");
-    expect(document.activeElement).toBe(item("pin"));
+    expect(document.activeElement).toBe(item("shortText"));
   });
 
   it("adds the kind chosen to its station, closed first, the focus back on the station's +", () => {

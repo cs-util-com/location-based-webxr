@@ -17,6 +17,7 @@ import type {
   TourStoryBlock,
 } from "gps-plus-slam-app-framework/ar/tour-story";
 
+import type { AddKind } from "../kinds/edit-kinds.js";
 import { worldBlocks } from "../tour-document.js";
 
 /** How far a new pin keeps from every item of its station (m). */
@@ -126,7 +127,7 @@ export function addNewItem(
   input: Omit<NewItemInput, "station"> & {
     readonly stations: readonly TourStation[];
     readonly stationId: string;
-    readonly kind: "pin" | "longText";
+    readonly kind: AddKind;
     readonly place: (
       item: TourPin | TourReadingSign,
     ) =>
@@ -142,16 +143,13 @@ export function addNewItem(
     nowIso: input.nowIso,
     groundAt: input.groundAt,
   };
-  const item = input.kind === "pin" ? newPin(made) : newLongText(made);
+  const item = MAKE_ITEM[input.kind](made);
   const placed = input.place(item);
   return placed.kind === "placed" ? { kind: "added", item } : placed;
 }
 
 /** The body a new long text starts with: the format requires one. */
 const NEW_LONG_TEXT_BODY = "Write the text here.";
-
-/** What a story's add can make. */
-export type NewEntryKind = "pin" | "longText";
 
 /**
  * A new entry at the end of `story`: a card a visitor taps on from, in its
@@ -161,26 +159,36 @@ export type NewEntryKind = "pin" | "longText";
  */
 export function newStoryEntry(
   story: TourStory,
-  kind: NewEntryKind,
+  kind: AddKind,
   id: string,
 ): TourStoryBlock {
-  const textKind = kind === "pin" ? "shortText" : "longText";
-  const n = story.children.filter((c) => c.kind === textKind).length + 1;
+  const n = story.children.filter((c) => c.kind === kind).length + 1;
   const shared = {
     id,
     view: "card",
     pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
     advance: { mode: "tap" },
   } as const;
-  return kind === "pin"
-    ? { ...shared, kind: "shortText", caption: `New pin ${String(n)}` }
-    : {
-        ...shared,
-        kind: "longText",
-        title: `New long text ${String(n)}`,
-        body: NEW_LONG_TEXT_BODY,
-      };
+  return { ...shared, ...MAKE_ENTRY[kind](n) };
 }
+
+/** What each addable kind starts as in a story, its number `n`. Keyed by
+ *  the addable kinds: a kind its row makes addable needs one. */
+const MAKE_ENTRY: {
+  readonly [K in AddKind]: (
+    n: number,
+  ) => Omit<
+    Extract<TourStoryBlock, { kind: K }>,
+    "id" | "view" | "pose" | "advance"
+  >;
+} = {
+  shortText: (n) => ({ kind: "shortText", caption: `New pin ${String(n)}` }),
+  longText: (n) => ({
+    kind: "longText",
+    title: `New long text ${String(n)}`,
+    body: NEW_LONG_TEXT_BODY,
+  }),
+};
 
 /**
  * A new long text of `station`, as `newPin` makes a pin: a reading sign
@@ -199,3 +207,9 @@ export function newLongText(input: NewItemInput): TourReadingSign {
     station: input.station.id,
   };
 }
+
+/** What each addable kind starts as at a station's free spot. Keyed by
+ *  the addable kinds: a kind its row makes addable needs one. */
+const MAKE_ITEM: {
+  readonly [K in AddKind]: (input: NewItemInput) => TourPin | TourReadingSign;
+} = { shortText: newPin, longText: newLongText };

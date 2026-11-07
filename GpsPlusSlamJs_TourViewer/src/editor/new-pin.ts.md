@@ -38,7 +38,7 @@ reason }`): the add itself - the new pin or long text of the station,
   words). The page toasts the refusal.
 
 - `newStoryEntry(story, kind, id)` -> `TourStoryBlock`: a card a story shows,
-  a short or a long text (`NewEntryKind`), at the station's origin, moving on by
+  a short or a long text (`AddKind`), at the station's origin, moving on by
   a tap, numbered within its kind in the story.
 
 ## Invariants & assumptions

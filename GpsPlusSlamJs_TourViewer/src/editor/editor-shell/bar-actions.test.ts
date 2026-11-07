@@ -33,7 +33,7 @@ const station: Extract<InspectorModel, { kind: "station" }> = {
 
 const item: InspectorModel = {
   kind: "item",
-  itemKind: "pin",
+  itemKind: "shortText",
   title: "Hello",
   sub: "Pin in Gate",
   stationId: "gate",

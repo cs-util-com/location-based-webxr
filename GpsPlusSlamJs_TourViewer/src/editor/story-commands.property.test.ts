@@ -194,7 +194,7 @@ type Command =
   | { kind: "add"; at: number }
   | { kind: "rename"; at: number; title: string }
   | { kind: "delete"; at: number }
-  | { kind: "addChild"; at: number; make: "pin" | "longText" }
+  | { kind: "addChild"; at: number; make: "shortText" | "longText" }
   | { kind: "deleteChild"; at: number }
   | { kind: "undo" }
   | { kind: "redo" };
@@ -211,7 +211,7 @@ const command: fc.Arbitrary<Command> = fc.oneof(
   fc.record({
     kind: fc.constant("addChild" as const),
     at,
-    make: fc.constantFrom("pin" as const, "longText" as const),
+    make: fc.constantFrom("shortText" as const, "longText" as const),
   }),
   fc.record({ kind: fc.constant("deleteChild" as const), at }),
   fc.constant({ kind: "undo" as const }),
