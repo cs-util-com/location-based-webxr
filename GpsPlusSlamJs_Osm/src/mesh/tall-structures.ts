@@ -27,9 +27,10 @@
  *   70.95 m and belong to the part path.
  *
  * A THIRD RULE LIVES IN `buildings.ts`, because it needs the parts: a tall
- * structure with any `building:part` inside it is not drawn (2026-11-07). The
- * Südturm's spire is modelled too, as parts from 71 m to 155 m, so the Sockel
- * parts above are not all of it and a prism over the area hid the spire.
+ * structure its `building:part`s fill (the outline's 90 % rule) is not drawn
+ * (2026-11-07). The Südturm's spire is modelled too, as parts from 71 m to
+ * 155 m, so the Sockel parts above are not all of it and a prism over the area
+ * hid the spire.
  *
  * @see tall-structures.ts.md
  */

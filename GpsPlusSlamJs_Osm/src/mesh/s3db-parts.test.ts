@@ -1,3 +1,4 @@
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import { buildBuildings, type BuildingVolume } from "./buildings.js";
@@ -173,6 +174,146 @@ describe("a man_made=tower area over its own modelled parts", () => {
   it("PIN: the Südturm spire parts are drawn", () => {
     const spire = volumes.find((v) => v.feature === "way/416846388");
     expect(spire?.heights.totalHeightM).toBeGreaterThan(140);
+  });
+});
+
+describe("a man_made=tower area with one small part inside (review finding 9)", () => {
+  // Why this test matters: the tower rule hid a tower the moment ANY part's
+  // representative point lay inside it. A shaft with one small canopy part
+  // mapped at its foot is not modelled by that part; hiding it erases a
+  // landmark-sized shaft. The rule is now the outline rule: the parts must
+  // cover the tower by PART_COVERAGE_TO_HIDE_OUTLINE. The Suedturm (100 %
+  // covered by 25 parts) still goes, pinned above.
+  it("keeps its shaft", () => {
+    const volumes = buildBuildings(
+      [
+        box(1, { man_made: "tower", height: "80" }, [0, 0, 10, 10]),
+        box(
+          2,
+          { "building:part": "roof", min_height: "3", height: "4" },
+          [4, 4, 6, 6],
+        ),
+      ],
+      { frame: FRAME },
+    );
+    expect(volumes.map((v) => v.feature).sort()).toEqual(["way/1", "way/2"]);
+  });
+
+  it("PIN: a tower its parts fill is still not drawn", () => {
+    const volumes = buildBuildings(
+      [
+        box(1, { man_made: "tower", height: "80" }, [0, 0, 10, 10]),
+        box(2, { "building:part": "yes", height: "60" }, [0, 0, 10, 10]),
+      ],
+      { frame: FRAME },
+    );
+    expect(volumes.map((v) => v.feature)).toEqual(["way/2"]);
+  });
+});
+
+describe("a nested outline counts toward its enclosing outline (review finding 2)", () => {
+  // Why these tests matter: parts go to the SMALLEST containing outline, so a
+  // cathedral whose tower is mapped as its own nested outline (with the
+  // tower's parts inside it) saw only the nave part when its own coverage was
+  // measured. At a nave share under 90 % the 157 m cathedral outline was drawn
+  // as a box through the whole model: the reviewer's synthetic cathedral. The
+  // enclosing outline now counts every nested outline's polygon, and their
+  // parts, as covered ground.
+  const cathedral = (towerWidthM: number): OsmFeature[] => [
+    box(1, { building: "cathedral", height: "157" }, [0, 0, 100, 40]),
+    box(2, { building: "tower", height: "157" }, [0, 0, towerWidthM, 40]),
+    box(
+      3,
+      {
+        "building:part": "yes",
+        height: "157",
+        "roof:shape": "pyramidal",
+        "roof:height": "60",
+      },
+      [0, 0, towerWidthM, 40],
+    ),
+    box(4, { "building:part": "yes", height: "45" }, [towerWidthM, 0, 100, 40]),
+  ];
+
+  it("draws no 157 m box over the reviewer's cathedral (tower 15 %)", () => {
+    const drawn = buildBuildings(cathedral(15), { frame: FRAME });
+    expect(drawn.map((v) => v.feature).sort()).toEqual(["way/3", "way/4"]);
+  });
+
+  it.each([5, 10, 15, 30])(
+    "hides the cathedral outline at a nested tower share of %i percent",
+    (share) => {
+      const drawn = buildBuildings(cathedral(share), { frame: FRAME });
+      expect(drawn.map((v) => v.feature)).not.toContain("way/1");
+      expect(drawn.map((v) => v.feature)).not.toContain("way/2");
+    },
+  );
+
+  it("hides an outline whose only parts sit in nested outlines", () => {
+    // Before, an outline with no parts of its own was skipped before any
+    // coverage was measured, so it was drawn over two fully modelled wings.
+    const drawn = buildBuildings(
+      [
+        box(1, { building: "yes", height: "30" }, [0, 0, 100, 40]),
+        box(2, { building: "yes", height: "30" }, [0, 0, 50, 40]),
+        box(3, { building: "yes", height: "30" }, [50, 0, 100, 40]),
+        box(4, { "building:part": "yes", height: "20" }, [0, 0, 50, 40]),
+        box(5, { "building:part": "yes", height: "25" }, [50, 0, 100, 40]),
+      ],
+      { frame: FRAME },
+    );
+    expect(drawn.map((v) => v.feature).sort()).toEqual(["way/4", "way/5"]);
+  });
+
+  it("counts a nested outline without parts by its own polygon", () => {
+    // The nested tower is not modelled, so it is drawn itself; it still
+    // covers its share of the cathedral, which the nave part fills the rest of.
+    const drawn = buildBuildings(
+      [
+        box(1, { building: "cathedral", height: "157" }, [0, 0, 100, 40]),
+        box(2, { building: "tower", height: "157" }, [0, 0, 30, 40]),
+        box(3, { "building:part": "yes", height: "45" }, [30, 0, 100, 40]),
+      ],
+      { frame: FRAME },
+    );
+    expect(drawn.map((v) => v.feature).sort()).toEqual(["way/2", "way/3"]);
+  });
+
+  it("PIN: a kiosk inside an outline with no parts anywhere is still drawn", () => {
+    // The removed nesting rule deleted Heidelberg's kiosks; nesting alone must
+    // never hide anything. Only an outline that has parts somewhere is a
+    // candidate for hiding.
+    const drawn = buildBuildings(
+      [
+        box(1, { building: "train_station", height: "20" }, [0, 0, 100, 40]),
+        box(2, { building: "kiosk", height: "3" }, [10, 10, 14, 14]),
+      ],
+      { frame: FRAME },
+    );
+    expect(drawn.map((v) => v.feature).sort()).toEqual(["way/1", "way/2"]);
+  });
+
+  it("PROPERTY: a modelled nested wing plus a filling part hides the outline, the wing alone does not", () => {
+    // Any split point and any input order: the outline is hidden exactly when
+    // the nested wing and the direct part together fill it.
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 2, max: 60 }),
+        fc.boolean(),
+        fc.boolean(),
+        (split, withNave, reversed) => {
+          const features = cathedral(split).filter(
+            (f) => withNave || f.id !== 4,
+          );
+          if (reversed) features.reverse();
+          const drawn = buildBuildings(features, { frame: FRAME }).map(
+            (v) => v.feature,
+          );
+          expect(drawn.includes("way/1")).toBe(!withNave);
+          expect(drawn).not.toContain("way/2");
+        },
+      ),
+    );
   });
 });
 

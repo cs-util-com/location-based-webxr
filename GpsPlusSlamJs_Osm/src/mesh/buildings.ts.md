@@ -121,9 +121,34 @@ parentFeature?, rings }` with rings as `x = lng, y = lat`.
     Cologne station) are drawn across the whole range; the jump at 0.9 is one
     building (the Tower Hotel). 0.9 kept as decided; 0.8 would spare the Tower
     Hotel, and the remainder polygon makes the choice matter much less.
-- **A tall structure with its own parts is not drawn either** (bug 3). The
-  Südturm area holds its spire's parts up to 155 m; F34's prism hid them. Any
-  part inside counts. A partless tower is still drawn (F34).
+- **A tall structure its parts fill is not drawn either** (bug 3). The
+  Südturm area holds its spire's parts up to 155 m; F34's prism hid them. Since
+  review finding 9 the parts whose point lies inside must cover it by the same
+  90 % rule (`partCoverage`): "any part inside" hid a whole shaft for one small
+  canopy at its foot. The Südturm is 100 % covered (25 parts) and still goes; a
+  partless tower is still drawn (F34).
+- **Nested outlines count toward the enclosing outline's coverage** (review
+  finding 2, 2026-11-07). Parts go to the smallest containing outline, so a
+  cathedral whose tower is its own nested outline never saw the tower's parts,
+  and at a nave share under 90 % the 157 m outline was drawn as a box through
+  the model. An outline's covered ground is now its own parts plus every outline
+  nested in it, at any depth, by its own polygon, plus their parts.
+  - **Nesting** is the smallest OTHER outline containing an outline's
+    representative point, ranked strictly above it on (area, key), so the
+    relation is a forest: identical duplicates cannot be each other's parent.
+  - **Only an outline with parts somewhere (its own or a nested one's) is a
+    candidate.** Nesting alone hides nothing, which keeps the removed nesting
+    rule's kiosk deletions out (see below).
+  - **Measured against r1123 on the 13 fixtures** at 0.9: one volume changes,
+    Tower Bridge's "Northern Gate" `way/934173812` (205 m², 6 m), which is a
+    near-duplicate of the Middlesex Abutment outline `way/367654296` (204 m²,
+    22 m, with parts) and was drawn invisibly inside it. Swept 0.5-0.95: the
+    same one, plus `way/367654912` at 0.5 and 0.7 only. Build time unchanged
+    within noise (interleaved runs 168-195 ms against 162-181 ms).
+  - **The cost of the rule, stated:** an enclosing outline covered by a nested
+    outline that is itself drawn is hidden like one covered by parts, so a
+    taller enclosing outline over a lower nested one would lose its height.
+    None occurs in the fixtures.
 - **Every polygon of a multipolygon is drawn** (bug 12), merged into ONE volume
   with one key, because consumers index volumes by feature key. Every outer of
   an outline is indexed for the part assignment, under the outline's whole area.
@@ -188,7 +213,7 @@ parentFeature?, rings }` with rings as `x = lng, y = lat`.
     that decides the outcome is the **unnamed** `way/207377042` — searching the
     fixture by the name "Nordturm" is what hid it.
 - **`man_made=tower` without a `building` tag** is drawn by the tall-structure
-  pass (F34, `tall-structures.ts`), unless parts stand inside it (bug 3 above).
+  pass (F34, `tall-structures.ts`), unless its parts fill it (bug 3 above).
 - **`type=building` relations are NOT read.** The header once said role `part`
   was supported; nothing read it. Measured 2026-11-07: the relations carry
   essentially only `type` (0 of 37 in a Cologne tile, 4 of 188 in Dresden carry
@@ -238,8 +263,13 @@ const batch = mergeMeshes(volumes.map((v) => v.mesh));
 - `part-coverage.test.ts` — the covered share (courtyards, overlaps, two outers,
   frame independence as a property).
 - `s3db-parts.test.ts` — a half-filled outline drawn (synthetic and Tower
-  Bridge), a filled one not, the Südturm not a prism, two outers drawn, and the
-  city window per building.
+  Bridge), a filled one not, the Südturm not a prism, a tower with one small
+  part kept, nested outlines counted (the reviewer's cathedral, shares 5-30 %,
+  parts only in nested outlines, a part-less nested outline, the kiosk pin and
+  a property over split and input order), two outers drawn, and the city
+  window per building.
+- `s3db-drawn-top.test.ts` — every volume drawn up to its reported top over
+  the 13 fixtures; a known failure until the skeleton roof, count pinned.
 - `buildings.test.ts` — the outline-with-parts suppression, an outline with no
   parts, a part with no parent, the part carrying its own height, and
   non-building features being ignored.

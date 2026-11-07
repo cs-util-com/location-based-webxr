@@ -157,6 +157,11 @@ export function buildBuildings(
     // four legitimate buildings — an `industrial` under the cathedral and three
     // `kiosk`s in Heidelberg. Nesting inside a modelled building simply does not
     // imply duplicating it: a kiosk in a station concourse is a real building.
+    //
+    // WHAT DOES COUNT NOW (review finding 2): a nested outline's ground, and its
+    // parts, toward the coverage of an outline that HAS parts somewhere (see
+    // `filledOutlines`). That is the 90 % rule measured honestly, not the rule
+    // above: an outline with no parts anywhere is never hidden.
     if (claimed.has(key)) continue;
     volumes.push(
       volumeFor(
@@ -430,13 +435,15 @@ function toPlanarPolygons(feature: OsmFeature): PlanarPolygon[] | undefined {
  * Cologne's Südturm is the case that named it — `man_made=tower` with no
  * `building` tag, a 157 m landmark that rendered as nothing.
  *
- * **A TOWER WITH ITS OWN PARTS IS NOT DRAWN** (2026-11-07, bug 3 of the
- * geometry findings). The same S3DB rule as for an outline: the Südturm's
- * spire is `building:part`s up to 155 m inside its area, and a prism over them
- * hid the spire. Any part whose representative point lies inside the area
- * counts, not a coverage share: a tower area is the shaft, and its parts are
- * the shaft modelled. The parts are NOT reassigned to the tower, so their
- * ground and parent stay what the outline pass gave them.
+ * **A TOWER ITS PARTS FILL IS NOT DRAWN** (2026-11-07, bug 3 of the geometry
+ * findings). The same S3DB rule as for an outline: the Südturm's spire is
+ * `building:part`s up to 155 m inside its area, and a prism over them hid the
+ * spire. Since review finding 9 it is the outline's coverage rule too: the
+ * parts whose representative point lies inside the area must cover
+ * `partCoverageToHideOutline` of it. "Any part inside" hid a whole shaft for
+ * one small canopy at its foot; the Südturm is 100 % covered and still goes.
+ * The parts are NOT reassigned to the tower, so their ground and parent stay
+ * what the outline pass gave them.
  */
 function tallStructureVolumes(
   features: Iterable<OsmFeature>,
@@ -456,7 +463,14 @@ function tallStructureVolumes(
     if (heightM === undefined) continue;
     const polygons = toEnuPolygons(feature, options.frame);
     if (polygons === undefined) continue;
-    if (hasPartInside(polygons, partPoints)) continue;
+    const inside = partsInside(polygons, parts, partPoints);
+    if (
+      inside.length > 0 &&
+      partCoverage(polygons, inside) >=
+        (options.partCoverageToHideOutline ?? PART_COVERAGE_TO_HIDE_OUTLINE)
+    ) {
+      continue;
+    }
     volumes.push(
       volumeFor(
         feature,
@@ -471,18 +485,31 @@ function tallStructureVolumes(
   return volumes;
 }
 
-/** Whether any of `points` lies inside any outer ring of `polygons`. */
-function hasPartInside(
+/**
+ * The polygons of the `parts` whose point (`points[i]` for `parts[i]`) lies
+ * inside any outer ring of `polygons`.
+ */
+function partsInside(
   polygons: readonly EnuPoint[][][],
+  parts: readonly Footprint[],
   points: readonly PlanarPoint[],
-): boolean {
-  return polygons.some((polygon) => {
+): EnuPoint[][][][] {
+  const outers = polygons.map((polygon) => {
     const outer = polygon[0] ?? [];
-    const bounds = ringBounds(outer);
-    return points.some(
-      (point) => withinBounds(bounds, point) && containsPoint(outer, point),
-    );
+    return { outer, bounds: ringBounds(outer) };
   });
+  return parts
+    .filter((_, i) => {
+      const point = points[i];
+      return (
+        point !== undefined &&
+        outers.some(
+          ({ outer, bounds }) =>
+            withinBounds(bounds, point) && containsPoint(outer, point),
+        )
+      );
+    })
+    .map((part) => part.polygons);
 }
 
 /** Splits the input into building outlines and `building:part` volumes. */
@@ -612,33 +639,120 @@ function assignPartsToOutlines<F extends PlanarFootprint>(
     partsByOutline.set(best, list);
   }
   return {
-    claimed: filledOutlines(outlines, partsByOutline, hideAtCoverage),
+    claimed: filledOutlines(
+      outlines,
+      partsByOutline,
+      hideAtCoverage,
+      enclosingOutlines(outlines, indexed, grid),
+    ),
     partsByOutline,
   };
 }
 
-/** The keys of the outlines whose assigned parts cover `hideAtCoverage`. */
+/**
+ * Each outline's PARENT: the smallest OTHER outline containing its
+ * representative point, ranked strictly above it on (area, key).
+ *
+ * Strictly above, so the relation is a forest by construction: two identical
+ * outlines cannot each be the other's parent, and no chain can loop.
+ */
+function enclosingOutlines<F extends PlanarFootprint>(
+  outlines: readonly F[],
+  indexed: readonly IndexedOutline[],
+  grid: { candidatesAt(point: PlanarPoint): readonly number[] },
+): Map<OsmFeatureKey, OsmFeatureKey> {
+  const areaByKey = new Map<OsmFeatureKey, number>();
+  for (const entry of indexed) areaByKey.set(entry.key, entry.area);
+  const parentOf = new Map<OsmFeatureKey, OsmFeatureKey>();
+  for (const outline of outlines) {
+    const key = featureKey(outline.feature);
+    const point = representativePoint(outline.polygons[0]?.[0] ?? []);
+    const parent = smallestContaining(
+      indexed,
+      grid.candidatesAt(point),
+      point,
+      {
+        area: areaByKey.get(key) ?? 0,
+        key,
+      },
+    );
+    if (parent !== undefined) parentOf.set(key, parent);
+  }
+  return parentOf;
+}
+
+/**
+ * The keys of the outlines whose parts cover `hideAtCoverage` of them.
+ *
+ * NESTED OUTLINES COUNT (2026-11-07, review finding 2). A part goes to the
+ * SMALLEST containing outline, so a cathedral whose tower is its own nested
+ * outline never saw the tower's parts: with the nave modelled and the tower
+ * at 15 %, the 157 m cathedral outline was drawn as a box through the model.
+ * So an outline's covered ground is its own parts, plus every outline nested
+ * in it (at any depth) by its own polygon, plus their parts.
+ *
+ * ONLY AN OUTLINE WITH PARTS SOMEWHERE IS A CANDIDATE, its own or a nested
+ * outline's. Nesting alone hides nothing: the removed nesting rule deleted
+ * Heidelberg's kiosks (see `buildBuildings`), and a station with a kiosk in
+ * it and no parts anywhere is two real buildings.
+ */
 function filledOutlines<F extends PlanarFootprint>(
   outlines: readonly F[],
   partsByOutline: ReadonlyMap<OsmFeatureKey, readonly F[]>,
   hideAtCoverage: number,
+  parentOf: ReadonlyMap<OsmFeatureKey, OsmFeatureKey>,
 ): Set<OsmFeatureKey> {
+  const children = new Map<OsmFeatureKey, F[]>();
+  for (const outline of outlines) {
+    const parent = parentOf.get(featureKey(outline.feature));
+    if (parent === undefined) continue;
+    const list = children.get(parent) ?? [];
+    list.push(outline);
+    children.set(parent, list);
+  }
+
   const filled = new Set<OsmFeatureKey>();
   for (const outline of outlines) {
     const key = featureKey(outline.feature);
-    const list = partsByOutline.get(key);
-    if (list === undefined) continue;
-    const share = partCoverage(
-      outline.polygons,
-      list.map((part) => part.polygons),
-    );
-    if (share >= hideAtCoverage) filled.add(key);
+    const covering = coveringOf(key, children, partsByOutline);
+    if (covering === undefined) continue;
+    if (partCoverage(outline.polygons, covering) >= hideAtCoverage) {
+      filled.add(key);
+    }
   }
   return filled;
 }
 
 /**
+ * What covers the outline `key`: its own parts, every outline nested in it at
+ * any depth, and their parts. `undefined` when no part is among them, so the
+ * outline is no candidate for hiding (see `filledOutlines`).
+ */
+function coveringOf<F extends PlanarFootprint>(
+  key: OsmFeatureKey,
+  children: ReadonlyMap<OsmFeatureKey, readonly F[]>,
+  partsByOutline: ReadonlyMap<OsmFeatureKey, readonly F[]>,
+): (readonly PlanarPolygon[])[] | undefined {
+  const own = partsByOutline.get(key) ?? [];
+  const covering = own.map((part) => part.polygons);
+  let hasParts = own.length > 0;
+  // Depth-first; the parent relation is a forest, so this terminates.
+  const stack = [...(children.get(key) ?? [])];
+  for (let nested = stack.pop(); nested !== undefined; nested = stack.pop()) {
+    const nestedKey = featureKey(nested.feature);
+    const nestedParts = partsByOutline.get(nestedKey) ?? [];
+    if (nestedParts.length > 0) hasParts = true;
+    covering.push(nested.polygons, ...nestedParts.map((p) => p.polygons));
+    stack.push(...(children.get(nestedKey) ?? []));
+  }
+  return hasParts ? covering : undefined;
+}
+
+/**
  * The key of the smallest indexed outline containing `point`, ties on key.
+ *
+ * With `above`, only outlines ranked strictly above it on (area, key) take
+ * part: that is how an outline finds the one it is nested in.
  *
  * `candidates` are indices into `indexed` — whatever the grid says could
  * contain the point. It is a SUPERSET, so the bounds test below is still run:
@@ -649,28 +763,30 @@ function smallestContaining(
   indexed: readonly IndexedOutline[],
   candidates: readonly number[],
   point: PlanarPoint,
+  above?: { readonly area: number; readonly key: OsmFeatureKey },
 ): OsmFeatureKey | undefined {
-  let bestKey: OsmFeatureKey | undefined;
-  let bestArea = Infinity;
+  let best: IndexedOutline | undefined;
 
   for (const index of candidates) {
     const candidate = indexed[index] as IndexedOutline;
     if (!withinBounds(candidate.bounds, point)) continue;
-    // A strictly larger area cannot win, and an equal one only wins on the key
-    // tie-break — so in neither case is the polygon test worth running.
-    if (candidate.area > bestArea) continue;
-    if (
-      candidate.area === bestArea &&
-      bestKey !== undefined &&
-      candidate.key >= bestKey
-    ) {
-      continue;
-    }
+    if (above !== undefined && !ranksAbove(candidate, above)) continue;
+    // A candidate that does not rank below the best so far (a larger area, or
+    // an equal one losing the key tie-break) cannot win, so the polygon test is
+    // not worth running.
+    if (best !== undefined && !ranksAbove(best, candidate)) continue;
     if (!containsPoint(candidate.ring, point)) continue;
-    bestKey = candidate.key;
-    bestArea = candidate.area;
+    best = candidate;
   }
-  return bestKey;
+  return best?.key;
+}
+
+/** Whether `a` ranks strictly above `b` on (area, key). */
+function ranksAbove(
+  a: { readonly area: number; readonly key: OsmFeatureKey },
+  b: { readonly area: number; readonly key: OsmFeatureKey },
+): boolean {
+  return a.area > b.area || (a.area === b.area && a.key > b.key);
 }
 
 function withinBounds(bounds: RingBounds, point: PlanarPoint): boolean {
