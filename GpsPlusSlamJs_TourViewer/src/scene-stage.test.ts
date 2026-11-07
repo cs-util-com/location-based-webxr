@@ -617,3 +617,37 @@ describe("a character in a story view stands as a character look", () => {
     expect(h.scene.children).toHaveLength(1);
   });
 });
+
+describe("a look's figure", () => {
+  // Why this test matters: the decoder flips a bitmap for WebGL, and a look
+  // draws that bitmap on a canvas, where the flip stays: every character of
+  // a real tour stood on his head while the check page, which hands the look
+  // a plain image, looked right.
+  it.each([
+    { flipY: false, flips: 1 },
+    { flipY: true, flips: 0 },
+  ])(
+    "turns a figure decoded for WebGL upright (flipY $flipY)",
+    async ({ flipY, flips }) => {
+      const { painters, painted } = fakeCharacterPainters();
+      const texture = textureOf(100, 200);
+      texture.flipY = flipY;
+      const stage = createSceneStage({
+        getScene: () => new Group(),
+        poseOf: () => ({
+          positionNue: [0, 0, 0],
+          rotationNue: [0, 0, 0, 1],
+        }),
+        decodeTexture: () => Promise.resolve(texture),
+        loadModel: () => Promise.resolve(new Group()),
+        lookPainters: painters,
+      });
+      await stage.showCharacter("gate", new Blob(["png"]), undefined, {
+        view: "speak",
+        name: "Wendel",
+        line: "Hello.",
+      });
+      expect(painted.flips).toBe(flips);
+    },
+  );
+});

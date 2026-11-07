@@ -49,6 +49,7 @@ import {
   paintBubble,
   paintFigure,
   paintFrames,
+  uprightFigure,
   paintPip,
   paintScroll,
   paintStageTop,
@@ -79,6 +80,8 @@ import {
 
 /** The painters a look draws its media with (fakes in unit tests). */
 export interface CharacterPainters {
+  /** A figure decoded for WebGL, the right way up on a canvas. */
+  upright(source: FigureSource): FigureSource;
   figure(source: FigureSource): PaintedFigure;
   /** A frames sheet's poses (`paintFrames`). */
   frames(sheet: FigureSource): PaintedFigure[];
@@ -91,6 +94,7 @@ export interface CharacterPainters {
 }
 
 const CANVAS_PAINTERS: CharacterPainters = {
+  upright: uprightFigure,
   figure: paintFigure,
   frames: paintFrames,
   bubble: (content) => paintBubble(content),
@@ -117,6 +121,9 @@ export interface CharacterLookOptions {
   readonly name: string;
   readonly line: string;
   readonly figure: FigureSource;
+  /** `figure` is stored bottom row first, as the decoder leaves a bitmap
+   *  for WebGL. Default false. */
+  readonly figureFlipped?: boolean;
   /** `figure` is a frames sheet (four equal cells in one row: idle,
    *  talk-a, talk-b, beckon), not one pose. A sheet that does not slice
    *  into four is drawn whole as one pose. Default false. */
@@ -286,9 +293,12 @@ export function createCharacterLook(
 
   // The die-cut figure: front and back, each seen from its own side.
   // A frames sheet gives a pose per frame (the same size each).
-  const sliced = options.sheet === true ? painters.frames(options.figure) : [];
-  const poses =
-    sliced.length === 4 ? sliced : [painters.figure(options.figure)];
+  const source =
+    options.figureFlipped === true
+      ? painters.upright(options.figure)
+      : options.figure;
+  const sliced = options.sheet === true ? painters.frames(source) : [];
+  const poses = sliced.length === 4 ? sliced : [painters.figure(source)];
   const fig = poses[0]!;
   const figGeo = figureGeometry(fig, heightM);
   const frontTexs = poses.map((p) => texture(p.front));

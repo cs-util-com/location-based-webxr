@@ -25,6 +25,7 @@ Layout (wrapping and sizes) is separated from painting, so it can be tested in n
 - Painters: `paintBubble`, `paintPip`, `paintScroll`, `paintStageTop`, `paintBackdrop` and `paintBlob`. Each returns `Painted {image, w, h}`, or `PaintedTail` with a `tipX`.
 - Frames sheets (the tour format's fixed layout, `TOUR_CHARACTER_FRAMES`): four frames (`TOUR_CHARACTER_FRAMES.length`); `SheetCell`; `sheetCells(w, h)`: four equal cells in one row, left to right, a remainder of the width dropped, none for a sheet too small or not a size; `paintFrames(sheet)`: each cell as a die-cut card (`paintFigure`), in the sheet's order.
 - The read-along: `BubbleContent.active` (the word sounding, -1 before the first; undefined draws the line plain) and `readAlongColour(i, active)`, the prototype's colours: said `#f4efe6`, sounding `#f6c45a` with a 5 px underline 12 px under the baseline, to come `rgba(244,239,230,0.46)`.
+- `uprightFigure(source)` returns a canvas of the same picture the right way up, for a bitmap the decoder flipped for WebGL.
 - `paintFigure(source)` returns `PaintedFigure {front, back, figureW, figureH, pad}`:
   - the source is scaled to at most `FIGURE_MAX_PX` (1024) high;
   - `dieCutPad(h)` = `max(3, round(14/1024 * h))`.

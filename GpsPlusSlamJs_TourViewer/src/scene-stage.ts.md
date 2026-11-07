@@ -66,6 +66,8 @@ tour's other content (`content-placement.ts`). Plan:
 
 ## Invariants & assumptions
 
+- A look paints on a canvas, which keeps the flip the decoder gave a bitmap for WebGL, so the stage tells it (`figureFlipped: !texture.flipY`). A plane with the texture itself needs no such turn.
+
 - **The K4 build agent's choice, not the owner's** (the plan leaves it
   open; B-15 as revised by K4 review R6): a character is 1.7 m tall, its
   aspect kept, its feet on the station's altitude, facing the visitor about

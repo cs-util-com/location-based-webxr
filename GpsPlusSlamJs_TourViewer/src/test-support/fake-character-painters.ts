@@ -21,12 +21,15 @@ export function fakeCharacterPainters(): {
     actives: (number | undefined)[];
     /** The frames each sliced sheet gave. */
     sheets: PaintedFigure[][];
+    /** Figures turned upright. */
+    flips: number;
   };
 } {
   const painted = {
     bubbles: [] as (string | null)[],
     actives: [] as (number | undefined)[],
     sheets: [] as PaintedFigure[][],
+    flips: 0,
   };
   const img = (w: number, h: number) =>
     ({ width: w, height: h }) as unknown as HTMLCanvasElement;
@@ -43,6 +46,10 @@ export function fakeCharacterPainters(): {
     pad: 3,
   });
   const painters: CharacterPainters = {
+    upright: (source) => {
+      painted.flips += 1;
+      return source;
+    },
     figure,
     frames: () => {
       const cells = [figure(), figure(), figure(), figure()];

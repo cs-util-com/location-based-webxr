@@ -425,6 +425,8 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
           name: lookSpec.name,
           line: lookSpec.line,
           figure: texture.image as FigureSource,
+          // The decoder leaves a bitmap flipped for WebGL; a canvas keeps it.
+          figureFlipped: !texture.flipY,
           heightM: CHARACTER_HEIGHT_M,
           voiced: lookSpec.voiced === true,
           sheet: lookSpec.sheet === true,
