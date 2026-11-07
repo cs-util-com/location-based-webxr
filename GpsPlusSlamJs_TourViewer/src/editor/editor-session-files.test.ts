@@ -318,6 +318,79 @@ describe("a restored file after the draft let it go", () => {
   });
 });
 
+/** Why this test matters: a copied photo's picture lives only in the
+ *  draft until a save writes it. The draft hands it back as the browser
+ *  stores it, a snapshot of its entry, and the restore writes the copy's
+ *  record and picture into that same entry again. A snapshot still held
+ *  then stops reading, and every save after the restore fails while the
+ *  zip is built - a reload and a second restore loop back to it. */
+describe("a restored copy of a photo", () => {
+  function photo(id: string): TourObject {
+    return {
+      id,
+      kind: "picture",
+      view: "plane",
+      image: id,
+      widthM: 1,
+      imageAsset: {
+        id,
+        path: `content/${id}.jpg`,
+        kind: "image",
+        width: 4,
+        height: 3,
+      },
+      createdAtIso: "2026-11-07T00:00:00.000Z",
+      geo: { lat: 48.52, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
+    };
+  }
+
+  it("is saved with its picture after a closed tab and a restore", async () => {
+    const manifest = parseTourManifest(
+      JSON.parse(serializeTourManifest(tourOf([photo("f")]))),
+    );
+    const zip = await packFilesAsZip([
+      { path: "tour.json", data: serializeTourManifest(manifest) },
+      { path: "content/f.jpg", data: "the picture of f" },
+    ]);
+    const session = await openTourFile(
+      new File([zip], "tour.zip", { type: "application/zip" }),
+    );
+    const stores = memoryDraftStores();
+    stores.snapshotBlobs = true;
+    const editorOver = (draft: EditorDraft): EditorSession =>
+      createEditorSession({
+        session,
+        manifest,
+        levels: new Map(),
+        store: createTourViewerStore(),
+        draft: draft.writes(),
+      });
+    const draft = draftOf(stores);
+    await draft.open(K, manifest);
+    const copy = await editorOver(draft).duplicateObject("f");
+    if (copy.kind !== "duplicated") throw new Error(copy.kind);
+    await draft.idle();
+    draft.close();
+
+    const again = draftOf(stores);
+    const { offer } = await again.open(K, manifest);
+    expect(offer?.made).toEqual([copy.id]);
+    const reloaded = editorOver(again);
+    reloaded.restore(offer!);
+    await again.idle();
+    const { tour, bytes } = await savedTour(
+      (await reloaded.save({ keepScan: false })).blob,
+    );
+    const copied = tour.objects.find((o) => o.id === copy.id);
+    const path =
+      copied?.kind === "picture" ? (copied.imageAsset?.path ?? "") : "";
+    expect(path).not.toBe("");
+    expect(entryText(bytes, path)).toBe("the picture of f");
+    again.close();
+    await session.close();
+  });
+});
+
 /** Why this property matters: whatever mix of voices brought in, taken off
  *  and undone, the draft must hold a document that reloads as the one the
  *  page showed, and every file a record names must come back with it - a

@@ -222,6 +222,42 @@ test("edits survive a closed tab: the same file reopened offers them, and Restor
   );
 });
 
+test("a copied photo survives a closed tab: Restore brings it back and the save after it writes its picture", async ({
+  page,
+  context,
+}) => {
+  // Why: the copy's picture lives only in the draft until a save writes
+  // it, and the browser hands a stored file out as a snapshot of its
+  // entry. The restore writes the copy into that same entry again; a
+  // snapshot still held then stops reading, and every save after the
+  // restore failed. Only a real origin-private file system shows this.
+  const buffer = await editorTour();
+  await page.goto("/edit.html");
+  await openFile(page, buffer, "editor-fixture.zip");
+  const copyId = await page.evaluate(async (id) => {
+    // @ts-expect-error - the editor's dev-only test hook.
+    const hook = window.__tourEditor;
+    const result = await hook.editor().duplicateObject(id);
+    hook.edited();
+    return result.kind === "duplicated" ? result.id : result.kind;
+  }, FOUNTAIN);
+  await expectCaption(page, copyId, "Fountain copy");
+  await backedUp(page);
+  await page.close();
+  const next = await newEditorPage(context);
+  await openFile(next, buffer, "editor-fixture.zip");
+  const offer = next.locator(".toast.draft-offer");
+  await offer.locator("button", { hasText: "Restore" }).click();
+  await expect(offer).toHaveCount(0);
+  await expectCaption(next, copyId, "Fountain copy");
+  const saved = await saveAndRead(next);
+  const copy = saved.manifest.objects.find(
+    (/** @type {{ id: string }} */ o) => o.id === copyId,
+  );
+  expect(copy?.kind).toBe("picture");
+  expect(saved.names).toContain(copy.imageAsset.path);
+});
+
 test("a station renamed through the editor session survives a closed tab: the draft offers it, and Restore brings it back", async ({
   page,
   context,
