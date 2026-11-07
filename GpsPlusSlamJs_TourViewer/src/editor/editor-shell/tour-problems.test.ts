@@ -125,7 +125,7 @@ describe("tourProblems", () => {
     expect(geo.alt).toBeCloseTo(560 + 2.5, 6);
     // A station's own note has nothing to fix in one click.
     const [empty] = tourProblems([station("b", [])]);
-    expect(empty?.problems[0]?.fix).toBeUndefined();
+    expect(empty?.problems[0]?.fixes).toBeUndefined();
   });
 
   // Why: a move of tens of metres on sloping ground kept the item's

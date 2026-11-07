@@ -46,7 +46,6 @@ import {
   selectTourDocument,
   tourDocumentActions,
   objectMoveChange,
-  type TourDocumentState,
   type TourSaveHolder,
   type TourSaveStatus,
 } from "../tour-document.js";
