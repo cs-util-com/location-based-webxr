@@ -210,10 +210,100 @@ const SHAPES: readonly RoofShape[] = [
   "flat",
   "pyramidal",
   "dome",
+  "onion",
   "skillion",
   "gabled",
   "hipped",
+  "gambrel",
+  "round",
 ];
+
+/**
+ * An L-shaped footprint, counter-clockwise in ENU.
+ *
+ * Not convex, so "away from the bounding-box centre" is not "outward" here:
+ * the inner corner's walls face the centre. `outsideOfTriangles` asks the
+ * mesh itself instead. It is also the footprint on which every ridged shape
+ * leaves the exact rectangle path, so the fallback roofs are checked too.
+ */
+const L_SHAPE: readonly EnuPoint[] = [
+  { x: 0, y: 0 },
+  { x: 20, y: 0 },
+  { x: 20, y: 8 },
+  { x: 8, y: 8 },
+  { x: 8, y: 20 },
+  { x: 0, y: 20 },
+];
+
+/**
+ * Whether `point` is inside the mesh, by the parity of a ray's crossings.
+ *
+ * The ray goes up with a small odd tilt, so it never runs along an edge or a
+ * wall. Up, because the buildings have no floor (it is only emitted for
+ * floating parts): a ray down would leave through the open bottom.
+ */
+function insideMesh(mesh: MeshData, point: Vec3): boolean {
+  const dir = { x: 0.1234, y: 1, z: 0.0567 };
+  let crossings = 0;
+  for (let t = 0; t * 3 < mesh.indices.length; t++) {
+    const a = vertex(mesh, mesh.indices[t * 3] as number);
+    const b = vertex(mesh, mesh.indices[t * 3 + 1] as number);
+    const c = vertex(mesh, mesh.indices[t * 3 + 2] as number);
+    if (rayHits(point, dir, a, b, c)) crossings += 1;
+  }
+  return crossings % 2 === 1;
+}
+
+/** Whether the ray `origin + s * dir`, s > 0, crosses triangle `abc`. */
+function rayHits(origin: Vec3, dir: Vec3, a: Vec3, b: Vec3, c: Vec3): boolean {
+  const e1 = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
+  const e2 = { x: c.x - a.x, y: c.y - a.y, z: c.z - a.z };
+  const p = {
+    x: dir.y * e2.z - dir.z * e2.y,
+    y: dir.z * e2.x - dir.x * e2.z,
+    z: dir.x * e2.y - dir.y * e2.x,
+  };
+  const det = dot(e1, p);
+  if (Math.abs(det) < 1e-12) return false;
+  const s = { x: origin.x - a.x, y: origin.y - a.y, z: origin.z - a.z };
+  const u = dot(s, p) / det;
+  if (u < 0 || u > 1) return false;
+  const q = {
+    x: s.y * e1.z - s.z * e1.y,
+    y: s.z * e1.x - s.x * e1.z,
+    z: s.x * e1.y - s.y * e1.x,
+  };
+  const v = dot(dir, q) / det;
+  if (v < 0 || u + v > 1) return false;
+  return dot(e2, q) / det > 1e-9;
+}
+
+/**
+ * Triangles whose assigned normal points INTO the volume, for any footprint.
+ *
+ * A point 5 cm along the normal from the triangle's centre must be outside the
+ * mesh, and 5 cm against it inside. Triangles under 1 cm2 are skipped: the
+ * probe points of a sliver can land past its own edges.
+ */
+function outsideOfTriangles(mesh: MeshData): Triangle[] {
+  const step = 0.05;
+  return triangles(mesh).filter((t) => {
+    if (length(t.winding) / 2 < 1e-4) return false;
+    const n = t.assigned;
+    const k = step / length(n);
+    const out = {
+      x: t.centre.x + n.x * k,
+      y: t.centre.y + n.y * k,
+      z: t.centre.z + n.z * k,
+    };
+    const inn = {
+      x: t.centre.x - n.x * k,
+      y: t.centre.y - n.y * k,
+      z: t.centre.z - n.z * k,
+    };
+    return insideMesh(mesh, out) || !insideMesh(mesh, inn);
+  });
+}
 
 function build(
   ring: readonly EnuPoint[],
@@ -316,6 +406,45 @@ describe("normals point out of the volume, not into it", () => {
       const inward = inwardTriangles(build(SHORT_SIDE_FIRST, shape)).length;
       expect({ shape, inward }).toEqual({ shape, inward: 0 });
     }
+  });
+});
+
+describe("both invariants hold on a non-convex footprint", () => {
+  /**
+   * WHY THIS MATTERS. Every check above uses rectangles, where the ridged
+   * shapes take the exact box path. On anything else they go through the
+   * fallback builders (`outlineFallback`, `hipOverOutline`), which emit their
+   * own faces and so can get either invariant wrong on their own. The L is the
+   * commonest non-rectangle in the corpus.
+   */
+  for (const shape of SHAPES) {
+    it(`holds for every triangle of a ${shape} roof on an L`, () => {
+      const mesh = build(L_SHAPE, shape);
+      expect(mesh.triangleCount).toBeGreaterThan(0);
+      const disagreeing = triangles(mesh).filter(
+        (t) => dot(t.winding, t.assigned) <= 0,
+      );
+      expect(disagreeing.map((t) => t.index)).toEqual([]);
+      expect(
+        outsideOfTriangles(mesh).map((t) => ({
+          triangle: t.index,
+          normal: t.assigned,
+        })),
+      ).toEqual([]);
+    });
+  }
+
+  it("agrees with the bounding-box check on a rectangle, and is not vacuous", () => {
+    // The ray-parity probe is new machinery; on a convex footprint it must
+    // reach the same verdict as the simpler check, and it must flag a mesh
+    // whose normals were all turned round.
+    const mesh = build(RECTANGLE, "hipped");
+    expect(outsideOfTriangles(mesh)).toEqual([]);
+    const flipped: MeshData = {
+      ...mesh,
+      normals: mesh.normals.map((v) => -v),
+    };
+    expect(outsideOfTriangles(flipped).length).toBe(triangles(mesh).length);
   });
 });
 

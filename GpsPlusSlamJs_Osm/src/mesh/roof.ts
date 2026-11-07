@@ -107,7 +107,7 @@ export function buildRoof(
     return { ...flatCap(cap, options.eaveHeightM), isApproximate: false };
   }
 
-  const profile = REVOLVED_PROFILES[options.shape];
+  const profile = REVOLVED_PROFILES.get(options.shape);
   if (profile !== undefined) {
     return { ...revolvedRoof(outer, options, profile), isApproximate: false };
   }
@@ -187,12 +187,18 @@ const ONION_PROFILE: readonly ProfilePoint[] = [
  * argued indistinguishable at walking distance under a shallow roof; on the
  * Frauenkirche and the Berliner Dom the dome IS the landmark, and half way up a
  * dome stands at 87 % of its radius where a pyramid is at 50 %.
+ *
+ * A map, not an object: `extrudeBuilding` is public and a JavaScript caller
+ * can pass any string as the shape; on an object `toString` found an inherited
+ * function and the building came back with no roof (review finding 5).
  */
-const REVOLVED_PROFILES: Partial<Record<RoofShape, readonly ProfilePoint[]>> = {
-  pyramidal: PYRAMID_PROFILE,
-  dome: DOME_PROFILE,
-  onion: ONION_PROFILE,
-};
+const REVOLVED_PROFILES: ReadonlyMap<string, readonly ProfilePoint[]> = new Map(
+  [
+    ["pyramidal", PYRAMID_PROFILE],
+    ["dome", DOME_PROFILE],
+    ["onion", ONION_PROFILE],
+  ],
+);
 
 /** A quarter circle from (1, 0) to (0, 1) in 15-degree steps, ending exactly. */
 function quarterCircle(): { out: number; up: number }[] {
@@ -368,10 +374,11 @@ const ROUND_SLOPE: readonly CrossPoint[] = quarterCircle().map(
   ({ out, up }) => ({ across: out, rise: up }),
 );
 
-const CROSS_SECTIONS: Partial<Record<RoofShape, readonly CrossPoint[]>> = {
-  gambrel: GAMBREL_SLOPE,
-  round: ROUND_SLOPE,
-};
+/** A map for the same reason as `REVOLVED_PROFILES`. */
+const CROSS_SECTIONS: ReadonlyMap<string, readonly CrossPoint[]> = new Map([
+  ["gambrel", GAMBREL_SLOPE],
+  ["round", ROUND_SLOPE],
+]);
 
 /**
  * A ridged roof from the oriented minimum bounding rectangle.
@@ -413,7 +420,7 @@ function ridgeRoof(
   }
 
   const { centre, axis, cross: crossAxis, halfLength, halfWidth } = box;
-  const profile = CROSS_SECTIONS[options.shape] ?? STRAIGHT_SLOPE;
+  const profile = CROSS_SECTIONS.get(options.shape) ?? STRAIGHT_SLOPE;
   const inset = options.shape === "hipped" ? halfLength / 2 : 0;
   const rise = options.ridgeHeightM - options.eaveHeightM;
 

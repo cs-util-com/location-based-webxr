@@ -1,3 +1,4 @@
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -233,6 +234,45 @@ describe("pedestrian ways read differently from car roads", () => {
       const value = luma(roadColour({ highway }));
       expect(value, highway).toBeGreaterThan(120);
       expect(value, highway).toBeLessThan(215);
+    }
+  });
+});
+
+describe("tag values that name Object.prototype members (review finding 5)", () => {
+  // WHY THIS TEST MATTERS. The colour tables were plain objects, so a tag
+  // value of `constructor` or `toString` found the inherited function rather
+  // than nothing: `building:colour=constructor` coloured a building with a
+  // function, which the buffer reads as NaN, and `__proto__` found an object.
+  // OSM values are free text, so every name below can arrive in a tile.
+  const PROTOTYPE_NAMES = Object.getOwnPropertyNames(Object.prototype);
+
+  it("parses none of them as a colour", () => {
+    for (const name of PROTOTYPE_NAMES) {
+      expect(parseOsmColour(name), name).toBeUndefined();
+    }
+  });
+
+  it("falls through to the default colour on every colour, material and class tag", () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...PROTOTYPE_NAMES),
+        fc.constantFrom("building:colour", "building:material", "building"),
+        (name, key) => {
+          expect(buildingColour({ [key]: name })).toBe(DEFAULT_BUILDING_RGB);
+          expect(
+            buildingColour({ "building:part": "yes" }, { [key]: name }),
+          ).toBe(DEFAULT_BUILDING_RGB);
+        },
+      ),
+    );
+  });
+
+  it("falls through to the default on a road's class and surface", () => {
+    for (const name of PROTOTYPE_NAMES) {
+      expect(roadColour({ highway: name }), name).toBe(DEFAULT_ROAD_RGB);
+      expect(roadColour({ highway: name, surface: name }), name).toBe(
+        DEFAULT_ROAD_RGB,
+      );
     }
   });
 });

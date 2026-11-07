@@ -20,6 +20,7 @@ import {
 import type { EnuPoint } from "./enu.js";
 import {
   DEFAULT_BUILDING_HEIGHT_M,
+  type RoofShape,
   parseLengthMetres,
   resolveHeights,
 } from "./building-heights.js";
@@ -876,5 +877,36 @@ describe("buildings below the surface are not extruded", () => {
     expect(
       buildBuildings([building(5, { layer: "2" })], { frame }),
     ).toHaveLength(1);
+  });
+});
+
+describe("extrudeBuilding with a shape that names an Object.prototype member (review finding 5)", () => {
+  // WHY THIS TEST MATTERS. `RoofShape` is a type, and a JavaScript caller (or a
+  // cast) can still hand `extrudeBuilding` any string. The profile tables were
+  // plain objects, so `toString` found the inherited function, the revolve ran
+  // over a "profile" with no points, and the building came back with walls and
+  // no roof at all: open at the top. Such a shape must close flat at the eave.
+  it("closes the building with a flat roof at the eave", () => {
+    const ring: EnuPoint[] = [
+      { x: 0, y: 0 },
+      { x: 20, y: 0 },
+      { x: 20, y: 10 },
+      { x: 0, y: 10 },
+    ];
+    const flat = extrudeBuilding([ring], {
+      minHeightM: 0,
+      eaveHeightM: 8,
+      totalHeightM: 12,
+      roofShape: "flat",
+    });
+    for (const name of Object.getOwnPropertyNames(Object.prototype)) {
+      const mesh = extrudeBuilding([ring], {
+        minHeightM: 0,
+        eaveHeightM: 8,
+        totalHeightM: 12,
+        roofShape: name as RoofShape,
+      });
+      expect(mesh.triangleCount, name).toBe(flat.triangleCount);
+    }
   });
 });

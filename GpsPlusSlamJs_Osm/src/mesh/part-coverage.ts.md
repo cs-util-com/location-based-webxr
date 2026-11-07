@@ -9,7 +9,7 @@ Measures how much of a building outline its `building:part`s cover, so
 ## Public API
 
 - `PART_COVERAGE_TO_HIDE_OUTLINE = 0.9` - the share at or above which the
-  outline is hidden. Owner decision 2026-11-07; OSM2World uses the same 90 %.
+  outline is hidden. Accepted recommendation, 2026-11-07; OSM2World uses the same 90 %.
 - `partCoverage(outline, parts) -> number` - the share, 0-1, of the outline's
   area inside at least one part. `outline` is the outline's polygons (each an
   outer ring first, then holes); `parts` is one polygon list per part. Never

@@ -6,6 +6,7 @@
  * and keeps it isolated so the fix cannot quietly be lost inside a larger suite.
  */
 
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import { resolveHeights } from "./building-heights.js";
@@ -157,5 +158,28 @@ describe("roof:direction and roof:orientation", () => {
       "roof:shape": tag,
     });
     expect(heights.roofShape).toBe(shape);
+  });
+});
+
+describe("roof:shape values that name Object.prototype members (review finding 5)", () => {
+  // WHY THIS TEST MATTERS. The alias table was a plain object, so
+  // `roof:shape=toString` resolved to an inherited function and `__proto__` to
+  // an object, and either reached the roof builder as a "shape". A free-text
+  // tag must fall through to the documented default, a flat roof.
+  it("resolves every one of them to a flat roof", () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...Object.getOwnPropertyNames(Object.prototype)),
+        (name) => {
+          const heights = resolveHeights({
+            building: "yes",
+            height: "10",
+            "roof:height": "3",
+            "roof:shape": name,
+          });
+          expect(heights.roofShape).toBe("flat");
+        },
+      ),
+    );
   });
 });

@@ -101,7 +101,7 @@ parentFeature?, rings }` with rings as `x = lng, y = lat`.
   building gets a box drawn straight through it. Taken from OSM2World's
   `Building.java`, the most complete implementation of the schema anywhere.
   - **"Fill" is 90 % of the outline's area** (`PART_COVERAGE_TO_HIDE_OUTLINE`,
-    sampled by `part-coverage.ts`; owner decision 2026-11-07, bug 5 of
+    sampled by `part-coverage.ts`; accepted recommendation 2026-11-07, bug 5 of
     `GpsPlusSlamJs_Docs/docs/2026-11-07-0920-osm-building-geometry-bugs-findings.md`).
     Until then ONE part hid the whole outline, so a mapper who modelled only the
     tower lost the hall: Tower Bridge's north tower (7 % covered) drew only its

@@ -45,12 +45,17 @@ scene stops being one grey for every building and one grey for every road.
   is a real thing people type, and a black building reads as a rendering
   failure.
 - **Only the colour names seen in use are resolved**, to their CSS values (bug
-  8, owner decision 2026-11-07). The OSM wiki's Key:building:colour prefers
+  8, accepted recommendation 2026-11-07). The OSM wiki's Key:building:colour prefers
   hex and allows basic names; the corpus has 3 108 colour values, 2 597 hex,
   and the table holds every name among the rest (`grey` 377 times down to
   `blue` twice). A name outside it still falls through, because a wrong colour
   is worse than the class default: it looks like a decision. `darkbrown` and
   `multiple` occur and are not CSS colours.
+- **Every lookup table is a `Map`, never a plain object** (review finding 5,
+  2026-11-07). Tag values are free text; on an object `constructor`,
+  `__proto__` or `toString` find inherited members, and
+  `building:colour=constructor` drew a building in NaN. Those names now fall
+  through to the defaults like any unknown value.
 - **A part's own colour tags beat its outline's; the class is always the
   outline's.** S3DB allows the colour tags on both, and a part that carries one
   says it differs. An untagged part takes the outline's colour, so an untagged

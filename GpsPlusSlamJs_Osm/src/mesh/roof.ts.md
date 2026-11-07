@@ -66,6 +66,10 @@ Roof geometry above the eaves, in the plan's own order of quality-per-effort.
     `half-hipped` and `mansard` as `hipped`, `saltbox` as `gabled`. Each is
     the nearest generated shape that keeps the roof's height and silhouette;
     the flat fallback would have put the roof height on the walls.
+  - **The alias, profile and cross-section tables are `Map`s** (review finding
+    5, 2026-11-07): on a plain object a shape named `toString` found an
+    inherited function and the building came back with walls and no roof. Any
+    unknown name, prototype names included, now draws flat.
   - **A box roof that would overhang its walls by more than
     `RIDGE_OVERHANG_LIMIT_M` (1 m) is not drawn.** The overhang is measured on
     a grid (at most 33 x 33, at least every 0.5 m) of box points outside the

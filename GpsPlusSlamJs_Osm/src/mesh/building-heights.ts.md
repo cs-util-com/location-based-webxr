@@ -34,6 +34,9 @@ onion | round | gambrel`
     `saltbox` as `gabled`. Flat was the wrong fallback for them: it also drops
     `roof:height`, so the walls ran up to where the roof should have ended (a
     45 m onion turret became a post).
+  - **The alias table is a `Map`** (review finding 5, 2026-11-07), so
+    `roof:shape=toString` or `__proto__` is an unknown value and falls back to
+    flat instead of passing an inherited member on as a shape.
 - **`roof:direction`** is read as degrees (any real number, taken mod 360) or
   one of the 16 compass names, case and surrounding space ignored; anything
   else is `undefined` and the roof keeps its default direction. It names the

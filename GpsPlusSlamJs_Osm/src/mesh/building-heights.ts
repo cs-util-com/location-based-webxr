@@ -84,13 +84,17 @@ const KNOWN_SHAPES = new Set<RoofShape>([
  * and narrows to a ridge or a point, which is a smaller error than the flat
  * lid they fell back to, with the walls running up to where the roof ends.
  * `cone` IS a pyramid on a round footprint.
+ *
+ * A map, not an object: `roof:shape` is free text, and on an object
+ * `toString` or `__proto__` found an inherited member and passed it on as a
+ * shape (review finding 5).
  */
-const SHAPE_ALIASES: Readonly<Record<string, RoofShape>> = {
-  cone: "pyramidal",
-  "half-hipped": "hipped",
-  mansard: "hipped",
-  saltbox: "gabled",
-};
+const SHAPE_ALIASES: ReadonlyMap<string, RoofShape> = new Map([
+  ["cone", "pyramidal"],
+  ["half-hipped", "hipped"],
+  ["mansard", "hipped"],
+  ["saltbox", "gabled"],
+]);
 
 /** The 16 compass points of `roof:direction`, in 22.5-degree steps. */
 const COMPASS = [
@@ -150,7 +154,7 @@ function normaliseRoofShape(raw: string | undefined): RoofShape {
   // height is a smaller error than a confidently wrong roof. The shapes with a
   // close relative are drawn as it (`SHAPE_ALIASES`), because flattening them
   // also threw away their `roof:height` and ran the walls up to the top.
-  return SHAPE_ALIASES[shape] ?? "flat";
+  return SHAPE_ALIASES.get(shape) ?? "flat";
 }
 
 /**

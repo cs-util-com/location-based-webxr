@@ -19,7 +19,7 @@ import type { PlanarPoint } from "../spatial/point-in-ring.js";
 /**
  * The share of an outline its parts must cover before the outline is hidden.
  *
- * 0.9, the owner's choice (2026-11-07), swept over 0.5-0.95 on the corpus; the
+ * 0.9, an accepted recommendation (2026-11-07), swept over 0.5-0.95 on the corpus; the
  * sweep and its verdict are in the sidecar.
  */
 export const PART_COVERAGE_TO_HIDE_OUTLINE = 0.9;
