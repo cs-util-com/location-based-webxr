@@ -101,7 +101,7 @@ export interface SceneAudio {
 /** What a step shows in AR at its station: the world an item draws on
  *  (`onWaiting`: what it drew waits for the station's pose,
  *  `scene-stage.ts`), and what the panel itself tells the stage. */
-interface SceneStage extends ItemWorld {
+interface SceneStage extends Required<ItemWorld> {
   /** The step's voice, which a character look follows; `durationMs`, the
    *  voice's length when known as it starts speaking. */
   setVoice?(voice: CharacterVoice, durationMs?: number): void;
@@ -537,6 +537,12 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
   /** What the step's item gets of this panel (`item-card.ts`). */
   function itemHost(station: TourStation): ItemCardHost {
     const token = renderToken;
+    // An item draws through the two doors only, never the panel's own
+    // calls on the stage (clear, release, voice, bubble).
+    const world: ItemWorld = {
+      showCharacter: (...a) => deps.stage.showCharacter(...a),
+      showModel: (...a) => deps.stage.showModel(...a),
+    };
     return {
       slots: dom,
       ...(dom.surface === undefined ? {} : { surface: dom.surface }),
@@ -550,7 +556,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
       stage: {
         stand: (what, draw) =>
           stageFigure(what, (onWaiting) =>
-            draw(deps.stage, { stationId: station.id, onWaiting }),
+            draw(world, { stationId: station.id, onWaiting }),
           ),
         tapTarget(target) {
           tapTarget = target;

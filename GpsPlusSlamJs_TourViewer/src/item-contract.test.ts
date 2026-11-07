@@ -24,7 +24,7 @@ import {
 } from "./checks/item-lab-kind";
 import { createFreeItems } from "./free-items";
 import { createNarrationPlayer } from "./narration-player";
-import { createSceneView } from "./scene-view";
+import { createSceneView, type SceneViewDeps } from "./scene-view";
 import { createVoiceFocus } from "./voice-focus";
 import { TOUR_BLOCK_VIEWS } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import { tourBlockAssetIds } from "gps-plus-slam-app-framework/ar/tour-kinds";
@@ -886,5 +886,36 @@ describe("the card's surface", () => {
     expect(offered).toHaveLength(2);
     view.stopAll();
     expect(dom.surface.held).toEqual([]);
+  });
+});
+
+describe("the stage's world doors", () => {
+  // Why this test matters: an item draws in the world through the doors
+  // it is handed and nothing else; the panel's own stage controls (clear,
+  // release, the voice, the bubble) are the host's, and a kind from the
+  // item lab is untyped code that could otherwise call them.
+  it("hands an item only the figure's and the model's doors", async () => {
+    const seen: string[][] = [];
+    const { view, stage } = panel(undefined, undefined, (_shown, host) => {
+      void host.stage?.stand("probe", async (world, place) => {
+        seen.push(Object.keys(world).sort());
+        await world.showModel?.(place.stationId, new Blob(["m"]));
+      });
+    });
+    view.offer(stationOf(ITEMS[0]?.fields ?? {}));
+    await flush();
+    expect(seen).toEqual([["showCharacter", "showModel"]]);
+    expect(stage.showModel).toHaveBeenCalledTimes(1);
+  });
+
+  // Why this test matters: a stage wired without the model's door would
+  // stand nothing for a model and say nothing; it must not compile.
+  it("refuses a stage without the model's door at compile time", () => {
+    // @ts-expect-error a stage needs both doors
+    const noModel: SceneViewDeps["stage"] = {
+      showCharacter: () => Promise.resolve(),
+      clear: () => undefined,
+    };
+    expect(noModel).toBeDefined();
   });
 });
