@@ -1245,13 +1245,13 @@ describe("the tree during the approach", () => {
     expect(treeFolded(store)).toBe(true);
   });
 
-  it("keeps the tree a tab at the landing on a narrow window", () => {
-    // Why: below the dock rule's width the tree starts folded at any
-    // open; the landing follows the same rule.
+  it("opens the list at the landing on a phone", () => {
+    // Why: a phone opens on the list, so a landing ends there too; no tab
+    // stands for the tree on a phone.
     vi.stubGlobal("innerWidth", 600);
     const { store, shell } = onApproach();
     shell.approachEnded("landed");
-    expect(treeFolded(store)).toBe(true);
+    expect(treeFolded(store)).toBe(false);
   });
 
   it("keeps a tree the creator had folded when the view closes mid-flight", () => {
@@ -1603,6 +1603,119 @@ describe("the inspector's station extras", () => {
     ][0];
     item?.click();
     expect(edits.addItem).toHaveBeenCalledWith("a", "pin");
+    shell.hide();
+  });
+});
+
+describe("on a phone", () => {
+  const sheetShare = () =>
+    document.body.style.getPropertyValue("--s-sheet-share");
+  const treeDock = () => document.getElementById("shell-tree") as HTMLElement;
+  const act = (name: string) =>
+    document.querySelector<HTMLButtonElement>(
+      `#inspector-head [data-act="${name}"]`,
+    );
+
+  beforeEach(() => {
+    vi.stubGlobal("innerWidth", 390);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // Why: the prototype opens on the list; its height shapes the map.
+  it("opens with the list as a sheet", () => {
+    const { shell } = setUp();
+    expect(treeDock().classList.contains("collapsed")).toBe(false);
+    expect(sheetShare()).toBe("0.62");
+    shell.hide();
+    expect(sheetShare()).toBe("");
+  });
+
+  it("turns the sheet into the details and back to the list", () => {
+    const { store, shell } = setUp();
+    store.dispatch(editorViewActions.selected({ id: "station:a" }));
+    expect(treeDock().classList.contains("collapsed")).toBe(true);
+    expect(sheetShare()).toBe("0.66");
+    act("back")?.click();
+    expect(store.getState().editorView.selected).toBeNull();
+    expect(treeDock().classList.contains("collapsed")).toBe(false);
+    expect(sheetShare()).toBe("0.62");
+    shell.hide();
+  });
+
+  // Why: the close button leaves the map alone, so List is the only way
+  // to the tree then.
+  it("shows the map alone after a close, and the list on List", () => {
+    const { store, shell } = setUp();
+    store.dispatch(editorViewActions.selected({ id: "station:a" }));
+    act("close")?.click();
+    expect(store.getState().editorView.selected).toBeNull();
+    expect(sheetShare()).toBe("");
+    document.getElementById("studio-list")?.click();
+    expect(treeDock().classList.contains("collapsed")).toBe(false);
+    expect(sheetShare()).toBe("0.62");
+    shell.hide();
+  });
+
+  it("lets List drop a selection, as the back arrow does", () => {
+    const { store, shell } = setUp();
+    store.dispatch(editorViewActions.selected({ id: "station:a" }));
+    document.getElementById("studio-list")?.click();
+    expect(store.getState().editorView.selected).toBeNull();
+    expect(sheetShare()).toBe("0.62");
+    shell.hide();
+  });
+
+  // Why: the sheet has no fold, so details folded on a wider window would
+  // be a selection with nothing to show it.
+  it("unfolds details folded on a wider window", () => {
+    const { store, shell } = setUp();
+    store.dispatch(
+      editorViewActions.dockFolded({ dock: "inspector", folded: true }),
+    );
+    store.dispatch(editorViewActions.selected({ id: "station:a" }));
+    expect(store.getState().editorView.foldedDocks.inspector).toBe(false);
+    expect(sheetShare()).toBe("0.66");
+    shell.hide();
+  });
+
+  it("writes no share on a wider window, and takes it when it narrows", () => {
+    vi.stubGlobal("innerWidth", 844);
+    const { shell } = setUp();
+    expect(sheetShare()).toBe("");
+    vi.stubGlobal("innerWidth", 390);
+    window.dispatchEvent(new Event("resize"));
+    expect(sheetShare()).toBe("0.62");
+    shell.hide();
+  });
+});
+
+describe("on a phone's side", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // Why: the prototype keeps both panels at 844 px, the map between them.
+  it("keeps the list open beside the details", () => {
+    vi.stubGlobal("innerWidth", 844);
+    const { store, shell } = setUp();
+    store.dispatch(editorViewActions.selected({ id: "station:a" }));
+    expect(store.getState().editorView.foldedDocks.tree).toBe(false);
+    shell.hide();
+  });
+
+  // Why: a phone hides the list behind the details by folding it, and no
+  // rule unfolds a dock; turned sideways with something selected, the list
+  // stayed a tab where the prototype has it open beside the details.
+  it("brings the list back beside the details when the phone turns", () => {
+    vi.stubGlobal("innerWidth", 390);
+    const { store, shell } = setUp();
+    store.dispatch(editorViewActions.selected({ id: "station:a" }));
+    expect(store.getState().editorView.foldedDocks.tree).toBe(true);
+    vi.stubGlobal("innerWidth", 844);
+    window.dispatchEvent(new Event("resize"));
+    expect(store.getState().editorView.foldedDocks.tree).toBe(false);
     shell.hide();
   });
 });

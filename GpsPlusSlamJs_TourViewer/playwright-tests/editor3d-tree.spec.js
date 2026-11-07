@@ -702,12 +702,24 @@ async function expectTreeControls(page, size) {
   expect(grip.height, at).toBe(tw.height);
   expect(grip.y + grip.height, at).toBeLessThanOrEqual(row.y + row.height);
   // The tree: 248 px wide on a desktop, 210 px at 1100 px or less, as the
-  // explorer's; its search 8 px in, to the dock's line.
+  // explorer's, 226 px at 900 px or less and the width on a phone; its
+  // search 8 px in, to the dock's line (a phone's sheet has none).
   const tree = await box(page.locator("#shell-tree"));
-  expect(tree.width, at).toBe(size.width > 1100 ? 248 : 210);
+  const phone = size.width <= 700;
+  const treePx =
+    size.width > 1100
+      ? 248
+      : size.width > 900
+        ? 210
+        : size.width > 700
+          ? 226
+          : size.width;
+  expect(tree.width, at).toBe(treePx);
   const search = await box(page.locator("#tree-search"));
   expect(search.x - tree.x, at).toBe(8);
-  expect(tree.x + tree.width - (search.x + search.width), at).toBe(9);
+  expect(tree.x + tree.width - (search.x + search.width), at).toBe(
+    phone ? 8 : 9,
+  );
   // A row's "+": 22 px, 4 px from the row's right end, in its middle.
   const plus = await box(page.locator("#tree-body .card > .head .add").first());
   expect([plus.width, plus.height], at).toEqual([22, 22]);
@@ -717,9 +729,9 @@ async function expectTreeControls(page, size) {
     at,
   ).toBeLessThanOrEqual(0.5);
   // The keys' foot: at the tree's bottom, its keys outlined, not filled;
-  // none on a phone, where the space is the rows'.
+  // none on a phone or a low window, where the space is the rows'.
   const foot = page.locator("#tree-foot");
-  if (size.width <= 700) {
+  if (size.width <= 700 || size.height <= 560) {
     await expect(foot, at).toBeHidden();
     return;
   }
@@ -858,6 +870,56 @@ function shownWords(l) {
 function atSize(size) {
   return `at ${String(size.width)}x${String(size.height)}`;
 }
+
+test("a station's picture is a strip under its row, and a tap on it selects the station, on a desktop and a phone", async ({
+  page,
+}) => {
+  // Why: the strip starts with the station's first picture, and at a
+  // phone's width it is the largest thing to tap in the row.
+  test.slow();
+  await page.addInitScript(() => {
+    // The file input opens the tour.
+    // @ts-expect-error - absent in this browser for the test.
+    delete window.showOpenFilePicker;
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await answerHosts(page);
+  await page.goto("/edit.html?globe=0");
+  await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
+  const { zip } = await photoTour(page);
+  await openZip(page, zip, "one-photo.zip");
+  await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
+    timeout: 60_000,
+  });
+  for (const size of [
+    { width: 1440, height: 900 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(size);
+    const at = atSize(size);
+    const fountain = card(page, "fountain");
+    await expect(fountain).toBeVisible();
+    const strip = fountain.locator(".pic");
+    if ((await strip.count()) === 0) await fountain.locator(".tw").click();
+    await expect(strip, at).toBeVisible();
+    await expect
+      .poll(() => strip.evaluate((e) => getComputedStyle(e).backgroundImage))
+      .toContain("url(");
+    const row = await box(fountain.locator("> .head"));
+    const shown = await box(strip);
+    expect(shown.y, at).toBeGreaterThanOrEqual(row.y + row.height);
+    expect(shown.height, at).toBe(54);
+    expect(shown.x, at).toBe(row.x + 54);
+    expect(row.x + row.width - (shown.x + shown.width), at).toBe(8);
+    await page.screenshot({
+      path: test.info().outputPath(`strip-${String(size.width)}.png`),
+    });
+    await strip.click();
+    expect(await selected(page), at).toBe("station:fountain");
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#shell-inspector"), at).toBeHidden();
+  }
+});
 
 test("the tree's add, its grips and the bar's actions sit in place at a phone, a phone in landscape, a tablet and a desktop", async ({
   page,

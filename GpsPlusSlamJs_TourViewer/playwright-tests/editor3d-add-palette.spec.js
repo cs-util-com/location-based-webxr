@@ -5,10 +5,10 @@ import { answerHosts, openSampleIn3d } from "./editor3d-fixture.js";
 
 /**
  * Why these tests matter: Add is the way in to the palette for a touch
- * screen, and it lives in two places: the top bar, and from 520 px down
+ * screen, and it lives in two places: the top bar, and from 560 px down
  * the Edit menu, where the bar has no room for it. A unit test without a
  * layout cannot see which of the two a phone gets, and the closing menu
- * takes the palette's return target with it. So each side of 520 px opens
+ * takes the palette's return target with it. So each side of 560 px opens
  * the palette, adds, and comes back with the focus on something shown.
  * And a station added during a search must be in the list: it is selected
  * and said, but its name matches nothing typed.

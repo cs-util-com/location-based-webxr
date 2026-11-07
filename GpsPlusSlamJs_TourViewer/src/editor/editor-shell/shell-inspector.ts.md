@@ -22,6 +22,7 @@ value writes is `inspector-edits.ts`'s, and the shell commits it.
   station's and a running one's left as drawn) and rebuilds nothing. When it
   is drawn again, the control that had the focus (by its `data-act` or
   `data-field`) has it again, with any text typed and not yet committed;
+  a slider keeps the focus and carries nothing (it has no caret);
   a control drawn disabled leaves the focus where it fell. A call made
   while a draw of the same dock runs (from a `focusout` the draw itself
   caused) is not run: the draw in progress finishes alone. The shell
@@ -37,6 +38,8 @@ value writes is `inspector-edits.ts`'s, and the shell commits it.
   a null name leaves it). The shell uses the two for the control the
   focus was moving to when a commit drew the dock again: Chromium drops
   a focus whose target a draw removed during `focusout` to the page.
+  - Every head starts with "Back to the list" (`data-act="back"`), shown
+    only on a phone (`editor-shell.css`), which drops the selection.
   - A station: its name as text in the head (`span.ttl`); "Station n
     of N"; its commands; then, first in its section, its **Name** to type
     (`input.tfield`, `data-field="title"`, its label "Name", the

@@ -1203,9 +1203,12 @@ function focusIn(root: HTMLElement): FocusKept | null {
       : null;
   return {
     selector,
-    // Only text typed and not yet committed is carried over.
+    // Only text typed and not yet committed is carried over; a slider has
+    // no caret, and its value is the document's by the time of a draw.
     typed:
-      typedIn !== null && typedIn.value !== typedIn.defaultValue
+      typedIn !== null &&
+      typedIn.type !== "range" &&
+      typedIn.value !== typedIn.defaultValue
         ? {
             value: typedIn.value,
             start: typedIn.selectionStart,
@@ -1360,6 +1363,7 @@ function drawDock(
       ? longTextButtons(state)
       : [];
   dock.head.replaceChildren(
+    iconButton("right", "Back to the list", "back"),
     icon,
     head,
     ...longText,

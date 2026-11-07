@@ -394,6 +394,17 @@ body[data-view="3d"] #view3d {
   border-radius: 0 0 0 8px;
 }
 
+/* A sheet's grip and the way back from a sheet are a phone's. */
+.sheet-grip,
+#inspector-head [data-act="back"],
+#studio-list {
+  display: none;
+}
+
+#inspector-head [data-act="back"] svg {
+  transform: rotate(180deg);
+}
+
 /* The accent line under the top bar (`edit.html`): always full, never
  * hidden; the globe view's approach covers it while the tour loads. */
 .load-line {
@@ -813,7 +824,11 @@ body[data-view="3d"] #view3d {
 /* An unfolded station's picture, under its row: only when it has one,
  * in line with its items. */
 .card > .pic {
+  display: block;
+  width: calc(100% - 62px);
   height: 54px;
+  padding: 0;
+  cursor: pointer;
   margin: 2px 8px 4px 54px;
   border: 1px solid var(--s-line2);
   border-radius: 5px;
@@ -1470,6 +1485,7 @@ button.thumb:focus-visible {
 .range input[type="range"] {
   flex: 1;
   min-width: 0;
+  margin: 0;
   accent-color: var(--s-accent);
 }
 
@@ -2486,9 +2502,91 @@ body[data-view="3d"] #view3d .view3d-canvas {
     left: 0;
   }
 
+  /* The panels are sheets over the map, the prototype's: the list or an
+   * element's details, the map above them. The sheet and the canvas share
+   * the height over the bottom panel, by `--s-sheet-share`
+   * (`phone-sheet.ts`), so the canvas ends at the sheet's top and what is
+   * flown to stays in sight. */
+  body[data-view="3d"] #view3d .view3d-canvas {
+    height: calc(
+      (100% - var(--s-panel-h, 0px)) * (1 - var(--s-sheet-share, 0))
+    );
+  }
+
+  #shell-tree,
+  #shell-inspector,
+  #shell-tree:not(.collapsed),
   #shell-inspector:not(.collapsed) {
+    top: auto;
+    right: 0;
     bottom: var(--s-panel-h, 0px);
-    border-bottom: 1px solid var(--s-line);
+    left: 0;
+    width: auto;
+    height: calc((100% - var(--s-panel-h, 0px)) * var(--s-sheet-share, 0));
+    max-height: none;
+    border: 0;
+    border-top: 1px solid var(--s-line2);
+    border-radius: 10px 10px 0 0;
+    box-shadow: 0 -10px 26px rgb(0 0 0 / 45%);
+  }
+
+  #shell-tree {
+    z-index: 6;
+  }
+
+  #shell-inspector {
+    z-index: 7;
+  }
+
+  #shell-tree.collapsed {
+    display: none;
+  }
+
+  .sheet-grip {
+    position: relative;
+    display: block;
+    flex: none;
+    height: 14px;
+    touch-action: none;
+    cursor: ns-resize;
+  }
+
+  .sheet-grip::before {
+    content: "";
+    position: absolute;
+    top: 4px;
+    left: 50%;
+    width: 34px;
+    height: 3px;
+    border-radius: 2px;
+    background: #4a4f57;
+    transform: translateX(-50%);
+  }
+
+  /* A finger's hold reaches over the sheet's edge. */
+  .sheet-grip::after {
+    content: "";
+    position: absolute;
+    inset: -10px 0 0;
+  }
+
+  #inspector-head [data-act="back"] {
+    display: inline-flex;
+  }
+
+  #inspector-head [data-act="fold"] {
+    display: none;
+  }
+
+  #map-controls,
+  #shell-inspector:not([hidden], .collapsed) ~ #map-controls {
+    top: 12px;
+    right: 12px;
+    bottom: auto;
+  }
+
+  #studio-list {
+    display: inline-flex;
   }
 
   .tog .tl,
@@ -2836,14 +2934,30 @@ body[data-view="3d"] #view3d .view3d-canvas {
   #shell-tree.collapsed {
     width: min(var(--s-tree-w), 100vw - var(--s-insp-w));
   }
+}
 
+/* A phone on its side and a small tablet: both panels, the map between. */
+@media (width > 700px) and (width <= 900px) {
   :root {
-    --s-insp-w: min(290px, 60vw);
-    --s-tree-w: min(210px, 56vw);
+    --s-tree-w: 226px;
+    --s-insp-w: 268px;
   }
+}
 
-  #shell-tree:not([hidden], .collapsed) ~ #shell-panel:not(.span) {
-    left: var(--s-tree-w);
+/* The on-screen keyboard lies over the page (`phone-keyboard.ts`): a panel
+ * keeps its foot free, so its last field scrolls clear. */
+@media (width <= 900px) {
+  .dock:not(.collapsed) {
+    padding-bottom: max(
+      0px,
+      var(--s-keyboard-h, 0px) - var(--s-bar-h) - var(--s-panel-h, 0px)
+    );
+  }
+}
+
+@media (height <= 560px) {
+  .treefoot {
+    display: none;
   }
 }
 
@@ -2860,8 +2974,10 @@ body[data-view="3d"] #view3d .view3d-canvas {
  * - 820 px: the unsaved mark keeps its dot (its words are its title, and
  *   the save status a screen reader hears);
  * - 720 px: the buttons drop their icons, keeping words;
- * - 520 px: Undo, Redo and Add fold into the Edit menu;
- * - 400 px: the menus' carets go and the groups close up. */
+ * - 560 px: Undo, Redo and Add fold into the Edit menu;
+ * - 420 px: the menus' carets go and the groups close up.
+ * The two lower steps stand 40 and 20 px above where they stood before a
+ * phone's List button joined the bar; the widths above are from then. */
 #edit-menu-wrap {
   display: none;
 }
@@ -2887,7 +3003,7 @@ body[data-view="3d"] #view3d .view3d-canvas {
   }
 }
 
-@media (width <= 520px) {
+@media (width <= 560px) {
   body[data-view="3d"] #topbar .studio.grp:not(#studio-help-group) {
     display: none;
   }
@@ -2908,7 +3024,7 @@ body[data-view="3d"] #view3d .view3d-canvas {
   }
 }
 
-@media (width <= 400px) {
+@media (width <= 420px) {
   body[data-view="3d"] #topbar .menu-btn > svg.i:last-child {
     display: none;
   }

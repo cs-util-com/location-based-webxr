@@ -65,7 +65,6 @@ import {
   inMenu,
   closeOpenMenu,
   setItemDisabled,
-  DEFAULT_DOCK_LAYOUT,
   docksAfter,
   type DockChange,
   waitForGround,
@@ -101,6 +100,13 @@ import {
   inspectorDrawing,
 } from "./shell-inspector.js";
 import { createBottomPanel } from "./bottom-panel.js";
+import { watchKeyboard } from "./phone-keyboard.js";
+import {
+  SHELL_DOCK_LAYOUT,
+  phoneSheets,
+  wirePhoneSheets,
+  type SheetKind,
+} from "./phone-sheet.js";
 import { wireRadiusSlider } from "./radius-slider.js";
 import { createShellPictures } from "./shell-pictures.js";
 import { tourProblems } from "./tour-problems.js";
@@ -411,6 +417,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     frame: byId<HTMLButtonElement>("studio-frame"),
     topView: byId<HTMLButtonElement>("studio-top"),
     help: byId<HTMLButtonElement>("studio-help"),
+    list: byId<HTMLButtonElement>("studio-list"),
   };
   const helpBox = byId("shell-help");
   const needle = byId<HTMLElement>("compass-needle");
@@ -600,16 +607,23 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   };
 
   /** The docks after `change` by the dock rule, stored. */
+  let onPhone = phoneSheets(window.innerWidth);
   const applyDocks = (change: DockChange) => {
     const ui = state().editorView;
+    const inspectorShows = inspectorModel(ui) !== null;
+    const phone = phoneSheets(window.innerWidth);
+    // Turned sideways, the list the details covered stands beside them.
+    const turnedWide = change === "resized" && onPhone && !phone;
+    onPhone = phone;
+    const folded = {
+      tree: ui.foldedDocks.tree && !turnedWide,
+      // A phone's details are a whole sheet, with no head to unfold it by.
+      inspector: ui.foldedDocks.inspector && !(phone && inspectorShows),
+    };
     const after = docksAfter(
       change,
-      {
-        widthPx: window.innerWidth,
-        folded: ui.foldedDocks,
-        inspectorShows: inspectorModel(ui) !== null,
-      },
-      DEFAULT_DOCK_LAYOUT,
+      { widthPx: window.innerWidth, folded, inspectorShows },
+      SHELL_DOCK_LAYOUT,
     );
     for (const dock of ["tree", "inspector"] as const) {
       if (after[dock] !== ui.foldedDocks[dock]) {
@@ -619,6 +633,45 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       }
     }
   };
+
+  /** The sheet a phone shows now: the details over the list. */
+  const shownSheet = (): SheetKind | null => {
+    const ui = state().editorView;
+    if (!phoneSheets(window.innerWidth)) return null;
+    if (inspectorModel(ui) !== null) return "details";
+    return ui.foldedDocks.tree ? null : "tree";
+  };
+  /** The selection let go and the list shown: on a phone, the way back
+   *  from the details. */
+  const showList = () => {
+    creatorTouchesTree();
+    if (state().editorView.selected !== null) deps.select(null);
+    store.dispatch(
+      editorViewActions.dockFolded({ dock: "tree", folded: false }),
+    );
+  };
+  const sheets = wirePhoneSheets({
+    tree: tree.root,
+    details: inspector.root,
+    spacePx: () => {
+      const panelPx = Number.parseFloat(
+        getComputedStyle(document.body).getPropertyValue("--s-panel-h"),
+      );
+      const viewPx = tree.root.parentElement?.clientHeight ?? 0;
+      return viewPx - (Number.isFinite(panelPx) ? panelPx : 0);
+    },
+    dismiss: (which) => {
+      if (which === "details") {
+        deps.select(null);
+        return;
+      }
+      creatorTouchesTree();
+      store.dispatch(
+        editorViewActions.dockFolded({ dock: "tree", folded: true }),
+      );
+    },
+  });
+  let stopKeyboard: (() => void) | null = null;
 
   const drawHistory = (doc: TourDocumentState) => {
     for (const which of ["undo", "redo"] as const) {
@@ -726,6 +779,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     if (before === null || before.hiddenLayers !== ui.hiddenLayers) {
       view?.setLayers(ui.hiddenLayers);
     }
+    sheets.sync(shownSheet());
   };
 
   // --- the inspector's fields and commands ---------------------------------
@@ -1271,6 +1325,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       runBarAction(action);
     }
   });
+  top.list.addEventListener("click", showList);
   tree.fold.addEventListener("click", () => {
     creatorTouchesTree();
     const folded = !state().editorView.foldedDocks.tree;
@@ -1285,6 +1340,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       return;
     }
     if (act === "close") deps.select(null);
+    if (act === "back") showList();
     if (act === "lock") {
       // The selected station's position locked or unlocked: view state,
       // never an edit; the session refuses its moves while locked.
@@ -1501,6 +1557,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   };
   const onResize = () => {
     applyDocks("resized");
+    sheets.sync(shownSheet());
   };
 
   return {
@@ -1530,6 +1587,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       window.addEventListener("keydown", onKey, true);
       document.addEventListener("pointerdown", onOutside);
       window.addEventListener("resize", onResize);
+      const box = tree.root.parentElement;
+      stopKeyboard?.();
+      stopKeyboard = box === null ? null : watchKeyboard(window, box);
     },
     flush() {
       const pending = typedField();
@@ -1564,6 +1624,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       window.removeEventListener("keydown", onKey, true);
       document.removeEventListener("pointerdown", onOutside);
       window.removeEventListener("resize", onResize);
+      stopKeyboard?.();
+      stopKeyboard = null;
+      sheets.sync(null);
       showHelp(false);
       addMenu.close(false);
       palette.close(false);
@@ -1601,7 +1664,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
           folded: { tree: false, inspector: ui.foldedDocks.inspector },
           inspectorShows: inspectorModel(ui) !== null,
         },
-        DEFAULT_DOCK_LAYOUT,
+        SHELL_DOCK_LAYOUT,
       );
       if (after.tree) return;
       const still =

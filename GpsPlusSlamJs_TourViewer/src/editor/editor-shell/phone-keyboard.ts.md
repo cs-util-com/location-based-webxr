@@ -1,0 +1,40 @@
+# phone-keyboard.ts
+
+## Purpose
+
+A phone's on-screen keyboard over the editor's panels: its height for the
+styles, and the field in use brought into sight.
+
+## Public API
+
+- `keyboardPx(innerHeight, { height, offsetTop, scale })` - the keyboard's
+  height from the visual viewport; 0 for none.
+- `watchKeyboard(win, host)` -> stop: writes `--s-keyboard-h` on the body
+  while a keyboard is up, and scrolls the focused field inside `host` into
+  sight when the keyboard comes and when the focus moves under it. Stopping
+  takes the value away.
+
+## Invariants & assumptions
+
+- A keyboard lies over the page in today's phone browsers: the layout
+  viewport keeps its size and only the visual viewport shrinks.
+- A zoomed viewport (`scale` over 1) and less than 80 px at the foot (a
+  browser's bar) are no keyboard.
+- Without a visual viewport nothing happens: the browser's own scrolling
+  stays.
+- The panels leave the height free at their foot (`editor-shell.css`), so
+  they scroll to their last field; the map's canvas is not resized for it.
+
+## Examples
+
+```ts
+const stop = watchKeyboard(window, view3d);
+// later
+stop();
+```
+
+## Tests
+
+`phone-keyboard.test.ts` (jsdom, a stub for the visual viewport): the
+height, a zoom, a browser's bar, the scroll, a field outside, a browser
+without the API. No test runs a real keyboard: only a phone can show that.

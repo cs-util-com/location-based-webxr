@@ -206,23 +206,20 @@ async function expectDocksAt(page, sizes) {
     await page.setViewportSize({ width, height });
     await afterFrames(page, 2);
     const bar = { x: 0, y: TOP_PX, width, height: LINE_PX };
-    const narrow = width <= 820;
+    // A phone's sheets take the width; both docks stand above 700 px.
+    const sheet = width <= 700;
     const docks = [
       {
         id: "#shell-tree",
         body: "#tree-body",
         left: true,
-        widthPx: narrow
-          ? Math.min(210, width * 0.56)
-          : width <= 1100
-            ? 210
-            : 248,
+        widthPx: sheet ? width : width <= 900 ? 226 : width <= 1100 ? 210 : 248,
       },
       {
         id: "#shell-inspector",
         body: "#inspector-body",
         left: false,
-        widthPx: narrow ? Math.min(290, width * 0.6) : 290,
+        widthPx: sheet ? width : width <= 900 ? 268 : 290,
       },
     ];
     // Read in one go (`layoutOf`): each read through Playwright waits on
@@ -240,11 +237,13 @@ async function expectDocksAt(page, sizes) {
       const d = boxIn(l, dock.id);
       if (dock.left) expect(d.x, at).toBe(0);
       else expect(d.x + d.width, at).toBeCloseTo(width, 0);
-      // No gap: the dock's top is the line's bottom.
-      expect(d.y, at).toBe(bar.y + bar.height);
       expect(d.y + d.height, at).toBeCloseTo(height - BOTTOM_PX, 0);
       expect(d.width, at).toBeCloseTo(dock.widthPx, 0);
       expect(overlaps(d, bar), at).toBe(false);
+      // A sheet stands on the bottom bar with the map above it.
+      if (sheet) continue;
+      // No gap: the dock's top is the line's bottom.
+      expect(d.y, at).toBe(bar.y + bar.height);
       // Square corners where it meets the line.
       expect(
         [
@@ -254,10 +253,8 @@ async function expectDocksAt(page, sizes) {
         at,
       ).toEqual(["0px", "0px"]);
     }
-    // Both from 900 px up (the dock rule's side by side), else one.
-    expect(shown, `${String(width)}x${String(height)}`).toBe(
-      width >= 900 ? 2 : 1,
-    );
+    // Both above 700 px (the dock rule's side by side), else one sheet.
+    expect(shown, `${String(width)}x${String(height)}`).toBe(sheet ? 1 : 2);
   }
 }
 
@@ -358,8 +355,7 @@ test("the line is glued under the menu bar, thin, in the accent colour, the dock
   await answerHosts(page, { globeAssets: "serve" });
   await approachLasting(page, 600_000);
   await openSampleOnGlobe(page);
-  // Turned: the only size wider than the narrow windows' 820 px and under
-  // the side-by-side docks' 900 px. The docks at both sizes from one
+  // A phone, and the same phone turned. The docks at both sizes from one
   // pick (`expectDocksAt`).
   const phone = [
     { width: 390, height: 844 },

@@ -222,7 +222,10 @@ describe("drawTree", () => {
     store.dispatch(editorViewActions.stationFolded({ id: "gate", open: true }));
     draw();
     const picks = [...dock.body.querySelectorAll("[data-select]")];
+    // A station's picture strip selects it as its row does: its second
+    // way there, out of the Tab order, so a keyboard meets the row once.
     expect(picks.map((p) => p.getAttribute("data-select"))).toEqual([
+      "station:gate",
       "station:gate",
       "photo-1",
       "station:steps",

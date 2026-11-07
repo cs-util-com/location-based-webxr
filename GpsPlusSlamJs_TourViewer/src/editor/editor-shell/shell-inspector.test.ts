@@ -973,6 +973,30 @@ describe("drawInspector", () => {
     expect(document.activeElement).toBe(again);
   });
 
+  // Why: an arrow key steps the focused radius slider, and its write draws
+  // the inspector inside the change event. A slider has no caret: carried
+  // over like typed text it threw, and the step never reached the history.
+  it("keeps the focus on a slider through a redraw, its value the model's", () => {
+    draw("station:steps", true);
+    const slider = (): HTMLInputElement | null =>
+      dock.body.querySelector('[data-act="radius-slider"]');
+    const moved = slider();
+    moved?.focus();
+    if (moved !== null) moved.value = "12";
+    const model = buildInspector({
+      selected: "station:steps",
+      stations: STATIONS.map((s) =>
+        s.id === "steps" ? { ...s, foundRadiusM: 12 } : s,
+      ),
+      assets: [],
+      codes: CODES,
+    });
+    drawInspector(dock, model, { folded: false, positionOpen: true }, pictures);
+    expect(slider()).not.toBe(moved);
+    expect(document.activeElement).toBe(slider());
+    expect(slider()?.value).toBe("12");
+  });
+
   // Why: a redraw while a field is being typed in (the ground arrived, a
   // radius changed elsewhere) must not drop what was typed, nor the
   // focus: the creator would lose words mid-sentence.
@@ -1225,5 +1249,17 @@ describe("the radius slider", () => {
     const range = dock.body.querySelector(".pos .range");
     expect(range?.querySelector("input[type=range]")).not.toBeNull();
     expect(range?.contains(input("radius"))).toBe(true);
+  });
+});
+
+describe("the head's way back", () => {
+  // Why: on a phone the details cover the list, so the head must lead back.
+  it("starts with the back arrow, every kind of element", () => {
+    for (const id of ["station:gate", "photo-1"]) {
+      draw(id);
+      const first = dock.head.firstElementChild as HTMLElement;
+      expect(first.dataset["act"]).toBe("back");
+      expect(first.getAttribute("aria-label")).toBe("Back to the list");
+    }
   });
 });
