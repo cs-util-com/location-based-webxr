@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   CLOUD_NIGHT_AMBIENT,
+  CLOUD_SUN_FLOOR,
   cloudMarchLight,
 } from "./globe-cloud-march-light.js";
 
@@ -60,6 +61,27 @@ describe("cloudMarchLight", () => {
     expect(luminance(l.cloudSun)).toBeLessThan(1e-3);
     expect(l.ambientTop[2]).toBeGreaterThanOrEqual(CLOUD_NIGHT_AMBIENT[2]);
     expect(luminance(l.ambientTop)).toBeLessThan(0.05);
+  });
+
+  // Why this test matters: half desaturated, the last light through the air
+  // is nearly pure red, and clouds at sunset came out crimson blotches.
+  it("keeps a sunset cloud warm, not crimson", () => {
+    for (const degrees of [3, 1, 0, -1, -2]) {
+      const up = Math.sin((degrees * Math.PI) / 180);
+      const [r = 0, g = 0, b = 0] = cloudMarchLight([
+        Math.cos((degrees * Math.PI) / 180),
+        up,
+        0,
+      ]).cloudSun;
+      expect(g).toBeGreaterThanOrEqual(CLOUD_SUN_FLOOR.green * r - 1e-9);
+      expect(b).toBeGreaterThanOrEqual(CLOUD_SUN_FLOOR.blue * r - 1e-9);
+    }
+  });
+
+  it("leaves the day's sun as the page chose it", () => {
+    const [r = 0, g = 0, b = 0] = cloudMarchLight([0.6, 0.8, 0]).cloudSun;
+    expect(g / r).toBeGreaterThan(CLOUD_SUN_FLOOR.green + 0.2);
+    expect(b / r).toBeGreaterThan(CLOUD_SUN_FLOOR.blue + 0.2);
   });
 
   it("refuses a sun that is not a direction", () => {

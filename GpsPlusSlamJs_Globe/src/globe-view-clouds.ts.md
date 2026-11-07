@@ -34,7 +34,8 @@
       mount's), the ground's soft shadow, then both volumes' update.
     - `render({ weight })`: begins the scene depth's frame; the relief's
       depth while the ground sky shows (`weight > 0`), with the clouds
-      off too, then, with them on, the slab and the shell.
+      off only in the hand-over (`weight < 1`, where the fading veil still
+      reads it), then, with them on, the slab and the shell.
     - `sceneDepth()`: the depth `render` draws, for the air's ground
       veil.
     - `setOn(on)`: the switch (off is the lab's `cloudVolume=0`: no slab,
@@ -81,6 +82,10 @@ mapFactor`, as the lab's: whole from orbit, gone below about 1,000 km
 
 ## The near clouds
 
+The near clouds are whole from 65 km down and gone at 80 km (`cloudNearCeilingKm`, `cloudNearFadeKm`): at 60 km half a share over the dark ground drew their thin parts as flat grey sheets, and the old clouds' share adds no white under them. The ceiling stays at the sky's hand-over edge, so the near air and the space pass overlap only below it.
+
+`nearAir()` is the share the air hands to the composite: `nearShare` while the clouds are on, else 0.
+
 The old clouds stay the old path: without the near clouds, or after a failed bake (`nearLive()` false), `cloudNear` is 0, so the shell keeps its cover and the air fades its veil with the sky. A closed view stops the worker, and a bake arriving after that is dropped.
 
-With `near: { createWorker, autoQuality?, warn?, nowMs? }` in the options, `createGlobeCloudMarch` joins the parts and `GLOBE_VIEW_CLOUDS.cloudNear` is honoured. The bakes are asked of a worker when the clouds are made; until they arrive, or if they fail (reported once), the old clouds draw. The tier starts at `view.quality` and `autoQuality: false` holds it. `state().near` gives the share, pixel scale and tier, null without them. The life clock is `view.driftTimeS()`. The governor is fed only on frames where they draw.
+With `near: { createWorker, autoQuality?, warn?, nowMs? }` in the options, `createGlobeCloudMarch` joins the parts and `GLOBE_VIEW_CLOUDS.cloudNear` is honoured. The bakes are asked of a worker when the clouds are made; until they arrive, or if they fail (reported once), the old clouds draw, without the shell's lifted cover. A worker that never answers leaves that state for the view's life: the old clouds, with the near clouds' veil over the ground. The tier starts at `view.quality` and `autoQuality: false` holds it. `state().near` gives the share, pixel scale and tier, null without them. The life clock is `view.driftTimeS()`. The governor is fed only on frames where they draw.

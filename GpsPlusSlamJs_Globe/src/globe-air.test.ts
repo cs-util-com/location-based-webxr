@@ -38,7 +38,13 @@ const PARAMS = {
 /** The air over recording fakes of the three drawers. */
 const setup = (
   hand = { weight: 0.25, exposure: 4.5 },
-  { noSky = false } = {},
+  {
+    noSky = false,
+    onGround = {
+      scale: 1,
+      colour: [1, 1, 1] as readonly [number, number, number],
+    },
+  } = {},
 ) => {
   const calls: string[] = [];
   let stage = "idle";
@@ -48,7 +54,12 @@ const setup = (
   const renders: unknown[] = [];
   const syncs: unknown[] = [];
   const weights: [number, number][] = [];
-  const sun = { position: new THREE.Vector3(0, 0, 1), intensity: 0 };
+  const sun = {
+    position: new THREE.Vector3(0, 0, 1),
+    intensity: 0,
+    color: new THREE.Color(1, 1, 1),
+  };
+  const sunExposure = { value: 0 };
   const globeGroup = {
     matrixWorld: new THREE.Matrix4().makeRotationX(Math.PI / 2),
   };
@@ -56,6 +67,7 @@ const setup = (
     ellipsoidRadii: RADII,
     groundRadiusKm: GROUND_KM,
     sun,
+    sunExposure,
     globeGroup,
     spacePass: {
       setLook: (look) => {
@@ -74,6 +86,7 @@ const setup = (
         updates.push({ ...frame, sunWorld: frame.sunWorld.toArray() });
         return hand;
       },
+      sunOnGround: () => onGround,
       state: () => {
         calls.push("state");
         return { lastStage: stage, rebuilds: 3 };
@@ -93,6 +106,7 @@ const setup = (
   const read = (s: string) => (stage = s);
   return {
     air,
+    sunExposure,
     calls,
     updates,
     looks,
@@ -200,6 +214,62 @@ describe("createGlobeAir", () => {
     expect(sun.intensity).toBe(4.5);
   });
 
+  // Why this test matters: the exposure climbs as the light falls, up to
+  // some 30x at sunset, and the air's own veil and sky need that whole
+  // value. The sun that lights the ground and the shell does not: it has
+  // come through the air, so it carries the air's dimming and colour, or a
+  // low sun blows the whole ground out to white.
+  it("lights the globe with the sun that reached the ground, the veil keeps the exposure", () => {
+    const { air, sun, renders } = setup(undefined, {
+      onGround: { scale: 0.5, colour: [1, 0.5, 0.25] },
+    });
+    air.step(PARAMS, { cameraEcef: at(1000), framed: true });
+    air.finish(PARAMS);
+    expect(sun.intensity).toBe(2.25);
+    expect(sun.color.toArray()).toEqual([1, 0.5, 0.25]);
+    air.render(new THREE.PerspectiveCamera(), PARAMS, {
+      drawn: true,
+      worldFromEcef: new THREE.Matrix4(),
+      sunEcef: new THREE.Vector3(1, 0, 0),
+      sceneDepth: null,
+    });
+    expect(renders[0]).toMatchObject({ sunIntensity: 4.5 });
+  });
+
+  // Why this test matters: where the near clouds draw the air behind them
+  // (the composite's own, on their scale), the veil and the space sky hand
+  // it over by the same share. Kept, the air is counted twice: a pale wash
+  // over the clouds. And at a whole share the veil's march is the frame's
+  // cost for nothing.
+  it("hands the air to the near clouds by their share", () => {
+    const { air, renders, weights } = setup({ weight: 0.5, exposure: 4.5 });
+    const frame = {
+      drawn: true,
+      worldFromEcef: new THREE.Matrix4(),
+      sunEcef: new THREE.Vector3(1, 0, 0),
+      sceneDepth: null,
+    };
+    const camera = new THREE.PerspectiveCamera();
+    const cameraEcef = at(1000);
+    air.step(PARAMS, { cameraEcef, framed: true, nearAir: 0.25 });
+    air.render(camera, PARAMS, frame);
+    expect(renders.at(-1)).toMatchObject({
+      skyShare: 0.375,
+      groundShare: 0.75,
+    });
+    expect(weights.at(-1)).toEqual([0.375, 2]);
+    air.render(camera, { ...PARAMS, atmoGround: 0 }, frame);
+    expect(renders.at(-1)).toMatchObject({
+      skyShare: 0.375,
+      groundShare: 0.375,
+    });
+    air.step(PARAMS, { cameraEcef, framed: true, nearAir: 1 });
+    const before = renders.length;
+    air.render(camera, PARAMS, frame);
+    expect(renders).toHaveLength(before);
+    expect(weights.at(-1)).toEqual([0, 2]);
+  });
+
   // Before the first `step` there is no hand-over yet (its exposure is
   // NaN, the observer at infinity). The lab never calls `finish` that way;
   // a second caller of this factory might, and a NaN sun draws the scene
@@ -263,8 +333,34 @@ describe("createGlobeAir", () => {
   // The space pass's sky fades under the ground sky; its ground keeps its
   // veil unless `atmoGround=0`; the scene's depth weighs in with the
   // ground sky; nothing is drawn when the page has the pass off.
+  // Why this test matters: the ground's sun has lost its light in the air.
+  // Whatever marches the air itself (the shell, the sky fill) starts from
+  // the sun above it: handed the ground's sun, the air counts twice and a
+  // low sun leaves a dark cirrus and a ground without its twilight.
+  it("keeps the sun's exposure apart from the sun on the ground", () => {
+    const { air, sun, sunExposure } = setup(
+      { weight: 1, exposure: 4 },
+      { onGround: { scale: 0.03, colour: [1, 0.5, 0.2] } },
+    );
+    air.step(PARAMS, { cameraEcef: at(30_000), framed: true });
+    air.finish(PARAMS);
+    expect(sun.intensity).toBeCloseTo(0.12);
+    expect(sunExposure.value).toBe(4);
+  });
+
+  // Why this test matters: the near clouds' look stays off the old clouds.
+  it("tells the ground sky whether the near clouds' look is on", () => {
+    const { air, updates } = setup();
+    air.step(
+      { ...PARAMS, atmoGround: 0 },
+      { cameraEcef: at(30_000), framed: true },
+    );
+    air.step(PARAMS, { cameraEcef: at(30_000), framed: true });
+    expect(updates).toMatchObject([{ nearLook: false }, { nearLook: true }]);
+  });
+
   it("renders the space pass with the hand-over's shares", () => {
-    const { air, renders, sun } = setup();
+    const { air, renders } = setup();
     const camera = new THREE.PerspectiveCamera();
     const worldFromEcef = new THREE.Matrix4();
     const sunEcef = new THREE.Vector3(1, 0, 0);
@@ -279,7 +375,7 @@ describe("createGlobeAir", () => {
       {
         worldFromEcef,
         sunEcef,
-        sunIntensity: sun.intensity,
+        sunIntensity: 4.5,
         skyShare: 0.75,
         groundShare: 1,
         sceneDepth,

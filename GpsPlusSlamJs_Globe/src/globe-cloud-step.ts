@@ -37,6 +37,7 @@ import type {
 } from "./globe-cloud-shell-volume-pass.js";
 import { CLOUD_VOLUME, cloudVolumeShare } from "./globe-cloud-volume.js";
 import type { GlobeCloudVolume } from "./globe-cloud-volume-pass.js";
+import { nearCloudsGain } from "./globe-sky-hand-over.js";
 import type { LatLng } from "./globe-target.js";
 
 /** The shell law's knobs (the lab's hash names). */
@@ -314,7 +315,13 @@ interface GlobeCloudStepOptions {
   /** The near clouds, in charge below their ceiling once they are ready. */
   readonly near?: Pick<
     GlobeCloudMarch,
-    "ready" | "render" | "texture" | "shadowTexture" | "uv" | "resolution"
+    | "ready"
+    | "render"
+    | "texture"
+    | "shadowTexture"
+    | "uv"
+    | "resolution"
+    | "uniforms"
   > | null;
 }
 
@@ -393,6 +400,7 @@ export function createGlobeCloudStep({
       shadow: nearShadow,
     });
     if (!drawn) return null;
+    const air = near.uniforms();
     return {
       texture: near.texture,
       shadowTexture: near.shadowTexture,
@@ -401,6 +409,8 @@ export function createGlobeCloudStep({
       tapPixels: frame.near.quality.tapPixels,
       weight: nearShare,
       shadow: nearShadow > 0,
+      air,
+      gain: nearCloudsGain(frame.sunIntensity, air.uSun.value.y),
     };
   };
 
