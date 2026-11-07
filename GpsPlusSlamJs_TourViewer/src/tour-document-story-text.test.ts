@@ -232,7 +232,6 @@ describe("stationEdited: a text of a block the station's story shows", () => {
       { block: "k1", field: "caption", value: "x".repeat(2001) },
       // A text the block needs, emptied.
       { block: "intro", field: "body", value: " " },
-      { block: "clip", field: "transcript", value: "" },
       { block: "k1", field: "name", value: "" },
       // A declared character's name is his declaration's.
       { block: "w1", field: "name", value: "Wendelin" },
@@ -250,6 +249,17 @@ describe("stationEdited: a text of a block the station's story shows", () => {
       });
       expect(edit(state, storyText)).toBe(state);
     }
+  });
+
+  it("takes a blank transcript as none", () => {
+    // Why: a video's transcript is the creator's to give. A blank one must
+    // not fail the write, and leaves no empty field in the tour.
+    const after = edit(open(), {
+      block: "clip",
+      field: "transcript",
+      value: "",
+    });
+    expect(blockOf(readBack(after), "clip")).not.toHaveProperty("transcript");
   });
 
   it("takes a text at its cap exactly", () => {

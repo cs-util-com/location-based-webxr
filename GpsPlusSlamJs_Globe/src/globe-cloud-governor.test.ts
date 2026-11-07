@@ -78,6 +78,18 @@ describe("createGlobeCloudGovernor", () => {
     expect(governor.state()).toEqual({ pixelScale: 1, tier: "high" });
   });
 
+  // Why this test matters: the rest is a verdict on the device as it was. A
+  // screen that was capped and a phone that later heats up look alike at
+  // first; a rest for the view's life would leave the second a slide show.
+  it("tries again after the rest", () => {
+    const governor = createGlobeCloudGovernor("high");
+    run(governor, 33.3, 3 * (CLOUD_GOVERNOR.steps + 2));
+    runOnPixels(governor, 100, CLOUD_GOVERNOR.restS - 60);
+    expect(governor.state()).toEqual({ pixelScale: 1, tier: "high" });
+    runOnPixels(governor, 100, 60 + 3 * (CLOUD_GOVERNOR.steps + 2));
+    expect(governor.state().tier).toBe("low");
+  });
+
   it("keeps stepping down when the pixels helped at 30 Hz", () => {
     const governor = createGlobeCloudGovernor("high");
     run(governor, 33.3, 3);

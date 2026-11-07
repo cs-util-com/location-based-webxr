@@ -1,4 +1,4 @@
-# long-text-body-assets.ts
+# tour-body-assets.ts
 
 ## Purpose
 
@@ -8,7 +8,7 @@ line of its own), at any depth; the view switch reads them (a lectern
 "shows no pictures", `visitor-prefs.ts` `bodyHasPictures`). Named: those
 and every other `asset:` picture the body holds (inline, or past the
 parser's cap), which show their alt text; a write's asset rule reads them
-(`item-card.ts` `itemStoredAssets`, which must not drop the file of a
+(`tour-kinds.ts` `refs`, which must not drop the file of a
 picture the body names).
 
 ## Public API
@@ -20,8 +20,8 @@ picture the body names).
   asset ids `block.body` NAMES, in document order, each once: every
   picture whose target is `asset:<id>`, shown or not (the parser's
   `pictureAlt.asset` for one that is not). Remembered by the block object
-  (a `WeakMap`). The write's asset rule (`tour-content.ts`
-  `itemStoredAssets`) asks through it.
+  (a `WeakMap`). The write's asset rule (`tour-kinds.ts`
+  `tourBlockRefs`) asks through it.
 
 ## Invariants & assumptions
 
@@ -63,26 +63,26 @@ picture the body names).
 ## Examples
 
 ```ts
-bodyPictureAssets("Intro.\n\n![The mill](asset:mill)\n\n> ![x](asset:bell)");
+bodyPictureAssets('Intro.\n\n![The mill](asset:mill)\n\n> ![x](asset:bell)');
 // ["mill", "bell"]
-bodyPictureAssets("Look ![x](asset:a) here."); // [] (inline)
-blockBodyAssets({ body: "Look ![x](asset:a) here." }); // ["a"] (named)
+bodyPictureAssets('Look ![x](asset:a) here.'); // [] (inline)
+blockBodyAssets({ body: 'Look ![x](asset:a) here.' }); // ["a"] (named)
 ```
 
 ## Tests
 
-- `long-text-body-assets.test.ts`: pictures at the top, in a list item and
+- `tour-body-assets.test.ts`: pictures at the top, in a list item and
   in a quote, in order and once; an inline picture not listed.
 - `visitor-prefs.memo.test.ts` (through `bodyHasPictures`, the switch's
   per-frame question): each body parsed once with two asked in turn;
   parsed again after 65 others filled the memo (the real parser, spied).
-- `long-text-body-assets.test.ts` also: the named assets of a body with
+- `tour-body-assets.test.ts` also: the named assets of a body with
   inline pictures (also inside emphasis and a quoted heading), 21
   pictures, a plain link and the bare words.
 - `tour-document.body-memo.test.ts`: a second `manifestToWrite` with 65,
   100 and 200 past bodies parses none of them again (at most the current
   body; the real parser, spied).
-- `long-text-body-assets.property.test.ts`: any mix of nesting and repeats
+- `tour-body-assets.property.test.ts`: any mix of nesting and repeats
   lists each shown picture once, in the body's order.
 - Through `tour-content.test.ts` (`withReferencedAssets` keeps a body's
   pictures) and `finish-rebuild.test.ts` (a Finish keeps their files, also

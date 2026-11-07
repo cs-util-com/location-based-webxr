@@ -64,7 +64,7 @@ export interface SceneViewDom {
   /** The character's round portrait beside his name (the `portrait`
    *  view); absent: none. */
   readonly portrait?: Pick<HTMLImageElement, "src" | "alt" | "hidden">;
-  /** Text, caption or transcript: every step has words (captions always). */
+  /** Text, caption or transcript: a step may have none (a video, a sound or a character without one). */
   readonly text: Pick<HTMLElement, "textContent">;
   /** Loading and failures of this step's media, `aria-live`. */
   readonly status: Pick<HTMLElement, "textContent">;

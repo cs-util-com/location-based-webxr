@@ -55,10 +55,10 @@ camera captures are debug data, never in a station (an earlier file's
   `withTourContent`, and the rebuild removes the dropped assets' files
   (`finish-rebuild.ts`). Used means (module-private
   `referencedAssetIds`): every block's of every station, story or free
-  (`itemStoredAssets`, `item-card.ts`: a picture's image, a video and its poster, an audio,
+  (`tourBlockAssetIds`, `tour-kinds.ts`: a picture's image, a video and its poster, an audio,
   a model's file, a character's image and voice, the pictures a long
   text's body names, shown or not: inline, past the cap
-  (`blockBodyAssets`, `long-text-body-assets.ts`, remembered by the
+  (`blockBodyAssets`, `tour-body-assets.ts`, remembered by the
   block), and its narration's voice (the reader requires it; the timing is an
   entry, not an asset);
   none for a short text), every station's card image and the cover. A
@@ -75,7 +75,7 @@ camera captures are debug data, never in a station (an earlier file's
 - `stepAssetIds(station)`: the assets a station's (or a frame's) story
   blocks name. `stepRequiredAssetIds(station)`: the same without the
   pictures a long text's body names (the format lets those be missing),
-  what a draft restore checks a frame against (`itemStoredAssets(block, true)`; a property test holds it to `stepAssetIds` of the same station with picture-free bodies). `objectAssetIds(object)`: the assets an object in the
+  what a draft restore checks a frame against (`tourBlockAssetIds(block, true)`; a property test holds it to `stepAssetIds` of the same station with picture-free bodies). `objectAssetIds(object)`: the assets an object in the
   world keeps (a model its file, a picture the tour's image it names, a
   pin none; a captured photo's own asset none, as it is part of its
   picture) - what the write and the document's history read.

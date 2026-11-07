@@ -63,6 +63,8 @@ import type { SkyAtmosphere } from "gps-plus-slam-app-framework/visualization/at
 
 import type { GlobeAtmosphere } from "./globe-atmosphere.js";
 import { GLOBE_CLOUD_FILTER_GLSL } from "./globe-cloud-filter.js";
+import { CLOUD_AIR_GLSL } from "./globe-cloud-march-glsl.js";
+import type { CloudAirUniforms } from "./globe-cloud-march-pass.js";
 import { ZENITH_MU, ZENITH_TABLE } from "./globe-cloud-shell-light.js";
 import {
   CLOUD_HIGH_LAYER,
@@ -175,6 +177,7 @@ const float SHELL_FORWARD = ${glslFloat(CLOUD_LAYER.forwardStrength)};
 const float SHELL_FORWARD_POWER = ${glslFloat(CLOUD_LAYER.forwardPower)};
 const float SHELL_THICKNESS_DARK = ${glslFloat(CLOUD_LAYER.thicknessDarkening)};
 const float SHELL_SKY_AMBIENT = ${glslFloat(CLOUD_LAYER.skyAmbient)};
+const float SHELL_THIN_VEIL = ${glslFloat(CLOUD_HIGH_LAYER.veil)};
 const float SHELL_TOP_ALBEDO = ${glslFloat(CLOUD_SHEET.topAlbedo)};
 const float SHELL_ZENITH_FROM = ${glslFloat(ZENITH_MU.from)};
 const float SHELL_ZENITH_TO = ${glslFloat(ZENITH_MU.to)};
@@ -402,6 +405,9 @@ void main() {
   vec3 top = ATM_RADIANCE_SCALE * sunT * max( mu, 0.0 ) * SHELL_TOP_ALBEDO / ATM_PI + zenith * SHELL_SKY_AMBIENT;
   vec3 sunUnder = ATM_RADIANCE_SCALE * sunT * ( SHELL_SUN_AMBIENT + SHELL_FORWARD * forward );
   vec3 skyUnder = zenith * SHELL_SKY_AMBIENT;
+  // The high layer is thin ice, lit through: the deck's dark underside drew
+  // it brown on a bright sky.
+  vec3 thinLight = max( top, sunUnder + skyUnder );
   highp float sunScale = SHELL_SIGMA * SHELL_SUN_DEPTH / max( mu, SHELL_SUN_MU_FLOOR );
   float deck = ( uDeckTopKm - uDeckBaseKm ) * 1000.0;
   float jitter = fract( 52.9829189 * fract( dot( gl_FragCoord.xy, vec2( 0.06711056, 0.00583715 ) ) ) );
@@ -448,7 +454,9 @@ void main() {
       float noise = mix( na, nb, 0.5 * ( fa + fb ) );
       float th = 0.5 * ( tha + thb );
       float density = smoothstep( 0.0, 1.0, clamp( ( noise - th ) / ( 2.0 * SHELL_EDGE ) + 0.5, 0.0, 1.0 ) );
-      vec3 under = sunUnder * ( 1.0 - SHELL_THICKNESS_DARK * density ) + skyUnder;
+      vec3 under = uBothSides > 0.5 ? thinLight : sunUnder * ( 1.0 - SHELL_THICKNESS_DARK * density ) + skyUnder;
+      // Thin ice fades out by its density; the deck's opacity drew it as flat sheets.
+      if ( uBothSides > 0.5 ) w *= SHELL_THIN_VEIL * density;
       colour += transmittance * w * ( under * a + ( top - under ) * shellInStepLight( tau, sunA, sunB ) );
       alpha += transmittance * a * w;
       transmittance *= exp( -tau );
@@ -474,8 +482,24 @@ void main() {
  * The mix: the shell and the slab premultiplied, each by its weight, never
  * one over the other; then straight colour, three's tone mapping and colour
  * space, and the alpha blended over the frame (the slab's own composite).
+ *
+ * Behind the near clouds, by their share, their air: at full resolution
+ * here, so it has no fringe at a silhouette. To the drawn relief or the
+ * sphere it scatters over the frame; past them it is the sky, opaque by day
+ * and clear of the stars at night. Where no depth tells what is drawn it
+ * stays off the sky, so it never paints over a building.
  */
 const COMPOSITE_FRAGMENT = /* glsl */ `
+uniform float uH;
+uniform vec3 uFwd, uRight, uUp;
+uniform vec2 uTan;
+uniform vec3 uSun;
+uniform vec3 uSunCol;
+${CLOUD_AIR_GLSL}
+uniform sampler2D uSceneDepth;
+uniform mat4 uSceneInverseProjection;
+uniform float uSceneDepthOn;
+uniform float uAirOn;
 uniform sampler2D tShell;
 uniform sampler2D tSlab;
 uniform float uShellWeight;
@@ -498,6 +522,7 @@ uniform float uShadowWeight;
 uniform vec2 uNearUv;
 uniform vec2 uNearRes;
 uniform float uNearTap;
+uniform float uNearGain;
 varying vec2 vUv;
 vec4 nearTap( vec2 c ) {
   vec2 h = 0.5 / uNearRes;
@@ -507,6 +532,38 @@ vec4 nearAt( vec2 uv ) {
   vec2 c = uv * uNearUv;
   vec2 o = uNearTap / uNearRes;
   return 0.25 * ( nearTap( c + o ) + nearTap( c - o ) + nearTap( c + vec2( o.x, -o.y ) ) + nearTap( c + vec2( -o.x, o.y ) ) );
+}
+vec4 airAt( vec2 uv ) {
+  vec2 n = uv * 2.0 - 1.0;
+  vec3 d = normalize( uFwd + n.x * uTan.x * uRight + n.y * uTan.y * uUp );
+  float t = hitDown( d.y, max( uH, 0.0 ), 0.0 );
+  if ( uSceneDepthOn > 0.5 ) {
+    float z = texture2D( uSceneDepth, uv ).r;
+    if ( z < 1.0 ) {
+      vec4 v = uSceneInverseProjection * vec4( n, z * 2.0 - 1.0, 1.0 );
+      float scene = length( v.xyz / v.w ) * 0.001;
+      t = t >= 0.0 ? min( t, scene ) : scene;
+    }
+  }
+  float cosSun = dot( d, uSun );
+  float angle = acos( clamp( cosSun, -1.0, 1.0 ) );
+  vec3 ins, tr;
+  vec4 air;
+  if ( t >= 0.0 ) {
+    vec3 p = d * t;
+    segTo( d, p, max( altOf( p ), 0.0 ), ins, tr );
+    air = vec4( ins, 1.0 - dot( tr, vec3( 1.0 / 3.0 ) ) );
+  } else if ( uSceneDepthOn > 0.5 ) {
+    ins = skyRad( uH, d, tr ) + ESUN * tr * ( 1.0 - smoothstep( 0.0055, 0.0072, angle ) ) * 400.0;
+    air = vec4( ins, 1.0 - exp( -dot( ins, vec3( 0.2126, 0.7152, 0.0722 ) ) * 8.0 ) );
+  } else {
+    return vec4( 0.0 );
+  }
+  if ( cosSun > 0.825 ) {
+    float glow = 1.4 * exp( -angle * 90.0 ) + 0.1 * exp( -angle * 14.0 );
+    air.rgb += ESUN * sunTrans( max( uH, 0.0 ) ) * glow * vec3( 1.0, 0.97, 0.9 );
+  }
+  return air;
 }
 void main() {
   vec4 shell = texture2D( tShell, vUv );
@@ -521,7 +578,12 @@ void main() {
     float r = shell.a > 1e-4 ? min( 1.0, slab.a / shell.a ) : 1.0;
     c = uShellWeight * ( 1.0 - uSlabWeight * r ) * shell + uSlabWeight * slab;
   }
-  if ( uNearWeight > 0.0 ) c = ( 1.0 - uNearWeight ) * c + uNearWeight * nearAt( vUv );
+  if ( uNearWeight > 0.0 ) {
+    vec4 near = nearAt( vUv );
+    near.rgb *= uNearGain;
+    c = ( 1.0 - uNearWeight ) * c + uNearWeight * near;
+  }
+  float cloud = min( c.a, 1.0 );
   // The ground shadow under both clouds (the cloud-shadows plan M1): in the
   // shell's own alpha the slab's per-pixel share took it with the shell's
   // clouds, and below the slab's ceiling the ground lost its shadows (an
@@ -540,6 +602,14 @@ void main() {
     vec4 high = texture2D( tHigh, vUv );
     c.a = min( c.a, 1.0 );
     c = uHighInFront > 0.5 ? high + ( 1.0 - high.a ) * c : c + ( 1.0 - c.a ) * high;
+    cloud += ( 1.0 - cloud ) * min( high.a, 1.0 );
+  }
+  if ( uAirOn > 0.5 ) {
+    // Over the ground's shadow, under the clouds.
+    vec4 air = uNearWeight * airAt( vUv );
+    c.rgb += ( 1.0 - cloud ) * air.rgb * uNearGain;
+    c.a = min( c.a, 1.0 );
+    c.a += ( 1.0 - c.a ) * air.a;
   }
   if ( c.a < 1e-4 ) discard;
   gl_FragColor = vec4( c.rgb / c.a, 1.0 );
@@ -748,6 +818,10 @@ export interface CloudShellNearMix {
   weight: number;
   /** Their shadow was drawn this frame. */
   shadow: boolean;
+  /** The march's frame, for the air behind them. */
+  air: CloudAirUniforms;
+  /** Their and the air's share of the camera's exposure (`nearCloudsGain`). */
+  gain: number;
 }
 
 /** Which of the pass's targets `alphaGrid` reads. */
@@ -980,9 +1054,21 @@ export function createGlobeCloudShellVolume(
     uNearWeight: { value: 0 },
     uNearShadowOn: { value: 0 },
     uShadowWeight: { value: 1 },
+    uAirOn: { value: 0 },
+    uH: { value: 0 },
+    uFwd: { value: new THREE.Vector3() },
+    uRight: { value: new THREE.Vector3() },
+    uUp: { value: new THREE.Vector3() },
+    uTan: { value: new THREE.Vector2(1, 1) },
+    uSun: { value: new THREE.Vector3(0, 1, 0) },
+    uSunCol: { value: new THREE.Vector3() },
+    uSceneDepth: { value: null as THREE.Texture | null },
+    uSceneInverseProjection: { value: new THREE.Matrix4() },
+    uSceneDepthOn: { value: 0 },
     uNearUv: { value: new THREE.Vector2(1, 1) },
     uNearRes: { value: new THREE.Vector2(1, 1) },
     uNearTap: { value: 0.5 },
+    uNearGain: { value: 1 },
   };
   const composite = new THREE.ShaderMaterial({
     uniforms: compositeUniforms,
@@ -1283,12 +1369,26 @@ export function createGlobeCloudShellVolume(
     compositeUniforms.uNearWeight.value = nearWeight;
     compositeUniforms.uNearShadowOn.value =
       near?.shadow === true && nearWeight > 0 ? 1 : 0;
+    compositeUniforms.uAirOn.value = near !== null && nearWeight > 0 ? 1 : 0;
     if (near === null) return;
+    const { air } = near;
+    compositeUniforms.uH.value = air.uH.value;
+    compositeUniforms.uFwd.value = air.uFwd.value;
+    compositeUniforms.uRight.value = air.uRight.value;
+    compositeUniforms.uUp.value = air.uUp.value;
+    compositeUniforms.uTan.value = air.uTan.value;
+    compositeUniforms.uSun.value = air.uSun.value;
+    compositeUniforms.uSunCol.value = air.uSunCol.value;
+    compositeUniforms.uSceneDepth.value = air.uSceneDepth.value;
+    compositeUniforms.uSceneInverseProjection.value =
+      air.uSceneInverseProjection.value;
+    compositeUniforms.uSceneDepthOn.value = air.uSceneDepthOn.value;
     compositeUniforms.tNear.value = near.texture;
     compositeUniforms.tNearShadow.value = near.shadowTexture;
     compositeUniforms.uNearUv.value = near.uv;
     compositeUniforms.uNearRes.value = near.resolution;
     compositeUniforms.uNearTap.value = near.tapPixels;
+    compositeUniforms.uNearGain.value = near.gain;
   };
 
   /** The composite's switches and weights, then the mix over the frame. */

@@ -357,18 +357,6 @@ describe('parseTourStations', () => {
       /children\[0\]\.image" must name an image asset/,
     ],
     [
-      'a character without a caption (captions always)',
-      [
-        withBlock({
-          kind: 'character',
-          view: 'stage',
-          name: 'K',
-          image: 'knight',
-        }),
-      ],
-      /children\[0\]\.caption/,
-    ],
-    [
       'a character voice that is not audio',
       [
         withBlock({
@@ -381,16 +369,6 @@ describe('parseTourStations', () => {
         }),
       ],
       /children\[0\]\.voice" must name an audio asset/,
-    ],
-    [
-      'audio without a transcript (audio needs a text version)',
-      [withBlock({ kind: 'audio', audio: 'voice' })],
-      /children\[0\]\.transcript/,
-    ],
-    [
-      'video without a transcript',
-      [withBlock({ kind: 'video', video: 'clip' })],
-      /children\[0\]\.transcript/,
     ],
     [
       'a model naming an image',
@@ -512,6 +490,19 @@ describe('parseTourStations', () => {
   ])('rejects %s', (_label, data, message) => {
     expect(() => parse(data)).toThrow(Invalid);
     expect(() => parse(data)).toThrow(message);
+  });
+
+  it.each([
+    [
+      'a character without a caption',
+      { kind: 'character', view: 'stage', name: 'K', image: 'knight' },
+    ],
+    ['audio without a transcript', { kind: 'audio', audio: 'voice' }],
+    ['video without a transcript', { kind: 'video', video: 'clip' }],
+  ])('reads %s', (_label, block) => {
+    // Why: these texts are the creator's to give. A freshly imported file has
+    // none yet, and a blank one must not fail every save of the tour.
+    expect(() => parse([withBlock(block)])).not.toThrow();
   });
 });
 

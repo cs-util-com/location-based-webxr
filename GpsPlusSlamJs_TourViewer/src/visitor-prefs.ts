@@ -12,7 +12,7 @@
 
 import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
-import { bodyPictureAssets } from "./long-text-body-assets.js";
+import { bodyPictureAssets } from "gps-plus-slam-app-framework/ar/tour-body-assets";
 import type { NarrationVerdict } from "./narration-timing.js";
 
 /** The one versioned key: views per kind and placement, and later the

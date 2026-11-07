@@ -13,7 +13,6 @@ import type { TourStoryChild } from "gps-plus-slam-app-framework/ar/tour-story";
 
 import {
   itemAssets,
-  itemStoredAssets,
   showItemCard,
   type ItemCardHost,
 } from "./item-card";
@@ -32,6 +31,7 @@ import { createNarrationPlayer } from "./narration-player";
 import { createSceneView } from "./scene-view";
 import { createVoiceFocus } from "./voice-focus";
 import { TOUR_BLOCK_VIEWS } from "gps-plus-slam-app-framework/ar/tour-blocks";
+import { tourBlockAssetIds } from "gps-plus-slam-app-framework/ar/tour-kinds";
 
 /**
  * Why these tests matter: what every kind of item owes whoever shows it. A
@@ -557,7 +557,7 @@ describe.each(ROWS)("the item contract: $name", (item) => {
     expect(declared).toEqual(expect.arrayContaining(reads));
     // A prototype has no format half yet: nothing writes it.
     if (kindOfRow.has(item)) return;
-    const stored = itemStoredAssets(block(item.fields));
+    const stored = tourBlockAssetIds(block(item.fields));
     expect(stored).toEqual(
       expect.arrayContaining(declared.filter(OWN_ASSETS_ONLY)),
     );

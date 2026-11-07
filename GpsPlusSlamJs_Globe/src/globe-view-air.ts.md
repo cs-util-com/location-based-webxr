@@ -47,7 +47,7 @@
     (`defaultAtmosphereSteps`), the haze's scale 1, the shell's ramp on,
     the space view's exposure the globe sun's intensity at the mount.
   - The ground's veil follows the near clouds, read each frame
-    (`clouds.nearLive()`). With them, `atmoGround` 1 and `sceneDepth`
+    (`clouds.nearLive()`). The air's frame also takes `nearAir` from `clouds.nearAir()`, the share of the air the composite draws. With them, `atmoGround` 1 and `sceneDepth`
     their `sceneDepth()`, so the veil's rays end at the drawn relief as in
     the lab, with one depth pass per frame, drawn even while the cloud
     volumes are switched off. Without clouds there is no depth, the rays
