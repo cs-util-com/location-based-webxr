@@ -55,7 +55,7 @@ the reading sign (`reading-sign.ts`) are world parts too.
   - the QR poster rule (`content-placement.ts` `rotationFromHeading(h)`, a
     turn of -h about up, used for a geo pose given by heading alone) turns
     local +X to the heading and front to heading + 90 degrees.
-  Both are confirmed by property tests over headings.
+    Both are confirmed by property tests over headings.
 - An empty `Object3D` is a valid part: mounted, placed and freed, never
   offered to a tap.
 - A hidden station's part is never offered to the pick.

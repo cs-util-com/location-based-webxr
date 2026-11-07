@@ -11,9 +11,10 @@
  * placed and freed, and takes no tap.
  *
  * Its world is metres, Y up, origin at the item's foot on the ground.
- * Front is local +Z, right local +X: a station block's pose turns local +X
- * to its heading and local +Z to heading + 90 degrees (the QR poster rule,
- * `rotationFromHeading`).
+ * Front is local +Z, right local +X. The part takes its block's pose
+ * rotation as it stands, tilt included, so where front points is that
+ * rotation's: the editor's `facingRotation` turns +Z to the facing, the QR
+ * poster rule `rotationFromHeading` turns +X to the heading (sidecar).
  *
  * @see world-part.ts.md
  */
