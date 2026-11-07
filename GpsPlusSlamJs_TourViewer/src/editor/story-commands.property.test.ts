@@ -265,10 +265,16 @@ describe("the tree's story commands", () => {
             const stories = storiesIn(tour());
             const was = tour();
             const revision = editor.revision();
+            /** An add whose station or story is there: it must be a
+             *  step, so a silently refused add cannot pass as a no-op. */
+            let mustStep = false;
             switch (c.kind) {
               case "add": {
                 const station = round(tour()?.stations ?? [], c.at);
-                if (station !== undefined) editor.addStory(station.id);
+                if (station !== undefined) {
+                  mustStep = true;
+                  editor.addStory(station.id);
+                }
                 break;
               }
               case "rename": {
@@ -283,7 +289,10 @@ describe("the tree's story commands", () => {
               }
               case "addChild": {
                 const story = round(stories, c.at);
-                if (story !== undefined) editor.addToStory(story.id, c.make);
+                if (story !== undefined) {
+                  mustStep = true;
+                  editor.addToStory(story.id, c.make);
+                }
                 break;
               }
               case "deleteChild": {
@@ -304,6 +313,7 @@ describe("the tree's story commands", () => {
             const now = tour();
             if (now === null) throw new Error(`no tour after ${c.kind}`);
             const rose = editor.revision() - revision;
+            expect(mustStep ? rose : 1, `${c.kind} refused`).toBe(1);
             // An undo or a redo with nothing to take back is the only
             // command that may leave the revision as it was.
             const owed =

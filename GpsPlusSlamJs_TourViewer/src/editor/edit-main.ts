@@ -31,7 +31,6 @@ import {
   tourStories,
   type TourStory,
 } from "gps-plus-slam-app-framework/ar/tour-story";
-import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   downloadZip,
   requestPersistentStorage,
@@ -188,6 +187,10 @@ import { reseatOf, type Reseat } from "./reseat-note.js";
 import { newObjectId } from "../content-placement.js";
 import type { InspectorCode } from "./editor-shell/inspector-model.js";
 import { stationTitle } from "../station-run.js";
+import {
+  stationDeleteQuestion,
+  storyDeleteQuestion,
+} from "./delete-questions.js";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import type {
@@ -1378,29 +1381,6 @@ function deleted(
   autosave.changed();
 }
 
-/** The question before a station's delete: what goes with it, by name for
- *  its stories, by count for its free items. */
-function stationDeleteQuestion(station: TourStation, title: string): string {
-  const stories = tourStories(station);
-  const free = tourFreeBlocks(station).length;
-  const n = stories.length + free;
-  const parts = [
-    ...stories.map((s) => `the story "${s.title}"`),
-    ...(free === 0
-      ? []
-      : [free === 1 ? "1 free item" : `${String(free)} free items`]),
-  ];
-  const list =
-    parts.length < 2
-      ? parts.join("")
-      : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1] ?? ""}`;
-  const goes =
-    n === 0
-      ? "It has no content."
-      : `Its ${n === 1 ? "item goes" : `${String(n)} items go`} with it: ${list}.`;
-  return `Delete the station "${title}"? ${goes} You can undo this.`;
-}
-
 /** The story `id` of the tour as it stands. */
 function storyNamed(id: string): TourStory | undefined {
   return manifestToWrite(store.getState().tourDocument)
@@ -1412,21 +1392,9 @@ function storyNamed(id: string): TourStory | undefined {
  *  which Undo takes back. */
 function deleteStorySelection(storyId: string): void {
   const story = storyNamed(storyId);
-  if (editor === null || story === undefined) return;
-  const n = story.children.length;
-  const goes =
-    n === 0
-      ? "It has no entries."
-      : n === 1
-        ? "Its entry goes with it."
-        : `Its ${String(n)} entries go with it.`;
-  if (
-    !confirmPausingFrames(
-      `Delete the story "${story.title}"? ${goes} You can undo this.`,
-    )
-  ) {
-    return;
-  }
+  const question = storyDeleteQuestion(store.getState().tourDocument, storyId);
+  if (editor === null || story === undefined || question === null) return;
+  if (!confirmPausingFrames(question)) return;
   endUndo();
   const outcome = editor.deleteStory(storyId);
   deleted(

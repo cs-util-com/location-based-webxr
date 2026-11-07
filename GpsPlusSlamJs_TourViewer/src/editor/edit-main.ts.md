@@ -840,10 +840,11 @@ The dev hook adds `view3dModelParts()` and
 
 The tree's add makes a story (`addStoryTo`) or an entry (`addToStoryEntry`),
 selects it, says it in a toast, one step each. Deleting a story asks first
-(`confirmPausingFrames`, naming what goes with it), and its toast says when
-the story's untitled automatic station went with it; deleting a station
-asks the same way (`stationDeleteQuestion`: its stories by name, its free
-items by count), except when the tour refuses it (its last station), which
+(`confirmPausingFrames`, naming what goes with it: its entries, and its
+untitled automatic station by name when that goes too, `delete-questions.ts`
+`storyDeleteQuestion`), and its toast says when the station went with it;
+deleting a station asks the same way (`stationDeleteQuestion`: its stories
+by name, its free items by count), except when the tour refuses it (its last station), which
 is said instead; an entry goes without a
 question, the toast's Undo taking it back and saying how many answers no
 longer lead to it. Every delete shares `deleted`, the toast and its Undo.
