@@ -62,10 +62,12 @@ export function treeClick(input: {
 export interface TreeClickPlan {
   /** The page's new selection (null: none). */
   readonly select: string | null;
-  /** The group to unfold, or none. */
-  readonly unfold: string | null;
+  /** The groups to unfold, outermost first (none: empty). */
+  readonly unfold: readonly string[];
   /** The group to fold, or none. */
   readonly fold: string | null;
+  /** The nested group whose fold flips, or none. */
+  readonly toggle: string | null;
   /** The selection belongs to no group: the app opens where such
    *  selections live. */
   readonly ungrouped: boolean;
@@ -73,31 +75,63 @@ export interface TreeClickPlan {
   readonly fly: boolean;
 }
 
-/** A group of the tree: its id, and the ids of the cards inside it. */
+/** A group of the tree: its id, the ids of the cards inside it, and any
+ *  groups nested in it. A nested group is selected by its own `selection`
+ *  (the group prefix names only the top level, and is no use below it). */
 export interface TreeGroup {
   readonly id: string;
+  readonly selection?: string;
   readonly children: readonly string[];
+  readonly groups?: readonly TreeGroup[];
 }
 
-/** The group a selection `id` names, or holds as a child, and whether it
- *  is the group itself; null for an ungrouped selection. */
-function groupOf(
+/** Where a selection sits: the groups from the outermost down to the one
+ *  that names it (`own`) or holds it. */
+interface TreeChain {
+  readonly ids: readonly string[];
+  readonly own: boolean;
+}
+
+/** The chain from `group` down to `id`, or null when it is not inside. */
+function chainIn(group: TreeGroup, id: string): TreeChain | null {
+  if (group.selection === id) return { ids: [group.id], own: true };
+  if (group.children.includes(id)) return { ids: [group.id], own: false };
+  for (const inner of group.groups ?? []) {
+    const chain = chainIn(inner, id);
+    if (chain !== null) {
+      return { ids: [group.id, ...chain.ids], own: chain.own };
+    }
+  }
+  return null;
+}
+
+/** The chain of the selection `id`, or null for an ungrouped one. */
+function chainOf(
   id: string,
   groups: readonly TreeGroup[],
   prefix: string,
-): { readonly id: string; readonly own: boolean } | null {
-  if (id.startsWith(prefix)) return { id: id.slice(prefix.length), own: true };
-  const holder = groups.find((g) => g.children.includes(id));
-  return holder === undefined ? null : { id: holder.id, own: false };
+): TreeChain | null {
+  if (id.startsWith(prefix)) {
+    return { ids: [id.slice(prefix.length)], own: true };
+  }
+  for (const group of groups) {
+    const chain = chainIn(group, id);
+    if (chain !== null) return chain;
+  }
+  return null;
 }
 
 /**
  * The plan for `outcome` on the card `id` (a group's `<groupPrefix><id>`,
- * a child of one of `groups`, or else ungrouped), or null when nothing
- * happens. A selected group unfolds, a selected child unfolds its group,
- * an ungrouped selection says so; a deselected group folds. The prefix
- * is the app's: the kit has none of its own. Throws for a missing or an
- * empty prefix (every id would read as a group).
+ * a nested group's `selection`, a child of a group at any depth, or else
+ * ungrouped), or null when nothing happens. A selected top-level group
+ * unfolds; a selected child unfolds its whole chain; a selected nested
+ * group unfolds what holds it and leaves its own fold, and a second click
+ * flips that fold with the selection staying (a folder is opened on
+ * purpose, and selected to be edited); an ungrouped selection says so; a
+ * deselected top-level group folds. The prefix is the app's: the kit has
+ * none of its own. Throws for a missing or an empty prefix (every id would
+ * read as a group).
  */
 export function treeClickPlan(
   outcome: TreeClickOutcome,
@@ -111,21 +145,24 @@ export function treeClickPlan(
     throw new RangeError("a tree click plan needs a non-empty group prefix");
   }
   if (outcome === "none") return null;
-  const group = groupOf(id, groups, prefix);
+  const chain = chainOf(id, groups, prefix);
+  const nestedOwn = chain?.own === true && chain.ids.length > 1;
   if (outcome === "deselect") {
     return {
-      select: null,
-      unfold: null,
-      fold: group?.own === true ? group.id : null,
+      select: nestedOwn ? id : null,
+      unfold: [],
+      fold: chain?.own === true && !nestedOwn ? (chain.ids[0] ?? null) : null,
+      toggle: nestedOwn ? (chain.ids.at(-1) ?? null) : null,
       ungrouped: false,
       fly: false,
     };
   }
   return {
     select: id,
-    unfold: group?.id ?? null,
+    unfold: nestedOwn ? chain.ids.slice(0, -1) : (chain?.ids ?? []),
     fold: null,
-    ungrouped: group === null,
+    toggle: null,
+    ungrouped: chain === null,
     fly: true,
   };
 }

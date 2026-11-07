@@ -36,6 +36,18 @@ const PATHS = {
   eye: '<path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8s-2.4 4.5-6.5 4.5S1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/>',
   folder:
     '<path d="M2 4.5a1 1 0 0 1 1-1h3.2l1.4 1.6H13a1 1 0 0 1 1 1v6.4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>',
+  video:
+    '<rect x="2" y="3.5" width="9" height="9" rx="1"/><path d="M11 7l3-2v6l-3-2"/>',
+  audio:
+    '<path d="M2.5 6h2.6L8.5 3v10L5.1 10H2.5z"/><path d="M10.8 5.6a3 3 0 0 1 0 4.8M12.4 3.8a5.5 5.5 0 0 1 0 8.4"/>',
+  character:
+    '<circle cx="8" cy="4.6" r="2.3"/><path d="M3.8 14c0-2.9 1.9-5.2 4.2-5.2s4.2 2.3 4.2 5.2"/>',
+  story: '<path d="M1.8 4h4.1l1.4 1.6h6.9v7.4H1.8z"/>',
+  storyOpen:
+    '<path d="M1.8 13V4h4.1l1.4 1.6h5.6v1.7"/><path d="M1.8 13l1.7-5.7h11.2L13 13z"/>',
+  choice:
+    '<path d="M8 14V8.6L4 3.6M8 8.6l4-5M3 6.2V3.2h3M13 6.2V3.2h-3"/>',
+  quiz: '<circle cx="8" cy="8" r="6.2"/><path d="M6.2 6.3a1.9 1.9 0 1 1 2.6 1.8c-.6.3-.8.7-.8 1.3v.3"/><circle cx="8" cy="11.6" r=".35"/>',
   plus: '<path d="M8 3v10M3 8h10"/>',
   // A long text's writer (long-text-writer.ts): its toolbar, its note, the
   // inspector's width and the three ways a visitor meets the text.
