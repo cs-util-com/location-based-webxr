@@ -45,8 +45,8 @@ every gate changed them, and any merge put open pull requests into conflict.
   - A push to `main` runs the browser tier, and a tier run records no browser
     stage. `gh workflow run ci.yml --ref main -f tier=full` gives those rows too;
     in such a run the Playwright stages print the `list` reporter, so the log
-    names every test, and the JSON goes to the counts rather than the report
-    upload.
+    names every test, and the JSON that gives the counts is kept as the
+    package's `test-results/results.json`, which the job uploads.
   - An artifact holds one run. The runner's machine can differ between runs, so
     compare medians of several, and read older numbers from the git history.
 - **The budget alarm** runs on local gates only, against a stage's ceiling, so a
