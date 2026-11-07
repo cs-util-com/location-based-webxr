@@ -390,7 +390,9 @@ test("the AR shadows lab opens and draws without errors @pr", async ({
 // OSM roof and part fixes by eye; its default view loads the largest site
 // fixture and builds the city in the page, so it is what still catches a
 // library module the page cannot import or a fixture the route does not serve.
-test("the building geometry lab opens and draws without errors @pr", async ({
+// Untagged: a lab is not a core flow a pull request could break, so it runs in
+// the full run only (tests/repo-config/e2e-pr-tier.test.js).
+test("the building geometry lab opens and draws without errors", async ({
   page,
 }) => {
   const problems = await watch(page);
