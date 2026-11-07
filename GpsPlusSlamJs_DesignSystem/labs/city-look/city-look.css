@@ -1,0 +1,242 @@
+/* The city look lab's chrome. Its own small sheet: the harness builds the DOM,
+   and each page only links this file. */
+
+:root {
+  color-scheme: light dark;
+  --cl-page: #e7ebef;
+  --cl-text: #1d2733;
+  --cl-muted: #55616e;
+  --cl-panel: rgb(255 255 255 / 92%);
+  --cl-line: #c4ccd4;
+  --cl-accent: #27547d;
+  --cl-on-accent: #fff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --cl-page: #11161c;
+    --cl-text: #e6ebf0;
+    --cl-muted: #9aa7b4;
+    --cl-panel: rgb(20 26 33 / 92%);
+    --cl-line: #36424e;
+    --cl-accent: #8fbce6;
+    --cl-on-accent: #10161c;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--cl-page);
+  color: var(--cl-text);
+  font:
+    14px/1.4 system-ui,
+    sans-serif;
+}
+
+a {
+  color: var(--cl-accent);
+}
+
+/* The gallery. */
+
+.cl-gallery {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+
+.cl-gallery li {
+  margin-bottom: 12px;
+}
+
+/* A page: the picture fills what the panel leaves. */
+
+.cl-page {
+  display: flex;
+  height: 100dvh;
+  overflow: hidden;
+  flex-direction: row-reverse;
+}
+
+.cl-stage {
+  position: relative;
+  min-width: 0;
+  flex: 1;
+}
+
+.cl-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.cl-panel {
+  width: 260px;
+  padding: 12px;
+  overflow-y: auto;
+  background: var(--cl-panel);
+  border-right: 1px solid var(--cl-line);
+}
+
+.cl-title {
+  margin: 0;
+  font-size: 16px;
+}
+
+.cl-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.cl-row-label {
+  width: 100%;
+  color: var(--cl-muted);
+  font-size: 12px;
+}
+
+.cl-button {
+  min-width: 44px;
+  min-height: 36px;
+  padding: 4px 10px;
+  border: 1px solid var(--cl-line);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.cl-button[aria-pressed="true"] {
+  border-color: var(--cl-accent);
+  background: var(--cl-accent);
+  color: var(--cl-on-accent);
+}
+
+.cl-stats,
+.cl-attribution {
+  margin: 10px 0 0;
+  font-size: 12px;
+}
+
+.cl-stats {
+  font-variant-numeric: tabular-nums;
+}
+
+.cl-attribution {
+  color: var(--cl-muted);
+}
+
+.cl-error {
+  position: fixed;
+  inset: auto 16px 16px;
+  margin: 0;
+  padding: 12px;
+  border-radius: 6px;
+  background: #8c1c13;
+  color: #fff;
+}
+
+/* A hit area wide enough for a thumb, around a thin line. */
+
+.cl-divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 44px;
+  transform: translateX(-50%);
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.cl-divider[hidden] {
+  display: none;
+}
+
+.cl-divider-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 21px;
+  width: 2px;
+  background: #fff;
+  box-shadow: 0 0 3px rgb(0 0 0 / 60%);
+}
+
+.cl-divider-grip {
+  position: absolute;
+  top: 50%;
+  left: 8px;
+  width: 28px;
+  height: 28px;
+  margin-top: -14px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 45%);
+}
+
+.cl-divider:focus-visible .cl-divider-grip {
+  outline: 2px solid var(--cl-accent);
+  outline-offset: 2px;
+}
+
+/* The two sides' names sit on the stage, so a screenshot says which is which. */
+
+.cl-side {
+  position: absolute;
+  top: 8px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgb(0 0 0 / 55%);
+  color: #fff;
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.cl-side-left {
+  left: 8px;
+}
+
+.cl-side-right {
+  right: 8px;
+}
+
+/* A phone upright: the picture on top, the controls under it, one screen. */
+
+@media (max-width: 700px) and (orientation: portrait) {
+  .cl-page {
+    flex-direction: column;
+  }
+
+  .cl-panel {
+    width: 100%;
+    max-height: 42dvh;
+    border-top: 1px solid var(--cl-line);
+    border-right: 0;
+  }
+}
+
+/* A phone sideways: a narrow panel, so the picture keeps the width. */
+
+@media (max-height: 500px) and (orientation: landscape) {
+  .cl-panel {
+    width: 200px;
+    padding: 8px;
+  }
+
+  .cl-button {
+    min-height: 32px;
+    padding: 2px 8px;
+  }
+}
