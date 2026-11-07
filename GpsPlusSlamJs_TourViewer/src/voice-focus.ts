@@ -13,6 +13,7 @@
 
 import type { ItemVideo } from "./item-card.js";
 import type { NarrationPlayer } from "./narration-player.js";
+import { isPlayAbort } from "./scene-audio.js";
 import type { SceneAudio } from "./scene-view.js";
 
 /** One source of sound, as the focus drives it. */
@@ -214,6 +215,8 @@ export function focusedSceneAudio(
           onEnded();
         })
         .catch((error: unknown) => {
+          // A hold's pause cut it short: still the channel's, still waited for.
+          if (isPlayAbort(error)) return;
           if (mine === clip) focus.ended(voice);
           throw error;
         });

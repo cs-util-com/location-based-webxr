@@ -2528,6 +2528,11 @@
       #scene-video[hidden] {
         display: none;
       }
+      /* What an item fills on its own (item-card.ts): empty, it takes no
+         place in the card. */
+      #scene-surface:empty {
+        display: none;
+      }
       /* The station's description under its name (B2b step 6). */
       #scene-description {
         color: var(--walk-muted);
@@ -6284,6 +6289,7 @@
                       preload="metadata"
                       hidden
                     ></video>
+                    <div id="scene-surface" data-testid="scene-surface"></div>
                     <p id="scene-text" data-testid="scene-text"></p>
                     <p id="scene-status" data-testid="scene-status"></p>
                     <div id="scene-choices" data-testid="scene-choices"></div>

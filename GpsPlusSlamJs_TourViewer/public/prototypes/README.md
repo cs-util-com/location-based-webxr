@@ -5,6 +5,10 @@ round M1; the rule: root `CLAUDE.md` "Throwaway UX prototypes"). They are
 served at `/tour/prototypes/`, linked from nothing in the app, and NOT
 wired into its logic: every interaction is faked.
 
+- `item-kinds/` - new kinds of items for the item lab
+  (`/tour/item-lab.html?kind=stamp-1`); its `README.md` says how to add one.
+  Pages and files here are linked from nothing in the app.
+
 - `index.html` - the list.
 - `landing-1-editorial/` ... `landing-5-map-path/` - the creator's entry
   and setup page, five visual directions. The app took L5.

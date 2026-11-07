@@ -17,6 +17,7 @@
 import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characters";
 import type {
   TourAsset,
+  TourBlock,
   TourCharacterBlock,
   TourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
@@ -30,6 +31,7 @@ import {
   type ItemCardHost,
   type ItemTapTarget,
   type ItemVideo,
+  type ItemWorld,
 } from "./item-card.js";
 import {
   createNarrationPlayer,
@@ -78,6 +80,9 @@ export interface FreeItemsDeps {
   sayFailure(text: string): void;
   /** Makes a player (a seam for tests). */
   makePlayer?: (deps: NarrationPlayerDeps) => NarrationPlayer;
+  /** Shows an item's card (the item lab swaps a kind in; `showItemCard`
+   *  otherwise). */
+  showItem?(block: TourBlock, host: ItemCardHost): void;
 }
 
 export interface FreeItems {
@@ -230,6 +235,17 @@ export function createFreeItems(deps: FreeItemsDeps): FreeItems {
 
   function hostOf(figure: Figure, stage: FreeStage): ItemCardHost {
     const { run } = figure;
+    // Only a figure's door: a model never stands free here.
+    const world: ItemWorld = {
+      showCharacter: (stationId, blob, _onWaiting, look) =>
+        stage.showCharacter(
+          stationId,
+          blob,
+          undefined,
+          // His line has no card to sit in here.
+          look === undefined ? undefined : { ...look, noCard: true },
+        ),
+    };
     const showing = (): boolean => run === figure.run;
     return {
       slots: offCard(),
@@ -258,15 +274,8 @@ export function createFreeItems(deps: FreeItemsDeps): FreeItems {
       url: () => "",
       sound: () => undefined,
       stage: {
-        character: (blob, look) =>
-          stage.showCharacter(
-            figure.stationId,
-            blob,
-            undefined,
-            // His line has no card to sit in here.
-            look === undefined ? undefined : { ...look, noCard: true },
-          ),
-        model: () => Promise.resolve(),
+        // Nothing waits here for the visitor's position: no line says so.
+        stand: (_what, draw) => draw(world, { stationId: figure.stationId }),
         tapTarget(target) {
           figure.target = target;
         },
@@ -281,7 +290,7 @@ export function createFreeItems(deps: FreeItemsDeps): FreeItems {
   function stand(figure: Figure): void {
     if (figure.stage === null) return;
     figure.standing = true;
-    showItemCard(figure.block, hostOf(figure, figure.stage));
+    (deps.showItem ?? showItemCard)(figure.block, hostOf(figure, figure.stage));
   }
 
   function leave(figure: Figure): void {
@@ -352,7 +361,7 @@ export function createFreeItems(deps: FreeItemsDeps): FreeItems {
       const figure = hit === null ? undefined : owners.get(hit);
       if (figure === undefined) return false;
       const { target } = figure;
-      if (target?.view === "bubble") {
+      if (target?.bubble === true) {
         figure.stage?.toggleBubble();
       } else if (target?.voice !== undefined) {
         const player = playerOf(figure, target.voice);

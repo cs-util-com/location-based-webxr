@@ -79,6 +79,32 @@ describe("createSceneAudio", () => {
     expect(urls.revoked).toHaveLength(1);
   });
 
+  // Why: a pause while a play() is still pending makes the browser reject
+  // that play() with AbortError. That is not a refusal: the clip is held and
+  // must carry on later, so ending it here would end a paused story's step.
+  it("a resume cut short by the next pause does not end the clip", async () => {
+    let abort = (): void => undefined;
+    let pending = false;
+    const { audio } = harness(() =>
+      pending
+        ? new Promise((_, reject) => {
+            abort = () => {
+              reject(new DOMException("paused", "AbortError"));
+            };
+          })
+        : Promise.resolve(),
+    );
+    const ended = vi.fn();
+    await audio.play(new Blob(), ended);
+    audio.pause();
+    pending = true;
+    audio.resume();
+    audio.pause();
+    abort();
+    await settle();
+    expect(ended).not.toHaveBeenCalled();
+  });
+
   it("resumes nothing once the clip has stopped", async () => {
     const { audio, elements } = harness();
     await audio.play(new Blob(), () => undefined);

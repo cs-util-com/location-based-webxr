@@ -985,6 +985,7 @@ const stations = wireVisitorStations({
       choices: element("scene-choices"),
       continueButton: element("scene-continue"),
       playNext: element("scene-play-next"),
+      surface: element("scene-surface"),
     },
     skipButton: element("station-skip"),
     continueButton: element("scene-continue"),
