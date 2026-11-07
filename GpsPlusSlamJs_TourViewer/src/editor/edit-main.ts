@@ -45,6 +45,7 @@ import {
   manifestToWrite,
   selectTourDocument,
   tourDocumentActions,
+  objectMoveChange,
   type TourDocumentState,
   type TourSaveHolder,
   type TourSaveStatus,
@@ -82,6 +83,7 @@ import {
 } from "./editor-model.js";
 import { applySceneEdit } from "./scene-edits.js";
 import type { GestureEdit } from "../editor3d/gesture.js";
+import { askMove, moveNote } from "../move-question.js";
 import { confirmPausingFrames } from "./browser-question.js";
 import {
   droppedDetailsLine,
@@ -175,7 +177,6 @@ import {
 } from "./editor-shell/editor-shell.js";
 import { addNewItem } from "./new-pin.js";
 import type { AddKind } from "./editor-shell/tree-add-menu.js";
-import { reseatOf, type Reseat } from "./reseat-note.js";
 import { newObjectId } from "../content-placement.js";
 import type { InspectorCode } from "./editor-shell/inspector-model.js";
 import { stationTitle } from "../station-run.js";
@@ -1151,17 +1152,23 @@ function finishMove(): void {
   if (done.drop !== null) {
     try {
       const before = store.getState().tourDocument;
-      const outcome = editor.move(done.id, done.drop.lat, done.drop.lng);
+      const { lat, lng } = done.drop;
+      const change = objectMoveChange(before, done.id, lat, lng);
+      const joinStation =
+        change.kind === "moved"
+          ? askMove(before, done.id, change.after.geo, confirmPausingFrames)
+          : undefined;
+      const outcome = editor.move(
+        done.id,
+        lat,
+        lng,
+        joinStation === undefined ? {} : { joinStation },
+      );
       if (outcome.kind === "moved") {
         moved.add(done.id);
-        const reseat = announceReseat(before, done.id);
-        say({
-          id: done.id,
-          text:
-            reseat === null
-              ? "Moved - not saved yet."
-              : `${reseat.said} - not saved yet.`,
-        });
+        if (joinStation !== undefined) showRowsOf(joinStation);
+        const note = moveNote(before, store.getState().tourDocument, done.id);
+        say({ id: done.id, text: `${note ?? "Moved"} - not saved yet.` });
         endUndo();
         autosave.changed();
       } else {
@@ -1374,31 +1381,24 @@ function commitSceneEdit(edit: GestureEdit): boolean {
   if (editor === null) return false;
   endUndo();
   const before = store.getState().tourDocument;
-  const outcome = applySceneEdit(editor, edit);
+  const joinStation =
+    edit.kind === "item-pose"
+      ? askMove(before, edit.id, edit.geo, confirmPausingFrames)
+      : undefined;
+  const outcome = applySceneEdit(editor, edit, joinStation);
   say(null);
   refresh();
   if (outcome.kind === "refused") {
     toast(outcome.reason);
     return false;
   }
+  if (joinStation !== undefined) showRowsOf(joinStation);
   if (edit.kind === "item-pose") {
-    const reseat = announceReseat(before, edit.id);
-    if (reseat !== null) toast(reseat.said);
+    const note = moveNote(before, store.getState().tourDocument, edit.id);
+    if (note !== null) toast(note);
   }
   autosave.changed();
   return true;
-}
-
-/** An item a write gave another station (`reseat-note.ts`): a station
- *  the rule made for it shows in the list and starts unlocked, as every
- *  station made in this session; the line saying so is the caller's. */
-function announceReseat(before: TourDocumentState, id: string): Reseat | null {
-  const reseat = reseatOf(before, store.getState().tourDocument, id);
-  if (reseat?.made === true) {
-    showRowsOf(reseat.stationId);
-    unlockMade(reseat.stationId);
-  }
-  return reseat;
 }
 
 /** An edit the 3D inspector typed or pressed, written through `write`:

@@ -654,10 +654,21 @@ test("Put items on the ground, Put on the ground, Add a pin, a pin's text and a 
     .toBe("");
   expect((await stationNow(page, "a")).foundRadiusM).toBe(24);
 
-  // An item typed out of its station's circle is seated again, said in a
-  // toast naming it and its new station: into the circle it lands in, or,
-  // out of every circle, into a station of its own, which, made here,
-  // starts unlocked.
+  // An item typed into another station's circle asks first: No leaves it
+  // in its station, where it was typed, and says so; Yes changes it. Typed
+  // out of every circle it asks nothing and stays. A move makes no station.
+  /** @type {string[]} */
+  const asked = [];
+  let answer = false;
+  page.on("dialog", (dialog) => {
+    asked.push(dialog.message());
+    void (answer ? dialog.accept() : dialog.dismiss());
+  });
+  const stationsBefore = (await tourNow(page)).stations.length;
+  const homeOfPin = async () =>
+    (await tourNow(page)).stations.find((/** @type {any} */ s) =>
+      stationBlocks(s).some((/** @type {any} */ i) => i.id === "pa"),
+    ).id;
   await page
     .locator('#tree-body .card[data-station="a"] [data-select="pa"]')
     .click();
@@ -667,22 +678,38 @@ test("Put items on the ground, Put on the ground, Add a pin, a pin's text and a 
   await field(page, "north").fill("60");
   await field(page, "north").press("Enter");
   await expect(
+    page.locator(".toast", {
+      hasText: `"Pin a" stays in Station A, outside its circle`,
+    }),
+  ).toBeVisible();
+  expect(asked).toHaveLength(1);
+  expect(asked[0]).toContain("Station A");
+  expect(asked[0]).toContain("Station B");
+  expect(await homeOfPin()).toBe("a");
+  // Undo takes the move back, and this time the answer is Yes.
+  await page.locator("#studio-undo").click();
+  answer = true;
+  await field(page, "north").fill("60");
+  await field(page, "north").press("Enter");
+  await expect(
     page.locator(".toast", { hasText: `"Pin a" is now in Station B` }),
   ).toBeVisible();
-  // 100 m south of b: out of a's circle too.
+  expect(await homeOfPin()).toBe("b");
+  expect(asked).toHaveLength(2);
+  // One step: its Undo gives it back to its station.
+  await page.locator("#studio-undo").click();
+  await expect.poll(homeOfPin).toBe("a");
+  // Out of every circle: no question, and no new station.
   await field(page, "north").fill("-100");
   await field(page, "north").press("Enter");
   await expect(
     page.locator(".toast", {
-      hasText: `"Pin a" left its station's circle: it is now in a station of its own`,
+      hasText: `"Pin a" stays in Station A, outside its circle`,
     }),
-  ).toBeVisible();
-  const home = (await tourNow(page)).stations.find((/** @type {any} */ s) =>
-    stationBlocks(s).some((/** @type {any} */ i) => i.id === "pa"),
-  );
-  expect(home.id).not.toBe("a");
-  await selectStation(page, home.id);
-  await expect(act(page, "lock")).toHaveAttribute("aria-pressed", "false");
+  ).toHaveCount(1);
+  expect(asked).toHaveLength(2);
+  expect(await homeOfPin()).toBe("a");
+  expect((await tourNow(page)).stations).toHaveLength(stationsBefore);
 });
 
 /**

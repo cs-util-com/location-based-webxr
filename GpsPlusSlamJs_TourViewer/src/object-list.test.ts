@@ -153,6 +153,14 @@ describe("objectListModel on the page", () => {
       expect(model.hidden).toBe(false);
     }
     expect(objectListModel(state({ note: "Saved." })).undo).toBe(false);
+    // A move waiting for its answer stands on both the page and in AR.
+    const question = { text: "Change?", declined: "Or not." };
+    for (const inAr of [false, true]) {
+      expect(objectListModel(state({ inAr, question })).question).toEqual(
+        question,
+      );
+    }
+    expect(objectListModel(state({})).question).toBeNull();
   });
 
   it("locks a busy row, and every row while a Finish runs", () => {

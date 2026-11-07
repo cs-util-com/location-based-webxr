@@ -245,9 +245,9 @@ M4 settles every code of the book, not only the one in hand.
       that this visit did not place (earlier work moved into it, a
       restored draft) is put back where it stood before the settle, as the
       code move's `stay` does: the visit's correction says nothing about
-      it. Put back by a move, so it stays in the station while the
-      item stays within the moved station's found radius (25 m by
-      default); further off, the move re-seats it by the station rule.
+      it. Put back by a move, which keeps its station whatever the
+      distance, and never asks: a settle has no one to ask. A spot past
+      the format's bound is refused, the item staying where it stood.
     - **One settle is one step** (plan M3b, Q-D): every station and
       object move of the settle, the code move's included, is collected in
       the document's `settleBatch()` (each reading the document as the

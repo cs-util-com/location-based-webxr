@@ -321,8 +321,7 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
 - **A typed height is the item's altitude alone** (`groundItems` with one
   item): its place and turn stay bit for bit, so a height never moves an
   item sideways (a pose through the station's frame and back would, by
-  its float32 rounding, and could re-seat an item outside a lowered
-  circle).
+  its float32 rounding).
 - With nothing selected the inspector's model is not built (no tour is
   built for it on the readout's tick, five times a second).
 - **Put on the ground waits for the ground:** where the ground under

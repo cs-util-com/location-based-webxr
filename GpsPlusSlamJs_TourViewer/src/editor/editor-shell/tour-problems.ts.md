@@ -11,7 +11,7 @@ its station's circle" that the inspector's count reads too.
 
 - `ProblemSeverity` - `"error" | "warning" | "note"`.
 - `TourProblem` (module-private, the shape of `problems`) -
-  `{ severity, what, who, select, fix? }`: what is wrong, the item's or
+  `{ severity, what, who, select, fixes? }`: what is wrong, the item's or
   station's title, the selection a click on its row makes
   (`station:<id>` or an item's id), and the one-click mend where there
   is one.
@@ -28,9 +28,10 @@ its station's circle" that the inspector's count reads too.
 - `tourProblems(stations)` -> one group per station that has a problem:
   - warning: "Outside its station's circle (N m from the centre, circle
     R m)" for each item of `outsideItems`, who = `objectTitle(item)`,
-    with the fix "Move inside": the item moved along the line it stands
-    on to 4 m inside the circle (halfway to the centre for a circle of
-    8 m or less), its heading kept. `fix.edit(groundAt?)`: where
+    with two fixes. "Move to a new station" is the explicit way out. "Move
+    inside": the item moved along the line it stands on to 4 m inside the
+    circle (halfway to the centre for a circle of 8 m or less), its
+    heading kept. Its `edit(groundAt?)`: where
     `groundAt` (the view's loaded ground, as "Put on the ground" reads it)
     has the ground at both the old and the new spot, the item keeps its
     height over the ground (a move of tens of metres on a slope would

@@ -494,6 +494,10 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     },
     fix: (selection, fix) => {
       deps.select(selection);
+      if ("split" in fix) {
+        deps.stations.split(selection);
+        return;
+      }
       let written: boolean;
       try {
         written = deps.edits.scene(fix.edit(groundAt));

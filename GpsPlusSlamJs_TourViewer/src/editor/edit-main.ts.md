@@ -742,11 +742,13 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   (`openedLevels`), and edits through the page's `edits`:
   - `commit` (`commitSceneEdit`) writes a finished gesture as one undo
     step (`applySceneEdit` of `scene-edits.ts`): it ends a delete's Undo
-    offer, refreshes the views and tells autosave, or toasts a refusal;
-    an item pose that gave the item another station is said in a toast
-    (`announceReseat`, `reseat-note.ts`), and a station the rule made
-    for it shows in the list (`showRowsOf`) and starts unlocked. The 2D map's drag (`finishMove`) says the
-    same on the card ("... - not saved yet.");
+    offer, refreshes the views and tells autosave, or toasts a refusal.
+    An item pose that crosses into another station's circle asks first,
+    in the blocking `confirmPausingFrames` (`askMove`, `move-question.ts`),
+    so no drag is ever half applied; the drop stays drawn behind the
+    question. What the write did to the item's station is said in a toast
+    (`moveNote`). The 2D map's drag (`finishMove`) asks the same and says
+    the same on the card ("... - not saved yet.");
   - `remove` (`deleteSelection`, the card's Delete too) deletes an item
     with the toast's Undo, or a station (`deleteStation`);
   - `duplicate` (`duplicateSelection`, Ctrl+D) copies an item or a

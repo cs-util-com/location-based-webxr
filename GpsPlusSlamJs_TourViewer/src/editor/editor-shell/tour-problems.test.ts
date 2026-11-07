@@ -16,7 +16,13 @@ import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 
-import { outsideItems, problemCounts, tourProblems } from "./tour-problems.js";
+import {
+  outsideItems,
+  problemCounts,
+  tourProblems,
+  type ProblemFix,
+  type ProblemGroup,
+} from "./tour-problems.js";
 import { stationContent, storyOf } from "../../test-support/station-content.js";
 
 const AT = "2026-11-04T00:00:00.000Z";
@@ -51,6 +57,15 @@ function station(
     hint: "arrow",
     ...stationContent(blocks as readonly TourBlock[]),
   } as unknown as TourStation;
+}
+
+/** A group's first problem's "Move inside". */
+function moveInside(
+  group: ProblemGroup | undefined,
+): Exclude<ProblemFix, { split: true }> {
+  const fix = group?.problems[0]?.fixes?.[0];
+  if (fix === undefined || "split" in fix) throw new Error("no edit fix");
+  return fix;
 }
 
 describe("tourProblems", () => {
@@ -90,10 +105,13 @@ describe("tourProblems", () => {
   it("offers to move an outside item inside, along its line, height kept", () => {
     const far = pin("far", 30, 40, "Far pin", 2.5);
     const [group] = tourProblems([station("a", [far], "Square")]);
-    const fix = group?.problems[0]?.fix;
-    expect(fix?.label).toBe("Move inside");
-    expect(fix?.done).toBe('Moved "Far pin" inside its station\'s circle');
-    const edit = fix!.edit();
+    const [fix, split] = group?.problems[0]?.fixes ?? [];
+    if (fix === undefined || "split" in fix) throw new Error("no edit fix");
+    expect(fix.label).toBe("Move inside");
+    expect(fix.done).toBe('Moved "Far pin" inside its station\'s circle');
+    // Why: an item left out of its circle has the second way out too.
+    expect(split).toEqual({ label: "Move to a new station", split: true });
+    const edit = fix.edit();
     expect(edit.kind).toBe("item-pose");
     expect(edit.id).toBe("far");
     const geo = edit.geo;
@@ -118,7 +136,7 @@ describe("tourProblems", () => {
   it("keeps the moved item's height over the ground where the ground is known", () => {
     const far = pin("far", 30, 40, "Far pin", 2.5);
     const [group] = tourProblems([station("a", [far], "Square")]);
-    const fix = group!.problems[0]!.fix!;
+    const fix = moveInside(group);
     const asked: { lat: number; lon: number }[] = [];
     // The far spot (50 m out) lies 4 m lower than the station's anchor
     // ground; the new spot (21 m out) 7 m higher than it.
@@ -142,7 +160,7 @@ describe("tourProblems", () => {
     const [group] = tourProblems([
       station("a", [pin("far", 6, 8, "Far pin")], "Square", 4),
     ]);
-    const geo = group!.problems[0]!.fix!.edit().geo;
+    const geo = moveInside(group).edit().geo;
     const northM = (geo.lat - 48.1) * 111_320;
     const eastM = (geo.lon - 11.5) * 111_320 * Math.cos((48.1 * Math.PI) / 180);
     expect(Math.hypot(northM, eastM)).toBeCloseTo(2, 1);

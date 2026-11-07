@@ -283,12 +283,13 @@ describe("the Problems tab", () => {
       }),
       done: "Moved",
     };
+    const split: ProblemFix = { label: "Move to a new station", split: true };
     const [first, second] = GROUPS;
     panel.problems(
       [
         {
           ...first!,
-          problems: [{ ...first!.problems[0]!, fix: mend }],
+          problems: [{ ...first!.problems[0]!, fixes: [mend, split] }],
         },
         second!,
       ],
@@ -296,9 +297,14 @@ describe("the Problems tab", () => {
     );
     toggle("problems").click();
     const links = [...el.querySelectorAll<HTMLButtonElement>(".prow .fix")];
-    expect(links.map((l) => l.textContent)).toEqual(["Move inside"]);
+    expect(links.map((l) => l.textContent)).toEqual([
+      "Move inside",
+      "Move to a new station",
+    ]);
     links[0]?.click();
     expect(fix).toHaveBeenCalledWith("far", mend);
+    links[1]?.click();
+    expect(fix).toHaveBeenCalledWith("far", split);
     expect(choose).not.toHaveBeenCalled();
   });
 
