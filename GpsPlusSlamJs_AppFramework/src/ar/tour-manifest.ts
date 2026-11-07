@@ -75,16 +75,20 @@ import {
   parseTourCharacters,
   type TourCharacter,
   type TourCharacterDrop,
+  type TourCharacterView,
 } from './tour-characters.js';
 import {
   placeTourBlocks,
   readTourBlocks,
+  type TourAudioBlock,
   type TourBlockDrop,
+  type TourCharacterBlock,
   type TourLongTextBlock,
   type TourModelBlock,
   type TourModelWorldView,
   type TourPictureBlock,
   type TourShortTextBlock,
+  type TourVideoBlock,
 } from './tour-blocks.js';
 import {
   parseTourDetails,
@@ -195,8 +199,25 @@ export type TourLectern = InWorld<TourLongTextBlock> & {
 export type TourReadingSign = InWorld<TourLongTextBlock> & {
   readonly view: 'reading';
 };
+/** A video standing free in its station, in `card` until a world look
+ *  joins the format. */
+export type TourFreeVideo = InWorld<TourVideoBlock> & { readonly view: 'card' };
+/** A sound standing free in its station, as a video. */
+export type TourFreeAudio = InWorld<TourAudioBlock> & { readonly view: 'card' };
+/** A character standing free in his station, as a figure in one of his
+ *  views. */
+export type TourFreeCharacter = InWorld<TourCharacterBlock> & {
+  readonly view: TourCharacterView;
+};
 export type TourObject =
-  TourPin | TourLectern | TourReadingSign | TourPicture | TourModel;
+  | TourPin
+  | TourLectern
+  | TourReadingSign
+  | TourPicture
+  | TourModel
+  | TourFreeVideo
+  | TourFreeAudio
+  | TourFreeCharacter;
 export type TourObjectKind = TourObject['kind'];
 
 /** The draft record's format: what `tourObjectRecord` writes and
@@ -316,10 +337,18 @@ const IDENTITY_POSE: TourLocalPose = {
   rotation: [0, 0, 0, 1],
 };
 
-/** The record's asset entry: the picture's own, read by the manifest's
- *  asset rules; for a model, an entry the record does not store, so its
- *  block reads (the model's file is the tour's asset, checked when the
- *  tour is written). */
+/** The asset entry a record does not store for `id`, so its block reads
+ *  (the file is the tour's asset, checked when the tour is written). */
+function unstoredAsset(
+  id: unknown,
+  kind: 'model' | 'video' | 'audio' | 'image'
+): TourAsset[] {
+  return isTourId(id) ? [{ id, path: `content/${id}`, kind }] : [];
+}
+
+/** The record's asset entries: the picture's own, read by the manifest's
+ *  asset rules; for every other kind, entries the record does not store
+ *  (`unstoredAsset`). */
 function recordAssets(
   record: Record<string, unknown>,
   block: Record<string, unknown>,
@@ -335,9 +364,37 @@ function recordAssets(
   if (record.asset !== undefined) {
     fail(`"${at}.asset" is only for a picture`);
   }
-  return block.kind === 'model' && isTourId(block.asset)
-    ? [{ id: block.asset, path: `content/${block.asset}.glb`, kind: 'model' }]
-    : [];
+  switch (block.kind) {
+    case 'model':
+      return unstoredAsset(block.asset, 'model');
+    case 'video':
+      return [
+        ...unstoredAsset(block.video, 'video'),
+        ...unstoredAsset(block.poster, 'image'),
+      ];
+    case 'audio':
+      return unstoredAsset(block.audio, 'audio');
+    case 'character':
+      return [
+        ...unstoredAsset(block.image, 'image'),
+        ...unstoredAsset(block.voice, 'audio'),
+      ];
+    default:
+      return [];
+  }
+}
+
+/** The declaration a free character's record names, so its block reads
+ *  (the record has no tour beside it; the write re-validates it). */
+function recordCharacters(
+  block: Record<string, unknown>
+): Map<string, { name: string; image: string }> {
+  const { character, name, image } = block;
+  return typeof character === 'string' &&
+    typeof name === 'string' &&
+    typeof image === 'string'
+    ? new Map([[character, { name, image }]])
+    : new Map<string, { name: string; image: string }>();
 }
 
 /** A record's station: absent, or a station id. */
@@ -366,6 +423,7 @@ export function parseTourObject(value: unknown, at = 'object'): TourObject {
   const assets = recordAssets(value, block, at);
   const options = {
     assets,
+    characters: recordCharacters(block),
     fail,
     onDropped: (drop: TourBlockDrop) => fail(drop.reason),
   };

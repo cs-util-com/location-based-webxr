@@ -23,9 +23,8 @@
  * kind, naming an asset this reader does not have, or breaking a rule a
  * later minor may relax is skipped and reported, never failing the tour; a
  * block in an unknown view falls back to its floor view: `card` for a
- * story block, the kind's world view for a free one
- * ({@link tourFloorView}), and a free block with no world view this reader
- * draws is skipped and reported. Structural faults (an id, a pose) fail at every
+ * story block, a view its kind may stand free in for a free one
+ * ({@link tourFloorView}). Structural faults (an id, a pose) fail at every
  * minor: no revision can make them valid.
  *
  * @see tour-blocks.ts.md
@@ -58,8 +57,8 @@ export type TourBlockKind =
  *  the bubble with his voice on a tap (`speak`); the bubble, and once his
  *  line has ended he beckons along the tour (`two-stations`); a portrait
  *  card at the foot of the screen (`portrait`); a paper stage that unfolds
- *  at the station (`popup`). None is a world view: a character speaks
- *  only as a step. */
+ *  at the station (`popup`). He takes them as a step and standing free
+ *  in a station (`TOUR_FREE_BLOCK_VIEWS`). */
 export const TOUR_CHARACTER_VIEWS = [
   'bubble',
   'speak',
@@ -103,10 +102,11 @@ export type TourModelWorldView = (typeof TOUR_MODEL_WORLD_VIEWS)[number];
 
 type ViewOf<K extends TourBlockKind> = (typeof TOUR_BLOCK_VIEWS)[K][number];
 
-/** The views a FREE block may stand in: drawn in the world for as long as
- *  its station is shown. `card` opens only when a step shows it, and a
- *  `stage` figure lives only while a story runs. Renderers ask this set,
- *  never a copy of it. */
+/** The views drawn in the world for as long as their block is present: a
+ *  story block in one stands from the moment its story reaches it. `card`
+ *  opens only when a step shows it, a character's views are the stage's,
+ *  and a `stage` figure lives only while a story runs. Renderers ask this
+ *  set, never a copy of it. */
 export const TOUR_WORLD_VIEWS: ReadonlySet<string> = new Set([
   'pin',
   'lectern',
@@ -114,6 +114,23 @@ export const TOUR_WORLD_VIEWS: ReadonlySet<string> = new Set([
   'plane',
   ...TOUR_MODEL_WORLD_VIEWS,
 ]);
+
+/**
+ * The views a FREE block may hold, per kind. Every kind works directly in a
+ * station; a view may belong to a story alone (`stage` always, `card` for a
+ * kind with a look of its own in the world, which nothing would reach). A
+ * video and a sound hold `card` until their world views join the format:
+ * the file then names no look, and the viewer draws what it has for them.
+ */
+export const TOUR_FREE_BLOCK_VIEWS = {
+  shortText: ['pin'],
+  longText: ['lectern', 'reading'],
+  picture: ['plane'],
+  video: ['card'],
+  audio: ['card'],
+  model: TOUR_MODEL_WORLD_VIEWS,
+  character: TOUR_CHARACTER_VIEWS,
+} as const satisfies Record<TourBlockKind, readonly string[]>;
 
 const MODEL_WORLD_VIEWS: ReadonlySet<string> = new Set(TOUR_MODEL_WORLD_VIEWS);
 
@@ -422,22 +439,22 @@ export function checkTourBlockText(
 
 /**
  * The view a free block falls back to when this reader does not know its
- * own: its kind's world view, or null when this reader draws none for that
- * kind (the block is skipped). A story block's floor is `card`, which is
- * also what its reader gives a block with no view at all.
+ * own: one of {@link TOUR_FREE_BLOCK_VIEWS}. A story block's floor is
+ * `card`, which is also what its reader gives a block with no view at all.
  */
-export function tourFloorView(kind: TourBlockKind): TourBlockView | null {
+export function tourFloorView(kind: TourBlockKind): TourBlockView {
   return FREE_FLOOR[kind];
 }
 
-const FREE_FLOOR: Record<TourBlockKind, TourBlockView | null> = {
+const FREE_FLOOR: Record<TourBlockKind, TourBlockView> = {
   shortText: 'pin',
   longText: 'reading',
   picture: 'plane',
-  video: null,
-  audio: null,
+  video: 'card',
+  audio: 'card',
   model: 'placed',
-  character: null,
+  // The view that stands him as a figure and keeps a tap on his voice.
+  character: 'speak',
 };
 
 /** What a block takes from a declared character. */
@@ -995,14 +1012,12 @@ export function readTourBlocks(
 function freePlacement(read: TourBlockRead): TourBlock | string {
   const { block, knownView } = read;
   if (knownView) {
-    return TOUR_WORLD_VIEWS.has(block.view)
+    const views: readonly string[] = TOUR_FREE_BLOCK_VIEWS[block.kind];
+    return views.includes(block.view)
       ? block
-      : `block "${block.id}" stands free in its station, so it must stand in the world (${[...TOUR_WORLD_VIEWS].join(', ')}), not in "${block.view}"`;
+      : `block "${block.id}" stands free in its station, so it must stand in the world (${views.join(', ')}), not in "${block.view}"`;
   }
   const floor = tourFloorView(block.kind);
-  if (floor === null) {
-    return `block "${block.id}" stands free in its station, and this version of the app draws no ${block.kind} in the world`;
-  }
   if (block.kind === 'model' && block.sizeM === undefined) {
     return `block "${block.id}" stands free in its station, and a placed model needs a size`;
   }
@@ -1010,9 +1025,9 @@ function freePlacement(read: TourBlockRead): TourBlock | string {
 }
 
 /**
- * Settle each FREE block's view: it must stand in the world - in a strict
- * read anything else fails the file, in a lenient one it falls back to its
- * kind's world view or is skipped and reported.
+ * Settle each FREE block's view: it must be one its kind may stand free
+ * in - in a strict read anything else fails the file, in a lenient one it
+ * is skipped and reported; an unknown view falls back to its kind's floor.
  */
 export function placeTourBlocks(
   read: readonly TourBlockRead[],

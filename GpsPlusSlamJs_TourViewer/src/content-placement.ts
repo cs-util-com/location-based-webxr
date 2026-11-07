@@ -56,6 +56,8 @@ import type {
   TourPicture,
   TourPin,
   TourStation,
+  TourAudioBlock,
+  TourVideoBlock,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { TOUR_MODEL_WORLD_VIEWS } from "gps-plus-slam-app-framework/ar/tour-blocks";
@@ -328,7 +330,20 @@ export type TourStationRendererDeps = Omit<TourObjectRendererDeps, "poseOf"> & {
    * creator's view. A view no world drawing has is drawn as nothing.
    */
   readonly viewOf?: (block: TourBlock) => string;
+  /**
+   * A free video's or a free sound's look in the world, built by the page.
+   * Absent, or null for a block: nothing is drawn for it, quietly (no look
+   * exists yet, and a stand-in would be a marker nobody chose). A free
+   * character is no business of this renderer: the page's free host stands
+   * him (`free-items.ts`).
+   */
+  readonly makeFreeItem?: (
+    block: TourFreeLookBlock,
+  ) => { object: Object3D; dispose(): void } | null;
 };
+
+/** The blocks `makeFreeItem` builds: the free ones in a `card` view. */
+export type TourFreeLookBlock = TourVideoBlock | TourAudioBlock;
 
 /**
  * Play one station of a tour: a group at the station's geo pose in the
@@ -420,6 +435,11 @@ type Drawn =
       readonly sizeM: number;
       readonly block: TourModelBlock;
     }
+  | {
+      readonly id: string;
+      readonly as: "free";
+      readonly block: TourFreeLookBlock;
+    }
   | { readonly id: string; readonly as: "none" };
 
 /** The views a long text stands in the world in; `captions` is a
@@ -473,6 +493,9 @@ function drawnObject(object: TourObject): Drawn {
     case "picture":
       return { id: object.id, as: "plane", entry: object.imageAsset.path };
     case "model":
+    case "video":
+    case "audio":
+    case "character":
       return { id: object.id, as: "none" };
   }
 }
@@ -505,13 +528,17 @@ function drawnBlock(
       block,
     };
   }
+  if (block.kind === "video" || block.kind === "audio") {
+    return { id: block.id, as: "free", block };
+  }
   return { id: block.id, as: "none" };
 }
 
 /** The one renderer: pins as labels, pictures as planes, models at their
  *  size (`modelScale`) in their world view (`mountModelView`, found again
- *  through `mountedModelViews`), reading stands by `makeLectern` and
- *  reading signs by `makeReadingSign`, each at
+ *  through `mountedModelViews`), reading stands by `makeLectern`,
+ *  reading signs by `makeReadingSign` and a free video's or sound's look
+ *  by `makeFreeItem`, each at
  *  its pose in `scene`'s frame, under one group added once everything
  *  decoded. */
 async function renderContent(
@@ -520,6 +547,7 @@ async function renderContent(
     alive?: () => boolean;
     loadModel?: TourStationRendererDeps["loadModel"];
     modelViews?: ModelViewEnv;
+    makeFreeItem?: TourStationRendererDeps["makeFreeItem"];
   },
 ): Promise<RenderedTourObjects> {
   const labels: { object: Object3D; dispose(): void }[] = [];
@@ -563,6 +591,15 @@ async function renderContent(
         // editor draws its own): left out quietly, as a lenient read
         // leaves out what it cannot show. Not in `skipped`: "could not
         // load" would claim a download failed.
+        continue;
+      }
+      if (drawn.as === "free") {
+        const look = deps.makeFreeItem?.(drawn.block) ?? null;
+        if (look === null) continue;
+        look.object.position.set(...pose.positionNue);
+        look.object.quaternion.set(...pose.rotationNue);
+        look.object.userData["objectId"] = drawn.id;
+        stands.push(look);
         continue;
       }
       if (drawn.as === "lectern" || drawn.as === "reading") {
