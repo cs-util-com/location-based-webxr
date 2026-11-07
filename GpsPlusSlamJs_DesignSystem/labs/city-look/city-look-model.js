@@ -18,6 +18,8 @@ export const SCENES = Object.freeze([
   "heidelberg",
   "midtown",
   "parkslope",
+  "reuss",
+  "woodland",
 ]);
 
 /** The cameras; the first is the default. */

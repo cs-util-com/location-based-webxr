@@ -50,6 +50,8 @@ const FIXTURE_URLS = {
   heidelberg: new URL("./fixtures/heidelberg-altstadt.json", import.meta.url),
   midtown: new URL("./fixtures/nyc-midtown.json", import.meta.url),
   parkslope: new URL("./fixtures/nyc-park-slope.json", import.meta.url),
+  reuss: new URL("./fixtures/lucerne-reuss.json", import.meta.url),
+  woodland: new URL("./fixtures/woodland-hinterzarten.json", import.meta.url),
 };
 
 const ATTRIBUTION_HTML =

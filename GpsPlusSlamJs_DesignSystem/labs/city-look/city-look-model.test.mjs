@@ -127,6 +127,8 @@ describe("the fixed views over the real scenes", () => {
     heidelberg: "heidelberg-altstadt.json",
     midtown: "nyc-midtown.json",
     parkslope: "nyc-park-slope.json",
+    reuss: "lucerne-reuss.json",
+    woodland: "woodland-hinterzarten.json",
   };
   for (const [scene, file] of Object.entries(scenes)) {
     it(`keeps ${scene}'s landing and bird clear of every tagged building`, () => {
@@ -276,6 +278,8 @@ describe("the committed fixtures", () => {
     "lucerne-meggen.json",
     "nyc-midtown.json",
     "nyc-park-slope.json",
+    "lucerne-reuss.json",
+    "woodland-hinterzarten.json",
   ]) {
     it(`keeps ${name} under 2 MiB, minified, with Overpass's shape`, () => {
       const file = join(FIXTURES, name);

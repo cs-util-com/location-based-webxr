@@ -74,3 +74,41 @@ runtime. Nothing here is used outside this lab.
 - What it holds: 1 419 building outlines and 101 `building:part`s; 1 416
   outlines (99.8 %) carry `height`, 3 `building:levels`, 0 `roof:shape`. Tagged
   heights: median 12.9 m, 10th percentile 9.8 m, 90th percentile 15.4 m.
+
+## `lucerne-reuss.json`
+
+- Place: Lucerne's old town on the Reuss, the Kapellbruecke and the lake's end,
+  Switzerland; 640 x 640 m around 47.0517 N, 8.3077 E.
+- Why this area: the only lab scene with real water (the lake is about 15 % of
+  the box, plus a river relation), 16 highway bridges at `layer=1`, 351 mapped
+  trees and 147 benches, which the other fixtures lack.
+- Source: `https://overpass-api.de/api/interpreter`, one POST on 2026-11-07
+  (`osm3s.timestamp_osm_base` 2026-11-07T14:28:06Z), with the Meggen fixture's
+  query form (`buildTileQuery`), only the bbox changed. Captured by the city
+  objects research session.
+- Two elements removed after the capture, and named in the file's
+  `droppedOversizeRelations`, as Meggen dropped its own: relation 20172352, the
+  1.5 MB `boundary=place` outline of the Swiss Alps, and relation 11342350, the
+  124 kB `boundary=natural` outline of the Emmental Alps. The answer was
+  4 426 428 bytes and 3 084 elements; the file is 1 496 678 bytes and 3 082
+  elements, minified, everything else as the server sent it.
+- What it holds: 478 buildings and 15 `building:part`s; 249 carry `height` or
+  `building:levels`, 115 `roof:shape`. Land use: 4 parks, 9 car parks, 4 pitches,
+  2 tracks, 2 playgrounds, 4 water areas, residential, retail, railway and
+  construction land.
+
+## `woodland-hinterzarten.json`
+
+- Place: Hinterzarten, a village in the Black Forest, Germany, where its houses
+  meet the mapped woods; 640 x 640 m around 47.9030 N, 8.1070 E.
+- Why this area: the only lab scene with real woods (25 wood or forest ways and 2
+  relations, 1 orchard, 9 scrub areas, 2 tree rows), most of them with a
+  `leaf_type`: 9 `mixed`, 9 `broadleaved`, 3 `needleleaved`, 6 untyped. It also
+  holds 126 mapped trees (125 with `leaf_type`, 21 with `leaf_cycle`), 191
+  buildings and a few hedges, walls and fences. Chosen for the city objects
+  round's O1 (cosmetic trees inside mapped woods).
+- Source: `https://overpass-api.de/api/interpreter`, one POST on 2026-11-07
+  (`osm3s.timestamp_osm_base` 2026-11-07T16:23:05Z), with the query built by
+  `buildTileQuery` itself (checked identical to Meggen's stored form, only the
+  bbox changed). The answer was 750 155 bytes and 762 elements; the file is
+  554 484 bytes, minified, nothing removed. Large forest relations (112835, 67504) reach outside the box, so a page that scatters trees clips to the bbox.

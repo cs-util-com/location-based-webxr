@@ -24,7 +24,7 @@ heat scores. No three.js, no DOM.
 
 ## Invariants and assumptions
 
-- Scenes: `lucerne` (Meggen), `heidelberg`, `midtown` (Manhattan), `parkslope` (Brooklyn);
+- Scenes: `lucerne` (Meggen), `heidelberg`, `midtown` (Manhattan), `parkslope` (Brooklyn), `reuss` (Lucerne's old town on the Reuss);
   the fixtures and why each was chosen are in `fixtures/PROVENANCE.md`.
 - A mistyped link falls back to the defaults, never to an error page.
 - Street classes: residential, living street, unclassified, tertiary, pedestrian;
