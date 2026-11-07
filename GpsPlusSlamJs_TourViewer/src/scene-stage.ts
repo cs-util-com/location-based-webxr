@@ -52,12 +52,14 @@ import {
 } from "./content-fade.js";
 import {
   createCharacterLook,
+  paintPoses,
   type CharacterBeckon,
   type CharacterLook,
   type CharacterPainters,
   type CharacterVoice,
 } from "./character-look.js";
-import type { FigureSource } from "./character-canvas.js";
+import type { FigureSource, PaintedFigure } from "./character-canvas.js";
+import type { FigureMemo } from "./figure-memo.js";
 import { restYawOf, type StageCharacterView } from "./character-views.js";
 import {
   DoubleSide,
@@ -80,6 +82,8 @@ export interface StageCharacterLook {
   readonly line: string;
   /** The line has a voice, which a tap plays; default false. */
   readonly voiced?: boolean;
+  /** No card shows the line: he stands outside a story. Default false. */
+  readonly noCard?: boolean;
   /** The image is his frames sheet (four poses in one row), which the look
    *  slices; default false (one pose). */
   readonly sheet?: boolean;
@@ -128,6 +132,9 @@ export interface SceneStageDeps {
   /** The look's painters (tests run without a canvas); default the
    *  canvas ones. */
   readonly lookPainters?: CharacterPainters;
+  /** What was painted before, shared between stages; absent: every figure
+   *  paints. */
+  readonly figures?: FigureMemo;
 }
 
 export interface SceneStage {
@@ -408,33 +415,54 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
     w.settle();
   }
 
+  /** His die-cut poses: painted before, else decoded and painted now, which
+   *  a figure of the same file decoding meanwhile saves. Null: the stage
+   *  moved on. */
+  async function posesOf(
+    image: Blob,
+    sheet: boolean,
+    mine: number,
+  ): Promise<readonly PaintedFigure[] | null> {
+    const known = deps.figures?.get(image, sheet) ?? null;
+    if (known !== null) return known;
+    const texture = await deps.decodeTexture(image);
+    if (texture === null) throw new Error("the figure did not decode");
+    const meanwhile = deps.figures?.get(image, sheet) ?? null;
+    if (mine !== token || meanwhile !== null) {
+      texture.dispose();
+      return mine === token ? meanwhile : null;
+    }
+    const poses = paintPoses(
+      texture.image as FigureSource,
+      sheet,
+      deps.lookPainters,
+      // The decoder leaves a bitmap flipped for WebGL; a canvas keeps it.
+      !texture.flipY,
+    );
+    texture.dispose();
+    deps.figures?.set(image, sheet, poses);
+    return poses;
+  }
+
   return {
     async showCharacter(stationId, image, onWaiting, lookSpec) {
       clear();
       const mine = token;
-      const texture = await deps.decodeTexture(image);
-      if (texture === null) throw new Error("the figure did not decode");
       if (lookSpec !== undefined) {
-        if (mine !== token) {
-          texture.dispose();
-          return;
-        }
-        // The look paints its own die-cut textures from the decoded image.
+        const poses = await posesOf(image, lookSpec.sheet === true, mine);
+        if (poses === null) return;
         const look = createCharacterLook({
           view: lookSpec.view,
           name: lookSpec.name,
           line: lookSpec.line,
-          figure: texture.image as FigureSource,
-          // The decoder leaves a bitmap flipped for WebGL; a canvas keeps it.
-          figureFlipped: !texture.flipY,
+          poses,
           heightM: CHARACTER_HEIGHT_M,
           voiced: lookSpec.voiced === true,
-          sheet: lookSpec.sheet === true,
+          noCard: lookSpec.noCard === true,
           ...(deps.lookPainters === undefined
             ? {}
             : { painters: deps.lookPainters }),
         });
-        texture.dispose();
         look.root.name = "station-character";
         await mount(
           mine,
@@ -447,6 +475,8 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
         );
         return;
       }
+      const texture = await deps.decodeTexture(image);
+      if (texture === null) throw new Error("the figure did not decode");
       const source = texture.image as
         { width?: number; height?: number } | undefined;
       const aspect =

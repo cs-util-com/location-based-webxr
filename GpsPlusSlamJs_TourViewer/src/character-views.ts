@@ -157,8 +157,20 @@ function look(parts: Partial<CharacterViewLook>): CharacterViewLook {
   };
 }
 
-export function characterViewLook(view: StageCharacterView): CharacterViewLook {
-  return LOOKS[view];
+/** The portrait's line lives in the story card. With no card to sit in (a
+ *  figure no story brings) it stands in a bubble by him, the rest of the
+ *  view unchanged. */
+const PORTRAIT_NO_CARD: CharacterViewLook = {
+  ...LOOKS.portrait,
+  bubble: true,
+  footer: true,
+};
+
+export function characterViewLook(
+  view: StageCharacterView,
+  noCard = false,
+): CharacterViewLook {
+  return noCard && view === "portrait" ? PORTRAIT_NO_CARD : LOOKS[view];
 }
 
 /** The bubble is open at this distance (a non-finite one is far). */

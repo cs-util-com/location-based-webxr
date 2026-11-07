@@ -10,11 +10,12 @@ The page's one voice channel: one voice is heard at a time, whoever asks. A tap 
   - `tapped(voice)` - an active start: it runs, whatever ran is held. One voice is remembered: a second tap over a tapped voice stops that one and keeps the first held; a story's voice is kept instead of a held free one, which stops.
   - `selfStart(voice)` - a start nobody tapped: true when the channel was free. False leaves everything as it was, and the caller stays tappable.
   - `ended(voice)` - it is over: the held voice carries on. A held voice that ends is forgotten.
+  - `behind(voice)` - it waits behind what runs and carries on when that ends or is tapped: true when the one place behind was free. False when nothing runs, when `voice` is the one running, or when the place is taken; the caller stays tappable.
   - `running()` - the voice heard now, or null.
 - `Voice` - `hold()`, `carryOn()`, `stop()`, and `story` on a voice a story owns.
-- `focusedPlayer(inner, focus): FocusedPlayer` - a `NarrationPlayer` in the channel: `play` is a tap, `pause` gives the channel back; adds `wanted()` (playing or held), `carryOn()` (a self-start, false when the channel is taken) and `stop()` (for good, back to its start).
-- `focusedSceneAudio(audio, focus): SceneAudio` - the story's sound channel in it; a clip is a tap.
-- `storyVideoVoice(video, focus)` - the story's clip in it; `started` takes the channel unless the clip is muted, `ended` gives it back.
+- `focusedPlayer(inner, focus): FocusedPlayer` - a `NarrationPlayer` in the channel: `play` is a tap, `pause` gives the channel back; adds `wanted()` (playing or held), `carryOn()` (a self-start; refused, it takes the place behind what runs and answers false) and `stop()` (for good, back to its start).
+- `focusedSceneAudio(audio, focus, onHeld?): SceneAudio` - the story's sound channel in it; a clip is a tap. `onHeld(held)` hears the channel hold it and let it go, so its step can wait. `takeBack()` is a tap on the held voice: it runs again, whatever runs is held. A clip replaced by the next one ends nothing: its late refusal or end is not the new clip's.
+- `storyVideoVoice(video, focus, onHeld?)` - the story's clip in it; `started` takes the channel unless the clip is muted, `ended` gives it back. A `play` the browser refuses at carrying on gives it back too.
 
 ## Invariants and assumptions
 

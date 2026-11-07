@@ -107,6 +107,26 @@ describe("createSceneAudio", () => {
     }
   });
 
+  // Why: a held voice's look goes back to speaking when it carries on, and
+  // its speech reel must run for what is left, not for the whole clip.
+  it("tells what is left of the clip, and nothing while it knows no length", async () => {
+    const h = harness();
+    expect(h.audio.leftMs?.()).toBeNull();
+    await h.audio.play(new Blob(["v"]), () => undefined);
+    const el = h.elements[0] as FakeElement & {
+      duration?: number;
+      currentTime?: number;
+    };
+    el.currentTime = 1;
+    expect(h.audio.leftMs?.()).toBeNull();
+    el.duration = 2.5;
+    expect(h.audio.leftMs?.()).toBe(1500);
+    el.currentTime = 9;
+    expect(h.audio.leftMs?.()).toBe(0);
+    el.currentTime = Number.NaN;
+    expect(h.audio.leftMs?.()).toBeNull();
+  });
+
   it("plays every clip through the one element the tap unlocked", async () => {
     const h = harness();
     h.audio.unlock();

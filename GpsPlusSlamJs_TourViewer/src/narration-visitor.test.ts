@@ -235,6 +235,21 @@ describe("the visitor's narrated texts", () => {
     expect(made.filter((p) => p.on)).toHaveLength(1);
   });
 
+  // Why: the one heard last plays at return, and the other, held behind it,
+  // carries on when that one is over: a station's second voice is not lost.
+  it("the voice held behind the first carries on when that one is over", () => {
+    const { visitor, made } = make(() => timingFile());
+    const first = visitor.sheetNarration(text())?.player;
+    const second = visitor.sheetNarration({ ...text(), id: "yard" })?.player;
+    first?.play();
+    second?.play();
+    visitor.pauseAll("gate");
+    visitor.carryOn("gate");
+    expect(made.map((p) => p.on)).toEqual([false, true]);
+    second?.pause();
+    expect(made.map((p) => p.on)).toEqual([true, false]);
+  });
+
   // Why: a voice stopped by the visitor is off until tapped, and passing
   // through another station must not forget what the first one left.
   it("leaves a paused voice off, and remembers a station across another", () => {

@@ -13,7 +13,7 @@ The visitor's narrated texts for the open tour: one voice per text, shared by it
   - `sheetNarration(block)` - the sheet's voice (player, timing promise, credit), its read-along read now; undefined for a silent text.
   - `captions(block)` - the strip's content for a text whose read-along fits, or null (while it is read - the read starts here - or when it does not fit).
   - `pauseAll(stationId?)` - pauses every voice; with an id, those wanted now (playing, or held by the voice channel) are kept for `carryOn`.
-  - `carryOn(stationId)` - the visitor is back: what that station's leaving paused carries on, as far as the voice channel lets it. The first takes the channel, the others stay at their place and a tap takes them up.
+  - `carryOn(stationId)` - the visitor is back: what that station's leaving paused carries on, as far as the voice channel lets it. The one heard last takes the channel, the next waits behind it and carries on when that one ends or is tapped, any further one stays at its place and a tap takes it up.
   - `reset()`.
 - `audioAssetPath(assets, id)` - the path of an `audio` asset by id, or null.
 

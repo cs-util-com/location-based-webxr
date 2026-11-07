@@ -62,6 +62,7 @@ import {
   type StationGuideDom,
   type StationTour,
 } from "./station-guide.js";
+import { createFigureMemo } from "./figure-memo.js";
 import { createStationPrefetch, decodeFigure } from "./station-prefetch.js";
 import { createStationRelocator, firstDeviceFix } from "./tour-relocation.js";
 import { alignmentReady, codeLinedUp, isPlacementReady } from "./tour-flow.js";
@@ -328,6 +329,8 @@ export function wireVisitorStations(deps: {
   });
   // The decode cap: one figure decoded at a time, a large one scaled down.
   const decodes = createKeyedChain();
+  // A figure coming back stands from his first painting (`figure-memo.ts`).
+  const figures = createFigureMemo();
   const breadcrumbs = createBreadcrumbTrail({
     getScene: () => seams.getScene(),
   });
@@ -351,6 +354,7 @@ export function wireVisitorStations(deps: {
           ),
         ),
       loadModel: (blob) => seams.loadGlbModel(blob),
+      figures,
       // The figure fades with its station's content (`follow` below).
       now: deps.now,
       registerFrame: registerFrameUpdate,
@@ -378,6 +382,9 @@ export function wireVisitorStations(deps: {
   const calls = createCallGuard(() => {
     renderSheet();
   });
+  const voiceHeld = (hold: boolean): void => {
+    view.holdVoice(hold);
+  };
   const view = createSceneView({
     dom: dom.scene,
     // A getter: the open tour's assets, read when a step needs one.
@@ -388,8 +395,8 @@ export function wireVisitorStations(deps: {
       return charactersById();
     },
     loadAsset: (path) => prefetch.load(path),
-    audio: focusedSceneAudio(audio, deps.focus),
-    videoVoice: storyVideoVoice(dom.scene.video, deps.focus),
+    audio: focusedSceneAudio(audio, deps.focus, voiceHeld),
+    videoVoice: storyVideoVoice(dom.scene.video, deps.focus, voiceHeld),
     stage,
     checkPicture: (blob) => pictureProblem(blob),
     createChoiceButton: (label, onClick) => {
@@ -823,6 +830,7 @@ export function wireVisitorStations(deps: {
         guide.endSession();
       });
       free.stop();
+      figures.clear();
       // A tour close has already dropped the manifest: the cache goes now;
       // a session end keeps it for the next session.
       prefetch.sync();

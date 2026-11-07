@@ -40,6 +40,7 @@ function fakeStage() {
   const part = new Object3D();
   return {
     shown: [] as { stationId: string; view: string | undefined }[],
+    noCard: [] as (boolean | undefined)[],
     voices: [] as (readonly [CharacterVoice, number | undefined])[],
     released: 0,
     cleared: 0,
@@ -51,9 +52,10 @@ function fakeStage() {
       stationId: string,
       _image: Blob,
       _onWaiting?: () => void,
-      look?: { view: string },
+      look?: { view: string; noCard?: boolean },
     ) {
       this.shown.push({ stationId, view: look?.view });
+      this.noCard.push(look?.noCard);
       this.standing = true;
       return Promise.resolve();
     },
@@ -232,6 +234,7 @@ describe("createFreeItems", () => {
     free.follow(away);
     expect(stages.flatMap((s) => s.shown)).toEqual([]);
     free.follow(here);
+    free.follow(here);
     await settle();
     expect(stages.flatMap((s) => s.shown)).toEqual([
       { stationId: "gate", view: "speak" },
@@ -325,6 +328,7 @@ describe("createFreeItems", () => {
   it("a tap on another figure pauses the first, which carries on after", async () => {
     const t = make([character("ann"), character("bob")]);
     t.free.follow(t.here);
+    t.free.follow(t.here);
     await settle();
     t.tap(t.stages[0]!);
     t.tap(t.stages[1]!);
@@ -391,6 +395,7 @@ describe("createFreeItems", () => {
       { ...character("bob"), voice: undefined } as never,
     ]);
     t.free.follow(t.here);
+    t.free.follow(t.here);
     await settle();
     expect(t.tap(t.stages[0]!)).toBe(true);
     expect(t.stages[0]!.bubbles).toBe(1);
@@ -442,5 +447,127 @@ describe("createFreeItems", () => {
     t.closeTour();
     t.free.follow(t.here);
     expect(t.stages).toEqual([]);
+  });
+});
+
+describe("two voices at leaving", () => {
+  // Why: every free voice pauses and carries on at return, and the channel
+  // has one sound and no line: the one heard last plays, the other stays
+  // held and carries on after it. Array order must decide nothing.
+  it.each([
+    ["ann", "bob", 0, 1],
+    ["bob", "ann", 1, 0],
+  ])(
+    "%s held behind %s: the one heard last carries on, then the other",
+    async (_held, _heard, heldAt, heardAt) => {
+      const t = make([character("ann"), character("bob")]);
+      t.free.follow(t.here);
+      t.free.follow(t.here);
+      await settle();
+      t.tap(t.stages[heldAt]!);
+      t.tap(t.stages[heardAt]!);
+      const held = t.players.find((p) => p.playing() === false)!;
+      const heard = t.players.find((p) => p.playing())!;
+      t.free.follow(t.away);
+      expect(held.playing() || heard.playing()).toBe(false);
+      expect(t.focus.running()).toBeNull();
+      t.free.follow(t.here);
+      expect(heard.playing()).toBe(true);
+      expect(held.playing()).toBe(false);
+      heard.finish();
+      expect(held.playing()).toBe(true);
+    },
+  );
+
+  // Why: "...or is tapped": stopping the one heard gives the sound to the
+  // one held, as it does anywhere else.
+  it("a tap stopping the one heard wakes the one held", async () => {
+    const t = make([character("ann"), character("bob")]);
+    t.free.follow(t.here);
+    t.free.follow(t.here);
+    await settle();
+    t.tap(t.stages[0]!);
+    t.tap(t.stages[1]!);
+    t.free.follow(t.away);
+    t.free.follow(t.here);
+    t.free.follow(t.here);
+    await settle();
+    t.tap(t.stages[1]!);
+    expect(t.players[1]!.playing()).toBe(false);
+    expect(t.players[0]!.playing()).toBe(true);
+  });
+});
+
+describe("overlapping stations", () => {
+  const station = (id: string, block: TourCharacterBlock) => {
+    const base = { id, title: id, children: [] };
+    return { ...base, ...withFreeBlocks(base, [block]) };
+  };
+
+  // Why: in one tick a station can go as another returns. The stand ran
+  // before the leave, in array order, so the returning voice found the old
+  // one still running and stayed silent. The leaves come first.
+  it("a voice returning as another station goes is heard", async () => {
+    const ann = character("ann");
+    const bob = character("bob");
+    const tour = { stations: [station("yard", ann), station("gate", bob)] };
+    const t = make([ann, bob], { tour: () => tour as never });
+    let at = "yard";
+    const there = (id: string) => id === at;
+    t.free.follow(there);
+    await settle();
+    t.tap(t.stages[0]!);
+    at = "gate";
+    t.free.follow(there);
+    await settle();
+    t.tap(t.stages[1]!);
+    at = "yard";
+    t.free.follow(there);
+    expect(t.players[0]!.playing()).toBe(true);
+    expect(t.players[1]!.playing()).toBe(false);
+  });
+});
+
+describe("a free portrait", () => {
+  // Why: the portrait's line lives in the story card, and a free figure has
+  // none. Its view stays, so the look must be told there is no card; it
+  // then gives him a bubble, or the figure says nothing.
+  it("stands his view and tells the look there is no card", async () => {
+    const t = make([character("ann", { view: "portrait" })]);
+    t.free.follow(t.here);
+    await settle();
+    expect(t.stages[0]!.shown).toEqual([
+      { stationId: "gate", view: "portrait" },
+    ]);
+    expect(t.stages[0]!.noCard).toEqual([true]);
+  });
+});
+
+describe("several figures coming back", () => {
+  // Why: building one look is a few milliseconds and six in one task are a
+  // visible hitch on a phone (measured: 16 ms each at 4x CPU throttling,
+  // 115 ms for six). One stands per tick, and no voice waits for that.
+  it("one stands per tick, and the voice does not wait", async () => {
+    const t = make([character("ann"), character("bob"), character("cid")]);
+    t.free.follow(t.here);
+    t.free.follow(t.here);
+    t.free.follow(t.here);
+    await settle();
+    t.tap(t.stages[2]!);
+    t.free.follow(t.away);
+    const standing = (): number =>
+      t.stages.filter((stage) => stage.standing).length;
+    await settle();
+    expect(standing()).toBe(0);
+    t.free.follow(t.here);
+    expect(t.players.at(-1)!.playing()).toBe(true);
+    await settle();
+    expect(standing()).toBe(1);
+    t.free.follow(t.here);
+    await settle();
+    expect(standing()).toBe(2);
+    t.free.follow(t.here);
+    await settle();
+    expect(standing()).toBe(3);
   });
 });

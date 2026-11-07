@@ -175,7 +175,7 @@ describe("focusedPlayer", () => {
     expect(focus.running()).toBeNull();
   });
 
-  it("carryOn plays only while nothing runs, and stays tappable otherwise", () => {
+  it("carryOn plays only while nothing runs, and waits behind what does", () => {
     const focus = createVoiceFocus();
     const innerA = player();
     const innerB = player();
@@ -185,6 +185,8 @@ describe("focusedPlayer", () => {
     expect(b.carryOn()).toBe(false);
     expect(innerB.playing()).toBe(false);
     a.pause();
+    expect(innerB.playing()).toBe(true);
+    b.pause();
     expect(b.carryOn()).toBe(true);
     expect(innerB.playing()).toBe(true);
   });
@@ -337,5 +339,121 @@ describe("storyVideoVoice", () => {
     const quiet = createVoiceFocus();
     storyVideoVoice(video(false, true), quiet).started();
     expect(quiet.running()).toBeNull();
+  });
+});
+
+describe("a voice behind the running one", () => {
+  // Why: there is no waiting line, but two voices can come back at once:
+  // the one heard last plays and one stays held behind it, carrying on when
+  // that one ends.
+  it("carries on when the running one ends", () => {
+    const focus = createVoiceFocus();
+    const log: string[] = [];
+    const a = voice("a", log);
+    const b = voice("b", log);
+    focus.tapped(a);
+    expect(focus.behind(b)).toBe(true);
+    focus.ended(a);
+    expect(log).toEqual(["b carries on"]);
+    expect(focus.running()).toBe(b);
+  });
+
+  // Why: one place behind the running voice and no more; with nothing
+  // running there is nothing to stand behind.
+  it("is refused with nothing running and when the place is taken", () => {
+    const focus = createVoiceFocus();
+    const log: string[] = [];
+    const a = voice("a", log);
+    const b = voice("b", log);
+    const c = voice("c", log);
+    expect(focus.behind(a)).toBe(false);
+    focus.tapped(a);
+    expect(focus.behind(a)).toBe(false);
+    expect(focus.behind(b)).toBe(true);
+    expect(focus.behind(c)).toBe(false);
+  });
+
+  // Why: a player that cannot play at return stands behind the one that
+  // does, wanted still, so its next pause and its next tap see it held.
+  it("a player's refused carryOn stands it behind the running voice", () => {
+    const focus = createVoiceFocus();
+    const a = player();
+    const b = player();
+    const first = focusedPlayer(a, focus);
+    const second = focusedPlayer(b, focus);
+    first.play();
+    expect(second.carryOn()).toBe(false);
+    expect(second.wanted()).toBe(true);
+    first.pause();
+    expect(b.calls).toEqual(["play"]);
+    expect(second.playing()).toBe(true);
+  });
+});
+
+describe("a superseded or refused clip", () => {
+  // Why: the first clip's AbortError lands tens of ms after the second
+  // started; it must not end the voice object the new clip runs on, or the
+  // channel reads free and a second voice plays over it.
+  it("a replaced clip's refusal does not end the new clip", async () => {
+    const focus = createVoiceFocus();
+    const refusals: ((e: Error) => void)[] = [];
+    const audio = focusedSceneAudio(
+      {
+        play: () =>
+          new Promise((_, reject) => {
+            refusals.push(reject);
+          }),
+        stop: () => undefined,
+        pause: () => undefined,
+        resume: () => undefined,
+      },
+      focus,
+    );
+    const blob = new Blob(["x"]);
+    const first = audio.play(blob, () => undefined).catch(() => "refused");
+    void audio.play(blob, () => undefined).catch(() => undefined);
+    refusals[0]!(new Error("AbortError"));
+    await expect(first).resolves.toBe("refused");
+    expect(focus.running()).not.toBeNull();
+  });
+
+  // Why: a phone may refuse the clip's way back; nobody hears it then, so
+  // the channel must not stay taken by a silent video.
+  it("a refused video gives the channel back when it should carry on", async () => {
+    const focus = createVoiceFocus();
+    const clip = {
+      paused: false,
+      muted: false,
+      pause() {
+        this.paused = true;
+      },
+      play: () => Promise.reject(new Error("NotAllowedError")),
+    };
+    const story = storyVideoVoice(clip, focus);
+    const free = voice("free", []);
+    story.started();
+    focus.tapped(free);
+    focus.ended(free);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(focus.running()).toBeNull();
+  });
+
+  // Why: the same for a clip the visitor had paused: it does not come back
+  // by itself, so it does not keep the channel either.
+  it("a clip the visitor paused gives the channel back after the hold", () => {
+    const focus = createVoiceFocus();
+    const clip = {
+      paused: true,
+      muted: false,
+      pause: () => undefined,
+      play: () => Promise.resolve(),
+    };
+    const story = storyVideoVoice(clip, focus);
+    const free = voice("free", []);
+    story.started();
+    focus.tapped(free);
+    focus.ended(free);
+    expect(focus.running()).toBeNull();
   });
 });

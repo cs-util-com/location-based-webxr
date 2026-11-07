@@ -53,7 +53,8 @@ Two hosts show items: `scene-view.ts` for a story's step and `free-items.ts` for
   a use that awaits (`checkPicture`) asks `showing()` again.
 - **No stage:** the words still show, a figure or model is not read, and a
   card view's voice still plays. A `portrait` view's portrait needs a stage
-  today, because it loads with the figure.
+  today, because it loads with the figure. Off the card (`free-items.ts`)
+  there is no place for it: the figure, name tag and bubble stand instead.
 
 ## Examples
 

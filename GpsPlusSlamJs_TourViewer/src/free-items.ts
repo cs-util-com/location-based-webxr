@@ -107,8 +107,10 @@ interface Figure {
   /** Bumped when he goes: a file landing later is dropped. */
   run: number;
   target: ItemTapTarget | null;
-  /** His voice was wanted when the visitor left: it carries on at return. */
-  left: boolean;
+  /** His voice was wanted when the visitor left, so it carries on at return:
+   *  0 for not, else the leaving's place in line, so the voice heard last has
+   *  the highest. */
+  left: number;
   /** What the stage was last told of his voice. */
   voice: CharacterVoice;
   /** The stage was told the voice's length. */
@@ -138,6 +140,8 @@ export function createFreeItems(deps: FreeItemsDeps): FreeItems {
   /** The tour `figures` were read from; undefined before the first look. */
   let seen: ReturnType<FreeItemsDeps["tour"]> | undefined;
   let figures: readonly Figure[] = [];
+  /** How many voices were left so far: orders `Figure.left`. */
+  let leavings = 0;
 
   function figuresOf(tour: Pick<TourManifest, "stations"> | null): Figure[] {
     return (tour?.stations ?? []).flatMap((station) =>
@@ -152,7 +156,7 @@ export function createFreeItems(deps: FreeItemsDeps): FreeItems {
                 standing: false,
                 run: 0,
                 target: null,
-                left: false,
+                left: 0,
                 voice: "idle" as const,
                 timed: false,
               },
@@ -259,7 +263,13 @@ export function createFreeItems(deps: FreeItemsDeps): FreeItems {
       sound: () => undefined,
       stage: {
         character: (blob, look) =>
-          stage.showCharacter(figure.stationId, blob, undefined, look),
+          stage.showCharacter(
+            figure.stationId,
+            blob,
+            undefined,
+            // His line has no card to sit in here.
+            look === undefined ? undefined : { ...look, noCard: true },
+          ),
         model: () => Promise.resolve(),
         tapTarget(target) {
           figure.target = target;
@@ -272,38 +282,60 @@ export function createFreeItems(deps: FreeItemsDeps): FreeItems {
     };
   }
 
-  function stand(figure: Figure, stage: FreeStage): void {
+  function stand(figure: Figure): void {
+    if (figure.stage === null) return;
     figure.standing = true;
-    (deps.showItem ?? showItemCard)(figure.block, hostOf(figure, stage));
-    if (!figure.left) return;
-    figure.left = false;
-    figure.player?.carryOn();
+    (deps.showItem ?? showItemCard)(figure.block, hostOf(figure, figure.stage));
   }
 
-  function leave(figure: Figure, stage: FreeStage): void {
+  function leave(figure: Figure): void {
     figure.standing = false;
     figure.run += 1;
     figure.target = null;
     tell(figure, "idle");
     if (figure.player?.wanted() === true) {
-      figure.left = true;
+      leavings += 1;
+      figure.left = leavings;
       figure.player.pause();
     }
-    stage.release();
+    figure.stage?.release();
   }
+
+  /** The voices left among `here`: the one heard last plays, the next
+   *  waits behind it. */
+  function carryOn(here: readonly Figure[]): void {
+    const voices = here.filter((figure) => figure.left > 0);
+    voices.sort((a, b) => b.left - a.left);
+    for (const figure of voices) {
+      figure.left = 0;
+      figure.player?.carryOn();
+    }
+  }
+
+  /** The held first: pausing the one heard wakes what it holds. */
+  const heardLast = (a: Figure, b: Figure): number =>
+    Number(a.player?.playing() === true) - Number(b.player?.playing() === true);
 
   return {
     follow(isShown) {
       sync();
       for (const figure of figures) {
-        const shown = isShown(figure.stationId);
-        if (shown && figure.stage === null) figure.stage = deps.makeStage();
-        const { stage } = figure;
-        if (stage === null) continue;
-        stage.follow(isShown);
-        if (shown && !figure.standing) stand(figure, stage);
-        else if (!shown && figure.standing) leave(figure, stage);
+        if (figure.stage === null && isShown(figure.stationId)) {
+          figure.stage = deps.makeStage();
+        }
+        figure.stage?.follow(isShown);
       }
+      // The leaves come first: a voice coming back finds the sound free.
+      const going = figures.filter(
+        (figure) => figure.standing && !isShown(figure.stationId),
+      );
+      going.sort(heardLast).forEach(leave);
+      // One a tick: several together would be one long task.
+      const next = figures.find(
+        (figure) => !figure.standing && isShown(figure.stationId),
+      );
+      if (next !== undefined) stand(next);
+      carryOn(figures.filter((figure) => isShown(figure.stationId)));
     },
     faceVisitor(visitor) {
       for (const figure of figures) figure.stage?.faceVisitor(visitor);

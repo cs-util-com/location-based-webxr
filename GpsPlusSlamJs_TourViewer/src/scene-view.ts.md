@@ -228,6 +228,12 @@ view.offer(foundStation); // plays at once, or waits behind "Play: …"
   step's time, nothing without a story, no dots with a choice, `onChange`
   on a start, each step, the end and `stopAll`).
 
+## The voice held by the channel
+
+- `SceneView.holdVoice(held)` - the channel holds the step's voice, or lets it go (`visitor-stations.ts` passes it as `onHeld`). While held, an auto step's timer is cancelled, `progress().autoMs` reads null and his look is idle. Let go, the timer starts again from the step's full length, as for `holdStep`, and his look speaks for what is left (`audio.leftMs`). The two holds are independent: the timer stays off until both are gone. A step starting under a held voice says nothing and arms no timer.
+- A tap on a story figure whose voice is held continues it (`audio.takeBack`), it does not stop it.
+- Tests: "a story's voice held in the channel" in `scene-view-voice.test.ts`.
+
 ## The held step
 
 - `SceneView.holdStep(held)` - while the visitor is asked whether to end

@@ -10,7 +10,7 @@ describe("createVoiceFocus (properties)", () => {
   it("holds one voice running and one paused through any sequence", () => {
     const event = fc.record({
       who: fc.integer({ min: 0, max: 3 }),
-      what: fc.constantFrom("tapped", "selfStart", "ended"),
+      what: fc.constantFrom("tapped", "selfStart", "behind", "ended"),
     });
     fc.assert(
       fc.property(fc.array(event, { maxLength: 40 }), (events) => {
@@ -33,6 +33,8 @@ describe("createVoiceFocus (properties)", () => {
             sounding.add(who);
           } else if (what === "selfStart") {
             if (focus.selfStart(v)) sounding.add(who);
+          } else if (what === "behind") {
+            if (focus.behind(v)) sounding.delete(who);
           } else {
             focus.ended(v);
             sounding.delete(who);

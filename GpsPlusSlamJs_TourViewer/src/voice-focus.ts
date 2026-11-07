@@ -2,7 +2,8 @@
  * The visitor's voice channel: one voice is heard. An active tap wins: the
  * voice running pauses and carries on when the tapped one ends, a story's
  * too. One paused voice is remembered, there is no waiting line, and a voice
- * that would start by itself while another runs does not start.
+ * that would start by itself while another runs does not start. A voice
+ * coming back while another runs takes the one place behind it.
  *
  * Pure: a voice is three callbacks, and the wrappers here make one of a
  * narration player, of the story's sound channel and of the story's video.
@@ -34,6 +35,10 @@ export interface VoiceFocus {
   /** `voice` is over (it ended, or the visitor stopped it): what it paused
    *  carries on. */
   ended(voice: Voice): void;
+  /** `voice`, paused already, takes the place behind the running one and
+   *  carries on when that ends. False with nothing running or the place
+   *  taken: it stays out of the channel. */
+  behind(voice: Voice): boolean;
   running(): Voice | null;
 }
 
@@ -77,6 +82,12 @@ export function createVoiceFocus(): VoiceFocus {
       paused = null;
       running?.carryOn();
     },
+    behind(voice) {
+      if (running === null || running === voice) return false;
+      if (paused !== null) return false;
+      paused = voice;
+      return true;
+    },
     running: () => running,
   };
 }
@@ -87,7 +98,8 @@ export interface FocusedPlayer extends NarrationPlayer {
    *  when the visitor walks off. */
   wanted(): boolean;
   /** Carry on without a tap: only while nothing else runs. True when it
-   *  does; otherwise it stays paused, and a tap continues it. */
+   *  does; otherwise it waits behind the running voice, and with that place
+   *  taken it stays paused. A tap continues it either way. */
   carryOn(): boolean;
   /** Off and back to its start, until a tap. */
   stop(): void;
@@ -140,7 +152,10 @@ export function focusedPlayer(
     },
     wanted: () => held || inner.playing(),
     carryOn() {
-      if (!focus.selfStart(voice)) return false;
+      if (!focus.selfStart(voice)) {
+        held = focus.behind(voice);
+        return false;
+      }
       held = false;
       inner.play();
       return true;
@@ -160,73 +175,103 @@ export function focusedPlayer(
 /**
  * The story's sound channel as a voice: its clip is a story's voice. It
  * starts as a tap does, since the story's own start is the visitor's doing,
- * and it hands the sound back when it ends, stops or is refused.
+ * and it hands the sound back when it ends, stops or is refused. `onHeld`
+ * hears when the channel holds it and lets it go: its step waits meanwhile.
  */
 export function focusedSceneAudio(
   audio: SceneAudio & { pause(): void; resume(): void },
   focus: VoiceFocus,
+  onHeld: (held: boolean) => void = () => undefined,
 ): SceneAudio {
+  /** Which clip is the current one: a replaced clip's refusal lands late,
+   *  on the one voice object the new clip runs on. */
+  let clip = 0;
   const voice: Voice = {
     story: true,
     hold: () => {
       audio.pause();
+      onHeld(true);
     },
     carryOn: () => {
       audio.resume();
+      onHeld(false);
     },
     stop: () => {
       audio.stop();
+      onHeld(false);
     },
   };
   return {
     ...audio,
     play(blob, onEnded) {
+      clip += 1;
+      const mine = clip;
       focus.tapped(voice);
+      onHeld(false);
       return audio
         .play(blob, () => {
-          focus.ended(voice);
+          if (mine === clip) focus.ended(voice);
           onEnded();
         })
         .catch((error: unknown) => {
-          focus.ended(voice);
+          if (mine === clip) focus.ended(voice);
           throw error;
         });
     },
     stop() {
+      clip += 1;
       audio.stop();
       focus.ended(voice);
+      onHeld(false);
+    },
+    takeBack() {
+      focus.tapped(voice);
+      audio.resume();
+      onHeld(false);
     },
   };
 }
 
 /**
  * The story's clip as a voice. A clip the visitor paused himself stays
- * paused when the sound comes back; a muted one is no voice at all.
+ * paused when the sound comes back, and so does one the browser refuses:
+ * either gives the channel back. A muted one is no voice at all. `onHeld`
+ * as for {@link focusedSceneAudio}.
  */
 export function storyVideoVoice(
   video: Pick<ItemVideo, "pause" | "paused" | "muted" | "play">,
   focus: VoiceFocus,
+  onHeld: (held: boolean) => void = () => undefined,
 ): { started(): void; ended(): void } {
   let wasPlaying = false;
+  const giveBack = (): void => {
+    focus.ended(voice);
+  };
   const voice: Voice = {
     story: true,
     hold() {
       wasPlaying = video.paused !== true;
       video.pause();
+      onHeld(true);
     },
     carryOn() {
-      if (wasPlaying) void video.play?.();
+      onHeld(false);
+      if (wasPlaying) video.play?.().catch(giveBack);
+      else giveBack();
     },
     stop() {
       video.pause();
+      onHeld(false);
     },
   };
   return {
     started() {
       if (video.muted !== true) focus.tapped(voice);
+      onHeld(false);
     },
     ended() {
       focus.ended(voice);
+      onHeld(false);
     },
   };
 }
