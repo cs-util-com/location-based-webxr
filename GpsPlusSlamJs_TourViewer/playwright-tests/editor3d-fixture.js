@@ -287,7 +287,8 @@ export async function openSample(page, link = OLDER_VIEW) {
   // No tour, nothing to show in 3D: the switch waits for one.
   await expect(page.locator("#view-switch")).toBeDisabled();
   await page.locator("#sample-btn").click();
-  await expect(page.locator("#rail .row-title")).toHaveCount(3);
+  // The sample's three stations and its two pins (its lectern has no row).
+  await expect(page.locator("#rail .row-title")).toHaveCount(5);
 }
 
 /** The editor's link to the older 3D view (`?globe=0`), and its plain link
