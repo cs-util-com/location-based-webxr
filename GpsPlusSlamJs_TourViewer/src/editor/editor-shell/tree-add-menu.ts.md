@@ -40,7 +40,9 @@ stationId, title), close(returnFocus), isOpen() }`: builds
 - The focus goes back by the station's id (`[data-add="<id>"]` in
   `body`), not to the element pressed: "Add content" is gone once the
   station holds an item, and the shell's redraw after the add keeps the
-  focus on the "+" by that id (`shell-tree.ts`'s focus keys).
+  focus on the "+" by that id (`shell-tree.ts`'s focus keys). With the tree
+  folded out of sight it goes to the button pressed, and if the add's draw
+  takes that away the shell puts it on the details' Close.
 - The menu closes before `choose` runs: the add may draw the tree again.
 - Every word is text, never markup.
 

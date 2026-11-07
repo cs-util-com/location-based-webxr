@@ -145,7 +145,7 @@ function fields(): [string, string][] {
   return [
     ...dock.body.querySelectorAll<
       HTMLOutputElement | HTMLInputElement | HTMLTextAreaElement
-    >("output:not(.count), input, textarea"),
+    >("output:not(.count), input:not([type=range]), textarea"),
   ].map((out) => {
     const label =
       out.labels?.[0]?.textContent ?? out.getAttribute("aria-label") ?? "?";
@@ -202,6 +202,7 @@ describe("drawInspector", () => {
         groundOffM: null,
         position: null,
         locked: true,
+        contents: [],
         story: [],
       },
       { folded: false, positionOpen: false },
@@ -247,6 +248,7 @@ describe("drawInspector", () => {
         position: null,
         locked: true,
         story,
+        contents: [],
       }) as const;
     drawInspector(
       dock,
@@ -313,6 +315,7 @@ describe("drawInspector", () => {
         groundOffM: null,
         position: null,
         locked: true,
+        contents: [],
         story: [
           { id: "intro", kind: "Long text", title: "The siege", fields: [] },
           {
@@ -410,6 +413,7 @@ describe("drawInspector", () => {
         groundOffM: null,
         position: null,
         locked: true,
+        contents: [],
         story: [
           {
             id: "intro",
@@ -879,9 +883,11 @@ describe("drawInspector", () => {
   // its own or Delete - each a button in words, its key announced.
   it("lists the selection's actions in words: a station's Delete, an item's new station and Delete", () => {
     const acts = () =>
-      [...dock.body.querySelectorAll<HTMLButtonElement>(".acts .act")].map(
-        (b) => [b.dataset["act"], b.querySelector(".lbl")?.textContent],
-      );
+      [
+        ...dock.body.querySelectorAll<HTMLButtonElement>(
+          ":not(.contents) > .acts .act",
+        ),
+      ].map((b) => [b.dataset["act"], b.querySelector(".lbl")?.textContent]);
     draw("station:gate");
     // Adding is the tree's and the palette's; Delete comes last, behind
     // a separator, so it is never the next button by accident.
@@ -965,6 +971,30 @@ describe("drawInspector", () => {
     const again = dock.body.querySelector('[data-act="earlier"]');
     expect(again).not.toBeNull();
     expect(document.activeElement).toBe(again);
+  });
+
+  // Why: an arrow key steps the focused radius slider, and its write draws
+  // the inspector inside the change event. A slider has no caret: carried
+  // over like typed text it threw, and the step never reached the history.
+  it("keeps the focus on a slider through a redraw, its value the model's", () => {
+    draw("station:steps", true);
+    const slider = (): HTMLInputElement | null =>
+      dock.body.querySelector('[data-act="radius-slider"]');
+    const moved = slider();
+    moved?.focus();
+    if (moved !== null) moved.value = "12";
+    const model = buildInspector({
+      selected: "station:steps",
+      stations: STATIONS.map((s) =>
+        s.id === "steps" ? { ...s, foundRadiusM: 12 } : s,
+      ),
+      assets: [],
+      codes: CODES,
+    });
+    drawInspector(dock, model, { folded: false, positionOpen: true }, pictures);
+    expect(slider()).not.toBe(moved);
+    expect(document.activeElement).toBe(slider());
+    expect(slider()?.value).toBe("12");
   });
 
   // Why: a redraw while a field is being typed in (the ground arrived, a
@@ -1178,5 +1208,89 @@ describe("drawInspector", () => {
     expect(
       dock.head.querySelector('[data-act="fold"]')?.getAttribute("aria-label"),
     ).toBe("Show the details");
+  });
+});
+
+describe("a station's Contents", () => {
+  const contents = () =>
+    dock.body.querySelector<HTMLButtonElement>('[data-act="contents"]');
+  const rows = () => [
+    ...dock.body.querySelectorAll<HTMLButtonElement>(".contents .kid"),
+  ];
+
+  // Why: the inspector is where a station is read on a phone, the tree out
+  // of sight, so its items are listed there, and a tap on one goes to it.
+  it("lists the station's items by kind and name, open from the start", () => {
+    draw("station:gate");
+    expect(contents()?.getAttribute("aria-expanded")).toBe("true");
+    expect(contents()?.querySelector(".sum")?.textContent).toBe("1 item");
+    expect(rows().map((r) => r.dataset["act"])).toEqual(["goto:photo-1"]);
+    expect(rows()[0]?.querySelector(".ic")?.classList.contains("photo")).toBe(
+      true,
+    );
+    expect(rows()[0]?.textContent).not.toBe("");
+  });
+
+  it("says when a station holds nothing, and offers to add", () => {
+    draw("station:steps");
+    expect(contents()?.querySelector(".sum")?.textContent).toBe("0 items");
+    expect(rows()).toHaveLength(0);
+    expect(dock.body.querySelector(".contents .note")?.textContent).toBe(
+      "Nothing at this station yet.",
+    );
+    expect(
+      dock.body.querySelector('.contents [data-act="add-content"]'),
+    ).not.toBeNull();
+  });
+
+  // Why: `.pos` is the position's body, read by the fold's checks: the
+  // list must not pass for it.
+  it("folds on its own, apart from the position", () => {
+    const state = { folded: false, positionOpen: false, contentsOpen: false };
+    const store = storeWith("station:gate").getState();
+    const tour = manifestToWrite(store.tourDocument);
+    drawInspector(
+      dock,
+      buildInspector({
+        selected: "station:gate",
+        stations: tour?.stations ?? [],
+        assets: tour?.assets ?? [],
+        codes: CODES,
+      }),
+      state,
+      pictures,
+    );
+    expect(contents()?.getAttribute("aria-expanded")).toBe("false");
+    expect(rows()).toHaveLength(0);
+    expect(dock.body.querySelector(".pos")).toBeNull();
+  });
+
+  it("does not list an item's own details as a station's", () => {
+    draw("photo-1");
+    expect(contents()).toBeNull();
+  });
+});
+
+describe("the radius slider", () => {
+  // Why: a number alone takes typing, a poor way to feel a circle's size;
+  // the slider stands beside the number, which stays the way to a value
+  // past the track.
+  it("stands beside the radius's number under Place", () => {
+    draw("station:gate", true);
+    const range = dock.body.querySelector(".pos .range");
+    expect(range?.querySelector("input[type=range]")).not.toBeNull();
+    expect(range?.contains(input("radius"))).toBe(true);
+  });
+});
+
+describe("the head's way back", () => {
+  // Why: on a phone the details cover the list, so the head must lead back.
+  it("starts with the back arrow, every kind of element", () => {
+    for (const id of ["station:gate", "photo-1"]) {
+      draw(id);
+      const first = dock.head.firstElementChild as HTMLElement;
+      expect(first.dataset["act"]).toBe("back");
+      expect(first.getAttribute("aria-label")).toBe("Back to the list");
+    }
   });
 });

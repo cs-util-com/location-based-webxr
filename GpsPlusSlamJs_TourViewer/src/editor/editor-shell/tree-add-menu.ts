@@ -13,6 +13,8 @@
  * The focus goes back by the station's id, not to the element pressed:
  * the add redraws the tree, and the station's "+" is the control that is
  * there before and after (its empty line is gone once it holds an item).
+ * With the tree folded out of sight (the details on a phone) it goes to
+ * the button pressed.
  *
  * @see tree-add-menu.ts.md
  */
@@ -168,15 +170,17 @@ export function createTreeAddMenu(deps: {
   function close(returnFocus: boolean): void {
     if (!isOpen()) return;
     const id = station;
+    const pressed = opener;
     menu.hidden = true;
     station = null;
-    opener?.setAttribute("aria-expanded", "false");
+    pressed?.setAttribute("aria-expanded", "false");
     opener = null;
     document.removeEventListener("pointerdown", onOutside, true);
     if (!returnFocus || id === null) return;
-    [...deps.body.querySelectorAll<HTMLElement>("[data-add]")]
-      .find((b) => b.dataset["add"] === id)
-      ?.focus();
+    const plus = [
+      ...deps.body.querySelectorAll<HTMLElement>("[data-add]"),
+    ].find((b) => b.dataset["add"] === id);
+    (plus?.closest(".collapsed, [hidden]") === null ? plus : pressed)?.focus();
   }
 
   menu.addEventListener("keydown", (event) => {
