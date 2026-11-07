@@ -203,14 +203,19 @@ describe("building passages across the corpus (DEC-R12-3)", () => {
       ).length;
     }
 
+    // RE-BASELINED 2026-11-07 FOR A RULE CHANGE, NOT FOR OSM RE-TAGGING: an
+    // outline its parts cover under 90 % is now drawn, so it is solid too
+    // (`part-coverage.ts`, bug 5 of the 2026-11-07 geometry findings). The
+    // sites that moved are the ones with half-filled outlines: Tokyo's station
+    // complexes, Tower Bridge's towers, Cologne's station hall.
     expect(opened).toEqual({
-      "cologne-cathedral": 6,
+      "cologne-cathedral": 8,
       "heidelberg-altstadt": 3,
       "berlin-alexanderplatz": 0,
-      "sylt-westerland": 2,
+      "sylt-westerland": 3,
       "manhattan-midtown": 1,
-      "tokyo-shinjuku": 7,
-      "london-tower-bridge": 3,
+      "tokyo-shinjuku": 15,
+      "london-tower-bridge": 6,
       "london-westminster": 15,
     });
   });

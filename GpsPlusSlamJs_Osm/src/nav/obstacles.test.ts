@@ -554,12 +554,14 @@ describe("crossesObstacle — what finally makes a wall block", () => {
     const part: OsmFeature = {
       type: "way",
       id: 24,
+      // The part FILLS the outline: since the 2026-11-07 coverage rule
+      // (`part-coverage.ts`) a half-filled outline is drawn, and so is solid.
       geometry: [
-        { lat: HOME.lat - STEP * 35, lng: HOME.lng - STEP * 35 },
-        { lat: HOME.lat - STEP * 35, lng: HOME.lng - STEP * 25 },
-        { lat: HOME.lat - STEP * 25, lng: HOME.lng - STEP * 25 },
-        { lat: HOME.lat - STEP * 25, lng: HOME.lng - STEP * 35 },
-        { lat: HOME.lat - STEP * 35, lng: HOME.lng - STEP * 35 },
+        { lat: HOME.lat - STEP * 40, lng: HOME.lng - STEP * 40 },
+        { lat: HOME.lat - STEP * 40, lng: HOME.lng + STEP * 40 },
+        { lat: HOME.lat + STEP * 40, lng: HOME.lng + STEP * 40 },
+        { lat: HOME.lat + STEP * 40, lng: HOME.lng - STEP * 40 },
+        { lat: HOME.lat - STEP * 40, lng: HOME.lng - STEP * 40 },
       ],
       tags: { "building:part": "yes", height: "10" },
     };

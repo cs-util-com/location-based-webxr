@@ -366,11 +366,15 @@ describe("building:part", () => {
     id: 2,
     tags: { "building:part": "yes", height: "157" },
     geometry: [
-      { lat: 50.94145, lng: 6.95845 },
-      { lat: 50.94145, lng: 6.95865 },
-      { lat: 50.94165, lng: 6.95865 },
-      { lat: 50.94165, lng: 6.95845 },
-      { lat: 50.94145, lng: 6.95845 },
+      // THE PART FILLS ITS OUTLINE. Since the 2026-11-07 coverage rule
+      // (`part-coverage.ts`) an outline is hidden only when its parts cover
+      // 90 % of it; a small tower inside a large outline now draws both, and
+      // `s3db-parts.test.ts` pins that case. These tests are about the filled one.
+      { lat: 50.9413, lng: 6.9583 },
+      { lat: 50.9413, lng: 6.9593 },
+      { lat: 50.9418, lng: 6.9593 },
+      { lat: 50.9418, lng: 6.9583 },
+      { lat: 50.9413, lng: 6.9583 },
     ],
   };
 

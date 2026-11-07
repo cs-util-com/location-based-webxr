@@ -96,10 +96,38 @@ parentFeature?, rings }` with rings as `x = lng, y = lat`.
   something recognisably cathedral-shaped, with no landmark database anywhere.
   That is why parts are first in the plan's ordering (§8, 24 % of buildings in
   the census) rather than an advanced feature.
-- **A building WITH parts is not extruded itself** — the parts replace it.
-  Drawing both is the single most visible S3DB mistake: every detailed building
-  gets a box drawn straight through it. Taken from OSM2World's `Building.java`,
-  the most complete implementation of the schema anywhere.
+- **A building whose parts FILL it is not extruded itself** — the parts replace
+  it. Drawing both is the single most visible S3DB mistake: every detailed
+  building gets a box drawn straight through it. Taken from OSM2World's
+  `Building.java`, the most complete implementation of the schema anywhere.
+  - **"Fill" is 90 % of the outline's area** (`PART_COVERAGE_TO_HIDE_OUTLINE`,
+    sampled by `part-coverage.ts`; owner decision 2026-11-07, bug 5 of
+    `GpsPlusSlamJs_Docs/docs/2026-11-07-0920-osm-building-geometry-bugs-findings.md`).
+    Until then ONE part hid the whole outline, so a mapper who modelled only the
+    tower lost the hall: Tower Bridge's north tower (7 % covered) drew only its
+    turrets, the Cologne station hall (2 %) only its canopy.
+  - **A half-filled outline is drawn WHOLE, under its parts**, on the same
+    ground. That is OSM2World's rule too; streets-gl draws only the uncovered
+    remainder, which needs a polygon difference this package does not have.
+    The cost, measured on the eight corpus sites at 0.9: 34 outlines drawn with
+    their parts, carrying 187 parts, of which **96 are no taller than the outline
+    and so are hidden inside it** (68 of them the Tower Hotel's, whose 51 m
+    outline is 80-90 % covered) and **12 share its roof height** (coplanar roofs,
+    a z-fighting risk). The remainder polygon is the fix for both and is filed.
+  - **`partCoverageToHideOutline`** varies the threshold for sweeps and the lab.
+    Swept 0.5 / 0.7 / 0.8 / 0.9 / 0.95: outlines drawn with parts 20 / 23 / 29 /
+    34 / 37, parts swallowed 20 / 21 / 26 / 96 / 101, coplanar roofs 8 / 9 / 10 /
+    12 / 16. The low-coverage outlines that motivated the rule (Tower Bridge,
+    Cologne station) are drawn across the whole range; the jump at 0.9 is one
+    building (the Tower Hotel). 0.9 kept as decided; 0.8 would spare the Tower
+    Hotel, and the remainder polygon makes the choice matter much less.
+- **A tall structure with its own parts is not drawn either** (bug 3). The
+  Südturm area holds its spire's parts up to 155 m; F34's prism hid them. Any
+  part inside counts. A partless tower is still drawn (F34).
+- **Every polygon of a multipolygon is drawn** (bug 12), merged into ONE volume
+  with one key, because consumers index volumes by feature key. Every outer of
+  an outline is indexed for the part assignment, under the outline's whole area.
+  The obstacle path emits one solid footprint per polygon.
 - **A part with no containing outline is still extruded.** A tile boundary can
   deliver a part without its parent, and dropping it would erase the building.
 - **Containment is tested on a representative point, not on every vertex.** Parts
@@ -159,14 +187,15 @@ parentFeature?, rings }` with rings as `x = lng, y = lat`.
     than the tower way above it (2.970e-8) and stays with the cathedral. The part
     that decides the outcome is the **unnamed** `way/207377042` — searching the
     fixture by the name "Nordturm" is what hid it.
-- **`man_made=tower` without a `building` tag draws nothing** — `isBuilding` keys
-  only on `building`. Cologne's Südturm (`way/645732603`, height 157) is exactly
-  this and is invisible, which is the other half of the reported asymmetry.
-  Deliberately not changed (N4, DEC-R5-13): admitting `man_made` widens what gets
-  drawn at every site, which is a look rather than a refactor.
-- **A multipolygon contributes only its first polygon.** A building mapped as
-  several disjoint polygons is a data error rather than a shape, and extruding
-  all of them under one set of heights would be inventing buildings.
+- **`man_made=tower` without a `building` tag** is drawn by the tall-structure
+  pass (F34, `tall-structures.ts`), unless parts stand inside it (bug 3 above).
+- **`type=building` relations are NOT read.** The header once said role `part`
+  was supported; nothing read it. Measured 2026-11-07: the relations carry
+  essentially only `type` (0 of 37 in a Cologne tile, 4 of 188 in Dresden carry
+  `building`), so only an unkeyed `relation["type"="building"]` selector catches
+  them, which `overpass-query.ts` bans on purpose; the probe timed out or
+  returned 502 on three of five mirrors. A part mapped outside its outline is
+  drawn on its own. Filed, not fixed.
 - Non-buildings are ignored; a feature whose geometry cannot be built is skipped
   rather than throwing, matching the rest of the package.
 
@@ -206,6 +235,11 @@ const batch = mergeMeshes(volumes.map((v) => v.mesh));
 
 ## Tests
 
+- `part-coverage.test.ts` — the covered share (courtyards, overlaps, two outers,
+  frame independence as a property).
+- `s3db-parts.test.ts` — a half-filled outline drawn (synthetic and Tower
+  Bridge), a filled one not, the Südturm not a prism, two outers drawn, and the
+  city window per building.
 - `buildings.test.ts` — the outline-with-parts suppression, an outline with no
   parts, a part with no parent, the part carrying its own height, and
   non-building features being ignored.

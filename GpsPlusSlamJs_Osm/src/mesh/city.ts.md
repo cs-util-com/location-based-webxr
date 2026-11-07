@@ -25,7 +25,10 @@ trees, roads, roadCount }`. `volumes` and `barriers` are the builders' own resul
   `featureRand` and `height01`; `trees` are `TreePlacement`s.
 - `buildCity(features, ground, { withinM })` keeps only volumes, barriers
   and trees whose own position (a mesh's centroid, a tree's placement) lies
-  within `withinM` metres of the origin in both directions: a height field
+  within `withinM` metres of the origin in both directions. **A building is
+  kept or dropped WHOLE** (2026-11-07, bug 10): its parts share one verdict,
+  taken at the mean of their mesh centroids, so the window's edge no longer cuts
+  a modelled cathedral in half. The reason for the window: a height field
   covers a window and clamps its edge heights outward beyond it, so a
   building outside would stand on made-up ground (globe city plan
   2026-10-05-0040 §12.4 R12). RangeError for a `withinM` that is not a
@@ -66,7 +69,8 @@ for (const chunk of city.buildings) draw(chunk);
 as its parent (and differently under another parent); the ground under every
 building; the shell phase stable and in [0, 1); empty in, empty out;
 `cityGround` flat without a field and reading the field at the position's ENU
-metres; `withinM` dropping what lies outside, keeping all without it, and
+metres; `withinM` dropping what lies outside, keeping all without it, keeping a
+building's parts together (`s3db-parts.test.ts`), and
 refusing a non-positive window; roads only when asked, the roads and paths
 coloured by class and surface and never a tunnel, draped on the ground, kept
 within the window. OsmDemo's worker tests and browser suite cover the same assembly in

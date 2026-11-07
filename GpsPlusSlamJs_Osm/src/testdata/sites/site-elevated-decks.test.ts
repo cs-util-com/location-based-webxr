@@ -164,6 +164,11 @@ describe("elevated decks drawn at ground level", () => {
       table[site.id] = c;
     }
 
+    // RE-BASELINED 2026-11-07 FOR A RULE CHANGE, NOT FOR OSM RE-TAGGING: an
+    // outline its parts cover under 90 % is now drawn, so it is solid too
+    // (`part-coverage.ts`, bug 5 of the 2026-11-07 geometry findings). The
+    // sites that moved are the ones with half-filled outlines: Tokyo's station
+    // complexes, Tower Bridge's towers, Cologne's station hall.
     expect(table).toEqual({
       "cologne-cathedral": {
         decks: 15,
@@ -198,14 +203,14 @@ describe("elevated decks drawn at ground level", () => {
       "tokyo-shinjuku": {
         decks: 143,
         crossBarrier: 1,
-        crossBuilding: 21,
-        crossEither: 22,
+        crossBuilding: 54,
+        crossEither: 55,
       },
       "london-tower-bridge": {
         decks: 17,
         crossBarrier: 2,
-        crossBuilding: 5,
-        crossEither: 7,
+        crossBuilding: 9,
+        crossEither: 11,
       },
       "london-westminster": {
         decks: 11,

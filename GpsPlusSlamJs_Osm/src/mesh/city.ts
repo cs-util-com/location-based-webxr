@@ -116,9 +116,7 @@ export function buildCity(
     withinM === undefined ||
     (Math.abs(p.x) <= withinM && Math.abs(p.y) <= withinM);
   const all = [...features];
-  const volumes = buildBuildings(all, ground).filter((v) =>
-    inside(meshCentroidEnu(v.mesh)),
-  );
+  const volumes = withinWindow(buildBuildings(all, ground), inside);
   const barriers = buildBarriers(all, ground).filter((b) =>
     inside(meshCentroidEnu(b.mesh)),
   );
@@ -184,4 +182,34 @@ function cityRoads(
     ),
     roadCount: ribbons.length,
   };
+}
+
+/**
+ * The volumes whose BUILDING is inside the window (2026-11-07, bug 10).
+ *
+ * Decided per building, not per volume: the parts of one outline share one
+ * verdict, taken at the mean of their mesh centroids. Per volume, a modelled
+ * building on the window's edge kept some parts and lost others, which drew
+ * half a cathedral at the globe city's rim. A building is its outline key, or
+ * its own key when it has no parent.
+ */
+function withinWindow(
+  volumes: readonly BuildingVolume[],
+  inside: (p: EnuPoint) => boolean,
+): BuildingVolume[] {
+  const sums = new Map<string, { x: number; y: number; n: number }>();
+  for (const volume of volumes) {
+    const key = volume.parentFeature ?? volume.feature;
+    const c = meshCentroidEnu(volume.mesh);
+    const sum = sums.get(key) ?? { x: 0, y: 0, n: 0 };
+    sum.x += c.x;
+    sum.y += c.y;
+    sum.n += 1;
+    sums.set(key, sum);
+  }
+  const kept = new Set<string>();
+  for (const [key, sum] of sums) {
+    if (inside({ x: sum.x / sum.n, y: sum.y / sum.n })) kept.add(key);
+  }
+  return volumes.filter((v) => kept.has(v.parentFeature ?? v.feature));
 }

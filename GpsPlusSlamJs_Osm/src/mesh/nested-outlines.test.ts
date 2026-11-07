@@ -266,20 +266,44 @@ describe("the Südturm — `man_made=tower` with no `building` tag (F34)", () =>
   const features = cathedralFeatures();
   const volumes = buildCathedral(features);
 
-  it("is extruded, at roughly its tagged height", () => {
-    // THE REPORTED DEFECT'S SECOND HALF. Before this, the cathedral had one
-    // tower and the absence read as a failed fetch.
+  it("is NOT extruded, because its own spire parts stand inside it", () => {
+    // CHANGED BY THE 2026-11-07 GEOMETRY FIX (bug 3 of
+    // `2026-11-07-0920-osm-building-geometry-bugs-findings.md`). F34 first drew
+    // the Südturm as a flat 157 m prism, on the belief that its parts reach only
+    // 70.95 m. That is the five `Sockel` parts; the spire itself is modelled as
+    // `building:part`s up to 155 m (`way/416846388` and its pinnacles), all
+    // inside this area. The S3DB rule that suppresses an outline with parts
+    // applies to the tower area too, or the cathedral gets one detailed spire and
+    // one grey box with the other spire's tip poking out.
     const südturm = volumes.filter((volume) => volume.feature === SÜDTURM_KEY);
-    expect(südturm).toHaveLength(1);
-    expect(südturm[0]?.heights.totalHeightM).toBeGreaterThan(150);
+    expect(südturm).toEqual([]);
+    const spire = volumes.find((volume) => volume.feature === "way/416846388");
+    expect(spire?.heights.totalHeightM).toBeGreaterThan(140);
   });
 
-  it("does NOT report its height as guessed", () => {
-    // `height=157` is tagged. If this said guessed, the status line's
-    // "N guessed building heights" would over-count and the one number that
-    // says how much of the skyline is real would be wrong.
-    const südturm = volumes.find((volume) => volume.feature === SÜDTURM_KEY);
-    expect(südturm?.heights.heightIsGuessed).toBe(false);
+  it("PIN: a partless man_made=tower is still extruded, at its tagged height, not guessed", () => {
+    // What F34 fixed and the change above must keep: a tower area with NO
+    // parts inside it is the only geometry there is, so it is drawn. And
+    // `height=157` is tagged, so it must not count as guessed, or the status
+    // line's "N guessed building heights" over-counts.
+    const tower: OsmFeature = {
+      type: "way",
+      id: 7,
+      tags: { man_made: "tower", height: "157" },
+      geometry: [
+        { lat: 0, lng: 0 },
+        { lat: 0, lng: 0.0001 },
+        { lat: 0.0001, lng: 0.0001 },
+        { lat: 0.0001, lng: 0 },
+        { lat: 0, lng: 0 },
+      ],
+    };
+    const drawn = buildBuildings([tower], {
+      frame: enuFrameAt({ lat: 0, lng: 0 }),
+    }).filter((volume) => volume.feature === "way/7");
+    expect(drawn).toHaveLength(1);
+    expect(drawn[0]?.heights.totalHeightM).toBe(157);
+    expect(drawn[0]?.heights.heightIsGuessed).toBe(false);
   });
 
   it("leaves the NORDTURM drawn exactly once", () => {
