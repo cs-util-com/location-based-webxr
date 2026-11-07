@@ -46,7 +46,7 @@ there.
   - `add` - its line in the tree's add menu (`KindAdd`: `label`, `hint`,
     `words`, `addable`); a row without one is not offered at all, and one
     with `addable: false` is listed, says why, and adds nothing.
-- `KindLook`, `WorldKind`, `AddKind` - types derived from the rows: the
+- `KindLook`, `WorldKind`, `AddKind` (and the unexported `KindAdd`, a row's add line) - types derived from the rows: the
   looks, the kinds with `inWorld: true`, the kinds with `add.addable: true`
   (today `"shortText" | "longText"`).
 - `isWorldKind(kind)` - type guard on `inWorld`.

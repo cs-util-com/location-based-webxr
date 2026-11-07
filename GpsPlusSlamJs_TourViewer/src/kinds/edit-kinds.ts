@@ -23,7 +23,7 @@ export interface FieldSpec {
 
 /** How a kind is added from nothing: its line in the tree's type menu (and,
  *  addable, in the Ctrl+K palette). */
-export interface KindAdd {
+interface KindAdd {
   readonly label: string;
   /** What it is, or for one that is off, why. */
   readonly hint: string;
