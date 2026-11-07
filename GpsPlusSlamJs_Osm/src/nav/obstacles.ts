@@ -640,10 +640,10 @@ function crossesAnyIn(
  * simply do not obstruct), so the drawn-iff-indexed rule that forced the barrier
  * gap into the shared geometry does not apply.
  *
- * HALF A {@link PASSAGE_CORRIDOR_M} either side. It is WIDER than a gate opens,
- * and that is not inconsistency: a gate needs one admitted step across a line,
- * a corridor needs a chain of them along its length, and the res-13 lattice the
- * search moves on has centres ~6 m apart. See `building-passages.ts`.
+ * HALF A {@link PASSAGE_CORRIDOR_M} either side, measured from the whole step to
+ * the whole line, so a step crossing the line is admitted at any width; the
+ * width decides how much of the interior beside the passage opens, not whether
+ * the passage can be walked. See `building-passages.ts`.
  */
 function blockedDespitePassages(
   a: PlanarPoint,

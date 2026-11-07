@@ -69,18 +69,18 @@ const PASSAGE_TUNNEL = "building_passage";
 /**
  * How wide a mapped building passage is taken to be, metres.
  *
- * **SIZED BY THE PATHFINDER, not by architecture**, exactly as `GATE_GAP_M` is —
- * and it has to be wider than a gate for a reason that only shows up here. A
- * gate needs ONE admitted step across a line. A corridor needs a CHAIN of them
- * along its length, and the res-13 cells the search moves between have centres
- * ~6 m apart on a lattice that has no idea where the passage runs: two
- * consecutive centres can sit several metres off the line, on the same side. A
- * corridor narrower than the lattice spacing is one the agent can enter and then
- * not follow — which is worse than not opening it at all, because the mouth is
- * visible.
+ * **Walkability does not depend on it, measured.** `crossesObstacle` admits a
+ * step that comes within half this width of the passage line anywhere along its
+ * length, so every step CROSSING the line is admitted at any width, and the
+ * res-13 lattice edges a line crosses always form a connected zigzag (centres
+ * are 7.1 m apart on average, up to 7.83 m). Over uniform and near-axis
+ * placements, widths from 0 to 12 m all joined the two sides of the building.
  *
- * `building-passages.property.test.ts` states that as "the passage is walkable
- * end to end, at any bearing" and fails below this value.
+ * **What it decides is how much of the building opens.** Rooms 15-29 m off the
+ * passage stay sealed at 10 m; at 16 m they become reachable in roughly one
+ * placement in seven, at 20 m in most. `building-passages.property.test.ts`
+ * holds both sides: the passage is walkable end to end at any bearing, and the
+ * rooms away from it stay sealed.
  */
 export const PASSAGE_CORRIDOR_M = 10;
 
