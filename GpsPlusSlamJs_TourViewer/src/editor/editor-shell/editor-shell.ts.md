@@ -60,9 +60,8 @@ on it, taking its share of what is left, so Problems and History still
 work; a problem tapped turns the sheet into its details. A sideways
 phone wider than 700 px keeps the two docks, and turning one with
 something selected unfolds the list the details covered. The on-screen keyboard
-(`phone-keyboard.ts`) is `--s-keyboard-h` on the page; at 900 px or less
-a sheet is padded by what the keyboard covers, so a focused field can
-scroll above it.
+(`phone-keyboard.ts`) is `--s-keyboard-h` on the page; at every width a
+panel stands on the keyboard, so a focused field can scroll above it.
 
 The tree's editing (G2 M3b) goes through it: "+" in the tree's head adds a
 station at the centre of the view (where the view has none, `centre()`
@@ -276,8 +275,8 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   - from 900 px down to 701 px the docks are 226 px and 268 px wide (a
     phone turned sideways keeps both, with the map between them);
   - at 720 px the buttons drop their icons, keeping words;
-  - at 520 px Undo and Redo fold into the Edit menu;
-  - at 400 px the menus' carets go and the groups close up.
+  - at 560 px Undo, Redo and Add fold into the Edit menu;
+  - at 420 px the menus' carets go and the groups close up.
   - Each step starts where the bar, in its most crowded state (the unsaved
     mark shown) in a wide platform face (Verdana, with DejaVu Sans'
     metrics), would no longer hold every control with the name at its
@@ -321,8 +320,7 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
 - **A typed height is the item's altitude alone** (`groundItems` with one
   item): its place and turn stay bit for bit, so a height never moves an
   item sideways (a pose through the station's frame and back would, by
-  its float32 rounding, and could re-seat an item outside a lowered
-  circle).
+  its float32 rounding).
 - With nothing selected the inspector's model is not built (no tour is
   built for it on the readout's tick, five times a second).
 - **Put on the ground waits for the ground:** where the ground under

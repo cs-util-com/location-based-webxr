@@ -4,7 +4,8 @@
  * tour's order, the worst first within a station. An item outside its
  * station's circle is a warning (a visitor at the station never finds
  * it); a station with nothing in it is a note. A problem one click can
- * mend carries its fix: an outside item is moved inside, along its line.
+ * mend carries its fixes: an outside item is moved inside, along its
+ * line, or given a station of its own where it stands.
  *
  * @see tour-problems.ts.md
  */
@@ -30,8 +31,8 @@ interface TourProblem {
   /** The selection a click on the row makes (`station:<id>` or an
    *  item's id). */
   readonly select: string;
-  /** The one-click mend, where there is one. */
-  readonly fix?: ProblemFix;
+  /** The one-click mends, where there are any. */
+  readonly fixes?: readonly ProblemFix[];
 }
 
 /** The ground's height at a place as the view has it loaded, or null. */
@@ -40,16 +41,19 @@ type GroundAt = (place: {
   readonly lon: number;
 }) => number | null;
 
-/** A one-click mend: the row's link, the edit the page writes (one undo
- *  step; made on the click, not on each draw, with the ground as loaded
- *  then) and what it says once written. */
-export interface ProblemFix {
-  readonly label: string;
-  readonly edit: (
-    groundAt?: GroundAt,
-  ) => Extract<GestureEdit, { kind: "item-pose" }>;
-  readonly done: string;
-}
+/** A one-click mend: the row's link and what it does - an edit the page
+ *  writes (one undo step; made on the click, not on each draw, with the
+ *  ground as loaded then), saying `done` once written, or the page's own
+ *  "Move to a new station", which says its own outcome. */
+export type ProblemFix =
+  | {
+      readonly label: string;
+      readonly edit: (
+        groundAt?: GroundAt,
+      ) => Extract<GestureEdit, { kind: "item-pose" }>;
+      readonly done: string;
+    }
+  | { readonly label: string; readonly split: true };
 
 /** A station's problems, with its place in the tour (1-based). */
 export interface ProblemGroup {
@@ -139,11 +143,14 @@ export function tourProblems(stations: readonly TourStation[]): ProblemGroup[] {
       )} m)`,
       who: objectTitle(item),
       select: item.id,
-      fix: {
-        label: "Move inside",
-        edit: (groundAt) => moveInside(station, item, groundAt),
-        done: `Moved "${objectTitle(item)}" inside its station's circle`,
-      },
+      fixes: [
+        {
+          label: "Move inside",
+          edit: (groundAt) => moveInside(station, item, groundAt),
+          done: `Moved "${objectTitle(item)}" inside its station's circle`,
+        },
+        { label: "Move to a new station", split: true },
+      ],
     }));
     if (!hasContent(station)) {
       problems.push({

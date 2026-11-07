@@ -64,6 +64,13 @@ beforeEach(() => {
 // A drag left open here would answer the next test's release.
 afterEach(() => {
   document.dispatchEvent(new Event("pointercancel"));
+  // The fingers the tests below press: a drag one of them holds ends only
+  // at its own cancel.
+  for (const pointerId of [7, 8, 9]) {
+    document.dispatchEvent(
+      Object.assign(new Event("pointercancel"), { pointerId }),
+    );
+  }
 });
 
 describe("a drag that ends without a change event", () => {
@@ -119,6 +126,59 @@ describe("a drag that ends without a change event", () => {
     release();
     expect(write).toHaveBeenCalledOnce();
     expect(slider.value).toBe("25");
+  });
+
+  describe("with a second finger on the screen", () => {
+    const pointer = (kind: string, pointerId: number) =>
+      Object.assign(new Event(kind, { bubbles: true }), { pointerId });
+
+    // Why: the release of another finger (one resting on the map, say) ended
+    // the drag and wrote a radius the creator was still choosing.
+    it("ends the drag at its own finger's release only", () => {
+      wired();
+      slider.dispatchEvent(pointer("pointerdown", 7));
+      drag(30);
+      document.dispatchEvent(pointer("pointerup", 8));
+      expect(write).not.toHaveBeenCalled();
+      drag(40);
+      document.dispatchEvent(pointer("pointerup", 7));
+      expect(write.mock.calls).toEqual([["gate", 40]]);
+    });
+
+    it("is not cancelled by another finger's cancel", () => {
+      wired();
+      slider.dispatchEvent(pointer("pointerdown", 7));
+      drag(30);
+      document.dispatchEvent(pointer("pointercancel", 8));
+      expect(preview).not.toHaveBeenCalledWith("gate", null);
+      document.dispatchEvent(pointer("pointercancel", 7));
+      expect(preview).toHaveBeenLastCalledWith("gate", null);
+      expect(write).not.toHaveBeenCalled();
+    });
+
+    it("keeps the drag's finger when another lands on the slider", () => {
+      wired();
+      slider.dispatchEvent(pointer("pointerdown", 7));
+      drag(30);
+      slider.dispatchEvent(pointer("pointerdown", 8));
+      document.dispatchEvent(pointer("pointerup", 8));
+      expect(write).not.toHaveBeenCalled();
+    });
+
+    // Why: the finger of an ended drag must not hold the next one's release.
+    it("takes the next drag's finger after one ended", () => {
+      wired();
+      slider.dispatchEvent(pointer("pointerdown", 7));
+      drag(30);
+      document.dispatchEvent(pointer("pointerup", 7));
+      slider.dispatchEvent(pointer("pointerdown", 9));
+      drag(35);
+      document.dispatchEvent(pointer("pointerup", 9));
+      expect(write.mock.calls).toEqual([
+        ["gate", 30],
+        ["gate", 35],
+      ]);
+    });
   });
 
   it("listens for a release only during a drag", () => {

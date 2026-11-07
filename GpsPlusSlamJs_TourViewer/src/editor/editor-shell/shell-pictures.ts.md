@@ -15,6 +15,12 @@ picture until the shell lets them all go.
     a card scrolled out of its dock is clipped by the dock, so it is out
     of view too); a picture that cannot be read or is too large to decode
     (`pictureProblem`) leaves `el` as it is;
+  - a read that FAILS (the load rejects) is not remembered: it is tried
+    again after 1.5 s while `el` is still on the page and still wants
+    that path, three tries in all per path; a card seen later reads it
+    again while tries are left. After the third failure the path counts
+    as unshowable until `clear`. A picture with a problem is final at
+    once: its bytes would not decode the next time either;
   - a picture read before is set at once on a new element (a redrawn
     card), with no second read and no wait for the observer, so a redraw
     does not flicker;
@@ -30,7 +36,10 @@ picture until the shell lets them all go.
   drawn again; one object URL per path, kept until `clear`.
 - The observer watches only elements still on the page after a
   `sweep`.
-- Nothing outlives `clear`: the shell calls it on hide.
+- Nothing outlives `clear`: the shell calls it on hide. A try waiting
+  when `clear` runs does nothing, and the failure counts start again.
+- At most three reads per path between two `clear`s, whatever the
+  number of cards or redraws: a missing file is not read over and over.
 
 ## Examples
 
@@ -46,7 +55,10 @@ pictures.clear();
 `shell-pictures.test.ts` (jsdom, a fake `IntersectionObserver`, a
 1x1 PNG): read only once in view and shown; a redrawn card shown at once
 from the earlier read, the replaced cards no longer watched after a
-sweep; a picture that cannot be read left as its placeholder; and
+sweep; a picture that cannot be read left as its placeholder; a failed
+read tried again and shown, given up after three tries, read again on a
+redrawn card, not tried for a card that left or after `clear`, and a
+picture with a problem read once (fake `setTimeout`); and
 `clear` letting every URL go, a late read too. The cards' drawing by
 `playwright-tests/editor3d-shell.spec.js` (the sample tour's stations
 carry no picture).

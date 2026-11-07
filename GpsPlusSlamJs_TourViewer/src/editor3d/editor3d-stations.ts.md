@@ -201,6 +201,11 @@ printed size, focalPxOf(view))` times its printed size: `CODE_SCREEN_PX`
   station's level it cannot follow a slope, and the relief above that level
   hid it. So it shows through a building or a hill, as the labels do. The
   visitor's ring (`station-ring.ts`) is not this one and keeps its depth test.
+- **A dragged item outside its station's circle turns that ring the
+  Problems warning colour** (`RING_ITEM_OUT`, `--s-warn`), at full
+  opacity, by the same ground distance Problems uses, until the drop. It
+  shows the creator the item is out while there is still time to bring
+  it back.
 - **The found-radius circle** is the selected station's ring: amber (the
   gizmo's colour, its radius dots sit on it) while the station itself is
   selected, a lighter blue while an item in it is, else blue.

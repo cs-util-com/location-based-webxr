@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Keeps a piece of the creator's text short where a line has room for only so much: cut at `n` characters, ending in "…". One copy for the package (root `CLAUDE.md`, a one-liner once per package). It lives at `src/` rather than `src/editor/` because the viewer's own modules use it too (the dependency rules keep them from importing the editor): the long-text writer's link note and the Narration section's lists, the creator's panel label for a tour file (`archive-open.ts`), the tour's short name (`tour-session.ts`), the map's "off the map view" chip (`editor/editor-card.ts`), the undo and re-seat notes (`editor/editor-session.ts`, `editor/reseat-note.ts`) and the 3D editor's station marks (`editor3d/editor3d-marks.ts`).
+Keeps a piece of the creator's text short where a line has room for only so much: cut at `n` characters, ending in "…". One copy for the package (root `CLAUDE.md`, a one-liner once per package). It lives at `src/` rather than `src/editor/` because the viewer's own modules use it too (the dependency rules keep them from importing the editor): the long-text writer's link note and the Narration section's lists, the creator's panel label for a tour file (`archive-open.ts`), the tour's short name (`tour-session.ts`), the map's "off the map view" chip (`editor/editor-card.ts`), the undo notes (`editor/editor-session.ts`), the move question and its note (`move-question.ts`) and the 3D editor's station marks (`editor3d/editor3d-marks.ts`).
 
 ## Public API
 

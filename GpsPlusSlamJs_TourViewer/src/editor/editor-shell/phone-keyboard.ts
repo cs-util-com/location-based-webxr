@@ -2,7 +2,8 @@
  * A phone's on-screen keyboard over the editor's panels: it lies over the
  * page without changing its size, so the page reads its height from the
  * visual viewport, gives it to the styles as `--s-keyboard-h` (a panel
- * stands on the keyboard) and brings the field in use into sight.
+ * stands on the keyboard) and `data-keyboard="up"`, and brings the field
+ * in use into sight.
  *
  * @see phone-keyboard.ts.md
  */
@@ -33,6 +34,8 @@ export function watchKeyboard(win: Window, host: HTMLElement): () => void {
   const viewport = win.visualViewport;
   if (viewport === null || viewport === undefined) return () => undefined;
   let up = false;
+  /** The keyboard's height last read; 0 for none. */
+  let shownPx = 0;
   const inSight = () => {
     const field = host.ownerDocument.activeElement;
     if (up && field instanceof HTMLElement && host.contains(field)) {
@@ -41,12 +44,19 @@ export function watchKeyboard(win: Window, host: HTMLElement): () => void {
   };
   const update = () => {
     const px = keyboardPx(win.innerHeight, viewport);
-    const { style } = host.ownerDocument.body;
-    const was = up;
+    const { body } = host.ownerDocument;
+    const grew = px > shownPx;
+    shownPx = px;
     up = px > 0;
-    if (up) style.setProperty(KEYBOARD_VAR, `${String(px)}px`);
-    else style.removeProperty(KEYBOARD_VAR);
-    if (up && !was) inSight();
+    if (up) {
+      body.style.setProperty(KEYBOARD_VAR, `${String(px)}px`);
+      body.dataset["keyboard"] = "up";
+    } else {
+      body.style.removeProperty(KEYBOARD_VAR);
+      delete body.dataset["keyboard"];
+    }
+    // Come, or grown over the field (its suggestions, a phone turned).
+    if (up && grew) inSight();
   };
   viewport.addEventListener("resize", update);
   viewport.addEventListener("scroll", update);
@@ -56,5 +66,6 @@ export function watchKeyboard(win: Window, host: HTMLElement): () => void {
     viewport.removeEventListener("scroll", update);
     host.removeEventListener("focusin", inSight);
     host.ownerDocument.body.style.removeProperty(KEYBOARD_VAR);
+    delete host.ownerDocument.body.dataset["keyboard"];
   };
 }
