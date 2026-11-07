@@ -44,6 +44,7 @@
  */
 import * as THREE from "three";
 
+import { AUTO_EXPOSURE } from "gps-plus-slam-app-framework/visualization/atmosphere/atmosphere-exposure";
 import {
   sunLight,
   type SunLight,
@@ -96,6 +97,8 @@ interface GroundSkyFrame {
   stepPct: number;
   /** The space view's sun intensity, the exposure above the edge. */
   spaceExposure: number;
+  /** The near clouds' look: their camera and the ground's own sun. */
+  nearLook: boolean;
 }
 
 /** What the debug panel and the smokes read. */
@@ -156,14 +159,12 @@ function createSky(
   renderer: THREE.WebGLRenderer,
 ): SkyAtmosphere | null {
   try {
-    const sky = new SkyAtmosphere({
+    return new SkyAtmosphere({
       scene,
       renderer,
       rebuild: "staged",
       observerAltitudeKm: GLOBE_SKY_HAND_OVER.observerCeilingKm,
     });
-    sky.setAutoExposureAdaptation(GLOBE_SKY_HAND_OVER.exposureAdaptation);
-    return sky;
   } catch (e) {
     if (!(e instanceof SkyAtmosphereUnsupportedError)) throw e;
     return null;
@@ -220,8 +221,8 @@ export function createGlobeGroundSky(
     read: 0,
     bake: 0,
   };
-  /** Moves the sky's observer and sun by their steps, one rebuild stage. */
   let groundSun: SunLight | null = null;
+  /** Moves the sky's observer and sun by their steps, one rebuild stage. */
   const advance = (
     sky: SkyAtmosphere,
     altitudeKm: number,
@@ -236,14 +237,33 @@ export function createGlobeGroundSky(
     if (sunStepped(lastSun, sun)) {
       sky.setSun(sunWorld);
       lastSun = sun;
-      groundSun = sunLight(sunWorld.clone().normalize().y, {
-        visibilityKm: sky.visibilityKm,
-        observerAltitudeKm: 0,
-      });
     }
     const stage = sky.stepRebuild();
     lastStage = stage;
     if (stage !== "idle") rebuilds[stage] += 1;
+  };
+  /**
+   * The near clouds' look: the camera's adaptation and, each frame (the
+   * sky's sun moves in steps that jump this light at a low sun), the sun
+   * that reached the ground. Off, the framework's camera and a white sun.
+   */
+  const lookOn = (
+    sky: SkyAtmosphere,
+    nearLook: boolean,
+    sunWorld: THREE.Vector3,
+  ) => {
+    const adaptation = nearLook
+      ? GLOBE_SKY_HAND_OVER.exposureAdaptation
+      : AUTO_EXPOSURE.adaptation;
+    if (sky.autoExposureAdaptation !== adaptation) {
+      sky.setAutoExposureAdaptation(adaptation);
+    }
+    groundSun = nearLook
+      ? sunLight(sunWorld.y / sunWorld.length(), {
+          visibilityKm: sky.visibilityKm,
+          observerAltitudeKm: 0,
+        })
+      : null;
   };
   return {
     get supported() {
@@ -263,11 +283,15 @@ export function createGlobeGroundSky(
       widthKm,
       stepPct,
       spaceExposure,
+      nearLook,
     }) {
       const working =
         atmosphere !== null && framed && altitudeKm < edgeKm + widthKm;
       weight = working ? groundSkyWeight(altitudeKm, { edgeKm, widthKm }) : 0;
-      if (working) advance(atmosphere, altitudeKm, stepPct, sunWorld);
+      if (working) {
+        lookOn(atmosphere, nearLook, sunWorld);
+        advance(atmosphere, altitudeKm, stepPct, sunWorld);
+      }
       // The automatic exposure alone (without this page's compensation),
       // then ONE eased value for the sky and the globe's sun.
       automatic = atmosphere ? atmosphere.exposure / 2 ** compensationEv : 1;

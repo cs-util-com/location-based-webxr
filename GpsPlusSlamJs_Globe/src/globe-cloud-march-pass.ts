@@ -308,7 +308,6 @@ export function createGlobeCloudMarch(
   let weather: CloudWeatherFrame | null = null;
   let disposed = false;
   let compiled = false;
-  let compiling: Promise<void> | null = null;
   let drawn = 0;
   let canvasPixelsPerCloudPixel = 1;
   let reachAtKm = -1;
@@ -458,21 +457,35 @@ export function createGlobeCloudMarch(
     );
   };
 
-  /** Compiles both shaders off the frame that first draws them; a browser
-   *  that fails the wait compiles on that frame instead. Until it is over
-   *  the materials stay: three polls their programs by a timer, and one
-   *  freed under it throws there. */
+  /**
+   * Compiles both shaders off the frame that first draws them; a browser
+   * that fails compiles on that frame instead. The wait is here and not
+   * `compileAsync`: its timer throws on a program the renderer forgot,
+   * where nothing can catch it, when the view closes meanwhile.
+   */
   const compile = () => {
-    quad.material = shadowMaterial;
-    const shadow = renderer.compileAsync(scene, quadCamera);
-    quad.material = material;
-    const clouds = renderer.compileAsync(scene, quadCamera);
-    compiling = Promise.all([shadow, clouds])
-      .catch(() => undefined)
-      .then(() => {
-        compiled = true;
-        compiling = null;
-      });
+    const pending = new Set<THREE.Material>();
+    try {
+      for (const next of [shadowMaterial, material]) {
+        quad.material = next;
+        for (const m of renderer.compile(scene, quadCamera)) pending.add(m);
+      }
+    } catch {
+      compiled = true;
+      return;
+    }
+    const check = () => {
+      if (disposed) return;
+      for (const m of pending) {
+        const { currentProgram: program } = renderer.properties.get(m) as {
+          currentProgram?: { isReady(): boolean };
+        };
+        if (program === undefined || program.isReady()) pending.delete(m);
+      }
+      if (pending.size === 0) compiled = true;
+      else setTimeout(check, 10);
+    };
+    check();
   };
 
   const ready = () =>
@@ -537,12 +550,8 @@ export function createGlobeCloudMarch(
       }
       target.dispose();
       shadowTarget.dispose();
-      const freeMaterials = () => {
-        material.dispose();
-        shadowMaterial.dispose();
-      };
-      if (compiling === null) freeMaterials();
-      else void compiling.then(freeMaterials);
+      material.dispose();
+      shadowMaterial.dispose();
       geometry.dispose();
     },
   };

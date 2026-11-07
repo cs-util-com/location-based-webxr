@@ -11,6 +11,7 @@
  * recording fakes of both volumes; the clouds' look is the lab's smokes and
  * the reference captures.
  */
+import { nearCloudsGain } from "./globe-sky-hand-over.js";
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
@@ -507,7 +508,7 @@ describe("createGlobeCloudStep: render", () => {
   });
 
   describe("with the near clouds", () => {
-    const marchAir = { uH: { value: 3 } };
+    const marchAir = { uH: { value: 3 }, uSun: { value: { y: 0.5 } } };
     const fakeNear = (log: unknown[][], ready = true) => ({
       ready,
       render: (frame: unknown) => {
@@ -626,6 +627,18 @@ describe("createGlobeCloudStep: render", () => {
       expect(options.near.tapPixels).toBe(
         GLOBE_QUALITIES.high.clouds.tapPixels,
       );
+    });
+
+    // Why this test matters: the near clouds carry their light in their own
+    // units while the ground follows the camera's exposure, so at dusk they
+    // stood black on a lit ground.
+    it("raises the near clouds with the camera's exposure", () => {
+      const log: unknown[][] = [];
+      const step = make(log);
+      step.plan(nearKnobs, { cameraAltM: 60_000, framed: true });
+      step.render(camera, { ...nearFrame, sunIntensity: 30 });
+      const options = log[1]?.[1] as { near: { gain: number } };
+      expect(options.near.gain).toBe(nearCloudsGain(30, marchAir.uSun.value.y));
     });
 
     it("keeps to the old path above its ceiling", () => {

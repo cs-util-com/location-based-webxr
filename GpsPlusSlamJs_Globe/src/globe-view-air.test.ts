@@ -18,6 +18,7 @@ import { GLOBE_ATMOSPHERE } from "./globe-atmosphere-frame.js";
 import type { GlobeAtmosphere } from "./globe-atmosphere.js";
 import type { GlobeGroundSky } from "./globe-ground-sky.js";
 import { GLOBE_SKY_HAND_OVER } from "./globe-sky-hand-over.js";
+import { GLOBE_SURFACE_TUNING } from "./globe-surface-material.js";
 import { mountGlobeViewAir } from "./globe-view-air.js";
 import type { GlobeSceneDepth } from "./globe-scene-depth.js";
 import {
@@ -48,12 +49,16 @@ const fakeView = (altitudeM: number, framed = true) => {
     camera,
     globe: {
       sun,
+      sunExposure: { value: 5 },
       group: { matrixWorld: new THREE.Matrix4() },
       tiles: {
         group: { matrixWorld: new THREE.Matrix4().makeTranslation(1, 2, 3) },
         ellipsoid: { radius: RADII },
       },
-      surfaceUniforms: { uSunEcef: { value: new THREE.Vector3(1, 0, 0) } },
+      surfaceUniforms: {
+        uSunEcef: { value: new THREE.Vector3(1, 0, 0) },
+        uNightGain: { value: 0 },
+      },
       cloudShell: {
         heights: [] as number[],
         setHeightM(heightM: number) {
@@ -487,5 +492,27 @@ describe("mountGlobeViewAir", () => {
     air.afterSky();
     air.afterScene();
     expect(fakes.log).toEqual([]);
+  });
+
+  // Why this test matters: the frame carries the height, so the fade of the
+  // night map has to reach the surface's uniform each step, the way up too.
+  it("fades the night map's lights by the camera's height", () => {
+    const low = fakeView(2);
+    const air = mountGlobeViewAir(low, {
+      coarsePointer: false,
+      drawers: () => fakeDrawers().drawers,
+    });
+    air.step();
+    const gain = low.globe.surfaceUniforms.uNightGain.value;
+    expect(gain).toBe(0);
+
+    const high = fakeView(400_000);
+    mountGlobeViewAir(high, {
+      coarsePointer: false,
+      drawers: () => fakeDrawers().drawers,
+    }).step();
+    expect(high.globe.surfaceUniforms.uNightGain.value).toBe(
+      GLOBE_SURFACE_TUNING.nightGain,
+    );
   });
 });

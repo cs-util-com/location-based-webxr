@@ -46,6 +46,10 @@ import { createGlobeHaze, type GlobeHaze } from "./globe-haze.js";
 import type { GlobeSea } from "./globe-sea.js";
 import { GLOBE_SKY_HAND_OVER } from "./globe-sky-hand-over.js";
 import {
+  GLOBE_SURFACE_TUNING,
+  nightLightsShare,
+} from "./globe-surface-material.js";
+import {
   GLOBE_VIEW_CLOUDS,
   type CloudsFactory,
   type GlobeViewClouds,
@@ -57,6 +61,7 @@ interface AirView {
   readonly scene: THREE.Scene;
   readonly camera: THREE.Camera;
   readonly globe: {
+    readonly sunExposure: { value: number };
     readonly sun: {
       readonly position: THREE.Vector3;
       intensity: number;
@@ -69,6 +74,7 @@ interface AirView {
     };
     readonly surfaceUniforms: {
       readonly uSunEcef: { readonly value: THREE.Vector3 };
+      readonly uNightGain: { value: number };
     };
     /** The cloud shell, its height set here when no heavy clouds do. */
     readonly cloudShell: { setHeightM(heightM: number): void };
@@ -201,6 +207,7 @@ export function mountGlobeViewAir(
     ellipsoidRadii: [radius.x, radius.y, radius.z],
     groundRadiusKm: EARTH_ATMOSPHERE.groundRadiusKm,
     sun: view.globe.sun,
+    sunExposure: view.globe.sunExposure,
     globeGroup: view.globe.group,
     spacePass,
     groundSky,
@@ -220,6 +227,8 @@ export function mountGlobeViewAir(
       framed: view.frameTarget() !== null,
       nearAir: clouds?.nearAir() ?? 0,
     });
+    view.globe.surfaceUniforms.uNightGain.value =
+      GLOBE_SURFACE_TUNING.nightGain * nightLightsShare(air.observerKm());
   };
   /**
    * The clouds between the hand-over and the sun's ease (the volumes update

@@ -7,6 +7,11 @@ Purpose: the near clouds' light, pure: the sun's path through the air, the sky's
 - `cloudMarchLight(sun): CloudMarchLight`: the sun's and the sky's colour for the march's uniforms, from a unit vector, y up at the camera.
 - `CLOUD_NIGHT_AMBIENT`: the faint light that stays at night.
 
+- `CLOUD_SUN_FLOOR`: the cloud sun's least green and blue as shares of its
+  red. Half desaturated, the last light through the air stays nearly pure
+  red, drawn crimson. Above about 3 degrees the floor does not act, so the
+  day keeps the page's light.
+
 ## Invariants
 
 - The same single-scattering air as the march's shader, so clouds and their aerial perspective agree.

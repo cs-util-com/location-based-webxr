@@ -646,8 +646,8 @@ const PARAMS = {
   // The near clouds (globe-cloud-march-pass.ts): 1 in place of the slab below
   // their ceiling, on the tier by index, 0 low to 2 high.
   cloudNear: { fallback: 0, min: 0, max: 1 },
-  cloudNearCeilingKm: { fallback: 70, min: 1, max: 400 },
-  cloudNearFadeKm: { fallback: 20, min: 0.1, max: 100 },
+  cloudNearCeilingKm: { fallback: 80, min: 1, max: 400 },
+  cloudNearFadeKm: { fallback: 15, min: 0.1, max: 100 },
   cloudNearTier: { fallback: 2, min: 0, max: 2 },
   cloudShellCell: {
     fallback: CLOUD_SHELL_VOLUME.stations[0].cellScale,
@@ -1707,6 +1707,7 @@ async function start() {
     ellipsoidRadii: [radii.x, radii.y, radii.z],
     groundRadiusKm: EARTH_ATMOSPHERE.groundRadiusKm,
     sun: globe.sun,
+    sunExposure: globe.sunExposure,
     globeGroup: globe.group,
     spacePass: atmosphere,
     groundSky,
@@ -2489,7 +2490,7 @@ async function start() {
         extra: city ? [city.root] : [],
         worldFromEcef: globe.tiles.group.matrixWorld,
         sunEcef: globe.surfaceUniforms.uSunEcef.value,
-        sunIntensity: globe.sun.intensity,
+        sunIntensity: globe.sunExposure.value,
         sceneDepthWeight: air.weight(),
         flatten: params.cloudShellFlat,
         near: {

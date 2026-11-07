@@ -39,7 +39,8 @@ function fakeView(altitudeM: number, framed = true) {
     renderer: {} as THREE.WebGLRenderer,
     camera,
     globe: {
-      sun: { intensity: 5 },
+      sun: { intensity: 0.1 },
+      sunExposure: { value: 5 },
       cloudShell: {
         heightM: () => heightM,
         setHeightM(next: number) {
@@ -68,6 +69,7 @@ function fakeParts() {
   const slabFrames: { radiusKm: number; altitudeKm: number }[] = [];
   const shellFrames: { altitudeKm: number; shadow: number; cover: number }[] =
     [];
+  const shellRenders: { sunIntensity: number }[] = [];
   const patched: unknown[] = [];
   const depthDrawn: unknown[] = [];
   const depthExtra: unknown[] = [];
@@ -107,7 +109,10 @@ function fakeParts() {
       update(frame: { altitudeKm: number; shadow: number; cover: number }) {
         shellFrames.push(frame);
       },
-      render: () => log.push("shell"),
+      render(_camera: unknown, options: { sunIntensity: number }) {
+        shellRenders.push(options);
+        log.push("shell");
+      },
       state: () => ({
         drawn: log.filter((l) => l === "shell").length,
         share: 0.5,
@@ -124,6 +129,7 @@ function fakeParts() {
     log,
     slabFrames,
     shellFrames,
+    shellRenders,
     patched,
     depthDrawn,
     depthExtra,
@@ -150,7 +156,8 @@ function fakeNear() {
     shadowTexture: new THREE.Texture(),
     uv: new THREE.Vector2(1, 1),
     resolution: new THREE.Vector2(10, 10),
-    uniforms: () => ({}),
+    // The march pass always carries its sun (the near clouds' gain reads it).
+    uniforms: () => ({ uSun: { value: new THREE.Vector3(0, 1, 0) } }),
     dispose() {
       this.disposed += 1;
     },
@@ -342,6 +349,18 @@ describe("createGlobeViewClouds", () => {
     clouds.step({ observerKm: 500, shareClouds: () => 1 });
     expect(clouds.state().shellOn).toBe(false);
     expect(fakes.log).toContain("shell off");
+  });
+
+  // Why: the shell marches the sun through the air itself, so it takes the
+  // sun above the air; the light's intensity has the air in it already, and
+  // the old deck and the high layer went dark at a low sun with it.
+  it("gives the clouds the sun above the air, not the sun on the ground", () => {
+    const fakes = fakeParts();
+    const clouds = createGlobeViewClouds(fakeView(10_000), fakes.parts);
+    clouds.patch(reliefTiles());
+    clouds.step({ observerKm: 10, shareClouds: () => 1 });
+    clouds.render({ weight: 1 });
+    expect(fakes.shellRenders.at(-1)?.sunIntensity).toBe(5);
   });
 
   // Why: the slab's shadow must reach the relief's tiles before the haze

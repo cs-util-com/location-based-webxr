@@ -82,6 +82,8 @@ mapFactor`, as the lab's: whole from orbit, gone below about 1,000 km
 
 ## The near clouds
 
+The near clouds are whole from 65 km down and gone at 80 km (`cloudNearCeilingKm`, `cloudNearFadeKm`): at 60 km half a share over the dark ground drew their thin parts as flat grey sheets, and the old clouds' share adds no white under them. The ceiling stays at the sky's hand-over edge, so the near air and the space pass overlap only below it.
+
 `nearAir()` is the share the air hands to the composite: `nearShare` while the clouds are on, else 0.
 
 The old clouds stay the old path: without the near clouds, or after a failed bake (`nearLive()` false), `cloudNear` is 0, so the shell keeps its cover and the air fades its veil with the sky. A closed view stops the worker, and a bake arriving after that is dropped.

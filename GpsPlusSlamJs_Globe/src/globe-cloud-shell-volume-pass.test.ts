@@ -580,6 +580,7 @@ describe("createGlobeCloudShellVolume", () => {
       weight,
       shadow,
       air,
+      gain: 2,
     });
 
     // Why this test matters: the mix is the hand-over. Stacked, the two
@@ -602,6 +603,7 @@ describe("createGlobeCloudShellVolume", () => {
       expect(composite.uniforms.uNearUv?.value).toBe(mix.uv);
       expect(composite.uniforms.uNearRes?.value).toBe(mix.resolution);
       expect(composite.uniforms.uNearTap?.value).toBe(0.45);
+      expect(composite.uniforms.uNearGain?.value).toBe(2);
       expect(composite.snapshot).toMatchObject({
         uNearWeight: 0.25,
         uNearShadowOn: 1,
@@ -614,6 +616,29 @@ describe("createGlobeCloudShellVolume", () => {
     // depth. Against any other sky far clouds stand out as white dashes on
     // a dark limb. It sits under the clouds and over their ground shadow,
     // and comes and goes with them.
+    // Why this test matters: the high layer is thin ice, lit through. Lit as
+    // the deck's dark underside it drew brown streaks on a bright sky from
+    // below and along the horizon from above.
+    it("lights the high layer through, the deck's underside only for the deck", () => {
+      const { shell, draws } = setUp();
+      shell.setEnabled(true);
+      shell.update(
+        frameAt({
+          altitudeKm: 5,
+          highLayer: { on: true },
+          shares: { shellIn: 1, shell: 1, slab: 0 },
+        }),
+      );
+      shell.render(camera(), renderOptions);
+      const pass = draws.find((draw) =>
+        draw.fragmentShader.includes("uBothSides"),
+      );
+      expect(pass?.fragmentShader).toContain("uBothSides > 0.5 ? thinLight");
+      expect(pass?.fragmentShader).toContain(
+        "vec3 thinLight = max( top, sunUnder + skyUnder );",
+      );
+    });
+
     it("draws the march's air behind them, over their shadow", () => {
       const { shell, draws } = setUp();
       shell.setEnabled(true);

@@ -110,6 +110,10 @@ radiusM }` from its state, the centre null on the camera, where its flat
   lattice offsets added to the carried anchor) and their cos / sin
   weights, so the clouds morph at one speed from 1,050 km down to the
   slab's ceiling, where the field is the slab's own (its basis copied).
+- The high layer is thin ice: its opacity falls with its density and stops
+  at `CLOUD_HIGH_LAYER.veil`, or it draws flat sheets over the near clouds.
+- The near clouds and their air are multiplied by the mix's `gain`
+  (`nearCloudsGain`), the old clouds carry the exposure in `uRadiance`.
 - A, the high layer (§11, DEC-R5-6; off by default): `update`'s
   `highLayer` `{ on, altitudeKm, cellScale, cover, noiseShare }`; `render`
   marches it a second time into its own target with the deck, the field
@@ -179,6 +183,10 @@ radiusM }` from its state, the centre null on the camera, where its flat
 ## The near clouds in the composite
 
 `render(camera, { near })` takes a `CloudShellNearMix`. The composite is the one place the old and the new clouds meet: `c = (1 - w) * c + w * near`, by one weight, never stacked, read through a four-tap tent inside the share the frame drew. The two shadows mix the same way, so a shadow does not double at the hand-over. At `weight` 1 the shell's own deck and its shadow are not marched, which saves their cost; the high layer stays.
+
+### The high layer's light
+
+The high layer takes `thinLight`, the brighter of the top's light and the light from under, on both sides: it is thin ice, lit through, and the deck's underside drew it brown on a bright sky.
 
 ### The air, in the same pass
 

@@ -48,6 +48,8 @@ interface GroundSkyFrame {
   widthKm: number;
   stepPct: number;
   spaceExposure: number;
+  /** The near clouds' look: their camera and the ground's own sun. */
+  nearLook: boolean;
 }
 
 /** The lab's ground sky, as the wiring uses it. */
@@ -113,6 +115,8 @@ interface GlobeAirOptions<Sky, Depth> {
   groundRadiusKm: number;
   /** The globe's sun: its position in the globe's group, its intensity. */
   sun: { position: THREE.Vector3; intensity: number; color: THREE.Color };
+  /** The sun above the air, for what marches the air itself. */
+  sunExposure: { value: number };
   /** The globe's group, whose world matrix turns the sun into the world. */
   globeGroup: { matrixWorld: THREE.Matrix4 };
   spacePass: AirSpacePass<Depth>;
@@ -176,7 +180,7 @@ export interface GlobeAir<Depth> {
 export function createGlobeAir<Sky, Depth>(
   options: GlobeAirOptions<Sky, Depth>,
 ): GlobeAir<Depth> {
-  const { sun, globeGroup, spacePass, groundSky, haze } = options;
+  const { sun, sunExposure, globeGroup, spacePass, groundSky, haze } = options;
   const radii: [number, number, number] = [...options.ellipsoidRadii];
   const sunWorld = new THREE.Vector3();
   let handOver: AirHandOver = { weight: 0, exposure: Number.NaN };
@@ -204,6 +208,7 @@ export function createGlobeAir<Sky, Depth>(
             widthKm: Math.min(params.skyWidthKm, params.skyEdgeKm),
             stepPct: params.skyStepPct,
             spaceExposure: params.sunIntensity,
+            nearLook: params.atmoGround === 1,
           })
         : { weight: 0, exposure: params.sunIntensity };
       onGround = grounded ? groundSky.sunOnGround() : SPACE_SUN;
@@ -224,6 +229,7 @@ export function createGlobeAir<Sky, Depth>(
       // The globe's light came through the air; the veil adds the air itself.
       sun.intensity = handOver.exposure * onGround.scale;
       sun.color.setRGB(...onGround.colour);
+      sunExposure.value = handOver.exposure;
       const thickness =
         params.atmoRamp === 1
           ? shellThicknessAt(Math.max(0, observerKm), params.atmoThickness)

@@ -59,6 +59,7 @@ const setup = (
     intensity: 0,
     color: new THREE.Color(1, 1, 1),
   };
+  const sunExposure = { value: 0 };
   const globeGroup = {
     matrixWorld: new THREE.Matrix4().makeRotationX(Math.PI / 2),
   };
@@ -66,6 +67,7 @@ const setup = (
     ellipsoidRadii: RADII,
     groundRadiusKm: GROUND_KM,
     sun,
+    sunExposure,
     globeGroup,
     spacePass: {
       setLook: (look) => {
@@ -104,6 +106,7 @@ const setup = (
   const read = (s: string) => (stage = s);
   return {
     air,
+    sunExposure,
     calls,
     updates,
     looks,
@@ -330,6 +333,32 @@ describe("createGlobeAir", () => {
   // The space pass's sky fades under the ground sky; its ground keeps its
   // veil unless `atmoGround=0`; the scene's depth weighs in with the
   // ground sky; nothing is drawn when the page has the pass off.
+  // Why this test matters: the ground's sun has lost its light in the air.
+  // Whatever marches the air itself (the shell, the sky fill) starts from
+  // the sun above it: handed the ground's sun, the air counts twice and a
+  // low sun leaves a dark cirrus and a ground without its twilight.
+  it("keeps the sun's exposure apart from the sun on the ground", () => {
+    const { air, sun, sunExposure } = setup(
+      { weight: 1, exposure: 4 },
+      { onGround: { scale: 0.03, colour: [1, 0.5, 0.2] } },
+    );
+    air.step(PARAMS, { cameraEcef: at(30_000), framed: true });
+    air.finish(PARAMS);
+    expect(sun.intensity).toBeCloseTo(0.12);
+    expect(sunExposure.value).toBe(4);
+  });
+
+  // Why this test matters: the near clouds' look stays off the old clouds.
+  it("tells the ground sky whether the near clouds' look is on", () => {
+    const { air, updates } = setup();
+    air.step(
+      { ...PARAMS, atmoGround: 0 },
+      { cameraEcef: at(30_000), framed: true },
+    );
+    air.step(PARAMS, { cameraEcef: at(30_000), framed: true });
+    expect(updates).toMatchObject([{ nearLook: false }, { nearLook: true }]);
+  });
+
   it("renders the space pass with the hand-over's shares", () => {
     const { air, renders } = setup();
     const camera = new THREE.PerspectiveCamera();

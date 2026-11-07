@@ -122,8 +122,8 @@ export const GLOBE_VIEW_CLOUDS = Object.freeze({
   /** The near clouds where a page has them and their bake did not fail,
    *  gone at 70 km, whole at 50. */
   cloudNear: 1,
-  cloudNearCeilingKm: 70,
-  cloudNearFadeKm: 20,
+  cloudNearCeilingKm: 80,
+  cloudNearFadeKm: 15,
 } as const satisfies GlobeViewCloudKnobs);
 
 /** What the clouds read and write of the view (a `GlobeView` is one). */
@@ -131,7 +131,7 @@ export interface CloudsView {
   readonly renderer: THREE.WebGLRenderer;
   readonly camera: THREE.PerspectiveCamera;
   readonly globe: Pick<GlobeSurface, "cloudShell" | "surfaceUniforms"> & {
-    readonly sun: { readonly intensity: number };
+    readonly sunExposure: { readonly value: number };
     readonly tiles: Pick<GlobeSurface["tiles"], "ellipsoid" | "group">;
   };
   ecefCamera(): { readonly position: THREE.Vector3 };
@@ -474,7 +474,7 @@ export function createGlobeViewClouds(
         extra,
         worldFromEcef: globe.tiles.group.matrixWorld,
         sunEcef: globe.surfaceUniforms.uSunEcef.value,
-        sunIntensity: globe.sun.intensity,
+        sunIntensity: globe.sunExposure.value,
         sceneDepthWeight: weight,
         flatten: knobs.cloudShellFlat,
         ...(nearOn && nearDriver !== null ? { near: nearDriver.frame() } : {}),

@@ -56,10 +56,14 @@ observerKm, rebuildPending, lastStage, rebuilds }`, `rebuilds` counting each sta
   sky drawn straight to the canvas, faded. The space sky's stars and sun
   disc fade under it while its own disc fades in, so the two discs are
   never both at full.
-- **The camera adapts by 0.3** (`exposureAdaptation`), not the framework's
-  street default of 0.75: at a sun 1 degree up 0.75 and 0.5 wash the frame
-  pale from the air, 0 leaves 9 km black. The value is a look, checked at
-  60, 40, 9 and 0.3 km; 40 km at 0.3 is still pale from the veil.
+- **The camera adapts by 0.5** (`exposureAdaptation`), not the framework's
+  street default of 0.75. Swept over 0.3, 0.4, 0.5, 0.6 and 0.75, suns 15, 8,
+  3, 1, -1, -3 and -6 degrees, at 40, 9 and 0.3 km: from 3 degrees up the
+  values differ by less than the eye tells, so the value is decided at dusk.
+  At -3 degrees 0.3 leaves the frame nearly black and 0.75 washes the sky
+  white and burns the pale roofs; 0.6 starts to, 0.4 starts to go dark. The
+  value is a look. Only with the near clouds (`nearLook`): the old
+  clouds keep the framework's camera and a white sun.
 - **One eased exposure** (DEC-GL5-16): `easedExposure(spaceExposure,
 automatic, weight)`, in ONE unit, the sun's scale in the scene: the
   ground sky (sun intensity 1) gets it through its exposure compensation,

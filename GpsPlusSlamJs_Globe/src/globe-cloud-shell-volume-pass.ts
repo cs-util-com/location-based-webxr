@@ -177,6 +177,7 @@ const float SHELL_FORWARD = ${glslFloat(CLOUD_LAYER.forwardStrength)};
 const float SHELL_FORWARD_POWER = ${glslFloat(CLOUD_LAYER.forwardPower)};
 const float SHELL_THICKNESS_DARK = ${glslFloat(CLOUD_LAYER.thicknessDarkening)};
 const float SHELL_SKY_AMBIENT = ${glslFloat(CLOUD_LAYER.skyAmbient)};
+const float SHELL_THIN_VEIL = ${glslFloat(CLOUD_HIGH_LAYER.veil)};
 const float SHELL_TOP_ALBEDO = ${glslFloat(CLOUD_SHEET.topAlbedo)};
 const float SHELL_ZENITH_FROM = ${glslFloat(ZENITH_MU.from)};
 const float SHELL_ZENITH_TO = ${glslFloat(ZENITH_MU.to)};
@@ -404,6 +405,9 @@ void main() {
   vec3 top = ATM_RADIANCE_SCALE * sunT * max( mu, 0.0 ) * SHELL_TOP_ALBEDO / ATM_PI + zenith * SHELL_SKY_AMBIENT;
   vec3 sunUnder = ATM_RADIANCE_SCALE * sunT * ( SHELL_SUN_AMBIENT + SHELL_FORWARD * forward );
   vec3 skyUnder = zenith * SHELL_SKY_AMBIENT;
+  // The high layer is thin ice, lit through: the deck's dark underside drew
+  // it brown on a bright sky.
+  vec3 thinLight = max( top, sunUnder + skyUnder );
   highp float sunScale = SHELL_SIGMA * SHELL_SUN_DEPTH / max( mu, SHELL_SUN_MU_FLOOR );
   float deck = ( uDeckTopKm - uDeckBaseKm ) * 1000.0;
   float jitter = fract( 52.9829189 * fract( dot( gl_FragCoord.xy, vec2( 0.06711056, 0.00583715 ) ) ) );
@@ -450,7 +454,9 @@ void main() {
       float noise = mix( na, nb, 0.5 * ( fa + fb ) );
       float th = 0.5 * ( tha + thb );
       float density = smoothstep( 0.0, 1.0, clamp( ( noise - th ) / ( 2.0 * SHELL_EDGE ) + 0.5, 0.0, 1.0 ) );
-      vec3 under = sunUnder * ( 1.0 - SHELL_THICKNESS_DARK * density ) + skyUnder;
+      vec3 under = uBothSides > 0.5 ? thinLight : sunUnder * ( 1.0 - SHELL_THICKNESS_DARK * density ) + skyUnder;
+      // Thin ice fades out by its density; the deck's opacity drew it as flat sheets.
+      if ( uBothSides > 0.5 ) w *= SHELL_THIN_VEIL * density;
       colour += transmittance * w * ( under * a + ( top - under ) * shellInStepLight( tau, sunA, sunB ) );
       alpha += transmittance * a * w;
       transmittance *= exp( -tau );
@@ -516,6 +522,7 @@ uniform float uShadowWeight;
 uniform vec2 uNearUv;
 uniform vec2 uNearRes;
 uniform float uNearTap;
+uniform float uNearGain;
 varying vec2 vUv;
 vec4 nearTap( vec2 c ) {
   vec2 h = 0.5 / uNearRes;
@@ -554,7 +561,7 @@ vec4 airAt( vec2 uv ) {
   }
   if ( cosSun > 0.825 ) {
     float glow = 1.4 * exp( -angle * 90.0 ) + 0.1 * exp( -angle * 14.0 );
-    air.rgb += ESUN * tr * glow * vec3( 1.0, 0.97, 0.9 );
+    air.rgb += ESUN * sunTrans( max( uH, 0.0 ) ) * glow * vec3( 1.0, 0.97, 0.9 );
   }
   return air;
 }
@@ -571,7 +578,11 @@ void main() {
     float r = shell.a > 1e-4 ? min( 1.0, slab.a / shell.a ) : 1.0;
     c = uShellWeight * ( 1.0 - uSlabWeight * r ) * shell + uSlabWeight * slab;
   }
-  if ( uNearWeight > 0.0 ) c = ( 1.0 - uNearWeight ) * c + uNearWeight * nearAt( vUv );
+  if ( uNearWeight > 0.0 ) {
+    vec4 near = nearAt( vUv );
+    near.rgb *= uNearGain;
+    c = ( 1.0 - uNearWeight ) * c + uNearWeight * near;
+  }
   float cloud = min( c.a, 1.0 );
   // The ground shadow under both clouds (the cloud-shadows plan M1): in the
   // shell's own alpha the slab's per-pixel share took it with the shell's
@@ -596,7 +607,7 @@ void main() {
   if ( uAirOn > 0.5 ) {
     // Over the ground's shadow, under the clouds.
     vec4 air = uNearWeight * airAt( vUv );
-    c.rgb += ( 1.0 - cloud ) * air.rgb;
+    c.rgb += ( 1.0 - cloud ) * air.rgb * uNearGain;
     c.a = min( c.a, 1.0 );
     c.a += ( 1.0 - c.a ) * air.a;
   }
@@ -809,6 +820,8 @@ export interface CloudShellNearMix {
   shadow: boolean;
   /** The march's frame, for the air behind them. */
   air: CloudAirUniforms;
+  /** Their and the air's share of the camera's exposure (`nearCloudsGain`). */
+  gain: number;
 }
 
 /** Which of the pass's targets `alphaGrid` reads. */
@@ -1055,6 +1068,7 @@ export function createGlobeCloudShellVolume(
     uNearUv: { value: new THREE.Vector2(1, 1) },
     uNearRes: { value: new THREE.Vector2(1, 1) },
     uNearTap: { value: 0.5 },
+    uNearGain: { value: 1 },
   };
   const composite = new THREE.ShaderMaterial({
     uniforms: compositeUniforms,
@@ -1374,6 +1388,7 @@ export function createGlobeCloudShellVolume(
     compositeUniforms.uNearUv.value = near.uv;
     compositeUniforms.uNearRes.value = near.resolution;
     compositeUniforms.uNearTap.value = near.tapPixels;
+    compositeUniforms.uNearGain.value = near.gain;
   };
 
   /** The composite's switches and weights, then the mix over the frame. */
