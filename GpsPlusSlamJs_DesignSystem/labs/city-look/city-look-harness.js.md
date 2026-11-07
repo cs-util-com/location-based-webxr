@@ -43,7 +43,7 @@ roads, built on the library's defaults), `sun` (a unit vector towards the sun),
   (`smoothedFrameMs`). It is capped by the display's
   refresh, and in split view it pays for both sides: read a variant's cost at `?split=off`.
 
-Link parameters: `?scene=lucerne|heidelberg`, `?view=landing|bird|street`, `?split=0..1|off`,
+Link parameters: `?scene=lucerne|heidelberg|midtown|parkslope`, `?view=landing|bird|street`, `?split=0..1|off`,
 `?heat=1`.
 
 ## Invariants and assumptions

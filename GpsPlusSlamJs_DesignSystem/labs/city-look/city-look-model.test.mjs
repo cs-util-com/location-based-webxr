@@ -117,6 +117,46 @@ describe("cameraPose", () => {
   });
 });
 
+describe("the fixed views over the real scenes", () => {
+  // Why this test matters: a fixed camera is a number picked once, and a
+  // tower 325 m tall makes the shared landing pose stand next to a wall. Only
+  // a person looking at the page would notice, so the fixtures are checked:
+  // no tagged building near a fixed camera reaches up to it.
+  const scenes = {
+    lucerne: "lucerne-meggen.json",
+    heidelberg: "heidelberg-altstadt.json",
+    midtown: "nyc-midtown.json",
+    parkslope: "nyc-park-slope.json",
+  };
+  for (const [scene, file] of Object.entries(scenes)) {
+    it(`keeps ${scene}'s landing and bird clear of every tagged building`, () => {
+      const { payload, centre } = JSON.parse(
+        readFileSync(join(FIXTURES, file), "utf8"),
+      );
+      const k = Math.cos((centre.lat * Math.PI) / 180);
+      const tall = payload.elements.filter(
+        (e) => e.type === "way" && e.geometry && Number(e.tags?.height) > 0,
+      );
+      for (const view of ["landing", "bird"]) {
+        const {
+          position: [x, y, z],
+        } = cameraPose(view, null, scene);
+        for (const e of tall) {
+          const near = e.geometry.some(
+            (p) =>
+              Math.hypot(
+                (p.lon - centre.lng) * 111320 * k - x,
+                (p.lat - centre.lat) * 110540 + z,
+              ) < 120,
+          );
+          if (near)
+            assert.ok(Number(e.tags.height) < y - 30, `${view} way/${e.id}`);
+        }
+      }
+    });
+  }
+});
+
 describe("streetCamera", () => {
   it("stands at eye height on the road segment nearest the centre", () => {
     const pose = streetCamera(
@@ -231,7 +271,12 @@ describe("the committed fixtures", () => {
     assert.match(provenance, /ODbL/);
   });
 
-  for (const name of ["heidelberg-altstadt.json", "lucerne-meggen.json"]) {
+  for (const name of [
+    "heidelberg-altstadt.json",
+    "lucerne-meggen.json",
+    "nyc-midtown.json",
+    "nyc-park-slope.json",
+  ]) {
     it(`keeps ${name} under 2 MiB, minified, with Overpass's shape`, () => {
       const file = join(FIXTURES, name);
       assert.ok(statSync(file).size < 2 * 1024 * 1024);

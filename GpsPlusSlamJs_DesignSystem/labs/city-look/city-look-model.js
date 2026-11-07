@@ -13,7 +13,12 @@ const FRAME_MS_SMOOTHING = 0.1;
 export const EYE_HEIGHT_M = 1.7;
 
 /** The fixtures by short name; the first is the default. */
-export const SCENES = Object.freeze(["lucerne", "heidelberg"]);
+export const SCENES = Object.freeze([
+  "lucerne",
+  "heidelberg",
+  "midtown",
+  "parkslope",
+]);
 
 /** The cameras; the first is the default. */
 export const VIEWS = Object.freeze(["landing", "bird", "street"]);
@@ -37,16 +42,29 @@ const FIXED_POSES = {
 };
 
 /**
+ * A scene's own fixed views, where the shared one would not work. Midtown's
+ * towers reach 325 m: the shared landing pose at 150 m stands next to one and
+ * sees a wall, so Midtown's landing stands back over the edge of the data,
+ * looking in along the same line.
+ */
+const SCENE_POSES = {
+  midtown: {
+    landing: { position: [-330, 380, 530], target: [0, 40, 0] },
+  },
+};
+
+/**
  * Where a view stands: `{ position, target }` as `[x, y, z]` in render axes
  * (east, up, minus north). `street` is the pose of `streetCamera`, needed
- * only for the street view. RangeError for an unknown view or a missing pose.
+ * only for the street view; `scene` picks a scene's own fixed view where it
+ * has one. RangeError for an unknown view or a missing pose.
  */
-export function cameraPose(view, street) {
+export function cameraPose(view, street, scene) {
   if (view === "street") {
     if (!street) throw new RangeError("the street view needs its pose");
     return street;
   }
-  const pose = FIXED_POSES[view];
+  const pose = SCENE_POSES[scene]?.[view] ?? FIXED_POSES[view];
   if (!pose) throw new RangeError(`unknown view: ${view}`);
   return pose;
 }

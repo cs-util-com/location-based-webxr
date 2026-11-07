@@ -40,3 +40,37 @@ runtime. Nothing here is used outside this lab.
   only.
 - What it holds: 315 buildings; 99 of them (31.4 %) carry `height` or
   `building:levels`, 100 carry `roof:shape`.
+
+## `nyc-midtown.json`
+
+- Place: Midtown Manhattan, New York, between Times Square and Ninth Avenue;
+  640 x 640 m around 40.7590 N, 73.9880 W.
+- Why this area: it holds both kinds of building the city look must not get
+  wrong. The avenues and Times Square carry towers up to 325 m, most of them
+  height-tagged and many split into `building:part`s; the side streets west of
+  Eighth Avenue carry four- to six-storey walk-ups and theatres with flat roofs,
+  and a few outlines have no height at all. 47 outlines are tagged
+  `roof:shape=flat`, none with another shape.
+- Source: `https://overpass-api.de/api/interpreter`, one POST on 2026-11-07
+  (`osm3s.timestamp_osm_base` 2026-11-07T14:09:51Z), with the Meggen
+  fixture's query form (`buildTileQuery`), only the bbox changed. The answer was
+  1 650 063 bytes and 2 143 elements; the file is that answer re-serialised as
+  minified JSON, nothing removed.
+- What it holds: 488 building outlines and 341 `building:part`s; 437 outlines
+  (89.5 %) carry `height`, 65 (13.3 %) `building:levels`, 47 (9.6 %)
+  `roof:shape`. Tagged heights: median 17.4 m, 90th percentile 33.2 m.
+
+## `nyc-park-slope.json`
+
+- Place: Park Slope, Brooklyn, New York, the brownstone blocks between Seventh
+  Avenue and Prospect Park West; 640 x 640 m around 40.6725 N, 73.9790 W.
+- Why this area: closed rows of three- and four-storey houses with flat roofs,
+  the case a pitched-roof default gets wrong, plus a commercial avenue, schools,
+  churches and a supermarket. Its heights come from a city building import, so
+  nearly every outline is height-tagged and none carries a roof shape: a roof
+  rule there cannot lean on `roof:shape`.
+- Source: as Midtown's (`osm3s.timestamp_osm_base` 2026-11-07T14:10:51Z). The
+  answer was 1 729 361 bytes and 2 313 elements, nothing removed.
+- What it holds: 1 419 building outlines and 101 `building:part`s; 1 416
+  outlines (99.8 %) carry `height`, 3 `building:levels`, 0 `roof:shape`. Tagged
+  heights: median 12.9 m, 10th percentile 9.8 m, 90th percentile 15.4 m.
