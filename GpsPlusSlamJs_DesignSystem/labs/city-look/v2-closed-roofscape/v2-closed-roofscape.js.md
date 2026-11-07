@@ -2,7 +2,9 @@
 
 ## Purpose
 
-The V2 page: every low house without a roof tag gets a roof on its real
+The V2 page: every low house without a roof tag gets a roof, unless the data
+around it says roofs there are flat, or it is a large or commercial footprint
+(`roofscape-rules.js.md`); it gets a roof on its real
 footprint (straight skeleton, gables, shared walls, a 32 cm eave), seeded
 heights and a muted seeded palette, with GTAO. Tagged buildings are built by
 the library exactly as today.
@@ -12,7 +14,8 @@ the library exactly as today.
 None; an entry module calling `startCityLook({ id: "v2", ... })` with
 `buildingsFor` and `postprocess: "gtao"`. Lab-only query keys on top of the
 harness's: `limit` (height limit, m), `tolerance` (corner simplification, m),
-`audit` (counts the kept triangles that differ from today's into
+`prior=off` (turns the local roof prior and the class and size refusals off: V2
+as first chosen, for a before and after on one page), `audit` (counts the kept triangles that differ from today's into
 `window.__roofscape.keptChanged`). `window.__roofscape` also carries the plan
 `counts` and `planMs`.
 

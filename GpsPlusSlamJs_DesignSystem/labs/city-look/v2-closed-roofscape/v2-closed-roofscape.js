@@ -145,6 +145,7 @@ function buildingsFor(features, ctx) {
     triangulate: tools.triangulate,
     heightLimitM: limit,
     simplifyToleranceM: tolerance,
+    refusals: search.get("prior") !== "off",
   });
   const planMs = performance.now() - started;
   window.__roofscape = { counts, planMs };

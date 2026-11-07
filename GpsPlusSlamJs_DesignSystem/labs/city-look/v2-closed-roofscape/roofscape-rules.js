@@ -39,6 +39,22 @@ export const PARAMS = Object.freeze({
   /** A real eave: how far a slope reaches past its wall. */
   overhangM: 0.32,
   areaTolerance: 0.004,
+  /** How far around a building its neighbourhood reaches. */
+  priorRadiusM: 200,
+  /** Tagged roofs, or outlines, a neighbourhood needs before it counts. */
+  priorMinEvidence: 5,
+  /** Share of the tagged roofs nearby that must be flat to invent none. */
+  flatShareMin: 0.5,
+  /** Three storeys: a stated height from here up counts as tall. */
+  tallM: 9,
+  /** Share of the outlines nearby that must be tall, with no roof tags. */
+  tallShareMin: 0.5,
+  /**
+   * A footprint larger than this is a hall, a block or a mall: no roof. Below
+   * 2 369 m² it starts to flatten Meggen's village centre, which the owner
+   * chose V2 for, so it is only a net for the very large.
+   */
+  largeFootprintM2: 2500,
 });
 
 /** Muted, related tones. Sandstone and plaster, clay and slate. */
@@ -59,6 +75,9 @@ const ROOFS = [
   "#6b625e",
   "#5c5a5c",
 ];
+
+/** A refused building's flat lid: bitumen and gravel greys, not clay. */
+const FLAT_LIDS = ["#8a8782", "#7a7772", "#97938c", "#6f6d6a"];
 
 const NEVER_PITCHED = new Set([
   "roof",
@@ -87,6 +106,14 @@ const LARGE = new Set([
   "school",
 ]);
 const SACRED = new Set(["church", "chapel"]);
+/** Classes that are flat-roofed nearly everywhere: no invented roof. */
+const FLAT_CLASSES = new Set([
+  "commercial",
+  "retail",
+  "industrial",
+  "warehouse",
+  "supermarket",
+]);
 
 const COLOUR_NAMES = new Set([
   "white",
@@ -132,6 +159,145 @@ export function keepReason(tags, { hasParts, heightLimitM, belowSurface }) {
   if (NEVER_PITCHED.has(tags.building)) return "no roof by class";
   const height = taggedHeightM(tags);
   return height !== undefined && height > heightLimitM ? "tall" : null;
+}
+
+const isPart = (tags) =>
+  tags["building:part"] && tags["building:part"] !== "no";
+
+const centroid = (ring) =>
+  ring.reduce(
+    (sum, p) => ({
+      x: sum.x + p.x / ring.length,
+      y: sum.y + p.y / ring.length,
+    }),
+    { x: 0, y: 0 },
+  );
+
+/** The value at share `q` of a sorted list, interpolated. */
+const quantile = (sorted, q) => {
+  const at = (sorted.length - 1) * q;
+  const low = Math.floor(at);
+  const high = Math.min(sorted.length - 1, low + 1);
+  return sorted[low] + (sorted[high] - sorted[low]) * (at - low);
+};
+
+/**
+ * What the data around each building says about roofs, from tags alone:
+ * a `Map` from key to `{ pitched, why, heights }`. Tagged roof shapes nearby
+ * (outlines and parts, one vote each) decide first: mostly flat means no
+ * invented roof. Where too few roofs are tagged, a neighbourhood whose outlines
+ * mostly state a height of three storeys or more is read as flat-roofed too.
+ * Otherwise nothing is known and V2 keeps inventing. `heights` are the stated
+ * heights of the outlines nearby, sorted. Never a city's name: only tags and
+ * distances, so the rule is the same in any town.
+ */
+export function neighbourhoodPriors(entries, options = {}) {
+  const radius = options.priorRadiusM ?? PARAMS.priorRadiusM;
+  const minEvidence = options.priorMinEvidence ?? PARAMS.priorMinEvidence;
+  const flatShareMin = options.flatShareMin ?? PARAMS.flatShareMin;
+  const tallM = options.tallM ?? PARAMS.tallM;
+  const tallShareMin = options.tallShareMin ?? PARAMS.tallShareMin;
+  const points = entries
+    .filter((entry) => entry.rings[0]?.length)
+    .map((entry) => ({
+      key: entry.key,
+      ring: entry.rings[0],
+      at: centroid(entry.rings[0]),
+      roof: entry.tags["roof:shape"],
+      part: isPart(entry.tags),
+      outline: Boolean(entry.tags.building) && !isPart(entry.tags),
+      height: isPart(entry.tags) ? undefined : taggedHeightM(entry.tags),
+    }));
+  collapsePartVotes(points);
+  const priors = new Map();
+  for (const self of points) {
+    let roofs = 0;
+    let flat = 0;
+    let outlines = 0;
+    let tall = 0;
+    const heights = [];
+    for (const other of points) {
+      const dx = other.at.x - self.at.x;
+      const dy = other.at.y - self.at.y;
+      if (dx * dx + dy * dy > radius * radius) continue;
+      if (other.roof) {
+        roofs += 1;
+        if (other.roof === "flat") flat += 1;
+      }
+      if (!other.outline) continue;
+      outlines += 1;
+      if (other.height !== undefined) {
+        heights.push(other.height);
+        if (other.height >= tallM) tall += 1;
+      }
+    }
+    heights.sort((a, b) => a - b);
+    let pitched = true;
+    let why = "no evidence";
+    if (roofs >= minEvidence) {
+      pitched = flat / roofs < flatShareMin;
+      why = pitched ? "pitched roofs nearby" : "flat roofs nearby";
+    } else if (outlines >= minEvidence && tall / outlines >= tallShareMin) {
+      pitched = false;
+      why = "tall neighbourhood";
+    }
+    priors.set(self.key, { pitched, why, heights });
+  }
+  return priors;
+}
+
+/**
+ * One building, one roof vote: the tagged parts inside an outline that has no
+ * roof tag of its own vote through it, flat when most of them are flat, and
+ * then stop voting. Without this one church's four tagged parts would decide
+ * a whole neighbourhood. A part outside every outline keeps its own vote.
+ */
+function collapsePartVotes(points) {
+  const outlines = points.filter((p) => p.outline);
+  const tally = new Map();
+  for (const part of points.filter((p) => p.part && p.roof)) {
+    const owner = outlines.find((o) => pointInRing(part.at, o.ring));
+    if (!owner) continue;
+    const counts = tally.get(owner) ?? { flat: 0, other: 0 };
+    if (part.roof === "flat") counts.flat += 1;
+    else counts.other += 1;
+    tally.set(owner, counts);
+    part.roof = undefined;
+  }
+  for (const [owner, { flat, other }] of tally) {
+    owner.roof ??= flat >= other ? "flat" : "pitched";
+  }
+}
+
+/**
+ * Why a building that could take an invented roof gets a flat lid instead, or
+ * null when it gets the roof. A church or chapel keeps its roof anywhere.
+ */
+export function inventedRoofRefusal(tags, areaM2, prior, options = {}) {
+  if (SACRED.has(tags.building)) return null;
+  if (FLAT_CLASSES.has(tags.building)) return "flat by class";
+  const large = options.largeFootprintM2 ?? PARAMS.largeFootprintM2;
+  if (areaM2 > large) return "large footprint";
+  if (prior && !prior.pitched) return prior.why;
+  return null;
+}
+
+/**
+ * A flat-lidded building's height: the tag's, else, in a flat-roofed
+ * neighbourhood that states enough heights, a seeded value between its
+ * neighbours' quartiles, else V2's seeded height by class and size.
+ */
+function flatHeightM(tags, areaM2, key, prior, minEvidence) {
+  const tagged = taggedHeightM(tags);
+  if (tagged !== undefined) return tagged;
+  if (prior && !prior.pitched && prior.heights.length >= minEvidence) {
+    const range = [
+      quantile(prior.heights, 0.25),
+      quantile(prior.heights, 0.75),
+    ];
+    return between(key, "eave", range);
+  }
+  return eaveHeightM(tags, areaM2, key);
 }
 
 const between = (key, salt, [low, high]) =>
@@ -492,6 +658,30 @@ function segmentsOf(entries) {
   );
 }
 
+/** A building the rules give no invented roof: walls and a flat lid. */
+function flatPlan(entry, area, prior, minEvidence, options, why) {
+  const { key, tags } = entry;
+  const tolerance = options.simplifyToleranceM ?? PARAMS.simplifyToleranceM;
+  const rings = orientRings(
+    entry.rings.map((ring, i) => prepareRing(ring, tolerance, key, i)),
+  );
+  if (rings.some((ring) => ring.length < 3)) return null;
+  return {
+    key,
+    rings,
+    roofRings: rings,
+    eaveM: flatHeightM(tags, area, key, prior, minEvidence),
+    tan: 0,
+    roof: null,
+    style: "flat",
+    why,
+    colours: {
+      ...coloursFor(tags, key),
+      roof: usableColour(tags["roof:colour"]) ?? pick(FLAT_LIDS, key, "lid"),
+    },
+  };
+}
+
 function planHouse(entry, area, segments, options) {
   const { key, tags } = entry;
   const tolerance = options.simplifyToleranceM ?? PARAMS.simplifyToleranceM;
@@ -554,13 +744,18 @@ function planHouse(entry, area, segments, options) {
  * Plans a fixture. `entries`: `{ key, tags, rings, belowSurface }`, rings in
  * metres, buildings and parts only. Options: `triangulate(contour, holes)`,
  * `heightLimitM`, `simplifyToleranceM`, `gableShare`, `overhangM`, `maxRiseM`,
- * `sharedGapM`, each defaulting to `PARAMS`. Returns `{ plans, counts }`;
- * a plan's `roof` is null for a house the method failed on, which stays flat.
+ * `sharedGapM` and the prior's thresholds, each defaulting to `PARAMS`;
+ * `refusals: false` turns the local prior and the class and size refusals off,
+ * which is V2 as the owner first saw it. Returns `{ plans, counts }`; a plan's
+ * `roof` is null for a house the method failed on (`counts.failed`) or one
+ * the rules refused a roof (`why`, `counts.refused`), which stays flat.
  * Pure and repeatable: the same entries give the same plans.
  */
 export function planCity(entries, options) {
   const heightLimitM = options.heightLimitM ?? PARAMS.heightLimitM;
+  const minEvidence = options.priorMinEvidence ?? PARAMS.priorMinEvidence;
   const owners = outlinesWithParts(entries);
+  const priors = neighbourhoodPriors(entries, options);
   const segments = segmentsOf(entries);
   const plans = [];
   const counts = {
@@ -569,6 +764,7 @@ export function planCity(entries, options) {
     roofed: 0,
     failed: 0,
     kept: {},
+    refused: {},
     styles: {},
   };
   for (const entry of entries) {
@@ -583,6 +779,18 @@ export function planCity(entries, options) {
     }
     counts.candidates += 1;
     const area = Math.abs(ringArea(entry.rings[0]));
+    const prior = priors.get(entry.key);
+    const why =
+      options.refusals === false
+        ? null
+        : inventedRoofRefusal(entry.tags, area, prior, options);
+    if (why) {
+      const plan = flatPlan(entry, area, prior, minEvidence, options, why);
+      if (!plan) continue;
+      plans.push(plan);
+      counts.refused[why] = (counts.refused[why] ?? 0) + 1;
+      continue;
+    }
     const plan = planHouse(entry, area, segments, options);
     if (!plan) continue;
     plans.push(plan);
