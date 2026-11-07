@@ -511,23 +511,23 @@ describe("wireCreatorStations", () => {
   // working copy's array (`creator-settle.ts`: same array, same length). A
   // HUD that only noticed a new array or a new length kept the pre-settle
   // stations, and its line and ring disagreed with the Finish.
-  it("follows a settle that re-poses a placement in place", () => {
+  // Why: a settle may re-pose a placement beyond its circle; it keeps its
+  // station, so the open station is still judged at the station's anchor.
+  it("keeps the station of a placement a settle re-poses out of its circle", () => {
     const h = harness();
     h.tour.place(pin("far", 60, 0), {}, "a pin");
     h.stand(60, 0);
     expect(h.chip.textContent).toBe(
       "In Station 2 - what you place here joins it.",
     );
-    // 40 m on, beyond its station's 25 m radius: the document seats it in
-    // a station there, and the one it left, now empty, goes.
     h.tour.move(pin("far", 100, 0), "a settle's re-pose");
     h.stand(60, 0);
     expect(h.chip.textContent).toBe(
-      "No station here - what you place next starts a new one.",
+      "In Station 2 - what you place here joins it.",
     );
     h.stand(100, 0);
     expect(h.chip.textContent).toBe(
-      "In Station 2 - what you place here joins it.",
+      "You left Station 2 - what you place next starts a new station.",
     );
   });
 

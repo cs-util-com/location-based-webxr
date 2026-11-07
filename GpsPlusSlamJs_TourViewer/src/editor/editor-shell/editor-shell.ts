@@ -591,6 +591,10 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     },
     fix: (selection, fix) => {
       deps.select(selection);
+      if ("split" in fix) {
+        deps.stations.split(selection);
+        return;
+      }
       let written: boolean;
       try {
         written = deps.edits.scene(fix.edit(groundAt));
@@ -710,9 +714,12 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
 
   /** The docks after `change` by the dock rule, stored. */
   let onPhone = phoneSheets(window.innerWidth);
-  const applyDocks = (change: DockChange) => {
+  const applyDocks = (
+    change: DockChange,
+    model: InspectorModel | null = inspectorModel(state().editorView),
+  ) => {
     const ui = state().editorView;
-    const inspectorShows = inspectorModel(ui) !== null;
+    const inspectorShows = model !== null;
     const phone = phoneSheets(window.innerWidth);
     // Turned sideways, the list the details covered stands beside them.
     const turnedWide = change === "resized" && onPhone && !phone;
@@ -736,11 +743,14 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     }
   };
 
-  /** The sheet a phone shows now: the details over the list. */
-  const shownSheet = (): SheetKind | null => {
+  /** The sheet a phone shows now: the details over the list. `model` is
+   *  the inspector's, when the caller has it built. */
+  const shownSheet = (
+    model: InspectorModel | null = inspectorModel(state().editorView),
+  ): SheetKind | null => {
     const ui = state().editorView;
     if (!phoneSheets(window.innerWidth)) return null;
-    if (inspectorModel(ui) !== null) return "details";
+    if (model !== null) return "details";
     return ui.foldedDocks.tree ? null : "tree";
   };
   /** The selection let go and the list shown: on a phone, the way back
@@ -881,19 +891,23 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     if (before === null || before.hiddenLayers !== ui.hiddenLayers) {
       view?.setLayers(ui.hiddenLayers);
     }
-    sheets.sync(shownSheet());
+    sheets.sync(shownSheet(model));
   };
 
   // --- the inspector's fields and commands ---------------------------------
 
   const radius = wireRadiusSlider({
     root: inspector.root,
+    // Read on every step of a drag: the manifest's station, not a whole
+    // inspector built.
     station: () => {
-      const model = inspectorModel(state().editorView);
-      const id = selectedStationId();
-      return model?.kind === "station" && id !== null
-        ? { id, radiusM: model.foundRadiusM }
-        : null;
+      const selected = state().editorView.selected;
+      if (selected?.startsWith(STATION_PREFIX) !== true) return null;
+      const id = selected.slice(STATION_PREFIX.length);
+      const station = manifest()?.stations.find((s) => s.id === id);
+      return station === undefined
+        ? null
+        : { id, radiusM: station.foundRadiusM };
     },
     preview: (id, radiusM) => view?.previewRadius(id, radiusM),
     write: (id, foundRadiusM) => {
@@ -1720,8 +1734,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     if (at?.closest("#shell-help, #studio-help") == null) showHelp(false);
   };
   const onResize = () => {
-    applyDocks("resized");
-    sheets.sync(shownSheet());
+    const model = inspectorModel(state().editorView);
+    applyDocks("resized", model);
+    sheets.sync(shownSheet(model));
   };
 
   return {

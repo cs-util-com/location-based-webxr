@@ -13,6 +13,7 @@
 
 import type { ItemVideo } from "./item-card.js";
 import type { NarrationPlayer } from "./narration-player.js";
+import { isPlayAbort } from "./scene-audio.js";
 import type { SceneAudio } from "./scene-view.js";
 
 /** One source of sound, as the focus drives it. */
@@ -186,9 +187,13 @@ export function focusedSceneAudio(
   /** Which clip is the current one: a replaced clip's refusal lands late,
    *  on the one voice object the new clip runs on. */
   let clip = 0;
+  /** The clip a hold paused: only its play() may end in an AbortError that
+   *  is no refusal. */
+  let heldClip = 0;
   const voice: Voice = {
     story: true,
     hold: () => {
+      heldClip = clip;
       audio.pause();
       onHeld(true);
     },
@@ -214,6 +219,9 @@ export function focusedSceneAudio(
           onEnded();
         })
         .catch((error: unknown) => {
+          // A hold's pause cut it short: still the channel's, still waited
+          // for. Any other AbortError is a refusal like the rest.
+          if (isPlayAbort(error) && heldClip === mine) return;
           if (mine === clip) focus.ended(voice);
           throw error;
         });

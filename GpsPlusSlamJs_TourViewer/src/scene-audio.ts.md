@@ -17,8 +17,12 @@ battery"): ONE audio element for the page, unlocked by the visitor's
   - `stop()` - pause, forget the end callback, revoke the clip's URL;
   - `pause()` - the clip stops where it is, keeping its file and its end;
   - `resume()` - the paused clip carries on; one the browser refuses runs
-    its end instead, so a step waiting for it does not wait for good. Both
-    do nothing with no clip.
+    its end instead, so a step waiting for it does not wait for good. A
+    resume a pause cut short (AbortError) is no refusal: the clip stays
+    held. Only a `pause()` after that resume excuses it; an AbortError with
+    no such pause (the browser or the system paused the element) ends the
+    clip like any refusal. Both do nothing with no clip.
+- `isPlayAbort(error)` - true for the AbortError a pause gives a pending `play()`.
 - `silentWav()` - a 45-byte RIFF/WAVE, PCM mono 8 kHz, one silent sample.
 - `AudioElementLike` - the slice of `HTMLAudioElement` it drives (`duration` optional).
 - `durationMs()` - the playing clip's length in ms once its metadata is read (`duration` finite and above 0), else null (no clip, not yet known, a stream).
@@ -50,5 +54,6 @@ await audio.play(voiceBlob, () => {}); // later, no tap needed
 
 - `scene-audio.test.ts` - every clip through the one unlocked element; one
   unlock and its URL released; a new clip stops and releases the previous;
-  the end calls back once; a refusal passes on; the WAV's header fields;
+  the end calls back once; a refusal passes on; a resume cut short by a
+  pause ends nothing; the WAV's header fields;
   the clip's length, and null while it is unknown.

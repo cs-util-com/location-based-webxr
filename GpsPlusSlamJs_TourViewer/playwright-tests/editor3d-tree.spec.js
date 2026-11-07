@@ -749,7 +749,9 @@ test("a station copied with its photo is saved with a picture of its own, and op
     expect([...(files.get(path) ?? [])]).toEqual(jpeg);
   }
 
-  // Opened again: both cards, each with its picture.
+  // Opened again: both cards, each with its picture. The saving page goes
+  // first: two pages of the editor would share one machine's budget.
+  await page.close();
   const next = await context.newPage();
   await next.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(next);
@@ -768,7 +770,9 @@ test("a station copied with its photo is saved with a picture of its own, and op
     const pic = each.locator(".pic");
     await expect(pic).toBeVisible();
     await expect
-      .poll(() => pic.evaluate((el) => getComputedStyle(el).backgroundImage))
+      .poll(() => pic.evaluate((el) => getComputedStyle(el).backgroundImage), {
+        timeout: 30_000,
+      })
       .toMatch(/^url\(/);
   }
   // Nothing of the photos was lost on the way: a reader of the file

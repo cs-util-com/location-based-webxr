@@ -98,8 +98,6 @@ import {
 } from "./code-book.js";
 import { newObjectId } from "./content-placement.js";
 import { finishedManifest, pendingAfterRebuild } from "./finish-rebuild.js";
-import { keepsHomeDistance } from "./keeps-home.js";
-import { horizontalM } from "./move-with-code.js";
 import { stationHolding, type StationPoint } from "./station-assign.js";
 import {
   duplicateItemGeo,
@@ -200,8 +198,7 @@ interface TourHistoryStep {
 /** One change of a settle (`settleApplied`, plan M3b), in the settle's own
  *  order - the station rule reads the frames as they stand when an object
  *  moves: a station's frame moved, its items rigidly with it (as
- *  `stationMoved`), or an object moved (as `moved`; a station it starts
- *  takes `newStationId`). */
+ *  `stationMoved`), or an object moved in its station (as `moved`). */
 export type SettleChange =
   | {
       readonly kind: "station";
@@ -211,7 +208,6 @@ export type SettleChange =
   | {
       readonly kind: "object";
       readonly object: TourObject;
-      readonly newStationId: string;
     };
 
 /** Who holds a page's one save slot: an explicit Save, the autosave, a
@@ -918,8 +914,9 @@ export function pinTextChange(
 /** What a move of an object to `lat`/`lon` on the map would change
  *  (`moveObjectTo`: its height and facing kept): the object before and
  *  after (`moved`, to dispatch), or `missing` for an id the tour does not
- *  carry. No move is too far: one beyond its station's found radius
- *  re-runs the station rule (`moved`). Throws for a position nobody can
+ *  carry. One beyond its station's found radius keeps its station
+ *  (`moved`); the session refuses one beyond an item's reach of its
+ *  station and asks before one into another station's circle. Throws for a position nobody can
  *  draw, as `moveObjectTo` does. */
 export function objectMoveChange(
   state: TourDocumentState,
@@ -1176,7 +1173,8 @@ export function objectFits(
   return fitsStation(object.geo, home, state.stations);
 }
 
-/** What a placement or a move hands the station rule: the id a station the
+/** What a placement hands the station rule, or a move its explicit way
+ *  out ("Move to a new station"): the id a station the
  *  rule starts gets - minted outside the reducer (by the caller, or the
  *  action's `prepare`), so the reducer stays pure - and, for "New station
  *  here", that the object starts its own station even within another's
@@ -1785,6 +1783,8 @@ interface TourRestorePayload extends TourRestore {
 interface PlacedPayload extends Seating {
   readonly object: TourObject;
   readonly what: string;
+  /** A move only: the station the creator agreed it changes to. */
+  readonly joinStation?: string;
 }
 
 /** What a page dispatches for a placement or a move: the id is minted
@@ -1795,6 +1795,7 @@ interface SeatingInput {
   readonly newStationId?: string;
   readonly newStation?: boolean;
   readonly afterHome?: boolean;
+  readonly joinStation?: string;
 }
 
 /** `input` with a station id minted for the rule when it carries none
@@ -1997,36 +1998,6 @@ function unseated(object: TourObject): TourObject {
   return rest;
 }
 
-/** Whether a move of `object` to its new spot keeps it in its station
- *  `frame`: the station's own found radius holds the spot; or, by
- *  distance (`keepsHomeDistance`), it stands within the radius and its
- *  tolerance, or no farther from the anchor than it stood before the move
- *  (an item outside the radius already) - and the move takes it into no
- *  other station's radius: a station whose radius held the old spot too
- *  (radii overlap) is not one it moved into. */
-function keepsHome(
-  state: TourDocumentState,
-  frame: StationFrame,
-  object: TourObject,
-): boolean {
-  if (stationHolding([frame], object.geo) !== null) return true;
-  const was = documentObjects(state).find((o) => o.object.id === object.id)
-    ?.object.geo;
-  if (was === undefined) return false;
-  const kept = keepsHomeDistance({
-    radiusM: frame.foundRadiusM,
-    wasM: horizontalM(frame.geo, was),
-    nowM: horizontalM(frame.geo, object.geo),
-  });
-  if (!kept) return false;
-  const base = manifestNow(state);
-  if (base === null) return false;
-  const movedInto = base.stations.filter(
-    (s) => stationHolding([s], was) === null,
-  );
-  return stationHolding(movedInto, object.geo) === null;
-}
-
 /** The station the document's object `id` stands in, if any. */
 function homeOf(state: TourDocumentState, id: string): string | undefined {
   return documentObjects(state).find((o) => o.object.id === id)?.object.station;
@@ -2065,29 +2036,49 @@ function stationMove(
   );
 }
 
-/** `moved`'s rule: the object at its new spot, keeping its station or
- *  seated anew (see `moved`), as one step; `before` for an unknown id. */
-function objectMove(
+/** A move's rule without "Move to a new station": the object at its new
+ *  spot in its station, or in `joinStation` (an answered change of
+ *  station, `move-question.ts`) - never another. A spot that station
+ *  cannot carry (`objectFits`), or a `joinStation` the tour lacks, changes
+ *  nothing, as does an unknown id. */
+function objectKept(
   before: TourDocumentState,
-  { object, what, newStationId, newStation, afterHome }: PlacedPayload,
+  object: TourObject,
+  what: string,
+  joinStation?: string,
 ): TourDocumentState {
   const home = homeOf(before, object.id);
-  const frame = before.stations.find((s) => s.id === home);
-  if (home === undefined || frame === undefined) return before;
-  const kept = { ...object, station: home };
-  if (
-    newStation !== true &&
-    keepsHome(before, frame, object) &&
-    objectFits(before, kept)
-  ) {
-    return putObject(before, kept, what);
-  }
+  if (home === undefined) return before;
+  const station = joinStation ?? home;
+  const kept = { ...object, station };
+  if (!objectFits(before, kept)) return before;
+  return station === home
+    ? putObject(before, kept, what)
+    : putObject(before, kept, what, before.stations, home);
+}
+
+/** `moved`'s rule: `objectKept`, or with `newStation` a station of its
+ *  own, as one step; `before` for an unknown id. */
+function objectMove(
+  before: TourDocumentState,
+  {
+    object,
+    what,
+    newStationId,
+    newStation,
+    afterHome,
+    joinStation,
+  }: PlacedPayload,
+): TourDocumentState {
+  if (newStation !== true) return objectKept(before, object, what, joinStation);
+  const home = homeOf(before, object.id);
+  if (home === undefined) return before;
   const seated = seatByRule(before, unseated(object), {
     newStationId,
-    ...(newStation === true ? { newStation } : {}),
+    newStation,
   });
   if (seated === null) return before;
-  if (newStation !== true || afterHome !== true) {
+  if (afterHome !== true) {
     return putObject(before, seated.object, what, seated.stations, home);
   }
   // The rule appends the new frame; it moves to right after the home.
@@ -3000,11 +2991,7 @@ function applySettle(
     moved =
       change.kind === "station"
         ? stationMove(moved, change.stationId, change.geo, what)
-        : objectMove(moved, {
-            object: change.object,
-            what,
-            newStationId: change.newStationId,
-          });
+        : objectKept(moved, change.object, what);
   }
   const was = bookOf(before.codes);
   let book = was;
@@ -3111,18 +3098,16 @@ const tourDocumentSlice = createSlice({
       if (station === undefined) return before;
       return putObject(before, { ...object, station }, what);
     },
-    /** An object moved (on the map, or in AR). Within its station's own
-     *  found radius and the format's reach it keeps its station (whose
-     *  anchor stays put), and so does one within the radius and its
-     *  tolerance, or already outside it and moved no farther out
-     *  (`keepsHome`); otherwise the station rule
-     *  runs again (`seatByRule`): it joins the station holding its new
-     *  spot, or starts one there under the payload's `newStationId`, and
-     *  the station it left goes when that leaves it an empty automatic
-     *  one. With `newStation` it starts its own station in any case, and
-     *  with `afterHome` too that station stands right after the one it
-     *  left (in its place when that one goes), its order recorded for the
-     *  draft. An unknown id changes nothing. */
+    /** An object moved (on the map, in the 3D view, or in AR). It keeps
+     *  its station wherever it stands, in or out of the circle, and never
+     *  starts one by itself (`objectKept`): with `joinStation`, the
+     *  creator's answer, it changes to that station, and the station it
+     *  left goes when that leaves it an empty automatic one. A spot its
+     *  station cannot carry (the format's bound) changes nothing. With
+     *  `newStation` ("Move to a new station") it starts its own station,
+     *  and with `afterHome` too that station stands right after the one
+     *  it left (in its place when that one goes), its order recorded for
+     *  the draft. An unknown id changes nothing. */
     moved: {
       reducer(state, action: PayloadAction<PlacedPayload>) {
         return objectMove(plain(state), action.payload);

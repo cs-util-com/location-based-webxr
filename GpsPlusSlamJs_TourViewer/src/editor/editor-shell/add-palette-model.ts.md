@@ -35,7 +35,7 @@ where, best first; Enter adds the first.
   - `kind` keeps only that kind's rows, before the cap;
   - at most `PALETTE_MAX_ROWS` (40).
 - `highlightParts(text, query)` -> `HighlightPart[]` - `text` cut into
-  `{ text, match }` parts that read back as `text`: every place a word of
+  `{ text, hit }` parts that read back as `text`: every place a word of
   the query (two letters or more, folded as above) occurs is marked,
   overlaps merged. Regular-expression characters in a query are plain
   letters here.

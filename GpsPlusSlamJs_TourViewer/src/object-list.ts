@@ -53,6 +53,15 @@ export interface ObjectListState {
   readonly note: string;
   /** The last delete can still be undone (M4 review #5). */
   readonly undo: boolean;
+  /** A move waiting for the creator's answer (`move-question.ts`); nothing
+   *  is written until it comes. Absent: none. */
+  readonly question?: ObjectListQuestion | null;
+}
+
+/** What the list asks, with its two answers beneath. */
+interface ObjectListQuestion {
+  readonly text: string;
+  readonly declined: string;
 }
 
 interface ObjectRowModel {
@@ -97,6 +106,8 @@ export interface ObjectListModel {
   readonly note: string;
   /** Offer Undo beside the note: the delete it reports can be undone. */
   readonly undo: boolean;
+  /** Asked above the note, with its answers. */
+  readonly question: ObjectListQuestion | null;
 }
 
 /** Said in AR while nothing is selected - a tap picks along its own ray
@@ -159,6 +170,7 @@ export function objectListModel(state: ObjectListState): ObjectListModel {
       rows,
       note: state.note,
       undo: state.undo,
+      question: state.question ?? null,
     };
   }
   const selected = rows.filter((row) => row.selected);
@@ -169,6 +181,7 @@ export function objectListModel(state: ObjectListState): ObjectListModel {
     rows: selected,
     note: state.note,
     undo: state.undo,
+    question: state.question ?? null,
   };
 }
 
@@ -182,6 +195,8 @@ export interface ObjectListHandlers {
   /** Close: let the selection go (polish round M3, Q-HUD - an object is
    *  selected by a tap on it; the Previous / Next chooser is gone). */
   deselect(): void;
+  /** The question answered: yes, change the station; no, keep it. */
+  answer(yes: boolean): void;
 }
 
 /** The list as the creator setup drives it. */
@@ -353,7 +368,25 @@ export function createObjectListView(
   const noteLine = doc.createElement("div");
   noteLine.className = "object-list-note-line";
   noteLine.append(note, undo);
-  container.replaceChildren(heading, hint, body, noteLine);
+  // The overlay's own question: window.confirm is unavailable in an XR
+  // session, as window.prompt is for the pin's label.
+  const asked = doc.createElement("p");
+  asked.className = "object-list-note";
+  asked.dataset["testid"] = "object-question";
+  asked.setAttribute("aria-live", "polite");
+  const answers = doc.createElement("div");
+  answers.className = "object-actions";
+  answers.append(
+    button("Change station", "object-question-yes", () => {
+      handlers?.answer(true);
+    }),
+    button("Keep its station", "object-question-no", () => {
+      handlers?.answer(false);
+    }),
+  );
+  const question = doc.createElement("div");
+  question.append(asked, answers);
+  container.replaceChildren(heading, hint, body, question, noteLine);
 
   function redraw(): void {
     const model = current;
@@ -372,6 +405,11 @@ export function createObjectListView(
     hint.hidden = model.hint === "";
     note.textContent = model.note;
     undo.hidden = !model.undo;
+    question.hidden = model.question === null;
+    asked.textContent =
+      model.question === null
+        ? ""
+        : `${model.question.text} ${model.question.declined}`;
     body.replaceChildren();
     const list = doc.createElement("ul");
     list.className = "object-rows";

@@ -679,9 +679,6 @@ describe("createEditorSession, the draft (M6 E2c)", () => {
     expect(draft.calls).toEqual([
       "save a New",
       "save b pin b",
-      // About 1.3 km away the move starts a station of its own, whose
-      // frame the settings record keeps (a reload brings it back).
-      "settings needsNoGps=false",
       "tombstone a",
       "save a New",
       "untombstone a",
@@ -689,7 +686,7 @@ describe("createEditorSession, the draft (M6 E2c)", () => {
     // An unchanged text and a refused one write nothing.
     editor.editText("a", "New");
     editor.editText("a", " ");
-    expect(draft.calls).toHaveLength(6);
+    expect(draft.calls).toHaveLength(5);
     await session.close();
   });
 
@@ -790,7 +787,10 @@ describe("createEditorSession, the draft (M6 E2c)", () => {
   // now re-runs the station rule, so the note lands in a station at its
   // new spot - never far from its station, however far it went - and the
   // station it left, now empty, goes with the same step.
-  it("seats a note moved far beyond its station in a station at its new spot, and saving works", async () => {
+  // Why: a move keeps its station, so the format's bound between an item
+  // and its station is what a far drag meets. Refused and said, or every
+  // later save would fail; the page's note reports this refusal.
+  it("refuses a note moved beyond the format's reach of its station", async () => {
     const { session, manifest } = await opened([pin("a"), pin("b")]);
     const editor = createEditorSession({
       session,
@@ -798,18 +798,41 @@ describe("createEditorSession, the draft (M6 E2c)", () => {
       levels: new Map(),
     });
     // About 22 km north of its station: beyond the format's 10 km bound.
-    expect(editor.move("a", 48.72, 9.05)).toEqual({ kind: "moved" });
-    expect(editor.changeCount()).toBe(1);
-    const saved = await carried((await editor.save({ keepScan: false })).blob);
-    const a = saved.objects.find((o) => o.id === "a");
-    expect(a?.geo.lat).toBeCloseTo(48.72, 6);
-    expect(a?.station).not.toBe(stationIdOf("a"));
-    const stations = saved.stations;
-    const home = stations.find((s) => s.id === a?.station);
-    expect(home?.geo.lat).toBeCloseTo(48.72, 6);
-    expect(stations.map((s) => s.id)).not.toContain(stationIdOf("a"));
-    // The undo takes the note back into its old station.
+    expect(editor.move("a", 48.72, 9.05)).toMatchObject({
+      kind: "refused",
+      reason: TOO_FAR_FROM_STATION,
+    });
+    expect(
+      editor.pose("a", {
+        lat: 48.72,
+        lon: 9.05,
+        alt: 340,
+        rotation: [0, 0, 0, 1],
+      }),
+    ).toMatchObject({ kind: "refused" });
+    expect(editor.changeCount()).toBe(0);
+    await session.close();
+  });
+
+  it("a note dropped on free ground stays in its station; one that joins another takes one undo step", async () => {
+    const { session, manifest } = await opened([pin("a"), pin("b")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    const home = stationIdOf("a");
+    const other = stationIdOf("b");
+    expect(editor.move("a", 48.53, 9.06)).toEqual({ kind: "moved" });
+    let saved = await carried((await editor.save({ keepScan: false })).blob);
+    expect(saved.objects.find((o) => o.id === "a")?.station).toBe(home);
+    expect(saved.stations.map((s) => s.id)).toContain(home);
+    expect(editor.move("a", 48.53, 9.06, { joinStation: other })).toEqual({
+      kind: "moved",
+    });
     expect(editor.undo()).toMatchObject({ kind: "undone" });
+    saved = await carried((await editor.save({ keepScan: false })).blob);
+    expect(saved.objects.find((o) => o.id === "a")?.station).toBe(home);
     await session.close();
   });
 
@@ -817,7 +840,7 @@ describe("createEditorSession, the draft (M6 E2c)", () => {
   // a huge one but beyond the format's 10 km reach changed nothing while
   // the page was told the note had moved. A move reported as made must be
   // one the document took, and one every later save can write.
-  it("a move reported as made is applied: inside a huge radius but beyond the format's reach, the note is re-seated and saving works", async () => {
+  it("a move inside a huge radius but beyond the format's reach is refused, not reported as made", async () => {
     const { session, manifest } = await opened([pin("a"), pin("b")]);
     const huge = {
       ...manifest,
@@ -832,16 +855,12 @@ describe("createEditorSession, the draft (M6 E2c)", () => {
       manifest: huge,
       levels: new Map(),
     });
-    expect(editor.move("a", 48.72, 9.05)).toEqual({ kind: "moved" });
-    expect(editor.changeCount()).toBe(1);
-    const saved = await carried((await editor.save({ keepScan: false })).blob);
-    const a = saved.objects.find((o) => o.id === "a");
-    expect(a?.geo.lat).toBeCloseTo(48.72, 6);
-    expect(a?.station).not.toBe(stationIdOf("a"));
+    expect(editor.move("a", 48.72, 9.05)).toMatchObject({ kind: "refused" });
+    expect(editor.changeCount()).toBe(0);
     await session.close();
   });
 
-  // Why: a draft written before far moves re-ran the station rule can
+  // Why: an older draft, or one whose station is gone, can
   // still hold a note its station cannot carry; restoring it as it was
   // would make every save fail, and skipping it would lose the work. It is
   // restored, seated by the rule where it stands.

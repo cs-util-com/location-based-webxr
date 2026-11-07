@@ -29,6 +29,7 @@ import { Vector3, type Object3D } from "three";
 import type { CreatorObject } from "./creator-document.js";
 import type { UndoOffer } from "./creator-undo.js";
 import { kindNoun } from "./kinds/edit-kinds.js";
+import { moveNote, moveQuestion, type MoveQuestion } from "./move-question.js";
 import { objectListModel, type ObjectListView } from "./object-list.js";
 import {
   objectDeleted,
@@ -139,6 +140,29 @@ interface Undoable {
   readonly run: () => void;
 }
 
+/** A Move to the reticle as planned at the tap, its write still to come. */
+interface PlannedPinMove {
+  readonly id: string;
+  readonly before: TourObject;
+  readonly after: TourObject;
+  readonly visit: number;
+  readonly local: NuePose;
+  readonly planned: NonNullable<ReturnType<typeof planMove>>;
+  readonly inputs: ReturnType<ObjectEditingDeps["settleInputs"]>;
+  readonly visitAlignment: ReturnType<typeof selectAlignmentMatrix>;
+  readonly zero: NonNullable<ReturnType<typeof selectZeroReference>>;
+}
+
+/** A Move waiting for the creator's answer: nothing is written until it
+ *  comes, so a reload meanwhile finds the pin where it was. Withdrawn when
+ *  the document moved on or the visit ended under the question. */
+interface AskedMove {
+  readonly move: PlannedPinMove;
+  readonly question: MoveQuestion;
+  readonly generation: number;
+  readonly revision: number;
+}
+
 /** What an Undo of a delete names and logs, captured at the delete. */
 interface DeletedObject {
   readonly object: TourObject;
@@ -161,6 +185,7 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
    *  until the hold ends, the note changes, or the document moves on. */
   let undoable: Undoable | null = null;
   const busy = new Map<string, string>();
+  let asking: AskedMove | null = null;
 
   function objects(): AuthoringObject[] {
     return tour.objects();
@@ -201,6 +226,7 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
         // In AR the strip's persistent Undo is the one Undo: the
         // note says what happened, the strip takes it back.
         undo: undoable !== null && !ctx.finishing && !deps.sessionLive(),
+        question: asking?.question ?? null,
       }),
     );
   }
@@ -363,13 +389,68 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
       say("No usable GPS alignment yet - the pin was not moved.");
       return;
     }
-    const before = found.object;
-    const after = planned.object;
+    const pinMove: PlannedPinMove = {
+      id,
+      before: found.object,
+      after: planned.object,
+      visit,
+      local,
+      planned,
+      inputs,
+      visitAlignment,
+      zero,
+    };
+    const question = moveQuestion(tour.state(), id, planned.object.geo);
+    if (question === null) {
+      writeMove(pinMove);
+      return;
+    }
+    const { generation, revision } = tour.state();
+    asking = { move: pinMove, question, generation, revision };
+    busy.set(id, "Asking…");
+    say("");
+  }
+
+  /** Let the question go: nothing was written. */
+  function endAsking(): AskedMove | null {
+    const was = asking;
+    asking = null;
+    if (was !== null) busy.delete(was.move.id);
+    return was;
+  }
+
+  /** The answer to the Move's question; a document that moved on under
+   *  it (or a visit that ended) withdraws the Move, unwritten. */
+  function answer(yes: boolean): void {
+    const was = endAsking();
+    if (was === null) return;
+    const now = tour.state();
+    if (
+      refusedDuringFinish() ||
+      now.generation !== was.generation ||
+      now.revision !== was.revision ||
+      ctx.arSessionGeneration !== was.move.visit
+    ) {
+      say("The tour changed meanwhile - the pin was not moved.");
+      return;
+    }
+    writeMove(was.move, yes ? was.question.stationId : undefined);
+  }
+
+  function writeMove(pin: PlannedPinMove, joinStation?: string): void {
+    const { id, before, after, visit, local, planned, inputs } = pin;
+    const { visitAlignment, zero } = pin;
     const label = before.kind === "shortText" ? before.caption : "the pin";
+    const was = tour.state();
     // The odometry pose is kept, so the visit's own settle recomputes it
     // with the rest of the visit at its end - and the preview is rigid in
     // AR meanwhile, like a newly placed pin.
-    const moved = tour.move(after, `the move of "${label}"`, { visit, local });
+    const moved = tour.move(
+      after,
+      `the move of "${label}"`,
+      { visit, local },
+      joinStation,
+    );
     if (moved === null) {
       // Beyond what its station can carry (the format's bound, kilometres).
       say(`That spot is too far from its station - "${label}" was not moved.`);
@@ -394,13 +475,14 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
     );
     deps.syncPreviews();
     deps.renderAuthorReadout();
+    const said = moveNote(was, tour.state(), id);
     void withBusy(
       id,
       "Moving…",
       () => moved.backedUp,
       (ok) =>
         ok
-          ? `Moved "${label}" to the ring - ${SAVED_SUFFIX}`
+          ? `${said ?? `Moved "${label}" to the ring`} - ${SAVED_SUFFIX}`
           : `Moved "${label}", but ${NOT_BACKED_UP}`,
     );
   }
@@ -541,6 +623,11 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
   /** Select `id` (a tap in AR), or clear with null (Done, a tap on
    *  empty scene). */
   function selectObject(id: string | null): void {
+    // The question stands on the selected row's card: another selection
+    // ends the Move, unwritten.
+    if (id !== selectedId && endAsking() !== null) {
+      say("The pin was not moved.");
+    }
     selectedId = id;
     // A tap in AR is also how the creator carries on, so it must not take
     // an outcome off the screen before it could be read (M4 review #6);
@@ -554,6 +641,7 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
     editText,
     move,
     remove,
+    answer,
     undo: () => {
       const pending = undoable;
       undoable = null;
@@ -576,6 +664,7 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
     selected: () => selectedId,
     objects,
     reset: () => {
+      asking = null;
       selectedId = null;
       note = "";
       undoable = null;

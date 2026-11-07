@@ -26,6 +26,8 @@ The three.js look of a recurring character standing at a station: a die-cut card
 
 ## Invariants and rules
 
+- `paintPoses(source, sheet, painters, flipped)`: a figure stored bottom row first, as the decoder leaves a bitmap for WebGL, is turned upright (`painters.upright`) before it is painted on a canvas.
+
 - Distances are horizontal, from the camera to the root.
 - Facing:
   - He rests at the creator's facing and turns toward the camera by at most 60 degrees (`facingYaw`, eased at 4 per second; the first frame snaps).

@@ -436,6 +436,8 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
       texture.image as FigureSource,
       sheet,
       deps.lookPainters,
+      // The decoder leaves a bitmap flipped for WebGL; a canvas keeps it.
+      !texture.flipY,
     );
     texture.dispose();
     deps.figures?.set(image, sheet, poses);

@@ -234,6 +234,9 @@ const RING_COLOUR = 0x6fa8dc;
 const RING_SELECTED = 0xe9a23b;
 /** The circle of the station a selected item is in. */
 const RING_CONTEXT = 0xa8c8ea;
+/** While a drag has an item out of its station's circle: the Problems
+ *  warning's colour (`--s-warn`, `editor-shell.css`). */
+export const RING_ITEM_OUT = 0xe9b86b;
 const POLE_COLOUR = 0xdfe3ea;
 
 interface StationContent {
@@ -654,10 +657,29 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     if (!(material instanceof THREE.MeshBasicMaterial)) return;
     const mine = entry.id === view.selectedStation;
     const selected = mine && view.stationSelected;
+    const out = itemOutOf(entry);
     material.color.setHex(
-      selected ? RING_SELECTED : mine ? RING_CONTEXT : RING_COLOUR,
+      out
+        ? RING_ITEM_OUT
+        : selected
+          ? RING_SELECTED
+          : mine
+            ? RING_CONTEXT
+            : RING_COLOUR,
     );
-    material.opacity = selected ? 1 : 0.85;
+    material.opacity = selected || out ? 1 : 0.85;
+  };
+
+  /** Whether a drag has one of `entry`'s items outside its circle now. */
+  const itemOutOf = (entry: StationEntry): boolean => {
+    if (preview?.kind !== "item" || entryOfItem(preview.id) !== entry) {
+      return false;
+    }
+    const [north, , east] = localPoseOf(
+      preview.geo,
+      entry.station.geo,
+    ).position;
+    return Math.hypot(north, east) > entry.station.foundRadiusM;
   };
 
   const placeBillboard = (entry: StationEntry, view: StationsLayerView) => {

@@ -251,11 +251,23 @@ const ALREADY_IN_TOUR = "That note is already in this tour.";
 /** Said for a move of a station the tour does not carry. */
 const NO_SUCH_STATION = "That station is no longer in this tour.";
 
+/** Whether `object` at its new spot fits the station it would stand in:
+ *  `joinStation`, the creator's answer, or its own. */
+function fitsAnswer(
+  state: TourDocumentState,
+  object: TourObject,
+  joinStation: string | undefined,
+): boolean {
+  return objectFits(
+    state,
+    joinStation === undefined ? object : { ...object, station: joinStation },
+  );
+}
+
 /** Said for a move further from the note's station than a tour can carry
  *  (`TOUR_ITEM_MAX_OFFSET_M` per axis): the format would refuse the tour,
- *  so every later save failed with the parser's own words (the M5a
- *  milestone review L1). A note stays in its station however far it is
- *  moved (`tour-content.ts`). */
+ *  so every later save would fail with the parser's own words. A note
+ *  stays in its station however far it is moved (`tour-content.ts`). */
 export const TOO_FAR_FROM_STATION = `It cannot go that far: a note must stay within ${String(TOUR_ITEM_MAX_OFFSET_M / 1000)} km of its station.`;
 
 /** An edit, move or delete of an id the tour no longer carries, said in
@@ -496,12 +508,17 @@ export interface EditorSession {
     id: string,
     view: string,
   ): { kind: "edited" | "unchanged" } | EditorRefusal;
-  /** Move a note on the map (its height and facing kept): beyond its
-   *  station's found radius the station rule seats it anew - the station
-   *  holding its new spot, or a new one there - so no move is too far.
-   *  Refused for an id the tour no longer carries. Throws for a position
-   *  nobody can draw (`moveObjectTo`). */
-  move(id: string, lat: number, lon: number): { kind: "moved" } | EditorRefusal;
+  /** Move a note on the map (its height and facing kept): it keeps its
+   *  station, in or out of the circle, or changes to `joinStation`, the
+   *  creator's answer (`move-question.ts`). Refused for an id the tour no
+   *  longer carries and a spot its station cannot carry. Throws for a
+   *  position nobody can draw (`moveObjectTo`). */
+  move(
+    id: string,
+    lat: number,
+    lon: number,
+    options?: { readonly joinStation?: string },
+  ): { kind: "moved" } | EditorRefusal;
   /** Delete (undone by `undo`, also after a save wrote it: a photo's
    *  picture is kept for that). Refused, deleting nothing, for an id the
    *  tour no longer carries. */
@@ -617,13 +634,17 @@ export interface EditorSession {
     id: string,
     sizeM: number,
   ): { kind: "resized" | "unchanged" } | EditorRefusal;
-  /** Put an item at a whole pose (position, height and turn): beyond its
-   *  station's radius the station rule seats it anew; `newStation` starts
-   *  a station of its own where it stands. One step. */
+  /** Put an item at a whole pose (position, height and turn): it keeps
+   *  its station, or changes to `joinStation`; `newStation` starts a
+   *  station of its own where it stands. One step. Refused for a spot its
+   *  station cannot carry. */
   pose(
     id: string,
     geo: QrGeoPose,
-    options?: { readonly newStation?: boolean },
+    options?: {
+      readonly newStation?: boolean;
+      readonly joinStation?: string;
+    },
   ): { kind: "moved" } | EditorRefusal;
   /** Give an item a station of its own where it stands, turned as it is
    *  ("Move to a new station"): one step; says the station it made. */
@@ -1217,15 +1238,19 @@ export function createEditorSession(input: {
       );
       return applied ? { kind: "edited" } : notApplied;
     },
-    move(id, lat, lon) {
+    move(id, lat, lon, { joinStation } = {}) {
       const state = mine();
       if (state === null) return notInTour;
       const change = objectMoveChange(state, id, lat, lon);
       if (change.kind === "missing") return notInTour;
+      if (!fitsAnswer(state, change.after, joinStation)) {
+        return { kind: "refused", reason: TOO_FAR_FROM_STATION };
+      }
       store.dispatch(
         tourDocumentActions.moved({
           object: change.after,
           what: `the move of ${objectName(change.before)}`,
+          ...(joinStation === undefined ? {} : { joinStation }),
         }),
       );
       return { kind: "moved" };
@@ -1772,10 +1797,16 @@ export function createEditorSession(input: {
       ) {
         return { kind: "refused", reason: NOT_ON_MAP };
       }
+      const { newStation, joinStation } = options;
+      const object = { ...found.object, geo };
+      if (newStation !== true && !fitsAnswer(own(), object, joinStation)) {
+        return { kind: "refused", reason: TOO_FAR_FROM_STATION };
+      }
       store.dispatch(
         tourDocumentActions.moved({
-          object: { ...found.object, geo },
-          ...(options.newStation === true ? { newStation: true } : {}),
+          object,
+          ...(newStation === true ? { newStation: true } : {}),
+          ...(joinStation === undefined ? {} : { joinStation }),
           what: `the move of ${objectName(found.object)}`,
         }),
       );
@@ -1847,9 +1878,9 @@ export function createEditorSession(input: {
           JSON.stringify(frame.geo) !== JSON.stringify(pose.geo)
         );
       });
-      // An object its station cannot carry (a draft written before far
-      // moves re-ran the station rule) is seated by the rule as the
-      // restore puts it back (`restored`), never skipped. One the tour
+      // An object its station cannot carry (the station is gone, or an
+      // older draft) is seated by the rule as the restore puts it back
+      // (`restored`), never skipped. One the tour
       // does not carry is skipped unless the offer names it a copy made
       // here: that is put back with its picture (a photo without one is
       // not), unless deleted here since.

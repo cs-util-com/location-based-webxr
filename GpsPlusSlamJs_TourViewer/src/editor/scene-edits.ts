@@ -1,7 +1,7 @@
 /**
  * A gesture of the 3D view (`../editor3d/gesture.ts`) written through the
  * editor session: one call, so one undo step. An item's pose goes through
- * `pose` (the station rule may seat it in another station), a station's
+ * `pose` (it keeps its station unless `joinStation` answers otherwise), a station's
  * anchor through `moveStation` (its items follow rigidly), a station's
  * found radius through `editStation`, a model's size through
  * `resizeModel`. A refusal comes back with its words for the page to say.
@@ -26,10 +26,15 @@ export type SceneEditOutcome =
 export function applySceneEdit(
   editor: SceneEditSession,
   edit: GestureEdit,
+  joinStation?: string,
 ): SceneEditOutcome {
   const outcome =
     edit.kind === "item-pose"
-      ? editor.pose(edit.id, edit.geo)
+      ? editor.pose(
+          edit.id,
+          edit.geo,
+          joinStation === undefined ? {} : { joinStation },
+        )
       : edit.kind === "station-pose"
         ? editor.moveStation(edit.id, edit.geo)
         : edit.kind === "radius"

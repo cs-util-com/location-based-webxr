@@ -47,12 +47,13 @@ copy of the tour.
     shutter tap, not when its encode lands) and gives it back if the item
     is not placed (`creator-placement.ts`);
   - `edit(object, what)` - `objectFits`; the AR placement is kept;
-  - `move(object, what, placement?)` - null for an id the document
-    lacks; within its station's found radius the object stays there,
-    beyond it the station rule seats it anew (a fresh id for a station it
-    starts), and the station it left goes when that empties an automatic
-    one. `placement` replaces the AR placement (a move in AR), else it is
-    kept (a settle's re-pose);
+  - `move(object, what, placement?, joinStation?)` - null, nothing kept,
+    for an id the document lacks or a spot its station cannot carry
+    (`objectFits`). The object keeps its station, in or out of the circle,
+    or changes to `joinStation` (the creator's answer, `move-question.ts`),
+    and the station it left goes when that empties an automatic one. A
+    move never starts a station. `placement` replaces the AR placement (a
+    move in AR), else it is kept (a settle's re-pose);
   - `remove(id, what)` - null for an id the tour does not carry;
   - `moveStation(stationId, geo, what)` - D17, null for an unknown station;
   - `settleBatch()` - a settle's changes as ONE step (plan M3b, Q-D):

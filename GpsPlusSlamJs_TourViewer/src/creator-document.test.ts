@@ -228,18 +228,22 @@ describe("the creator's document: changes through the slice's guards", () => {
   // rule, so however far it goes the object stands in a station near it -
   // the format's 10 km bound between an item and its station cannot be
   // crossed by a move. A move of an id the document lacks is refused.
-  it("seats a move far beyond its station in a station at the new spot, and refuses an unknown id", () => {
+  it("refuses a move beyond its station's reach, and an unknown id, keeping nothing", () => {
     const doc = fresh();
-    doc.open(tourOf([pin("a")]));
+    doc.open(tourOf([]));
+    doc.place(pin("a"), { placement: PLACEMENT }, "a pin");
     const a = doc.objects()[0]!.object;
     // About 110 km north: far beyond the format's bound.
     expect(
-      doc.move({ ...a, geo: { ...a.geo, lat: 49.5 } }, "far"),
-    ).not.toBeNull();
-    const moved = doc.objects()[0]!.object;
-    expect(moved.station).not.toBe(a.station);
-    const home = doc.state().stations.find((f) => f.id === moved.station);
-    expect(home?.geo.lat).toBe(49.5);
+      doc.move({ ...a, geo: { ...a.geo, lat: 49.5 } }, "far", {
+        ...PLACEMENT,
+        visit: 2,
+      }),
+    ).toBeNull();
+    expect(doc.objects()[0]!.object).toEqual(a);
+    // The AR placement of a refused move is not kept either: its settle
+    // would put the object at the spot the document refused.
+    expect(doc.entries()[0]?.placement).toEqual(PLACEMENT);
     expect(doc.move({ ...pin("nobody") }, "nobody")).toBeNull();
   });
 
@@ -355,22 +359,18 @@ describe("the creator's document: the AR anchors of the stations it starts", () 
     expect(doc.stationPlacements().size).toBe(0);
   });
 
-  it("anchors the station a move starts: in AR at the new placement, by a settle at the placement the item keeps", () => {
+  // Why: a move starts no station, so it must not touch one's anchor
+  // either: only a placement anchors a station.
+  it("keeps a station and its anchor through a move in AR and a settle", () => {
     const doc = fresh();
     doc.open(tourOf([]));
     doc.place(pin("p"), { placement: PLACEMENT }, "a pin");
     const first = stationOf(doc, "p");
     doc.move(pin("p", 48.53), "a move in AR", ELSEWHERE);
-    const second = stationOf(doc, "p");
-    expect(second).not.toBe(first);
-    // The station it left emptied and went, and its anchor with it.
-    expect([...doc.stationPlacements()]).toEqual([
-      [second, { ...ELSEWHERE, item: "p" }],
-    ]);
     doc.move(pin("p", 48.54), "the settle");
-    const third = stationOf(doc, "p");
+    expect(stationOf(doc, "p")).toBe(first);
     expect([...doc.stationPlacements()]).toEqual([
-      [third, { ...ELSEWHERE, item: "p" }],
+      [first, { ...PLACEMENT, item: "p" }],
     ]);
   });
 

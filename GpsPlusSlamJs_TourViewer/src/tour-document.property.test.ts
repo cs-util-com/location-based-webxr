@@ -38,6 +38,7 @@ import {
   viewOf,
   type TourDocumentState,
   type TourDocumentView,
+  objectFits,
 } from "./tour-document.js";
 import {
   parseSettingsRecord,
@@ -948,7 +949,7 @@ function near(north: number, east: number): TourObject["geo"] {
 
 type StationOp =
   | { kind: "place"; id: string; north: number; east: number; own: boolean }
-  | { kind: "move"; id: string; north: number; east: number }
+  | { kind: "move"; id: string; north: number; east: number; own?: boolean }
   | { kind: "delete"; id: string }
   | { kind: "frame"; id: string; north: number }
   | { kind: "restore"; north: number; east: number; dangling: boolean }
@@ -974,6 +975,7 @@ const stationOpArb: fc.Arbitrary<StationOp> = fc.oneof(
     id: anyId,
     north: metres,
     east: metres,
+    own: fc.boolean(),
   }),
   fc.record({ kind: fc.constant("delete" as const), id: anyId }),
   fc.record({ kind: fc.constant("frame" as const), id: anyId, north: metres }),
@@ -1026,6 +1028,7 @@ function stationRun(
             object: { ...object, geo: near(op.north, op.east) },
             what: "move",
             newStationId: mint(),
+            ...(op.own === true ? { newStation: true } : {}),
           }),
         );
         break;
@@ -1236,7 +1239,7 @@ describe("tour document (properties): every object belongs to a station", () => 
     // Seed 4246602: a pin moved out of its station into a new one, that
     // station moved, undone and redone.
     const again = stationRun([
-      { kind: "move", id: "a", north: 0, east: -37.5 },
+      { kind: "move", id: "a", north: 0, east: -37.5, own: true },
       { kind: "frame", id: "a", north: 0 },
       { kind: "undo" },
       { kind: "redo" },
@@ -1315,14 +1318,14 @@ describe("tour document (properties): every object belongs to a station", () => 
     );
   });
 
-  it("whatever a station's found radius, a placed and then moved object stands within the format's reach of its station, where it was moved", () => {
+  it("whatever a station's found radius, a placed and then moved object stands within the format's reach of its station, where it was moved or, refused, where it was", () => {
     // 100 runs: a reach check at twice the format's bound was caught over 24
     // seeds by run 30 at worst. Why: a found radius has no upper bound (a hand-edited file may carry
     // 50 km), while the format keeps an item within 10 km of its station
     // per axis. Seated by the radius alone, an object stood beyond that
-    // reach and every later save failed; a move inside such a radius was
-    // dropped without a word. Radii from 1 m to 60 km, spots up to 30 km
-    // out on each axis.
+    // reach and every later save failed; a move past that reach is refused
+    // (`objectFits`), and the caller says so. Radii from 1 m to 60 km, spots
+    // up to 30 km out on each axis.
     const at = (north: number, east: number): TourObject["geo"] => {
       const g = calcGpsCoords({ lat: 48.6, lon: 9.1 }, [north, 0, east]);
       return { lat: g.lat, lon: g.lon, alt: 400, rotation: [0, 0, 0, 1] };
@@ -1361,19 +1364,18 @@ describe("tour document (properties): every object belongs to a station", () => 
             state,
             act.placed({ object: placed, what: "p", newStationId: "first" }),
           );
+          const moved = { ...placed, geo: at(n2, e2) };
+          const fits = objectFits(state, moved);
           state = reduce(
             state,
-            act.moved({
-              object: { ...placed, geo: at(n2, e2) },
-              what: "m",
-              newStationId: "second",
-            }),
+            act.moved({ object: moved, what: "m", newStationId: "second" }),
           );
           const p = documentObjects(state).find(
             (o) => o.object.id === "p",
           )!.object;
-          expect(p.geo.lat).toBeCloseTo(at(n2, e2).lat, 7);
-          expect(p.geo.lon).toBeCloseTo(at(n2, e2).lon, 7);
+          const end = fits ? at(n2, e2) : at(n1, e1);
+          expect(p.geo.lat).toBeCloseTo(end.lat, 7);
+          expect(p.geo.lon).toBeCloseTo(end.lon, 7);
           const frame = state.stations.find((f) => f.id === p.station)!;
           for (const v of localPoseOf(p.geo, frame.geo).position) {
             expect(Math.abs(v)).toBeLessThanOrEqual(TOUR_ITEM_MAX_OFFSET_M);

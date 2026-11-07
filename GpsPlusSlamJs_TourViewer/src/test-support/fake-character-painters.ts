@@ -7,11 +7,15 @@
 
 import type {
   BubbleSide,
+  FigureSource,
   Painted,
   PaintedFigure,
   PaintedTail,
 } from "../character-canvas";
 import type { CharacterPainters } from "../character-look";
+
+/** What the fake `upright` hands back, so a test can see who received it. */
+export const UPRIGHT_MARK = { upright: true } as unknown as FigureSource;
 
 export function fakeCharacterPainters(): {
   painters: CharacterPainters;
@@ -21,12 +25,18 @@ export function fakeCharacterPainters(): {
     actives: (number | undefined)[];
     /** The frames each sliced sheet gave. */
     sheets: PaintedFigure[][];
+    /** Figures turned upright. */
+    flips: number;
+    /** The sources `figure` and `frames` were painted from. */
+    sources: FigureSource[];
   };
 } {
   const painted = {
     bubbles: [] as (string | null)[],
     actives: [] as (number | undefined)[],
     sheets: [] as PaintedFigure[][],
+    flips: 0,
+    sources: [] as FigureSource[],
   };
   const img = (w: number, h: number) =>
     ({ width: w, height: h }) as unknown as HTMLCanvasElement;
@@ -35,7 +45,7 @@ export function fakeCharacterPainters(): {
     ...flat(w, h),
     tipX: side === "right" ? 30 : w - 30,
   });
-  const figure = (): PaintedFigure => ({
+  const cell = (): PaintedFigure => ({
     front: img(106, 206),
     back: img(106, 206),
     figureW: 100,
@@ -43,9 +53,17 @@ export function fakeCharacterPainters(): {
     pad: 3,
   });
   const painters: CharacterPainters = {
-    figure,
-    frames: () => {
-      const cells = [figure(), figure(), figure(), figure()];
+    upright: () => {
+      painted.flips += 1;
+      return UPRIGHT_MARK;
+    },
+    figure: (source) => {
+      painted.sources.push(source);
+      return cell();
+    },
+    frames: (sheet) => {
+      painted.sources.push(sheet);
+      const cells = [cell(), cell(), cell(), cell()];
       painted.sheets.push(cells);
       return cells;
     },

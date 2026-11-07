@@ -60,7 +60,7 @@ there.
 ## Who reads it
 
 - Words: `object-describe.ts` `objectTitle`, `object-list.ts`,
-  `creator-placement.ts`, `object-editing.ts`, `editor/reseat-note.ts`,
+  `creator-placement.ts`, `object-editing.ts`, `move-question.ts` (an item with no text of its own),
   `editor/editor-card.ts`, `editor/editor-model.ts`, `editor/edit-main.ts`
   (its add, delete and split toasts), `editor/editor-session.ts`
   (`objectName`), `editor/editor-shell/inspector-model.ts`,

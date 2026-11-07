@@ -126,16 +126,16 @@ imperative resources only - that handle and the pictures' side table
     has a sentence of its own. A free short text's `caption` is its pin
     text: it goes `editText`'s way (`pinTextEdit`'s rule, "the text of
     <name>"), so a pin's caption has one rule, never two.
-  - `move(id, lat, lon)` - `moveObjectTo` (height and facing kept),
+  - `move(id, lat, lon, { joinStation? })` - `moveObjectTo` (height and facing kept),
     through the document's `objectMoveChange`:
     `{ kind: "moved" }`, or `EditorRefusal` (module-private: `refused` with `NOT_IN_TOUR`)
-    for an id the tour no longer carries (PR #622 bot finding C). Beyond
-    the note's station's found radius the slice's station rule seats it
-    anew (the station holding its new spot, or a new one there), so no
-    move is too far: the format's 10 km bound between an item and its
-    station (`TOUR_ITEM_MAX_OFFSET_M`), which once made every later save
-    fail after a far drag, cannot be crossed by a move. Throws for a
-    position nobody can draw.
+    for an id the tour no longer carries (PR #622 bot finding C), and
+    `TOO_FAR_FROM_STATION` for a spot the format's 10 km bound between an
+    item and its station (`TOUR_ITEM_MAX_OFFSET_M`) rules out: a far drag
+    once made every later save fail, so it is refused and said. The item
+    keeps its station, in or out of the circle, or changes to
+    `joinStation`, the creator's answer; a move never starts a station.
+    Throws for a position nobody can draw.
   - `remove(id)` - `deleteObject`; `{ kind: "deleted" }`, undone like any
     edit (`undo()`). A deleted photo's picture is kept for that undo - the
     one its entry carries, else read once through `loadPhoto` - since a
@@ -203,9 +203,10 @@ imperative resources only - that handle and the pictures' side table
       a height beyond an item's reach of its station (`HEIGHT_REFUSED`).
     - `resizeModel(id, sizeM)` - a placed model's size, 0.05 m to 500 m
       (`MODEL_SIZE`; `NOT_A_MODEL` for anything else).
-    - `pose(id, geo, { newStation? })` - an item at a whole pose (position,
-      height, turn): beyond its station's radius the rule seats it anew;
-      `newStation` ("Move to a new station") starts one where it stands.
+    - `pose(id, geo, { newStation?, joinStation? })` - an item at a whole
+      pose (position, height, turn), keeping its station or changing to
+      `joinStation`, refused like `move`; `newStation` ("Move to a new
+      station") starts one where it stands.
     - `moveToNewStation(id)` - "Move to a new station" where the item
       stands, turned as it is, the new station right after the one it
       left (`afterHome`): one step, `{ kind: "moved", stationId }`
@@ -236,7 +237,7 @@ changes`; a label is cut at 40 characters (`truncated`, split-safe), a label-les
     the draft's version (`upsertPlaced`), a deletion its tombstone
     (`deleteObject`); live work on an id wins; an id the tour no longer
     carries is skipped; an object its station cannot carry (a draft
-    written before far moves re-ran the station rule) is seated by the
+    of an older build, or whose station is gone) is seated by the
     rule, never skipped; the stations the draft's objects were seated in
     that the tour lacks come back whole first (the record's
     `createdStations`, with `handMadeStations` naming those added by

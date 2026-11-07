@@ -31,6 +31,7 @@ import {
   CODE_FLAT_GAP_M,
   CODE_SCREEN_PX,
   DEFAULT_CODE_SIZE_M,
+  RING_ITEM_OUT,
   RING_RENDER_ORDER,
   codeGrowth,
   focalPxOf,
@@ -1059,6 +1060,45 @@ describe("createStationsLayer", () => {
     expect(c1.x).toBeCloseTo(0, 1);
     expect(c1.z).toBeCloseTo(0, 1);
     expect(c1.y).toBeCloseTo(517, 1);
+    layer.dispose();
+  });
+
+  // Why: a move keeps an item in its station however far it goes, so the
+  // ring is the one thing that tells the creator it is out while there is
+  // still time to bring it back; by the Problems list's own measure, so
+  // the ring and the list never disagree.
+  it("turns the ring the warning colour while a drag has its item out", async () => {
+    const { d } = deps();
+    const layer = createStationsLayer(d);
+    const a = station("a", 0, 0, [photo("p")]);
+    layer.setTour(manifest([a], []), new Map());
+    layer.update(view(0, 0, "a", 1));
+    await settle();
+    const ring = () => {
+      let found: THREE.Mesh | null = null;
+      layer.group.traverse((o) => {
+        if (o.name === "found-radius") found = o as THREE.Mesh;
+      });
+      if (found === null) throw new Error("no circle");
+      return (found as THREE.Mesh).material as THREE.MeshBasicMaterial;
+    };
+    const normal = ring().color.getHex();
+    const at = (position: [number, number, number]) => ({
+      kind: "item" as const,
+      id: "p",
+      geo: itemGeoPose({ position, rotation: [0, 0, 0, 1] }, a.geo),
+      sizeM: null,
+    });
+    layer.setPreview(at([0, 1.5, a.foundRadiusM - 1]));
+    layer.update(view(0, 0, "a", 1));
+    expect(ring().color.getHex()).toBe(normal);
+    layer.setPreview(at([a.foundRadiusM + 1, 1.5, 0]));
+    layer.update(view(0, 0, "a", 1));
+    expect(ring().color.getHex()).toBe(RING_ITEM_OUT);
+    expect(ring().opacity).toBe(1);
+    layer.setPreview(null);
+    layer.update(view(0, 0, "a", 1));
+    expect(ring().color.getHex()).toBe(normal);
     layer.dispose();
   });
 
