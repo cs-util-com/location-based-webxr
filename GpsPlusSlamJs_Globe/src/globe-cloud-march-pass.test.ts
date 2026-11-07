@@ -18,6 +18,10 @@ import {
   type GlobeCloudMarch,
   createGlobeCloudMarch,
 } from "./globe-cloud-march-pass.js";
+import {
+  CLOUD_AIR_GLSL,
+  CLOUD_MARCH_FRAGMENT,
+} from "./globe-cloud-march-glsl.js";
 import { CLOUD_MARCH_LAYER } from "./globe-cloud-march-law.js";
 import { GLOBE_QUALITIES } from "./globe-quality.js";
 
@@ -45,7 +49,8 @@ function fakeRenderer() {
     render: () => {
       draws.push(target);
     },
-    compileAsync: () => Promise.resolve(),
+    compile: () => new Set<THREE.Material>(),
+    properties: { get: () => ({}) },
   };
   return { renderer: renderer as unknown as THREE.WebGLRenderer, draws };
 }
@@ -113,21 +118,64 @@ function mapUvUnder(march: GlobeCloudMarch): [number, number] {
 }
 
 describe("createGlobeCloudMarch: the shader's first compile", () => {
+  /** Three's compile over one fake program per call, not yet linked. */
+  const compiling = (renderer: THREE.WebGLRenderer) => {
+    const state = { linked: false, gone: false, compiled: 0 };
+    const program = { isReady: () => state.linked };
+    const fake = renderer as unknown as {
+      compile: unknown;
+      properties: unknown;
+    };
+    fake.compile = () => {
+      state.compiled += 1;
+      return new Set([new THREE.MeshBasicMaterial()]);
+    };
+    // A renderer disposed under the wait forgets its materials: three then
+    // hands back an empty record, no program in it.
+    fake.properties = {
+      get: () => (state.gone ? {} : { currentProgram: program }),
+    };
+    return state;
+  };
+
   // Why this test matters: a compile on the frame that first draws is a
   // long stall in the middle of a flight; until it is done the old clouds
   // draw.
   it("is ready only once its shaders are compiled", async () => {
-    let finish = () => {};
-    const compiled = new Promise<void>((resolve) => {
-      finish = resolve;
-    });
     const { march, renderer } = make();
-    const compile = vi.fn(() => compiled);
-    (renderer as unknown as { compileAsync: unknown }).compileAsync = compile;
+    const state = compiling(renderer);
     march.setBakes(fakeBakes());
-    expect(compile).toHaveBeenCalledTimes(2);
+    expect(state.compiled).toBe(2);
     expect(march.ready).toBe(false);
-    finish();
+    state.linked = true;
+    await vi.waitFor(() => expect(march.ready).toBe(true));
+  });
+
+  // Why this test matters: a timer polling a program its renderer has
+  // forgotten throws where nothing can catch it: a view closed while the
+  // shader compiles, with the renderer disposed in the same tick.
+  it("survives a renderer disposed while it compiles", async () => {
+    const { march, renderer } = make();
+    const state = compiling(renderer);
+    const errors: unknown[] = [];
+    const seen = (e: unknown) => errors.push(e);
+    process.on("uncaughtException", seen);
+    march.setBakes(fakeBakes());
+    march.dispose();
+    state.gone = true;
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    process.off("uncaughtException", seen);
+    expect(errors).toEqual([]);
+    expect(march.ready).toBe(false);
+  });
+
+  // Why this test matters: a renderer that forgot a material has no program
+  // to wait for; the wait must end, not poll for ever.
+  it("stops waiting for a program the renderer no longer has", async () => {
+    const { march, renderer } = make();
+    const state = compiling(renderer);
+    march.setBakes(fakeBakes());
+    state.gone = true;
     await vi.waitFor(() => expect(march.ready).toBe(true));
   });
 
@@ -135,8 +183,9 @@ describe("createGlobeCloudMarch: the shader's first compile", () => {
   // on the first draw; the new clouds must not stay off for that.
   it("is ready after a failed compile too", async () => {
     const { march, renderer } = make();
-    (renderer as unknown as { compileAsync: unknown }).compileAsync = () =>
-      Promise.reject(new Error("no"));
+    (renderer as unknown as { compile: unknown }).compile = () => {
+      throw new Error("no");
+    };
     march.setBakes(fakeBakes());
     await vi.waitFor(() => expect(march.ready).toBe(true));
   });
@@ -321,5 +370,25 @@ describe("createGlobeCloudMarch", () => {
     march.dispose();
     expect(march.ready).toBe(false);
     expect(march.render(frameAt(cameraOver(53, 10, 5_000)))).toBe(false);
+  });
+});
+
+describe("CLOUD_AIR_GLSL", () => {
+  // Why this test matters: the composite includes this block too and vitest
+  // does not compile GLSL. A uniform only the march declares (the block once
+  // read uPixAng) leaves the march working and the composite black, with no
+  // clouds at all.
+  it("reads no uniform beyond the three the block's users all declare", () => {
+    const declared = [
+      ...CLOUD_MARCH_FRAGMENT.matchAll(/uniform\s+\w+\s+([^;]+);/g),
+    ]
+      .flatMap((m) => (m[1] ?? "").split(/\s*,\s*/))
+      .filter((name) => /^u\w+$/.test(name));
+    const allowed = new Set(["uH", "uSun", "uSunCol"]);
+    expect(declared.length).toBeGreaterThan(allowed.size);
+    const read = declared.filter((name) =>
+      new RegExp(`\\b${name}\\b`).test(CLOUD_AIR_GLSL),
+    );
+    expect(new Set(read)).toEqual(allowed);
   });
 });

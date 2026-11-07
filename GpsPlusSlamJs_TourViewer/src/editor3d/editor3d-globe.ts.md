@@ -40,7 +40,8 @@ true ECEF place, so one placed anywhere shows where it is.
     and `grade`, the raw `?grade=` name judged here by
     `resolveGlobeGrade` (the globe's `globe-grade.ts`; an unknown name warns
     and keeps the default). `quality`, the raw `?quality=`, goes through `resolveGlobeQuality` with
-    the pointer: a coarse pointer gets the low tier unless the link names one.
+    the pointer: a coarse pointer gets the medium tier and a fine one high,
+    unless the link names one; low is never a default.
     `view3d().globe.grade` reads the tone curve and
     exposure back.
   - Resolves on the render loop's first tick with the same `Editor3dView`
