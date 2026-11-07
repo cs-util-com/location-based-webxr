@@ -11,11 +11,7 @@ import type {
 import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characters";
 import type { TourStoryChild } from "gps-plus-slam-app-framework/ar/tour-story";
 
-import {
-  itemAssets,
-  showItemCard,
-  type ItemCardHost,
-} from "./item-card";
+import { itemAssets, showItemCard, type ItemCardHost } from "./item-card";
 import {
   createSilentAudio,
   freeCarrier,

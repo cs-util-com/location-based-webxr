@@ -447,9 +447,9 @@ describe("a superseded or refused clip", () => {
     expect(log).toEqual(["resume"]);
   });
 
-  // Why: only a hold makes an AbortError harmless. One with no hold behind
-  // it (the element was torn down, a load aborted) is a real refusal: the
-  // caller hears it and the channel is given back.
+  // Why: only a hold makes an AbortError harmless. Without a hold (the
+  // element was torn down, a load aborted) it is a real refusal: the caller
+  // hears it and the channel is given back.
   it("an AbortError with no hold still surfaces and frees the channel", async () => {
     const focus = createVoiceFocus();
     const audio = focusedSceneAudio(
