@@ -13,6 +13,7 @@ import {
 } from "three";
 
 import { CHARACTER_HEIGHT_M, createSceneStage } from "./scene-stage";
+import { createFigureMemo } from "./figure-memo";
 import { fakeCharacterPainters } from "./test-support/fake-character-painters";
 
 /**
@@ -353,6 +354,80 @@ describe("a character in a story view stands as a character look", () => {
   // frame and fades by its own presence; a holder turned by faceVisitor or
   // a material opacity cached by the plain fade would fight it, and a look
   // that never ticks would stand frozen with its bubble closed.
+  // Why: a die-cut figure paints for hundreds of milliseconds on the main
+  // thread, measured on one return, and each visitor's return repainted it.
+  // Stages share what was painted, by the file, so he comes back at once
+  // with no second decode; each look still owns its textures.
+  describe("a figure painted before", () => {
+    function remembering() {
+      const decodes = vi.fn(() => Promise.resolve(textureOf(100, 200)));
+      const { painters } = fakeCharacterPainters();
+      const paints = vi.spyOn(painters, "figure");
+      const sheets = vi.spyOn(painters, "frames");
+      const figures = createFigureMemo();
+      const stage = () =>
+        createSceneStage({
+          getScene: () => new Group(),
+          poseOf: () => ({
+            positionNue: [0, 400, 0] as [number, number, number],
+            rotationNue: [0, 0, 0, 1] as [number, number, number, number],
+          }),
+          decodeTexture: decodes,
+          loadModel: () => Promise.resolve(new Group()),
+          lookPainters: painters,
+          figures,
+        });
+      return { decodes, paints, sheets, stage };
+    }
+    const look = { view: "speak", name: "Ann", line: "Hello." } as const;
+
+    it("is neither decoded nor painted again, on any stage", async () => {
+      const { decodes, paints, stage } = remembering();
+      const image = new Blob(["ann"]);
+      const first = stage();
+      await first.showCharacter("s", image, undefined, look);
+      first.clear();
+      await first.showCharacter("s", image, undefined, look);
+      await stage().showCharacter("s", image, undefined, look);
+      expect(decodes).toHaveBeenCalledTimes(1);
+      expect(paints).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps files and sheets apart", async () => {
+      const { paints, sheets, stage } = remembering();
+      const image = new Blob(["ann"]);
+      await stage().showCharacter("s", image, undefined, look);
+      await stage().showCharacter("s", new Blob(["bob"]), undefined, look);
+      await stage().showCharacter("s", image, undefined, {
+        ...look,
+        sheet: true,
+      });
+      expect(paints).toHaveBeenCalledTimes(2);
+      expect(sheets).toHaveBeenCalledTimes(1);
+    });
+
+    // Why: two figures of one file can stand at once, and the second's
+    // decode must not paint what the first just painted.
+    it("two stages asking at once paint once", async () => {
+      const { paints, stage } = remembering();
+      const image = new Blob(["ann"]);
+      await Promise.all([
+        stage().showCharacter("s", image, undefined, look),
+        stage().showCharacter("s", image, undefined, look),
+      ]);
+      expect(paints).toHaveBeenCalledTimes(1);
+    });
+
+    it("a figure gone before its decode lands paints nothing", async () => {
+      const { paints, stage } = remembering();
+      const one = stage();
+      const shown = one.showCharacter("s", new Blob(["a"]), undefined, look);
+      one.clear();
+      await shown;
+      expect(paints).not.toHaveBeenCalled();
+    });
+  });
+
   function looking(cameraAt: [number, number, number] | null = [0, 401.6, 5]) {
     const clock = { ms: 1000 };
     const scene = new Group();
@@ -616,4 +691,38 @@ describe("a character in a story view stands as a character look", () => {
     expect(() => h.frame(16)).not.toThrow();
     expect(h.scene.children).toHaveLength(1);
   });
+});
+
+describe("a look's figure", () => {
+  // Why this test matters: the decoder flips a bitmap for WebGL, and a look
+  // draws that bitmap on a canvas, where the flip stays: every character of
+  // a real tour stood on his head while the check page, which hands the look
+  // a plain image, looked right.
+  it.each([
+    { flipY: false, flips: 1 },
+    { flipY: true, flips: 0 },
+  ])(
+    "turns a figure decoded for WebGL upright (flipY $flipY)",
+    async ({ flipY, flips }) => {
+      const { painters, painted } = fakeCharacterPainters();
+      const texture = textureOf(100, 200);
+      texture.flipY = flipY;
+      const stage = createSceneStage({
+        getScene: () => new Group(),
+        poseOf: () => ({
+          positionNue: [0, 0, 0],
+          rotationNue: [0, 0, 0, 1],
+        }),
+        decodeTexture: () => Promise.resolve(texture),
+        loadModel: () => Promise.resolve(new Group()),
+        lookPainters: painters,
+      });
+      await stage.showCharacter("gate", new Blob(["png"]), undefined, {
+        view: "speak",
+        name: "Wendel",
+        line: "Hello.",
+      });
+      expect(painted.flips).toBe(flips);
+    },
+  );
 });

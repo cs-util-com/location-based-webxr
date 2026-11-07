@@ -88,7 +88,7 @@ under - what a tap in AR is cast against to name the object
   disposed with them (the 3D editor passes it too); without the builder
   (the creator's previews, the unit tests) it is left out. Models are added after the planes, so the planes'
   order behind the labels holds. A station's story blocks are the
-  story's, never drawn here. A station without free blocks gives an empty
+  story's, never drawn here. A free video or sound is drawn by the page's `makeFreeItem`, at its pose; without one, or when it answers null, nothing stands there (no look exists yet, and a stand-in would be a marker nobody chose). A free character is the page's free host's (`free-items.ts`), never this renderer's. A station without free blocks gives an empty
   one. The
   same rendering (`renderContent`) as `renderTourObjects`, so labels,
   photo planes, `skipped` and `dispose` behave the same. `alive()`

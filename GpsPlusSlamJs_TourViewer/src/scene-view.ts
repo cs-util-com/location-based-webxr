@@ -17,6 +17,7 @@
 
 import type {
   TourAsset,
+  TourBlock,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
@@ -87,6 +88,11 @@ export interface SceneAudio {
   /** The playing clip's length (ms) once known, else null; absent: never
    *  known. */
   durationMs?(): number | null;
+  /** What is left of it (ms) once known, else null; absent: never known. */
+  leftMs?(): number | null;
+  /** A clip the voice channel holds comes back: the visitor tapped its
+   *  figure. Absent where no channel holds a clip. */
+  takeBack?(): void;
 }
 
 /** What a step shows in AR at its station. `onWaiting`: the decoded
@@ -145,6 +151,9 @@ export interface SceneViewDeps {
   /** The station is done: its one story played to its end, or the last
    *  unplayed of several, or the visitor left its picker. */
   onStoryEnd(stationId: string): void;
+  /** Shows an item's card (the item lab swaps a kind in; `showItemCard`
+   *  otherwise). */
+  showItem?(block: TourBlock, host: ItemCardHost): void;
   /** The story started, moved to another step, ended or stopped, or the
    *  queue changed: what the sheet draws of it (`progress`) may differ. */
   onChange?(): void;
@@ -157,6 +166,9 @@ export interface SceneViewDeps {
    *  plays and the panel is hidden: his voice, tapped after his story,
    *  could not play. The app says it in its toast. None: not said. */
   sayFailure?(text: string): void;
+  /** The step's clip in the page's voice channel (`voice-focus.ts`): told
+   *  each time it starts and when it is over. None: no channel. */
+  readonly videoVoice?: { started(): void; ended(): void };
 }
 
 /** Where a choice-free story is (the story card's dots). */
@@ -205,6 +217,10 @@ export interface SceneView {
    *  reads null); released, it starts again from its full length. A new
    *  story starts unheld. */
   holdStep(held: boolean): void;
+  /** The voice channel holds the step's voice, or let it go: the same stop
+   *  of the timer as {@link SceneView.holdStep}, and his look goes quiet
+   *  and speaks again with what is left. */
+  holdVoice(held: boolean): void;
 }
 
 export function createSceneView(deps: SceneViewDeps): SceneView {
@@ -236,6 +252,9 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
   let tapTarget: ItemTapTarget | null = null;
   /** The step held (`holdStep`): no timer runs. */
   let held = false;
+  /** The voice channel holds the step's voice (`holdVoice`): no timer runs
+   *  either, and this hold is not the guide's to lift. */
+  let voiceHeld = false;
   /** The step's voice or sound, which a `lineEnd` step waits for: none
    *  (or it could not play: the words' reading time stands in), playing,
    *  or ended. */
@@ -284,6 +303,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
 
   function releaseStep(): void {
     renderToken += 1;
+    voiceHeld = false;
     cancelTimer?.();
     cancelTimer = null;
     deps.audio.stop();
@@ -320,6 +340,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     video.onended = null;
     video.onplay = null;
     video.onerror = null;
+    deps.videoVoice?.ended();
   }
 
   /** The stage is cleared: nothing of his stands to tap. */
@@ -439,9 +460,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
           });
           if (run === voiceRun && his && lineVoice === "playing") {
             // Its length, when the element knows it, times the read-along.
-            const ms = deps.audio.durationMs?.() ?? null;
-            if (ms === null) deps.stage.setVoice?.("speaking");
-            else deps.stage.setVoice?.("speaking", ms);
+            if (!voiceHeld) saySpeaking(deps.audio.durationMs?.() ?? null);
           }
           return undefined;
         } catch {
@@ -452,6 +471,12 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
       },
       lost,
     );
+  }
+
+  /** His look speaks, for `ms` when that is known. */
+  function saySpeaking(ms: number | null): void {
+    if (ms === null) deps.stage.setVoice?.("speaking");
+    else deps.stage.setVoice?.("speaking", ms);
   }
 
   /** A `lineEnd` step's wait changed (its voice ended or was lost). */
@@ -487,17 +512,22 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     const run = voiceRun;
     return {
       started() {
-        if (run !== voiceRun || lineVoice === "playing") return;
+        if (run !== voiceRun) return;
+        // Also a re-play after the channel held it: it takes the channel.
+        deps.videoVoice?.started();
+        if (lineVoice === "playing") return;
         lineVoice = "playing";
         rearmLineEnd();
       },
       ended() {
         if (run !== voiceRun) return;
+        deps.videoVoice?.ended();
         lineVoice = "ended";
         rearmLineEnd();
       },
       lost(why) {
         if (run !== voiceRun) return;
+        deps.videoVoice?.ended();
         if (why !== undefined) {
           notices.set("video", why);
           showStatus();
@@ -554,7 +584,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
    *  player skips quizzes until K5. */
   function showChild(station: TourStation, child: TourStoryChild): void {
     if (isTourStoryBlock(child)) {
-      showItemCard(child, itemHost(station));
+      (deps.showItem ?? showItemCard)(child, itemHost(station));
       return;
     }
     if (child.kind !== "choice") return;
@@ -591,7 +621,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     // One timer: a voice lost while its step renders arms it early.
     cancelTimer?.();
     cancelTimer = null;
-    if (held || !isTourStoryBlock(step)) return;
+    if (held || voiceHeld || !isTourStoryBlock(step)) return;
     const ms = timerMs(step);
     if (ms === null) return;
     cancelTimer = deps.schedule(() => {
@@ -813,7 +843,10 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
       // him) and plays nothing over it, nor stops it - its end is what a
       // lineEnd step waits for.
       if (videoStep || (lineVoice === "playing" && !voiceIsHis)) return true;
-      if (lineVoice === "playing") {
+      if (lineVoice === "playing" && voiceHeld) {
+        // Held by the channel, his voice is continued: an active tap wins.
+        deps.audio.takeBack?.();
+      } else if (lineVoice === "playing") {
         // A tap while he speaks stops him; a lineEnd step then waits only
         // its tail.
         voiceRun += 1;
@@ -863,7 +896,8 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
       return {
         index: playable.indexOf(step),
         count: story.count,
-        autoMs: held || !isTourStoryBlock(step) ? null : timerMs(step),
+        autoMs:
+          held || voiceHeld || !isTourStoryBlock(step) ? null : timerMs(step),
       };
     },
     holdStep(hold) {
@@ -873,6 +907,19 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
       cancelTimer = null;
       const step = story?.player.current() ?? null;
       if (!hold && step !== null) armTimer(step);
+    },
+    holdVoice(hold) {
+      if (hold === voiceHeld) return;
+      voiceHeld = hold;
+      cancelTimer?.();
+      cancelTimer = null;
+      if (voiceIsHis && lineVoice === "playing") {
+        if (hold) deps.stage.setVoice?.("idle");
+        else saySpeaking(deps.audio.leftMs?.() ?? null);
+      }
+      const step = story?.player.current() ?? null;
+      if (!hold && step !== null) armTimer(step);
+      deps.onChange?.();
     },
   };
 }

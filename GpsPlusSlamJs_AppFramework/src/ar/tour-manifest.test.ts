@@ -20,6 +20,7 @@ import {
   createEmptyTourManifest,
   parseTourManifest,
   parseTourObject,
+  type TourObject,
   serializeTourManifest,
   TOUR_MANIFEST_MINOR,
   TOUR_MANIFEST_VERSION,
@@ -725,6 +726,64 @@ describe('parseTourObject and tourObjectRecord (the world view a draft keeps)', 
     sizeM: 3,
     geo: GEO,
   } as const;
+
+  it.each([
+    [
+      'a free video',
+      {
+        id: 'v1',
+        kind: 'video',
+        view: 'card',
+        video: 'clip',
+        poster: 'still',
+        transcript: 'T',
+        geo: GEO,
+        station: 'gate',
+      },
+    ],
+    [
+      'a free sound',
+      {
+        id: 'a1',
+        kind: 'audio',
+        view: 'card',
+        audio: 'bell',
+        transcript: 'T',
+        geo: GEO,
+      },
+    ],
+    [
+      'a free character',
+      {
+        id: 'c1',
+        kind: 'character',
+        view: 'speak',
+        name: 'Sir',
+        image: 'sir',
+        caption: 'Hail',
+        voice: 'hail',
+        geo: GEO,
+      },
+    ],
+    [
+      'a free declared character',
+      {
+        id: 'c2',
+        kind: 'character',
+        view: 'bubble',
+        name: 'Sir',
+        image: 'sir',
+        character: 'konrad',
+        caption: 'Hail',
+        geo: GEO,
+      },
+    ],
+  ])('reads %s back from its record', (_label, object) => {
+    // Why: a creator's draft keeps every free block of a tour it edits; one
+    // its record cannot carry would vanish from the draft.
+    const typed = object as unknown as TourObject;
+    expect(parseTourObject(tourObjectRecord(typed))).toEqual(object);
+  });
 
   it('reads a world pin, with or without its station, from its record', () => {
     expect(parseTourObject(tourObjectRecord(worldPin))).toEqual(worldPin);

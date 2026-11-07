@@ -64,10 +64,16 @@ model | character`.
 - `checkTourBlockText(rule, value): TourBlockTextCheck` -
   `{ ok: true, value }` (the text exactly as written) or
   `{ ok: false, reason, blank? }` (`blank` for a whitespace-only text).
-- `tourFloorView(kind): TourBlockView | null` - the view a free block falls
-  back to when its own is unknown to this reader: its kind's world view
-  (`pin`, `reading`, `plane`, `placed`) or `null` (no world view:
-  skipped). A story block's floor is `card`, from its reader.
+- `TOUR_FREE_BLOCK_VIEWS` - the views a block of each kind may stand free
+  in: every kind has some. `TOUR_WORLD_VIEWS` plus a video's and a sound's
+  `card` (their free look is the viewer's business, the format only keeps
+  them) and a character's five views (he stands as a figure). A text, a
+  picture or a model in `card` stays refused: a card without a step would
+  show nothing.
+- `tourFloorView(kind): TourBlockView` - the view a free block falls back
+  to when its own is unknown to this reader: `pin`, `reading`, `plane`,
+  `placed`, `card` for a video or a sound, `speak` for a character. A story
+  block's floor is `card`, from its reader.
 - `readTourBlocks(value, at, options): TourBlockRead[]` - a list of blocks
   read at once, ids unique (the draft record's one block).
 - `tourBlockReader(options)` - the per-block reader of a station's children

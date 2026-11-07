@@ -40,8 +40,9 @@
  *   printed code: only a walk gives the guide its heading.
  * - `/ranges-ok/blocks-tour.zip` - the stations tour whose gate also
  *   holds, beside its pin, a captured photo (its own image asset), a
- *   picture of the tour's knight image in the world and a placed model of
- *   the arch: every kind of free block a tour can stand in the world.
+ *   picture of the tour's knight image in the world, a placed model of
+ *   the arch and two characters standing free: every kind of free block a
+ *   tour can stand in the world.
  * - `/ranges-ok/long-text-tour.zip` and `/ranges-ok/long-text-tour-b.zip`
  *   - the stations tour whose gate also holds a long text its creator
  *   stands as a reading sign; the second tour is another tour (its own
@@ -316,6 +317,16 @@ async function buildStationsZip({
           title: "The arch",
           pose: { position: [0, 0, 4], rotation: [0, 0, 0, 1] },
         },
+        ...["warden", "porter"].map((name, i) => ({
+          id: `gate-${name}`,
+          kind: "character",
+          view: "speak",
+          name,
+          image: "knight",
+          caption: "Good day.",
+          voice: "voice",
+          pose: { position: [3 + i, 0, 3], rotation: [0, 0, 0, 1] },
+        })),
       ]
     : [];
   /** The gate's new story blocks (`storyBlocks`, station blocks plan

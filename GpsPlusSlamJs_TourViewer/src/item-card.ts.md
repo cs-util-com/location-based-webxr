@@ -36,6 +36,10 @@ it has a row).
   - `showing()`: false once the item stopped.
   - `notice(what, text | null)`, `debugLine(text)`.
 
+## Hosts
+
+Two hosts show items: `scene-view.ts` for a story's step and `free-items.ts` for what stands free in a station. Each takes an optional `showItem`, so the item lab (`checks/item-lab.ts`) can run a kind the format does not know yet through a real host; the switch here stays closed. `ItemVideo`'s optional `paused`, `muted` and `play` are what the voice channel reads of a real element (`voice-focus.ts`).
+
 ## Invariants and assumptions
 
 - **The item owns** what it shows, what it reads and its words. **The host
@@ -49,7 +53,8 @@ it has a row).
   a use that awaits (`checkPicture`) asks `showing()` again.
 - **No stage:** the words still show, a figure or model is not read, and a
   card view's voice still plays. A `portrait` view's portrait needs a stage
-  today, because it loads with the figure.
+  today, because it loads with the figure. Off the card (`free-items.ts`)
+  there is no place for it: the figure, name tag and bubble stand instead.
 
 ## Examples
 

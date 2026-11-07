@@ -553,7 +553,7 @@ describe('children: a file of a newer minor (lenient)', () => {
     ]);
   });
 
-  it('views: a free block in an unknown view takes its world floor; a free video is skipped and reported; a story block falls back to the card', () => {
+  it('views: a free block in an unknown view takes its floor, a free video too; a story block falls back to the card', () => {
     const drops: TourChildDrop[] = [];
     const read = children(
       [
@@ -564,14 +564,13 @@ describe('children: a file of a newer minor (lenient)', () => {
       { lenient: true, drops }
     );
     expect(read[0]).toMatchObject({ id: 'intro', view: 'reading' });
-    expect(read[1]).toMatchObject({
+    expect(read[1]).toMatchObject({ id: 'film', view: 'card' });
+    expect(read[2]).toMatchObject({
       id: 'a',
       children: [{ id: 'sign', view: 'card' }],
     });
-    expect(read).toHaveLength(2);
-    expect(drops).toEqual([
-      expect.objectContaining({ kind: 'block', block: 'film' }),
-    ]);
+    expect(read).toHaveLength(3);
+    expect(drops).toEqual([]);
   });
 
   it('an unknown advance mode is a tap', () => {

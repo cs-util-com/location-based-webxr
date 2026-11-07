@@ -6,7 +6,9 @@ The three.js look of a recurring character standing at a station: a die-cut card
 
 ## Public API
 
-- `createCharacterLook({view, name, line, figure, sheet?, heightM?, restYaw?, voiced?, painters?})` returns a `CharacterLook`:
+- `paintPoses(source, sheet, painters?)` - his die-cut poses from the decoded image: four from a frames sheet that slices, else one.
+- `createCharacterLook({view, name, line, figure | poses, sheet?, noCard?, heightM?, restYaw?, voiced?, painters?})` returns a `CharacterLook`:
+  - `poses`: painted before (`figure-memo.ts`) in place of `figure`, shared and left unchanged; `noCard`: as `characterViewLook`. The paper stage (top and backdrop) is painted only for the `popup` view, the only one that shows it;
   - `sheet`: `figure` is a frames sheet (idle, talk-a, talk-b, beckon in four equal cells, `painters.frames`); one that does not slice into four is drawn whole as one pose. Default false;
   - `restYaw`: the creator's facing (rad about Up, 0 facing +Z; the block pose's yaw, `restYawOf`), default 0; `voiced`: his line has a voice, which a tap plays (the footers say so), default false;
   - `root`: the group to add at the station's position. It is not rotated by the caller; the look turns its own inner group.
@@ -23,6 +25,8 @@ The three.js look of a recurring character standing at a station: a die-cut card
 - `CANVAS_PAINTERS` (module-internal): the real painters, the default when none are injected.
 
 ## Invariants and rules
+
+- `paintPoses(source, sheet, painters, flipped)`: a figure stored bottom row first, as the decoder leaves a bitmap for WebGL, is turned upright (`painters.upright`) before it is painted on a canvas.
 
 - Distances are horizontal, from the camera to the root.
 - Facing:

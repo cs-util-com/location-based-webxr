@@ -37,7 +37,7 @@ export type ItemVideo = Pick<
   onplay: ((ev: Event) => void) | null;
   /** The clip loaded but cannot be played (it does not decode here). */
   onerror: OnErrorEventHandler;
-};
+} & Partial<Pick<HTMLVideoElement, "paused" | "muted" | "play">>;
 
 /** The places of a card an item fills. */
 interface ItemCardSlots {

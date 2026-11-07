@@ -25,6 +25,7 @@ import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   BLOCK_KIND_LABEL,
   codeDistanceLine,
+  hasLook,
   objectLook,
   objectTitle,
   type ObjectLook,
@@ -119,8 +120,12 @@ function standing(entry: ObjectListEntry): string {
     : "new, not yet in the zip";
 }
 
-function rowOf(entry: ObjectListEntry, state: ObjectListState): ObjectRowModel {
+function rowOf(
+  entry: ObjectListEntry,
+  state: ObjectListState,
+): ObjectRowModel | null {
   const { object } = entry;
+  if (!hasLook(object)) return null;
   const busy = state.busy.get(object.id) ?? null;
   const title = objectTitle(object);
   const distance = codeDistanceLine(object, state.codes);
@@ -147,7 +152,7 @@ function rowOf(entry: ObjectListEntry, state: ObjectListState): ObjectRowModel {
 
 /** What the list shows for `state` (pure). */
 export function objectListModel(state: ObjectListState): ObjectListModel {
-  const rows = state.entries.map((entry) => rowOf(entry, state));
+  const rows = state.entries.flatMap((entry) => rowOf(entry, state) ?? []);
   const count = rows.length;
   const heading = `Objects in this tour (${String(count)})`;
   const hasPins = rows.some((row) => row.kind === "pin");

@@ -34,7 +34,7 @@ status line and what an end means.
   `audio` (`SceneAudio`: `play(blob, onEnded)` rejecting when refused,
   `stop()`), `stage` (`SceneStage` from `scene-stage.ts`),
   `createChoiceButton(label, onClick)`, `focusChoice?(button)`, `schedule(fn, ms)`, `objectUrls`,
-  `onStoryEnd(stationId)`.
+  `onStoryEnd(stationId)`, `showItem?(block, host)` (the item lab swaps a kind in; `showItemCard` otherwise; the app passes none).
 
 ## Invariants & assumptions
 
@@ -185,6 +185,10 @@ preload="metadata">` (`dom.video`, `ItemVideo`): the clip and its
   re-queued station shows its picker again on its turn. A figure stays for the
   picker (`stage.release`) and goes when the next story starts.
 
+## The voice channel
+
+The step's sound reaches the channel through `audio`, which `visitor-stations.ts` wraps; the step's clip plays in the page's `<video>`, so the optional `videoVoice` hears it: `started` each time it starts (also a re-play after the channel held it), `ended` at its end, when it is lost and when the step goes.
+
 ## Examples
 
 ```ts
@@ -223,6 +227,12 @@ view.offer(foundStation); // plays at once, or waits behind "Play: …"
 - Tested in `scene-view.test.ts` (the step, the count and the auto
   step's time, nothing without a story, no dots with a choice, `onChange`
   on a start, each step, the end and `stopAll`).
+
+## The voice held by the channel
+
+- `SceneView.holdVoice(held)` - the channel holds the step's voice, or lets it go (`visitor-stations.ts` passes it as `onHeld`). While held, an auto step's timer is cancelled, `progress().autoMs` reads null and his look is idle. Let go, the timer starts again from the step's full length, as for `holdStep`, and his look speaks for what is left (`audio.leftMs`). The two holds are independent: the timer stays off until both are gone. A step starting under a held voice says nothing and arms no timer.
+- A tap on a story figure whose voice is held continues it (`audio.takeBack`), it does not stop it.
+- Tests: "a story's voice held in the channel" in `scene-view-voice.test.ts`.
 
 ## The held step
 
