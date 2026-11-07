@@ -69,7 +69,10 @@ standing`). A distance, size or focal length that is not a positive
   - `pointOf(id)`, `billboardOf(id)`, `photoPlanes(id)`, `models(id)` - for
     the tests and the page's checks;
   - for the flights: `radiusOf(id)` (a station's found radius),
-    `itemPointOf(id)` (an item's place, its station drawn or not),
+    `itemPointOf(id)` (an item's place, its station drawn or not; any free
+    block, a part from the world door too, which a click selects and the
+    view flies to although no gesture moves it: only world blocks get the
+    gizmo),
     `codePointOf(levelId)` (a code's centre); each null for an id the
     tour does not have. `pointOf`, `itemPointOf` and `codePointOf` are in
     the layer's frame (`deps.parent`'s), see the invariant below;
@@ -265,9 +268,10 @@ shown and taken back; a moved station, its items and the codes kept in
 the layer's frame after the world frame moved (the globe's nesting), also
 once deselected; the selected station's circle amber and a selected
 item's station lighter; a part from the world door built in the
-editor's mode from the block, at the pose, the visitor's page builds it
-at (tilt included), kept through the morph, picked, moved and turned by
-a preview and freed with the layer; what is under a ray; names and codes hidden and shown; everything removed on
+editor's mode from the block the visitor's page builds it from, both at
+the block's own pose over six turns (none to upside down), kept through
+the morph, picked and located but no gesture's target, moved and turned
+by a preview and freed with the layer; what is under a ray; names and codes hidden and shown; everything removed on
 dispose; `codeQuaternionNue` for a heading and a full rotation;
 `focalPxOf`; `codeGrowth`'s size on screen, its printed size near, its
 flat weighting, bad input, and a property (at least 1, laid flat exactly

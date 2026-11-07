@@ -854,8 +854,9 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     }
     const entry = entryOfItem(p.id);
     if (entry === null) return;
-    // Any free block drawn (a part from the door too), not only those
-    // the creator pages edit in the world.
+    // Any free block drawn (a part from the door too), as `itemPointOf`
+    // reads them; only world blocks are dragged today (the gizmo's
+    // `targetOf`), and a preview of another is put back the same way.
     const item = tourFreeBlocks(entry.station).find((i) => i.id === p.id);
     if (item === undefined) return;
     poseDrawn(entry, p.id, item.pose, null);
@@ -1015,10 +1016,13 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     },
     /** Where an item of the tour stands in the layer's frame (its pose in
      *  its station's frame), whether its station draws its items now or
-     *  not; null for an id no station holds. */
+     *  not; null for an id no station holds. Any free block, as
+     *  `clearPreview` reads them: a part from the door is located too
+     *  (the view flies to it), though only world blocks are a gesture's
+     *  target (`editor3d-editing.ts`). */
     itemPointOf(id: string): THREE.Vector3 | null {
       for (const entry of stations.values()) {
-        const item = worldBlocks(entry.station).find((i) => i.id === id);
+        const item = tourFreeBlocks(entry.station).find((i) => i.id === id);
         if (item === undefined) continue;
         const { geo } = entry.station;
         const frame = objectPoseNue(geo, { lat: geo.lat, lon: geo.lon });

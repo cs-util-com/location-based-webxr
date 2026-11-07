@@ -43,6 +43,7 @@ import { isInterfacePart } from "./globe-interface-pass.js";
 import { buildLecternStand } from "../lectern-view.js";
 import { buildReadingSign } from "../reading-sign.js";
 import { renderTourStation } from "../content-placement.js";
+import { worldBlocks } from "../tour-document.js";
 import {
   mountedWorldParts,
   worldEnv,
@@ -1357,18 +1358,40 @@ describe("createStationsLayer", () => {
     const tilt = new THREE.Quaternion().setFromEuler(
       new THREE.Euler(0.3, 0.8, -0.2, "YXZ"),
     );
-    const spot = {
-      id: "song",
-      kind: "audio",
-      view: "spot",
-      audio: "snd",
-      transcript: "t",
-      createdAtIso: "2026-10-22T08:00:00Z",
-      pose: {
-        position: [3, 0.5, -2],
-        rotation: [tilt.x, tilt.y, tilt.z, tilt.w],
-      },
-    } as unknown as TourBlock;
+    /** A free sound at `rotation` (default: `tilt`). */
+    const spotAt = (rotation: THREE.Quaternion = tilt) =>
+      ({
+        id: "song",
+        kind: "audio",
+        view: "spot",
+        audio: "snd",
+        transcript: "t",
+        createdAtIso: "2026-10-22T08:00:00Z",
+        pose: {
+          position: [3, 0.5, -2],
+          rotation: [rotation.x, rotation.y, rotation.z, rotation.w],
+        },
+      }) as unknown as TourBlock;
+    const spot = spotAt();
+    /** Turns a pose may carry: none, a yaw alone, pitch and roll, a pitch
+     *  near the vertical, upside down, and the mixed `tilt`. */
+    const TURNS: readonly (readonly [string, THREE.Quaternion])[] = [
+      ["none", new THREE.Quaternion()],
+      ["yaw", new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 2.4, 0))],
+      [
+        "pitch and roll",
+        new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.6, 0, 0.9)),
+      ],
+      [
+        "near vertical",
+        new THREE.Quaternion().setFromEuler(new THREE.Euler(1.55, 0.4, 0)),
+      ],
+      [
+        "upside down",
+        new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI, 0.7, 0)),
+      ],
+      ["mixed", tilt],
+    ];
     const assets: TourManifest["assets"] = [
       { id: "snd", path: "content/snd.mp3", kind: "audio" },
     ];
@@ -1392,7 +1415,7 @@ describe("createStationsLayer", () => {
       return { part, asked, freed, made };
     }
 
-    it("builds it in the editor's mode, from the block play builds it from, at the pose play gives it", async () => {
+    it("builds it in the editor's mode, from the block play builds it from", async () => {
       const read: string[] = [];
       const editor = door();
       const { d } = deps({
@@ -1412,30 +1435,55 @@ describe("createStationsLayer", () => {
       expect(env.mode).toBe("edit");
       await env.loadAsset("snd");
       expect(read).toEqual(["content/snd.mp3"]);
-      // The visitor's page, with the same door in its own mode.
-      const play = door();
-      const scene = new THREE.Group();
-      const shown = await renderTourStation(a, {
-        assets,
-        scene,
-        zero: { lat: a.geo.lat, lon: a.geo.lon },
-        makeLabel: () => ({ object: new THREE.Object3D(), dispose: () => {} }),
-        loadPhotoTexture: () => Promise.resolve(new THREE.Texture()),
-        worldPart: (b) =>
-          play.part(
-            b,
-            worldEnv("play", assets, () => Promise.reject(new Error("unread"))),
-          ),
-      });
-      expect(play.asked.map((x) => x.block)).toEqual([block]);
-      const edited = editor.made[0]!.object;
-      const played = play.made[0]!.object;
-      expect(edited.position.toArray()).toEqual(played.position.toArray());
-      expect(edited.quaternion.angleTo(played.quaternion)).toBeLessThan(1e-6);
-      expect(edited.quaternion.angleTo(tilt)).toBeLessThan(1e-6);
-      shown.dispose();
+      expect(block).toEqual(spot);
       layer.dispose();
     });
+
+    // Not only "the editor agrees with play" (both place the part with
+    // the same pose, so that alone would pass a shared mistake): each is
+    // held to the block's own pose, in its station's frame, over turns
+    // from none to upside down.
+    it.each(TURNS)(
+      "stands it at the block's own pose, as play does, turned %s",
+      async (_name, turn) => {
+        const editor = door();
+        const { d } = deps({ worldPart: editor.part });
+        const layer = createStationsLayer(d);
+        const a = station("a", 0, 0, [spotAt(turn)]);
+        layer.setTour(manifest([a], assets), new Map());
+        layer.update(view(0, 0, "a", 1));
+        await settle();
+        const play = door();
+        const shown = await renderTourStation(a, {
+          assets,
+          scene: new THREE.Group(),
+          zero: { lat: a.geo.lat, lon: a.geo.lon },
+          makeLabel: () => ({
+            object: new THREE.Object3D(),
+            dispose: () => {},
+          }),
+          loadPhotoTexture: () => Promise.resolve(new THREE.Texture()),
+          worldPart: (b) =>
+            play.part(
+              b,
+              worldEnv("play", assets, () =>
+                Promise.reject(new Error("unread")),
+              ),
+            ),
+        });
+        const edited = editor.made[0]!.object;
+        const played = play.made[0]!.object;
+        for (const [who, object] of [
+          ["editor", edited],
+          ["play", played],
+        ] as const) {
+          expect(object.position.toArray(), who).toEqual([3, 0.5, -2]);
+          expect(object.quaternion.angleTo(turn), who).toBeLessThan(1e-6);
+        }
+        shown.dispose();
+        layer.dispose();
+      },
+    );
 
     it("keeps its pose through the morph, is picked, follows a drag's preview, and is freed with the layer", async () => {
       const editor = door();
@@ -1462,6 +1510,13 @@ describe("createStationsLayer", () => {
       const ray = new THREE.Raycaster();
       ray.setFromCamera(new THREE.Vector2(0, 0), camera);
       expect(layer.pick(ray)).toBe("song");
+      // Located where it stands (the view flies to it), yet no gesture's
+      // target: the gizmo moves the world blocks only (the rows that say
+      // `inWorld`, `editor3d-editing.ts` `targetOf`), and a free sound is
+      // none, so it is selected by a click and not dragged.
+      const located = layer.itemPointOf("song");
+      expect(located?.distanceTo(at)).toBeLessThan(1e-6);
+      expect(worldBlocks(a).map((b) => b.id)).toEqual(["p"]);
       // A drag's preview moves it and turns it as the pose says, tilt
       // included; cleared, it is back.
       const dragged = new THREE.Quaternion().setFromEuler(
