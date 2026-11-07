@@ -226,7 +226,9 @@ editor's own namespace, one tab at a time. Design:
   build wrote the other value (a build never put in place); offered by a
   later open whose file does not carry it - read whether or not a meta
   landed, since the namespace names the tour; spent or unreadable, it goes,
-  and an unreadable one is told (`unreadDraft`). A station in it that no
+  and an unreadable one is told (`unreadDraft`). It is read after the
+  files' list, against the opened file and the files the draft holds: a
+  new station's story may name a file brought in. A station in it that no
   longer reads (its story names what the file no longer declares) is told
   too, and the record stays, as a file with that asset reads it again; it
   lasts until the next whole write of the record, which holds only what read;
