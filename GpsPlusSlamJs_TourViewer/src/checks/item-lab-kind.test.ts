@@ -97,6 +97,25 @@ describe("reading a kind's folder", () => {
     expect(read.sample.freeKnown).toBe("no look");
   });
 
+  // Why: the free host stands a kind as a figure drawn from its image. A
+  // kind with no image and no note would stand a figure with no picture and
+  // fail deep inside the host instead of saying what it lacks.
+  it("refuses a kind with no image unless it says why it cannot stand free", () => {
+    const module = { show: () => undefined, assets: () => [] };
+    const sound = {
+      ...SAMPLE,
+      assets: [{ id: "s", kind: "audio", file: "s.mp3" }],
+    };
+    expect(() => readItemKind("a", module, sound)).toThrow(
+      /needs an "image" in its assets or a "freeKnown" note/,
+    );
+    const noted = readItemKind("a", module, {
+      ...sound,
+      freeKnown: "a sound has no figure",
+    });
+    expect(noted.sample.freeKnown).toBe("a sound has no figure");
+  });
+
   it("lists its files as the tour's assets, by their file names", () => {
     expect(kindAssets(kind()).get("pic")).toMatchObject({
       path: "pic.png",

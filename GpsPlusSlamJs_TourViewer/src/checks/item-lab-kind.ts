@@ -102,6 +102,15 @@ export function readItemKind(
   if (!Array.isArray(sample.assets) || !sample.assets.every(isKindFile)) {
     throw fail('needs "assets" of { id, kind, file } in sample.json');
   }
+  // The free host stands the kind as a figure drawn from its image.
+  if (
+    sample.freeKnown === undefined &&
+    !sample.assets.some((file) => file.kind === "image")
+  ) {
+    throw fail(
+      'needs an "image" in its assets or a "freeKnown" note in sample.json saying why it cannot stand in the free host',
+    );
+  }
   return {
     name,
     show: module.show as ItemKind["show"],
@@ -132,7 +141,9 @@ export function storyCarrier(kind: ItemKind): Record<string, unknown> {
 }
 
 /** The block the free host stands where the kind stands: only a character
- *  reaches it. */
+ *  reaches it, drawn from the kind's image. A kind with none carries a
+ *  `freeKnown` note (`readItemKind` refuses it otherwise), and its contract
+ *  row is marked known. */
 export function freeCarrier(kind: ItemKind): TourBlock {
   const figure = kind.sample.assets.find((file) => file.kind === "image");
   return {
