@@ -39,7 +39,12 @@ there.
   - `inWorld` - the editor draws and edits it in the world
     (`tour-content.ts` `worldBlocks`, the object list, the inspector's
     item); one that is not stands in the tree and its own inspector, and a
-    write keeps it untouched.
+    write keeps it untouched. `true` promises a drawing: the inspector
+    then offers the item's handles, so the kind needs something that draws
+    it (a case of `content-placement.ts` `drawnBlock`, or the world part
+    its play kind's `world` builds, `play-kinds.ts` `worldPartOf`).
+    Without one the handles would move a
+    block nothing shows.
   - `fields` - its text fields in the inspector's order (`FieldSpec`:
     `name`, `label`, `prose`), besides a short text's caption, which the
     head types (`editor/block-fields.ts`).
