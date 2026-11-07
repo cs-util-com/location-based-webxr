@@ -60,6 +60,19 @@ describe("watchKeyboard", () => {
     expect(onPage()).toBe("");
   });
 
+  // Why: the styles give a sheet all the room over a keyboard and drop its
+  // grip only while one is up, and a selector cannot read a length.
+  it("marks the page while it is up", () => {
+    const stop = watchKeyboard(win(), host());
+    opened(500);
+    expect(document.body.dataset["keyboard"]).toBe("up");
+    opened(800);
+    expect(document.body.dataset["keyboard"]).toBeUndefined();
+    opened(500);
+    stop();
+    expect(document.body.dataset["keyboard"]).toBeUndefined();
+  });
+
   it("brings the field in use into sight when the keyboard comes", () => {
     const field = document.getElementById("f") as HTMLInputElement;
     const scroll = vi.fn();
@@ -68,6 +81,43 @@ describe("watchKeyboard", () => {
     field.focus();
     opened(500);
     expect(scroll).toHaveBeenCalledWith({ block: "nearest" });
+  });
+
+  // Why: a keyboard grows while it is up (its suggestions bar, another
+  // layout, a phone turned), and the field it now covers was left there.
+  it("brings the field in use into sight again when the keyboard grows", () => {
+    const field = document.getElementById("f") as HTMLInputElement;
+    const scroll = vi.fn();
+    field.scrollIntoView = scroll;
+    watchKeyboard(win(), host());
+    field.focus();
+    opened(500);
+    opened(500);
+    expect(scroll).toHaveBeenCalledTimes(1);
+    opened(300);
+    expect(scroll).toHaveBeenCalledTimes(2);
+    // Smaller, the field is still where it was in sight.
+    opened(450);
+    expect(scroll).toHaveBeenCalledTimes(2);
+  });
+
+  // Why: panning the visual viewport (the page moved up under the
+  // keyboard, a scroll the browser makes itself) changes its offset, not
+  // the keyboard; reading that as a keyboard that grew pulls the field the
+  // creator has just scrolled away from back into sight.
+  it("leaves the field where it is while the viewport pans", () => {
+    const field = document.getElementById("f") as HTMLInputElement;
+    const scroll = vi.fn();
+    field.scrollIntoView = scroll;
+    watchKeyboard(win(), host());
+    field.focus();
+    opened(500);
+    expect(scroll).toHaveBeenCalledTimes(1);
+    for (const offsetTop of [120, 0, 60, 0]) {
+      viewport.offsetTop = offsetTop;
+      viewport.dispatchEvent(new Event("scroll"));
+    }
+    expect(scroll).toHaveBeenCalledTimes(1);
   });
 
   it("brings a field in sight when the focus moves under the keyboard", () => {

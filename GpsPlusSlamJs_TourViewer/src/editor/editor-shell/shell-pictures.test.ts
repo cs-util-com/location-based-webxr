@@ -159,4 +159,107 @@ describe("createShellPictures", () => {
     expect(revoked).toEqual(["blob:picture-1", "blob:picture-2"]);
     expect(pending.style.backgroundImage).toBe("");
   });
+
+  // Why: a read that fails once (the tour's file still being opened, a
+  // busy page) was remembered as "no picture" for as long as the shell
+  // showed, so the card stayed blank until the tour was opened again.
+  describe("a read that failed", () => {
+    const blob = () => new Blob([PNG], { type: "image/png" });
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["setTimeout"] });
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("is tried again for the card still waiting, and then shows", async () => {
+      const load = vi
+        .fn<() => Promise<Blob>>()
+        .mockRejectedValueOnce(new Error("busy"))
+        .mockResolvedValue(blob());
+      const pictures = createShellPictures({ load });
+      const el = card();
+      pictures.show(el, "content/gate.png");
+      FakeObserver.last?.see(el);
+      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.waitFor(() => {
+        expect(el.style.backgroundImage).toBe('url("blob:picture-1")');
+      });
+      expect(load).toHaveBeenCalledTimes(2);
+    });
+
+    it("is given up after three tries, and no later card reads it again", async () => {
+      const load = vi.fn(() => Promise.reject(new Error("gone")));
+      const pictures = createShellPictures({ load });
+      const el = card();
+      pictures.show(el, "content/gone.png");
+      FakeObserver.last?.see(el);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(load).toHaveBeenCalledTimes(3);
+      expect(el.style.backgroundImage).toBe("");
+      const later = card();
+      pictures.show(later, "content/gone.png");
+      expect(FakeObserver.last?.watched.has(later)).toBe(false);
+      expect(load).toHaveBeenCalledTimes(3);
+    });
+
+    it("is read again on a new card, seen, while tries are left", async () => {
+      const load = vi
+        .fn<() => Promise<Blob>>()
+        .mockRejectedValueOnce(new Error("busy"))
+        .mockResolvedValue(blob());
+      const pictures = createShellPictures({ load });
+      const el = card();
+      pictures.show(el, "content/gate.png");
+      FakeObserver.last?.see(el);
+      await vi.advanceTimersByTimeAsync(0);
+      // A redraw replaced the card before the second try.
+      el.remove();
+      const redrawn = card();
+      pictures.show(redrawn, "content/gate.png");
+      FakeObserver.last?.see(redrawn);
+      await vi.waitFor(() => {
+        expect(redrawn.style.backgroundImage).toBe('url("blob:picture-1")');
+      });
+      expect(load).toHaveBeenCalledTimes(2);
+    });
+
+    it("is not tried again for a card that left the page, nor after clear", async () => {
+      const load = vi.fn(() => Promise.reject(new Error("busy")));
+      const pictures = createShellPictures({ load });
+      const left = card();
+      pictures.show(left, "content/left.png");
+      FakeObserver.last?.see(left);
+      await vi.advanceTimersByTimeAsync(0);
+      left.remove();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(load).toHaveBeenCalledTimes(1);
+
+      const cleared = card();
+      pictures.show(cleared, "content/cleared.png");
+      FakeObserver.last?.see(cleared);
+      await vi.advanceTimersByTimeAsync(0);
+      pictures.clear();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(load).toHaveBeenCalledTimes(2);
+    });
+
+    // Why: a picture too large to decode stays too large: reading it again
+    // would only cost its bytes.
+    it("is not what a picture with a problem is: that one is read once", async () => {
+      const load = vi.fn(() => Promise.resolve(new Blob(["not a picture"])));
+      const pictures = createShellPictures({ load });
+      const el = card();
+      pictures.show(el, "content/broken.png");
+      FakeObserver.last?.see(el);
+      await vi.waitFor(() => {
+        const later = card();
+        pictures.show(later, "content/broken.png");
+        expect(FakeObserver.last?.watched.has(later)).toBe(false);
+      });
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(load).toHaveBeenCalledTimes(1);
+    });
+  });
 });

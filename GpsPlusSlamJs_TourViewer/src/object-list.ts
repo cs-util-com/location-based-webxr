@@ -22,14 +22,8 @@
 
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import {
-  BLOCK_KIND_LABEL,
-  codeDistanceLine,
-  hasLook,
-  objectLook,
-  objectTitle,
-  type ObjectLook,
-} from "./object-describe.js";
+import { isWorldKind, KIND_EDIT, type KindLook } from "./kinds/edit-kinds.js";
+import { codeDistanceLine, objectTitle } from "./object-describe.js";
 
 /** One object as the list sees it. */
 export interface ObjectListEntry {
@@ -59,11 +53,20 @@ export interface ObjectListState {
   readonly note: string;
   /** The last delete can still be undone (M4 review #5). */
   readonly undo: boolean;
+  /** A move waiting for the creator's answer (`move-question.ts`); nothing
+   *  is written until it comes. Absent: none. */
+  readonly question?: ObjectListQuestion | null;
+}
+
+/** What the list asks, with its two answers beneath. */
+interface ObjectListQuestion {
+  readonly text: string;
+  readonly declined: string;
 }
 
 interface ObjectRowModel {
   readonly id: string;
-  readonly kind: ObjectLook;
+  readonly kind: KindLook;
   /** The object's name (`objectTitle`). */
   readonly title: string;
   /** On the page: kind, where it stands (in the zip, changed, new) and the
@@ -103,6 +106,8 @@ export interface ObjectListModel {
   readonly note: string;
   /** Offer Undo beside the note: the delete it reports can be undone. */
   readonly undo: boolean;
+  /** Asked above the note, with its answers. */
+  readonly question: ObjectListQuestion | null;
 }
 
 /** Said in AR while nothing is selected - a tap picks along its own ray
@@ -125,18 +130,19 @@ function rowOf(
   state: ObjectListState,
 ): ObjectRowModel | null {
   const { object } = entry;
-  if (!hasLook(object)) return null;
+  // A kind the creator pages do not draw in the world has no row here.
+  if (!isWorldKind(object.kind)) return null;
   const busy = state.busy.get(object.id) ?? null;
   const title = objectTitle(object);
   const distance = codeDistanceLine(object, state.codes);
   return {
     id: object.id,
-    kind: objectLook(object.kind),
+    kind: KIND_EDIT[object.kind].look,
     title,
     detail: state.inAr
       ? distance
       : [
-          BLOCK_KIND_LABEL[object.kind],
+          KIND_EDIT[object.kind].label,
           standing(entry),
           ...(distance === "" ? [] : [distance]),
         ].join(" · "),
@@ -164,6 +170,7 @@ export function objectListModel(state: ObjectListState): ObjectListModel {
       rows,
       note: state.note,
       undo: state.undo,
+      question: state.question ?? null,
     };
   }
   const selected = rows.filter((row) => row.selected);
@@ -174,6 +181,7 @@ export function objectListModel(state: ObjectListState): ObjectListModel {
     rows: selected,
     note: state.note,
     undo: state.undo,
+    question: state.question ?? null,
   };
 }
 
@@ -187,6 +195,8 @@ export interface ObjectListHandlers {
   /** Close: let the selection go (polish round M3, Q-HUD - an object is
    *  selected by a tap on it; the Previous / Next chooser is gone). */
   deselect(): void;
+  /** The question answered: yes, change the station; no, keep it. */
+  answer(yes: boolean): void;
 }
 
 /** The list as the creator setup drives it. */
@@ -358,7 +368,25 @@ export function createObjectListView(
   const noteLine = doc.createElement("div");
   noteLine.className = "object-list-note-line";
   noteLine.append(note, undo);
-  container.replaceChildren(heading, hint, body, noteLine);
+  // The overlay's own question: window.confirm is unavailable in an XR
+  // session, as window.prompt is for the pin's label.
+  const asked = doc.createElement("p");
+  asked.className = "object-list-note";
+  asked.dataset["testid"] = "object-question";
+  asked.setAttribute("aria-live", "polite");
+  const answers = doc.createElement("div");
+  answers.className = "object-actions";
+  answers.append(
+    button("Change station", "object-question-yes", () => {
+      handlers?.answer(true);
+    }),
+    button("Keep its station", "object-question-no", () => {
+      handlers?.answer(false);
+    }),
+  );
+  const question = doc.createElement("div");
+  question.append(asked, answers);
+  container.replaceChildren(heading, hint, body, question, noteLine);
 
   function redraw(): void {
     const model = current;
@@ -377,6 +405,11 @@ export function createObjectListView(
     hint.hidden = model.hint === "";
     note.textContent = model.note;
     undo.hidden = !model.undo;
+    question.hidden = model.question === null;
+    asked.textContent =
+      model.question === null
+        ? ""
+        : `${model.question.text} ${model.question.declined}`;
     body.replaceChildren();
     const list = doc.createElement("ul");
     list.className = "object-rows";

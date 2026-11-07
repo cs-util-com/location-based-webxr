@@ -116,7 +116,7 @@ listener (`tour-document-draft.ts`) and to the rebuild by the page.
   the page's, and the save holding it lets it go once it sees its tour
   gone (as the page's own flag behaved).
 - `placed` / `edited` / `moved({ object, what, newStationId?, newStation?,
-afterHome? })`
+afterHome?, joinStation? })`
   - one entry per id (`upsertPlaced`): a new object, a pin's text, a move
     on the map or in AR. Three names so a log reads as what happened. None
     changes anything for a pending object put again with the same content
@@ -152,22 +152,16 @@ afterHome? })`
     another's radius.
   - `edited`: keeps the object's station (`objectFits`); an object naming
     none, of an id the document lacks, changes nothing.
-  - `moved`: within its station's own found radius (and the format's
-    reach) the object keeps its station (whose anchor stays put); beyond
-    it the rule runs again - the station holding the new spot, or a new
-    one there - so no move is ever too far, and none is silently dropped.
-    The object also keeps its station (`keepsHome`, by distance
-    `keepsHomeDistance` of `keeps-home.ts`) when it stands within the
-    radius plus a tolerance of 0.5 m (a typed offset, an AR settle), or
-    no farther from the anchor than it stood before the move (an object
-    outside the radius already: the radius shrank, the station moved) -
-    in both cases only when the move takes it into no other station's
-    radius; a station whose radius already held the old spot (overlapping
-    radii) is not one it moved into, so a nudge toward its own anchor
-    keeps it. The bound is the circle, never the previous place, so no
-    run of nudges carries an object outward without limit. A radius
+  - `moved` (`objectKept`): a move never starts a station. The object
+    keeps its station (whose anchor stays put), in or out of the circle,
+    or changes to `joinStation`, the creator's answer to the question of
+    `move-question.ts`. A spot past that station's reach
+    (`objectFits`, the format's bound) or a `joinStation` the document
+    lacks changes nothing: the caller refuses and says so. Only
+    `newStation: true`, "Move to a new station", starts one. A radius
     lowered under its objects moves none of them: they stay in the
-    station, outside the circle, until moved. The station it left goes in the same step when that leaves
+    station, outside the circle, until moved. An object outside its circle
+    is listed by Problems (`tour-problems.ts`). The station it left goes in the same step when that leaves
     it an EMPTY AUTOMATIC station: no object names it, and nothing of its
     own (`keepsItself` of `tour-content.ts`: a title, a story, a
     non-blank description, a card image naming an image asset) keeps it.
@@ -188,7 +182,7 @@ afterHome? })`
 - `settleApplied({ changes, codes, hand, what })` - a settle as ONE step
   (plan M3b, Q-D): `changes` (`SettleChange[]`, in the settle's order:
   `{ kind: "station", stationId, geo }` by `stationMoved`'s rule, `{ kind:
-"object", object, newStationId }` by `moved`'s) applied one after the
+"object", object }` as a `moved` without an answer: it keeps its station) applied one after the
   other, each reading the document as the ones before left it; then
   `codes` saved (`withSaved`) and the hand named after them winning
   (`withHand`). The step keeps each code whose saved text it changed with
@@ -277,6 +271,12 @@ largeTour?, cannotSave? })`.
 - The 3D editor's station edits, each ONE step (refused, changing nothing,
   before an open, for an unknown station or item, or for a value the
   format refuses - the page asks the exported guard first and says why):
+  - `storyAdded`, `storyRenamed`, `storyDeleted`, `storyChildAdded`,
+    `storyChildDeleted` (which prunes the `goto`s that led to the child) - one
+    history entry each and a draft write; the maths is `tour-story-edit.ts`,
+    and `story-commands.property.test.ts` holds that after any sequence and
+    its undos the writer accepts the document and a draft reload equals it.
+    `stationEdited` with `storyAdvance` sets how a story's block moves on.
   - `stationEdited({ stationId, edit, what })` - a station's title, found
     radius (`isStationRadius`, 2 m to 300 m inclusive; the preload radius
     follows at twice it, `preloadRadiusM`), description or card image

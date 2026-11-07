@@ -4,11 +4,17 @@
  * is (`pictureProblem`: a picture too large to decode is left out), and
  * kept as one object URL per picture until the shell lets them all go. A
  * picture read once shows at once on every card drawn after, so a redraw
- * never blanks it; the cards a redraw replaced stop being watched.
+ * never blanks it; the cards a redraw replaced stop being watched. A read
+ * that fails is tried again a few times for the card still waiting; a
+ * picture with a problem is not: it stays as it is.
  *
  * @see shell-pictures.ts.md
  */
 import { pictureProblem } from "../../image-cap.js";
+
+/** How often a picture's read is tried, and the wait between tries. */
+const READ_TRIES = 3;
+const RETRY_MS = 1500;
 
 export interface ShellPictures {
   /** Show the picture at `path` (a content path of the tour) as `el`'s
@@ -28,10 +34,13 @@ export function createShellPictures(deps: {
   /** The picture's bytes from the open tour. */
   readonly load: (path: string) => Promise<Blob>;
 }): ShellPictures {
-  /** A path's URL once read; null for one that cannot be shown. */
+  /** A path's URL once read; null for one that cannot be shown. A read
+   *  that failed and may be tried again leaves no entry here. */
   const urls = new Map<string, Promise<string | null>>();
   /** The same, for the reads that have finished: shown without waiting. */
   const resolved = new Map<string, string | null>();
+  /** How many of a path's reads failed so far. */
+  const failed = new Map<string, number>();
   const wanted = new WeakMap<Element, string>();
   /** The cards watched until they come into view. */
   const watched = new Set<Element>();
@@ -53,13 +62,42 @@ export function createShellPictures(deps: {
         }
         return made;
       })
-      .catch(() => null)
-      .then((made) => {
-        if (mine === generation) resolved.set(path, made);
-        return made;
-      });
+      .then(
+        (made) => {
+          if (mine === generation) resolved.set(path, made);
+          return made;
+        },
+        () => {
+          if (mine !== generation) return null;
+          const tries = (failed.get(path) ?? 0) + 1;
+          failed.set(path, tries);
+          if (tries >= READ_TRIES) resolved.set(path, null);
+          else urls.delete(path);
+          return null;
+        },
+      );
     urls.set(path, url);
     return url;
+  };
+
+  /** `el`'s picture read and shown, tried again while it may still come
+   *  and `el` still waits for it. */
+  const fetchFor = (el: HTMLElement, path: string): void => {
+    const mine = generation;
+    void read(path).then((url) => {
+      if (url !== null) {
+        if (wanted.get(el) === path) {
+          el.style.backgroundImage = `url("${url}")`;
+        }
+        return;
+      }
+      if (mine !== generation || resolved.has(path)) return;
+      setTimeout(() => {
+        if (mine === generation && el.isConnected && wanted.get(el) === path) {
+          fetchFor(el, path);
+        }
+      }, RETRY_MS);
+    });
   };
 
   const forget = (el: Element) => {
@@ -75,11 +113,7 @@ export function createShellPictures(deps: {
         forget(el);
         const path = wanted.get(el);
         if (path === undefined) continue;
-        void read(path).then((url) => {
-          if (url !== null && wanted.get(el) === path) {
-            el.style.backgroundImage = `url("${url}")`;
-          }
-        });
+        fetchFor(el, path);
       }
     },
     // The window: a card scrolled out of its dock is clipped by the dock,
@@ -112,6 +146,7 @@ export function createShellPictures(deps: {
       const all = [...urls.values()];
       urls.clear();
       resolved.clear();
+      failed.clear();
       for (const url of all) {
         void url.then((u) => {
           if (u !== null) URL.revokeObjectURL(u);

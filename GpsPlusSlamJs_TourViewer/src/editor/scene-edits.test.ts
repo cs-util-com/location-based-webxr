@@ -44,7 +44,7 @@ describe("a scene edit", () => {
     expect(
       applySceneEdit(asSession(s), { kind: "item-pose", id: "p", geo: GEO }),
     ).toEqual({ kind: "applied" });
-    expect(s.pose).toHaveBeenCalledWith("p", GEO);
+    expect(s.pose).toHaveBeenCalledWith("p", GEO, {});
     applySceneEdit(asSession(s), { kind: "station-pose", id: "st", geo: GEO });
     expect(s.moveStation).toHaveBeenCalledWith("st", GEO);
     applySceneEdit(asSession(s), { kind: "radius", id: "st", foundRadiusM: 9 });

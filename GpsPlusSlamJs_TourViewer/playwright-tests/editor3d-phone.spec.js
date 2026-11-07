@@ -223,9 +223,9 @@ test("on a phone the controls smaller for a mouse take a finger", async ({
 }) => {
   await open(page, PORTRAIT);
   await station(page, "The old gate").click();
-  // The sample's stations start empty: a row to measure, then back.
+  // A row to measure, whatever the sample's station holds, then back.
   await page.locator('#inspector-body [data-act="add-content"]').click();
-  await page.locator('#tree-add-menu [data-kind="pin"]').click();
+  await page.locator('#tree-add-menu [data-kind="shortText"]').click();
   await page.locator('#inspector-head [data-act="back"]').click();
   await station(page, "The old gate").click();
   const row = page.locator('#inspector-body [data-act^="goto:"]').first();
@@ -242,18 +242,24 @@ test("on a phone the controls smaller for a mouse take a finger", async ({
  * What an on-screen keyboard leaves at each size, by the page's real path:
  * the visual viewport shrinks and `watchKeyboard` answers. A field counts
  * as in sight when it ends above the keyboard and nothing covers its
- * middle, its scroller's edge included. Keyboards above about 55 % of the
- * height are left out: at those sizes a phone shows the field alone.
+ * middle, its scroller's edge included. Every keyboard up to the one that
+ * leaves the top bar and a field's row (`FIELD_ROOM_PX`) is measured: a
+ * phone on its side, its browser bar showing, has a keyboard of 61-69 % of
+ * the height, the case a sheet's share alone does not leave room for.
  */
 const KEYBOARD_SIZES = [
   PORTRAIT,
   { width: 360, height: 640 },
   { width: 667, height: 375 },
+  // On its side with the browser's bar: 75 px less.
+  { width: 667, height: 300 },
   SIDEWAYS,
   { width: 915, height: 412 },
   { width: 1024, height: 600 },
 ];
-const KEYBOARDS = [100, 150, 200, 260, 300];
+const KEYBOARDS = [100, 150, 200, 260, 300, 400];
+/** What a keyboard leaves at the most: the bar and one field's row. */
+const FIELD_ROOM_PX = 116;
 const SHARES = [0.3, 0.66, 0.8];
 
 /**
@@ -263,7 +269,8 @@ const SHARES = [0.3, 0.66, 0.8];
  * @returns {Promise<string[]>} what is out of sight
  */
 function outOfSight(page, fields, size) {
-  const keyboards = KEYBOARDS.filter((px) => px <= size.height * 0.55);
+  const most = size.height - FIELD_ROOM_PX;
+  const keyboards = [...KEYBOARDS.filter((px) => px < most), most];
   return page.evaluate(
     ({ fields, keyboards, shares }) => {
       const viewport = /** @type {VisualViewport} */ (window.visualViewport);
@@ -297,7 +304,7 @@ function outOfSight(page, fields, size) {
               field.contains(hit);
             if (!seen) {
               lost.push(
-                `${String(innerWidth)}x${String(innerHeight)} keyboard ${String(px)} share ${String(share)} ${selector} at ${String(Math.round(at.top))}-${String(Math.round(at.bottom))}`,
+                `${String(innerWidth)}x${String(innerHeight)} keyboard ${String(px)} share ${String(share)} ${selector} at ${String(Math.round(at.top))}-${String(Math.round(at.bottom))} under ${hit === null ? "nothing" : `${hit.tagName.toLowerCase()}.${String(hit.className)}${hit.id === "" ? "" : `#${hit.id}`}`}`,
               );
             }
           }
@@ -337,6 +344,25 @@ test("over a keyboard every field in use stays in sight, at every size and sheet
     await page.setViewportSize(size);
     lost.push(
       ...(await outOfSight(page, ["#shell-tree .tsearch input"], size)),
+    );
+  }
+  // A long text's writer, the field a creator types most into: the
+  // sample's reading stand at the old gate, picked by its row.
+  await page.setViewportSize(PORTRAIT);
+  const writer = page.locator("#inspector-body .lw-writer textarea");
+  await station(page, "The old gate").click();
+  await page
+    .locator('#inspector-body [data-act="goto:market-lectern"]')
+    .click();
+  await expect(writer).toHaveCount(1);
+  for (const size of KEYBOARD_SIZES) {
+    await page.setViewportSize(size);
+    lost.push(
+      ...(await outOfSight(
+        page,
+        ["#inspector-body .lw-writer textarea"],
+        size,
+      )),
     );
   }
   expect(lost).toEqual([]);

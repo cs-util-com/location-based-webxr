@@ -10,10 +10,15 @@ button pressed.
 
 ## Public API
 
-- `AddKind` - `"pin" | "longText"`: the kinds the editor makes from
-  nothing (`../new-pin.ts`).
-- `ADD_CHOICES` - the menu's lines in order, `{ kind, label, hint, words,
-icon, addable }`: Short text ("A pin with a caption"), Long text ("A
+- `createTreeAddMenu({ body, host, choose, chooseForStory })` - `openFor` for a
+  station (its `choose` gets a kind or `"story"`: the Story item, behind a
+  line, a station's alone), `openForStory` for a story ("Add to the story
+  "<name>"", `chooseForStory`, no Story item). The focus returns to that row's
+  "+".
+
+- The menu's lines are `ADD_CHOICES` of the editor's list of kinds
+  (`../../kinds/edit-kinds.ts`), in its order, `{ kind, label, hint, words,
+look, addable }`, each item's `data-kind` its format kind: Short text ("A pin with a caption"), Long text ("A
   reading sign: a title and its text"), Picture (off: "Taken on site with
   the phone"). `words` is what a search for the kind matches.
 - `addMenuSpot(anchor, size, view)` -> `{ left, top }` (window px, pure):

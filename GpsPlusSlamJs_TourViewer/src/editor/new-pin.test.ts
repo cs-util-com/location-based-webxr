@@ -14,7 +14,13 @@ import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 // Activates the licence the station frame's geodesy needs.
 import "../test-support/tour-of.js";
-import { addNewItem, freePinSpot, newLongText, newPin } from "./new-pin.js";
+import {
+  addNewItem,
+  freePinSpot,
+  newLongText,
+  newPin,
+  newStoryEntry,
+} from "./new-pin.js";
 import {
   parseTourObject,
   tourObjectRecord,
@@ -140,7 +146,7 @@ describe("addNewItem", () => {
         ...base,
         stations: [station([])],
         stationId: "gone",
-        kind: "pin",
+        kind: "shortText",
         place,
       }),
     ).toEqual({
@@ -217,5 +223,28 @@ describe("newLongText", () => {
     expect(
       parseTourObject(JSON.parse(JSON.stringify(tourObjectRecord(text)))),
     ).toEqual(text);
+  });
+});
+
+// Why: a story's entry is shown in the card while the story runs, so it
+// stands at the station's own origin and moves on by a tap; the number in
+// its text counts its own kind, or two new entries would read the same.
+describe("newStoryEntry", () => {
+  it("makes a card that moves on by a tap, numbered within its kind", () => {
+    const story = { children: [{ kind: "shortText" }] } as never;
+    const pin = newStoryEntry(story, "shortText", "p");
+    expect(pin).toMatchObject({
+      id: "p",
+      kind: "shortText",
+      view: "card",
+      caption: "New pin 2",
+      advance: { mode: "tap" },
+    });
+    expect(newStoryEntry(story, "longText", "t")).toMatchObject({
+      kind: "longText",
+      view: "card",
+      title: "New long text 1",
+      advance: { mode: "tap" },
+    });
   });
 });

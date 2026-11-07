@@ -64,6 +64,8 @@ export function wireRadiusSlider(deps: {
     readonly radiusM: number;
     atM: number;
   } | null = null;
+  /** The finger on the slider: another's release is not the drag's end. */
+  let pointer: number | null = null;
 
   const doc = deps.root.ownerDocument;
   const sliderNow = () =>
@@ -72,11 +74,13 @@ export function wireRadiusSlider(deps: {
     sliderNow()?.parentElement?.querySelector<HTMLInputElement>(
       "input[data-field]",
     ) ?? null;
-  const released = () => {
-    finish(true);
+  const isDragging = (event: PointerEvent) =>
+    pointer === null || event.pointerId === pointer;
+  const released = (event: PointerEvent) => {
+    if (isDragging(event)) finish(true);
   };
-  const cancelled = () => {
-    finish(false);
+  const cancelled = (event: PointerEvent) => {
+    if (isDragging(event)) finish(false);
   };
 
   /** The drag over: written or not, then the number, the thumb and the
@@ -85,6 +89,7 @@ export function wireRadiusSlider(deps: {
     if (drag === null) return;
     const { id, radiusM, atM } = drag;
     drag = null;
+    pointer = null;
     doc.removeEventListener("pointerup", released, true);
     doc.removeEventListener("pointercancel", cancelled, true);
     const number = numberNow();
@@ -102,6 +107,12 @@ export function wireRadiusSlider(deps: {
     target instanceof HTMLInputElement && target.dataset["act"] === SLIDER_ACT
       ? target
       : null;
+
+  deps.root.addEventListener("pointerdown", (event) => {
+    if (drag === null && sliderOf(event.target) !== null) {
+      pointer = event.pointerId;
+    }
+  });
 
   deps.root.addEventListener("input", (event) => {
     const slider = sliderOf(event.target);
@@ -128,6 +139,8 @@ export function wireRadiusSlider(deps: {
   });
 
   return {
-    cancel: cancelled,
+    cancel: () => {
+      finish(false);
+    },
   };
 }

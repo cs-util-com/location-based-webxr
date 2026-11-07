@@ -26,7 +26,11 @@
  * @see edit-main.ts.md
  */
 
-import { tourStationBlocks } from "gps-plus-slam-app-framework/ar/tour-story";
+import {
+  tourChildPlace,
+  tourStories,
+  type TourStory,
+} from "gps-plus-slam-app-framework/ar/tour-story";
 import {
   downloadZip,
   requestPersistentStorage,
@@ -44,15 +48,21 @@ import {
 import {
   manifestToWrite,
   selectTourDocument,
+  stationDeleteRefusal,
   tourDocumentActions,
-  type TourDocumentState,
+  objectMoveChange,
   type TourSaveHolder,
   type TourSaveStatus,
 } from "../tour-document.js";
 import { describeIntegrityError, olderFormatRefusal } from "../open-errors.js";
 import { debugCapturesOf, type DebugCapture } from "../debug-captures.js";
 import { pictureProblem } from "../image-cap.js";
-import { objectLook } from "../object-describe.js";
+import {
+  kindNoun,
+  kindWithArticle,
+  type AddKind,
+} from "../kinds/edit-kinds.js";
+import { objectTitle } from "../object-describe.js";
 import { scanEntryNames } from "../tour-read-set.js";
 import { openDraftStore } from "../draft-store-root.js";
 import { DRAFT_PART_UNREAD } from "../tour-document-draft.js";
@@ -76,12 +86,16 @@ import {
 import { walkAfterDraw, walkAtLayerStart } from "./tour-walk-kept.js";
 import {
   STATION_PREFIX,
+  STORY_PREFIX,
   photoSource,
+  selectedStationOf,
   type EditorItem,
   type EditorModel,
 } from "./editor-model.js";
 import { applySceneEdit } from "./scene-edits.js";
+import { storyRows } from "./editor-shell/tree-model.js";
 import type { GestureEdit } from "../editor3d/gesture.js";
+import { askMove, moveNote } from "../move-question.js";
 import { confirmPausingFrames } from "./browser-question.js";
 import {
   droppedDetailsLine,
@@ -174,11 +188,13 @@ import {
   type TypedEditOutcome,
 } from "./editor-shell/editor-shell.js";
 import { addNewItem } from "./new-pin.js";
-import type { AddKind } from "./editor-shell/tree-add-menu.js";
-import { reseatOf, type Reseat } from "./reseat-note.js";
 import { newObjectId } from "../content-placement.js";
 import type { InspectorCode } from "./editor-shell/inspector-model.js";
 import { stationTitle } from "../station-run.js";
+import {
+  stationDeleteQuestion,
+  storyDeleteQuestion,
+} from "./delete-questions.js";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import type {
@@ -1007,10 +1023,9 @@ function renderTourName(): void {
  *  free long text. */
 function stillInTour(id: string): boolean {
   if (model?.items.some((i) => i.id === id) === true) return true;
-  const tour = manifestToWrite(store.getState().tourDocument);
   return (
-    tour?.stations.some((s) => tourStationBlocks(s).some((b) => b.id === id)) ??
-    false
+    selectedStationOf(id, manifestToWrite(store.getState().tourDocument)) !==
+    null
   );
 }
 
@@ -1151,17 +1166,23 @@ function finishMove(): void {
   if (done.drop !== null) {
     try {
       const before = store.getState().tourDocument;
-      const outcome = editor.move(done.id, done.drop.lat, done.drop.lng);
+      const { lat, lng } = done.drop;
+      const change = objectMoveChange(before, done.id, lat, lng);
+      const joinStation =
+        change.kind === "moved"
+          ? askMove(before, done.id, change.after.geo, confirmPausingFrames)
+          : undefined;
+      const outcome = editor.move(
+        done.id,
+        lat,
+        lng,
+        joinStation === undefined ? {} : { joinStation },
+      );
       if (outcome.kind === "moved") {
         moved.add(done.id);
-        const reseat = announceReseat(before, done.id);
-        say({
-          id: done.id,
-          text:
-            reseat === null
-              ? "Moved - not saved yet."
-              : `${reseat.said} - not saved yet.`,
-        });
+        if (joinStation !== undefined) showRowsOf(joinStation);
+        const note = moveNote(before, store.getState().tourDocument, done.id);
+        say({ id: done.id, text: `${note ?? "Moved"} - not saved yet.` });
         endUndo();
         autosave.changed();
       } else {
@@ -1291,20 +1312,68 @@ const card = createEditorCard(
   },
 );
 
+/** What a toast calls `id`: its rail row's title (a pin, a photo, a
+ *  station), else, for a free block the rail does not list, its name by
+ *  the one rule (`objectTitle`: its own text, else its kind's word); "the
+ *  note" for an id the tour does not have. */
+function itemCalled(id: string): string {
+  const listed = model?.items.find((i) => i.id === id)?.title;
+  if (listed !== undefined) return listed;
+  const block = manifestToWrite(store.getState().tourDocument)
+    ?.stations.flatMap((s) => tourFreeBlocks(s))
+    .find((b) => b.id === id);
+  return block === undefined ? "the note" : objectTitle(block);
+}
+
 /**
  * Delete a note, or a station with its notes (`station:<id>`; the 3D
- * view's Del): one step. The toast offers its Undo while it is the newest
- * edit; a refusal deletes nothing and is said.
+ * view's Del) once its creator said yes: one step. The toast offers its
+ * Undo while it is the newest edit; a refusal deletes nothing and is said.
  */
 function deleteSelection(id: string): void {
   if (editor === null) return;
-  const item = model?.items.find((i) => i.id === id);
+  const tour = manifestToWrite(store.getState().tourDocument);
+  if (id.startsWith(STORY_PREFIX)) {
+    deleteStorySelection(id.slice(STORY_PREFIX.length));
+    return;
+  }
+  const place = tour === null ? null : tourChildPlace(tour, id);
+  if (place?.story !== undefined) {
+    deleteStoryEntry(id, place.story);
+    return;
+  }
+  const called = itemCalled(id);
+  if (id.startsWith(STATION_PREFIX)) {
+    const stationId = id.slice(STATION_PREFIX.length);
+    const station = tour?.stations.find((s) => s.id === stationId);
+    // A delete the tour refuses (its last station) is not asked about:
+    // the refusal is said instead.
+    if (
+      station !== undefined &&
+      stationDeleteRefusal(store.getState().tourDocument, stationId) === null &&
+      !confirmPausingFrames(
+        stationDeleteQuestion(station, stationTitleOf(stationId)),
+      )
+    ) {
+      return;
+    }
+  }
   // One delete toast at a time: its Undo takes back the newest edit.
   endUndo();
   const outcome = id.startsWith(STATION_PREFIX)
     ? editor.deleteStation(id.slice(STATION_PREFIX.length))
     : editor.remove(id);
-  if (outcome.kind === "refused") {
+  deleted(outcome, `Deleted ${called}`);
+}
+
+/** After a delete: the selection gone, the page redrawn and the toast with
+ *  its Undo, or a refusal said. */
+function deleted(
+  outcome: { readonly kind: "refused"; readonly reason: string } | object,
+  said: string,
+): void {
+  if (editor === null) return;
+  if ("reason" in outcome) {
     // Nothing was deleted: no "Deleted" toast, and no Undo offered - it
     // would only answer that there is nothing to take back.
     select(null);
@@ -1318,7 +1387,7 @@ function deleteSelection(id: string): void {
   // newest edit; a newer one ends the toast.
   const mine = editor;
   const at = editor.revision();
-  const t = toast(`Deleted ${item?.title ?? "the note"}`, {
+  const t = toast(said, {
     label: "Undo",
     run: () => {
       if (editor !== mine || mine.revision() !== at) {
@@ -1335,6 +1404,49 @@ function deleteSelection(id: string): void {
   autosave.changed();
 }
 
+/** The story `id` of the tour as it stands. */
+function storyNamed(id: string): TourStory | undefined {
+  return manifestToWrite(store.getState().tourDocument)
+    ?.stations.flatMap((s) => tourStories(s))
+    .find((s) => s.id === id);
+}
+
+/** Delete a story and its entries, once its creator said yes: one step,
+ *  which Undo takes back. */
+function deleteStorySelection(storyId: string): void {
+  const story = storyNamed(storyId);
+  const question = storyDeleteQuestion(store.getState().tourDocument, storyId);
+  if (editor === null || story === undefined || question === null) return;
+  if (!confirmPausingFrames(question)) return;
+  endUndo();
+  const outcome = editor.deleteStory(storyId);
+  deleted(
+    outcome,
+    `Deleted the story "${story.title}"${
+      "stationGone" in outcome && outcome.stationGone
+        ? ", and its station, which held nothing else"
+        : ""
+    }`,
+  );
+}
+
+/** Delete an entry of `story`: one step; the toast says when answers that
+ *  led to it changed. */
+function deleteStoryEntry(id: string, story: TourStory): void {
+  if (editor === null) return;
+  const title = storyRows(story).find((r) => r.id === id)?.title ?? "the entry";
+  endUndo();
+  const outcome = editor.deleteStoryChild(id);
+  const n = outcome.kind === "deleted" ? outcome.answers : 0;
+  const said = `Deleted ${title}`;
+  deleted(
+    outcome,
+    n === 0
+      ? said
+      : `${said}. ${String(n)} ${n === 1 ? "answer no longer leads" : "answers no longer lead"} to it.`,
+  );
+}
+
 /**
  * Copy a note, or a station with its notes, beside itself (the 3D view's
  * Ctrl+D): one step; the copy is selected and a toast names it. A photo's
@@ -1343,7 +1455,7 @@ function deleteSelection(id: string): void {
 async function duplicateSelection(id: string): Promise<void> {
   const mine = editor;
   if (mine === null) return;
-  const item = model?.items.find((i) => i.id === id);
+  const called = itemCalled(id);
   endUndo();
   const outcome = id.startsWith(STATION_PREFIX)
     ? await mine.duplicateStation(id.slice(STATION_PREFIX.length))
@@ -1354,7 +1466,7 @@ async function duplicateSelection(id: string): Promise<void> {
     toast(outcome.reason);
     return;
   }
-  const said = `Duplicated ${item?.title ?? "the note"}`;
+  const said = `Duplicated ${called}`;
   if ("stationId" in outcome) {
     showNewStation(outcome.stationId, () => said);
     return;
@@ -1374,31 +1486,24 @@ function commitSceneEdit(edit: GestureEdit): boolean {
   if (editor === null) return false;
   endUndo();
   const before = store.getState().tourDocument;
-  const outcome = applySceneEdit(editor, edit);
+  const joinStation =
+    edit.kind === "item-pose"
+      ? askMove(before, edit.id, edit.geo, confirmPausingFrames)
+      : undefined;
+  const outcome = applySceneEdit(editor, edit, joinStation);
   say(null);
   refresh();
   if (outcome.kind === "refused") {
     toast(outcome.reason);
     return false;
   }
+  if (joinStation !== undefined) showRowsOf(joinStation);
   if (edit.kind === "item-pose") {
-    const reseat = announceReseat(before, edit.id);
-    if (reseat !== null) toast(reseat.said);
+    const note = moveNote(before, store.getState().tourDocument, edit.id);
+    if (note !== null) toast(note);
   }
   autosave.changed();
   return true;
-}
-
-/** An item a write gave another station (`reseat-note.ts`): a station
- *  the rule made for it shows in the list and starts unlocked, as every
- *  station made in this session; the line saying so is the caller's. */
-function announceReseat(before: TourDocumentState, id: string): Reseat | null {
-  const reseat = reseatOf(before, store.getState().tourDocument, id);
-  if (reseat?.made === true) {
-    showRowsOf(reseat.stationId);
-    unlockMade(reseat.stationId);
-  }
-  return reseat;
 }
 
 /** An edit the 3D inspector typed or pressed, written through `write`:
@@ -1477,8 +1582,42 @@ function addItemTo(stationId: string, kind: AddKind): void {
     return;
   }
   select(outcome.item.id);
-  const what = kind === "pin" ? "a pin" : "a long text";
-  toast(`Added ${what} to "${stationTitleOf(stationId)}"`);
+  toast(`Added ${kindWithArticle(kind)} to "${stationTitleOf(stationId)}"`);
+  autosave.changed();
+}
+
+/** The tree's add of a story to `stationId`: a new story, selected with its
+ *  folder open, said once it was made; one step. */
+function addStoryTo(stationId: string): void {
+  if (editor === null) return;
+  endUndo();
+  const outcome = editor.addStory(stationId);
+  refresh();
+  if (outcome.kind === "refused") {
+    toast(outcome.reason);
+    return;
+  }
+  store.dispatch(editorViewActions.storyFolded({ id: outcome.id, open: true }));
+  select(`${STORY_PREFIX}${outcome.id}`);
+  toast(`Added a story to "${stationTitleOf(stationId)}"`);
+  autosave.changed();
+}
+
+/** The tree's add into the story `storyId`: a new entry of `kind`,
+ *  selected, said once it was made; one step. */
+function addToStoryEntry(storyId: string, kind: AddKind): void {
+  if (editor === null) return;
+  endUndo();
+  const outcome = editor.addToStory(storyId, kind);
+  refresh();
+  if (outcome.kind === "refused") {
+    toast(outcome.reason);
+    return;
+  }
+  select(outcome.id);
+  toast(
+    `Added ${kindWithArticle(kind)} to the story "${storyNamed(storyId)?.title ?? ""}"`,
+  );
   autosave.changed();
 }
 
@@ -1568,12 +1707,7 @@ function splitItem(id: string): void {
     return;
   }
   // The pages' word (a pin, a photo), never the file's block kind.
-  const word =
-    kind === "model"
-      ? "3D model"
-      : kind === "shortText" || kind === "picture"
-        ? objectLook(kind)
-        : "item";
+  const word = kind === undefined ? "item" : kindNoun(kind);
   showNewStation(
     outcome.stationId,
     (title) => `New station "${title}" with the ${word} in it`,
@@ -2166,8 +2300,8 @@ async function openFile(
     if (older !== undefined) {
       // Its draft has nothing left to be restored into: deleted, and the
       // refusal says so once it is gone.
-      void draft.forget(older.fileKey).then((deleted) => {
-        if (deleted && openError.textContent === outcome.reason) {
+      void draft.forget(older.fileKey).then((forgotten) => {
+        if (forgotten && openError.textContent === outcome.reason) {
           openError.textContent = olderFormatRefusal(older.error, true);
         }
       });
@@ -3901,6 +4035,12 @@ const shell = createEditorShell({
       writeInspectorEdit((e) => e.groundItems(items));
     },
     addItem: addItemTo,
+    addStory: addStoryTo,
+    addToStory: addToStoryEntry,
+    storyTitle: (id, title) =>
+      writeInspectorEdit((e) => e.renameStory(id, title)),
+    storyAdvance: (id, advance) =>
+      writeInspectorEdit((e) => e.setStoryAdvance(id, advance)),
     narration: (id) =>
       editor === null
         ? Promise.resolve({

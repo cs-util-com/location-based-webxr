@@ -19,7 +19,8 @@ this draws them and takes the clicks, the grip's drag and the keys.
     it (the shell selects and flies to it);
   - `fix(selection, fix)` - a problem's fix link clicked (`ProblemFix`,
     `tour-problems.ts`; the shell selects, writes `fix.edit()` as one undo
-    step and says `fix.done`);
+    step and says `fix.done`, or for a `split` fix runs "Move to a new
+    station");
   - `map` (`PanelMap`) - the shown view's street map: `tiles(limit)`,
     `retry()` (an `OsmRetryAsk`: how many failed tiles it asked for
     again, or why none, and the retry number that answers it),

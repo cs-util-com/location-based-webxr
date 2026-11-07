@@ -121,7 +121,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   on blur or Ctrl+Enter; an empty pin is refused in the phone's words),
   Move (the marker made draggable, Done applies the drop, Cancel or Esc
   puts it back; the card then says the height was kept), Delete with an
-  Undo toast for 8 s (the phone's hold, which holds autosave too). Codes and stations
+  Undo toast for 8 s (the phone's hold, which holds autosave too). The toast names
+  the item by its rail name, else by its own text, else by its kind's word
+  (`itemCalled`: "Deleted Video", never "Deleted the note" for a free video). Codes and stations
   stay read-only; the walk's debug camera captures are not items.
   The toast's Undo is the edit stack's (below): it runs while its delete
   is still the newest step (`editor.revision()` unchanged), also after a
@@ -742,11 +744,13 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   (`openedLevels`), and edits through the page's `edits`:
   - `commit` (`commitSceneEdit`) writes a finished gesture as one undo
     step (`applySceneEdit` of `scene-edits.ts`): it ends a delete's Undo
-    offer, refreshes the views and tells autosave, or toasts a refusal;
-    an item pose that gave the item another station is said in a toast
-    (`announceReseat`, `reseat-note.ts`), and a station the rule made
-    for it shows in the list (`showRowsOf`) and starts unlocked. The 2D map's drag (`finishMove`) says the
-    same on the card ("... - not saved yet.");
+    offer, refreshes the views and tells autosave, or toasts a refusal.
+    An item pose that crosses into another station's circle asks first,
+    in the blocking `confirmPausingFrames` (`askMove`, `move-question.ts`),
+    so no drag is ever half applied; the drop stays drawn behind the
+    question. What the write did to the item's station is said in a toast
+    (`moveNote`). The 2D map's drag (`finishMove`) asks the same and says
+    the same on the card ("... - not saved yet.");
   - `remove` (`deleteSelection`, the card's Delete too) deletes an item
     with the toast's Undo, or a station (`deleteStation`);
   - `duplicate` (`duplicateSelection`, Ctrl+D) copies an item or a
@@ -835,6 +839,19 @@ The shell's and the 3D view's `model` edits go through
 `writeInspectorEdit` to the session's `editModel` (a refusal toasted).
 The dev hook adds `view3dModelParts()` and
 `view3dModelScreen(id, at)` for `editor3d-model.spec.js`.
+
+### Stories in the tree
+
+The tree's add makes a story (`addStoryTo`) or an entry (`addToStoryEntry`),
+selects it, says it in a toast, one step each. Deleting a story asks first
+(`confirmPausingFrames`, naming what goes with it: its entries, and its
+untitled automatic station by name when that goes too, `delete-questions.ts`
+`storyDeleteQuestion`), and its toast says when the station went with it;
+deleting a station asks the same way (`stationDeleteQuestion`: its stories
+by name, its free items by count), except when the tour refuses it (its last station), which
+is said instead; an entry goes without a
+question, the toast's Undo taking it back and saying how many answers no
+longer lead to it. Every delete shares `deleted`, the toast and its Undo.
 
 ## Tests
 

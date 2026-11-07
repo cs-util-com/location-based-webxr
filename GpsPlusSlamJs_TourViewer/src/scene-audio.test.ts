@@ -105,6 +105,26 @@ describe("createSceneAudio", () => {
     expect(ended).not.toHaveBeenCalled();
   });
 
+  // Why: only our own pause makes a resume's AbortError harmless. Without
+  // one (the browser or the system paused the element) nothing will carry
+  // the clip on, so a step waiting for its end would wait until a tap: the
+  // clip ends instead, as any refused resume does.
+  it("a resume aborted with no pause of ours ends the clip", async () => {
+    let pending = false;
+    const { audio } = harness(() =>
+      pending
+        ? Promise.reject(new DOMException("gone", "AbortError"))
+        : Promise.resolve(),
+    );
+    const ended = vi.fn();
+    await audio.play(new Blob(), ended);
+    audio.pause();
+    pending = true;
+    audio.resume();
+    await settle();
+    expect(ended).toHaveBeenCalledTimes(1);
+  });
+
   it("resumes nothing once the clip has stopped", async () => {
     const { audio, elements } = harness();
     await audio.play(new Blob(), () => undefined);
