@@ -40,8 +40,18 @@ export function objectOwnText(object: TourObject): string | undefined {
       return object.caption;
     case "character":
       return object.name;
-    default:
+    case "longText":
+    case "video":
+    case "audio":
+    case "model":
       return object.title;
+    default: {
+      // A kind this list does not name: the compiler asks for its case,
+      // and at run time (a newer file) it is named by no field.
+      const unknownKind: never = object;
+      void unknownKind;
+      return undefined;
+    }
   }
 }
 

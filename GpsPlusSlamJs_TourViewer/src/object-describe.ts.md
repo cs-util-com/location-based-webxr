@@ -33,7 +33,8 @@ rule before a third page used it (root `CLAUDE.md` DEC-H3). Pure.
     (`editor/editor-model.ts` `filterItems`).
 - `objectOwnText(object): string | undefined` - the text a free block
   carries for its name (a caption, a character's name, else a title); unlike
-  `objectTitle` it can be empty.
+  `objectTitle` it can be empty. One case per kind, checked exhaustive by
+  the compiler; a kind it does not know (a newer file) gives undefined.
 - `objectTitle(object): string` - for any object or block (in the world
   or in a station's story): its title (a character's name), else its
   caption (a pin's own text), else its kind's name

@@ -32,7 +32,8 @@ export type ItemVideo = Pick<
 
 /** The places of a card an item fills. */
 interface ItemCardSlots {
-  /** Text, caption or transcript: every item has words (captions always). */
+  /** Text, caption or transcript: the item's words, empty when an
+   *  optional caption or transcript is absent. */
   readonly text: Pick<HTMLElement, "textContent">;
   /** A character's name; the host hides it for other items. */
   readonly speaker: Pick<HTMLElement, "textContent" | "hidden">;

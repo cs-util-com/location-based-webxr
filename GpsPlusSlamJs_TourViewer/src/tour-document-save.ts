@@ -31,6 +31,7 @@ import {
   historyAssetIds,
   historyTimingEntries,
   manifestNow,
+  manifestToWrite,
   tourDocumentActions,
   type StationFrame,
   type TourDocumentState,
@@ -112,7 +113,7 @@ interface TourSaveSnapshot {
   readonly timings: Readonly<Record<string, string | null>>;
   /** What the write carries besides the manifest and the photos, by path
    *  in the tour's folder: each read-along text set here that the written
-   *  file does not hold, and each voice brought in here that it does not
+   *  file does not hold, and each file brought in here that it does not
    *  list, with the bytes the page keeps. The rebuild writes the ones the
    *  written tour names. */
   readonly files: readonly {
@@ -148,6 +149,13 @@ interface TourSaves {
   queued<T>(start: () => Promise<T>): TourDocumentThunk<Promise<T>>;
   /** The document as a save reads it now. */
   snapshot(): TourDocumentThunk<TourSaveSnapshot>;
+  /** The bytes a save of `state` adds to the written file: the pictures
+   *  of the captured photos it does not host, the timing texts and the
+   *  files brought in it lacks (the snapshot's own rule). With
+   *  `keptOnly`, only the files the write keeps: one nothing names (an
+   *  undo took it out and a later edit dropped its redo, or a file not
+   *  named yet) is left out. */
+  addedBytes(state: TourDocumentState, keptOnly?: boolean): number;
   /** Settles once the pictures being read are read: a rebuild waits for
    *  it, since it replaces the bytes they may be read from. */
   picturesRead(): Promise<void>;
@@ -174,11 +182,10 @@ export function createTourSaves(input: {
   readonly tour: TourSession;
   /** The open the saves belong to (`TourDocumentState.generation`). */
   readonly generation: number;
-  /** A photo's picture the page keeps (the side table: Blobs are never
-   *  state). */
-  readonly pictureOf: (id: string) => Blob | undefined;
-  /** A voice's bytes the page keeps (`TourDocumentState.voices`). */
-  readonly voiceOf?: (id: string) => Blob | undefined;
+  /** A file's bytes the page keeps, by asset id (its files table: Blobs
+   *  are never state) - a file brought in (`addedAssets`), a photo's
+   *  picture (a captured photo's id is its picture's). */
+  readonly fileOf: (id: string) => Blob | undefined;
   /** Settles once the pictures being read are read. */
   readonly picturesRead: () => Promise<unknown>;
 }): TourSaves {
@@ -190,15 +197,8 @@ export function createTourSaves(input: {
   function snapshotOf(state: TourDocumentState): TourSaveSnapshot {
     const manifest = manifestNow(state);
     if (manifest === null) throw new Error("no tour is open to save");
-    const hosted = hostedObjects(state.written);
     return {
-      placed: state.placed.map(({ object }) => {
-        const blob =
-          isCapturedPhoto(object) && hosted.key(object.id) === undefined
-            ? input.pictureOf(object.id)
-            : undefined;
-        return blob === undefined ? { object } : { object, blob };
-      }),
+      placed: placedOf(state),
       deleted: [...state.deleted],
       manifest,
       keepAssets: historyAssetIds(state),
@@ -210,7 +210,31 @@ export function createTourSaves(input: {
     };
   }
 
-  /** The snapshot's `files`: the texts and voices the written file lacks. */
+  /** The manifest a save of `state` writes; null when none can be built
+   *  (then every file counts). */
+  function writtenOrNull(state: TourDocumentState): TourManifest | null {
+    try {
+      return manifestToWrite(state);
+    } catch {
+      return null;
+    }
+  }
+
+  /** The snapshot's `placed`: a captured photo the written file does not
+   *  host carries its picture, which the save writes. */
+  function placedOf(state: TourDocumentState): TourSaveSnapshot["placed"] {
+    const hosted = hostedObjects(state.written);
+    return state.placed.map(({ object }) => {
+      const blob =
+        isCapturedPhoto(object) && hosted.key(object.id) === undefined
+          ? input.fileOf(object.id)
+          : undefined;
+      return blob === undefined ? { object } : { object, blob };
+    });
+  }
+
+  /** The snapshot's `files`: the texts and the files brought in that the
+   *  written file lacks. */
   function filesOf(state: TourDocumentState): TourSaveSnapshot["files"] {
     const listed = new Set((state.written?.assets ?? []).map((a) => a.id));
     return [
@@ -219,11 +243,9 @@ export function createTourSaves(input: {
           ? []
           : [{ path, data: text }],
       ),
-      ...state.voices.flatMap((voice) => {
-        const blob = listed.has(voice.id)
-          ? undefined
-          : input.voiceOf?.(voice.id);
-        return blob === undefined ? [] : [{ path: voice.path, data: blob }];
+      ...state.addedAssets.flatMap((asset) => {
+        const blob = listed.has(asset.id) ? undefined : input.fileOf(asset.id);
+        return blob === undefined ? [] : [{ path: asset.path, data: blob }];
       }),
     ];
   }
@@ -276,6 +298,31 @@ export function createTourSaves(input: {
     },
     snapshot() {
       return (_dispatch, getState) => snapshotOf(getState().tourDocument);
+    },
+    addedBytes(state, keptOnly = false) {
+      const encoder = new TextEncoder();
+      let sum = 0;
+      for (const placed of placedOf(state)) sum += placed.blob?.size ?? 0;
+      const files = filesOf(state);
+      // `keptOnly`: what the save keeps (the rebuild's own filter); a file
+      // no object or step names any more is left out of it.
+      const written = keptOnly ? writtenOrNull(state) : null;
+      const kept =
+        written === null
+          ? null
+          : visitorEntryNames(
+              files.map((file) => file.path),
+              written,
+              "",
+            );
+      for (const { path, data } of files) {
+        if (kept !== null && !kept.has(path)) continue;
+        sum +=
+          typeof data === "string"
+            ? encoder.encode(data).byteLength
+            : data.size;
+      }
+      return sum;
     },
     async picturesRead() {
       await input.picturesRead();

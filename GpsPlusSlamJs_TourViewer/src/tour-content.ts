@@ -346,8 +346,9 @@ export function stepRequiredAssetIds(
 
 /**
  * The ids of the assets `manifest` uses: every block's of every station,
- * every station's card image and the cover (each of the last two names an
- * image asset).
+ * every station's card image, the cover (each of the last two names an
+ * image asset), and every declared character's image and frames sheet,
+ * which the declaration names whether or not a block shows him.
  */
 function referencedAssetIds(manifest: TourManifest): Set<string> {
   return new Set([
@@ -356,6 +357,9 @@ function referencedAssetIds(manifest: TourManifest): Set<string> {
       ...(station.image === undefined ? [] : [station.image]),
     ]),
     ...(manifest.cover === undefined ? [] : [manifest.cover]),
+    ...(manifest.characters ?? []).flatMap((c) =>
+      c.frames === undefined ? [c.image] : [c.image, c.frames],
+    ),
   ]);
 }
 

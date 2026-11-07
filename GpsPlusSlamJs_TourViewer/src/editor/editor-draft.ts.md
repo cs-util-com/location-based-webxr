@@ -226,7 +226,9 @@ editor's own namespace, one tab at a time. Design:
   build wrote the other value (a build never put in place); offered by a
   later open whose file does not carry it - read whether or not a meta
   landed, since the namespace names the tour; spent or unreadable, it goes,
-  and an unreadable one is told (`unreadDraft`). A station in it that no
+  and an unreadable one is told (`unreadDraft`). It is read after the
+  files' list, against the opened file and the files the draft holds: a
+  new station's story may name a file brought in. A station in it that no
   longer reads (its story names what the file no longer declares) is told
   too, and the record stays, as a file with that asset reads it again; it
   lasts until the next whole write of the record, which holds only what read;
@@ -279,6 +281,14 @@ editor's own namespace, one tab at a time. Design:
   its own (the whole restore is one Ctrl+Z step, W2); an object an undo
   re-adds after a save wrote its delete is backed up, but offered after a
   closed tab only when its record carries no `seen` base (above).
+
+## The files
+
+- A file brought in is kept as `asset:<id>` (its bytes) beside `assets` (the list of their `TourAsset`s), in that order, before the record naming it (`saveAsset(asset, blob)`, whether both landed; a write that did not land is said as any other: `noBackup("storage")`).
+- `open` reads the list and the bytes, skipping a file the opened manifest lists (its own now). A list that does not read, or a file it names that is missing, is told (`unreadDraft`, once), and an offered record naming a file held nowhere is left out (`objectAssetsHeld`), except a long text whose voice is gone: it is offered with the opened file's narration (`withFiledNarration`), its words kept. `holdsFile(id)` is false for a file whose write did not land. The offer carries `files`; with nothing offered they go, and every `asset:` entry the list does not name is removed.
+- `open` copies each file's bytes into memory. The store hands out a snapshot of the entry (`handle.getFile()`), whose reads fail once the entry is removed; a landed save or a key move removes it while the session may still need the bytes (a preview, a save after an undo brings the file back). An entry that does not read is told as a missing one. The restored photos' pictures (`draft-persistence.ts`) are still handed over as snapshots: the same exposure, not yet covered.
+- A landed save drops the files its manifest lists; a discard drops the offered files this visit did not bring in again; a key move carries them, and its carried records and settings wait for the carried files (each still queued at the move, in its own chain): a tab closed mid-move never leaves the new key a record naming a file it lacks.
+- Tests: `editor-draft.test.ts` ("the files a draft keeps").
 
 ## Examples
 

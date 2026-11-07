@@ -97,9 +97,10 @@ reducers' building blocks, so a page cannot apply them differently.
   the visit's sightings are the page's, in `creatorCodes`
   (`creator-codes-slice.ts`).
 
-Blobs are never state: a photo's picture lives in the page's side table
-keyed by id (`editor-session.ts` `pictures`), handed to the draft by the
-listener (`tour-document-draft.ts`) and to the rebuild by the page.
+Blobs are never state: every file's bytes - a photo's picture, a file
+brought in - live in the session's one files table keyed by asset id
+(`editor-session.ts` `files`), handed to the draft and to the rebuild by
+the session.
 
 ## Actions (`tourDocumentActions`)
 
@@ -790,10 +791,19 @@ store.dispatch(tourDocumentActions.undone());
 
 ## Narration (read-along timings and voices)
 
-- State: `timings` (the read-along texts set here, by archive entry, `null` for none), `timingsWritten` (what the file last written holds for each), `voices` (audio assets brought in here; `manifestNow` lists the ones the written tour does not).
-- `narrationEdited({ object, timing?, voice?, what })`: a free long text's narration changed as ONE step - its voice, whether it names its entry (`tourTimingEntryName(id)`), that entry's text.
-  - Refused (state unchanged) when anything but the narration differs from the object as the document holds it, when a voice is not audio, reuses a held id or is not the narration's audio, when the narration names an audio the tour does not hold, or when the entry is not the object's own.
+- State: `timings` (the read-along texts set here, by archive entry, `null` for none), `timingsWritten` (what the file last written holds for each). A voice is a file brought in (`addedAssets`, below), listed before the step naming it.
+- `narrationEdited({ object, timing?, what })`: a free long text's narration changed as ONE step - its voice, whether it names its entry (`tourTimingEntryName(id)`), that entry's text.
+  - Refused (state unchanged) when anything but the narration differs from the object as the document holds it, when the narration names an audio that is not an audio asset of the written tour or of `addedAssets`, or when the entry is not the object's own.
   - An undo brings back the entry's text the step started from.
   - It is a separate `createAction` handled in `extraReducers` and merged into `tourDocumentActions`: one more case reducer on the slice made the slice's type too long for the compiler to write out (TS7056).
 - `timingChanges(state)`: the entries set here that the written file does not hold, for an object not otherwise unsaved. `changeCount` counts each changed object once, so a new voice and its timing on one text count once.
 - A duplicated narrated text keeps its voice but not the original's timing entry (`copiedNarration`).
+
+## Files brought in (`addedAssets`)
+
+- State: `addedAssets` - the assets of the files brought in here (a voice; a picture, a video, a sound or a model), each `content/<id>.<ext>` of its kind, the id the file's sha256. `manifestNow` lists the ones the written tour does not.
+- `assetsAdded({ assets })`: lists them. No undo step and no change of its own (`isDocumentEdit` is false): the edit naming a file is the step, and an undo of it keeps the file listed, so a redo, or an undo after a save, still finds it. The bytes ride along until the tour closes; the rebuild leaves out of a save any asset nothing (and no history step) names.
+  - Refused as a whole (state unchanged) when a path is not `content/<id>.<ext>` or its extension is not of the asset's kind; an asset the written tour or the list holds already is skipped.
+- `objectAssetsHeld(object, held)`: whether every file an object needs (`tourBlockAssetIds(object, true)`) is in `held`; a captured photo carries its own.
+- `restored({ ..., assets? })`: a draft's files are listed with its records, and a record naming a file held nowhere (the written tour, `addedAssets`, the draft's files) is left out - the format refuses it, and every later save would fail.
+- Tests: `tour-document-assets.test.ts`.

@@ -653,6 +653,10 @@ function loggedDraft(): EditorSessionDraft & { calls: string[] } {
       calls.push(`forget ${id}`);
       return Promise.resolve();
     },
+    saveAsset: (asset) => {
+      calls.push(`asset ${asset.id}`);
+      return Promise.resolve(true);
+    },
   };
 }
 
