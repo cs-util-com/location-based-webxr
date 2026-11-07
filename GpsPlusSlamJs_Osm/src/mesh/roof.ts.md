@@ -10,7 +10,7 @@ Roof geometry above the eaves, in the plan's own order of quality-per-effort.
 - `interface RoofOptions` — `shape`, `eaveHeightM`, `ridgeHeightM`, and the
   optional `directionDeg` (`roof:direction`), `orientation` (`"across"`) and
   `maxOverhangM` (the overhang limit, for sweeps and tests)
-- `RIDGE_OVERHANG_LIMIT_M` (1) — the default for `maxOverhangM`
+- `RIDGE_OVERHANG_LIMIT_M` (1, module-private) — the default for `maxOverhangM`
 
 ## Invariants & assumptions
 

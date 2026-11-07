@@ -78,7 +78,7 @@ export interface RoofOptions {
  * is the better shape, and above it the roof visibly spans a courtyard or a
  * street.
  */
-export const RIDGE_OVERHANG_LIMIT_M = 1;
+const RIDGE_OVERHANG_LIMIT_M = 1;
 
 export interface RoofMesh extends MeshData {
   /**
