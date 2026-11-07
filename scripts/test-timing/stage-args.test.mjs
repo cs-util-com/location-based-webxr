@@ -2,8 +2,11 @@
 // runs. If filtered runs (pnpm run test:unit -- src/foo.test.ts) ever record,
 // the history compares a 1-file run against a full run and every delta lies.
 // Canonical commands live in stages.mjs, so ANY forwarded arg ⇒ filtered run.
+import path from 'node:path';
+
 import { describe, it, expect } from 'vitest';
 import {
+  runnerReportFile,
   decideRecording,
   appendArgs,
   buildStageCommand,
@@ -74,6 +77,26 @@ describe('decideRecording', () => {
 
   it('treats an empty GITHUB_ACTIONS variable as not the runner', () => {
     expect(decideRecording([], { GITHUB_ACTIONS: '' }).record).toBe(true);
+  });
+});
+
+// Why this test matters: the gate's --reporter flag replaces the config's
+// JSON reporter, so without this file a recording run on main uploaded no
+// report, the one thing left of a run that hung.
+describe('runnerReportFile', () => {
+  const root = path.join('some', 'pkg');
+  const runner = { GITHUB_ACTIONS: 'true' };
+
+  it('names the file the job uploads, for a Playwright stage on the runner', () => {
+    expect(runnerReportFile('playwright', runner, root)).toBe(
+      path.join(root, 'test-results', 'results.json'),
+    );
+  });
+
+  it('keeps nothing off the runner, whatever CI says, nor for another stage', () => {
+    expect(runnerReportFile('playwright', { CI: '1' }, root)).toBeNull();
+    expect(runnerReportFile('vitest', runner, root)).toBeNull();
+    expect(runnerReportFile(null, runner, root)).toBeNull();
   });
 });
 

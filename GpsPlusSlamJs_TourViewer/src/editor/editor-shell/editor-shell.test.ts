@@ -796,6 +796,46 @@ describe("the inspector's typed fields", () => {
     expect(document.activeElement).toBe(field("title"));
     shell.hide();
   });
+
+  // Why: Tab selects the text of the field it lands on, so typing replaces
+  // the value. The field drawn again gets a plain focus, which selects
+  // nothing, so a Tab after an edit left the old value to type into. A press
+  // on a field keeps its plain focus: a click means a place in the text.
+  it.each([
+    ["Tab", true],
+    ["a press", false],
+  ])("selects the field the focus lands on after %s only", (_how, byTab) => {
+    const { store, select, edits, shell } = setUp();
+    edits.station.mockImplementation((...args: unknown[]) => {
+      store.dispatch(
+        tourDocumentActions.stationEdited({
+          stationId: args[0] as string,
+          edit: args[1] as { description: string },
+          what: "description",
+        }),
+      );
+    });
+    select("station:a");
+    const typed = typeInto("description", "By the fountain");
+    if (byTab) {
+      typed.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Tab", bubbles: true }),
+      );
+    }
+    typed.dispatchEvent(
+      new FocusEvent("focusout", {
+        bubbles: true,
+        relatedTarget: field("title"),
+      }),
+    );
+    const next = field("title") as HTMLInputElement;
+    expect(document.activeElement).toBe(next);
+    expect(next.value.length).toBeGreaterThan(0);
+    expect(next.selectionEnd! - next.selectionStart!).toBe(
+      byTab ? next.value.length : 0,
+    );
+    shell.hide();
+  });
 });
 
 describe("the inspector's Escape and its text of several lines", () => {

@@ -127,9 +127,11 @@ jobs:
         # step, 2026-11-05): Tour page tests 25 of 13.2 min, Tour 3D 45 of 20.3,
         # OsmDemo 55 of 30.3 (1.8 times), the design system 25 of 12.8, which
         # also fits a test timing out on all 3 attempts (9 min). Each leaves 25
-        # min of the job for setup (20 of them the browser install's limit),
-        # earlier stages and the upload; a worker that stopped answering takes up to 5 of those,
-        # which is Playwright's wait before it force-kills one. A green process
+        # min of the job (30 on the Tour 3D lanes) for setup (20 of them the
+        # browser install's limit), earlier stages and the upload. A worker that
+        # stopped answering takes 5 more, Playwright's wait before it force-kills
+        # one: the Tour 3D lanes have that room, OsmDemo and the Tour page lanes
+        # only when setup took under about 17 min. A green process
         # coming near its limit reverses the value. A job of several packages
         # has its own sum in ci-jobs.test.js: one hang fits, two can outrun it.
         include:
@@ -257,7 +259,7 @@ jobs:
         run: pnpm run build:framework
 
       # A step limit, because a job limit cancels the job with no log. Above
-      # the first install's, because apt can fetch at 30 kB/s from a slow
+      # the first install's, because apt can fetch at 15 kB/s from a slow
       # mirror for over 15 min and still finish.
       - name: Install Playwright browsers
         if: ${{ matrix.browsers }}

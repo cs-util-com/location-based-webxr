@@ -1286,11 +1286,19 @@ function controlNamed(root: HTMLElement, name: string): HTMLElement | null {
 /** The focus put on the control drawn under `name` (`controlName`) in
  *  the dock at `root`: where the focus was going when a draw took that
  *  control out of the page (Chromium then drops the focus to the page).
- *  None, or a disabled one, leaves the focus where it is. */
-export function focusControl(root: HTMLElement, name: string | null): void {
+ *  None, or a disabled one, leaves the focus where it is. `tabbed`: Tab
+ *  brought it there, so a one-line field has its text selected, as Tab
+ *  selects it in a field no draw replaced. */
+export function focusControl(
+  root: HTMLElement,
+  name: string | null,
+  tabbed = false,
+): void {
   if (name === null) return;
   const control = controlNamed(root, name);
-  if (control !== null && control !== document.activeElement) control.focus();
+  if (control === null || control === document.activeElement) return;
+  control.focus();
+  if (tabbed && control instanceof HTMLInputElement) control.select();
 }
 
 function focusIn(root: HTMLElement): FocusKept | null {
