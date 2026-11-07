@@ -2275,9 +2275,10 @@ async function attachTarget(
       // before the target came are saved once the delay has passed) -
       // unless every save of it would rewrite more than the cap (E2b-2
       // milestone review #3: the cost is linear in the file's size).
-      // The files brought in before the target came ride along too.
+      // The files brought in before the target came ride along too - those
+      // the write keeps: one nothing names is left out of it.
       const largeTour = !autosaveFits(
-        file.size + mine.addedBytes(),
+        file.size + mine.addedBytes({ keptOnly: true }),
         autosaveMaxBytes,
       );
       store.dispatch(tourDocumentActions.saveLimited({ largeTour }));

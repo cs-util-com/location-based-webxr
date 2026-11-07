@@ -123,6 +123,26 @@ describe("addFile: the files table", () => {
     await session.close();
   });
 
+  // Why: a file brought in that no edit came to name (a narration that did
+  // not apply, an add given up) is listed but left out of the next save.
+  // Whether a large tour may still save by itself is judged by what that
+  // save writes, so such a file must not count there.
+  it("counts a file nothing names only among the added bytes, not among those a save keeps", async () => {
+    const session = await openedTour();
+    const { editor } = editorOf(session);
+    const orphan = await editor.addFile(new Blob(["voice-1"]), "Take 1.mp3");
+    expect(orphan.kind).toBe("added");
+    expect(editor.addedBytes()).toBe(7);
+    expect(editor.addedBytes({ keptOnly: true })).toBe(0);
+    await editor.editNarration("t1", {
+      kind: "voice",
+      file: new Blob(["voice-1"]),
+      fileName: "again.mp3",
+    });
+    expect(editor.addedBytes({ keptOnly: true })).toBe(7);
+    await session.close();
+  });
+
   it("refuses in words a type the tour cannot take, or not here, changing nothing", async () => {
     const session = await openedTour();
     const { editor } = editorOf(session);
