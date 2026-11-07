@@ -21,8 +21,8 @@
  * With `near` the near clouds (`globe-cloud-march-pass.ts`) replace the
  * slab below their own ceiling, at about 60 km of camera height, as soon as
  * their bakes are back from the worker; until then, and if that fails, the
- * old clouds draw. Their tier and pixels are the step-down's
- * (`globe-cloud-governor.ts`).
+ * old clouds draw, with the cover they always had. Their tier and pixels are
+ * the step-down's (`globe-cloud-governor.ts`).
  *
  * @see globe-view-clouds.ts.md
  */
@@ -122,8 +122,8 @@ export const GLOBE_VIEW_CLOUDS = Object.freeze({
   /** The near clouds where a page has them and their bake did not fail,
    *  gone at 70 km, whole at 50. */
   cloudNear: 1,
-  cloudNearCeilingKm: 70,
-  cloudNearFadeKm: 20,
+  cloudNearCeilingKm: 80,
+  cloudNearFadeKm: 15,
 } as const satisfies GlobeViewCloudKnobs);
 
 /** What the clouds read and write of the view (a `GlobeView` is one). */
@@ -131,7 +131,7 @@ export interface CloudsView {
   readonly renderer: THREE.WebGLRenderer;
   readonly camera: THREE.PerspectiveCamera;
   readonly globe: Pick<GlobeSurface, "cloudShell" | "surfaceUniforms"> & {
-    readonly sun: { readonly intensity: number };
+    readonly sunExposure: { readonly value: number };
     readonly tiles: Pick<GlobeSurface["tiles"], "ellipsoid" | "group">;
   };
   ecefCamera(): { readonly position: THREE.Vector3 };
@@ -189,6 +189,8 @@ export interface GlobeViewClouds {
   /** Whether the near clouds are drawn or on their way: false with the
    *  clouds off and on the old clouds, by choice or after a failed bake. */
   nearLive(): boolean;
+  /** The share of the air the near clouds draw this frame, 0-1. */
+  nearAir(): number;
   /** Whether they are on, and the last plan's flat share and shell, the
    *  shell's own ground shadow and the surface's (`uCloudShadow`). */
   state(): {
@@ -391,13 +393,14 @@ export function createGlobeViewClouds(
   const appKnobs = knobsWith(options);
   let on = true;
   let nearFine = near !== null;
-  /** The knobs for the switch and the near clouds now: without them the
+  const nearDraws = () => nearFine && near?.ready === true;
+  /** The knobs for the switch and the near clouds now: until they draw the
    *  old clouds, with the cover they always had. */
   const chooseKnobs = (): GlobeViewCloudKnobs =>
     Object.freeze({
       ...appKnobs,
       cloudVolume: on ? appKnobs.cloudVolume : 0,
-      cloudNear: nearFine ? 1 : 0,
+      cloudNear: nearDraws() ? 1 : 0,
     });
   let knobs = chooseKnobs();
   const nearDriver =
@@ -420,6 +423,7 @@ export function createGlobeViewClouds(
     },
     step({ observerKm, shareClouds }) {
       if (disposed) return;
+      if (nearDraws() !== (knobs.cloudNear === 1)) knobs = chooseKnobs();
       const { globe, camera } = view;
       globe.cloudShell.setHeightM(knobs.cloudShellKm * 1000);
       const cameraAltM = globe.tiles.ellipsoid.getPositionElevation(
@@ -455,18 +459,22 @@ export function createGlobeViewClouds(
       const { globe, camera } = view;
       sceneDepth.beginFrame();
       // The relief's depth while the ground sky shows (the shell's rays end
-      // at it by that weight, and the air's veil, so it is drawn with the
-      // clouds off too); the slab draws it itself when only it needs it.
+      // at it by that weight, and the air's veil); the slab draws it itself
+      // when only it needs it. With the clouds off the one reader left is
+      // the veil, which is gone once the ground sky is whole.
       const extra = extraOf();
       const nearOn = clouds.nearShare > 0;
-      if (weight > 0 || nearOn) sceneDepth.render(camera, relief, extra);
+      const read = knobs.cloudVolume === 0 ? weight < 1 : true;
+      if (read && (weight > 0 || nearOn)) {
+        sceneDepth.render(camera, relief, extra);
+      }
       if (knobs.cloudVolume === 0) return;
       clouds.render(camera, {
         relief,
         extra,
         worldFromEcef: globe.tiles.group.matrixWorld,
         sunEcef: globe.surfaceUniforms.uSunEcef.value,
-        sunIntensity: globe.sun.intensity,
+        sunIntensity: globe.sunExposure.value,
         sceneDepthWeight: weight,
         flatten: knobs.cloudShellFlat,
         ...(nearOn && nearDriver !== null ? { near: nearDriver.frame() } : {}),
@@ -478,6 +486,7 @@ export function createGlobeViewClouds(
       knobs = chooseKnobs();
     },
     nearLive: () => on && nearFine,
+    nearAir: () => (on ? clouds.nearShare : 0),
     state: () => ({
       on: knobs.cloudVolume !== 0,
       ...last,

@@ -190,3 +190,5 @@ shortestWaveM }`) compiles `globe-sea.ts` right before
   `GLOBE_SEA` and `GLOBE_SEA_OCTAVES` defined; the program key gains
   `-sea<n>` (key v13). Without the option the sea's code is not in the
   program; its uniforms are in the one uniforms object either way.
+
+`nightLightsShare(observerKm)` is the night map's share at a camera height, 1 from 60 km up and 0 from 15 km down (`NIGHT_LIGHTS_FADE_KM`), 1 on a height that is not finite. The map's texel is many kilometres wide, so low down it would be a grey wash; `globe-view-air.ts` multiplies `uNightGain` by it each step.

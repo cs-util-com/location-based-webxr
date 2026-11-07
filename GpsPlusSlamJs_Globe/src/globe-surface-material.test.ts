@@ -23,12 +23,14 @@ import {
   GLOBE_CLOUD_GLSL,
   GLOBE_SURFACE_CACHE_KEY,
   GLOBE_SURFACE_TUNING,
+  NIGHT_LIGHTS_FADE_KM,
   applyGlobeSurface,
   cloudLonOffsetRad,
   createGlobeSurfaceUniforms,
   patchGlobeSurfaceShader,
   GLOBE_FADE_GLSL,
   globeFadeKeeps,
+  nightLightsShare,
 } from "./globe-surface-material.js";
 import { SKY_FILL, SKY_LEVEL_GLSL } from "./sky-level.js";
 
@@ -49,6 +51,47 @@ const textures = () => ({
 
 const count = (text: string, needle: string): number =>
   text.split(needle).length - 1;
+
+describe("nightLightsShare", () => {
+  // Why this test matters: the night map's texel is many kilometres wide, so
+  // from low down one texel fills the view with a grey wash under the clouds.
+  it("keeps the map's lights from high up and fades them near the ground", () => {
+    expect(nightLightsShare(400)).toBe(1);
+    expect(nightLightsShare(NIGHT_LIGHTS_FADE_KM.high)).toBe(1);
+    expect(nightLightsShare(NIGHT_LIGHTS_FADE_KM.low)).toBe(0);
+    expect(nightLightsShare(0.3)).toBe(0);
+    // One night texel spans many km: at 30 km it was a grey disc.
+    expect(nightLightsShare(30)).toBeLessThan(0.5);
+    const middle = nightLightsShare(
+      (NIGHT_LIGHTS_FADE_KM.low + NIGHT_LIGHTS_FADE_KM.high) / 2,
+    );
+    expect(middle).toBeCloseTo(0.5, 5);
+  });
+
+  // Why this test matters: a bad height must not turn the night side's
+  // lights off or put a NaN into a uniform.
+  it("keeps them whole on a height it cannot read", () => {
+    expect(nightLightsShare(Number.NaN)).toBe(1);
+  });
+
+  // Why this test matters: a share that rises and falls on the way down
+  // would pulse the city's glow during a flight.
+  it("never grows on the way down", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: 0, max: 500, noNaN: true }),
+        fc.double({ min: 0, max: 500, noNaN: true }),
+        (a, b) => {
+          const share = nightLightsShare(Math.max(a, b));
+          expect(share).toBeGreaterThanOrEqual(
+            nightLightsShare(Math.min(a, b)),
+          );
+          expect(share).toBeLessThanOrEqual(1);
+        },
+      ),
+    );
+  });
+});
 
 describe("createGlobeSurfaceUniforms", () => {
   it("holds the two maps, a unit sun and the tuning defaults", () => {

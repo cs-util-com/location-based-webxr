@@ -32,6 +32,11 @@ spaceExposure })`
   - `render(camera)`: draws the ground sky into its own target and
     composites it over the frame with the weight; nothing at weight 0.
     After the space sky, before the Earth.
+  - `sunOnGround()` → `{ scale, colour }`: the sun through the whole air
+    down to the ground, whatever the camera's height, relative to the
+    exposure, eased in by the weight. `scale` is 1 and `colour` white above
+    the edge and without a sky. The air multiplies it into the globe's
+    light; the sky and the veil carry the air themselves.
   - `state()`: `{ supported, weight, exposure, automaticExposure,
 observerKm, rebuildPending, lastStage, rebuilds }`, `rebuilds` counting each stage done.
   - `dispose()`.
@@ -51,6 +56,14 @@ observerKm, rebuildPending, lastStage, rebuilds }`, `rebuilds` counting each sta
   sky drawn straight to the canvas, faded. The space sky's stars and sun
   disc fade under it while its own disc fades in, so the two discs are
   never both at full.
+- **The camera adapts by 0.5** (`exposureAdaptation`), not the framework's
+  street default of 0.75. Swept over 0.3, 0.4, 0.5, 0.6 and 0.75, suns 15, 8,
+  3, 1, -1, -3 and -6 degrees, at 40, 9 and 0.3 km: from 3 degrees up the
+  values differ by less than the eye tells, so the value is decided at dusk.
+  At -3 degrees 0.3 leaves the frame nearly black and 0.75 washes the sky
+  white and burns the pale roofs; 0.6 starts to, 0.4 starts to go dark. The
+  value is a look. Only with the near clouds (`nearLook`): the old
+  clouds keep the framework's camera and a white sun.
 - **One eased exposure** (DEC-GL5-16): `easedExposure(spaceExposure,
 automatic, weight)`, in ONE unit, the sun's scale in the scene: the
   ground sky (sun intensity 1) gets it through its exposure compensation,
