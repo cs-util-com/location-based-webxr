@@ -82,8 +82,8 @@ test("the visitor sees a station's pin, its captured photo, its picture and its 
       { timeout: 20000 },
     )
     .toEqual(["gate-arch", "gate-knight", "gate-photo", "gate-pin"]);
-  // A free character stands with no story playing, and two stand side by
-  // side, each on a stage of his own: the stage of a story holds one.
+  // Two free characters stand side by side, each on a stage of his own (a
+  // stage holds one), beside the knight the gate's story opens with.
   await expect
     .poll(
       () =>
@@ -102,7 +102,7 @@ test("the visitor sees a station's pin, its captured photo, its picture and its 
         }),
       { timeout: 20000 },
     )
-    .toBe(2);
+    .toBe(3);
 });
 
 /**
