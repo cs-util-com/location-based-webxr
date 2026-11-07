@@ -11,7 +11,7 @@ The free items' host: what a station shows that no story brings. It is the secon
   - `faceVisitor(nue)` - turns the standing figures.
   - `tapped(tap)` - true when the tap hit a free figure. A voice plays, or stops for good when it is playing; the bubble view's tap shuts or opens the bubble.
   - `stop()` - nothing stands, no voice is kept. The next `follow` starts afresh.
-- `deps`: `tour`, `characters`, `assets`, `loadAsset`, `makeStage`, `focus`, `checkPicture`, `pick`, `sayFailure`, and `makePlayer` as a seam for tests.
+- `deps`: `tour`, `characters`, `assets`, `loadAsset`, `makeStage`, `focus`, `checkPicture`, `pick`, `sayFailure`, `makePlayer` as a seam for tests, and `showItem?(block, host)` (the item lab swaps a kind in; `showItemCard` otherwise; the app passes none).
 
 ## Invariants and assumptions
 

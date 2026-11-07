@@ -17,6 +17,7 @@
 import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characters";
 import type {
   TourAsset,
+  TourBlock,
   TourCharacterBlock,
   TourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
@@ -78,6 +79,9 @@ export interface FreeItemsDeps {
   sayFailure(text: string): void;
   /** Makes a player (a seam for tests). */
   makePlayer?: (deps: NarrationPlayerDeps) => NarrationPlayer;
+  /** Shows an item's card (the item lab swaps a kind in; `showItemCard`
+   *  otherwise). */
+  showItem?(block: TourBlock, host: ItemCardHost): void;
 }
 
 export interface FreeItems {
@@ -270,7 +274,7 @@ export function createFreeItems(deps: FreeItemsDeps): FreeItems {
 
   function stand(figure: Figure, stage: FreeStage): void {
     figure.standing = true;
-    showItemCard(figure.block, hostOf(figure, stage));
+    (deps.showItem ?? showItemCard)(figure.block, hostOf(figure, stage));
     if (!figure.left) return;
     figure.left = false;
     figure.player?.carryOn();

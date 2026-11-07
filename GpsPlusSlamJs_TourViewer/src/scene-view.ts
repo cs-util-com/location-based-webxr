@@ -17,6 +17,7 @@
 
 import type {
   TourAsset,
+  TourBlock,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
@@ -145,6 +146,9 @@ export interface SceneViewDeps {
   /** The station is done: its one story played to its end, or the last
    *  unplayed of several, or the visitor left its picker. */
   onStoryEnd(stationId: string): void;
+  /** Shows an item's card (the item lab swaps a kind in; `showItemCard`
+   *  otherwise). */
+  showItem?(block: TourBlock, host: ItemCardHost): void;
   /** The story started, moved to another step, ended or stopped, or the
    *  queue changed: what the sheet draws of it (`progress`) may differ. */
   onChange?(): void;
@@ -563,7 +567,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
    *  player skips quizzes until K5. */
   function showChild(station: TourStation, child: TourStoryChild): void {
     if (isTourStoryBlock(child)) {
-      showItemCard(child, itemHost(station));
+      (deps.showItem ?? showItemCard)(child, itemHost(station));
       return;
     }
     if (child.kind !== "choice") return;

@@ -38,7 +38,7 @@ it has a row).
 
 ## Hosts
 
-Two hosts show items: `scene-view.ts` for a story's step and `free-items.ts` for what stands free in a station. `ItemVideo`'s optional `paused`, `muted` and `play` are what the voice channel reads of a real element (`voice-focus.ts`).
+Two hosts show items: `scene-view.ts` for a story's step and `free-items.ts` for what stands free in a station. Each takes an optional `showItem`, so the item lab (`checks/item-lab.ts`) can run a kind the format does not know yet through a real host; the switch here stays closed. `ItemVideo`'s optional `paused`, `muted` and `play` are what the voice channel reads of a real element (`voice-focus.ts`).
 
 ## Invariants and assumptions
 

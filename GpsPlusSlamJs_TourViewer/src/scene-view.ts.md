@@ -34,7 +34,7 @@ status line and what an end means.
   `audio` (`SceneAudio`: `play(blob, onEnded)` rejecting when refused,
   `stop()`), `stage` (`SceneStage` from `scene-stage.ts`),
   `createChoiceButton(label, onClick)`, `focusChoice?(button)`, `schedule(fn, ms)`, `objectUrls`,
-  `onStoryEnd(stationId)`.
+  `onStoryEnd(stationId)`, `showItem?(block, host)` (the item lab swaps a kind in; `showItemCard` otherwise; the app passes none).
 
 ## Invariants & assumptions
 
