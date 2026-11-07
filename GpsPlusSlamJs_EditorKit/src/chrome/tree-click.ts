@@ -121,6 +121,40 @@ function chainOf(
   return null;
 }
 
+/** Whether the chain ends in a nested group that the click named itself. */
+function isNestedOwn(chain: TreeChain | null): boolean {
+  return chain?.own === true && chain.ids.length > 1;
+}
+
+/** A deselecting click: a nested group flips its fold and stays selected,
+ *  a top-level group folds, anything else just clears the selection. */
+function deselectPlan(id: string, chain: TreeChain | null): TreeClickPlan {
+  const nested = isNestedOwn(chain);
+  return {
+    select: nested ? id : null,
+    unfold: [],
+    fold: chain?.own === true && !nested ? (chain.ids[0] ?? null) : null,
+    toggle: nested ? (chain?.ids.at(-1) ?? null) : null,
+    ungrouped: false,
+    fly: false,
+  };
+}
+
+/** A selecting click: everything that holds the card unfolds, and a nested
+ *  group keeps its own fold. */
+function selectPlan(id: string, chain: TreeChain | null): TreeClickPlan {
+  return {
+    select: id,
+    unfold: isNestedOwn(chain)
+      ? (chain?.ids.slice(0, -1) ?? [])
+      : (chain?.ids ?? []),
+    fold: null,
+    toggle: null,
+    ungrouped: chain === null,
+    fly: true,
+  };
+}
+
 /**
  * The plan for `outcome` on the card `id` (a group's `<groupPrefix><id>`,
  * a nested group's `selection`, a child of a group at any depth, or else
@@ -146,23 +180,7 @@ export function treeClickPlan(
   }
   if (outcome === "none") return null;
   const chain = chainOf(id, groups, prefix);
-  const nestedOwn = chain?.own === true && chain.ids.length > 1;
-  if (outcome === "deselect") {
-    return {
-      select: nestedOwn ? id : null,
-      unfold: [],
-      fold: chain?.own === true && !nestedOwn ? (chain.ids[0] ?? null) : null,
-      toggle: nestedOwn ? (chain.ids.at(-1) ?? null) : null,
-      ungrouped: false,
-      fly: false,
-    };
-  }
-  return {
-    select: id,
-    unfold: nestedOwn ? chain.ids.slice(0, -1) : (chain?.ids ?? []),
-    fold: null,
-    toggle: null,
-    ungrouped: chain === null,
-    fly: true,
-  };
+  return outcome === "deselect"
+    ? deselectPlan(id, chain)
+    : selectPlan(id, chain);
 }
