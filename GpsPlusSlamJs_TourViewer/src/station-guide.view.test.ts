@@ -55,6 +55,7 @@ function harness(
 ) {
   let now = 1_000;
   let allowed = true;
+  let choosing: string | null = null;
   let visitor: VisitorPosition | null = null;
   const dom = {
     line: { textContent: "", hidden: true },
@@ -84,6 +85,7 @@ function harness(
     startHud: () => ({ dispose: () => undefined }),
     now: () => now,
     onFound: () => undefined,
+    storyChoosing: () => choosing,
     onEndStory: (id) => {
       guide.storyEnded(id);
     },
@@ -109,6 +111,10 @@ function harness(
     },
     setAllowed(value: boolean) {
       allowed = value;
+    },
+    /** The station whose story picker shows now, or null. */
+    setChoosing(id: string | null) {
+      choosing = id;
     },
   };
 }
@@ -229,6 +235,48 @@ describe("the end control on the story card", () => {
     h.guide.cancelAsk();
     expect(h.dom.end?.textContent).toBe("End this story?");
     expect(h.guide.view()?.end).toEqual({ kind: "ask-end", id: "gate" });
+  });
+
+  // Why this test matters: the page holds an auto step while the ask stands
+  // (`holdStep`). The ask at the picker is about skipping the stories, and
+  // a story tapped there answers it: left armed, the picked story's first
+  // step froze until "Keep listening", and the control offered to end a
+  // story nobody had asked to end.
+  it("a story picked at the picker takes the picker's ask back", () => {
+    const h = harness("fixed", { end: true });
+    h.setChoosing("gate");
+    h.at(0, 0);
+    h.guide.skipTapped(h.dom.end);
+    expect(h.dom.end?.textContent).toBe("Skip the stories of GATE now");
+    h.setChoosing(null);
+    h.guide.tick();
+    expect(h.dom.end?.textContent).toBe("End this story?");
+    expect(h.guide.view()?.end).toEqual({ kind: "ask-end", id: "gate" });
+  });
+
+  // Why this test matters: the same rule the other way. "End the story of
+  // GATE now" must not turn into a confirmed "Skip the stories" when the
+  // story reaches its end and the picker comes back.
+  it("a story that ends at the picker takes the story's ask back", () => {
+    const h = harness("fixed", { end: true });
+    h.at(0, 0);
+    h.guide.skipTapped(h.dom.end);
+    expect(h.dom.end?.textContent).toBe("End the story of GATE now");
+    h.setChoosing("gate");
+    h.guide.tick();
+    expect(h.dom.end?.textContent).toBe("Skip the stories");
+    expect(h.guide.view()?.end).toEqual({ kind: "ask-end", id: "gate" });
+  });
+
+  // Why this test matters: the ask outlives ticks. Only the change of what
+  // it was asked about takes it back, not the next frame.
+  it("the ask at the picker stays while the picker stays", () => {
+    const h = harness("fixed", { end: true });
+    h.setChoosing("gate");
+    h.at(0, 0);
+    h.guide.skipTapped(h.dom.end);
+    h.guide.tick();
+    expect(h.guide.view()?.end).toEqual({ kind: "end", id: "gate" });
   });
 
   it("without a card the skip button carries it, as before", () => {

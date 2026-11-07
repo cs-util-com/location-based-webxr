@@ -744,7 +744,10 @@ undo, note }`: the line's station, how the position stands
   chosen target is the focus whatever the precision, until it is found,
   skipped or no longer offered.
 - **The end-a-story rule:** the end control is shown whenever a found station is offered;
-  its ask is disarmed when the story it named is no longer the target.
+  its ask is disarmed when the story it named is no longer the target, and
+  when the picker opens or closes under it (a pick answers the picker's ask,
+  which would otherwise hold the picked story's auto step; a story's ask
+  does not become a confirmed skip of the stories).
 - **The parity golden's exception for the walk's rules, field by field:** on a tick where
   the no-guess rule holds the `line`, `crumbs` and `skip` may differ from the golden;
   on a tick with no distance the `hud` may; every other field equals the

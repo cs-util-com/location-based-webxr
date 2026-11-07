@@ -640,6 +640,10 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   /** The present station was last judged on a position a code held:
    *  once the code goes (a veto) and nothing else can judge, it ends. */
   let presentByCode = false;
+  /** The end's ask was made at the picker: its confirm skips the stories,
+   *  so it does not carry over to a story, nor a story's to the picker. The
+   *  guide's own bookkeeping; the store holds the ask (`quickArmedId`). */
+  let askedAtPicker = false;
   /** The camera's last bearing this AR entry (`Measurement.headingDeg`). */
   let lastHeadingDeg: number | null = null;
   /** The last judged geometry, for a frozen radar: a
@@ -1406,9 +1410,14 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     const skip = unsettledSkip();
     if (skip !== null && deps.now() >= skip.atMs + SKIP_UNDO_MS) settleUndo();
     startFocusClock();
-    // The end's ask follows the story it was asked for.
-    const story = storyTarget();
-    if (walk().quickArmedId !== null && walk().quickArmedId !== story) {
+    // The end's ask follows the story it was asked for, at the picker or
+    // in the story: a pick answers the picker's, and the page holds the
+    // step while an ask stands.
+    const armed = walk().quickArmedId;
+    if (
+      armed !== null &&
+      (armed !== storyTarget() || askedAtPicker !== atPicker(armed))
+    ) {
       disarm();
     }
     show(dom.line, lineText());
@@ -1473,14 +1482,14 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   function skipLabel(action: SkipAction): string {
     if (action.kind === "ask-skip") return "Can't get there?";
     const title = stationTitle(stationById(action.id) ?? {});
-    const atPicker = deps.storyChoosing?.() === action.id;
+    const picker = atPicker(action.id);
     switch (action.kind) {
       case "skip":
         return `Skip ${title} - I can't get there`;
       case "ask-end":
-        return atPicker ? "Skip the stories" : "End this story?";
+        return picker ? "Skip the stories" : "End this story?";
       case "end":
-        return atPicker
+        return picker
           ? `Skip the stories of ${title} now`
           : `End the story of ${title} now`;
       case "undo":
@@ -1488,6 +1497,11 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       case "finish-tour":
         return "Finish the tour";
     }
+  }
+
+  /** Whether the story picker of `stationId` shows now. */
+  function atPicker(stationId: string): boolean {
+    return deps.storyChoosing?.() === stationId;
   }
 
   /** The found station whose story the visitor may end: the one playing
@@ -1676,6 +1690,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       case "ask-end":
         // On demand: the first tap asks, the second acts.
         if (run.status(action.id)?.state === "found") {
+          askedAtPicker = atPicker(action.id);
           change(quickArmed(action.id));
         }
         break;
