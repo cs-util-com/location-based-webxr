@@ -297,7 +297,7 @@ function outOfSight(page, fields, size) {
               field.contains(hit);
             if (!seen) {
               lost.push(
-                `${String(innerWidth)}x${String(innerHeight)} keyboard ${String(px)} share ${String(share)} ${selector} at ${String(Math.round(at.top))}-${String(Math.round(at.bottom))}`,
+                `${String(innerWidth)}x${String(innerHeight)} keyboard ${String(px)} share ${String(share)} ${selector} at ${String(Math.round(at.top))}-${String(Math.round(at.bottom))} under ${hit === null ? "nothing" : `${hit.tagName.toLowerCase()}.${String(hit.className)}${hit.id === "" ? "" : `#${hit.id}`}`}`,
               );
             }
           }

@@ -446,6 +446,11 @@ body {
 .dbody {
   min-height: 0;
   overflow: auto;
+  /* A field brought into sight (over a keyboard, by its keys) keeps a
+   * little room from the edge rather than ending flush with it, where a
+   * fraction of a pixel of the dock's height leaves its last line under
+   * the keyboard. */
+  scroll-padding-block: 8px;
 }
 
 .dock.collapsed .dbody {
