@@ -728,6 +728,12 @@ function volumeFor(
     eaveHeightM: heights.eaveHeightM + ground.rise,
     totalHeightM: heights.totalHeightM + ground.rise,
     roofShape: heights.roofShape,
+    ...(heights.roofDirectionDeg === undefined
+      ? {}
+      : { roofDirectionDeg: heights.roofDirectionDeg }),
+    ...(heights.roofOrientation === undefined
+      ? {}
+      : { roofOrientation: heights.roofOrientation }),
     groundHeightM: ground.lowest,
   });
 

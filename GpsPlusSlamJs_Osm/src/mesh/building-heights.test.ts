@@ -96,3 +96,66 @@ describe("min_height against a tagged height", () => {
     expect(heights.totalHeightM).toBeGreaterThan(30);
   });
 });
+
+describe("roof:direction and roof:orientation", () => {
+  // Why these tests matter: the two tags only reach the roof generator through
+  // `resolveHeights`, so a value it drops or misreads turns a roof with no
+  // error anywhere. Key:roof:direction allows degrees or a 16-point compass
+  // name; a value it does not define must leave the default in place rather
+  // than tilt the roof towards north.
+  it.each([
+    ["90", 90],
+    ["-90", 270],
+    ["450", 90],
+    [" ssw ", 202.5],
+    ["NW", 315],
+  ])("reads roof:direction=%s as %d degrees", (value, degrees) => {
+    const heights = resolveHeights({
+      building: "yes",
+      "roof:direction": value,
+    });
+    expect(heights.roofDirectionDeg).toBeCloseTo(degrees);
+  });
+
+  it.each(["", "uphill", "12 deg", "N-E"])(
+    "ignores roof:direction=%j it cannot read",
+    (value) => {
+      const heights = resolveHeights({
+        building: "yes",
+        "roof:direction": value,
+      });
+      expect(heights.roofDirectionDeg).toBeUndefined();
+    },
+  );
+
+  it("reads roof:orientation=across and leaves along as the default", () => {
+    expect(
+      resolveHeights({ building: "yes", "roof:orientation": "Across" })
+        .roofOrientation,
+    ).toBe("across");
+    expect(
+      resolveHeights({ building: "yes", "roof:orientation": "along" })
+        .roofOrientation,
+    ).toBeUndefined();
+  });
+
+  it.each([
+    ["cone", "pyramidal"],
+    ["half-hipped", "hipped"],
+    ["mansard", "hipped"],
+    ["saltbox", "gabled"],
+    ["gambrel", "gambrel"],
+    ["round", "round"],
+    ["onion", "onion"],
+  ])("draws roof:shape=%s as %s", (tag, shape) => {
+    // The aliases are the nearest generated shape, chosen so the roof keeps its
+    // height and silhouette; the flat fallback would put the roof on the walls.
+    const heights = resolveHeights({
+      building: "yes",
+      height: "20",
+      "roof:height": "6",
+      "roof:shape": tag,
+    });
+    expect(heights.roofShape).toBe(shape);
+  });
+});

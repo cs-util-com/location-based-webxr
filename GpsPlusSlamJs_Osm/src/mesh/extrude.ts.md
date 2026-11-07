@@ -9,7 +9,8 @@ Footprint plus heights to a triangle mesh: walls, roof, and optionally a floor.
 - `extrudeBuilding(rings, options): MeshData`
 - `mergeMeshes(meshes): MeshData`
 - `interface ExtrudeOptions` — `minHeightM`, `eaveHeightM`, `totalHeightM`,
-  `roofShape`, `groundHeightM?`, `includeFloor?`
+  `roofShape`, `roofDirectionDeg?`, `roofOrientation?` (passed to `buildRoof`
+  as `directionDeg` and `orientation`), `groundHeightM?`, `includeFloor?`
 
 ## Invariants & assumptions
 

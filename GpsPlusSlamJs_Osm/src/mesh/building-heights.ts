@@ -38,6 +38,13 @@ export interface BuildingHeights {
   readonly roofShape: RoofShape;
   /** True when no tag gave a height and the default was used. */
   readonly heightIsGuessed: boolean;
+  /**
+   * `roof:direction` in degrees clockwise from north: the way the slopes face,
+   * downhill. Absent when untagged or unreadable.
+   */
+  readonly roofDirectionDeg?: number;
+  /** Present only for `roof:orientation=across`; `along` is the default. */
+  readonly roofOrientation?: "across";
 }
 
 /**
@@ -50,7 +57,15 @@ export interface BuildingHeights {
  * and where it stops.
  */
 export type RoofShape =
-  "flat" | "pyramidal" | "skillion" | "gabled" | "hipped" | "dome";
+  | "flat"
+  | "pyramidal"
+  | "skillion"
+  | "gabled"
+  | "hipped"
+  | "dome"
+  | "onion"
+  | "round"
+  | "gambrel";
 
 const KNOWN_SHAPES = new Set<RoofShape>([
   "flat",
@@ -59,7 +74,43 @@ const KNOWN_SHAPES = new Set<RoofShape>([
   "gabled",
   "hipped",
   "dome",
+  "onion",
+  "round",
+  "gambrel",
 ]);
+
+/**
+ * Shapes drawn as their nearest generated relative. Each keeps its height
+ * and narrows to a ridge or a point, which is a smaller error than the flat
+ * lid they fell back to, with the walls running up to where the roof ends.
+ * `cone` IS a pyramid on a round footprint.
+ */
+const SHAPE_ALIASES: Readonly<Record<string, RoofShape>> = {
+  cone: "pyramidal",
+  "half-hipped": "hipped",
+  mansard: "hipped",
+  saltbox: "gabled",
+};
+
+/** The 16 compass points of `roof:direction`, in 22.5-degree steps. */
+const COMPASS = [
+  "N",
+  "NNE",
+  "NE",
+  "ENE",
+  "E",
+  "ESE",
+  "SE",
+  "SSE",
+  "S",
+  "SSW",
+  "SW",
+  "WSW",
+  "W",
+  "WNW",
+  "NW",
+  "NNW",
+];
 
 /**
  * Parses an OSM length: metres by default, feet when suffixed.
@@ -93,11 +144,27 @@ function parseLevels(raw: string | undefined): number | undefined {
 function normaliseRoofShape(raw: string | undefined): RoofShape {
   if (raw === undefined) return "flat";
   const shape = raw.trim().toLowerCase();
-  // `half-hipped`, `round`, `gambrel`, `mansard`, `onion`, `saltbox`… all fall
-  // back to flat rather than to a wrong shape. A flat extrusion of the right
-  // footprint at the right height is a much smaller error than a confidently
-  // wrong roof, and at walking distance a roof is barely visible anyway (§8.4).
-  return KNOWN_SHAPES.has(shape as RoofShape) ? (shape as RoofShape) : "flat";
+  if (KNOWN_SHAPES.has(shape as RoofShape)) return shape as RoofShape;
+  // A shape with no agreed meaning (`many`, a typo) falls back to flat rather
+  // than to a wrong shape: a flat extrusion of the right footprint at the right
+  // height is a smaller error than a confidently wrong roof. The shapes with a
+  // close relative are drawn as it (`SHAPE_ALIASES`), because flattening them
+  // also threw away their `roof:height` and ran the walls up to the top.
+  return SHAPE_ALIASES[shape] ?? "flat";
+}
+
+/**
+ * `roof:direction`: degrees, or one of the 16 compass points; `undefined` for
+ * anything else, so junk falls back to the untagged behaviour.
+ */
+function parseRoofDirection(raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
+  const text = raw.trim();
+  const point = COMPASS.indexOf(text.toUpperCase());
+  if (point >= 0) return point * 22.5;
+  if (!/^-?\d+(?:\.\d+)?$/.test(text)) return undefined;
+  const degrees = Number(text);
+  return Number.isFinite(degrees) ? ((degrees % 360) + 360) % 360 : undefined;
 }
 
 /**
@@ -226,6 +293,21 @@ export function resolveHeights(tags: OsmTags): BuildingHeights {
     totalHeightM: Math.max(minHeightM, totalHeightM),
     roofShape,
     heightIsGuessed,
+    // Omitted rather than `undefined` when untagged, so a heights object
+    // compares equal to one written without them.
+    ...roofFacingOf(tags),
+  };
+}
+
+/** `roof:direction` and `roof:orientation=across`, each only when tagged. */
+function roofFacingOf(
+  tags: OsmTags,
+): Pick<BuildingHeights, "roofDirectionDeg" | "roofOrientation"> {
+  const roofDirectionDeg = parseRoofDirection(tags["roof:direction"]);
+  const across = tags["roof:orientation"]?.trim().toLowerCase() === "across";
+  return {
+    ...(roofDirectionDeg === undefined ? {} : { roofDirectionDeg }),
+    ...(across ? { roofOrientation: "across" as const } : {}),
   };
 }
 

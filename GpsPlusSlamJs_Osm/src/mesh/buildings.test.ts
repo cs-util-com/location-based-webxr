@@ -192,8 +192,12 @@ describe("height resolution", () => {
 
   it("falls back to flat for a roof shape it cannot generate", () => {
     // A flat roof of the right footprint at the right height is a far smaller
-    // error than a confidently wrong `gambrel`.
-    expect(resolveHeights({ "roof:shape": "gambrel" }).roofShape).toBe("flat");
+    // error than a confidently wrong one. `quadruple_saltbox` is a real value
+    // (five in the corpus) with no generated relative; `gambrel`, which this
+    // test used to name, is generated since the S3DB roof fixes.
+    expect(
+      resolveHeights({ "roof:shape": "quadruple_saltbox" }).roofShape,
+    ).toBe("flat");
     expect(resolveHeights({ "roof:shape": "gabled" }).roofShape).toBe("gabled");
   });
 });

@@ -36,6 +36,10 @@ export interface ExtrudeOptions {
   /** The very top. Equals `eaveHeightM` for a flat roof. */
   readonly totalHeightM: number;
   readonly roofShape: RoofShape;
+  /** `roof:direction`, degrees clockwise from north; see `RoofOptions`. */
+  readonly roofDirectionDeg?: number;
+  /** `roof:orientation=across`; see `RoofOptions`. */
+  readonly roofOrientation?: "across";
   /** Ground elevation to offset the whole volume by. */
   readonly groundHeightM?: number;
   /**
@@ -113,6 +117,12 @@ export function extrudeBuilding(
     shape: options.roofShape,
     eaveHeightM: eave,
     ridgeHeightM: ground + options.totalHeightM,
+    ...(options.roofDirectionDeg === undefined
+      ? {}
+      : { directionDeg: options.roofDirectionDeg }),
+    ...(options.roofOrientation === undefined
+      ? {}
+      : { orientation: options.roofOrientation }),
   });
   builder.append(roof);
 

@@ -7,11 +7,12 @@ Simple 3D Buildings height resolution: how tall a volume is, and where it starts
 ## Public API
 
 - `resolveHeights(tags): BuildingHeights` — `{ minHeightM, eaveHeightM,
-totalHeightM, roofShape, heightIsGuessed }`
+totalHeightM, roofShape, heightIsGuessed, roofDirectionDeg?, roofOrientation? }`
 - `parseLengthMetres(raw): number | undefined`
 - `isBuilding(feature)`, `isBuildingPart(feature)`
 - `DEFAULT_LEVEL_HEIGHT_M` (3), `DEFAULT_BUILDING_HEIGHT_M` (6)
-- `type RoofShape` — `flat | pyramidal | skillion | gabled | hipped | dome`
+- `type RoofShape` — `flat | pyramidal | skillion | gabled | hipped | dome |
+onion | round | gambrel`
 
 ## Invariants & assumptions
 
@@ -27,8 +28,18 @@ totalHeightM, roofShape, heightIsGuessed }`
   artefact in practice.
 - **An unrecognised `roof:shape` falls back to flat, never to a guess.** A flat
   roof of the right footprint at the right height is a far smaller error than a
-  confidently wrong `gambrel`, and §8.4 notes a roof is barely visible from the
-  pavement anyway.
+  confidently wrong shape for a value with no agreed meaning.
+  - **Four wiki shapes are drawn as their nearest generated shape**, not flat:
+    `cone` as `pyramidal`, `half-hipped` and `mansard` as `hipped`,
+    `saltbox` as `gabled`. Flat was the wrong fallback for them: it also drops
+    `roof:height`, so the walls ran up to where the roof should have ended (a
+    45 m onion turret became a post).
+- **`roof:direction`** is read as degrees (any real number, taken mod 360) or
+  one of the 16 compass names, case and surrounding space ignored; anything
+  else is `undefined` and the roof keeps its default direction. It names the
+  downhill facing of the slope.
+- **`roof:orientation=across`** is the only value carried; `along` is the
+  default and is carried as nothing.
 - **Junk lengths parse to `undefined`, never `0`.** A zero-height building is
   invisible, which reads as "not mapped" rather than "bad tag". Feet are
   supported because real OSM data contains them.
@@ -40,6 +51,9 @@ const heights = resolveHeights({ height: "157", min_height: "12" });
 ```
 
 ## Tests
+
+`building-heights.test.ts` — `min_height` against `height`, the
+`roof:direction` and `roof:orientation` parse, and the shape aliases.
 
 `buildings.test.ts` — precedence, the flagged guess, `min_height`, the roof
 clamp, feet/metres/junk parsing, and the unrecognised-shape fallback.
