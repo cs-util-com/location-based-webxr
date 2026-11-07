@@ -88,9 +88,21 @@ export async function videoPosterOf(
       video.addEventListener("seeked", () => {
         done(true);
       });
+      // A length the browser does not know (0, NaN, a recorded clip's
+      // Infinity) leaves only the start to seek to, and a seek to where
+      // the video already is fires no "seeked": its first frame is drawn
+      // once it is loaded instead.
+      let atStart = false;
       video.addEventListener("loadedmetadata", () => {
-        const half = Number.isFinite(video.duration) ? video.duration / 2 : 0;
-        video.currentTime = Math.min(POSTER_AT_S, half);
+        const length = video.duration;
+        if (!(Number.isFinite(length) && length > 0)) {
+          atStart = true;
+          return;
+        }
+        video.currentTime = Math.min(POSTER_AT_S, length / 2);
+      });
+      video.addEventListener("loadeddata", () => {
+        if (atStart) done(true);
       });
       video.muted = true;
       video.playsInline = true;

@@ -11,7 +11,10 @@ import { describe, expect, it } from "vitest";
 import { videoPosterOf, type PosterVideo } from "./video-poster.js";
 
 /** A video element stand-in that plays `script` once its src is set. */
-function fakeVideo(script: "frame" | "error" | "stall" | "empty") {
+function fakeVideo(
+  script: "frame" | "error" | "stall" | "empty",
+  duration = 4,
+) {
   const listeners = new Map<string, (() => void)[]>();
   const video = {
     muted: false,
@@ -19,12 +22,14 @@ function fakeVideo(script: "frame" | "error" | "stall" | "empty") {
     playsInline: false,
     videoWidth: script === "empty" ? 0 : 640,
     videoHeight: script === "empty" ? 0 : 360,
-    duration: 4,
+    duration,
     seekedTo: null as number | null,
     get currentTime() {
       return this.seekedTo ?? 0;
     },
     set currentTime(t: number) {
+      // A seek to where the video already is fires no "seeked" (Chrome).
+      if (t === this.currentTime) return;
       this.seekedTo = t;
       queueMicrotask(() => {
         for (const f of listeners.get("seeked") ?? []) f();
@@ -40,6 +45,8 @@ function fakeVideo(script: "frame" | "error" | "stall" | "empty") {
               : "loadedmetadata";
         if (event === null) return;
         for (const f of listeners.get(event) ?? []) f();
+        if (event !== "loadedmetadata") return;
+        for (const f of listeners.get("loadeddata") ?? []) f();
       });
     },
     addEventListener(type: string, f: () => void) {
@@ -51,10 +58,13 @@ function fakeVideo(script: "frame" | "error" | "stall" | "empty") {
   return video;
 }
 
-function deps(script: "frame" | "error" | "stall" | "empty") {
+function deps(
+  script: "frame" | "error" | "stall" | "empty",
+  duration?: number,
+) {
   const revoked: string[] = [];
   const drawn: { w: number; h: number }[] = [];
-  const video = fakeVideo(script);
+  const video = fakeVideo(script, duration);
   return {
     revoked,
     drawn,
@@ -92,6 +102,21 @@ describe("videoPosterOf", () => {
       const d = deps(script);
       expect(await videoPosterOf(new Blob(["v"]), d.options)).toBeNull();
       expect(d.drawn).toEqual([]);
+      expect(d.revoked).toEqual(["blob:video"]);
+    }
+  });
+
+  // Why: a video whose length the browser does not know yet (0, NaN, or a
+  // recorded clip's Infinity) has nowhere to seek to but its start, and a
+  // seek to where it already is fires no "seeked": the import waited the
+  // whole timeout and got no poster. Its first frame is drawn once loaded.
+  it("draws the first frame of a video with no known length, without waiting for a seek", async () => {
+    for (const duration of [0, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const d = deps("frame", duration);
+      d.options.timeoutMs = 60_000;
+      const poster = await videoPosterOf(new Blob(["v"]), d.options);
+      expect(await poster?.text()).toBe("jpeg");
+      expect(d.drawn).toEqual([{ w: 640, h: 360 }]);
       expect(d.revoked).toEqual(["blob:video"]);
     }
   });
