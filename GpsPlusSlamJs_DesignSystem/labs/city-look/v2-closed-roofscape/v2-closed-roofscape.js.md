@@ -11,8 +11,9 @@ the library exactly as today.
 
 ## Public API
 
-None; an entry module calling `startCityLook({ id: "v2", ... })` with
-`buildingsFor` and `postprocess: "gtao"`. Lab-only query keys on top of the
+`v2Variant`: the frozen variant object `{ id: "v2", label, postprocess: "gtao",
+buildingsFor }` that `v2-page.js` starts; a later variant spreads it and adds its
+own hooks. Lab-only query keys on top of the
 harness's: `limit` (height limit, m), `tolerance` (corner simplification, m),
 `prior=off` (turns the local roof prior and the class and size refusals off: V2
 as first chosen, for a before and after on one page), `audit` (counts the kept triangles that differ from today's into

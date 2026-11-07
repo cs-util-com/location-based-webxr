@@ -23,6 +23,12 @@ overlay, and the numbers a variant is judged by. Throwaway: nothing outside this
   `3d/ambient-occlusion.js`). The lab's default fades it out at 700-1400 m, not 300-700 m,
   so the bird's view still has it.
 
+`objectsFor(features, ctx)` (optional, may be async) returns a THREE object or an array of
+them, added to the variant's side after its buildings: objects today's look does not draw at
+all (street furniture, scattered trees, a land-use layer). `omitToday` (optional) is a list of
+today's layers the variant's side leaves out, any of `"ground"`, `"roads"`, `"trees"`, so a
+variant can draw its own instead of restyling today's.
+
 `ctx`: `THREE`, `fixture` (`name`, `label`, `centre`, `bbox`), `features`, `featureByKey`
 (a `Map` on `featureKey`), `frame` (`toEnu`), `ground`, `city` (the `buildCity` result with
 roads, built on the library's defaults), `sun` (a unit vector towards the sun),

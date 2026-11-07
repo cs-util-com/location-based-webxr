@@ -11,7 +11,6 @@ import { isBelowSurface } from "/osm-lib/model/below-surface.js";
 import { featureKey } from "/osm-lib/model/osm-feature.js";
 import { toGeometry } from "/osm-lib/model/osm-geometry.js";
 
-import { startCityLook } from "../city-look-harness.js";
 import { appendHouse } from "./house-shell.js";
 import { PARAMS, planCity } from "./roofscape-rules.js";
 
@@ -165,7 +164,11 @@ function buildingsFor(features, ctx) {
   return [...list, roofscapeMesh(plans, tools, ctx.THREE)];
 }
 
-startCityLook({
+/**
+ * V2 as a variant, so a later round can build on its buildings and add its
+ * own objects; `v2-page.js` starts the V2 page with it.
+ */
+export const v2Variant = Object.freeze({
   id: "v2",
   label: "V2 closed roofscape",
   postprocess: "gtao",

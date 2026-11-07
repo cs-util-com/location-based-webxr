@@ -225,18 +225,28 @@ async function variantGroup(variant, today, ground, ctx) {
     group.add(ground, ...today.roads, ...today.trees, ...today.buildings);
     return group;
   }
-  group.add(variantClone(ground, "ground", variant, ctx));
-  for (const road of today.roads) {
-    group.add(variantClone(road, "roads", variant, ctx));
+  const omit = new Set(variant.omitToday ?? []);
+  if (!omit.has("ground")) {
+    group.add(variantClone(ground, "ground", variant, ctx));
   }
-  for (const tree of today.trees) {
-    group.add(variantClone(tree, "trees", variant, ctx));
+  if (!omit.has("roads")) {
+    for (const road of today.roads) {
+      group.add(variantClone(road, "roads", variant, ctx));
+    }
+  }
+  if (!omit.has("trees")) {
+    for (const tree of today.trees) {
+      group.add(variantClone(tree, "trees", variant, ctx));
+    }
   }
   const buildings = variant.buildingsFor
     ? await variant.buildingsFor(ctx.features, ctx)
     : buildingObjects(ctx.city.buildings);
   const list = Array.isArray(buildings) ? buildings : [buildings];
   if (list.length > 0) group.add(...list);
+  const extra = (await variant.objectsFor?.(ctx.features, ctx)) ?? [];
+  const extras = Array.isArray(extra) ? extra : [extra];
+  if (extras.length > 0) group.add(...extras);
   return group;
 }
 
