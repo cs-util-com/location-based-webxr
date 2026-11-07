@@ -21,6 +21,7 @@ import {
   cityLookSearch,
   parseCityLookParams,
   seededRandom,
+  smoothedFrameMs,
   standInFraction,
   streetCamera,
 } from "./city-look-model.js";
@@ -242,4 +243,27 @@ describe("the committed fixtures", () => {
       assert.ok(fixture.centre.lat && fixture.centre.lng);
     });
   }
+});
+
+describe("smoothedFrameMs", () => {
+  // Why this test matters: an animation frame's timestamp is taken at the
+  // frame's start, so a clock read just before it can lie later, and the
+  // preview published -351 ms a frame. The owner compares variants by this
+  // number, so only the gap between two frames' own timestamps may enter it.
+  it("has no value until two frames have a gap", () => {
+    assert.equal(smoothedFrameMs(null, null, 1000), null);
+  });
+
+  it("starts at the first real gap", () => {
+    assert.equal(smoothedFrameMs(null, 1000, 1016), 16);
+  });
+
+  it("moves a tenth of the way towards each new gap", () => {
+    assert.equal(smoothedFrameMs(20, 1000, 1030), 21);
+  });
+
+  it("ignores a frame with no gap or a negative one", () => {
+    assert.equal(smoothedFrameMs(20, 1000, 1000), 20);
+    assert.equal(smoothedFrameMs(20, 1000, 900), 20);
+  });
 });

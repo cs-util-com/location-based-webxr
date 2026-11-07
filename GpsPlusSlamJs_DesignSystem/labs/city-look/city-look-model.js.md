@@ -12,6 +12,8 @@ heat scores. No three.js, no DOM.
   (east, up, minus north). RangeError for an unknown view, or `street` without its pose.
 - `streetCamera(features, frame)`: the street view's pose from real roads, on the middle of
   the street segment nearest the centre. `frame` needs `toEnu({lat, lng})`.
+- `smoothedFrameMs(current, previous, now)`: the smoothed frame gap from frame timestamps;
+  null until a real gap exists, unchanged on a gap that is not positive.
 - `clampSplit(x)`: the divider's share, kept in [0.05, 0.95].
 - `parseCityLookParams(search, { defaultSplit })`: `{ scene, view, split, heat }`.
 - `cityLookSearch(state)`: the search string `parseCityLookParams` reads back.

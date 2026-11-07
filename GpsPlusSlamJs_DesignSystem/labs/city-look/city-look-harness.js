@@ -39,6 +39,7 @@ import {
   clampSplit,
   parseCityLookParams,
   seededRandom,
+  smoothedFrameMs,
   standInFraction,
   streetCamera,
 } from "./city-look-model.js";
@@ -83,7 +84,6 @@ const HEAT_SCALE = fixedScale(1);
 const LAB_AO_PARAMS = { ...AO_PARAMS, fadeStartM: 700, fadeEndM: 1400 };
 
 const MAX_PIXEL_RATIO = 2;
-const FRAME_MS_SMOOTHING = 0.1;
 const STATS_EVERY_MS = 500;
 
 const el = (tag, className, text) => {
@@ -238,6 +238,23 @@ async function variantGroup(variant, today, ground, ctx) {
   return group;
 }
 
+/**
+ * The scene's own render pass, which records what it alone drew. GTAO draws
+ * the scene a second time for its normals, so the renderer's totals are about
+ * twice the geometry on a GTAO page.
+ */
+class CountingRenderPass extends RenderPass {
+  triangles = 0;
+  calls = 0;
+
+  render(renderer, ...rest) {
+    const { triangles, calls } = renderer.info.render;
+    super.render(renderer, ...rest);
+    this.triangles = renderer.info.render.triangles - triangles;
+    this.calls = renderer.info.render.calls - calls;
+  }
+}
+
 function makeComposer(renderer, scene, camera) {
   const composer = new EffectComposer(
     renderer,
@@ -246,7 +263,8 @@ function makeComposer(renderer, scene, camera) {
       samples: 4,
     }),
   );
-  composer.addPass(new RenderPass(scene, camera));
+  composer.scenePass = new CountingRenderPass(scene, camera);
+  composer.addPass(composer.scenePass);
   composer.addPass(new OutputPass());
   return composer;
 }
@@ -560,21 +578,20 @@ async function run(variant, api) {
       renderer.info.reset();
       draw(sideB, composerB);
     }
-    api.triangles = renderer.info.render.triangles;
-    api.draws = renderer.info.render.calls;
+    api.triangles = composerB.scenePass.triangles;
+    api.draws = composerB.scenePass.calls;
+    api.allTriangles = renderer.info.render.triangles;
+    api.allDraws = renderer.info.render.calls;
   }
 
-  let previous = performance.now();
+  let previous = null;
   let lastStats = 0;
   function tick(now) {
     requestAnimationFrame(tick);
     drawFrame();
-    const delta = now - previous;
+    api.frameMs = smoothedFrameMs(api.frameMs, previous, now);
     previous = now;
-    api.frameMs =
-      api.frameMs === null
-        ? delta
-        : api.frameMs + (delta - api.frameMs) * FRAME_MS_SMOOTHING;
+    if (api.frameMs === null) return;
     if (now - lastStats > STATS_EVERY_MS) {
       lastStats = now;
       chrome.stats.textContent =
@@ -602,6 +619,8 @@ export async function startCityLook(variant) {
     split: null,
     triangles: 0,
     draws: 0,
+    allTriangles: 0,
+    allDraws: 0,
     frameMs: null,
     three: null,
   };

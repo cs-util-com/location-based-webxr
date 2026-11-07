@@ -6,6 +6,9 @@
  * @see city-look-model.js.md
  */
 
+/** How far each new frame's gap moves the smoothed frame time. */
+const FRAME_MS_SMOOTHING = 0.1;
+
 /** The street camera's eye above the ground, in metres. */
 export const EYE_HEIGHT_M = 1.7;
 
@@ -46,6 +49,20 @@ export function cameraPose(view, street) {
   const pose = FIXED_POSES[view];
   if (!pose) throw new RangeError(`unknown view: ${view}`);
   return pose;
+}
+
+/**
+ * The smoothed time between animation frames, from the frames' own timestamps:
+ * `previous` is the last frame's, or null on the first. A gap that is not
+ * positive leaves `current` as it is, and it stays null until a real gap exists.
+ */
+export function smoothedFrameMs(current, previous, now) {
+  if (previous === null) return current;
+  const gap = now - previous;
+  if (!(gap > 0)) return current;
+  return current === null
+    ? gap
+    : current + (gap - current) * FRAME_MS_SMOOTHING;
 }
 
 /** The divider's share of the width, kept off both edges; NaN is the middle. */

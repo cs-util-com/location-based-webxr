@@ -30,14 +30,17 @@ roads, built on the library's defaults), `sun` (a unit vector towards the sun),
 
 `window.__cityLook`, serialisable except `three`:
 
-- `ready`: true after the first full frame. `error`: null, or the failure's text.
+- `ready`: true once two frames have run, so `frameMs` has a value. `error`: null, or the failure's text.
 - `scene`, `camera`: the fixture's name and the view's name, strings, so a test can read
   them. The three.js objects are in `three: { scene, camera, renderer }`.
 - `split`: the divider's share, or null for the full view.
-- `triangles`, `draws`: what the variant's side cost in the last frame, full-screen
-  passes and GTAO's extra scene passes included, and the same in split and in full view.
+- `triangles`, `draws`: what the variant's scene pass drew in the last frame, its
+  geometry alone, the same in split and in full view. `allTriangles`, `allDraws`: every
+  pass of the variant's side, full-screen passes and GTAO's second scene pass included, so
+  on a GTAO page about twice the geometry.
   Today's numbers are the V0 page's.
-- `frameMs`: a smoothed time between animation frames. It is capped by the display's
+- `frameMs`: a smoothed time between animation frames, from their own timestamps
+  (`smoothedFrameMs`). It is capped by the display's
   refresh, and in split view it pays for both sides: read a variant's cost at `?split=off`.
 
 Link parameters: `?scene=lucerne|heidelberg`, `?view=landing|bird|street`, `?split=0..1|off`,
