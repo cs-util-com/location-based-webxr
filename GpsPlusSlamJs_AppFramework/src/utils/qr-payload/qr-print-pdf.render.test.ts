@@ -27,6 +27,14 @@ GlobalWorkerOptions.workerSrc = pathToFileURL(
   require.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs')
 ).href;
 
+/** pdf.js draws the standard fonts (the poster text is Helvetica) from its
+ *  own font files, read here as a plain path: in Node a file: URL is not
+ *  read. Without them it falls back to the machine's fonts, and on the
+ *  ubuntu-26.04 runner image the poster text drew nothing. */
+const STANDARD_FONTS = require
+  .resolve('pdfjs-dist/package.json')
+  .replace(/package\.json$/, 'standard_fonts/');
+
 /** Pixels per millimetre the pages are rendered at. */
 const PX_PER_MM = 4;
 
@@ -50,6 +58,8 @@ interface Rendered {
 async function render(bytes: Uint8Array, pageNumber = 1): Promise<Rendered> {
   const task = getDocument({
     data: bytes.slice(),
+    standardFontDataUrl: STANDARD_FONTS,
+    useSystemFonts: false,
     verbosity: 0,
   });
   const doc = await task.promise;
