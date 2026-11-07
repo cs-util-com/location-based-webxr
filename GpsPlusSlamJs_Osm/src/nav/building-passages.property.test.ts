@@ -15,13 +15,16 @@
  * admitted and the chain exists at any width. Mapped passages end at the
  * outline or a little inside it, and there the entry step has to reach the
  * line's end: over 400 uniform placements, a passage ending 3 m short of the
- * walls needed 10 m (8 m: 389, 9 m: 398 of 400). So the walk property draws
- * passages that end at the walls or up to 3 m short, and fails at 5 m.
+ * walls needed 10 m (8 m: 389, 9 m: 398 of 400), and bearings within 2 degrees
+ * of the lattice directions were no worse. So the walk property draws passages
+ * that end at the walls or up to 3 m short, and fails at 5 m. At 3 m short the
+ * corridor has only about 0.5-1 m of margin; a mapped passage ending further
+ * inside the building may need more.
  *
  * The counterweights are in the same file on purpose: an untagged road joins
  * nothing, and with a tagged one the rooms well away from the passage stay
  * sealed. That last property bounds the width from above (it fails at 16 m),
- * so `PASSAGE_CORRIDOR_M` sits inside a window of about 8 to 14.5 m.
+ * so `PASSAGE_CORRIDOR_M` sits inside a window of about 9.5 to 14.5 m.
  *
  * Both reachability checks are confined to a strip through the building. With
  * the whole disk around it the agent could walk round the outside, and the

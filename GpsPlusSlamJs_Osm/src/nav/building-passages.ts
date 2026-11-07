@@ -77,11 +77,14 @@ const PASSAGE_TUNNEL = "building_passage";
  * line's end across a res-13 lattice (centres 7.1 m apart on average, up to
  * 7.83 m). Measured over 400 uniform placements of a 60 m building: a passage ending exactly at the walls joined the two sides
  * every time from 7 m (5 m: 392 of 400), one ending 3 m short needed 10 m
- * (8 m: 389, 9 m: 398 of 400). The LOWER bound is therefore about 8-10 m.
+ * (8 m: 389, 9 m: 398 of 400). Bearings within 2 degrees of the lattice
+ * directions are no worse (2940 near-axis placements: 8 m 2890, 9 m 2939,
+ * 9.5 m and 10 m all). The LOWER bound is therefore about 9.5 m.
  *
  * **The UPPER bound is the building.** Rooms 15-29 m off the passage stayed
  * sealed up to 14.5 m and were reached at 15 m in 3 % of placements, at 16 m in
- * 24 %. 10 m keeps a margin on both sides. `building-passages.property.test.ts`
+ * 24 %. 10 m sits inside that window with only about 0.5-1 m of margin on
+ * the lower side and about 4.5 m on the upper. `building-passages.property.test.ts`
  * holds both: walkable end to end (red at 5 m) and the rooms sealed (red at
  * 16 m).
  */

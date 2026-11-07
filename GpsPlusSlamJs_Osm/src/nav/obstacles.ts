@@ -643,7 +643,7 @@ function crossesAnyIn(
  * HALF A {@link PASSAGE_CORRIDOR_M} either side, measured from the whole step to
  * the whole line. Too narrow and a passage ending at the walls cannot be
  * entered from the lattice; too wide and the rooms beside it open. See
- * `building-passages.ts` for the measured window (about 8-14.5 m).
+ * `building-passages.ts` for the measured window (about 9.5-14.5 m).
  */
 function blockedDespitePassages(
   a: PlanarPoint,
