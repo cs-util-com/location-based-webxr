@@ -905,6 +905,18 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       });
   }
 
+  /** `fileIn`, and `filesNotKept` told whether it landed - for the open
+   *  it was asked in: a close forgets what it knew. */
+  function keepFile(s: Space, file: DraftFile): Promise<boolean> {
+    const mine = generation;
+    return fileIn(s, file).then((ok) => {
+      if (mine !== generation) return ok;
+      if (ok) filesNotKept.delete(file.asset.id);
+      else filesNotKept.add(file.asset.id);
+      return ok;
+    });
+  }
+
   /** The offer's files: every one this draft holds (a write keeps only
    *  what the tour names). */
   function filesOffered(): { files?: readonly DraftFile[] } {
@@ -1167,6 +1179,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     pendingPictures.clear();
     files.clear();
     filesHere.clear();
+    filesNotKept.clear();
     touched.clear();
     bases.clear();
     settingsPending = null;
@@ -1206,7 +1219,9 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     // namespace lacks yet would, for a tab closed mid-move, be dropped by
     // the reopen. Each record still queues now, in its own chain, so a
     // change made after the move lands after it.
-    const filesCarried = [...files.values()].map((file) => fileIn(next, file));
+    const filesCarried = [...files.values()].map((file) =>
+      keepFile(next, file),
+    );
     const filesIn = Promise.all(filesCarried);
     const carried = [writeMeta(next), ...filesCarried];
     for (const [id, change] of pending) {
@@ -1731,11 +1746,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       filesHere.add(asset.id);
       const s = space;
       if (s === null) return Promise.resolve(true);
-      return fileIn(s, file).then((ok) => {
-        if (ok) filesNotKept.delete(asset.id);
-        else filesNotKept.add(asset.id);
-        return ok;
-      });
+      return keepFile(s, file);
     },
     holdsFile: (id) => !filesNotKept.has(id),
     saveSettings(settings) {
