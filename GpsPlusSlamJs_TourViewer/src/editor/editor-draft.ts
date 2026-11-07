@@ -1297,19 +1297,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       // file does not carry it; spent or unreadable, it goes.
       const settingsText = await store.getText(SETTINGS_KEY);
       if (mine !== generation) return none;
-      // A station that no longer reads may read again against a corrected
-      // file: told, and its record stays. A record that does not read at
-      // all has no such way back: told, and it goes.
-      let frameLost = false;
       let lost = false;
-      const readSettings = parseSettingsRecord(
-        settingsText,
-        manifest,
-        (what) => {
-          lost = true;
-          if (what === "frame") frameLost = true;
-        },
-      );
       // The files brought in: one the file on disk lists is
       // its own now and goes; a list that does not read, or a file it
       // names that is missing, is told.
@@ -1332,6 +1320,24 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
           files.set(asset.id, { asset, blob });
         }
       }
+      // Read against the opened file and the files held: a new station's
+      // story may name a file brought in, which the next save writes.
+      const withHeld: TourManifest = {
+        ...manifest,
+        assets: [...manifest.assets, ...[...files.values()].map((f) => f.asset)],
+      };
+      // A station that no longer reads may read again against a corrected
+      // file: told, and its record stays. A record that does not read at
+      // all has no such way back: told, and it goes.
+      let frameLost = false;
+      const readSettings = parseSettingsRecord(
+        settingsText,
+        withHeld,
+        (what) => {
+          lost = true;
+          if (what === "frame") frameLost = true;
+        },
+      );
       /** Told once, for the settings and the files alike. */
       const sayUnread = (): void => {
         if (lost) deps.unreadDraft?.();
@@ -1339,7 +1345,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       const storedSettings =
         readSettings === undefined
           ? undefined
-          : heldAgainst(readSettings, manifest);
+          : heldAgainst(readSettings, withHeld);
       let settings: EditorTourSettings | undefined;
       /** The record offered beside `notes` offered notes, or none - then
        *  it goes. Stations the page created alone are kept only for the

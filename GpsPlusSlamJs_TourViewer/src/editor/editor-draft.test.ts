@@ -2009,6 +2009,53 @@ describe("the files a draft keeps", () => {
     expect(offer?.files?.map((f) => f.asset.id)).toEqual([STATUE.id]);
   });
 
+  // Why: a new station's story may hold a model brought in this visit.
+  // Its frame is kept in the settings record and reads only against a tour
+  // declaring the file; read against the opened file alone, before the
+  // held files are known, it is lost and the station comes back empty.
+  it("offers a new station whose story names a file brought in", async () => {
+    const station = {
+      id: "s-new",
+      geo: { lat: 48.5205, lon: 9.0, alt: 340, rotation: [0, 0, 0, 1] as const },
+      activateRadiusM: 50,
+      foundRadiusM: 25,
+      hint: "arrow" as const,
+      ...stationContent([
+        storyOf("story-102", [
+          {
+            id: "statue-block",
+            kind: "model" as const,
+            view: "hotspots" as const,
+            asset: STATUE.id,
+            sizeM: 2,
+            createdAtIso: "2026-11-07T00:00:00.000Z",
+            pose: {
+              position: [0, 0, 0] as [number, number, number],
+              rotation: [0, 0, 0, 1] as [number, number, number, number],
+            },
+          },
+        ]),
+      ]),
+    };
+    const b = browser();
+    const draft = draftIn(b);
+    const opened = tour(pin("a"));
+    await draft.open(K1, opened);
+    await draft.saveAsset(STATUE, new Blob(["glTF-statue"]));
+    void draft.saveObject({
+      ...pin("a"),
+      geo: { lat: 48.5205, lon: 9.0, alt: 340, headingDeg: 0 },
+      station: "s-new",
+    });
+    void draft.saveSettings({ needsNoGps: false, createdStations: [station] });
+    await draft.idle();
+    draft.close();
+    const again = draftIn(b);
+    const { offer } = await again.open(K1, opened);
+    expect(offer?.settings?.createdStations).toEqual([station]);
+    expect(again.unread()).toBe(0);
+  });
+
   // Why: a key move writes the records and the files into the new key's
   // namespace. A small record landing before a large file leaves, for a
   // tab closed mid-move, a record naming a file the new key lacks: the
