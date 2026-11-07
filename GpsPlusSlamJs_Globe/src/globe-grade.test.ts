@@ -12,15 +12,17 @@ import {
 /**
  * Why these tests matter: the colour grade decides how every picture of
  * the globe looks, and a name in a link picks it. The default is ACES at
- * 0.75, the look from before the presets must stay reachable by its name,
- * the prototype's must stay
- * its curve and exposure, and a mistyped link must degrade to the default
+ * 0.47, the look prototype's grade; ACES at 0.75 and the look from before
+ * the presets stay reachable by their names, and a mistyped link must degrade to the default
  * with a warning: a tester who opens a wrong link sees the plain globe and
  * a console line, not a dead page.
  */
 describe("the grade table", () => {
-  it("defaults to ACES at 0.75", () => {
-    expect(DEFAULT_GLOBE_GRADE).toBe("aces-bright");
+  it("defaults to the look prototype's ACES", () => {
+    expect(DEFAULT_GLOBE_GRADE).toBe("aces");
+  });
+
+  it("keeps ACES at 0.75 selectable", () => {
     expect(GLOBE_GRADES["aces-bright"]).toEqual({
       toneMapping: THREE.ACESFilmicToneMapping,
       exposure: 0.75,

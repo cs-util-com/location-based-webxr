@@ -184,6 +184,14 @@ import type {
   Editor3dStats,
   Editor3dView,
 } from "../editor3d/editor3d-scene.js";
+import {
+  globeQualityChoiceLabel,
+  globeQualityChoiceToast,
+  nextGlobeQualityChoice,
+  qualityToOpenWith,
+  readGlobeQualityChoice,
+  writeGlobeQualityChoice,
+} from "./globe-quality-choice.js";
 import { readGlobeSwitch } from "./globe-switch.js";
 import {
   adoptsSavedFile,
@@ -433,6 +441,8 @@ const debugSwitch = element<HTMLButtonElement>("view-debug");
 const realTimeSwitch = element<HTMLButtonElement>("view-realtime");
 /** The View menu's Clouds: the globe view's heavy clouds (the globe view only). */
 const cloudsSwitch = element<HTMLButtonElement>("view-clouds");
+/** The View menu's Quality: the tier of the next globe view's open. */
+const qualitySwitch = element<HTMLButtonElement>("view-quality");
 const debugStatus = element("debug-status");
 /** "Add debug data…" and its file input (M2 step 5 of the debug-captures
  *  plan). */
@@ -3912,6 +3922,24 @@ function globeOpening(): Pick<Editor3dDeps, "approach" | "walk"> {
 // Only the globe view has a sky of its own to set the clock of.
 realTimeSwitch.hidden = !globeSwitch.on;
 cloudsSwitch.hidden = !globeSwitch.on;
+qualitySwitch.hidden = !globeSwitch.on;
+/** Local storage where the browser allows it (a private window may not). */
+function browserStorage(): Storage | null {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+let qualityChoice = readGlobeQualityChoice(browserStorage());
+qualitySwitch.textContent = globeQualityChoiceLabel(qualityChoice);
+qualitySwitch.addEventListener("click", () => {
+  qualityChoice = nextGlobeQualityChoice(qualityChoice);
+  const label = globeQualityChoiceLabel(qualityChoice);
+  qualitySwitch.textContent = label;
+  const kept = writeGlobeQualityChoice(browserStorage(), qualityChoice);
+  toast(globeQualityChoiceToast(label, kept, globeSwitch.quality));
+});
 // In the dev server an e2e may set `window.__tourEditorClouds` (an init
 // script) to `{ off: true }`: Clouds starts unticked, as if a creator had
 // unticked it, so every open applies it from its first frame. Inert in a
@@ -3945,7 +3973,13 @@ const viewSwitch = createViewSwitch({
         ? import("../editor3d/editor3d-globe.js").then(
             ({ openGlobeEditor }) =>
               (deps: Editor3dDeps) =>
-                openGlobeEditor(deps, globeSwitch),
+                openGlobeEditor(deps, {
+                  ...globeSwitch,
+                  quality: qualityToOpenWith(
+                    globeSwitch.quality,
+                    qualityChoice,
+                  ),
+                }),
           )
         : import("../editor3d/editor3d-scene.js").then(
             ({ openEditor3d }) => openEditor3d,

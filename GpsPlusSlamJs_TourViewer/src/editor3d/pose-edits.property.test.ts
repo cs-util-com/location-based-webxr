@@ -28,6 +28,17 @@ function rolling(a: number) {
     400 + a * Math.sin(p.lat * 9000) * Math.cos(p.lon * 7000);
 }
 
+/**
+ * A number evenly spread over [min, max]. `fc.double` is even over the
+ * representable doubles, so nearly every draw sits at the end of the range
+ * nearest zero: over 0 to 8.5, 94 % of draws were tiny and 5 % at the top,
+ * and the poses between were never met.
+ */
+const between = (min: number, max: number): fc.Arbitrary<number> =>
+  fc
+    .integer({ min: 0, max: 1_000_000 })
+    .map((i) => min + ((max - min) * i) / 1_000_000);
+
 /** The horizontal and vertical gap between two poses (m). */
 function gap(a: QrGeoPose, b: QrGeoPose): number {
   const north = (b.lat - a.lat) * 111_320;
@@ -45,8 +56,8 @@ describe("n nudges then n back", () => {
         const ground = rolling(amplitude);
         fc.assert(
           fc.property(
-            fc.double({ min: -80, max: 80, noNaN: true }),
-            fc.double({ min: -179, max: 179, noNaN: true }),
+            between(-80, 80),
+            between(-179, 179),
             fc.integer({ min: 1, max: 200 }),
             fc.constantFrom(
               [1, 0] as const,
@@ -54,7 +65,7 @@ describe("n nudges then n back", () => {
               [0, 1] as const,
               [0, -1] as const,
             ),
-            fc.double({ min: 0, max: 30, noNaN: true }),
+            between(0, 30),
             (lat, lon, n, [e, nn], above) => {
               const start: QrGeoPose = {
                 lat,
@@ -83,7 +94,9 @@ describe("a whole turn in steps", () => {
   // Swept: steps of 1, 5 and 15 degrees (the keys' 5 and 15, and the
   // knob's whole degrees); heading-only, upright-rotation, tilted and
   // near-vertical poses; any start heading. Verdict: back on its heading
-  // within `turnBound` scaled by `reach`, its rotation within 1e-9.
+  // within `turnBound` scaled by `reach`, its rotation within `turnBound`
+  // too, as a chord: half the angle, where `1 - |dot|` is its square and at
+  // 1e-9 could not see 9e-5 rad.
   //
   // The heading is ill-conditioned, the rotation is not. A rotation's
   // heading is the bearing of its x axis's shadow on the ground, and that
@@ -105,10 +118,13 @@ describe("a whole turn in steps", () => {
   // 7,200, 1,546 at 36,000, about 0.04 EPS a step. A bound with under 17
   // EPS for the readings, or under 0.05 EPS a step, would be false.
   const poses = fc.oneof(
-    fc
-      .double({ min: 0, max: 359.999, noNaN: true })
-      .map((h): QrGeoPose => ({ lat: 48, lon: 11, alt: 500, headingDeg: h })),
-    fc.double({ min: 0, max: 359.999, noNaN: true }).map((h): QrGeoPose => {
+    between(0, 359.999).map((h): QrGeoPose => ({
+      lat: 48,
+      lon: 11,
+      alt: 500,
+      headingDeg: h,
+    })),
+    between(0, 359.999).map((h): QrGeoPose => {
       const half = (-h * Math.PI) / 360;
       return {
         lat: 48,
@@ -119,12 +135,7 @@ describe("a whole turn in steps", () => {
       };
     }),
     fc
-      .tuple(
-        fc.double({ min: -1, max: 1, noNaN: true }),
-        fc.double({ min: -1, max: 1, noNaN: true }),
-        fc.double({ min: -1, max: 1, noNaN: true }),
-        fc.double({ min: 0.1, max: 1, noNaN: true }),
-      )
+      .tuple(between(-1, 1), between(-1, 1), between(-1, 1), between(0.1, 1))
       .map(([x, y, z, w]): QrGeoPose => {
         const l = Math.hypot(x, y, z, w);
         return {
@@ -138,10 +149,10 @@ describe("a whole turn in steps", () => {
     // the plain draws above almost never come here.
     fc
       .tuple(
-        fc.double({ min: 0, max: 8.5, noNaN: true }),
+        between(0, 8.5),
         fc.constantFrom(1, -1),
-        fc.double({ min: 0, max: 7, noNaN: true }),
-        fc.double({ min: 0, max: 7, noNaN: true }),
+        between(0, 7),
+        between(0, 7),
       )
       .map(([tens, side, yaw, roll]): QrGeoPose => {
         const pitch = side * (Math.PI / 2 - 10 ** -tens);
@@ -204,8 +215,10 @@ describe("a whole turn in steps", () => {
           const identity = [0, 0, 0, 1] as const;
           const before = start.rotation ?? identity;
           const after = at.rotation ?? identity;
-          const dot = before.reduce((s, v, i) => s + v * (after[i] ?? 0), 0);
-          expect(1 - Math.abs(dot)).toBeLessThan(1e-9);
+          const apart = (sign: number): number =>
+            Math.hypot(...before.map((v, i) => v - sign * (after[i] ?? 0)));
+          // A quaternion and its negative are the same rotation.
+          expect(Math.min(apart(1), apart(-1))).toBeLessThan(turnBound(steps));
           expect(at.lat).toBe(start.lat);
           expect(at.alt).toBe(start.alt);
         }),

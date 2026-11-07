@@ -376,7 +376,8 @@ function card(page, name) {
 test("the shell's layout at a phone, a phone in landscape, a tablet and a desktop", async ({
   page,
 }) => {
-  test.setTimeout(150_000);
+  // About 52 s on CI, 144 s at worst under load.
+  test.setTimeout(240_000);
   await useWideFont(page);
   // A phone: the list is a sheet; selecting a station turns it into the
   // details. Where the sheets stand: `editor3d-phone.spec.js`.
@@ -488,14 +489,20 @@ async function expectPanel(page, size, heightPx) {
   const inspector = page.locator("#shell-inspector");
   const phone = size.width <= 700;
   // It pushes the view up: the view's canvas ends at its top, or on a
-  // phone at the top of the sheet standing on it.
+  // phone at the top of the sheet standing on it. Polled: the canvas takes
+  // its size from a ResizeObserver, a callback after the layout the panel's
+  // box is read from, which a busy page delays.
   let mapFoot = panel.y;
   if (phone) {
     const sheet = (await inspector.isVisible()) ? inspector : tree;
     if (await sheet.isVisible()) mapFoot = (await box(sheet)).y;
   }
-  const canvas = await box(page.locator("#view3d canvas.view3d-canvas"));
-  expect(canvas.y + canvas.height, at).toBeCloseTo(mapFoot, 0);
+  await expect
+    .poll(async () => {
+      const canvas = await box(page.locator("#view3d canvas.view3d-canvas"));
+      return Math.abs(canvas.y + canvas.height - mapFoot);
+    }, at)
+    .toBeLessThan(0.5);
   const head = await box(page.locator("#shell-panel .bp-head"));
   expect(head.height, at).toBe(30);
   expect(head.y, at).toBeCloseTo(panel.y + 1, 0);

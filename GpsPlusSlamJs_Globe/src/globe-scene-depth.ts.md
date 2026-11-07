@@ -82,3 +82,12 @@ to the drawing buffer. In the browser: the lab's
 `globe-cloud-volume.smoke.spec.mjs` (the volume seen from just above the
 deck: the near plane) and `globe-atmosphere.smoke.spec.mjs` (no unveiled
 relief at the horizon below the hand-over).
+
+## The band's dither
+
+`createGlobeSceneDepth(renderer, { carrierShare })` takes the band's
+`uCarrierShare` and holds it at 1 while the relief is drawn, so the depth has
+no dither holes; the value is given back before the method returns. Without it
+the near clouds' shadow and their stop at the ground flip between the relief
+and the sea's sphere pixel by pixel inside the band (a dark stipple around
+3.5 km). Covered by `globe-scene-depth.test.ts`.

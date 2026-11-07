@@ -1,0 +1,4153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Editor Import: Drop Into Scene</title>
+    <!--
+  Throwaway prototype: bringing your own pictures and 3D models into the tour
+  editor, direction "drag the file straight onto the place". The moment a file
+  enters the window the 3D view shows where it would land; on drop it stands
+  there, selected, and reading and checking happen on the object itself. No
+  dialog, no right-hand panel. Files are really read: pictures are decoded,
+  .glb models are checked and parsed by three.js. Sample files are built on
+  this page. Nothing is saved. Original code and made-up data.
+-->
+    <style>
+      :root {
+        --bg0: #1c1e22;
+        --bg1: #212327;
+        --panel: #24272c;
+        --bg3: #2c2f35;
+        --bg4: #363a41;
+        --line: #33363c;
+        --line2: #3e424a;
+        --text: #e6e6e6;
+        --muted: #9aa0a6;
+        --dim: #6c727b;
+        --accent: #e9a23b;
+        --accentBg: rgba(233, 162, 59, 0.14);
+        --accentLine: rgba(233, 162, 59, 0.55);
+        --accentText: #f3c47e;
+        --warn: #ff9166;
+        --warnBg: rgba(255, 145, 102, 0.13);
+        --warnLine: rgba(255, 145, 102, 0.5);
+        --danger: #ef7470;
+        --dangerBg: rgba(239, 116, 112, 0.13);
+        --dangerLine: rgba(239, 116, 112, 0.5);
+        --good: #7fc77a;
+        --focus: #5b9cf0;
+        --mono:
+          "Cascadia Mono", Consolas, "SF Mono", ui-monospace, Menlo, monospace;
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        background: var(--bg0);
+        color: var(--text);
+        font:
+          12px/1.4 "Segoe UI",
+          system-ui,
+          -apple-system,
+          "Helvetica Neue",
+          Arial,
+          sans-serif;
+        overflow: hidden;
+        display: grid;
+        grid-template-rows: 40px minmax(0, 1fr) 24px 88px;
+      }
+      button,
+      input,
+      select {
+        font: inherit;
+        color: inherit;
+      }
+      svg.i {
+        width: 16px;
+        height: 16px;
+        flex: none;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.35;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      kbd {
+        font: 10px var(--mono);
+        padding: 0 4px;
+        border: 1px solid var(--line2);
+        border-bottom-width: 2px;
+        border-radius: 3px;
+        background: var(--bg3);
+        color: var(--muted);
+      }
+      [hidden] {
+        display: none !important;
+      }
+      :focus-visible {
+        outline: 2px solid var(--focus);
+        outline-offset: -2px;
+      }
+
+      /* top bar */
+      #top {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 8px;
+        background: var(--bg1);
+        border-bottom: 1px solid var(--line);
+        min-width: 0;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding-right: 10px;
+        margin-right: 2px;
+        border-right: 1px solid var(--line);
+        height: 24px;
+        white-space: nowrap;
+      }
+      .brand b {
+        font-weight: 600;
+      }
+      .brand .doc {
+        color: var(--muted);
+      }
+      .tbtn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 26px;
+        padding: 0 9px;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        background: transparent;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .tbtn:hover:not(:disabled) {
+        background: var(--bg3);
+      }
+      .tbtn:disabled {
+        color: var(--dim);
+        cursor: default;
+      }
+      .tbtn.acc {
+        border-color: var(--accentLine);
+        background: var(--accentBg);
+        color: var(--accentText);
+      }
+      .unsaved {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--accentText);
+        font-size: 11px;
+        white-space: nowrap;
+        padding: 0 6px;
+      }
+      .unsaved::before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+      .sp {
+        flex: 1;
+      }
+
+      /* main row */
+      #main {
+        display: flex;
+        min-height: 0;
+        min-width: 0;
+        position: relative;
+      }
+      #tree {
+        width: 272px;
+        flex: none;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        background: var(--panel);
+        border-right: 1px solid var(--line);
+      }
+      .phead {
+        flex: none;
+        height: 34px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 0 12px;
+        border-bottom: 1px solid var(--line);
+      }
+      .phead .ttl {
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .phead .count {
+        font: 10px var(--mono);
+        color: var(--dim);
+        margin-left: 4px;
+      }
+      #rows {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        padding: 4px 0 16px;
+      }
+      #rows::-webkit-scrollbar {
+        width: 10px;
+      }
+      #rows::-webkit-scrollbar-thumb {
+        background: var(--bg4);
+        border: 3px solid var(--panel);
+        border-radius: 6px;
+      }
+      .row {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        height: 26px;
+        padding-left: calc(var(--d) * 16px + 2px);
+        padding-right: 8px;
+        cursor: pointer;
+        white-space: nowrap;
+        user-select: none;
+      }
+      .row:hover {
+        background: rgba(255, 255, 255, 0.035);
+      }
+      .row.sel {
+        background: rgba(233, 162, 59, 0.2);
+        box-shadow: inset 2px 0 0 var(--accent);
+      }
+      .row.st {
+        height: 28px;
+        font-weight: 600;
+      }
+      .row.ghostly {
+        cursor: default;
+      }
+      .tw {
+        width: 16px;
+        height: 20px;
+        flex: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--muted);
+        border: 0;
+        background: transparent;
+        padding: 0;
+        cursor: pointer;
+      }
+      .tw svg {
+        width: 12px;
+        height: 12px;
+        transition: transform 0.12s;
+      }
+      .tw.open svg {
+        transform: rotate(90deg);
+      }
+      .tw.none {
+        visibility: hidden;
+      }
+      .badge {
+        font: 600 10px var(--mono);
+        min-width: 18px;
+        height: 16px;
+        line-height: 16px;
+        text-align: center;
+        border-radius: 3px;
+        background: #3d5a78;
+        color: #e6f0fa;
+        flex: none;
+        padding: 0 3px;
+      }
+      .row .ti {
+        color: var(--muted);
+      }
+      .row .ti.story {
+        color: var(--accentText);
+      }
+      .nm {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .row:not(.st) .nm {
+        font-weight: 400;
+      }
+      .meta {
+        font: 10px var(--mono);
+        color: var(--dim);
+        flex: none;
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex: none;
+      }
+      .dot.warn {
+        background: var(--warn);
+      }
+      .dot.bad {
+        background: var(--danger);
+      }
+      .spin {
+        width: 11px;
+        height: 11px;
+        flex: none;
+        border-radius: 50%;
+        border: 2px solid var(--accentLine);
+        border-top-color: transparent;
+        animation: sp 0.8s linear infinite;
+      }
+      @keyframes sp {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .row.justin {
+        animation: justin 1.1s ease-out;
+      }
+      @keyframes justin {
+        from {
+          background: rgba(233, 162, 59, 0.42);
+        }
+      }
+      /* While a file is in the air every station row is a place it can land. */
+      body.filedrag .row.st {
+        box-shadow: inset 0 0 0 1px rgba(233, 162, 59, 0.18);
+      }
+      body.filedrag .row.st.over {
+        background: rgba(233, 162, 59, 0.3);
+        box-shadow: inset 0 0 0 1px var(--accent);
+      }
+      .treefoot {
+        flex: none;
+        padding: 8px 12px 10px;
+        color: var(--dim);
+        font-size: 11px;
+        line-height: 1.5;
+        border-top: 1px solid var(--line);
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 4px 8px;
+      }
+      .treefoot > span {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      /* 3D view */
+      #view {
+        flex: 1;
+        min-width: 0;
+        position: relative;
+        overflow: hidden;
+        background: #232427;
+      }
+      #view canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        touch-action: none;
+        outline: none;
+      }
+      #view.moving canvas {
+        cursor: grabbing;
+      }
+      #view.hoverobj canvas {
+        cursor: grab;
+      }
+      #frame {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        box-shadow: inset 0 0 0 0 transparent;
+        transition: box-shadow 0.12s;
+      }
+      body.filedrag #frame {
+        box-shadow:
+          inset 0 0 0 2px var(--accent),
+          inset 0 0 90px rgba(233, 162, 59, 0.14);
+      }
+      #over {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        overflow: hidden;
+        z-index: 2;
+      }
+      #lead {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+      }
+      #lead line {
+        stroke: rgba(235, 235, 235, 0.5);
+        stroke-width: 1;
+      }
+      #lead circle {
+        fill: #fff;
+      }
+
+      .stag {
+        position: absolute;
+        left: 0;
+        top: 0;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 26px;
+        padding: 0 11px 0 3px;
+        border-radius: 999px;
+        background: #fff;
+        color: #23262b;
+        font-size: 12.5px;
+        font-weight: 500;
+        white-space: nowrap;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+      }
+      .stag i {
+        display: grid;
+        place-items: center;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: #3f6b9e;
+        color: #fff;
+        font: 600 11px var(--mono);
+      }
+      .stag.hit {
+        background: var(--accent);
+      }
+      .stag.hit i {
+        background: #23262b;
+      }
+
+      .itag {
+        position: absolute;
+        left: 0;
+        top: 0;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        height: 22px;
+        padding: 0 8px;
+        border-radius: 4px;
+        border: 1px solid var(--line2);
+        background: rgba(28, 30, 34, 0.94);
+        color: var(--text);
+        font-size: 11px;
+        white-space: nowrap;
+        pointer-events: auto;
+        cursor: pointer;
+      }
+      .itag.warn {
+        border-color: var(--warnLine);
+        color: #ffc6ae;
+      }
+      .itag.bad {
+        border-color: var(--dangerLine);
+        color: #ffc4c1;
+      }
+
+      #ghostTag {
+        position: absolute;
+        left: 0;
+        top: 0;
+        max-width: 300px;
+        padding: 5px 10px;
+        border-radius: 6px;
+        background: rgba(24, 25, 28, 0.96);
+        border: 1px solid var(--accentLine);
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+        white-space: nowrap;
+      }
+      #ghostTag b {
+        display: block;
+        font-weight: 600;
+        color: var(--accentText);
+      }
+      #ghostTag span {
+        color: var(--muted);
+        font-size: 11px;
+      }
+      #ghostTag.no {
+        border-color: var(--dangerLine);
+        white-space: normal;
+        width: 270px;
+      }
+      #ghostTag.no b {
+        color: #ffc4c1;
+      }
+      #ghostTag.swap {
+        border-color: var(--warnLine);
+      }
+      #ghostTag.swap b {
+        color: #ffc6ae;
+      }
+
+      #dropHint {
+        position: absolute;
+        top: 12px;
+        left: 50%;
+        transform: translate(-50%, -8px);
+        padding: 6px 14px;
+        border-radius: 999px;
+        background: rgba(24, 25, 28, 0.94);
+        border: 1px solid var(--accentLine);
+        color: var(--accentText);
+        font-size: 12.5px;
+        white-space: nowrap;
+        opacity: 0;
+        transition:
+          opacity 0.12s,
+          transform 0.12s;
+        pointer-events: none;
+      }
+      body.filedrag #dropHint {
+        opacity: 1;
+        transform: translate(-50%, 0);
+      }
+
+      /* knobs on the selected object */
+      .knob {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 26px;
+        height: 26px;
+        margin: -13px 0 0 -13px;
+        display: grid;
+        place-items: center;
+        padding: 0;
+        border-radius: 50%;
+        border: 2px solid #23262b;
+        background: var(--accent);
+        color: #23262b;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+        pointer-events: auto;
+        touch-action: none;
+      }
+      .knob svg {
+        width: 14px;
+        height: 14px;
+        stroke-width: 1.7;
+      }
+      .knob:hover {
+        background: #ffc873;
+      }
+      #hTurn {
+        cursor: grab;
+      }
+      #hSize {
+        cursor: nwse-resize;
+        border-radius: 6px;
+      }
+      body.filedrag .knob,
+      body.filedrag #card,
+      body.filedrag #lead {
+        display: none;
+      }
+
+      #readout {
+        position: absolute;
+        left: 0;
+        top: 0;
+        padding: 3px 8px;
+        border-radius: 4px;
+        background: rgba(24, 25, 28, 0.94);
+        border: 1px solid var(--line2);
+        font: 11px var(--mono);
+        white-space: nowrap;
+      }
+
+      /* the card that travels with the object */
+      #card {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 272px;
+        max-height: calc(100% - 16px);
+        overflow: auto;
+        background: rgba(36, 39, 44, 0.97);
+        border: 1px solid var(--line2);
+        border-radius: 8px;
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+        pointer-events: auto;
+      }
+      #card.warn {
+        border-color: var(--warnLine);
+      }
+      #card.bad {
+        border-color: var(--dangerLine);
+      }
+      #card::-webkit-scrollbar {
+        width: 8px;
+      }
+      #card::-webkit-scrollbar-thumb {
+        background: var(--bg4);
+        border-radius: 6px;
+      }
+      .chead {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 36px;
+        padding: 0 4px 0 10px;
+        border-bottom: 1px solid var(--line);
+      }
+      .chead .ic {
+        color: var(--accentText);
+        display: inline-flex;
+      }
+      .chead input {
+        flex: 1;
+        min-width: 0;
+        height: 26px;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        background: transparent;
+        color: #f0f1f3;
+        font-weight: 600;
+        font-size: 13px;
+        padding: 0 4px;
+        outline: none;
+        text-overflow: ellipsis;
+      }
+      .chead input:hover {
+        border-color: var(--line2);
+      }
+      .chead input:focus {
+        border-color: var(--focus);
+        background: var(--bg0);
+      }
+      .ib {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 26px;
+        height: 26px;
+        border: 0;
+        background: transparent;
+        border-radius: 4px;
+        color: var(--muted);
+        cursor: pointer;
+        flex: none;
+        padding: 0;
+      }
+      .ib:hover {
+        background: var(--bg3);
+        color: var(--text);
+      }
+      .cbody {
+        padding: 9px 10px 10px;
+        display: grid;
+        gap: 8px;
+      }
+      .stage {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        min-height: 18px;
+        color: var(--accentText);
+      }
+      .stage .sz {
+        margin-left: auto;
+        font: 10.5px var(--mono);
+        color: var(--dim);
+      }
+      .pbar {
+        height: 3px;
+        border-radius: 2px;
+        background: var(--bg4);
+        overflow: hidden;
+      }
+      .pbar i {
+        display: block;
+        height: 100%;
+        width: 0;
+        background: var(--accent);
+      }
+      .frow {
+        display: grid;
+        grid-template-columns: 60px 1fr;
+        align-items: center;
+        gap: 6px;
+        color: var(--muted);
+      }
+      .frow select {
+        height: 24px;
+        min-width: 0;
+        width: 100%;
+        background: var(--bg0);
+        border: 1px solid var(--line2);
+        border-radius: 3px;
+        padding: 0 3px;
+      }
+      .nums {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 6px;
+      }
+      .num {
+        display: grid;
+        gap: 2px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .num div {
+        display: flex;
+        align-items: center;
+        height: 24px;
+        background: var(--bg0);
+        border: 1px solid var(--line2);
+        border-radius: 3px;
+        padding-right: 5px;
+      }
+      .num div:focus-within {
+        border-color: var(--focus);
+      }
+      .num input {
+        flex: 1;
+        min-width: 0;
+        width: 100%;
+        height: 100%;
+        border: 0;
+        background: transparent;
+        padding: 0 2px 0 5px;
+        font: 11px var(--mono);
+        outline: none;
+        -moz-appearance: textfield;
+        appearance: textfield;
+      }
+      .num input::-webkit-inner-spin-button {
+        display: none;
+      }
+      .num em {
+        font: 10px var(--mono);
+        color: var(--dim);
+        font-style: normal;
+      }
+      .fine {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.35;
+      }
+      .fine .ok {
+        color: var(--good);
+        flex: none;
+      }
+      .prob {
+        display: grid;
+        gap: 5px;
+        padding: 8px 9px;
+        border-radius: 6px;
+        border: 1px solid var(--warnLine);
+        background: var(--warnBg);
+      }
+      .prob.bad {
+        border-color: var(--dangerLine);
+        background: var(--dangerBg);
+      }
+      .prob b {
+        font-size: 12.5px;
+        color: #ffd9c9;
+        font-weight: 600;
+      }
+      .prob.bad b {
+        color: #ffd2cf;
+      }
+      .prob p {
+        margin: 0;
+        color: #d9dade;
+        line-height: 1.4;
+      }
+      .prob .found {
+        font: 10.5px var(--mono);
+        color: var(--muted);
+      }
+      .meter {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 2px 8px;
+        font-size: 11px;
+        color: #d9dade;
+      }
+      .meter span:nth-child(2) {
+        font: 10.5px var(--mono);
+        color: var(--muted);
+      }
+      .mtrack {
+        grid-column: 1 / -1;
+        height: 4px;
+        border-radius: 2px;
+        background: rgba(0, 0, 0, 0.35);
+        overflow: hidden;
+        position: relative;
+      }
+      .mtrack i {
+        display: block;
+        height: 100%;
+        background: var(--warn);
+      }
+      .mtrack::after {
+        content: "";
+        position: absolute;
+        left: 40%;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: #fff;
+      }
+      .mtrack i.fits {
+        background: var(--good);
+      }
+      .act {
+        display: block;
+        width: 100%;
+        padding: 6px 9px;
+        border: 1px solid var(--line2);
+        border-radius: 5px;
+        background: var(--bg3);
+        cursor: pointer;
+        text-align: left;
+        line-height: 1.3;
+      }
+      .act:hover:not(:disabled) {
+        border-color: #5a5f69;
+        background: var(--bg4);
+      }
+      .act:disabled {
+        cursor: default;
+        color: var(--muted);
+      }
+      .act.main {
+        border-color: var(--accentLine);
+        background: var(--accentBg);
+        color: var(--accentText);
+        font-weight: 600;
+      }
+      .act small {
+        display: block;
+        font-weight: 400;
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 1px;
+      }
+      .acts {
+        display: grid;
+        gap: 6px;
+      }
+      .dropnote {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 6px 9px;
+        border: 1px dashed var(--line2);
+        border-radius: 5px;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.35;
+      }
+      .dropnote svg {
+        color: var(--dim);
+      }
+      .link {
+        border: 0;
+        background: transparent;
+        padding: 0;
+        color: var(--muted);
+        cursor: pointer;
+        text-decoration: underline dotted;
+        font-size: 11px;
+        text-align: left;
+      }
+      .link:hover {
+        color: var(--text);
+      }
+      .link.red {
+        color: var(--danger);
+      }
+      .foot {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      details.diy summary {
+        color: var(--muted);
+        font-size: 11px;
+        cursor: pointer;
+      }
+      details.diy ol {
+        margin: 4px 0 0;
+        padding-left: 18px;
+        color: #d9dade;
+        font-size: 11px;
+        line-height: 1.45;
+      }
+
+      #mapCtl {
+        position: absolute;
+        right: 12px;
+        bottom: 12px;
+        display: flex;
+        gap: 6px;
+      }
+      .mc {
+        width: 30px;
+        height: 30px;
+        display: grid;
+        place-items: center;
+        border: 1px solid var(--line2);
+        border-radius: 5px;
+        background: rgba(30, 31, 34, 0.92);
+        cursor: pointer;
+        padding: 0;
+        color: var(--muted);
+      }
+      .mc:hover {
+        color: var(--text);
+      }
+
+      #toast {
+        position: absolute;
+        left: 50%;
+        bottom: 14px;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        padding: 5px 12px;
+        border-radius: 5px;
+        background: rgba(30, 31, 34, 0.96);
+        border: 1px solid var(--line2);
+        white-space: nowrap;
+        opacity: 0;
+        transition: opacity 0.15s;
+        pointer-events: none;
+      }
+      #toast.on {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      #toast button {
+        border: 0;
+        background: transparent;
+        color: var(--accentText);
+        cursor: pointer;
+        padding: 0;
+        text-decoration: underline dotted;
+      }
+
+      #notes {
+        position: absolute;
+        left: 10px;
+        top: 10px;
+        width: 300px;
+        background: rgba(36, 39, 44, 0.96);
+        border: 1px solid var(--line2);
+        border-radius: 6px;
+        font-size: 11.5px;
+      }
+      #notes summary {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 9px;
+        cursor: pointer;
+        color: var(--accentText);
+        list-style: none;
+      }
+      #notes summary::-webkit-details-marker {
+        display: none;
+      }
+      #notes:not([open]) {
+        width: auto;
+        background: rgba(36, 39, 44, 0.8);
+      }
+      #notes .nb {
+        padding: 2px 11px 9px;
+        color: #d3d5d9;
+        line-height: 1.45;
+      }
+      #notes p {
+        margin: 4px 0;
+      }
+      #notes ul {
+        margin: 4px 0;
+        padding-left: 16px;
+      }
+
+      /* footer */
+      #bar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 0 10px;
+        background: var(--bg1);
+        border-top: 1px solid var(--line);
+        color: var(--dim);
+        font-size: 11px;
+        white-space: nowrap;
+        min-width: 0;
+      }
+      #barHint {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
+      }
+      #probBtn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 20px;
+        padding: 0 8px;
+        border: 0;
+        border-radius: 3px;
+        background: var(--warnBg);
+        color: #ffc6ae;
+        cursor: pointer;
+        font-size: 11px;
+      }
+      #probBtn:hover {
+        background: rgba(255, 145, 102, 0.24);
+      }
+      #weight {
+        font-family: var(--mono);
+        font-size: 10.5px;
+      }
+
+      /* the desk: below the app, standing in for the computer */
+      #desk {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 0 14px;
+        background: linear-gradient(180deg, #141a24, #10151d);
+        border-top: 1px solid #000;
+        min-width: 0;
+      }
+      .deskhead {
+        flex: none;
+        width: 214px;
+        line-height: 1.35;
+      }
+      .deskhead b {
+        display: block;
+        font-size: 13px;
+        font-weight: 600;
+        color: #f0f1f3;
+      }
+      .deskhead span {
+        color: #93a0b2;
+        font-size: 11px;
+      }
+      #files {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        gap: 8px;
+      }
+      .file {
+        flex: 1 1 0;
+        min-width: 0;
+        max-width: 218px;
+        height: 64px;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 6px 9px 6px 7px;
+        border: 1px solid #2c3648;
+        border-radius: 7px;
+        background: rgba(255, 255, 255, 0.04);
+        cursor: grab;
+        text-align: left;
+      }
+      .file:hover {
+        border-color: #55657e;
+        background: rgba(255, 255, 255, 0.08);
+      }
+      .file:active {
+        cursor: grabbing;
+      }
+      .file.flying {
+        opacity: 0.4;
+      }
+      .file canvas,
+      .file .glb {
+        width: 44px;
+        height: 50px;
+        flex: none;
+        border-radius: 3px;
+      }
+      .file canvas {
+        object-fit: cover;
+      }
+      .file .tx {
+        min-width: 0;
+        display: grid;
+        gap: 0;
+      }
+      .file .fn {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: #eef0f3;
+        font-size: 12px;
+      }
+      .file .fs {
+        font: 10.5px var(--mono);
+        color: #93a0b2;
+      }
+      .file .fk {
+        font-size: 11px;
+        color: #93a0b2;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .file .fk.w {
+        color: #ffb394;
+      }
+      .file .fk.b {
+        color: #ff9f9b;
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.185.1/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <header id="top">
+      <div class="brand">
+        <b>Tour editor</b><span class="doc">Old Town Walk</span>
+      </div>
+      <button class="tbtn" id="undoBtn" disabled title="Undo (Ctrl+Z)">
+        <svg class="i" viewBox="0 0 16 16">
+          <path d="M5.5 3L2.5 6l3 3M2.8 6h6.7a3.8 3.8 0 0 1 0 7.5H6" /></svg
+        >Undo
+      </button>
+      <span id="unsaved" class="unsaved" hidden>Not saved</span>
+      <span class="sp"></span>
+      <button
+        class="tbtn acc"
+        id="addBtn"
+        title="Choose pictures or models from your computer"
+      >
+        <svg class="i" viewBox="0 0 16 16"><path d="M8 3.5v9M3.5 8h9" /></svg
+        >Add file...
+      </button>
+      <input
+        type="file"
+        id="picker"
+        multiple
+        accept="image/*,.glb,model/gltf-binary"
+        hidden
+      />
+    </header>
+
+    <div id="main">
+      <aside id="tree" aria-label="Stations">
+        <div class="phead">
+          <span class="ttl">Stations</span
+          ><span class="count" id="stCount"></span>
+        </div>
+        <div id="rows" role="tree" aria-label="Tour contents"></div>
+        <div class="treefoot">
+          <span><kbd>&larr;&uarr;&darr;&rarr;</kbd> move</span>
+          <span><kbd>Q</kbd> <kbd>E</kbd> turn</span>
+          <span><kbd>Del</kbd> remove</span>
+          <span><kbd>Ctrl Z</kbd> undo</span>
+        </div>
+      </aside>
+
+      <section id="view" aria-label="3D view of the place">
+        <canvas id="cv" tabindex="0"></canvas>
+        <div id="frame"></div>
+        <div id="over">
+          <svg id="lead" aria-hidden="true">
+            <line id="leadLine" />
+            <circle id="leadDot" r="2.5" />
+          </svg>
+          <div id="tags"></div>
+          <button class="knob" id="hTurn" title="Drag to turn" hidden>
+            <svg class="i" viewBox="0 0 16 16">
+              <path d="M12.8 8a4.8 4.8 0 1 1-1.5-3.5M11.6 1.8v2.9H8.7" />
+            </svg>
+          </button>
+          <button class="knob" id="hSize" title="Drag to resize" hidden>
+            <svg class="i" viewBox="0 0 16 16">
+              <path d="M4 12l8-8M7.5 4H12v4.5M8.5 12H4V7.5" />
+            </svg>
+          </button>
+          <div id="readout" hidden></div>
+          <div id="ghostTag" hidden></div>
+          <div id="card" hidden></div>
+        </div>
+        <div id="dropHint"></div>
+        <details id="notes">
+          <summary>
+            <svg class="i" viewBox="0 0 16 16">
+              <circle cx="8" cy="8" r="6.2" />
+              <path d="M8 7.2v4M8 4.8v.1" /></svg
+            >Prototype notes
+          </summary>
+          <div class="nb">
+            <p>
+              <b>The place decides.</b> Inside a station's circle the file joins
+              that station. Outside every circle it starts a new station on the
+              spot. The label beside the outline says which, before you let go.
+            </p>
+            <ul>
+              <li>
+                Dropped files that fail stay where they fell as a marker, with
+                the reason on it. Drop the fixed file on the marker and it takes
+                over the place.
+              </li>
+              <li>
+                Real: pictures are decoded, a .glb gets the tour's structure
+                checks, then three.js parses it and measures it. Real limit:
+                4096 x 4096 pixels.
+              </li>
+              <li>
+                Made up for this page: the 25 MB and 300,000 triangle limits,
+                the figures of the stone scan, and "Make it lighter", which only
+                pretends to rebuild the file.
+              </li>
+            </ul>
+          </div>
+        </details>
+        <div id="mapCtl">
+          <button class="mc" id="zoomOut" title="Zoom out">
+            <svg class="i" viewBox="0 0 16 16"><path d="M3.5 8h9" /></svg>
+          </button>
+          <button class="mc" id="zoomIn" title="Zoom in">
+            <svg class="i" viewBox="0 0 16 16">
+              <path d="M8 3.5v9M3.5 8h9" />
+            </svg>
+          </button>
+        </div>
+        <div id="toast">
+          <span class="tx"></span><button id="toastUndo" hidden>Undo</button>
+        </div>
+      </section>
+    </div>
+
+    <footer id="bar">
+      <span id="barHint"
+        >Drag the ground to pan, right-drag to tilt, wheel to zoom</span
+      >
+      <span class="sp"></span>
+      <button id="probBtn" hidden></button>
+      <span id="weight"></span>
+    </footer>
+
+    <section id="desk" aria-label="Sample files">
+      <div class="deskhead">
+        <b>Drag a file onto the square</b
+        ><span
+          >These stand in for your computer. Your own pictures and .glb models
+          work too.</span
+        >
+      </div>
+      <div id="files"></div>
+    </section>
+
+    <script type="module">
+      import * as THREE from "three";
+      import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+      import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+      import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
+
+      /* ---------- small helpers ---------- */
+      const $ = (id) => document.getElementById(id);
+      const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+      const rad = (d) => (d * Math.PI) / 180;
+      const deg = (r) => ((Math.round((r * 180) / Math.PI) % 360) + 360) % 360;
+      const esc = (s) =>
+        String(s).replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[c],
+        );
+      const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const sleep = (ms) => new Promise((r) => setTimeout(r, reduced ? 0 : ms));
+      function tween(ms, fn) {
+        return new Promise((res) => {
+          if (reduced) {
+            fn(1);
+            res();
+            return;
+          }
+          const t0 = performance.now();
+          const step = () => {
+            const t = clamp((performance.now() - t0) / ms, 0, 1);
+            fn(t);
+            if (t < 1) requestAnimationFrame(step);
+            else res();
+          };
+          step();
+        });
+      }
+      const ease = (t) => t * t * (3 - 2 * t);
+      const MB = 1024 * 1024;
+      function fmtBytes(b) {
+        if (b >= MB) return (b / MB).toFixed(1) + " MB";
+        return Math.max(1, Math.round(b / 1024)) + " KB";
+      }
+      const fmtCount = (n) =>
+        n >= 1e6
+          ? (n / 1e6).toFixed(1) + " million"
+          : n.toLocaleString("en-US");
+      const fmtM = (v) =>
+        (v >= 100
+          ? v.toFixed(0)
+          : v >= 10
+            ? v.toFixed(1)
+            : v.toFixed(2).replace(/\.?0+$/, "")) + " m";
+      const stem = (n) => n.replace(/\.[^.]*$/, "");
+      const prettyName = (n) => {
+        const s = stem(n).replace(/[-_]+/g, " ").trim();
+        return s ? s[0].toUpperCase() + s.slice(1) : "New item";
+      };
+      const extOf = (n) => {
+        const i = n.lastIndexOf(".");
+        return i < 0 ? "" : n.slice(i + 1).toLowerCase();
+      };
+
+      const ICON = {
+        chev: '<path d="M6 3.5l4.5 4.5L6 12.5"/>',
+        picture:
+          '<rect x="2" y="3" width="12" height="10" rx="1"/><path d="M2.5 11.2l3.4-3.4 3 3 2-2 2.6 2.6"/><circle cx="10.6" cy="6" r="1"/>',
+        model:
+          '<path d="M8 1.8l5.5 3v6.4L8 14.2 2.5 11.2V4.8z"/><path d="M2.5 4.8L8 7.8l5.5-3M8 7.8v6.4"/>',
+        short:
+          '<rect x="2.5" y="2.5" width="11" height="5.5" rx="1"/><path d="M8 8v6M5 5.2h6"/>',
+        long: '<path d="M3 3.5h10M3 6.5h10M3 9.5h10M3 12.5h6"/>',
+        audio:
+          '<path d="M2.5 6h2.6L8.5 3v10L5.1 10H2.5z"/><path d="M10.8 5.6a3 3 0 0 1 0 4.8"/>',
+        story: '<path d="M1.8 4h4.1l1.4 1.6h6.9v7.4H1.8z"/>',
+        broken:
+          '<path d="M8.6 2H3.5v12h9V6z"/><path d="M8.6 2v4h3.9M6 8.6l4 3.6M10 8.6l-4 3.6"/>',
+        close: '<path d="M4 4l8 8M12 4l-8 8"/>',
+        tick: '<path d="M3 8.5l3.2 3.2L13 4.8"/>',
+        drop: '<path d="M8 2.5v8M4.8 7.4L8 10.6l3.2-3.2M3 13.5h10"/>',
+      };
+      const ic = (k, c = "") =>
+        `<svg class="i ${c}" viewBox="0 0 16 16">${ICON[k]}</svg>`;
+
+      /* ---------- limits (the pixel cap is the tour format's; the rest are stand-ins) ---------- */
+      const MAX_PIXELS = 4096 * 4096;
+      const MAX_TEX_SIDE = 4096;
+      const MAX_MODEL_BYTES = 25 * MB;
+      const MAX_TRIANGLES = 300000;
+      const MAX_SIDE_M = 30;
+      const MIN_SIDE_M = 0.1;
+
+      /* ---------- the renderer ---------- */
+      const viewEl = $("view"),
+        cv = $("cv");
+      const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true });
+      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+      renderer.localClippingEnabled = true;
+      const scene = new THREE.Scene();
+      const SKY = 0x232427;
+      scene.background = new THREE.Color(SKY);
+      scene.fog = new THREE.Fog(SKY, 260, 620);
+      const camera = new THREE.PerspectiveCamera(35, 1, 0.5, 1600);
+      camera.position.set(3, 37, 46);
+      scene.add(new THREE.HemisphereLight(0xe9eef5, 0x6d685e, 1.5));
+      const sun = new THREE.DirectionalLight(0xfff3e0, 2.0);
+      sun.position.set(-60, 120, 70);
+      scene.add(sun);
+
+      /* The picking listener goes on before OrbitControls so a grab on an object can
+   switch the camera off for that gesture. */
+      let controls = null;
+
+      /* ---------- the place ---------- */
+      function canvasOf(w, h, draw) {
+        const c = document.createElement("canvas");
+        c.width = w;
+        c.height = h;
+        draw(c.getContext("2d"), w, h);
+        return c;
+      }
+      function mulberry(a) {
+        return () => {
+          a |= 0;
+          a = (a + 0x6d2b79f5) | 0;
+          let t = Math.imul(a ^ (a >>> 15), 1 | a);
+          t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+      const WORLD = 480;
+      function paintGround(g, S) {
+        const k = S / WORLD,
+          X = (x) => (x + WORLD / 2) * k,
+          Z = (z) => (z + WORLD / 2) * k;
+        g.fillStyle = "#c7bfae";
+        g.fillRect(0, 0, S, S);
+        const r = mulberry(5);
+        g.strokeStyle = "#e6e0d4";
+        g.lineCap = "round";
+        /* streets */
+        g.lineWidth = 9 * k;
+        for (let x = -220; x <= 220; x += 74) {
+          g.beginPath();
+          g.moveTo(X(x + 18), 0);
+          g.lineTo(X(x + 18), S);
+          g.stroke();
+        }
+        for (let z = -220; z <= 220; z += 66) {
+          g.beginPath();
+          g.moveTo(0, Z(z + 8));
+          g.lineTo(S, Z(z + 8));
+          g.stroke();
+        }
+        /* building plots */
+        g.fillStyle = "#b9b1a0";
+        for (let i = 0; i < 260; i++)
+          g.fillRect(
+            X(-230 + r() * 460),
+            Z(-230 + r() * 460),
+            (8 + r() * 22) * k,
+            (8 + r() * 22) * k,
+          );
+        /* the park */
+        g.fillStyle = "#a7b58c";
+        g.fillRect(X(-110), Z(-96), 62 * k, 44 * k);
+        /* the river */
+        g.strokeStyle = "#7b9cbc";
+        g.lineWidth = 15 * k;
+        g.beginPath();
+        g.moveTo(X(82), 0);
+        g.bezierCurveTo(X(60), Z(-60), X(100), Z(40), X(78), S);
+        g.stroke();
+        /* the square */
+        g.fillStyle = "#ddd6c7";
+        g.fillRect(X(-34), Z(-20), 70 * k, 42 * k);
+        g.strokeStyle = "rgba(120,110,95,.2)";
+        g.lineWidth = 1;
+        for (let x = -34; x <= 36; x += 2) {
+          g.beginPath();
+          g.moveTo(X(x), Z(-20));
+          g.lineTo(X(x), Z(22));
+          g.stroke();
+        }
+        for (let z = -20; z <= 22; z += 2) {
+          g.beginPath();
+          g.moveTo(X(-34), Z(z));
+          g.lineTo(X(36), Z(z));
+          g.stroke();
+        }
+        g.strokeStyle = "rgba(120,110,95,.45)";
+        g.lineWidth = 2 * k * 0.3;
+        g.strokeRect(X(-34), Z(-20), 70 * k, 42 * k);
+      }
+      const groundTex = new THREE.CanvasTexture(
+        canvasOf(4096, 4096, paintGround),
+      );
+      groundTex.colorSpace = THREE.SRGBColorSpace;
+      groundTex.anisotropy = Math.min(
+        8,
+        renderer.capabilities.getMaxAnisotropy(),
+      );
+      const ground = new THREE.Mesh(
+        new THREE.PlaneGeometry(WORLD, WORLD).rotateX(-Math.PI / 2),
+        new THREE.MeshLambertMaterial({ map: groundTex }),
+      );
+      scene.add(ground);
+      const floor = new THREE.Mesh(
+        new THREE.PlaneGeometry(3000, 3000).rotateX(-Math.PI / 2),
+        new THREE.MeshBasicMaterial({ color: 0x1f2023 }),
+      );
+      floor.position.y = -0.4;
+      scene.add(floor);
+
+      /* buildings: plain boxes around the square, like the editor's map */
+      (function buildTown() {
+        const r = mulberry(11),
+          mats = [0xa8a196, 0x9c958a, 0xb0a99d, 0x94908a].map(
+            (c) => new THREE.MeshLambertMaterial({ color: c }),
+          );
+        const box = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
+        const place = (x, z, w, d, h) => {
+          const m = new THREE.Mesh(box, mats[Math.floor(r() * mats.length)]);
+          m.position.set(x, 0, z);
+          m.scale.set(w, h, d);
+          scene.add(m);
+        };
+        for (let x = -38; x < 44; x += 11 + r() * 3) {
+          place(x, -27 - r() * 3, 8 + r() * 3, 9, 7 + r() * 7);
+          place(x + 2, 31 + r() * 3, 8 + r() * 3, 9, 4 + r() * 3);
+        }
+        for (let z = -16; z < 22; z += 12 + r() * 3)
+          place(-42 - r() * 2, z, 9, 9 + r() * 2, 7 + r() * 6);
+        for (const z of [-14, 20]) place(40, z, 9, 11, 8 + r() * 5);
+        for (let i = 0; i < 90; i++) {
+          const x = -200 + r() * 400,
+            z = -200 + r() * 400;
+          if (Math.abs(x - 2) < 62 && Math.abs(z) < 50) continue;
+          if (x > 56 && x < 104) continue;
+          place(x, z, 9 + r() * 12, 9 + r() * 12, 6 + r() * 16);
+        }
+        /* the bridge */
+        const deck = new THREE.Mesh(
+          new THREE.BoxGeometry(44, 0.6, 6),
+          new THREE.MeshLambertMaterial({ color: 0x8e7f6a }),
+        );
+        deck.position.set(80, 0.6, 8);
+        scene.add(deck);
+      })();
+
+      /* three landmarks, so the place reads at a glance */
+      (function buildLandmarks() {
+        const stone = new THREE.MeshLambertMaterial({ color: 0xb6ae9f });
+        const dark = new THREE.MeshLambertMaterial({ color: 0x8a8378 });
+        const water = new THREE.MeshLambertMaterial({ color: 0x7ba7c8 });
+        const add = (geo, mat, x, y, z) => {
+          const m = new THREE.Mesh(geo, mat);
+          m.position.set(x, y, z);
+          scene.add(m);
+          return m;
+        };
+        /* the column */
+        add(new THREE.BoxGeometry(2.2, 0.8, 2.2), dark, -18, 0.4, 1);
+        add(new THREE.CylinderGeometry(0.42, 0.52, 9, 16), stone, -18, 5.2, 1);
+        add(new THREE.BoxGeometry(1.3, 0.4, 1.3), dark, -18, 9.9, 1);
+        /* the fountain */
+        add(new THREE.CylinderGeometry(3, 3.2, 0.7, 28), stone, 3, 0.35, -8);
+        add(new THREE.CylinderGeometry(2.7, 2.7, 0.1, 28), water, 3, 0.72, -8);
+        add(new THREE.CylinderGeometry(0.34, 0.5, 2.6, 12), dark, 3, 1.9, -8);
+        add(new THREE.CylinderGeometry(1, 0.5, 0.3, 16), stone, 3, 3.2, -8);
+        /* the old gate */
+        add(new THREE.BoxGeometry(3.2, 8, 3.2), dark, 30, 4, 0);
+        add(new THREE.BoxGeometry(3.2, 8, 3.2), dark, 30, 4, 10);
+        add(new THREE.BoxGeometry(2.8, 2.6, 7), stone, 30, 6.7, 5);
+      })();
+
+      /* ---------- stations ---------- */
+      const tagsEl = $("tags");
+      const zoneFillGeo = new THREE.CircleGeometry(1, 96).rotateX(-Math.PI / 2);
+      const zoneRingGeo = new THREE.RingGeometry(0.975, 1, 128).rotateX(
+        -Math.PI / 2,
+      );
+      const stations = [];
+      let uid = 0;
+      function addStationVisual(s) {
+        s.fill = new THREE.Mesh(
+          zoneFillGeo,
+          new THREE.MeshBasicMaterial({
+            color: 0x4f8fe8,
+            transparent: true,
+            opacity: 0.07,
+            depthWrite: false,
+          }),
+        );
+        s.ring = new THREE.Mesh(
+          zoneRingGeo,
+          new THREE.MeshBasicMaterial({
+            color: 0x4f8fe8,
+            transparent: true,
+            opacity: 0.75,
+            depthWrite: false,
+          }),
+        );
+        for (const m of [s.fill, s.ring]) {
+          m.position.set(s.x, 0.05, s.z);
+          m.scale.setScalar(s.r);
+          m.renderOrder = 2;
+          scene.add(m);
+        }
+        s.tag = document.createElement("div");
+        s.tag.className = "stag";
+        tagsEl.append(s.tag);
+        refreshStationTag(s);
+      }
+      function refreshStationTag(s) {
+        s.tag.innerHTML = `<i>${s.n}</i>${esc(s.name)}`;
+      }
+      function removeStationVisual(s) {
+        scene.remove(s.fill, s.ring);
+        s.fill.material.dispose();
+        s.ring.material.dispose();
+        s.tag.remove();
+      }
+      function addStation(o) {
+        const s = {
+          id: "s" + ++uid,
+          n: stations.length + 1,
+          items: [],
+          open: false,
+          auto: false,
+          ...o,
+        };
+        stations.push(s);
+        addStationVisual(s);
+        return s;
+      }
+      const stationById = (id) => stations.find((s) => s.id === id);
+      function stationAt(x, z) {
+        let best = null,
+          bd = Infinity;
+        for (const s of stations) {
+          const d = Math.hypot(x - s.x, z - s.z);
+          if (d < s.r && d / s.r < bd) {
+            best = s;
+            bd = d / s.r;
+          }
+        }
+        return best;
+      }
+      function renumber() {
+        stations.forEach((s, i) => {
+          s.n = i + 1;
+          refreshStationTag(s);
+        });
+      }
+
+      /* the walk between the stations, like the editor's route line */
+      const routeMat = new THREE.MeshBasicMaterial({
+        color: 0x2fb3d6,
+        transparent: true,
+        opacity: 0.85,
+        depthWrite: false,
+      });
+      const routeGroup = new THREE.Group();
+      scene.add(routeGroup);
+      function rebuildRoute() {
+        routeGroup.clear();
+        for (let i = 1; i < stations.length; i++) {
+          const a = stations[i - 1],
+            b = stations[i],
+            len = Math.hypot(b.x - a.x, b.z - a.z);
+          const m = new THREE.Mesh(
+            new THREE.PlaneGeometry(0.26, len).rotateX(-Math.PI / 2),
+            routeMat,
+          );
+          m.position.set((a.x + b.x) / 2, 0.04, (a.z + b.z) / 2);
+          m.rotation.y = Math.atan2(b.x - a.x, b.z - a.z);
+          m.renderOrder = 1;
+          routeGroup.add(m);
+        }
+      }
+
+      /* ---------- objects in the place ---------- */
+      const items = [];
+      const blobTex = new THREE.CanvasTexture(
+        canvasOf(128, 128, (g) => {
+          const rg = g.createRadialGradient(64, 64, 8, 64, 64, 62);
+          rg.addColorStop(0, "rgba(30,28,24,.5)");
+          rg.addColorStop(1, "rgba(30,28,24,0)");
+          g.fillStyle = rg;
+          g.fillRect(0, 0, 128, 128);
+        }),
+      );
+      const blobGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+      const unitBox = new THREE.BoxGeometry(1, 1, 1);
+      const unitEdges = new THREE.EdgesGeometry(unitBox);
+      const STATUS_COLOR = { warn: 0xff9166, bad: 0xef7470, plain: 0xe9a23b };
+
+      const woodMat = new THREE.MeshLambertMaterial({ color: 0x4a3524 });
+      const backMat = new THREE.MeshLambertMaterial({ color: 0x8b8e93 });
+      const legMat = new THREE.MeshLambertMaterial({ color: 0x55595f });
+
+      function makePictureBody(canvas, aspect) {
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.anisotropy = 4;
+        const body = new THREE.Group(),
+          h = 1 / aspect;
+        const frame = new THREE.Mesh(
+          new THREE.BoxGeometry(1.05, h + 0.05, 0.03),
+          woodMat.clone(),
+        );
+        const front = new THREE.Mesh(
+          new THREE.PlaneGeometry(1, h),
+          new THREE.MeshBasicMaterial({ map: tex }),
+        );
+        front.position.z = 0.0165;
+        const back = new THREE.Mesh(
+          new THREE.PlaneGeometry(1, h),
+          backMat.clone(),
+        );
+        back.position.z = -0.0165;
+        back.rotation.y = Math.PI;
+        body.add(frame, front, back);
+        return body;
+      }
+      function attachPicture(it, canvas, aspect) {
+        it.kind = "picture";
+        it.aspect = aspect;
+        it.body = makePictureBody(canvas, aspect);
+        it.root.add(it.body);
+        it.legs = [-0.3, 0.3].map(() => {
+          const m = new THREE.Mesh(unitBox, legMat.clone());
+          it.root.add(m);
+          return m;
+        });
+      }
+      function attachModel(it, scn) {
+        const box = new THREE.Box3().setFromObject(scn),
+          c = box.getCenter(new THREE.Vector3()),
+          s = box.getSize(new THREE.Vector3());
+        const holder = new THREE.Group();
+        scn.position.x -= c.x;
+        scn.position.z -= c.z;
+        scn.position.y -= box.min.y;
+        holder.add(scn);
+        it.kind = "model";
+        it.body = holder;
+        it.base = s.clone();
+        it.largest = Math.max(s.x, s.y, s.z);
+        it.root.add(holder);
+      }
+      /* width, height (with what it stands on) and depth of what stands there, in metres */
+      function extent(it) {
+        if (it.kind === "picture" && it.body) {
+          const h = it.size / it.aspect;
+          return { w: it.size, h: h + it.lift, d: 0.2 };
+        }
+        if (it.kind === "model" && it.body) {
+          const k = it.size / it.largest;
+          return {
+            w: it.base.x * k,
+            h: it.base.y * k + it.lift,
+            d: it.base.z * k,
+          };
+        }
+        return it.standDims || { w: 2, h: 2, d: 2 };
+      }
+      function ringRadius(it) {
+        const e = extent(it);
+        return Math.max(2, Math.hypot(e.w, e.d) * 0.55 + 0.7);
+      }
+      function applyPose(it) {
+        it.root.position.set(it.x, 0, it.z);
+        it.root.rotation.y = it.yaw;
+        const e = extent(it);
+        if (it.kind === "picture" && it.body) {
+          const h = it.size / it.aspect;
+          it.body.scale.setScalar(it.size);
+          it.body.position.y = it.lift + h / 2;
+          it.legs.forEach((m, i) => {
+            const top = it.lift + h * 0.6;
+            m.scale.set(0.07, Math.max(top, 0.001), 0.05);
+            m.position.set(
+              (i ? 0.3 : -0.3) * it.size,
+              top / 2,
+              -0.04 * it.size,
+            );
+            m.visible = it.lift > 0.02;
+          });
+        } else if (it.kind === "model" && it.body) {
+          it.body.scale.setScalar(it.size / it.largest);
+          it.body.position.y = it.lift;
+        }
+        it.blob.scale.set(Math.max(e.w, 1) * 1.5, 1, Math.max(e.d, 0.8) * 1.5);
+        it.hit.scale.set(
+          Math.max(e.w, 0.6),
+          Math.max(e.h, 0.6),
+          Math.max(e.d, 0.6),
+        );
+        it.hit.position.y = e.h / 2;
+        if (it.warnBox) {
+          it.warnBox.scale.set(e.w + 0.3, e.h + 0.3, e.d + 0.3);
+          it.warnBox.position.y = e.h / 2 + 0.05;
+        }
+      }
+      function newItem(o) {
+        const it = {
+          id: "i" + ++uid,
+          alive: true,
+          x: 0,
+          z: 0,
+          yaw: 0,
+          lift: 0,
+          size: 3,
+          status: "ok",
+          problems: [],
+          root: new THREE.Group(),
+          body: null,
+          legs: [],
+          ...o,
+        };
+        it.blob = new THREE.Mesh(
+          blobGeo,
+          new THREE.MeshBasicMaterial({
+            map: blobTex,
+            transparent: true,
+            depthWrite: false,
+          }),
+        );
+        it.blob.position.y = 0.06;
+        it.blob.renderOrder = 3;
+        it.hit = new THREE.Mesh(unitBox, new THREE.MeshBasicMaterial());
+        it.hit.visible = false;
+        it.root.add(it.blob, it.hit);
+        it.tag = document.createElement("button");
+        it.tag.className = "itag";
+        it.tag.hidden = true;
+        it.tag.addEventListener("click", () => select(it));
+        tagsEl.append(it.tag);
+        scene.add(it.root);
+        items.push(it);
+        return it;
+      }
+      function clearBody(it) {
+        if (it.standIn) {
+          it.root.remove(it.standIn);
+          it.standIn = null;
+        }
+        if (it.warnBox) {
+          it.root.remove(it.warnBox);
+          it.warnBox = null;
+        }
+        if (it.body) {
+          it.root.remove(it.body);
+          it.body = null;
+        }
+        it.legs.forEach((m) => it.root.remove(m));
+        it.legs = [];
+      }
+      function detachItem(it) {
+        it.alive = false;
+        it.token = null;
+        scene.remove(it.root);
+        it.tag.hidden = true;
+        const s = stationById(it.sid);
+        if (s) s.items = s.items.filter((x) => x !== it);
+        items.splice(items.indexOf(it), 1);
+      }
+      function attachItem(it, s, at) {
+        it.alive = true;
+        it.sid = s.id;
+        scene.add(it.root);
+        items.push(it);
+        if (at == null) s.items.push(it);
+        else s.items.splice(at, 0, it);
+      }
+      /* A stand-in stands from the first moment: a wire box whose fill rises as the file is read. */
+      function addStandIn(it, kind) {
+        const d = it.standDims;
+        const g = new THREE.Group();
+        const fill = new THREE.Mesh(
+          unitBox,
+          new THREE.MeshBasicMaterial({
+            color: 0xe9a23b,
+            transparent: true,
+            opacity: 0.3,
+            depthWrite: false,
+          }),
+        );
+        const edges = new THREE.LineSegments(
+          unitEdges,
+          new THREE.LineBasicMaterial({ color: 0xf3c47e }),
+        );
+        edges.scale.set(d.w, d.h, d.d);
+        edges.position.y = d.h / 2;
+        fill.scale.set(d.w, 0.001, d.d);
+        g.add(fill, edges);
+        it.standIn = g;
+        it.standFill = fill;
+        it.root.add(g);
+        if (kind === "picture") fill.material.opacity = 0.42;
+      }
+      function setStandInProgress(it, p) {
+        if (!it.standIn) return;
+        const d = it.standDims,
+          h = Math.max(0.001, d.h * p);
+        it.standFill.scale.y = h;
+        it.standFill.position.y = h / 2;
+      }
+
+      /* The object rises out of the ground, so a landing reads as arrival. */
+      const clipPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 0);
+      function clipMaterials(it, planes) {
+        it.root.traverse((m) => {
+          if (!m.isMesh || m === it.hit || m === it.blob || !m.material) return;
+          m.material.clippingPlanes = planes;
+          m.material.needsUpdate = true;
+        });
+      }
+      async function reveal(it) {
+        const top = extent(it).h + 0.2,
+          plane = clipPlane.clone();
+        clipMaterials(it, [plane]);
+        await tween(top > 40 ? 1100 : 620, (t) => {
+          plane.constant = ease(t) * top;
+        });
+        clipMaterials(it, null);
+      }
+
+      /* ---------- the tree ---------- */
+      const rowsEl = $("rows");
+      function statusGlyph(it) {
+        if (it.status === "reading" || it.fixing)
+          return '<span class="spin"></span>';
+        if (it.status === "bad")
+          return '<span class="dot bad" title="Cannot be used"></span>';
+        if (it.status === "warn")
+          return '<span class="dot warn" title="Needs a look"></span>';
+        return "";
+      }
+      function itemRow(it, d) {
+        if (it.tree)
+          return `<div class="row ghostly" style="--d:${d}"><span class="tw none"></span>${ic(it.ic, "ti")}<span class="nm">${esc(it.name)}</span></div>`;
+        if (it.kids) {
+          return (
+            `<div class="row" style="--d:${d}" data-folder="${it.fid}"><button class="tw ${it.open ? "open" : ""}" tabindex="-1">${ic("chev")}</button>${ic("story", "ti story")}<span class="nm">${esc(it.name)}</span><span class="meta">${it.kids.length}</span></div>` +
+            (it.open ? it.kids.map((k) => itemRow(k, d + 1)).join("") : "")
+          );
+        }
+        const icon =
+          it.status === "bad"
+            ? "broken"
+            : it.kind === "picture"
+              ? "picture"
+              : "model";
+        return `<div class="row ${selected === it ? "sel" : ""} ${it.fresh ? "justin" : ""}" style="--d:${d}" data-iid="${it.id}" role="treeitem"><span class="tw none"></span>${ic(icon, "ti")}<span class="nm">${esc(it.name)}</span>${statusGlyph(it)}</div>`;
+      }
+      function renderTree() {
+        rowsEl.innerHTML = stations
+          .map((s) => {
+            const count = s.items.length;
+            return (
+              `<div class="row st ${over && over === s ? "over" : ""}" style="--d:0" data-sid="${s.id}" role="treeitem" aria-expanded="${s.open}">
+      <button class="tw ${s.open ? "open" : ""}" tabindex="-1">${ic("chev")}</button><span class="badge">${s.n}</span><span class="nm">${esc(s.name)}</span><span class="meta">${count || ""}</span></div>` +
+              (s.open ? s.items.map((it) => itemRow(it, 1)).join("") : "")
+            );
+          })
+          .join("");
+        $("stCount").textContent = stations.length;
+        items.forEach((it) => {
+          it.fresh = false;
+        });
+        renderFooter();
+      }
+      rowsEl.addEventListener("click", (e) => {
+        const row = e.target.closest(".row");
+        if (!row) return;
+        if (row.dataset.iid) {
+          const it = items.find((x) => x.id === row.dataset.iid);
+          if (it) {
+            select(it);
+            flyIfHidden(it.x, it.z);
+          }
+          return;
+        }
+        if (row.dataset.folder) {
+          const f = folders.get(row.dataset.folder);
+          f.open = !f.open;
+          renderTree();
+          return;
+        }
+        if (row.dataset.sid) {
+          const s = stationById(row.dataset.sid);
+          if (e.target.closest(".tw")) {
+            s.open = !s.open;
+            renderTree();
+            return;
+          }
+          s.open = true;
+          renderTree();
+          flyTo(s.x, s.z);
+        }
+      });
+      function renderFooter() {
+        const open = items.filter(
+          (it) => it.status === "warn" || it.status === "bad",
+        );
+        const pb = $("probBtn");
+        pb.hidden = open.length === 0;
+        pb.textContent =
+          open.length === 1
+            ? "1 file needs a look"
+            : open.length + " files need a look";
+        const total = items.reduce(
+          (a, it) => a + (it.status === "bad" ? 0 : it.bytes || 0),
+          0,
+        );
+        $("weight").textContent = "Tour " + fmtBytes(total);
+      }
+      $("probBtn").addEventListener("click", () => {
+        const open = items.filter(
+          (it) => it.status === "warn" || it.status === "bad",
+        );
+        if (!open.length) return;
+        const next = open[(open.indexOf(selected) + 1) % open.length];
+        select(next);
+        flyIfHidden(next.x, next.z);
+      });
+
+      /* ---------- undo ---------- */
+      const undoStack = [];
+      function pushUndo(label, fn) {
+        undoStack.push({ label, fn });
+        $("undoBtn").disabled = false;
+        $("undoBtn").title = "Undo " + label + " (Ctrl+Z)";
+        $("unsaved").hidden = false;
+      }
+      function undo() {
+        const u = undoStack.pop();
+        if (!u) return;
+        u.fn();
+        $("undoBtn").disabled = undoStack.length === 0;
+        $("undoBtn").title = undoStack.length
+          ? "Undo " + undoStack[undoStack.length - 1].label + " (Ctrl+Z)"
+          : "Undo (Ctrl+Z)";
+        renderTree();
+        renderCard();
+        toast("Undone: " + u.label);
+      }
+      $("undoBtn").addEventListener("click", undo);
+      let toastTimer = 0;
+      function toast(msg, withUndo = false) {
+        const t = $("toast");
+        t.querySelector(".tx").textContent = msg;
+        $("toastUndo").hidden = !withUndo;
+        t.classList.add("on");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => t.classList.remove("on"), 3600);
+      }
+      $("toastUndo").addEventListener("click", () => {
+        $("toast").classList.remove("on");
+        undo();
+      });
+
+      /* ---------- selection and the card ---------- */
+      let selected = null;
+      const selRing = new THREE.Mesh(
+        new THREE.RingGeometry(0.955, 1, 128).rotateX(-Math.PI / 2),
+        new THREE.MeshBasicMaterial({
+          color: 0xe9a23b,
+          transparent: true,
+          opacity: 0.95,
+          depthTest: false,
+          depthWrite: false,
+        }),
+      );
+      selRing.renderOrder = 20;
+      selRing.visible = false;
+      scene.add(selRing);
+      const cardEl = $("card");
+      function select(it) {
+        selected = it;
+        renderTree();
+        renderCard();
+      }
+      const usable = (it) => it && it.body && it.status !== "bad";
+      function stationOptions(it) {
+        return stations
+          .map(
+            (s) =>
+              `<option value="${s.id}" ${s.id === it.sid ? "selected" : ""}>${s.n}. ${esc(s.name)}</option>`,
+          )
+          .join("");
+      }
+      function meter(label, cls, value, limit, frac, fits) {
+        return `<div class="meter" data-m="${cls}"><span>${label}</span><span><b class="mv">${value}</b> of ${limit}</span><div class="mtrack"><i class="${fits ? "fits" : ""}" style="width:${clamp(frac * 100, 3, 100)}%"></i></div></div>`;
+      }
+      function probHTML(it, p) {
+        if (p.kind === "heavy") {
+          const f = it.stats;
+          return `<div class="prob"><b>Too large for a visitor's phone</b>
+      ${meter("Download", "bytes", fmtBytes(f.bytes), fmtBytes(MAX_MODEL_BYTES), f.bytes / (MAX_MODEL_BYTES * 2.5), f.bytes <= MAX_MODEL_BYTES)}
+      ${meter("Triangles", "tris", fmtCount(f.tris), fmtCount(MAX_TRIANGLES), f.tris / (MAX_TRIANGLES * 2.5), f.tris <= MAX_TRIANGLES)}
+      ${meter("Largest texture", "tex", f.tex + " px", MAX_TEX_SIDE + " px", f.tex / (MAX_TEX_SIDE * 2.5), f.tex <= MAX_TEX_SIDE)}
+      <p>Phones refuse a texture this large, so nobody would see it. It can stand here for now, but the tour cannot go out with it.</p></div>
+      <div class="acts">
+        <button class="act main" data-act="lighten" ${it.fixing ? "disabled" : ""}>${it.fixing ? "Making it lighter..." : "Make it lighter here"}<small>${it.fixing ? "It stays usable while this runs" : "About " + fmtBytes(lightened(f).bytes) + ". Same shape, softer fine detail. Your own file stays as it is."}</small></button>
+        <div class="dropnote">${ic("drop")}<span>Or make it smaller yourself and drop the new file on this object. It keeps its place.</span></div>
+        <details class="diy"><summary>How, in a 3D tool</summary><ol><li>Reduce the mesh to about 300,000 triangles.</li><li>Scale its textures to 2048 px.</li><li>Export as .glb.</li></ol></details>
+      </div>`;
+        }
+        if (p.kind === "big" || p.kind === "tiny") {
+          const opts = sizeGuesses(it);
+          return `<div class="prob"><b>${p.kind === "big" ? "This came in very large" : "This came in very small"}</b><p>${esc(it.name)} measures ${fmtM(it.largest)} on its longest side. ${p.kind === "big" ? "Files in centimetres or millimetres often land like this." : "It would be hard to see from a few steps away."}</p></div>
+      <div class="acts">
+        ${opts.map((o, i) => `<button class="act ${i ? "" : "main"}" data-act="resize" data-size="${o.size}">Make it ${fmtM(o.size)}<small>${o.why}</small></button>`).join("")}
+        <button class="link" data-act="keepsize">It really is this size</button>
+      </div>`;
+        }
+        if (p.kind === "pixels") {
+          return `<div class="prob"><b>Too many pixels for a phone</b><p>${it.px.w} x ${it.px.h} pixels. A phone opens up to 4096 x 4096 safely.</p></div>
+      <div class="acts"><button class="act main" data-act="shrinkpic">Make it 4096 px wide<small>Looks the same at this size. Your own file stays as it is.</small></button></div>`;
+        }
+        return "";
+      }
+      function sizeGuesses(it) {
+        const out = [];
+        if (it.largest > MAX_SIDE_M) {
+          if (it.largest / 100 >= 1 && it.largest / 100 <= MAX_SIDE_M)
+            out.push({
+              size: +(it.largest / 100).toFixed(2),
+              why: "If the file is in centimetres",
+            });
+          else if (it.largest / 1000 >= 1 && it.largest / 1000 <= MAX_SIDE_M)
+            out.push({
+              size: +(it.largest / 1000).toFixed(2),
+              why: "If the file is in millimetres",
+            });
+          else out.push({ size: 8, why: "A size that fits the square" });
+        } else {
+          out.push({ size: 2, why: "About as tall as a person" });
+        }
+        return out;
+      }
+      function cardHTML(it) {
+        const iconName =
+          it.status === "bad"
+            ? "broken"
+            : it.kind === "picture"
+              ? "picture"
+              : it.kind === "model"
+                ? "model"
+                : "drop";
+        const head = `<div class="chead"><span class="ic">${ic(iconName)}</span><input data-f="name" value="${esc(it.name)}" aria-label="Name" spellcheck="false" /><button class="ib" data-act="close" title="Close">${ic("close")}</button></div>`;
+        const inSt = `<div class="frow"><span>Station</span><select data-f="station" aria-label="Station">${stationOptions(it)}</select></div>`;
+        let body = "";
+        if (it.status === "reading") {
+          body = `<div class="stage"><span class="spin"></span><span class="stx">${esc(it.stage || "Reading")}</span><span class="sz">${fmtBytes(it.bytes || 0)}</span></div><div class="pbar"><i style="width:${(it.progress || 0) * 100}%"></i></div>${inSt}`;
+        } else if (it.status === "bad") {
+          const b = it.problems[0];
+          body = `<div class="prob bad"><b>${esc(b.title)}</b><p>${esc(b.body)}</p>${b.found ? `<span class="found">${esc(b.found)}</span>` : ""}</div>
+      <div class="dropnote">${ic("drop")}<span>${esc(b.fix)} Drop the new file on this marker and it takes over the place.</span></div>
+      <div class="foot"><button class="link" data-act="choose">Choose a file instead</button><button class="link red" data-act="remove">Remove marker</button></div>`;
+        } else {
+          const nums = `<div class="nums">
+      <label class="num">${it.kind === "picture" ? "Width" : "Longest side"}<div><input type="number" step="0.1" min="0.1" data-f="size" /><em>m</em></div></label>
+      <label class="num">Turn<div><input type="number" step="5" data-f="yaw" /><em>deg</em></div></label>
+      <label class="num">Off ground<div><input type="number" step="0.1" min="0" data-f="lift" /><em>m</em></div></label></div>`;
+          const probs = it.problems.map((p) => probHTML(it, p)).join("");
+          const clean = it.problems.length === 0;
+          const meta =
+            it.kind === "picture"
+              ? `${it.px ? it.px.w + " x " + it.px.h + " px" : ""}${it.bytes ? ", " + fmtBytes(it.bytes) : ""}`
+              : `${it.stats ? fmtCount(it.stats.tris) + " triangles, " + fmtBytes(it.stats.bytes) : ""}`;
+          body = `${inSt}${nums}${probs}${meta && clean ? `<div class="fine"><span class="ok">${ic("tick")}</span><span>${esc(meta)}. Fits a phone.</span></div>` : ""}${it.note ? `<div class="fine">${esc(it.note)}</div>` : ""}
+      <div class="foot"><span></span><button class="link red" data-act="remove">Remove</button></div>`;
+        }
+        return head + `<div class="cbody">${body}</div>`;
+      }
+      function renderCard() {
+        const it = selected;
+        cardEl.hidden = !it;
+        if (!it) return;
+        cardEl.className =
+          it.status === "bad" ? "bad" : it.status === "warn" ? "warn" : "";
+        const openDiy = cardEl.querySelector("details.diy")?.open;
+        cardEl.innerHTML = cardHTML(it);
+        if (openDiy) {
+          const d = cardEl.querySelector("details.diy");
+          if (d) d.open = true;
+        }
+        syncFields();
+      }
+      function syncFields() {
+        const it = selected;
+        if (!it) return;
+        const set = (k, v) => {
+          const el = cardEl.querySelector(`[data-f="${k}"]`);
+          if (el && document.activeElement !== el) el.value = v;
+        };
+        set("size", +it.size.toFixed(2));
+        set("yaw", deg(it.yaw));
+        set("lift", +it.lift.toFixed(2));
+      }
+      cardEl.addEventListener("input", (e) => {
+        const f = e.target.dataset.f,
+          it = selected;
+        if (!f || !it) return;
+        if (f === "name") {
+          it.name = e.target.value;
+          const nm = rowsEl.querySelector(`[data-iid="${it.id}"] .nm`);
+          if (nm) nm.textContent = it.name;
+          return;
+        }
+        const v = parseFloat(e.target.value);
+        if (!isFinite(v)) return;
+        if (f === "size") it.size = clamp(v, 0.1, 600);
+        if (f === "yaw") it.yaw = rad(v);
+        if (f === "lift") it.lift = clamp(v, 0, 60);
+        applyPose(it);
+        $("unsaved").hidden = false;
+      });
+      cardEl.addEventListener("change", (e) => {
+        if (e.target.dataset.f === "station" && selected)
+          rehome(selected, stationById(e.target.value), true);
+        if (e.target.dataset.f === "size" && selected)
+          refreshSizeProblem(selected);
+      });
+      cardEl.addEventListener("click", (e) => {
+        const btn = e.target.closest("[data-act]"),
+          it = selected;
+        if (!btn || !it) return;
+        const a = btn.dataset.act;
+        if (a === "close") select(null);
+        if (a === "remove") removeItem(it);
+        if (a === "choose") {
+          pickFor = it;
+          $("picker").click();
+        }
+        if (a === "lighten") lighten(it);
+        if (a === "resize") resizeTo(it, parseFloat(btn.dataset.size));
+        if (a === "keepsize") {
+          it.problems = it.problems.filter(
+            (p) => p.kind !== "big" && p.kind !== "tiny",
+          );
+          it.sizeAccepted = true;
+          settleStatus(it);
+        }
+        if (a === "shrinkpic") {
+          const was = { px: it.px, bytes: it.bytes };
+          it.px = { w: 4096, h: Math.round((4096 * it.px.h) / it.px.w) };
+          it.problems = it.problems.filter((p) => p.kind !== "pixels");
+          settleStatus(it);
+          pushUndo("making the picture smaller", () => {
+            it.px = was.px;
+            it.problems.push({ kind: "pixels" });
+            settleStatus(it);
+          });
+        }
+      });
+      /* Keeps status, tree, warning box and card in step with the list of problems. */
+      function settleStatus(it) {
+        if (it.status === "bad") return;
+        const warn = it.problems.length > 0;
+        it.status = warn ? "warn" : "ok";
+        if (it.warnBox) {
+          it.root.remove(it.warnBox);
+          it.warnBox = null;
+        }
+        if (warn) {
+          it.warnBox = new THREE.LineSegments(
+            unitEdges,
+            new THREE.LineBasicMaterial({ color: STATUS_COLOR.warn }),
+          );
+          it.root.add(it.warnBox);
+        }
+        applyPose(it);
+        renderTree();
+        if (selected === it) renderCard();
+      }
+      function refreshSizeProblem(it) {
+        if (it.kind !== "model" || it.sizeAccepted) return;
+        const keep = it.problems.filter(
+          (p) => p.kind !== "big" && p.kind !== "tiny",
+        );
+        if (it.size > MAX_SIDE_M) keep.push({ kind: "big" });
+        else if (it.size < MIN_SIDE_M) keep.push({ kind: "tiny" });
+        if (
+          keep.length !== it.problems.length ||
+          keep.some((p, i) => p !== it.problems[i])
+        ) {
+          it.problems = keep;
+          settleStatus(it);
+        }
+      }
+      function removeItem(it) {
+        const s = stationById(it.sid),
+          at = s ? s.items.indexOf(it) : null,
+          name = it.name;
+        detachItem(it);
+        const dropped =
+          s && s.auto && s.items.length === 0 ? dropStation(s) : null;
+        if (selected === it) selected = null;
+        renderTree();
+        renderCard();
+        pushUndo("removing " + name, () => {
+          if (dropped) dropped();
+          attachItem(it, s, at);
+          selected = it;
+        });
+        toast("Removed " + name, true);
+      }
+      /* Takes an empty station made by a drop out again; returns how to put it back. */
+      function dropStation(s) {
+        const at = stations.indexOf(s);
+        stations.splice(at, 1);
+        removeStationVisual(s);
+        renumber();
+        rebuildRoute();
+        return () => {
+          stations.splice(at, 0, s);
+          addStationVisual(s);
+          renumber();
+          rebuildRoute();
+        };
+      }
+      function rehome(it, s, byHand) {
+        if (!s || s.id === it.sid) return;
+        const was = stationById(it.sid),
+          at = was ? was.items.indexOf(it) : null;
+        if (was) was.items = was.items.filter((x) => x !== it);
+        s.items.push(it);
+        it.sid = s.id;
+        s.open = true;
+        const back =
+          was && was.auto && was.items.length === 0 ? dropStation(was) : null;
+        it.fresh = true;
+        renderTree();
+        renderCard();
+        if (byHand !== "quiet") {
+          pushUndo("moving " + it.name + " to " + s.name, () => {
+            if (back) back();
+            s.items = s.items.filter((x) => x !== it);
+            if (was) {
+              was.items.splice(at, 0, it);
+              it.sid = was.id;
+            }
+          });
+          toast(it.name + " is now in " + s.name, true);
+        }
+      }
+      async function resizeTo(it, target) {
+        const from = it.size;
+        it.problems = it.problems.filter(
+          (p) => p.kind !== "big" && p.kind !== "tiny",
+        );
+        await tween(700, (t) => {
+          const k = ease(t);
+          it.size = Math.exp(
+            Math.log(from) + (Math.log(target) - Math.log(from)) * k,
+          );
+          applyPose(it);
+          syncFields();
+        });
+        it.size = target;
+        settleStatus(it);
+        pushUndo("the size change", () => {
+          it.size = from;
+          applyPose(it);
+          refreshSizeProblem(it);
+        });
+      }
+
+      /* The stone scan's "make it lighter". Faked: the numbers run down and a coarser mesh takes over. */
+      const lightened = (f) => ({
+        bytes: Math.min(f.bytes * 0.16, MAX_MODEL_BYTES * 0.8),
+        tris: Math.min(f.tris, MAX_TRIANGLES),
+        tex: Math.min(f.tex, 2048),
+      });
+      async function lighten(it) {
+        if (it.fixing) return;
+        const from = { ...it.stats },
+          to = lightened(from);
+        it.fixing = true;
+        renderTree();
+        renderCard();
+        const swapAt = 0.6;
+        let swapped = false;
+        const oldBody = it.body,
+          oldProblems = it.problems;
+        await tween(2400, (t) => {
+          const k = ease(t);
+          it.stats = {
+            bytes: from.bytes + (to.bytes - from.bytes) * k,
+            tris: Math.round(from.tris + (to.tris - from.tris) * k),
+            tex: Math.round(from.tex + (to.tex - from.tex) * k),
+          };
+          if (selected === it) {
+            const setM = (c, v, frac, fits) => {
+              const m = cardEl.querySelector(`[data-m="${c}"]`);
+              if (!m) return;
+              m.querySelector(".mv").textContent = v;
+              const b = m.querySelector("i");
+              b.style.width = clamp(frac * 100, 3, 100) + "%";
+              b.classList.toggle("fits", fits);
+            };
+            setM(
+              "bytes",
+              fmtBytes(it.stats.bytes),
+              it.stats.bytes / (MAX_MODEL_BYTES * 2.5),
+              it.stats.bytes <= MAX_MODEL_BYTES,
+            );
+            setM(
+              "tris",
+              fmtCount(it.stats.tris),
+              it.stats.tris / (MAX_TRIANGLES * 2.5),
+              it.stats.tris <= MAX_TRIANGLES,
+            );
+            setM(
+              "tex",
+              it.stats.tex + " px",
+              it.stats.tex / (MAX_TEX_SIDE * 2.5),
+              it.stats.tex <= MAX_TEX_SIDE,
+            );
+          }
+          if (!swapped && t > swapAt && it.lightMesh) {
+            swapped = true;
+            const holderChild = it.body.children[0];
+            const mesh = holderChild.getObjectByProperty("isMesh", true);
+            if (mesh) {
+              it.heavyGeo = mesh.geometry;
+              mesh.geometry = it.lightMesh;
+            }
+          }
+        });
+        it.fixing = false;
+        it.bytes = it.stats.bytes;
+        it.problems = oldProblems.filter((p) => p.kind !== "heavy");
+        it.note = `Lighter: ${fmtBytes(from.bytes)} became ${fmtBytes(it.stats.bytes)}. Your own file is unchanged.`;
+        settleStatus(it);
+        pushUndo("making it lighter", () => {
+          it.stats = from;
+          it.bytes = from.bytes;
+          it.note = "";
+          const mesh = oldBody.getObjectByProperty("isMesh", true);
+          if (mesh && it.heavyGeo) mesh.geometry = it.heavyGeo;
+          it.problems = [...oldProblems];
+          settleStatus(it);
+        });
+      }
+
+      /* ---------- reading and checking a file ---------- */
+      const OTHER_MODELS = new Set([
+        "obj",
+        "fbx",
+        "stl",
+        "dae",
+        "usdz",
+        "usd",
+        "ply",
+        "blend",
+        "3ds",
+        "3mf",
+      ]);
+      const PICTURES = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif"]);
+      /* What a file's name alone says. A null `fails` means: read it and see. */
+      function byName(name) {
+        const e = extOf(name);
+        if (PICTURES.has(e)) return { kind: "picture" };
+        if (e === "glb") return { kind: "model" };
+        if (e === "svg")
+          return {
+            fails: {
+              title: "An SVG cannot go in a tour",
+              body: "An SVG can carry a script, so a tour only takes pictures made of pixels.",
+              fix: "Export it as PNG or JPG.",
+            },
+          };
+        if (e === "gltf")
+          return {
+            fails: {
+              title: "A .gltf is not one whole file",
+              body: "It keeps its shapes and textures in files beside it, and a tour carries one file per model.",
+              fix: "Export it as .glb.",
+            },
+          };
+        if (OTHER_MODELS.has(e))
+          return {
+            fails: {
+              title: `A .${e} cannot be read here`,
+              body: "Tours take one kind of model file: .glb.",
+              fix: "Export it as .glb from your 3D tool.",
+            },
+          };
+        return {
+          fails: {
+            title: e
+              ? `A .${e} file cannot stand in the place`
+              : "This file cannot stand in the place",
+            body: "Pictures (JPG, PNG, WebP, GIF, AVIF) and .glb models can.",
+            fix: "Pick a picture or a model.",
+          },
+        };
+      }
+      /* The tour format's checks on a .glb, shortened; the wording is for the author. */
+      function checkGlb(buf) {
+        const n = buf.byteLength;
+        const notModel = {
+          title: "This is not a .glb model",
+          body: "The name ends in .glb, but what is inside is something else.",
+          fix: "Export the model as .glb again.",
+        };
+        if (n < 20) return notModel;
+        const v = new DataView(buf);
+        if (v.getUint32(0, true) !== 0x46546c67) return notModel;
+        if (v.getUint32(4, true) !== 2)
+          return {
+            title: "This model is in an old format",
+            body: "Only glTF version 2 can be read.",
+            fix: "Open it in a 3D tool and export it as .glb again.",
+          };
+        const declared = v.getUint32(8, true);
+        if (declared !== n)
+          return {
+            title: "This model is cut off",
+            body: "The file says how long it should be, and part of it is missing. A download or an export probably stopped early.",
+            found: `says ${fmtBytes(declared)}, found ${fmtBytes(n)}`,
+            fix: "Copy or export it again.",
+          };
+        const len = v.getUint32(12, true);
+        let json = null;
+        try {
+          if (v.getUint32(16, true) !== 0x4e4f534a || 20 + len > n)
+            throw new Error("no json");
+          json = JSON.parse(
+            new TextDecoder().decode(new Uint8Array(buf, 20, len)),
+          );
+        } catch {
+          return {
+            title: "This model is damaged",
+            body: "The part of the file that describes the model cannot be read.",
+            fix: "Export it again.",
+          };
+        }
+        for (const key of ["buffers", "images"]) {
+          for (const entry of json[key] || []) {
+            if (
+              entry.uri !== undefined &&
+              !String(entry.uri).startsWith("data:")
+            ) {
+              return {
+                title: "This model reaches outside its file",
+                body: "It points to a texture or data in another file, and a tour carries one file per model. Visitors would see holes.",
+                found: String(entry.uri).slice(0, 44),
+                fix: "Export it as .glb with everything inside.",
+              };
+            }
+          }
+        }
+        const decoder = [
+          ...(json.extensionsUsed || []),
+          ...(json.extensionsRequired || []),
+        ].find((x) =>
+          [
+            "KHR_draco_mesh_compression",
+            "EXT_meshopt_compression",
+            "KHR_meshopt_compression",
+            "KHR_texture_basisu",
+          ].includes(x),
+        );
+        if (decoder)
+          return {
+            title: "This model needs a decoder",
+            body: "It is compressed in a way that needs extra code, and a tour loads no code from outside.",
+            found: decoder,
+            fix: "Export it without compression.",
+          };
+        return null;
+      }
+      function parseGlb(buf) {
+        return new Promise((res, rej) =>
+          new GLTFLoader().parse(buf, "", (g) => res(g.scene), rej),
+        );
+      }
+      function measureModel(scn) {
+        let tris = 0,
+          tex = 0;
+        scn.traverse((m) => {
+          if (!m.isMesh) return;
+          const g = m.geometry;
+          tris += (g.index ? g.index.count : g.attributes.position.count) / 3;
+          for (const mat of [].concat(m.material))
+            for (const k of [
+              "map",
+              "normalMap",
+              "roughnessMap",
+              "metalnessMap",
+              "emissiveMap",
+            ]) {
+              const im = mat[k]?.image;
+              if (im?.width) tex = Math.max(tex, im.width, im.height);
+            }
+        });
+        return { tris: Math.round(tris), tex };
+      }
+      function markBad(it, p) {
+        it.status = "bad";
+        it.problems = [p];
+        if (it.standIn) {
+          it.root.remove(it.standIn);
+          it.standIn = null;
+        }
+        /* the marker: a dashed red crate with a cross, standing where the file fell */
+        const d = (it.standDims = { w: 2, h: 2, d: 2 });
+        const g = new THREE.Group();
+        const mat = new THREE.LineDashedMaterial({
+          color: STATUS_COLOR.bad,
+          dashSize: 0.22,
+          gapSize: 0.14,
+        });
+        const edges = new THREE.LineSegments(
+          unitEdges.clone().scale(d.w, d.h, d.d),
+          mat,
+        );
+        edges.computeLineDistances();
+        edges.position.y = d.h / 2;
+        const fill = new THREE.Mesh(
+          unitBox,
+          new THREE.MeshBasicMaterial({
+            color: STATUS_COLOR.bad,
+            transparent: true,
+            opacity: 0.32,
+            depthWrite: false,
+          }),
+        );
+        fill.scale.set(d.w, d.h, d.d);
+        fill.position.y = d.h / 2;
+        /* a cross of two bars, so the marker reads as "no" from across the square */
+        const barMat = new THREE.MeshBasicMaterial({ color: 0xc23b3b });
+        const bars = [1, -1].map((sign) => {
+          const bar = new THREE.Mesh(unitBox, barMat);
+          bar.scale.set(2.3, 0.2, 0.02);
+          bar.position.set(0, 1, 1.02);
+          bar.rotation.z = (sign * Math.PI) / 4;
+          return bar;
+        });
+        g.add(edges, fill, ...bars);
+        it.standIn = g;
+        it.root.add(g);
+        applyPose(it);
+        renderTree();
+        if (selected === it) renderCard();
+      }
+      function stageTo(it, text, p) {
+        it.stage = text;
+        it.progress = p;
+        if (selected !== it) return;
+        const tx = cardEl.querySelector(".stx"),
+          bar = cardEl.querySelector(".pbar i");
+        if (tx) tx.textContent = text;
+        if (bar) bar.style.width = p * 100 + "%";
+      }
+      async function readInto(it, file) {
+        const token = (it.token = {});
+        const gone = () => it.token !== token;
+        const sample = samples.find((s) => s.file === file);
+        it.bytes = sample?.claim?.bytes ?? file.size;
+        it.status = "reading";
+        it.problems = [];
+        it.note = "";
+        it.fixing = false;
+        it.sizeAccepted = false;
+        renderTree();
+        if (selected === it) renderCard();
+
+        const named = byName(file.name);
+        await tween(380, (t) => {
+          setStandInProgress(it, t * 0.7);
+          stageTo(it, "Reading the file", t * 0.5);
+        });
+        if (gone()) return;
+        if (named.fails) {
+          markBad(it, named.fails);
+          return;
+        }
+
+        if (named.kind === "picture") {
+          stageTo(it, "Is it a picture?", 0.6);
+          let bmp;
+          try {
+            bmp = await createImageBitmap(file);
+          } catch {
+            bmp = null;
+          }
+          await sleep(220);
+          if (gone()) {
+            bmp?.close?.();
+            return;
+          }
+          if (!bmp) {
+            markBad(it, {
+              title: "This picture cannot be opened",
+              body: "The file may be damaged, or this browser cannot read its kind of picture.",
+              fix: "Save it again as JPG or PNG.",
+            });
+            return;
+          }
+          stageTo(it, "Counting pixels", 0.85);
+          setStandInProgress(it, 1);
+          await sleep(200);
+          if (gone()) {
+            bmp.close();
+            return;
+          }
+          const w = bmp.width,
+            h = bmp.height,
+            k = Math.min(1, 2048 / Math.max(w, h));
+          const canvas = canvasOf(
+            Math.max(1, Math.round(w * k)),
+            Math.max(1, Math.round(h * k)),
+            (g, cw, ch) => g.drawImage(bmp, 0, 0, cw, ch),
+          );
+          bmp.close();
+          clearBody(it);
+          it.px = { w, h };
+          it.lift = 0.9;
+          it.size = it.size || 3.2;
+          attachPicture(it, canvas, w / h);
+          if (w * h > MAX_PIXELS) it.problems.push({ kind: "pixels" });
+        } else {
+          stageTo(it, "Is the file whole?", 0.6);
+          const buf = await file.arrayBuffer();
+          await sleep(200);
+          if (gone()) return;
+          const fail = checkGlb(buf);
+          if (fail) {
+            markBad(it, fail);
+            return;
+          }
+          stageTo(it, "Does it stay inside its file?", 0.72);
+          await sleep(160);
+          let scn;
+          try {
+            scn = await parseGlb(buf);
+          } catch {
+            markBad(it, {
+              title: "This model cannot be opened",
+              body: "Its parts look right, but the model inside does not hold together.",
+              fix: "Export it again.",
+            });
+            return;
+          }
+          if (gone()) return;
+          stageTo(it, "Counting triangles", 0.84);
+          setStandInProgress(it, 1);
+          await sleep(160);
+          if (gone()) return;
+          const m = measureModel(scn);
+          if (m.tris === 0) {
+            markBad(it, {
+              title: "This model is empty",
+              body: "The file opens, but there is no shape in it to show.",
+              fix: "Export it again with the object selected.",
+            });
+            return;
+          }
+          stageTo(it, "Measuring its size", 0.94);
+          await sleep(140);
+          if (gone()) return;
+          clearBody(it);
+          it.lift = 0;
+          attachModel(it, scn);
+          it.size = it.largest;
+          it.stats = {
+            bytes: it.bytes,
+            tris: sample?.claim?.tris ?? m.tris,
+            tex: sample?.claim?.tex ?? m.tex,
+          };
+          if (sample?.light) it.lightMesh = sample.light;
+          const f = it.stats;
+          if (
+            f.bytes > MAX_MODEL_BYTES ||
+            f.tris > MAX_TRIANGLES ||
+            f.tex > MAX_TEX_SIDE
+          )
+            it.problems.push({ kind: "heavy" });
+          if (it.largest > MAX_SIDE_M) it.problems.push({ kind: "big" });
+          else if (it.largest < MIN_SIDE_M) it.problems.push({ kind: "tiny" });
+        }
+        applyPose(it);
+        it.status = "ready";
+        await reveal(it);
+        if (gone()) return;
+        settleStatus(it);
+        if (selected === it) renderCard();
+      }
+
+      /* ---------- landing ---------- */
+      const FACE_CAMERA = (x, z) =>
+        Math.atan2(camera.position.x - x, camera.position.z - z);
+      function freeSpot(s) {
+        const taken = items.filter((it) => it.sid === s.id).map((it) => it);
+        for (let k = 0; k < 40; k++) {
+          const a = 0.6 + k * 2.399,
+            r = Math.min(s.r - 1.4, 3.8 + k * 0.42);
+          const x = s.x + Math.cos(a) * r,
+            z = s.z + Math.sin(a) * r;
+          if (
+            z > s.z - 2 &&
+            taken.every((it) => Math.hypot(it.x - x, it.z - z) > 3.4) &&
+            !LANDMARKS.some((l) => Math.hypot(l[0] - x, l[1] - z) < l[2])
+          )
+            return { x, z };
+        }
+        return { x: s.x + 2, z: s.z + 2 };
+      }
+      const LANDMARKS = [
+        [-18, 1, 2.6],
+        [3, -8, 4.6],
+        [30, 0, 3],
+        [30, 10, 3],
+      ];
+      function dimsFor(guess) {
+        if (guess.kind === "picture") {
+          const a = guess.aspect || 4 / 3;
+          return {
+            w: guess.size || 3.2,
+            h: (guess.size || 3.2) / a + 0.9,
+            d: 0.2,
+          };
+        }
+        if (guess.box) return guess.box;
+        return { w: 2.2, h: 2.2, d: 2.2 };
+      }
+      function nameForNew(fileName) {
+        return prettyName(fileName);
+      }
+      /* One file onto one spot: decides the station, stands the object there, reads it. */
+      function landOne(file, spot, guess, target) {
+        let st = target,
+          made = null;
+        if (!st) {
+          st = addStation({
+            name: nameForNew(file.name),
+            x: spot.x,
+            z: spot.z,
+            r: 6.5,
+            auto: true,
+            open: true,
+          });
+          rebuildRoute();
+          made = st;
+        }
+        st.open = true;
+        const it = newItem({
+          name: prettyName(file.name),
+          fileName: file.name,
+          x: spot.x,
+          z: spot.z,
+          yaw: FACE_CAMERA(spot.x, spot.z),
+          kind: guess.kind || "file",
+          size: guess.size || 3.2,
+          standDims: dimsFor(guess),
+          status: "reading",
+          sid: st.id,
+          fresh: true,
+        });
+        st.items.push(it);
+        addStandIn(it, guess.kind);
+        applyPose(it);
+        return { it, made };
+      }
+      function land(files, spots, guesses) {
+        /* One drop, one station: the row of files goes where the label said. */
+        const middle = spots[Math.floor((spots.length - 1) / 2)];
+        const placed = [];
+        let target = stationAt(middle.x, middle.z);
+        files.forEach((file, i) => {
+          const one = landOne(file, spots[i], guesses[i] || {}, target);
+          target = target || one.made;
+          placed.push(one);
+        });
+        const last = placed[placed.length - 1];
+        selected = last.it;
+        renderTree();
+        renderCard();
+        placed.forEach((p, i) => readInto(p.it, files[i]));
+        pushUndo(
+          files.length === 1
+            ? "adding " + files[0].name
+            : "adding " + files.length + " files",
+          () => {
+            placed.forEach((p) => {
+              p.it.token = null;
+              detachItem(p.it);
+              if (selected === p.it) selected = null;
+            });
+            placed.forEach((p) => {
+              if (
+                p.made &&
+                stations.includes(p.made) &&
+                p.made.items.length === 0
+              )
+                dropStation(p.made);
+            });
+          },
+        );
+        scrollRowIntoView(last.it);
+        flyIfHidden(last.it.x, last.it.z);
+      }
+      function scrollRowIntoView(it) {
+        rowsEl
+          .querySelector(`[data-iid="${it.id}"]`)
+          ?.scrollIntoView({ block: "nearest" });
+      }
+      function replaceFile(it, file, guess) {
+        const before = {
+          kind: it.kind,
+          body: it.body,
+          legs: it.legs,
+          status: it.status,
+          problems: it.problems,
+          stats: it.stats,
+          size: it.size,
+          lift: it.lift,
+          name: it.name,
+          bytes: it.bytes,
+          base: it.base,
+          largest: it.largest,
+          aspect: it.aspect,
+          px: it.px,
+          standIn: it.standIn,
+          standDims: it.standDims,
+          note: it.note,
+        };
+        it.root.remove(before.body, before.standIn, ...before.legs);
+        if (it.warnBox) {
+          it.root.remove(it.warnBox);
+          it.warnBox = null;
+        }
+        it.body = null;
+        it.standIn = null;
+        it.legs = [];
+        it.kind = guess.kind || "file";
+        it.name = prettyName(file.name);
+        it.fileName = file.name;
+        it.size = guess.size || 3.2;
+        it.lift = 0;
+        it.standDims = dimsFor(guess);
+        addStandIn(it, guess.kind);
+        applyPose(it);
+        select(it);
+        readInto(it, file);
+        toast(`${file.name} takes over this place`, true);
+        pushUndo("replacing the file", () => {
+          it.token = null;
+          clearBody(it);
+          Object.assign(it, before);
+          if (before.body) it.root.add(before.body);
+          if (before.standIn) it.root.add(before.standIn);
+          before.legs.forEach((m) => it.root.add(m));
+          applyPose(it);
+          settleStatus(it);
+        });
+      }
+
+      /* ---------- the file in the air ---------- */
+      const GHOST_MAX = 5;
+      const ghosts = [];
+      function makeGhost() {
+        const g = new THREE.Group();
+        const fill = new THREE.Mesh(
+          unitBox,
+          new THREE.MeshBasicMaterial({
+            color: 0xe9a23b,
+            transparent: true,
+            opacity: 0.5,
+            depthWrite: false,
+            depthTest: true,
+          }),
+        );
+        const edges = new THREE.LineSegments(
+          unitEdges,
+          new THREE.LineBasicMaterial({ color: 0x7a3e00 }),
+        );
+        const foot = new THREE.Mesh(
+          new THREE.RingGeometry(0.88, 1, 72).rotateX(-Math.PI / 2),
+          new THREE.MeshBasicMaterial({
+            color: 0xe9a23b,
+            transparent: true,
+            opacity: 0.95,
+            depthWrite: false,
+            depthTest: false,
+          }),
+        );
+        foot.position.y = 0.08;
+        foot.renderOrder = 15;
+        g.add(fill, edges, foot);
+        g.visible = false;
+        g.userData = { fill, edges, foot };
+        scene.add(g);
+        return g;
+      }
+      for (let i = 0; i < GHOST_MAX; i++) ghosts.push(makeGhost());
+      const tetherMat = new THREE.LineDashedMaterial({
+        color: 0xe9a23b,
+        dashSize: 0.8,
+        gapSize: 0.5,
+        depthTest: false,
+        transparent: true,
+      });
+      const tether = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(),
+          new THREE.Vector3(1, 0, 0),
+        ]),
+        tetherMat,
+      );
+      tether.visible = false;
+      tether.renderOrder = 14;
+      tether.frustumCulled = false;
+      scene.add(tether);
+      function shapeGhost(g, dims, color) {
+        const { fill, edges, foot } = g.userData;
+        fill.scale.set(dims.w, dims.h, dims.d);
+        fill.position.y = dims.h / 2;
+        edges.scale.copy(fill.scale);
+        edges.position.y = dims.h / 2;
+        foot.scale.setScalar(Math.max(1.2, Math.hypot(dims.w, dims.d) * 0.55));
+        fill.material.color.setHex(color);
+        foot.material.color.setHex(color);
+        edges.material.color.setHex(color === 0xe9a23b ? 0x7a3e00 : color);
+      }
+
+      let fd = null; // the file in the air: { guesses, at, replace, sample, refused }
+      let dragDepth = 0;
+      let over = null; // the station the file would join
+      let flyingSample = null;
+      const SAMPLE_TYPE = "application/x-tour-sample";
+      const isFileDrag = (e) => {
+        const t = [...(e.dataTransfer?.types || [])];
+        return t.includes("Files") || t.includes(SAMPLE_TYPE);
+      };
+
+      /* What can be known while the file is still in the air: browsers show the type, never the name. */
+      function guessesFrom(e) {
+        if (flyingSample) return [flyingSample.guess];
+        const list = [...(e.dataTransfer.items || [])]
+          .filter((x) => x.kind === "file")
+          .map((x) => {
+            const t = x.type || "";
+            if (t === "image/svg+xml")
+              return {
+                refused:
+                  "An SVG cannot go in a tour. A picture made of pixels can.",
+              };
+            if (t.startsWith("image/")) return { kind: "picture" };
+            if (t === "model/gltf-binary") return { kind: "model" };
+            if (t === "") return { kind: null };
+            if (t.startsWith("application/pdf"))
+              return {
+                refused:
+                  "A PDF cannot stand in the place. Pictures and .glb models can.",
+              };
+            if (
+              t.startsWith("video/") ||
+              t.startsWith("audio/") ||
+              t.startsWith("text/")
+            )
+              return {
+                refused:
+                  "Only pictures and .glb models can stand in the place.",
+              };
+            return { kind: null };
+          });
+        return list.length ? list : [{ kind: null }];
+      }
+      function centreSpot() {
+        const hit = groundAt(
+          viewEl.getBoundingClientRect().left + W / 2,
+          viewEl.getBoundingClientRect().top + H * 0.55,
+        );
+        return hit
+          ? { x: hit.x, z: hit.z }
+          : { x: controls.target.x, z: controls.target.z };
+      }
+      function spotsAround(at, n) {
+        if (n === 1) return [{ x: at.x, z: at.z }];
+        const side = new THREE.Vector3()
+          .setFromMatrixColumn(camera.matrixWorld, 0)
+          .setY(0)
+          .normalize();
+        return Array.from({ length: n }, (_, i) => {
+          const u = (i - (n - 1) / 2) * 4.2;
+          return { x: at.x + side.x * u, z: at.z + side.z * u };
+        });
+      }
+      function beginDrag(e) {
+        fd = {
+          guesses: guessesFrom(e),
+          at: centreSpot(),
+          replace: null,
+          row: null,
+        };
+        document.body.classList.add("filedrag");
+        const g = fd.guesses,
+          n = g.length;
+        const kinds =
+          n > 1
+            ? `${n} files`
+            : g[0].kind === "picture"
+              ? "A picture"
+              : g[0].kind === "model"
+                ? "A model"
+                : "A file";
+        $("dropHint").textContent =
+          `${kinds}: let go on the place, it lands on the outline`;
+        drawGhosts();
+      }
+      function endDrag() {
+        fd = null;
+        dragDepth = 0;
+        setOver(null);
+        document.body.classList.remove("filedrag");
+        ghosts.forEach((g) => (g.visible = false));
+        tether.visible = false;
+        $("ghostTag").hidden = true;
+        rowsEl
+          .querySelectorAll(".row.over")
+          .forEach((r) => r.classList.remove("over"));
+      }
+      function setOver(s) {
+        if (over === s) return;
+        over = s;
+        rowsEl
+          .querySelectorAll(".row.st")
+          .forEach((r) =>
+            r.classList.toggle("over", !!s && r.dataset.sid === s.id),
+          );
+      }
+      function trackDrag(e) {
+        const r = viewEl.getBoundingClientRect();
+        const inView =
+          e.clientX >= r.left &&
+          e.clientX <= r.right &&
+          e.clientY >= r.top &&
+          e.clientY <= r.bottom;
+        const row = e.target?.closest?.(".row.st");
+        fd.replace = null;
+        fd.row = null;
+        if (row) {
+          const s = stationById(row.dataset.sid);
+          fd.row = s;
+          fd.at = freeSpot(s);
+        } else if (inView) {
+          const hit = groundAt(e.clientX, e.clientY);
+          if (hit) {
+            fd.at = {
+              x: clamp(hit.x, -WORLD / 2, WORLD / 2),
+              z: clamp(hit.z, -WORLD / 2, WORLD / 2),
+            };
+          }
+          const it = objectAt(
+            e.clientX,
+            e.clientY,
+            (x) => x.status === "warn" || x.status === "bad",
+          );
+          if (it && fd.guesses.length === 1) {
+            fd.replace = it;
+            fd.at = { x: it.x, z: it.z };
+          }
+        }
+        drawGhosts();
+      }
+      function drawGhosts() {
+        const g = fd.guesses,
+          n = Math.min(g.length, GHOST_MAX);
+        const spots = spotsAround(fd.at, n);
+        const refused = g.find((x) => x.refused);
+        ghosts.forEach((h, i) => {
+          h.visible = i < n;
+          if (i >= n) return;
+          const color = refused ? 0xef7470 : fd.replace ? 0xff9166 : 0xe9a23b;
+          shapeGhost(h, dimsFor(g[i]), color);
+          h.position.set(spots[i].x, 0, spots[i].z);
+          h.rotation.y = fd.replace
+            ? fd.replace.yaw
+            : FACE_CAMERA(spots[i].x, spots[i].z);
+        });
+        const st = fd.replace ? null : stationAt(fd.at.x, fd.at.z);
+        setOver(fd.replace ? stationById(fd.replace.sid) : st);
+        tether.visible = !!st && !refused;
+        if (st) {
+          const p = tether.geometry.attributes.position;
+          p.setXYZ(0, fd.at.x, 0.09, fd.at.z);
+          p.setXYZ(1, st.x, 0.09, st.z);
+          p.needsUpdate = true;
+          tether.computeLineDistances();
+        }
+        const tag = $("ghostTag");
+        tag.hidden = false;
+        tag.className = refused ? "no" : fd.replace ? "swap" : "";
+        if (refused)
+          tag.innerHTML = `<b>This one will not fit</b><span>${esc(refused.refused)}</span>`;
+        else if (fd.replace)
+          tag.innerHTML = `<b>Takes over from ${esc(fd.replace.name)}</b><span>Keeps its place and its turn</span>`;
+        else {
+          const a = g[0];
+          const what =
+            n > 1
+              ? `${n} files in a row, facing you`
+              : a.kind === "picture"
+                ? `Stands ${fmtM(a.size || 3.2)} wide, facing you`
+                : a.kind === "model"
+                  ? "Stands on the ground, facing you"
+                  : "Stands here, facing you";
+          tag.innerHTML = `<b>${st ? "Joins " + esc(st.name) : "New station here"}</b><span>${what}</span>`;
+        }
+      }
+      addEventListener("dragenter", (e) => {
+        if (!isFileDrag(e)) return;
+        e.preventDefault();
+        dragDepth++;
+        if (!fd) beginDrag(e);
+      });
+      addEventListener("dragover", (e) => {
+        if (!isFileDrag(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+        if (!fd) beginDrag(e);
+        trackDrag(e);
+      });
+      addEventListener("dragleave", (e) => {
+        if (!fd) return;
+        dragDepth--;
+        if (dragDepth <= 0 || e.relatedTarget === null) endDrag();
+      });
+      addEventListener("drop", (e) => {
+        if (!isFileDrag(e)) return;
+        e.preventDefault();
+        if (!fd) beginDrag(e);
+        trackDrag(e);
+        const at = fd.at,
+          swap = fd.replace,
+          guesses = fd.guesses;
+        const files = flyingSample
+          ? [flyingSample.file]
+          : [...e.dataTransfer.files];
+        endDrag();
+        if (!files.length) return;
+        if (swap && files.length === 1) {
+          replaceFile(swap, files[0], guessFromFile(files[0], guesses[0]));
+          return;
+        }
+        land(
+          files,
+          spotsAround(at, files.length),
+          files.map((f, i) => guessFromFile(f, guesses[i] || {})),
+        );
+      });
+      /* On the drop the name is known at last, so the stand-in can be the right shape. */
+      function guessFromFile(f, g) {
+        const s = samples.find((x) => x.file === f);
+        if (s) return s.guess;
+        const named = byName(f.name);
+        return { ...g, kind: named.kind || g.kind || null };
+      }
+
+      /* ---------- pointer work in the view ---------- */
+      let W = 1,
+        H = 1;
+      const ndc = new THREE.Vector2(),
+        ray = new THREE.Raycaster(),
+        groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0),
+        hitV = new THREE.Vector3();
+      function setRay(cx, cy) {
+        const r = cv.getBoundingClientRect();
+        ndc.set(
+          ((cx - r.left) / r.width) * 2 - 1,
+          -(((cy - r.top) / r.height) * 2 - 1),
+        );
+        ray.setFromCamera(ndc, camera);
+      }
+      function groundAt(cx, cy) {
+        setRay(cx, cy);
+        return ray.ray.intersectPlane(groundPlane, hitV) ? hitV.clone() : null;
+      }
+      function objectAt(cx, cy, filter = () => true) {
+        setRay(cx, cy);
+        let best = null,
+          bd = Infinity;
+        for (const it of items) {
+          if (!filter(it)) continue;
+          const hits = ray.intersectObject(it.body || it.hit, true);
+          if (hits.length && hits[0].distance < bd) {
+            bd = hits[0].distance;
+            best = it;
+          }
+        }
+        return best;
+      }
+      let act = null; // the pointer gesture: { mode, it, ... }
+      const readout = $("readout");
+      function showReadout(text, cx, cy) {
+        const r = viewEl.getBoundingClientRect();
+        readout.hidden = false;
+        readout.textContent = text;
+        readout.style.transform = `translate(${Math.round(cx - r.left + 16)}px,${Math.round(cy - r.top + 14)}px)`;
+      }
+      cv.addEventListener("pointerdown", (e) => {
+        if (e.button !== 0) return;
+        const it = objectAt(e.clientX, e.clientY);
+        if (it) {
+          controls.enabled = false;
+          const hit = groundAt(e.clientX, e.clientY);
+          act = {
+            mode: "move",
+            it,
+            sx: e.clientX,
+            sy: e.clientY,
+            moved: false,
+            dx: hit ? it.x - hit.x : 0,
+            dz: hit ? it.z - hit.z : 0,
+            from: { x: it.x, z: it.z },
+          };
+          cv.setPointerCapture(e.pointerId);
+          if (selected !== it) select(it);
+        } else {
+          act = { mode: "maybeClick", sx: e.clientX, sy: e.clientY };
+        }
+      });
+      function beginKnob(e, mode) {
+        e.preventDefault();
+        e.stopPropagation();
+        const it = selected;
+        if (!it) return;
+        controls.enabled = false;
+        const hit =
+          groundAt(e.clientX, e.clientY) || new THREE.Vector3(it.x, 0, it.z);
+        act = {
+          mode,
+          it,
+          grabYaw: Math.atan2(hit.x - it.x, hit.z - it.z) - it.yaw,
+          grabDist: Math.max(0.2, Math.hypot(hit.x - it.x, hit.z - it.z)),
+          from: { yaw: it.yaw, size: it.size },
+        };
+        addEventListener("pointermove", onMove);
+        addEventListener("pointerup", onUp, { once: true });
+      }
+      $("hTurn").addEventListener("pointerdown", (e) => beginKnob(e, "turn"));
+      $("hSize").addEventListener("pointerdown", (e) => beginKnob(e, "size"));
+      function onMove(e) {
+        if (!act) return;
+        const it = act.it;
+        if (act.mode === "move") {
+          if (
+            !act.moved &&
+            Math.hypot(e.clientX - act.sx, e.clientY - act.sy) < 4
+          )
+            return;
+          act.moved = true;
+          viewEl.classList.add("moving");
+          const hit = groundAt(e.clientX, e.clientY);
+          if (!hit) return;
+          it.x = hit.x + act.dx;
+          it.z = hit.z + act.dz;
+          applyPose(it);
+          const st = stationAt(it.x, it.z),
+            home = stationById(it.sid);
+          setOverQuiet(st);
+          const ref = st || home;
+          showReadout(
+            st
+              ? `${fmtM(Math.hypot(it.x - st.x, it.z - st.z))} from ${st.name}`
+              : `${fmtM(Math.hypot(it.x - ref.x, it.z - ref.z))} from ${ref.name}, outside its circle`,
+            e.clientX,
+            e.clientY,
+          );
+        } else if (act.mode === "turn") {
+          const hit = groundAt(e.clientX, e.clientY);
+          if (!hit) return;
+          it.yaw = Math.atan2(hit.x - it.x, hit.z - it.z) - act.grabYaw;
+          if (e.shiftKey)
+            it.yaw = rad(Math.round((it.yaw * 180) / Math.PI / 15) * 15);
+          applyPose(it);
+          syncFields();
+          showReadout(deg(it.yaw) + " deg", e.clientX, e.clientY);
+        } else if (act.mode === "size") {
+          const hit = groundAt(e.clientX, e.clientY);
+          if (!hit) return;
+          it.size = clamp(
+            (act.from.size * Math.hypot(hit.x - it.x, hit.z - it.z)) /
+              act.grabDist,
+            0.1,
+            600,
+          );
+          applyPose(it);
+          syncFields();
+          showReadout(fmtM(it.size), e.clientX, e.clientY);
+        }
+      }
+      function setOverQuiet(s) {
+        for (const z of stations) z.fill.userData.hot = z === s;
+      }
+      function onUp() {
+        removeEventListener("pointermove", onMove);
+        const a = act;
+        act = null;
+        readout.hidden = true;
+        viewEl.classList.remove("moving");
+        setOverQuiet(null);
+        if (controls) controls.enabled = true;
+        if (!a) return;
+        if (a.mode === "move" && a.moved) {
+          const it = a.it,
+            f = a.from,
+            st = stationAt(it.x, it.z),
+            home = stationById(it.sid);
+          pushUndo("moving " + it.name, () => {
+            it.x = f.x;
+            it.z = f.z;
+            applyPose(it);
+            if (it.sid !== home.id && stations.includes(home))
+              rehome(it, home, "quiet");
+          });
+          if (st && st.id !== it.sid) {
+            rehome(it, st, "quiet");
+            toast(it.name + " is now in " + st.name);
+          }
+        } else if (a.mode === "turn") {
+          const it = a.it,
+            f = a.from.yaw;
+          pushUndo("turning " + it.name, () => {
+            it.yaw = f;
+            applyPose(it);
+            syncFields();
+          });
+        } else if (a.mode === "size") {
+          const it = a.it,
+            f = a.from.size;
+          refreshSizeProblem(it);
+          pushUndo("resizing " + it.name, () => {
+            it.size = f;
+            applyPose(it);
+            syncFields();
+            refreshSizeProblem(it);
+          });
+        }
+      }
+      cv.addEventListener("pointermove", (e) => {
+        if (act && act.mode === "move") {
+          onMove(e);
+          return;
+        }
+        if (!act && !fd && e.buttons === 0)
+          viewEl.classList.toggle("hoverobj", !!objectAt(e.clientX, e.clientY));
+      });
+      cv.addEventListener("pointerup", (e) => {
+        const a = act;
+        if (a?.mode === "maybeClick") {
+          act = null;
+          if (Math.hypot(e.clientX - a.sx, e.clientY - a.sy) < 4) select(null);
+          return;
+        }
+        if (a?.mode === "move") onUp();
+      });
+      cv.addEventListener("contextmenu", (e) => e.preventDefault());
+      addEventListener("keydown", (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+          if (!/INPUT|SELECT/.test(document.activeElement?.tagName || "")) {
+            e.preventDefault();
+            undo();
+          }
+          return;
+        }
+        if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
+        const it = selected;
+        if (!it) return;
+        const step = e.shiftKey ? 1 : 0.25;
+        const f = new THREE.Vector3();
+        camera.getWorldDirection(f);
+        f.y = 0;
+        f.normalize();
+        const r = new THREE.Vector3(-f.z, 0, f.x);
+        const nudge = (u, v) => {
+          it.x += r.x * u + f.x * v;
+          it.z += r.z * u + f.z * v;
+          applyPose(it);
+          $("unsaved").hidden = false;
+        };
+        if (e.key === "ArrowLeft") nudge(-step, 0);
+        else if (e.key === "ArrowRight") nudge(step, 0);
+        else if (e.key === "ArrowUp") nudge(0, step);
+        else if (e.key === "ArrowDown") nudge(0, -step);
+        else if (e.key.toLowerCase() === "q") {
+          it.yaw += rad(5);
+          applyPose(it);
+          syncFields();
+        } else if (e.key.toLowerCase() === "e") {
+          it.yaw -= rad(5);
+          applyPose(it);
+          syncFields();
+        } else if (e.key === "Delete" || e.key === "Backspace") removeItem(it);
+        else if (e.key === "Escape") select(null);
+        else return;
+        e.preventDefault();
+      });
+
+      /* ---------- the Add file button ---------- */
+      let pickFor = null;
+      $("addBtn").addEventListener("click", () => {
+        pickFor = null;
+        $("picker").click();
+      });
+      $("picker").addEventListener("change", (e) => {
+        const files = [...e.target.files];
+        e.target.value = "";
+        if (!files.length) return;
+        if (pickFor) {
+          replaceFile(pickFor, files[0], guessFromFile(files[0], {}));
+          pickFor = null;
+          return;
+        }
+        const s = nearestStationToView();
+        land(
+          files,
+          spotsAround(freeSpot(s), files.length),
+          files.map((f) => guessFromFile(f, {})),
+        );
+      });
+      function nearestStationToView() {
+        const c = centreSpot();
+        return stations.reduce((a, b) =>
+          Math.hypot(a.x - c.x, a.z - c.z) < Math.hypot(b.x - c.x, b.z - c.z)
+            ? a
+            : b,
+        );
+      }
+
+      /* ---------- the camera ---------- */
+      controls = new OrbitControls(camera, cv);
+      controls.target.set(3, 0, 3);
+      controls.mouseButtons = {
+        LEFT: THREE.MOUSE.PAN,
+        MIDDLE: THREE.MOUSE.DOLLY,
+        RIGHT: THREE.MOUSE.ROTATE,
+      };
+      controls.screenSpacePanning = false;
+      controls.maxPolarAngle = rad(82);
+      controls.minDistance = 10;
+      controls.maxDistance = 320;
+      controls.enableDamping = false;
+      let camGoal = null;
+      function flyTo(x, z) {
+        camGoal = { x, z };
+      }
+      function flyIfHidden(x, z) {
+        const s = toScreen(new THREE.Vector3(x, 0, z));
+        if (s.x < 40 || s.y < 40 || s.x > W - 40 || s.y > H - 40) flyTo(x, z);
+      }
+      function zoomBy(k) {
+        const off = camera.position
+          .clone()
+          .sub(controls.target)
+          .multiplyScalar(k);
+        if (
+          off.length() < controls.minDistance ||
+          off.length() > controls.maxDistance
+        )
+          return;
+        camera.position.copy(controls.target).add(off);
+      }
+      $("zoomIn").addEventListener("click", () => zoomBy(0.8));
+      $("zoomOut").addEventListener("click", () => zoomBy(1.25));
+
+      /* ---------- laying the DOM over the scene ---------- */
+      const tmpV = new THREE.Vector3();
+      function toScreen(v) {
+        tmpV.copy(v).project(camera);
+        return {
+          x: ((tmpV.x + 1) / 2) * W,
+          y: ((1 - tmpV.y) / 2) * H,
+          behind: tmpV.z > 1,
+        };
+      }
+      const place = (el, x, y) => {
+        el.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px)`;
+      };
+      function screenBox(it) {
+        const e = extent(it),
+          hw = e.w / 2 + 0.2,
+          hd = e.d / 2 + 0.2;
+        const c = Math.cos(it.yaw),
+          s = Math.sin(it.yaw);
+        let l = Infinity,
+          r = -Infinity,
+          t = Infinity,
+          b = -Infinity,
+          seen = 0;
+        for (const u of [-hw, hw])
+          for (const v of [-hd, hd])
+            for (const y of [0, e.h]) {
+              const p = toScreen(
+                new THREE.Vector3(
+                  it.x + u * c + v * s,
+                  y,
+                  it.z - u * s + v * c,
+                ),
+              );
+              if (p.behind) continue;
+              seen++;
+              l = Math.min(l, p.x);
+              r = Math.max(r, p.x);
+              t = Math.min(t, p.y);
+              b = Math.max(b, p.y);
+            }
+        return seen ? { l, r, t, b } : null;
+      }
+      function layout() {
+        for (const s of stations) {
+          /* The name sits on the near edge of the circle, so it never covers what stands inside. */
+          const dx = camera.position.x - s.x,
+            dz = camera.position.z - s.z,
+            dl = Math.hypot(dx, dz) || 1;
+          const p = toScreen(
+            new THREE.Vector3(s.x + (dx / dl) * s.r, 0, s.z + (dz / dl) * s.r),
+          );
+          const hide =
+            p.behind || p.x < -80 || p.x > W + 20 || p.y < -30 || p.y > H + 30;
+          s.tag.hidden = hide;
+          if (!hide) place(s.tag, p.x - s.tag.offsetWidth / 2, p.y - 13);
+          s.tag.classList.toggle("hit", over === s);
+        }
+        for (const it of items) {
+          const problem = it.status === "warn" || it.status === "bad";
+          const show =
+            (problem || it.status === "reading") &&
+            selected !== it &&
+            !document.body.classList.contains("filedrag");
+          it.tag.hidden = !show;
+          if (!show) continue;
+          const sb = screenBox(it);
+          if (!sb) {
+            it.tag.hidden = true;
+            continue;
+          }
+          it.tag.className =
+            "itag " +
+            (it.status === "bad" ? "bad" : it.status === "warn" ? "warn" : "");
+          const txt =
+            it.status === "reading"
+              ? "Reading..."
+              : it.status === "bad"
+                ? it.problems[0].title
+                : it.problems[0]?.kind === "heavy"
+                  ? "Too large for phones"
+                  : "Check its size";
+          if (it.tag.textContent !== txt) it.tag.textContent = txt;
+          place(
+            it.tag,
+            clamp(
+              (sb.l + sb.r) / 2 - it.tag.offsetWidth / 2,
+              4,
+              W - it.tag.offsetWidth - 4,
+            ),
+            clamp(sb.t - 28, 4, H - 26),
+          );
+        }
+        /* the ghost's label */
+        if (fd) {
+          const n = Math.min(fd.guesses.length, GHOST_MAX),
+            d = dimsFor(fd.guesses[0]);
+          const p = toScreen(
+              new THREE.Vector3(fd.at.x, d.h + (n > 1 ? 0.4 : 0.2), fd.at.z),
+            ),
+            tag = $("ghostTag");
+          place(
+            tag,
+            clamp(p.x - tag.offsetWidth / 2, 8, W - tag.offsetWidth - 8),
+            clamp(p.y - tag.offsetHeight - 10, 8, H - tag.offsetHeight - 8),
+          );
+        }
+        /* the selected object's knobs and card */
+        const it = selected,
+          lead = $("lead");
+        selRing.visible = !!it;
+        const knobs = !!it && !!it.body && it.status !== "bad" && !fd;
+        $("hTurn").hidden = !knobs;
+        $("hSize").hidden = !knobs;
+        if (!it) {
+          $("leadLine").style.display = "none";
+          $("leadDot").style.display = "none";
+          return;
+        }
+        const R = ringRadius(it);
+        selRing.position.set(it.x, 0.1, it.z);
+        selRing.scale.setScalar(R);
+        selRing.material.color.setHex(
+          it.status === "bad"
+            ? STATUS_COLOR.bad
+            : it.status === "warn"
+              ? STATUS_COLOR.warn
+              : STATUS_COLOR.plain,
+        );
+        if (knobs) {
+          const tp = toScreen(
+            new THREE.Vector3(
+              it.x + Math.sin(it.yaw) * R,
+              0.1,
+              it.z + Math.cos(it.yaw) * R,
+            ),
+          );
+          const sp = toScreen(
+            new THREE.Vector3(
+              it.x + Math.sin(it.yaw + Math.PI / 2) * R,
+              0.1,
+              it.z + Math.cos(it.yaw + Math.PI / 2) * R,
+            ),
+          );
+          place($("hTurn"), tp.x, tp.y);
+          place($("hSize"), sp.x, sp.y);
+          $("hTurn").hidden = tp.x < 0 || tp.y < 0 || tp.x > W || tp.y > H;
+          $("hSize").hidden = sp.x < 0 || sp.y < 0 || sp.x > W || sp.y > H;
+        }
+        if (fd) return;
+        const sb = screenBox(it);
+        if (!sb) return;
+        const cw = cardEl.offsetWidth,
+          ch = cardEl.offsetHeight,
+          gap = 28;
+        const l = clamp(sb.l, 0, W),
+          r = clamp(sb.r, 0, W);
+        let cx;
+        if (W - r >= cw + gap + 8) cx = r + gap;
+        else if (l >= cw + gap + 8) cx = l - gap - cw;
+        else cx = W - cw - 8;
+        const anchorY = clamp(
+          (clamp(sb.t, 0, H) + clamp(sb.b, 0, H)) / 2,
+          8,
+          H - 8,
+        );
+        const cy = clamp(anchorY - Math.min(ch * 0.4, 90), 8, H - ch - 8);
+        place(cardEl, cx, cy);
+        const ax = cx > r ? clamp(sb.r, 0, W) : clamp(sb.l, 0, W);
+        const fromX = cx > ax ? cx : cx + cw;
+        const ll = $("leadLine"),
+          ld = $("leadDot");
+        ll.style.display = "";
+        ld.style.display = "";
+        ll.setAttribute("x1", fromX);
+        ll.setAttribute("y1", Math.min(cy + 22, anchorY));
+        ll.setAttribute("x2", ax);
+        ll.setAttribute("y2", anchorY);
+        ld.setAttribute("cx", ax);
+        ld.setAttribute("cy", anchorY);
+      }
+
+      function resize() {
+        const r = viewEl.getBoundingClientRect();
+        W = Math.max(1, r.width);
+        H = Math.max(1, r.height);
+        renderer.setSize(W, H, false);
+        camera.aspect = W / H;
+        camera.updateProjectionMatrix();
+      }
+      new ResizeObserver(resize).observe(viewEl);
+      resize();
+
+      renderer.setAnimationLoop(() => {
+        if (camGoal) {
+          const dx = camGoal.x - controls.target.x,
+            dz = camGoal.z - controls.target.z;
+          if (Math.hypot(dx, dz) < 0.1) camGoal = null;
+          else {
+            const k = reduced ? 1 : 0.12,
+              step = new THREE.Vector3(dx * k, 0, dz * k);
+            controls.target.add(step);
+            camera.position.add(step);
+          }
+        }
+        controls.update();
+        const dragging = !!fd || (act && act.mode === "move");
+        for (const s of stations) {
+          const hot = over === s || s.fill.userData.hot;
+          s.fill.material.opacity = hot ? 0.3 : dragging ? 0.14 : 0.07;
+          s.ring.material.opacity = hot ? 1 : dragging ? 0.95 : 0.7;
+          s.ring.material.color.setHex(hot ? 0xe9a23b : 0x4f8fe8);
+          s.fill.material.color.setHex(hot ? 0xe9a23b : 0x4f8fe8);
+        }
+        renderer.render(scene, camera);
+        layout();
+      });
+
+      /* ---------- the sample tour ---------- */
+      const folders = new Map();
+      function folder(name, kids) {
+        const fid = "f" + ++uid;
+        const f = { fid, name, kids, open: false };
+        folders.set(fid, f);
+        return f;
+      }
+      function paintOldSquare(g, w, h) {
+        const sky = g.createLinearGradient(0, 0, 0, h * 0.6);
+        sky.addColorStop(0, "#d9c9a4");
+        sky.addColorStop(1, "#ece2c6");
+        g.fillStyle = sky;
+        g.fillRect(0, 0, w, h);
+        g.fillStyle = "#8f7d5e";
+        for (let i = 0; i < 7; i++) {
+          const x = (i * w) / 7,
+            ww = w / 7.4,
+            hh = h * (0.28 + ((i * 37) % 11) / 42);
+          g.fillRect(x, h * 0.72 - hh, ww, hh);
+          g.beginPath();
+          g.moveTo(x, h * 0.72 - hh);
+          g.lineTo(x + ww / 2, h * 0.72 - hh - h * 0.09);
+          g.lineTo(x + ww, h * 0.72 - hh);
+          g.fill();
+        }
+        g.fillStyle = "#6e5d44";
+        g.fillRect(0, h * 0.72, w, h * 0.28);
+        g.fillStyle = "#b6a57f";
+        g.fillRect(w * 0.47, h * 0.3, w * 0.06, h * 0.46);
+      }
+      function buildTour() {
+        const s1 = addStation({
+          name: "The Column",
+          x: -15,
+          z: 5,
+          r: 7.5,
+          open: true,
+        });
+        const s2 = addStation({
+          name: "Market fountain",
+          x: 3,
+          z: -3,
+          r: 8.5,
+          open: true,
+        });
+        const s3 = addStation({ name: "The old gate", x: 22, z: 6, r: 6.5 });
+        const s4 = addStation({ name: "The bridge", x: 74, z: 8, r: 8 });
+        const postcard = newItem({
+          name: "The square in 1890",
+          x: -12,
+          z: 3,
+          yaw: rad(-12),
+          lift: 0.9,
+          size: 3,
+          sid: s1.id,
+          bytes: 640 * 1024,
+          px: { w: 1200, h: 900 },
+        });
+        attachPicture(postcard, canvasOf(600, 450, paintOldSquare), 4 / 3);
+        applyPose(postcard);
+        s1.items.push(
+          folder("The Column's tale", [
+            { tree: true, ic: "long", name: "Why a column here?" },
+            { tree: true, ic: "short", name: "Look up!" },
+          ]),
+          postcard,
+          { tree: true, ic: "audio", name: "Square ambience" },
+        );
+        s2.items.push({ tree: true, ic: "short", name: "Mind the step" });
+        s3.items.push(
+          { tree: true, ic: "long", name: "The gate as it stood" },
+          { tree: true, ic: "short", name: "Toll house" },
+        );
+        s4.items.push({ tree: true, ic: "short", name: "Seven arches" });
+        rebuildRoute();
+      }
+
+      /* ---------- sample files, built on this page as real bytes ---------- */
+      const samples = [];
+      function paintMarket(g, w, h) {
+        const sky = g.createLinearGradient(0, 0, 0, h * 0.7);
+        sky.addColorStop(0, "#5fa0d6");
+        sky.addColorStop(0.7, "#f6d9a8");
+        sky.addColorStop(1, "#f7b98a");
+        g.fillStyle = sky;
+        g.fillRect(0, 0, w, h);
+        g.fillStyle = "#fff4d6";
+        g.beginPath();
+        g.arc(w * 0.76, h * 0.22, h * 0.07, 0, 7);
+        g.fill();
+        const r = mulberry(3),
+          cols = [
+            "#c8553d",
+            "#e1a84a",
+            "#6e8f6a",
+            "#d9cdb5",
+            "#8c5a44",
+            "#5d7f9a",
+          ];
+        for (let i = 0; i < 9; i++) {
+          const x = (i / 9) * w,
+            ww = w / 8.6,
+            top = h * (0.26 + r() * 0.2);
+          g.fillStyle = cols[i % cols.length];
+          g.fillRect(x, top, ww, h * 0.72 - top);
+          g.fillStyle = "#4a3a34";
+          g.beginPath();
+          g.moveTo(x - 6, top);
+          g.lineTo(x + ww / 2, top - h * 0.1);
+          g.lineTo(x + ww + 6, top);
+          g.fill();
+          g.fillStyle = "rgba(255,246,214,.85)";
+          for (let a = 0; a < 3; a++)
+            for (let b = 0; b < 3; b++)
+              g.fillRect(
+                x + ww * (0.14 + a * 0.27),
+                top + h * (0.04 + b * 0.1),
+                ww * 0.14,
+                h * 0.055,
+              );
+        }
+        g.fillStyle = "#a08a6a";
+        g.fillRect(0, h * 0.72, w, h * 0.28);
+        for (let i = 0; i < 4; i++) {
+          const x = w * (0.08 + i * 0.235),
+            y = h * 0.66,
+            sw = w * 0.17;
+          for (let k = 0; k < 8; k++) {
+            g.fillStyle =
+              k % 2
+                ? "#f4efe3"
+                : ["#c8553d", "#3f7ea6", "#e1a84a", "#6e8f6a"][i];
+            g.fillRect(x + (k * sw) / 8, y - h * 0.09, sw / 8 + 1, h * 0.06);
+          }
+          g.fillStyle = "#5a4634";
+          g.fillRect(x + 4, y - h * 0.03, 6, h * 0.17);
+          g.fillRect(x + sw - 10, y - h * 0.03, 6, h * 0.17);
+          g.fillStyle = "#7b5c3e";
+          g.fillRect(x, y + h * 0.05, sw, h * 0.06);
+        }
+      }
+      const noise3 = (x, y, z) =>
+        Math.sin(x * 2.1 + 1.3) * Math.cos(y * 1.7 - 0.6) * 0.5 +
+        Math.sin(y * 3.3 + z * 2.2) * Math.cos(x * 2.9) * 0.28 +
+        Math.sin(z * 5.1 + x * 4.3 + y * 3.1) * 0.14 +
+        Math.sin(x * 11 + z * 9) * Math.cos(y * 13) * 0.05;
+      function stoneGeometry(detail) {
+        const g = new THREE.IcosahedronGeometry(1, detail),
+          p = g.attributes.position,
+          cols = new Float32Array(p.count * 3);
+        const v = new THREE.Vector3();
+        for (let i = 0; i < p.count; i++) {
+          v.fromBufferAttribute(p, i).normalize();
+          const n = noise3(v.x, v.y, v.z),
+            rr = 1 + n * 0.3,
+            grey = 0.45 + n * 0.3;
+          p.setXYZ(i, v.x * rr * 0.72, (v.y * rr + 1) * 1.15, v.z * rr * 0.56);
+          cols[i * 3] = grey * 1.02;
+          cols[i * 3 + 1] = grey * 0.98;
+          cols[i * 3 + 2] = grey * 0.9;
+        }
+        g.setAttribute("color", new THREE.BufferAttribute(cols, 3));
+        g.computeVertexNormals();
+        return g;
+      }
+      function buildStall() {
+        const g = new THREE.Group(),
+          wood = new THREE.MeshStandardMaterial({
+            color: 0x7b5c3e,
+            roughness: 0.8,
+          });
+        const red = new THREE.MeshStandardMaterial({
+            color: 0xc8553d,
+            roughness: 0.7,
+          }),
+          cream = new THREE.MeshStandardMaterial({
+            color: 0xf0e7d2,
+            roughness: 0.7,
+          });
+        const add = (w, h, d, m, x, y, z, rx = 0) => {
+          const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+          b.position.set(x, y, z);
+          b.rotation.x = rx;
+          g.add(b);
+        };
+        add(2.8, 0.1, 1.2, wood, 0, 0.92, 0);
+        add(2.6, 0.84, 0.06, wood, 0, 0.46, 0.5);
+        for (const x of [-1.32, 1.32])
+          for (const z of [-0.54, 0.54]) add(0.09, 2.3, 0.09, wood, x, 1.15, z);
+        for (let i = 0; i < 8; i++)
+          add(
+            0.38,
+            0.05,
+            1.7,
+            i % 2 ? cream : red,
+            -1.33 + i * 0.38,
+            2.4,
+            0.1,
+            0.16,
+          );
+        const fruit = [0xe1a84a, 0xc8553d, 0x6e8f6a, 0xd98a3d];
+        for (let i = 0; i < 4; i++) {
+          add(0.56, 0.2, 0.46, wood, -1.0 + i * 0.68, 1.06, 0.06);
+          for (let k = 0; k < 6; k++) {
+            const s = new THREE.Mesh(
+              new THREE.SphereGeometry(0.075, 12, 8),
+              new THREE.MeshStandardMaterial({
+                color: fruit[i],
+                roughness: 0.5,
+              }),
+            );
+            s.position.set(
+              -1.16 + i * 0.68 + (k % 3) * 0.16,
+              1.22,
+              -0.06 + (k > 2 ? 0.2 : 0),
+            );
+            g.add(s);
+          }
+        }
+        return g;
+      }
+      function buildLamp() {
+        const g = new THREE.Group(),
+          iron = new THREE.MeshStandardMaterial({
+            color: 0x3a4148,
+            roughness: 0.6,
+            metalness: 0.2,
+          }),
+          glow = new THREE.MeshStandardMaterial({
+            color: 0xffe2a8,
+            emissive: 0x8a6a2a,
+            roughness: 0.4,
+          });
+        const add = (geo, m, x, y, z) => {
+          const b = new THREE.Mesh(geo, m);
+          b.position.set(x, y, z);
+          g.add(b);
+        };
+        add(new THREE.CylinderGeometry(9, 15, 30, 12), iron, 0, 15, 0);
+        add(new THREE.CylinderGeometry(5, 8, 330, 12), iron, 0, 195, 0);
+        add(new THREE.CylinderGeometry(24, 13, 44, 6), glow, 0, 382, 0);
+        add(new THREE.ConeGeometry(30, 22, 6), iron, 0, 401, 0);
+        return g;
+      }
+      const exportGlb = (obj) =>
+        new GLTFExporter().parseAsync(obj, { binary: true });
+      const GLB_ICON = (tint) =>
+        `<svg class="glb" viewBox="0 0 44 50"><path d="M6 2h22l12 12v34H6z" fill="#e9edf2"/><path d="M28 2v12h12" fill="#c6ccd6"/><rect x="2" y="30" width="30" height="13" rx="2" fill="${tint}"/><text x="17" y="40" font-family="Segoe UI, sans-serif" font-size="9" font-weight="700" fill="#fff" text-anchor="middle">GLB</text></svg>`;
+      const SAMPLE_CAPTIONS = {
+        picture: ["Good picture", ""],
+        model: ["Good model", ""],
+        heavy: ["Too large for phones", "w"],
+        big: ["Wrong size", "w"],
+        broken: ["Broken file", "b"],
+      };
+      async function buildSamples() {
+        const pic = canvasOf(1600, 1200, paintMarket);
+        const jpg = await new Promise((r) => pic.toBlob(r, "image/jpeg", 0.86));
+        const stall = await exportGlb(buildStall());
+        const stoneMesh = new THREE.Mesh(
+          stoneGeometry(26),
+          new THREE.MeshStandardMaterial({
+            vertexColors: true,
+            roughness: 0.9,
+          }),
+        );
+        const stone = await exportGlb(stoneMesh);
+        const lamp = await exportGlb(buildLamp());
+        const cut = stall.slice(0, Math.floor(stall.byteLength * 0.46));
+        const mk = (id, name, parts, guess, more = {}) =>
+          samples.push({
+            id,
+            file: new File([parts], name, {
+              type: extOf(name) === "jpg" ? "image/jpeg" : "model/gltf-binary",
+            }),
+            guess,
+            ...more,
+          });
+        mk(
+          "picture",
+          "market-day.jpg",
+          jpg,
+          { kind: "picture" },
+          { thumb: pic },
+        );
+        mk("model", "market-stall.glb", stall, { kind: "model" });
+        mk(
+          "heavy",
+          "boundary-stone-scan.glb",
+          stone,
+          { kind: "model" },
+          {
+            claim: { bytes: 86.4 * MB, tris: 1900000, tex: 8192 },
+            light: stoneGeometry(6),
+          },
+        );
+        mk("big", "street-lamp.glb", lamp, { kind: "model" });
+        mk("broken", "fountain-figure.glb", cut, { kind: "model" });
+        const tints = {
+          model: "#3f6b9e",
+          heavy: "#3f6b9e",
+          big: "#3f6b9e",
+          broken: "#3f6b9e",
+        };
+        const host = $("files");
+        for (const s of samples) {
+          const [cap, cls] = SAMPLE_CAPTIONS[s.id];
+          const b = document.createElement("button");
+          b.className = "file";
+          b.draggable = true;
+          b.dataset.sample = s.id;
+          b.title =
+            "Drag onto the place, or click to add it near the middle of the view";
+          b.innerHTML = `${s.thumb ? "" : GLB_ICON(tints[s.id])}<span class="tx"><span class="fn">${esc(s.file.name)}</span><span class="fs">${fmtBytes(s.claim?.bytes ?? s.file.size)}</span><span class="fk ${cls}">${cap}</span></span>`;
+          if (s.thumb) {
+            const c = canvasOf(88, 100, (g) => {
+              g.fillStyle = "#e9edf2";
+              g.fillRect(0, 0, 88, 100);
+              g.drawImage(pic, 200, 0, 1200, 1200, 4, 16, 80, 68);
+            });
+            b.prepend(c);
+            s.dragImage = c;
+          }
+          b.addEventListener("dragstart", (e) => {
+            flyingSample = s;
+            e.dataTransfer.setData(SAMPLE_TYPE, s.id);
+            e.dataTransfer.effectAllowed = "copy";
+            if (s.dragImage) e.dataTransfer.setDragImage(s.dragImage, 22, 25);
+            b.classList.add("flying");
+          });
+          b.addEventListener("dragend", () => {
+            flyingSample = null;
+            b.classList.remove("flying");
+            if (fd) endDrag();
+          });
+          b.addEventListener("click", () => {
+            const st = nearestStationToView();
+            land([s.file], [freeSpot(st)], [s.guess]);
+          });
+          host.append(b);
+        }
+      }
+
+      buildTour();
+      renderTree();
+      buildSamples();
+
+      window.__editorImport = {
+        items: () =>
+          items.map((it) => ({
+            name: it.name,
+            kind: it.kind,
+            status: it.status,
+            station: stationById(it.sid)?.name,
+            x: it.x,
+            z: it.z,
+            yaw: it.yaw,
+            size: it.size,
+            problems: it.problems.map((p) => p.kind || p.title),
+          })),
+        stations: () => stations.map((s) => s.name),
+        selected: () => selected?.name ?? null,
+      };
+    </script>
+  </body>
+</html>

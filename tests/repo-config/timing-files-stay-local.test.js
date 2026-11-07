@@ -45,10 +45,13 @@ describe('the timing tables are not versioned', () => {
   it('tracks no table and ignores the table of every project', () => {
     const tracked = trackedFiles().filter((file) => file.endsWith('docs/test-timings.md'));
     expect(tracked).toEqual([]);
-    for (const { dir } of PROJECTS) {
-      const ignored = spawnSync('git', ['check-ignore', '-q', tableOf(dir)], { cwd: repoRoot });
-      expect(ignored.status, tableOf(dir)).toBe(0);
-    }
+    // One git for all of them: one per project ran past 5 s on a loaded machine.
+    const tables = PROJECTS.map(({ dir }) => tableOf(dir));
+    const ignored = spawnSync('git', ['check-ignore', ...tables], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+    });
+    expect(ignored.stdout.trim().split(/\s+/)).toEqual(tables);
   });
 });
 

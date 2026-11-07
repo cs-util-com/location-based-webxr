@@ -56,6 +56,31 @@ describe("GLOBE_OSM", () => {
   });
 });
 
+describe("createGlobeOsmOverlay's fade start", () => {
+  // Why: a map brighter than the ground beneath it arrives as a band in a
+  // descent, and how wide that band is, is this share. The editor's far map
+  // needs a wider one than the near map's, so it is an option.
+  const make = (fadeStartShare?: number) =>
+    createGlobeOsmOverlay({
+      url: TEMPLATE,
+      attribution: ATTRIBUTION,
+      maxZoom: 19,
+      renderer: {} as THREE.WebGLRenderer,
+      ...(fadeStartShare === undefined ? {} : { fadeStartShare }),
+    });
+
+  it("defaults to the near map's share and takes another", () => {
+    expect(make().uniforms.uOsmFadeStart.value).toBe(GLOBE_OSM.fadeStartShare);
+    expect(make(0.2).uniforms.uOsmFadeStart.value).toBe(0.2);
+  });
+
+  it("refuses a share that leaves no fade", () => {
+    for (const share of [-0.1, 1, 1.5, Number.NaN]) {
+      expect(() => make(share), String(share)).toThrow(RangeError);
+    }
+  });
+});
+
 describe("osmCredit", () => {
   // Why: the OSM tile usage policy asks for a LINK to the copyright page;
   // the globe's credits line renders text and a link, never markup.
@@ -395,6 +420,28 @@ describe("patchOsmFade", () => {
       "tint.rgba *= layerInfo[ i ].opacity * wOpacity;",
     );
     expect(shader.uniforms.uOsmFadeM).toBe(uniforms.uOsmFadeM);
+  });
+
+  // Why: over water the sea is drawn last, so without the map's own share
+  // it would paint over the streets of a harbour.
+  it("tells a compiled sea how much map a pixel shows", () => {
+    const chunk = "tint.rgba *= layerInfo[ i ].opacity * wOpacity;";
+    const shader = {
+      uniforms: {} as Record<string, unknown>,
+      fragmentShader: `#include <common>\nvoid main() {\n${chunk}\n}`,
+    };
+    patchOsmFade(shader, {
+      uOsmFadeM: { value: 300 },
+      uOsmOn: { value: 1 },
+      uOsmFadeStart: { value: 0.7 },
+      uOsmGain: { value: 0.55 },
+      uOsmFlat: { value: 0 },
+    });
+    const glsl = shader.fragmentShader;
+    expect(glsl).toContain("globeMapShare = max( globeMapShare, tint.a );");
+    expect(glsl.indexOf("#ifdef GLOBE_SEA")).toBeGreaterThan(
+      glsl.indexOf("uOsmOn * ("),
+    );
   });
 
   // Why: the street map's tiles are far brighter than the relief's

@@ -1142,11 +1142,13 @@ export function inspectorDrawing(root: HTMLElement): boolean {
 }
 
 /** The control that has the focus in `root`, by the name it is drawn
- *  under again (`data-act` or `data-field`), with a field's text. */
+ *  under again (`data-act` or `data-field`), with a field's selection and
+ *  the text typed in it and not yet committed (null: none, the draw's own
+ *  value stands). */
 interface FocusKept {
   readonly selector: string;
-  readonly typed: {
-    readonly value: string;
+  readonly field: {
+    readonly typed: string | null;
     readonly start: number | null;
     readonly end: number | null;
   } | null;
@@ -1203,18 +1205,18 @@ function focusIn(root: HTMLElement): FocusKept | null {
       : null;
   return {
     selector,
-    // Only text typed and not yet committed is carried over; a slider has
-    // no caret, and its value is the document's by the time of a draw.
-    typed:
-      typedIn !== null &&
-      typedIn.type !== "range" &&
-      typedIn.value !== typedIn.defaultValue
-        ? {
-            value: typedIn.value,
+    // A control without a caret (a slider) carries nothing: its value is the
+    // document's by the time of a draw, and it has no selection to set.
+    field:
+      typedIn === null || typedIn.selectionStart === null
+        ? null
+        : {
+            // Only text typed and not yet committed is carried over.
+            typed:
+              typedIn.value !== typedIn.defaultValue ? typedIn.value : null,
             start: typedIn.selectionStart,
             end: typedIn.selectionEnd,
-          }
-        : null,
+          },
   };
 }
 
@@ -1225,12 +1227,12 @@ function focusAgain(root: HTMLElement, kept: FocusKept | null): void {
   const again = controlNamed(root, kept.selector);
   if (again === null) return;
   if (
-    kept.typed !== null &&
+    kept.field !== null &&
     (again instanceof HTMLInputElement || again instanceof HTMLTextAreaElement)
   ) {
-    again.value = kept.typed.value;
+    if (kept.field.typed !== null) again.value = kept.field.typed;
     again.focus();
-    again.setSelectionRange(kept.typed.start, kept.typed.end);
+    again.setSelectionRange(kept.field.start, kept.field.end);
     return;
   }
   again.focus();

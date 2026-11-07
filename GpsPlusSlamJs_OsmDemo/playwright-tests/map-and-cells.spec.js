@@ -1314,7 +1314,7 @@ test.describe("the cell layer toggle", () => {
    * hidden, stored value untouched. A control that disappears reads as a bug,
    * and one whose value is silently reset loses the choice just made.
    */
-  test("hides 'below threshold' while the cell layer is off (DEC-U9), and shows an in-progress state while the cells are fetched", async ({
+  test("hides 'below threshold' while the cell layer is off, and shows an in-progress state while the cells are fetched", async ({
     page,
   }) => {
     // WHY THIS TEST EXISTS, and it is not tidiness: the bug it catches shipped.

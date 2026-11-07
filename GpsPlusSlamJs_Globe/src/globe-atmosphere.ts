@@ -164,6 +164,9 @@ void main() {
     }
   }
   if ( tEnd <= tEnter ) discard;
+  // The sky below the hand-over is the ground sky's: no march for nothing.
+  float share = mix( uSkyShare, uGroundShare, groundness );
+  if ( share <= 0.0 ) discard;
   float tMid = clamp( -b, tEnter, tEnd );
   // The grazing compensation (see above), at the ray's lowest point.
   float muRay = atmLowestPointMu( o, dir, tEnter, tEnd );
@@ -196,7 +199,6 @@ void main() {
   // comes through: one grey value, the mean over R, G, B (a per-channel
   // veil needs the ground's own shader). Space behind keeps its stars.
   float through = mix( 1.0, dot( throughput, vec3( 1.0 / 3.0 ) ), groundness );
-  float share = mix( uSkyShare, uGroundShare, groundness );
   gl_FragColor = vec4( radiance * share * uRadiance, ( 1.0 - through ) * share );
   #include <tonemapping_fragment>
   #include <colorspace_fragment>

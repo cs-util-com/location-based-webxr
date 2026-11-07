@@ -21,6 +21,10 @@ import {
 } from "/globe/globe-surface.js";
 import { createGlobeView, viewPoseEcef } from "/globe/globe-view.js";
 import { GLOBE_GRADE_PARAM, resolveGlobeGrade } from "/globe/globe-grade.js";
+import {
+  GLOBE_QUALITY_PARAM,
+  resolveGlobeQuality,
+} from "/globe/globe-quality.js";
 import { CLOUD_LAYER } from "/fw/visualization/atmosphere/cloud-layer.js";
 import {
   CLOUD_LIVE_NOISE,
@@ -133,6 +137,9 @@ import { createGlobeHaze } from "/globe/globe-haze.js";
 import { createGlobeCloudVolume } from "/globe/globe-cloud-volume-pass.js";
 import { createGlobeCloudShellVolume } from "/globe/globe-cloud-shell-volume-pass.js";
 import { createGlobeCloudStep } from "/globe/globe-cloud-step.js";
+import { requestCloudBakes } from "/globe/globe-cloud-bake-worker-core.js";
+import { createGlobeCloudMarch } from "/globe/globe-cloud-march-pass.js";
+import { GLOBE_QUALITIES, GLOBE_QUALITY_NAMES } from "/globe/globe-quality.js";
 import { createGlobeSceneDepth } from "/globe/globe-scene-depth.js";
 import { createGlobeCity } from "/globe/globe-city.js";
 import { createGlobeCityStep } from "/globe/globe-city-step.js";
@@ -409,6 +416,9 @@ const PARAMS = {
   // requests a minute. The overlay is attached the first time it is on.
   osm: { fallback: 0, min: 0, max: 1 },
   osmFadeM: { fallback: 300, min: 50, max: 2000 },
+  // The sea (`/globe/globe-sea.js`): 0 keeps the flat glint. Fixed for the
+  // page's life: its waves are compiled into the globe's shader.
+  sea: { fallback: 1, min: 0, max: 1 },
   /**
    * The globe's error target while the relief has every pixel and the
    * globe only fills its gaps: coarse, so it keeps to its top tiles.
@@ -633,6 +643,12 @@ const PARAMS = {
   // The shell's deck flat where the slab draws (round-5 C4; 0 the sphere's
   // everywhere, for the A/B and the smoke's control).
   cloudShellFlat: { fallback: 1, min: 0, max: 1 },
+  // The near clouds (globe-cloud-march-pass.ts): 1 in place of the slab below
+  // their ceiling, on the tier by index, 0 low to 2 high.
+  cloudNear: { fallback: 0, min: 0, max: 1 },
+  cloudNearCeilingKm: { fallback: 70, min: 1, max: 400 },
+  cloudNearFadeKm: { fallback: 20, min: 0.1, max: 100 },
+  cloudNearTier: { fallback: 2, min: 0, max: 2 },
   cloudShellCell: {
     fallback: CLOUD_SHELL_VOLUME.stations[0].cellScale,
     min: 1,
@@ -1463,6 +1479,11 @@ async function start() {
     // plain globe draws the program from before the relief.
     mapLoader: startParams.mapBitmap === 0 ? elementMapLoader : undefined,
     band: startParams.relief === 1,
+    sea: startParams.sea === 1,
+    quality: resolveGlobeQuality(
+      new URLSearchParams(location.search).get(GLOBE_QUALITY_PARAM),
+      matchMedia("(pointer: coarse)").matches,
+    ),
     // A globe that fills the relief's gaps never discards (round-6 plan
     // G6-1): its program keeps the GPU's early stencil test.
     fill: fillAtStart,
@@ -1655,7 +1676,24 @@ async function start() {
     : null;
   // The clouds frame by frame (globe-cloud-step.ts): who draws them at the
   // camera's altitude, the two volumes' update and their drawing.
-  const clouds = createGlobeCloudStep({ cloudVolume, shellVolume });
+  const near =
+    shellVolume && readHashParams().cloudNear === 1
+      ? createGlobeCloudMarch(renderer, {
+          ellipsoid: globe.tiles.ellipsoid,
+          surfaceUniforms: globe.surfaceUniforms,
+        })
+      : null;
+  if (near) {
+    requestCloudBakes(
+      new Worker("/w/labs/globe/globe-cloud-bake-worker.js", {
+        type: "module",
+      }),
+    ).then(
+      (bakes) => near.setBakes(bakes),
+      (error) => console.warn("the near clouds stay off:", error),
+    );
+  }
+  const clouds = createGlobeCloudStep({ cloudVolume, shellVolume, near });
   // The haze (F2b; globe-haze.ts): one fog for the whole page, the relief's
   // tiles patched last, after their own hooks and the stencil writer.
   const haze = createGlobeHaze(scene, {
@@ -2365,6 +2403,8 @@ async function start() {
     controls.fitPlanes();
     // The sky hand-over (F2b): the observer's height over the ellipsoid,
     // the ground sky's weight and its eased exposure.
+    // The sea reflects the production sky once the ground sky has one.
+    view.sea?.setSky(groundSky.atmosphere?.sharedUniforms ?? null);
     air.step(params, {
       cameraEcef: ecefCamera().position.toArray(),
       framed: frameTarget() !== null,
@@ -2434,8 +2474,9 @@ async function start() {
     sceneDepth?.beginFrame();
     if (
       sceneDepth &&
-      air.weight() > 0 &&
-      (costMode === null ? params.atmo !== 0 : costMode === "on")
+      (clouds.nearShare > 0 ||
+        (air.weight() > 0 &&
+          (costMode === null ? params.atmo !== 0 : costMode === "on")))
     ) {
       sceneDepth.render(camera, terrain.tiles.group, city ? [city.root] : []);
     }
@@ -2450,6 +2491,13 @@ async function start() {
         sunIntensity: globe.sun.intensity,
         sceneDepthWeight: air.weight(),
         flatten: params.cloudShellFlat,
+        near: {
+          timeS: view.driftTimeS(),
+          quality:
+            GLOBE_QUALITIES[GLOBE_QUALITY_NAMES[params.cloudNearTier]].clouds,
+          pixelScale: 1,
+          sceneDepth: sceneDepth?.fresh ? sceneDepth : null,
+        },
       });
     }
     // The air over the Earth and the sky, lit by the same sun (or, while
@@ -2677,6 +2725,8 @@ async function start() {
     ready: false,
     error: null,
     state: () => ({
+      // The sea's state (the smoke spec's), null where it is not compiled.
+      sea: view.sea?.state() ?? null,
       ...globe.state(),
       ...flight.state(),
       appliedHash,
@@ -3478,6 +3528,11 @@ void main() {
      * weights in the mix (R4d's seam and descent smokes; debug, slow).
      */
     cloudShellAlphaGrid: (nx, ny) => clouds.alphaGrid(nx, ny),
+    /** The near clouds now: ready, their share and what they draw at. */
+    cloudNearState: () =>
+      near
+        ? { ready: near.ready, share: clouds.nearShare, ...near.state() }
+        : null,
     /**
      * The cost probe of the spherical volume (R4d): `n` of its passes (the
      * march and the mix) after one frame, then one pixel read; the wall

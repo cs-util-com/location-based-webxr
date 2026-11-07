@@ -212,11 +212,13 @@ test.describe("Physics Demo - shadows you can see", () => {
       // and Off are the skins that lost the shadow on a phone (2026-09-27),
       // and the two share the receiver path this test measures Off on.
       if (skin === "depth-shaded-wireframe") {
-        await page.getByTestId("mesh-shader").selectOption("wireframe");
-        await page.evaluate(() => window.__physicsShadowProbe.remesh());
-        expect(
-          await measureSides(page, "wireframe", 1.2),
-        ).toBeGreaterThanOrEqual(minShadowPx(1.2));
+        for (const next of ["wireframe", "matcap", "depth-shaded"]) {
+          await page.getByTestId("mesh-shader").selectOption(next);
+          await page.evaluate(() => window.__physicsShadowProbe.remesh());
+          expect(await measureSides(page, next, 1.2)).toBeGreaterThanOrEqual(
+            minShadowPx(1.2),
+          );
+        }
       }
       expect(pageErrors).toEqual([]);
     });

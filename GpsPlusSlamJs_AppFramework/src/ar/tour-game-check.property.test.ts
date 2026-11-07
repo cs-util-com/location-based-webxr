@@ -431,7 +431,11 @@ const QUIZ_GUARDED: TourGame = {
   ],
 };
 
-/** The causes a run of the property must meet at least once each. */
+/**
+ * The causes a run of the property must meet at least once each. The last is
+ * met by the example `QUIZ_GUARDED`, not by the generator: for that cause this
+ * says the check ran, not that random tours reach it.
+ */
 const GUARDED_CAUSES = [
   'unreachable:label-never-set',
   'unreachable:label-set-only-by-unreachable-content',

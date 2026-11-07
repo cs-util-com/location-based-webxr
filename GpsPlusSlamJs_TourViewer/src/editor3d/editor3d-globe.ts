@@ -90,12 +90,15 @@ import {
   creditsFor,
   GIBS_ACKNOWLEDGEMENT,
   GLOBE_INTRO,
+  CLOUD_MARCH_LAYER,
   GLOBE_VIEW_CLOUDS,
+  globeQualityPixelRatio,
   globeViewClouds,
   globeZoomOutLimitM,
   mountGlobeRelief,
   mountGlobeViewAir,
   resolveGlobeGrade,
+  resolveGlobeQuality,
   SPEED_DUST_LOOK,
   type GlobeView,
   type GlobeViewAir,
@@ -335,6 +338,8 @@ export async function openGlobeEditor(
     | "cloudWind"
     | "buildings"
     | "grade"
+    | "clouds"
+    | "quality"
   >,
 ): Promise<Editor3dView> {
   const state = deps.store.getState();
@@ -435,6 +440,14 @@ export async function openGlobeEditor(
     });
     // The clouds' wind floor is the link's: built once, read each frame.
     const settings = globeEditorSettings({ windMps: knobs.cloudWind });
+    const coarsePointer =
+      window.matchMedia?.("(pointer: coarse)").matches === true;
+    const quality = resolveGlobeQuality(knobs.quality, coarsePointer);
+    const nearClouds = knobs.clouds === "new";
+    // Over this height the interface stays under the clouds.
+    const cloudDeckKm = nearClouds
+      ? CLOUD_MARCH_LAYER.topKm
+      : GLOBE_VIEW_CLOUDS.cloudShellKm;
     const view: GlobeView = createGlobeView({
       canvas,
       fovYDeg: GLOBE_EDITOR_LOOK.fovYDeg,
@@ -453,6 +466,7 @@ export async function openGlobeEditor(
       stencil: true,
       fill: true,
       grade: resolveGlobeGrade(knobs.grade),
+      quality,
       createRenderer: (parameters) => createViewRenderer(parameters),
       seams: {
         driveCamera: () => {
@@ -503,7 +517,7 @@ export async function openGlobeEditor(
           interfacePass?.lift(
             interfaceOverAir(
               ellipsoid.getPositionElevation(pose.position),
-              GLOBE_VIEW_CLOUDS.cloudShellKm * 1000,
+              cloudDeckKm * 1000,
             ),
           );
           sceneFrom = drawCalls?.now() ?? 0;
@@ -539,7 +553,9 @@ export async function openGlobeEditor(
     drawCalls = createFrameDrawCalls(renderer.info);
     const frameCounter = drawCalls;
     undo.push(() => frameCounter.dispose());
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(
+      globeQualityPixelRatio(quality, window.devicePixelRatio),
+    );
     // Daylight over the tour by default (held at its solar noon); the real
     // time now on request.
     let realTime = false;
@@ -627,11 +643,24 @@ export async function openGlobeEditor(
       editorCity?.dispose();
     });
     const mountedAir = mountGlobeViewAir(view, {
-      coarsePointer: window.matchMedia?.("(pointer: coarse)").matches === true,
+      coarsePointer,
       clouds: globeViewClouds(view, {
         shadow: knobs.cloudShadow,
         // The buildings hide the clouds behind them, as the relief does.
         extra: () => editorCity?.extra() ?? [],
+        ...(nearClouds
+          ? {
+              near: {
+                // A tier named by hand is held; only the default steps down.
+                autoQuality: knobs.quality === null,
+                createWorker: () =>
+                  new Worker(
+                    new URL("./globe-cloud-bake-worker.ts", import.meta.url),
+                    { type: "module" },
+                  ),
+              },
+            }
+          : {}),
       }),
     });
     air = mountedAir;

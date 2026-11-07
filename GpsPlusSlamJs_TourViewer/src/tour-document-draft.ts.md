@@ -52,13 +52,15 @@ createdStations?, handMadeStations?, frames?, order?, deletedStations? }`
   format reads a station.
 - `parseSettingsRecord(text, against?)` - a stored record, or undefined
   when it does not read (a bad station pose or detail costs the record,
-  never the objects beside it). `against` is the opened tour: its
-  assets are what a story step may name (without it, a frame whose step
-  names an asset is lost). The created frames and the `frames` are read
-  one by one, in one pass, as the format reads a station
-  (`parseTourManifest`, without free blocks, alone: a station names no other,
-  so no frame depends on a sibling); of two under one id the first is
-  kept. A frame that does not read is lost, and only it - the objects
+  never the objects beside it). `against` is the opened tour: what a
+  story may name, its assets and its declared characters, resolves
+  against it, and both pages read with it (without it, a frame naming
+  either is lost). The created frames and the `frames` are read
+  one by one, in one pass, as the format reads a station: each as the
+  only station of `against` (`parseTourManifest`, the whole tour, so a new
+  tour-level declaration needs no change here; without free blocks,
+  alone: a station names no other, so no frame depends on a sibling); of
+  two under one id the first is kept. A frame that does not read is lost, and only it - the objects
   naming it are seated by the station rule as they come back. A `next`
   or a quiz `route` an older build stored is ignored by that reader, so
   it neither costs the frame nor survives the read.
@@ -157,6 +159,14 @@ const stop = store.listenToDocument({
 - `tour-document-draft.property.test.ts` - over random broken frames,
   some naming a sibling as `next`: exactly the readable frames come
   back, in order, none carrying a `next`.
+- `tour-document-draft-frames.property.test.ts` - a rename and a copy of a
+  station a declared character speaks in come back through a restore; a
+  frame naming a character the tour lacks costs only itself; every field
+  of a station, of each kind of block, step and answer survives the
+  record. Its generators are typed field by field, so a field added to
+  the format and not generated there fails `typecheck:tests`.
+- `creator-draft-follow.test.ts` - the phone reads the stored frames
+  against the opened tour: a later write keeps a frame naming its asset.
 - `tour-document.property.test.ts` - any sequence of edits written to the
   records and restored over the opened tour gives back the same write.
 - The record's reading and comparing, through both drafts:

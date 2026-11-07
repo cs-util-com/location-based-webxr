@@ -15,6 +15,13 @@ import { GLOBE_SWITCH, readGlobeSwitch } from "./globe-switch.js";
 describe("readGlobeSwitch", () => {
   // Why this test matters: the name stays raw here because this module must
   // not load the globe's code; the globe's own table judges it (and warns).
+  // Why: the tier is judged in the Globe package, behind the lazy import.
+  it("hands the link's quality on as written", () => {
+    expect(readGlobeSwitch("?quality=low").quality).toBe("low");
+    expect(readGlobeSwitch("?quality=nope").quality).toBe("nope");
+    expect(readGlobeSwitch("?globe=1").quality).toBeNull();
+  });
+
   it("hands the link's grade on as written", () => {
     expect(readGlobeSwitch("?grade=aces").grade).toBe("aces");
     expect(readGlobeSwitch("?grade=nope").grade).toBe("nope");
@@ -37,8 +44,20 @@ describe("readGlobeSwitch", () => {
       cloudWind: GLOBE_SWITCH.cloudWind.fallback,
       buildings: 1,
       grade: null,
+      clouds: "new",
+      quality: null,
     });
     expect(readGlobeSwitch("?tour=https://example.org/walk.zip").on).toBe(true);
+  });
+
+  // Why: `clouds=old` is the way back to the old clouds for as long as
+  // they exist; a mistyped value must not silently switch them on.
+  it("reads the clouds' way back and the quality's name", () => {
+    expect(readGlobeSwitch("?clouds=old").clouds).toBe("old");
+    expect(readGlobeSwitch("?clouds=new").clouds).toBe("new");
+    expect(readGlobeSwitch("?clouds=nope").clouds).toBe("new");
+    expect(readGlobeSwitch("?quality=low").quality).toBe("low");
+    expect(readGlobeSwitch("?quality=").quality).toBe("");
   });
 
   // Why: `globe=0` is the temporary way back to the older 3D view; any

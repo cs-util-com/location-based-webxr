@@ -10,6 +10,13 @@
 import * as THREE from "three";
 
 import { GLOBE_CLOUD_FILTER_GLSL } from "./globe-cloud-filter.js";
+import {
+  GLOBE_SEA_DECLARATIONS_GLSL,
+  GLOBE_SEA_FRAGMENT_GLSL,
+  createGlobeSeaUniforms,
+  type GlobeSeaOptions,
+  type GlobeSeaUniforms,
+} from "./globe-sea.js";
 import { SKY_FILL, SKY_LEVEL_GLSL } from "./sky-level.js";
 
 /** The patch's tunables (lab parameters; the phone round sets them). */
@@ -44,10 +51,10 @@ export const GLOBE_SURFACE_TUNING = {
 export const GLOBE_CLOUD_DRIFT_DEG_PER_S = 0.375;
 
 /** Every tile's program is the same one: three shares it by this key. */
-export const GLOBE_SURFACE_CACHE_KEY = "gps-plus-slam-globe-surface-v12";
+export const GLOBE_SURFACE_CACHE_KEY = "gps-plus-slam-globe-surface-v13";
 
 /** The one uniforms object every tile's shader reads. */
-export interface GlobeSurfaceUniforms {
+export interface GlobeSurfaceUniforms extends GlobeSeaUniforms {
   readonly uSunEcef: { value: THREE.Vector3 };
   /**
    * The same sun in WORLD space (the tiles' placement applied), kept by the
@@ -133,11 +140,13 @@ export interface GlobeSurfaceUniforms {
 /**
  * How the patch is compiled: `band` for a page that draws a relief;
  * `fill` (with `band`) when the globe fills the relief's gaps through the
- * stencil (round-6 plan G6-1), where it never discards.
+ * stencil (round-6 plan G6-1), where it never discards; `sea` compiles the
+ * sea (`globe-sea.ts`), its waves fixed by the quality.
  */
 export interface GlobeSurfacePatchOptions {
   readonly band?: boolean;
   readonly fill?: boolean;
+  readonly sea?: GlobeSeaOptions;
 }
 
 /**
@@ -155,6 +164,7 @@ export function createGlobeSurfaceUniforms(textures: {
   dayEast?: THREE.Texture;
 }): GlobeSurfaceUniforms {
   return {
+    ...createGlobeSeaUniforms(),
     uSunEcef: { value: new THREE.Vector3(1, 0, 0) },
     uSunWorld: { value: new THREE.Vector3(1, 0, 0) },
     uNight: { value: textures.night },
@@ -427,6 +437,11 @@ export function afterChunk(
   return `${parts[0]}${anchor}${code}${parts[1]}`;
 }
 
+/** `code` inserted right before `anchor`, on `afterChunk`'s terms. */
+function beforeChunk(source: string, anchor: string, code: string): string {
+  return afterChunk(source, anchor, "").replace(anchor, `${code}\n${anchor}`);
+}
+
 /**
  * Patches a physical-shader source in place: the uniforms, the geodetic
  * normal varying and the three terms, each after its chunk. Throws, naming
@@ -442,16 +457,28 @@ export function patchGlobeSurfaceShader(
   vs = afterChunk(vs, "#include <common>", VERTEX_DECLARATIONS);
   vs = afterChunk(vs, "#include <beginnormal_vertex>", VERTEX_NORMAL);
   let fs = shader.fragmentShader;
-  fs = afterChunk(fs, "#include <common>", FRAGMENT_DECLARATIONS);
+  const { sea } = options;
+  fs = afterChunk(
+    fs,
+    "#include <common>",
+    sea
+      ? FRAGMENT_DECLARATIONS + GLOBE_SEA_DECLARATIONS_GLSL
+      : FRAGMENT_DECLARATIONS,
+  );
   fs = afterChunk(fs, "#include <clipping_planes_fragment>", FRAGMENT_FADE);
   fs = afterChunk(fs, "#include <alphamap_fragment>", FRAGMENT_SAMPLES);
   fs = afterChunk(fs, "#include <roughnessmap_fragment>", FRAGMENT_GLINT);
   fs = afterChunk(fs, "#include <emissivemap_fragment>", FRAGMENT_NIGHT);
   fs = afterChunk(fs, "#include <lights_fragment_end>", FRAGMENT_SKY_FILL);
+  if (sea) {
+    fs = beforeChunk(fs, "#include <opaque_fragment>", GLOBE_SEA_FRAGMENT_GLSL);
+  }
   shader.vertexShader = vs;
   const defines = [
     options.band ? "#define GLOBE_BAND" : "",
     options.band && options.fill ? "#define GLOBE_FILL" : "",
+    sea ? "#define GLOBE_SEA" : "",
+    sea ? `#define GLOBE_SEA_OCTAVES ${sea.waveOctaves}` : "",
   ].filter(Boolean);
   shader.fragmentShader =
     defines.length > 0 ? `${defines.join("\n")}\n${fs}` : fs;
@@ -470,8 +497,9 @@ export function applyGlobeSurface(
 ): void {
   material.onBeforeCompile = (shader) =>
     patchGlobeSurfaceShader(shader, uniforms, options);
-  const key = options.band
+  const band = options.band
     ? `${GLOBE_SURFACE_CACHE_KEY}-band${options.fill ? "-fill" : ""}`
     : GLOBE_SURFACE_CACHE_KEY;
+  const key = options.sea ? `${band}-sea${options.sea.waveOctaves}` : band;
   material.customProgramCacheKey = () => key;
 }

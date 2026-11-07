@@ -90,6 +90,7 @@ interface Fakes {
   coverageCalls: number;
   /** The options the view was made with. */
   viewOptions: null | {
+    quality?: string;
     band?: boolean;
     stencil?: boolean;
     fill?: boolean;
@@ -102,7 +103,10 @@ interface Fakes {
   /** What the air's cloud switch was told. */
   cloudsOn: boolean[];
   /** The options the clouds were made with (their `extra` depth). */
-  cloudsOptions: null | { extra?: () => readonly THREE.Object3D[] };
+  cloudsOptions: null | {
+    extra?: () => readonly THREE.Object3D[];
+    near?: { createWorker: () => unknown; autoQuality?: boolean };
+  };
   /** The options each city was made with, and the loads it was asked. */
   cityOptions: {
     parent: unknown;
@@ -697,14 +701,14 @@ describe("openGlobeEditor's wiring", () => {
   it("hands the link's grade to the view, an unknown one as the default", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     open = await openGlobeEditor(deps(), {
-      ...readGlobeSwitch("?grade=aces"),
+      ...readGlobeSwitch("?grade=agx"),
     });
-    expect(fakes.colourGrade).toBe("aces");
+    expect(fakes.colourGrade).toBe("agx");
     open.dispose();
     open = await openGlobeEditor(deps(), {
       ...readGlobeSwitch("?grade=nope"),
     });
-    expect(fakes.colourGrade).toBe("aces-bright");
+    expect(fakes.colourGrade).toBe("aces");
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("nope"));
     warn.mockRestore();
   });
@@ -1192,6 +1196,30 @@ describe("openGlobeEditor's wiring", () => {
   // Why: the editor draws the lab's heavy 3D clouds, on by default with
   // a switch; the air carries them, and the View menu's
   // switch reaches them through the view.
+  // Why this test matters: the new clouds are the default and `clouds=old`
+  // the one way back; without a worker factory they would never start.
+  it("opens with the near clouds, or the old ones on the link", async () => {
+    const opened = await openGlobeEditor(deps(), readGlobeSwitch(""));
+    expect(typeof fakes.cloudsOptions?.near?.createWorker).toBe("function");
+    expect(fakes.cloudsOptions?.near?.autoQuality).toBe(true);
+    opened.dispose();
+    const old = await openGlobeEditor(deps(), readGlobeSwitch("?clouds=old"));
+    expect(fakes.cloudsOptions?.near).toBeUndefined();
+    old.dispose();
+  });
+
+  // Why this test matters: a tier named by hand is a choice: the step-down
+  // stays out of it, and the canvas follows the tier's own pixel ratio.
+  it("takes the named quality and leaves it alone", async () => {
+    const opened = await openGlobeEditor(
+      deps(),
+      readGlobeSwitch("?quality=low"),
+    );
+    expect(fakes.viewOptions?.quality).toBe("low");
+    expect(fakes.cloudsOptions?.near?.autoQuality).toBe(false);
+    opened.dispose();
+  });
+
   it("mounts the heavy clouds with the air and switches them", async () => {
     const view = await openAt(0);
     expect(typeof fakes.airOptions?.clouds).toBe("function");

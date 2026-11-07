@@ -514,7 +514,8 @@ test("a short text's caption and Description are typed in the inspector: one ste
 test("Put items on the ground, Put on the ground, Add a pin, a pin's text and a typed place are one step each", async ({
   page,
 }) => {
-  test.slow();
+  // Its flows run one after another: about 67 s on CI, 89 at the worst of 25.
+  test.setTimeout(180_000);
   await openTour(page, await twoPinTour());
   await selectStation(page, "a");
   const ground = SQUARE_GROUND_M + N_M;
@@ -905,20 +906,22 @@ test("a picture's and a model's fields are typed in the inspector, the station l
   );
   await expect(kayLabels.nth(0)).toHaveText("Sir Kay");
   await expect(kayLabels.nth(1)).toHaveText("View");
-  // Both boxes read in one go: a redraw between two separate reads left
-  // the second label detached (no box) now and then.
-  const labels = await inspector
-    .locator('.character[data-block="sir-kay"]')
-    .evaluate((el) => {
-      const [name, view] = [...el.querySelectorAll(":scope > .flabel")].map(
-        (l) => l.getBoundingClientRect(),
-      );
-      return {
-        nameHeight: name?.height ?? 0,
-        nameBottom: (name?.y ?? 0) + (name?.height ?? 0),
-        viewTop: view?.y ?? Number.NaN,
-      };
-    });
+  // Both boxes read in one go, the element found in the same call: a
+  // locator's evaluate finds it first, and a redraw in between measured a
+  // detached element (no boxes) now and then.
+  const labels = await page.evaluate(() => {
+    const el = document.querySelector(
+      '#shell-inspector .character[data-block="sir-kay"]',
+    );
+    const [name, view] = [
+      ...(el?.querySelectorAll(":scope > .flabel") ?? []),
+    ].map((l) => l.getBoundingClientRect());
+    return {
+      nameHeight: name?.height ?? 0,
+      nameBottom: (name?.y ?? 0) + (name?.height ?? 0),
+      viewTop: view?.y ?? Number.NaN,
+    };
+  });
   expect(labels.nameHeight).toBeGreaterThan(0);
   expect(labels.viewTop).toBeGreaterThanOrEqual(labels.nameBottom - 0.5);
   // An untitled picture is named by its kind in the tree.

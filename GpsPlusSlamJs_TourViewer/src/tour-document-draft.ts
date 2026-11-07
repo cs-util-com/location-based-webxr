@@ -125,8 +125,8 @@ function parseStations(value: unknown): StationPose[] | undefined | null {
  * (`parseTourManifest`, without items): undefined when absent; of two
  * under one id the first is kept. A frame that does not read is lost (the
  * objects naming it are seated by the station rule as they come back). A
- * step naming an asset reads only against `against`'s assets; without
- * `against`, a frame with such a step is lost. */
+ * frame naming an asset or a character reads only against `against`, which
+ * declares them; without `against`, such a frame is lost. */
 function parseFrames(
   value: unknown,
   against: TourManifest | undefined,
@@ -134,7 +134,7 @@ function parseFrames(
   if (!Array.isArray(value)) return undefined;
   const frames: StationFrame[] = [];
   for (const entry of value as unknown[]) {
-    const frame = parseFrame(entry, against?.assets ?? []);
+    const frame = parseFrame(entry, against);
     if (frame !== undefined && !frames.some((f) => f.id === frame.id)) {
       frames.push(frame);
     }
@@ -149,21 +149,23 @@ function idOf(entry: unknown): string | undefined {
   return typeof id === "string" && TOUR_ID_PATTERN.test(id) ? id : undefined;
 }
 
-/** One frame, read with `assets` for its story; undefined when it does
- *  not read. Its card image is read apart: the probe holds no free
- *  blocks, so a captured photo of the station would read as gone - a well-formed id is kept,
- *  and the document shows and writes it only while it names a picture
- *  (its effective image). */
+/** One frame, read as the only station of the tour it is read `against`,
+ *  so whatever its story names there resolves (the whole tour, never a
+ *  picked list of its fields: a field left off that list loses every frame
+ *  naming it); undefined when it does not read. Its card image is read
+ *  apart: the probe holds no free blocks, so a captured photo of the
+ *  station would read as gone - a well-formed id is kept, and the document
+ *  shows and writes it only while it names a picture (its effective
+ *  image). */
 function parseFrame(
   entry: unknown,
-  assets: TourManifest["assets"],
+  against: TourManifest | undefined,
 ): StationFrame | undefined {
   const id = idOf(entry);
   if (id === undefined) return undefined;
   try {
     const probe = parseTourManifest({
-      ...createEmptyTourManifest(),
-      assets,
+      ...(against ?? createEmptyTourManifest()),
       stations: [entry],
     });
     const frame = framesOf(probe).find((f) => f.id === id);
@@ -215,8 +217,8 @@ function parseDetails(value: unknown): TourDetailFields | undefined | null {
 /** A stored settings record (`SETTINGS_KEY`'s text); undefined for
  *  anything that does not read (a record that does not read costs
  *  itself, never the objects beside it). `against`: the tour it is read
- *  for (the one opened), whose assets a recorded frame's steps may name
- *  (`parseFrames`). A frame list or a
+ *  for (the one opened), whose assets and characters a recorded frame's
+ *  story may name (`parseFrames`). A frame list or a
  *  deleted list that does not read costs only itself. */
 export function parseSettingsRecord(
   text: string | undefined,

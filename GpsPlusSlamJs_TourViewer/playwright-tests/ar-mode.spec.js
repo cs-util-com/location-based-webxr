@@ -2817,7 +2817,13 @@ test("a draft is offered again after Not now, and gone after Delete it", async (
           const codes = names.includes("codes.blob")
             ? await (await dir.getFileHandle("codes.blob")).getFile()
             : null;
-          return `${names.sort().join(",")} ${codes === null ? "-" : await codes.text()}`;
+          // A file read as the app writes it over throws NotReadableError:
+          // not an answer yet, and a throw here would end the poll.
+          const text =
+            codes === null
+              ? "-"
+              : await codes.text().catch(() => "being written");
+          return `${names.sort().join(",")} ${text}`;
         }, RANGES_ARCHIVE),
       { timeout: 10000 },
     )

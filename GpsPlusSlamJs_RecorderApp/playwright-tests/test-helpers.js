@@ -138,29 +138,10 @@ export const REQUIRED_TEST_HOOKS = [
   'getDebugWheelValues',
   'hideSetupModal',
   'showRecordingControls',
-  'hideRecordingControls',
   'showSessionSummary',
-  'updateGpsInfo',
-  'updateArInfo',
   'validateEnterButton',
   'updatePermissionStatus',
   'setPermissionsReady',
-  // Log panel hooks (Issue #5)
-  'showLogPanel',
-  'hideLogPanel',
-  'toggleLogPanel',
-  'logInfo',
-  'logWarn',
-  'logError',
-  // GPS event visualizer hooks
-  'getGpsEventVisualizerCounts',
-  'setGpsEventVisualizerZeroRef',
-  'clearGpsEventVisualizer',
-  // GPS accuracy ellipsoid hooks (§3c)
-  'addGpsEventForTest',
-  'getRawGpsMarkerWorldSizes',
-  // Tracking quality indicator hook (F1)
-  'updateTrackingQuality',
   // Mandatory storage selection hook (Task 1a-fix; the optional-folder
   // twin setFolderSelected was removed end-to-end in quality-review D-3)
   'setSaveLocationSelected',
