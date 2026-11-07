@@ -1,0 +1,1350 @@
+<!doctype html>
+<!-- Prototype Q2 - The guide asks (the visitor's quiz in AR). Throwaway; not wired to the app. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Visitor quiz Q2</title>
+<meta name="description" content="The guide figure asks in a speech bubble, the answers stand as small signs in the world, and the HUD stays almost empty.">
+<style>
+:root{
+  /* the design system's tokens, by name */
+  --ink:#fff;
+  --paper:#232838;
+  --surface-read-gradient:linear-gradient(160deg,rgb(52 58 80 / .75),rgb(20 24 36 / .75));
+  --accent:#f2971f;
+  --ink-on-accent:#000;
+  --danger:#ef4444;
+  --radius:14px;
+  --radius-small:10px;
+  --radius-pill:999px;
+  --tap:44px;
+  --space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;
+  --size-hint:12px;--size-body:14px;--size-read:16px;
+  --tracking-ui:.08em;
+  --t-fast:120ms;--t-state:250ms;--t-enter:400ms;
+  --ease-out:cubic-bezier(0,0,.2,1);
+  --halo-text:0 0 2px rgb(0 0 0 / .95),0 0 5px rgb(0 0 0 / .85),0 1px 14px rgb(0 0 0 / .65);
+  --font-ui:"Corbel","Noto Sans",ui-rounded,"Segoe UI","Roboto",system-ui,sans-serif;
+  /* the world's plates, as the character's bubble paints them in the app */
+  --plate:rgb(16 19 26 / .93);
+  --plate-edge:rgb(255 255 255 / .2);
+  --plate-ink:#f4efe6;
+  --plate-muted:#b9b3a6;
+  --gold:#f2b84b;
+  --gold-ink:#2a1d07;
+  --ok:#8fc49a;
+  --no:#f0857a;
+  --hud:rgb(12 16 21 / .8);
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;height:100%}
+body{font:var(--size-read)/1.35 var(--font-ui);background:#101317;color:var(--ink);overflow:hidden;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+
+/* ---------- the phone: full screen on a phone, a frame on a desktop ---------- */
+.device{position:fixed;inset:0;overflow:hidden;background:#8d8a7c;container-type:size;touch-action:none;user-select:none;-webkit-user-select:none;--kb:0px}
+#cam{position:absolute;inset:0;width:100%;height:100%;display:block}
+.vignette{position:absolute;inset:0;pointer-events:none;background:radial-gradient(120% 90% at 50% 45%,transparent 58%,rgb(0 0 0 / .22))}
+
+/* ---------- the world: everything here is anchored in the place ---------- */
+#world{position:absolute;inset:0;pointer-events:none;isolation:isolate}
+.anch{position:absolute;left:0;top:0;width:0;height:0;will-change:transform}
+.blob{position:absolute;left:-90px;bottom:-22px;width:180px;height:44px;border-radius:50%;background:radial-gradient(closest-side,rgb(0 0 0 / .42),transparent)}
+#well canvas{position:absolute;left:-340px;bottom:-22px;display:block;filter:blur(1.6px) saturate(.86) contrast(.96)}
+
+/* the figure */
+#fig .figin{position:absolute;left:-100px;bottom:0;width:200px;height:585px;transform-origin:50% 100%;transition:transform var(--t-state) var(--ease-out)}
+#fig svg{display:block;width:100%;height:100%;overflow:visible;filter:drop-shadow(3px 0 0 #fff) drop-shadow(-3px 0 0 #fff) drop-shadow(0 3px 0 #fff) drop-shadow(0 -3px 0 #fff) drop-shadow(0 3px 5px rgb(0 0 0 / .3))}
+#fig .breath{position:absolute;inset:0;transform-origin:50% 100%;animation:breath 3.4s ease-in-out infinite}
+@keyframes breath{50%{transform:scaleY(1.008) scaleX(.996)}}
+#fig .fr{display:none}
+#fig[data-frame=idle] .f-idle,#fig[data-frame=talk-a] .f-a,#fig[data-frame=talk-b] .f-b,#fig[data-frame=beckon] .f-beckon{display:inline}
+#fig[data-frame=idle] .a-down,#fig[data-frame=talk-a] .a-down,#fig[data-frame=talk-b] .a-down{display:inline}
+#fig[data-frame=beckon] .a-up{display:inline}
+#fig.hop .breath{animation:hop .95s cubic-bezier(.3,.7,.4,1)}
+@keyframes hop{0%,100%{transform:none}12%{transform:scale(1.04,.95)}30%{transform:translateY(-44px) scale(.98,1.03)}48%{transform:scale(1.03,.96)}66%{transform:translateY(-24px)}84%{transform:scale(1.02,.98)}}
+#fig.shake .breath{animation:shake 1s ease-in-out}
+@keyframes shake{0%,100%{transform:none}18%{transform:rotate(-3.4deg)}42%{transform:rotate(3.2deg)}66%{transform:rotate(-2.2deg)}84%{transform:rotate(1.2deg)}}
+
+/* a sign: post in the ground, plate at reading height; the same plate as his bubble */
+.sign .sin{position:absolute;left:-85px;bottom:0;width:170px;display:flex;flex-direction:column;align-items:center;transform-origin:50% 100%;transform:translateY(46px) scale(.15);opacity:0;transition:transform .55s cubic-bezier(.2,1.5,.4,1) var(--d,0ms),opacity .18s linear var(--d,0ms)}
+.sign.up .sin{transform:none;opacity:1}
+.sign.sunk .sin{transform:translateY(46px) scale(.15);opacity:0;transition:transform .36s cubic-bezier(.5,0,.8,.4),opacity .2s linear .16s}
+.plate{position:relative;width:100%;min-height:68px;display:flex;align-items:center;justify-content:center;gap:7px;padding:9px 11px;border-radius:13px;background:var(--plate);border:2px solid var(--plate-edge);color:var(--plate-ink);font-size:23px;font-weight:600;line-height:1.14;text-align:center;box-shadow:0 5px 12px rgb(0 0 0 / .32);transition:background var(--t-state),border-color var(--t-state),color var(--t-state),transform var(--t-enter) var(--ease-out),opacity var(--t-state)}
+.sign.long .plate{font-size:19px;padding:8px 9px}
+.post{width:13px;height:var(--post,200px);margin-top:-2px;background:linear-gradient(90deg,#8a6a45,#5c4228 62%,#3b2a18);border-radius:0 0 3px 3px;box-shadow:inset 0 0 0 .5px rgb(0 0 0 / .35)}
+.pip{position:absolute;left:50%;bottom:var(--post,200px);width:36px;height:36px;margin-left:-18px;transform-origin:50% 100%;border-radius:50%;display:grid;place-items:center;background:var(--plate);border:2px solid var(--gold);color:var(--gold);font-weight:700;font-size:21px;opacity:0;transform:scale(.3);transition:opacity var(--t-state)}
+.m{flex:none;width:24px;height:24px;display:none}
+.m svg{display:block;width:100%;height:100%}
+.sign.tried .sin{transform:rotate(var(--lean,-13deg)) translateY(5px);opacity:1}
+.sign.tried .plate{background:rgb(44 26 26 / .88);border-color:var(--no);color:#e8cfca;}
+.sign.tried .m-no{display:block;color:var(--no)}
+.sign.right .sin{transform:translateY(-12px) scale(1.09);opacity:1}
+.sign.right .plate{background:var(--gold);border-color:#fff3d0;color:var(--gold-ink)}
+.sign.right .m-ok{display:block}
+.sign.shown .sin{opacity:1;transform:translateY(-6px)}
+.sign.shown .plate{border-color:var(--gold)}
+.sign.shown .m-ok{display:block;color:var(--gold)}
+.sign.press .plate{transform:translateY(5px) scale(.96)}
+.sign.wig .plate{animation:wig .42s ease-in-out}
+@keyframes wig{25%{transform:rotate(-2.5deg)}70%{transform:rotate(2.5deg)}}
+/* greyed as a whole */
+.sign.grey .plate{background:rgb(58 60 64 / .86);border-color:rgb(255 255 255 / .12);color:#c8c8c4}
+.sign.grey .post{filter:grayscale(1) brightness(.85)}
+.sign.grey.mine .plate{border-color:#e6e6e0;color:#fff}
+.sign.grey.mine .m-ok{display:block;color:#fff}
+.sign.grey.mine.miss .m-ok{display:none}
+.sign.grey.mine.miss .m-no{display:block;color:#fff}
+.sign.locked .m-lock{display:block;color:#c8c8c4}
+/* folded while the visitor is too far off to answer */
+.sign.fold .plate{transform:scale(.06);opacity:0}
+.sign.fold .pip{opacity:1;transform:scale(var(--ps,1))}
+.sign.gone .sin{opacity:0!important}
+
+/* the slate: the typed answer's sign */
+.sign.slate .sin{left:-122px;width:244px}
+.sign.slate .plate{min-height:112px;flex-direction:column;gap:3px;background:#20302b;border:7px solid #7a5a36;border-radius:7px;color:#f3f1e4;font:600 31px/1.1 "Segoe Print","Bradley Hand","Noto Sans",cursive;box-shadow:0 5px 12px rgb(0 0 0 / .35),inset 0 0 22px rgb(0 0 0 / .4)}
+.sign.slate .chalk{max-width:100%;overflow:hidden;white-space:nowrap}
+.sign.slate .chalk:empty{display:none}
+.sign.slate.writing .chalk:empty{display:block;min-height:34px}
+.sign.slate .say{font:500 19px/1.2 var(--font-ui);color:#d5dbd0}
+.sign.slate.writing .chalk::after{content:"";display:inline-block;width:3px;height:27px;margin-left:3px;background:#f3f1e4;vertical-align:-4px;animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:0}}
+.sign.slate.wiped .plate{animation:wipe .55s ease-in-out}
+@keyframes wipe{20%{transform:translateX(-7px) rotate(-1deg)}45%{transform:translateX(7px) rotate(1deg)}70%{transform:translateX(-4px)}}
+.sign.slate.right .plate{background:#20302b;border-color:var(--gold);color:#fff}
+.sign.slate.tried .plate{background:#20302b;color:#f3f1e4;border-color:#7a5a36}
+.sign.slate.tried .sin{transform:none}
+.sign.slate.tried .m-no,.sign.slate .m{display:none}
+.sign.slate.grey .plate{background:#3a3c40;border-color:#6e6e6a;color:#dcdcd8}
+
+/* his bubble: faces the visitor, keeps its reading size, its tail stays on his head */
+#tail{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+#tail path{fill:var(--plate)}
+#bubble{position:absolute;left:0;top:0;width:var(--bw,340px);padding:10px 15px 11px;border-radius:15px;background:var(--plate);border:1.5px solid var(--plate-edge);color:var(--plate-ink);pointer-events:none;box-shadow:0 6px 16px rgb(0 0 0 / .28);will-change:transform}
+#bubble.pop .bin{animation:pop .3s cubic-bezier(.2,.9,.3,1.25)}
+@keyframes pop{from{opacity:.2;transform:scale(.96)}}
+.who{font-size:var(--size-hint);font-weight:700;letter-spacing:var(--tracking-ui);text-transform:uppercase;color:var(--gold)}
+.line{margin:3px 0 0;font-size:18px;font-weight:500;line-height:1.27}
+.line .g{display:inline-block;width:22px;height:22px;margin-right:6px;vertical-align:-5px}
+.line .g svg{display:block;width:100%;height:100%}
+.again{margin:6px 0 0;padding-top:6px;border-top:1px solid var(--plate-edge);font-size:15px;line-height:1.26;color:var(--plate-muted)}
+.foot{margin:5px 0 0;font-size:var(--size-body);color:var(--plate-muted);font-weight:500}
+.foot b{color:var(--gold);font-weight:700}
+#bubble.tag{width:auto!important;padding:6px 12px 7px}
+#bubble.tag .line,#bubble.tag .again{display:none}
+#bubble.tag .foot{margin-top:1px;font-size:var(--size-hint)}
+
+/* the moment's marks in the world */
+#fx{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.ringfx{position:absolute;width:150px;height:44px;margin:-22px 0 0 -75px;border:4px solid var(--gold);border-radius:50%;animation:ringfx .9s var(--ease-out) forwards}
+@keyframes ringfx{from{transform:scale(.3);opacity:1}to{transform:scale(1.6);opacity:0}}
+.float{position:absolute;padding:4px 11px;margin-left:-34px;border-radius:var(--radius-pill);background:var(--gold);color:var(--gold-ink);font-weight:800;font-size:19px;animation:floaty 1.5s cubic-bezier(.3,.7,.3,1) forwards}
+@keyframes floaty{0%{opacity:0;transform:translate(0,14px) scale(.7)}18%{opacity:1;transform:translate(0,0) scale(1.08)}60%{opacity:1}100%{opacity:0;transform:translate(var(--tx,0),var(--ty,-90px)) scale(.8)}}
+.spark{position:absolute;width:9px;height:9px;margin:-4px;border-radius:50%;background:var(--gold);animation:spark .85s ease-out forwards}
+@keyframes spark{to{transform:translate(var(--sx),var(--sy));opacity:0}}
+
+/* ---------- the HUD: almost nothing ---------- */
+.hud{position:absolute;inset:0;pointer-events:none;padding:calc(8px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left))}
+.top{display:flex;align-items:center;gap:8px}
+.top .sp{flex:1}
+.iconbtn{pointer-events:auto;flex:none;width:var(--tap);height:var(--tap);border-radius:50%;border:0;background:var(--hud);display:grid;place-items:center;padding:0;color:#fff}
+.iconbtn svg{width:18px;height:18px}
+.iconbtn.txt{width:auto;padding:0 14px;border-radius:22px;font-size:var(--size-hint);font-weight:700;letter-spacing:var(--tracking-ui);text-transform:uppercase}
+#notnow{pointer-events:auto;position:absolute;left:50%;bottom:calc(14px + env(safe-area-inset-bottom));transform:translateX(-50%);min-height:var(--tap);padding:0 18px;border:0;border-radius:var(--radius-pill);background:var(--hud);color:#fff;font-size:var(--size-body);font-weight:600;white-space:nowrap}
+#pill{position:absolute;left:50%;top:calc(14px + env(safe-area-inset-top));transform:translate(-50%,-8px);max-width:60cqw;padding:8px 14px;border-radius:var(--radius-pill);background:var(--hud);font-size:var(--size-body);font-weight:600;text-align:center;opacity:0;transition:opacity var(--t-state),transform var(--t-state);pointer-events:none}
+#pill.on{opacity:1;transform:translate(-50%,0)}
+#pill b{color:var(--gold)}
+/* an answer or the guide out of view */
+.edge{position:absolute;top:50%;width:var(--tap);height:var(--tap);margin-top:-22px;border-radius:50%;background:var(--plate);border:2px solid var(--gold);color:var(--gold);display:grid;place-items:center;font-weight:800;font-size:15px;opacity:0;transition:opacity var(--t-state);pointer-events:none}
+.edge.on{opacity:1}
+#edgeL{left:calc(8px + env(safe-area-inset-left))}
+#edgeR{right:calc(8px + env(safe-area-inset-right))}
+.edge span{display:flex;align-items:center;gap:1px}
+.edge svg{width:11px;height:14px}
+#edgeR svg{transform:scaleX(-1)}
+
+/* the typed answer's one concession to the HUD: it needs a keyboard */
+#dock{pointer-events:auto;position:absolute;left:calc(12px + env(safe-area-inset-left));right:calc(12px + env(safe-area-inset-right));bottom:calc(12px + var(--kb) + env(safe-area-inset-bottom));display:flex;gap:8px;padding:8px;border-radius:var(--radius);background:rgb(16 19 26 / .9);box-shadow:0 6px 16px rgb(0 0 0 / .3)}
+#answer{flex:1;min-width:0;height:48px;padding:0 12px;border:1.5px solid var(--plate-edge);border-radius:var(--radius-small);background:rgb(255 255 255 / .08);color:#fff;font-size:17px;outline:none;user-select:text;-webkit-user-select:text}
+#answer:focus{border-color:var(--accent)}
+#answer::placeholder{color:var(--plate-muted)}
+.btn{min-height:48px;padding:0 16px;border:0;border-radius:var(--radius-small);background:var(--accent);color:var(--ink-on-accent);font-weight:700;font-size:15px;white-space:nowrap}
+.btn:disabled{opacity:.45;cursor:default}
+.btn.q{background:rgb(255 255 255 / .1);color:#fff;font-weight:600}
+#dockX{flex:none;width:48px;padding:0;display:grid;place-items:center}
+
+/* walked away: one quiet line from the guide */
+#peek{pointer-events:auto;position:absolute;left:calc(12px + env(safe-area-inset-left));right:calc(12px + env(safe-area-inset-right));bottom:calc(12px + env(safe-area-inset-bottom));max-width:420px;margin:0 auto;display:flex;align-items:center;gap:10px;padding:8px 8px 8px 10px;border-radius:var(--radius);background:rgb(16 19 26 / .9);box-shadow:0 6px 16px rgb(0 0 0 / .3)}
+#peek p{flex:1;margin:0;font-size:15px;line-height:1.25;min-width:0}
+#peek small{display:block;color:var(--plate-muted);font-size:var(--size-hint);margin-top:1px}
+
+/* the end of the demonstration */
+#endcard{pointer-events:auto;position:absolute;left:calc(12px + env(safe-area-inset-left));right:calc(12px + env(safe-area-inset-right));bottom:calc(12px + env(safe-area-inset-bottom));max-width:420px;margin:0 auto;padding:12px 14px 14px;border-radius:var(--radius);background:rgb(16 19 26 / .92);box-shadow:0 8px 20px rgb(0 0 0 / .35)}
+#endcard h2{margin:0;font-size:18px;font-weight:600}
+#endcard p{margin:3px 0 10px;font-size:var(--size-body);color:var(--plate-muted)}
+#endcard .acts{display:flex;flex-wrap:wrap;gap:8px}
+#endcard .btn{flex:1 1 auto;min-height:var(--tap)}
+
+/* ---------- the design note ---------- */
+.note{position:absolute;inset:0;z-index:40;background:var(--paper);color:#fff;overflow:auto;padding:calc(16px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right)) calc(28px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left));touch-action:pan-y;user-select:text;-webkit-user-select:text}
+.note .in{max-width:620px;margin:0 auto}
+.note .close{position:sticky;top:0;float:right;width:var(--tap);height:var(--tap);border-radius:50%;border:0;background:rgb(255 255 255 / .12);font-size:20px;color:#fff}
+.note h2{font-size:26px;font-weight:600;margin:6px 0 10px}
+.note h3{font-size:var(--size-hint);letter-spacing:var(--tracking-ui);text-transform:uppercase;color:var(--gold);margin:20px 0 6px}
+.note p,.note li{font-size:15px;line-height:1.5}
+.note ul{padding-left:20px;margin:6px 0}
+.note li{margin:3px 0}
+
+/* ---------- demo controls (not part of the design) ---------- */
+.demo{position:fixed;z-index:60;right:calc(10px + env(safe-area-inset-right));top:calc(60px + env(safe-area-inset-top));width:min(300px,calc(100vw - 20px));max-height:calc(100dvh - 72px);overflow:auto;background:rgb(14 18 23 / .95);border:1px solid rgb(255 255 255 / .16);border-radius:var(--radius);font-size:13px;color:#e8edf2;padding:10px}
+.demo h4{margin:8px 2px 5px;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:#a9b4bf}
+.demo .about{margin:0 2px 8px;line-height:1.42;color:#c6d0da}
+.demo .about b{color:#fff}
+.demo .row{display:flex;flex-wrap:wrap;gap:6px}
+.demo button{border:1px solid rgb(255 255 255 / .2);background:rgb(255 255 255 / .08);color:#fff;border-radius:var(--radius-small);padding:7px 10px;min-height:36px;text-align:left;font-size:12.5px}
+.demo button[aria-pressed=true]{background:#fff;color:#111}
+.demo .states{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.demo .states button{padding:6px 8px}
+.demo label{display:flex;align-items:center;gap:8px;font-size:12.5px}
+.demo input[type=range]{flex:1;min-width:0;accent-color:var(--accent)}
+.demo output{min-width:44px;text-align:right;font-variant-numeric:tabular-nums}
+.demo .status{font-size:12px;color:#a9b4bf;min-height:16px;margin:8px 2px 0}
+
+@container (orientation:landscape) and (max-height:520px){
+  .line{font-size:16.5px}
+  .again{font-size:14px}
+  .foot{font-size:13px;margin-top:3px}
+  #bubble{padding:8px 12px 9px}
+  #endcard,#peek{max-width:380px}
+  #endcard{left:auto}
+  .kbopen .top{visibility:hidden}
+  #peek{left:auto;right:calc(12px + env(safe-area-inset-right))}
+}
+@media (min-width:960px) and (min-height:720px){
+  body{display:flex;align-items:center;justify-content:center;gap:40px;padding:40px;background:radial-gradient(1200px 700px at 30% 20%,#26303a,#12151a)}
+  .device{position:relative;inset:auto;flex:none;width:414px;height:min(844px,calc(100vh - 80px));border-radius:42px;border:12px solid #0a0c0f;box-shadow:0 0 0 2px #2d333b,0 40px 90px rgb(0 0 0 / .6)}
+  .device.sideways{width:868px;height:414px}
+  .demo{position:static;width:320px;max-height:calc(100vh - 80px);font-size:13.5px}
+  .demo[hidden]{display:block!important}
+  #demoBtn{display:none}
+}
+@media (max-width:959px),(max-height:719px){.onlydesk{display:none}}
+@media (prefers-reduced-motion:reduce){
+  #fig .breath,.bin{animation:none!important}
+  .sign .sin{transition-duration:.01s!important;transition-delay:0s!important}
+}
+</style>
+</head>
+<body>
+
+<main class="device" id="device" data-step="line1">
+  <canvas id="cam" role="img" aria-label="A camera view of a small town square with a covered well. Drag to look around."></canvas>
+  <div class="vignette"></div>
+
+  <div id="world">
+    <div class="anch" id="well"><span class="blob" style="left:-340px;width:680px;height:90px;bottom:-40px"></span></div>
+    <div class="anch" id="fig" data-frame="idle">
+      <span class="blob"></span>
+      <div class="figin"><div class="breath">
+        <svg viewBox="0 0 200 585" aria-hidden="true">
+          <!-- one cut-out with the four frames a tour character has: idle, talk-a, talk-b, beckon -->
+          <path d="M72 395h22l-1 150H68zM106 395h22l4 150h-25z" fill="#2c2f36"/>
+          <path d="M60 552c0-9 8-12 15-12h20v22H60zM105 540h20c8 0 15 3 15 12v10h-35z" fill="#3b2517"/>
+          <g class="fr a-down">
+            <path d="M144 196c14 6 20 16 22 34l9 92c1 9-13 12-16 3l-19-92z" fill="#0c524c"/>
+            <circle cx="168" cy="332" r="11" fill="#e8c4a0"/>
+          </g>
+          <g class="fr a-up">
+            <path d="M142 200c12-4 20-14 26-34l8-34c2-9 17-6 16 4l-9 44c-4 18-16 38-34 44z" fill="#0c524c"/>
+            <circle cx="184" cy="122" r="11" fill="#e8c4a0"/>
+            <path d="M178 114l-2-13M185 112l1-14M192 115l4-12" stroke="#e8c4a0" stroke-width="5" stroke-linecap="round"/>
+          </g>
+          <path d="M60 190c12-10 26-14 40-14s28 4 40 14l15 214c-34 12-76 12-110 0z" fill="#0f5f59"/>
+          <path d="M100 176v230" stroke="rgb(0 0 0 / .18)" stroke-width="2"/>
+          <path d="M82 178l18 26 18-26" fill="none" stroke="#f4efe6" stroke-width="5"/>
+          <circle cx="106" cy="238" r="3.4" fill="#f2b84b"/><circle cx="106" cy="274" r="3.4" fill="#f2b84b"/><circle cx="106" cy="310" r="3.4" fill="#f2b84b"/>
+          <path d="M58 196c-14 6-20 16-22 34l-6 92c-1 9 13 12 16 3l15-92z" fill="#0c524c"/>
+          <circle cx="36" cy="332" r="11" fill="#e8c4a0"/>
+          <g transform="translate(36 372)">
+            <circle r="34" fill="#ffd27a" opacity=".38"/>
+            <path d="M-6-14v-14h12v14M0-40v12" stroke="#3d2a10" stroke-width="3.4" fill="none"/>
+            <rect x="-13" y="-14" width="26" height="36" rx="5" fill="#ffcf6b" stroke="#3d2a10" stroke-width="3.4"/>
+          </g>
+          <rect x="89" y="150" width="22" height="30" fill="#d7ae86"/>
+          <circle cx="100" cy="122" r="38" fill="#e8c4a0"/>
+          <circle cx="86" cy="120" r="4.4" fill="#2b2420"/><circle cx="114" cy="120" r="4.4" fill="#2b2420"/>
+          <path d="M80 108q6-4 12-1M108 107q6-3 12 1" stroke="#6b4a33" stroke-width="3" fill="none" stroke-linecap="round"/>
+          <path class="fr f-idle" d="M88 138q12 8 24 0" stroke="#7a4a35" stroke-width="3.6" fill="none" stroke-linecap="round"/>
+          <path class="fr f-beckon" d="M86 136q14 12 28 0z" fill="#7a3a2c"/>
+          <ellipse class="fr f-a" cx="100" cy="140" rx="9" ry="5" fill="#7a3a2c"/>
+          <ellipse class="fr f-b" cx="100" cy="141" rx="10" ry="9" fill="#7a3a2c"/>
+          <path d="M42 86h116" stroke="#1c1f22" stroke-width="13" stroke-linecap="round"/>
+          <rect x="66" y="16" width="68" height="70" rx="6" fill="#1c1f22"/>
+          <rect x="66" y="62" width="68" height="12" fill="#c2410c"/>
+        </svg>
+      </div></div>
+    </div>
+    <div id="signs"></div>
+    <div id="fx"></div>
+  </div>
+
+  <svg id="tail" aria-hidden="true"><path id="tailP" d=""/></svg>
+  <div id="bubble" role="status" aria-live="polite"><div class="bin">
+    <div class="who" id="who">Mara, your guide</div>
+    <p class="line" id="line"></p>
+    <p class="again" id="again" hidden></p>
+    <p class="foot" id="foot"></p>
+  </div></div>
+
+  <div class="hud">
+    <div class="top">
+      <button class="iconbtn" id="exitBtn" type="button" aria-label="Leave AR"><svg viewBox="0 0 16 16"><path d="M3 3l10 10M13 3L3 13" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg></button>
+      <span class="sp"></span>
+      <button class="iconbtn" id="noteBtn" type="button" aria-label="Design note"><svg viewBox="0 0 16 16"><circle cx="8" cy="4" r="1.3" fill="#fff"/><path d="M8 7v6" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg></button>
+      <button class="iconbtn txt" id="demoBtn" type="button" aria-expanded="false" aria-controls="demo">Demo</button>
+    </div>
+    <div id="pill" aria-live="polite"></div>
+    <div class="edge" id="edgeL"><span><svg viewBox="0 0 11 14"><path d="M8 2L3 7l5 5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg><b id="edgeLn"></b></span></div>
+    <div class="edge" id="edgeR"><span><b id="edgeRn"></b><svg viewBox="0 0 11 14"><path d="M8 2L3 7l5 5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span></div>
+    <button id="notnow" type="button" hidden>Not now</button>
+    <form id="dock" hidden autocomplete="off">
+      <input id="answer" type="text" enterkeyhint="done" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Your answer" aria-label="Your answer" maxlength="60">
+      <button class="btn" id="check" type="submit" disabled>Check</button>
+      <button class="btn q" id="dockX" type="button" aria-label="Close the keyboard"><svg viewBox="0 0 16 16" width="16" height="16"><path d="M3 5l5 5 5-5" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    </form>
+    <section id="peek" hidden>
+      <p><span id="peekLine"></span><small id="peekWhere"></small></p>
+      <button class="btn q" id="peekLeave" type="button">Let it go</button>
+    </section>
+    <section id="endcard" hidden>
+      <h2 id="endTitle">The story is finished</h2>
+      <p id="endText"></p>
+      <div class="acts">
+        <button class="btn q" id="endAgain" type="button">Start over</button>
+        <button class="btn" id="endBack" type="button">Come back to the well</button>
+      </div>
+    </section>
+  </div>
+
+  <section class="note" id="note" hidden aria-labelledby="noteTitle">
+    <div class="in">
+      <button class="close" id="noteClose" type="button" aria-label="Close the design note">&#215;</button>
+      <div style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--gold)">Design note - Q2</div>
+      <h2 id="noteTitle">The guide asks</h2>
+      <p>The figure asks where it stands. The answers grow out of the ground as small signs around it, and you answer by tapping a sign in the place. The question can be about what is in front of you: count the columns, read the stone. The HUD holds only a way out.</p>
+
+      <h3>What stands where</h3>
+      <ul>
+        <li><b>The bubble</b> is the one the character already has: same plate, same name line, its tail on the head. It keeps its reading size and flips to the side with room.</li>
+        <li><b>The signs look placed in the world, but they are placed for the screen.</b> When the question starts they fan out around the figure to fit the view you hold, so all of them are in view and clear of each other, and they fan again if you turn the phone.</li>
+        <li><b>Any tap near a sign counts:</b> it snaps to the nearest sign within a thumb's width, because a sign 3 m away is small. While a line is showing, a tap anywhere goes on, so nothing has to be reached.</li>
+        <li><b>The figure reacts with what every character has:</b> four frames (idle, two talk frames, beckon), a hop for right, a sway for wrong, a beckon to try again, and a turn towards the sign you chose. No special artwork is needed.</li>
+      </ul>
+
+      <h3>What happens when</h3>
+      <ul>
+        <li><b>Right:</b> the sign lifts and turns gold with a tick, the points rise out of it in the world and show for two seconds at the top, the other signs sink.</li>
+        <li><b>Wrong, may try again:</b> that sign tips over and stays tipped, the others stay. The tick and the cross carry the meaning, not the colour alone.</li>
+        <li><b>Wrong, one try:</b> the signs sink, the right one stays standing, no points.</li>
+        <li><b>Typed:</b> a slate stands by the figure. Tap it and a field opens with the keyboard; the letters appear on the slate as you type. The keyboard does not open by itself: it would hide the place before you have read the question.</li>
+        <li><b>Done:</b> the signs stand grey as a whole, yours marked, and a tap goes on. No points twice.</li>
+        <li><b>Costs too much:</b> a quiz that costs more than you have stands grey as a whole with what it needs, so no single answer can give the right one away.</li>
+        <li><b>Walking away:</b> within 5 m you can answer. Up to 9 m the question stays readable but the signs fold to small marks: "Come closer to answer". Past 9 m the bubble folds to a name tag, as it does today. Past the station the guide says once that the question stays open, and offers to let it go. Coming back finds everything as it was, tipped signs and half-typed words included.</li>
+      </ul>
+
+      <h3>What it trades away</h3>
+      <ul>
+        <li><b>Signs stand in thin air.</b> Nothing here knows about walls, cars or people: on a narrow pavement a sign can stand in a hedge or inside a passer-by. There is no hiding behind real objects.</li>
+        <li><b>Placement decides whether it works.</b> This scene is hand-tuned so that the bubble leaves the well in view. In a real place the bubble or a sign can cover the very thing the question is about.</li>
+        <li><b>Long answers fight the idea.</b> Try "Long answers": the signs become small cards. Beyond about 30 characters a list would be easier to read.</li>
+        <li><b>Holding the phone up.</b> Reading and answering in the world means holding the arm up for the whole question, and tapping high up on the screen one-handed is a stretch.</li>
+        <li><b>The keyboard covers half the world</b> upright and nearly all of it sideways, and how a keyboard behaves inside a real AR session is unproven here.</li>
+        <li><b>A hash cannot say "almost".</b> A typed answer is right or it is not, and when it is wrong the page cannot show the right word: it does not know it.</li>
+      </ul>
+
+      <h3>Rules this page reads as proposals</h3>
+      <ul>
+        <li>Feedback lines and a retry setting are not in the tour file yet; the page assumes both.</li>
+        <li>Feedback text sits in the file in clear, so a typed quiz's feedback must not repeat its answer, or the hash protects nothing. The sample's lines avoid it.</li>
+        <li>A wrong answer with a price would be charged on every try. This page has no price on a wrong try.</li>
+        <li>A later right try earns the full points, because the file has one number per quiz.</li>
+      </ul>
+
+      <h3>Not covered here</h3>
+      <ul>
+        <li>Quizzes with several right answers, number answers and code answers.</li>
+        <li>Voice lines, and how a story with several figures shares one quiz.</li>
+        <li>Ground finding: the signs stand on a flat plane by construction.</li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<div class="demo" id="demo" hidden>
+  <p class="about"><b>Q2 - The guide asks.</b> Line, quiz, line at a sample well. Tap the world to go on, tap a sign to answer, drag to look around.</p>
+  <h4>Question</h4>
+  <div class="row">
+    <button id="dChoice" type="button" aria-pressed="true">Choice</button>
+    <button id="dTyped" type="button" aria-pressed="false">Typed</button>
+    <button id="dLong" type="button" aria-pressed="false">Long answers</button>
+  </div>
+  <h4>Tries</h4>
+  <div class="row">
+    <button id="dAgain" type="button" aria-pressed="true">May try again</button>
+    <button id="dOne" type="button" aria-pressed="false">One try</button>
+  </div>
+  <h4>Jump to</h4>
+  <div class="states" id="dStates"></div>
+  <h4>Walk</h4>
+  <label>Distance to the guide <input id="dDist" type="range" min="3.6" max="40" step="0.2" value="3.6"><output id="dDistOut">3.6 m</output></label>
+  <div class="row" style="margin-top:6px">
+    <button id="dLeave" type="button">Walk away</button>
+    <button id="dReturn" type="button">Come back</button>
+  </div>
+  <h4>Phone</h4>
+  <div class="row">
+    <button id="dMotion" type="button">Turn with the phone</button>
+    <button id="dSide" class="onlydesk" type="button" aria-pressed="false">Hold it sideways</button>
+  </div>
+  <div class="status" id="dStatus"></div>
+</div>
+
+<script>
+'use strict';
+const $ = (s) => document.querySelector(s);
+const device = $('#device');
+const DEG = Math.PI / 180;
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const REDUCE = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// ---------------------------------------------------------------- the sample story
+const LINE_1 = 'Every house on this square drew its water here, twice a day.';
+const LINE_2 = 'When the pipes came, the square went quiet. Come, the tower is next.';
+const POINTS = 10;
+// Salted SHA-256 of the normalised accepted answers: this page does not
+// hold the typed answer, the way a tour file does not.
+const SALT = 'well-column-7f3a';
+const HASHES = ['2a1a55562075e2d6ecdcd5cdec25c03955ecdf1f33fced890490a5d77b40b06c', '34bc1af24617496984298a139e6956b6b8317fe9a2c9419668ce76d128c4940b'];
+const QUIZ = {
+  choice: {
+    q: 'Look at the well. How many stone columns hold up its roof?',
+    yes: 'Yes, four! One for each street that paid for it.',
+    no: 'Not quite. Count again, the ones at the back too.',
+    last: 'Not quite. It is four, one for each street that paid for it.',
+    options: [{ id: 'a', label: 'Two' }, { id: 'b', label: 'Three' }, { id: 'c', label: 'Four' }, { id: 'd', label: 'Six' }],
+    long: [
+      { id: 'a', label: 'Two, one on each side of the path' },
+      { id: 'b', label: 'Three, since one fell in a storm' },
+      { id: 'c', label: 'Four, one at every corner' },
+      { id: 'd', label: 'Six, in a ring around the rim' },
+    ],
+    correct: 'c',
+  },
+  typed: {
+    q: 'One word is cut into the stone above the well. What does it say?',
+    yes: 'Yes! That is how the masons wrote water.',
+    no: 'That is not what I read. Look up at the stone again.',
+    last: 'Not what I read. Never mind, the stone will be here tomorrow.',
+  },
+};
+
+// Where things stand, as spots on the screen at the resting pose: x and y
+// as parts of the view, z in metres. The fan is laid out for the view held.
+const FAN = {
+  upright: [[.215, .585, 2.8, 13], [.79, .6, 2.8, -13], [.25, .735, 2.15, 13], [.75, .75, 2.15, -13]],
+  sideways: [[.115, .69, 2.8, 13], [.315, .73, 2.5, -13], [.735, .73, 2.5, 13], [.895, .69, 2.8, -13]],
+};
+const SLATE = { upright: [.31, .475, 2.8], sideways: [.24, .69, 2.6] };
+const FIG = { upright: [.66, 3.6], sideways: [.55, 3.6] };
+const WELL = { upright: [.30, 6.2], sideways: [.30, 6.2] };
+const NEAR_M = 5;      // answers can be tapped within this distance of the guide
+const BUBBLE_OPEN_M = 9;   // the bubble folds to a name tag beyond this, as the app's does
+const STATION_M = 25;  // past this the question is held and the guide says so
+const FIG_H = 1.72, EYE = 1.5, PX_PER_M = 340;
+
+// ---------------------------------------------------------------- state (faked, not the app's logic)
+const M = {
+  kind: 'choice', tries: 'again', long: false,
+  step: 'line1', tried: new Set(), typed: '', writing: false,
+  off: 0, yaw: 0, pitch: null, wasAway: false, back: false,
+  score: 0, result: null, open: false, coins: false,
+};
+const V = { w: 0, h: 0, f: 700, side: false, pitch0: 0, dirty: true };
+
+const QUIZ_STEPS = ['ask', 'wrong', 'judging', 'right', 'missed', 'skipped', 'done', 'locked'];
+const ANSWERING = ['ask', 'wrong'];
+const dist = () => FIG[orient()][1] + M.off;
+const orient = () => (V.side ? 'sideways' : 'upright');
+function ring() {
+  const d = dist();
+  if (d <= NEAR_M) return 'near';
+  if (d <= BUBBLE_OPEN_M) return 'read';
+  return d <= STATION_M ? 'tag' : 'away';
+}
+
+// ---------------------------------------------------------------- normalise and judge a typed answer
+function normalise(s) {
+  return s.normalize('NFC').toLowerCase().trim().replace(/\s+/g, ' ')
+    .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss').replace(/(\d),(\d)/g, '$1.$2');
+}
+const SHA = (() => {
+  const K = [], I = [];
+  for (let p = 2, n = 0; n < 64; p++) {
+    let prime = true;
+    for (let i = 2; i * i <= p; i++) if (p % i === 0) { prime = false; break; }
+    if (!prime) continue;
+    if (n < 8) I[n] = (Math.pow(p, 1 / 2) % 1) * 2 ** 32 >>> 0;
+    K[n++] = (Math.pow(p, 1 / 3) % 1) * 2 ** 32 >>> 0;
+  }
+  const rr = (x, n) => (x >>> n) | (x << (32 - n));
+  return (text) => {
+    const b = [...new TextEncoder().encode(text)];
+    const bits = b.length * 8;
+    b.push(0x80);
+    while (b.length % 64 !== 56) b.push(0);
+    for (let i = 7; i >= 0; i--) b.push(i > 3 ? 0 : (bits >>> (i * 8)) & 255);
+    const h = I.slice();
+    for (let o = 0; o < b.length; o += 64) {
+      const w = new Array(64);
+      for (let i = 0; i < 16; i++) w[i] = (b[o + 4 * i] << 24 | b[o + 4 * i + 1] << 16 | b[o + 4 * i + 2] << 8 | b[o + 4 * i + 3]) >>> 0;
+      for (let i = 16; i < 64; i++) {
+        const a = w[i - 15], c = w[i - 2];
+        w[i] = (w[i - 16] + (rr(a, 7) ^ rr(a, 18) ^ (a >>> 3)) + w[i - 7] + (rr(c, 17) ^ rr(c, 19) ^ (c >>> 10))) >>> 0;
+      }
+      let [a, bb, c, d, e, f, g, hh] = h;
+      for (let i = 0; i < 64; i++) {
+        const t1 = (hh + (rr(e, 6) ^ rr(e, 11) ^ rr(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + w[i]) >>> 0;
+        const t2 = ((rr(a, 2) ^ rr(a, 13) ^ rr(a, 22)) + ((a & bb) ^ (a & c) ^ (bb & c))) >>> 0;
+        hh = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = bb; bb = a; a = (t1 + t2) >>> 0;
+      }
+      [a, bb, c, d, e, f, g, hh].forEach((v, i) => { h[i] = (h[i] + v) >>> 0; });
+    }
+    return h.map((v) => v.toString(16).padStart(8, '0')).join('');
+  };
+})();
+const typedRight = (v) => HASHES.includes(SHA(SALT + normalise(v)));
+
+// ---------------------------------------------------------------- the camera picture: a sunny town square
+function paintPano() {
+  const W = 2800, H = 1800, HZ = 900, P = W / (262 * DEG);
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const x = c.getContext('2d');
+  let seed = 20261107;
+  const r = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
+  // sky, overexposed towards the horizon as a phone camera does
+  let g = x.createLinearGradient(0, 0, 0, HZ);
+  g.addColorStop(0, '#4f8fcc'); g.addColorStop(.45, '#9cc7e8'); g.addColorStop(.8, '#e6eff2'); g.addColorStop(1, '#fbfbf6');
+  x.fillStyle = g; x.fillRect(0, 0, W, HZ + 40);
+  for (let i = 0; i < 46; i++) {
+    const cx = r() * W, cy = 220 + r() * 420, rad = 70 + r() * 190;
+    const cg = x.createRadialGradient(cx, cy, 0, cx, cy, rad);
+    cg.addColorStop(0, 'rgb(255 255 255 / .5)'); cg.addColorStop(1, 'rgb(255 255 255 / 0)');
+    x.fillStyle = cg; x.save(); x.translate(cx, cy); x.scale(1.9, .55); x.translate(-cx, -cy); x.fillRect(cx - rad, cy - rad, rad * 2, rad * 2); x.restore();
+  }
+  // the houses round the square, slightly soft as a camera sees them
+  const b = document.createElement('canvas'); b.width = W; b.height = H;
+  const y = b.getContext('2d');
+  const walls = ['#d9c39a', '#e6d6b8', '#cfa77f', '#e2c9a6', '#c9b49a', '#dcb896', '#d3cdbd', '#e7dcc6'];
+  const shutters = ['#3f6250', '#5a4632', '#4a5f72', '#6d3b2c'];
+  const base = HZ + 62;
+  function house(hx, w, h) {
+    const col = walls[Math.floor(r() * walls.length)], sh = shutters[Math.floor(r() * shutters.length)];
+    const top = base - h;
+    y.fillStyle = col; y.fillRect(hx, top, w, h);
+    const lg = y.createLinearGradient(hx, 0, hx + w, 0);
+    lg.addColorStop(0, 'rgb(255 244 215 / .24)'); lg.addColorStop(1, 'rgb(50 34 22 / .2)');
+    y.fillStyle = lg; y.fillRect(hx, top, w, h);
+    const dg = y.createLinearGradient(0, top, 0, base);
+    dg.addColorStop(0, 'rgb(0 0 0 / 0)'); dg.addColorStop(1, 'rgb(40 30 20 / .22)');
+    y.fillStyle = dg; y.fillRect(hx, top, w, h);
+    // the roof
+    y.fillStyle = r() > .5 ? '#6f4332' : '#5f3b2d';
+    const rise = 66 + r() * 52;
+    y.beginPath(); y.moveTo(hx - 12, top); y.lineTo(hx + 22, top - rise); y.lineTo(hx + w - 22, top - rise); y.lineTo(hx + w + 12, top); y.closePath(); y.fill();
+    y.strokeStyle = 'rgb(0 0 0 / .13)'; y.lineWidth = 2;
+    for (let k = 1; k < 5; k++) { const ry = top - rise * k / 5; y.beginPath(); y.moveTo(hx, ry); y.lineTo(hx + w, ry); y.stroke(); }
+    y.fillStyle = 'rgb(255 255 255 / .28)'; y.fillRect(hx - 6, top - 4, w + 12, 8);
+    y.fillStyle = 'rgb(0 0 0 / .2)'; y.fillRect(hx - 6, top + 4, w + 12, 4);
+    // windows
+    const cols = Math.max(2, Math.floor(w / 72)), rows = Math.max(2, Math.floor((h - 96) / 92));
+    const gapX = w / cols;
+    for (let ry = 0; ry < rows; ry++) for (let cx = 0; cx < cols; cx++) {
+      const wx = hx + gapX * (cx + .5), wy = top + 34 + ry * 92;
+      y.fillStyle = 'rgb(255 255 255 / .55)'; y.fillRect(wx - 19, wy - 3, 38, 66);
+      y.fillStyle = '#36424c'; y.fillRect(wx - 15, wy, 30, 58);
+      const gl = y.createLinearGradient(wx - 15, wy, wx + 15, wy + 58);
+      gl.addColorStop(0, 'rgb(190 220 240 / .55)'); gl.addColorStop(.6, 'rgb(190 220 240 / 0)');
+      y.fillStyle = gl; y.fillRect(wx - 15, wy, 30, 58);
+      y.fillStyle = 'rgb(255 255 255 / .6)'; y.fillRect(wx - .8, wy, 1.8, 58); y.fillRect(wx - 15, wy + 26, 30, 1.8);
+      if (r() > .3) { y.fillStyle = sh; y.fillRect(wx - 34, wy - 2, 15, 62); y.fillRect(wx + 19, wy - 2, 15, 62); }
+    }
+    // the street floor: shop fronts and doors
+    for (let cx = 0; cx < cols; cx++) {
+      const wx = hx + gapX * (cx + .5);
+      y.fillStyle = r() > .5 ? '#3a2d24' : '#2f3a42'; y.beginPath(); y.roundRect(wx - 22, base - 88, 44, 88, [22, 22, 0, 0]); y.fill();
+    }
+    if (r() > .5) { y.fillStyle = ['#9a3a2c', '#2f5d57', '#7a6a2e'][Math.floor(r() * 3)]; y.beginPath(); y.moveTo(hx + 6, base - 100); y.lineTo(hx + w - 6, base - 100); y.lineTo(hx + w + 6, base - 72); y.lineTo(hx - 6, base - 72); y.closePath(); y.fill(); }
+  }
+  let hx = -30;
+  while (hx < W) { const w = 180 + r() * 190; house(hx, w, 340 + r() * 240); hx += w - 3; }
+  try { x.filter = 'blur(1.3px)'; } catch { /* a soft picture is a nicety */ }
+  x.drawImage(b, 0, 0);
+  x.filter = 'none';
+  // the paving
+  g = x.createLinearGradient(0, base - 6, 0, H);
+  g.addColorStop(0, '#b4aa97'); g.addColorStop(.25, '#9b9180'); g.addColorStop(1, '#6f6758');
+  x.fillStyle = g; x.fillRect(0, base - 6, W, H - base + 6);
+  const tones = ['#a39987', '#8f8675', '#b5ab98', '#7d7566', '#9a8f7c', '#ad9f88'];
+  for (let z = 19; z > .62; z *= .95) {
+    const ry = HZ + EYE * P / z, sw = .2 * P / z, sh = Math.max(1.5, .09 * P / z);
+    if (ry > H + 60) continue;
+    for (let px = -sw * r(); px < W; px += sw * (.84 + .3 * r())) {
+      const tone = tones[Math.floor(r() * tones.length)];
+      if (sw > 14) {
+        x.fillStyle = 'rgb(30 26 20 / .42)';
+        x.beginPath(); x.ellipse(px + 1.5, ry + 2, sw * .47, sh * .58, 0, 0, 7); x.fill();
+        x.fillStyle = tone;
+        x.beginPath(); x.ellipse(px, ry, sw * .45, sh * .52, (r() - .5) * .12, 0, 7); x.fill();
+        x.fillStyle = 'rgb(255 250 235 / .13)';
+        x.beginPath(); x.ellipse(px - sw * .08, ry - sh * .14, sw * .28, sh * .22, 0, 0, 7); x.fill();
+      } else { x.fillStyle = tone; x.globalAlpha = .55; x.fillRect(px, ry, sw * .9, sh * .7); x.globalAlpha = 1; }
+    }
+  }
+  // sun and shade on the ground
+  x.fillStyle = 'rgb(28 34 54 / .24)';
+  x.beginPath(); x.moveTo(0, base - 4); x.lineTo(W * .28, base - 4); x.lineTo(W * .09, H); x.lineTo(0, H); x.closePath(); x.fill();
+  g = x.createLinearGradient(W * .3, 0, W, 0);
+  g.addColorStop(0, 'rgb(255 240 205 / .1)'); g.addColorStop(1, 'rgb(255 240 205 / 0)');
+  x.fillStyle = g; x.fillRect(0, base, W, H - base);
+  // a lamp post, a tree, a few people too far off to matter
+  const lamp = (lx, ly, s) => {
+    x.fillStyle = '#23272b'; x.fillRect(lx - 3 * s, ly - 230 * s, 6 * s, 230 * s);
+    x.beginPath(); x.moveTo(lx - 13 * s, ly - 232 * s); x.lineTo(lx + 13 * s, ly - 232 * s); x.lineTo(lx + 8 * s, ly - 266 * s); x.lineTo(lx - 8 * s, ly - 266 * s); x.closePath(); x.fill();
+  };
+  lamp(W * .44, base + 34, 1); lamp(W * .63, base + 40, 1.15);
+  const tree = (tx, ty, s) => {
+    x.fillStyle = '#4b3a2a'; x.fillRect(tx - 7 * s, ty - 120 * s, 14 * s, 120 * s);
+    for (let i = 0; i < 90; i++) {
+      const a = r() * 7, q = r(), cx = tx + Math.cos(a) * q * 92 * s, cy = ty - 190 * s + Math.sin(a) * q * 84 * s;
+      x.fillStyle = ['#4e7a3a', '#5d8c42', '#3f6a33', '#74a052'][Math.floor(r() * 4)];
+      x.beginPath(); x.arc(cx, cy, (14 + r() * 13) * s, 0, 7); x.fill();
+    }
+  };
+  tree(W * .39, base + 24, 1); tree(W * .71, base + 32, 1.2);
+  for (const [px, s, col] of [[.46, .95, '#3b4a63'], [.475, .9, '#8a4b3c'], [.58, 1.1, '#2f4f4a'], [.61, 1, '#6a6f7a']]) {
+    const f = W * px, fy = base + 30;
+    x.fillStyle = col; x.beginPath(); x.roundRect(f - 11 * s, fy - 62 * s, 22 * s, 42 * s, 7 * s); x.fill();
+    x.fillStyle = '#2a2d33'; x.fillRect(f - 9 * s, fy - 22 * s, 7 * s, 24 * s); x.fillRect(f + 2 * s, fy - 22 * s, 7 * s, 24 * s);
+    x.fillStyle = '#d8b394'; x.beginPath(); x.arc(f, fy - 71 * s, 8.5 * s, 0, 7); x.fill();
+  }
+  // sensor grain
+  const n = document.createElement('canvas'); n.width = n.height = 256;
+  const nc = n.getContext('2d'), id = nc.createImageData(256, 256);
+  for (let i = 0; i < id.data.length; i += 4) { const v = 96 + r() * 64; id.data[i] = id.data[i + 1] = id.data[i + 2] = v; id.data[i + 3] = 255; }
+  nc.putImageData(id, 0, 0);
+  x.globalCompositeOperation = 'overlay'; x.globalAlpha = .34; x.fillStyle = x.createPattern(n, 'repeat'); x.fillRect(0, 0, W, H);
+  x.globalAlpha = 1; x.globalCompositeOperation = 'source-over';
+  return { c, W, H, HZ, P };
+}
+
+function paintWell() {
+  const W = 680, H = 1122;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const x = c.getContext('2d');
+  let seed = 88123;
+  const r = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
+  const stone = (ax, bx) => { const g = x.createLinearGradient(ax, 0, bx, 0); g.addColorStop(0, '#cbbfa9'); g.addColorStop(.4, '#ded3bf'); g.addColorStop(1, '#8f8370'); return g; };
+  const column = (cx, top, bot, w, dim) => {
+    x.fillStyle = stone(cx - w / 2, cx + w / 2); x.fillRect(cx - w / 2, top, w, bot - top);
+    x.fillStyle = '#b7ab96'; x.fillRect(cx - w / 2 - 9, bot - 22, w + 18, 22); x.fillRect(cx - w / 2 - 9, top, w + 18, 22);
+    x.fillStyle = 'rgb(0 0 0 / .2)'; x.fillRect(cx - w / 2 - 9, top + 22, w + 18, 5);
+    if (dim) { x.fillStyle = `rgb(40 34 26 / ${dim})`; x.fillRect(cx - w / 2 - 9, top, w + 18, bot - top); }
+  };
+  // the dark inside
+  x.fillStyle = '#4b4438'; x.fillRect(120, 320, 440, 520);
+  // back columns, then rope and bucket, then the front ones
+  column(232, 320, 800, 50, .34);
+  column(448, 320, 800, 50, .34);
+  x.strokeStyle = '#6e5a3c'; x.lineWidth = 6; x.beginPath(); x.moveTo(340, 324); x.lineTo(340, 610); x.stroke();
+  x.fillStyle = '#7b5a36'; x.beginPath(); x.moveTo(306, 612); x.lineTo(374, 612); x.lineTo(364, 690); x.lineTo(316, 690); x.closePath(); x.fill();
+  x.strokeStyle = '#3a2c1b'; x.lineWidth = 5; x.beginPath(); x.moveTo(308, 636); x.lineTo(372, 636); x.moveTo(312, 668); x.lineTo(368, 668); x.stroke();
+  // the rim
+  x.fillStyle = '#a99d88'; x.beginPath(); x.ellipse(340, 838, 292, 58, 0, 0, 7); x.fill();
+  x.fillStyle = '#332e27'; x.beginPath(); x.ellipse(340, 838, 228, 38, 0, 0, 7); x.fill();
+  const rim = x.createLinearGradient(48, 0, 632, 0);
+  rim.addColorStop(0, '#a89b84'); rim.addColorStop(.35, '#d5cab4'); rim.addColorStop(1, '#7f7462');
+  x.fillStyle = rim; x.beginPath(); x.moveTo(48, 838); x.lineTo(48, 1060); x.ellipse(340, 1060, 292, 58, 0, Math.PI, 0, true); x.lineTo(632, 838); x.ellipse(340, 838, 292, 58, 0, 0, Math.PI, false); x.closePath(); x.fill();
+  x.strokeStyle = 'rgb(50 42 32 / .4)'; x.lineWidth = 3;
+  for (let row = 0; row < 4; row++) {
+    const y0 = 900 + row * 50, f = (row % 2) * 40;
+    x.beginPath(); x.ellipse(340, y0, 292, 58, 0, Math.PI, 0, true); x.stroke();
+    for (let a = 0; a < 7; a++) { const t = .15 + a * .12 + f * .002, px = 340 - Math.cos(t * Math.PI) * 292, py = y0 + Math.sin(t * Math.PI) * 58; x.beginPath(); x.moveTo(px, py); x.lineTo(px, py + 48); x.stroke(); }
+  }
+  column(112, 300, 850, 60);
+  column(568, 300, 850, 60);
+  // the stone beam with its word
+  x.fillStyle = stone(60, 620); x.fillRect(60, 214, 560, 104);
+  x.fillStyle = 'rgb(0 0 0 / .24)'; x.fillRect(60, 306, 560, 12);
+  x.fillStyle = 'rgb(255 255 255 / .35)'; x.fillRect(60, 214, 560, 5);
+  x.font = '700 76px Georgia,"Times New Roman",serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+  try { x.letterSpacing = '20px'; } catch { /* plain spacing is fine */ }
+  x.fillStyle = 'rgb(255 255 255 / .55)'; x.fillText('AQVA', 350, 265);
+  x.fillStyle = '#463c2e'; x.fillText('AQVA', 348, 263);
+  // the roof
+  const rg = x.createLinearGradient(0, 0, W, 0);
+  rg.addColorStop(0, '#7c4f39'); rg.addColorStop(.5, '#8f5c42'); rg.addColorStop(1, '#55352a');
+  x.fillStyle = rg; x.beginPath(); x.moveTo(26, 216); x.lineTo(654, 216); x.lineTo(372, 10); x.lineTo(308, 10); x.closePath(); x.fill();
+  x.strokeStyle = 'rgb(35 20 12 / .35)'; x.lineWidth = 3;
+  for (let i = 1; i < 7; i++) {
+    const t = i / 7, yy = 216 - 206 * t, a = 26 + 282 * t, b = 654 - 282 * t;
+    x.beginPath(); x.moveTo(a, yy); x.lineTo(b, yy); x.stroke();
+    for (let k = 0; k < 12; k++) { const sx = a + (b - a) * ((k + r() * .3) / 12); x.beginPath(); x.moveTo(sx, yy); x.lineTo(sx, yy + 28); x.stroke(); }
+  }
+  // weather on the stone, only where there is paint
+  x.globalCompositeOperation = 'source-atop';
+  for (let i = 0; i < 2600; i++) {
+    x.fillStyle = r() > .5 ? 'rgb(60 50 38 / .1)' : 'rgb(255 248 232 / .08)';
+    x.fillRect(r() * W, r() * H, 3 + r() * 16, 2 + r() * 7);
+  }
+  const shade = x.createLinearGradient(0, 0, W, 0);
+  shade.addColorStop(0, 'rgb(255 240 205 / .08)'); shade.addColorStop(1, 'rgb(28 34 54 / .22)');
+  x.fillStyle = shade; x.fillRect(0, 0, W, H);
+  x.globalCompositeOperation = 'source-over';
+  return c;
+}
+
+// ---------------------------------------------------------------- the view
+const cam = $('#cam'), cx = cam.getContext('2d', { alpha: false });
+let pano = null;
+const wellCanvas = paintWell();
+$('#well').appendChild(wellCanvas);
+
+function measure() {
+  V.w = device.clientWidth; V.h = device.clientHeight;
+  const side = V.w > V.h, turned = side !== V.side;
+  V.side = side;
+  V.f = Math.max(V.w, V.h) / (2 * Math.tan(31.5 * DEG));
+  V.pitch0 = Math.atan((V.h * .385 - V.h / 2) / V.f);
+  if (M.pitch === null || turned) M.pitch = V.pitch0;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  cam.width = Math.round(V.w * dpr); cam.height = Math.round(V.h * dpr);
+  V.dpr = dpr; V.dirty = true;
+  document.documentElement.style.setProperty('--bw', Math.round(V.side ? Math.min(310, V.w * .37) : Math.min(V.w - 24, 356)) + 'px');
+}
+/** A spot on the screen at the resting pose, as a place in the world. */
+function worldOf(fx, fy, z) {
+  const hy = V.h * .385;
+  return { x: (fx - .5) * V.w * z / V.f, h: EYE - (fy * V.h - hy) * z / V.f, z };
+}
+function project(o) {
+  const d = o.z + M.off, c = Math.cos(M.yaw), s = Math.sin(M.yaw);
+  const rx = o.x * c - d * s, rz = o.x * s + d * c;
+  if (rz < .4) return null;
+  const k = V.f / rz, hy = V.h / 2 + V.f * Math.tan(M.pitch);
+  return { x: V.w / 2 + k * rx, y: hy + k * EYE, k, s: k / PX_PER_M, rz };
+}
+const place = (el, p, scale) => {
+  if (!p) { el.style.visibility = 'hidden'; return; }
+  el.style.visibility = '';
+  el.style.transform = `translate(${p.x.toFixed(1)}px,${p.y.toFixed(1)}px) scale(${scale.toFixed(4)})`;
+  el.style.zIndex = String(2000 - Math.round(p.rz * 100));
+};
+
+function drawCam() {
+  if (!pano) return;
+  const zoom = 1.08 / (1 + M.off / 90), k = V.f / pano.P * zoom * V.dpr;
+  const hy = (V.h / 2 + V.f * Math.tan(M.pitch)) * V.dpr;
+  cx.drawImage(pano.c, V.w * V.dpr / 2 - (pano.W / 2 + M.yaw * pano.P) * k, hy - pano.HZ * k, pano.W * k, pano.H * k);
+}
+
+// ---------------------------------------------------------------- the signs
+const ICON = {
+  ok: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13l5.5 5.5L20 7" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  no: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round"/></svg>',
+  lock: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2" fill="currentColor"/><path d="M8 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2.6"/></svg>',
+};
+let signs = [];
+function buildSigns() {
+  const host = $('#signs');
+  host.innerHTML = '';
+  signs = [];
+  const add = (id, label, slate) => {
+    const el = document.createElement('div');
+    el.className = 'anch sign' + (slate ? ' slate' : '') + (M.long && !slate ? ' long' : '');
+    el.innerHTML = '<span class="blob" style="left:-70px;width:140px;height:30px;bottom:-15px"></span><div class="sin"><span class="pip">?</span><div class="plate">' +
+      (slate ? '<span class="chalk"></span><span class="say">Tap to write</span>' :
+        `<span class="m m-ok">${ICON.ok}</span><span class="m m-no">${ICON.no}</span><span class="m m-lock">${ICON.lock}</span><span class="t"></span>`) +
+      '</div><div class="post"></div></div>';
+    if (!slate) el.querySelector('.t').textContent = label;
+    host.appendChild(el);
+    signs.push({ id, el, plate: el.querySelector('.plate'), slate });
+  };
+  if (M.kind === 'typed') add('slate', '', true);
+  else (M.long ? QUIZ.choice.long : QUIZ.choice.options).forEach((o) => add(o.id, o.label, false));
+}
+function layoutSigns() {
+  const o = orient();
+  signs.forEach((s, i) => {
+    const t = s.slate ? SLATE[o] : FAN[o][i];
+    s.w = worldOf(t[0], t[1], t[2]);
+    s.el.style.setProperty('--post', Math.max(30, (s.w.h - .15) * PX_PER_M).toFixed(0) + 'px');
+    s.el.style.setProperty('--lean', (t[3] || -13) + 'deg');
+    s.el.style.setProperty('--d', (i * 90) + 'ms');
+  });
+}
+const allSigns = (fn) => signs.forEach(fn);
+const signOf = (id) => signs.find((s) => s.id === id);
+const raiseSigns = () => allSigns((s) => { s.el.classList.remove('sunk'); s.el.classList.add('up'); });
+const sinkSigns = (keep) => allSigns((s) => { if (s.id !== keep) { s.el.classList.remove('up', 'tried'); s.el.classList.add('sunk'); } });
+function clearSigns() {
+  allSigns((s) => { s.el.className = s.el.className.replace(/\b(up|sunk|tried|right|shown|press|grey|mine|miss|locked|fold|gone|writing|wiped|wig)\b/g, '').replace(/\s+/g, ' ').trim(); });
+}
+
+// ---------------------------------------------------------------- the figure
+const fig = $('#fig');
+let talkTimer = 0, restTimer = 0, popTimer = 0;
+function talk(ms = 1500, rest = 'idle') {
+  clearInterval(talkTimer); clearTimeout(restTimer);
+  let n = 0;
+  talkTimer = setInterval(() => { fig.dataset.frame = ['talk-a', 'talk-b', 'talk-a', 'idle'][n++ % 4]; }, 130);
+  restTimer = setTimeout(() => { clearInterval(talkTimer); fig.dataset.frame = rest; }, ms);
+}
+function react(kind) {
+  fig.classList.remove('hop', 'shake');
+  void fig.offsetWidth;
+  fig.classList.add(kind);
+  setTimeout(() => fig.classList.remove(kind), 1100);
+}
+function turnTo(worldX) {
+  const f = worldOf(FIG[orient()][0], 0, FIG[orient()][1]).x;
+  fig.querySelector('.figin').style.transform = worldX < f ? 'scaleX(-1)' : 'none';
+}
+
+// ---------------------------------------------------------------- what the bubble says
+const glyph = (g) => `<span class="g" style="color:var(--${g})">${ICON[g]}</span>`;
+function pop() {
+  const b = $('#bubble');
+  b.classList.remove('pop'); void b.offsetWidth; b.classList.add('pop');
+  clearTimeout(popTimer); popTimer = setTimeout(() => b.classList.remove('pop'), 340);
+}
+function bubbleText() {
+  const q = M.kind === 'typed' ? QUIZ.typed : QUIZ.choice;
+  const worth = `<b>${POINTS} points</b>` + (M.tries === 'one' ? ' - one try' : '');
+  const goOn = 'Tap anywhere to go on';
+  const closer = M.kind === 'typed' ? 'Tap the slate to answer' : 'Tap a sign to answer';
+  switch (M.step) {
+    case 'line1': return { line: LINE_1, foot: goOn };
+    case 'ask': return { line: q.q, foot: M.writing ? worth : worth + ' - ' + closer };
+    case 'judging': return { line: q.q, foot: worth };
+    case 'wrong': return { line: glyph('no') + q.no, again: q.q, foot: 'Try again - ' + closer.toLowerCase() };
+    case 'right': return { line: glyph('ok') + q.yes, foot: goOn };
+    case 'missed': return { line: glyph('no') + q.last, foot: 'No points this time - ' + goOn.toLowerCase() };
+    case 'skipped': return { line: 'Fine, it stays open here. Come back when you like.', foot: goOn };
+    case 'line2': return { line: LINE_2, foot: 'Tap anywhere to finish' };
+    case 'done': {
+      const r = M.result;
+      const what = M.kind === 'typed' ? `You wrote "${r.typed}".` : `You chose ${labelOf(r.picked)}.`;
+      return { line: q.q, again: what + (r.right ? ` ${POINTS} points earned.` : ' No points that time.'), foot: 'Answered - ' + goOn.toLowerCase() };
+    }
+    case 'locked': return { line: q.q, again: 'This one costs 2 coins. You have 1.', foot: goOn };
+    case 'end': return { line: M.open ? 'That was the well. Your question stays open here.' : 'That was the well. On to the tower.', foot: '' };
+    default: return { line: '', foot: '' };
+  }
+}
+const labelOf = (id) => ((M.long ? QUIZ.choice.long : QUIZ.choice.options).find((o) => o.id === id) || {}).label || '';
+
+function renderBubble() {
+  const b = $('#bubble'), r = ring(), t = bubbleText();
+  const quiz = ANSWERING.includes(M.step);
+  const tag = r === 'tag' || r === 'away';
+  b.classList.toggle('tag', tag);
+  if (tag) {
+    $('#who').textContent = 'Mara';
+    $('#foot').textContent = (quiz || M.step === 'judging') ? 'A question is waiting' : 'Your guide';
+  } else {
+    $('#who').textContent = 'Mara, your guide';
+    $('#line').innerHTML = (M.back && quiz ? 'Back again? Good. ' : '') + t.line;
+    const ag = $('#again');
+    ag.hidden = !t.again; ag.textContent = t.again || '';
+    $('#foot').hidden = !t.foot;
+    let foot = t.foot;
+    if (r === 'read' && quiz) foot = 'Come closer to answer';
+    $('#foot').innerHTML = foot;
+  }
+  if (tag) $('#foot').hidden = false;
+}
+
+// ---------------------------------------------------------------- the step, as the whole page shows it
+function render() {
+  device.dataset.step = M.step;
+  const r = ring();
+  const answering = ANSWERING.includes(M.step);
+  $('#notnow').hidden = !(answering && (r === 'near' || r === 'read') && !M.writing);
+  $('#dock').hidden = !(M.writing && answering && r === 'near');
+  $('#peek').hidden = !(r === 'away' && answering);
+  $('#endcard').hidden = M.step !== 'end';
+  if (r === 'away' && answering) {
+    $('#peekLine').textContent = 'The question stays open at the well.';
+    $('#peekWhere').textContent = Math.round(dist()) + ' m behind you';
+  }
+  if (M.step === 'end') {
+    $('#endText').textContent = M.open
+      ? 'One question left open at the well. You can come back to it.'
+      : M.result && M.result.right ? `${POINTS} points at the well.` + (M.score > POINTS ? ` In all: ${M.score}.` : '') : 'No points at the well this time.';
+    $('#endBack').textContent = M.open ? 'Go back to the question' : 'Come back to the well';
+  }
+  renderBubble();
+  allSigns((s) => {
+    const fold = (r === 'read' || r === 'tag') && QUIZ_STEPS.includes(M.step);
+    s.el.classList.toggle('fold', fold);
+    s.el.classList.toggle('gone', r === 'away' && QUIZ_STEPS.includes(M.step));
+  });
+  const st = signOf('slate');
+  if (st) {
+    st.el.querySelector('.chalk').textContent = M.typed;
+    st.el.classList.toggle('writing', M.writing);
+    st.el.querySelector('.say').textContent = M.step === 'right' ? 'Right' : M.step === 'missed' ? 'Not this time' : M.step === 'done' ? 'Answered' : M.typed ? (M.writing ? 'Writing' : 'Tap to go on writing') : 'Tap to write';
+    st.el.querySelector('.say').hidden = false;
+  }
+  $('#dStatus').textContent = `Step: ${M.step}. ${dist().toFixed(1)} m from the guide (${ { near: 'can answer', read: 'can read', tag: 'name tag', away: 'question held' }[r] }).`;
+  $('#dDist').value = dist();
+  $('#dDistOut').textContent = dist().toFixed(1) + ' m';
+  V.dirty = true;
+}
+
+function say(step, ms = 1500, rest = 'idle') { M.step = step; render(); pop(); talk(ms, rest); }
+
+function ask() {
+  M.tried = new Set(); M.writing = false;
+  layoutSigns();
+  if (M.result && !M.open) { showDone(); return; }
+  if (M.coins) { showLocked(); return; }
+  M.open = false;
+  raiseSigns();
+  say('ask', 2100);
+}
+function showDone() {
+  const r = M.result;
+  allSigns((s) => {
+    s.el.classList.add('up', 'grey');
+    if (s.slate) { M.typed = r.typed; }
+    else if (s.id === r.picked) { s.el.classList.add('mine'); s.el.classList.toggle('miss', !r.right); }
+  });
+  say('done', 900);
+}
+function showLocked() {
+  allSigns((s) => s.el.classList.add('up', 'grey', 'locked'));
+  say('locked', 900);
+}
+
+function answerChoice(s) {
+  if (M.tried.has(s.id)) { s.el.classList.remove('wig'); void s.el.offsetWidth; s.el.classList.add('wig'); return; }
+  s.el.classList.add('press');
+  M.step = 'judging';
+  M.picked = s.id;
+  turnTo(s.w.x);
+  render();
+  setTimeout(() => {
+    s.el.classList.remove('press');
+    if (s.id === QUIZ.choice.correct) gotRight(s, s.id); else gotWrong(s);
+  }, 260);
+}
+function submitTyped(value) {
+  const v = value.trim();
+  if (!v) return;
+  const s = signOf('slate');
+  M.writing = false;
+  $('#answer').blur();
+  M.step = 'judging';
+  render();
+  setTimeout(() => { if (typedRight(v)) gotRight(s, null, v); else gotWrong(s, v); }, 260);
+}
+const buzz = (p) => { if (navigator.vibrate && navigator.userActivation && navigator.userActivation.hasBeenActive) navigator.vibrate(p); };
+function gotRight(s, picked, typed) {
+  const first = M.tried.size === 0;
+  M.result = { right: true, picked, typed, first };
+  M.open = false;
+  M.score += POINTS;
+  s.el.classList.add('right');
+  s.el.classList.remove('tried');
+  sinkSigns(s.id);
+  worldBurst(s);
+  react('hop');
+  buzz(25);
+  flash(`<b>${M.score}</b> points`);
+  say('right', 1700);
+}
+function gotWrong(s, typed) {
+  M.tried.add(s.id);
+  react('shake');
+  buzz([30, 40, 30]);
+  if (M.tries === 'again') {
+    if (s.slate) { M.typed = ''; s.el.classList.remove('wiped'); void s.el.offsetWidth; s.el.classList.add('wiped'); }
+    else s.el.classList.add('tried');
+    say('wrong', 1500, 'beckon');
+    setTimeout(() => { if (M.step === 'wrong' && !M.writing) fig.dataset.frame = 'idle'; }, 3400);
+    return;
+  }
+  M.result = { right: false, picked: s.id, typed, first: true };
+  M.open = false;
+  if (s.slate) s.el.classList.add('tried');
+  else {
+    s.el.classList.add('tried');
+    const right = signOf(QUIZ.choice.correct);
+    right.el.classList.add('shown');
+    allSigns((o) => { if (o !== s && o !== right) { o.el.classList.remove('up'); o.el.classList.add('sunk'); } });
+    setTimeout(() => { if (M.step === 'missed') { s.el.classList.remove('up', 'tried'); s.el.classList.add('sunk'); } }, 1100);
+  }
+  say('missed', 1700);
+}
+function goOnFromQuiz() {
+  M.writing = false;
+  sinkSigns(null);
+  allSigns((s) => s.el.classList.remove('right', 'shown', 'grey', 'mine', 'miss', 'locked'));
+  allSigns((s) => { s.el.classList.remove('up'); s.el.classList.add('sunk'); });
+  say('line2', 2000, 'beckon');
+}
+function notNow() {
+  M.open = true; M.writing = false;
+  $('#answer').blur();
+  allSigns((s) => { s.el.classList.remove('up', 'tried'); s.el.classList.add('sunk'); });
+  say('skipped', 1400);
+}
+function letGo() {
+  M.open = true; M.writing = false;
+  allSigns((s) => { s.el.classList.remove('up', 'tried'); s.el.classList.add('sunk'); });
+  M.step = 'end';
+  render();
+}
+function finish() { M.step = 'end'; render(); pop(); talk(900, 'beckon'); }
+
+// ---------------------------------------------------------------- marks in the world, and the one passing pill
+function worldBurst(s) {
+  const fx = $('#fx'), p = project(s.w), head = project({ x: worldOf(FIG[orient()][0], 0, 1).x, z: FIG[orient()][1] });
+  if (!p) return;
+  const plateY = p.y - s.w.h * p.k;
+  const add = (cls, css) => { const e = document.createElement('i'); e.className = cls; Object.assign(e.style, css); fx.appendChild(e); e.addEventListener('animationend', () => e.remove()); return e; };
+  add('ringfx', { left: p.x + 'px', top: Math.min(p.y, V.h - 20) + 'px' });
+  const fl = add('float', { left: p.x + 'px', top: plateY - 62 + 'px', fontStyle: 'normal' });
+  fl.textContent = '+' + POINTS;
+  if (head) { fl.style.setProperty('--tx', (V.w / 2 - p.x) + 'px'); fl.style.setProperty('--ty', (16 - plateY + 62) + 'px'); }
+  for (let i = 0; i < 9; i++) {
+    const a = i / 9 * 6.28;
+    const sp = add('spark', { left: p.x + 'px', top: plateY + 'px' });
+    sp.style.setProperty('--sx', Math.cos(a) * 74 + 'px');
+    sp.style.setProperty('--sy', Math.sin(a) * 58 + 'px');
+  }
+}
+let pillTimer = 0;
+function flash(html, ms = 2400) {
+  const p = $('#pill');
+  p.innerHTML = html; p.classList.add('on');
+  clearTimeout(pillTimer); pillTimer = setTimeout(() => p.classList.remove('on'), ms);
+}
+
+// ---------------------------------------------------------------- tapping the world
+function plateRect(s) {
+  const d = device.getBoundingClientRect(), r = s.plate.getBoundingClientRect();
+  return { l: r.left - d.left - device.clientLeft, t: r.top - d.top - device.clientTop, r: r.right - d.left - device.clientLeft, b: r.bottom - d.top - device.clientTop };
+}
+function signAt(x, y) {
+  let best = null, bd = 30; // the thumb's width: a tap this close to a sign counts
+  allSigns((s) => {
+    const r = plateRect(s), dx = Math.max(r.l - x, 0, x - r.r), dy = Math.max(r.t - y, 0, y - r.b), d = Math.hypot(dx, dy);
+    if (d < bd) { bd = d; best = s; }
+  });
+  return best;
+}
+function onFigure(x, y) {
+  const p = project({ x: worldOf(FIG[orient()][0], 0, 1).x, z: FIG[orient()][1] });
+  if (!p) return false;
+  return Math.abs(x - p.x) < Math.max(36, .3 * p.k) && y > p.y - FIG_H * p.k && y < p.y;
+}
+function worldTap(x, y) {
+  const r = ring();
+  if (r === 'tag' || r === 'away') return;
+  switch (M.step) {
+    case 'line1': ask(); break;
+    case 'ask': case 'wrong': {
+      M.back = false;
+      if (r === 'read') { pop(); return; }
+      const s = signAt(x, y);
+      if (s) {
+        if (s.slate) { openDock(); return; }
+        answerChoice(s);
+        return;
+      }
+      if (onFigure(x, y)) { M.step = 'ask'; render(); pop(); talk(1800); return; }
+      if (M.kind === 'typed') { openDock(); return; }
+      allSigns((o) => { if (!M.tried.has(o.id)) { o.el.classList.remove('wig'); void o.el.offsetWidth; o.el.classList.add('wig'); } });
+      break;
+    }
+    case 'right': case 'missed': case 'skipped': case 'done': case 'locked': goOnFromQuiz(); break;
+    case 'line2': finish(); break;
+    default: break;
+  }
+}
+function openDock() {
+  M.writing = true;
+  const a = $('#answer');
+  a.value = M.typed; $('#check').disabled = !a.value.trim();
+  render();
+  a.focus();
+}
+
+let drag = null;
+device.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('button,input,form,#peek,#endcard,.note')) return;
+  drag = { x: e.clientX, y: e.clientY, yaw: M.yaw, pitch: M.pitch, moved: false };
+  device.setPointerCapture(e.pointerId);
+});
+device.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (!drag.moved && Math.hypot(dx, dy) < 10) return;
+  drag.moved = true;
+  M.yaw = clamp(drag.yaw - dx / V.f, -1.1, 1.1);
+  M.pitch = clamp(drag.pitch + dy / V.f, V.pitch0 - .2, V.pitch0 + .2);
+  V.dirty = true;
+});
+device.addEventListener('pointerup', (e) => {
+  if (!drag) return;
+  const moved = drag.moved;
+  drag = null;
+  if (moved) return;
+  const b = device.getBoundingClientRect();
+  worldTap(e.clientX - b.left - device.clientLeft, e.clientY - b.top - device.clientTop);
+});
+device.addEventListener('pointercancel', () => { drag = null; });
+
+// ---------------------------------------------------------------- the frame
+function frame() {
+  if (V.dirty) {
+    V.dirty = false;
+    drawCam();
+    const o = orient();
+    const well = project({ x: worldOf(WELL[o][0], 0, WELL[o][1]).x, z: WELL[o][1] });
+    place($('#well'), well, well ? well.s : 1);
+    const fp = project({ x: worldOf(FIG[o][0], 0, FIG[o][1]).x, z: FIG[o][1] });
+    place(fig, fp, fp ? fp.s : 1);
+    let leftN = 0, rightN = 0;
+    const floorS = dist() > NEAR_M ? 0 : .6;
+    allSigns((s) => {
+      if (!s.w) return;
+      const p = project(s.w);
+      place(s.el, p, p ? Math.max(p.s, floorS) : 1);
+      if (p) s.el.style.setProperty('--ps', (.72 / Math.max(p.s, floorS, .05)).toFixed(2));
+      if (!p || !ANSWERING.includes(M.step) || ring() !== 'near') return;
+      if (p.x < -6) leftN++; else if (p.x > V.w + 6) rightN++;
+    });
+    placeBubble(fp);
+    // what stands out of view: only ever a mark at the edge
+    const figOff = !fp || fp.x < -30 || fp.x > V.w + 30;
+    const figSide = fp && fp.x < 0 ? 'L' : 'R';
+    const showL = leftN > 0 || (figOff && figSide === 'L' && M.step !== 'end');
+    const showR = rightN > 0 || (figOff && figSide === 'R' && M.step !== 'end');
+    $('#edgeL').classList.toggle('on', showL); $('#edgeR').classList.toggle('on', showR);
+    $('#edgeLn').textContent = leftN || ''; $('#edgeRn').textContent = rightN || '';
+  }
+  requestAnimationFrame(frame);
+}
+function placeBubble(fp) {
+  const b = $('#bubble'), tail = $('#tailP');
+  const hide = () => { b.style.visibility = 'hidden'; tail.setAttribute('d', ''); };
+  if (!fp) { hide(); return; }
+  const headX = fp.x, headY = fp.y - FIG_H * fp.k;
+  if (headX < -60 || headX > V.w + 60) { hide(); return; }
+  b.style.visibility = '';
+  const bw = b.offsetWidth, bh = b.offsetHeight, m = 12;
+  const tag = b.classList.contains('tag');
+  let bx, by, pts;
+  if (V.side && !tag) {
+    // sideways: he has height, not width, above him; the bubble hangs at his side
+    const right = headX + 44 + bw < V.w - m;
+    bx = right ? headX + 44 : headX - 44 - bw;
+    by = clamp(headY - 6, 56, V.h - bh - 62);
+    const ey = clamp(headY + 18, by + 16, by + bh - 16), ex = right ? bx + 1 : bx + bw - 1;
+    const tx = right ? headX + 12 + 26 * fp.s * 5 : headX - 12 - 26 * fp.s * 5;
+    pts = `M${ex} ${ey - 12}L${ex} ${ey + 12}L${tx} ${headY + 30}Z`;
+  } else {
+    bx = clamp(headX - bw / 2, m, V.w - bw - m);
+    by = clamp(headY - bh - (b.classList.contains('tag') ? 26 : 110), 60, V.h - bh - 70);
+    const tipY = Math.max(headY - 2, by + bh + 4);
+    const ex = clamp(headX, bx + 24, bx + bw - 24), ey = by + bh - 1;
+    const mid = (ey + tipY) / 2, w = clamp((tipY - ey) * .24, 11, 19);
+    pts = `M${ex - w} ${ey}Q${ex - w * .35} ${mid} ${headX} ${tipY}Q${ex + w * .75} ${mid} ${ex + w} ${ey}Z`;
+  }
+  b.style.transform = `translate(${bx.toFixed(1)}px,${by.toFixed(1)}px)`;
+  tail.setAttribute('d', pts);
+}
+
+// ---------------------------------------------------------------- walking
+let walkAnim = 0;
+function setDistance(d) {
+  const before = ring();
+  M.off = Math.max(0, d - FIG[orient()][1]);
+  const now = ring();
+  if (now === 'away') M.wasAway = true;
+  if (M.wasAway && (now === 'near' || now === 'read')) { M.back = true; M.wasAway = false; }
+  if (now !== before || now === 'away') {
+    if (now !== 'near' && M.writing) { M.writing = false; $('#answer').blur(); }
+    render();
+    if ((now === 'near' || now === 'read') && (before === 'tag' || before === 'away')) pop();
+  } else {
+    $('#dStatus').textContent = `Step: ${M.step}. ${dist().toFixed(1)} m from the guide.`;
+    $('#dDistOut').textContent = dist().toFixed(1) + ' m';
+  }
+  V.dirty = true;
+}
+function walkTo(d) {
+  cancelAnimationFrame(walkAnim);
+  const step = () => {
+    const c = dist(), left = d - c;
+    if (Math.abs(left) < .05) { setDistance(d); $('#dDist').value = d; return; }
+    setDistance(c + Math.sign(left) * Math.min(Math.abs(left), .16));
+    $('#dDist').value = dist();
+    walkAnim = requestAnimationFrame(step);
+  };
+  step();
+}
+
+// ---------------------------------------------------------------- start, and the demo's jumps
+function reset(keep) {
+  clearInterval(talkTimer); clearTimeout(restTimer);
+  M.step = 'line1'; M.tried = new Set(); M.typed = ''; M.writing = false; M.off = 0; M.wasAway = false; M.back = false; M.coins = false; M.yaw = 0;
+  M.pitch = V.pitch0;
+  if (!keep) { M.score = 0; M.result = null; M.open = false; }
+  fig.dataset.frame = 'idle';
+  fig.querySelector('.figin').style.transform = 'none';
+  $('#fx').innerHTML = '';
+  $('#pill').classList.remove('on');
+  buildSigns(); layoutSigns(); clearSigns();
+  render();
+}
+function start(keep) { reset(keep); pop(); talk(1800); }
+const correctSign = () => signOf(QUIZ.choice.correct);
+const wrongSign = () => signOf('b');
+const quick = () => { reset(); layoutSigns(); raiseSigns(); M.step = 'ask'; render(); };
+const JUMPS = {
+  'The first line': () => start(),
+  'The question': () => { quick(); talk(2100); },
+  'Wrong answer': () => { quick(); if (M.kind === 'typed') submitTyped('aqaa'); else answerChoice(wrongSign()); },
+  'Right answer': () => { quick(); if (M.kind === 'typed') submitTyped('Aqua '); else answerChoice(correctSign()); },
+  'Writing': () => { M.kind = 'typed'; syncButtons(); quick(); openDock(); M.typed = 'AQ'; $('#answer').value = 'AQ'; $('#check').disabled = false; render(); },
+  'The next line': () => { quick(); clearSigns(); M.result = { right: true, picked: 'c', typed: 'aqva' }; M.score = POINTS; say('line2', 2000, 'beckon'); },
+  'Already done': () => { reset(); M.result = { right: true, picked: 'c', typed: 'aqva' }; M.score = POINTS; layoutSigns(); showDone(); },
+  'Costs too much': () => { reset(); M.coins = true; layoutSigns(); showLocked(); },
+  'Come closer (7 m)': () => { quick(); setDistance(7); render(); },
+  'Name tag (14 m)': () => { quick(); setDistance(14); render(); },
+  'Walked off (32 m)': () => { quick(); setDistance(32); render(); },
+  'End': () => { quick(); clearSigns(); M.result = { right: true, picked: 'c' }; M.score = POINTS; finish(); },
+};
+function syncButtons() {
+  $('#dChoice').setAttribute('aria-pressed', String(M.kind === 'choice'));
+  $('#dTyped').setAttribute('aria-pressed', String(M.kind === 'typed'));
+  $('#dLong').setAttribute('aria-pressed', String(M.long));
+  $('#dAgain').setAttribute('aria-pressed', String(M.tries === 'again'));
+  $('#dOne').setAttribute('aria-pressed', String(M.tries === 'one'));
+}
+for (const name of Object.keys(JUMPS)) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.textContent = name;
+  b.addEventListener('click', () => { JUMPS[name](); closeDemoOnPhone(); });
+  $('#dStates').appendChild(b);
+}
+function closeDemoOnPhone() {
+  if (matchMedia('(min-width:960px) and (min-height:720px)').matches) return;
+  $('#demo').hidden = true; $('#demoBtn').setAttribute('aria-expanded', 'false');
+}
+const choose = (fn) => () => { fn(); syncButtons(); start(); };
+$('#dChoice').addEventListener('click', choose(() => { M.kind = 'choice'; }));
+$('#dTyped').addEventListener('click', choose(() => { M.kind = 'typed'; }));
+$('#dLong').addEventListener('click', choose(() => { M.long = !M.long; M.kind = 'choice'; }));
+$('#dAgain').addEventListener('click', choose(() => { M.tries = 'again'; }));
+$('#dOne').addEventListener('click', choose(() => { M.tries = 'one'; }));
+$('#dDist').addEventListener('input', (e) => { cancelAnimationFrame(walkAnim); setDistance(Number(e.target.value)); });
+$('#dLeave').addEventListener('click', () => walkTo(32));
+$('#dReturn').addEventListener('click', () => walkTo(3.6));
+$('#dSide').addEventListener('click', (e) => {
+  const on = device.classList.toggle('sideways');
+  e.currentTarget.setAttribute('aria-pressed', String(on));
+  measure(); layoutSigns(); render();
+});
+$('#dMotion').addEventListener('click', async (e) => {
+  try {
+    const D = window.DeviceOrientationEvent;
+    if (D && D.requestPermission && (await D.requestPermission()) !== 'granted') return;
+  } catch { return; }
+  let a0 = null;
+  window.addEventListener('deviceorientation', (ev) => {
+    if (ev.alpha == null) return;
+    if (a0 === null) a0 = ev.alpha;
+    let d = ev.alpha - a0;
+    while (d > 180) d -= 360;
+    while (d < -180) d += 360;
+    M.yaw = clamp(-d * DEG, -1.1, 1.1);
+    V.dirty = true;
+  });
+  e.currentTarget.textContent = 'Turning with the phone';
+});
+
+// the HUD's few controls
+$('#notnow').addEventListener('click', notNow);
+$('#peekLeave').addEventListener('click', letGo);
+$('#exitBtn').addEventListener('click', () => flash('Leaving AR keeps your place in the story'));
+$('#endAgain').addEventListener('click', () => start());
+$('#endBack').addEventListener('click', () => start(true));
+$('#noteBtn').addEventListener('click', () => { $('#note').hidden = false; });
+$('#noteClose').addEventListener('click', () => { $('#note').hidden = true; });
+$('#demoBtn').addEventListener('click', (e) => {
+  const d = $('#demo');
+  d.hidden = !d.hidden;
+  e.currentTarget.setAttribute('aria-expanded', String(!d.hidden));
+});
+$('#dock').addEventListener('submit', (e) => { e.preventDefault(); submitTyped($('#answer').value); });
+$('#answer').addEventListener('input', (e) => {
+  M.typed = e.target.value;
+  $('#check').disabled = !M.typed.trim();
+  signOf('slate').el.querySelector('.chalk').textContent = M.typed;
+});
+$('#dockX').addEventListener('click', () => { M.writing = false; $('#answer').blur(); render(); });
+addEventListener('keydown', (e) => {
+  if (e.target.matches('input') || !$('#note').hidden) return;
+  if (e.key === ' ' || e.key === 'Enter') { if (e.target.matches('button')) return; e.preventDefault(); worldTap(-999, -999); }
+  const i = Number(e.key) - 1;
+  if (signs[i] && ANSWERING.includes(M.step) && ring() === 'near' && !signs[i].slate) answerChoice(signs[i]);
+});
+// the keyboard takes the bottom of the screen: the field stays above it
+const params = new URLSearchParams(location.search);
+function keyboardGap() {
+  const forced = params.get('kbd');
+  const vv = window.visualViewport;
+  const gap = forced ? Number(forced) : vv ? Math.max(0, innerHeight - vv.height - vv.offsetTop) : 0;
+  device.style.setProperty('--kb', gap + 'px');
+  device.classList.toggle('kbopen', gap > 0);
+}
+if (window.visualViewport) visualViewport.addEventListener('resize', keyboardGap);
+keyboardGap();
+
+addEventListener('resize', () => { measure(); layoutSigns(); render(); });
+new ResizeObserver(() => { measure(); layoutSigns(); V.dirty = true; }).observe(device);
+
+measure();
+pano = paintPano();
+if (params.get('kind') === 'typed') M.kind = 'typed';
+if (params.get('tries') === 'one') M.tries = 'one';
+if (params.get('long')) M.long = true;
+syncButtons();
+start();
+const jump = params.get('at');
+if (jump && JUMPS[jump]) JUMPS[jump]();
+requestAnimationFrame(frame);
+document.fonts && document.fonts.ready.then(() => { V.dirty = true; });
+</script>
+</body>
+</html>
