@@ -195,21 +195,36 @@ export function allShots() {
 }
 
 /**
+ * The building colours the page can draw: `buildCity`'s `palette` option.
+ * "seeded" (the default, city objects plan M7) or "class" (the colours
+ * before it), so the seeded palette can be compared with what it replaced.
+ */
+export const PALETTES = ["seeded", "class"];
+
+/**
  * The page's state from its query string: `building` and `view`, each
  * falling back to the first one when missing or unknown, so a stale link
- * still opens a picture.
+ * still opens a picture; `palette` falls back to "seeded".
  */
 export function parseParams(search) {
   const params = new URLSearchParams(search);
+  const palette = PALETTES.includes(params.get("palette"))
+    ? params.get("palette")
+    : PALETTES[0];
   const building =
     BUILDINGS.find((b) => b.id === params.get("building")) ?? BUILDINGS[0];
   const views = Object.keys(building.views);
   const asked = params.get("view");
   const view = views.includes(asked) ? asked : views[0];
-  return { building, view };
+  return { building, view, palette };
 }
 
-/** The query string of a state; the inverse of `parseParams`. */
-export function searchFor(buildingId, view) {
-  return `?${new URLSearchParams({ building: buildingId, view })}`;
+/**
+ * The query string of a state; the inverse of `parseParams`. The default
+ * palette stays out of the link, so links from before the toggle still match.
+ */
+export function searchFor(buildingId, view, palette = PALETTES[0]) {
+  const params = new URLSearchParams({ building: buildingId, view });
+  if (palette !== PALETTES[0]) params.set("palette", palette);
+  return `?${params}`;
 }

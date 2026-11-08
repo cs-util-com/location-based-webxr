@@ -7,12 +7,16 @@
   `GpsPlusSlamJs_Docs/docs/2026-11-07-0920-osm-building-geometry-bugs-findings.md`
   (private docs repo).
 - **Public API:** `startBuildingGeometry()` runs once on import and publishes
-  `window.__buildingGeometry = { ready, error, building, view, triangles }`
+  `window.__buildingGeometry = { ready, error, building, view, palette,
+triangles }`
   at once; `ready` turns true after the first frame, `error` carries the stack
   of a failure, which also shows on the page. `triangles` counts the building
   meshes' triangles within the window.
 - **Query string:** `building` and `view` pick the scene and camera (see
-  `building-geometry-model.js`); `capture` hides everything but the live
+  `building-geometry-model.js`); `palette=class` draws the class colours
+  instead of the seeded palette (the "Farben: Palette / Klassen" toggle, the
+  only user of `buildCity`'s `palette: "class"`, city objects plan M7 review
+  MINOR 3); `capture` hides everything but the live
   canvas, which is how the "today" pictures were taken.
 - **Invariants:**
   - The scene's origin is the first vertex of the building's `target` outline,

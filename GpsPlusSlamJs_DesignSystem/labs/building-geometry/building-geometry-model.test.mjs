@@ -5,6 +5,7 @@ import { test } from "node:test";
 
 import {
   BUILDINGS,
+  PALETTES,
   allShots,
   fixtureUrl,
   parseParams,
@@ -48,4 +49,25 @@ test("every building has a fixture URL, and an unknown one throws", () => {
     assert.match(fixtureUrl(id).pathname, /\/osm-lib\/testdata\/.+\.json$/);
   }
   assert.throws(() => fixtureUrl("nowhere"), TypeError);
+});
+
+// Why this test matters (M7 review MINOR 3): the colour toggle is the only
+// place `palette: "class"` is used, the before-and-after of the seeded
+// palette; a link that dropped it, or an unknown value that reached
+// `buildCity` (which throws on it), would make the comparison silently
+// impossible.
+test("the colour toggle round-trips, defaults to the seeded palette", () => {
+  assert.equal(parseParams("").palette, "seeded");
+  assert.equal(parseParams("?palette=loud").palette, "seeded");
+  assert.equal(parseParams("?palette=class").palette, "class");
+  for (const palette of PALETTES) {
+    const state = parseParams(searchFor("cologne", "plate", palette));
+    assert.equal(state.palette, palette);
+    assert.equal(state.view, "plate");
+  }
+  // The default stays out of the link, so the old links are the new ones.
+  assert.equal(
+    searchFor("cologne", "plate", "seeded"),
+    searchFor("cologne", "plate"),
+  );
 });

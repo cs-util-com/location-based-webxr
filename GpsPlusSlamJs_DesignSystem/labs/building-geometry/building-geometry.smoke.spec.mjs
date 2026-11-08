@@ -60,3 +60,33 @@ for (const { id, view } of allShots()) {
     expect(problems).toEqual([]);
   });
 }
+
+// Why this test matters (M7 review MINOR 3): the "Klassen" link is the only
+// way to see the class colours the seeded palette replaced; it must reach
+// `buildCity` and draw, not throw or quietly draw the palette again.
+test("building geometry draws the class colours behind the Klassen link", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const problems = await watch(page);
+  await page.goto("/labs/building-geometry/index.html?building=heidelberg");
+  await page.getByRole("link", { name: "Klassen" }).click();
+  await page.waitForFunction(
+    () => window.__buildingGeometry?.ready || window.__buildingGeometry?.error,
+    null,
+    { timeout: 100_000 },
+  );
+  const state = await page.evaluate(() => {
+    const { error, palette, triangles } = window.__buildingGeometry;
+    return { error, palette, triangles };
+  });
+  expect(state).toEqual(
+    expect.objectContaining({ error: null, palette: "class" }),
+  );
+  expect(state.triangles).toBeGreaterThan(100);
+  await expect(page.getByRole("link", { name: "Klassen" })).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+  expect(problems).toEqual([]);
+});

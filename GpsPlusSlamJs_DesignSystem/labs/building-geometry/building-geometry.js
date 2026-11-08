@@ -16,6 +16,7 @@ import { buildingObjects } from "/osm-lib/three/index.js";
 
 import {
   BUILDINGS,
+  PALETTES,
   fixtureUrl,
   parseParams,
   searchFor,
@@ -86,7 +87,7 @@ function buildChrome(state, capture) {
     BUILDINGS.map((b) => ({
       value: b.id,
       text: b.label,
-      href: searchFor(b.id, Object.keys(b.views)[0]),
+      href: searchFor(b.id, Object.keys(b.views)[0], state.palette),
     })),
     state.building.id,
   );
@@ -95,9 +96,21 @@ function buildChrome(state, capture) {
     Object.keys(state.building.views).map((view) => ({
       value: view,
       text: view,
-      href: searchFor(state.building.id, view),
+      href: searchFor(state.building.id, view, state.palette),
     })),
     state.view,
+  );
+  // The owner's words for the toggle (M7 review MINOR 3): the seeded palette
+  // against the class colours it replaced, same building, same camera.
+  const colourNames = { seeded: "Palette", class: "Klassen" };
+  const colours = linkRow(
+    "Farben",
+    PALETTES.map((palette) => ({
+      value: palette,
+      text: colourNames[palette],
+      href: searchFor(state.building.id, state.view, palette),
+    })),
+    state.palette,
   );
   const bugs = el(
     "p",
@@ -136,7 +149,17 @@ function buildChrome(state, capture) {
   const stats = el("p", "bg-note bg-stats", "building the scene");
   const attribution = el("p", "bg-note bg-attribution");
   attribution.innerHTML = `${ATTRIBUTION_HTML}.`;
-  page.append(title, buildings, views, bugs, source, pair, stats, attribution);
+  page.append(
+    title,
+    buildings,
+    views,
+    colours,
+    bugs,
+    source,
+    pair,
+    stats,
+    attribution,
+  );
   document.body.append(page);
   return { canvas, stats };
 }
@@ -172,6 +195,7 @@ async function run(api) {
   const capture = new URLSearchParams(location.search).has("capture");
   api.building = state.building.id;
   api.view = state.view;
+  api.palette = state.palette;
   const chrome = buildChrome(state, capture);
 
   const features = await loadFeatures(state.building.id);
@@ -180,6 +204,7 @@ async function run(api) {
   const frame = enuFrameAt(originOf(target));
   const city = buildCity(features, cityGround(frame, undefined), {
     withinM: WITHIN_M,
+    palette: state.palette,
   });
   const objects = buildingObjects(city.buildings);
   api.triangles = objects.reduce(
@@ -199,6 +224,7 @@ export async function startBuildingGeometry() {
     error: null,
     building: null,
     view: null,
+    palette: null,
     triangles: 0,
   };
   window.__buildingGeometry = api;
