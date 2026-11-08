@@ -129,7 +129,7 @@ export type WorldBlock = Extract<TourBlock, { readonly kind: WorldKind }>;
 
 /** A station's free blocks (`tourFreeBlocks`) the creator pages draw and
  *  edit: those of a kind its row draws in the world. Any other (today a
- *  free video, sound or character) is not among them: those pages have no
+ *  free video or character) is not among them: those pages have no
  *  drawing for one yet, and a write keeps it (`withTourContent`). */
 export function worldBlocks(
   station: Pick<TourStation, "children">,

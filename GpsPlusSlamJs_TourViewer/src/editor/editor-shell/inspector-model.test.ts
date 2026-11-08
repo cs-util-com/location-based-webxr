@@ -347,6 +347,38 @@ describe("buildInspector", () => {
       expect(model.fields.map((f) => f.name)).toEqual(["title", "transcript"]);
     });
 
+    // Why: a free sound stands in the world (a narration circle or a
+    // zone), so it gets the item's inspector - its place, its turn, its
+    // handles - with the numbers of its view to type beside its texts.
+    it("shows a free sound as an item, with its view's numbers", () => {
+      const sound = {
+        id: "voice",
+        kind: "audio",
+        view: "spot",
+        audio: "a",
+        radiusM: 6,
+        title: "The guide",
+        pose: POSE,
+      };
+      const station = {
+        ...STATIONS[0]!,
+        children: [sound],
+      } as unknown as TourStation;
+      const model = buildInspector({
+        selected: "voice",
+        stations: [station],
+        assets: [],
+        codes: CODES,
+      });
+      expect(model).toMatchObject({ kind: "item", itemKind: "audio" });
+      if (model?.kind !== "item") return;
+      expect(model.fields.map((f) => [f.name, f.value])).toEqual([
+        ["title", "The guide"],
+        ["transcript", ""],
+        ["radiusM", "6"],
+      ]);
+    });
+
     it("hints at what can be done, and answers nothing for a gone story", () => {
       expect(inspectorHint(inStory("story:legend"))).toContain("The legend");
       expect(inStory("story:gone")).toBeNull();

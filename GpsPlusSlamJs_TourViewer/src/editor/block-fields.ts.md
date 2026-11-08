@@ -8,12 +8,15 @@ A block's text fields as the desktop editor's inspector edits them
 
 ## Public API
 
-- `BlockField` - `{ name, label, value, max, unit, required, prose }`:
-  the block's own field name (the inspector's `data-field`), its label,
-  its text now ("" when absent), the format's cap, the unit the cap counts
-  in (`codePoints`, or `utf16` for a long text's body), whether the block
-  needs it, and whether it is prose (a text area keeping its lines) or one
-  line.
+- `BlockField` - `{ name, label, value, max, unit, required, prose,
+number? }`: the block's own field name (the inspector's `data-field`),
+  its label, its text now ("" when absent), the format's cap, the unit the
+  cap counts in (`codePoints`, or `utf16` for a long text's body), whether
+  the block needs it, and whether it is prose (a text area keeping its
+  lines) or one line. A number field (`number: { unit }`, from the row's
+  `FieldSpec` `number`) carries its value as a decimal string, its upper
+  bound in `max` and its need in `required`; the inspector draws it as a
+  decimal box with the unit beside it, no counter.
 - `blockFields(block)` - the fields of any block (`TourObject` or
   `TourBlock`) besides a short text's caption, which the inspector's head
   types:
@@ -22,6 +25,10 @@ A block's text fields as the desktop editor's inspector edits them
     prose);
   - picture: Title (40), Caption (1200, prose), Alt text (300, prose);
   - video and audio: Title (40), Transcript (32 000, needed, prose);
+    audio also, each only in the view that reads it (`FieldSpec`
+    `views`): in `spot` Radius (1-50 m, needed); in `zone` Reach (1-200
+    m, needed), Full volume within (1-200 m) and Volume (0-1, needed). A
+    story's `card` sound shows none;
   - model: Title (80);
   - character: Name (80, needed), Caption (2000, needed, prose). Its
     image and voice are assets, not text: not fields here.
@@ -44,7 +51,18 @@ A block's text fields as the desktop editor's inspector edits them
   - `refused` with a sentence ("A title takes at most 40 characters.",
     "A body takes at most 32000 UTF-16 units." - the unit's word is the
     rule's) for a text over its cap, counted in the field's unit, or ("A body
-    cannot be empty.") for a field the block needs emptied.
+    cannot be empty.") for a field the block needs emptied;
+  - for a number field: `edited` with the typed decimal (a comma as its
+    point, `typedNumber`) as a number, or without the field for a blank
+    optional one; `unchanged` for the same number or a field outside the
+    block's view; `refused` for anything else or a number out of the
+    format's bounds ("Radius takes a number from 1 to 50 m."), a needed one
+    emptied ("Radius cannot be empty.") and a zone's calm not less than
+    its reach ("Full volume within must be less than the reach.").
+- `typedNumber(value)` - a typed decimal (sign, digits, one point or
+  comma) as a number; anything else, blank included, is null. The
+  inspector's position, heading and size fields read it too
+  (`editor-shell/inspector-edits.ts`).
 - The fields' counters are `pin-text.ts`'s `textCounterLine` and
   `wireTextCounter` (one copy for every text counter of the creator
   pages); this module keeps only the fields and their edit rule.

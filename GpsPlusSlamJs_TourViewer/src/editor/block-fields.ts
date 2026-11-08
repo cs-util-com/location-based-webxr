@@ -21,7 +21,7 @@ import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import { KIND_EDIT, type FieldSpec } from "../kinds/edit-kinds.js";
 
-/** One text field of a block, as the inspector draws it. */
+/** One field of a block, as the inspector draws it. */
 export interface BlockField {
   /** The block's own field (`data-field` in the inspector). */
   readonly name: string;
@@ -37,6 +37,9 @@ export interface BlockField {
   readonly required: boolean;
   /** Prose: a text area that keeps its lines, else one line. */
   readonly prose: boolean;
+  /** A number to type, with its unit (`FieldSpec` `number`); none: a
+   *  text. Its `max` and `required` above are the number's. */
+  readonly number?: { readonly unit: string };
 }
 
 /** A block the inspector reads: a free one in the world or one a story
@@ -61,11 +64,50 @@ function textOf(block: AnyBlock, name: string): string {
   return typeof value === "string" ? value : "";
 }
 
+/** A plain decimal: a sign, digits and one decimal point or comma. */
+const DECIMAL = /^[+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+)$/;
+
+/** A typed number: a plain decimal, a comma as its decimal point (one
+ *  comma always is: "1,000" is 1); blank, or anything else (hex, an
+ *  exponent, a second comma or point), is none. */
+export function typedNumber(value: string): number | null {
+  const text = value.trim();
+  if (!DECIMAL.test(text)) return null;
+  const n = Number(text.replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+}
+
+/** `block`'s own fields in its view: a field its row names for some
+ *  views only is left out of the others. */
+function ownFields(block: AnyBlock): readonly FieldSpec[] {
+  const own: readonly FieldSpec[] = KIND_EDIT[block.kind].fields;
+  return own.filter(
+    (spec) => spec.views === undefined || spec.views.includes(block.view),
+  );
+}
+
+function numberOf(block: AnyBlock, name: string): number | undefined {
+  const value = (block as unknown as Record<string, unknown>)[name];
+  return typeof value === "number" ? value : undefined;
+}
+
 /** The fields the inspector types for `block`, besides a short text's
  *  caption (the head's). */
 export function blockFields(block: AnyBlock): BlockField[] {
-  const own: readonly FieldSpec[] = KIND_EDIT[block.kind].fields;
-  return own.map((spec) => {
+  return ownFields(block).map((spec) => {
+    if (spec.number !== undefined) {
+      const n = numberOf(block, spec.name);
+      return {
+        name: spec.name,
+        label: spec.label,
+        prose: false,
+        value: n === undefined ? "" : String(n),
+        max: spec.number.max,
+        unit: "codePoints",
+        required: spec.number.required,
+        number: { unit: spec.number.unit },
+      };
+    }
     const rule = ruleOf(block.kind, spec.name);
     return {
       ...spec,
@@ -117,10 +159,13 @@ export function blockFieldEdit<B extends AnyBlock>(
   | { readonly kind: "edited"; readonly after: B }
   | { readonly kind: "unchanged" }
   | { readonly kind: "refused"; readonly reason: string } {
-  const own: readonly FieldSpec[] = KIND_EDIT[block.kind].fields;
+  const own = ownFields(block);
   const specs = block.kind === "shortText" ? [CAPTION, ...own] : own;
   const spec = specs.find((f) => f.name === name);
   if (spec === undefined) return { kind: "unchanged" };
+  if (spec.number !== undefined) {
+    return numberFieldEdit(block, spec.label, name, spec.number, value);
+  }
   const text = value.trim();
   if (text === textOf(block, name)) return { kind: "unchanged" };
   const rule = ruleOf(block.kind, name);
@@ -139,6 +184,48 @@ export function blockFieldEdit<B extends AnyBlock>(
   const rest = { ...(block as unknown as Record<string, unknown>) };
   if (text === "") delete rest[name];
   else rest[name] = text;
+  return { kind: "edited", after: rest as unknown as B };
+}
+
+/** What typing `value` into a number field writes (`blockFieldEdit`):
+ *  the number within `bounds`, or none for a blank optional one; a zone's
+ *  calm (`minM`) stays less than its reach, as the reader needs. */
+function numberFieldEdit<B extends AnyBlock>(
+  block: B,
+  label: string,
+  name: string,
+  bounds: NonNullable<FieldSpec["number"]>,
+  value: string,
+):
+  | { readonly kind: "edited"; readonly after: B }
+  | { readonly kind: "unchanged" }
+  | { readonly kind: "refused"; readonly reason: string } {
+  const rest = { ...(block as unknown as Record<string, unknown>) };
+  if (value.trim() === "") {
+    if (numberOf(block, name) === undefined) return { kind: "unchanged" };
+    if (bounds.required) {
+      return { kind: "refused", reason: `${label} cannot be empty.` };
+    }
+    delete rest[name];
+    return { kind: "edited", after: rest as unknown as B };
+  }
+  const n = typedNumber(value);
+  if (n === null || n < bounds.min || n > bounds.max) {
+    const unit = bounds.unit === "" ? "" : ` ${bounds.unit}`;
+    return {
+      kind: "refused",
+      reason: `${label} takes a number from ${String(bounds.min)} to ${String(bounds.max)}${unit}.`,
+    };
+  }
+  if (n === numberOf(block, name)) return { kind: "unchanged" };
+  rest[name] = n;
+  const { minM, maxM } = rest;
+  if (typeof minM === "number" && typeof maxM === "number" && minM >= maxM) {
+    return {
+      kind: "refused",
+      reason: "Full volume within must be less than the reach.",
+    };
+  }
   return { kind: "edited", after: rest as unknown as B };
 }
 

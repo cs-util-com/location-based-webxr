@@ -8,6 +8,7 @@
  * leaves the block without it (they are all optional), and a field the
  * kind does not have writes nothing.
  */
+import fc from "fast-check";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { describe, expect, it } from "vitest";
 
@@ -343,5 +344,114 @@ describe("the counter", () => {
     wireTextCounter(field, out, 2, "utf16");
     expect(out.textContent).toBe("3 / 2");
     expect(marks.at(-1)).toEqual(["data-over", true]);
+  });
+});
+
+// Why: a sound's reach is typed in the inspector before it gets a 3D
+// handle. Each number field shows only in the view that reads it (a
+// narration circle's radius in `spot`, a zone's reach, calm and volume in
+// `zone`), is held to the format's bounds (`tour-kinds.ts`), and may not
+// be emptied where the reader needs it; a zone's calm stays inside its
+// reach. A text card shows none of them.
+describe("number fields", () => {
+  const SPOT = {
+    ...AUDIO,
+    view: "spot",
+    radiusM: 6,
+  } as unknown as TourObject;
+  const ZONE = {
+    ...AUDIO,
+    view: "zone",
+    maxM: 20,
+    volume: 0.5,
+  } as unknown as TourObject;
+  const numbers = (b: TourObject) =>
+    blockFields(b)
+      .filter((f) => f.number !== undefined)
+      .map((f) => [f.name, f.value, f.required, f.number?.unit]);
+
+  it("shows each number in the view that reads it, with its unit", () => {
+    expect(numbers(AUDIO)).toEqual([]);
+    expect(numbers(SPOT)).toEqual([["radiusM", "6", true, "m"]]);
+    expect(numbers(ZONE)).toEqual([
+      ["maxM", "20", true, "m"],
+      ["minM", "", false, "m"],
+      ["volume", "0.5", true, ""],
+    ]);
+  });
+
+  it("writes a typed decimal as a number, a comma as its point", () => {
+    expect(blockFieldEdit(SPOT, "radiusM", " 7,5 ")).toEqual({
+      kind: "edited",
+      after: { ...SPOT, radiusM: 7.5 },
+    });
+    expect(blockFieldEdit(SPOT, "radiusM", "6.0")).toEqual({
+      kind: "unchanged",
+    });
+    expect(blockFieldEdit(ZONE, "minM", "4")).toMatchObject({
+      after: { minM: 4 },
+    });
+  });
+
+  it("refuses what the reader would refuse, in words", () => {
+    expect(blockFieldEdit(SPOT, "radiusM", "60")).toEqual({
+      kind: "refused",
+      reason: "Radius takes a number from 1 to 50 m.",
+    });
+    expect(blockFieldEdit(SPOT, "radiusM", "abc")).toEqual({
+      kind: "refused",
+      reason: "Radius takes a number from 1 to 50 m.",
+    });
+    expect(blockFieldEdit(SPOT, "radiusM", " ")).toEqual({
+      kind: "refused",
+      reason: "Radius cannot be empty.",
+    });
+    expect(blockFieldEdit(ZONE, "volume", "1.5")).toEqual({
+      kind: "refused",
+      reason: "Volume takes a number from 0 to 1.",
+    });
+    expect(blockFieldEdit(ZONE, "minM", "20")).toEqual({
+      kind: "refused",
+      reason: "Full volume within must be less than the reach.",
+    });
+    expect(blockFieldEdit(ZONE, "maxM", "3")).toMatchObject({
+      kind: "edited",
+    });
+  });
+
+  it("removes an optional number emptied, and writes none outside its view", () => {
+    const calm = { ...ZONE, minM: 4 } as unknown as TourObject;
+    const cleared = blockFieldEdit(calm, "minM", "");
+    expect(cleared.kind).toBe("edited");
+    if (cleared.kind === "edited") expect("minM" in cleared.after).toBe(false);
+    expect(blockFieldEdit(AUDIO, "radiusM", "6")).toEqual({
+      kind: "unchanged",
+    });
+    expect(blockFieldEdit(SPOT, "maxM", "6")).toEqual({ kind: "unchanged" });
+  });
+
+  // Why a property: whatever is typed, a written number is one the format
+  // reads - inside its bounds, a zone's calm inside its reach.
+  it("never writes a number the format would refuse", () => {
+    const typedText = fc.oneof(
+      fc.string(),
+      fc.double({ min: -10, max: 300, noNaN: true }).map(String),
+      fc.integer({ min: -5, max: 250 }).map(String),
+    );
+    fc.assert(
+      fc.property(
+        fc.constantFrom("maxM", "minM", "volume"),
+        typedText,
+        (name, text) => {
+          const r = blockFieldEdit(ZONE, name, text);
+          if (r.kind !== "edited") return;
+          const z = r.after as unknown as Record<string, number | undefined>;
+          const { maxM = 0, minM, volume = -1 } = z;
+          expect(maxM >= 1 && maxM <= 200).toBe(true);
+          expect(volume >= 0 && volume <= 1).toBe(true);
+          if (minM !== undefined) expect(minM >= 1 && minM < maxM).toBe(true);
+        },
+      ),
+    );
   });
 });

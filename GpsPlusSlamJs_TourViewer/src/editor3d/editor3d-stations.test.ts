@@ -1510,13 +1510,13 @@ describe("createStationsLayer", () => {
       const ray = new THREE.Raycaster();
       ray.setFromCamera(new THREE.Vector2(0, 0), camera);
       expect(layer.pick(ray)).toBe("song");
-      // Located where it stands (the view flies to it), yet no gesture's
-      // target: the gizmo moves the world blocks only (the rows that say
+      // Located where it stands (the view flies to it), and a gesture's
+      // target: the gizmo moves the world blocks (the rows that say
       // `inWorld`, `editor3d-editing.ts` `targetOf`), and a free sound is
-      // none, so it is selected by a click and not dragged.
+      // one, so its circle or zone is moved and turned like a pin.
       const located = layer.itemPointOf("song");
       expect(located?.distanceTo(at)).toBeLessThan(1e-6);
-      expect(worldBlocks(a).map((b) => b.id)).toEqual(["p"]);
+      expect(worldBlocks(a).map((b) => b.id)).toEqual(["p", "song"]);
       // A drag's preview moves it and turns it as the pose says, tilt
       // included; cleared, it is back.
       const dragged = new THREE.Quaternion().setFromEuler(

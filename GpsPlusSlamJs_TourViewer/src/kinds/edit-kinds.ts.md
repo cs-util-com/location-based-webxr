@@ -45,9 +45,13 @@ there.
     its play kind's `world` builds, `play-kinds.ts` `worldPartOf`).
     Without one the handles would move a
     block nothing shows.
-  - `fields` - its text fields in the inspector's order (`FieldSpec`:
-    `name`, `label`, `prose`), besides a short text's caption, which the
-    head types (`editor/block-fields.ts`).
+  - `fields` - its fields in the inspector's order (`FieldSpec`:
+    `name`, `label`, `prose`, `number?` - a number's bounds, unit and
+    need, the bounds the format's (`tour-kinds.ts` `TOUR_AUDIO_*`) -
+    and `views?` - the views that read it, none: every view), besides a
+    short text's caption, which the head types (`editor/block-fields.ts`).
+    Audio lists a narration circle's radius (`spot`) and a zone's reach,
+    calm and volume (`zone`).
   - `add` - its line in the tree's add menu (`KindAdd`: `label`, `hint`,
     `words`, `addable`); a row without one is not offered at all, and one
     with `addable: false` is listed, says why, and adds nothing.
