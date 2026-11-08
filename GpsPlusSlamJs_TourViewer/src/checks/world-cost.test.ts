@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   BoxGeometry,
+  BufferGeometry,
   Group,
   InstancedMesh,
+  Line,
+  LineSegments,
   Mesh,
   MeshBasicMaterial,
   PlaneGeometry,
+  Points,
+  Sprite,
 } from "three";
 
 import { poseKey, worldCost } from "./world-cost.js";
@@ -38,6 +43,42 @@ describe("what a world part costs to draw", () => {
       calls: 1,
       triangles: 12,
     });
+  });
+
+  // Why: three draws a mesh with a list of materials once per geometry
+  // group, so a box in six materials is six calls, not one; the same box
+  // in one material is one call whatever groups its geometry carries.
+  it("counts a call per material group of a mesh drawn in several materials", () => {
+    const box = new BoxGeometry(); // six groups, 12 triangles
+    const six = Array.from({ length: 6 }, () => new MeshBasicMaterial());
+    expect(worldCost(new Mesh(box, six))).toEqual({ calls: 6, triangles: 12 });
+    expect(worldCost(new Mesh(box, material))).toEqual({
+      calls: 1,
+      triangles: 12,
+    });
+    // A group whose material index names no material is not drawn, nor
+    // are its triangles.
+    const two = new BoxGeometry();
+    two.clearGroups();
+    two.addGroup(0, 18, 0);
+    two.addGroup(18, 18, 5);
+    expect(worldCost(new Mesh(two, [material]))).toEqual({
+      calls: 1,
+      triangles: 6,
+    });
+  });
+
+  // Why: points, lines and sprites are draw calls too (motes, outlines,
+  // labels); a part made of them must not read as free. They add no
+  // triangles but a sprite, which is a quad.
+  it("counts points, lines and sprites as calls", () => {
+    const root = new Group();
+    const dots = new BufferGeometry().setFromPoints([]);
+    root.add(new Points(dots));
+    root.add(new Line(new BufferGeometry()));
+    root.add(new LineSegments(new BufferGeometry()));
+    root.add(new Sprite());
+    expect(worldCost(root)).toEqual({ calls: 4, triangles: 2 });
   });
 
   it("costs nothing for an empty part", () => {

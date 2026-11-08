@@ -6,7 +6,7 @@ The item lab's readout for a kind's world part (`item-lab.ts`): draw calls and t
 
 ## Public API
 
-- `worldCost(root)` - `{ calls, triangles }`: one call per visible mesh under `root`, its triangles from the index (or the vertices of an unindexed geometry) divided by three, an `InstancedMesh`'s times its `count`.
+- `worldCost(root)` - `{ calls, triangles }` of everything visible under `root`: a mesh in one material is one call, a mesh in a list of materials one call per geometry group whose material is in the list (as three draws it); its triangles from the index (or the vertices of an unindexed geometry) divided by three, per drawn group for a list, an `InstancedMesh`'s times its `count`. A `Sprite` is one call and two triangles, `Points` and every `Line` (segments and loops too) one call and none.
 - `poseKey(root)` - one string of every object's local position, quaternion and scale, `root` included.
 
 ## Invariants and assumptions
@@ -25,4 +25,4 @@ const still = poseKey(part.object) === lastKey;
 
 ## Tests
 
-`world-cost.test.ts`.
+`world-cost.test.ts`: calls and triangles of shown meshes and instances, hidden subtrees, an unindexed geometry, material groups (six materials, one material, a group naming no material), points, lines and a sprite, an empty part, and the pose key.
