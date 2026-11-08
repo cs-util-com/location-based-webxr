@@ -1166,8 +1166,13 @@ export function createViewerPlacement(deps: {
     // while the manifest names `content/…` (PR #435 review).
     const loadContent =
       deps.loadContent ?? ((path: string) => current.loadContentEntry(path));
-    // What a kind's world part reads its files through: the visitor's.
-    const env = worldEnv("play", manifest.assets, loadContent);
+    // What a kind's world part reads its files through: the visitor's,
+    // a placed model read through the same cache as the station's story
+    // (station blocks plan B2b), a cutaway clipping by a plane.
+    const env = worldEnv("play", manifest.assets, loadContent, {
+      parseModel: (blob) => seams.loadGlbModel(blob),
+      enableClipping: () => seams.enableClipping(),
+    });
     const rendererDeps = (parent: Object3D, alive: () => boolean) => ({
       assets: manifest.assets,
       scene: parent,
@@ -1181,12 +1186,6 @@ export function createViewerPlacement(deps: {
         mountReadingSign(block, deps.openReading),
       // Any other block's part in the world, by its kind's row.
       worldPart: (block: TourBlock) => worldPartOf(block, env),
-      // A placed model at its size (station blocks plan B2b), read
-      // through the same cache as the station's story.
-      loadModel: async (entryName: string) =>
-        seams.loadGlbModel(await loadContent(entryName)),
-      // A cutaway model clips by a plane.
-      modelViews: { enableClipping: () => seams.enableClipping() },
       loadPhotoTexture: async (entryName: string) =>
         // Measured before it is decoded (tour kit K4 review R2).
         decodeFrameTexture(await loadContent(entryName), PHOTO_DECODE_DIVISOR, {

@@ -19,16 +19,25 @@ the reading sign (`reading-sign.ts`) are world parts too.
   object, still and silent).
 - `WorldEnv` - what a part is built with: `mode`, `loadAsset(id)` (a tour
   file by asset id; rejects with `no file "<id>" in the tour` for an id the
-  tour lacks) and `canvasTexture(canvas)`.
+  tour lacks), `canvasTexture(canvas)`, `loadModel(id)` (a tour file read
+  as a three.js model by the page's parser; rejects with `this page reads
+no model` where the page gives none) and `enableClipping()` (the
+  renderer's clipping switch a model's cutaway asks for; a no-op where the
+  page gives none).
+- `WorldMedia` - what a page may add to its env: `parseModel(blob)` (a glb
+  as a model, `glb-model.ts`) and `enableClipping()`.
 - `WorldPart` - `object` (what stands; placed by the renderer, never by the
   part), `tapTarget?` (what a tap is cast against; none: no tap),
-  `tap?()`,
+  `tap?()`, `ready?` (a promise that settles once a part that loads
+  something stands; the renderer adds the station once every part is ready,
+  and a rejection names the block in `skipped` and disposes the part),
   `dispose()` (frees every geometry, material and texture it made).
 - `canvasTexture(canvas, { anisotropy? } = {})` - a canvas as a texture (painted words, a figure, a shadow blob):
   sRGB, and the anisotropy only when given (a page seen at a slant; three
   clamps it to the renderer's largest).
-- `worldEnv(mode, assets, load)` - a page's `WorldEnv`: an asset id is read
-  through `load` by the path the tour's `assets` name for it.
+- `worldEnv(mode, assets, load, media = {})` - a page's `WorldEnv`: an
+  asset id is read through `load` by the path the tour's `assets` name for
+  it; a model through `media.parseModel` after that.
 - `mountWorldPart(part)`, `unmountWorldPart(part)` (false when it was not
   mounted, so a second `dispose` is a no-op), `mountedWorldParts()` (oldest
   first) - the one mounted set.
@@ -96,6 +105,7 @@ tapShownWorldPart(scene, pickObjectInView, tap);
 (hidden, outside any station, no tap, no scene, a miss), the nearer of two
 parts on the ray through the real `pickObject`, an empty `Object3D` as a
 part, the axes of both rotation conventions over headings, and `worldEnv` in both modes with an unknown
-id. The door's delegation is in `play-kinds.test.ts`, the placement (the
+id, a model read through the page's parser with the clipping switch passed
+on, and the refusal without a parser. The door's delegation is in `play-kinds.test.ts`, the placement (the
 pose's rotation kept, tilt included, and a part that unmounts itself in its
 own dispose still freed) in `content-placement.test.ts`.

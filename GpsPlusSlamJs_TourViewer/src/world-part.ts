@@ -36,6 +36,19 @@ export interface WorldEnv {
   loadAsset(id: string): Promise<Blob>;
   /** `canvas` as a texture (`canvasTexture`). */
   canvasTexture(canvas: HTMLCanvasElement): CanvasTexture;
+  /** A 3D model file by its asset id, as a three scene; rejects for an id
+   *  the tour lacks, or on a page that reads no model. */
+  loadModel(id: string): Promise<Object3D>;
+  /** Switches the renderer's clipping on, for a part cut by a plane; a
+   *  page with no such switch does nothing. */
+  enableClipping(): void;
+}
+
+/** What a page can do for a part beyond reading files: read a model file
+ *  as a three scene, switch its renderer's clipping on. */
+export interface WorldMedia {
+  readonly parseModel?: (blob: Blob) => Promise<Object3D>;
+  readonly enableClipping?: () => void;
 }
 
 /** A kind's object in the world. */
@@ -47,6 +60,11 @@ export interface WorldPart {
   readonly tapTarget?: Object3D;
   /** The visitor tapped `tapTarget`. */
   tap?(): void;
+  /** Settles once the part shows what it loads (a model's file), and
+   *  rejects when it cannot show it; absent: it shows all at once. The
+   *  renderer waits for it before the station appears, and names a part
+   *  whose `ready` rejected in its `skipped`. */
+  readonly ready?: Promise<void>;
   /** Frees every geometry, material and texture the part made. */
   dispose(): void;
 }
@@ -68,23 +86,34 @@ export function canvasTexture(
   return texture;
 }
 
-/** A part's environment on a page: `mode`, and its files read through
- *  `load` by the path the tour's `assets` name for an id. */
+/** A part's environment on a page: `mode`, its files read through
+ *  `load` by the path the tour's `assets` name for an id, and what
+ *  `media` the page gives (none: a model is refused, clipping ignored). */
 export function worldEnv(
   mode: WorldMode,
   assets: readonly TourAsset[],
   load: (path: string) => Promise<Blob>,
+  media: WorldMedia = {},
 ): WorldEnv {
   const paths = new Map(assets.map((a) => [a.id, a.path]));
+  const loadAsset = (id: string): Promise<Blob> => {
+    const path = paths.get(id);
+    return path === undefined
+      ? Promise.reject(new Error(`no file "${id}" in the tour`))
+      : load(path);
+  };
+  const { parseModel, enableClipping } = media;
   return {
     mode,
-    loadAsset(id) {
-      const path = paths.get(id);
-      return path === undefined
-        ? Promise.reject(new Error(`no file "${id}" in the tour`))
-        : load(path);
-    },
+    loadAsset,
     canvasTexture: (canvas) => canvasTexture(canvas),
+    loadModel: (id) =>
+      parseModel === undefined
+        ? Promise.reject(new Error("this page reads no model"))
+        : loadAsset(id).then(parseModel),
+    enableClipping: () => {
+      enableClipping?.();
+    },
   };
 }
 

@@ -5,7 +5,7 @@
 The tour in the 3D editor's world: every station at its point
 with a billboard (its number and name); the stations near the camera's
 centre and the selected one with their items drawn as the phone draws
-them, their placed models, a ring for their found radius and a pole up to
+them, their placed models through the world door in their world view, a ring for their found radius and a pole up to
 the billboard; every code with a position as a square of its printed
 size, facing as printed. It writes nothing: while a gesture runs it
 draws the gesture's preview (`setPreview`), and it says what is under a
@@ -56,10 +56,11 @@ standing`). A distance, size or focal length that is not a positive
 - `createStationsLayer(deps)` -> the layer:
   - `setTour(manifest, levels)` - when the document changes; a station
     whose place in the list and record are unchanged is not rebuilt, and
-    neither is one where only a model's `annotations`, `sections` or
-    `view` changed (the layer does not draw them; the model parts do),
-    so a note's edit never loads the model's file again (its record is
-    still updated);
+    neither is one where only a model's `annotations` or `sections`
+    changed (the layer does not draw them anew; the model parts do), so a
+    note's edit never loads the model's file again (its record is still
+    updated); a change of its `view` draws it anew, as the visitor sees
+    it;
   - `update(view)` - each frame: near-K (`nearStations`), the morph;
   - `stats()` - `{ stations, codes, codeScales, shown, renders }`
     (`codeScales`: each code's drawn size over its printed one);
@@ -101,7 +102,7 @@ standing`). A distance, size or focal length that is not a positive
     not scaled.
   - `dispose()` - everything out of the scene and freed. A free that
     throws (the renderer rethrows a world part's, `content-placement.ts`)
-    abandons nothing: its station's models, renderer (which unmounts its
+    abandons nothing: its station's renderer (which unmounts its
     parts), ring, pole and billboard are all freed and its content is
     cleared, every later station is freed too, and the first
     throw then reaches the caller. `setTour` and `update` free the same
@@ -110,8 +111,9 @@ standing`). A distance, size or focal length that is not a positive
   pole, items) and its billboard once made (the billboard hangs in the
   layer's group, not under the root); null for an id the tour does not
   hold. The globe view stages a station's first upload through these.
-- `modelObject(id)` - an item's drawn model (the glb under its tour
-  pose and scale), or null while its station does not draw it.
+- `modelObject(id)` - an item's drawn model (the glb in its world part,
+  at its tour scale under the part's pose), or null while its station does
+  not draw it; `models(id)` - the models a station draws now.
 
 ## Invariants & assumptions
 
@@ -208,11 +210,15 @@ printed size, focalPxOf(view))` times its printed size: `CODE_SCREEN_PX`
   block's pose as it is, tilt included: its meshes are no photo planes
   either, and a preview moves it and turns it by the dragged pose as it
   is (a stand only by its turn about up). Clearing a preview puts back any
-  free block drawn, not only those the creator pages edit in the world. `renderTourStation` skips placed models (and draws each
-  picture from the tour's assets, passed to it), so the layer adds the
-  free blocks in their `placed` view at their pose, scaled to their size
-  by `modelScale`; a model whose file cannot be read, or one without a
-  size, is left out.
+  free block drawn, not only those the creator pages edit in the world. `renderTourStation` draws each picture from the
+  tour's assets, passed to it, and asks the door for every other item: a
+  placed model is the model row's part (`kinds/model/world.ts`) built in
+  `edit` (an autoplaying clip held), its file parsed by `loadGlbModel`
+  and scaled to its size by `modelScale`; a preview of another size
+  scales the model in the part from its `tourScale`. A model whose file
+  cannot be read, or one without a size, is left out. The page must give
+  `worldPart` (`editor3d-drawings.ts` does): without it no model is
+  drawn.
 - **Names the globe's interface pass reads** (`globe-interface-pass.ts`):
   the ring `found-radius` and the billboard's pole `pole`; renaming
   either lets the clouds' shadow darken it.
@@ -259,8 +265,8 @@ renderer.setAnimationLoop(() => {
 `editor3d-stations.test.ts` (a hand-made WGS84 ellipsoid, the licence's
 store): each station at its drawn height where it stands; only the near
 and selected stations rendered, and what leaves freed; a model kept
-drawn through an edit of its notes, sections or view, drawn anew when it
-moves; a billboard per
+drawn through an edit of its notes or sections, drawn anew when its view
+changes or it moves; a billboard per
 station rising with the morph; photos flat looking down and upright
 tilted; a model at its size and pose; a model that cannot be read left
 out; every code as a square of its printed size, laid flat face up in front

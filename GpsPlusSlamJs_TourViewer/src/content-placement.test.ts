@@ -44,8 +44,26 @@ import { mountedModelViews } from "./model-views";
 import {
   mountedWorldParts,
   unmountWorldPart,
+  worldEnv,
   type WorldPart,
 } from "./world-part";
+import { worldPartOf } from "./play-kinds";
+
+/** The visitor's world door for models: each file is read by its path,
+ *  and `parse` turns the path into the model (or fails). */
+function modelDoor(
+  assets: readonly TourAsset[],
+  parse: (path: string) => Promise<Object3D>,
+  enableClipping: () => void = () => undefined,
+) {
+  const env = worldEnv(
+    "play",
+    assets,
+    (path) => Promise.resolve(new Blob([path])),
+    { parseModel: async (blob) => parse(await blob.text()), enableClipping },
+  );
+  return (block: TourBlock) => worldPartOf(block, env);
+}
 import { contentSegment } from "./tour-flow";
 import { stationContent } from "./test-support/station-content.js";
 
@@ -524,13 +542,11 @@ describe("renderTourStation", () => {
     }));
   }
 
-  // Why (station blocks plan B2b step 1): a placed model was left out
-  // for the visitor (B2a's rule of no visible change). Drawn now, at the
-  // size the tour names (`sizeM`, its largest side) by the one shared
-  // scale rule (`modelScale`, the 3D editor's), at its local pose in the
-  // station's frame; a model whose file fails is named in `skipped`, and
-  // a renderer given no model loader (the editor draws its own) leaves it
-  // out quietly as before.
+  // Why: a placed model stands through the world door like every other
+  // kind, at the size the tour names (`sizeM`, its largest side) by the
+  // one shared scale rule (`modelScale`), its part at its local pose in
+  // the station's frame; a model whose file fails is named in `skipped`,
+  // and a renderer given no door leaves it out quietly.
   it("draws a placed model at its sizeM by the shared scale rule, at its local pose", async () => {
     const scene = new Group();
     const stationGeo = geoAt({ ...ZERO, alt: 400 }, 10, 0, 5, yaw(0));
@@ -567,12 +583,12 @@ describe("renderTourStation", () => {
       zero: ZERO,
       makeLabel: labelStub,
       loadPhotoTexture: () => Promise.resolve(new Texture()),
-      loadModel: (entry) => {
+      worldPart: modelDoor(assets, (entry) => {
         loaded.push(entry);
         return entry === "content/horse.glb"
           ? Promise.resolve(new Mesh(geometry))
           : Promise.reject(new Error("bad glb"));
-      },
+      }),
     });
     expect(loaded).toEqual(["content/horse.glb", "content/broken.glb"]);
     expect(rendered.count).toBe(1);
@@ -582,14 +598,15 @@ describe("renderTourStation", () => {
       if (o.userData["objectId"] === "m1") found = o;
     });
     expect(found, "the model is drawn under the station").toBeDefined();
-    // Its largest side (2 m) made 3 m: the factor 1.5, the editor's rule.
-    expect(found!.scale.x).toBeCloseTo(1.5, 12);
+    // Its largest side (2 m) made 3 m: the factor 1.5, the editor's rule,
+    // on the model in the part; the part is at the pose.
+    expect(found!.children[0]?.scale.x).toBeCloseTo(1.5, 12);
     expect(found!.position.toArray()).toEqual([1, 0, 2]);
     expect(found!.quaternion.toArray()).toEqual(pose.rotation);
     rendered.dispose();
     expect(disposed, "its geometry is freed with the station").toBe(1);
 
-    // No loader: left out quietly, as before B2b.
+    // No door: left out quietly.
     const quiet = await renderTourStation(station, {
       assets,
       scene,
@@ -1181,21 +1198,27 @@ describe("renderTourStation", () => {
       freed += 1;
     };
     let clipping = 0;
+    const assets: TourAsset[] = [
+      { id: "horse", path: "content/horse.glb", kind: "model" },
+    ];
     const rendered = await renderTourStation(station, {
-      assets: [{ id: "horse", path: "content/horse.glb", kind: "model" }],
+      assets,
       scene,
       zero: ZERO,
       makeLabel: labelStub,
       loadPhotoTexture: () => Promise.resolve(new Texture()),
-      loadModel: () =>
-        Promise.resolve(new Mesh(new BoxGeometry(2, 0.5, 1), own)),
-      modelViews: { enableClipping: () => (clipping += 1) },
+      worldPart: modelDoor(
+        assets,
+        () => Promise.resolve(new Mesh(new BoxGeometry(2, 0.5, 1), own)),
+        () => (clipping += 1),
+      ),
     });
     expect(rendered.count).toBe(views.length);
     const drawn = new Map<string, Object3D>();
     rendered.root.traverse((o) => {
       const id = o.userData["objectId"];
-      if (typeof id === "string") drawn.set(id, o);
+      // The model is the one child of its part.
+      if (typeof id === "string") drawn.set(id, o.children[0]!);
     });
     for (const view of views) {
       const model = drawn.get(view)!;

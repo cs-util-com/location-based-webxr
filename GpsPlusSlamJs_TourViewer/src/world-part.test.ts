@@ -293,4 +293,34 @@ describe("worldEnv", () => {
     }
     expect(asked).toEqual(["content/song.mp3", "content/song.mp3"]);
   });
+
+  // Why: a model part reads its file through the page, which parses the
+  // file (a glb needs the page's loader) and switches the renderer's
+  // clipping on for a cutaway. A page that reads no model refuses by
+  // name, so a part fails into `skipped` instead of hanging.
+  it("reads a model through the page's parser and passes on the clipping switch, or refuses without one", async () => {
+    const assets = [
+      { id: "horse", path: "content/horse.glb", kind: "model" as const },
+    ];
+    const blob = new Blob(["glb"]);
+    const model = new Object3D();
+    const parsed: Blob[] = [];
+    let clipping = 0;
+    const env = worldEnv("play", assets, () => Promise.resolve(blob), {
+      parseModel: (b) => {
+        parsed.push(b);
+        return Promise.resolve(model);
+      },
+      enableClipping: () => (clipping += 1),
+    });
+    await expect(env.loadModel("horse")).resolves.toBe(model);
+    expect(parsed).toEqual([blob]);
+    await expect(env.loadModel("gone")).rejects.toThrow(/"gone"/);
+    env.enableClipping();
+    expect(clipping).toBe(1);
+
+    const bare = worldEnv("edit", assets, () => Promise.resolve(blob));
+    await expect(bare.loadModel("horse")).rejects.toThrow(/reads no model/);
+    expect(() => bare.enableClipping()).not.toThrow();
+  });
 });

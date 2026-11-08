@@ -22,7 +22,8 @@ reading sign: a long text shown as a sign was drawn in the flat view only.
     decoded by `decodeFrameTexture`, measured against
     `TOUR_MAX_IMAGE_PIXELS` first, as the visitor's page does;
   - `loadContent(entry)` - forwarded to `loadContent`;
-  - `loadGlbModel` - `glb-model.ts`;
+  - `loadGlbModel` - `glb-model.ts`, the parser a placed model's part
+    reads its file with (`worldEnv` `parseModel`);
   - `worldPart` - `worldPartOf` (`play-kinds.ts`), the visitor's world
     door: any other item's part by its kind's row, which the layer asks in
     the editor's mode (`worldEnv("edit", ...)`). There is no second
