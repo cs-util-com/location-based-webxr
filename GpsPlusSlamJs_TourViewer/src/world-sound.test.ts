@@ -132,6 +132,24 @@ describe("a voice in the world", () => {
   });
 });
 
+describe("a voice's clock", () => {
+  it("tells where it is and how long it is, and seeks; the silent one says 0", async () => {
+    // Why: the narration card shows the time and scrubs through the voice
+    // by these three alone.
+    const { sound, made } = setup();
+    const voice = sound.sound(LOAD, "voice");
+    voice.play();
+    await flush();
+    made[0]!.currentTime = 12;
+    expect(voice.timeMs()).toBe(12_000);
+    expect(voice.durationMs()).toBe(60_000);
+    voice.seek(30_000);
+    expect(made[0]?.currentTime).toBe(30);
+    const quiet = sound.sound(LOAD, "background");
+    expect([quiet.timeMs(), quiet.durationMs()]).toEqual([0, 0]);
+  });
+});
+
 describe("a background sound in the world", () => {
   it("loops at the level asked, lowered under a voice, silent when sound is off", async () => {
     // Why: ambient plays by itself at its distance's loudness, glides

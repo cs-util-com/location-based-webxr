@@ -24,6 +24,9 @@ sound, on one of two channels.
     true;
   - `carryOn()` - back: plays again only if still wanted;
   - `wanted()`, `playing()`;
+  - `timeMs()`, `durationMs()` (0 while not known), `seek(ms)` - a voice's
+    clock, read and moved by the narration card; a background says 0 and
+    ignores the seek;
   - `level(gain, seconds)` - a background's loudness (0 to 1) at page time
     `seconds`; a voice ignores it;
   - `dispose()` - stops it and frees its element and its object URL.

@@ -2845,6 +2845,51 @@
         display: none;
       }
 
+      /* A narration circle's player card (narration-card.ts): a plain
+         panel at the foot of the screen while the visitor stands inside the
+         circle. Its look is deliberately minimal until the narration
+         prototype's look is chosen. */
+      #narration-card-root {
+        position: fixed;
+        bottom: calc(16px + env(safe-area-inset-bottom));
+        left: 50%;
+        z-index: 30;
+        width: min(360px, calc(100vw - 32px));
+        transform: translateX(-50%);
+      }
+      #narration-card-root:empty {
+        display: none;
+      }
+      .narration-card {
+        padding: 12px 14px;
+        border-radius: 12px;
+        background: #fff;
+        color: #1c1917;
+        box-shadow: 0 4px 16px rgb(0 0 0 / 25%);
+        font-variant-numeric: lining-nums;
+      }
+      .narration-card-head,
+      .narration-card-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .narration-card-head {
+        justify-content: space-between;
+        font-size: 0.8rem;
+      }
+      .narration-card-title {
+        margin: 4px 0 8px;
+        font-size: 1rem;
+      }
+      .narration-card-scrub {
+        flex: 1;
+        min-width: 0;
+      }
+      .narration-card-line {
+        margin: 8px 0 0;
+        font-size: 0.9rem;
+      }
       /* The toast (the prototype's place, the framework's toast in the design
          system's toast look, restated here: design.css's .toast class is
          not used, plan §1.2). Below the radar's top at the left; its right
@@ -6119,6 +6164,10 @@
                 id="walk-toast-root"
                 data-testid="walk-toast-root"
                 aria-hidden="true"
+              ></div>
+              <div
+                id="narration-card-root"
+                data-testid="narration-card-root"
               ></div>
               <section
                 id="pin-sheet"

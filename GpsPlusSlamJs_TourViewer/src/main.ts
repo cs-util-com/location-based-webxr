@@ -52,7 +52,7 @@ import {
 import { loadVisitorPrefs, storeVisitorChoice } from "./visitor-prefs.js";
 import { readingSheetContent } from "./reading-sign.js";
 import "./model-visitor.css";
-import { tapShownWorldPart, tickWorldParts } from "./world-part.js";
+import { screenIn, tapShownWorldPart, tickWorldParts } from "./world-part.js";
 import { createWorldSound } from "./world-sound.js";
 import {
   bindSoundToggle,
@@ -930,6 +930,8 @@ const worldSound = createWorldSound({
 });
 const viewer = createViewerPlacement({
   worldSound,
+  // Where a narration circle opens its player card.
+  worldScreen: screenIn(element("narration-card-root")),
   ctx,
   mode,
   arStore,

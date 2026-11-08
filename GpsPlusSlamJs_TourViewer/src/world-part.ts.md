@@ -28,7 +28,13 @@ the reading sign (`reading-sign.ts`) are world parts too.
   file by asset id; rejects with `no file "<id>" in the tour` for an id the
   tour lacks), `canvasTexture(canvas)` and `sound(id, channel)` (a
   `world-sound.ts` `SoundHandle` for an audio asset on the `"voice"` or
-  `"background"` channel; in the editor always the silent handle).
+  `"background"` channel; in the editor always the silent handle), and
+  `screen?` (the page's `WorldScreen`, in `play` only).
+- `WorldScreen` - `show(build)`: `build(host)` fills a fresh panel and
+  returns its clean-up; `show` returns the close. `screenIn(host)` is the
+  page's (`main.ts`, `#narration-card-root`): one panel at a time, a newer
+  one closing the older, a stale close doing nothing. First user: the
+  narration circle's player card.
 - `WorldPart` - `object` (what stands; placed by the renderer, never by the
   part), `tapTarget?` (what a tap is cast against; none: no tap),
   `update?({ seconds, viewer })` (driven by `tickWorldParts`), `tap?()`,
@@ -36,10 +42,11 @@ the reading sign (`reading-sign.ts`) are world parts too.
 - `canvasTexture(canvas, { anisotropy? } = {})` - a canvas as a texture (painted words, a figure, a shadow blob):
   sRGB, and the anisotropy only when given (a page seen at a slant; three
   clamps it to the renderer's largest).
-- `worldEnv(mode, assets, load, sound = SILENT_WORLD_SOUND)` - a page's
+- `worldEnv(mode, assets, load, sound = SILENT_WORLD_SOUND, screen?)` - a page's
   `WorldEnv`: an asset id is read through `load` by the path the tour's
   `assets` name for it; a sound is made by `sound` (the page's
-  `createWorldSound`) and reads its file the same way.
+  `createWorldSound`) and reads its file the same way; `screen` is handed on
+  in `play` only, so an editor part never opens a panel.
 - `tickWorldParts(scene, viewer, nowMs, parts = mountedWorldParts())` - every
   camera frame (`main.ts` `hooks.tickStations`): each shown part with an
   `update` gets `{ seconds: nowMs / 1000, viewer }`, the camera's world

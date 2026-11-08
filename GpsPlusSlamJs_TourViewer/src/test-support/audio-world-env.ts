@@ -11,6 +11,8 @@ interface RecordedSound extends SoundHandle {
   levels: number[];
   isPlaying: boolean;
   isWanted: boolean;
+  time: number;
+  duration: number;
 }
 
 export function recordingEnv(mode: WorldMode = "play") {
@@ -28,6 +30,8 @@ export function recordingEnv(mode: WorldMode = "play") {
         levels: [],
         isPlaying: false,
         isWanted: false,
+        time: 0,
+        duration: 30_000,
         play() {
           s.calls.push("play");
           s.isPlaying = true;
@@ -45,6 +49,12 @@ export function recordingEnv(mode: WorldMode = "play") {
         carryOn() {
           s.calls.push("carryOn");
           if (s.isWanted) s.isPlaying = true;
+        },
+        timeMs: () => s.time,
+        durationMs: () => s.duration,
+        seek(ms) {
+          s.calls.push(`seek:${String(ms)}`);
+          s.time = ms;
         },
         wanted: () => s.isWanted,
         playing: () => s.isPlaying,

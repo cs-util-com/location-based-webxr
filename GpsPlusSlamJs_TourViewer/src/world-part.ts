@@ -45,6 +45,36 @@ interface WorldFrame {
   readonly viewer: readonly [number, number, number];
 }
 
+/** The page's screen beside the world, where a part may open one panel
+ *  of its own (a narration's player card). */
+export interface WorldScreen {
+  /** Opens what `build` puts into the host; returns the close, which runs
+   *  `build`'s returned clean-up and empties the host. */
+  show(build: (host: HTMLElement) => () => void): () => void;
+}
+
+/** A screen in `host` (the page's panel root): one panel at a time, a
+ *  newer one closing the older. */
+export function screenIn(host: HTMLElement): WorldScreen {
+  let close: (() => void) | null = null;
+  return {
+    show(build) {
+      close?.();
+      const panel = host.ownerDocument.createElement("div");
+      host.append(panel);
+      const cleanUp = build(panel);
+      const mine = (): void => {
+        if (close !== mine) return;
+        close = null;
+        cleanUp();
+        panel.remove();
+      };
+      close = mine;
+      return mine;
+    },
+  };
+}
+
 /** What a kind's world part is given to build itself. */
 export interface WorldEnv {
   readonly mode: WorldMode;
@@ -55,6 +85,8 @@ export interface WorldEnv {
   /** A sound of the tour by its asset id, heard by `channel`'s rule
    *  (`world-sound.ts`); in `edit` always the silent handle. */
   sound(id: string, channel: SoundChannel): SoundHandle;
+  /** The page's screen, in `play` only (none: a part opens no panel). */
+  readonly screen?: WorldScreen;
 }
 
 /** A kind's object in the world. */
@@ -91,12 +123,14 @@ export function canvasTexture(
 
 /** A part's environment on a page: `mode`, its files read through
  *  `load` by the path the tour's `assets` name for an id, and its sounds
- *  through the page's `sound` seam (none: silence). */
+ *  through the page's `sound` seam (none: silence); `screen` is
+ *  handed on in `play` only. */
 export function worldEnv(
   mode: WorldMode,
   assets: readonly TourAsset[],
   load: (path: string) => Promise<Blob>,
   sound: WorldSound = SILENT_WORLD_SOUND,
+  screen?: WorldScreen,
 ): WorldEnv {
   const paths = new Map(assets.map((a) => [a.id, a.path]));
   const loadAsset = (id: string): Promise<Blob> => {
@@ -113,6 +147,7 @@ export function worldEnv(
       mode === "edit"
         ? SILENT_SOUND
         : sound.sound(() => loadAsset(id), channel),
+    ...(mode === "play" && screen !== undefined ? { screen } : {}),
   };
 }
 

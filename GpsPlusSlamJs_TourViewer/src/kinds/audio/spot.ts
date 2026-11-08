@@ -4,9 +4,10 @@
  * when the visitor leaves (beyond the radius plus `NARRATION_MARGIN_M`)
  * and carries on at return; the visitor's own pause (a second tap) keeps
  * it off until tapped again. Heard through the voice channel, so one
- * voice at a time (`world-sound.ts`). Its look is `narrationLook`'s; the
- * player card listens to `onInside`. In the editor: the same circle,
- * still and silent.
+ * voice at a time (`world-sound.ts`). Its look is `narrationLook`'s; its
+ * player card (`narrationCard`) opens on the page's screen while the
+ * visitor is inside, at the same change `onInside` reports. In the editor:
+ * the same circle, still and silent, and no card.
  *
  * @see spot.ts.md
  */
@@ -15,6 +16,7 @@ import type { TourAudioBlock } from "gps-plus-slam-app-framework/ar/tour-kinds";
 
 import type { WorldEnv, WorldPart } from "../../world-part.js";
 import type { SoundHandle } from "../../world-sound.js";
+import { narrationCard, type NarrationCard } from "./narration-card.js";
 import { narrationLook } from "./narration-look.js";
 import {
   circleInside,
@@ -37,6 +39,41 @@ export function spotPart(block: TourAudioBlock, env: WorldEnv): SpotPart {
   let inside = false;
   let voice: SoundHandle | null = null;
   const sound = (): SoundHandle => (voice ??= env.sound(block.audio, "voice"));
+  /** The tap rule: pause a playing voice, else play it (from the start
+   *  once it was heard to the end). */
+  const toggle = (): void => {
+    const v = sound();
+    if (v.playing()) {
+      v.pause();
+      return;
+    }
+    const duration = v.durationMs();
+    if (duration > 0 && v.timeMs() >= duration) v.seek(0);
+    v.play();
+  };
+  let card: NarrationCard | null = null;
+  let closeCard: (() => void) | null = null;
+  const openCard = (): void => {
+    if (env.screen === undefined || closeCard !== null) return;
+    closeCard = env.screen.show((host) => {
+      card = narrationCard(host, block, {
+        toggle,
+        seek: (ms) => sound().seek(ms),
+        timeMs: () => voice?.timeMs() ?? 0,
+        durationMs: () => voice?.durationMs() ?? 0,
+        playing: () => voice?.playing() ?? false,
+      });
+      return () => {
+        card?.dispose();
+        card = null;
+      };
+    });
+  };
+  const shutCard = (): void => {
+    const close = closeCard;
+    closeCard = null;
+    close?.();
+  };
   return {
     object: look.object,
     tapTarget: look.tapTarget,
@@ -52,8 +89,13 @@ export function spotPart(block: TourAudioBlock, env: WorldEnv): SpotPart {
             const { position } = look.object;
             const d = Math.hypot(x - position.x, z - position.z);
             const now = circleInside(d, radiusM, NARRATION_MARGIN_M, inside);
-            if (now === inside) return;
+            if (now === inside) {
+              card?.render();
+              return;
+            }
             inside = now;
+            if (inside) openCard();
+            else shutCard();
             look.inside(inside);
             if (voice !== null) {
               if (inside) voice.carryOn();
@@ -65,11 +107,11 @@ export function spotPart(block: TourAudioBlock, env: WorldEnv): SpotPart {
       : {}),
     tap() {
       if (!play || !inside) return;
-      const v = sound();
-      if (v.playing()) v.pause();
-      else v.play();
+      toggle();
+      card?.render();
     },
     dispose() {
+      shutCard();
       listeners.clear();
       voice?.dispose();
       voice = null;

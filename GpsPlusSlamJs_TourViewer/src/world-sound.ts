@@ -42,6 +42,12 @@ export interface SoundHandle {
   /** Voice: it plays, or is held to carry on. */
   wanted(): boolean;
   playing(): boolean;
+  /** Voice: where it is, in ms (0 before it first plays). */
+  timeMs(): number;
+  /** Voice: its length in ms; 0 while not known. */
+  durationMs(): number;
+  /** Voice: moves to `ms`. Background: no effect. */
+  seek(ms: number): void;
   /** Background: the loudness asked for, 0 to 1, at page time `seconds`;
    *  0 pauses it. Voice: no effect. */
   level(gain: number, seconds: number): void;
@@ -84,6 +90,9 @@ export const SILENT_SOUND: SoundHandle = {
   carryOn: () => undefined,
   wanted: () => false,
   playing: () => false,
+  timeMs: () => 0,
+  durationMs: () => 0,
+  seek: () => undefined,
   level: () => undefined,
   dispose: () => undefined,
 };
@@ -136,6 +145,9 @@ export function createWorldSound(deps: WorldSoundDeps): WorldSound {
       },
       wanted: () => away || player.wanted(),
       playing: () => player.playing(),
+      timeMs: () => player.nowMs(),
+      durationMs: () => player.durationMs(),
+      seek: (ms) => player.seek(ms),
       dispose() {
         away = false;
         player.dispose();

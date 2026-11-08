@@ -11,7 +11,8 @@
 /** A narration circle's radius when its block names none (a lenient read's
  *  floor) and the editor's starting value. 6 m holds with the phone's
  *  tracking fused in; under GPS alone it does not, which needs 10 m or more
- *  (`sound-reach.sweep.test.ts`). Provisional until a phone walk. */
+ *  (`sound-reach.sweep.test.ts`). Which default to ship is open; it stays
+ *  until a phone walk decides. */
 export const NARRATION_DEFAULT_RADIUS_M = 6;
 
 /** How far beyond the radius a visitor inside counts as still inside: the

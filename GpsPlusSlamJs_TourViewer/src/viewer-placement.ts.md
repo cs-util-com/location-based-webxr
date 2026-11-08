@@ -237,9 +237,10 @@ them.
 ## The world door and the reading sign's tap
 
 - The renderer deps carry `worldPart`: `play-kinds.ts` `worldPartOf` with a
-  `world-part.ts` `worldEnv("play", manifest.assets, loadContent, worldSound)`
-  (the optional `worldSound` dep, `main.ts`'s `createWorldSound`; absent:
-  silent), so a
+  `world-part.ts` `worldEnv("play", manifest.assets, loadContent, worldSound,
+worldScreen)` (the optional `worldSound` dep, `main.ts`'s
+  `createWorldSound`, absent: silent; the optional `worldScreen` dep,
+  `main.ts`'s `screenIn(#narration-card-root)`, absent: no panel), so a
   kind's row decides its part in the world and reads its files through the
   visitor's prefetch.
 - The optional `openReading(block)` dep (`main.ts`: the reading sheet) is
