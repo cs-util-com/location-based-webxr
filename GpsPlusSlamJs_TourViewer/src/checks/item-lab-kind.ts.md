@@ -7,12 +7,14 @@ What the item lab (`item-lab.ts`) and the contract table (`../item-contract.test
 ## Public API
 
 - `kindNameOf(search)` - the kind a page's address names: `stamp-1` for none, null for anything that is not a folder name.
-- `readItemKind(name, module, sample)` - a folder's `kind.js` and `sample.json` as an `ItemKind`. Throws a `TypeError` naming what is missing.
+- `LabWorldPart` - a station's `WorldPart` plus the optional per-frame `update({ seconds, viewer })` the lab calls; a station does not call it yet.
+- `RECORD_NAMES` - `normal`, `longest`, `missing`: the records every sample holds.
+- `readItemKind(name, module, sample)` - a folder's `kind.js` and `sample.json` as an `ItemKind`: `card`, `assets`, an optional `world`, the sample, the normal record's `block`, and `recordOf(name)` (each `{ block, problems }`, read once by the kind's optional `read`). Throws a `TypeError` naming what is missing or not a function; a kind with the older `show`, or a sample with the older `block`, is told the new name.
 - `kindAssets(kind)` - its files as tour assets by id; a `path` is a file name in the folder.
 - `storyCarrier(kind)`, `freeCarrier(kind)` - the block each host plays where the kind stands: a `shortText` card, and a `character` in the `speak` view, the only free block the free host stands.
 - `storyStation(kind)` - a station with a two-step story: the kind, then a plain card.
 - `freeTour(kind)` - a tour of one station where the kind stands free.
-- `showWith(kind)` - the hosts' `showItem`: the kind for its carrier, `showItemCard` for everything else.
+- `showWith(kind, shown?)` - the hosts' `showItem`: `kind.card(shown(), host)` for its carrier (`shown` defaults to the normal block; the lab passes the record it shows), `showItemCard` for everything else.
 - `createSilentAudio()` - a `NarrationAudio` with a clock and no sound; `finish()` runs it out.
 
 ## Invariants and assumptions

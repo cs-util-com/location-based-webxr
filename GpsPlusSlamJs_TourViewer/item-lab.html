@@ -92,6 +92,8 @@
         height: 100%;
       }
       #lab-free-status,
+      #lab-cost,
+      #lab-problems,
       #lab-status,
       #lab-stage,
       .lab-note {
@@ -141,9 +143,14 @@
         <h2>In a station</h2>
         <div id="lab-world"></div>
         <p id="lab-free-status" aria-live="polite"></p>
+        <p id="lab-cost"></p>
+        <p id="lab-problems"></p>
         <p class="lab-note">
           Tap the item. The sound is silent here. There is no sheet yet: a tap
-          plays or stops its voice, or shuts its bubble.
+          plays or stops its voice, or shuts its bubble. A kind with a world
+          view stands to the left of the figure; the cost line counts it against
+          a budget of 30 draw calls and 50 000 triangles, which no phone
+          measurement backs yet.
         </p>
       </section>
     </div>
