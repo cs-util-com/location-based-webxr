@@ -214,6 +214,14 @@ wired into its logic: every interaction is faked.
   video stay stopped until tapped; a character or a video may start by itself
   only if its settings say so and nothing else plays; the AR view shows no
   lists of items in its HUD.
+- `audio-narration-spot-1/` - a narration sound placed in the world, for a
+  visitor: one circle on the ground with rising light, a player card only
+  inside it (plays on a tap, pauses on leaving, carries on at return, stays
+  off once stopped) and an ambient glow nearby that turns quieter while the
+  narration plays. Three looks of the circle (motes, curtain, plume), a
+  walk-through, position noise and an edit view. The look is a kind module
+  (`kind.js`, `kind.css`, `sample.json`) that the page only hosts; the voice
+  and the market sound are generated in the page; made 2026-11-08.
 - `editor-import-1-drop-into-scene/` and `editor-import-2-tour-library/` -
   two directions for bringing pictures and 3D models into the desktop
   editor: straight onto the place, or a checked library shelf first; the
