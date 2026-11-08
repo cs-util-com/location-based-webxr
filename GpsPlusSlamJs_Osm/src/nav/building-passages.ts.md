@@ -34,7 +34,7 @@ const openings = passageOpenings(features, solids);
 ## Tests
 
 - `building-passages.test.ts` — which ways count (and each rejected neighbour by name), the passage line reported for a pierced footprint, the split-way case, and the one-entry-per-footprint ordering.
-- `building-passages.property.test.ts` — the claim the feature exists for: **the passage is walkable end to end at any bearing**, with the passage ending at the walls or up to 3 m short of them and the search confined to a strip that rules out walking round the building; it fails at 5 m. Two counterweights: an untagged road joins nothing, and the rooms more than 15 m off a tagged passage stay sealed, which fails at 16 m. Placements are drawn uniformly (`test-utils/uniform-arbitrary.ts`).
+- `building-passages.property.test.ts` — the claim the feature exists for: **the passage is walkable end to end at any bearing**, with the passage ending at the walls or up to 3 m short of them and the search confined to a strip that rules out walking round the building; it fails at 5 m. Two counterweights: an untagged road joins nothing, and the rooms more than 15 m off a tagged passage stay sealed, which fails at 16 m. A plain assertion beside them holds `PASSAGE_CORRIDOR_M` inside the measured window (9.5 to 14.5 m), which 25 random placements alone could not. Placements are drawn uniformly (`test-utils/uniform-arbitrary.ts`).
 - `nav/obstacles.test.ts` — the pair that defines a corridor: a step through the passage is admitted, a step between two rooms away from it is blocked, and the building stays indexed.
 - `testdata/sites/site-building-obstacles.test.ts` — per-site counts of buildings that gain an opening, plus the guard that the corridor reading stays far below the whole-volume one.
 

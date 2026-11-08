@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 
 import { fusedGpsFrom } from "./ar-fused-gps.js";
-import { uniformIn } from "gps-plus-slam-app-framework/test-utils/uniform-arbitrary";
+import {
+  uniformIn,
+  uniformWithSeams,
+} from "gps-plus-slam-app-framework/test-utils/uniform-arbitrary";
 
 /**
  * The NUE→ENU axis mapping holds for ANY pose and ANY origin latitude.
@@ -43,8 +46,11 @@ const origin = fc.record({
   lng: uniformIn(-179, 179),
 });
 
-/** Metres, at the scale an AR session actually reaches. */
-const metres = uniformIn(-2000, 2000);
+/**
+ * Metres, at the scale an AR session actually reaches, with zero (the
+ * identity: no movement on that axis) and the bounds drawn exactly too.
+ */
+const metres = uniformWithSeams(-2000, 2000);
 
 /** A northward step big enough to be a real movement — see the floor note. */
 const stepMetres = fc.double({ min: 0.01, max: 2000, noNaN: true });

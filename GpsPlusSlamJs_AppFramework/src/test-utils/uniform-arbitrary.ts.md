@@ -57,4 +57,7 @@ validation. Used by the property tests of the framework (`geo/h3-coverage`),
 the RecorderApp (`ui/map-browser-index`), the Tour Viewer
 (`editor3d/globe-layer`) and the OSM demo (`quest-beacon-placement`,
 `ar-fused-gps`). The OSM package keeps its own copy, `GpsPlusSlamJs_Osm/src/test-utils/uniform-arbitrary.ts`,
-because it does not depend on the framework.
+because it does not depend on the framework; `tests/repo-config/uniform-arbitrary-copies.test.js`
+holds the two files, and their two test files, to the same code, and
+`duplicate-helpers.test.js` names the copy as the one justified exception. Change
+both together.
