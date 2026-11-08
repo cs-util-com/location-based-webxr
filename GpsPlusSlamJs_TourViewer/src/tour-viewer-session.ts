@@ -50,7 +50,6 @@ import {
 import { visitorGuideReducer } from "./visitor-guide-slice.js";
 import { visitorWalkReducer } from "./visitor-walk-slice.js";
 import { visitorPrefsReducer } from "./visitor-prefs-slice.js";
-import { assetShelfReducer } from "./asset-shelf-slice.js";
 
 import type {
   HitTestReticleHandle,
@@ -142,9 +141,6 @@ export function createTourViewerStore<
     visitorWalk: visitorWalkReducer,
     creatorCodes: creatorCodesReducer,
     visitorPrefs: visitorPrefsReducer,
-    // The editor's asset shelf (`asset-shelf-slice.ts`): empty on a page
-    // that has no shelf.
-    assetShelf: assetShelfReducer,
   };
   const clash = Object.keys(pageReducers ?? {}).filter((key) => key in own);
   if (clash.length > 0) {

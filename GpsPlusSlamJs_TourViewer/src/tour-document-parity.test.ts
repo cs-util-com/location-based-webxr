@@ -29,6 +29,7 @@
  * the result its AR path leaves in the page's lists (named per row), and
  * the row compares what the document makes of it from there on.
  */
+import { editorStore } from "./test-support/editor-store.js";
 import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import { isDeepStrictEqual } from "node:util";
 import { beforeAll, describe, expect, it, vi } from "vitest";
@@ -62,10 +63,7 @@ import {
   tourFileKeyOfFile,
   type TourSession,
 } from "./tour-session.js";
-import {
-  createTourViewerSession,
-  createTourViewerStore,
-} from "./tour-viewer-session.js";
+import { createTourViewerSession } from "./tour-viewer-session.js";
 import { documentObjects, selectTourDocument } from "./tour-document.js";
 import { settle } from "./test-support/settle.js";
 import { stationIdOf, tourOf } from "./test-support/tour-of.js";
@@ -75,7 +73,7 @@ import {
 } from "./test-support/station-content.js";
 
 beforeAll(() => {
-  createTourViewerStore();
+  editorStore();
 });
 
 // --- the tour both pages open ----------------------------------------------
@@ -309,7 +307,7 @@ async function desktopPage(
     noBackup: () => undefined,
   });
   const opened = await draft.open(session.archive.url, manifest);
-  const store = createTourViewerStore();
+  const store = editorStore();
   const editor = createEditorSession({
     session,
     manifest,
@@ -508,7 +506,7 @@ async function phonePage(
   ) as Record<(typeof PHONE_DOM_KEYS)[number], ReturnType<typeof phoneElement>>;
   // One store for the page, as `main.ts` wires it: the session's tour
   // document is the store's `tourDocument` slice.
-  const store = createTourViewerStore();
+  const store = editorStore();
   const ctx = createTourViewerSession(store);
   ctx.session = session;
   ctx.tourManifestStatus = "settled";

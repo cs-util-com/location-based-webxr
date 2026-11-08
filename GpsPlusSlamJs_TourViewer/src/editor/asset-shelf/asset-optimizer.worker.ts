@@ -11,9 +11,10 @@
 
 import type { TourAssetKind } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
-import type {
-  OptimizerInbound,
-  OptimizerOutbound,
+import {
+  inboundOf,
+  type OptimizerInbound,
+  type OptimizerOutbound,
 } from "./optimizer-protocol.js";
 import type { OptimizerSettings } from "./optimizer-settings.js";
 
@@ -85,8 +86,10 @@ async function run(
   }
 }
 
+// What arrives is checked first: anything else is ignored (`inboundOf`).
 ctx.addEventListener("message", (event) => {
-  const message = event.data as OptimizerInbound;
+  const message = inboundOf(event.data);
+  if (message === null) return;
   if (message.type === "cancel") {
     running.get(message.job)?.abort();
     return;

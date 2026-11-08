@@ -10,6 +10,9 @@
  * @see optimizer-client.ts.md
  */
 
+import type { TourAssetKind } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { tourMediaTypeOf } from "gps-plus-slam-app-framework/ar/tour-media";
+
 import {
   OptimizerCrashed,
   type OptimizeControl,
@@ -30,6 +33,8 @@ export interface OptimizerWorker {
 }
 
 interface Pending {
+  /** The kind the run was asked for: a smaller file must be of it. */
+  readonly kind: TourAssetKind;
   readonly resolve: (outcome: OptimizeOutcome) => void;
   readonly reject: (error: unknown) => void;
   readonly control: OptimizeControl;
@@ -40,23 +45,59 @@ function aborted(): DOMException {
   return new DOMException("the optimization was stopped", "AbortError");
 }
 
-/** `data` as an answer of the protocol, or null for anything else. */
-function answerOf(data: unknown): OptimizerOutbound | null {
+/** Said when the Worker's smaller file is not one the tour takes for the
+ *  run's kind (no Blob, an extension of another kind or none the format
+ *  allows, an image size that is no positive whole number). */
+const BAD_FILE = "the optimizer answered with a file the tour cannot take";
+/** Said when the Worker kept or failed a run without words. */
+const NO_REASON = "the optimizer answered with no reason";
+
+/** An answer of a known type whose fields do not read: its run fails. */
+interface Malformed {
+  readonly type: "malformed";
+  readonly job: number;
+  readonly reason: string;
+}
+
+function isPixelCount(n: unknown): boolean {
+  return n === undefined || (Number.isSafeInteger(n) && (n as number) > 0);
+}
+
+/** `data` as an answer of the protocol for a run of `kindOf(job)`; one of
+ *  a known type whose fields do not read is `Malformed`; null for
+ *  anything else (no job number, an unknown type, a progress that is no
+ *  number). */
+function answerOf(
+  data: unknown,
+  kindOf: (job: number) => TourAssetKind | undefined,
+): OptimizerOutbound | Malformed | null {
   if (typeof data !== "object" || data === null) return null;
   const m = data as Partial<Record<string, unknown>>;
   if (typeof m.job !== "number") return null;
+  const job = m.job;
   switch (m.type) {
     case "progress":
       return typeof m.fraction === "number"
         ? (data as OptimizerOutbound)
         : null;
-    case "done":
-      return m.blob instanceof Blob && typeof m.extension === "string"
+    case "done": {
+      const kind = kindOf(job);
+      const fits =
+        m.blob instanceof Blob &&
+        typeof m.extension === "string" &&
+        kind !== undefined &&
+        tourMediaTypeOf(m.extension)?.kind === kind &&
+        isPixelCount(m.width) &&
+        isPixelCount(m.height);
+      return fits
         ? (data as OptimizerOutbound)
-        : null;
+        : { type: "malformed", job, reason: BAD_FILE };
+    }
     case "kept":
     case "failed":
-      return typeof m.reason === "string" ? (data as OptimizerOutbound) : null;
+      return typeof m.reason === "string"
+        ? (data as OptimizerOutbound)
+        : { type: "malformed", job, reason: NO_REASON };
     default:
       return null;
   }
@@ -86,7 +127,7 @@ export function createOptimizerHost(
   }
 
   function onAnswer(event: MessageEvent): void {
-    const answer = answerOf(event.data);
+    const answer = answerOf(event.data, (job) => pending.get(job)?.kind);
     if (answer === null) return;
     if (answer.type === "progress") {
       pending.get(answer.job)?.control.progress(answer.fraction);
@@ -94,7 +135,7 @@ export function createOptimizerHost(
     }
     const run = settle(answer.job);
     if (run === undefined) return;
-    if (answer.type === "failed") {
+    if (answer.type === "failed" || answer.type === "malformed") {
       run.reject(new Error(answer.reason));
     } else if (answer.type === "kept") {
       run.resolve({ kind: "kept", reason: answer.reason });
@@ -137,7 +178,7 @@ export function createOptimizerHost(
           target.postMessage({ type: "cancel", job });
           reject(aborted());
         };
-        pending.set(job, { resolve, reject, control, onAbort });
+        pending.set(job, { kind, resolve, reject, control, onAbort });
         control.signal.addEventListener("abort", onAbort, { once: true });
         target.postMessage({ type: "run", job, kind, payload, settings });
       });

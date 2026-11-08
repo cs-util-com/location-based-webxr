@@ -20,7 +20,7 @@ import { describe, expect, it } from "vitest";
 
 import { openTourFile, type TourSession } from "../tour-session.js";
 import { tourDocumentActions } from "../tour-document.js";
-import { createTourViewerStore } from "../tour-viewer-session.js";
+import { editorStore } from "../test-support/editor-store.js";
 import { tourOf } from "../test-support/tour-of.js";
 import { zipBlobEntryNames } from "../zip-blob.js";
 import {
@@ -55,7 +55,7 @@ function editorOf(session: TourSession): EditorSession {
     session,
     manifest: MANIFEST,
     levels: new Map(),
-    store: createTourViewerStore(),
+    store: editorStore(),
   });
 }
 
@@ -261,7 +261,7 @@ describe("swapAsset of a placed picture", () => {
       session,
       manifest,
       levels: new Map(),
-      store: createTourViewerStore(),
+      store: editorStore(),
     });
     expect(
       await editor.swapAsset("f", {
@@ -320,7 +320,7 @@ describe("swapAsset with a draft, and a restore of a swap", () => {
       session,
       manifest: MANIFEST,
       levels: new Map(),
-      store: createTourViewerStore(),
+      store: editorStore(),
       draft,
     });
     late.editor = editor;
@@ -343,7 +343,7 @@ describe("swapAsset with a draft, and a restore of a swap", () => {
   // given the record that stood before.
   it("a swap refused after the draft wrote it is taken back out of the draft", async () => {
     const session = await openedTour();
-    const store = createTourViewerStore();
+    const store = editorStore();
     const calls: string[] = [];
     const draft: EditorSessionDraft = {
       saveObject: () => Promise.resolve(true),

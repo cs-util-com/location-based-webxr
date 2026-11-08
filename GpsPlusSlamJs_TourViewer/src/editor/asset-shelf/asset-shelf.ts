@@ -27,7 +27,7 @@ import {
   assetShelfActions as act,
   type AssetShelfState,
   type ShelfEntry,
-} from "../../asset-shelf-slice.js";
+} from "./asset-shelf-slice.js";
 import {
   OPTIMIZER_SETTINGS,
   OPTIMIZER_SLOTS,

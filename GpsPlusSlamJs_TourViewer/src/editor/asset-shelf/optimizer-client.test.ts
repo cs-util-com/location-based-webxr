@@ -166,4 +166,62 @@ describe("the optimizer's Worker client", () => {
       w.onmessage?.({ data: { type: "nonsense", job: 1 } } as MessageEvent);
     }).not.toThrow();
   });
+
+  // Why: the Worker is code the page does not trust field by field. A
+  // smaller file whose extension the tour would refuse for the kind, or an
+  // image size that is no positive whole number, would make every later
+  // save fail; the run fails with words instead (Retry), and never hangs.
+  it.each([
+    ["an extension of another kind", { extension: "opus" }],
+    ["an extension the tour does not take", { extension: "exe" }],
+    ["no extension", { extension: 4 }],
+    ["a width of 0", { extension: "webp", width: 0, height: 3 }],
+    ["a fractional height", { extension: "webp", width: 2, height: 1.5 }],
+    ["no blob", { extension: "webp", blob: "bytes" }],
+  ])("rejects a smaller file with %s", async (_what, fields) => {
+    const w = fakeWorker();
+    const host = createOptimizerHost(() => w);
+    const run = host.run("image", 1, OPTIMIZER_SETTINGS, control());
+    const job = w.posted[0]!.job;
+    w.onmessage?.({
+      data: { type: "done", job, blob: new Blob(["s"]), ...fields },
+    } as MessageEvent);
+    await expect(run).rejects.toThrow(
+      "the optimizer answered with a file the tour cannot take",
+    );
+  });
+
+  it("rejects a kept or failed answer without words", async () => {
+    const w = fakeWorker();
+    const host = createOptimizerHost(() => w);
+    const kept = host.run("image", 1, OPTIMIZER_SETTINGS, control());
+    const failed = host.run("image", 1, OPTIMIZER_SETTINGS, control());
+    const [a, b] = w.posted.map((m) => m.job);
+    w.onmessage?.({ data: { type: "kept", job: a } } as MessageEvent);
+    w.onmessage?.({
+      data: { type: "failed", job: b, reason: 3 },
+    } as MessageEvent);
+    await expect(kept).rejects.toThrow("the optimizer answered with");
+    await expect(failed).rejects.toThrow("the optimizer answered with");
+  });
+
+  it("takes an image size that is whole and positive, and an audio file of its kind", async () => {
+    const w = fakeWorker();
+    const host = createOptimizerHost(() => w);
+    const image = host.run("image", 1, OPTIMIZER_SETTINGS, control());
+    const audio = host.run("audio", 1, OPTIMIZER_SETTINGS, control());
+    const [a, b] = w.posted.map((m) => m.job);
+    const blob = new Blob(["s"]);
+    w.answer({
+      type: "done",
+      job: a!,
+      blob,
+      extension: "webp",
+      width: 1600,
+      height: 1200,
+    });
+    w.answer({ type: "done", job: b!, blob, extension: "opus" });
+    await expect(image).resolves.toMatchObject({ width: 1600, height: 1200 });
+    await expect(audio).resolves.toMatchObject({ extension: "opus" });
+  });
 });

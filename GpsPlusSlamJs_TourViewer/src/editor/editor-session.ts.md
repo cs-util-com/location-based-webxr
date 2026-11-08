@@ -32,8 +32,10 @@ never state). Design:
 - `createEditorSession({ session, manifest, levels, fileName?, draft?, loadPhoto?, store? }): EditorSession`
   (`manifest` as `openTourForEditing` opened it; the document drops a
   file's debug camera captures)
-  - `store` - the page's `createTourViewerStore()`; a fresh one when
-    absent (tests). Creating the session dispatches `opened` (with a
+  - `store` - the page's store, built with the editor's page slices
+    `EDITOR_SESSION_SLICES` (`{ assetShelf }`, exported here so the page
+    and the tests mount the same set; `EditorSessionStore` is its type);
+    a fresh one when absent (tests). Creating the session dispatches `opened` (with a
     fresh `newTourId()` for a tour without an id, Q-I): whatever
     the store's document held is gone, and an older session on the same
     store is disowned (`generation`) - its edits are refused with

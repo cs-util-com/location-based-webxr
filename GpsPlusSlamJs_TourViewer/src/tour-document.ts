@@ -2029,6 +2029,28 @@ function assetOptimize(
   };
 }
 
+/** How many of the tour's objects (story blocks among them) and stations
+ *  use each asset id as the tour stands - a station by its steps or its
+ *  picture. What the asset shelf says as a file's places in use. */
+export function assetUsesOf(
+  state: TourDocumentState,
+): ReadonlyMap<string, number> {
+  const uses = new Map<string, number>();
+  const count = (ids: readonly string[]) => {
+    for (const id of new Set(ids)) uses.set(id, (uses.get(id) ?? 0) + 1);
+  };
+  for (const { object } of documentObjects(state)) {
+    count(tourBlockAssetIds(object));
+  }
+  for (const station of manifestNow(state)?.stations ?? []) {
+    count([
+      ...stepAssetIds(station),
+      ...(station.image === undefined ? [] : [station.image]),
+    ]);
+  }
+  return uses;
+}
+
 /** `state` with the read-along entry `entry` listed at `previous` (what
  *  the written file holds) in `timings`, `timingsWritten` and every step
  *  of the history that does not list it yet. */

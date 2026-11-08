@@ -26,7 +26,7 @@ import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
 
 import { manifestToWrite } from "../tour-document.js";
 import { openTourFile, type TourSession } from "../tour-session.js";
-import { createTourViewerStore } from "../tour-viewer-session.js";
+import { editorStore } from "../test-support/editor-store.js";
 import {
   freeLocks,
   memoryDraftStores,
@@ -38,7 +38,7 @@ import { createEditorDraft } from "./editor-draft.js";
 import { createEditorSession } from "./editor-session.js";
 
 beforeAll(() => {
-  createTourViewerStore();
+  editorStore();
 });
 
 const K = "local-file:00000000000000000000000000000001";
@@ -241,7 +241,7 @@ describe("the tree's story commands", () => {
       fc.asyncProperty(
         fc.array(command, { maxLength: 14, size: "max" }),
         async (commands) => {
-          const store = createTourViewerStore();
+          const store = editorStore();
           const stores = memoryDraftStores();
           const draft = createEditorDraft({
             openStore: stores.open,
@@ -404,7 +404,7 @@ describe("a story's delete", () => {
   // and a word about it is all that tells the creator where it went.
   it("says when the station went with its only story", async () => {
     const { session, manifest } = await opened();
-    const store = createTourViewerStore();
+    const store = editorStore();
     const editor = createEditorSession({
       session,
       manifest,
@@ -433,7 +433,7 @@ describe("a story's delete", () => {
   // three was deleted.
   it('names a new story "New story", numbered only while that name is taken', async () => {
     const { session, manifest } = await opened();
-    const store = createTourViewerStore();
+    const store = editorStore();
     const editor = createEditorSession({
       session,
       manifest,

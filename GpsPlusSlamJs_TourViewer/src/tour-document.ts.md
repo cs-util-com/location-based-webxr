@@ -405,6 +405,10 @@ written, hand })` (the hosted texts enter the book);
   and `WorldBlock` (a station's free blocks), `isCapturedPhoto` and `ownedAssetIds` (the pictures that own their image asset). A page reads
   them here, never from `tour-content.ts` (the boundary rule
   `document-rules-through-tour-document`).
+- `assetUsesOf(state)` - per asset id, how many places name it: each
+  document object or story block (`tourBlockAssetIds`) and each station's
+  steps and picture, one count per place however often it names the id.
+  The asset shelf's `placesInUse`.
 - The codes: `documentCodes(state)` (the book, in order),
   `codeSavedText(state, id)`, `codeLiveText(state, id)` (`liveText`
   against the hosted texts as they stand), `levelsToWrite(state)` and

@@ -18,7 +18,7 @@ import {
 import { describe, expect, it } from "vitest";
 
 import { openTourFile, type TourSession } from "../tour-session.js";
-import { createTourViewerStore } from "../tour-viewer-session.js";
+import { editorStore } from "../test-support/editor-store.js";
 import { tourOf } from "../test-support/tour-of.js";
 import { zipBlobEntryNames } from "../zip-blob.js";
 import { createEditorSession, type EditorSession } from "./editor-session.js";
@@ -58,7 +58,7 @@ function editorOf(session: TourSession): EditorSession {
     session,
     manifest: MANIFEST,
     levels: new Map(),
-    store: createTourViewerStore(),
+    store: editorStore(),
     fileReaders: { limits: LIMITS, shrinks: (kind) => kind === "audio" },
   });
 }

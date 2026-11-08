@@ -10,7 +10,7 @@
 ## Invariants
 
 - No row of `ASSET_OPTIMIZERS` calls the Worker yet, and `createOptimizerHost` spawns it only on a run, so this build never starts it.
-- Inputs are the shapes of `optimizer-protocol.ts`; an unknown message type is ignored.
+- Every message is checked with `inboundOf` (`optimizer-protocol.ts`) before it is read: a non-object, an unknown type or a malformed run is ignored, never thrown on (a throw would reach the page as the Worker's error event, which it reads as a crash).
 
 ## Tests
 

@@ -21,7 +21,7 @@ import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
 
 import { openTourFile, type TourSession } from "../tour-session.js";
 import { manifestToWrite } from "../tour-document.js";
-import { createTourViewerStore } from "../tour-viewer-session.js";
+import { editorStore } from "../test-support/editor-store.js";
 import { stationIdOf, tourOf } from "../test-support/tour-of.js";
 import {
   startGesture,
@@ -32,7 +32,7 @@ import { createEditorSession } from "./editor-session.js";
 import { applySceneEdit } from "./scene-edits.js";
 
 beforeAll(() => {
-  createTourViewerStore();
+  editorStore();
 });
 
 const LAT = 48.137;
@@ -197,7 +197,7 @@ describe("a gesture and its undo", () => {
               pin("b", 60, 0, 530),
             ];
             const session = await opened(objects);
-            const store = createTourViewerStore();
+            const store = editorStore();
             const editor = createEditorSession({
               session,
               manifest: parseTourManifest(

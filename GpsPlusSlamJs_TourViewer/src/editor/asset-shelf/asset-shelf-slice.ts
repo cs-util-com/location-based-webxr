@@ -17,15 +17,9 @@ import {
   createSlice,
   type PayloadAction,
 } from "@reduxjs/toolkit";
-import { tourBlockAssetIds } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import type { TourAssetKind } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
-import { stepAssetIds } from "./tour-content.js";
-import {
-  documentObjects,
-  manifestNow,
-  type TourDocumentState,
-} from "./tour-document.js";
+import { assetUsesOf, type TourDocumentState } from "../../tour-document.js";
 import {
   IDLE_JOB,
   jobFailed,
@@ -240,23 +234,6 @@ interface ShelfRoot {
   readonly tourDocument: TourDocumentState;
 }
 
-/** How many blocks and station cards of the tour as it stands use each
- *  asset id. */
-function usesOf(state: TourDocumentState): ReadonlyMap<string, number> {
-  const uses = new Map<string, number>();
-  const count = (ids: readonly string[]) => {
-    for (const id of new Set(ids)) uses.set(id, (uses.get(id) ?? 0) + 1);
-  };
-  for (const { object } of documentObjects(state)) {
-    count(tourBlockAssetIds(object));
-  }
-  for (const station of manifestNow(state)?.stations ?? []) {
-    count(stepAssetIds(station));
-    if (station.image !== undefined) count([station.image]);
-  }
-  return uses;
-}
-
 export const selectShelfRows = createSelector(
   [
     (root: ShelfRoot) => root.assetShelf,
@@ -265,7 +242,7 @@ export const selectShelfRows = createSelector(
   (shelf, doc): ShelfRow[] => {
     const entries = Object.values(shelf.entries).sort((a, b) => a.seq - b.seq);
     const queued = entries.filter((e) => e.phase === "queued").map((e) => e.id);
-    const uses = usesOf(doc);
+    const uses = assetUsesOf(doc);
     const writtenPath = new Map(
       (doc.written?.assets ?? []).map((a) => [a.id, a.path]),
     );

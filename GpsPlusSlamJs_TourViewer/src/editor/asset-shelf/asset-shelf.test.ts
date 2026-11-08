@@ -25,7 +25,7 @@ import {
   createAssetShelf,
   type AssetShelfDeps,
 } from "./asset-shelf.js";
-import { assetShelfReducer, selectShelfRows } from "../../asset-shelf-slice.js";
+import { assetShelfReducer, selectShelfRows } from "./asset-shelf-slice.js";
 import { fakeOptimizer } from "./test-support/fake-optimizer.js";
 
 createSlamAppStore({ storageBackend: new NullStorageBackend() });

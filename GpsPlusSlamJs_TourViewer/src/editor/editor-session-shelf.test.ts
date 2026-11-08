@@ -18,13 +18,13 @@ import { describe, expect, it, vi } from "vitest";
 
 import { tourOf } from "../test-support/tour-of.js";
 import { openTourFile, type TourSession } from "../tour-session.js";
-import { createTourViewerStore } from "../tour-viewer-session.js";
+import { editorStore } from "../test-support/editor-store.js";
 import { zipBlobEntryNames } from "../zip-blob.js";
 import {
   ASSET_OPTIMIZERS,
   type OptimizerHost,
 } from "./asset-shelf/asset-optimizers.js";
-import { selectShelfRows } from "../asset-shelf-slice.js";
+import { selectShelfRows } from "./asset-shelf/asset-shelf-slice.js";
 import { fakeOptimizer } from "./asset-shelf/test-support/fake-optimizer.js";
 import { createEditorSession } from "./editor-session.js";
 
@@ -67,7 +67,7 @@ async function openedTour(): Promise<TourSession> {
   return openTourFile(new File([zip], "tour.zip", { type: "application/zip" }));
 }
 
-function setup(session: TourSession, store = createTourViewerStore()) {
+function setup(session: TourSession, store = editorStore()) {
   const fake = fakeOptimizer();
   const pictures = fakeOptimizer();
   const host: OptimizerHost = {

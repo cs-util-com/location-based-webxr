@@ -9,6 +9,7 @@
  * that no command moves, lifts or turns a station that was locked when it
  * ran - while the radius, the name, a delete and a copy still work.
  */
+import { editorStore } from "../test-support/editor-store.js";
 import fc from "fast-check";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
@@ -26,7 +27,10 @@ import {
   type TourViewerStore,
 } from "../tour-viewer-session.js";
 import { stationIdOf, tourOf } from "../test-support/tour-of.js";
-import { createEditorSession } from "./editor-session.js";
+import {
+  createEditorSession,
+  EDITOR_SESSION_SLICES,
+} from "./editor-session.js";
 import {
   editorViewActions,
   editorViewReducer,
@@ -36,7 +40,7 @@ import {
 import { applySceneEdit } from "./scene-edits.js";
 
 beforeAll(() => {
-  createTourViewerStore();
+  editorStore();
 });
 
 function pin(id: string, lat: number): TourPin {
@@ -160,7 +164,7 @@ describe("the station lock", () => {
       fc.asyncProperty(
         fc.array(command, { maxLength: 30, size: "max" }),
         async (commands) => {
-          const store = createTourViewerStore();
+          const store = editorStore();
           const unlocked = new Set<string>();
           const editor = createEditorSession({
             session,
@@ -283,7 +287,7 @@ describe("the station lock", () => {
 
   it("refuses a locked station's move in words, and moves it once unlocked", async () => {
     const { session, manifest } = await opened();
-    const store = createTourViewerStore();
+    const store = editorStore();
     let locked = true;
     const editor = createEditorSession({
       session,
@@ -324,7 +328,7 @@ describe("the station lock", () => {
 
   it("without a lock rule (the phone, a test) every station moves as before", async () => {
     const { session, manifest } = await opened();
-    const store = createTourViewerStore();
+    const store = editorStore();
     const editor = createEditorSession({
       session,
       manifest,
@@ -349,6 +353,7 @@ describe("the station lock", () => {
     const { session, manifest } = await opened();
     const store = createTourViewerStore(undefined, {
       editorView: editorViewReducer,
+      ...EDITOR_SESSION_SLICES,
     });
     const editor = createEditorSession({
       session,

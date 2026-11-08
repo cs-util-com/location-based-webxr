@@ -160,6 +160,7 @@ import {
 import {
   copyFileName,
   createEditorSession,
+  EDITOR_SESSION_SLICES,
   datedFileName,
   type EditorSave,
   type EditorSession,
@@ -369,6 +370,7 @@ function element<T extends HTMLElement>(id: string): T {
 // runs once a store exists).
 const store = createTourViewerStore(undefined, {
   editorView: editorViewReducer,
+  ...EDITOR_SESSION_SLICES,
 });
 
 /** The page's chrome state (`editorView`): what is selected, in flight,

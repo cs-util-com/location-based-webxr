@@ -13,13 +13,13 @@ import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 import { describe, expect, it } from "vitest";
 
-import { tourOf } from "./test-support/tour-of.js";
+import { tourOf } from "../../test-support/tour-of.js";
 import {
   initialTourDocumentState,
   tourDocumentActions as doc,
   tourDocumentReducer,
   type TourDocumentState,
-} from "./tour-document.js";
+} from "../../tour-document.js";
 import {
   assetShelfActions as act,
   assetShelfReducer,

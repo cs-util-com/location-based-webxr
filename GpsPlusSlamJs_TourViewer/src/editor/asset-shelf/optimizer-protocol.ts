@@ -2,7 +2,8 @@
  * The messages between the page and the asset optimizer's module Worker
  * (`asset-optimizer.worker.ts`), in a module of their own (no DOM, no
  * `new Worker`) so the worker, its client (`optimizer-client.ts`) and the
- * tests share one shape.
+ * tests share one shape - and the Worker's check of what it receives
+ * (`inboundOf`).
  *
  * @see optimizer-protocol.ts.md
  */
@@ -29,6 +30,34 @@ interface CancelMessage {
 }
 
 export type OptimizerInbound = RunMessage | CancelMessage;
+
+/** Every asset kind, so a run of another kind is refused. */
+const KINDS: Readonly<Record<TourAssetKind, true>> = {
+  image: true,
+  audio: true,
+  video: true,
+  model: true,
+};
+
+/** `data` as a message the Worker takes, or null for anything else (a
+ *  non-object, an unknown type, a job that is no whole number, a run of no
+ *  known kind or without settings): the Worker ignores those. */
+export function inboundOf(data: unknown): OptimizerInbound | null {
+  if (typeof data !== "object" || data === null) return null;
+  const m = data as Partial<Record<string, unknown>>;
+  if (typeof m.job !== "number" || !Number.isSafeInteger(m.job)) return null;
+  if (m.type === "cancel") return { type: "cancel", job: m.job };
+  if (
+    m.type !== "run" ||
+    typeof m.kind !== "string" ||
+    !Object.hasOwn(KINDS, m.kind) ||
+    typeof m.settings !== "object" ||
+    m.settings === null
+  ) {
+    return null;
+  }
+  return data as RunMessage;
+}
 
 interface ProgressMessage {
   readonly type: "progress";

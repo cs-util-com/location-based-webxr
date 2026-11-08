@@ -28,7 +28,7 @@ import { readStoredEntryBytes } from "gps-plus-slam-app-framework/test-utils/zip
 import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { manifestToWrite } from "../tour-document.js";
 import { openTourFile, type TourSession } from "../tour-session.js";
-import { createTourViewerStore } from "../tour-viewer-session.js";
+import { editorStore } from "../test-support/editor-store.js";
 import { photoKey } from "../draft-persistence.js";
 import { createEditorDraft } from "./editor-draft.js";
 import { createEditorSession } from "./editor-session.js";
@@ -42,7 +42,7 @@ import {
 } from "../test-support/station-content.js";
 
 beforeAll(() => {
-  createTourViewerStore();
+  editorStore();
 });
 
 /** The world view of `tour` (none without one). */
@@ -538,7 +538,7 @@ describe("the editor session's station edits", () => {
   // move nothing, and take it back in one undo.
   it("moveToNewStation gives an item a station of its own where it stands, one step, and names it", async () => {
     const { session, manifest } = await opened();
-    const store = createTourViewerStore();
+    const store = editorStore();
     const editor = createEditorSession({
       session,
       manifest,

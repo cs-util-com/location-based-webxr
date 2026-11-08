@@ -20,7 +20,7 @@ import { describe, expect, it } from "vitest";
 
 import { tourOf, withWorldObjects } from "../test-support/tour-of.js";
 import { openTourFile } from "../tour-session.js";
-import { createTourViewerStore } from "../tour-viewer-session.js";
+import { editorStore } from "../test-support/editor-store.js";
 import { zipBlobEntryNames } from "../zip-blob.js";
 import { ASSET_OPTIMIZERS } from "./asset-shelf/asset-optimizers.js";
 import { fakeOptimizer } from "./asset-shelf/test-support/fake-optimizer.js";
@@ -89,7 +89,7 @@ describe("the shelf and the save, in any order", () => {
           session,
           manifest: MANIFEST,
           levels: new Map(),
-          store: createTourViewerStore(),
+          store: editorStore(),
           optimizers: { ...ASSET_OPTIMIZERS, audio: fake },
         });
         const settle = () => new Promise((r) => setTimeout(r, 0));

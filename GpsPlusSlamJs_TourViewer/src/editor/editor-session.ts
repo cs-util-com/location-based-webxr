@@ -101,10 +101,7 @@ import {
   TOUR_REPLACED,
 } from "../tour-document-save.js";
 import type { FinishedTour } from "../finish-rebuild.js";
-import {
-  createTourViewerStore,
-  type TourViewerStore,
-} from "../tour-viewer-session.js";
+import { createTourViewerStore } from "../tour-viewer-session.js";
 import type { DetailsOutcome } from "./details-dialog.js";
 import type { EditorTourSettings } from "./editor-draft.js";
 import {
@@ -135,7 +132,10 @@ import {
   createAssetShelf,
   type AssetShelf,
 } from "./asset-shelf/asset-shelf.js";
-import { assetShelfActions } from "../asset-shelf-slice.js";
+import {
+  assetShelfActions,
+  assetShelfReducer,
+} from "./asset-shelf/asset-shelf-slice.js";
 import {
   createOptimizerHost,
   spawnOptimizerWorker,
@@ -320,6 +320,17 @@ interface EditorRestore {
     readonly blob: Blob;
   }[];
 }
+
+/** The editor's own slices an editor session's store must hold, passed as
+ *  the page's slices (`createTourViewerStore`'s `pageReducers`), so the
+ *  phone's store never names them: the asset shelf's plain data. */
+export const EDITOR_SESSION_SLICES = { assetShelf: assetShelfReducer };
+
+/** A store an editor session runs on: the tour viewer's, with
+ *  `EDITOR_SESSION_SLICES`. */
+export type EditorSessionStore = ReturnType<
+  typeof createTourViewerStore<typeof EDITOR_SESSION_SLICES>
+>;
 
 /** A smaller file for an asset (`swapAsset`): its bytes, its path
  *  (`content/<id>.<ext>`) and, for an image, its new size in pixels. */
@@ -846,8 +857,9 @@ export function createEditorSession(input: {
   readonly loadPhoto?: (image: string) => Promise<Blob>;
   /** The store holding the tour document (D29): the page's own, so its
    *  views read the same state; a fresh one when absent (tests). Opening
-   *  the session opens the document in it - whatever it held is gone. */
-  readonly store?: TourViewerStore;
+   *  the session opens the document in it - whatever it held is gone. It
+   *  holds `EDITOR_SESSION_SLICES`. */
+  readonly store?: EditorSessionStore;
   /** Whether a station's pose is locked (the page's view state): its move,
    *  turn and lift are then refused; its radius, name, delete and copy
    *  stay open. None: nothing is locked (the phone, a test). */
@@ -868,7 +880,8 @@ export function createEditorSession(input: {
   readonly optimizerHost?: OptimizerHost;
 }): EditorSession {
   const { session, levels } = input;
-  const store: TourViewerStore = input.store ?? createTourViewerStore();
+  const store: EditorSessionStore =
+    input.store ?? createTourViewerStore(undefined, EDITOR_SESSION_SLICES);
   // A tour without an id of its own is given one, once (Q-I).
   store.dispatch(
     tourDocumentActions.opened({

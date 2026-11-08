@@ -122,9 +122,6 @@ lives here.
   `editorView`), so the phone's store never names them; a key one of the
   store's own slices has throws, naming it (the framework refuses its own
   keys). `TourViewerStore` is the store without page slices.
-  The store's own slices include `assetShelf` (`asset-shelf-slice.ts`, beside `tour-document.ts` because every page's store mounts it; the runner stays in `editor/asset-shelf/`):
-  the editor session that fills it is created on this store, and its
-  selector reads it beside `tourDocument`.
   With the creator's troubleshooting
   recording (`authoring-recording.ts`; authoring recording plan
   2026-09-28-0953, M1a) the store writes into its backend under its

@@ -715,7 +715,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   (`undelivered`, a Blob; the store holds only that one waits).
 - **The page's chrome state is the store's too** (`editorView`,
   `editor-view.ts`, mounted only here: `createTourViewerStore(undefined,
-{ editorView })`): the selection, `busy`, the marker being dragged and
+{ editorView, ...EDITOR_SESSION_SLICES })`, the session's own slices -
+  the asset shelf - beside it): the selection, `busy`, the marker being dragged and
   its drop, `keepsWalk`, `openedWalk`, `doneBusy`, whether a save waits
   to be delivered, the card's outcome line and the file picker's
   `picking`. The page reads them through `ui()` and changes them only by
