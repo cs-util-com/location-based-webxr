@@ -341,12 +341,17 @@ export function cleanMergeRefusal({ refGiven, selection, headIsMerge, headOnMain
  *   dependents get it cleared, so they always run their whole suite;
  *   `dependentTrimEnv`, also fast-gate only, is set to '1' for the dependents
  *   (which then skip the checks that read only their own files, projects.mjs
- *   DEPENDENT_TRIM_STAGES) and cleared for the changed packages
+ *   DEPENDENT_TRIM_STAGES) and cleared for the changed packages;
+ *   `dependents`, also fast-gate only, is the whole dependent set as pnpm
+ *   names (the packages the import graph reaches, impact-graph.mjs): each
+ *   runs by name and gets the ref through `relatedUnitEnv`, so its unit stage
+ *   runs only the tests the change reaches (related-unit.mjs); an empty list
+ *   runs no dependent. Without it every pnpm dependent runs its whole suite.
  * @returns {{ command: string, env: Record<string, string> }[]}
  */
 export function gateCommands(
   names,
-  { skipBrowserEnv, rootChecks = [], docOnlyNames = [], ref, relatedUnitEnv, dependentTrimEnv }
+  { skipBrowserEnv, rootChecks = [], docOnlyNames = [], ref, relatedUnitEnv, dependentTrimEnv, dependents }
 ) {
   /** @type {{ command: string, env: Record<string, string> }[]} */
   const commands = [];
@@ -384,6 +389,20 @@ export function gateCommands(
       ...(dependentTrimEnv ? { [dependentTrimEnv]: '' } : {}),
     },
   });
+  if (dependents) {
+    const chosen = [...new Set(dependents)].filter((n) => !names.includes(n)).sort();
+    if (chosen.length > 0) {
+      commands.push({
+        command: `pnpm --workspace-concurrency=1 ${chosen.map((n) => `--filter ${n}`).join(' ')} test`,
+        env: {
+          [skipBrowserEnv]: '1',
+          ...(ref && relatedUnitEnv ? { [relatedUnitEnv]: ref } : {}),
+          ...(dependentTrimEnv ? { [dependentTrimEnv]: '1' } : {}),
+        },
+      });
+    }
+    return commands;
+  }
   // Then dependents, WITHOUT the browser stages. `...X` is X plus dependents;
   // `!X` subtracts the ones that just ran in full. An empty result is a safe
   // no-op: pnpm prints "No projects matched the filters" and exits 0.

@@ -48,9 +48,12 @@ export const DEFAULT_MAX_FILES = 150;
  */
 export function planRelatedRun({ changed, deleted, testFiles, maxFiles = DEFAULT_MAX_FILES }) {
   const gone = new Set(deleted.map(normalize));
-  const paths = [...new Set(changed.map(normalize))].filter(
-    (p) => p !== '' && p !== 'docs/test-timings.md' && !p.toLowerCase().endsWith('.md')
-  );
+  const unique = [...new Set(changed.map(normalize))].filter((p) => p !== '' && p !== 'docs/test-timings.md');
+  const paths = unique.filter((p) => !p.toLowerCase().endsWith('.md'));
+  // Markdown is never handed to vitest, but a test can read it as data (a
+  // fixtures PROVENANCE.md), so it selects its readers. A deleted one breaks
+  // no test that would still pass without it.
+  const markdown = unique.filter((p) => p.toLowerCase().endsWith('.md') && !gone.has(p));
   if (paths.length > maxFiles) {
     return { mode: 'full', reason: `${paths.length} changed files (more than ${maxFiles})` };
   }
@@ -72,7 +75,7 @@ export function planRelatedRun({ changed, deleted, testFiles, maxFiles = DEFAULT
       return { mode: 'full', reason: `${p} is not a source, style, page or Playwright file` };
     }
   }
-  const names = paths.map((p) => p.split('/').pop() ?? p);
+  const names = [...paths, ...markdown].map((p) => p.split('/').pop() ?? p);
   for (const test of testFiles) {
     const path = normalize(test.path);
     const scans = sourceChanged && SCANNER_RE.test(test.text);
@@ -83,34 +86,24 @@ export function planRelatedRun({ changed, deleted, testFiles, maxFiles = DEFAULT
 }
 
 /**
- * The first changed path that lies in a workspace package `packageDir`
- * depends on, directly or through another, or null. Such a change runs the
- * full suite: a test can import that package's source (an alias, or exports
- * that point at `src`), and the related run, which sees only this package's
- * own paths, would skip it.
+ * The plan of a package when some change lies outside it: its own related
+ * plan plus the unit tests of this package that the import graph reaches
+ * (impact-graph.mjs `impactOf`), or the whole suite when a graph rule asks for
+ * it. A full own plan stays full.
  *
  * @param {object} input
- * @param {readonly string[]} input.changed - repo-relative changed paths
- * @param {string} input.packageDir - this package's top-level directory
- * @param {readonly { dir: string, name: string, deps: readonly string[] }[]} input.packages
- *   - every workspace package: its directory, its name and the names it
- *   depends on (any dependency field)
- * @returns {string | null}
+ * @param {RelatedPlan} input.plan - this package's own plan (planRelatedRun)
+ * @param {{ tests: readonly string[], fullSuite: readonly { dir: string, reason: string }[] }} input.impact
+ * @param {string} input.packageDir
+ * @returns {RelatedPlan}
  */
-export function upstreamChange({ changed, packageDir, packages }) {
-  const byName = new Map(packages.map((p) => [p.name, p]));
-  const self = packages.find((p) => p.dir === packageDir);
-  if (!self) return null;
-  /** @type {Set<string>} */
-  const upstream = new Set();
-  const queue = [...self.deps];
-  while (queue.length > 0) {
-    const pkg = byName.get(/** @type {string} */ (queue.pop()));
-    if (!pkg || pkg.dir === packageDir || upstream.has(pkg.dir)) continue;
-    upstream.add(pkg.dir);
-    queue.push(...pkg.deps);
-  }
-  return changed.find((p) => upstream.has(normalize(p).split('/')[0])) ?? null;
+export function mergeImpact({ plan, impact, packageDir }) {
+  if (plan.mode === 'full') return plan;
+  const full = impact.fullSuite.find((f) => f.dir === packageDir);
+  if (full) return { mode: 'full', reason: full.reason };
+  const prefix = `${packageDir}/`;
+  const reached = impact.tests.filter((t) => t.startsWith(prefix)).map((t) => t.slice(prefix.length));
+  return { mode: 'related', files: [...new Set([...plan.files, ...reached])].sort() };
 }
 
 /**

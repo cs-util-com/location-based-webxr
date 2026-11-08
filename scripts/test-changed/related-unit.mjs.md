@@ -12,12 +12,14 @@
   for a vitest `test:unit` stage, only with `GATE_SKIP_BROWSER_STAGES` and
   the ref set, never on the GitHub runner; `gateCommands` in
   [select.mjs](select.mjs.md) sets the ref for the changed packages of the
-  fast gate only and clears it for their dependents.
+  fast gate and for the dependents the graph chose.
 - Invariants & assumptions:
-  - A change in a workspace package this one depends on (directly or
-    transitively, any dependency field) runs the full suite
-    (`upstreamChange`): a test can import that package's source through an
-    alias or a src export, which a package-local related run cannot see.
+  - When any change lies outside the package (an upstream package, a file
+    one of its tests reads), the plan adds this package's tests that the
+    cross-package graph reaches (`mergeImpact` over `impactOf`,
+    [impact-graph.mjs](impact-graph.mjs.md)), or runs the full suite when a
+    graph fallback names this package. The same stage runs in a dependent
+    the graph chose, so a dependent runs only the tests the change reaches.
   - Prints ONE line saying what it runs: `related-unit: only the tests
     related to N changed or reading file(s) ...`, `related-unit: no unit test
     can read this change, so none runs ...`, or `related-unit: full suite -

@@ -11,7 +11,7 @@ import path from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { changedPaths, trackedPaths, untrackedPaths } from './changed-paths.mjs';
+import { changedFiles, changedPaths, trackedPaths, untrackedPaths } from './changed-paths.mjs';
 
 let repo = '';
 /** @param {string[]} args */
@@ -49,6 +49,19 @@ describe('changed-paths', () => {
       'pkg/edited.txt',
       'pkg/new.txt',
     ]);
+  });
+
+  // Why: the impact graph and the changed-files stages match single files,
+  // so a brand-new folder must arrive as its files, not as `pkg/fresh/`.
+  it('changedFiles lists the files of a new folder, not the folder', () => {
+    mkdirSync(path.join(repo, 'pkg', 'fresh'));
+    writeFileSync(path.join(repo, 'pkg', 'fresh', 'a.ts'), 'x');
+    try {
+      expect(untrackedPaths(repo)).toContain('pkg/fresh/');
+      expect(changedFiles('HEAD', repo).sort()).toEqual(['pkg/edited.txt', 'pkg/fresh/a.ts', 'pkg/new.txt']);
+    } finally {
+      rmSync(path.join(repo, 'pkg', 'fresh'), { recursive: true, force: true });
+    }
   });
 
   it('throws on an unknown ref instead of reporting no change', () => {

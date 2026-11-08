@@ -321,6 +321,36 @@ describe('gateCommands: related unit tests in the fast gate', () => {
   });
 });
 
+// Why this test matters: in the fast gate the dependents are the packages the
+// import graph reaches (impact-graph.mjs), not every package pnpm lists as
+// depending on a changed one. A list given here is the whole dependent set:
+// each runs by name, with the ref, so its unit stage runs only the tests the
+// change reaches; an empty list runs no dependent at all (a test-only change).
+describe('gateCommands: graph-chosen dependents in the fast gate', () => {
+  const ENV = 'GATE_SKIP_BROWSER_STAGES';
+  const RELATED = 'GATE_UNIT_RELATED_REF';
+  const TRIM = 'GATE_DEPENDENT_TRIM';
+  const options = { skipBrowserEnv: ENV, relatedUnitEnv: RELATED, dependentTrimEnv: TRIM, ref: 'HEAD' };
+
+  it('runs exactly the listed dependents, by name, with the ref and the trim', () => {
+    const commands = gateCommands(['fw'], { ...options, dependents: ['tour', 'kit'] });
+    const last = commands[commands.length - 1];
+    expect(last.command).toBe('pnpm --workspace-concurrency=1 --filter kit --filter tour test');
+    expect(last.env).toEqual({ [ENV]: '1', [RELATED]: 'HEAD', [TRIM]: '1' });
+    expect(commands.some((c) => c.command.includes('"...fw"'))).toBe(false);
+  });
+
+  it('runs no dependent when the list is empty', () => {
+    const commands = gateCommands(['fw'], { ...options, dependents: [] });
+    expect(commands[commands.length - 1].command).toBe('pnpm --workspace-concurrency=1 --filter fw test');
+  });
+
+  it('never lists a changed package as its own dependent', () => {
+    const commands = gateCommands(['fw'], { ...options, dependents: ['fw', 'tour'] });
+    expect(commands[commands.length - 1].command).toBe('pnpm --workspace-concurrency=1 --filter tour test');
+  });
+});
+
 // Why this test matters: the dependent trim (projects.mjs
 // DEPENDENT_TRIM_STAGES) is licensed for the DEPENDENTS of the per-commit fast
 // gate only. A changed package always runs its static checks, so it gets the

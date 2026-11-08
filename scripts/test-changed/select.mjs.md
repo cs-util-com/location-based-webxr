@@ -32,7 +32,7 @@
   `select.property.test.mjs` (never invents packages; any non-package path
   forces 'all'; order-insensitive). Run in the root repo-config gate.
 
-## `gateCommands(names, { skipBrowserEnv, rootChecks, docOnlyNames, ref, relatedUnitEnv, dependentTrimEnv })`
+## `gateCommands(names, { skipBrowserEnv, rootChecks, docOnlyNames, ref, relatedUnitEnv, dependentTrimEnv, dependents })`
 
 The command SPLIT, kept pure so DEC-G2 is testable. Emits, in order:
 
@@ -80,6 +80,14 @@ top-level directories and nothing more — so the closure comes from pnpm’s
 workspace graph at execution time. What is asserted here is therefore the
 emitted commands and their environment, which is where the guarantee either
 holds or silently does not.
+
+`dependents`, passed by the fast gate only, is the list of package names the
+cross-package graph reaches ([impact-graph.mjs](impact-graph.mjs.md)). With
+it, the dependents' command is `--filter <name>` per chosen package (the
+changed ones dropped) instead of pnpm's `...<name>` closure, and carries
+`<relatedUnitEnv>=<ref>` and the trim switch, so each runs only the tests
+the change reaches. An empty list emits no dependents' command: a test-only
+change or one no other package imports runs no dependent.
 
 An empty dependent set is a safe no-op: pnpm prints "No projects matched the
 filters" and exits 0 (verified), which is what a package with no dependents
