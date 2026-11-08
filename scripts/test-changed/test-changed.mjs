@@ -54,7 +54,8 @@
 //   read it, and the run prints ONE line naming everything it runs.
 
 import { spawnSync } from 'node:child_process';
-import { readFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -84,7 +85,7 @@ import {
   selectPackages,
 } from './select.mjs';
 import { trackedPaths, untrackedPaths } from './changed-paths.mjs';
-import { graphDependents } from './graph-dependents.mjs';
+import { IMPACT_FILE_ENV, graphDependents, writeImpactCache } from './graph-dependents.mjs';
 
 const WORKSPACE_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
@@ -320,8 +321,17 @@ const fastOptions = fastGateOptions(process.env);
  */
 function fastGateDependents() {
   if (!fastOptions.relatedUnitEnv || names.length === 0) return undefined;
-  const { dirs, line } = graphDependents({ root: WORKSPACE_ROOT, ref, changedDirs: selection.packages });
+  const { dirs, line, impact } = graphDependents({ root: WORKSPACE_ROOT, ref, changedDirs: selection.packages });
   console.log(line);
+  if (impact) {
+    // Built once: every package's unit stage reads this instead of
+    // rebuilding the graph (related-unit.mjs). Removed when the run exits.
+    const dir = mkdtempSync(path.join(tmpdir(), 'test-changed-impact-'));
+    const file = path.join(dir, 'impact.json');
+    writeImpactCache(file, { ref, root: WORKSPACE_ROOT, impact });
+    process.env[IMPACT_FILE_ENV] = file;
+    process.on('exit', () => rmSync(dir, { recursive: true, force: true }));
+  }
   return dirs?.map(packageName);
 }
 

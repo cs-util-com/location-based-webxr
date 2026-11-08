@@ -9,11 +9,12 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { trackedPaths, untrackedPaths } from './changed-paths.mjs';
-import { graphDependents } from './graph-dependents.mjs';
+import { IMPACT_FILE_ENV, graphDependents, readImpactCache, writeImpactCache } from './graph-dependents.mjs';
 import { gateCommands, selectPackages } from './select.mjs';
 
 let root = '';
@@ -125,5 +126,38 @@ describe('the fast gate on a real workspace', () => {
       dirs: undefined,
       line: expect.stringMatching(/could not be built/),
     });
+  });
+});
+
+// Why: every package's unit stage rebuilt the whole graph (about 3.4k file
+// reads in this workspace) although test-changed.mjs had just built it for
+// the same ref. The gate now builds it once and hands the reached set down;
+// a cache written for another ref or root must never be read.
+describe('the impact cache the fast gate hands to each unit stage', () => {
+  it('round-trips the impact for its ref and root, and is refused for any other', () => {
+    const file = path.join(root, 'impact.json');
+    const impact = { tests: ['Tour/src/view.test.ts'], packages: ['Tour'], fullSuite: [] };
+    writeImpactCache(file, { ref: 'HEAD', root, impact });
+    expect(readImpactCache(file, { ref: 'HEAD', root })).toEqual(impact);
+    expect(readImpactCache(file, { ref: 'main', root })).toBeNull();
+    expect(readImpactCache(file, { ref: 'HEAD', root: `${root}-other` })).toBeNull();
+    expect(readImpactCache(path.join(root, 'missing.json'), { ref: 'HEAD', root })).toBeNull();
+    rmSync(file);
+  });
+
+  it("related-unit takes the reached set from the cache instead of building the graph", () => {
+    write('Fw/src/a.ts', 'export const a = 3;\n');
+    const file = path.join(tmpdir(), `impact-${process.pid}.json`);
+    const impact = { tests: [], packages: ['Tour'], fullSuite: [{ dir: 'Tour', reason: 'the cached reason' }] };
+    writeImpactCache(file, { ref: 'HEAD', root, impact });
+    const script = fileURLToPath(new URL('./related-unit.mjs', import.meta.url));
+    const out = execFileSync(process.execPath, [script, 'node', '-e', '0'], {
+      cwd: path.join(root, 'Tour'),
+      encoding: 'utf8',
+      env: { ...process.env, GATE_UNIT_RELATED_REF: 'HEAD', [IMPACT_FILE_ENV]: file },
+    });
+    expect(out).toMatch(/full suite - the cached reason/);
+    rmSync(file);
+    git(['checkout', '-q', '--', 'Fw/src/a.ts']);
   });
 });

@@ -43,12 +43,16 @@ const SRC_SPEC_RE = /(?:^|\/)src\/(?:.*\/)?[^/]+\.spec\.(?:[cm]?[jt]sx?)$/;
 const SPEC_RE =
   /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+|\bvi\.(?:mock|doMock|unmock|importActual|importMock)\s*\(\s*|\brequire\s*\(\s*|\bnew\s+URL\s*\(\s*|import\.meta\.resolve\s*\(\s*)(["'`])([^"'`\n]+)\1/g;
 const GLOB_RE = /import\.meta\.glob\s*(?:<[^>]*>)?\s*\(\s*(\[[^\]]*\]|["'`][^"'`]+["'`])/g;
-const FS_READ_RE = /\breadFileSync\b|\breadFile\s*\(|\bcreateReadStream\b|\bfs\.promises\b|\bfetch\s*\(/;
-// An `import.meta.glob` is not a scanner: its folder edge says exactly what it loads.
-const SCANNER_RE = /\breaddirSync\b|\breaddir\s*\(|\bglobSync\b|\bfs\.glob\b|\bopendirSync\b/;
+// The one source of these patterns: related-tests.mjs (the in-package plan) reads them too.
+/** Any file read (`fs` or `fetch`); a reader also names the file it reads. */
+export const FS_READ_RE = /\breadFileSync\b|\breadFile\s*\(|\breaddirSync\b|\bcreateReadStream\b|\bfs\.promises\b|\bfetch\s*\(/;
+/** A whole-tree walk. An `import.meta.glob` is none here: its folder edge says exactly what it loads. */
+export const SCANNER_RE = /\breaddirSync\b|\breaddir\s*\(|\bglobSync\b|\bfs\.glob\b|\bopendirSync\b/;
 // By basename: `setup.ts`, `test-setup.ts`, `vitest.setup.ts`, `setupTests.ts`; a
 // module that merely ends in `-setup` (`creator-setup.ts`) is ordinary source.
 const SETUP_RE = /^(?:(?:test|vitest)[-_.])?setup(?:Tests)?\.[cm]?[jt]sx?$/i;
+/** @param {string} path @returns {boolean} a vitest setup file, which runs before every test unimported */
+export const isSetupFile = (path) => SETUP_RE.test(path.replaceAll('\\', '/').split('/').pop() ?? '');
 /**
  * The `setupFiles` / `globalSetup` value of a config: the only path strings that
  * load a file (a coverage `exclude` names files it loads not).
@@ -81,13 +85,13 @@ export const FULL_SUITE_RULES = Object.freeze([
   { name: 'a declaration file', test: (p) => DECLARATION_RE.test(p) },
   // The build shapes dist, which every dependent type-checks and runs against.
   { name: 'a build config', test: (p) => BUILD_CONFIG_RE.test(p) },
-  { name: 'a setup file every test may load', test: (p) => SETUP_RE.test(p.split('/').pop() ?? '') },
+  { name: 'a setup file every test may load', test: (p) => isSetupFile(p) },
   { name: 'a mock every test may load', test: (p) => p.includes('__mocks__/') },
 ]);
 
 /** A config, setup file or mock that an import reaches runs its package whole. */
 const loadsEveryTest = (/** @type {string} */ p) =>
-  CONFIG_RE.test(p) || SETUP_RE.test(p.split('/').pop() ?? '') || p.includes('__mocks__/');
+  CONFIG_RE.test(p) || isSetupFile(p) || p.includes('__mocks__/');
 
 /**
  * @typedef {{ dir: string, name: string, deps: readonly string[], exports?: unknown }} WorkspacePackage
