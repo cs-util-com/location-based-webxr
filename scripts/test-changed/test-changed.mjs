@@ -321,14 +321,15 @@ const fastOptions = fastGateOptions(process.env);
  */
 function fastGateDependents() {
   if (!fastOptions.relatedUnitEnv || names.length === 0) return undefined;
-  const { dirs, line, impact } = graphDependents({ root: WORKSPACE_ROOT, ref, changedDirs: selection.packages });
+  const { dirs, line, impact, changed } = graphDependents({ root: WORKSPACE_ROOT, ref, changedDirs: selection.packages });
   console.log(line);
-  if (impact) {
+  if (impact && changed) {
     // Built once: every package's unit stage reads this instead of
-    // rebuilding the graph (related-unit.mjs). Removed when the run exits.
+    // rebuilding the graph (related-unit.mjs). Removed on a normal exit; a
+    // run killed by a signal (Ctrl-C) leaves the temp dir behind.
     const dir = mkdtempSync(path.join(tmpdir(), 'test-changed-impact-'));
     const file = path.join(dir, 'impact.json');
-    writeImpactCache(file, { ref, root: WORKSPACE_ROOT, impact });
+    writeImpactCache(file, { ref, root: WORKSPACE_ROOT, changed, impact });
     process.env[IMPACT_FILE_ENV] = file;
     process.on('exit', () => rmSync(dir, { recursive: true, force: true }));
   }

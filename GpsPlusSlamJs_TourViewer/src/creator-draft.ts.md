@@ -300,7 +300,9 @@ whole frames of the stations this page created) is one file, `settings`
 (`editor/editor-draft.ts`), read by the same `parseSettingsRecord`, against
 the opened tour, whose assets and characters a stored frame may name. What
 did not read is told on the status line (`DRAFT_PART_UNREAD`), beside any
-other note of the open; a record with a station that did not read is kept
+other note of the open, as is a captured photo whose bytes did not read
+(`StoredDraft.photosUnread`; `creator-draft-follow.test.ts`, seen red:
+no word at all); a record with a station that did not read is kept
 though spent, since a corrected file reads it again, until the next whole
 write. The
 document's listener writes it whole on each change, in its own queue. The

@@ -137,11 +137,27 @@ describe('the impact cache the fast gate hands to each unit stage', () => {
   it('round-trips the impact for its ref and root, and is refused for any other', () => {
     const file = path.join(root, 'impact.json');
     const impact = { tests: ['Tour/src/view.test.ts'], packages: ['Tour'], fullSuite: [] };
-    writeImpactCache(file, { ref: 'HEAD', root, impact });
-    expect(readImpactCache(file, { ref: 'HEAD', root })).toEqual(impact);
-    expect(readImpactCache(file, { ref: 'main', root })).toBeNull();
-    expect(readImpactCache(file, { ref: 'HEAD', root: `${root}-other` })).toBeNull();
-    expect(readImpactCache(path.join(root, 'missing.json'), { ref: 'HEAD', root })).toBeNull();
+    const changed = ['Fw/src/a.ts', 'Fw\\src\\b.ts'];
+    writeImpactCache(file, { ref: 'HEAD', root, changed, impact });
+    expect(readImpactCache(file, { ref: 'HEAD', root, changed })).toEqual(impact);
+    // The same list in another order or slash style is the same change set.
+    expect(readImpactCache(file, { ref: 'HEAD', root, changed: ['Fw/src/b.ts', 'Fw/src/a.ts'] })).toEqual(impact);
+    expect(readImpactCache(file, { ref: 'main', root, changed })).toBeNull();
+    expect(readImpactCache(file, { ref: 'HEAD', root: `${root}-other`, changed })).toBeNull();
+    expect(readImpactCache(path.join(root, 'missing.json'), { ref: 'HEAD', root, changed })).toBeNull();
+    rmSync(file);
+  });
+
+  // Why: the ref and root alone do not pin the reached set. A file edited
+  // while the gate runs (or a cache file reused by a later run on the same
+  // ref) has another change set, and its stale impact would select the wrong
+  // tests; a reader must rebuild instead (PR #877 review).
+  it('is refused for another set of changed files', () => {
+    const file = path.join(root, 'impact.json');
+    const impact = { tests: [], packages: ['Tour'], fullSuite: [] };
+    writeImpactCache(file, { ref: 'HEAD', root, changed: ['Fw/src/a.ts'], impact });
+    expect(readImpactCache(file, { ref: 'HEAD', root, changed: ['Fw/src/a.ts', 'Fw/src/b.ts'] })).toBeNull();
+    expect(readImpactCache(file, { ref: 'HEAD', root, changed: [] })).toBeNull();
     rmSync(file);
   });
 
@@ -149,7 +165,10 @@ describe('the impact cache the fast gate hands to each unit stage', () => {
     write('Fw/src/a.ts', 'export const a = 3;\n');
     const file = path.join(tmpdir(), `impact-${process.pid}.json`);
     const impact = { tests: [], packages: ['Tour'], fullSuite: [{ dir: 'Tour', reason: 'the cached reason' }] };
-    writeImpactCache(file, { ref: 'HEAD', root, impact });
+    // The changed list exactly as test-changed.mjs hands it to the cache.
+    const { changed } = graphDependents({ root, ref: 'HEAD', changedDirs: ['Fw'] });
+    expect(changed).toEqual(['Fw/src/a.ts']);
+    writeImpactCache(file, { ref: 'HEAD', root, changed: changed ?? [], impact });
     const script = fileURLToPath(new URL('./related-unit.mjs', import.meta.url));
     const out = execFileSync(process.execPath, [script, 'node', '-e', '0'], {
       cwd: path.join(root, 'Tour'),

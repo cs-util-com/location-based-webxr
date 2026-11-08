@@ -99,7 +99,12 @@ standing`). A distance, size or focal length that is not a positive
     a station absent from the map or at 1 put back exactly to the tour's
     matrix. A station under a preview is left alone. The billboards are
     not scaled.
-  - `dispose()` - everything out of the scene and freed.
+  - `dispose()` - everything out of the scene and freed. A free that
+    throws (the renderer rethrows a world part's, `content-placement.ts`)
+    abandons nothing: its station's ring, pole and billboard go and its
+    content is cleared, every later station is freed too, and the first
+    throw then reaches the caller. `setTour` and `update` free the same
+    way (a station freed by a throwing frame is drawn anew when near).
 - `stationObjects(id)` - every object a station draws: its root (ring,
   pole, items) and its billboard once made (the billboard hangs in the
   layer's group, not under the root); null for an id the tour does not
@@ -271,7 +276,9 @@ item's station lighter; a part from the world door built in the
 editor's mode from the block the visitor's page builds it from, both at
 the block's own pose over six turns (none to upside down), kept through
 the morph, picked and located but no gesture's target, moved and turned
-by a preview and freed with the layer; what is under a ray; names and codes hidden and shown; everything removed on
+by a preview and freed with the layer; a part whose dispose throws
+leaving its station freed and drawn again later, and every station freed
+on dispose (both seen red, PR #874 review); what is under a ray; names and codes hidden and shown; everything removed on
 dispose; `codeQuaternionNue` for a heading and a full rotation;
 `focalPxOf`; `codeGrowth`'s size on screen, its printed size near, its
 flat weighting, bad input, and a property (at least 1, laid flat exactly

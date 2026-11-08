@@ -88,14 +88,15 @@ under - what a tap in AR is cast against to name the object
   disposed with them (the 3D editor passes it too); without the builder
   (the creator's previews, the unit tests) it is left out. Models are added after the planes, so the planes'
   order behind the labels holds. A station's story blocks are the
-  story's, never drawn here. Any other block (a free video or sound, a kind with no drawing here) is asked of the page's world door, `worldPart` (the visitor's: its kind's row, `play-kinds.ts` `worldPartOf`), and the `WorldPart` it gives (`world-part.ts`) is placed at the block's pose, mounted in the one world-part set, and disposed and then unmounted with the station (in that order: a part that frees itself only while still mounted, as the stand and the sign do, still frees everything; a part whose dispose throws still leaves every other part freed and unmounted, and the first throw then reaches the caller); without the door, or when it answers null, nothing stands there (no look exists yet, and a stand-in would be a marker nobody chose). The part takes the block's pose rotation as it stands, pitch and roll included (only the stand and the sign are set upright); where its front, local +Z, then points depends on which convention wrote that rotation (`world-part.ts.md`, Axes). A free character is the page's free host's (`free-items.ts`), never this renderer's. A station without free blocks gives an empty
+  story's, never drawn here. Any other block (a free video or sound, a kind with no drawing here) is asked of the page's world door, `worldPart` (the visitor's: its kind's row, `play-kinds.ts` `worldPartOf`), and the `WorldPart` it gives (`world-part.ts`) is placed at the block's pose, mounted in the one world-part set, and disposed and then unmounted with the station (in that order: a part that frees itself only while still mounted, as the stand and the sign do, still frees everything; a free that throws - a part, a stand, a view, a label - still leaves everything else freed and every part unmounted, and the first throw then reaches the caller); without the door, or when it answers null, nothing stands there (no look exists yet, and a stand-in would be a marker nobody chose). The part takes the block's pose rotation as it stands, pitch and roll included (only the stand and the sign are set upright); where its front, local +Z, then points depends on which convention wrote that rotation (`world-part.ts.md`, Axes). A free character is the page's free host's (`free-items.ts`), never this renderer's. A station without free blocks gives an empty
   one. The
   same rendering (`renderContent`) as `renderTourObjects`, so labels,
   photo planes, `skipped` and `dispose` behave the same. `alive()`
   turning false stops the decode loop: no further photo is decoded, and the
   caller disposes what came back. A throw part-way (a label or plane
-  constructor) frees the labels and decoded photos made so far, then goes
-  on (the caller gets the rejection and nothing to dispose).
+  constructor) frees everything made so far, then goes on (the caller gets
+  the rejection and nothing to dispose); a free that throws there is not
+  what the caller is told - the construction error is.
 - Every rendered pin's label and photo's plane carries its object's id in
   `userData.objectId`, so a pointer over the 3D editor can say which item
   it is over (`editor3d-stations.ts`, `pick`).
@@ -168,7 +169,9 @@ load" in the status segment), a station's placed model drawn at its
 its geometry freed with the station, none drawn without `loadModel`
 (B2b), a model in every world view at the same shared scale with its
 view's handle and its own material back and freed on disposal, disposal, what a throw part-way frees (the
-decoded photo and the label made so far), and a
+decoded photo and the label made so far), a throwing stand leaving no
+part mounted, the construction error kept over a throwing part dispose,
+and a
 caller's own pose and frame (`poseOf`) for pins and photos. For
 `renderTourStation`: the group structure (the station's group, its free
 blocks as its children, each tagged with its block's id; its story blocks

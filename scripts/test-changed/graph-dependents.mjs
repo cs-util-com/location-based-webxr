@@ -7,6 +7,7 @@
 // cache file (IMPACT_FILE_ENV names it) that each package's unit stage
 // (related-unit.mjs) reads instead of rebuilding the graph itself.
 
+import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -24,15 +25,18 @@ export const IMPACT_FILE_ENV = 'GATE_IMPACT_FILE';
  * @param {string} input.root - the workspace root
  * @param {string} input.ref - the gate's diff base
  * @param {readonly string[]} input.changedDirs - the package dirs the gate runs in full
- * @returns {{ dirs: string[] | undefined, line: string, impact?: Impact }}
+ * @returns {{ dirs: string[] | undefined, line: string, impact?: Impact, changed?: string[] }}
  *   `dirs`: the reached package dirs beyond `changedDirs` (sorted), or
  *   undefined for "every dependent"; `line`: the one log line that says
- *   which; `impact`: the whole reached set, when the graph was built
+ *   which; `impact`: the whole reached set, and `changed`: the files it
+ *   was built from, when the graph was built
  */
 export function graphDependents({ root, ref, changedDirs }) {
   let impact;
+  let changed;
   try {
-    impact = impactOf(loadImpactGraph(root), changedFiles(ref, root));
+    changed = changedFiles(ref, root);
+    impact = impactOf(loadImpactGraph(root), changed);
   } catch (error) {
     const first = String(error).split('\n')[0];
     return { dirs: undefined, line: `test-changed: the import graph could not be built (${first}), so every dependent runs` };
@@ -44,6 +48,7 @@ export function graphDependents({ root, ref, changedDirs }) {
   return {
     dirs,
     impact,
+    changed,
     line:
       dirs.length === 0
         ? 'test-changed: the import graph reaches no other package, so no dependent runs'
@@ -56,24 +61,36 @@ const sameRoot = (/** @type {string} */ a, /** @type {string} */ b) =>
   path.resolve(a).replaceAll('\\', '/').toLowerCase() === path.resolve(b).replaceAll('\\', '/').toLowerCase();
 
 /**
- * @param {string} file
- * @param {{ ref: string, root: string, impact: Impact }} entry
+ * The change set as one key: order and slash style do not matter.
+ * @param {readonly string[]} changed
  */
-export function writeImpactCache(file, { ref, root, impact }) {
-  writeFileSync(file, JSON.stringify({ ref, root, impact }));
+const changesKey = (changed) =>
+  createHash('sha256')
+    .update([...new Set(changed.map((f) => f.replaceAll('\\', '/')))].sort().join('\n'))
+    .digest('hex');
+
+/**
+ * @param {string} file
+ * @param {{ ref: string, root: string, changed: readonly string[], impact: Impact }} entry
+ *   - `changed`: the files the impact was built from
+ */
+export function writeImpactCache(file, { ref, root, changed, impact }) {
+  writeFileSync(file, JSON.stringify({ ref, root, changes: changesKey(changed), impact }));
 }
 
 /**
  * @param {string} file
- * @param {{ ref: string, root: string }} expected - the reader's own ref and root
+ * @param {{ ref: string, root: string, changed: readonly string[] }} expected - the
+ *   reader's own ref, root and changed files
  * @returns {Impact | null} the cached impact, or null when the file is missing,
- *   unreadable, malformed, or written for another ref or root
+ *   unreadable, malformed, or written for another ref, root or change set
  */
-export function readImpactCache(file, { ref, root }) {
+export function readImpactCache(file, { ref, root, changed }) {
   try {
     const entry = JSON.parse(readFileSync(file, 'utf8'));
     const impact = entry?.impact;
     if (entry?.ref !== ref || typeof entry?.root !== 'string' || !sameRoot(entry.root, root)) return null;
+    if (entry?.changes !== changesKey(changed)) return null;
     if (!Array.isArray(impact?.tests) || !Array.isArray(impact?.packages) || !Array.isArray(impact?.fullSuite)) return null;
     return impact;
   } catch {

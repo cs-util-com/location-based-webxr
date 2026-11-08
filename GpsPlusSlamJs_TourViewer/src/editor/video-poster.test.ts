@@ -14,6 +14,9 @@ import { videoPosterOf, type PosterVideo } from "./video-poster.js";
 function fakeVideo(
   script: "frame" | "error" | "stall" | "empty",
   duration = 4,
+  /** What an unknown (Infinity) length turns out to be once a seek far
+   *  past the end makes the browser read it (Chrome); none: never. */
+  resolvesTo?: number,
 ) {
   const listeners = new Map<string, (() => void)[]>();
   const video = {
@@ -32,6 +35,15 @@ function fakeVideo(
       if (t === this.currentTime) return;
       this.seekedTo = t;
       queueMicrotask(() => {
+        if (
+          this.duration === Number.POSITIVE_INFINITY &&
+          resolvesTo !== undefined &&
+          t > resolvesTo
+        ) {
+          this.duration = resolvesTo;
+          this.seekedTo = resolvesTo;
+          for (const f of listeners.get("durationchange") ?? []) f();
+        }
         for (const f of listeners.get("seeked") ?? []) f();
       });
     },
@@ -61,10 +73,11 @@ function fakeVideo(
 function deps(
   script: "frame" | "error" | "stall" | "empty",
   duration?: number,
+  resolvesTo?: number,
 ) {
   const revoked: string[] = [];
   const drawn: { w: number; h: number }[] = [];
-  const video = fakeVideo(script, duration);
+  const video = fakeVideo(script, duration, resolvesTo);
   return {
     revoked,
     drawn,
@@ -106,18 +119,49 @@ describe("videoPosterOf", () => {
     }
   });
 
-  // Why: a video whose length the browser does not know yet (0, NaN, or a
-  // recorded clip's Infinity) has nowhere to seek to but its start, and a
-  // seek to where it already is fires no "seeked": the import waited the
-  // whole timeout and got no poster. Its first frame is drawn once loaded.
+  // Why: a video whose length the browser does not know (0, NaN) has
+  // nowhere to seek to but its start, and a seek to where it already is
+  // fires no "seeked": the import waited the whole timeout and got no
+  // poster. Its first frame is drawn once loaded.
   it("draws the first frame of a video with no known length, without waiting for a seek", async () => {
-    for (const duration of [0, Number.NaN, Number.POSITIVE_INFINITY]) {
+    for (const duration of [0, Number.NaN]) {
       const d = deps("frame", duration);
       d.options.timeoutMs = 60_000;
       const poster = await videoPosterOf(new Blob(["v"]), d.options);
       expect(await poster?.text()).toBe("jpeg");
       expect(d.drawn).toEqual([{ w: 640, h: 360 }]);
       expect(d.revoked).toEqual(["blob:video"]);
+    }
+  });
+
+  // Why (PR #876 review, note 12): the app's own recorded clips report a
+  // length of Infinity (MediaRecorder, Chrome), and they got their first
+  // frame - often black, the frame POSTER_AT_S exists to avoid. A seek far
+  // past the end makes the browser read the length; the poster is then
+  // taken just after the start like any other video's.
+  it("reads a recorded clip's unknown length first, then draws the frame just after the start", async () => {
+    const d = deps("frame", Number.POSITIVE_INFINITY, 3);
+    d.options.timeoutMs = 60_000;
+    const poster = await videoPosterOf(new Blob(["v"]), d.options);
+    expect(await poster?.text()).toBe("jpeg");
+    expect(d.video.seekedTo).toBe(0.1);
+    expect(d.drawn).toEqual([{ w: 640, h: 360 }]);
+    expect(d.revoked).toEqual(["blob:video"]);
+  });
+
+  // Why: a length that never resolves must not cost the poster: after a
+  // short wait the first frame is drawn, as before the fix.
+  it("draws the first frame of a recorded clip whose length never resolves", async () => {
+    for (const lengthTimeoutMs of [0, 5, 30]) {
+      const d = deps("frame", Number.POSITIVE_INFINITY);
+      d.options.timeoutMs = 60_000;
+      const poster = await videoPosterOf(new Blob(["v"]), {
+        ...d.options,
+        lengthTimeoutMs,
+      });
+      expect(await poster?.text()).toBe("jpeg");
+      expect(d.video.seekedTo).toBe(0);
+      expect(d.drawn).toEqual([{ w: 640, h: 360 }]);
     }
   });
 

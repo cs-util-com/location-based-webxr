@@ -1478,14 +1478,22 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         ...(storedSettings?.frames ?? []).map((f) => f.id),
         ...(storedSettings?.createdStations ?? []).map((f) => f.id),
       ]);
-      const made = notHosted.filter(
+      const madeHere = notHosted.filter(
         (o) =>
           hosted.key(o.id) === undefined &&
           (stored.draft.bases?.get(o.id)?.seen.length ?? 0) === 0 &&
           o.station !== undefined &&
-          knownStations.has(o.station) &&
-          (o.kind !== "picture" || o.image !== o.id || stored.photos.has(o.id)),
+          knownStations.has(o.station),
       );
+      const made = madeHere.filter(
+        (o) =>
+          o.kind !== "picture" || o.image !== o.id || stored.photos.has(o.id),
+      );
+      // A copy whose picture did not read is part of the draft that did
+      // not read (told so), never a record replaced elsewhere (PR #876
+      // review): it goes like any other unreadable record.
+      const photoless = madeHere.length - made.length;
+      if (photoless > 0) lost = true;
       const pictures = new Map(
         made.flatMap((o) => {
           const blob = stored.photos.get(o.id);
@@ -1498,7 +1506,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       ];
       const replaced =
         draftObjectsSuperseded(stored.draft, manifest).length +
-        (notHosted.length - offered.length);
+        (notHosted.length - offered.length - photoless);
       // A record naming a file neither the opened file nor this draft
       // holds is not offered as it is: a restore of it would make every
       // save fail (told: part of the draft did not read). A long text

@@ -58,7 +58,10 @@
     `*.ts` glob), a folder or extensionless glob by module files only, minus
     the program's `exclude` (a `files` entry is never excluded). `include`,
     `files` and `exclude` are inherited through a relative `extends` until a
-    config sets its own. A tsconfig that another extends and none
+    config sets its own; an `extends` array (TS 5) is searched from its last
+    entry to its first, as tsc lets a later entry override an earlier one,
+    and each entry counts as extended (no tsconfig here uses the array form
+    today). A tsconfig that another extends and none
     `references` is a base, not a program: only its extenders count, so the
     Recorder's base reaches no framework test, because its app and vitest
     programs exclude them (before r1139 a framework test file or sidecar

@@ -1048,6 +1048,109 @@ describe("renderTourStation", () => {
     expect(mountedWorldParts()).toEqual([]);
   });
 
+  // Why (PR #874 review, notes 3 and 5): the views, models and stands were
+  // freed unguarded before the parts, so a throwing stand (the pages'
+  // reading sign) stranded every part, mounted in the module-global set.
+  it("frees and unmounts the world parts when a stand's dispose throws", async () => {
+    const base = {
+      geo: { lat: ZERO.lat, lon: ZERO.lon, alt: 0, rotation: yaw(0) },
+      children: [],
+    };
+    const blocks = withFreeBlocks(base, [
+      {
+        id: "sign",
+        kind: "longText",
+        view: "reading",
+        title: "T",
+        body: "B",
+        pose: { position: [0, 0, 0], rotation: yaw(0) },
+      },
+      {
+        id: "film",
+        kind: "video",
+        view: "card",
+        video: "v",
+        transcript: "t",
+        pose: { position: [0, 0, 0], rotation: yaw(0) },
+      },
+    ]);
+    const freed: string[] = [];
+    const drawn = await renderTourStation(
+      { ...base, ...blocks },
+      {
+        assets: [],
+        scene: new Group(),
+        zero: ZERO,
+        makeLabel: labelStub,
+        loadPhotoTexture: () => Promise.resolve(new Texture()),
+        makeReadingSign: () => ({
+          object: new Object3D(),
+          dispose: () => {
+            throw new Error("broken sign");
+          },
+        }),
+        worldPart: (block) => ({
+          object: new Object3D(),
+          dispose: () => freed.push(block.id),
+        }),
+      },
+    );
+    expect(drawn.count).toBe(2);
+    expect(() => {
+      drawn.dispose();
+    }).toThrow("broken sign");
+    expect(freed).toEqual(["film"]);
+    expect(mountedWorldParts()).toEqual([]);
+  });
+
+  // Why (PR #874 review, notes 3 and 5): in the build-failure path a
+  // throwing part dispose replaced the construction error, so the caller
+  // was told of the wrong failure; the parts are freed all the same.
+  it("keeps the construction error when a part's dispose throws while it frees what was made", async () => {
+    const base = {
+      geo: { lat: ZERO.lat, lon: ZERO.lon, alt: 0, rotation: yaw(0) },
+      children: [],
+    };
+    const blocks = withFreeBlocks(base, [
+      {
+        id: "film",
+        kind: "video",
+        view: "card",
+        video: "v",
+        transcript: "t",
+        pose: { position: [0, 0, 0], rotation: yaw(0) },
+      },
+      {
+        id: "tag",
+        kind: "shortText",
+        view: "pin",
+        caption: "a tag",
+        pose: { position: [1, 0, 0], rotation: yaw(0) },
+      },
+    ]);
+    await expect(
+      renderTourStation(
+        { ...base, ...blocks },
+        {
+          assets: [],
+          scene: new Group(),
+          zero: ZERO,
+          makeLabel: () => {
+            throw new Error("no canvas");
+          },
+          loadPhotoTexture: () => Promise.resolve(new Texture()),
+          worldPart: () => ({
+            object: new Object3D(),
+            dispose: () => {
+              throw new Error("broken part");
+            },
+          }),
+        },
+      ),
+    ).rejects.toThrow("no canvas");
+    expect(mountedWorldParts()).toEqual([]);
+  });
+
   // Why: every world view of a model - placed, ghost, hotspots, cutaway,
   // toy - keeps the size the tour names by the one shared scale rule, and
   // carries its view's handle for the visitor's page; freeing the station

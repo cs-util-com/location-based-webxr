@@ -1,6 +1,7 @@
 /**
  * A video's poster: its frame just after the start, as a JPEG, read once
- * when the video is brought into the tour (`readTourFile`'s `posterOf`).
+ * when the video is brought into the tour (`readTourFile`'s `posterOf`);
+ * a recorded clip's unknown length is read first.
  * The browser's own decoder reads it; a video it refuses, one that does
  * not load within the time allowed, or one with no picture gives none.
  *
@@ -35,6 +36,9 @@ export interface VideoPosterOptions {
     revoke(url: string): void;
   };
   readonly timeoutMs?: number;
+  /** How long a recorded clip's unknown length (Infinity) is waited for
+   *  before its first frame is taken instead. */
+  readonly lengthTimeoutMs?: number;
 }
 
 /** The poster's longest side at most: a picture for a card, not a copy. */
@@ -42,6 +46,10 @@ const POSTER_MAX_SIDE = 1920;
 /** Where the frame is taken: a first frame is often black. */
 const POSTER_AT_S = 0.1;
 const POSTER_TIMEOUT_MS = 10_000;
+const LENGTH_TIMEOUT_MS = 2_000;
+/** A seek far past any clip's end: the browser reads a recorded clip's
+ *  length to clamp it, and says so in "durationchange". */
+const FAR_PAST_THE_END_S = 1e9;
 
 function drawOnCanvas(
   video: PosterVideo,
@@ -75,31 +83,63 @@ export async function videoPosterOf(
   const url = urls.create(blob);
   try {
     const seeked = await new Promise<boolean>((resolve) => {
+      let lengthTimer: ReturnType<typeof setTimeout> | undefined;
       const timer = setTimeout(() => {
+        clearTimeout(lengthTimer);
         resolve(false);
       }, options.timeoutMs ?? POSTER_TIMEOUT_MS);
       const done = (ok: boolean): void => {
         clearTimeout(timer);
+        clearTimeout(lengthTimer);
         resolve(ok);
       };
+      // "length": a recorded clip's length is being read; "frame": the
+      // seek to the poster's frame is under way.
+      let phase: "length" | "frame" | null = null;
+      const seekTo = (at: number): void => {
+        phase = "frame";
+        // At the frame already: no "seeked" will come.
+        if (video.currentTime === at) done(true);
+        else video.currentTime = at;
+      };
+      const lengthKnown = (): boolean =>
+        Number.isFinite(video.duration) && video.duration > 0;
       video.addEventListener("error", () => {
         done(false);
       });
       video.addEventListener("seeked", () => {
-        done(true);
+        if (phase === "frame") done(true);
+        else if (phase === "length" && lengthKnown()) atFrame();
       });
-      // A length the browser does not know (0, NaN, a recorded clip's
-      // Infinity) leaves only the start to seek to, and a seek to where
-      // the video already is fires no "seeked": its first frame is drawn
-      // once it is loaded instead.
+      const atFrame = (): void => {
+        clearTimeout(lengthTimer);
+        seekTo(Math.min(POSTER_AT_S, video.duration / 2));
+      };
+      // A recorded clip's length (Infinity, MediaRecorder) is read by a
+      // seek far past its end, then the frame just after the start is
+      // taken; a length that never comes leaves the first frame.
+      video.addEventListener("durationchange", () => {
+        if (phase === "length" && lengthKnown()) atFrame();
+      });
+      // A length the browser does not know at all (0, NaN) leaves only the
+      // start to seek to, and a seek to where the video already is fires
+      // no "seeked": its first frame is drawn once it is loaded instead.
       let atStart = false;
       video.addEventListener("loadedmetadata", () => {
         const length = video.duration;
+        if (length === Number.POSITIVE_INFINITY) {
+          phase = "length";
+          lengthTimer = setTimeout(() => {
+            seekTo(0);
+          }, options.lengthTimeoutMs ?? LENGTH_TIMEOUT_MS);
+          video.currentTime = FAR_PAST_THE_END_S;
+          return;
+        }
         if (!(Number.isFinite(length) && length > 0)) {
           atStart = true;
           return;
         }
-        video.currentTime = Math.min(POSTER_AT_S, length / 2);
+        seekTo(Math.min(POSTER_AT_S, length / 2));
       });
       video.addEventListener("loadeddata", () => {
         if (atStart) done(true);
