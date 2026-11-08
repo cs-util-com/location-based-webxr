@@ -310,9 +310,11 @@ describe("draftableObject: what a draft keeps of a narration", () => {
   // Why: a file brought in whose write did not land (a full disk) is held
   // nowhere after a reload, and a record naming it is then left out whole.
   // That holds for every kind that names a file, not only a narration: a
-  // model naming such a file is drafted as the written file has it, and a
-  // new one naming it not at all, never as a record naming a missing file.
-  it("drafts a model naming a file the draft could not keep as the written file has it, or not at all", () => {
+  // model naming such a file keeps the written file's asset and every other
+  // edit (its size, its pose: PR #876 review, the whole record was taken
+  // back), and a new one naming it is drafted not at all, never as a record
+  // naming a missing file.
+  it("drafts a model naming a file the draft could not keep with the written file's asset and its other edits, or not at all", () => {
     const STATUE: TourAsset = {
       id: "statue",
       path: "content/statue.glb",
@@ -349,10 +351,20 @@ describe("draftableObject: what a draft keeps of a narration", () => {
     const written = documentObjects(state).find(
       (o) => o.object.id === "m",
     )?.object;
-    const renamed: TourObject = { ...model, asset: "statue2", sizeM: 3 };
+    expect(written?.kind === "model" ? written.asset : null).toBe("statue");
+    const moved = { ...model.geo, lat: 47.5001 };
+    const renamed: TourObject = {
+      ...model,
+      asset: "statue2",
+      sizeM: 3,
+      geo: moved,
+    };
     const notKept = (id: string): boolean => id !== "statue2";
     expect(draftableObject(renamed, state)).toBe(renamed);
-    expect(draftableObject(renamed, state, notKept)).toEqual(written);
+    expect(draftableObject(renamed, state, notKept)).toEqual({
+      ...renamed,
+      asset: "statue",
+    });
     expect(
       draftableObject({ ...renamed, id: "m-new" }, state, notKept),
     ).toBeNull();

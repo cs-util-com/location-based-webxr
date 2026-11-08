@@ -18,6 +18,7 @@ import {
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { TOUR_ID_PATTERN } from "gps-plus-slam-app-framework/ar/tour-archive";
+import { tourBlockAssetIds } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { objectContentKey } from "./authoring-draft.js";
 import type { DraftObjectWrites } from "./draft-actions.js";
@@ -391,10 +392,41 @@ export function draftableObject(
   const fallback =
     object.kind === "longText"
       ? withFiledNarration(object, state.written)
-      : (writtenObject(state.written, object.id) ?? null);
+      : withWrittenAssets(
+          object,
+          writtenObject(state.written, object.id),
+          assets,
+        );
   return fallback !== null && objectAssetsHeld(fallback, assets)
     ? fallback
     : null;
+}
+
+/**
+ * `object` with each field naming a file held nowhere (`held`) put back as
+ * `written` has it, every other edit kept (PR #876 review: the whole
+ * record was taken back, losing a size or a move). `written` whole when a
+ * field cannot be put back (the written record is of another kind or lacks
+ * the field); null when nothing is written.
+ */
+function withWrittenAssets(
+  object: TourObject,
+  written: TourObject | undefined,
+  held: ReadonlySet<string>,
+): TourObject | null {
+  if (written === undefined) return null;
+  if (written.kind !== object.kind) return written;
+  const unheld = new Set(
+    tourBlockAssetIds(object, true).filter((id) => !held.has(id)),
+  );
+  const from = written as unknown as Readonly<Record<string, unknown>>;
+  const kept: Record<string, unknown> = { ...object };
+  for (const [key, value] of Object.entries(object)) {
+    if (typeof value !== "string" || !unheld.has(value)) continue;
+    if (!Object.hasOwn(from, key)) return written;
+    kept[key] = from[key];
+  }
+  return kept as unknown as TourObject;
 }
 
 /** The object of `id` as `file` holds it, if it does. */
