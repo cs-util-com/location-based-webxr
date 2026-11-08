@@ -2854,7 +2854,8 @@
         bottom: calc(16px + env(safe-area-inset-bottom));
         left: 50%;
         z-index: 30;
-        width: min(360px, calc(100vw - 32px));
+        width: calc(100vw - 32px);
+        max-width: 360px;
         transform: translateX(-50%);
       }
       #narration-card-root:empty {
