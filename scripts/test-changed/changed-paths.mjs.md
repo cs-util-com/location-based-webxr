@@ -9,6 +9,9 @@
     AND its new name, so the old path counts as a deletion.
   - `untrackedPaths(cwd)`: the `??` entries of `git status --porcelain`.
   - `changedPaths(ref, cwd)`: both, tracked first.
+  - `changedFiles(ref, cwd)`: the tracked paths, then the untracked FILES
+    (`git ls-files --others --exclude-standard`, never a collapsed new
+    folder), for the impact graph and the changed-files stages.
   - All throw when git fails (an unknown ref, not a work tree): a failed
     lookup must never read as "nothing changed".
 - Invariants & assumptions: paths are repo-relative whatever `cwd` inside

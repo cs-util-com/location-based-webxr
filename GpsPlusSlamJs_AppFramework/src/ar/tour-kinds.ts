@@ -309,7 +309,7 @@ export interface TourCharacterBlock extends TourBlockEnvelope<
   readonly image: string;
   /** The tour's declared character this is (`tour-characters.ts`). */
   readonly character?: string;
-  /** Captions always: what the character says, as text. */
+  /** What the character says, as text; optional. */
   readonly caption?: string;
   /** An optional voice clip (an audio asset). */
   readonly voice?: string;

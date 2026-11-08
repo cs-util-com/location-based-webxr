@@ -432,6 +432,25 @@ describe("the editor session's station edits", () => {
     await session.close();
   });
 
+  it("counts a copied photo's picture among the bytes the next save adds", async () => {
+    // Why: the archive room check and the autosave cap judge the next save
+    // by `addedBytes`; the copy's picture is an entry that save writes.
+    const { session, manifest } = await opened();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    expect(editor.addedBytes()).toBe(0);
+    expect(await editor.duplicateObject("f")).toMatchObject({
+      kind: "duplicated",
+    });
+    expect(editor.addedBytes()).toBe("the picture of f".length);
+    await editor.save({ keepScan: false });
+    expect(editor.addedBytes()).toBe(0);
+    await session.close();
+  });
+
   it("a copied photo station saves the copy's picture under the copy's own content file", async () => {
     // Why: a photo copied under a new id names `content/<new id>.jpg`; a
     // save that wrote no such entry would write a tour the reader refuses.

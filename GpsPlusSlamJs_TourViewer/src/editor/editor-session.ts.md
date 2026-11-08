@@ -21,8 +21,9 @@ into the store, whose handle keeps the newest bytes, the photo spots'
 decision and the save queue, while the slice's save status says whether
 a save runs, landed or failed. The session imports none of the shared
 rules itself (`config/.dependency-cruiser.cjs`). Its closure keeps
-imperative resources only - that handle and the pictures' side table
-(Blobs are never state). Design:
+imperative resources only - that handle and the one files table, every
+file's bytes by asset id: a photo's picture, a file brought in (Blobs are
+never state). Design:
 `GpsPlusSlamJs_Docs/docs/2026-10-13-0832-tour-desktop-editor-and-scan-data-design.md`
 §9 ("E2 as revised").
 
@@ -257,7 +258,7 @@ changes`; a label is cut at 40 characters (`truncated`, split-safe), a label-les
     name keep the opened file's version) unless a station was changed
     here (each station change counted, `stationEditsBetween`); a copy made there (the offer's
     `made`, an id the tour does not carry) put back with its picture
-    (`pictures`; a photo copy without one is skipped); what was applied
+    (`files`; a photo copy without one is skipped); what was applied
     is written to the draft again. Returns the counts.
   - `save({ keepScan, inPlace? })` - the document's save thunk
     (`../tour-document-save.ts` `save`, through `dispatchThunk`):
@@ -467,9 +468,19 @@ examples).
 ## Narration
 
 - `narration(itemId)`: the long text's `NarrationFacts` (voice, its audio asset id `audioId`, length, the read-along text from the newest bytes or the page's state), or a refusal.
-- `editNarration(itemId, change)`: one `NarrationChange` as one undo step (`narrationEdited`), answering `edited`, `unchanged` or `refused` with a reason.
-  - `voice`: a sound file, stored under `content/`.
+- `editNarration(itemId, change)`: one `NarrationChange` as one undo step (`narrationEdited`), answering `edited`, `unchanged` or `refused` with a reason; `edited` carries `notBackedUp: true` when the draft could not keep the voice's file.
+  - `voice`: a sound file, brought in with `addFile(file, name, ["audio"])`; the same recording again is `unchanged`.
   - `removeVoice`: takes the timing off too.
   - `timing`: compact JSON, at most `TOUR_TIMING_MAX_BYTES`, only with a voice.
   - `removeTiming`: keeps the voice.
 - Story-block long texts are refused. The voice and the timing are written in the same save as the tour that names them.
+
+## Files brought in
+
+- One files table (`files`, asset id to Blob) for every file's bytes the session holds; no other map of bytes.
+- `addFile(file, fileName, kinds?)`: reads the file at once (`readTourFile`, `tour-files.ts`) - a dropped `File` moved or deleted later does not matter - checked against the caps on `tourBytes()`, named by its sha256. Bytes the tour holds already (an asset of that id, or a signed tour's entry of that hash) are that asset, nothing added. Each new file (and a video's minted poster) goes into the table and the draft (`saveAsset`, before the asset is listed, so before any record naming it), then `assetsAdded`. Answers `{ kind: "added", asset, poster?, backedUp }` or a refusal in words; `backedUp` false when the draft did not keep it.
+- `fileReaders` (input): `measureModel` (a model's largest side; 0 refuses it as showing nothing) and `posterOf` (a video's first frame), the page's browser readers; absent in a test, a model is taken unmeasured and a video without a poster.
+- `addedBytes()`: what the next save adds to the written file (`saves.addedBytes`, the snapshot's rule): the files brought in, the timing texts and the copied or restored photos' pictures it lacks. `addedBytes({ keptOnly: true })`: only those the write keeps - a file brought in that nothing names (an edit naming it that did not apply, an add given up) is left out; what the page judges a large tour by when a save target comes (`attachTarget`). `tourBytes()`: the newest written file's size (the opened entries' before a save) plus `addedBytes()` - what the caps are judged on. `nextSaveBytes()`: the same, but only the added bytes the write keeps (`saves.addedBytes(state, true)`: a file nothing names any more, after an undo whose redo a later edit dropped, is left out) - what the autosave's cap is judged on, both ways.
+- `contentOf(path)`: a file brought in, by its entry, for a preview before a save writes it.
+- `restore(offer)`: the offer's `files` go into the table before the records are dispatched; a record naming a file held nowhere is skipped.
+- Tests: `editor-session-files.test.ts` (the table, the refusals, one file for two narrations, a put that fails, a reload with its file, and a property over voices, removals and undos: the reloaded document equals the one shown and every named file is in the save).

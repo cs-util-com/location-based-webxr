@@ -102,7 +102,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   tour without them; station descriptions and card images the reader
   left out (format minor 2: a picture gone, or a value a hand edit broke)
   in a toast of their own, naming each station by its rail name
-  (`droppedStationFieldsLine`).
+  (`droppedStationFieldsLine`); and a block's text over its cap in a
+  third, naming each block (`droppedBlockFieldsLine`).
 - **A failure latched during the open** (`integrityFailure()` right after
   it) refuses the tour (E1 review #6).
 - **A late integrity failure** (`onIntegrityFailure`, the background
@@ -923,4 +924,4 @@ on a desktop.
 
 ## Narration
 
-`writeNarrationEdit` runs a section's change through the session (`editNarration`), redraws, and says a refusal through the page's toast; the shell's `narration` command reads `EditorSession.narration`, and `voiceMaxBytes` hands the section the configured autosave cap (`autosaveMaxBytes`) as its voice file limit.
+`writeNarrationEdit` runs a section's change through the session (`editNarration`), redraws, and says a refusal through the page's toast, and a voice whose file the draft could not keep (`notBackedUp`) with `FILE_NOT_KEPT`; it then judges the autosave again (`judgeAutosave`: off once `nextSaveBytes()` is over the cap, on again once it is back under (an undo alone keeps the file in the save, since its redo names it; the edit that drops that redo frees it); asked by every edit through `tourChanged` (the test hook's `edited()` too), by an unchanged narration answer and after every save; never for a tour not written in place or one that `cannotSave`. `nextSaveBytes()` counts the opened file by its entries' sizes until a save, so a tour opened just over the cap by its zip overhead alone may turn autosave on at its first judged edit). The session's `fileReaders` are three's loader with `largestSide` (imported on first use) and `videoPosterOf`; `readContent` reads a file brought in from the session (`contentOf`) before the opened file; the shell's `narration` command reads `EditorSession.narration`, and `voiceMaxBytes` hands the section the configured autosave cap (`autosaveMaxBytes`) as its voice file limit.

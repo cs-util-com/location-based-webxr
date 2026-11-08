@@ -99,10 +99,13 @@ status line and what an end means.
   a picture over the tour pixel cap or one whose size cannot be read; it
   is then not shown, and the status says "The picture is too large to show
   here - the words are below."
-- **Captions always** (plan §4.1): every step puts words in `text` - the
-  text, the picture's caption, the model's title, the character's
-  caption, the audio's or video's transcript. A character also shows its
-  name.
+- **Words where the item has them** (plan §4.1): every step puts its
+  words in `text` - the text, the picture's caption, the model's title,
+  the character's caption, the audio's or video's transcript. A caption
+  and a transcript are optional, so `text` may be empty. A character also
+  shows its name. A `lineEnd` video step with no transcript has no reading
+  time to stand in: it waits for the clip to be started and to end (one
+  that cannot be read moves on after the reading floor).
 - **Async feedback** (CLAUDE.md): a step's media shows "Loading the
   picture/figure/sound/3D model…" in `status`, cleared when it shows;
   while the stage holds a loaded figure or model back for the visitor's

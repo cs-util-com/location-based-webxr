@@ -98,6 +98,7 @@ import type { GestureEdit } from "../editor3d/gesture.js";
 import { askMove, moveNote } from "../move-question.js";
 import { confirmPausingFrames } from "./browser-question.js";
 import {
+  droppedBlockFieldsLine,
   droppedDetailsLine,
   droppedStationFieldsLine,
   openTourForEditing,
@@ -164,6 +165,7 @@ import {
   type EditorSession,
   type NarrationChange,
 } from "./editor-session.js";
+import { videoPosterOf } from "./video-poster.js";
 import { waitForSaveSlot } from "gps-plus-slam-app-framework/storage/save-slot-wait";
 import { guardSlidersIn } from "gps-plus-slam-app-framework/utils/slider-scroll-guard";
 import {
@@ -680,7 +682,7 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
     editor: () => editor,
     edited: () => {
       refresh();
-      autosave.changed();
+      tourChanged();
     },
     view3d: () => shown3d?.stats() ?? null,
     view3dTilt: (deg) => {
@@ -1097,7 +1099,7 @@ function runStep(which: "undo" | "redo"): void {
   }, RESAVE_QUIET_MS);
   endUndo();
   toast(`${STEP_WORDS[which].done}: ${outcome.what}.`);
-  autosave.changed();
+  tourChanged();
 }
 
 function stopResaveTimer(): void {
@@ -1184,7 +1186,7 @@ function finishMove(): void {
         const note = moveNote(before, store.getState().tourDocument, done.id);
         say({ id: done.id, text: `${note ?? "Moved"} - not saved yet.` });
         endUndo();
-        autosave.changed();
+        tourChanged();
       } else {
         // Said, never dropped (PR #622 bot finding C).
         say({ id: done.id, text: outcome.reason, refused: true });
@@ -1300,7 +1302,7 @@ const card = createEditorCard(
       // Committed (or given back unchanged): the typing hold is over.
       if (outcome.kind === "edited") {
         endUndo();
-        autosave.changed();
+        tourChanged();
       }
       autosave.poke();
       void resaveIfDue();
@@ -1401,7 +1403,7 @@ function deleted(
     toast: t,
     timer: window.setTimeout(endUndo, UNDO_MS),
   };
-  autosave.changed();
+  tourChanged();
 }
 
 /** The story `id` of the tour as it stands. */
@@ -1477,7 +1479,7 @@ async function duplicateSelection(id: string): Promise<void> {
   if (home !== undefined) showRowsOf(home.id);
   select(outcome.id);
   toast(said);
-  autosave.changed();
+  tourChanged();
 }
 
 /** A gesture of the 3D view written (`scene-edits.ts`): one step; a
@@ -1502,7 +1504,7 @@ function commitSceneEdit(edit: GestureEdit): boolean {
     const note = moveNote(before, store.getState().tourDocument, edit.id);
     if (note !== null) toast(note);
   }
-  autosave.changed();
+  tourChanged();
   return true;
 }
 
@@ -1525,7 +1527,7 @@ function writeInspectorEdit(
     toast(outcome.reason);
     return "refused";
   }
-  if (outcome.kind !== "unchanged") autosave.changed();
+  if (outcome.kind !== "unchanged") tourChanged();
   return "written";
 }
 
@@ -1552,8 +1554,40 @@ async function writeNarrationEdit(
     toast(outcome.reason);
     return "refused";
   }
-  if (outcome.kind !== "unchanged") autosave.changed();
+  if (outcome.notBackedUp === true) toast(FILE_NOT_KEPT);
+  if (outcome.kind === "unchanged") judgeAutosave();
+  else tourChanged();
   return "written";
+}
+
+/** Said when a file brought in could not be kept in this browser: it is
+ *  in the tour, but a reload before a save would lose it. */
+const FILE_NOT_KEPT =
+  "The file is in the tour, but this browser could not keep a copy of it. Save the tour before you close this page.";
+
+/** An edit made: the autosave's cap judged again (an edit may drop the
+ *  redo steps naming a file brought in, so the next save no longer writes
+ *  it), then the autosave told. */
+function tourChanged(): void {
+  judgeAutosave();
+  autosave.changed();
+}
+
+/** The autosave's cap judged again: the cost of an in-place save is the
+ *  tour's whole size, judged on what the next one rewrites (the newest
+ *  written file and what it adds and keeps: `nextSaveBytes`). Both ways - a file
+ *  brought in may take the tour over the cap, and an edit that drops the
+ *  last step naming it (an undo alone keeps it: its redo does), or a save
+ *  writing less, may bring it back under. Asked after every edit, step and
+ *  save; a file that is not written in place, or no longer can be, is left
+ *  as it is. */
+function judgeAutosave(): void {
+  if (editor === null || target === null || saveState().cannotSave) return;
+  const largeTour = !autosaveFits(editor.nextSaveBytes(), autosaveMaxBytes);
+  if (largeTour === saveState().largeTour) return;
+  store.dispatch(tourDocumentActions.saveLimited({ largeTour }));
+  autosave.enable(!largeTour);
+  renderSaveState();
 }
 
 /** The tree's add in place and the palette's: a new item of `kind` in
@@ -1583,7 +1617,7 @@ function addItemTo(stationId: string, kind: AddKind): void {
   }
   select(outcome.item.id);
   toast(`Added ${kindWithArticle(kind)} to "${stationTitleOf(stationId)}"`);
-  autosave.changed();
+  tourChanged();
 }
 
 /** The tree's add of a story to `stationId`: a new story, selected with its
@@ -1600,7 +1634,7 @@ function addStoryTo(stationId: string): void {
   store.dispatch(editorViewActions.storyFolded({ id: outcome.id, open: true }));
   select(`${STORY_PREFIX}${outcome.id}`);
   toast(`Added a story to "${stationTitleOf(stationId)}"`);
-  autosave.changed();
+  tourChanged();
 }
 
 /** The tree's add into the story `storyId`: a new entry of `kind`,
@@ -1618,7 +1652,7 @@ function addToStoryEntry(storyId: string, kind: AddKind): void {
   toast(
     `Added ${kindWithArticle(kind)} to the story "${storyNamed(storyId)?.title ?? ""}"`,
   );
-  autosave.changed();
+  tourChanged();
 }
 
 /** A station made in this session (added, split off, copied) starts
@@ -1658,7 +1692,7 @@ function showNewStation(stationId: string, said: (title: string) => string) {
   refresh();
   select(`${STATION_PREFIX}${stationId}`);
   toast(said(stationTitleOf(stationId)));
-  autosave.changed();
+  tourChanged();
 }
 
 /**
@@ -1689,7 +1723,7 @@ function reorderStations(order: readonly string[]): void {
   const outcome = editor.reorderStations(order);
   refresh();
   if (outcome.kind === "refused") toast(outcome.reason);
-  else if (outcome.kind === "reordered") autosave.changed();
+  else if (outcome.kind === "reordered") tourChanged();
 }
 
 /** An item given a station of its own where it stands ("Move to a new
@@ -1827,7 +1861,7 @@ const details = wireDetailsDialog({
     if (kind === "changed") endUndo();
     refresh();
     toast(kind === "changed" ? DETAILS_CHANGED : DETAILS_UNCHANGED);
-    if (kind === "changed") autosave.changed();
+    if (kind === "changed") tourChanged();
   },
   // Written with the details by Apply: one change, one toast.
   noGps: {
@@ -2241,7 +2275,12 @@ async function attachTarget(
       // before the target came are saved once the delay has passed) -
       // unless every save of it would rewrite more than the cap (E2b-2
       // milestone review #3: the cost is linear in the file's size).
-      const largeTour = !autosaveFits(file.size, autosaveMaxBytes);
+      // The files brought in before the target came ride along too - those
+      // the write keeps: one nothing names is left out of it.
+      const largeTour = !autosaveFits(
+        file.size + mine.addedBytes({ keptOnly: true }),
+        autosaveMaxBytes,
+      );
       store.dispatch(tourDocumentActions.saveLimited({ largeTour }));
       autosave.enable(!largeTour);
       renderSaveState();
@@ -2364,6 +2403,18 @@ async function openFile(
     draft: writes,
     // The page's store: the document the views read (D29).
     store,
+    // A model brought in is measured, and a video's poster minted, by the
+    // browser here: three's loader on first use, a video element.
+    fileReaders: {
+      measureModel: async (blob) => {
+        const [{ loadGlbModel }, { largestSide }] = await Promise.all([
+          import("../glb-model.js"),
+          import("../model-scale.js"),
+        ]);
+        return largestSide(await loadGlbModel(blob));
+      },
+      posterOf: (blob) => videoPosterOf(blob),
+    },
   });
   model = editor.model();
   openedLevels = outcome.levels;
@@ -2397,12 +2448,13 @@ async function openFile(
   sayNoBackup();
   sayUnreadDraft();
   keepStorage();
-  // Details, station descriptions and card images the reader dropped are
-  // said, never lost silently by the next save (M4a review #6); kept until
-  // closed, as an instruction.
+  // Details, station descriptions, card images and block texts the reader
+  // dropped are said, never lost silently by the next save;
+  // kept until closed, as an instruction.
   for (const line of [
     droppedDetailsLine(outcome.dropped),
     droppedStationFieldsLine(outcome.dropped, outcome.manifest),
+    droppedBlockFieldsLine(outcome.dropped, outcome.manifest),
   ]) {
     if (line !== null) fileToasts.push(toast(line, undefined, null));
   }
@@ -2446,7 +2498,7 @@ function offerDraft(mine: EditorSession, offer: EditorDraftOffer): void {
           refresh();
           toast(restoredLine(applied.changed + applied.deleted, offer));
           // Restored work is pending work: saved by itself like any edit.
-          if (applied.changed + applied.deleted > 0) autosave.changed();
+          if (applied.changed + applied.deleted > 0) tourChanged();
         },
       },
       {
@@ -3185,6 +3237,7 @@ async function saveTour(
     // never a save of a tour opened meanwhile.
     if (editor === mine) releaseSave();
     ended();
+    if (editor === mine) judgeAutosave();
     // A Save asked for while this save ran runs now, for the tour that
     // shows - also when another tour opened meanwhile (`saveCopy`'s rule).
     if (editor !== null) runQueuedSave(editor);
@@ -3401,7 +3454,7 @@ noGpsInput.addEventListener("change", () => {
   renderSaveState();
   if (outcome.kind === "changed") {
     endUndo();
-    autosave.changed();
+    tourChanged();
   }
 });
 // One handler for the drop box and its "Choose…" button (a click on the
@@ -3978,6 +4031,9 @@ let view3dFailureToast: HTMLElement | null = null;
 
 /** A content entry of the open tour, from the copy the page reads now. */
 function readContent(name: string): Promise<Blob> {
+  // A file brought in is held by the session until a save writes it.
+  const added = editor?.contentOf(name);
+  if (added !== undefined) return Promise.resolve(added);
   const open = photos.current() ?? session;
   if (open === null) return Promise.reject(new Error("no tour is open"));
   return open.loadContentEntry(name);

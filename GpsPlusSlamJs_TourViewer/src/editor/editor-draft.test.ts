@@ -20,6 +20,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  type TourAsset,
   type TourManifest,
   type TourObject,
   type TourPicture,
@@ -43,7 +44,7 @@ import { stationContent, storyOf } from "../test-support/station-content.js";
 
 /** One browser's draft directories: namespace -> files. `failIn` makes
  *  one namespace's writes refuse; `holdPuts` holds every write until
- *  `releasePuts`; `holdOpenOf` holds a namespace's open until
+ *  `releasePuts` (`holdPutsOf` only the keys it matches); `holdOpenOf` holds a namespace's open until
  *  `releaseOpens` - the order a key move's writes land in; `failMetaPuts`
  *  refuses that many of the next meta writes; `failRemoveOf` makes a
  *  removal of those keys throw (a store breaking its never-throws
@@ -54,6 +55,7 @@ function browser(): {
   failWrites: boolean;
   failIn: Set<string>;
   holdPuts: boolean;
+  holdPutsOf: RegExp | null;
   releasePuts: (ok?: boolean) => void;
   holdOpenOf: Set<string>;
   releaseOpens: () => void;
@@ -68,8 +70,10 @@ function browser(): {
     failWrites: false,
     failIn: new Set<string>(),
     holdPuts: false,
+    holdPutsOf: null as RegExp | null,
     releasePuts: (ok = true) => {
       state.holdPuts = false;
+      state.holdPutsOf = null;
       for (const land of heldPuts.splice(0)) land(ok);
     },
     failMetaPuts: 0,
@@ -91,7 +95,7 @@ function browser(): {
             state.failMetaPuts -= 1;
             return Promise.resolve(false);
           }
-          if (state.holdPuts) {
+          if (state.holdPuts || state.holdPutsOf?.test(k) === true) {
             return new Promise((resolve) => {
               heldPuts.push((ok) => {
                 if (ok) files.set(k, data as Blob | string);
@@ -1861,5 +1865,299 @@ describe("createEditorDraft, the stations the page created", () => {
     expect((await again.open(K1, opened)).offer).toBeNull();
     await again.idle();
     expect(b.spaces.get(editorDraftKey(K1))?.has(SETTINGS)).toBe(false);
+  });
+});
+
+/**
+ * Why these tests matter: a file brought into the tour (a
+ * voice, a model) exists nowhere but in this page until a save writes it.
+ * The draft keeps its bytes as `asset:<id>` beside a list of the assets,
+ * both before the record naming it, so a reload offers them back; a
+ * record whose file did not survive is left out and said, since every
+ * save of it would fail.
+ */
+describe("the files a draft keeps", () => {
+  const STATUE: TourAsset = {
+    id: "a".repeat(64),
+    path: `content/${"a".repeat(64)}.glb`,
+    kind: "model",
+  };
+  const MODEL: TourObject = {
+    id: "m",
+    kind: "model",
+    view: "placed",
+    station: "st-a",
+    asset: STATUE.id,
+    sizeM: 2,
+    createdAtIso: "2026-11-07T00:00:00.000Z",
+    geo: { lat: 48.5, lon: 9.0, alt: 340, rotation: [0, 0, 0, 1] },
+  };
+  const ASSET = `asset:${STATUE.id}`;
+
+  async function keptModel(b: ReturnType<typeof browser>): Promise<void> {
+    const draft = draftIn(b);
+    await draft.open(K1, tour(pin("a")));
+    expect(await draft.saveAsset(STATUE, new Blob(["glTF-statue"]))).toBe(true);
+    // The bytes and the list land before the record is asked for.
+    const space = b.spaces.get(editorDraftKey(K1));
+    expect(space?.has(ASSET)).toBe(true);
+    expect(space?.has("assets")).toBe(true);
+    await draft.saveObject(MODEL);
+    await draft.idle();
+    draft.close();
+  }
+
+  it("offers the file and the record naming it on the next open", async () => {
+    const b = browser();
+    await keptModel(b);
+    const again = draftIn(b);
+    const { offer } = await again.open(K1, tour(pin("a")));
+    expect(offer?.objects.map((o) => o.id)).toEqual(["m"]);
+    expect(offer?.files?.map((f) => f.asset)).toEqual([STATUE]);
+    expect(await offer?.files?.[0]?.blob.text()).toBe("glTF-statue");
+    expect(again.unread()).toBe(0);
+  });
+
+  // Why (follow-up: a draft model naming a missing asset): the file was
+  // cleared from storage but the record was not; offered, every save of
+  // the tour would fail with the parser's words.
+  it("leaves out a record whose file is gone, and says the draft did not read whole", async () => {
+    const b = browser();
+    await keptModel(b);
+    b.spaces.get(editorDraftKey(K1))?.delete(ASSET);
+    const again = draftIn(b);
+    const { offer } = await again.open(K1, tour(pin("a")));
+    expect(offer?.objects.map((o) => o.id) ?? []).not.toContain("m");
+    expect(offer?.files ?? []).toEqual([]);
+    expect(again.unread()).toBe(1);
+  });
+
+  // Why: a long text's record naming a voice whose file is gone still
+  // carries the visitor's words. Left out whole, every text edit of it is
+  // lost with the voice; it is offered with the narration the opened file
+  // gives it instead, and the loss is told.
+  it("offers a long text whose voice is gone with the opened file's narration", async () => {
+    const VOICE: TourAsset = {
+      id: "b".repeat(64),
+      path: `content/${"b".repeat(64)}.mp3`,
+      kind: "audio",
+    };
+    const ESSAY: TourObject = {
+      id: "e",
+      kind: "longText",
+      view: "reading",
+      station: "st-a",
+      title: "Essay",
+      body: "Typed here.",
+      narration: { audio: VOICE.id, synthetic: false },
+      createdAtIso: "2026-11-07T00:00:00.000Z",
+      geo: { lat: 48.5, lon: 9.0, alt: 340, rotation: [0, 0, 0, 1] },
+    };
+    const b = browser();
+    const draft = draftIn(b);
+    await draft.open(K1, tour(pin("a")));
+    await draft.saveAsset(VOICE, new Blob(["voice"]));
+    await draft.saveObject(ESSAY);
+    await draft.idle();
+    draft.close();
+    b.spaces.get(editorDraftKey(K1))?.delete(`asset:${VOICE.id}`);
+    const again = draftIn(b);
+    const { offer } = await again.open(K1, tour(pin("a")));
+    const essay = offer?.objects.find((o) => o.id === "e");
+    expect(essay).toMatchObject({ body: "Typed here." });
+    expect(essay !== undefined && "narration" in essay).toBe(false);
+    expect(again.unread()).toBe(1);
+  });
+
+  it("says a file that did not land, as any write that did not", async () => {
+    const b = browser();
+    const draft = draftIn(b);
+    await draft.open(K1, tour(pin("a")));
+    b.failWrites = true;
+    expect(await draft.saveAsset(STATUE, new Blob(["x"]))).toBe(false);
+    expect(draft.said).toEqual(["storage"]);
+  });
+
+  it("drops a file once a save landed with it, and offers none the opened file lists", async () => {
+    const b = browser();
+    const draft = draftIn(b);
+    await draft.open(K1, tour(pin("a")));
+    await draft.saveAsset(STATUE, new Blob(["glTF-statue"]));
+    await draft.saveObject(MODEL);
+    const written = tourOf([pin("a"), MODEL], { assets: [STATUE] });
+    draft.writes().built(written);
+    draft.writes().landed(written, K1);
+    await draft.idle();
+    expect(b.spaces.get(editorDraftKey(K1))?.has(ASSET)).toBe(false);
+    draft.close();
+    const again = draftIn(b);
+    const { offer } = await again.open(K1, written);
+    expect(offer?.files ?? []).toEqual([]);
+  });
+
+  it("carries its files when a download moves the key", async () => {
+    const b = browser();
+    const draft = draftIn(b);
+    await draft.open(K1, tour(pin("a")));
+    await draft.saveAsset(STATUE, new Blob(["glTF-statue"]));
+    await draft.saveObject(MODEL);
+    draft.writes().moved(K2);
+    await draft.idle();
+    draft.close();
+    const { offer } = await draftIn(b).open(K2, tour(pin("a")));
+    expect(offer?.objects.map((o) => o.id)).toEqual(["m"]);
+    expect(offer?.files?.map((f) => f.asset.id)).toEqual([STATUE.id]);
+  });
+
+  // Why: a new station's story may hold a model brought in this visit.
+  // Its frame is kept in the settings record and reads only against a tour
+  // declaring the file; read against the opened file alone, before the
+  // held files are known, it is lost and the station comes back empty.
+  it("offers a new station whose story names a file brought in", async () => {
+    const station = {
+      id: "s-new",
+      geo: {
+        lat: 48.5205,
+        lon: 9.0,
+        alt: 340,
+        rotation: [0, 0, 0, 1] as const,
+      },
+      activateRadiusM: 50,
+      foundRadiusM: 25,
+      hint: "arrow" as const,
+      ...stationContent([
+        storyOf("story-102", [
+          {
+            id: "statue-block",
+            kind: "model" as const,
+            view: "hotspots" as const,
+            asset: STATUE.id,
+            sizeM: 2,
+            createdAtIso: "2026-11-07T00:00:00.000Z",
+            pose: {
+              position: [0, 0, 0] as [number, number, number],
+              rotation: [0, 0, 0, 1] as [number, number, number, number],
+            },
+          },
+        ]),
+      ]),
+    };
+    const b = browser();
+    const draft = draftIn(b);
+    const opened = tour(pin("a"));
+    await draft.open(K1, opened);
+    await draft.saveAsset(STATUE, new Blob(["glTF-statue"]));
+    void draft.saveObject({
+      ...pin("a"),
+      geo: { lat: 48.5205, lon: 9.0, alt: 340, headingDeg: 0 },
+      station: "s-new",
+    });
+    void draft.saveSettings({ needsNoGps: false, createdStations: [station] });
+    await draft.idle();
+    draft.close();
+    const again = draftIn(b);
+    const { offer } = await again.open(K1, opened);
+    expect(offer?.settings?.createdStations).toEqual([station]);
+    expect(again.unread()).toBe(0);
+  });
+
+  // Why: a key move writes the records and the files into the new key's
+  // namespace. A small record landing before a large file leaves, for a
+  // tab closed mid-move, a record naming a file the new key lacks: the
+  // reopen drops that record whole. The records wait for the files.
+  it("a key move writes a record only after the files it may name", async () => {
+    const b = browser();
+    const draft = draftIn(b);
+    await draft.open(K1, tour(pin("a")));
+    await draft.saveAsset(STATUE, new Blob(["glTF-statue"]));
+    await draft.saveObject(MODEL);
+    await draft.idle();
+    b.holdPutsOf = /^asset:/;
+    draft.writes().moved(K2);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // The tab closes here: what the new key holds is all a reopen finds.
+    const closed = browser();
+    closed.spaces.set(
+      editorDraftKey(K2),
+      new Map(b.spaces.get(editorDraftKey(K2))),
+    );
+    const cut = draftIn(closed);
+    await cut.open(K2, tour(pin("a")));
+    expect(cut.unread()).toBe(0);
+    b.releasePuts();
+    await draft.idle();
+    draft.close();
+    const again = draftIn(b);
+    const { offer } = await again.open(K2, tour(pin("a")));
+    expect(offer?.objects.map((o) => o.id)).toEqual(["m"]);
+    expect(offer?.files?.map((f) => f.asset.id)).toEqual([STATUE.id]);
+  });
+
+  // Why: a file whose write did not land is not held, and a narration
+  // naming it stays out of the record. That knowledge is about one open:
+  // the same bytes (one content hash) kept by another tour's draft, or
+  // carried by a key move, are held, and a record naming them written
+  // without its narration loses it after a reload.
+  it("forgets a file not kept when the draft closes, and once a key move carried it", async () => {
+    const b = browser();
+    await keptModel(b);
+    const draft = draftIn(b);
+    await draft.open(K2, tour(pin("a")));
+    b.failWrites = true;
+    expect(await draft.saveAsset(STATUE, new Blob(["glTF-statue"]))).toBe(
+      false,
+    );
+    expect(draft.holdsFile(STATUE.id)).toBe(false);
+    b.failWrites = false;
+    draft.close();
+    const { offer } = await draft.open(K1, tour(pin("a")));
+    expect(offer?.files?.map((f) => f.asset.id)).toEqual([STATUE.id]);
+    expect(draft.holdsFile(STATUE.id)).toBe(true);
+    draft.close();
+
+    const moving = draftIn(b);
+    await moving.open(K2, tour(pin("a")));
+    b.failWrites = true;
+    await moving.saveAsset(STATUE, new Blob(["glTF-statue"]));
+    b.failWrites = false;
+    moving.writes().moved(K1);
+    await moving.idle();
+    expect(moving.holdsFile(STATUE.id)).toBe(true);
+  });
+
+  // Why: only a record naming a file has to wait for it in a key move. A
+  // record naming none (a text edit) must reach the new key at once, or a
+  // tab closed while a large file is still being written keeps it only in
+  // the old key, which only the old file reaches.
+  it("a key move writes a record naming no file without waiting for the files", async () => {
+    const b = browser();
+    const draft = draftIn(b);
+    await draft.open(K1, tour(pin("a")));
+    await draft.saveAsset(STATUE, new Blob(["glTF-statue"]));
+    await draft.saveObject(MODEL);
+    await draft.saveObject(pin("a", "Edited before the move"));
+    await draft.idle();
+    b.holdPutsOf = /^asset:/;
+    draft.writes().moved(K2);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const closed = browser();
+    closed.spaces.set(
+      editorDraftKey(K2),
+      new Map(b.spaces.get(editorDraftKey(K2))),
+    );
+    const { offer } = await draftIn(closed).open(K2, tour(pin("a")));
+    expect(offer?.objects.map((o) => o.id)).toEqual(["a"]);
+    b.releasePuts();
+    await draft.idle();
+  });
+
+  it("drops the offered files a discard turns down", async () => {
+    const b = browser();
+    await keptModel(b);
+    const again = draftIn(b);
+    await again.open(K1, tour(pin("a")));
+    expect(await again.discard()).toBe(true);
+    await again.idle();
+    expect(b.spaces.get(editorDraftKey(K1))?.has(ASSET)).toBe(false);
   });
 });

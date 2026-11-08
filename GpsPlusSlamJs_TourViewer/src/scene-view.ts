@@ -1,7 +1,7 @@
 /**
  * The visitor's story panel (tour kit plan K4, §4.2): plays a found
  * station's scene (`scene-player.ts`) in the DOM overlay, with its media,
- * captions always, the tap to continue and the timed advance, scene choices,
+ * its words, the tap to continue and the timed advance, scene choices,
  * and ONE story at a time: a station found while another story plays waits
  * behind a "Play" button, and tapping that button stops the story playing
  * (the community PR idea of "a new tap stops the previous one", K-D4: the
@@ -491,11 +491,14 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
 
   /** How long a `lineEnd` step still waits once its voice is out of the
    *  way: its tail after the voice, the words' reading time with none;
-   *  null while the voice plays. */
+   *  null while the voice plays, and while a clip with no words to read
+   *  waits to be started (a reading floor would move on before it). */
   function lineEndMs(): number | null {
     if (lineVoice === "playing") return null;
     if (lineVoice === "ended") return LINE_TAIL_MS;
-    return lineReadingMs(dom.text.textContent ?? "");
+    const words = dom.text.textContent ?? "";
+    if (videoStep && words.trim() === "") return null;
+    return lineReadingMs(words);
   }
 
   /** The step's clip: its own sound, so nothing else plays through the

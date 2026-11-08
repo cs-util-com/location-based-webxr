@@ -123,11 +123,29 @@ describe('the list of kinds', () => {
     for (const view of row.worldViews) expect(row.freeViews).toContain(view);
   });
 
-  it.each(tourBlockKinds())('%s: says the minor that brought it', (kind) => {
-    const { sinceMinor } = TOUR_KINDS[kind];
-    expect(Number.isInteger(sinceMinor)).toBe(true);
-    expect(sinceMinor).toBeGreaterThanOrEqual(0);
-    expect(sinceMinor).toBeLessThanOrEqual(TOUR_MANIFEST_MINOR);
+  it('says the minor that brought each kind and view, pinned', () => {
+    // Why: the bound `TOUR_MANIFEST_MINOR` is itself the largest
+    // `sinceMinor`, so a check against it passes any row. A kind of
+    // version 5 written with a later minor would make a released viewer
+    // skip it; one added later and written at 0 would make that viewer
+    // fail the whole tour. So the list is pinned: a new kind adds its row
+    // here with its own minor.
+    const minors = Object.fromEntries(
+      tourBlockKinds().map((kind) => {
+        const row: { sinceMinor: number; viewsSince?: object } =
+          TOUR_KINDS[kind];
+        return [kind, [row.sinceMinor, row.viewsSince ?? {}]];
+      })
+    );
+    expect(minors).toEqual({
+      shortText: [0, {}],
+      longText: [0, {}],
+      picture: [0, {}],
+      video: [0, {}],
+      audio: [0, {}],
+      model: [0, {}],
+      character: [0, {}],
+    });
   });
 
   it.each(tourBlockKinds())('%s: read writes no envelope field', (kind) => {
@@ -189,7 +207,10 @@ describe('the minor a kind brings', () => {
 
   it('is what this reader is strict about', () => {
     expect(tourKindsMinor(later)).toBe(2);
-    expect(tourKindsMinor()).toBe(TOUR_MANIFEST_MINOR);
+    // The literal: a row whose minor moved changes what this reader is
+    // strict about, which no comparison with the derived value can see.
+    expect(tourKindsMinor()).toBe(0);
+    expect(TOUR_MANIFEST_MINOR).toBe(0);
   });
 
   it('is what a block needs: its kind, then its view', () => {

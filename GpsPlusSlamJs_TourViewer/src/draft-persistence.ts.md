@@ -139,6 +139,11 @@ are the framework's.
   `undefined` when there
   is no meta file. Objects the meta rejects are absent from `draft.objects`
   and `photos` whether or not their files are still on disk.
+  `photos` are copies in memory, never the store's blobs: the OPFS store
+  hands out a snapshot of the entry (`handle.getFile()`), whose reads fail
+  once the entry is written again or removed - and a restore writes a
+  copied photo's entry again. A photo whose entry does not read is a
+  missing one (its record dropped, as for absent bytes).
 - `readDraft` also returns `draft.deleted` - the tombstoned ids (sorted),
   minus rejected ones; a tombstoned id's record and bytes are skipped.
   `storedIds` includes tombstone ids, so a discard or a spent draft sweeps

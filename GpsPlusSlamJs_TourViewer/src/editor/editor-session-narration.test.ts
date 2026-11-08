@@ -269,3 +269,53 @@ describe("what editNarration refuses, changing nothing", () => {
     await session.close();
   });
 });
+
+describe("the bytes the next save adds", () => {
+  it("counts a timing text written since the last save", async () => {
+    // Why: the archive room check and the autosave cap judge the next save
+    // by `addedBytes`; a new timing is an entry that save writes too.
+    const { session, editor } = await editorOf([ESSAY]);
+    await editor.editNarration("t1", {
+      kind: "voice",
+      file: new Blob(["RIFF-voice-bytes"], { type: "audio/wav" }),
+      fileName: "v.wav",
+    });
+    const voiceOnly = editor.addedBytes();
+    expect(voiceOnly).toBe(16);
+    const text = await timingText();
+    await editor.editNarration("t1", { kind: "timing", text });
+    expect(editor.addedBytes()).toBe(
+      voiceOnly + new TextEncoder().encode(text).byteLength,
+    );
+    await editor.save({ keepScan: false });
+    expect(editor.addedBytes()).toBe(0);
+    await session.close();
+  });
+});
+
+describe("the bytes the next save adds, once no step names a file", () => {
+  it("counts no voice the save would not write", async () => {
+    // Why: the autosave's cap is judged on these bytes. A voice an undo
+    // took out, whose redo a later edit dropped, is named by nothing: the
+    // save leaves it out, so it must not keep the tour over the cap.
+    const { session, editor } = await editorOf([ESSAY]);
+    const opened = editor.nextSaveBytes();
+    await editor.editNarration("t1", {
+      kind: "voice",
+      file: new Blob(["RIFF-voice-bytes"], { type: "audio/wav" }),
+      fileName: "v.wav",
+    });
+    expect(editor.nextSaveBytes()).toBe(opened + 16);
+    // Its redo names the file: the save still writes it.
+    expect(editor.undo()).toMatchObject({ kind: "undone" });
+    expect(editor.nextSaveBytes()).toBe(opened + 16);
+    expect(editor.setNeedsNoGps(!editor.needsNoGps())).toMatchObject({
+      kind: "changed",
+    });
+    expect(editor.redo()).toMatchObject({ kind: "nothing" });
+    expect(editor.nextSaveBytes()).toBe(opened);
+    // The archive room check stays on the safe side: every file brought in.
+    expect(editor.addedBytes()).toBe(16);
+    await session.close();
+  });
+});

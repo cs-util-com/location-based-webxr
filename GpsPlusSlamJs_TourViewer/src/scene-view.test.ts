@@ -18,7 +18,7 @@ import {
 
 /**
  * Why these tests matter: the story panel is what the visitor came for. It
- * must show every step with words (captions always), say when a picture or
+ * must show every step's words, say when a picture or
  * sound is loading and when it failed, never let a late load paint over the
  * next step, advance on a tap or a timer, branch on a choice, and play ONE
  * story at a time - a second station found meanwhile waits behind a button,
@@ -2059,6 +2059,41 @@ describe("a lineEnd step on a video", () => {
     const live = h.timers.filter((t) => !t.cancelled);
     expect(live).toHaveLength(1);
     expect(live[0]?.ms).toBeGreaterThanOrEqual(1500);
+  });
+
+  // Why this test matters: a transcript is optional. With none there are
+  // no words to read, so no reading time may stand in for the clip - the
+  // shortest one would move the story on before the visitor could start
+  // it. The step waits for the clip; one that cannot be read still moves
+  // on, so the story does not stall.
+  it("waits for a clip with no transcript to be started, and moves on when it cannot be read", async () => {
+    const silent = (advance: TourStepAdvance): Step => {
+      const { transcript: _, ...step } = clip(advance);
+      return { ...step, id: step.id };
+    };
+    const h = harness();
+    h.view.offer(
+      station("s", [silent({ mode: "lineEnd" }), tap("b", "Onwards.")]),
+    );
+    await settle();
+    expect(h.timers.filter((t) => !t.cancelled)).toHaveLength(0);
+    h.dom.video.onplay?.(new Event("play"));
+    h.dom.video.onended?.(new Event("ended"));
+    expect(h.timers.filter((t) => !t.cancelled).map((t) => t.ms)).toEqual([
+      600,
+    ]);
+
+    const lost = harness({
+      loadAsset: (path) =>
+        path.endsWith(".webm")
+          ? Promise.reject(new Error("no"))
+          : Promise.resolve(new Blob([path])),
+    });
+    lost.view.offer(
+      station("s", [silent({ mode: "lineEnd" }), tap("b", "Onwards.")]),
+    );
+    await settle();
+    expect(lost.timers.filter((t) => !t.cancelled)).toHaveLength(1);
   });
 });
 

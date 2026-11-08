@@ -21,6 +21,7 @@ import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import type {
   TourAsset,
+  TourAssetKind,
   TourManifest,
   TourNarration,
   TourObject,
@@ -70,6 +71,7 @@ import {
   isCapturedPhoto,
   isDocumentEdit,
   manifestNow,
+  objectAssetsHeld,
   objectFits,
   nextStep,
   objectMoveChange,
@@ -118,6 +120,7 @@ import { STATION_LOCKED } from "./editor-view.js";
 import { checkNoGps, type NoGpsCheck } from "./no-gps-check.js";
 import { readZipBlobEntry, zipBlobEntryNames } from "../zip-blob.js";
 import { truncated } from "../truncated.js";
+import { readTourFile, type TourFileContext } from "./tour-files.js";
 import { newStory, withoutStoryChild } from "../tour-story-edit.js";
 import { newStoryEntry } from "./new-pin.js";
 
@@ -289,6 +292,24 @@ interface EditorRestore {
   /** The pictures of offered photos the opened file lacks (copies made
    *  here): a photo among them without its picture is not put back. */
   readonly pictures?: ReadonlyMap<string, Blob>;
+  /** The files brought in there, with their bytes: listed again first,
+   *  so the objects naming them come back (one naming a file held
+   *  nowhere does not). */
+  readonly files?: readonly {
+    readonly asset: TourAsset;
+    readonly blob: Blob;
+  }[];
+}
+
+/** A file brought into the tour (`addFile`): its asset - the one the tour
+ *  held already for the same bytes, or a new one - and a video's minted
+ *  poster. `backedUp` false: the draft could not keep it (the page says
+ *  so); the tour holds it all the same until it closes. */
+interface EditorFileAdded {
+  readonly kind: "added";
+  readonly asset: TourAsset;
+  readonly poster?: TourAsset;
+  readonly backedUp: boolean;
 }
 
 /** Said for a station's edit the format refuses, by the field. */
@@ -438,6 +459,9 @@ function stationName(frame: { readonly title?: string }): string {
  *  with its details (W2). */
 export interface EditorSessionDraft extends DraftObjectWrites {
   saveSettings(settings: EditorTourSettings): Promise<boolean>;
+  /** A file brought in, with its bytes: written before the record that
+   *  names it; whether it landed. */
+  saveAsset(asset: TourAsset, blob: Blob): Promise<boolean>;
 }
 
 /** One image a tour may show as its cover (W2): a placed photo, or an
@@ -624,11 +648,16 @@ export interface EditorSession {
    *  changing nothing, for an id the tour does not carry, a block that is
    *  not a long text, a file that is not a sound file, a timing without a
    *  voice or over the format's cap, and a timing whose written text
-   *  could not be read first (what an undo would bring back). */
+   *  could not be read first (what an undo would bring back).
+   *  `notBackedUp`: the voice is in the tour, but the draft could not
+   *  keep its file (the page says so). */
   editNarration(
     id: string,
     change: NarrationChange,
-  ): Promise<{ kind: "edited" | "unchanged" } | EditorRefusal>;
+  ): Promise<
+    | { kind: "edited" | "unchanged"; readonly notBackedUp?: true }
+    | EditorRefusal
+  >;
   /** Set a model's size (its largest side, 0.05 m to 500 m): one step. */
   resizeModel(
     id: string,
@@ -665,6 +694,37 @@ export interface EditorSession {
   /** A photo's picture this session holds and the opened file may not (one
    *  an undo brought back after a save took it out), for the card. */
   pictureOf(id: string): Blob | undefined;
+  /** Bring a file into the tour (a voice; a picture, a video, a sound or
+   *  a model): read at once, so a source moved later does not matter,
+   *  checked against what a tour can carry (`readTourFile`), named by its
+   *  content hash - the same bytes are one file however many items use
+   *  them - and kept in the session's files table and the draft before
+   *  it is listed. No step of its own: the edit naming it is. Refused in
+   *  words, changing nothing, for a type `kinds` does not take, a size
+   *  over the caps, a file that cannot be read, a model with nothing to
+   *  show. */
+  addFile(
+    file: Blob,
+    fileName: string,
+    kinds?: readonly TourAssetKind[],
+  ): Promise<EditorFileAdded | EditorRefusal>;
+  /** What the next save adds to the newest written file: the files
+   *  brought in, the timing texts and the copied or restored photos'
+   *  pictures it does not hold yet. `keptOnly`: only those that save
+   *  keeps - a file brought in that nothing names (an edit naming it that
+   *  did not apply, an add given up) is left out. */
+  addedBytes(options?: { readonly keptOnly?: boolean }): number;
+  /** What the tour weighs now: the newest written file (the opened one
+   *  before a save) and the files added since - what an in-place save
+   *  rewrites, so what the autosave's cap is judged by. */
+  tourBytes(): number;
+  /** What the next in-place save rewrites: the newest written file and
+   *  only the added bytes that write keeps (a file nothing names any more
+   *  is left out). What the autosave's cap is judged by. */
+  nextSaveBytes(): number;
+  /** A file brought in, by its entry (`content/<id>.<ext>`), until a
+   *  save wrote it: what a preview shows. */
+  contentOf(path: string): Blob | undefined;
   /** Put a draft's work back by the session's own rules (M6 E2c): an
    *  object the tour carries gets the draft's version, a deletion its
    *  tombstone; live work on an id wins, and an id the tour no longer
@@ -729,6 +789,10 @@ export function createEditorSession(input: {
    *  turn and lift are then refused; its radius, name, delete and copy
    *  stay open. None: nothing is locked (the phone, a test). */
   readonly stationLocked?: (stationId: string) => boolean;
+  /** What a file brought in is measured by (the page's model loader and
+   *  video element, `readTourFile`); none: a model is taken unmeasured
+   *  and a video without a poster. */
+  readonly fileReaders?: Pick<TourFileContext, "measureModel" | "posterOf">;
 }): EditorSession {
   const { session, levels } = input;
   const store: TourViewerStore = input.store ?? createTourViewerStore();
@@ -744,26 +808,28 @@ export function createEditorSession(input: {
   const generation = doc().generation;
 
   // What follows is imperative resources only (root CLAUDE.md, "App state
-  // lives in the Redux store"): the pictures' side table, and the saves'
+  // lives in the Redux store"): the files table, and the saves'
   // own (the newest bytes, the queue) in the
   // document's save (`tour-document-save.ts`), whose status is the slice's.
-  /** Deleted photos' pictures, for an undo after a save took them out
-   *  (the side table: Blobs are never state). */
-  const pictures = new Map<string, Blob>();
+  /** The files table, by asset id (Blobs are never state): the files
+   *  brought in here (`addedAssets`), and the pictures of photos deleted
+   *  or copied here - a captured photo's id is its picture's - for an
+   *  undo after a save took them out. Kept until the tour closes: an undo
+   *  after a save may name any of them again. */
+  const files = new Map<string, Blob>();
   /** Pictures being read: a save waits for them, so an undo right after
    *  the save that wrote a photo's delete finds its picture. */
   const pictureReads = new Set<Promise<void>>();
-  /** The voices brought in here, by asset id (Blobs are never state). */
-  const voices = new Map<string, Blob>();
   const loadPhoto =
     input.loadPhoto ?? ((image: string) => session.loadContentEntry(image));
   const saves = createTourSaves({
     tour: session,
     generation,
-    pictureOf: (id) => pictures.get(id),
-    voiceOf: (id) => voices.get(id),
+    fileOf: (id) => files.get(id),
     picturesRead: () => Promise.all(pictureReads),
   });
+  /** What the opened file weighs: its entries' sizes. */
+  const openedBytes = session.entries.reduce((sum, e) => sum + e.size, 0);
   /** The saved file's name: the opened one's, made safe (the Finish's rule). */
   const savedName = saves.fileName;
   /** The name the page shows when the tour has no title. */
@@ -785,7 +851,7 @@ export function createEditorSession(input: {
           draft,
           selectTourDocument(api.getOriginalState()),
           after,
-          (id) => pictures.get(id),
+          (id) => files.get(id),
         );
       },
     });
@@ -870,7 +936,7 @@ export function createEditorSession(input: {
    *  bytes - the page's copy may not read right after an in-place write.
    *  Rejects when every way fails. */
   function readPicture(object: TourPicture): Promise<Blob> {
-    const held = pictures.get(object.id);
+    const held = files.get(object.id);
     if (held !== undefined) return Promise.resolve(held);
     const newest = saves.newest()?.blob;
     const entry = object.imageAsset.path;
@@ -886,13 +952,13 @@ export function createEditorSession(input: {
     const object = found.object;
     if (!isCapturedPhoto(object)) return;
     const id = object.id;
-    if (pictures.has(id)) return;
+    if (files.has(id)) return;
     // Read now, while the copy that carries it is at hand. A read that
     // fails every way leaves an undo after a save refused, in words.
     const read = readPicture(object)
       .then(
         (blob) => {
-          pictures.set(id, blob);
+          files.set(id, blob);
         },
         () => undefined,
       )
@@ -910,7 +976,7 @@ export function createEditorSession(input: {
     if (!canStep(state)) return { kind: "refused", reason: SAVE_RUNNING };
     const next = nextStep(state, which);
     if (next === undefined) return { kind: "nothing" };
-    if (picturesNeeded(state, next.view).some((id) => !pictures.has(id))) {
+    if (picturesNeeded(state, next.view).some((id) => !files.has(id))) {
       return { kind: "refused", reason: PICTURE_GONE };
     }
     store.dispatch(
@@ -1112,7 +1178,92 @@ export function createEditorSession(input: {
     return read;
   }
 
+  /** The bytes the next save adds to the written file. */
+  function addedBytes(options: { readonly keptOnly?: boolean } = {}): number {
+    return saves.addedBytes(own(), options.keptOnly === true);
+  }
+
+  function nextSaveBytes(): number {
+    return (
+      (saves.newest()?.blob.size ?? openedBytes) + saves.addedBytes(own(), true)
+    );
+  }
+
+  function tourBytes(): number {
+    return (saves.newest()?.blob.size ?? openedBytes) + addedBytes();
+  }
+
+  /** The asset the tour holds for bytes of hash `sha`: one named by it
+   *  (brought in here, or written so), else - for a signed tour - one
+   *  whose entry the signed list gives that hash. An unsigned tour's
+   *  other assets would have to be read whole to be hashed: not looked
+   *  at. */
+  function knownFile(sha: string): TourAsset | undefined {
+    const state = own();
+    const assets = [...(state.written?.assets ?? []), ...state.addedAssets];
+    const named = assets.find((a) => a.id === sha);
+    if (named !== undefined || session.integrity.kind !== "listed") {
+      return named;
+    }
+    const listed = session.integrity.manifest.files;
+    const wrap = session.manifestWrap;
+    return (state.written?.assets ?? []).find(
+      (a) => listed[`${wrap}${a.path}`]?.sha256 === sha,
+    );
+  }
+
+  /** `addFile`: read, kept in the table and the draft, then listed. */
+  async function addFile(
+    file: Blob,
+    fileName: string,
+    kinds?: readonly TourAssetKind[],
+  ): Promise<EditorFileAdded | EditorRefusal> {
+    if (mine() === null) return notInTour;
+    const read = await readTourFile(file, fileName, {
+      tourBytes: tourBytes(),
+      known: knownFile,
+      ...(kinds === undefined ? {} : { kinds }),
+      ...input.fileReaders,
+    });
+    if (read.kind === "refused") return read;
+    if (mine() === null) return notInTour;
+    const brought = [
+      read,
+      ...(read.poster === undefined ? [] : [read.poster]),
+    ].filter((f) => f.isNew);
+    let backedUp = true;
+    for (const { asset, blob } of brought) {
+      files.set(asset.id, blob);
+      // Before the asset is listed, so before any record naming it.
+      if (draft !== undefined && !(await draft.saveAsset(asset, blob))) {
+        backedUp = false;
+      }
+    }
+    if (mine() === null) return notInTour;
+    if (brought.length > 0) {
+      store.dispatch(
+        tourDocumentActions.assetsAdded({
+          assets: brought.map((f) => f.asset),
+        }),
+      );
+    }
+    return {
+      kind: "added",
+      asset: read.asset,
+      ...(read.poster === undefined ? {} : { poster: read.poster.asset }),
+      backedUp,
+    };
+  }
+
   return {
+    addFile,
+    addedBytes,
+    tourBytes,
+    nextSaveBytes,
+    contentOf(path) {
+      const asset = own().addedAssets.find((a) => a.path === path);
+      return asset === undefined ? undefined : files.get(asset.id);
+    },
     model() {
       return buildEditorModel({
         manifest: now(),
@@ -1552,7 +1703,7 @@ export function createEditorSession(input: {
       // draft's write of each copy carries its picture.
       for (const [id, blob] of read) {
         const copyId = newItemIds[id];
-        if (copyId !== undefined) pictures.set(copyId, blob);
+        if (copyId !== undefined) files.set(copyId, blob);
       }
       if (
         took(() =>
@@ -1568,7 +1719,7 @@ export function createEditorSession(input: {
       ) {
         return { kind: "duplicated", stationId: newStationId };
       }
-      for (const copyId of Object.values(newItemIds)) pictures.delete(copyId);
+      for (const copyId of Object.values(newItemIds)) files.delete(copyId);
       return mine() === null ? notInTour : notApplied;
     },
     async duplicateObject(id) {
@@ -1578,7 +1729,7 @@ export function createEditorSession(input: {
       if (read === null) return { kind: "refused", reason: PICTURE_UNREAD };
       const newId = newObjectId();
       const blob = read.get(id);
-      if (blob !== undefined) pictures.set(newId, blob);
+      if (blob !== undefined) files.set(newId, blob);
       if (
         took(() =>
           store.dispatch(
@@ -1592,7 +1743,7 @@ export function createEditorSession(input: {
       ) {
         return { kind: "duplicated", id: newId };
       }
-      pictures.delete(newId);
+      files.delete(newId);
       return find(id) === undefined
         ? notInTour
         : { kind: "refused", reason: TOO_FAR_FROM_STATION };
@@ -1679,18 +1830,17 @@ export function createEditorSession(input: {
         return notApplied;
       }
       let voice: TourAsset | undefined;
+      let backedUp = true;
       if (change.kind === "voice") {
         const dot = change.fileName.lastIndexOf(".");
         const ext = dot < 0 ? "" : change.fileName.slice(dot + 1).toLowerCase();
         if (tourMediaTypeOf(ext)?.kind !== "audio") {
           return { kind: "refused", reason: NOT_A_VOICE };
         }
-        const voiceId = newObjectId();
-        voice = {
-          id: voiceId,
-          path: `content/${voiceId}.${ext}`,
-          kind: "audio",
-        };
+        const added = await addFile(change.file, change.fileName, ["audio"]);
+        if (added.kind === "refused") return added;
+        voice = added.asset;
+        backedUp = added.backedUp;
       }
       if (change.kind === "timing") {
         if (found.object.narration === undefined) {
@@ -1729,6 +1879,10 @@ export function createEditorSession(input: {
       if (change.kind === "removeTiming" && was?.timing === undefined) {
         return { kind: "unchanged" };
       }
+      // The same recording again (one file by its content): no change.
+      if (voice !== undefined && voice.id === was?.audio) {
+        return { kind: "unchanged" };
+      }
       const narration = narrationAfter(was, change, voice, entry);
       const { narration: _was, ...rest } = latest;
       const what =
@@ -1739,9 +1893,6 @@ export function createEditorSession(input: {
             : change.kind === "removeTiming"
               ? `the removal of the timing of ${objectName(latest)}`
               : `the timing of ${objectName(latest)}`;
-      if (voice !== undefined && change.kind === "voice") {
-        voices.set(voice.id, change.file);
-      }
       const applied = took(() =>
         store.dispatch(
           tourDocumentActions.narrationEdited({
@@ -1755,13 +1906,15 @@ export function createEditorSession(input: {
                   },
                 }
               : {}),
-            ...(voice === undefined ? {} : { voice }),
             what,
           }),
         ),
       );
-      if (applied) return { kind: "edited" };
-      if (voice !== undefined) voices.delete(voice.id);
+      if (applied) {
+        return backedUp
+          ? { kind: "edited" }
+          : { kind: "edited", notBackedUp: true };
+      }
       return change.kind === "timing" ? { kind: "unchanged" } : notApplied;
     },
     resizeModel(id, sizeM) {
@@ -1853,7 +2006,7 @@ export function createEditorSession(input: {
     },
     pictureOf(id) {
       return unsavedEntries(own()).some((p) => p.object.id === id)
-        ? pictures.get(id)
+        ? files.get(id)
         : undefined;
     },
     restore(work) {
@@ -1885,18 +2038,31 @@ export function createEditorSession(input: {
       // here: that is put back with its picture (a photo without one is
       // not), unless deleted here since.
       const offeredPicture = (object: TourObject): Blob | undefined =>
-        work.pictures?.get(object.id) ?? pictures.get(object.id);
+        work.pictures?.get(object.id) ?? files.get(object.id);
+      // The files the offer brings, and the objects naming files held
+      // nowhere left out (the restore's own rule, `objectAssetsHeld`).
+      const offeredFiles = work.files ?? [];
+      const assets = offeredFiles.map((f) => f.asset);
+      const heldIds = new Set(
+        [...written().assets, ...state.addedAssets, ...assets].map((a) => a.id),
+      );
+      const held = (object: TourObject): boolean =>
+        objectAssetsHeld(object, heldIds);
       const madeIds = new Set(work.made ?? []);
       const made = work.objects.filter(
         (object) =>
           madeIds.has(object.id) &&
           !live.has(object.id) &&
           find(object.id) === undefined &&
+          held(object) &&
           (!isCapturedPhoto(object) || offeredPicture(object) !== undefined),
       );
       const objects = [
         ...work.objects.filter(
-          (object) => !live.has(object.id) && find(object.id) !== undefined,
+          (object) =>
+            !live.has(object.id) &&
+            find(object.id) !== undefined &&
+            held(object),
         ),
         ...made,
       ];
@@ -1944,6 +2110,7 @@ export function createEditorSession(input: {
         tourDocumentActions.restored({
           objects,
           deleted,
+          ...(assets.length === 0 ? {} : { assets }),
           ...(stations.length === 0 ? {} : { stations }),
           ...createdStations,
           ...framesWork,
@@ -1970,12 +2137,15 @@ export function createEditorSession(input: {
         // copy carries its picture, and a save needs it.
         for (const object of made) {
           const blob = offeredPicture(object);
-          if (blob !== undefined) pictures.set(object.id, blob);
+          if (blob !== undefined) files.set(object.id, blob);
         }
+        // The files before the records naming them, likewise.
+        for (const { asset, blob } of offeredFiles) files.set(asset.id, blob);
         store.dispatch(
           tourDocumentActions.restored({
             objects,
             deleted,
+            ...(assets.length === 0 ? {} : { assets }),
             ...(needsNoGps === undefined ? {} : { needsNoGps }),
             ...(details === null ? {} : { details }),
             ...(stations.length === 0 ? {} : { stations }),

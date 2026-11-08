@@ -13,16 +13,18 @@
   - `relatedVitestArgs(fullCommand, files)` -> the vitest arguments
     (`related --run <the command's other args> <files>`, `--coverage`
     dropped), or `null` when the command is not a plain `vitest run`.
-  - `upstreamChange({ changed, packageDir, packages })` -> the first
-    repo-relative changed path inside a workspace package this one depends
-    on (directly or transitively), or `null`. `related-unit.mjs` runs the
-    full suite on one: an app's tests can import an upstream package's
-    source through an alias, which a package-local related run cannot see.
+  - `mergeImpact({ plan, impact, packageDir })` -> the own plan plus this
+    package's tests in `impact.tests` (package-relative, sorted), or
+    `{ mode: 'full', reason }` when `impact.fullSuite` names
+    `packageDir`; a full own plan stays full.
   - `DEFAULT_MAX_FILES` (150).
 - Rules, in order:
-  - Markdown (sidecars, docs) and the generated `docs/test-timings.md` are
-    ignored: no unit test reads markdown (checked by search across every
-    package on 2026-11-05: the only `.md` mentions in tests are comments).
+  - Markdown (sidecars, docs) is never handed to vitest and never forces
+    the full suite, but it selects the tests that read it by name (the
+    design system's `terrain-fixtures.test.mjs` reads `PROVENANCE.md`; the
+    2026-11-05 search that said no test reads markdown missed it). A deleted
+    markdown file selects nothing. The generated `docs/test-timings.md` is
+    ignored.
   - More than `maxFiles` changes, a deleted or renamed file (its importers
     are no longer in the graph), a setup file (`*setup.ts`, loaded before
     every test without an import) or anything under `__mocks__/` -> full.

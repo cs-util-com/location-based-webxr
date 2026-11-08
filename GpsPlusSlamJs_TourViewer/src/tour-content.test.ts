@@ -634,6 +634,24 @@ describe("withReferencedAssets", () => {
     };
     expect(withReferencedAssets(manifest)).toBe(manifest);
   });
+
+  it("keeps a declared character's image and frames sheet, and the save still reads back", () => {
+    // Why: a character the tour declares names its image and its frames
+    // sheet from the tour itself, not from a block. Dropped here, the save
+    // would write a declaration naming an asset the tour no longer lists,
+    // and the strict re-read of every save refuses that: no tour with a
+    // declared character could be saved.
+    const manifest = telling([], {
+      characters: [
+        { id: "kay", name: "Sir Kay", image: "guide", frames: "picture" },
+      ],
+    });
+    expect(kept(manifest)).toEqual(["picture", "guide"]);
+    const pruned = withReferencedAssets(manifest);
+    expect(() =>
+      parseTourManifest(JSON.parse(serializeTourManifest(pruned))),
+    ).not.toThrow();
+  });
 });
 
 describe("asStored", () => {

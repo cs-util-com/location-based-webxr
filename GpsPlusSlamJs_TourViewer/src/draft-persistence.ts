@@ -666,7 +666,16 @@ export async function readDraft(
     // A captured photo's bytes are its picture's own file; a picture
     // naming an asset of the tour has none here.
     if (object.kind !== "picture" || object.image !== object.id) continue;
-    const blob = await store.getBlob(photoKey(object.id));
+    // Copied into memory now: the store hands out a snapshot of the entry
+    // (`handle.getFile()`), whose reads fail once the entry is written
+    // again or removed - and a restore writes this very entry again. A
+    // snapshot that does not read is a missing photo.
+    const stored = await store.getBlob(photoKey(object.id));
+    const bytes = await stored?.arrayBuffer().catch(() => undefined);
+    const blob =
+      stored === undefined || bytes === undefined
+        ? undefined
+        : new Blob([bytes], { type: stored.type });
     // A photo record whose bytes are gone would name a content entry the
     // rebuilt zip does not contain, which is the failure mode PR #435 was
     // about. Drop the record with them - unless the caller's photos live
