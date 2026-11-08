@@ -114,6 +114,18 @@ there.
   says it. Short and long text are addable, a picture is listed off,
   video, audio, model and character are not offered.
 
+## The editor half of a row
+
+- A kind's own part of the item inspector (what no field spec says: a
+  long text's writer, a model's notes and sections) is its panel, in
+  `editor/kind-panels/kind-panels.ts` `KIND_PANELS`, keyed by the same
+  kind type. It cannot live here: the creator pages outside the editor
+  read this list, and top-level modules may not reach editor DOM code.
+- `new-pin.ts` `MAKE_ITEM` / `MAKE_ENTRY` (an added item's first block)
+  stay there, keyed by `AddKind` so an addable kind without a maker fails
+  to compile; folding them here would make this list import the makers
+  and their dependencies.
+
 ## Not folded, and why
 
 - `view-switch.ts` `KIND_NOUN` and the visitor pages' kind words: the
