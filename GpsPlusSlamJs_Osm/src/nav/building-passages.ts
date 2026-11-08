@@ -69,18 +69,24 @@ const PASSAGE_TUNNEL = "building_passage";
 /**
  * How wide a mapped building passage is taken to be, metres.
  *
- * **SIZED BY THE PATHFINDER, not by architecture**, exactly as `GATE_GAP_M` is —
- * and it has to be wider than a gate for a reason that only shows up here. A
- * gate needs ONE admitted step across a line. A corridor needs a CHAIN of them
- * along its length, and the res-13 cells the search moves between have centres
- * ~6 m apart on a lattice that has no idea where the passage runs: two
- * consecutive centres can sit several metres off the line, on the same side. A
- * corridor narrower than the lattice spacing is one the agent can enter and then
- * not follow — which is worse than not opening it at all, because the mouth is
- * visible.
+ * **SIZED BY THE PATHFINDER, from both sides.** `crossesObstacle` admits a step
+ * that comes within half this width of the passage line anywhere along its
+ * length. Where the line runs past the walls every step crossing it is
+ * admitted, so the chain exists at any width; but mapped passages END at the
+ * outline or a little inside it, and there the entry step has to reach the
+ * line's end across a res-13 lattice (centres 7.1 m apart on average, up to
+ * 7.83 m). Measured over 400 uniform placements of a 60 m building: a passage ending exactly at the walls joined the two sides
+ * every time from 7 m (5 m: 392 of 400), one ending 3 m short needed 10 m
+ * (8 m: 389, 9 m: 398 of 400). Bearings within 2 degrees of the lattice
+ * directions are no worse (2940 near-axis placements: 8 m 2890, 9 m 2939,
+ * 9.5 m and 10 m all). The LOWER bound is therefore about 9.5 m.
  *
- * `building-passages.property.test.ts` states that as "the passage is walkable
- * end to end, at any bearing" and fails below this value.
+ * **The UPPER bound is the building.** Rooms 15-29 m off the passage stayed
+ * sealed up to 14.5 m and were reached at 15 m in 3 % of placements, at 16 m in
+ * 24 %. 10 m sits inside that window with only about 0.5-1 m of margin on
+ * the lower side and about 4.5 m on the upper. `building-passages.property.test.ts`
+ * holds both: walkable end to end (red at 5 m) and the rooms sealed (red at
+ * 16 m).
  */
 export const PASSAGE_CORRIDOR_M = 10;
 

@@ -20,11 +20,13 @@ import {
   gpsToH3,
   H3_RESOLUTION,
 } from './h3-proximity';
+import { uniformWithSeams } from '../test-utils/uniform-arbitrary';
 
-// Full lat/lng ranges, including near the poles and the ±180° antimeridian, so
-// the validity invariants are exercised at the seams h3-js must handle.
-const latArb = fc.double({ min: -89.9, max: 89.9, noNaN: true });
-const lngArb = fc.double({ min: -180, max: 180, noNaN: true });
+// Full lat/lng ranges, uniform, with the bounds (near the poles and the ±180°
+// antimeridian) and zero mixed back in, so the validity invariants are
+// exercised at the seams h3-js must handle.
+const latArb = uniformWithSeams(-89.9, 89.9);
+const lngArb = uniformWithSeams(-180, 180);
 const pathArb = fc.array(fc.record({ lat: latArb, lng: lngArb }), {
   maxLength: 60,
 });

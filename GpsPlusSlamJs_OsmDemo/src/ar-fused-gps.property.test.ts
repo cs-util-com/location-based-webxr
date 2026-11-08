@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 
 import { fusedGpsFrom } from "./ar-fused-gps.js";
+import { uniformIn } from "gps-plus-slam-app-framework/test-utils/uniform-arbitrary";
 
 /**
  * The NUE→ENU axis mapping holds for ANY pose and ANY origin latitude.
@@ -38,12 +39,12 @@ function frameAt(lat: number, lng: number) {
  * which is a property of the flat-earth frame rather than of this mapping.
  */
 const origin = fc.record({
-  lat: fc.double({ min: -70, max: 70, noNaN: true }),
-  lng: fc.double({ min: -179, max: 179, noNaN: true }),
+  lat: uniformIn(-70, 70),
+  lng: uniformIn(-179, 179),
 });
 
 /** Metres, at the scale an AR session actually reaches. */
-const metres = fc.double({ min: -2000, max: 2000, noNaN: true });
+const metres = uniformIn(-2000, 2000);
 
 /** A northward step big enough to be a real movement — see the floor note. */
 const stepMetres = fc.double({ min: 0.01, max: 2000, noNaN: true });
