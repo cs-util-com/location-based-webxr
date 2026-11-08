@@ -233,7 +233,7 @@ describe("the voice", () => {
     expect(said.at(-1)).toContain("voice.mp3 (2.0 KiB) added");
   });
 
-  // Why (PR #874 review, note 1): a length the browser does not read in
+  // Why: a length the browser does not read in
   // time (a slow phone, 5 s) was dropped silently; the voice is still
   // added, and the author is told the tour shows no length for it.
   it("tells the author when the voice's length could not be read", async () => {
@@ -245,7 +245,9 @@ describe("the voice", () => {
     await flush();
     expect(edits.at(-1)).not.toHaveProperty("durationMs");
     expect(said.at(-1)).toContain("voice.mp3 (1 B) added");
-    expect(said.at(-1)).toContain("Its length could not be read");
+    expect(said.at(-1)).toContain(
+      "Its length could not be read, so the tour shows no length for it.",
+    );
   });
 
   it("says nothing of the length when it was read", async () => {

@@ -2,9 +2,11 @@
  * The long text's part of the editor's inspector, put together: the
  * writer (`long-text-writer.ts`) the inspector shows while a long text is
  * selected, the preview (`long-text-preview.ts`) over the 3D view (none
- * on a phone, which has no room for it), the inspector's "Wider" width and the preview's own open state. The shell
- * asks it for the writer's node on each draw (`sync`) and hands it the
- * inspector's head buttons it owns (`act`).
+ * on a phone, which has no room for it), the inspector's "Wider" width
+ * and the preview's own open state. Its panel (`long-text-panel.ts`, the
+ * long text's row of the inspector's kind panels) asks it for the
+ * writer's node on each draw (`sync`) and hands it the inspector's head
+ * buttons it owns (`act`).
  *
  * @see long-text-dock.ts.md
  */

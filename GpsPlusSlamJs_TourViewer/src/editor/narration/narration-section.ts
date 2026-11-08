@@ -569,10 +569,10 @@ export function createNarrationSection(
       if (done !== "written") return;
       added = true;
       // A length not read (in time, on a slow phone, or at all) is told:
-      // the tour then shows none for the voice (PR #874 review).
+      // the tour then shows no length for the voice.
       const length =
         ms === undefined
-          ? " Its length could not be read, so the tour shows none for it."
+          ? " Its length could not be read, so the tour shows no length for it."
           : "";
       deps.say(
         `Voice ${file.name} (${sizeWords(file.size)}) added. Save to keep it in the tour.${length}`,
