@@ -143,6 +143,29 @@ describe("buildRoof: the exact rungs", () => {
       expect(roof.isApproximate).toBe(true);
     }
   });
+  it("takes the box roof only within maxOverhangM, never below a zero limit", () => {
+    // Why: the box test stops at the first sample too far out (a cost cut,
+    // M2 review finding 2); it must still say what the measured overhang
+    // said. A rectangle overhangs by nothing, so a limit of 0 takes the box
+    // and any limit below zero, or not a number, does not.
+    const rectangle: EnuPoint[] = [
+      { x: 0, y: 0 },
+      { x: 12, y: 0 },
+      { x: 12, y: 7 },
+      { x: 0, y: 7 },
+    ];
+    const method = (maxOverhangM: number): string =>
+      buildRoof([rectangle], triangulate([rectangle]), {
+        shape: "gabled",
+        eaveHeightM: 6,
+        ridgeHeightM: 10,
+        maxOverhangM,
+      }).method;
+    expect(method(0)).toBe("box");
+    expect(method(Number.POSITIVE_INFINITY)).toBe("box");
+    expect(method(-0.5)).toBe("skeleton");
+    expect(method(Number.NaN)).toBe("skeleton");
+  });
 });
 
 describe("buildRoof: the fallback rungs", () => {

@@ -52,6 +52,17 @@ slope, weight 0 stays put and sweeps a vertical gable. Planned and decided in
   - `caps`: flat polygons left by `maxT`, at `t = ridgeT`.
   - `ridgeT`: the latest time reached, the top of the roof.
   - `gables`: how many walls `gableEnds` turned into gables.
+- `skeletonFootprint(rings): SkeletonFootprint` - the footprint of a roof
+  ladder (`roof.ts`): prepared and checked once, then `hipped(attempt)` and
+  `gabled(attempt, gableEnds)` give exactly `skeletonRoof(rings, { attempt })`
+  and `skeletonRoof(rings, { attempt, gableEnds })`. The all-slopes run of
+  each attempt is made at most once: the gabled rung chooses its gables from
+  it and the hipped rung after it is that run, so a failing gabled ladder
+  costs four runs, not six; a run that threw is thrown again at once.
+  Throws `SkeletonFailure` at once for a ring the preparation rejects (not
+  simple, fewer than three corners, not finite), which no nudge changes, so
+  the ladder skips all its rungs. No weights or `maxT`: the tagged path uses
+  neither.
 - `faceTriangles(face)`, `capTriangles(cap)`: triangles in plan (the
   library's `triangulate`), as the face's own points.
 - `skeletonPlanArea(roof)`: the plan area of the slopes and caps.
@@ -135,6 +146,8 @@ gabled.gables; // 2 on a rectangle: both short ends
   ring with a soffit and `maxT`, and every refusal.
 - `roof-skeleton.property.test.ts`: star polygons (area within 0.5 %, no
   point outside by more than 1 cm, no NaN, no fold), and a convex oracle: on a
-  convex ring `t` is the distance to the nearest wall line.
+  convex ring `t` is the distance to the nearest wall line; and
+  `skeletonFootprint` against `skeletonRoof` (the same roofs or the same
+  failure, the rungs in either order), plus a bow tie it rejects up front.
 - Through `roof.ts`: `s3db-roof-tags.test.ts`, `mesh-orientation.test.ts`,
   `s3db-drawn-top.test.ts`, and the `buildRoof` fuzz.

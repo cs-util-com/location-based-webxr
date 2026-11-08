@@ -34,7 +34,12 @@ import {
 const WELD_M = 0.003;
 /** A corner this near a triangle's edge lies on that edge. */
 const ON_EDGE_M = 0.002;
-const NEIGHBOUR_CELLS = [-1, 0, 1] as const;
+/** The 27 cells around a cell, as (dx, dy, dz) offsets. */
+const NEIGHBOUR_OFFSETS: readonly (readonly [number, number, number])[] = [
+  -1, 0, 1,
+].flatMap((dx) =>
+  [-1, 0, 1].flatMap((dy) => [-1, 0, 1].map((dz) => [dx, dy, dz] as const)),
+);
 
 export interface SkeletonHeights {
   /** The height of `t = 0`, metres. */
@@ -105,34 +110,56 @@ export function skeletonMesh(
  */
 function assertClosed(mesh: MeshData, eaveM: number): void {
   const { positions, indices } = mesh;
-  const key = (i: number): string =>
-    `${positions[i * 3]},${positions[i * 3 + 1]},${positions[i * 3 + 2]}`;
+  // An edge is one number, `from * count + to` over position ids.
+  const count = positions.length / 3;
+  const id = positionIds(positions);
   // The positions are float32 and `eaveM` a float64, so the eave is compared
   // as float32 too: rounded up by more than the 1e-6 (from |eave| >= 32 m),
   // every eave vertex read as raised and no roof up there closed.
   const eave = Math.fround(eaveM);
   const raised = (i: number): boolean =>
     (positions[i * 3 + 1] as number) > eave + 1e-6;
-  const edges = new Map<string, { count: number; raised: boolean }>();
+  const edges = new Map<number, { count: number; raised: boolean }>();
   for (let i = 0; i < indices.length; i += 3) {
-    const tri = [indices[i], indices[i + 1], indices[i + 2]] as number[];
-    tri.forEach((p, k) => {
-      const q = tri[(k + 1) % 3] as number;
-      const id = `${key(p)}>${key(q)}`;
-      const seen = edges.get(id);
-      edges.set(id, {
+    for (let k = 0; k < 3; k++) {
+      const p = indices[i + k] as number;
+      const q = indices[i + ((k + 1) % 3)] as number;
+      const edge = (id[p] as number) * count + (id[q] as number);
+      const seen = edges.get(edge);
+      edges.set(edge, {
         count: (seen?.count ?? 0) + 1,
         raised: raised(p) || raised(q),
       });
-    });
+    }
   }
-  for (const [id, edge] of edges) {
-    const [from, to] = id.split(">");
-    const open = edge.raised && !edges.has(`${to}>${from}`);
-    if (edge.count > 1 || open) {
+  for (const [edge, { count: uses, raised: up }] of edges) {
+    const from = Math.floor(edge / count);
+    const to = edge - from * count;
+    const open = up && !edges.has(to * count + from);
+    if (uses > 1 || open) {
       throw new SkeletonFailure("the stitched roof is not closed");
     }
   }
+}
+
+/**
+ * One id per distinct position: the builder repeats a corner once per face.
+ * The template string makes -0 and 0 one position, as they are.
+ */
+function positionIds(positions: Float32Array): Int32Array {
+  const count = positions.length / 3;
+  const ids = new Map<string, number>();
+  const id = new Int32Array(count);
+  for (let i = 0; i < count; i++) {
+    const position = `${positions[i * 3]},${positions[i * 3 + 1]},${positions[i * 3 + 2]}`;
+    let known = ids.get(position);
+    if (known === undefined) {
+      known = ids.size;
+      ids.set(position, known);
+    }
+    id[i] = known;
+  }
+  return id;
 }
 
 function roofTriangles(
@@ -194,8 +221,7 @@ class Corners {
 
   /** Registers a wall-top corner as it is; equal ones are one. */
   pin(p: Corner): void {
-    const known = this.near(p, 0);
-    if (known === undefined) this.add(p);
+    if (this.same(p) === undefined) this.add(p);
   }
 
   /**
@@ -205,8 +231,8 @@ class Corners {
    * top and one beside it, and the faces would no longer share an edge.
    */
   weld(p: Corner): Corner {
-    if (p.pinned) return this.near(p, 0) ?? p;
-    const known = this.near(p, WELD_M, false);
+    if (p.pinned) return this.same(p) ?? p;
+    const known = this.nearRaised(p, WELD_M);
     if (known !== undefined) return known;
     this.add(p);
     return p;
@@ -220,37 +246,38 @@ class Corners {
     else list.push(p);
   }
 
-  /** The nearest registered corner within `reach` (0: an exact match). */
-  private near(p: Vec3, reach: number, pinned = true): Corner | undefined {
-    let best: Corner | undefined;
-    let bestGap = reach;
-    this.forAround(p, (q) => {
-      if (q.pinned && !pinned) return;
-      const d = gap(p, q);
-      if (d < bestGap || (d === 0 && best === undefined)) {
-        best = q;
-        bestGap = d;
-      }
-    });
-    return best;
+  /** The registered corner at exactly `p`: it can only be in `p`'s own cell. */
+  private same(p: Vec3): Corner | undefined {
+    const list = this.cells.get(cellKey(cellOf(p.x), cellOf(p.y), cellOf(p.z)));
+    if (list === undefined) return undefined;
+    for (const q of list) if (gap(p, q) === 0) return q;
+    return undefined;
   }
 
   /**
-   * Visits the registered corners in the 27 cells around `p`. Numeric cell
-   * keys and no intermediate arrays: this is the stitch's hot path (string
-   * keys here were about half of all roof time, measured 2026-11-08).
+   * The nearest registered raised corner within `reach`, from the 27 cells
+   * around `p`. Numeric cell keys and no intermediate arrays: this is the
+   * stitch's hot path (string keys here were about half of all roof time,
+   * measured 2026-11-08).
    */
-  private forAround(p: Vec3, visit: (q: Corner) => void): void {
+  private nearRaised(p: Vec3, reach: number): Corner | undefined {
+    let best: Corner | undefined;
+    let bestGap = reach;
     const cx = cellOf(p.x);
     const cy = cellOf(p.y);
     const cz = cellOf(p.z);
-    for (const dx of NEIGHBOUR_CELLS) {
-      for (const dy of NEIGHBOUR_CELLS) {
-        for (const dz of NEIGHBOUR_CELLS) {
-          this.cells.get(cellKey(cx + dx, cy + dy, cz + dz))?.forEach(visit);
+    for (const [dx, dy, dz] of NEIGHBOUR_OFFSETS) {
+      const list = this.cells.get(cellKey(cx + dx, cy + dy, cz + dz));
+      for (const q of list ?? []) {
+        if (q.pinned) continue;
+        const d = gap(p, q);
+        if (d < bestGap || (d === 0 && best === undefined)) {
+          best = q;
+          bestGap = d;
         }
       }
     }
+    return best;
   }
 }
 
@@ -299,15 +326,14 @@ function outsideBox(p: Vec3, t: Triangle): boolean {
   );
 }
 
-/** The registered corners strictly inside edge `a`-`b`, from `a` to `b`. */
+/** Of `candidates`, the corners strictly inside edge `a`-`b`, from `a` to `b`. */
 function cornersOn(
-  corners: Corners,
-  t: Triangle,
+  candidates: readonly Corner[],
   a: Corner,
   b: Corner,
 ): Corner[] {
-  return corners.all
-    .filter((p) => !outsideBox(p, t) && onEdge(p, a, b))
+  return candidates
+    .filter((p) => onEdge(p, a, b))
     .map((p) => ({ p, along: gap(a, p) }))
     .sort((x, y) => x.along - y.along)
     .map(({ p }) => p);
@@ -331,13 +357,15 @@ function emitStitched(
 ): void {
   const { a, b, c } = t;
   if (gap(a, b) === 0 || gap(b, c) === 0 || gap(c, a) === 0) return;
+  // The box test once per triangle, not once per edge.
+  const near = corners.all.filter((p) => !outsideBox(p, t));
   const ring = withoutSpikes([
     a,
-    ...cornersOn(corners, t, a, b),
+    ...cornersOn(near, a, b),
     b,
-    ...cornersOn(corners, t, b, c),
+    ...cornersOn(near, b, c),
     c,
-    ...cornersOn(corners, t, c, a),
+    ...cornersOn(near, c, a),
   ]);
   if (ring.length < 3) return;
   if (ring.length === 3) {

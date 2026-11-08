@@ -137,6 +137,69 @@ export interface SkeletonOptions {
 }
 
 /**
+ * One footprint for a roof ladder: prepared once, with the all-slopes run of
+ * each nudge made at most once. A gabled roof chooses its gables from that
+ * run, so the hipped rung after it reuses it rather than running it again,
+ * and a run that failed fails both rungs of its nudge at once. The same roofs
+ * as `skeletonRoof` with the same options, bit for bit.
+ */
+export interface SkeletonFootprint {
+  /** `skeletonRoof(rings, { attempt })`. */
+  hipped(attempt: number): SkeletonRoof;
+  /** `skeletonRoof(rings, { attempt, gableEnds })`. */
+  gabled(attempt: number, gableEnds: GableRule): SkeletonRoof;
+}
+
+/**
+ * Prepares `rings` for `SkeletonFootprint`. Throws `SkeletonFailure` for
+ * a ring `skeletonRoof` rejects before any run (not simple, fewer than three
+ * usable corners, a number that is not finite): no nudge changes that.
+ */
+export function skeletonFootprint(
+  rings: readonly (readonly EnuPoint[])[],
+): SkeletonFootprint {
+  const prepared = preparedRings(rings);
+  const weights = preparedWeights(prepared, undefined);
+  const runs = new Map<
+    number,
+    { nudged: EnuPoint[][]; hip: Run } | { error: unknown }
+  >();
+  const hipRun = (attempt: number): { nudged: EnuPoint[][]; hip: Run } => {
+    let known = runs.get(attempt);
+    if (known === undefined) {
+      const nudged = nudgedRings(prepared, attempt);
+      try {
+        known = {
+          nudged,
+          hip: runSkeleton(nudged, weights, Number.POSITIVE_INFINITY),
+        };
+      } catch (error) {
+        known = { error };
+      }
+      runs.set(attempt, known);
+    }
+    if ("error" in known) throw known.error;
+    return known;
+  };
+  const sound = (run: Run): SkeletonRoof => {
+    const roof = finish(run, prepared);
+    assertSound(roof, prepared);
+    return roof;
+  };
+  return {
+    hipped: (attempt) => sound(hipRun(attempt).hip),
+    gabled: (attempt, gableEnds) => {
+      const { nudged, hip } = hipRun(attempt);
+      const gabled = gableWeights(
+        weights,
+        chooseGables(hip, gableEnds, prepared[0]),
+      );
+      return sound(runSkeleton(nudged, gabled, Number.POSITIVE_INFINITY));
+    },
+  };
+}
+
+/**
  * The roof over `rings` (outer first, then courtyards; either winding, a
  * repeated closing point allowed).
  *
@@ -153,19 +216,14 @@ export function skeletonRoof(
   rings: readonly (readonly EnuPoint[])[],
   options: SkeletonOptions = {},
 ): SkeletonRoof {
-  const prepared = prepareRings(rings);
-  assertSimple(prepared);
-  const attempt = options.attempt ?? 0;
-  const origin = lowestCorner(prepared);
-  const nudged = prepared.map((ring, r) =>
-    nudgedRing(ring, r, attempt, origin),
-  );
+  const prepared = preparedRings(rings);
+  const nudged = nudgedRings(prepared, options.attempt ?? 0);
   let weights = preparedWeights(prepared, options.weights);
   if (options.gableEnds !== undefined) {
     const hip = runSkeleton(nudged, weights, Number.POSITIVE_INFINITY);
-    const gables = chooseGables(hip, options.gableEnds, prepared[0]);
-    weights = weights.map((ring, r) =>
-      r === 0 ? ring.map((w, i) => (gables.has(i) ? 0 : w)) : ring,
+    weights = gableWeights(
+      weights,
+      chooseGables(hip, options.gableEnds, prepared[0]),
     );
   }
   const maxT = options.maxT ?? Number.POSITIVE_INFINITY;
@@ -306,6 +364,34 @@ function lineGap(p: EnuPoint, a: EnuPoint, b: EnuPoint): number {
   const length = Math.hypot(dx, dy);
   if (length === 0) return Math.hypot(p.x - a.x, p.y - a.y);
   return Math.abs((p.x - a.x) * dy - (p.y - a.y) * dx) / length;
+}
+
+/** The rings prepared and checked: everything a nudge does not change. */
+function preparedRings(
+  rings: readonly (readonly EnuPoint[])[],
+): PreparedRing[] {
+  const prepared = prepareRings(rings);
+  assertSimple(prepared);
+  return prepared;
+}
+
+/** Every ring's kept corners nudged for `attempt`. */
+function nudgedRings(
+  prepared: readonly PreparedRing[],
+  attempt: number,
+): EnuPoint[][] {
+  const origin = lowestCorner(prepared);
+  return prepared.map((ring, r) => nudgedRing(ring, r, attempt, origin));
+}
+
+/** `weights` with the chosen outer walls made vertical gables. */
+function gableWeights(
+  weights: readonly (readonly number[])[],
+  gables: ReadonlySet<number>,
+): number[][] {
+  return weights.map((ring, r) =>
+    r === 0 ? ring.map((w, i) => (gables.has(i) ? 0 : w)) : [...ring],
+  );
 }
 
 /**

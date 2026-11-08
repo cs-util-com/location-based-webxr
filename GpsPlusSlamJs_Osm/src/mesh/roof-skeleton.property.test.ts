@@ -6,6 +6,8 @@ import { signedArea2 } from "./enu.js";
 import type { SkeletonRoof } from "./roof-skeleton.js";
 import {
   faceTriangles,
+  SkeletonFailure,
+  skeletonFootprint,
   skeletonPlanArea,
   skeletonRoof,
 } from "./roof-skeleton.js";
@@ -370,5 +372,60 @@ describe("the skeleton roof as a mesh (skeleton-mesh.ts)", () => {
       soffit,
     );
     expectClosedMesh(skeletonRoof([soffit], { maxT: 1.5 }), soffit);
+  });
+});
+
+describe("skeletonFootprint (the ladder's footprint)", () => {
+  // Why: buildRoof draws every skeleton rung through skeletonFootprint, which
+  // reuses one all-slopes run for the gabled pre-run and the hipped rung of a
+  // nudge. The cost cut is only allowed if it changes nothing, so the
+  // footprint must give exactly skeletonRoof's roof, or fail where it fails.
+  const outcome = (draw: () => SkeletonRoof): SkeletonRoof | string => {
+    try {
+      return draw();
+    } catch (error) {
+      return error instanceof SkeletonFailure ? "failure" : String(error);
+    }
+  };
+  it("draws exactly skeletonRoof's roofs, in either order of the rungs", () => {
+    const rule = { kind: "neighbours" } as const;
+    fc.assert(
+      fc.property(
+        starPolygon,
+        fc.constantFrom(0, 1),
+        fc.boolean(),
+        (footprint, attempt, hippedFirst) => {
+          const want = {
+            hipped: outcome(() => skeletonRoof([footprint], { attempt })),
+            gabled: outcome(() =>
+              skeletonRoof([footprint], { attempt, gableEnds: rule }),
+            ),
+          };
+          const shared = skeletonFootprint([footprint]);
+          const hipped = (): SkeletonRoof | string =>
+            outcome(() => shared.hipped(attempt));
+          const gabled = (): SkeletonRoof | string =>
+            outcome(() => shared.gabled(attempt, rule));
+          const got = hippedFirst
+            ? { hipped: hipped(), gabled: gabled() }
+            : { gabled: gabled(), hipped: hipped() };
+          expect(got).toEqual(want);
+        },
+      ),
+      { numRuns: 150 },
+    );
+  });
+
+  it("rejects a ring the preparation rejects, before any nudge", () => {
+    // A bow tie is not simple; no nudge makes it so, so the ladder skips
+    // every rung at once.
+    const bowTie = [
+      { x: 0, y: 0 },
+      { x: 10, y: 10 },
+      { x: 10, y: 0 },
+      { x: 0, y: 10 },
+    ];
+    expect(() => skeletonFootprint([bowTie])).toThrow(SkeletonFailure);
+    expect(() => skeletonRoof([bowTie])).toThrow(SkeletonFailure);
   });
 });

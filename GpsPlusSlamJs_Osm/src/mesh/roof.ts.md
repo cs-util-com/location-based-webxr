@@ -97,11 +97,17 @@ Roof geometry above the eaves, in the plan's own order of quality-per-effort.
       52 across-tagged skeleton roofs, where the box roof had drawn them
       across before. Taking the box keeps the tag; teaching the axis rule end
       walls is a follow-up (`roof-skeleton.ts.md`). Without this step the
-      corpus has 44 approximate skeletons and 2 box fallbacks instead of 13
-      and 33.
+      corpus had 44 approximate skeletons and 2 box fallbacks instead of 13
+      and 33 (measured before the float32 fix of M2 review finding 1).
     - Each skeleton rung catches ANY error, not only a `SkeletonFailure`,
       and the ladder goes on: an unforeseen throw in one rung used to skip
       the box rung and draw a prism (M2 review finding 6, 2026-11-08).
+    - **Cost of a failing ladder:** a gabled roof whose every rung fails ran
+      six skeleton runs (per nudge an all-slopes pre-run and the gabled run,
+      then the hipped rung ran the pre-run again). The ladder now shares one
+      `skeletonFootprint` (`roof-skeleton.ts.md`), so the hipped rung reuses
+      the pre-run: four runs, and a nudge whose pre-run threw fails both its
+      rungs at once. A ring the preparation rejects skips every rung.
     - `buildRoof` never throws: an exception anywhere becomes the prism, or,
       if even that throws, a flat cap at the eaves.
   - **`surfaceVertices`** tells a consumer which vertices are roof and which
@@ -111,8 +117,13 @@ Roof geometry above the eaves, in the plan's own order of quality-per-effort.
     over the real outline. That is a gambrel or round skeleton, a gabled roof
     drawn hipped or with no gable, the box roof as a fallback, the prism, and
     the flat cap of a roof that could not be built. On the corpus 48 of the
-    508 ridged roofs (13 approximate skeletons, 33 box fallbacks, 2 prisms),
-    against 125 before, when every non-rectangle was approximate.
+    508 ridged roofs (13 approximate skeletons, 3 hipped skeletons, 32 box
+    fallbacks, no prism; 2026-11-08 after the M2 review fixes), against 125
+    before, when every non-rectangle was approximate. The two prisms counted
+    at first were M2 review finding 1 (the float32 eave check in
+    `skeleton-mesh.ts.md`), not shapes the skeleton cannot settle; the three
+    hipped skeletons (Cologne cathedral, Heidelberg, Sylt) came with the
+    ring-relative nudge (`roof-skeleton.ts.md`).
   - **Which way the ridge runs on the box roof:** along the long side by
     default; `roof:orientation=across` turns it square to that, and
     `roof:direction` turns it so the slopes face that direction (the ridge
@@ -126,11 +137,15 @@ Roof geometry above the eaves, in the plan's own order of quality-per-effort.
     5, 2026-11-07): on a plain object a shape named `toString` found an
     inherited function and the building came back with walls and no roof. Any
     unknown name, prototype names included, now draws flat.
-  - **The overhang** is measured on a grid (at most 33 x 33, at least every
-    0.5 m) of box points outside the outline, as each one's distance to the
-    nearest wall, for every ridged roof, rectangles included.
+  - **The overhang** is checked on a grid (at most 33 x 33, at least every
+    0.5 m) of box points outside the outline: each must lie within the limit
+    of a wall. Only when a rung asks (a rectangle, a gabled skeleton with no
+    gable, the box fallback), and it stops at the first point too far out
+    and at the first wall near enough; it was measured in full for every
+    ridged roof before (M2 review finding 2).
 - **Sweeps** (the 508 ridged roofs of the 13 corpus fixtures, plus 2,000 to
-  4,000 random stars for the failure rates; 2026-11-08). The counts are
+  4,000 random stars for the failure rates; 2026-11-08, before the M2 review
+  fixes, so each still counts the 2 prisms of finding 1). The counts are
   box / skeleton / approximate skeleton / box-fallback / prism:
   - **Overhang limit:** 0.5 m 377 / 78 / 22 (+1 hipped) / 23 / 3; **1 m
     (kept)** 379 / 77 / 13 / 33 / 2; 2 m 380 / 76 / 10 / 36 / 2. 1 m is the
@@ -147,7 +162,8 @@ Roof geometry above the eaves, in the plan's own order of quality-per-effort.
     run on a ring of irregular corners costs about 54 ms at 128 corners,
     280 ms at 256, 2.3 s at 512 and 8 s at 1,000 (regular corners: 10, 21,
     37 ms and 2.6 s); a 5,000-corner ring goes straight to the box or prism
-    in 0.3 s. 128 is kept: the worst case is every rung failing, four runs.
+    in 0.3 s. 128 is kept: the worst case is every rung failing, six runs
+    when this was measured and four since the shared footprint.
   - **Skeleton parameters** (jitter, area check, gable rule, axis angle,
     weld) are swept in `roof-skeleton.ts.md` and `skeleton-mesh.ts.md`; in
     every variant no drawn top misses its tagged height.
@@ -160,7 +176,23 @@ Roof geometry above the eaves, in the plan's own order of quality-per-effort.
   roof is a 61-corner gabled one at Cologne, 21 ms) and 16 ms in box roofs.
   Half of the skeleton time was the stitch's corner lookup until it got
   numeric cell keys; what is left is the skeleton's event loop and the
-  stitch's on-edge scan.
+  stitch's on-edge scan. (The two prisms were finding 1 and are gone.)
+- **Cost cuts at city scale** (M2 review finding 2: Heidelberg tiled N x N,
+  `buildBuildings`, min of 5 passes per process, three interleaved rounds on
+  a machine shared with other gates, so the spread is load; 2026-11-08). The
+  three builds are M2 as reviewed (6a585d484), M2 with the review fixes
+  before the cuts, and after the cuts; wall ms, then roof ms:
+  - 3 x 3: 519-763 / 415-646; 578-867 / 482-751; 430-542 / 257-361 (one
+    round at 2,225 under load);
+  - 5 x 5: 1,697-2,053 / 1,393-1,662 (one round 6,735); 1,314-1,614 /
+    1,232-1,403; 877-1,456 / 573-743;
+  - 7 x 7: 3,165-3,925 / 2,908-3,530; 3,462-4,805 / 2,511-3,383; **2,247-2,678
+    / 1,360-2,028**.
+  - About a third off the wall time and 40 to 50 % off the roof time at every
+    size. The output is unchanged: the same sha256 over 10,512 roofs (the 508
+    ridged corpus roofs at three eave heights and 3,000 seeded stars as
+    gabled, hipped and gambrel) and over all 3,072 corpus volumes. A phone
+    measurement in OsmDemo before the main merge is still the owner's.
 - **Licence constraint, and it binds:** the skeleton is our own. Do NOT bring
   in `straight-skeleton`'s v3 in production or in the harness: its npm
   package declares MIT while wrapping CGAL's GPL `Straight_skeleton_2`, and
@@ -206,7 +238,8 @@ approximate; a star that fails its first nudge closes on the retry; a gabled
 star that fails as gabled is drawn hipped; an across-tagged quadrilateral
 keeps its gables through the box roof while the untagged one is a skeleton; a
 footprint above the corner cap goes to the box or the prism; an L draws as a
-skeleton at eaves from -250.9 to 499.9 m (float32 positions); malformed and
+skeleton at eaves from -250.9 to 499.9 m (float32 positions); the box roof
+only within `maxOverhangM` (0 and infinity take it, -0.5 and NaN do not); malformed and
 NaN rings never throw; and a fuzz property over random rings, duplicates and
 shapes (finite, between eaves and ridge, `surfaceVertices` in range).
 

@@ -46,8 +46,12 @@ import { isCounterClockwise } from "./enu.js";
 import type { RoofShape } from "./building-heights.js";
 import type { MeshData } from "./mesh-data.js";
 import { MeshBuilder } from "./mesh-data.js";
-import type { GableRule, SkeletonRoof } from "./roof-skeleton.js";
-import { skeletonRoof } from "./roof-skeleton.js";
+import type {
+  GableRule,
+  SkeletonFootprint,
+  SkeletonRoof,
+} from "./roof-skeleton.js";
+import { skeletonFootprint } from "./roof-skeleton.js";
 import { skeletonMesh } from "./skeleton-mesh.js";
 import type { TriangulationResult } from "./triangulate.js";
 import { dropClosingPoint } from "./triangulate.js";
@@ -472,13 +476,16 @@ function ridgeRoof(
   }
   const box = turnedBox(found, options);
   const limit = options.maxOverhangM ?? RIDGE_OVERHANG_LIMIT_M;
-  const boxFits = boxOverhangM(rings, found) <= limit;
-  if (boxFits && rings.length === 1 && isRectangular(outer, found)) {
+  // Measured only when a rung asks: the overhang samples are most of the cost
+  // of a roof the skeleton draws, and most skeleton roofs never ask.
+  let fits: boolean | undefined;
+  const boxFits = (): boolean => (fits ??= boxFitsWithin(rings, found, limit));
+  if (rings.length === 1 && isRectangular(outer, found) && boxFits()) {
     return { ...boxRoof(box, options), isApproximate: false, method: "box" };
   }
   const skeleton = skeletonOrNothing(rings, box, options, boxFits);
   if (skeleton !== undefined) return skeleton;
-  if (boxFits) {
+  if (boxFits()) {
     return {
       ...boxRoof(box, options),
       isApproximate: true,
@@ -497,12 +504,12 @@ function skeletonOrNothing(
   rings: readonly (readonly EnuPoint[])[],
   box: OrientedBox,
   options: RoofOptions,
-  boxFits: boolean,
+  boxFits: () => boolean,
 ): RoofMesh | undefined {
   if (cornerCount(rings) > SKELETON_VERTEX_CAP) return undefined;
   const skeleton = skeletonLadder(rings, box, options);
   if (skeleton === undefined) return undefined;
-  return boxFits && lostItsGables(skeleton, options) ? undefined : skeleton;
+  return lostItsGables(skeleton, options) && boxFits() ? undefined : skeleton;
 }
 
 /**
@@ -566,16 +573,25 @@ function gableRule(box: OrientedBox, options: RoofOptions): GableRule {
   return tagged ? { kind: "axis", axis: box.axis } : { kind: "neighbours" };
 }
 
-/** Steps 1 to 3 of the ladder; `undefined` when every rung failed. */
+/**
+ * Steps 1 to 3 of the ladder; `undefined` when every rung failed, or at once
+ * when the rings fail the preparation, which no nudge changes.
+ */
 function skeletonLadder(
   rings: readonly (readonly EnuPoint[])[],
   box: OrientedBox,
   options: RoofOptions,
 ): RoofMesh | undefined {
+  let footprint: SkeletonFootprint;
+  try {
+    footprint = skeletonFootprint(rings);
+  } catch {
+    return undefined;
+  }
   const requests = skeletonRequests(box, options);
   for (const attempt of [0, 1]) {
     for (const request of requests) {
-      const mesh = trySkeleton(rings, request, attempt, options);
+      const mesh = trySkeleton(footprint, request, attempt, options);
       if (mesh !== undefined) return mesh;
     }
   }
@@ -584,18 +600,16 @@ function skeletonLadder(
 
 /** The roof of one rung, or `undefined` when its skeleton or mesh failed. */
 function trySkeleton(
-  rings: readonly (readonly EnuPoint[])[],
+  footprint: SkeletonFootprint,
   request: SkeletonRequest,
   attempt: number,
   options: RoofOptions,
 ): RoofMesh | undefined {
   try {
-    const roof = skeletonRoof(rings, {
-      attempt,
-      ...(request.gableEnds === undefined
-        ? {}
-        : { gableEnds: request.gableEnds }),
-    });
+    const roof =
+      request.gableEnds === undefined
+        ? footprint.hipped(attempt)
+        : footprint.gabled(attempt, request.gableEnds);
     return roof.ridgeT > 0
       ? skeletonRoofMesh(roof, request, options)
       : undefined;
@@ -780,22 +794,25 @@ function turnedBox(box: OrientedBox, options: RoofOptions): OrientedBox {
 }
 
 /**
- * The furthest the bounding rectangle reaches outside the footprint, in
- * metres: a grid over the rectangle, each sample outside the outer ring or
- * inside a hole measured to the nearest wall. At most 33 x 33 samples, and at
- * least one every half metre on a small building.
+ * True when the bounding rectangle reaches no further than `limit` metres
+ * outside the footprint: a grid over the rectangle, and each sample outside
+ * the outer ring or inside a hole must lie within `limit` of a wall. At most
+ * 33 x 33 samples, and at least one every half metre on a small building.
+ * Stops at the first sample too far out.
  */
-function boxOverhangM(
+function boxFitsWithin(
   rings: readonly (readonly EnuPoint[])[],
   box: OrientedBox,
-): number {
+  limit: number,
+): boolean {
+  // The overhang is never negative, so no limit below zero is met.
+  if (!(limit >= 0)) return false;
   const steps = (half: number): number =>
     Math.min(32, Math.max(2, Math.ceil((2 * half) / 0.5)));
   const nAlong = steps(box.halfLength);
   const nAcross = steps(box.halfWidth);
   const [outer, ...holes] = rings;
-  if (outer === undefined) return 0;
-  let worst = 0;
+  if (outer === undefined) return true;
   for (let i = 0; i <= nAlong; i++) {
     const along = -box.halfLength + (2 * box.halfLength * i) / nAlong;
     for (let j = 0; j <= nAcross; j++) {
@@ -807,18 +824,18 @@ function boxOverhangM(
       const inside =
         containsPoint(outer, point) &&
         !holes.some((hole) => containsPoint(hole, point));
-      if (!inside) worst = Math.max(worst, distanceToWalls(rings, point));
+      if (!inside && !withinOfWall(rings, point, limit)) return false;
     }
   }
-  return worst;
+  return true;
 }
 
-/** Distance from `point` to the nearest edge of any ring. */
-function distanceToWalls(
+/** True when `point` is within `limit` of an edge of any ring. */
+function withinOfWall(
   rings: readonly (readonly EnuPoint[])[],
   point: EnuPoint,
-): number {
-  let best = Number.POSITIVE_INFINITY;
+  limit: number,
+): boolean {
   for (const ring of rings) {
     for (let i = 0; i < ring.length; i++) {
       const a = ring[i] as EnuPoint;
@@ -831,16 +848,14 @@ function distanceToWalls(
           ? 0
           : ((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSq;
       const clamped = Math.max(0, Math.min(1, t));
-      best = Math.min(
-        best,
-        Math.hypot(
-          point.x - (a.x + clamped * dx),
-          point.y - (a.y + clamped * dy),
-        ),
+      const d = Math.hypot(
+        point.x - (a.x + clamped * dx),
+        point.y - (a.y + clamped * dy),
       );
+      if (d <= limit) return true;
     }
   }
-  return best;
+  return false;
 }
 
 /** Unit `(east, north)` vector pointing UPHILL, against `roof:direction`. */

@@ -70,6 +70,14 @@ Turns a `SkeletonRoof` (`roof-skeleton.ts`) into triangles: heights from
   - The verdict holds from 1 to 4 mm and turns above it: a weld that wide
     merges distinct corners of a narrow face. 3 mm sits in the middle of the
     clean range and still closes the hair-wide gaps simultaneous events leave.
+- **Cost cuts with no change in output** (M2 review finding 2, 2026-11-08;
+  the same hash over 10,512 roofs before and after, see `roof.ts.md`): the
+  closure check keys an edge by two vertex ids, one string per vertex rather
+  than two per edge end; an exact-match lookup (wall tops) reads only its own
+  grid cell, where an equal corner must lie; the weld scan is plain loops
+  instead of a callback; and a triangle filters the registered corners by its
+  box once rather than once per edge. A sort-based vertex id was tried for the
+  closure check and made no measurable difference, so the strings stay.
 - With a caller-given offset ring (an invented roof's soffit), the eave corners
   are the offset ring's: the roof is closed against that ring, and the soffit
   between it and the walls is the caller's to draw.
