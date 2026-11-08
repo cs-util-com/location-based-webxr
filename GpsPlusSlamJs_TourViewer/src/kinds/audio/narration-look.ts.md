@@ -14,7 +14,8 @@ visitor is inside. An invisible column takes the taps.
   - `object` - the group to place;
   - `tapTarget` - the invisible column a tap is cast against;
   - `inside(inside)` - brighter inside;
-  - `tick(seconds)` - moves the particles; allocates nothing;
+  - `tick(seconds)` - moves the particles; allocates nothing (the spread is
+    one array made at load);
   - `dispose()` - frees every geometry and material.
 
 ## Invariants & assumptions
@@ -33,5 +34,7 @@ look.inside(true);
 
 ## Tests
 
-Through `spot.test.ts` (a tap target, dispose). The look itself is checked
+`narration-look.test.ts` (the rise stays on the column and repeats each
+`RISE_S`, the tick writes in place) and `spot.test.ts` (a tap target,
+dispose). The look itself is checked
 by eye until its prototype is chosen.

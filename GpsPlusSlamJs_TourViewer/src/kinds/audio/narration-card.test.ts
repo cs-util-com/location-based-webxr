@@ -121,6 +121,13 @@ describe("narrationCard", () => {
     expect(q(".narration-card-time")?.textContent).toBe("0:28 / 0:30");
     expect(q(".narration-card-line")?.textContent).toBe("Look up?");
     expect(q(".narration-card-state")?.textContent).toBe("Paused");
+    // Why: the card tells the time as every other clock of the app does
+    // (read-along.ts clockText, rounded to the second), and carries its
+    // kind, which its styles are scoped to.
+    c.time = 28_600;
+    card.render();
+    expect(q(".narration-card-time")?.textContent).toBe("0:29 / 0:30");
+    expect(q("[data-testid=narration-card]")?.dataset["kind"]).toBe("audio");
   });
 
   // Why: the button is the visitor's tap on the voice; its new state must

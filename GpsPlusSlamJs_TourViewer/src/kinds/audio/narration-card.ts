@@ -9,6 +9,8 @@
  * @see narration-card.ts.md
  */
 
+import { clockText } from "../../read-along.js";
+
 /** What the card asks of the narration it shows. */
 export interface NarrationControls {
   /** Play, or pause a playing one (the circle's tap rule). */
@@ -51,12 +53,6 @@ export function sentenceAt(
     if (at < reached) return i;
   }
   return sentences.length - 1;
-}
-
-/** `ms` as m:ss. */
-function clock(ms: number): string {
-  const s = Math.max(0, Math.floor(ms / 1000));
-  return `${String(Math.floor(s / 60))}:${String(s % 60).padStart(2, "0")}`;
 }
 
 /** What the card says of the narration now. */
@@ -106,6 +102,8 @@ export function narrationCard(
   const sentences = transcriptSentences(narration.transcript);
   const root = make("section", "narration-card", host);
   root.dataset["testid"] = "narration-card";
+  // The card's styles are scoped to its kind.
+  root.dataset["kind"] = "audio";
   root.setAttribute("aria-label", `Narration: ${title}`);
   const head = make("div", "narration-card-head", root);
   make("span", "narration-card-kicker", head).textContent = "Narration";
@@ -152,7 +150,7 @@ export function narrationCard(
     }
     const ms = controls.timeMs();
     const duration = controls.durationMs();
-    const shown = `${clock(ms)} / ${clock(duration)}`;
+    const shown = `${clockText(ms)} / ${clockText(duration)}`;
     if (shown !== last.time) {
       time.textContent = shown;
       scrub.max = String(Math.max(0, Math.round(duration / 1000)));
@@ -160,7 +158,7 @@ export function narrationCard(
       if (!dragging) scrub.value = String(Math.floor(ms / 1000));
       scrub.setAttribute(
         "aria-valuetext",
-        `${clock(ms)} of ${clock(duration)}`,
+        `${clockText(ms)} of ${clockText(duration)}`,
       );
       last.time = shown;
     }

@@ -8,7 +8,10 @@ pause, a scrub bar with the time, and the sentence of the transcript being
 spoken. Its structure follows the card of the narration prototype
 (`public/prototypes/audio-narration-spot-1/`); its look is deliberately plain
 and lives behind this one function (plus the `#narration-card-root` rules in
-`index.html`) until a look is chosen.
+`index.html`, scoped to the card's `data-kind="audio"` and drawn in the
+walk's colour tokens, no fixed colours) until a look is chosen. The time is
+`read-along.ts` `clockText`, rounded to the second like every clock of the
+app.
 
 ## Public API
 

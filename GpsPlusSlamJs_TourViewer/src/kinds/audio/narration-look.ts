@@ -41,13 +41,20 @@ const RISE_S = 4;
 const TAP_RADIUS_M = 0.6;
 const TAP_HEIGHT_M = 2.2;
 
-/** A particle's fixed spot on the column: a seeded spread, so two circles
- *  look alike and a test is repeatable. */
-function spread(i: number): readonly [number, number, number] {
-  const a = i * 2.399963;
-  const r = 0.15 + 0.35 * ((i * 0.618034) % 1);
-  return [Math.cos(a) * r, Math.sin(a) * r, i / PARTICLES];
-}
+/** Each particle's fixed spot on the column, as x, z and its phase in the
+ *  rise: a seeded spread, so two circles look alike and a test is
+ *  repeatable. Made once, so a frame reads it without allocating. */
+const SPREAD = (() => {
+  const out = new Float32Array(PARTICLES * 3);
+  for (let i = 0; i < PARTICLES; i += 1) {
+    const a = i * 2.399963;
+    const r = 0.15 + 0.35 * ((i * 0.618034) % 1);
+    out[i * 3] = Math.cos(a) * r;
+    out[i * 3 + 1] = Math.sin(a) * r;
+    out[i * 3 + 2] = i / PARTICLES;
+  }
+  return out;
+})();
 
 export function narrationLook(radiusM: number): NarrationLook {
   const object = new Group();
@@ -100,11 +107,10 @@ export function narrationLook(radiusM: number): NarrationLook {
     },
     tick(seconds) {
       for (let i = 0; i < PARTICLES; i += 1) {
-        const [x, z, phase] = spread(i);
-        const t = (seconds / RISE_S + phase) % 1;
-        positions[i * 3] = x;
+        const t = (seconds / RISE_S + (SPREAD[i * 3 + 2] ?? 0)) % 1;
+        positions[i * 3] = SPREAD[i * 3] ?? 0;
         positions[i * 3 + 1] = t * RISE_M;
-        positions[i * 3 + 2] = z;
+        positions[i * 3 + 2] = SPREAD[i * 3 + 1] ?? 0;
       }
       attribute.needsUpdate = true;
     },
