@@ -8,15 +8,7 @@
   - `narrowCommand(command, changed)` ->
     - `{ mode: 'files', files, argv }`: the rewritten command as an argv
       (`[tool, ...options, ...files]`), which the stage runs without a
-      shell, so a file name with `# changed-files-command.mjs - a format command narrowed to the changed files
-
-- Purpose: the pure rewrite behind the fast gate's format stage
-  ([changed-files-stage.mjs](changed-files-stage.mjs.md) is the shell): the
-  stage's own command, with its targets replaced by the changed files that
-  lie inside them.
-- Public API:
-  - `narrowCommand(command, changed)` ->
-, a backtick or a `"` reaches the tool
+      shell, so a file name with a `$`, a backtick or a `"` reaches the tool
       verbatim (r1139); `files` sorted and deduplicated;
     - `{ mode: 'skip', reason }`: no changed file is in the stage;
     - `{ mode: 'full', reason }`: run the command unchanged.

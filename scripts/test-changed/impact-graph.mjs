@@ -326,35 +326,46 @@ function matchesPattern(/** @type {string} */ file, /** @type {string} */ patter
  */
 function tsconfigEdges(packages, fileSet, texts, edge) {
   /** @typedef {'include' | 'files' | 'exclude'} ListKey */
-  /** @type {Map<string, { parent: string | null, lists: Record<ListKey, string[] | undefined> }>} */
+  /** @type {Map<string, { parents: string[], lists: Record<ListKey, string[] | undefined> }>} */
   const configs = new Map();
   const referenced = new Set();
   const extended = new Set();
   for (const [from, text] of texts) {
     if (!TSCONFIG_RE.test(from)) continue;
+    // A string, or (TS 5) an array whose later entries override earlier ones.
     const ext = text.match(/"extends"\s*:\s*"([^"]+)"/);
-    const parent = ext ? tsconfigPath(from, ext[1], false) : null;
-    if (parent) extended.add(parent);
+    const names = ext ? [ext[1]] : (jsonList(text, 'extends') ?? []);
+    const parents = names.flatMap((n) => tsconfigPath(from, n, false) ?? []);
+    for (const parent of parents) extended.add(parent);
     const refs = text.match(/"references"\s*:\s*\[([^\]]*)\]/);
     for (const r of refs ? refs[1].matchAll(/"path"\s*:\s*"([^"]+)"/g) : []) {
       const p = tsconfigPath(from, r[1], true);
       if (p) referenced.add(p);
     }
     configs.set(from, {
-      parent,
+      parents,
       lists: { include: jsonList(text, 'include'), files: jsonList(text, 'files'), exclude: jsonList(text, 'exclude') },
     });
   }
-  /** @param {string} from @param {ListKey} key @returns {string[]} repo-relative patterns */
-  const inherited = (from, key) => {
-    const seen = new Set();
-    for (let c = from; configs.has(c) && !seen.has(c); c = configs.get(c)?.parent ?? '') {
-      seen.add(c);
-      const list = configs.get(c)?.lists[key];
-      if (list) return list.map((p) => joinPath(dirname(c), p));
+  /**
+   * A config's own list, else the one its last parent that sets it inherits.
+   * @param {string} from @param {ListKey} key @param {Set<string>} [seen] - cycle guard
+   * @returns {string[] | undefined} repo-relative patterns
+   */
+  const lookup = (from, key, seen = new Set()) => {
+    const config = configs.get(from);
+    if (!config || seen.has(from)) return undefined;
+    seen.add(from);
+    const list = config.lists[key];
+    if (list) return list.map((p) => joinPath(dirname(from), p));
+    for (const parent of [...config.parents].reverse()) {
+      const found = lookup(parent, key, seen);
+      if (found) return found;
     }
-    return [];
+    return undefined;
   };
+  /** @param {string} from @param {ListKey} key @returns {string[]} */
+  const inherited = (from, key) => lookup(from, key) ?? [];
   for (const from of configs.keys()) {
     if (extended.has(from) && !referenced.has(from)) continue;
     const own = packageOf(packages, from);
