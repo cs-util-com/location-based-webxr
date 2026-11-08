@@ -27,8 +27,9 @@ quiet-greens lab the owner chose (city objects plan 2026-11-07-2315 M2a).
 - `cosmeticTreeSource(feature)`: which source a feature is, or undefined (nodes
   never are).
 - `cosmeticRank(key)`: the seeded rank in [0, 1) the output is sorted by.
-- Constants: `WOOD_HEIGHT_FACTOR` 1.5, `ORCHARD_SPACING_M` 6,
-  `ORCHARD_HEIGHT_M` 4.5, `TREE_ROW_SPACING_M` 8, `TREE_ROW_CLEAR_M` 4.
+- Exported constants: `ORCHARD_HEIGHT_M` 4.5, `TREE_ROW_SPACING_M` 8.
+  Module-private: `WOOD_HEIGHT_FACTOR` 1.5, `ORCHARD_SPACING_M` 6,
+  `TREE_ROW_CLEAR_M` 4 (no caller outside the module).
 
 ## Invariants & assumptions
 

@@ -64,15 +64,15 @@ export const COSMETIC_TREE_CAP = 20_000;
 /** Clearance a wood or orchard tree keeps beyond a road's half width, metres. */
 export const COSMETIC_ROAD_MARGIN_M = 1;
 /** A wood tree's default height, as a multiple of a lone tree's. */
-export const WOOD_HEIGHT_FACTOR = 1.5;
+const WOOD_HEIGHT_FACTOR = 1.5;
 /** Orchard grid spacing, metres. */
-export const ORCHARD_SPACING_M = 6;
+const ORCHARD_SPACING_M = 6;
 /** An orchard tree's default height, metres. */
 export const ORCHARD_HEIGHT_M = 4.5;
 /** Spacing of the trees along a `natural=tree_row`, metres. */
 export const TREE_ROW_SPACING_M = 8;
 /** A row tree is dropped this close to a mapped tree, metres. */
-export const TREE_ROW_CLEAR_M = 4;
+const TREE_ROW_CLEAR_M = 4;
 
 /** Which kind of mapped feature implied a cosmetic tree. */
 export type CosmeticTreeSource = "wood" | "orchard" | "tree_row";
