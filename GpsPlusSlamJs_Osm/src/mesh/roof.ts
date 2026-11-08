@@ -95,7 +95,7 @@ const RIDGE_OVERHANG_LIMIT_M = 1;
 const SKELETON_VERTEX_CAP = 128;
 
 /** Which builder drew a roof; see the fallback ladder in the file header. */
-export type RoofMethod =
+type RoofMethod =
   | "flat"
   | "revolved"
   | "skillion"
