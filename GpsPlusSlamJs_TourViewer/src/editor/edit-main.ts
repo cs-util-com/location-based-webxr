@@ -54,6 +54,7 @@ import {
   type TourSaveHolder,
   type TourSaveStatus,
 } from "../tour-document.js";
+import type { ChildMoveTo } from "../station-children-moves.js";
 import { describeIntegrityError, olderFormatRefusal } from "../open-errors.js";
 import { debugCapturesOf, type DebugCapture } from "../debug-captures.js";
 import { pictureProblem } from "../image-cap.js";
@@ -1724,6 +1725,37 @@ function reorderStations(order: readonly string[]): void {
   refresh();
   if (outcome.kind === "refused") toast(outcome.reason);
   else if (outcome.kind === "reordered") tourChanged();
+}
+
+/** A station's item moved within its station (the tree's drag, the
+ *  inspector's Move to, Earlier and Later): one step, the selection kept.
+ *  What the move changed beyond its place is said: answers that led to it
+ *  now go on, or the view it took to stand in the world. */
+function moveChild(id: string, to: ChildMoveTo): void {
+  if (editor === null) return;
+  endUndo();
+  const outcome = editor.moveChild(id, to);
+  refresh();
+  if (outcome.kind === "refused") {
+    toast(outcome.reason);
+    return;
+  }
+  if (outcome.kind !== "moved") return;
+  tourChanged();
+  const notes: string[] = [];
+  if (outcome.answers > 0) {
+    notes.push(
+      outcome.answers === 1
+        ? "1 answer that led to it now goes on to the next entry."
+        : `${String(outcome.answers)} answers that led to it now go on to the next entry.`,
+    );
+  }
+  if (outcome.floored) {
+    notes.push(
+      `"${itemCalled(id)}" now stands in the world in its kind's usual view.`,
+    );
+  }
+  if (notes.length > 0) toast(notes.join(" "));
 }
 
 /** An item given a station of its own where it stands ("Move to a new
@@ -4072,6 +4104,7 @@ const shell = createEditorShell({
   stations: {
     add: addStationAt,
     reorder: reorderStations,
+    moveChild,
     split: splitItem,
     duplicate: (selection) => {
       void duplicateSelection(selection);

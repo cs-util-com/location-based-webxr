@@ -218,6 +218,17 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   was pressed, or at an end on the other one; the new place is said in a
   polite live region (`#shell-said`, hidden but read: "Now Station n of
   N").
+- **Moves inside a station:** a story's, an entry's or a free item's grip
+  (`data-move`) drags it with the editor kit's `createNestDrag`
+  (`tree-nest-drag.ts`) among its station's stories, into a story (onto
+  its row, or a slot among its entries) or out to the free items (onto
+  the card's head); a drop the move rule refuses (`childMayGo`) is not
+  offered, Escape ends a drag with no write, and one drop is one
+  `stations.moveChild`. Never across stations. Earlier and Later of a
+  story or an entry step it in its list (`childStepTo`); the
+  inspector's Move buttons (`move-to:<list>`) put it into that list,
+  keeping the selection and moving the focus to the first Move button
+  left, else to Earlier.
 - **Delete in the inspector** moves the focus to the row button (`.head > .pick`) of the tree card now in
   the deleted station's place (the one before it, at the end), for an
   item to its station's card, and to the view's box when the tree is

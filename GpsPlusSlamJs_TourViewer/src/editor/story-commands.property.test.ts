@@ -36,6 +36,7 @@ import { stationContent, storyOf } from "../test-support/station-content.js";
 import { tourOf } from "../test-support/tour-of.js";
 import { createEditorDraft } from "./editor-draft.js";
 import { createEditorSession } from "./editor-session.js";
+import type { ChildMoveTo } from "../station-children-moves.js";
 
 beforeAll(() => {
   createTourViewerStore();
@@ -196,6 +197,7 @@ type Command =
   | { kind: "delete"; at: number }
   | { kind: "addChild"; at: number; make: "shortText" | "longText" }
   | { kind: "deleteChild"; at: number }
+  | { kind: "move"; at: number; to: number }
   | { kind: "undo" }
   | { kind: "redo" };
 
@@ -214,6 +216,7 @@ const command: fc.Arbitrary<Command> = fc.oneof(
     make: fc.constantFrom("shortText" as const, "longText" as const),
   }),
   fc.record({ kind: fc.constant("deleteChild" as const), at }),
+  fc.record({ kind: fc.constant("move" as const), at, to: at }),
   fc.constant({ kind: "undo" as const }),
   fc.constant({ kind: "redo" as const }),
 );
@@ -303,6 +306,41 @@ describe("the tree's story commands", () => {
                 if (child !== undefined) editor.deleteStoryChild(child.id);
                 break;
               }
+              case "move": {
+                // Any item or story of any station, to any place of its
+                // station: what the format refuses is refused, and what
+                // it takes is one step.
+                const items = (tour()?.stations ?? []).flatMap((st) =>
+                  st.children.flatMap((ch) =>
+                    ch.kind === "story"
+                      ? [
+                          { st, id: ch.id },
+                          ...ch.children.map((e) => ({ st, id: e.id })),
+                        ]
+                      : [{ st, id: ch.id }],
+                  ),
+                );
+                const item = round(items, c.at);
+                if (item === undefined) break;
+                const places: ChildMoveTo[] = [
+                  { place: "free" },
+                  { place: "stories", index: 0 },
+                  ...tourStories(item.st).flatMap((story) => [
+                    { place: "story" as const, story: story.id, index: 0 },
+                    {
+                      place: "story" as const,
+                      story: story.id,
+                      index: story.children.length,
+                    },
+                  ]),
+                ];
+                const to = round(places, c.to);
+                if (to !== undefined) {
+                  const out = editor.moveChild(item.id, to);
+                  mustStep = out.kind === "moved";
+                }
+                break;
+              }
               case "undo":
                 editor.undo();
                 break;
@@ -365,7 +403,7 @@ describe("the tree's story commands", () => {
             (await reloaded.save({ keepScan: false })).blob,
           );
           again.close();
-          expect(after).toEqual(before);
+          expect(freeByName(after)).toEqual(freeByName(before));
           expect(before.assets).toEqual(manifest.assets);
         },
       ),
@@ -376,6 +414,26 @@ describe("the tree's story commands", () => {
     // default 5 s once the machine runs other gates.
   }, 30_000);
 });
+
+/** The written tour `json` with each station's free items by id. They
+ *  all stand in the world at once and have no order of their own; the
+ *  draft keeps them by id, so a reload may write them in another order.
+ *  The stories keep theirs, and everything else is compared as written. */
+function freeByName(json: Record<string, unknown>): TourManifest {
+  const tour = parseTourManifest(json);
+  return {
+    ...tour,
+    stations: tour.stations.map((station) => ({
+      ...station,
+      children: [
+        ...station.children.filter((c) => c.kind === "story"),
+        ...station.children
+          .filter((c) => c.kind !== "story")
+          .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
+      ],
+    })),
+  };
+}
 
 describe("a story's delete", () => {
   // Why: the page's question and toast say what went; these are their numbers.
@@ -521,3 +579,63 @@ describe("a story's delete", () => {
 function storyName(manifest: TourManifest): string {
   return storiesIn(manifest)[0]?.title ?? "";
 }
+
+describe("a station item's move", () => {
+  // Why: the tree's drag and the inspector's Move to write through this;
+  // each move is one step the undo takes back, the selection's id stays
+  // the item's, and a move the format refuses is said in words, never
+  // half made.
+  it("moves a free item into a story and out again, one step each, and refuses in words", async () => {
+    const { session, manifest } = await opened();
+    const store = createTourViewerStore();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      store,
+    });
+    const tour = () => manifestToWrite(store.getState().tourDocument);
+    const first = () => {
+      const station = tour()?.stations[0];
+      return station === undefined ? undefined : tourStories(station)[0];
+    };
+    const before = tour();
+    const revision = editor.revision();
+    expect(
+      editor.moveChild("free", { place: "story", story: "first", index: 0 }),
+    ).toEqual({ kind: "moved", answers: 0, floored: false });
+    expect(editor.revision()).toBe(revision + 1);
+    expect(first()?.children.map((c) => c.id)).toEqual([
+      "free",
+      "l1",
+      "c1",
+      "l2",
+    ]);
+    // Out of the story: the answer that led to l2 now plays on, and its
+    // card (a story's view) takes the pin a short text stands free as.
+    expect(editor.moveChild("l2", { place: "free" })).toEqual({
+      kind: "moved",
+      answers: 1,
+      floored: true,
+    });
+    expect(editor.revision()).toBe(revision + 2);
+    editor.undo();
+    editor.undo();
+    expect(tour()).toEqual(before);
+    // The same place again is no step.
+    expect(
+      editor.moveChild("l1", { place: "story", story: "first", index: 0 }),
+    ).toEqual({ kind: "unchanged" });
+    expect(editor.moveChild("c1", { place: "free" })).toEqual({
+      kind: "refused",
+      reason: expect.stringContaining("choice") as unknown,
+    });
+    expect(editor.moveChild("first", { place: "free" })).toEqual({
+      kind: "refused",
+      reason: expect.stringContaining("story") as unknown,
+    });
+    expect(editor.moveChild("gone", { place: "free" }).kind).toBe("refused");
+    expect(editor.revision()).toBe(revision + 4);
+    await session.close();
+  });
+});

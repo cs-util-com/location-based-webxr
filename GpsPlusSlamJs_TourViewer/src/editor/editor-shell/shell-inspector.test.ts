@@ -909,6 +909,51 @@ describe("drawInspector", () => {
   // Why: the tree's drag is a pointer's; Earlier and Later are the
   // keyboard's way to reorder (and a touch screen's, where a drag in a
   // narrow dock is easy to miss), so they sit on the station's own line.
+  // Why: a story's entry is moved from the keyboard by these: Earlier and
+  // Later beside its place, as a station's are, and a Move button per
+  // list it may go into - each named in words, the ends off.
+  it("gives a story's entry Earlier, Later and its Move buttons", () => {
+    drawInspector(
+      dock,
+      {
+        kind: "storyStep",
+        stepKind: "choice",
+        id: "way",
+        stationId: "gate",
+        title: "Which way?",
+        sub: "1 The old gate / The legend / Choice, entry 1",
+        heading: "Answers",
+        lines: [],
+        moves: {
+          step: { earlier: false, later: true },
+          targets: [
+            { list: "free", label: "Move out of the story" },
+            { list: "story:aside", label: 'Move into "Aside"' },
+          ],
+        },
+      },
+      FOLD,
+      pictures,
+    );
+    const earlier = dock.body.querySelector<HTMLButtonElement>(
+      '.sub [data-act="earlier"]',
+    );
+    const later = dock.body.querySelector<HTMLButtonElement>(
+      '.sub [data-act="later"]',
+    );
+    expect(earlier?.getAttribute("aria-label")).toBe("Earlier in the story");
+    expect(earlier?.disabled).toBe(true);
+    expect(later?.disabled).toBe(false);
+    expect(
+      [
+        ...dock.body.querySelectorAll<HTMLElement>('[data-act^="move-to:"]'),
+      ].map((b) => [b.dataset["act"], b.textContent]),
+    ).toEqual([
+      ["move-to:free", "Move out of the story"],
+      ["move-to:story:aside", 'Move into "Aside"'],
+    ]);
+  });
+
   it("gives a station Earlier and Later beside its place in the tour, off at the ends", () => {
     draw("station:gate");
     const earlier = dock.body.querySelector<HTMLButtonElement>(

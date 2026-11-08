@@ -15,7 +15,15 @@ import type {
   TourStoryChild,
 } from "gps-plus-slam-app-framework/ar/tour-story";
 
-import { movedChild } from "./station-children-moves.js";
+import {
+  FREE_LIST,
+  STORIES_LIST,
+  childDropTo,
+  childMayGo,
+  childStepTo,
+  movedChild,
+  storyList,
+} from "./station-children-moves.js";
 
 const POSE = { position: [1, 0, 2], rotation: [0, 0, 0, 1] } as const;
 const TAP = { mode: "tap" } as const;
@@ -227,5 +235,87 @@ describe("movedChild", () => {
     expect(
       movedChild(holder, "p", { place: "story", story: "a", index: 5 }),
     ).toEqual({ refused: "missing" });
+  });
+});
+
+describe("the tree's lists of a station", () => {
+  const holder = station([
+    story("a", [line("a1"), choice("c", "a1"), line("a2")]),
+    story("b", []),
+    pin("p"),
+  ]);
+
+  // Why: the drag offers a list only when the move would be taken there;
+  // a list it lit up and then refused would read as a broken drop.
+  it("lets a story go only among the stories, a choice only in its story, a block anywhere in its station", () => {
+    expect(childMayGo(holder, "a", STORIES_LIST)).toBe(true);
+    expect(childMayGo(holder, "a", FREE_LIST)).toBe(false);
+    expect(childMayGo(holder, "a", storyList("b"))).toBe(false);
+    expect(childMayGo(holder, "c", storyList("a"))).toBe(true);
+    expect(childMayGo(holder, "c", storyList("b"))).toBe(false);
+    expect(childMayGo(holder, "c", FREE_LIST)).toBe(false);
+    for (const id of ["a1", "p"]) {
+      expect(childMayGo(holder, id, FREE_LIST)).toBe(true);
+      expect(childMayGo(holder, id, storyList("a"))).toBe(true);
+      expect(childMayGo(holder, id, storyList("b"))).toBe(true);
+      expect(childMayGo(holder, id, STORIES_LIST)).toBe(false);
+    }
+    expect(childMayGo(holder, "p", storyList("gone"))).toBe(false);
+    expect(childMayGo(holder, "gone", FREE_LIST)).toBe(false);
+  });
+
+  // Why: a drop names a list and a slot or "into"; this is the move it
+  // asks for, so a drop into a folder lands at the story's end.
+  it("turns a drop into the move it asks for", () => {
+    expect(childDropTo(holder, FREE_LIST, { slot: 0 })).toEqual({
+      place: "free",
+    });
+    expect(childDropTo(holder, STORIES_LIST, { slot: 2 })).toEqual({
+      place: "stories",
+      index: 2,
+    });
+    expect(childDropTo(holder, STORIES_LIST, { into: true })).toBeNull();
+    expect(childDropTo(holder, storyList("a"), { slot: 1 })).toEqual({
+      place: "story",
+      story: "a",
+      index: 1,
+    });
+    expect(childDropTo(holder, storyList("a"), { into: true })).toEqual({
+      place: "story",
+      story: "a",
+      index: 3,
+    });
+    expect(childDropTo(holder, storyList("gone"), { into: true })).toBeNull();
+    expect(childDropTo(holder, "nonsense", { slot: 0 })).toBeNull();
+  });
+
+  // Why: Earlier and Later are the keyboard's way to move; at an end of a
+  // list, and for a free item (the free items have no order), there is no
+  // step, and its button must say so by being off.
+  it("steps an entry or a story one place, and nothing at an end or for a free item", () => {
+    expect(childStepTo(holder, "a1", "later")).toEqual({
+      place: "story",
+      story: "a",
+      index: 2,
+    });
+    expect(childStepTo(holder, "a2", "earlier")).toEqual({
+      place: "story",
+      story: "a",
+      index: 1,
+    });
+    expect(childStepTo(holder, "a1", "earlier")).toBeNull();
+    expect(childStepTo(holder, "a2", "later")).toBeNull();
+    expect(childStepTo(holder, "a", "later")).toEqual({
+      place: "stories",
+      index: 2,
+    });
+    expect(childStepTo(holder, "b", "later")).toBeNull();
+    expect(childStepTo(holder, "p", "earlier")).toBeNull();
+    expect(childStepTo(holder, "gone", "later")).toBeNull();
+    // Each step is one the move rule takes.
+    const step = childStepTo(holder, "a1", "later");
+    expect(
+      step === null ? null : "station" in movedChild(holder, "a1", step),
+    ).toBe(true);
   });
 });

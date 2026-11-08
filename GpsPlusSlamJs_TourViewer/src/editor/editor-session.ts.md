@@ -199,6 +199,15 @@ never state). Design:
       answers no longer lead anywhere), `setStoryAdvance(id, advance)` - the
       tree's and the inspector's story edits, each one step, a refusal said
       in the creator's words.
+    - `moveChild(id, to)` - a station's item or story moved within its
+      station (`ChildMoveTo` of `station-children-moves.ts`; the tree's
+      drag and the inspector's Earlier, Later and Move buttons), one step
+      (`childMoved`): `{ kind: "moved", answers, floored }` (how many
+      answers that led to it now go on to the next entry, and whether it
+      took its kind's world view), `{ kind: "unchanged" }`, or a refusal
+      in words (a choice or a quiz leaving its story, a story into a story,
+      a model without a size standing free, a picture made here before the
+      tour holds its file).
     - `groundItems([{ id, alt }])` - "Put on the ground": the altitudes the
       page measured, ONE step for all; refused whole for an unknown id or
       a height beyond an item's reach of its station (`HEIGHT_REFUSED`).

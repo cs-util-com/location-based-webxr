@@ -77,6 +77,7 @@ import {
   placeShellIcons,
   shellIcon,
   type ShellIcon,
+  createNestDrag,
   createTreeDrag,
   movedTo,
   NO_TREE_CLICK,
@@ -119,6 +120,13 @@ import { wireRadiusSlider } from "./radius-slider.js";
 import { createShellPictures } from "./shell-pictures.js";
 import { tourProblems } from "./tour-problems.js";
 import { drawTree } from "./shell-tree.js";
+import {
+  FREE_LIST,
+  childDropTo,
+  childMayGo,
+  childStepTo,
+  type ChildMoveTo,
+} from "../../station-children-moves.js";
 import { createTreeAddMenu } from "./tree-add-menu.js";
 import type { AddKind } from "../../kinds/edit-kinds.js";
 import { createAddPalette, isPaletteKey } from "./add-palette.js";
@@ -173,6 +181,8 @@ interface ShellStationCommands {
   add(at: GroundPlace, where: "centre" | "here"): void;
   /** The stations in `order` (every station once). */
   reorder(order: readonly string[]): void;
+  /** A station's item (a story by its id) moved within its station. */
+  moveChild(id: string, to: ChildMoveTo): void;
   /** An item into a station of its own, where it stands. */
   split(itemId: string): void;
   /** The selection (`station:<id>` or an item's id) copied beside itself. */
@@ -384,6 +394,14 @@ function inWritingField(target: EventTarget | null): boolean {
     target instanceof HTMLTextAreaElement ||
     (target instanceof HTMLElement && target.isContentEditable)
   );
+}
+
+/** The id the move rule knows a selection by: a story's own id for its
+ *  `story:<id>`, an item's id as it is. */
+function childIdOf(selected: string): string {
+  return selected.startsWith(STORY_PREFIX)
+    ? selected.slice(STORY_PREFIX.length)
+    : selected;
 }
 
 export function createEditorShell(deps: EditorShellDeps): EditorShell {
@@ -1056,19 +1074,40 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     top.help.setAttribute("aria-expanded", String(on));
   };
 
-  /** The selected station one place earlier or later in the tour (the
-   *  inspector's buttons), the focus kept on the buttons and the new
-   *  place said (the inspector's line, "Station n of N"). */
-  const moveSelected = (selected: string, way: "earlier" | "later") => {
-    if (!selected.startsWith(STATION_PREFIX)) return;
+  /** The station `id` one place `way` in the tour; false at an end. */
+  const stepStation = (id: string, way: "earlier" | "later"): boolean => {
     const ids = (manifest()?.stations ?? []).map((s) => s.id);
-    const from = ids.indexOf(selected.slice(STATION_PREFIX.length));
-    if (from < 0) return;
+    const from = ids.indexOf(id);
     const slot = way === "earlier" ? from - 1 : from + 2;
-    if (slot < 0 || slot > ids.length) return;
-    const order = movedTo(ids, from, slot);
-    if (order === null) return;
+    const order =
+      from < 0 || slot < 0 || slot > ids.length
+        ? null
+        : movedTo(ids, from, slot);
+    if (order === null) return false;
     deps.stations.reorder(order);
+    return true;
+  };
+
+  /** A story, or a story's entry, one place `way` in its list; false at
+   *  an end and for a free item (the free items have no order). */
+  const stepChild = (id: string, way: "earlier" | "later"): boolean => {
+    const tour = manifest();
+    const place = tour === null ? null : tourChildPlace(tour, id);
+    const to = place === null ? null : childStepTo(place.station, id, way);
+    if (to === null) return false;
+    deps.stations.moveChild(id, to);
+    return true;
+  };
+
+  /** The selected station one place earlier or later in the tour, or the
+   *  selected story or entry in its list (the inspector's buttons), the
+   *  focus kept on the buttons and the new place said (the inspector's
+   *  line, "Station n of N" for a station). */
+  const moveSelected = (selected: string, way: "earlier" | "later") => {
+    const moved = selected.startsWith(STATION_PREFIX)
+      ? stepStation(selected.slice(STATION_PREFIX.length), way)
+      : stepChild(childIdOf(selected), way);
+    if (!moved) return;
     // The inspector was drawn again: the same button, or at an end the
     // other one.
     const again = (name: string) =>
@@ -1080,6 +1119,24 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     )?.focus();
     const place = inspector.body.querySelector(".sub")?.textContent ?? "";
     said.textContent = place === "" ? "" : `Now ${place.trim()}`;
+  };
+
+  /** The inspector's "Move to" (`move-to:<list>`): the selection to the
+   *  end of that list of its station (out of its story, into another),
+   *  the focus kept on the inspector's first "Move to" (the one it had
+   *  may be gone: the list it named is now the item's own). */
+  const moveSelectedTo = (selected: string, list: string) => {
+    const id = childIdOf(selected);
+    const tour = manifest();
+    const place = tour === null ? null : tourChildPlace(tour, id);
+    const to =
+      place === null ? null : childDropTo(place.station, list, { into: true });
+    if (to === null) return;
+    deps.stations.moveChild(id, to);
+    (
+      inspector.body.querySelector<HTMLElement>('[data-act^="move-to:"]') ??
+      inspector.body.querySelector<HTMLElement>('[data-act="earlier"]')
+    )?.focus();
   };
 
   /** After the inspector's Delete the focus would fall to the page: it
@@ -1370,6 +1427,36 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       deps.stations.reorder(order);
     },
   });
+  // An item's or a story's grip (`shell-tree.ts`): among the stories,
+  // between a story and another or the station's free items, never into
+  // another station. A list offered is one the move takes; a free item
+  // among the free items is no move (they have no order).
+  createNestDrag({
+    body: tree.body,
+    grip: "[data-move]",
+    rows: ".head, .folder, .kid, .emptyrow",
+    scope: ".card[data-station]",
+    placeOf: (row) => {
+      const { list, item } = row.dataset;
+      return list === undefined || item === undefined
+        ? null
+        : { list, id: item };
+    },
+    intoOf: (row) => row.dataset["into"] ?? null,
+    accepts: (from, to) => {
+      if (from.list === FREE_LIST && to === FREE_LIST) return false;
+      const tour = manifest();
+      const place = tour === null ? null : tourChildPlace(tour, from.id);
+      return place !== null && childMayGo(place.station, from.id, to);
+    },
+    move: (from, drop) => {
+      const tour = manifest();
+      const place = tour === null ? null : tourChildPlace(tour, from.id);
+      const to =
+        place === null ? null : childDropTo(place.station, drop.list, drop);
+      if (to !== null) deps.stations.moveChild(from.id, to);
+    },
+  });
   bar.acts.addEventListener("click", (event) => {
     const action = (event.target as Element).closest<HTMLElement>("[data-bar]")
       ?.dataset["bar"];
@@ -1454,6 +1541,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       flyToSelection(item);
     }
     if (act === "earlier" || act === "later") moveSelected(selected, act);
+    if (act?.startsWith("move-to:") === true) {
+      moveSelectedTo(selected, act.slice("move-to:".length));
+    }
     if (act === "delete") deleteSelected(selected);
     if (act === "split") deps.stations.split(selected);
     if (act === "ground" || act === "ground-items") void runGround(act);

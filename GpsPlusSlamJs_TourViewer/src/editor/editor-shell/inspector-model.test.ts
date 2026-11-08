@@ -270,6 +270,8 @@ describe("buildInspector", () => {
         kind: "story",
         storyId: "legend",
         stationId: "b",
+        // Its station's only story: no step, nothing to go into.
+        moves: { step: { earlier: false, later: false }, targets: [] },
         title: "The legend",
         sub: "2 The gate / Story",
         entries: [
@@ -347,6 +349,30 @@ describe("buildInspector", () => {
       expect(model.fields.map((f) => f.name)).toEqual(["title", "transcript"]);
     });
 
+    // Why: the inspector's Earlier, Later and Move buttons are the
+    // keyboard's way to move an item; each offers only a move the rule
+    // takes, so a choice (its answers name its story's entries) offers no
+    // way out, and a free item no step (the free items have no order).
+    it("offers the moves the rule takes: steps in a story, out of it, into it", () => {
+      const moves = (id: string) => {
+        const model = inStory(id);
+        return model !== null && "moves" in model ? model.moves : undefined;
+      };
+      expect(moves("intro")).toEqual({
+        step: { earlier: false, later: true },
+        targets: [{ list: "free", label: "Move out of the story" }],
+      });
+      expect(moves("way")).toEqual({
+        step: { earlier: true, later: true },
+        targets: [],
+      });
+      expect(moves("year")?.step).toEqual({ earlier: true, later: false });
+      expect(moves("clip")).toEqual({
+        step: null,
+        targets: [{ list: "story:legend", label: 'Move into "The legend"' }],
+      });
+    });
+
     it("hints at what can be done, and answers nothing for a gone story", () => {
       expect(inspectorHint(inStory("story:legend"))).toContain("The legend");
       expect(inStory("story:gone")).toBeNull();
@@ -360,6 +386,8 @@ describe("buildInspector", () => {
       title: "Fountain, 1612",
       sub: "Pin in Market Square",
       stationId: "a",
+      // A free item has no order, and its station no story to go into.
+      moves: { step: null, targets: [] },
       text: "Fountain, 1612",
       sizeM: null,
       // Only a model has notes, sections and a view.

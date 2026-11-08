@@ -4,7 +4,9 @@
 
 An item of a station moved to another place in the same station, pure: the
 rule behind the editor's drag and its "Move to", Earlier and Later. The
-document action `childMoved` (`tour-document.ts`) is its only caller.
+document action `childMoved` (`tour-document.ts`) is the only writer;
+the editor's tree (`editor-shell.ts`, `shell-tree.ts`) and inspector
+(`inspector-model.ts`) read the list helpers below.
 
 ## Public API
 
@@ -22,6 +24,17 @@ document action `childMoved` (`tour-document.ts`) is its only caller.
   story's entries), `noNesting` (a story into a story or among the free
   items, a free item among the stories), `cannotStandFree` (a model without
   a size), `unchanged` (it would stay where it is).
+- The tree's lists of a station, by name: `STORIES_LIST` (`"stories"`),
+  `FREE_LIST` (`"free"`) and `storyList(id)` (`"story:<id>"`, the
+  story's own selection id).
+  - `childMayGo(holder, id, list)` -> whether the rule takes item `id`
+    into that list at all (the drag's `accepts`; a slot is not checked).
+  - `childDropTo(holder, list, drop)` -> the `ChildMoveTo` for a drop
+    on a slot of `list` or into it (`{ into: true }`: a story's end, or
+    the free items), or null for an unknown list.
+  - `childStepTo(holder, id, way)` -> the `ChildMoveTo` one place
+    `"earlier"` or `"later"` in the item's list, or null at its end and
+    for a free item (no order).
 
 ## Invariants & assumptions
 
@@ -62,6 +75,6 @@ else if (out.floored) say("It now stands in the world as its kind does");
 ## Tests
 
 `station-children-moves.test.ts`: every move and every refusal at its
-boundary. The document-level halves (objects and frames, undo, a draft
+boundary, and the list helpers ("the tree's lists of a station"). The document-level halves (objects and frames, undo, a draft
 reload, random sequences) are in `tour-document-child-move.test.ts` and
 `tour-document-child-move.property.test.ts`.

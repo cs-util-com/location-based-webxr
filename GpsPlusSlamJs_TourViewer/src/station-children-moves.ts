@@ -6,7 +6,9 @@
  * the world (its view, or its kind's world floor by the framework's rule),
  * one entering a story moves on by a tap, and the answers that jumped to a
  * block leaving its story are dropped. Moves across stations are not
- * offered. The document's reducer is the only caller (`tour-document.ts`).
+ * offered. The document's reducer writes the moves (`tour-document.ts`);
+ * the editor's tree and inspector read the list helpers to offer only a
+ * move the rule takes.
  *
  * @see station-children-moves.ts.md
  */
@@ -241,4 +243,94 @@ export function movedChild<H extends Holder>(
   return into === null
     ? refused("missing")
     : { station: into, answers: out.answers, floored: false };
+}
+
+/** The tree's names for a station's lists (its drag's `data-list` and
+ *  `data-into`, the inspector's `move-to:<list>`): its stories, a story's
+ *  entries (`story:<id>`, the story's selection id) and its free items. */
+export const STORIES_LIST = "stories";
+export const FREE_LIST = "free";
+const STORY_LIST = "story:";
+
+/** The list of the story `id`'s entries. */
+export function storyList(id: string): string {
+  return `${STORY_LIST}${id}`;
+}
+
+/** `holder`'s story whose entries are the list `list`. */
+function storyOfList(holder: Holder, list: string): TourStory | undefined {
+  if (!list.startsWith(STORY_LIST)) return undefined;
+  const id = list.slice(STORY_LIST.length);
+  return holder.children.find(
+    (c): c is TourStory => isTourStory(c) && c.id === id,
+  );
+}
+
+/**
+ * Whether `holder`'s item `id` may go into the list `list`, as `movedChild`
+ * takes it: a story only among the stories; a choice or a quiz only in its
+ * own story; any other item into any story of its station or among its
+ * free items. The tree's drag offers only these.
+ */
+export function childMayGo(holder: Holder, id: string, list: string): boolean {
+  const place = tourChildrenPlace(holder.children, id);
+  if (place === null) return false;
+  const { story } = place;
+  if (story === undefined) {
+    const own = holder.children[place.index];
+    if (own === undefined) return false;
+    if (isTourStory(own)) return list === STORIES_LIST;
+  } else {
+    const own = story.children[place.index];
+    if (own === undefined) return false;
+    if (!isTourStoryBlock(own)) return list === storyList(story.id);
+  }
+  return list === FREE_LIST || storyOfList(holder, list) !== undefined;
+}
+
+/** The move a drop into `list` makes: at `drop.slot` (counted before the
+ *  move), or at its end (`into`). Null for a list `holder` does not have,
+ *  or into the stories (they are no folder). */
+export function childDropTo(
+  holder: Holder,
+  list: string,
+  drop: { readonly slot: number } | { readonly into: true },
+): ChildMoveTo | null {
+  if (list === FREE_LIST) return { place: "free" };
+  if (list === STORIES_LIST) {
+    return "slot" in drop ? { place: "stories", index: drop.slot } : null;
+  }
+  const story = storyOfList(holder, list);
+  if (story === undefined) return null;
+  return {
+    place: "story",
+    story: story.id,
+    index: "slot" in drop ? drop.slot : story.children.length,
+  };
+}
+
+/** The move one place `way` in its list: a story among the stories, an
+ *  entry in its story. Null at an end of its list, for a free item (the
+ *  free items have no order) and for an unknown id. */
+export function childStepTo(
+  holder: Holder,
+  id: string,
+  way: "earlier" | "later",
+): ChildMoveTo | null {
+  const place = tourChildrenPlace(holder.children, id);
+  if (place === null) return null;
+  const { story } = place;
+  const ids =
+    story !== undefined
+      ? story.children.map((c) => c.id)
+      : isTourStory(holder.children[place.index] as TourStationChild)
+        ? holder.children.filter(isTourStory).map((s) => s.id)
+        : null;
+  if (ids === null) return null;
+  const from = ids.indexOf(id);
+  const slot = way === "earlier" ? from - 1 : from + 2;
+  if (slot < 0 || slot > ids.length) return null;
+  return story === undefined
+    ? { place: "stories", index: slot }
+    : { place: "story", story: story.id, index: slot };
 }
