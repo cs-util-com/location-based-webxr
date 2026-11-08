@@ -53,7 +53,7 @@ export type ChildMoveRefusal =
 
 /** A move made: the station after it, how many answers lost their jump,
  *  and whether the item took its kind's world floor for a view. */
-export interface ChildMoved<H> {
+interface ChildMoved<H> {
   readonly station: H;
   readonly answers: number;
   readonly floored: boolean;

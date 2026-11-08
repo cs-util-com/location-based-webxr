@@ -170,7 +170,7 @@ interface StationInspector {
  *  the free items have no order), and the lists it may go into (`targets`:
  *  out of its story, into another story of its station), each with its
  *  button's words. Never into another station. */
-export interface InspectorMoves {
+interface InspectorMoves {
   readonly step: { readonly earlier: boolean; readonly later: boolean } | null;
   readonly targets: readonly {
     readonly list: string;
