@@ -38,12 +38,15 @@ const TEXTS = {
   'Tour/vitest.config.ts': "import { u } from 'fw/utils/u';",
   'Other/src/o.test.ts': "const s = readFileSync('a.ts', 'utf8');",
   'Other/src/test-setup.ts': '',
+  'Fw/src/prov.test.ts': "const p = readFileSync(join(DIR, 'PROVENANCE.md'), 'utf8');",
 };
-const FILES = [...Object.keys(TEXTS), 'Tour/index.html', 'Fw/package.json', 'Fw/README.md'];
+const FILES = [...Object.keys(TEXTS), 'Tour/index.html', 'Fw/package.json', 'Fw/README.md', 'Fw/fixtures/PROVENANCE.md'];
+// Present, so the fallback tests below see each rule, not 'deleted'.
+const RULE_FILES = ['Fw/tsconfig.json', 'Fw/vitest.config.ts', 'Fw/config/vite.config.ts', 'Fw/src/test-setup.ts', 'Fw/src/__mocks__/three.ts', 'Fw/src/types/global.d.ts', 'Fw/tsdown.config.ts', 'Fw/config/rollup.config.mjs'];
 
 const graph = buildImpactGraph({
   packages: PACKAGES,
-  files: FILES,
+  files: [...FILES, ...RULE_FILES],
   texts: new Map(Object.entries(TEXTS)),
 });
 
@@ -97,8 +100,18 @@ describe('impactOf: edges', () => {
     expect(impact(['Fw/src/a.ts']).tests).not.toContain('Tour/src/scan.test.ts');
   });
 
-  it('markdown reaches nothing', () => {
+  it('markdown that no test reads reaches nothing', () => {
     expect(impact(['Fw/README.md', 'Fw/src/a.ts.md'])).toEqual({ tests: [], packages: [], fullSuite: [] });
+  });
+
+  // Why: a unit test can read markdown as data (the design system's terrain
+  // fixtures test reads fixtures/PROVENANCE.md); dropping every .md missed it.
+  it('reaches a test that reads a changed markdown file by name', () => {
+    expect(impact(['Fw/fixtures/PROVENANCE.md'])).toEqual({
+      tests: ['Fw/src/prov.test.ts'],
+      packages: ['Fw'],
+      fullSuite: [],
+    });
   });
 
   it('accepts backslash paths', () => {
@@ -123,8 +136,14 @@ describe('impactOf: fallbacks to a full suite', () => {
       'Fw/config/vite.config.ts',
       'Fw/src/test-setup.ts',
       'Fw/src/__mocks__/three.ts',
+      // Ambient declarations reach every file of a program without an import.
+      'Fw/src/types/global.d.ts',
+      // The build config shapes dist, which the dependents type-check against.
+      'Fw/tsdown.config.ts',
+      'Fw/config/rollup.config.mjs',
     ]) {
       expect(full([path]), path).toEqual(['Fw', 'Tour']);
+      expect(impact([path]).fullSuite[0].reason, path).not.toMatch(/deleted/);
     }
     expect(full(['Other/src/test-setup.ts'])).toEqual(['Other']);
   });
@@ -172,5 +191,43 @@ describe('impactOf: fallbacks to a full suite', () => {
 
   it('a deleted markdown file stays ignored', () => {
     expect(full(['Fw/docs/gone.md'])).toEqual([]);
+  });
+});
+
+// Why these matter: tsc sees edges that no runtime import draws. A dependent's
+// tsconfig can include another package's sources (the Recorder includes
+// ../GpsPlusSlamJs_AppFramework/src/**/*.ts, the globe names single framework
+// files), and a declaration file imports types. A change behind either broke
+// a dependent's typecheck while the graph reached no dependent.
+describe('impactOf: type-level edges', () => {
+  const REC = { dir: 'Rec', name: 'rec', deps: [], exports: undefined };
+  /** @param {Record<string, string>} extra */
+  const graphWith = (extra) =>
+    buildImpactGraph({
+      packages: [...PACKAGES, REC],
+      files: [...FILES, ...Object.keys(extra)],
+      texts: new Map([...Object.entries(TEXTS), ...Object.entries(extra)]),
+    });
+
+  it('reaches a package whose tsconfig includes the changed file by a glob (JSONC, as tsc reads it)', () => {
+    const g = graphWith({
+      'Rec/tsconfig.json': '{\n  // the framework source too\n  "include": ["src/**/*.ts", "../Fw/src/**/*.ts",],\n}',
+    });
+    expect(impactOf(g, ['Fw/src/a.ts']).packages).toContain('Rec');
+    expect(impactOf(g, ['Tour/src/view.ts']).packages).not.toContain('Rec');
+  });
+
+  it('reaches a package whose tsconfig names the changed file, and not by another file', () => {
+    const g = graphWith({ 'Rec/tsconfig.app.json': '{ "files": ["../Fw/src/utils/u.ts"] }' });
+    expect(impactOf(g, ['Fw/src/utils/u.ts']).packages).toContain('Rec');
+    expect(impactOf(g, ['Fw/src/a.ts']).packages).not.toContain('Rec');
+  });
+
+  it('follows an import inside a declaration file, and resolves an import to one', () => {
+    const g = graphWith({
+      'Tour/src/shapes.d.ts': "import type { a } from 'fw';\nexport type Shape = typeof a;",
+      'Tour/src/shapes.test.ts': "import type { Shape } from './shapes';",
+    });
+    expect(impactOf(g, ['Fw/src/a.ts']).tests).toContain('Tour/src/shapes.test.ts');
   });
 });

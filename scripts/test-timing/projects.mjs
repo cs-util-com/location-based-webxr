@@ -1001,10 +1001,12 @@ export function gateBaseCommand(stage, env = {}) {
   if (fastGate && stage.name === "test:unit" && stage.counts === "vitest") {
     return `node ${RELATED_UNIT_SCRIPT} ${command}`;
   }
-  // Format and lint check only the changed files in the per-commit gate
+  // Format checks only the changed files in the per-commit gate
   // (scripts/test-changed/changed-files-stage.mjs); the package-wide run is
-  // the milestone run's, a package's own gate's and CI's.
-  if (fastGate && (stage.name === "format" || stage.name === "lint")) {
+  // the milestone run's, a package's own gate's and CI's. Lint always runs
+  // whole: its typed rules read across files and its --max-warnings budgets
+  // are package-wide, and a dependent's diff narrowed it to no file at all.
+  if (fastGate && stage.name === "format") {
     return `node ${CHANGED_FILES_SCRIPT} ${command}`;
   }
   return command;

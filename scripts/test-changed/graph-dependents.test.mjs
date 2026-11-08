@@ -24,14 +24,14 @@ const write = (rel, text) => {
   mkdirSync(path.dirname(path.join(root, rel)), { recursive: true });
   writeFileSync(path.join(root, rel), text);
 };
-const DIRS = ['Fw', 'Tour', 'Other'];
+const DIRS = ['Fw', 'Tour', 'Other', 'Dts', 'Rec'];
 
 beforeAll(() => {
   root = mkdtempSync(path.join(tmpdir(), 'graph-dependents-'));
   git(['init', '-q']);
   git(['config', 'user.email', 'test@example.invalid']);
   git(['config', 'user.name', 'test']);
-  write('pnpm-workspace.yaml', 'packages:\n  - Fw\n  - Tour\n  - Other\n');
+  write('pnpm-workspace.yaml', 'packages:\n  - Fw\n  - Tour\n  - Other\n  - Dts\n  - Rec\n');
   write('Fw/package.json', JSON.stringify({ name: 'fw', exports: { './*': './dist/*.js' } }));
   write('Fw/src/a.ts', 'export const a = 1;\n');
   write('Fw/src/b.ts', 'export const b = 1;\n');
@@ -42,6 +42,12 @@ beforeAll(() => {
   write('Other/package.json', JSON.stringify({ name: 'other', dependencies: { fw: 'workspace:*' } }));
   write('Other/src/o.ts', "import { b } from 'fw/b';\n");
   write('Other/src/o.test.ts', "import './o';\n");
+  // Type-level couplings only: a declaration file's import, and a tsconfig
+  // that compiles another package's file (the Recorder and the globe do).
+  write('Dts/package.json', JSON.stringify({ name: 'dts', dependencies: { fw: 'workspace:*' } }));
+  write('Dts/src/global.d.ts', "import type { b } from 'fw/b';\n");
+  write('Rec/package.json', JSON.stringify({ name: 'rec' }));
+  write('Rec/tsconfig.json', JSON.stringify({ files: ['../Fw/src/b.ts'] }));
   git(['add', '.']);
   git(['commit', '-q', '-m', 'base']);
 });
@@ -58,7 +64,7 @@ function fastGate() {
     packageDirs: DIRS,
   });
   const dependents = graphDependents({ root, ref: 'HEAD', changedDirs: selection.packages ?? [] });
-  const nameOf = (/** @type {string} */ dir) => ({ Fw: 'fw', Tour: 'tour', Other: 'other' })[dir];
+  const nameOf = (/** @type {string} */ dir) => ({ Fw: 'fw', Tour: 'tour', Other: 'other', Dts: 'dts', Rec: 'rec' })[dir];
   return {
     selection,
     dependents,
@@ -82,6 +88,17 @@ describe('the fast gate on a real workspace', () => {
     expect(commands.some((c) => c.includes('--filter tour test'))).toBe(true);
     expect(commands.some((c) => c.includes('other') || c.includes('...fw'))).toBe(false);
     git(['checkout', '-q', '--', 'Fw/src/a.ts']);
+  });
+
+  // Why: the r1125 review found that a coupling only tsc sees (a declaration
+  // file's import, a tsconfig that compiles another package's file) reached
+  // no dependent, so that dependent's typecheck never ran in the fast gate.
+  it('runs the dependents that only the type checker couples to the change', () => {
+    write('Fw/src/b.ts', 'export const b = 2;\n');
+    const { dependents, commands } = fastGate();
+    expect(dependents.dirs).toEqual(['Dts', 'Other', 'Rec']);
+    expect(commands.some((c) => c.includes('--filter rec test'))).toBe(true);
+    git(['checkout', '-q', '--', 'Fw/src/b.ts']);
   });
 
   it('runs no dependent for a test-only change', () => {

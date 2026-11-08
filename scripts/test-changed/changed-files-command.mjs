@@ -1,6 +1,9 @@
-// Pure rewrite of a package's format or lint command to the files a commit
-// changed, for the per-commit fast gate (changed-files-stage.mjs is the
-// shell). The stage's own targets stay the scope: a changed file outside them
+// Pure rewrite of a package's format command to the files a commit changed,
+// for the per-commit fast gate (changed-files-stage.mjs is the shell). Lint
+// is deliberately not narrowed: ESLint's typed rules read across files (a
+// change in one file can raise an error in another), and `--max-warnings`
+// budgets count the whole package, so a lint of the changed files proves
+// neither (r1125 review). The stage's own targets stay the scope: a changed file outside them
 // is not checked, exactly as the whole-package command would not check it.
 // Anything the rewrite cannot read with certainty runs the command whole.
 
@@ -14,14 +17,6 @@ const TOOLS = {
     valueFlags: ['--log-level', '--cache-strategy', '--cache-location', '--config', '--ignore-path', '--plugin', '--parser'],
     flags: ['--write', '--check', '--list-different', '-l', '--cache', '--ignore-unknown', '-u', '--no-error-on-unmatched-pattern'],
     accepts: () => true,
-    extra: [],
-  },
-  eslint: {
-    valueFlags: ['--config', '-c', '--max-warnings', '--concurrency', '--format', '-f', '--cache-location', '--output-file', '-o', '--rule', '--ignore-pattern'],
-    flags: ['--cache', '--fix', '--quiet', '--no-warn-ignored', '--no-error-on-unmatched-pattern', '--pass-on-no-patterns'],
-    accepts: (/** @type {string} */ f) => /\.(?:[cm]?[jt]sx?)$/.test(f),
-    // A changed file the config ignores is not a warning that counts.
-    extra: ['--no-warn-ignored'],
   },
 };
 
@@ -51,7 +46,7 @@ function owns(target, file) {
 export function narrowCommand(command, changed) {
   const [tool, ...args] = splitCommand(command);
   const spec = TOOLS[/** @type {keyof typeof TOOLS} */ (tool)];
-  if (!spec) return { mode: 'full', reason: 'not a prettier or eslint command' };
+  if (!spec) return { mode: 'full', reason: 'not a prettier command' };
   /** @type {string[]} */
   const options = [];
   /** @type {string[]} */
@@ -78,10 +73,9 @@ export function narrowCommand(command, changed) {
     return { mode: 'full', reason: `${files.length} changed files (more than ${MAX_FILES})` };
   }
   if (files.length === 0) return { mode: 'skip', reason: 'no changed file is in this stage' };
-  const extra = spec.extra.filter((x) => !options.includes(x));
   return {
     mode: 'files',
     files,
-    command: [tool, ...options, ...extra, ...files.map((f) => `"${f}"`)].join(' '),
+    command: [tool, ...options, ...files.map((f) => `"${f}"`)].join(' '),
   };
 }

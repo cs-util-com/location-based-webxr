@@ -16,7 +16,12 @@
 //   file's package directory, so a common basename does not pull in unrelated
 //   packages;
 // - scanners: a unit test that walks a whole tree (`readdirSync`, a glob) is
-//   reached by any source change in its own package, or in a package it names.
+//   reached by any source change in its own package, or in a package it names;
+// - type-level: a tsconfig whose `include` or `files` names another
+//   package's sources depends on them (the Recorder compiles the framework's
+//   `src/**/*.ts`), and a declaration file's imports are edges like any
+//   module's. Markdown takes part only as a file that is read or imported
+//   (`?raw`): a changed markdown file reaches its readers, never its package.
 //
 // Fallbacks (FULL_SUITE_RULES): what a test can depend on without any edge
 // above runs whole suites instead. A template import whose prefix is not a
@@ -40,6 +45,11 @@ const SETUP_RE = /^(?:(?:test|vitest)[-_.])?setup(?:Tests)?\.[cm]?[jt]sx?$/i;
 const CONFIG_PATH_RE = /["'`]((?:\.{1,2}\/)*[\w@-][\w./@-]*\.[cm]?[jt]sx?)["'`]/g;
 const CONFIG_RE = /(?:^|\/)vite(?:st)?\.config\.[cm]?[jt]s$/;
 const MANIFEST_RE = /(?:^|\/)(?:package\.json|tsconfig[^/]*\.json)$/;
+/** A tsconfig, whose `include`/`files` can name another package's sources. */
+export const TSCONFIG_RE = /(?:^|\/)tsconfig[^/]*\.json$/;
+const DECLARATION_RE = /\.d\.[cm]?ts$/;
+const BUILD_CONFIG_RE = /(?:^|\/)(?:tsdown|tsup|rollup|rolldown|esbuild|webpack)\.config\.[cm]?[jt]s$/;
+const isMarkdown = (/** @type {string} */ p) => p.toLowerCase().endsWith('.md');
 
 /**
  * The changes that run a package's whole suite, and its dependents', because
@@ -47,9 +57,14 @@ const MANIFEST_RE = /(?:^|\/)(?:package\.json|tsconfig[^/]*\.json)$/;
  * @type {readonly { name: string, test: (path: string, exists: boolean) => boolean }[]}
  */
 export const FULL_SUITE_RULES = Object.freeze([
-  { name: 'deleted or renamed', test: (p, exists) => !exists },
+  // A deleted markdown file breaks no test that would still pass without it.
+  { name: 'deleted or renamed', test: (p, exists) => !exists && !isMarkdown(p) },
   { name: 'a manifest or tsconfig', test: (p) => MANIFEST_RE.test(p) },
   { name: 'a vite or vitest config', test: (p) => CONFIG_RE.test(p) },
+  // Ambient declarations reach every file of a program without any import.
+  { name: 'a declaration file', test: (p) => DECLARATION_RE.test(p) },
+  // The build shapes dist, which every dependent type-checks and runs against.
+  { name: 'a build config', test: (p) => BUILD_CONFIG_RE.test(p) },
   { name: 'a setup file every test may load', test: (p) => SETUP_RE.test(p.split('/').pop() ?? '') },
   { name: 'a mock every test may load', test: (p) => p.includes('__mocks__/') },
 ]);
@@ -104,9 +119,10 @@ const dirname = (/** @type {string} */ p) => p.slice(0, Math.max(0, p.lastIndexO
 function tryFile(/** @type {ReadonlySet<string>} */ files, /** @type {string} */ base) {
   const candidates = [
     base,
-    ...['.ts', '.tsx', '.js', '.mjs', '.mts', '.json'].map((x) => base + x),
+    ...['.ts', '.tsx', '.js', '.mjs', '.mts', '.json', '.d.ts'].map((x) => base + x),
     base.replace(/\.js$/, '.ts'),
     base.replace(/\.js$/, '.tsx'),
+    base.replace(/\.js$/, '.d.ts'),
     base.replace(/\.mjs$/, '.mts'),
     base.replace(/\.jsx$/, '.tsx'),
     ...['/index.ts', '/index.tsx', '/index.js', '/index.mjs'].map((x) => base + x),
@@ -159,7 +175,8 @@ function resolveSpecifier(packages, files, from, rawSpec) {
  * @param {object} input
  * @param {readonly WorkspacePackage[]} input.packages
  * @param {readonly string[]} input.files - every tracked repo path
- * @param {ReadonlyMap<string, string>} input.texts - module path to source text
+ * @param {ReadonlyMap<string, string>} input.texts - module path to source
+ *   text, declaration files and tsconfigs included
  * @returns {ImpactGraph}
  */
 export function buildImpactGraph({ packages, files, texts }) {
@@ -175,6 +192,10 @@ export function buildImpactGraph({ packages, files, texts }) {
     importers.set(dep, set);
   };
   for (const [from, text] of texts) {
+    if (TSCONFIG_RE.test(from)) {
+      tsconfigEdges(packages, fileSet, from, text, edge, dirDeps);
+      continue;
+    }
     for (const m of text.matchAll(SPEC_RE)) {
       const spec = m[2];
       const hole = spec.indexOf('${');
@@ -210,6 +231,34 @@ export function buildImpactGraph({ packages, files, texts }) {
     }
   }
   return { packages, fileSet, texts, importers, dirDeps };
+}
+
+/**
+ * The edges of a tsconfig's `include` and `files` entries that name another
+ * package's files: a glob depends on its literal folder, a file on itself.
+ * Entries inside the tsconfig's own package are its package's own business
+ * (a change there already selects the package). Read with a pattern, not
+ * JSON.parse: tsconfigs are JSONC (comments, trailing commas).
+ *
+ * @param {readonly WorkspacePackage[]} packages
+ * @param {ReadonlySet<string>} fileSet
+ * @param {string} from - the tsconfig
+ * @param {string} text
+ * @param {(dep: string | null, from: string) => void} edge
+ * @param {[string, string][]} dirDeps
+ */
+function tsconfigEdges(packages, fileSet, from, text, edge, dirDeps) {
+  const own = packageOf(packages, from);
+  for (const list of text.matchAll(/"(?:include|files)"\s*:\s*\[([^\]]*)\]/g)) {
+    for (const q of list[1].matchAll(/"([^"]+)"/g)) {
+      const wild = q[1].search(/[*?{[]/);
+      const prefix = wild === -1 ? q[1] : q[1].slice(0, wild);
+      const base = joinPath(dirname(from), prefix);
+      if (packageOf(packages, base) === own) continue;
+      if (wild === -1 && fileSet.has(base)) edge(base, from);
+      else dirDeps.push([from, prefix.endsWith('/') || wild === -1 ? base : dirname(base)]);
+    }
+  }
 }
 
 /**
@@ -249,9 +298,8 @@ function dependentsOf(graph, dir) {
  *   must run, with the rule that says why. All sorted.
  */
 export function impactOf(graph, changedPaths) {
-  const changed = [...new Set(changedPaths.map(normalize))].filter(
-    (p) => p !== '' && !p.toLowerCase().endsWith('.md')
-  );
+  // Markdown stays in: a test can read it by name (fixtures/PROVENANCE.md).
+  const changed = [...new Set(changedPaths.map(normalize))].filter((p) => p !== '');
   /** @type {Map<string, string>} */
   const full = new Map();
   for (const path of changed) {
@@ -318,6 +366,8 @@ export function impactOf(graph, changedPaths) {
   }
   const packages = new Set([...full.keys()]);
   for (const f of [...seen, ...tests]) {
+    // A changed markdown file alone gives its package's gate nothing to check.
+    if (isMarkdown(f) && changed.includes(f)) continue;
     const dir = packageOf(graph.packages, f);
     if (dir) packages.add(dir);
   }

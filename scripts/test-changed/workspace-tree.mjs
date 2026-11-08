@@ -8,7 +8,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
-import { MODULE_RE, buildImpactGraph } from './impact-graph.mjs';
+import { MODULE_RE, TSCONFIG_RE, buildImpactGraph } from './impact-graph.mjs';
 
 /** Above this size a module is generated data, not source with imports. */
 const MAX_TEXT_BYTES = 3_000_000;
@@ -55,7 +55,8 @@ export function loadImpactGraph(root) {
   /** @type {Map<string, string>} */
   const texts = new Map();
   for (const f of files) {
-    if (!MODULE_RE.test(f) || f.endsWith('.d.ts')) continue;
+    // Declaration files and tsconfigs draw type-level edges (impact-graph.mjs).
+    if (!MODULE_RE.test(f) && !TSCONFIG_RE.test(f)) continue;
     const abs = path.join(root, f);
     if (statSync(abs).size > MAX_TEXT_BYTES) continue;
     texts.set(f, readFileSync(abs, 'utf8'));

@@ -587,21 +587,31 @@ describe('gateBaseCommand (related unit tests in the fast gate only)', () => {
   });
 });
 
-// Why this test matters: in the per-commit fast gate a package's format and
-// lint stages check only the changed files (changed-files-stage.mjs), and
-// the package-wide run moves to the milestone run, a package's own gate and
-// CI. If the wrapper leaked into those, a package-wide check would silently
-// shrink to the changed files there too.
-describe('gateBaseCommand (format and lint on the changed files in the fast gate only)', () => {
+// Why this test matters: in the per-commit fast gate a package's format
+// stage checks only the changed files (changed-files-stage.mjs), and the
+// package-wide run moves to the milestone run, a package's own gate and CI.
+// If the wrapper leaked into those, a package-wide check would silently
+// shrink to the changed files there too. Lint is never narrowed: its typed
+// rules read across files and its --max-warnings budgets are package-wide,
+// and a dependent's diff narrowed its lint to no file at all (r1125 review).
+describe('gateBaseCommand (format on the changed files in the fast gate only)', () => {
   const FAST = { [SKIP_BROWSER_ENV]: '1', [UNIT_RELATED_ENV]: 'HEAD' };
   const stages = PROJECTS.flatMap((project) =>
     project.stages
-      .filter((stage) => stage.name === 'format' || stage.name === 'lint')
+      .filter((stage) => stage.name === 'format')
       .map((stage) => ({ project: project.name, stage }))
+  );
+  const lintStages = PROJECTS.flatMap((project) =>
+    project.stages.filter((stage) => stage.name === 'lint').map((stage) => ({ project: project.name, stage }))
   );
 
   it('finds the format and lint stages (so the checks are not vacuous)', () => {
-    expect(stages.length).toBeGreaterThanOrEqual(20);
+    expect(stages.length).toBeGreaterThanOrEqual(10);
+    expect(lintStages.length).toBeGreaterThanOrEqual(10);
+  });
+
+  it.each(lintStages)('$project runs its whole lint stage in the fast gate', ({ stage }) => {
+    expect(gateBaseCommand(stage, FAST)).toBe(stage.command);
   });
 
   it.each(stages)('$project wraps its $stage.name stage in the fast gate', ({ stage }) => {

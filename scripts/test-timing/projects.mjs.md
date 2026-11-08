@@ -46,10 +46,12 @@
       `node ../scripts/test-changed/related-unit.mjs <command>`
       (`RELATED_UNIT_SCRIPT`), which runs only the tests related to the
       change ([related-unit.mjs](../test-changed/related-unit.mjs.md)), and
-      a `format` or `lint` stage becomes
+      a `format` stage becomes
       `node ../scripts/test-changed/changed-files-stage.mjs <command>`
       (`CHANGED_FILES_SCRIPT`), which checks only the changed files
       ([changed-files-stage.mjs](../test-changed/changed-files-stage.mjs.md)).
+      `lint` stays whole: its typed rules read across files and its
+      `--max-warnings` budgets are package-wide.
       A run without the ref, the milestone run and a package's own gate (no
       skip switch) keep the command. Pinned by `projects.test.mjs`.
     - On the GitHub runner (`onGithubRunner` from `stage-args.mjs`, i.e.

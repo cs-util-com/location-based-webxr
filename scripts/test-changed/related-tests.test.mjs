@@ -65,6 +65,20 @@ describe('planRelatedRun', () => {
     ).toEqual({ mode: 'related', files: ['src/a.ts'] });
   });
 
+  // Why: a unit test can read markdown as data (the design system's terrain
+  // fixtures test reads fixtures/PROVENANCE.md). A changed markdown file is
+  // never handed to vitest itself, but it selects the tests that read it.
+  it('adds the tests that read a changed markdown file by name', () => {
+    const prov = {
+      path: 'src/fixtures.test.ts',
+      text: "const p = readFileSync(join(DIR, 'PROVENANCE.md'), 'utf8');",
+    };
+    expect(plan({ changed: ['fixtures/PROVENANCE.md'], testFiles: [PLAIN, prov] })).toEqual({
+      mode: 'related',
+      files: ['src/fixtures.test.ts'],
+    });
+  });
+
   it('runs nothing for a change no unit test can read (a Playwright spec)', () => {
     expect(
       plan({ changed: ['playwright-tests/x.spec.js'], testFiles: [PLAIN, SCANNER] })

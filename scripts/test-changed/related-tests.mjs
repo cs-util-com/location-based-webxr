@@ -48,9 +48,12 @@ export const DEFAULT_MAX_FILES = 150;
  */
 export function planRelatedRun({ changed, deleted, testFiles, maxFiles = DEFAULT_MAX_FILES }) {
   const gone = new Set(deleted.map(normalize));
-  const paths = [...new Set(changed.map(normalize))].filter(
-    (p) => p !== '' && p !== 'docs/test-timings.md' && !p.toLowerCase().endsWith('.md')
-  );
+  const unique = [...new Set(changed.map(normalize))].filter((p) => p !== '' && p !== 'docs/test-timings.md');
+  const paths = unique.filter((p) => !p.toLowerCase().endsWith('.md'));
+  // Markdown is never handed to vitest, but a test can read it as data (a
+  // fixtures PROVENANCE.md), so it selects its readers. A deleted one breaks
+  // no test that would still pass without it.
+  const markdown = unique.filter((p) => p.toLowerCase().endsWith('.md') && !gone.has(p));
   if (paths.length > maxFiles) {
     return { mode: 'full', reason: `${paths.length} changed files (more than ${maxFiles})` };
   }
@@ -72,7 +75,7 @@ export function planRelatedRun({ changed, deleted, testFiles, maxFiles = DEFAULT
       return { mode: 'full', reason: `${p} is not a source, style, page or Playwright file` };
     }
   }
-  const names = paths.map((p) => p.split('/').pop() ?? p);
+  const names = [...paths, ...markdown].map((p) => p.split('/').pop() ?? p);
   for (const test of testFiles) {
     const path = normalize(test.path);
     const scans = sourceChanged && SCANNER_RE.test(test.text);

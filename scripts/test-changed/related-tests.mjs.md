@@ -19,9 +19,12 @@
     `packageDir`; a full own plan stays full.
   - `DEFAULT_MAX_FILES` (150).
 - Rules, in order:
-  - Markdown (sidecars, docs) and the generated `docs/test-timings.md` are
-    ignored: no unit test reads markdown (checked by search across every
-    package on 2026-11-05: the only `.md` mentions in tests are comments).
+  - Markdown (sidecars, docs) is never handed to vitest and never forces
+    the full suite, but it selects the tests that read it by name (the
+    design system's `terrain-fixtures.test.mjs` reads `PROVENANCE.md`; the
+    2026-11-05 search that said no test reads markdown missed it). A deleted
+    markdown file selects nothing. The generated `docs/test-timings.md` is
+    ignored.
   - More than `maxFiles` changes, a deleted or renamed file (its importers
     are no longer in the graph), a setup file (`*setup.ts`, loaded before
     every test without an import) or anything under `__mocks__/` -> full.

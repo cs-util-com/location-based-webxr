@@ -9,8 +9,10 @@
     four dependency fields.
   - `existingFiles(root)` -> every tracked or untracked (not ignored) file
     that exists on disk, repo-relative.
-  - `loadImpactGraph(root)` -> the built graph. Module texts skip `.d.ts`
-    and files over 3 MB (generated data, not source with imports).
+  - `loadImpactGraph(root)` -> the built graph. Texts are every module,
+    declaration files and `tsconfig*.json` included (their type-level
+    edges), except files over 3 MB (generated data, not source with
+    imports).
 - Invariants & assumptions: git errors propagate; both callers catch them and
   fall back to their full behaviour. Loading the whole tree takes about 1.6 s
   warm and 6 s cold on the development machine.

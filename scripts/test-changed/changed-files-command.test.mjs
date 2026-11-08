@@ -1,6 +1,6 @@
-// Why this test matters: in the per-commit fast gate a package's format and
-// lint stages check only the files the commit changed, by rewriting the
-// stage's own command. A rewrite that widens the scope formats files the
+// Why this test matters: in the per-commit fast gate a package's format
+// stage checks only the files the commit changed, by rewriting the stage's
+// own command. A rewrite that widens the scope formats files the
 // stage never owned; one that drops a target silently leaves a changed file
 // unchecked; one that misreads an option's value as a target does both. So
 // every target kind, every option kind and every fallback is pinned here.
@@ -53,22 +53,15 @@ describe('narrowCommand: prettier', () => {
   });
 });
 
+// Why: ESLint's typed rules read across files, so a change in one file can
+// raise an error in another the commit did not touch, and a --max-warnings
+// budget counts the whole package. A lint of the changed files alone missed
+// both (the r1125 review), so lint is never narrowed.
 describe('narrowCommand: eslint', () => {
-  it('lints only the changed scripts, keeps every option and silences ignored-file warnings', () => {
-    expect(narrowCommand(ESLINT, ['src/a.ts', 'src/b.css', 'index.html', 'config/x.mjs'])).toEqual({
-      mode: 'files',
-      files: ['config/x.mjs', 'src/a.ts'],
-      command:
-        'eslint --config config/eslint.config.mjs --max-warnings 37 --concurrency auto --no-warn-ignored "config/x.mjs" "src/a.ts"',
-    });
-  });
-
-  it('keeps a narrow target narrow', () => {
-    const cmd = 'eslint "labs/globe/*.js" --config config/eslint.config.mjs --max-warnings 0';
-    expect(narrowCommand(cmd, ['labs/globe/a.js', 'labs/other/b.js'])).toMatchObject({
-      files: ['labs/globe/a.js'],
-    });
-    expect(narrowCommand(cmd, ['src/a.ts']).mode).toBe('skip');
+  it('never narrows a lint command', () => {
+    expect(narrowCommand(ESLINT, ['src/a.ts'])).toEqual({ mode: 'full', reason: 'not a prettier command' });
+    const narrow = 'eslint "labs/globe/*.js" --config config/eslint.config.mjs --max-warnings 0';
+    expect(narrowCommand(narrow, ['labs/globe/a.js']).mode).toBe('full');
   });
 });
 
@@ -76,17 +69,17 @@ describe('narrowCommand: fallbacks', () => {
   it('runs whole for another tool, an unknown option or too many files', () => {
     expect(narrowCommand('stylelint "*.css"', ['a.css'])).toEqual({
       mode: 'full',
-      reason: 'not a prettier or eslint command',
+      reason: 'not a prettier command',
     });
-    expect(narrowCommand('eslint . --new-flag', ['a.ts'])).toEqual({
+    expect(narrowCommand('prettier --ignore-unknown --new-flag "src"', ['src/a.ts'])).toEqual({
       mode: 'full',
       reason: 'unknown option --new-flag',
     });
     const many = Array.from({ length: 101 }, (_, i) => `src/f${i}.ts`);
-    expect(narrowCommand(ESLINT, many)).toEqual({ mode: 'full', reason: '101 changed files (more than 100)' });
+    expect(narrowCommand(PRETTIER, many)).toEqual({ mode: 'full', reason: '101 changed files (more than 100)' });
   });
 
   it('accepts backslash paths and ignores duplicates', () => {
-    expect(narrowCommand(ESLINT, ['src\\a.ts', 'src/a.ts'])).toMatchObject({ files: ['src/a.ts'] });
+    expect(narrowCommand(PRETTIER, ['src\\a.ts', 'src/a.ts'])).toMatchObject({ files: ['src/a.ts'] });
   });
 });
