@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Asset Shelf: Docked Panel</title>
+    <!--
+  Throwaway prototype: the tour editor's asset shelf as its own docked panel
+  on the right edge, beside the inspector. It collapses to a slim rail that
+  keeps showing each file's progress as a ring. Files dropped anywhere on the
+  page land on the shelf and are "optimized" for a phone by faked timers; an
+  asset can be used (dragged onto a station, a story or an item, or picked in
+  an item's file field) while it is still being optimized. On a phone the
+  shelf is a third bottom sheet beside the list and the details. Original
+  code, no libraries, no network; all data is made up and nothing is saved.
+-->
+    <link rel="stylesheet" href="shelf.css" />
+  </head>
+  <body class="sheet-list">
+    <header id="top">
+      <div class="brand">
+        <b class="hideS">Tour editor</b><span class="doc">Old Town Walk</span>
+      </div>
+      <button class="mbtn" type="button" data-inert>File</button>
+      <button class="mbtn hideS" type="button" data-inert>Edit</button>
+      <button class="mbtn" type="button" data-inert>View</button>
+      <span id="unsaved" class="unsaved" hidden>Not saved</span>
+      <span class="sp"></span>
+      <button
+        class="tbtn proto"
+        id="simDrop"
+        type="button"
+        title="Prototype: drop four sample files on the page"
+      >
+        <span class="hideS">Simulate drop</span><span class="showS">Drop</span>
+      </button>
+      <button class="tbtn phoneOnly" id="listBtn" type="button">List</button>
+      <button class="tbtn phoneOnly" id="assetsBtn" type="button">
+        Assets<span class="badge" id="assetsBtnBadge" hidden></span>
+      </button>
+    </header>
+    <div id="loadbar"></div>
+
+    <div id="main">
+      <section id="map" aria-label="Map">
+        <svg id="mapsvg" viewBox="0 0 1000 700" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+          <rect width="1000" height="700" fill="#1d2126" />
+          <path d="M-20 520 C 200 470 330 560 520 500 S 820 420 1040 470" stroke="#22384d" stroke-width="46" fill="none" />
+          <g stroke="#2b3037" stroke-width="16" fill="none" stroke-linecap="round">
+            <path d="M120 -10 L 260 300 L 230 720" />
+            <path d="M-10 250 L 1010 210" />
+            <path d="M480 -10 L 560 720" />
+            <path d="M720 -10 C 700 200 780 300 760 720" />
+            <path d="M260 300 L 720 120" />
+          </g>
+          <g stroke="#262a30" stroke-width="7" fill="none">
+            <path d="M330 80 L 400 460" />
+            <path d="M600 330 L 900 360" />
+            <path d="M80 400 L 480 380" />
+          </g>
+        </svg>
+        <div id="pins"></div>
+        <details id="notes">
+          <summary>
+            <svg class="i" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2" /><path d="M8 7.2v4M8 4.8v.1" /></svg>
+            <span><span class="hideS">Prototype notes: </span>the docked asset shelf</span>
+          </summary>
+          <div class="nb">
+            <p>
+              <b>Idea.</b> The asset shelf is its own panel at the right edge,
+              beside the inspector. Fold it with the arrow in its head (or the
+              <b>Assets</b> toggle in the bottom bar): it becomes a slim rail
+              whose rings keep showing what is still being optimized, so the
+              shelf never has to be open to know where the files are.
+            </p>
+            <ul>
+              <li><b>Drop</b> files anywhere on the page, or press <b>Simulate drop</b> for four sample files.</li>
+              <li><b>Use</b> an asset at once: drag a card onto a station, a story or an empty item in the tree, or onto an item's file field; or open a card and choose <b>Use in...</b> (the phone's way).</li>
+              <li>An item whose file is still being optimized says so, and uses the original until the optimized one replaces it.</li>
+              <li>The video fails the first time; <b>Retry</b> works.</li>
+            </ul>
+            <div class="nrow">
+              <span>Speed</span>
+              <span class="seg" id="speedSeg">
+                <button type="button" data-speed="1" class="on">1x</button><button type="button" data-speed="4">4x</button>
+              </span>
+            </div>
+          </div>
+        </details>
+        <button id="phonePill" type="button" hidden></button>
+      </section>
+
+      <aside id="tree" class="dock" aria-label="Stations">
+        <div class="phead">
+          <span class="ttl">Stations</span><span class="count" id="stCount"></span>
+          <span class="sp"></span>
+          <button class="ib" id="treeFold" type="button" title="Fold the list" aria-label="Fold the list">
+            <svg class="i" viewBox="0 0 16 16"><path d="M4.5 10l3.5-3.5 3.5 3.5" /></svg>
+          </button>
+        </div>
+        <div class="pbody"><div id="rows" role="tree" aria-label="Tour contents"></div></div>
+        <div class="treefoot">
+          <span>Click to select</span>
+          <span>Drop an asset on a row</span>
+        </div>
+      </aside>
+
+      <aside id="insp" class="dock" aria-label="The selection" hidden></aside>
+
+      <aside id="shelf" class="dock" aria-label="Assets">
+        <div class="phead shead">
+          <button class="ib" id="shelfFold" type="button" title="Fold the asset shelf" aria-label="Fold the asset shelf" aria-expanded="true">
+            <svg class="i" viewBox="0 0 16 16"><path d="M6 3.5L10.5 8 6 12.5" /></svg>
+          </button>
+          <span class="ttl">Assets</span><span class="count" id="shelfCount"></span>
+          <span class="sp"></span>
+          <button class="ib acc" id="addFiles" type="button" title="Add files from this computer" aria-label="Add files from this computer">
+            <svg class="i" viewBox="0 0 16 16"><path d="M8 11V3M5 6l3-3 3 3M3 12.5h10" /></svg>
+          </button>
+          <button class="ib phoneOnly" id="shelfClose" type="button" title="Close the assets" aria-label="Close the assets">
+            <svg class="i" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" /></svg>
+          </button>
+        </div>
+        <div id="shelfSum" class="sumline" role="status" aria-live="polite"></div>
+        <div id="shelfChips" class="chips" role="group" aria-label="Show"></div>
+        <div class="pbody"><div id="shelfList" role="list"></div></div>
+        <div class="shelffoot">Drop files anywhere on the page. Drag a card onto a station, a story or an item.</div>
+        <div id="rail" aria-label="Assets, folded"></div>
+      </aside>
+    </div>
+
+    <footer id="bar">
+      <span class="credits">Map: made-up sample</span>
+      <span id="saveState" class="said">No changes</span>
+      <span class="sp"></span>
+      <button class="tog" type="button" data-inert>
+        <svg class="i" viewBox="0 0 16 16"><path d="M8 2.5l6 11H2z M8 6.5v3.5M8 12v.1" /></svg><span class="tl">Problems</span>
+      </button>
+      <button class="tog" id="assetsTog" type="button" aria-pressed="true" title="The asset shelf open or folded">
+        <svg class="i" viewBox="0 0 16 16"><path d="M2 5.5l6-3 6 3-6 3z M2 5.5v5l6 3 6-3v-5M8 8.5v5" /></svg><span class="tl">Assets</span><span class="badge" id="togBadge" hidden></span>
+      </button>
+    </footer>
+
+    <div id="dropOverlay" hidden>
+      <div class="dropbox">
+        <svg class="i big" viewBox="0 0 16 16"><path d="M8 11V3M5 6l3-3 3 3M3 12.5h10" /></svg>
+        <div class="dt">Drop to add to the asset shelf</div>
+        <div class="ds">Sounds, pictures, videos and 3D models. They are made smaller for a phone while you keep working.</div>
+        <div class="dfiles" id="dropFiles"></div>
+      </div>
+    </div>
+    <input type="file" id="fileInput" multiple hidden />
+    <div id="pop" hidden></div>
+    <div id="ghost" hidden></div>
+    <div id="toast" role="status" aria-live="polite"><span class="tx"></span><button type="button" id="toastAct" hidden></button></div>
+
+    <script src="shelf.js"></script>
+  </body>
+</html>
