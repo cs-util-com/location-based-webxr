@@ -54,7 +54,6 @@ import {
   isStationLocked,
   pointerDragRuns,
   type EditorViewState,
-  type ModelPick,
   type ShellLayer,
   type TreeSection,
 } from "../editor-view.js";
@@ -130,8 +129,7 @@ import {
   type TreeFolder,
   type TreeModel,
 } from "./tree-model.js";
-import { createKeptStore } from "../long-text/kept-store.js";
-import { createLongTextDock } from "../long-text/long-text-dock.js";
+import { createKindPanels } from "../kind-panels/kind-panels.js";
 import type { NarrationChange, NarrationFacts } from "../editor-session.js";
 
 /** A stamp per read-along texts object of the tour document: the reducer
@@ -190,7 +188,7 @@ export type TypedEditOutcome = "written" | "refused";
 
 /** The page's edits the inspector gives: each one undo step, a refusal
  *  said by the page. */
-interface ShellEditCommands {
+export interface ShellEditCommands {
   /** A station's name, description, found radius or card picture. */
   station(stationId: string, edit: StationEdit): TypedEditOutcome;
   /** A pin's text. */
@@ -531,27 +529,27 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     load: (path) => deps.loadPicture(path),
   });
   const viewBox = byId("view3d");
-  /** A long text's writer in the inspector and its preview over the 3D
-   *  view (`long-text-dock.ts`). */
-  const longText = createLongTextDock({
+  /** The kinds' own parts of the inspector (`kind-panels.ts`): a long
+   *  text's writer and its preview over the 3D view, a model's notes and
+   *  sections. */
+  const panels = createKindPanels({
     document,
     box: viewBox,
     inspectorRoot: inspector.root,
     treeRoot: tree.root,
-    kept: createKeptStore(),
-    writeBody: (id, body) => deps.edits.block(id, "body", body),
-    writeView: (id, view) => deps.edits.view(id, view),
-    readNarration: (id) => deps.edits.narration(id),
-    editNarration: (id, change) => deps.edits.editNarration(id, change),
-    ...(deps.edits.voiceMaxBytes === undefined
-      ? {}
-      : { voiceMaxBytes: deps.edits.voiceMaxBytes }),
+    edits: deps.edits,
     loadPicture: (path) => deps.loadPicture(path),
     say: (text) => {
       deps.say(text);
     },
     changed: () => {
       draw();
+    },
+    pickAsked: (pick) => {
+      store.dispatch(editorViewActions.modelPickAsked({ pick }));
+    },
+    focused: (focus) => {
+      store.dispatch(editorViewActions.modelFocused({ focus }));
     },
   });
   const said = byId("shell-said");
@@ -676,9 +674,6 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
    *  changes nothing is skipped): also each readout tick, so the ground
    *  arriving shows. */
   const drawInspectorNow = (model: InspectorModel | null) => {
-    const writer = longText.sync(
-      model?.kind === "item" ? model.longText : null,
-    );
     drawInspector(
       inspector,
       model,
@@ -687,10 +682,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         positionOpen,
         contentsOpen,
         busy: busy?.act ?? null,
-        ...(writer === null ? {} : { longText: longText.state() }),
       },
       pictures,
-      writer,
+      panels.sync(model),
     );
   };
 
@@ -969,99 +963,6 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     if (outcome === "refused") input.value = value;
   };
 
-  /** A button of a model's own parts (`shell-inspector.ts` `modelParts`)
-   *  answered: a view chosen, a note or a section in focus, the 3D view
-   *  asked to wait for a click on the model (pressed again: not), a part
-   *  deleted or a section flipped, the clip's autoplay turned. Anything
-   *  else, or a selection that is no model, does nothing. */
-  const modelAct = (selected: string, act: string) => {
-    const model = inspectorModel(state().editorView);
-    if (model?.kind !== "item" || model.model === null) return;
-    const parts = model.model;
-    const [name = "", arg] = act.split(":");
-    const index = arg === undefined ? -1 : Number(arg);
-    const pickNow = parts.pick;
-    const ask = (pick: ModelPick) => {
-      const same =
-        pickNow?.what === pick.what &&
-        ("index" in pickNow ? pickNow.index : -1) ===
-          ("index" in pick ? pick.index : -1);
-      store.dispatch(
-        editorViewActions.modelPickAsked({ pick: same ? null : pick }),
-      );
-    };
-    const focus = (part: "note" | "section") => {
-      const on = parts.focus?.part === part && parts.focus.index === index;
-      store.dispatch(
-        editorViewActions.modelFocused({ focus: on ? null : { part, index } }),
-      );
-    };
-    switch (name) {
-      case "view":
-        if (arg !== undefined)
-          deps.edits.model(selected, { kind: "view", view: arg });
-        return;
-      case "note":
-        focus("note");
-        return;
-      case "section":
-        focus("section");
-        return;
-      case "note-add":
-      case "section-add":
-        ask({ what: name });
-        return;
-      case "note-place":
-      case "section-place":
-        ask({ what: name, index });
-        if (
-          pickNow === null ||
-          !("index" in pickNow) ||
-          pickNow.index !== index
-        ) {
-          store.dispatch(
-            editorViewActions.modelFocused({
-              focus: {
-                part: name === "note-place" ? "note" : "section",
-                index,
-              },
-            }),
-          );
-        }
-        return;
-      case "note-delete":
-      case "section-delete":
-        if (deps.edits.model(selected, { kind: name, index }) === "written") {
-          store.dispatch(editorViewActions.modelFocused({ focus: null }));
-          store.dispatch(editorViewActions.modelPickAsked({ pick: null }));
-        }
-        return;
-      case "section-flip": {
-        const section = parts.sections[index];
-        if (section === undefined) return;
-        const [x, y, z] = section.normal;
-        deps.edits.model(selected, {
-          kind: "section-place",
-          index,
-          // 0 - x, not -x: a zero stays 0, never -0.
-          at: { position: section.position, normal: [0 - x, 0 - y, 0 - z] },
-        });
-        return;
-      }
-      case "anim-autoplay":
-        if (parts.animation !== null) {
-          deps.edits.model(selected, {
-            kind: "animation",
-            name: parts.animation.name,
-            autoplay: !parts.animation.autoplay,
-          });
-        }
-        return;
-      default:
-        return;
-    }
-  };
-
   /** A ground command on the selection: run at once with the ground
    *  loaded, else shown in progress while it waits for it; said when done,
    *  when there is nothing to do, and when it gives up. */
@@ -1131,7 +1032,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       busy = null;
       const pending = typedField();
       if (pending !== null) commitField(pending, was);
-      longText.flush();
+      panels.flush();
       if (selected !== null) applyDocks("selected");
     }
     draw();
@@ -1486,7 +1387,12 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   inspector.root.addEventListener("click", (event) => {
     const act = (event.target as Element).closest<HTMLElement>("[data-act]")
       ?.dataset["act"];
-    if (act !== undefined && longText.act(act)) {
+    const chosen = state().editorView.selected;
+    if (
+      act !== undefined &&
+      chosen !== null &&
+      panels.act(act, inspectorModel(state().editorView), chosen)
+    ) {
       draw();
       return;
     }
@@ -1551,7 +1457,6 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     if (act === "delete") deleteSelected(selected);
     if (act === "split") deps.stations.split(selected);
     if (act === "ground" || act === "ground-items") void runGround(act);
-    if (act !== undefined) modelAct(selected, act);
     if (
       act?.startsWith("image:") === true &&
       selected.startsWith(STATION_PREFIX)
@@ -1769,7 +1674,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     flush() {
       const pending = typedField();
       if (pending !== null) commitField(pending, lastSelected);
-      longText.flush();
+      panels.flush();
     },
     hide() {
       // Closed mid-approach: the fold was the approach's, so the tree
@@ -1787,8 +1692,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       radius.cancel();
       const pending = typedField();
       if (pending !== null) commitField(pending, lastSelected);
-      longText.flush();
-      longText.sync(null);
+      panels.flush();
+      panels.sync(null);
       busy?.stop.abort();
       busy = null;
       view = null;

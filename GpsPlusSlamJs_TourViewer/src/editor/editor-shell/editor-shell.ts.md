@@ -154,22 +154,22 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   `origin` for the inspector); a type only, so the page's code never
   holds the 3D view's.
 - `ShellEditCommands.model(itemId, edit)` - a model's own edit, as typed
-  (`inspector-edits.ts`) or pressed (`modelAct`).
-- `modelAct` answers a model's part buttons: a view chosen; a note or a
-  section brought into focus (pressed again: out of it); the 3D view asked
-  to wait for a click on the model (`modelPickAsked`; pressed again: no
-  longer), placing a part again also focusing it; a part deleted (focus and
-  wait cleared when written); a section flipped (its normal negated, a zero
-  kept 0); the clip's autoplay turned.
+  (`inspector-edits.ts`) or pressed (its panel, `../kind-panels/model-panel.ts`).
+  `ShellEditCommands` is exported for the kinds' panels (`PanelContext.edits`).
 
-- A long text's writer and preview come from one `createLongTextDock`
-  (`../long-text/long-text-dock.ts`): `sync` hands it the selected item's
-  `longText` model on every draw (null closes it), `act` takes the clicks
-  it owns, and `flush` writes pending typing before a selection change or
-  a save. Its body goes through `edits.block(id, "body", ...)` and its view
-  through the new `edits.view(id, view)` (`editor.editBlockView`). The
-  shell's generic field input skips its fields: only an input drawn under
-  a field name (`data-field`) is written by the shell.
+- The kinds' own parts of the inspector come from one `createKindPanels`
+  (`../kind-panels/kind-panels.ts`): `sync` hands it the inspector's model
+  on every draw (every panel follows it; a long text's preview closes with
+  its selection) and its answer is drawn by `drawInspector`; a press
+  (`data-act`) goes to the selected item's kind's panel first, and one it
+  takes draws again and ends there; `flush` writes pending typing before a
+  selection change or a save. A long text's panel is its dock
+  (`../long-text/long-text-dock.ts`, body through `edits.block(id, "body",
+...)`, view through `edits.view`); a model's answers its part buttons,
+  the 3D view's wait and focus going to `modelPickAsked` and
+  `modelFocused`. The shell's generic field input skips a writer's fields:
+  only an input drawn under a field name (`data-field`) is written by
+  the shell.
 - The inspector's station extras: `contents` folds Contents (kept across
   selections), `add-content` opens the tree's type menu for the station,
   `goto:<id>` selects and flies as a tree row does, and the radius slider

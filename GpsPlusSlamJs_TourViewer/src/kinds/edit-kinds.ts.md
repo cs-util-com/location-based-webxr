@@ -76,8 +76,8 @@ there.
   `inspector-model.ts` (an item or a free block's own inspector).
 - Fields: `editor/block-fields.ts`.
 - Adding: `editor/editor-shell/tree-add-menu.ts`, `add-palette-model.ts`,
-  `editor/new-pin.ts` (`MAKE_ITEM`, `MAKE_ENTRY`, both keyed by `AddKind`,
-  so an addable row without a maker fails to compile), `editor-shell.ts`.
+  `editor/new-pin.ts` (`KIND_ADD`, one row per `AddKind`, so an addable
+  row without its start fails to compile), `editor-shell.ts`.
 
 ## Invariants & assumptions
 
@@ -113,6 +113,21 @@ there.
 - What the editor can do with a kind is unchanged by this list: it only
   says it. Short and long text are addable, a picture is listed off,
   video, audio, model and character are not offered.
+
+## The editor half of a row
+
+- A kind's own part of the item inspector (what no field spec says: a
+  long text's writer, a model's notes and sections) is its panel, in
+  `editor/kind-panels/kind-panels.ts` `KIND_PANELS`, keyed by the same
+  kind type. It cannot live here: the creator pages outside the editor
+  read this list, and top-level modules may not reach editor DOM code.
+- `new-pin.ts` `KIND_ADD` (what an added kind starts as, at a station
+  and as a story entry) stays there, one row per `AddKind`, so an
+  addable kind without one fails to compile. Folding it here would be a
+  runtime import cycle: `edit-kinds.ts` -> `editor/new-pin.ts` ->
+  `tour-document.ts` -> `tour-content.ts` -> `edit-kinds.ts`, and it
+  would put an editor module and the tour document under every creator
+  page that reads this list.
 
 ## Not folded, and why
 
