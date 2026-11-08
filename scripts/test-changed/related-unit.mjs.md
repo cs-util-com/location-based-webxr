@@ -36,7 +36,7 @@
   - The cross-package reached set comes from the gate run's impact cache
     (`GATE_IMPACT_FILE`, written once by test-changed.mjs, see
     [graph-dependents.mjs](graph-dependents.mjs.md)) when it was written for
-    the same ref and root; only without one is the graph built here (about
+    the same ref, root and changed files; only without one is the graph built here (about
     3.4k file reads, once per package before r1139).
   - vitest is spawned through node from the package's own resolution, not a
     shell, so a long file list never meets cmd.exe's command-line limit.

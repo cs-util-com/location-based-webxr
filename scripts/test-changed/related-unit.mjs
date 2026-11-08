@@ -25,12 +25,12 @@ import { loadImpactGraph } from './workspace-tree.mjs';
 
 /**
  * The gate run's reached set: from the cache test-changed.mjs wrote for this
- * ref and root (graph-dependents.mjs), else built here.
+ * ref, root and change set (graph-dependents.mjs), else built here.
  * @param {string} root @param {string} ref @param {string[]} everyChange
  */
 function impactFor(root, ref, everyChange) {
   const file = process.env[IMPACT_FILE_ENV];
-  return (file && readImpactCache(file, { ref, root })) || impactOf(loadImpactGraph(root), everyChange);
+  return (file && readImpactCache(file, { ref, root, changed: everyChange })) || impactOf(loadImpactGraph(root), everyChange);
 }
 
 const fullCommand = process.argv.slice(2);
