@@ -39,8 +39,9 @@ sound, on one of two channels.
 
 - Nothing is read or played before a `play()` (a voice) or a first non-zero
   `level` (a background).
-- With `soundOn()` false a voice does not start and a background plays at
-  volume 0.
+- With `soundOn()` false a voice does not carry on at return (a tap still
+  plays it: the visitor's own ask) and a background plays at volume 0. The
+  page's `sound-setting.ts` holds the running voice when sound goes off.
 - A background at level 0 is paused, not only silent, so a far ambient sound
   costs nothing.
 - The lowering follows `focus.running()`: any voice of the page lowers the

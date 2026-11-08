@@ -114,13 +114,21 @@ describe("a voice in the world", () => {
     expect(a.playing()).toBe(true);
   });
 
-  it("with sound off does not start", async () => {
-    // Why: the global sound-off silences voices too.
-    const { sound } = setup(false);
+  it("with sound off plays on a tap only, never on a return", async () => {
+    // Why: sound off holds the voice; a tap is the visitor's own ask and
+    // plays, but walking back into the circle must not start it again.
+    const { sound, setOn } = setup();
     const voice = sound.sound(LOAD, "voice");
     voice.play();
     await flush();
+    voice.hold();
+    setOn(false);
+    voice.carryOn();
+    await flush();
     expect(voice.playing()).toBe(false);
+    voice.play();
+    await flush();
+    expect(voice.playing()).toBe(true);
   });
 });
 

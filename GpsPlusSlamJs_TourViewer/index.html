@@ -3323,6 +3323,9 @@
         width: 16px;
         height: 16px;
       }
+      .walk-sound[aria-pressed="true"] .walk-sound-wave {
+        opacity: 0.2;
+      }
       .walk-progress {
         margin: 0;
         padding: 0 16px 8px;
@@ -6351,6 +6354,28 @@
                       class="walk-chip"
                       data-testid="walk-chip"
                     ></span>
+                    <!-- Sound on or off for every tour (sound-setting.ts):
+                     pressed is off. -->
+                    <button
+                      type="button"
+                      id="walk-sound"
+                      class="walk-round walk-sound"
+                      data-testid="walk-sound"
+                      aria-pressed="false"
+                      aria-label="Sound on - tap to turn it off"
+                    >
+                      <svg viewBox="0 0 16 16" aria-hidden="true">
+                        <path d="M2 6h3l4-3v10l-4-3H2z" fill="currentcolor" />
+                        <path
+                          class="walk-sound-wave"
+                          d="M11.5 5a4 4 0 0 1 0 6"
+                          fill="none"
+                          stroke="currentcolor"
+                          stroke-width="1.6"
+                          stroke-linecap="round"
+                        />
+                      </svg>
+                    </button>
                     <button
                       type="button"
                       id="walk-close"

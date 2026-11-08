@@ -10,7 +10,9 @@ defensive read and write of the one storage key.
 ## Public API
 
 - `VISITOR_PREFS_KEY` - `tour-viewer.visitor.prefs.v1`, one key per
-  device.
+  device. Its `views` are this module's; its `sound` ("on" or "off") is
+  `sound-setting.ts`'s. Each writer merges into a fresh read, so neither
+  loses the other's field.
 - `viewSetOf(kind, view)` - the `ViewSet` (`kind`, `placement` world or
   screen, `members`, `floor`) a view belongs to, or null. Today one set:
   a long text's world views `reading`, `lectern` and `captions`;

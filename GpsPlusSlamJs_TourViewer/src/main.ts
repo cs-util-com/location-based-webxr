@@ -54,6 +54,11 @@ import { readingSheetContent } from "./reading-sign.js";
 import "./model-visitor.css";
 import { tapShownWorldPart, tickWorldParts } from "./world-part.js";
 import { createWorldSound } from "./world-sound.js";
+import {
+  bindSoundToggle,
+  createSoundSetting,
+  silencedFocus,
+} from "./sound-setting.js";
 import { wireArEntry } from "./ar-entry.js";
 import { createAuthoringRecording } from "./authoring-recording.js";
 import { arSessionLive, wireCreatorSetup } from "./creator-setup.js";
@@ -897,7 +902,11 @@ const escapeButton = element<HTMLButtonElement>("scan-escape");
 // The visitor's narrated texts (one voice per text, shared by its sheet
 // and its captions strip; each read-along read when its text opens).
 // Their voices are read through the stations' prefetch cache.
-const voiceFocus = createVoiceFocus();
+// Sound on or off for every tour: off holds the running voice and lets
+// none start by itself (the list's sound button).
+const soundSetting = createSoundSetting({ storage: stepStore });
+bindSoundToggle(element<HTMLButtonElement>("walk-sound"), soundSetting);
+const voiceFocus = silencedFocus(createVoiceFocus(), soundSetting);
 const narration = createNarrationVisitor({
   focus: voiceFocus,
   tour: () => ctx.session,
@@ -912,6 +921,7 @@ const narration = createNarrationVisitor({
 // an ambient sound in the background, lowered under any voice.
 const worldSound = createWorldSound({
   focus: voiceFocus,
+  soundOn: () => soundSetting.on(),
   onError: () => {
     const message = "A sound could not be played here.";
     walkToast.say([message]);

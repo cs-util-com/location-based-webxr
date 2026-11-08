@@ -10,13 +10,14 @@
  * - **Background** (an ambient sound): loops at the level its part asks
  *   for each frame (its distance's loudness), lowered to
  *   `BACKGROUND_UNDER_VOICE` with a glide while any voice runs.
- * - **Sound off** (`soundOn`) silences both: a voice does not start, a
- *   background plays at volume 0.
+ * - **Sound off** (`soundOn`) silences both: a voice does not carry on
+ *   at return (a tap still plays it), a background plays at volume 0.
  *
  * @see world-sound.ts.md
  */
 
 import { BACKGROUND_UNDER_VOICE, glide } from "./kinds/audio/sound-reach.js";
+import { clamp01 } from "./landing/clamp01.js";
 import {
   createNarrationPlayer,
   type NarrationAudio,
@@ -90,9 +91,6 @@ export const SILENT_SOUND: SoundHandle = {
 /** A seam that gives every part the silent handle. */
 export const SILENT_WORLD_SOUND: WorldSound = { sound: () => SILENT_SOUND };
 
-const clamp01 = (v: number): number =>
-  Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0;
-
 export function createWorldSound(deps: WorldSoundDeps): WorldSound {
   const soundOn = deps.soundOn ?? (() => true);
   const audio = deps.audio ?? (() => new Audio());
@@ -107,7 +105,9 @@ export function createWorldSound(deps: WorldSoundDeps): WorldSound {
         audio,
         createUrl,
         revokeUrl,
-        ...(deps.onError === undefined ? {} : { onError: deps.onError }),
+        ...(deps.onError === undefined
+          ? {}
+          : { onError: (e: unknown) => deps.onError?.(e) }),
       }),
       deps.focus,
     );
@@ -117,7 +117,8 @@ export function createWorldSound(deps: WorldSoundDeps): WorldSound {
       ...SILENT_SOUND,
       play() {
         away = false;
-        if (soundOn()) player.play();
+        // A tap plays even with sound off: it is the visitor's own ask.
+        player.play();
       },
       pause() {
         away = false;

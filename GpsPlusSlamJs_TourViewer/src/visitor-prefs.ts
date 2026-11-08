@@ -15,8 +15,9 @@ import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { bodyPictureAssets } from "gps-plus-slam-app-framework/ar/tour-body-assets";
 import type { NarrationVerdict } from "./narration-timing.js";
 
-/** The one versioned key: views per kind and placement, and later the
- *  video's sound and captions choices (design §4). */
+/** The one versioned key: views per kind and placement, the sound
+ *  setting (`sound-setting.ts`), and later the video's captions choice
+ *  (design §4). */
 export const VISITOR_PREFS_KEY = "tour-viewer.visitor.prefs.v1";
 
 export type ViewPlacement = "world" | "screen";

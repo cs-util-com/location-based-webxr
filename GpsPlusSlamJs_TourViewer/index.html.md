@@ -612,7 +612,8 @@ the story card `walk-story` (`#scene-panel` and its parts, `walk-dots`,
 `walk-story-acts` with `#scene-continue`, `story-end` (`#walk-story-end`)
 and `keep-listening`; while the end is asked (`data-kind="end"`) `#scene-continue` is not shown, so the card offers only its two answers, M4; then `#scene-play-next`), and the list `walk-list`
 (`walk-list-title`, `walk-chip` - "Any order" only, hidden for a fixed
-order - `walk-close`, the completion card
+order - `walk-sound` (the sound setting for every tour, `sound-setting.ts`;
+pressed is off), `walk-close`, the completion card
 `walk-done` with `walk-done-title` and `walk-done-text`, `walk-progress`,
 the hint `walk-hint` (`#walk-hint`, hidden unless no station is guessed,
 M4), `walk-rows` whose rows carry `walk-row`, `data-state`, `data-id`,
