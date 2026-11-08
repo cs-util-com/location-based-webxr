@@ -485,3 +485,10 @@ examples).
 - `swapAsset(id, { blob, path, width?, height? })`: a smaller file in place of an asset's under the same id. Judged first by the document's own rule (`assetOptimized` run on the current state), so a refused file never reaches the table; then the table holds the new bytes and the record is listed at the new path. The next save writes the new entry and removes the old one; a save already running writes the original. Answers `{ kind: "swapped" }` or a refusal in words. Not yet followed by the draft. A re-drop of the original bytes finds the swapped record (`knownFile` prefers `addedAssets`).
 - `restore(offer)`: the offer's `files` go into the table before the records are dispatched; a record naming a file held nowhere is skipped.
 - Tests: `editor-session-swap.test.ts` (a save before and after a swap, a swap before the first save, a save running when the swap lands, the refusals); `editor-session-files.test.ts` (the table, the refusals, one file for two narrations, a put that fails, a reload with its file, and a property over voices, removals and undos: the reloaded document equals the one shown and every named file is in the save).
+
+## `swapAsset` with a draft, and restoring a swap
+
+- `swapAsset` is async: judged by the document's rule, written to the draft (`EditorSessionDraft.swapAsset`, with the new record), judged again, then the files table and the document take it in one synchronous step. Without a draft it is taken before the first await. `backedUp` false: the draft could not keep it.
+- `restore`: an offered file whose id the written tour lists is a smaller file for that asset. It is left out of `restored.assets` and dispatched as `assetOptimized` after the rest, counted among `changed`.
+- Known gap: a placed picture embeds its `imageAsset` record, so after a swap of that picture's image the in-session object still names the old path until a reload (the save is right). `nextSaveBytes` / `addedBytes` do not yet subtract the replaced entry.
+- Tests: `editor-session-swap.test.ts`.

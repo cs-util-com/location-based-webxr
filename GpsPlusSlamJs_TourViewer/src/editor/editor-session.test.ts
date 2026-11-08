@@ -655,6 +655,10 @@ function loggedDraft(): EditorSessionDraft & { calls: string[] } {
       calls.push(`asset ${asset.id}`);
       return Promise.resolve(true);
     },
+    swapAsset: (asset) => {
+      calls.push(`swap ${asset.id}`);
+      return Promise.resolve(true);
+    },
   };
 }
 

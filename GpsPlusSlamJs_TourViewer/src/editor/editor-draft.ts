@@ -516,16 +516,74 @@ const EDITOR_DRAFT_PREFIX = "editor:";
 const ASSET_PREFIX = "asset:";
 const ASSETS_KEY = "assets";
 
-/** A file brought in, with its bytes. */
+/** A file the draft holds, with its bytes. After a smaller file replaced
+ *  it (`swapAsset`), `original` is the record it replaced, with that
+ *  record's bytes while this draft keeps them (a file brought in; an asset
+ *  of the file on disk has its original there, so none). */
 interface DraftFile {
   readonly asset: TourAsset;
   readonly blob: Blob;
+  readonly original?: { readonly asset: TourAsset; readonly blob?: Blob };
 }
 
-/** The `assets` list as written, each one the format takes (its path
- *  `content/<id>.<ext>` of an extension of its kind); null when it does
- *  not read. */
-function assetListOf(text: string | undefined): TourAsset[] | null {
+/** Where `file`'s own bytes are kept: `asset:<id>` for a plain file,
+ *  `asset:<id>.<ext>` for a smaller one, so the original's bytes stay
+ *  readable under `asset:<id>` until a save that wrote the new file
+ *  landed. */
+function bytesKey(file: DraftFile): string {
+  const { id, path } = file.asset;
+  if (file.original === undefined) return `${ASSET_PREFIX}${id}`;
+  return `${ASSET_PREFIX}${id}.${path.slice(path.lastIndexOf(".") + 1)}`;
+}
+
+/** Every key `file` uses: its own bytes, and its original's when kept. */
+function keysOf(file: DraftFile): string[] {
+  const own = bytesKey(file);
+  return file.original?.blob === undefined
+    ? [own]
+    : [own, `${ASSET_PREFIX}${file.asset.id}`];
+}
+
+/** `file` as the `assets` list names it: a plain record, or one with the
+ *  record it replaced and whether its bytes are kept. */
+function listItem(file: DraftFile): unknown {
+  return file.original === undefined
+    ? file.asset
+    : {
+        ...file.asset,
+        original: file.original.asset,
+        originalKept: file.original.blob !== undefined,
+      };
+}
+
+/** A record the format takes: its path `content/<id>.<ext>` of an
+ *  extension of its kind. */
+function readsAsAsset(item: unknown): item is TourAsset {
+  const a = item as Partial<Record<keyof TourAsset, unknown>> | null;
+  if (
+    typeof a?.id !== "string" ||
+    typeof a.path !== "string" ||
+    typeof a.kind !== "string"
+  ) {
+    return false;
+  }
+  const ext = a.path.slice(a.path.lastIndexOf(".") + 1);
+  return (
+    a.path === `content/${a.id}.${ext}` && tourMediaTypeOf(ext)?.kind === a.kind
+  );
+}
+
+/** One entry of the `assets` list as read. */
+interface ListedFile {
+  readonly asset: TourAsset;
+  readonly original?: TourAsset;
+  readonly originalKept: boolean;
+}
+
+/** The `assets` list as written, each record one the format takes, and a
+ *  replaced record of the same id at another path; null when it does not
+ *  read. */
+function assetListOf(text: string | undefined): ListedFile[] | null {
   if (text === undefined) return [];
   let data: unknown;
   try {
@@ -534,26 +592,28 @@ function assetListOf(text: string | undefined): TourAsset[] | null {
     return null;
   }
   if (!Array.isArray(data)) return null;
-  const assets: TourAsset[] = [];
+  const listed: ListedFile[] = [];
   for (const item of data as unknown[]) {
-    const a = item as Partial<Record<keyof TourAsset, unknown>> | null;
+    if (!readsAsAsset(item)) return null;
+    const { original, originalKept, ...asset } = item as TourAsset & {
+      readonly original?: unknown;
+      readonly originalKept?: unknown;
+    };
+    if (original === undefined && originalKept === undefined) {
+      listed.push({ asset, originalKept: false });
+      continue;
+    }
     if (
-      typeof a?.id !== "string" ||
-      typeof a.path !== "string" ||
-      typeof a.kind !== "string"
+      !readsAsAsset(original) ||
+      original.id !== asset.id ||
+      original.path === asset.path ||
+      typeof originalKept !== "boolean"
     ) {
       return null;
     }
-    const ext = a.path.slice(a.path.lastIndexOf(".") + 1);
-    if (
-      a.path !== `content/${a.id}.${ext}` ||
-      tourMediaTypeOf(ext)?.kind !== a.kind
-    ) {
-      return null;
-    }
-    assets.push(item as TourAsset);
+    listed.push({ asset, original, originalKept });
   }
-  return assets;
+  return listed;
 }
 
 /** The editor's draft namespace (and Web Lock key) for a file key. */
@@ -653,6 +713,17 @@ interface DraftFileWrites {
   /** Whether a file brought in is held here: false once its write did not
    *  land, so no record names it (`draftableObject`). */
   holdsFile(id: string): boolean;
+  /** A smaller file for an asset held here or by the file on disk, under
+   *  the same id (`asset`: its new record): its bytes under a key of their
+   *  own, then the list, then the keys only the previous entry used, so a
+   *  crash between any two writes leaves every listed record with the
+   *  bytes of its own path. Back at the original's path, the original
+   *  stands again (an asset of the file on disk: nothing is held). False
+   *  when it did not land, or for an id held nowhere. */
+  swapAsset(asset: TourAsset, blob: Blob): Promise<boolean>;
+  /** Whether the draft keeps the bytes a smaller file replaced ("use the
+   *  original"): until a save that wrote the smaller file landed. */
+  holdsOriginal(id: string): boolean;
 }
 
 export interface EditorDraft
@@ -875,28 +946,44 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     return JSON.stringify([s.key, "files"]);
   }
 
-  /** The list of `files` written into `s`. */
-  function writeList(store: DraftFileStore): Promise<boolean> {
+  /** The list of `files` as it stands now; null when it is empty. Taken
+   *  when a write is queued, never when it runs: a later change's list
+   *  may name bytes its own write has not put yet. */
+  function listText(): string | null {
     return files.size === 0
-      ? store.remove(ASSETS_KEY).then(() => true)
-      : store.put(
-          ASSETS_KEY,
-          JSON.stringify([...files.values()].map((f) => f.asset)),
-        );
+      ? null
+      : JSON.stringify([...files.values()].map(listItem));
   }
 
-  /** `file`'s bytes, then the list, into `s`; whether both landed. A
-   *  write that did not land is said, once. */
+  /** A list taken by `listText` written into `store`. */
+  function writeList(
+    store: DraftFileStore,
+    list: string | null,
+  ): Promise<boolean> {
+    return list === null
+      ? store.remove(ASSETS_KEY).then(() => true)
+      : store.put(ASSETS_KEY, list);
+  }
+
+  /** `file`'s bytes (its original's first, when kept), then the list,
+   *  into `s`; whether all landed. A write that did not land is said,
+   *  once. */
   function fileIn(s: Space, file: DraftFile): Promise<boolean> {
+    const list = listText();
+    const original = file.original?.blob;
     return inSpace(
       s,
       chain.run(filesChain(s), async () => {
         const store = await s.store;
         if (store === undefined) return false;
-        if (!(await store.put(`${ASSET_PREFIX}${file.asset.id}`, file.blob))) {
+        if (
+          original !== undefined &&
+          !(await store.put(`${ASSET_PREFIX}${file.asset.id}`, original))
+        ) {
           return false;
         }
-        return writeList(store);
+        if (!(await store.put(bytesKey(file), file.blob))) return false;
+        return writeList(store, list);
       }),
     )
       .catch(() => false)
@@ -929,38 +1016,71 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
    *  mirror holds it. */
   function tidyFiles(s: Space): void {
     if (offer === null) files.clear();
+    const named = new Set([...files.values()].flatMap(keysOf));
+    const list = listText();
     void inSpace(
       s,
       chain.run(filesChain(s), async () => {
         const store = await s.store;
         if (store === undefined) return;
         for (const key of await store.keys()) {
-          if (
-            key.startsWith(ASSET_PREFIX) &&
-            !files.has(key.slice(ASSET_PREFIX.length))
-          ) {
+          if (key.startsWith(ASSET_PREFIX) && !named.has(key)) {
             await store.remove(key);
           }
         }
-        await writeList(store);
+        await writeList(store, list);
       }),
     ).catch(() => undefined);
   }
 
-  /** The files `ids` taken out of the mirror and out of `s`, the list
-   *  first: a reload midway finds none it lists missing. */
+  /** The files `ids` taken out of the mirror and out of `s` with every
+   *  key they use, the list first: a reload midway finds none it lists
+   *  missing. */
   function dropFiles(s: Space, ids: readonly string[]): void {
     if (ids.length === 0) return;
+    const keys = ids.flatMap((id) => {
+      const file = files.get(id);
+      return file === undefined ? [`${ASSET_PREFIX}${id}`] : keysOf(file);
+    });
     for (const id of ids) files.delete(id);
+    const list = listText();
     void inSpace(
       s,
       chain.run(filesChain(s), async () => {
         const store = await s.store;
         if (store === undefined) return;
-        await writeList(store);
-        for (const id of ids) await store.remove(`${ASSET_PREFIX}${id}`);
+        await writeList(store, list);
+        for (const key of keys) await store.remove(key);
       }),
     ).catch(() => undefined);
+  }
+
+  /** `swapAsset`'s writes into `s`: `put` (the new bytes) first, then the
+   *  list taken now, then the keys no longer used; whether all landed. */
+  function swapIn(
+    s: Space,
+    put: { readonly key: string; readonly blob: Blob } | undefined,
+    stale: readonly string[],
+  ): Promise<boolean> {
+    const list = listText();
+    return inSpace(
+      s,
+      chain.run(filesChain(s), async () => {
+        const store = await s.store;
+        if (store === undefined) return false;
+        if (put !== undefined && !(await store.put(put.key, put.blob))) {
+          return false;
+        }
+        if (!(await writeList(store, list))) return false;
+        for (const key of stale) await store.remove(key);
+        return true;
+      }),
+    )
+      .catch(() => false)
+      .then((ok) => {
+        if (!ok) say(s, s.refused ?? "storage");
+        return ok;
+      });
   }
 
   /** `s`'s settings record written (`value`) or removed (null), in its
@@ -1330,27 +1450,63 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       if (mine !== generation) return none;
       if (listed === null) lost = true;
       const inFile = new Set(manifest.assets.map((a) => a.id));
-      for (const asset of listed ?? []) {
-        if (inFile.has(asset.id)) continue;
-        // Copied into memory now: the store hands out a snapshot of the
-        // entry, which a landed save or a key move later removes while
-        // the session still needs the bytes (a preview, an undo after a
-        // save). A file brought in this visit is held the same way.
-        const stored = await store.getBlob(`${ASSET_PREFIX}${asset.id}`);
+      // Matched by id AND path: after a smaller file the id alone no
+      // longer says which bytes the file on disk carries.
+      const pathInFile = new Map(manifest.assets.map((a) => [a.id, a.path]));
+      // Copied into memory now: the store hands out a snapshot of the
+      // entry, which a landed save or a key move later removes while the
+      // session still needs the bytes (a preview, an undo after a save).
+      // A file brought in this visit is held the same way.
+      const bytesAt = async (key: string): Promise<Blob | undefined> => {
+        const stored = await store.getBlob(key);
         const bytes = await stored?.arrayBuffer().catch(() => undefined);
+        return stored === undefined || bytes === undefined
+          ? undefined
+          : new Blob([bytes], { type: stored.type });
+      };
+      for (const { asset, original, originalKept } of listed ?? []) {
+        if (pathInFile.get(asset.id) === asset.path) continue;
+        if (original === undefined) {
+          const blob = await bytesAt(`${ASSET_PREFIX}${asset.id}`);
+          if (mine !== generation) return none;
+          if (blob === undefined) lost = true;
+          else files.set(asset.id, { asset, blob });
+          continue;
+        }
+        const kept = originalKept
+          ? await bytesAt(`${ASSET_PREFIX}${asset.id}`)
+          : undefined;
         if (mine !== generation) return none;
-        if (stored === undefined || bytes === undefined) lost = true;
+        if (originalKept && kept === undefined) lost = true;
+        const was =
+          kept === undefined
+            ? { asset: original }
+            : { asset: original, blob: kept };
+        const blob = await bytesAt(
+          bytesKey({ asset, blob: new Blob(), original: was }),
+        );
+        if (mine !== generation) return none;
+        if (blob !== undefined)
+          files.set(asset.id, { asset, blob, original: was });
         else {
-          const blob = new Blob([bytes], { type: stored.type });
-          files.set(asset.id, { asset, blob });
+          // The smaller bytes are gone: the original stands, when kept.
+          lost = true;
+          if (kept !== undefined) {
+            files.set(asset.id, { asset: original, blob: kept });
+          }
         }
       }
+      /** Smaller files for assets the opened file carries: work of their
+       *  own, offered though no record names them anew. */
+      const swaps = [...files.values()].filter((f) =>
+        inFile.has(f.asset.id),
+      ).length;
       // Read against the opened file and the files held: a new station's
       // story may name a file brought in, which the next save writes.
       const withHeld: TourManifest = {
         ...manifest,
         assets: [
-          ...manifest.assets,
+          ...manifest.assets.filter((a) => !files.has(a.id)),
           ...[...files.values()].map((f) => f.asset),
         ],
       };
@@ -1424,13 +1580,18 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         );
         offerSettings(0);
         offer =
-          settings === undefined
+          settings === undefined && swaps === 0
             ? null
-            : { objects: [], deleted: [], settings, ...filesOffered() };
+            : {
+                objects: [],
+                deleted: [],
+                ...(settings === undefined ? {} : { settings }),
+                ...filesOffered(),
+              };
         tidyFiles(s);
         sayUnread();
         return {
-          offer: offer === null ? null : { ...offer, ...offerWords(0, 0) },
+          offer: offer === null ? null : { ...offer, ...offerWords(swaps, 0) },
           superseded: null,
           backedUp: true,
         };
@@ -1531,7 +1692,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         if (base !== undefined) bases.set(id, base);
       }
       offer =
-        kept.size === 0 && settings === undefined
+        kept.size === 0 && settings === undefined && swaps === 0
           ? null
           : {
               objects: waiting,
@@ -1549,7 +1710,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
             ? null
             : {
                 ...offer,
-                ...offerWords(waiting.length, deleted.length),
+                ...offerWords(waiting.length + swaps, deleted.length),
               },
         superseded:
           replaced === 0 ? null : supersededLine(replaced, SUPERSEDED_WHERE),
@@ -1574,6 +1735,9 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         saveAsset: (asset, blob) =>
           live() ? api.saveAsset(asset, blob) : Promise.resolve(true),
         holdsFile: (id) => api.holdsFile(id),
+        swapAsset: (asset, blob) =>
+          live() ? api.swapAsset(asset, blob) : Promise.resolve(true),
+        holdsOriginal: (id) => api.holdsOriginal(id),
         built: (written) => {
           if (live()) api.built(written);
         },
@@ -1687,9 +1851,14 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         bases.delete(id);
       }
       opened = read;
-      // A file the written tour lists is the file's own now.
-      const listedNow = new Set(read.assets.map((a) => a.id));
-      const spentFiles = [...files.keys()].filter((id) => listedNow.has(id));
+      // A file the written tour lists AT ITS PATH is the file's own now,
+      // its original with it. Listed at another path (a save already
+      // running when a smaller file came wrote the original), the swap is
+      // still to be written.
+      const listedAt = new Map(read.assets.map((a) => [a.id, a.path]));
+      const spentFiles = [...files.values()]
+        .filter((f) => listedAt.get(f.asset.id) === f.asset.path)
+        .map((f) => f.asset.id);
       // The settings decided again against the file on disk now: spent
       // when it carries them, kept when it does not (M1b-2 milestone
       // review #1); a key move below carries what is kept.
@@ -1767,6 +1936,45 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       return keepFile(s, file);
     },
     holdsFile: (id) => !filesNotKept.has(id),
+    swapAsset(asset, blob) {
+      const id = asset.id;
+      const prev = files.get(id);
+      const onDisk = opened?.assets.find((a) => a.id === id);
+      // What stands for the id when no smaller file does: the entry's own
+      // original, the entry itself, or the file on disk's record.
+      const original =
+        prev?.original ??
+        (prev !== undefined
+          ? { asset: prev.asset, blob: prev.blob }
+          : onDisk === undefined
+            ? undefined
+            : { asset: onDisk });
+      if (original === undefined) return Promise.resolve(space === null);
+      const next: DraftFile | undefined =
+        asset.path !== original.asset.path
+          ? { asset, blob, original }
+          : original.blob === undefined
+            ? undefined
+            : { asset: original.asset, blob: original.blob };
+      const before = prev === undefined ? [] : keysOf(prev);
+      if (next === undefined) files.delete(id);
+      else files.set(id, next);
+      filesHere.add(id);
+      const s = space;
+      if (s === null) return Promise.resolve(true);
+      const after = next === undefined ? [] : keysOf(next);
+      const put =
+        next !== undefined &&
+        (next.original !== undefined || !before.includes(bytesKey(next)))
+          ? { key: bytesKey(next), blob: next.blob }
+          : undefined;
+      return swapIn(
+        s,
+        put,
+        before.filter((key) => !after.includes(key)),
+      );
+    },
+    holdsOriginal: (id) => files.get(id)?.original?.blob !== undefined,
     saveSettings(settings) {
       settingsWanted = settings;
       // Kept while the file on disk differs, or a build wrote other

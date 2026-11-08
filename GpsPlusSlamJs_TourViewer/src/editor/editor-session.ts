@@ -294,7 +294,8 @@ interface EditorRestore {
   readonly pictures?: ReadonlyMap<string, Blob>;
   /** The files brought in there, with their bytes: listed again first,
    *  so the objects naming them come back (one naming a file held
-   *  nowhere does not). */
+   *  nowhere does not). One the written tour lists is a smaller file for
+   *  that asset: put back as a swap (`assetOptimized`), after the rest. */
   readonly files?: readonly {
     readonly asset: TourAsset;
     readonly blob: Blob;
@@ -310,9 +311,11 @@ export interface AssetSwap {
   readonly height?: number;
 }
 
-/** A smaller file now stands in for the asset's (`swapAsset`). */
+/** A smaller file now stands in for the asset's (`swapAsset`).
+ *  `backedUp` false: the draft could not keep it (the page says so). */
 export interface EditorSwapped {
   readonly kind: "swapped";
+  readonly backedUp: boolean;
 }
 
 /** A file brought into the tour (`addFile`): its asset - the one the tour
@@ -481,6 +484,10 @@ export interface EditorSessionDraft extends DraftObjectWrites {
   /** A file brought in, with its bytes: written before the record that
    *  names it; whether it landed. */
   saveAsset(asset: TourAsset, blob: Blob): Promise<boolean>;
+  /** A smaller file for an asset (its new record), under the same id:
+   *  written before the table and the document take it; whether it
+   *  landed. */
+  swapAsset(asset: TourAsset, blob: Blob): Promise<boolean>;
 }
 
 /** One image a tour may show as its cover (W2): a placed photo, or an
@@ -746,10 +753,16 @@ export interface EditorSession {
    *  item, narration or step changes): kept in the files table and listed
    *  at its new path (`assetOptimized`, no step). The next save writes it
    *  and removes the old entry; one already running writes the original.
-   *  Refused in words, changing nothing, for an id the tour does not
-   *  hold, a path the format would refuse for that asset's kind, or the
-   *  record the tour already lists. */
-  swapAsset(id: string, file: AssetSwap): EditorSwapped | EditorRefusal;
+   *  Written to the draft first, then the table and the document in one
+   *  synchronous step (the table is by id: a save between them would
+   *  write the new bytes under the old path). Refused in words, changing
+   *  nothing, for an id the tour does not hold, a path the format would
+   *  refuse for that asset's kind, or the record the tour already lists -
+   *  judged before the draft's write and again after it. */
+  swapAsset(
+    id: string,
+    file: AssetSwap,
+  ): Promise<EditorSwapped | EditorRefusal>;
   /** Put a draft's work back by the session's own rules (M6 E2c): an
    *  object the tour carries gets the draft's version, a deletion its
    *  tombstone; live work on an id wins, and an id the tour no longer
@@ -1238,26 +1251,49 @@ export function createEditorSession(input: {
     );
   }
 
-  /** `swapAsset`: judged by the document's own rule first, so a refused
-   *  file never reaches the table. */
-  function swapAsset(
+  /** A swap judged by the document's own rule, with the record it makes;
+   *  null when the document refuses it (or this open is replaced). */
+  function judgedSwap(
     id: string,
-    { blob, path, width, height }: AssetSwap,
-  ): EditorSwapped | EditorRefusal {
+    { path, width, height }: Omit<AssetSwap, "blob">,
+  ): {
+    readonly action: ReturnType<typeof tourDocumentActions.assetOptimized>;
+    readonly asset: TourAsset;
+  } | null {
     const before = mine();
-    if (before === null) return { kind: "refused", reason: SWAP_REFUSED };
+    if (before === null) return null;
     const action = tourDocumentActions.assetOptimized({
       id,
       path,
       ...(width === undefined ? {} : { width }),
       ...(height === undefined ? {} : { height }),
     });
-    if (tourDocumentReducer(before, action) === before) {
-      return { kind: "refused", reason: SWAP_REFUSED };
-    }
-    files.set(id, blob);
-    store.dispatch(action);
-    return { kind: "swapped" };
+    const after = tourDocumentReducer(before, action);
+    const asset = after.addedAssets.find((a) => a.id === id);
+    return after === before || asset === undefined ? null : { action, asset };
+  }
+
+  const swapRefused: EditorRefusal = { kind: "refused", reason: SWAP_REFUSED };
+
+  /** `swapAsset`: judged first, so a refused file never reaches the draft
+   *  or the table. */
+  async function swapAsset(
+    id: string,
+    file: AssetSwap,
+  ): Promise<EditorSwapped | EditorRefusal> {
+    const judged = judgedSwap(id, file);
+    if (judged === null) return swapRefused;
+    // Without a draft the swap is taken before the first await: a save
+    // started right after the call sees it.
+    const backedUp =
+      draft === undefined
+        ? true
+        : await draft.swapAsset(judged.asset, file.blob);
+    const final = draft === undefined ? judged : judgedSwap(id, file);
+    if (final === null) return swapRefused;
+    files.set(id, file.blob);
+    store.dispatch(final.action);
+    return { kind: "swapped", backedUp };
   }
 
   /** `addFile`: read, kept in the table and the draft, then listed. */
@@ -2090,7 +2126,15 @@ export function createEditorSession(input: {
         work.pictures?.get(object.id) ?? files.get(object.id);
       // The files the offer brings, and the objects naming files held
       // nowhere left out (the restore's own rule, `objectAssetsHeld`).
-      const offeredFiles = work.files ?? [];
+      // A file the written tour lists already is a smaller file for that
+      // asset: a swap, put back after the rest.
+      const writtenIds = new Set(written().assets.map((a) => a.id));
+      const offeredSwaps = (work.files ?? []).filter((f) =>
+        writtenIds.has(f.asset.id),
+      );
+      const offeredFiles = (work.files ?? []).filter(
+        (f) => !writtenIds.has(f.asset.id),
+      );
       const assets = offeredFiles.map((f) => f.asset);
       const heldIds = new Set(
         [...written().assets, ...state.addedAssets, ...assets].map((a) => a.id),
@@ -2204,7 +2248,17 @@ export function createEditorSession(input: {
           }),
         );
       }
-      return { changed, deleted: deleted.length };
+      // Each by the document's own rule, as `swapAsset` judges it; the
+      // draft holds it already.
+      let swapped = 0;
+      for (const { asset, blob } of offeredSwaps) {
+        const judged = judgedSwap(asset.id, asset);
+        if (judged === null) continue;
+        files.set(asset.id, blob);
+        store.dispatch(judged.action);
+        swapped += 1;
+      }
+      return { changed: changed + swapped, deleted: deleted.length };
     },
     save(options) {
       // The document's save (`tour-document-save.ts`): a thunk, queued with

@@ -22,7 +22,11 @@ import { openTourFile, type TourSession } from "../tour-session.js";
 import { createTourViewerStore } from "../tour-viewer-session.js";
 import { tourOf } from "../test-support/tour-of.js";
 import { zipBlobEntryNames } from "../zip-blob.js";
-import { createEditorSession, type EditorSession } from "./editor-session.js";
+import {
+  createEditorSession,
+  type EditorSession,
+  type EditorSessionDraft,
+} from "./editor-session.js";
 
 const ESSAY: TourObject = {
   id: "t1",
@@ -100,8 +104,11 @@ describe("swapAsset: the smaller file replaces the original", () => {
     expect(first.names).toContain(wav);
 
     expect(
-      editor.swapAsset(id, { blob: new Blob(["OggS-small"]), path: opus }),
-    ).toEqual({ kind: "swapped" });
+      await editor.swapAsset(id, {
+        blob: new Blob(["OggS-small"]),
+        path: opus,
+      }),
+    ).toEqual({ kind: "swapped", backedUp: true });
     expect(await editor.contentOf(opus)?.text()).toBe("OggS-small");
 
     const second = await saved((await editor.save({ keepScan: false })).blob);
@@ -123,7 +130,7 @@ describe("swapAsset: the smaller file replaces the original", () => {
     const session = await openedTour();
     const editor = editorOf(session);
     const { id, wav, opus } = await narrated(editor);
-    editor.swapAsset(id, { blob: new Blob(["OggS-small"]), path: opus });
+    await editor.swapAsset(id, { blob: new Blob(["OggS-small"]), path: opus });
     const { names } = await saved(
       (await editor.save({ keepScan: false })).blob,
     );
@@ -141,8 +148,12 @@ describe("swapAsset: the smaller file replaces the original", () => {
     const editor = editorOf(session);
     const { id, wav, opus } = await narrated(editor);
     const running = editor.save({ keepScan: false });
-    editor.swapAsset(id, { blob: new Blob(["OggS-small"]), path: opus });
+    const swap = editor.swapAsset(id, {
+      blob: new Blob(["OggS-small"]),
+      path: opus,
+    });
     const first = await saved((await running).blob);
+    expect(await swap).toMatchObject({ kind: "swapped" });
     expect(first.names).toContain(wav);
     expect(first.names).not.toContain(opus);
     const next = await saved((await editor.save({ keepScan: false })).blob);
@@ -157,18 +168,88 @@ describe("swapAsset: the smaller file replaces the original", () => {
     const { id, wav } = await narrated(editor);
     const ghost = "f".repeat(64);
     expect(
-      editor.swapAsset(ghost, {
+      await editor.swapAsset(ghost, {
         blob: new Blob(["x"]),
         path: `content/${ghost}.opus`,
       }),
     ).toMatchObject({ kind: "refused" });
     expect(
-      editor.swapAsset(id, {
+      await editor.swapAsset(id, {
         blob: new Blob(["x"]),
         path: `content/${id}.webp`,
       }),
     ).toMatchObject({ kind: "refused" });
     expect(await editor.contentOf(wav)?.text()).toBe("RIFF-original-voice");
+    await session.close();
+  });
+});
+
+describe("swapAsset with a draft, and a restore of a swap", () => {
+  // Why: the draft is what brings a swap back after a crash, so it is
+  // written first; the table and the document take the swap only once the
+  // draft answered, together, and the page is told when it was not kept.
+  it("writes the draft first, then the table and the document take it", async () => {
+    const session = await openedTour();
+    const seen: string[] = [];
+    const late: { editor?: EditorSession } = {};
+    const draft: EditorSessionDraft = {
+      saveObject: () => Promise.resolve(true),
+      saveDeletion: () => Promise.resolve(true),
+      forgetDeletion: () => Promise.resolve(true),
+      forgetObject: () => Promise.resolve(),
+      saveSettings: () => Promise.resolve(true),
+      saveAsset: () => Promise.resolve(true),
+      swapAsset: (asset) => {
+        const taken = late.editor?.contentOf(asset.path) !== undefined;
+        seen.push(`${asset.path} ${taken ? "taken" : "not yet"}`);
+        return Promise.resolve(false);
+      },
+    };
+    const editor = createEditorSession({
+      session,
+      manifest: MANIFEST,
+      levels: new Map(),
+      store: createTourViewerStore(),
+      draft,
+    });
+    late.editor = editor;
+    const { id, opus } = await narrated(editor);
+    expect(
+      await editor.swapAsset(id, {
+        blob: new Blob(["OggS-small"]),
+        path: opus,
+      }),
+    ).toEqual({ kind: "swapped", backedUp: false });
+    expect(seen).toEqual([`${opus} not yet`]);
+    expect(await editor.contentOf(opus)?.text()).toBe("OggS-small");
+    await session.close();
+  });
+
+  // Why: after a reload the draft offers a smaller file for an asset the
+  // written tour already lists. Put back as an ordinary file it would be
+  // skipped (the id is listed), and the next save would write the original
+  // again; put back as a swap, it counts as a change and is written.
+  it("a restore puts a smaller file for a written asset back as a swap", async () => {
+    const session = await openedTour();
+    const editor = editorOf(session);
+    const { id, wav, opus } = await narrated(editor);
+    await editor.save({ keepScan: false });
+    expect(
+      editor.restore({
+        objects: [],
+        deleted: [],
+        files: [
+          {
+            asset: { id, path: opus, kind: "audio" },
+            blob: new Blob(["OggS-small"]),
+          },
+        ],
+      }),
+    ).toEqual({ changed: 1, deleted: 0 });
+    const next = await saved((await editor.save({ keepScan: false })).blob);
+    expect(next.names).toContain(opus);
+    expect(next.names).not.toContain(wav);
+    expect(entryText(next.bytes, opus)).toBe("OggS-small");
     await session.close();
   });
 });

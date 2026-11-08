@@ -354,3 +354,17 @@ longer claimed (PR #626 1); the pre-save file reopened in this tab right
 after a key move, not "another tab" (PR #626 2). A
 scoped mutation pass (12 mutants of the rules above) killed all 12. The page's walks are in
 `playwright-tests/editor.spec.js` (the E2c block).
+
+## Smaller files (`swapAsset`, `holdsOriginal`)
+
+A smaller file replaces an asset's bytes under the same id. The key lifecycle:
+
+- `asset:<id>` holds a plain file's bytes (a file brought in).
+- A swapped entry keeps its own bytes under `asset:<id>.<ext>` (the new path's extension). The `assets` list names it as `{ ...asset, original, originalKept }`.
+  - For a file brought in, the original's bytes stay under `asset:<id>` (`originalKept: true`), and "use the original" is offered (`holdsOriginal`).
+  - For an asset of the file on disk, the original is in that file; nothing is kept (`originalKept: false`).
+- Write order of a swap: the new bytes, then the list (taken when the write is queued, never when it runs), then the keys only the previous entry used. A crash between any two writes leaves every listed record with the bytes of its own path (`editor-draft-swap.test.ts`).
+- Back at the original's path: the plain entry stands again (no put), or, for an asset of the file on disk, the entry goes.
+- `landed` spends an entry only when the written tour lists the id AT the entry's path; then every key goes. Listed at the other path (a save already running when the swap came wrote the original), everything is kept.
+- `open` skips a listed entry only when the opened file lists the same id and path; an entry whose smaller bytes are gone falls back to its kept original (told: `unreadDraft`). A swap of an asset the opened file carries makes the offer non-null and counts as a change in its words. `tidyFiles` and `dropFiles` use every key of each entry; a key move carries the original's bytes too.
+- Tests: `editor-draft-swap.test.ts`.
