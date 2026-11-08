@@ -37,7 +37,7 @@ interface BlockFieldBase {
 }
 
 /** A text to type, counted against the format's cap. */
-export interface BlockTextField extends BlockFieldBase {
+interface BlockTextField extends BlockFieldBase {
   /** The most it takes, in `unit` (the format's cap). */
   readonly max: number;
   /** How the cap counts: characters, or UTF-16 units (a long text's
@@ -48,7 +48,7 @@ export interface BlockTextField extends BlockFieldBase {
 
 /** A number to type, with its unit (`FieldSpec` `number`). No cap: its
  *  bounds are the format's, refused on the write (`blockFieldEdit`). */
-export interface BlockNumberField extends BlockFieldBase {
+interface BlockNumberField extends BlockFieldBase {
   readonly number: { readonly unit: string };
   readonly max?: undefined;
   readonly unit?: undefined;
