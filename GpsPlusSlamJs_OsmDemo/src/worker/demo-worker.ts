@@ -306,8 +306,11 @@ function buildMesh(
   // plan 2026-10-05-0040 §14 L3). BARRIERS ARE DRAWN, and drawn WITH the
   // buildings (DEC-R11-2, DEC-R11-11): `nav/obstacles.ts` has blocked agents
   // with these since #259, and an NPC dodging geometry the viewer cannot see
-  // demonstrates nothing. No toggle and no distinct colour: a wall is part of
-  // the built world, so it goes through `buildingColour` like the rest.
+  // demonstrates nothing. No toggle: a wall is part of the built world. Each
+  // barrier kind has its own muted colour (`barrierColour`) since the city
+  // objects plan 2026-11-07-2315 M1 (the owner O1 choice), which replaced
+  // DEC-R11-11 "no distinct colour"; barriers still ride in the building
+  // chunks.
   // THE ROADS too, since 2026-10-11 (round-4 plan 2026-10-11-0122 DEC-R4-7:
   // the globe draws the same roads): PER-VERTEX terrain, like the plates (a
   // road is a long surface, and one sample would cut into the hill at one

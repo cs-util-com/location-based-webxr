@@ -6,6 +6,13 @@ The colour of a drawn barrier (wall, city wall, retaining wall, fence,
 hedge): the O1 quiet-greens look the owner chose (city objects plan
 2026-11-07-2315 M1).
 
+**Supersedes DEC-R11-11 in part.** DEC-R11-11 drew barriers with no
+distinct colour (through `buildingColour`, so `0xc8ccd8` for every wall and
+fence). The owner O1 choice (2026-11-07) gives each kind its own colour.
+The rest of DEC-R11-11 stands: barriers have no toggle and ride in the
+building chunks, so the AR shell and the colour-space conversion apply to
+them as to buildings.
+
 ## Public API
 
 - `barrierColour(tags): Rgb` - packed sRGB `0xrrggbb`.
