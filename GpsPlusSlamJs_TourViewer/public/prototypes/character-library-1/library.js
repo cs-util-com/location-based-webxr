@@ -70,7 +70,7 @@
       localStorage.setItem(k, v);
     } catch (e) {
       if (e && e.name === "QuotaExceededError")
-        throw new Error("this browser's storage is full");
+        throw new Error("this browser's storage is full", { cause: e });
       mem.set(k, v);
     }
   }
@@ -84,7 +84,9 @@
   function lsDel(k) {
     try {
       localStorage.removeItem(k);
-    } catch {}
+    } catch {
+      // storage unavailable: nothing to remove
+    }
     mem.delete(k);
   }
   const blobToDataUrl = (b) =>
@@ -320,7 +322,7 @@
   async function exchangeFile(id) {
     const f = await files(id);
     const u8 = new Uint8Array(await f.frames.arrayBuffer());
-    const { libraryId, ...rest } = f.record;
+    const { libraryId: _libraryId, ...rest } = f.record;
     const out = withText(u8, TEXT_KEY, asciiJson(rest));
     const safe = f.record.name.replace(/[^\w\- ]+/g, "").trim() || "character";
     return new File([out], safe + ".png", { type: "image/png" });
@@ -993,7 +995,9 @@
     try {
       for (const k of Object.keys(localStorage))
         if (k.startsWith("charlib1:")) localStorage.removeItem(k);
-    } catch {}
+    } catch {
+      // storage unavailable: nothing to remove
+    }
   }
 
   // ------------------------------------------------------------ small words

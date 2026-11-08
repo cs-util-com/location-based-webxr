@@ -1,3 +1,4 @@
+/* global CharLib */
 // Throwaway prototype: small UI pieces shared by the editor page and the
 // character maker: toasts, a button's in-progress state, list thumbnails and
 // the "Import character..." flow (refuse with words, or ask for a name).
@@ -91,7 +92,9 @@
     try {
       const f = await CharLib.files(id);
       if (f.image) url = (await cropThumb(f.image)).toDataURL("image/png");
-    } catch {}
+    } catch {
+      // no thumbnail: the list shows the name only
+    }
     thumbs.set(id, url);
     return url;
   }
