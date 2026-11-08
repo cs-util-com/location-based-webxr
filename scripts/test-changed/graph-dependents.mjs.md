@@ -19,5 +19,8 @@
 - Example: a change to `Fw/src/a.ts` that only `Tour` imports gives
   `{ dirs: ['Tour'], line: 'test-changed: the import graph reaches Tour (1 unit test file(s)); other dependents run nothing' }`.
 - Tests: `graph-dependents.test.mjs`, end to end on a throwaway git
-  workspace: the emitted command is `--filter tour`, a test-only change runs
-  no dependent, a missing root falls back to every dependent.
+  workspace: the emitted command is `--filter tour` (plus `rec`, whose
+  Recorder-shaped tsconfig base includes every framework source), a
+  test-only change (a framework test file and a markdown sidecar under that
+  include glob) runs no dependent, a missing root falls back to every
+  dependent.

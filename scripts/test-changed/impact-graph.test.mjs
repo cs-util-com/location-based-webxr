@@ -114,6 +114,22 @@ describe('impactOf: edges', () => {
     });
   });
 
+  // Why: the Recorder's vitest include lists src/**/*.spec.ts. A spec under
+  // src is a unit test; one elsewhere is a Playwright spec (the design
+  // system keeps its browser specs beside its pages).
+  it('counts a *.spec file under src as a unit test, and a spec elsewhere as none', () => {
+    const g = buildImpactGraph({
+      packages: PACKAGES,
+      files: ['Tour/src/x.ts', 'Tour/src/x.spec.ts', 'Tour/pages/x.spec.mjs'],
+      texts: new Map([
+        ['Tour/src/x.ts', ''],
+        ['Tour/src/x.spec.ts', "import './x';"],
+        ['Tour/pages/x.spec.mjs', "import '../src/x';"],
+      ]),
+    });
+    expect(impactOf(g, ['Tour/src/x.ts']).tests).toEqual(['Tour/src/x.spec.ts']);
+  });
+
   it('accepts backslash paths', () => {
     expect(impact(['Fw\\src\\a.test.ts']).tests).toEqual(['Fw/src/a.test.ts']);
   });
@@ -155,6 +171,36 @@ describe('impactOf: fallbacks to a full suite', () => {
     ]);
   });
 
+  // Why: the Recorder's and the globe's vitest configs alias the framework
+  // package to its src folder. Read as an import, that alias made each config
+  // import the framework index, so any change that reached the index ran both
+  // packages' whole suites (a change to the Osm index reached 12 packages).
+  // An alias says how the package's own files resolve a specifier; it loads
+  // nothing by itself.
+  it('a config alias is a resolution rule for its package, not an import of the config', () => {
+    const g = buildImpactGraph({
+      packages: [...PACKAGES, { dir: 'Rec', name: 'rec', deps: ['fw'], exports: undefined }],
+      files: [...FILES, 'Rec/config/vitest.config.ts', 'Rec/src/r.ts', 'Rec/src/r.test.ts', 'Rec/src/s.test.ts', 'Other/src/shared/k.ts'],
+      texts: new Map([
+        ...Object.entries(TEXTS),
+        [
+          'Rec/config/vitest.config.ts',
+          "export default defineConfig({ resolve: { alias: {\n  'fw': fileURLToPath(new URL('../../Fw/src', import.meta.url)),\n  \"shared\": fileURLToPath(\n    new URL(\"../../Other/src/shared\", import.meta.url)\n  ),\n} } });",
+        ],
+        ['Rec/src/r.ts', "import { a } from 'fw';"],
+        ['Rec/src/r.test.ts', "import './r';"],
+        // `shared` is no workspace package: only the alias resolves it.
+        ['Rec/src/s.test.ts', "import { k } from 'shared/k';"],
+        ['Other/src/shared/k.ts', ''],
+      ]),
+    });
+    const r = impactOf(g, ['Fw/src/a.ts']);
+    expect(r.fullSuite).toEqual([]);
+    expect(r.tests).toContain('Rec/src/r.test.ts');
+    expect(r.tests).not.toContain('Rec/src/s.test.ts');
+    expect(impactOf(g, ['Other/src/shared/k.ts'])).toMatchObject({ tests: ['Rec/src/s.test.ts'], fullSuite: [] });
+  });
+
   it('a module whose name merely ends in setup is not a setup file', () => {
     const g = buildImpactGraph({
       packages: PACKAGES,
@@ -189,6 +235,28 @@ describe('impactOf: fallbacks to a full suite', () => {
     }
   });
 
+  // Why: the Recorder's coverage exclude names 'src/main.ts', which imports
+  // the framework index; read as a loaded file it ran the Recorder's whole
+  // suite on every change behind that index. Only setupFiles and globalSetup
+  // load a file by its path.
+  it('a path a config names outside setupFiles and globalSetup (a coverage exclude) loads nothing', () => {
+    const g = buildImpactGraph({
+      packages: PACKAGES,
+      files: ['Tour/config/vitest.config.ts', 'Tour/src/main.ts', 'Tour/src/global.ts', 'Tour/src/main.test.ts'],
+      texts: new Map([
+        [
+          'Tour/config/vitest.config.ts',
+          "export default { test: { globalSetup: 'src/global.ts', coverage: { exclude: ['src/**/*.test.ts', 'src/main.ts'] } } };",
+        ],
+        ['Tour/src/main.ts', ''],
+        ['Tour/src/global.ts', ''],
+        ['Tour/src/main.test.ts', "import './main';"],
+      ]),
+    });
+    expect(impactOf(g, ['Tour/src/main.ts'])).toEqual({ tests: ['Tour/src/main.test.ts'], packages: ['Tour'], fullSuite: [] });
+    expect(impactOf(g, ['Tour/src/global.ts']).fullSuite.map((f) => f.dir)).toEqual(['Tour']);
+  });
+
   it('a deleted markdown file stays ignored', () => {
     expect(full(['Fw/docs/gone.md'])).toEqual([]);
   });
@@ -221,6 +289,47 @@ describe('impactOf: type-level edges', () => {
     const g = graphWith({ 'Rec/tsconfig.app.json': '{ "files": ["../Fw/src/utils/u.ts"] }' });
     expect(impactOf(g, ['Fw/src/utils/u.ts']).packages).toContain('Rec');
     expect(impactOf(g, ['Fw/src/a.ts']).packages).not.toContain('Rec');
+  });
+
+  // Why: the Recorder's tsconfig.base.json includes ../Fw/src/**/*.ts with no
+  // exclude of its own, so a framework test file or a markdown sidecar reached
+  // the Recorder although no program it compiles holds either: the configs
+  // that extend the base (app, vitest) exclude the framework tests.
+  it('an include glob matches its own extension, never a sidecar or a test its programs exclude', () => {
+    const g = graphWith({
+      'Fw/src/a.ts.md': '',
+      'Fw/src/b.js': '',
+      'Fw/src/helper.ts': '',
+      'Rec/tsconfig.base.json': '{ "include": ["src/**/*.ts", "../Fw/src/**/*.ts"] }',
+      'Rec/tsconfig.app.json': '{ "extends": "./tsconfig.base.json", "exclude": ["../Fw/src/**/*.test.ts", "../Fw/src/helper.ts"] }',
+      'Rec/tsconfig.vitest.json': '{ "extends": "./tsconfig.base", "exclude": ["../Fw/src/**/*.test.ts"] }',
+      'Rec/tsconfig.json': '{ "files": [], "references": [{ "path": "./tsconfig.app.json" }, { "path": "./tsconfig.vitest.json" }] }',
+    });
+    expect(impactOf(g, ['Fw/src/a.ts']).packages).toContain('Rec');
+    // Excluded by one program only: the vitest program still compiles it.
+    expect(impactOf(g, ['Fw/src/helper.ts']).packages).toContain('Rec');
+    for (const path of ['Fw/src/a.test.ts', 'Fw/src/a.ts.md', 'Fw/src/b.js']) {
+      expect(impactOf(g, [path]).packages, path).not.toContain('Rec');
+    }
+  });
+
+  it("honours a tsconfig's own exclude and an inherited one, which an own exclude replaces (as in tsc)", () => {
+    const base = '{ "include": ["../Fw/src/**/*.ts"], "exclude": ["../Fw/src/**/*.test.ts"] }';
+    // A referenced base is a program of its own.
+    const refs = '{ "references": [{ "path": "./tsconfig.base.json" }, { "path": "./tsconfig.app.json" }] }';
+    const inherits = graphWith({
+      'Rec/tsconfig.base.json': base,
+      'Rec/tsconfig.app.json': '{ "extends": "./tsconfig.base.json" }',
+      'Rec/tsconfig.json': refs,
+    });
+    expect(impactOf(inherits, ['Fw/src/a.test.ts']).packages).not.toContain('Rec');
+    expect(impactOf(inherits, ['Fw/src/a.ts']).packages).toContain('Rec');
+    const replaces = graphWith({
+      'Rec/tsconfig.base.json': base,
+      'Rec/tsconfig.app.json': '{ "extends": "./tsconfig.base.json", "exclude": ["../Fw/src/utils/**"] }',
+      'Rec/tsconfig.json': refs,
+    });
+    expect(impactOf(replaces, ['Fw/src/a.test.ts']).packages).toContain('Rec');
   });
 
   it('follows an import inside a declaration file, and resolves an import to one', () => {

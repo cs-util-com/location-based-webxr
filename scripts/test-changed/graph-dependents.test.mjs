@@ -48,6 +48,11 @@ beforeAll(() => {
   write('Dts/src/global.d.ts', "import type { b } from 'fw/b';\n");
   write('Rec/package.json', JSON.stringify({ name: 'rec' }));
   write('Rec/tsconfig.json', JSON.stringify({ files: ['../Fw/src/b.ts'] }));
+  // The Recorder's shape: a base that includes all framework sources, and the
+  // programs that extend it excluding the framework tests.
+  write('Rec/tsconfig.base.json', JSON.stringify({ include: ['src/**/*.ts', '../Fw/src/**/*.ts'] }));
+  write('Rec/tsconfig.app.json', JSON.stringify({ extends: './tsconfig.base.json', exclude: ['../Fw/src/**/*.test.ts'] }));
+  write('Fw/src/a.ts.md', '# a\n');
   git(['add', '.']);
   git(['commit', '-q', '-m', 'base']);
 });
@@ -83,8 +88,9 @@ describe('the fast gate on a real workspace', () => {
     write('Fw/src/a.ts', 'export const a = 2;\n');
     const { selection, dependents, commands } = fastGate();
     expect(selection.mode).toBe('packages');
-    expect(dependents.dirs).toEqual(['Tour']);
-    expect(dependents.line).toMatch(/reaches Tour \(1 unit test file/);
+    // Rec compiles every framework source (its tsconfig.base.json include).
+    expect(dependents.dirs).toEqual(['Rec', 'Tour']);
+    expect(dependents.line).toMatch(/reaches Rec, Tour \(1 unit test file/);
     expect(commands.some((c) => c.includes('--filter tour test'))).toBe(true);
     expect(commands.some((c) => c.includes('other') || c.includes('...fw'))).toBe(false);
     git(['checkout', '-q', '--', 'Fw/src/a.ts']);
@@ -101,13 +107,17 @@ describe('the fast gate on a real workspace', () => {
     git(['checkout', '-q', '--', 'Fw/src/b.ts']);
   });
 
+  // Why: a framework test file and a markdown sidecar sit under Rec's include
+  // glob, but no program of Rec compiles either (its programs exclude the
+  // framework tests, and markdown is no TypeScript).
   it('runs no dependent for a test-only change', () => {
     write('Fw/src/a.test.ts', "import { a } from './a';\n// more\n");
+    write('Fw/src/a.ts.md', '# a, changed\n');
     const { dependents, commands } = fastGate();
     expect(dependents.dirs).toEqual([]);
     expect(dependents.line).toMatch(/no other package/);
     expect(commands.filter((c) => /--filter (tour|other)\b|\.\.\.fw/.test(c))).toEqual([]);
-    git(['checkout', '-q', '--', 'Fw/src/a.test.ts']);
+    git(['checkout', '-q', '--', 'Fw/src/a.test.ts', 'Fw/src/a.ts.md']);
   });
 
   it('falls back to every dependent when the graph cannot be built', () => {
