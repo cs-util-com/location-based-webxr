@@ -524,6 +524,12 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
   history no longer names them. The stations are the document's as they
   are, and a write assigns nothing. The creator's station HUD (`creator-stations.ts`)
   reads its stations from it.
+- `historyStoryAssetIds(state)` - the part of `historyAssetIds` the
+  undo and redo steps' story blocks name (`keepStoryAssets` of every
+  write): kept even where it is a captured photo's own image, so a photo
+  moved into a story that was then deleted keeps its file for the undo
+  that brings the story back. A cover or card image does not keep a
+  deleted photo's image.
 - `historyTimingEntries(state)` - the read-along entries
   (`timing/<blockId>.json`, relative to the tour's folder) the undo and
   redo steps' long texts name, story or free. Every write keeps them

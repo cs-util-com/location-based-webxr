@@ -39,6 +39,7 @@ import {
 } from "../test-support/memory-draft.js";
 import { stationContent, storyOf } from "../test-support/station-content.js";
 import { tourOf } from "../test-support/tour-of.js";
+import { withReferencedAssets } from "../tour-content.js";
 import { createEditorDraft } from "./editor-draft.js";
 import { createEditorSession } from "./editor-session.js";
 import type { ChildMoveTo } from "../station-children-moves.js";
@@ -245,184 +246,212 @@ describe("the tree's story commands", () => {
   // the draft - so asset safety is checked, not only true by construction.
   it("keep the tour writable after every step, each edit one step an undo takes back exactly, and a draft reload equals it (property)", async () => {
     const { session, manifest } = await opened();
-    await fc.assert(
-      fc.asyncProperty(
-        fc.array(command, { maxLength: 14, size: "max" }),
-        async (commands) => {
-          const store = createTourViewerStore();
-          const stores = memoryDraftStores();
-          const draft = createEditorDraft({
-            openStore: stores.open,
-            holdLock: freeLocks,
-            noBackup: () => undefined,
-          });
-          await draft.open(K, manifest);
-          const editor = createEditorSession({
-            session,
-            manifest,
-            levels: new Map(),
-            store,
-            draft: draft.writes(),
-          });
-          const tour = () => manifestToWrite(store.getState().tourDocument);
-          /** The tours before each edit an undo can take back, and before
-           *  each undo a redo can take back again. */
-          const past: (TourManifest | null)[] = [];
-          const future: (TourManifest | null)[] = [];
-          /** Whether a move of a station item ran (see `freeByName`). */
-          let moved = false;
-          for (const c of commands) {
-            const stories = storiesIn(tour());
-            const was = tour();
-            const revision = editor.revision();
-            /** An add whose station or story is there: it must be a
-             *  step, so a silently refused add cannot pass as a no-op. */
-            let mustStep = false;
-            switch (c.kind) {
-              case "add": {
-                const station = round(tour()?.stations ?? [], c.at);
-                if (station !== undefined) {
-                  mustStep = true;
-                  editor.addStory(station.id);
-                }
-                break;
-              }
-              case "rename": {
-                const story = round(stories, c.at);
-                if (story !== undefined) editor.renameStory(story.id, c.title);
-                break;
-              }
-              case "delete": {
-                const story = round(stories, c.at);
-                if (story !== undefined) editor.deleteStory(story.id);
-                break;
-              }
-              case "addChild": {
-                const story = round(stories, c.at);
-                if (story !== undefined) {
-                  mustStep = true;
-                  editor.addToStory(story.id, c.make);
-                }
-                break;
-              }
-              case "deleteChild": {
-                const child = round(
-                  stories.flatMap((s) => s.children),
-                  c.at,
-                );
-                if (child !== undefined) editor.deleteStoryChild(child.id);
-                break;
-              }
-              case "move": {
-                // Any item or story of any station, to any place of its
-                // station: what the format refuses is refused, and what
-                // it takes is one step.
-                const items = (tour()?.stations ?? []).flatMap((st) =>
-                  st.children.flatMap((ch) =>
-                    ch.kind === "story"
-                      ? [
-                          { st, id: ch.id },
-                          ...ch.children.map((e) => ({ st, id: e.id })),
-                        ]
-                      : [{ st, id: ch.id }],
-                  ),
-                );
-                const item = round(items, c.at);
-                if (item === undefined) break;
-                const places: ChildMoveTo[] = [
-                  { place: "free" },
-                  { place: "stories", index: 0 },
-                  ...tourStories(item.st).flatMap((story) => [
-                    { place: "story" as const, story: story.id, index: 0 },
-                    {
-                      place: "story" as const,
-                      story: story.id,
-                      index: story.children.length,
-                    },
-                  ]),
-                ];
-                const to = round(places, c.to);
-                if (to !== undefined) {
-                  const out = editor.moveChild(item.id, to);
-                  mustStep = out.kind === "moved";
-                  if (mustStep) moved = true;
-                }
-                break;
-              }
-              case "undo":
-                editor.undo();
-                break;
-              case "redo":
-                editor.redo();
-                break;
-            }
-            const now = tour();
-            if (now === null) throw new Error(`no tour after ${c.kind}`);
-            const rose = editor.revision() - revision;
-            expect(mustStep ? rose : 1, `${c.kind} refused`).toBe(1);
-            // An undo or a redo with nothing to take back is the only
-            // command that may leave the revision as it was.
-            const owed =
-              c.kind === "undo"
-                ? past.length
-                : c.kind === "redo"
-                  ? future.length
-                  : 0;
-            expect({ rose, owed }).toEqual(
-              rose === 0 ? { rose: 0, owed: 0 } : { rose: 1, owed },
-            );
-            let expected: TourManifest | null | undefined = was;
-            if (rose === 1 && c.kind === "undo") {
-              expected = past.pop();
-              future.push(was);
-            } else if (rose === 1 && c.kind === "redo") {
-              expected = future.pop();
-              past.push(was);
-            } else if (rose === 1) {
-              expected = now;
-              past.push(was);
-              future.length = 0;
-            }
-            expect(now).toEqual(expected);
-            expect(() =>
-              parseTourManifest(JSON.parse(serializeTourManifest(now))),
-            ).not.toThrow();
-          }
-          const before = await writtenJson(
-            (await editor.save({ keepScan: false })).blob,
-          );
-          await draft.idle();
-          draft.close();
-
-          const again = createEditorDraft({
-            openStore: stores.open,
-            holdLock: freeLocks,
-            noBackup: () => undefined,
-          });
-          const { offer } = await again.open(K, manifest);
-          const reloaded = createEditorSession({
-            session,
-            manifest,
-            levels: new Map(),
-            draft: again.writes(),
-          });
-          if (offer !== null && offer !== undefined) reloaded.restore(offer);
-          const after = await writtenJson(
-            (await reloaded.save({ keepScan: false })).blob,
-          );
-          again.close();
-          const read = moved ? freeByName : parseTourManifest;
-          expect(read(after)).toEqual(read(before));
-          expect(before.assets).toEqual(manifest.assets);
-        },
+    await expect(
+      fc.assert(
+        fc.asyncProperty(
+          fc.array(command, { maxLength: 14, size: "max" }),
+          commandsKeepTheTour(session, manifest),
+        ),
+        { numRuns: 40 },
       ),
-      { numRuns: 40 },
-    );
+    ).resolves.toBeUndefined();
     await session.close();
     // Each run drives a session, two drafts and two saves: more than the
     // default 5 s once the machine runs other gates.
   }, 30_000);
+
+  // Why: a run the property found (seed 694650037). A story added to the
+  // photo's station, the photo moved into it, then the story deleted: the
+  // photo goes with its story, and the undo steps still name its image,
+  // so the save must keep the image's file for an undo across it.
+  it("keep a photo's image after the photo moved into a new story and the story was deleted", async () => {
+    const { session, manifest } = await opened();
+    // The checks are inside the helper; resolving is the pass.
+    const run = commandsKeepTheTour(session, manifest);
+    await expect(
+      run([
+        { kind: "add", at: 2 },
+        { kind: "move", at: 7, to: 6 },
+        { kind: "delete", at: 4 },
+      ]),
+    ).resolves.toBeUndefined();
+    await session.close();
+  }, 30_000);
 });
+
+/** Drives `commands` through a fresh editor session and draft, checking
+ *  after every step and after a draft reload (the property above). */
+function commandsKeepTheTour(session: TourSession, manifest: TourManifest) {
+  return async (commands: readonly Command[]): Promise<void> => {
+    const store = createTourViewerStore();
+    const stores = memoryDraftStores();
+    const draft = createEditorDraft({
+      openStore: stores.open,
+      holdLock: freeLocks,
+      noBackup: () => undefined,
+    });
+    await draft.open(K, manifest);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      store,
+      draft: draft.writes(),
+    });
+    const tour = () => manifestToWrite(store.getState().tourDocument);
+    /** The tours before each edit an undo can take back, and before
+     *  each undo a redo can take back again. */
+    const past: (TourManifest | null)[] = [];
+    const future: (TourManifest | null)[] = [];
+    /** Whether a move of a station item ran (see `freeByName`). */
+    let moved = false;
+    for (const c of commands) {
+      const stories = storiesIn(tour());
+      const was = tour();
+      const revision = editor.revision();
+      /** An add whose station or story is there: it must be a
+       *  step, so a silently refused add cannot pass as a no-op. */
+      let mustStep = false;
+      switch (c.kind) {
+        case "add": {
+          const station = round(tour()?.stations ?? [], c.at);
+          if (station !== undefined) {
+            mustStep = true;
+            editor.addStory(station.id);
+          }
+          break;
+        }
+        case "rename": {
+          const story = round(stories, c.at);
+          if (story !== undefined) editor.renameStory(story.id, c.title);
+          break;
+        }
+        case "delete": {
+          const story = round(stories, c.at);
+          if (story !== undefined) editor.deleteStory(story.id);
+          break;
+        }
+        case "addChild": {
+          const story = round(stories, c.at);
+          if (story !== undefined) {
+            mustStep = true;
+            editor.addToStory(story.id, c.make);
+          }
+          break;
+        }
+        case "deleteChild": {
+          const child = round(
+            stories.flatMap((s) => s.children),
+            c.at,
+          );
+          if (child !== undefined) editor.deleteStoryChild(child.id);
+          break;
+        }
+        case "move": {
+          // Any item or story of any station, to any place of its
+          // station: what the format refuses is refused, and what
+          // it takes is one step.
+          const items = (tour()?.stations ?? []).flatMap((st) =>
+            st.children.flatMap((ch) =>
+              ch.kind === "story"
+                ? [
+                    { st, id: ch.id },
+                    ...ch.children.map((e) => ({ st, id: e.id })),
+                  ]
+                : [{ st, id: ch.id }],
+            ),
+          );
+          const item = round(items, c.at);
+          if (item === undefined) break;
+          const places: ChildMoveTo[] = [
+            { place: "free" },
+            { place: "stories", index: 0 },
+            ...tourStories(item.st).flatMap((story) => [
+              { place: "story" as const, story: story.id, index: 0 },
+              {
+                place: "story" as const,
+                story: story.id,
+                index: story.children.length,
+              },
+            ]),
+          ];
+          const to = round(places, c.to);
+          if (to !== undefined) {
+            const out = editor.moveChild(item.id, to);
+            mustStep = out.kind === "moved";
+            if (mustStep) moved = true;
+          }
+          break;
+        }
+        case "undo":
+          editor.undo();
+          break;
+        case "redo":
+          editor.redo();
+          break;
+      }
+      const now = tour();
+      if (now === null) throw new Error(`no tour after ${c.kind}`);
+      const rose = editor.revision() - revision;
+      expect(mustStep ? rose : 1, `${c.kind} refused`).toBe(1);
+      // An undo or a redo with nothing to take back is the only
+      // command that may leave the revision as it was.
+      const owed =
+        c.kind === "undo" ? past.length : c.kind === "redo" ? future.length : 0;
+      expect({ rose, owed }).toEqual(
+        rose === 0 ? { rose: 0, owed: 0 } : { rose: 1, owed },
+      );
+      let expected: TourManifest | null | undefined = was;
+      if (rose === 1 && c.kind === "undo") {
+        expected = past.pop();
+        future.push(was);
+      } else if (rose === 1 && c.kind === "redo") {
+        expected = future.pop();
+        past.push(was);
+      } else if (rose === 1) {
+        expected = now;
+        past.push(was);
+        future.length = 0;
+      }
+      expect(now).toEqual(expected);
+      expect(() =>
+        parseTourManifest(JSON.parse(serializeTourManifest(now))),
+      ).not.toThrow();
+    }
+    const before = await writtenJson(
+      (await editor.save({ keepScan: false })).blob,
+    );
+    await draft.idle();
+    draft.close();
+
+    const again = createEditorDraft({
+      openStore: stores.open,
+      holdLock: freeLocks,
+      noBackup: () => undefined,
+    });
+    const { offer } = await again.open(K, manifest);
+    const reloaded = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      draft: again.writes(),
+    });
+    if (offer !== null && offer !== undefined) reloaded.restore(offer);
+    const after = await writtenJson(
+      (await reloaded.save({ keepScan: false })).blob,
+    );
+    again.close();
+    // The draft keeps the tour, not its undo steps: an asset only an undo
+    // step still names (`historyAssetIds`) is kept by the first save and
+    // not by the reloaded one, which has no step that could bring it back.
+    // Compared without those; every asset the tour itself names counts.
+    const parse = moved ? freeByName : parseTourManifest;
+    const read = (json: Record<string, unknown>) =>
+      withReferencedAssets(parse(json));
+    expect(read(after)).toEqual(read(before));
+    expect(before.assets).toEqual(manifest.assets);
+  };
+}
 
 /** The written tour `json` with each station's free items by id, for a
  *  run in which a move ran. The format keeps the file's order of a

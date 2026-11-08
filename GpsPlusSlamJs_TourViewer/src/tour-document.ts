@@ -1101,6 +1101,24 @@ export function historyAssetIds(state: TourDocumentState): Set<string> {
 }
 
 /**
+ * The assets the undo and redo steps' STORY BLOCKS name (`stepAssetIds`),
+ * a part of `historyAssetIds`: a write keeps them even where they are a
+ * captured photo's own (`keepStoryAssets` of `finishedManifest`), as a
+ * photo moved into a story that was then deleted comes back with an undo
+ * inside that story, needing its file. A cover or card image naming a
+ * deleted photo does not keep its image (it goes with the photo).
+ */
+export function historyStoryAssetIds(state: TourDocumentState): Set<string> {
+  const ids = new Set<string>();
+  for (const { view } of [...state.past, ...state.future]) {
+    for (const frame of view.stations) {
+      for (const id of stepAssetIds(frame)) ids.add(id);
+    }
+  }
+  return ids;
+}
+
+/**
  * The read-along entries (`timing/<blockId>.json`, relative to the
  * tour's folder) the undo and redo steps' long texts name, story or free:
  * a write keeps them (`keepEntries`), as `historyAssetIds` keeps assets,
@@ -1134,6 +1152,7 @@ export function manifestToWrite(state: TourDocumentState): TourManifest | null {
     placed: state.placed,
     deleted: state.deleted,
     keepAssets: historyAssetIds(state),
+    keepStoryAssets: historyStoryAssetIds(state),
   });
 }
 
