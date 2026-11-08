@@ -26,19 +26,27 @@ with its leave margin, and the background's glide.
 
 - **The defaults rest on the tracking's noise, not on GPS.** `spot.ts`
   measures, in the scene's x/z, the distance between the tracked camera
-  and the circle's centre; both share the scene frame, so the GPS
-  alignment's offset moves them together and cancels out.
-  `sound-reach.sweep.test.ts` puts a still visitor within half the radius
-  under three tracking models (steady, drifting, poor: stated, not
-  measured), with a shared alignment offset, and counts the runs in which
-  the narration is cut off and in which a neighbour 2 m beyond the edge
-  hears it open (at most 1 in 20 holds):
+  and the circle's centre; both share the scene frame, so a constant
+  alignment offset moves them together and cancels out by construction.
+  Changes of the alignment during a walk (a re-alignment shifting the
+  scene) are not modelled; they are assumed to sit inside the drift
+  models. `sound-reach.sweep.test.ts` puts a still visitor within half the
+  radius under three tracking models (steady, drifting, poor: stated, not
+  measured) and counts the runs in which the narration is cut off and in
+  which a still neighbour 2 m beyond the radius (the edge at which the
+  circle opens) hears it open (at most 1 in 20 holds):
   - steady and drifting tracking: every circle of 3-8 m with a margin of
-    0.5-2 m holds;
-  - poor tracking: from 4 m with a margin of 1 m or more, 3 m with 1.5 m;
-    a 0.5 m margin opens on the neighbour (8-11 %).
-  - The offset changes nothing (the same runs with and without it).
-    6 m / 1.5 m holds under all three, and a field walk found it stable.
+    0.5-2 m holds, for the listener and the neighbour (at most 0.5 %);
+  - poor tracking (1 m slow error): the listener holds from 5 m at any
+    margin, 4 m with 1 m or more, 3 m with 1.5 m or more; the neighbour
+    hears the circle open in 22-28 % of the runs at every radius and
+    margin. The margin cannot help it: the circle opens at the radius.
+  - Neighbour distance: under drifting tracking 1 m beyond the radius opens
+    (15-18 %) and 2 m holds; under poor tracking 2 m opens (22-27 %), 3 m
+    holds narrowly (3-5 %), 4 m holds (at most 0.3 %).
+  - The default 6 m / 1.5 m keeps its listener up to 1.5 m of slow error
+    (1 %) and breaks at 2 m (13 %); its neighbour 2 m outside breaks first,
+    between 0.5 m (1 %) and 0.75 m (9 %). A field walk found it stable.
 - Distances are horizontal (the parts drop the height).
 
 ## Examples

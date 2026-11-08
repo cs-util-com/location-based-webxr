@@ -15,8 +15,8 @@
  * tau) plus white jitter, sampled at 1 Hz for 3 minutes, 400 seeded runs
  * per cell, on top of a shared alignment offset that moves the circle as
  * well. Three tracking models, from steady to poor. A listener stands
- * still at a uniform spot within half the radius; a neighbour stands 2 m
- * beyond the radius plus margin.
+ * still at a uniform spot within half the radius; a neighbour stands still
+ * 2 m beyond the radius, the edge at which the circle opens.
  */
 import { describe, expect, it } from "vitest";
 
@@ -33,15 +33,27 @@ interface Noise {
   readonly whiteM: number;
 }
 
+const POOR: Noise = {
+  name: "tracking-poor",
+  sigmaM: 1,
+  tauS: 60,
+  whiteM: 0.15,
+};
 const MODELS: readonly Noise[] = [
   { name: "tracking-steady", sigmaM: 0.15, tauS: 30, whiteM: 0.03 },
   { name: "tracking-drifting", sigmaM: 0.5, tauS: 120, whiteM: 0.05 },
-  { name: "tracking-poor", sigmaM: 1, tauS: 60, whiteM: 0.15 },
+  POOR,
 ];
 const RADII = [3, 4, 5, 6, 7, 8];
 const MARGINS = [0.5, 1, 1.5, 2];
 const RUNS = 400;
 const SECONDS = 180;
+/** How far beyond the radius (the entering edge) the neighbour stands (m). */
+const NEIGHBOUR_GAP_M = 2;
+/** The neighbour distances swept around it (m beyond the radius). */
+const GAPS = [1, 2, 3, 4];
+/** Poor tracking's slow error, swept below and above it until the default breaks (m). */
+const SIGMAS = [0.5, 0.75, 1, 1.5, 2, 2.5, 3];
 /** How far the GPS alignment may put the whole scene off (m). */
 const ALIGNMENT_SIGMA_M = 5;
 
@@ -98,6 +110,7 @@ function rate(
   marginM: number,
   listener: boolean,
   alignment = true,
+  gapM = NEIGHBOUR_GAP_M,
 ): number {
   const rand = mulberry32(
     Math.round(radiusM * 1000 + marginM * 100 + noise.sigmaM * 7919),
@@ -105,9 +118,7 @@ function rate(
   let hits = 0;
   for (let run = 0; run < RUNS; run += 1) {
     const angle = 2 * Math.PI * rand();
-    const d = listener
-      ? (radiusM / 2) * Math.sqrt(rand())
-      : radiusM + marginM + 2;
+    const d = listener ? (radiusM / 2) * Math.sqrt(rand()) : radiusM + gapM;
     const at = [d * Math.cos(angle), d * Math.sin(angle)] as const;
     const ox = gaussian(rand) * ALIGNMENT_SIGMA_M;
     const oz = gaussian(rand) * ALIGNMENT_SIGMA_M;
@@ -118,7 +129,6 @@ function rate(
   }
   return hits / RUNS;
 }
-
 /** The whole sweep, once: interrupted listeners and disturbed neighbours
  *  per model, radius and margin. */
 const SWEEP = MODELS.map((noise) => ({
@@ -133,28 +143,78 @@ const SWEEP = MODELS.map((noise) => ({
   ),
 }));
 
+/** The neighbour's distance beyond the radius, swept per model and radius
+ *  at the default margin (the margin does not reach a neighbour outside). */
+const GAP_SWEEP = MODELS.map((noise) => ({
+  noise,
+  cells: GAPS.flatMap((g) =>
+    RADII.map((r) => ({
+      g,
+      r,
+      opened: rate(noise, r, NARRATION_MARGIN_M, false, true, g),
+    })),
+  ),
+}));
+
+/** Poor tracking's slow error swept at the default radius. */
+const SIGMA_SWEEP = SIGMAS.map((sigmaM) => {
+  const noise: Noise = {
+    ...POOR,
+    name: `poor, sigma ${String(sigmaM)}`,
+    sigmaM,
+  };
+  return {
+    sigmaM,
+    interrupted: MARGINS.map((m) => ({
+      m,
+      rate: rate(noise, NARRATION_DEFAULT_RADIUS_M, m, true),
+    })),
+    opened: rate(noise, NARRATION_DEFAULT_RADIUS_M, NARRATION_MARGIN_M, false),
+  };
+});
+
 /** An interruption in 3 minutes for at most 1 listener in 20. */
 const HOLDS = 0.05;
 
+const pct = (x: number) => `${(100 * x).toFixed(1)} %`;
+
 describe("the narration circle under tracking noise (sweep)", () => {
-  it("prints the table: interrupted listeners and disturbed neighbours", () => {
-    // Why: the radius default rests on this table; the verdict is read
-    // across the range, so the whole table is kept in the test's output.
+  it("prints the tables: radius and margin, neighbour distance, tracking sigma", () => {
+    // Why: the radius default rests on these tables; the verdict is read
+    // across the range, so every table is kept in the test's output.
     for (const { noise, cells } of SWEEP) {
       const rows = cells.map(
         (c) =>
-          `r ${String(c.r)} m, margin ${c.m.toFixed(1)} m: interrupted ${(100 * c.interrupted).toFixed(1)} %, neighbour opened ${(100 * c.opened).toFixed(1)} %`,
+          `r ${String(c.r)} m, margin ${c.m.toFixed(1)} m: interrupted ${pct(c.interrupted)}, neighbour opened ${pct(c.opened)}`,
       );
       console.info(`${noise.name}\n  ${rows.join("\n  ")}`);
     }
+    for (const { noise, cells } of GAP_SWEEP) {
+      const rows = GAPS.map(
+        (g) =>
+          `neighbour at r+${String(g)} m: ${cells
+            .filter((c) => c.g === g)
+            .map((c) => `r ${String(c.r)} ${pct(c.opened)}`)
+            .join(", ")}`,
+      );
+      console.info(`${noise.name}, neighbour opened\n  ${rows.join("\n  ")}`);
+    }
+    const rows = SIGMA_SWEEP.map(
+      (s) =>
+        `sigma ${s.sigmaM.toFixed(2)} m: ${s.interrupted.map((i) => `margin ${i.m.toFixed(1)} interrupted ${pct(i.rate)}`).join(", ")}; neighbour at r+${String(NEIGHBOUR_GAP_M)} opened ${pct(s.opened)}`,
+    );
+    console.info(
+      `poor tracking at r ${String(NARRATION_DEFAULT_RADIUS_M)} m, sigma swept\n  ${rows.join("\n  ")}`,
+    );
     expect(SWEEP).toHaveLength(MODELS.length);
   });
 
-  it("the alignment's offset changes nothing: it moves the circle and the visitor together", () => {
-    // Why: the circle and the camera share the scene frame, so a GPS
-    // alignment that is metres off shifts both; only the tracking's own
-    // noise reaches the distance the circle reads. Same seed with and
-    // without the offset gives the same verdict.
+  it("a constant alignment offset cancels out of the distance (by construction)", () => {
+    // Why: a check of the model, not evidence about GPS: the circle and the
+    // camera share the scene frame, so a constant offset moves both and
+    // cancels, which this run with and without it confirms. Changes of the
+    // alignment during a walk (a re-alignment shifting the scene) are not
+    // modelled here; they are assumed to sit inside the drift models.
     for (const noise of MODELS) {
       for (const listener of [true, false]) {
         expect(rate(noise, 6, 1.5, listener, true)).toBe(
@@ -164,12 +224,14 @@ describe("the narration circle under tracking noise (sweep)", () => {
     }
   });
 
-  it("holds every swept circle under steady or drifting tracking, and from 4 m with a 1 m margin under poor", () => {
+  it("holds every swept circle under steady or drifting tracking; under poor, the listener from 4 m with a 1 m margin and the neighbour nowhere", () => {
     // Why: the measured verdict across the range, kept as a test so a
-    // change to the edge rule or the model is seen. Only poor tracking
-    // (1 m of slow error, 0.15 m of jitter) reaches the small circles and
-    // the thinnest margin; nothing here is a GPS limit, since the
-    // alignment cancels out of the distance.
+    // change to the edge rule or the model is seen. Under poor tracking
+    // (1 m of slow error, 0.15 m of jitter) a listener is cut off only in
+    // small circles with thin margins, but a neighbour 2 m beyond the edge
+    // hears it open in about a quarter of the runs at every radius and
+    // margin: the circle opens at the radius, so the margin never reaches
+    // a visitor outside.
     const holds = (c: { interrupted: number; opened: number }) =>
       c.interrupted <= HOLDS && c.opened <= HOLDS;
     const [steady, drifting, poor] = SWEEP.map((s) => s.cells);
@@ -177,21 +239,44 @@ describe("the narration circle under tracking noise (sweep)", () => {
       expect(holds(c)).toBe(true);
     }
     for (const c of poor ?? []) {
-      expect(holds(c)).toBe(c.r >= 4 ? c.m >= 1 : c.m >= 1.5);
+      const listenerHolds = c.r >= 5 || (c.r >= 4 ? c.m >= 1 : c.m >= 1.5);
+      expect(c.interrupted <= HOLDS).toBe(listenerHolds);
+      expect(c.opened).toBeGreaterThan(HOLDS);
     }
   });
 
-  it("the default circle holds under every tracking model swept", () => {
+  it("keeps a neighbour off from 2 m beyond the edge under drifting tracking, from 3 m under poor", () => {
+    // Why: the neighbour's verdict depends on where it stands; this pins
+    // the distance at which each model stops opening the circle on it.
+    // Under poor tracking the 3 m verdict is close (up to about 5 %).
+    const [steady, drifting, poor] = GAP_SWEEP.map((s) => s.cells);
+    for (const c of steady ?? []) expect(c.opened).toBeLessThanOrEqual(HOLDS);
+    for (const c of drifting ?? []) {
+      expect(c.opened <= HOLDS).toBe(c.g >= 2);
+    }
+    for (const c of poor ?? []) {
+      expect(c.opened <= HOLDS).toBe(c.g >= 3);
+    }
+  });
+
+  it("the default circle keeps its listener under every tracking model and up to 1.5 m of slow error; 2 m breaks it", () => {
     // Why: the default (`NARRATION_DEFAULT_RADIUS_M`, 6 m, margin
     // `NARRATION_MARGIN_M`, 1.5 m) is what a tour gets when its block names
-    // no radius; a field walk found it stable, and it must hold from
-    // steady tracking to poor.
+    // no radius; a field walk found it stable. Its listener holds from
+    // steady tracking to poor and further, until the slow error reaches
+    // 2 m; its neighbour 2 m outside holds only under steady and drifting
+    // tracking (see the test above).
     for (const { cells } of SWEEP) {
       const c = cells.find(
         (c) => c.r === NARRATION_DEFAULT_RADIUS_M && c.m === NARRATION_MARGIN_M,
       );
       expect(c?.interrupted).toBeLessThanOrEqual(HOLDS);
-      expect(c?.opened).toBeLessThanOrEqual(HOLDS);
+    }
+    for (const s of SIGMA_SWEEP) {
+      const atDefault = s.interrupted.find((i) => i.m === NARRATION_MARGIN_M);
+      expect((atDefault?.rate ?? 1) <= HOLDS).toBe(s.sigmaM <= 1.5);
+      // The neighbour 2 m outside goes first: between 0.5 and 0.75 m.
+      expect(s.opened <= HOLDS).toBe(s.sigmaM <= 0.5);
     }
   });
 });

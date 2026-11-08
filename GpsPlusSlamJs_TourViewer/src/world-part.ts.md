@@ -14,7 +14,9 @@ has its driver:
 
 Leaving and coming back (`leave`/`back`) were part of the first draft and
 still have no driver, so they are not in the type: they come with one (the
-station's leave and return) when a kind needs it (PR #874 review). The renderer (`content-placement.ts`) places it at the block's
+station's leave and return) when a kind needs it.
+
+The renderer (`content-placement.ts`) places a part at the block's
 pose; the part never touches the scene, the camera, the renderer or the
 frame loop. A kind gives its part through its row (`play-kinds.ts`
 `world?`, read by `worldPartOf`); the reading stand (`lectern-view.ts`) and

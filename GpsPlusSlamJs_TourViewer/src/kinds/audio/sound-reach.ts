@@ -10,13 +10,16 @@
 
 /** A narration circle's radius when its block names none (a lenient read's
  *  floor) and the editor's starting value. The circle and the tracked
- *  camera share the scene frame, so only the tracking's own noise reaches
- *  the distance; 6 m holds under every tracking model swept
- *  (`sound-reach.sweep.test.ts`) and was stable on a field walk. */
+ *  camera share the scene frame, so a constant alignment offset cancels
+ *  out of the distance; 6 m keeps a still listener under every tracking
+ *  model swept (`sound-reach.sweep.test.ts`, up to 1.5 m of slow error)
+ *  and was stable on a field walk. */
 export const NARRATION_DEFAULT_RADIUS_M = 6;
 
-/** How far beyond the radius a visitor inside counts as still inside; 1 m
- *  or more holds a neighbour off under poor tracking, 1.5 m leaves room. */
+/** How far beyond the radius a visitor inside counts as still inside. It
+ *  keeps a listener from being cut off (under poor tracking from 4 m with
+ *  1 m, 3 m with 1.5 m); it does not reach a neighbour outside, since the
+ *  circle opens at the radius. */
 export const NARRATION_MARGIN_M = 1.5;
 
 /** An ambient zone's reach when the editor adds one: a constant until it
