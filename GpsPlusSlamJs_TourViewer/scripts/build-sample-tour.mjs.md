@@ -18,7 +18,10 @@ into the build, so a branch preview serves it at
   knight says farewell). Free items stand beside the stories, each about
   3.5 m from the station: a pin at the column and at the steps, a lectern on
   the market square at the gate, so an author sees that not everything
-  lives in a story. `?relocate=here` moves the stations only, so these stay
+  lives in a story. Two free sounds: a narration circle at the column
+  (`spot`, 6 m, played on a tap, its transcript three sentences) and a
+  market murmur at the gate (`zone`, heard within 20 m, full within 4 m,
+  volume 0.5). `?relocate=here` moves the stations only, so these stay
   at Marienplatz there. Written as `tour.json` version 5: each
   station has its own geo pose, its story's blocks (the knight a
   `character` and the arch a `model` on the stage, a story line a
@@ -37,7 +40,9 @@ into the build, so a branch preview serves it at
   earlier 519 m every station stood about 42 m under the drawn ground.
 - Every asset is generated here, so there is nothing to license: a
   pixel-art knight PNG (24 x 40 cells, 8 px each), a three-note fanfare WAV
-  (16 kHz mono), and an arch GLB (two pillars and a lintel, one grey
+  (16 kHz mono), a hummed stand-in for a guide's voice and a looping
+  market murmur (8 kHz mono WAVs, seeded noise so a rebuild is identical;
+  no recorded voice is licence-clean to ship), and an arch GLB (two pillars and a lintel, one grey
   material, one JSON and one binary chunk, no URIs).
 - Entries are stored uncompressed with a fixed date, so a rebuild with
   unchanged content gives identical bytes.
