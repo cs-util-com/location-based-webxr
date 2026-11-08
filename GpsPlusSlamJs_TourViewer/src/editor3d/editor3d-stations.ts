@@ -454,6 +454,20 @@ function freeObject(object: THREE.Object3D): void {
   });
 }
 
+/** Runs every one of `frees`: one that throws strands none after it, and
+ *  the first throw then reaches the caller. */
+function freeEach(frees: Iterable<() => void>): void {
+  let failed: { error: unknown } | null = null;
+  for (const free of frees) {
+    try {
+      free();
+    } catch (error) {
+      failed ??= { error };
+    }
+  }
+  if (failed !== null) throw failed.error;
+}
+
 function freeSprite(sprite: THREE.Sprite): void {
   sprite.removeFromParent();
   sprite.material.map?.dispose();
@@ -549,17 +563,17 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     const content = entry.content;
     if (content === null) return;
     content.alive = false;
-    // Cleared first, and the ring and the pole freed whatever the
-    // renderer's dispose throws (it rethrows a part's, PR #874 review):
-    // the station is freed either way and drawn anew when it is near.
+    // Cleared first, and every free run whatever another throws (the
+    // renderer's dispose rethrows a part's; only it unmounts the parts and
+    // frees the labels and textures): the station is freed either way and
+    // drawn anew when it is near.
     entry.content = null;
-    try {
-      for (const model of content.models) freeObject(model);
-      content.rendered?.dispose();
-    } finally {
-      freeObject(content.ring);
-      freeObject(content.pole);
-    }
+    freeEach([
+      ...content.models.map((model) => () => freeObject(model)),
+      () => content.rendered?.dispose(),
+      () => freeObject(content.ring),
+      () => freeObject(content.pole),
+    ]);
   };
 
   const freeStation = (entry: StationEntry) => {
@@ -574,17 +588,8 @@ export function createStationsLayer(deps: StationsLayerDeps) {
 
   /** Frees each of `entries`; one that throws abandons none after it, and
    *  the first throw then reaches the caller. */
-  const freeStations = (entries: Iterable<StationEntry>) => {
-    let failed: { error: unknown } | null = null;
-    for (const entry of entries) {
-      try {
-        freeStation(entry);
-      } catch (error) {
-        failed ??= { error };
-      }
-    }
-    if (failed !== null) throw failed.error;
-  };
+  const freeStations = (entries: Iterable<StationEntry>) =>
+    freeEach([...entries].map((entry) => () => freeStation(entry)));
 
   const placeModels = async (entry: StationEntry, content: StationContent) => {
     for (const item of worldBlocks(entry.station)) {

@@ -369,4 +369,72 @@ describe("draftableObject: what a draft keeps of a narration", () => {
       draftableObject({ ...renamed, id: "m-new" }, state, notKept),
     ).toBeNull();
   });
+
+  // Why (#881 review): a picture names its file twice, as `image` and as
+  // the inline `imageAsset` (`imageAsset.id === image`, which the draft
+  // record writes as its asset). Putting back only the string left the
+  // record naming the written file as its image and the file held nowhere
+  // as its asset: a restore then asks for a content entry the zip lacks.
+  it("puts a picture's image and its inline asset back together", () => {
+    const OLD_IMAGE: TourAsset = {
+      id: "photo-a",
+      path: "content/photo-a.jpg",
+      kind: "image",
+      width: 4,
+      height: 3,
+    };
+    const NEW_IMAGE: TourAsset = {
+      id: "photo-b",
+      path: "content/photo-b.jpg",
+      kind: "image",
+      width: 8,
+      height: 6,
+    };
+    const picture = {
+      id: "ph",
+      kind: "picture",
+      view: "plane",
+      image: "photo-a",
+      widthM: 1,
+      imageAsset: OLD_IMAGE,
+      createdAtIso: "2026-10-31T00:00:03.000Z",
+      geo: {
+        lat: 47.5,
+        lon: 8.7,
+        alt: 400,
+        rotation: [0, 0, 0, 1],
+        headingDeg: 0,
+      },
+      station: "st-ph",
+    } as const satisfies TourObject;
+    const state = reduce(
+      reduce(
+        initialTourDocumentState,
+        act.opened({ manifest: tourOf([picture], { assets: [OLD_IMAGE] }) }),
+      ),
+      act.assetsAdded({ assets: [NEW_IMAGE] }),
+    );
+    const written = documentObjects(state).find(
+      (o) => o.object.id === "ph",
+    )?.object;
+    expect(written?.kind === "picture" ? written.imageAsset.id : null).toBe(
+      "photo-a",
+    );
+    const replaced: TourObject = {
+      ...picture,
+      image: "photo-b",
+      imageAsset: NEW_IMAGE,
+      widthM: 2,
+    };
+    const notKept = (id: string): boolean => id !== "photo-b";
+    const kept = draftableObject(replaced, state, notKept);
+    expect(kept).toEqual({
+      ...replaced,
+      image: "photo-a",
+      imageAsset: written?.kind === "picture" ? written.imageAsset : null,
+    });
+    expect(kept?.kind === "picture" ? kept.imageAsset.id : null).toBe(
+      kept?.kind === "picture" ? kept.image : undefined,
+    );
+  });
 });

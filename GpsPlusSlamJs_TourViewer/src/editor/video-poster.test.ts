@@ -134,7 +134,7 @@ describe("videoPosterOf", () => {
     }
   });
 
-  // Why (PR #876 review, note 12): the app's own recorded clips report a
+  // Why: the app's own recorded clips report a
   // length of Infinity (MediaRecorder, Chrome), and they got their first
   // frame - often black, the frame POSTER_AT_S exists to avoid. A seek far
   // past the end makes the browser read the length; the poster is then
@@ -162,6 +162,30 @@ describe("videoPosterOf", () => {
       expect(await poster?.text()).toBe("jpeg");
       expect(d.video.seekedTo).toBe(0);
       expect(d.drawn).toEqual([{ w: 640, h: 360 }]);
+    }
+  });
+
+  // Why (#881 review): a clip that takes the far seek and then goes quiet
+  // (no "seeked", no length) got no poster at all: the fallback's seek
+  // back to the start waited for a "seeked" that never came, until the
+  // whole timeout ran out. The fallback now takes a frame regardless.
+  it("draws a recorded clip's frame even when no seek ever answers", async () => {
+    for (const lengthTimeoutMs of [0, 5, 30]) {
+      const d = deps("frame", Number.POSITIVE_INFINITY);
+      Object.defineProperty(d.video, "currentTime", {
+        get: () => d.video.seekedTo ?? 0,
+        set: (t: number) => {
+          d.video.seekedTo = t;
+        },
+      });
+      d.options.timeoutMs = 1_000;
+      const poster = await videoPosterOf(new Blob(["v"]), {
+        ...d.options,
+        lengthTimeoutMs,
+      });
+      expect(await poster?.text()).toBe("jpeg");
+      expect(d.drawn).toEqual([{ w: 640, h: 360 }]);
+      expect(d.revoked).toEqual(["blob:video"]);
     }
   });
 

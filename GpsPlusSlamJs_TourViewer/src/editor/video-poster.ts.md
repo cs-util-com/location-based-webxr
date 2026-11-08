@@ -30,9 +30,11 @@ hands it to the session as `fileReaders.posterOf` (`edit-main.ts`), and
 - A recorded clip reports a length of Infinity (MediaRecorder, Chrome):
   a seek far past its end (1e9 s) makes the browser read the length
   (`durationchange`, or a `seeked` with a finite length), and the frame
-  just after the start is then taken like any other video's (PR #876
-  review: the first frame is often black). A length that does not come
-  within `lengthTimeoutMs` leaves the first frame (a seek back to 0).
+  just after the start is then taken like any other video's (the first
+  frame is often black). A length that does not come within
+  `lengthTimeoutMs` leaves the first frame (a seek back to 0), and the
+  frame showing is taken once as long again has passed even when that
+  seek never answers: no poster is lost to a clip that goes quiet.
 - A video whose length is 0 or NaN is not seeked: a seek to
   where it already is (its start) fires no `seeked`, so it would wait the
   whole timeout. Its first frame is drawn at `loadeddata` instead.
@@ -52,4 +54,5 @@ poster for a refused, stalled or picture-less video (URL revoked each
 time), the first frame of a video of length 0 or NaN without a seek, a
 recorded clip's (Infinity) length read first and its frame at 0.1 s taken
 (seen red: the first frame), its first frame when the length never comes
-(over three waits), and a 4K frame scaled to 1920 x 1080.
+(over three waits), a frame even when no seek ever answers (over three
+waits, seen red: no poster), and a 4K frame scaled to 1920 x 1080.

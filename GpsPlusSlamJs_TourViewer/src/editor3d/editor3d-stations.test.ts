@@ -1573,7 +1573,7 @@ describe("createStationsLayer", () => {
       return n;
     };
 
-    // Why (PR #874 review, note 6): a part dispose rethrown by the
+    // Why: a part dispose rethrown by the
     // renderer left the station's ring and pole in the scene and its
     // content set, so it was never drawn again when the view came back.
     it("a part whose dispose throws leaves the station freed and drawn again later", async () => {
@@ -1605,7 +1605,7 @@ describe("createStationsLayer", () => {
       expect(() => layer.dispose()).toThrow("broken song");
     });
 
-    // Why (PR #874 review, note 6): the layer's dispose stopped at the
+    // Why: the layer's dispose stopped at the
     // first station whose part threw, abandoning every later station.
     it("frees every station when one station's part dispose throws", async () => {
       const editor = brokenDoor();
@@ -1619,6 +1619,46 @@ describe("createStationsLayer", () => {
       expect(editor.asked.sort()).toEqual(["song", "song-b"]);
       expect(() => layer.dispose()).toThrow(/broken song/);
       expect(editor.freed.sort()).toEqual(["song", "song-b"]);
+      expect(mountedWorldParts()).toEqual([]);
+      expect(parent.children).toHaveLength(0);
+    });
+
+    // Why (#881 review): the models were freed before the renderer's
+    // dispose, outside the guard the ring and the pole had - a model
+    // whose free threw skipped `rendered.dispose()`, which is what
+    // unmounts the station's parts and frees its labels and textures.
+    it("a model whose free throws still frees the station's parts", async () => {
+      const editor = door();
+      const { d, parent } = deps({
+        worldPart: editor.part,
+        loadGlbModel: () => {
+          const geometry = new THREE.BoxGeometry(2, 4, 1);
+          geometry.dispose = () => {
+            throw new Error("model free broke");
+          };
+          const g = new THREE.Group();
+          g.add(new THREE.Mesh(geometry));
+          return Promise.resolve(g);
+        },
+      });
+      const layer = createStationsLayer(d);
+      const a = station("a", 0, 0, [spot, model("m", "horse", 2)]);
+      layer.setTour(
+        manifest(
+          [a],
+          [
+            ...assets,
+            { id: "horse", path: "content/horse.glb", kind: "model" },
+          ],
+        ),
+        new Map(),
+      );
+      layer.update(view(0, 0, null, 1));
+      await settle();
+      expect(editor.made).toHaveLength(1);
+      expect(mountedWorldParts()).toEqual(editor.made);
+      expect(() => layer.dispose()).toThrow("model free broke");
+      expect(editor.freed).toEqual(["song"]);
       expect(mountedWorldParts()).toEqual([]);
       expect(parent.children).toHaveLength(0);
     });

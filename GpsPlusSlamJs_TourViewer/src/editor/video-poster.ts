@@ -129,9 +129,16 @@ export async function videoPosterOf(
         const length = video.duration;
         if (length === Number.POSITIVE_INFINITY) {
           phase = "length";
+          const wait = options.lengthTimeoutMs ?? LENGTH_TIMEOUT_MS;
+          // No length: back to the start, and the frame showing is taken
+          // once as long again has passed, whether or not that seek
+          // answers (a clip may take the far seek and then go quiet).
           lengthTimer = setTimeout(() => {
             seekTo(0);
-          }, options.lengthTimeoutMs ?? LENGTH_TIMEOUT_MS);
+            lengthTimer = setTimeout(() => {
+              done(true);
+            }, wait);
+          }, wait);
           video.currentTime = FAR_PAST_THE_END_S;
           return;
         }

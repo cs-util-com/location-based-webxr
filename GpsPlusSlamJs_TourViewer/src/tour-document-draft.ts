@@ -404,8 +404,8 @@ export function draftableObject(
 
 /**
  * `object` with each field naming a file held nowhere (`held`) put back as
- * `written` has it, every other edit kept (PR #876 review: the whole
- * record was taken back, losing a size or a move). `written` whole when a
+ * `written` has it, every other edit kept (taking the whole record back
+ * would lose a size or a move). `written` whole when a
  * field cannot be put back (the written record is of another kind or lacks
  * the field); null when nothing is written.
  */
@@ -422,11 +422,24 @@ function withWrittenAssets(
   const from = written as unknown as Readonly<Record<string, unknown>>;
   const kept: Record<string, unknown> = { ...object };
   for (const [key, value] of Object.entries(object)) {
-    if (typeof value !== "string" || !unheld.has(value)) continue;
+    if (!unheld.has(namedFile(value) ?? "")) continue;
     if (!Object.hasOwn(from, key)) return written;
     kept[key] = from[key];
   }
   return kept as unknown as TourObject;
+}
+
+/**
+ * The file a top-level field of an object names: a string field names it
+ * by id, an inline asset (a picture's `imageAsset`, whose id is its
+ * `image`) by its `id` - so the two of a pair are put back together.
+ * Nested references are not read: no kind has one yet.
+ */
+function namedFile(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  if (typeof value !== "object" || value === null) return undefined;
+  const id = (value as { readonly id?: unknown }).id;
+  return typeof id === "string" ? id : undefined;
 }
 
 /** The object of `id` as `file` holds it, if it does. */
