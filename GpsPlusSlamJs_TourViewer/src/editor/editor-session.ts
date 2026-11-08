@@ -710,8 +710,10 @@ export interface EditorSession {
   ): Promise<EditorFileAdded | EditorRefusal>;
   /** What the next save adds to the newest written file: the files
    *  brought in, the timing texts and the copied or restored photos'
-   *  pictures it does not hold yet. */
-  addedBytes(): number;
+   *  pictures it does not hold yet. `keptOnly`: only those that save
+   *  keeps - a file brought in that nothing names (an edit naming it that
+   *  did not apply, an add given up) is left out. */
+  addedBytes(options?: { readonly keptOnly?: boolean }): number;
   /** What the tour weighs now: the newest written file (the opened one
    *  before a save) and the files added since - what an in-place save
    *  rewrites, so what the autosave's cap is judged by. */
@@ -1177,8 +1179,8 @@ export function createEditorSession(input: {
   }
 
   /** The bytes the next save adds to the written file. */
-  function addedBytes(): number {
-    return saves.addedBytes(own());
+  function addedBytes(options: { readonly keptOnly?: boolean } = {}): number {
+    return saves.addedBytes(own(), options.keptOnly === true);
   }
 
   function nextSaveBytes(): number {

@@ -70,6 +70,7 @@ import type {
   TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { tourMediaTypeOf } from "gps-plus-slam-app-framework/ar/tour-media";
+import { tourBlockAssetIds } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 import { tourImageIds } from "gps-plus-slam-app-framework/ar/tour-details";
 import {
@@ -905,6 +906,18 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       });
   }
 
+  /** `fileIn`, and `filesNotKept` told whether it landed - for the open
+   *  it was asked in: a close forgets what it knew. */
+  function keepFile(s: Space, file: DraftFile): Promise<boolean> {
+    const mine = generation;
+    return fileIn(s, file).then((ok) => {
+      if (mine !== generation) return ok;
+      if (ok) filesNotKept.delete(file.asset.id);
+      else filesNotKept.add(file.asset.id);
+      return ok;
+    });
+  }
+
   /** The offer's files: every one this draft holds (a write keeps only
    *  what the tour names). */
   function filesOffered(): { files?: readonly DraftFile[] } {
@@ -1167,6 +1180,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     pendingPictures.clear();
     files.clear();
     filesHere.clear();
+    filesNotKept.clear();
     touched.clear();
     bases.clear();
     settingsPending = null;
@@ -1205,9 +1219,20 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     // The files first: a record or a story frame naming a file the new
     // namespace lacks yet would, for a tab closed mid-move, be dropped by
     // the reopen. Each record still queues now, in its own chain, so a
-    // change made after the move lands after it.
-    const filesCarried = [...files.values()].map((file) => fileIn(next, file));
+    // change made after the move lands after it. Only a record naming a
+    // carried file waits for them: one naming none reaches the new key at
+    // once. The settings always wait (a station's story may name one).
+    const filesCarried = [...files.values()].map((file) =>
+      keepFile(next, file),
+    );
     const filesIn = Promise.all(filesCarried);
+    const waitFor = (
+      change: TourObject | null,
+    ): Promise<unknown> | undefined =>
+      change !== null &&
+      tourBlockAssetIds(change).some((asset) => files.has(asset))
+        ? filesIn
+        : undefined;
     const carried = [writeMeta(next), ...filesCarried];
     for (const [id, change] of pending) {
       carried.push(
@@ -1217,7 +1242,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
           change,
           bases.get(id),
           pendingPictures.get(id),
-          filesIn,
+          waitFor(change),
         ),
       );
     }
@@ -1235,14 +1260,14 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
               object,
               bases.get(object.id),
               offer.pictures?.get(object.id),
-              filesIn,
+              waitFor(object),
             ),
           );
         }
       }
       for (const id of offer.deleted) {
         if (!touched.has(id)) {
-          carried.push(carry(next, id, null, undefined, undefined, filesIn));
+          carried.push(carry(next, id, null, undefined, undefined));
         }
       }
       if (offer.settings !== undefined && settingsWanted === null) {
@@ -1731,11 +1756,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       filesHere.add(asset.id);
       const s = space;
       if (s === null) return Promise.resolve(true);
-      return fileIn(s, file).then((ok) => {
-        if (ok) filesNotKept.delete(asset.id);
-        else filesNotKept.add(asset.id);
-        return ok;
-      });
+      return keepFile(s, file);
     },
     holdsFile: (id) => !filesNotKept.has(id),
     saveSettings(settings) {

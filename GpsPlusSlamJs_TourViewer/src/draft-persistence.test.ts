@@ -172,6 +172,32 @@ describe("readDraft", () => {
     expect((await readDraft(store))?.draft.objects).toEqual([]);
   });
 
+  it("hands back the photo's bytes, not the store's snapshot of the entry, and drops a photo whose entry does not read", async () => {
+    // The OPFS store hands out `handle.getFile()`, a snapshot whose reads
+    // fail once the entry is written again - and a restore rewrites that
+    // very entry, which made every later save fail. A snapshot that does
+    // not read at all is a missing photo, never a record the save cannot
+    // build.
+    const store = memoryStore();
+    await writeDraftMeta(store, META);
+    const snapshot = new Blob(["bytes of p"]);
+    await writeDraftObject(store, photo("p"), snapshot);
+    await writeDraftObject(store, photo("q"), new Blob(["bytes of q"]));
+    const unreadable = new Blob(["x"]);
+    const notReadable = (): Promise<never> =>
+      Promise.reject(new DOMException("changed", "NotReadableError"));
+    unreadable.arrayBuffer = notReadable;
+    store.files.set(photoKey("q"), unreadable);
+    const read = await readDraft(store);
+    // The entry written again: the snapshot stops reading.
+    snapshot.arrayBuffer = notReadable;
+    snapshot.text = notReadable;
+    expect(await read?.photos.get("p")?.text()).toBe("bytes of p");
+    expect(read?.draft.objects.map((o) => o.id)).toEqual(["p"]);
+    const editors = await readDraft(store, { photoBytesRequired: false });
+    expect(editors?.photos.has("q")).toBe(false);
+  });
+
   it("returns the objects in a stable order (property)", async () => {
     // The store lists in whatever order the directory yields. A tour whose
     // objects shuffle between restores would produce a different tour.json

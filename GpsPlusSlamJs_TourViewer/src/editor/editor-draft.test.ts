@@ -2093,6 +2093,64 @@ describe("the files a draft keeps", () => {
     expect(offer?.files?.map((f) => f.asset.id)).toEqual([STATUE.id]);
   });
 
+  // Why: a file whose write did not land is not held, and a narration
+  // naming it stays out of the record. That knowledge is about one open:
+  // the same bytes (one content hash) kept by another tour's draft, or
+  // carried by a key move, are held, and a record naming them written
+  // without its narration loses it after a reload.
+  it("forgets a file not kept when the draft closes, and once a key move carried it", async () => {
+    const b = browser();
+    await keptModel(b);
+    const draft = draftIn(b);
+    await draft.open(K2, tour(pin("a")));
+    b.failWrites = true;
+    expect(await draft.saveAsset(STATUE, new Blob(["glTF-statue"]))).toBe(
+      false,
+    );
+    expect(draft.holdsFile(STATUE.id)).toBe(false);
+    b.failWrites = false;
+    draft.close();
+    const { offer } = await draft.open(K1, tour(pin("a")));
+    expect(offer?.files?.map((f) => f.asset.id)).toEqual([STATUE.id]);
+    expect(draft.holdsFile(STATUE.id)).toBe(true);
+    draft.close();
+
+    const moving = draftIn(b);
+    await moving.open(K2, tour(pin("a")));
+    b.failWrites = true;
+    await moving.saveAsset(STATUE, new Blob(["glTF-statue"]));
+    b.failWrites = false;
+    moving.writes().moved(K1);
+    await moving.idle();
+    expect(moving.holdsFile(STATUE.id)).toBe(true);
+  });
+
+  // Why: only a record naming a file has to wait for it in a key move. A
+  // record naming none (a text edit) must reach the new key at once, or a
+  // tab closed while a large file is still being written keeps it only in
+  // the old key, which only the old file reaches.
+  it("a key move writes a record naming no file without waiting for the files", async () => {
+    const b = browser();
+    const draft = draftIn(b);
+    await draft.open(K1, tour(pin("a")));
+    await draft.saveAsset(STATUE, new Blob(["glTF-statue"]));
+    await draft.saveObject(MODEL);
+    await draft.saveObject(pin("a", "Edited before the move"));
+    await draft.idle();
+    b.holdPutsOf = /^asset:/;
+    draft.writes().moved(K2);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const closed = browser();
+    closed.spaces.set(
+      editorDraftKey(K2),
+      new Map(b.spaces.get(editorDraftKey(K2))),
+    );
+    const { offer } = await draftIn(closed).open(K2, tour(pin("a")));
+    expect(offer?.objects.map((o) => o.id)).toEqual(["a"]);
+    b.releasePuts();
+    await draft.idle();
+  });
+
   it("drops the offered files a discard turns down", async () => {
     const b = browser();
     await keptModel(b);

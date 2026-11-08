@@ -131,8 +131,6 @@ export async function readTourFile(
         )
       : null;
   };
-  const full = room(file.size, 0);
-  if (full !== null) return full;
   let data: Uint8Array<ArrayBuffer>;
   try {
     data = new Uint8Array(await file.arrayBuffer());
@@ -140,14 +138,20 @@ export async function readTourFile(
     return refused(UNREAD);
   }
   const blob = new Blob([data], { type: type.mime });
+  // Hashed before the room is judged: bytes the tour already holds add
+  // nothing, so a tour near its cap still takes them.
+  const named = await assetOf(data, ext, type.kind, blob, context);
+  const added = (part: { blob: Blob; isNew: boolean }): number =>
+    part.isNew ? part.blob.size : 0;
+  const full = room(added(named), 0);
+  if (full !== null) return full;
   const checked = await checkKind(type.kind, data, blob, context);
   if (checked !== null) return checked;
-  const named = await assetOf(data, ext, type.kind, blob, context);
   if (type.kind !== "video" || context.posterOf === undefined) {
     return { kind: "read", ...named };
   }
   const poster = await posterFor(blob, context);
-  if (poster === null || room(blob.size, poster.blob.size) !== null) {
+  if (poster === null || room(added(named), added(poster)) !== null) {
     return { kind: "read", ...named };
   }
   return { kind: "read", ...named, poster };

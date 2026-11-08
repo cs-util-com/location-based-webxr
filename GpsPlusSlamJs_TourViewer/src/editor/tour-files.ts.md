@@ -38,8 +38,10 @@ editor session keeps what it returns in its one files table
 ## Invariants & assumptions
 
 - Order of checks: the extension's type (and `kinds`), the entry cap, the
-  room in the tour, the read (a dropped `File` whose source moved or went
-  is refused here, never later at a save), the kind's own rule, the hash.
+  read (a dropped `File` whose source moved or went is refused here, never
+  later at a save), the hash, the room in the tour, the kind's own rule.
+  The room counts only what the import ADDS (a new asset, a new poster):
+  bytes the tour already holds are taken however full it is.
 - A kind's own rule: an image's size read from its header and within
   `TOUR_MAX_IMAGE_PIXELS`; a model inert (`checkGlbInert`) and, when a
   measurer is given, with a shape; other kinds pass.
@@ -70,7 +72,7 @@ if (read.kind === "refused") toast(read.reason);
 ## Tests
 
 `tour-files.test.ts`: the read at the drop (a source that changes or
-fails afterwards), the hash naming, reuse of held bytes, the type refusal
+fails afterwards), the hash naming, reuse of held bytes (also in a tour at its cap), the type refusal
 naming the types taken, the entry and archive caps (and that they stay
 below the reader's), models that are not inert, show nothing or cannot be
 measured, the image pixel cap, and a minted poster.
