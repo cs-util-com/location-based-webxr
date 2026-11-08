@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// The format or lint stage of a package in the per-commit fast gate: runs the
+// The format stage of a package in the per-commit fast gate: runs the
 // stage's own command on only the files changed against the gate's ref
 // (changed-files-command.mjs decides how), skips it when none of them is in
 // the stage, or runs it whole when the rewrite is unsure. It says which in
@@ -18,6 +18,7 @@ import path from 'node:path';
 import { UNIT_RELATED_ENV } from '../test-timing/projects.mjs';
 import { changedFiles } from './changed-paths.mjs';
 import { narrowCommand } from './changed-files-command.mjs';
+import { toolBin } from './package-bin.mjs';
 
 const fullCommand = process.argv
   .slice(2)
@@ -43,9 +44,19 @@ function plan() {
   }
 }
 
-/** @param {string} command @returns {number} */
-function run(command) {
-  return spawnSync(command, { stdio: 'inherit', cwd: pkgDir, shell: true }).status ?? 1;
+/** The stage's own command, as the package script wrote it. @returns {number} */
+function runFull() {
+  return spawnSync(fullCommand, { stdio: 'inherit', cwd: pkgDir, shell: true }).status ?? 1;
+}
+
+/**
+ * The narrowed command: the tool's bin through node with an argv, no shell,
+ * so a git-reported file name is never interpreted.
+ * @param {string[]} argv - `[tool, ...options, ...files]`
+ * @returns {number}
+ */
+function runArgv([tool, ...args]) {
+  return spawnSync(process.execPath, [toolBin(pkgDir, tool), ...args], { stdio: 'inherit', cwd: pkgDir }).status ?? 1;
 }
 
 const p = plan();
@@ -55,9 +66,9 @@ if (p.mode === 'skip') {
 }
 if (p.mode === 'full') {
   console.log(`changed-files: whole package - ${p.reason}`);
-  process.exit(run(fullCommand));
+  process.exit(runFull());
 }
 console.log(
   `changed-files: only the ${p.files.length} changed file(s) (the whole package is checked at the milestone and in CI)`
 );
-process.exit(run(p.command));
+process.exit(runArgv(p.argv));

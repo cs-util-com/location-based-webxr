@@ -330,6 +330,7 @@ export function cleanMergeRefusal({ refGiven, selection, headIsMerge, headOnMain
  *   ref?: string,
  *   relatedUnitEnv?: string,
  *   dependentTrimEnv?: string,
+ *   dependents?: readonly string[],
  * }} options - `skipBrowserEnv` names the env var that puts a gate run in
  *   dependent mode; `rootChecks` are root scripts to run (`check:deadcode`);
  *   `docOnlyNames` are pnpm names of packages that run only `format`;

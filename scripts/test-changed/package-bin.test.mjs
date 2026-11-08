@@ -1,0 +1,23 @@
+// Why this test matters: the fast gate's wrappers run vitest and prettier
+// through this lookup with an argv and no shell. A wrong path would turn
+// every narrowed run into a crash, and a silent fallback would hide it.
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+import { describe, expect, it } from 'vitest';
+
+import { toolBin } from './package-bin.mjs';
+
+const ROOT = fileURLToPath(new URL('../..', import.meta.url));
+
+describe('toolBin', () => {
+  it("finds a tool's bin script through the package's own resolution", () => {
+    const bin = toolBin(ROOT, 'vitest');
+    expect(existsSync(bin)).toBe(true);
+    expect(bin.replaceAll('\\', '/')).toMatch(/\/vitest\/[^/]+\.m?js$/);
+  });
+
+  it('throws for a tool the package does not resolve', () => {
+    expect(() => toolBin(ROOT, 'no-such-tool-r1139')).toThrow();
+  });
+});

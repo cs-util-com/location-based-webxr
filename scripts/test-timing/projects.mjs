@@ -1018,7 +1018,7 @@ export const UNIT_RELATED_ENV = "GATE_UNIT_RELATED_REF";
 /** The related-unit wrapper, relative to a package directory. */
 export const RELATED_UNIT_SCRIPT = "../scripts/test-changed/related-unit.mjs";
 
-/** The changed-files wrapper of the format and lint stages, relative to a package directory. */
+/** The changed-files wrapper of the format stage, relative to a package directory. */
 export const CHANGED_FILES_SCRIPT = "../scripts/test-changed/changed-files-stage.mjs";
 
 /** Env var that puts a gate run in DEC-G2's dependent mode. */

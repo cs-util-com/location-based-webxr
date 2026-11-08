@@ -13,13 +13,13 @@
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import path from 'node:path';
 
 import { UNIT_RELATED_ENV } from '../test-timing/projects.mjs';
 import { changedFiles } from './changed-paths.mjs';
 import { IMPACT_FILE_ENV, readImpactCache } from './graph-dependents.mjs';
 import { impactOf, isUnitTest } from './impact-graph.mjs';
+import { toolBin } from './package-bin.mjs';
 import { mergeImpact, planRelatedRun, relatedVitestArgs } from './related-tests.mjs';
 import { loadImpactGraph } from './workspace-tree.mjs';
 
@@ -81,12 +81,7 @@ function computePlan() {
 function runVitest(args) {
   // Through node, not a shell: a long file list must not meet cmd.exe's
   // 8 191-character limit.
-  const require = createRequire(path.join(pkgDir, 'package.json'));
-  const pkgJson = require.resolve('vitest/package.json');
-  const bin = /** @type {{ bin: { vitest: string } }} */ (
-    JSON.parse(readFileSync(pkgJson, 'utf8'))
-  ).bin.vitest;
-  const child = spawnSync(process.execPath, [path.join(path.dirname(pkgJson), bin), ...args], {
+  const child = spawnSync(process.execPath, [toolBin(pkgDir, 'vitest'), ...args], {
     stdio: 'inherit',
     cwd: pkgDir,
   });
