@@ -21,6 +21,7 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-markdown";
 
 import { CHARACTER_PLAY } from "./character-card.js";
+import { AUDIO_PLAY } from "./kinds/audio/play.js";
 import type { ItemCardHost } from "./item-card.js";
 import type { WorldEnv, WorldPart } from "./world-part.js";
 
@@ -36,8 +37,8 @@ export interface KindPlay<B extends TourBlock> {
   ): readonly string[];
   /** Its part in the world (`world-part.ts`), built for `env.mode`; null
    *  in a view that stands nothing. Absent: the kind stands nothing through
-   *  the world door (no row has one yet: the stands, signs and models are
-   *  the renderer's own drawings, a free character the free host's). */
+   *  the world door (only audio has one yet: the stands, signs and models
+   *  are the renderer's own drawings, a free character the free host's). */
   world?(block: B, env: WorldEnv): WorldPart | null;
 }
 
@@ -145,13 +146,7 @@ export const PLAY_KINDS = {
     assets: (block) =>
       block.poster === undefined ? [block.video] : [block.video, block.poster],
   },
-  audio: {
-    card(block, host) {
-      host.slots.text.textContent = block.transcript ?? "";
-      host.sound(block.audio);
-    },
-    assets: (block) => [block.audio],
-  },
+  audio: AUDIO_PLAY,
   model: {
     card(block, host) {
       host.slots.text.textContent = block.title ?? "";

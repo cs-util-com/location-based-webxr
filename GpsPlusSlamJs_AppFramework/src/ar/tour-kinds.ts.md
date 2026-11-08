@@ -63,6 +63,13 @@ declares a kind or a field, because a tour is untrusted input.
   uses those constants, never `TOUR_KINDS`: the block types derive from them,
   so a row referring to the list would be a circular type.
 - `refs` never throws: a field of the wrong shape names nothing.
+- An audio item stands free as a narration circle (`spot`, `radiusM`
+  required, `TOUR_AUDIO_MIN_RADIUS_M` to `TOUR_AUDIO_MAX_RADIUS_M`) or an
+  ambient zone (`zone`, `maxM` and `volume` 0 to 1 required, `minM` optional
+  and below `maxM`). Its `card` is a story's only. Each world field is
+  required in its own view and kept, still checked, in every other, so the
+  editor's view switch loses nothing. The format floor is 1 m; the editor's
+  default radius is larger (the viewer's `narration-circle` sweep).
 
 ## Examples
 

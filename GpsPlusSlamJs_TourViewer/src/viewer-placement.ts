@@ -62,6 +62,7 @@ import { mountLectern } from "./lectern-view.js";
 import { mountReadingSign, type ReadingSignBlock } from "./reading-sign.js";
 import { worldPartOf } from "./play-kinds.js";
 import { worldEnv } from "./world-part.js";
+import type { WorldSound } from "./world-sound.js";
 import { hasStoryWorldBlocks, reachedWorldBlocks } from "./shown-blocks.js";
 import { selectShownBlocks } from "./visitor-walk-slice.js";
 import { selectVisitorPrefs } from "./visitor-prefs-slice.js";
@@ -188,6 +189,9 @@ export function createViewerPlacement(deps: {
   /** The `?debug=1` viewer recording's `tourViewing/*` log (M1b); silent
    *  while no recording runs. Absent: nothing is logged. */
   viewingLog?: ViewingLog;
+  /** How a free item's part in the world sounds (`world-sound.ts`).
+   *  Absent: silent. */
+  worldSound?: WorldSound;
   /** The page clock: the QR controller's detection times and the moment a
    *  GPS fix ARRIVES, the one clock the keep-alive's hold runs on (M2b
    *  review #4), and the content's fades. Absent: `Date.now` - the
@@ -1167,7 +1171,7 @@ export function createViewerPlacement(deps: {
     const loadContent =
       deps.loadContent ?? ((path: string) => current.loadContentEntry(path));
     // What a kind's world part reads its files through: the visitor's.
-    const env = worldEnv("play", manifest.assets, loadContent);
+    const env = worldEnv("play", manifest.assets, loadContent, deps.worldSound);
     const rendererDeps = (parent: Object3D, alive: () => boolean) => ({
       assets: manifest.assets,
       scene: parent,

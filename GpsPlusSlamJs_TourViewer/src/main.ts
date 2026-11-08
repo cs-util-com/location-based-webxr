@@ -52,7 +52,8 @@ import {
 import { loadVisitorPrefs, storeVisitorChoice } from "./visitor-prefs.js";
 import { readingSheetContent } from "./reading-sign.js";
 import "./model-visitor.css";
-import { tapShownWorldPart } from "./world-part.js";
+import { tapShownWorldPart, tickWorldParts } from "./world-part.js";
+import { createWorldSound } from "./world-sound.js";
 import { wireArEntry } from "./ar-entry.js";
 import { createAuthoringRecording } from "./authoring-recording.js";
 import { arSessionLive, wireCreatorSetup } from "./creator-setup.js";
@@ -907,7 +908,18 @@ const narration = createNarrationVisitor({
     walkToast.announce(message);
   },
 });
+// The free sounds in the world: a narration on the voice channel above,
+// an ambient sound in the background, lowered under any voice.
+const worldSound = createWorldSound({
+  focus: voiceFocus,
+  onError: () => {
+    const message = "A sound could not be played here.";
+    walkToast.say([message]);
+    walkToast.announce(message);
+  },
+});
 const viewer = createViewerPlacement({
+  worldSound,
   ctx,
   mode,
   arStore,
@@ -1077,6 +1089,9 @@ hooks.tickStations = () => {
   captionsFollow?.sync();
   // A model's view, its notes and its card.
   modelVisitor.tick(performance.now());
+  // The free items' parts in the world: a sound's distance, a circle's
+  // inside.
+  tickWorldParts(seams.getScene(), seams.getViewerCamera(), performance.now());
 };
 hooks.stationCodeLocked = stations.codeLocked;
 hooks.unlockStationAudio = stations.unlockAudio;

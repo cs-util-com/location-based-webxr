@@ -16,7 +16,9 @@ the reading sign (`reading-sign.ts`) are world parts too.
   object, still and silent).
 - `WorldEnv` - what a part is built with: `mode`, `loadAsset(id)` (a tour
   file by asset id; rejects with `no file "<id>" in the tour` for an id the
-  tour lacks) and `canvasTexture(canvas)`.
+  tour lacks), `canvasTexture(canvas)` and `sound(id, channel)` (a
+  `world-sound.ts` `SoundHandle` for an audio asset on the `"voice"` or
+  `"background"` channel; in the editor always the silent handle).
 - `WorldPart` - `object` (what stands; placed by the renderer, never by the
   part), `tapTarget?` (what a tap is cast against; none: no tap),
   `update?({ seconds, viewer })`, `tap?()`, `leave?()`, `back?()`,
@@ -24,8 +26,17 @@ the reading sign (`reading-sign.ts`) are world parts too.
 - `canvasTexture(canvas, { anisotropy? } = {})` - a canvas as a texture (painted words, a figure, a shadow blob):
   sRGB, and the anisotropy only when given (a page seen at a slant; three
   clamps it to the renderer's largest).
-- `worldEnv(mode, assets, load)` - a page's `WorldEnv`: an asset id is read
-  through `load` by the path the tour's `assets` name for it.
+- `worldEnv(mode, assets, load, sound = SILENT_WORLD_SOUND)` - a page's
+  `WorldEnv`: an asset id is read through `load` by the path the tour's
+  `assets` name for it; a sound is made by `sound` (the page's
+  `createWorldSound`) and reads its file the same way.
+- `tickWorldParts(scene, viewer, nowMs, parts = mountedWorldParts())` - every
+  camera frame (`main.ts` `hooks.tickStations`): each shown part with an
+  `update` gets `{ seconds: nowMs / 1000, viewer }`, the camera's world
+  position in the part object's parent frame (the frame its `position` is
+  in, so a part measures its distance with no matrix of its own). No scene
+  or no camera: nothing is ticked. A hidden station's parts are not ticked,
+  so its sounds keep their last level until it is left (and disposed).
 - `mountWorldPart(part)`, `unmountWorldPart(part)` (false when it was not
   mounted, so a second `dispose` is a no-op), `mountedWorldParts()` (oldest
   first) - the one mounted set.
@@ -92,7 +103,8 @@ tapShownWorldPart(scene, pickObjectInView, tap);
 1, 4 and 16, and none), the mounted set as a property, the shown-only tap
 (hidden, outside any station, no tap, no scene, a miss), the nearer of two
 parts on the ray through the real `pickObject`, an empty `Object3D` as a
-part, the axes of both rotation conventions over headings, and `worldEnv` in both modes with an unknown
-id. The door's delegation is in `play-kinds.test.ts`, the placement (the
+part, the axes of both rotation conventions over headings, `worldEnv` in both modes with an unknown
+id, its sound in both modes, and `tickWorldParts` (shown only, the parent
+frame, no scene, no camera). The door's delegation is in `play-kinds.test.ts`, the placement (the
 pose's rotation kept, tilt included, and a part that unmounts itself in its
 own dispose still freed) in `content-placement.test.ts`.

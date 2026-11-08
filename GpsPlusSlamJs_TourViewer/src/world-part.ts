@@ -20,9 +20,16 @@
  */
 
 import type { TourAsset } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { CanvasTexture, SRGBColorSpace, type Object3D } from "three";
+import { CanvasTexture, SRGBColorSpace, Vector3, type Object3D } from "three";
 
 import { shownIn } from "./model-visitor.js";
+import {
+  SILENT_SOUND,
+  SILENT_WORLD_SOUND,
+  type SoundChannel,
+  type SoundHandle,
+  type WorldSound,
+} from "./world-sound.js";
 
 /** A part is built for a visitor (`play`) or for the editor (`edit`: the
  *  same object, still and silent). */
@@ -43,6 +50,9 @@ export interface WorldEnv {
   loadAsset(id: string): Promise<Blob>;
   /** `canvas` as a texture (`canvasTexture`). */
   canvasTexture(canvas: HTMLCanvasElement): CanvasTexture;
+  /** A sound of the tour by its asset id, heard by `channel`'s rule
+   *  (`world-sound.ts`); in `edit` always the silent handle. */
+  sound(id: string, channel: SoundChannel): SoundHandle;
 }
 
 /** A kind's object in the world. */
@@ -79,23 +89,30 @@ export function canvasTexture(
   return texture;
 }
 
-/** A part's environment on a page: `mode`, and its files read through
- *  `load` by the path the tour's `assets` name for an id. */
+/** A part's environment on a page: `mode`, its files read through
+ *  `load` by the path the tour's `assets` name for an id, and its sounds
+ *  through the page's `sound` seam (none: silence). */
 export function worldEnv(
   mode: WorldMode,
   assets: readonly TourAsset[],
   load: (path: string) => Promise<Blob>,
+  sound: WorldSound = SILENT_WORLD_SOUND,
 ): WorldEnv {
   const paths = new Map(assets.map((a) => [a.id, a.path]));
+  const loadAsset = (id: string): Promise<Blob> => {
+    const path = paths.get(id);
+    return path === undefined
+      ? Promise.reject(new Error(`no file "${id}" in the tour`))
+      : load(path);
+  };
   return {
     mode,
-    loadAsset(id) {
-      const path = paths.get(id);
-      return path === undefined
-        ? Promise.reject(new Error(`no file "${id}" in the tour`))
-        : load(path);
-    },
+    loadAsset,
     canvasTexture: (canvas) => canvasTexture(canvas),
+    sound: (id, channel) =>
+      mode === "edit"
+        ? SILENT_SOUND
+        : sound.sound(() => loadAsset(id), channel),
   };
 }
 
@@ -115,6 +132,35 @@ export function unmountWorldPart(part: WorldPart): boolean {
 /** The parts mounted and not yet unmounted, oldest first. */
 export function mountedWorldParts(): WorldPart[] {
   return [...mounted];
+}
+
+const viewerLocal = new Vector3();
+
+/**
+ * Every camera frame (`main.ts`): each of `parts` shown under a
+ * station's content group of `scene` (`shownIn`) and having an
+ * `update` is given the page clock (`nowMs`, as seconds) and the world
+ * position of `viewer` (the camera) in its object's parent frame. No
+ * scene or no camera: nothing is ticked.
+ */
+export function tickWorldParts(
+  scene: Object3D | null,
+  viewer: Object3D | null,
+  nowMs: number,
+  parts: readonly WorldPart[] = mountedWorldParts(),
+): void {
+  if (scene === null || viewer === null) return;
+  const seconds = nowMs / 1000;
+  for (const part of parts) {
+    if (part.update === undefined || !shownIn(part.object, scene)) continue;
+    const parent = part.object.parent;
+    viewer.getWorldPosition(viewerLocal);
+    if (parent !== null) parent.worldToLocal(viewerLocal);
+    part.update({
+      seconds,
+      viewer: [viewerLocal.x, viewerLocal.y, viewerLocal.z],
+    });
+  }
 }
 
 /**
