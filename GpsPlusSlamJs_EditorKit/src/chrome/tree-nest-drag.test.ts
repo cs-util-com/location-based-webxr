@@ -5,8 +5,11 @@
  * items, and drags a story to another place among the stories. The drag
  * must show where the item will land (before, after or into a folder),
  * write ONE move there, offer only the lists the app says take the item,
- * never leave its station, and write nothing for a drop in place, Escape,
- * a cancelled pointer or a redraw that lost the item.
+ * leave its station only where the app offers it, and write nothing for a
+ * drop in place, Escape, a cancelled pointer or a redraw that lost the
+ * item. Above all it lands only where the pointer is: an item picked up
+ * near a story once snapped into that story's list, could not be put back
+ * where it came from, and was moved into the story on release.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -51,7 +54,19 @@ function accepts(from: NestPlace, to: string): boolean {
   return to !== "stories";
 }
 
-function setUp() {
+/** As the Tour Viewer's rule: the free items have no order among
+ *  themselves, so a free item is never taken by the free list. */
+function acceptsUnordered(from: NestPlace, to: string): boolean {
+  if (from.list === "free" && to === "free") return false;
+  return accepts(from, to);
+}
+
+function setUp(
+  options: {
+    accepts?: (from: NestPlace, to: string) => boolean;
+    across?: Parameters<typeof createNestDrag>[0]["across"];
+  } = {},
+) {
   document.body.innerHTML = `<div id="tree-body">${MARKUP}</div>`;
   const body = document.getElementById("tree-body") as HTMLElement;
   stubRows(body);
@@ -67,8 +82,10 @@ function setUp() {
       return list === undefined || id === undefined ? null : { list, id };
     },
     intoOf: (row) => row.dataset["into"] ?? null,
-    accepts,
+    accepts: options.accepts ?? accepts,
     move,
+    ...(options.across === undefined ? {} : { across: options.across }),
+    label: (row) => `item ${row.dataset["item"] ?? ""}`,
   });
   const row = (id: string) =>
     body.querySelector(`[data-item="${id}"]`) as HTMLElement;
@@ -82,15 +99,19 @@ function pointer(
   y: number,
   init: Partial<PointerEventInit> = {},
 ): Event {
+  const { pointerType, ...mouse } = init;
   // jsdom has no PointerEvent: a MouseEvent carries the same fields here.
   const event = new MouseEvent(type, {
     bubbles: true,
     cancelable: true,
     clientY: y,
     button: 0,
-    ...init,
+    ...mouse,
   });
   Object.defineProperty(event, "pointerId", { value: 1 });
+  Object.defineProperty(event, "pointerType", {
+    value: pointerType ?? "mouse",
+  });
   target.dispatchEvent(event);
   return event;
 }
@@ -101,7 +122,8 @@ function dragTo(grip: HTMLElement, fromY: number, toY: number): void {
   pointer(window, "pointerup", toY);
 }
 
-const MARKED = ".dragging, .drop-before, .drop-after, .drop-into";
+const MARKED = ".dragging, .drop-before, .drop-after, .drop-into, .drop-across";
+const DROPS = ".drop-before, .drop-after, .drop-into, .drop-across";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -176,17 +198,95 @@ describe("createNestDrag", () => {
     );
   });
 
-  it("never leaves its station", () => {
-    const { grip, move } = setUp();
-    // Past its station's last row: still its own free list, where it was.
-    dragTo(grip("p"), 130, 170);
-    expect(move).not.toHaveBeenCalled();
-    // Above its station: onto its own station row, never into story A.
+  it("never leaves its station unless the app offers the other one", () => {
+    const { grip, move, body } = setUp();
+    // Over the other station's rows: nothing marked, nothing written.
+    pointer(grip("p"), "pointerdown", 130);
+    pointer(window, "pointermove", 170);
+    expect(body.querySelector(DROPS)).toBe(null);
+    pointer(window, "pointerup", 170);
     dragTo(grip("q"), 170, 50);
+    expect(move).not.toHaveBeenCalled();
+  });
+
+  // Why: the owner's report - a free item picked up beside a story snapped
+  // into the story's list wherever the pointer was, could not be dropped
+  // back, and went into the story on release. With the free items unordered
+  // (as the Tour Viewer's are), nothing near its own place takes it.
+  it("lands only where the pointer is, never at the nearest list that takes it", () => {
+    const { grip, move, body } = setUp({ accepts: acceptsUnordered });
+    pointer(grip("p"), "pointerdown", 130);
+    // Its own row, then its station's row (the free items it is among).
+    for (const y of [130, 10]) {
+      pointer(window, "pointermove", y);
+      expect(body.querySelector(DROPS)).toBe(null);
+    }
+    pointer(window, "pointerup", 10);
+    dragTo(grip("p"), 130, 132);
+    expect(move).not.toHaveBeenCalled();
+    // On a story's row it still goes in.
+    dragTo(grip("p"), 130, 90);
     expect(move).toHaveBeenCalledWith(
-      { list: "free", id: "q" },
-      { list: "free", into: true },
+      { list: "free", id: "p" },
+      { list: "story:B", into: true },
     );
+  });
+
+  it("lands nowhere outside the rows: beside them, or past a gap", () => {
+    const { grip, move } = setUp();
+    pointer(grip("p"), "pointerdown", 130);
+    pointer(window, "pointermove", 90, { clientX: 260 });
+    pointer(window, "pointerup", 90, { clientX: 260 });
+    // 20 px past the last row: past the gap a row still counts across.
+    dragTo(grip("a1"), 50, 200);
+    expect(move).not.toHaveBeenCalled();
+  });
+
+  // Why: with no snapped mark, a creator must still SEE that a drop will
+  // do nothing - by the cursor on a desktop and by the ghost's badge on a
+  // phone, where there is no cursor.
+  it("says where a drop cannot land: the ghost's badge and the root's flag", () => {
+    const { grip, row } = setUp({ accepts: acceptsUnordered });
+    const root = document.documentElement;
+    pointer(grip("p"), "pointerdown", 130);
+    pointer(window, "pointermove", 130, { clientX: 20 });
+    const ghost = document.querySelector<HTMLElement>(".nest-ghost");
+    expect(ghost?.textContent).toContain("item p");
+    expect(ghost?.hasAttribute("data-refused")).toBe(true);
+    expect(ghost?.querySelector(".nest-ghost-no svg")).not.toBe(null);
+    expect(ghost?.style.left).toBe("34px");
+    expect(root.dataset["nestDrag"]).toBe("refused");
+    pointer(window, "pointermove", 90);
+    expect(ghost?.hasAttribute("data-refused")).toBe(false);
+    expect(root.dataset["nestDrag"]).toBe("on");
+    expect(row("B").classList.contains("drop-into")).toBe(true);
+    // A finger's ghost stands above it.
+    pointer(window, "pointermove", 130, { pointerType: "touch" });
+    expect(Number.parseFloat(ghost?.style.top ?? "")).toBeLessThan(130);
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(document.querySelector(".nest-ghost")).toBe(null);
+    expect(root.dataset["nestDrag"]).toBe(undefined);
+  });
+
+  it("drops onto another station as a whole where the app offers it", () => {
+    const keyOf = (scope: HTMLElement) => scope.dataset["station"] ?? null;
+    const { grip, move, body } = setUp({
+      across: { keyOf, accepts: (from) => from.id !== "a1" },
+    });
+    pointer(grip("p"), "pointerdown", 130);
+    pointer(window, "pointermove", 170);
+    const t = body.querySelector('.card[data-station="t"]') as HTMLElement;
+    expect(t.classList.contains("drop-across")).toBe(true);
+    expect(body.querySelectorAll(DROPS).length).toBe(1);
+    pointer(window, "pointerup", 170);
+    expect(move).toHaveBeenCalledWith(
+      { list: "free", id: "p" },
+      { across: "t" },
+    );
+    expect(t.classList.contains("drop-across")).toBe(false);
+    // One the app does not let go there: nothing.
+    dragTo(grip("a1"), 50, 150);
+    expect(move).toHaveBeenCalledTimes(1);
   });
 
   it("writes nothing for a drop where the item already was", () => {

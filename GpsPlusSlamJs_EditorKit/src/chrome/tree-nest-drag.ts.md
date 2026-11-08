@@ -11,7 +11,7 @@ app's: the kit has none of its own.
 
 ## Public API
 
-- `createNestDrag({ body, grip, rows, scope, placeOf, intoOf, accepts, move })`
+- `createNestDrag({ body, grip, rows, scope, placeOf, intoOf, accepts, move, across?, label? })`
   -> `{ dispose() }`:
   - `grip` - a grip's selector; its row is its nearest `rows` ancestor;
   - `rows` - every row a drag may land at, in the order drawn;
@@ -23,7 +23,12 @@ app's: the kit has none of its own.
   - `accepts(from, list)` - whether the item may go into `list`;
   - `move(from, drop)` - writes the move: `drop` is `{ list, slot }` (a
     slot counted in that list before the move) or `{ list, into: true }`
-    (at its end);
+    (at its end) or `{ across: key }` (onto another scope as a whole);
+  - `across` (optional) - `keyOf(scope)` names another scope a drop may
+    land on as a whole (null: none) and `accepts(from, key)` says whether
+    the item may go there; without it a drag never leaves its scope;
+  - `label(row)` (optional) - the ghost's words for the carried row
+    (default: the row's text);
   - an empty or a missing selector throws `RangeError`.
 - `NestPlace`, `NestDrop` - the shapes above.
 
@@ -32,13 +37,27 @@ app's: the kit has none of its own.
 - A drag starts only with the main button on a grip inside `body` whose
   row has a place and a scope; the press is `preventDefault`ed and stopped
   (no scroll, no selection, no press of the row under it).
-- At every move the target is the row under the pointer (else the
-  nearest) among the scope's rows whose list or folder `accepts` the item;
-  over the carried row itself there is none. A row that is both in a list
+- At every move the target is the row under the pointer, or one at most
+  `ROW_GAP_PX` (8 px) above or below it (the gap between two rows), within
+  the row's width. It is NEVER the nearest row that takes the item: over a
+  row whose list and folder refuse it, over the carried row itself, at a
+  slot where it already stands, or outside the rows there is no target, no
+  mark, and a release writes nothing. (A drag that snapped to the nearest
+  accepting row made every release land somewhere, its origin included.)
+- Over a row of another scope the target is that scope as a whole, marked
+  `drop-across`, where `across` names and accepts it; else none.
+- From the first move a ghost (`div.nest-ghost`, fixed, `aria-hidden`,
+  `pointer-events: none`, on `document.body`) follows the pointer: 14/12 px
+  right of and below a mouse, 24 px left of and 64 px above a finger (which
+  would hide it). Where there is no target it carries `data-refused` and
+  shows its badge (`.nest-ghost-no`: the `ban` icon and "Not possible
+  here"), and the root element carries `data-nest-drag="refused"` (else
+  `"on"`) for the app's not-allowed cursor; both go at the end. The look is
+  the app's CSS. A row that is both in a list
   that takes the item and a folder that does lands into it in its middle
   half, before or after it outside that; a folder alone lands into it.
 - While it moves the carried row is marked `dragging` and the target
-  `drop-before`, `drop-after` or `drop-into` (one at a time); every mark
+  `drop-before`, `drop-after`, `drop-into` or `drop-across` (one at a time); every mark
   goes at the end.
 - A slot drop that `movedAcross` (`tree-reorder.ts`) answers null for
   (where it was) writes nothing. An into drop is always handed on: only
@@ -72,7 +91,10 @@ createNestDrag({
 
 `tree-nest-drag.test.ts` (jsdom, stubbed row boxes): into a folder, before
 and after an entry, out onto the station's row; the marks while moving; a
-story only among the stories; never out of its station; nothing for a drop
+story only among the stories; never out of its station unless `across`
+offers the other; only where the pointer is, never at the nearest list
+that takes it; nowhere outside the rows; the ghost's badge and the root's
+flag; a drop onto another station as a whole; nothing for a drop
 in place, Escape, a cancelled pointer, a press off the grip or with another
 button; a redraw that keeps the item carries on and one that loses it ends
 unwritten; selectors refused; nothing after `dispose`. The list maths:
