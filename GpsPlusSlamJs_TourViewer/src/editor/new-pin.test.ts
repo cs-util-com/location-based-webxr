@@ -67,6 +67,15 @@ describe("KIND_ADD", () => {
       expect(typeof row.entry).toBe("function");
     }
   });
+
+  it("types each row's item maker by its kind", () => {
+    // Why: a row whose maker makes another kind's item would add the wrong
+    // thing from the menu; it must fail to compile, not at a visitor.
+    // @ts-expect-error a long text's maker is no short text's
+    const wrong: (typeof KIND_ADD)["shortText"]["item"] =
+      KIND_ADD.longText.item;
+    expect(wrong).toBe(KIND_ADD.longText.item);
+  });
 });
 
 describe("freePinSpot", () => {

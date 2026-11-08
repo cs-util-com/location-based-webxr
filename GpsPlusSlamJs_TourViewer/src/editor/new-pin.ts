@@ -193,7 +193,9 @@ export function newLongText(input: NewItemInput): TourReadingSign {
 /** One addable kind's start: what it is at a station's free spot, and as
  *  a story entry numbered `n`. */
 interface KindAddRow<K extends AddKind> {
-  readonly item: (input: NewItemInput) => TourPin | TourReadingSign;
+  readonly item: (
+    input: NewItemInput,
+  ) => Extract<TourPin | TourReadingSign, { kind: K }>;
   readonly entry: (
     n: number,
   ) => Omit<
