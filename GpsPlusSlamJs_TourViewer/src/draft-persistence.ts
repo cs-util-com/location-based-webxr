@@ -567,6 +567,12 @@ export interface StoredDraft {
    * session writes afterwards can be in the list.
    */
   storedIds: readonly string[];
+  /**
+   * How many photo records the read dropped because their bytes did not
+   * read (`photoBytesRequired`, the phone's rule): part of the draft that
+   * did not read, which the caller tells the creator (PR #876 review).
+   */
+  photosUnread: number;
 }
 
 /**
@@ -613,6 +619,7 @@ export async function readDraft(
   const rejected = new Set(rejectedIdsOf(meta.rejected));
   const objects: TourObject[] = [];
   const photos = new Map<string, Blob>();
+  let photosUnread = 0;
   // One snapshot, both prefixes: a photo file whose record never landed has
   // no `object:` key at all, so listing only those would miss it.
   // Sliced by the prefix that MATCHED, not by the first colon. The colon
@@ -683,6 +690,7 @@ export async function readDraft(
     if (blob === undefined && options.photoBytesRequired === false) continue;
     if (blob === undefined) {
       objects.pop();
+      photosUnread += 1;
       continue;
     }
     photos.set(object.id, blob);
@@ -720,6 +728,7 @@ export async function readDraft(
     rejectedOnDisk: [...rejected],
     visits,
     storedIds,
+    photosUnread,
   };
 }
 

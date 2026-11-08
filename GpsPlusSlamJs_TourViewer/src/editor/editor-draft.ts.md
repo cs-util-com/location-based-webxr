@@ -163,8 +163,11 @@ editor's own namespace, one tab at a time. Design:
   only when no file this browser opened showed the id (no `seen` base),
   it names a station the file or the record knows, and, for a photo, the
   draft holds its bytes (a copy's picture is in no file yet: it is
-  written with the record and offered in `pictures`). Any other such
-  record counts as given way (said with the replaced ones), as before.
+  written with the record and offered in `pictures`). A copy whose
+  picture does not read is part of the draft that did not read
+  (`unreadDraft`), never counted as replaced, and goes (PR #876 review).
+  Any other such record counts as given way (said with the replaced
+  ones), as before.
   The same rule also lets an object an undo re-added after an in-place
   save wrote its delete through, when its record carries no `seen` base
   (it was never edited before that delete): no test pins that case yet.
@@ -342,7 +345,8 @@ reload - seen red, the record outlived the save; a record restored over
 a file moved and renamed elsewhere bringing back only the station edited
 here, at the file's pose - seen red, "the details of 2 stations"; a copy
 made here, saved in place, deleted, saved in place and undone, offered
-after a reload);
+after a reload; a copied photo whose picture does not read told as
+unread, not as replaced - seen red, the superseded line);
 an edit claimed against the meta on disk when the pruning write was refused
 (PR #622 A); a close right after "Delete it" holding until its meta write
 landed (PR #622 B); a refused first meta write said, and the backup no
