@@ -99,6 +99,9 @@ Roof geometry above the eaves, in the plan's own order of quality-per-effort.
       walls is a follow-up (`roof-skeleton.ts.md`). Without this step the
       corpus has 44 approximate skeletons and 2 box fallbacks instead of 13
       and 33.
+    - Each skeleton rung catches ANY error, not only a `SkeletonFailure`,
+      and the ladder goes on: an unforeseen throw in one rung used to skip
+      the box rung and draw a prism (M2 review finding 6, 2026-11-08).
     - `buildRoof` never throws: an exception anywhere becomes the prism, or,
       if even that throws, a flat cap at the eaves.
   - **`surfaceVertices`** tells a consumer which vertices are roof and which
@@ -202,9 +205,14 @@ exact skeleton up to the tagged ridge; gambrel and round on an L are
 approximate; a star that fails its first nudge closes on the retry; a gabled
 star that fails as gabled is drawn hipped; an across-tagged quadrilateral
 keeps its gables through the box roof while the untagged one is a skeleton; a
-footprint above the corner cap goes to the box or the prism; malformed and
+footprint above the corner cap goes to the box or the prism; an L draws as a
+skeleton at eaves from -250.9 to 499.9 m (float32 positions); malformed and
 NaN rings never throw; and a fuzz property over random rings, duplicates and
 shapes (finite, between eaves and ridge, `surfaceVertices` in range).
+
+`roof-ladder.test.ts` - an unforeseen error (a `TypeError` injected by mocking
+`skeletonMesh`) in one rung goes on to the hipped rung, and with every
+skeleton rung throwing a near-rectangle still gets the box fallback.
 
 `roof-skeleton.test.ts`, `roof-skeleton.property.test.ts` - the skeleton and
 its mesh; see their sidecars.

@@ -47,7 +47,7 @@ import type { RoofShape } from "./building-heights.js";
 import type { MeshData } from "./mesh-data.js";
 import { MeshBuilder } from "./mesh-data.js";
 import type { GableRule, SkeletonRoof } from "./roof-skeleton.js";
-import { SkeletonFailure, skeletonRoof } from "./roof-skeleton.js";
+import { skeletonRoof } from "./roof-skeleton.js";
 import { skeletonMesh } from "./skeleton-mesh.js";
 import type { TriangulationResult } from "./triangulate.js";
 import { dropClosingPoint } from "./triangulate.js";
@@ -599,9 +599,11 @@ function trySkeleton(
     return roof.ridgeT > 0
       ? skeletonRoofMesh(roof, request, options)
       : undefined;
-  } catch (error) {
-    if (error instanceof SkeletonFailure) return undefined;
-    throw error;
+  } catch {
+    // Any error, not only a SkeletonFailure: an unforeseen throw in one rung
+    // used to escape the ladder, so the box rung was never tried (M2 review
+    // finding 6). The next rung, and in the end the prism, is still a roof.
+    return undefined;
   }
 }
 
