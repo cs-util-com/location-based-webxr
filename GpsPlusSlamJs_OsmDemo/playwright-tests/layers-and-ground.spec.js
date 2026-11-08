@@ -374,7 +374,7 @@ test.describe("the layer toggles", () => {
     // remains, and what is visible underneath is the DoubleSide affordance grid.
     // These steps pin the half that could regress silently.
     // THE SKY STEP RUNS FIRST, and the order is the fusion's own rule rather
-    // than taste: it is fully reversible (seven switches back on), while the step
+    // than taste: it is fully reversible (eight switches back on), while the step
     // below MOVES THE USER, which reloads the terrain and cannot be undone. An
     // irreversible step goes last or it hands every later step a world it did
     // not ask for.
@@ -383,6 +383,8 @@ test.describe("the layer toggles", () => {
       "areas",
       "buildings",
       "trees",
+      // The cosmetic woods (objects M2a) are a layer too, on by default.
+      "woods",
       "plates",
       "roads",
       "poi",
