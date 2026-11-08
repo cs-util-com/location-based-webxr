@@ -282,3 +282,36 @@ describe("modelWorld", () => {
     );
   });
 });
+
+// Why: a free that throws half way (a material whose dispose fails) must
+// not leave the model behind for a second dispose to free again, and when
+// both the view and the model fail to free, the caller is told the first
+// failure, not the one that came after it.
+describe("modelWorld dispose", () => {
+  it("frees the model once when its free throws, and keeps the first error", async () => {
+    const { mesh, freed } = boxModel();
+    const material = mesh.material;
+    material.dispose = () => {
+      freed.material += 1;
+      throw new Error("material free failed");
+    };
+    const part = modelWorld(
+      blockOf(),
+      envOf(() => Promise.resolve(mesh)),
+    );
+    await part!.ready;
+    const view = mountedModelViews().find((h) => h.model === mesh);
+    expect(view).toBeDefined();
+    const viewDispose = view!.dispose.bind(view);
+    view!.dispose = () => {
+      viewDispose();
+      throw new Error("view free failed");
+    };
+    expect(() => part!.dispose()).toThrow("view free failed");
+    expect(freed).toEqual({ geometry: 1, material: 1 });
+    expect(mesh.parent).toBeNull();
+    // Again: nothing left to free, nothing thrown.
+    expect(() => part!.dispose()).not.toThrow();
+    expect(freed).toEqual({ geometry: 1, material: 1 });
+  });
+});

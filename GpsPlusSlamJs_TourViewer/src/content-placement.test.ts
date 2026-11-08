@@ -739,6 +739,111 @@ describe("renderTourStation", () => {
     expect(early.skipped).toEqual([]);
   });
 
+  // Why: a part's `ready` can reject while the renderer still decodes
+  // the blocks after it (a photo crosses tasks), or a later block can
+  // throw before the station stands at all. Either way the rejection must
+  // be handled the moment the part is placed: an unhandled rejection is
+  // reported as a crash. A part whose free throws on that path is still
+  // taken out of the station, quietly.
+  it("handles a part's early rejection while later blocks decode, after a throw, and when its free throws", async () => {
+    const stationGeo = geoAt({ ...ZERO, alt: 400 }, 10, 0, 5, yaw(0));
+    const pose = {
+      position: [1, 0, 2] as [number, number, number],
+      rotation: yaw(0),
+    };
+    const model = {
+      id: "m",
+      kind: "model" as const,
+      view: "placed" as const,
+      asset: "horse",
+      sizeM: 2,
+      createdAtIso: NOW,
+      pose,
+    };
+    const photo = {
+      id: "p",
+      kind: "picture" as const,
+      view: "plane" as const,
+      image: "g",
+      widthM: 1,
+      createdAtIso: NOW,
+      pose,
+    };
+    const pin = {
+      id: "pin",
+      kind: "shortText" as const,
+      view: "pin" as const,
+      caption: "Here",
+      pose,
+    };
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const failing = (throwOnFree: boolean) => () => {
+        const part: WorldPart = {
+          object: new Group(),
+          ready: Promise.reject(new Error("bad glb")),
+          dispose: () => {
+            if (throwOnFree) throw new Error("free failed");
+          },
+        };
+        return part;
+      };
+      // A photo that decodes a task later, after the rejection.
+      const slowPhoto = () =>
+        new Promise<Texture>((resolve) =>
+          setTimeout(() => resolve(new Texture()), 5),
+        );
+      for (const throwOnFree of [false, true]) {
+        const rendered = await renderTourStation(
+          stationAt("s", stationGeo, [model, photo]),
+          {
+            assets: photoAssets("g"),
+            scene: new Group(),
+            zero: ZERO,
+            makeLabel: labelStub,
+            loadPhotoTexture: slowPhoto,
+            worldPart: failing(throwOnFree),
+          },
+        );
+        await filesLanded();
+        expect(rendered.skipped).toEqual(["m"]);
+        expect(rendered.count).toBe(1);
+        expect(
+          mountedWorldParts().map(
+            (p): unknown => p.object.userData["objectId"],
+          ),
+        ).not.toContain("m");
+        rendered.dispose();
+      }
+
+      // A later block throws: the part is freed with the construction, and
+      // its rejection is still handled.
+      let throwingLabel = 0;
+      await expect(
+        renderTourStation(stationAt("s", stationGeo, [model, pin]), {
+          assets: [],
+          scene: new Group(),
+          zero: ZERO,
+          makeLabel: () => {
+            throwingLabel += 1;
+            throw new Error("no canvas");
+          },
+          loadPhotoTexture: slowPhoto,
+          worldPart: failing(false),
+        }),
+      ).rejects.toThrow("no canvas");
+      expect(throwingLabel).toBe(1);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+
   // Why (station blocks, the reading stand): a long text in the
   // `lectern` view stands at its local pose and keeps it (it does not
   // turn to the visitor), drawn by the page's builder (a canvas, so the

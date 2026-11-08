@@ -535,8 +535,32 @@ async function renderContent(
   const photoIds: string[] = [];
   const textures: Texture[] = [];
   const skipped: string[] = [];
-  /** The parts placed while still loading, with their block's id. */
-  const loading: { readonly id: string; readonly part: WorldPart }[] = [];
+  /** Set once the station (or a construction that threw) freed its
+   *  parts: a part's late rejection then changes nothing. */
+  let freed = false;
+  /** Takes away a part whose `ready` rejects (an asset the tour lacks, a
+   *  file that fails), leaving the station that already shows: freed,
+   *  unmounted, out of the group and the count, and named in `skipped`.
+   *  Attached as the part is placed, so a rejection that arrives while
+   *  later blocks still decode, or after a construction that threw, is
+   *  always handled. */
+  const dropFailed = (id: string, part: WorldPart): void => {
+    part.ready?.catch(() => {
+      if (freed) return;
+      const at = parts.indexOf(part);
+      if (at === -1) return;
+      parts.splice(at, 1);
+      part.object.removeFromParent();
+      try {
+        part.dispose();
+      } catch {
+        // No caller to tell: the part leaves the station either way.
+      } finally {
+        unmountWorldPart(part);
+      }
+      skipped.push(id);
+    });
+  };
   // One group, added to the scene only once everything decoded (M5 review
   // #6): pins used to land one by one while photos trickled in, and a
   // session ending mid-run left them in the scene with no owner. Photos
@@ -575,7 +599,7 @@ async function renderContent(
         part.object.userData["objectId"] = drawn.id;
         mountWorldPart(part);
         parts.push(part);
-        if (part.ready !== undefined) loading.push({ id: drawn.id, part });
+        dropFailed(drawn.id, part);
         continue;
       }
       if (drawn.as === "lectern" || drawn.as === "reading") {
@@ -629,6 +653,7 @@ async function renderContent(
     // again as the visitor walks. The construction error is the one the
     // caller is told: a free failing after it is its consequence, and
     // would hide the cause (PR #874 review).
+    freed = true;
     try {
       freeAll([
         ...labels.map((label) => () => label.dispose()),
@@ -640,9 +665,11 @@ async function renderContent(
     throw error;
   }
   deps.scene.add(group);
-  let freed = false;
   const rendered: RenderedTourObjects = {
-    count: labels.length + planes.count + stands.length + parts.length,
+    // Live: a part `dropFailed` takes away leaves the count.
+    get count() {
+      return labels.length + planes.count + stands.length + parts.length;
+    },
     root: group,
     skipped,
     dispose: () => {
@@ -658,25 +685,5 @@ async function renderContent(
       ]);
     },
   };
-  // A part whose `ready` rejects (an asset the tour lacks, a file that
-  // fails) leaves the station that already shows: freed, unmounted, out of
-  // the group and the count, and named in `skipped`. Once the station is
-  // freed its parts went with it, so a late rejection changes nothing.
-  for (const { id, part } of loading) {
-    part.ready?.catch(() => {
-      if (freed) return;
-      const at = parts.indexOf(part);
-      if (at === -1) return;
-      parts.splice(at, 1);
-      part.object.removeFromParent();
-      try {
-        part.dispose();
-      } finally {
-        unmountWorldPart(part);
-        rendered.count -= 1;
-        skipped.push(id);
-      }
-    });
-  }
   return rendered;
 }

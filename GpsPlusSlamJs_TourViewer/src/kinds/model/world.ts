@@ -73,17 +73,29 @@ export function modelWorld(
     dispose() {
       gone = true;
       // The view first: it gives the model back its own materials, which
-      // `disposeObject3D` then frees.
-      try {
-        view?.dispose();
-      } finally {
-        view = null;
-        if (model !== null) {
-          model.removeFromParent();
-          disposeObject3D(model);
-          model = null;
+      // `disposeObject3D` then frees. Both are let go before freeing, so a
+      // free that throws leaves nothing for a second dispose to free again;
+      // the first failure is the one the caller is told.
+      const shown = view;
+      const drawn = model;
+      view = null;
+      model = null;
+      let failed = false;
+      let first: unknown;
+      const attempt = (free: () => void): void => {
+        try {
+          free();
+        } catch (error) {
+          if (!failed) first = error;
+          failed = true;
         }
+      };
+      if (shown !== null) attempt(() => shown.dispose());
+      if (drawn !== null) {
+        drawn.removeFromParent();
+        attempt(() => disposeObject3D(drawn));
       }
+      if (failed) throw first;
     },
   };
 }

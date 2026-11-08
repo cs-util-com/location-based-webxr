@@ -76,7 +76,10 @@ under - what a tap in AR is cast against to name the object
   of the group and the `count`, and names the block in `skipped` (the
   result's array, read again by `station-content.ts` `shown()`). A
   station freed first frees the part with it, and the late rejection
-  changes nothing. A long text in the `reading` view is drawn the same
+  changes nothing. The rejection is handled from the moment the part is
+  placed (`dropFailed`), so one that arrives while later blocks still
+  decode, or after a construction that threw, is never unhandled; a part
+  whose free throws there still leaves the station, quietly. A long text in the `reading` view is drawn the same
   way by the page's optional `makeReadingSign(block)` (`reading-sign.ts`
   `mountReadingSign`), and left out quietly without it. A long text in
   the `lectern` view is drawn by the
@@ -166,7 +169,7 @@ load" in the status segment), a station's placed model drawn through the world d
 `sizeM` by `modelScale`, its part at its local pose, a failed one in
 `skipped`, its geometry freed with the station, none drawn without a
 door, the other blocks shown while a model still loads and a model that
-fails later taken away once (and not at all after the station went), a model in every world view at the same shared scale with its
+fails later taken away once (and not at all after the station went), an early rejection handled while a later photo decodes, after a throw part-way and when its free throws, a model in every world view at the same shared scale with its
 view's handle and its own material back and freed on disposal, disposal, what a throw part-way frees (the
 decoded photo and the label made so far), a throwing stand leaving no
 part mounted, the construction error kept over a throwing part dispose,

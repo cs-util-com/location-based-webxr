@@ -24,11 +24,14 @@ kind's part, and the 3D editor (`editor3d-stations.ts`) builds it in
     mounted (below).
   - `ready` - settles once the model stands; rejects with the load's error
     when the file cannot be read or parsed (the renderer names the block
-    in `skipped`, disposes the part and stands nothing).
+    in `skipped` and takes the part out of the station: freed, unmounted,
+    out of its group and count, while the station's other blocks stay).
   - `dispose()` - the view first (it gives the model back its own
     materials), then the model out of the group and freed
-    (`disposeObject3D`). A model that lands after `dispose` is freed and
-    never added.
+    (`disposeObject3D`). Both are let go before freeing: a free that
+    throws leaves nothing for a second `dispose` to free again, every
+    free still runs, and the first error is the one thrown. A model that
+    lands after `dispose` is freed and never added.
 
 ## Invariants and assumptions
 
