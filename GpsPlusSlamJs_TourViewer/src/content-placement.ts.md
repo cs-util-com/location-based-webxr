@@ -69,9 +69,14 @@ under - what a tap in AR is cast against to name the object
   tour lacks is named in `skipped`, as one whose file fails). A placed
   model is a world part like any other kind's (below): its row's
   `kinds/model/world.ts` `modelWorld` loads its file through the env,
-  scales it to its `sizeM` and mounts its view; the renderer awaits the
-  part's `ready`, and a rejection (an asset the tour lacks, a file that
-  fails) names the block in `skipped` and disposes the part. A long text in the `reading` view is drawn the same
+  scales it to its `sizeM` and mounts its view. The renderer places the
+  part at once and never awaits its `ready`, so a model file holds back
+  none of the station's other blocks; a rejection (an asset the tour lacks,
+  a file that fails) later disposes and unmounts the part, takes it out
+  of the group and the `count`, and names the block in `skipped` (the
+  result's array, read again by `station-content.ts` `shown()`). A
+  station freed first frees the part with it, and the late rejection
+  changes nothing. A long text in the `reading` view is drawn the same
   way by the page's optional `makeReadingSign(block)` (`reading-sign.ts`
   `mountReadingSign`), and left out quietly without it. A long text in
   the `lectern` view is drawn by the
@@ -80,8 +85,7 @@ under - what a tap in AR is cast against to name the object
   only (`uprightTurn`: a pitch or roll is dropped, as the prototype's
   stand keeps only its turn), added after the pictures and
   disposed with them (the 3D editor passes it too); without the builder
-  (the creator's previews, the unit tests) it is left out. The station's group is added to `scene` once every picture decoded and
-  every part is ready. A station's story blocks are the
+  (the creator's previews, the unit tests) it is left out. The station's group is added to `scene` once every picture decoded. A station's story blocks are the
   story's, never drawn here. Any other block (a free video or sound, a kind with no drawing here) is asked of the page's world door, `worldPart` (the visitor's: its kind's row, `play-kinds.ts` `worldPartOf`), and the `WorldPart` it gives (`world-part.ts`) is placed at the block's pose, mounted in the one world-part set, and disposed and then unmounted with the station (in that order: a part that frees itself only while still mounted, as the stand and the sign do, still frees everything; a free that throws - a part, a stand, a view, a label - still leaves everything else freed and every part unmounted, and the first throw then reaches the caller); without the door, or when it answers null, nothing stands there (no look exists yet, and a stand-in would be a marker nobody chose). The part takes the block's pose rotation as it stands, pitch and roll included (only the stand and the sign are set upright); where its front, local +Z, then points depends on which convention wrote that rotation (`world-part.ts.md`, Axes). A free character is the page's free host's (`free-items.ts`), never this renderer's. A station without free blocks gives an empty
   one. The
   same rendering (`renderContent`) as `renderTourObjects`, so labels,
@@ -161,7 +165,8 @@ model left out quietly (the photo loader never asked, no "could not
 load" in the status segment), a station's placed model drawn through the world door at its
 `sizeM` by `modelScale`, its part at its local pose, a failed one in
 `skipped`, its geometry freed with the station, none drawn without a
-door, a model in every world view at the same shared scale with its
+door, the other blocks shown while a model still loads and a model that
+fails later taken away once (and not at all after the station went), a model in every world view at the same shared scale with its
 view's handle and its own material back and freed on disposal, disposal, what a throw part-way frees (the
 decoded photo and the label made so far), a throwing stand leaving no
 part mounted, the construction error kept over a throwing part dispose,

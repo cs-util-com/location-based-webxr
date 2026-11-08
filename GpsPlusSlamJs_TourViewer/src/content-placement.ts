@@ -268,7 +268,8 @@ export interface TourObjectRendererDeps {
 }
 
 export interface RenderedTourObjects {
-  /** Objects actually placed (a photo whose texture failed is left out). */
+  /** Objects actually placed (a photo whose texture failed is left out;
+   *  a world part whose `ready` rejects leaves it then). */
   count: number;
   /** Ids of objects that could not be rendered, for the status line. */
   skipped: string[];
@@ -375,7 +376,11 @@ export async function renderStationBlocks(
   );
   deps.scene.add(frame);
   return {
-    count: part.count,
+    // Read through: a part that fails after the station shows leaves the
+    // count then (`renderContent`).
+    get count() {
+      return part.count;
+    },
     skipped: part.skipped,
     root: frame,
     dispose: () => {
@@ -530,6 +535,8 @@ async function renderContent(
   const photoIds: string[] = [];
   const textures: Texture[] = [];
   const skipped: string[] = [];
+  /** The parts placed while still loading, with their block's id. */
+  const loading: { readonly id: string; readonly part: WorldPart }[] = [];
   // One group, added to the scene only once everything decoded (M5 review
   // #6): pins used to land one by one while photos trickled in, and a
   // session ending mid-run left them in the scene with no owner. Photos
@@ -560,30 +567,20 @@ async function renderContent(
       if (drawn.as === "world") {
         const part = deps.worldPart?.(drawn.block) ?? null;
         if (part === null) continue;
-        // A part that loads (a model's file) stands before the station
-        // appears; one that cannot show what it loads is freed and named.
-        const shown =
-          part.ready === undefined
-            ? true
-            : await part.ready.then(
-                () => true,
-                () => false,
-              );
-        if (!shown) {
-          part.dispose();
-          skipped.push(drawn.id);
-          continue;
-        }
+        // Placed at once: a part that loads (a model's file) never holds
+        // back the station's other blocks. One that cannot show what it
+        // loads is taken away when it says so (`dropFailed`).
         part.object.position.set(...pose.positionNue);
         part.object.quaternion.set(...pose.rotationNue);
         part.object.userData["objectId"] = drawn.id;
         mountWorldPart(part);
         parts.push(part);
+        if (part.ready !== undefined) loading.push({ id: drawn.id, part });
         continue;
       }
       if (drawn.as === "lectern" || drawn.as === "reading") {
         // No builder (the 3D editor, the creator's previews): left out
-        // quietly, as a model without a loader.
+        // quietly, as a block the world door answers null for.
         const make =
           drawn.as === "lectern" ? deps.makeLectern : deps.makeReadingSign;
         const stand = make?.({
@@ -643,11 +640,13 @@ async function renderContent(
     throw error;
   }
   deps.scene.add(group);
-  return {
+  let freed = false;
+  const rendered: RenderedTourObjects = {
     count: labels.length + planes.count + stands.length + parts.length,
     root: group,
     skipped,
     dispose: () => {
+      freed = true;
       // From whatever holds it now - the creator's previews move a group
       // between frames (code book plan M5b) - and from the node it was
       // added to (the e2e fakes' nodes set no `parent`).
@@ -659,4 +658,25 @@ async function renderContent(
       ]);
     },
   };
+  // A part whose `ready` rejects (an asset the tour lacks, a file that
+  // fails) leaves the station that already shows: freed, unmounted, out of
+  // the group and the count, and named in `skipped`. Once the station is
+  // freed its parts went with it, so a late rejection changes nothing.
+  for (const { id, part } of loading) {
+    part.ready?.catch(() => {
+      if (freed) return;
+      const at = parts.indexOf(part);
+      if (at === -1) return;
+      parts.splice(at, 1);
+      part.object.removeFromParent();
+      try {
+        part.dispose();
+      } finally {
+        unmountWorldPart(part);
+        rendered.count -= 1;
+        skipped.push(id);
+      }
+    });
+  }
+  return rendered;
 }

@@ -49,6 +49,12 @@ import {
 } from "./world-part";
 import { worldPartOf } from "./play-kinds";
 
+/** Lets the files a world part asked for land: the renderer never waits
+ *  for them (a model holds back no other block). */
+function filesLanded(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 /** The visitor's world door for models: each file is read by its path,
  *  and `parse` turns the path into the model (or fails). */
 function modelDoor(
@@ -590,6 +596,9 @@ describe("renderTourStation", () => {
           : Promise.reject(new Error("bad glb"));
       }),
     });
+    // The station stands before its files arrive; once they have, the
+    // broken one is gone and named.
+    await filesLanded();
     expect(loaded).toEqual(["content/horse.glb", "content/broken.glb"]);
     expect(rendered.count).toBe(1);
     expect(rendered.skipped).toEqual(["m2"]);
@@ -617,6 +626,117 @@ describe("renderTourStation", () => {
     expect(quiet.count).toBe(0);
     expect(quiet.skipped).toEqual([]);
     quiet.dispose();
+  });
+
+  // Why: a model file can be large, and the other blocks of its station
+  // must never wait for it. The pin stands (and the station's group is in
+  // the scene) while the model still loads; a load that then fails takes
+  // only the model's part away - freed, unmounted, out of the group,
+  // named in `skipped` and no longer counted - and a station freed while
+  // its model still loads frees the part once, ignoring a late failure.
+  it("shows a station's other blocks before its model loads, and drops a model that fails later", async () => {
+    const scene = new Group();
+    const stationGeo = geoAt({ ...ZERO, alt: 400 }, 10, 0, 5, yaw(0));
+    const pose = {
+      position: [1, 0, 2] as [number, number, number],
+      rotation: yaw(0),
+    };
+    const pin = {
+      id: "pin",
+      kind: "shortText" as const,
+      view: "pin" as const,
+      caption: "Here",
+      pose,
+    };
+    const model = {
+      id: "m",
+      kind: "model" as const,
+      view: "placed" as const,
+      asset: "horse",
+      sizeM: 2,
+      createdAtIso: NOW,
+      pose,
+    };
+    const assets: TourAsset[] = [
+      { id: "horse", path: "content/horse.glb", kind: "model" },
+    ];
+    const pending: ((error: Error) => void)[] = [];
+    const door = modelDoor(
+      assets,
+      () =>
+        new Promise<Object3D>((_resolve, reject) => {
+          pending.push(reject);
+        }),
+    );
+    let partDisposed = 0;
+    const counted = (block: TourBlock) => {
+      const part = door(block);
+      if (part === null) return null;
+      const dispose = part.dispose.bind(part);
+      part.dispose = () => {
+        partDisposed += 1;
+        dispose();
+      };
+      return part;
+    };
+    const rendered = await renderTourStation(
+      stationAt("s", stationGeo, [pin, model]),
+      {
+        assets,
+        scene,
+        zero: ZERO,
+        makeLabel: labelStub,
+        loadPhotoTexture: () => Promise.resolve(new Texture()),
+        worldPart: counted,
+      },
+    );
+    await filesLanded();
+    expect(pending, "the model still loads").toHaveLength(1);
+    const ids = () => {
+      const found: unknown[] = [];
+      rendered.root.traverse((o) => {
+        if (o.userData["objectId"] !== undefined) {
+          found.push(o.userData["objectId"]);
+        }
+      });
+      return found;
+    };
+    expect(scene.children).toContain(rendered.root);
+    expect(ids()).toEqual(["pin", "m"]);
+    expect(rendered.count).toBe(2);
+    const part = mountedWorldParts().at(-1);
+    expect(part?.object.userData["objectId"]).toBe("m");
+
+    pending[0]!(new Error("bad glb"));
+    await filesLanded();
+    expect(ids()).toEqual(["pin"]);
+    expect(rendered.count).toBe(1);
+    expect(rendered.skipped).toEqual(["m"]);
+    expect(partDisposed).toBe(1);
+    expect(mountedWorldParts()).not.toContain(part);
+    rendered.dispose();
+    expect(partDisposed, "freed once, not again with the station").toBe(1);
+
+    // Freed while loading: the part goes with the station, and the late
+    // failure neither frees it again nor names it.
+    const early = await renderTourStation(
+      stationAt("s", stationGeo, [pin, model]),
+      {
+        assets,
+        scene,
+        zero: ZERO,
+        makeLabel: labelStub,
+        loadPhotoTexture: () => Promise.resolve(new Texture()),
+        worldPart: counted,
+      },
+    );
+    await filesLanded();
+    early.dispose();
+    expect(partDisposed).toBe(2);
+    pending[1]!(new Error("bad glb"));
+    await filesLanded();
+    expect(partDisposed).toBe(2);
+    expect(early.skipped).toEqual([]);
   });
 
   // Why (station blocks, the reading stand): a long text in the
@@ -1213,6 +1333,7 @@ describe("renderTourStation", () => {
         () => (clipping += 1),
       ),
     });
+    await filesLanded();
     expect(rendered.count).toBe(views.length);
     const drawn = new Map<string, Object3D>();
     rendered.root.traverse((o) => {
