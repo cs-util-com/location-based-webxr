@@ -348,20 +348,37 @@ test.describe("on a phone", () => {
     const from = middle(await box(row.locator('[data-move="pin"]')));
     const to = middle(await box(card.locator('.folder[data-story="s1"]')));
     const cdp = await page.context().newCDPSession(page);
-    /** @param {string} type @param {{x: number, y: number, id: number}[]} points */
-    const touch = (type, points) =>
-      cdp.send("Input.dispatchTouchEvent", { type, touchPoints: points });
-    await touch("touchStart", [{ x: from.x, y: from.y, id: 1 }]);
+    // The finger as a person moves it: 0.1 s between moves, and it rests
+    // on the drop for 0.7 s before it lifts. Events sent back to back with
+    // no time of their own lift a finger still moving fast; Chrome then
+    // starts a fling, and the next tap only stops that fling - no click,
+    // so the tap below selected nothing in about half the runs (r1149
+    // review #1, measured: 0 of 8 lost with these times, 5 of 8 without;
+    // a second tap always selected). The times are the events' own
+    // (seconds, ending now), so nothing waits for them.
+    const t0 = Date.now() / 1000 - 1.5;
+    /** @param {string} type @param {{x: number, y: number, id: number}[]} points @param {number} at */
+    const touch = (type, points, at) =>
+      cdp.send("Input.dispatchTouchEvent", {
+        type,
+        touchPoints: points,
+        timestamp: t0 + at,
+      });
+    await touch("touchStart", [{ x: from.x, y: from.y, id: 1 }], 0);
     for (let i = 1; i <= 8; i++) {
-      await touch("touchMove", [
-        {
-          x: from.x + ((to.x - from.x) * i) / 8,
-          y: from.y + ((to.y - from.y) * i) / 8,
-          id: 1,
-        },
-      ]);
+      await touch(
+        "touchMove",
+        [
+          {
+            x: from.x + ((to.x - from.x) * i) / 8,
+            y: from.y + ((to.y - from.y) * i) / 8,
+            id: 1,
+          },
+        ],
+        i * 0.1,
+      );
     }
-    await touch("touchEnd", []);
+    await touch("touchEnd", [], 1.5);
     await expect
       .poll(() => lists(page))
       .toEqual({
