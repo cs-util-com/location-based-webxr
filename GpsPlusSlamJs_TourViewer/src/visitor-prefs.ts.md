@@ -57,6 +57,9 @@ defensive read and write of the one storage key.
   one set, `fails(view)` saying whether a member's needs fail; what
   `shownView` uses, and what pins rule 4 on a set of three.
 - `loadVisitorPrefs(storage)` - the parsed value, or null; never throws.
+- `prefsRoot(stored)` - the stored value as its own object (the framework's
+  `isRecord`, an array excluded), or a fresh `{}`: the base every write
+  merges into (`withPreferredView`, `sound-setting.ts`).
 - `saveVisitorPrefs(storage, value)` - true when written; false when the
   storage is missing or throws (the choice then lasts the visit).
 - `storeVisitorChoice(storage, inStore, kind, placement, view | null)` -

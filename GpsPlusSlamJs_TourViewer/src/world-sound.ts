@@ -10,18 +10,23 @@
  * - **Background** (an ambient sound): loops at the level its part asks
  *   for each frame (its distance's loudness), lowered to
  *   `BACKGROUND_UNDER_VOICE` with a glide while any voice runs.
- * - **Sound off** (`soundOn`) silences both: a voice does not carry on
- *   at return (a tap still plays it), a background plays at volume 0.
+ * - **Sound off** (`sound`, the page's setting while the page is shown)
+ *   silences both: a voice does not carry on at return (a tap still plays
+ *   it), a background is paused at once and is not read before it may be
+ *   heard. A play the browser refuses is reported once and not tried again
+ *   until the sound falls silent (level 0) or comes back on.
  *
  * @see world-sound.ts.md
  */
 
 import { BACKGROUND_UNDER_VOICE, glide } from "./kinds/audio/sound-reach.js";
 import { clamp01 } from "./landing/clamp01.js";
+import { isPlayAbort } from "./scene-audio.js";
 import {
   createNarrationPlayer,
   type NarrationAudio,
 } from "./narration-player.js";
+import type { SoundGate } from "./sound-setting.js";
 import { focusedPlayer, type VoiceFocus } from "./voice-focus.js";
 
 /** Which rule a sound is heard by. */
@@ -58,6 +63,8 @@ export interface SoundHandle {
 /** The slice of an audio element a background sound drives. */
 export interface BackgroundAudio {
   src: string;
+  removeAttribute(name: string): void;
+  load(): void;
   loop: boolean;
   volume: number;
   readonly paused: boolean;
@@ -69,8 +76,9 @@ export interface WorldSoundDeps {
   readonly focus: VoiceFocus;
   /** Defaults to `new Audio()`. */
   readonly audio?: () => NarrationAudio & BackgroundAudio;
-  /** The page's sound setting; default on. */
-  readonly soundOn?: () => boolean;
+  /** Whether sound may be heard (the page's setting while it is shown);
+   *  default always on. */
+  readonly sound?: SoundGate;
   /** The voice or the file could not be played (the page's error toast). */
   onError?(error: unknown): void;
   readonly createUrl?: (blob: Blob) => string;
@@ -101,7 +109,17 @@ export const SILENT_SOUND: SoundHandle = {
 export const SILENT_WORLD_SOUND: WorldSound = { sound: () => SILENT_SOUND };
 
 export function createWorldSound(deps: WorldSoundDeps): WorldSound {
-  const soundOn = deps.soundOn ?? (() => true);
+  const gate: SoundGate = deps.sound ?? {
+    on: () => true,
+    onChange: () => () => undefined,
+  };
+  const soundOn = (): boolean => gate.on();
+  /** The live backgrounds' re-checks, run when the gate changes: a hidden
+   *  page runs no frame that would pause them. */
+  const backgrounds = new Set<(cameOn: boolean) => void>();
+  gate.onChange((on) => {
+    for (const recheck of [...backgrounds]) recheck(on);
+  });
   const audio = deps.audio ?? (() => new Audio());
   const createUrl = deps.createUrl ?? ((b: Blob) => URL.createObjectURL(b));
   const revokeUrl = deps.revokeUrl ?? ((u: string) => URL.revokeObjectURL(u));
@@ -163,12 +181,11 @@ export function createWorldSound(deps: WorldSoundDeps): WorldSound {
     let want = 0;
     let lower = 1;
     let lastS: number | null = null;
-    const apply = (): void => {
-      if (element === null) return;
-      element.volume = soundOn() ? clamp01(want * lower) : 0;
-      if (want > 0 && element.paused) element.play().catch(report);
-      if (want <= 0 && !element.paused) element.pause();
-    };
+    /** A play() is under way: no second one meanwhile. */
+    let trying = false;
+    /** The browser refused to play it: not tried again (nor reported)
+     *  until it falls silent or sound comes back on. */
+    let refused = false;
     const start = (): void => {
       if (loading || gone) return;
       loading = true;
@@ -184,23 +201,52 @@ export function createWorldSound(deps: WorldSoundDeps): WorldSound {
         })
         .catch(report);
     };
+    const apply = (): void => {
+      const audible = want > 0 && soundOn();
+      if (audible) start();
+      if (element === null) return;
+      // Silence is always a pause: sound off loads and plays nothing.
+      element.volume = clamp01(want * lower);
+      if (audible && element.paused && !trying && !refused) {
+        trying = true;
+        const el = element;
+        el.play()
+          .catch((error: unknown) => {
+            // A pause of ours cut it short: no refusal.
+            if (isPlayAbort(error) || el !== element) return;
+            refused = true;
+            report(error);
+          })
+          .finally(() => {
+            trying = false;
+          });
+      }
+      if (!audible && !element.paused) element.pause();
+    };
+    const recheck = (cameOn: boolean): void => {
+      if (cameOn) refused = false;
+      apply();
+    };
+    backgrounds.add(recheck);
     return {
       ...SILENT_SOUND,
       playing: () => element !== null && !element.paused,
       level(gain, seconds) {
         want = clamp01(gain);
+        if (want <= 0) refused = false;
         const target =
           deps.focus.running() === null ? 1 : BACKGROUND_UNDER_VOICE;
         lower = lastS === null ? target : glide(lower, target, seconds - lastS);
         lastS = seconds;
-        if (want > 0) start();
         apply();
       },
       dispose() {
         gone = true;
+        backgrounds.delete(recheck);
         if (element !== null) {
           element.pause();
-          element.src = "";
+          element.removeAttribute("src");
+          element.load();
           element = null;
         }
         if (url !== null) revokeUrl(url);

@@ -6,6 +6,7 @@ import {
   bindSoundToggle,
   silencedFocus,
   createSoundSetting,
+  whileShown,
 } from "./sound-setting.js";
 import { storeVisitorChoice, VISITOR_PREFS_KEY } from "./visitor-prefs.js";
 
@@ -126,10 +127,54 @@ describe("the voice focus under the setting", () => {
     expect(focus.selfStart(a)).toBe(true);
     setting.set(false);
     expect(calls).toEqual(["a hold"]);
-    focus.ended(a);
     expect(focus.selfStart(voice("b"))).toBe(false);
     const c = voice("c");
     focus.tapped(c);
     expect(focus.running()).toBe(c);
+  });
+
+  it("carries on, at sound on, the voice it kept quiet", () => {
+    // Why: off holds the running voice and keeps it the channel's; back on
+    // it must sound again, or the channel stays taken by a voice nobody
+    // hears and nothing starts by itself until a tap.
+    const setting = createSoundSetting({ storage: memory() });
+    const focus = silencedFocus(createVoiceFocus(), setting);
+    const calls: string[] = [];
+    const a: Voice = {
+      hold: () => calls.push("hold"),
+      carryOn: () => calls.push("carryOn"),
+      stop: () => calls.push("stop"),
+    };
+    focus.selfStart(a);
+    setting.set(false);
+    setting.set(true);
+    expect(calls).toEqual(["hold", "carryOn"]);
+    expect(focus.running()).toBe(a);
+  });
+});
+
+describe("the sound while the page is shown", () => {
+  it("is off while the page is hidden or gone, and tells of each change", () => {
+    // Why: a hidden page runs no frames, so its sounds must be paused by
+    // the page's own events; a return gives the setting back.
+    const setting = createSoundSetting({ storage: memory() });
+    const doc = Object.assign(new EventTarget(), {
+      visibilityState: "visible",
+    });
+    const win = new EventTarget();
+    const shown = whileShown(setting, doc, win);
+    const heard: boolean[] = [];
+    shown.onChange((on) => heard.push(on));
+    expect(shown.on()).toBe(true);
+    doc.visibilityState = "hidden";
+    doc.dispatchEvent(new Event("visibilitychange"));
+    expect(shown.on()).toBe(false);
+    setting.set(false);
+    doc.visibilityState = "visible";
+    doc.dispatchEvent(new Event("visibilitychange"));
+    setting.set(true);
+    win.dispatchEvent(new Event("pagehide"));
+    win.dispatchEvent(new Event("pageshow"));
+    expect(heard).toEqual([false, true, false, true]);
   });
 });

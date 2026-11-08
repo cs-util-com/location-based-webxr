@@ -59,8 +59,17 @@ describe("a narration circle in the world", () => {
     part.tap?.();
     expect(voice()?.calls).toEqual(["play", "pause"]);
     expect(voice()?.wanted()).toBe(false);
+    part.update?.(at(20, 1));
+    part.update?.(at(0, 2));
+    expect(voice()?.playing()).toBe(false);
     part.tap?.();
-    expect(voice()?.calls).toEqual(["play", "pause", "play"]);
+    expect(voice()?.calls).toEqual([
+      "play",
+      "pause",
+      "hold",
+      "carryOn",
+      "play",
+    ]);
   });
 
   it("says when the visitor is inside, for its look and its card", () => {

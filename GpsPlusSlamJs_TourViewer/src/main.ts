@@ -59,6 +59,7 @@ import {
   bindSoundToggle,
   createSoundSetting,
   silencedFocus,
+  whileShown,
 } from "./sound-setting.js";
 import { wireArEntry } from "./ar-entry.js";
 import { createAuthoringRecording } from "./authoring-recording.js";
@@ -904,13 +905,15 @@ const escapeButton = element<HTMLButtonElement>("scan-escape");
 // and its captions strip; each read-along read when its text opens).
 // Their voices are read through the stations' prefetch cache.
 // Sound on or off for every tour: off holds the running voice and lets
-// none start by itself (the list's sound button).
+// none start by itself (the list's sound button). A hidden page is silent
+// as well.
 const soundSetting = createSoundSetting({ storage: stepStore });
+const audible = whileShown(soundSetting, document, window);
 bindSoundToggle(element<HTMLButtonElement>("walk-sound"), soundSetting);
 // A vertical swipe that starts on a slider (the narration card's scrub
 // bar) scrolls instead of moving it.
 guardSlidersIn(document);
-const voiceFocus = silencedFocus(createVoiceFocus(), soundSetting);
+const voiceFocus = silencedFocus(createVoiceFocus(), audible);
 const narration = createNarrationVisitor({
   focus: voiceFocus,
   tour: () => ctx.session,
@@ -925,7 +928,7 @@ const narration = createNarrationVisitor({
 // an ambient sound in the background, lowered under any voice.
 const worldSound = createWorldSound({
   focus: voiceFocus,
-  soundOn: () => soundSetting.on(),
+  sound: audible,
   onError: () => {
     const message = "A sound could not be played here.";
     walkToast.say([message]);

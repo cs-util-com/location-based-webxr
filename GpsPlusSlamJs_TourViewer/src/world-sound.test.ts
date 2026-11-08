@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
 
+import {
+  createSoundSetting,
+  silencedFocus,
+  whileShown,
+} from "./sound-setting.js";
 import { createVoiceFocus } from "./voice-focus.js";
 import {
   createWorldSound,
@@ -8,8 +13,16 @@ import {
 } from "./world-sound.js";
 import type { NarrationAudio } from "./narration-player.js";
 
-/** An audio element that plays at once and can be ended by hand. */
-function fakeAudio(): NarrationAudio & BackgroundAudio & { end(): void } {
+/** An audio element that plays at once and can be ended by hand; with
+ *  `refuse` its play() is refused as an autoplay block is, and it stays
+ *  paused. */
+function fakeAudio(refuse = false): NarrationAudio &
+  BackgroundAudio & {
+    end(): void;
+    plays: number;
+    removed: boolean;
+    loaded: number;
+  } {
   const listeners = new Map<string, (() => void)[]>();
   const fire = (type: string) => {
     for (const fn of listeners.get(type) ?? []) fn();
@@ -22,7 +35,13 @@ function fakeAudio(): NarrationAudio & BackgroundAudio & { end(): void } {
     preload: "",
     loop: false,
     volume: 1,
+    plays: 0,
+    removed: false,
     play() {
+      a.plays += 1;
+      if (refuse) {
+        return Promise.reject(new DOMException("blocked", "NotAllowedError"));
+      }
       a.paused = false;
       fire("play");
       return Promise.resolve();
@@ -34,10 +53,13 @@ function fakeAudio(): NarrationAudio & BackgroundAudio & { end(): void } {
     addEventListener(type: string, fn: () => void) {
       listeners.set(type, [...(listeners.get(type) ?? []), fn]);
     },
-    removeAttribute() {
-      a.src = "";
+    removeAttribute(name: string) {
+      if (name === "src") a.removed = true;
     },
-    load() {},
+    loaded: 0,
+    load() {
+      a.loaded += 1;
+    },
     end() {
       a.paused = true;
       fire("ended");
@@ -46,22 +68,58 @@ function fakeAudio(): NarrationAudio & BackgroundAudio & { end(): void } {
   return a;
 }
 
-function setup(soundOn = true) {
-  const focus = createVoiceFocus();
+/** A page the sound can be hidden from: its document and its window. */
+function fakePage() {
+  const doc = Object.assign(new EventTarget(), {
+    visibilityState: "visible",
+  });
+  const win = new EventTarget();
+  return {
+    doc,
+    win,
+    hide() {
+      doc.visibilityState = "hidden";
+      doc.dispatchEvent(new Event("visibilitychange"));
+    },
+    show() {
+      doc.visibilityState = "visible";
+      doc.dispatchEvent(new Event("visibilitychange"));
+    },
+  };
+}
+
+/** The page's wiring: the real setting over the real focus, as main.ts
+ *  makes them, behind a page that can be hidden. */
+function setup(options: { soundOn?: boolean; refuse?: boolean } = {}) {
+  const setting = createSoundSetting({ storage: undefined });
+  if (options.soundOn === false) setting.set(false);
+  const page = fakePage();
+  const audible = whileShown(setting, page.doc, page.win);
+  const focus = silencedFocus(createVoiceFocus(), audible);
   const made: ReturnType<typeof fakeAudio>[] = [];
-  let on = soundOn;
+  const errors: unknown[] = [];
   const sound = createWorldSound({
     focus,
     audio: () => {
-      const a = fakeAudio();
+      const a = fakeAudio(options.refuse === true);
       made.push(a);
       return a;
     },
-    soundOn: () => on,
+    sound: audible,
+    onError: (e) => errors.push(e),
     createUrl: () => "blob:x",
     revokeUrl: () => undefined,
   });
-  return { focus, made, sound, setOn: (v: boolean) => (on = v) };
+  return {
+    focus,
+    made,
+    sound,
+    page,
+    errors,
+    setOn: (v: boolean) => {
+      setting.set(v);
+    },
+  };
 }
 
 const LOAD = () => Promise.resolve(new Blob(["x"]));
@@ -151,9 +209,10 @@ describe("a voice's clock", () => {
 });
 
 describe("a background sound in the world", () => {
-  it("loops at the level asked, lowered under a voice, silent when sound is off", async () => {
+  it("loops at the level asked, lowered under a voice, paused when sound is off", async () => {
     // Why: ambient plays by itself at its distance's loudness, glides
-    // down under a narration and is silenced by the global setting.
+    // down under a narration and is silenced by the global setting. Off
+    // pauses it at once: sound off plays nothing, not a file at volume 0.
     const { sound, made, setOn } = setup();
     const bg = sound.sound(LOAD, "background");
     bg.level(0.8, 0);
@@ -168,24 +227,141 @@ describe("a background sound in the world", () => {
     bg.level(0.8, 10);
     expect(el?.volume).toBeCloseTo(0.8 * 0.3);
     setOn(false);
-    bg.level(0.8, 11);
-    expect(el?.volume).toBe(0);
-    bg.level(0, 12);
     expect(el?.paused).toBe(true);
+    bg.level(0.8, 11);
+    expect(el?.paused).toBe(true);
+    setOn(true);
+    bg.level(0.8, 12);
+    expect(el?.paused).toBe(false);
+    bg.level(0, 13);
+    expect(el?.paused).toBe(true);
+  });
+
+  it("with sound off is neither read nor played until sound is on", async () => {
+    // Why: sound off must not load a file and play it silently; the file
+    // is read the first time it may be heard.
+    const { sound, made, setOn } = setup({ soundOn: false });
+    const bg = sound.sound(LOAD, "background");
+    bg.level(0.8, 0);
+    await flush();
+    expect(made).toHaveLength(0);
+    setOn(true);
+    bg.level(0.8, 1);
+    await flush();
+    expect(made[0]?.paused).toBe(false);
+  });
+
+  it("a refused play is reported once, not each frame, and tried again after a return", async () => {
+    // Why: level() runs every frame; a refused play (an autoplay block, a
+    // file the browser cannot decode) left the element paused, so each
+    // frame retried it and toasted and announced the error again.
+    const { sound, made, errors } = setup({ refuse: true });
+    const bg = sound.sound(LOAD, "background");
+    bg.level(0.8, 0);
+    await flush();
+    for (let i = 1; i <= 5; i += 1) {
+      bg.level(0.8, i);
+      await flush();
+    }
+    expect(made[0]?.plays).toBe(1);
+    expect(errors).toHaveLength(1);
+    bg.level(0, 6);
+    bg.level(0.8, 7);
+    await flush();
+    expect(made[0]?.plays).toBe(2);
+    expect(errors).toHaveLength(2);
   });
 
   it("frees its element on dispose, and the silent handle does nothing", async () => {
     // Why: a station is freed as the visitor walks on; the editor's parts
-    // ask the silent handle and must never sound.
+    // ask the silent handle and must never sound. The source is removed
+    // and the element reloaded, so the browser lets the file go (an empty
+    // src would be read as this page's address).
     const { sound, made } = setup();
     const bg = sound.sound(LOAD, "background");
     bg.level(1, 0);
     await flush();
     bg.dispose();
     expect(made[0]?.paused).toBe(true);
-    expect(made[0]?.src).toBe("");
+    expect(made[0]?.removed).toBe(true);
+    expect(made[0]?.loaded).toBe(1);
     SILENT_SOUND.play();
     SILENT_SOUND.level(1, 0);
     expect(SILENT_SOUND.playing()).toBe(false);
+  });
+});
+
+describe("the world's sounds under the page's sound setting", () => {
+  it("a voice queued behind the silenced one stays quiet when that one is freed", async () => {
+    // Why: sound off holds the running voice; the voice waiting behind it
+    // must not play aloud when the held one leaves or is freed - the
+    // hand-over is a start the setting does not allow. Real voices, real
+    // hand-over: nothing calls the focus by hand.
+    const { sound, setOn, focus } = setup();
+    const b = sound.sound(LOAD, "voice");
+    const a = sound.sound(LOAD, "voice");
+    b.play();
+    await flush();
+    a.play();
+    await flush();
+    expect(b.playing()).toBe(false);
+    setOn(false);
+    expect(a.playing()).toBe(false);
+    a.dispose();
+    await flush();
+    expect(b.playing()).toBe(false);
+    setOn(true);
+    await flush();
+    expect(b.playing()).toBe(true);
+    expect(focus.running()).not.toBeNull();
+  });
+
+  it("off and on again carries the silenced voice on and frees the channel at its end", async () => {
+    // Why: off then on left the held voice as the running one for good:
+    // nothing started by itself until a tap and an ambient sound stayed
+    // lowered under a voice nobody heard.
+    const { sound, made, setOn, focus } = setup();
+    const a = sound.sound(LOAD, "voice");
+    const bg = sound.sound(LOAD, "background");
+    a.play();
+    await flush();
+    setOn(false);
+    expect(a.playing()).toBe(false);
+    setOn(true);
+    await flush();
+    expect(a.playing()).toBe(true);
+    made[0]?.end();
+    await flush();
+    expect(focus.running()).toBeNull();
+    bg.level(1, 0);
+    await flush();
+    expect(made[1]?.volume).toBeCloseTo(1);
+  });
+
+  it("pauses everything while the page is hidden and follows the rules at return", async () => {
+    // Why: a hidden page runs no frames, so nothing would pause a sound
+    // left playing; the walk must fall silent with the page. Back on the
+    // page, ambient plays by its level again and the voice it held
+    // carries on, as sound back on does.
+    const { sound, made, page } = setup();
+    const bg = sound.sound(LOAD, "background");
+    bg.level(0.5, 0);
+    await flush();
+    const voice = sound.sound(LOAD, "voice");
+    voice.play();
+    await flush();
+    page.hide();
+    expect(made[0]?.paused).toBe(true);
+    expect(voice.playing()).toBe(false);
+    page.show();
+    await flush();
+    expect(made[0]?.paused).toBe(false);
+    expect(voice.playing()).toBe(true);
+    page.win.dispatchEvent(new Event("pagehide"));
+    expect(made[0]?.paused).toBe(true);
+    expect(voice.playing()).toBe(false);
+    page.win.dispatchEvent(new Event("pageshow"));
+    await flush();
+    expect(voice.playing()).toBe(true);
   });
 });

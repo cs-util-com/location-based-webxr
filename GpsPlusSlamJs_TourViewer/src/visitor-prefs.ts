@@ -13,6 +13,7 @@
 import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import { bodyPictureAssets } from "gps-plus-slam-app-framework/ar/tour-body-assets";
+import { isRecord } from "gps-plus-slam-app-framework/utils/json-guards";
 import type { NarrationVerdict } from "./narration-timing.js";
 
 /** The one versioned key: views per kind and placement, the sound
@@ -153,6 +154,11 @@ export function viewNeedsFail(
   return null;
 }
 
+/** `stored` as the prefs' own object (an array is none), or a fresh one. */
+export function prefsRoot(stored: unknown): Record<string, unknown> {
+  return isRecord(stored) && !Array.isArray(stored) ? stored : {};
+}
+
 function objectAt(value: unknown, key: string): Record<string, unknown> | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return null;
@@ -211,10 +217,7 @@ export function withPreferredView(
   placement: ViewPlacement,
   view: string | null,
 ): Record<string, unknown> {
-  const root =
-    typeof stored === "object" && stored !== null && !Array.isArray(stored)
-      ? (stored as Record<string, unknown>)
-      : {};
+  const root = prefsRoot(stored);
   const views = objectAt(root, "views") ?? {};
   const byKind: Record<string, unknown> = { ...(objectAt(views, kind) ?? {}) };
   const spec = specAt(kind, placement);
