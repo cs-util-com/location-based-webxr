@@ -147,4 +147,4 @@ contract (`tour-document-parity.test.ts`).
 
 ## Narration files
 
-The snapshot carries `timings` and `files`: each read-along text set here that the written file does not hold, and each voice brought in here that it does not list, with the bytes the page keeps (`voiceOf`). After the write, `timingsWritten` follows what the written tour names (`visitorEntryNames`); an entry nothing names is written nowhere.
+The snapshot carries `timings` and `files`: each read-along text set here that the written file does not hold, and each file brought in here that it does not list at that path, with the bytes the page keeps (`fileOf`). The rule is by path, never by a flag: a smaller file that replaced an asset the written file lists (`assetOptimized`) is written, and its old path goes into the snapshot's `replaced`, which the rebuild removes. A save already running when the swap lands snapshotted the old record, so it writes the original and the next save writes the new file. After the write, `timingsWritten` follows what the written tour names (`visitorEntryNames`); an entry nothing names is written nowhere.

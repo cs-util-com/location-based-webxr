@@ -350,9 +350,15 @@ export interface TourDocumentState {
    *  each once, by its content hash (`assetsAdded`): listed with the
    *  tour's assets (`manifestNow`), where a write keeps the ones an item,
    *  a narration or a step of the history names (`withReferencedAssets`).
-   *  Only grows while the tour is open; their bytes are the page's (its
-   *  files table) and the draft's. */
+   *  Only grows while the tour is open, except that a smaller file
+   *  replaces its asset's record under the same id (`assetOptimized`),
+   *  also for an asset the written file lists. Their bytes are the page's
+   *  (its files table) and the draft's. */
   readonly addedAssets: readonly TourAsset[];
+  /** How often each asset's file was replaced (`assetOptimized`), by
+   *  asset id: a preview showing the asset keys its cache on this, since
+   *  the id stays when the bytes change. No history step. */
+  readonly assetSwaps: Readonly<Record<string, number>>;
   /** The tour's codes and the hosted texts they are judged against
    *  (debug-captures plan M3a): no history step and no draft write, and
    *  not reset by `opened` or `closed` - the levels and `tour.json` are
@@ -599,6 +605,7 @@ export const initialTourDocumentState: TourDocumentState = {
   timings: {},
   timingsWritten: {},
   addedAssets: [],
+  assetSwaps: {},
   codes: NO_CODES,
 };
 
@@ -991,18 +998,29 @@ export function manifestNow(state: TourDocumentState): TourManifest | null {
   );
 }
 
-/** `manifest` with the files brought in here that it does not list yet;
- *  a write drops each one nothing names (`withReferencedAssets`). */
+/** `manifest` with the files brought in here: those it does not list
+ *  yet are appended, and one it lists under another record (a smaller
+ *  file under the same id, `assetOptimized`) replaces that record. A
+ *  write drops each one nothing names (`withReferencedAssets`). */
 function withAdded(
   manifest: TourManifest,
   assets: readonly TourAsset[],
 ): TourManifest {
   if (assets.length === 0) return manifest;
-  const listed = new Set(manifest.assets.map((a) => a.id));
-  const added = assets.filter((v) => !listed.has(v.id));
-  return added.length === 0
+  const byId = new Map(assets.map((a) => [a.id, a]));
+  let replaced = false;
+  const kept = manifest.assets.map((a) => {
+    const now = byId.get(a.id);
+    if (now === undefined) return a;
+    byId.delete(a.id);
+    if (sameJson(now, a)) return a;
+    replaced = true;
+    return now;
+  });
+  const added = [...byId.values()];
+  return added.length === 0 && !replaced
     ? manifest
-    : { ...manifest, assets: [...manifest.assets, ...added] };
+    : { ...manifest, assets: [...kept, ...added] };
 }
 
 /** The images each station's card may show now, by station id: the image
@@ -1904,6 +1922,22 @@ export function objectAssetsHeld(
   );
 }
 
+/** Whether `path` is one the format takes for asset `id` of `kind`:
+ *  `content/<id>.<ext>`, of an allowlisted extension of that kind. */
+function assetPathFits(
+  id: string,
+  path: string,
+  kind: TourAsset["kind"],
+): boolean {
+  const dot = path.lastIndexOf(".");
+  const ext = path.slice(dot + 1);
+  return (
+    dot >= 0 &&
+    path === `content/${id}.${ext}` &&
+    tourMediaTypeOf(ext)?.kind === kind
+  );
+}
+
 /**
  * `assets` among `before`'s added ones (`assetsAdded`, a restore): each
  * once, none the written tour lists. Null when one is no asset the
@@ -1919,15 +1953,7 @@ function withAddedAssets(
   );
   const added: TourAsset[] = [];
   for (const asset of assets) {
-    const dot = asset.path.lastIndexOf(".");
-    const ext = asset.path.slice(dot + 1);
-    if (
-      dot < 0 ||
-      asset.path !== `content/${asset.id}.${ext}` ||
-      tourMediaTypeOf(ext)?.kind !== asset.kind
-    ) {
-      return null;
-    }
+    if (!assetPathFits(asset.id, asset.path, asset.kind)) return null;
     if (held.has(asset.id)) continue;
     held.add(asset.id);
     added.push(asset);
@@ -1949,6 +1975,58 @@ function assetsAdd(
   return addedAssets === null || addedAssets === before.addedAssets
     ? before
     : { ...before, addedAssets };
+}
+
+/** A smaller file in place of an asset's (`assetOptimized`). */
+export interface AssetOptimizedPayload {
+  /** The asset's id; it stays, so no item naming it changes. */
+  readonly id: string;
+  /** The new file's path, `content/<id>.<ext>` of the asset's kind. */
+  readonly path: string;
+  /** An image's new size in pixels; without it the old size stays. */
+  readonly width?: number;
+  readonly height?: number;
+}
+
+function isPixelCount(n: number | undefined): boolean {
+  return n === undefined || (Number.isInteger(n) && n > 0);
+}
+
+/** A smaller file replaces an asset's under the same id: its record
+ *  (path, an image's size) changes in `addedAssets` - added there for an
+ *  asset only the written file lists - and `assetSwaps` counts it. No
+ *  step: an undo takes back edits, not the file's encoding. Unchanged for
+ *  an id the tour does not hold, a path the format would refuse, or a size
+ *  that is no positive whole number, since every later save would fail. */
+function assetOptimize(
+  before: TourDocumentState,
+  { id, path, width, height }: AssetOptimizedPayload,
+): TourDocumentState {
+  if (before.written === null) return before;
+  const old =
+    before.addedAssets.find((a) => a.id === id) ??
+    before.written.assets.find((a) => a.id === id);
+  if (old === undefined || !assetPathFits(id, path, old.kind)) return before;
+  if (!isPixelCount(width) || !isPixelCount(height)) return before;
+  const size =
+    old.kind === "image" && width !== undefined && height !== undefined
+      ? { width, height }
+      : old.width !== undefined && old.height !== undefined
+        ? { width: old.width, height: old.height }
+        : {};
+  const now: TourAsset = { id, path, kind: old.kind, ...size };
+  if (sameJson(now, old)) return before;
+  const listed = before.addedAssets.some((a) => a.id === id);
+  return {
+    ...before,
+    addedAssets: listed
+      ? before.addedAssets.map((a) => (a.id === id ? now : a))
+      : [...before.addedAssets, now],
+    assetSwaps: {
+      ...before.assetSwaps,
+      [id]: (before.assetSwaps[id] ?? 0) + 1,
+    },
+  };
 }
 
 /** `state` with the read-along entry `entry` listed at `previous` (what
@@ -3084,6 +3162,12 @@ const assetsAdded = createAction<{ readonly assets: readonly TourAsset[] }>(
   "tourDocument/assetsAdded",
 );
 
+/** A smaller file in place of an asset's (`assetOptimize`); beside the
+ *  slice's actions for the same reason. */
+const assetOptimized = createAction<AssetOptimizedPayload>(
+  "tourDocument/assetOptimized",
+);
+
 const tourDocumentSlice = createSlice({
   name: "tourDocument",
   initialState: initialTourDocumentState,
@@ -3951,6 +4035,9 @@ const tourDocumentSlice = createSlice({
     builder.addCase(assetsAdded, (state, action) =>
       assetsAdd(plain(state), action.payload.assets),
     );
+    builder.addCase(assetOptimized, (state, action) =>
+      assetOptimize(plain(state), action.payload),
+    );
   },
 });
 
@@ -3960,6 +4047,7 @@ export const tourDocumentActions = {
   ...tourDocumentSlice.actions,
   narrationEdited,
   assetsAdded,
+  assetOptimized,
 };
 
 export const tourDocumentReducer = tourDocumentSlice.reducer;

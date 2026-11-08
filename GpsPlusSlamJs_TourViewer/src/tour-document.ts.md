@@ -806,4 +806,6 @@ store.dispatch(tourDocumentActions.undone());
   - Refused as a whole (state unchanged) when a path is not `content/<id>.<ext>` or its extension is not of the asset's kind; an asset the written tour or the list holds already is skipped.
 - `objectAssetsHeld(object, held)`: whether every file an object needs (`tourBlockAssetIds(object, true)`) is in `held`; a captured photo carries its own.
 - `restored({ ..., assets? })`: a draft's files are listed with its records, and a record naming a file held nowhere (the written tour, `addedAssets`, the draft's files) is left out - the format refuses it, and every later save would fail.
-- Tests: `tour-document-assets.test.ts`.
+- `assetOptimized({ id, path, width?, height? })`: a smaller file replaces an asset's under the same id, so no item, narration or step changes. The record (path; an image's size, kept when none is given) changes in `addedAssets`, and is added there for an asset only the written file lists; `manifestNow` (`withAdded`) then lists the new record in place of the written one. `assetSwaps[id]` counts each swap, for a preview whose cache is keyed by id. No step and no draft write here (the draft follows its own files).
+  - Refused (state unchanged) for an id the tour does not hold, a path that is not `content/<id>.<ext>` of an extension of the asset's kind, or a size that is no positive whole number; the record the document already lists is no change. Swapping back to the original path is a swap too.
+- Tests: `tour-document-assets.test.ts`, `tour-document-swap.test.ts`.

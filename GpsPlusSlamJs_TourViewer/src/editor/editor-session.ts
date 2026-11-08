@@ -301,6 +301,20 @@ interface EditorRestore {
   }[];
 }
 
+/** A smaller file for an asset (`swapAsset`): its bytes, its path
+ *  (`content/<id>.<ext>`) and, for an image, its new size in pixels. */
+export interface AssetSwap {
+  readonly blob: Blob;
+  readonly path: string;
+  readonly width?: number;
+  readonly height?: number;
+}
+
+/** A smaller file now stands in for the asset's (`swapAsset`). */
+export interface EditorSwapped {
+  readonly kind: "swapped";
+}
+
 /** A file brought into the tour (`addFile`): its asset - the one the tour
  *  held already for the same bytes, or a new one - and a video's minted
  *  poster. `backedUp` false: the draft could not keep it (the page says
@@ -448,6 +462,11 @@ const HEIGHT_REFUSED = `That height cannot be set: an item must stay within ${St
 
 /** Said when an edit could not be applied (the tour changed under it). */
 const NOT_APPLIED = "That change could not be made to the tour as it is now.";
+
+/** Said when a smaller file cannot replace an asset's: the tour does not
+ *  hold the asset, or the new file is not one the format takes for it. */
+const SWAP_REFUSED =
+  "That smaller file could not replace the one in the tour: the tour no longer holds that file, or the new file is not of its kind.";
 
 /** A station as the undo's words name it. */
 function stationName(frame: { readonly title?: string }): string {
@@ -723,6 +742,14 @@ export interface EditorSession {
   /** A file brought in, by its entry (`content/<id>.<ext>`), until a
    *  save wrote it: what a preview shows. */
   contentOf(path: string): Blob | undefined;
+  /** A smaller file in place of an asset's, under the same id (so no
+   *  item, narration or step changes): kept in the files table and listed
+   *  at its new path (`assetOptimized`, no step). The next save writes it
+   *  and removes the old entry; one already running writes the original.
+   *  Refused in words, changing nothing, for an id the tour does not
+   *  hold, a path the format would refuse for that asset's kind, or the
+   *  record the tour already lists. */
+  swapAsset(id: string, file: AssetSwap): EditorSwapped | EditorRefusal;
   /** Put a draft's work back by the session's own rules (M6 E2c): an
    *  object the tour carries gets the draft's version, a deletion its
    *  tombstone; live work on an id wins, and an id the tour no longer
@@ -1198,7 +1225,8 @@ export function createEditorSession(input: {
    *  at. */
   function knownFile(sha: string): TourAsset | undefined {
     const state = own();
-    const assets = [...(state.written?.assets ?? []), ...state.addedAssets];
+    // The record brought in first: after a swap it names the new path.
+    const assets = [...state.addedAssets, ...(state.written?.assets ?? [])];
     const named = assets.find((a) => a.id === sha);
     if (named !== undefined || session.integrity.kind !== "listed") {
       return named;
@@ -1208,6 +1236,28 @@ export function createEditorSession(input: {
     return (state.written?.assets ?? []).find(
       (a) => listed[`${wrap}${a.path}`]?.sha256 === sha,
     );
+  }
+
+  /** `swapAsset`: judged by the document's own rule first, so a refused
+   *  file never reaches the table. */
+  function swapAsset(
+    id: string,
+    { blob, path, width, height }: AssetSwap,
+  ): EditorSwapped | EditorRefusal {
+    const before = mine();
+    if (before === null) return { kind: "refused", reason: SWAP_REFUSED };
+    const action = tourDocumentActions.assetOptimized({
+      id,
+      path,
+      ...(width === undefined ? {} : { width }),
+      ...(height === undefined ? {} : { height }),
+    });
+    if (tourDocumentReducer(before, action) === before) {
+      return { kind: "refused", reason: SWAP_REFUSED };
+    }
+    files.set(id, blob);
+    store.dispatch(action);
+    return { kind: "swapped" };
   }
 
   /** `addFile`: read, kept in the table and the draft, then listed. */
@@ -1255,6 +1305,7 @@ export function createEditorSession(input: {
 
   return {
     addFile,
+    swapAsset,
     addedBytes,
     tourBytes,
     nextSaveBytes,

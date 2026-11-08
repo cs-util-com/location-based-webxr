@@ -120,6 +120,9 @@ interface TourSaveSnapshot {
     readonly path: string;
     readonly data: string | Blob;
   }[];
+  /** The written file's entries a smaller file replaced (`replacedOf`):
+   *  removed, whatever the write keeps. */
+  readonly replaced: readonly string[];
 }
 
 interface TourSaves {
@@ -207,6 +210,7 @@ export function createTourSaves(input: {
       position: state.position,
       timings: state.timings,
       files: filesOf(state),
+      replaced: replacedOf(state),
     };
   }
 
@@ -234,9 +238,10 @@ export function createTourSaves(input: {
   }
 
   /** The snapshot's `files`: the texts and the files brought in that the
-   *  written file lacks. */
+   *  written file lacks - by path, so a smaller file that replaced one the
+   *  written file lists under its old path is written too. */
   function filesOf(state: TourDocumentState): TourSaveSnapshot["files"] {
-    const listed = new Set((state.written?.assets ?? []).map((a) => a.id));
+    const listed = writtenPaths(state);
     return [
       ...Object.entries(state.timings).flatMap(([path, text]) =>
         text === null || text === state.timingsWritten[path]
@@ -244,10 +249,25 @@ export function createTourSaves(input: {
           : [{ path, data: text }],
       ),
       ...state.addedAssets.flatMap((asset) => {
-        const blob = listed.has(asset.id) ? undefined : input.fileOf(asset.id);
+        const blob =
+          listed.get(asset.id) === asset.path
+            ? undefined
+            : input.fileOf(asset.id);
         return blob === undefined ? [] : [{ path: asset.path, data: blob }];
       }),
     ];
+  }
+
+  /** The snapshot's `replaced`: the written path of each asset whose
+   *  record here names another path (`assetOptimized`). Derived from the
+   *  paths, so a save already running when the swap lands leaves it to
+   *  the next one. */
+  function replacedOf(state: TourDocumentState): readonly string[] {
+    const listed = writtenPaths(state);
+    return state.addedAssets.flatMap((asset) => {
+      const was = listed.get(asset.id);
+      return was === undefined || was === asset.path ? [] : [was];
+    });
   }
 
   const saves: TourSaves = {
@@ -345,6 +365,7 @@ export function createTourSaves(input: {
         keepAssets: snap.keepAssets,
         keepEntries: snap.keepEntries,
         files: snap.files,
+        replaced: snap.replaced,
         levels: [],
         keepScan,
         previous: newest,
@@ -395,4 +416,9 @@ export function createTourSaves(input: {
     },
   };
   return saves;
+}
+
+/** The written file's asset paths, by asset id. */
+function writtenPaths(state: TourDocumentState): ReadonlyMap<string, string> {
+  return new Map((state.written?.assets ?? []).map((a) => [a.id, a.path]));
 }

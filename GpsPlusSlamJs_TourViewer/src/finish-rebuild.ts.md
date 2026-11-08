@@ -160,4 +160,6 @@ wiring around it stays pinned by `creator-finish.test.ts` and
 
 ## Extra files (narration)
 
+`input.replaced` (optional; paths in the tour's folder) names the entries a smaller file replaced under the same asset id: they are removed whatever the write keeps, since the manifest lists the asset at its new path. The phone's Finish passes none.
+
 `input.files` (a path in the tour's folder, text or Blob) are written only where the written tour names them (`visitorEntryNames`). An entry an earlier rebuild of the same open wrote is read from that rebuild's bytes (`zipBlobEntryNames`), so a later write that drops its narration leaves no stale read-along entry behind.
