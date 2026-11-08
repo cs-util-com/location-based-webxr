@@ -299,6 +299,43 @@ describe("rebuildFinishedTour (M6 E0: the Finish's rules, shared)", () => {
     await tour.close();
   });
 
+  // Why: a smaller file replaces a photo's picture under the same id, so
+  // the manifest lists the asset at its new path while the picture's own
+  // inline record still names the old one. A picture written at the
+  // inline path is an entry no manifest names, holding bytes of another
+  // type than its extension says - and the listed path stays empty when
+  // nothing else writes it.
+  it("writes a placed photo's picture at the path the written tour lists for it, once", async () => {
+    const tour = await plainTour([]);
+    const webp = new Blob(["webp"], { type: "image/webp" });
+    const object = seated(photo("p1"));
+    const listed = {
+      ...hereTour(),
+      assets: [{ ...photo("p1").imageAsset, path: "content/p1.webp" }],
+    };
+    for (const files of [[], [{ path: "content/p1.webp", data: webp }]]) {
+      const result = await rebuildFinishedTour({
+        ...NO_EDITS,
+        tour,
+        manifest: listed,
+        placed: [{ object, blob: webp }],
+        files,
+      });
+      const names = await namesOf(result!.blob);
+      expect(names).not.toContain(`${WRAP}content/p1.jpg`);
+      expect(names.filter((n) => n === `${WRAP}content/p1.webp`)).toHaveLength(
+        1,
+      );
+      await expect(
+        textOf(result!.blob, `${WRAP}content/p1.webp`),
+      ).resolves.toBe("webp");
+      expect(result!.written.assets.map((a) => a.path)).toEqual([
+        "content/p1.webp",
+      ]);
+    }
+    await tour.close();
+  });
+
   // (A test that a Finish wrote the walk's photos as the open baked them,
   // and a later Finish kept them, stood here: the open bakes none, and
   // a tour carries none (the field is gone from the format).

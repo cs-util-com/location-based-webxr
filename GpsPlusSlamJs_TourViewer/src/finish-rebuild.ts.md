@@ -97,7 +97,11 @@ signature, a broken series list (M6 design §5, cold review #2). Design:
 - **Paths:** the manifest at `${manifestWrap}tour.json` (the session's own
   prefix, never derived again); a level the zip holds is replaced where it
   is, a new one inside a listed tour's folder or at the root
-  (`finish-entries.ts`); photos at `${wrap}${image}`.
+  (`finish-entries.ts`); a photo's picture at `${wrap}` plus the path the
+  WRITTEN tour lists for its image asset (after a smaller file replaced it,
+  the picture's inline `imageAsset` still names the old path), and not at
+  all when a file of `files` already writes that path (one entry, never
+  two).
 - **Signatures and lists:** a signature never survives (it cannot cover
   the rewritten files); a LISTED tour's `manifest.json` continues as the
   series' next version (`successorManifest`: same series id, the
