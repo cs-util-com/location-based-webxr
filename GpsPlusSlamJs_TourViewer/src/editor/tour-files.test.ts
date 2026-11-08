@@ -170,10 +170,18 @@ describe("readTourFile", () => {
   // its cap must still take them (one more item using the same voice); the
   // room is judged by what an import ADDS, after its hash is known.
   it("takes bytes the tour already holds however full it is", async () => {
-    const limits = { maxEntryBytes: 100, maxArchiveBytes: 200, marginBytes: 10 };
+    const limits = {
+      maxEntryBytes: 100,
+      maxArchiveBytes: 200,
+      marginBytes: 10,
+    };
     const data = new Uint8Array(90).fill(7);
     const sha = await sha256Hex(data);
-    const held: TourAsset = { id: sha, path: `content/${sha}.mp3`, kind: "audio" };
+    const held: TourAsset = {
+      id: sha,
+      path: `content/${sha}.mp3`,
+      kind: "audio",
+    };
     const again = await readTourFile(new Blob([data]), "same.mp3", {
       tourBytes: 190,
       known: (s) => (s === sha ? held : undefined),
