@@ -82,6 +82,18 @@ import { readTracked, repoRoot, trackedFiles } from "./tracked-tree.js";
  */
 const CANONICAL = [
   {
+    name: "uniformIn",
+    rule: "shared",
+    home: "GpsPlusSlamJs_AppFramework/src/test-utils/uniform-arbitrary.ts",
+    why: "the distribution IS the contract: two copies drifting apart (grid, rounding, noBias) would sample two different worlds while both claim uniform",
+  },
+  {
+    name: "uniformWithSeams",
+    rule: "shared",
+    home: "GpsPlusSlamJs_AppFramework/src/test-utils/uniform-arbitrary.ts",
+    why: "the seam weight and the seam values decide whether the poles and the antimeridian are tested at all",
+  },
+  {
     name: "escapeHtml",
     rule: "shared",
     home: "GpsPlusSlamJs_AppFramework/src/utils/escape-html.ts",
@@ -203,6 +215,16 @@ const CANONICAL = [
  * it excuses. That is the difference between an allowlist and a graveyard.
  */
 const JUSTIFIED = [
+  {
+    name: "uniformIn",
+    file: "GpsPlusSlamJs_Osm/src/test-utils/uniform-arbitrary.ts",
+    why: "the OSM package does not depend on the framework (the framework depends on it); held to the same code by uniform-arbitrary-copies.test.js",
+  },
+  {
+    name: "uniformWithSeams",
+    file: "GpsPlusSlamJs_Osm/src/test-utils/uniform-arbitrary.ts",
+    why: "the same copy as uniformIn above, in the same file; held to the same code by uniform-arbitrary-copies.test.js",
+  },
   {
     name: "escapeHtml",
     file: "GpsPlusSlamJs_Landing/src/chapter-dots.ts",

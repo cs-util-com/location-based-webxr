@@ -5,8 +5,10 @@
 Fast-check arbitraries that draw a number uniformly over a range, for the
 latitudes, longitudes and bearings of property tests. A copy of
 `GpsPlusSlamJs_AppFramework/src/test-utils/uniform-arbitrary.ts`, kept here
-because this package does not depend on the framework; the two are held to the
-same tests (`uniform-arbitrary.test.ts` in each).
+because this package does not depend on the framework. The repo-config guard
+`tests/repo-config/uniform-arbitrary-copies.test.js` holds the two files, and
+their `uniform-arbitrary.test.ts` files, to the same code (formatting aside), so
+change both together.
 
 ## Public API
 
