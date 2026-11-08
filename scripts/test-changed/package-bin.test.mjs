@@ -17,6 +17,15 @@ describe('toolBin', () => {
     expect(bin.replaceAll('\\', '/')).toMatch(/\/vitest\/[^/]+\.m?js$/);
   });
 
+  // The format stage's tool: prettier's `bin` is a plain string (vitest's is
+  // an object), and its `exports` map must let `prettier/package.json` resolve.
+  it('finds a tool whose bin is a plain string (prettier, from a package that declares it)', () => {
+    const pkg = fileURLToPath(new URL('../../GpsPlusSlamJs_AppFramework', import.meta.url));
+    const bin = toolBin(pkg, 'prettier');
+    expect(existsSync(bin)).toBe(true);
+    expect(bin.replaceAll('\\', '/')).toMatch(/\/prettier\/bin\/prettier\.c?js$/);
+  });
+
   it('throws for a tool the package does not resolve', () => {
     expect(() => toolBin(ROOT, 'no-such-tool-r1139')).toThrow();
   });
