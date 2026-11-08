@@ -142,9 +142,19 @@ function lists(page) {
 function stationB(page) {
   return page.evaluate(() => {
     const tour = /** @type {any} */ (window).__tourEditor.manifest();
-    return tour.stations[1].children
-      .filter((/** @type {any} */ c) => c.kind !== "story")
-      .map((/** @type {any} */ c) => ({ id: c.id, position: c.pose.position }));
+    return (
+      tour.stations[1].children
+        .filter((/** @type {any} */ c) => c.kind !== "story")
+        .map((/** @type {any} */ c) => ({
+          id: c.id,
+          position: c.pose.position,
+        }))
+        // By id: a station's free items have no order (the file keeps its
+        // records' order, so a free item moved here may come first).
+        .sort((/** @type {any} */ a, /** @type {any} */ b) =>
+          a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+        )
+    );
   });
 }
 
@@ -235,11 +245,14 @@ async function drag(page, id, to, hold = false) {
   const from = middle(await box(row.locator(`[data-move="${id}"]`)));
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
-  await page.mouse.move(to.x, to.y, { steps: 8 });
+  // Three steps: the drag starts at the first and the last decides where
+  // it lands. Each step waits on the page, which a loaded runner with a
+  // software renderer took over a second to answer.
+  await page.mouse.move(to.x, to.y, { steps: 3 });
   if (!hold) await page.mouse.up();
 }
 
-test("the grip's drag moves a station's items between its stories and its free items, one step each, and Escape writes nothing", async ({
+test("the grip's drag moves a station's items between its stories and its free items, one step each", async ({
   page,
 }) => {
   test.slow();
@@ -293,6 +306,29 @@ test("the grip's drag moves a station's items between its stories and its free i
     page.locator(".toast", { hasText: "now stands in the world" }),
   ).toBeVisible();
 
+  // Each move is one step: three undos give the tour as it was opened.
+  for (let i = 0; i < 3; i++) await page.keyboard.press("Control+z");
+  await expect
+    .poll(() => lists(page))
+    .toEqual({
+      s1: ["e1", "e2"],
+      s2: ["e3"],
+      free: ["pin"],
+    });
+});
+
+// Why this is a test of its own: on a loaded runner every pointer step
+// took over a second, and one test carrying all five drags ran out of its
+// budget mid-drag (a timing limit, not a defect: every step had answered).
+test("a drag over its own place or a refused row, or broken off with Escape, marks nothing and writes nothing", async ({
+  page,
+}) => {
+  test.slow();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openStories(page);
+  const card = await unfold(page);
+  const start = await revision(page);
+
   // A drag held over its own place, and over the station's row (a free
   // item among the free items is no move), lands nowhere: nothing is
   // marked, the ghost says so and the page shows the not-allowed cursor,
@@ -302,8 +338,8 @@ test("the grip's drag moves a station's items between its stories and its free i
   const marks = card.locator(".drop-before, .drop-after, .drop-into");
   await drag(
     page,
-    "e2",
-    middle(await box(card.locator('.kid[data-select="e2"]'))),
+    "pin",
+    middle(await box(card.locator('.kid[data-select="pin"]'))),
     true,
   );
   await expect(refusedGhost).toBeVisible();
@@ -314,14 +350,14 @@ test("the grip's drag moves a station's items between its stories and its free i
   );
   await expect(marks).toHaveCount(0);
   const head = middle(await box(card.locator(":scope > .head")));
-  await page.mouse.move(head.x, head.y, { steps: 4 });
+  await page.mouse.move(head.x, head.y, { steps: 2 });
   await expect(refusedGhost).toBeVisible();
   await expect(marks).toHaveCount(0);
   await page.mouse.up();
   await expect(page.locator(".nest-ghost")).toHaveCount(0);
   await expect(page.locator("html")).not.toHaveAttribute("data-nest-drag");
-  expect(await revision(page)).toBe(start + 3);
-  expect((await lists(page))["free"]).toEqual(["e2"]);
+  expect(await revision(page)).toBe(start);
+  expect((await lists(page))["free"]).toEqual(["pin"]);
 
   // Escape mid-drag: the marks go, and nothing is written.
   await drag(
@@ -334,17 +370,12 @@ test("the grip's drag moves a station's items between its stories and its free i
   await page.keyboard.press("Escape");
   await page.mouse.up();
   await expect(card.locator(".drop-into, .dragging")).toHaveCount(0);
-  expect(await revision(page)).toBe(start + 3);
-
-  // Each move is one step: three undos give the tour as it was opened.
-  for (let i = 0; i < 3; i++) await page.keyboard.press("Control+z");
-  await expect
-    .poll(() => lists(page))
-    .toEqual({
-      s1: ["e1", "e2"],
-      s2: ["e3"],
-      free: ["pin"],
-    });
+  expect(await revision(page)).toBe(start);
+  expect(await lists(page)).toEqual({
+    s1: ["e1", "e2"],
+    s2: ["e3"],
+    free: ["pin"],
+  });
 });
 
 test("the inspector's Earlier, Later and Move buttons move the selected entry, keep it selected, and take the keyboard", async ({
