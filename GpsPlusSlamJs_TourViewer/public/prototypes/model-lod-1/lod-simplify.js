@@ -12,6 +12,18 @@
 // - No flips: a collapse is refused when any remaining triangle would turn
 //   by more than `maxTurnDeg` or become degenerate.
 // - Manifold: the link condition is checked for every collapse.
+//
+// Speed (optimization rounds, 2026-11-08; see the model LOD spike findings):
+// - typed arrays throughout, per-vertex triangle lists pooled in one
+//   Int32Array, no allocation per collapse;
+// - an indexed binary heap over vertices with decrease/increase-key;
+// - after a collapse u -> v only v is fully re-evaluated; a neighbour x
+//   prices just x -> v and falls back on its cached runner-up move when its
+//   best move pointed at u or v; a move made invalid is caught at pop;
+// - a target's own quadric error is cached per vertex.
+// meshoptimizer 1.1.1 (MIT, https://github.com/zeux/meshoptimizer) was the
+// reference measured against and its simplifier.cpp was studied; no code
+// is translated from it.
 
 /** Merge render vertices that are equal in position and texture
  *  coordinate (and extra attributes), and whose normals differ by at most
@@ -22,28 +34,50 @@ export function weldVertices(attrs, indices, normalAngleDeg = 2) {
   const n = attrs.position.length / 3;
   const exact = [attrs.position, attrs.uv, ...(attrs.exact ?? [])].filter(Boolean);
   const sizes = exact.map((a) => a.length / n);
+  const K = sizes.reduce((s, x) => s + x, 0);
   const cosMax = Math.cos((normalAngleDeg * Math.PI) / 180);
-  const groups = new Map();
+  // the exact key of every vertex as doubles (-0 counts as 0), hashed
+  const key = new Float64Array(n * K);
+  for (let i = 0; i < n; i++) {
+    let o = i * K;
+    for (let a = 0; a < exact.length; a++) {
+      const s = sizes[a], A = exact[a];
+      for (let c = 0; c < s; c++) {key[o++] = A[i * s + c] + 0;}
+    }
+  }
+  const bits = new Uint32Array(key.buffer);
+  let size = 1; while (size < 2 * n) {size <<= 1;}
+  const mask = size - 1;
+  const head = new Int32Array(size).fill(-1); // first vertex of a key group
+  const next = new Int32Array(n).fill(-1); // next group member with the same key
   const remap = new Uint32Array(n);
   let count = 0;
+  const N = attrs.normal;
   for (let i = 0; i < n; i++) {
-    let key = "";
-    for (let a = 0; a < exact.length; a++) {
-      const s = sizes[a];
-      for (let c = 0; c < s; c++) {key += exact[a][i * s + c] + ",";}
+    let h = 0;
+    for (let k = 0; k < 2 * K; k++) {h = Math.imul(h ^ bits[2 * K * i + k], 0x9e3779b1);}
+    h = (h ^ (h >>> 16)) & mask;
+    let j = head[h];
+    // find the key group (linear probing over distinct keys)
+    while (j >= 0) {
+      let same = true;
+      for (let k = 0; k < K; k++) {if (key[j * K + k] !== key[i * K + k]) { same = false; break; }}
+      if (same) {break;}
+      h = (h + 1) & mask; j = head[h];
     }
-    let list = groups.get(key);
-    if (list === undefined) {groups.set(key, (list = []));}
     let found = -1;
-    if (attrs.normal) {
-      const N = attrs.normal;
-      for (const j of list) {
-        const d = N[3 * i] * N[3 * j] + N[3 * i + 1] * N[3 * j + 1] + N[3 * i + 2] * N[3 * j + 2];
-        if (d >= cosMax) { found = j; break; }
-      }
-    } else if (list.length > 0) {found = list[0];}
-    if (found >= 0) {remap[i] = remap[found];}
-    else { list.push(i); remap[i] = count++; }
+    if (j >= 0) {
+      if (N) {
+        for (let m = j; m >= 0; m = next[m]) {
+          const d = N[3 * i] * N[3 * m] + N[3 * i + 1] * N[3 * m + 1] + N[3 * i + 2] * N[3 * m + 2];
+          if (d >= cosMax) { found = m; break; }
+        }
+      } else {found = j;}
+    }
+    if (found >= 0) {remap[i] = remap[found]; continue;}
+    remap[i] = count++;
+    // append i as a group member (kept in first-seen order)
+    if (j < 0) {head[h] = i;} else { let m = j; while (next[m] >= 0) {m = next[m];} next[m] = i; }
   }
   const out = new Uint32Array(indices.length);
   for (let k = 0; k < indices.length; k++) {out[k] = remap[indices[k]];}
@@ -63,39 +97,47 @@ export function remapAttribute(data, size, remap, count) {
   return out;
 }
 
-// ---- small binary min-heap of (cost, vertex, version) -------------------
-class Heap {
-  constructor() { this.c = []; this.v = []; this.s = []; }
-  get size() { return this.c.length; }
-  push(cost, vert, stamp) {
-    const c = this.c, v = this.v, s = this.s;
-    let i = c.length;
-    c.push(cost); v.push(vert); s.push(stamp);
+// ---- indexed binary min-heap over vertices, with decrease/increase-key ----
+class IndexedHeap {
+  constructor(n) { this.key = new Float64Array(n); this.h = new Int32Array(n); this.pos = new Int32Array(n).fill(-1); this.size = 0; }
+  up(i) {
+    const h = this.h, key = this.key, pos = this.pos, x = h[i], k = key[x];
     while (i > 0) {
-      const p = (i - 1) >> 1;
-      if (c[p] <= cost) {break;}
-      c[i] = c[p]; v[i] = v[p]; s[i] = s[p];
-      i = p;
+      const p = (i - 1) >> 1, y = h[p];
+      if (key[y] <= k) {break;}
+      h[i] = y; pos[y] = i; i = p;
     }
-    c[i] = cost; v[i] = vert; s[i] = stamp;
+    h[i] = x; pos[x] = i;
   }
-  pop(out) {
-    const c = this.c, v = this.v, s = this.s;
-    out[0] = c[0]; out[1] = v[0]; out[2] = s[0];
-    const lc = c.pop(), lv = v.pop(), ls = s.pop();
-    const n = c.length;
-    if (n === 0) {return;}
-    let i = 0;
+  down(i) {
+    const h = this.h, key = this.key, pos = this.pos, n = this.size, x = h[i], k = key[x];
     for (;;) {
       let m = 2 * i + 1;
       if (m >= n) {break;}
-      if (m + 1 < n && c[m + 1] < c[m]) {m++;}
-      if (c[m] >= lc) {break;}
-      c[i] = c[m]; v[i] = v[m]; s[i] = s[m];
-      i = m;
+      if (m + 1 < n && key[h[m + 1]] < key[h[m]]) {m++;}
+      const y = h[m];
+      if (key[y] >= k) {break;}
+      h[i] = y; pos[y] = i; i = m;
     }
-    c[i] = lc; v[i] = lv; s[i] = ls;
+    h[i] = x; pos[x] = i;
   }
+  set(x, k) {
+    const i = this.pos[x];
+    if (i < 0) { this.key[x] = k; this.h[this.size] = x; this.pos[x] = this.size; this.up(this.size++); return; }
+    const old = this.key[x]; this.key[x] = k;
+    if (k < old) {this.up(i);} else {this.down(i);}
+  }
+  remove(x) {
+    const i = this.pos[x];
+    if (i < 0) {return;}
+    this.pos[x] = -1;
+    const last = this.h[--this.size];
+    if (i === this.size) {return;}
+    this.h[i] = last; this.pos[last] = i;
+    this.up(i); this.down(this.pos[last]);
+  }
+  /** Remove and return the vertex with the smallest key. */
+  pop() { const x = this.h[0]; this.remove(x); return x; }
 }
 
 const INTERIOR = 0, SPECIAL = 1, LOCKED = 2;
@@ -105,7 +147,9 @@ const INTERIOR = 0, SPECIAL = 1, LOCKED = 2;
  * `levelIndices`.
  * @param {{ positions: Float32Array, indices: Uint32Array,
  *   attributes?: { data: Float32Array, size: number, weight: number }[] }} mesh
- * @param {{ maxTurnDeg?: number, edgeWeight?: number, onProgress?: (alive:number)=>void }} [opts]
+ * @param {{ maxTurnDeg?: number, edgeWeight?: number, normals?: Float32Array,
+ *   onProgress?: (alive:number)=>void }} [opts] edgeWeight (default 1)
+ *   scales the border and seam constraints; normals enable the facing check.
  */
 export function buildProgressive(mesh, opts = {}) {
   const P = mesh.positions, I = mesh.indices;
@@ -115,7 +159,7 @@ export function buildProgressive(mesh, opts = {}) {
   const AQ = (D * (D + 1)) / 2, QS = AQ + D + 1;
   const cosTurn = Math.cos(((opts.maxTurnDeg ?? 45) * Math.PI) / 180);
   const SN = opts.normals ?? null; // shading normals per render vertex, for the facing check
-  const edgeWeight = opts.edgeWeight ?? 4;
+  const edgeWeight = opts.edgeWeight ?? 1;
 
   // Normalize positions to the unit bounding-box diagonal for the metric.
   const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
@@ -135,27 +179,60 @@ export function buildProgressive(mesh, opts = {}) {
 
   // Position vertices: render vertices with bit-identical positions.
   const wPos = new Int32Array(W);
-  const posMap = new Map();
   let V = 0;
-  for (let i = 0; i < W; i++) {
-    const k = P[3 * i] + "," + P[3 * i + 1] + "," + P[3 * i + 2];
-    let id = posMap.get(k);
-    if (id === undefined) {posMap.set(k, (id = V++));}
-    wPos[i] = id;
+  {
+    // open-addressing hash over the exact coordinates (-0 equals 0)
+    const F = new Float64Array(3 * W);
+    for (let k = 0; k < 3 * W; k++) {F[k] = P[k] + 0;}
+    const bits = new Uint32Array(F.buffer);
+    let size = 1; while (size < 2 * W) {size <<= 1;}
+    const mask = size - 1, table = new Int32Array(size).fill(-1);
+    for (let i = 0; i < W; i++) {
+      const o = 6 * i;
+      let h = Math.imul(bits[o] ^ bits[o + 1], 73856093) ^ Math.imul(bits[o + 2] ^ bits[o + 3], 19349663) ^ Math.imul(bits[o + 4] ^ bits[o + 5], 83492791);
+      h = (h ^ (h >>> 15)) & mask;
+      for (;;) {
+        const j = table[h];
+        if (j < 0) { table[h] = i; wPos[i] = V++; break; }
+        if (F[3 * j] === F[3 * i] && F[3 * j + 1] === F[3 * i + 1] && F[3 * j + 2] === F[3 * i + 2]) { wPos[i] = wPos[j]; break; }
+        h = (h + 1) & mask;
+      }
+    }
   }
   const vRep = new Int32Array(V).fill(-1); // a render vertex at that position
   for (let i = 0; i < W; i++) {if (vRep[wPos[i]] < 0) {vRep[wPos[i]] = i;}}
-  const px = (v, c) => X[vRep[v] * D + c];
+  const PX = new Float64Array(V * 3); // normalized position per position vertex
+  for (let v = 0; v < V; v++) {for (let c = 0; c < 3; c++) {PX[3 * v + c] = X[vRep[v] * D + c];}}
 
   const triW = new Int32Array(I); // corners as render vertices (mutable)
   const triDead = new Uint8Array(T);
   const triDeath = new Int32Array(T).fill(0x7fffffff);
-  const vTris = Array.from({ length: V }, () => []);
+
+  // Per position vertex triangle lists, pooled in one typed array. A list
+  // that outgrows its slot moves to the end of the pool with double room.
+  const tOff = new Int32Array(V), tCnt = new Int32Array(V), tCap = new Int32Array(V);
   for (let t = 0; t < T; t++) {
     const a = wPos[triW[3 * t]], b = wPos[triW[3 * t + 1]], c = wPos[triW[3 * t + 2]];
     if (a === b || b === c || a === c) { triDead[t] = 1; triDeath[t] = -1; continue; }
-    vTris[a].push(t); vTris[b].push(t); vTris[c].push(t);
+    tCnt[a]++; tCnt[b]++; tCnt[c]++;
   }
+  let poolTop = 0;
+  for (let v = 0; v < V; v++) { tOff[v] = poolTop; tCap[v] = tCnt[v]; poolTop += tCnt[v]; tCnt[v] = 0; }
+  let pool = new Int32Array(Math.max(64, poolTop * 2));
+  for (let t = 0; t < T; t++) {
+    if (triDead[t]) {continue;}
+    for (let c = 0; c < 3; c++) { const v = wPos[triW[3 * t + c]]; pool[tOff[v] + tCnt[v]++] = t; }
+  }
+  const reserve = (v, need) => {
+    if (need <= tCap[v]) {return;}
+    const cap = Math.max(8, 2 * need);
+    if (poolTop + cap > pool.length) {
+      const np = new Int32Array(Math.max(pool.length * 2, poolTop + cap));
+      np.set(pool.subarray(0, poolTop)); pool = np;
+    }
+    pool.copyWithin(poolTop, tOff[v], tOff[v] + tCnt[v]);
+    tOff[v] = poolTop; tCap[v] = cap; poolTop += cap;
+  };
 
   // ---- quadrics ----
   const Q = new Float64Array(W * QS); // generalized quadric per render vertex
@@ -194,14 +271,17 @@ export function buildProgressive(mesh, opts = {}) {
   const kind = new Uint8Array(V);
   const special = new Int32Array(V), edges = new Int32Array(V), multiW = new Uint8Array(V);
   const wedgeOf = (t, v) => {
-    for (let c = 0; c < 3; c++) {if (wPos[triW[3 * t + c]] === v) {return triW[3 * t + c];}}
+    const b = 3 * t;
+    if (wPos[triW[b]] === v) {return triW[b];}
+    if (wPos[triW[b + 1]] === v) {return triW[b + 1];}
+    if (wPos[triW[b + 2]] === v) {return triW[b + 2];}
     return -1;
   };
   const addEdgePlane = (a, b, t) => {
     // plane through edge ab, perpendicular to triangle t
     const A = vRep[a] * D, B = vRep[b] * D;
     const ex = X[B] - X[A], ey = X[B + 1] - X[A + 1], ez = X[B + 2] - X[A + 2];
-    const [w0, w1, w2] = [triW[3 * t] * D, triW[3 * t + 1] * D, triW[3 * t + 2] * D];
+    const w0 = triW[3 * t] * D, w1 = triW[3 * t + 1] * D, w2 = triW[3 * t + 2] * D;
     const ux = X[w1] - X[w0], uy = X[w1 + 1] - X[w0 + 1], uz = X[w1 + 2] - X[w0 + 2];
     const vx = X[w2] - X[w0], vy = X[w2 + 1] - X[w0 + 1], vz = X[w2 + 2] - X[w0 + 2];
     const fx = uy * vz - uz * vy, fy = uz * vx - ux * vz, fz = ux * vy - uy * vx;
@@ -210,161 +290,199 @@ export function buildProgressive(mesh, opts = {}) {
     nx /= nl; ny /= nl; nz /= nl;
     const d = -(nx * X[A] + ny * X[A + 1] + nz * X[A + 2]);
     const w = edgeWeight * (ex * ex + ey * ey + ez * ez);
-    for (const v of [a, b]) {
-      const q = v * 10;
+    for (let s = 0; s < 2; s++) {
+      const q = (s === 0 ? a : b) * 10;
       PQ[q] += w * nx * nx; PQ[q + 1] += w * nx * ny; PQ[q + 2] += w * nx * nz;
       PQ[q + 3] += w * ny * ny; PQ[q + 4] += w * ny * nz; PQ[q + 5] += w * nz * nz;
       PQ[q + 6] += w * nx * d; PQ[q + 7] += w * ny * d; PQ[q + 8] += w * nz * d; PQ[q + 9] += w * d * d;
     }
   };
   {
-    const edgeMap = new Map();
-    for (let t = 0; t < T; t++) {
-      if (triDead[t]) {continue;}
-      for (let e = 0; e < 3; e++) {
-        const a = wPos[triW[3 * t + e]], b = wPos[triW[3 * t + ((e + 1) % 3)]];
-        const k = a < b ? a * V + b : b * V + a;
-        let l = edgeMap.get(k); if (l === undefined) {edgeMap.set(k, (l = []));}
-        l.push(t);
+    // Edges from the per-vertex triangle lists: for each vertex a, its
+    // neighbours b with the triangles shared with each (at most 3 kept).
+    const mark = new Int32Array(V).fill(-1), slot = new Int32Array(V);
+    let nb = new Int32Array(64), cnt = new Int32Array(64), tl = new Int32Array(192);
+    for (let a = 0; a < V; a++) {
+      const o = tOff[a], n = tCnt[a];
+      if (nb.length < 2 * n) { nb = new Int32Array(4 * n); cnt = new Int32Array(4 * n); tl = new Int32Array(12 * n); }
+      let nn = 0;
+      for (let i = 0; i < n; i++) {
+        const t = pool[o + i];
+        for (let c = 0; c < 3; c++) {
+          const x = wPos[triW[3 * t + c]];
+          if (x === a) {continue;}
+          if (mark[x] !== a) { mark[x] = a; slot[x] = nn; nb[nn] = x; cnt[nn] = 0; nn++; }
+          const sl = slot[x];
+          if (cnt[sl] < 3) {tl[3 * sl + cnt[sl]] = t;}
+          cnt[sl]++;
+        }
       }
-    }
-    for (const [k, ts] of edgeMap) {
-      const a = Math.floor(k / V), b = k % V;
-      edges[a]++; edges[b]++;
-      if (ts.length > 2) { kind[a] = LOCKED; kind[b] = LOCKED; continue; }
-      const isSpecial = ts.length === 1 ||
-        wedgeOf(ts[0], a) !== wedgeOf(ts[1], a) || wedgeOf(ts[0], b) !== wedgeOf(ts[1], b);
-      if (isSpecial) { special[a]++; special[b]++; for (const t of ts) {addEdgePlane(a, b, t);} }
+      edges[a] += nn;
+      for (let sl = 0; sl < nn; sl++) {
+        const b = nb[sl];
+        if (b < a) {continue;}
+        const m = cnt[sl];
+        if (m > 2) { kind[a] = LOCKED; kind[b] = LOCKED; continue; }
+        const t0 = tl[3 * sl], t1 = tl[3 * sl + 1];
+        const isSpecial = m === 1 || wedgeOf(t0, a) !== wedgeOf(t1, a) || wedgeOf(t0, b) !== wedgeOf(t1, b);
+        if (isSpecial) { special[a]++; special[b]++; addEdgePlane(a, b, t0); if (m === 2) {addEdgePlane(a, b, t1);} }
+      }
     }
     for (let v = 0; v < V; v++) {
       let first = -1;
-      for (const t of vTris[v]) { const w = wedgeOf(t, v); if (first < 0) {first = w;} else if (w !== first) {multiW[v] = 1;} }
+      const o = tOff[v], n = tCnt[v];
+      for (let i = 0; i < n; i++) { const w = wedgeOf(pool[o + i], v); if (first < 0) {first = w;} else if (w !== first) {multiW[v] = 1;} }
       if (kind[v] === LOCKED) {continue;}
-      const nt = vTris[v].length;
-      if (nt === 0) { kind[v] = LOCKED; continue; }
-      if (special[v] === 0) {kind[v] = !multiW[v] && edges[v] === nt ? INTERIOR : LOCKED;}
-      else if (special[v] === 2 && (edges[v] === nt || edges[v] === nt + 1)) {kind[v] = SPECIAL;}
+      if (n === 0) { kind[v] = LOCKED; continue; }
+      if (special[v] === 0) {kind[v] = !multiW[v] && edges[v] === n ? INTERIOR : LOCKED;}
+      else if (special[v] === 2 && (edges[v] === n || edges[v] === n + 1)) {kind[v] = SPECIAL;}
       else {kind[v] = LOCKED;}
     }
   }
 
-  // ---- candidate evaluation ----
-  const stamp = new Int32Array(V); let stampId = 1;
-  const version = new Int32Array(V);
+  // ---- candidate evaluation (typed scratch, no allocation per move) ----
+  let stamp = new Int32Array(V); let stampId = 1;
   const best = new Int32Array(V).fill(-1);
+  // runner-up move per vertex (target and cost, geometry not yet checked)
+  const second = new Int32Array(V).fill(-1), secondCost = new Float64Array(V);
   const vDead = new Uint8Array(V);
-  const heap = new Heap();
-  const mapFrom = [], mapTo = []; // scratch wedge map for one candidate
-  const tsBuf = [];
-  const tq = new Float64Array(QS);
-
-  const evalTQ = (w) => {
+  const heap = new IndexedHeap(V);
+  const MAXW = 64;
+  const mapFrom = new Int32Array(MAXW), mapTo = new Int32Array(MAXW); let mapN = 0;
+  const uWedges = new Int32Array(MAXW); let uwN = 0;
+  const tsBuf = new Int32Array(3); let tsN = 0;
+  const nMark = new Int32Array(V), nSlot = new Int32Array(V); let nMarkId = 0;
+  let sCnt = new Int32Array(256), sT = new Int32Array(512);
+  let nbr = new Int32Array(256), cCost = new Float64Array(256), cV = new Int32Array(256);
+  let touched = new Int32Array(256);
+  /** The quadric at Q[q..] evaluated at render vertex w's feature point. */
+  const evalQ = (q, w) => {
     const x = w * D;
-    let s = 0, m = 0;
+    let s = 0, m = q;
     for (let i = 0; i < D; i++) {
       const xi = X[x + i];
-      s += tq[m++] * xi * xi;
-      for (let j = i + 1; j < D; j++) {s += 2 * tq[m++] * xi * X[x + j];}
+      s += Q[m++] * xi * xi;
+      for (let j = i + 1; j < D; j++) {s += 2 * Q[m++] * xi * X[x + j];}
     }
-    for (let i = 0; i < D; i++) {s += 2 * tq[AQ + i] * X[x + i];}
-    return s + tq[AQ + D];
+    for (let i = 0; i < D; i++) {s += 2 * Q[q + AQ + i] * X[x + i];}
+    return s + Q[q + AQ + D];
   };
-  const evalPQ = (u, v) => {
-    const a = u * 10, b = v * 10;
-    const x = px(v, 0), y = px(v, 1), z = px(v, 2);
-    const q = (k) => PQ[a + k] + PQ[b + k];
-    return q(0) * x * x + 2 * q(1) * x * y + 2 * q(2) * x * z + q(3) * y * y + 2 * q(4) * y * z +
-      q(5) * z * z + 2 * (q(6) * x + q(7) * y + q(8) * z) + q(9);
+  // A target's own quadric at its own point is the same for every move onto
+  // it: cached per render vertex (SELF) and per position (PSELF), refreshed
+  // when a collapse adds to that quadric.
+  const SELF = new Float64Array(W), PSELF = new Float64Array(V);
+  const selfOf = (w) => evalQ(w * QS, w);
+  const pselfOf = (v) => {
+    const a = v * 10, x = PX[3 * v], y = PX[3 * v + 1], z = PX[3 * v + 2];
+    return PQ[a] * x * x + 2 * PQ[a + 1] * x * y + 2 * PQ[a + 2] * x * z + PQ[a + 3] * y * y + 2 * PQ[a + 4] * y * z +
+      PQ[a + 5] * z * z + 2 * (PQ[a + 6] * x + PQ[a + 7] * y + PQ[a + 8] * z) + PQ[a + 9];
+  };
+  for (let w = 0; w < W; w++) {SELF[w] = selfOf(w);}
+  for (let v = 0; v < V; v++) {PSELF[v] = pselfOf(v);}
+  const mapOf = (w) => { for (let i = 0; i < mapN; i++) {if (mapFrom[i] === w) {return mapTo[i];}} return -1; };
+
+  const evalPQu = (u, v) => {
+    const a = u * 10;
+    const x = PX[3 * v], y = PX[3 * v + 1], z = PX[3 * v + 2];
+    return PQ[a] * x * x + 2 * PQ[a + 1] * x * y + 2 * PQ[a + 2] * x * z + PQ[a + 3] * y * y + 2 * PQ[a + 4] * y * z +
+      PQ[a + 5] * z * z + 2 * (PQ[a + 6] * x + PQ[a + 7] * y + PQ[a + 8] * z) + PQ[a + 9];
   };
 
-  /** vTris[x] with dead triangles dropped, in place. */
+  /** Drop dead triangles from x's list in place; returns the live count. */
   const live = (x) => {
-    const l = vTris[x];
+    const o = tOff[x], n = tCnt[x];
     let j = 0;
-    for (let i = 0; i < l.length; i++) {if (!triDead[l[i]]) {l[j++] = l[i];}}
-    l.length = j;
-    return l;
+    for (let i = 0; i < n; i++) { const t = pool[o + i]; if (!triDead[t]) {pool[o + j++] = t;} }
+    tCnt[x] = j;
+    return j;
   };
-  const uWedges = [];
-  const collectUWedges = (u, ut) => {
-    uWedges.length = 0;
-    for (let i = 0; i < ut.length; i++) {
-      const w = wedgeOf(ut[i], u);
-      if (uWedges.indexOf(w) < 0) {uWedges.push(w);}
+  const collectUWedges = (u) => {
+    uwN = 0;
+    const o = tOff[u], n = tCnt[u];
+    for (let i = 0; i < n; i++) {
+      const w = wedgeOf(pool[o + i], u);
+      let seen = false;
+      for (let k = 0; k < uwN; k++) {if (uWedges[k] === w) { seen = true; break; }}
+      if (!seen && uwN < MAXW) {uWedges[uwN++] = w;}
     }
   };
 
-  /** Fill mapFrom/mapTo and tsBuf for u -> v (u's live list `ut`, its
-   *  wedges in uWedges); false when not allowed. */
-  const buildMap = (u, v, ut) => {
-    tsBuf.length = 0;
-    for (let i = 0; i < ut.length; i++) {
-      const t = ut[i];
-      if (wPos[triW[3 * t]] === v || wPos[triW[3 * t + 1]] === v || wPos[triW[3 * t + 2]] === v) {tsBuf.push(t);}
+  /** Fill the wedge map and tsBuf for u -> v (u's list live, its wedges
+   *  in uWedges); false when not allowed. */
+  const buildMap = (u, v) => {
+    tsN = 0;
+    const o = tOff[u], n = tCnt[u];
+    for (let i = 0; i < n; i++) {
+      const t = pool[o + i];
+      if (wPos[triW[3 * t]] === v || wPos[triW[3 * t + 1]] === v || wPos[triW[3 * t + 2]] === v) {
+        if (tsN === 2) {return false;}
+        tsBuf[tsN++] = t;
+      }
     }
-    const n = tsBuf.length;
-    if (n === 0 || n > 2) {return false;}
-    mapFrom.length = 0; mapTo.length = 0;
-    const isSpecialEdge = n === 1 ||
+    return mapShared(u, v);
+  };
+  /** The rest of buildMap, with the shared triangles already in tsBuf. */
+  const mapShared = (u, v) => {
+    if (tsN === 0) {return false;}
+    mapN = 0;
+    const isSpecialEdge = tsN === 1 ||
       wedgeOf(tsBuf[0], u) !== wedgeOf(tsBuf[1], u) || wedgeOf(tsBuf[0], v) !== wedgeOf(tsBuf[1], v);
     if (kind[u] === INTERIOR) {
       if (isSpecialEdge) {return false;}
     } else if (!isSpecialEdge) {return false;}
-    for (let i = 0; i < n; i++) {
+    for (let i = 0; i < tsN; i++) {
       const t = tsBuf[i];
       const wu = wedgeOf(t, u), wv = wedgeOf(t, v);
-      const at = mapFrom.indexOf(wu);
-      if (at >= 0) { if (mapTo[at] !== wv) {return false;} } else { mapFrom.push(wu); mapTo.push(wv); }
+      const at = mapOf(wu);
+      if (at >= 0) { if (at !== wv) {return false;} } else { mapFrom[mapN] = wu; mapTo[mapN] = wv; mapN++; }
     }
-    return mapFrom.length === uWedges.length; // every wedge u uses is mapped
+    return mapN === uwN; // every wedge u uses is mapped
   };
 
   const costOf = (u, v) => {
     // accumulated quadric error at the target, summed over target wedges
-    let s = evalPQ(u, v);
-    for (let i = 0; i < mapTo.length; i++) {
+    let s = evalPQu(u, v) + PSELF[v];
+    for (let i = 0; i < mapN; i++) {
       let seenBefore = false;
       for (let j = 0; j < i; j++) {if (mapTo[j] === mapTo[i]) {seenBefore = true;}}
       if (seenBefore) {continue;}
       const wv = mapTo[i];
-      for (let k = 0; k < QS; k++) {tq[k] = Q[wv * QS + k];}
-      for (let j = 0; j < mapFrom.length; j++) {if (mapTo[j] === wv) {
-        const q = mapFrom[j] * QS; for (let k = 0; k < QS; k++) {tq[k] += Q[q + k];}
-      }}
-      s += evalTQ(wv);
+      s += SELF[wv];
+      for (let j = 0; j < mapN; j++) {if (mapTo[j] === wv) {s += evalQ(mapFrom[j] * QS, wv);}}
     }
     return Math.max(0, s);
   };
 
-  const geometryOk = (u, v, ut) => {
+  const geometryOk = (u, v) => {
     // link condition: common neighbours == third vertices of tsBuf
     stampId++;
-    for (let i = 0; i < ut.length; i++) {
-      const t = ut[i];
+    const uo = tOff[u], un = tCnt[u];
+    for (let i = 0; i < un; i++) {
+      const t = pool[uo + i];
       stamp[wPos[triW[3 * t]]] = stampId; stamp[wPos[triW[3 * t + 1]]] = stampId; stamp[wPos[triW[3 * t + 2]]] = stampId;
     }
     let common = 0;
     stampId++;
     const mark = stampId;
-    const vt = live(v);
-    for (let i = 0; i < vt.length; i++) {
-      const t = vt[i];
+    const vn = live(v), vo = tOff[v];
+    for (let i = 0; i < vn; i++) {
+      const t = pool[vo + i];
       for (let c = 0; c < 3; c++) {
         const x = wPos[triW[3 * t + c]];
         if (x !== u && x !== v && stamp[x] === mark - 1) { stamp[x] = mark; common++; }
       }
     }
-    if (common !== tsBuf.length) {return false;}
+    if (common !== tsN) {return false;}
     // flip / turn check
-    const vx = px(v, 0), vy = px(v, 1), vz = px(v, 2);
-    const ux = px(u, 0), uy = px(u, 1), uz = px(u, 2);
-    for (let i = 0; i < ut.length; i++) {
-      const t = ut[i];
-      if (t === tsBuf[0] || t === tsBuf[1]) {continue;}
+    const vx = PX[3 * v], vy = PX[3 * v + 1], vz = PX[3 * v + 2];
+    const ux = PX[3 * u], uy = PX[3 * u + 1], uz = PX[3 * u + 2];
+    for (let i = 0; i < un; i++) {
+      const t = pool[uo + i];
+      if (t === tsBuf[0] || (tsN > 1 && t === tsBuf[1])) {continue;}
       const q0 = wPos[triW[3 * t]], q1 = wPos[triW[3 * t + 1]], q2 = wPos[triW[3 * t + 2]];
       const a = q0 === u ? q1 : q1 === u ? q2 : q0;
       const b = q0 === u ? q2 : q1 === u ? q0 : q1;
-      const ax = px(a, 0), ay = px(a, 1), az = px(a, 2), bx = px(b, 0), by = px(b, 1), bz = px(b, 2);
+      const ax = PX[3 * a], ay = PX[3 * a + 1], az = PX[3 * a + 2], bx = PX[3 * b], by = PX[3 * b + 1], bz = PX[3 * b + 2];
       // old normal (u,a,b), new normal (v,a,b)
       let e1x = ax - ux, e1y = ay - uy, e1z = az - uz, e2x = bx - ux, e2y = by - uy, e2z = bz - uz;
       const ox = e1y * e2z - e1z * e2y, oy = e1z * e2x - e1x * e2z, oz = e1x * e2y - e1y * e2x;
@@ -378,7 +496,7 @@ export function buildProgressive(mesh, opts = {}) {
         let sx = 0, sy = 0, sz = 0;
         for (let c = 0; c < 3; c++) {
           let w = triW[3 * t + c];
-          if (wPos[w] === u) {w = mapTo[mapFrom.indexOf(w)];}
+          if (wPos[w] === u) {w = mapOf(w);}
           sx += SN[3 * w]; sy += SN[3 * w + 1]; sz += SN[3 * w + 2];
         }
         if (nx * sx + ny * sy + nz * sz <= 0) {return false;}
@@ -387,109 +505,176 @@ export function buildProgressive(mesh, opts = {}) {
     return true;
   };
 
-  const nbr = [], cCost = [], cV = [];
+  const loadShared = (sl) => { if (sCnt[sl] > 2) { tsN = 0; return; } tsN = sCnt[sl]; tsBuf[0] = sT[2 * sl]; tsBuf[1] = sT[2 * sl + 1]; };
   const candidate = (u) => {
-    best[u] = -1;
+    best[u] = -1; second[u] = -1;
+    heap.remove(u);
     if (vDead[u] || kind[u] === LOCKED) {return;}
-    const ut = live(u);
-    collectUWedges(u, ut);
-    stampId++;
-    nbr.length = 0;
-    for (let i = 0; i < ut.length; i++) {
-      const t = ut[i];
+    const un = live(u), uo = tOff[u];
+    collectUWedges(u);
+    // one pass over u's triangles: each neighbour with the triangles it shares
+    nMarkId++;
+    let nn = 0;
+    if (nbr.length < 3 * un) { nbr = new Int32Array(6 * un); cCost = new Float64Array(6 * un); cV = new Int32Array(6 * un); sCnt = new Int32Array(6 * un); sT = new Int32Array(12 * un); }
+    for (let i = 0; i < un; i++) {
+      const t = pool[uo + i];
       for (let c = 0; c < 3; c++) {
         const x = wPos[triW[3 * t + c]];
-        if (x !== u && stamp[x] !== stampId) { stamp[x] = stampId; nbr.push(x); }
+        if (x === u) {continue;}
+        let sl;
+        if (nMark[x] !== nMarkId) { nMark[x] = nMarkId; nSlot[x] = sl = nn; nbr[nn] = x; sCnt[nn] = 0; nn++; } else {sl = nSlot[x];}
+        if (sCnt[sl] < 2) {sT[2 * sl + sCnt[sl]] = t;}
+        sCnt[sl]++;
       }
     }
-    cCost.length = 0; cV.length = 0;
-    for (let i = 0; i < nbr.length; i++) {
+    let cn = 0;
+    for (let i = 0; i < nn; i++) {
       const v = nbr[i];
-      if (!buildMap(u, v, ut)) {continue;}
-      cCost.push(costOf(u, v)); cV.push(v);
+      loadShared(i);
+      if (!mapShared(u, v)) {continue;}
+      cCost[cn] = costOf(u, v); cV[cn] = i; cn++;
     }
     // try cheapest first (selection; lists are short)
-    while (cCost.length > 0) {
+    while (cn > 0) {
       let m = 0;
-      for (let i = 1; i < cCost.length; i++) {if (cCost[i] < cCost[m]) {m = i;}}
-      const c = cCost[m], v = cV[m];
-      cCost[m] = cCost[cCost.length - 1]; cV[m] = cV[cV.length - 1]; cCost.pop(); cV.pop();
-      buildMap(u, v, ut);
-      if (geometryOk(u, v, ut)) {
-        best[u] = v; version[u]++;
-        heap.push(c, u, version[u]);
+      for (let i = 1; i < cn; i++) {if (cCost[i] < cCost[m]) {m = i;}}
+      const c = cCost[m], sl = cV[m], v = nbr[sl];
+      cn--; cCost[m] = cCost[cn]; cV[m] = cV[cn];
+      loadShared(sl); mapShared(u, v);
+      if (geometryOk(u, v)) {
+        best[u] = v;
+        heap.set(u, c);
+        if (cn > 0) {
+          let r = 0;
+          for (let i = 1; i < cn; i++) {if (cCost[i] < cCost[r]) {r = i;}}
+          second[u] = nbr[cV[r]]; secondCost[u] = cCost[r];
+        }
         return;
       }
     }
   };
 
-  for (let v = 0; v < V; v++) {live(v);}
   for (let u = 0; u < V; u++) {candidate(u);}
 
   // ---- collapse loop ----
   const wParent = new Int32Array(W).fill(-1);
   const wStep = new Int32Array(W).fill(0x7fffffff);
   let alive = 0; for (let t = 0; t < T; t++) {if (!triDead[t]) {alive++;}}
-  const stepAlive = [alive], stepError = [0];
-  const top = [0, 0, 0];
-  const touched = [];
+  let stepAlive = new Int32Array(Math.max(16, V + 1)), stepError = new Float64Array(Math.max(16, V + 1));
+  stepAlive[0] = alive; stepError[0] = 0;
   let step = 0, maxErr = 0;
   while (heap.size > 0) {
-    heap.pop(top);
-    const u = top[1];
-    if (top[2] !== version[u] || vDead[u] || best[u] < 0) {continue;}
+    const key = heap.key[heap.h[0]];
+    const u = heap.pop();
+    if (vDead[u] || best[u] < 0) {continue;}
     const v = best[u];
-    const ut = live(u);
-    collectUWedges(u, ut);
-    if (vDead[v] || !buildMap(u, v, ut) || !geometryOk(u, v, ut)) { candidate(u); continue; }
+    live(u);
+    collectUWedges(u);
+    if (vDead[v] || !buildMap(u, v) || !geometryOk(u, v)) { candidate(u); continue; }
     const cost = costOf(u, v);
-    if (cost > top[0] * 1.0001 + 1e-18) { candidate(u); continue; } // stale, re-queue
+    if (cost > key * 1.0001 + 1e-18) { candidate(u); continue; } // stale, re-queue
     step++;
-    for (const t of tsBuf) { triDead[t] = 1; triDeath[t] = step; alive--; }
+    for (let i = 0; i < tsN; i++) { const t = tsBuf[i]; triDead[t] = 1; triDeath[t] = step; alive--; }
     // quadrics
-    for (let i = 0; i < mapFrom.length; i++) {
+    for (let i = 0; i < mapN; i++) {
       const a = mapFrom[i] * QS, b = mapTo[i] * QS;
       for (let k = 0; k < QS; k++) {Q[b + k] += Q[a + k];}
       wParent[mapFrom[i]] = mapTo[i]; wStep[mapFrom[i]] = step;
     }
     for (let k = 0; k < 10; k++) {PQ[v * 10 + k] += PQ[u * 10 + k];}
-    // remap corners
-    const vt = live(v);
-    for (let i = 0; i < ut.length; i++) {
-      const t = ut[i];
+    PSELF[v] = pselfOf(v);
+    for (let i = 0; i < mapN; i++) {SELF[mapTo[i]] = selfOf(mapTo[i]);}
+    // remap corners and move u's surviving triangles to v's list
+    const vn0 = live(v);
+    const un = tCnt[u];
+    reserve(v, vn0 + un);
+    const uo = tOff[u];
+    let vn = vn0;
+    for (let i = 0; i < un; i++) {
+      const t = pool[uo + i];
       if (triDead[t]) {continue;}
       for (let c = 0; c < 3; c++) {
         const w = triW[3 * t + c];
-        if (wPos[w] === u) {triW[3 * t + c] = mapTo[mapFrom.indexOf(w)];}
+        if (wPos[w] === u) {triW[3 * t + c] = mapOf(w);}
       }
-      vt.push(t);
+      pool[tOff[v] + vn++] = t;
     }
-    vDead[u] = 1; vTris[u] = [];
+    tCnt[v] = vn;
+    vDead[u] = 1; tCnt[u] = 0;
     maxErr = Math.max(maxErr, Math.sqrt(cost));
-    stepAlive.push(alive); stepError.push(maxErr);
+    if (step >= stepAlive.length) {
+      const a2 = new Int32Array(stepAlive.length * 2); a2.set(stepAlive); stepAlive = a2;
+      const e2b = new Float64Array(stepError.length * 2); e2b.set(stepError); stepError = e2b;
+    }
+    stepAlive[step] = alive; stepError[step] = maxErr;
     if (opts.onProgress && step % 2048 === 0) {opts.onProgress(alive);}
     // re-evaluate v and its neighbours
     stampId++;
-    touched.length = 0;
-    touched.push(v); stamp[v] = stampId;
-    for (let i = 0; i < vt.length; i++) {
-      const t = vt[i];
-      for (let c = 0; c < 3; c++) { const x = wPos[triW[3 * t + c]]; if (stamp[x] !== stampId) { stamp[x] = stampId; touched.push(x); } }
+    let nt = 0;
+    if (touched.length < 3 * vn + 1) {touched = new Int32Array(6 * vn + 2);}
+    touched[nt++] = v; stamp[v] = stampId;
+    const vo = tOff[v];
+    for (let i = 0; i < vn; i++) {
+      const t = pool[vo + i];
+      for (let c = 0; c < 3; c++) { const x = wPos[triW[3 * t + c]]; if (stamp[x] !== stampId) { stamp[x] = stampId; touched[nt++] = x; } }
     }
-    for (let i = 0; i < touched.length; i++) {candidate(touched[i]);}
+    // v's moves all changed. A neighbour's moves changed only towards v (its
+    // other edges keep their cost), so it is fully re-evaluated only when its
+    // best move pointed at u or v, or it had none; otherwise only x -> v is
+    // priced. A best move made invalid by this collapse is caught at pop.
+    candidate(v);
+    for (let i = 1; i < nt; i++) {
+      const x = touched[i];
+      if (vDead[x] || kind[x] === LOCKED) {continue;}
+      const bx = best[x];
+      if (bx < 0) { candidate(x); continue; }
+      live(x); collectUWedges(x);
+      const ok = buildMap(x, v);
+      const c = ok ? costOf(x, v) : Infinity;
+      // the runner-up is kept current for moves onto v (u is now v)
+      if (second[x] === u || second[x] === v) { second[x] = ok ? v : -1; secondCost[x] = c; }
+      if (bx === u || bx === v) {
+        // best move gone or repriced: the cheaper of x -> v and the runner-up
+        const s2 = second[x] === v ? -1 : second[x], c2 = s2 < 0 ? Infinity : secondCost[x];
+        if (ok && c <= c2) {
+          if (geometryOk(x, v)) { best[x] = v; heap.set(x, c); second[x] = s2; secondCost[x] = c2; continue; }
+        } else if (s2 >= 0 && !vDead[s2]) {
+          if (buildMap(x, s2) && geometryOk(x, s2)) {
+            const cs = costOf(x, s2);
+            best[x] = s2; heap.set(x, cs);
+            if (ok) { second[x] = v; secondCost[x] = c; } else {second[x] = -1;}
+            continue;
+          }
+        }
+        candidate(x);
+        continue;
+      }
+      if (!ok) {continue;}
+      if (c < heap.key[x]) {
+        if (geometryOk(x, v)) { second[x] = bx; secondCost[x] = heap.key[x]; best[x] = v; heap.set(x, c); }
+      } else if (second[x] < 0 || c < secondCost[x]) { second[x] = v; secondCost[x] = c; }
+    }
   }
+  stamp = null;
 
   // Triangles ordered so that any level's live triangles are a prefix.
-  const order = Array.from({ length: T }, (_, t) => t).filter((t) => triDeath[t] >= 0);
-  order.sort((a, b) => triDeath[b] - triDeath[a]);
+  // (counting sort by death step, latest first, stable in t)
+  const never = step + 1; // triangles alive at the floor sort first
+  const bucket = new Int32Array(never + 2);
+  let kept = 0;
+  for (let t = 0; t < T; t++) {if (triDeath[t] >= 0) { bucket[never - Math.min(triDeath[t], never)]++; kept++; }}
+  for (let i = 0, acc = 0; i < bucket.length; i++) { const c = bucket[i]; bucket[i] = acc; acc += c; }
+  const order = new Uint32Array(kept);
+  for (let t = 0; t < T; t++) {if (triDeath[t] >= 0) {order[bucket[never - Math.min(triDeath[t], never)]++] = t;}}
   return {
     vertexCount: W, triangleCount: alive === 0 ? 0 : stepAlive[0], diag,
-    indices: I, order: Uint32Array.from(order), triDeath,
+    indices: I, order, triDeath,
     wParent, wStep,
-    stepAlive: Int32Array.from(stepAlive), stepError: Float64Array.from(stepError),
-    minTriangles: stepAlive[stepAlive.length - 1],
+    stepAlive: stepAlive.slice(0, step + 1), stepError: stepError.slice(0, step + 1),
+    minTriangles: stepAlive[step],
   };
 }
+
 
 /** The number of collapse steps whose result has at most `targetTris`. */
 export function stepsFor(prog, targetTris) {
