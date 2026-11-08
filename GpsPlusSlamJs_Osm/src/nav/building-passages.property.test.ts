@@ -37,6 +37,7 @@ import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import { cellToLatLng, gridDisk, latLngToCell } from "h3-js";
 
+import { PASSAGE_CORRIDOR_M } from "./building-passages.js";
 import { buildObstacleIndex, crossesObstacle } from "./obstacles.js";
 import { AFFORDANCE_RES } from "../spatial/resolutions.js";
 import { enuFrameAt } from "../mesh/enu.js";
@@ -212,6 +213,17 @@ describe("a mapped building passage is walkable end to end", () => {
       // ceiling for a unit test that still samples the lattice properly.
       { numRuns: 25 },
     );
+  });
+
+  it("keeps the corridor inside its measured window", () => {
+    // Why this test matters: the two properties sample 25 placements each, so
+    // they catch a constant far outside the window but cannot be trusted to
+    // catch one just outside it. This holds the constant to the measured
+    // window directly: a passage ending 3 m short of the walls joined the two
+    // sides at every placement from 9.5 m, and the rooms stayed sealed up to
+    // 14.5 m (see the sizing note on PASSAGE_CORRIDOR_M).
+    expect(PASSAGE_CORRIDOR_M).toBeGreaterThanOrEqual(9.5);
+    expect(PASSAGE_CORRIDOR_M).toBeLessThanOrEqual(14.5);
   });
 
   it("does NOT join them when the same road carries no passage tag", () => {
