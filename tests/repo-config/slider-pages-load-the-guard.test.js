@@ -238,6 +238,20 @@ const EXEMPT = new Map([
     'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-4-card-unfolds/index.html',
     'design prototype in the inspiration gallery, wired to nothing',
   ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-5-creator-places/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-7-answer-scenes/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  // Its card also builds sliders of its own (found radius, hint delay, position error): test
+  // aids that change only the draft's own feel.
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-6-find-first/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
 ]);
 
 const RANGE_IN_HTML = /<input\b[^>]*\btype\s*=\s*["']?range\b/is;
