@@ -28,7 +28,7 @@ import {
   storyVideoVoice,
   type Voice,
 } from "../voice-focus.js";
-import { worldEnv, type WorldMode } from "../world-part.js";
+import { worldEnv, type WorldMode, type WorldPart } from "../world-part.js";
 import {
   createSilentAudio,
   freeTour,
@@ -39,7 +39,6 @@ import {
   showWith,
   storyStation,
   type ItemKind,
-  type LabWorldPart,
   type ReadRecord,
   type RecordName,
   type SilentAudio,
@@ -412,7 +411,7 @@ function runItemLab(kind: ItemKind, folder: URL): ItemLab {
   // gives one: its files by id, a canvas as a texture, play or edit.
   let backdrop: keyof typeof BACKDROPS = "bright";
   let worldMode: WorldMode = "play";
-  let part: LabWorldPart | null = null;
+  let part: WorldPart | null = null;
   let worldTaps = 0;
   let worldFailure = "";
   let moving = false;
@@ -422,7 +421,7 @@ function runItemLab(kind: ItemKind, folder: URL): ItemLab {
     worldEnv(mode, [...assets.values()], loadAsset);
   /** A fresh part of the shown record, or null (none, or `world` threw:
    *  the failure is kept and shown). */
-  function makePart(): LabWorldPart | null {
+  function makePart(): WorldPart | null {
     if (kind.world === undefined) return null;
     try {
       return kind.world(shownRecord.block, envOf(worldMode));

@@ -33,6 +33,9 @@ import {
   TOUR_BLOCK_VIEWS,
   TOUR_MODEL_ANIMATION_RULES,
   TOUR_MODEL_MAX_NOTES,
+  TOUR_AUDIO_MAX_RADIUS_M,
+  TOUR_AUDIO_MAX_REACH_M,
+  TOUR_AUDIO_MIN_RADIUS_M,
   TOUR_MODEL_MAX_SECTIONS,
   TOUR_MODEL_MAX_SIZE_M,
   TOUR_MODEL_MIN_DIRECTION_LENGTH,
@@ -239,11 +242,24 @@ const KIND_FIELDS: Record<
       title: optionalText(r.video.title),
       poster: fc.option(fc.constantFrom(...IMAGE_ASSETS), { nil: undefined }),
     }),
-  audio: () =>
+  audio: (view) =>
     fc.record({
       audio: fc.constant('voice'),
       transcript: tourTextArbitrary(r.audio.transcript),
       title: optionalText(r.audio.title),
+      // Required in their own view, kept (optional) in every other.
+      radiusM:
+        view === 'spot'
+          ? audioRadius
+          : fc.option(audioRadius, { nil: undefined }),
+      maxM:
+        view === 'zone'
+          ? audioReach
+          : fc.option(audioReach, { nil: undefined }),
+      volume:
+        view === 'zone'
+          ? audioVolume
+          : fc.option(audioVolume, { nil: undefined }),
     }),
   model: (view) =>
     fc.record({
@@ -326,6 +342,18 @@ export const tourModelAnimationArbitrary = fc.record({
   autoplay: fc.boolean(),
 });
 
+const audioRadius = fc.double({
+  min: TOUR_AUDIO_MIN_RADIUS_M,
+  max: TOUR_AUDIO_MAX_RADIUS_M,
+  noNaN: true,
+});
+const audioReach = fc.double({
+  min: TOUR_AUDIO_MIN_RADIUS_M,
+  max: TOUR_AUDIO_MAX_REACH_M,
+  noNaN: true,
+});
+const audioVolume = fc.double({ min: 0, max: 1, noNaN: true });
+
 const modelSize = fc.double({
   min: TOUR_MODEL_MIN_SIZE_M,
   max: TOUR_MODEL_MAX_SIZE_M,
@@ -341,7 +369,7 @@ export const TOUR_FREE_VIEWS: Readonly<
   longText: ['lectern', 'reading'],
   picture: ['plane'],
   video: ['card'],
-  audio: ['card'],
+  audio: ['spot', 'zone'],
   model: TOUR_MODEL_WORLD_VIEWS,
   character: TOUR_CHARACTER_VIEWS,
 };

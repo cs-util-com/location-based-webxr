@@ -382,6 +382,47 @@ describe("drawInspector", () => {
     ).toContain("Delete video");
   });
 
+  // Why: a sound's radius, reach and volume are numbers (block-fields.ts
+  // `number`): typed in a decimal box with the unit beside it, never a
+  // text with a character counter.
+  it("draws a block's number field as a decimal box with its unit", () => {
+    drawInspector(
+      dock,
+      {
+        kind: "freeBlock",
+        itemKind: "video",
+        id: "clip",
+        stationId: "gate",
+        title: "A clip",
+        sub: "Video in The old gate",
+        fields: [
+          {
+            name: "radiusM",
+            label: "Radius",
+            value: "6",
+            max: 50,
+            unit: "codePoints",
+            required: true,
+            prose: false,
+            number: { unit: "m" },
+          },
+        ],
+      },
+      FOLD,
+      pictures,
+    );
+    const input = dock.body.querySelector<HTMLInputElement>(
+      '[data-field="radiusM"]',
+    );
+    expect(input?.defaultValue).toBe("6");
+    expect(input?.inputMode).toBe("decimal");
+    expect(input?.placeholder).toBe("Required");
+    expect(input?.closest(".num")?.querySelector(".unit")?.textContent).toBe(
+      "m",
+    );
+    expect(dock.body.querySelector("output.count")).toBeNull();
+  });
+
   // Why: how a block moves on is the one thing of its step the entry's
   // inspector sets: the chip in use pressed, the seconds only while they
   // mean something, and a mode no chip offers still shown as its own chip.

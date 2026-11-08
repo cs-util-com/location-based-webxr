@@ -216,10 +216,21 @@ function lockButton(locked: boolean): HTMLButtonElement {
   return b;
 }
 
-/** A block's text field to type (`block-fields.ts`), its count against
- *  the format's cap under it as it is typed. */
+/** A block's field to type (`block-fields.ts`): a text with its count
+ *  against the format's cap under it as it is typed, or a number in a
+ *  decimal box with its unit (the format's bounds refuse on the write). */
 function blockTextField(field: BlockField): HTMLElement[] {
   const hint = blockFieldPlaceholder(field);
+  if (field.number !== undefined) {
+    const row = numberField(
+      field.label,
+      field.name,
+      field.value,
+      field.number.unit,
+    );
+    row.querySelector("input")?.setAttribute("placeholder", hint);
+    return [row];
+  }
   const row = field.prose
     ? proseField(field.label, field.name, field.value, hint)
     : lineField(field.label, field.name, field.value, hint);

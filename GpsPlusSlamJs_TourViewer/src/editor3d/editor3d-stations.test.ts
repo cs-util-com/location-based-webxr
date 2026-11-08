@@ -406,6 +406,38 @@ describe("createStationsLayer", () => {
     expect(layer.photoPlanes("a")).toHaveLength(1);
   });
 
+  // Why: a free model in the card or stage view stands nothing in the
+  // station's world for a visitor (the card is a panel, the stage is the
+  // story's), and the editor's 3D view draws what the visitor sees, so
+  // it draws none either - and does not read its file.
+  it("draws no free model in the card or stage view, and reads no file for it", async () => {
+    let parsed = 0;
+    const { d } = deps({
+      loadGlbModel: () => {
+        parsed += 1;
+        return Promise.resolve(new THREE.Mesh(new THREE.BoxGeometry()));
+      },
+    });
+    const layer = createStationsLayer(d);
+    const card = { ...model("c", "horse", 8), view: "card" } as TourBlock;
+    const stage = { ...model("s", "horse", 8), view: "stage" } as TourBlock;
+    layer.setTour(
+      manifest(
+        [station("a", 0, 0, [card, stage, photo("p")])],
+        [{ id: "horse", path: "content/horse.glb", kind: "model" }],
+      ),
+      new Map(),
+    );
+    layer.update(view(0, 0, null));
+    await settle();
+    expect(layer.models("a")).toHaveLength(0);
+    expect(layer.modelObject("c")).toBeNull();
+    expect(layer.modelObject("s")).toBeNull();
+    expect(parsed).toBe(0);
+    expect(layer.photoPlanes("a")).toHaveLength(1);
+    layer.dispose();
+  });
+
   // Why: a printed code is drawn at its printed size (0.2 m when the tour
   // does not say), at its own point; a code with no position is not drawn.
   it("draws every code with a position as a square of its printed size", () => {
@@ -1529,13 +1561,13 @@ describe("createStationsLayer", () => {
       const ray = new THREE.Raycaster();
       ray.setFromCamera(new THREE.Vector2(0, 0), camera);
       expect(layer.pick(ray)).toBe("song");
-      // Located where it stands (the view flies to it), yet no gesture's
-      // target: the gizmo moves the world blocks only (the rows that say
+      // Located where it stands (the view flies to it), and a gesture's
+      // target: the gizmo moves the world blocks (the rows that say
       // `inWorld`, `editor3d-editing.ts` `targetOf`), and a free sound is
-      // none, so it is selected by a click and not dragged.
+      // one, so its circle or zone is moved and turned like a pin.
       const located = layer.itemPointOf("song");
       expect(located?.distanceTo(at)).toBeLessThan(1e-6);
-      expect(worldBlocks(a).map((b) => b.id)).toEqual(["p"]);
+      expect(worldBlocks(a).map((b) => b.id)).toEqual(["p", "song"]);
       // A drag's preview moves it and turns it as the pose says, tilt
       // included; cleared, it is back.
       const dragged = new THREE.Quaternion().setFromEuler(
@@ -1680,6 +1712,48 @@ describe("createStationsLayer", () => {
       expect(editor.freed).toEqual(["song"]);
       expect(mountedWorldParts()).toEqual([]);
       expect(parent.children).toHaveLength(0);
+    });
+
+    // Why: a model is a tree of meshes; a throwing geometry dispose inside
+    // one model aborted the traverse and stranded every mesh after it, its
+    // GPU buffers and materials included.
+    it("a mesh whose geometry free throws still frees the model's other meshes", async () => {
+      const freed: string[] = [];
+      const { d } = deps({
+        loadGlbModel: () => {
+          const broken = new THREE.BoxGeometry(1, 1, 1);
+          broken.dispose = () => {
+            throw new Error("mesh free broke");
+          };
+          const fine = new THREE.BoxGeometry(1, 1, 1);
+          fine.dispose = () => {
+            freed.push("geometry");
+          };
+          const material = new THREE.MeshBasicMaterial();
+          material.dispose = () => {
+            freed.push("material");
+          };
+          const g = new THREE.Group();
+          g.add(new THREE.Mesh(broken), new THREE.Mesh(fine, material));
+          return Promise.resolve(g);
+        },
+      });
+      const layer = createStationsLayer(d);
+      const a = station("a", 0, 0, [spot, model("m", "horse", 2)]);
+      layer.setTour(
+        manifest(
+          [a],
+          [
+            ...assets,
+            { id: "horse", path: "content/horse.glb", kind: "model" },
+          ],
+        ),
+        new Map(),
+      );
+      layer.update(view(0, 0, null, 1));
+      await settle();
+      expect(() => layer.dispose()).toThrow("mesh free broke");
+      expect(freed).toEqual(["geometry", "material"]);
     });
   });
 

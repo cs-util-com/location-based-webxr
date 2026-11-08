@@ -30,6 +30,10 @@ function isTexture(value: unknown): value is THREE.Texture {
  * Traverse an Object3D and all its descendants, disposing GPU resources:
  * geometries (Mesh), materials (Mesh + Sprite), and material textures.
  *
+ * Every resource is freed under its own guard: one whose `dispose` throws
+ * strands none of the others, and the first throw is rethrown once all
+ * were tried.
+ *
  * Does NOT remove root from its parent — callers handle that.
  *
  * @param root The Object3D tree root to clean up.
@@ -40,6 +44,14 @@ export function disposeObject3D(
   opts?: DisposeOptions
 ): void {
   const disposed = new Set<{ dispose(): void }>();
+  const errors: unknown[] = [];
+  const free = (resource: { dispose(): void }): void => {
+    try {
+      resource.dispose();
+    } catch (error) {
+      errors.push(error);
+    }
+  };
 
   root.traverse((object: THREE.Object3D) => {
     // Dispose geometry on Mesh instances
@@ -47,7 +59,7 @@ export function disposeObject3D(
       const geo = (object as THREE.Mesh).geometry;
       if (!opts?.skipGeometry && !disposed.has(geo)) {
         disposed.add(geo);
-        geo.dispose();
+        free(geo);
       }
     }
 
@@ -65,12 +77,13 @@ export function disposeObject3D(
         for (const value of Object.values(mat)) {
           if (!isTexture(value) || disposed.has(value)) continue;
           disposed.add(value);
-          value.dispose();
+          free(value);
         }
-        mat.dispose();
+        free(mat);
       }
     }
   });
+  if (errors.length > 0) throw errors[0];
 }
 
 /**

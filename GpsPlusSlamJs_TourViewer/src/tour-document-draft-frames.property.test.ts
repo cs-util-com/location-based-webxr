@@ -313,6 +313,11 @@ const BLOCKS: Record<TourBlockKind, (id: string) => fc.Arbitrary<TourBlock>> = {
       audio: fc.constant("song"),
       transcript: words,
       title: maybe(words),
+      // A card keeps its world fields, still checked, for a view switch.
+      radiusM: maybe(fc.integer({ min: 1, max: 50 })),
+      maxM: maybe(fc.integer({ min: 2, max: 200 })),
+      minM: fc.constant(undefined),
+      volume: maybe(fc.constantFrom(0, 0.5, 1)),
     }),
   model: (id) =>
     fc

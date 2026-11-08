@@ -7,7 +7,7 @@ What the item lab (`item-lab.ts`) and the contract table (`../item-contract.test
 ## Public API
 
 - `kindNameOf(search)` - the kind a page's address names: `stamp-1` for none, null for anything that is not a folder name.
-- `LabWorldPart` - a station's `WorldPart` plus the optional per-frame `update({ seconds, viewer })` the lab calls; a station does not call it yet.
+- A kind's `world?(block, env)` gives a plain `world-part.ts` `WorldPart`; the lab calls its `update({ seconds, viewer })` per frame, as the visitor's `tickWorldParts` does.
 - `RECORD_NAMES` - `normal`, `longest`, `missing`: the records every sample holds.
 - `readItemKind(name, module, sample)` - a folder's `kind.js` and `sample.json` as an `ItemKind`: `card`, `assets`, an optional `world`, the sample, the normal record's `block`, and `recordOf(name)` (each `{ block, problems }`, read once by the kind's optional `read`). Throws a `TypeError` naming what is missing or not a function; a kind with the older `show`, or a sample with the older `block`, is told the new name.
 - `kindAssets(kind)` - its files as tour assets by id; a `path` is a file name in the folder.

@@ -80,7 +80,10 @@ const SHORT_TEXT_VIEWS = ['pin', 'card'] as const;
 const LONG_TEXT_VIEWS = ['lectern', 'reading', 'card'] as const;
 const PICTURE_VIEWS = ['plane', 'card'] as const;
 const VIDEO_VIEWS = ['card'] as const;
-const AUDIO_VIEWS = ['card'] as const;
+/* An audio item stands as a narration circle (`spot`: the voice plays on
+ * a tap inside it) or an ambient zone (`zone`: it plays by itself within
+ * its reach, louder toward the centre). */
+const AUDIO_VIEWS = ['spot', 'zone', 'card'] as const;
 const MODEL_VIEWS = [...TOUR_MODEL_WORLD_VIEWS, 'stage', 'card'] as const;
 const CHARACTER_VIEWS = ['stage', ...TOUR_CHARACTER_VIEWS, 'card'] as const;
 
@@ -151,6 +154,16 @@ export const TOUR_NARRATION_RULES = {
 
 /** The longest a narration may last (ms): four hours. */
 export const TOUR_NARRATION_MAX_DURATION_MS = 14_400_000;
+
+/** A narration circle's radius (m), inclusive. The editor's default is
+ *  larger than the floor: a smaller circle only holds where the position
+ *  is steadier than GPS alone (the viewer's sweep, `narration-circle`). */
+export const TOUR_AUDIO_MIN_RADIUS_M = 1;
+export const TOUR_AUDIO_MAX_RADIUS_M = 50;
+
+/** An ambient zone's reach and inner calm (m), inclusive. */
+export const TOUR_AUDIO_MIN_REACH_M = 1;
+export const TOUR_AUDIO_MAX_REACH_M = 200;
 
 /** A picture's width in the world (m), inclusive. */
 export const TOUR_PICTURE_MIN_WIDTH_M = 0.05;
@@ -243,6 +256,16 @@ export interface TourAudioBlock extends TourBlockEnvelope<
   readonly audio: string;
   readonly transcript?: string;
   readonly title?: string;
+  /** A narration circle's radius (m): required in `spot`, kept in the
+   *  other views so a view switch loses nothing. */
+  readonly radiusM?: number;
+  /** An ambient zone's reach (m): silent beyond it. Required in `zone`. */
+  readonly maxM?: number;
+  /** Within this distance (m) a zone plays at full volume; absent: only at
+   *  its centre. Less than `maxM`. */
+  readonly minM?: number;
+  /** A zone's loudness at full, 0 to 1. Required in `zone`. */
+  readonly volume?: number;
 }
 
 /** A point or a direction in a model's own space: the model file's frame
@@ -337,6 +360,60 @@ function modelSize(
   }
   const bounds = [TOUR_MODEL_MIN_SIZE_M, TOUR_MODEL_MAX_SIZE_M] as const;
   return { sizeM: metres(v.sizeM, `${ctx.at}.sizeM`, bounds, ctx) };
+}
+
+/** One metres field of an audio item: required in the view `requiredIn`,
+ *  checked when present in any other (a lenient reader's unknown view,
+ *  null, asks for none). */
+function audioMetres(
+  v: TourBlockFields,
+  field: 'radiusM' | 'maxM' | 'minM',
+  requiredIn: string | null,
+  view: string | null,
+  bounds: readonly [number, number],
+  ctx: TourBlockReadContext
+): Partial<Record<string, number>> {
+  const value = v[field];
+  if (value === undefined) {
+    if (requiredIn === null || view !== requiredIn) return {};
+    return problem(
+      ctx,
+      `"${ctx.at}.${field}" is required for a sound in the ${requiredIn} view`
+    );
+  }
+  return { [field]: metres(value, `${ctx.at}.${field}`, bounds, ctx) };
+}
+
+/** An audio item's world fields by its view: a narration circle's radius,
+ *  an ambient zone's reach, inner calm and volume. */
+function audioWorld(
+  v: TourBlockFields,
+  view: string | null,
+  ctx: TourBlockReadContext
+): Partial<Record<string, number>> {
+  const reach = [TOUR_AUDIO_MIN_REACH_M, TOUR_AUDIO_MAX_REACH_M] as const;
+  const radius = [TOUR_AUDIO_MIN_RADIUS_M, TOUR_AUDIO_MAX_RADIUS_M] as const;
+  const fields = {
+    ...audioMetres(v, 'radiusM', 'spot', view, radius, ctx),
+    ...audioMetres(v, 'maxM', 'zone', view, reach, ctx),
+    ...audioMetres(v, 'minM', null, view, reach, ctx),
+  };
+  const { minM, maxM } = fields;
+  if (minM !== undefined && maxM !== undefined && minM >= maxM) {
+    return problem(ctx, `"${ctx.at}.minM" must be less than its maxM`);
+  }
+  const volume = v.volume;
+  if (volume === undefined) {
+    if (view !== 'zone') return fields;
+    return problem(
+      ctx,
+      `"${ctx.at}.volume" is required for a sound in the zone view`
+    );
+  }
+  if (!isFiniteNumber(volume) || volume < 0 || volume > 1) {
+    return problem(ctx, `"${ctx.at}.volume" must be a number from 0 to 1`);
+  }
+  return { ...fields, volume };
 }
 
 /** Whether `value` is an array of exactly three finite numbers. */
@@ -740,14 +817,16 @@ export const TOUR_KINDS = {
   audio: {
     sinceMinor: 0,
     views: AUDIO_VIEWS,
-    freeViews: ['card'],
-    worldViews: [],
-    floor: 'card',
+    // Free, it stands in the world; its card is a story's.
+    freeViews: ['spot', 'zone'],
+    worldViews: ['spot', 'zone'],
+    floor: 'spot',
     text: AUDIO_RULES,
-    read: (v, _view, ctx) => ({
+    read: (v, view, ctx) => ({
       audio: assetRef(v, 'audio', 'audio', ctx),
       ...optionalText(v, 'transcript', AUDIO_RULES.transcript, ctx),
       ...optionalText(v, 'title', AUDIO_RULES.title, ctx),
+      ...audioWorld(v, view, ctx),
     }),
     refs: (b) => refTo(b.audio, 'audio'),
   },

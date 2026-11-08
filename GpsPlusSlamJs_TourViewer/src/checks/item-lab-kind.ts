@@ -20,16 +20,6 @@ import { showItemCard, type ItemCardHost } from "../item-card.js";
 import type { NarrationAudio } from "../narration-player.js";
 import type { WorldEnv, WorldPart } from "../world-part.js";
 
-/** A kind's world part as the lab drives it: the station's part, plus a
- *  per-frame `update` the lab calls with the seconds and the viewer (in
- *  the part's parent's frame, metres) when the kind gives one. */
-export interface LabWorldPart extends WorldPart {
-  update?(frame: {
-    readonly seconds: number;
-    readonly viewer: readonly [number, number, number];
-  }): void;
-}
-
 /** The kind a bare link opens. */
 const DEFAULT_KIND = "stamp-1";
 /** A folder's name: nothing in it can leave the kinds' folder. */
@@ -83,7 +73,7 @@ export interface ItemKind {
   /** Every file `card` or `world` may read. */
   assets(block: unknown): readonly string[];
   /** Its part in the world (`KindPlay.world`); absent: it stands none. */
-  world?(block: unknown, env: WorldEnv): LabWorldPart | null;
+  world?(block: unknown, env: WorldEnv): WorldPart | null;
   readonly sample: KindSample;
   /** `records.normal` as read. */
   readonly block: KindRecord;

@@ -21,6 +21,7 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-markdown";
 
 import { CHARACTER_PLAY } from "./character-card.js";
+import { AUDIO_PLAY } from "./kinds/audio/play.js";
 import type { ItemCardHost } from "./item-card.js";
 import { modelWorld } from "./kinds/model/world.js";
 import type { WorldEnv, WorldPart } from "./world-part.js";
@@ -146,13 +147,7 @@ export const PLAY_KINDS = {
     assets: (block) =>
       block.poster === undefined ? [block.video] : [block.video, block.poster],
   },
-  audio: {
-    card(block, host) {
-      host.slots.text.textContent = block.transcript ?? "";
-      host.sound(block.audio);
-    },
-    assets: (block) => [block.audio],
-  },
+  audio: AUDIO_PLAY,
   model: {
     card(block, host) {
       host.slots.text.textContent = block.title ?? "";

@@ -52,7 +52,7 @@ import {
 } from "../../tour-document.js";
 import { STATION_PREFIX, STORY_PREFIX } from "../editor-model.js";
 import { eastNorthOf, placeAtEastNorth } from "../tour-origin.js";
-import { blockFields, storyBlockFields } from "../block-fields.js";
+import { blockFields, storyBlockFields, typedNumber } from "../block-fields.js";
 import type { ModelEdit } from "../model-edits.js";
 import { headingOfRotation, ON_GROUND_M } from "./inspector-model.js";
 import { inputText } from "../../input-text.js";
@@ -103,19 +103,6 @@ export type InspectorEdit =
 const NOT_A_NUMBER = "Type a number, like 12.5";
 
 const NONE: InspectorEdit = { kind: "none" };
-
-/** A plain decimal: a sign, digits and one decimal point or comma. */
-const DECIMAL = /^[+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+)$/;
-
-/** A typed number: a plain decimal, a comma as its decimal point (one
- *  comma always is: "1,000" is 1); blank, or anything else (hex, an
- *  exponent, a second comma or point), is none. */
-function typedNumber(value: string): number | null {
-  const text = value.trim();
-  if (!DECIMAL.test(text)) return null;
-  const n = Number(text.replace(",", "."));
-  return Number.isFinite(n) ? n : null;
-}
 
 /** `deg` as a turn of -180 to 180 degrees. */
 function shortTurn(deg: number): number {

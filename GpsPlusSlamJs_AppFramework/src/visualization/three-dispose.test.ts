@@ -17,6 +17,33 @@ import { disposeMeshArray, disposeObject3D } from './three-dispose';
 // ---- disposeObject3D ----
 
 describe('disposeObject3D', () => {
+  // Why: a model is freed as a whole as a station goes; one resource whose
+  // free throws (a broken geometry) must not strand every geometry,
+  // material and texture after it in the tree. All are freed, and the
+  // first throw then reaches the caller, so the failure is still seen.
+  it('frees every resource when one free throws, then throws the first error', () => {
+    const broken = new THREE.BoxGeometry(1, 1, 1);
+    broken.dispose = () => {
+      throw new Error('first broke');
+    };
+    const brokenMat = new THREE.MeshBasicMaterial();
+    brokenMat.dispose = () => {
+      throw new Error('second broke');
+    };
+    const fine = new THREE.BoxGeometry(1, 1, 1);
+    const map = new THREE.Texture();
+    const mat = new THREE.MeshBasicMaterial({ map });
+    const freed = [
+      vi.spyOn(fine, 'dispose'),
+      vi.spyOn(map, 'dispose'),
+      vi.spyOn(mat, 'dispose'),
+    ];
+    const root = new THREE.Group();
+    root.add(new THREE.Mesh(broken, brokenMat), new THREE.Mesh(fine, mat));
+    expect(() => disposeObject3D(root)).toThrow('first broke');
+    for (const spy of freed) expect(spy).toHaveBeenCalledTimes(1);
+  });
+
   // Why: core contract — traverse a single mesh and dispose geometry + material.
   it('disposes geometry and material of a single Mesh', () => {
     const geo = new THREE.BoxGeometry(1, 1, 1);

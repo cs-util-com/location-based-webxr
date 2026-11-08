@@ -35,6 +35,9 @@ hands it to the session as `fileReaders.posterOf` (`edit-main.ts`), and
   `lengthTimeoutMs` leaves the first frame (a seek back to 0), and the
   frame showing is taken once as long again has passed even when that
   seek never answers: no poster is lost to a clip that goes quiet.
+  That second wait is set before the seek, so a seek that answers at
+  once (the clip still at its start) clears it and no timer outlives the
+  poster.
 - A video whose length is 0 or NaN is not seeked: a seek to
   where it already is (its start) fires no `seeked`, so it would wait the
   whole timeout. Its first frame is drawn at `loadeddata` instead.
@@ -49,7 +52,8 @@ const poster = await videoPosterOf(file); // Blob (image/jpeg) or null
 
 ## Tests
 
-`video-poster.test.ts`: a frame drawn at the video's size after a seek, no
+`video-poster.test.ts`: no timer left when the fallback's seek answers at
+once (seen red), a frame drawn at the video's size after a seek, no
 poster for a refused, stalled or picture-less video (URL revoked each
 time), the first frame of a video of length 0 or NaN without a seek, a
 recorded clip's (Infinity) length read first and its frame at 0.1 s taken

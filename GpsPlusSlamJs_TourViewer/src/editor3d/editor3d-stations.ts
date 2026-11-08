@@ -5,8 +5,8 @@
  * camera's centre and the selected one (`nearStations`) also draw their
  * items as the phone does (`renderTourStation`: pins as labels, photos as
  * planes, long texts on their reading stands when the page gives
- * `makeLectern`), their placed models through the world door in their
- * world view, their found radius as a ring (over the ground: `ringOf`) and a pole up to the
+ * `makeLectern`), their placed models through the world door (plain, at
+ * their tour size), their found radius as a ring (over the ground: `ringOf`) and a pole up to the
  * billboard. Every code with a
  * position is a square of its printed size, facing as printed.
  *
@@ -435,9 +435,13 @@ function poleOf(): THREE.Mesh {
  *  mesh says its map is shared (`userData.sharedMap`: a code's face). */
 function freeObject(object: THREE.Object3D): void {
   object.removeFromParent();
+  // Each geometry and material freed under its own guard: one that throws
+  // strands none of the rest of the tree.
+  const frees: (() => void)[] = [];
   object.traverse((o) => {
     const mesh = o as Partial<THREE.Mesh>;
-    mesh.geometry?.dispose();
+    const geometry = mesh.geometry;
+    if (geometry !== undefined) frees.push(() => geometry.dispose());
     const material = mesh.material;
     const list = Array.isArray(material)
       ? material
@@ -445,12 +449,15 @@ function freeObject(object: THREE.Object3D): void {
         ? []
         : [material];
     for (const m of list) {
-      if (o.userData["sharedMap"] !== true) {
-        (m as THREE.MeshBasicMaterial).map?.dispose();
-      }
-      m.dispose();
+      frees.push(() => {
+        if (o.userData["sharedMap"] !== true) {
+          (m as THREE.MeshBasicMaterial).map?.dispose();
+        }
+        m.dispose();
+      });
     }
   });
+  freeEach(frees);
 }
 
 /** Runs every one of `frees`: one that throws strands none after it, and
