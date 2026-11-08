@@ -548,29 +548,34 @@ async function renderContent(
   const models: Object3D[] = [];
   const views: ModelViewHandle[] = [];
   const parts: WorldPart[] = [];
-  const disposeModels = (): void => {
+  /** Frees everything made, `first` (the labels' and photos' frees)
+   *  included. One free that throws strands none after it: every one
+   *  runs, and the first throw then reaches the caller (PR #874 review). */
+  const freeAll = (first: readonly (() => void)[]): void => {
+    const errors: unknown[] = [];
+    const attempt = (free: () => void): void => {
+      try {
+        free();
+      } catch (error) {
+        errors.push(error);
+      }
+    };
+    for (const free of first) attempt(free);
     // The views first: they give the models back their own materials,
     // which `disposeObject3D` then frees.
-    for (const view of views) view.dispose();
-    for (const model of models) disposeObject3D(model);
-    for (const stand of stands) stand.dispose();
+    for (const view of views) attempt(() => view.dispose());
+    for (const model of models) attempt(() => disposeObject3D(model));
+    for (const stand of stands) attempt(() => stand.dispose());
     // Freed first: a part that frees itself only while still mounted
     // (the stand's `if (!unmountWorldPart(part)) return;`) would free
     // nothing after an unmount. The unmount then covers a part whose
-    // dispose leaves the set alone.
-    // A part whose dispose throws strands none after it: every part is
-    // freed and unmounted, and the first throw then reaches the caller.
-    let failed: { error: unknown } | null = null;
+    // dispose leaves the set alone, or throws.
     for (const part of parts) {
-      try {
-        part.dispose();
-      } catch (error) {
-        failed ??= { error };
-      } finally {
-        unmountWorldPart(part);
-      }
+      attempt(() => part.dispose());
+      unmountWorldPart(part);
     }
-    if (failed !== null) throw failed.error;
+    // The first error is the one the caller is told.
+    if (errors.length > 0) throw errors[0];
   };
   const photoPoses: ObjectPoseNue[] = [];
   const photoIds: string[] = [];
@@ -685,10 +690,17 @@ async function renderContent(
   } catch (error) {
     // A constructor that throws half way (a label without a canvas) must
     // not strand what was made before it: a station is drawn and freed
-    // again as the visitor walks.
-    for (const label of labels) label.dispose();
-    for (const texture of textures) texture.dispose();
-    disposeModels();
+    // again as the visitor walks. The construction error is the one the
+    // caller is told: a free failing after it is its consequence, and
+    // would hide the cause (PR #874 review).
+    try {
+      freeAll([
+        ...labels.map((label) => () => label.dispose()),
+        ...textures.map((texture) => () => texture.dispose()),
+      ]);
+    } catch {
+      // Everything was still freed (`freeAll` runs each one).
+    }
     throw error;
   }
   deps.scene.add(group);
@@ -707,9 +719,10 @@ async function renderContent(
       // added to (the e2e fakes' nodes set no `parent`).
       group.removeFromParent();
       deps.scene.remove(group);
-      for (const label of labels) label.dispose();
-      planes.dispose();
-      disposeModels();
+      freeAll([
+        ...labels.map((label) => () => label.dispose()),
+        () => planes.dispose(),
+      ]);
     },
   };
 }

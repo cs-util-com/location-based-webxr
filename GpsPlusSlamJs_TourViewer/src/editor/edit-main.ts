@@ -2276,11 +2276,11 @@ async function attachTarget(
       // unless every save of it would rewrite more than the cap (E2b-2
       // milestone review #3: the cost is linear in the file's size).
       // The files brought in before the target came ride along too - those
-      // the write keeps: one nothing names is left out of it.
-      const largeTour = !autosaveFits(
-        file.size + mine.addedBytes({ keptOnly: true }),
-        autosaveMaxBytes,
-      );
+      // the write keeps: one nothing names is left out of it. Judged as
+      // `judgeAutosave` judges it after every edit (`nextSaveBytes`, whose
+      // kept-only count its tests pin: PR #876 review, this wiring was
+      // tested by nothing).
+      const largeTour = !autosaveFits(mine.nextSaveBytes(), autosaveMaxBytes);
       store.dispatch(tourDocumentActions.saveLimited({ largeTour }));
       autosave.enable(!largeTour);
       renderSaveState();

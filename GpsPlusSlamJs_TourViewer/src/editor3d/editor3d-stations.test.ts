@@ -1545,6 +1545,83 @@ describe("createStationsLayer", () => {
       expect(editor.freed).toEqual(["song"]);
       expect(mountedWorldParts()).not.toContain(part);
     });
+
+    /** A door whose parts' dispose throws, after counting the free. */
+    function brokenDoor() {
+      const asked: string[] = [];
+      const freed: string[] = [];
+      const part = (block: TourBlock): WorldPart => {
+        asked.push(block.id);
+        const object = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+        return {
+          object,
+          dispose: () => {
+            freed.push(block.id);
+            throw new Error(`broken ${block.id}`);
+          },
+        };
+      };
+      return { part, asked, freed };
+    }
+
+    /** How many objects hang under `parent`. */
+    const countUnder = (parent: THREE.Object3D): number => {
+      let n = 0;
+      parent.traverse(() => {
+        n += 1;
+      });
+      return n;
+    };
+
+    // Why (PR #874 review, note 6): a part dispose rethrown by the
+    // renderer left the station's ring and pole in the scene and its
+    // content set, so it was never drawn again when the view came back.
+    it("a part whose dispose throws leaves the station freed and drawn again later", async () => {
+      const editor = brokenDoor();
+      const { d, parent } = deps({ worldPart: editor.part });
+      const layer = createStationsLayer(d);
+      const far = [0, 1, 2, 3, 4].map((i) => station(`f${i}`, 1000 + i, 0));
+      const a = station("a", 0, 0, [spot]);
+      layer.setTour(manifest([a, ...far], assets), new Map());
+      // Away first: "a" is not drawn, so this is the scene without it.
+      layer.update(view(1002, 0, null, 1));
+      await settle();
+      const without = countUnder(parent);
+      layer.update(view(0, 0, null, 1));
+      await settle();
+      expect(editor.asked).toEqual(["song"]);
+      expect(countUnder(parent)).toBeGreaterThan(without);
+      expect(() => layer.update(view(1002, 0, null, 1))).toThrow("broken song");
+      // The frame that threw ended early; the next one finishes it and
+      // finds nothing left to free.
+      layer.update(view(1002, 0, null, 1));
+      await settle();
+      expect(countUnder(parent)).toBe(without);
+      expect(mountedWorldParts()).toEqual([]);
+      layer.update(view(0, 0, null, 1));
+      await settle();
+      expect(editor.asked).toEqual(["song", "song"]);
+      editor.freed.length = 0;
+      expect(() => layer.dispose()).toThrow("broken song");
+    });
+
+    // Why (PR #874 review, note 6): the layer's dispose stopped at the
+    // first station whose part threw, abandoning every later station.
+    it("frees every station when one station's part dispose throws", async () => {
+      const editor = brokenDoor();
+      const { d, parent } = deps({ worldPart: editor.part });
+      const layer = createStationsLayer(d);
+      const a = station("a", 0, 0, [spot]);
+      const b = station("b", 5, 0, [{ ...spot, id: "song-b" }]);
+      layer.setTour(manifest([a, b], assets), new Map());
+      layer.update(view(0, 0, null, 1));
+      await settle();
+      expect(editor.asked.sort()).toEqual(["song", "song-b"]);
+      expect(() => layer.dispose()).toThrow(/broken song/);
+      expect(editor.freed.sort()).toEqual(["song", "song-b"]);
+      expect(mountedWorldParts()).toEqual([]);
+      expect(parent.children).toHaveLength(0);
+    });
   });
 
   // Why: a click in the view selects what is under the pointer - a

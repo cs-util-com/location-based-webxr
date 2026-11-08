@@ -549,18 +549,41 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     const content = entry.content;
     if (content === null) return;
     content.alive = false;
-    for (const model of content.models) freeObject(model);
-    content.rendered?.dispose();
-    freeObject(content.ring);
-    freeObject(content.pole);
+    // Cleared first, and the ring and the pole freed whatever the
+    // renderer's dispose throws (it rethrows a part's, PR #874 review):
+    // the station is freed either way and drawn anew when it is near.
     entry.content = null;
+    try {
+      for (const model of content.models) freeObject(model);
+      content.rendered?.dispose();
+    } finally {
+      freeObject(content.ring);
+      freeObject(content.pole);
+    }
   };
 
   const freeStation = (entry: StationEntry) => {
-    freeContent(entry);
-    if (entry.billboard !== null) freeSprite(entry.billboard);
-    entry.billboard = null;
-    entry.root.removeFromParent();
+    try {
+      freeContent(entry);
+    } finally {
+      if (entry.billboard !== null) freeSprite(entry.billboard);
+      entry.billboard = null;
+      entry.root.removeFromParent();
+    }
+  };
+
+  /** Frees each of `entries`; one that throws abandons none after it, and
+   *  the first throw then reaches the caller. */
+  const freeStations = (entries: Iterable<StationEntry>) => {
+    let failed: { error: unknown } | null = null;
+    for (const entry of entries) {
+      try {
+        freeStation(entry);
+      } catch (error) {
+        failed ??= { error };
+      }
+    }
+    if (failed !== null) throw failed.error;
   };
 
   const placeModels = async (entry: StationEntry, content: StationContent) => {
@@ -873,6 +896,9 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       assets = new Map(tourAssets.map((a) => [a.id, a.path]));
       env = editEnv();
       const keep = new Set<string>();
+      // Freed once the new tour is in place: a free that throws then
+      // leaves no station of it unplaced.
+      const freed: StationEntry[] = [];
       (manifest?.stations ?? []).forEach((station, index) => {
         keep.add(station.id);
         const key = keyOf(station, index);
@@ -881,7 +907,7 @@ export function createStationsLayer(deps: StationsLayerDeps) {
           old.station = station;
           return;
         }
-        if (old !== undefined) freeStation(old);
+        if (old !== undefined) freed.push(old);
         const root = rootAt(station.geo);
         const point = layerPoint(root, station.geo.alt);
         stations.set(station.id, {
@@ -900,10 +926,14 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       });
       for (const [id, entry] of stations) {
         if (keep.has(id)) continue;
-        freeStation(entry);
+        freed.push(entry);
         stations.delete(id);
       }
-      setCodes(levels);
+      try {
+        freeStations(freed);
+      } finally {
+        setCodes(levels);
+      }
     },
     /** Each frame: the near set, the morph and the billboards. */
     update(view: StationsLayerView) {
@@ -1124,13 +1154,16 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       return [...(stations.get(id)?.content?.models ?? [])];
     },
     dispose() {
-      for (const entry of stations.values()) freeStation(entry);
-      stations.clear();
-      for (const code of codes) freeObject(code);
-      codes = [];
-      codeIds = [];
-      codeSquares = [];
-      group.removeFromParent();
+      try {
+        freeStations([...stations.values()]);
+      } finally {
+        stations.clear();
+        for (const code of codes) freeObject(code);
+        codes = [];
+        codeIds = [];
+        codeSquares = [];
+        group.removeFromParent();
+      }
     },
   };
 }

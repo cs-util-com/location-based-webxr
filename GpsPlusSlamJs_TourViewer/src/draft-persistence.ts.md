@@ -135,7 +135,9 @@ are the framework's.
   (`photoBytesRequired: false`, M6 E2c review #1: the desktop editor keeps a
   photo record without its bytes - they are in the file it opened; the
   phone's default drops one) -
-  `{ draft, photos, rejectedIds, rejectedOnDisk, visits, storedIds }`, or
+  `{ draft, photos, rejectedIds, rejectedOnDisk, visits, storedIds,
+photosUnread }` (`photosUnread`: the photo records the phone rule dropped
+  for bytes that did not read, so the caller tells the creator), or
   `undefined` when there
   is no meta file. Objects the meta rejects are absent from `draft.objects`
   and `photos` whether or not their files are still on disk.

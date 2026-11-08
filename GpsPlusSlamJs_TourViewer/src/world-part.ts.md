@@ -3,8 +3,11 @@
 ## Purpose
 
 What an item stands in the world as, the same for every kind: one three.js
-object, and what the page may ask of it (a tap, a frame, leaving and coming
-back, going). The renderer (`content-placement.ts`) places it at the block's
+object, and what the page may ask of it (a tap, going). A frame tick
+(`update`) and leaving and coming back (`leave`/`back`) were part of the
+first draft and had no caller: they come back with their driver (the frame
+loop, the station's leave and return) when a kind needs one (PR #874
+review). The renderer (`content-placement.ts`) places it at the block's
 pose; the part never touches the scene, the camera, the renderer or the
 frame loop. A kind gives its part through its row (`play-kinds.ts`
 `world?`, read by `worldPartOf`); the reading stand (`lectern-view.ts`) and
@@ -19,7 +22,7 @@ the reading sign (`reading-sign.ts`) are world parts too.
   tour lacks) and `canvasTexture(canvas)`.
 - `WorldPart` - `object` (what stands; placed by the renderer, never by the
   part), `tapTarget?` (what a tap is cast against; none: no tap),
-  `update?({ seconds, viewer })`, `tap?()`, `leave?()`, `back?()`,
+  `tap?()`,
   `dispose()` (frees every geometry, material and texture it made).
 - `canvasTexture(canvas, { anisotropy? } = {})` - a canvas as a texture (painted words, a figure, a shadow blob):
   sRGB, and the anisotropy only when given (a page seen at a slant; three
