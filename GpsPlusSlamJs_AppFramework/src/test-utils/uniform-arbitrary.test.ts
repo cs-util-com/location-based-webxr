@@ -64,10 +64,14 @@ describe('uniformWithSeams', () => {
       expect(values.filter((v) => v === seam).length).toBeGreaterThan(50);
     }
     expect(values.every((v) => v >= -180 && v <= 180)).toBe(true);
-    // About a tenth of the draws are seams; the rest spread evenly.
+    // About a tenth of the draws are seams.
     const seams = values.filter((v) => v === -180 || v === 180 || v === 0);
     expect(seams.length / values.length).toBeLessThan(0.15);
-    expect(shareNear(values, 90, 1)).toBeGreaterThan(0.002);
+    // The rest spread evenly. The draws are not seeded, so the bound sits far
+    // from its expectation: [85, 95] should hold 0.9 * 10 / 360 = 2.5 % of them,
+    // about 125 of 5000 (sd about 11), and the bound of 1.25 % (63 draws) is
+    // about 5.6 sd below that.
+    expect(shareNear(values, 90, 5)).toBeGreaterThan(0.0125);
   });
 
   it('leaves zero out when the range does not contain it', () => {
