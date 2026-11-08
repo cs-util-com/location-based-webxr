@@ -21,6 +21,7 @@ import {
   selectAlignmentMatrix,
 } from "gps-plus-slam-app-framework/state";
 import { debugUiEnabledFromSearch } from "gps-plus-slam-app-framework/utils/debug-flag";
+import { guardSlidersIn } from "gps-plus-slam-app-framework/utils/slider-scroll-guard";
 import {
   createTapCounter,
   wantsRecording,
@@ -906,6 +907,9 @@ const escapeButton = element<HTMLButtonElement>("scan-escape");
 // none start by itself (the list's sound button).
 const soundSetting = createSoundSetting({ storage: stepStore });
 bindSoundToggle(element<HTMLButtonElement>("walk-sound"), soundSetting);
+// A vertical swipe that starts on a slider (the narration card's scrub
+// bar) scrolls instead of moving it.
+guardSlidersIn(document);
 const voiceFocus = silencedFocus(createVoiceFocus(), soundSetting);
 const narration = createNarrationVisitor({
   focus: voiceFocus,
