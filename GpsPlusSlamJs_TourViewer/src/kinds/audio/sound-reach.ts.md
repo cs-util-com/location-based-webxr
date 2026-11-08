@@ -24,17 +24,21 @@ with its leave margin, and the background's glide.
 
 ## Invariants & assumptions
 
-- **The defaults rest on the AR view's tracking, not on GPS alone.**
-  `sound-reach.sweep.test.ts` puts a visitor within half the radius under
-  three noise models (open-sky GPS, street-canyon GPS, tracking fused) and
-  counts the runs in which the narration is cut off, and the runs in which a
-  neighbour standing just outside hears the circle open:
-  - fused tracking: no cut-off from 3 m with a margin of 1 m or more;
-  - open-sky GPS alone: no cell of 3-8 m by 0.5-1.5 m holds (40 % of runs
-    cut off at 6 m / 1.5 m); it holds from 10 m with 1.5 m;
-  - street-canyon GPS alone: nothing up to 16 m holds.
-    So 6 m / 1.5 m holds only while the view tracks the phone; a tour walked
-    on GPS alone needs a larger circle. The defaults are provisional.
+- **The defaults rest on the tracking's noise, not on GPS.** `spot.ts`
+  measures, in the scene's x/z, the distance between the tracked camera
+  and the circle's centre; both share the scene frame, so the GPS
+  alignment's offset moves them together and cancels out.
+  `sound-reach.sweep.test.ts` puts a still visitor within half the radius
+  under three tracking models (steady, drifting, poor: stated, not
+  measured), with a shared alignment offset, and counts the runs in which
+  the narration is cut off and in which a neighbour 2 m beyond the edge
+  hears it open (at most 1 in 20 holds):
+  - steady and drifting tracking: every circle of 3-8 m with a margin of
+    0.5-2 m holds;
+  - poor tracking: from 4 m with a margin of 1 m or more, 3 m with 1.5 m;
+    a 0.5 m margin opens on the neighbour (8-11 %).
+  - The offset changes nothing (the same runs with and without it).
+    6 m / 1.5 m holds under all three, and a field walk found it stable.
 - Distances are horizontal (the parts drop the height).
 
 ## Examples
