@@ -28,6 +28,7 @@ import {
   PerspectiveCamera,
   Plane,
   PlaneGeometry,
+  Quaternion,
   Raycaster,
   RingGeometry,
   SRGBColorSpace,
@@ -916,6 +917,11 @@ export function runStage(options) {
     const dz = wz - foot.z;
     return out.set(dx * cosH - dz * sinH, wy, dx * sinH + dz * cosH);
   };
+  // The same turn as toLocal, for a direction or an orientation.
+  const toLocalTurn = new Quaternion().setFromAxisAngle(
+    new Vector3(0, 1, 0),
+    -heading,
+  );
 
   const applyLook = (name) => {
     const l = LOOKS[name];
@@ -1034,6 +1040,20 @@ export function runStage(options) {
     dt: 0,
     viewer: new Vector3(),
     viewerWorld: new Vector3(),
+    // Where the visitor looks. viewYaw is Math.atan2(view.x, view.z): the convention of
+    // Math.atan2(dx, dz) from the viewer to a point, so a point straight ahead has that yaw.
+    view: new Vector3(0, 0, -1),
+    viewWorld: new Vector3(0, 0, -1),
+    viewYaw: Math.PI,
+    // The eye as it draws this frame, for a kind that holds things to the screen.
+    eye: {
+      position: new Vector3(),
+      quaternion: new Quaternion(),
+      width: 1,
+      height: 1,
+      tanH: 0.5,
+      tanV: 0.5,
+    },
   };
   const anchors = {};
   for (const [name, p] of Object.entries(ANCHORS))
@@ -1185,19 +1205,24 @@ export function runStage(options) {
     return pending;
   };
 
-  const openWorld = () => {
+  // A fresh open starts the question again. Ten rounds is not one: it closes and opens the same
+  // visit, so a finished quiz stays finished.
+  const openWorld = (fresh = true) => {
     if (part) closeWorld();
     frame.time = 0;
     frame.dt = 0;
     updateBroken = false;
-    finished = false;
-    said = { text: "", mood: "calm", ask: false, eyebrow: "A question" };
+    if (fresh) {
+      finished = false;
+      said = { text: "", mood: "calm", ask: false, eyebrow: "A question" };
+    }
     env.mode = mode;
     fillFrame();
     let b;
+    let made = null;
     try {
       b = currentBlock();
-      const made = kind.world(b, env);
+      made = kind.world(b, env);
       if (!made?.object) throw new Error("world() must return { object }");
       part = made;
       holder.add(part.object);
@@ -1205,6 +1230,14 @@ export function runStage(options) {
     } catch (err) {
       console.error(err);
       toast(`The kind failed to open: ${err.message}`);
+      // What a failed world() painted is freed here, so the next close does not count it.
+      try {
+        made?.dispose?.();
+      } catch (e) {
+        console.error(e);
+      }
+      for (const tex of [...painted]) tex.dispose();
+      painted.clear();
       return;
     }
     if (mode === "play" && kind.card) {
@@ -1240,6 +1273,18 @@ export function runStage(options) {
   function fillFrame() {
     frame.viewerWorld.set(me.x, EYE, me.z);
     toLocal(frame.viewer, me.x, EYE, me.z);
+    // The camera looks along its own -z; its quaternion follows camera.rotation.
+    frame.viewWorld.set(0, 0, -1).applyQuaternion(camera.quaternion);
+    frame.view.copy(frame.viewWorld).applyQuaternion(toLocalTurn);
+    frame.viewYaw = Math.atan2(frame.view.x, frame.view.z);
+    const eye = frame.eye;
+    const c = camera.position;
+    toLocal(eye.position, c.x, c.y, c.z);
+    eye.quaternion.multiplyQuaternions(toLocalTurn, camera.quaternion);
+    eye.width = size.w;
+    eye.height = size.h;
+    eye.tanV = Math.tan((camera.fov * Math.PI) / 360);
+    eye.tanH = eye.tanV * camera.aspect;
   }
   const viewerDistance = () => Math.hypot(me.x - foot.x, me.z - foot.z);
 
@@ -1251,7 +1296,8 @@ export function runStage(options) {
       if (mode === "play" && part) {
         counts.leave += 1;
         part.leave?.();
-        if (step === "kind" && !finished) setFold("auto");
+        // A card folded by hand stays folded by hand; only its words change.
+        if (step === "kind" && !finished) setFold(folded ?? "auto");
       }
     } else if (outside && d < RING_BACK) {
       outside = false;
@@ -1260,6 +1306,7 @@ export function runStage(options) {
         counts.back += 1;
         part.back?.();
         if (folded === "auto") setFold(null);
+        else if (folded === "hand") setFold("hand");
       }
     }
   };
@@ -1374,6 +1421,49 @@ export function runStage(options) {
     }, ms);
   };
 
+  // What the panel shows of a field list. When fields(raw) answers a change with another list,
+  // the panel is drawn again and the focus goes back to the field that had it.
+  const fieldsKey = (fields) =>
+    JSON.stringify(
+      fields.map((f) => [
+        f.name,
+        f.type,
+        f.label,
+        f.prose,
+        f.min,
+        f.max,
+        f.step,
+        f.options,
+      ]),
+    );
+  let panelKey = "";
+  const refreshPanel = () => {
+    if (typeof kind.fields !== "function") return;
+    if (fieldsKey(fieldsOf()) === panelKey) return;
+    const active = document.activeElement;
+    const name = ui.edit.contains(active) ? active.dataset.field : undefined;
+    const from = active?.selectionStart;
+    const to = active?.selectionEnd;
+    renderEditPanel();
+    buildHandles();
+    if (name === undefined) return;
+    const again = [...ui.edit.querySelectorAll("[data-field]")].find(
+      (el) => el.dataset.field === name,
+    );
+    if (!again) return;
+    again.focus();
+    if (
+      typeof from === "number" &&
+      typeof again.setSelectionRange === "function"
+    ) {
+      try {
+        again.setSelectionRange(from, to);
+      } catch {
+        // a field without a text selection: the focus is enough
+      }
+    }
+  };
+
   function renderEditPanel() {
     panelHandle?.dispose?.();
     panelHandle = null;
@@ -1384,6 +1474,7 @@ export function runStage(options) {
       '<p class="eyebrow">Edit - the same object, still and silent</p>';
     ui.edit.append(head);
     const fields = fieldsOf();
+    panelKey = fieldsKey(fields);
     for (const f of fields) {
       const type = f.type ?? (f.prose ? "prose" : "text");
       const label = document.createElement("label");
@@ -1392,6 +1483,7 @@ export function runStage(options) {
       const value = getPath(raw, f.name);
       const onValue = (v) => {
         setPath(raw, f.name, v);
+        refreshPanel();
         rebuildSoon();
       };
       let input;
@@ -1411,6 +1503,7 @@ export function runStage(options) {
         input = document.createElement("input");
         input.type = "checkbox";
         input.checked = !!value;
+        input.dataset.field = f.name;
         input.addEventListener("change", () => onValue(input.checked));
         label.prepend(input);
         input = null;
@@ -1434,7 +1527,10 @@ export function runStage(options) {
         if (f.max) input.maxLength = f.max;
         input.addEventListener("input", () => onValue(input.value));
       }
-      if (input) label.append(input);
+      if (input) {
+        input.dataset.field = f.name;
+        label.append(input);
+      }
       ui.edit.append(label);
     }
     if (!fields.length) {
@@ -1890,7 +1986,7 @@ export function runStage(options) {
     tenRunning = true;
     ui.after.textContent = "Running...";
     const wasOpen = part !== null;
-    if (!wasOpen) openWorld();
+    if (!wasOpen) openWorld(false);
     await nextFrame();
     await nextFrame();
     const before = costNumbers();
@@ -1898,7 +1994,7 @@ export function runStage(options) {
     for (let i = 0; i < 10; i++) {
       closeWorld();
       notFreedTotal += notFreed;
-      openWorld();
+      openWorld(false);
       await nextFrame();
     }
     await nextFrame();
@@ -2025,4 +2121,30 @@ export function runStage(options) {
   };
   window.__stage = stage;
   return stage;
+}
+
+/**
+ * A page's samples, or null when they cannot be had. A failed load says so on the page, since
+ * a stage that never starts would otherwise leave the visitor a blank screen.
+ */
+export async function loadSamples(url) {
+  try {
+    const response = await fetch(url);
+    if (!response.ok)
+      throw new Error(`the server answered ${response.status}`);
+    const samples = await response.json();
+    if (!samples || typeof samples !== "object" || Array.isArray(samples))
+      throw new Error("it holds no samples");
+    return samples;
+  } catch (err) {
+    console.error(err);
+    const note = document.createElement("p");
+    note.setAttribute("role", "alert");
+    note.style.cssText =
+      "margin:24px 16px;font:16px/1.4 system-ui,sans-serif;color:#f3f5f7;";
+    document.body.style.background = "#14171d";
+    note.textContent = `The samples (${url}) could not be loaded: ${err.message}. Reload the page to try again.`;
+    document.body.append(note);
+    return null;
+  }
 }

@@ -370,15 +370,6 @@ function fanWorld(block, env) {
     fan.add(rail);
   }
 
-  // The seam gives no view direction. Three.js keeps this mesh's model-view matrix up to date
-  // while drawing it, which needs no camera in hand, and a draw range of zero draws nothing. If
-  // the seam gains frame.viewYaw, this mesh and readView() go.
-  const tellGeo = new PlaneGeometry(0.01, 0.01);
-  tellGeo.setDrawRange(0, 0);
-  const tell = new Mesh(tellGeo, postMat);
-  tell.frustumCulled = false;
-  object.add(tell);
-
   const sizeOf = (i) => LOOKS[lookOf(block, q, i)].size * (q.whole ? 0.92 : 1);
   const applySizes = () => {
     for (let i = 0; i < count; i++) signs[i].size = sizeOf(i);
@@ -389,8 +380,8 @@ function fanWorld(block, env) {
   let cz = 0;
   let heading = 0;
   let dealT = -100;
+  // Where the visitor looks, as atan2(x, z) in the kind's metres: the convention of toSign below.
   let viewYaw = Math.PI;
-  let renders = 0;
   let wantDeal = !edit;
   let snapFaces = true;
   let movedOn = false;
@@ -422,17 +413,6 @@ function fanWorld(block, env) {
     deal(x, z, far ? Math.atan2(-x, -z) : Math.PI, -100);
   }
 
-  const readView = (frame) => {
-    if (frame.viewYaw !== undefined) {
-      viewYaw = frame.viewYaw;
-      return;
-    }
-    const e = tell.modelViewMatrix.elements;
-    const fx = -e[2];
-    const fz = -e[10];
-    if (fx * fx + fz * fz > 0.01) viewYaw = Math.atan2(fx, fz);
-  };
-
   q.repaint = (picked) => {
     atlas.repaint();
     applySizes();
@@ -461,8 +441,7 @@ function fanWorld(block, env) {
       const t = frame.time;
       const dt = frame.dt;
       const v = frame.viewer;
-      if (renders < 2) renders += 1;
-      if (renders >= 2 || frame.viewYaw !== undefined) readView(frame);
+      viewYaw = frame.viewYaw;
 
       // A GPS correction moves this whole object under the visitor. The fan was never about the
       // world, so it stays where the visitor saw it.
@@ -480,7 +459,7 @@ function fanWorld(block, env) {
       lastZ = v.z;
 
       if (!movedOn && q.el?.hidden) movedOn = true;
-      if (wantDeal && renders >= 2 && !q.parked && !movedOn)
+      if (wantDeal && !q.parked && !movedOn)
         deal(v.x, v.z, viewYaw - (count % 2 ? 0 : step / 2), t);
 
       if (!edit && fan.visible && !q.parked) {
@@ -584,7 +563,7 @@ function fanWorld(block, env) {
       if (!movedOn) wantDeal = true;
     },
     dispose() {
-      for (const g of [postGeo, footGeo, tellGeo, ...plateGeos]) g.dispose();
+      for (const g of [postGeo, footGeo, ...plateGeos]) g.dispose();
       railGeo?.dispose();
       for (const m of [plateMat, postMat, footMat, railMat]) m.dispose();
       atlas.dispose();

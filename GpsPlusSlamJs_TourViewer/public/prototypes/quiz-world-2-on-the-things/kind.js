@@ -44,8 +44,8 @@ const BEAM_ANGLE = 0.012;
 const BEAM_HIGH = 40;
 const BEAM_AFTER = 6; // seconds the answer's beam stays after a result
 
-/* The turn ring: chevrons around the viewer. The seam gives no view direction, so it does not need
-   one: whichever way you face, the part you see slides towards the marker. */
+/* The turn ring: chevrons around the viewer. It needs no view direction: whichever way you
+   face, the part you see slides towards the marker. */
 const GUIDE_RADIUS = 2.4;
 const GUIDE_Y = 1.95; // above the eye: the card covers what lies below the horizon
 const GUIDE_BAND = 0.16;
@@ -457,6 +457,9 @@ export const kind = {
         reach: a.reach > 0 ? tools.metres(a.reach, "reach", [0, 12]) : 3,
       });
     });
+    // A choice needs something to choose between, as in the other kinds.
+    if (mode === "choose" && answers.length < 2)
+      throw new Error("A question needs at least two answers");
     const right = answers.some((a) => a.id === v.right)
       ? v.right
       : answers[0]?.id;
@@ -504,7 +507,7 @@ export const kind = {
       { name: "ask", label: "Question", prose: true },
       {
         name: "mode",
-        label: "Kind of answer (leave Edit and come back to see its fields)",
+        label: "Kind of answer",
         type: "choice",
         options: [
           ["choose", "Tap a thing"],

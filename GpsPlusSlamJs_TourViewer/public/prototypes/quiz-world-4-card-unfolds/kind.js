@@ -10,16 +10,13 @@
 // card's edge the copy fades and the canvas one, already underneath it, is left. Tile and tablet
 // are painted from the same measurements, so nothing jumps.
 import {
-  BufferGeometry,
   DoubleSide,
-  Float32BufferAttribute,
   Group,
   Matrix4,
   Mesh,
   MeshBasicMaterial,
   PlaneGeometry,
   Quaternion,
-  Vector2,
   Vector3,
 } from "three";
 
@@ -507,26 +504,6 @@ function makeDeck(block, env) {
     object.add(t.mesh, t.blob);
   }
 
-  /* The seam has no view direction, so a mesh that draws nothing reads the camera as it is being
-     rendered. It runs before the tablets, inside the same render, so a tablet held to the
-     screen never trails the view by a frame. Read only: nothing on the camera is written. */
-  const probeGeo = new BufferGeometry();
-  probeGeo.setAttribute(
-    "position",
-    new Float32BufferAttribute(new Float32Array(9), 3),
-  );
-  probeGeo.setDrawRange(0, 0);
-  const probeMat = new MeshBasicMaterial({
-    colorWrite: false,
-    depthWrite: false,
-    depthTest: false,
-  });
-  const probe = new Mesh(probeGeo, probeMat);
-  probe.frustumCulled = false;
-  probe.renderOrder = -1000;
-  probe.raycast = silent;
-  object.add(probe);
-
   /* ---------- the state of the quiz ---------- */
   const memory = memoryOf(env);
   const prior =
@@ -559,15 +536,13 @@ function makeDeck(block, env) {
 
   /* ---------- scratch: the frame loop allocates nothing here ---------- */
   const view = { w: 1, h: 1 };
-  const sizeV = new Vector2();
-  const camLocal = new Matrix4();
-  const objectInverse = new Matrix4();
-  const viewProj = new Matrix4();
   const camPos = new Vector3();
   const camQ = new Quaternion();
   const camQInv = new Quaternion();
-  const camScale = new Vector3();
   const camUp = new Vector3();
+  const unitScale = new Vector3(1, 1, 1);
+  const projection = new Matrix4();
+  const viewProj = new Matrix4(); // the kind's metres to clip space, depth left out
   let tanH = 0.5;
   let tanV = 0.5;
   const v1 = new Vector3();
@@ -649,7 +624,9 @@ function makeDeck(block, env) {
         centre.z - fx * ox - fz * back,
       );
       low = Math.min(low, t.stand.y - t.h / 2);
-      t.hit.scale.setScalar(Math.max(0.2, t.h * 0.7));
+      // The hit reaches the tablet's ends: a wide tablet answers a tap near its edge too. Where two
+      // overlap the stage takes the nearer centre, so neighbours stay apart.
+      t.hit.scale.setScalar(Math.max(0.2, Math.max(t.w, t.h) / 2));
     }
     if (low < 0.3) for (const t of tablets) t.stand.y += 0.3 - low;
   }
@@ -816,7 +793,7 @@ function makeDeck(block, env) {
     if (s.right <= 0) return;
     const tw = t.tw;
     const th = t.th;
-    m1.multiplyMatrices(viewProj, t.mesh.matrixWorld);
+    m1.multiplyMatrices(viewProj, t.mesh.matrix);
     m2.set(1 / tw, 0, 0, -0.5, 0, -1 / th, 0, 0.5, 0, 0, 1, 0, 0, 0, 0, 1);
     m1.multiply(m2);
     toCss.set(
@@ -1059,7 +1036,7 @@ function makeDeck(block, env) {
     bridge?.retry();
   }
 
-  /* ---------- the frame, inside the render ---------- */
+  /* ---------- the frame ---------- */
   function watchGroup() {
     if (phase !== "out" || busy) return;
     const away = Math.hypot(centre.x - camPos.x, centre.z - camPos.z);
@@ -1148,29 +1125,27 @@ function makeDeck(block, env) {
     }
   }
 
-  probe.onBeforeRender = (renderer, _scene, camera) => {
-    const t0 = performance.now();
-    renderer.getSize(sizeV);
-    view.w = sizeV.x || 1;
-    view.h = sizeV.y || 1;
-    objectInverse.copy(object.matrixWorld).invert();
-    camLocal.multiplyMatrices(objectInverse, camera.matrixWorld);
-    camLocal.decompose(camPos, camQ, camScale);
+  /* The eye as the stage hands it over, in the kind's metres. The update runs after the stage
+     has moved the camera and before it draws, so a tablet held to the screen never trails the
+     view by a frame. */
+  function readEye(eye) {
+    view.w = eye.width || 1;
+    view.h = eye.height || 1;
+    camPos.copy(eye.position);
+    camQ.copy(eye.quaternion);
     camQInv.copy(camQ).invert();
     camUp.copy(Y_AXIS).applyQuaternion(camQ);
-    const p = camera.projectionMatrix.elements;
-    tanH = 1 / p[0];
-    tanV = 1 / p[5];
-    viewProj.multiplyMatrices(
-      camera.projectionMatrix,
-      camera.matrixWorldInverse,
+    tanH = eye.tanH;
+    tanV = eye.tanV;
+    // Only x, y and w of a projected point are read (ghostOf), so depth needs no near or far.
+    projection.set(
+      1 / tanH, 0, 0, 0,
+      0, 1 / tanV, 0, 0,
+      0, 0, -1, 0,
+      0, 0, -1, 0,
     );
-    if (env.mode === "edit") restInEdit();
-    else advance();
-    const spent = performance.now() - t0;
-    hookMs += (spent - hookMs) * 0.1;
-    hookMax = Math.max(hookMax, spent);
-  };
+    viewProj.compose(camPos, camQ, unitScale).invert().premultiply(projection);
+  }
 
   const deck = {
     block,
@@ -1254,6 +1229,13 @@ function makeDeck(block, env) {
       // The sum of frame.dt is frame.time; kind.speed only slows it for screenshots.
       clock += frame.dt * kind.speed;
       dt = frame.dt;
+      const t0 = performance.now();
+      readEye(frame.eye);
+      if (env.mode === "edit") restInEdit();
+      else advance();
+      const spent = performance.now() - t0;
+      hookMs += (spent - hookMs) * 0.1;
+      hookMax = Math.max(hookMax, spent);
     },
     tap(hit) {
       const m = /^answer-(\d)$/.exec(hit.name);
@@ -1272,15 +1254,12 @@ function makeDeck(block, env) {
       armLift(BEAT_AGAIN);
     },
     dispose() {
-      probe.onBeforeRender = () => {};
       for (const t of tablets) {
         t.mesh.geometry.dispose();
         t.material.dispose();
       }
       blobGeo.dispose();
       blobMat.dispose();
-      probeGeo.dispose();
-      probeMat.dispose();
       texture.dispose();
       queue.length = 0;
       bridge = null;

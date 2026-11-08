@@ -1213,7 +1213,20 @@ function read(v, _view, tools) {
 }
 
 function fields(raw) {
-  const head = [{ name: "ask", label: "Question", prose: true }];
+  const head = [
+    { name: "ask", label: "Question", prose: true },
+    {
+      // read() takes anything but "typed" as walking to a flag, so "" stands for a record
+      // that names no type.
+      name: "type",
+      label: "How it is answered",
+      type: "choice",
+      options: [
+        ["", "Walk to a flag"],
+        ["typed", "Type a word"],
+      ],
+    },
+  ];
   const tail = [
     { name: "retry", label: "One more try after a wrong answer", type: "toggle" },
     {

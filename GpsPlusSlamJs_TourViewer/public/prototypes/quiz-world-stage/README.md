@@ -31,10 +31,10 @@ copy them.
   </head>
   <body>
     <script type="module">
-      import { runStage } from "../quiz-world-stage/stage.js";
+      import { loadSamples, runStage } from "../quiz-world-stage/stage.js";
       import { kind } from "./kind.js";
-      const samples = await fetch("./sample.json").then((r) => r.json());
-      runStage({ kind, samples, title: "Two To Four Words" });
+      const samples = await loadSamples("./sample.json");
+      if (samples) runStage({ kind, samples, title: "Two To Four Words" });
     </script>
   </body>
 </html>
@@ -43,6 +43,7 @@ copy them.
 `runStage({ kind, samples | block, title, story?, at?, heading? })`:
 
 - `samples`: `{ normal, longest, missing }`, raw records; the Cost panel switches them.
+  `loadSamples(url)` fetches them, or says on the page why it could not and returns `null`.
 - `story`: `{ speaker, station, before, after }`, the lines around the kind. Sensible defaults exist.
 - `at: { x, z }`, `heading` (radians): where the stage puts the item. Default the middle of the square.
 
@@ -69,8 +70,11 @@ export const kind = {
   outside knowledge: the stage hangs it from a holder.
 - `update(frame)`: no allocation. `tap(hit)`, play only.
 - `leave()` and `back()`: the visitor crossed the 12 m ring, play only. The stage folds the card
-  on `leave` while the question is open and opens it again on `back`.
+  on `leave` while the question is open and opens it again on `back`; a card the visitor
+  folded by hand stays folded.
 - `dispose()`: free every geometry, material and texture. Ten rounds will show what you missed.
+  When `world()` throws, the stage frees what it painted with `paintText`; anything else it made
+  is lost, so check the record in `read`, before building.
 
 ## `env`
 
@@ -81,6 +85,17 @@ export const kind = {
   - `viewer`: the eye (Vector3), in the kind's own metres, y = 1.6. Local, so
     `Math.atan2(v.x - c.position.x, v.z - c.position.z)` faces a direct child at the viewer.
   - `viewerWorld`: the same in world metres, for `lookAt`.
+  - `view`: where the visitor looks, a unit Vector3 in the kind's own metres; `viewWorld` in world
+    metres.
+  - `viewYaw`: `Math.atan2(view.x, view.z)` in radians, in the kind's own metres. It is the
+    convention of `Math.atan2(dx, dz)` from the viewer to a point, so a point straight ahead has
+    the same yaw.
+  - `eye`: `{ position, quaternion, width, height, tanH, tanV }`, the eye as it draws this frame,
+    for a kind that holds things to the screen. `position` (Vector3) is the camera itself, step
+    bob included, and `quaternion` its orientation, looking along its own -z, both in the kind's
+    own metres. `width` and `height` are the view in CSS pixels, `tanH` and `tanV` the tangents of
+    half the field of view across and up. `update` runs after the stage moves the camera and
+    before it draws, so it sees the frame that is drawn. Never touch the camera itself.
 - `env.place`: `{ size: 40, edge: 20, ring: 12, anchors }`. `anchors` are Vector3s in the kind's
   own metres, aimed at the readable part: `fountain`, `statue`, `tree`, `bench`, `gate`, `hall`
   (its door) and `tower` (its clock, 25 m away, too far to walk to). In AR a creator would set
@@ -118,7 +133,9 @@ Data, the same `{ name, label, prose }` the app's inspector reads, plus a `type`
   the ground in Edit, and a drag from that ring moves the field, inside the place's edge. This is
   how a kind declares a named placement. It rebuilds the world while dragging, so keep `world` quick.
 
-Any field change closes and reopens the world with the new block.
+Any field change closes and reopens the world with the new block. When `fields` is a function
+and a change makes it answer another list, the panel and its place rings are drawn again, and the
+focus stays in the field that had it.
 
 ## The story card
 
@@ -151,7 +168,7 @@ or `document` in `world`.
 
 The ms button opens the readout: frame ms, JavaScript ms, kind update ms, draw calls, triangles,
 textures, geometries, and the stage alone for comparison. "Run ten rounds" closes and opens the kind
-ten times, then shows the same numbers. It says LEAK when memory grew or `dispose()` left anything
+ten times within the same visit, so a finished quiz stays finished, then shows the same numbers. It says LEAK when memory grew or `dispose()` left anything
 unfreed, including materials. First limits to compare with, one item: about 30 draw calls, 50 000
 triangles, two 1024 px canvases, under 1 ms in `update`.
 
@@ -169,7 +186,5 @@ turn the view before you tap.
   frame times here are software GL. Only a real phone can judge them.
 - The card keeps the app's `backdrop-filter` blur, which costs GPU over a moving canvas and is not in
   the readout.
-- The seam has no view direction, by the rule. A kind that needs to know where the visitor looks
-  lists that under "what I needed".
 - `update` is the only clock. A world part has no way to end the story early beyond `done`.
 - The hit area radius ignores a scale on the parents.

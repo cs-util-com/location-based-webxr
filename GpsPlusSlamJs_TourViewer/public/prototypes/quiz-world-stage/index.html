@@ -19,11 +19,11 @@
   </head>
   <body>
     <script type="module">
-      import { runStage } from "./stage.js";
+      import { loadSamples, runStage } from "./stage.js";
       import { kind } from "./kind.js";
 
-      const samples = await fetch("./sample.json").then((r) => r.json());
-      runStage({ kind, samples, title: "Quiz World Stage" });
+      const samples = await loadSamples("./sample.json");
+      if (samples) runStage({ kind, samples, title: "Quiz World Stage" });
     </script>
   </body>
 </html>

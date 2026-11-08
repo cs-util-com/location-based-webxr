@@ -219,6 +219,25 @@ const EXEMPT = new Map([
     'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-visitor-2-guide-asks/index.html',
     'design prototype in the inspiration gallery, wired to nothing',
   ],
+  // The quiz-world pages get their sliders from the shared stage's edit panel, built at runtime
+  // from each kind's fields and reached through an inline module script, which this check does
+  // not follow. They are listed so the exemption is a decision rather than a blind spot.
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-1-fan/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-2-on-the-things/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-3-walk-to-it/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-4-card-unfolds/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
 ]);
 
 const RANGE_IN_HTML = /<input\b[^>]*\btype\s*=\s*["']?range\b/is;
