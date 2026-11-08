@@ -1,5 +1,5 @@
 /**
- * Why this property matters (review r1149 #4): the tree's drag lights up
+ * Why this property matters: the tree's drag lights up
  * the lists `childMayGo` names, and the drop then asks `movedChild` for the
  * move. Where the two disagree the drag offers a list and the drop refuses
  * it (a model without a size dragged out of its story was one), which reads

@@ -258,7 +258,7 @@ describe("a free item whose file the tour a reload opens lacks", () => {
     expect(freeItemUnsaved(state(tour, tour, false), "snap")).toBe(false);
   });
 
-  // Why (review r1149 #4): the tree's drag and the inspector ask this to
+  // Why: the tree's drag and the inspector ask this to
   // offer no story the move would refuse; it must say exactly what the
   // refusal says, and nothing for an item that is no free item.
   it("tells the tree which free item keeps out of the stories", () => {
@@ -272,7 +272,7 @@ describe("a free item whose file the tour a reload opens lacks", () => {
     expect(freeItemUnsaved(downloaded, "gone")).toBe(false);
   });
 
-  // Why (review r1149 #2): a save written in place puts the file on the
+  // Why: a save written in place puts the file on the
   // disk a reload opens; the refusal must not outlive it.
   it("moves it once a write in place holds the file", () => {
     const tour = withPicture();

@@ -369,7 +369,7 @@ const MOVE_REFUSALS: Readonly<
 };
 
 /** Said for a free item whose file the tour on disk does not hold yet,
- *  naming its kind ("an audio", "a 3D model"; review r1149 #2). */
+ *  naming its kind ("an audio", "a 3D model"). */
 function unsavedRefusal(manifest: TourManifest, id: string): string {
   const place = tourChildPlace(manifest, id);
   const item = place === null ? undefined : place.station.children[place.index];

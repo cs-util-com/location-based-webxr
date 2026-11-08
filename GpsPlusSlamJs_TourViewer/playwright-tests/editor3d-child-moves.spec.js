@@ -352,8 +352,8 @@ test.describe("on a phone", () => {
     // on the drop for 0.7 s before it lifts. Events sent back to back with
     // no time of their own lift a finger still moving fast; Chrome then
     // starts a fling, and the next tap only stops that fling - no click,
-    // so the tap below selected nothing in about half the runs (r1149
-    // review #1, measured: 0 of 8 lost with these times, 5 of 8 without;
+    // so the tap below selected nothing in about half the runs
+    // (measured: 0 of 8 lost with these times, 5 of 8 without;
     // a second tap always selected). The times are the events' own
     // (seconds, ending now), so nothing waits for them.
     const t0 = Date.now() / 1000 - 1.5;

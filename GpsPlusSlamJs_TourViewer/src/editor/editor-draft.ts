@@ -234,7 +234,7 @@ function changedFrames(
  *  the story entries of each station whose frame it edits, in its frame or
  *  in the file's. Such an item's object record (out of a story) or
  *  tombstone (into one) is part of that frame's change, counted there and
- *  never as a change or a deletion of its own (review r1149 #7). */
+ *  never as a change or a deletion of its own. */
 function movedIds(
   settings: EditorTourSettings | undefined,
   manifest: TourManifest,

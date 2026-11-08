@@ -288,8 +288,8 @@ largeTour?, cannotSave? })`.
     frame a draft reload could not read). "On disk" is the file a reload
     opens: the one written in place once such a write arrived
     (`save.inPlaceAt`), else the opened one - a download leaves the opened
-    file where it was, so only a write in place counts the file as saved
-    (review r1149 #2). `freeItemUnsaved(state, id)` says the same for one
+    file where it was, so only a write in place counts the file as saved.
+    `freeItemUnsaved(state, id)` says the same for one
     free item, so the tree's drag and the inspector offer it no story. A free item leaving is deleted
     as an object (a tombstone when the file holds it); one arriving is put
     as an object at the world place its pose gives, a tombstone of its id
@@ -528,7 +528,7 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
   its keys were built in (`same-json.ts`), so a station moved back is no
   change. An item moved between a story and the free items counts once,
   as its station's changed frame: its object record or tombstone is not
-  counted again (review r1149 #6).
+  counted again.
 - `effectiveDetails(state)` - the cover only while its image is in the tour.
 - `coverImageIds(state)` - the images the tour may show as its cover (its
   photos as they stand, its image assets that are no captured photo's own:

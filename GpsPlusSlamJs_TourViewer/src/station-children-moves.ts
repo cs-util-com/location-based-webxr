@@ -273,7 +273,7 @@ function storyOfList(holder: Holder, list: string): TourStory | undefined {
  * quiz only within its own story, a model without a size never out of its
  * story, and any other item into any story of its station or among its
  * free items. The tree's drag offers only these; asking the rule itself is
- * what keeps the two from disagreeing (review r1149 #4). A drop's slot
+ * what keeps the two from disagreeing. A drop's slot
  * changes no refusal but "unchanged", so the first slot answers for all.
  */
 export function childMayGo(holder: Holder, id: string, list: string): boolean {

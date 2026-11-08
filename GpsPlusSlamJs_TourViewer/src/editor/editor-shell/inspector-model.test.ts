@@ -373,7 +373,7 @@ describe("buildInspector", () => {
       });
     });
 
-    // Why (review r1149 #4): a free item whose file the tour on disk does
+    // Why: a free item whose file the tour on disk does
     // not hold yet is refused a story (the frame would name a file a
     // reload lacks); its inspector must not offer the Move it would refuse.
     it("offers no story to a free item whose file is not saved yet", () => {

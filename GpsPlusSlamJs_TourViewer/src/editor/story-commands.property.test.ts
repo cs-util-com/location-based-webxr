@@ -676,7 +676,7 @@ describe("a station item's move, counted and kept", () => {
     return { session, manifest, store, draft, editor };
   }
 
-  // Why (review r1149 #6): the status line said "2 changes not saved" for
+  // Why: the status line said "2 changes not saved" for
   // one move - the item's object record and its station's frame were each
   // counted. A move is one change, in every direction.
   it("counts one move as one change, into a story and out of one", async () => {
@@ -694,7 +694,7 @@ describe("a station item's move, counted and kept", () => {
     await session.close();
   });
 
-  // Why (review r1149 #2): the refusal named "a picture" for every kind.
+  // Why: the refusal named "a picture" for every kind.
   it("names the item's kind when its file is not saved yet", async () => {
     const { session, store, editor } = await editorOver();
     const added = await editor.addFile(new Blob(["tune"]), "tune.mp3");
@@ -730,7 +730,7 @@ describe("a station item's move, counted and kept", () => {
     await session.close();
   });
 
-  // Why (review r1149 #7): a saved free item moved into a story leaves a
+  // Why: a saved free item moved into a story leaves a
   // tombstone for its object record; the draft's offer must call that a
   // change of the station, never "1 deletion" - the creator deleted
   // nothing, and "Add it back?" would read as bringing a deleted item back.
