@@ -22,6 +22,11 @@ export {
 export { movedTo } from "./tree-reorder.js";
 export { createTreeDrag } from "./tree-drag.js";
 export {
+  createNestDrag,
+  type NestDrop,
+  type NestPlace,
+} from "./tree-nest-drag.js";
+export {
   NO_TREE_CLICK,
   treeClick,
   treeClickPlan,
