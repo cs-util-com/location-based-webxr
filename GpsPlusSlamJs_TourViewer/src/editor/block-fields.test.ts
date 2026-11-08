@@ -422,8 +422,7 @@ describe("number fields", () => {
   it("removes an optional number emptied, and writes none outside its view", () => {
     const calm = { ...ZONE, minM: 4 } as unknown as TourObject;
     const cleared = blockFieldEdit(calm, "minM", "");
-    expect(cleared.kind).toBe("edited");
-    if (cleared.kind === "edited") expect("minM" in cleared.after).toBe(false);
+    expect(cleared).toEqual({ kind: "edited", after: ZONE });
     expect(blockFieldEdit(AUDIO, "radiusM", "6")).toEqual({
       kind: "unchanged",
     });
@@ -449,7 +448,7 @@ describe("number fields", () => {
           const { maxM = 0, minM, volume = -1 } = z;
           expect(maxM >= 1 && maxM <= 200).toBe(true);
           expect(volume >= 0 && volume <= 1).toBe(true);
-          if (minM !== undefined) expect(minM >= 1 && minM < maxM).toBe(true);
+          expect(minM === undefined || (minM >= 1 && minM < maxM)).toBe(true);
         },
       ),
     );
