@@ -66,6 +66,10 @@ never state). Design:
     (`zip-blob.ts`; right after an in-place write the page's copy may not
     read yet, M4a review #5). A save waits for the pictures being read.
   - `model()` - the `EditorModel` of the tour with the edits applied.
+  - `moveChild(id, to)` refuses in words; an `unsaved` refusal names the
+    item's kind ("Save the tour first: an audio added here can go into a
+    story once the tour's file holds it."), read from the tour as the next
+    write carries it (a free item placed here is an object record).
   - `changeCount()` - edits and deletions not yet in a saved file, by
     content (a text edited back is no change), plus one while the "needs no
     GPS" setting differs from the saved file, plus one per detail that

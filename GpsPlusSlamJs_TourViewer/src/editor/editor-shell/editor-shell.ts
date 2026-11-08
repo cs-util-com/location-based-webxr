@@ -43,6 +43,7 @@ import type { UnknownAction } from "@reduxjs/toolkit";
 import type { Editor3dView } from "../../editor3d/editor3d-scene.js";
 import type { GestureEdit } from "../../editor3d/gesture.js";
 import {
+  freeItemUnsaved,
   manifestToWrite,
   nextStep,
   type StationCharacterEdit,
@@ -685,6 +686,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       modelFocus: ui.modelFocus,
       modelPick: ui.modelPick,
       timingsStamp: timingsStampOf(state().tourDocument.timings),
+      selectedFileUnsaved: freeItemUnsaved(state().tourDocument, ui.selected),
     });
   };
 
@@ -1430,7 +1432,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   // An item's or a story's grip (`shell-tree.ts`): among the stories,
   // between a story and another or the station's free items, never into
   // another station. A list offered is one the move takes; a free item
-  // among the free items is no move (they have no order).
+  // among the free items is no move (they have no order), and one whose
+  // file the tour on disk lacks goes into no story (`freeItemUnsaved`).
   createNestDrag({
     body: tree.body,
     grip: "[data-move]",
@@ -1445,6 +1448,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     intoOf: (row) => row.dataset["into"] ?? null,
     accepts: (from, to) => {
       if (from.list === FREE_LIST && to === FREE_LIST) return false;
+      if (to !== FREE_LIST && freeItemUnsaved(state().tourDocument, from.id)) {
+        return false;
+      }
       const tour = manifest();
       const place = tour === null ? null : tourChildPlace(tour, from.id);
       return place !== null && childMayGo(place.station, from.id, to);

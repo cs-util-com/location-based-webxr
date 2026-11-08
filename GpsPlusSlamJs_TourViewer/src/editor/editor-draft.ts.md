@@ -69,7 +69,10 @@ editor's own namespace, one tab at a time. Design:
     `deleted`, `made?` - the ids among `objects` that are copies made here
     (below), `pictures?` - those copies' photo bytes by id, `settings?` -
     the record when the file does not carry it,
-    `text` from `restoreOfferText`, changes and deletions named apart, a
+    `text` from `restoreOfferText`, changes and deletions named apart (an
+    item moved between a story and the free items is its station's
+    changed frame alone: its object record or tombstone is neither a
+    change nor a deletion of its own, review r1149 #7), a
     changed setting counted as a change and NAMED with its value - "It is
     "This tour needs no GPS" turned on." alone, "One of the changes is
     ..." beside notes, M1b-2 milestone review #3; changed details counted

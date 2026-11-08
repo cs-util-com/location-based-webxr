@@ -223,7 +223,8 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   (`tree-nest-drag.ts`) among its station's stories, into a story (onto
   its row, or a slot among its entries) or out to the free items (onto
   the card's head); a drop the move rule refuses (`childMayGo`) is not
-  offered, Escape ends a drag with no write, and one drop is one
+  offered, nor a story to a free item whose file the tour on disk lacks
+  (`freeItemUnsaved`), Escape ends a drag with no write, and one drop is one
   `stations.moveChild`. Never across stations. Earlier and Later of a
   story or an entry step it in its list (`childStepTo`); the
   inspector's Move buttons (`move-to:<list>`) put it into that list,

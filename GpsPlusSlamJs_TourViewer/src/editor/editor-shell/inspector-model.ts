@@ -629,8 +629,14 @@ function choiceLines(choice: TourChoice, story: TourStory): string[] {
 
 /** Where the station's item or story `id` may move in its station
  *  (`station-children-moves.ts`): the steps and lists the move rule
- *  takes, so no button offers a move it would refuse. */
-function movesOf(id: string, stations: readonly TourStation[]): InspectorMoves {
+ *  takes, so no button offers a move it would refuse. A free item whose
+ *  file the tour on disk does not hold yet (`keepsFree`) goes into no
+ *  story: the document refuses that move (`freeItemUnsaved`). */
+function movesOf(
+  id: string,
+  stations: readonly TourStation[],
+  keepsFree = false,
+): InspectorMoves {
   const place = tourChildPlace({ stations }, id);
   if (place === null) return { step: null, targets: [] };
   const { station, story } = place;
@@ -645,7 +651,7 @@ function movesOf(id: string, stations: readonly TourStation[]): InspectorMoves {
           later: childStepTo(station, id, "later") !== null,
         }
       : null,
-    targets: moveTargets(station, id, story?.id),
+    targets: keepsFree ? [] : moveTargets(station, id, story?.id),
   };
 }
 
@@ -753,6 +759,7 @@ function storyInspector(
 function freeBlockInspector(
   selected: string,
   stations: readonly TourStation[],
+  keepsFree: boolean,
 ): InspectorModel | null {
   for (const [index, station] of stations.entries()) {
     const block = tourFreeBlocks(station).find((b) => b.id === selected);
@@ -765,7 +772,7 @@ function freeBlockInspector(
       itemKind: kind,
       id: block.id,
       stationId: station.id,
-      moves: movesOf(block.id, stations),
+      moves: movesOf(block.id, stations, keepsFree),
       title: objectTitle(block),
       sub: `${KIND_EDIT[block.kind].label} in ${stationTitle(station, index + 1)}`,
       fields: blockFields(block),
@@ -795,6 +802,9 @@ export function buildInspector(input: {
   readonly modelPick?: ModelPick | null;
   /** Changes whenever the tour's read-along texts do; none given: "". */
   readonly timingsStamp?: string;
+  /** The selected free item's file is not in the tour on disk yet, so it
+   *  is offered no story (`freeItemUnsaved`); none given: it is. */
+  readonly selectedFileUnsaved?: boolean;
 }): InspectorModel | null {
   const { selected, stations, groundAt } = input;
   if (selected === null) return null;
@@ -850,7 +860,7 @@ export function buildInspector(input: {
       title: objectTitle(item),
       sub: `${KIND_EDIT[item.kind].label} in ${stationTitle(station, index + 1)}`,
       stationId: station.id,
-      moves: movesOf(item.id, stations),
+      moves: movesOf(item.id, stations, input.selectedFileUnsaved === true),
       text: item.kind === "shortText" ? item.caption : null,
       sizeM: item.kind === "model" ? (item.sizeM ?? null) : null,
       fields: blockFields(item),
@@ -901,7 +911,11 @@ export function buildInspector(input: {
       groundOffM: itemOffGround(item, station, groundAt),
     };
   }
-  const free = freeBlockInspector(selected, stations);
+  const free = freeBlockInspector(
+    selected,
+    stations,
+    input.selectedFileUnsaved === true,
+  );
   if (free !== null) return free;
   const code = input.codes.find((c) => c.id === selected);
   if (code === undefined) return null;

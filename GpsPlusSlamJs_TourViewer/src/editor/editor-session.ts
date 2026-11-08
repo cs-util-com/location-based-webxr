@@ -73,6 +73,7 @@ import {
   isCapturedPhoto,
   isDocumentEdit,
   manifestNow,
+  manifestToWrite,
   objectAssetsHeld,
   objectFits,
   nextStep,
@@ -354,12 +355,10 @@ function storyChildName(child: TourStoryChild): string {
   return child.kind === "choice" ? child.prompt : child.question;
 }
 
-/** Said for a move of a station's item the format refuses, by why. */
+/** Said for a move of a station's item the format refuses, by why (an
+ *  unsaved file is said by `unsavedRefusal`, naming the item's kind). */
 const MOVE_REFUSALS: Readonly<
-  Record<
-    "missing" | "ownStory" | "noNesting" | "cannotStandFree" | "unsaved",
-    string
-  >
+  Record<"missing" | "ownStory" | "noNesting" | "cannotStandFree", string>
 > = {
   missing: NO_SUCH_STORY,
   ownStory:
@@ -367,9 +366,19 @@ const MOVE_REFUSALS: Readonly<
   noNesting: "It cannot go there: a story holds no story.",
   cannotStandFree:
     "A model without a size cannot stand in the world: give it a size first.",
-  unsaved:
-    "Save the tour first: a picture made here can go into a story once the tour holds its file.",
 };
+
+/** Said for a free item whose file the tour on disk does not hold yet,
+ *  naming its kind ("an audio", "a 3D model"; review r1149 #2). */
+function unsavedRefusal(manifest: TourManifest, id: string): string {
+  const place = tourChildPlace(manifest, id);
+  const item = place === null ? undefined : place.station.children[place.index];
+  const what =
+    item === undefined || isTourStory(item)
+      ? "an item"
+      : kindWithArticle(item.kind);
+  return `Save the tour first: ${what} added here can go into a story once the tour's file holds it.`;
+}
 
 /** What the history calls the station's item or story `id`: a story by
  *  its title, a story's child as its delete does, a free item by the one
@@ -1706,10 +1715,19 @@ export function createEditorSession(input: {
       if (state === null || manifest === null) return notInTour;
       const change = childMoveChange(state, id, to);
       if (change.kind === "unchanged") return change;
+      // The items as the next write carries them: a free item placed here
+      // is an object record, not in the frames alone.
+      const items = manifestToWrite(state) ?? manifest;
       if (change.kind === "refused") {
-        return { kind: "refused", reason: MOVE_REFUSALS[change.reason] };
+        return {
+          kind: "refused",
+          reason:
+            change.reason === "unsaved"
+              ? unsavedRefusal(items, id)
+              : MOVE_REFUSALS[change.reason],
+        };
       }
-      const name = childCalled(manifest, id);
+      const name = childCalled(items, id);
       return took(() =>
         store.dispatch(
           tourDocumentActions.childMoved({

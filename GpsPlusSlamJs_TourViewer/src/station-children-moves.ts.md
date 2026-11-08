@@ -28,7 +28,12 @@ the editor's tree (`editor-shell.ts`, `shell-tree.ts`) and inspector
   `FREE_LIST` (`"free"`) and `storyList(id)` (`"story:<id>"`, the
   story's own selection id).
   - `childMayGo(holder, id, list)` -> whether the rule takes item `id`
-    into that list at all (the drag's `accepts`; a slot is not checked).
+    into that list at all (the drag's `accepts`): it asks `movedChild`
+    for a drop at the list's first slot, so the two cannot disagree (a
+    model without a size is offered no way out of its story; a drop on
+    the item's own place counts as taken). No refusal but `unchanged`
+    depends on the slot. `station-children-moves.property.test.ts` pins
+    the agreement over random stations, every item and every list.
   - `childDropTo(holder, list, drop)` -> the `ChildMoveTo` for a drop
     on a slot of `list` or into it (`{ into: true }`: a story's end, or
     the free items), or null for an unknown list.

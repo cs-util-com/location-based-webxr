@@ -267,25 +267,20 @@ function storyOfList(holder: Holder, list: string): TourStory | undefined {
 }
 
 /**
- * Whether `holder`'s item `id` may go into the list `list`, as `movedChild`
- * takes it: a story only among the stories; a choice or a quiz only in its
- * own story; any other item into any story of its station or among its
- * free items. The tree's drag offers only these.
+ * Whether `holder`'s item `id` may go into the list `list`: exactly when
+ * `movedChild` takes a drop there, or keeps the item where it is (a drop
+ * on its own place). So a story goes only among the stories, a choice or a
+ * quiz only within its own story, a model without a size never out of its
+ * story, and any other item into any story of its station or among its
+ * free items. The tree's drag offers only these; asking the rule itself is
+ * what keeps the two from disagreeing (review r1149 #4). A drop's slot
+ * changes no refusal but "unchanged", so the first slot answers for all.
  */
 export function childMayGo(holder: Holder, id: string, list: string): boolean {
-  const place = tourChildrenPlace(holder.children, id);
-  if (place === null) return false;
-  const { story } = place;
-  if (story === undefined) {
-    const own = holder.children[place.index];
-    if (own === undefined) return false;
-    if (isTourStory(own)) return list === STORIES_LIST;
-  } else {
-    const own = story.children[place.index];
-    if (own === undefined) return false;
-    if (!isTourStoryBlock(own)) return list === storyList(story.id);
-  }
-  return list === FREE_LIST || storyOfList(holder, list) !== undefined;
+  const to = childDropTo(holder, list, { slot: 0 });
+  if (to === null) return false;
+  const out = movedChild(holder, id, to);
+  return !("refused" in out) || out.refused === "unchanged";
 }
 
 /** The move a drop into `list` makes: at `drop.slot` (counted before the

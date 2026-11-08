@@ -1341,8 +1341,9 @@ function sameFrame(a: StationFrame, b: StationFrame | undefined): boolean {
  *  ...), each station added that no object's placement accounts for, each
  *  empty station deleted (one holding items is counted by their deletes),
  *  one for a new order of the stations, the setting, and each detail
- *  field. The frames are compared as the next write carries them
- *  (`manifestNow`). */
+ *  field; an item moved between a story and the free items counts once,
+ *  as its station's frame. The frames are compared as the next write
+ *  carries them (`manifestNow`). */
 export function changeCount(state: TourDocumentState): number {
   const written = state.written;
   const base = manifestNow(state);
@@ -1351,9 +1352,23 @@ export function changeCount(state: TourDocumentState): number {
   const nowFrames = framesOf(base);
   const nowIds = new Set(nowFrames.map((f) => f.id));
   const named = new Set(documentObjects(state).map((o) => o.object.station));
-  const changed = nowFrames.filter(
+  const reframed = nowFrames.filter(
     (f) => writtenFrames.has(f.id) && !sameFrame(f, writtenFrames.get(f.id)),
-  ).length;
+  );
+  const changed = reframed.length;
+  // An item moved between a story and the free items (`childMoved`) is
+  // one change: its station's frame, counted above - not its object
+  // record, or its tombstone, as well. Such an item is a story entry of
+  // that frame on one side of the move.
+  const moved = new Set(
+    reframed.flatMap((f) => {
+      const was = writtenFrames.get(f.id);
+      return [
+        ...tourStationChildIds(f),
+        ...(was === undefined ? [] : tourStationChildIds(was)),
+      ];
+    }),
+  );
   const added = nowFrames.filter(
     (f) => !writtenFrames.has(f.id) && !named.has(f.id),
   ).length;
@@ -1363,8 +1378,8 @@ export function changeCount(state: TourDocumentState): number {
   const now = effectiveDetails(state);
   const details = DETAIL_FIELDS.filter((f) => now[f] !== written[f]).length;
   return (
-    unsavedEntries(state).length +
-    state.deleted.length +
+    unsavedEntries(state).filter((e) => !moved.has(e.object.id)).length +
+    state.deleted.filter((id) => !moved.has(id)).length +
     changed +
     added +
     removed +
@@ -2740,14 +2755,40 @@ function storyChildDelete(
   return out === null ? before : frameReplaced(before, out.frame, payload.what);
 }
 
+/** Whether the tour a reload opens holds every file `block` names: the
+ *  one last written in place once that write arrived (`inPlaceAt`), else
+ *  the one opened here (a download leaves that file where it was). */
+function filesOnDisk(
+  state: TourDocumentState,
+  block: { readonly kind?: unknown },
+): boolean {
+  const disk = state.save.inPlaceAt === null ? state.opened : state.written;
+  const held = new Set((disk?.assets ?? []).map((a) => a.id));
+  return tourBlockAssetIds(block).every((a) => held.has(a));
+}
+
+/** Whether `id` is a free item naming a file the tour a reload opens does
+ *  not hold yet (`filesOnDisk`): it cannot go into a story until a save
+ *  in place, or an open of the saved file, puts that file there - the
+ *  move's `unsaved` refusal, which the tree's drag and the inspector ask
+ *  before they offer a story. */
+export function freeItemUnsaved(state: TourDocumentState, id: string): boolean {
+  const manifest = manifestToWrite(state);
+  const place = manifest === null ? null : tourChildPlace(manifest, id);
+  if (place === null || place.story !== undefined) return false;
+  const block = tourFreeBlocks(place.station).find((b) => b.id === id);
+  return block !== undefined && !filesOnDisk(state, block);
+}
+
 /** What a move of the station item `id` (`childMoved`) would do, by the
  *  move rule (`station-children-moves.ts`) over the station as the next
  *  write carries it: the station after it, how many answers lost their
  *  jump and whether the item took its kind's world floor; nothing; or why
  *  not. One refusal more than the rule's: `unsaved`, a free item naming a
- *  file the tour on disk does not hold yet (a picture made here). A
+ *  file the tour a reload opens does not hold yet (`freeItemUnsaved`: a
+ *  photo taken here, a file brought in, until a save in place). A
  *  story's entries are drafted in the station's frame, which a reload
- *  reads against the tour's files, so that frame would be lost. */
+ *  reads against that tour's files, so that frame would be lost. */
 export function childMoveChange(
   state: TourDocumentState,
   id: string,
@@ -2777,15 +2818,8 @@ export function childMoveChange(
     place.story === undefined
       ? tourFreeBlocks(place.station).find((b) => b.id === id)
       : undefined;
-  if (leaving !== undefined) {
-    const onDisk = (m: TourManifest | null) =>
-      new Set((m?.assets ?? []).map((a) => a.id));
-    const opened = onDisk(state.opened);
-    const written = onDisk(state.written);
-    const held = tourBlockAssetIds(leaving).every(
-      (a) => opened.has(a) && written.has(a),
-    );
-    if (!held) return { kind: "refused", reason: "unsaved" };
+  if (leaving !== undefined && !filesOnDisk(state, leaving)) {
+    return { kind: "refused", reason: "unsaved" };
   }
   return {
     kind: "moved",

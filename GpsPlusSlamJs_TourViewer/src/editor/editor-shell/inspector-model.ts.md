@@ -13,7 +13,10 @@ edit. The DOM is `shell-inspector.ts`'s; what a typed value writes is
   inspector): `step` (`{ earlier, later }`, whether each is possible; null
   for a free item, as the free items have no order) and `targets` (each
   list the move rule takes it into, with its button's words: "Move out of
-  the story", 'Move into "<title>"'). Never another station.
+  the story", 'Move into "<title>"'). Never another station, and no
+  story for a free item whose file the tour on disk lacks
+  (`selectedFileUnsaved`, from `freeItemUnsaved`: the move would be
+  refused).
 - `buildInspector({ selected, stations, assets, codes, unlockedStations?,
 origin?, groundAt? })` ->
   `InspectorModel | null`:

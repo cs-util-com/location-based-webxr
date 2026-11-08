@@ -16,6 +16,7 @@ import {
   type TourManifest,
   type TourPicture,
   type TourPin,
+  type TourObject,
   type TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
@@ -24,7 +25,11 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-story";
 import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
 
-import { manifestToWrite } from "../tour-document.js";
+import {
+  documentObjects,
+  manifestToWrite,
+  tourDocumentActions,
+} from "../tour-document.js";
 import { openTourFile, type TourSession } from "../tour-session.js";
 import { createTourViewerStore } from "../tour-viewer-session.js";
 import {
@@ -264,6 +269,8 @@ describe("the tree's story commands", () => {
            *  each undo a redo can take back again. */
           const past: (TourManifest | null)[] = [];
           const future: (TourManifest | null)[] = [];
+          /** Whether a move of a station item ran (see `freeByName`). */
+          let moved = false;
           for (const c of commands) {
             const stories = storiesIn(tour());
             const was = tour();
@@ -338,6 +345,7 @@ describe("the tree's story commands", () => {
                 if (to !== undefined) {
                   const out = editor.moveChild(item.id, to);
                   mustStep = out.kind === "moved";
+                  if (mustStep) moved = true;
                 }
                 break;
               }
@@ -403,7 +411,8 @@ describe("the tree's story commands", () => {
             (await reloaded.save({ keepScan: false })).blob,
           );
           again.close();
-          expect(freeByName(after)).toEqual(freeByName(before));
+          const read = moved ? freeByName : parseTourManifest;
+          expect(read(after)).toEqual(read(before));
           expect(before.assets).toEqual(manifest.assets);
         },
       ),
@@ -415,10 +424,13 @@ describe("the tree's story commands", () => {
   }, 30_000);
 });
 
-/** The written tour `json` with each station's free items by id. They
- *  all stand in the world at once and have no order of their own; the
- *  draft keeps them by id, so a reload may write them in another order.
- *  The stories keep theirs, and everything else is compared as written. */
+/** The written tour `json` with each station's free items by id, for a
+ *  run in which a move ran. The format keeps the file's order of a
+ *  station's free items (`tour-story.ts.md`), but the editor's draft
+ *  records none for them (`tour-document.ts.md`): an item a move took out
+ *  of a story comes back from a reload at another place among them, so the
+ *  tree lists them in another order after a restore. The stories keep
+ *  their order, and everything else is compared as written. */
 function freeByName(json: Record<string, unknown>): TourManifest {
   const tour = parseTourManifest(json);
   return {
@@ -637,5 +649,143 @@ describe("a station item's move", () => {
     expect(editor.moveChild("gone", { place: "free" }).kind).toBe("refused");
     expect(editor.revision()).toBe(revision + 4);
     await session.close();
+  });
+});
+
+describe("a station item's move, counted and kept", () => {
+  /** The session over the story tour, with a draft when `stores` is given. */
+  async function editorOver(stores?: ReturnType<typeof memoryDraftStores>) {
+    const { session, manifest } = await opened();
+    const store = createTourViewerStore();
+    const draft =
+      stores === undefined
+        ? undefined
+        : createEditorDraft({
+            openStore: stores.open,
+            holdLock: freeLocks,
+            noBackup: () => undefined,
+          });
+    await draft?.open(K, manifest);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      store,
+      ...(draft === undefined ? {} : { draft: draft.writes() }),
+    });
+    return { session, manifest, store, draft, editor };
+  }
+
+  // Why (review r1149 #6): the status line said "2 changes not saved" for
+  // one move - the item's object record and its station's frame were each
+  // counted. A move is one change, in every direction.
+  it("counts one move as one change, into a story and out of one", async () => {
+    const { session, editor } = await editorOver();
+    editor.moveChild("free", { place: "story", story: "first", index: 0 });
+    expect(editor.changeCount()).toBe(1);
+    editor.undo();
+    expect(editor.changeCount()).toBe(0);
+    editor.moveChild("l2", { place: "free" });
+    expect(editor.changeCount()).toBe(1);
+    // A second move at the same station is still one change: its frame,
+    // as two edits of one station's stories count once.
+    editor.moveChild("l1", { place: "free" });
+    expect(editor.changeCount()).toBe(1);
+    await session.close();
+  });
+
+  // Why (review r1149 #2): the refusal named "a picture" for every kind.
+  it("names the item's kind when its file is not saved yet", async () => {
+    const { session, store, editor } = await editorOver();
+    const added = await editor.addFile(new Blob(["tune"]), "tune.mp3");
+    if (added.kind !== "added") throw new Error(added.reason);
+    const pin = documentObjects(store.getState().tourDocument).find(
+      (o) => o.object.id === "free",
+    )?.object;
+    if (pin === undefined) throw new Error("no free pin");
+    store.dispatch(
+      tourDocumentActions.placed({
+        object: {
+          id: "tune",
+          kind: "audio",
+          view: "card",
+          audio: added.asset.id,
+          station: pin.station,
+          geo: pin.geo,
+          createdAtIso: pin.createdAtIso,
+        } as unknown as TourObject,
+        what: "the sound",
+      }),
+    );
+    const out = editor.moveChild("tune", {
+      place: "story",
+      story: "first",
+      index: 0,
+    });
+    expect(out).toEqual({
+      kind: "refused",
+      reason: expect.stringContaining("audio") as unknown,
+    });
+    expect(JSON.stringify(out)).not.toContain("picture");
+    await session.close();
+  });
+
+  // Why (review r1149 #7): a saved free item moved into a story leaves a
+  // tombstone for its object record; the draft's offer must call that a
+  // change of the station, never "1 deletion" - the creator deleted
+  // nothing, and "Add it back?" would read as bringing a deleted item back.
+  it("offers a move into a story back from the draft as a change, not a deletion", async () => {
+    const stores = memoryDraftStores();
+    const first = await editorOver(stores);
+    first.editor.moveChild("free", {
+      place: "story",
+      story: "first",
+      index: 0,
+    });
+    const moved = manifestToWrite(first.store.getState().tourDocument);
+    await first.draft?.idle();
+    first.draft?.close();
+    const again = createEditorDraft({
+      openStore: stores.open,
+      holdLock: freeLocks,
+      noBackup: () => undefined,
+    });
+    const { offer } = await again.open(K, first.manifest);
+    expect(offer?.text).not.toMatch(/deletion/);
+    expect(offer?.text).toMatch(
+      /^Unsaved work from this tour is still on this device: 1 change\b/,
+    );
+    const store = createTourViewerStore();
+    const reloaded = createEditorSession({
+      session: first.session,
+      manifest: first.manifest,
+      levels: new Map(),
+      store,
+      draft: again.writes(),
+    });
+    if (offer === null || offer === undefined) throw new Error("no offer");
+    reloaded.restore(offer);
+    expect(manifestToWrite(store.getState().tourDocument)).toEqual(moved);
+    again.close();
+    await first.session.close();
+  });
+
+  it("offers a move out of a story back from the draft as one change", async () => {
+    const stores = memoryDraftStores();
+    const first = await editorOver(stores);
+    first.editor.moveChild("l2", { place: "free" });
+    await first.draft?.idle();
+    first.draft?.close();
+    const again = createEditorDraft({
+      openStore: stores.open,
+      holdLock: freeLocks,
+      noBackup: () => undefined,
+    });
+    const { offer } = await again.open(K, first.manifest);
+    expect(offer?.text).toMatch(
+      /^Unsaved work from this tour is still on this device: 1 change\b/,
+    );
+    again.close();
+    await first.session.close();
   });
 });

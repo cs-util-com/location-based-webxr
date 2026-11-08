@@ -373,6 +373,23 @@ describe("buildInspector", () => {
       });
     });
 
+    // Why (review r1149 #4): a free item whose file the tour on disk does
+    // not hold yet is refused a story (the frame would name a file a
+    // reload lacks); its inspector must not offer the Move it would refuse.
+    it("offers no story to a free item whose file is not saved yet", () => {
+      const model = buildInspector({
+        selected: "clip",
+        stations: [STATIONS[0]!, STORY_STATION],
+        assets: [],
+        codes: CODES,
+        selectedFileUnsaved: true,
+      });
+      expect(model !== null && "moves" in model ? model.moves : null).toEqual({
+        step: null,
+        targets: [],
+      });
+    });
+
     it("hints at what can be done, and answers nothing for a gone story", () => {
       expect(inspectorHint(inStory("story:legend"))).toContain("The legend");
       expect(inStory("story:gone")).toBeNull();
