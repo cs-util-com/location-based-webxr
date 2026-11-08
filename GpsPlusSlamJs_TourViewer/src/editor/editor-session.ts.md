@@ -21,8 +21,9 @@ into the store, whose handle keeps the newest bytes, the photo spots'
 decision and the save queue, while the slice's save status says whether
 a save runs, landed or failed. The session imports none of the shared
 rules itself (`config/.dependency-cruiser.cjs`). Its closure keeps
-imperative resources only - that handle and the pictures' side table
-(Blobs are never state). Design:
+imperative resources only - that handle and the one files table, every
+file's bytes by asset id: a photo's picture, a file brought in (Blobs are
+never state). Design:
 `GpsPlusSlamJs_Docs/docs/2026-10-13-0832-tour-desktop-editor-and-scan-data-design.md`
 §9 ("E2 as revised").
 
@@ -126,16 +127,16 @@ imperative resources only - that handle and the pictures' side table
     has a sentence of its own. A free short text's `caption` is its pin
     text: it goes `editText`'s way (`pinTextEdit`'s rule, "the text of
     <name>"), so a pin's caption has one rule, never two.
-  - `move(id, lat, lon)` - `moveObjectTo` (height and facing kept),
+  - `move(id, lat, lon, { joinStation? })` - `moveObjectTo` (height and facing kept),
     through the document's `objectMoveChange`:
     `{ kind: "moved" }`, or `EditorRefusal` (module-private: `refused` with `NOT_IN_TOUR`)
-    for an id the tour no longer carries (PR #622 bot finding C). Beyond
-    the note's station's found radius the slice's station rule seats it
-    anew (the station holding its new spot, or a new one there), so no
-    move is too far: the format's 10 km bound between an item and its
-    station (`TOUR_ITEM_MAX_OFFSET_M`), which once made every later save
-    fail after a far drag, cannot be crossed by a move. Throws for a
-    position nobody can draw.
+    for an id the tour no longer carries (PR #622 bot finding C), and
+    `TOO_FAR_FROM_STATION` for a spot the format's 10 km bound between an
+    item and its station (`TOUR_ITEM_MAX_OFFSET_M`) rules out: a far drag
+    once made every later save fail, so it is refused and said. The item
+    keeps its station, in or out of the circle, or changes to
+    `joinStation`, the creator's answer; a move never starts a station.
+    Throws for a position nobody can draw.
   - `remove(id)` - `deleteObject`; `{ kind: "deleted" }`, undone like any
     edit (`undo()`). A deleted photo's picture is kept for that undo - the
     one its entry carries, else read once through `loadPhoto` - since a
@@ -189,14 +190,24 @@ imperative resources only - that handle and the pictures' side table
       copy's own `content/<id>.<ext>` and the draft keeps it. A station's
       copy mints a new id for every block of it, its story's too (block
       ids are unique across the tour).
+    - `addStory(stationId)` (named "New story", or "New story n" with the
+      least n from 2 while that name is taken, so a delete never makes a
+      name repeat), `renameStory(id, title)`, `deleteStory(id)` (says how
+      many children went and `stationGone` when its untitled automatic
+      station, kept by nothing else, went with it),
+      `addToStory(storyId, kind)`, `deleteStoryChild(id)` (says how many
+      answers no longer lead anywhere), `setStoryAdvance(id, advance)` - the
+      tree's and the inspector's story edits, each one step, a refusal said
+      in the creator's words.
     - `groundItems([{ id, alt }])` - "Put on the ground": the altitudes the
       page measured, ONE step for all; refused whole for an unknown id or
       a height beyond an item's reach of its station (`HEIGHT_REFUSED`).
     - `resizeModel(id, sizeM)` - a placed model's size, 0.05 m to 500 m
       (`MODEL_SIZE`; `NOT_A_MODEL` for anything else).
-    - `pose(id, geo, { newStation? })` - an item at a whole pose (position,
-      height, turn): beyond its station's radius the rule seats it anew;
-      `newStation` ("Move to a new station") starts one where it stands.
+    - `pose(id, geo, { newStation?, joinStation? })` - an item at a whole
+      pose (position, height, turn), keeping its station or changing to
+      `joinStation`, refused like `move`; `newStation` ("Move to a new
+      station") starts one where it stands.
     - `moveToNewStation(id)` - "Move to a new station" where the item
       stands, turned as it is, the new station right after the one it
       left (`afterHome`): one step, `{ kind: "moved", stationId }`
@@ -227,7 +238,7 @@ changes`; a label is cut at 40 characters (`truncated`, split-safe), a label-les
     the draft's version (`upsertPlaced`), a deletion its tombstone
     (`deleteObject`); live work on an id wins; an id the tour no longer
     carries is skipped; an object its station cannot carry (a draft
-    written before far moves re-ran the station rule) is seated by the
+    of an older build, or whose station is gone) is seated by the
     rule, never skipped; the stations the draft's objects were seated in
     that the tour lacks come back whole first (the record's
     `createdStations`, with `handMadeStations` naming those added by
@@ -247,7 +258,7 @@ changes`; a label is cut at 40 characters (`truncated`, split-safe), a label-les
     name keep the opened file's version) unless a station was changed
     here (each station change counted, `stationEditsBetween`); a copy made there (the offer's
     `made`, an id the tour does not carry) put back with its picture
-    (`pictures`; a photo copy without one is skipped); what was applied
+    (`files`; a photo copy without one is skipped); what was applied
     is written to the draft again. Returns the counts.
   - `save({ keepScan, inPlace? })` - the document's save thunk
     (`../tour-document-save.ts` `save`, through `dispatchThunk`):
@@ -457,9 +468,19 @@ examples).
 ## Narration
 
 - `narration(itemId)`: the long text's `NarrationFacts` (voice, its audio asset id `audioId`, length, the read-along text from the newest bytes or the page's state), or a refusal.
-- `editNarration(itemId, change)`: one `NarrationChange` as one undo step (`narrationEdited`), answering `edited`, `unchanged` or `refused` with a reason.
-  - `voice`: a sound file, stored under `content/`.
+- `editNarration(itemId, change)`: one `NarrationChange` as one undo step (`narrationEdited`), answering `edited`, `unchanged` or `refused` with a reason; `edited` carries `notBackedUp: true` when the draft could not keep the voice's file.
+  - `voice`: a sound file, brought in with `addFile(file, name, ["audio"])`; the same recording again is `unchanged`.
   - `removeVoice`: takes the timing off too.
   - `timing`: compact JSON, at most `TOUR_TIMING_MAX_BYTES`, only with a voice.
   - `removeTiming`: keeps the voice.
 - Story-block long texts are refused. The voice and the timing are written in the same save as the tour that names them.
+
+## Files brought in
+
+- One files table (`files`, asset id to Blob) for every file's bytes the session holds; no other map of bytes.
+- `addFile(file, fileName, kinds?)`: reads the file at once (`readTourFile`, `tour-files.ts`) - a dropped `File` moved or deleted later does not matter - checked against the caps on `tourBytes()`, named by its sha256. Bytes the tour holds already (an asset of that id, or a signed tour's entry of that hash) are that asset, nothing added. Each new file (and a video's minted poster) goes into the table and the draft (`saveAsset`, before the asset is listed, so before any record naming it), then `assetsAdded`. Answers `{ kind: "added", asset, poster?, backedUp }` or a refusal in words; `backedUp` false when the draft did not keep it.
+- `fileReaders` (input): `measureModel` (a model's largest side; 0 refuses it as showing nothing) and `posterOf` (a video's first frame), the page's browser readers; absent in a test, a model is taken unmeasured and a video without a poster.
+- `addedBytes()`: what the next save adds to the written file (`saves.addedBytes`, the snapshot's rule): the files brought in, the timing texts and the copied or restored photos' pictures it lacks. `tourBytes()`: the newest written file's size (the opened entries' before a save) plus `addedBytes()` - what the caps are judged on. `nextSaveBytes()`: the same, but only the added bytes the write keeps (`saves.addedBytes(state, true)`: a file nothing names any more, after an undo whose redo a later edit dropped, is left out) - what the autosave's cap is judged on, both ways.
+- `contentOf(path)`: a file brought in, by its entry, for a preview before a save writes it.
+- `restore(offer)`: the offer's `files` go into the table before the records are dispatched; a record naming a file held nowhere is skipped.
+- Tests: `editor-session-files.test.ts` (the table, the refusals, one file for two narrations, a put that fails, a reload with its file, and a property over voices, removals and undos: the reloaded document equals the one shown and every named file is in the save).

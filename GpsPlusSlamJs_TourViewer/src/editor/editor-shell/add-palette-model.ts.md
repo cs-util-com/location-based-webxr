@@ -10,7 +10,7 @@ where, best first; Enter adds the first.
 
 - `PaletteStation` - `{ id, number, title }`, a station in the tour's
   order (`number` from 1).
-- `PaletteAdd` - `{ kind: "pin" | "longText", stationId }` or
+- `PaletteAdd` - `{ kind: AddKind ("shortText" | "longText"), stationId }` or
   `{ kind: "station" }`: what a row adds.
 - `PaletteRow` - `{ add, label, place, icon }`: the kind in words
   ("Short text", "Long text", "New station"), where it goes ("in 2 The
@@ -20,7 +20,7 @@ where, best first; Enter adds the first.
   by the labels of the rows, in their order.
 - `paletteRows(query, stations, selectedStationId, kind = null)` ->
   `PaletteRow[]`:
-  - candidates: every addable kind of `ADD_CHOICES` (`tree-add-menu.ts`)
+  - candidates: every addable kind of `ADD_CHOICES` (`../../kinds/edit-kinds.ts`)
     in every station, then a new station;
   - an empty query lists the default place's rows only: the selected
     station's (else the first station's) kinds and the new station;
@@ -35,7 +35,7 @@ where, best first; Enter adds the first.
   - `kind` keeps only that kind's rows, before the cap;
   - at most `PALETTE_MAX_ROWS` (40).
 - `highlightParts(text, query)` -> `HighlightPart[]` - `text` cut into
-  `{ text, match }` parts that read back as `text`: every place a word of
+  `{ text, hit }` parts that read back as `text`: every place a word of
   the query (two letters or more, folded as above) occurs is marked,
   overlaps merged. Regular-expression characters in a query are plain
   letters here.

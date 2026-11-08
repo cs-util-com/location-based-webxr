@@ -15,7 +15,7 @@ zip's and this device's - with **Edit text**, **Move to the reticle** and
     the Finish writes them (`object-editing.ts` `authoringObjects`).
   - `state.codes` - the stored codes' geo; each row says how far the object
     is from the nearest one ("11 m from the code", whole metres).
-  - A free video, sound or character gets no row (`hasLook`).
+  - A free video, sound or character gets no row (`isWorldKind`, `kinds/edit-kinds.ts`).
   - `state.inAr` - on the page every row is in `rows`; in AR `rows` holds
     only the selected object (none while nothing is selected, with
     `SELECT_HINT`), and there is no heading.
@@ -23,6 +23,10 @@ zip's and this device's - with **Edit text**, **Move to the reticle** and
     (a Finish is rebuilding) disables every row.
   - `state.note` - the last action's outcome or failure, shown under the
     list (an `aria-live` region).
+  - `state.question` - a move waiting for its answer: the text with two
+    buttons, `object-question-yes` ("Change station") and
+    `object-question-no` ("Keep its station"); hidden when absent. Drawn
+    in an `aria-live` line that persists across redraws.
   - `state.undo` - the last delete can still be undone (M4 review #5): the
     model's `undo` puts an **Undo** button on the note's line, on the page
     and in AR, and keeps the list shown though the delete emptied it.
@@ -34,7 +38,7 @@ zip's and this device's - with **Edit text**, **Move to the reticle** and
 - `createObjectListView(container, doc): ObjectListView` - the DOM view over
   `#object-list`: `bind(handlers)` once, `render(model)` any time.
 - `ObjectListHandlers` - `editText(id, text)`, `move(id)`, `remove(id)`,
-  `undo()`, `deselect()` (the row's Close).
+  `undo()`, `deselect()` (the row's Close), `answer(yes)` (the question).
 - `ObjectRowModel.compact` - in AR: the row is drawn as ONE line of text
   (title and distance - `detail` holds only the distance in AR) over ONE
   line of buttons with short labels: Edit, Move, Delete, Close (accessible

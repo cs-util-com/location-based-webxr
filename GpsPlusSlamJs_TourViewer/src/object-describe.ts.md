@@ -16,44 +16,29 @@ rule before a third page used it (root `CLAUDE.md` DEC-H3). Pure.
 
 ## Public API
 
-- `ObjectLook` - `"pin" | "photo" | "text" | "model"`: what an object in
-  the world is in the pages' words and icons; `objectLook(kind)` maps the
-  format's kinds onto it (a short text is a pin, a picture a photo, a long
-  text on its reading stand a text, a model a model; a stand read as a
-  model before the editor learnt long texts, with a model's icon, "Delete 3D model" and a resize
-  hint). The format's kinds stay out of the pages' words.
-- `BLOCK_KIND_LABEL` - each kind in the ONE word every creator page uses
-  for it ("Pin", "Long text", "Photo", "Video", "Audio", "3D model",
-  "Character"): the name of a block with no text of its own, the
-  inspector's kind line and its commands ("Delete photo"),
-  the 2D card's kind, and the second line of the object list and the
-  editor's rail.
+- A kind's words and look are the editor's list of kinds
+  (`kinds/edit-kinds.ts` `KIND_EDIT`): its `label`, the ONE word every
+  creator page uses for it ("Pin", "Long text", "Photo", "Video", "Audio",
+  "3D model", "Character"), `kindNoun`, and its `look`. They lived here
+  until the list took them.
   - **Why "Pin" and "Photo", not the format's "short text" and
     "picture":** the phone places a pin and takes a photo ("Place a pin",
     "Take a photo"), its list, toasts and AR hints say "pins and photos",
     the rail groups them as "Pins" and "Photos", and the landing and
     visitor pages speak of photos. The 3D editor alone said "Short text"
     and "Picture", and the 2D card "Pin note" and "Photo note": three
-    names for two things. The format's `shortText`/`picture` stay the
-    file's words (`objectLook` maps them). "Note" remains the one word
-    for "a pin or a photo" together ("3 notes", "Find a code or note"),
-    and a search still finds a pin or a photo by "note" and by the old
-    words (`editor/editor-model.ts` `filterItems`).
-- `kindNoun(kind): string` - a kind's word inside a sentence: its
-  `BLOCK_KIND_LABEL` with the first letter lower-cased ("photo", "long
-  text", "3D model"). The phone's undo and placement words use it for
-  every object that is no pin ("the delete of the long text"), where they
-  once said "photo" for every one.
-- `hasLook(object)` - whether a creator page has a look for it: a free
-  video, sound or character has none yet, so the object list and the 2D
-  rail name none (the tour keeps them).
+    names for two things. "Note" remains the one word for "a pin or a
+    photo" together ("3 notes", "Find a code or note"), and a search still
+    finds a pin or a photo by "note" and by the old words
+    (`editor/editor-model.ts` `filterItems`).
 - `objectOwnText(object): string | undefined` - the text a free block
   carries for its name (a caption, a character's name, else a title); unlike
-  `objectTitle` it can be empty.
+  `objectTitle` it can be empty. One case per kind, checked exhaustive by
+  the compiler; a kind it does not know (a newer file) gives undefined.
 - `objectTitle(object): string` - for any object or block (in the world
   or in a station's story): its title (a character's name), else its
   caption (a pin's own text), else its kind's name
-  (`BLOCK_KIND_LABEL`) - each trimmed, so a text of blanks names
+  (`KIND_EDIT` label) - each trimmed, so a text of blanks names
   nothing.
 - `codeDistanceLine(object, codes): string` - `"4 m from the code"` with
   one code, `"12 m from the nearest code"` with several, `""` without a
@@ -80,6 +65,6 @@ codeDistanceLine(pin, [codeGeo]); // "4 m from the code"
 `object-describe.test.ts` (a pin's text; a picture's title, else its
 caption, else "Photo", trimmed; the kinds' words "Pin" and "Photo", and
 inside a sentence (`kindNoun`); every block kind by its own text, else
-its kind's name; the looks of the three kinds,
+its kind's name; the looks of the four kinds in the world,
 the distance to one code or the nearest of several, none without a
 code); `object-list.test.ts` pins that the list uses the same rule.

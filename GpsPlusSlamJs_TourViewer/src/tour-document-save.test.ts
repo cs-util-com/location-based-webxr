@@ -78,7 +78,7 @@ function savesOf(
   return createTourSaves({
     tour: session,
     generation: doc(store).generation,
-    pictureOf: () => undefined,
+    fileOf: () => undefined,
     picturesRead: () => Promise.resolve(),
   });
 }

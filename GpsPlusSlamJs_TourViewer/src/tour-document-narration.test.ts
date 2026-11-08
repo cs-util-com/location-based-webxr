@@ -101,40 +101,43 @@ function savedNow(
 describe("narrationEdited: a voice brought in", () => {
   it("lists the voice with the tour and names it as the text's audio, as one step", () => {
     const before = opened(ESSAY);
+    const added = reduce(before, act.assetsAdded({ assets: [VOICE2] }));
+    // The file brought in is no step of its own: the edit naming it is.
+    expect(added.addedAssets).toEqual([VOICE2]);
+    expect(changeCount(added)).toBe(0);
+    expect(added.past).toEqual(before.past);
     const state = reduce(
-      before,
+      added,
       act.narrationEdited({
         object: { ...ESSAY, narration: { audio: "voice2", synthetic: false } },
-        voice: VOICE2,
         what: "the voice",
       }),
     );
-    expect(state.voices).toEqual([VOICE2]);
     expect(manifestToWrite(state)?.assets).toContainEqual(VOICE2);
     expect(essay(state)).toMatchObject({ narration: { audio: "voice2" } });
     expect(changeCount(state)).toBe(1);
     const undone = reduce(state, act.undone());
     expect(essay(undone)).not.toHaveProperty("narration");
     expect(changeCount(undone)).toBe(0);
+    // Kept for a redo; a write drops what nothing names.
+    expect(undone.addedAssets).toEqual([VOICE2]);
   });
 
-  it.each([
-    ["a voice that is not audio", { ...VOICE2, kind: "image" as const }],
-    ["a voice under an id the tour already has", { ...VOICE2, id: "voice" }],
-  ])("refuses %s, changing nothing", (_name, voice) => {
+  // Why: the table is one per tour - an asset is listed once, never one
+  // the written tour lists, and never one whose path does not say what
+  // it is (the format would refuse the next save).
+  it("lists an added asset once, and none the tour has or the format refuses", () => {
     const before = opened(ESSAY);
-    const state = reduce(
-      before,
-      act.narrationEdited({
-        object: {
-          ...ESSAY,
-          narration: { audio: voice.id, synthetic: false },
-        },
-        voice,
-        what: "the voice",
-      }),
-    );
-    expect(state).toBe(before);
+    let state = reduce(before, act.assetsAdded({ assets: [VOICE2, VOICE2] }));
+    state = reduce(state, act.assetsAdded({ assets: [VOICE2, VOICE] }));
+    expect(state.addedAssets).toEqual([VOICE2]);
+    for (const bad of [
+      { ...VOICE2, id: "x", kind: "image" as const, path: "content/x.ogg" },
+      { ...VOICE2, id: "y", path: "content/z.ogg" },
+      { ...VOICE2, id: "w", path: "content/w.txt" },
+    ]) {
+      expect(reduce(before, act.assetsAdded({ assets: [bad] }))).toBe(before);
+    }
   });
 
   it("refuses a narration naming audio the tour neither holds nor brings in", () => {
@@ -267,25 +270,27 @@ describe("narrationEdited: the read-along text", () => {
 });
 
 describe("draftableObject: what a draft keeps of a narration", () => {
-  // Why: a draft keeps records, never a voice's bytes or a timing's text.
-  // A reload offering a narration that names a voice only this page held
-  // would put back a block naming a file the tour lacks, and every later
-  // save would fail.
+  // Why: a draft keeps records and the files brought in, never a timing's
+  // text. A reload offering a narration that names a timing only this
+  // page held would put back a block naming a file the tour lacks, and
+  // every later save would fail.
   it("keeps a narration the written file holds whole", () => {
     const state = opened();
     expect(draftableObject(NARRATED, state)).toBe(NARRATED);
   });
 
-  it("gives a voice brought in here the written narration instead (none when there was none)", () => {
+  // Why: a voice brought in here is a file of the draft too (written
+  // before the record that names it), so its narration is kept.
+  it("keeps a narration naming a voice brought in here", () => {
     const state = reduce(
-      opened(ESSAY),
+      reduce(opened(ESSAY), act.assetsAdded({ assets: [VOICE2] })),
       act.narrationEdited({
         object: { ...ESSAY, narration: { audio: "voice2", synthetic: false } },
-        voice: VOICE2,
         what: "the voice",
       }),
     );
-    expect(draftableObject(essay(state) as TourObject, state)).toEqual(ESSAY);
+    const object = essay(state) as TourObject;
+    expect(draftableObject(object, state)).toBe(object);
   });
 
   it("keeps the written narration for a timing the written file does not hold", () => {

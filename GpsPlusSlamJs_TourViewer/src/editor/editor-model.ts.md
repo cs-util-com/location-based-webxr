@@ -21,7 +21,7 @@ name on the phone and on the desktop (M6 E1 plan review #1, #3). Design:
     "Code N"; `number` 1-based; `at` null without a stored position), then
     the pins and photos of `objects` (kind `pin` for a short text, `photo`
     for a picture - the page's words, not the format's; title
-    `objectTitle`, meta the kind's name from the one naming rule (`BLOCK_KIND_LABEL`:
+    `objectTitle`, meta the kind's name from the one naming rule (`KIND_EDIT` label:
     "Pin", "Photo", "3D model") plus
     `codeDistanceLine`, a photo's `image` the path of its image asset), then the
     stations. The walk's debug camera captures are never items (they were
@@ -56,15 +56,21 @@ name on the phone and on the desktop (M6 E1 plan review #1, #3). Design:
   (`editor-shell/tree-model.ts`).
 - `filterItems(items, query)` - the rows whose title, meta or kind's
   words contain the trimmed query (`matchesQuery`); all for an empty
-  query. The kind's words (`KIND_SEARCH_WORDS`, exported for the 3D
-  tree's search) are "note"
-  for a pin and a photo (the search box says "Find a code or note") and
-  the words the 3D editor once showed ("short text", "picture"), so an
-  item whose own text names no kind is still found by them; the kind's
-  own word ("Pin", "Photo") is in its meta.
+  query. The kind's words (`KIND_SEARCH_WORDS`) are its kind's row's
+  search words (`src/kinds/edit-kinds.ts` `KIND_EDIT`), the 3D tree's
+  too: "note" for a pin and a photo (the search box says "Find a code or
+  note") and the words the 3D editor once showed ("short text",
+  "picture"), so an item whose own text names no kind is still found by
+  them; the kind's own word ("Pin", "Photo") is in its meta.
 - `EditorItem`, `EditorItemKind`, `EditorModel`.
 - `STATION_PREFIX` - `"station:"`, the prefix of a station's item id (the
   page and the 3D view's editing tell a station's selection by it).
+- `selectedStationOf(selected, manifest)` -> the station id for
+  `station:<id>` when the tour has it, or the station holding the selected
+  item, story (`story:<id>`) or story's child; null for a code, an unknown
+  id, no selection or no tour. It lives here, not in the 3D view, so the
+  edit page and the shell use it without loading the 3D view's code
+  (`app-bundle.test.ts`).
 
 ## Invariants & assumptions
 

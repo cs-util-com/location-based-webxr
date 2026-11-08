@@ -42,15 +42,23 @@ export {
   splitAtGates,
 } from "./barrier-gates.js";
 
-export type { BarrierDimensions } from "./barriers.js";
+export type { BarrierDimensions, BarrierKind } from "./barriers.js";
 export {
   barrierCentrelines,
+  barrierKind,
   isSolidBarrier,
   resolveBarrier,
   DEFAULT_BARRIER_HEIGHT_M,
   DEFAULT_CITY_WALL_HEIGHT_M,
   DEFAULT_BARRIER_THICKNESS_M,
 } from "./barriers.js";
+
+export {
+  BARRIER_KIND_RGB,
+  BARRIER_MATERIAL_RGB,
+  TAGGED_BARRIER_COLOUR_SHARE,
+  barrierColour,
+} from "./barrier-colours.js";
 
 export type { BarrierVolume, BuildBarriersOptions } from "./barrier-volumes.js";
 export { buildBarriers } from "./barrier-volumes.js";
@@ -90,8 +98,11 @@ export {
   CHUNK_SIZE_M,
   chunkKeyFor,
   chunkMeshes,
+  linearChunkColours,
   meshCentroidEnu,
 } from "./chunk-meshes.js";
+
+export { linearToSrgb, srgbToLinear } from "./srgb.js";
 
 export type { AreaPlate, BuildPlatesOptions } from "./plates.js";
 export { buildAreaPlates, isPlateArea } from "./plates.js";
@@ -162,13 +173,25 @@ export {
   rankPoiKinds,
 } from "./poi-ranking.js";
 
-export type { BuildTreesOptions, TreePlacement, TreeVariant } from "./trees.js";
+export type {
+  BuildTreesOptions,
+  TreeClass,
+  TreeInstances,
+  TreePlacement,
+  TreeVariant,
+} from "./trees.js";
 export {
   DEFAULT_CROWN_RATIO,
   DEFAULT_TREE_HEIGHT_M,
+  MAX_TREE_CROWN_M,
+  MAX_TREE_HEIGHT_M,
+  TREE_COLOUR_JITTER,
+  TREE_PALETTE,
   buildTrees,
   isTree,
   packInstances,
+  treeClass,
+  treeColour,
 } from "./trees.js";
 // The shared deterministic hash. It lived in `trees.ts` until §4a gave POI
 // markers the same variation; see `stable-jitter.ts` for why one copy matters.

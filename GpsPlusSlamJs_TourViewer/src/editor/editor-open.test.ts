@@ -16,6 +16,7 @@ import {
   serializeTourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
+  droppedBlockFieldsLine,
   droppedDetailsLine,
   droppedStationFieldsLine,
   NOT_A_TOUR,
@@ -24,6 +25,7 @@ import {
 } from "./editor-open.js";
 import { createEditorSession } from "./editor-session.js";
 import { stationContent } from "../test-support/station-content.js";
+import { tourOf } from "../test-support/tour-of.js";
 
 async function zipFile(
   entries: { path: string; data: string }[],
@@ -181,6 +183,61 @@ describe("openTourForEditing", () => {
     expect(droppedStationFieldsLine(out.dropped.slice(3), out.manifest)).toBe(
       null,
     );
+    await out.session.close();
+  });
+
+  it("names the blocks whose text the reader dropped, by their names, and says the next save writes them without it", async () => {
+    // Why: a text over its cap (a transcript, a caption, a description)
+    // is left out by the reader rather than failing the tour, so the next
+    // save writes the block without it. Unsaid, that is a silent loss of
+    // what the creator wrote. The line names each block as the editor's
+    // panels do (its title, else its caption), never by the random id.
+    const pin = (id: string, caption: string) =>
+      ({
+        id,
+        kind: "shortText",
+        view: "pin",
+        caption,
+        createdAtIso: "2026-11-07T00:00:00.000Z",
+        geo: { lat: 48.52, lon: 9.05, alt: 340, headingDeg: 0 },
+      }) as const;
+    const wire = JSON.parse(
+      serializeTourManifest(
+        tourOf([pin("b1", "The gate"), pin("b2", "The well")]),
+      ),
+    ) as { stations: { children: Record<string, unknown>[] }[] };
+    for (const station of wire.stations) {
+      for (const child of station.children) {
+        child.description = "x".repeat(161);
+      }
+    }
+    const out = await openTourForEditing(
+      await zipFile([{ path: "tour.json", data: JSON.stringify(wire) }]),
+    );
+    expect(out.kind).toBe("opened");
+    if (out.kind !== "opened") return;
+    expect(out.dropped).toHaveLength(2);
+    expect(droppedBlockFieldsLine(out.dropped, out.manifest)).toBe(
+      'A text of "The gate" and "The well" could not be read, so the editor left it out: the next save writes those items without it. Write it again in the item.',
+    );
+    expect(droppedBlockFieldsLine(out.dropped.slice(1), out.manifest)).toBe(
+      'A text of "The well" could not be read, so the editor left it out: the next save writes the item without it. Write it again in the item.',
+    );
+    // A block nobody kept is named by its id; details, stations and whole
+    // blocks are other lines.
+    expect(
+      droppedBlockFieldsLine(
+        [
+          { kind: "field", block: "zz9", field: "title", reason: "too long" },
+          { kind: "block", block: "b3", reason: "unknown kind" },
+          { field: "cover", reason: "gone" },
+        ],
+        out.manifest,
+      ),
+    ).toBe(
+      'A text of "zz9" could not be read, so the editor left it out: the next save writes the item without it. Write it again in the item.',
+    );
+    expect(droppedBlockFieldsLine([], out.manifest)).toBeNull();
     await out.session.close();
   });
 

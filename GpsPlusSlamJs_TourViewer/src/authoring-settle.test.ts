@@ -1525,8 +1525,8 @@ describe(
     it("leaves an item of the visit's station that this visit did not place where it stood", async () => {
       // Why: the settle moves the visit's station rigidly with its items
       // and then puts back only this visit's items at their settled
-      // spots. An item that joined the station from earlier work (moved
-      // into its radius here, a restored draft) is no item of this visit:
+      // spots. An item that joined the station from earlier work (changed
+      // to it here, a restored draft) is no item of this visit:
       // the visit's correction says nothing about where it stands, so it
       // must not be shifted with the station.
       const a = authoring();
@@ -1540,6 +1540,8 @@ describe(
       a.ctx.tourDocument.move(
         { ...old, geo: { ...old.geo, lat: near.lat + 0.00003, lon: near.lon } },
         "a note",
+        undefined,
+        started,
       );
       const joined = pinAndStation(a, "old");
       expect(joined.station.id, "it joined the visit's station").toBe(started);
@@ -3040,6 +3042,87 @@ describe(
       expect(list.lastModel?.note).toMatch(
         /^Moved "Gate", but this device could not save a backup copy/,
       );
+    });
+
+    // Why: window.confirm does not exist in an XR session, so AR's question
+    // stands in the list, and while it stands nothing may be half applied:
+    // a reload then finds the pin where it was. Each way out has its end
+    // state: Yes, No, and a tour or a selection that moved on under it.
+    describe("a Move into another station's circle", () => {
+      const stationOfH1 = (a: Awaited<ReturnType<typeof withHostedTour>>) =>
+        a.ctx.tourDocument.objects().find((o) => o.object.id === "h1")?.object
+          .station;
+
+      async function asked() {
+        const a = await withHostedTour(
+          [hostedPin("h1", "Gate")],
+          memoryDraftStore().store,
+        );
+        await a.mint();
+        await a.placePin("Tower", [100, 0, 0]);
+        const list = a.dom.objectList;
+        const home = stationOfH1(a);
+        const revision = a.ctx.tourDocument.state().revision;
+        a.pick.fn = () => "h1";
+        a.setup.selectInView(null);
+        a.setReticle([102, 0, 2]);
+        list.listHandlers!.move("h1");
+        await flush();
+        return { a, list, home, revision };
+      }
+
+      it("asks and writes nothing until the answer", async () => {
+        const { a, list, revision } = await asked();
+        expect(list.lastModel?.question?.text).toContain("Change");
+        expect(a.ctx.tourDocument.state().revision).toBe(revision);
+        const row = list.lastModel!.rows.find((r) => r.busy !== null);
+        expect(row?.busy).toBe("Asking…");
+        expect(
+          logged(a, "tourAuthoring/objectMoved").filter(
+            (e) => e.payload["id"] === "h1",
+          ),
+        ).toEqual([]);
+      });
+
+      it("changes the station on a yes, in one step, and says so", async () => {
+        const { a, list, home, revision } = await asked();
+        list.listHandlers!.answer(true);
+        await flush();
+        expect(list.lastModel?.question).toBeNull();
+        expect(stationOfH1(a)).not.toBe(home);
+        expect(a.ctx.tourDocument.state().revision).toBe(revision + 1);
+        expect(list.lastModel?.note).toMatch(/is now in /);
+      });
+
+      it("keeps its station on a no, where the reticle put it, and says so", async () => {
+        const { a, list, home, revision } = await asked();
+        list.listHandlers!.answer(false);
+        await flush();
+        expect(stationOfH1(a)).toBe(home);
+        expect(a.ctx.tourDocument.state().revision).toBe(revision + 1);
+        expect(list.lastModel?.note).toMatch(/outside its circle/);
+      });
+
+      it("withdraws the Move, unwritten, when the selection or the tour moves on", async () => {
+        const first = await asked();
+        first.a.pick.fn = () => null;
+        first.a.setup.selectInView(null);
+        expect(first.list.lastModel?.question).toBeNull();
+        expect(first.a.ctx.tourDocument.state().revision).toBe(first.revision);
+
+        const second = await asked();
+        const h1 = second.a.ctx.tourDocument
+          .objects()
+          .find((o) => o.object.id === "h1")!.object;
+        second.a.ctx.tourDocument.edit(
+          { ...h1, caption: "Renamed" } as typeof h1,
+          "a text",
+        );
+        second.list.listHandlers!.answer(true);
+        await flush();
+        expect(stationOfH1(second.a)).toBe(second.home);
+        expect(second.list.lastModel?.note).toMatch(/was not moved/);
+      });
     });
 
     it(`keeps an outcome through a tap that only selects, for ${String(OUTCOME_HOLD_MS)} ms`, async () => {

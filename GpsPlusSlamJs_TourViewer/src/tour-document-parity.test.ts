@@ -68,7 +68,7 @@ import {
 } from "./tour-viewer-session.js";
 import { documentObjects, selectTourDocument } from "./tour-document.js";
 import { settle } from "./test-support/settle.js";
-import { tourOf } from "./test-support/tour-of.js";
+import { stationIdOf, tourOf } from "./test-support/tour-of.js";
 import {
   stationContent,
   stationBlocks,
@@ -211,7 +211,12 @@ interface Page {
   placeOwnStation(object: TourObject): Promise<void>;
   /** A note to `lat`/`lon`, height and facing kept (the phone: as its AR
    *  move leaves the page's lists). */
-  move(id: string, lat: number, lon: number): Promise<void>;
+  move(
+    id: string,
+    lat: number,
+    lon: number,
+    joinStation?: string,
+  ): Promise<void>;
   /** A station moved rigidly to `geo`, its items with it (D17), by a code
    *  (the phone: as its settle moves it once the station's code was
    *  re-measured, the code's new text in the same step; the desktop
@@ -343,8 +348,13 @@ async function desktopPage(
           "desktop: a new station for a placement (D8's desktop half)",
         ),
       ),
-    move: (id, lat, lon) => {
-      editor.move(id, lat, lon);
+    move: (id, lat, lon, joinStation) => {
+      editor.move(
+        id,
+        lat,
+        lon,
+        joinStation === undefined ? {} : { joinStation },
+      );
       return draft.idle();
     },
     moveStation: (stationId, geo) => {
@@ -579,7 +589,7 @@ async function phonePage(
       ctx.tourDocument.place(object, { ownStation: true }, "a pin");
       await flush(store);
     },
-    move: async (id, lat, lon) => {
+    move: async (id, lat, lon, joinStation) => {
       // As `object-editing.ts`'s move changes the document (its AR
       // geometry decides the geo; here the same spot the desktop is given).
       const found = objects().find((o) => o.id === id);
@@ -587,6 +597,8 @@ async function phonePage(
       ctx.tourDocument.move(
         { ...found, geo: { ...found.geo, lat, lon } },
         "a note",
+        undefined,
+        joinStation,
       );
       await flush(store);
     },
@@ -829,30 +841,45 @@ const ROWS: readonly Row[] = [
     },
   },
   {
-    // Why: a move out of its station's found radius re-runs the station
-    // rule. About 57 m from its station and 36 m from the nearest other
-    // one (25 m radii): the note starts a station at its new spot, and the
-    // station it left, now empty and automatic, goes.
+    // Why: a move never starts a station. About 57 m from its station and
+    // 36 m from the nearest other one (25 m radii): the note keeps its
+    // station, outside the circle, on both pages.
     name: "move a note out of its station's radius, save",
     records: false,
     run: async (p) => {
       await p.move("a", NORTH, 9.0502);
+      expect(p.addedStations()).toEqual([]);
       return p;
     },
     each: ({ written }) => {
       expect(itemsByStation(written)).toEqual({
-        opened: [["b"], ["f"]],
-        added: [["a"]],
+        opened: [["a"], ["b"], ["f"]],
+        added: [],
       });
     },
   },
   {
-    // Why: the same rule, the other way: a note moved to about 11 m from
-    // another station (inside its 25 m radius) joins that station.
-    name: "move a note into another station's radius, save",
+    // Why: inside another station's circle (about 11 m, 25 m radii) the
+    // creator was asked. Declined, the note stays where its station was.
+    name: "move a note into another station's radius, declined, save",
     records: false,
     run: async (p) => {
       await p.move("a", 48.5203, 9.05);
+      return p;
+    },
+    each: ({ written }) => {
+      expect(itemsByStation(written)).toEqual({
+        opened: [["a"], ["b"], ["f"]],
+        added: [],
+      });
+    },
+  },
+  {
+    // Why: the same, answered yes: the note changes to that station.
+    name: "move a note into another station's radius, agreed, save",
+    records: false,
+    run: async (p) => {
+      await p.move("a", 48.5203, 9.05, stationIdOf("b"));
       return p;
     },
     each: ({ written }) => {
@@ -884,28 +911,37 @@ const ROWS: readonly Row[] = [
     },
   },
   {
-    // Why: the station a move started is the document's from that moment,
-    // not the next write's, so the draft must keep it: after a reload the
-    // note comes back in THAT station (same id, same spot), on both pages,
-    // not in one the rule seats it in again under a new id - which the
-    // written items alone cannot tell apart. (A placement's reload is the
-    // phone's alone - the desktop places nothing a draft offers back - and
-    // is held by the creator document's tests and the phone's end-to-end
-    // run.)
+    // Why: a drop's end state has to survive a reload as it was left: the
+    // note outside its circle comes back in its own station, on both
+    // pages, not in one the rule seats it in again.
     name: "move a note out of its station's radius, reload and restore the draft, save",
     records: false,
     run: async (p) => {
       await p.move("a", NORTH, 9.0502);
-      const before = p.addedStations();
-      expect(before).toHaveLength(1);
       const after = await p.reopenRestored();
-      expect(after.addedStations()).toEqual(before);
+      expect(after.addedStations()).toEqual([]);
       return after;
     },
     each: ({ written }) => {
       expect(itemsByStation(written)).toEqual({
-        opened: [["b"], ["f"]],
-        added: [["a"]],
+        opened: [["a"], ["b"], ["f"]],
+        added: [],
+      });
+    },
+  },
+  {
+    // Why: as above for a Yes: the station it changed to is written in the
+    // object's draft record, so the reload keeps the change.
+    name: "move a note to another station, reload and restore the draft, save",
+    records: false,
+    run: async (p) => {
+      await p.move("a", 48.5203, 9.05, stationIdOf("b"));
+      return p.reopenRestored();
+    },
+    each: ({ written }) => {
+      expect(itemsByStation(written)).toEqual({
+        opened: [["a", "b"], ["f"]],
+        added: [],
       });
     },
   },

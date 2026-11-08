@@ -1,7 +1,7 @@
 /**
  * The Ctrl+K palette's rows, pure: what a typed query adds where. Each
- * row is a kind the editor can make from nothing (a short text, a long
- * text: `ADD_CHOICES`) in one station, or a new station; a query names
+ * row is a kind the editor can make from nothing (its row says it is
+ * addable: `KIND_EDIT`, today a short text and a long text) in one station, or a new station; a query names
  * the kind and the place in one go ("long gate", "pin 2"), every word of
  * it found in the row's kind words (as a word's start) or in its place
  * (anywhere in it). An empty query lists what adds to the default place:
@@ -18,8 +18,12 @@
  */
 import type { ShellIcon } from "gps-plus-slam-editor-kit/chrome";
 
+import {
+  ADD_CHOICES,
+  isAddable,
+  type AddKind,
+} from "../../kinds/edit-kinds.js";
 import { foldForSearch } from "../editor-model.js";
-import { ADD_CHOICES, type AddKind } from "./tree-add-menu.js";
 
 /** A station as the palette offers it. */
 export interface PaletteStation {
@@ -52,11 +56,11 @@ export const PALETTE_KINDS: readonly {
   readonly label: string;
   readonly icon: ShellIcon;
 }[] = [
-  ...ADD_CHOICES.flatMap((c) =>
-    c.addable && c.kind !== "picture"
-      ? [{ kind: c.kind, label: c.label, icon: c.icon }]
-      : [],
-  ),
+  ...ADD_CHOICES.filter(isAddable).map((c) => ({
+    kind: c.kind,
+    label: c.label,
+    icon: c.look,
+  })),
   { kind: "station", label: "Station", icon: "station" },
 ];
 
@@ -87,9 +91,7 @@ function candidates(
   stations: readonly PaletteStation[],
   defaultId: string | null,
 ): Candidate[] {
-  const kinds = ADD_CHOICES.filter(
-    (c): c is typeof c & { kind: AddKind } => c.addable && c.kind !== "picture",
-  );
+  const kinds = ADD_CHOICES.filter(isAddable);
   const out: Candidate[] = [];
   for (const station of stations) {
     const place = `in ${String(station.number)} ${station.title}`;
@@ -99,7 +101,7 @@ function candidates(
           add: { kind: choice.kind, stationId: station.id },
           label: choice.label,
           place,
-          icon: choice.icon,
+          icon: choice.look,
         },
         atDefault: station.id === defaultId,
         kindWords: wordsOf(`${choice.label} ${choice.words}`),

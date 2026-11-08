@@ -19,7 +19,9 @@ battery"): ONE audio element for the page, unlocked by the visitor's
   - `resume()` - the paused clip carries on; one the browser refuses runs
     its end instead, so a step waiting for it does not wait for good. A
     resume a pause cut short (AbortError) is no refusal: the clip stays
-    held. Both do nothing with no clip.
+    held. Only a `pause()` after that resume excuses it; an AbortError with
+    no such pause (the browser or the system paused the element) ends the
+    clip like any refusal. Both do nothing with no clip.
 - `isPlayAbort(error)` - true for the AbortError a pause gives a pending `play()`.
 - `silentWav()` - a 45-byte RIFF/WAVE, PCM mono 8 kHz, one silent sample.
 - `AudioElementLike` - the slice of `HTMLAudioElement` it drives (`duration` optional).

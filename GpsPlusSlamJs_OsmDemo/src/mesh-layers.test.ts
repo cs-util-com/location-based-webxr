@@ -69,6 +69,7 @@ function fullMesh(): TransferableMesh {
         crownDiameterM: 4,
         rotationY: 0.5,
         variant: "unknown",
+        colour: 0x737c66,
       },
     ],
     plates: oneChunk(),
@@ -454,6 +455,7 @@ describe("drawMeshLayers — trees are instanced, one mesh per variant (W6)", ()
           crownDiameterM: 4,
           rotationY: 0,
           variant: "broadleaved",
+          colour: 0x737c66,
         },
         {
           feature: "node/2",
@@ -463,6 +465,7 @@ describe("drawMeshLayers — trees are instanced, one mesh per variant (W6)", ()
           crownDiameterM: 5,
           rotationY: 0.5,
           variant: "broadleaved",
+          colour: 0x737c66,
         },
         {
           feature: "node/3",
@@ -472,6 +475,7 @@ describe("drawMeshLayers — trees are instanced, one mesh per variant (W6)", ()
           crownDiameterM: 6,
           rotationY: 1,
           variant: "needleleaved",
+          colour: 0x737c66,
         },
       ],
     };

@@ -29,6 +29,7 @@
  * @see chunk-meshes.ts.md
  */
 
+import { srgbToLinear } from "./srgb.js";
 import type { EnuPoint } from "./enu.js";
 import { mergeMeshes } from "./extrude.js";
 import type { VertexRange } from "./extrude.js";
@@ -305,4 +306,33 @@ export function meshCentroidEnu(mesh: MeshData): EnuPoint {
     z += mesh.positions[i + 2] as number;
   }
   return { x: x / count, y: -(z / count) };
+}
+
+/** sRGB byte to linear light, once per byte rather than once per vertex. */
+const LINEAR_OF_BYTE = Float32Array.from({ length: 256 }, (_, i) =>
+  srgbToLinear(i / 255),
+);
+
+/**
+ * The chunks with their vertex colours converted from sRGB to linear light
+ * (city objects plan 2026-11-07-2315 section 7). Building chunks go through
+ * it, because three.js shades in linear light and the palettes are sRGB; road
+ * chunks do not, as the O3 picture the owner chose drew them raw.
+ *
+ * Returns new chunks with a new `colors` array and leaves the input as it
+ * was, so a second call cannot convert twice. A chunk without colours is
+ * passed through as is. A colour is read back to its byte first (the fill
+ * writes byte / 255), so the conversion is a table lookup.
+ */
+export function linearChunkColours(chunks: readonly MeshChunk[]): MeshChunk[] {
+  return chunks.map((chunk) => {
+    const raw = chunk.colors;
+    if (raw === undefined) return chunk;
+    const colors = new Float32Array(raw.length);
+    for (let i = 0; i < raw.length; i++) {
+      const byte = Math.round((raw[i] ?? 0) * 255);
+      colors[i] = LINEAR_OF_BYTE[byte < 0 ? 0 : byte > 255 ? 255 : byte] ?? 0;
+    }
+    return { ...chunk, colors };
+  });
 }

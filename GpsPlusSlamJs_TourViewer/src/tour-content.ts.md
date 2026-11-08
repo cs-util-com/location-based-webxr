@@ -30,8 +30,10 @@ camera captures are debug data, never in a station (an earlier file's
 - `WorldBlock`, `worldBlocks(station)`: a station's free blocks
   (`tourFreeBlocks`, the ones outside its stories) as the short texts,
   pictures, long texts (on their reading stands) and models
-  the creator pages draw and edit. A free video, sound or character is
-  not among them yet: those pages have no drawing for one, and
+  the creator pages draw and edit: the kinds whose row in the editor's
+  list says `inWorld` (`kinds/edit-kinds.ts` `isWorldKind`). A free
+  video, sound or character is not among them yet: those pages have no
+  drawing for one, and
   `withTourContent` keeps it, stored files included.
 - `isCapturedPhoto(object)`: a picture whose image asset carries its own
   id (`content/<id>.jpg`, minted with it) - what a creator page takes with
@@ -61,7 +63,10 @@ camera captures are debug data, never in a station (an earlier file's
   (`blockBodyAssets`, `tour-body-assets.ts`, remembered by the
   block), and its narration's voice (the reader requires it; the timing is an
   entry, not an asset);
-  none for a short text), every station's card image and the cover. A
+  none for a short text), every station's card image, the cover, and every
+  declared character's image and frames sheet (the declaration names them
+  whether or not a block shows him; dropped, the strict re-read of the
+  save refused the tour). A
   body's pictures are named only inside its Markdown; before they were
   counted, every Finish dropped their assets and deleted their files.
 - `keepsItself(station, imageAssets) -> boolean`: whether an EMPTY

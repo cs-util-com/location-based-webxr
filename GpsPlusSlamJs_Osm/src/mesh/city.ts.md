@@ -21,7 +21,8 @@ the same ground.
 - `buildCity(features, ground) → City` - `{ volumes, barriers, buildings,
 trees, roads, roadCount }`. `volumes` and `barriers` are the builders' own results (a caller
   that needs them, OsmDemo for its POI hosts and counters, does not build
-  twice); `buildings` are `MeshChunk`s with per-vertex `colors`,
+  twice); `buildings` are `MeshChunk`s with per-vertex `colors` (LINEAR light,
+  `linearChunkColours`; `roads` stay raw sRGB),
   `featureRand` and `height01`; `trees` are `TreePlacement`s.
 - `buildCity(features, ground, { withinM })` keeps only volumes, barriers
   and trees whose own position (a mesh's centroid, a tree's placement) lies
@@ -53,6 +54,16 @@ trees, roads, roadCount }`. `volumes` and `barriers` are the builders' own resul
   parent's) through `chunkMeshes`'s `roofOf`, on each volume's `roofVertexRanges` (the
   roof block, not the upward faces; review finding 3). A barrier has no roof
   block.
+- **A barrier takes `barrierColour`**, its kind's muted colour, a tagged
+  material's, and a tagged colour mixed in at half (city objects plan
+  2026-11-07-2315 M1); a building takes `buildingColour`.
+- **Building chunk colours are linear, road chunk colours raw** (that plan's
+  section 7): three.js shades in linear light, and the labs the owner chose
+  built building and barrier colours through `THREE.Color` while O3 drew
+  roads raw. The conversion wraps the whole `chunkMeshes` call, so roof
+  colours are converted with the walls (skeleton roof plan 2026-11-07-2130
+  section 9 item 3). The AR shell reads the vertex colour inside its own
+  shader, so the conversion also moves its cyan mix slightly.
 - **The shell phase is stable across rebuilds** (`shellRandFor`, from each
   feature's first vertex), so the AR shell does not re-randomise when a tile
   loads.
@@ -71,8 +82,10 @@ for (const chunk of city.buildings) draw(chunk);
 ## Tests
 
 `city.test.ts` - volumes, barriers and trees built; an untagged part coloured
-exactly as its parent (and differently under another parent); a part's own
-colour and the roof colours in `s3db-parts.test.ts`; the ground under every
+exactly as its parent (and differently under another parent), in linear light;
+a barrier coloured by its kind; a mid-grey `roof:colour` reaching the roof
+vertices in linear light; a part's own colour and the roof colours in
+`s3db-parts.test.ts`; the ground under every
 building; the shell phase stable and in [0, 1); empty in, empty out;
 `cityGround` flat without a field and reading the field at the position's ENU
 metres; `withinM` dropping what lies outside, keeping all without it, keeping a

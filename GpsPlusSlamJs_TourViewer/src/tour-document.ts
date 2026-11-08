@@ -25,8 +25,17 @@ import {
   tourStories,
   type TourStory,
   type TourStoryBlock,
+  type TourStepAdvance,
   type TourStoryChild,
 } from "gps-plus-slam-app-framework/ar/tour-story";
+import {
+  newStory,
+  withoutStory,
+  withoutStoryChild,
+  withStory,
+  withStoryChild,
+  withStoryTitle,
+} from "./tour-story-edit.js";
 import {
   createAction,
   createSlice,
@@ -56,6 +65,8 @@ import {
   type TourTextRule,
 } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
+import { tourBlockAssetIds } from "gps-plus-slam-app-framework/ar/tour-kinds";
+import { tourMediaTypeOf } from "gps-plus-slam-app-framework/ar/tour-media";
 import type {
   TourAsset,
   TourManifest,
@@ -89,8 +100,6 @@ import {
 } from "./code-book.js";
 import { newObjectId } from "./content-placement.js";
 import { finishedManifest, pendingAfterRebuild } from "./finish-rebuild.js";
-import { keepsHomeDistance } from "./keeps-home.js";
-import { horizontalM } from "./move-with-code.js";
 import { stationHolding, type StationPoint } from "./station-assign.js";
 import {
   duplicateItemGeo,
@@ -119,6 +128,7 @@ import {
 import {
   automaticStationFrame,
   imageAssetIds,
+  isCapturedPhoto,
   keepsItself,
   objectAssetIds,
   stepAssetIds,
@@ -191,8 +201,7 @@ interface TourHistoryStep {
 /** One change of a settle (`settleApplied`, plan M3b), in the settle's own
  *  order - the station rule reads the frames as they stand when an object
  *  moves: a station's frame moved, its items rigidly with it (as
- *  `stationMoved`), or an object moved (as `moved`; a station it starts
- *  takes `newStationId`). */
+ *  `stationMoved`), or an object moved in its station (as `moved`). */
 export type SettleChange =
   | {
       readonly kind: "station";
@@ -202,7 +211,6 @@ export type SettleChange =
   | {
       readonly kind: "object";
       readonly object: TourObject;
-      readonly newStationId: string;
     };
 
 /** Who holds a page's one save slot: an explicit Save, the autosave, a
@@ -338,11 +346,13 @@ export interface TourDocumentState {
   /** What the file last written holds for each entry of `timings`
    *  (null: none). */
   readonly timingsWritten: Readonly<Record<string, string | null>>;
-  /** The voices (audio assets) brought in here: listed with the tour's
-   *  assets (`manifestNow`), where a write keeps the ones a narration or
-   *  a step of the history names (`withReferencedAssets`). Only grows
-   *  while the tour is open; their bytes are the page's (a side table). */
-  readonly voices: readonly TourAsset[];
+  /** The files (assets) brought in here - a voice, a model, a picture -
+   *  each once, by its content hash (`assetsAdded`): listed with the
+   *  tour's assets (`manifestNow`), where a write keeps the ones an item,
+   *  a narration or a step of the history names (`withReferencedAssets`).
+   *  Only grows while the tour is open; their bytes are the page's (its
+   *  files table) and the draft's. */
+  readonly addedAssets: readonly TourAsset[];
   /** The tour's codes and the hosted texts they are judged against
    *  (debug-captures plan M3a): no history step and no draft write, and
    *  not reset by `opened` or `closed` - the levels and `tour.json` are
@@ -588,7 +598,7 @@ export const initialTourDocumentState: TourDocumentState = {
   newStationArmed: false,
   timings: {},
   timingsWritten: {},
-  voices: [],
+  addedAssets: [],
   codes: NO_CODES,
 };
 
@@ -909,8 +919,9 @@ export function pinTextChange(
 /** What a move of an object to `lat`/`lon` on the map would change
  *  (`moveObjectTo`: its height and facing kept): the object before and
  *  after (`moved`, to dispatch), or `missing` for an id the tour does not
- *  carry. No move is too far: one beyond its station's found radius
- *  re-runs the station rule (`moved`). Throws for a position nobody can
+ *  carry. One beyond its station's found radius keeps its station
+ *  (`moved`); the session refuses one beyond an item's reach of its
+ *  station and asks before one into another station's circle. Throws for a position nobody can
  *  draw, as `moveObjectTo` does. */
 export function objectMoveChange(
   state: TourDocumentState,
@@ -973,22 +984,22 @@ export function manifestNow(state: TourDocumentState): TourManifest | null {
   if (base === null) return null;
   return withDetails(
     withNeedsNoGps(
-      withVoices(withEffectiveImages(state, base), state.voices),
+      withAdded(withEffectiveImages(state, base), state.addedAssets),
       state.needsNoGps,
     ),
     effectiveDetails(state),
   );
 }
 
-/** `manifest` with the voices brought in here that it does not list yet;
+/** `manifest` with the files brought in here that it does not list yet;
  *  a write drops each one nothing names (`withReferencedAssets`). */
-function withVoices(
+function withAdded(
   manifest: TourManifest,
-  voices: readonly TourAsset[],
+  assets: readonly TourAsset[],
 ): TourManifest {
-  if (voices.length === 0) return manifest;
+  if (assets.length === 0) return manifest;
   const listed = new Set(manifest.assets.map((a) => a.id));
-  const added = voices.filter((v) => !listed.has(v.id));
+  const added = assets.filter((v) => !listed.has(v.id));
   return added.length === 0
     ? manifest
     : { ...manifest, assets: [...manifest.assets, ...added] };
@@ -1167,7 +1178,8 @@ export function objectFits(
   return fitsStation(object.geo, home, state.stations);
 }
 
-/** What a placement or a move hands the station rule: the id a station the
+/** What a placement hands the station rule, or a move its explicit way
+ *  out ("Move to a new station"): the id a station the
  *  rule starts gets - minted outside the reducer (by the caller, or the
  *  action's `prepare`), so the reducer stays pure - and, for "New station
  *  here", that the object starts its own station even within another's
@@ -1715,6 +1727,9 @@ interface TourRestore {
    *  seated afresh by the station rule against the opened tour's
    *  stations. */
   readonly rerun?: boolean;
+  /** The files a draft kept (`addedAssets` there): listed again before
+   *  the frames and objects naming them come back. */
+  readonly assets?: readonly TourAsset[];
 }
 
 /**
@@ -1776,6 +1791,8 @@ interface TourRestorePayload extends TourRestore {
 interface PlacedPayload extends Seating {
   readonly object: TourObject;
   readonly what: string;
+  /** A move only: the station the creator agreed it changes to. */
+  readonly joinStation?: string;
 }
 
 /** What a page dispatches for a placement or a move: the id is minted
@@ -1786,6 +1803,7 @@ interface SeatingInput {
   readonly newStationId?: string;
   readonly newStation?: boolean;
   readonly afterHome?: boolean;
+  readonly joinStation?: string;
 }
 
 /** `input` with a station id minted for the rule when it carries none
@@ -1870,9 +1888,67 @@ export interface NarrationEditPayload {
     readonly text: string | null;
     readonly previous: string | null;
   };
-  /** A voice brought in with it (the narration's new audio). */
-  readonly voice?: TourAsset;
   readonly what: string;
+}
+
+/** Whether every file `object` needs is among `held` (asset ids): a
+ *  record naming one held nowhere would make every save fail. A captured
+ *  photo's own picture comes with its record. */
+export function objectAssetsHeld(
+  object: TourObject,
+  held: ReadonlySet<string>,
+): boolean {
+  return (
+    isCapturedPhoto(object) ||
+    tourBlockAssetIds(object, true).every((id) => held.has(id))
+  );
+}
+
+/**
+ * `assets` among `before`'s added ones (`assetsAdded`, a restore): each
+ * once, none the written tour lists. Null when one is no asset the
+ * format takes - a path other than `content/<id>.<ext>` of an
+ * allowlisted extension of its kind - since the next save would fail.
+ */
+function withAddedAssets(
+  before: TourDocumentState,
+  assets: readonly TourAsset[],
+): readonly TourAsset[] | null {
+  const held = new Set(
+    [...(before.written?.assets ?? []), ...before.addedAssets].map((a) => a.id),
+  );
+  const added: TourAsset[] = [];
+  for (const asset of assets) {
+    const dot = asset.path.lastIndexOf(".");
+    const ext = asset.path.slice(dot + 1);
+    if (
+      dot < 0 ||
+      asset.path !== `content/${asset.id}.${ext}` ||
+      tourMediaTypeOf(ext)?.kind !== asset.kind
+    ) {
+      return null;
+    }
+    if (held.has(asset.id)) continue;
+    held.add(asset.id);
+    added.push(asset);
+  }
+  return added.length === 0
+    ? before.addedAssets
+    : [...before.addedAssets, ...added];
+}
+
+/** Files brought in (`assetsAdded`): listed, no step - the edit that
+ *  names one is the step, and an undo of it leaves the file listed for a
+ *  redo (a write drops what nothing names). */
+function assetsAdd(
+  before: TourDocumentState,
+  assets: readonly TourAsset[],
+): TourDocumentState {
+  if (before.written === null) return before;
+  const addedAssets = withAddedAssets(before, assets);
+  return addedAssets === null || addedAssets === before.addedAssets
+    ? before
+    : { ...before, addedAssets };
 }
 
 /** `state` with the read-along entry `entry` listed at `previous` (what
@@ -1904,11 +1980,11 @@ function withTimingListed(
 
 /**
  * A free long text's narration changed (`narrationEdited`), as one step:
- * its voice (a new one brought in: `voice`), whether it names its
- * read-along entry, and that entry's text. Refused, changing nothing: for
- * anything but a free long text of the document, a change of anything but
- * its narration, a voice the tour neither holds nor brings in (as audio,
- * under an id no asset has), a read-along entry other than its own
+ * its voice (a file the tour holds or one brought in first,
+ * `assetsAdded`), whether it names its read-along entry, and that entry's
+ * text. Refused, changing nothing: for anything but a free long text of
+ * the document, a change of anything but its narration, a voice the tour
+ * does not hold, a read-along entry other than its own
  * (`timing/<id>.json`), a text where the narration names no entry or none
  * where it does, and a change that changes nothing.
  */
@@ -1918,7 +1994,7 @@ function narrationEdit(
 ): TourDocumentState {
   const written = before.written;
   if (written === null) return before;
-  const { object, timing, voice } = payload;
+  const { object, timing } = payload;
   const was = documentObjects(before).find(
     (o) => o.object.id === object.id,
   )?.object;
@@ -1927,22 +2003,10 @@ function narrationEdit(
     return before;
   }
   const narration = object.narration;
-  const held = new Set([...written.assets, ...before.voices].map((a) => a.id));
-  if (
-    voice !== undefined &&
-    (voice.kind !== "audio" ||
-      held.has(voice.id) ||
-      narration?.audio !== voice.id)
-  ) {
-    return before;
-  }
-  if (
-    narration !== undefined &&
-    narration.audio !== voice?.id &&
-    !held.has(narration.audio)
-  ) {
-    return before;
-  }
+  const audio = [...written.assets, ...before.addedAssets].find(
+    (a) => a.id === narration?.audio,
+  );
+  if (narration !== undefined && audio?.kind !== "audio") return before;
   let entry: string;
   try {
     entry = tourTimingEntryName(object.id);
@@ -1964,20 +2028,12 @@ function narrationEdit(
     }
     timings = { ...base.timings, [entry]: timing.text };
   }
-  if (
-    voice === undefined &&
-    sameJson(was, object) &&
-    timings[entry] === base.timings[entry]
-  ) {
+  if (sameJson(was, object) && timings[entry] === base.timings[entry]) {
     return before;
   }
   return edited(
     base,
-    {
-      placed: upsertPlaced(base.placed, { object }),
-      timings,
-      voices: voice === undefined ? base.voices : [...base.voices, voice],
-    },
+    { placed: upsertPlaced(base.placed, { object }), timings },
     payload.what,
   );
 }
@@ -1986,36 +2042,6 @@ function narrationEdit(
 function unseated(object: TourObject): TourObject {
   const { station: _station, ...rest } = object;
   return rest;
-}
-
-/** Whether a move of `object` to its new spot keeps it in its station
- *  `frame`: the station's own found radius holds the spot; or, by
- *  distance (`keepsHomeDistance`), it stands within the radius and its
- *  tolerance, or no farther from the anchor than it stood before the move
- *  (an item outside the radius already) - and the move takes it into no
- *  other station's radius: a station whose radius held the old spot too
- *  (radii overlap) is not one it moved into. */
-function keepsHome(
-  state: TourDocumentState,
-  frame: StationFrame,
-  object: TourObject,
-): boolean {
-  if (stationHolding([frame], object.geo) !== null) return true;
-  const was = documentObjects(state).find((o) => o.object.id === object.id)
-    ?.object.geo;
-  if (was === undefined) return false;
-  const kept = keepsHomeDistance({
-    radiusM: frame.foundRadiusM,
-    wasM: horizontalM(frame.geo, was),
-    nowM: horizontalM(frame.geo, object.geo),
-  });
-  if (!kept) return false;
-  const base = manifestNow(state);
-  if (base === null) return false;
-  const movedInto = base.stations.filter(
-    (s) => stationHolding([s], was) === null,
-  );
-  return stationHolding(movedInto, object.geo) === null;
 }
 
 /** The station the document's object `id` stands in, if any. */
@@ -2056,29 +2082,49 @@ function stationMove(
   );
 }
 
-/** `moved`'s rule: the object at its new spot, keeping its station or
- *  seated anew (see `moved`), as one step; `before` for an unknown id. */
-function objectMove(
+/** A move's rule without "Move to a new station": the object at its new
+ *  spot in its station, or in `joinStation` (an answered change of
+ *  station, `move-question.ts`) - never another. A spot that station
+ *  cannot carry (`objectFits`), or a `joinStation` the tour lacks, changes
+ *  nothing, as does an unknown id. */
+function objectKept(
   before: TourDocumentState,
-  { object, what, newStationId, newStation, afterHome }: PlacedPayload,
+  object: TourObject,
+  what: string,
+  joinStation?: string,
 ): TourDocumentState {
   const home = homeOf(before, object.id);
-  const frame = before.stations.find((s) => s.id === home);
-  if (home === undefined || frame === undefined) return before;
-  const kept = { ...object, station: home };
-  if (
-    newStation !== true &&
-    keepsHome(before, frame, object) &&
-    objectFits(before, kept)
-  ) {
-    return putObject(before, kept, what);
-  }
+  if (home === undefined) return before;
+  const station = joinStation ?? home;
+  const kept = { ...object, station };
+  if (!objectFits(before, kept)) return before;
+  return station === home
+    ? putObject(before, kept, what)
+    : putObject(before, kept, what, before.stations, home);
+}
+
+/** `moved`'s rule: `objectKept`, or with `newStation` a station of its
+ *  own, as one step; `before` for an unknown id. */
+function objectMove(
+  before: TourDocumentState,
+  {
+    object,
+    what,
+    newStationId,
+    newStation,
+    afterHome,
+    joinStation,
+  }: PlacedPayload,
+): TourDocumentState {
+  if (newStation !== true) return objectKept(before, object, what, joinStation);
+  const home = homeOf(before, object.id);
+  if (home === undefined) return before;
   const seated = seatByRule(before, unseated(object), {
     newStationId,
-    ...(newStation === true ? { newStation } : {}),
+    newStation,
   });
   if (seated === null) return before;
-  if (newStation !== true || afterHome !== true) {
+  if (afterHome !== true) {
     return putObject(before, seated.object, what, seated.stations, home);
   }
   // The rule appends the new frame; it moves to right after the home.
@@ -2112,6 +2158,16 @@ export interface StationEdit {
   /** A text of a block the station's story shows, typed in the station's
    *  inspector. */
   readonly storyText?: StationStoryTextEdit;
+  /** How the story block `block` moves on: on a tap, or by itself after
+   *  `afterS` seconds. */
+  readonly storyAdvance?: StationStoryAdvanceEdit;
+}
+
+/** How a story block that is no character moves on. A character has his
+ *  own (`StationCharacterEdit`), since only he can wait for his line. */
+export interface StationStoryAdvanceEdit {
+  readonly block: string;
+  readonly advance: Extract<TourStepAdvance, { mode: "tap" | "auto" }>;
 }
 
 /** One text field (`field`, a key of the format's `TOUR_BLOCK_TEXT_RULES`
@@ -2149,7 +2205,8 @@ export type StationEditChange =
         | "description"
         | "image"
         | "character"
-        | "storyText";
+        | "storyText"
+        | "storyAdvance";
     }
   | { readonly kind: "missing" };
 
@@ -2260,6 +2317,25 @@ function withStoryText(
   return withStoryBlock(frame, next as unknown as TourStoryBlock);
 }
 
+/** `frame` with its story block `edit.block` moving on as `edit` says;
+ *  null when the block is none of its stories', or the wait is no number
+ *  of seconds above 0. */
+function withStoryAdvance(
+  frame: StationFrame,
+  edit: StationStoryAdvanceEdit,
+): StationFrame | null {
+  const block = tourStationStoryBlocks(frame).find((b) => b.id === edit.block);
+  if (block === undefined) return null;
+  const { advance } = edit;
+  if (
+    advance.mode === "auto" &&
+    !(Number.isFinite(advance.afterS) && advance.afterS > 0)
+  ) {
+    return null;
+  }
+  return withStoryBlock(frame, { ...block, advance });
+}
+
 /**
  * What `edit` would make of the station `stationId`, by the format's rules
  * (both a page and the reducer ask it): a title of at most 80 characters
@@ -2313,6 +2389,11 @@ export function stationEditChange(
     const texted = withStoryText(next, edit.storyText);
     if (texted === null) return { kind: "refused", reason: "storyText" };
     next = texted;
+  }
+  if (edit.storyAdvance !== undefined) {
+    const moved = withStoryAdvance(next, edit.storyAdvance);
+    if (moved === null) return { kind: "refused", reason: "storyAdvance" };
+    next = moved;
   }
   return sameJson(next, frame)
     ? { kind: "unchanged" }
@@ -2545,8 +2626,19 @@ function stationEdit(
   const { stationId } = payload;
   const change = stationEditChange(before, stationId, payload.edit);
   if (change.kind !== "edited") return before;
+  return frameReplaced(before, change.frame, payload.what);
+}
+
+/** The frame of `frame.id` replaced by it, as one step: what a station's
+ *  edit and each story edit come to. */
+function frameReplaced(
+  before: TourDocumentState,
+  frame: StationFrame,
+  what: string,
+): TourDocumentState {
+  const stationId = frame.id;
   const frames = framesHolding(before, stationId).map((s) =>
-    s.id === stationId ? change.frame : s,
+    s.id === stationId ? frame : s,
   );
   const stations = withoutEmptied({ ...before, stations: frames }, [stationId]);
   const listed = (list: readonly StationFrame[]) =>
@@ -2559,8 +2651,87 @@ function stationEdit(
       touched: { ...before.touched, stations: true },
       framesRecorded: true,
     },
-    payload.what,
+    what,
   );
+}
+
+/** The frame that holds the story `id`, or the story child `id`. */
+function frameOfStory(
+  state: TourDocumentState,
+  id: string,
+): StationFrame | undefined {
+  return allFrames(state).find((f) =>
+    tourStories(f).some(
+      (s) => s.id === id || s.children.some((c) => c.id === id),
+    ),
+  );
+}
+
+/** A story added at the end of the stories of `stationId`
+ *  (`storyAdded`), as one step. */
+function storyAdd(
+  before: TourDocumentState,
+  payload: { stationId: string; id: string; title: string; what: string },
+): TourDocumentState {
+  if (before.written === null || !freeObjectId(before, payload.id)) {
+    return before;
+  }
+  const frame = allFrames(before).find((f) => f.id === payload.stationId);
+  const story = newStory(payload.id, payload.title);
+  if (frame === undefined || story === null) return before;
+  return frameReplaced(before, withStory(frame, story), payload.what);
+}
+
+/** A story's title set (`storyRenamed`), as one step. */
+function storyRename(
+  before: TourDocumentState,
+  payload: { story: string; title: string; what: string },
+): TourDocumentState {
+  const frame = frameOfStory(before, payload.story);
+  if (before.written === null || frame === undefined) return before;
+  const next = withStoryTitle(frame, payload.story, payload.title);
+  if (next === null || sameJson(next, frame)) return before;
+  return frameReplaced(before, next, payload.what);
+}
+
+/** A story taken out with its children (`storyDeleted`), as one step. */
+function storyDelete(
+  before: TourDocumentState,
+  payload: { story: string; what: string },
+): TourDocumentState {
+  const frame = frameOfStory(before, payload.story);
+  if (before.written === null || frame === undefined) return before;
+  const next = withoutStory(frame, payload.story);
+  return next === null ? before : frameReplaced(before, next, payload.what);
+}
+
+/** A child at the end of a story (`storyChildAdded`), as one step. */
+function storyChildAdd(
+  before: TourDocumentState,
+  payload: { story: string; child: TourStoryChild; what: string },
+): TourDocumentState {
+  const frame = frameOfStory(before, payload.story);
+  if (
+    before.written === null ||
+    frame === undefined ||
+    !freeObjectId(before, payload.child.id)
+  ) {
+    return before;
+  }
+  const next = withStoryChild(frame, payload.story, payload.child);
+  return next === null ? before : frameReplaced(before, next, payload.what);
+}
+
+/** A child taken out of its story, the `goto`s naming it gone with it
+ *  (`storyChildDeleted`), as one step. */
+function storyChildDelete(
+  before: TourDocumentState,
+  payload: { child: string; what: string },
+): TourDocumentState {
+  const frame = frameOfStory(before, payload.child);
+  if (before.written === null || frame === undefined) return before;
+  const out = withoutStoryChild(frame, payload.child);
+  return out === null ? before : frameReplaced(before, out.frame, payload.what);
 }
 
 /** A station added at `at` (`stationAdded`), as one step: untitled (named
@@ -2866,11 +3037,7 @@ function applySettle(
     moved =
       change.kind === "station"
         ? stationMove(moved, change.stationId, change.geo, what)
-        : objectMove(moved, {
-            object: change.object,
-            what,
-            newStationId: change.newStationId,
-          });
+        : objectKept(moved, change.object, what);
   }
   const was = bookOf(before.codes);
   let book = was;
@@ -2909,6 +3076,12 @@ function applySettle(
  *  to write out (TS7056). */
 const narrationEdited = createAction<NarrationEditPayload>(
   "tourDocument/narrationEdited",
+);
+
+/** Files brought into the tour, before the edit that names them
+ *  (`assetsAdd`); beside the slice's actions for the same reason. */
+const assetsAdded = createAction<{ readonly assets: readonly TourAsset[] }>(
+  "tourDocument/assetsAdded",
 );
 
 const tourDocumentSlice = createSlice({
@@ -2977,18 +3150,16 @@ const tourDocumentSlice = createSlice({
       if (station === undefined) return before;
       return putObject(before, { ...object, station }, what);
     },
-    /** An object moved (on the map, or in AR). Within its station's own
-     *  found radius and the format's reach it keeps its station (whose
-     *  anchor stays put), and so does one within the radius and its
-     *  tolerance, or already outside it and moved no farther out
-     *  (`keepsHome`); otherwise the station rule
-     *  runs again (`seatByRule`): it joins the station holding its new
-     *  spot, or starts one there under the payload's `newStationId`, and
-     *  the station it left goes when that leaves it an empty automatic
-     *  one. With `newStation` it starts its own station in any case, and
-     *  with `afterHome` too that station stands right after the one it
-     *  left (in its place when that one goes), its order recorded for the
-     *  draft. An unknown id changes nothing. */
+    /** An object moved (on the map, in the 3D view, or in AR). It keeps
+     *  its station wherever it stands, in or out of the circle, and never
+     *  starts one by itself (`objectKept`): with `joinStation`, the
+     *  creator's answer, it changes to that station, and the station it
+     *  left goes when that leaves it an empty automatic one. A spot its
+     *  station cannot carry (the format's bound) changes nothing. With
+     *  `newStation` ("Move to a new station") it starts its own station,
+     *  and with `afterHome` too that station stands right after the one
+     *  it left (in its place when that one goes), its order recorded for
+     *  the draft. An unknown id changes nothing. */
     moved: {
       reducer(state, action: PayloadAction<PlacedPayload>) {
         return objectMove(plain(state), action.payload);
@@ -3043,6 +3214,55 @@ const tourDocumentSlice = createSlice({
       }>,
     ) {
       return stationEdit(plain(state), action.payload);
+    },
+    /** A new empty story at the end of a station's stories. Its id is
+     *  minted outside the reducer; a taken id, a refused title or an
+     *  unknown station changes nothing. */
+    storyAdded(
+      state,
+      action: PayloadAction<{
+        stationId: string;
+        id: string;
+        title: string;
+        what: string;
+      }>,
+    ) {
+      return storyAdd(plain(state), action.payload);
+    },
+    /** A story's title: one step; a refused or unchanged title, or an
+     *  unknown story, changes nothing. */
+    storyRenamed(
+      state,
+      action: PayloadAction<{ story: string; title: string; what: string }>,
+    ) {
+      return storyRename(plain(state), action.payload);
+    },
+    /** A story deleted with its children: one step. */
+    storyDeleted(
+      state,
+      action: PayloadAction<{ story: string; what: string }>,
+    ) {
+      return storyDelete(plain(state), action.payload);
+    },
+    /** A child at the end of a story: one step; its id is minted outside
+     *  the reducer, and a taken id changes nothing. */
+    storyChildAdded(
+      state,
+      action: PayloadAction<{
+        story: string;
+        child: TourStoryChild;
+        what: string;
+      }>,
+    ) {
+      return storyChildAdd(plain(state), action.payload);
+    },
+    /** A story's child deleted, the answers that named it going on to the
+     *  next child: one step. */
+    storyChildDeleted(
+      state,
+      action: PayloadAction<{ child: string; what: string }>,
+    ) {
+      return storyChildDelete(plain(state), action.payload);
     },
     /** A station added at `at`, untitled (the tree names it by its
      *  number), with the automatic radii and nothing in it: it keeps
@@ -3244,14 +3464,23 @@ const tourDocumentSlice = createSlice({
           const geo = poses.get(s.id);
           return geo === undefined ? s : { ...s, geo };
         });
-        const writtenAssets = new Set(
-          plainBefore.written.assets.map((a) => a.id),
+        // The files the draft kept, listed first: what follows may name
+        // them. A list the format would refuse lists none of them.
+        const addedAssets =
+          withAddedAssets(plainBefore, work.assets ?? []) ??
+          plainBefore.addedAssets;
+        const heldAssets = new Set(
+          [...plainBefore.written.assets, ...addedAssets].map((a) => a.id),
         );
         // A frame whose story needs an asset the tour lacks is left out:
         // the format refuses it, so every later save would fail. A picture
         // a long text body names is not needed (its alt text is read).
         const fits = (frame: StationFrame): boolean =>
-          stepRequiredAssetIds(frame).every((id) => writtenAssets.has(id));
+          stepRequiredAssetIds(frame).every((id) => heldAssets.has(id));
+        // An object likewise (a model whose file nothing holds); a
+        // captured photo's own picture comes with its record.
+        const objectHeld = (object: TourObject): boolean =>
+          objectAssetsHeld(object, heldAssets);
         const recorded = (work.frames ?? []).filter(fits);
         const replaced = new Map(recorded.map((f) => [f.id, f]));
         // A recorded frame the document carries is an edit beyond its pose:
@@ -3289,7 +3518,7 @@ const tourDocumentSlice = createSlice({
         for (const [i, given] of work.objects.entries()) {
           // The deletion of its id would hide it (as for a placement,
           // `canPlace`), and a station started for it would stand empty.
-          if (next.deleted.includes(given.id)) continue;
+          if (next.deleted.includes(given.id) || !objectHeld(given)) continue;
           const home = homeOf(next, given.id);
           left.push(home);
           const named = work.rerun === true ? undefined : given.station;
@@ -3326,6 +3555,7 @@ const tourDocumentSlice = createSlice({
             deletedStations: next.deletedStations,
             stations: withoutEmptied(next, left),
             handMade,
+            addedAssets,
             ...(work.stations === undefined ? {} : { stationsRecorded: true }),
             ...(recordsStations(work) ? { framesRecorded: true } : {}),
             ...(work.needsNoGps === undefined
@@ -3718,6 +3948,9 @@ const tourDocumentSlice = createSlice({
     builder.addCase(narrationEdited, (state, action) =>
       narrationEdit(plain(state), action.payload),
     );
+    builder.addCase(assetsAdded, (state, action) =>
+      assetsAdd(plain(state), action.payload.assets),
+    );
   },
 });
 
@@ -3726,6 +3959,7 @@ const tourDocumentSlice = createSlice({
 export const tourDocumentActions = {
   ...tourDocumentSlice.actions,
   narrationEdited,
+  assetsAdded,
 };
 
 export const tourDocumentReducer = tourDocumentSlice.reducer;
@@ -3741,6 +3975,11 @@ export const isDocumentEdit = isAnyOf(
   tourDocumentActions.deleted,
   tourDocumentActions.stationMoved,
   tourDocumentActions.stationEdited,
+  tourDocumentActions.storyAdded,
+  tourDocumentActions.storyRenamed,
+  tourDocumentActions.storyDeleted,
+  tourDocumentActions.storyChildAdded,
+  tourDocumentActions.storyChildDeleted,
   tourDocumentActions.stationAdded,
   tourDocumentActions.stationDeleted,
   tourDocumentActions.stationsReordered,

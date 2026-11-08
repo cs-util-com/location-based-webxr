@@ -102,7 +102,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   tour without them; station descriptions and card images the reader
   left out (format minor 2: a picture gone, or a value a hand edit broke)
   in a toast of their own, naming each station by its rail name
-  (`droppedStationFieldsLine`).
+  (`droppedStationFieldsLine`); and a block's text over its cap in a
+  third, naming each block (`droppedBlockFieldsLine`).
 - **A failure latched during the open** (`integrityFailure()` right after
   it) refuses the tour (E1 review #6).
 - **A late integrity failure** (`onIntegrityFailure`, the background
@@ -121,7 +122,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   on blur or Ctrl+Enter; an empty pin is refused in the phone's words),
   Move (the marker made draggable, Done applies the drop, Cancel or Esc
   puts it back; the card then says the height was kept), Delete with an
-  Undo toast for 8 s (the phone's hold, which holds autosave too). Codes and stations
+  Undo toast for 8 s (the phone's hold, which holds autosave too). The toast names
+  the item by its rail name, else by its own text, else by its kind's word
+  (`itemCalled`: "Deleted Video", never "Deleted the note" for a free video). Codes and stations
   stay read-only; the walk's debug camera captures are not items.
   The toast's Undo is the edit stack's (below): it runs while its delete
   is still the newest step (`editor.revision()` unchanged), also after a
@@ -742,11 +745,13 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   (`openedLevels`), and edits through the page's `edits`:
   - `commit` (`commitSceneEdit`) writes a finished gesture as one undo
     step (`applySceneEdit` of `scene-edits.ts`): it ends a delete's Undo
-    offer, refreshes the views and tells autosave, or toasts a refusal;
-    an item pose that gave the item another station is said in a toast
-    (`announceReseat`, `reseat-note.ts`), and a station the rule made
-    for it shows in the list (`showRowsOf`) and starts unlocked. The 2D map's drag (`finishMove`) says the
-    same on the card ("... - not saved yet.");
+    offer, refreshes the views and tells autosave, or toasts a refusal.
+    An item pose that crosses into another station's circle asks first,
+    in the blocking `confirmPausingFrames` (`askMove`, `move-question.ts`),
+    so no drag is ever half applied; the drop stays drawn behind the
+    question. What the write did to the item's station is said in a toast
+    (`moveNote`). The 2D map's drag (`finishMove`) asks the same and says
+    the same on the card ("... - not saved yet.");
   - `remove` (`deleteSelection`, the card's Delete too) deletes an item
     with the toast's Undo, or a station (`deleteStation`);
   - `duplicate` (`duplicateSelection`, Ctrl+D) copies an item or a
@@ -836,6 +841,19 @@ The shell's and the 3D view's `model` edits go through
 The dev hook adds `view3dModelParts()` and
 `view3dModelScreen(id, at)` for `editor3d-model.spec.js`.
 
+### Stories in the tree
+
+The tree's add makes a story (`addStoryTo`) or an entry (`addToStoryEntry`),
+selects it, says it in a toast, one step each. Deleting a story asks first
+(`confirmPausingFrames`, naming what goes with it: its entries, and its
+untitled automatic station by name when that goes too, `delete-questions.ts`
+`storyDeleteQuestion`), and its toast says when the station went with it;
+deleting a station asks the same way (`stationDeleteQuestion`: its stories
+by name, its free items by count), except when the tour refuses it (its last station), which
+is said instead; an entry goes without a
+question, the toast's Undo taking it back and saying how many answers no
+longer lead to it. Every delete shares `deleted`, the toast and its Undo.
+
 ## Tests
 
 The modules it wires have their own unit tests; the page is pinned by
@@ -906,4 +924,4 @@ on a desktop.
 
 ## Narration
 
-`writeNarrationEdit` runs a section's change through the session (`editNarration`), redraws, and says a refusal through the page's toast; the shell's `narration` command reads `EditorSession.narration`, and `voiceMaxBytes` hands the section the configured autosave cap (`autosaveMaxBytes`) as its voice file limit.
+`writeNarrationEdit` runs a section's change through the session (`editNarration`), redraws, and says a refusal through the page's toast, and a voice whose file the draft could not keep (`notBackedUp`) with `FILE_NOT_KEPT`; it then judges the autosave again (`judgeAutosave`: off once `nextSaveBytes()` is over the cap, on again once it is back under (an undo alone keeps the file in the save, since its redo names it; the edit that drops that redo frees it); asked by every edit through `tourChanged` (the test hook's `edited()` too), by an unchanged narration answer and after every save; never for a tour not written in place or one that `cannotSave`. `nextSaveBytes()` counts the opened file by its entries' sizes until a save, so a tour opened just over the cap by its zip overhead alone may turn autosave on at its first judged edit). The session's `fileReaders` are three's loader with `largestSide` (imported on first use) and `videoPosterOf`; `readContent` reads a file brought in from the session (`contentOf`) before the opened file; the shell's `narration` command reads `EditorSession.narration`, and `voiceMaxBytes` hands the section the configured autosave cap (`autosaveMaxBytes`) as its voice file limit.

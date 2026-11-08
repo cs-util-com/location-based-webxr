@@ -94,7 +94,8 @@ export const PLAY_KINDS = {
       slots.text.textContent = block.transcript ?? "";
       // The player does not start by itself: until the visitor starts
       // the clip a `lineEnd` step waits the transcript's reading time
-      // (as for one that cannot be read); once it plays, its end.
+      // (as for one that cannot be read), or with no transcript for the
+      // visitor to start it; once it plays, its end.
       const clip = host.clip();
       let clipShown = false;
       if (block.poster !== undefined) {

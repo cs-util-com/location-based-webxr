@@ -101,6 +101,7 @@ describe("editorView", () => {
   it("starts with nothing selected, nothing in flight and no walk", () => {
     expect(initialEditorViewState).toEqual({
       selected: null,
+      openStories: [],
       busy: false,
       moving: null,
       keepsWalk: false,
@@ -154,6 +155,7 @@ describe("editorView", () => {
     state = reduce(state, act.pickingChanged({ picking: true }));
     expect(state).toEqual({
       selected: "x",
+      openStories: [],
       busy: true,
       moving: null,
       keepsWalk: true,

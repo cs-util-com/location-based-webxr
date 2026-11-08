@@ -20,10 +20,12 @@ import {
   type LatLng,
   type OsmFeature,
 } from "../model/osm-feature.js";
+import { barrierColour } from "./barrier-colours.js";
 import { buildBarriers, type BarrierVolume } from "./barrier-volumes.js";
 import { buildBuildings, type BuildingVolume } from "./buildings.js";
 import {
   chunkMeshes,
+  linearChunkColours,
   meshCentroidEnu,
   type MeshChunk,
 } from "./chunk-meshes.js";
@@ -146,23 +148,33 @@ export function buildCity(
       roofVertexRanges: [],
       tags: tagsByKey.get(barrier.feature) ?? {},
       outline: undefined,
+      barrier: true,
     })),
   ];
-  const buildings = chunkMeshes(
-    drawn,
-    (item) => item.mesh,
-    (item) => meshCentroidEnu(item.mesh),
-    undefined,
-    (item) => buildingColour(item.tags, item.outline),
-    // The shell shader's phase, from the feature's own geometry, so it is
-    // stable across rebuilds (an index would re-shuffle on every refresh).
-    (item) => shellRandFor(item.mesh),
-    (item) => {
-      const colour = roofColour(item.tags, item.outline);
-      return colour === undefined
-        ? undefined
-        : { colour, vertexRanges: item.roofVertexRanges };
-    },
+  // Linear light, as three.js shades (plan 2026-11-07-2315 section 7). The
+  // whole chunk is converted, roof vertices included, so a tagged roof colour
+  // is in the same colour space as its walls.
+  const buildings = linearChunkColours(
+    chunkMeshes(
+      drawn,
+      (item) => item.mesh,
+      (item) => meshCentroidEnu(item.mesh),
+      undefined,
+      // A barrier takes its own muted colour, not a building's grey.
+      (item) =>
+        "barrier" in item
+          ? barrierColour(item.tags)
+          : buildingColour(item.tags, item.outline),
+      // The shell shader's phase, from the feature's own geometry, so it is
+      // stable across rebuilds (an index would re-shuffle on every refresh).
+      (item) => shellRandFor(item.mesh),
+      (item) => {
+        const colour = roofColour(item.tags, item.outline);
+        return colour === undefined
+          ? undefined
+          : { colour, vertexRanges: item.roofVertexRanges };
+      },
+    ),
   );
   const { roads, roadCount } = options.roads
     ? cityRoads(all, ground, inside, tagsByKey)

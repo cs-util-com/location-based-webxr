@@ -15,6 +15,9 @@ coloured.
 - `chunkMeshes(items, meshOf, positionOf, sizeM?, colourOf?, shellRandOf?, roofOf?): MeshChunk[]`
 - `interface RoofPaint` - `{ colour, vertexRanges }`, what `roofOf` returns
 - `meshCentroidEnu(mesh): EnuPoint`
+- `linearChunkColours(chunks): MeshChunk[]` — the chunks with their `colors`
+  converted from sRGB to linear light (new arrays; the input is untouched; a
+  chunk without colours passes through as is).
 
 ## Invariants & assumptions
 
@@ -59,6 +62,15 @@ coloured.
   flat-shaded faces with their own vertices; it is read only with `colourOf`,
   and `undefined` for an item leaves it one colour.
 
+- **`chunkMeshes` writes raw sRGB (byte / 255); `linearChunkColours` is the
+  one conversion** (city objects plan 2026-11-07-2315 section 7). Building
+  chunks go through it in `buildCity`, as the O1 and V2 labs built their
+  colours through `THREE.Color`; road chunks and OsmDemo's plates stay raw
+  (the O3 picture the owner chose drew roads raw; unifying plates, ground
+  and POI is filed in [the colour-space follow-up](../../docs/2026-11-08-0107-city-colour-space-unification-followup.md)).
+  The conversion reads each value back to its byte and looks it up in a
+  256-entry table, so it costs one rounding per channel, not a power.
+
 ## Examples
 
 ```ts
@@ -81,6 +93,8 @@ sign handling, the centroid's frame, and for colours: flat per feature, each
 feature's colour on its own vertices, no buffer when uncoloured, and the buffer
 sized to the merged vertex count; the roof colour on the non-vertical
 vertices of the roof ranges only (a vertex outside them never paints, an
-overlong range is clamped), and no change for a feature without one.
+overlong range is clamped), and no change for a feature without one;
+`linearChunkColours` converting known values (0x80 to 0.2158605), leaving its
+input untouched and passing a chunk without colours through.
 `s3db-parts.test.ts` checks the rule end to end through `buildCity`: onion,
 gable ends, a floating flat part's floor, dome.

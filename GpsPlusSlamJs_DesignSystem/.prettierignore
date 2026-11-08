@@ -1,0 +1,5 @@
+# Captured Overpass payloads stay minified: prettier resolves this file from its
+# cwd (the package), and the format stage's "labs/**/*" would otherwise
+# pretty-print a 750 KB one-liner into tens of thousands of lines. The same
+# trap is written up in GpsPlusSlamJs_Osm/.prettierignore.
+labs/city-look/fixtures/*.json

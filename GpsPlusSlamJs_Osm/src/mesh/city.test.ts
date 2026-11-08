@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import type { OsmFeature } from "../model/osm-feature.js";
 import { buildCity, cityGround } from "./city.js";
 import { enuFrameAt } from "./enu.js";
+import { barrierColour } from "./barrier-colours.js";
 import { buildingColour, roadColour } from "./feature-colours.js";
+import { srgbToLinear } from "./srgb.js";
 
 /**
  * `buildCity` is the city a renderer draws: buildings (with their parts and
@@ -75,6 +77,15 @@ const unpacked = (c: number) =>
     Math.fround(v / 255),
   );
 
+/**
+ * A packed 0xrrggbb as a BUILDING chunk stores it: linear light, 0-1 per
+ * channel (plan 2026-11-07-2315 section 7; roads stay raw, see `unpacked`).
+ */
+const linearUnpacked = (c: number) =>
+  [(c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff].map((v) =>
+    Math.fround(srgbToLinear(v / 255)),
+  );
+
 describe("buildCity", () => {
   it("builds the volumes, the barriers among them and the trees", () => {
     const city = buildCity([outline("#cc2200"), tower(), WALL, TREE], {
@@ -98,8 +109,45 @@ describe("buildCity", () => {
       buildCity([outline("#0044cc"), tower()], { frame }),
     );
     // Exactly the parent's colour (its type counts too, not only its tag).
-    expect(underRed).toEqual(unpacked(buildingColour(outline("#cc2200").tags)));
+    expect(underRed).toEqual(
+      linearUnpacked(buildingColour(outline("#cc2200").tags)),
+    );
     expect(underRed).not.toEqual(underBlue);
+  });
+
+  // WHY (city objects plan 2026-11-07-2315 M1): a barrier drawn among the
+  // buildings takes its own muted kind colour, not a building's grey; before,
+  // every wall, hedge and fence went through `buildingColour`.
+  it("colours a barrier by its kind, in linear light like the buildings", () => {
+    const city = buildCity([WALL], { frame });
+    expect(colours(city)).toEqual(linearUnpacked(barrierColour(WALL.tags)));
+    expect(barrierColour(WALL.tags)).not.toBe(buildingColour(WALL.tags));
+  });
+
+  // WHY (skeleton roof plan 2026-11-07-2130 section 9 item 3): the roof
+  // colour is painted inside `chunkMeshes` (`roofOf`), and the linear
+  // conversion must wrap that whole call, or the roofs stay raw sRGB next to
+  // linear walls and the two-toned city returns. The red and black roof tests
+  // cannot see this: 0 and 255 are the same in both spaces. Mid-grey 0x80 is
+  // 0.2158605 linear and 0.5019608 raw.
+  it("gives a mid-grey roof:colour to the roof vertices in linear light", () => {
+    const house: OsmFeature = {
+      ...outline("#000000"),
+      tags: {
+        building: "house",
+        "building:colour": "#000000",
+        "roof:colour": "#808080",
+      },
+    };
+    const values = buildCity([house], { frame }).buildings.flatMap((c) => [
+      ...(c.colors ?? []),
+    ]);
+    expect(values.length).toBeGreaterThan(0);
+    const grey = values.filter((v) => v !== 0);
+    // Some vertices are the roof (and only the roof is grey), and every one
+    // of them is linear.
+    expect(grey.length).toBeGreaterThan(0);
+    for (const v of grey) expect(v).toBeCloseTo(0.2158605, 6);
   });
 
   it("stands on the ground it is given", () => {

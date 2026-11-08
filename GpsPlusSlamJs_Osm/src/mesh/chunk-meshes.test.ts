@@ -4,6 +4,7 @@ import {
   CHUNK_SIZE_M,
   chunkKeyFor,
   chunkMeshes,
+  linearChunkColours,
   meshCentroidEnu,
   type RoofPaint,
 } from "./chunk-meshes.js";
@@ -423,5 +424,51 @@ describe("chunkMeshes shell attributes", () => {
     expect(chunk?.colors?.[0]).toBeCloseTo(1, 6);
     expect(chunk?.featureRand?.[0]).toBeCloseTo(0.5, 6);
     expect(chunk?.height01).toBeDefined();
+  });
+});
+
+describe("linearChunkColours", () => {
+  // WHY THIS MATTERS (city objects plan 2026-11-07-2315 section 7). three.js
+  // shades in linear light; the palettes are sRGB. The O1 and V2 labs built
+  // their colours through THREE.Color, which converts, while the library wrote
+  // raw bytes, so tagged buildings drew lighter and greyer than the lab's own
+  // houses beside them (the two-toned Heidelberg). Building chunks are
+  // converted here; road chunks stay raw, as the O3 picture the owner chose.
+  const chunked = chunkMeshes(
+    [cube(0, 0), cube(3, 0)],
+    (m) => m,
+    (m) => meshCentroidEnu(m),
+    undefined,
+    (m) => (m === undefined ? 0 : 0x80ff00),
+  );
+
+  it("converts every vertex colour from sRGB to linear light", () => {
+    const linear = linearChunkColours(chunked);
+    expect(linear).toHaveLength(chunked.length);
+    const c = linear[0]!.colors!;
+    // 0x80 is 0.2158605 linear, 0xff stays 1, 0 stays 0.
+    expect(c[0]).toBeCloseTo(0.2158605, 6);
+    expect(c[1]).toBeCloseTo(1, 6);
+    expect(c[2]).toBe(0);
+    expect(c.length).toBe(chunked[0]!.colors!.length);
+  });
+
+  it("leaves the input untouched and keeps every other field", () => {
+    // WHY: the chunk is shared with the counters and the shell attributes;
+    // converting in place would convert twice on a second call.
+    const before = chunked[0]!.colors![0];
+    const linear = linearChunkColours(chunked);
+    expect(chunked[0]!.colors![0]).toBe(before);
+    expect(linear[0]!.mesh).toBe(chunked[0]!.mesh);
+    expect(linear[0]!.key).toBe(chunked[0]!.key);
+  });
+
+  it("passes a chunk without colours through", () => {
+    const bare = chunkMeshes(
+      [cube(0, 0)],
+      (m) => m,
+      (m) => meshCentroidEnu(m),
+    );
+    expect(linearChunkColours(bare)[0]).toBe(bare[0]);
   });
 });

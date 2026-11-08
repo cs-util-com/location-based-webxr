@@ -37,11 +37,10 @@ far the visitor is from each offered station. Plan:
   `deps.characters`) reads the sheet instead, the portrait view the sheet
   and his image; a model in its `stage` or
   `placed` view - a reached placed model stands in the world from its
-  step on, B2b; never a video nor its poster, K4 review R3; the list is `itemAssets` of `item-card.ts`), then the files of
+  step on, B2b; never a video's file but its poster, the picture minted when the video was brought in; the list is `itemAssets` of `item-card.ts`), then the files of
   the station's free models, each in a world view (B2b, G2 follow-up 9: drawn with the
   station, so read ahead with it), then a free sound's file and a free character's
-  image, model and voice (he stands from arrival). Never a free video's file or
-  poster. Free pictures are read on their own.
+  image, model and voice (he stands from arrival). A free video's poster, never its file. Free pictures are read on their own.
 - `decodeDivisor(size)` - the divisor that brings a figure of this size
   within `MAX_DECODE_SIDE_PX` (a size is required: K4 review R17 removed
   the "no size: 1" case).
@@ -120,7 +119,7 @@ const blob = await prefetch.load(asset.path); // a hit when it was prefetched
   never over the cap or unmeasured (R2); the asset list, the decode
   divisor, the
   radius, one read at a time, joining and hitting, a story-only read not
-  kept, a failed read not kept, never a video nor its poster (R3), a
+  kept, a failed read not kept, never a video's file but its poster, a
   figure only in its stage view, a model in its stage or placed view
   (B2b) and a voice in either, offline
   not retried for

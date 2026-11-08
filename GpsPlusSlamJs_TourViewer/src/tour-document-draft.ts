@@ -319,6 +319,8 @@ function codesRecord(
 export interface TourDocumentDraft extends DraftObjectWrites {
   saveSettings(settings: TourSettingsRecord): Promise<boolean>;
   saveCodes?(codes: TourCodesRecord): Promise<boolean>;
+  /** Whether the draft holds a file brought in (absent: every one). */
+  holdsFile?(id: string): boolean;
 }
 
 /** The settings record as the document holds it now. */
@@ -360,28 +362,46 @@ interface Holders {
  * `object` as a draft can keep it: a long text whose narration needs what
  * only this page holds - a voice brought in here, a read-along text set
  * here and written nowhere yet - keeps the narration the written file
- * gives it (none when it has none). A draft keeps records, never a
- * voice's bytes or a timing's text: a reload offering that narration
+ * gives it (none when it has none). A draft keeps the records and the
+ * files brought in (`addedAssets`, written before the records naming
+ * them), never a timing's text: a reload offering a narration naming one
  * would name a file the tour lacks, and every save would fail.
  */
 export function draftableObject(
   object: TourObject,
   state: TourDocumentState,
+  holdsFile: (id: string) => boolean = () => true,
 ): TourObject {
   if (object.kind !== "longText" || object.narration === undefined) {
     return object;
   }
   const { audio, timing } = object.narration;
-  const assets = new Set((state.written?.assets ?? []).map((a) => a.id));
+  const assets = new Set([
+    ...(state.written?.assets ?? []).map((a) => a.id),
+    ...state.addedAssets.map((a) => a.id).filter(holdsFile),
+  ]);
   const timingHeld =
     timing === undefined ||
     !Object.hasOwn(state.timingsWritten, timing) ||
     state.timingsWritten[timing] !== null;
   if (assets.has(audio) && timingHeld) return object;
+  return withFiledNarration(object, state.written);
+}
+
+/** `object` with the narration `file` gives it in place of its own (none
+ *  when the file gives none): a long text whose narration names what is
+ *  held nowhere keeps its words. Any other object is returned as it is. */
+export function withFiledNarration(
+  object: TourObject,
+  file: TourManifest | null,
+): TourObject {
+  if (object.kind !== "longText" || object.narration === undefined) {
+    return object;
+  }
   const filed =
-    state.written === null
+    file === null
       ? undefined
-      : tourObjects(state.written).find((o) => o.id === object.id);
+      : tourObjects(file).find((o) => o.id === object.id);
   const { narration: _unheld, ...rest } = object;
   return filed?.kind === "longText" && filed.narration !== undefined
     ? { ...rest, narration: filed.narration }
@@ -478,7 +498,12 @@ export function followDocument(
       standing(after, id),
       pictureOf,
       holds,
-      (object) => draftableObject(object, after),
+      (object) =>
+        draftableObject(
+          object,
+          after,
+          (asset) => draft.holdsFile?.(asset) ?? true,
+        ),
     );
   }
   const was = settingsRecord(before);

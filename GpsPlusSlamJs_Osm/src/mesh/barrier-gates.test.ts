@@ -579,30 +579,32 @@ describe("splitAtGates", () => {
 
   it("emits no fragment too small to be a barrier, between two gates just over a gap apart", () => {
     // THE CASE THE MERGE TEST ABOVE DOES NOT REACH, because that one uses gates
-    // CLOSER than one gap. Gates 5.2 m apart give cuts [-2.5, 2.5] and
-    // [2.7, 7.7], which do not overlap — so a naive filter emits the 0.2 m of
-    // wall between them: a visible stub floating in the middle of a 7.7 m
-    // opening, and a ~0.2 x 0.5 m quad in the index that a step between two cell
-    // centres can still hit. That is precisely the "drawn and unusable" outcome
-    // GATE_GAP_M is bounded from below to prevent, arriving from the other side.
+    // CLOSER than one gap. Gates GATE_GAP_M + 0.2 m apart give cuts that do
+    // not overlap — so a naive filter emits the 0.2 m of wall between them: a
+    // visible stub floating in the middle of the opening, and a ~0.2 x 0.5 m
+    // quad in the index that a step between two cell centres can still hit.
+    // That is precisely the "drawn and unusable" outcome GATE_GAP_M is bounded
+    // from below to prevent, arriving from the other side.
+    //
+    // THE SPACING IS STATED IN TERMS OF THE GAP because a fixed one goes stale:
+    // this test once used 5.2 m, written for a 5 m gap, and at any wider gap
+    // those two cuts simply merge, so it no longer reached the case it names.
+    const second = GATE_GAP_M + 0.2;
     const gates = gateOpenings([
       node(1, north(0), { barrier: "gate" }),
-      node(2, north(5.2), { barrier: "gate" }),
+      node(2, north(second), { barrier: "gate" }),
     ]);
     const wall2: readonly LatLng[] = [
       north(0),
-      north(5.2),
+      north(second),
       north(50),
       north(100),
     ];
 
-    for (const part of splitAtGates(
-      wall2,
-      gates,
-      DEFAULT_BARRIER_THICKNESS_M,
-    )) {
-      expect(lengthM(part)).toBeGreaterThan(DEFAULT_BARRIER_THICKNESS_M);
-    }
+    const parts = splitAtGates(wall2, gates, DEFAULT_BARRIER_THICKNESS_M);
+    // Exactly the piece beyond the second cut survives; the stub is gone.
+    expect(parts).toHaveLength(1);
+    expect(lengthM(parts[0]!)).toBeCloseTo(100 - second - GATE_GAP_M / 2, 1);
   });
 
   it("never emits a line with fewer than two points", () => {

@@ -116,6 +116,70 @@ describe("treeObjects", () => {
   it("draws nothing for no trees", () => {
     expect(treeObjects([])).toEqual([]);
   });
+
+  it("colours each instance from its placement, converted from sRGB", () => {
+    // WHY THIS MATTERS. The class colour reaches the screen only through
+    // `instanceColor`; three.js shades in linear space, so a raw sRGB value
+    // there would draw every tree lighter and greyer than the palette.
+    const trees = treeObjects(city.trees);
+    const broad = trees.find((t) => t.count === 2)!;
+    expect(broad.instanceColor).not.toBeNull();
+    const placement = city.trees.find((t) => t.variant === "broadleaved")!;
+    const expected = new THREE.Color().setHex(
+      placement.colour,
+      THREE.SRGBColorSpace,
+    );
+    const got = new THREE.Color();
+    broad.getColorAt(0, got);
+    expect(got.r).toBeCloseTo(expected.r, 5);
+    expect(got.g).toBeCloseTo(expected.g, 5);
+    expect(got.b).toBeCloseTo(expected.b, 5);
+  });
+
+  it("draws the crown-only forms on a white, vertex-coloured, flat material", () => {
+    // WHY THIS MATTERS. The forms are the O1 look the owner chose: a broad
+    // and a neutral hull of 20 triangles, a needle cone of 10, each darker
+    // at the foot (0.86) than at the top (1.04), on a white material so the
+    // instance colour is not tinted. An untagged tree is the neutral form,
+    // not today's fir cone (DEC-R4-10).
+    const untagged: OsmFeature = {
+      type: "node",
+      id: 13,
+      tags: { natural: "tree" },
+      position: { lat: 50.941, lng: 6.959 },
+    };
+    const all = treeObjects(
+      buildCity([tree(10, "broadleaved"), tree(12, "needleleaved"), untagged], {
+        frame,
+      }).trees,
+    );
+    expect(all).toHaveLength(3);
+    const triangles = all.map(
+      (t) => t.geometry.getAttribute("position").count / 3,
+    );
+    expect(triangles.sort((a, b) => a - b)).toEqual([10, 20, 20]);
+    const geometries = new Set(all.map((t) => t.geometry));
+    expect(geometries.size).toBe(3);
+    for (const t of all) {
+      const material = t.material as THREE.MeshStandardMaterial;
+      expect(material.vertexColors).toBe(true);
+      expect(material.color.getHex()).toBe(0xffffff);
+      expect(material.flatShading).toBe(true);
+      expect(material.roughness).toBeCloseTo(0.9, 9);
+      const position = t.geometry.getAttribute("position");
+      const colour = t.geometry.getAttribute("color");
+      for (let i = 0; i < position.count; i++) {
+        expect(colour.getX(i)).toBeCloseTo(0.86 + 0.18 * position.getY(i), 5);
+      }
+      const box = new THREE.Box3().setFromBufferAttribute(
+        position as THREE.BufferAttribute,
+      );
+      // Unit height from the ground, unit diameter at most.
+      expect(box.min.y).toBeCloseTo(0, 6);
+      expect(box.max.y).toBeCloseTo(1, 6);
+      expect(box.max.x).toBeLessThanOrEqual(0.5 + 1e-6);
+    }
+  });
 });
 
 describe("disposeCityObjects", () => {

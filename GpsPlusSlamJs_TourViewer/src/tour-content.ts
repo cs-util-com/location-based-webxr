@@ -61,6 +61,7 @@ import {
   tourStories,
 } from "gps-plus-slam-app-framework/ar/tour-story";
 
+import { isWorldKind, type WorldKind } from "./kinds/edit-kinds.js";
 import { STATION_RADIUS_M, type StationPoint } from "./station-assign.js";
 
 /**
@@ -122,26 +123,19 @@ export function automaticStationFrame(
   };
 }
 
-/** A block the creator pages draw and edit in the world: a short text
- *  drawn as a pin, a picture, a long text on its reading stand or a placed
- *  model. */
-export type WorldBlock = Extract<
-  TourBlock,
-  { readonly kind: "shortText" | "picture" | "longText" | "model" }
->;
+/** A block the creator pages draw and edit in the world: one whose kind's
+ *  row says so (`KIND_EDIT` `inWorld`). */
+export type WorldBlock = Extract<TourBlock, { readonly kind: WorldKind }>;
 
 /** A station's free blocks (`tourFreeBlocks`) the creator pages draw and
- *  edit. A free video, sound or character is not among them: those pages
- *  have no drawing for one yet, and a write keeps it (`withTourContent`). */
+ *  edit: those of a kind its row draws in the world. Any other (today a
+ *  free video, sound or character) is not among them: those pages have no
+ *  drawing for one yet, and a write keeps it (`withTourContent`). */
 export function worldBlocks(
   station: Pick<TourStation, "children">,
 ): WorldBlock[] {
-  return tourFreeBlocks(station).filter(
-    (b): b is WorldBlock =>
-      b.kind === "shortText" ||
-      b.kind === "picture" ||
-      b.kind === "longText" ||
-      b.kind === "model",
+  return tourFreeBlocks(station).filter((b): b is WorldBlock =>
+    isWorldKind(b.kind),
   );
 }
 
@@ -352,8 +346,9 @@ export function stepRequiredAssetIds(
 
 /**
  * The ids of the assets `manifest` uses: every block's of every station,
- * every station's card image and the cover (each of the last two names an
- * image asset).
+ * every station's card image, the cover (each of the last two names an
+ * image asset), and every declared character's image and frames sheet,
+ * which the declaration names whether or not a block shows him.
  */
 function referencedAssetIds(manifest: TourManifest): Set<string> {
   return new Set([
@@ -362,6 +357,9 @@ function referencedAssetIds(manifest: TourManifest): Set<string> {
       ...(station.image === undefined ? [] : [station.image]),
     ]),
     ...(manifest.cover === undefined ? [] : [manifest.cover]),
+    ...(manifest.characters ?? []).flatMap((c) =>
+      c.frames === undefined ? [c.image] : [c.image, c.frames],
+    ),
   ]);
 }
 

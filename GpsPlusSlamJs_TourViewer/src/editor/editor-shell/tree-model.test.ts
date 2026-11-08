@@ -19,6 +19,7 @@ import { initialEditorViewState } from "../editor-view.js";
 import {
   buildTree,
   stationGroups,
+  stationContents,
   stationImagePath,
   treeFoldOf,
   type TreeInput,
@@ -200,7 +201,7 @@ describe("buildTree", () => {
 // Why: a click in the tree extends a selection along a station's listed
 // items; an item left out of its group is one the click rule cannot reach.
 describe("a station's group for the click rule", () => {
-  it("lists a station's free items, then the blocks of its stories", () => {
+  it("nests each story as a group of its children, after the free items", () => {
     const told = {
       ...station("a", {}, [PIN]),
     };
@@ -215,17 +216,189 @@ describe("a station's group for the click rule", () => {
       },
     ]);
     expect(groups).toEqual([
-      { id: "a", children: ["pin-1", "line-1", "line-2"] },
+      {
+        id: "a",
+        children: ["pin-1"],
+        groups: [
+          { id: "first", selection: "story:first", children: ["line-1"] },
+          { id: "second", selection: "story:second", children: ["line-2"] },
+        ],
+      },
+    ]);
+  });
+});
+
+const CHOICE = {
+  id: "choice-1",
+  kind: "choice",
+  prompt: "Which way?",
+  options: [
+    { id: "o1", label: "Left", goto: "line-1" },
+    { id: "o2", label: "Right" },
+  ],
+} as const;
+const QUIZ = {
+  id: "quiz-1",
+  kind: "quiz",
+  question: "How old is it?",
+  points: 1,
+  answer: {
+    type: "single",
+    options: [
+      { id: "o1", label: "Old" },
+      { id: "o2", label: "New" },
+    ],
+    correct: "o1",
+  },
+} as const;
+const VIDEO = {
+  id: "video-1",
+  kind: "video",
+  view: "card",
+  video: "clip",
+  transcript: "",
+  widthM: 1,
+  pose: POSE,
+} as const;
+
+/** A station with a story of a line, a choice and a quiz, an empty story
+ *  and a free pin and video. */
+function storied(view: Partial<TreeInput["view"]> = {}, query?: string) {
+  return buildTree({
+    ...input({
+      stations: [
+        station("a", {
+          children: [
+            storyOf(
+              "first",
+              [{ ...STORY_LINE, id: "line-1" }, CHOICE, QUIZ],
+              "The legend",
+            ),
+            storyOf("empty", [], "Empty one"),
+            PIN,
+            VIDEO,
+          ],
+        }),
+      ],
+    }),
+    view: { ...initialEditorViewState, ...view },
+    ...(query === undefined ? {} : { query }),
+  });
+}
+
+// Why: a story is a folder in the tree now, no longer a hidden part of the
+// station. What a row says, what it holds and how it folds is what the
+// creator works with; a story's entry that no row lists is one the creator
+// cannot reach, and a free video the free host shows must be listed too.
+describe("a station's story folders", () => {
+  it("lists stories first, each with its count and its entries in order", () => {
+    const [card] = storied({ openStories: ["first"] }).cards;
+    expect(
+      card?.folders.map((f) => [f.selection, f.title, f.open, f.count]),
+    ).toEqual([
+      ["story:first", "The legend", true, 3],
+      ["story:empty", "Empty one", false, 0],
+    ]);
+    expect(
+      card?.folders[0]?.children.map((c) => [c.kind, c.title, c.place]),
+    ).toEqual([
+      ["pin", "Hello", 1],
+      ["choice", "Choice: Which way?", 2],
+      ["quiz", "Quiz: How old is it?", 3],
+    ]);
+  });
+
+  it("lists every free block, a video among them, without a place", () => {
+    const [card] = storied().cards;
+    expect(card?.children.map((c) => [c.kind, c.title, c.place])).toEqual([
+      ["pin", "Fountain <b>1612</b>", undefined],
+      ["video", "Video", undefined],
+    ]);
+  });
+
+  it("counts entries and free items in the station's count", () => {
+    expect(storied().cards[0]?.count).toBe(5);
+  });
+
+  it("marks a selected story, a selected entry, and the station as context", () => {
+    const folder = storied({ selected: "story:first" });
+    expect(folder.cards[0]?.folders[0]?.selected).toBe(true);
+    expect(folder.cards[0]?.context).toBe(true);
+    const entry = storied({ selected: "choice-1", openStories: ["first"] });
+    const first = entry.cards[0]?.folders[0];
+    expect([first?.selected, first?.context]).toEqual([false, true]);
+    expect(first?.children.filter((c) => c.selected).map((c) => c.id)).toEqual([
+      "choice-1",
+    ]);
+    expect(entry.cards[0]?.context).toBe(true);
+  });
+
+  it("reports the open folders in the tree's folds", () => {
+    expect(
+      treeFoldOf(storied({ openStories: ["first", "gone"] })).openStories,
+    ).toEqual(["first"]);
+  });
+
+  it("finds a story by its title, with its entries as they were folded", () => {
+    const tree = storied({}, "legend");
+    const folder = tree.cards[0]?.folders[0];
+    expect(tree.cards[0]?.folders).toHaveLength(1);
+    expect([folder?.open, folder?.searchOpened]).toEqual([false, false]);
+    expect(folder?.children).toHaveLength(3);
+  });
+
+  it("finds an entry, listing just it with its folder unfolded", () => {
+    const tree = buildTreeSearch("which way");
+    const folder = tree.cards[0]?.folders[0];
+    expect([folder?.open, folder?.searchOpened]).toEqual([true, true]);
+    expect(folder?.children.map((c) => c.id)).toEqual(["choice-1"]);
+    const folded = buildTreeSearch("which way", ["story:first"]);
+    expect(folded.cards[0]?.folders[0]?.open).toBe(false);
+  });
+});
+
+function buildTreeSearch(query: string, searchFolded?: readonly string[]) {
+  const stations = [
+    station("a", {
+      children: [
+        storyOf(
+          "first",
+          [{ ...STORY_LINE, id: "line-1" }, CHOICE],
+          "The legend",
+        ),
+      ],
+    }),
+  ];
+  return buildTree(
+    input({
+      stations,
+      query,
+      ...(searchFolded === undefined ? {} : { searchFolded }),
+    }),
+  );
+}
+
+// Why: the inspector's Contents is the same list as the tree's, stories
+// first; a row naming no selection is a dead row.
+describe("stationContents", () => {
+  it("lists stories, by their selection, then the free items", () => {
+    const contents = stationContents(
+      station("a", {
+        children: [storyOf("first", [], "The legend"), PIN],
+      }),
+    );
+    expect(contents.map((c) => [c.id, c.kind, c.title])).toEqual([
+      ["story:first", "story", "The legend"],
+      ["pin-1", "pin", "Fountain <b>1612</b>"],
     ]);
   });
 });
 
 // Why: the explorer row says what a folded station holds (its count),
 // flags a station that may be moved (its lock is off: every station
-// starts locked), and the story folders a later format brings slot in
-// before the free items - none exist yet, so none is listed.
+// starts locked).
 describe("the explorer row's facts", () => {
-  it("counts a station's items, flags an unlocked one, and lists no folders yet", () => {
+  it("counts a station's items and flags an unlocked one", () => {
     const tree = buildTree(
       input({ view: { ...initialEditorViewState, unlockedStations: ["b"] } }),
     );
@@ -353,8 +526,8 @@ describe("stationGroups", () => {
     expect(
       stationGroups([station("a", {}, [PIN, PHOTO]), station("b")]),
     ).toEqual([
-      { id: "a", children: [PIN.id, PHOTO.id] },
-      { id: "b", children: [] },
+      { id: "a", children: [PIN.id, PHOTO.id], groups: [] },
+      { id: "b", children: [], groups: [] },
     ]);
   });
 });

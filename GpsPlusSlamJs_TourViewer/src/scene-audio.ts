@@ -74,6 +74,9 @@ export function createSceneAudio(deps: {
   let clipEnded: (() => void) | null = null;
   /** A refused unlock may be tried again on the next tap. */
   let unlockState: "no" | "trying" | "yes" = "no";
+  /** How often `pause` held a clip: a resume's AbortError counts as held
+   *  only when a pause came after that resume. */
+  let holds = 0;
 
   const el = (): AudioElementLike => (element ??= deps.createElement());
 
@@ -137,15 +140,21 @@ export function createSceneAudio(deps: {
     },
     stop,
     pause() {
-      if (clipEnded !== null) el().pause();
+      if (clipEnded === null) return;
+      holds += 1;
+      el().pause();
     },
     resume() {
       if (clipEnded === null) return;
       const ended = clipEnded;
+      const heldBefore = holds;
       el()
         .play()
         .catch((error: unknown) => {
-          if (!isPlayAbort(error) && clipEnded === ended) ended();
+          // Our own pause cut it short: the clip is held, not refused. Any
+          // other AbortError leaves nothing to carry it on, so it ends.
+          const held = isPlayAbort(error) && holds !== heldBefore;
+          if (!held && clipEnded === ended) ended();
         });
     },
     durationMs: lengthMs,

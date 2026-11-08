@@ -5,6 +5,7 @@ import { buildBuildings, type BuildingVolume } from "./buildings.js";
 import { buildCity } from "./city.js";
 import { ENU_METRES_PER_DEG_LAT, enuFrameAt } from "./enu.js";
 import type { OsmFeature } from "../model/osm-feature.js";
+import { srgbToLinear } from "./srgb.js";
 import { parseOverpassJson } from "../model/overpass-parser.js";
 import { loadSite } from "../test-utils/load-fixtures.js";
 import { CORPUS_SITES } from "../places/sites.js";
@@ -498,8 +499,9 @@ describe("colour of a building:part", () => {
     // face is roof, while gable ends (vertical, in the roof block) and the
     // floor of a floating part (outside it) keep the wall colour.
     const RED = "1,0,0";
-    // The colour buffer is a Float32Array, so the channel is the float32 value.
-    const G = Math.fround(0x80 / 255);
+    // The colour buffer is a Float32Array, so the channel is the float32 value;
+    // building chunks are linear light (city objects plan 2026-11-07-2315 s7).
+    const G = Math.fround(srgbToLinear(0x80 / 255));
     const GREY = `${G},${G},${G}`;
 
     /** "r,g,b" per vertex of the one chunk, with its y and normal y. */

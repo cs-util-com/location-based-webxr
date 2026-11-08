@@ -97,9 +97,10 @@ reducers' building blocks, so a page cannot apply them differently.
   the visit's sightings are the page's, in `creatorCodes`
   (`creator-codes-slice.ts`).
 
-Blobs are never state: a photo's picture lives in the page's side table
-keyed by id (`editor-session.ts` `pictures`), handed to the draft by the
-listener (`tour-document-draft.ts`) and to the rebuild by the page.
+Blobs are never state: every file's bytes - a photo's picture, a file
+brought in - live in the session's one files table keyed by asset id
+(`editor-session.ts` `files`), handed to the draft and to the rebuild by
+the session.
 
 ## Actions (`tourDocumentActions`)
 
@@ -116,7 +117,7 @@ listener (`tour-document-draft.ts`) and to the rebuild by the page.
   the page's, and the save holding it lets it go once it sees its tour
   gone (as the page's own flag behaved).
 - `placed` / `edited` / `moved({ object, what, newStationId?, newStation?,
-afterHome? })`
+afterHome?, joinStation? })`
   - one entry per id (`upsertPlaced`): a new object, a pin's text, a move
     on the map or in AR. Three names so a log reads as what happened. None
     changes anything for a pending object put again with the same content
@@ -152,22 +153,16 @@ afterHome? })`
     another's radius.
   - `edited`: keeps the object's station (`objectFits`); an object naming
     none, of an id the document lacks, changes nothing.
-  - `moved`: within its station's own found radius (and the format's
-    reach) the object keeps its station (whose anchor stays put); beyond
-    it the rule runs again - the station holding the new spot, or a new
-    one there - so no move is ever too far, and none is silently dropped.
-    The object also keeps its station (`keepsHome`, by distance
-    `keepsHomeDistance` of `keeps-home.ts`) when it stands within the
-    radius plus a tolerance of 0.5 m (a typed offset, an AR settle), or
-    no farther from the anchor than it stood before the move (an object
-    outside the radius already: the radius shrank, the station moved) -
-    in both cases only when the move takes it into no other station's
-    radius; a station whose radius already held the old spot (overlapping
-    radii) is not one it moved into, so a nudge toward its own anchor
-    keeps it. The bound is the circle, never the previous place, so no
-    run of nudges carries an object outward without limit. A radius
+  - `moved` (`objectKept`): a move never starts a station. The object
+    keeps its station (whose anchor stays put), in or out of the circle,
+    or changes to `joinStation`, the creator's answer to the question of
+    `move-question.ts`. A spot past that station's reach
+    (`objectFits`, the format's bound) or a `joinStation` the document
+    lacks changes nothing: the caller refuses and says so. Only
+    `newStation: true`, "Move to a new station", starts one. A radius
     lowered under its objects moves none of them: they stay in the
-    station, outside the circle, until moved. The station it left goes in the same step when that leaves
+    station, outside the circle, until moved. An object outside its circle
+    is listed by Problems (`tour-problems.ts`). The station it left goes in the same step when that leaves
     it an EMPTY AUTOMATIC station: no object names it, and nothing of its
     own (`keepsItself` of `tour-content.ts`: a title, a story, a
     non-blank description, a card image naming an image asset) keeps it.
@@ -188,7 +183,7 @@ afterHome? })`
 - `settleApplied({ changes, codes, hand, what })` - a settle as ONE step
   (plan M3b, Q-D): `changes` (`SettleChange[]`, in the settle's order:
   `{ kind: "station", stationId, geo }` by `stationMoved`'s rule, `{ kind:
-"object", object, newStationId }` by `moved`'s) applied one after the
+"object", object }` as a `moved` without an answer: it keeps its station) applied one after the
   other, each reading the document as the ones before left it; then
   `codes` saved (`withSaved`) and the hand named after them winning
   (`withHand`). The step keeps each code whose saved text it changed with
@@ -277,6 +272,12 @@ largeTour?, cannotSave? })`.
 - The 3D editor's station edits, each ONE step (refused, changing nothing,
   before an open, for an unknown station or item, or for a value the
   format refuses - the page asks the exported guard first and says why):
+  - `storyAdded`, `storyRenamed`, `storyDeleted`, `storyChildAdded`,
+    `storyChildDeleted` (which prunes the `goto`s that led to the child) - one
+    history entry each and a draft write; the maths is `tour-story-edit.ts`,
+    and `story-commands.property.test.ts` holds that after any sequence and
+    its undos the writer accepts the document and a draft reload equals it.
+    `stationEdited` with `storyAdvance` sets how a story's block moves on.
   - `stationEdited({ stationId, edit, what })` - a station's title, found
     radius (`isStationRadius`, 2 m to 300 m inclusive; the preload radius
     follows at twice it, `preloadRadiusM`), description or card image
@@ -790,10 +791,19 @@ store.dispatch(tourDocumentActions.undone());
 
 ## Narration (read-along timings and voices)
 
-- State: `timings` (the read-along texts set here, by archive entry, `null` for none), `timingsWritten` (what the file last written holds for each), `voices` (audio assets brought in here; `manifestNow` lists the ones the written tour does not).
-- `narrationEdited({ object, timing?, voice?, what })`: a free long text's narration changed as ONE step - its voice, whether it names its entry (`tourTimingEntryName(id)`), that entry's text.
-  - Refused (state unchanged) when anything but the narration differs from the object as the document holds it, when a voice is not audio, reuses a held id or is not the narration's audio, when the narration names an audio the tour does not hold, or when the entry is not the object's own.
+- State: `timings` (the read-along texts set here, by archive entry, `null` for none), `timingsWritten` (what the file last written holds for each). A voice is a file brought in (`addedAssets`, below), listed before the step naming it.
+- `narrationEdited({ object, timing?, what })`: a free long text's narration changed as ONE step - its voice, whether it names its entry (`tourTimingEntryName(id)`), that entry's text.
+  - Refused (state unchanged) when anything but the narration differs from the object as the document holds it, when the narration names an audio that is not an audio asset of the written tour or of `addedAssets`, or when the entry is not the object's own.
   - An undo brings back the entry's text the step started from.
   - It is a separate `createAction` handled in `extraReducers` and merged into `tourDocumentActions`: one more case reducer on the slice made the slice's type too long for the compiler to write out (TS7056).
 - `timingChanges(state)`: the entries set here that the written file does not hold, for an object not otherwise unsaved. `changeCount` counts each changed object once, so a new voice and its timing on one text count once.
 - A duplicated narrated text keeps its voice but not the original's timing entry (`copiedNarration`).
+
+## Files brought in (`addedAssets`)
+
+- State: `addedAssets` - the assets of the files brought in here (a voice; a picture, a video, a sound or a model), each `content/<id>.<ext>` of its kind, the id the file's sha256. `manifestNow` lists the ones the written tour does not.
+- `assetsAdded({ assets })`: lists them. No undo step and no change of its own (`isDocumentEdit` is false): the edit naming a file is the step, and an undo of it keeps the file listed, so a redo, or an undo after a save, still finds it. The bytes ride along until the tour closes; the rebuild leaves out of a save any asset nothing (and no history step) names.
+  - Refused as a whole (state unchanged) when a path is not `content/<id>.<ext>` or its extension is not of the asset's kind; an asset the written tour or the list holds already is skipped.
+- `objectAssetsHeld(object, held)`: whether every file an object needs (`tourBlockAssetIds(object, true)`) is in `held`; a captured photo carries its own.
+- `restored({ ..., assets? })`: a draft's files are listed with its records, and a record naming a file held nowhere (the written tour, `addedAssets`, the draft's files) is left out - the format refuses it, and every later save would fail.
+- Tests: `tour-document-assets.test.ts`.

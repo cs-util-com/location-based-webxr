@@ -30,17 +30,23 @@ deselected: only the first click of a quick run on one card counts.
     - selected, same card, quick: none;
     - selected, otherwise: deselect;
     - not selected, otherwise: select.
-- `TreeGroup` - `{ id, children: string[] }`, a group of the tree (the
-  app's; the Tour Viewer makes them with its `tree-model.ts`).
+- `TreeGroup` - `{ id, selection?, children: string[], groups? }`, a group
+  of the tree (the app's; the Tour Viewer makes them with its
+  `tree-model.ts`). `groups` nest; a nested group is selected by its own
+  `selection`, because the prefix names only the top level.
 - `treeClickPlan(outcome, id, groups, { groupPrefix })` -> `{ select,
-unfold, fold, ungrouped, fly }`, or null for `none`; `groupPrefix`
-  (required, the kit has none of its own) is how the app's selection
-  names a group, and a missing or empty one throws `RangeError`:
-  - select a group (`<groupPrefix><id>`): unfold it, fly;
-  - select a child: unfold its group, fly;
+unfold, fold, toggle, ungrouped, fly }`, or null for `none`; `unfold` is a
+  list, outermost first; `groupPrefix` (required, the kit has none of its
+  own) is how the app's selection names a top-level group, and a missing or
+  empty one throws `RangeError`:
+  - select a top-level group (`<groupPrefix><id>`): unfold it, fly;
+  - select a child, at any depth: unfold the whole chain to it, fly;
+  - select a nested group: unfold what holds it, leave its own fold, fly;
   - select anything else: `ungrouped` (the app opens where such
     selections live), fly;
-  - deselect: select none, fold a group, no flight.
+  - deselect a nested group: the selection stays and its fold flips
+    (`toggle`), no flight;
+  - deselect anything else: select none, fold a top-level group, no flight.
 
 ## Invariants & assumptions
 
@@ -72,7 +78,8 @@ card it just deselected (a double click on a selected card must not
 reselect it), another card at once, a click with no usable time, the
 property that any run of clicks follows the rule's table (an oracle
 written apart from the code; it found the reselect case against the old
-rule), each plan (group, child, ungrouped, deselect, none), a group prefix of
+rule), each plan (group, child, ungrouped, deselect, none), nested groups
+(the chain at any depth as a property, a nested group's own fold), a group prefix of
 the app's own, an empty one refused and a missing one refused (and a
 type error). The page's
 use: `playwright-tests/editor3d-shell.spec.js`.

@@ -2,23 +2,28 @@
  * The 3D view's tree dock, drawn from its model (`tree-model.ts`) as a
  * file explorer draws one: a row per station (its grip, its fold arrow,
  * its number and name, a mark when it is unlocked, its count when
- * folded), unfolded its picture, its story folders and its items, then
- * the codes and the layer chips.
+ * folded), unfolded its picture, its story folders (a story's fold arrow,
+ * its name, its count and its "+", and when open its numbered entries) and
+ * its free items, then the codes and the layer chips.
  * Everything from the tour is set as text, never as markup. Every control
- * is a button (a card's row, its fold arrow, an item's and a code's
- * row, a header, a chip), none inside another, so the tree works from the
+ * is a button (a card's row, its fold arrow, a folder's arrow and name, an
+ * item's and a code's row, a header, a chip), none inside another, so the
+ * tree works from the
  * keyboard; a draw keeps the focus on the control that had it. The clicks
  * are the shell's (`editor-shell.ts`), read from the drawn elements' data:
  *
  * - `data-select` - a card's row, an item's or a code's row: the
  *   page's selection id it selects;
  * - `data-unfold` - a card's fold button: the station's id;
+ * - `data-folder` - a story's fold arrow: the story's id;
  * - `data-section` - a section's header: the section it folds;
  * - `data-layer` - a chip: the layer it turns on or off;
  * - `data-drag` - a card's grip (no button): the station it drags
  *   (`tree-drag.ts`); none while a search runs - the grip is `off`;
  * - `data-add` - a card's "+", `data-fill` - its empty line's "Add
- *   content": the station the type menu adds to (`tree-add-menu.ts`).
+ *   content": the station the type menu adds to (`tree-add-menu.ts`);
+ * - `data-storyadd` - a story's "+", `data-storyfill` - its empty line's
+ *   "Add the first entry": the story the type menu adds to.
  *
  * @see shell-tree.ts.md
  */
@@ -50,7 +55,17 @@ function button(className: string): HTMLButtonElement {
 }
 
 /** The data attributes a control of the tree is known by across draws. */
-const KEYS = ["select", "unfold", "section", "layer", "add", "fill"] as const;
+const KEYS = [
+  "select",
+  "unfold",
+  "folder",
+  "section",
+  "layer",
+  "add",
+  "fill",
+  "storyadd",
+  "storyfill",
+] as const;
 
 type ControlKey = (typeof KEYS)[number];
 
@@ -96,8 +111,8 @@ function sectionHeader(
   return head;
 }
 
-/** An item's row: its kind's icon and its name; `deep` inside a story
- *  folder. */
+/** An item's row: its kind's icon, its name and, for a story's entry, its
+ *  place; `deep` inside a story folder. */
 function childOf(child: TreeChild, deep: boolean): HTMLButtonElement {
   const row = button(deep ? "kid deep" : "kid");
   row.classList.toggle("sel", child.selected);
@@ -106,25 +121,53 @@ function childOf(child: TreeChild, deep: boolean): HTMLButtonElement {
   const icon = el("span", `ic ${child.kind}`);
   icon.append(shellIcon(child.kind));
   row.append(icon, el("span", "nm", child.title));
+  if (child.place !== undefined) {
+    row.append(el("span", "meta", String(child.place)));
+  }
   return row;
 }
 
-/** A story folder's row (no button: no command acts on it yet) and, when
- *  it is open, its entries under it. */
+/** A story's row (its arrow, its name, its count, its "+": none inside
+ *  another) and, when it is open, its entries under it, or the line that
+ *  says it has none. */
 function folderOf(folder: TreeFolder): HTMLElement[] {
   const row = el("div", "folder");
-  row.dataset["folder"] = folder.id;
+  row.classList.toggle("sel", folder.selected);
+  row.classList.toggle("ctx", folder.context);
+  row.dataset["story"] = folder.id;
+  const fold = button("tw");
+  fold.dataset["folder"] = folder.id;
+  fold.setAttribute("aria-expanded", String(folder.open));
+  fold.title = folder.open ? "Hide the entries" : "Show the entries";
+  fold.setAttribute("aria-label", fold.title);
+  fold.append(shellIcon(folder.open ? "down" : "right"));
+  const pick = button("fname");
+  pick.dataset["select"] = folder.selection;
+  pick.title = folder.title;
+  pick.setAttribute("aria-pressed", String(folder.selected));
   const icon = el("span", "ic story");
-  icon.append(shellIcon("folder"));
-  row.append(
-    icon,
-    el("span", "nm", folder.title),
-    el("span", "meta", String(folder.children.length)),
-  );
-  return [
-    row,
-    ...(folder.open ? folder.children.map((c) => childOf(c, true)) : []),
-  ];
+  icon.append(shellIcon(folder.open ? "storyOpen" : "story"));
+  pick.append(icon, el("span", "nm", folder.title));
+  const add = button("ib add");
+  add.dataset["storyadd"] = folder.id;
+  add.title = `Add an entry to the story "${folder.title}"`;
+  add.setAttribute("aria-label", add.title);
+  add.setAttribute("aria-haspopup", "menu");
+  add.setAttribute("aria-expanded", "false");
+  add.append(shellIcon("plus"));
+  row.append(fold, pick, el("span", "meta", String(folder.count)), add);
+  if (!folder.open) return [row];
+  if (folder.children.length > 0 || folder.count > 0) {
+    return [row, ...folder.children.map((c) => childOf(c, true))];
+  }
+  const empty = el("div", "emptyrow deep", "No entries yet. ");
+  const fill = button("fill");
+  fill.dataset["storyfill"] = folder.id;
+  fill.textContent = "Add the first entry";
+  fill.setAttribute("aria-label", add.title);
+  fill.setAttribute("aria-haspopup", "menu");
+  empty.append(fill);
+  return [row, empty];
 }
 
 function cardOf(
