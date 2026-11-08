@@ -40,7 +40,7 @@ export interface TourFileLimits {
  * smaller: its bytes are held, and decoded, in memory. PROVISIONAL: set by
  * a phone memory measurement when the first real optimizer lands.
  */
-export const ASSET_CEILING_BYTES = 512 * 1024 * 1024;
+const ASSET_CEILING_BYTES = 512 * 1024 * 1024;
 
 /**
  * The absolute pixel ceiling for a picture taken over the pixel cap
@@ -48,7 +48,7 @@ export const ASSET_CEILING_BYTES = 512 * 1024 * 1024;
  * headers and decodes no phone survives (a 48 MP photo fits). PROVISIONAL,
  * like `ASSET_CEILING_BYTES`.
  */
-export const ASSET_CEILING_PIXELS = 8192 * 8192;
+const ASSET_CEILING_PIXELS = 8192 * 8192;
 
 /** A kind as a refusal names it. */
 const KIND_WORDS: Readonly<Record<TourAssetKind, string>> = {

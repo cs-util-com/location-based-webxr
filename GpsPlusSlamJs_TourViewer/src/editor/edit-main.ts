@@ -1994,6 +1994,8 @@ function setBusy(on: boolean, text: string): void {
 /** The opened file's hold and target, and the written bytes' session, go
  *  with the tour they belong to. */
 function leaveFile(): void {
+  // The shelf's jobs belong to the tour that leaves.
+  editor?.shelf.close();
   const was = lock;
   lock = null;
   was?.release();

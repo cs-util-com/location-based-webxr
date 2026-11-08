@@ -31,8 +31,9 @@ editor session keeps what it returns in its one files table
   - `measureModel?(blob)` - a model's largest side; 0 (or not finite)
     refuses it as showing nothing, a rejection as unreadable.
   - `shrinks?(kind)` - whether a file of that kind over the caps may come
-    in to be made smaller. Absent (production until the first real
-    optimizer): none may, and the refusal is the plain cap's. Present
+    in to be made smaller. The editor session passes it from the shelf's
+    optimizer table (`optimizerShrinks`), false for every kind in this
+    build. Absent: none may, and the refusal is the plain cap's. Present
     but false for the kind: the refusal adds that this kind cannot be made
     smaller here yet. Either way never above the absolute ceilings:
     `ASSET_CEILING_BYTES` (512 MiB, `limits.ceilingBytes` overrides it) and

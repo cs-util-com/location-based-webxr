@@ -399,7 +399,7 @@ changes`; a label is cut at 40 characters (`truncated`, split-safe), a label-les
 
 ## Files over the caps
 
-`fileReaders.limits` (default `TOUR_FILE_LIMITS`) and `fileReaders.shrinks` reach `readTourFile`; the session keeps each added file's name by asset id and hands the save handle `maxFileBytes` (entry cap less margin) and `fileNameOf`, so a save that would write a file still over the cap is refused with words naming it. Nothing passes `shrinks` in production until a real optimizer exists, so today a file over the cap is refused at the drop as before.
+`fileReaders.limits` (default `TOUR_FILE_LIMITS`) and `fileReaders.shrinks` reach `readTourFile`; the session keeps each added file's name by asset id and hands the save handle `maxFileBytes` (entry cap less margin) and `fileNameOf`, so a save that would write a file still over the cap is refused with words naming it. `shrinks` is derived from the shelf's optimizer table (`optimizerShrinks`, set before `fileReaders` so a test may still override it); every row is null in this build, so today a file over the cap is refused at the drop as before.
 
 ## Tests
 
@@ -497,3 +497,11 @@ examples).
 - A placed picture embeds its `imageAsset` record, which keeps the old path after a swap (the written tour is right: a reader inflates the record from the manifest by id). `contentOf` resolves by id, and a copy of a photo (`copiedObject`) takes the record `addedAssets` holds, so its entry gets the new file's extension. A preview keys its cache on `assetSwaps`, not on the inline path.
 - A swap the second check refuses after the draft wrote it (the open was replaced, or the asset left the tour) is taken back out of the draft: the draft gets the record that stood before. Not when the document already lists the same record (the same swap landed meanwhile): the draft agrees then.
 - Tests: `editor-session-swap.test.ts`.
+
+## The asset shelf
+
+- `shelf: AssetShelf` (`asset-shelf/asset-shelf.ts`), created per session on the session's store. Input `optimizers?` (default `ASSET_OPTIMIZERS`) and `optimizerHost?` (default a lazy Worker host, `createOptimizerHost(spawnOptimizerWorker)`, which spawns nothing until a row runs).
+- Creating the session clears the shelf and adds every asset of the written tour as `opened`, idle, sized from its archive entry: an opened tour's files are made smaller only on `shelf.optimizeTour()`.
+- `addFile` puts a NEW file on the shelf as `added` (a file already in the tour is not added twice).
+- The shelf reads bytes from the files table, else the opened archive's entry; it swaps through `swapAsset`; its cap is the entry cap less margin, as the save's.
+- Tests: `asset-shelf/asset-shelf.test.ts` (the runner), `editor-session-shelf.test.ts` (the wiring), `editor-session-shelf.property.test.ts` (any order of voice, job ends, use the original, retry, save, undo and redo: every save writes each listed asset at its path with bytes of its type, nothing unlisted).

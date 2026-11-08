@@ -125,6 +125,21 @@ import {
   TOUR_FILE_LIMITS,
   type TourFileContext,
 } from "./tour-files.js";
+import {
+  ASSET_OPTIMIZERS,
+  optimizerShrinks,
+  type OptimizerHost,
+  type OptimizerTable,
+} from "./asset-shelf/asset-optimizers.js";
+import {
+  createAssetShelf,
+  type AssetShelf,
+} from "./asset-shelf/asset-shelf.js";
+import { assetShelfActions } from "../asset-shelf-slice.js";
+import {
+  createOptimizerHost,
+  spawnOptimizerWorker,
+} from "./asset-shelf/optimizer-client.js";
 import { newStory, withoutStoryChild } from "../tour-story-edit.js";
 import { newStoryEntry } from "./new-pin.js";
 
@@ -308,7 +323,7 @@ interface EditorRestore {
 
 /** A smaller file for an asset (`swapAsset`): its bytes, its path
  *  (`content/<id>.<ext>`) and, for an image, its new size in pixels. */
-export interface AssetSwap {
+interface AssetSwap {
   readonly blob: Blob;
   readonly path: string;
   readonly width?: number;
@@ -317,7 +332,7 @@ export interface AssetSwap {
 
 /** A smaller file now stands in for the asset's (`swapAsset`).
  *  `backedUp` false: the draft could not keep it (the page says so). */
-export interface EditorSwapped {
+interface EditorSwapped {
   readonly kind: "swapped";
   readonly backedUp: boolean;
 }
@@ -503,6 +518,10 @@ interface CoverChoice {
 }
 
 export interface EditorSession {
+  /** The asset shelf of this open (`asset-shelf.ts`): every file brought
+   *  in is queued there to be made smaller, an opened tour's files wait
+   *  for "Optimize this tour". The page closes it with the tour. */
+  readonly shelf: AssetShelf;
   /** The tour as it stands with the edits, for the rail and the map. */
   model(): EditorModel;
   /** Edits and deletions not yet in a saved file, by content: a text
@@ -840,6 +859,13 @@ export function createEditorSession(input: {
     TourFileContext,
     "measureModel" | "posterOf" | "limits" | "shrinks"
   >;
+  /** The shelf's optimizers, one row per kind (default: this build's,
+   *  `ASSET_OPTIMIZERS`); a kind with one may bring a file over the caps
+   *  in (`shrinks`, unless `fileReaders` says otherwise). */
+  readonly optimizers?: OptimizerTable;
+  /** The Worker the optimizers hand their heavy part to (default: the
+   *  module Worker, spawned on the first run that needs it). */
+  readonly optimizerHost?: OptimizerHost;
 }): EditorSession {
   const { session, levels } = input;
   const store: TourViewerStore = input.store ?? createTourViewerStore();
@@ -1342,6 +1368,7 @@ export function createEditorSession(input: {
       tourBytes: tourBytes(),
       known: knownFile,
       ...(kinds === undefined ? {} : { kinds }),
+      shrinks: optimizerShrinks(optimizers),
       ...input.fileReaders,
     });
     if (read.kind === "refused") return read;
@@ -1367,6 +1394,11 @@ export function createEditorSession(input: {
         }),
       );
     }
+    // On the shelf once listed, so its swap finds the record (a minted
+    // poster is small already).
+    if (read.isNew) {
+      shelf.add(read.asset, fileName, read.blob.size, "added");
+    }
     return {
       kind: "added",
       asset: read.asset,
@@ -1375,7 +1407,46 @@ export function createEditorSession(input: {
     };
   }
 
+  const optimizers = input.optimizers ?? ASSET_OPTIMIZERS;
+  const shelf = createAssetShelf({
+    store,
+    optimizers,
+    host: input.optimizerHost ?? createOptimizerHost(spawnOptimizerWorker),
+    maxFileBytes: limits.maxEntryBytes - limits.marginBytes,
+    bytesOf: async (id) => {
+      const held = files.get(id);
+      if (held !== undefined) return held;
+      const record = own().written?.assets.find((a) => a.id === id);
+      return record === undefined
+        ? undefined
+        : session.loadContentEntry(record.path);
+    },
+    recordOf: (id) => {
+      const state = own();
+      return (
+        state.addedAssets.find((a) => a.id === id) ??
+        state.written?.assets.find((a) => a.id === id)
+      );
+    },
+    swap: (id, file) => swapAsset(id, file),
+  });
+  // The opened tour's files wait on the shelf for "Optimize this tour".
+  store.dispatch(assetShelfActions.cleared());
+  {
+    const wrap = session.manifestWrap;
+    const sizes = new Map(session.entries.map((e) => [e.filename, e.size]));
+    for (const asset of own().written?.assets ?? []) {
+      shelf.add(
+        asset,
+        asset.path,
+        sizes.get(`${wrap}${asset.path}`) ?? 0,
+        "opened",
+      );
+    }
+  }
+
   return {
+    shelf,
     addFile,
     swapAsset,
     addedBytes,

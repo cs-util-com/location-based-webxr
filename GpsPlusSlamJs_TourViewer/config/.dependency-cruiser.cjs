@@ -143,6 +143,9 @@ module.exports = {
           // Read-only helper, permanent: the AR placement's world view
           // (`tourObjectsOf`).
           "^src/creator-placement\\.ts$",
+          // Read-only helper: the asset shelf's places in use (its
+          // selector counts the steps naming each asset).
+          "^src/asset-shelf-slice\\.ts$",
           // The draft's own modules, permanent: its storage (`withBaseKey`,
           // the draft's types) and the desktop's draft store (the offer
           // rules, and `hostedObjects` to tell what the opened file holds).

@@ -12,6 +12,7 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
 
 ## Behaviour
 
+- Leaving a file (`leaveFile`) closes the session's asset shelf first, so no optimization job of the old tour lands in the next one.
 - Every slider of the page takes the framework's scroll guard at load, so a
   vertical swipe on the radius slider scrolls its panel on a phone.
 
