@@ -112,6 +112,10 @@ const EXEMPT = new Map([
     'design prototype in the inspiration gallery, wired to nothing',
   ],
   [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/model-lod-1/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
     'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-1-narrated-text/index.html',
     'design prototype in the inspiration gallery, wired to nothing',
   ],
