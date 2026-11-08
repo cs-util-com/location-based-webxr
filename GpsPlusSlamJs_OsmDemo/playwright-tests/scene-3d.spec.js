@@ -1153,7 +1153,11 @@ async function underTheWorldSteps(page) {
     // it is the one thing that DOES look like ground from below — and since W9
     // the plates, the roads and the region slabs are on by default and lie flat
     // on the same surface, which is the same problem three more times over.
-    for (const layer of ["cells", "plates", "roads", "areas", "poi"]) {
+    // THE WOODS TOO (objects M2a): their invented trees stand on the ground
+    // and are not what this step asks about; with them on, the rotation's
+    // settle poll never saw two equal frames and the step timed out, while
+    // the same test passed on the commit before the woods layer existed.
+    for (const layer of ["cells", "plates", "roads", "areas", "poi", "woods"]) {
       const box = page.locator(`#layer-${layer}`);
       if (await box.isChecked()) await box.uncheck();
     }
@@ -1486,7 +1490,11 @@ test.describe("the time of day", () => {
    *
    * **The wrong response to a red here is lowering the bound.** It is either
    * fixing the backdrop or re-judging the decision that made it so (the
-   * natural-light EV in `atmosphere-rig.ts` is exactly that, measured).
+   * natural-light EV in `atmosphere-rig.ts` is exactly that, measured). The
+   * one re-judgement so far changed the SCENE, not the bound: the owner
+   * relaxed the rule for wooded scenes (2026-11-08, city objects plan
+   * 2026-11-07-2315 section 17), so the check runs with the cosmetic woods
+   * off and the bound stays 5 (see `expectHeatRampLoudest`).
    *
    * **AND THE CITY MUST STAY VISIBLE, because the margin alone rewards
    * darkness** (real-sun plan 2026-09-23-2149 §10.1). A darker backdrop always
@@ -1538,6 +1546,14 @@ test.describe("the time of day", () => {
  */
 async function expectHeatRampLoudest(page, label, approvedLit, share = 0.5) {
   const DEFAULT_MODE = "cpu-slope";
+  // THE SCENE THIS RULE IS ABOUT HAS NO COSMETIC WOODS. The owner relaxed
+  // DEC-R4-5 for wooded scenes ("Regel lockern", 2026-11-08, city objects plan
+  // 2026-11-07-2315 section 17): where a wood is mapped, the invented crowns
+  // may outshine the heat grid. The fixture maps a wood, so the check runs with
+  // the `woods` layer off; the bound itself is unchanged. The woods stay on by
+  // default, so they are switched back on before returning.
+  const woods = page.locator("#layer-woods");
+  await woods.uncheck();
   // The lit city first, heat grid off, in the default ground mode.
   await page.locator("#layer-cells").uncheck();
   await settledChroma(page);
@@ -1550,6 +1566,7 @@ async function expectHeatRampLoudest(page, label, approvedLit, share = 0.5) {
   expect(plain, `plain ground at ${label}`).toBeGreaterThan(5);
   expect(byDefault, `${DEFAULT_MODE} at ${label}`).toBeGreaterThan(5);
   expect(lit, `lit surfaces at ${label}`).toBeGreaterThan(approvedLit * share);
+  await woods.check();
 }
 
 /**
