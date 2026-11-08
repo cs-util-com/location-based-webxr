@@ -27,7 +27,7 @@ import { stationBlocks, storyOf, told } from "./tour-fixture.mjs";
 
 /**
  * Why these tests matter: a character of a station's story is set in the
- * 3D editor's station inspector - his view, how the step showing him
+ * 3D editor's inspector of his entry - his view, how the step showing him
  * moves on, the heading he faces. Only the page shows the chips, the
  * shell, the session and the save working together: each change must be
  * one undo step, be saved as the format reads it, and come back pressed
@@ -105,7 +105,9 @@ async function characterTour() {
 }
 
 /**
- * The editor with `zip` open in the 3D view and its station selected.
+ * The editor with `zip` open in the 3D view and Wendel's entry selected:
+ * his settings are in his entry's inspector, reached through the
+ * station's card and the story's folder in the tree.
  * @param {import("@playwright/test").Page} page
  * @param {Buffer} zip
  */
@@ -129,12 +131,22 @@ async function openAndSelect(page, zip) {
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
     timeout: 60_000,
   });
-  await page.locator('#tree-body .card[data-station="gate"] .pick').click();
+  const card = page.locator('#tree-body .card[data-station="gate"]');
+  for (const fold of [
+    card.locator(".head .tw"),
+    card.locator('[data-folder="wendel-story"]'),
+  ]) {
+    if ((await fold.getAttribute("aria-expanded")) !== "true") {
+      await fold.click();
+    }
+    await expect(fold).toHaveAttribute("aria-expanded", "true");
+  }
+  await card.locator('[data-select="w1"]').click();
   await expect
     .poll(() =>
       page.evaluate(() => /** @type {any} */ (window).__tourEditor.selected()),
     )
-    .toBe("station:gate");
+    .toBe("w1");
 }
 
 /** @param {import("@playwright/test").Page} page */
@@ -182,7 +194,7 @@ async function savedTour(zip) {
   return JSON.parse(text);
 }
 
-test("a story character's view, advance and facing set in the station's inspector are one step each, saved, and open again pressed", async ({
+test("a story character's view, advance and facing set in his entry's inspector are one step each, saved, and open again pressed", async ({
   page,
   context,
 }) => {

@@ -121,6 +121,12 @@ export interface GlobeSurface {
    * placed.
    */
   readonly sun: THREE.DirectionalLight;
+  /**
+   * The sun above the air: the scene's scale for whatever carries the air
+   * itself (the sky fill here, the clouds). `sun` may be the sun on the
+   * ground, red or gone at a low sun.
+   */
+  readonly sunExposure: { value: number };
   /** The uniforms every tile's shader reads (the maps, the tuning). */
   readonly surfaceUniforms: GlobeSurfaceUniforms;
   /**
@@ -393,6 +399,7 @@ export function createGlobeSurface(
   const template = new THREE.MeshStandardMaterial({ roughness: 0.9 });
   applyGlobeSurface(template, surfaceUniforms, patch);
   const sun = new THREE.DirectionalLight(0xffffff, GLOBE_SURFACE.sunIntensity);
+  const sunExposure = { value: GLOBE_SURFACE.sunIntensity };
   // NOT inside tiles.group: that group updates its children's world
   // matrices only when its own changes, so a light there keeps the matrix
   // it was made with, sits on its target and lights nothing (measured).
@@ -438,10 +445,9 @@ export function createGlobeSurface(
    * group, identity in the lab, a rotation once phase 5 re-centres.
    */
   const syncSun = () => {
-    // The sky fill's light, by role: this light's colour times intensity.
-    surfaceUniforms.uSunRadiance.value
-      .set(sun.color.r, sun.color.g, sun.color.b)
-      .multiplyScalar(sun.intensity);
+    // The sky fill's light, by role: the sun above the air, since the fill
+    // has its own fall with the sun.
+    surfaceUniforms.uSunRadiance.value.setScalar(sunExposure.value);
     sun.position
       .copy(surfaceUniforms.uSunEcef.value)
       .transformDirection(tiles.group.matrix);
@@ -496,6 +502,7 @@ export function createGlobeSurface(
     overlay,
     options,
     sun,
+    sunExposure,
     surfaceUniforms,
     template,
     setSun,

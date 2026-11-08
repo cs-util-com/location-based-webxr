@@ -25,6 +25,7 @@ import {
   SKIP_BROWSER_ENV,
   UNIT_RELATED_ENV,
   RELATED_UNIT_SCRIPT,
+  CHANGED_FILES_SCRIPT,
   DEPENDENT_TRIM_ENV,
   DEPENDENT_TRIM_STAGES,
   dependentTrimMode,
@@ -583,6 +584,49 @@ describe('gateBaseCommand (related unit tests in the fast gate only)', () => {
   it('points at the wrapper that exists', () => {
     expect(RELATED_UNIT_SCRIPT).toBe('../scripts/test-changed/related-unit.mjs');
     expect(existsSync(path.join(WORKSPACE_ROOT, 'scripts/test-changed/related-unit.mjs'))).toBe(true);
+  });
+});
+
+// Why this test matters: in the per-commit fast gate a package's format
+// stage checks only the changed files (changed-files-stage.mjs), and the
+// package-wide run moves to the milestone run, a package's own gate and CI.
+// If the wrapper leaked into those, a package-wide check would silently
+// shrink to the changed files there too. Lint is never narrowed: its typed
+// rules read across files and its --max-warnings budgets are package-wide,
+// and a dependent's diff narrowed its lint to no file at all (r1125 review).
+describe('gateBaseCommand (format on the changed files in the fast gate only)', () => {
+  const FAST = { [SKIP_BROWSER_ENV]: '1', [UNIT_RELATED_ENV]: 'HEAD' };
+  const stages = PROJECTS.flatMap((project) =>
+    project.stages
+      .filter((stage) => stage.name === 'format')
+      .map((stage) => ({ project: project.name, stage }))
+  );
+  const lintStages = PROJECTS.flatMap((project) =>
+    project.stages.filter((stage) => stage.name === 'lint').map((stage) => ({ project: project.name, stage }))
+  );
+
+  it('finds the format and lint stages (so the checks are not vacuous)', () => {
+    expect(stages.length).toBeGreaterThanOrEqual(10);
+    expect(lintStages.length).toBeGreaterThanOrEqual(10);
+  });
+
+  it.each(lintStages)('$project runs its whole lint stage in the fast gate', ({ stage }) => {
+    expect(gateBaseCommand(stage, FAST)).toBe(stage.command);
+  });
+
+  it.each(stages)('$project wraps its $stage.name stage in the fast gate', ({ stage }) => {
+    expect(gateBaseCommand(stage, FAST)).toBe(`node ${CHANGED_FILES_SCRIPT} ${stage.command}`);
+  });
+
+  it.each(stages)('$project keeps its $stage.name stage whole everywhere else', ({ stage }) => {
+    expect(gateBaseCommand(stage, { [SKIP_BROWSER_ENV]: '1' })).toBe(stage.command);
+    expect(gateBaseCommand(stage, { [UNIT_RELATED_ENV]: 'HEAD' })).toBe(stage.command);
+    expect(gateBaseCommand(stage, { ...FAST, GITHUB_ACTIONS: 'true' })).not.toContain(CHANGED_FILES_SCRIPT);
+  });
+
+  it('points at the wrapper that exists', () => {
+    expect(CHANGED_FILES_SCRIPT).toBe('../scripts/test-changed/changed-files-stage.mjs');
+    expect(existsSync(path.join(WORKSPACE_ROOT, 'scripts/test-changed/changed-files-stage.mjs'))).toBe(true);
   });
 });
 

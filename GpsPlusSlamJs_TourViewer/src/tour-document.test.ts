@@ -616,6 +616,23 @@ function place(
   );
 }
 
+/** The object `id` moved to `geo`, the creator having agreed to `station`. */
+function joinAt(
+  state: TourDocumentState,
+  id: string,
+  geo: TourObject["geo"],
+  station: string,
+): TourDocumentState {
+  return reduce(
+    state,
+    act.moved({
+      object: { ...objectOf(state, id), geo },
+      what: "m",
+      joinStation: station,
+    }),
+  );
+}
+
 function moveTo(
   state: TourDocumentState,
   id: string,
@@ -728,35 +745,33 @@ describe("tour document: every object belongs to a station", () => {
     expect(stationOf(state, "p")).toBe("t");
   });
 
-  it("a move within its station's radius keeps it, even nearer another's anchor; out of it, it joins the station holding its new spot or starts one", () => {
+  it("a move keeps its station, in or out of the circle, even inside another's, and starts none", () => {
     let state = tourWith(stationAt("s", 0), stationAt("t", 30));
     state = place(state, pinAt("p", spot(0)));
     state = place(state, pinAt("q", spot(30)));
     // 20 m north: 10 m from t's anchor, but still inside s's 25 m.
     state = moveTo(state, "p", spot(20));
     expect(stationOf(state, "p")).toBe("s");
-    // 26 m north: out of s (by 1 m), inside t.
+    // 26 m north: out of s (by 1 m), inside t: only an answer changes it.
     state = moveTo(state, "p", spot(26));
-    expect(stationOf(state, "p")).toBe("t");
-    // Far away: a new station anchored there.
+    expect(stationOf(state, "p")).toBe("s");
+    // Far away: no new station.
     state = moveTo(state, "p", spot(200), "far");
-    expect(stationOf(state, "p")).toBe("far");
-    expect(state.stations.find((s) => s.id === "far")!.geo.lat).toBe(
-      spot(200).lat,
-    );
+    expect(stationOf(state, "p")).toBe("s");
+    expect(state.stations.map((s) => s.id)).toEqual(["s", "t"]);
   });
 
-  it("a move out of a station it alone held drops that station, and a move back joins the one holding the spot", () => {
+  it("a station the move left by an answer goes when that empties it, and a later move starts none", () => {
     let state = tourWith(stationAt("s", 0));
     state = place(state, pinAt("q", spot(0)));
     state = place(state, pinAt("p", spot(100)), "auto");
     expect(state.stations.map((s) => s.id)).toEqual(["s", "auto"]);
-    state = moveTo(state, "p", spot(5));
+    state = joinAt(state, "p", spot(5), "s");
     expect(stationOf(state, "p")).toBe("s");
     expect(state.stations.map((s) => s.id)).toEqual(["s"]);
     state = moveTo(state, "p", spot(100), "again");
-    expect(stationOf(state, "p")).toBe("again");
-    expect(state.stations.map((s) => s.id)).toEqual(["s", "again"]);
+    expect(stationOf(state, "p")).toBe("s");
+    expect(state.stations.map((s) => s.id)).toEqual(["s"]);
   });
 
   // Why: a station's found radius has no upper bound (a hand-edited file
@@ -773,61 +788,32 @@ describe("tour document: every object belongs to a station", () => {
     expect(stationOf(place(huge, pinAt("p", spot(9_000))), "p")).toBe("huge");
   });
 
-  // Why: a move inside the station's radius but beyond the format's reach
-  // changed nothing, while the page reported the move as made.
-  it("a move within a huge radius but beyond the format's reach re-seats the object rather than changing nothing", () => {
-    let state = place(
+  // Why: the format's bound stands whatever the radius: an object past it
+  // would fail every later save, so the move changes nothing and the
+  // caller, which sees that, says so.
+  it("a move within a huge radius but beyond the format's reach changes nothing", () => {
+    const state = place(
       tourWith(stationAt("huge", 0, 50_000)),
       pinAt("p", spot(0)),
     );
     expect(stationOf(state, "p")).toBe("huge");
-    state = moveTo(state, "p", spot(15_000));
-    expect(objectOf(state, "p").geo.lat).toBe(spot(15_000).lat);
-    expect(stationOf(state, "p")).toBe("moved-p");
+    expect(moveTo(state, "p", spot(15_000))).toEqual(state);
   });
 
   // Why: an object can stand outside its own station's found radius (the
-  // creator shrank the radius, or moved the station). A small nudge of it
-  // must not start a station of its own: it keeps its station unless the
-  // move takes it farther from the anchor than it was, or into another
-  // station's radius. The rule is strict - any move farther out, however
-  // small, re-seats it.
-  it("an object outside its station's radius keeps its station when nudged no farther out; farther out, or into another station's radius, the rule seats it", () => {
+  // creator shrank the radius, moved the station, or dropped it there).
+  // Nudged, turned or dragged on, it stays until the creator says else.
+  it("an object outside its station's radius keeps its station wherever it is moved", () => {
     const outside = place(tourWith(stationAt("s", 0), stationAt("t", 60)), {
       ...pinAt("p", spot(-40)),
       station: "s",
     });
     expect(stationOf(outside, "p")).toBe("s");
-    const nudged = moveTo(outside, "p", spot(-39, 1));
-    expect(stationOf(nudged, "p")).toBe("s");
-    expect(nudged.stations.map((s) => s.id)).toEqual(["s", "t"]);
-    const sideways = moveTo(outside, "p", spot(-1, -39));
-    expect(stationOf(sideways, "p")).toBe("s");
-    const fartherOut = moveTo(outside, "p", spot(-41));
-    expect(stationOf(fartherOut, "p")).toBe("moved-p");
-    // Nearer s's anchor than before, and into t's radius: t holds it.
-    const intoT = place(tourWith(stationAt("s", 0), stationAt("t", 60)), {
-      ...pinAt("p", spot(45, 30)),
-      station: "s",
-    });
-    expect(stationOf(moveTo(intoT, "p", spot(40)), "p")).toBe("t");
-  });
-
-  // Why: radii overlap. An object of s that already stood inside t's
-  // radius (and outside s's) was re-seated into t by any nudge toward s:
-  // t held the spot before the move as much as after it, so the move did
-  // not take the object anywhere new.
-  it("an object of one station standing inside another's radius keeps its station when nudged toward its own anchor", () => {
-    const overlap = place(tourWith(stationAt("s", 0), stationAt("t", 60)), {
-      ...pinAt("p", spot(40)),
-      station: "s",
-    });
-    expect(stationOf(overlap, "p")).toBe("s");
-    const nudged = moveTo(overlap, "p", spot(38));
-    expect(stationOf(nudged, "p")).toBe("s");
-    expect(nudged.stations.map((s) => s.id)).toEqual(["s", "t"]);
-    // Farther from s's anchor it is the rule's again: t holds it.
-    expect(stationOf(moveTo(overlap, "p", spot(42)), "p")).toBe("t");
+    for (const to of [spot(-39, 1), spot(-1, -39), spot(-41), spot(40)]) {
+      const moved = moveTo(outside, "p", to);
+      expect(stationOf(moved, "p")).toBe("s");
+      expect(moved.stations.map((s) => s.id)).toEqual(["s", "t"]);
+    }
   });
 
   it("a delete that empties an automatic station drops it in the same step; an undo brings both back as they were", () => {
@@ -985,7 +971,7 @@ describe("tour document: every object belongs to a station", () => {
     state = save(state);
     // Back into "s": "far" is emptied and goes from the document, while the
     // file still carries it.
-    state = moveTo(state, "r", spot(3));
+    state = joinAt(state, "r", spot(3), "s");
     expect(state.stations.map((s) => s.id)).toEqual(["s"]);
     expect(manifestNow(state)!.stations.map((s) => s.id)).toContain("far");
     state = place(state, pinAt("q", spot(101)));
@@ -1247,7 +1233,7 @@ describe("tour document: the rules its reducers keep", () => {
   // carry would make every save fail; a MOVE that far re-runs the station
   // rule instead (the object leaves its station's radius long before the
   // format's bound), so it is never refused for its distance.
-  it("an edit to a spot too far from its station changes nothing; a move there starts a station at its new spot", () => {
+  it("an edit or a move to a spot too far from its station changes nothing; only Move to a new station goes there", () => {
     const state = open();
     const a = objectOf(state, "a");
     const moved = { ...a, geo: { ...a.geo, lat: a.geo.lat + far } };
@@ -1255,9 +1241,20 @@ describe("tour document: the rules its reducers keep", () => {
     expect(reduce(state, act.edited({ object: moved, what: "e" }))).toEqual(
       state,
     );
+    expect(
+      reduce(
+        state,
+        act.moved({ object: moved, what: "m", newStationId: "far" }),
+      ),
+    ).toEqual(state);
     const after = reduce(
       state,
-      act.moved({ object: moved, what: "m", newStationId: "far" }),
+      act.moved({
+        object: moved,
+        what: "m",
+        newStationId: "far",
+        newStation: true,
+      }),
     );
     expect(objectOf(after, "a").station).toBe("far");
     // The station it left held it alone, and goes with it.

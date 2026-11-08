@@ -12,7 +12,12 @@ import type {
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import type {
+  TourStory,
+  TourStoryBlock,
+} from "gps-plus-slam-app-framework/ar/tour-story";
 
+import type { AddKind } from "../kinds/edit-kinds.js";
 import { worldBlocks } from "../tour-document.js";
 
 /** How far a new pin keeps from every item of its station (m). */
@@ -122,7 +127,7 @@ export function addNewItem(
   input: Omit<NewItemInput, "station"> & {
     readonly stations: readonly TourStation[];
     readonly stationId: string;
-    readonly kind: "pin" | "longText";
+    readonly kind: AddKind;
     readonly place: (
       item: TourPin | TourReadingSign,
     ) =>
@@ -138,13 +143,34 @@ export function addNewItem(
     nowIso: input.nowIso,
     groundAt: input.groundAt,
   };
-  const item = input.kind === "pin" ? newPin(made) : newLongText(made);
+  const item = KIND_ADD[input.kind].item(made);
   const placed = input.place(item);
   return placed.kind === "placed" ? { kind: "added", item } : placed;
 }
 
 /** The body a new long text starts with: the format requires one. */
 const NEW_LONG_TEXT_BODY = "Write the text here.";
+
+/**
+ * A new entry at the end of `story`: a card a visitor taps on from, in its
+ * station's middle, "New pin n" or "New long text n" with n one more than
+ * the story's cards of that kind. Moved in the room later, as any story
+ * block.
+ */
+export function newStoryEntry(
+  story: TourStory,
+  kind: AddKind,
+  id: string,
+): TourStoryBlock {
+  const n = story.children.filter((c) => c.kind === kind).length + 1;
+  const shared = {
+    id,
+    view: "card",
+    pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+    advance: { mode: "tap" },
+  } as const;
+  return { ...shared, ...KIND_ADD[kind].entry(n) };
+}
 
 /**
  * A new long text of `station`, as `newPin` makes a pin: a reading sign
@@ -163,3 +189,35 @@ export function newLongText(input: NewItemInput): TourReadingSign {
     station: input.station.id,
   };
 }
+
+/** One addable kind's start: what it is at a station's free spot, and as
+ *  a story entry numbered `n`. */
+interface KindAddRow<K extends AddKind> {
+  readonly item: (input: NewItemInput) => TourPin | TourReadingSign;
+  readonly entry: (
+    n: number,
+  ) => Omit<
+    Extract<TourStoryBlock, { kind: K }>,
+    "id" | "view" | "pose" | "advance"
+  >;
+}
+
+/** What each addable kind starts as, one row per kind: the editor half of
+ *  the add line of its row in `kinds/edit-kinds.ts` (which may not hold
+ *  these: it would then import this module, and through `tour-document`
+ *  and `tour-content` itself again). Keyed by the addable kinds, in the
+ *  add menu's order: a kind its row makes addable needs one. */
+export const KIND_ADD: { readonly [K in AddKind]: KindAddRow<K> } = {
+  shortText: {
+    item: newPin,
+    entry: (n) => ({ kind: "shortText", caption: `New pin ${String(n)}` }),
+  },
+  longText: {
+    item: newLongText,
+    entry: (n) => ({
+      kind: "longText",
+      title: `New long text ${String(n)}`,
+      body: NEW_LONG_TEXT_BODY,
+    }),
+  },
+};

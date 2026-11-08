@@ -259,9 +259,7 @@ test("drags a selected pin over the ground with the mouse: one step, kept above 
   const after = pinOf(await manifest(page));
   if (before === null || after === null) throw new Error("the pin is gone");
   expect(horizontalM(before.item, after.item)).toBeGreaterThan(0.5);
-  // Flat ground: its height over the ground kept, whichever station the
-  // station rule seats it in (a few metres of drag may leave the first
-  // one's found radius).
+  // Flat ground: its height over the ground kept.
   expect(heightM(after)).toBeCloseTo(heightM(before), 3);
   expect(after.item.pose.rotation).toEqual(before.item.pose.rotation);
   // The saved file carries the moved pin.
@@ -276,6 +274,46 @@ test("drags a selected pin over the ground with the mouse: one step, kept above 
   await expect
     .poll(async () => pinOf(await manifest(page))?.item.pose)
     .toEqual(after.item.pose);
+});
+
+// Why: a move keeps an item in its station, so a drag out of its circle
+// must drop it there, outside the circle, with no station made, and say
+// so. The ring's warning colour during the drag is held by the stations
+// layer's unit test; the capture is for a reader.
+test("a pin dragged out of its circle warns on the ring and stays in its station", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const station = await openWithPin(page);
+  // A circle a short drag leaves.
+  await page.evaluate((id) => {
+    const hook = /** @type {any} */ (window).__tourEditor;
+    hook.editor().editStation(id, { foundRadiusM: 4 });
+    hook.edited();
+  }, station);
+  await selectPin(page, station);
+  const stations = (await manifest(page)).stations.length;
+  const from = await handle(page, "middle");
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 16; i++) {
+    await page.mouse.move(from.x + i * 22, from.y + i * 3);
+  }
+  await afterFrames(page, 3);
+  await capture(page, "test-results/ring-item-out.png");
+  await page.mouse.up();
+  await expect
+    .poll(async () => pinOf(await manifest(page))?.station.id)
+    .toBe(station);
+  const after = pinOf(await manifest(page));
+  if (after === null) throw new Error("the pin is gone");
+  // Out of the circle on the ground: the up component is no distance.
+  const [x = 0, , z = 0] = after.item.pose.position;
+  expect(Math.hypot(x, z)).toBeGreaterThan(4);
+  expect((await manifest(page)).stations).toHaveLength(stations);
+  await expect(
+    page.locator(".toast", { hasText: "outside its circle" }),
+  ).toBeVisible();
 });
 
 /** The camera's position. @param {import("@playwright/test").Page} page */

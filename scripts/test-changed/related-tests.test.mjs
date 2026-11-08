@@ -4,7 +4,7 @@
 // a file by name, a test that scans the whole tree) or falls back to the full
 // suite (configs, data, deletions, setup files) is pinned here.
 import { describe, it, expect } from 'vitest';
-import { planRelatedRun, relatedVitestArgs, upstreamChange } from './related-tests.mjs';
+import { mergeImpact, planRelatedRun, relatedVitestArgs } from './related-tests.mjs';
 
 /** @param {Partial<Parameters<typeof planRelatedRun>[0]>} partial */
 function plan(partial) {
@@ -63,6 +63,20 @@ describe('planRelatedRun', () => {
         changed: ['src/a.ts.md', 'docs/notes.md', 'docs/test-timings.md', 'src/a.ts'],
       })
     ).toEqual({ mode: 'related', files: ['src/a.ts'] });
+  });
+
+  // Why: a unit test can read markdown as data (the design system's terrain
+  // fixtures test reads fixtures/PROVENANCE.md). A changed markdown file is
+  // never handed to vitest itself, but it selects the tests that read it.
+  it('adds the tests that read a changed markdown file by name', () => {
+    const prov = {
+      path: 'src/fixtures.test.ts',
+      text: "const p = readFileSync(join(DIR, 'PROVENANCE.md'), 'utf8');",
+    };
+    expect(plan({ changed: ['fixtures/PROVENANCE.md'], testFiles: [PLAIN, prov] })).toEqual({
+      mode: 'related',
+      files: ['src/fixtures.test.ts'],
+    });
   });
 
   it('runs nothing for a change no unit test can read (a Playwright spec)', () => {
@@ -138,35 +152,50 @@ describe('relatedVitestArgs', () => {
   });
 });
 
-// Why: an app's tests can import an upstream workspace package's SOURCE
-// (an alias, or exports that point at src), so a commit that edits the
-// framework and an app at once must not run only the app's own slice: the
-// app's tests of the framework module would be skipped. Any change in a
-// package this one depends on, directly or through another, runs the full
-// suite.
-describe('upstreamChange', () => {
-  const packages = [
-    { dir: 'Fw', name: 'fw', deps: [] },
-    { dir: 'Kit', name: 'kit', deps: ['fw'] },
-    { dir: 'Tour', name: 'tour', deps: ['kit', 'three'] },
-    { dir: 'Other', name: 'other', deps: [] },
-  ];
-  it('names a changed path in a direct or transitive upstream package', () => {
-    expect(upstreamChange({ changed: ['Kit/src/a.ts'], packageDir: 'Tour', packages })).toBe('Kit/src/a.ts');
-    expect(upstreamChange({ changed: ['Tour/src/b.ts', 'Fw/src/x.ts'], packageDir: 'Tour', packages })).toBe('Fw/src/x.ts');
+// Why: a change outside this package (upstream, or a file one of its tests
+// reads) used to run this package's whole suite. The import graph says which
+// of its tests that change can reach, so the plan is the package's own
+// related set plus those, unless a graph rule asks for the whole suite.
+describe('mergeImpact', () => {
+  const related = { mode: 'related', files: ['src/a.ts'] };
+  const impact = {
+    tests: ['Tour/src/x.test.ts', 'Other/src/y.test.ts', 'Tour/src/a.test.ts'],
+    packages: ['Other', 'Tour'],
+    fullSuite: [{ dir: 'Other', reason: 'Other/package.json is a manifest or tsconfig' }],
+  };
+  it('adds the reached tests of this package, package-relative', () => {
+    expect(mergeImpact({ plan: related, impact, packageDir: 'Tour' })).toEqual({
+      mode: 'related',
+      files: ['src/a.test.ts', 'src/a.ts', 'src/x.test.ts'],
+    });
   });
-  it('ignores the package itself, unrelated packages, root files and dependents', () => {
-    expect(
-      upstreamChange({ changed: ['Tour/src/b.ts', 'Other/src/c.ts', 'scripts/s.mjs', 'Tour'], packageDir: 'Tour', packages })
-    ).toBeNull();
-    expect(upstreamChange({ changed: ['Tour/src/b.ts'], packageDir: 'Fw', packages })).toBeNull();
+  it('runs the whole suite when the graph asks for it, saying why', () => {
+    expect(mergeImpact({ plan: related, impact, packageDir: 'Other' })).toEqual({
+      mode: 'full',
+      reason: 'Other/package.json is a manifest or tsconfig',
+    });
   });
-  it('survives a dependency cycle and an unknown package', () => {
-    const cyclic = [
-      { dir: 'A', name: 'a', deps: ['b'] },
-      { dir: 'B', name: 'b', deps: ['a'] },
-    ];
-    expect(upstreamChange({ changed: ['B/x.ts'], packageDir: 'A', packages: cyclic })).toBe('B/x.ts');
-    expect(upstreamChange({ changed: ['B/x.ts'], packageDir: 'Nope', packages: cyclic })).toBeNull();
+  it('keeps a full own plan full', () => {
+    const full = { mode: 'full', reason: 'x' };
+    expect(mergeImpact({ plan: full, impact, packageDir: 'Tour' })).toBe(full);
+  });
+});
+
+// Why: the in-package plan and the cross-package graph (impact-graph.mjs)
+// decided "is this a setup file, a scanner, a reader?" with two copies of
+// each pattern that had drifted apart (r1125 review). They now share one
+// source, so the two paths cannot disagree again.
+describe('planRelatedRun: the patterns shared with the impact graph', () => {
+  it('a module whose name merely ends in setup is ordinary source, not a setup file', () => {
+    expect(plan({ changed: ['src/creator-setup.ts'] })).toEqual({ mode: 'related', files: ['src/creator-setup.ts'] });
+  });
+
+  it('counts opendirSync and fs.glob as scanners, and fs.promises and fetch as reads', () => {
+    for (const text of ['for await (const d of opendirSync(SRC)) check(d);', 'for await (const f of fs.glob("**")) check(f);']) {
+      expect(plan({ changed: ['src/b.ts'], testFiles: [{ path: 'src/s.test.ts', text }] }).files, text).toContain('src/s.test.ts');
+    }
+    for (const text of ["await fs.promises.readFile('index.html')", "await fetch('index.html')"]) {
+      expect(plan({ changed: ['index.html'], testFiles: [{ path: 'src/r.test.ts', text }] }).files, text).toContain('src/r.test.ts');
+    }
   });
 });

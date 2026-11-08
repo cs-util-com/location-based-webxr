@@ -13,8 +13,9 @@
  * The morph (`standing`, 0 looking straight down to 1 tilted up): photos
  * and codes lie flat face up and stand up again - a code laid in front of
  * its anchor, on the side its face looks to, never under the wall it hangs
- * on - and the billboards and their poles rise. Models and reading stands
- * keep their pose;
+ * on - and the billboards and their poles rise. Models, reading stands
+ * and the parts of the world door (`worldPart`, the visitor's, asked in
+ * the editor's mode) keep their pose;
  * pins (the phone's labels) stand. Laid flat, a code is drawn at least
  * `CODE_SCREEN_PX` on screen (`codeGrowth`): grown with the camera's
  * distance wherever its printed size would look smaller, its printed size
@@ -49,9 +50,13 @@ import * as THREE from "three";
 import { localPlaneToEnu } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
-import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import {
+  localPoseOf,
+  tourFreeBlocks,
+} from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import type {
   TourAsset,
+  TourBlock,
   TourManifest,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
@@ -64,6 +69,7 @@ import {
   type RenderedTourObjects,
 } from "../content-placement.js";
 import { modelScale } from "../model-scale.js";
+import { worldEnv, type WorldEnv, type WorldPart } from "../world-part.js";
 import { pointRootMatrix, type GlobeEllipsoid } from "./editor3d-tour-root.js";
 import { NEAR_STATIONS, nearStations } from "./editor3d-visibility.js";
 import { viewHeightAtOneM } from "./gizmo-maths.js";
@@ -95,6 +101,11 @@ export interface StationsLayerDeps {
     readonly title: string;
     readonly body: string;
   }): { object: THREE.Object3D; dispose(): void };
+  /** Any other item's part in the world: the visitor's door
+   *  (`play-kinds.ts` `worldPartOf`), asked in the editor's mode with
+   *  the tour's files read through `loadContent`. Absent: no part is
+   *  drawn. */
+  worldPart?(block: TourBlock, env: WorldEnv): WorldPart | null;
   /** A content entry's bytes, by its path in the tour. */
   loadContent(entryName: string): Promise<Blob>;
   loadGlbModel(blob: Blob): Promise<THREE.Object3D>;
@@ -234,6 +245,9 @@ const RING_COLOUR = 0x6fa8dc;
 const RING_SELECTED = 0xe9a23b;
 /** The circle of the station a selected item is in. */
 const RING_CONTEXT = 0xa8c8ea;
+/** While a drag has an item out of its station's circle: the Problems
+ *  warning's colour (`--s-warn`, `editor-shell.css`). */
+export const RING_ITEM_OUT = 0xe9b86b;
 const POLE_COLOUR = 0xdfe3ea;
 
 interface StationContent {
@@ -440,6 +454,20 @@ function freeObject(object: THREE.Object3D): void {
   });
 }
 
+/** Runs every one of `frees`: one that throws strands none after it, and
+ *  the first throw then reaches the caller. */
+function freeEach(frees: Iterable<() => void>): void {
+  let failed: { error: unknown } | null = null;
+  for (const free of frees) {
+    try {
+      free();
+    } catch (error) {
+      failed ??= { error };
+    }
+  }
+  if (failed !== null) throw failed.error;
+}
+
 function freeSprite(sprite: THREE.Sprite): void {
   sprite.removeFromParent();
   sprite.material.map?.dispose();
@@ -469,6 +497,19 @@ export function createStationsLayer(deps: StationsLayerDeps) {
   const stations = new Map<string, StationEntry>();
   let assets = new Map<string, string>();
   let tourAssets: readonly TourAsset[] = [];
+  /** What a world part reads the tour's files through: the editor's. */
+  const editEnv = (): WorldEnv =>
+    worldEnv("edit", tourAssets, (path) => deps.loadContent(path));
+  let env = editEnv();
+  /** The objects of the parts the door built: drawn at their pose as it
+   *  stands, never as a photo plane. */
+  const partObjects = new WeakSet<THREE.Object3D>();
+  const inPart = (object: THREE.Object3D): boolean => {
+    for (let o: THREE.Object3D | null = object; o !== null; o = o.parent) {
+      if (partObjects.has(o)) return true;
+    }
+    return false;
+  };
   let codes: THREE.Group[] = [];
   /** Each code's square and its morph. */
   let codeSquares: CodeSquare[] = [];
@@ -522,19 +563,33 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     const content = entry.content;
     if (content === null) return;
     content.alive = false;
-    for (const model of content.models) freeObject(model);
-    content.rendered?.dispose();
-    freeObject(content.ring);
-    freeObject(content.pole);
+    // Cleared first, and every free run whatever another throws (the
+    // renderer's dispose rethrows a part's; only it unmounts the parts and
+    // frees the labels and textures): the station is freed either way and
+    // drawn anew when it is near.
     entry.content = null;
+    freeEach([
+      ...content.models.map((model) => () => freeObject(model)),
+      () => content.rendered?.dispose(),
+      () => freeObject(content.ring),
+      () => freeObject(content.pole),
+    ]);
   };
 
   const freeStation = (entry: StationEntry) => {
-    freeContent(entry);
-    if (entry.billboard !== null) freeSprite(entry.billboard);
-    entry.billboard = null;
-    entry.root.removeFromParent();
+    try {
+      freeContent(entry);
+    } finally {
+      if (entry.billboard !== null) freeSprite(entry.billboard);
+      entry.billboard = null;
+      entry.root.removeFromParent();
+    }
   };
+
+  /** Frees each of `entries`; one that throws abandons none after it, and
+   *  the first throw then reaches the caller. */
+  const freeStations = (entries: Iterable<StationEntry>) =>
+    freeEach([...entries].map((entry) => () => freeStation(entry)));
 
   const placeModels = async (entry: StationEntry, content: StationContent) => {
     for (const item of worldBlocks(entry.station)) {
@@ -594,6 +649,15 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       ...(deps.makeReadingSign === undefined
         ? {}
         : { makeReadingSign: deps.makeReadingSign.bind(deps) }),
+      ...(deps.worldPart === undefined
+        ? {}
+        : {
+            worldPart: (block: TourBlock) => {
+              const part = deps.worldPart?.(block, env) ?? null;
+              if (part !== null) partObjects.add(part.object);
+              return part;
+            },
+          }),
     })
       .then(async (rendered) => {
         if (!content.alive) {
@@ -603,8 +667,9 @@ export function createStationsLayer(deps: StationsLayerDeps) {
         content.rendered = rendered;
         rendered.root.traverse((o) => {
           const mesh = o as THREE.Mesh;
-          // A stand's meshes keep their pose: they are no photo planes.
-          if (mesh.isMesh && !inStand(mesh)) {
+          // A stand's and a part's meshes keep their pose: they are no
+          // photo planes.
+          if (mesh.isMesh && !inStand(mesh) && !inPart(mesh)) {
             content.photos.push({ mesh, upright: mesh.quaternion.clone() });
           }
         });
@@ -654,10 +719,29 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     if (!(material instanceof THREE.MeshBasicMaterial)) return;
     const mine = entry.id === view.selectedStation;
     const selected = mine && view.stationSelected;
+    const out = itemOutOf(entry);
     material.color.setHex(
-      selected ? RING_SELECTED : mine ? RING_CONTEXT : RING_COLOUR,
+      out
+        ? RING_ITEM_OUT
+        : selected
+          ? RING_SELECTED
+          : mine
+            ? RING_CONTEXT
+            : RING_COLOUR,
     );
-    material.opacity = selected ? 1 : 0.85;
+    material.opacity = selected || out ? 1 : 0.85;
+  };
+
+  /** Whether a drag has one of `entry`'s items outside its circle now. */
+  const itemOutOf = (entry: StationEntry): boolean => {
+    if (preview?.kind !== "item" || entryOfItem(preview.id) !== entry) {
+      return false;
+    }
+    const [north, , east] = localPoseOf(
+      preview.geo,
+      entry.station.geo,
+    ).position;
+    return Math.hypot(north, east) > entry.station.foundRadiusM;
   };
 
   const placeBillboard = (entry: StationEntry, view: StationsLayerView) => {
@@ -745,6 +829,11 @@ export function createStationsLayer(deps: StationsLayerDeps) {
         photo.upright.copy(turned);
         continue;
       }
+      if (partObjects.has(o)) {
+        // As the renderer draws a part: the pose's rotation as it is.
+        o.quaternion.copy(turned);
+        continue;
+      }
       if (STANDS.has(o.name)) {
         // Upright, as the renderer draws it: its turn about up only.
         uprightTurn(pose.rotation, o.quaternion);
@@ -793,7 +882,10 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     }
     const entry = entryOfItem(p.id);
     if (entry === null) return;
-    const item = worldBlocks(entry.station).find((i) => i.id === p.id);
+    // Any free block drawn (a part from the door too), as `itemPointOf`
+    // reads them; only world blocks are dragged today (the gizmo's
+    // `targetOf`), and a preview of another is put back the same way.
+    const item = tourFreeBlocks(entry.station).find((i) => i.id === p.id);
     if (item === undefined) return;
     poseDrawn(entry, p.id, item.pose, null);
   };
@@ -807,7 +899,11 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     ) {
       tourAssets = manifest?.assets ?? [];
       assets = new Map(tourAssets.map((a) => [a.id, a.path]));
+      env = editEnv();
       const keep = new Set<string>();
+      // Freed once the new tour is in place: a free that throws then
+      // leaves no station of it unplaced.
+      const freed: StationEntry[] = [];
       (manifest?.stations ?? []).forEach((station, index) => {
         keep.add(station.id);
         const key = keyOf(station, index);
@@ -816,7 +912,7 @@ export function createStationsLayer(deps: StationsLayerDeps) {
           old.station = station;
           return;
         }
-        if (old !== undefined) freeStation(old);
+        if (old !== undefined) freed.push(old);
         const root = rootAt(station.geo);
         const point = layerPoint(root, station.geo.alt);
         stations.set(station.id, {
@@ -835,10 +931,14 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       });
       for (const [id, entry] of stations) {
         if (keep.has(id)) continue;
-        freeStation(entry);
+        freed.push(entry);
         stations.delete(id);
       }
-      setCodes(levels);
+      try {
+        freeStations(freed);
+      } finally {
+        setCodes(levels);
+      }
     },
     /** Each frame: the near set, the morph and the billboards. */
     update(view: StationsLayerView) {
@@ -951,10 +1051,13 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     },
     /** Where an item of the tour stands in the layer's frame (its pose in
      *  its station's frame), whether its station draws its items now or
-     *  not; null for an id no station holds. */
+     *  not; null for an id no station holds. Any free block, as
+     *  `clearPreview` reads them: a part from the door is located too
+     *  (the view flies to it), though only world blocks are a gesture's
+     *  target (`editor3d-editing.ts`). */
     itemPointOf(id: string): THREE.Vector3 | null {
       for (const entry of stations.values()) {
-        const item = worldBlocks(entry.station).find((i) => i.id === id);
+        const item = tourFreeBlocks(entry.station).find((i) => i.id === id);
         if (item === undefined) continue;
         const { geo } = entry.station;
         const frame = objectPoseNue(geo, { lat: geo.lat, lon: geo.lon });
@@ -1056,13 +1159,16 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       return [...(stations.get(id)?.content?.models ?? [])];
     },
     dispose() {
-      for (const entry of stations.values()) freeStation(entry);
-      stations.clear();
-      for (const code of codes) freeObject(code);
-      codes = [];
-      codeIds = [];
-      codeSquares = [];
-      group.removeFromParent();
+      try {
+        freeStations([...stations.values()]);
+      } finally {
+        stations.clear();
+        for (const code of codes) freeObject(code);
+        codes = [];
+        codeIds = [];
+        codeSquares = [];
+        group.removeFromParent();
+      }
     },
   };
 }

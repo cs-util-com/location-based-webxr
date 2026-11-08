@@ -60,9 +60,8 @@ on it, taking its share of what is left, so Problems and History still
 work; a problem tapped turns the sheet into its details. A sideways
 phone wider than 700 px keeps the two docks, and turning one with
 something selected unfolds the list the details covered. The on-screen keyboard
-(`phone-keyboard.ts`) is `--s-keyboard-h` on the page; at 900 px or less
-a sheet is padded by what the keyboard covers, so a focused field can
-scroll above it.
+(`phone-keyboard.ts`) is `--s-keyboard-h` on the page; at every width a
+panel stands on the keyboard, so a focused field can scroll above it.
 
 The tree's editing (G2 M3b) goes through it: "+" in the tree's head adds a
 station at the centre of the view (where the view has none, `centre()`
@@ -83,6 +82,12 @@ becomes one edit (`inspector-edits.ts`) and one page command
 items on the ground, the card's picture, and a story
 character's view and advance chips (`characterChipEdit`: his station's
 `StationEdit.character`; the chip already pressed writes nothing).
+
+A story is a folder of the tree: its arrow folds it (`storyFolded`), its name
+selects it, its "+" and its empty line open the type menu for it, a click
+unfolds what holds a row. The inspector's `goto:` reveals the entry's folder,
+and a view that cannot fly to a story or an entry flies to its station. Added
+to a station, a story's name in the head takes the focus, selected.
 
 ## Public API
 
@@ -149,22 +154,22 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   `origin` for the inspector); a type only, so the page's code never
   holds the 3D view's.
 - `ShellEditCommands.model(itemId, edit)` - a model's own edit, as typed
-  (`inspector-edits.ts`) or pressed (`modelAct`).
-- `modelAct` answers a model's part buttons: a view chosen; a note or a
-  section brought into focus (pressed again: out of it); the 3D view asked
-  to wait for a click on the model (`modelPickAsked`; pressed again: no
-  longer), placing a part again also focusing it; a part deleted (focus and
-  wait cleared when written); a section flipped (its normal negated, a zero
-  kept 0); the clip's autoplay turned.
+  (`inspector-edits.ts`) or pressed (its panel, `../kind-panels/model-panel.ts`).
+  `ShellEditCommands` is exported for the kinds' panels (`PanelContext.edits`).
 
-- A long text's writer and preview come from one `createLongTextDock`
-  (`../long-text/long-text-dock.ts`): `sync` hands it the selected item's
-  `longText` model on every draw (null closes it), `act` takes the clicks
-  it owns, and `flush` writes pending typing before a selection change or
-  a save. Its body goes through `edits.block(id, "body", ...)` and its view
-  through the new `edits.view(id, view)` (`editor.editBlockView`). The
-  shell's generic field input skips its fields: only an input drawn under
-  a field name (`data-field`) is written by the shell.
+- The kinds' own parts of the inspector come from one `createKindPanels`
+  (`../kind-panels/kind-panels.ts`): `sync` hands it the inspector's model
+  on every draw (every panel follows it; a long text's preview closes with
+  its selection) and its answer is drawn by `drawInspector`; a press
+  (`data-act`) goes to the selected item's kind's panel first, and one it
+  takes draws again and ends there; `flush` writes pending typing before a
+  selection change or a save. A long text's panel is its dock
+  (`../long-text/long-text-dock.ts`, body through `edits.block(id, "body",
+...)`, view through `edits.view`); a model's answers its part buttons,
+  the 3D view's wait and focus going to `modelPickAsked` and
+  `modelFocused`. The shell's generic field input skips a writer's fields:
+  only an input drawn under a field name (`data-field`) is written by
+  the shell.
 - The inspector's station extras: `contents` folds Contents (kept across
   selections), `add-content` opens the tree's type menu for the station,
   `goto:<id>` selects and flies as a tree row does, and the radius slider
@@ -216,7 +221,9 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
 - **Delete in the inspector** moves the focus to the row button (`.head > .pick`) of the tree card now in
   the deleted station's place (the one before it, at the end), for an
   item to its station's card, and to the view's box when the tree is
-  folded or empty: it never falls to the page.
+  folded or empty: it never falls to the page. A delete that asks first
+  (a station's, a story's) and is answered no leaves the selection as it
+  was, and the focus on the Delete that was pressed.
 - **The view's box** (`#view3d`, `tabindex="-1"`) shows a ring only when
   a key brought the focus there (`:focus-visible`), as the ground menu's
   Escape does.
@@ -276,8 +283,8 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   - from 900 px down to 701 px the docks are 226 px and 268 px wide (a
     phone turned sideways keeps both, with the map between them);
   - at 720 px the buttons drop their icons, keeping words;
-  - at 520 px Undo and Redo fold into the Edit menu;
-  - at 400 px the menus' carets go and the groups close up.
+  - at 560 px Undo, Redo and Add fold into the Edit menu;
+  - at 420 px the menus' carets go and the groups close up.
   - Each step starts where the bar, in its most crowded state (the unsaved
     mark shown) in a wide platform face (Verdana, with DejaVu Sans'
     metrics), would no longer hold every control with the name at its
@@ -321,8 +328,7 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
 - **A typed height is the item's altitude alone** (`groundItems` with one
   item): its place and turn stay bit for bit, so a height never moves an
   item sideways (a pose through the station's frame and back would, by
-  its float32 rounding, and could re-seat an item outside a lowered
-  circle).
+  its float32 rounding).
 - With nothing selected the inspector's model is not built (no tour is
   built for it on the readout's tick, five times a second).
 - **Put on the ground waits for the ground:** where the ground under

@@ -8,10 +8,10 @@ words the page says.
 
 ## Public API
 
-- `applySceneEdit(editor, edit)` -> `{ kind: "applied" }` or
+- `applySceneEdit(editor, edit, joinStation?)` -> `{ kind: "applied" }` or
   `{ kind: "refused", reason }`:
-  - `item-pose` -> `editor.pose(id, geo)` (the station rule may seat the
-    item in another station);
+  - `item-pose` -> `editor.pose(id, geo)`: it keeps its station, or
+    changes to `joinStation`, the creator's answer (`../move-question.ts`);
   - `station-pose` -> `editor.moveStation(id, geo)` (its items follow
     rigidly);
   - `radius` -> `editor.editStation(id, { foundRadiusM })`;

@@ -41,6 +41,11 @@ import {
   uprightTurn,
 } from "./content-placement";
 import { mountedModelViews } from "./model-views";
+import {
+  mountedWorldParts,
+  unmountWorldPart,
+  type WorldPart,
+} from "./world-part";
 import { contentSegment } from "./tour-flow";
 import { stationContent } from "./test-support/station-content.js";
 
@@ -826,11 +831,13 @@ describe("renderTourStation", () => {
     expect(drawn).toEqual(["lectern:sign", "reading:sign", "reading:sign"]);
   });
 
-  // Why: a free video and a free sound have no look of their own yet. The
-  // page's builder is where one plugs in; without it nothing stands there,
-  // because a stand-in would be a marker nobody chose. A free character is
-  // the page's free host's, never this renderer's.
-  it("draws a free video or sound by the page's builder at its pose, and nothing without one", async () => {
+  // Why: a block no other drawing has is asked of the page's world door
+  // (the kinds' rows, `worldPartOf`), whatever its kind: a kind gets a
+  // look in the world by its row alone, with no arm here. Without the door
+  // nothing stands, because a stand-in would be a marker nobody chose. An
+  // empty object is a part too (a sound zone shows nothing): placed at its
+  // pose, mounted while it stands, freed and unmounted with the station.
+  it("asks the page's world door for every block no drawing has, and places what it gives", async () => {
     const scene = new Group();
     const pose = {
       position: [1, 2, 3] as [number, number, number],
@@ -880,26 +887,268 @@ describe("renderTourStation", () => {
     bare.dispose();
     const built: string[] = [];
     let freed = 0;
+    const parts: WorldPart[] = [];
     const drawn = await renderTourStation(
       { ...base, ...station },
       {
         ...deps,
-        makeFreeItem: (block) => {
+        worldPart: (block) => {
           built.push(block.id);
           if (block.kind === "audio") return null;
-          return { object: new Group(), dispose: () => (freed += 1) };
+          const part: WorldPart = {
+            object: new Object3D(),
+            dispose: () => (freed += 1),
+          };
+          parts.push(part);
+          return part;
         },
       },
     );
-    expect(built).toEqual(["film", "song"]);
-    expect(drawn.count).toBe(1);
+    expect(built).toEqual(["film", "song", "ann"]);
+    expect(drawn.count).toBe(2);
+    expect(mountedWorldParts()).toEqual(expect.arrayContaining(parts));
     let found: Object3D | undefined;
     drawn.root.traverse((o) => {
       if (o.userData["objectId"] === "film") found = o;
     });
     expect(found?.position.toArray()).toEqual([1, 2, 3]);
+    expect(found?.quaternion.toArray()).toEqual(yaw(0));
+    drawn.dispose();
+    expect(freed).toBe(2);
+    for (const part of parts) expect(mountedWorldParts()).not.toContain(part);
+  });
+
+  // Why: a part stands as its block's pose says, pitch and roll included:
+  // only the stand and the sign are set upright, by their own arm, so a
+  // kind that wants a tilt (a plaque on a slope) gets it.
+  it("gives a world part its block's pose rotation as it stands, tilt included", async () => {
+    const base = {
+      geo: { lat: ZERO.lat, lon: ZERO.lon, alt: 0, rotation: yaw(0) },
+      children: [],
+    };
+    const tilt = new Quaternion()
+      .setFromEuler(new Euler(0.3, 0.5, -0.2, "YXZ"))
+      .toArray();
+    const blocks = withFreeBlocks(base, [
+      {
+        id: "film",
+        kind: "video",
+        view: "card",
+        video: "v",
+        transcript: "t",
+        pose: { position: [0, 0, 0], rotation: tilt },
+      },
+    ]);
+    const object = new Object3D();
+    const drawn = await renderTourStation(
+      { ...base, ...blocks },
+      {
+        assets: [],
+        scene: new Group(),
+        zero: ZERO,
+        makeLabel: labelStub,
+        loadPhotoTexture: () => Promise.resolve(new Texture()),
+        worldPart: () => ({ object, dispose: () => undefined }),
+      },
+    );
+    expect(object.quaternion.angleTo(new Quaternion(...tilt))).toBeLessThan(
+      1e-6,
+    );
+    drawn.dispose();
+  });
+
+  // Why: the stand and the sign free themselves only while still mounted
+  // (`if (!unmountWorldPart(part)) return;`, so a second dispose is a
+  // no-op). A part built the same way must still be freed with its
+  // station: unmounting it first would leave its geometry, materials and
+  // textures behind on every station change.
+  it("frees a world part that unmounts itself in its own dispose", async () => {
+    const base = {
+      geo: { lat: ZERO.lat, lon: ZERO.lon, alt: 0, rotation: yaw(0) },
+      children: [],
+    };
+    const blocks = withFreeBlocks(base, [
+      {
+        id: "film",
+        kind: "video",
+        view: "card",
+        video: "v",
+        transcript: "t",
+        pose: { position: [0, 0, 0], rotation: yaw(0) },
+      },
+    ]);
+    let freed = 0;
+    const made: WorldPart[] = [];
+    const drawn = await renderTourStation(
+      { ...base, ...blocks },
+      {
+        assets: [],
+        scene: new Group(),
+        zero: ZERO,
+        makeLabel: labelStub,
+        loadPhotoTexture: () => Promise.resolve(new Texture()),
+        worldPart: () => {
+          const part: WorldPart = {
+            object: new Object3D(),
+            dispose: () => {
+              if (!unmountWorldPart(part)) return;
+              freed += 1;
+            },
+          };
+          made.push(part);
+          return part;
+        },
+      },
+    );
     drawn.dispose();
     expect(freed).toBe(1);
+    expect(made).toHaveLength(1);
+    expect(mountedWorldParts()).not.toContain(made[0]);
+  });
+
+  // Why: one part whose dispose throws must not strand the station's
+  // other parts, mounted and unfreed, on every station change; the throw
+  // still reaches the caller once all are freed.
+  it("frees and unmounts every world part when one part's dispose throws", async () => {
+    const base = {
+      geo: { lat: ZERO.lat, lon: ZERO.lon, alt: 0, rotation: yaw(0) },
+      children: [],
+    };
+    const film = (id: string): TourBlock => ({
+      id,
+      kind: "video",
+      view: "card",
+      video: "v",
+      transcript: "t",
+      pose: { position: [0, 0, 0], rotation: yaw(0) },
+    });
+    const blocks = withFreeBlocks(base, [film("f1"), film("f2"), film("f3")]);
+    const freed: string[] = [];
+    const drawn = await renderTourStation(
+      { ...base, ...blocks },
+      {
+        assets: [],
+        scene: new Group(),
+        zero: ZERO,
+        makeLabel: labelStub,
+        loadPhotoTexture: () => Promise.resolve(new Texture()),
+        worldPart: (block) => ({
+          object: new Object3D(),
+          dispose: () => {
+            freed.push(block.id);
+            if (block.id !== "f3") throw new Error(`broken ${block.id}`);
+          },
+        }),
+      },
+    );
+    expect(() => {
+      drawn.dispose();
+    }).toThrow("broken f1");
+    expect(freed).toEqual(["f1", "f2", "f3"]);
+    expect(mountedWorldParts()).toEqual([]);
+  });
+
+  // Why (PR #874 review, notes 3 and 5): the views, models and stands were
+  // freed unguarded before the parts, so a throwing stand (the pages'
+  // reading sign) stranded every part, mounted in the module-global set.
+  it("frees and unmounts the world parts when a stand's dispose throws", async () => {
+    const base = {
+      geo: { lat: ZERO.lat, lon: ZERO.lon, alt: 0, rotation: yaw(0) },
+      children: [],
+    };
+    const blocks = withFreeBlocks(base, [
+      {
+        id: "sign",
+        kind: "longText",
+        view: "reading",
+        title: "T",
+        body: "B",
+        pose: { position: [0, 0, 0], rotation: yaw(0) },
+      },
+      {
+        id: "film",
+        kind: "video",
+        view: "card",
+        video: "v",
+        transcript: "t",
+        pose: { position: [0, 0, 0], rotation: yaw(0) },
+      },
+    ]);
+    const freed: string[] = [];
+    const drawn = await renderTourStation(
+      { ...base, ...blocks },
+      {
+        assets: [],
+        scene: new Group(),
+        zero: ZERO,
+        makeLabel: labelStub,
+        loadPhotoTexture: () => Promise.resolve(new Texture()),
+        makeReadingSign: () => ({
+          object: new Object3D(),
+          dispose: () => {
+            throw new Error("broken sign");
+          },
+        }),
+        worldPart: (block) => ({
+          object: new Object3D(),
+          dispose: () => freed.push(block.id),
+        }),
+      },
+    );
+    expect(drawn.count).toBe(2);
+    expect(() => {
+      drawn.dispose();
+    }).toThrow("broken sign");
+    expect(freed).toEqual(["film"]);
+    expect(mountedWorldParts()).toEqual([]);
+  });
+
+  // Why (PR #874 review, notes 3 and 5): in the build-failure path a
+  // throwing part dispose replaced the construction error, so the caller
+  // was told of the wrong failure; the parts are freed all the same.
+  it("keeps the construction error when a part's dispose throws while it frees what was made", async () => {
+    const base = {
+      geo: { lat: ZERO.lat, lon: ZERO.lon, alt: 0, rotation: yaw(0) },
+      children: [],
+    };
+    const blocks = withFreeBlocks(base, [
+      {
+        id: "film",
+        kind: "video",
+        view: "card",
+        video: "v",
+        transcript: "t",
+        pose: { position: [0, 0, 0], rotation: yaw(0) },
+      },
+      {
+        id: "tag",
+        kind: "shortText",
+        view: "pin",
+        caption: "a tag",
+        pose: { position: [1, 0, 0], rotation: yaw(0) },
+      },
+    ]);
+    await expect(
+      renderTourStation(
+        { ...base, ...blocks },
+        {
+          assets: [],
+          scene: new Group(),
+          zero: ZERO,
+          makeLabel: () => {
+            throw new Error("no canvas");
+          },
+          loadPhotoTexture: () => Promise.resolve(new Texture()),
+          worldPart: () => ({
+            object: new Object3D(),
+            dispose: () => {
+              throw new Error("broken part");
+            },
+          }),
+        },
+      ),
+    ).rejects.toThrow("no canvas");
+    expect(mountedWorldParts()).toEqual([]);
   });
 
   // Why: every world view of a model - placed, ghost, hotspots, cutaway,

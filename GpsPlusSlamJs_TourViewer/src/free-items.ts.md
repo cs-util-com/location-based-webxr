@@ -11,7 +11,7 @@ The free items' host: what a station shows that no story brings. It is the secon
   - `faceVisitor(nue)` - turns the standing figures.
   - `tapped(tap)` - true when the tap hit a free figure. A voice plays, or stops for good when it is playing; the bubble view's tap shuts or opens the bubble.
   - `stop()` - nothing stands, no voice is kept. The next `follow` starts afresh.
-- `deps`: `tour`, `characters`, `assets`, `loadAsset`, `makeStage`, `focus`, `checkPicture`, `pick`, `sayFailure`, and `makePlayer` as a seam for tests.
+- `deps`: `tour`, `characters`, `assets`, `loadAsset`, `makeStage`, `focus`, `checkPicture`, `pick`, `sayFailure`, `makePlayer` as a seam for tests, and `showItem?(block, host)` (the item lab swaps a kind in; `showItemCard` otherwise; the app passes none).
 
 ## Invariants and assumptions
 
@@ -26,7 +26,18 @@ The free items' host: what a station shows that no story brings. It is the secon
 - A free `portrait` keeps his figure, name tag and ring and gains the bubble (`noCard`), since no card shows his line here. The story's portrait does not change.
 - His look follows his voice: `speaking` with what is left of it, `spoken` once it ran out, `idle` when held, paused or never heard.
 - A free video or sound has no look yet: it draws nothing and has no tap target here. `content-placement.ts` holds the seam for those looks, and the editor does not offer them.
-- A free figure's words are in his look, so the card's places are written and read by nobody.
+- A free figure's words are in his look, so the card's places are written and read by nobody, and no `surface` is offered.
+- Its stage gives an item only a figure's door (`ItemWorld.showCharacter`, his look marked `noCard`); no model door exists here, so a row that needs one stands nothing. Nothing waits for the visitor's position with a line, so `stand` passes no `onWaiting`.
+
+## Not a world part yet: who owns a free figure's object
+
+A kind's object in the world is a `WorldPart` (`world-part.ts`): the renderer (`content-placement.ts`) places it at its block's pose and frees it with the station, and the part never touches the scene. A free figure is not one yet. His object belongs to a `SceneStage` (`scene-stage.ts`), the same stage type the story's figure stands on: the stage adds it to the scene root at a pose of its own (`poseOf`), fades it in and out (`follow`) and turns it (`faceVisitor`).
+
+- **Option A, the stage keeps it (today).** Nothing moves; free figures keep their own tap route (`tapped`) ahead of the world parts, and their own set (`figures`).
+  - Against: a second way for a placed block to stand, which is what the one world door exists to end.
+- **Option B, the renderer owns it (recommended).** A free character is a block with a pose at a station, which is exactly what the renderer places. His look becomes the character row's world part: `object` the look's root, `tapTarget` the figure, `update(frame)` the turn toward `frame.viewer` and the voice's ring, `leave` and `back` the walk away and the return. This host keeps only what is his: the voice in the one channel and the order voices carry on in. The story's figure stays on `SceneStage`, because it stands where a step puts it, not as a placed block.
+  - Against: the presence fade and the "one figure stands per tick" rule move with the look, and both are pinned by this host's tests today.
+  - To check first: where a free figure stands now (the station's pose from `poseOf`, or his block's pose). If they differ, moving him to the renderer moves him in the world, which needs a look on a phone.
 
 ## Examples
 

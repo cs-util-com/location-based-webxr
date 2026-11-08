@@ -22,6 +22,9 @@ import type {
   TourDetailsField,
 } from "gps-plus-slam-app-framework/ar/tour-details";
 import type { TourIntegrityError } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
+import type { TourBlockDrop } from "gps-plus-slam-app-framework/ar/tour-block-read";
+import { tourStationBlocks } from "gps-plus-slam-app-framework/ar/tour-story";
+import { objectTitle } from "../object-describe.js";
 import { describeOpenError, olderFormatRefusal } from "../open-errors.js";
 import { stationTitle } from "../station-run.js";
 import { openTourFile, type TourSession } from "../tour-session.js";
@@ -144,6 +147,39 @@ export function droppedStationFieldsLine(
     `The editor left ${it} out: the next save writes ${where} without ${it}.`,
   );
   return sentences.join(" ");
+}
+
+/**
+ * Said once a tour opened with a block's text its reader dropped (a
+ * transcript, a caption or a description over its cap): which blocks, by
+ * the names the editor's panels show (`objectTitle`, the id only as a
+ * fallback), and that the next save writes them without it - never a
+ * silent loss. Null when none was dropped.
+ */
+export function droppedBlockFieldsLine(
+  dropped: readonly TourManifestDrop[],
+  manifest: Pick<TourManifest, "stations">,
+): string | null {
+  const ids = [
+    ...new Set(
+      dropped
+        .filter(
+          (d): d is TourBlockDrop & { kind: "field" } =>
+            "kind" in d && d.kind === "field" && "block" in d,
+        )
+        .map((d) => d.block),
+    ),
+  ];
+  if (ids.length === 0) return null;
+  const blocks = new Map(
+    manifest.stations.flatMap(tourStationBlocks).map((b) => [b.id, b]),
+  );
+  const names = ids.map((id) => {
+    const block = blocks.get(id);
+    return `"${block === undefined ? id : objectTitle(block)}"`;
+  });
+  const where = ids.length === 1 ? "the item" : "those items";
+  return `A text of ${listed(names)} could not be read, so the editor left it out: the next save writes ${where} without it. Write it again in the item.`;
 }
 
 /** `words` as a sentence lists them: "a", "a and b", "a, b and c". */

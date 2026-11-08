@@ -26,7 +26,7 @@ import { mintPhoto, mintPin, newObjectId } from "./content-placement.js";
 import type { CreatorAlignmentPicks } from "./creator-alignment-picks.js";
 import type { CreatorDraft } from "./creator-draft.js";
 import type { CreatorPreviews } from "./creator-previews.js";
-import { kindNoun } from "./object-describe.js";
+import { kindWithArticle } from "./kinds/edit-kinds.js";
 import { usablePhotoFrame } from "./photo-frame.js";
 import {
   PIN_DESCRIPTION_MAX_CHARS,
@@ -234,7 +234,7 @@ export function wireCreatorPlacement(deps: {
     const what =
       object.kind === "shortText"
         ? `the pin "${object.caption}"`
-        : `a ${kindNoun(object.kind)}`;
+        : kindWithArticle(object.kind);
     const refusal = placeRefusal(ctx.tourDocument.state(), object);
     const change =
       refusal === null ? ctx.tourDocument.place(object, extras, what) : null;

@@ -157,6 +157,21 @@ interface GlobeCloudMarchOptions {
 
 type MarchUniforms = ReturnType<typeof marchUniforms>;
 
+/** What the air behind the clouds reads of the march's frame. */
+export type CloudAirUniforms = Pick<
+  MarchUniforms,
+  | "uH"
+  | "uFwd"
+  | "uRight"
+  | "uUp"
+  | "uTan"
+  | "uSun"
+  | "uSunCol"
+  | "uSceneDepth"
+  | "uSceneInverseProjection"
+  | "uSceneDepthOn"
+>;
+
 function marchUniforms(map: { value: unknown }) {
   return {
     uH: { value: 0 },
@@ -442,18 +457,35 @@ export function createGlobeCloudMarch(
     );
   };
 
-  /** Compiles both shaders off the frame that first draws them; a browser
-   *  that fails the wait compiles on that frame instead. */
+  /**
+   * Compiles both shaders off the frame that first draws them; a browser
+   * that fails compiles on that frame instead. The wait is here and not
+   * `compileAsync`: its timer throws on a program the renderer forgot,
+   * where nothing can catch it, when the view closes meanwhile.
+   */
   const compile = () => {
-    quad.material = shadowMaterial;
-    const shadow = renderer.compileAsync(scene, quadCamera);
-    quad.material = material;
-    const clouds = renderer.compileAsync(scene, quadCamera);
-    void Promise.all([shadow, clouds])
-      .catch(() => undefined)
-      .then(() => {
-        compiled = true;
-      });
+    const pending = new Set<THREE.Material>();
+    try {
+      for (const next of [shadowMaterial, material]) {
+        quad.material = next;
+        for (const m of renderer.compile(scene, quadCamera)) pending.add(m);
+      }
+    } catch {
+      compiled = true;
+      return;
+    }
+    const check = () => {
+      if (disposed) return;
+      for (const m of pending) {
+        const { currentProgram: program } = renderer.properties.get(m) as {
+          currentProgram?: { isReady(): boolean };
+        };
+        if (program === undefined || program.isReady()) pending.delete(m);
+      }
+      if (pending.size === 0) compiled = true;
+      else setTimeout(check, 10);
+    };
+    check();
   };
 
   const ready = () =>

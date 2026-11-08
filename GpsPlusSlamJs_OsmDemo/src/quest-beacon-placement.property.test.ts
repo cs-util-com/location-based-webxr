@@ -7,6 +7,10 @@ import {
   questBeaconPlacements,
 } from "./quest-beacon-placement.js";
 import { type Heightfield } from "gps-plus-slam-osm";
+import {
+  uniformIn,
+  uniformWithSeams,
+} from "gps-plus-slam-app-framework/test-utils/uniform-arbitrary";
 
 /**
  * The beacon's frame holds for ANY origin and ANY quest position.
@@ -27,12 +31,15 @@ import { type Heightfield } from "gps-plus-slam-osm";
 const origin = fc.record({
   // Poles excluded: `cos(lat)` reaches 0 there and the frame's longitude scale
   // diverges — a property of the flat-earth frame, not of this mapping.
-  lat: fc.double({ min: -70, max: 70, noNaN: true }),
-  lng: fc.double({ min: -179, max: 179, noNaN: true }),
+  lat: uniformIn(-70, 70),
+  lng: uniformIn(-179, 179),
 });
 
-/** Degrees, small enough to stay inside a sane local frame. */
-const offsetDeg = fc.double({ min: -0.02, max: 0.02, noNaN: true });
+/**
+ * Degrees, small enough to stay inside a sane local frame, with zero (a beacon
+ * exactly at the origin) and the bounds drawn exactly too.
+ */
+const offsetDeg = uniformWithSeams(-0.02, 0.02);
 
 /** A field wide enough that nothing in these properties falls outside it. */
 function wideField(relief: number): Heightfield {
@@ -126,7 +133,7 @@ describe("quest beacon placement, as a property", () => {
       fc.property(
         origin,
         offsetDeg,
-        fc.double({ min: -400, max: 4000, noNaN: true }),
+        uniformWithSeams(-400, 4000),
         (o, d, relief) => {
           const placements = questBeaconPlacements(
             [{ position: { lat: o.lat + d, lng: o.lng + d } }],

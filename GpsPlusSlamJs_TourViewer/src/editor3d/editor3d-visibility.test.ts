@@ -15,7 +15,6 @@ import {
   NEAR_STATIONS,
   morphStanding,
   nearStations,
-  selectedStationOf,
 } from "./editor3d-visibility.js";
 
 describe("morphStanding", () => {
@@ -119,34 +118,5 @@ describe("nearStations", () => {
     expect(() =>
       nearStations(stations, { east: Number.NaN, north: 0 }, 1),
     ).toThrow(RangeError);
-  });
-});
-
-describe("selectedStationOf", () => {
-  const block = {
-    kind: "shortText",
-    view: "pin",
-    caption: "A pin",
-    pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-  } as const;
-  const manifest = {
-    stations: [
-      { id: "a", children: [{ ...block, id: "pin1" }] },
-      { id: "b", children: [{ ...block, id: "photo2" }] },
-    ],
-  };
-
-  // Why: the near-K rule always draws the selected station; the 2D page
-  // selects a station as `station:<id>`, and an item by its own id, whose
-  // station is the one to draw. A code, an unknown id or nothing selects
-  // no station.
-  it("names the selected station, or the station holding the selected item", () => {
-    expect(selectedStationOf("station:b", manifest)).toBe("b");
-    expect(selectedStationOf("pin1", manifest)).toBe("a");
-    expect(selectedStationOf("photo2", manifest)).toBe("b");
-    expect(selectedStationOf("station:gone", manifest)).toBeNull();
-    expect(selectedStationOf("code-7", manifest)).toBeNull();
-    expect(selectedStationOf(null, manifest)).toBeNull();
-    expect(selectedStationOf("station:a", null)).toBeNull();
   });
 });

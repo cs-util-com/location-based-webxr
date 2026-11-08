@@ -36,8 +36,8 @@ editor's own namespace, one tab at a time. Design:
     (or from a build's value), removed once it does not; whether it landed.
     The record may also hold `handMadeStations` (compared like the other
     fields) and `createdStations`: a station the page created
-    (whole frames at their current poses: a note moved beyond its station's
-    radius starts one) that the compared file does not carry counts as a
+    (whole frames at their current poses: one made by "Move to a new
+    station", for one) that the compared file does not carry counts as a
     difference, so a record holding nothing else is kept: the draft's
     notes name it, and without it a reload would seat them again by the
     station rule under a new id. Such a record is offered only beside a
@@ -163,8 +163,11 @@ editor's own namespace, one tab at a time. Design:
   only when no file this browser opened showed the id (no `seen` base),
   it names a station the file or the record knows, and, for a photo, the
   draft holds its bytes (a copy's picture is in no file yet: it is
-  written with the record and offered in `pictures`). Any other such
-  record counts as given way (said with the replaced ones), as before.
+  written with the record and offered in `pictures`). A copy whose
+  picture does not read is part of the draft that did not read
+  (`unreadDraft`), never counted as replaced, and goes (PR #876 review).
+  Any other such record counts as given way (said with the replaced
+  ones), as before.
   The same rule also lets an object an undo re-added after an in-place
   save wrote its delete through, when its record carries no `seen` base
   (it was never edited before that delete): no test pins that case yet.
@@ -226,7 +229,9 @@ editor's own namespace, one tab at a time. Design:
   build wrote the other value (a build never put in place); offered by a
   later open whose file does not carry it - read whether or not a meta
   landed, since the namespace names the tour; spent or unreadable, it goes,
-  and an unreadable one is told (`unreadDraft`). A station in it that no
+  and an unreadable one is told (`unreadDraft`). It is read after the
+  files' list, against the opened file and the files the draft holds: a
+  new station's story may name a file brought in. A station in it that no
   longer reads (its story names what the file no longer declares) is told
   too, and the record stays, as a file with that asset reads it again; it
   lasts until the next whole write of the record, which holds only what read;
@@ -280,6 +285,14 @@ editor's own namespace, one tab at a time. Design:
   re-adds after a save wrote its delete is backed up, but offered after a
   closed tab only when its record carries no `seen` base (above).
 
+## The files
+
+- A file brought in is kept as `asset:<id>` (its bytes) beside `assets` (the list of their `TourAsset`s), in that order, before the record naming it (`saveAsset(asset, blob)`, whether both landed; a write that did not land is said as any other: `noBackup("storage")`).
+- `open` reads the list and the bytes, skipping a file the opened manifest lists (its own now). A list that does not read, or a file it names that is missing, is told (`unreadDraft`, once), and an offered record naming a file held nowhere is left out (`objectAssetsHeld`), except a long text whose voice is gone: it is offered with the opened file's narration (`withFiledNarration`), its words kept. `holdsFile(id)` is false for a file whose last write did not land in this open: a key move that carries the file counts as its write, and a close forgets it (the same bytes kept by another tour's draft are held there). The offer carries `files`; with nothing offered they go, and every `asset:` entry the list does not name is removed.
+- `open` copies each file's bytes into memory. The store hands out a snapshot of the entry (`handle.getFile()`), whose reads fail once the entry is removed; a landed save or a key move removes it while the session may still need the bytes (a preview, a save after an undo brings the file back). An entry that does not read is told as a missing one. The restored photos' pictures are copied the same way (`readDraft`, `draft-persistence.ts`): a restore writes a copied photo's record and picture into the very entry its snapshot read from.
+- A landed save drops the files its manifest lists; a discard drops the offered files this visit did not bring in again; a key move carries them, and its carried records that name a carried file, and its settings (a station's story may name one), wait for the carried files (each still queued at the move, in its own chain): a tab closed mid-move never leaves the new key a record naming a file it lacks. A record naming none, and a deletion, are written at once, so a tab closed while a large file is still being written does not keep them only in the old key.
+- Tests: `editor-draft.test.ts` ("the files a draft keeps").
+
 ## Examples
 
 ```ts
@@ -332,7 +345,8 @@ reload - seen red, the record outlived the save; a record restored over
 a file moved and renamed elsewhere bringing back only the station edited
 here, at the file's pose - seen red, "the details of 2 stations"; a copy
 made here, saved in place, deleted, saved in place and undone, offered
-after a reload);
+after a reload; a copied photo whose picture does not read told as
+unread, not as replaced - seen red, the superseded line);
 an edit claimed against the meta on disk when the pruning write was refused
 (PR #622 A); a close right after "Delete it" holding until its meta write
 landed (PR #622 B); a refused first meta write said, and the backup no

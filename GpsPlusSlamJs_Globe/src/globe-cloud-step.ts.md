@@ -58,6 +58,8 @@ sunIntensity, sceneDepthWeight, flatten })`: the slab over the Earth
     the shell's own drawing and the slab's alpha; null where either does
     not draw).
 
+`drawNear` also returns `air`: the march's uniforms, which the composite's air reads, so the near pass and the composite share one camera and one sun.
+
 ## Invariants
 
 - Pure orchestration: no GPU state of its own; every number it passes is

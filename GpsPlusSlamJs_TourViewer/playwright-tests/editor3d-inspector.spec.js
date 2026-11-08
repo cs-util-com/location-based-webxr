@@ -609,7 +609,7 @@ test("Put items on the ground, Put on the ground, Add a pin, a pin's text and a 
   // Add a pin (the row's "+"): a new pin in b, selected and said; its
   // words typed in the head.
   await page.locator('#tree-body .card[data-station="b"] .head .add').click();
-  await page.locator('#tree-add-menu [data-kind="pin"]').click();
+  await page.locator('#tree-add-menu [data-kind="shortText"]').click();
   await expect(
     page.locator(".toast", { hasText: 'Added a pin to "Station B"' }),
   ).toBeVisible();
@@ -666,10 +666,21 @@ test("Put items on the ground, Put on the ground, Add a pin, a pin's text and a 
     .toBe("");
   expect((await stationNow(page, "a")).foundRadiusM).toBe(24);
 
-  // An item typed out of its station's circle is seated again, said in a
-  // toast naming it and its new station: into the circle it lands in, or,
-  // out of every circle, into a station of its own, which, made here,
-  // starts unlocked.
+  // An item typed into another station's circle asks first: No leaves it
+  // in its station, where it was typed, and says so; Yes changes it. Typed
+  // out of every circle it asks nothing and stays. A move makes no station.
+  /** @type {string[]} */
+  const asked = [];
+  let answer = false;
+  page.on("dialog", (dialog) => {
+    asked.push(dialog.message());
+    void (answer ? dialog.accept() : dialog.dismiss());
+  });
+  const stationsBefore = (await tourNow(page)).stations.length;
+  const homeOfPin = async () =>
+    (await tourNow(page)).stations.find((/** @type {any} */ s) =>
+      stationBlocks(s).some((/** @type {any} */ i) => i.id === "pa"),
+    ).id;
   await page
     .locator('#tree-body .card[data-station="a"] [data-select="pa"]')
     .click();
@@ -679,22 +690,38 @@ test("Put items on the ground, Put on the ground, Add a pin, a pin's text and a 
   await field(page, "north").fill("60");
   await field(page, "north").press("Enter");
   await expect(
+    page.locator(".toast", {
+      hasText: `"Pin a" stays in Station A, outside its circle`,
+    }),
+  ).toBeVisible();
+  expect(asked).toHaveLength(1);
+  expect(asked[0]).toContain("Station A");
+  expect(asked[0]).toContain("Station B");
+  expect(await homeOfPin()).toBe("a");
+  // Undo takes the move back, and this time the answer is Yes.
+  await page.locator("#studio-undo").click();
+  answer = true;
+  await field(page, "north").fill("60");
+  await field(page, "north").press("Enter");
+  await expect(
     page.locator(".toast", { hasText: `"Pin a" is now in Station B` }),
   ).toBeVisible();
-  // 100 m south of b: out of a's circle too.
+  expect(await homeOfPin()).toBe("b");
+  expect(asked).toHaveLength(2);
+  // One step: its Undo gives it back to its station.
+  await page.locator("#studio-undo").click();
+  await expect.poll(homeOfPin).toBe("a");
+  // Out of every circle: no question, and no new station.
   await field(page, "north").fill("-100");
   await field(page, "north").press("Enter");
   await expect(
     page.locator(".toast", {
-      hasText: `"Pin a" left its station's circle: it is now in a station of its own`,
+      hasText: `"Pin a" stays in Station A, outside its circle`,
     }),
-  ).toBeVisible();
-  const home = (await tourNow(page)).stations.find((/** @type {any} */ s) =>
-    stationBlocks(s).some((/** @type {any} */ i) => i.id === "pa"),
-  );
-  expect(home.id).not.toBe("a");
-  await selectStation(page, home.id);
-  await expect(act(page, "lock")).toHaveAttribute("aria-pressed", "false");
+  ).toHaveCount(1);
+  expect(asked).toHaveLength(2);
+  expect(await homeOfPin()).toBe("a");
+  expect((await tourNow(page)).stations).toHaveLength(stationsBefore);
 });
 
 /**
@@ -881,7 +908,7 @@ test("the inspector's fields sit in place at a phone, a phone in landscape, a ta
   }
 });
 
-test("a picture's and a model's fields are typed in the inspector, the station lists its story's blocks, and the edits survive a draft reload, a save and a new open", async ({
+test("a picture's and a model's fields are typed in the inspector, a story's entry shows its own texts, and the edits survive a draft reload, a save and a new open", async ({
   page,
   context,
 }) => {
@@ -889,9 +916,9 @@ test("a picture's and a model's fields are typed in the inspector, the station l
   // typed in the inspector by the format's caps; each edit must reach the
   // shared tour document, be backed up by the draft over a reload, be
   // written by the save and read back by a new open. The tree names an
-  // untitled picture by its kind, and a station's inspector lists the
-  // blocks its story shows (the 3D view draws none of them), with the
-  // texts of each typed there too (a story block's edit is its station's).
+  // untitled picture by its kind. A story's blocks (the 3D view draws none
+  // of them) are selected in the story's folder and their texts typed in
+  // their own inspector: the station's lists only the story.
   test.slow();
   const zip = Buffer.from(
     await (
@@ -914,11 +941,16 @@ test("a picture's and a model's fields are typed in the inspector, the station l
   });
   await selectStation(page, "gate");
   const inspector = page.locator("#shell-inspector");
-  // The story's character, listed by kind and name.
-  const story = inspector.locator("ul.story-blocks li");
-  await expect(story.filter({ hasText: "Sir Kay" })).toHaveText(
-    "CharacterSir Kay",
-  );
+  const card = page.locator('#tree-body .card[data-station="gate"]');
+  // The station lists its story, not the story's parts.
+  await expect(
+    inspector.locator('[data-act="goto:story:gate-story"]'),
+  ).toBeVisible();
+  await expect(inspector.locator('[data-act="goto:sir-kay"]')).toHaveCount(0);
+  await expect(inspector.locator(".isec.character")).toHaveCount(0);
+  await card.locator('[data-folder="gate-story"]').click();
+  await card.locator('[data-select="sir-kay"]').click();
+  await expect.poll(() => selected(page)).toBe("sir-kay");
   // His name heads his own parts, on a line of its own: it once ran into
   // the "View" label after it ("Sir KayView").
   const kayLabels = inspector.locator(
@@ -945,7 +977,6 @@ test("a picture's and a model's fields are typed in the inspector, the station l
   expect(labels.nameHeight).toBeGreaterThan(0);
   expect(labels.viewTop).toBeGreaterThanOrEqual(labels.nameBottom - 0.5);
   // An untitled picture is named by its kind in the tree.
-  const card = page.locator('#tree-body .card[data-station="gate"]');
   await expect(card.locator('[data-select="gate-knight"]')).toContainText(
     "Photo",
   );
@@ -984,9 +1015,10 @@ test("a picture's and a model's fields are typed in the inspector, the station l
     .poll(async () => (await blockNow("gate-arch"))?.title)
     .toBe("The castle arch");
 
-  // A story character's line, typed in his station's inspector: one step
-  // that undo takes back and redo puts again; over its cap, nothing.
-  await selectStation(page, "gate");
+  // A story character's line, typed in his own inspector: one step that
+  // undo takes back and redo puts again; over its cap, nothing.
+  await card.locator('[data-select="sir-kay"]').click();
+  await expect.poll(() => selected(page)).toBe("sir-kay");
   const kayCaption = field(page, "block:sir-kay:caption");
   await expect(kayCaption).toHaveValue("Halt, traveller!");
   await expect(field(page, "block:sir-kay:name")).toHaveValue("Sir Kay");
@@ -1067,7 +1099,11 @@ test("a picture's and a model's fields are typed in the inspector, the station l
   await expect(
     next.locator("#shell-inspector").getByLabel("Title", { exact: true }),
   ).toHaveValue("The castle arch");
-  await next.locator('#tree-body .card[data-station="gate"] .pick').click();
+  // A story's character is read back in his own inspector, reached
+  // through the story's folder.
+  const nextCard = next.locator('#tree-body .card[data-station="gate"]');
+  await nextCard.locator('[data-folder="gate-story"]').click();
+  await nextCard.locator('[data-select="sir-kay"]').click();
   await expect(field(next, "block:sir-kay:caption")).toHaveValue(
     "Halt! Who goes there?",
   );

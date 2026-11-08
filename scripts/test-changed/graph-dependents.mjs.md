@@ -1,0 +1,34 @@
+# graph-dependents.mjs - which dependents the fast gate runs
+
+- Purpose: in the per-commit fast gate, run only the dependent packages the
+  cross-package import graph ([impact-graph.mjs](impact-graph.mjs.md))
+  reaches, instead of pnpm's whole `...<name>` closure. Called by
+  [test-changed.mjs](test-changed.mjs.md); its result becomes the
+  `dependents` option of `gateCommands` ([select.mjs](select.mjs.md)).
+- Public API: `graphDependents({ root, ref, changedDirs })` ->
+  `{ dirs, line }`.
+  - `dirs`: the reached package dirs beyond `changedDirs`, sorted; `[]` when
+    the change reaches no other package (a test-only change); `undefined`
+    when the graph could not be built, which means "every dependent runs".
+  - `line`: the one log line that says which, including how many unit test
+    files the dependents run and which run their whole suite.
+- Invariants & assumptions: reads git and the work tree (through
+  `changedFiles` in [changed-paths.mjs](changed-paths.mjs.md) and
+  `loadImpactGraph` in [workspace-tree.mjs](workspace-tree.mjs.md)); never
+  throws. `impact` in the result is the whole reached set; test-changed.mjs
+  writes it once per run with
+  `writeImpactCache(file, { ref, root, changed, impact })` (`changed`, the
+  files the graph was built from, also returned by `graphDependents`, is
+  stored as a sha256 of the sorted, slash-normalised list) and names the file
+  in `IMPACT_FILE_ENV` (`GATE_IMPACT_FILE`), and each unit stage reads it
+  with `readImpactCache(file, { ref, root, changed })`, which returns null
+  for a missing or malformed file or another ref, root or change set (a file
+  edited while the gate runs makes the unit stage rebuild the graph).
+- Example: a change to `Fw/src/a.ts` that only `Tour` imports gives
+  `{ dirs: ['Tour'], line: 'test-changed: the import graph reaches Tour (1 unit test file(s)); other dependents run nothing' }`.
+- Tests: `graph-dependents.test.mjs`, end to end on a throwaway git
+  workspace: the emitted command is `--filter tour` (plus `rec`, whose
+  Recorder-shaped tsconfig base includes every framework source), a
+  test-only change (a framework test file and a markdown sidecar under that
+  include glob) runs no dependent, a missing root falls back to every
+  dependent.

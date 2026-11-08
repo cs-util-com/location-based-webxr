@@ -234,6 +234,15 @@ them.
 - **No lock-time veto** (M5d dropped): a sighting is never judged through an
   alignment that converged before it.
 
+## The world door and the reading sign's tap
+
+- The renderer deps carry `worldPart`: `play-kinds.ts` `worldPartOf` with a
+  `world-part.ts` `worldEnv("play", manifest.assets, loadContent)`, so a
+  kind's row decides its part in the world and reads its files through the
+  visitor's prefetch.
+- The optional `openReading(block)` dep (`main.ts`: the reading sheet) is
+  passed to `mountReadingSign`; without it a sign takes no tap.
+
 ## Invariants & assumptions
 
 - Session-state fields it owns: the six `viewer*` QR-line inputs,

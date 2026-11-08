@@ -233,6 +233,30 @@ describe("the voice", () => {
     expect(said.at(-1)).toContain("voice.mp3 (2.0 KiB) added");
   });
 
+  // Why: a length the browser does not read in
+  // time (a slow phone, 5 s) was dropped silently; the voice is still
+  // added, and the author is told the tour shows no length for it.
+  it("tells the author when the voice's length could not be read", async () => {
+    section = make({ durationOf: () => Promise.resolve(undefined) });
+    document.body.replaceChildren(section.node);
+    section.update({ blockId: "essay", body: BODY, key: "1" });
+    await flush();
+    await section.takeFiles([file("x", "voice.mp3")]);
+    await flush();
+    expect(edits.at(-1)).not.toHaveProperty("durationMs");
+    expect(said.at(-1)).toContain("voice.mp3 (1 B) added");
+    expect(said.at(-1)).toContain(
+      "Its length could not be read, so the tour shows no length for it.",
+    );
+  });
+
+  it("says nothing of the length when it was read", async () => {
+    await section.takeFiles([file("x", "voice.mp3")]);
+    await flush();
+    expect(said.at(-1)).toContain("voice.mp3 (1 B) added");
+    expect(said.at(-1)).not.toContain("length");
+  });
+
   // Why: the file name describes one recording; after an undo the tour
   // holds the earlier one, and the row must name that one, not the file
   // chosen last.

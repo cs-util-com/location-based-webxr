@@ -1,14 +1,17 @@
 /**
  * The long text's part of the editor's inspector, put together: the
  * writer (`long-text-writer.ts`) the inspector shows while a long text is
- * selected, the preview (`long-text-preview.ts`) over the 3D view, the
- * inspector's "Wider" width and the preview's own open state. The shell
- * asks it for the writer's node on each draw (`sync`) and hands it the
- * inspector's head buttons it owns (`act`).
+ * selected, the preview (`long-text-preview.ts`) over the 3D view (none
+ * on a phone, which has no room for it), the inspector's "Wider" width
+ * and the preview's own open state. Its panel (`long-text-panel.ts`, the
+ * long text's row of the inspector's kind panels) asks it for the
+ * writer's node on each draw (`sync`) and hands it the inspector's head
+ * buttons it owns (`act`).
  *
  * @see long-text-dock.ts.md
  */
 import type { InspectorLongText } from "../editor-shell/inspector-model.js";
+import { phoneSheets } from "../editor-shell/phone-sheet.js";
 import type { TypedEditOutcome } from "../editor-shell/editor-shell.js";
 import type { NarrationSectionDeps } from "../narration/narration-section.js";
 import type { KeptStore } from "./kept-store.js";
@@ -123,6 +126,14 @@ export function createLongTextDock(deps: LongTextDockDeps): LongTextDock {
     },
   });
 
+  const onPhone = () =>
+    phoneSheets((deps.document.defaultView ?? globalThis).innerWidth);
+
+  const dropPreview = () => {
+    preview?.destroy();
+    preview = null;
+  };
+
   const relayout = () => {
     deps.inspectorRoot.classList.toggle("lw", model !== null);
     deps.inspectorRoot.classList.toggle("lw-wide", model !== null && wide);
@@ -134,7 +145,9 @@ export function createLongTextDock(deps: LongTextDockDeps): LongTextDock {
 
   return {
     sync(next) {
-      const key = JSON.stringify(next);
+      const phone = onPhone();
+      // A phone turned wide or back changes what is shown, not the model.
+      const key = `${String(phone)} ${JSON.stringify(next)}`;
       if (key === lastKey) return next === null ? null : writer.node;
       lastKey = key;
       const was = model;
@@ -142,20 +155,28 @@ export function createLongTextDock(deps: LongTextDockDeps): LongTextDock {
       writer.update(next);
       if (next === null) {
         if (was !== null) {
-          preview?.destroy();
-          preview = null;
+          dropPreview();
           relayout();
         }
         return null;
       }
       assets = next.pictures;
+      if (phone) {
+        dropPreview();
+        if (was === null) relayout();
+        return writer.node;
+      }
+      const opened = preview === null;
       const p = ensurePreview();
-      if (was === null) {
+      if (opened) {
         p.setOpen(previewOpen);
         relayout();
       }
       p.setView(viewLabel(next.view));
-      p.show(content(next, writer.area.value), was?.blockId !== next.blockId);
+      p.show(
+        content(next, writer.area.value),
+        opened || was?.blockId !== next.blockId,
+      );
       return writer.node;
     },
     state() {

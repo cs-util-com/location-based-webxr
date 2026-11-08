@@ -32,6 +32,12 @@ one edit.
   a draw can take the slider from under the pointer. A cancelled pointer
   writes nothing. The two listeners on the document exist only during a
   drag.
+- A drag belongs to the finger that pressed the slider (its `pointerId`,
+  taken at `pointerdown` while no drag runs): another finger's release or
+  cancel, or a second press on the slider, does not end it. A drag begun
+  without a press seen (the keyboard) ends at any release, as before. A
+  press that moved nothing starts no drag; its own release (or cancel)
+  forgets its finger, so it never holds a later drag's release.
 - After a drag the thumb goes back to the station's radius, so a write that
   changed nothing leaves no thumb beside a number that disagrees.
 - The format allows more than the track (2 to 300 m): the thumb rests at the

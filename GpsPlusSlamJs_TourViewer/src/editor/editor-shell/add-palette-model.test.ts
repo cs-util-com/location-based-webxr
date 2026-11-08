@@ -32,7 +32,7 @@ const short = (rows: ReturnType<typeof paletteRows>) =>
 describe("paletteRows", () => {
   it("lists what adds to the selected station for an empty query, then a new station", () => {
     expect(short(paletteRows("", STATIONS, "gate"))).toEqual([
-      "pin@gate",
+      "shortText@gate",
       "longText@gate",
       "station",
     ]);
@@ -43,8 +43,10 @@ describe("paletteRows", () => {
   });
 
   it("defaults to the first station with none selected, or one that is gone", () => {
-    expect(short(paletteRows("", STATIONS, null))[0]).toBe("pin@column");
-    expect(short(paletteRows("", STATIONS, "gone"))[0]).toBe("pin@column");
+    expect(short(paletteRows("", STATIONS, null))[0]).toBe("shortText@column");
+    expect(short(paletteRows("", STATIONS, "gone"))[0]).toBe(
+      "shortText@column",
+    );
   });
 
   it("finds the kind and the place in one query, the place's station first", () => {
@@ -52,7 +54,7 @@ describe("paletteRows", () => {
       "longText@steps",
     ]);
     expect(short(paletteRows("pin 3", STATIONS, "gate"))).toEqual([
-      "pin@steps",
+      "shortText@steps",
     ]);
     // A kind alone: every station's, the selection's first.
     expect(short(paletteRows("long", STATIONS, "gate"))).toEqual([
@@ -72,7 +74,9 @@ describe("paletteRows", () => {
       title: `Stop ${String(i + 1)}`,
     }));
     expect(short(paletteRows("long 1", twelve, "s11"))[0]).toBe("longText@s1");
-    expect(short(paletteRows("short 2", twelve, "s12"))[0]).toBe("pin@s2");
+    expect(short(paletteRows("short 2", twelve, "s12"))[0]).toBe(
+      "shortText@s2",
+    );
     // A number that only some places contain still lists them all.
     expect(short(paletteRows("long 1", twelve, "s11"))).toContain(
       "longText@s11",
@@ -93,7 +97,9 @@ describe("paletteRows", () => {
 
   it("puts the kind named by its label over one matched by another word", () => {
     // "text" starts both labels' second word; "short" only the pin's label.
-    expect(short(paletteRows("short", STATIONS, "gate"))[0]).toBe("pin@gate");
+    expect(short(paletteRows("short", STATIONS, "gate"))[0]).toBe(
+      "shortText@gate",
+    );
     expect(short(paletteRows("sta", STATIONS, "gate"))[0]).toBe("station");
   });
 
@@ -169,10 +175,10 @@ describe("paletteRows with a kind chip", () => {
   });
 
   it("narrows what the words found, and can find nothing", () => {
-    expect(short(paletteRows("steps", STATIONS, "gate", "pin"))).toEqual([
-      "pin@steps",
+    expect(short(paletteRows("steps", STATIONS, "gate", "shortText"))).toEqual([
+      "shortText@steps",
     ]);
-    expect(paletteRows("long", STATIONS, "gate", "pin")).toEqual([]);
+    expect(paletteRows("long", STATIONS, "gate", "shortText")).toEqual([]);
   });
 
   it("lists every kind with no chip on", () => {
@@ -183,7 +189,7 @@ describe("paletteRows with a kind chip", () => {
 
   it("offers a chip per kind that adds, the picture none, a station last", () => {
     expect(PALETTE_KINDS.map((k) => k.kind)).toEqual([
-      "pin",
+      "shortText",
       "longText",
       "station",
     ]);

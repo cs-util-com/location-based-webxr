@@ -29,6 +29,7 @@ import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { manifestToWrite } from "../tour-document.js";
 import { openTourFile, type TourSession } from "../tour-session.js";
 import { createTourViewerStore } from "../tour-viewer-session.js";
+import { photoKey } from "../draft-persistence.js";
 import { createEditorDraft } from "./editor-draft.js";
 import { createEditorSession } from "./editor-session.js";
 import type { EditorLock } from "./save-target.js";
@@ -429,6 +430,25 @@ describe("the editor session's station edits", () => {
     expect(
       editor.model().items.filter((i) => i.kind === "station"),
     ).toHaveLength(2);
+    await session.close();
+  });
+
+  it("counts a copied photo's picture among the bytes the next save adds", async () => {
+    // Why: the archive room check and the autosave cap judge the next save
+    // by `addedBytes`; the copy's picture is an entry that save writes.
+    const { session, manifest } = await opened();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    expect(editor.addedBytes()).toBe(0);
+    expect(await editor.duplicateObject("f")).toMatchObject({
+      kind: "duplicated",
+    });
+    expect(editor.addedBytes()).toBe("the picture of f".length);
+    await editor.save({ keepScan: false });
+    expect(editor.addedBytes()).toBe(0);
     await session.close();
   });
 
@@ -846,6 +866,54 @@ describe("the station edits across a reload", () => {
     );
     expect(offer?.made).toEqual([copyId]);
     expect(offer?.objects.map((o) => o.id)).toEqual([copyId]);
+    await session.close();
+  });
+
+  it("a copied photo whose picture does not read is told as unread, not as replaced", async () => {
+    // Why (PR #876 review, note 8): such a copy was counted among the
+    // records "replaced by a newer one in the tour file" and deleted, so
+    // the author was told of an edit elsewhere that never happened and was
+    // never told a part of the draft did not read.
+    const { session, manifest } = await opened();
+    const stores = memoryDraftStores();
+    const draft = draftOver(stores);
+    await draft.open(K, manifest);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      draft: draft.writes(),
+    });
+    const copy = await editor.duplicateObject("f");
+    const copyId = copy.kind === "duplicated" ? copy.id : "";
+    expect(copyId).not.toBe("");
+    await draft.idle();
+    draft.close();
+    // The next page's store hands out no bytes for the copy's picture.
+    const blind = async (key: string) => {
+      const store = await stores.open(key);
+      if (store === undefined) return undefined;
+      return {
+        ...store,
+        getBlob: (k: string) =>
+          k === photoKey(copyId)
+            ? Promise.resolve(undefined)
+            : store.getBlob(k),
+      };
+    };
+    let unread = 0;
+    const reloaded = createEditorDraft({
+      openStore: blind,
+      holdLock: freeLocks,
+      noBackup: () => undefined,
+      unreadDraft: () => {
+        unread += 1;
+      },
+    });
+    const again = await reloaded.open(K, manifest);
+    expect(again.superseded).toBeNull();
+    expect(unread).toBe(1);
+    expect(again.offer?.objects.map((o) => o.id) ?? []).not.toContain(copyId);
     await session.close();
   });
 });

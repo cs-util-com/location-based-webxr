@@ -103,17 +103,27 @@ const UNBUILT_HIGHWAYS = new Set(["construction", "proposed"]);
  * A DECISION BOUNDED BY A MEASUREMENT. OSM does not say how wide a gate is, any
  * more than it says how tall a wall is (DEC-R11-2 settled that one the same way)
  * — but the LOWER bound is not a matter of taste. Blocking is a property of the
- * STEP between two res-13 cell centres, whose spacing is ~6 m, so a narrower gap
- * is one the pathfinder cannot use: drawn, visible, and walked around.
+ * STEP between two res-13 cell centres, so a gap narrower than their spacing is
+ * one the pathfinder can miss: drawn, visible, and walked around.
  *
- * SIX, NOT FIVE, and the difference was measured rather than reasoned. Five was
- * chosen first and passed the walkability property at 40 alignments; run at 300
- * it failed roughly one run in four, i.e. about one alignment in twelve hundred
- * had no step through the gate at all. Six passed 1 200 alignments with no
- * failure. A property that is 99.9 % true is a flaky test AND a gate that
- * occasionally does not open, and the second is the one that matters.
+ * THE BOUND IS THE LARGEST SPACING, NOT THE TYPICAL ONE. When a wall runs along
+ * a lattice axis just beside a row of cell centres, every step across it crosses
+ * within a fraction of a metre of one of those centres, so the crossings come
+ * one centre spacing apart and a narrower gap can fall between two of them.
+ * Res-13 neighbour centres are ~7.1 m apart on average and up to 7.83 m
+ * (measured over 20 000 random cells and a global grid), so the gap must exceed
+ * 7.83 m. Measured at bearings within 2° of a lattice axis, 14 400 alignments:
+ * 6 m left no step at ~12 % of them, 7 m at ~3 %, 7.5 m at 0.3 %, 8 m at none
+ * (also none at 1 m and 2 m wall thickness and at 8-200 m wall lengths). At
+ * random alignments 6 m failed about one gate in fifty.
+ *
+ * Six was the earlier value, and it passed its property only because that
+ * property drew its coordinates from `fc.double`, which puts almost every value
+ * within a hair of zero: it was testing one spot on the lattice. A property that
+ * is 98 % true is a flaky test AND a gate that occasionally does not open, and
+ * the second is the one that matters.
  */
-export const GATE_GAP_M = 6;
+export const GATE_GAP_M = 8;
 
 /**
  * How far off a barrier a gate node may sit and still open it (DEC-A2).
@@ -410,9 +420,9 @@ export function splitAtGates(
 
   // A PIECE SHORTER THAN THE BARRIER IS THICK IS NOT A BARRIER, and this is a
   // LENGTH test rather than a point count because the case that produces one has
-  // two perfectly good points. Two gates just over a gap apart — 0 m and 5.2 m —
-  // give cuts that do NOT overlap and so are not merged, leaving 0.2 m of wall
-  // stranded in the middle of a 7.7 m opening: a visible stub floating in the
+  // two perfectly good points. Two gates just over a gap apart — 0 m and
+  // GATE_GAP_M + 0.2 m — give cuts that do NOT overlap and so are not merged,
+  // leaving 0.2 m of wall stranded in the middle of the opening: a visible stub in the
   // gap, and a quad in the index that a step between two cell centres can still
   // hit. That is the "drawn and unusable" outcome GATE_GAP_M is bounded from
   // below to prevent, arriving from the other side.

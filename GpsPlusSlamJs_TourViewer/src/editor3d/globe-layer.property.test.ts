@@ -28,18 +28,26 @@ import {
   recentre,
 } from "../test-support/tour-frame-points.js";
 import { WGS84_TEXTBOOK } from "../test-support/wgs84-textbook.js";
+import {
+  uniformIn,
+  uniformWithSeams,
+} from "gps-plus-slam-app-framework/test-utils/uniform-arbitrary";
 
 const TOLERANCES_M = [1e-3, 1e-4, 1e-5, 1e-6];
 
 const latLng = fc.record({
-  lat: fc.double({ min: -80, max: 80, noNaN: true }),
-  lng: fc.double({ min: -180, max: 180, noNaN: true }),
+  lat: uniformIn(-80, 80),
+  // The antimeridian drawn exactly, not only near it: the frame must hold there.
+  lng: uniformWithSeams(-180, 180),
 });
-/** A station within 5 km of the tour's centre, at any tour height. */
+/**
+ * A station within 5 km of the tour's centre, at any tour height, with the
+ * centre itself (zero) and the bounds drawn exactly too.
+ */
 const tourPoint = fc.tuple(
-  fc.double({ min: -5_000, max: 5_000, noNaN: true }),
-  fc.double({ min: -100, max: 9_000, noNaN: true }),
-  fc.double({ min: -5_000, max: 5_000, noNaN: true }),
+  uniformWithSeams(-5_000, 5_000),
+  uniformWithSeams(-100, 9_000),
+  uniformWithSeams(-5_000, 5_000),
 );
 
 /**

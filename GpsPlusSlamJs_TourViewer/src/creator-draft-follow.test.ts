@@ -11,7 +11,10 @@
  * nothing on screen would say so.
  */
 import { describe, expect, it } from "vitest";
-import type { TourPin } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type {
+  TourObject,
+  TourPin,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 
 import { TOUR_OBJECT_RECORD_FORMAT } from "gps-plus-slam-app-framework/ar/tour-manifest";
@@ -233,6 +236,40 @@ describe("the phone's draft says what it could not read", () => {
     const ns = await space(JSON.stringify({ needsNoGps: false }));
     const { ctx } = await wired(ns);
     expect(ctx.placementNote).toBeNull();
+  });
+
+  it("tells of a captured photo whose bytes do not read", async () => {
+    // Why (PR #876 review, note 8): the read drops such a record - a
+    // restore of it would name a content entry the zip lacks - and the
+    // phone said nothing at all, so a photo vanished without a word.
+    const ns = namespaces({ unreadable: photoKey("ph") });
+    const first = await wired(ns);
+    const photo: TourObject = {
+      id: "ph",
+      kind: "picture",
+      view: "plane",
+      image: "ph",
+      widthM: 1,
+      imageAsset: {
+        id: "ph",
+        path: "content/ph.jpg",
+        kind: "image",
+        width: 4,
+        height: 3,
+      },
+      createdAtIso: "2026-10-20T00:00:00.000Z",
+      geo: { lat: 48.5201, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
+    };
+    expect(
+      await first.draft.writeObject(
+        photo,
+        new Blob(["JPEG"], { type: "image/jpeg" }),
+      ),
+    ).toBe(true);
+    await flush();
+    expect(ns.files(OLD).has(photoKey("ph"))).toBe(true);
+    const { ctx } = await wired(ns);
+    expect(ctx.placementNote).toBe(DRAFT_PART_UNREAD);
   });
 });
 

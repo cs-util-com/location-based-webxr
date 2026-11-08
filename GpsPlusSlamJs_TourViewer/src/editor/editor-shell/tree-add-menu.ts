@@ -1,8 +1,12 @@
 /**
  * The tree's type menu: what a station row's "+" (and its empty line's
- * "Add content") adds in place - a short text or a long text, at a free
- * spot of that station; a picture is listed, off, with the reason (it is
- * taken on site with the phone). One menu for every row, opened under the
+ * "Add content") adds in place - a kind its row says is addable
+ * (`KIND_EDIT` `add`; today a short text or a long text), at a free spot
+ * of that station, or a story; a story row's "+" (and its empty line, and
+ * its inspector's "Add entry...") adds such a kind into that story; a kind
+ * listed but not addable (a picture: it is taken on site with the phone)
+ * is shown off, with the reason. The head names the place. One menu for every row, opened
+ * under the
  * button pressed, the WAI-ARIA menu's keys inside it: the arrows, Home and
  * End move among its items (an item that is off keeps its place, said by
  * `aria-disabled`), a letter jumps to the next item starting with it,
@@ -10,9 +14,9 @@
  * further: the page's Escape would drop the selection), Tab closes it and
  * lets the focus move on, a press outside closes it.
  *
- * The focus goes back by the station's id, not to the element pressed:
- * the add redraws the tree, and the station's "+" is the control that is
- * there before and after (its empty line is gone once it holds an item).
+ * The focus goes back by the row's id, not to the element pressed: the add
+ * redraws the tree, and the row's "+" is the control that is there before
+ * and after (its empty line is gone once it holds an item).
  * With the tree folded out of sight (the details on a phone) it goes to
  * the button pressed.
  *
@@ -24,54 +28,15 @@ import {
   type ShellIcon,
 } from "gps-plus-slam-editor-kit/chrome";
 
-/** What a station's "+" adds: the kinds the editor can make from nothing. */
-export type AddKind = "pin" | "longText";
-
-/** One line of the menu (and of the Ctrl+K palette's kinds). */
-export interface AddChoice {
-  /** The kind it adds; `picture` adds nothing here. */
-  readonly kind: AddKind | "picture";
-  readonly label: string;
-  /** What it is, or for one that is off, why. */
-  readonly hint: string;
-  /** The words a search for it matches (its label among them). */
-  readonly words: string;
-  /** The shell icon drawn beside it. */
-  readonly icon: ShellIcon;
-  readonly addable: boolean;
-}
-
-export const ADD_CHOICES: readonly AddChoice[] = [
-  {
-    kind: "pin",
-    label: "Short text",
-    hint: "A pin with a caption",
-    words: "short text pin caption label note",
-    icon: "pin",
-    addable: true,
-  },
-  {
-    kind: "longText",
-    label: "Long text",
-    hint: "A reading sign: a title and its text",
-    words: "long text reading sign article body",
-    icon: "text",
-    addable: true,
-  },
-  {
-    kind: "picture",
-    label: "Picture",
-    hint: "Taken on site with the phone",
-    words: "picture photo image",
-    icon: "photo",
-    addable: false,
-  },
-];
+import { ADD_CHOICES, type AddKind } from "../../kinds/edit-kinds.js";
 
 export interface TreeAddMenu {
   /** Open under `anchor` for the station `stationId`, titled `title`, the
    *  focus on its first item. */
   openFor(anchor: HTMLElement, stationId: string, title: string): void;
+  /** Open under `anchor` for the story `storyId`, named `title`, the focus
+   *  on its first item; a story is not offered. */
+  openForStory(anchor: HTMLElement, storyId: string, title: string): void;
   close(returnFocus: boolean): void;
   isOpen(): boolean;
 }
@@ -116,12 +81,14 @@ export function addMenuSpot(
 }
 
 export function createTreeAddMenu(deps: {
-  /** The tree's body: where the station's "+" is found again. */
+  /** The tree's body: where a row's "+" is found again. */
   readonly body: HTMLElement;
   /** Where the menu goes (the page's body). */
   readonly host: HTMLElement;
   /** Add `kind` to the station; run after the menu closed. */
-  readonly choose: (stationId: string, kind: AddKind) => void;
+  readonly choose: (stationId: string, kind: AddKind | "story") => void;
+  /** Add `kind` to the story; run after the menu closed. */
+  readonly chooseForStory: (storyId: string, kind: AddKind) => void;
 }): TreeAddMenu {
   const menu = document.createElement("div");
   menu.id = "tree-add-menu";
@@ -132,30 +99,48 @@ export function createTreeAddMenu(deps: {
   head.className = "mhead";
   head.setAttribute("aria-hidden", "true");
   menu.append(head);
-  for (const choice of ADD_CHOICES) {
+  const itemOf = (
+    kind: string,
+    text: string,
+    why: string,
+    icon: ShellIcon,
+  ): HTMLButtonElement => {
     const item = document.createElement("button");
     item.type = "button";
     item.setAttribute("role", "menuitem");
     item.tabIndex = -1;
-    item.dataset["kind"] = choice.kind;
+    item.dataset["kind"] = kind;
     const label = document.createElement("span");
     label.className = "label";
-    label.textContent = choice.label;
+    label.textContent = text;
     const hint = document.createElement("span");
     hint.className = "hint";
-    hint.textContent = choice.hint;
-    item.append(shellIcon(choice.icon), label, hint);
+    hint.textContent = why;
+    item.append(shellIcon(icon), label, hint);
+    return item;
+  };
+  for (const choice of ADD_CHOICES) {
+    const item = itemOf(choice.kind, choice.label, choice.hint, choice.look);
     setItemDisabled(item, !choice.addable);
     menu.append(item);
   }
+  // A story goes behind a line: it is a folder, the others are what fills
+  // one.
+  const storyPart = document.createElement("div");
+  storyPart.className = "storypart";
+  storyPart.append(
+    itemOf("story", "Story", "A folder of entries that play in order", "story"),
+  );
+  menu.append(storyPart);
   deps.host.append(menu);
-  let station: string | null = null;
+  let target: { kind: "station" | "story"; id: string } | null = null;
   /** The button it opened from, which says it is open (`aria-expanded`). */
   let opener: HTMLElement | null = null;
 
-  const items = (): HTMLElement[] => [
-    ...menu.querySelectorAll<HTMLElement>('[role="menuitem"]'),
-  ];
+  const items = (): HTMLElement[] =>
+    [...menu.querySelectorAll<HTMLElement>('[role="menuitem"]')].filter(
+      (item) => item.closest("[hidden]") === null || menu.hidden,
+    );
   const focusAt = (index: number): void => {
     const all = items();
     all[((index % all.length) + all.length) % all.length]?.focus();
@@ -169,18 +154,43 @@ export function createTreeAddMenu(deps: {
 
   function close(returnFocus: boolean): void {
     if (!isOpen()) return;
-    const id = station;
+    const from = target;
     const pressed = opener;
     menu.hidden = true;
-    station = null;
+    target = null;
     pressed?.setAttribute("aria-expanded", "false");
     opener = null;
     document.removeEventListener("pointerdown", onOutside, true);
-    if (!returnFocus || id === null) return;
+    if (!returnFocus || from === null) return;
+    const key = from.kind === "station" ? "add" : "storyadd";
     const plus = [
-      ...deps.body.querySelectorAll<HTMLElement>("[data-add]"),
-    ].find((b) => b.dataset["add"] === id);
+      ...deps.body.querySelectorAll<HTMLElement>(`[data-${key}]`),
+    ].find((b) => b.dataset[key] === from.id);
     (plus?.closest(".collapsed, [hidden]") === null ? plus : pressed)?.focus();
+  }
+
+  function open(
+    anchor: HTMLElement,
+    to: { kind: "station" | "story"; id: string },
+    words: string,
+  ): void {
+    if (isOpen()) close(false);
+    target = to;
+    opener = anchor;
+    anchor.setAttribute("aria-expanded", "true");
+    head.textContent = words;
+    menu.setAttribute("aria-label", words);
+    storyPart.hidden = to.kind === "story";
+    menu.hidden = false;
+    const { left, top } = addMenuSpot(
+      anchor.getBoundingClientRect(),
+      menu.getBoundingClientRect(),
+      { width: window.innerWidth, height: window.innerHeight },
+    );
+    menu.style.left = `${String(left)}px`;
+    menu.style.top = `${String(top)}px`;
+    document.addEventListener("pointerdown", onOutside, true);
+    focusAt(0);
   }
 
   menu.addEventListener("keydown", (event) => {
@@ -211,31 +221,25 @@ export function createTreeAddMenu(deps: {
   });
   menu.addEventListener("click", (event) => {
     const item = (event.target as Element).closest<HTMLElement>("[data-kind]");
-    if (item === null || station === null) return;
+    if (item === null || target === null) return;
     if (item.getAttribute("aria-disabled") === "true") return;
-    const id = station;
+    const from = target;
+    const kind = item.dataset["kind"] as AddKind | "story";
     close(true);
-    deps.choose(id, item.dataset["kind"] as AddKind);
+    if (from.kind === "station") deps.choose(from.id, kind);
+    else if (kind !== "story") deps.chooseForStory(from.id, kind);
   });
 
   return {
     openFor(anchor, stationId, title) {
-      if (isOpen()) close(false);
-      station = stationId;
-      opener = anchor;
-      anchor.setAttribute("aria-expanded", "true");
-      head.textContent = `Add to ${title}`;
-      menu.setAttribute("aria-label", `Add to ${title}`);
-      menu.hidden = false;
-      const { left, top } = addMenuSpot(
-        anchor.getBoundingClientRect(),
-        menu.getBoundingClientRect(),
-        { width: window.innerWidth, height: window.innerHeight },
+      open(anchor, { kind: "station", id: stationId }, `Add to ${title}`);
+    },
+    openForStory(anchor, storyId, title) {
+      open(
+        anchor,
+        { kind: "story", id: storyId },
+        `Add to the story "${title}"`,
       );
-      menu.style.left = `${String(left)}px`;
-      menu.style.top = `${String(top)}px`;
-      document.addEventListener("pointerdown", onOutside, true);
-      focusAt(0);
     },
     close,
     isOpen,

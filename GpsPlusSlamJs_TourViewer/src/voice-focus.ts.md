@@ -14,7 +14,7 @@ The page's one voice channel: one voice is heard at a time, whoever asks. A tap 
   - `running()` - the voice heard now, or null.
 - `Voice` - `hold()`, `carryOn()`, `stop()`, and `story` on a voice a story owns.
 - `focusedPlayer(inner, focus): FocusedPlayer` - a `NarrationPlayer` in the channel: `play` is a tap, `pause` gives the channel back; adds `wanted()` (playing or held), `carryOn()` (a self-start; refused, it takes the place behind what runs and answers false) and `stop()` (for good, back to its start).
-- `focusedSceneAudio(audio, focus, onHeld?): SceneAudio` - the story's sound channel in it; a clip is a tap. `onHeld(held)` hears the channel hold it and let it go, so its step can wait. `takeBack()` is a tap on the held voice: it runs again, whatever runs is held. A clip replaced by the next one ends nothing: its late refusal or end is not the new clip's.
+- `focusedSceneAudio(audio, focus, onHeld?): SceneAudio` - the story's sound channel in it; a clip is a tap. `onHeld(held)` hears the channel hold it and let it go, so its step can wait. `takeBack()` is a tap on the held voice: it runs again, whatever runs is held. A clip replaced by the next one ends nothing: its late refusal or end is not the new clip's. A `play` a hold's pause cut short (AbortError) is no refusal: it resolves and the clip keeps the channel. Only the held clip's AbortError is excused: one with no hold behind it, or a later clip's, rejects and gives the channel back as any refusal does. A clip the channel itself stops (a held story clip dropped to keep another story voice held) ends for its step there and then, once: a stopped clip never reaches its own end, and a `lineEnd` step would wait for it for good.
 - `storyVideoVoice(video, focus, onHeld?)` - the story's clip in it; `started` takes the channel unless the clip is muted, `ended` gives it back. A `play` the browser refuses at carrying on gives it back too.
 
 ## Invariants and assumptions
@@ -35,4 +35,4 @@ voice.pause(); // the held voice carries on
 
 ## Tests
 
-`voice-focus.test.ts` covers the rules and each wrapper; `voice-focus.property.test.ts` drives random sequences and holds that one voice runs and one stays paused.
+`voice-focus.test.ts` covers the rules and each wrapper, including a story's clip the channel stops ending for its step whether its `play()` had settled or was still pending; `voice-focus.property.test.ts` drives random sequences and holds that one voice runs and one stays paused.

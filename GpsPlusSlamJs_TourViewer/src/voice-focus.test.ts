@@ -417,6 +417,84 @@ describe("a superseded or refused clip", () => {
     expect(focus.running()).not.toBeNull();
   });
 
+  // Why: a hold pauses the clip, and a pause while its play() is pending
+  // rejects that play() with AbortError. The clip is held, not refused: it
+  // keeps its place and carries on when the tapped voice ends.
+  it("a play cut short by a hold is no refusal", async () => {
+    const focus = createVoiceFocus();
+    const log: string[] = [];
+    const refusals: ((e: Error) => void)[] = [];
+    const audio = focusedSceneAudio(
+      {
+        play: () =>
+          new Promise((_, reject) => {
+            refusals.push(reject);
+          }),
+        stop: () => undefined,
+        pause: () => undefined,
+        resume: () => {
+          log.push("resume");
+        },
+      },
+      focus,
+    );
+    const played = audio.play(new Blob(["x"]), () => undefined);
+    const tap = voice("tap", []);
+    focus.tapped(tap);
+    refusals[0]!(new DOMException("paused", "AbortError"));
+    await expect(played).resolves.toBe(undefined);
+    focus.ended(tap);
+    expect(log).toEqual(["resume"]);
+  });
+
+  // Why: only a hold makes an AbortError harmless. Without a hold (the
+  // element was torn down, a load aborted) it is a real refusal: the caller
+  // hears it and the channel is given back.
+  it("an AbortError with no hold still surfaces and frees the channel", async () => {
+    const focus = createVoiceFocus();
+    const audio = focusedSceneAudio(
+      {
+        play: () => Promise.reject(new DOMException("gone", "AbortError")),
+        stop: () => undefined,
+        pause: () => undefined,
+        resume: () => undefined,
+      },
+      focus,
+    );
+    await expect(
+      audio.play(new Blob(["x"]), () => undefined),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(focus.running()).toBeNull();
+  });
+
+  // Why: a hold belongs to the clip it paused. A later clip's AbortError,
+  // with no hold of its own, is still a refusal.
+  it("a hold of an earlier clip does not excuse a later clip's AbortError", async () => {
+    const focus = createVoiceFocus();
+    const refusals: ((e: Error) => void)[] = [];
+    const audio = focusedSceneAudio(
+      {
+        play: () =>
+          new Promise((_, reject) => {
+            refusals.push(reject);
+          }),
+        stop: () => undefined,
+        pause: () => undefined,
+        resume: () => undefined,
+      },
+      focus,
+    );
+    const blob = new Blob(["x"]);
+    void audio.play(blob, () => undefined);
+    const tap = voice("tap", []);
+    focus.tapped(tap);
+    focus.ended(tap);
+    const second = audio.play(blob, () => undefined);
+    refusals[1]!(new DOMException("gone", "AbortError"));
+    await expect(second).rejects.toMatchObject({ name: "AbortError" });
+    expect(focus.running()).toBeNull();
+  });
+
   // Why: a phone may refuse the clip's way back; nobody hears it then, so
   // the channel must not stay taken by a silent video.
   it("a refused video gives the channel back when it should carry on", async () => {
@@ -455,5 +533,52 @@ describe("a superseded or refused clip", () => {
     focus.tapped(free);
     focus.ended(free);
     expect(focus.running()).toBeNull();
+  });
+});
+
+describe("a story's clip the channel stops", () => {
+  // Why: a story's sound held behind the story's video is the one held
+  // voice; a free voice tapped then stops it to keep the video. Its step
+  // waits for the clip's end, and a stopped clip has no end of its own, so
+  // the stop must end it for the step, or a lineEnd step waits for good.
+  // Both orders: the clip's play() already settled, and still pending when
+  // the hold's pause cut it short (its AbortError lands after the stop).
+  it.each([
+    ["settled", false],
+    ["pending", true],
+  ])("ends for its step once, its play() %s", async (_, pending) => {
+    const focus = createVoiceFocus();
+    const refusals: ((e: Error) => void)[] = [];
+    const calls: string[] = [];
+    const audio = focusedSceneAudio(
+      {
+        play: () =>
+          pending
+            ? new Promise<void>((_, reject) => {
+                refusals.push(reject);
+              })
+            : Promise.resolve(),
+        stop: () => calls.push("stop"),
+        pause: () => calls.push("pause"),
+        resume: () => calls.push("resume"),
+      },
+      focus,
+    );
+    let ended = 0;
+    const played = audio.play(new Blob(["x"]), () => (ended += 1));
+    const clip = {
+      paused: false,
+      muted: false,
+      pause() {
+        this.paused = true;
+      },
+      play: () => Promise.resolve(),
+    };
+    storyVideoVoice(clip, focus).started();
+    focus.tapped(voice("free", []));
+    expect(calls).toEqual(["pause", "stop"]);
+    refusals[0]?.(new DOMException("paused", "AbortError"));
+    await expect(played).resolves.toBe(undefined);
+    expect(ended).toBe(1);
   });
 });

@@ -4,7 +4,10 @@
  * and the position folded away under a disclosure (a station's "Place",
  * its radius first, a slider beside its number (`radius-slider.ts`); an
  * item's "Position"), a station's items under its Contents
- * (`inspector-contents.ts`). Text only, never markup.
+ * (`inspector-contents.ts`). A story shows its Entries, a story's block its
+ * texts and how it moves on, a choice or a quiz a summary, a free block with
+ * no place in the world its texts, each with its Delete. Text only, never
+ * markup.
  *
  * The fields a creator types carry `data-field` (a station's `title` and
  * `description`, labelled Name and Description at the top of the body, the
@@ -25,91 +28,57 @@
  * at the ends), the card picture's choices (`image:<id>`, the shown one
  * pressed), and the selection's commands in words: a station's
  * `ground-items` and `delete`, its own `ground` under Place; an item's
- * `split` ("Move to a new station"), `ground` and `delete` - Delete
- * last, behind a separator. A command the
+ * `split` ("Move to a new station"), `ground` and `delete`; a story's
+ * `add-entry` and `delete`; a story block's `entry-advance:<id>:<mode>` -
+ * Delete last, behind a separator. A command the
  * shell is running (`busy`) shows as waiting.
  *
- * A long text shows its title in the head, typed there, with the
- * preview's and the width's buttons beside it (`lt-preview`,
- * `lt-wide`, pressed while on), and its writer in the body: a node the
- * shell hands in (`long-text-writer.ts`), kept in the page across draws
- * so its focus, its selection and the browser's undo survive them.
+ * A kind's own part of an item (a long text's title, buttons and writer,
+ * a model's size, view, notes and sections) is its panel's
+ * (`../kind-panels/kind-panel.ts`), handed in as a `KindPanelDraw` and
+ * placed without naming the kind: its title in the head, its head
+ * buttons before the fold, its kept node under the head (kept in the
+ * page across draws, so a writer's focus, selection and undo survive
+ * them) and its parts after the item's fields.
  *
  * @see shell-inspector.ts.md
  */
 import type { ShellPictures } from "./shell-pictures.js";
 import { shellIcon, type ShellIcon } from "gps-plus-slam-editor-kit/chrome";
 import {
-  TOUR_MODEL_NOTE_RULES,
-  TOUR_MODEL_SECTION_RULES,
-} from "gps-plus-slam-app-framework/ar/tour-blocks";
+  TOUR_STORY_TITLE_RULE,
+  type TourStepAdvance,
+} from "gps-plus-slam-app-framework/ar/tour-story";
+import { KIND_EDIT, kindNoun } from "../../kinds/edit-kinds.js";
 import {
   CHARACTER_VIEW_CHOICES,
-  MODEL_VIEW_CHOICES,
   ON_GROUND_M,
   type InspectorCharacter,
   type InspectorModel,
-  type InspectorModelParts,
   type InspectorPosition,
 } from "./inspector-model.js";
-import { contentsBody, contentsSummary } from "./inspector-contents.js";
+import {
+  chipGroup,
+  el,
+  fieldId,
+  fixed,
+  iconButton,
+  labelled,
+  lineField,
+  numberBox,
+  numberField,
+  severalLines,
+  typed,
+} from "./inspector-fields.js";
+import type { KindPanelDraw } from "../kind-panels/kind-panel.js";
+import {
+  contentsBody,
+  contentsSummary,
+  entriesList,
+} from "./inspector-contents.js";
 import { radiusRange } from "./radius-slider.js";
 import { wirePinTextCounter, wireTextCounter } from "../../pin-text.js";
 import { blockFieldPlaceholder, type BlockField } from "../block-fields.js";
-
-function el<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  className: string,
-  text?: string,
-): HTMLElementTagNameMap[K] {
-  const made = document.createElement(tag);
-  made.className = className;
-  if (text !== undefined) made.textContent = text;
-  return made;
-}
-
-/** `value` with `digits` decimals, "-0" shown as "0". */
-function fixed(value: number, digits: number): string {
-  const text = value.toFixed(digits);
-  return Number(text) === 0 ? (0).toFixed(digits) : text;
-}
-
-/** A fresh id for a field's value: labels point at their value by it.
- *  Only one inspector exists, and each draw replaces every field. */
-let fieldCount = 0;
-function fieldId(): string {
-  fieldCount += 1;
-  return `inspector-field-${String(fieldCount)}`;
-}
-
-function iconButton(
-  icon: ShellIcon,
-  label: string,
-  act: string,
-): HTMLButtonElement {
-  const b = el("button", "ib");
-  b.type = "button";
-  b.title = label;
-  b.setAttribute("aria-label", label);
-  b.dataset["act"] = act;
-  b.append(shellIcon(icon));
-  return b;
-}
-
-/** A row: `label` tied to the value `value` (given an id here), the row
- *  showing `shown` (the value, or a box holding it). */
-function labelled(
-  label: string,
-  value: HTMLElement,
-  shown: HTMLElement = value,
-): HTMLElement {
-  const row = el("div", "f");
-  value.id = fieldId();
-  const tag = el("label", "", label);
-  tag.htmlFor = value.id;
-  row.append(tag, shown);
-  return row;
-}
 
 /** A read-only number: its label and its value (with a unit). */
 function readOnlyNumber(label: string, value: string, unit = ""): HTMLElement {
@@ -118,11 +87,6 @@ function readOnlyNumber(label: string, value: string, unit = ""): HTMLElement {
   box.append(out);
   if (unit !== "") box.append(el("span", "unit", unit));
   return labelled(label, out, box);
-}
-
-/** Whether `value` holds a line break. */
-function severalLines(value: string): boolean {
-  return /[\r\n]/.test(value);
 }
 
 /** Why a pin's text of several lines is read-only in the head, said on a
@@ -135,62 +99,6 @@ const PIN_LINES_ID = "inspector-pin-lines";
 
 /** The id of a typed pin text's count, which the field names. */
 const PIN_COUNT_ID = "inspector-pin-count";
-
-/** A field to type in, named `field` (`data-field`), the tour's value
- *  `value` its default, so text that differs from it is typed. A text
- *  input drops line breaks: a value of several lines is shown, and taken
- *  as its default, on one line, so a field left untouched reads as
- *  untyped and is never written back flattened. */
-function typed(
-  field: string,
-  value: string,
-  className: string,
-): HTMLInputElement {
-  const input = el("input", className);
-  input.type = "text";
-  input.spellcheck = false;
-  input.autocomplete = "off";
-  input.dataset["field"] = field;
-  input.defaultValue = severalLines(value)
-    ? value.replace(/\s*[\r\n]+\s*/g, " ")
-    : value;
-  return input;
-}
-
-/** A number to type, in a box with its unit; read-only (`locked`) while
- *  a lock keeps it still. */
-function numberBox(
-  field: string,
-  value: string,
-  unit: string,
-  locked = false,
-  axis?: string,
-): { box: HTMLElement; input: HTMLInputElement } {
-  const box = el("div", locked ? "num ro" : "num");
-  const input = typed(field, value, "val");
-  input.inputMode = "decimal";
-  if (locked) {
-    input.readOnly = true;
-    input.title = "Unlock the position to type it";
-  }
-  if (axis !== undefined) {
-    box.append(el("span", `ax ${axis.toLowerCase()}`, axis));
-  }
-  box.append(input);
-  if (unit !== "") box.append(el("span", "unit", unit));
-  return { box, input };
-}
-
-function numberField(
-  label: string,
-  field: string,
-  value: string,
-  unit: string,
-  locked = false,
-): HTMLElement {
-  const { box, input } = numberBox(field, value, unit, locked);
-  return labelled(label, input, box);
-}
 
 /** Prose to type, named `field`: a text area, which keeps line breaks
  *  (Enter starts a new line there; the shell writes it when it is left).
@@ -215,18 +123,6 @@ function proseField(
   const row = labelled(label, area);
   row.classList.add("top");
   return row;
-}
-
-/** A line to type, named `field`, under its label. */
-function lineField(
-  label: string,
-  field: string,
-  value: string,
-  placeholder: string,
-): HTMLElement {
-  const input = typed(field, value, "tfield");
-  input.placeholder = placeholder;
-  return labelled(label, input);
 }
 
 function readOnlyText(label: string, value: string): HTMLElement {
@@ -320,15 +216,6 @@ function lockButton(locked: boolean): HTMLButtonElement {
   return b;
 }
 
-/** An item's kind in a command's words: the one word every creator page
- *  uses for it (`object-describe.ts` `BLOCK_KIND_LABEL`). */
-const ITEM_WORD: Readonly<Record<string, string>> = {
-  pin: "pin",
-  photo: "photo",
-  text: "long text",
-  model: "3D model",
-};
-
 /** A block's text field to type (`block-fields.ts`), its count against
  *  the format's cap under it as it is typed. */
 function blockTextField(field: BlockField): HTMLElement[] {
@@ -416,15 +303,6 @@ function actions(buttons: readonly HTMLButtonElement[]): HTMLElement {
   return box;
 }
 
-const KIND_ICON: Readonly<Record<string, ShellIcon>> = {
-  station: "station",
-  code: "qr",
-  pin: "pin",
-  photo: "photo",
-  text: "text",
-  model: "model",
-};
-
 /** Whether `m` off the ground counts as on it (null: not known). */
 function onGround(m: number | null): boolean {
   return m !== null && Math.abs(m) <= ON_GROUND_M;
@@ -482,7 +360,10 @@ function actionInPlace(
 type StationModel = Extract<InspectorModel, { kind: "station" }>;
 type ItemModel = Extract<InspectorModel, { kind: "item" }>;
 type CodeModel = Extract<InspectorModel, { kind: "code" }>;
-type ModelParts = InspectorModelParts;
+type StoryModel = Extract<InspectorModel, { kind: "story" }>;
+type StoryEntryModel = Extract<InspectorModel, { kind: "storyEntry" }>;
+type StoryStepModel = Extract<InspectorModel, { kind: "storyStep" }>;
+type FreeBlockModel = Extract<InspectorModel, { kind: "freeBlock" }>;
 
 /** The card picture's choices: a button each, the shown one pressed. */
 function imagePicker(
@@ -586,57 +467,6 @@ function stationPosition(
   ];
 }
 
-/** The blocks the station's story shows, a row each by kind and name:
- *  listed here, neither added, ordered nor removed (the story editor's);
- *  their texts are typed in a box each below (`storyBlockParts`). */
-function storyList(model: StationModel): HTMLElement {
-  const box = el("div", "isec story");
-  const tag = el("span", "flabel", "In its story");
-  tag.id = fieldId();
-  const list = el("ul", "story-blocks");
-  list.setAttribute("aria-labelledby", tag.id);
-  for (const block of model.story) {
-    const row = el("li", "");
-    row.dataset["block"] = block.id;
-    row.append(el("span", "kind", block.kind), el("span", "name", block.title));
-    list.append(row);
-  }
-  box.append(
-    tag,
-    list,
-    el(
-      "div",
-      "note",
-      "Shown while the station's story runs; their texts and characters are set below.",
-    ),
-  );
-  return box;
-}
-
-/** A group of chips named `label`, one per choice, the one `on` pressed;
- *  each acts as `act:<value>`. */
-function chipGroup(
-  label: string,
-  act: string,
-  choices: readonly { readonly value: string; readonly label: string }[],
-  on: string,
-): [HTMLElement, HTMLElement] {
-  const tag = el("span", "flabel", label);
-  tag.id = fieldId();
-  const chips = el("div", "vchips");
-  chips.setAttribute("role", "group");
-  chips.setAttribute("aria-labelledby", tag.id);
-  for (const choice of choices) {
-    const pressed = choice.value === on;
-    const b = el("button", pressed ? "chip on" : "chip", choice.label);
-    b.type = "button";
-    b.dataset["act"] = `${act}:${choice.value}`;
-    b.setAttribute("aria-pressed", String(pressed));
-    chips.append(b);
-  }
-  return [tag, chips];
-}
-
 /** Said under a character's view chips for a view they do not offer
  *  (an older tour's), so no chip being pressed reads as meant. */
 const CHARACTER_OLDER_VIEW =
@@ -674,7 +504,7 @@ function storyBox(id: string, className: string, head: string): HTMLElement {
 }
 
 /** A story block that is no character: its kind and name, its texts. */
-function storyBlockParts(block: StationModel["story"][number]): HTMLElement {
+function storyBlockParts(block: StoryEntryModel["block"]): HTMLElement {
   const box = storyBox(
     block.id,
     "isec story-text",
@@ -706,8 +536,8 @@ function characterParts(
       "Moves on",
       `character-advance:${id}`,
       [
-        { value: "tap", label: "On a tap" },
-        { value: "lineEnd", label: "When the line ends" },
+        { value: "tap", label: ADVANCE_WORDS.tap },
+        { value: "lineEnd", label: ADVANCE_WORDS.lineEnd },
       ],
       c.advance,
     ),
@@ -733,7 +563,7 @@ function stationContentsFold(
 ): HTMLElement[] {
   return disclosure(
     state.contentsOpen ?? true,
-    contentsSummary(model.contents.length),
+    contentsSummary(model.contents),
     () =>
       contentsBody(
         model.contents,
@@ -783,16 +613,6 @@ function stationParts(
     ]),
     section,
   ];
-  if (model.story.length > 0) parts.push(storyList(model));
-  for (const block of model.story) {
-    if (block.character !== undefined) {
-      parts.push(
-        characterParts(block.id, block.title, block.character, block.fields),
-      );
-    } else if (block.fields.length > 0) {
-      parts.push(storyBlockParts(block));
-    }
-  }
   const p = model.position;
   if (p === null) {
     // Nothing for the lock to keep still: the radius and the note stand
@@ -824,212 +644,131 @@ function stationParts(
   return parts;
 }
 
-/** A line of a model's part to type (a note's title, a section's name),
- *  its count against the format's cap beside it. */
-function partLine(
-  field: string,
-  aria: string,
-  value: string,
-  max: number,
-): HTMLElement[] {
-  const input = typed(field, value, "tfield");
-  input.setAttribute("aria-label", aria);
-  input.id = fieldId();
-  const count = el("output", "note count");
-  count.id = `${input.id}-count`;
-  input.setAttribute("aria-describedby", count.id);
-  wireTextCounter(input, count, max, "codePoints");
-  return [input, count];
+/** A story: its Entries in order, the way to add one, its Delete saying
+ *  what goes with it. */
+function storyParts(model: StoryModel, state: InspectorState): HTMLElement[] {
+  const n = model.entries.length;
+  const entries = disclosure(
+    state.contentsOpen ?? true,
+    `${String(n)}, played in order`,
+    () => [
+      n === 0
+        ? el("div", "note", "No entries yet.")
+        : entriesList(model.entries),
+      actions([action("add-entry", "plus", "Add entry...")]),
+    ],
+    {
+      label: "Entries",
+      title: "What this story plays",
+      act: "contents",
+      body: "contents",
+    },
+  );
+  const goes = n === 1 ? "1 entry" : `${String(n)} entries`;
+  return [
+    ...entries,
+    actions([
+      action(
+        "delete",
+        "trash",
+        n === 0 ? "Delete story" : `Delete story and its ${goes}...`,
+        { key: DELETE_KEY },
+      ),
+    ]),
+  ];
 }
 
-/** A small button of a model's part (`data-act`), pressed while `on`. */
-function partButton(act: string, label: string, on = false): HTMLButtonElement {
-  const b = el("button", on ? "mini on" : "mini", label);
-  b.type = "button";
-  b.dataset["act"] = act;
-  if (on) b.setAttribute("aria-pressed", "true");
-  return b;
-}
+/** What a chip of how a block moves on says. */
+const ADVANCE_WORDS = {
+  tap: "On a tap",
+  auto: "After a while",
+  lineEnd: "When the line ends",
+} as const satisfies { readonly [M in TourStepAdvance["mode"]]: string };
 
-/** A model-space point as the inspector shows it. */
-function spotText(v: readonly number[]): string {
-  return v.map((x) => fixed(x, 2)).join(", ");
-}
-
-/** What a model's view does, under its choice. */
-const VIEW_NOTE: Readonly<Record<string, string>> = {
-  placed: "Stands at its place and size.",
-  ghost: "Glass, its feet fading into the ground.",
-  hotspots: "Its notes drawn on it; its animation held at rest.",
-  cutaway: "Cut open by its sections, one after the other.",
-  toy: "The visitor may move and resize it.",
-};
-
-/** A model's view, clip, notes and sections (`model-edits.ts`). */
-function modelParts(parts: ModelParts): HTMLElement[] {
-  const view = el("div", "isec mview");
-  const [label, chips] = chipGroup(
-    "View",
-    "view",
-    MODEL_VIEW_CHOICES.map((c) => ({ value: c.view, label: c.label })),
-    parts.view,
-  );
-  // Notes are drawn only in the Hotspots view: say so where they would
-  // otherwise seem lost.
-  const notesHidden = parts.view !== "hotspots" && parts.notes.length > 0;
-  const viewNote =
-    (VIEW_NOTE[parts.view] ?? "") +
-    (notesHidden ? " Its notes show only in Hotspots." : "");
-  view.append(label, chips, el("div", "note", viewNote.trim()));
-
-  const clip = el("div", "isec manim");
-  const autoplay = partButton(
-    "anim-autoplay",
-    "Plays by itself",
-    parts.animation?.autoplay === true,
-  );
-  autoplay.disabled = parts.animation === null;
-  autoplay.setAttribute(
-    "aria-pressed",
-    String(parts.animation?.autoplay === true),
-  );
-  clip.append(
-    lineField(
-      "Animation",
-      "anim-name",
-      parts.animation?.name ?? "",
-      "The clip's name in the model file",
+/** How a story's block moves on: chips, its seconds while automatic. A
+ *  mode the chips do not offer shows as its own chip, so none being
+ *  pressed never reads as meant. */
+function advanceParts(id: string, advance: StoryEntryModel["advance"]) {
+  const box = el("div", "isec");
+  const modes: TourStepAdvance["mode"][] = [
+    "tap",
+    "auto",
+    ...(advance.mode === "lineEnd" ? (["lineEnd"] as const) : []),
+  ];
+  box.append(
+    ...chipGroup(
+      "Moves on",
+      `entry-advance:${id}`,
+      modes.map((value) => ({ value, label: ADVANCE_WORDS[value] })),
+      advance.mode,
     ),
-    autoplay,
   );
-
-  const notes = el("div", "isec mnotes");
-  notes.append(el("div", "flabel", `Notes (${String(parts.notes.length)})`));
-  const pick = parts.pick;
-  parts.notes.forEach((n, i) => {
-    const on = parts.focus?.part === "note" && parts.focus.index === i;
-    const row = el("div", on ? "anno on" : "anno");
-    row.dataset["note"] = String(i);
-    const top = el("div", "top");
-    const badge = el("button", "badge", String(i + 1));
-    badge.type = "button";
-    badge.dataset["act"] = `note:${String(i)}`;
-    badge.setAttribute("aria-label", `Note ${String(i + 1)}`);
-    badge.setAttribute("aria-pressed", String(on));
-    top.append(
-      badge,
-      ...partLine(
-        `note-title:${String(i)}`,
-        `Note ${String(i + 1)} title`,
-        n.title,
-        TOUR_MODEL_NOTE_RULES.title.max,
-      ),
-    );
-    const text = el("textarea", "tfield");
-    text.rows = 2;
-    text.spellcheck = false;
-    text.dataset["field"] = `note-text:${String(i)}`;
-    text.placeholder = "What the visitor reads";
-    text.defaultValue = n.text.replace(/\r\n?/g, "\n");
-    text.id = fieldId();
-    text.setAttribute("aria-label", `Note ${String(i + 1)} text`);
-    const count = el("output", "note count");
-    count.id = `${text.id}-count`;
-    text.setAttribute("aria-describedby", count.id);
-    wireTextCounter(
-      text,
-      count,
-      TOUR_MODEL_NOTE_RULES.text.max,
-      TOUR_MODEL_NOTE_RULES.text.unit,
-    );
-    const picking = pick?.what === "note-place" && pick.index === i;
-    const tools = el("div", "tools");
-    tools.append(
-      partButton(
-        `note-place:${String(i)}`,
-        picking ? "Click the model..." : "Pick on model",
-        picking,
-      ),
-      partButton(`note-delete:${String(i)}`, "Delete"),
-      el("span", "pos", spotText(n.position)),
-    );
-    row.append(top, text, count, tools);
-    notes.append(row);
-  });
-  const adding = pick?.what === "note-add";
-  const add = partButton(
-    "note-add",
-    adding ? "Click the model..." : "+ Add note (click the model)",
-    adding,
-  );
-  add.disabled = parts.notesFull;
-  notes.append(add);
-  if (parts.notes.length > 0 && parts.view !== "hotspots") {
-    notes.append(
-      el("div", "note", "The visitor sees notes in the Hotspots view."),
+  if (advance.afterS !== null) {
+    box.append(
+      numberField("After", `entry-after:${id}`, String(advance.afterS), "s"),
     );
   }
-
-  const sections = el("div", "isec msections");
-  sections.append(
-    el("div", "flabel", `Sections (${String(parts.sections.length)})`),
-  );
-  parts.sections.forEach((c, i) => {
-    const on = parts.focus?.part === "section" && parts.focus.index === i;
-    const row = el("div", on ? "anno on" : "anno");
-    row.dataset["section"] = String(i);
-    const top = el("div", "top");
-    const badge = el("button", "badge", String(i + 1));
-    badge.type = "button";
-    badge.dataset["act"] = `section:${String(i)}`;
-    badge.setAttribute("aria-label", `Section ${String(i + 1)}`);
-    badge.setAttribute("aria-pressed", String(on));
-    top.append(
-      badge,
-      ...partLine(
-        `section-name:${String(i)}`,
-        `Section ${String(i + 1)} name`,
-        c.name,
-        TOUR_MODEL_SECTION_RULES.name.max,
-      ),
-    );
-    const picking = pick?.what === "section-place" && pick.index === i;
-    const tools = el("div", "tools");
-    tools.append(
-      partButton(
-        `section-place:${String(i)}`,
-        picking ? "Click the model..." : "Place on model",
-        picking,
-      ),
-      partButton(`section-flip:${String(i)}`, "Flip"),
-      partButton(`section-delete:${String(i)}`, "Delete"),
-      el("span", "pos", spotText(c.position)),
-    );
-    row.append(top, tools);
-    sections.append(row);
-  });
-  const cutting = pick?.what === "section-add";
-  const addCut = partButton(
-    "section-add",
-    cutting ? "Click the model..." : "+ Add section (click the model)",
-    cutting,
-  );
-  addCut.disabled = parts.sectionsFull;
-  sections.append(
-    addCut,
-    el(
-      "div",
-      "note",
-      "A section cuts the model through the point you click; the side facing you is cut away. Shown in the Cutaway view.",
-    ),
-  );
-  return [view, clip, notes, sections];
+  return box;
 }
 
-function itemParts(model: ItemModel, state: InspectorState): HTMLElement[] {
+/** A story's block: a character's parts, or its texts and how it moves on,
+ *  and its Delete. */
+function storyEntryParts(model: StoryEntryModel): HTMLElement[] {
+  const { block } = model;
   const parts: HTMLElement[] = [];
-  // A long text's title is typed in the head and its text in the writer.
-  const fields = model.longText === null ? model.fields : [];
+  if (block.character !== undefined) {
+    parts.push(
+      characterParts(block.id, block.title, block.character, block.fields),
+    );
+  } else {
+    if (block.fields.length > 0) parts.push(storyBlockParts(block));
+    parts.push(advanceParts(block.id, model.advance));
+  }
+  parts.push(
+    actions([action("delete", "trash", "Delete entry", { key: DELETE_KEY })]),
+  );
+  return parts;
+}
+
+/** A choice or a quiz: what it says and its Delete. */
+function storyStepParts(model: StoryStepModel): HTMLElement[] {
+  const box = el("div", "isec");
+  const list = el("ul", "steplines");
+  for (const line of model.lines) list.append(el("li", "", line));
+  box.append(el("div", "flabel", model.heading), list);
+  return [
+    box,
+    actions([
+      action("delete", "trash", `Delete ${model.stepKind}`, {
+        key: DELETE_KEY,
+      }),
+    ]),
+  ];
+}
+
+/** A free block with no place in the world: its texts and its Delete. */
+function freeBlockParts(model: FreeBlockModel): HTMLElement[] {
+  const box = el("div", "isec");
+  box.append(...model.fields.flatMap(blockTextField));
+  return [
+    box,
+    actions([
+      action("delete", "trash", `Delete ${kindNoun(model.itemKind)}`, {
+        key: DELETE_KEY,
+      }),
+    ]),
+  ];
+}
+
+/** An item's parts: its commands, its fields (unless its kind's panel
+ *  types them itself), its panel's parts, its position. */
+function itemParts(
+  model: ItemModel,
+  state: InspectorState,
+  panel: KindPanelDraw | null,
+): HTMLElement[] {
+  const parts: HTMLElement[] = [];
+  const fields = panel?.ownsFields === true ? [] : model.fields;
   if (model.text !== null && severalLines(model.text)) {
     const why = el("div", "note pad", PIN_LINES);
     why.id = PIN_LINES_ID;
@@ -1043,7 +782,7 @@ function itemParts(model: ItemModel, state: InspectorState): HTMLElement[] {
         note: offText(model.groundOffM),
         busy: state.busy,
       }),
-      action("delete", "trash", `Delete ${ITEM_WORD[model.itemKind]}`, {
+      action("delete", "trash", `Delete ${kindNoun(model.itemKind)}`, {
         key: DELETE_KEY,
       }),
     ]),
@@ -1053,19 +792,7 @@ function itemParts(model: ItemModel, state: InspectorState): HTMLElement[] {
     section.append(...fields.flatMap(blockTextField));
     parts.push(section);
   }
-  if (model.sizeM !== null) {
-    const section = el("div", "isec");
-    section.append(
-      numberField("Size", "size", fixed(model.sizeM, 2), "m"),
-      el(
-        "div",
-        "note",
-        "Its largest side, from 0.05 m to 500 m. Drag a white dot to resize.",
-      ),
-    );
-    parts.push(section);
-  }
-  if (model.model !== null) parts.push(...modelParts(model.model));
+  if (panel !== null) parts.push(...panel.parts());
   const o = model.offset;
   const heading = model.headingDeg === null ? "-" : fixed(model.headingDeg, 0);
   parts.push(
@@ -1254,8 +981,6 @@ export interface InspectorState {
   /** A station's Contents unfolded (none said: it is). */
   readonly contentsOpen?: boolean;
   readonly busy?: string | null;
-  /** A long text's preview shown, and the inspector made wider. */
-  readonly longText?: { readonly preview: boolean; readonly wide: boolean };
 }
 
 /**
@@ -1266,8 +991,12 @@ export interface InspectorState {
  * just its "Put on the ground" is updated in place - and never from
  * inside a draw (`inspectorDrawing`); the
  * control that had the focus has it again after a draw, with text typed
- * in it and not yet committed. `writer`, a long text's writer, is put
- * in the body and stays in the page while the next draw shows it too.
+ * in it and not yet committed. `panel`, the selected item's kind's own
+ * part (`../kind-panels/kind-panel.ts`), is drawn in its places: its
+ * title in the head (else the head's own), its buttons before the fold,
+ * its kept node (a long text's writer) under the head, staying in the
+ * page while the next draw shows it too, and its parts after the item's
+ * fields.
  */
 export function drawInspector(
   dock: {
@@ -1278,13 +1007,13 @@ export function drawInspector(
   model: InspectorModel | null,
   state: InspectorState,
   pictures: ShellPictures,
-  writer: HTMLElement | null = null,
+  panel: KindPanelDraw | null = null,
 ): void {
   if (drawing.has(dock.root)) return;
   const key = JSON.stringify([
     model === null ? null : { ...model, groundOffM: null, offGround: null },
     state,
-    writer !== null,
+    panel === null ? null : [panel.key, panel.kept !== null],
   ]);
   if (lastDrawn.get(dock.root) === key) {
     if (model !== null) groundInPlace(dock.body, model);
@@ -1294,20 +1023,26 @@ export function drawInspector(
   try {
     lastDrawn.set(dock.root, key);
     const kept = focusIn(dock.root);
-    drawDock(dock, model, state, pictures, writer);
+    drawDock(dock, model, state, pictures, panel);
     focusAgain(dock.root, kept);
   } finally {
     drawing.delete(dock.root);
   }
 }
 
-/** The head's title: a pin's text to type, else the title in words (a
- *  station's name is typed in its labelled field, AU-2). */
-function headTitle(model: InspectorModel): HTMLElement {
-  if (model.kind === "item" && model.longText !== null) {
-    const input = typed("title", model.longText.title, "ttlin");
-    input.setAttribute("aria-label", "Title of the text");
-    input.title = "The text's title (Enter keeps it)";
+/** The head's title: its kind's panel's, a pin's text or a story's name
+ *  to type, else the title in words (a station's name is typed in its
+ *  labelled field, AU-2). */
+function headTitle(
+  model: InspectorModel,
+  panel: KindPanelDraw | null,
+): HTMLElement {
+  const own = panel?.title() ?? null;
+  if (own !== null) return own;
+  if (model.kind === "story") {
+    const input = typed("story-title", model.title, "ttlin");
+    input.setAttribute("aria-label", "Name of the story");
+    input.title = "The story's name (Enter keeps it)";
     return input;
   }
   if (model.kind === "item" && model.text !== null) {
@@ -1336,13 +1071,70 @@ function pinCount(
   model: InspectorModel,
   head: HTMLElement,
 ): HTMLElement | null {
-  if (model.kind !== "item" || model.text === null) return null;
+  const counted = model.kind === "story" || model.kind === "item";
+  if (!counted || (model.kind === "item" && model.text === null)) return null;
   if (!(head instanceof HTMLInputElement) || head.readOnly) return null;
   const out = el("output", "note pad");
   out.id = PIN_COUNT_ID;
   head.setAttribute("aria-describedby", PIN_COUNT_ID);
-  wirePinTextCounter(head, out);
+  if (model.kind === "story") {
+    const { max, unit } = TOUR_STORY_TITLE_RULE;
+    wireTextCounter(head, out, max, unit);
+  } else {
+    wirePinTextCounter(head, out);
+  }
   return out;
+}
+
+/** What the head shows of `model`: its look (the icon's style class)
+ *  and its icon. A block's are its kind's look (`KIND_EDIT`). */
+function headLook(model: InspectorModel): {
+  readonly look: string;
+  readonly icon: ShellIcon;
+} {
+  switch (model.kind) {
+    case "item":
+    case "freeBlock": {
+      const { look } = KIND_EDIT[model.itemKind];
+      return { look, icon: look };
+    }
+    case "storyEntry":
+      return { look: model.rowKind, icon: model.rowKind };
+    case "storyStep":
+      return { look: model.stepKind, icon: model.stepKind };
+    case "station":
+      return { look: "station", icon: "station" };
+    case "story":
+      return { look: "story", icon: "storyOpen" };
+    case "code":
+      return { look: "code", icon: "qr" };
+  }
+}
+
+/** The dock's parts for `model`, the station's commands beside `sub`. */
+function partsOf(
+  model: InspectorModel,
+  state: InspectorState,
+  pictures: ShellPictures,
+  sub: HTMLElement,
+  panel: KindPanelDraw | null,
+): HTMLElement[] {
+  switch (model.kind) {
+    case "station":
+      return stationParts(model, state, pictures, sub);
+    case "item":
+      return itemParts(model, state, panel);
+    case "story":
+      return storyParts(model, state);
+    case "storyEntry":
+      return storyEntryParts(model);
+    case "storyStep":
+      return storyStepParts(model);
+    case "freeBlock":
+      return freeBlockParts(model);
+    default:
+      return codeParts(model, state);
+  }
 }
 
 function drawDock(
@@ -1354,7 +1146,7 @@ function drawDock(
   model: InspectorModel | null,
   state: InspectorState,
   pictures: ShellPictures,
-  writer: HTMLElement | null,
+  panel: KindPanelDraw | null,
 ): void {
   dock.root.hidden = model === null;
   if (model === null) {
@@ -1363,20 +1155,16 @@ function drawDock(
     return;
   }
   dock.root.classList.toggle("collapsed", state.folded);
-  const kind = model.kind === "item" ? model.itemKind : model.kind;
-  const icon = el("span", `hic ic ${kind}`);
-  icon.append(shellIcon(KIND_ICON[kind] ?? "station"));
-  const head = headTitle(model);
+  const { look, icon: drawn } = headLook(model);
+  const icon = el("span", `hic ic ${look}`);
+  icon.append(shellIcon(drawn));
+  const head = headTitle(model, panel);
   const count = pinCount(model, head);
-  const longText =
-    model.kind === "item" && model.longText !== null
-      ? longTextButtons(state)
-      : [];
   dock.head.replaceChildren(
     iconButton("right", "Back to the list", "back"),
     icon,
     head,
-    ...longText,
+    ...(panel?.head() ?? []),
     iconButton(
       state.folded ? "down" : "up",
       state.folded ? "Show the details" : "Collapse the details",
@@ -1386,34 +1174,9 @@ function drawDock(
   );
   const sub = el("div", "sub");
   sub.append(el("span", "", model.sub));
-  const parts =
-    model.kind === "station"
-      ? stationParts(model, state, pictures, sub)
-      : model.kind === "item"
-        ? itemParts(model, state)
-        : codeParts(model, state);
+  const parts = partsOf(model, state, pictures, sub, panel);
   const before = [sub, ...(count === null ? [] : [count])];
-  placeAround(dock.body, before, writer, parts);
-}
-
-/** A long text's head buttons: the preview's and the width's, pressed
- *  while on. */
-function longTextButtons(state: InspectorState): HTMLButtonElement[] {
-  const preview = state.longText?.preview ?? false;
-  const wide = state.longText?.wide ?? false;
-  const show = iconButton(
-    "eye",
-    preview ? "Hide the preview" : "Show the preview",
-    "lt-preview",
-  );
-  show.setAttribute("aria-pressed", String(preview));
-  const wider = iconButton(
-    "wide",
-    wide ? "Back to the normal width" : "Make the inspector wider for writing",
-    "lt-wide",
-  );
-  wider.setAttribute("aria-pressed", String(wide));
-  return [show, wider];
+  placeAround(dock.body, before, panel?.kept ?? null, parts);
 }
 
 /** `body` holding `before`, `middle` and `after` in that order. A

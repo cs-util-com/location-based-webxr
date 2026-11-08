@@ -37,7 +37,7 @@
  *
  * @see editor-shell.ts.md
  */
-import { tourStationBlocks } from "gps-plus-slam-app-framework/ar/tour-story";
+import { tourChildPlace } from "gps-plus-slam-app-framework/ar/tour-story";
 import type { UnknownAction } from "@reduxjs/toolkit";
 
 import type { Editor3dView } from "../../editor3d/editor3d-scene.js";
@@ -54,11 +54,14 @@ import {
   isStationLocked,
   pointerDragRuns,
   type EditorViewState,
-  type ModelPick,
   type ShellLayer,
   type TreeSection,
 } from "../editor-view.js";
-import { STATION_PREFIX } from "../editor-model.js";
+import {
+  STATION_PREFIX,
+  STORY_PREFIX,
+  selectedStationOf,
+} from "../editor-model.js";
 import type { ModelEdit } from "../model-edits.js";
 import {
   inComposite,
@@ -87,7 +90,11 @@ import {
   positionText,
   type BarAction,
 } from "./bar-actions.js";
-import { groundEdit, inspectorEdit } from "./inspector-edits.js";
+import {
+  groundEdit,
+  inspectorEdit,
+  type EntryAdvance,
+} from "./inspector-edits.js";
 import {
   buildInspector,
   inspectorHint,
@@ -112,12 +119,17 @@ import { wireRadiusSlider } from "./radius-slider.js";
 import { createShellPictures } from "./shell-pictures.js";
 import { tourProblems } from "./tour-problems.js";
 import { drawTree } from "./shell-tree.js";
-import { createTreeAddMenu, type AddKind } from "./tree-add-menu.js";
+import { createTreeAddMenu } from "./tree-add-menu.js";
+import type { AddKind } from "../../kinds/edit-kinds.js";
 import { createAddPalette, isPaletteKey } from "./add-palette.js";
 import { stationTitle } from "../../station-run.js";
-import { buildTree, stationGroups, type TreeModel } from "./tree-model.js";
-import { createKeptStore } from "../long-text/kept-store.js";
-import { createLongTextDock } from "../long-text/long-text-dock.js";
+import {
+  buildTree,
+  stationGroups,
+  type TreeFolder,
+  type TreeModel,
+} from "./tree-model.js";
+import { createKindPanels } from "../kind-panels/kind-panels.js";
 import type { NarrationChange, NarrationFacts } from "../editor-session.js";
 
 /** A stamp per read-along texts object of the tour document: the reducer
@@ -176,7 +188,7 @@ export type TypedEditOutcome = "written" | "refused";
 
 /** The page's edits the inspector gives: each one undo step, a refusal
  *  said by the page. */
-interface ShellEditCommands {
+export interface ShellEditCommands {
   /** A station's name, description, found radius or card picture. */
   station(stationId: string, edit: StationEdit): TypedEditOutcome;
   /** A pin's text. */
@@ -199,6 +211,14 @@ interface ShellEditCommands {
   /** A new item of `kind` in the station, at a free spot near its
    *  anchor. */
   addItem(stationId: string, kind: AddKind): void;
+  /** A new story in the station, selected, one undo step. */
+  addStory(stationId: string): void;
+  /** A new entry of `kind` in the story, selected, one undo step. */
+  addToStory(storyId: string, kind: AddKind): void;
+  /** A story's title, typed in its inspector. */
+  storyTitle(storyId: string, title: string): TypedEditOutcome;
+  /** How a story's block moves on. */
+  storyAdvance(id: string, advance: EntryAdvance): TypedEditOutcome;
   /** A long text's narration as it stands (`EditorSession.narration`). */
   narration(
     itemId: string,
@@ -307,6 +327,28 @@ function byId<T extends HTMLElement>(id: string): T {
   return found as T;
 }
 
+/** How long a story's block waits when "After a while" is chosen (s). */
+const ENTRY_AUTO_S = 5;
+
+/** A chip of how a story's block moves on, as the page's edit, or null for
+ *  another act and for the chip already pressed (`characterChipEdit`). */
+function entryAdvanceEdit(
+  model: InspectorModel | null,
+  act: string,
+): { id: string; advance: EntryAdvance } | null {
+  const chip = ENTRY_ADVANCE.exec(act);
+  if (chip === null || model?.kind !== "storyEntry") return null;
+  const [, id = "", mode] = chip;
+  if (id !== model.id || mode === model.advance.mode) return null;
+  if (mode === "tap") return { id, advance: { mode: "tap" } };
+  return mode === "auto"
+    ? { id, advance: { mode: "auto", afterS: ENTRY_AUTO_S } }
+    : null;
+}
+
+/** A chip of how a story's block moves on: its block and its mode. */
+const ENTRY_ADVANCE = /^entry-advance:(.+):([^:]+)$/;
+
 /** A story character's chip (`character-view:<block>:<view>` or
  *  `character-advance:<block>:<mode>`) as his station's edit, or null for
  *  another act and for the chip already pressed (writing it would be an
@@ -316,14 +358,14 @@ function characterChipEdit(
   act: string,
 ): StationCharacterEdit | null {
   const chip = CHARACTER_CHIP.exec(act);
-  if (chip === null || model?.kind !== "station") return null;
+  if (chip === null || model?.kind !== "storyEntry") return null;
   const [, what, block, value] = chip as unknown as [
     string,
     "view" | "advance",
     string,
     string,
   ];
-  const now = model.story.find((b) => b.id === block)?.character;
+  const now = model.block.id === block ? model.block.character : undefined;
   if (now === undefined || now[what] === value) return null;
   if (what === "view") return { block, view: value };
   // Only the two advance chips are drawn: another value is no chip's.
@@ -360,8 +402,18 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     body: tree.body,
     host: document.body,
     choose: (id, kind) => {
+      if (kind === "story") {
+        addStoryIn(id);
+        return;
+      }
       addInPlace(id, kind);
       // Added from the details on a phone: the draw took the button away.
+      if (document.activeElement === document.body) {
+        focusControl(inspector.root, '[data-act="close"]');
+      }
+    },
+    chooseForStory: (id, kind) => {
+      addInStory(id, kind);
       if (document.activeElement === document.body) {
         focusControl(inspector.root, '[data-act="close"]');
       }
@@ -389,6 +441,49 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     clearSearch();
     store.dispatch(editorViewActions.stationFolded({ id, open: true }));
     deps.edits.addItem(id, kind);
+  }
+  /** Add a story to a station, unfolded first; its new row opens and its
+   *  name in the head is ready to type over. */
+  function addStoryIn(id: string): void {
+    clearSearch();
+    store.dispatch(editorViewActions.stationFolded({ id, open: true }));
+    deps.edits.addStory(id);
+    draw();
+    const title = inspector.head.querySelector<HTMLInputElement>(
+      '[data-field="story-title"]',
+    );
+    title?.focus();
+    title?.select();
+  }
+  /** Add to a story, its station and its folder unfolded first. */
+  function addInStory(storyId: string, kind: AddKind): void {
+    clearSearch();
+    revealStory(storyId);
+    deps.edits.addToStory(storyId, kind);
+  }
+  /** The folder of the story as last drawn. */
+  function drawnFolder(id: string): TreeFolder | undefined {
+    return drawnTree?.cards.flatMap((c) => c.folders).find((f) => f.id === id);
+  }
+  /** The story's station and its folder unfolded. */
+  function revealStory(storyId: string): void {
+    const stationId = selectedStationOf(
+      `${STORY_PREFIX}${storyId}`,
+      manifest(),
+    );
+    if (stationId !== null) {
+      store.dispatch(
+        editorViewActions.stationFolded({ id: stationId, open: true }),
+      );
+    }
+    store.dispatch(editorViewActions.storyFolded({ id: storyId, open: true }));
+  }
+  /** The view on `selection`, else on its station (a story and its entries
+   *  stand nowhere in it). */
+  function flyToSelection(selection: string): void {
+    if (view === null || view.flyTo(selection)) return;
+    const stationId = selectedStationOf(selection, manifest());
+    if (stationId !== null) view.flyTo(`${STATION_PREFIX}${stationId}`);
   }
   // The top bar's Add (the Edit menu's at a phone's width): the palette
   // for a touch screen, with no keys.
@@ -434,27 +529,27 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     load: (path) => deps.loadPicture(path),
   });
   const viewBox = byId("view3d");
-  /** A long text's writer in the inspector and its preview over the 3D
-   *  view (`long-text-dock.ts`). */
-  const longText = createLongTextDock({
+  /** The kinds' own parts of the inspector (`kind-panels.ts`): a long
+   *  text's writer and its preview over the 3D view, a model's notes and
+   *  sections. */
+  const panels = createKindPanels({
     document,
     box: viewBox,
     inspectorRoot: inspector.root,
     treeRoot: tree.root,
-    kept: createKeptStore(),
-    writeBody: (id, body) => deps.edits.block(id, "body", body),
-    writeView: (id, view) => deps.edits.view(id, view),
-    readNarration: (id) => deps.edits.narration(id),
-    editNarration: (id, change) => deps.edits.editNarration(id, change),
-    ...(deps.edits.voiceMaxBytes === undefined
-      ? {}
-      : { voiceMaxBytes: deps.edits.voiceMaxBytes }),
+    edits: deps.edits,
     loadPicture: (path) => deps.loadPicture(path),
     say: (text) => {
       deps.say(text);
     },
     changed: () => {
       draw();
+    },
+    pickAsked: (pick) => {
+      store.dispatch(editorViewActions.modelPickAsked({ pick }));
+    },
+    focused: (focus) => {
+      store.dispatch(editorViewActions.modelFocused({ focus }));
     },
   });
   const said = byId("shell-said");
@@ -494,6 +589,10 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     },
     fix: (selection, fix) => {
       deps.select(selection);
+      if ("split" in fix) {
+        deps.stations.split(selection);
+        return;
+      }
       let written: boolean;
       try {
         written = deps.edits.scene(fix.edit(groundAt));
@@ -575,9 +674,6 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
    *  changes nothing is skipped): also each readout tick, so the ground
    *  arriving shows. */
   const drawInspectorNow = (model: InspectorModel | null) => {
-    const writer = longText.sync(
-      model?.kind === "item" ? model.longText : null,
-    );
     drawInspector(
       inspector,
       model,
@@ -586,10 +682,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         positionOpen,
         contentsOpen,
         busy: busy?.act ?? null,
-        ...(writer === null ? {} : { longText: longText.state() }),
       },
       pictures,
-      writer,
+      panels.sync(model),
     );
   };
 
@@ -613,9 +708,12 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
 
   /** The docks after `change` by the dock rule, stored. */
   let onPhone = phoneSheets(window.innerWidth);
-  const applyDocks = (change: DockChange) => {
+  const applyDocks = (
+    change: DockChange,
+    model: InspectorModel | null = inspectorModel(state().editorView),
+  ) => {
     const ui = state().editorView;
-    const inspectorShows = inspectorModel(ui) !== null;
+    const inspectorShows = model !== null;
     const phone = phoneSheets(window.innerWidth);
     // Turned sideways, the list the details covered stands beside them.
     const turnedWide = change === "resized" && onPhone && !phone;
@@ -639,11 +737,14 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     }
   };
 
-  /** The sheet a phone shows now: the details over the list. */
-  const shownSheet = (): SheetKind | null => {
+  /** The sheet a phone shows now: the details over the list. `model` is
+   *  the inspector's, when the caller has it built. */
+  const shownSheet = (
+    model: InspectorModel | null = inspectorModel(state().editorView),
+  ): SheetKind | null => {
     const ui = state().editorView;
     if (!phoneSheets(window.innerWidth)) return null;
-    if (inspectorModel(ui) !== null) return "details";
+    if (model !== null) return "details";
     return ui.foldedDocks.tree ? null : "tree";
   };
   /** The selection let go and the list shown: on a phone, the way back
@@ -784,19 +885,23 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     if (before === null || before.hiddenLayers !== ui.hiddenLayers) {
       view?.setLayers(ui.hiddenLayers);
     }
-    sheets.sync(shownSheet());
+    sheets.sync(shownSheet(model));
   };
 
   // --- the inspector's fields and commands ---------------------------------
 
   const radius = wireRadiusSlider({
     root: inspector.root,
+    // Read on every step of a drag: the manifest's station, not a whole
+    // inspector built.
     station: () => {
-      const model = inspectorModel(state().editorView);
-      const id = selectedStationId();
-      return model?.kind === "station" && id !== null
-        ? { id, radiusM: model.foundRadiusM }
-        : null;
+      const selected = state().editorView.selected;
+      if (selected?.startsWith(STATION_PREFIX) !== true) return null;
+      const id = selected.slice(STATION_PREFIX.length);
+      const station = manifest()?.stations.find((s) => s.id === id);
+      return station === undefined
+        ? null
+        : { id, radiusM: station.foundRadiusM };
     },
     preview: (id, radiusM) => view?.previewRadius(id, radiusM),
     write: (id, foundRadiusM) => {
@@ -842,6 +947,10 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       outcome = deps.edits.station(edit.stationId, edit.edit);
     else if (edit.kind === "text")
       outcome = deps.edits.text(edit.id, edit.text);
+    else if (edit.kind === "story-title")
+      outcome = deps.edits.storyTitle(edit.id, edit.title);
+    else if (edit.kind === "story-advance")
+      outcome = deps.edits.storyAdvance(edit.id, edit.advance);
     else if (edit.kind === "block") {
       outcome = deps.edits.block(edit.id, edit.field, edit.value);
     } else if (edit.kind === "model") {
@@ -852,99 +961,6 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       deps.edits.groundItems([{ id: edit.id, alt: edit.alt }]);
     }
     if (outcome === "refused") input.value = value;
-  };
-
-  /** A button of a model's own parts (`shell-inspector.ts` `modelParts`)
-   *  answered: a view chosen, a note or a section in focus, the 3D view
-   *  asked to wait for a click on the model (pressed again: not), a part
-   *  deleted or a section flipped, the clip's autoplay turned. Anything
-   *  else, or a selection that is no model, does nothing. */
-  const modelAct = (selected: string, act: string) => {
-    const model = inspectorModel(state().editorView);
-    if (model?.kind !== "item" || model.model === null) return;
-    const parts = model.model;
-    const [name = "", arg] = act.split(":");
-    const index = arg === undefined ? -1 : Number(arg);
-    const pickNow = parts.pick;
-    const ask = (pick: ModelPick) => {
-      const same =
-        pickNow?.what === pick.what &&
-        ("index" in pickNow ? pickNow.index : -1) ===
-          ("index" in pick ? pick.index : -1);
-      store.dispatch(
-        editorViewActions.modelPickAsked({ pick: same ? null : pick }),
-      );
-    };
-    const focus = (part: "note" | "section") => {
-      const on = parts.focus?.part === part && parts.focus.index === index;
-      store.dispatch(
-        editorViewActions.modelFocused({ focus: on ? null : { part, index } }),
-      );
-    };
-    switch (name) {
-      case "view":
-        if (arg !== undefined)
-          deps.edits.model(selected, { kind: "view", view: arg });
-        return;
-      case "note":
-        focus("note");
-        return;
-      case "section":
-        focus("section");
-        return;
-      case "note-add":
-      case "section-add":
-        ask({ what: name });
-        return;
-      case "note-place":
-      case "section-place":
-        ask({ what: name, index });
-        if (
-          pickNow === null ||
-          !("index" in pickNow) ||
-          pickNow.index !== index
-        ) {
-          store.dispatch(
-            editorViewActions.modelFocused({
-              focus: {
-                part: name === "note-place" ? "note" : "section",
-                index,
-              },
-            }),
-          );
-        }
-        return;
-      case "note-delete":
-      case "section-delete":
-        if (deps.edits.model(selected, { kind: name, index }) === "written") {
-          store.dispatch(editorViewActions.modelFocused({ focus: null }));
-          store.dispatch(editorViewActions.modelPickAsked({ pick: null }));
-        }
-        return;
-      case "section-flip": {
-        const section = parts.sections[index];
-        if (section === undefined) return;
-        const [x, y, z] = section.normal;
-        deps.edits.model(selected, {
-          kind: "section-place",
-          index,
-          // 0 - x, not -x: a zero stays 0, never -0.
-          at: { position: section.position, normal: [0 - x, 0 - y, 0 - z] },
-        });
-        return;
-      }
-      case "anim-autoplay":
-        if (parts.animation !== null) {
-          deps.edits.model(selected, {
-            kind: "animation",
-            name: parts.animation.name,
-            autoplay: !parts.animation.autoplay,
-          });
-        }
-        return;
-      default:
-        return;
-    }
   };
 
   /** A ground command on the selection: run at once with the ground
@@ -1016,7 +1032,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       busy = null;
       const pending = typedField();
       if (pending !== null) commitField(pending, was);
-      longText.flush();
+      panels.flush();
       if (selected !== null) applyDocks("selected");
     }
     draw();
@@ -1074,11 +1090,12 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     const stations = manifest()?.stations ?? [];
     const stationId = selected.startsWith(STATION_PREFIX)
       ? selected.slice(STATION_PREFIX.length)
-      : (stations.find((s) =>
-          tourStationBlocks(s).some((i) => i.id === selected),
-        )?.id ?? null);
+      : selectedStationOf(selected, manifest());
     const index = stations.findIndex((s) => s.id === stationId);
     deps.stations.remove(selected);
+    // A station's or a story's delete asks first: answered no, it stays
+    // selected, and the focus stays on the Delete that was pressed.
+    if (state().editorView.selected === selected) return;
     const picks = [
       ...tree.body.querySelectorAll<HTMLElement>(
         ".card[data-station] > .head > .pick",
@@ -1162,6 +1179,15 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       addMenu.openFor(adder, id, title);
       return;
     }
+    const storyAdder = target.closest<HTMLElement>(
+      "[data-storyadd], [data-storyfill]",
+    );
+    if (storyAdder !== null) {
+      const id =
+        storyAdder.dataset["storyadd"] ?? storyAdder.dataset["storyfill"] ?? "";
+      addMenu.openForStory(storyAdder, id, drawnFolder(id)?.title ?? "");
+      return;
+    }
     const section = target.closest<HTMLElement>("[data-section]");
     if (section !== null) {
       const key = section.dataset["section"] as TreeSection;
@@ -1201,6 +1227,21 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       store.dispatch(editorViewActions.stationFolded({ id, open: !open }));
       return;
     }
+    const arrow = target.closest<HTMLElement>("[data-folder]");
+    if (arrow !== null) {
+      const story = arrow.dataset["folder"] ?? "";
+      if (drawnFolder(story)?.searchOpened === true) {
+        // The search unfolded it: its fold is the search's.
+        const key = `${STORY_PREFIX}${story}`;
+        if (!searchFolded.delete(key)) searchFolded.add(key);
+        drawTreeNow();
+        pictures.sweep();
+        return;
+      }
+      const open = state().editorView.openStories.includes(story);
+      store.dispatch(editorViewActions.storyFolded({ id: story, open: !open }));
+      return;
+    }
     const row = target.closest<HTMLElement>("[data-select]");
     const id = row?.dataset["select"];
     if (id === undefined) return;
@@ -1220,9 +1261,17 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     );
     if (plan === null) return;
     deps.select(plan.select);
-    if (plan.unfold !== null) {
+    plan.unfold.forEach((holder, depth) => {
       store.dispatch(
-        editorViewActions.stationFolded({ id: plan.unfold, open: true }),
+        depth === 0
+          ? editorViewActions.stationFolded({ id: holder, open: true })
+          : editorViewActions.storyFolded({ id: holder, open: true }),
+      );
+    });
+    if (plan.toggle !== null) {
+      const open = state().editorView.openStories.includes(plan.toggle);
+      store.dispatch(
+        editorViewActions.storyFolded({ id: plan.toggle, open: !open }),
       );
     }
     if (plan.fold !== null) {
@@ -1235,7 +1284,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         editorViewActions.sectionFolded({ section: "codes", open: true }),
       );
     }
-    if (plan.fly && plan.select !== null) view?.flyTo(plan.select);
+    if (plan.fly && plan.select !== null) flyToSelection(plan.select);
   });
   tree.stationsHead.addEventListener("click", () => {
     creatorTouchesTree();
@@ -1303,11 +1352,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     if (selected.startsWith(STATION_PREFIX)) {
       return selected.slice(STATION_PREFIX.length);
     }
-    return (
-      manifest()?.stations.find((s) =>
-        tourStationBlocks(s).some((b) => b.id === selected),
-      )?.id ?? null
-    );
+    return selectedStationOf(selected, manifest());
   }
   tree.add.addEventListener("click", addStationAtCentre);
   // A search hides stations, so a drop would order the hidden ones
@@ -1342,7 +1387,12 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   inspector.root.addEventListener("click", (event) => {
     const act = (event.target as Element).closest<HTMLElement>("[data-act]")
       ?.dataset["act"];
-    if (act !== undefined && longText.act(act)) {
+    const chosen = state().editorView.selected;
+    if (
+      act !== undefined &&
+      chosen !== null &&
+      panels.act(act, inspectorModel(state().editorView), chosen)
+    ) {
       draw();
       return;
     }
@@ -1385,16 +1435,28 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         );
       }
     }
+    if (act === "add-entry") {
+      const button = (event.target as Element).closest<HTMLElement>(
+        "[data-act]",
+      );
+      const model = inspectorModel(state().editorView);
+      if (button !== null && model?.kind === "story") {
+        addMenu.openForStory(button, model.storyId, model.title);
+      }
+    }
     if (act?.startsWith("goto:") === true) {
       const item = act.slice("goto:".length);
       deps.select(item);
-      view?.flyTo(item);
+      const tour = manifest();
+      const story =
+        tour === null ? undefined : tourChildPlace(tour, item)?.story;
+      if (story !== undefined) revealStory(story.id);
+      flyToSelection(item);
     }
     if (act === "earlier" || act === "later") moveSelected(selected, act);
     if (act === "delete") deleteSelected(selected);
     if (act === "split") deps.stations.split(selected);
     if (act === "ground" || act === "ground-items") void runGround(act);
-    if (act !== undefined) modelAct(selected, act);
     if (
       act?.startsWith("image:") === true &&
       selected.startsWith(STATION_PREFIX)
@@ -1405,10 +1467,16 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         deps.edits.station(selected.slice(STATION_PREFIX.length), { image });
       }
     }
-    if (act !== undefined && selected.startsWith(STATION_PREFIX)) {
-      const stationId = selected.slice(STATION_PREFIX.length);
-      const edit = characterChipEdit(inspectorModel(state().editorView), act);
-      if (edit !== null) deps.edits.station(stationId, { character: edit });
+    if (act !== undefined) {
+      const model = inspectorModel(state().editorView);
+      const edit = characterChipEdit(model, act);
+      if (edit !== null && model?.kind === "storyEntry") {
+        deps.edits.station(model.stationId, { character: edit });
+      }
+      const advance = entryAdvanceEdit(model, act);
+      if (advance !== null) {
+        deps.edits.storyAdvance(advance.id, advance.advance);
+      }
     }
     if (act === "fold") {
       const folded = !state().editorView.foldedDocks.inspector;
@@ -1567,8 +1635,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     if (at?.closest("#shell-help, #studio-help") == null) showHelp(false);
   };
   const onResize = () => {
-    applyDocks("resized");
-    sheets.sync(shownSheet());
+    const model = inspectorModel(state().editorView);
+    applyDocks("resized", model);
+    sheets.sync(shownSheet(model));
   };
 
   return {
@@ -1605,7 +1674,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     flush() {
       const pending = typedField();
       if (pending !== null) commitField(pending, lastSelected);
-      longText.flush();
+      panels.flush();
     },
     hide() {
       // Closed mid-approach: the fold was the approach's, so the tree
@@ -1623,8 +1692,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       radius.cancel();
       const pending = typedField();
       if (pending !== null) commitField(pending, lastSelected);
-      longText.flush();
-      longText.sync(null);
+      panels.flush();
+      panels.sync(null);
       busy?.stop.abort();
       busy = null;
       view = null;

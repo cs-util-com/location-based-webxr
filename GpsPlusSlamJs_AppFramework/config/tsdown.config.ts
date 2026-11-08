@@ -74,6 +74,7 @@ const entryFiles = [
   // A block's local pose and the station frame, deep-imported by the Tour
   // Viewer the same way.
   'src/ar/tour-items.ts',
+  'src/ar/tour-kinds.ts',
   'src/ar/tour-station-pose.ts',
   // Version 4's media assets, station blocks and the story that shows
   // them, deep-imported by the Tour Viewer the same way.
@@ -81,7 +82,9 @@ const entryFiles = [
   // The field checks every reader of tour.json shares (the CHANGELOG
   // names it a new module), deep-imported the same way.
   'src/ar/tour-fields.ts',
+  'src/ar/tour-block-read.ts',
   'src/ar/tour-blocks.ts',
+  'src/ar/tour-body-assets.ts',
   'src/ar/tour-story.ts',
   'src/ar/tour-characters.ts',
   'src/ar/tour-signed-manifest.ts',
@@ -281,6 +284,10 @@ const entryFiles = [
   // and view, version 3 manifests), shared with the Tour Viewer's property
   // tests so both packages test against the same notion of a valid file.
   'src/test-utils/tour-arbitraries.ts',
+  // Uniform number draws (and their seams) for property tests, shared with
+  // the RecorderApp, the Tour Viewer and the OSM demo so every package draws
+  // places and bearings the same, validated way.
+  'src/test-utils/uniform-arbitrary.ts',
 
   // types/
   'src/types/index.ts',

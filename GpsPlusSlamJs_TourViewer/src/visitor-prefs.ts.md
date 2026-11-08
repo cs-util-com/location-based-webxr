@@ -21,7 +21,7 @@ defensive read and write of the one storage key.
 - `bodyHasPictures(body)` - whether a long text's body holds a picture
   block, at any depth (in a list, in a quote); an inline picture is not
   one. Each body is parsed once: `bodyPictureAssets`
-  (`long-text-body-assets.ts`) keeps the answers by body, since the switch
+  (`tour-body-assets.ts`) keeps the answers by body, since the switch
   asks every camera frame and a 32 000-character body took about 2 ms to
   parse on desktop Node.
 - `viewNeedsFail(block, view, verdict?)` - the reason `view` cannot show
@@ -99,7 +99,7 @@ saveVisitorPrefs(localStorage, stored); // false in a browser that refuses
   and the fall from captions to the world's view, then the creator's.
 - `visitor-prefs.memo.test.ts` - each body parsed once, two bodies in
   turn included, and parsed again once 65 others filled the memo (the
-  parser spied on; the memo is `long-text-body-assets.ts`'s).
+  parser spied on; the memo is `tour-body-assets.ts`'s).
 - `visitor-prefs.property.test.ts` - the needs hold and the placement
   stays for any stored value; a read never rewrites it; a chosen member
   shows whenever its needs hold.

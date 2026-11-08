@@ -14,7 +14,15 @@ import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 // Activates the licence the station frame's geodesy needs.
 import "../test-support/tour-of.js";
-import { addNewItem, freePinSpot, newLongText, newPin } from "./new-pin.js";
+import { ADD_CHOICES, isAddable } from "../kinds/edit-kinds.js";
+import {
+  addNewItem,
+  freePinSpot,
+  KIND_ADD,
+  newLongText,
+  newPin,
+  newStoryEntry,
+} from "./new-pin.js";
 import {
   parseTourObject,
   tourObjectRecord,
@@ -46,6 +54,20 @@ function station(
     ),
   } as unknown as TourStation;
 }
+
+// Why this test matters: what a kind starts as when added (at a station,
+// and as a story entry) is its one row here; the add menu's addable kinds
+// and these rows must be the same set, or a menu line adds nothing.
+describe("KIND_ADD", () => {
+  it("has one row, with an item and an entry, for every addable kind of the add menu", () => {
+    const addable = ADD_CHOICES.filter(isAddable).map((c) => c.kind);
+    expect(Object.keys(KIND_ADD)).toEqual(addable);
+    for (const row of Object.values(KIND_ADD)) {
+      expect(typeof row.item).toBe("function");
+      expect(typeof row.entry).toBe("function");
+    }
+  });
+});
 
 describe("freePinSpot", () => {
   it("starts 4 m north of an empty station's anchor", () => {
@@ -140,7 +162,7 @@ describe("addNewItem", () => {
         ...base,
         stations: [station([])],
         stationId: "gone",
-        kind: "pin",
+        kind: "shortText",
         place,
       }),
     ).toEqual({
@@ -217,5 +239,28 @@ describe("newLongText", () => {
     expect(
       parseTourObject(JSON.parse(JSON.stringify(tourObjectRecord(text)))),
     ).toEqual(text);
+  });
+});
+
+// Why: a story's entry is shown in the card while the story runs, so it
+// stands at the station's own origin and moves on by a tap; the number in
+// its text counts its own kind, or two new entries would read the same.
+describe("newStoryEntry", () => {
+  it("makes a card that moves on by a tap, numbered within its kind", () => {
+    const story = { children: [{ kind: "shortText" }] } as never;
+    const pin = newStoryEntry(story, "shortText", "p");
+    expect(pin).toMatchObject({
+      id: "p",
+      kind: "shortText",
+      view: "card",
+      caption: "New pin 2",
+      advance: { mode: "tap" },
+    });
+    expect(newStoryEntry(story, "longText", "t")).toMatchObject({
+      kind: "longText",
+      view: "card",
+      title: "New long text 1",
+      advance: { mode: "tap" },
+    });
   });
 });

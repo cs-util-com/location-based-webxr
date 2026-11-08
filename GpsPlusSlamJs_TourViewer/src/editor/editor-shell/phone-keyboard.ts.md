@@ -9,10 +9,13 @@ styles, and the field in use brought into sight.
 
 - `keyboardPx(innerHeight, { height, offsetTop, scale })` - the keyboard's
   height from the visual viewport; 0 for none.
-- `watchKeyboard(win, host)` -> stop: writes `--s-keyboard-h` on the body
-  while a keyboard is up, and scrolls the focused field inside `host` into
-  sight when the keyboard comes and when the focus moves under it. Stopping
-  takes the value away.
+- `watchKeyboard(win, host)` -> stop: writes `--s-keyboard-h` and
+  `data-keyboard="up"` on the body while a keyboard is up, and scrolls the focused field inside `host` into
+  sight when the keyboard comes, when it grows while up, and when the
+  focus moves under it. Whether it grew is read off the viewport's height
+  alone, so a pan of the visual viewport (its `offsetTop`, also a
+  `scroll` event) never pulls the field back. Stopping takes the value
+  away.
 
 ## Invariants & assumptions
 
@@ -27,6 +30,11 @@ styles, and the field in use brought into sight.
   above the keyboard and a field scrolled into it is in sight. A padding
   would not do: the scroller's box would still reach under the keyboard.
   The map's canvas is not resized for it.
+- While a keyboard is up (`data-keyboard`) a phone's sheet takes all the
+  room above it whatever its share, and its grip goes, and a long text's
+  writer is no taller than that room: so the field in use and its row fit
+  even in the least a keyboard leaves (a phone on its side with its
+  browser's bar: about 116 px for the top bar and one row).
 
 ## Examples
 
@@ -39,5 +47,5 @@ stop();
 ## Tests
 
 `phone-keyboard.test.ts` (jsdom, a stub for the visual viewport): the
-height, a zoom, a browser's bar, the scroll, a field outside, a browser
+height, a zoom, a browser's bar, the scroll, a pan that moves no field, a field outside, a browser
 without the API. No test runs a real keyboard: only a phone can show that.

@@ -31,6 +31,7 @@ import {
   CODE_FLAT_GAP_M,
   CODE_SCREEN_PX,
   DEFAULT_CODE_SIZE_M,
+  RING_ITEM_OUT,
   RING_RENDER_ORDER,
   codeGrowth,
   focalPxOf,
@@ -41,6 +42,14 @@ import {
 import { isInterfacePart } from "./globe-interface-pass.js";
 import { buildLecternStand } from "../lectern-view.js";
 import { buildReadingSign } from "../reading-sign.js";
+import { renderTourStation } from "../content-placement.js";
+import { worldBlocks } from "../tour-document.js";
+import {
+  mountedWorldParts,
+  worldEnv,
+  type WorldEnv,
+  type WorldPart,
+} from "../world-part.js";
 import {
   stationContent,
   stationBlocks,
@@ -1062,6 +1071,45 @@ describe("createStationsLayer", () => {
     layer.dispose();
   });
 
+  // Why: a move keeps an item in its station however far it goes, so the
+  // ring is the one thing that tells the creator it is out while there is
+  // still time to bring it back; by the Problems list's own measure, so
+  // the ring and the list never disagree.
+  it("turns the ring the warning colour while a drag has its item out", async () => {
+    const { d } = deps();
+    const layer = createStationsLayer(d);
+    const a = station("a", 0, 0, [photo("p")]);
+    layer.setTour(manifest([a], []), new Map());
+    layer.update(view(0, 0, "a", 1));
+    await settle();
+    const ring = () => {
+      let found: THREE.Mesh | null = null;
+      layer.group.traverse((o) => {
+        if (o.name === "found-radius") found = o as THREE.Mesh;
+      });
+      if (found === null) throw new Error("no circle");
+      return (found as THREE.Mesh).material as THREE.MeshBasicMaterial;
+    };
+    const normal = ring().color.getHex();
+    const at = (position: [number, number, number]) => ({
+      kind: "item" as const,
+      id: "p",
+      geo: itemGeoPose({ position, rotation: [0, 0, 0, 1] }, a.geo),
+      sizeM: null,
+    });
+    layer.setPreview(at([0, 1.5, a.foundRadiusM - 1]));
+    layer.update(view(0, 0, "a", 1));
+    expect(ring().color.getHex()).toBe(normal);
+    layer.setPreview(at([a.foundRadiusM + 1, 1.5, 0]));
+    layer.update(view(0, 0, "a", 1));
+    expect(ring().color.getHex()).toBe(RING_ITEM_OUT);
+    expect(ring().opacity).toBe(1);
+    layer.setPreview(null);
+    layer.update(view(0, 0, "a", 1));
+    expect(ring().color.getHex()).toBe(normal);
+    layer.dispose();
+  });
+
   // Why: an item dragged, turned or (a model) resized is drawn at the
   // drag's pose in its station's frame - a photo keeps the flat-or-upright
   // morph, turned with it - and goes back when the drag is cleared.
@@ -1298,6 +1346,322 @@ describe("createStationsLayer", () => {
     layer.setPreview(null);
     layer.update(view(0, 0, "a", 1));
     expect(root.quaternion.angleTo(turn(40, 0))).toBeLessThan(1e-6);
+  });
+
+  // Why: the editor shows an item through the same world door as the
+  // visitor's page, built in the editor's mode: a second preview path
+  // would let the two drift apart. The part stands where play stands it
+  // (the block's pose as it is, tilt included), keeps that pose through
+  // the morph (it is no photo plane), is selected by a click, moved and
+  // turned by a drag's preview, and freed with the layer.
+  describe("an item's part from the world door", () => {
+    const tilt = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(0.3, 0.8, -0.2, "YXZ"),
+    );
+    /** A free sound at `rotation` (default: `tilt`). */
+    const spotAt = (rotation: THREE.Quaternion = tilt) =>
+      ({
+        id: "song",
+        kind: "audio",
+        view: "spot",
+        audio: "snd",
+        transcript: "t",
+        createdAtIso: "2026-10-22T08:00:00Z",
+        pose: {
+          position: [3, 0.5, -2],
+          rotation: [rotation.x, rotation.y, rotation.z, rotation.w],
+        },
+      }) as unknown as TourBlock;
+    const spot = spotAt();
+    /** Turns a pose may carry: none, a yaw alone, pitch and roll, a pitch
+     *  near the vertical, upside down, and the mixed `tilt`. */
+    const TURNS: readonly (readonly [string, THREE.Quaternion])[] = [
+      ["none", new THREE.Quaternion()],
+      ["yaw", new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 2.4, 0))],
+      [
+        "pitch and roll",
+        new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.6, 0, 0.9)),
+      ],
+      [
+        "near vertical",
+        new THREE.Quaternion().setFromEuler(new THREE.Euler(1.55, 0.4, 0)),
+      ],
+      [
+        "upside down",
+        new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI, 0.7, 0)),
+      ],
+      ["mixed", tilt],
+    ];
+    const assets: TourManifest["assets"] = [
+      { id: "snd", path: "content/snd.mp3", kind: "audio" },
+    ];
+
+    /** The door both pages are given: a one metre box for the block. */
+    function door() {
+      const asked: { block: TourBlock; env: WorldEnv }[] = [];
+      const freed: string[] = [];
+      const made: WorldPart[] = [];
+      const part = (block: TourBlock, env: WorldEnv): WorldPart | null => {
+        asked.push({ block, env });
+        const object = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+        const made1: WorldPart = {
+          object,
+          tapTarget: object,
+          dispose: () => freed.push(block.id),
+        };
+        made.push(made1);
+        return made1;
+      };
+      return { part, asked, freed, made };
+    }
+
+    it("builds it in the editor's mode, from the block play builds it from", async () => {
+      const read: string[] = [];
+      const editor = door();
+      const { d } = deps({
+        worldPart: editor.part,
+        loadContent: (path) => {
+          read.push(path);
+          return Promise.resolve(new Blob([]));
+        },
+      });
+      const layer = createStationsLayer(d);
+      const a = station("a", 0, 0, [photo("p"), spot]);
+      layer.setTour(manifest([a], assets), new Map());
+      layer.update(view(0, 0, "a", 1));
+      await settle();
+      expect(editor.asked).toHaveLength(1);
+      const [{ block, env }] = editor.asked as [(typeof editor.asked)[0]];
+      expect(env.mode).toBe("edit");
+      await env.loadAsset("snd");
+      expect(read).toEqual(["content/snd.mp3"]);
+      expect(block).toEqual(spot);
+      layer.dispose();
+    });
+
+    // Not only "the editor agrees with play" (both place the part with
+    // the same pose, so that alone would pass a shared mistake): each is
+    // held to the block's own pose, in its station's frame, over turns
+    // from none to upside down.
+    it.each(TURNS)(
+      "stands it at the block's own pose, as play does, turned %s",
+      async (_name, turn) => {
+        const editor = door();
+        const { d } = deps({ worldPart: editor.part });
+        const layer = createStationsLayer(d);
+        const a = station("a", 0, 0, [spotAt(turn)]);
+        layer.setTour(manifest([a], assets), new Map());
+        layer.update(view(0, 0, "a", 1));
+        await settle();
+        const play = door();
+        const shown = await renderTourStation(a, {
+          assets,
+          scene: new THREE.Group(),
+          zero: { lat: a.geo.lat, lon: a.geo.lon },
+          makeLabel: () => ({
+            object: new THREE.Object3D(),
+            dispose: () => {},
+          }),
+          loadPhotoTexture: () => Promise.resolve(new THREE.Texture()),
+          worldPart: (b) =>
+            play.part(
+              b,
+              worldEnv("play", assets, () =>
+                Promise.reject(new Error("unread")),
+              ),
+            ),
+        });
+        const edited = editor.made[0]!.object;
+        const played = play.made[0]!.object;
+        for (const [who, object] of [
+          ["editor", edited],
+          ["play", played],
+        ] as const) {
+          expect(object.position.toArray(), who).toEqual([3, 0.5, -2]);
+          expect(object.quaternion.angleTo(turn), who).toBeLessThan(1e-6);
+        }
+        shown.dispose();
+        layer.dispose();
+      },
+    );
+
+    it("keeps its pose through the morph, is picked, follows a drag's preview, and is freed with the layer", async () => {
+      const editor = door();
+      const { d } = deps({ worldPart: editor.part });
+      const layer = createStationsLayer(d);
+      const a = station("a", 0, 0, [photo("p"), spot]);
+      layer.setTour(manifest([a], assets), new Map());
+      layer.update(view(0, 0, "a", 1));
+      await settle();
+      const part = editor.made[0]!;
+      expect(mountedWorldParts()).toContain(part);
+      // The photo alone is a photo plane; looking down, the part keeps
+      // its pose.
+      expect(layer.photoPlanes("a")).toHaveLength(1);
+      layer.update(view(0, 0, "a", 0));
+      expect(part.object.quaternion.angleTo(tilt)).toBeLessThan(1e-6);
+      // Seen from 20 m above it, a click on it selects the item.
+      part.object.updateMatrixWorld(true);
+      const at = part.object.getWorldPosition(new THREE.Vector3());
+      const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
+      camera.position.copy(at).add(new THREE.Vector3(0, 20, 0));
+      camera.lookAt(at);
+      camera.updateMatrixWorld(true);
+      const ray = new THREE.Raycaster();
+      ray.setFromCamera(new THREE.Vector2(0, 0), camera);
+      expect(layer.pick(ray)).toBe("song");
+      // Located where it stands (the view flies to it), yet no gesture's
+      // target: the gizmo moves the world blocks only (the rows that say
+      // `inWorld`, `editor3d-editing.ts` `targetOf`), and a free sound is
+      // none, so it is selected by a click and not dragged.
+      const located = layer.itemPointOf("song");
+      expect(located?.distanceTo(at)).toBeLessThan(1e-6);
+      expect(worldBlocks(a).map((b) => b.id)).toEqual(["p"]);
+      // A drag's preview moves it and turns it as the pose says, tilt
+      // included; cleared, it is back.
+      const dragged = new THREE.Quaternion().setFromEuler(
+        new THREE.Euler(-0.4, -1.1, 0.1, "YXZ"),
+      );
+      layer.setPreview({
+        kind: "item",
+        id: "song",
+        geo: itemGeoPose(
+          {
+            position: [3, 0.5, 4],
+            rotation: [dragged.x, dragged.y, dragged.z, dragged.w],
+          },
+          a.geo,
+        ),
+        sizeM: null,
+      });
+      layer.update(view(0, 0, "a", 1));
+      expect(part.object.position.z).toBeCloseTo(4, 3);
+      expect(part.object.quaternion.angleTo(dragged)).toBeLessThan(1e-6);
+      layer.setPreview(null);
+      layer.update(view(0, 0, "a", 1));
+      expect(part.object.position.toArray()).toEqual([3, 0.5, -2]);
+      expect(part.object.quaternion.angleTo(tilt)).toBeLessThan(1e-6);
+      layer.dispose();
+      expect(editor.freed).toEqual(["song"]);
+      expect(mountedWorldParts()).not.toContain(part);
+    });
+
+    /** A door whose parts' dispose throws, after counting the free. */
+    function brokenDoor() {
+      const asked: string[] = [];
+      const freed: string[] = [];
+      const part = (block: TourBlock): WorldPart => {
+        asked.push(block.id);
+        const object = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+        return {
+          object,
+          dispose: () => {
+            freed.push(block.id);
+            throw new Error(`broken ${block.id}`);
+          },
+        };
+      };
+      return { part, asked, freed };
+    }
+
+    /** How many objects hang under `parent`. */
+    const countUnder = (parent: THREE.Object3D): number => {
+      let n = 0;
+      parent.traverse(() => {
+        n += 1;
+      });
+      return n;
+    };
+
+    // Why: a part dispose rethrown by the
+    // renderer left the station's ring and pole in the scene and its
+    // content set, so it was never drawn again when the view came back.
+    it("a part whose dispose throws leaves the station freed and drawn again later", async () => {
+      const editor = brokenDoor();
+      const { d, parent } = deps({ worldPart: editor.part });
+      const layer = createStationsLayer(d);
+      const far = [0, 1, 2, 3, 4].map((i) => station(`f${i}`, 1000 + i, 0));
+      const a = station("a", 0, 0, [spot]);
+      layer.setTour(manifest([a, ...far], assets), new Map());
+      // Away first: "a" is not drawn, so this is the scene without it.
+      layer.update(view(1002, 0, null, 1));
+      await settle();
+      const without = countUnder(parent);
+      layer.update(view(0, 0, null, 1));
+      await settle();
+      expect(editor.asked).toEqual(["song"]);
+      expect(countUnder(parent)).toBeGreaterThan(without);
+      expect(() => layer.update(view(1002, 0, null, 1))).toThrow("broken song");
+      // The frame that threw ended early; the next one finishes it and
+      // finds nothing left to free.
+      layer.update(view(1002, 0, null, 1));
+      await settle();
+      expect(countUnder(parent)).toBe(without);
+      expect(mountedWorldParts()).toEqual([]);
+      layer.update(view(0, 0, null, 1));
+      await settle();
+      expect(editor.asked).toEqual(["song", "song"]);
+      editor.freed.length = 0;
+      expect(() => layer.dispose()).toThrow("broken song");
+    });
+
+    // Why: the layer's dispose stopped at the
+    // first station whose part threw, abandoning every later station.
+    it("frees every station when one station's part dispose throws", async () => {
+      const editor = brokenDoor();
+      const { d, parent } = deps({ worldPart: editor.part });
+      const layer = createStationsLayer(d);
+      const a = station("a", 0, 0, [spot]);
+      const b = station("b", 5, 0, [{ ...spot, id: "song-b" }]);
+      layer.setTour(manifest([a, b], assets), new Map());
+      layer.update(view(0, 0, null, 1));
+      await settle();
+      expect(editor.asked.sort()).toEqual(["song", "song-b"]);
+      expect(() => layer.dispose()).toThrow(/broken song/);
+      expect(editor.freed.sort()).toEqual(["song", "song-b"]);
+      expect(mountedWorldParts()).toEqual([]);
+      expect(parent.children).toHaveLength(0);
+    });
+
+    // Why (#881 review): the models were freed before the renderer's
+    // dispose, outside the guard the ring and the pole had - a model
+    // whose free threw skipped `rendered.dispose()`, which is what
+    // unmounts the station's parts and frees its labels and textures.
+    it("a model whose free throws still frees the station's parts", async () => {
+      const editor = door();
+      const { d, parent } = deps({
+        worldPart: editor.part,
+        loadGlbModel: () => {
+          const geometry = new THREE.BoxGeometry(2, 4, 1);
+          geometry.dispose = () => {
+            throw new Error("model free broke");
+          };
+          const g = new THREE.Group();
+          g.add(new THREE.Mesh(geometry));
+          return Promise.resolve(g);
+        },
+      });
+      const layer = createStationsLayer(d);
+      const a = station("a", 0, 0, [spot, model("m", "horse", 2)]);
+      layer.setTour(
+        manifest(
+          [a],
+          [
+            ...assets,
+            { id: "horse", path: "content/horse.glb", kind: "model" },
+          ],
+        ),
+        new Map(),
+      );
+      layer.update(view(0, 0, null, 1));
+      await settle();
+      expect(editor.made).toHaveLength(1);
+      expect(mountedWorldParts()).toEqual(editor.made);
+      expect(() => layer.dispose()).toThrow("model free broke");
+      expect(editor.freed).toEqual(["song"]);
+      expect(mountedWorldParts()).toEqual([]);
+      expect(parent.children).toHaveLength(0);
+    });
   });
 
   // Why: a click in the view selects what is under the pointer - a

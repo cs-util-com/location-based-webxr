@@ -30,11 +30,11 @@ status line and what an end means.
   - `choosing()` - the station whose picker shows, null while its story or
     card plays: the guide's and the sheet's words ask for a choice then, and
     never say a story is playing.
-- Deps: `dom` (`SceneViewDom`), `assets` (by id), `characters?` (the tour's declared characters by id, minor 2), `loadAsset(path)`,
+- Deps: `dom` (`SceneViewDom`, with an optional `surface` an item fills on its own, emptied when the step changes), `assets` (by id), `characters?` (the tour's declared characters by id, minor 2), `loadAsset(path)`,
   `audio` (`SceneAudio`: `play(blob, onEnded)` rejecting when refused,
-  `stop()`), `stage` (`SceneStage` from `scene-stage.ts`),
+  `stop()`), `stage` (`SceneStage` from `scene-stage.ts`: the `ItemWorld` an item draws on through its row's `stand`, with both doors required so a stage missing one does not compile; the panel wraps it with its waiting line and hands the item an object holding only the two doors, never its own calls on the stage: `clear`, `release`, `setVoice`, `toggleBubble`),
   `createChoiceButton(label, onClick)`, `focusChoice?(button)`, `schedule(fn, ms)`, `objectUrls`,
-  `onStoryEnd(stationId)`.
+  `onStoryEnd(stationId)`, `showItem?(block, host)` (the item lab swaps a kind in; `showItemCard` otherwise; the app passes none).
 
 ## Invariants & assumptions
 
@@ -99,10 +99,13 @@ status line and what an end means.
   a picture over the tour pixel cap or one whose size cannot be read; it
   is then not shown, and the status says "The picture is too large to show
   here - the words are below."
-- **Captions always** (plan §4.1): every step puts words in `text` - the
-  text, the picture's caption, the model's title, the character's
-  caption, the audio's or video's transcript. A character also shows its
-  name.
+- **Words where the item has them** (plan §4.1): every step puts its
+  words in `text` - the text, the picture's caption, the model's title,
+  the character's caption, the audio's or video's transcript. A caption
+  and a transcript are optional, so `text` may be empty. A character also
+  shows its name. A `lineEnd` video step with no transcript has no reading
+  time to stand in: it waits for the clip to be started and to end (one
+  that cannot be read moves on after the reading floor).
 - **Async feedback** (CLAUDE.md): a step's media shows "Loading the
   picture/figure/sound/3D model…" in `status`, cleared when it shows;
   while the stage holds a loaded figure or model back for the visitor's

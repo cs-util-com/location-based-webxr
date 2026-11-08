@@ -567,11 +567,12 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
         const what = el("span", "what", `${problem.what} `);
         what.append(el("em", "", `- ${problem.who}`));
         row.append(icon(problem.severity, `sev-${problem.severity}`), what);
-        if (problem.fix !== undefined) {
-          const fix = el("button", "lnk fix", problem.fix.label);
+        for (const [at, mend] of (problem.fixes ?? []).entries()) {
+          const fix = el("button", "lnk fix", mend.label);
           fix.type = "button";
           fix.dataset["fix"] = problem.select;
-          fix.title = `${problem.fix.label}: ${problem.who}`;
+          fix.dataset["fixAt"] = String(at);
+          fix.title = `${mend.label}: ${problem.who}`;
           row.append(fix);
         }
         wrap.append(row);
@@ -1023,12 +1024,14 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
       keepingFocus(drawProblems);
       return;
     }
-    const fixOf = target.closest<HTMLElement>("[data-fix]")?.dataset["fix"];
+    const fixLink = target.closest<HTMLElement>("[data-fix]");
+    const fixOf = fixLink?.dataset["fix"];
     if (fixOf !== undefined) {
-      const problem = groups
+      const at = Number(fixLink?.dataset["fixAt"]);
+      const mend = groups
         .flatMap((g) => g.problems)
-        .find((p) => p.select === fixOf && p.fix !== undefined);
-      if (problem?.fix !== undefined) deps.fix(fixOf, problem.fix);
+        .find((p) => p.select === fixOf && p.fixes !== undefined)?.fixes?.[at];
+      if (mend !== undefined) deps.fix(fixOf, mend);
       return;
     }
     const select =

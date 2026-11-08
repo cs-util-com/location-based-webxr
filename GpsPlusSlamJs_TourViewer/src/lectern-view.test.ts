@@ -12,13 +12,12 @@
 
 import {
   Box3,
-  Group,
   Mesh,
+  type MeshBasicMaterial,
   SRGBColorSpace,
   Vector3,
-  type Object3D,
 } from "three";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   analyzeLecternText,
@@ -30,11 +29,9 @@ import {
   drawLecternPage,
   LECTERN_PAGE_ANISOTROPY,
   LECTERN_STAND,
-  lecternPageTexture,
-  turnLecternUnderTap,
-  turnShownLecternUnderTap,
-  type LecternHandle,
+  mountLectern,
 } from "./lectern-view";
+import { mountedWorldParts } from "./world-part";
 
 interface Drawn {
   readonly text: string;
@@ -231,149 +228,34 @@ describe("buildLecternStand", () => {
   });
 });
 
-// Why: seen at a slant from the square the page blurs without the
-// prototype's anisotropy (the renderer's maximum; three clamps a
-// texture's to it).
-describe("lecternPageTexture", () => {
-  it("is an sRGB canvas texture asking for the renderer's largest anisotropy", () => {
-    const canvas = { width: 1024, height: 768 } as unknown as HTMLCanvasElement;
-    const texture = lecternPageTexture(canvas);
-    expect(texture.image).toBe(canvas);
-    expect(texture.colorSpace).toBe(SRGBColorSpace);
+// Why: a mounted stand is a world part like any kind's: its page (not its
+// legs) takes the tap and the tap turns it, it sits in the one mounted set
+// while it stands, and seen at a slant from the square its page would blur
+// without the prototype's anisotropy (the renderer's maximum; three
+// clamps a texture's to it).
+describe("mountLectern", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("is a world part whose page takes the tap and turns, mounted until disposed", () => {
+    const { g } = recorder();
+    vi.stubGlobal("document", {
+      createElement: () => ({ width: 0, height: 0, getContext: () => g }),
+    });
+    const stand = mountLectern({ id: "gate", title: "The Gate", body: TWO });
+    expect(stand.tapTarget).toBe(stand.page);
+    expect(stand.object.userData["objectId"]).toBe("gate");
+    expect(mountedWorldParts()).toContain(stand);
+    const map = (stand.page as Mesh).material as MeshBasicMaterial;
+    expect(map.map?.colorSpace).toBe(SRGBColorSpace);
     expect(LECTERN_PAGE_ANISOTROPY).toBe(16);
-    expect(texture.anisotropy).toBe(LECTERN_PAGE_ANISOTROPY);
-    texture.dispose();
-  });
-});
-
-// Why: the visitor's tap (`main.ts`) reaches only the stands shown under a
-// station's content group, so a stand of a hidden station, or one outside
-// any station, never takes a tap; without a scene nothing is asked.
-describe("turnShownLecternUnderTap", () => {
-  function standIn(parent: Object3D, id: string) {
-    const object = new Group();
-    parent.add(object);
-    const h = {
-      blockId: id,
-      object,
-      page: object,
-      turns: 0,
-      sentence: () => 0,
-      turn() {
-        h.turns += 1;
-      },
-      dispose() {},
-    };
-    return h;
-  }
-
-  function world() {
-    const scene = new Group();
-    const shown = new Group();
-    shown.name = "station-content:gate";
-    const hidden = new Group();
-    hidden.name = "station-content:well";
-    hidden.visible = false;
-    scene.add(shown, hidden);
-    return {
-      scene,
-      a: standIn(shown, "a"),
-      b: standIn(hidden, "b"),
-      c: standIn(scene, "c"),
-    };
-  }
-
-  it("offers only the shown stands to the pick, and turns the one under the tap", () => {
-    const { scene, a, b, c } = world();
-    const seen: string[][] = [];
-    expect(
-      turnShownLecternUnderTap(
-        scene,
-        (targets) => {
-          seen.push([...targets.keys()]);
-          return "a";
-        },
-        null,
-        [a, b, c],
-      ),
-    ).toBe(true);
-    expect(seen).toEqual([["a"]]);
-    expect([a.turns, b.turns, c.turns]).toEqual([1, 0, 0]);
-  });
-
-  it("turns no hidden stand, and nothing without a scene", () => {
-    const { scene, a, b, c } = world();
-    expect(turnShownLecternUnderTap(scene, () => "b", null, [a, b, c])).toBe(
-      false,
-    );
-    let asked = false;
-    expect(
-      turnShownLecternUnderTap(
-        null,
-        () => {
-          asked = true;
-          return "a";
-        },
-        null,
-        [a, b, c],
-      ),
-    ).toBe(false);
-    expect(asked).toBe(false);
-    expect([a.turns, b.turns, c.turns]).toEqual([0, 0, 0]);
-  });
-});
-
-describe("turnLecternUnderTap", () => {
-  function fake(id: string): LecternHandle & { turns: number } {
-    const page = { name: id } as unknown as Object3D;
-    const h = {
-      blockId: id,
-      object: page,
-      page,
-      turns: 0,
-      sentence: () => h.turns,
-      turn() {
-        h.turns += 1;
-      },
-      dispose() {},
-    };
-    return h;
-  }
-
-  it("turns the stand whose page is under the tap, and only that one", () => {
-    const a = fake("a");
-    const b = fake("b");
-    const seen: string[][] = [];
-    const turned = turnLecternUnderTap(
-      [a, b],
-      (targets) => {
-        seen.push([...targets.keys()]);
-        expect(targets.get("b")).toBe(b.page);
-        return "b";
-      },
-      null,
-    );
-    expect(turned).toBe(true);
-    expect([a.turns, b.turns]).toEqual([0, 1]);
-    expect(seen).toEqual([["a", "b"]]);
-  });
-
-  it("a tap on nothing, or with no stand, turns none and says so", () => {
-    const a = fake("a");
-    expect(turnLecternUnderTap([a], () => null, null)).toBe(false);
-    expect(turnLecternUnderTap([a], () => "other", null)).toBe(false);
-    let asked = false;
-    expect(
-      turnLecternUnderTap(
-        [],
-        () => {
-          asked = true;
-          return "a";
-        },
-        null,
-      ),
-    ).toBe(false);
-    expect(asked).toBe(false);
-    expect(a.turns).toBe(0);
+    expect(map.map?.anisotropy).toBe(LECTERN_PAGE_ANISOTROPY);
+    const before = stand.sentence();
+    stand.tap();
+    expect(stand.sentence()).not.toBe(before);
+    stand.dispose();
+    expect(mountedWorldParts()).not.toContain(stand);
+    stand.dispose();
   });
 });

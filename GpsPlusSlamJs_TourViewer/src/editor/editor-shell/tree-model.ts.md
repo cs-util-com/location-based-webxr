@@ -24,8 +24,13 @@ children }`; `count` is how many items it holds, `unlocked` whether
     its position may be moved (every station starts locked), `context`
     is true for the card of a selected item; `children` are its free
     items (`TreeChild`), `folders` its story folders (`TreeFolder`
-    `{ id, title, open, children }`), listed before them - always empty
-    until the format has story folders;
+    `{ id, selection, title, open, searchOpened, selected, context, count,
+children }`), listed before them, a folder's `children` its entries with
+    their 1-based `place`; free items carry no place; `children` of a station
+    list every free block, a video, an audio and a character too;
+  - `storyRows(story)` - a story's entries as `{ id, kind, title, place }`;
+  - `stationContents(station)` - its stories (selected as `story:<id>`), then
+    its free items, as the inspector's Contents lists them;
   - the search (`query`, trimmed into `TreeModel.query`) matches as the
     2D rail's does (`../editor-model.ts` `matchesQuery`): a station
     whose name or description holds it is listed with all its items as
@@ -40,25 +45,27 @@ children }`; `count` is how many items it holds, `unlocked` whether
   - an item's title: `../../object-describe.ts`'s `objectTitle`, the one
     naming rule of every page (a pin's caption, a picture's title, else
     its caption, a model's title), else its kind's word
-    (`BLOCK_KIND_LABEL`: "Photo", "3D model");
+    (`KIND_EDIT` label: "Photo", "3D model");
   - `TreeCode` - a code's row; `TreeChip` - `{ layer, label, on }`, on
     unless hidden.
 - `stationImagePath(station, assets)` - the card picture's asset path: a
   photo of the station named as its picture, else a named image asset,
   else its first photo, else null.
-- `treeFoldOf(tree)` -> `{ openStations, openSections }`: the folds the
-  tree shows, stations in list order (of a tree drawn without a search,
-  which unfolds the stations whose items it finds).
+- `treeFoldOf(tree)` -> `{ openStations, openStories, openSections }`:
+  the folds the tree shows, stations in list order and stories in their
+  stations' order (of a tree drawn without a search, which unfolds the
+  stations whose items it finds).
 - `stationGroups(stations)` -> the editor kit's `TreeGroup[]`: each
-  station's id with its items' ids, for the tree's click rule
-  (`treeClickPlan`).
-- `StationContent` (`{ id, kind, title }`), `stationContents(station)` - the
-  items of a station's world in their order, as the tree names them.
+  station's id with its free items' ids as its children and its stories
+  as groups inside it (selected as `story:<id>`, their entries' ids as
+  their children), for the tree's click rule (`treeClickPlan`).
+- `StationContent` (`{ id, kind, title }`) - the shape
+  `stationContents` lists (above).
 
 ## Invariants & assumptions
 
-- The fold state is `editorView`'s (`openStations`, `openSections`); an
-  unfolded id the tour no longer has is ignored, so a removed station
+- The fold state is `editorView`'s (`openStations`, `openStories`,
+  `openSections`); an unfolded id the tour no longer has is ignored, so a removed station
   leaves no trace in the tree.
 - Pure; no picture is read here (the shell reads the asset).
 
@@ -78,11 +85,13 @@ const tree = buildTree({
 
 `tree-model.test.ts`: cards numbered and folded with their items as
 text, the selected and context cards, the chips, the sections, a stale
-unfolded id ignored, the explorer row's facts (count, unlocked, no
-folders yet), the search (blank, by a station's name or description, by
+unfolded id ignored, the explorer row's facts (count, unlocked), the story
+folders (order, counts, entries, selection and context, folds, search), the
+search (blank, by a station's name or description, by
 an item's title or kind's words, codes, nothing found),
 `stationImagePath`'s order, `stationGroups`.
-`tree-model.property.test.ts`: for any station list and any run of fold
-and select steps, the tree is drawn exactly as `editorView` holds it, a
+`tree-model.property.test.ts`: for any station list (pins, and stories of
+pins as folders inside a station) and any run of station and story folds
+and clicks on stations, items, stories and their entries, the tree is drawn exactly as `editorView` holds it, a
 fresh view given the drawn folds draws the same tree (the round trip),
 and reordering the list keeps the same stations unfolded.

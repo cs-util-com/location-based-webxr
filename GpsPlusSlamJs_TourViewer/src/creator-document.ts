@@ -229,14 +229,16 @@ export interface CreatorDocument {
   armNewStation(armed: boolean): void;
   /** A pin's text changed (`objectFits`); its placement is kept. */
   edit(object: TourObject, what: string): DocumentChange | null;
-  /** An object moved: within its station's found radius it stays there,
-   *  beyond it the station rule seats it anew (`moved`). `placement`
+  /** An object moved: it keeps its station, in or out of the circle, or
+   *  changes to `joinStation`, the creator's answer (`moved`). `placement`
    *  replaces its AR placement when given (a move in AR), else it is kept
-   *  (a settle's re-pose). Null for an id the document lacks. */
+   *  (a settle's re-pose). Null, nothing kept, for an id the document
+   *  lacks and a spot that station cannot carry. */
   move(
     object: TourObject,
     what: string,
     placement?: VisitPlacement,
+    joinStation?: string,
   ): DocumentChange | null;
   /** An object deleted; null for an id the tour does not carry. */
   remove(id: string, what: string): DocumentChange | null;
@@ -544,21 +546,23 @@ export function createCreatorDocument(
       if (!objectFits(state(), object)) return null;
       return change(tourDocumentActions.edited({ object, what }));
     },
-    move(object, what, placement) {
+    move(object, what, placement, joinStation) {
       const before = state();
-      if (!documentObjects(before).some((o) => o.object.id === object.id)) {
-        return null;
-      }
+      const found = documentObjects(before).find(
+        (o) => o.object.id === object.id,
+      );
+      if (found === undefined) return null;
+      const seat = joinStation ?? found.object.station;
+      if (seat === undefined) return null;
+      if (!objectFits(before, { ...object, station: seat })) return null;
       if (placement !== undefined) setPlacement(object.id, placement);
-      const moved = change(
+      return change(
         tourDocumentActions.moved({
           object,
           what,
-          newStationId: freshStationId(before),
+          ...(joinStation === undefined ? {} : { joinStation }),
         }),
       );
-      anchorStarted(before, [object.id]);
-      return moved;
     },
     remove(id, what) {
       if (!documentObjects(state()).some((o) => o.object.id === id)) {
@@ -594,11 +598,10 @@ export function createCreatorDocument(
           if (!documentObjects(staged).some((o) => o.object.id === object.id)) {
             return false;
           }
-          const newStationId = freshStationId(staged);
-          changes.push({ kind: "object", object, newStationId });
+          changes.push({ kind: "object", object });
           staged = tourDocumentReducer(
             staged,
-            tourDocumentActions.moved({ object, what: "", newStationId }),
+            tourDocumentActions.moved({ object, what: "" }),
           );
           return true;
         },
@@ -615,10 +618,6 @@ export function createCreatorDocument(
             }),
           );
           if (state().revision === before.revision) return null;
-          anchorStarted(
-            before,
-            changes.flatMap((c) => (c.kind === "object" ? [c.object.id] : [])),
-          );
           return taken;
         },
       };

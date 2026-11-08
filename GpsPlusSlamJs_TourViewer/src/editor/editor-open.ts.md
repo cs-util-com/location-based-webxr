@@ -54,6 +54,12 @@ picture this tour no longer has. The description of "Station 3" could
 not be read. The editor left them out: ...`), and that the next save
   writes them without; null for none. Not told to set them again in the
   tour's details: neither is a tour detail.
+- `droppedBlockFieldsLine(dropped, manifest): string | null` - the toast
+  for a block's text the reader left out (a transcript, a caption or a
+  description over its cap: the block is kept, the text is not): which
+  blocks, named by `objectTitle` (the id only for a block the manifest
+  does not hold), and that the next save writes them without it; null
+  for none. Whole blocks a reader cannot show are not listed.
 - `EditorOpen`, `NOT_A_TOUR`, `NOT_A_ZIP`.
 
 ## Invariants & assumptions

@@ -293,6 +293,17 @@
   border-radius: 4px;
   background: #222327;
 }
+/* A keyboard up: no taller than what is left over it under the panel's
+ * head, so the caret's line is in sight wherever it is; the room kept at
+ * the foot for the last line goes under the keyboard anyway. */
+body[data-keyboard] .lw-writer {
+  min-height: 24px;
+  max-height: calc(100dvh - var(--s-keyboard-h, 0px) - 100px);
+}
+body[data-keyboard] .lw-mirror,
+body[data-keyboard] .lw-writer textarea {
+  padding-bottom: 10px;
+}
 .lw-writer:focus-within {
   border-color: var(--s-focus);
 }

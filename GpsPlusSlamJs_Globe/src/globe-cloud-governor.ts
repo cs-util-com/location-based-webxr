@@ -14,7 +14,9 @@
  * Frame times alone cannot tell a slow device from a capped one (a 30 Hz
  * screen, a saving mode), so the step-down is its own test: when the fewest
  * pixels bought less than `worthwhile`, the pixels were not the cost, all of
- * them come back and it rests for the view's life.
+ * them come back and it rests for `restS`: long enough that a capped screen
+ * sees the test rarely, short enough that a device that gets slower later
+ * (a phone heating up) still steps down.
  *
  * @see globe-cloud-governor.ts.md
  */
@@ -39,6 +41,8 @@ export const CLOUD_GOVERNOR = Object.freeze({
   steps: 5,
   /** The share of the frame time the fewest pixels must save. */
   worthwhile: 0.15,
+  /** How long the step-down rests after pixels that bought nothing (s). */
+  restS: 300,
   /** How much of a frame reaches the average. */
   smoothing: 0.1,
   /** One frame this long says nothing of the device (ms); two in a row do:
@@ -67,16 +71,17 @@ export function createGlobeCloudGovernor(
   /** The average when the pixels began to fall. */
   let slowAt = 0;
   let gapBefore = false;
-  let resting = false;
+  /** The rest still to run (s). */
+  let restFor = 0;
 
   const stepDown = () => {
-    if (resting) return;
+    if (restFor > 0) return;
     if (scaleSteps === 0) slowAt = average;
     if (scaleSteps < G.steps) {
       scaleSteps += 1;
     } else if (average > slowAt * (1 - G.worthwhile)) {
       scaleSteps = 0;
-      resting = true;
+      restFor = G.restS;
     } else if (current !== "low") {
       current = "low";
       scaleSteps = 0;
@@ -93,6 +98,7 @@ export function createGlobeCloudGovernor(
       if (alone) return;
       average = average === 0 ? ms : average + (ms - average) * G.smoothing;
       const seconds = ms / 1000;
+      restFor = Math.max(0, restFor - seconds);
       slowFor = average > G.slowMs ? slowFor + seconds : 0;
       fastFor = average < G.fastMs ? fastFor + seconds : 0;
       if (slowFor >= G.slowS) {

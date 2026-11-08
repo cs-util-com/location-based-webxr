@@ -18,6 +18,7 @@ import {
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { TOUR_ID_PATTERN } from "gps-plus-slam-app-framework/ar/tour-archive";
+import { tourBlockAssetIds } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { objectContentKey } from "./authoring-draft.js";
 import type { DraftObjectWrites } from "./draft-actions.js";
@@ -28,6 +29,7 @@ import {
   documentFrames,
   framesOf,
   levelsNotHosted,
+  objectAssetsHeld,
   type LevelText,
   recordedFrames,
   recordedOrder,
@@ -319,6 +321,8 @@ function codesRecord(
 export interface TourDocumentDraft extends DraftObjectWrites {
   saveSettings(settings: TourSettingsRecord): Promise<boolean>;
   saveCodes?(codes: TourCodesRecord): Promise<boolean>;
+  /** Whether the draft holds a file brought in (absent: every one). */
+  holdsFile?(id: string): boolean;
 }
 
 /** The settings record as the document holds it now. */
@@ -357,31 +361,109 @@ interface Holders {
 }
 
 /**
- * `object` as a draft can keep it: a long text whose narration needs what
- * only this page holds - a voice brought in here, a read-along text set
- * here and written nowhere yet - keeps the narration the written file
- * gives it (none when it has none). A draft keeps records, never a
- * voice's bytes or a timing's text: a reload offering that narration
- * would name a file the tour lacks, and every save would fail.
+ * `object` as a draft can keep it, or null when it cannot keep it at all.
+ * A draft keeps the records and the files brought in (`addedAssets`,
+ * written before the records naming them), never a timing's text: a
+ * reload offering a record naming a file the tour lacks would fail every
+ * save, so the restore leaves such a record out whole. A file brought in
+ * whose write did not land (`holdsFile` false) is held nowhere either.
+ * So a record naming what only this page holds is drafted otherwise:
+ * - a long text keeps its words with the narration the written file gives
+ *   it (none when it has none);
+ * - any other kind (a model, a video, a picture of a file) is drafted as
+ *   the written file has it, or - written nowhere - not at all.
  */
 export function draftableObject(
   object: TourObject,
   state: TourDocumentState,
-): TourObject {
-  if (object.kind !== "longText" || object.narration === undefined) {
-    return object;
-  }
-  const { audio, timing } = object.narration;
-  const assets = new Set((state.written?.assets ?? []).map((a) => a.id));
+  holdsFile: (id: string) => boolean = () => true,
+): TourObject | null {
+  const assets = new Set([
+    ...(state.written?.assets ?? []).map((a) => a.id),
+    ...state.addedAssets.map((a) => a.id).filter(holdsFile),
+  ]);
+  const timing =
+    object.kind === "longText" ? object.narration?.timing : undefined;
   const timingHeld =
     timing === undefined ||
     !Object.hasOwn(state.timingsWritten, timing) ||
     state.timingsWritten[timing] !== null;
-  if (assets.has(audio) && timingHeld) return object;
+  if (objectAssetsHeld(object, assets) && timingHeld) return object;
+  const fallback =
+    object.kind === "longText"
+      ? withFiledNarration(object, state.written)
+      : withWrittenAssets(
+          object,
+          writtenObject(state.written, object.id),
+          assets,
+        );
+  return fallback !== null && objectAssetsHeld(fallback, assets)
+    ? fallback
+    : null;
+}
+
+/**
+ * `object` with each field naming a file held nowhere (`held`) put back as
+ * `written` has it, every other edit kept (taking the whole record back
+ * would lose a size or a move). `written` whole when a
+ * field cannot be put back (the written record is of another kind or lacks
+ * the field); null when nothing is written.
+ */
+function withWrittenAssets(
+  object: TourObject,
+  written: TourObject | undefined,
+  held: ReadonlySet<string>,
+): TourObject | null {
+  if (written === undefined) return null;
+  if (written.kind !== object.kind) return written;
+  const unheld = new Set(
+    tourBlockAssetIds(object, true).filter((id) => !held.has(id)),
+  );
+  const from = written as unknown as Readonly<Record<string, unknown>>;
+  const kept: Record<string, unknown> = { ...object };
+  for (const [key, value] of Object.entries(object)) {
+    if (!unheld.has(namedFile(value) ?? "")) continue;
+    if (!Object.hasOwn(from, key)) return written;
+    kept[key] = from[key];
+  }
+  return kept as unknown as TourObject;
+}
+
+/**
+ * The file a top-level field of an object names: a string field names it
+ * by id, an inline asset (a picture's `imageAsset`, whose id is its
+ * `image`) by its `id` - so the two of a pair are put back together.
+ * Nested references are not read: no kind has one yet.
+ */
+function namedFile(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  if (typeof value !== "object" || value === null) return undefined;
+  const id = (value as { readonly id?: unknown }).id;
+  return typeof id === "string" ? id : undefined;
+}
+
+/** The object of `id` as `file` holds it, if it does. */
+function writtenObject(
+  file: TourManifest | null,
+  id: string,
+): TourObject | undefined {
+  return file === null ? undefined : tourObjects(file).find((o) => o.id === id);
+}
+
+/** `object` with the narration `file` gives it in place of its own (none
+ *  when the file gives none): a long text whose narration names what is
+ *  held nowhere keeps its words. Any other object is returned as it is. */
+export function withFiledNarration(
+  object: TourObject,
+  file: TourManifest | null,
+): TourObject {
+  if (object.kind !== "longText" || object.narration === undefined) {
+    return object;
+  }
   const filed =
-    state.written === null
+    file === null
       ? undefined
-      : tourObjects(state.written).find((o) => o.id === object.id);
+      : tourObjects(file).find((o) => o.id === object.id);
   const { narration: _unheld, ...rest } = object;
   return filed?.kind === "longText" && filed.narration !== undefined
     ? { ...rest, narration: filed.narration }
@@ -397,7 +479,7 @@ function followId(
   now: Standing,
   pictureOf: (id: string) => Blob | undefined,
   holds: Holders,
-  kept: (object: TourObject) => TourObject,
+  kept: (object: TourObject) => TourObject | null,
 ): void {
   if (now === "deleted") {
     if (was !== "deleted") void draft.saveDeletion(id);
@@ -419,7 +501,10 @@ function followId(
     was !== null &&
     was !== "deleted" &&
     objectContentKey(was.object) === objectContentKey(now.object);
-  if (!same) void draft.saveObject(kept(now.object), pictureOf(id));
+  // A record the draft cannot keep (`draftableObject` null) is not
+  // written: the draft keeps what it had for the id.
+  const keep = same ? null : kept(now.object);
+  if (keep !== null) void draft.saveObject(keep, pictureOf(id));
   // An object back that the written file lacks may be a delete a save
   // already wrote (and took out of the document's deletions, not the
   // draft's tombstone): an undo across that save. Its tombstone goes too,
@@ -478,7 +563,12 @@ export function followDocument(
       standing(after, id),
       pictureOf,
       holds,
-      (object) => draftableObject(object, after),
+      (object) =>
+        draftableObject(
+          object,
+          after,
+          (asset) => draft.holdsFile?.(asset) ?? true,
+        ),
     );
   }
   const was = settingsRecord(before);

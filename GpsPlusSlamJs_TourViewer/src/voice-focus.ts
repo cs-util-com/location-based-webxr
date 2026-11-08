@@ -13,6 +13,7 @@
 
 import type { ItemVideo } from "./item-card.js";
 import type { NarrationPlayer } from "./narration-player.js";
+import { isPlayAbort } from "./scene-audio.js";
 import type { SceneAudio } from "./scene-view.js";
 
 /** One source of sound, as the focus drives it. */
@@ -186,9 +187,16 @@ export function focusedSceneAudio(
   /** Which clip is the current one: a replaced clip's refusal lands late,
    *  on the one voice object the new clip runs on. */
   let clip = 0;
+  /** The clip a hold paused: only its play() may end in an AbortError that
+   *  is no refusal. */
+  let heldClip = 0;
+  /** The current clip's end, as its step hears it: null once it ended,
+   *  was stopped or was refused. */
+  let clipEnd: (() => void) | null = null;
   const voice: Voice = {
     story: true,
     hold: () => {
+      heldClip = clip;
       audio.pause();
       onHeld(true);
     },
@@ -196,9 +204,17 @@ export function focusedSceneAudio(
       audio.resume();
       onHeld(false);
     },
+    // The channel stops a story's clip only when it keeps another story
+    // voice held instead. A stopped clip never reaches its end, and its
+    // step waits for that end, so the stop is its end. The clip counts as
+    // replaced: its late end or AbortError is no longer the current one's.
     stop: () => {
+      const end = clipEnd;
+      clipEnd = null;
+      clip += 1;
       audio.stop();
       onHeld(false);
+      end?.();
     },
   };
   return {
@@ -208,18 +224,29 @@ export function focusedSceneAudio(
       const mine = clip;
       focus.tapped(voice);
       onHeld(false);
+      clipEnd = onEnded;
       return audio
         .play(blob, () => {
-          if (mine === clip) focus.ended(voice);
+          if (mine === clip) {
+            clipEnd = null;
+            focus.ended(voice);
+          }
           onEnded();
         })
         .catch((error: unknown) => {
-          if (mine === clip) focus.ended(voice);
+          // A hold's pause cut it short: still the channel's, still waited
+          // for. Any other AbortError is a refusal like the rest.
+          if (isPlayAbort(error) && heldClip === mine) return;
+          if (mine === clip) {
+            clipEnd = null;
+            focus.ended(voice);
+          }
           throw error;
         });
     },
     stop() {
       clip += 1;
+      clipEnd = null;
       audio.stop();
       focus.ended(voice);
       onHeld(false);

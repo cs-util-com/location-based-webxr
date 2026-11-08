@@ -1,0 +1,21 @@
+{
+  "name": "The gate stamp",
+  "words": "Stamped at the old gate. Tap to hear it land.",
+  "block": {
+    "kind": "stamp",
+    "name": "The gate stamp",
+    "words": "Stamped at the old gate. Tap to hear it land.",
+    "image": "stamp-image",
+    "sound": "stamp-sound"
+  },
+  "assets": [
+    {
+      "id": "stamp-image",
+      "kind": "image",
+      "file": "stamp.png",
+      "width": 256,
+      "height": 512
+    },
+    { "id": "stamp-sound", "kind": "audio", "file": "stamp.wav" }
+  ]
+}

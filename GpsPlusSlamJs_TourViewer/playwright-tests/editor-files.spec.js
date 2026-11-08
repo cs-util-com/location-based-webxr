@@ -1,6 +1,12 @@
 // @ts-check
 import { expect, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
+import {
+  TextWriter,
+  Uint8ArrayReader,
+  Uint8ArrayWriter,
+  ZipReader,
+} from "@zip.js/zip.js";
 
 import { fileCommand, fileItem, openAnother, save } from "./editor-menus.js";
 import {
@@ -214,6 +220,42 @@ test("edits survive a closed tab: the same file reopened offers them, and Restor
   await expect(next.locator("#save-status")).toHaveText(
     "2 changes not saved - kept in this browser until you save",
   );
+});
+
+test("a copied photo survives a closed tab: Restore brings it back and the save after it writes its picture", async ({
+  page,
+  context,
+}) => {
+  // Why: the copy's picture lives only in the draft until a save writes
+  // it, and the browser hands a stored file out as a snapshot of its
+  // entry. The restore writes the copy into that same entry again; a
+  // snapshot still held then stops reading, and every save after the
+  // restore failed. Only a real origin-private file system shows this.
+  const buffer = await editorTour();
+  await page.goto("/edit.html");
+  await openFile(page, buffer, "editor-fixture.zip");
+  const copyId = await page.evaluate(async (id) => {
+    // @ts-expect-error - the editor's dev-only test hook.
+    const hook = window.__tourEditor;
+    const result = await hook.editor().duplicateObject(id);
+    hook.edited();
+    return result.kind === "duplicated" ? result.id : result.kind;
+  }, FOUNTAIN);
+  await expectCaption(page, copyId, "Fountain copy");
+  await backedUp(page);
+  await page.close();
+  const next = await newEditorPage(context);
+  await openFile(next, buffer, "editor-fixture.zip");
+  const offer = next.locator(".toast.draft-offer");
+  await offer.locator("button", { hasText: "Restore" }).click();
+  await expect(offer).toHaveCount(0);
+  await expectCaption(next, copyId, "Fountain copy");
+  const saved = await saveAndRead(next);
+  const copy = saved.manifest.objects.find(
+    (/** @type {{ id: string }} */ o) => o.id === copyId,
+  );
+  expect(copy?.kind).toBe("picture");
+  expect(saved.names).toContain(copy.imageAsset.path);
 });
 
 test("a station renamed through the editor session survives a closed tab: the draft offers it, and Restore brings it back", async ({
@@ -774,4 +816,281 @@ test("an edit after a download, with the downloaded copy put in place, is offere
   ).toHaveCount(0);
   await offer.locator("button", { hasText: "Restore" }).click();
   await expectCaption(next, WRAPPED_PIN, "After the download");
+});
+
+// ---------------------------------------------------------------------------
+// The files brought in: a voice's bytes are kept by the draft until a save.
+// ---------------------------------------------------------------------------
+
+const LONG_TEXT_TOUR = "http://127.0.0.1:5197/ranges-ok/long-text-tour.zip";
+
+/** Bytes no two offsets of which repeat in a short run: a stand-in voice.
+ * @param {number} size */
+function voiceBytes(size) {
+  const b = Buffer.alloc(size);
+  for (let i = 0; i < size; i += 1) b[i] = (i * 31 + (i >> 8)) & 0xff;
+  return b;
+}
+
+/**
+ * Bring `bytes` in as the essay's voice through the editor session, as the
+ * Narration section does; the session's answer.
+ * @param {import("@playwright/test").Page} page
+ * @param {Buffer} bytes
+ */
+function importVoice(page, bytes) {
+  return page.evaluate(
+    async (data) => {
+      // @ts-expect-error - the editor's dev-only test hook.
+      const hook = window.__tourEditor;
+      const file = new File([new Uint8Array(data)], "gate-voice.wav", {
+        type: "audio/wav",
+      });
+      const outcome = await hook.editor().editNarration("gate-essay", {
+        kind: "voice",
+        file,
+        fileName: file.name,
+      });
+      hook.edited();
+      return outcome;
+    },
+    [...bytes],
+  );
+}
+
+/**
+ * The essay's voice entry in the zip a save downloads, as bytes.
+ * @param {import("@playwright/test").Page} page
+ */
+async function savedVoice(page) {
+  const download = page.waitForEvent("download");
+  await save(page);
+  const zip = readFileSync(await (await download).path());
+  const reader = new ZipReader(new Uint8ArrayReader(new Uint8Array(zip)));
+  const entries = await reader.getEntries();
+  const named = (/** @type {string} */ n) =>
+    entries.find((e) => e.filename === n);
+  const tourEntry = named("tour.json");
+  if (tourEntry?.getData === undefined) throw new Error("no tour.json");
+  const tour = JSON.parse(await tourEntry.getData(new TextWriter()));
+  // The essay's own voice: the tour carries other sounds too.
+  /** @type {(v: any) => any} */
+  const essayIn = (v) =>
+    Array.isArray(v)
+      ? v.map(essayIn).find((e) => e !== undefined)
+      : v !== null && typeof v === "object"
+        ? v.id === "gate-essay"
+          ? v
+          : essayIn(Object.values(v))
+        : undefined;
+  const audio = essayIn(tour)?.narration?.audio;
+  const voice = tour.assets.find((/** @type {any} */ a) => a.id === audio);
+  const entry = named(voice?.path ?? "");
+  const bytes =
+    entry?.getData === undefined
+      ? undefined
+      : Buffer.from(await entry.getData(new Uint8ArrayWriter()));
+  await reader.close();
+  return { zip, bytes, path: voice?.path };
+}
+
+test("a voice brought in survives a closed tab with its bytes, and the saved file reopens with the same bytes", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(90_000);
+  // Why: a file brought in exists only in the page until a save writes
+  // it. The draft keeps its bytes before the record naming it, so a
+  // reload brings both back; the save after the reload must write the
+  // very bytes brought in, and a reopen of that file must carry them on.
+  const tour = Buffer.from(await (await fetch(LONG_TEXT_TOUR)).arrayBuffer());
+  const voice = voiceBytes(300_000);
+  await noSavePicker(page);
+  await page.goto("/edit.html");
+  await openFile(page, tour, "long-text-tour.zip");
+  expect(await importVoice(page, voice)).toEqual({ kind: "edited" });
+  await backedUp(page);
+  await page.close();
+
+  const next = await newEditorPage(context);
+  await openFile(next, tour, "long-text-tour.zip");
+  const offer = next.locator(".toast.draft-offer");
+  await expect(offer).toContainText("1 change");
+  await offer.locator("button", { hasText: "Restore" }).click();
+  await expect(offer).toHaveCount(0);
+  const saved = await savedVoice(next);
+  expect(saved.path).toMatch(/^content\/[0-9a-f]{64}\.wav$/);
+  expect(saved.bytes?.equals(voice)).toBe(true);
+  await backedUp(next);
+  await next.close();
+
+  const reopened = await newEditorPage(context);
+  await openFile(reopened, saved.zip, "long-text-tour.zip");
+  await expect
+    .poll(() =>
+      reopened.evaluate(
+        async () =>
+          // @ts-expect-error - the editor's dev-only test hook.
+          (await window.__tourEditor.editor().narration("gate-essay")).hasVoice,
+      ),
+    )
+    .toBe(true);
+  // A save with nothing changed asks for no file: one change elsewhere,
+  // so this save copies the voice from the reopened file.
+  expect(
+    await reopened.evaluate(() => {
+      // @ts-expect-error - the editor's dev-only test hook.
+      const hook = window.__tourEditor;
+      const editor = hook.editor();
+      const outcome = editor.setNeedsNoGps(!editor.needsNoGps());
+      hook.edited();
+      return outcome.kind;
+    }),
+  ).toBe("changed");
+  const again = await savedVoice(reopened);
+  expect(again.bytes?.equals(voice)).toBe(true);
+});
+
+test("a voice the browser cannot keep is still in the tour, and the page says the edits are not backed up", async ({
+  page,
+}) => {
+  // Why: a full disk refuses the draft's write of the file; the voice is
+  // in the tour all the same (a save writes it), and the page must not
+  // claim a backup it does not have.
+  const tour = Buffer.from(await (await fetch(LONG_TEXT_TOUR)).arrayBuffer());
+  await page.goto("/edit.html");
+  await openFile(page, tour, "long-text-tour.zip");
+  await backedUp(page);
+  await page.evaluate(() => {
+    const write = FileSystemWritableFileStream.prototype.write;
+    FileSystemWritableFileStream.prototype.write = function (data) {
+      return data instanceof Blob && data.size > 1000
+        ? Promise.reject(new DOMException("full", "QuotaExceededError"))
+        : write.call(this, data);
+    };
+  });
+  expect(await importVoice(page, voiceBytes(50_000))).toEqual({
+    kind: "edited",
+    notBackedUp: true,
+  });
+  await expect(page.locator("body")).toHaveAttribute("data-draft", "off");
+  expect(
+    await page.evaluate(
+      async () =>
+        // @ts-expect-error - the editor's dev-only test hook.
+        (await window.__tourEditor.editor().narration("gate-essay")).hasVoice,
+    ),
+  ).toBe(true);
+});
+
+test("autosave follows the tour's size both ways: off over the cap, on again once no step names the voice", async ({
+  page,
+}) => {
+  // Why: a file brought in may take the tour over the autosave's cap, and
+  // the cap is judged on what the next save in place would rewrite. Judged
+  // only one way, a tour back under the cap stayed saved only by hand for
+  // the rest of the visit.
+  const tour = Buffer.from(await (await fetch(LONG_TEXT_TOUR)).arrayBuffer());
+  await page.addInitScript((maxBytes) => {
+    // @ts-expect-error - the editor's dev-only autosave cap and timings.
+    window.__tourEditorAutosave = {
+      maxBytes,
+      delayMs: 3_600_000,
+      maxWaitMs: 3_600_000,
+    };
+  }, tour.length + 100_000);
+  await page.goto("/edit.html");
+  await offerOpfsFile(page, tour, "long-text-tour.zip");
+  await openOffered(page);
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "idle");
+  expect(await importVoice(page, voiceBytes(300_000))).toEqual({
+    kind: "edited",
+  });
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "off");
+  await expect(page.locator("#save-status")).toContainText("large tour");
+  // The undo takes the voice out, but its redo still names the file, so
+  // the next save still writes it: autosave stays off.
+  await page.keyboard.press("Control+z");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        async () =>
+          // @ts-expect-error - the editor's dev-only test hook.
+          (await window.__tourEditor.editor().narration("gate-essay")).hasVoice,
+      ),
+    )
+    .toBe(false);
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "off");
+  // An edit after the undo drops that redo: the save no longer writes it.
+  expect(
+    await page.evaluate(() => {
+      // @ts-expect-error - the editor's dev-only test hook.
+      const hook = window.__tourEditor;
+      const editor = hook.editor();
+      const outcome = editor.setNeedsNoGps(!editor.needsNoGps());
+      hook.edited();
+      return outcome.kind;
+    }),
+  ).toBe("changed");
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-autosave",
+    /^(idle|waiting)$/,
+  );
+  await expect(page.locator("#save-status")).not.toContainText("large tour");
+});
+
+test("a target attached after a copy was saved judges the autosave by the tour, not by the file it attaches", async ({
+  page,
+  context,
+}) => {
+  // Why (#881 review): when the save target comes later than the open,
+  // the tour may have outgrown the file the target names. A second tab
+  // brings a voice in and saves a copy (a download) before "Edit here
+  // anyway": the copy took the voice in, so nothing is added any more,
+  // yet the next in-place save rewrites the tour with the voice. Judged
+  // on the attached file's size (the old formula, `file.size` plus the
+  // added bytes), the tour looked under the cap and saved by itself.
+  // The cap sits between the two readings; a cap of 1 byte, as in the
+  // other large-tour tests, cannot tell them apart.
+  const tour = Buffer.from(await (await fetch(LONG_TEXT_TOUR)).arrayBuffer());
+  await page.goto("/edit.html");
+  await offerOpfsFile(page, tour, "long-text-tour.zip");
+  await openOffered(page);
+  const second = await context.newPage();
+  await noSavePicker(second);
+  await second.addInitScript((maxBytes) => {
+    // @ts-expect-error - the editor's dev-only autosave cap and timings.
+    window.__tourEditorAutosave = {
+      maxBytes,
+      delayMs: 3_600_000,
+      maxWaitMs: 3_600_000,
+    };
+  }, tour.length + 100_000);
+  await second.goto("/edit.html");
+  await offerOpfsFile(second, tour, "long-text-tour.zip");
+  await openOffered(second);
+  const told = second.locator(".toast", { hasText: "Another tab is editing" });
+  await expect(told).toBeVisible();
+  // The draft is the first tab's, so the second tab's voice is not
+  // backed up there; the subject here is the autosave.
+  expect(await importVoice(second, voiceBytes(300_000))).toEqual({
+    kind: "edited",
+    notBackedUp: true,
+  });
+  const download = second.waitForEvent("download");
+  await save(second);
+  await download;
+  await told.locator("button", { hasText: "Edit here anyway" }).click();
+  await expect(second.locator("body")).toHaveAttribute("data-autosave", "off");
+  // The target is attached (the large-tour note is said only for a file
+  // written in place): an edit now waits for Save, not for the autosave.
+  await second.evaluate(() => {
+    // @ts-expect-error - the editor's dev-only test hook.
+    const hook = window.__tourEditor;
+    const editor = hook.editor();
+    editor.setNeedsNoGps(!editor.needsNoGps());
+    hook.edited();
+  });
+  await expect(second.locator("#save-status")).toContainText("large tour");
+  await expect(second.locator("body")).toHaveAttribute("data-autosave", "off");
 });
