@@ -22,7 +22,22 @@ export const ROAD_PARAMS = Object.freeze({
   carEdgeM: 0.22,
   /** Width of the darkened edge on a path, metres. */
   pathEdgeM: 0.08,
+  /**
+   * The mitre style's limit on the ratio of the mitre length to the half
+   * width, `1 / cos(t / 2)` at a turn of t: above it the outer side is
+   * bevelled. 2 bevels turns over 120 degrees.
+   */
+  mitreLimit: 2,
+  /**
+   * The mitre style's kerb fade where a way runs into another, metres: the
+   * kerb is off inside the other way's half width and ramps back in over
+   * this length.
+   */
+  kerbTaperM: 1,
 });
+
+/** The two ways a ribbon joins its segments (`buildRibbons`'s `joinStyle`). */
+export const JOIN_STYLES = Object.freeze(["discs", "mitre"]);
 
 /** A separately mapped sidewalk: the footway's warm family, lighter. */
 export const SIDEWALK_RGB = 0xc6b49c;
@@ -147,6 +162,114 @@ export function pushTriangle(out, rgb, a, b, c) {
   }
 }
 
+/**
+ * One way's continuous strip with mitre joins (the mitre style). `points` are
+ * ENU metres without consecutive duplicates, `half` the half width, `breaks`
+ * the indices of interior points shared with another way. Returns:
+ *
+ * - `triangles`: `[a, b, c]`, counter-clockwise in ENU, each vertex
+ *   `{ x, y, offset, index }` with `offset` +half on the left edge and -half
+ *   on the right (every strip vertex lies on an edge line) and `index` the
+ *   point it belongs to;
+ * - `discs`: the indices that take a round disc instead: the ends, the
+ *   breaks and the fallbacks;
+ * - `mitres`, `bevels`, `fallbacks` (counts) and `maxOvershootM`, the
+ *   furthest a mitre corner reaches past the round join (`h / cos(t/2) - h`).
+ *
+ * At an interior point both sides meet at the mitre point, on the bisector of
+ * the two segment normals at `h / cos(t/2)`. Above `mitreLimit` the outer
+ * side is bevelled: its two plain corners plus one fill triangle; the inner
+ * side keeps the mitre point. Where the inner mitre point would run more than
+ * half way along either neighbouring segment (`h tan(t/2)`), two joins could
+ * cross on a short segment and fold the strip, so the point falls back to a
+ * disc and the strip breaks there, as at a junction.
+ */
+export function mitreStrip(
+  points,
+  half,
+  { breaks, mitreLimit = ROAD_PARAMS.mitreLimit },
+) {
+  const n = points.length;
+  const dirs = [];
+  for (let i = 0; i + 1 < n; i += 1) {
+    const a = points[i];
+    const b = points[i + 1];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    dirs.push({ x: (b.x - a.x) / len, y: (b.y - a.y) / len, len });
+  }
+  const at = (k, nx, ny, scale, offset) => ({
+    x: points[k].x + nx * scale,
+    y: points[k].y + ny * scale,
+    offset,
+    index: k,
+  });
+  // Plain cross-sections: perpendicular to one segment.
+  const plain = (k, d) => ({
+    left: at(k, -d.y, d.x, half, half),
+    right: at(k, -d.y, d.x, -half, -half),
+  });
+  const starts = [];
+  const ends = [];
+  const triangles = [];
+  const discs = [0];
+  const result = { mitres: 0, bevels: 0, fallbacks: 0, maxOvershootM: 0 };
+  starts[0] = plain(0, dirs[0]);
+  for (let k = 1; k + 1 < n; k += 1) {
+    const p = points[k];
+    const dIn = dirs[k - 1];
+    const dOut = dirs[k];
+    const cross = dIn.x * dOut.y - dIn.y * dOut.x;
+    const dot = dIn.x * dOut.x + dIn.y * dOut.y;
+    const halfTurn = Math.abs(Math.atan2(cross, dot)) / 2;
+    const reach = half * Math.tan(halfTurn);
+    const folds =
+      halfTurn >= Math.PI / 2 - 1e-9 ||
+      reach > 0.5 * Math.min(dIn.len, dOut.len);
+    if (breaks.has(k) || folds) {
+      if (!breaks.has(k)) result.fallbacks += 1;
+      ends[k - 1] = plain(k, dIn);
+      starts[k] = plain(k, dOut);
+      discs.push(k);
+      continue;
+    }
+    // The bisector of the two left normals, scaled to reach both edge lines.
+    const mx = -dIn.y - dOut.y;
+    const my = dIn.x + dOut.x;
+    const norm = Math.hypot(mx, my);
+    const length = half / Math.cos(halfTurn);
+    const left = at(k, mx / norm, my / norm, length, half);
+    const right = at(k, mx / norm, my / norm, -length, -half);
+    if (length / half <= mitreLimit) {
+      result.mitres += 1;
+      result.maxOvershootM = Math.max(result.maxOvershootM, length - half);
+      ends[k - 1] = { left, right };
+      starts[k] = { left, right };
+      continue;
+    }
+    result.bevels += 1;
+    const inPlain = plain(k, dIn);
+    const outPlain = plain(k, dOut);
+    if (cross > 0) {
+      // A left turn: the right side is outside.
+      ends[k - 1] = { left, right: inPlain.right };
+      starts[k] = { left, right: outPlain.right };
+      triangles.push([left, inPlain.right, outPlain.right]);
+    } else {
+      ends[k - 1] = { left: inPlain.left, right };
+      starts[k] = { left: outPlain.left, right };
+      triangles.push([right, outPlain.left, inPlain.left]);
+    }
+  }
+  ends[n - 2] = plain(n - 1, dirs[n - 2]);
+  discs.push(n - 1);
+  for (let i = 0; i + 1 < n; i += 1) {
+    const s = starts[i];
+    const e = ends[i];
+    triangles.push([s.right, e.right, e.left], [s.right, e.left, s.left]);
+  }
+  return { triangles, discs, ...result };
+}
+
 /** Packed `0xrrggbb` to linear-ish 0..1 floats (sRGB as three reads it). */
 export function rgbOf(packed) {
   return [
@@ -157,6 +280,76 @@ export function rgbOf(packed) {
 }
 
 /**
+ * The mitre style's kerb fade for one way. Where the way passes through or
+ * ends at a junction, its kerb is off along the way for the widest other
+ * half width there (`reach`), ramps back in over `kerbTaperM`, and is full
+ * beyond. Cross-sections are inserted on the segments at `reach` and
+ * `reach + kerbTaperM` from each junction (collinear points, so the strip
+ * takes them as straight mitres), and `kerb[i]` is the factor 0..1 at each
+ * point. A way that visits a point twice counts its own half width there.
+ */
+function kerbFade(points, wayIndex, junctions, halvesAt, ownHalf) {
+  const taper = ROAD_PARAMS.kerbTaperM;
+  const along = [0];
+  for (let i = 1; i < points.length; i += 1) {
+    const a = points[i - 1];
+    const b = points[i];
+    along.push(along[i - 1] + Math.hypot(b.x - a.x, b.y - a.y));
+  }
+  const stops = [];
+  points.forEach((point, i) => {
+    const key = pointKey(point);
+    if (!junctions.has(key)) return;
+    const others = halvesAt.get(key).filter((h) => h.wayIndex !== wayIndex);
+    const reach = others.length
+      ? Math.max(...others.map((h) => h.half))
+      : ownHalf;
+    stops.push({ at: along[i], reach });
+  });
+  const factor = (s) => {
+    let f = 1;
+    for (const { at, reach } of stops) {
+      const d = Math.abs(s - at);
+      f = Math.min(f, Math.max(0, Math.min(1, (d - reach) / taper)));
+    }
+    return f;
+  };
+  // Every distance where the factor changes slope, kept 5 cm off the points
+  // and off each other, so no segment becomes degenerate.
+  const total = along[along.length - 1];
+  const cuts = [];
+  for (const s of stops
+    .flatMap(({ at, reach }) => [
+      at - reach,
+      at + reach,
+      at - reach - taper,
+      at + reach + taper,
+    ])
+    .sort((a, b) => a - b)) {
+    if (s <= 0.05 || s >= total - 0.05) continue;
+    if (along.some((a) => Math.abs(a - s) <= 0.05)) continue;
+    if (cuts.length && s - cuts[cuts.length - 1] <= 0.05) continue;
+    cuts.push(s);
+  }
+  const out = [points[0]];
+  const kerb = [factor(0)];
+  let c = 0;
+  for (let i = 1; i < points.length; i += 1) {
+    const a = points[i - 1];
+    const b = points[i];
+    const length = along[i] - along[i - 1];
+    for (; c < cuts.length && cuts[c] < along[i]; c += 1) {
+      const t = (cuts[c] - along[i - 1]) / length;
+      out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+      kerb.push(factor(cuts[c]));
+    }
+    out.push(b);
+    kerb.push(factor(along[i]));
+  }
+  return { points: out, kerb };
+}
+
+/**
  * Ribbons for `ways` (`{ key, tags, points: [{ x, y }] }`, ENU metres) as flat
  * arrays: `positions` (render axes), `colours` (0..1, sRGB values),
  * `street` (offset from the centre or the disc's centre, half width, edge
@@ -164,6 +357,9 @@ export function rgbOf(packed) {
  * `colourOf(tags)` are the library's `roadWidthM` and `roadColour`.
  * `straightDeg` 0 is today's geometry exactly. `maxGapM` (optional) also
  * keeps a disc whose dropping would open a chord wider than it.
+ * `joinStyle` `"discs"` (the default) is that geometry; `"mitre"` draws
+ * each way as one strip (`mitreStrip`) with discs at ends and junctions only,
+ * and ignores `straightDeg` and `maxGapM`. RangeError for another style.
  */
 export function buildRibbons(
   ways,
@@ -172,8 +368,13 @@ export function buildRibbons(
     colourOf,
     straightDeg = ROAD_PARAMS.straightDeg,
     maxGapM = Infinity,
+    joinStyle = "discs",
+    mitreLimit = ROAD_PARAMS.mitreLimit,
   } = {},
 ) {
+  if (!JOIN_STYLES.includes(joinStyle)) {
+    throw new RangeError(`unknown join style ${String(joinStyle)}`);
+  }
   const p = ROAD_PARAMS;
   const out = sink();
   const stats = {
@@ -185,13 +386,32 @@ export function buildRibbons(
     discTriangles: 0,
     maxGapM: 0,
     gapAreaM2: 0,
+    joinTriangles: 0,
+    mitres: 0,
+    bevels: 0,
+    fallbacks: 0,
+    maxOvershootM: 0,
   };
   const cleaned = ways
     .map((w) => ({ ...w, points: dedupe(w.points) }))
     .filter((w) => w.points.length >= 2);
   const junctions = junctionKeys(cleaned);
+  // Per junction key, each way's half width there: the kerb fade's reach.
+  const halvesAt = new Map();
+  if (joinStyle === "mitre") {
+    cleaned.forEach(({ tags, points }, wayIndex) => {
+      for (const point of points) {
+        const key = pointKey(point);
+        if (!junctions.has(key)) continue;
+        if (!halvesAt.has(key)) halvesAt.set(key, []);
+        halvesAt.get(key).push({ wayIndex, half: widthOf(tags) / 2 });
+      }
+    });
+  }
 
-  for (const { key, tags, points } of cleaned) {
+  for (const [wayIndex, way] of cleaned.entries()) {
+    const { key, tags } = way;
+    let { points } = way;
     stats.ways += 1;
     stats.points += points.length;
     const half = widthOf(tags) / 2;
@@ -200,6 +420,54 @@ export function buildRibbons(
     const quadY =
       rankOf(tags) * p.rankStepM + p.discDropM + keyFraction(key) * p.tieLiftM;
     const discY = quadY - p.discDropM;
+    const disc = (point, discEdge = edge) => {
+      stats.discsKept += 1;
+      const centre = [point.x, point.y, discY, 0, half, discEdge];
+      const rim = (step) => {
+        const angle = (step / p.discSegments) * Math.PI * 2;
+        return [
+          point.x + Math.cos(angle) * half,
+          point.y + Math.sin(angle) * half,
+          discY,
+          half,
+          half,
+          discEdge,
+        ];
+      };
+      for (let step = 0; step < p.discSegments; step += 1) {
+        pushTriangle(out, rgb, centre, rim(step), rim(step + 1));
+        stats.discTriangles += 1;
+      }
+    };
+
+    if (joinStyle === "mitre") {
+      const faded = kerbFade(points, wayIndex, junctions, halvesAt, half);
+      points = faded.points;
+      const breaks = new Set();
+      for (let i = 1; i + 1 < points.length; i += 1) {
+        if (junctions.has(pointKey(points[i]))) breaks.add(i);
+      }
+      const strip = mitreStrip(points, half, { breaks, mitreLimit });
+      const vertex = (v) => [
+        v.x,
+        v.y,
+        quadY,
+        v.offset,
+        half,
+        edge * faded.kerb[v.index],
+      ];
+      for (const [a, b, c] of strip.triangles) {
+        pushTriangle(out, rgb, vertex(a), vertex(b), vertex(c));
+      }
+      stats.quadTriangles += 2 * (points.length - 1);
+      stats.joinTriangles += strip.bevels;
+      stats.mitres += strip.mitres;
+      stats.bevels += strip.bevels;
+      stats.fallbacks += strip.fallbacks;
+      stats.maxOvershootM = Math.max(stats.maxOvershootM, strip.maxOvershootM);
+      for (const i of strip.discs) disc(points[i], edge * faded.kerb[i]);
+      continue;
+    }
 
     for (let i = 0; i + 1 < points.length; i += 1) {
       const a = points[i];
@@ -229,23 +497,7 @@ export function buildRibbons(
           return;
         }
       }
-      stats.discsKept += 1;
-      const centre = [point.x, point.y, discY, 0, half, edge];
-      const rim = (step) => {
-        const angle = (step / p.discSegments) * Math.PI * 2;
-        return [
-          point.x + Math.cos(angle) * half,
-          point.y + Math.sin(angle) * half,
-          discY,
-          half,
-          half,
-          edge,
-        ];
-      };
-      for (let step = 0; step < p.discSegments; step += 1) {
-        pushTriangle(out, rgb, centre, rim(step), rim(step + 1));
-        stats.discTriangles += 1;
-      }
+      disc(point);
     });
   }
 
