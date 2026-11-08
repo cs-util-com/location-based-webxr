@@ -332,6 +332,23 @@ describe('impactOf: type-level edges', () => {
     expect(impactOf(replaces, ['Fw/src/a.test.ts']).packages).toContain('Rec');
   });
 
+  // Why: TS 5 allows `extends` as an array, later entries overriding earlier
+  // ones. Read only as a string, the extender inherited nothing (a framework
+  // change missed the Recorder) and each base counted as a program of its own
+  // (its missing exclude reached the Recorder for a framework test).
+  it('reads an array extends: inherits from every entry, the last that sets a list wins, no base is a program', () => {
+    const g = graphWith({
+      'Rec/tsconfig.base.json': '{ "include": ["../Fw/src/**/*.ts"], "exclude": ["../Fw/src/utils/**"] }',
+      'Rec/tsconfig.strict.json': '{ "exclude": ["../Fw/src/**/*.test.ts"] }',
+      'Rec/tsconfig.app.json': '{ "extends": [\n  "./tsconfig.base.json",\n  "./tsconfig.strict.json"\n] }',
+      'Rec/tsconfig.json': '{ "files": [], "references": [{ "path": "./tsconfig.app.json" }] }',
+    });
+    expect(impactOf(g, ['Fw/src/a.ts']).packages).toContain('Rec');
+    // The later entry's exclude replaces the base's: utils is compiled again.
+    expect(impactOf(g, ['Fw/src/utils/u.ts']).packages).toContain('Rec');
+    expect(impactOf(g, ['Fw/src/a.test.ts']).packages).not.toContain('Rec');
+  });
+
   it('follows an import inside a declaration file, and resolves an import to one', () => {
     const g = graphWith({
       'Tour/src/shapes.d.ts': "import type { a } from 'fw';\nexport type Shape = typeof a;",
