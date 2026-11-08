@@ -151,44 +151,48 @@ describe("buildRoof: the fallback rungs", () => {
   it("retries with another nudge when the stitched mesh does not close", () => {
     // A random star whose first nudge leaves a fold in the stitched mesh
     // (SkeletonFailure from skeleton-mesh.ts); the second nudge closes it.
+    // Found by a random search (2026-11-08) after the nudges were keyed
+    // ring-relative; the star found before no longer fails on either nudge.
     const star: EnuPoint[] = [
-      { x: 14.078632394317538, y: 0 },
-      { x: 9.914552187653287, y: 3.965452538505752 },
-      { x: 7.942324767425197, y: 7.108508336003523 },
-      { x: 1.4819450636918365, y: 4.752134179571199 },
-      { x: -0.8995241110352774, y: 3.5361902375786003 },
-      { x: -3.532773438116367, y: 3.634847131191911 },
-      { x: -11.226735419329124, y: 4.027197387935776 },
-      { x: -8.85981942015947, y: -2.5169607564268626 },
-      { x: -19.668436545102193, y: -11.509916277519967 },
-      { x: -11.012314412095389, y: -17.734966374736988 },
-      { x: -0.6932731115709576, y: -4.828911726210062 },
-      { x: 2.4813352341943635, y: -4.918632280652562 },
-      { x: 20.26382220028862, y: -11.924646203202599 },
+      { x: 18.038, y: 0 },
+      { x: 4.853, y: 2.635 },
+      { x: 3.964, y: 6.831 },
+      { x: 0.827, y: 9.074 },
+      { x: -3.415, y: 9.133 },
+      { x: -10.264, y: 10.894 },
+      { x: -7.441, y: 1.492 },
+      { x: -13.603, y: -8.295 },
+      { x: -4.638, y: -7.003 },
+      { x: 2.638, y: -20.331 },
+      { x: 8.219, y: -8.317 },
     ];
     const roof = roofOf([star], "hipped");
     expect(roof.method).toBe("skeleton");
     expect(roof.isApproximate).toBe(false);
   });
 
-  it("falls back to a hipped skeleton when no gabled one closes", () => {
-    // Fails as gabled with both nudges (found by a random search).
+  it("falls back to a hipped skeleton when the gabled one does not close", () => {
+    // Sylt (sylt-westerland.json), a 15-corner gabled house: its first nudge
+    // folds the gabled mesh, and the hipped rung of the same nudge comes
+    // before the gabled retry, so it is drawn hipped. (The random star used
+    // here before the nudges were keyed ring-relative closes now.)
     const star: EnuPoint[] = [
-      { x: 21.05, y: 0 },
-      { x: 6.593, y: 2.385 },
-      { x: 5.957, y: 4.751 },
-      { x: 6.03, y: 9.517 },
-      { x: 4.203, y: 24.154 },
-      { x: -3.036, y: 16.506 },
-      { x: -2.141, y: 3.959 },
-      { x: -9.346, y: 5.627 },
-      { x: -4.699, y: 0.037 },
-      { x: -8.23, y: -5.695 },
-      { x: -7.891, y: -9.366 },
-      { x: -2.136, y: -14.155 },
-      { x: 4.286, y: -9.009 },
-      { x: 8.103, y: -4.686 },
-    ];
+      [291.544, 92.352],
+      [291.537, 94.171],
+      [303.94, 94.216],
+      [303.953, 91.686],
+      [303.978, 85.773],
+      [303.985, 84.23],
+      [302.884, 84.23],
+      [302.891, 82.067],
+      [297.515, 82.045],
+      [297.508, 83.986],
+      [291.595, 83.964],
+      [291.595, 83.398],
+      [286.021, 83.376],
+      [285.982, 92.318],
+      [291.544, 92.352],
+    ].map(([x, y]) => ({ x: x as number, y: y as number }));
     const roof = roofOf([star], "gabled");
     expect(roof.method).toBe("hipped-skeleton");
     expect(roof.isApproximate).toBe(true);

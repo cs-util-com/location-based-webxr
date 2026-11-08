@@ -156,7 +156,10 @@ export function skeletonRoof(
   const prepared = prepareRings(rings);
   assertSimple(prepared);
   const attempt = options.attempt ?? 0;
-  const nudged = prepared.map((ring, r) => nudgedRing(ring, r, attempt));
+  const origin = lowestCorner(prepared);
+  const nudged = prepared.map((ring, r) =>
+    nudgedRing(ring, r, attempt, origin),
+  );
   let weights = preparedWeights(prepared, options.weights);
   if (options.gableEnds !== undefined) {
     const hip = runSkeleton(nudged, weights, Number.POSITIVE_INFINITY);
@@ -305,16 +308,39 @@ function lineGap(p: EnuPoint, a: EnuPoint, b: EnuPoint): number {
   return Math.abs((p.x - a.x) * dy - (p.y - a.y) * dx) / length;
 }
 
-/** The kept corners, each nudged by its own stable offset. */
+/**
+ * The outer ring's kept corner with the smallest x, then y: the point the
+ * nudges are keyed from. Not the first corner, so the ring's starting corner
+ * does not matter either.
+ */
+function lowestCorner(prepared: readonly PreparedRing[]): EnuPoint {
+  const outer = at(prepared, 0);
+  let best = at(outer.oriented, at(outer.keep, 0));
+  for (const k of outer.keep) {
+    const p = at(outer.oriented, k);
+    if (p.x < best.x || (p.x === best.x && p.y < best.y)) best = p;
+  }
+  return best;
+}
+
+/**
+ * The kept corners, each nudged by its own stable offset.
+ *
+ * Keyed on the corner RELATIVE to `origin` (`lowestCorner`), not on its ENU
+ * coordinates: the ENU origin is each app's own, and absolute keys gave the
+ * same building other nudges, and so other gables, in apps with other
+ * origins (M2 review finding 4).
+ */
 function nudgedRing(
   ring: PreparedRing,
   r: number,
   attempt: number,
+  origin: EnuPoint,
 ): EnuPoint[] {
   return ring.keep.map((k) => {
     const p = at(ring.oriented, k);
     const nudge = stableNudge(
-      `${attempt}/${r}/${p.x.toFixed(3)}/${p.y.toFixed(3)}`,
+      `${attempt}/${r}/${(p.x - origin.x).toFixed(3)}/${(p.y - origin.y).toFixed(3)}`,
     );
     return { x: p.x + nudge.x * JITTER_M, y: p.y + nudge.y * JITTER_M };
   });

@@ -73,7 +73,12 @@ The tagged path uses neither: its pitch is `rise / ridgeT`, uncapped.
   - every remaining corner is nudged by up to `JITTER_M` (0.5 mm) per axis,
     deterministically (`stableNudge` from `stable-jitter.ts`, keyed by the
     attempt, the ring and the rounded corner), so no two walls are exactly
-    parallel and no two events coincide;
+    parallel and no two events coincide. The corner is keyed relative to the
+    outer ring's lowest corner (smallest x, then y), not by its frame
+    coordinates, so the same house drawn anywhere in the frame (another tile
+    origin, another start corner) gets the same nudge and the same roof
+    (M2 review finding 7; `roof-skeleton.test.ts`, "the same roof wherever
+    the frame puts it");
   - after the run every face's eave points are snapped back to the given
     corners, and the dropped collinear corners are put back into the face of
     the wall they lay on, so the roof meets the unnudged walls exactly.

@@ -454,3 +454,106 @@ describe("skeletonRoof expectRefused what it cannot roof soundly", () => {
     expectRefused([]);
   });
 });
+
+describe("skeletonRoof is the same roof wherever the frame puts it", () => {
+  // Why: the corner nudge was keyed on absolute ENU coordinates, and the ENU
+  // origin is each app's own choice, so the same building could get other
+  // gables in two apps (M2 review finding 4: 6 to 9 corpus roofs changed with
+  // the origin). Keyed on coordinates relative to the ring's lowest corner,
+  // a translated footprint gets the same roof, translated.
+  const STAR = ring([
+    [21.05, 0],
+    [6.593, 2.385],
+    [5.957, 4.751],
+    [6.03, 9.517],
+    [4.203, 24.154],
+    [-3.036, 16.506],
+    [-2.141, 3.959],
+    [-9.346, 5.627],
+    [-4.699, 0.037],
+    [-8.23, -5.695],
+    [-7.891, -9.366],
+    [-2.136, -14.155],
+    [4.286, -9.009],
+    [8.103, -4.686],
+  ]);
+  /**
+   * Every roof point, shifted back by (dx, dy), in a canonical order. A point
+   * repeated within 1e-7 m along a face outline counts once: far from the
+   * frame origin one event can reach a face twice, a rounding error apart
+   * (both copies weld into one corner in the mesh), and that is not a
+   * different roof.
+   */
+  const points = (roof: SkeletonRoof, dx = 0, dy = 0): number[][] =>
+    roof.faces
+      .flatMap((face) =>
+        face.points.filter((p, i) => {
+          const q = face.points[i - 1];
+          return (
+            q === undefined ||
+            Math.hypot(p.x - q.x, p.y - q.y, p.t - q.t) > 1e-7
+          );
+        }),
+      )
+      .map((p) => [p.x - dx, p.y - dy, p.t])
+      .sort(
+        (a, b) =>
+          (a[0] as number) - (b[0] as number) ||
+          (a[1] as number) - (b[1] as number) ||
+          (a[2] as number) - (b[2] as number),
+      );
+  const expectSameRoof = (
+    a: SkeletonRoof,
+    b: SkeletonRoof,
+    dx: number,
+    dy: number,
+  ): void => {
+    expect(b.gables).toBe(a.gables);
+    expect(b.ridgeT).toBeCloseTo(a.ridgeT, 6);
+    const pa = points(a);
+    const pb = points(b, dx, dy);
+    expect(pb.length).toBe(pa.length);
+    const worst = Math.max(
+      ...pa.flatMap((p, i) =>
+        p.map((v, k) => Math.abs(v - (pb[i]?.[k] ?? Number.NaN))),
+      ),
+    );
+    // 1 micrometre: a different nudge moves the inner points by about 0.1 mm.
+    expect(worst).toBeLessThan(1e-6);
+  };
+
+  // The star is a hip-roof fixture (roof.test.ts drew it hipped), so it is
+  // checked hipped; the L with and without gables.
+  const GABLED = { gableEnds: { kind: "neighbours" } } as const;
+  for (const [name, footprint, optionSets] of [
+    ["an L", L_SHAPE, [{}, GABLED]],
+    ["a star", STAR, [{}]],
+  ] as const) {
+    it(`translated by (+1234.5, -987.25), ${name} keeps its roof`, () => {
+      const [dx, dy] = [1234.5, -987.25];
+      const moved = footprint.map((p) => ({ x: p.x + dx, y: p.y + dy }));
+      for (const options of optionSets) {
+        for (const attempt of [0, 1]) {
+          expectSameRoof(
+            skeletonRoof([footprint], { ...options, attempt }),
+            skeletonRoof([moved], { ...options, attempt }),
+            dx,
+            dy,
+          );
+        }
+      }
+    });
+
+    it(`started at another corner, ${name} keeps its roof`, () => {
+      const turned = [...footprint.slice(3), ...footprint.slice(0, 3)];
+      for (const options of optionSets) {
+        expectSameRoof(
+          skeletonRoof([footprint], options),
+          skeletonRoof([turned], options),
+          0,
+          0,
+        );
+      }
+    });
+  }
+});
