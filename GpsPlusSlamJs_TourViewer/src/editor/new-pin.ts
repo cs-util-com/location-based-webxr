@@ -143,7 +143,7 @@ export function addNewItem(
     nowIso: input.nowIso,
     groundAt: input.groundAt,
   };
-  const item = MAKE_ITEM[input.kind](made);
+  const item = KIND_ADD[input.kind].item(made);
   const placed = input.place(item);
   return placed.kind === "placed" ? { kind: "added", item } : placed;
 }
@@ -169,26 +169,8 @@ export function newStoryEntry(
     pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
     advance: { mode: "tap" },
   } as const;
-  return { ...shared, ...MAKE_ENTRY[kind](n) };
+  return { ...shared, ...KIND_ADD[kind].entry(n) };
 }
-
-/** What each addable kind starts as in a story, its number `n`. Keyed by
- *  the addable kinds: a kind its row makes addable needs one. */
-const MAKE_ENTRY: {
-  readonly [K in AddKind]: (
-    n: number,
-  ) => Omit<
-    Extract<TourStoryBlock, { kind: K }>,
-    "id" | "view" | "pose" | "advance"
-  >;
-} = {
-  shortText: (n) => ({ kind: "shortText", caption: `New pin ${String(n)}` }),
-  longText: (n) => ({
-    kind: "longText",
-    title: `New long text ${String(n)}`,
-    body: NEW_LONG_TEXT_BODY,
-  }),
-};
 
 /**
  * A new long text of `station`, as `newPin` makes a pin: a reading sign
@@ -208,8 +190,34 @@ export function newLongText(input: NewItemInput): TourReadingSign {
   };
 }
 
-/** What each addable kind starts as at a station's free spot. Keyed by
- *  the addable kinds: a kind its row makes addable needs one. */
-const MAKE_ITEM: {
-  readonly [K in AddKind]: (input: NewItemInput) => TourPin | TourReadingSign;
-} = { shortText: newPin, longText: newLongText };
+/** One addable kind's start: what it is at a station's free spot, and as
+ *  a story entry numbered `n`. */
+interface KindAddRow<K extends AddKind> {
+  readonly item: (input: NewItemInput) => TourPin | TourReadingSign;
+  readonly entry: (
+    n: number,
+  ) => Omit<
+    Extract<TourStoryBlock, { kind: K }>,
+    "id" | "view" | "pose" | "advance"
+  >;
+}
+
+/** What each addable kind starts as, one row per kind: the editor half of
+ *  the add line of its row in `kinds/edit-kinds.ts` (which may not hold
+ *  these: it would then import this module, and through `tour-document`
+ *  and `tour-content` itself again). Keyed by the addable kinds, in the
+ *  add menu's order: a kind its row makes addable needs one. */
+export const KIND_ADD: { readonly [K in AddKind]: KindAddRow<K> } = {
+  shortText: {
+    item: newPin,
+    entry: (n) => ({ kind: "shortText", caption: `New pin ${String(n)}` }),
+  },
+  longText: {
+    item: newLongText,
+    entry: (n) => ({
+      kind: "longText",
+      title: `New long text ${String(n)}`,
+      body: NEW_LONG_TEXT_BODY,
+    }),
+  },
+};
