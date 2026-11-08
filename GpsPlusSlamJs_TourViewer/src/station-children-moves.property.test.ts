@@ -21,10 +21,12 @@ import {
   childDropTo,
   childMayGo,
   movedChild,
+  movedToStation,
   storyList,
 } from "./station-children-moves.js";
 
-const POSE = { position: [0, 0, 0], rotation: [0, 0, 0, 1] } as const;
+// Off the centre, so a move that stands an item at it is seen.
+const POSE = { position: [1, 0, 2], rotation: [0, 0, 0, 1] } as const;
 const TAP = { mode: "tap" } as const;
 
 type Make = "line" | "choice" | "sizedModel" | "unsizedModel";
@@ -154,3 +156,80 @@ describe("the drag's lists and the move rule", () => {
     );
   });
 });
+
+/**
+ * Why this property matters: a move onto another station takes an item out
+ * of one station and puts it into the other. Lost or doubled on the way, an
+ * id breaks the tour (the format refuses an id twice); a free item left at
+ * its old offset would stand somewhere near the OLD station. So over any
+ * two stations and every item: a move either refuses and changes nothing,
+ * or keeps every id exactly once across the two, puts the item (a story
+ * with all its entries) into the target, and stands a free item at the
+ * target's centre.
+ */
+describe("a move onto another station", () => {
+  it("keeps every id once, and a free item stands at the centre (property)", () => {
+    const target = holder.map((h) => ({
+      id: "other",
+      children: h.children.map((c) => renamed(c)),
+    }));
+    fc.assert(
+      fc.property(holder, target, (from, to) => {
+        const all = (h: { children: readonly TourStationChild[] }) =>
+          h.children.flatMap((c) =>
+            c.kind === "story"
+              ? [c.id, ...c.children.map((e) => e.id)]
+              : [c.id],
+          );
+        const before = [...all(from), ...all(to)].sort();
+        for (const id of all(from)) {
+          const out = movedToStation(from, to, id);
+          // The same refusals as a move out to the station's free items.
+          const out2 = movedChild(from, id, { place: "free" });
+          const within =
+            "refused" in out2 &&
+            out2.refused !== "unchanged" &&
+            out2.refused !== "noNesting"
+              ? out2.refused
+              : null;
+          expect("refused" in out ? out.refused : null).toBe(within);
+          if ("refused" in out) continue;
+          expect([...all(out.from), ...all(out.to)].sort()).toEqual(before);
+          expect(all(out.from)).not.toContain(id);
+          expect(all(out.to)).toContain(id);
+          // An item standing free there stands at its centre (a story
+          // keeps its entries' offsets and has no pose of its own).
+          const free = out.to.children.find((c) => c.id === id);
+          const centre =
+            free === undefined || free.kind === "story"
+              ? [0, 0, 0]
+              : free.pose.position;
+          expect(centre).toEqual([0, 0, 0]);
+        }
+      }),
+      { numRuns: 200 },
+    );
+  });
+});
+
+/** `child` with ids of its own (`x` before each), so two stations share
+ *  none. */
+function renamed(child: TourStationChild): TourStationChild {
+  if (child.kind !== "story") return { ...child, id: `x${child.id}` };
+  const first = `x${child.children[0]?.id ?? ""}`;
+  return {
+    ...child,
+    id: `x${child.id}`,
+    children: child.children.map((e) =>
+      e.kind === "choice"
+        ? {
+            ...e,
+            id: `x${e.id}`,
+            options: e.options.map((o) =>
+              o.goto === undefined ? o : { ...o, goto: first },
+            ),
+          }
+        : { ...e, id: `x${e.id}` },
+    ),
+  };
+}

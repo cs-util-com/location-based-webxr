@@ -5,8 +5,8 @@
  * for each place are kept on the way: an item leaving a story stands in
  * the world (its view, or its kind's world floor by the framework's rule),
  * one entering a story moves on by a tap, and the answers that jumped to a
- * block leaving its story are dropped. Moves across stations are not
- * offered. The document's reducer writes the moves (`tour-document.ts`);
+ * block leaving its story are dropped. A move onto another station
+ * (`movedToStation`) stands the item at that station's centre. The document's reducer writes the moves (`tour-document.ts`);
  * the editor's tree and inspector read the list helpers to offer only a
  * move the rule takes.
  *
@@ -37,11 +37,13 @@ interface Holder {
  *  the world at once, so they have no place among themselves), into the
  *  story `story` at the slot `index` (counted in that story before the
  *  move: 0 first, its length last), or, for a story, to the slot `index`
- *  among the stories. */
+ *  among the stories, or onto the station `station` (`movedToStation`;
+ *  `movedChild` refuses it as `missing`). */
 export type ChildMoveTo =
   | { readonly place: "free" }
   | { readonly place: "story"; readonly story: string; readonly index: number }
-  | { readonly place: "stories"; readonly index: number };
+  | { readonly place: "stories"; readonly index: number }
+  | { readonly place: "station"; readonly station: string };
 
 /** Why a move is not made: no such item, story or slot; a choice or a quiz
  *  leaving its story (its answers name that story's entries); a story
@@ -198,7 +200,7 @@ export function movedChild<H extends Holder>(
   to: ChildMoveTo,
 ): ChildMove<H> {
   const place = tourChildrenPlace(holder.children, id);
-  if (place === null) return refused("missing");
+  if (place === null || to.place === "station") return refused("missing");
   const { story } = place;
   if (story === undefined) {
     const child = holder.children[place.index] as TourStationChild;
@@ -243,6 +245,85 @@ export function movedChild<H extends Holder>(
   return into === null
     ? refused("missing")
     : { station: into, answers: out.answers, floored: false };
+}
+
+/** A move onto another station made: both stations after it, how many
+ *  answers lost their jump, and whether the item took its kind's world
+ *  floor for a view. */
+interface StationsMoved<H> {
+  readonly from: H;
+  readonly to: H;
+  readonly answers: number;
+  readonly floored: boolean;
+}
+
+export type StationMove<H> =
+  StationsMoved<H> | { readonly refused: ChildMoveRefusal };
+
+/** `block` standing at its station's centre, its turn kept. */
+function centred(block: TourBlock): TourBlock {
+  return { ...block, pose: { ...block.pose, position: [0, 0, 0] } };
+}
+
+/** `holder` with `story` after its last story, ahead of its free items. */
+function withStory<H extends Holder>(holder: H, story: TourStory): H {
+  const children = [...holder.children];
+  let at = 0;
+  children.forEach((c, index) => {
+    if (isTourStory(c)) at = index + 1;
+  });
+  children.splice(at, 0, story);
+  return { ...holder, children };
+}
+
+/**
+ * `from`'s item `id` moved onto the station `to`, or why not. A free item
+ * goes among `to`'s free items, and a story's entry out of its story
+ * there, both at `to`'s centre (their offset meant a place near `from`):
+ * the editor asks that it be placed again. A story goes whole after `to`'s
+ * stories, its entries keeping their offsets, now around `to`'s centre.
+ * The rules of a move within a station hold: a choice or a quiz never
+ * leaves its story, a model without a size never stands free, an answer
+ * that jumped to a block leaving its story is dropped. Never changes its
+ * inputs.
+ */
+export function movedToStation<H extends Holder & { readonly id: string }>(
+  from: H,
+  to: H,
+  id: string,
+): StationMove<H> {
+  const place = tourChildrenPlace(from.children, id);
+  if (place === null) return refused("missing");
+  const { story } = place;
+  if (story === undefined) {
+    if (to.id === from.id) return refused("unchanged");
+    const child = from.children[place.index] as TourStationChild;
+    const rest = {
+      ...from,
+      children: from.children.filter((c) => c.id !== id),
+    };
+    return {
+      from: rest,
+      to: isTourStory(child)
+        ? withStory(to, child)
+        : { ...to, children: [...to.children, centred(child)] },
+      answers: 0,
+      floored: false,
+    };
+  }
+  const child = story.children[place.index] as TourStoryChild;
+  if (!isTourStoryBlock(child)) return refused("ownStory");
+  if (to.id === from.id) return refused("unchanged");
+  const free = freeBlock(child);
+  if (free === null) return refused("cannotStandFree");
+  const out = withoutStoryChild(from, id);
+  if (out === null) return refused("missing");
+  return {
+    from: out.frame,
+    to: { ...to, children: [...to.children, centred(free.block)] },
+    answers: out.answers,
+    floored: free.floored,
+  };
 }
 
 /** The tree's names for a station's lists (its drag's `data-list` and

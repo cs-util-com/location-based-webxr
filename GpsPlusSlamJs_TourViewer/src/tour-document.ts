@@ -138,6 +138,7 @@ import {
 import { sameJson } from "./same-json.js";
 import {
   movedChild,
+  movedToStation,
   type ChildMoveRefusal,
   type ChildMoveTo,
 } from "./station-children-moves.js";
@@ -2507,12 +2508,13 @@ function allFrames(state: TourDocumentState): StationFrame[] {
  *  works on, listed whatever it holds. */
 function framesToList(
   state: TourDocumentState,
-  editedId?: string,
+  ...editedIds: (string | undefined)[]
 ): StationFrame[] {
   const own = new Set(state.stations.map((f) => f.id));
   const named = new Set(documentObjects(state).map((o) => o.object.station));
+  const wanted = new Set(editedIds);
   return allFrames(state).filter(
-    (f) => own.has(f.id) || named.has(f.id) || f.id === editedId,
+    (f) => own.has(f.id) || named.has(f.id) || wanted.has(f.id),
   );
 }
 
@@ -2523,11 +2525,11 @@ function framesToList(
  *  emptied one stays unlisted). */
 function framesHolding(
   state: TourDocumentState,
-  stationId: string,
+  ...stationIds: string[]
 ): readonly StationFrame[] {
-  return state.stations.some((s) => s.id === stationId)
+  return stationIds.every((id) => state.stations.some((s) => s.id === id))
     ? state.stations
-    : framesToList(state, stationId);
+    : framesToList(state, ...stationIds);
 }
 
 /** What a copy's title adds to the original's. */
@@ -2808,7 +2810,7 @@ export function childMoveChange(
 ):
   | {
       readonly kind: "moved";
-      readonly station: TourStation;
+      readonly stations: readonly TourStation[];
       readonly answers: number;
       readonly floored: boolean;
     }
@@ -2820,6 +2822,24 @@ export function childMoveChange(
   const manifest = manifestToWrite(state);
   const place = manifest === null ? null : tourChildPlace(manifest, id);
   if (place === null) return { kind: "refused", reason: "missing" };
+  if (to.place === "station") {
+    // Onto another station: a free item there stays an object record, a
+    // story stays in the frames, so a file a reload lacks loses nothing.
+    const target = manifest?.stations.find((s) => s.id === to.station);
+    if (target === undefined) return { kind: "refused", reason: "missing" };
+    const across = movedToStation(place.station, target, id);
+    if ("refused" in across) {
+      return across.refused === "unchanged"
+        ? { kind: "unchanged" }
+        : { kind: "refused", reason: across.refused };
+    }
+    return {
+      kind: "moved",
+      stations: [across.from, across.to],
+      answers: across.answers,
+      floored: across.floored,
+    };
+  }
   const out = movedChild(place.station, id, to);
   if ("refused" in out) {
     return out.refused === "unchanged"
@@ -2835,7 +2855,7 @@ export function childMoveChange(
   }
   return {
     kind: "moved",
-    station: out.station,
+    stations: [out.station],
     answers: out.answers,
     floored: out.floored,
   };
@@ -2853,33 +2873,62 @@ function childMove(
   const { id } = payload;
   const change = childMoveChange(before, id, payload.to);
   if (before.written === null || change.kind !== "moved") return before;
-  const { station } = change;
-  const frame = allFrames(before).find((f) => f.id === station.id);
-  if (frame === undefined) return before;
-  const free = tourFreeBlocks(station).filter((b) => b.id === id);
+  const { stations } = change;
+  const all = allFrames(before);
+  const next = new Map<string, StationFrame>();
+  for (const station of stations) {
+    const frame = all.find((f) => f.id === station.id);
+    if (frame === undefined) return before;
+    next.set(frame.id, { ...frame, children: tourStories(station) });
+  }
+  // The station whose free items hold the item after the move, if any.
+  const holder = stations.find((s) =>
+    tourFreeBlocks(s).some((b) => b.id === id),
+  );
   const found = documentObjects(before).find((o) => o.object.id === id);
   let lists = { placed: [...before.placed], deleted: [...before.deleted] };
-  if (found !== undefined && free.length === 0) {
+  if (found !== undefined && holder === undefined) {
     lists = deleteObject(lists, found);
-  } else if (found === undefined && free.length > 0) {
-    const [object] = tourObjects({
-      stations: [{ ...station, children: free }],
+  } else if (holder !== undefined) {
+    const [at] = tourObjects({
+      stations: [
+        {
+          ...holder,
+          children: tourFreeBlocks(holder).filter((b) => b.id === id),
+        },
+      ],
       assets: manifestNow(before)?.assets ?? [],
     });
-    if (object === undefined) return before;
+    if (at === undefined) return before;
+    // A free item that stays free (onto another station) keeps its own
+    // record, its new station and place aside; one arriving from a story
+    // is read from its block.
+    const object =
+      found === undefined
+        ? at
+        : {
+            ...found.object,
+            geo: at.geo,
+            ...(at.station === undefined ? {} : { station: at.station }),
+          };
     lists = {
       placed: upsertPlaced(lists.placed, { object }),
       deleted: lists.deleted.filter((d) => d !== id),
     };
   }
-  const next: StationFrame = { ...frame, children: tourStories(station) };
+  const ids = [...next.keys()];
+  const frames = framesHolding(before, ...ids).map((s) => next.get(s.id) ?? s);
+  const placed = lists.placed;
+  // The station an item left may be an automatic one it emptied.
+  const left = ids.length > 1 ? ids[0] : undefined;
   return edited(
     before,
     {
-      placed: lists.placed,
+      placed,
       deleted: lists.deleted,
-      stations: framesHolding(before, frame.id).map((s) =>
-        s.id === frame.id ? next : s,
+      stations: withoutEmptied(
+        { ...before, placed, deleted: lists.deleted, stations: frames },
+        [left],
       ),
       touched: { ...before.touched, stations: true },
       framesRecorded: true,

@@ -282,10 +282,20 @@ largeTour?, cannotSave? })`.
     `stationEdited` with `storyAdvance` sets how a story's block moves on.
   - `childMoved({ id, to, what })` - an item of a station moved inside it
     (a free item into a story and out, an entry between stories or within
-    one, a story among the stories), one history entry. The rule is
+    one, a story among the stories) or onto another station (`{ place:
+"station", station }`: both frames and the item's object record in the
+    same step, the item standing at that station's centre, a whole story
+    keeping its entries' offsets; an automatic station it empties goes, as
+    `withoutEmptied` says), one history entry. A free item that stays free
+    keeps its own record, with its new station and world place. Counted
+    by `changeCount` as the frames and records it changed: a free item
+    onto another station is one change (its record), a story two (both
+    frames). The rule is
     `station-children-moves.ts`, asked through the exported guard
     `childMoveChange(state, id, to)` (`moved` with `answers` and `floored`,
-    `unchanged`, or `refused` with the rule's reason or `unsaved`: a free
+    `stations`: the one or two stations after it, `unchanged`, or
+    `refused` with the rule's reason or `unsaved` (never for a move onto
+    another station: there the item stays a record or in the frames): a free
     item naming a file the tour on disk does not hold yet, whose story
     frame a draft reload could not read). "On disk" is the file a reload
     opens: the one written in place once such a write arrived (its files

@@ -14,7 +14,9 @@ the editor's tree (`editor-shell.ts`, `shell-tree.ts`) and inspector
   stand in the world at once, so they have no order of their own to pick),
   `{ place: "story", story, index }` (into that story at the slot `index`,
   counted before the move: 0 first, the story's length last) or
-  `{ place: "stories", index }` (a story to that slot among the stories).
+  `{ place: "stories", index }` (a story to that slot among the stories) or
+  `{ place: "station", station }` (onto that other station: `movedToStation`;
+  `movedChild` refuses it as `missing`, it moves within one station only).
 - `movedChild(holder, id, to)` -> `{ station, answers, floored }` or
   `{ refused }`. `answers` counts the choices' options that lost their jump
   (they go on to the next entry); `floored` says the item took its kind's
@@ -24,6 +26,21 @@ the editor's tree (`editor-shell.ts`, `shell-tree.ts`) and inspector
   story's entries), `noNesting` (a story into a story or among the free
   items, a free item among the stories), `cannotStandFree` (a model without
   a size), `unchanged` (it would stay where it is).
+- `movedToStation(from, to, id)` -> `{ from, to, answers, floored }` (both
+  stations after the move) or `{ refused }`:
+  - a free item goes among `to`'s free items (at their end), its position
+    reset to `[0, 0, 0]` (`to`'s centre) and its turn kept: its offset
+    meant a place near `from`, so the editor asks for it to be placed again;
+  - a story's entry leaves its story (its answers' jumps dropped, its view
+    floored where a story's view cannot stand free, its `advance` dropped)
+    and stands free at `to`'s centre the same way;
+  - a story moves WHOLE after `to`'s last story, ahead of its free items,
+    and its entries keep their offsets: the arrangement the author made
+    around one station's centre now stands around the other's. Nothing is
+    reset, so the editor says the story's entries need placing too;
+  - refused as within a station: `ownStory` (a choice or a quiz),
+    `cannotStandFree` (a model without a size), `missing`, and
+    `unchanged` for `to` being `from`.
 - The tree's lists of a station, by name: `STORIES_LIST` (`"stories"`),
   `FREE_LIST` (`"free"`) and `storyList(id)` (`"story:<id>"`, the
   story's own selection id).
@@ -57,9 +74,9 @@ the editor's tree (`editor-shell.ts`, `shell-tree.ts`) and inspector
   resolve.
 - Stories stay before the free items (the writer's order); a move of a
   story reorders only the stories.
-- Moves across stations are not offered: an item's pose is in its station's
-  frame, and whether it keeps its world place or its offset is a decision
-  of its own.
+- A move onto another station never keeps an item's world place: a free
+  item or an entry stands at the new centre, a story keeps its entries'
+  offsets (`movedToStation` above). Never changes its inputs.
 - The slot maths inside one list is the editor kit's `movedTo` rule, kept
   as a private copy: the visitor's pages reach this module through the
   document and must not load the editor's chrome
@@ -80,6 +97,11 @@ else if (out.floored) say("It now stands in the world as its kind does");
 ## Tests
 
 `station-children-moves.test.ts`: every move and every refusal at its
-boundary, and the list helpers ("the tree's lists of a station"). The document-level halves (objects and frames, undo, a draft
+boundary, and the list helpers ("the tree's lists of a station").
+`station-children-moves-across.test.ts`: `movedToStation` per kind and
+refusal; `station-children-moves.property.test.ts` also holds, over random
+stations, that a move onto another keeps every id once across the two,
+refuses exactly what a move out to the free items refuses, and stands a
+free item at the centre. Document level: `tour-document-child-move-across.test.ts`. The document-level halves (objects and frames, undo, a draft
 reload, random sequences) are in `tour-document-child-move.test.ts` and
 `tour-document-child-move.property.test.ts`.
