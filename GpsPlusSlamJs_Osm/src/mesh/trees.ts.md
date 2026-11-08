@@ -2,15 +2,25 @@
 
 ## Purpose
 
-Tree placement as instancing data — position, rotation, scale, variant. No
-geometry.
+Tree placement as instancing data: position, rotation, scale, variant and
+colour, plus what a tree is from its tags (`treeClass`). No geometry.
 
 ## Public API
 
 - `buildTrees(features, { frame, groundHeightM? }): TreePlacement[]`
-- `packInstances(placements): Map<TreeVariant, { positions, scales, rotations }>`
+- `packInstances(placements): Map<TreeVariant, TreeInstances>`, where
+  `TreeInstances` is `{ positions, scales, rotations, colours }`; `colours`
+  is sRGB channels 0 to 1, three per instance, for the renderer to convert
+- `treeClass(tags): TreeClass`, `{ leafType, leafCycle, source }`:
+  - `leafType`: broadleaved, needleleaved, mixed or unknown;
+  - `leafCycle`: deciduous, evergreen or unknown;
+  - `source`: `leaf_type`, `wood`, `genus` or `none`
+- `treeColour(cls, key, jitter = TREE_COLOUR_JITTER): number`, packed sRGB
+- `TREE_PALETTE` (a `Map`, key `leafType/leafCycle` or `unknown`)
 - `isTree(feature)`, `stableHash(text)`
-- `DEFAULT_TREE_HEIGHT_M` (8), `DEFAULT_CROWN_RATIO` (0.6)
+- `DEFAULT_TREE_HEIGHT_M` (8), `DEFAULT_CROWN_RATIO` (0.6),
+  `MAX_TREE_HEIGHT_M` (60), `MAX_TREE_CROWN_M` (40),
+  `TREE_COLOUR_JITTER` (0.16)
 
 ## Invariants & assumptions
 
@@ -40,9 +50,22 @@ geometry.
   and `coniferous` to needleleaved, matching OSM2World's `TreeModule`. A feature
   carrying both is mid-retagging, so the newer key is the one someone last
   checked.
-  - `wood=yes` and `wood=mixed` stay `unknown`: they are not leaf-type claims.
-  - **Species is still not guessed.** `species`/`genus` are free text, not a
-    controlled vocabulary, and a wrong species is no better than an unknown one.
+  - `wood=yes` stays `unknown`: it is not a leaf-type claim. `mixed` (either
+    key) is its own class; one tree has one form, so its variant is `unknown`.
+  - The tables are `Map`s: on a plain object `leaf_type=constructor` found an
+    inherited function and the tree was dropped; prototype names now read as
+    `unknown`.
+  - **A closed genus list, read as a leaf type only.** After the two keys,
+    the first word of `genus`, `species` or `taxon` is looked up in a list of
+    48 genera whose leaf type is not in doubt (Quercus, Tilia, Pinus, ...). It
+    never picks a shape, a size or a species look, and a genus not on the
+    list leaves the tree `unknown`: free text is read only where the reading
+    cannot be wrong. Larch-type genera (Larix, Metasequoia, Taxodium) are
+    needleleaved and deciduous.
+  - **`leaf_cycle` is the cycle, never the type.** It picks the light
+    deciduous or the dark evergreen green; a tree tagged only
+    `leaf_cycle=deciduous` keeps the cycle and stays of unknown type, because
+    deciduous does not mean broadleaved (a larch is both).
   - This matters more than it looks: `variant` is the only thing standing
     between the renderer and drawing every tree as the same fir (R4-3), so every
     tree left at `unknown` is a tree that cannot be drawn correctly.
@@ -58,8 +81,19 @@ geometry.
   `natural=tree_row` need a scatter over an area or along a line — the same
   placement type, a different generator, and a well-defined follow-up rather than
   a guess.
-- Species is not inferred from `genus`/`species` free text: a wrong species is no
-  better than `unknown`, and those values are not a controlled vocabulary.
+- **Colour per class, muted, deterministic** (city objects plan
+  2026-11-07-2315 M1, ported from the O1 quiet-greens lab the owner chose).
+  `TREE_PALETTE` is sRGB, chroma 19 to 40 (max minus min channel) against
+  the old 62. A hash of the feature key (`unit(key, "l")`) moves lightness by
+  up to plus or minus 8 percent. The colour rides on the placement and in
+  `packInstances`' `colours` as sRGB; converting it to a renderer's working
+  space is the renderer's job (`three/city-objects.ts` does it through
+  `THREE.Color`, section 7 of that plan).
+- **Tagged sizes are refused above 60 m (height) and 40 m (crown)**, and at
+  or below zero: a refused value falls back to the untagged rule (8 m times
+  0.75 to 1.25, crown 0.6 times the height) rather than drawing a typo.
+  `circumference` is not read yet: it sizes a trunk, and trees are crown-only
+  until the trunk option.
 
 ## Examples
 
@@ -71,6 +105,14 @@ for (const [variant, buffers] of packInstances(placements)) {
 ```
 
 ## Tests
+
+`trees.test.ts` — the class table (every vocabulary value, prototype names,
+the `leaf_cycle` hint, the genus list, larch-type genera), the palette per
+class, the lightness spread, variant and colour on placements, the size
+refusals, and the packed colours.
+
+`trees.property.test.ts` — every colour stays muted (chroma at most 45) and
+deterministic per key; any tag soup classifies into the closed vocabulary.
 
 `buildings.test.ts` — one instance per node, determinism across calls, variation
 between untagged trees, tagged height winning, `leaf_type` and `wood` mapping to

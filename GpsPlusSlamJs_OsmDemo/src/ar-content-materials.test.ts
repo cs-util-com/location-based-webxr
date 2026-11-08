@@ -82,6 +82,7 @@ function everyLayer(): TransferableMesh {
         crownDiameterM: 4,
         rotationY: 0.5,
         variant: "unknown",
+        colour: 0x737c66,
       },
     ],
     plates: oneChunk(),

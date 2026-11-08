@@ -123,34 +123,124 @@ let treeResources:
   | undefined;
 
 /**
+ * A closed crown of revolution about +y, from a pole at y 0 to a pole at
+ * y 1, through `rings` of `[y, radius]`, `sides` around: 2 x sides x rings
+ * triangles. Odd rings turn half a step, so each band is a strip of
+ * alternating triangles. Each vertex carries a grey `color` from 0.86 at the
+ * foot to 1.04 at the top, a shade the instance colour is multiplied by, so a
+ * crown reads darker underneath at no cost.
+ */
+function crownHull(
+  sides: number,
+  rings: readonly (readonly [number, number])[],
+): THREE.BufferGeometry {
+  const positions: number[] = [];
+  const colours: number[] = [];
+  const push = (point: readonly [number, number, number]): void => {
+    positions.push(point[0], point[1], point[2]);
+    const shade = 0.86 + 0.18 * point[1];
+    colours.push(shade, shade, shade);
+  };
+  const tri = (
+    a: readonly [number, number, number],
+    b: readonly [number, number, number],
+    c: readonly [number, number, number],
+  ): void => {
+    push(a);
+    push(b);
+    push(c);
+  };
+  const ringPoints = rings.map(([y, r], k) =>
+    Array.from({ length: sides }, (_, i): [number, number, number] => {
+      const a = ((i + (k % 2) * 0.5) / sides) * Math.PI * 2;
+      return [Math.cos(a) * r, y, Math.sin(a) * r];
+    }),
+  );
+  const first = ringPoints[0];
+  const last = ringPoints[ringPoints.length - 1];
+  if (first === undefined || last === undefined) {
+    throw new RangeError("a crown needs at least one ring");
+  }
+  const at = (ring: readonly [number, number, number][], i: number) =>
+    ring[i % sides] as [number, number, number];
+  for (let i = 0; i < sides; i++) {
+    tri([0, 0, 0], at(first, i), at(first, i + 1));
+    tri([0, 1, 0], at(last, i + 1), at(last, i));
+  }
+  for (let k = 0; k + 1 < ringPoints.length; k++) {
+    const lo = ringPoints[k] as [number, number, number][];
+    const hi = ringPoints[k + 1] as [number, number, number][];
+    for (let i = 0; i < sides; i++) {
+      if (k % 2 === 0) {
+        tri(at(lo, i), at(hi, i), at(lo, i + 1));
+        tri(at(lo, i + 1), at(hi, i), at(hi, i + 1));
+      } else {
+        tri(at(lo, i), at(hi, i + 1), at(lo, i + 1));
+        tri(at(lo, i), at(hi, i), at(hi, i + 1));
+      }
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute(
+    "position",
+    new THREE.Float32BufferAttribute(positions, 3),
+  );
+  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colours, 3));
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+/**
+ * The crown-only profiles, `[y, radius]` at unit height and a unit DIAMETER
+ * (radius at most 0.5), so `crownDiameterM` is the horizontal scale. The
+ * crown tapers to the ground: no trunk (the owner's default; a trunk option
+ * is a later step).
+ */
+const CROWN_SIDES = 5;
+const CROWN_PROFILES = {
+  broad: [
+    [0.3, 0.45],
+    [0.72, 0.43],
+  ],
+  neutral: [
+    [0.3, 0.38],
+    [0.72, 0.33],
+  ],
+  needle: [[0.12, 0.5]],
+} as const;
+
+/**
  * The shared tree resources, created on the first call rather than at import,
  * so importing this module costs nothing.
  *
- * Unit geometries scaled per instance: a cone for needleleaved (and unknown,
- * which keeps what was drawn before the leaf type was read), a level-0
- * icosahedron for broadleaved. Segment counts are low on purpose: this is an
- * AR overlay before it is a desktop scene, so a thousand trees stay
- * affordable, and the flat-shaded low-polygon look is the house style.
+ * Unit crowns scaled per instance: a broad hull for broadleaved, a cone for
+ * needleleaved, and a narrower plain egg, the neutral form, for an unknown
+ * leaf type (DEC-R4-10: never a confident wrong shape such as a fir). 20, 10
+ * and 20 triangles: this is an AR overlay before it is a desktop scene, so a
+ * thousand trees stay affordable, and the flat-shaded low-polygon look is the
+ * house style. The material is WHITE with vertex colours: the per-instance
+ * colour carries the class, the per-vertex grey the foot-to-top shade.
  */
 function trees(): NonNullable<typeof treeResources> {
   if (treeResources !== undefined) return treeResources;
-  // Radius 0.5 and height 1, translated up by half: x,z in [-0.5, 0.5], y in
-  // [0, 1], a unit cube's worth, scaled per tree.
-  const needle = new THREE.ConeGeometry(0.5, 1, 6);
-  needle.translate(0, 0.5, 0);
-  const broad = new THREE.IcosahedronGeometry(0.5, 0);
-  broad.translate(0, 0.5, 0);
   treeResources = {
-    geometry: { needleleaved: needle, broadleaved: broad, unknown: needle },
+    geometry: {
+      broadleaved: crownHull(CROWN_SIDES, CROWN_PROFILES.broad),
+      needleleaved: crownHull(CROWN_SIDES, CROWN_PROFILES.needle),
+      unknown: crownHull(CROWN_SIDES, CROWN_PROFILES.neutral),
+    },
     material: new THREE.MeshStandardMaterial({
-      color: 0x3f7d4a,
+      color: 0xffffff,
+      vertexColors: true,
       flatShading: true,
-      roughness: 0.8,
+      roughness: 0.9,
+      metalness: 0,
     }),
   };
   return treeResources;
 }
 
+const treeColour = new THREE.Color();
 const treeMatrix = new THREE.Matrix4();
 const treePosition = new THREE.Vector3();
 const treeQuaternion = new THREE.Quaternion();
@@ -170,6 +260,7 @@ function setTreeMatrices(
     readonly positions: Float32Array;
     readonly rotations: Float32Array;
     readonly scales: Float32Array;
+    readonly colours: Float32Array;
   },
 ): void {
   for (let i = 0; i < instanced.count; i++) {
@@ -186,7 +277,21 @@ function setTreeMatrices(
       i,
       treeMatrix.compose(treePosition, treeQuaternion, treeScale),
     );
+    instanced.setColorAt(i, treeColourAt(packed.colours, i));
   }
+}
+
+/**
+ * Instance `i`'s colour: sRGB in, converted to three's linear working space,
+ * as every other colour three.js manages (`setHex`, material colours) is.
+ */
+function treeColourAt(colours: Float32Array, i: number): THREE.Color {
+  return treeColour.setRGB(
+    colours[i * 3] ?? 1,
+    colours[i * 3 + 1] ?? 1,
+    colours[i * 3 + 2] ?? 1,
+    THREE.SRGBColorSpace,
+  );
 }
 
 /**
@@ -212,6 +317,9 @@ export function treeObjects(
     );
     setTreeMatrices(instanced, packed);
     instanced.instanceMatrix.needsUpdate = true;
+    if (instanced.instanceColor !== null) {
+      instanced.instanceColor.needsUpdate = true;
+    }
     instanced.userData = { sharedResources: true };
     objects.push(instanced);
   }

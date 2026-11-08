@@ -20,10 +20,12 @@ import {
   type LatLng,
   type OsmFeature,
 } from "../model/osm-feature.js";
+import { barrierColour } from "./barrier-colours.js";
 import { buildBarriers, type BarrierVolume } from "./barrier-volumes.js";
 import { buildBuildings, type BuildingVolume } from "./buildings.js";
 import {
   chunkMeshes,
+  linearChunkColours,
   meshCentroidEnu,
   type MeshChunk,
 } from "./chunk-meshes.js";
@@ -142,17 +144,25 @@ export function buildCity(
     ...barriers.map((barrier) => ({
       mesh: barrier.mesh,
       tags: tagsByKey.get(barrier.feature) ?? {},
+      barrier: true,
     })),
   ];
-  const buildings = chunkMeshes(
-    drawn,
-    (item) => item.mesh,
-    (item) => meshCentroidEnu(item.mesh),
-    undefined,
-    (item) => buildingColour(item.tags),
-    // The shell shader's phase, from the feature's own geometry, so it is
-    // stable across rebuilds (an index would re-shuffle on every refresh).
-    (item) => shellRandFor(item.mesh),
+  // Linear light, as three.js shades (plan 2026-11-07-2315 section 7).
+  const buildings = linearChunkColours(
+    chunkMeshes(
+      drawn,
+      (item) => item.mesh,
+      (item) => meshCentroidEnu(item.mesh),
+      undefined,
+      // A barrier takes its own muted colour, not a building's grey.
+      (item) =>
+        "barrier" in item
+          ? barrierColour(item.tags)
+          : buildingColour(item.tags),
+      // The shell shader's phase, from the feature's own geometry, so it is
+      // stable across rebuilds (an index would re-shuffle on every refresh).
+      (item) => shellRandFor(item.mesh),
+    ),
   );
   const { roads, roadCount } = options.roads
     ? cityRoads(all, ground, inside, tagsByKey)

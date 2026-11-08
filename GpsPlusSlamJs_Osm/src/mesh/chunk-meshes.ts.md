@@ -14,6 +14,9 @@ coloured.
 - `chunkKeyFor(point, sizeM?): string`
 - `chunkMeshes(items, meshOf, positionOf, sizeM?, colourOf?): MeshChunk[]`
 - `meshCentroidEnu(mesh): EnuPoint`
+- `linearChunkColours(chunks): MeshChunk[]` — the chunks with their `colors`
+  converted from sRGB to linear light (new arrays; the input is untouched; a
+  chunk without colours passes through as is).
 
 ## Invariants & assumptions
 
@@ -46,6 +49,15 @@ coloured.
 - **No `colourOf` means no colour buffer** — bytes and a shader define bought for
   nothing.
 
+- **`chunkMeshes` writes raw sRGB (byte / 255); `linearChunkColours` is the
+  one conversion** (city objects plan 2026-11-07-2315 section 7). Building
+  chunks go through it in `buildCity`, as the O1 and V2 labs built their
+  colours through `THREE.Color`; road chunks and OsmDemo's plates stay raw
+  (the O3 picture the owner chose drew roads raw; unifying plates, ground
+  and POI is filed in [the colour-space follow-up](../../docs/2026-11-08-0107-city-colour-space-unification-followup.md)).
+  The conversion reads each value back to its byte and looks it up in a
+  256-entry table, so it costs one rounding per channel, not a power.
+
 ## Examples
 
 ```ts
@@ -64,4 +76,6 @@ const buildings = chunkMeshes(
 distant-apart grouping, the empty and degenerate cases, determinism, the key's
 sign handling, the centroid's frame, and for colours: flat per feature, each
 feature's colour on its own vertices, no buffer when uncoloured, and the buffer
-sized to the merged vertex count.
+sized to the merged vertex count; `linearChunkColours` converting known
+values (0x80 to 0.2158605), leaving its input untouched and passing a
+chunk without colours through.

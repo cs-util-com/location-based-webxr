@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import type { OsmFeature } from "../model/osm-feature.js";
 import { buildCity, cityGround } from "./city.js";
 import { enuFrameAt } from "./enu.js";
+import { barrierColour } from "./barrier-colours.js";
 import { buildingColour, roadColour } from "./feature-colours.js";
+import { srgbToLinear } from "./srgb.js";
 
 /**
  * `buildCity` is the city a renderer draws: buildings (with their parts and
@@ -71,6 +73,15 @@ const unpacked = (c: number) =>
     Math.fround(v / 255),
   );
 
+/**
+ * A packed 0xrrggbb as a BUILDING chunk stores it: linear light, 0-1 per
+ * channel (plan 2026-11-07-2315 section 7; roads stay raw, see `unpacked`).
+ */
+const linearUnpacked = (c: number) =>
+  [(c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff].map((v) =>
+    Math.fround(srgbToLinear(v / 255)),
+  );
+
 describe("buildCity", () => {
   it("builds the volumes, the barriers among them and the trees", () => {
     const city = buildCity([outline("#cc2200"), tower(), WALL, TREE], {
@@ -94,8 +105,19 @@ describe("buildCity", () => {
       buildCity([outline("#0044cc"), tower()], { frame }),
     );
     // Exactly the parent's colour (its type counts too, not only its tag).
-    expect(underRed).toEqual(unpacked(buildingColour(outline("#cc2200").tags)));
+    expect(underRed).toEqual(
+      linearUnpacked(buildingColour(outline("#cc2200").tags)),
+    );
     expect(underRed).not.toEqual(underBlue);
+  });
+
+  // WHY (city objects plan 2026-11-07-2315 M1): a barrier drawn among the
+  // buildings takes its own muted kind colour, not a building's grey; before,
+  // every wall, hedge and fence went through `buildingColour`.
+  it("colours a barrier by its kind, in linear light like the buildings", () => {
+    const city = buildCity([WALL], { frame });
+    expect(colours(city)).toEqual(linearUnpacked(barrierColour(WALL.tags)));
+    expect(barrierColour(WALL.tags)).not.toBe(buildingColour(WALL.tags));
   });
 
   it("stands on the ground it is given", () => {

@@ -8,7 +8,12 @@ import {
   buildBarriers,
   type BarrierVolume,
 } from "../../mesh/barrier-volumes.js";
-import { barrierCentrelines, isSolidBarrier } from "../../mesh/barriers.js";
+import {
+  barrierCentrelines,
+  barrierKind,
+  isSolidBarrier,
+  resolveBarrier,
+} from "../../mesh/barriers.js";
 import { NO_GATES, gateOpenings } from "../../mesh/barrier-gates.js";
 import type { LatLng } from "../../model/osm-feature.js";
 import { buildObstacleIndex } from "../../nav/obstacles.js";
@@ -282,5 +287,34 @@ describe("site barriers", () => {
         expect(drawn.has(`${feature.type}/${feature.id}`)).toBe(false);
       }
     }
+  });
+
+  it("draws Heidelberg's barriers by kind at their kind's size, still obstacles", () => {
+    // WHY (city objects plan 2026-11-07-2315 M1). The kinds now carry their
+    // own size and colour, so the count per kind is what the O1 lab drew from
+    // this extract. Each drawn barrier keeps the height navigation indexes,
+    // and the lowered fence (1.2 m) and retaining wall (1 m) stay obstacles:
+    // drawn and indexed is the same set (see "draws every barrier it also
+    // indexes" above).
+    const entry = built.get("heidelberg-altstadt");
+    if (entry === undefined) throw new Error("no heidelberg build");
+    const tagsOf = new Map(entry.features.map((f) => [featureKey(f), f.tags]));
+    const byKind = new Map<string, number>();
+    for (const volume of entry.volumes) {
+      const tags = tagsOf.get(volume.feature) ?? {};
+      const kind = barrierKind(tags) ?? "none";
+      byKind.set(kind, (byKind.get(kind) ?? 0) + 1);
+      expect(volume.heightM, volume.feature).toBe(resolveBarrier(tags).heightM);
+      expect(entry.indexed.has(volume.feature), volume.feature).toBe(true);
+    }
+    // The extract tags 25 walls, 16 retaining walls, 10 fences and 2 hedges
+    // as ways; 3 of the fences are not drawn, today as before M1 (the plan's
+    // fixture line counted the tags and left the hedges out).
+    expect(Object.fromEntries(byKind)).toEqual({
+      wall: 25,
+      retaining_wall: 16,
+      fence: 7,
+      hedge: 2,
+    });
   });
 });
