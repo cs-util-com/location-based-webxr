@@ -42,8 +42,12 @@ the reading sign (`reading-sign.ts`) are world parts too.
   none: a model is refused) and `enableClipping()` (none: ignored).
 - `WorldScreen` - `show(build)`: `build(host)` fills a fresh panel and
   returns its clean-up; `show` returns the close. `screenIn(host)` is the
-  page's (`main.ts`, `#narration-card-root`): one panel at a time, a newer
-  one closing the older, a stale close doing nothing. First user: the
+  page's (`main.ts`, `#narration-card-root`): one panel at a time, the newest
+  shown: a newer one takes the older down (its clean-up runs) and, once it
+  closes, the older is built again, so its own close still closes it (two
+  overlapping narration circles hand the screen back and forth); a build
+  that throws shows nothing and gives the screen back; a stale close does
+  nothing. First user: the
   narration circle's player card.
 - `WorldPart` - `object` (what stands; placed by the renderer, never by the
   part), `tapTarget?` (what a tap is cast against; none: no tap),

@@ -106,6 +106,9 @@ function setup(options: { soundOn?: boolean; refuse?: boolean } = {}) {
       return a;
     },
     sound: audible,
+    turnSoundOn: () => {
+      setting.set(true);
+    },
     onError: (e) => errors.push(e),
     createUrl: () => "blob:x",
     revokeUrl: () => undefined,
@@ -119,6 +122,7 @@ function setup(options: { soundOn?: boolean; refuse?: boolean } = {}) {
     setOn: (v: boolean) => {
       setting.set(v);
     },
+    isOn: () => setting.on(),
   };
 }
 
@@ -187,6 +191,26 @@ describe("a voice in the world", () => {
     voice.play();
     await flush();
     expect(voice.playing()).toBe(true);
+  });
+
+  it("a tap that plays with sound off turns the sound on", async () => {
+    // Why: the page's sound button shows the setting. A tap plays the
+    // voice even with sound off, so leaving the setting off would have the
+    // button say "Sound off" while a voice is heard.
+    const { sound, isOn } = setup({ soundOn: false });
+    const voice = sound.sound(LOAD, "voice");
+    voice.play();
+    await flush();
+    expect(voice.playing()).toBe(true);
+    expect(isOn()).toBe(true);
+    // A pause is no ask for sound: turned off again, it stays off.
+    const { sound: quiet, isOn: quietOn, setOn } = setup();
+    const other = quiet.sound(LOAD, "voice");
+    setOn(false);
+    other.pause();
+    other.hold();
+    other.carryOn();
+    expect(quietOn()).toBe(false);
   });
 });
 

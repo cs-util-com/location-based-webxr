@@ -400,8 +400,6 @@ describe("drawInspector", () => {
             name: "radiusM",
             label: "Radius",
             value: "6",
-            max: 50,
-            unit: "codePoints",
             required: true,
             prose: false,
             number: { unit: "m" },

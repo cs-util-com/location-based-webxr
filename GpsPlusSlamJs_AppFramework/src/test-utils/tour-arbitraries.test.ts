@@ -25,7 +25,12 @@ import {
 import { parseTourStationChildren } from '../ar/tour-story';
 import { parseTourAssets } from '../ar/tour-assets';
 import {
+  TOUR_AUDIO_MAX_REACH_M,
+  TOUR_AUDIO_MIN_REACH_M,
+} from '../ar/tour-kinds';
+import {
   TOUR_ARBITRARY_ASSETS,
+  tourBlockArbitrary,
   tourIdArbitrary,
   tourStationChildrenArbitrary,
   tourTextArbitrary,
@@ -204,4 +209,45 @@ describe('tourStationChildrenArbitrary', () => {
     },
     SLOW_SAMPLES_TIMEOUT_MS
   );
+});
+
+describe('tourBlockArbitrary, audio', () => {
+  // Why this test matters: an ambient zone's inner calm (`minM`) must stay
+  // below its reach (`maxM`), and only a generator that writes `minM` puts
+  // that rule under property coverage. Its bounds come from the format's
+  // reach constants, so a change to one cannot drift past the reader.
+  it('writes an inner calm below the reach, which the reader accepts', () => {
+    const assets = parseTourAssets(
+      TOUR_ARBITRARY_ASSETS.map((a) => ({ ...a })),
+      {
+        fail: (m: string): never => {
+          throw new Error(m);
+        },
+      }
+    );
+    const seen = new Set<string>();
+    fc.assert(
+      // Free: its views are the world ones, a zone (reach required) and a
+      // spot (reach kept, optional).
+      fc.property(tourBlockArbitrary('a', 'free', ['audio']), (block) => {
+        parseTourStationChildren(JSON.parse(JSON.stringify([block])), 'c', {
+          assets,
+          fail: (m: string): never => {
+            throw new Error(m);
+          },
+        });
+        const { minM, maxM } = block as { minM?: number; maxM?: number };
+        if (minM !== undefined) {
+          seen.add(maxM === undefined ? 'calm alone' : 'calm under reach');
+        }
+        const inReach = (m: number | undefined) =>
+          m === undefined ||
+          (m >= TOUR_AUDIO_MIN_REACH_M && m <= TOUR_AUDIO_MAX_REACH_M);
+        const below = minM === undefined || maxM === undefined || minM < maxM;
+        return inReach(minM) && inReach(maxM) && below;
+      }),
+      { numRuns: 300 }
+    );
+    expect([...seen].sort()).toEqual(['calm alone', 'calm under reach']);
+  });
 });

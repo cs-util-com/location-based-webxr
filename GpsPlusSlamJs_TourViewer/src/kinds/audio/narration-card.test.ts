@@ -176,6 +176,29 @@ describe("narrationCard", () => {
     );
   });
 
+  // Why: a drag that ends without a change (a cancelled touch, the page
+  // taking the swipe, focus moving away) must not freeze the thumb while
+  // the voice plays on.
+  it("lets the thumb follow the voice again after a drag ends without a change", () => {
+    for (const end of ["pointerup", "pointercancel", "blur"]) {
+      const host = document.createElement("div");
+      const { c, api } = controls();
+      const card = narrationCard(host, { title: "T" }, api);
+      const scrub = host.querySelector<HTMLInputElement>("input[type=range]")!;
+      scrub.value = "20";
+      scrub.dispatchEvent(new Event("input"));
+      c.time = 3_000;
+      card.render();
+      expect(scrub.value, "held while dragging").toBe("20");
+      scrub.dispatchEvent(new Event(end));
+      c.time = 5_000;
+      card.render();
+      expect(scrub.value, end).toBe("5");
+      expect(c.seeks).toEqual([]);
+      card.dispose();
+    }
+  });
+
   it("hides the sentence line without a transcript, waits for a length, and goes on dispose", () => {
     const host = document.createElement("div");
     const { api } = controls(0);

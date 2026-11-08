@@ -8,14 +8,16 @@ A block's text fields as the desktop editor's inspector edits them
 
 ## Public API
 
-- `BlockField` - `{ name, label, value, max, unit, required, prose,
-number? }`: the block's own field name (the inspector's `data-field`),
+- `BlockField` - a `BlockTextField` `{ name, label, value, max, unit,
+required, prose }` or a `BlockNumberField` `{ name, label, value,
+required, prose, number }`: the block's own field name (the inspector's `data-field`),
   its label, its text now ("" when absent), the format's cap, the unit the
   cap counts in (`codePoints`, or `utf16` for a long text's body), whether
   the block needs it, and whether it is prose (a text area keeping its
   lines) or one line. A number field (`number: { unit }`, from the row's
-  `FieldSpec` `number`) carries its value as a decimal string, its upper
-  bound in `max` and its need in `required`; the inspector draws it as a
+  `FieldSpec` `number`) carries its value as a decimal string and its need
+  in `required`, and no `max` or `unit`: those are a text's character cap,
+  and a number's bounds are the format's, refused on the write; the inspector draws it as a
   decimal box with the unit beside it, no counter.
 - `blockFields(block)` - the fields of any block (`TourObject` or
   `TourBlock`) besides a short text's caption, which the inspector's head

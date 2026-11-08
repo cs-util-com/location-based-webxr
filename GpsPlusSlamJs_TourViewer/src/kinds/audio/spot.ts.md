@@ -28,7 +28,10 @@ inside, its player card (`narration-card.ts`) is open on the page's screen
   end.
 - The card: opened through `env.screen` on walking in, closed on walking
   out and on dispose, rendered every frame in between. No screen (the
-  editor, or a page that gives none): no card. Its scrub seeks the voice
+  editor, or a page that gives none): no card. An overlapping circle's card
+  takes the screen while the visitor is in both; leaving that circle brings
+  this one's back (the screen rebuilds it, `world-part.ts` `screenIn`), and
+  this circle's close stays the one that closes it. Its scrub seeks the voice
   (making the handle if there is none yet).
 - Walking out holds a wanted voice; walking in carries it on. A voice the
   visitor paused is not wanted, so it stays off.
@@ -57,5 +60,6 @@ part.tap?.(); // plays
 margin and carry on at return, the visitor's pause staying off, `onInside`,
 the editor's silence, and dispose. `spot-card.test.ts`: the card opens
 inside and closes outside, its button plays and pauses, a heard narration
-plays again from 0, and no card in the editor or after dispose. `play.test.ts`: the world door picks it
+plays again from 0, the first circle's card back after leaving an
+overlapping one, and no card in the editor or after dispose. `play.test.ts`: the world door picks it
 for `spot`.

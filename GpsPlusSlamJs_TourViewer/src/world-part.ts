@@ -49,28 +49,75 @@ interface WorldFrame {
  *  of its own (a narration's player card). */
 export interface WorldScreen {
   /** Opens what `build` puts into the host; returns the close, which runs
-   *  `build`'s returned clean-up and empties the host. */
+   *  `build`'s returned clean-up and empties the host. A panel a newer one
+   *  pushed aside is built again once that one closes, so its close stays
+   *  the one to call. */
   show(build: (host: HTMLElement) => () => void): () => void;
 }
 
-/** A screen in `host` (the page's panel root): one panel at a time, a
- *  newer one closing the older. */
+/** One panel asked for and not closed yet; `panel` while it shows. */
+interface ScreenEntry {
+  readonly build: (host: HTMLElement) => () => void;
+  panel: HTMLElement | null;
+  cleanUp: (() => void) | null;
+}
+
+/** A screen in `host` (the page's panel root): one panel at a time, the
+ *  newest shown. A newer one takes the older one down (its clean-up
+ *  runs) and, once it closes, the older one is built again: two
+ *  overlapping narration circles hand the screen back and forth. */
 export function screenIn(host: HTMLElement): WorldScreen {
-  let close: (() => void) | null = null;
+  /** Every panel asked for and not closed, the newest last. */
+  const asked: ScreenEntry[] = [];
+  const takeDown = (entry: ScreenEntry): void => {
+    const { panel, cleanUp } = entry;
+    entry.panel = null;
+    entry.cleanUp = null;
+    try {
+      cleanUp?.();
+    } finally {
+      panel?.remove();
+    }
+  };
+  const showNewest = (): void => {
+    const entry = asked.at(-1);
+    if (entry === undefined || entry.panel !== null) return;
+    const panel = host.ownerDocument.createElement("div");
+    host.append(panel);
+    entry.panel = panel;
+    try {
+      entry.cleanUp = entry.build(panel);
+    } catch (error) {
+      // A build that throws shows nothing and is not asked again; the
+      // panel it pushed aside comes back (one that throws too is dropped).
+      asked.splice(asked.indexOf(entry), 1);
+      entry.panel = null;
+      panel.remove();
+      try {
+        showNewest();
+      } catch {
+        // Dropped as well; the first error is the one told.
+      }
+      throw error;
+    }
+  };
   return {
     show(build) {
-      close?.();
-      const panel = host.ownerDocument.createElement("div");
-      host.append(panel);
-      const cleanUp = build(panel);
-      const mine = (): void => {
-        if (close !== mine) return;
-        close = null;
-        cleanUp();
-        panel.remove();
+      const shown = asked.at(-1);
+      if (shown !== undefined) takeDown(shown);
+      const entry: ScreenEntry = { build, panel: null, cleanUp: null };
+      asked.push(entry);
+      showNewest();
+      return () => {
+        const at = asked.indexOf(entry);
+        if (at === -1) return;
+        asked.splice(at, 1);
+        try {
+          takeDown(entry);
+        } finally {
+          showNewest();
+        }
       };
-      close = mine;
-      return mine;
     },
   };
 }

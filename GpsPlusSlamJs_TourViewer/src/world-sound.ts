@@ -12,7 +12,7 @@
  *   `BACKGROUND_UNDER_VOICE` with a glide while any voice runs.
  * - **Sound off** (`sound`, the page's setting while the page is shown)
  *   silences both: a voice does not carry on at return (a tap still plays
- *   it), a background is paused at once and is not read before it may be
+ *   it, and turns the sound on: `turnSoundOn`), a background is paused at once and is not read before it may be
  *   heard. A play the browser refuses is reported once and not tried again
  *   until the sound falls silent (level 0) or comes back on.
  *
@@ -79,6 +79,10 @@ export interface WorldSoundDeps {
   /** Whether sound may be heard (the page's setting while it is shown);
    *  default always on. */
   readonly sound?: SoundGate;
+  /** A tap played a voice while sound was off: the page turns its
+   *  setting on, so its sound button never says "off" while a voice is
+   *  heard. None: the setting is left as it is. */
+  turnSoundOn?(): void;
   /** The voice or the file could not be played (the page's error toast). */
   onError?(error: unknown): void;
   readonly createUrl?: (blob: Blob) => string;
@@ -144,8 +148,11 @@ export function createWorldSound(deps: WorldSoundDeps): WorldSound {
       ...SILENT_SOUND,
       play() {
         away = false;
-        // A tap plays even with sound off: it is the visitor's own ask.
+        // A tap plays even with sound off: it is the visitor's own ask,
+        // and turns the sound on (after the play, so a voice kept quiet
+        // by the setting does not carry on first and is held at once).
         player.play();
+        if (!soundOn()) deps.turnSoundOn?.();
       },
       pause() {
         away = false;

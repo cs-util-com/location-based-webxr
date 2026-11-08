@@ -76,6 +76,49 @@ describe("a narration circle's card", () => {
     expect(voice.calls).toEqual(["seek:0", "play"]);
   });
 
+  // Why: one screen shows one card at a time, so a second circle that
+  // overlaps the first takes the screen. Leaving the second while still
+  // standing in the first must bring the first one's card back: its
+  // circle reports no new change, so nothing else would reopen it.
+  it("shows the first circle's card again after leaving an overlapping one", () => {
+    const host = document.createElement("div");
+    const screen = screenIn(host);
+    const circle = (title: string, x: number) => {
+      const { env } = recordingEnv("play");
+      const part = spotPart(audioBlock("spot", { radiusM: 6, title }), {
+        ...env,
+        screen,
+      });
+      part.object.position.x = x;
+      return part;
+    };
+    const a = circle("A", 0);
+    const b = circle("B", 8);
+    const walk = (x: number) => {
+      a.update?.(at(x));
+      b.update?.(at(x));
+    };
+    const shown = () =>
+      [...host.querySelectorAll("[data-testid=narration-card]")].map((c) =>
+        c.getAttribute("aria-label"),
+      );
+    walk(-1);
+    expect(shown()).toEqual(["Narration: A"]);
+    walk(4);
+    expect(shown()).toEqual(["Narration: B"]);
+    walk(-1);
+    expect(shown()).toEqual(["Narration: A"]);
+    // And again, both ways, then out of both.
+    walk(4);
+    expect(shown()).toEqual(["Narration: B"]);
+    walk(12);
+    expect(shown()).toEqual(["Narration: B"]);
+    walk(30);
+    expect(shown()).toEqual([]);
+    a.dispose();
+    b.dispose();
+  });
+
   it("goes with the part, and never opens in the editor", () => {
     const playing = circleWithScreen();
     playing.part.update?.(at(0));

@@ -21,7 +21,9 @@ hidden or the page is gone (`pagehide`) the sound is off the same way, and
 at return (visible again, `pageshow`) it is the setting again: ambient
 plays by its level, the held voice carries on.
 
-A tap still plays a voice: it is the visitor's own ask.
+A tap still plays a voice: it is the visitor's own ask, and it turns the
+setting on (`world-sound.ts` `turnSoundOn`), so the toggle reads "Sound on"
+while that voice is heard.
 
 ## Public API
 

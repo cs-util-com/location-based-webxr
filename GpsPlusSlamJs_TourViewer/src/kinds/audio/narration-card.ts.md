@@ -40,7 +40,9 @@ dispose }`: builds the card into `host`; `render()` brings it up to the
 - States: "Playing"; "Heard. Play again?" at or past the end; "Paused" part
   way; "Tap play to listen" at 0.
 - The scrub seeks on `change` (let go), not on every `input`; while dragged,
-  `render` leaves the thumb where the finger is.
+  `render` leaves the thumb where the finger is. A drag that ends without a
+  change (`pointerup`, `pointercancel`, `blur`) lets the thumb follow the
+  voice again, so it never freezes.
 - `render` writes only what changed, so it is cheap to call per frame.
 - The scrub is disabled while the length is unknown.
 
@@ -57,5 +59,5 @@ card.dispose(); // on leaving the circle
 `narration-card.test.ts`: the sentence split, `sentenceAt`'s share rule and
 a property (always a sentence, never backwards), the title, time, state and
 line, the button's play and pause shown at once, "Play again", the scrub's
-seek, and the card without transcript or length. `spot-card.test.ts` drives
+seek, the thumb following again after a drag ends without a change, and the card without transcript or length. `spot-card.test.ts` drives
 it through a circle.

@@ -380,6 +380,16 @@ describe("number fields", () => {
     ]);
   });
 
+  // Why: `max` and `unit` mean a text's character cap; a number field
+  // carrying its numeric bound there would read as a cap of a few
+  // characters. A number's bounds are the format's, refused on the write.
+  it("carries no character cap on a number field", () => {
+    for (const field of blockFields(ZONE).filter((f) => f.number)) {
+      expect(field, field.name).not.toHaveProperty("max");
+      expect(field, field.name).not.toHaveProperty("unit");
+    }
+  });
+
   it("writes a typed decimal as a number, a comma as its point", () => {
     expect(blockFieldEdit(SPOT, "radiusM", " 7,5 ")).toEqual({
       kind: "edited",

@@ -22,24 +22,36 @@ import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { KIND_EDIT, type FieldSpec } from "../kinds/edit-kinds.js";
 
 /** One field of a block, as the inspector draws it. */
-export interface BlockField {
+export type BlockField = BlockTextField | BlockNumberField;
+
+interface BlockFieldBase {
   /** The block's own field (`data-field` in the inspector). */
   readonly name: string;
   readonly label: string;
   /** Its text now ("" when the block has none). */
   readonly value: string;
+  /** The block needs it: it may not be emptied. */
+  readonly required: boolean;
+  /** Prose: a text area that keeps its lines, else one line. */
+  readonly prose: boolean;
+}
+
+/** A text to type, counted against the format's cap. */
+export interface BlockTextField extends BlockFieldBase {
   /** The most it takes, in `unit` (the format's cap). */
   readonly max: number;
   /** How the cap counts: characters, or UTF-16 units (a long text's
    *  body). */
   readonly unit: TourTextUnit;
-  /** The block needs it: it may not be emptied. */
-  readonly required: boolean;
-  /** Prose: a text area that keeps its lines, else one line. */
-  readonly prose: boolean;
-  /** A number to type, with its unit (`FieldSpec` `number`); none: a
-   *  text. Its `max` and `required` above are the number's. */
-  readonly number?: { readonly unit: string };
+  readonly number?: undefined;
+}
+
+/** A number to type, with its unit (`FieldSpec` `number`). No cap: its
+ *  bounds are the format's, refused on the write (`blockFieldEdit`). */
+export interface BlockNumberField extends BlockFieldBase {
+  readonly number: { readonly unit: string };
+  readonly max?: undefined;
+  readonly unit?: undefined;
 }
 
 /** A block the inspector reads: a free one in the world or one a story
@@ -102,15 +114,15 @@ export function blockFields(block: AnyBlock): BlockField[] {
         label: spec.label,
         prose: false,
         value: n === undefined ? "" : String(n),
-        max: spec.number.max,
-        unit: "codePoints",
         required: spec.number.required,
         number: { unit: spec.number.unit },
       };
     }
     const rule = ruleOf(block.kind, spec.name);
     return {
-      ...spec,
+      name: spec.name,
+      label: spec.label,
+      prose: spec.prose,
       value: textOf(block, spec.name),
       max: rule.max,
       unit: rule.unit,
@@ -129,7 +141,9 @@ export function storyBlockFields(block: TourBlock): BlockField[] {
     const rule = ruleOf("shortText", CAPTION.name);
     return [
       {
-        ...CAPTION,
+        name: CAPTION.name,
+        label: CAPTION.label,
+        prose: CAPTION.prose,
         value: block.caption,
         max: rule.max,
         unit: rule.unit,

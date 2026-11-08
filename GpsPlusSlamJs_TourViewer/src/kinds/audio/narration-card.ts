@@ -135,6 +135,15 @@ export function narrationCard(
     controls.seek(Number(scrub.value) * 1000);
     render();
   });
+  // A drag that ends without a change (a cancelled touch, the page taking
+  // the swipe, focus moving away) must not freeze the thumb. A release
+  // that does change the value fires its change in the same task, before
+  // any frame renders over the value.
+  for (const end of ["pointerup", "pointercancel", "blur"]) {
+    scrub.addEventListener(end, () => {
+      dragging = false;
+    });
+  }
 
   const last = { state: "", button: "", time: "", line: -2 };
   function render(): void {

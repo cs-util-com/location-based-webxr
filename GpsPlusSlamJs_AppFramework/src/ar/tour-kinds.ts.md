@@ -66,7 +66,7 @@ declares a kind or a field, because a tour is untrusted input.
 - An audio item stands free as a narration circle (`spot`, `radiusM`
   required, `TOUR_AUDIO_MIN_RADIUS_M` to `TOUR_AUDIO_MAX_RADIUS_M`) or an
   ambient zone (`zone`, `maxM` and `volume` 0 to 1 required, `minM` optional
-  and below `maxM`). Its `card` is a story's only. Each world field is
+  and below `maxM`). Its `card` is a story's only: a free audio block now takes the `spot` view, and a free one in `card` (the earlier shape) is not read - no tour of that shape exists, so none is migrated. Each world field is
   required in its own view and kept, still checked, in every other, so the
   editor's view switch loses nothing. The format floor is 1 m; the editor's
   default radius is larger (the viewer's `narration-circle` sweep).

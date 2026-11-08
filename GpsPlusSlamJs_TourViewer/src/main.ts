@@ -929,6 +929,10 @@ const narration = createNarrationVisitor({
 const worldSound = createWorldSound({
   focus: voiceFocus,
   sound: audible,
+  // A tap that plays with sound off turns it on: the toggle tells the truth.
+  turnSoundOn: () => {
+    soundSetting.set(true);
+  },
   onError: () => {
     const message = "A sound could not be played here.";
     walkToast.say([message]);

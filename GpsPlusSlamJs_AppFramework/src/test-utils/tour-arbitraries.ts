@@ -36,6 +36,7 @@ import {
   TOUR_AUDIO_MAX_RADIUS_M,
   TOUR_AUDIO_MAX_REACH_M,
   TOUR_AUDIO_MIN_RADIUS_M,
+  TOUR_AUDIO_MIN_REACH_M,
   TOUR_MODEL_MAX_SECTIONS,
   TOUR_MODEL_MAX_SIZE_M,
   TOUR_MODEL_MIN_DIRECTION_LENGTH,
@@ -243,24 +244,23 @@ const KIND_FIELDS: Record<
       poster: fc.option(fc.constantFrom(...IMAGE_ASSETS), { nil: undefined }),
     }),
   audio: (view) =>
-    fc.record({
-      audio: fc.constant('voice'),
-      transcript: tourTextArbitrary(r.audio.transcript),
-      title: optionalText(r.audio.title),
-      // Required in their own view, kept (optional) in every other.
-      radiusM:
-        view === 'spot'
-          ? audioRadius
-          : fc.option(audioRadius, { nil: undefined }),
-      maxM:
-        view === 'zone'
-          ? audioReach
-          : fc.option(audioReach, { nil: undefined }),
-      volume:
-        view === 'zone'
-          ? audioVolume
-          : fc.option(audioVolume, { nil: undefined }),
-    }),
+    fc
+      .record({
+        audio: fc.constant('voice'),
+        transcript: tourTextArbitrary(r.audio.transcript),
+        title: optionalText(r.audio.title),
+        // Required in their own view, kept (optional) in every other.
+        radiusM:
+          view === 'spot'
+            ? audioRadius
+            : fc.option(audioRadius, { nil: undefined }),
+        reach: audioReaches(view === 'zone'),
+        volume:
+          view === 'zone'
+            ? audioVolume
+            : fc.option(audioVolume, { nil: undefined }),
+      })
+      .map(({ reach, ...fields }) => ({ ...fields, ...reach })),
   model: (view) =>
     fc.record({
       asset: fc.constant('arch'),
@@ -348,10 +348,36 @@ const audioRadius = fc.double({
   noNaN: true,
 });
 const audioReach = fc.double({
-  min: TOUR_AUDIO_MIN_RADIUS_M,
+  min: TOUR_AUDIO_MIN_REACH_M,
   max: TOUR_AUDIO_MAX_REACH_M,
   noNaN: true,
 });
+/** An ambient zone's reach (`maxM`, required when `required`) and its
+ *  optional inner calm (`minM`): within the reach bounds, and below
+ *  `maxM` when both stand, as the reader asks. */
+function audioReaches(
+  required: boolean
+): fc.Arbitrary<{ maxM: number | undefined; minM: number | undefined }> {
+  return fc
+    .record({
+      maxM: required ? audioReach : fc.option(audioReach, { nil: undefined }),
+      calm: fc.option(
+        fc.double({ min: 0, max: 1, maxExcluded: true, noNaN: true }),
+        { nil: undefined }
+      ),
+    })
+    .map(({ maxM, calm }) => {
+      if (calm === undefined) return { maxM, minM: undefined };
+      const top = maxM ?? TOUR_AUDIO_MAX_REACH_M;
+      const minM =
+        TOUR_AUDIO_MIN_REACH_M + calm * (top - TOUR_AUDIO_MIN_REACH_M);
+      // A reach at the floor leaves no room for a calm below it.
+      return {
+        maxM,
+        minM: maxM === undefined || minM < maxM ? minM : undefined,
+      };
+    });
+}
 const audioVolume = fc.double({ min: 0, max: 1, noNaN: true });
 
 const modelSize = fc.double({
