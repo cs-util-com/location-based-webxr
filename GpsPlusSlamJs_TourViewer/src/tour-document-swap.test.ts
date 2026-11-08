@@ -141,7 +141,10 @@ describe("assetOptimized: the same id, a new path", () => {
     }
   });
 
-  it("is no change for the record it already lists, and back to the original is a swap too", () => {
+  // Why: a file made smaller in its own format keeps its record (same
+  // path, same size); its bytes are new all the same, so the swap counts
+  // and the next save writes them.
+  it("counts a swap to the record it already lists, and back to the original is a swap too", () => {
     const swapped = reduce(
       withPicture(),
       act.assetOptimized({
@@ -151,17 +154,18 @@ describe("assetOptimized: the same id, a new path", () => {
         height: 1200,
       }),
     );
-    expect(
-      reduce(
-        swapped,
-        act.assetOptimized({
-          id: ID,
-          path: `content/${ID}.webp`,
-          width: 1600,
-          height: 1200,
-        }),
-      ),
-    ).toBe(swapped);
+    const again = reduce(
+      swapped,
+      act.assetOptimized({
+        id: ID,
+        path: `content/${ID}.webp`,
+        width: 1600,
+        height: 1200,
+      }),
+    );
+    expect(again).not.toBe(swapped);
+    expect(manifestToWrite(again)).toEqual(manifestToWrite(swapped));
+    expect(again.assetSwaps[ID]).toBe(2);
     const back = reduce(
       swapped,
       act.assetOptimized({

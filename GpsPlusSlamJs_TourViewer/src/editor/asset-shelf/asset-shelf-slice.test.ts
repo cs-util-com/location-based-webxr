@@ -164,13 +164,20 @@ describe("the shelf's plain data", () => {
       doc.assetOptimized({ id: A, path: `content/${A}.webp` }),
     );
     expect(rows(s, swapped)[0]?.canUseOriginal).toBe(true);
-    // A save that wrote the smaller file landed: the written file lists it.
-    const landed: TourDocumentState = {
+    // A save that wrote the smaller file landed: the written file lists it
+    // and holds that swap's bytes.
+    const listedOnly: TourDocumentState = {
       ...swapped,
       written: {
         ...swapped.written!,
         assets: [{ ...ASSET, path: `content/${A}.webp` }],
       },
+    };
+    // Listed at the new path, but no save wrote this swap's bytes yet.
+    expect(rows(s, listedOnly)[0]?.canUseOriginal).toBe(true);
+    const landed: TourDocumentState = {
+      ...listedOnly,
+      swapsWritten: swapped.assetSwaps,
     };
     expect(rows(s, landed)[0]?.canUseOriginal).toBe(false);
     const notHeld = shelf(

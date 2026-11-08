@@ -25,6 +25,7 @@ import {
 } from "./asset-optimizers.js";
 import {
   assetShelfActions as act,
+  selectShelfRows,
   type AssetShelfState,
   type ShelfEntry,
 } from "./asset-shelf-slice.js";
@@ -52,6 +53,13 @@ interface ShelfSwap {
   readonly height?: number;
 }
 
+/** An original a smaller file replaced: its record, and its bytes, read
+ *  when "use the original" asks for them. */
+interface HeldOriginal {
+  readonly asset: TourAsset;
+  readonly load: () => Promise<Blob | undefined>;
+}
+
 export interface AssetShelfDeps {
   readonly store: {
     dispatch(action: UnknownAction): unknown;
@@ -59,6 +67,8 @@ export interface AssetShelfDeps {
       readonly assetShelf: AssetShelfState;
       readonly tourDocument: TourDocumentState;
     };
+    /** After every action: an original no longer offered is let go. */
+    subscribe(listener: () => void): () => void;
   };
   readonly optimizers: OptimizerTable;
   readonly host: OptimizerHost;
@@ -91,6 +101,15 @@ export interface AssetShelf {
     bytes: number,
     origin: ShelfEntry["origin"],
   ): void;
+  /** A reload put back a smaller file the draft kept: on the shelf as
+   *  optimized, no job run for it, its original offered when `original`
+   *  can read its bytes. */
+  restored(
+    asset: TourAsset,
+    name: string,
+    sizes: { readonly originalBytes: number; readonly optimizedBytes: number },
+    original?: HeldOriginal,
+  ): void;
   /** Retry a retryable end; false when there is none. */
   retry(id: string): boolean;
   /** Put the original back in place of the smaller file; false when it
@@ -113,14 +132,27 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
   const slots = Math.max(1, deps.slots ?? OPTIMIZER_SLOTS.phone);
   const maxBytes = deps.maxFileBytes ?? DEFAULT_ARCHIVE_LIMITS.maxEntryBytes;
   const running = new Map<string, AbortController>();
-  /** The originals a smaller file replaced: record and bytes. */
-  const originals = new Map<string, { asset: TourAsset; blob: Blob }>();
+  /** The originals a smaller file replaced, while they are offered. */
+  const originals = new Map<string, HeldOriginal>();
   let closed = false;
 
   const entries = () => store.getState().assetShelf.entries;
   const dispatch = (action: UnknownAction) => {
     if (!closed) store.dispatch(action);
   };
+
+  /** Each original no longer offered - a save wrote the smaller file's
+   *  bytes, or the job left "optimized" - is let go: it may be large. One
+   *  whose entry left the shelf stays for the removal's undo. */
+  function freeOriginals(): void {
+    if (closed || originals.size === 0) return;
+    for (const row of selectShelfRows(store.getState())) {
+      if (!originals.has(row.id) || row.canUseOriginal) continue;
+      originals.delete(row.id);
+      dispatch(act.originalFreed({ id: row.id }));
+    }
+  }
+  const unsubscribe = store.subscribe(freeOriginals);
 
   function pump(): void {
     if (closed) return;
@@ -214,7 +246,7 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
       dispatch(act.jobFailed({ id, reason: swapped.reason, retryable: true }));
       return;
     }
-    originals.set(id, { asset: before, blob: source });
+    originals.set(id, { asset: before, load: () => Promise.resolve(source) });
     dispatch(
       act.jobOptimized({
         id,
@@ -248,6 +280,22 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
       );
       pump();
     },
+    restored(asset, name, sizes, original) {
+      if (closed) return;
+      stopJob(asset.id);
+      if (original === undefined) originals.delete(asset.id);
+      else originals.set(asset.id, original);
+      dispatch(
+        act.optimizedRestored({
+          id: asset.id,
+          kind: asset.kind,
+          name,
+          ...sizes,
+          originalHeld: original !== undefined,
+        }),
+      );
+      pump();
+    },
     retry(id) {
       if (closed) return false;
       const before = entries()[id];
@@ -258,11 +306,15 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
     },
     async useOriginal(id) {
       const original = originals.get(id);
-      const entry = entries()[id];
-      if (closed || original === undefined || entry?.phase !== "optimized") {
+      const offered = selectShelfRows(store.getState()).find(
+        (r) => r.id === id,
+      )?.canUseOriginal;
+      if (closed || original === undefined || offered !== true) return false;
+      const { asset } = original;
+      const blob = await original.load().catch(() => undefined);
+      if (blob === undefined || closed || originals.get(id) !== original) {
         return false;
       }
-      const { asset, blob } = original;
       const swapped = await deps.swap(id, {
         blob,
         path: asset.path,
@@ -307,6 +359,7 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
     close() {
       if (closed) return;
       closed = true;
+      unsubscribe();
       for (const id of [...running.keys()]) stopJob(id);
       originals.clear();
       host.close();

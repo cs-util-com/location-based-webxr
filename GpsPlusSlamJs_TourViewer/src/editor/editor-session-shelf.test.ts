@@ -14,6 +14,7 @@ import {
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
+import { readStoredEntryBytes } from "gps-plus-slam-app-framework/test-utils/zip-central-directory";
 import { describe, expect, it, vi } from "vitest";
 
 import { tourOf } from "../test-support/tour-of.js";
@@ -41,22 +42,26 @@ const ESSAY: TourObject = {
 const PICTURE = "a".repeat(64);
 const PICTURE_BYTES = "P".repeat(50);
 
+/** A placed picture of the opened tour: what keeps its file listed. */
+const PHOTO: TourObject = {
+  id: "p1",
+  kind: "picture",
+  view: "plane",
+  image: PICTURE,
+  widthM: 1,
+  imageAsset: {
+    id: PICTURE,
+    path: `content/${PICTURE}.png`,
+    kind: "image",
+    width: 4,
+    height: 3,
+  },
+  createdAtIso: "2026-11-08T00:00:00.000Z",
+  geo: { lat: 48.52, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
+};
+
 const MANIFEST: TourManifest = parseTourManifest(
-  JSON.parse(
-    serializeTourManifest(
-      tourOf([ESSAY], {
-        assets: [
-          {
-            id: PICTURE,
-            path: `content/${PICTURE}.png`,
-            kind: "image",
-            width: 4,
-            height: 3,
-          },
-        ],
-      }),
-    ),
-  ),
+  JSON.parse(serializeTourManifest(tourOf([ESSAY, PHOTO]))),
 );
 
 async function openedTour(): Promise<TourSession> {
@@ -108,7 +113,7 @@ describe("the editor session's asset shelf", () => {
   // "use the original" switching off once the smaller file is written.
   it("a file brought in is queued, its smaller file is saved, and the original stops being offered after that save", async () => {
     const session = await openedTour();
-    const { editor, fake, rows, settle } = setup(session);
+    const { editor, fake, rows, settle, store } = setup(session);
     // Brought in as an essay's narration, so the save writes it.
     await editor.editNarration("t1", {
       kind: "voice",
@@ -139,6 +144,9 @@ describe("the editor session's asset shelf", () => {
     expect(names).not.toContain(`content/${id}.wav`);
     await settle();
     expect(rows().find((r) => r.id === id)?.canUseOriginal).toBe(false);
+    // Not offered, so not done - and the original's bytes are let go.
+    expect(await editor.shelf.useOriginal(id)).toBe(false);
+    expect(store.getState().assetShelf.entries[id]?.originalHeld).toBe(false);
     await session.close();
   });
 
@@ -151,6 +159,72 @@ describe("the editor session's asset shelf", () => {
     expect(first.host.close).toHaveBeenCalled();
     const second = setup(session, first.store);
     expect(second.rows().map((r) => r.id)).toEqual([PICTURE]);
+    await session.close();
+  });
+});
+
+/** The text of entry `path` in a saved zip. */
+async function entryText(blob: Blob, path: string): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  return new TextDecoder().decode(readStoredEntryBytes(bytes, path));
+}
+
+describe("a smaller file that keeps its path", () => {
+  // Why: a picture made smaller as the same format keeps its path; the
+  // save must still write the new bytes, or the manifest would name the
+  // new size over the old file.
+  it("writes the new bytes and size of an opened tour's picture, once", async () => {
+    const session = await openedTour();
+    const { editor, settle } = setup(session);
+    const path = `content/${PICTURE}.png`;
+    expect(
+      await editor.swapAsset(PICTURE, {
+        blob: new Blob(["SMALL"]),
+        path,
+        width: 2,
+        height: 1,
+      }),
+    ).toMatchObject({ kind: "swapped" });
+    const saved = await editor.save({ keepScan: false, inPlace: true });
+    expect(await entryText(saved.blob, path)).toBe("SMALL");
+    expect(saved.written.assets.find((a) => a.id === PICTURE)).toMatchObject({
+      path,
+      width: 2,
+      height: 1,
+    });
+    expect(saved.wrote.get(PICTURE)).toBeDefined();
+    await settle();
+    // Written once: the next save carries the same bytes, writing none.
+    const again = await editor.save({ keepScan: false, inPlace: true });
+    expect(await entryText(again.blob, path)).toBe("SMALL");
+    expect(again.wrote.has(PICTURE)).toBe(false);
+    await session.close();
+  });
+
+  // Why: a sound made smaller under its own extension is a real swap, not
+  // a refusal in words about the wrong kind.
+  it("takes and writes a sound made smaller under the same extension", async () => {
+    const session = await openedTour();
+    const { editor, fake, rows, settle } = setup(session);
+    await editor.editNarration("t1", {
+      kind: "voice",
+      file: new Blob(["RIFF-original-voice-long-enough"]),
+      fileName: "voice.wav",
+    });
+    const facts = await editor.narration("t1");
+    if (facts.kind !== "narration" || facts.audioId === null) {
+      throw new Error("no voice");
+    }
+    const id = facts.audioId;
+    await settle();
+    fake.finish(new Blob(["RIFF-sm"]), "wav");
+    await settle();
+    expect(rows().find((r) => r.id === id)).toMatchObject({
+      status: "optimized",
+      canUseOriginal: true,
+    });
+    const saved = await editor.save({ keepScan: false });
+    expect(await entryText(saved.blob, `content/${id}.wav`)).toBe("RIFF-sm");
     await session.close();
   });
 });

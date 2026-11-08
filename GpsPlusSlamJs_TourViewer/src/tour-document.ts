@@ -359,6 +359,12 @@ export interface TourDocumentState {
    *  asset id: a preview showing the asset keys its cache on this, since
    *  the id stays when the bytes change. No history step. */
   readonly assetSwaps: Readonly<Record<string, number>>;
+  /** The swap count (`assetSwaps`) whose bytes the written file holds, by
+   *  asset id (absent: the bytes no swap replaced): a save writes an
+   *  asset's file again while the two differ, also at the same path (a
+   *  picture made smaller as the same format, or the original put back).
+   *  Set by `saved` from the save's snapshot. No history step. */
+  readonly swapsWritten: Readonly<Record<string, number>>;
   /** The tour's codes and the hosted texts they are judged against
    *  (debug-captures plan M3a): no history step and no draft write, and
    *  not reset by `opened` or `closed` - the levels and `tour.json` are
@@ -606,6 +612,7 @@ export const initialTourDocumentState: TourDocumentState = {
   timingsWritten: {},
   addedAssets: [],
   assetSwaps: {},
+  swapsWritten: {},
   codes: NO_CODES,
 };
 
@@ -1849,6 +1856,9 @@ interface TourSaved {
   /** The read-along texts the write holds, by entry (null: none), for
    *  the entries of `timings` it started from. */
   readonly timings?: Readonly<Record<string, string | null>>;
+  /** The swap counts (`assetSwaps`) the write started from: the asset
+   *  bytes it holds are those swaps' (`swapsWritten`). */
+  readonly swaps?: Readonly<Record<string, number>>;
 }
 
 /** A fresh save status that keeps who holds the page's save slot: the
@@ -1994,7 +2004,9 @@ function isPixelCount(n: number | undefined): boolean {
 
 /** A smaller file replaces an asset's under the same id: its record
  *  (path, an image's size) changes in `addedAssets` - added there for an
- *  asset only the written file lists - and `assetSwaps` counts it. No
+ *  asset only the written file lists - and `assetSwaps` counts it, also
+ *  when the record stays the same (new bytes under the same path: the next
+ *  save writes them, `swapsWritten`). No
  *  step: an undo takes back edits, not the file's encoding. Unchanged for
  *  an id the tour does not hold, a path the format would refuse, or a size
  *  that is no positive whole number, since every later save would fail. */
@@ -2015,7 +2027,6 @@ function assetOptimize(
         ? { width: old.width, height: old.height }
         : {};
   const now: TourAsset = { id, path, kind: old.kind, ...size };
-  if (sameJson(now, old)) return before;
   const listed = before.addedAssets.some((a) => a.id === id);
   return {
     ...before,
@@ -2027,6 +2038,40 @@ function assetOptimize(
       [id]: (before.assetSwaps[id] ?? 0) + 1,
     },
   };
+}
+
+/** Whether asset `id`'s bytes as the tour holds them now are not the
+ *  written file's yet: brought in or replaced here (`addedAssets`), and the
+ *  written file lists it at another path or holds the bytes of another
+ *  swap (`swapsWritten`). What the next save writes for it. */
+export function assetBytesPending(
+  state: TourDocumentState,
+  id: string,
+): boolean {
+  const now = state.addedAssets.find((a) => a.id === id);
+  if (now === undefined) return false;
+  const was = state.written?.assets.find((a) => a.id === id);
+  return (
+    was?.path !== now.path ||
+    (state.assetSwaps[id] ?? 0) !== (state.swapsWritten[id] ?? 0)
+  );
+}
+
+/** `swapsWritten` after a write of `written` from a snapshot whose swap
+ *  counts were `swaps`: each asset it lists holds that snapshot's bytes. */
+function swapsWrittenAfter(
+  before: TourDocumentState,
+  written: TourManifest,
+  swaps: Readonly<Record<string, number>> | undefined,
+): Readonly<Record<string, number>> {
+  if (swaps === undefined) return before.swapsWritten;
+  const next: Record<string, number> = { ...before.swapsWritten };
+  for (const { id } of written.assets) {
+    const count = swaps[id];
+    if (count === undefined) delete next[id];
+    else next[id] = count;
+  }
+  return next;
 }
 
 /** How many of the tour's objects (story blocks among them) and stations
@@ -3759,6 +3804,7 @@ const tourDocumentSlice = createSlice({
         stations: unmoved
           ? [...framesOf(written), ...startedSince]
           : before.stations,
+        swapsWritten: swapsWrittenAfter(before, written, action.payload.swaps),
         timingsWritten:
           action.payload.timings === undefined
             ? before.timingsWritten

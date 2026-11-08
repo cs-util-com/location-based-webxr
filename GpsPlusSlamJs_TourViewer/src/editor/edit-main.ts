@@ -2715,7 +2715,7 @@ async function deliver(
   // (the M4b fix re-review #4).
   if (editor === mine && writtenKey !== null) {
     // A no-op once another tour's draft began to open (review #1).
-    writes?.landed(save.written, writtenKey);
+    writes?.landed(save.written, writtenKey, save.wrote);
     fileKey = writtenKey;
   }
   // The photos read from this page's copy of what it wrote, never from
@@ -2764,7 +2764,7 @@ async function writeChosen(
     return { arrived: false, inPlace: false };
   }
   if (editor === mine && writtenKey !== null) {
-    writes?.landed(save.written, writtenKey);
+    writes?.landed(save.written, writtenKey, save.wrote);
     fileKey = writtenKey;
   }
   await readPhotosFrom(mine, written).catch(() => undefined);

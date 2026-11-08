@@ -30,6 +30,10 @@ import {
 } from "./editor-draft.js";
 
 const ID = "a".repeat(64);
+/** One Blob each, as the session hands the draft the very bytes it holds:
+ *  the draft tells a file's own bytes from others by identity. */
+const RIFF = new Blob(["RIFF"]);
+const OGGS = new Blob(["OggS"]);
 const WAV: TourAsset = { id: ID, path: `content/${ID}.wav`, kind: "audio" };
 const OPUS: TourAsset = { id: ID, path: `content/${ID}.opus`, kind: "audio" };
 const K1 = "local-file:00000000000000000000000000000001";
@@ -98,9 +102,9 @@ async function offeredAfterReload(
 async function swapped(stores: MemoryDraftStores): Promise<EditorDraft> {
   const draft = draftOf(stores);
   await draft.open(K1, opened());
-  expect(await draft.saveAsset(WAV, new Blob(["RIFF"]))).toBe(true);
+  expect(await draft.saveAsset(WAV, RIFF)).toBe(true);
   await draft.saveObject(ESSAY);
-  expect(await draft.swapAsset(OPUS, new Blob(["OggS"]))).toBe(true);
+  expect(await draft.swapAsset(OPUS, OGGS)).toBe(true);
   await draft.idle();
   return draft;
 }
@@ -126,7 +130,7 @@ describe("the draft of a smaller file", () => {
     const draft = await swapped(stores);
     const written = { ...tourOf([PIN, ESSAY]), assets: [OPUS] };
     draft.writes().built(written);
-    draft.writes().landed(written, K1);
+    draft.writes().landed(written, K1, new Map([[ID, OGGS]]));
     await draft.idle();
     const keys = [...(stores.spaces.get(SPACE)?.keys() ?? [])];
     expect(keys.filter((k) => k.startsWith("asset"))).toEqual([]);
@@ -155,7 +159,7 @@ describe("the draft of a smaller file", () => {
   it("goes back to the original as a plain file, the smaller bytes removed", async () => {
     const stores = memoryDraftStores();
     const draft = await swapped(stores);
-    expect(await draft.swapAsset(WAV, new Blob(["RIFF"]))).toBe(true);
+    expect(await draft.swapAsset(WAV, RIFF)).toBe(true);
     await draft.idle();
     const keys = [...(stores.spaces.get(SPACE)?.keys() ?? [])];
     expect(keys).toContain(`asset:${ID}`);
@@ -169,26 +173,89 @@ describe("the draft of a smaller file", () => {
 
   // Why: an asset the opened file already carries has its original in
   // that file, not in the draft; the draft keeps the smaller bytes only,
-  // and offers no original of its own.
+  // and offers no original of its own. Back to the original, it keeps the
+  // bytes it was handed: a save writing the smaller file may still be
+  // running and land over the file on disk, so that file cannot be
+  // counted on to hold the original.
   it("keeps a smaller file for an asset of the opened file", async () => {
     const stores = memoryDraftStores();
     const draft = draftOf(stores);
     const tour = opened(WAV);
     await draft.open(K1, tour);
-    expect(await draft.swapAsset(OPUS, new Blob(["OggS"]))).toBe(true);
+    expect(await draft.swapAsset(OPUS, OGGS)).toBe(true);
     await draft.idle();
     expect(draft.holdsOriginal(ID)).toBe(false);
     draft.close();
     expect(await offeredAfterReload(stores, tour)).toEqual([
       { path: OPUS.path, text: "OggS" },
     ]);
-    // Swapping back to the file's own bytes leaves nothing to keep.
     const back = draftOf(stores);
     await back.open(K1, tour);
-    expect(await back.swapAsset(WAV, new Blob(["RIFF"]))).toBe(true);
+    expect(await back.swapAsset(WAV, RIFF)).toBe(true);
     await back.idle();
     back.close();
-    expect(await offeredAfterReload(stores, tour)).toEqual([]);
+    expect(await offeredAfterReload(stores, tour)).toEqual([
+      { path: WAV.path, text: "RIFF" },
+    ]);
+  });
+
+  // Why: "use the original" while an in-place save writing the smaller
+  // file still runs. That save lands over the file on disk, so the
+  // original's bytes exist only in the draft; a reload must offer them.
+  it("keeps the original handed back while a save writing the smaller file lands", async () => {
+    const stores = memoryDraftStores();
+    const draft = draftOf(stores);
+    await draft.open(K1, opened(WAV));
+    expect(await draft.swapAsset(OPUS, OGGS)).toBe(true);
+    expect(await draft.swapAsset(WAV, RIFF)).toBe(true);
+    const written = { ...tourOf([PIN, ESSAY]), assets: [OPUS] };
+    draft.writes().built(written);
+    draft.writes().landed(written, K1, new Map([[ID, OGGS]]));
+    await draft.idle();
+    draft.close();
+    expect(await offeredAfterReload(stores, written)).toEqual([
+      { path: WAV.path, text: "RIFF" },
+    ]);
+  });
+
+  // Why: a smaller file under the same path (a WebP made smaller as WebP)
+  // is told from the file on disk by its bytes, not its path: a save that
+  // started before it wrote the old bytes, and only a save that wrote these
+  // spends it.
+  it("keeps a swap at the same path until a save that wrote its bytes landed", async () => {
+    const WEBP: TourAsset = {
+      id: ID,
+      path: `content/${ID}.webp`,
+      kind: "image",
+      width: 4,
+      height: 4,
+    };
+    const SMALL = { ...WEBP, width: 2, height: 2 };
+    const BYTES = new Blob(["RIFF-small-webp"]);
+    const stores = memoryDraftStores();
+    const draft = draftOf(stores);
+    const tour = opened(WEBP);
+    await draft.open(K1, tour);
+    expect(await draft.swapAsset(SMALL, BYTES)).toBe(true);
+    const stale = { ...tourOf([PIN]), assets: [WEBP] };
+    draft.writes().built(stale);
+    draft.writes().landed(stale, K1, new Map());
+    await draft.idle();
+    draft.close();
+    expect(await offeredAfterReload(stores, tour)).toEqual([
+      { path: WEBP.path, text: "RIFF-small-webp" },
+    ]);
+    // A save that wrote these bytes spends it.
+    const fresh = memoryDraftStores();
+    const later = draftOf(fresh);
+    await later.open(K1, tour);
+    expect(await later.swapAsset(SMALL, BYTES)).toBe(true);
+    const written = { ...tourOf([PIN]), assets: [SMALL] };
+    later.writes().built(written);
+    later.writes().landed(written, K1, new Map([[ID, BYTES]]));
+    await later.idle();
+    later.close();
+    expect(await offeredAfterReload(fresh, written)).toEqual([]);
   });
 
   it("carries the smaller file and the original when a download moves the key", async () => {
@@ -234,17 +301,17 @@ describe("the draft of a smaller file", () => {
     };
     const draft = draftOf(spy);
     await draft.open(K1, opened());
-    await draft.saveAsset(WAV, new Blob(["RIFF"]));
+    await draft.saveAsset(WAV, RIFF);
     await draft.saveObject(ESSAY);
     await draft.idle();
     recording = true;
     snapshots.push(new Map(stores.spaces.get(SPACE)));
-    await draft.swapAsset(OPUS, new Blob(["OggS"]));
+    await draft.swapAsset(OPUS, OGGS);
     await draft.swapAsset(
       { ...OPUS, path: `content/${ID}.mp3` },
       new Blob(["ID3"]),
     );
-    await draft.swapAsset(WAV, new Blob(["RIFF"]));
+    await draft.swapAsset(WAV, RIFF);
     await draft.idle();
     recording = false;
     draft.close();

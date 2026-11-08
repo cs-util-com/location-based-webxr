@@ -19,7 +19,11 @@ import {
 } from "@reduxjs/toolkit";
 import type { TourAssetKind } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
-import { assetUsesOf, type TourDocumentState } from "../../tour-document.js";
+import {
+  assetBytesPending,
+  assetUsesOf,
+  type TourDocumentState,
+} from "../../tour-document.js";
 import {
   IDLE_JOB,
   jobFailed,
@@ -179,6 +183,51 @@ const assetShelfSlice = createSlice({
       ),
     jobRetried: (state, action: PayloadAction<{ readonly id: string }>) =>
       withJob(state, action.payload.id, jobRetried),
+    /** A reload put back a smaller file the draft kept: the entry stands
+     *  optimized, in place of the one the open listed (its arrival kept). */
+    optimizedRestored(
+      state,
+      action: PayloadAction<{
+        readonly id: string;
+        readonly kind: TourAssetKind;
+        readonly name: string;
+        readonly originalBytes: number;
+        readonly optimizedBytes: number;
+        readonly originalHeld: boolean;
+      }>,
+    ) {
+      const p = action.payload;
+      const was = state.entries[p.id];
+      const entry: ShelfEntry = {
+        ...IDLE_JOB,
+        phase: "optimized",
+        progress: 1,
+        id: p.id,
+        kind: p.kind,
+        name: was?.name ?? p.name,
+        origin: was?.origin ?? "added",
+        originalBytes: p.originalBytes,
+        optimizedBytes: p.optimizedBytes,
+        originalHeld: p.originalHeld,
+        seq: was?.seq ?? state.nextSeq,
+      };
+      return {
+        entries: { ...state.entries, [p.id]: entry },
+        nextSeq: was === undefined ? state.nextSeq + 1 : state.nextSeq,
+      };
+    },
+    /** The runner let an original's bytes go: no longer offered. */
+    originalFreed(state, action: PayloadAction<{ readonly id: string }>) {
+      const entry = state.entries[action.payload.id];
+      if (entry?.originalHeld !== true) return state;
+      return {
+        ...state,
+        entries: {
+          ...state.entries,
+          [entry.id]: { ...entry, originalHeld: false },
+        },
+      };
+    },
     /** "Use the original": the smaller file left again. */
     originalUsed(
       state,
@@ -224,8 +273,8 @@ export interface ShelfRow {
   /** How often a smaller file replaced the asset's: a preview built from
    *  the old bytes reloads when this changes. */
   readonly swaps: number;
-  /** The original's bytes are kept and no save wrote the smaller file
-   *  yet (the draft's own rule). */
+  /** The original's bytes are kept and no save wrote the smaller file's
+   *  bytes yet (`assetBytesPending`, the draft's own rule). */
   readonly canUseOriginal: boolean;
 }
 
@@ -243,13 +292,8 @@ export const selectShelfRows = createSelector(
     const entries = Object.values(shelf.entries).sort((a, b) => a.seq - b.seq);
     const queued = entries.filter((e) => e.phase === "queued").map((e) => e.id);
     const uses = assetUsesOf(doc);
-    const writtenPath = new Map(
-      (doc.written?.assets ?? []).map((a) => [a.id, a.path]),
-    );
-    const currentPath = new Map(doc.addedAssets.map((a) => [a.id, a.path]));
     return entries.map((e) => {
       const position = queued.indexOf(e.id);
-      const current = currentPath.get(e.id);
       return {
         id: e.id,
         kind: e.kind,
@@ -270,8 +314,7 @@ export const selectShelfRows = createSelector(
         canUseOriginal:
           e.phase === "optimized" &&
           e.originalHeld &&
-          current !== undefined &&
-          writtenPath.get(e.id) !== current,
+          assetBytesPending(doc, e.id),
       };
     });
   },

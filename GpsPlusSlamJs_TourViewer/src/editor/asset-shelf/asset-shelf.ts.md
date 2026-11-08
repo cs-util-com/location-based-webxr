@@ -19,7 +19,7 @@
   - otherwise the session's swap to `content/<id>.<extension>`; a refusal fails, retryable, with its words.
 - A job's late end (after `remove`, after `close`) changes nothing: every await is followed by an ownership check.
 - A crash (`OptimizerCrashed`) is passed to the state machine as `crashed`, which queues the job again while attempts remain.
-- The original's record and bytes are kept in memory for "use the original"; the row offers it only while the written file does not list the smaller file (`selectShelfRows`).
+- The original's record and a loader of its bytes are kept in memory for "use the original"; the row offers it only while the written file does not hold the smaller file's bytes (`selectShelfRows`). The runner subscribes to the store and frees an original (`originalFreed`) as soon as its row stops offering it; one whose row left the shelf (a removal with undo) is kept until the shelf closes.
 - A save never waits for a job: it writes the original until the swap.
 
 ## Not here yet

@@ -519,7 +519,10 @@ const ASSETS_KEY = "assets";
 /** A file the draft holds, with its bytes. After a smaller file replaced
  *  it (`swapAsset`), `original` is the record it replaced, with that
  *  record's bytes while this draft keeps them (a file brought in; an asset
- *  of the file on disk has its original there, so none). */
+ *  of the file on disk has its original there, so none). The two records
+ *  may share a path (a smaller file of the same format, or the original
+ *  handed back for an asset of the file on disk): the bytes tell them
+ *  apart, never the path. */
 interface DraftFile {
   readonly asset: TourAsset;
   readonly blob: Blob;
@@ -581,8 +584,7 @@ interface ListedFile {
 }
 
 /** The `assets` list as written, each record one the format takes, and a
- *  replaced record of the same id at another path; null when it does not
- *  read. */
+ *  replaced record of the same id; null when it does not read. */
 function assetListOf(text: string | undefined): ListedFile[] | null {
   if (text === undefined) return [];
   let data: unknown;
@@ -606,7 +608,6 @@ function assetListOf(text: string | undefined): ListedFile[] | null {
     if (
       !readsAsAsset(original) ||
       original.id !== asset.id ||
-      original.path === asset.path ||
       typeof originalKept !== "boolean"
     ) {
       return null;
@@ -696,8 +697,15 @@ export interface EditorTourDraft
   /** A save was built: its versions are this browser's own work. */
   built(written: TourManifest): void;
   /** An in-place write of `written` landed, whose bytes have `fileKey`:
-   *  what it carries clears, and the draft follows the key. */
-  landed(written: TourManifest, fileKey: string): void;
+   *  what it carries clears, and the draft follows the key. `wrote`: the
+   *  bytes it wrote for each asset (`EditorSave.wrote`); a smaller file
+   *  is spent only by a write of its own bytes, a plain file also by its
+   *  path when the write wrote none for it. */
+  landed(
+    written: TourManifest,
+    fileKey: string,
+    wrote?: ReadonlyMap<string, Blob>,
+  ): void;
   /** A download landed whose bytes have `fileKey` (debug-captures plan,
    *  Q-I: the first save of a tour without an id writes one): the draft
    *  follows the key, carrying everything - nothing is spent, and the old
@@ -717,10 +725,15 @@ interface DraftFileWrites {
    *  the same id (`asset`: its new record): its bytes under a key of their
    *  own, then the list, then the keys only the previous entry used, so a
    *  crash between any two writes leaves every listed record with the
-   *  bytes of its own path. Back at the original's path, the original
-   *  stands again (an asset of the file on disk: nothing is held). False
-   *  when it did not land, or for an id held nowhere. */
-  swapAsset(asset: TourAsset, blob: Blob): Promise<boolean>;
+   *  bytes of its own path. Back to the original's record with the
+   *  original's own bytes (the same Blob), the original stands again as a
+   *  plain file; any other bytes are kept as a smaller file, also at the
+   *  original's path - for an asset of the file on disk the bytes handed
+   *  back are kept, since a save still running may land other bytes over
+   *  that file. `blob` undefined: what stands without a smaller file (the
+   *  file on disk's bytes: nothing held). False when it did not land, or
+   *  for an id held nowhere. */
+  swapAsset(asset: TourAsset, blob: Blob | undefined): Promise<boolean>;
   /** Whether the draft keeps the bytes a smaller file replaced ("use the
    *  original"): until a save that wrote the smaller file landed. */
   holdsOriginal(id: string): boolean;
@@ -1465,7 +1478,10 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
           : new Blob([bytes], { type: stored.type });
       };
       for (const { asset, original, originalKept } of listed ?? []) {
-        if (pathInFile.get(asset.id) === asset.path) continue;
+        // A plain file the file on disk lists at its path is its own; a
+        // smaller file may share the path with other bytes, so it stays.
+        if (original === undefined && pathInFile.get(asset.id) === asset.path)
+          continue;
         if (original === undefined) {
           const blob = await bytesAt(`${ASSET_PREFIX}${asset.id}`);
           if (mine !== generation) return none;
@@ -1741,8 +1757,8 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         built: (written) => {
           if (live()) api.built(written);
         },
-        landed: (written, fileKey) => {
-          if (live()) api.landed(written, fileKey);
+        landed: (written, fileKey, wrote) => {
+          if (live()) api.landed(written, fileKey, wrote);
         },
         moved: (fileKey) => {
           if (live()) api.moved(fileKey);
@@ -1834,7 +1850,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       }
     },
 
-    landed(written, fileKey) {
+    landed(written, fileKey, wrote) {
       const s = space;
       if (s === null) return;
       const read = manifestAsRead(written);
@@ -1851,13 +1867,21 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         bases.delete(id);
       }
       opened = read;
-      // A file the written tour lists AT ITS PATH is the file's own now,
-      // its original with it. Listed at another path (a save already
-      // running when a smaller file came wrote the original), the swap is
-      // still to be written.
+      // A file the written tour lists AT ITS PATH, with the bytes the save
+      // wrote for it, is the file's own now, its original with it. Listed
+      // at another path, or with other bytes (a save already running when
+      // a smaller file came wrote the original - perhaps at the same
+      // path), the swap is still to be written. A plain file the save
+      // wrote no bytes for is the file's own by its path.
       const listedAt = new Map(read.assets.map((a) => [a.id, a.path]));
       const spentFiles = [...files.values()]
-        .filter((f) => listedAt.get(f.asset.id) === f.asset.path)
+        .filter((f) => {
+          if (listedAt.get(f.asset.id) !== f.asset.path) return false;
+          const bytes = wrote?.get(f.asset.id);
+          return bytes === undefined
+            ? f.original === undefined
+            : bytes === f.blob;
+        })
         .map((f) => f.asset.id);
       // The settings decided again against the file on disk now: spent
       // when it carries them, kept when it does not (M1b-2 milestone
@@ -1950,12 +1974,15 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
             ? undefined
             : { asset: onDisk });
       if (original === undefined) return Promise.resolve(space === null);
+      const back = original.blob;
       const next: DraftFile | undefined =
-        asset.path !== original.asset.path
-          ? { asset, blob, original }
-          : original.blob === undefined
+        blob === undefined
+          ? back === undefined
             ? undefined
-            : { asset: original.asset, blob: original.blob };
+            : { asset: original.asset, blob: back }
+          : blob === back && asset.path === original.asset.path
+            ? { asset: original.asset, blob }
+            : { asset, blob, original };
       const before = prev === undefined ? [] : keysOf(prev);
       if (next === undefined) files.delete(id);
       else files.set(id, next);

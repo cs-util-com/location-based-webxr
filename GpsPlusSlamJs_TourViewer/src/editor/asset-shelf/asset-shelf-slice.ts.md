@@ -15,7 +15,7 @@
 - Blobs are never state; the runner keeps them (`editor/asset-shelf/asset-shelf.ts`). Commands live on the runner.
 - `placesInUse`: the document's objects and story blocks that name the id, plus station steps and station pictures, counted by `assetUsesOf` (`tour-document.ts`), since no page module reads `tour-content.ts` itself.
 - `swaps`: the document's `assetSwaps[id]`; a preview built from the old bytes reloads when it changes.
-- `canUseOriginal` is DERIVED, never a stored flag: the entry is optimized, the runner holds the original, and the written file does not yet list the asset at its current path. Once a save that wrote the smaller file landed, the original is no longer offered (the same rule the draft uses for a landed save).
+- `canUseOriginal` is DERIVED, never a stored flag: the entry is optimized, the runner holds the original, and the asset's bytes are not the written file's yet (`assetBytesPending` in `tour-document.ts`: another path, or a swap no save wrote). Once a save that wrote the smaller file landed, the original is no longer offered (the same rule the draft uses for a landed save).
 
 ## Tests
 

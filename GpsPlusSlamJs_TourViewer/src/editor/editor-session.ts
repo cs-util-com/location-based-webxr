@@ -98,9 +98,9 @@ import { newTourId } from "../tour-file-key.js";
 import {
   createTourSaves,
   dispatchThunk,
+  type SavedTour,
   TOUR_REPLACED,
 } from "../tour-document-save.js";
-import type { FinishedTour } from "../finish-rebuild.js";
 import { createTourViewerStore } from "../tour-viewer-session.js";
 import type { DetailsOutcome } from "./details-dialog.js";
 import type { EditorTourSettings } from "./editor-draft.js";
@@ -232,6 +232,9 @@ export interface EditorSave {
   /** The manifest the zip carries (the draft's `written` versions, M6
    *  E2c). */
   readonly written: TourManifest;
+  /** The bytes it wrote for each asset, by id: the draft spends a file it
+   *  holds only when these are its bytes (`landed`). */
+  readonly wrote: ReadonlyMap<string, Blob>;
 }
 
 /** Said when "Move the debug data out" finds no walk in the newest
@@ -318,6 +321,10 @@ interface EditorRestore {
   readonly files?: readonly {
     readonly asset: TourAsset;
     readonly blob: Blob;
+    /** A smaller file's: the record it replaced, with its bytes when the
+     *  draft kept them. On the shelf as made smaller, that original
+     *  offered. */
+    readonly original?: { readonly asset: TourAsset; readonly blob?: Blob };
   }[];
 }
 
@@ -516,8 +523,9 @@ export interface EditorSessionDraft extends DraftObjectWrites {
   saveAsset(asset: TourAsset, blob: Blob): Promise<boolean>;
   /** A smaller file for an asset (its new record), under the same id:
    *  written before the table and the document take it; whether it
-   *  landed. */
-  swapAsset(asset: TourAsset, blob: Blob): Promise<boolean>;
+   *  landed. `blob` undefined: back to what stands without one (the file
+   *  on disk's bytes for its asset). */
+  swapAsset(asset: TourAsset, blob: Blob | undefined): Promise<boolean>;
 }
 
 /** One image a tour may show as its cover (W2): a placed photo, or an
@@ -919,6 +927,10 @@ export function createEditorSession(input: {
     picturesRead: () => Promise.all(pictureReads),
     maxFileBytes: limits.maxEntryBytes - limits.marginBytes,
     fileNameOf: (id) => fileNames.get(id),
+    shrinking: (id) => {
+      const phase = store.getState().assetShelf.entries[id]?.phase;
+      return phase === "queued" || phase === "running";
+    },
   });
   /** What the opened file weighs: its entries' sizes. */
   const openedBytes = session.entries.reduce((sum, e) => sum + e.size, 0);
@@ -1354,14 +1366,14 @@ export function createEditorSession(input: {
     if (final === null) {
       // The draft took what the document now refuses (this open was
       // replaced, or the asset left the tour): it gets the record that
-      // stood before back, so no later open offers the refused file.
-      // Back at a path whose bytes it holds, it reads no bytes: an asset
-      // of the opened file has none here.
+      // stood before back, so no later open offers the refused file -
+      // with the bytes held here, or none for an asset of the opened file
+      // never replaced (the file on disk's stand).
       // Not when the same swap landed meanwhile: the draft agrees then.
       const listed = own().addedAssets.find((a) => a.id === id);
       const same = JSON.stringify(listed) === JSON.stringify(judged.asset);
       if (was !== undefined && !same) {
-        await draft.swapAsset(was, wasBlob ?? new Blob([]));
+        await draft.swapAsset(was, wasBlob);
       }
       return swapRefused;
     }
@@ -2374,12 +2386,22 @@ export function createEditorSession(input: {
       // Each by the document's own rule, as `swapAsset` judges it; the
       // draft holds it already.
       let swapped = 0;
-      for (const { asset, blob } of offeredSwaps) {
-        const judged = judgedSwap(asset.id, asset);
+      const onShelf: (typeof offeredSwaps)[number][] = [];
+      for (const file of offeredSwaps) {
+        const judged = judgedSwap(file.asset.id, file.asset);
         if (judged === null) continue;
-        files.set(asset.id, blob);
+        files.set(file.asset.id, file.blob);
         store.dispatch(judged.action);
+        onShelf.push(file);
         swapped += 1;
+      }
+      // The shelf as the draft left it: a reload dropped the runner's
+      // queue, so a file brought in is queued again (an over-cap one would
+      // refuse every save for good otherwise), and one made smaller there
+      // stands optimized, its original offered.
+      const listedNow = new Set(own().addedAssets.map((a) => a.id));
+      for (const file of [...offeredFiles, ...onShelf]) {
+        if (listedNow.has(file.asset.id)) shelveRestored(file);
       }
       return { changed: changed + swapped, deleted: deleted.length };
     },
@@ -2395,7 +2417,10 @@ export function createEditorSession(input: {
           if (mine() === null) throw new Error(TOUR_REPLACED);
           const snap = dispatchThunk(store, saves.snapshot());
           await saves.picturesRead();
-          const copy = saveOf(await saves.rebuild(snap, options.keepScan));
+          const copy = saveOf({
+            ...(await saves.rebuild(snap, options.keepScan)),
+            wrote: snap.wrote,
+          });
           return { ...copy, filename: copyFileName(copy.filename) };
         }),
       );
@@ -2443,13 +2468,59 @@ export function createEditorSession(input: {
       : zipBlobEntryNames(newest.blob);
   }
 
-  function saveOf(finished: FinishedTour): EditorSave {
+  function saveOf(finished: SavedTour): EditorSave {
     return {
       blob: finished.blob,
       filename: savedName,
       scanLeftOut: finished.scanLeftOut,
       written: finished.written,
+      wrote: finished.wrote,
     };
+  }
+
+  /** A file a restore put back, on the shelf (`restore`): a plain one
+   *  brought in is queued as a new one is; a smaller file stands optimized
+   *  - unless its record is its original's and it is no smaller (the
+   *  original put back there) - with that original offered while its
+   *  bytes can be read: the draft's, or the opened file's own entry. */
+  function shelveRestored(
+    file: NonNullable<EditorRestore["files"]>[number],
+  ): void {
+    const { asset, blob, original } = file;
+    if (original === undefined) {
+      shelf.add(asset, asset.path, blob.size, "added");
+      return;
+    }
+    const wrap = session.manifestWrap;
+    const onDisk = input.manifest.assets.find((a) => a.id === asset.id);
+    const fromDisk =
+      onDisk !== undefined && onDisk.path === original.asset.path;
+    const originalBytes =
+      original.blob?.size ??
+      (fromDisk
+        ? session.entries.find((e) => e.filename === `${wrap}${onDisk.path}`)
+            ?.size
+        : undefined) ??
+      blob.size;
+    if (asset.path === original.asset.path && blob.size >= originalBytes) {
+      return;
+    }
+    const kept = original.blob;
+    const load =
+      kept !== undefined
+        ? () => Promise.resolve<Blob | undefined>(kept)
+        : fromDisk
+          ? () =>
+              session
+                .loadContentEntry(original.asset.path)
+                .catch(() => undefined)
+          : undefined;
+    shelf.restored(
+      asset,
+      asset.path,
+      { originalBytes, optimizedBytes: blob.size },
+      load === undefined ? undefined : { asset: original.asset, load },
+    );
   }
 
   /** The tour a debug bundle names (`debug-bundle.json`): a listed
@@ -2507,7 +2578,7 @@ export function createEditorSession(input: {
     return {
       kind: "ready",
       walk: { blob: bundle.blob, filename: bundle.filename },
-      save: saveOf(finished),
+      save: saveOf({ ...finished, wrote: snap.wrote }),
       current: () => saves.newest() === base,
       commit(inPlace) {
         if (saves.newest() !== base) {
