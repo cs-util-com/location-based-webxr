@@ -16,14 +16,16 @@
 // golden data, configs, setup files, mocks) falls back to the full suite, as
 // does a deleted or renamed file, whose importers the graph no longer knows.
 
-/** Module sources the graph follows. */
-const MODULE_RE = /\.(?:[cm]?[jt]sx?)$/;
-/** A vitest setup file runs before every test without being imported. */
-const SETUP_RE = /(?:^|[-_.])setup\.[cm]?[jt]sx?$/i;
-/** A whole-tree scan: any added or changed source can break it. */
-const SCANNER_RE = /\breaddirSync\b|\breaddir\(|import\.meta\.glob|\bglobSync\b/;
-/** Any `fs` read; a reader also names the file it reads. */
-const FS_READ_RE = /\breadFileSync\b|\breadFile\(|\breaddirSync\b|\bcreateReadStream\b/;
+// One source for "a module, a setup file, a scanner, a reader" with the
+// cross-package graph, so the two paths cannot drift apart.
+import { FS_READ_RE, MODULE_RE, SCANNER_RE, isSetupFile } from './impact-graph.mjs';
+
+/**
+ * Within its own package an `import.meta.glob` also counts as a scan: the
+ * related run hands vitest the changed files, and a file added under a glob
+ * is no import vitest's graph knew of before.
+ */
+const scans = (/** @type {string} */ text) => SCANNER_RE.test(text) || /import\.meta\.glob/.test(text);
 
 /** Above this many changed files the related set is no cheaper than the suite. */
 export const DEFAULT_MAX_FILES = 150;
@@ -62,8 +64,7 @@ export function planRelatedRun({ changed, deleted, testFiles, maxFiles = DEFAULT
   let sourceChanged = false;
   for (const p of paths) {
     if (gone.has(p)) return { mode: 'full', reason: `${p} was deleted or renamed` };
-    const base = p.split('/').pop() ?? p;
-    if (p.includes('__mocks__/') || SETUP_RE.test(base)) {
+    if (p.includes('__mocks__/') || isSetupFile(p)) {
       return { mode: 'full', reason: `${p} is a setup or mock file every test may load` };
     }
     if (p.startsWith('src/') && MODULE_RE.test(p)) {
@@ -78,9 +79,9 @@ export function planRelatedRun({ changed, deleted, testFiles, maxFiles = DEFAULT
   const names = [...paths, ...markdown].map((p) => p.split('/').pop() ?? p);
   for (const test of testFiles) {
     const path = normalize(test.path);
-    const scans = sourceChanged && SCANNER_RE.test(test.text);
+    const scanning = sourceChanged && scans(test.text);
     const reads = FS_READ_RE.test(test.text) && names.some((n) => test.text.includes(n));
-    if (scans || reads) files.add(path);
+    if (scanning || reads) files.add(path);
   }
   return { mode: 'related', files: [...files].sort() };
 }

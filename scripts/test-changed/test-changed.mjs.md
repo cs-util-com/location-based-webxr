@@ -62,7 +62,9 @@
     ([graph-dependents.mjs](graph-dependents.mjs.md), one `the import graph
     reaches ...` line), not pnpm's whole closure, and each runs only the
     unit tests the change reaches (or its full suite when a graph fallback
-    says so). The milestone run (no skip switch), a package's own
+    says so). The graph is built once per run: its reached set goes to a
+    temporary cache file named in `GATE_IMPACT_FILE`, which every unit stage
+    reads instead of rebuilding the graph. The milestone run (no skip switch), a package's own
     `pnpm test` and CI run every stage.
   - Selected packages run as `pnpm --filter "...<name>" test` — the `...`
     prefix adds all dependents (the safety closure) from pnpm's workspace

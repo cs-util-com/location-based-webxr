@@ -9,11 +9,12 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { trackedPaths, untrackedPaths } from './changed-paths.mjs';
-import { graphDependents } from './graph-dependents.mjs';
+import { IMPACT_FILE_ENV, graphDependents, readImpactCache, writeImpactCache } from './graph-dependents.mjs';
 import { gateCommands, selectPackages } from './select.mjs';
 
 let root = '';
@@ -48,6 +49,11 @@ beforeAll(() => {
   write('Dts/src/global.d.ts', "import type { b } from 'fw/b';\n");
   write('Rec/package.json', JSON.stringify({ name: 'rec' }));
   write('Rec/tsconfig.json', JSON.stringify({ files: ['../Fw/src/b.ts'] }));
+  // The Recorder's shape: a base that includes all framework sources, and the
+  // programs that extend it excluding the framework tests.
+  write('Rec/tsconfig.base.json', JSON.stringify({ include: ['src/**/*.ts', '../Fw/src/**/*.ts'] }));
+  write('Rec/tsconfig.app.json', JSON.stringify({ extends: './tsconfig.base.json', exclude: ['../Fw/src/**/*.test.ts'] }));
+  write('Fw/src/a.ts.md', '# a\n');
   git(['add', '.']);
   git(['commit', '-q', '-m', 'base']);
 });
@@ -83,8 +89,9 @@ describe('the fast gate on a real workspace', () => {
     write('Fw/src/a.ts', 'export const a = 2;\n');
     const { selection, dependents, commands } = fastGate();
     expect(selection.mode).toBe('packages');
-    expect(dependents.dirs).toEqual(['Tour']);
-    expect(dependents.line).toMatch(/reaches Tour \(1 unit test file/);
+    // Rec compiles every framework source (its tsconfig.base.json include).
+    expect(dependents.dirs).toEqual(['Rec', 'Tour']);
+    expect(dependents.line).toMatch(/reaches Rec, Tour \(1 unit test file/);
     expect(commands.some((c) => c.includes('--filter tour test'))).toBe(true);
     expect(commands.some((c) => c.includes('other') || c.includes('...fw'))).toBe(false);
     git(['checkout', '-q', '--', 'Fw/src/a.ts']);
@@ -101,13 +108,17 @@ describe('the fast gate on a real workspace', () => {
     git(['checkout', '-q', '--', 'Fw/src/b.ts']);
   });
 
+  // Why: a framework test file and a markdown sidecar sit under Rec's include
+  // glob, but no program of Rec compiles either (its programs exclude the
+  // framework tests, and markdown is no TypeScript).
   it('runs no dependent for a test-only change', () => {
     write('Fw/src/a.test.ts', "import { a } from './a';\n// more\n");
+    write('Fw/src/a.ts.md', '# a, changed\n');
     const { dependents, commands } = fastGate();
     expect(dependents.dirs).toEqual([]);
     expect(dependents.line).toMatch(/no other package/);
     expect(commands.filter((c) => /--filter (tour|other)\b|\.\.\.fw/.test(c))).toEqual([]);
-    git(['checkout', '-q', '--', 'Fw/src/a.test.ts']);
+    git(['checkout', '-q', '--', 'Fw/src/a.test.ts', 'Fw/src/a.ts.md']);
   });
 
   it('falls back to every dependent when the graph cannot be built', () => {
@@ -115,5 +126,38 @@ describe('the fast gate on a real workspace', () => {
       dirs: undefined,
       line: expect.stringMatching(/could not be built/),
     });
+  });
+});
+
+// Why: every package's unit stage rebuilt the whole graph (about 3.4k file
+// reads in this workspace) although test-changed.mjs had just built it for
+// the same ref. The gate now builds it once and hands the reached set down;
+// a cache written for another ref or root must never be read.
+describe('the impact cache the fast gate hands to each unit stage', () => {
+  it('round-trips the impact for its ref and root, and is refused for any other', () => {
+    const file = path.join(root, 'impact.json');
+    const impact = { tests: ['Tour/src/view.test.ts'], packages: ['Tour'], fullSuite: [] };
+    writeImpactCache(file, { ref: 'HEAD', root, impact });
+    expect(readImpactCache(file, { ref: 'HEAD', root })).toEqual(impact);
+    expect(readImpactCache(file, { ref: 'main', root })).toBeNull();
+    expect(readImpactCache(file, { ref: 'HEAD', root: `${root}-other` })).toBeNull();
+    expect(readImpactCache(path.join(root, 'missing.json'), { ref: 'HEAD', root })).toBeNull();
+    rmSync(file);
+  });
+
+  it("related-unit takes the reached set from the cache instead of building the graph", () => {
+    write('Fw/src/a.ts', 'export const a = 3;\n');
+    const file = path.join(tmpdir(), `impact-${process.pid}.json`);
+    const impact = { tests: [], packages: ['Tour'], fullSuite: [{ dir: 'Tour', reason: 'the cached reason' }] };
+    writeImpactCache(file, { ref: 'HEAD', root, impact });
+    const script = fileURLToPath(new URL('./related-unit.mjs', import.meta.url));
+    const out = execFileSync(process.execPath, [script, 'node', '-e', '0'], {
+      cwd: path.join(root, 'Tour'),
+      encoding: 'utf8',
+      env: { ...process.env, GATE_UNIT_RELATED_REF: 'HEAD', [IMPACT_FILE_ENV]: file },
+    });
+    expect(out).toMatch(/full suite - the cached reason/);
+    rmSync(file);
+    git(['checkout', '-q', '--', 'Fw/src/a.ts']);
   });
 });

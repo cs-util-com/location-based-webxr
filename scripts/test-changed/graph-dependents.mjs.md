@@ -15,9 +15,16 @@
 - Invariants & assumptions: reads git and the work tree (through
   `changedFiles` in [changed-paths.mjs](changed-paths.mjs.md) and
   `loadImpactGraph` in [workspace-tree.mjs](workspace-tree.mjs.md)); never
-  throws.
+  throws. `impact` in the result is the whole reached set; test-changed.mjs
+  writes it once per run with `writeImpactCache(file, { ref, root, impact })`
+  and names the file in `IMPACT_FILE_ENV` (`GATE_IMPACT_FILE`), and each
+  unit stage reads it with `readImpactCache(file, { ref, root })`, which
+  returns null for a missing or malformed file or another ref or root.
 - Example: a change to `Fw/src/a.ts` that only `Tour` imports gives
   `{ dirs: ['Tour'], line: 'test-changed: the import graph reaches Tour (1 unit test file(s)); other dependents run nothing' }`.
 - Tests: `graph-dependents.test.mjs`, end to end on a throwaway git
-  workspace: the emitted command is `--filter tour`, a test-only change runs
-  no dependent, a missing root falls back to every dependent.
+  workspace: the emitted command is `--filter tour` (plus `rec`, whose
+  Recorder-shaped tsconfig base includes every framework source), a
+  test-only change (a framework test file and a markdown sidecar under that
+  include glob) runs no dependent, a missing root falls back to every
+  dependent.

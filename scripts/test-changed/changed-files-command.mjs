@@ -9,7 +9,7 @@
 
 import path from 'node:path';
 
-/** Above this many files the whole command is as cheap and keeps cmd.exe's limit far away. */
+/** Above this many files the whole command is as cheap. */
 export const MAX_FILES = 100;
 
 const TOOLS = {
@@ -39,7 +39,7 @@ function owns(target, file) {
 /**
  * @param {string} command - the stage's command, run from the package dir
  * @param {readonly string[]} changed - package-relative changed files that exist
- * @returns {{ mode: 'files', files: string[], command: string }
+ * @returns {{ mode: 'files', files: string[], argv: string[] }
  *   | { mode: 'skip', reason: string }
  *   | { mode: 'full', reason: string }}
  */
@@ -76,6 +76,7 @@ export function narrowCommand(command, changed) {
   return {
     mode: 'files',
     files,
-    command: [tool, ...options, ...files.map((f) => `"${f}"`)].join(' '),
+    // An argv, run without a shell: a file name reaches the tool verbatim.
+    argv: [tool, ...options, ...files],
   };
 }

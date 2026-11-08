@@ -26,8 +26,9 @@
     markdown file selects nothing. The generated `docs/test-timings.md` is
     ignored.
   - More than `maxFiles` changes, a deleted or renamed file (its importers
-    are no longer in the graph), a setup file (`*setup.ts`, loaded before
-    every test without an import) or anything under `__mocks__/` -> full.
+    are no longer in the graph), a setup file (`setup.*`, `test-setup.*`,
+    `vitest.setup.*`, `setupTests.*`, loaded before every test without an
+    import; `creator-setup.ts` is ordinary source) or anything under `__mocks__/` -> full.
   - A module under `src/` (`.ts`, `.tsx`, `.js`, `.mjs`, `.cjs`, `.jsx`,
     test files included) goes to vitest's graph; a `.css` or `.html` file is
     passed too (harmless; no test imports it); a file under
@@ -37,8 +38,12 @@
   - Widening, because vitest's graph cannot see a read through `fs`:
     - READERS: a test that calls an `fs` read and names the basename of a
       changed file (page markup, a stylesheet, another module's source text);
-    - SCANNERS: a test that walks a directory (`readdirSync`,
-      `import.meta.glob`, `globSync`), whenever a module source changed.
+    - SCANNERS: a test that walks a directory (`readdirSync`, `readdir(`,
+      `globSync`, `fs.glob`, `opendirSync`, and in its own package
+      `import.meta.glob`), whenever a module source changed.
+    - The setup, scanner and reader patterns (`isSetupFile`, `SCANNER_RE`,
+      `FS_READ_RE`, `MODULE_RE`) come from [impact-graph.mjs](impact-graph.mjs.md),
+      the one source both paths read (r1139; the two copies had drifted).
 - Invariants & assumptions: spiked against vitest 5.0.0 in the Tour Viewer:
   a changed module selects the tests importing it (through the package's own
   aliases and source-consumed workspace packages), a changed test file

@@ -180,3 +180,22 @@ describe('mergeImpact', () => {
     expect(mergeImpact({ plan: full, impact, packageDir: 'Tour' })).toBe(full);
   });
 });
+
+// Why: the in-package plan and the cross-package graph (impact-graph.mjs)
+// decided "is this a setup file, a scanner, a reader?" with two copies of
+// each pattern that had drifted apart (r1125 review). They now share one
+// source, so the two paths cannot disagree again.
+describe('planRelatedRun: the patterns shared with the impact graph', () => {
+  it('a module whose name merely ends in setup is ordinary source, not a setup file', () => {
+    expect(plan({ changed: ['src/creator-setup.ts'] })).toEqual({ mode: 'related', files: ['src/creator-setup.ts'] });
+  });
+
+  it('counts opendirSync and fs.glob as scanners, and fs.promises and fetch as reads', () => {
+    for (const text of ['for await (const d of opendirSync(SRC)) check(d);', 'for await (const f of fs.glob("**")) check(f);']) {
+      expect(plan({ changed: ['src/b.ts'], testFiles: [{ path: 'src/s.test.ts', text }] }).files, text).toContain('src/s.test.ts');
+    }
+    for (const text of ["await fs.promises.readFile('index.html')", "await fetch('index.html')"]) {
+      expect(plan({ changed: ['index.html'], testFiles: [{ path: 'src/r.test.ts', text }] }).files, text).toContain('src/r.test.ts');
+    }
+  });
+});

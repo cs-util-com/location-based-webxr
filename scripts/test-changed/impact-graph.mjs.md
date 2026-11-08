@@ -18,8 +18,10 @@
     `fullSuite`: `{ dir, reason }` for each package whose whole unit suite
     must run. Paths may use either slash style.
   - `FULL_SUITE_RULES`: the named fallbacks below, each `{ name, test }`.
-  - `MODULE_RE`, `TSCONFIG_RE`, `isUnitTest(path)` (a `*.test.*` file outside
-    `playwright-tests/`).
+  - `MODULE_RE`, `TSCONFIG_RE`, `isUnitTest(path)` (a `*.test.*` file, or a
+    `*.spec.*` file under a `src/` folder, outside `playwright-tests/`; the
+    Recorder's vitest include lists `src/**/*.spec.ts`, while the design
+    system keeps Playwright specs beside its pages).
 - Edges (a reverse walk from every changed file):
   - imports: static `from`, `import()`, `vi.mock` and friends, `require`,
     `new URL(...)`, `import.meta.resolve`; a package specifier resolves
@@ -29,8 +31,17 @@
     prefix (`./kinds/${name}.js`) depends on every file under that prefix's
     folder, not its siblings;
   - config paths: a vite or vitest config depends on every existing module
-    it names by a path string (a `setupFiles` entry), relative to the config
-    or to the package;
+    its `setupFiles` or `globalSetup` names by a path string, relative to the
+    config or to the package. Other path strings (a coverage `exclude` naming
+    `src/main.ts`) load nothing and draw no edge;
+  - config aliases: a `resolve.alias` entry
+    (`'name': fileURLToPath(new URL('../dir', import.meta.url))`) is a
+    resolution rule for the files of the config's package (`name` and
+    `name/sub` resolve under `dir` first), not an import of the config. Read
+    as an import, the Recorder's and the globe's alias of the framework to its
+    `src` made each config import the framework index, so a change to the Osm
+    index ran both whole suites (12 packages, 521 test files, against 11 and
+    318 since; r1139);
   - readers: a module that reads through `fs` or `fetch` and names a changed
     file's basename; across packages it must also name that file's package
     directory;
@@ -38,13 +49,22 @@
     `globSync`, `fs.glob`, `opendirSync`) is reached by any non-test module
     change in its own package or in a package directory it names. An
     `import.meta.glob` is not a scanner: its folder edge is exact;
-  - type-level: a tsconfig's `include` and `files` entries that point into
-    another package draw edges (a glob to its literal folder, a file to
-    itself), so a framework change reaches the Recorder, whose
-    `tsconfig.base.json` compiles `../GpsPlusSlamJs_AppFramework/src/**/*.ts`,
-    and the globe, whose tsconfigs name single framework files. The arrays
-    are read with a pattern, since tsconfigs are JSONC. A declaration file's
-    imports are edges, and a specifier resolves to a `.d.ts` too.
+  - type-level: a tsconfig program's `include` and `files` entries that point
+    into another package draw an edge from every file they compile, so a
+    framework change reaches the Recorder, whose `tsconfig.base.json`
+    includes `../GpsPlusSlamJs_AppFramework/src/**/*.ts`, and the globe, whose
+    tsconfigs name single framework files. Matched as tsc matches: an include
+    glob by its own extension (never a `.md` sidecar, never a `.js` under a
+    `*.ts` glob), a folder or extensionless glob by module files only, minus
+    the program's `exclude` (a `files` entry is never excluded). `include`,
+    `files` and `exclude` are inherited through a relative `extends` until a
+    config sets its own. A tsconfig that another extends and none
+    `references` is a base, not a program: only its extenders count, so the
+    Recorder's base reaches no framework test, because its app and vitest
+    programs exclude them (before r1139 a framework test file or sidecar
+    reached the Recorder). The arrays are read with a pattern, since
+    tsconfigs are JSONC. A declaration file's imports are edges, and a
+    specifier resolves to a `.d.ts` too.
 - Fallbacks (`FULL_SUITE_RULES`; each runs the package's whole suite and its
   dependents', with the rule's name in the reason):
   - `deleted or renamed`: the graph no longer knows the file's importers;

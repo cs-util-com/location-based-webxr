@@ -28,8 +28,12 @@ describe('narrowCommand: prettier', () => {
     expect(r).toEqual({
       mode: 'files',
       files: ['README.md', 'index.html', 'src/a.ts'],
-      command:
-        'prettier --log-level warn --write --cache --cache-strategy content --ignore-unknown --no-error-on-unmatched-pattern "README.md" "index.html" "src/a.ts"',
+      argv: [
+        ...'prettier --log-level warn --write --cache --cache-strategy content --ignore-unknown --no-error-on-unmatched-pattern'.split(' '),
+        'README.md',
+        'index.html',
+        'src/a.ts',
+      ],
     });
   });
 
@@ -81,5 +85,19 @@ describe('narrowCommand: fallbacks', () => {
 
   it('accepts backslash paths and ignores duplicates', () => {
     expect(narrowCommand(PRETTIER, ['src\\a.ts', 'src/a.ts'])).toMatchObject({ files: ['src/a.ts'] });
+  });
+});
+
+// Why: the file names come from git and were interpolated into a
+// double-quoted shell word run with `shell: true`, where `$`, backticks and a
+// `"` in a name are still interpreted (r1136 review). The narrowed command is
+// now an argv, run without a shell, so a name reaches the tool verbatim.
+describe('narrowCommand: argv', () => {
+  it('returns the tool, its options and the files as argv, a name kept verbatim', () => {
+    const r = narrowCommand('prettier --check --ignore-unknown "src"', ['src/$(whoami).ts', 'src/`x`.ts', 'src/a"b.ts']);
+    expect(r).toMatchObject({
+      mode: 'files',
+      argv: ['prettier', '--check', '--ignore-unknown', 'src/$(whoami).ts', 'src/`x`.ts', 'src/a"b.ts'],
+    });
   });
 });

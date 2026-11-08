@@ -13,16 +13,25 @@
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import path from 'node:path';
 
 import { UNIT_RELATED_ENV } from '../test-timing/projects.mjs';
 import { changedFiles } from './changed-paths.mjs';
-import { impactOf } from './impact-graph.mjs';
+import { IMPACT_FILE_ENV, readImpactCache } from './graph-dependents.mjs';
+import { impactOf, isUnitTest } from './impact-graph.mjs';
+import { toolBin } from './package-bin.mjs';
 import { mergeImpact, planRelatedRun, relatedVitestArgs } from './related-tests.mjs';
 import { loadImpactGraph } from './workspace-tree.mjs';
 
-const TEST_FILE_RE = /\.test\.[cm]?[jt]sx?$/;
+/**
+ * The gate run's reached set: from the cache test-changed.mjs wrote for this
+ * ref and root (graph-dependents.mjs), else built here.
+ * @param {string} root @param {string} ref @param {string[]} everyChange
+ */
+function impactFor(root, ref, everyChange) {
+  const file = process.env[IMPACT_FILE_ENV];
+  return (file && readImpactCache(file, { ref, root })) || impactOf(loadImpactGraph(root), everyChange);
+}
 
 const fullCommand = process.argv.slice(2);
 const pkgDir = process.cwd();
@@ -51,7 +60,7 @@ function computePlan() {
     const changed = everyChange.flatMap(inPackage);
     const deleted = changed.filter((p) => !existsSync(path.join(pkgDir, p)));
     const testFiles = git(['ls-files', '--cached', '--others', '--exclude-standard', '.'])
-      .filter((p) => TEST_FILE_RE.test(p) && !p.startsWith('playwright-tests/'))
+      .filter((p) => isUnitTest(p))
       .filter((p) => existsSync(path.join(pkgDir, p)))
       .map((p) => ({ path: p, text: readFileSync(path.join(pkgDir, p), 'utf8') }));
     const own = planRelatedRun({ changed, deleted, testFiles });
@@ -59,7 +68,7 @@ function computePlan() {
     // reads): add the tests of this package that the import graph reaches.
     const outside = everyChange.some((p) => !p.replaceAll('\\', '/').startsWith(prefix));
     const plan = outside
-      ? mergeImpact({ plan: own, impact: impactOf(loadImpactGraph(root), everyChange), packageDir: prefix.slice(0, -1) })
+      ? mergeImpact({ plan: own, impact: impactFor(root, ref, everyChange), packageDir: prefix.slice(0, -1) })
       : own;
     if (plan.mode === 'full') return { reason: plan.reason };
     return { files: plan.files };
@@ -72,12 +81,7 @@ function computePlan() {
 function runVitest(args) {
   // Through node, not a shell: a long file list must not meet cmd.exe's
   // 8 191-character limit.
-  const require = createRequire(path.join(pkgDir, 'package.json'));
-  const pkgJson = require.resolve('vitest/package.json');
-  const bin = /** @type {{ bin: { vitest: string } }} */ (
-    JSON.parse(readFileSync(pkgJson, 'utf8'))
-  ).bin.vitest;
-  const child = spawnSync(process.execPath, [path.join(path.dirname(pkgJson), bin), ...args], {
+  const child = spawnSync(process.execPath, [toolBin(pkgDir, 'vitest'), ...args], {
     stdio: 'inherit',
     cwd: pkgDir,
   });
