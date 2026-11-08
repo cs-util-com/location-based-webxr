@@ -1,11 +1,25 @@
 /**
  * Why this test matters: the shelf's jobs end whenever they end - before
- * a save, between an undo and a redo, after "use the original" - and the
- * saved file must stay whole through any order of those. After every
- * save, each asset the written tour lists has an entry at its path whose
- * bytes are of that path's type (no WebP-named WAV, no orphan left behind),
- * nothing in `content/` is unlisted, and the narration the essay names is
- * listed. Real zips, read back with the viewer's reader.
+ * a save, while one runs, between an undo and a redo, after "use the
+ * original", across a reload or a crash - and neither the saved file nor
+ * the draft may lose or garble a file through any order of those. Each run
+ * drives a real session over a real draft (in memory) and a real file on
+ * disk (the last in-place save that landed), with two kinds of files: a
+ * voice brought in (made smaller as Opus, or as a smaller WAV at the same
+ * path) and a picture of the opened tour (made smaller at the same path,
+ * with a new size). Checked in every run, not across runs:
+ * - every save writes each listed asset at its path, with bytes of that
+ *   path's type and, for a picture, of the size the manifest names; nothing
+ *   in `content/` is unlisted; the narration's file is listed;
+ * - a reload after a clean close brings the tour back as it stood: the
+ *   same records and the same bytes for every listed asset;
+ * - after a crash (the draft as its last landed write left it) the tour
+ *   still saves whole by the rules above;
+ * - every file the document brought in or replaced is on the shelf.
+ * Planted bugs it caught before they were fixed: a reload that left the
+ * restored files off the shelf, a draft that dropped the original handed
+ * back while a save writing the smaller file ran, and a swap at the same
+ * path whose bytes no save wrote.
  */
 import {
   parseTourManifest,
@@ -18,13 +32,32 @@ import { readStoredEntryBytes } from "gps-plus-slam-app-framework/test-utils/zip
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
-import { tourOf, withWorldObjects } from "../test-support/tour-of.js";
-import { openTourFile } from "../tour-session.js";
 import { editorStore } from "../test-support/editor-store.js";
+import {
+  freeDraftLocks,
+  memoryDraftStores,
+  type MemoryDraftStores,
+} from "../test-support/memory-draft-stores.js";
+import { tourOf, withWorldObjects } from "../test-support/tour-of.js";
+import { openTourFile, type TourSession } from "../tour-session.js";
 import { zipBlobEntryNames } from "../zip-blob.js";
-import { ASSET_OPTIMIZERS } from "./asset-shelf/asset-optimizers.js";
-import { fakeOptimizer } from "./asset-shelf/test-support/fake-optimizer.js";
-import { createEditorSession } from "./editor-session.js";
+import {
+  ASSET_OPTIMIZERS,
+  type OptimizerHost,
+} from "./asset-shelf/asset-optimizers.js";
+import { selectShelfRows } from "./asset-shelf/asset-shelf-slice.js";
+import {
+  fakeOptimizer,
+  type FakeOptimizer,
+} from "./asset-shelf/test-support/fake-optimizer.js";
+import { createEditorDraft, type EditorDraft } from "./editor-draft.js";
+import {
+  createEditorSession,
+  type EditorSave,
+  type EditorSession,
+} from "./editor-session.js";
+
+const K = "local-file:00000000000000000000000000000005";
 
 const ESSAY: TourObject = {
   id: "t1",
@@ -36,131 +69,178 @@ const ESSAY: TourObject = {
   geo: { lat: 48.52, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
 };
 
+const PICTURE = "b".repeat(64);
+const PICTURE_PATH = `content/${PICTURE}.png`;
+
+/** A picture's bytes name their size, so a manifest naming another size
+ *  over them is caught. */
+const pictureBytes = (w: number, h: number, tag: string): Blob =>
+  new Blob([`PNG-|${String(w)}x${String(h)}|${tag}`]);
+
+/** A placed picture of the opened tour: what keeps its file listed. */
+const PHOTO: TourObject = {
+  id: "p1",
+  kind: "picture",
+  view: "plane",
+  image: PICTURE,
+  widthM: 1,
+  imageAsset: {
+    id: PICTURE,
+    path: PICTURE_PATH,
+    kind: "image",
+    width: 40,
+    height: 30,
+  },
+  createdAtIso: "2026-11-08T00:00:00.000Z",
+  geo: { lat: 48.52, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
+};
+
 const MANIFEST: TourManifest = parseTourManifest(
-  JSON.parse(serializeTourManifest(tourOf([ESSAY]))),
+  JSON.parse(serializeTourManifest(tourOf([ESSAY, PHOTO]))),
 );
 
 /** What a step of the run does. */
 type Op =
   | "voice"
-  | "finish"
+  | "finishOpus"
+  | "finishWav"
+  | "finishPicture"
   | "keep"
   | "crash"
-  | "useOriginal"
+  | "optimizeTour"
+  | "useVoiceOriginal"
+  | "usePictureOriginal"
   | "retry"
   | "save"
+  | "startSave"
+  | "finishSave"
   | "undo"
-  | "redo";
+  | "redo"
+  | "reload"
+  | "crashReload";
 
-const ops = fc.array(
-  fc.constantFrom<Op>(
-    "voice",
-    "finish",
-    "keep",
-    "crash",
-    "useOriginal",
-    "retry",
-    "save",
-    "undo",
-    "redo",
-  ),
-  { minLength: 1, maxLength: 12 },
-);
+const OPS: readonly Op[] = [
+  "voice",
+  "finishOpus",
+  "finishWav",
+  "finishPicture",
+  "keep",
+  "crash",
+  "optimizeTour",
+  "useVoiceOriginal",
+  "usePictureOriginal",
+  "retry",
+  "save",
+  "startSave",
+  "finishSave",
+  "undo",
+  "redo",
+  "reload",
+  "crashReload",
+];
+
+const ops = fc.array(fc.constantFrom(...OPS), { minLength: 1, maxLength: 16 });
 
 /** The type a written entry's bytes must have, by its path's ending. */
-const MAGIC: Record<string, string> = { wav: "RIFF", opus: "OggS" };
+const MAGIC: Record<string, string> = {
+  wav: "RIFF",
+  opus: "OggS",
+  png: "PNG-",
+};
 
-/** Saves that wrote a smaller file, over all runs: a guard against runs
- *  that never reach a swap and so check nothing about it. */
-let savedSwaps = 0;
+const settle = () => new Promise((r) => setTimeout(r, 0));
 
-describe("the shelf and the save, in any order", () => {
-  it("every save writes each listed asset at its path, with bytes of its type, and nothing unlisted", async () => {
-    await fc.assert(
-      fc.asyncProperty(ops, async (steps) => {
-        const zip = await packFilesAsZip([
-          { path: "tour.json", data: serializeTourManifest(MANIFEST) },
-        ]);
-        const session = await openTourFile(
-          new File([zip], "tour.zip", { type: "application/zip" }),
-        );
-        const fake = fakeOptimizer();
-        const editor = createEditorSession({
-          session,
-          manifest: MANIFEST,
-          levels: new Map(),
-          store: editorStore(),
-          optimizers: { ...ASSET_OPTIMIZERS, audio: fake },
-        });
-        const settle = () => new Promise((r) => setTimeout(r, 0));
-        let voices = 0;
-        try {
-          for (const step of steps) {
-            const id = await audioIdOf(editor);
-            switch (step) {
-              case "voice":
-                voices++;
-                await editor.editNarration("t1", {
-                  kind: "voice",
-                  file: new Blob([`RIFF-voice-${voices}-${"x".repeat(40)}`]),
-                  fileName: `voice-${voices}.wav`,
-                });
-                break;
-              case "finish":
-                if (fake.calls.length > 0) {
-                  fake.finish(new Blob([`OggS-${voices}`]), "opus");
-                }
-                break;
-              case "keep":
-                if (fake.calls.length > 0) fake.keep("kept");
-                break;
-              case "crash":
-                if (fake.calls.length > 0) fake.crash();
-                break;
-              case "useOriginal":
-                if (id !== null) await editor.shelf.useOriginal(id);
-                break;
-              case "retry":
-                if (id !== null) editor.shelf.retry(id);
-                break;
-              case "save":
-                await checkSaved((await editor.save({ keepScan: false })).blob);
-                break;
-              case "undo":
-                editor.undo();
-                break;
-              case "redo":
-                editor.redo();
-                break;
-            }
-            await settle();
-          }
-          await checkSaved((await editor.save({ keepScan: false })).blob);
-        } finally {
-          editor.shelf.close();
-          await session.close();
-        }
-      }),
-      { numRuns: 25 },
-    );
-    expect(savedSwaps).toBeGreaterThan(0);
-  }, 60_000);
-});
+const host: OptimizerHost = {
+  run: () => Promise.reject(new Error("unused")),
+  close: () => undefined,
+};
 
-async function audioIdOf(
-  editor: ReturnType<typeof createEditorSession>,
-): Promise<string | null> {
-  const facts = await editor.narration("t1");
-  return facts.kind === "narration" ? facts.audioId : null;
+/** One open of the tour: the file on disk, its draft and its editor. */
+interface World {
+  readonly session: TourSession;
+  readonly draft: EditorDraft;
+  readonly editor: EditorSession;
+  readonly store: ReturnType<typeof editorStore>;
+  readonly voices: FakeOptimizer;
+  readonly pictures: FakeOptimizer;
 }
 
-async function checkSaved(blob: Blob): Promise<void> {
-  const bytes = new Uint8Array(await blob.arrayBuffer());
-  const tour = parseTourManifest(
+function draftOf(stores: MemoryDraftStores): EditorDraft {
+  return createEditorDraft({
+    openStore: stores.open,
+    holdLock: freeDraftLocks,
+    noBackup: () => undefined,
+  });
+}
+
+/** Open `disk` as the page does: the draft first, then the session, then
+ *  what the draft offers put back. */
+async function openWorld(
+  disk: Blob,
+  stores: MemoryDraftStores,
+): Promise<World> {
+  const session = await openTourFile(
+    new File([disk], "tour.zip", { type: "application/zip" }),
+  );
+  const manifest = manifestOf(new Uint8Array(await disk.arrayBuffer()));
+  const draft = draftOf(stores);
+  const { offer } = await draft.open(K, manifest);
+  const store = editorStore();
+  const voices = fakeOptimizer();
+  const pictures = fakeOptimizer();
+  const editor = createEditorSession({
+    session,
+    manifest,
+    levels: new Map(),
+    store,
+    draft: draft.writes(),
+    optimizers: { ...ASSET_OPTIMIZERS, audio: voices, image: pictures },
+    optimizerHost: host,
+  });
+  if (offer !== null) editor.restore(offer);
+  await settle();
+  return { session, draft, editor, store, voices, pictures };
+}
+
+function manifestOf(bytes: Uint8Array): TourManifest {
+  return parseTourManifest(
     JSON.parse(
       new TextDecoder().decode(readStoredEntryBytes(bytes, "tour.json")),
     ),
   );
+}
+
+/** The ids of the assets the blocks of `tour` name (a voice, a picture). */
+function namedIds(tour: TourManifest): Set<string> {
+  return new Set(
+    withWorldObjects(tour).objects.flatMap((object) => {
+      const audio = (object as { narration?: { audio?: string } }).narration
+        ?.audio;
+      const image = object.kind === "picture" ? object.image : undefined;
+      return [audio, image].filter((id): id is string => id !== undefined);
+    }),
+  );
+}
+
+/** The assets a saved zip's blocks name, with their bytes as text: what a
+ *  reload must bring back (one kept only for an undo step leaves with the
+ *  undo history). */
+async function assetsOf(blob: Blob): Promise<unknown[]> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const tour = manifestOf(bytes);
+  const named = namedIds(tour);
+  return tour.assets
+    .filter((a) => named.has(a.id))
+    .map((a) => ({
+      ...a,
+      text: new TextDecoder().decode(readStoredEntryBytes(bytes, a.path)),
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
+async function checkSaved(blob: Blob): Promise<void> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const tour = manifestOf(bytes);
   const names = await zipBlobEntryNames(blob);
   const listed = tour.assets.map((a) => a.path);
   expect(names.filter((n) => n.startsWith("content/")).sort()).toEqual(
@@ -168,16 +248,204 @@ async function checkSaved(blob: Blob): Promise<void> {
   );
   for (const asset of tour.assets) {
     const ext = asset.path.slice(asset.path.lastIndexOf(".") + 1);
-    if (ext === "opus") savedSwaps++;
-    const head = new TextDecoder().decode(
-      readStoredEntryBytes(bytes, asset.path)?.slice(0, 4),
+    const text = new TextDecoder().decode(
+      readStoredEntryBytes(bytes, asset.path),
     );
-    expect(head).toBe(MAGIC[ext]);
+    expect(text.slice(0, 4), asset.path).toBe(MAGIC[ext]);
+    if (asset.kind === "image") {
+      expect(text, asset.path).toContain(
+        `|${String(asset.width)}x${String(asset.height)}|`,
+      );
+    }
   }
   const ids = new Set(tour.assets.map((a) => a.id));
-  for (const object of withWorldObjects(tour).objects) {
-    const audio = (object as { narration?: { audio?: string } }).narration
-      ?.audio;
-    if (audio !== undefined) expect(ids.has(audio)).toBe(true);
+  for (const id of namedIds(tour)) expect(ids.has(id), id).toBe(true);
+}
+
+/** Every file the document brought in or replaced is on the shelf. */
+function checkShelf(world: World): void {
+  const state = world.store.getState();
+  const rows = new Set(selectShelfRows(state).map((r) => r.id));
+  for (const asset of state.tourDocument.addedAssets) {
+    expect(rows.has(asset.id), `${asset.id} on the shelf`).toBe(true);
   }
 }
+
+async function voiceIdOf(editor: EditorSession): Promise<string | null> {
+  const facts = await editor.narration("t1");
+  return facts.kind === "narration" ? facts.audioId : null;
+}
+
+describe("the shelf, the save and the draft, in any order", () => {
+  it("every save is whole, a reload loses nothing, a crash breaks nothing", async () => {
+    const opened = await packFilesAsZip([
+      { path: "tour.json", data: serializeTourManifest(MANIFEST) },
+      { path: PICTURE_PATH, data: pictureBytes(40, 30, "original") },
+    ]);
+    await fc.assert(
+      fc.asyncProperty(ops, async (steps) => {
+        let disk = opened;
+        let stores = memoryDraftStores();
+        let world = await openWorld(disk, stores);
+        let pending: Promise<EditorSave> | null = null;
+        let n = 0;
+        /** Each reload: the tour before it and as it came back. */
+        const reloads: { before: unknown[]; after: unknown[] }[] = [];
+        /** The in-place save `save` lands: the file on disk, the draft. */
+        const land = async (save: EditorSave): Promise<void> => {
+          await checkSaved(save.blob);
+          disk = save.blob;
+          world.draft.writes().landed(save.written, K, save.wrote);
+        };
+        const finishPending = async (): Promise<void> => {
+          if (pending === null) return;
+          const save = await pending;
+          pending = null;
+          await land(save);
+        };
+        const leave = async (w: World): Promise<void> => {
+          w.editor.shelf.close();
+          w.draft.close();
+          await w.session.close();
+        };
+        try {
+          for (const step of steps) {
+            n++;
+            const { editor, voices, pictures } = world;
+            switch (step) {
+              case "voice":
+                await editor.editNarration("t1", {
+                  kind: "voice",
+                  file: new Blob([`RIFF-voice-${String(n)}-${"x".repeat(40)}`]),
+                  fileName: `voice-${String(n)}.wav`,
+                });
+                break;
+              case "finishOpus":
+                if (voices.calls.length > 0) {
+                  voices.finish(new Blob([`OggS-${String(n)}`]), "opus");
+                }
+                break;
+              case "finishWav":
+                if (voices.calls.length > 0) {
+                  voices.finish(new Blob([`RIFF-${String(n)}`]), "wav");
+                }
+                break;
+              case "finishPicture":
+                if (pictures.calls.length > 0) {
+                  pictures.finish(pictureBytes(4, 3, String(n)), "png", {
+                    width: 4,
+                    height: 3,
+                  });
+                }
+                break;
+              case "keep":
+                if (voices.calls.length > 0) voices.keep("kept");
+                break;
+              case "crash":
+                if (voices.calls.length > 0) voices.crash();
+                break;
+              case "optimizeTour":
+                editor.shelf.optimizeTour();
+                break;
+              case "useVoiceOriginal": {
+                const id = await voiceIdOf(editor);
+                if (id !== null) await editor.shelf.useOriginal(id);
+                break;
+              }
+              case "usePictureOriginal":
+                await editor.shelf.useOriginal(PICTURE);
+                break;
+              case "retry": {
+                const id = await voiceIdOf(editor);
+                if (id !== null) editor.shelf.retry(id);
+                break;
+              }
+              case "save":
+                await finishPending();
+                await land(
+                  await editor.save({ keepScan: false, inPlace: true }),
+                );
+                break;
+              case "startSave":
+                pending ??= editor.save({ keepScan: false, inPlace: true });
+                break;
+              case "finishSave":
+                await finishPending();
+                break;
+              case "undo":
+                editor.undo();
+                break;
+              case "redo":
+                editor.redo();
+                break;
+              case "reload": {
+                await finishPending();
+                const before = await assetsOf(
+                  (await editor.saveCopy({ keepScan: false })).blob,
+                );
+                await world.draft.idle();
+                await leave(world);
+                world = await openWorld(disk, stores);
+                const after = await assetsOf(
+                  (await world.editor.saveCopy({ keepScan: false })).blob,
+                );
+                reloads.push({ before, after });
+                break;
+              }
+              case "crashReload": {
+                // The tab dies: a save still running never lands, and the
+                // draft holds what its writes so far left.
+                const dropped = pending;
+                pending = null;
+                void dropped?.catch(() => undefined);
+                const left = memoryDraftStores();
+                for (const [key, files] of stores.spaces) {
+                  left.spaces.set(key, new Map(files));
+                }
+                const dead = world;
+                stores = left;
+                world = await openWorld(disk, stores);
+                await dropped?.catch(() => undefined);
+                await leave(dead);
+                await checkSaved(
+                  (await world.editor.saveCopy({ keepScan: false })).blob,
+                );
+                break;
+              }
+            }
+            await settle();
+            checkShelf(world);
+          }
+          await finishPending();
+          await land(
+            await world.editor.save({ keepScan: false, inPlace: true }),
+          );
+          for (const { before, after } of reloads)
+            expect(after).toEqual(before);
+        } finally {
+          await leave(world);
+        }
+      }),
+      {
+        numRuns: 40,
+        // The orders the review found broken, run every time: a reload
+        // with a large file still on the shelf; "use the original" while a
+        // save writing the smaller file runs, then a reload; a picture made
+        // smaller at its own path, saved, then reloaded.
+        examples: [
+          [["voice", "reload", "finishOpus", "save", "reload"]],
+          [
+            [
+              "optimizeTour",
+              "finishPicture",
+              "startSave",
+              "usePictureOriginal",
+              "reload",
+            ],
+          ],
+          [["optimizeTour", "finishPicture", "save", "reload", "save"]],
+        ],
+      },
+    );
+  }, 120_000);
+});
