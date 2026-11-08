@@ -1,12 +1,13 @@
 /**
  * A kind's part in the world: the one three.js object a station shows for
- * an item, and what the page may ask of it (a tap, a frame, leaving and
- * coming back, going). The renderer places it (`content-placement.ts`);
+ * an item, and what the page may ask of it (a tap, going). A frame tick
+ * and leaving and coming back are added when a kind needs them, with
+ * their driver (PR #874 review: none had one). The renderer places it (`content-placement.ts`);
  * the part itself never touches the scene, the camera, the renderer or the
  * frame loop.
  *
  * Every mounted part sits in one set (`mountWorldPart`), so the page finds
- * a tapped part, or one to tick, the same way for every kind. A part may
+ * a tapped part the same way for every kind. A part may
  * show nothing (an empty `Object3D`, a sound zone): it is still mounted,
  * placed and freed, and takes no tap.
  *
@@ -28,14 +29,6 @@ import { shownIn } from "./model-visitor.js";
  *  same object, still and silent). */
 export type WorldMode = "play" | "edit";
 
-/** One rendered frame, as a part's `update` reads it. */
-interface WorldFrame {
-  /** The page clock, in seconds. */
-  readonly seconds: number;
-  /** The viewer's position in the part's parent frame (metres). */
-  readonly viewer: readonly [number, number, number];
-}
-
 /** What a kind's world part is given to build itself. */
 export interface WorldEnv {
   readonly mode: WorldMode;
@@ -52,12 +45,8 @@ export interface WorldPart {
   /** What a tap is cast against (a stand's page, not its legs); none: the
    *  part takes no tap. */
   readonly tapTarget?: Object3D;
-  update?(frame: WorldFrame): void;
   /** The visitor tapped `tapTarget`. */
   tap?(): void;
-  /** The station's content stopped showing; `back` when it shows again. */
-  leave?(): void;
-  back?(): void;
   /** Frees every geometry, material and texture the part made. */
   dispose(): void;
 }
