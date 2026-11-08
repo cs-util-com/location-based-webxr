@@ -12,9 +12,11 @@ import { SQUARE_GROUND_M, answerHosts, openZip } from "./editor3d-fixture.js";
  * Why these tests matter: a station's items are moved in the tree - a free
  * item into a story, an entry from one story to another, an entry out to
  * stand free - by the grip's drag, by the inspector's Earlier, Later and
- * Move buttons, and by a finger on a phone. Each move must be ONE step of
- * the history, keep the item selected, and a drag broken off with Escape
- * must write nothing. The move rule, the list maths and the drag each have
+ * Move buttons, and by a finger on a phone - and onto another station, by
+ * a drag onto its card or the inspector's Move to station, asked first.
+ * Each move must be ONE step of the history, keep the item selected, and a
+ * drag broken off with Escape, released where it cannot land or answered
+ * no must write nothing. The move rule, the list maths and the drag each have
  * unit tests; only the page shows the tree's markup, the drag, the session
  * and the toasts agreeing.
  */
@@ -27,8 +29,9 @@ test.describe.configure({ mode: "default" });
 const N_M = 45.68;
 
 /**
- * A tour of one station: two stories ("First" with two entries, "Second"
- * with one) and a free pin.
+ * A tour of two stations: "Station A" with two stories ("First" with two
+ * entries, "Second" with one) and a free pin, and "Station B" about 100 m
+ * east with a free pin of its own.
  * @returns {Promise<Buffer>}
  */
 async function storiesTour() {
@@ -78,6 +81,29 @@ async function storiesTour() {
           },
         ],
       },
+      {
+        id: "b",
+        title: "Station B",
+        geo: {
+          lat: 48.13725,
+          lon: 11.57684,
+          alt: SQUARE_GROUND_M + N_M,
+          headingDeg: 0,
+        },
+        activateRadiusM: 50,
+        foundRadiusM: 25,
+        hint: "arrow",
+        children: [
+          {
+            id: "bpin",
+            kind: "shortText",
+            view: "pin",
+            caption: "B's pin",
+            createdAtIso: "2026-10-25T09:00:00.000Z",
+            pose,
+          },
+        ],
+      },
     ],
   };
   const writer = new ZipWriter(new Uint8ArrayWriter());
@@ -105,6 +131,20 @@ function lists(page) {
       } else out["free"]?.push(child.id);
     }
     return out;
+  });
+}
+
+/**
+ * Station B's free items as the tour holds them: id and position.
+ * @param {import("@playwright/test").Page} page
+ * @returns {Promise<{ id: string, position: number[] }[]>}
+ */
+function stationB(page) {
+  return page.evaluate(() => {
+    const tour = /** @type {any} */ (window).__tourEditor.manifest();
+    return tour.stations[1].children
+      .filter((/** @type {any} */ c) => c.kind !== "story")
+      .map((/** @type {any} */ c) => ({ id: c.id, position: c.pose.position }));
   });
 }
 
@@ -253,6 +293,36 @@ test("the grip's drag moves a station's items between its stories and its free i
     page.locator(".toast", { hasText: "now stands in the world" }),
   ).toBeVisible();
 
+  // A drag held over its own place, and over the station's row (a free
+  // item among the free items is no move), lands nowhere: nothing is
+  // marked, the ghost says so and the page shows the not-allowed cursor,
+  // and a release writes nothing. A drag that snapped to the nearest list
+  // taking the item put it into a story at every release.
+  const refusedGhost = page.locator(".nest-ghost[data-refused]");
+  const marks = card.locator(".drop-before, .drop-after, .drop-into");
+  await drag(
+    page,
+    "e2",
+    middle(await box(card.locator('.kid[data-select="e2"]'))),
+    true,
+  );
+  await expect(refusedGhost).toBeVisible();
+  await expect(refusedGhost).toContainText("Not possible here");
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-nest-drag",
+    "refused",
+  );
+  await expect(marks).toHaveCount(0);
+  const head = middle(await box(card.locator(":scope > .head")));
+  await page.mouse.move(head.x, head.y, { steps: 4 });
+  await expect(refusedGhost).toBeVisible();
+  await expect(marks).toHaveCount(0);
+  await page.mouse.up();
+  await expect(page.locator(".nest-ghost")).toHaveCount(0);
+  await expect(page.locator("html")).not.toHaveAttribute("data-nest-drag");
+  expect(await revision(page)).toBe(start + 3);
+  expect((await lists(page))["free"]).toEqual(["e2"]);
+
   // Escape mid-drag: the marks go, and nothing is written.
   await drag(
     page,
@@ -331,6 +401,86 @@ test("the inspector's Earlier, Later and Move buttons move the selected entry, k
   ).toBeVisible();
 });
 
+// Why: an item dragged onto another station must not land in its own
+// station's nearest story (the drag once snapped there), and the move does
+// not keep its place in the world, so the page asks first: no writes
+// nothing, yes moves it as one step to that station's centre and the view
+// flies there.
+test("a drag onto another station's card asks first: no writes nothing, yes moves it to that centre", async ({
+  page,
+}) => {
+  test.slow();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openStories(page);
+  const card = await unfold(page);
+  const other = page.locator('#tree-body .card[data-station="b"]');
+  const start = await revision(page);
+  /** @type {string[]} */
+  const asked = [];
+
+  await drag(
+    page,
+    "pin",
+    middle(await box(other.locator(":scope > .head"))),
+    true,
+  );
+  await expect(other).toHaveClass(/drop-across/);
+  await expect(
+    card.locator(".drop-before, .drop-after, .drop-into"),
+  ).toHaveCount(0);
+  page.once("dialog", (dialog) => {
+    asked.push(dialog.message());
+    void dialog.dismiss();
+  });
+  await page.mouse.up();
+  await expect.poll(() => asked.length).toBe(1);
+  expect(asked[0]).toContain("centre of that station");
+  expect(await revision(page)).toBe(start);
+  expect((await lists(page))["free"]).toEqual(["pin"]);
+
+  page.once("dialog", (dialog) => {
+    void dialog.accept();
+  });
+  await drag(page, "pin", middle(await box(other.locator(":scope > .head"))));
+  await expect
+    .poll(() => stationB(page))
+    .toEqual([
+      { id: "bpin", position: [2, 1.5, 0] },
+      { id: "pin", position: [0, 0, 0] },
+    ]);
+  expect((await lists(page))["free"]).toEqual([]);
+  expect(await revision(page)).toBe(start + 1);
+  await expect(
+    page.locator(".toast", { hasText: 'Moved to "Station B"' }),
+  ).toBeVisible();
+  // The view flew to Station B: its centre near the middle of the view.
+  const canvas = await box(page.locator("#view3d canvas"));
+  await expect
+    .poll(
+      async () => {
+        const at = await page.evaluate(() =>
+          /** @type {any} */ (window).__tourEditor.view3dScreenOf("station:b"),
+        );
+        return at === null
+          ? Infinity
+          : Math.hypot(at[0] - canvas.width / 2, at[1] - canvas.height / 2) /
+              Math.min(canvas.width, canvas.height);
+      },
+      { timeout: 30_000 },
+    )
+    .toBeLessThan(0.15);
+
+  // One step: an undo gives it back to Station A.
+  await page.keyboard.press("Control+z");
+  await expect
+    .poll(() => lists(page))
+    .toEqual({
+      s1: ["e1", "e2"],
+      s2: ["e3"],
+      free: ["pin"],
+    });
+});
+
 test.describe("on a phone", () => {
   test.use({ hasTouch: true });
 
@@ -400,5 +550,21 @@ test.describe("on a phone", () => {
         free: ["e3"],
       });
     expect(await revision(page)).toBe(start + 2);
+
+    // Onto another station from the inspector's picker, asked first.
+    page.once("dialog", (dialog) => {
+      void dialog.accept();
+    });
+    await page
+      .locator("#inspector-body select[data-move-station]")
+      .selectOption("b");
+    await expect
+      .poll(() => stationB(page))
+      .toEqual([
+        { id: "bpin", position: [2, 1.5, 0] },
+        { id: "e3", position: [0, 0, 0] },
+      ]);
+    expect(await selected(page)).toBe("e3");
+    expect(await revision(page)).toBe(start + 3);
   });
 });

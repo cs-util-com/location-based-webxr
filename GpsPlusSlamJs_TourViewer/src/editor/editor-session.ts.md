@@ -204,7 +204,8 @@ never state). Design:
       tree's and the inspector's story edits, each one step, a refusal said
       in the creator's words.
     - `moveChild(id, to)` - a station's item or story moved within its
-      station (`ChildMoveTo` of `station-children-moves.ts`; the tree's
+      station, or onto another (`{ place: "station", station }`, standing
+      at its centre) (`ChildMoveTo` of `station-children-moves.ts`; the tree's
       drag and the inspector's Earlier, Later and Move buttons), one step
       (`childMoved`): `{ kind: "moved", answers, floored }` (how many
       answers that led to it now go on to the next entry, and whether it

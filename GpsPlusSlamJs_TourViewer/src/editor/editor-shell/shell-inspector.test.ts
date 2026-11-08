@@ -930,6 +930,7 @@ describe("drawInspector", () => {
             { list: "free", label: "Move out of the story" },
             { list: "story:aside", label: 'Move into "Aside"' },
           ],
+          stations: [{ id: "mill", label: "The mill" }],
         },
       },
       FOLD,
@@ -951,6 +952,18 @@ describe("drawInspector", () => {
     ).toEqual([
       ["move-to:free", "Move out of the story"],
       ["move-to:story:aside", 'Move into "Aside"'],
+    ]);
+    // The phone's and the keyboard's way onto another station: a picker
+    // whose first, disabled option names it, then each station it may go to.
+    const pick = dock.body.querySelector<HTMLSelectElement>(
+      "select[data-move-station]",
+    );
+    expect(pick?.getAttribute("aria-label")).toBe("Move to station");
+    expect(
+      [...(pick?.options ?? [])].map((o) => [o.value, o.disabled]),
+    ).toEqual([
+      ["", true],
+      ["mill", false],
     ]);
   });
 

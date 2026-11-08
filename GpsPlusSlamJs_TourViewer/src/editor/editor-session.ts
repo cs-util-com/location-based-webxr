@@ -383,7 +383,7 @@ function unsavedRefusal(manifest: TourManifest, id: string): string {
 /** What the history calls the station's item or story `id`: a story by
  *  its title, a story's child as its delete does, a free item by the one
  *  rule (`objectTitle`). */
-function childCalled(manifest: TourManifest, id: string): string {
+export function childCalled(manifest: TourManifest, id: string): string {
   const place = tourChildPlace(manifest, id);
   if (place === null) return "the item";
   if (place.story !== undefined) {

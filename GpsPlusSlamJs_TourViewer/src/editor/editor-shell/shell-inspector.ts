@@ -1114,7 +1114,8 @@ function headLook(model: InspectorModel): {
 
 /** A station's item's or story's moves within its station: Earlier and
  *  Later beside its place (as a station's are), and a "Move" button per
- *  list it may go into (`move-to:<list>`); none for a code or a
+ *  list it may go into (`move-to:<list>`) and a picker of the other
+ *  stations it may go onto (`data-move-station`); none for a code or a
  *  station. */
 function moveParts(model: InspectorModel, sub: HTMLElement): HTMLElement[] {
   const moves = "moves" in model ? model.moves : undefined;
@@ -1128,18 +1129,43 @@ function moveParts(model: InspectorModel, sub: HTMLElement): HTMLElement[] {
     later.disabled = !step.later;
     sub.append(el("span", "sp"), earlier, later);
   }
-  if (targets.length === 0) return [];
-  return [
-    actions(
-      targets.map((t) =>
-        action(
-          `move-to:${t.list}`,
-          t.list === FREE_LIST ? "station" : "story",
-          t.label,
+  const parts: HTMLElement[] = [];
+  if (targets.length > 0) {
+    parts.push(
+      actions(
+        targets.map((t) =>
+          action(
+            `move-to:${t.list}`,
+            t.list === FREE_LIST ? "station" : "story",
+            t.label,
+          ),
         ),
       ),
-    ),
-  ];
+    );
+  }
+  if (moves.stations.length > 0) parts.push(stationPicker(moves.stations));
+  return parts;
+}
+
+/** The words of the station picker's first, unchosen line. */
+const MOVE_TO_STATION = "Move to station…";
+
+/** The inspector's Move to station: a native picker of the other stations
+ *  the item may go onto (a finger's list on a phone, the arrow keys on a
+ *  desktop), `data-move-station`; choosing one moves it there. */
+function stationPicker(
+  stations: readonly { readonly id: string; readonly label: string }[],
+): HTMLElement {
+  const box = el("div", "acts move-station");
+  box.append(shellIcon("station"));
+  const select = el("select", "move-station-pick");
+  select.dataset["moveStation"] = "";
+  select.setAttribute("aria-label", "Move to station");
+  const first = new Option(MOVE_TO_STATION, "", true, true);
+  first.disabled = true;
+  select.append(first, ...stations.map((st) => new Option(st.label, st.id)));
+  box.append(select);
+  return box;
 }
 
 /** The dock's parts for `model`, the station's commands beside `sub`. */

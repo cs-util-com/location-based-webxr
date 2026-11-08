@@ -46,6 +46,7 @@ import {
   type EditorViewState,
 } from "./editor-view.js";
 import {
+  childMoveChange,
   manifestToWrite,
   selectTourDocument,
   stationDeleteRefusal,
@@ -55,6 +56,7 @@ import {
   type TourSaveStatus,
 } from "../tour-document.js";
 import type { ChildMoveTo } from "../station-children-moves.js";
+import { stationMoveQuestion } from "./station-move-question.js";
 import { describeIntegrityError, olderFormatRefusal } from "../open-errors.js";
 import { debugCapturesOf, type DebugCapture } from "../debug-captures.js";
 import { pictureProblem } from "../image-cap.js";
@@ -159,6 +161,7 @@ import {
   type AutosaveOutcome,
 } from "gps-plus-slam-app-framework/storage/autosave";
 import {
+  childCalled,
   copyFileName,
   createEditorSession,
   datedFileName,
@@ -1728,21 +1731,37 @@ function reorderStations(order: readonly string[]): void {
 }
 
 /** A station's item moved within its station (the tree's drag, the
- *  inspector's Move to, Earlier and Later): one step, the selection kept.
- *  What the move changed beyond its place is said: answers that led to it
- *  now go on, or the view it took to stand in the world. */
-function moveChild(id: string, to: ChildMoveTo): void {
-  if (editor === null) return;
+ *  inspector's Move to, Earlier and Later) or onto another one (the drag
+ *  onto its card, the inspector's Move to station): one step, the
+ *  selection kept. A move onto another station asks first
+ *  (`stationMoveQuestion`: the item will stand at its centre); answered
+ *  no, nothing is written. What the move changed beyond its place is
+ *  said: answers that led to it now go on, or the view it took to stand in
+ *  the world. Whether it moved. */
+function moveChild(id: string, to: ChildMoveTo): boolean {
+  if (editor === null) return false;
+  if (
+    to.place === "station" &&
+    childMoveChange(store.getState().tourDocument, id, to).kind === "moved" &&
+    !confirmPausingFrames(
+      stationMoveQuestion(movingSubject(id), stationTitleOf(to.station)),
+    )
+  ) {
+    return false;
+  }
   endUndo();
   const outcome = editor.moveChild(id, to);
   refresh();
   if (outcome.kind === "refused") {
     toast(outcome.reason);
-    return;
+    return false;
   }
-  if (outcome.kind !== "moved") return;
+  if (outcome.kind !== "moved") return false;
   tourChanged();
-  const notes: string[] = [];
+  const notes: string[] =
+    to.place === "station"
+      ? [`Moved to "${stationTitleOf(to.station)}": place it again there.`]
+      : [];
   if (outcome.answers > 0) {
     notes.push(
       outcome.answers === 1
@@ -1756,6 +1775,21 @@ function moveChild(id: string, to: ChildMoveTo): void {
     );
   }
   if (notes.length > 0) toast(notes.join(" "));
+  return true;
+}
+
+/** What a move of the station child `id` moves, named as the history
+ *  names it (`childCalled`): a story, or one item. */
+function movingSubject(id: string): {
+  kind: "story" | "item";
+  name: string;
+} {
+  const tour = manifestToWrite(store.getState().tourDocument);
+  if (tour === null) return { kind: "item", name: "" };
+  const story = tour.stations.some((s) =>
+    tourStories(s).some((t) => t.id === id),
+  );
+  return { kind: story ? "story" : "item", name: childCalled(tour, id) };
 }
 
 /** An item given a station of its own where it stands ("Move to a new

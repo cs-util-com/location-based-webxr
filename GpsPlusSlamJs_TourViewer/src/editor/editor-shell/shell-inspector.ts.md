@@ -142,7 +142,10 @@ content` (Chromium, the editor's browser; elsewhere it stays three
   keyboard's way to reorder. A story's and an entry's line holds the same
   pair ("Earlier in the story", "Later in the story", or "among the
   stories" for a story), and the commands add one Move button per target
-  of `moves` (`data-act` `move-to:<list>`).
+  of `moves` (`data-act` `move-to:<list>`), and, where `moves.stations`
+  is not empty, a "Move to station..." picker (`select[data-move-station]`,
+  named "Move to station", its first option disabled) whose choice the
+  shell moves to that station's centre, asked first.
 - The selection's commands in words (`.acts`, the prototype's): a
   station's "Put items on the ground"
   (`ground-items`, its note "N off", off when none is) and "Delete

@@ -3578,3 +3578,86 @@ body[data-view="3d"] #toasts {
   outline: 2px solid var(--s-accent);
   outline-offset: -2px;
 }
+
+/* The dragged item's picture at the pointer (the kit's nested drag), and
+ * where it cannot land its badge, which a finger reads without a cursor;
+ * the whole page then shows the not-allowed cursor. */
+.nest-ghost {
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 220px;
+  padding: 4px 8px;
+  border: 1px solid var(--s-accent);
+  border-radius: 6px;
+  background: var(--s-bg1);
+  color: var(--s-text);
+  font-size: 12px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 35%);
+}
+
+.nest-ghost-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nest-ghost-no {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  color: var(--s-danger);
+  font-weight: 600;
+}
+
+.nest-ghost-no svg.i {
+  width: 12px;
+  height: 12px;
+}
+
+.nest-ghost[data-refused] {
+  border-color: var(--s-danger);
+}
+
+.nest-ghost[data-refused] .nest-ghost-no {
+  display: flex;
+}
+
+:root[data-nest-drag="refused"],
+:root[data-nest-drag="refused"] * {
+  cursor: not-allowed !important;
+}
+
+/* Another station a dragged item lands on as a whole. */
+.card.drop-across {
+  outline: 2px dashed var(--s-accent);
+  outline-offset: -2px;
+}
+
+/* The inspector's Move to station: the station icon beside a native
+ * picker of the other stations (a finger's list on a phone). */
+.acts.move-station {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding-left: 14px;
+}
+
+.move-station-pick {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--s-line);
+  border-radius: 4px;
+  background: var(--s-bg1);
+  color: var(--s-text);
+  font: inherit;
+}
+
+@media (pointer: coarse) {
+  .move-station-pick {
+    height: 40px;
+  }
+}

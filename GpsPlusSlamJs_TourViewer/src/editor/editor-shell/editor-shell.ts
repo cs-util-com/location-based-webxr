@@ -126,6 +126,7 @@ import {
   childDropTo,
   childMayGo,
   childStepTo,
+  movedToStation,
   type ChildMoveTo,
 } from "../../station-children-moves.js";
 import { createTreeAddMenu } from "./tree-add-menu.js";
@@ -182,8 +183,9 @@ interface ShellStationCommands {
   add(at: GroundPlace, where: "centre" | "here"): void;
   /** The stations in `order` (every station once). */
   reorder(order: readonly string[]): void;
-  /** A station's item (a story by its id) moved within its station. */
-  moveChild(id: string, to: ChildMoveTo): void;
+  /** A station's item (a story by its id) moved within its station or
+   *  onto another (asked first): whether it moved. */
+  moveChild(id: string, to: ChildMoveTo): boolean;
   /** An item into a station of its own, where it stands. */
   split(itemId: string): void;
   /** The selection (`station:<id>` or an item's id) copied beside itself. */
@@ -1141,6 +1143,17 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     )?.focus();
   };
 
+  /** The station child `id` moved onto the station `station` (the drag
+   *  onto its card, the inspector's Move to station); where it went, the
+   *  view flies to that station's centre, where the item now stands. */
+  const moveToStation = (id: string, station: string): boolean => {
+    if (!deps.stations.moveChild(id, { place: "station", station })) {
+      return false;
+    }
+    view?.flyTo(`${STATION_PREFIX}${station}`);
+    return true;
+  };
+
   /** After the inspector's Delete the focus would fall to the page: it
    *  goes to the tree card that took the deleted station's place (the one
    *  before it at the end), for an item to its station's card, and to the
@@ -1430,10 +1443,11 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     },
   });
   // An item's or a story's grip (`shell-tree.ts`): among the stories,
-  // between a story and another or the station's free items, never into
-  // another station. A list offered is one the move takes; a free item
-  // among the free items is no move (they have no order), and one whose
-  // file the tour on disk lacks goes into no story (`freeItemUnsaved`).
+  // between a story and another or the station's free items, or onto
+  // another station's card as a whole (asked first, `moveToStation`). A
+  // list offered is one the move takes; a free item among the free items
+  // is no move (they have no order), and one whose file the tour on disk
+  // lacks goes into no story (`freeItemUnsaved`).
   createNestDrag({
     body: tree.body,
     grip: "[data-move]",
@@ -1446,6 +1460,20 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         : { list, id: item };
     },
     intoOf: (row) => row.dataset["into"] ?? null,
+    label: (row) => row.querySelector(".nm")?.textContent ?? "",
+    across: {
+      keyOf: (card) => card.dataset["station"] ?? null,
+      accepts: (from, key) => {
+        const tour = manifest();
+        const place = tour === null ? null : tourChildPlace(tour, from.id);
+        const target = tour?.stations.find((s) => s.id === key);
+        return (
+          place !== null &&
+          target !== undefined &&
+          !("refused" in movedToStation(place.station, target, from.id))
+        );
+      },
+    },
     accepts: (from, to) => {
       if (from.list === FREE_LIST && to === FREE_LIST) return false;
       if (to !== FREE_LIST && freeItemUnsaved(state().tourDocument, from.id)) {
@@ -1456,6 +1484,10 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       return place !== null && childMayGo(place.station, from.id, to);
     },
     move: (from, drop) => {
+      if ("across" in drop) {
+        moveToStation(from.id, drop.across);
+        return;
+      }
       const tour = manifest();
       const place = tour === null ? null : tourChildPlace(tour, from.id);
       const to =
@@ -1607,6 +1639,25 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       commitField(input, state().editorView.selected);
       focusControl(inspector.root, next, tabbed);
     }
+  });
+  // The inspector's Move to station (`data-move-station`): a choice moves
+  // the selection there, and the picker, drawn again, keeps the focus.
+  inspector.root.addEventListener("change", (event) => {
+    const pick = event.target;
+    if (
+      !(pick instanceof HTMLSelectElement) ||
+      pick.dataset["moveStation"] === undefined
+    ) {
+      return;
+    }
+    const station = pick.value;
+    pick.value = "";
+    const { selected } = state().editorView;
+    if (selected === null || station === "") return;
+    moveToStation(childIdOf(selected), station);
+    inspector.body
+      .querySelector<HTMLElement>("select[data-move-station]")
+      ?.focus();
   });
   inspector.root.addEventListener("keydown", (event) => {
     const input = event.target;

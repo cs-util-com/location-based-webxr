@@ -81,6 +81,7 @@ import {
   childMayGo,
   childStepTo,
   movedChild,
+  movedToStation,
   storyList,
 } from "../../station-children-moves.js";
 import { eastNorthOf, tourCentre } from "../tour-origin.js";
@@ -169,11 +170,16 @@ interface StationInspector {
  *  place earlier or later in its list (`step`; null for a free item, as
  *  the free items have no order), and the lists it may go into (`targets`:
  *  out of its story, into another story of its station), each with its
- *  button's words. Never into another station. */
+ *  button's words, and the other stations it may go onto (`stations`, by
+ *  their titles: the inspector's Move to station). */
 interface InspectorMoves {
   readonly step: { readonly earlier: boolean; readonly later: boolean } | null;
   readonly targets: readonly {
     readonly list: string;
+    readonly label: string;
+  }[];
+  readonly stations: readonly {
+    readonly id: string;
     readonly label: string;
   }[];
 }
@@ -631,14 +637,15 @@ function choiceLines(choice: TourChoice, story: TourStory): string[] {
  *  (`station-children-moves.ts`): the steps and lists the move rule
  *  takes, so no button offers a move it would refuse. A free item whose
  *  file the tour on disk does not hold yet (`keepsFree`) goes into no
- *  story: the document refuses that move (`freeItemUnsaved`). */
+ *  story: the document refuses that move (`freeItemUnsaved`); onto another
+ *  station it may go (it stays a free item there). */
 function movesOf(
   id: string,
   stations: readonly TourStation[],
   keepsFree = false,
 ): InspectorMoves {
   const place = tourChildPlace({ stations }, id);
-  if (place === null) return { step: null, targets: [] };
+  if (place === null) return { step: null, targets: [], stations: [] };
   const { station, story } = place;
   const own = story === undefined ? station.children[place.index] : undefined;
   // The free items have no order: a free item has no step.
@@ -652,6 +659,12 @@ function movesOf(
         }
       : null,
     targets: keepsFree ? [] : moveTargets(station, id, story?.id),
+    stations: stations.flatMap((other, index) =>
+      other.id !== station.id &&
+      !("refused" in movedToStation(station, other, id))
+        ? [{ id: other.id, label: stationTitle(other, index + 1) }]
+        : [],
+    ),
   };
 }
 
