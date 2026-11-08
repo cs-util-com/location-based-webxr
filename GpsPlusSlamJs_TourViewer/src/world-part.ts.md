@@ -3,11 +3,18 @@
 ## Purpose
 
 What an item stands in the world as, the same for every kind: one three.js
-object, and what the page may ask of it (a tap, going). A frame tick
-(`update`) and leaving and coming back (`leave`/`back`) were part of the
-first draft and had no caller: they come back with their driver (the frame
-loop, the station's leave and return) when a kind needs one (PR #874
-review). The renderer (`content-placement.ts`) places it at the block's
+object, and what the page may ask of it (a tap, a frame, going). Every hook
+has its driver:
+
+- `tap` - the visitor's tap (`tapShownWorldPart`, from `main.ts`);
+- `update` - the camera frame (`tickWorldParts`, from `main.ts`
+  `hooks.tickStations`); its first callers are the audio kind's zone and
+  narration circle (`kinds/audio/`), which hear the visitor's distance;
+- `dispose` - the renderer, when the station's content goes.
+
+Leaving and coming back (`leave`/`back`) were part of the first draft and
+still have no driver, so they are not in the type: they come with one (the
+station's leave and return) when a kind needs it (PR #874 review). The renderer (`content-placement.ts`) places it at the block's
 pose; the part never touches the scene, the camera, the renderer or the
 frame loop. A kind gives its part through its row (`play-kinds.ts`
 `world?`, read by `worldPartOf`); the reading stand (`lectern-view.ts`) and
@@ -24,7 +31,7 @@ the reading sign (`reading-sign.ts`) are world parts too.
   `"background"` channel; in the editor always the silent handle).
 - `WorldPart` - `object` (what stands; placed by the renderer, never by the
   part), `tapTarget?` (what a tap is cast against; none: no tap),
-  `tap?()`,
+  `update?({ seconds, viewer })` (driven by `tickWorldParts`), `tap?()`,
   `dispose()` (frees every geometry, material and texture it made).
 - `canvasTexture(canvas, { anisotropy? } = {})` - a canvas as a texture (painted words, a figure, a shadow blob):
   sRGB, and the anisotropy only when given (a page seen at a slant; three
