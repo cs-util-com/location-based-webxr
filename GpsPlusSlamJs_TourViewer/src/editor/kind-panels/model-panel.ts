@@ -37,7 +37,7 @@ import {
 import type { ModelFocus, ModelPick } from "../editor-view.js";
 import type { ModelEdit } from "../model-edits.js";
 import { wireTextCounter } from "../../pin-text.js";
-import type { KindPanel, KindPanelDraw, PanelItem } from "./kind-panel.js";
+import type { KindPanel, KindPanelDraw } from "./kind-panel.js";
 
 export interface ModelPanelDeps {
   /** One of a model's own edits: one undo step, a refusal said by the
