@@ -75,7 +75,9 @@ reducers' building blocks, so a page cannot apply them differently.
   `walk`), `rebuilds` (the session's queued rebuilds: an undo waits),
   `queued` (a Save waiting for the autosave), `built`, `delivered`
   (in place or downloaded, under which name), `largeTour`, `cannotSave`,
-  `inPlaceAt` and `resave` (D33, below).
+  `inPlaceAt` and `resave` (D33, below), and `inPlaceAssets` /
+  `writingAssets` (the files the last arrived write in place holds, and
+  those of the in-place build still being written).
 
 - `newStationArmed` - the phone's "New station here" is armed: the
   next placement starts its own station. An
@@ -286,9 +288,11 @@ largeTour?, cannotSave? })`.
     `unchanged`, or `refused` with the rule's reason or `unsaved`: a free
     item naming a file the tour on disk does not hold yet, whose story
     frame a draft reload could not read). "On disk" is the file a reload
-    opens: the one written in place once such a write arrived
-    (`save.inPlaceAt`), else the opened one - a download leaves the opened
-    file where it was, so only a write in place counts the file as saved.
+    opens: the one written in place once such a write arrived (its files
+    are `save.inPlaceAssets`, named by `saveDelivered`, not when the save
+    is built: a write still running or one that failed does not count),
+    else the opened one. A download leaves the file on disk where it was:
+    it neither counts a file as saved nor forgets the last write in place.
     `freeItemUnsaved(state, id)` says the same for one
     free item, so the tree's drag and the inspector offer it no story. A free item leaving is deleted
     as an object (a tombstone when the file holds it); one arriving is put

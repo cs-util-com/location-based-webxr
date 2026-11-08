@@ -246,7 +246,11 @@ describe("a free item whose file the tour a reload opens lacks", () => {
       ...start,
       opened,
       written,
-      save: { ...start.save, inPlaceAt: inPlace ? 1 : null },
+      save: {
+        ...start.save,
+        inPlaceAt: inPlace ? 1 : null,
+        inPlaceAssets: inPlace ? written.assets.map((a) => a.id) : null,
+      },
     };
   }
 
@@ -317,5 +321,73 @@ describe("a free item whose file the tour a reload opens lacks", () => {
       kind: "refused",
       reason: "unsaved",
     });
+  });
+
+  /** `state` after a save of `written` landed: in place (its write not
+   *  arrived yet unless `arrived`) or downloaded. */
+  function landed(
+    state: TourDocumentState,
+    written: TourManifest,
+    how: { inPlace: boolean; arrived?: boolean },
+  ): TourDocumentState {
+    const built = reduce(
+      state,
+      act.saved({
+        generation: state.generation,
+        written,
+        appliedDeletions: [],
+        stationsAtStart: state.stations,
+        ...(how.inPlace ? { inPlaceAt: state.position } : {}),
+      }),
+    );
+    return how.inPlace && how.arrived !== true
+      ? built
+      : reduce(
+          built,
+          act.saveDelivered({ inPlace: how.inPlace, name: "tour.zip" }),
+        );
+  }
+
+  // Why: a save is BUILT before its write in place arrives, and that write
+  // can fail. Until it arrives the disk holds the file written in place
+  // before, which lacks the picture's file: a story frame naming it would
+  // not read on reload. Only the arrival counts the file as on disk.
+  it("keeps refusing while a later write in place has not arrived", () => {
+    const tour = withPicture();
+    const first = landed(
+      state(without(tour), without(tour), false),
+      without(tour),
+      { inPlace: true, arrived: true },
+    );
+    expect(first.save.inPlaceAt).not.toBeNull();
+    const writing = landed(first, tour, { inPlace: true });
+    expect(freeItemUnsaved(writing, "snap")).toBe(true);
+    expect(childMoveChange(writing, "snap", INTO)).toEqual({
+      kind: "refused",
+      reason: "unsaved",
+    });
+    const arrived = reduce(
+      writing,
+      act.saveDelivered({ inPlace: true, name: "tour.zip" }),
+    );
+    expect(freeItemUnsaved(arrived, "snap")).toBe(false);
+  });
+
+  // Why: a download after a write in place leaves that file on disk, and a
+  // reload opens it: the file it holds stays saved, so the move must not be
+  // refused because the download no longer names an in-place view.
+  it("still counts the file written in place after a download", () => {
+    const tour = withPicture();
+    const inPlace = landed(state(without(tour), without(tour), false), tour, {
+      inPlace: true,
+      arrived: true,
+    });
+    expect(freeItemUnsaved(inPlace, "snap")).toBe(false);
+    const downloaded = landed(inPlace, tour, { inPlace: false });
+    expect(downloaded.save.inPlaceAt).toBeNull();
+    expect(freeItemUnsaved(downloaded, "snap")).toBe(false);
+    expect(childMoveChange(downloaded, "snap", INTO)).toEqual(
+      expect.objectContaining({ kind: "moved" }),
+    );
   });
 });

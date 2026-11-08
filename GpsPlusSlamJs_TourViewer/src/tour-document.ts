@@ -271,6 +271,14 @@ export interface TourSaveStatus {
    *  ends); with the slot free the disk holds `inPlaceAt`, and it counts
    *  for nothing. */
   readonly inPlaceWriting: number | "elsewhere" | null;
+  /** The ids of the files (assets) the tour last written IN PLACE holds,
+   *  named once that write arrived (`saveDelivered`); null while none of
+   *  this open did (a reload then opens the opened file). A download
+   *  leaves it: the file on disk stays what it was. */
+  readonly inPlaceAssets: readonly string[] | null;
+  /** The ids of the files the in-place build named by `inPlaceWriting`
+   *  holds, until its write arrives (they then become `inPlaceAssets`). */
+  readonly writingAssets: readonly string[] | null;
   /** An undo or a redo crossed the in-place file (`stepCrossesInPlaceSave`)
    *  and no save was claimed since: the page writes the file again as soon
    *  as no save runs (D33). */
@@ -382,6 +390,8 @@ const IDLE: TourSaveStatus = {
   cannotSave: false,
   inPlaceAt: null,
   inPlaceWriting: null,
+  inPlaceAssets: null,
+  writingAssets: null,
   resave: false,
 };
 
@@ -2756,14 +2766,16 @@ function storyChildDelete(
 }
 
 /** Whether the tour a reload opens holds every file `block` names: the
- *  one last written in place once that write arrived (`inPlaceAt`), else
- *  the one opened here (a download leaves that file where it was). */
+ *  one last written in place once that write arrived (`inPlaceAssets`: a
+ *  write still running, or one that failed, does not count, and a
+ *  download after it leaves it on disk), else the one opened here. */
 function filesOnDisk(
   state: TourDocumentState,
   block: { readonly kind?: unknown },
 ): boolean {
-  const disk = state.save.inPlaceAt === null ? state.opened : state.written;
-  const held = new Set((disk?.assets ?? []).map((a) => a.id));
+  const held = new Set(
+    state.save.inPlaceAssets ?? (state.opened?.assets ?? []).map((a) => a.id),
+  );
   return tourBlockAssetIds(block).every((a) => held.has(a));
 }
 
@@ -3794,13 +3806,17 @@ const tourDocumentSlice = createSlice({
           action.payload.timings === undefined
             ? before.timingsWritten
             : { ...before.timingsWritten, ...action.payload.timings },
-        // An in-place write names its view once it arrives
-        // (`saveDelivered`); a download leaves no in-place file.
+        // An in-place write names its view and its files once it arrives
+        // (`saveDelivered`); a download names no in-place view, and the
+        // files on disk stay what the last write in place left there.
         save: saveWith(
           before.save,
           action.payload.inPlaceAt === undefined
-            ? { inPlaceAt: null, inPlaceWriting: null }
-            : { inPlaceWriting: action.payload.inPlaceAt },
+            ? { inPlaceAt: null, inPlaceWriting: null, writingAssets: null }
+            : {
+                inPlaceWriting: action.payload.inPlaceAt,
+                writingAssets: written.assets.map((a) => a.id),
+              },
         ),
       };
     },
@@ -3878,9 +3894,15 @@ const tourDocumentSlice = createSlice({
         save: saveWith(before.save, {
           delivered: action.payload,
           error: null,
-          // The in-place write arrived: the disk holds its view now.
+          // The in-place write arrived: the disk holds its view and its
+          // files now.
           ...(action.payload.inPlace && before.save.inPlaceWriting !== null
-            ? { inPlaceAt: before.save.inPlaceWriting, inPlaceWriting: null }
+            ? {
+                inPlaceAt: before.save.inPlaceWriting,
+                inPlaceWriting: null,
+                inPlaceAssets: before.save.writingAssets,
+                writingAssets: null,
+              }
             : {}),
         }),
       };
