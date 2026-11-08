@@ -133,13 +133,13 @@ describe("addFile: the files table", () => {
     const orphan = await editor.addFile(new Blob(["voice-1"]), "Take 1.mp3");
     expect(orphan.kind).toBe("added");
     expect(editor.addedBytes()).toBe(7);
-    expect(editor.addedBytes({ keptOnly: true })).toBe(0);
+    expect(editor.nextSaveBytes()).toBe(editor.tourBytes() - 7);
     await editor.editNarration("t1", {
       kind: "voice",
       file: new Blob(["voice-1"]),
       fileName: "again.mp3",
     });
-    expect(editor.addedBytes({ keptOnly: true })).toBe(7);
+    expect(editor.nextSaveBytes()).toBe(editor.tourBytes());
     await session.close();
   });
 

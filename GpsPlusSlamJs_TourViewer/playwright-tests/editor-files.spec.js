@@ -1038,3 +1038,59 @@ test("autosave follows the tour's size both ways: off over the cap, on again onc
   );
   await expect(page.locator("#save-status")).not.toContainText("large tour");
 });
+
+test("a target attached after a copy was saved judges the autosave by the tour, not by the file it attaches", async ({
+  page,
+  context,
+}) => {
+  // Why (#881 review): when the save target comes later than the open,
+  // the tour may have outgrown the file the target names. A second tab
+  // brings a voice in and saves a copy (a download) before "Edit here
+  // anyway": the copy took the voice in, so nothing is added any more,
+  // yet the next in-place save rewrites the tour with the voice. Judged
+  // on the attached file's size (the old formula, `file.size` plus the
+  // added bytes), the tour looked under the cap and saved by itself.
+  // The cap sits between the two readings; a cap of 1 byte, as in the
+  // other large-tour tests, cannot tell them apart.
+  const tour = Buffer.from(await (await fetch(LONG_TEXT_TOUR)).arrayBuffer());
+  await page.goto("/edit.html");
+  await offerOpfsFile(page, tour, "long-text-tour.zip");
+  await openOffered(page);
+  const second = await context.newPage();
+  await noSavePicker(second);
+  await second.addInitScript((maxBytes) => {
+    // @ts-expect-error - the editor's dev-only autosave cap and timings.
+    window.__tourEditorAutosave = {
+      maxBytes,
+      delayMs: 3_600_000,
+      maxWaitMs: 3_600_000,
+    };
+  }, tour.length + 100_000);
+  await second.goto("/edit.html");
+  await offerOpfsFile(second, tour, "long-text-tour.zip");
+  await openOffered(second);
+  const told = second.locator(".toast", { hasText: "Another tab is editing" });
+  await expect(told).toBeVisible();
+  // The draft is the first tab's, so the second tab's voice is not
+  // backed up there; the subject here is the autosave.
+  expect(await importVoice(second, voiceBytes(300_000))).toEqual({
+    kind: "edited",
+    notBackedUp: true,
+  });
+  const download = second.waitForEvent("download");
+  await save(second);
+  await download;
+  await told.locator("button", { hasText: "Edit here anyway" }).click();
+  await expect(second.locator("body")).toHaveAttribute("data-autosave", "off");
+  // The target is attached (the large-tour note is said only for a file
+  // written in place): an edit now waits for Save, not for the autosave.
+  await second.evaluate(() => {
+    // @ts-expect-error - the editor's dev-only test hook.
+    const hook = window.__tourEditor;
+    const editor = hook.editor();
+    editor.setNeedsNoGps(!editor.needsNoGps());
+    hook.edited();
+  });
+  await expect(second.locator("#save-status")).toContainText("large tour");
+  await expect(second.locator("body")).toHaveAttribute("data-autosave", "off");
+});

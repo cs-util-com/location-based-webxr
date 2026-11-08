@@ -2277,9 +2277,9 @@ async function attachTarget(
       // milestone review #3: the cost is linear in the file's size).
       // The files brought in before the target came ride along too - those
       // the write keeps: one nothing names is left out of it. Judged as
-      // `judgeAutosave` judges it after every edit (`nextSaveBytes`, whose
-      // kept-only count its tests pin: PR #876 review, this wiring was
-      // tested by nothing).
+      // `judgeAutosave` judges it after every edit (`nextSaveBytes`): on
+      // the tour's size, not the attached file's, which falls behind once
+      // a copy was saved before the target came (editor-files.spec.js).
       const largeTour = !autosaveFits(mine.nextSaveBytes(), autosaveMaxBytes);
       store.dispatch(tourDocumentActions.saveLimited({ largeTour }));
       autosave.enable(!largeTour);
