@@ -568,8 +568,14 @@ export function createNarrationSection(
       });
       if (done !== "written") return;
       added = true;
+      // A length not read (in time, on a slow phone, or at all) is told:
+      // the tour then shows none for the voice (PR #874 review).
+      const length =
+        ms === undefined
+          ? " Its length could not be read, so the tour shows none for it."
+          : "";
       deps.say(
-        `Voice ${file.name} (${sizeWords(file.size)}) added. Save to keep it in the tour.`,
+        `Voice ${file.name} (${sizeWords(file.size)}) added. Save to keep it in the tour.${length}`,
       );
     });
     if (!added) return;
