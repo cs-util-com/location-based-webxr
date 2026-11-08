@@ -5,8 +5,8 @@
 The adapter that puts a model's world view (`model-views.ts`
 `mountModelView`) behind the one world door (`world-part.ts`). The
 renderer (`content-placement.ts`) draws a model as it draws any other
-kind's part, and the 3D editor (`editor3d-stations.ts`) builds the same
-object in `edit`. It is the model row's `world` (`play-kinds.ts`).
+kind's part, and the 3D editor (`editor3d-stations.ts`) builds it in
+`edit` as the plain model (below). It is the model row's `world` (`play-kinds.ts`).
 
 ## Public API
 
@@ -20,7 +20,8 @@ object in `edit`. It is the model row's `world` (`play-kinds.ts`).
     model lands in it once `env.loadModel(block.asset)` resolves, scaled
     so its largest side is `sizeM` (`model-scale.ts` `modelScale`), and
     mounted in its view with the page's clipping switch
-    (`env.enableClipping`, which a cutaway asks for).
+    (`env.enableClipping`, which a cutaway asks for); in `edit` no view is
+    mounted (below).
   - `ready` - settles once the model stands; rejects with the load's error
     when the file cannot be read or parsed (the renderer names the block
     in `skipped`, disposes the part and stands nothing).
@@ -39,8 +40,12 @@ object in `edit`. It is the model row's `world` (`play-kinds.ts`).
 - The scale is on the model, the pose on the group: the editor's notes and
   sections (`editor3d-model-parts.ts`) are in the model's own space and
   stay correct under both.
-- In `edit` an autoplaying clip is held (the block is mounted with
-  `autoplay: false`), so the editor's model stands still; `play` keeps it.
+- In `edit` the model stands plain: at its tour size (a toy at its full
+  size), in its own materials, with no view mounted, so no clip plays and
+  no clipping is asked for. The editor drives no frame of a view (a
+  ghost's ground height, a clip) and switches no clipping on, so a view
+  mounted there would show a half-made look; it is how the editor drew
+  models before they came through the door. `play` wears the view.
 - The part never touches the scene, the camera or the frame loop; the
   view's handle is found again through `mountedModelViews`
   (`model-visitor.ts` drives its gestures and frame tick).
@@ -60,9 +65,13 @@ await part?.ready;
 
 `world.test.ts`: placed at `sizeM` with its view mounted and unmounted on
 dispose; null and no read for card, stage and no size; a cutaway's
-clipping switch and ghost glass restored and freed once; a file that lands
-after dispose freed and not added; a failed load rejecting `ready`; edit
-holding an autoplaying clip; a toy's drawn scale as `tourScale`; and a
+clipping switch and its cut faces' materials freed exactly once, the
+ghost glass freed exactly once and the model's own material restored and
+freed once; a file that lands
+after dispose freed and not added; a failed load rejecting `ready`; the
+plain model in `edit` in every world view (no view, its own material, no
+clipping, the tour size, freed once) against `play` wearing the view; a
+toy's drawn scale as `tourScale`; and a
 property (60 runs over box sides 0.01 to 100 m and sizes 0.05 to 50 m):
 the drawn largest side is `sizeM`. The renderer's use is in
 `content-placement.test.ts`, the editor's in `editor3d-stations.test.ts`.

@@ -26,19 +26,13 @@ import type { WorldEnv, WorldPart } from "../../world-part.js";
 
 const WORLD_VIEWS: ReadonlySet<string> = new Set(TOUR_MODEL_WORLD_VIEWS);
 
-/** The block the view is mounted with: in `edit` a clip that would play
- *  by itself is held, so the editor's model stands still. */
-function shownBlock(block: TourModelBlock, env: WorldEnv): TourModelBlock {
-  if (env.mode !== "edit" || block.animation?.autoplay !== true) return block;
-  return { ...block, animation: { ...block.animation, autoplay: false } };
-}
-
 /**
  * `block`'s part: null in a view that stands nothing in the station (the
  * card, the story's stage) or with no size to scale by. Its `ready`
  * settles once the model stands, and rejects when its file cannot be
  * read. The model carries `tourScale` and `tourSizeM` in its `userData`,
- * so a page resizing it for a preview scales from what was drawn.
+ * so a page resizing it for a preview scales from what was drawn. In
+ * `edit` the model stands plain, at its tour size, with no view mounted.
  */
 export function modelWorld(
   block: TourModelBlock,
@@ -58,11 +52,15 @@ export function modelWorld(
     const scale = modelScale(loaded, sizeM);
     loaded.scale.setScalar(scale);
     model = loaded;
-    view = mountModelView(loaded, shownBlock(block, env), scale, {
-      enableClipping: () => {
-        env.enableClipping();
-      },
-    });
+    // The editor drives no frame of a view (a ghost's ground, a clip),
+    // and switches no clipping on: it shows the plain model, still.
+    if (env.mode === "play") {
+      view = mountModelView(loaded, block, scale, {
+        enableClipping: () => {
+          env.enableClipping();
+        },
+      });
+    }
     // The scale the view left (a toy starts smaller): a preview of
     // another size scales from what is drawn.
     loaded.userData["tourScale"] = loaded.scale.x;

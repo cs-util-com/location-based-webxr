@@ -12,6 +12,7 @@ import {
 
 import { mountedModelViews, type TourModelBlock } from "../../model-views.js";
 import type { WorldEnv, WorldMode } from "../../world-part.js";
+import { SILENT_SOUND } from "../../world-sound.js";
 import { modelWorld } from "./world.js";
 
 /**
@@ -74,6 +75,7 @@ function envOf(
     canvasTexture: () => {
       throw new Error("a model paints no canvas");
     },
+    sound: () => SILENT_SOUND,
   };
   return env;
 }
@@ -115,7 +117,26 @@ describe("modelWorld", () => {
     const cutPart = modelWorld(blockOf({ view: "cutaway" }), cutEnv);
     await cutPart!.ready;
     expect(cutEnv.clipping).toBeGreaterThan(0);
+    // Every material the cutaway made (its cut faces) is freed exactly
+    // once with the part: by the view, and not again with the model.
+    const fills: number[] = [];
+    cut.mesh.traverse((o) => {
+      if (o.name !== "cutaway-fill" || !(o instanceof Mesh)) return;
+      const material = o.material as MeshBasicMaterial;
+      const at = fills.push(0) - 1;
+      const free = material.dispose.bind(material);
+      material.dispose = () => {
+        fills[at]! += 1;
+        free();
+      };
+    });
+    expect(fills.length).toBeGreaterThan(0);
     cutPart!.dispose();
+    expect(
+      fills.every((n) => n === 1),
+      String(fills),
+    ).toBe(true);
+    expect(cut.freed).toEqual({ geometry: 1, material: 1 });
 
     const glass = boxModel();
     const own = glass.mesh.material;
@@ -125,7 +146,15 @@ describe("modelWorld", () => {
     );
     await part!.ready;
     expect(glass.mesh.material).not.toBe(own);
+    const ghost = glass.mesh.material;
+    let ghostFreed = 0;
+    const freeGhost = ghost.dispose.bind(ghost);
+    ghost.dispose = () => {
+      ghostFreed += 1;
+      freeGhost();
+    };
     part!.dispose();
+    expect(ghostFreed, "the ghost glass is freed exactly once").toBe(1);
     expect(glass.mesh.material).toBe(own);
     expect(glass.freed).toEqual({ geometry: 1, material: 1 });
   });
@@ -164,28 +193,45 @@ describe("modelWorld", () => {
     part!.dispose();
   });
 
-  // Why: the editor builds the same part as the visitor, still: a clip
-  // the visitor sees play is held in `edit`.
-  it("holds an autoplaying clip in edit, and plays it in play", async () => {
+  // Why: the editor draws no frame for a model's view - nothing there
+  // lifts a ghost's ground, switches clipping on or plays a clip - so a
+  // view mounted in `edit` would show a half-made look. The editor shows
+  // the plain model at its tour size (as it did before models came
+  // through the door), still and in its own materials, in every world
+  // view; `play` wears the view.
+  it("stands the plain model in edit, without its view, in every world view", async () => {
     const animation = { name: "trot", autoplay: true };
     const playing = boxModel();
     const play = modelWorld(
-      blockOf({ animation }),
+      blockOf({ animation, view: "ghost" }),
       envOf(() => Promise.resolve(playing.mesh)),
     );
     await play!.ready;
-    const still = boxModel();
-    const edit = modelWorld(
-      blockOf({ animation }),
-      envOf(() => Promise.resolve(still.mesh), "edit"),
-    );
-    await edit!.ready;
     const handle = (model: Object3D) =>
       mountedModelViews().find((h) => h.model === model);
     expect(handle(playing.mesh)?.block.animation?.autoplay).toBe(true);
-    expect(handle(still.mesh)?.block.animation?.autoplay).not.toBe(true);
     play!.dispose();
-    edit!.dispose();
+    for (const view of [
+      "placed",
+      "ghost",
+      "hotspots",
+      "cutaway",
+      "toy",
+    ] as const) {
+      const still = boxModel();
+      const own = still.mesh.material;
+      const env = envOf(() => Promise.resolve(still.mesh), "edit");
+      const edit = modelWorld(blockOf({ animation, view }), env);
+      await edit!.ready;
+      expect(handle(still.mesh), view).toBeUndefined();
+      expect(still.mesh.material, view).toBe(own);
+      expect(env.clipping, view).toBe(0);
+      // 2 m made 3 m: the tour size, a toy too.
+      expect(still.mesh.scale.x, view).toBeCloseTo(1.5, 12);
+      expect(still.mesh.userData["tourScale"], view).toBe(still.mesh.scale.x);
+      edit!.dispose();
+      expect(still.freed, view).toEqual({ geometry: 1, material: 1 });
+    }
   });
 
   // Why: a toy starts smaller than its tour size; the editor scales a
