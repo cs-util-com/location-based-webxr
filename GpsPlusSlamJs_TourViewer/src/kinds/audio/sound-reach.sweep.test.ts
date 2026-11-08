@@ -116,7 +116,6 @@ describe("the narration circle under position noise (sweep)", () => {
   it("prints the table: interrupted listeners and disturbed neighbours", () => {
     // Why: the radius default rests on this table; the verdict is read
     // across the range, so the whole table is kept in the test's output.
-    const out: string[] = [];
     for (const { noise, cells } of SWEEP) {
       const rows = cells.map(
         (c) =>
