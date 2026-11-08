@@ -1662,6 +1662,48 @@ describe("createStationsLayer", () => {
       expect(mountedWorldParts()).toEqual([]);
       expect(parent.children).toHaveLength(0);
     });
+
+    // Why: a model is a tree of meshes; a throwing geometry dispose inside
+    // one model aborted the traverse and stranded every mesh after it, its
+    // GPU buffers and materials included.
+    it("a mesh whose geometry free throws still frees the model's other meshes", async () => {
+      const freed: string[] = [];
+      const { d } = deps({
+        loadGlbModel: () => {
+          const broken = new THREE.BoxGeometry(1, 1, 1);
+          broken.dispose = () => {
+            throw new Error("mesh free broke");
+          };
+          const fine = new THREE.BoxGeometry(1, 1, 1);
+          fine.dispose = () => {
+            freed.push("geometry");
+          };
+          const material = new THREE.MeshBasicMaterial();
+          material.dispose = () => {
+            freed.push("material");
+          };
+          const g = new THREE.Group();
+          g.add(new THREE.Mesh(broken), new THREE.Mesh(fine, material));
+          return Promise.resolve(g);
+        },
+      });
+      const layer = createStationsLayer(d);
+      const a = station("a", 0, 0, [spot, model("m", "horse", 2)]);
+      layer.setTour(
+        manifest(
+          [a],
+          [
+            ...assets,
+            { id: "horse", path: "content/horse.glb", kind: "model" },
+          ],
+        ),
+        new Map(),
+      );
+      layer.update(view(0, 0, null, 1));
+      await settle();
+      expect(() => layer.dispose()).toThrow("mesh free broke");
+      expect(freed).toEqual(["geometry", "material"]);
+    });
   });
 
   // Why: a click in the view selects what is under the pointer - a

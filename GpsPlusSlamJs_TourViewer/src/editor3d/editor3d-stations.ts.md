@@ -102,7 +102,8 @@ standing`). A distance, size or focal length that is not a positive
   - `dispose()` - everything out of the scene and freed. A free that
     throws (the renderer rethrows a world part's, `content-placement.ts`)
     abandons nothing: its station's models, renderer (which unmounts its
-    parts), ring, pole and billboard are all freed and its content is
+    parts), ring, pole and billboard are all freed (inside one model too:
+    each mesh's geometry and material under its own guard) and its content is
     cleared, every later station is freed too, and the first
     throw then reaches the caller. `setTour` and `update` free the same
     way (a station freed by a throwing frame is drawn anew when near).
@@ -279,8 +280,9 @@ the block's own pose over six turns (none to upside down), kept through
 the morph, picked and located but no gesture's target, moved and turned
 by a preview and freed with the layer; a part whose dispose throws
 leaving its station freed and drawn again later, every station freed
-on dispose, and a model whose free throws still freeing the station's
-parts (all seen red); what is under a ray; names and codes hidden and shown; everything removed on
+on dispose, a model whose free throws still freeing the station's
+parts, and a mesh whose geometry free throws still freeing the model's
+other meshes (all seen red); what is under a ray; names and codes hidden and shown; everything removed on
 dispose; `codeQuaternionNue` for a heading and a full rotation;
 `focalPxOf`; `codeGrowth`'s size on screen, its printed size near, its
 flat weighting, bad input, and a property (at least 1, laid flat exactly

@@ -134,10 +134,11 @@ export async function videoPosterOf(
           // once as long again has passed, whether or not that seek
           // answers (a clip may take the far seek and then go quiet).
           lengthTimer = setTimeout(() => {
-            seekTo(0);
+            // Set before the seek: a seek that answers at once clears it.
             lengthTimer = setTimeout(() => {
               done(true);
             }, wait);
+            seekTo(0);
           }, wait);
           video.currentTime = FAR_PAST_THE_END_S;
           return;
