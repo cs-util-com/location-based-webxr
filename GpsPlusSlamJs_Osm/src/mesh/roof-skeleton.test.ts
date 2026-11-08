@@ -544,6 +544,42 @@ describe("skeletonRoof is the same roof wherever the frame puts it", () => {
       }
     });
 
+    // Why (delta review MINOR 1, 2026-11-08): a north-south move of the ENU
+    // origin rescales x by cos(originLat), so a house's corners move by
+    // millimetres relative to each other. Keyed on those coordinates the
+    // nudge changed with them (2-7 of 508 corpus roofs). Keyed on the corner's
+    // index, a similar footprint gets the same nudges: scaled by 1 + 1e-4
+    // about its lowest corner, the roof is the scaled roof to well under the
+    // 0.1 mm a different nudge moves the inner points.
+    it(`scaled by 1 + 1e-4, ${name} keeps its nudges`, () => {
+      const s = 1 + 1e-4;
+      const o = footprint.reduce((best, p) =>
+        p.x < best.x || (p.x === best.x && p.y < best.y) ? p : best,
+      );
+      const scaled = footprint.map((p) => ({
+        x: o.x + (p.x - o.x) * s,
+        y: o.y + (p.y - o.y) * s,
+      }));
+      for (const options of optionSets) {
+        const a = skeletonRoof([footprint], options);
+        const b = skeletonRoof([scaled], options);
+        expect(b.gables).toBe(a.gables);
+        const pa = points(a).map(([x, y, t]) => [
+          o.x + ((x as number) - o.x) * s,
+          o.y + ((y as number) - o.y) * s,
+          (t as number) * s,
+        ]);
+        const pb = points(b);
+        expect(pb.length).toBe(pa.length);
+        const worst = Math.max(
+          ...pa.flatMap((p, i) =>
+            p.map((v, k) => Math.abs(v - (pb[i]?.[k] ?? Number.NaN))),
+          ),
+        );
+        expect(worst).toBeLessThan(1e-5);
+      }
+    });
+
     it(`started at another corner, ${name} keeps its roof`, () => {
       const turned = [...footprint.slice(3), ...footprint.slice(0, 3)];
       for (const options of optionSets) {

@@ -83,13 +83,21 @@ The tagged path uses neither: its pitch is `rise / ridgeT`, uncapped.
     through their neighbours are dropped;
   - every remaining corner is nudged by up to `JITTER_M` (0.5 mm) per axis,
     deterministically (`stableNudge` from `stable-jitter.ts`, keyed by the
-    attempt, the ring and the rounded corner), so no two walls are exactly
-    parallel and no two events coincide. The corner is keyed relative to the
-    outer ring's lowest corner (smallest x, then y), not by its frame
-    coordinates, so the same house drawn anywhere in the frame (another tile
-    origin, another start corner) gets the same nudge and the same roof
-    (M2 review finding 7; `roof-skeleton.test.ts`, "the same roof wherever
-    the frame puts it");
+    attempt, the ring, the ring's corner count and the corner's index counted
+    from the ring's lowest corner, smallest x then y), so no two walls are
+    exactly parallel and no two events coincide. No coordinate is in the key,
+    so a translated, rotated-start or slightly rescaled footprint gets the
+    same nudges (M2 review finding 4, then delta review MINOR 1;
+    `roof-skeleton.test.ts`, "the same roof wherever the frame puts it").
+    What the key cannot remove: a north-south move of the ENU origin rescales
+    x by `cos(originLat)` and so moves the corners themselves by millimetres,
+    more than the 0.5 mm nudge, and a roof near a decision can still change
+    with it. Measured on the 508 ridged corpus roofs (origin moved E 300 m /
+    E 3 km / N 50 m / N 300 m / N 3 km / NE 1 km): 0 / 1 / 2 / 1 / 1 / 2
+    roofs change method or gable count, against 0 / 0 / 2 / 4 / 5 / 7 with
+    the corner-relative key. Changing the key changed the bytes of 94 of the
+    508 roofs (27 in method or vertex count; the 379 box roofs unchanged);
+    approximate 48 to 46;
   - after the run every face's eave points are snapped back to the given
     corners, and the dropped collinear corners are put back into the face of
     the wall they lay on, so the roof meets the unnudged walls exactly.
@@ -148,6 +156,8 @@ gabled.gables; // 2 on a rectangle: both short ends
   point outside by more than 1 cm, no NaN, no fold), and a convex oracle: on a
   convex ring `t` is the distance to the nearest wall line; and
   `skeletonFootprint` against `skeletonRoof` (the same roofs or the same
-  failure, the rungs in either order), plus a bow tie it rejects up front.
+  failure, both attempts on one footprint with the four rungs in a random
+  order, so a cache that ignored the attempt fails), plus a bow tie it
+  rejects up front.
 - Through `roof.ts`: `s3db-roof-tags.test.ts`, `mesh-orientation.test.ts`,
   `s3db-drawn-top.test.ts`, and the `buildRoof` fuzz.

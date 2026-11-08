@@ -102,6 +102,12 @@ Roof geometry above the eaves, in the plan's own order of quality-per-effort.
     - Each skeleton rung catches ANY error, not only a `SkeletonFailure`,
       and the ladder goes on: an unforeseen throw in one rung used to skip
       the box rung and draw a prism (M2 review finding 6, 2026-11-08).
+      The risk this takes (delta review NIT 6, accepted rather than given a
+      mechanism): a future bug that throws in a rung is not reported, it is
+      drawn as the next rung's roof, a box or a prism. What would see it is
+      the tests that assert the METHOD a footprint gets (`roof.test.ts`,
+      `roof-ladder.test.ts`) and the corpus counts below: a skeleton count
+      that drops, or box fallbacks that grow, is the symptom.
     - **Cost of a failing ladder:** a gabled roof whose every rung fails ran
       six skeleton runs (per nudge an all-slopes pre-run and the gabled run,
       then the hipped rung ran the pre-run again). The ladder now shares one
@@ -116,14 +122,15 @@ Roof geometry above the eaves, in the plan's own order of quality-per-effort.
   - **What `isApproximate` means since M2:** the roof is not the tagged shape
     over the real outline. That is a gambrel or round skeleton, a gabled roof
     drawn hipped or with no gable, the box roof as a fallback, the prism, and
-    the flat cap of a roof that could not be built. On the corpus 48 of the
-    508 ridged roofs (13 approximate skeletons, 3 hipped skeletons, 32 box
-    fallbacks, no prism; 2026-11-08 after the M2 review fixes), against 125
-    before, when every non-rectangle was approximate. The two prisms counted
-    at first were M2 review finding 1 (the float32 eave check in
-    `skeleton-mesh.ts.md`), not shapes the skeleton cannot settle; the three
-    hipped skeletons (Cologne cathedral, Heidelberg, Sylt) came with the
-    ring-relative nudge (`roof-skeleton.ts.md`).
+    the flat cap of a roof that could not be built. On the corpus 46 of the
+    508 ridged roofs (13 approximate skeletons, 2 hipped skeletons, 31 box
+    fallbacks, no prism; 2026-11-08 with the index-keyed nudge; 48 with 3
+    hipped and 32 box fallbacks under the corpus-relative key before it),
+    against 125 before M2, when every non-rectangle was approximate. The two
+    prisms counted at first were M2 review finding 1 (the float32 eave check
+    in `skeleton-mesh.ts.md`), not shapes the skeleton cannot settle; the
+    hipped skeletons (Cologne cathedral, Heidelberg) depend on the nudge
+    (`roof-skeleton.ts.md`).
   - **Which way the ridge runs on the box roof:** along the long side by
     default; `roof:orientation=across` turns it square to that, and
     `roof:direction` turns it so the slopes face that direction (the ridge
@@ -178,18 +185,25 @@ Roof geometry above the eaves, in the plan's own order of quality-per-effort.
   numeric cell keys; what is left is the skeleton's event loop and the
   stitch's on-edge scan. (The two prisms were finding 1 and are gone.)
 - **Cost cuts at city scale** (M2 review finding 2: Heidelberg tiled N x N,
-  `buildBuildings`, min of 5 passes per process, three interleaved rounds on
-  a machine shared with other gates, so the spread is load; 2026-11-08). The
-  three builds are M2 as reviewed (6a585d484), M2 with the review fixes
-  before the cuts, and after the cuts; wall ms, then roof ms:
-  - 3 x 3: 519-763 / 415-646; 578-867 / 482-751; 430-542 / 257-361 (one
-    round at 2,225 under load);
-  - 5 x 5: 1,697-2,053 / 1,393-1,662 (one round 6,735); 1,314-1,614 /
-    1,232-1,403; 877-1,456 / 573-743;
+  `buildBuildings`, three interleaved rounds on a machine shared with other
+  gates, so the spread is load; 2026-11-08). Wall ms is the minimum of 5
+  passes per process; roof ms is the roof time of ONE further, instrumented
+  pass, so it is noisier. The three builds are M2 as reviewed (6a585d484),
+  M2 with the review fixes before the cuts, and after the cuts; wall ms,
+  then roof ms, the range over the rounds:
+  - 3 x 3: 519-763 / 415-646; 578-867 / 482-751; 430-542 / 257-361;
+  - 5 x 5: 1,697-2,053 / 1,393-1,662; 1,314-1,614 / 1,232-1,403; 877-1,456 /
+    573-743;
   - 7 x 7: 3,165-3,925 / 2,908-3,530; 3,462-4,805 / 2,511-3,383; **2,247-2,678
     / 1,360-2,028**.
-  - About a third off the wall time and 40 to 50 % off the roof time at every
-    size. The output is unchanged: the same sha256 over 10,512 roofs (the 508
+  - Two readings are left out of the ranges as load outliers: 2,225 (3 x 3)
+    and 6,735 (5 x 5, M2 as reviewed).
+  - The cuts' own effect (fixes before the cuts against after, range
+    midpoints): wall -33 / -20 / -40 % and roof -50 / -50 / -43 % at 3 x 3 /
+    5 x 5 / 7 x 7. Against M2 as reviewed: wall -24 / -38 / -31 %, roof
+    -42 / -57 / -47 %. So "a third off the wall time" holds at 7 x 7 only
+    roughly and not at every size; the roof saving is 40 to 57 %. The output
+    is unchanged: the same sha256 over 10,512 roofs (the 508
     ridged corpus roofs at three eave heights and 3,000 seeded stars as
     gabled, hipped and gambrel) and over all 3,072 corpus volumes. A phone
     measurement in OsmDemo before the main merge is still the owner's.

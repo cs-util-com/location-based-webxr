@@ -387,28 +387,36 @@ describe("skeletonFootprint (the ladder's footprint)", () => {
       return error instanceof SkeletonFailure ? "failure" : String(error);
     }
   };
-  it("draws exactly skeletonRoof's roofs, in either order of the rungs", () => {
+  // Both attempts on ONE footprint, the four rungs in a random order (delta
+  // review MINOR 3): with one attempt per footprint, a cache that ignored the
+  // attempt would still have passed.
+  it("draws exactly skeletonRoof's roofs, both attempts, the rungs in any order", () => {
     const rule = { kind: "neighbours" } as const;
+    const RUNGS = ["hipped/0", "gabled/0", "hipped/1", "gabled/1"] as const;
     fc.assert(
       fc.property(
         starPolygon,
-        fc.constantFrom(0, 1),
-        fc.boolean(),
-        (footprint, attempt, hippedFirst) => {
-          const want = {
-            hipped: outcome(() => skeletonRoof([footprint], { attempt })),
-            gabled: outcome(() =>
-              skeletonRoof([footprint], { attempt, gableEnds: rule }),
-            ),
+        fc.shuffledSubarray([...RUNGS], { minLength: 4, maxLength: 4 }),
+        (footprint, order) => {
+          const draw = (
+            rung: (typeof RUNGS)[number],
+            shared?: ReturnType<typeof skeletonFootprint>,
+          ): SkeletonRoof | string => {
+            const [kind, n] = rung.split("/");
+            const attempt = Number(n);
+            return outcome(() =>
+              kind === "hipped"
+                ? (shared?.hipped(attempt) ??
+                  skeletonRoof([footprint], { attempt }))
+                : (shared?.gabled(attempt, rule) ??
+                  skeletonRoof([footprint], { attempt, gableEnds: rule })),
+            );
           };
+          const want = Object.fromEntries(RUNGS.map((r) => [r, draw(r)]));
           const shared = skeletonFootprint([footprint]);
-          const hipped = (): SkeletonRoof | string =>
-            outcome(() => shared.hipped(attempt));
-          const gabled = (): SkeletonRoof | string =>
-            outcome(() => shared.gabled(attempt, rule));
-          const got = hippedFirst
-            ? { hipped: hipped(), gabled: gabled() }
-            : { gabled: gabled(), hipped: hipped() };
+          const got = Object.fromEntries(
+            order.map((r) => [r, draw(r, shared)]),
+          );
           expect(got).toEqual(want);
         },
       ),

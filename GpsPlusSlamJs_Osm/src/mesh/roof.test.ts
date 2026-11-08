@@ -148,6 +148,12 @@ describe("buildRoof: the exact rungs", () => {
     // M2 review finding 2); it must still say what the measured overhang
     // said. A rectangle overhangs by nothing, so a limit of 0 takes the box
     // and any limit below zero, or not a number, does not.
+    // NOT a test of `boxFitsWithin`'s `limit >= 0` guard (delta review NIT 4):
+    // the grid includes the box's own corners, which lie on the outline, and
+    // for them `d <= limit` is false at any negative or NaN limit, so the
+    // result is the same without the guard (checked by removing it,
+    // 2026-11-08). No footprint has every sample strictly inside, so no
+    // footprint can reach the guard alone; it is a shortcut, not behaviour.
     const rectangle: EnuPoint[] = [
       { x: 0, y: 0 },
       { x: 12, y: 0 },

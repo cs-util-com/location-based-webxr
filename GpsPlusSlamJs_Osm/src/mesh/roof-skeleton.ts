@@ -380,8 +380,7 @@ function nudgedRings(
   prepared: readonly PreparedRing[],
   attempt: number,
 ): EnuPoint[][] {
-  const origin = lowestCorner(prepared);
-  return prepared.map((ring, r) => nudgedRing(ring, r, attempt, origin));
+  return prepared.map((ring, r) => nudgedRing(ring, r, attempt));
 }
 
 /** `weights` with the chosen outer walls made vertical gables. */
@@ -395,16 +394,16 @@ function gableWeights(
 }
 
 /**
- * The outer ring's kept corner with the smallest x, then y: the point the
- * nudges are keyed from. Not the first corner, so the ring's starting corner
- * does not matter either.
+ * The position in `ring.keep` of the kept corner with the smallest x, then y:
+ * where the nudge keys start counting. Not the first corner, so the ring's
+ * starting corner does not matter.
  */
-function lowestCorner(prepared: readonly PreparedRing[]): EnuPoint {
-  const outer = at(prepared, 0);
-  let best = at(outer.oriented, at(outer.keep, 0));
-  for (const k of outer.keep) {
-    const p = at(outer.oriented, k);
-    if (p.x < best.x || (p.x === best.x && p.y < best.y)) best = p;
+function lowestCorner(ring: PreparedRing): number {
+  let best = 0;
+  for (let j = 1; j < ring.keep.length; j++) {
+    const p = at(ring.oriented, at(ring.keep, j));
+    const b = at(ring.oriented, at(ring.keep, best));
+    if (p.x < b.x || (p.x === b.x && p.y < b.y)) best = j;
   }
   return best;
 }
@@ -412,22 +411,23 @@ function lowestCorner(prepared: readonly PreparedRing[]): EnuPoint {
 /**
  * The kept corners, each nudged by its own stable offset.
  *
- * Keyed on the corner RELATIVE to `origin` (`lowestCorner`), not on its ENU
- * coordinates: the ENU origin is each app's own, and absolute keys gave the
- * same building other nudges, and so other gables, in apps with other
- * origins (M2 review finding 4).
+ * Keyed on the corner's INDEX counted from `lowestCorner`, and on the ring's
+ * size, not on coordinates: the ENU origin is each app's own, and absolute
+ * keys gave the same building other nudges, and so other gables, in apps
+ * with other origins (M2 review finding 4); keys relative to a corner still
+ * moved when a north-south origin move rescaled x by millimetres (delta
+ * review MINOR 1).
  */
 function nudgedRing(
   ring: PreparedRing,
   r: number,
   attempt: number,
-  origin: EnuPoint,
 ): EnuPoint[] {
-  return ring.keep.map((k) => {
+  const n = ring.keep.length;
+  const start = lowestCorner(ring);
+  return ring.keep.map((k, j) => {
     const p = at(ring.oriented, k);
-    const nudge = stableNudge(
-      `${attempt}/${r}/${(p.x - origin.x).toFixed(3)}/${(p.y - origin.y).toFixed(3)}`,
-    );
+    const nudge = stableNudge(`${attempt}/${r}/${(j - start + n) % n}/${n}`);
     return { x: p.x + nudge.x * JITTER_M, y: p.y + nudge.y * JITTER_M };
   });
 }
