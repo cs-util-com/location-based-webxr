@@ -6,6 +6,7 @@
 export {
   buildingObjects,
   cityObjects,
+  cosmeticTreeObjects,
   disposeCityObjects,
   geometryFrom,
   roadObjects,

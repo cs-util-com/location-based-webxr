@@ -42,7 +42,9 @@ message }` when no city was delivered (heights still missing, no tile).
   user agent) and `createCachingTileFetch` (tiles and heights side by side,
   the first ring delivered first, a 20 s deadline per height tile, retries
   after 10, 30 and 60 s); `buildCity` within the terrain window (R12) with
-  the roads, on each delivery.
+  the roads, on each delivery, with the delivery's `window` (the loaded
+  tiles' box) as its build window and the cosmetic woods off until objects
+  M2b.
 - Invariants & assumptions:
   - The warm-up and the build are one load, so they read the same tiles and
     the same heights by construction (validation finding F6).

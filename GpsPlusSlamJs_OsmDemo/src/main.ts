@@ -2955,6 +2955,9 @@ async function main(): Promise<void> {
       // silently produces nothing is indistinguishable from one that produced
       // nothing because there is nothing there.
       mesh === undefined || mesh.poi === 0 ? "" : `${mesh.poi} POI`,
+      // The woods layer's invented trees (objects M2a), reported like the POI:
+      // a count is how a user tells "switched off" from "no woods here".
+      mesh === undefined || mesh.woods === 0 ? "" : `${mesh.woods} woods`,
       mesh === undefined || mesh.roads === 0
         ? ""
         : `${mesh.roads} roads (${mesh.roadTriangles} tri)`,

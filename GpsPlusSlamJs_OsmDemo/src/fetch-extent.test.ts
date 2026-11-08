@@ -16,7 +16,12 @@
 import { describe, expect, it } from "vitest";
 import { latLngToCell } from "h3-js";
 
-import { describeExtent, summariseExtent, tileBounds } from "./fetch-extent.js";
+import {
+  describeExtent,
+  fetchedWindow,
+  summariseExtent,
+  tileBounds,
+} from "./fetch-extent.js";
 
 /** Cologne — the demo's default area. */
 const COLOGNE = { lat: 50.9413, lng: 6.9583 };
@@ -95,5 +100,40 @@ describe("describing the extent", () => {
     // on the scoring rather than on this module.
     const text = describeExtent([TILE]);
     expect(text).not.toMatch(/NaN|Infinity/);
+  });
+});
+
+// WHY (city objects plan 2026-11-07-2315 M2a): the library invents trees
+// only inside the window it is given, and a forest relation reaches far past
+// any fetch. The window must be the ground actually fetched (the tiles'
+// boxes, which is what Overpass was asked for) and no larger than the drawn
+// ground, or trees would stand where no terrain is drawn.
+describe("the build window", () => {
+  const tile = latLngToCell(50.9413, 6.9583, 7);
+  const clip = { south: 50.93, west: 6.94, north: 50.95, east: 6.97 };
+
+  it("is the loaded tiles' box cut to the drawn ground", () => {
+    const box = tileBounds(tile);
+    const window = fetchedWindow([tile], clip);
+    expect(window).toEqual({
+      south: Math.max(box.south, clip.south),
+      west: Math.max(box.west, clip.west),
+      north: Math.min(box.north, clip.north),
+      east: Math.min(box.east, clip.east),
+    });
+  });
+
+  it("spans every loaded tile", () => {
+    const east = latLngToCell(50.9413, 7.2, 7);
+    const wide = { south: 50, west: 6, north: 52, east: 8 };
+    const window = fetchedWindow([tile, east], wide);
+    expect(window?.west).toBe(tileBounds(tile).west);
+    expect(window?.east).toBe(tileBounds(east).east);
+  });
+
+  it("is undefined when nothing is loaded or nothing overlaps the ground", () => {
+    expect(fetchedWindow([], clip)).toBeUndefined();
+    const far = { south: 10, west: 10, north: 10.01, east: 10.01 };
+    expect(fetchedWindow([tile], far)).toBeUndefined();
   });
 });

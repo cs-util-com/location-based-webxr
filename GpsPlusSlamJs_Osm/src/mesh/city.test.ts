@@ -16,6 +16,8 @@ import { srgbToLinear } from "./srgb.js";
  */
 const ORIGIN = { lat: 50.9413, lng: 6.9583 };
 const frame = enuFrameAt(ORIGIN);
+/** The fetched window every build is given: wide enough for every test feature. */
+const W = { south: 50.9, west: 6.9, north: 51.0, east: 7.0 };
 
 function outline(colour: string): OsmFeature {
   return {
@@ -84,9 +86,13 @@ const linearUnpacked = (c: number) =>
 
 describe("buildCity", () => {
   it("builds the volumes, the barriers among them and the trees", () => {
-    const city = buildCity([outline("#cc2200"), tower(), WALL, TREE], {
-      frame,
-    });
+    const city = buildCity(
+      [outline("#cc2200"), tower(), WALL, TREE],
+      {
+        frame,
+      },
+      { window: W },
+    );
     // The outline with a part is drawn through its part only.
     expect(city.volumes.map((v) => v.feature)).toEqual(["way/2"]);
     expect(city.barriers).toHaveLength(1);
@@ -99,10 +105,10 @@ describe("buildCity", () => {
   // by whichever part carried a tag). OsmDemo's worker did this inline.
   it("colours a part by its parent", () => {
     const underRed = colours(
-      buildCity([outline("#cc2200"), tower()], { frame }),
+      buildCity([outline("#cc2200"), tower()], { frame }, { window: W }),
     );
     const underBlue = colours(
-      buildCity([outline("#0044cc"), tower()], { frame }),
+      buildCity([outline("#0044cc"), tower()], { frame }, { window: W }),
     );
     // Exactly the parent's colour (its type counts too, not only its tag).
     expect(underRed).toEqual(
@@ -115,16 +121,20 @@ describe("buildCity", () => {
   // buildings takes its own muted kind colour, not a building's grey; before,
   // every wall, hedge and fence went through `buildingColour`.
   it("colours a barrier by its kind, in linear light like the buildings", () => {
-    const city = buildCity([WALL], { frame });
+    const city = buildCity([WALL], { frame }, { window: W });
     expect(colours(city)).toEqual(linearUnpacked(barrierColour(WALL.tags)));
     expect(barrierColour(WALL.tags)).not.toBe(buildingColour(WALL.tags));
   });
 
   it("stands on the ground it is given", () => {
-    const city = buildCity([outline("#cc2200"), tower()], {
-      frame,
-      groundHeightM: () => 500,
-    });
+    const city = buildCity(
+      [outline("#cc2200"), tower()],
+      {
+        frame,
+        groundHeightM: () => 500,
+      },
+      { window: W },
+    );
     let minY = Infinity;
     for (const chunk of city.buildings) {
       const p = chunk.mesh.positions;
@@ -136,8 +146,16 @@ describe("buildCity", () => {
   // WHY: the AR shell shader's phase per feature must not re-shuffle on a
   // rebuild, or the city visibly re-randomises whenever a tile loads.
   it("gives each feature a stable shell phase in [0, 1)", () => {
-    const a = buildCity([outline("#cc2200"), tower(), WALL], { frame });
-    const b = buildCity([outline("#cc2200"), tower(), WALL], { frame });
+    const a = buildCity(
+      [outline("#cc2200"), tower(), WALL],
+      { frame },
+      { window: W },
+    );
+    const b = buildCity(
+      [outline("#cc2200"), tower(), WALL],
+      { frame },
+      { window: W },
+    );
     const ra = a.buildings.flatMap((c) => [...(c.featureRand ?? [])]);
     const rb = b.buildings.flatMap((c) => [...(c.featureRand ?? [])]);
     expect(ra.length).toBeGreaterThan(0);
@@ -149,7 +167,7 @@ describe("buildCity", () => {
   });
 
   it("builds nothing from nothing", () => {
-    const city = buildCity([], { frame });
+    const city = buildCity([], { frame }, { window: W });
     expect(city.volumes).toEqual([]);
     expect(city.buildings).toEqual([]);
     expect(city.trees).toEqual([]);
@@ -221,7 +239,7 @@ describe("buildCity within a window", () => {
     const city = buildCity(
       [near, far, TREE, farTree, WALL, farWall],
       { frame },
-      { withinM: 2400 },
+      { window: W, withinM: 2400 },
     );
     expect(city.volumes.map((v) => v.feature)).toEqual(["way/1"]);
     expect(city.barriers.map((b) => b.feature)).toEqual(["way/3"]);
@@ -229,16 +247,20 @@ describe("buildCity within a window", () => {
   });
 
   it("keeps everything without a window", () => {
-    const city = buildCity([near, far, TREE, farTree], { frame });
+    const city = buildCity(
+      [near, far, TREE, farTree],
+      { frame },
+      { window: W },
+    );
     expect(city.volumes).toHaveLength(2);
     expect(city.trees).toHaveLength(2);
   });
 
   it("refuses a window that is not a positive number", () => {
     for (const withinM of [0, -1, Number.NaN]) {
-      expect(() => buildCity([near], { frame }, { withinM })).toThrow(
-        RangeError,
-      );
+      expect(() =>
+        buildCity([near], { frame }, { window: W, withinM }),
+      ).toThrow(RangeError);
     }
   });
 });
@@ -287,13 +309,17 @@ describe("buildCity with roads", () => {
   };
 
   it("builds no roads unless asked", () => {
-    const city = buildCity([ROAD, PATH], { frame });
+    const city = buildCity([ROAD, PATH], { frame }, { window: W });
     expect(city.roads).toEqual([]);
     expect(city.roadCount).toBe(0);
   });
 
   it("builds the roads and the paths, chunked and coloured by class and surface, never a tunnel", () => {
-    const city = buildCity([ROAD, PATH, TUNNEL], { frame }, { roads: true });
+    const city = buildCity(
+      [ROAD, PATH, TUNNEL],
+      { frame },
+      { window: W, roads: true },
+    );
     expect(city.roadCount).toBe(2);
     expect(city.roads.length).toBeGreaterThan(0);
     const colours = new Set<string>();
@@ -313,7 +339,7 @@ describe("buildCity with roads", () => {
     const city = buildCity(
       [ROAD],
       { frame, groundHeightM: (p) => 400 + (p.lng - 6.958) * 10_000 },
-      { roads: true },
+      { window: W, roads: true },
     );
     const ys: number[] = [];
     for (const chunk of city.roads) {
@@ -329,8 +355,92 @@ describe("buildCity with roads", () => {
     const city = buildCity(
       [ROAD, FAR_ROAD],
       { frame },
-      { roads: true, withinM: 2400 },
+      { window: W, roads: true, withinM: 2400 },
     );
     expect(city.roadCount).toBe(1);
+  });
+});
+
+// WHY (city objects plan 2026-11-07-2315 M2a): the invented trees of woods,
+// orchards and tree rows are part of the city both apps draw, on by default
+// (the owner) and switchable off; they must never mix with the mapped trees,
+// and the build must refuse to run without the fetched window that bounds
+// every invention.
+describe("buildCity, cosmetic trees", () => {
+  const forest: OsmFeature = {
+    type: "way",
+    id: 20,
+    tags: { landuse: "forest" },
+    geometry: [
+      { lat: 50.95, lng: 6.96 },
+      { lat: 50.95, lng: 6.962 },
+      { lat: 50.951, lng: 6.962 },
+      { lat: 50.951, lng: 6.96 },
+      { lat: 50.95, lng: 6.96 },
+    ],
+  };
+  // A house inside the forest.
+  const house: OsmFeature = {
+    type: "way",
+    id: 21,
+    tags: { building: "house" },
+    geometry: [
+      { lat: 50.9503, lng: 6.9605 },
+      { lat: 50.9503, lng: 6.9612 },
+      { lat: 50.9507, lng: 6.9612 },
+      { lat: 50.9507, lng: 6.9605 },
+      { lat: 50.9503, lng: 6.9605 },
+    ],
+  };
+
+  it("invents them by default, in their own field, never among the mapped trees", () => {
+    const city = buildCity([forest, TREE], { frame }, { window: W });
+    expect(city.trees.map((t) => t.feature)).toEqual(["node/4"]);
+    expect(city.cosmeticTrees.length).toBeGreaterThan(100);
+    for (const t of city.cosmeticTrees) {
+      expect(t.cosmetic).toBe(true);
+      expect(t.feature).toBe("way/20");
+    }
+  });
+
+  it("builds none when switched off", () => {
+    const city = buildCity(
+      [forest, TREE],
+      { frame },
+      { window: W, cosmeticTrees: false },
+    );
+    expect(city.cosmeticTrees).toEqual([]);
+    expect(city.trees).toHaveLength(1);
+  });
+
+  it("keeps them out of the buildings it builds", () => {
+    const city = buildCity([forest, house], { frame }, { window: W });
+    const ring = city.volumes[0]!.footprint;
+    const xs = ring.map((p) => p.x);
+    const ys = ring.map((p) => p.y);
+    const inHouse = city.cosmeticTrees.filter(
+      (t) =>
+        t.position.x > Math.min(...xs) &&
+        t.position.x < Math.max(...xs) &&
+        t.position.y > Math.min(...ys) &&
+        t.position.y < Math.max(...ys),
+    );
+    expect(inHouse).toEqual([]);
+    const without = buildCity([forest], { frame }, { window: W });
+    expect(without.cosmeticTrees.length).toBeGreaterThan(
+      city.cosmeticTrees.length,
+    );
+  });
+
+  it("keeps them within withinM like everything else", () => {
+    const city = buildCity([forest], { frame }, { window: W, withinM: 800 });
+    expect(city.cosmeticTrees).toEqual([]);
+  });
+
+  it("refuses to build without a window", () => {
+    expect(() => buildCity([forest], { frame }, {} as never)).toThrow(
+      RangeError,
+    );
+    expect(() => buildCity([forest], { frame }, undefined as never)).toThrow();
   });
 });

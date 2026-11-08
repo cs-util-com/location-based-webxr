@@ -65,6 +65,39 @@ export function tileBounds(tile: string): Bounds {
   };
 }
 
+/**
+ * The build window: the union of the loaded tiles' boxes (what Overpass was
+ * asked for), cut to `clip` (the drawn ground). Undefined when no tile is
+ * loaded or the two do not overlap: there is then no fetched ground to invent
+ * anything on (city objects plan 2026-11-07-2315 section 4).
+ */
+export function fetchedWindow(
+  tiles: readonly string[],
+  clip: Bounds,
+): Bounds | undefined {
+  if (tiles.length === 0) return undefined;
+  let south = Infinity;
+  let west = Infinity;
+  let north = -Infinity;
+  let east = -Infinity;
+  for (const tile of tiles) {
+    const box = tileBounds(tile);
+    south = Math.min(south, box.south);
+    west = Math.min(west, box.west);
+    north = Math.max(north, box.north);
+    east = Math.max(east, box.east);
+  }
+  const window = {
+    south: Math.max(south, clip.south),
+    west: Math.max(west, clip.west),
+    north: Math.min(north, clip.north),
+    east: Math.min(east, clip.east),
+  };
+  return window.south < window.north && window.west < window.east
+    ? window
+    : undefined;
+}
+
 export interface ExtentSummary {
   /** Bounding-box width at its mid-latitude, km. */
   readonly widthKm: number;

@@ -97,6 +97,7 @@ const EMPTY_MESH_DATA = {
 const NO_MESH: TransferableMesh = {
   buildings: [],
   trees: [],
+  cosmeticTrees: [],
   plates: [],
   plateCount: 0,
   poi: [],

@@ -142,6 +142,9 @@ function meshLayerMaterials(): { material: THREE.Material; where: string }[] {
   const { objects } = drawMeshLayers(everyLayer(), {
     buildings: true,
     trees: true,
+    // The cosmetic woods are hidden in AR (owner decision, objects M2a), so
+    // they are not AR content; their material is the trees layer one anyway.
+    woods: false,
     plates: true,
     roads: true,
     poi: true,

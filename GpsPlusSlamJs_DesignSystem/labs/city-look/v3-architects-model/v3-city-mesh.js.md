@@ -23,7 +23,9 @@ model shader reads.
 - An inferred roof goes on a volume without a `parentFeature` only. The library
   still builds that volume's flat cap at the eave, hidden under the sheet: about
   two triangles a house that are never seen.
-- A tagged building reaches `buildCity` as the same feature object.
+- A tagged building reaches `buildCity` as the same feature object; the build
+  window is `ctx.fixture.bbox` and the cosmetic trees are off (only volumes and
+  barriers are read).
 - Barriers are matte paper without lines.
 
 ## Example

@@ -435,7 +435,13 @@ async function run(variant, api) {
   const { features } = parseOverpassJson(fixture.payload);
   const frame = enuFrameAt(fixture.centre);
   const ground = cityGround(frame, undefined);
-  const city = buildCity(features, ground, { roads: true });
+  // The fixture's box is the data fetched, so the build window (city
+  // objects plan 2026-11-07-2315 section 4); today's side now carries the
+  // library's cosmetic woods, which O1 omits with today's trees.
+  const city = buildCity(features, ground, {
+    roads: true,
+    window: fixture.bbox,
+  });
   const street = streetCamera(features, frame);
 
   const writeLink = () => history.replaceState(null, "", cityLookSearch(state));

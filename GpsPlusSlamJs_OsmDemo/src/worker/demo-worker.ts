@@ -71,6 +71,7 @@ import { createOsmTileSource, openOsmStore } from "../osm-tile-cache.js";
 import { WALKABLE_CATEGORY, walkableScoreOf } from "../route-penalty.js";
 import { buildCellMesh } from "../cell-mesh.js";
 import { DemoPipeline } from "../demo-pipeline.js";
+import { fetchedWindow } from "../fetch-extent.js";
 import { nowMs, nowEpochMs } from "../monotonic-clock.js";
 import { describeTerrain } from "../terrain-note.js";
 import {
@@ -289,6 +290,12 @@ function buildMesh(
    * the same rule the cell array follows since round 10 stage B.
    */
   undergroundOutlines: readonly (readonly LatLng[])[] = [],
+  /**
+   * The fetch tiles loaded so far. Their boxes, cut to the drawn ground, are
+   * the build window: no tree is invented outside it (city objects plan
+   * 2026-11-07-2315 M2a).
+   */
+  loadedTiles: readonly string[] = [],
 ): TransferableMesh {
   const options = meshOptions(frameOrigin);
   const all = [...features];
@@ -315,7 +322,15 @@ function buildMesh(
   // the globe draws the same roads): PER-VERTEX terrain, like the plates (a
   // road is a long surface, and one sample would cut into the hill at one
   // end and float at the other), chunked and coloured by class and surface.
-  const city = buildCity(all, options, { roads: true });
+  // THE WINDOW is the fetched tiles cut to the drawn ground: a forest
+  // relation reaches far past both, and a tree beyond the drawn terrain
+  // would stand on nothing. No overlap, no fetched ground: no woods.
+  const window = fetchedWindow(loadedTiles, plateClip);
+  const city = buildCity(all, options, {
+    window: window ?? plateClip,
+    cosmeticTrees: window !== undefined,
+    roads: true,
+  });
   const { volumes, barriers, trees } = city;
   // Per-vertex terrain again: a region can be hundreds of metres across.
   const regionSlabs = buildRegionSlabs(regions, options);
@@ -412,6 +427,7 @@ function buildMesh(
   return {
     buildings,
     trees,
+    cosmeticTrees: city.cosmeticTrees,
     plates: chunkMeshes(
       plates,
       (plate) => plate.mesh,
@@ -519,6 +535,7 @@ function meshUpdateFor(
     position: LatLng;
     regions: readonly SlabRegion[];
     undergroundOutlines: readonly (readonly LatLng[])[];
+    loadedTiles: readonly string[];
   },
   pipeline: DemoPipeline,
   frameOrigin: LatLng,
@@ -545,6 +562,7 @@ function meshUpdateFor(
       frameOrigin,
       snapshot.regions,
       snapshot.undergroundOutlines,
+      snapshot.loadedTiles,
     ),
   };
 }

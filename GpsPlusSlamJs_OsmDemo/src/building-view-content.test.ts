@@ -211,4 +211,13 @@ describe("suspend/resume — the desktop renderer's AR lifecycle (M5)", () => {
     const beacons = SOURCE.slice(SOURCE.indexOf("setQuestBeacons(placements"));
     expect(beacons.slice(0, 200)).toContain("this.reapplyArShadowCasting();");
   });
+
+  // WHY (objects M2a, owner decision): the cosmetic woods are off in AR. The
+  // switch rides the shell material, which render() re-applies after every
+  // rebuild, so a refetch during AR cannot bring the invented trees back.
+  it("hides the cosmetic woods together with the AR shell material", () => {
+    const start = SOURCE.indexOf("  setArShellMaterial(material");
+    const body = SOURCE.slice(start, SOURCE.indexOf("\n  }\n", start));
+    expect(body).toContain("showCosmetic(this.group, material === undefined);");
+  });
 });

@@ -38,6 +38,7 @@ function meshWith(poi: TransferableMesh["poi"]): TransferableMesh {
     // eligible -- so its row actually runs and iterates this.
     buildings: [],
     trees: [],
+    cosmeticTrees: [],
     plates: [],
     plateCount: 0,
     roads: [],

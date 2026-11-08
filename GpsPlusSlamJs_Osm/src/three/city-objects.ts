@@ -364,17 +364,36 @@ export function roadObjects(chunks: readonly MeshChunk[]): THREE.Mesh[] {
 }
 
 /**
- * The buildings, trees and (when built) roads of a city (`buildCity`), as
- * three.js objects.
+ * The invented trees of a city (`City.cosmeticTrees`): `treeObjects` with
+ * `userData.cosmetic = true` on each mesh, so an app can hide them (a
+ * layer switch, AR) and never confuse them with mapped trees. Each mesh
+ * keeps the build's rank order (`packInstances` preserves order within a
+ * form), so drawing its first n instances thins a wood evenly.
+ */
+export function cosmeticTreeObjects(
+  placements: readonly TreePlacement[],
+): THREE.InstancedMesh[] {
+  const objects = treeObjects(placements);
+  for (const object of objects) {
+    object.userData = { sharedResources: true, cosmetic: true };
+  }
+  return objects;
+}
+
+/**
+ * The buildings, trees, invented trees (when the city has them) and roads
+ * (when built) of a city (`buildCity`), as three.js objects.
  */
 export function cityObjects(city: {
   readonly buildings: readonly MeshChunk[];
   readonly trees: readonly TreePlacement[];
+  readonly cosmeticTrees?: readonly TreePlacement[];
   readonly roads?: readonly MeshChunk[];
 }): THREE.Object3D[] {
   return [
     ...buildingObjects(city.buildings),
     ...treeObjects(city.trees),
+    ...cosmeticTreeObjects(city.cosmeticTrees ?? []),
     ...roadObjects(city.roads ?? []),
   ];
 }

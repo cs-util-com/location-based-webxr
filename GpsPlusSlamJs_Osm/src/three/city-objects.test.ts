@@ -7,6 +7,7 @@ import type { OsmFeature } from "../model/osm-feature.js";
 import {
   buildingObjects,
   cityObjects,
+  cosmeticTreeObjects,
   disposeCityObjects,
   geometryFrom,
   roadObjects,
@@ -23,6 +24,8 @@ import {
  * never frees what is shared.
  */
 const frame = enuFrameAt({ lat: 50.9413, lng: 6.9583 });
+/** The fetched window every build is given: wide enough for every test feature. */
+const W = { south: 50.9, west: 6.9, north: 51.0, east: 7.0 };
 const HOUSE: OsmFeature = {
   type: "way",
   id: 1,
@@ -49,6 +52,7 @@ const city = buildCity(
     tree(12, "needleleaved"),
   ],
   { frame },
+  { window: W },
 );
 
 describe("geometryFrom", () => {
@@ -149,9 +153,13 @@ describe("treeObjects", () => {
       position: { lat: 50.941, lng: 6.959 },
     };
     const all = treeObjects(
-      buildCity([tree(10, "broadleaved"), tree(12, "needleleaved"), untagged], {
-        frame,
-      }).trees,
+      buildCity(
+        [tree(10, "broadleaved"), tree(12, "needleleaved"), untagged],
+        {
+          frame,
+        },
+        { window: W },
+      ).trees,
     );
     expect(all).toHaveLength(3);
     const triangles = all.map(
@@ -223,7 +231,11 @@ describe("roadObjects", () => {
       { lat: 50.9412, lng: 6.9595 },
     ],
   };
-  const withRoads = buildCity([HOUSE, ROAD], { frame }, { roads: true });
+  const withRoads = buildCity(
+    [HOUSE, ROAD],
+    { frame },
+    { window: W, roads: true },
+  );
 
   it("draws one opaque, single-sided, vertex-coloured mesh per road chunk, at the ground", () => {
     const roads = roadObjects(withRoads.roads);
@@ -254,5 +266,66 @@ describe("roadObjects", () => {
     expect(
       cityObjects(city).some((o) => o.userData["cityLayer"] === "roads"),
     ).toBe(false);
+  });
+});
+
+// WHY (city objects plan 2026-11-07-2315 M2a): invented trees are drawn in
+// their own instanced meshes, flagged `userData.cosmetic`, so an app can hide
+// them (OsmDemo's `woods` layer, AR) without touching the mapped trees, and
+// each mesh keeps the build's rank order, which is what a phone governor
+// thins by (draw the first n instances).
+describe("cosmeticTreeObjects", () => {
+  const forest: OsmFeature = {
+    type: "way",
+    id: 30,
+    tags: { landuse: "forest", leaf_type: "mixed" },
+    geometry: [
+      { lat: 50.942, lng: 6.96 },
+      { lat: 50.942, lng: 6.961 },
+      { lat: 50.9425, lng: 6.961 },
+      { lat: 50.9425, lng: 6.96 },
+      { lat: 50.942, lng: 6.96 },
+    ],
+  };
+  const wooded = buildCity([forest, HOUSE], { frame }, { window: W });
+
+  it("draws one cosmetic instanced mesh per form, in rank order", () => {
+    const objects = cosmeticTreeObjects(wooded.cosmeticTrees);
+    expect(objects).toHaveLength(2);
+    let total = 0;
+    for (const mesh of objects) {
+      expect(mesh.userData).toEqual({ sharedResources: true, cosmetic: true });
+      total += mesh.count;
+    }
+    expect(total).toBe(wooded.cosmeticTrees.length);
+    // Instance 0 of each mesh is the first tree of its form in the build:
+    // packing kept the rank order.
+    const firsts = ["needleleaved", "broadleaved"].map((v) =>
+      wooded.cosmeticTrees.find((t) => t.variant === v)!,
+    );
+    const m = new THREE.Matrix4();
+    const starts = objects.map((mesh) => {
+      mesh.getMatrixAt(0, m);
+      const p = new THREE.Vector3().setFromMatrixPosition(m);
+      return [p.x.toFixed(2), (-p.z).toFixed(2)].join(",");
+    });
+    expect(new Set(starts)).toEqual(
+      new Set(
+        firsts.map((t) =>
+          [t.position.x.toFixed(2), t.position.y.toFixed(2)].join(","),
+        ),
+      ),
+    );
+  });
+
+  it("is drawn by cityObjects when the city has them, the mapped trees unflagged", () => {
+    const plain = cityObjects({
+      buildings: wooded.buildings,
+      trees: wooded.trees,
+    });
+    expect(plain.some((o) => o.userData["cosmetic"])).toBe(false);
+    const all = cityObjects(wooded);
+    expect(all.filter((o) => o.userData["cosmetic"])).toHaveLength(2);
+    expect(cosmeticTreeObjects([])).toEqual([]);
   });
 });

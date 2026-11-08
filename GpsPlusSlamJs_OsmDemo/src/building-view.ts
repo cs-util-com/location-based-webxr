@@ -51,6 +51,7 @@ import { installGroundSlope } from "./ground-slope-shader.js";
 import {
   applyBuildingSkyLight,
   applySurfaceGain,
+  showCosmetic,
   drawMeshLayers,
 } from "./mesh-layers.js";
 import {
@@ -2325,6 +2326,9 @@ export class BuildingView {
    */
   setArShellMaterial(material: THREE.Material | undefined): void {
     this.arShellMaterial = material;
+    // The cosmetic woods are off in AR (owner decision, objects M2a); held
+    // with the shell material so a rebuild during AR stays hidden too.
+    showCosmetic(this.group, material === undefined);
     this.group.traverse((object) => {
       if (!(object instanceof THREE.Mesh)) return;
       // NARROWED EXPLICITLY: `THREE.Mesh`'s default generics leave `geometry`

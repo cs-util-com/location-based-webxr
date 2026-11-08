@@ -77,10 +77,11 @@ colour, plus what a tree is from its tags (`treeClass`). No geometry.
   buildings, and because the trees stay consistent with each other it reads as a
   data or heading problem rather than a sign error. A consumer doing its own
   packing from `TreePlacement` must apply the reflection itself.
-- **Only `natural=tree` nodes.** `natural=wood`, `landuse=forest` and
-  `natural=tree_row` need a scatter over an area or along a line — the same
-  placement type, a different generator, and a well-defined follow-up rather than
-  a guess.
+- **Only `natural=tree` nodes.** `natural=wood`, `landuse=forest`,
+  `landuse=orchard` and `natural=tree_row` imply trees nobody mapped one by
+  one; `cosmetic-trees.ts` invents those (city objects plan 2026-11-07-2315
+  M2a), as the same placement type flagged `cosmetic: true`, and `buildCity`
+  keeps them in their own field.
 - **Colour per class, muted, deterministic** (city objects plan
   2026-11-07-2315 M1, ported from the O1 quiet-greens lab the owner chose).
   `TREE_PALETTE` is sRGB, chroma 19 to 40 (max minus min channel) against

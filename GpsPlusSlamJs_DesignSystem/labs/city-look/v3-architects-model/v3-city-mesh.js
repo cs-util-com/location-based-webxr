@@ -147,7 +147,10 @@ function chunkObject(pieces, material, THREE) {
  */
 export function buildModelCity(features, ctx, { material, tolerance }) {
   const { adjusted, plans } = planCity(features, ctx, tolerance);
-  const city = ctx.buildCity(adjusted, ctx.ground, {});
+  const city = ctx.buildCity(adjusted, ctx.ground, {
+    window: ctx.fixture.bbox,
+    cosmeticTrees: false,
+  });
   const chunks = chunksOf(city.volumes, city.barriers, ctx.featureByKey, plans);
   return [...chunks.values()].map((pieces) =>
     chunkObject(pieces, material, ctx.THREE),

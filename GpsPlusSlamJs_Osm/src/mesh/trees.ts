@@ -303,9 +303,8 @@ export interface BuildTreesOptions {
 /**
  * Placements for every `natural=tree` node in `features`.
  *
- * Only individual trees. `natural=wood`, `landuse=forest` and `natural=tree_row`
- * need a scatter over an area or along a line — the same placement type, a
- * different generator, and a well-defined follow-up rather than a guess.
+ * Only individual trees. The trees a wood, an orchard or a tree row implies
+ * are invented by `cosmetic-trees.ts`, flagged `cosmetic: true`.
  */
 export function buildTrees(
   features: Iterable<OsmFeature>,

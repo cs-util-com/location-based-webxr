@@ -41,6 +41,7 @@ describe("groundLift", () => {
     // them would only make them float above the surface they sit on.
     expect(groundLift("buildings")).toBe(0);
     expect(groundLift("trees")).toBe(0);
+    expect(groundLift("woods")).toBe(0);
     expect(groundLift("poi")).toBe(0);
   });
 

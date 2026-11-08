@@ -143,7 +143,14 @@ describe("the side-effect note on a layer that does more than its name says", ()
           HTMLElement | undefined
       )?.title ?? "";
     expect(noteFor("plates")).toMatch(/pool, pitch and parking/);
-    for (const layer of ["buildings", "trees", "roads", "poi", "cells"]) {
+    for (const layer of [
+      "buildings",
+      "trees",
+      "woods",
+      "roads",
+      "poi",
+      "cells",
+    ]) {
       expect(noteFor(layer)).toBe("");
     }
   });
@@ -375,6 +382,7 @@ describe("where an extra control lands inside its group", () => {
       "layer-group-label",
       "layer-buildings",
       "layer-trees",
+      "layer-woods",
       "layer-plates",
       "layer-roads",
       "layer-poi",

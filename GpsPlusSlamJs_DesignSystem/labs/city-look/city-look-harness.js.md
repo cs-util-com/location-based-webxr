@@ -31,7 +31,8 @@ variant can draw its own instead of restyling today's.
 
 `ctx`: `THREE`, `fixture` (`name`, `label`, `centre`, `bbox`), `features`, `featureByKey`
 (a `Map` on `featureKey`), `frame` (`toEnu`), `ground`, `city` (the `buildCity` result with
-roads, built on the library's defaults), `sun` (a unit vector towards the sun),
+roads, built on the library's defaults with `fixture.bbox` as its build window, so
+today's trees now carry the library's cosmetic woods; O1 omits them with today's trees), `sun` (a unit vector towards the sun),
 `seededRandom`, `buildCity`, `buildingObjects`, `geometryFrom`.
 
 `window.__cityLook`, serialisable except `three`:

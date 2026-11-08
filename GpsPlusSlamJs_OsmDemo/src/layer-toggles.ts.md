@@ -145,3 +145,8 @@ subscriber (`subscribe` fires on change only, and `cells` is off by default —
 so the one state DEC-U9 exists for was never painted), and `[hidden]` must be
 given precedence over `header label { display: inline-flex }`, or the attribute
 is set and nothing happens.
+
+## `woods` joins `world` (objects M2a, 2026-11-08)
+
+- Label "woods", beside "trees": invented trees in mapped woods, orchards and
+  tree rows. The switch is the owner's on/off for them (default on).

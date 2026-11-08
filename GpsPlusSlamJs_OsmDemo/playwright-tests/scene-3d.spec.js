@@ -1188,6 +1188,8 @@ async function underTheWorldSteps(page) {
     // geometry is gone, and a 20x drop says that without depending on a palette.
     await page.locator("#layer-buildings").uncheck();
     await page.locator("#layer-trees").uncheck();
+    // The cosmetic woods (objects M2a) are trees too, and the fixture maps a wood.
+    await page.locator("#layer-woods").uncheck();
     await expect
       .poll(async () => (await countNonSkyPixels(page)).count)
       .toBeLessThan(withBuildings.count / 20);
