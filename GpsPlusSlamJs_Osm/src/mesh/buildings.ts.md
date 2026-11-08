@@ -43,7 +43,9 @@ parentFeature?, rings }` with rings as `x = lng, y = lat`.
   - **No area cap** — a measured deviation from DEC-R11-9. See below.
 - `interface BuildingVolume` — `feature`, `parentFeature?`, `heights`, `mesh`,
   `roofIsApproximate`, `roofVertexRanges` (the roof block of each merged
-  polygon in `mesh`, review finding 3), `footprint`, `topHeightM`
+  polygon in `mesh`, review finding 3), `roofMethods` (the ladder step that
+  drew each polygon's roof, in the same order; the seeded palette colours the
+  drawn roof, M7 review MINOR 4), `footprint`, `topHeightM`
   - **`roofIsApproximate` is the real flag from `buildRoof`, not a proxy.**
     Substituting "is the shape gabled or hipped?" is a _different_ claim: a
     gabled roof on an actual rectangle is exact, and that is the common case

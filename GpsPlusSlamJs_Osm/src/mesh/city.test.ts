@@ -421,6 +421,36 @@ describe("buildCity's seeded palette", () => {
     expect(got).toEqual(new Set([key(expected.wall), key(expected.roof)]));
   });
 
+  it("gives a pitched-tagged roof the ladder drew as a flat lid a flat grey", () => {
+    // Why (M7 review MINOR 4): the colour follows the DRAWN roof, not the
+    // tag. An L above the skeleton's corner cap whose rectangle would span
+    // its yard is drawn as a prism (a flat lid at the ridge); clay on a flat
+    // lid reads as a red flat roof, which V2 never drew.
+    const corners: { x: number; y: number }[] = [];
+    for (let i = 0; i < 300; i++) corners.push({ x: (20 * i) / 300, y: 0 });
+    const ring = [
+      ...corners,
+      { x: 20, y: 0 },
+      { x: 20, y: 8 },
+      { x: 8, y: 8 },
+      { x: 8, y: 20 },
+      { x: 0, y: 20 },
+    ];
+    const geometry = [...ring, ring[0] as { x: number; y: number }].map((p) =>
+      frame.toLatLng(p),
+    );
+    const tags = { building: "house", "roof:shape": "hipped", height: "11" };
+    const city = buildCity([{ type: "way", id: 9, tags, geometry }], {
+      frame,
+    });
+    expect(city.volumes[0]?.roofMethods).toEqual(["prism"]);
+    const expected = seededBuildingColours(tags, undefined, "way/9", false);
+    expect(FLAT_ROOF_TONES).toContain(expected.roof);
+    expect(triples(city)).toEqual(
+      new Set([key(expected.wall), key(expected.roof)]),
+    );
+  });
+
   it("is the same city for the same features", () => {
     const features = [1, 2, 3].map((id) => house(id, { building: "yes" }));
     expect(triples(buildCity(features, { frame }))).toEqual(
@@ -471,11 +501,36 @@ describe("Heidelberg under the seeded palette", () => {
   const city = buildCity(features, ground);
   const tagsByKey = new Map(features.map((f) => [featureKey(f), f.tags]));
 
+  /**
+   * The seeded roof a colourless volume must carry. The colour follows the
+   * DRAWN roof (M7 review MINOR 4): a pitched tag the ladder drew as a flat
+   * lid takes a flat grey.
+   */
+  const seededRoofOf = (
+    volume: (typeof city.volumes)[number],
+    tags: Record<string, string>,
+    outlineTags: Record<string, string> | undefined,
+  ): { roof: number; drawnPitched: boolean } => {
+    const drawnPitched = volume.roofMethods.some(
+      (m) => m !== "flat" && m !== "prism",
+    );
+    const key = volume.parentFeature ?? volume.feature;
+    const { roof } = seededBuildingColours(
+      tags,
+      outlineTags,
+      key,
+      drawnPitched,
+    );
+    expect(drawnPitched ? PITCHED_ROOF_TONES : FLAT_ROOF_TONES).toContain(roof);
+    return { roof, drawnPitched };
+  };
+
   it("roofs every roof-tagged building from the palette unless it is colour-tagged", () => {
     const linear = (rgb: number) => linearUnpacked(rgb);
     let pitched = 0;
     let tagged = 0;
     let palette = 0;
+    let flatLid = 0;
     for (const volume of city.volumes) {
       if (volume.heights.roofShape === "flat") continue;
       pitched += 1;
@@ -488,13 +543,8 @@ describe("Heidelberg under the seeded palette", () => {
         tagged += 1;
         continue;
       }
-      const roof = seededBuildingColours(
-        tags,
-        outlineTags,
-        volume.parentFeature ?? volume.feature,
-        true,
-      ).roof;
-      expect(PITCHED_ROOF_TONES).toContain(roof);
+      const { roof, drawnPitched } = seededRoofOf(volume, tags, outlineTags);
+      if (!drawnPitched) flatLid += 1;
       // The roof vertices carry it: find this volume's first roof vertex in
       // the chunks by its position.
       const r = volume.roofVertexRanges[0];
@@ -522,11 +572,13 @@ describe("Heidelberg under the seeded palette", () => {
     }
     // Counted in VOLUMES (parts count singly): 150 pitched volumes of 93
     // buildings; 81 volumes (24 buildings) carry a roof:colour, 69 volumes
-    // (69 buildings) take the palette (2026-11-08).
-    expect({ pitched, tagged, palette }).toEqual({
+    // (69 buildings) take the palette (2026-11-08); 3 of those 69 the ladder
+    // drew as a flat lid, so they take a flat grey (r1155).
+    expect({ pitched, tagged, palette, flatLid }).toEqual({
       pitched: 150,
       tagged: 81,
       palette: 69,
+      flatLid: 3,
     });
   });
 

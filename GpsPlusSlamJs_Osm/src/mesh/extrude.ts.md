@@ -7,7 +7,8 @@ Footprint plus heights to a triangle mesh: walls, roof, and optionally a floor.
 ## Public API
 
 - `extrudeBuilding(rings, options): ExtrudedBuilding` - `MeshData` plus
-  `roofIsApproximate` and `roofVertices`
+  `roofIsApproximate`, `roofVertices` and `roofMethod` (the ladder step that
+  drew the roof, `RoofMesh.method`; `"flat"` for the empty mesh)
 - `interface VertexRange` - `{ start, end }`, half-open vertex indices
 - `mergeMeshes(meshes): MeshData`
 - `interface ExtrudeOptions` — `minHeightM`, `eaveHeightM`, `totalHeightM`,

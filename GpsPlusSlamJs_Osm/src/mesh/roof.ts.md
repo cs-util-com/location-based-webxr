@@ -12,8 +12,8 @@ Roof geometry above the eaves, in the plan's own order of quality-per-effort.
 - `interface RoofOptions` — `shape`, `eaveHeightM`, `ridgeHeightM`, and the
   optional `directionDeg` (`roof:direction`), `orientation` (`"across"`) and
   `maxOverhangM` (the overhang limit, for sweeps and tests)
-- `RoofMesh.method` - which builder drew the roof (`RoofMethod`,
-  module-private): `flat`, `revolved`, `skillion`, `box`, `skeleton`,
+- `RoofMesh.method` - which builder drew the roof (`RoofMethod`, exported
+  since r1155 so `extrude.ts` and `buildings.ts` can carry it to the palette): `flat`, `revolved`, `skillion`, `box`, `skeleton`,
   `hipped-skeleton`, `box-fallback`, `prism`
 - `RoofMesh.surfaceVertices` - the vertices `[0, surfaceVertices)` are roof
   surface; the rest are walls the roof brings (gables, the prism's sides)

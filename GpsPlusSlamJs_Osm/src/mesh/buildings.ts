@@ -52,6 +52,7 @@ import {
 import type { BuildingHeights } from "./building-heights.js";
 import { extrudeBuilding, mergeMeshes } from "./extrude.js";
 import type { ExtrudedBuilding, VertexRange } from "./extrude.js";
+import type { RoofMethod } from "./roof.js";
 import type { MeshData } from "./mesh-data.js";
 import {
   PART_COVERAGE_TO_HIDE_OUTLINE,
@@ -82,6 +83,12 @@ export interface BuildingVolume {
    * drew, not on whatever faces up; see `ExtrudedBuilding.roofVertices`.
    */
   readonly roofVertexRanges: readonly VertexRange[];
+  /**
+   * The ladder step that drew each polygon's roof, in the order of
+   * `roofVertexRanges`. A pitched tag drawn as a flat lid ("flat", "prism")
+   * takes a flat roof colour under the seeded palette (M7 review MINOR 4).
+   */
+  readonly roofMethods: readonly RoofMethod[];
   /**
    * The OUTER ring in ENU metres, kept so a consumer can ask what ground this
    * volume covers (F33, §5).
@@ -958,6 +965,7 @@ function volumeFor(
     });
     offset += m.positions.length / 3;
   }
+  const roofMethods = meshes.map((m) => m.roofMethod);
   const footprint = polygons[0]?.[0] ?? [];
   // The absolute top: the base the walls actually stand on, plus the height the
   // roof reaches above that base.
@@ -969,6 +977,7 @@ function volumeFor(
         mesh,
         roofIsApproximate,
         roofVertexRanges,
+        roofMethods,
         footprint,
         topHeightM,
       }
@@ -980,6 +989,7 @@ function volumeFor(
         mesh,
         roofIsApproximate,
         roofVertexRanges,
+        roofMethods,
         topHeightM,
       };
 }

@@ -51,6 +51,29 @@ export function unit(key: string, salt: string): number {
 }
 
 /**
+ * `unit` with an avalanche finaliser (MurmurHash3's fmix32) over the hash.
+ *
+ * FNV-1a mixes each character into the low bits only as far as the following
+ * characters carry it, and the salt comes LAST, so two salts of one key share
+ * most of their state: over sequential ids the wall and roof picks of the
+ * building palette came out correlated (M7 review NIT 6, chi-square 140-230
+ * against 74.7). The finaliser makes every input bit reach every output bit.
+ *
+ * A separate function, not a change to `unit`: every tree's yaw, every POI's
+ * jitter and every skeleton nudge are pinned to `unit`'s values, and the
+ * roof ladder's test footprints were found against them.
+ */
+export function mixedUnit(key: string, salt: string): number {
+  let h = stableHash(`${key}#${salt}`);
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x85ebca6b) >>> 0;
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35) >>> 0;
+  h ^= h >>> 16;
+  return (h >>> 0) / 0x1_0000_0000;
+}
+
+/**
  * How far a POI marker's size may stray from its model's true size, as a
  * fraction.
  *

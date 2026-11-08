@@ -148,12 +148,14 @@ describe("buildRoof: the exact rungs", () => {
     // M2 review finding 2); it must still say what the measured overhang
     // said. A rectangle overhangs by nothing, so a limit of 0 takes the box
     // and any limit below zero, or not a number, does not.
-    // NOT a test of `boxFitsWithin`'s `limit >= 0` guard (delta review NIT 4):
-    // the grid includes the box's own corners, which lie on the outline, and
-    // for them `d <= limit` is false at any negative or NaN limit, so the
-    // result is the same without the guard (checked by removing it,
-    // 2026-11-08). No footprint has every sample strictly inside, so no
-    // footprint can reach the guard alone; it is a shortcut, not behaviour.
+    // This axis-aligned rectangle does NOT need `boxFitsWithin`'s `limit >= 0`
+    // guard (delta review NIT 4): the grid includes the box's own corners,
+    // which lie on the outline, and for them `d <= limit` is false at any
+    // negative or NaN limit. A ROTATED rectangle can need it: rounding in the
+    // sample positions can put every sample strictly inside the outline, and
+    // then only the guard refuses a negative limit (M7 review, corrected
+    // 2026-11-08; the last case below, found by a search with the guard
+    // removed: 7 of 20 000 rotated rectangles returned "box" at -0.5).
     const rectangle: EnuPoint[] = [
       { x: 0, y: 0 },
       { x: 12, y: 0 },
@@ -171,6 +173,23 @@ describe("buildRoof: the exact rungs", () => {
     expect(method(Number.POSITIVE_INFINITY)).toBe("box");
     expect(method(-0.5)).toBe("skeleton");
     expect(method(Number.NaN)).toBe("skeleton");
+    // The rotated rectangle only the guard refuses: every grid sample of its
+    // box rounds strictly inside the outline.
+    const rotated: EnuPoint[] = [
+      { x: 10.542318440195466, y: -14.8428113740892 },
+      { x: 6.129211794003123, y: 1.667566868983642 },
+      { x: -2.9423184401954705, y: -0.757188625910804 },
+      { x: 1.4707882059968709, y: -17.267566868983646 },
+    ];
+    const rotatedMethod = (maxOverhangM: number): string =>
+      buildRoof([rotated], triangulate([rotated]), {
+        shape: "gabled",
+        eaveHeightM: 6,
+        ridgeHeightM: 10,
+        maxOverhangM,
+      }).method;
+    expect(rotatedMethod(0)).toBe("box");
+    expect(rotatedMethod(-0.5)).toBe("skeleton");
   });
 });
 

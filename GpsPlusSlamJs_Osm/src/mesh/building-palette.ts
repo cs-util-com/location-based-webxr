@@ -22,7 +22,7 @@
 
 import type { OsmTags } from "../model/osm-feature.js";
 import { parseOsmColour, roofColour, type Rgb } from "./feature-colours.js";
-import { unit } from "./stable-jitter.js";
+import { mixedUnit } from "./stable-jitter.js";
 
 /** Which colours `buildCity` gives untagged buildings. */
 export type BuildingPalette = "seeded" | "class";
@@ -52,7 +52,7 @@ export interface BuildingColours {
 function pick(list: readonly Rgb[], key: string, salt: string): Rgb {
   const i = Math.min(
     list.length - 1,
-    Math.floor(unit(key, salt) * list.length),
+    Math.floor(mixedUnit(key, salt) * list.length),
   );
   return list[i] ?? (list[0] as Rgb);
 }

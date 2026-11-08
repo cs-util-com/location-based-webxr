@@ -25,7 +25,7 @@ import { triangulate } from "./triangulate.js";
 import type { RoofShape } from "./building-heights.js";
 import type { MeshData } from "./mesh-data.js";
 import { MeshBuilder } from "./mesh-data.js";
-import { buildRoof } from "./roof.js";
+import { buildRoof, type RoofMethod } from "./roof.js";
 import { addWalls } from "./walls.js";
 
 export interface ExtrudeOptions {
@@ -79,6 +79,12 @@ export interface ExtrudedBuilding extends MeshData {
    * half in the wall colour.
    */
   readonly roofVertices: VertexRange;
+  /**
+   * The ladder step that drew the roof (`RoofMesh.method`). A pitched tag can
+   * still be drawn as a flat lid ("flat", "prism"), and the seeded palette
+   * colours the roof that was drawn, not the one tagged (M7 review MINOR 4).
+   */
+  readonly roofMethod: RoofMethod;
 }
 
 /** A half-open range of vertex indices, `[start, end)`. */
@@ -96,6 +102,7 @@ const EMPTY: ExtrudedBuilding = {
   forcedEars: 0,
   roofIsApproximate: false,
   roofVertices: { start: 0, end: 0 },
+  roofMethod: "flat",
 };
 
 /**
@@ -160,6 +167,7 @@ export function extrudeBuilding(
     ...builder.build(cap.forcedEars + roof.forcedEars),
     roofIsApproximate: roof.isApproximate,
     roofVertices,
+    roofMethod: roof.method,
   };
 }
 

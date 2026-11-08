@@ -26,9 +26,13 @@ of `feature-colours.ts`.
 
 ## Invariants & assumptions
 
-- **Deterministic per key**: the picks come from `unit(key, salt)`
-  (`stable-jitter.ts`, FNV-1a), salts `wall`, `roof` and `lid`, so the same
-  house has the same colour on every device and reload. The V2 prototype
+- **Deterministic per key**: the picks come from `mixedUnit(key, salt)`
+  (`stable-jitter.ts`, FNV-1a with a fmix32 finaliser), salts `wall`, `roof`
+  and `lid`, so the same house has the same colour on every device and reload.
+- **Wall and roof picks are independent**: without the finaliser (plain
+  `unit`) they were correlated over sequential ids (chi-square 140-230
+  against the p = 0.001 bound 74.7, M7 review NIT 6); with it at most 59.2
+  (pitched) and 29.8 (flat) over the property test's nine id ranges. The V2 prototype
   picked with its own `seededRandom`, so the tones match V2 but which house
   gets which tone does not.
 - **`building:material` is not read** under this palette (owner, Q3 of that
@@ -59,6 +63,9 @@ buildCity(features, ground, { palette: "class" }); // the colours before M7
   ignored, unparsable tags ignored, a non-string key.
 - `building-palette.property.test.ts`: chroma below 80 with the maximum at
   58; any key and colourless tags draw from the lists, deterministically; a
-  part passing its outline's key gets the outline's colours.
-- Through `buildCity`: `city.test.ts` ("buildCity's seeded palette" and
-  "Heidelberg under the seeded palette").
+  part passing its outline's key gets the outline's colours. The wall-by-roof
+  cells over 2000 sequential ids (nine id ranges) stay below the p = 0.001
+  chi-square bound (74.7 pitched, 49.7 flat).
+- Through `buildCity`: `city.test.ts` ("buildCity's seeded palette", incl.
+  a pitched tag drawn as a prism taking a flat grey, and "Heidelberg under
+  the seeded palette").

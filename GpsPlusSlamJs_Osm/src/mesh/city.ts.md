@@ -45,7 +45,9 @@ trees, roads, roadCount }`. `volumes` and `barriers` are the builders' own resul
   building without colour tags (city objects plan 2026-11-07-2315 M7):
   `"seeded"` (default) the warm palette of `building-palette.ts`, picked from
   the building's key (a part: its outline's), the roof from the clay and
-  slate tones when its shape is not flat and the greys when it is;
+  slate tones when the ladder DREW a sloped roof and the greys when it drew
+  a flat lid (`BuildingVolume.roofMethods`: "flat" or "prism", also for a
+  pitched tag the ladder could not build; M7 review MINOR 4);
   `"class"` the class colours (`buildingColour`, `roofColour`) as before M7.
   RangeError for any other value.
 - No other error modes: a feature that cannot be built is skipped, as in
@@ -104,9 +106,11 @@ building's parts together (`s3db-parts.test.ts`), and
 refusing a non-positive window; roads only when asked, the roads and paths
 coloured by class and surface and never a tunnel, draped on the ground, kept
 within the window; the seeded palette by default (walls and flat or pitched
-roofs from the key, a part from its outline, material ignored, `"class"`
+roofs from the key, a pitched tag drawn as a prism in a flat grey, a part
+from its outline, material ignored, `"class"`
 reaching the class colours, an unknown palette refused), and Heidelberg's
 corpus extract (every untagged pitched roof takes its palette tone on its own
-roof vertices: 150 pitched volumes, 81 roof-coloured, 69 seeded; no stray
+roof vertices: 150 pitched volumes, 81 roof-coloured, 69 seeded, 3 of them
+drawn as flat lids and so grey; no stray
 colour anywhere). OsmDemo's worker tests and browser suite cover the same assembly in
 use.

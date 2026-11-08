@@ -167,7 +167,7 @@ export function buildCity(
               tags,
               outline,
               volume.parentFeature ?? volume.feature,
-              volume.heights.roofShape !== "flat",
+              drawsPitchedRoof(volume),
             )
           : {
               wall: buildingColour(tags, outline),
@@ -207,6 +207,16 @@ export function buildCity(
     ? cityRoads(all, ground, inside, tagsByKey)
     : { roads: [], roadCount: 0 };
   return { volumes, barriers, buildings, trees, roads, roadCount };
+}
+
+/**
+ * True when the ladder drew a sloped roof on some polygon of the volume: the
+ * clay and slate tones go on what is drawn, so a pitched tag the ladder had to
+ * draw as a flat lid ("flat" cap, "prism") takes the flat greys (M7 review
+ * MINOR 4). A volume without polygons reads as flat.
+ */
+function drawsPitchedRoof(volume: BuildingVolume): boolean {
+  return volume.roofMethods.some((m) => m !== "flat" && m !== "prism");
 }
 
 /**

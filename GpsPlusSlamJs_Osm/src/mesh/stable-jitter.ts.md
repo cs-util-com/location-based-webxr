@@ -10,6 +10,12 @@ render as a row of clones.
   error modes.
 - `unit(key: string, salt: string): number` — a value in `[0, 1)`. The salt lets
   one feature carry several uncorrelated variations.
+- `mixedUnit(key: string, salt: string): number` - `unit` with MurmurHash3's
+  fmix32 finaliser over the hash. The building palette uses it: plain FNV-1a
+  with the salt last left a house's wall and roof picks correlated over
+  sequential ids (M7 review NIT 6). `unit` itself is unchanged, because tree
+  yaws, POI jitter and the skeleton nudges (and the roof tests' footprints)
+  are pinned to its values.
 - `stableRotationY(key: string): number` — a yaw in `[0, 2π)`.
 - `stablePoiScale(key: string): number` — a size multiplier in
   `[1 − POI_SCALE_JITTER, 1 + POI_SCALE_JITTER]`, centred on 1.
@@ -55,7 +61,10 @@ stablePoiScale(key); // e.g. 1.0231
 ## Tests
 
 - `stable-jitter.test.ts` - `stableNudge`: determinism, the `[-1, 1)` band,
-  all four quadrants, and salts distinct from yaw and scale.
+  all four quadrants, and salts distinct from yaw and scale; `mixedUnit`:
+  determinism, the `[0, 1)` band, distinct from `unit`.
+- `building-palette.property.test.ts` - the chi-square independence of the
+  palette's wall and roof picks, which rests on `mixedUnit`.
 
 - `poi-jitter.test.ts` — determinism across builds, spread over all four
   quadrants, the scale band, order-independence, and that POI yaw equals

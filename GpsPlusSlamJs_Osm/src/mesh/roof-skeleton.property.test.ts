@@ -404,13 +404,19 @@ describe("skeletonFootprint (the ladder's footprint)", () => {
           ): SkeletonRoof | string => {
             const [kind, n] = rung.split("/");
             const attempt = Number(n);
-            return outcome(() =>
-              kind === "hipped"
-                ? (shared?.hipped(attempt) ??
-                  skeletonRoof([footprint], { attempt }))
-                : (shared?.gabled(attempt, rule) ??
-                  skeletonRoof([footprint], { attempt, gableEnds: rule })),
-            );
+            // Branch on the cache's absence, not on a nullish fallback: a
+            // cache answering nullish must fail here, not fall back to the
+            // uncached roof (M7 review NIT 5).
+            return outcome(() => {
+              if (shared === undefined) {
+                return kind === "hipped"
+                  ? skeletonRoof([footprint], { attempt })
+                  : skeletonRoof([footprint], { attempt, gableEnds: rule });
+              }
+              return kind === "hipped"
+                ? shared.hipped(attempt)
+                : shared.gabled(attempt, rule);
+            });
           };
           const want = Object.fromEntries(RUNGS.map((r) => [r, draw(r)]));
           const shared = skeletonFootprint([footprint]);

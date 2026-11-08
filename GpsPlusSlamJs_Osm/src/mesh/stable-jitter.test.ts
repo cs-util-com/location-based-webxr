@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { stableNudge, unit } from "./stable-jitter.js";
+import { mixedUnit, stableNudge, unit } from "./stable-jitter.js";
 
 describe("stableNudge", () => {
   // Why this test matters: the skeleton roof moves every footprint corner by
@@ -34,5 +34,23 @@ describe("stableNudge", () => {
     expect((x + 1) / 2).not.toBe(unit(key, "r"));
     expect((y + 1) / 2).not.toBe(unit(key, "s"));
     expect(x).not.toBe(y);
+  });
+});
+
+describe("mixedUnit", () => {
+  // Why this test matters: the building palette picks a house's tones from
+  // it, so it must be as stable as `unit` (the same house, the same colour on
+  // every device) and stay in [0, 1); and it must NOT be `unit`, or the
+  // finaliser that decorrelates the wall and roof picks was dropped.
+  it("is a pure function in [0, 1), distinct from unit", () => {
+    let differs = 0;
+    for (let i = 0; i < 200; i++) {
+      const v = mixedUnit(`way/${i}`, "wall");
+      expect(v).toBe(mixedUnit(`way/${i}`, "wall"));
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThan(1);
+      if (v !== unit(`way/${i}`, "wall")) differs += 1;
+    }
+    expect(differs).toBe(200);
   });
 });
