@@ -7,7 +7,10 @@ import {
   questBeaconPlacements,
 } from "./quest-beacon-placement.js";
 import { type Heightfield } from "gps-plus-slam-osm";
-import { uniformIn } from "gps-plus-slam-app-framework/test-utils/uniform-arbitrary";
+import {
+  uniformIn,
+  uniformWithSeams,
+} from "gps-plus-slam-app-framework/test-utils/uniform-arbitrary";
 
 /**
  * The beacon's frame holds for ANY origin and ANY quest position.
@@ -32,8 +35,11 @@ const origin = fc.record({
   lng: uniformIn(-179, 179),
 });
 
-/** Degrees, small enough to stay inside a sane local frame. */
-const offsetDeg = uniformIn(-0.02, 0.02);
+/**
+ * Degrees, small enough to stay inside a sane local frame, with zero (a beacon
+ * exactly at the origin) and the bounds drawn exactly too.
+ */
+const offsetDeg = uniformWithSeams(-0.02, 0.02);
 
 /** A field wide enough that nothing in these properties falls outside it. */
 function wideField(relief: number): Heightfield {
@@ -124,20 +130,25 @@ describe("quest beacon placement, as a property", () => {
     // whether the ground was measured or assumed. A beacon whose icon and line
     // disagreed would draw a stalk that misses its own marker.
     fc.assert(
-      fc.property(origin, offsetDeg, uniformIn(-400, 4000), (o, d, relief) => {
-        const placements = questBeaconPlacements(
-          [{ position: { lat: o.lat + d, lng: o.lng + d } }],
-          enuFrameAt(o),
-          wideField(relief),
-        );
+      fc.property(
+        origin,
+        offsetDeg,
+        uniformWithSeams(-400, 4000),
+        (o, d, relief) => {
+          const placements = questBeaconPlacements(
+            [{ position: { lat: o.lat + d, lng: o.lng + d } }],
+            enuFrameAt(o),
+            wideField(relief),
+          );
 
-        const placed = placements[0];
-        expect(placed).toBeDefined();
-        expect((placed?.y ?? 0) - (placed?.groundY ?? 0)).toBeCloseTo(
-          QUEST_BEACON_HOVER_M,
-          9,
-        );
-      }),
+          const placed = placements[0];
+          expect(placed).toBeDefined();
+          expect((placed?.y ?? 0) - (placed?.groundY ?? 0)).toBeCloseTo(
+            QUEST_BEACON_HOVER_M,
+            9,
+          );
+        },
+      ),
     );
   });
 });

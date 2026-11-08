@@ -40,11 +40,14 @@ const latLng = fc.record({
   // The antimeridian drawn exactly, not only near it: the frame must hold there.
   lng: uniformWithSeams(-180, 180),
 });
-/** A station within 5 km of the tour's centre, at any tour height. */
+/**
+ * A station within 5 km of the tour's centre, at any tour height, with the
+ * centre itself (zero) and the bounds drawn exactly too.
+ */
 const tourPoint = fc.tuple(
-  uniformIn(-5_000, 5_000),
-  uniformIn(-100, 9_000),
-  uniformIn(-5_000, 5_000),
+  uniformWithSeams(-5_000, 5_000),
+  uniformWithSeams(-100, 9_000),
+  uniformWithSeams(-5_000, 5_000),
 );
 
 /**
