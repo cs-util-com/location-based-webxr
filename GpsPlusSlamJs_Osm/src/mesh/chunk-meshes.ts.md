@@ -46,13 +46,15 @@ coloured.
   where per-feature colour meets per-chunk batching.
 - **No `colourOf` means no colour buffer** — bytes and a shader define bought for
   nothing.
-- **`roofOf` paints a feature's roof** (bug 8, review finding 3): a vertex in
-  one of the item's `vertexRanges` whose face is not vertical (|normal y| above
-  `1e-3`) takes the roof colour, every other vertex the wall colour. The ranges
-  are the roof block `extrudeBuilding` emitted, so the floor of a floating
-  part (outside them) and gable ends (vertical) stay wall-coloured, while an
-  onion's lower, downward-facing half is roof. Until 2026-11-07 the rule was
-  "normal y above `1e-3`", which drew that half grey. Ranges are clamped to the
+- **`roofOf` paints a feature's roof** (bug 8, review finding 3, plan M2):
+  every vertex in one of the item's `vertexRanges` takes the roof colour,
+  every other vertex the wall colour, whatever it faces. The ranges are the
+  roof SURFACE `extrudeBuilding` reports (`buildRoof`'s `surfaceVertices`), so
+  the floor of a floating part and the gable ends, both outside them, stay
+  wall-coloured, while an onion's lower, downward-facing half is roof. Until
+  2026-11-07 the rule was "normal y above `1e-3`", which drew that half grey;
+  until M2 a vertical-face test inside the ranges kept gables wall-coloured,
+  an epsilon that a nearly vertical slope could fall on either side of. Ranges are clamped to the
   item's own vertices, so a bad range cannot paint a neighbour. It relies on
   flat-shaded faces with their own vertices; it is read only with `colourOf`,
   and `undefined` for an item leaves it one colour.

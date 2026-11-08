@@ -413,9 +413,9 @@ describe("both invariants hold on a non-convex footprint", () => {
   /**
    * WHY THIS MATTERS. Every check above uses rectangles, where the ridged
    * shapes take the exact box path. On anything else they go through the
-   * fallback builders (`outlineFallback`, `hipOverOutline`), which emit their
-   * own faces and so can get either invariant wrong on their own. The L is the
-   * commonest non-rectangle in the corpus.
+   * skeleton roof (`roof-skeleton.ts`, `skeleton-mesh.ts`), which emits its
+   * own faces and gables and so can get either invariant wrong on its own. The
+   * L is the commonest non-rectangle in the corpus.
    */
   for (const shape of SHAPES) {
     it(`holds for every triangle of a ${shape} roof on an L`, () => {
@@ -464,9 +464,12 @@ describe("the roof approximation flag reaches a consumer", () => {
     expect(mesh.roofIsApproximate).toBe(false);
   });
 
-  it("reports a gabled roof on an L-shape as approximated", () => {
-    // The oriented bounding rectangle is not the footprint here, so the ridge
-    // is in approximately — not exactly — the right place.
+  it("reports a gabled roof on an L-shape as exact, and a gambrel there as approximated", () => {
+    // BASELINE MOVED BY PLAN (M2 of the skeleton-roof plan, 2026-11-07): the
+    // L used to get the bounding rectangle's ridge, approximately placed. The
+    // skeleton now gives it its real ridges with gables at both wing ends, so
+    // it is the tagged shape and says so. A gambrel has no bent cross-section
+    // on a skeleton yet and is drawn as a plain gable, so it stays approximate.
     const lShape: readonly EnuPoint[] = [
       { x: 0, y: 0 },
       { x: 20, y: 0 },
@@ -475,7 +478,8 @@ describe("the roof approximation flag reaches a consumer", () => {
       { x: 8, y: 20 },
       { x: 0, y: 20 },
     ];
-    expect(build(lShape, "gabled").roofIsApproximate).toBe(true);
+    expect(build(lShape, "gabled").roofIsApproximate).toBe(false);
+    expect(build(lShape, "gambrel").roofIsApproximate).toBe(true);
   });
 
   it("reports a flat roof as exact, because it is", () => {

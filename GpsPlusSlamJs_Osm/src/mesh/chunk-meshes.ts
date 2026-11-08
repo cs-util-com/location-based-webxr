@@ -132,13 +132,13 @@ export function chunkMeshes<T>(
    * The item's ROOF colour and where its roof is, or `undefined` for an item
    * whose roof is its wall colour. Read only together with `colourOf`.
    *
-   * A ROOF VERTEX IS ONE IN `vertexRanges` WHOSE FACE IS NOT VERTICAL (|normal
-   * y| above `ROOF_NORMAL_MIN_Y`), review finding 3. The ranges are what the
-   * roof builder emitted, so the floor of a floating part (outside them) keeps
-   * the wall colour, and gable ends (vertical) do too, while an onion's lower,
-   * downward-facing half is roof. Until 2026-11-07 it was "the normal points
-   * up", which drew half a copper onion in the wall colour. This works because
-   * the builders emit flat-shaded faces with their own vertices.
+   * A ROOF VERTEX IS ONE IN `vertexRanges`, review finding 3. The ranges are
+   * the roof builder's own surfaces (`RoofMesh.surfaceVertices`), so the floor
+   * of a floating part and the gable ends a roof brings with it (both outside
+   * them) keep the wall colour, while an onion's lower, downward-facing half is
+   * roof. Until 2026-11-07 it was "the normal points up", which drew half a
+   * copper onion in the wall colour, and until M2 of the skeleton-roof plan the
+   * gables were told apart by a normal epsilon.
    */
   roofOf?: (item: T) => RoofPaint | undefined,
 ): MeshChunk[] {
@@ -192,9 +192,6 @@ export interface RoofPaint {
   readonly vertexRanges: readonly VertexRange[];
 }
 
-/** |Normal `y`| above which a roof-block vertex is roof (see `roofOf`). */
-const ROOF_NORMAL_MIN_Y = 1e-3;
-
 /** A packed `0xrrggbb` as three 0..1 channels. */
 function channels(colour: number): readonly [number, number, number] {
   return [
@@ -211,7 +208,7 @@ function channels(colour: number): readonly [number, number, number] {
  * faded from one class colour to its neighbour's would read as a gradient
  * someone chose. The merge preserves order, so filling in the same order is
  * what keeps a colour on the feature it belongs to. A part with a roof colour
- * paints the non-vertical vertices of its roof ranges with it; ranges are
+ * paints the vertices of its roof ranges with it; ranges are
  * clamped to the part's own vertices, so a bad range cannot paint a neighbour.
  */
 function vertexColours(
@@ -242,8 +239,7 @@ function paintRoof(
   for (const range of roof.vertexRanges) {
     const end = Math.min(range.end, count);
     for (let i = Math.max(0, range.start); i < end; i++) {
-      const ny = mesh.normals[i * 3 + 1] ?? 0;
-      if (Math.abs(ny) > ROOF_NORMAL_MIN_Y) colors.set(rgb, at + i * 3);
+      colors.set(rgb, at + i * 3);
     }
   }
 }

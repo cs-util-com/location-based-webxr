@@ -89,3 +89,21 @@ export function stableRotationY(key: string): number {
 export function stablePoiScale(key: string): number {
   return 1 + (unit(key, POI_SCALE_SALT) * 2 - 1) * POI_SCALE_JITTER;
 }
+
+/** The salts for the two axes of `stableNudge`. */
+const NUDGE_X_SALT = "nx";
+const NUDGE_Y_SALT = "ny";
+
+/**
+ * A planar offset in `[-1, 1)` on each axis for a key.
+ *
+ * Scaled by the caller, it moves a point off an exact degeneracy (two walls
+ * exactly parallel, two events at exactly one time) the same way on every run
+ * and every device. `roof-skeleton.ts` nudges every footprint corner by it.
+ */
+export function stableNudge(key: string): { x: number; y: number } {
+  return {
+    x: unit(key, NUDGE_X_SALT) * 2 - 1,
+    y: unit(key, NUDGE_Y_SALT) * 2 - 1,
+  };
+}

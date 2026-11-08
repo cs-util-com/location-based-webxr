@@ -202,11 +202,13 @@ describe("chunkMeshes - roof colours (bug 8, review finding 3)", () => {
   // colour per feature, so a red-tiled roof on white walls drew all white.
   // BASELINE MOVED BY PLAN (review finding 3, 2026-11-07): the roof was told
   // apart by an upward normal, which left an onion's downward-facing lower
-  // half in the wall colour. It is now the item's roof vertex ranges, and in
-  // them every face that is not vertical. These pin that rule on a cube whose
-  // whole mesh is declared roof (top AND bottom paint, sides do not), that a
-  // vertex outside the ranges never paints, and that a feature with no roof
-  // colour is unchanged.
+  // half in the wall colour. It is now the item's roof vertex ranges, and
+  // every vertex in them: since M2 of the skeleton-roof plan the ranges hold
+  // only the roof's own surfaces (gables follow outside them), so no normal
+  // epsilon decides what is roof. These pin that rule on a cube whose whole
+  // mesh is declared roof (every face paints, sides included), that a vertex
+  // outside the ranges never paints, and that a feature with no roof colour is
+  // unchanged.
   const paint = (roof: RoofPaint | undefined) =>
     chunkMeshes(
       [cube(0, 0)],
@@ -237,7 +239,7 @@ describe("chunkMeshes - roof colours (bug 8, review finding 3)", () => {
     return { vertical, other };
   }
 
-  it("paints the non-vertical vertices of the roof ranges, the rest with the wall colour", () => {
+  it("paints every vertex of the roof ranges, whatever it faces", () => {
     const { vertical, other } = byFacing(
       paint({
         colour: 0xff0000,
@@ -246,7 +248,17 @@ describe("chunkMeshes - roof colours (bug 8, review finding 3)", () => {
     );
     // Both sets non-empty and one colour each: equality with one-element sets.
     expect(other).toEqual(new Set(["1,0,0"]));
-    expect(vertical).toEqual(new Set(["1,1,1"]));
+    expect(vertical).toEqual(new Set(["1,0,0"]));
+  });
+
+  it("paints only the range, so a part of the mesh keeps the wall colour", () => {
+    const chunk = paint({
+      colour: 0xff0000,
+      vertexRanges: [{ start: 0, end: 4 }],
+    });
+    const colors = [...(chunk?.colors ?? new Float32Array())];
+    expect(new Set(colors.slice(0, 12))).toEqual(new Set([1, 0]));
+    expect(new Set(colors.slice(12))).toEqual(new Set([1]));
   });
 
   it("never paints a vertex outside the ranges, whatever it faces", () => {

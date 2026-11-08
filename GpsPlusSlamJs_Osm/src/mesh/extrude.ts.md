@@ -46,11 +46,14 @@ Footprint plus heights to a triangle mesh: walls, roof, and optionally a floor.
   could, and the demo substituted a roof-shape test that answers a different
   question. Extending rather than wrapping keeps `mergeMeshes` and every other
   `MeshData` consumer working unchanged.
-- **`roofVertices` is the roof block, `[start, end)`** (review finding 3). The
-  mesh is walls, then the roof, then the floor of a floating part, so the roof
-  is one contiguous range; `buildings.ts` carries it (offset per polygon) so
-  `chunkMeshes` can paint the roof colour on what the roof builder drew rather
-  than on whatever faces up. An empty mesh has the empty range `{0, 0}`.
+- **`roofVertices` is the roof's SURFACE, `[start, start + surfaceVertices)`**
+  (review finding 3, plan M2). The mesh is walls, then the roof, then the floor
+  of a floating part; `buildRoof` emits its own surfaces (slopes, caps, hips)
+  before the vertical walls it brings with it (gables, the prism's sides) and
+  reports how many surface vertices there are, so the range is exactly the
+  part to paint as roof. `buildings.ts` carries it (offset per polygon) to
+  `chunkMeshes`, which needs no normal test any more. An empty mesh has the
+  empty range `{0, 0}`.
 - **Batch per res-8 or res-9 cell, never per fetch tile.** A fetch tile is res 7
   (2.81 km across); one merged geometry spanning 2.8 km defeats frustum culling
   entirely, since the batch is only ever wholly visible or wholly not. Fetch

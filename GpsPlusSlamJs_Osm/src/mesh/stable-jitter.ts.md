@@ -13,9 +13,14 @@ render as a row of clones.
 - `stableRotationY(key: string): number` — a yaw in `[0, 2π)`.
 - `stablePoiScale(key: string): number` — a size multiplier in
   `[1 − POI_SCALE_JITTER, 1 + POI_SCALE_JITTER]`, centred on 1.
+- `stableNudge(key: string): { x, y }` - a planar offset in `[-1, 1)` on each
+  axis, for moving a point off an exact degeneracy deterministically. The
+  skeleton roof (`roof-skeleton.ts`) scales it by half a millimetre and nudges
+  every footprint corner by it, so no two walls are exactly parallel.
 - Constant: `POI_SCALE_JITTER` (0.05).
 
-The salt strings (`"r"` for yaw, `"s"` for scale) are module-private named
+The salt strings (`"r"` for yaw, `"s"` for scale, `"nx"` / `"ny"` for the
+nudge) are module-private named
 constants. They are deliberately NOT exported: a caller that picks its own salt
 is a second convention, which is the drift this module exists to prevent. Ask
 for a named helper instead.
@@ -48,6 +53,9 @@ stablePoiScale(key); // e.g. 1.0231
 ```
 
 ## Tests
+
+- `stable-jitter.test.ts` - `stableNudge`: determinism, the `[-1, 1)` band,
+  all four quadrants, and salts distinct from yaw and scale.
 
 - `poi-jitter.test.ts` — determinism across builds, spread over all four
   quadrants, the scale band, order-independence, and that POI yaw equals

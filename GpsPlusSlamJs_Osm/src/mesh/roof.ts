@@ -1,52 +1,57 @@
 /**
- * Roof geometry, in the plan's own order of quality-per-effort.
+ * Roof geometry for every tagged `roof:shape` this package draws.
  *
- * WHERE THE SUPPORT STOPS, AND WHY IT STOPS THERE — read this before adding a
- * shape, because the boundary is a deliberate engineering decision rather than
- * an unfinished list.
+ * Flat, `pyramidal` / `dome` / `onion` (roofs of revolution) and `skillion`
+ * are cheap parametric shapes. The ridged shapes, `gabled` / `hipped` /
+ * `gambrel` / `round`, take one of two builders:
  *
- * OSM2World dispatches 26 roof classes. The plan (§8) orders them by value:
- * flat extrusion first, then `pyramidal` / `skillion` / `dome`, which are cheap
- * parametric shapes, and only then `gabled` / `hipped`. That last pair is
- * singled out because **a gabled roof on a non-rectangular footprint cannot be
- * generated without a straight skeleton** — the straight skeleton *is* the
- * mathematical description of a roof surface. That is a real algorithm, not a
- * special case.
+ * - **A rectangle** (the footprint fills its oriented bounding rectangle to
+ *   2 %, has no courtyard and overhangs it by at most `maxOverhangM`) gets the
+ *   box roof: a ridge along the rectangle with the tagged cross-section. Exact,
+ *   cheap, and the common case in the corpus.
+ * - **Everything else** gets the straight skeleton of its real outline
+ *   (`roof-skeleton.ts`), courtyards included: the roof surface every wall
+ *   slopes up from at one pitch, so an L-shaped house gets the two ridges and
+ *   the valley it actually has, and no roof stands over the street.
  *
- * What ships here: `gabled` and `hipped` are generated from the footprint's
- * **oriented minimum bounding rectangle**, which is exact for the rectangular
- * footprints that dominate real data and an approximation for L-shaped and
- * cranked ones. That is a deliberate trade, and the reasoning is:
+ * A skeleton can fail on a ring it cannot settle, so it runs down a FALLBACK
+ * LADDER and the result says which step drew it (`method`) and whether that is
+ * an approximation of the tag (`isApproximate`):
  *
- * - The census measured **12 %** non-flat `roof:shape` in one of Germany's
- *   best-mapped areas, and the majority of those sit on rectangles.
- * - §8.4 is explicit that the overlay's value is gross-failure detection, and
- *   that OSM's own footprint error is in the low metres. A ridge in
- *   approximately the right place on an L-shaped building is well inside that.
- * - A half-correct straight skeleton is worse than no straight skeleton: it
- *   produces self-intersecting roof surfaces that render as flickering
- *   z-fighting, which reads as a renderer bug rather than as a geometry bug.
+ * 1. the tagged shape (gabled: the wing ends chosen as vertical gables);
+ * 2. a hipped skeleton (gabled only);
+ * 3. both again with a different nudge of the corners;
+ * 4. the box roof, if its overhang is within the limit; also taken over a
+ *    gabled-family skeleton that found no gable end, so a tagged ridge
+ *    direction the skeleton cannot place is still drawn;
+ * 5. a flat-topped prism at full height, so the building keeps its tagged
+ *    height and nothing stands outside its walls.
  *
- * So the skeleton is **not** implemented here, the approximation is honest
- * about being one (`isApproximate` on the result), and `roof.ts.md` records the
- * exact condition under which it should be built.
+ * A ring above `SKELETON_VERTEX_CAP` corners starts at step 4: the simulation
+ * is O(n^3) and a round tower drawn with hundreds of nodes is a revolved roof's
+ * job, not a skeleton's. And `buildRoof` never throws: anything unforeseen
+ * becomes the prism, or a flat cap, for that one building.
  *
- * **Licence note, and it binds:** if the skeleton is built, benchmark against
- * `straight-skeleton`'s **v1 branch** (pure TypeScript). Do not touch v3 in
- * production OR in the harness — its npm package declares MIT while wrapping
- * CGAL's GPL `Straight_skeleton_2`, and reading GPL source with intent to
- * reimplement is a derivation this Apache-2.0 package must not contain.
+ * **Licence note, and it binds:** the skeleton here is our own. Do not bring in
+ * the `straight-skeleton` package's v3 in production OR in the harness: its npm
+ * package declares MIT while wrapping a GPL implementation, and reading GPL
+ * source with intent to reimplement is a derivation this Apache-2.0 package
+ * must not contain.
  *
  * @see roof.ts.md
  */
 
 import type { EnuPoint } from "./enu.js";
-import { isCounterClockwise, signedArea2 } from "./enu.js";
+import { isCounterClockwise } from "./enu.js";
 import type { RoofShape } from "./building-heights.js";
 import type { MeshData } from "./mesh-data.js";
 import { MeshBuilder } from "./mesh-data.js";
+import type { GableRule, SkeletonRoof } from "./roof-skeleton.js";
+import { SkeletonFailure, skeletonRoof } from "./roof-skeleton.js";
+import { skeletonMesh } from "./skeleton-mesh.js";
 import type { TriangulationResult } from "./triangulate.js";
 import { dropClosingPoint } from "./triangulate.js";
+import { addWalls } from "./walls.js";
 import { containsPoint } from "../spatial/point-in-ring.js";
 
 export interface RoofOptions {
@@ -63,15 +68,15 @@ export interface RoofOptions {
   /** `roof:orientation=across`: the ridge runs across the long side. */
   readonly orientation?: "across";
   /**
-   * How far a ridged roof built over the bounding rectangle may reach beyond
-   * the footprint before the footprint's own outline is used instead.
-   * Defaults to `RIDGE_OVERHANG_LIMIT_M`.
+   * How far the bounding rectangle may reach beyond the footprint and still
+   * carry the box roof: as the exact roof of a near-rectangle, and as step 4
+   * of the fallback ladder. Defaults to `RIDGE_OVERHANG_LIMIT_M`.
    */
   readonly maxOverhangM?: number;
 }
 
 /**
- * The overhang above which a ridged roof leaves the bounding rectangle.
+ * The overhang above which the box roof is not used.
  *
  * Swept at 0.5, 1 and 2 m over the corpus (2026-11-07): see `roof.ts.md`. One
  * metre is inside OSM's own footprint error, so below it the rectangle's roof
@@ -80,19 +85,72 @@ export interface RoofOptions {
  */
 const RIDGE_OVERHANG_LIMIT_M = 1;
 
+/**
+ * The most corners (all rings together) a footprint may have for a skeleton
+ * roof; above it the ladder starts at the box roof. 128 and 256 draw the test
+ * corpus identically (no ridged footprint there has more than 128 corners);
+ * 128 halves the worst case, a ring of irregular corners running every rung.
+ * Swept in `roof.ts.md`.
+ */
+const SKELETON_VERTEX_CAP = 128;
+
+/** Which builder drew a roof; see the fallback ladder in the file header. */
+export type RoofMethod =
+  | "flat"
+  | "revolved"
+  | "skillion"
+  | "box"
+  | "skeleton"
+  | "hipped-skeleton"
+  | "box-fallback"
+  | "prism";
+
 export interface RoofMesh extends MeshData {
   /**
-   * True when the shape was approximated rather than generated exactly.
+   * True when the roof is not the tagged shape over the real outline: a
+   * gambrel or round roof drawn as a plain gabled skeleton, a gabled roof that
+   * fell back to hipped or found no gable end, the box roof as a fallback, the
+   * prism, and the flat cap of a roof that could not be built.
    *
    * Surfaced rather than hidden: a consumer that wants to know how much of what
-   * it draws is real can ask, and a future straight-skeleton implementation has
-   * a ready-made measurement of how much it would improve.
+   * it draws is real can ask.
    */
   readonly isApproximate: boolean;
+  /** The builder that drew it. */
+  readonly method: RoofMethod;
+  /**
+   * The vertices `[0, surfaceVertices)` are the roof's own surfaces (slopes,
+   * caps, hips); the rest are vertical walls the roof brings with it (gables,
+   * the prism's sides), which a consumer colours as wall.
+   */
+  readonly surfaceVertices: number;
 }
 
-/** Builds the roof for a footprint. */
+/**
+ * Builds the roof for a footprint. Never throws: a roof that cannot be built
+ * becomes a full-height prism, or failing that a flat cap at the eaves.
+ */
 export function buildRoof(
+  rings: readonly (readonly EnuPoint[])[],
+  cap: TriangulationResult,
+  options: RoofOptions,
+): RoofMesh {
+  try {
+    return dispatchRoof(rings, cap, options);
+  } catch {
+    try {
+      return prismRoof(rings, cap, options);
+    } catch {
+      return {
+        ...allSurface(flatCap(cap, options.eaveHeightM)),
+        isApproximate: true,
+        method: "flat",
+      };
+    }
+  }
+}
+
+function dispatchRoof(
   rings: readonly (readonly EnuPoint[])[],
   cap: TriangulationResult,
   options: RoofOptions,
@@ -103,26 +161,36 @@ export function buildRoof(
   // No rise, no shape, or nothing to work with: a flat cap at the eaves. This
   // is also the fallback for every unrecognised `roof:shape`, because a flat
   // roof at the right height is a far smaller error than a confident wrong one.
-  if (rise <= 0 || outer === undefined || options.shape === "flat") {
-    return { ...flatCap(cap, options.eaveHeightM), isApproximate: false };
+  if (!(rise > 0) || outer === undefined || options.shape === "flat") {
+    return exact(flatCap(cap, options.eaveHeightM), "flat");
   }
 
   const profile = REVOLVED_PROFILES.get(options.shape);
   if (profile !== undefined) {
-    return { ...revolvedRoof(outer, options, profile), isApproximate: false };
+    return exact(revolvedRoof(outer, options, profile), "revolved");
   }
 
   switch (options.shape) {
     case "skillion":
-      return { ...skillionRoof(rings, cap, options), isApproximate: false };
+      return exact(skillionRoof(rings, cap, options), "skillion");
     case "gabled":
     case "hipped":
     case "gambrel":
     case "round":
       return ridgeRoof(rings, cap, options);
     default:
-      return { ...flatCap(cap, options.eaveHeightM), isApproximate: false };
+      return exact(flatCap(cap, options.eaveHeightM), "flat");
   }
+}
+
+/** A mesh that is all roof surface. */
+function allSurface(mesh: MeshData): MeshData & { surfaceVertices: number } {
+  return { ...mesh, surfaceVertices: mesh.positions.length / 3 };
+}
+
+/** The exact roof of a shape whose every vertex is roof surface. */
+function exact(mesh: MeshData, method: RoofMethod): RoofMesh {
+  return { ...allSurface(mesh), isApproximate: false, method };
 }
 
 /** A horizontal cap at the eaves — the flat roof, and the universal fallback. */
@@ -213,7 +281,7 @@ function quarterCircle(): { out: number; up: number }[] {
  * A roof of revolution: the footprint scaled towards its centroid ring by
  * ring, one band of faces between each pair of rings, closing in an apex
  * (every profile ends at scale 0). One builder for the pyramid, the dome, the
- * onion and the ridged roofs' outline fallback.
+ * onion.
  *
  * The centroid is the AREA centroid of the open ring, not the vertex average:
  * OSM rings repeat their first node as their last, which counted it twice and
@@ -381,24 +449,12 @@ const CROSS_SECTIONS: ReadonlyMap<string, readonly CrossPoint[]> = new Map([
 ]);
 
 /**
- * A ridged roof from the oriented minimum bounding rectangle.
- *
- * `gabled` runs the ridge the full length of the rectangle, so the short ends
- * are vertical gable walls. `hipped` pulls the ridge in by a quarter of the
- * rectangle's length at each end, so all four sides slope — which is the actual
- * difference between the two shapes. `gambrel` and `round` are gabled roofs
- * with a bent and a curved cross-section.
+ * A ridged roof: the box roof on a rectangle, the skeleton ladder otherwise.
  *
  * The ridge runs along the long side unless `roof:orientation=across` turns
  * it, or `roof:direction` names the way the slopes face, which puts the ridge
- * at right angles to that.
- *
- * EXACT for a rectangular footprint. An APPROXIMATION for anything else, and it
- * says so: see the file header for why an approximation beats a half-correct
- * straight skeleton here. Where the rectangle's roof would reach more than
- * `maxOverhangM` beyond the footprint — over a courtyard, or over the street
- * beside an L-shaped house — it is not built: `outlineFallback` covers the
- * real outline instead.
+ * at right angles to that. On a rectangle that is the box roof's axis; on a
+ * skeleton roof it picks which wing ends become gables (`gableRule`).
  */
 function ridgeRoof(
   rings: readonly (readonly EnuPoint[])[],
@@ -408,17 +464,203 @@ function ridgeRoof(
   const outer = rings[0] ?? [];
   const found = orientedBoundingBox(outer);
   if (found === undefined) {
-    return { ...flatCap(cap, options.eaveHeightM), isApproximate: true };
-  }
-  const exact = isRectangular(outer, found) && rings.length === 1;
-  const box = turnedBox(found, options);
-  if (overhangsTooFar(rings, found, options)) {
     return {
-      ...outlineFallback(rings, cap, box, options),
+      ...allSurface(flatCap(cap, options.eaveHeightM)),
       isApproximate: true,
+      method: "flat",
     };
   }
+  const box = turnedBox(found, options);
+  const limit = options.maxOverhangM ?? RIDGE_OVERHANG_LIMIT_M;
+  const boxFits = boxOverhangM(rings, found) <= limit;
+  if (boxFits && rings.length === 1 && isRectangular(outer, found)) {
+    return { ...boxRoof(box, options), isApproximate: false, method: "box" };
+  }
+  const skeleton = skeletonOrNothing(rings, box, options, boxFits);
+  if (skeleton !== undefined) return skeleton;
+  if (boxFits) {
+    return {
+      ...boxRoof(box, options),
+      isApproximate: true,
+      method: "box-fallback",
+    };
+  }
+  return prismRoof(rings, cap, options);
+}
 
+/**
+ * Steps 1 to 3 of the ladder, or `undefined` to go on to the box roof or the
+ * prism: above the corner cap, when every rung failed, and when a gabled-family
+ * roof found no gable and the box roof fits.
+ */
+function skeletonOrNothing(
+  rings: readonly (readonly EnuPoint[])[],
+  box: OrientedBox,
+  options: RoofOptions,
+  boxFits: boolean,
+): RoofMesh | undefined {
+  if (cornerCount(rings) > SKELETON_VERTEX_CAP) return undefined;
+  const skeleton = skeletonLadder(rings, box, options);
+  if (skeleton === undefined) return undefined;
+  return boxFits && lostItsGables(skeleton, options) ? undefined : skeleton;
+}
+
+/**
+ * True when a gabled, gambrel or round roof came back from the skeleton with
+ * no gable at all. The box roof, where it fits, then keeps the tag: on a
+ * quadrilateral tagged `roof:orientation=across` the gables belong on the long
+ * walls, which are not wing ends of the all-slopes skeleton, so the skeleton
+ * finds none (39 of the corpus's 52 across-tagged skeleton roofs, 2026-11-08).
+ */
+function lostItsGables(roof: RoofMesh, options: RoofOptions): boolean {
+  return (
+    options.shape !== "hipped" &&
+    roof.surfaceVertices === roof.positions.length / 3
+  );
+}
+
+/** The corners of all rings, a repeated closing point not counted. */
+function cornerCount(rings: readonly (readonly EnuPoint[])[]): number {
+  return rings.reduce((sum, ring) => sum + dropClosingPoint(ring).length, 0);
+}
+
+/** One rung of the skeleton ladder. */
+interface SkeletonRequest {
+  readonly gableEnds?: GableRule;
+  readonly method: RoofMethod;
+  readonly approximate: (roof: SkeletonRoof) => boolean;
+}
+
+/**
+ * The skeleton rungs for this shape, in order. `hipped` is all slopes and
+ * exact. The gabled family first asks for gable ends; gambrel and round have no
+ * cross-section on a skeleton yet, so they are drawn as a plain gabled roof and
+ * say so. A gabled roof with no gable end found is a hipped roof in all but
+ * name, so it says so too.
+ */
+function skeletonRequests(
+  box: OrientedBox,
+  options: RoofOptions,
+): SkeletonRequest[] {
+  const hipped: SkeletonRequest = {
+    method: options.shape === "hipped" ? "skeleton" : "hipped-skeleton",
+    approximate: () => options.shape !== "hipped",
+  };
+  if (options.shape === "hipped") return [hipped];
+  const gabled: SkeletonRequest = {
+    gableEnds: gableRule(box, options),
+    method: "skeleton",
+    approximate: (roof) => options.shape !== "gabled" || roof.gables === 0,
+  };
+  return [gabled, hipped];
+}
+
+/**
+ * Which wing ends become gables. Untagged: every wing end whose neighbours are
+ * not wing ends too. Tagged with `roof:orientation` or `roof:direction`: the
+ * ends whose wall faces along the tagged ridge axis.
+ */
+function gableRule(box: OrientedBox, options: RoofOptions): GableRule {
+  const tagged =
+    options.orientation !== undefined || options.directionDeg !== undefined;
+  return tagged ? { kind: "axis", axis: box.axis } : { kind: "neighbours" };
+}
+
+/** Steps 1 to 3 of the ladder; `undefined` when every rung failed. */
+function skeletonLadder(
+  rings: readonly (readonly EnuPoint[])[],
+  box: OrientedBox,
+  options: RoofOptions,
+): RoofMesh | undefined {
+  const requests = skeletonRequests(box, options);
+  for (const attempt of [0, 1]) {
+    for (const request of requests) {
+      const mesh = trySkeleton(rings, request, attempt, options);
+      if (mesh !== undefined) return mesh;
+    }
+  }
+  return undefined;
+}
+
+/** The roof of one rung, or `undefined` when its skeleton or mesh failed. */
+function trySkeleton(
+  rings: readonly (readonly EnuPoint[])[],
+  request: SkeletonRequest,
+  attempt: number,
+  options: RoofOptions,
+): RoofMesh | undefined {
+  try {
+    const roof = skeletonRoof(rings, {
+      attempt,
+      ...(request.gableEnds === undefined
+        ? {}
+        : { gableEnds: request.gableEnds }),
+    });
+    return roof.ridgeT > 0
+      ? skeletonRoofMesh(roof, request, options)
+      : undefined;
+  } catch (error) {
+    if (error instanceof SkeletonFailure) return undefined;
+    throw error;
+  }
+}
+
+/** A skeleton as a roof mesh: the top time is the tagged ridge height. */
+function skeletonRoofMesh(
+  roof: SkeletonRoof,
+  request: SkeletonRequest,
+  options: RoofOptions,
+): RoofMesh {
+  const rise = options.ridgeHeightM - options.eaveHeightM;
+  const { mesh, surfaceVertices } = skeletonMesh(roof, {
+    eaveM: options.eaveHeightM,
+    slope: rise / roof.ridgeT,
+  });
+  return {
+    ...mesh,
+    surfaceVertices,
+    isApproximate: request.approximate(roof),
+    method: request.method,
+  };
+}
+
+/**
+ * The last rung: a flat lid at the tagged top with walls from the eaves up to
+ * it. Keeps the building's height and its outline, both of which a flat cap at
+ * the eaves would lose.
+ */
+function prismRoof(
+  rings: readonly (readonly EnuPoint[])[],
+  cap: TriangulationResult,
+  options: RoofOptions,
+): RoofMesh {
+  const builder = new MeshBuilder();
+  builder.append(flatCap(cap, options.ridgeHeightM));
+  const surfaceVertices = builder.vertexCount;
+  rings.forEach((ring, r) => {
+    addWalls(builder, ring, options.eaveHeightM, options.ridgeHeightM, r === 0);
+  });
+  return {
+    ...builder.build(cap.forcedEars),
+    surfaceVertices,
+    isApproximate: true,
+    method: "prism",
+  };
+}
+
+/**
+ * The box roof over the oriented bounding rectangle.
+ *
+ * `gabled` runs the ridge the full length of the rectangle, so the short ends
+ * are vertical gable walls. `hipped` pulls the ridge in by a quarter of the
+ * rectangle's length at each end, so all four sides slope — which is the actual
+ * difference between the two shapes. `gambrel` and `round` are gabled roofs
+ * with a bent and a curved cross-section.
+ */
+function boxRoof(
+  box: OrientedBox,
+  options: RoofOptions,
+): MeshData & { surfaceVertices: number } {
   const { centre, axis, cross: crossAxis, halfLength, halfWidth } = box;
   const profile = CROSS_SECTIONS.get(options.shape) ?? STRAIGHT_SLOPE;
   const inset = options.shape === "hipped" ? halfLength / 2 : 0;
@@ -477,6 +719,8 @@ function ridgeRoof(
     const highPlus = line(k + 1, 1);
     quad(lowPlus.end, highPlus.end, highPlus.start, lowPlus.start);
   }
+  // A hipped roof's ends are roof too; anyone else's are vertical gable walls.
+  const slopes = builder.vertexCount;
 
   // The ends: a hip when hipped, a vertical gable wall otherwise, closing the
   // volume. Without them a gabled building is open at both ends — visible
@@ -501,173 +745,8 @@ function ridgeRoof(
 
   return {
     ...builder.build(0),
-    // Exact only when the footprint IS its bounding rectangle AND has no holes.
-    //
-    // The hole clause is not defensive padding: the rectangle is built from
-    // `rings[0]` and nothing else, so a courtyard building gets a SOLID ridge
-    // roof spanning the courtyard while `isRectangular(outer, box)` is
-    // perfectly true for the outer ring alone. That is the one case where the
-    // flag would assert something false rather than merely be conservative —
-    // and it is not rare in the European blocks this package targets. (A
-    // courtyard deeper than `maxOverhangM` now takes the outline fallback.)
-    isApproximate: !exact,
+    surfaceVertices: inset > 0 ? builder.vertexCount : slopes,
   };
-}
-
-/**
- * The roof over the real outline, for a ridged roof the bounding rectangle
- * cannot carry: HIPPED over the outline where it can be, a flat cap at the
- * eaves otherwise.
- *
- * Hipped: the ridge is the box's centre line, pulled in from each end by the
- * half-width (a 45-degree hip on a rectangle), and every outline vertex is
- * drawn up to its nearest point on that ridge. Each wall then carries one
- * sloped face up to the ridge: a long side gets a slope, an end or an apse a
- * fan of hips. On a rectangle that is exactly a hipped roof; on the nave and
- * apse of a church it is the hipped roof the eye expects. Chosen over a
- * pyramid to one apex, which was tried and reads as a tent on a long nave,
- * and over the flat cap, which drops the whole roof's height (2026-11-07, by
- * eye on Heidelberg, Munich and Ulm; `roof.ts.md`).
- *
- * Not the straight skeleton (see the file header). What it fixes is the roof
- * standing over nothing, and the checks below are what keep that true: the
- * ridge lies inside the outline, no vertex's line to the ridge crosses a wall,
- * and no face folds over in plan. Any failure, or a courtyard, gives the flat
- * cap.
- */
-function outlineFallback(
-  rings: readonly (readonly EnuPoint[])[],
-  cap: TriangulationResult,
-  box: OrientedBox,
-  options: RoofOptions,
-): MeshData {
-  const open = dropClosingPoint(rings[0] ?? []);
-  const outer = isCounterClockwise(open) ? open : [...open].reverse();
-  const hipped =
-    rings.length === 1 ? hipOverOutline(outer, box, options) : undefined;
-  return hipped ?? flatCap(cap, options.eaveHeightM);
-}
-
-/** The hipped roof of `outlineFallback`, or `undefined` where it would leave the outline. */
-function hipOverOutline(
-  outer: readonly EnuPoint[],
-  box: OrientedBox,
-  options: RoofOptions,
-): MeshData | undefined {
-  const half = Math.max(0, box.halfLength - box.halfWidth);
-  const ridgeAt = (t: number): EnuPoint => ({
-    x: box.centre.x + box.axis.x * t,
-    y: box.centre.y + box.axis.y * t,
-  });
-  const toRidge = (p: EnuPoint): EnuPoint => {
-    const t =
-      (p.x - box.centre.x) * box.axis.x + (p.y - box.centre.y) * box.axis.y;
-    return ridgeAt(Math.max(-half, Math.min(half, t)));
-  };
-  const ridge = outer.map(toRidge);
-  if (!hipsStayInside(outer, ridge, ridgeAt(-half), ridgeAt(half))) {
-    return undefined;
-  }
-
-  const builder = new MeshBuilder();
-  const face = (p: Vec3, q: Vec3, r: Vec3): void => {
-    const n = faceNormal(p, q, r);
-    builder.triangle(
-      builder.vertex(p.x, p.y, p.z, n.x, n.y, n.z),
-      builder.vertex(q.x, q.y, q.z, n.x, n.y, n.z),
-      builder.vertex(r.x, r.y, r.z, n.x, n.y, n.z),
-    );
-  };
-  const eave = (p: EnuPoint): Vec3 => ({
-    x: p.x,
-    y: options.eaveHeightM,
-    z: p.y,
-  });
-  const top = (p: EnuPoint): Vec3 => ({
-    x: p.x,
-    y: options.ridgeHeightM,
-    z: p.y,
-  });
-  for (let i = 0; i < outer.length; i++) {
-    const j = (i + 1) % outer.length;
-    const a = outer[i] as EnuPoint;
-    const b = outer[j] as EnuPoint;
-    if (a.x === b.x && a.y === b.y) continue;
-    const r = ridge[i] as EnuPoint;
-    const s = ridge[j] as EnuPoint;
-    // b BEFORE a, for the handedness reason given in `revolvedRoof`.
-    face(eave(b), eave(a), top(r));
-    if (Math.hypot(s.x - r.x, s.y - r.y) > 1e-9) face(eave(b), top(r), top(s));
-  }
-  return builder.build(0);
-}
-
-/** True when the box roof would overhang the walls past the limit. */
-function overhangsTooFar(
-  rings: readonly (readonly EnuPoint[])[],
-  box: OrientedBox,
-  options: RoofOptions,
-): boolean {
-  const limit = options.maxOverhangM ?? RIDGE_OVERHANG_LIMIT_M;
-  return boxOverhangM(rings, box) > limit;
-}
-
-/**
- * True when the hipped roof over `outer` stays over its own walls: the ridge
- * from `start` to `end` inside, each hip line from a vertex to its point on
- * `ridge` inside, and no face folding over its neighbour in plan.
- */
-function hipsStayInside(
-  outer: readonly EnuPoint[],
-  ridge: readonly EnuPoint[],
-  start: EnuPoint,
-  end: EnuPoint,
-): boolean {
-  if (!containsPoint(outer, start) || !containsPoint(outer, end)) return false;
-  const long = start.x !== end.x || start.y !== end.y;
-  if (long && leavesOutline(start, end, outer)) return false;
-  for (let i = 0; i < outer.length; i++) {
-    const a = outer[i] as EnuPoint;
-    const r = ridge[i] as EnuPoint;
-    if (leavesOutline(a, r, outer)) return false;
-    const b = outer[(i + 1) % outer.length] as EnuPoint;
-    const s = ridge[(i + 1) % outer.length] as EnuPoint;
-    // The face (a, b, s, r) must keep the ring's counter-clockwise turn in
-    // plan; a negative one folds over its neighbour.
-    if (signedArea2([a, b, s, r]) < -1e-6) return false;
-  }
-  return true;
-}
-
-/**
- * True when the segment `p`-`q` passes outside `ring`.
- *
- * Touching is allowed, unlike `segmentCrossesRing`: on a rectilinear L the hip
- * from the corner of a wing square to the ridge runs exactly along the wing's
- * wall, and that is a gable, not a roof over the street. So only a proper
- * crossing counts, plus a midpoint that is neither inside nor on a wall. A
- * segment that leaves and re-enters through two vertices with its midpoint
- * inside slips past; the face winding check in `hipOverOutline` is the second
- * net, and the corpus capture in roof.ts.md the third.
- */
-function leavesOutline(
-  p: EnuPoint,
-  q: EnuPoint,
-  ring: readonly EnuPoint[],
-): boolean {
-  const side = (a: EnuPoint, b: EnuPoint, c: EnuPoint): number =>
-    (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
-  for (let i = 0; i < ring.length; i++) {
-    const a = ring[i] as EnuPoint;
-    const b = ring[(i + 1) % ring.length] as EnuPoint;
-    const d1 = side(a, b, p);
-    const d2 = side(a, b, q);
-    const d3 = side(p, q, a);
-    const d4 = side(p, q, b);
-    if (d1 * d2 < 0 && d3 * d4 < 0) return true;
-  }
-  const mid = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
-  return !containsPoint(ring, mid) && distanceToWalls([ring], mid) > 1e-6;
 }
 
 /**
@@ -929,9 +1008,9 @@ function isRectangular(ring: readonly EnuPoint[], box: OrientedBox): boolean {
     if (a === undefined || b === undefined) continue;
     ringArea += a.x * b.y - b.x * a.y;
   }
-  // 2 % tolerance: a mapper's rectangle is rarely exact to the millimetre, and
-  // a strict test would mark almost every real building as approximate and make
-  // the flag useless.
+  // 2 % tolerance: a mapper's rectangle is rarely exact to the millimetre. A
+  // footprint inside it gets the box roof, every other one the skeleton; the
+  // sweep in roof.ts.md shows how many move between the two.
   return Math.abs(Math.abs(ringArea) / 2 / boxArea - 1) < 0.02;
 }
 

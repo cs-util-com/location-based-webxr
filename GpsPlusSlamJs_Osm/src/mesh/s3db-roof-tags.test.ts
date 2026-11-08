@@ -533,11 +533,11 @@ describe("the cross-section of a ridged roof", () => {
 describe("a ridged roof that would overhang its walls", () => {
   // FIXED. Why these tests matter: the bounding-rectangle roof spans the empty
   // quarter of an L-shaped house. Past RIDGE_OVERHANG_LIMIT_M of overhang the
-  // roof is instead hipped over the real outline: a ridge along the box centre
-  // line with every eave vertex sloping up to its nearest point on the ridge. A
-  // flat lid would be the cheap way past "stays over its own walls" above, and
-  // these tests keep that way closed. The house is a 30 x 10 bar with a
-  // 10 x 5 wing, the common shape of an L in the corpus.
+  // roof is the straight skeleton of the real outline (M2 of the skeleton-roof
+  // plan; until then a hip over the outline). A flat lid would be the cheap way
+  // past "stays over its own walls" above, and these tests keep that way
+  // closed. The house is a 30 x 10 bar with a 10 x 5 wing, the common shape of
+  // an L in the corpus.
   const lHouse = (): BuildingVolume =>
     build(
       wayFrom({ height: "10", "roof:height": "3", "roof:shape": "gabled" }, [
@@ -555,8 +555,10 @@ describe("a ridged roof that would overhang its walls", () => {
     expect(top).toBeCloseTo(10);
   });
 
-  it("says it is approximate", () => {
-    expect(lHouse().roofIsApproximate).toBe(true);
+  it("says it is exact: the skeleton found a gable at both wing ends", () => {
+    // BASELINE MOVED BY PLAN (M2): the hip over the outline was an
+    // approximation of a gabled tag; the skeleton is the tagged shape.
+    expect(lHouse().roofIsApproximate).toBe(false);
   });
 
   it("faces no roof triangle downward", () => {
@@ -579,10 +581,11 @@ describe("a ridged roof that would overhang its walls", () => {
     expect(outside).toEqual([]);
   });
 
-  it("PIN: falls back to a flat lid when the ridge would sit on the outline", () => {
-    // The square L of the test further up has a square box, so the ridge shrinks
-    // to one point, and that point is the inner corner: no hip can reach it from
-    // inside. Flat at the eave is then the honest roof.
+  it("FIXED: the square L that fell back to a flat lid rises to its tagged height", () => {
+    // BASELINE MOVED BY PLAN (M2). The square L of the test further up has a
+    // square box, so the old hip ridge shrank to the inner corner and the roof
+    // went flat at the eave (7 m), 3 m short of its tag. The skeleton has no
+    // such corner case: two ridges meeting in a valley, up to 10 m.
     const volume = build(
       wayFrom({ height: "10", "roof:height": "3", "roof:shape": "gabled" }, [
         [-10, -10],
@@ -593,7 +596,7 @@ describe("a ridged roof that would overhang its walls", () => {
         [-10, 10],
       ]),
     );
-    expect(Math.max(...pointsOf(volume.mesh).map((p) => p.up))).toBeCloseTo(7);
+    expect(Math.max(...pointsOf(volume.mesh).map((p) => p.up))).toBeCloseTo(10);
   });
 
   it("PIN: a rectangle within the limit keeps its gable", () => {

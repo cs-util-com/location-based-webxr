@@ -50,6 +50,15 @@ parentFeature?, rings }` with rings as `x = lng, y = lat`.
     §8's approximation trade rests on — so the proxy over-reports every time.
     The demo counted it that way, which meant the counter that exists to check
     the census against real data was measuring something else.
+  - **What it counts since plan M2** (the skeleton roof): a ridged roof is
+    exact when it is the tagged shape over the real outline, which a skeleton
+    now draws for every footprint, so an L-shaped gabled house is exact. It is
+    approximate for gambrel and round off a rectangle (drawn as plain
+    gabled), a gabled roof that found no gable end or fell back to hipped, the
+    box roof as a fallback, the full-height prism, and the flat cap of a roof
+    that could not be built. Before M2 every non-rectangle was approximate:
+    on the 13 corpus fixtures 125 of the 508 ridged roofs were flagged, 48
+    after.
 
 ## Invariants & assumptions
 

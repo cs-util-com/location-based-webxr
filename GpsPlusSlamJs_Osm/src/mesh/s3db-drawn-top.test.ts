@@ -22,12 +22,13 @@ import { loadSite } from "../test-utils/load-fixtures.js";
  * this check pass by definition, so the number stays the tagged top and the
  * mesh has to reach it.
  *
- * KNOWN FAILURE until the skeleton roof lands (M2 of
+ * FIXED by the skeleton roof (M2 of
  * `GpsPlusSlamJs_Docs/docs/2026-11-07-2130-osm-skeleton-roof-and-geometry-review-fixes-plan.md`).
- * The hip-over-outline fallback goes flat at the eave where a hip line would
- * cross a wall. So the strict assertion is `it.fails`, and the list is pinned
- * beside it so it cannot grow unnoticed. M2 removes both: the strict test then
- * passes as a plain `it`.
+ * Until then the hip-over-outline fallback went flat at the eave where a hip
+ * line would cross a wall, 29 volumes were short at 1 cm, and this was an
+ * `it.fails` beside a pinned list of them. Every rung of the new fallback
+ * ladder reaches the tagged top (the prism included), so the strict assertion
+ * is a plain `it` and the list is gone.
  *
  * Empty meshes are left out: a degenerate footprint draws nothing, so it has no
  * drawn top to compare. The fixtures carry no terrain, so `rise` is 0 here and
@@ -36,44 +37,6 @@ import { loadSite } from "../test-utils/load-fixtures.js";
 
 /** Drawn top and reported top agree to this, metres. */
 const TOLERANCE_M = 0.01;
-
-/**
- * The volumes short of their top on r1129 at 1 cm, as sorted `fixture feature`
- * keys (29; 28 of them by more than 0.5 m, the review's count). A list, not a
- * count (M1 review finding 4): a count stays green when one volume is fixed and
- * another breaks. Shortened, never lengthened.
- */
-const KNOWN_SHORT_VOLUMES: readonly string[] = [
-  "cologne-cathedral way/16367389",
-  "cologne-cathedral way/416846395",
-  "cologne-cathedral way/691239651",
-  "cologne-cathedral way/691239653",
-  "heidelberg-altstadt way/171041984",
-  "heidelberg-altstadt way/171691889",
-  "heidelberg-altstadt way/180108327",
-  "heidelberg-altstadt way/247081690",
-  "heidelberg-altstadt way/247521018",
-  "heidelberg-altstadt way/247530267",
-  "heidelberg-altstadt way/247844774",
-  "heidelberg-altstadt way/312575198",
-  "heidelberg-altstadt way/32200572",
-  "heidelberg-altstadt way/92139256",
-  "heidelberg-altstadt way/92139269",
-  "london-westminster way/1134791147",
-  "london-westminster way/153342452",
-  "moscow-st-basil.json relation/3030595",
-  "munich-frauenkirche.json way/80965569",
-  "sylt-westerland way/199572766",
-  "sylt-westerland way/199829557",
-  "sylt-westerland way/200056529",
-  "sylt-westerland way/356841441",
-  "sylt-westerland way/356898090",
-  "sylt-westerland way/356898091",
-  "sylt-westerland way/631351550",
-  "ulm-minster.json way/128963311",
-  "ulm-minster.json way/237518946",
-  "ulm-minster.json way/255550471",
-];
 
 const LANDMARK_DIR = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -159,19 +122,12 @@ describe("drawn top against reported top, over the 13 fixtures", () => {
   const short = shortVolumes(fixtures);
 
   it("covers all 13 fixtures", () => {
-    // A fixture that silently drops out would make both tests below pass on
+    // A fixture that silently drops out would make the test below pass on
     // less data than they claim.
     expect(fixtures).toHaveLength(13);
   });
 
-  it.fails(
-    "draws every volume up to its reported top (KNOWN FAILURE until M2)",
-    () => {
-      expect(short.map((v) => v.detail)).toEqual([]);
-    },
-  );
-
-  it("has exactly the known short volumes, so the defect cannot grow or move", () => {
-    expect(short.map((v) => v.key).sort()).toEqual(KNOWN_SHORT_VOLUMES);
+  it("draws every volume up to its reported top", () => {
+    expect(short.map((v) => v.detail)).toEqual([]);
   });
 });
