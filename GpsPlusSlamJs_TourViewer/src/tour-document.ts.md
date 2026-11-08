@@ -278,6 +278,20 @@ largeTour?, cannotSave? })`.
     and `story-commands.property.test.ts` holds that after any sequence and
     its undos the writer accepts the document and a draft reload equals it.
     `stationEdited` with `storyAdvance` sets how a story's block moves on.
+  - `childMoved({ id, to, what })` - an item of a station moved inside it
+    (a free item into a story and out, an entry between stories or within
+    one, a story among the stories), one history entry. The rule is
+    `station-children-moves.ts`, asked through the exported guard
+    `childMoveChange(state, id, to)` (`moved` with `answers` and `floored`,
+    `unchanged`, or `refused` with the rule's reason or `unsaved`: a free
+    item naming a file the tour on disk does not hold yet, whose story
+    frame a draft reload could not read). A free item leaving is deleted
+    as an object (a tombstone when the file holds it); one arriving is put
+    as an object at the world place its pose gives, a tombstone of its id
+    withdrawn. Tests: `tour-document-child-move.test.ts` (undo, redo, a
+    draft reload) and `tour-document-child-move.property.test.ts` (random
+    moves keep the tour readable and every id once; undoing all of them
+    gives back the tour exactly).
   - `stationEdited({ stationId, edit, what })` - a station's title, found
     radius (`isStationRadius`, 2 m to 300 m inclusive; the preload radius
     follows at twice it, `preloadRadiusM`), description or card image

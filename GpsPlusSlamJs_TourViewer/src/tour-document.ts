@@ -20,6 +20,7 @@
 
 import {
   isTourStory,
+  tourChildPlace,
   tourStationChildIds,
   tourStationStoryBlocks,
   tourStories,
@@ -135,6 +136,11 @@ import {
   stepRequiredAssetIds,
 } from "./tour-content.js";
 import { sameJson } from "./same-json.js";
+import {
+  movedChild,
+  type ChildMoveRefusal,
+  type ChildMoveTo,
+} from "./station-children-moves.js";
 import type { CodeMeasurement } from "./visit-settle.js";
 
 export type { LevelText } from "./code-book.js";
@@ -2734,6 +2740,108 @@ function storyChildDelete(
   return out === null ? before : frameReplaced(before, out.frame, payload.what);
 }
 
+/** What a move of the station item `id` (`childMoved`) would do, by the
+ *  move rule (`station-children-moves.ts`) over the station as the next
+ *  write carries it: the station after it, how many answers lost their
+ *  jump and whether the item took its kind's world floor; nothing; or why
+ *  not. One refusal more than the rule's: `unsaved`, a free item naming a
+ *  file the tour on disk does not hold yet (a picture made here). A
+ *  story's entries are drafted in the station's frame, which a reload
+ *  reads against the tour's files, so that frame would be lost. */
+export function childMoveChange(
+  state: TourDocumentState,
+  id: string,
+  to: ChildMoveTo,
+):
+  | {
+      readonly kind: "moved";
+      readonly station: TourStation;
+      readonly answers: number;
+      readonly floored: boolean;
+    }
+  | { readonly kind: "unchanged" }
+  | {
+      readonly kind: "refused";
+      readonly reason: Exclude<ChildMoveRefusal, "unchanged"> | "unsaved";
+    } {
+  const manifest = manifestToWrite(state);
+  const place = manifest === null ? null : tourChildPlace(manifest, id);
+  if (place === null) return { kind: "refused", reason: "missing" };
+  const out = movedChild(place.station, id, to);
+  if ("refused" in out) {
+    return out.refused === "unchanged"
+      ? { kind: "unchanged" }
+      : { kind: "refused", reason: out.refused };
+  }
+  const leaving =
+    place.story === undefined
+      ? tourFreeBlocks(place.station).find((b) => b.id === id)
+      : undefined;
+  if (leaving !== undefined) {
+    const onDisk = (m: TourManifest | null) =>
+      new Set((m?.assets ?? []).map((a) => a.id));
+    const opened = onDisk(state.opened);
+    const written = onDisk(state.written);
+    const held = tourBlockAssetIds(leaving).every(
+      (a) => opened.has(a) && written.has(a),
+    );
+    if (!held) return { kind: "refused", reason: "unsaved" };
+  }
+  return {
+    kind: "moved",
+    station: out.station,
+    answers: out.answers,
+    floored: out.floored,
+  };
+}
+
+/** A station item moved (`childMoved`), as one step: the station's frame
+ *  takes its stories as the move leaves them; a free item leaving is
+ *  deleted as an object (a tombstone for one the file holds), and one
+ *  arriving is put as an object at the world place its pose in the
+ *  station gives (a tombstone of its id withdrawn). */
+function childMove(
+  before: TourDocumentState,
+  payload: { id: string; to: ChildMoveTo; what: string },
+): TourDocumentState {
+  const { id } = payload;
+  const change = childMoveChange(before, id, payload.to);
+  if (before.written === null || change.kind !== "moved") return before;
+  const { station } = change;
+  const frame = allFrames(before).find((f) => f.id === station.id);
+  if (frame === undefined) return before;
+  const free = tourFreeBlocks(station).filter((b) => b.id === id);
+  const found = documentObjects(before).find((o) => o.object.id === id);
+  let lists = { placed: [...before.placed], deleted: [...before.deleted] };
+  if (found !== undefined && free.length === 0) {
+    lists = deleteObject(lists, found);
+  } else if (found === undefined && free.length > 0) {
+    const [object] = tourObjects({
+      stations: [{ ...station, children: free }],
+      assets: manifestNow(before)?.assets ?? [],
+    });
+    if (object === undefined) return before;
+    lists = {
+      placed: upsertPlaced(lists.placed, { object }),
+      deleted: lists.deleted.filter((d) => d !== id),
+    };
+  }
+  const next: StationFrame = { ...frame, children: tourStories(station) };
+  return edited(
+    before,
+    {
+      placed: lists.placed,
+      deleted: lists.deleted,
+      stations: framesHolding(before, frame.id).map((s) =>
+        s.id === frame.id ? next : s,
+      ),
+      touched: { ...before.touched, stations: true },
+      framesRecorded: true,
+    },
+    payload.what,
+  );
+}
+
 /** A station added at `at` (`stationAdded`), as one step: untitled (named
  *  by its place in the tour) and made by hand (`handMade`). */
 function stationAdd(
@@ -3263,6 +3371,14 @@ const tourDocumentSlice = createSlice({
       action: PayloadAction<{ child: string; what: string }>,
     ) {
       return storyChildDelete(plain(state), action.payload);
+    },
+    /** A station item moved (`childMoveChange`): one step; a refused
+     *  move changes nothing. */
+    childMoved(
+      state,
+      action: PayloadAction<{ id: string; to: ChildMoveTo; what: string }>,
+    ) {
+      return childMove(plain(state), action.payload);
     },
     /** A station added at `at`, untitled (the tree names it by its
      *  number), with the automatic radii and nothing in it: it keeps
@@ -3980,6 +4096,7 @@ export const isDocumentEdit = isAnyOf(
   tourDocumentActions.storyDeleted,
   tourDocumentActions.storyChildAdded,
   tourDocumentActions.storyChildDeleted,
+  tourDocumentActions.childMoved,
   tourDocumentActions.stationAdded,
   tourDocumentActions.stationDeleted,
   tourDocumentActions.stationsReordered,
