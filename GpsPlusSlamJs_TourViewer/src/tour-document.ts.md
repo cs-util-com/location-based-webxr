@@ -350,6 +350,10 @@ geo?, what })` - a copy inserted after the original (any station the
     copy 1.5 m east (`duplicateItemGeo`) or at `geo`, same height and
     facing, in the same station; a copy its station cannot carry
     (`objectFits`) is refused, changing nothing - it is never re-seated.
+    A captured photo's copy takes the record `addedAssets` holds for
+    the photo (a smaller file, `assetOptimized`), not its inline
+    `imageAsset`, which keeps the old path: its entry gets the new
+    file's extension and size (also for `stationDuplicated`).
   - `itemsGrounded({ items: [{ id, alt }], what })` - several items' new
     altitudes ("put on the ground", the page measures the ground) as one
     step; an unknown id refuses the whole step.

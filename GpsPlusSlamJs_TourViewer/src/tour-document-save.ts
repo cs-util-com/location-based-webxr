@@ -20,6 +20,8 @@ import type {
   TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { SignedTourManifest } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
+import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
+import { DEFAULT_ARCHIVE_LIMITS } from "gps-plus-slam-app-framework/storage";
 import { hostedObjects } from "./authoring-draft.js";
 import {
   finishedFileName,
@@ -154,7 +156,9 @@ interface TourSaves {
   snapshot(): TourDocumentThunk<TourSaveSnapshot>;
   /** The bytes a save of `state` adds to the written file: the pictures
    *  of the captured photos it does not host, the timing texts and the
-   *  files brought in it lacks (the snapshot's own rule). With
+   *  files brought in it lacks (the snapshot's own rule), less the old
+   *  entries a smaller file replaces (`assetOptimized`): below zero when
+   *  the swaps save more than the rest adds. With
    *  `keptOnly`, only the files the write keeps: one nothing names (an
    *  undo took it out and a later edit dropped its redo, or a file not
    *  named yet) is left out. */
@@ -191,11 +195,28 @@ export function createTourSaves(input: {
   readonly fileOf: (id: string) => Blob | undefined;
   /** Settles once the pictures being read are read. */
   readonly picturesRead: () => Promise<unknown>;
+  /** The largest file a save writes (default: the archive's entry cap);
+   *  a larger one, or a picture over the pixel cap, refuses the save. */
+  readonly maxFileBytes?: number;
+  /** The name a file brought in had, by asset id, for that refusal's
+   *  words. */
+  readonly fileNameOf?: (id: string) => string | undefined;
 }): TourSaves {
   const { tour, generation } = input;
   let newest: NewestBytes | null = null;
   /** The end of the last queued run, for the next to start after. */
   let tail: Promise<unknown> = Promise.resolve();
+  /** The newest bytes' entry sizes, by path in the tour's folder: the
+   *  opened file's, then each landed save's files written and entries
+   *  replaced. What a swap's old entry takes out of the next save
+   *  (`addedBytes`); an entry not known here counts 0. */
+  const entrySizes = new Map(
+    tour.entries.flatMap((e) =>
+      e.filename.startsWith(tour.manifestWrap)
+        ? [[e.filename.slice(tour.manifestWrap.length), e.size] as const]
+        : [],
+    ),
+  );
 
   function snapshotOf(state: TourDocumentState): TourSaveSnapshot {
     const manifest = manifestNow(state);
@@ -270,6 +291,26 @@ export function createTourSaves(input: {
     });
   }
 
+  /** The words refusing a save of `snap`: a file it writes is over the
+   *  entry cap (or a picture over the pixel cap), so no reader would open
+   *  the zip - an original still being made smaller. Null when none is. */
+  function oversizedFile(snap: TourSaveSnapshot): string | null {
+    const maxBytes = input.maxFileBytes ?? DEFAULT_ARCHIVE_LIMITS.maxEntryBytes;
+    for (const { path, data } of snap.files) {
+      const asset = snap.manifest.assets.find((a) => a.path === path);
+      if (asset === undefined || typeof data === "string") continue;
+      const pixels = (asset.width ?? 0) * (asset.height ?? 0);
+      if (data.size <= maxBytes && pixels <= TOUR_MAX_IMAGE_PIXELS) continue;
+      const name = input.fileNameOf?.(asset.id);
+      const what =
+        name === undefined
+          ? `${KIND_WORDS[asset.kind]} of this tour`
+          : `"${name}"`;
+      return `${what} is still too large to save - it is being made smaller. Save again once it is ready, or remove it.`;
+    }
+    return null;
+  }
+
   const saves: TourSaves = {
     fileName: finishedFileName(tour),
     newest: () => newest,
@@ -337,17 +378,18 @@ export function createTourSaves(input: {
             );
       for (const { path, data } of files) {
         if (kept !== null && !kept.has(path)) continue;
-        sum +=
-          typeof data === "string"
-            ? encoder.encode(data).byteLength
-            : data.size;
+        sum += sizeOf(data, encoder);
       }
+      // The old entries a smaller file replaces leave the file.
+      for (const path of replacedOf(state)) sum -= entrySizes.get(path) ?? 0;
       return sum;
     },
     async picturesRead() {
       await input.picturesRead();
     },
     async rebuild(snap, keepScan, whole) {
+      const oversized = oversizedFile(snap);
+      if (oversized !== null) throw new Error(oversized);
       const finished = await rebuildFinishedTour({
         tour:
           whole === undefined
@@ -375,6 +417,11 @@ export function createTourSaves(input: {
     },
     land(finished, snap, inPlace = false) {
       return (dispatch) => {
+        const encoder = new TextEncoder();
+        for (const path of snap.replaced) entrySizes.delete(path);
+        for (const { path, data } of snap.files) {
+          entrySizes.set(path, sizeOf(data, encoder));
+        }
         newest = {
           blob: finished.blob,
           ...(finished.signedManifest === undefined
@@ -416,6 +463,19 @@ export function createTourSaves(input: {
     },
   };
   return saves;
+}
+
+/** A kind as the oversized refusal names it, at the start of a sentence. */
+const KIND_WORDS = {
+  image: "A picture",
+  audio: "A sound",
+  video: "A video",
+  model: "A 3D model",
+} as const;
+
+/** The bytes `data` takes in the zip (a text as UTF-8). */
+function sizeOf(data: string | Blob, encoder: TextEncoder): number {
+  return typeof data === "string" ? encoder.encode(data).byteLength : data.size;
 }
 
 /** The written file's asset paths, by asset id. */

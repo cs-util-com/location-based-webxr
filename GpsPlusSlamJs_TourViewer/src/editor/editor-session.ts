@@ -120,7 +120,11 @@ import { STATION_LOCKED } from "./editor-view.js";
 import { checkNoGps, type NoGpsCheck } from "./no-gps-check.js";
 import { readZipBlobEntry, zipBlobEntryNames } from "../zip-blob.js";
 import { truncated } from "../truncated.js";
-import { readTourFile, type TourFileContext } from "./tour-files.js";
+import {
+  readTourFile,
+  TOUR_FILE_LIMITS,
+  type TourFileContext,
+} from "./tour-files.js";
 import { newStory, withoutStoryChild } from "../tour-story-edit.js";
 import { newStoryEntry } from "./new-pin.js";
 
@@ -747,7 +751,9 @@ export interface EditorSession {
    *  is left out). What the autosave's cap is judged by. */
   nextSaveBytes(): number;
   /** A file brought in, by its entry (`content/<id>.<ext>`), until a
-   *  save wrote it: what a preview shows. */
+   *  save wrote it: what a preview shows. Resolved by the id the entry
+   *  names, so the path a placed picture still names after a swap reads
+   *  the smaller file. */
   contentOf(path: string): Blob | undefined;
   /** A smaller file in place of an asset's, under the same id (so no
    *  item, narration or step changes): kept in the files table and listed
@@ -830,7 +836,10 @@ export function createEditorSession(input: {
   /** What a file brought in is measured by (the page's model loader and
    *  video element, `readTourFile`); none: a model is taken unmeasured
    *  and a video without a poster. */
-  readonly fileReaders?: Pick<TourFileContext, "measureModel" | "posterOf">;
+  readonly fileReaders?: Pick<
+    TourFileContext,
+    "measureModel" | "posterOf" | "limits" | "shrinks"
+  >;
 }): EditorSession {
   const { session, levels } = input;
   const store: TourViewerStore = input.store ?? createTourViewerStore();
@@ -860,11 +869,17 @@ export function createEditorSession(input: {
   const pictureReads = new Set<Promise<void>>();
   const loadPhoto =
     input.loadPhoto ?? ((image: string) => session.loadContentEntry(image));
+  /** The names the files brought in here had, by asset id: what a save
+   *  refused for one still too large says. */
+  const fileNames = new Map<string, string>();
+  const limits = input.fileReaders?.limits ?? TOUR_FILE_LIMITS;
   const saves = createTourSaves({
     tour: session,
     generation,
     fileOf: (id) => files.get(id),
     picturesRead: () => Promise.all(pictureReads),
+    maxFileBytes: limits.maxEntryBytes - limits.marginBytes,
+    fileNameOf: (id) => fileNames.get(id),
   });
   /** What the opened file weighs: its entries' sizes. */
   const openedBytes = session.entries.reduce((sum, e) => sum + e.size, 0);
@@ -1285,12 +1300,32 @@ export function createEditorSession(input: {
     if (judged === null) return swapRefused;
     // Without a draft the swap is taken before the first await: a save
     // started right after the call sees it.
-    const backedUp =
-      draft === undefined
-        ? true
-        : await draft.swapAsset(judged.asset, file.blob);
-    const final = draft === undefined ? judged : judgedSwap(id, file);
-    if (final === null) return swapRefused;
+    if (draft === undefined) {
+      files.set(id, file.blob);
+      store.dispatch(judged.action);
+      return { kind: "swapped", backedUp: true };
+    }
+    const state = own();
+    const was =
+      state.addedAssets.find((a) => a.id === id) ??
+      state.written?.assets.find((a) => a.id === id);
+    const wasBlob = files.get(id);
+    const backedUp = await draft.swapAsset(judged.asset, file.blob);
+    const final = judgedSwap(id, file);
+    if (final === null) {
+      // The draft took what the document now refuses (this open was
+      // replaced, or the asset left the tour): it gets the record that
+      // stood before back, so no later open offers the refused file.
+      // Back at a path whose bytes it holds, it reads no bytes: an asset
+      // of the opened file has none here.
+      // Not when the same swap landed meanwhile: the draft agrees then.
+      const listed = own().addedAssets.find((a) => a.id === id);
+      const same = JSON.stringify(listed) === JSON.stringify(judged.asset);
+      if (was !== undefined && !same) {
+        await draft.swapAsset(was, wasBlob ?? new Blob([]));
+      }
+      return swapRefused;
+    }
     files.set(id, file.blob);
     store.dispatch(final.action);
     return { kind: "swapped", backedUp };
@@ -1318,6 +1353,7 @@ export function createEditorSession(input: {
     let backedUp = true;
     for (const { asset, blob } of brought) {
       files.set(asset.id, blob);
+      if (asset === read.asset) fileNames.set(asset.id, fileName);
       // Before the asset is listed, so before any record naming it.
       if (draft !== undefined && !(await draft.saveAsset(asset, blob))) {
         backedUp = false;
@@ -1346,7 +1382,10 @@ export function createEditorSession(input: {
     tourBytes,
     nextSaveBytes,
     contentOf(path) {
-      const asset = own().addedAssets.find((a) => a.path === path);
+      // By the id the entry names (`content/<id>.<ext>`): a placed
+      // picture's inline record keeps the path it had before a swap.
+      const id = /^content\/([^/]+)\.[a-z0-9]+$/.exec(path)?.[1];
+      const asset = own().addedAssets.find((a) => a.id === id);
       return asset === undefined ? undefined : files.get(asset.id);
     },
     model() {

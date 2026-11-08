@@ -2623,7 +2623,8 @@ function copiedNarration<T extends { readonly narration?: TourNarration }>(
  *  (`createdAtIso`), a captured photo under its own image asset (the new
  *  id, `content/<id>.` its extension), its text marked as a copy where
  *  the mark fits (a pin's caption, a picture's caption, a model's
- *  title). */
+ *  title). A photo's record among `assets` (`addedAssets`: a smaller
+ *  file, `assetOptimized`) is the one copied, not its inline one. */
 function copiedObject(
   object: TourObject,
   copy: {
@@ -2632,6 +2633,7 @@ function copiedObject(
     readonly geo: QrGeoPose;
     readonly station: string;
   },
+  assets?: readonly TourAsset[],
 ): TourObject {
   const base = {
     ...object,
@@ -2673,13 +2675,16 @@ function copiedObject(
       if (object.kind !== "picture" || object.image !== object.id) {
         return marked;
       }
-      const ext =
-        /\.([a-z0-9]{1,5})$/.exec(marked.imageAsset.path)?.[1] ?? "jpg";
+      // The record the tour holds now: after a swap (`assetOptimized`) the
+      // inline one still names the old file, whose bytes are gone.
+      const record =
+        assets?.find((a) => a.id === object.id) ?? marked.imageAsset;
+      const ext = /\.([a-z0-9]{1,5})$/.exec(record.path)?.[1] ?? "jpg";
       return {
         ...marked,
         image: copy.id,
         imageAsset: {
-          ...marked.imageAsset,
+          ...record,
           id: copy.id,
           path: `content/${copy.id}.${ext}`,
         },
@@ -2998,12 +3003,16 @@ function stationDuplicate(
     const id = newIds[i];
     if (id === undefined) return before;
     placed = upsertPlaced(placed, {
-      object: copiedObject(item, {
-        id,
-        createdAtIso: payload.createdAtIso,
-        geo: rigidlyMoved(item.geo, frame.geo, geo),
-        station: copy.id,
-      }),
+      object: copiedObject(
+        item,
+        {
+          id,
+          createdAtIso: payload.createdAtIso,
+          geo: rigidlyMoved(item.geo, frame.geo, geo),
+          station: copy.id,
+        },
+        before.addedAssets,
+      ),
     });
   }
   const listed = new Set(frames.map((f) => f.id));
@@ -3037,12 +3046,16 @@ function objectDuplicate(
   const station = found?.object.station;
   if (found === undefined || station === undefined) return before;
   if (!freeObjectId(before, payload.newId)) return before;
-  const copy = copiedObject(found.object, {
-    id: payload.newId,
-    createdAtIso: payload.createdAtIso,
-    geo: payload.geo ?? duplicateItemGeo(found.object.geo),
-    station,
-  });
+  const copy = copiedObject(
+    found.object,
+    {
+      id: payload.newId,
+      createdAtIso: payload.createdAtIso,
+      geo: payload.geo ?? duplicateItemGeo(found.object.geo),
+      station,
+    },
+    before.addedAssets,
+  );
   if (!objectFits(before, copy)) return before;
   return putObject(before, copy, payload.what);
 }

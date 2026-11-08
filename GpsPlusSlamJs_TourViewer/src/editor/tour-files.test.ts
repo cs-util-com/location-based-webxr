@@ -166,6 +166,80 @@ describe("readTourFile", () => {
     });
   });
 
+  // Why: a file over a tour's caps may come in when its kind can be made
+  // smaller (the shelf keeps the original until the smaller file fits), but
+  // never above the absolute ceiling, which guards the decode against a
+  // huge or crafted file. A kind that cannot be made smaller yet (a video
+  // always) is refused over the caps, in words that say why.
+  it("takes a file over the entry cap only for a kind that shrinks, below the ceiling", async () => {
+    const limits = {
+      maxEntryBytes: 100,
+      maxArchiveBytes: 1000,
+      marginBytes: 10,
+      ceilingBytes: 300,
+    };
+    const shrinks = (kind: string) => kind === "audio";
+    const over = await readTourFile(new Blob([new Uint8Array(250)]), "a.mp3", {
+      tourBytes: 0,
+      known: none,
+      limits,
+      shrinks,
+    });
+    expect(over).toMatchObject({ kind: "read", oversized: true });
+    const fits = await readTourFile(new Blob([new Uint8Array(90)]), "a.mp3", {
+      tourBytes: 0,
+      known: none,
+      limits,
+      shrinks,
+    });
+    expect(fits).not.toHaveProperty("oversized");
+    const ceiling = await readTourFile(
+      new Blob([new Uint8Array(301)]),
+      "a.mp3",
+      { tourBytes: 0, known: none, limits, shrinks },
+    );
+    expect(ceiling).toEqual({
+      kind: "refused",
+      reason:
+        "That file is too large for a tour (301 B; a file can be at most 90 B, and one larger than 300 B cannot be made smaller here).",
+    });
+    const video = await readTourFile(new Blob([new Uint8Array(250)]), "a.mp4", {
+      tourBytes: 0,
+      known: none,
+      limits,
+      shrinks,
+    });
+    expect(video).toEqual({
+      kind: "refused",
+      reason:
+        "That file is too large for a tour (250 B; a file can be at most 90 B), and a video cannot be made smaller here yet.",
+    });
+  });
+
+  // Why: the pixel cap guards phones against huge pictures and crafted
+  // headers. A picture over it may come in to be made smaller, but one over
+  // the absolute pixel ceiling is refused whatever its kind can do.
+  it("takes a picture over the pixel cap only to be made smaller, below the pixel ceiling", async () => {
+    const shrinks = () => true;
+    const big = await readTourFile(png(8000, 6000), "a.png", {
+      tourBytes: 0,
+      known: none,
+      shrinks,
+    });
+    expect(big).toMatchObject({ kind: "read", oversized: true });
+    const refusedHere = await readTourFile(png(8000, 6000), "a.png", {
+      tourBytes: 0,
+      known: none,
+    });
+    expect(refusedHere).toMatchObject({ kind: "refused" });
+    const crafted = await readTourFile(png(60000, 60000), "a.png", {
+      tourBytes: 0,
+      known: none,
+      shrinks,
+    });
+    expect(crafted).toMatchObject({ kind: "refused" });
+  });
+
   // Why: bytes the tour already holds add nothing to it, so a tour near
   // its cap must still take them (one more item using the same voice); the
   // room is judged by what an import ADDS, after its hash is known.
