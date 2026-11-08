@@ -45,6 +45,16 @@ Turns a `SkeletonRoof` (`roof-skeleton.ts`) into triangles: heights from
   1 in 670 gabled roofs fail on their first nudge, and all close on the
   second. `roof.ts` then takes its next rung, so a fold or a crack never
   reaches the screen.
+- **The check compares in float32.** The mesh positions are a
+  `Float32Array` and the eave a float64, so "above the eaves" is
+  `y > Math.fround(eaveM) + 1e-6`. Against the float64 eave, an eave that
+  float32 rounds UP by more than 1e-6 (possible from |eave| >= 32 m, and eaves
+  are frame-relative, so relief puts real roofs there) made every eave vertex
+  read as raised, every eave edge open, and the roof a prism: 24 to 48 % of an
+  L-shape in the 32 to 512 m bands, and both prisms of the corpus (M2 review
+  finding 1, 2026-11-08). Fixed, the L draws as a skeleton in every band from
+  -512 to 512 m at rises 0.5, 5 and 30 m, and 5,400 random stars at eaves in
+  [-500, 500] m and rises 0.3 to 40 m land on the same rung as at eave 0.
 - **Sweep of the weld and edge distances** (weld / edge; 4,000 random stars
   of 13 to 40 corners, plus the 508 ridged roofs of the test corpus;
   2026-11-08). "First" counts roofs whose first nudge failed, "both" those
@@ -81,6 +91,11 @@ const { mesh, surfaceVertices } = skeletonMesh(roof, {
 - The mesh properties in `roof-skeleton.property.test.ts`: normals up on
   every surface, gables vertical, edge-manifold with the eave ring as the
   only open boundary (a soffit ring for an offset ring), over random stars
-  with and without gables; a star whose skeleton or mesh refuses is skipped
-  (the ladder handles it, `roof.test.ts` pins a retry and a fallback).
+  with and without gables, and through `buildRoof` at random eaves in
+  [-500, 500] m and rises 0.3 to 40 m (whole millimetres: an `fc.double` over
+  that range is nearly always a tiny number or a bound): the rung drawn must not
+  depend on the eave, and every skeleton it draws is closed. Nothing the check
+  rejects is skipped any more.
+- `roof.test.ts`: an L drawn as a skeleton at eaves 40.3, 40.4, 123.45,
+  -250.9, 499.9 and -0.7 m (40.4 and -250.9 were prisms before the fix).
 - `s3db-roof-tags.test.ts`: heights and coverage through `buildBuildings`.

@@ -103,6 +103,26 @@ describe("buildRoof: the exact rungs", () => {
     expect(top(hipped)).toBeCloseTo(RIDGE, 3);
   });
 
+  it("draws an L with the skeleton at any eave height, above and below zero", () => {
+    // Why: positions are float32 and the eave a float64. Where float32 rounds
+    // the eave UP by more than the closure check's 1e-6 (from |eave| >= 32 m,
+    // and eaves are frame-relative, so relief puts real roofs there) every eave
+    // vertex read as raised, the closure check failed and the roof fell to the
+    // prism (M2 review finding 1, 2026-11-08: both corpus prisms). 40.3 m rounds
+    // down and always passed; 40.4 m and -250.9 m round up and did not.
+    for (const eave of [40.3, 40.4, 123.45, -250.9, 499.9, -0.7]) {
+      for (const shape of ["gabled", "hipped"] as const) {
+        const roof = roofOf([L_SHAPE], shape, {
+          eaveHeightM: eave,
+          ridgeHeightM: eave + 5,
+        });
+        expect(`${shape} at ${eave} m: ${roof.method}`).toBe(
+          `${shape} at ${eave} m: skeleton`,
+        );
+      }
+    }
+  });
+
   it("draws a courtyard with the skeleton, never the box", () => {
     const hole: EnuPoint[] = [
       { x: 4, y: 3 },

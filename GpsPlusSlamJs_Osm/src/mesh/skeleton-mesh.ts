@@ -107,8 +107,12 @@ function assertClosed(mesh: MeshData, eaveM: number): void {
   const { positions, indices } = mesh;
   const key = (i: number): string =>
     `${positions[i * 3]},${positions[i * 3 + 1]},${positions[i * 3 + 2]}`;
+  // The positions are float32 and `eaveM` a float64, so the eave is compared
+  // as float32 too: rounded up by more than the 1e-6 (from |eave| >= 32 m),
+  // every eave vertex read as raised and no roof up there closed.
+  const eave = Math.fround(eaveM);
   const raised = (i: number): boolean =>
-    (positions[i * 3 + 1] as number) > eaveM + 1e-6;
+    (positions[i * 3 + 1] as number) > eave + 1e-6;
   const edges = new Map<string, { count: number; raised: boolean }>();
   for (let i = 0; i < indices.length; i += 3) {
     const tri = [indices[i], indices[i + 1], indices[i + 2]] as number[];

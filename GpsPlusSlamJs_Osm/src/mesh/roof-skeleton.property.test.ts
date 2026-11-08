@@ -6,12 +6,13 @@ import { signedArea2 } from "./enu.js";
 import type { SkeletonRoof } from "./roof-skeleton.js";
 import {
   faceTriangles,
-  SkeletonFailure,
   skeletonPlanArea,
   skeletonRoof,
 } from "./roof-skeleton.js";
 import { skeletonMesh } from "./skeleton-mesh.js";
 import type { MeshData } from "./mesh-data.js";
+import { buildRoof } from "./roof.js";
+import { triangulate } from "./triangulate.js";
 import { containsPoint } from "../spatial/point-in-ring.js";
 
 /**
@@ -285,6 +286,22 @@ describe("the skeleton roof as a mesh (skeleton-mesh.ts)", () => {
   // used twice in one direction is a fold or a duplicate, and a slope facing
   // down is culled. So: normals up on every surface, gables vertical, and the
   // surface closed except along the ring it stands on.
+  const expectClosedSurface = (
+    mesh: MeshData,
+    surfaceVertices: number,
+    eaves: readonly EnuPoint[],
+    eaveM: number,
+  ): void => {
+    expect(badNormals(mesh, surfaceVertices)).toEqual([]);
+    const { open, repeated } = openEdges(mesh);
+    expect(repeated).toEqual([]);
+    const strays = open.filter(
+      ([p, q]) =>
+        !onEaveRing(p as string, eaves, eaveM) ||
+        !onEaveRing(q as string, eaves, eaveM),
+    );
+    expect(strays).toEqual([]);
+  };
   const expectClosedMesh = (
     roof: SkeletonRoof,
     eaves: readonly EnuPoint[],
@@ -293,39 +310,46 @@ describe("the skeleton roof as a mesh (skeleton-mesh.ts)", () => {
       eaveM: 7,
       slope: 0.8,
     });
-    expect(badNormals(mesh, surfaceVertices)).toEqual([]);
-    const { open, repeated } = openEdges(mesh);
-    expect(repeated).toEqual([]);
-    const strays = open.filter(
-      ([p, q]) =>
-        !onEaveRing(p as string, eaves, 7) ||
-        !onEaveRing(q as string, eaves, 7),
-    );
-    expect(strays).toEqual([]);
+    expectClosedSurface(mesh, surfaceVertices, eaves, 7);
   };
 
-  it("is closed up to the eave ring and faces up, all slopes or with gables", () => {
+  it("draws the same rung at any eave, closed and facing up, at any slope", () => {
+    // Through buildRoof, so nothing the closure check rejects is discarded:
+    // a roof that fails takes the next rung, and the rung it lands on must not
+    // depend on the eave. The eave sweeps [-500, 500] m because eaves are
+    // frame-relative and positions float32 (M2 review finding 1: from
+    // |eave| >= 32 m the old check refused a quarter to a half of all stars and
+    // L-shapes, so they became prisms); the rise sweeps slopes from about 0.02
+    // to over 10. Not "always the skeleton": about one random star in 2,700
+    // fails both nudges as a hipped roof at every eave (2026-11-08, 5,400
+    // stars), which is the ladder working, and asserting it away would make
+    // this property flaky.
     fc.assert(
-      fc.property(starPolygon, fc.boolean(), (footprint, gabled) => {
-        // A skeleton or a stitched mesh that fails says so with
-        // SkeletonFailure (about 1 in 670 gabled and under 1 in 4,000 hipped random
-        // stars), and buildRoof then takes its next rung; what is drawn is
-        // only what passed, so only that is checked here.
-        let roof: SkeletonRoof;
-        try {
-          roof = skeletonRoof(
-            [footprint],
-            gabled ? { gableEnds: { kind: "neighbours" } } : {},
-          );
-          skeletonMesh(roof, { eaveM: 7, slope: 0.8 });
-        } catch (error) {
-          if (!(error instanceof SkeletonFailure)) throw error;
-          fc.pre(false);
-          return;
-        }
-        expectClosedMesh(roof, footprint);
-      }),
-      { numRuns: 100 },
+      fc.property(
+        starPolygon,
+        fc.constantFrom<"gabled" | "hipped">("gabled", "hipped"),
+        // Whole millimetres, not fc.double: a double drawn from [-500, 500]
+        // is nearly always a tiny number or a bound (it is uniform over bit
+        // patterns), and neither ever showed finding 1.
+        fc.integer({ min: -500_000, max: 500_000 }).map((mm) => mm / 1000),
+        fc.integer({ min: 300, max: 40_000 }).map((mm) => mm / 1000),
+        (footprint, shape, eaveM, rise) => {
+          const roof = buildRoof([footprint], triangulate([footprint]), {
+            shape,
+            eaveHeightM: eaveM,
+            ridgeHeightM: eaveM + rise,
+          });
+          const atZero = buildRoof([footprint], triangulate([footprint]), {
+            shape,
+            eaveHeightM: 0,
+            ridgeHeightM: rise,
+          });
+          expect(roof.method).toBe(atZero.method);
+          if (!roof.method.includes("skeleton")) return;
+          expectClosedSurface(roof, roof.surfaceVertices, footprint, eaveM);
+        },
+      ),
+      { numRuns: 150 },
     );
   });
 
