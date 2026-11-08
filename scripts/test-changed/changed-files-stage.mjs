@@ -50,13 +50,17 @@ function runFull() {
 }
 
 /**
- * The narrowed command: the tool's bin through node with an argv, no shell,
- * so a git-reported file name is never interpreted.
- * @param {string[]} argv - `[tool, ...options, ...files]`
- * @returns {number}
+ * The narrowed command's bin: run through node with an argv, no shell, so a
+ * git-reported file name is never interpreted.
+ * @param {string} tool
+ * @returns {{ bin: string } | { reason: string }} a reason when the package does not resolve the tool
  */
-function runArgv([tool, ...args]) {
-  return spawnSync(process.execPath, [toolBin(pkgDir, tool), ...args], { stdio: 'inherit', cwd: pkgDir }).status ?? 1;
+function narrowedBin(tool) {
+  try {
+    return { bin: toolBin(pkgDir, tool) };
+  } catch (error) {
+    return { reason: `${tool} does not resolve from this package (${String(error).split('\n')[0]})` };
+  }
 }
 
 const p = plan();
@@ -68,7 +72,13 @@ if (p.mode === 'full') {
   console.log(`changed-files: whole package - ${p.reason}`);
   process.exit(runFull());
 }
+const [tool, ...args] = p.argv;
+const resolved = narrowedBin(tool);
+if ('reason' in resolved) {
+  console.log(`changed-files: whole package - ${resolved.reason}`);
+  process.exit(runFull());
+}
 console.log(
   `changed-files: only the ${p.files.length} changed file(s) (the whole package is checked at the milestone and in CI)`
 );
-process.exit(runArgv(p.argv));
+process.exit(spawnSync(process.execPath, [resolved.bin, ...args], { stdio: 'inherit', cwd: pkgDir }).status ?? 1);

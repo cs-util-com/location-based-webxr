@@ -27,8 +27,13 @@
   - The narrowed command runs as an argv through node and the tool's own bin
     ([package-bin.mjs](package-bin.mjs.md)), with no shell, so a file name
     with a `$`, a backtick or a `"` reaches the tool verbatim (r1139).
+  - When the package does not resolve the tool's bin, the stage runs the
+    whole command and its line says `whole package - <tool> does not
+    resolve from this package (...)`, like every other uncertainty.
 - Example: a Tour Viewer commit touching 3 modules formats those 3 files
   instead of the whole package.
-- Tests: the rewrite in `changed-files-command.test.mjs`; the wiring in
+- Tests: the rewrite in `changed-files-command.test.mjs`; the bin fallback
+  end to end in `changed-files-stage.test.mjs` (a throwaway git repo
+  outside the workspace); the wiring in
   `projects.test.mjs` ("format on the changed files in the fast gate
   only"); the shell by real fast-gate runs.

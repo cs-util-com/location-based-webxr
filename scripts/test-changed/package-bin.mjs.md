@@ -11,8 +11,9 @@
   `bin[tool]` entry.
 - Invariants & assumptions: the tool's npm name is its bin name (true for
   vitest and prettier). Throws when the tool does not resolve from the
-  package or has no such bin; callers fall back to running the whole
-  command, or report the error.
+  package or has no such bin. changed-files-stage.mjs falls back to the
+  whole-package command and says so in its one line; related-unit.mjs lets
+  the error surface (vitest is every package's own dependency).
 - Example: `spawnSync(process.execPath, [toolBin(pkgDir, 'prettier'), '--check', file])`.
-- Tests: `package-bin.test.mjs` (resolves vitest's bin from the root, throws
-  for an unknown tool).
+- Tests: `package-bin.test.mjs` (vitest's object `bin` from the root,
+  prettier's string `bin` from the framework, throws for an unknown tool).
