@@ -1,10 +1,24 @@
 import { describe, expect, it } from "vitest";
 
-import type { OsmFeature } from "../model/osm-feature.js";
+import { featureKey, type OsmFeature } from "../model/osm-feature.js";
+import { parseOverpassJson } from "../model/overpass-parser.js";
+import { CORPUS_SITES } from "../places/sites.js";
+import { loadSite } from "../test-utils/load-fixtures.js";
 import { buildCity, cityGround } from "./city.js";
 import { enuFrameAt } from "./enu.js";
 import { barrierColour } from "./barrier-colours.js";
-import { buildingColour, roadColour } from "./feature-colours.js";
+import {
+  FLAT_ROOF_TONES,
+  PITCHED_ROOF_TONES,
+  allPaletteColours,
+  seededBuildingColours,
+} from "./building-palette.js";
+import {
+  buildingColour,
+  parseOsmColour,
+  roadColour,
+  roofColour,
+} from "./feature-colours.js";
 import { srgbToLinear } from "./srgb.js";
 
 /**
@@ -362,5 +376,181 @@ describe("buildCity with roads", () => {
       { roads: true, withinM: 2400 },
     );
     expect(city.roadCount).toBe(1);
+  });
+});
+
+/**
+ * WHY (city objects plan 2026-11-07-2315 M7): the owner chose V2's look, so
+ * an untagged building takes warm seeded tones from its own key, the same on
+ * every reload, and the class colours stay reachable only behind
+ * `palette: "class"`. Each failure here is silent on screen: a city of one
+ * tone, a striped cathedral, the class greys back, a roof painted as a wall.
+ */
+describe("buildCity's seeded palette", () => {
+  const house = (id: number, tags: Record<string, string>): OsmFeature => ({
+    ...outline("#000000"),
+    id,
+    tags,
+  });
+  /** The distinct linear colours a city's building chunks carry. */
+  const triples = (city: ReturnType<typeof buildCity>): Set<string> => {
+    const out = new Set<string>();
+    for (const chunk of city.buildings) {
+      const c = chunk.colors ?? [];
+      for (let i = 0; i < c.length; i += 3) {
+        out.add(`${c[i]},${c[i + 1]},${c[i + 2]}`);
+      }
+    }
+    return out;
+  };
+  const key = (rgb: number) => linearUnpacked(rgb).join(",");
+
+  it("paints an untagged house's walls and flat roof from its key, by default", () => {
+    const tags = { building: "house" };
+    const expected = seededBuildingColours(tags, undefined, "way/9", false);
+    const got = triples(buildCity([house(9, tags)], { frame }));
+    expect(got).toEqual(new Set([key(expected.wall), key(expected.roof)]));
+    expect(FLAT_ROOF_TONES).toContain(expected.roof);
+  });
+
+  it("gives a pitched roof a clay or slate tone", () => {
+    const tags = { building: "house", "roof:shape": "gabled" };
+    const expected = seededBuildingColours(tags, undefined, "way/9", true);
+    expect(PITCHED_ROOF_TONES).toContain(expected.roof);
+    const got = triples(buildCity([house(9, tags)], { frame }));
+    expect(got).toEqual(new Set([key(expected.wall), key(expected.roof)]));
+  });
+
+  it("is the same city for the same features", () => {
+    const features = [1, 2, 3].map((id) => house(id, { building: "yes" }));
+    expect(triples(buildCity(features, { frame }))).toEqual(
+      triples(buildCity(features, { frame })),
+    );
+  });
+
+  it("gives an untagged part its outline's seeded colours", () => {
+    const parent = house(1, { building: "church" });
+    const part = { ...tower(), tags: { "building:part": "yes", height: "20" } };
+    const expected = seededBuildingColours({}, undefined, "way/1", false);
+    expect(triples(buildCity([parent, part], { frame }))).toEqual(
+      new Set([key(expected.wall), key(expected.roof)]),
+    );
+  });
+
+  it("ignores building:material (owner Q3), and keeps the class colours behind palette: class", () => {
+    const plain = { building: "house" };
+    const brick = { building: "house", "building:material": "brick" };
+    expect(triples(buildCity([house(9, brick)], { frame }))).toEqual(
+      triples(buildCity([house(9, plain)], { frame })),
+    );
+    const classic = triples(
+      buildCity([house(9, brick)], { frame }, { palette: "class" }),
+    );
+    expect(classic).toEqual(new Set([key(buildingColour(brick))]));
+  });
+
+  it("refuses a palette it does not know", () => {
+    expect(() =>
+      buildCity([], { frame }, { palette: "loud" as "class" }),
+    ).toThrow(RangeError);
+  });
+});
+
+/**
+ * WHY: the corpus is what the owner looks at. Heidelberg's roof-tagged
+ * buildings are the ones V2's clay roofscape was chosen on; each must take a
+ * palette roof unless a mapper coloured it, and no class colour may survive
+ * anywhere in the default city.
+ */
+describe("Heidelberg under the seeded palette", () => {
+  // The Osm corpus extract (src/testdata/sites), not the city-look lab's.
+  const site = CORPUS_SITES.find((s) => s.id === "heidelberg-altstadt");
+  if (site === undefined) throw new Error("heidelberg-altstadt not in corpus");
+  const features = parseOverpassJson(loadSite(site.id).payload).features;
+  const ground = { frame: enuFrameAt(site.position) };
+  const city = buildCity(features, ground);
+  const tagsByKey = new Map(features.map((f) => [featureKey(f), f.tags]));
+
+  it("roofs every roof-tagged building from the palette unless it is colour-tagged", () => {
+    const linear = (rgb: number) => linearUnpacked(rgb);
+    let pitched = 0;
+    let tagged = 0;
+    let palette = 0;
+    for (const volume of city.volumes) {
+      if (volume.heights.roofShape === "flat") continue;
+      pitched += 1;
+      const tags = tagsByKey.get(volume.feature) ?? {};
+      const outlineTags =
+        volume.parentFeature === undefined
+          ? undefined
+          : tagsByKey.get(volume.parentFeature);
+      if (roofColour(tags, outlineTags) !== undefined) {
+        tagged += 1;
+        continue;
+      }
+      const roof = seededBuildingColours(
+        tags,
+        outlineTags,
+        volume.parentFeature ?? volume.feature,
+        true,
+      ).roof;
+      expect(PITCHED_ROOF_TONES).toContain(roof);
+      // The roof vertices carry it: find this volume's first roof vertex in
+      // the chunks by its position.
+      const r = volume.roofVertexRanges[0];
+      if (r === undefined || r.end <= r.start) continue;
+      const p = volume.mesh.positions;
+      const at = [p[r.start * 3], p[r.start * 3 + 1], p[r.start * 3 + 2]];
+      const found = city.buildings.some((chunk) => {
+        const q = chunk.mesh.positions;
+        const c = chunk.colors ?? [];
+        for (let i = 0; i < q.length; i += 3) {
+          if (q[i] === at[0] && q[i + 1] === at[1] && q[i + 2] === at[2]) {
+            const want = linear(roof);
+            if (
+              c[i] === want[0] &&
+              c[i + 1] === want[1] &&
+              c[i + 2] === want[2]
+            )
+              return true;
+          }
+        }
+        return false;
+      });
+      expect(found, `${volume.feature} roof`).toBe(true);
+      palette += 1;
+    }
+    // Counted in VOLUMES (parts count singly): 150 pitched volumes of 93
+    // buildings; 81 volumes (24 buildings) carry a roof:colour, 69 volumes
+    // (69 buildings) take the palette (2026-11-08).
+    expect({ pitched, tagged, palette }).toEqual({
+      pitched: 150,
+      tagged: 81,
+      palette: 69,
+    });
+  });
+
+  it("draws no class colour that the palette, a tag or a barrier did not give", () => {
+    const allowed = new Set<string>(
+      allPaletteColours().map((rgb) => linearUnpacked(rgb).join(",")),
+    );
+    for (const f of features) {
+      for (const tag of ["building:colour", "roof:colour"]) {
+        const rgb = parseOsmColour(f.tags[tag]);
+        if (rgb !== undefined) allowed.add(linearUnpacked(rgb).join(","));
+      }
+      if (f.tags.barrier !== undefined) {
+        allowed.add(linearUnpacked(barrierColour(f.tags)).join(","));
+      }
+    }
+    const stray: string[] = [];
+    for (const chunk of city.buildings) {
+      const c = chunk.colors ?? [];
+      for (let i = 0; i < c.length; i += 3) {
+        const k = `${c[i]},${c[i + 1]},${c[i + 2]}`;
+        if (!allowed.has(k)) stray.push(k);
+      }
+    }
+    expect(new Set(stray)).toEqual(new Set());
   });
 });

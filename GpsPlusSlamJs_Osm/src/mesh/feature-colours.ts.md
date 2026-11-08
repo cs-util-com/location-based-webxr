@@ -5,6 +5,10 @@
 Turns OSM tags into a muted material colour for buildings and roads, so the
 scene stops being one grey for every building and one grey for every road.
 
+Since city objects M7 (2026-11-08) these class colours are `buildCity`'s
+`palette: "class"`; by default an untagged building takes the seeded palette
+of `building-palette.ts`, which shares `parseOsmColour` and `roofColour`.
+
 ## Public API
 
 - `Rgb` — packed `0xrrggbb`.

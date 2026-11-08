@@ -93,6 +93,15 @@ export {
   roadColour,
 } from "./feature-colours.js";
 
+export type { BuildingColours, BuildingPalette } from "./building-palette.js";
+export {
+  FLAT_ROOF_TONES,
+  PITCHED_ROOF_TONES,
+  WALL_TONES,
+  allPaletteColours,
+  seededBuildingColours,
+} from "./building-palette.js";
+
 export type { MeshChunk } from "./chunk-meshes.js";
 export {
   CHUNK_SIZE_M,

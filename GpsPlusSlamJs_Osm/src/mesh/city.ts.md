@@ -41,11 +41,22 @@ trees, roads, roadCount }`. `volumes` and `barriers` are the builders' own resul
   `roadCount`. Without it `roads` is empty and `roadCount` 0: a consumer
   that draws no roads builds none. OsmDemo chunked and coloured them inline
   in its worker until 2026-10-11.
+- `buildCity(features, ground, { palette })` picks the colours of a
+  building without colour tags (city objects plan 2026-11-07-2315 M7):
+  `"seeded"` (default) the warm palette of `building-palette.ts`, picked from
+  the building's key (a part: its outline's), the roof from the clay and
+  slate tones when its shape is not flat and the greys when it is;
+  `"class"` the class colours (`buildingColour`, `roofColour`) as before M7.
+  RangeError for any other value.
 - No other error modes: a feature that cannot be built is skipped, as in
   every builder.
 
 ## Invariants & assumptions
 
+- **Under the default seeded palette** colour tags still win (the part's,
+  then the outline's), `building:material` is not read (owner Q3), and every
+  volume's roof block gets a roof colour, tagged or seeded. The paragraphs
+  below describe the `"class"` palette, and the tag precedence both share.
 - **A `building:part` is coloured by its own `building:colour` or
   `building:material` first, and by its parent's colour when it has neither**
   (bug 8, `buildingColour(tags, outline)`), so a mapped copper spire is copper
@@ -92,5 +103,10 @@ metres; `withinM` dropping what lies outside, keeping all without it, keeping a
 building's parts together (`s3db-parts.test.ts`), and
 refusing a non-positive window; roads only when asked, the roads and paths
 coloured by class and surface and never a tunnel, draped on the ground, kept
-within the window. OsmDemo's worker tests and browser suite cover the same assembly in
+within the window; the seeded palette by default (walls and flat or pitched
+roofs from the key, a part from its outline, material ignored, `"class"`
+reaching the class colours, an unknown palette refused), and Heidelberg's
+corpus extract (every untagged pitched roof takes its palette tone on its own
+roof vertices: 150 pitched volumes, 81 roof-coloured, 69 seeded; no stray
+colour anywhere). OsmDemo's worker tests and browser suite cover the same assembly in
 use.

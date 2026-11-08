@@ -22,6 +22,10 @@ import {
 } from "../model/osm-feature.js";
 import { barrierColour } from "./barrier-colours.js";
 import { buildBarriers, type BarrierVolume } from "./barrier-volumes.js";
+import {
+  seededBuildingColours,
+  type BuildingPalette,
+} from "./building-palette.js";
 import { buildBuildings, type BuildingVolume } from "./buildings.js";
 import {
   chunkMeshes,
@@ -58,6 +62,14 @@ export interface CityOptions {
    * consumer that draws none builds none.
    */
   readonly roads?: boolean;
+  /**
+   * Which colours a building without a colour tag takes (city objects plan
+   * 2026-11-07-2315 M7). `"seeded"` (default): the warm palette of
+   * `building-palette.ts`, picked per building from its key, its roof by
+   * its shape. `"class"`: `buildingColour` and `roofColour` by tag and
+   * material, the colours before M7. Colour tags win under both.
+   */
+  readonly palette?: BuildingPalette;
 }
 
 /** What `buildCity` returns. */
@@ -110,9 +122,14 @@ export function buildCity(
   ground: CityGround,
   options: CityOptions = {},
 ): City {
-  const { withinM } = options;
+  const { withinM, palette = "seeded" } = options;
   if (withinM !== undefined && !(withinM > 0)) {
     throw new RangeError(`withinM must be a positive number, got ${withinM}`);
+  }
+  if (palette !== "seeded" && palette !== "class") {
+    throw new RangeError(
+      `palette must be "seeded" or "class", got ${String(palette)}`,
+    );
   }
   const inside = (p: EnuPoint): boolean =>
     withinM === undefined ||
@@ -132,23 +149,39 @@ export function buildCity(
   // stays the colour of the building it belongs to, so an untagged cathedral
   // is not striped, and a part a mapper coloured is drawn that colour. A
   // barrier has no outline and is simply itself.
+  //
+  // Under the seeded palette a part passes its OUTLINE's key, so an untagged
+  // cathedral draws one wall tone and one roof tone across all its parts.
   const drawn = [
-    ...volumes.map((volume) => ({
-      mesh: volume.mesh,
-      roofVertexRanges: volume.roofVertexRanges,
-      tags: tagsByKey.get(volume.feature) ?? {},
-      outline:
+    ...volumes.map((volume) => {
+      const tags = tagsByKey.get(volume.feature) ?? {};
+      const outline =
         volume.parentFeature === undefined
           ? undefined
-          : tagsByKey.get(volume.parentFeature),
-    })),
+          : tagsByKey.get(volume.parentFeature);
+      return {
+        mesh: volume.mesh,
+        roofVertexRanges: volume.roofVertexRanges,
+        ...(palette === "seeded"
+          ? seededBuildingColours(
+              tags,
+              outline,
+              volume.parentFeature ?? volume.feature,
+              volume.heights.roofShape !== "flat",
+            )
+          : {
+              wall: buildingColour(tags, outline),
+              roof: roofColour(tags, outline),
+            }),
+      };
+    }),
     ...barriers.map((barrier) => ({
       mesh: barrier.mesh,
-      // A barrier has no roof block: it is all wall.
+      // A barrier has no roof block: it is all wall, in its own muted kind
+      // colour, not a building's.
       roofVertexRanges: [],
-      tags: tagsByKey.get(barrier.feature) ?? {},
-      outline: undefined,
-      barrier: true,
+      wall: barrierColour(tagsByKey.get(barrier.feature) ?? {}),
+      roof: undefined,
     })),
   ];
   // Linear light, as three.js shades (plan 2026-11-07-2315 section 7). The
@@ -160,20 +193,14 @@ export function buildCity(
       (item) => item.mesh,
       (item) => meshCentroidEnu(item.mesh),
       undefined,
-      // A barrier takes its own muted colour, not a building's grey.
-      (item) =>
-        "barrier" in item
-          ? barrierColour(item.tags)
-          : buildingColour(item.tags, item.outline),
+      (item) => item.wall,
       // The shell shader's phase, from the feature's own geometry, so it is
       // stable across rebuilds (an index would re-shuffle on every refresh).
       (item) => shellRandFor(item.mesh),
-      (item) => {
-        const colour = roofColour(item.tags, item.outline);
-        return colour === undefined
+      (item) =>
+        item.roof === undefined
           ? undefined
-          : { colour, vertexRanges: item.roofVertexRanges };
-      },
+          : { colour: item.roof, vertexRanges: item.roofVertexRanges },
     ),
   );
   const { roads, roadCount } = options.roads
