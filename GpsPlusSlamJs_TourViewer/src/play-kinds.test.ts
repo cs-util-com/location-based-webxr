@@ -1,3 +1,4 @@
+import { Object3D } from "three";
 import { describe, expect, it } from "vitest";
 import {
   tourBlockKinds,
@@ -7,7 +8,8 @@ import {
 import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import { itemAssets, showItemCard, type ItemCardHost } from "./item-card";
-import { PLAY_KINDS, playKindOf } from "./play-kinds";
+import { PLAY_KINDS, playKindOf, worldPartOf } from "./play-kinds";
+import { worldEnv, type WorldPart } from "./world-part";
 
 /**
  * Why these tests matter: the visitor's card is one row per kind, so a kind
@@ -165,4 +167,44 @@ describe("a block of a kind with no row", () => {
       expect(playKindOf(kind)).toBeUndefined();
     },
   );
+});
+
+describe("the world door", () => {
+  const env = worldEnv("play", [], () => Promise.reject(new Error("none")));
+
+  // Why: the renderer asks this door for every block it has no drawing
+  // for; a row with no world part yet must give none, so nothing stands
+  // that nobody chose (the stands, signs and models are the renderer's own
+  // drawings, a free character the free host's).
+  it.each(tourBlockKinds())(
+    "gives no part for %s while its row has none",
+    (kind) => {
+      expect(worldPartOf(SAMPLES[kind][0], env)).toBeNull();
+    },
+  );
+
+  it("gives no part for a kind with no row", () => {
+    const block = { id: "x", kind: "stamp", view: "card", pose: POSE };
+    expect(worldPartOf(block as unknown as TourBlock, env)).toBeNull();
+  });
+
+  // Why: a kind gets its look in the world by its row alone. A row is
+  // given a world part here for the length of the test (no row has one
+  // yet), to prove the door hands it the block and the environment.
+  it("hands a row with a world part the block and the environment", () => {
+    const row = PLAY_KINDS.audio as { world?: unknown };
+    const part: WorldPart = { object: new Object3D(), dispose() {} };
+    const seen: unknown[] = [];
+    row.world = (block: unknown, given: unknown) => {
+      seen.push(block, given);
+      return part;
+    };
+    try {
+      const [block] = SAMPLES.audio;
+      expect(worldPartOf(block, env)).toBe(part);
+      expect(seen).toEqual([block, env]);
+    } finally {
+      delete row.world;
+    }
+  });
 });

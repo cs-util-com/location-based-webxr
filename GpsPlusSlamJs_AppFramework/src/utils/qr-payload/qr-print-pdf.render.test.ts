@@ -9,6 +9,7 @@
  * 10 cm. These render the file to pixels and measure.
  */
 import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
@@ -30,10 +31,18 @@ GlobalWorkerOptions.workerSrc = pathToFileURL(
 /** pdf.js draws the standard fonts (the poster text is Helvetica) from its
  *  own font files, read here as a plain path: in Node a file: URL is not
  *  read. Without them it falls back to the machine's fonts, and on the
- *  ubuntu-26.04 runner image the poster text drew nothing. */
-const STANDARD_FONTS = require
-  .resolve('pdfjs-dist/package.json')
-  .replace(/package\.json$/, 'standard_fonts/');
+ *  ubuntu-26.04 runner image the poster text drew nothing. The package
+ *  folder is taken from the entry imported above (it sits at legacy/build/
+ *  inside it), not from `pdfjs-dist/package.json`, which resolves only
+ *  while the package's `exports` happens to list it. pdf.js insists on a
+ *  trailing '/', also on Windows. */
+const STANDARD_FONTS =
+  join(
+    dirname(require.resolve('pdfjs-dist/legacy/build/pdf.mjs')),
+    '..',
+    '..',
+    'standard_fonts'
+  ) + '/';
 
 /** Pixels per millimetre the pages are rendered at. */
 const PX_PER_MM = 4;

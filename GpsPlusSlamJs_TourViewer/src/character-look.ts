@@ -25,7 +25,6 @@
 
 import {
   BoxGeometry,
-  CanvasTexture,
   DoubleSide,
   Group,
   Mesh,
@@ -34,7 +33,6 @@ import {
   PlaneGeometry,
   Quaternion,
   RingGeometry,
-  SRGBColorSpace,
   Vector3,
   type BufferGeometry,
   type Camera,
@@ -77,6 +75,7 @@ import {
   readingFloor,
   type StageCharacterView,
 } from "./character-views.js";
+import { canvasTexture } from "./world-part.js";
 
 /** The painters a look draws its media with (fakes in unit tests). */
 export interface CharacterPainters {
@@ -245,12 +244,6 @@ const smooth = (t: number): number => {
 };
 const wrapAngle = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));
 
-function texture(image: Painted["image"]): Texture {
-  const t = new CanvasTexture(image);
-  t.colorSpace = SRGBColorSpace;
-  return t;
-}
-
 function basic(
   map: Texture | null,
   extra: ConstructorParameters<typeof MeshBasicMaterial>[0] = {},
@@ -322,8 +315,8 @@ export function createCharacterLook(
       : paintPoses(options.figure, options.sheet === true, painters);
   const fig = poses[0]!;
   const figGeo = figureGeometry(fig, heightM);
-  const frontTexs = poses.map((p) => texture(p.front));
-  const backTexs = poses.map((p) => texture(p.back));
+  const frontTexs = poses.map((p) => canvasTexture(p.front));
+  const backTexs = poses.map((p) => canvasTexture(p.back));
   const frontTex = frontTexs[0]!;
   const backTex = backTexs[0]!;
   /** A pose's textures, mirrored or not; seen from behind the silhouette
@@ -348,7 +341,7 @@ export function createCharacterLook(
   body.add(front, back);
 
   const blob = painters.blob();
-  const blobTex = texture(blob.image);
+  const blobTex = canvasTexture(blob.image);
   const shadow = new Mesh(new PlaneGeometry(1, 0.5), basic(blobTex));
   shadow.rotation.x = -Math.PI / 2;
   shadow.position.y = 0.015;
@@ -386,7 +379,9 @@ export function createCharacterLook(
   const popupScale = heightM / POPUP_FIGURE_M;
   popup.scale.setScalar(popupScale);
   // The paper stage is the look's costliest painting: only the pop-up shows it.
-  const topTex = look.popup ? texture(painters.stageTop(name).image) : null;
+  const topTex = look.popup
+    ? canvasTexture(painters.stageTop(name).image)
+    : null;
   const sideMat = basic(null, {
     color: 0xd9ccb0,
     transparent: false,
@@ -413,7 +408,9 @@ export function createCharacterLook(
   const popBack = new Group();
   popBack.position.set(0, 0.05, -0.6);
   popup.add(popBack);
-  const backdropTex = look.popup ? texture(painters.backdrop().image) : null;
+  const backdropTex = look.popup
+    ? canvasTexture(painters.backdrop().image)
+    : null;
   const backdropGeo = new PlaneGeometry(2.3, BACKDROP_H);
   backdropGeo.translate(0, BACKDROP_H / 2, 0);
   const backdrop = new Mesh(
@@ -495,7 +492,7 @@ export function createCharacterLook(
   const setMap = (mesh: Mesh, image: Painted["image"]): void => {
     const material = mesh.material as MeshBasicMaterial;
     material.map?.dispose();
-    material.map = texture(image);
+    material.map = canvasTexture(image);
     material.needsUpdate = true;
   };
 

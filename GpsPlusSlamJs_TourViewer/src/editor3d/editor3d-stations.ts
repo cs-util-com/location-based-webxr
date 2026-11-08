@@ -13,8 +13,9 @@
  * The morph (`standing`, 0 looking straight down to 1 tilted up): photos
  * and codes lie flat face up and stand up again - a code laid in front of
  * its anchor, on the side its face looks to, never under the wall it hangs
- * on - and the billboards and their poles rise. Models and reading stands
- * keep their pose;
+ * on - and the billboards and their poles rise. Models, reading stands
+ * and the parts of the world door (`worldPart`, the visitor's, asked in
+ * the editor's mode) keep their pose;
  * pins (the phone's labels) stand. Laid flat, a code is drawn at least
  * `CODE_SCREEN_PX` on screen (`codeGrowth`): grown with the camera's
  * distance wherever its printed size would look smaller, its printed size
@@ -49,9 +50,13 @@ import * as THREE from "three";
 import { localPlaneToEnu } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
-import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import {
+  localPoseOf,
+  tourFreeBlocks,
+} from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import type {
   TourAsset,
+  TourBlock,
   TourManifest,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
@@ -64,6 +69,7 @@ import {
   type RenderedTourObjects,
 } from "../content-placement.js";
 import { modelScale } from "../model-scale.js";
+import { worldEnv, type WorldEnv, type WorldPart } from "../world-part.js";
 import { pointRootMatrix, type GlobeEllipsoid } from "./editor3d-tour-root.js";
 import { NEAR_STATIONS, nearStations } from "./editor3d-visibility.js";
 import { viewHeightAtOneM } from "./gizmo-maths.js";
@@ -95,6 +101,11 @@ export interface StationsLayerDeps {
     readonly title: string;
     readonly body: string;
   }): { object: THREE.Object3D; dispose(): void };
+  /** Any other item's part in the world: the visitor's door
+   *  (`play-kinds.ts` `worldPartOf`), asked in the editor's mode with
+   *  the tour's files read through `loadContent`. Absent: no part is
+   *  drawn. */
+  worldPart?(block: TourBlock, env: WorldEnv): WorldPart | null;
   /** A content entry's bytes, by its path in the tour. */
   loadContent(entryName: string): Promise<Blob>;
   loadGlbModel(blob: Blob): Promise<THREE.Object3D>;
@@ -472,6 +483,19 @@ export function createStationsLayer(deps: StationsLayerDeps) {
   const stations = new Map<string, StationEntry>();
   let assets = new Map<string, string>();
   let tourAssets: readonly TourAsset[] = [];
+  /** What a world part reads the tour's files through: the editor's. */
+  const editEnv = (): WorldEnv =>
+    worldEnv("edit", tourAssets, (path) => deps.loadContent(path));
+  let env = editEnv();
+  /** The objects of the parts the door built: drawn at their pose as it
+   *  stands, never as a photo plane. */
+  const partObjects = new WeakSet<THREE.Object3D>();
+  const inPart = (object: THREE.Object3D): boolean => {
+    for (let o: THREE.Object3D | null = object; o !== null; o = o.parent) {
+      if (partObjects.has(o)) return true;
+    }
+    return false;
+  };
   let codes: THREE.Group[] = [];
   /** Each code's square and its morph. */
   let codeSquares: CodeSquare[] = [];
@@ -597,6 +621,15 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       ...(deps.makeReadingSign === undefined
         ? {}
         : { makeReadingSign: deps.makeReadingSign.bind(deps) }),
+      ...(deps.worldPart === undefined
+        ? {}
+        : {
+            worldPart: (block: TourBlock) => {
+              const part = deps.worldPart?.(block, env) ?? null;
+              if (part !== null) partObjects.add(part.object);
+              return part;
+            },
+          }),
     })
       .then(async (rendered) => {
         if (!content.alive) {
@@ -606,8 +639,9 @@ export function createStationsLayer(deps: StationsLayerDeps) {
         content.rendered = rendered;
         rendered.root.traverse((o) => {
           const mesh = o as THREE.Mesh;
-          // A stand's meshes keep their pose: they are no photo planes.
-          if (mesh.isMesh && !inStand(mesh)) {
+          // A stand's and a part's meshes keep their pose: they are no
+          // photo planes.
+          if (mesh.isMesh && !inStand(mesh) && !inPart(mesh)) {
             content.photos.push({ mesh, upright: mesh.quaternion.clone() });
           }
         });
@@ -767,6 +801,11 @@ export function createStationsLayer(deps: StationsLayerDeps) {
         photo.upright.copy(turned);
         continue;
       }
+      if (partObjects.has(o)) {
+        // As the renderer draws a part: the pose's rotation as it is.
+        o.quaternion.copy(turned);
+        continue;
+      }
       if (STANDS.has(o.name)) {
         // Upright, as the renderer draws it: its turn about up only.
         uprightTurn(pose.rotation, o.quaternion);
@@ -815,7 +854,10 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     }
     const entry = entryOfItem(p.id);
     if (entry === null) return;
-    const item = worldBlocks(entry.station).find((i) => i.id === p.id);
+    // Any free block drawn (a part from the door too), as `itemPointOf`
+    // reads them; only world blocks are dragged today (the gizmo's
+    // `targetOf`), and a preview of another is put back the same way.
+    const item = tourFreeBlocks(entry.station).find((i) => i.id === p.id);
     if (item === undefined) return;
     poseDrawn(entry, p.id, item.pose, null);
   };
@@ -829,6 +871,7 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     ) {
       tourAssets = manifest?.assets ?? [];
       assets = new Map(tourAssets.map((a) => [a.id, a.path]));
+      env = editEnv();
       const keep = new Set<string>();
       (manifest?.stations ?? []).forEach((station, index) => {
         keep.add(station.id);
@@ -973,10 +1016,13 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     },
     /** Where an item of the tour stands in the layer's frame (its pose in
      *  its station's frame), whether its station draws its items now or
-     *  not; null for an id no station holds. */
+     *  not; null for an id no station holds. Any free block, as
+     *  `clearPreview` reads them: a part from the door is located too
+     *  (the view flies to it), though only world blocks are a gesture's
+     *  target (`editor3d-editing.ts`). */
     itemPointOf(id: string): THREE.Vector3 | null {
       for (const entry of stations.values()) {
-        const item = worldBlocks(entry.station).find((i) => i.id === id);
+        const item = tourFreeBlocks(entry.station).find((i) => i.id === id);
         if (item === undefined) continue;
         const { geo } = entry.station;
         const frame = objectPoseNue(geo, { lat: geo.lat, lon: geo.lon });

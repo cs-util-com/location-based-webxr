@@ -9,8 +9,10 @@ The visitor's kinds: one row per kind of the format (`TOUR_KINDS` in the framewo
 - `KindPlay<B>`: what a row holds.
   - `card(block, host)`: the item's words at once, its media as they load, through the `ItemCardHost` only.
   - `assets(block, characters)`: every file `card` may read, in the card or in the world.
+  - `world?(block, env)`: the kind's part in the world (`world-part.ts` `WorldPart`), built with a `WorldEnv` (`mode` "play" or "edit", `loadAsset`, `canvasTexture`); null or absent: nothing stands. No row has one yet; the reading stand, the reading sign and the models are the renderer's own drawings until their kinds are next worked on.
 - `PLAY_KINDS`: the list, keyed by `TourBlockKind`, in the format's order. Checked with `satisfies { [K in TourBlockKind]: KindPlay<TourBlockOfKind[K]> }`, so each row's block is its own kind's.
 - `playKindOf(kind)`: the row of `kind`, or `undefined` for any value that is no kind this viewer knows (checked with `isTourBlockKind`, an own-property test, so `"toString"` or `"__proto__"` find nothing).
+- `worldPartOf(block, env)`: the world door, its row's `world` part or `null` (no row, or no part). `viewer-placement.ts` hands it to the renderer as `worldPart`.
 
 ## Invariants and assumptions
 

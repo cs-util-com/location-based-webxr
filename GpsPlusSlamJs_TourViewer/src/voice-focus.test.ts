@@ -535,3 +535,50 @@ describe("a superseded or refused clip", () => {
     expect(focus.running()).toBeNull();
   });
 });
+
+describe("a story's clip the channel stops", () => {
+  // Why: a story's sound held behind the story's video is the one held
+  // voice; a free voice tapped then stops it to keep the video. Its step
+  // waits for the clip's end, and a stopped clip has no end of its own, so
+  // the stop must end it for the step, or a lineEnd step waits for good.
+  // Both orders: the clip's play() already settled, and still pending when
+  // the hold's pause cut it short (its AbortError lands after the stop).
+  it.each([
+    ["settled", false],
+    ["pending", true],
+  ])("ends for its step once, its play() %s", async (_, pending) => {
+    const focus = createVoiceFocus();
+    const refusals: ((e: Error) => void)[] = [];
+    const calls: string[] = [];
+    const audio = focusedSceneAudio(
+      {
+        play: () =>
+          pending
+            ? new Promise<void>((_, reject) => {
+                refusals.push(reject);
+              })
+            : Promise.resolve(),
+        stop: () => calls.push("stop"),
+        pause: () => calls.push("pause"),
+        resume: () => calls.push("resume"),
+      },
+      focus,
+    );
+    let ended = 0;
+    const played = audio.play(new Blob(["x"]), () => (ended += 1));
+    const clip = {
+      paused: false,
+      muted: false,
+      pause() {
+        this.paused = true;
+      },
+      play: () => Promise.resolve(),
+    };
+    storyVideoVoice(clip, focus).started();
+    focus.tapped(voice("free", []));
+    expect(calls).toEqual(["pause", "stop"]);
+    refusals[0]?.(new DOMException("paused", "AbortError"));
+    await expect(played).resolves.toBe(undefined);
+    expect(ended).toBe(1);
+  });
+});

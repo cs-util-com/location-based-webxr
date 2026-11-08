@@ -447,10 +447,11 @@ body {
   min-height: 0;
   overflow: auto;
   /* A field brought into sight (over a keyboard, by its keys) keeps a
-   * little room from the edge rather than ending flush with it, where a
-   * fraction of a pixel of the dock's height leaves its last line under
-   * the keyboard. */
-  scroll-padding-block: 8px;
+   * little room from the bottom edge rather than ending flush with it,
+   * where a fraction of a pixel of the dock's height leaves its last line
+   * under the keyboard. The bottom only: the top edge has no keyboard, and
+   * padding there too would cost a one-row scroller 16 px of its room. */
+  scroll-padding-bottom: 8px;
 }
 
 .dock.collapsed .dbody {

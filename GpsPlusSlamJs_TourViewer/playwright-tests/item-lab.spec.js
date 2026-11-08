@@ -63,19 +63,19 @@ test.describe("the item lab", () => {
     expect(errors).toEqual([]);
   });
 
-  test("moves through the two-step story and reports its end once", async ({
+  // Why this test matters: the scene view shows its Continue button on a
+  // tap step, so the button a person sees must move the story on; the hook's
+  // `next` alone would pass with a dead button.
+  test("moves through the two-step story by its Continue button and reports its end once", async ({
     page,
   }) => {
     await openLab(page);
-    await page.evaluate(() => {
-      window.__itemLab?.next();
-    });
+    const proceed = page.getByRole("button", { name: "Continue" });
+    await proceed.click();
     await expect(page.locator("#lab-text")).toHaveText(
       "The story's next step.",
     );
-    await page.evaluate(() => {
-      window.__itemLab?.next();
-    });
+    await proceed.click();
     await expect.poll(async () => (await state(page)).story.ended).toBe(1);
     const free = (await state(page)).free;
     expect(free.standing).toBe(true);
@@ -224,6 +224,38 @@ test.describe("the item lab", () => {
     await expect(page.locator("#lab-error")).toContainText("could not be read");
     await page.goto("/item-lab.html?kind=..%2Fx");
     await expect(page.locator("#lab-error")).toContainText("not the name");
+  });
+
+  // Why this test matters: a kind's `assets(block)` is untyped code from a
+  // session's folder. One that throws must fail once, as the page loads,
+  // with its words on the page, not on every frame behind a running lab.
+  test("says so at load when the kind's assets() throws", async ({ page }) => {
+    const errors = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.route("**/prototypes/item-kinds/broken-1/kind.js", (route) =>
+      route.fulfill({
+        contentType: "text/javascript",
+        body: [
+          "export function show(block, host) { host.slots.text.textContent = 'x'; }",
+          "export function assets() { throw new Error('assets broke'); }",
+        ].join("\n"),
+      }),
+    );
+    await page.route("**/prototypes/item-kinds/broken-1/sample.json", (route) =>
+      route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          name: "Broken",
+          words: "Broken words.",
+          block: { kind: "broken" },
+          assets: [{ id: "pic", kind: "image", file: "pic.png" }],
+        }),
+      }),
+    );
+    await page.goto("/item-lab.html?kind=broken-1");
+    await expect(page.locator("#lab-error")).toContainText("assets broke");
+    expect(await page.evaluate(() => window.__itemLab)).toBeUndefined();
+    expect(errors).toEqual([]);
   });
 
   for (const viewport of VIEWPORTS) {

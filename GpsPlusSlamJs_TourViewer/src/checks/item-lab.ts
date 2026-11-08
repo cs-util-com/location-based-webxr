@@ -44,6 +44,9 @@ import {
 const EYE = [0, 1.6, 4.8] as const;
 /** Where the eye looks: the middle of a figure. */
 const LOOK_AT_Y = 1;
+/** The state line is for a person reading it: redrawn at most this often
+ *  (ms). The hook's `state()` is read fresh. */
+const STATE_LINE_MS = 250;
 
 /** What the page holds at this moment. */
 export interface ItemLabState {
@@ -222,6 +225,9 @@ async function loadKind(name: string, folder: URL): Promise<ItemKind> {
 
 /** The lab around a read kind. */
 function runItemLab(kind: ItemKind, folder: URL): ItemLab {
+  // The kind's untyped code runs once, before anything is built: a kind
+  // whose `assets` throws fails the page's load and says why.
+  const declared = [...kind.assets(kind.sample.block)];
   const world = must("lab-world");
   const focus = createVoiceFocus();
   const assets = kindAssets(kind);
@@ -262,6 +268,10 @@ function runItemLab(kind: ItemKind, folder: URL): ItemLab {
 
   // Left: the story, in the real scene view.
   const dom = storyDom();
+  const textLine = must("lab-text");
+  const statusLine = must("lab-status");
+  const speakerLine = must("lab-speaker");
+  const image = must("lab-image");
   const audio = fakeAudio();
   const stageLine = must("lab-stage");
   let storyEnds = 0;
@@ -295,6 +305,13 @@ function runItemLab(kind: ItemKind, folder: URL): ItemLab {
       storyEnds += 1;
     },
     showItem,
+  });
+  // The scene view shows these on a tap step and on a waiting story.
+  must("lab-continue").addEventListener("click", () => {
+    view.continueTapped();
+  });
+  must("lab-play-next").addEventListener("click", () => {
+    view.playNextNow();
   });
 
   // Right: the station, in the real free host.
@@ -510,12 +527,10 @@ function runItemLab(kind: ItemKind, folder: URL): ItemLab {
       return {
         kind: kind.name,
         story: {
-          text: must("lab-text").textContent,
-          status: must("lab-status").textContent,
-          speaker: must("lab-speaker").hidden
-            ? ""
-            : must("lab-speaker").textContent,
-          imageShown: !must("lab-image").hidden,
+          text: textLine.textContent,
+          status: statusLine.textContent,
+          speaker: speakerLine.hidden ? "" : speakerLine.textContent,
+          imageShown: !image.hidden,
           ended: storyEnds,
           stage: stageLine.textContent,
         },
@@ -528,19 +543,23 @@ function runItemLab(kind: ItemKind, folder: URL): ItemLab {
         },
         urls: liveUrls.size,
         reads: [...reads],
-        declared: kind.assets(kind.sample.block),
+        declared,
       };
     },
   };
 
   const stateLine = must("lab-state");
-  const loop = (): void => {
+  let stateDrawnAt = -Infinity;
+  const loop = (now: number): void => {
     free.follow(() => shown);
     free.faceVisitor(EYE);
     for (const frame of frames) frame();
     renderer.render(scene, camera);
-    const text = JSON.stringify(hook.state(), null, 1);
-    if (stateLine.textContent !== text) stateLine.textContent = text;
+    if (now - stateDrawnAt >= STATE_LINE_MS) {
+      stateDrawnAt = now;
+      const text = JSON.stringify(hook.state(), null, 1);
+      if (stateLine.textContent !== text) stateLine.textContent = text;
+    }
     requestAnimationFrame(loop);
   };
 

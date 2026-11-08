@@ -59,7 +59,9 @@ import {
   renderTourStation,
 } from "./content-placement.js";
 import { mountLectern } from "./lectern-view.js";
-import { mountReadingSign } from "./reading-sign.js";
+import { mountReadingSign, type ReadingSignBlock } from "./reading-sign.js";
+import { worldPartOf } from "./play-kinds.js";
+import { worldEnv } from "./world-part.js";
 import { hasStoryWorldBlocks, reachedWorldBlocks } from "./shown-blocks.js";
 import { selectShownBlocks } from "./visitor-walk-slice.js";
 import { selectVisitorPrefs } from "./visitor-prefs-slice.js";
@@ -197,6 +199,9 @@ export function createViewerPlacement(deps: {
    *  until item photos join the prefetch. Absent: the
    *  open tour's own read. */
   loadContent?: (path: string) => Promise<Blob>;
+  /** Opens a reading sign's text (the visitor's reading sheet); absent,
+   *  a sign takes no tap. */
+  openReading?: (block: ReadingSignBlock) => void;
   /** A text's read-along verdict, which a visitor's captions need
    *  (`narration-visitor.ts`), and a count bumped whenever one settles:
    *  a text whose captions turn out stale is drawn again in the view it
@@ -1161,6 +1166,8 @@ export function createViewerPlacement(deps: {
     // while the manifest names `content/…` (PR #435 review).
     const loadContent =
       deps.loadContent ?? ((path: string) => current.loadContentEntry(path));
+    // What a kind's world part reads its files through: the visitor's.
+    const env = worldEnv("play", manifest.assets, loadContent);
     const rendererDeps = (parent: Object3D, alive: () => boolean) => ({
       assets: manifest.assets,
       scene: parent,
@@ -1170,7 +1177,10 @@ export function createViewerPlacement(deps: {
       // A long text's reading stand: a canvas page, turned by a tap.
       makeLectern: mountLectern,
       // A long text's reading sign: a tap opens its text in the sheet.
-      makeReadingSign: mountReadingSign,
+      makeReadingSign: (block: ReadingSignBlock) =>
+        mountReadingSign(block, deps.openReading),
+      // Any other block's part in the world, by its kind's row.
+      worldPart: (block: TourBlock) => worldPartOf(block, env),
       // A placed model at its size (station blocks plan B2b), read
       // through the same cache as the station's story.
       loadModel: async (entryName: string) =>

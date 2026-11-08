@@ -20,6 +20,7 @@ What the item lab (`item-lab.ts`) and the contract table (`../item-contract.test
 - A kind's name matches `^[a-z0-9][a-z0-9-]*$`, so what a link says cannot leave the kinds' folder, and it is what the page builds a module URL from.
 - The carriers are real, valid blocks, so a host's own logic (the step's advance, the free block filter) runs as it does for any item. Only the one block with the carrier's id reaches the kind.
 - A kind that cannot stand in the free host says why in `freeKnown`; its contract row is then marked known, never skipped.
+- The free host stands a kind as a figure drawn from its first `image` asset, so `readItemKind` refuses a kind with no image and no `freeKnown` note, with a line saying it needs one or the other. A `freeKnown` that is not a non-empty string (JSON null, "", a number) is refused too, with or without an image.
 
 ## Example
 

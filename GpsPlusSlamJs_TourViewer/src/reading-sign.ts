@@ -11,8 +11,8 @@
  * (the prototype's rule), so it reads from any side; the stem and the ring
  * on the ground are round and need no turning.
  *
- * Mounted signs are kept in a registry (`mountedReadingSigns`), the
- * reading stands' pattern, so a tap finds them without walking the scene.
+ * A mounted sign is a world part in the one mounted set (`world-part.ts`),
+ * so the visitor's tap finds it as it finds every part.
  *
  * @see reading-sign.ts.md
  */
@@ -20,7 +20,7 @@
 import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { tourStationBlocks } from "gps-plus-slam-app-framework/ar/tour-story";
 import {
-  CanvasTexture,
+  type CanvasTexture,
   CylinderGeometry,
   Group,
   Mesh,
@@ -28,13 +28,17 @@ import {
   MeshLambertMaterial,
   PlaneGeometry,
   RingGeometry,
-  SRGBColorSpace,
   Vector3,
   type Object3D,
 } from "three";
 
 import { readMinutes, wordCount } from "./long-text-sheet.js";
-import { shownIn } from "./model-visitor.js";
+import {
+  mountWorldPart,
+  canvasTexture,
+  unmountWorldPart,
+  type WorldPart,
+} from "./world-part.js";
 
 /** The sign's shape (m) and its canvas (px), the prototype's numbers. */
 export const READING_SIGN = {
@@ -254,32 +258,27 @@ export interface ReadingSignBlock {
   readonly body: string;
 }
 
-/** A mounted reading sign. */
-export interface ReadingSignHandle {
+/** A mounted reading sign: a world part whose plate takes the tap. */
+export interface ReadingSignHandle extends WorldPart {
   /** The block the sign stands for; its sheet shows this text. */
   readonly block: ReadingSignBlock;
-  /** The sign: placed by the caller at the block's pose. */
-  readonly object: Object3D;
-  /** The plate: what a tap is cast against. */
-  readonly plate: Object3D;
-  dispose(): void;
-}
-
-const mounted = new Set<ReadingSignHandle>();
-
-/** The signs mounted and not yet disposed, oldest first. */
-function mountedReadingSigns(): ReadingSignHandle[] {
-  return [...mounted];
+  /** The plate. */
+  readonly tapTarget: Object3D;
 }
 
 /**
  * Build the reading sign for a long text: its title and its reading time
  * (the words of its body's plain text at 200 a minute, `readMinutes`).
+ * A tap on its plate opens the text by `open` (the visitor's reading
+ * sheet); without it the sign takes no tap (the 3D editor's).
  *
  * @throws when the page has no 2D canvas (a page without a DOM: the
  *   renderer's caller passes this builder only in a browser).
  */
-export function mountReadingSign(block: ReadingSignBlock): ReadingSignHandle {
+export function mountReadingSign(
+  block: ReadingSignBlock,
+  open?: (block: ReadingSignBlock) => void,
+): ReadingSignHandle {
   const canvas = document.createElement("canvas");
   canvas.width = READING_SIGN.canvasWidthPx;
   canvas.height = READING_SIGN.canvasHeightPx;
@@ -289,57 +288,30 @@ export function mountReadingSign(block: ReadingSignBlock): ReadingSignHandle {
     title: block.title,
     minutes: readMinutes(wordCount(block.body)),
   });
-  const texture = new CanvasTexture(canvas);
-  texture.colorSpace = SRGBColorSpace;
+  const texture = canvasTexture(canvas);
   const sign = buildReadingSign(texture);
   sign.root.userData["objectId"] = block.id;
+  const shown = { id: block.id, title: block.title, body: block.body };
   const handle: ReadingSignHandle = {
-    block: { id: block.id, title: block.title, body: block.body },
+    block: shown,
     object: sign.root,
-    plate: sign.plate,
+    tapTarget: sign.plate,
+    ...(open === undefined
+      ? {}
+      : {
+          tap() {
+            open(shown);
+          },
+        }),
     dispose() {
-      if (!mounted.delete(handle)) return;
+      if (!unmountWorldPart(handle)) return;
       sign.root.removeFromParent();
       sign.dispose();
       texture.dispose();
     },
   };
-  mounted.add(handle);
+  mountWorldPart(handle);
   return handle;
-}
-
-/**
- * The sign whose plate is under the tap (`pick`, the page's
- * `pickObjectInView`) among `handles`, or null.
- */
-export function readingSignUnderTap<T>(
-  handles: readonly ReadingSignHandle[],
-  pick: (targets: ReadonlyMap<string, Object3D>, tap: T) => string | null,
-  tap: T,
-): ReadingSignHandle | null {
-  if (handles.length === 0) return null;
-  const byId = new Map(handles.map((h) => [h.block.id, h]));
-  const hit = pick(new Map(handles.map((h) => [h.block.id, h.plate])), tap);
-  return hit === null ? null : (byId.get(hit) ?? null);
-}
-
-/**
- * The visitor's tap on the reading signs (`main.ts`): only the signs shown
- * under a station's content group of `scene` (`shownIn`) can take it, so a
- * hidden station's sign never opens; no scene, no sign.
- */
-export function shownReadingSignUnderTap<T>(
-  scene: Object3D | null,
-  pick: (targets: ReadonlyMap<string, Object3D>, tap: T) => string | null,
-  tap: T,
-  handles: readonly ReadingSignHandle[] = mountedReadingSigns(),
-): ReadingSignHandle | null {
-  if (scene === null) return null;
-  return readingSignUnderTap(
-    handles.filter((h) => shownIn(h.object, scene)),
-    pick,
-    tap,
-  );
 }
 
 /**

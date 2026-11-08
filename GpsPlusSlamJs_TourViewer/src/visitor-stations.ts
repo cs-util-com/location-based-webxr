@@ -918,29 +918,24 @@ export function wirePortraitTap(
 
 /**
  * The visitor's tap in AR, in its order: the story's character first,
- * then a model's card, then a reading stand's page (it turns), then a
- * reading sign (its text opens in the reading sheet); a tap any of them
- * takes closes the pin sheet, and one none takes is the pin sheet's.
+ * then a model's card, then a world part (`world-part.ts`: a reading
+ * stand's page turns, a reading sign's text opens in the reading sheet);
+ * a tap any of them takes closes the pin sheet, and one none takes is the
+ * pin sheet's.
  */
 export function routeVisitorTap(
   tap: SelectTargetRay | null,
   to: {
     character(tap: SelectTargetRay | null): boolean;
     model(tap: SelectTargetRay | null): boolean;
-    lectern(tap: SelectTargetRay | null): boolean;
-    reading(tap: SelectTargetRay | null): boolean;
+    part(tap: SelectTargetRay | null): boolean;
     readonly pinSheet: {
       close(): void;
       tapped(tap: SelectTargetRay | null): void;
     };
   },
 ): void {
-  if (
-    to.character(tap) ||
-    to.model(tap) ||
-    to.lectern(tap) ||
-    to.reading(tap)
-  ) {
+  if (to.character(tap) || to.model(tap) || to.part(tap)) {
     to.pinSheet.close();
   } else to.pinSheet.tapped(tap);
 }

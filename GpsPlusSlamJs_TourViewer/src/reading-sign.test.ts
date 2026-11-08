@@ -10,14 +10,8 @@
  * station's line above the title.
  */
 
-import {
-  Group,
-  PerspectiveCamera,
-  Vector3,
-  type Mesh,
-  type Object3D,
-} from "three";
-import { describe, expect, it } from "vitest";
+import { Group, PerspectiveCamera, Vector3, type Mesh } from "three";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   buildReadingSign,
@@ -26,13 +20,12 @@ import {
   READING_SIGN_HEIGHT_M,
   READING_SIGN_HINT,
   readingSheetContent,
+  mountReadingSign,
   readingSignOverLine,
-  readingSignUnderTap,
-  shownReadingSignUnderTap,
   turnToward,
-  type ReadingSignHandle,
   type SignContext,
 } from "./reading-sign";
+import { mountedWorldParts } from "./world-part";
 
 interface Drawn {
   readonly text: string;
@@ -187,71 +180,45 @@ describe("buildReadingSign", () => {
   });
 });
 
-function handle(id: string, parent: Object3D): ReadingSignHandle {
-  const sign = buildReadingSign(null);
-  sign.root.userData["objectId"] = id;
-  parent.add(sign.root);
-  return {
-    block: { id, title: `Title ${id}`, body: "Words." },
-    object: sign.root,
-    plate: sign.plate,
-    dispose: () => sign.dispose(),
-  };
-}
+// Why: a mounted sign is a world part like any kind's: its plate takes
+// the tap and the tap opens its text where the page says (the reading
+// sheet); a page with no sheet (the 3D editor) gets a sign that takes no
+// tap. It sits in the one mounted set while it stands.
+describe("mountReadingSign", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
 
-describe("shownReadingSignUnderTap", () => {
-  function scene() {
-    const root = new Group();
-    const shown = new Group();
-    shown.name = "station-content:square";
-    const hidden = new Group();
-    hidden.name = "station-content:market";
-    hidden.visible = false;
-    root.add(shown, hidden);
-    return { root, shown, hidden };
+  function stubCanvas(): void {
+    const { g } = recorder();
+    vi.stubGlobal("document", {
+      createElement: () => ({ width: 0, height: 0, getContext: () => g }),
+    });
   }
 
-  it("offers only the shown signs to the pick, and returns the one under the tap", () => {
-    const s = scene();
-    const a = handle("a", s.shown);
-    const b = handle("b", s.hidden);
-    const offered: string[][] = [];
-    const hit = shownReadingSignUnderTap(
-      s.root,
-      (targets) => {
-        offered.push([...targets.keys()]);
-        expect(targets.get("a")).toBe(a.plate);
-        return "a";
-      },
-      "tap",
-      [a, b],
+  const block = { id: "guild", title: "The guild house", body: "Words." };
+
+  it("opens its text on a tap of its plate, mounted until disposed", () => {
+    stubCanvas();
+    const opened: unknown[] = [];
+    const sign = mountReadingSign(block, (b) => opened.push(b));
+    expect(sign.tapTarget).toBe(
+      sign.object.getObjectByName("reading-sign-plate"),
     );
-    expect(offered).toEqual([["a"]]);
-    expect(hit).toBe(a);
+    expect(sign.object.userData["objectId"]).toBe("guild");
+    expect(mountedWorldParts()).toContain(sign);
+    sign.tap?.();
+    expect(opened).toEqual([block]);
+    sign.dispose();
+    expect(mountedWorldParts()).not.toContain(sign);
+    sign.dispose();
   });
 
-  it("no sign for a hidden one, nothing under the tap, or no scene", () => {
-    const s = scene();
-    const b = handle("b", s.hidden);
-    let picks = 0;
-    const pick = () => {
-      picks += 1;
-      return "b";
-    };
-    expect(shownReadingSignUnderTap(s.root, pick, "tap", [b])).toBeNull();
-    expect(shownReadingSignUnderTap(null, pick, "tap", [b])).toBeNull();
-    expect(picks).toBe(0);
-    const a = handle("a", s.shown);
-    expect(shownReadingSignUnderTap(s.root, () => null, "tap", [a])).toBeNull();
-  });
-});
-
-describe("readingSignUnderTap", () => {
-  it("a pick naming an id no sign has gives none", () => {
-    const root = new Group();
-    const a = handle("a", root);
-    expect(readingSignUnderTap([a], () => "zz", 0)).toBeNull();
-    expect(readingSignUnderTap([], () => "a", 0)).toBeNull();
+  it("takes no tap on a page with no sheet", () => {
+    stubCanvas();
+    const sign = mountReadingSign(block);
+    expect(sign.tap).toBeUndefined();
+    sign.dispose();
   });
 });
 

@@ -170,14 +170,9 @@ describe("the visitor's tap on the story's character", () => {
     }).not.toThrow();
   });
 
-  it("gives a tap to the character first, then a model's card, then a reading stand, then a reading sign, then the pin sheet", () => {
+  it("gives a tap to the character first, then a model's card, then a world part, then the pin sheet", () => {
     const calls: string[] = [];
-    const targets = (
-      character: boolean,
-      model: boolean,
-      lectern = false,
-      reading = false,
-    ) => ({
+    const targets = (character: boolean, model: boolean, part = false) => ({
       character: () => {
         calls.push("character");
         return character;
@@ -186,13 +181,9 @@ describe("the visitor's tap on the story's character", () => {
         calls.push("model");
         return model;
       },
-      lectern: () => {
-        calls.push("lectern");
-        return lectern;
-      },
-      reading: () => {
-        calls.push("reading");
-        return reading;
+      part: () => {
+        calls.push("part");
+        return part;
       },
       pinSheet: {
         close: () => calls.push("close"),
@@ -205,22 +196,13 @@ describe("the visitor's tap on the story's character", () => {
     routeVisitorTap(null, targets(false, true));
     expect(calls).toEqual(["character", "model", "close"]);
     calls.length = 0;
+    // A tapped part (a stand's page turned, a sign's text opened) closes
+    // the pin sheet, as a model's card does.
     routeVisitorTap(null, targets(false, false, true));
-    // A turned page closes the pin sheet, as a model's card does.
-    expect(calls).toEqual(["character", "model", "lectern", "close"]);
-    calls.length = 0;
-    // An opened reading sheet closes the pin sheet too.
-    routeVisitorTap(null, targets(false, false, false, true));
-    expect(calls).toEqual([
-      "character",
-      "model",
-      "lectern",
-      "reading",
-      "close",
-    ]);
+    expect(calls).toEqual(["character", "model", "part", "close"]);
     calls.length = 0;
     routeVisitorTap(null, targets(false, false));
-    expect(calls).toEqual(["character", "model", "lectern", "reading", "pin"]);
+    expect(calls).toEqual(["character", "model", "part", "pin"]);
   });
 
   it("reads the tour's declared characters by id, once per manifest", () => {

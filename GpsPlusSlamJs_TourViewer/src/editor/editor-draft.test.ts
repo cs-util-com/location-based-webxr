@@ -1733,10 +1733,10 @@ describe("createEditorDraft, the tour's details (W2)", () => {
 });
 
 describe("createEditorDraft, the stations the page created", () => {
-  // Why these tests matter: a note moved beyond its station's radius starts
-  // a station the opened file lacks, and the note's record names it. A
-  // settings record holding nothing but that station is still work: if it
-  // is dropped (or not offered), a reload seats the note again by the rule
+  // Why these tests matter: a note given a station of its own ("Move to a
+  // new station") starts a station the opened file lacks, and the note's
+  // record names it. A settings record holding nothing but that station is
+  // still work: if it is dropped (or not offered), a reload seats the note again by the rule
   // under a NEW station id, and the station the creator saw is gone.
   const SETTINGS = "settings";
   const frame = (id: string, lat = 48.5205) => ({

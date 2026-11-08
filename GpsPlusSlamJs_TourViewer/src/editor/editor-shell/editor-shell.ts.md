@@ -221,7 +221,9 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
 - **Delete in the inspector** moves the focus to the row button (`.head > .pick`) of the tree card now in
   the deleted station's place (the one before it, at the end), for an
   item to its station's card, and to the view's box when the tree is
-  folded or empty: it never falls to the page.
+  folded or empty: it never falls to the page. A delete that asks first
+  (a station's, a story's) and is answered no leaves the selection as it
+  was, and the focus on the Delete that was pressed.
 - **The view's box** (`#view3d`, `tabindex="-1"`) shows a ring only when
   a key brought the focus there (`:focus-visible`), as the ground menu's
   Escape does.
