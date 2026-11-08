@@ -534,8 +534,13 @@ test.describe("where the 3D view cannot open", () => {
 test("the plain editor link opens the sample tour on the globe, and 'needs no GPS' is set in its Tour details, saved, and read back @pr", async ({
   page,
 }, testInfo) => {
-  // One globe open and a zip download in the software renderer.
-  test.setTimeout(240_000);
+  // One globe open and a zip download in the software renderer. Every
+  // frame waits on the software rasterizer, so the time grows with what
+  // the sample draws: on CI this test took 181-219 s before the sample
+  // gained its narration circle and market zone, which add about 28 %
+  // (3.4 against 2.7 min side by side on one machine; the save 35-40 s
+  // against 23-26 s). The budget still fails a stuck save.
+  test.setTimeout(360_000);
   await answerHosts(page, { globeAssets: "serve" });
   await keepRejections(page);
   await noApproach(page);
