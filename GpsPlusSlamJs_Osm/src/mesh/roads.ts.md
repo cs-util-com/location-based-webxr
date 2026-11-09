@@ -200,13 +200,13 @@ position moved by a millimetre between them.
   the factor scales with the surface's depth slope, which at an oblique view is
   decimetres a pixel, so it would break OsmDemo's 4 cm ladder (areas and heat
   cells over the roads). Units alone (no factor) fight in most views (5-60 %).
-- **The gaps per step, and what each leaves.** The builder's gaps: between
+- **The gaps per step, and what each leaves.** Before r1171, the builder's gaps were: between
   two classes' strips at least 0.6 step, a higher class's END disc over a
   lower class's strip at least 0.1 step (discs exist only at ends and
   fallbacks since r1164), two ways of one class anywhere from 0 to 0.4 step
   (a tie wherever their tie fractions are close, at any step). Real GPU,
   three positions unless named otherwise:
-  - **5 mm (today)**: strips 3 mm apart, clean except 226 m (one position,
+  - **5 mm (before r1171)**: strips 3 mm apart, clean except 226 m (one position,
     1.0 %) and 570 m (3 / 25 / 16 %); end discs 0.5 mm, fighting 12.6 % at
     226 m, 31.9 % in the editor at 300 m and 19.3 % in the deep globe view
     (r1164, look-at point only).
@@ -224,8 +224,8 @@ position moved by a millimetre between them.
     verdict rests on three positions of about 640 pixels each (1 pixel is
     0.16 %), and a fourth position or more frames could move the threshold
     either way. Strips 20.4 mm apart (18 mm measured clean but for 3 pixels
-    at 570 m); the top road sits 3.9 steps = 13.3 cm up, so OsmDemo's 4 cm
-    ladder would widen to about 14 cm. End discs at 570 m still fight
+    at 570 m); the top road sat 3.9 steps = 13.3 cm up before r1171 (3.4 steps =
+    11.6 cm since), so OsmDemo's 4 cm ladder would widen to about 12-14 cm. End discs at 570 m still fight
     (11-19 % at 3.4 mm).
   - Main before M4a (0 mm): 8-66 % in every view.
   - Phone GPUs were not measured; SwiftShader is above.
@@ -271,9 +271,9 @@ position moved by a millimetre between them.
 The owner kept the 5 mm step and moved the discs to their strip's height; no
 wider ladder. Measured again with the real `buildRoads` (bundled from the
 source before, c1ecfcba0, and after), not a stand-in pair of quads. Three
-cases: **end** (a footway's end disc under a crossing service way, the case
-the change targets), **lowEnd** (the service way's end disc over the footway)
-and **cross** (two strips crossing, no disc; its gaps are equal before and
+cases: **end** (a service way ending on a footway: its end disc over the
+footway's strip, the case the change targets), **lowEnd** (the footway ending
+under the service way: its end disc under the service strip) and **cross** (two strips crossing, no disc; its gaps are equal before and
 after, so it is the control: it shows what the strips' 2.5 mm absolute shift
 alone does to the depth quantisation). Feature keys chosen for the worst tie
 fractions (footway f near 1, service f near 0); footway 2 m, service 12 m
@@ -295,10 +295,10 @@ losing the depth test, three crossing positions, 12 frames each.
   positions each: mean / max percent over the 12 readings), 226 m and the
   editor at 300 m:
   - end, 226 m, flat: before 10.5 / 15.4, 8.7 / 13.8, 6.5 / 11.2; after
-    3.0 / 7.1, 0.6 / 2.4, 0 / 0
+    2.9 / 7.1, 0.5 / 2.4, 0 / 0
   - end, 226 m, slope: before 15.5 / 41.7, 6.0 / 12.2, 6.1 / 11.6; after
     12.7 / 24.3, 2.4 / 6.3, 0.2 / 1.6
-  - end, editor 300 m: before 8-16 mean, 22-36 max at every step and both
+  - end, editor 300 m: before 5.7-16.1 mean, 22-36 max at every step and both
     grounds; after 0 everywhere
   - lowEnd, 226 m, flat: before 4.0 / 7.0, 2.1 / 5.1, 0 / 0; after
     5.3 / 11.0, 2.0 / 5.9, 0.2 / 0.8
@@ -319,11 +319,18 @@ losing the depth test, three crossing positions, 12 frames each.
 - **The slope result.** The end case gains on the slope as on the flat. The
   lowEnd case is the one that moves the other way: at 5 mm on the 25 % slope
   its mean at 226 m rises 1.6 -> 2.5 % while the control rises 1.3 -> 1.7 %,
-  so about 0.5 points beyond the strips' shift; at 3 mm it rises by about as
-  much as the control (+8.2 against +6.2). That is inside the spread between
-  positions (max 4.2 -> 7.5 %); more positions could flip its sign. On the
-  CPU (below) lowEnd is +0.1 to +0.5 points worse on a curved hill. Read as:
-  no regression large enough to stop on, one case to watch.
+  so about 0.5 points beyond the strips' shift; at 3 mm +8.2 against +6.2.
+  The rise is geometric, not noise, and its sign is expected: the footway's
+  end disc under the service strip used to sit half a step below its own
+  strip, so its gap to the service strip shrinks from 1.1 to 0.6 step (5.5 to
+  3 mm at 5 mm), exactly the strip-over-strip gap the cross control already
+  has. lowEnd after therefore sits just above cross after (5 mm flat 2.0 / 5.9
+  against 1.6 / 4.9, slope 2.5 / 7.5 against 1.7 / 5.0), the extra half point
+  being the disc's share of the overlap. On the CPU (below) lowEnd is +0.1 to
+  +0.5 points worse on a curved hill. Read as: every class gap is now the
+  0.6-step strip gap, which is what the owner chose; not a regression to stop
+  on. What would reverse it is the 0.6-step strip floor itself proving too
+  thin, a step-size question, not this change.
 - **The drape on curved ground (CPU, both builds).** The heights a GPU would
   interpolate, sampled every 25 cm over 150 random placements (seed 777) of
   each case at 3, 5 and 8 mm, against a heightfield that is barycentric on a
@@ -338,8 +345,7 @@ losing the depth test, three crossing positions, 12 frames each.
   it; filed:
   [`2026-11-09-2155-road-drape-chord-error-inverts-class-order-followup.md`](../../docs/2026-11-09-2155-road-drape-chord-error-inverts-class-order-followup.md).
 - **What would reverse these verdicts:** a slope steeper than 25 % or a tighter
-  hill, other tie fractions than the worst pair, more crossing positions (the
-  lowEnd difference is inside their spread), and phone GPUs, which were not
+  hill, other tie fractions than the worst pair, more crossing positions, and phone GPUs, which were not
   measured.
 
 ## Build time (M4a review MINOR 2, measured r1164)

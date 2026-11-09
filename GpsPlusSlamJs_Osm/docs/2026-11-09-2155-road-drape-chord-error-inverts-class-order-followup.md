@@ -23,8 +23,8 @@ A CPU check, not a render: the heights a GPU would interpolate across each
 road triangle (the ribbon's vertices sampled from the ground, linear in
 between), against a heightfield that is barycentric on a 12 m triangle grid,
 sampled every 25 cm over the overlap of two crossing ways. 150 random
-placements (seed 777), steps 3, 5 and 8 mm, three cases (a footway's end disc
-under a service way, the service way's end disc over the footway, two strips
+placements (seed 777), steps 3, 5 and 8 mm, three cases (a service way's end disc
+over the footway, the footway's end disc under the service way, two strips
 crossing). Ground models:
 
 - flat, and planes of 10 % and 25 %: the order holds everywhere; the smallest
@@ -33,7 +33,7 @@ crossing). Ground models:
   overlap samples, by case, have the lower way's surface above the upper
   way's, at every step (cross case 51.7 / 49.8 / 46.8 % at 3 / 5 / 8 mm), with the worst
   sample 0.11-0.29 m the wrong way.
-- the same hill with 1 m ripples at a 30 m wavelength: about 48 % inverted,
+- the same hill with 1 m ripples at a 30 m wavelength: 36-54 % inverted by case,
   worst sample about 1.2-1.3 m.
 
 The cause is that a ribbon's vertex sits on the ground but its triangle spans
