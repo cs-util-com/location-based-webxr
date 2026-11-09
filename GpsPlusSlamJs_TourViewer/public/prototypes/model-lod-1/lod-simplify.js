@@ -813,9 +813,16 @@ class TriGrid {
   }
 }
 
-/** @returns {{ mean: number, max: number }} symmetric, model units */
-export function surfaceDistance(PA, IA, PB, IB, samples = 20000) {
-  const ga = new TriGrid(PA, IA), gb = new TriGrid(PB, IB);
+/** The nearest-triangle grid over one mesh, for `surfaceDistance`. A caller
+ *  that compares many levels against the same full model builds it once. */
+export function surfaceGrid(P, I) {
+  return new TriGrid(P, I);
+}
+
+/** @param gridA optional `surfaceGrid(PA, IA)`, reused instead of rebuilt
+ *  @returns {{ mean: number, max: number }} symmetric, model units */
+export function surfaceDistance(PA, IA, PB, IB, samples = 20000, gridA = null) {
+  const ga = gridA ?? new TriGrid(PA, IA), gb = new TriGrid(PB, IB);
   const sa = samplePoints(PA, IA, samples, 1), sb = samplePoints(PB, IB, samples, 2);
   let sum = 0, max = 0;
   for (let i = 0; i < samples; i++) { const d = gb.nearest2(sa[3 * i], sa[3 * i + 1], sa[3 * i + 2]); sum += d; if (d > max) {max = d;} }

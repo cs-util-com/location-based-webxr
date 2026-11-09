@@ -35,10 +35,17 @@
     setTimeout(() => t.remove(), err ? 7000 : action ? 6000 : 3500);
   }
 
-  // runs fn while the button shows label and cannot be pressed again
+  // runs fn while the button shows label and cannot be pressed again. Calls
+  // can overlap on one button (a second import started from a chip while the
+  // first waits for a name), so the idle label is kept from the first call and
+  // the button comes back only when the last of them has settled.
+  const busyCount = new WeakMap();
+  const idleLabel = new WeakMap();
   async function busy(btn, label, fn) {
-    const old = btn ? btn.textContent : "";
     if (btn) {
+      const n = busyCount.get(btn) || 0;
+      if (n === 0) idleLabel.set(btn, btn.textContent);
+      busyCount.set(btn, n + 1);
       btn.disabled = true;
       btn.textContent = label;
       btn.setAttribute("aria-busy", "true");
@@ -46,10 +53,14 @@
     try {
       return await fn();
     } finally {
-      if (btn && btn.isConnected) {
-        btn.disabled = false;
-        btn.textContent = old;
-        btn.removeAttribute("aria-busy");
+      if (btn) {
+        const n = busyCount.get(btn) - 1;
+        busyCount.set(btn, n);
+        if (n === 0 && btn.isConnected) {
+          btn.disabled = false;
+          btn.textContent = idleLabel.get(btn);
+          btn.removeAttribute("aria-busy");
+        }
       }
     }
   }
@@ -105,7 +116,12 @@
   // "Import character...": inspects the file; a refusal is drawn into errBox,
   // a file without a name asks for one in askBox. Resolves to the accepted
   // { name, frames, framesBlob, imageBlob, record } or null.
+  // Only one name question is open at a time: a new import answers the open
+  // one with null, so whatever waits on it (a busy chip, the Import button)
+  // is released instead of waiting until the page is reloaded.
+  let pendingAsk = null;
   async function importFlow(file, errBox, askBox, chooseAgain) {
+    if (pendingAsk) pendingAsk(null);
     errBox.hidden = true;
     askBox.hidden = true;
     let r;
@@ -138,6 +154,7 @@
     askBox.scrollIntoView({ block: "nearest", behavior: "smooth" });
     return new Promise((res) => {
       const done = (v) => {
+        if (pendingAsk === done) pendingAsk = null;
         askBox.hidden = true;
         URL.revokeObjectURL(url);
         res(v);
@@ -151,6 +168,7 @@
         }
         done({ ...r, name: n.slice(0, 40) });
       };
+      pendingAsk = done;
       askBox.querySelector("[data-keep]").onclick = keep;
       input.onkeydown = (e) => e.key === "Enter" && keep();
       askBox.querySelector("[data-cancel]").onclick = () => {

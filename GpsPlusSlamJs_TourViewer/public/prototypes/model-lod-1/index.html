@@ -243,6 +243,7 @@
         stepsFor,
         levelIndices,
         surfaceDistance,
+        surfaceGrid,
       } from "./lod-simplify.js";
 
       const MODELS = [
@@ -385,8 +386,13 @@
         const capacity = weld.indices.length * 2;
         geo.setIndex(new THREE.BufferAttribute(new Uint32Array(capacity), 1));
         if (state.mesh) {
+          // The previous model's GPU copies: its geometry (shared with the
+          // wireframe), the wireframe's material, and the glTF's material
+          // with its textures. Nothing else holds them once removed.
           scene.remove(state.mesh, state.wire);
           state.mesh.geometry.dispose();
+          state.wire.material.dispose();
+          disposeMaterial(state.mesh.material);
         }
         const mesh = new THREE.Mesh(geo, src.material);
         const wire = new THREE.Mesh(
@@ -411,10 +417,24 @@
           buildMs: t2 - t1,
           chain: null,
           errorCache: new Map(),
+          // Every level is measured against the full model: its search grid is
+          // built once here instead of on every measurement.
+          fullGrid: surfaceGrid(P, weld.indices),
         });
         $("quality").min = String(Math.max(1, Math.ceil((100 * prog.minTriangles) / state.total)));
         placeCamera(state.size * 1.1);
         applyQuality();
+      }
+
+      function disposeMaterial(material) {
+        for (const m of [material].flat()) {
+          for (const value of Object.values(m)) {
+            if (value && value.isTexture) {
+              value.dispose();
+            }
+          }
+          m.dispose();
+        }
       }
 
       function placeCamera(dist) {
@@ -445,7 +465,7 @@
       /** Largest deviation of a level from the full model, sampled, in metres. */
       function levelError(steps, indices) {
         if (!state.errorCache.has(steps)) {
-          const d = surfaceDistance(state.positions, state.lod0, state.positions, indices, 2500);
+          const d = surfaceDistance(state.positions, state.lod0, state.positions, indices, 2500, state.fullGrid);
           state.errorCache.set(steps, d.max);
         }
         return state.errorCache.get(steps);
@@ -475,6 +495,7 @@
             `<br>Largest deviation: <b>${fmtLen(err)}</b> (${((100 * err) / state.size).toFixed(2)} % of the model's size)`;
         }, 160);
         state.chain = null;
+        chainToken++;
       }
 
       function buildChain() {
@@ -502,9 +523,27 @@
         return state.size * Math.pow(1000, Number($("distance").value) / 1000);
       }
 
+      // Building the distance levels measures each one (0.2-0.9 s), so it is
+      // deferred behind a "measuring..." label, as the quality path does,
+      // rather than freezing the tap that asked for it.
+      let chainToken = 0;
       function applyDistance() {
+        // A pending quality readout would overwrite this mode's stats.
+        clearTimeout(errorTimer);
         if (state.chain === null) {
-          buildChain();
+          const token = ++chainToken;
+          $("levels").innerHTML = "";
+          $("stats").innerHTML = "Detail levels for this quality: measuring...";
+          requestAnimationFrame(() =>
+            setTimeout(() => {
+              if (token !== chainToken || state.mode !== "distance" || state.chain !== null) {
+                return;
+              }
+              buildChain();
+              applyDistance();
+            }, 0),
+          );
+          return;
         }
         const d = distanceMetres();
         const fov = THREE.MathUtils.degToRad(camera.fov);
