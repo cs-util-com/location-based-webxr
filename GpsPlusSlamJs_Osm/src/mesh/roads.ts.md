@@ -60,9 +60,22 @@ footway crossing it.
   lanes wide. Expressed as a lane count rather than a width override, so there is
   still one mechanism.
 - **Paths bypass the lane model entirely** — `footway`/`path`/`steps`/
-  `pedestrian`/`bridleway` 2 m, `cycleway` 3 m. A footway has no lanes, and
-  multiplying a fictional lane count by a lane width is arithmetic dressed up as
-  data.
+  `pedestrian`/`platform`/`bridleway` 2 m, `cycleway` 3 m. A footway has no
+  lanes, and multiplying a fictional lane count by a lane width is arithmetic
+  dressed up as data.
+  - **`PATH_WIDTH_M` is the file's one path list**: `isPedestrianPath` tests
+    its keys and `ROAD_RANK` derives its rank-0 entries from them, so a path
+    class cannot reach one table alone. That happened once (#909 review):
+    `platform` was in the rank table only, so a `highway=platform` way drew
+    6 m wide (the unknown-class width) and took `surface` first for its
+    colour.
+  - **`platform` is a bus or tram platform mapped as a way** (OSM wiki,
+    `Tag:highway=platform`: where passengers wait, a pedestrian surface), so
+    it takes the pedestrian width, 2 m, and the pedestrian colour
+    (`feature-colours.ts`). OSM2World gives `platform` and `pedestrian` alike
+    4 m; this package gives both 2 m, and a tagged `width` wins either way.
+    It is also a pedestrian path for routing (`isPedestrianPath`), walkable
+    along like a footway.
 - **`parseLengthMetres`, never `Number`, for the `width` tag.** `width=7 m` is
   ordinary and `Number` returns `NaN`, which the fallback would then swallow — a
   tagged road silently becoming an untagged one at a plausible width. The tree

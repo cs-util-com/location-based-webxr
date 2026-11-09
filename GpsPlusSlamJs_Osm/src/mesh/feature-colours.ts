@@ -186,6 +186,10 @@ const ROAD_CLASS_RGB: ReadonlyMap<string, Rgb> = new Map(
     path: 0xa9855c,
     steps: 0xc09b6e,
     cycleway: 0xb08d5f,
+    // A bus or tram platform mapped as a way: a paved pedestrian surface, so
+    // the pedestrian zone's tone (#909 review: it had no entry and fell to
+    // `surface` first, then the car-road default).
+    platform: 0xbfa079,
 
     // NOT pedestrian classes, and left alone. A track is an unpaved rural way and
     // a bridleway is for horses; both already sit in this brown and neither was
@@ -338,6 +342,7 @@ export const PEDESTRIAN_CLASSES = [
   "steps",
   "pedestrian",
   "cycleway",
+  "platform",
 ] as const;
 
 const PEDESTRIAN = new Set<string>(PEDESTRIAN_CLASSES);

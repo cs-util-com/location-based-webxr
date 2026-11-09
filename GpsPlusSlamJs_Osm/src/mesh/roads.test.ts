@@ -20,6 +20,7 @@ import { describe, expect, it } from "vitest";
 
 import type { OsmFeature } from "../model/osm-feature.js";
 import { enuFrameAt } from "./enu.js";
+import { PEDESTRIAN_CLASSES, roadColour } from "./feature-colours.js";
 import type { MeshData } from "./mesh-data.js";
 import {
   ROAD_MITRE_LIMIT,
@@ -943,6 +944,69 @@ describe("buildRoads - class order (M4a)", () => {
     expect(roadRank({})).toBe(3);
     // A free-text value never finds an inherited property.
     expect(roadRank({ highway: "constructor" })).toBe(3);
+  });
+
+  it("draws `highway=platform` as the path the class order says it is", () => {
+    // WHY THIS TEST MATTERS (#909 review). `platform` reached the class order
+    // at rank 0 but none of the other path tables, so a bus platform drew
+    // with the unknown-class width (6 m), was no pedestrian path, and took
+    // `surface` first for its colour: three tables, three answers.
+    const tags = { highway: "platform" };
+    expect(roadRank(tags)).toBe(0);
+    expect(roadWidthM(tags)).toBe(roadWidthM({ highway: "pedestrian" }));
+    expect(roadWidthM(tags)).toBe(2);
+    expect(
+      isPedestrianPath({
+        type: "way",
+        id: 1,
+        geometry: [
+          { lat: 0, lng: 0 },
+          { lat: 0, lng: 0.001 },
+        ],
+        tags,
+      }),
+    ).toBe(true);
+    // Its colour is a pedestrian class's: the class wins over `surface`.
+    expect(roadColour({ ...tags, surface: "asphalt" })).toBe(roadColour(tags));
+    expect(PEDESTRIAN_CLASSES).toContain("platform");
+  });
+
+  it("ranks a class 0 exactly when it is a pedestrian path, and every pedestrian colour class is one", () => {
+    // WHY THIS TEST MATTERS. The path list lives in `PATH_WIDTH_M` and the
+    // rank table derives its rank-0 entries from it; this pins that the two
+    // cannot disagree, over the classes the colour table names plus some it
+    // does not. `PEDESTRIAN_CLASSES` (the colour exception) is a subset of
+    // the paths: `bridleway` is a path but deliberately not one of them.
+    const way = (highway: string): OsmFeature => ({
+      type: "way",
+      id: 1,
+      geometry: [
+        { lat: 0, lng: 0 },
+        { lat: 0, lng: 0.001 },
+      ],
+      tags: { highway },
+    });
+    const classes = [
+      ...PEDESTRIAN_CLASSES,
+      "bridleway",
+      "track",
+      "service",
+      "residential",
+      "living_street",
+      "unclassified",
+      "busway",
+      "primary",
+      "motorway",
+      "some_future_value",
+    ];
+    for (const highway of classes) {
+      expect(roadRank({ highway }) === 0, highway).toBe(
+        isPedestrianPath(way(highway)),
+      );
+    }
+    for (const highway of PEDESTRIAN_CLASSES) {
+      expect(isPedestrianPath(way(highway)), highway).toBe(true);
+    }
   });
 
   it("lifts a carriageway above the footway that crosses it", () => {
