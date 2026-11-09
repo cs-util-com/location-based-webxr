@@ -178,10 +178,12 @@ describe("AtmosphereRig with the physical sky", () => {
   // keeps its approved brightness, the adaptation raised so the 3.6°
   // morning keeps the lit-city floor. Each was measured at every DEC-R4-5
   // sun point; changing one re-opens that measurement.
+  // The sky light was re-measured in r1158 (1.4 -> 3, owner 2026-11-09: keep
+  // the linear building colours and raise the light; sweep in the constant).
   it("ships the owner's light defaults", () => {
     expect(NATURAL_LIGHT_COMPENSATION_EV).toBe(-3.15);
     expect(NATURAL_LIGHT_ADAPTATION).toBe(0.83);
-    expect(BUILDING_SKY_LIGHT).toBe(1.4);
+    expect(BUILDING_SKY_LIGHT).toBe(3);
     expect(NOON_SURFACE_GAIN).toEqual({ max: 1.8, fromDeg: 18, fullDeg: 40 });
   });
 

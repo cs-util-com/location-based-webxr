@@ -39,8 +39,18 @@ colour that matched the sky at one time of day.
   handed to the sky at construction (the framework's default is 0.75) and
   used by the fallback. It acts almost only below the reference light, so
   it sets how dark dawn, dusk and twilight get.
-- `BUILDING_SKY_LIGHT` (1.4) — the sky light on the buildings, the default
-  of the light dialog's slider (`applyBuildingSkyLight`).
+- `BUILDING_SKY_LIGHT` (3) — the sky light on the buildings, the default
+  of the light dialog's slider (`applyBuildingSkyLight`). The owner's pick
+  was 1.4 (DEC-LIGHT-9); r1158 raised it to 3 when the building chunks
+  moved to linear colours (`linearChunkColours`, r1135), which had darkened
+  the lit city below the June-noon floor (48.8 against 61.47). The owner
+  chose to keep the conversion and raise the light (2026-11-09). The sky
+  light, not the EV, because it reaches only the buildings: at 3 every
+  heat-grid margin is unchanged (lowest 6.07, June noon) and June noon reads
+  65.3; the EV cleared the floor first at −2.65 (64.3) with the June-noon
+  margin down to 5.43 and the twilight about a third brighter. The full
+  sweep (1.4 / 2 / 2.5 / 3 and EV −2.9 / −2.65 / −2.4 at ten sun points)
+  is in the constant's doc comment.
 - **The CPU fallback sky gets the same EV**, but its dome and fog are not
   tone-mapped (by earlier design), while geometry goes through Neutral: on
   a device without float targets the dome now outshines the lit city more
@@ -71,7 +81,8 @@ colour that matched the sky at one time of day.
   (DEC-SUN-12; the value entering the curve, not the look: Neutral renders
   mids and highlights brighter than ACES did). **Since 2026-09-25 the
   owner's pick from the light dialog** (plan 2026-09-24-2140 §13-§15,
-  DEC-LIGHT-9/10): −3.15 EV with adaptation 0.83, sky light 1.4 and the
+  DEC-LIGHT-9/10): −3.15 EV with adaptation 0.83, sky light 1.4 (3 since
+  r1158, see `BUILDING_SKY_LIGHT`) and the
   noon gain ×1.8, measured together at every DEC-R4-5 sun point (lowest
   margin 6.08; the 3.6° morning 17.6 against its lit-city floor of 16.8).
   Before that the sky's natural light got **−2.75 EV**, bounded from both

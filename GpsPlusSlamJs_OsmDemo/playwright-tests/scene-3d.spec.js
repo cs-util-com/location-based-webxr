@@ -1560,7 +1560,7 @@ test.describe("the time of day", () => {
    * under the owner-approved ACES −2 EV look (measured 2026-09-24, below). It
    * passes Neutral −2.75 at every point (~1.4× the floor) and fails −3.75 at
    * every point. The owner's light defaults (−3.15 EV, adaptation 0.83, sky
-   * light 1.4, gain 1.8 from 18° to 40°; light dialog plan 2026-09-24-2140
+   * light 1.4, raised to 3 in r1158 for the linear building colours, gain 1.8 from 18° to 40°; light dialog plan 2026-09-24-2140
    * §15) pass every point, the 3.6° morning with the least to spare (17.6
    * against 16.8).
    */
@@ -2194,7 +2194,7 @@ test.describe("the light dialog", () => {
     await test.step("opens from its button and the l key, closes with Escape, and brightens noon with the gain, the sky light and the EV, kept in the URL", async () => {
       // WHY: each lever the owner tunes must move the lit surfaces the way the
       // M0 spike measured, and the URL must keep the pick through a reload. From
-      // the owner's defaults (gain 1.8, sky light 1.4, EV -3.15; DEC-LIGHT-9) each
+      // the defaults (gain 1.8, sky light 3 since r1158, EV -3.15; DEC-LIGHT-9) each
       // lever is taken to its slider's end, so the step stays well above the
       // threshold whatever the default.
       // BACK TO THE BOOT STATE first: the parity step left the dialog open
@@ -2217,7 +2217,7 @@ test.describe("the light dialog", () => {
       await slide(page, "gainMax", 2.5);
       await expect.poll(() => readoutLuma(page)).toBeGreaterThan(base + 10);
       await page.locator("#light-reset").click();
-      await slide(page, "buildingSkyLight", 3);
+      await slide(page, "buildingSkyLight", 5);
       await expect.poll(() => readoutLuma(page)).toBeGreaterThan(base + 5);
       await page.locator("#light-reset").click();
       await slide(page, "exposureEv", -2.25);

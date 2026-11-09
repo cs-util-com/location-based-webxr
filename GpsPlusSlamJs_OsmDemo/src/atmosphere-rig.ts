@@ -114,9 +114,30 @@ export const NATURAL_LIGHT_ADAPTATION = 0.83;
 /**
  * The sky light on the buildings: the scene environment's intensity on the
  * building materials, as a factor (`applyBuildingSkyLight`). The owner's
- * pick (DEC-LIGHT-9).
+ * pick was 1.4 (DEC-LIGHT-9), chosen while the building colours entered the
+ * shader as sRGB values, i.e. too bright.
+ *
+ * 3 SINCE r1158 (owner 2026-11-09, "Korrekt lassen, Licht anheben"): the
+ * building chunks now carry LINEAR colours (`linearChunkColours`, r1135),
+ * which darkened the lit city (June noon 64.3 -> 48.8 against its floor
+ * 61.47 = 0.95 x 64.7), and the owner chose to keep the conversion and raise
+ * the light. This knob, not the EV, because it lights only what the
+ * conversion darkened: the buildings. Measured 2026-11-09 (OsmDemo e2e,
+ * Cologne fixture, heat grid off; lit luma at June noon / Sep noon / 24
+ * degrees / Nov 8 13:00; every heat-grid margin unchanged, the lowest 6.07
+ * at June noon in `cpu-slope`):
+ * - 1.4: 48.8 / 58.9 / 65.1 / 42.7
+ * - 2: 54.7 / 64.6 / 69.7 / 46.9
+ * - 2.5: 59.6 / 69.2 / 73.3 / 50.5 (below the June-noon floor)
+ * - 3: 65.3 / 74.0 / 77.7 / 54.3 (clears it by 3.8)
+ * The EV alternative first cleared the floor at -2.65 (64.3) but took the
+ * June-noon margin from 6.07 to 5.43 and brightened the twilight points by
+ * about a third (15.9 -> 21.7 at -2.9 degrees); the sky light moves twilight
+ * by less than 1 and the night not at all (its environment is near zero).
+ * The verdict would flip only if the June-noon reading drifted down by more
+ * than 3.8 between runs (it repeated to 0.1 across the r1155 and r1158 runs).
  */
-export const BUILDING_SKY_LIGHT = 1.4;
+export const BUILDING_SKY_LIGHT = 3;
 
 /** The sun light's intensity at the model's reference elevation (45°): the demo's old white-light value. */
 const SUN_INTENSITY = 1.1;

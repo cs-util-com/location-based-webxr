@@ -60,7 +60,8 @@ export const LIGHT_SETTING_RANGES: {
   gainMax: { min: 1, max: 2.5, step: 0.05 },
   gainFromDeg: { min: 0, max: 60, step: 1 },
   gainFullDeg: { min: 1, max: 90, step: 1 },
-  buildingSkyLight: { min: 0.5, max: 3, step: 0.05 },
+  // To 5 since the default became 3 (r1158), so the slider still brightens.
+  buildingSkyLight: { min: 0.5, max: 5, step: 0.05 },
   exposureAdaptation: { min: 0.5, max: 1, step: 0.05 },
   exposureEv: { min: -4, max: 0, step: 0.05 },
 };
