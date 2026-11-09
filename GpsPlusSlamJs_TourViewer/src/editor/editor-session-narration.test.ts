@@ -22,13 +22,13 @@ import { TOUR_TIMING_MAX_BYTES } from "gps-plus-slam-app-framework/ar/tour-timin
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { openTourFile } from "../tour-session.js";
-import { createTourViewerStore } from "../tour-viewer-session.js";
+import { editorStore } from "../test-support/editor-store.js";
 import { tourOf, withWorldObjects } from "../test-support/tour-of.js";
 import { importTiming } from "./narration/timing-import.js";
 import { createEditorSession, NOT_IN_TOUR } from "./editor-session.js";
 
 beforeAll(() => {
-  createTourViewerStore();
+  editorStore();
 });
 
 const BODY = "The mill turned all day. The miller slept at night.";

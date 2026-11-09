@@ -22,13 +22,13 @@ import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
 
 import { manifestToWrite } from "../tour-document.js";
 import { openTourFile, type TourSession } from "../tour-session.js";
-import { createTourViewerStore } from "../tour-viewer-session.js";
+import { editorStore } from "../test-support/editor-store.js";
 import { stationIdOf, tourOf } from "../test-support/tour-of.js";
 import { createEditorSession } from "./editor-session.js";
 import { buildTree } from "./editor-shell/tree-model.js";
 
 beforeAll(() => {
-  createTourViewerStore();
+  editorStore();
 });
 
 function pin(id: string, lat: number): TourPin {
@@ -139,7 +139,7 @@ describe("the tree's station commands", () => {
       fc.asyncProperty(
         fc.array(command, { maxLength: 25, size: "max" }),
         async (commands) => {
-          const store = createTourViewerStore();
+          const store = editorStore();
           const editor = createEditorSession({
             session,
             manifest,
@@ -257,7 +257,7 @@ describe("the tree's station commands", () => {
       fc.property(
         fc.array(shaping, { maxLength: 20, size: "max" }),
         (commands) => {
-          const store = createTourViewerStore();
+          const store = editorStore();
           const editor = createEditorSession({
             session,
             manifest,

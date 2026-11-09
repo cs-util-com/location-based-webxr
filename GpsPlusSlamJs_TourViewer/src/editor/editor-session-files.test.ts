@@ -22,7 +22,7 @@ import { describe, expect, it } from "vitest";
 
 import { manifestToWrite } from "../tour-document.js";
 import { openTourFile, type TourSession } from "../tour-session.js";
-import { createTourViewerStore } from "../tour-viewer-session.js";
+import { editorStore } from "../test-support/editor-store.js";
 import { tourOf, withWorldObjects } from "../test-support/tour-of.js";
 import {
   freeDraftLocks,
@@ -72,7 +72,7 @@ function editorOf(
   session: TourSession,
   draft?: EditorDraft,
 ): { editor: EditorSession; state: () => TourManifest | null } {
-  const store = createTourViewerStore();
+  const store = editorStore();
   const editor = createEditorSession({
     session,
     manifest: MANIFEST,
@@ -362,7 +362,7 @@ describe("a restored copy of a photo", () => {
         session,
         manifest,
         levels: new Map(),
-        store: createTourViewerStore(),
+        store: editorStore(),
         draft: draft.writes(),
       });
     const draft = draftOf(stores);

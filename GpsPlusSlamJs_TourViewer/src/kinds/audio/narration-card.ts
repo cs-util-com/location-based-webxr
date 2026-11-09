@@ -164,12 +164,20 @@ export function narrationCard(
       time.textContent = shown;
       scrub.max = String(Math.max(0, Math.round(duration / 1000)));
       scrub.disabled = !(duration > 0);
-      if (!dragging) scrub.value = String(Math.floor(ms / 1000));
       scrub.setAttribute(
         "aria-valuetext",
         `${clockText(ms)} of ${clockText(duration)}`,
       );
       last.time = shown;
+    }
+    // Outside the check above: a drag that ended without a change on a
+    // paused voice leaves the time unchanged, and the thumb must still
+    // come back to it. Not rendered from the drag's end itself: a release
+    // that changes the value fires its change after the pointerup, and a
+    // render there would put the old time over the value it reads.
+    if (!dragging) {
+      const at = String(Math.floor(ms / 1000));
+      if (scrub.value !== at) scrub.value = at;
     }
     const i = sentenceAt(sentences, ms, duration);
     if (i !== last.line) {

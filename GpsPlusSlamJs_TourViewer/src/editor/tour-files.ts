@@ -30,7 +30,33 @@ export interface TourFileLimits {
   readonly maxEntryBytes: number;
   readonly maxArchiveBytes: number;
   readonly marginBytes: number;
+  /** The largest file taken at all, to be made smaller
+   *  (`TourFileContext.shrinks`); default `ASSET_CEILING_BYTES`. */
+  readonly ceilingBytes?: number;
 }
+
+/**
+ * The absolute ceiling for a file taken over a tour's caps to be made
+ * smaller: its bytes are held, and decoded, in memory. PROVISIONAL: set by
+ * a phone memory measurement when the first real optimizer lands.
+ */
+const ASSET_CEILING_BYTES = 512 * 1024 * 1024;
+
+/**
+ * The absolute pixel ceiling for a picture taken over the pixel cap
+ * (`TOUR_MAX_IMAGE_PIXELS`) to be made smaller: a guard against crafted
+ * headers and decodes no phone survives (a 48 MP photo fits). PROVISIONAL,
+ * like `ASSET_CEILING_BYTES`.
+ */
+const ASSET_CEILING_PIXELS = 8192 * 8192;
+
+/** A kind as a refusal names it. */
+const KIND_WORDS: Readonly<Record<TourAssetKind, string>> = {
+  image: "a picture",
+  audio: "a sound",
+  video: "a video",
+  model: "a 3D model",
+};
 
 export const TOUR_FILE_LIMITS: TourFileLimits = Object.freeze({
   maxEntryBytes: DEFAULT_ARCHIVE_LIMITS.maxEntryBytes,
@@ -47,6 +73,9 @@ export interface TourFileRead {
   readonly asset: TourAsset;
   readonly blob: Blob;
   readonly isNew: boolean;
+  /** Over the entry cap or the pixel cap (`shrinks` took it): no save
+   *  can write it until a smaller file replaces it. */
+  readonly oversized?: true;
   readonly poster?: {
     readonly asset: TourAsset;
     readonly blob: Blob;
@@ -74,6 +103,9 @@ export interface TourFileContext {
    *  rejection or null mints none. */
   readonly posterOf?: (blob: Blob) => Promise<Blob | null>;
   readonly limits?: TourFileLimits;
+  /** Whether a file of `kind` over the entry cap or the pixel cap may
+   *  come in to be made smaller (below the ceilings). Absent: none may. */
+  readonly shrinks?: (kind: TourAssetKind) => boolean;
 }
 
 const UNREAD = "That file could not be read. Is it still where it was?";
@@ -118,9 +150,19 @@ export async function readTourFile(
     );
   }
   const maxEntry = limits.maxEntryBytes - limits.marginBytes;
-  if (file.size > maxEntry) {
+  const shrinks = context.shrinks?.(type.kind) === true;
+  const ceiling = limits.ceilingBytes ?? ASSET_CEILING_BYTES;
+  const tooLarge = `That file is too large for a tour (${formatFileSize(file.size)}; a file can be at most ${formatFileSize(maxEntry)}`;
+  if (file.size > maxEntry && !shrinks) {
     return refused(
-      `That file is too large for a tour (${formatFileSize(file.size)}; a file can be at most ${formatFileSize(maxEntry)}).`,
+      context.shrinks === undefined
+        ? `${tooLarge}).`
+        : `${tooLarge}), and ${KIND_WORDS[type.kind]} cannot be made smaller here yet.`,
+    );
+  }
+  if (file.size > ceiling) {
+    return refused(
+      `${tooLarge}, and one larger than ${formatFileSize(ceiling)} cannot be made smaller here).`,
     );
   }
   const room = (bytes: number, more: number): TourFileRefusal | null => {
@@ -145,16 +187,18 @@ export async function readTourFile(
     part.isNew ? part.blob.size : 0;
   const full = room(added(named), 0);
   if (full !== null) return full;
-  const checked = await checkKind(type.kind, data, blob, context);
-  if (checked !== null) return checked;
+  const checked = await checkKind(type.kind, data, blob, context, shrinks);
+  if (typeof checked === "object") return checked;
+  const over =
+    checked || file.size > maxEntry ? { oversized: true as const } : {};
   if (type.kind !== "video" || context.posterOf === undefined) {
-    return { kind: "read", ...named };
+    return { kind: "read", ...named, ...over };
   }
   const poster = await posterFor(blob, context);
   if (poster === null || room(added(named), added(poster)) !== null) {
-    return { kind: "read", ...named };
+    return { kind: "read", ...named, ...over };
   }
-  return { kind: "read", ...named, poster };
+  return { kind: "read", ...named, ...over, poster };
 }
 
 function refused(reason: string): TourFileRefusal {
@@ -162,36 +206,38 @@ function refused(reason: string): TourFileRefusal {
 }
 
 /** What a kind must be beyond its type: a model inert and with a shape,
- *  an image within the pixel cap. Null when it passes. */
+ *  an image within the pixel cap - or, when `shrinks`, within the pixel
+ *  ceiling, to be made smaller (true). False when it passes. */
 async function checkKind(
   kind: TourAssetKind,
   data: Uint8Array,
   blob: Blob,
   context: TourFileContext,
-): Promise<TourFileRefusal | null> {
+  shrinks: boolean,
+): Promise<TourFileRefusal | boolean> {
   if (kind === "image") {
     const info = await imageInfoOfBlob(blob);
     if (info === null) return refused("That picture's size could not be read.");
-    if (info.width * info.height > TOUR_MAX_IMAGE_PIXELS) {
-      return refused(
-        `That picture is too large to show on a phone (${String(info.width)} x ${String(info.height)} pixels).`,
-      );
-    }
-    return null;
+    const pixels = info.width * info.height;
+    if (pixels <= TOUR_MAX_IMAGE_PIXELS) return false;
+    if (shrinks && pixels <= ASSET_CEILING_PIXELS) return true;
+    return refused(
+      `That picture is too large to show on a phone (${String(info.width)} x ${String(info.height)} pixels).`,
+    );
   }
-  if (kind !== "model") return null;
+  if (kind !== "model") return false;
   const inert = checkGlbInert(data);
   if (!inert.ok) {
     return refused(`That 3D model cannot be used: ${inert.reason}.`);
   }
-  if (context.measureModel === undefined) return null;
+  if (context.measureModel === undefined) return false;
   let side: number;
   try {
     side = await context.measureModel(blob);
   } catch {
     return refused(MODEL_UNREAD);
   }
-  return side > 0 && Number.isFinite(side) ? null : refused(NO_SHAPE);
+  return side > 0 && Number.isFinite(side) ? false : refused(NO_SHAPE);
 }
 
 /** The asset of `data`: the one the tour holds for its hash, else a new

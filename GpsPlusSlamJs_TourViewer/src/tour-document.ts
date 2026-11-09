@@ -365,9 +365,21 @@ export interface TourDocumentState {
    *  each once, by its content hash (`assetsAdded`): listed with the
    *  tour's assets (`manifestNow`), where a write keeps the ones an item,
    *  a narration or a step of the history names (`withReferencedAssets`).
-   *  Only grows while the tour is open; their bytes are the page's (its
-   *  files table) and the draft's. */
+   *  Only grows while the tour is open, except that a smaller file
+   *  replaces its asset's record under the same id (`assetOptimized`),
+   *  also for an asset the written file lists. Their bytes are the page's
+   *  (its files table) and the draft's. */
   readonly addedAssets: readonly TourAsset[];
+  /** How often each asset's file was replaced (`assetOptimized`), by
+   *  asset id: a preview showing the asset keys its cache on this, since
+   *  the id stays when the bytes change. No history step. */
+  readonly assetSwaps: Readonly<Record<string, number>>;
+  /** The swap count (`assetSwaps`) whose bytes the written file holds, by
+   *  asset id (absent: the bytes no swap replaced): a save writes an
+   *  asset's file again while the two differ, also at the same path (a
+   *  picture made smaller as the same format, or the original put back).
+   *  Set by `saved` from the save's snapshot. No history step. */
+  readonly swapsWritten: Readonly<Record<string, number>>;
   /** The tour's codes and the hosted texts they are judged against
    *  (debug-captures plan M3a): no history step and no draft write, and
    *  not reset by `opened` or `closed` - the levels and `tour.json` are
@@ -616,6 +628,8 @@ export const initialTourDocumentState: TourDocumentState = {
   timings: {},
   timingsWritten: {},
   addedAssets: [],
+  assetSwaps: {},
+  swapsWritten: {},
   codes: NO_CODES,
 };
 
@@ -1008,18 +1022,29 @@ export function manifestNow(state: TourDocumentState): TourManifest | null {
   );
 }
 
-/** `manifest` with the files brought in here that it does not list yet;
- *  a write drops each one nothing names (`withReferencedAssets`). */
+/** `manifest` with the files brought in here: those it does not list
+ *  yet are appended, and one it lists under another record (a smaller
+ *  file under the same id, `assetOptimized`) replaces that record. A
+ *  write drops each one nothing names (`withReferencedAssets`). */
 function withAdded(
   manifest: TourManifest,
   assets: readonly TourAsset[],
 ): TourManifest {
   if (assets.length === 0) return manifest;
-  const listed = new Set(manifest.assets.map((a) => a.id));
-  const added = assets.filter((v) => !listed.has(v.id));
-  return added.length === 0
+  const byId = new Map(assets.map((a) => [a.id, a]));
+  let replaced = false;
+  const kept = manifest.assets.map((a) => {
+    const now = byId.get(a.id);
+    if (now === undefined) return a;
+    byId.delete(a.id);
+    if (sameJson(now, a)) return a;
+    replaced = true;
+    return now;
+  });
+  const added = [...byId.values()];
+  return added.length === 0 && !replaced
     ? manifest
-    : { ...manifest, assets: [...manifest.assets, ...added] };
+    : { ...manifest, assets: [...kept, ...added] };
 }
 
 /** The images each station's card may show now, by station id: the image
@@ -1882,6 +1907,9 @@ interface TourSaved {
   /** The read-along texts the write holds, by entry (null: none), for
    *  the entries of `timings` it started from. */
   readonly timings?: Readonly<Record<string, string | null>>;
+  /** The swap counts (`assetSwaps`) the write started from: the asset
+   *  bytes it holds are those swaps' (`swapsWritten`). */
+  readonly swaps?: Readonly<Record<string, number>>;
 }
 
 /** A fresh save status that keeps who holds the page's save slot: the
@@ -1955,6 +1983,22 @@ export function objectAssetsHeld(
   );
 }
 
+/** Whether `path` is one the format takes for asset `id` of `kind`:
+ *  `content/<id>.<ext>`, of an allowlisted extension of that kind. */
+function assetPathFits(
+  id: string,
+  path: string,
+  kind: TourAsset["kind"],
+): boolean {
+  const dot = path.lastIndexOf(".");
+  const ext = path.slice(dot + 1);
+  return (
+    dot >= 0 &&
+    path === `content/${id}.${ext}` &&
+    tourMediaTypeOf(ext)?.kind === kind
+  );
+}
+
 /**
  * `assets` among `before`'s added ones (`assetsAdded`, a restore): each
  * once, none the written tour lists. Null when one is no asset the
@@ -1970,15 +2014,7 @@ function withAddedAssets(
   );
   const added: TourAsset[] = [];
   for (const asset of assets) {
-    const dot = asset.path.lastIndexOf(".");
-    const ext = asset.path.slice(dot + 1);
-    if (
-      dot < 0 ||
-      asset.path !== `content/${asset.id}.${ext}` ||
-      tourMediaTypeOf(ext)?.kind !== asset.kind
-    ) {
-      return null;
-    }
+    if (!assetPathFits(asset.id, asset.path, asset.kind)) return null;
     if (held.has(asset.id)) continue;
     held.add(asset.id);
     added.push(asset);
@@ -2000,6 +2036,115 @@ function assetsAdd(
   return addedAssets === null || addedAssets === before.addedAssets
     ? before
     : { ...before, addedAssets };
+}
+
+/** A smaller file in place of an asset's (`assetOptimized`). */
+export interface AssetOptimizedPayload {
+  /** The asset's id; it stays, so no item naming it changes. */
+  readonly id: string;
+  /** The new file's path, `content/<id>.<ext>` of the asset's kind. */
+  readonly path: string;
+  /** An image's new size in pixels; without it the old size stays. */
+  readonly width?: number;
+  readonly height?: number;
+}
+
+function isPixelCount(n: number | undefined): boolean {
+  return n === undefined || (Number.isInteger(n) && n > 0);
+}
+
+/** A smaller file replaces an asset's under the same id: its record
+ *  (path, an image's size) changes in `addedAssets` - added there for an
+ *  asset only the written file lists - and `assetSwaps` counts it, also
+ *  when the record stays the same (new bytes under the same path: the next
+ *  save writes them, `swapsWritten`). No
+ *  step: an undo takes back edits, not the file's encoding. Unchanged for
+ *  an id the tour does not hold, a path the format would refuse, or a size
+ *  that is no positive whole number, since every later save would fail. */
+function assetOptimize(
+  before: TourDocumentState,
+  { id, path, width, height }: AssetOptimizedPayload,
+): TourDocumentState {
+  if (before.written === null) return before;
+  const old =
+    before.addedAssets.find((a) => a.id === id) ??
+    before.written.assets.find((a) => a.id === id);
+  if (old === undefined || !assetPathFits(id, path, old.kind)) return before;
+  if (!isPixelCount(width) || !isPixelCount(height)) return before;
+  const size =
+    old.kind === "image" && width !== undefined && height !== undefined
+      ? { width, height }
+      : old.width !== undefined && old.height !== undefined
+        ? { width: old.width, height: old.height }
+        : {};
+  const now: TourAsset = { id, path, kind: old.kind, ...size };
+  const listed = before.addedAssets.some((a) => a.id === id);
+  return {
+    ...before,
+    addedAssets: listed
+      ? before.addedAssets.map((a) => (a.id === id ? now : a))
+      : [...before.addedAssets, now],
+    assetSwaps: {
+      ...before.assetSwaps,
+      [id]: (before.assetSwaps[id] ?? 0) + 1,
+    },
+  };
+}
+
+/** Whether asset `id`'s bytes as the tour holds them now are not the
+ *  written file's yet: brought in or replaced here (`addedAssets`), and the
+ *  written file lists it at another path or holds the bytes of another
+ *  swap (`swapsWritten`). What the next save writes for it. */
+export function assetBytesPending(
+  state: TourDocumentState,
+  id: string,
+): boolean {
+  const now = state.addedAssets.find((a) => a.id === id);
+  if (now === undefined) return false;
+  const was = state.written?.assets.find((a) => a.id === id);
+  return (
+    was?.path !== now.path ||
+    (state.assetSwaps[id] ?? 0) !== (state.swapsWritten[id] ?? 0)
+  );
+}
+
+/** `swapsWritten` after a write of `written` from a snapshot whose swap
+ *  counts were `swaps`: each asset it lists holds that snapshot's bytes. */
+function swapsWrittenAfter(
+  before: TourDocumentState,
+  written: TourManifest,
+  swaps: Readonly<Record<string, number>> | undefined,
+): Readonly<Record<string, number>> {
+  if (swaps === undefined) return before.swapsWritten;
+  const next: Record<string, number> = { ...before.swapsWritten };
+  for (const { id } of written.assets) {
+    const count = swaps[id];
+    if (count === undefined) delete next[id];
+    else next[id] = count;
+  }
+  return next;
+}
+
+/** How many of the tour's objects (story blocks among them) and stations
+ *  use each asset id as the tour stands - a station by its steps or its
+ *  picture. What the asset shelf says as a file's places in use. */
+export function assetUsesOf(
+  state: TourDocumentState,
+): ReadonlyMap<string, number> {
+  const uses = new Map<string, number>();
+  const count = (ids: readonly string[]) => {
+    for (const id of new Set(ids)) uses.set(id, (uses.get(id) ?? 0) + 1);
+  };
+  for (const { object } of documentObjects(state)) {
+    count(tourBlockAssetIds(object));
+  }
+  for (const station of manifestNow(state)?.stations ?? []) {
+    count([
+      ...stepAssetIds(station),
+      ...(station.image === undefined ? [] : [station.image]),
+    ]);
+  }
+  return uses;
 }
 
 /** `state` with the read-along entry `entry` listed at `previous` (what
@@ -2597,7 +2742,8 @@ function copiedNarration<T extends { readonly narration?: TourNarration }>(
  *  (`createdAtIso`), a captured photo under its own image asset (the new
  *  id, `content/<id>.` its extension), its text marked as a copy where
  *  the mark fits (a pin's caption, a picture's caption, a model's
- *  title). */
+ *  title). A photo's record among `assets` (`addedAssets`: a smaller
+ *  file, `assetOptimized`) is the one copied, not its inline one. */
 function copiedObject(
   object: TourObject,
   copy: {
@@ -2606,6 +2752,7 @@ function copiedObject(
     readonly geo: QrGeoPose;
     readonly station: string;
   },
+  assets?: readonly TourAsset[],
 ): TourObject {
   const base = {
     ...object,
@@ -2647,13 +2794,16 @@ function copiedObject(
       if (object.kind !== "picture" || object.image !== object.id) {
         return marked;
       }
-      const ext =
-        /\.([a-z0-9]{1,5})$/.exec(marked.imageAsset.path)?.[1] ?? "jpg";
+      // The record the tour holds now: after a swap (`assetOptimized`) the
+      // inline one still names the old file, whose bytes are gone.
+      const record =
+        assets?.find((a) => a.id === object.id) ?? marked.imageAsset;
+      const ext = /\.([a-z0-9]{1,5})$/.exec(record.path)?.[1] ?? "jpg";
       return {
         ...marked,
         image: copy.id,
         imageAsset: {
-          ...marked.imageAsset,
+          ...record,
           id: copy.id,
           path: `content/${copy.id}.${ext}`,
         },
@@ -3142,12 +3292,16 @@ function stationDuplicate(
     const id = newIds[i];
     if (id === undefined) return before;
     placed = upsertPlaced(placed, {
-      object: copiedObject(item, {
-        id,
-        createdAtIso: payload.createdAtIso,
-        geo: rigidlyMoved(item.geo, frame.geo, geo),
-        station: copy.id,
-      }),
+      object: copiedObject(
+        item,
+        {
+          id,
+          createdAtIso: payload.createdAtIso,
+          geo: rigidlyMoved(item.geo, frame.geo, geo),
+          station: copy.id,
+        },
+        before.addedAssets,
+      ),
     });
   }
   const listed = new Set(frames.map((f) => f.id));
@@ -3181,12 +3335,16 @@ function objectDuplicate(
   const station = found?.object.station;
   if (found === undefined || station === undefined) return before;
   if (!freeObjectId(before, payload.newId)) return before;
-  const copy = copiedObject(found.object, {
-    id: payload.newId,
-    createdAtIso: payload.createdAtIso,
-    geo: payload.geo ?? duplicateItemGeo(found.object.geo),
-    station,
-  });
+  const copy = copiedObject(
+    found.object,
+    {
+      id: payload.newId,
+      createdAtIso: payload.createdAtIso,
+      geo: payload.geo ?? duplicateItemGeo(found.object.geo),
+      station,
+    },
+    before.addedAssets,
+  );
   if (!objectFits(before, copy)) return before;
   return putObject(before, copy, payload.what);
 }
@@ -3304,6 +3462,12 @@ const narrationEdited = createAction<NarrationEditPayload>(
  *  (`assetsAdd`); beside the slice's actions for the same reason. */
 const assetsAdded = createAction<{ readonly assets: readonly TourAsset[] }>(
   "tourDocument/assetsAdded",
+);
+
+/** A smaller file in place of an asset's (`assetOptimize`); beside the
+ *  slice's actions for the same reason. */
+const assetOptimized = createAction<AssetOptimizedPayload>(
+  "tourDocument/assetOptimized",
 );
 
 const tourDocumentSlice = createSlice({
@@ -3870,6 +4034,7 @@ const tourDocumentSlice = createSlice({
         stations: unmoved
           ? [...framesOf(written), ...startedSince]
           : before.stations,
+        swapsWritten: swapsWrittenAfter(before, written, action.payload.swaps),
         timingsWritten:
           action.payload.timings === undefined
             ? before.timingsWritten
@@ -4191,6 +4356,9 @@ const tourDocumentSlice = createSlice({
     builder.addCase(assetsAdded, (state, action) =>
       assetsAdd(plain(state), action.payload.assets),
     );
+    builder.addCase(assetOptimized, (state, action) =>
+      assetOptimize(plain(state), action.payload),
+    );
   },
 });
 
@@ -4200,6 +4368,7 @@ export const tourDocumentActions = {
   ...tourDocumentSlice.actions,
   narrationEdited,
   assetsAdded,
+  assetOptimized,
 };
 
 export const tourDocumentReducer = tourDocumentSlice.reducer;

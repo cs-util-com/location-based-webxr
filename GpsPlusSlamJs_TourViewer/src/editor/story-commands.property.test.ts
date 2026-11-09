@@ -31,7 +31,7 @@ import {
   tourDocumentActions,
 } from "../tour-document.js";
 import { openTourFile, type TourSession } from "../tour-session.js";
-import { createTourViewerStore } from "../tour-viewer-session.js";
+import { editorStore } from "../test-support/editor-store.js";
 import {
   freeLocks,
   memoryDraftStores,
@@ -45,7 +45,7 @@ import { createEditorSession } from "./editor-session.js";
 import type { ChildMoveTo } from "../station-children-moves.js";
 
 beforeAll(() => {
-  createTourViewerStore();
+  editorStore();
 });
 
 const K = "local-file:00000000000000000000000000000001";
@@ -204,6 +204,7 @@ type Command =
   | { kind: "addChild"; at: number; make: "shortText" | "longText" }
   | { kind: "deleteChild"; at: number }
   | { kind: "move"; at: number; to: number }
+  | { kind: "voice"; at: number }
   | { kind: "undo" }
   | { kind: "redo" };
 
@@ -223,6 +224,7 @@ const command: fc.Arbitrary<Command> = fc.oneof(
   }),
   fc.record({ kind: fc.constant("deleteChild" as const), at }),
   fc.record({ kind: fc.constant("move" as const), at, to: at }),
+  fc.record({ kind: fc.constant("voice" as const), at }),
   fc.constant({ kind: "undo" as const }),
   fc.constant({ kind: "redo" as const }),
 );
@@ -297,7 +299,7 @@ function commandsKeepTheTour(
   afterStep?: (tour: TourManifest) => void,
 ) {
   return async (commands: readonly Command[]): Promise<void> => {
-    const store = createTourViewerStore();
+    const store = editorStore();
     const stores = memoryDraftStores();
     const draft = createEditorDraft({
       openStore: stores.open,
@@ -319,6 +321,9 @@ function commandsKeepTheTour(
     const future: (TourManifest | null)[] = [];
     /** Whether a move of a station item ran (see `freeByName`). */
     let moved = false;
+    /** Voices brought in: each a new file, so a reload that kept one
+     *  nothing names any more is caught by the bound after the reload. */
+    let voices = 0;
     for (const c of commands) {
       const stories = storiesIn(tour());
       const was = tour();
@@ -397,6 +402,33 @@ function commandsKeepTheTour(
           }
           break;
         }
+        case "voice": {
+          // A new file brought in: as a free long text's voice where the
+          // station has one (the narration edits only those), else as a
+          // file nothing names yet. A delete of the text, an undo or the
+          // file never named leave a file only the history or nothing
+          // names, which a reload must not bring back with the draft.
+          voices += 1;
+          const file = new Blob([`RIFF-voice-${String(voices)}`]);
+          const fileName = `voice-${String(voices)}.wav`;
+          const texts = documentObjects(store.getState().tourDocument)
+            .map((o) => o.object)
+            .filter((o) => o.kind === "longText");
+          const text = round(texts, c.at);
+          if (text === undefined) {
+            const out = await editor.addFile(file, fileName);
+            if (out.kind !== "added") throw new Error(out.reason);
+            break;
+          }
+          const out = await editor.editNarration(text.id, {
+            kind: "voice",
+            file,
+            fileName,
+          });
+          mustStep = out.kind === "edited";
+          if (!mustStep) throw new Error(`voice not taken: ${out.kind}`);
+          break;
+        }
         case "undo":
           editor.undo();
           break;
@@ -470,11 +502,28 @@ function commandsKeepTheTour(
     // the reloaded save may keep only what its one step (the restore) can
     // bring back: the opened tour's assets. Not "exactly what its tour
     // names": deleting a story drops a character image the opened tour
-    // names, and the undo of the restore still needs that file.
+    // names, and the undo of the restore still needs that file. The
+    // "voice" command brings in new files, some of which nothing names by
+    // the end of a run, so this bound can fail: a reload that brought such
+    // a file back with the draft would carry it here.
     const afterTour = parse(after);
     const opened = new Set(manifest.assets.map((a) => a.id));
     expect(afterTour).toEqual(withReferencedAssets(afterTour, opened));
-    expect(before.assets).toEqual(manifest.assets);
+    // The first save keeps the opened tour's files as they were, in their
+    // order; beside them only the voices this run brought in (an undo step
+    // may still name one whose text is gone, so that save keeps it).
+    const brought = new Set(
+      store.getState().tourDocument.addedAssets.map((a) => a.id),
+    );
+    const beforeAssets = parseTourManifest(before).assets;
+    expect(beforeAssets.filter((a) => opened.has(a.id))).toEqual(
+      manifest.assets,
+    );
+    for (const asset of beforeAssets) {
+      if (opened.has(asset.id)) continue;
+      expect(brought.has(asset.id), asset.path).toBe(true);
+      expect(asset.kind).toBe("audio");
+    }
   };
 }
 
@@ -528,7 +577,7 @@ describe("a story's delete", () => {
   // and a word about it is all that tells the creator where it went.
   it("says when the station went with its only story", async () => {
     const { session, manifest } = await opened();
-    const store = createTourViewerStore();
+    const store = editorStore();
     const editor = createEditorSession({
       session,
       manifest,
@@ -557,7 +606,7 @@ describe("a story's delete", () => {
   // three was deleted.
   it('names a new story "New story", numbered only while that name is taken', async () => {
     const { session, manifest } = await opened();
-    const store = createTourViewerStore();
+    const store = editorStore();
     const editor = createEditorSession({
       session,
       manifest,
@@ -653,7 +702,7 @@ describe("a station item's move", () => {
   // half made.
   it("moves a free item into a story and out again, one step each, and refuses in words", async () => {
     const { session, manifest } = await opened();
-    const store = createTourViewerStore();
+    const store = editorStore();
     const editor = createEditorSession({
       session,
       manifest,
@@ -710,7 +759,7 @@ describe("a station item's move, counted and kept", () => {
   /** The session over the story tour, with a draft when `stores` is given. */
   async function editorOver(stores?: ReturnType<typeof memoryDraftStores>) {
     const { session, manifest } = await opened();
-    const store = createTourViewerStore();
+    const store = editorStore();
     const draft =
       stores === undefined
         ? undefined
@@ -745,6 +794,67 @@ describe("a station item's move, counted and kept", () => {
     // as two edits of one station's stories count once.
     editor.moveChild("l1", { place: "free" });
     expect(editor.changeCount()).toBe(1);
+    await session.close();
+  });
+
+  // Why: a video cannot leave its story (no free host shows one yet), and
+  // the words a model without a size gets ("give it a size") would send
+  // the creator looking for a size a video does not have.
+  it("says why a video stays in its story, in words of its own", async () => {
+    const manifest = parseTourManifest(
+      JSON.parse(
+        serializeTourManifest(
+          tourOf([], {
+            assets: [{ id: "clip", path: "content/clip.mp4", kind: "video" }],
+            stations: [
+              {
+                id: "well",
+                title: "The well",
+                geo: {
+                  lat: 48.52,
+                  lon: 9.05,
+                  alt: 400,
+                  rotation: [0, 0, 0, 1],
+                },
+                activateRadiusM: 50,
+                foundRadiusM: 25,
+                hint: "arrow",
+                ...stationContent([
+                  storyOf("tale", [
+                    {
+                      id: "film",
+                      kind: "video",
+                      view: "card",
+                      video: "clip",
+                      pose: POSE,
+                    } as never,
+                  ]),
+                ]),
+              },
+            ],
+          }),
+        ),
+      ),
+    );
+    const zip = await packFilesAsZip([
+      { path: "tour.json", data: serializeTourManifest(manifest) },
+      { path: "content/clip.mp4", data: new Uint8Array([0, 0, 0, 0]) },
+    ]);
+    const session = await openTourFile(
+      new File([zip], "tour.zip", { type: "application/zip" }),
+    );
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    const out = editor.moveChild("film", { place: "free" });
+    expect(out).toEqual({
+      kind: "refused",
+      reason: expect.stringContaining("video") as unknown,
+    });
+    expect(JSON.stringify(out)).not.toContain("size");
+    expect(editor.changeCount()).toBe(0);
     await session.close();
   });
 
@@ -809,7 +919,7 @@ describe("a station item's move, counted and kept", () => {
     expect(offer?.text).toMatch(
       /^Unsaved work from this tour is still on this device: 1 change\b/,
     );
-    const store = createTourViewerStore();
+    const store = editorStore();
     const reloaded = createEditorSession({
       session: first.session,
       manifest: first.manifest,

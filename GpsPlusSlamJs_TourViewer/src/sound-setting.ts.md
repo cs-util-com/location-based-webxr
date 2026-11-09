@@ -27,6 +27,16 @@ so saved), for EVERY voice alike - a narration circle, a free sound, a
 narrated text, a figure, a story's clip - so the toggle reads "Sound on"
 while that voice is heard. A tap with sound already on changes nothing.
 
+`tapped` is the hook of every voice that STARTS playing, not only of a
+tap, and it turns the setting on alike: a story step that moves on by
+itself plays its voice through it (`scene-view.ts` through
+`voice-focus.ts`'s clip player), and so does a story clip that starts
+with its sound (`storyVideoVoice`'s `started`). Kept on purpose: a step
+or a clip the visitor walked into is still their ask to hear the story,
+and the sound button must never read "off" while a voice plays. A voice
+that may start by itself without such an ask uses `selfStart`, which
+sound off refuses.
+
 ## Public API
 
 - `SoundGate` - `on()`, `onChange(listener)` (every change, not a repeat;

@@ -15,7 +15,17 @@ phone's Finish does not yet: see "Not here yet" below.
 
 ## Public API
 
-- `createTourSaves({ tour, generation, fileOf, picturesRead }): TourSaves`
+- `createTourSaves({ tour, generation, fileOf, picturesRead, maxFileBytes?, fileNameOf? }): TourSaves`
+  - `maxFileBytes` (default the archive's entry cap) - a file the save
+    would write that is larger, or a picture whose record is over
+    `TOUR_MAX_IMAGE_PIXELS`, refuses every save of the handle (`rebuild`
+    throws, so the slice says it): "<name> is still too large to save -
+    it is being made smaller. Save again once it is ready, or remove
+    it." `fileNameOf(id)` gives the name; without one the kind is named.
+    Derived from the bytes held, never a flag, so a reload that brings
+    the original back from the draft is refused the same way; a zip
+    never carries an entry its readers would refuse, nor a manifest
+    naming an entry the zip lacks.
   - one handle per open; it keeps the imperative resources only - the
     newest bytes (a Blob), the queue's tail.
   - `tour` - the open `TourSession` (the rebuild's reads, the file's
@@ -53,7 +63,7 @@ phone's Finish does not yet: see "Not here yet" below.
     undo asked for right after an awaited save is not refused. The
     desktop's move of the walk out runs in the same queue.
   - `snapshot()` - thunk; the document as a save reads it now.
-  - `addedBytes(state)` - the bytes a save of `state` adds to the written file, by the snapshot's own rule: the pictures of the captured photos it does not host, the timing texts and the files brought in it lacks; with `keptOnly`, only the files the write keeps (`visitorEntryNames` of `manifestToWrite`, the rebuild's own filter; every file when no manifest can be built).
+  - `addedBytes(state)` - the bytes a save of `state` adds to the written file, by the snapshot's own rule: the pictures of the captured photos it does not host, the timing texts and the files brought in it lacks; with `keptOnly`, only the files the write keeps (`visitorEntryNames` of `manifestToWrite`, the rebuild's own filter; every file when no manifest can be built). Less the sizes of the old entries a smaller file replaces (`replacedOf`), from the newest bytes' entry sizes the handle keeps: the opened file's entries, then each landed save's written files and removed entries. An entry not known there counts 0, so the count errs high, never low.
   - `picturesRead()` - settles after the input's `picturesRead()`
     (before a rebuild replaces the bytes a picture may be read from; the
     desktop's move of the walk waits for it too).
@@ -147,4 +157,4 @@ contract (`tour-document-parity.test.ts`).
 
 ## Narration files
 
-The snapshot carries `timings` and `files`: each read-along text set here that the written file does not hold, and each voice brought in here that it does not list, with the bytes the page keeps (`voiceOf`). After the write, `timingsWritten` follows what the written tour names (`visitorEntryNames`); an entry nothing names is written nowhere.
+The snapshot carries `timings` and `files`: each read-along text set here that the written file does not hold, and each file brought in here that it does not list at that path, with the bytes the page keeps (`fileOf`). The rule is derived, never a flag (`assetBytesPending`): a smaller file that replaced an asset the written file lists (`assetOptimized`) is written, and its old path goes into the snapshot's `replaced`, which the rebuild removes; one at the same path (a WebP made smaller as WebP) is written while the snapshot's swap count is not the written file's, its old entry replaced in place and its size subtracted in `addedBytes` (`rewrittenOf`). The snapshot carries `swaps`, which `saved` records as `swapsWritten`. A save already running when the swap lands snapshotted the old record, so it writes the original and the next save writes the new file. After the write, `timingsWritten` follows what the written tour names (`visitorEntryNames`); an entry nothing names is written nowhere.

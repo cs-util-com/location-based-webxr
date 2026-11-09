@@ -164,6 +164,7 @@ import {
   childCalled,
   copyFileName,
   createEditorSession,
+  EDITOR_SESSION_SLICES,
   datedFileName,
   type EditorSave,
   type EditorSession,
@@ -373,6 +374,7 @@ function element<T extends HTMLElement>(id: string): T {
 // runs once a store exists).
 const store = createTourViewerStore(undefined, {
   editorView: editorViewReducer,
+  ...EDITOR_SESSION_SLICES,
 });
 
 /** The page's chrome state (`editorView`): what is selected, in flight,
@@ -2066,6 +2068,8 @@ function setBusy(on: boolean, text: string): void {
 /** The opened file's hold and target, and the written bytes' session, go
  *  with the tour they belong to. */
 function leaveFile(): void {
+  // The shelf's jobs belong to the tour that leaves.
+  editor?.shelf.close();
   const was = lock;
   lock = null;
   was?.release();
@@ -2432,9 +2436,16 @@ async function openFile(
   // The draft is read inside the open, before the tour shows (E2c plan
   // review #7): what an earlier visit left is offered with the tour.
   document.body.dataset["draft"] = "writing";
+  // The opened file's entry sizes: a smaller file it already holds at
+  // its path (a save by download) is no work of the draft's any more.
+  const wrap = outcome.session.manifestWrap;
+  const entrySizes = new Map(
+    outcome.session.entries.map((e) => [e.filename, e.size]),
+  );
   const drafted = await draft.open(
     outcome.session.archive.url,
     outcome.manifest,
+    (path) => entrySizes.get(`${wrap}${path}`),
   );
   setBusy(false, "");
   details.close();
@@ -2783,7 +2794,7 @@ async function deliver(
   // (the M4b fix re-review #4).
   if (editor === mine && writtenKey !== null) {
     // A no-op once another tour's draft began to open (review #1).
-    writes?.landed(save.written, writtenKey);
+    writes?.landed(save.written, writtenKey, save.wrote);
     fileKey = writtenKey;
   }
   // The photos read from this page's copy of what it wrote, never from
@@ -2832,7 +2843,7 @@ async function writeChosen(
     return { arrived: false, inPlace: false };
   }
   if (editor === mine && writtenKey !== null) {
-    writes?.landed(save.written, writtenKey);
+    writes?.landed(save.written, writtenKey, save.wrote);
     fileKey = writtenKey;
   }
   await readPhotosFrom(mine, written).catch(() => undefined);

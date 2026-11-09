@@ -187,8 +187,11 @@ export function silencedFocus(
     tapped(voice) {
       quiet = null;
       focus.tapped(gated(voice));
-      // After the hand-over, with nothing kept quiet: turning on carries
-      // no other voice on, and the tapped one is the channel's.
+      // Every voice that starts playing comes here, not only a tap: a
+      // story step that moves on by itself and a story clip that starts
+      // with its sound turn the setting on too. After the hand-over, with
+      // nothing kept quiet: turning on carries no other voice on, and the
+      // starting one is the channel's.
       if (!sound.on()) options.turnOn?.();
     },
     selfStart: (voice) => sound.on() && focus.selfStart(gated(voice)),

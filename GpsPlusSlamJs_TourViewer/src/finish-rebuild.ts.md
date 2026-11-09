@@ -101,7 +101,11 @@ signature, a broken series list (M6 design §5, cold review #2). Design:
 - **Paths:** the manifest at `${manifestWrap}tour.json` (the session's own
   prefix, never derived again); a level the zip holds is replaced where it
   is, a new one inside a listed tour's folder or at the root
-  (`finish-entries.ts`); photos at `${wrap}${image}`.
+  (`finish-entries.ts`); a photo's picture at `${wrap}` plus the path the
+  WRITTEN tour lists for its image asset (after a smaller file replaced it,
+  the picture's inline `imageAsset` still names the old path), and not at
+  all when a file of `files` already writes that path (one entry, never
+  two).
 - **Signatures and lists:** a signature never survives (it cannot cover
   the rewritten files); a LISTED tour's `manifest.json` continues as the
   series' next version (`successorManifest`: same series id, the
@@ -163,5 +167,7 @@ wiring around it stays pinned by `creator-finish.test.ts` and
 `authoring-settle.test.ts`.
 
 ## Extra files (narration)
+
+`input.replaced` (optional; paths in the tour's folder) names the entries a smaller file replaced under the same asset id: they are removed whatever the write keeps, since the manifest lists the asset at its new path. The phone's Finish passes none.
 
 `input.files` (a path in the tour's folder, text or Blob) are written only where the written tour names them (`visitorEntryNames`). An entry an earlier rebuild of the same open wrote is read from that rebuild's bytes (`zipBlobEntryNames`), so a later write that drops its narration leaves no stale read-along entry behind.

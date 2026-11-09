@@ -199,6 +199,29 @@ describe("narrationCard", () => {
     }
   });
 
+  // Why: on a paused voice the time does not move, so nothing else would
+  // make the next render write the thumb: it would stay where the
+  // abandoned drag left it, at a place the voice is not.
+  it("puts the thumb back on a paused voice after a drag ends without a change", () => {
+    for (const end of ["pointerup", "pointercancel", "blur"]) {
+      const host = document.createElement("div");
+      const { c, api } = controls();
+      c.time = 3_000;
+      const card = narrationCard(host, { title: "T" }, api);
+      const scrub = host.querySelector<HTMLInputElement>("input[type=range]")!;
+      expect(scrub.value).toBe("3");
+      scrub.value = "20";
+      scrub.dispatchEvent(new Event("input"));
+      card.render();
+      expect(scrub.value, "held while dragging").toBe("20");
+      scrub.dispatchEvent(new Event(end));
+      card.render();
+      expect(scrub.value, end).toBe("3");
+      expect(c.seeks).toEqual([]);
+      card.dispose();
+    }
+  });
+
   it("hides the sentence line without a transcript, waits for a length, and goes on dispose", () => {
     const host = document.createElement("div");
     const { api } = controls(0);

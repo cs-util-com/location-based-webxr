@@ -63,7 +63,7 @@ editor's own namespace, one tab at a time. Design:
     lands in the new tour's namespace with the new tour's `seen` (milestone
     review #6), and a save of the old tour that lands while the next one
     opens moves nothing of the new tour's draft (E2b-2 milestone review #1).
-  - `open(fileKey, manifest)` - closes the last tour's hold, holds
+  - `open(fileKey, manifest, sizeInFile?)` - closes the last tour's hold, holds
     `editor:<fileKey>`, reads it, clears what the file carries, and
     resolves `{ offer, superseded, backedUp }`: `offer` (`objects`,
     `deleted`, `made?` - the ids among `objects` that are copies made here
@@ -78,7 +78,10 @@ editor's own namespace, one tab at a time. Design:
     ..." beside notes, M1b-2 milestone review #3; changed details counted
     one per field and named by field - "Changed: the tour's details (name,
     contact)." - W2; moved stations counted one each and named "the
-    position of a station" / "the positions of N stations"),
+    position of a station" / "the positions of N stations"; changes and
+    deletions are counted by id, so one a moved station carries is not
+    counted twice, and each smaller file for an asset of the opened file
+    counts as one change of its own),
     `settingsWhat` (how `restoredLine` names the settings part: the
     setting, "this tour's details", "this tour's station positions", or
     "this tour's settings" for more than one kind), or null; `superseded` -
@@ -357,3 +360,17 @@ longer claimed (PR #626 1); the pre-save file reopened in this tab right
 after a key move, not "another tab" (PR #626 2). A
 scoped mutation pass (12 mutants of the rules above) killed all 12. The page's walks are in
 `playwright-tests/editor.spec.js` (the E2c block).
+
+## Smaller files (`swapAsset`, `holdsOriginal`)
+
+A smaller file replaces an asset's bytes under the same id. The key lifecycle:
+
+- `asset:<id>` holds a plain file's bytes (a file brought in).
+- A swapped entry keeps its own bytes under `asset:<id>.<ext>` (the new path's extension). The `assets` list names it as `{ ...asset, original, originalKept }`.
+  - For a file brought in, the original's bytes stay under `asset:<id>` (`originalKept: true`), and "use the original" is offered (`holdsOriginal`).
+  - For an asset of the file on disk, the original is in that file; nothing is kept (`originalKept: false`).
+- Write order of a swap: the new bytes, then the list (taken when the write is queued, never when it runs), then the keys only the previous entry used. A crash between any two writes leaves every listed record with the bytes of its own path (`editor-draft-swap.test.ts`).
+- `swapAsset(asset, blob)`: `blob` undefined goes back to the plain entry, or, with no bytes kept, the entry goes. The very Blob the entry holds as its original at the same path brings the plain entry back (no put). Any other bytes - also the original of an asset of the file on disk, read back from that file - are kept as the entry's own, because a save still running may write the smaller file over the file on disk.
+- `landed(written, fileKey, wrote?)` spends an entry only when the written tour lists the id AT the entry's path AND the write carried the entry's own bytes: `wrote` (the save's `wrote`, id to the Blob it wrote) holds that very Blob, or, without an entry in `wrote`, the entry has no original (the file on disk already held it). Listed at the other path, or written with other bytes (a save already running when the swap or "use the original" came), everything is kept.
+- `open` skips a listed entry only when the opened file lists the same id and path AND, given `sizeInFile` (path to the size of the opened file's entry there; the page passes it from the archive's entries), that entry has the size of the draft's bytes at that path - the smaller file's for a smaller entry, the file's own for a plain one. A save that ran while the creator swapped or chose the original can land other bytes at the same path, and the path alone would drop the draft's file, or offer a smaller file the downloaded file already holds on every reload. Without `sizeInFile` only a plain entry without an original is skipped by its path. A plain entry for which the creator chose "use the original" carries `originalChosen` (`swapAsset(asset, blob, true)`), offered back with the file so the shelf does not queue it again; an entry whose smaller bytes are gone falls back to its kept original (told: `unreadDraft`). A swap of an asset the opened file carries makes the offer non-null and counts as a change in its words. `tidyFiles` and `dropFiles` use every key of each entry; a key move carries the original's bytes too.
+- Tests: `editor-draft-swap.test.ts`.

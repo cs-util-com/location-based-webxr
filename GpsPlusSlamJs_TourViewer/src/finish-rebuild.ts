@@ -96,6 +96,10 @@ export interface FinishInput {
     readonly path: string;
     readonly data: string | Blob;
   }[];
+  /** Paths in the tour's folder of entries a smaller file replaced under
+   *  the same asset id (the editor's `assetOptimized`): removed, since the
+   *  manifest already lists the asset at its new path. */
+  readonly replaced?: readonly string[];
   /** Keep the entries visitors never read (the walk, S-D10). */
   readonly keepScan: boolean;
   /** The last rebuild of this open tour; null or absent for the first,
@@ -235,7 +239,8 @@ function withKeptAssets(
 
 /** The zip entries a write removes: the file of every asset the write
  *  dropped (a deleted photo's own included, and only when nothing else
- *  names it: B2a review 2, never by the picture alone), the read-along
+ *  names it, never by the picture alone), the old entry of
+ *  every asset a smaller file replaced (`replaced`), the read-along
  *  entries no narration names (`timingUnnamed`), the entries visitors
  *  never read that were left out, the old signatures, and a list that
  *  does not continue (`listName`, undefined when it does or there is
@@ -248,6 +253,7 @@ function entriesToRemove(input: {
   readonly scanLeftOut: readonly string[];
   readonly signatureNames: readonly string[];
   readonly listName: string | undefined;
+  readonly replaced: readonly string[];
 }): string[] {
   const { wrap } = input;
   const keptAssets = new Set(input.written.assets.map((a) => a.id));
@@ -255,6 +261,7 @@ function entriesToRemove(input: {
     ...input.before.assets.flatMap((a) =>
       keptAssets.has(a.id) ? [] : [`${wrap}${a.path}`],
     ),
+    ...input.replaced.map((path) => `${wrap}${path}`),
     ...input.timingUnnamed,
     ...input.scanLeftOut,
     ...input.signatureNames,
@@ -324,6 +331,7 @@ export async function rebuildFinishedTour(
     previous === null ? entryNames : await zipBlobEntryNames(previous.blob);
   const removed = entriesToRemove({
     wrap,
+    replaced: input.replaced ?? [],
     before: manifest,
     written,
     // A narration removed (or its block deleted) leaves its timing behind;
@@ -340,7 +348,12 @@ export async function rebuildFinishedTour(
   });
   // The level replaced where the zip holds it (also wrapped), a new
   // one inside a listed tour's folder or at the root
-  // (`finish-entries.ts`), then the manifest and the photos.
+  // (`finish-entries.ts`), then the manifest and the photos. A photo's
+  // picture goes where the written tour lists its asset: after a smaller
+  // file replaced it (`replaced`) the picture's inline record still names
+  // the old path. One a file of `files` already writes is left to it.
+  const listedPaths = new Map(written.assets.map((a) => [a.id, a.path]));
+  const filePaths = new Set((input.files ?? []).map((f) => f.path));
   const entries: FinishEntry[] = finishEntries({
     entryNames,
     levels: input.levels,
@@ -348,11 +361,12 @@ export async function rebuildFinishedTour(
     listed: listed !== null,
     manifestPath,
     manifestJson: serializeTourManifest(written),
-    photos: input.placed.flatMap((p) =>
-      isCapturedPhoto(p.object) && p.blob !== undefined
-        ? [{ image: p.object.imageAsset.path, blob: p.blob }]
-        : [],
-    ),
+    photos: input.placed.flatMap((p) => {
+      if (!isCapturedPhoto(p.object) || p.blob === undefined) return [];
+      const image =
+        listedPaths.get(p.object.imageAsset.id) ?? p.object.imageAsset.path;
+      return filePaths.has(image) ? [] : [{ image, blob: p.blob }];
+    }),
   });
   const files = (input.files ?? []).map((f) => ({
     path: `${wrap}${f.path}`,
