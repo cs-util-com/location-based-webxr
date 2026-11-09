@@ -1,0 +1,2398 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <title>Narration particle looks - prototype</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js"
+        }
+      }
+    </script>
+    <link rel="stylesheet" href="./kind.css" />
+    <style>
+      /* The design.css tokens this page and the kind's card use (same values). */
+      :root {
+        --ink: #fff;
+        --ink-dim: #b5b9c4;
+        --surface: rgb(36 42 58 / 0.92);
+        --surface-hi: rgb(52 58 80 / 0.92);
+        --surface-lo: rgb(20 24 36 / 0.92);
+        --accent: #f2971f;
+        --ink-on-accent: #000;
+        --font-ui:
+          system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+          sans-serif;
+        --size-hint: 12px;
+        --size-body: 14px;
+        --size-read: 16px;
+        --space-1: 4px;
+        --space-2: 8px;
+        --space-3: 12px;
+        --space-4: 16px;
+        --radius: 14px;
+        --radius-small: 10px;
+        --radius-pill: 999px;
+        --tap: 44px;
+        --t-fast: 120ms;
+        --t-state: 250ms;
+        --t-enter: 400ms;
+        --ease-out: cubic-bezier(0, 0, 0.2, 1);
+        --raise-big: 0 10px 30px rgb(0 0 0 / 0.35);
+        --shadow-pressed: 0 1px 3px rgb(0 0 0 / 0.4);
+        --tracking-ui: 0.08em;
+        --case-ui: uppercase;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #15171b;
+        color: var(--ink);
+        font: 500 var(--size-body)/1.4 var(--font-ui);
+        -webkit-font-smoothing: antialiased;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+      }
+      #stage {
+        position: fixed;
+        inset: 0;
+        touch-action: none;
+      }
+      #gl {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      .hud {
+        position: absolute;
+        z-index: 4;
+      }
+      [hidden] {
+        display: none !important;
+      }
+
+      /* top */
+      #top {
+        left: 0;
+        right: 0;
+        top: 0;
+        padding: calc(env(safe-area-inset-top) + 8px) 10px 0;
+        display: grid;
+        gap: 6px;
+        pointer-events: none;
+      }
+      #top .row {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      #top .row > * {
+        pointer-events: auto;
+      }
+      .sp {
+        flex: 1;
+      }
+      #lookSeg {
+        max-width: 100%;
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+      @media (max-width: 400px) {
+        .seg button {
+          padding: 0 9px;
+        }
+      }
+      .seg {
+        display: flex;
+        background: var(--surface-lo);
+        border-radius: var(--radius-pill);
+        padding: 3px;
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        min-width: 0;
+      }
+      .seg button {
+        all: unset;
+        cursor: pointer;
+        font: 600 12.5px/1 var(--font-ui);
+        padding: 0 11px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        border-radius: var(--radius-pill);
+        color: var(--ink-dim);
+        white-space: nowrap;
+      }
+      .seg button[aria-pressed="true"] {
+        background: var(--ink);
+        color: #14161c;
+      }
+      .seg button:focus-visible,
+      .ib:focus-visible,
+      .pill:focus-visible,
+      .pad button:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      .ib {
+        all: unset;
+        cursor: pointer;
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: var(--surface-lo);
+        display: grid;
+        place-items: center;
+        flex: none;
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+      }
+      .ib svg {
+        width: 19px;
+        height: 19px;
+      }
+      .ib[aria-pressed="false"] {
+        color: var(--ink-dim);
+      }
+
+      #say {
+        left: 50%;
+        top: calc(env(safe-area-inset-top) + 104px);
+        transform: translateX(-50%);
+        width: max-content;
+        max-width: calc(100% - 24px);
+        background: var(--accent);
+        color: #14161c;
+        font: 650 13px/1.3 var(--font-ui);
+        padding: 8px 14px;
+        border-radius: var(--radius);
+        text-align: center;
+        box-shadow: var(--raise-big);
+        pointer-events: none;
+      }
+      #toast {
+        left: 50%;
+        top: 45%;
+        transform: translate(-50%, -50%);
+        background: var(--surface);
+        padding: 10px 16px;
+        border-radius: var(--radius);
+        font-weight: 600;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity var(--t-state) var(--ease-out);
+        max-width: calc(100% - 32px);
+        text-align: center;
+      }
+      #toast.show {
+        opacity: 1;
+      }
+      #readout {
+        right: 10px;
+        top: calc(env(safe-area-inset-top) + 98px);
+        font:
+          500 10px/1.35 ui-monospace,
+          Consolas,
+          monospace;
+        color: #e8e8e8;
+        background: rgb(15 17 23 / 0.6);
+        padding: 3px 7px;
+        border-radius: 6px;
+        pointer-events: none;
+        white-space: pre;
+        text-align: right;
+      }
+      #say:not([hidden]) ~ #readout {
+        top: calc(env(safe-area-inset-top) + 146px);
+      }
+
+      /* bottom bar */
+      #bar {
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 0 10px calc(env(safe-area-inset-bottom) + 10px);
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        pointer-events: none;
+      }
+      #bar > * {
+        pointer-events: auto;
+      }
+      .pad {
+        display: flex;
+        gap: 4px;
+        background: var(--surface-lo);
+        border-radius: var(--radius);
+        padding: 3px;
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+      }
+      .pad button {
+        all: unset;
+        cursor: pointer;
+        width: 42px;
+        height: 42px;
+        border-radius: var(--radius-small);
+        display: grid;
+        place-items: center;
+        user-select: none;
+        -webkit-user-select: none;
+        touch-action: none;
+      }
+      .pad button:active,
+      .pad button.held {
+        background: var(--surface-hi);
+      }
+      .pad svg {
+        width: 20px;
+        height: 20px;
+      }
+      .pill {
+        all: unset;
+        cursor: pointer;
+        height: 44px;
+        padding: 0 16px;
+        border-radius: var(--radius-pill);
+        background: var(--ink);
+        color: #14161c;
+        font: 650 13.5px/1 var(--font-ui);
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        white-space: nowrap;
+      }
+      .pill.dim {
+        background: var(--surface-lo);
+        color: var(--ink);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+      }
+      .pill svg {
+        width: 18px;
+        height: 18px;
+      }
+      @media (max-width: 400px) {
+        .pill svg {
+          display: none;
+        }
+        .pad button {
+          width: 40px;
+        }
+      }
+
+      /* the kind's card host */
+      #cardHost {
+        left: 12px;
+        right: 12px;
+        bottom: calc(env(safe-area-inset-bottom) + 66px);
+        max-width: 460px;
+        margin: 0 auto;
+      }
+
+      /* sheets */
+      .sheet {
+        left: 10px;
+        right: 10px;
+        bottom: calc(env(safe-area-inset-bottom) + 66px);
+        max-width: 460px;
+        margin: 0 auto;
+        background: var(--surface);
+        border-radius: var(--radius);
+        padding: 12px 14px;
+        display: grid;
+        gap: 10px;
+        box-shadow: var(--raise-big);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        max-height: 60vh;
+        overflow: auto;
+      }
+      .sheet .opt {
+        display: grid;
+        gap: 5px;
+      }
+      .sheet .opt > span {
+        font: 650 10.5px/1 var(--font-ui);
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--ink-dim);
+      }
+      .sheet .seg {
+        background: rgb(255 255 255 / 0.07);
+        align-self: start;
+        width: max-content;
+        max-width: 100%;
+        overflow-x: auto;
+      }
+      #editor {
+        bottom: calc(env(safe-area-inset-bottom) + 10px);
+      }
+      #measureBtn {
+        justify-self: start;
+        height: 38px;
+      }
+      #measureBtn:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+      #costs table,
+      #notes table {
+        border-collapse: collapse;
+        font:
+          500 12px/1.35 ui-monospace,
+          Consolas,
+          monospace;
+      }
+      #costs th,
+      #costs td,
+      #notes th,
+      #notes td {
+        padding: 3px 8px 3px 0;
+        text-align: right;
+        white-space: nowrap;
+      }
+      #costs th:first-child,
+      #costs td:first-child,
+      #notes th:first-child,
+      #notes td:first-child {
+        text-align: left;
+      }
+      #costs th,
+      #notes th {
+        color: var(--ink-dim);
+        font-weight: 600;
+      }
+      #costs p {
+        margin: 6px 0 0;
+        font-size: var(--size-hint);
+        color: var(--ink-dim);
+      }
+      #editor h2 {
+        margin: 0;
+        font-size: 15px;
+      }
+      #editor .f {
+        display: grid;
+        gap: 4px;
+      }
+      #editor .f label {
+        font: 650 10.5px/1 var(--font-ui);
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--ink-dim);
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      #editor .f label em {
+        font-style: normal;
+        text-transform: none;
+        letter-spacing: 0;
+        font-weight: 500;
+      }
+      #editor input {
+        all: unset;
+        box-sizing: border-box;
+        width: 100%;
+        min-height: 40px;
+        background: rgb(255 255 255 / 0.08);
+        border: 1px solid rgb(255 255 255 / 0.14);
+        border-radius: var(--radius-small);
+        padding: 8px 10px;
+        font: 500 15px/1.3 var(--font-ui);
+        color: var(--ink);
+      }
+      #editor input:focus-visible {
+        border-color: var(--accent);
+      }
+      #editor .hint,
+      #editor .problems {
+        margin: 0;
+        font-size: var(--size-hint);
+        color: var(--ink-dim);
+      }
+      #editor .problems {
+        color: var(--accent);
+      }
+
+      /* notes */
+      #notes {
+        position: absolute;
+        inset: 0;
+        z-index: 20;
+        background: rgb(10 11 14 / 0.6);
+        padding: calc(env(safe-area-inset-top) + 12px) 10px
+          calc(env(safe-area-inset-bottom) + 12px);
+      }
+      #notes .box {
+        background: #171a20;
+        border: 1px solid rgb(255 255 255 / 0.1);
+        border-radius: var(--radius);
+        max-width: 680px;
+        margin: 0 auto;
+        max-height: 100%;
+        overflow: auto;
+        padding: 16px 18px;
+        font: 400 14px/1.55 var(--font-ui);
+        color: #dedfe3;
+      }
+      #notes h1 {
+        font-size: 18px;
+        margin: 4px 0 8px;
+        color: #fff;
+      }
+      #notes h2 {
+        font-size: 14.5px;
+        margin: 18px 0 4px;
+        color: var(--accent);
+      }
+      #notes ul {
+        margin: 4px 0 8px;
+        padding-left: 18px;
+      }
+      #notes li {
+        margin: 3px 0;
+      }
+      #notes code {
+        font:
+          500 12.5px ui-monospace,
+          Consolas,
+          monospace;
+        color: #ffd39a;
+      }
+      #notes .x {
+        float: right;
+      }
+
+      @media (max-height: 520px) {
+        #say {
+          top: calc(env(safe-area-inset-top) + 56px);
+        }
+        #readout {
+          top: auto;
+          bottom: calc(env(safe-area-inset-bottom) + 64px);
+        }
+        #say:not([hidden]) ~ #readout {
+          top: auto;
+        }
+        #cardHost,
+        .sheet {
+          left: 10px;
+          right: auto;
+          width: 360px;
+          margin: 0;
+          bottom: calc(env(safe-area-inset-bottom) + 62px);
+        }
+        #editor {
+          left: auto;
+          right: 10px;
+          top: calc(env(safe-area-inset-top) + 100px);
+          bottom: 10px;
+          max-height: none;
+        }
+        [data-kind="audio"] .ak-line {
+          min-height: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage">
+      <canvas id="gl" aria-label="The place, seen as a visitor"></canvas>
+      <header id="top" class="hud">
+        <div class="row">
+          <div class="seg" id="modeSeg" role="group" aria-label="Mode">
+            <button type="button" data-mode="play" aria-pressed="true">
+              Visitor
+            </button>
+            <button type="button" data-mode="edit" aria-pressed="false">
+              Edit
+            </button>
+          </div>
+          <div class="sp"></div>
+          <div class="seg" id="viewSeg" role="group" aria-label="Camera">
+            <button type="button" data-view="eye" aria-pressed="true">
+              Eye
+            </button>
+            <button type="button" data-view="above" aria-pressed="false">
+              Above
+            </button>
+          </div>
+          <button
+            type="button"
+            class="ib"
+            id="soundBtn"
+            aria-pressed="true"
+            aria-label="Sound on"
+            title="Sound on or off"
+          ></button>
+          <button
+            type="button"
+            class="ib"
+            id="notesBtn"
+            aria-label="Notes"
+            title="Notes"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+            >
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 11v6M12 7.5v.5" />
+            </svg>
+          </button>
+        </div>
+        <div class="row">
+          <div
+            class="seg"
+            id="lookSeg"
+            role="group"
+            aria-label="Look of the circle"
+          >
+            <button type="button" data-look="plume" aria-pressed="true">
+              Plume
+            </button>
+            <button type="button" data-look="embers" aria-pressed="false">
+              Embers
+            </button>
+            <button type="button" data-look="helix" aria-pressed="false">
+              Helix
+            </button>
+            <button type="button" data-look="fireflies" aria-pressed="false">
+              Fireflies
+            </button>
+            <button type="button" data-look="rings" aria-pressed="false">
+              Rings
+            </button>
+          </div>
+        </div>
+      </header>
+      <div id="say" class="hud" hidden></div>
+      <div id="readout" class="hud"></div>
+      <div id="toast" class="hud" role="status" aria-live="polite"></div>
+      <div id="cardHost" class="hud" data-kind="audio" hidden></div>
+      <div id="more" class="hud sheet" hidden>
+        <div class="opt">
+          <span>Stand this far from the middle</span>
+          <div class="seg" data-opt="stand">
+            <button type="button" data-v="3" aria-pressed="false">3 m</button>
+            <button type="button" data-v="8" aria-pressed="false">8 m</button>
+            <button type="button" data-v="15" aria-pressed="false">15 m</button>
+          </div>
+        </div>
+        <div class="opt">
+          <span>Name plate above the light</span>
+          <div class="seg" data-opt="plate">
+            <button type="button" data-v="on" aria-pressed="true">On</button>
+            <button type="button" data-v="off" aria-pressed="false">Off</button>
+          </div>
+        </div>
+        <div class="opt">
+          <span>Cost of each look</span>
+          <button type="button" class="pill dim" id="measureBtn">
+            Measure all looks
+          </button>
+          <div id="costs" hidden></div>
+        </div>
+        <div class="opt">
+          <span>Record</span>
+          <div class="seg" data-opt="record">
+            <button type="button" data-v="normal" aria-pressed="true">
+              Normal
+            </button>
+            <button type="button" data-v="longest" aria-pressed="false">
+              Longest text
+            </button>
+            <button type="button" data-v="missingOptional" aria-pressed="false">
+              No sentences
+            </button>
+          </div>
+        </div>
+        <div class="opt">
+          <span>Card closes this far past the circle</span>
+          <div class="seg" data-opt="margin">
+            <button type="button" data-v="0.5" aria-pressed="false">
+              0.5 m
+            </button>
+            <button type="button" data-v="1" aria-pressed="true">1 m</button>
+            <button type="button" data-v="1.5" aria-pressed="false">
+              1.5 m
+            </button>
+          </div>
+        </div>
+        <div class="opt">
+          <span>Position noise (like GPS alone)</span>
+          <div class="seg" data-opt="noise">
+            <button type="button" data-v="0" aria-pressed="true">Off</button>
+            <button type="button" data-v="2" aria-pressed="false">2 m</button>
+            <button type="button" data-v="4" aria-pressed="false">4 m</button>
+          </div>
+        </div>
+        <div class="opt">
+          <span>Backdrop</span>
+          <div class="seg" data-opt="backdrop">
+            <button type="button" data-v="bright" aria-pressed="true">
+              Bright
+            </button>
+            <button type="button" data-v="dark" aria-pressed="false">
+              Dark
+            </button>
+          </div>
+        </div>
+        <div class="opt">
+          <span>Station content</span>
+          <div class="seg" data-opt="shown">
+            <button type="button" data-v="yes" aria-pressed="true">
+              Shown
+            </button>
+            <button type="button" data-v="no" aria-pressed="false">
+              Hidden
+            </button>
+          </div>
+        </div>
+      </div>
+      <div id="editor" class="hud sheet" data-kind="audio" hidden>
+        <div class="seg" id="pickSeg" role="group" aria-label="Item">
+          <button type="button" data-pick="narration" aria-pressed="true">
+            Narration
+          </button>
+          <button type="button" data-pick="ambient" aria-pressed="false">
+            Ambient
+          </button>
+        </div>
+        <div id="edFields"></div>
+        <p class="problems" id="edProblems" hidden></p>
+        <p class="hint">
+          The same objects as for a visitor, still and silent. Tap a circle to
+          pick it; drag to turn the view.
+        </p>
+      </div>
+      <footer id="bar" class="hud">
+        <div class="pad" id="pad">
+          <button type="button" data-hold="left" aria-label="Turn left">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.4"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M9 7l-5 5 5 5" />
+              <path d="M4 12h9a6 6 0 0 1 6 6" />
+            </svg>
+          </button>
+          <button type="button" data-hold="fwd" aria-label="Walk forward">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M12 20V5M6 11l6-6 6 6" />
+            </svg>
+          </button>
+          <button type="button" data-hold="back" aria-label="Walk back">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M12 4v15M6 13l6 6 6-6" />
+            </svg>
+          </button>
+          <button type="button" data-hold="right" aria-label="Turn right">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.4"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M15 7l5 5-5 5" />
+              <path d="M20 12h-9a6 6 0 0 0-6 6" />
+            </svg>
+          </button>
+        </div>
+        <div class="sp"></div>
+        <button type="button" class="pill" id="walkBtn">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <circle cx="13" cy="4.5" r="1.8" />
+            <path
+              d="M10 21l2.2-6.5L15 17v4M8.5 11.5l2.5-3.5h3l2 3.5 2.5 1M11 8l-1 6"
+            /></svg
+          ><span>Walk through</span>
+        </button>
+        <button
+          type="button"
+          class="ib"
+          id="moreBtn"
+          aria-expanded="false"
+          aria-controls="more"
+          aria-label="More options"
+          title="More options"
+        >
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <circle cx="5" cy="12" r="2" />
+            <circle cx="12" cy="12" r="2" />
+            <circle cx="19" cy="12" r="2" />
+          </svg>
+        </button>
+      </footer>
+      <div id="notes" hidden>
+        <div class="box" role="dialog" aria-label="Notes">
+          <button type="button" class="pill dim x" data-close>Close</button>
+          <h1>Narration: more particle looks</h1>
+          <p>
+            The second round of the narration circle's look. The first round
+            compared three looks, and the plume was the prettiest and drew the
+            most attention, so this page keeps the plume and adds four more
+            particle looks of the same family. Everything else (the circle, the
+            card, the ambient sound, the walk-through) is as before. Everything
+            here is a throwaway draft; the looks live in <code>kind.js</code>,
+            which a real app would import as it is.
+          </p>
+          <h2>The five looks</h2>
+          <ul>
+            <li>
+              <b>Plume</b> (from the first round, unchanged): a column of soft
+              light rises in the middle and widens a little as it goes, under a
+              name plate above head height.
+            </li>
+            <li>
+              <b>Embers</b>: sparks rise from the middle, slow down and drift
+              away with a gusting wind, flickering and cooling from cream to
+              deep orange, drawn as short streaks. It reads like a small fire.
+              Weakness: the drift makes the column lean, so from one side it
+              looks off centre; the streaks are thin from far away.
+            </li>
+            <li>
+              <b>Helix</b>: two strands of motes wind slowly up around the
+              middle, narrowing toward the top, with now and then a mote that
+              lets go. The calmest and the most ordered. Weakness: it can read
+              as a technical symbol rather than as "something to listen to", and
+              from straight above the strands collapse to a ring.
+            </li>
+            <li>
+              <b>Fireflies</b>: a loose swarm over the whole circle, each
+              blinking on its own. As you come near they gather into a slow ball
+              above the middle and blink together. It is the only look that
+              answers your approach. Weakness: from far away a loose swarm is
+              faint, and the gathering is the slowest change of the five (about
+              2 s).
+            </li>
+            <li>
+              <b>Rings</b>: like sonar, rings of light leave the ground in the
+              middle, widen and rise. While the voice plays their pace follows
+              its loudness: quick while it is loud, slow in its pauses.
+              Weakness: the most "interface-like" of the five; rings seen
+              edge-on at eye height are thin lines.
+            </li>
+          </ul>
+          <h2>What to try on a phone</h2>
+          <ul>
+            <li>
+              Under <b>More</b>, <b>Stand this far from the middle</b> puts you
+              at 3 m (inside the circle), 8 m and 15 m. Switch the five looks at
+              each distance: a look that reads at one distance can fail at
+              another.
+            </li>
+            <li>
+              Fireflies: walk in slowly from 15 m and watch them gather. Rings:
+              tap play inside the circle and watch the pace follow the voice.
+            </li>
+            <li>
+              The dark backdrop, and the name plate off: which look still says
+              "walk into this" without words?
+            </li>
+            <li>
+              <b>Walk through</b> works as before: in, play, out, back, stop,
+              and on to the ambient sound.
+            </li>
+          </ul>
+          <h2>What it does (unchanged)</h2>
+          <ul>
+            <li>
+              The narration is one circle on the ground, 6 m in radius, with a
+              dashed rim and a glow in the middle. Outside it nothing is on the
+              screen; inside, a card opens with the title, play or pause, a
+              scrub bar and the sentence being spoken.
+            </li>
+            <li>
+              It plays only on a tap. Leaving pauses it and closes the card;
+              coming back carries on. Once stopped with a tap, it stays off
+              until tapped again.
+            </li>
+            <li>
+              The warm glow nearby is an ambient sound, in the editor's own
+              colour for it. It plays by itself within earshot (louder toward
+              its middle) and is lowered to 30 % while the narration plays; its
+              glow turns quieter with it.
+            </li>
+            <li>
+              <b>Edit</b> shows the same objects, still and silent, with their
+              fields as an inspector.
+            </li>
+          </ul>
+          <h2>Cost</h2>
+          <ul>
+            <li>
+              Every look stays inside the first round's limits: three draw calls
+              for the narration (ground, particles, name plate; two with the
+              plate off), the particles in one instanced draw of camera-facing
+              squares, no post-processing, no shadows, no render target of its
+              own, no texture except the plate's.
+            </li>
+            <li>
+              Particles per look: plume 200, embers 240, helix 240, fireflies 90
+              (larger, softer squares), rings 288 (six rings of 48).
+            </li>
+            <li>
+              All motion is computed on the graphics card from a clock and a few
+              numbers; the per-frame work in JavaScript is the same for every
+              look (the distance, the state, five numbers handed to the shader).
+            </li>
+            <li>
+              <b>More, Measure all looks</b> shows each look from 8 m: its
+              draws, its particles, the narration's per-frame update time (mean
+              and worst of 120 frames) and the frame rate. The readout at the
+              top right shows the same for the current look.
+            </li>
+            <li>
+              What it does not measure: the graphics card's time. Soft squares
+              cost by the screen area they cover, so the embers (stretched) and
+              fireflies (large) cost most when you stand inside them. None of
+              this was measured on a phone yet.
+            </li>
+          </ul>
+          <h2>The values it rests on</h2>
+          <ul>
+            <li>
+              Circle radius 6 m; the card opens at the rim and closes 1 m past
+              it.
+            </li>
+            <li>
+              Fireflies gather by distance from the middle: not at all from 5 m
+              past the rim, half at 2 m past it, fully from 1 m inside it, eased
+              over about a second.
+            </li>
+            <li>
+              Rings: pace 0.55 in the voice's pauses up to about 3 at its
+              loudest (1 is idle), following it within about 0.2 s.
+            </li>
+            <li>
+              Embers: wind toward one side of the item, gusting between about
+              0.3 and 1, up to 1.7 m of drift at the top.
+            </li>
+            <li>
+              Ambient: heard up to 14 m, full volume within 4 m, volume 0.6.
+            </li>
+          </ul>
+          <h2>Blunt self-check</h2>
+          <ul>
+            <li>
+              The looks were judged over a plain grey or dark ground, not over a
+              camera image in sunlight, where the soft parts (the fireflies'
+              halos, the helix's thin top) will be weaker.
+            </li>
+            <li>
+              The embers' wind is in the item's own frame, not the real wind,
+              and it always blows the same way.
+            </li>
+            <li>
+              The voice is a generated speech-like tone pattern, never real
+              speech; the rings' pace follows its loudness, which real speech
+              will vary less evenly.
+            </li>
+            <li>
+              A browser lets sound start only after a tap, so the ambient sound
+              starts with your first tap on the page.
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <script type="module">
+      import {
+        BoxGeometry,
+        CanvasTexture,
+        CapsuleGeometry,
+        Color,
+        ConeGeometry,
+        DirectionalLight,
+        Group,
+        HemisphereLight,
+        Mesh,
+        MeshBasicMaterial,
+        MeshLambertMaterial,
+        PerspectiveCamera,
+        Plane,
+        PlaneGeometry,
+        Raycaster,
+        RepeatWrapping,
+        SRGBColorSpace,
+        Scene,
+        SphereGeometry,
+        Vector2,
+        Vector3,
+        WebGLRenderer,
+      } from "three";
+      import * as kind from "./kind.js";
+
+      const $ = (id) => document.getElementById(id);
+      const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+      /* ------------------------------------------------------------- state */
+      const PLACES = { narration: [0, 0], ambient: [9, -4] };
+      const EYE = 1.6;
+      const S = {
+        mode: "play",
+        look: "plume",
+        plate: true,
+        view: "eye",
+        record: "normal",
+        margin: 1,
+        noise: 0,
+        backdrop: "bright",
+        shown: true,
+        pick: "narration",
+        sound: true,
+        V: { x: 0, z: 20, yaw: 0, pitch: -0.2, target: null },
+        orbit: { az: 0.5, el: 0.85, dist: 17 },
+        edit: { az: 0.6, el: 0.95, dist: 30 },
+        hold: new Set(),
+        keys: new Set(),
+        script: null,
+        noiseX: 0,
+        noiseZ: 0,
+      };
+      let sample = null;
+      const raws = { narration: null, ambient: null };
+      const items = { narration: null, ambient: null };
+      let cardHandle = null;
+
+      /* --------------------------------------------------------- the sound */
+      const SR = 22050;
+      function rng(seed) {
+        let s = seed;
+        return () => {
+          s = (s + 0x6d2b79f5) | 0;
+          let t = Math.imul(s ^ (s >>> 15), 1 | s);
+          t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+      const VOWELS = [
+        [1, 0.55, 0.25, 0.1, 0.05],
+        [1, 0.3, 0.5, 0.2, 0.08],
+        [1, 0.7, 0.15, 0.25, 0.1],
+        [1, 0.2, 0.1, 0.35, 0.15],
+        [1, 0.45, 0.35, 0.05, 0.12],
+      ];
+      function syllable(buf, t0, dur, f0, f1, amp, v) {
+        const i0 = Math.floor(t0 * SR),
+          n = Math.floor(dur * SR),
+          a = 0.012 * SR,
+          r = 0.045 * SR;
+        let ph = 0;
+        for (let i = 0; i < n && i0 + i < buf.length; i++) {
+          const u = i / n;
+          ph += (2 * Math.PI * (f0 + (f1 - f0) * u)) / SR;
+          const env =
+            Math.min(1, i / a) *
+            Math.min(1, (n - i) / r) *
+            (0.85 + 0.15 * Math.sin(Math.PI * u));
+          let s = 0;
+          for (let h = 0; h < 5; h++) s += v[h] * Math.sin(ph * (h + 1));
+          buf[i0 + i] += amp * env * s * 0.3;
+        }
+      }
+      function lowpass(b, k) {
+        let y = 0;
+        for (let i = 0; i < b.length; i++) {
+          y += (b[i] - y) * k;
+          b[i] = y;
+        }
+      }
+      function normalize(b, peak) {
+        let m = 0;
+        for (let i = 0; i < b.length; i++) m = Math.max(m, Math.abs(b[i]));
+        if (m > 0) for (let i = 0; i < b.length; i++) b[i] *= peak / m;
+      }
+      const FILLER =
+        "Welcome to the square, and thank you for stopping here for a moment. Look around you before you walk on.";
+      /** A speech-like tone pattern, one voiced tone per syllable, each sentence placed at its own time. Never speech. */
+      function sentence(buf, start, end, text, R) {
+        const ws = text.split(/\s+/).filter(Boolean),
+          plan = [],
+          base = 138 + R() * 22;
+        let natural = 0;
+        ws.forEach((w, wi) => {
+          const n = Math.max(
+            1,
+            Math.round(w.replace(/[^\p{L}\p{N}]/gu, "").length / 3),
+          );
+          for (let k = 0; k < n; k++) {
+            const d = 0.09 + R() * 0.06,
+              gap = k < n - 1 ? 0.02 : /[,;:]$/.test(w) ? 0.28 : 0.07;
+            const f =
+              base *
+              (1.12 - (0.24 * (wi + k / n)) / ws.length) *
+              (1 + (R() - 0.5) * 0.06);
+            plan.push({
+              d,
+              gap,
+              f,
+              amp: (k === 0 ? 1 : 0.8) * (0.75 + R() * 0.25),
+              v: VOWELS[Math.floor(R() * 5)],
+            });
+            natural += d + gap;
+          }
+        });
+        const scale = Math.min(1, Math.max(0.1, end - start) / natural);
+        let t = start;
+        for (const p of plan) {
+          syllable(buf, t, p.d * scale, p.f, p.f * 0.97, p.amp, p.v);
+          t += (p.d + p.gap) * scale;
+        }
+      }
+      function speechLike(lines, seconds, seed) {
+        const R = rng(seed),
+          buf = new Float32Array(Math.ceil(seconds * SR));
+        const spans =
+          lines.length > 0
+            ? lines.map((l, i) => [
+                l.at,
+                (i + 1 < lines.length ? lines[i + 1].at : seconds) - 0.6,
+                l.text,
+              ])
+            : [[0.5, seconds - 0.5, FILLER]];
+        for (const [a, b, text] of spans) sentence(buf, a, b, text, R);
+        lowpass(buf, 0.45);
+        normalize(buf, 0.6);
+        return buf;
+      }
+      /** A market murmur that loops without a seam: filtered noise, far voices, a few hoof clops and a bell. */
+      function marketBed(seconds, seed) {
+        const R = rng(seed),
+          X = 0.6,
+          N = Math.ceil((seconds + X) * SR),
+          g = new Float32Array(N);
+        let b1 = 0,
+          b2 = 0;
+        for (let i = 0; i < N; i++) {
+          const w = R() * 2 - 1;
+          b1 += (w - b1) * 0.1;
+          b2 += (b1 - b2) * 0.02;
+          const t = i / SR;
+          g[i] +=
+            (b1 - b2) *
+            (0.55 +
+              0.25 * Math.sin(2 * Math.PI * 0.31 * t) +
+              0.2 * Math.sin(2 * Math.PI * 0.13 * t + 1.3)) *
+            1.6;
+        }
+        for (let c = 0; c < 40; c++) {
+          let t = R() * (seconds + X - 1.4);
+          const f = 110 + R() * 170,
+            amp = 0.025 + R() * 0.05,
+            n = 2 + Math.floor(R() * 6);
+          for (let k = 0; k < n; k++) {
+            const d = 0.07 + R() * 0.08;
+            syllable(
+              g,
+              t,
+              d,
+              f * (1 + (R() - 0.5) * 0.15),
+              f * (0.95 + R() * 0.08),
+              amp,
+              VOWELS[Math.floor(R() * 5)],
+            );
+            t += d + 0.02 + R() * 0.06;
+          }
+        }
+        for (let t = 2.5, k = 0; t < 7.5; t += 0.24 + (k % 2 ? 0.07 : 0), k++) {
+          const i0 = Math.floor(t * SR),
+            n = Math.floor(0.09 * SR),
+            r = 0.992,
+            f = 620 + R() * 260,
+            w = (2 * Math.PI * f) / SR,
+            a1 = 2 * r * Math.cos(w),
+            a2 = -r * r,
+            amp = 0.5 * Math.sin((Math.PI * (t - 2.5)) / 5);
+          let y1 = 0,
+            y2 = 0;
+          for (let i = 0; i < n; i++) {
+            const x = i < 0.005 * SR ? R() * 2 - 1 : 0;
+            const y = x * (1 - r) * 3 + a1 * y1 + a2 * y2;
+            y2 = y1;
+            y1 = y;
+            g[i0 + i] += y * amp;
+          }
+        }
+        {
+          const i0 = Math.floor(9.3 * SR);
+          for (let i = 0; i < 2.5 * SR && i0 + i < N; i++) {
+            const t = i / SR;
+            g[i0 + i] +=
+              0.1 *
+              (Math.exp(-t / 2.4) * Math.sin(2 * Math.PI * 392 * t) +
+                0.5 * Math.exp(-t / 1.6) * Math.sin(2 * Math.PI * 784 * t));
+          }
+        }
+        const n = Math.floor(seconds * SR),
+          x = Math.floor(X * SR),
+          out = new Float32Array(n);
+        for (let i = 0; i < n; i++) out[i] = g[i];
+        for (let i = 0; i < x; i++) {
+          const w = i / x;
+          out[i] = g[i] * w + g[n + i] * (1 - w);
+        }
+        normalize(out, 0.55);
+        return out;
+      }
+      function wav(samples) {
+        const b = new ArrayBuffer(44 + samples.length * 2),
+          v = new DataView(b);
+        const str = (o, s) => {
+          for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i));
+        };
+        str(0, "RIFF");
+        v.setUint32(4, 36 + samples.length * 2, true);
+        str(8, "WAVE");
+        str(12, "fmt ");
+        v.setUint32(16, 16, true);
+        v.setUint16(20, 1, true);
+        v.setUint16(22, 1, true);
+        v.setUint32(24, SR, true);
+        v.setUint32(28, SR * 2, true);
+        v.setUint16(32, 2, true);
+        v.setUint16(34, 16, true);
+        str(36, "data");
+        v.setUint32(40, samples.length * 2, true);
+        for (let i = 0; i < samples.length; i++)
+          v.setInt16(44 + i * 2, clamp(samples[i], -1, 1) * 32767, true);
+        return new Blob([b], { type: "audio/wav" });
+      }
+
+      /** The tour's files: here every audio file is generated from the sample on first read. */
+      const files = new Map();
+      function loadAsset(id) {
+        if (!files.has(id)) {
+          files.set(
+            id,
+            new Promise((resolve, reject) => {
+              setTimeout(() => {
+                const asset = sample.assets.find((a) => a.id === id);
+                if (!asset) {
+                  reject(new Error(`no file "${id}" in the tour`));
+                  return;
+                }
+                if (id === "market-bed") {
+                  resolve(wav(marketBed(asset.seconds, 11)));
+                  return;
+                }
+                const rec = Object.values(sample.records).find(
+                  (r) => r.audio === id,
+                );
+                const lines = kind.read(rec).block.lines ?? [];
+                resolve(
+                  wav(speechLike(lines, asset.seconds, id.length * 7 + 3)),
+                );
+              }, 0);
+            }),
+          );
+        }
+        return files.get(id);
+      }
+
+      /**
+       * The sound seam this page offers the kind: one voice channel (a playing
+       * voice lowers the beds to 30 % with a 0.35 s glide), looping beds with a
+       * gain each, and a global sound switch. Without Web Audio a voice runs on
+       * a clock, silent, so the card still reads along.
+       */
+      const sound = {
+        ctx: null,
+        master: null,
+        voiceBus: null,
+        bedBus: null,
+        analyser: null,
+        wave: null,
+        voices: new Set(),
+        low: 0,
+        ensure() {
+          if (this.ctx !== null || typeof AudioContext === "undefined")
+            return this.ctx;
+          try {
+            const c = new AudioContext();
+            this.master = c.createGain();
+            this.master.gain.value = S.sound ? 1 : 0;
+            this.master.connect(c.destination);
+            this.voiceBus = c.createGain();
+            this.bedBus = c.createGain();
+            this.analyser = c.createAnalyser();
+            this.analyser.fftSize = 512;
+            this.wave = new Float32Array(512);
+            this.voiceBus.connect(this.analyser);
+            this.voiceBus.connect(this.master);
+            this.bedBus.connect(this.master);
+            this.ctx = c;
+          } catch (e) {
+            console.warn("no Web Audio", e);
+          }
+          return this.ctx;
+        },
+        unlock() {
+          const c = this.ensure();
+          if (c && c.state !== "running") c.resume().catch(() => {});
+        },
+        setOn(on) {
+          if (this.master)
+            this.master.gain.setTargetAtTime(
+              on ? 1 : 0,
+              this.ctx.currentTime,
+              0.05,
+            );
+        },
+        voiceActive(v, on) {
+          if (on) this.voices.add(v);
+          else this.voices.delete(v);
+          if (this.bedBus)
+            this.bedBus.gain.setTargetAtTime(
+              this.voices.size > 0 ? 0.3 : 1,
+              this.ctx.currentTime,
+              0.35 / 3,
+            );
+        },
+        step(dt) {
+          const target = this.voices.size > 0 ? 1 : 0;
+          this.low += (target - this.low) * (1 - Math.exp(-dt / (0.35 / 3)));
+        },
+        lowered() {
+          return this.low;
+        },
+        level() {
+          if (!this.analyser) return 0;
+          this.analyser.getFloatTimeDomainData(this.wave);
+          let s = 0;
+          for (let i = 0; i < this.wave.length; i++)
+            s += this.wave[i] * this.wave[i];
+          return clamp(Math.sqrt(s / this.wave.length) * 4, 0, 1);
+        },
+        async decode(blob) {
+          const c = this.ensure();
+          if (c === null) return null;
+          return c.decodeAudioData(await blob.arrayBuffer());
+        },
+        async voice(blob) {
+          const buf = await this.decode(blob).catch(() => null);
+          return buf
+            ? audioVoice(this, buf)
+            : clockVoice(this, (blob.size - 44) / (2 * SR));
+        },
+        async bed(blob) {
+          const buf = await this.decode(blob).catch(() => null);
+          return buf ? audioBed(this, buf) : { setGain() {}, dispose() {} };
+        },
+      };
+      function audioVoice(host, buf) {
+        const c = host.ctx,
+          dur = buf.duration;
+        let src = null,
+          offset = 0,
+          startedAt = 0,
+          playing = false,
+          endFn = null;
+        const stop = () => {
+          if (src) {
+            const s = src;
+            src = null;
+            s.onended = null;
+            try {
+              s.stop();
+            } catch {
+              /* not started */
+            }
+            s.disconnect();
+          }
+        };
+        const time = () =>
+          playing
+            ? Math.min(dur, offset + (c.currentTime - startedAt))
+            : offset;
+        const self = {
+          duration: dur,
+          play(from) {
+            host.unlock();
+            stop();
+            offset = clamp(from, 0, dur);
+            const s = c.createBufferSource();
+            s.buffer = buf;
+            s.connect(host.voiceBus);
+            s.onended = () => {
+              if (src !== s) return;
+              src = null;
+              playing = false;
+              offset = dur;
+              host.voiceActive(self, false);
+              endFn?.();
+            };
+            s.start(0, offset);
+            src = s;
+            startedAt = c.currentTime;
+            playing = true;
+            host.voiceActive(self, true);
+          },
+          pause() {
+            const t = time();
+            stop();
+            playing = false;
+            offset = t;
+            host.voiceActive(self, false);
+            return t;
+          },
+          cue(t) {
+            offset = clamp(t, 0, dur);
+          },
+          time,
+          level() {
+            return playing ? host.level() : 0;
+          },
+          onEnded(fn) {
+            endFn = fn;
+          },
+          dispose() {
+            stop();
+            playing = false;
+            host.voiceActive(self, false);
+            endFn = null;
+          },
+        };
+        return self;
+      }
+      function clockVoice(host, dur) {
+        const now = () => performance.now() / 1000;
+        let offset = 0,
+          startedAt = 0,
+          playing = false,
+          endFn = null,
+          timer = 0;
+        const time = () =>
+          playing ? Math.min(dur, offset + now() - startedAt) : offset;
+        const self = {
+          duration: dur,
+          play(from) {
+            clearTimeout(timer);
+            offset = clamp(from, 0, dur);
+            startedAt = now();
+            playing = true;
+            host.voiceActive(self, true);
+            timer = setTimeout(
+              () => {
+                playing = false;
+                offset = dur;
+                host.voiceActive(self, false);
+                endFn?.();
+              },
+              (dur - offset) * 1000,
+            );
+          },
+          pause() {
+            const t = time();
+            clearTimeout(timer);
+            playing = false;
+            offset = t;
+            host.voiceActive(self, false);
+            return t;
+          },
+          cue(t) {
+            offset = clamp(t, 0, dur);
+          },
+          time,
+          level: () => 0,
+          onEnded(fn) {
+            endFn = fn;
+          },
+          dispose() {
+            clearTimeout(timer);
+            playing = false;
+            host.voiceActive(self, false);
+          },
+        };
+        return self;
+      }
+      function audioBed(host, buf) {
+        const c = host.ctx,
+          g = c.createGain(),
+          s = c.createBufferSource();
+        g.gain.value = 0;
+        s.buffer = buf;
+        s.loop = true;
+        s.connect(g);
+        g.connect(host.bedBus);
+        s.start();
+        return {
+          setGain(v) {
+            g.gain.setTargetAtTime(v, c.currentTime, 0.15);
+          },
+          dispose() {
+            try {
+              s.stop();
+            } catch {
+              /* not started */
+            }
+            s.disconnect();
+            g.disconnect();
+          },
+        };
+      }
+
+      /* --------------------------------------------------------- the stage */
+      const canvas = $("gl");
+      const renderer = new WebGLRenderer({ canvas, antialias: true });
+      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+      const scene = new Scene();
+      const camera = new PerspectiveCamera(62, 1, 0.05, 400);
+      camera.rotation.order = "YXZ";
+      scene.add(new HemisphereLight("#ffffff", "#7d807c", 2.2));
+      const sun = new DirectionalLight("#ffffff", 1.1);
+      sun.position.set(-20, 40, 25);
+      scene.add(sun);
+      function canvasTexture(c) {
+        const t = new CanvasTexture(c);
+        t.colorSpace = SRGBColorSpace;
+        t.anisotropy = 4;
+        return t;
+      }
+
+      const BACKDROPS = {
+        bright: {
+          sky: "#dfe3e6",
+          ground: "#c9ccc7",
+          prop: "#aeb1b0",
+          figure: "#8f9396",
+        },
+        dark: {
+          sky: "#121418",
+          ground: "#33363b",
+          prop: "#4a4e55",
+          figure: "#5d626a",
+        },
+      };
+      const paving = (() => {
+        const c = document.createElement("canvas");
+        c.width = c.height = 256;
+        const g = c.getContext("2d");
+        g.fillStyle = "#fff";
+        g.fillRect(0, 0, 256, 256);
+        g.strokeStyle = "rgba(0,0,0,.16)";
+        g.lineWidth = 3;
+        g.strokeRect(0, 0, 256, 256);
+        g.strokeStyle = "rgba(0,0,0,.07)";
+        g.lineWidth = 2;
+        g.beginPath();
+        g.moveTo(128, 0);
+        g.lineTo(128, 256);
+        g.moveTo(0, 128);
+        g.lineTo(256, 128);
+        g.stroke();
+        const t = canvasTexture(c);
+        t.wrapS = t.wrapT = RepeatWrapping;
+        t.repeat.set(100, 100);
+        return t;
+      })();
+      const groundMat = new MeshLambertMaterial({ map: paving });
+      const ground = new Mesh(new PlaneGeometry(400, 400), groundMat);
+      ground.rotation.x = -Math.PI / 2;
+      scene.add(ground);
+      const propMat = new MeshLambertMaterial(),
+        figureMat = new MeshLambertMaterial();
+      const props = new Group();
+      scene.add(props);
+      {
+        const box = (w, h, d, x, z) => {
+          const m = new Mesh(new BoxGeometry(w, h, d), propMat);
+          m.position.set(x, h / 2, z);
+          props.add(m);
+        };
+        box(44, 7, 2, 0, -22);
+        box(2, 5, 18, -21, -12);
+        box(1.8, 0.45, 0.5, -7, 6);
+        box(0.4, 1.1, 0.4, 5, 9);
+        const figure = (x, z) => {
+          const m = new Mesh(new CapsuleGeometry(0.24, 1.25, 4, 10), figureMat);
+          m.position.set(x, 0.86, z);
+          props.add(m);
+        };
+        figure(-4.5, 2.5);
+        figure(3, -8.5);
+        figure(13, -1);
+        figure(-9, -6);
+        figure(7.5, 4.5);
+      }
+      function setBackdrop(name) {
+        const b = BACKDROPS[name];
+        scene.background = new Color(b.sky);
+        groundMat.color.set(b.ground);
+        propMat.color.set(b.prop);
+        figureMat.color.set(b.figure);
+      }
+
+      const visitor = new Group();
+      {
+        const body = new Mesh(
+          new CapsuleGeometry(0.26, 1.1, 4, 12),
+          new MeshLambertMaterial({ color: "#ffffff" }),
+        );
+        body.position.y = 0.81;
+        visitor.add(body);
+        const nose = new Mesh(
+          new ConeGeometry(0.16, 0.45, 12),
+          new MeshBasicMaterial({ color: "#14161c" }),
+        );
+        nose.rotation.x = -Math.PI / 2;
+        nose.position.set(0, 1.35, -0.42);
+        visitor.add(nose);
+      }
+      scene.add(visitor);
+      const noiseDot = new Mesh(
+        new SphereGeometry(0.18, 12, 8),
+        new MeshBasicMaterial({ color: "#e11d48" }),
+      );
+      noiseDot.position.y = 0.2;
+      scene.add(noiseDot);
+
+      /* --------------------------------------------------------- the items */
+      function env() {
+        return {
+          mode: S.mode,
+          loadAsset,
+          canvasTexture,
+          sound: S.mode === "play" ? sound : null,
+          notice: toast,
+          proto: { look: S.look, marginM: S.margin, plate: S.plate },
+        };
+      }
+      function unmountCard() {
+        if (cardHandle) {
+          cardHandle.dispose();
+          cardHandle = null;
+        }
+        $("cardHost").hidden = true;
+      }
+      function build(which) {
+        const old = items[which];
+        if (old) {
+          if (which === "narration") unmountCard();
+          scene.remove(old.part.object);
+          old.part.dispose();
+        }
+        const { block, problems } = kind.read(raws[which]);
+        const part = kind.world(block, env());
+        const [x, z] = PLACES[which];
+        part.object.position.set(x, 0, z);
+        scene.add(part.object);
+        if (!S.shown) part.leave?.();
+        items[which] = { block, problems, part };
+        part.player?.subscribe((p) => {
+          if (p.open && cardHandle === null && items[which]?.part === part) {
+            $("cardHost").hidden = false;
+            cardHandle = kind.card(block, $("cardHost"), p);
+          } else if (!p.open && cardHandle !== null) {
+            unmountCard();
+          }
+        });
+        if (S.mode === "edit" && S.pick === which) renderFields();
+      }
+      function buildAll() {
+        build("ambient");
+        build("narration");
+      }
+
+      /* ------------------------------------------------------- the walking */
+      const keymap = {
+        KeyW: "fwd",
+        ArrowUp: "fwd",
+        KeyS: "back",
+        ArrowDown: "back",
+        KeyA: "left",
+        ArrowLeft: "left",
+        KeyD: "right",
+        ArrowRight: "right",
+      };
+      function cancelScript() {
+        if (S.script) {
+          S.script = null;
+          $("say").hidden = true;
+        }
+      }
+      function forwardOf(yaw) {
+        return [-Math.sin(yaw), -Math.cos(yaw)];
+      }
+      function turnToward(dx, dz, dt) {
+        const want = Math.atan2(-dx, -dz);
+        let d = want - S.V.yaw;
+        d = Math.atan2(Math.sin(d), Math.cos(d));
+        S.V.yaw += d * Math.min(1, dt * 4);
+      }
+      function walk(dt) {
+        const V = S.V,
+          input = new Set([...S.hold, ...S.keys]);
+        const fast =
+          S.keys.has("ShiftLeft") || S.keys.has("ShiftRight") ? 2 : 1;
+        if (input.has("left")) V.yaw += 1.7 * dt;
+        if (input.has("right")) V.yaw -= 1.7 * dt;
+        const dir = (input.has("fwd") ? 1 : 0) - (input.has("back") ? 1 : 0);
+        if (dir !== 0) {
+          const [fx, fz] = forwardOf(V.yaw);
+          V.x += fx * dir * 1.4 * fast * dt;
+          V.z += fz * dir * 1.4 * fast * dt;
+          V.target = null;
+        }
+        if (V.target) {
+          const dx = V.target[0] - V.x,
+            dz = V.target[1] - V.z,
+            d = Math.hypot(dx, dz);
+          if (d < 0.05) {
+            V.target = null;
+          } else {
+            const step = Math.min(d, 1.4 * dt);
+            V.x += (dx / d) * step;
+            V.z += (dz / d) * step;
+            turnToward(dx, dz, dt);
+          }
+        }
+        V.x = clamp(V.x, -60, 60);
+        V.z = clamp(V.z, -19, 60);
+      }
+      function gauss(R) {
+        return Math.sqrt(-2 * Math.log(1 - R())) * Math.cos(2 * Math.PI * R());
+      }
+      const noiseR = rng(99);
+      function stepNoise(dt) {
+        const tau = 4,
+          sigma = S.noise;
+        const k = Math.sqrt((2 * dt) / tau) * sigma;
+        S.noiseX += (-S.noiseX * dt) / tau + k * gauss(noiseR);
+        S.noiseZ += (-S.noiseZ * dt) / tau + k * gauss(noiseR);
+        if (sigma === 0) {
+          S.noiseX = 0;
+          S.noiseZ = 0;
+        }
+      }
+
+      /* the walk-through: every confirmed rule, in one walk */
+      const WALK = [
+        {
+          say: "Walking toward the circle. Outside it, nothing is on the screen.",
+          to: [0.4, 2.2],
+        },
+        {
+          say: "Inside the circle the card opens. Nothing plays yet.",
+          wait: 2.2,
+        },
+        {
+          say: "It plays only on a tap. The walk-through taps play.",
+          wait: 1.6,
+        },
+        { tap: "play" },
+        {
+          say: "Playing. The ambient glow nearby turns quieter, and so does its sound.",
+          wait: 7,
+        },
+        {
+          say: "Leaving the circle: it pauses and the card closes.",
+          to: [-3, 13],
+        },
+        { say: "Outside, it waits where it paused.", wait: 2.5 },
+        { say: "Coming back: it carries on from there.", to: [0, 1.5] },
+        { say: "Carrying on.", wait: 4.5 },
+        {
+          say: "The walk-through taps pause. Now it is stopped.",
+          tap: "pause",
+          wait: 1.8,
+        },
+        { say: "Leaving while stopped...", to: [0, 12.5] },
+        {
+          say: "...and coming back: it stays off until tapped.",
+          to: [0.3, 1.5],
+        },
+        { say: "Stopped stays stopped.", wait: 3 },
+        {
+          say: "On to the ambient sound: it plays by itself while you are near.",
+          to: [8, -2],
+        },
+        {
+          say: "Done. Walk around yourself, or tap play on the card.",
+          wait: 4,
+        },
+      ];
+      function startWalk() {
+        sound.unlock();
+        if (S.mode !== "play") setMode("play");
+        build("narration");
+        Object.assign(S.V, { x: 0, z: 20, yaw: 0, target: null });
+        S.script = { i: -1, wait: 0, step: null };
+        nextStep();
+      }
+      function nextStep() {
+        const sc = S.script;
+        sc.i += 1;
+        if (sc.i >= WALK.length) {
+          cancelScript();
+          return;
+        }
+        const step = WALK[sc.i];
+        sc.step = step;
+        sc.wait = step.wait ?? 0;
+        sc.tapped = false;
+        if (step.say) {
+          $("say").hidden = false;
+          $("say").textContent = step.say;
+        }
+        if (step.to) S.V.target = step.to;
+      }
+      function stepScript(dt) {
+        const sc = S.script;
+        if (!sc) return;
+        const step = sc.step,
+          player = items.narration?.part.player;
+        if (step.tap && !sc.tapped) {
+          if (!player?.ready) return;
+          const playing = player.state === "playing";
+          if ((step.tap === "play") !== playing) player.toggle();
+          sc.tapped = true;
+        }
+        if (step.to && S.V.target) return;
+        sc.wait -= dt;
+        if (sc.wait <= 0) nextStep();
+      }
+
+      /* ---------------------------------------------------------- the camera */
+      function placeCamera() {
+        const V = S.V;
+        if (S.mode === "play" && S.view === "eye") {
+          camera.position.set(V.x, EYE, V.z);
+          camera.rotation.set(V.pitch, V.yaw, 0);
+          return;
+        }
+        const o = S.mode === "edit" ? S.edit : S.orbit;
+        const cx = S.mode === "edit" ? 4 : V.x,
+          cz = S.mode === "edit" ? -2 : V.z;
+        camera.position.set(
+          cx + Math.sin(o.az) * Math.cos(o.el) * o.dist,
+          Math.sin(o.el) * o.dist,
+          cz + Math.cos(o.az) * Math.cos(o.el) * o.dist,
+        );
+        camera.lookAt(cx, 0.6, cz);
+      }
+      function resize() {
+        const w = innerWidth,
+          h = innerHeight;
+        renderer.setSize(w, h, false);
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+      }
+      addEventListener("resize", resize);
+
+      /* ---------------------------------------------------------- the pointer */
+      const ray = new Raycaster(),
+        ndc = new Vector2(),
+        floor = new Plane(new Vector3(0, 1, 0), 0),
+        hit = new Vector3();
+      const pointers = new Map();
+      let press = null;
+      function aim(x, y) {
+        ndc.set((x / innerWidth) * 2 - 1, -(y / innerHeight) * 2 + 1);
+        ray.setFromCamera(ndc, camera);
+      }
+      function floorAt(x, y) {
+        aim(x, y);
+        return ray.ray.intersectPlane(floor, hit) ? hit : null;
+      }
+      canvas.addEventListener("pointerdown", (e) => {
+        canvas.setPointerCapture(e.pointerId);
+        pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (pointers.size === 2) {
+          const [a, b] = [...pointers.values()];
+          press = { pinch: Math.hypot(a.x - b.x, a.y - b.y), moved: true };
+          return;
+        }
+        aim(e.clientX, e.clientY);
+        const dragVisitor =
+          S.mode === "play" &&
+          S.view === "above" &&
+          ray.intersectObject(visitor, true).length > 0;
+        press = {
+          x: e.clientX,
+          y: e.clientY,
+          lx: e.clientX,
+          ly: e.clientY,
+          moved: false,
+          dragVisitor,
+        };
+      });
+      canvas.addEventListener("pointermove", (e) => {
+        if (!pointers.has(e.pointerId) || !press) return;
+        pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (press.pinch && pointers.size === 2) {
+          const [a, b] = [...pointers.values()],
+            d = Math.hypot(a.x - b.x, a.y - b.y),
+            o = S.mode === "edit" ? S.edit : S.orbit;
+          o.dist = clamp((o.dist * press.pinch) / Math.max(1, d), 5, 80);
+          press.pinch = d;
+          return;
+        }
+        if (press.pinch) return;
+        const dx = e.clientX - press.lx,
+          dy = e.clientY - press.ly;
+        press.lx = e.clientX;
+        press.ly = e.clientY;
+        if (Math.hypot(e.clientX - press.x, e.clientY - press.y) > 7)
+          press.moved = true;
+        if (!press.moved) return;
+        if (press.dragVisitor) {
+          const p = floorAt(e.clientX, e.clientY);
+          if (p) {
+            cancelScript();
+            S.V.x = p.x;
+            S.V.z = p.z;
+            S.V.target = null;
+          }
+          return;
+        }
+        if (S.mode === "play" && S.view === "eye") {
+          S.V.yaw += dx * 0.006;
+          S.V.pitch = clamp(S.V.pitch + dy * 0.005, -1.1, 0.5);
+          return;
+        }
+        const o = S.mode === "edit" ? S.edit : S.orbit;
+        o.az -= dx * 0.006;
+        o.el = clamp(o.el + dy * 0.005, 0.2, 1.5);
+      });
+      function release(e) {
+        pointers.delete(e.pointerId);
+        if (!press) return;
+        const wasTap = !press.moved && !press.pinch;
+        if (pointers.size === 0) press = null;
+        if (wasTap && e.type === "pointerup") tapAt(e.clientX, e.clientY);
+      }
+      canvas.addEventListener("pointerup", release);
+      canvas.addEventListener("pointercancel", release);
+      canvas.addEventListener(
+        "wheel",
+        (e) => {
+          const o = S.mode === "edit" ? S.edit : S.orbit;
+          o.dist = clamp(o.dist * Math.exp(e.deltaY * 0.001), 5, 80);
+        },
+        { passive: true },
+      );
+      function tapAt(x, y) {
+        aim(x, y);
+        if (S.mode === "play") {
+          for (const it of Object.values(items)) {
+            if (
+              it?.part.tapTarget &&
+              ray.intersectObject(it.part.tapTarget, false).length > 0
+            ) {
+              it.part.tap();
+              return;
+            }
+          }
+          const p = floorAt(x, y);
+          if (p) {
+            cancelScript();
+            S.V.target = [p.x, p.z];
+          }
+          return;
+        }
+        const p = floorAt(x, y);
+        if (!p) return;
+        const dn = Math.hypot(
+          p.x - PLACES.narration[0],
+          p.z - PLACES.narration[1],
+        );
+        const da = Math.hypot(p.x - PLACES.ambient[0], p.z - PLACES.ambient[1]);
+        if (dn <= items.narration.block.radiusM + 0.5) setPick("narration");
+        else if (da <= items.ambient.block.maxM) setPick("ambient");
+      }
+      addEventListener("keydown", (e) => {
+        if (
+          e.target instanceof HTMLInputElement ||
+          e.target.closest?.(".ak-scrub")
+        )
+          return;
+        const k = keymap[e.code];
+        if (k) {
+          e.preventDefault();
+          cancelScript();
+          S.keys.add(k);
+        }
+        if (e.code.startsWith("Shift")) S.keys.add(e.code);
+      });
+      addEventListener("keyup", (e) => {
+        const k = keymap[e.code];
+        if (k) S.keys.delete(k);
+        S.keys.delete(e.code);
+      });
+      addEventListener("blur", () => {
+        S.keys.clear();
+        S.hold.clear();
+      });
+      document.addEventListener("pointerdown", () => sound.unlock(), {
+        capture: true,
+      });
+
+      for (const b of $("pad").querySelectorAll("button")) {
+        const on = (e) => {
+          e.preventDefault();
+          b.setPointerCapture?.(e.pointerId);
+          cancelScript();
+          S.hold.add(b.dataset.hold);
+          b.classList.add("held");
+        };
+        const off = () => {
+          S.hold.delete(b.dataset.hold);
+          b.classList.remove("held");
+        };
+        b.addEventListener("pointerdown", on);
+        b.addEventListener("pointerup", off);
+        b.addEventListener("pointercancel", off);
+        b.addEventListener("lostpointercapture", off);
+      }
+
+      /* -------------------------------------------------------------- the UI */
+      let toastTimer = 0;
+      function toast(text) {
+        const t = $("toast");
+        t.textContent = text;
+        t.classList.add("show");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => t.classList.remove("show"), 2200);
+      }
+      function press1(seg, attr, value) {
+        for (const b of seg.querySelectorAll("button"))
+          b.setAttribute("aria-pressed", String(b.dataset[attr] === value));
+      }
+      const SOUND_ICON = {
+        on: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3.5L12 5v14l-4.5-4.5H4z" fill="currentColor"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg>',
+        off: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3.5L12 5v14l-4.5-4.5H4z" fill="currentColor"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></svg>',
+      };
+      function renderSound() {
+        const b = $("soundBtn");
+        b.innerHTML = SOUND_ICON[S.sound ? "on" : "off"];
+        b.setAttribute("aria-pressed", String(S.sound));
+        b.setAttribute("aria-label", S.sound ? "Sound on" : "Sound off");
+      }
+      $("soundBtn").addEventListener("click", () => {
+        S.sound = !S.sound;
+        sound.unlock();
+        sound.setOn(S.sound);
+        renderSound();
+        toast(S.sound ? "Sound on" : "Sound off: the card still reads along");
+      });
+
+      function setMode(mode) {
+        S.mode = mode;
+        press1($("modeSeg"), "mode", mode);
+        const edit = mode === "edit";
+        $("editor").hidden = !edit;
+        $("pad").hidden = edit;
+        $("walkBtn").hidden = edit;
+        $("moreBtn").hidden = edit;
+        $("viewSeg").hidden = edit;
+        $("more").hidden = true;
+        $("moreBtn").setAttribute("aria-expanded", "false");
+        cancelScript();
+        unmountCard();
+        buildAll();
+        if (edit) renderFields();
+      }
+      $("modeSeg").addEventListener("click", (e) => {
+        const m = e.target.closest("button")?.dataset.mode;
+        if (m && m !== S.mode) setMode(m);
+      });
+      $("lookSeg").addEventListener("click", (e) => {
+        const l = e.target.closest("button")?.dataset.look;
+        if (!l || l === S.look) return;
+        S.look = l;
+        press1($("lookSeg"), "look", l);
+        build("narration");
+      });
+      $("viewSeg").addEventListener("click", (e) => {
+        const v = e.target.closest("button")?.dataset.view;
+        if (!v) return;
+        S.view = v;
+        press1($("viewSeg"), "view", v);
+      });
+      $("walkBtn").addEventListener("click", startWalk);
+      $("measureBtn").addEventListener("click", () => {
+        measureLooks().catch((e) => {
+          console.error(e);
+          toast("The measurement stopped");
+        });
+      });
+      $("moreBtn").addEventListener("click", () => {
+        const m = $("more");
+        m.hidden = !m.hidden;
+        $("moreBtn").setAttribute("aria-expanded", String(!m.hidden));
+      });
+      $("notesBtn").addEventListener("click", () => {
+        $("notes").hidden = false;
+      });
+      $("notes").addEventListener("click", (e) => {
+        if (e.target === $("notes") || e.target.closest("[data-close]"))
+          $("notes").hidden = true;
+      });
+      $("more").addEventListener("click", (e) => {
+        const b = e.target.closest("button");
+        const seg = b?.closest("[data-opt]");
+        if (!seg) return;
+        const opt = seg.dataset.opt,
+          v = b.dataset.v;
+        press1(seg, "v", v);
+        if (opt === "record") {
+          S.record = v;
+          raws.narration = structuredClone(sample.records[v]);
+          build("narration");
+        }
+        if (opt === "margin") {
+          S.margin = Number(v);
+          build("narration");
+        }
+        if (opt === "noise") S.noise = Number(v);
+        if (opt === "stand") standAt(Number(v));
+        if (opt === "plate") {
+          S.plate = v === "on";
+          build("narration");
+        }
+        if (opt === "backdrop") {
+          S.backdrop = v;
+          setBackdrop(v);
+        }
+        if (opt === "shown") {
+          S.shown = v === "yes";
+          for (const it of Object.values(items)) {
+            if (S.shown) it.part.back?.();
+            else it.part.leave?.();
+          }
+        }
+      });
+
+      /* the editor's inspector, built from the kind's field list */
+      function setPick(which) {
+        S.pick = which;
+        press1($("pickSeg"), "pick", which);
+        renderFields();
+      }
+      $("pickSeg").addEventListener("click", (e) => {
+        const p = e.target.closest("button")?.dataset.pick;
+        if (p) setPick(p);
+      });
+      function renderFields() {
+        const it = items[S.pick];
+        if (!it) return;
+        const box = $("edFields");
+        box.replaceChildren();
+        for (const f of kind.fields(it.block.view)) {
+          const wrap = document.createElement("div");
+          wrap.className = "f";
+          const id = `f-${S.pick}-${f.key}`;
+          const label = document.createElement("label");
+          label.htmlFor = id;
+          label.textContent = f.label;
+          if (f.unit || f.optional) {
+            const em = document.createElement("em");
+            em.textContent = [f.unit, f.optional ? "optional" : ""]
+              .filter(Boolean)
+              .join(", ");
+            label.append(em);
+          }
+          const input = document.createElement("input");
+          input.id = id;
+          if (f.type === "number") {
+            input.type = "number";
+            input.inputMode = "decimal";
+            input.min = String(f.min);
+            input.max = String(f.max);
+            input.step = String(f.step);
+          } else {
+            input.type = "text";
+            input.maxLength = f.max;
+          }
+          const raw = raws[S.pick][f.key];
+          input.value = raw === undefined ? "" : String(raw);
+          if (f.type === "number" && raw === undefined)
+            input.placeholder = String(it.block[f.key]);
+          input.addEventListener(
+            f.type === "number" ? "change" : "input",
+            () => {
+              const v = input.value.trim();
+              if (v === "") delete raws[S.pick][f.key];
+              else raws[S.pick][f.key] = f.type === "number" ? Number(v) : v;
+              const keep = document.activeElement === input;
+              build(S.pick);
+              if (keep && f.type !== "number") {
+                const again = $(id);
+                again?.focus();
+                again?.setSelectionRange(v.length, v.length);
+              }
+            },
+          );
+          wrap.append(label, input);
+          if (f.hint) {
+            const h = document.createElement("p");
+            h.className = "hint";
+            h.textContent = f.hint;
+            wrap.append(h);
+          }
+          box.append(wrap);
+        }
+        const pr = $("edProblems");
+        pr.hidden = it.problems.length === 0;
+        pr.textContent = it.problems.length
+          ? `Read with changes: ${it.problems.join("; ")}.`
+          : "";
+      }
+
+      /* ------------------------------------------------------------ the loop */
+      const frame = { seconds: 0, viewer: [0, EYE, 0] };
+      let last = performance.now(),
+        updMs = 0,
+        fps = 60,
+        shownAt = 0;
+      function loop(now) {
+        const dt = Math.min(0.1, (now - last) / 1000);
+        last = now;
+        walk(dt);
+        stepScript(dt);
+        stepNoise(dt);
+        sound.step(dt);
+        visitor.position.set(S.V.x, 0, S.V.z);
+        visitor.rotation.y = S.V.yaw;
+        visitor.visible = S.mode === "play" && S.view === "above";
+        noiseDot.visible =
+          S.noise > 0 && S.mode === "play" && S.view === "above";
+        noiseDot.position.set(S.V.x + S.noiseX, 0.2, S.V.z + S.noiseZ);
+        placeCamera();
+        frame.seconds = now / 1000;
+        if (S.mode === "play") {
+          frame.viewer[0] = S.V.x + S.noiseX;
+          frame.viewer[1] = EYE;
+          frame.viewer[2] = S.V.z + S.noiseZ;
+        } else {
+          frame.viewer[0] = camera.position.x;
+          frame.viewer[1] = camera.position.y;
+          frame.viewer[2] = camera.position.z;
+        }
+        const t0 = performance.now();
+        items.ambient?.part.update(frame);
+        const t1 = performance.now();
+        items.narration?.part.update(frame);
+        const t2 = performance.now();
+        updMs += (t2 - t0 - updMs) * 0.05;
+        renderer.render(scene, camera);
+        fps += (1 / Math.max(dt, 1e-3) - fps) * 0.05;
+        if (frameWaiters.length > 0) {
+          const info = {
+            dt,
+            ambientMs: t1 - t0,
+            narrationMs: t2 - t1,
+            calls: renderer.info.render.calls,
+            triangles: renderer.info.render.triangles,
+          };
+          for (const w of frameWaiters.splice(0)) w(info);
+        }
+        if (now - shownAt > 400) {
+          shownAt = now;
+          readout();
+        }
+      }
+      /** What the narration item draws: its visible meshes and its particles. */
+      function itemCost(part) {
+        let draws = 0,
+          particles = 0;
+        part.object.traverse((o) => {
+          if (!o.isMesh || !o.visible || o.material.visible === false) return;
+          draws += 1;
+          if (o.geometry.isInstancedBufferGeometry)
+            particles += o.geometry.instanceCount;
+        });
+        return { draws, particles };
+      }
+      function readout() {
+        const i = renderer.info,
+          n = items.narration;
+        const own = n ? itemCost(n.part) : { draws: 0, particles: 0 };
+        const edge = n
+          ? Math.hypot(
+              frame.viewer[0] - PLACES.narration[0],
+              frame.viewer[2] - PLACES.narration[1],
+            ) - n.block.radiusM
+          : 0;
+        const where =
+          S.mode === "play"
+            ? `\n${edge <= 0 ? "inside" : "outside"}, ${Math.abs(edge).toFixed(1)} m ${edge <= 0 ? "from the rim" : "to the rim"}`
+            : "";
+        $("readout").textContent =
+          `${i.render.calls} calls  ${i.render.triangles} tris  ${Math.round(fps)} fps\n${i.memory.geometries} geometries  ${i.memory.textures} textures\nitems' update ${updMs.toFixed(3)} ms\n${S.look}: ${own.draws} draws, ${own.particles} particles${where}`;
+      }
+
+      /* ------------------------------------------- stand at, and the costs */
+      const frameWaiters = [];
+      const nextFrame = () => new Promise((r) => frameWaiters.push(r));
+      function standAt(d) {
+        cancelScript();
+        if (S.mode !== "play") setMode("play");
+        Object.assign(S.V, { x: 0, z: d, yaw: 0, pitch: -0.08, target: null });
+        S.view = "eye";
+        press1($("viewSeg"), "view", "eye");
+        press1(document.querySelector('[data-opt="stand"]'), "v", String(d));
+      }
+      const MEASURE = Object.freeze({ settle: 30, frames: 120, standM: 8 });
+      /**
+       * Every look in turn, from the same spot (8 m from the middle, eye
+       * view): the narration's own draws and particles, the frame's calls
+       * and triangles, and the narration's update time per frame (mean and
+       * worst of 120 frames, after 30 to settle). The result is shown in
+       * the sheet and kept on `window.lookCosts`.
+       */
+      async function measureLooks() {
+        const btn = $("measureBtn"),
+          before = S.look,
+          rows = [];
+        btn.disabled = true;
+        btn.textContent = "Measuring...";
+        try {
+          standAt(MEASURE.standM);
+          for (const look of kind.LOOKS) {
+            S.look = look;
+            press1($("lookSeg"), "look", look);
+            build("narration");
+            for (let k = 0; k < MEASURE.settle; k++) await nextFrame();
+            let sum = 0,
+              worst = 0,
+              frameSum = 0,
+              info = null;
+            for (let k = 0; k < MEASURE.frames; k++) {
+              info = await nextFrame();
+              sum += info.narrationMs;
+              worst = Math.max(worst, info.narrationMs);
+              frameSum += info.dt;
+            }
+            const own = itemCost(items.narration.part);
+            rows.push({
+              look,
+              draws: own.draws,
+              particles: own.particles,
+              frameCalls: info.calls,
+              frameTriangles: info.triangles,
+              updateMeanMs: Number((sum / MEASURE.frames).toFixed(4)),
+              updateWorstMs: Number(worst.toFixed(4)),
+              fps: Math.round(MEASURE.frames / Math.max(frameSum, 1e-3)),
+              geometries: renderer.info.memory.geometries,
+              textures: renderer.info.memory.textures,
+            });
+          }
+        } finally {
+          S.look = before;
+          press1($("lookSeg"), "look", before);
+          build("narration");
+          btn.disabled = false;
+          btn.textContent = "Measure again";
+        }
+        window.lookCosts = rows;
+        showCosts(rows);
+        toast("Measured all five looks");
+        return rows;
+      }
+      function showCosts(rows) {
+        const box = $("costs");
+        const table = document.createElement("table");
+        const head = table.insertRow();
+        for (const h of [
+          "Look",
+          "Draws",
+          "Particles",
+          "Update",
+          "Worst",
+          "fps",
+        ]) {
+          const th = document.createElement("th");
+          th.textContent = h;
+          head.append(th);
+        }
+        for (const r of rows) {
+          const tr = table.insertRow();
+          for (const v of [
+            r.look,
+            r.draws,
+            r.particles,
+            `${r.updateMeanMs.toFixed(3)} ms`,
+            `${r.updateWorstMs.toFixed(3)} ms`,
+            r.fps,
+          ])
+            tr.insertCell().textContent = String(v);
+        }
+        const note = document.createElement("p");
+        note.textContent =
+          "On this device, from 8 m. Update is the narration's own per-frame work; the particles move on the graphics card, which this does not time. Worst is a single frame: it lands on a different look from run to run.";
+        box.replaceChildren(table, note);
+        box.hidden = false;
+      }
+
+      /* ------------------------------------------------------------ the start */
+      async function start() {
+        try {
+          sample = await (await fetch("./sample.json")).json();
+        } catch (e) {
+          console.error(e);
+          toast("The sample could not be loaded");
+          return;
+        }
+        raws.narration = structuredClone(sample.records.normal);
+        raws.ambient = structuredClone(sample.records.ambient);
+        setBackdrop(S.backdrop);
+        renderSound();
+        resize();
+        buildAll();
+        renderer.setAnimationLoop(loop);
+      }
+      start();
+    </script>
+  </body>
+</html>

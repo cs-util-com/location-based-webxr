@@ -1,0 +1,622 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Model detail levels</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.185.1/examples/jsm/"
+        }
+      }
+    </script>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #14171a;
+        --panel: rgb(27 31 36 / 94%);
+        --line: #2f363e;
+        --text: #e9edf1;
+        --muted: #9aa5b1;
+        --accent: #6cc4a1;
+        --warn: #f0b35a;
+        font-family:
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        overflow: hidden;
+      }
+      #view {
+        position: fixed;
+        inset: 0;
+        display: block;
+        width: 100%;
+        height: 100%;
+        touch-action: none;
+      }
+      .panel {
+        position: fixed;
+        right: 16px;
+        top: 16px;
+        width: 340px;
+        max-height: calc(100% - 32px);
+        overflow: auto;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 16px;
+        backdrop-filter: blur(6px);
+      }
+      h1 {
+        font-size: 17px;
+        margin: 0 0 4px;
+      }
+      .lead {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.4;
+        margin: 0 0 12px;
+      }
+      .seg {
+        display: flex;
+        gap: 6px;
+        margin: 0 0 12px;
+        flex-wrap: wrap;
+      }
+      .seg button {
+        flex: 1 1 0;
+        min-width: 0;
+        padding: 8px 6px;
+        border-radius: 9px;
+        border: 1px solid var(--line);
+        background: transparent;
+        color: var(--text);
+        font: inherit;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      .seg button[aria-pressed="true"] {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #0b1a14;
+        font-weight: 600;
+      }
+      .seg button:disabled {
+        opacity: 0.5;
+        cursor: progress;
+      }
+      label.slider {
+        display: block;
+        font-size: 13px;
+        margin: 12px 0 4px;
+      }
+      label.slider span {
+        float: right;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+      input[type="range"] {
+        width: 100%;
+        accent-color: var(--accent);
+      }
+      .stats {
+        font-size: 13px;
+        line-height: 1.5;
+        margin: 8px 0 0;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: rgb(255 255 255 / 4%);
+        font-variant-numeric: tabular-nums;
+      }
+      .stats b {
+        font-weight: 600;
+      }
+      .levels {
+        display: flex;
+        gap: 4px;
+        margin: 8px 0 0;
+      }
+      .levels div {
+        flex: 1;
+        text-align: center;
+        font-size: 11px;
+        padding: 5px 0;
+        border-radius: 6px;
+        border: 1px solid var(--line);
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .levels div.on {
+        border-color: var(--accent);
+        color: var(--text);
+        background: rgb(108 196 161 / 18%);
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        margin: 10px 0 0;
+      }
+      .status {
+        color: var(--warn);
+        font-size: 13px;
+        min-height: 18px;
+        margin: 8px 0 0;
+      }
+      .credit {
+        color: var(--muted);
+        font-size: 11px;
+        margin: 12px 0 0;
+        line-height: 1.4;
+      }
+      .credit a {
+        color: var(--muted);
+      }
+      @media (width <= 600px) {
+        #view {
+          height: 50%;
+        }
+        .panel {
+          left: 16px;
+          right: 16px;
+          top: calc(50% + 8px);
+          bottom: 16px;
+          width: auto;
+          max-height: none;
+          padding: 12px 14px;
+        }
+        .lead {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="view" aria-label="3D view of the model"></canvas>
+    <section class="panel" aria-label="Detail controls">
+      <h1>Model detail levels</h1>
+      <p class="lead">
+        The model is simplified once, in your browser. After that, any
+        quality is only a different list of triangles over the same points,
+        so the slider answers at once, and a viewer far away can draw fewer
+        triangles without loading anything new.
+      </p>
+      <div class="seg" id="models" role="group" aria-label="Model"></div>
+      <div class="seg" role="group" aria-label="What the slider does">
+        <button id="modeQuality" aria-pressed="true">Quality</button>
+        <button id="modeDistance" aria-pressed="false">Distance</button>
+      </div>
+      <div id="qualityBox">
+        <label class="slider" for="quality"
+          >Quality, share of triangles kept <span id="qualityOut"></span
+        ></label>
+        <input id="quality" type="range" min="1" max="100" value="100" />
+      </div>
+      <div id="distanceBox" hidden>
+        <label class="slider" for="distance"
+          >Viewer distance <span id="distanceOut"></span
+        ></label>
+        <input id="distance" type="range" min="0" max="1000" value="200" />
+        <div class="levels" id="levels"></div>
+        <div class="row">
+          <input id="closeUp" type="checkbox" checked />
+          <label for="closeUp"
+            >Keep the camera close, to see the level it picks</label
+          >
+        </div>
+      </div>
+      <div class="row">
+        <input id="wire" type="checkbox" />
+        <label for="wire">Show the triangles</label>
+      </div>
+      <div class="stats" id="stats">Loading...</div>
+      <div class="status" id="status" role="status"></div>
+      <p class="credit">
+        Scanned rocks from
+        <a href="https://polyhaven.com" rel="noopener">Poly Haven</a> (CC0),
+        textures reduced for this page. Drag to turn the model.
+      </p>
+    </section>
+    <script type="module">
+      import * as THREE from "three";
+      import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+      import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+      import {
+        weldVertices,
+        remapAttribute,
+        buildProgressive,
+        stepsFor,
+        levelIndices,
+        surfaceDistance,
+        surfaceGrid,
+      } from "./lod-simplify.js";
+
+      const MODELS = [
+        { file: "rock.glb", label: "Small rock" },
+        { file: "boulder.glb", label: "Boulder" },
+        { file: "coast-rock.glb", label: "Coastal rock" },
+      ];
+      const PIXEL_BUDGET = 1; // the largest error a level may show, in screen pixels
+      const CHAIN = [1, 1 / 2, 1 / 4, 1 / 8, 1 / 16];
+      const $ = (id) => document.getElementById(id);
+
+      const canvas = $("view");
+      const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x1b2026);
+      scene.add(new THREE.HemisphereLight(0xdfe9f3, 0x3a3128, 1.6));
+      const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+      sun.position.set(3, 5, 2);
+      scene.add(sun);
+      const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 2000);
+      const controls = new OrbitControls(camera, canvas);
+      controls.enableDamping = true;
+
+      const state = {
+        mesh: null,
+        wire: null,
+        prog: null,
+        total: 0,
+        size: 1,
+        quality: 1,
+        mode: "quality",
+        chain: null,
+        chainLevel: 0,
+        positions: null,
+        lod0: null,
+        loadId: 0,
+      };
+
+      function fmt(n) {
+        return n.toLocaleString("en-US");
+      }
+      function fmtLen(m) {
+        if (m < 0.001) {
+          return (m * 1e6).toFixed(0) + " µm";
+        }
+        if (m < 1) {
+          return (m * 1000).toFixed(1) + " mm";
+        }
+        return m.toFixed(2) + " m";
+      }
+
+      function resize() {
+        const w = canvas.clientWidth;
+        const h = canvas.clientHeight;
+        renderer.setSize(w, h, false);
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+      }
+      window.addEventListener("resize", resize);
+      resize();
+
+      function setStatus(text) {
+        $("status").textContent = text;
+      }
+
+      async function loadModel(index) {
+        const id = ++state.loadId;
+        for (const b of $("models").children) {
+          b.setAttribute("aria-pressed", String(Number(b.dataset.i) === index));
+          b.disabled = true;
+        }
+        setStatus("Loading the model...");
+        try {
+          const gltf = await new GLTFLoader().loadAsync(MODELS[index].file);
+          if (id !== state.loadId) {
+            return;
+          }
+          let src = null;
+          gltf.scene.traverse((o) => {
+            if (o.isMesh && src === null) {
+              src = o;
+            }
+          });
+          if (src === null) {
+            throw new Error("the file has no mesh");
+          }
+          setStatus("Simplifying once...");
+          await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+          prepare(src);
+          setStatus("");
+        } catch (e) {
+          setStatus("Could not load this model: " + e.message);
+        } finally {
+          for (const b of $("models").children) {
+            b.disabled = false;
+          }
+        }
+      }
+
+      function prepare(src) {
+        const g = src.geometry;
+        const t0 = performance.now();
+        // Copied out per component: a model's attributes may be interleaved.
+        const flat = (a) => {
+          const o = new Float32Array(a.count * a.itemSize);
+          for (let i = 0; i < a.count; i++) {
+            for (let c = 0; c < a.itemSize; c++) {
+              o[i * a.itemSize + c] = a.getComponent(i, c);
+            }
+          }
+          return o;
+        };
+        const pos = flat(g.attributes.position);
+        const nor = g.attributes.normal ? flat(g.attributes.normal) : null;
+        const uv = g.attributes.uv ? flat(g.attributes.uv) : null;
+        const idx = g.index
+          ? Uint32Array.from(g.index.array.subarray(0, g.index.count))
+          : Uint32Array.from({ length: g.attributes.position.count }, (_, i) => i);
+        const weld = weldVertices({ position: pos, normal: nor, uv }, idx, 2);
+        const P = remapAttribute(Float32Array.from(pos), 3, weld.remap, weld.count);
+        const N = nor ? remapAttribute(Float32Array.from(nor), 3, weld.remap, weld.count) : null;
+        const U = uv ? remapAttribute(Float32Array.from(uv), 2, weld.remap, weld.count) : null;
+        const t1 = performance.now();
+        const prog = buildProgressive(
+          { positions: P, indices: weld.indices, attributes: U ? [{ data: U, size: 2, weight: 1 }] : [] },
+          { normals: N },
+        );
+        const t2 = performance.now();
+
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute("position", new THREE.BufferAttribute(P, 3));
+        if (N) {
+          geo.setAttribute("normal", new THREE.BufferAttribute(N, 3));
+        }
+        if (U) {
+          geo.setAttribute("uv", new THREE.BufferAttribute(U, 2));
+        }
+        // One index buffer, sized for the full model plus the distance chain.
+        const capacity = weld.indices.length * 2;
+        geo.setIndex(new THREE.BufferAttribute(new Uint32Array(capacity), 1));
+        if (state.mesh) {
+          // The previous model's GPU copies: its geometry (shared with the
+          // wireframe), the wireframe's material, and the glTF's material
+          // with its textures. Nothing else holds them once removed.
+          scene.remove(state.mesh, state.wire);
+          state.mesh.geometry.dispose();
+          state.wire.material.dispose();
+          disposeMaterial(state.mesh.material);
+        }
+        const mesh = new THREE.Mesh(geo, src.material);
+        const wire = new THREE.Mesh(
+          geo,
+          new THREE.MeshBasicMaterial({ color: 0x0b0f12, wireframe: true, transparent: true, opacity: 0.45 }),
+        );
+        wire.visible = $("wire").checked;
+        const box = new THREE.Box3().setFromBufferAttribute(geo.attributes.position);
+        const center = box.getCenter(new THREE.Vector3());
+        mesh.position.sub(center);
+        wire.position.copy(mesh.position);
+        scene.add(mesh, wire);
+        Object.assign(state, {
+          mesh,
+          wire,
+          prog,
+          positions: P,
+          lod0: weld.indices,
+          total: weld.indices.length / 3,
+          size: box.getSize(new THREE.Vector3()).length(),
+          weldMs: t1 - t0,
+          buildMs: t2 - t1,
+          chain: null,
+          errorCache: new Map(),
+          // Every level is measured against the full model: its search grid is
+          // built once here instead of on every measurement.
+          fullGrid: surfaceGrid(P, weld.indices),
+        });
+        $("quality").min = String(Math.max(1, Math.ceil((100 * prog.minTriangles) / state.total)));
+        placeCamera(state.size * 1.1);
+        applyQuality();
+      }
+
+      function disposeMaterial(material) {
+        for (const m of [material].flat()) {
+          for (const value of Object.values(m)) {
+            if (value && value.isTexture) {
+              value.dispose();
+            }
+          }
+          m.dispose();
+        }
+      }
+
+      function placeCamera(dist) {
+        const dir = camera.position.clone().sub(controls.target);
+        if (dir.lengthSq() < 1e-12) {
+          dir.set(0.6, 0.45, 1);
+        }
+        dir.setLength(dist);
+        controls.target.set(0, 0, 0);
+        camera.position.copy(dir);
+        camera.near = dist / 100;
+        camera.far = dist * 100;
+        camera.updateProjectionMatrix();
+      }
+
+      function writeIndex(parts) {
+        const attr = state.mesh.geometry.index;
+        let at = 0;
+        for (const p of parts) {
+          attr.array.set(p, at);
+          at += p.length;
+        }
+        attr.clearUpdateRanges();
+        attr.addUpdateRange(0, at);
+        attr.needsUpdate = true;
+      }
+
+      /** Largest deviation of a level from the full model, sampled, in metres. */
+      function levelError(steps, indices) {
+        if (!state.errorCache.has(steps)) {
+          const d = surfaceDistance(state.positions, state.lod0, state.positions, indices, 2500, state.fullGrid);
+          state.errorCache.set(steps, d.max);
+        }
+        return state.errorCache.get(steps);
+      }
+
+      let errorTimer = 0;
+      function applyQuality() {
+        const pct = Number($("quality").value);
+        state.quality = pct / 100;
+        const t0 = performance.now();
+        const steps = stepsFor(state.prog, Math.round(state.total * state.quality));
+        const indices = levelIndices(state.prog, steps);
+        writeIndex([indices]);
+        state.mesh.geometry.setDrawRange(0, indices.length);
+        const ms = performance.now() - t0;
+        $("qualityOut").textContent = pct + " %";
+        const base =
+          `<b>${fmt(indices.length / 3)}</b> of ${fmt(state.total)} triangles<br>` +
+          `Simplified once in <b>${state.buildMs.toFixed(0)} ms</b> (plus ${state.weldMs.toFixed(0)} ms to join split points)<br>` +
+          `This level made in <b>${ms.toFixed(1)} ms</b>`;
+        $("stats").innerHTML = base + "<br>Largest deviation: measuring...";
+        clearTimeout(errorTimer);
+        errorTimer = setTimeout(() => {
+          const err = steps === 0 ? 0 : levelError(steps, indices);
+          $("stats").innerHTML =
+            base +
+            `<br>Largest deviation: <b>${fmtLen(err)}</b> (${((100 * err) / state.size).toFixed(2)} % of the model's size)`;
+        }, 160);
+        state.chain = null;
+        chainToken++;
+      }
+
+      function buildChain() {
+        const top = Math.round(state.total * state.quality);
+        const parts = [];
+        const levels = [];
+        let start = 0;
+        for (const f of CHAIN) {
+          const steps = stepsFor(state.prog, Math.round(top * f));
+          const ix = levelIndices(state.prog, steps);
+          if (levels.length && ix.length >= levels[levels.length - 1].count) {
+            continue;
+          }
+          levels.push({ start, count: ix.length, error: steps === 0 ? 0 : levelError(steps, ix) });
+          parts.push(ix);
+          start += ix.length;
+        }
+        writeIndex(parts);
+        state.chain = levels;
+        $("levels").innerHTML = levels.map((l) => `<div>${fmt(l.count / 3)}</div>`).join("");
+      }
+
+      function distanceMetres() {
+        // 0..1000 on the slider maps to 1x .. 1000x the model's size, in log scale
+        return state.size * Math.pow(1000, Number($("distance").value) / 1000);
+      }
+
+      // Building the distance levels measures each one (0.2-0.9 s), so it is
+      // deferred behind a "measuring..." label, as the quality path does,
+      // rather than freezing the tap that asked for it.
+      let chainToken = 0;
+      function applyDistance() {
+        // A pending quality readout would overwrite this mode's stats.
+        clearTimeout(errorTimer);
+        if (state.chain === null) {
+          const token = ++chainToken;
+          $("levels").innerHTML = "";
+          $("stats").innerHTML = "Detail levels for this quality: measuring...";
+          requestAnimationFrame(() =>
+            setTimeout(() => {
+              if (token !== chainToken || state.mode !== "distance" || state.chain !== null) {
+                return;
+              }
+              buildChain();
+              applyDistance();
+            }, 0),
+          );
+          return;
+        }
+        const d = distanceMetres();
+        const fov = THREE.MathUtils.degToRad(camera.fov);
+        const pxPerMetre = canvas.clientHeight / (2 * d * Math.tan(fov / 2));
+        let pick = 0;
+        state.chain.forEach((l, i) => {
+          if (l.error * pxPerMetre <= PIXEL_BUDGET) {
+            pick = i;
+          }
+        });
+        const l = state.chain[pick];
+        state.mesh.geometry.setDrawRange(l.start, l.count);
+        [...$("levels").children].forEach((el, i) => el.classList.toggle("on", i === pick));
+        $("distanceOut").textContent = d < 10 ? d.toFixed(1) + " m" : fmt(Math.round(d)) + " m";
+        const finest = l.error * pxPerMetre > PIXEL_BUDGET ? " (the finest level this quality allows)" : "";
+        if (!$("closeUp").checked) {
+          placeCamera(d);
+        }
+        const onScreen = state.size * pxPerMetre;
+        $("stats").innerHTML =
+          `Drawn: level ${pick + 1} of ${state.chain.length}, <b>${fmt(l.count / 3)}</b> triangles<br>` +
+          `Its largest deviation, ${fmtLen(l.error)}, is <b>${(l.error * pxPerMetre).toFixed(2)} px</b> at this distance${finest}<br>` +
+          `The model is about ${onScreen < 1 ? "<1" : onScreen.toFixed(0)} px tall on this screen<br>` +
+          `Switching levels changes only which part of one index list is drawn.`;
+      }
+
+      function setMode(mode) {
+        state.mode = mode;
+        $("modeQuality").setAttribute("aria-pressed", String(mode === "quality"));
+        $("modeDistance").setAttribute("aria-pressed", String(mode === "distance"));
+        $("qualityBox").hidden = mode !== "quality";
+        $("distanceBox").hidden = mode !== "distance";
+        if (mode === "quality") {
+          placeCamera(state.size * 1.1);
+          applyQuality();
+        } else {
+          state.chain = null;
+          if ($("closeUp").checked) {
+            placeCamera(state.size * 1.1);
+          }
+          applyDistance();
+        }
+      }
+
+      MODELS.forEach((m, i) => {
+        const b = document.createElement("button");
+        b.textContent = m.label;
+        b.dataset.i = String(i);
+        b.setAttribute("aria-pressed", "false");
+        b.addEventListener("click", () => loadModel(i).then(() => setMode(state.mode)));
+        $("models").appendChild(b);
+      });
+      $("quality").addEventListener("input", () => state.prog && applyQuality());
+      $("distance").addEventListener("input", () => state.prog && applyDistance());
+      $("closeUp").addEventListener("change", () => {
+        if ($("closeUp").checked) {
+          placeCamera(state.size * 1.1);
+        }
+        applyDistance();
+      });
+      $("modeQuality").addEventListener("click", () => state.prog && setMode("quality"));
+      $("modeDistance").addEventListener("click", () => state.prog && setMode("distance"));
+      $("wire").addEventListener("change", () => {
+        if (state.wire) {
+          state.wire.visible = $("wire").checked;
+        }
+      });
+
+      renderer.setAnimationLoop(() => {
+        controls.update();
+        renderer.render(scene, camera);
+      });
+      loadModel(0);
+    </script>
+  </body>
+</html>

@@ -1,0 +1,126 @@
+<!doctype html>
+<!-- Prototype: the creator places the answers in the place, the visitor walks to one. Throwaway; not wired to the app. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="robots" content="noindex" />
+    <title>Creator Places Answers</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js"
+        }
+      }
+    </script>
+    <style>
+      .cp-intro {
+        position: fixed;
+        z-index: 30;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        padding: 16px;
+        background: rgb(8 10 14 / 55%);
+        font:
+          15px/1.42 Corbel,
+          "Noto Sans",
+          system-ui,
+          sans-serif;
+        color: #f3f5f7;
+      }
+      .cp-intro[hidden] {
+        display: none;
+      }
+      .cp-intro section {
+        box-sizing: border-box;
+        width: min(460px, 100%);
+        max-height: 100%;
+        overflow: auto;
+        padding: 16px 18px;
+        border: 1px solid rgb(255 255 255 / 15%);
+        border-radius: 18px;
+        background: rgb(12 16 21 / 94%);
+      }
+      .cp-intro h1 {
+        margin: 0 0 8px;
+        font-size: 19px;
+        line-height: 1.25;
+      }
+      .cp-intro p {
+        margin: 8px 0 0;
+      }
+      .cp-intro b {
+        color: #fff;
+      }
+      .cp-intro .muted {
+        color: #b3bcc6;
+        font-size: 13.5px;
+      }
+      .cp-intro button {
+        display: block;
+        width: 100%;
+        min-height: 48px;
+        margin-top: 14px;
+        border: 0;
+        border-radius: 14px;
+        background: #2dd4bf;
+        color: #04201c;
+        font: inherit;
+        font-size: 16px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      @media (orientation: landscape) and (max-height: 520px) {
+        .cp-intro section {
+          width: min(640px, 100%);
+          padding: 12px 16px;
+        }
+        .cp-intro p {
+          margin-top: 5px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="cp-intro" role="dialog" aria-labelledby="cpIntroTitle">
+      <section>
+        <h1 id="cpIntroTitle">The creator places the answers</h1>
+        <p>
+          <b>Why this is in 3D:</b> the place is the answer. The creator stands
+          each answer where it belongs, beside the fountain or under the tree,
+          and the visitor answers with their feet. A card with four buttons
+          cannot say "here".
+        </p>
+        <p>
+          <b>The strongest case against:</b> the phone's position is off by up
+          to 3.6 m for 9 readings in 10, so two answers a few metres apart blur
+          into one, and placing four markers is the heaviest step a creator has.
+          A card never misreads and needs no walking.
+        </p>
+        <p class="muted">
+          Try <b>Edit</b> first: drag a marker's ring, or walk and press Where I
+          stand or Where I aim. Move the warning slider and watch the red links.
+          Then <b>Play</b>, Continue, and walk into a circle. The white dot is
+          the simulated phone. Cost, Sample, crowded puts four answers 3 m
+          apart.
+        </p>
+        <button type="button" id="cpStart">Start</button>
+      </section>
+    </div>
+    <script type="module">
+      import { loadSamples, runStage } from "../quiz-world-stage/stage.js";
+      import { kind } from "./kind.js";
+
+      const intro = document.querySelector(".cp-intro");
+      document
+        .querySelector("#cpStart")
+        .addEventListener("click", () => (intro.hidden = true));
+      const samples = await loadSamples("./sample.json");
+      if (samples) runStage({ kind, samples, title: "Creator Places Answers" });
+    </script>
+  </body>
+</html>
