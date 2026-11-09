@@ -326,6 +326,7 @@ function tick() {
       toast(`${a.name} could not be optimized.${n ? " The original is used until it is." : ""}`, "Show", () => revealCard(a.id));
     } else if (a.progress >= 1) {
       a.state = "ready";
+      a.original = true;
       changed = true;
       onReady(a);
     }
@@ -345,6 +346,28 @@ function onReady(a) {
     );
   const cur = ui.sel && find(ui.sel);
   if (cur && cur.node.asset === a.id) ui.pulse = true;
+}
+
+/* Back to the original: it is in the draft until the next save lands. */
+function useOriginal(aid) {
+  const a = assetById(aid);
+  if (!a || a.state !== "ready" || !a.original) return;
+  a.state = "kept";
+  a.original = false;
+  markDirty();
+  renderAll();
+  toast(`${a.name}: the original (${fmt(a.before)}) is used again.`);
+}
+
+/* Only on request: the opened tour's files join the queue. */
+function optimizeTour() {
+  const idle = bySeq(assets.filter((a) => a.state === "idle"));
+  for (const a of idle) {
+    a.state = "queued";
+    a.seq = nextSeq++;
+  }
+  renderAll();
+  if (idle.length) toast(`${idle.length === 1 ? "1 file" : idle.length + " files"} of the tour queued to be made smaller.`);
 }
 
 function retry(aid) {
@@ -372,6 +395,14 @@ function stateLine(a) {
     const gain = Math.round((1 - a.after / a.before) * 100);
     return `<div class="cstate ready">${ic("check")}<span class="sz">${fmt(a.before)} → ${fmt(a.after)}</span><span class="gain">-${gain} %</span></div>`;
   }
+  /* A file of the opened tour waits for "Optimize this tour"; one whose
+   * original was chosen again keeps its first size. */
+  if (a.state === "idle") {
+    return `<div class="cstate idle">${ic("clock")}<span>In the tour, not made smaller</span></div>`;
+  }
+  if (a.state === "kept") {
+    return `<div class="cstate kept">${ic("check")}<span>The original is used</span><span class="sz">${fmt(a.before)}</span></div>`;
+  }
   return `<div class="cstate failed">${ic("alert")}<span>${a.retryable ? "Not optimized" : "Cannot be used"}</span>
     ${a.retryable ? `<button class="btn sm" type="button" data-act="retry">${ic("retry")}Retry</button>` : ""}
     <span class="why">${esc(a.reason)}</span></div>`;
@@ -395,10 +426,15 @@ function cardHtml(a) {
     const what = !k
       ? "Only sounds, pictures, videos and 3D models go into a tour."
       : a.state === "ready"
-        ? `Optimized to ${esc(k.target)}. The original is no longer in the tour.`
-        : `Becomes ${esc(k.target)}, about ${fmt(a.after)}. Until then the original (${fmt(a.before)}) is used.`;
+        ? `Optimized to ${esc(k.target)}. The original is kept until the next save, so you can still go back to it.`
+        : a.state === "idle"
+          ? `Part of the opened tour. "Optimize this tour" makes it smaller, about ${fmt(a.after)}.`
+          : a.state === "kept"
+            ? `The original (${fmt(a.before)}) is used; it is not made smaller again.`
+            : `Becomes ${esc(k.target)}, about ${fmt(a.after)}. Until then the original (${fmt(a.before)}) is used.`;
     more = `<div class="cmore">${what}
       <div class="btnrow">${k ? `<button class="btn" type="button" data-act="usein">${ic("plus")}Use in...</button>` : ""}
+      ${a.state === "ready" && a.original ? `<button class="btn" type="button" data-act="useorig">${ic("back")}Use the original</button>` : ""}
       ${n ? `<button class="btn" type="button" data-act="uses">${ic("jump")}Show where</button>` : ""}</div></div>`;
   }
   return `<div class="card ${a.state}${ui.openCard === a.id ? " open" : ""}${a.fresh ? " new" : ""}" data-aid="${a.id}" role="listitem">
@@ -413,6 +449,11 @@ function cardHtml(a) {
 
 function summaryHtml() {
   if (!assets.length) return "Nothing on the shelf yet.";
+  const idle = assets.filter((a) => a.state === "idle").length;
+  const optour = idle
+    ? `<span class="optour"><span>${idle === 1 ? "1 file" : idle + " files"} of the opened tour ${idle === 1 ? "is" : "are"} not made smaller.</span>
+      <button class="btn sm" type="button" data-act="optour">Optimize this tour</button></span>`
+    : "";
   const busy = assets.filter((a) => a.state === "processing" || a.state === "queued");
   const failed = assets.filter((a) => a.state === "failed").length;
   const before = assets.reduce((s, a) => s + a.before, 0);
@@ -420,10 +461,11 @@ function summaryHtml() {
   if (busy.length) {
     const tot = busy.reduce((s, a) => s + a.progress, 0) / busy.length;
     return `<b>Optimizing ${busy.length} of ${assets.length}</b>, you can keep working.${failed ? ` <span style="color:var(--danger)">${failed} failed.</span>` : ""}
-      <span class="bar" id="sumBar"><i style="width:${Math.round(tot * 100)}%"></i></span>`;
+      <span class="bar" id="sumBar"><i style="width:${Math.round(tot * 100)}%"></i></span>${optour}`;
   }
   const gain = Math.round((1 - after / before) * 100);
-  return `<b>${assets.length - failed} ready</b>${failed ? `, <span style="color:var(--danger)">${failed} failed</span>` : ""}. A phone downloads <span class="save">${fmt(after)}</span> instead of ${fmt(before)}${gain > 0 ? ` (-${gain} %)` : ""}.`;
+  const ready = assets.filter((a) => a.state === "ready" || a.state === "kept").length;
+  return `<b>${ready} ready</b>${failed ? `, <span style="color:var(--danger)">${failed} failed</span>` : ""}. A phone downloads <span class="save">${fmt(after)}</span> instead of ${fmt(before)}${gain > 0 ? ` (-${gain} %)` : ""}.${optour}`;
 }
 
 function renderShelf() {
@@ -448,8 +490,9 @@ function renderShelf() {
 
 const RING_C = 2 * Math.PI * 11;
 function renderRail() {
-  const show = assets.filter((a) => a.state !== "ready").slice(0, 7);
-  const rest = assets.filter((a) => a.state !== "ready").length - show.length;
+  const open = assets.filter((a) => a.state !== "ready" && a.state !== "idle" && a.state !== "kept");
+  const show = open.slice(0, 7);
+  const rest = open.length - show.length;
   const busy = assets.filter((a) => a.state === "processing" || a.state === "queued").length;
   const failed = assets.filter((a) => a.state === "failed").length;
   const badge = failed
@@ -1066,6 +1109,7 @@ $("#shelfList").addEventListener("click", (e) => {
   if (!card) return;
   const aid = card.dataset.aid;
   if (act === "retry") return retry(aid);
+  if (act === "useorig") return useOriginal(aid);
   if (act === "uses") return usesMenu(actEl, aid);
   if (act === "usein") return useInMenu(actEl, aid);
   if (act === "del") {
@@ -1093,6 +1137,9 @@ $("#shelfList").addEventListener("keydown", (e) => {
     e.preventDefault();
     e.target.click();
   }
+});
+$("#shelfSum").addEventListener("click", (e) => {
+  if (e.target.closest('[data-act="optour"]')) optimizeTour();
 });
 $("#shelfChips").addEventListener("click", (e) => {
   const b = e.target.closest("[data-filter]");
@@ -1201,5 +1248,13 @@ window.addEventListener("resize", () => {
 
 /* Notes open on a roomy screen, folded where they would cover the work. */
 if (window.innerWidth >= 1000 && window.innerHeight >= 600) $("#notes").open = true;
+/* The opened tour's own files: on the shelf, idle until "Optimize this tour". */
+for (const a of addBatch([
+  { name: "market-square.jpg", size: 6.2 * MB },
+  { name: "church-bells.wav", size: 18.4 * MB },
+])) {
+  a.state = "idle";
+  a.fresh = false;
+}
 renderAll();
 renderInsp();

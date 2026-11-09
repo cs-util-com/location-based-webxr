@@ -1128,6 +1128,24 @@ textarea.tfield {
   color: var(--danger);
 }
 
+.cstate.idle {
+  color: var(--muted);
+}
+
+.cstate.kept {
+  flex-wrap: nowrap;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.sumline .optour {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
 .cstate .ph {
   flex: 1;
   min-width: 0;
