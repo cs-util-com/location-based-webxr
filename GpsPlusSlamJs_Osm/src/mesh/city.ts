@@ -40,7 +40,7 @@ import {
 } from "./chunk-meshes.js";
 import type { EnuFrame, EnuPoint } from "./enu.js";
 import { buildingColour, roadColour, roofColour } from "./feature-colours.js";
-import { buildRoads } from "./roads.js";
+import { buildRoads, type BuildRoadsOptions } from "./roads.js";
 import { shellRandFor } from "./shell-rand.js";
 import { buildTrees, type TreePlacement } from "./trees.js";
 
@@ -76,9 +76,12 @@ export interface CityOptions {
    * Also build the roads and paths (`buildRoads`: ribbons draped per vertex
    * on the ground, tunnels and highway areas left out), chunked and
    * coloured by class and surface (`roadColour`). Default false: a
-   * consumer that draws none builds none.
+   * consumer that draws none builds none. An object builds them with
+   * `buildRoads`'s look options (`CityRoadOptions`), so an audit or a
+   * before/after page can switch the class lift or the mitre off; `true`
+   * and `{}` take the builder's defaults.
    */
-  readonly roads?: boolean;
+  readonly roads?: boolean | CityRoadOptions;
   /**
    * Which colours a building without a colour tag takes (city objects plan
    * 2026-11-07-2315 M7). `"seeded"` (default): the warm palette of
@@ -88,6 +91,17 @@ export interface CityOptions {
    */
   readonly palette?: BuildingPalette;
 }
+
+/**
+ * The road look a city may set (`buildRoads`'s options): `rankStepM` the
+ * lift between two road classes (0 puts every road on the ground, as before
+ * M4a), `mitreLimit` the longest mitre before a join is bevelled (1
+ * bevels every turn). Invalid values throw `RangeError` from the builder.
+ */
+export type CityRoadOptions = Pick<
+  BuildRoadsOptions,
+  "mitreLimit" | "rankStepM"
+>;
 
 /** What `buildCity` returns. */
 export interface City {
@@ -230,9 +244,11 @@ export function buildCity(
           : { colour: item.roof, vertexRanges: item.roofVertexRanges },
     ),
   );
-  const { roads, roadCount } = options.roads
-    ? cityRoads(all, ground, inside, tagsByKey)
-    : { roads: [], roadCount: 0 };
+  const roadOptions = roadBuildOptions(options.roads, ground);
+  const { roads, roadCount } =
+    roadOptions === undefined
+      ? { roads: [], roadCount: 0 }
+      : cityRoads(all, roadOptions, inside, tagsByKey);
   // Every built footprint excludes, not only the kept ones: a house just
   // outside `withinM` still has no tree growing through it.
   const cosmeticTrees =
@@ -265,13 +281,32 @@ function drawsPitchedRoof(volume: BuildingVolume): boolean {
 }
 
 /**
+ * `buildRoads`'s options for `CityOptions.roads`, or undefined when no roads
+ * are asked for. Only the road look's own keys are taken from an object, so a
+ * caller's object carries nothing else (a `frame`, say) into the builder.
+ */
+function roadBuildOptions(
+  roads: CityOptions["roads"],
+  ground: CityGround,
+): BuildRoadsOptions | undefined {
+  if (roads === undefined || roads === false) return undefined;
+  if (roads === true) return ground;
+  const { mitreLimit, rankStepM } = roads;
+  return {
+    ...ground,
+    ...(mitreLimit === undefined ? {} : { mitreLimit }),
+    ...(rankStepM === undefined ? {} : { rankStepM }),
+  };
+}
+
+/**
  * The roads of a city, within its window, merged per chunk with a colour
  * per vertex (class and surface, `roadColour`). OsmDemo's worker did this
  * inline until the globe needed the same (round-4 plan 2026-10-11-0122).
  */
 function cityRoads(
   all: readonly OsmFeature[],
-  ground: CityGround,
+  ground: BuildRoadsOptions,
   inside: (p: EnuPoint) => boolean,
   tagsByKey: ReadonlyMap<string, OsmFeature["tags"]>,
 ): { roads: MeshChunk[]; roadCount: number } {

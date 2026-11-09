@@ -125,13 +125,10 @@ export { buildRegionSlabs } from "./region-slabs.js";
 
 export type { BuildRoadsOptions, RoadRibbon } from "./roads.js";
 export {
-  ROAD_MITRE_LIMIT,
-  ROAD_RANK_STEP_M,
   buildRoads,
   isBridgeCrossing,
   isPedestrianPath,
   isRoad,
-  roadRank,
   roadWidthM,
 } from "./roads.js";
 
@@ -230,6 +227,6 @@ export {
   cosmeticRank,
   cosmeticTreeSource,
 } from "./cosmetic-trees.js";
-export type { City, CityGround, CityOptions } from "./city.js";
+export type { City, CityGround, CityOptions, CityRoadOptions } from "./city.js";
 export { buildCity, cityGround } from "./city.js";
 export { shellRandFor } from "./shell-rand.js";

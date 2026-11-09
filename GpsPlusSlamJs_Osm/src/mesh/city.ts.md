@@ -50,6 +50,14 @@ buildings, trees, cosmeticTrees, roads, roadCount }`. `window` (a lat/lng
   `roadCount`. Without it `roads` is empty and `roadCount` 0: a consumer
   that draws no roads builds none. OsmDemo chunked and coloured them inline
   in its worker until 2026-10-11.
+- `roads` may instead be a `CityRoadOptions` object, `{ rankStepM?,
+mitreLimit? }` (city objects plan 2026-11-07-2315 M4a, review MINOR 4):
+  roads are built, with `buildRoads`'s look options passed through, so an
+  audit or a before/after page can switch the class lift off (`rankStepM:
+0`) or bevel every turn (`mitreLimit: 1`). `{}` and `true` take the
+  builder's defaults; only those two keys are passed on, and an invalid value
+  throws the builder's `RangeError`. The defaults themselves are not on the
+  package entry: `roads.ts.md`.
 - `buildCity(features, ground, { palette })` picks the colours of a
   building without colour tags (city objects plan 2026-11-07-2315 M7):
   `"seeded"` (default) the warm palette of `building-palette.ts`, picked from

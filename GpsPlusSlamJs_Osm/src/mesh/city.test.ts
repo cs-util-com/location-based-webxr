@@ -397,6 +397,56 @@ describe("buildCity with roads", () => {
     expect(Math.max(...ys)).toBeGreaterThan(413);
   });
 
+  // WHY (M4a review MINOR 4, plan section 4's rule that a look decision stays
+  // switchable): an audit or a before/after page must reach the road lift and
+  // the mitre through `buildCity`, the one way every app builds its roads.
+  it("takes the road options through to the builder", () => {
+    const heights = (roads: Parameters<typeof buildCity>[2]["roads"]) => {
+      const ys: number[] = [];
+      for (const chunk of buildCity(
+        [ROAD, PATH],
+        { frame },
+        { window: W, roads },
+      ).roads) {
+        const p = chunk.mesh.positions;
+        for (let i = 1; i < p.length; i += 3) ys.push(p[i]!);
+      }
+      return ys;
+    };
+    // The default lifts the classes off the ground; a rank step of 0 does not.
+    expect(Math.max(...heights(true))).toBeGreaterThan(0);
+    expect(heights({ rankStepM: 0 }).every((y) => y === 0)).toBe(true);
+    expect(Math.max(...heights({ mitreLimit: 4 }))).toBeGreaterThan(0);
+
+    // A 90 degree corner: mitred at the default limit, bevelled at 1.2.
+    const corner: OsmFeature = {
+      type: "way",
+      id: 24,
+      tags: { highway: "residential" },
+      geometry: [
+        { lat: 50.9412, lng: 6.958 },
+        { lat: 50.9412, lng: 6.9585 },
+        { lat: 50.9416, lng: 6.9585 },
+      ],
+    };
+    const triangles = (roads: Parameters<typeof buildCity>[2]["roads"]) =>
+      buildCity([corner], { frame }, { window: W, roads }).roads.reduce(
+        (sum, chunk) => sum + chunk.mesh.indices.length / 3,
+        0,
+      );
+    expect(triangles({ mitreLimit: 1.2 })).toBe(triangles(true) + 1);
+    expect(triangles({})).toBe(triangles(true));
+  });
+
+  it("refuses invalid road options as the builder does", () => {
+    expect(() =>
+      buildCity([ROAD], { frame }, { window: W, roads: { mitreLimit: 0.5 } }),
+    ).toThrow(RangeError);
+    expect(() =>
+      buildCity([ROAD], { frame }, { window: W, roads: { rankStepM: -1 } }),
+    ).toThrow(RangeError);
+  });
+
   it("keeps only the roads inside the window", () => {
     const city = buildCity(
       [ROAD, FAR_ROAD],
