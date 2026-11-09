@@ -144,6 +144,12 @@ import {
   type DoneSaved,
   type WalkMoveOutcome,
 } from "./done-dialog.js";
+import { assetPlaces } from "./asset-shelf/asset-places.js";
+import { selectShelfRows } from "./asset-shelf/asset-shelf-slice.js";
+import {
+  createShelfPanel,
+  type ShelfPanel,
+} from "./asset-shelf/shelf-panel.js";
 import {
   TOUR_HOSTS,
   hostOfLink,
@@ -1702,6 +1708,91 @@ function addToStoryEntry(storyId: string, kind: AddKind): void {
 /** The file picker the add menu's file kinds open. */
 const filePicker = createFilePicker(document.body);
 
+/** The asset shelf's panel of the open tour (`asset-shelf/shelf-panel.ts`). */
+let shelfPanel: ShelfPanel | null = null;
+
+/** A phone's layout: the shelf is a sheet (shelf-panel.css's width). */
+const phoneLayout = window.matchMedia("(width <= 700px)");
+phoneLayout.addEventListener("change", () => {
+  shelfPanel?.refresh();
+});
+
+/**
+ * Files put on the shelf (its "Add files..."), each read and listed as
+ * the add does (`addFile`), used nowhere yet: a save leaves out what no
+ * place uses. A refusal is said by the file; the last one added is shown.
+ */
+async function addToShelf(files: readonly File[]): Promise<void> {
+  const open = editor;
+  if (open === null || files.length === 0) return;
+  let added: string | null = null;
+  let count = 0;
+  let backedUp = true;
+  for (const file of files) {
+    const outcome = await open.addFile(file, file.name);
+    if (editor !== open) return;
+    if (outcome.kind === "refused") {
+      toast(`${file.name}: ${outcome.reason}`);
+      continue;
+    }
+    added = outcome.asset.id;
+    count += 1;
+    if (!outcome.backedUp) backedUp = false;
+  }
+  if (added === null) return;
+  shelfPanel?.reveal(added);
+  toast(
+    count === 1
+      ? "The file is on the shelf."
+      : `${String(count)} files are on the shelf.`,
+  );
+  if (!backedUp) toast(FILE_NOT_KEPT);
+}
+
+/** The shelf's panel for the tour just opened, on its session's shelf. */
+function openShelfPanel(open: EditorSession): void {
+  shelfPanel?.destroy();
+  shelfPanel = createShelfPanel({
+    root: element("shell-shelf"),
+    toggle: element<HTMLButtonElement>("shelf-toggle"),
+    pill: element<HTMLButtonElement>("shelf-pill"),
+    host: document.body,
+    rows: () => selectShelfRows(store.getState()),
+    subscribe: (listener) => store.subscribe(listener),
+    retry: (id) => open.shelf.retry(id),
+    useOriginal: (id) => open.shelf.useOriginal(id),
+    remove: (id) => open.shelf.remove(id),
+    optimizeTour: () => open.shelf.optimizeTour(),
+    addFiles: () => {
+      void filePicker.pickMany().then(addToShelf);
+    },
+    placesOf: (id) =>
+      assetPlaces(
+        manifestToWrite(store.getState().tourDocument)?.stations ?? [],
+        id,
+      ),
+    show: (selection) => {
+      select(selection, true);
+    },
+    toast: (text, action) => {
+      toast(
+        text,
+        action === undefined
+          ? undefined
+          : {
+              label: action.label,
+              run: (button) => {
+                button.disabled = true;
+                action.run();
+              },
+            },
+      );
+    },
+    storage: browserStorage(),
+    phone: () => phoneLayout.matches,
+  });
+}
+
 /**
  * The add of a `kind` item from a file at `at` (`add-file-item.ts`):
  * `file` when given (a drop), else the one picked. While the file is read
@@ -2407,6 +2498,8 @@ function dropTour(reason: string): void {
   const open = session;
   session = null;
   editor = null;
+  shelfPanel?.destroy();
+  shelfPanel = null;
   model = null;
   fileKey = null;
   tourDraft = null;
@@ -2608,6 +2701,7 @@ async function openFile(
   });
   model = editor.model();
   openedLevels = outcome.levels;
+  openShelfPanel(editor);
   // The debug data switch only for a tour that carries a walk (S-D10:
   // the saved copy leaves it out unless asked, E2 plan review #4), and
   // unticked (M2 of the debug-captures plan, E2): the walk is saved apart.

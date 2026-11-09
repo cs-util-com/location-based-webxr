@@ -884,6 +884,22 @@ is said instead; an entry goes without a
 question, the toast's Undo taking it back and saying how many answers no
 longer lead to it. Every delete shares `deleted`, the toast and its Undo.
 
+### The asset shelf's panel
+
+Once a tour is open, `openShelfPanel` builds the shelf's panel
+(`asset-shelf/shelf-panel.ts`) in `#shell-shelf`, with the bar's
+`#shelf-toggle` and the phone's `#shelf-pill`, on that session's shelf; it
+is destroyed when the tour goes (`dropTour`). It reads
+`selectShelfRows(store.getState())` and redraws on the store's changes; its
+places come from `assetPlaces` over the manifest to write, and a place's
+button selects it with a pan (`select(selection, true)`). A phone is
+`(width <= 700px)`, the width at which shelf-panel.css makes it a sheet;
+a change of it redraws the panel. "Add files..." opens the picker for
+several files of every kind (`filePicker.pickMany`) and `addToShelf`
+reads each one onto the shelf through the session's `addFile`, used
+nowhere yet (a save leaves out what nothing uses): a refusal is said per
+file, the last file added is revealed and a toast says how many arrived.
+
 ## Tests
 
 The modules it wires have their own unit tests; the page is pinned by

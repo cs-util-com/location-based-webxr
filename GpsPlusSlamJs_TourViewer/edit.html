@@ -11,6 +11,7 @@
     <!-- The 3D view's studio shell (editor-shell.ts): applied while the
          3D view shows. -->
     <link rel="stylesheet" href="/src/editor/editor-shell/editor-shell.css" />
+    <link rel="stylesheet" href="/src/editor/asset-shelf/shelf-panel.css" />
     <!-- A long text's writer in the inspector and its phone preview
          (long-text-writer.ts, long-text-preview.ts). -->
     <link rel="stylesheet" href="/src/editor/long-text/long-text-editor.css" />
@@ -383,6 +384,11 @@
         <div class="dhead" id="inspector-head"></div>
         <div class="dbody" id="inspector-body"></div>
       </aside>
+      <!-- The asset shelf: right of the inspector, folding to a rail of
+           rings; a sheet on a phone, with its pill over the map while it
+           is closed (asset-shelf/shelf-panel.ts fills both). -->
+      <aside class="dock" id="shell-shelf" aria-label="Assets"></aside>
+      <button id="shelf-pill" type="button" hidden></button>
       <div id="map-controls">
         <div class="pill">
           <button
@@ -516,6 +522,19 @@
       <!-- The bottom panel's toggles, a badge on each only when there is
            something to see (bottom-panel.ts draws them). -->
       <div id="shell-toggles" role="group" aria-label="Panels"></div>
+      <button
+        class="tog"
+        id="shelf-toggle"
+        type="button"
+        aria-controls="shell-shelf"
+        aria-label="Assets"
+        aria-pressed="true"
+      >
+        <svg class="i" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M2 5.5l6-3 6 3-6 3z" />
+          <path d="M2 5.5v5l6 3 6-3v-5M8 8.5v5" /></svg
+        ><span class="tl">Assets</span>
+      </button>
     </footer>
 
     <!-- The debug layer (debug-capture-layer.ts): the walk's camera
