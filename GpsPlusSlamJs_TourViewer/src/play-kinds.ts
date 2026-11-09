@@ -39,7 +39,7 @@ export interface KindPlay<B extends TourBlock> {
   /** Its part in the world (`world-part.ts`), built for `env.mode`; null
    *  in a view that stands nothing. Absent: the kind stands nothing through
    *  the world door (the stands and signs are the renderer's own drawings,
-   *  a free character the free host's). */
+   *  a free character's in play the free host's). */
   world?(block: B, env: WorldEnv): WorldPart | null;
 }
 
