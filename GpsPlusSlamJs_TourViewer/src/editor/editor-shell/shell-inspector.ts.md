@@ -99,7 +99,7 @@ content` (Chromium, the editor's browser; elsewhere it stays three
     group's name once on entering it, so two blocks' "Title" fields are
     told apart by their group without the head said again per field. A story block's text field is named
     `block:<id>:<field>` and drawn as an item's other texts are
-    (`blockTextField`, its count under it). Where these controls sit is this build's choice, made before the
+    (`blockTextField`, its count under it; a number field, a sound's radius, reach or volume, is a decimal box with its unit and no count). Where these controls sit is this build's choice, made before the
     owner's prototype round on the editor's character UI.
   - A story's choice or quiz: its summary (`ul.steplines`), read here and
     not edited, and "Delete choice" / "Delete quiz".
@@ -139,7 +139,13 @@ content` (Chromium, the editor's browser; elsewhere it stays three
 - A station's line ("Station n of N", `.sub`) holds Earlier and Later
   (`data-act` `earlier` / `later`, icon buttons named "Earlier in the
   tour" and "Later in the tour", disabled at the tour's ends): the
-  keyboard's way to reorder.
+  keyboard's way to reorder. A story's and an entry's line holds the same
+  pair ("Earlier in the story", "Later in the story", or "among the
+  stories" for a story), and the commands add one Move button per target
+  of `moves` (`data-act` `move-to:<list>`), and, where `moves.stations`
+  is not empty, a "Move to station..." picker (`select[data-move-station]`,
+  named "Move to station", its first option disabled) whose choice the
+  shell moves to that station's centre, asked first.
 - The selection's commands in words (`.acts`, the prototype's): a
   station's "Put items on the ground"
   (`ground-items`, its note "N off", off when none is) and "Delete

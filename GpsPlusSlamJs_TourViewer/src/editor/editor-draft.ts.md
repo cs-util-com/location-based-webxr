@@ -69,13 +69,19 @@ editor's own namespace, one tab at a time. Design:
     `deleted`, `made?` - the ids among `objects` that are copies made here
     (below), `pictures?` - those copies' photo bytes by id, `settings?` -
     the record when the file does not carry it,
-    `text` from `restoreOfferText`, changes and deletions named apart, a
+    `text` from `restoreOfferText`, changes and deletions named apart (an
+    item moved between a story and the free items is its station's
+    changed frame alone: its object record or tombstone is neither a
+    change nor a deletion of its own), a
     changed setting counted as a change and NAMED with its value - "It is
     "This tour needs no GPS" turned on." alone, "One of the changes is
     ..." beside notes, M1b-2 milestone review #3; changed details counted
     one per field and named by field - "Changed: the tour's details (name,
     contact)." - W2; moved stations counted one each and named "the
-    position of a station" / "the positions of N stations"),
+    position of a station" / "the positions of N stations"; changes and
+    deletions are counted by id, so one a moved station carries is not
+    counted twice, and each smaller file for an asset of the opened file
+    counts as one change of its own),
     `settingsWhat` (how `restoredLine` names the settings part: the
     setting, "this tour's details", "this tour's station positions", or
     "this tour's settings" for more than one kind), or null; `superseded` -

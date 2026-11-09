@@ -80,6 +80,10 @@ export interface FinishInput {
   /** Assets the page's undo history still names (`historyAssetIds`):
    *  kept, with their files, though the written tour does not name them. */
   readonly keepAssets?: ReadonlySet<string>;
+  /** Assets a story block of an undo step names (`historyStoryAssetIds`):
+   *  kept even where a captured photo's own image would go with the photo
+   *  (`withKeptAssets`). */
+  readonly keepStoryAssets?: ReadonlySet<string>;
   /** Read-along entries (`timing/<blockId>.json`, relative to the tour's
    *  folder) the undo history still names (`historyTimingEntries`): kept,
    *  though no narration of the written tour names them. */
@@ -151,6 +155,10 @@ export interface FinishedManifestInput {
   /** Assets another view of the tour still names (its undo history,
    *  `historyAssetIds`): kept though the written tour does not. */
   readonly keepAssets?: ReadonlySet<string>;
+  /** Assets a story block of an undo step names (`historyStoryAssetIds`):
+   *  kept even where a captured photo's own image would go with the photo
+   *  (`withKeptAssets`). */
+  readonly keepStoryAssets?: ReadonlySet<string>;
 }
 
 /**
@@ -173,22 +181,60 @@ export function finishedManifest(input: FinishedManifestInput): TourManifest {
   // into the station it names, and an asset nothing names any more is
   // dropped (`tour-content.ts`).
   return withReferencedAssets(
-    withTourContent(
-      { ...untitled, ...(title === undefined ? {} : { title }) },
-      {
-        // Never an id twice, and not for tidiness: the serializer REJECTS
-        // duplicates, so one restored object that is already in the
-        // manifest would make every finish throw - for as long as the
-        // draft is restored, with no escape inside the app (M5 review #4).
-        objects: applyObjectChanges(
-          tourObjects(manifest),
-          input.placed.map((p) => p.object),
-          input.deleted,
-        ),
-      },
+    withKeptAssets(
+      manifest,
+      withTourContent(
+        { ...untitled, ...(title === undefined ? {} : { title }) },
+        {
+          // Never an id twice, and not for tidiness: the serializer REJECTS
+          // duplicates, so one restored object that is already in the
+          // manifest would make every finish throw - for as long as the
+          // draft is restored, with no escape inside the app (M5 review #4).
+          objects: applyObjectChanges(
+            tourObjects(manifest),
+            input.placed.map((p) => p.object),
+            input.deleted,
+          ),
+        },
+      ),
+      input.keepStoryAssets,
     ),
     input.keepAssets,
   );
+}
+
+/**
+ * `written` with the assets of `source` that `keep` (the undo steps'
+ * story blocks) names and the content step dropped put back, in
+ * `source`'s order: `withTourContent` drops a captured photo's own image
+ * once no written item names it, which is right for a photo deleted where
+ * it stood free (its cover and card image go with it, and the page keeps
+ * its bytes for an undo) but not for one an undo step still shows inside
+ * a story (a photo moved into a story that was then deleted): without
+ * this the undo across the save brought the picture back without its
+ * file.
+ */
+function withKeptAssets(
+  source: TourManifest,
+  written: TourManifest,
+  keep: ReadonlySet<string> | undefined,
+): TourManifest {
+  if (keep === undefined || keep.size === 0) return written;
+  const has = new Set(written.assets.map((a) => a.id));
+  const back = new Set(
+    source.assets
+      .filter((a) => keep.has(a.id) && !has.has(a.id))
+      .map((a) => a.id),
+  );
+  if (back.size === 0) return written;
+  const inSource = new Set(source.assets.map((a) => a.id));
+  return {
+    ...written,
+    assets: [
+      ...source.assets.filter((a) => has.has(a.id) || back.has(a.id)),
+      ...written.assets.filter((a) => !inSource.has(a.id)),
+    ],
+  };
 }
 
 /** The zip entries a write removes: the file of every asset the write

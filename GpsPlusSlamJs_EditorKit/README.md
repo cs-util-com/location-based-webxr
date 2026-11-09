@@ -23,7 +23,7 @@ imports alike).
   lines (`status-lines`), the ground wait (`ground-wait`), the shell's
   icons (`shell-icons`), the docks' fold rule and its default layout
   (`dock-rule`), the tree's reorder, drag and click rules (`tree-reorder`,
-  `tree-drag`, `tree-click`) and the scene's menu (`scene-menu`). An
+  `tree-drag`, `tree-nest-drag`, `tree-click`) and the scene's menu (`scene-menu`). An
   editor's page loads it statically.
 - `gps-plus-slam-editor-kit/scene` (`src/scene/`, not created yet) - the 3D
   scene's blocks; brings three. An editor's page reaches it by `import()`

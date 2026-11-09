@@ -25,7 +25,11 @@ reason; no production module imports it.
 - `TOUR_FREE_VIEWS` - the views a free block of each kind may take: a table of its own, equal to the format's `TOUR_FREE_BLOCK_VIEWS` (a test holds the two together), so every world view is round-tripped.
 - `tourBlockArbitrary(id, 'free' | 'story', kinds?)` - a valid version 5
   block record: a free one in a view its kind may stand free in, a story one in any view of its
-  kind.
+  kind. An audio block's world fields come from the format's own bounds
+  (`radiusM` from the radius ones, `maxM` from the reach ones) and its
+  optional inner calm `minM` lies within the reach bounds and below `maxM`
+  when both stand, so the reader's `minM < maxM` rule is under property
+  coverage.
 - `tourStationChildrenArbitrary({ maxStories?, maxFreeBlocks?,
 maxStoryChildren? })` - a valid version 5 children list (defaults 4, 4,
   5): titled stories (possibly empty) of blocks in any view with an

@@ -84,6 +84,11 @@ function model(ctx: PanelContext): KindPanel {
   });
 }
 
+/** A kind's panel maker, or null for a kind without one. */
+type KindPanelList = {
+  readonly [K in TourBlockKind]: ((ctx: PanelContext) => KindPanel) | null;
+};
+
 /** THE list, in the format's order. */
 export const KIND_PANELS = {
   shortText: null,
@@ -93,9 +98,7 @@ export const KIND_PANELS = {
   audio: null,
   model,
   character: null,
-} as const satisfies {
-  readonly [K in TourBlockKind]: ((ctx: PanelContext) => KindPanel) | null;
-};
+} as const satisfies KindPanelList;
 
 /** The shell's panels, answering for the selection. */
 export interface KindPanels {
@@ -109,20 +112,25 @@ export interface KindPanels {
   flush(): void;
 }
 
-/** The panels of `KIND_PANELS`, made once with `ctx`. */
-export function createKindPanels(ctx: PanelContext): KindPanels {
+/** The panels of `list` (`KIND_PANELS`), made once with `ctx`. */
+export function createKindPanels(
+  ctx: PanelContext,
+  list: KindPanelList = KIND_PANELS,
+): KindPanels {
   const made = new Map<TourBlockKind, KindPanel>();
   for (const kind of tourBlockKinds()) {
-    const make: ((c: PanelContext) => KindPanel) | null = KIND_PANELS[kind];
+    const make = list[kind];
     if (make !== null) made.set(kind, make(ctx));
   }
   return {
     sync(selection) {
       const item = selection?.kind === "item" ? selection : null;
+      // Every panel follows; only the selected kind's draw is shown.
       let drawn: KindPanelDraw | null = null;
       for (const [kind, panel] of made) {
-        const draw = panel.sync(item?.itemKind === kind ? item : null);
-        if (draw !== null) drawn = draw;
+        const selected = item?.itemKind === kind;
+        const draw = panel.sync(selected ? item : null);
+        if (selected) drawn = draw;
       }
       return drawn;
     },

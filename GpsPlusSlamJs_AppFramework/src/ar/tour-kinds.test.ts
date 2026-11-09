@@ -222,3 +222,64 @@ describe('the minor a kind brings', () => {
     expect(tourBlockMinor(block('hologram', 'card'), later)).toBe(0);
   });
 });
+
+describe('an audio item in the world', () => {
+  const read = (view: string | null, fields: Record<string, unknown>) =>
+    TOUR_KINDS.audio.read(
+      { id: 'a', kind: 'audio', view, audio: 'bell', ...fields },
+      view,
+      contextFor('a')
+    );
+
+  it('stands as a narration circle or an ambient zone, free', () => {
+    // Why: the two world views are what a station shows of a sound; the
+    // card alone reaches nothing when the item stands free.
+    expect(TOUR_KINDS.audio.views).toEqual(['spot', 'zone', 'card']);
+    expect(TOUR_KINDS.audio.freeViews).toEqual(['spot', 'zone']);
+    expect(TOUR_KINDS.audio.worldViews).toEqual(['spot', 'zone']);
+    expect(TOUR_KINDS.audio.floor).toBe('spot');
+  });
+
+  it('reads a narration circle by its radius, required there', () => {
+    // Why: the circle is where the player opens; without a radius the
+    // creator's choice would be lost to a default nobody saw.
+    expect(read('spot', { radiusM: 6 })).toMatchObject({ radiusM: 6 });
+    expect(() => read('spot', {})).toThrow(/radiusM/);
+    expect(() => read('spot', { radiusM: 0.5 })).toThrow(/radiusM/);
+    expect(() => read('spot', { radiusM: 'x' })).toThrow(/radiusM/);
+  });
+
+  it('reads an ambient zone by its reach, inner calm and volume', () => {
+    // Why: reach and volume decide what is heard; the inner radius is
+    // optional (full volume only at the centre without it) and must lie
+    // inside the reach, or the loudness curve would run backwards.
+    expect(read('zone', { maxM: 20, volume: 0.5 })).toEqual({
+      audio: 'bell',
+      maxM: 20,
+      volume: 0.5,
+    });
+    expect(read('zone', { maxM: 20, minM: 5, volume: 1 })).toMatchObject({
+      minM: 5,
+    });
+    expect(() => read('zone', { volume: 1 })).toThrow(/maxM/);
+    expect(() => read('zone', { maxM: 20 })).toThrow(/volume/);
+    expect(() => read('zone', { maxM: 20, volume: 1.5 })).toThrow(/volume/);
+    expect(() => read('zone', { maxM: 20, minM: 20, volume: 1 })).toThrow(
+      /minM/
+    );
+  });
+
+  it('keeps the other view fields when present, so a view switch keeps them', () => {
+    // Why: the editor switches between the two views; the fields of the
+    // other one are kept (and still checked), so switching back loses
+    // nothing. A card in a story reads the same way.
+    expect(read('card', { radiusM: 6, maxM: 20, volume: 0.5 })).toMatchObject({
+      radiusM: 6,
+      maxM: 20,
+      volume: 0.5,
+    });
+    expect(read('card', {})).toEqual({ audio: 'bell' });
+    expect(read(null, {})).toEqual({ audio: 'bell' });
+    expect(() => read('card', { volume: -1 })).toThrow(/volume/);
+  });
+});

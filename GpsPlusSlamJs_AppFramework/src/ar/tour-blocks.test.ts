@@ -420,7 +420,7 @@ describe('views', () => {
       longText: ['lectern', 'reading', 'card'],
       picture: ['plane', 'card'],
       video: ['card'],
-      audio: ['card'],
+      audio: ['spot', 'zone', 'card'],
       model: ['placed', 'ghost', 'hotspots', 'cutaway', 'toy', 'stage', 'card'],
       character: [
         'stage',
@@ -448,13 +448,18 @@ describe('views', () => {
   it('a free block stands in a view its kind has for standing free', () => {
     // Why: a text, a picture or a model has a look in the world, so a card
     // would be a block nobody can reach, and a staged figure lives only
-    // while a story runs. A video and a sound stand free in `card` until
-    // their world views join the format.
+    // while a story runs. A video stands free in `card` until its world
+    // views join the format; a sound stands as a circle or a zone.
     for (const kind of ['shortText', 'picture', 'model'] as const) {
       expect(parse([VALID[kind]], { shown: [] })).toHaveLength(1);
     }
-    for (const kind of ['video', 'audio'] as const) {
-      expect(parse([VALID[kind]], { shown: [] })[0]?.view).toBe('card');
+    expect(parse([VALID.video], { shown: [] })[0]?.view).toBe('card');
+    expect(() => parse([VALID.audio], { shown: [] })).toThrow(
+      /stands free in its station/
+    );
+    for (const view of ['spot', 'zone']) {
+      const sound = { ...VALID.audio, view, radiusM: 6, maxM: 20, volume: 1 };
+      expect(parse([sound], { shown: [] })[0]?.view).toBe(view);
     }
     expect(() => parse([VALID.longText], { shown: [] })).toThrow(
       /stands free in its station/
@@ -488,7 +493,7 @@ describe('views', () => {
     expect(tourFloorView('model')).toBe('placed');
     expect(tourFloorView('longText')).toBe('reading');
     expect(tourFloorView('video')).toBe('card');
-    expect(tourFloorView('audio')).toBe('card');
+    expect(tourFloorView('audio')).toBe('spot');
     expect(tourFloorView('character')).toBe('speak');
     for (const kind of Object.keys(
       TOUR_FREE_BLOCK_VIEWS
@@ -705,6 +710,8 @@ describe("a model's views, notes, sections and clip", () => {
       'lectern',
       'reading',
       'plane',
+      'spot',
+      'zone',
       ...TOUR_MODEL_WORLD_VIEWS,
     ]);
   });

@@ -260,7 +260,7 @@ function declaredOf(row: ItemRow): readonly string[] {
   const kind = kindOfRow.get(row);
   return kind === undefined
     ? itemAssets(block(row.fields), characters)
-    : kind.assets(kind.sample.block);
+    : kind.assets(kind.block);
 }
 
 function stationOf(fields: Record<string, unknown>): TourStation {
@@ -681,12 +681,21 @@ describe("the free host's table", () => {
   });
 
   // Why this test matters: a kind that imported the app would need the app's
-  // build, which is what a folder of the gallery does not have.
-  it.each(KINDS)("$name imports nothing", ({ name }) => {
+  // build, which is what a folder of the gallery does not have; and a second
+  // copy of three (a CDN link, an addon) would not be the renderer's. So a
+  // kind imports three by name and nothing else, with no import() at all.
+  it.each(KINDS)("$name imports three only", ({ name }) => {
     const path = fileURLToPath(new URL(`${name}/kind.js`, KINDS_DIR));
-    expect(readFileSync(path, "utf8")).not.toMatch(
-      /^\s*(import|export\s.+\sfrom)\b|\bimport\(/m,
+    const source = readFileSync(path, "utf8");
+    expect(source).not.toMatch(/\bimport\(/);
+    const from = [
+      ...source.matchAll(/^\s*(?:import|export)\b[^;]*?\bfrom\s+"([^"]+)"/gm),
+    ];
+    expect(from.map((m) => m[1])).toEqual(
+      from.length === 0 ? [] : from.map(() => "three"),
     );
+    // A bare side-effect import names no binding and slips past the above.
+    expect(source).not.toMatch(/^\s*import\s+"/m);
   });
 });
 
@@ -763,17 +772,19 @@ describe.each(STANDS)("the item contract, in the free host: $name", (item) => {
   // Why this test matters: a free item's words live in its look, so a lost
   // figure takes them along and the visitor is told only that it failed. No
   // sheet exists to hold them; the day one does this row goes red.
-  it.fails(
-    "keeps its words when its files are lost: known, there is no free sheet yet",
-    async () => {
-      const side = freeSide(item, () =>
-        Promise.reject(new Error("the file is gone")),
-      );
-      side.arrive();
-      await flush();
-      expect([...side.lines, ...side.failures].join(" ")).toContain(item.words);
-    },
-  );
+  // The gap is pinned as it is, not by `it.fails`, which a crash anywhere
+  // in the row would pass as well.
+  it("loses its words with its files: known, there is no free sheet yet", async () => {
+    const side = freeSide(item, () =>
+      Promise.reject(new Error("the file is gone")),
+    );
+    side.arrive();
+    await flush();
+    expect(side.failures.length).toBeGreaterThan(0);
+    expect([...side.lines, ...side.failures].join(" ")).not.toContain(
+      item.words,
+    );
+  });
 
   it("reports its voice's end once however often it ends", async () => {
     const side = freeSide(item);

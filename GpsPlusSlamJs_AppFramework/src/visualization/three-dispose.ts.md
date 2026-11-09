@@ -34,6 +34,7 @@ export function disposeMeshArray(
 - Disposes the material and every `Texture`-valued property of it (by three's `isTexture` flag: `map`, `normalMap`, `emissiveMap`, ...; a texture in two slots once) on Mesh and Sprite instances (skipped if `opts.skipMaterial`). Until the tour kit K4 review (R12) only `map` was freed, which leaked a loaded GLB's other maps.
 - A ShaderMaterial's `uniforms` are NOT walked: a uniform often holds a texture another object owns (the camera blit sets its camera texture there), so freeing uniform textures is the caller's decision.
 - Shared resources (same geometry/material/texture on multiple objects) are disposed only once.
+- Each resource is freed under its own guard: a `dispose` that throws (a broken geometry in a loaded model) strands none of the others in the tree, and the first error is rethrown after every resource was tried, so the failure still reaches the caller.
 - Does **not** remove `root` from its parent — callers handle that.
 
 ### `disposeMeshArray(meshes, parent?, opts?)`

@@ -25,11 +25,13 @@ import { describe, expect, it } from "vitest";
 import { facingRotation } from "./character-views";
 import { rotationFromHeading } from "./content-placement";
 import { pickObject } from "./object-pick";
+import { SILENT_SOUND, type WorldSound } from "./world-sound";
 import {
   mountedWorldParts,
   mountWorldPart,
   canvasTexture,
   tapShownWorldPart,
+  tickWorldParts,
   unmountWorldPart,
   worldEnv,
   type WorldPart,
@@ -292,5 +294,95 @@ describe("worldEnv", () => {
       expect(env.canvasTexture(canvas()).colorSpace).toBe(SRGBColorSpace);
     }
     expect(asked).toEqual(["content/song.mp3", "content/song.mp3"]);
+  });
+
+  // Why: a model part reads its file through the page, which parses the
+  // file (a glb needs the page's loader) and switches the renderer's
+  // clipping on for a cutaway. A page that reads no model refuses by
+  // name, so a part fails into `skipped` instead of hanging.
+  it("reads a model through the page's parser and passes on the clipping switch, or refuses without one", async () => {
+    const assets = [
+      { id: "horse", path: "content/horse.glb", kind: "model" as const },
+    ];
+    const blob = new Blob(["glb"]);
+    const model = new Object3D();
+    const parsed: Blob[] = [];
+    let clipping = 0;
+    const env = worldEnv("play", assets, () => Promise.resolve(blob), {
+      parseModel: (b) => {
+        parsed.push(b);
+        return Promise.resolve(model);
+      },
+      enableClipping: () => (clipping += 1),
+    });
+    await expect(env.loadModel("horse")).resolves.toBe(model);
+    expect(parsed).toEqual([blob]);
+    await expect(env.loadModel("gone")).rejects.toThrow(/"gone"/);
+    env.enableClipping();
+    expect(clipping).toBe(1);
+
+    const bare = worldEnv("edit", assets, () => Promise.resolve(blob));
+    await expect(bare.loadModel("horse")).rejects.toThrow(/reads no model/);
+    expect(() => bare.enableClipping()).not.toThrow();
+  });
+});
+
+describe("the world's sound and frame", () => {
+  it("hands a part the page's sound in play, and only silence in edit", async () => {
+    // Why: the editor shows the same part still and silent; a sound asked
+    // for in edit must never reach the page's seam.
+    const asked: string[] = [];
+    const seam: WorldSound = {
+      sound: (load, channel) => {
+        asked.push(channel);
+        void load();
+        return SILENT_SOUND;
+      },
+    };
+    const assets = [
+      { id: "song", path: "content/song.mp3", kind: "audio" as const },
+    ];
+    const loaded: string[] = [];
+    const load = (path: string) => {
+      loaded.push(path);
+      return Promise.resolve(new Blob(["x"]));
+    };
+    worldEnv("play", assets, load, { sound: seam }).sound("song", "background");
+    worldEnv("edit", assets, load, { sound: seam }).sound("song", "voice");
+    await Promise.resolve();
+    expect(asked).toEqual(["background"]);
+    expect(loaded).toEqual(["content/song.mp3"]);
+  });
+
+  it("ticks the shown parts with the page clock and the viewer in their parent's frame", () => {
+    // Why: a sound's loudness and a circle's edge are distances from the
+    // viewer; the part reads them in its own parent's frame (a station's
+    // group, turned and moved), never the scene's.
+    const { scene, shown, hidden } = stage();
+    shown.position.set(10, 0, 0);
+    shown.rotation.y = Math.PI / 2;
+    const frames: { s: number; v: readonly number[] }[] = [];
+    const part = (parent: Object3D): WorldPart => {
+      const object = new Group();
+      parent.add(object);
+      return {
+        object,
+        update: (f) => frames.push({ s: f.seconds, v: [...f.viewer] }),
+        dispose: () => undefined,
+      };
+    };
+    const parts = [part(shown), part(hidden)];
+    const camera = new Object3D();
+    camera.position.set(10, 1.5, -3);
+    tickWorldParts(scene, camera, 2500, parts);
+    expect(frames).toHaveLength(1);
+    expect(frames[0]?.s).toBe(2.5);
+    const [x, y, z] = frames[0]?.v ?? [];
+    expect(x).toBeCloseTo(3);
+    expect(y).toBeCloseTo(1.5);
+    expect(z).toBeCloseTo(0);
+    tickWorldParts(null, camera, 0, parts);
+    tickWorldParts(scene, null, 0, parts);
+    expect(frames).toHaveLength(1);
   });
 });

@@ -63,8 +63,8 @@ them.
   - The tour's content (`tour.json`, M5) is rendered once per session as
     soon as the gate allows it and the GPS zero exists
     (`renderTourStation`: a group per station at its geo pose, its
-    free blocks (pins, pictures and, since B2b, placed models through
-    `seams.loadGlbModel` over the same read, and since minor 3 a long
+    free blocks (pins, pictures, placed models through the world
+    door, parsed by `seams.loadGlbModel` over the same read, and since minor 3 a long
     text's reading stand through `mountLectern`, since minor 4 its
     reading sign through `mountReadingSign`) as children at their local
     poses, the
@@ -237,9 +237,13 @@ them.
 ## The world door and the reading sign's tap
 
 - The renderer deps carry `worldPart`: `play-kinds.ts` `worldPartOf` with a
-  `world-part.ts` `worldEnv("play", manifest.assets, loadContent)`, so a
+  `world-part.ts` `worldEnv("play", manifest.assets, loadContent, options)`,
+  `options` being `{ sound, screen, parseModel, enableClipping }` (the optional `worldSound` dep,
+  `main.ts`'s `createWorldSound`, absent: silent; the optional
+  `worldScreen` dep, `main.ts`'s `screenIn(#narration-card-root)`, absent:
+  no panel; `seams.loadGlbModel` and `seams.enableClipping`), so a
   kind's row decides its part in the world and reads its files through the
-  visitor's prefetch.
+  visitor's prefetch; a placed model stands this way too.
 - The optional `openReading(block)` dep (`main.ts`: the reading sheet) is
   passed to `mountReadingSign`; without it a sign takes no tap.
 

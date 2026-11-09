@@ -10,7 +10,9 @@ defensive read and write of the one storage key.
 ## Public API
 
 - `VISITOR_PREFS_KEY` - `tour-viewer.visitor.prefs.v1`, one key per
-  device.
+  device. Its `views` are this module's; its `sound` ("on" or "off") is
+  `sound-setting.ts`'s. Each writer merges into a fresh read, so neither
+  loses the other's field.
 - `viewSetOf(kind, view)` - the `ViewSet` (`kind`, `placement` world or
   screen, `members`, `floor`) a view belongs to, or null. Today one set:
   a long text's world views `reading`, `lectern` and `captions`;
@@ -55,6 +57,9 @@ defensive read and write of the one storage key.
   one set, `fails(view)` saying whether a member's needs fail; what
   `shownView` uses, and what pins rule 4 on a set of three.
 - `loadVisitorPrefs(storage)` - the parsed value, or null; never throws.
+- `prefsRoot(stored)` - the stored value as its own object (the framework's
+  `isRecord`, an array excluded), or a fresh `{}`: the base every write
+  merges into (`withPreferredView`, `sound-setting.ts`).
 - `saveVisitorPrefs(storage, value)` - true when written; false when the
   storage is missing or throws (the choice then lasts the visit).
 - `storeVisitorChoice(storage, inStore, kind, placement, view | null)` -

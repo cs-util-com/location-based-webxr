@@ -21,6 +21,7 @@ import {
   selectAlignmentMatrix,
 } from "gps-plus-slam-app-framework/state";
 import { debugUiEnabledFromSearch } from "gps-plus-slam-app-framework/utils/debug-flag";
+import { guardSlidersIn } from "gps-plus-slam-app-framework/utils/slider-scroll-guard";
 import {
   createTapCounter,
   wantsRecording,
@@ -52,7 +53,14 @@ import {
 import { loadVisitorPrefs, storeVisitorChoice } from "./visitor-prefs.js";
 import { readingSheetContent } from "./reading-sign.js";
 import "./model-visitor.css";
-import { tapShownWorldPart } from "./world-part.js";
+import { screenIn, tapShownWorldPart, tickWorldParts } from "./world-part.js";
+import { createWorldSound } from "./world-sound.js";
+import {
+  bindSoundToggle,
+  createSoundSetting,
+  silencedFocus,
+  whileShown,
+} from "./sound-setting.js";
 import { wireArEntry } from "./ar-entry.js";
 import { createAuthoringRecording } from "./authoring-recording.js";
 import { arSessionLive, wireCreatorSetup } from "./creator-setup.js";
@@ -896,7 +904,22 @@ const escapeButton = element<HTMLButtonElement>("scan-escape");
 // The visitor's narrated texts (one voice per text, shared by its sheet
 // and its captions strip; each read-along read when its text opens).
 // Their voices are read through the stations' prefetch cache.
-const voiceFocus = createVoiceFocus();
+// Sound on or off for every tour: off holds the running voice and lets
+// none start by itself (the list's sound button). A hidden page is silent
+// as well.
+const soundSetting = createSoundSetting({ storage: stepStore });
+const audible = whileShown(soundSetting, document, window);
+bindSoundToggle(element<HTMLButtonElement>("walk-sound"), soundSetting);
+// A vertical swipe that starts on a slider (the narration card's scrub
+// bar) scrolls instead of moving it.
+guardSlidersIn(document);
+// A tap that plays any voice with sound off turns it on: the toggle tells
+// the truth.
+const voiceFocus = silencedFocus(createVoiceFocus(), audible, {
+  turnOn: () => {
+    soundSetting.set(true);
+  },
+});
 const narration = createNarrationVisitor({
   focus: voiceFocus,
   tour: () => ctx.session,
@@ -907,7 +930,27 @@ const narration = createNarrationVisitor({
     walkToast.announce(message);
   },
 });
+// The free sounds in the world: a narration on the voice channel above,
+// an ambient sound in the background, lowered under any voice.
+const worldSound = createWorldSound({
+  focus: voiceFocus,
+  sound: audible,
+  onError: () => {
+    const message = "A sound could not be played here.";
+    walkToast.say([message]);
+    walkToast.announce(message);
+  },
+});
 const viewer = createViewerPlacement({
+  worldSound,
+  // Where a narration circle opens its player card.
+  worldScreen: screenIn(element("narration-card-root"), {
+    onError: () => {
+      const message = "A narration card could not be shown again.";
+      walkToast.say([message]);
+      walkToast.announce(message);
+    },
+  }),
   ctx,
   mode,
   arStore,
@@ -1077,6 +1120,9 @@ hooks.tickStations = () => {
   captionsFollow?.sync();
   // A model's view, its notes and its card.
   modelVisitor.tick(performance.now());
+  // The free items' parts in the world: a sound's distance, a circle's
+  // inside.
+  tickWorldParts(seams.getScene(), seams.getViewerCamera(), performance.now());
 };
 hooks.stationCodeLocked = stations.codeLocked;
 hooks.unlockStationAudio = stations.unlockAudio;

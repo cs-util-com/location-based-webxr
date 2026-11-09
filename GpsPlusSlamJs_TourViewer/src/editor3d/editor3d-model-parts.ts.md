@@ -46,9 +46,9 @@ or a section's place in the model file's own space.
 ## Invariants and assumptions
 
 - Places are in the model file's own space: the drawn object is the glb's
-  root with the tour's scale, rotation and position set on it
-  (`editor3d-stations.ts` `placeModels`), so `worldToLocal` undoes exactly
-  those.
+  root with the tour's scale on it, in a part placed at the tour's pose
+  (`kinds/model/world.ts`, through `editor3d-stations.ts`), so
+  `worldToLocal` undoes exactly those.
 - Uniform scale only (the format's `sizeM`): the normal's direction
   transform is a rotation.
 - The parts read the tour every frame and keep nothing of it: a redrawn

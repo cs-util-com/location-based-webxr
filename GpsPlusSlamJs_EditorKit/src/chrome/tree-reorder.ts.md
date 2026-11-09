@@ -20,6 +20,13 @@ app's.
   `RangeError` for a `from` or a `slot` outside the list or not a whole
   number.
 
+- `movedAcross(lists, from, to)` -> `lists` (ids per list) with the item
+  at `from = { list, index }` moved to the slot `to = { list, slot }`: inside
+  one list by `movedTo`, across two out of the one and into the other at
+  that slot (a list not yet in `lists` counts as empty). Null when it stays
+  where it was; a `RangeError` for an unknown source list, a place or a
+  slot outside its list. The nested drag (`tree-nest-drag.ts`) moves by it.
+
 ## Invariants & assumptions
 
 - `middles` are top to bottom, in the same coordinates as `y`.
@@ -40,4 +47,6 @@ movedTo(["a", "b", "c"], 1, 2); // null: dropped where it was
 `tree-reorder.test.ts`: the slot at, before and after the middles and an
 empty list; moves in both directions; the null drop; the refusals; a
 property over random lists, places and slots (every id once, the moved
-one where it was dropped, the others in order).
+one where it was dropped, the others in order); `movedAcross` inside and
+across lists, into an empty one, its refusals, and a property that nothing
+is lost or doubled and that the move back restores the lists.

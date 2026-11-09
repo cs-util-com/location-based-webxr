@@ -87,7 +87,11 @@ signature, a broken series list (M6 design §5, cold review #2). Design:
   model, not the cover; `withReferencedAssets` of `tour-content.ts`) leaves the
   written manifest, and its file leaves the zip - unless `keepAssets`
   (the page's undo history, `historyAssetIds`) names it: an undo across
-  the save must still find it.
+  the save must still find it. `keepStoryAssets` (`historyStoryAssetIds`, the
+  undo steps' story blocks only) wins over the captured photo's rule
+  (`withKeptAssets`); a cover or card image does not: a photo moved into a story that was then
+  deleted is named by the undo step that shows it there, so its image
+  stays listed and its file in the zip.
 - **Read-along entries:** a `timing/<name>.json` no narration of the
   written tour names (`unnamedTimingEntryNames` of `tour-read-set.ts`, over
   `visitorEntryNames`) leaves the zip, by the same keep rule as an asset:

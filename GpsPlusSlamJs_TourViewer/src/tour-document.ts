@@ -20,6 +20,7 @@
 
 import {
   isTourStory,
+  tourChildPlace,
   tourStationChildIds,
   tourStationStoryBlocks,
   tourStories,
@@ -135,6 +136,12 @@ import {
   stepRequiredAssetIds,
 } from "./tour-content.js";
 import { sameJson } from "./same-json.js";
+import {
+  movedChild,
+  movedToStation,
+  type ChildMoveRefusal,
+  type ChildMoveTo,
+} from "./station-children-moves.js";
 import type { CodeMeasurement } from "./visit-settle.js";
 
 export type { LevelText } from "./code-book.js";
@@ -265,6 +272,14 @@ export interface TourSaveStatus {
    *  ends); with the slot free the disk holds `inPlaceAt`, and it counts
    *  for nothing. */
   readonly inPlaceWriting: number | "elsewhere" | null;
+  /** The ids of the files (assets) the tour last written IN PLACE holds,
+   *  named once that write arrived (`saveDelivered`); null while none of
+   *  this open did (a reload then opens the opened file). A download
+   *  leaves it: the file on disk stays what it was. */
+  readonly inPlaceAssets: readonly string[] | null;
+  /** The ids of the files the in-place build named by `inPlaceWriting`
+   *  holds, until its write arrives (they then become `inPlaceAssets`). */
+  readonly writingAssets: readonly string[] | null;
   /** An undo or a redo crossed the in-place file (`stepCrossesInPlaceSave`)
    *  and no save was claimed since: the page writes the file again as soon
    *  as no save runs (D33). */
@@ -388,6 +403,8 @@ const IDLE: TourSaveStatus = {
   cannotSave: false,
   inPlaceAt: null,
   inPlaceWriting: null,
+  inPlaceAssets: null,
+  writingAssets: null,
   resave: false,
 };
 
@@ -1109,6 +1126,24 @@ export function historyAssetIds(state: TourDocumentState): Set<string> {
 }
 
 /**
+ * The assets the undo and redo steps' STORY BLOCKS name (`stepAssetIds`),
+ * a part of `historyAssetIds`: a write keeps them even where they are a
+ * captured photo's own (`keepStoryAssets` of `finishedManifest`), as a
+ * photo moved into a story that was then deleted comes back with an undo
+ * inside that story, needing its file. A cover or card image naming a
+ * deleted photo does not keep its image (it goes with the photo).
+ */
+export function historyStoryAssetIds(state: TourDocumentState): Set<string> {
+  const ids = new Set<string>();
+  for (const { view } of [...state.past, ...state.future]) {
+    for (const frame of view.stations) {
+      for (const id of stepAssetIds(frame)) ids.add(id);
+    }
+  }
+  return ids;
+}
+
+/**
  * The read-along entries (`timing/<blockId>.json`, relative to the
  * tour's folder) the undo and redo steps' long texts name, story or free:
  * a write keeps them (`keepEntries`), as `historyAssetIds` keeps assets,
@@ -1142,6 +1177,7 @@ export function manifestToWrite(state: TourDocumentState): TourManifest | null {
     placed: state.placed,
     deleted: state.deleted,
     keepAssets: historyAssetIds(state),
+    keepStoryAssets: historyStoryAssetIds(state),
   });
 }
 
@@ -1360,8 +1396,9 @@ function sameFrame(a: StationFrame, b: StationFrame | undefined): boolean {
  *  ...), each station added that no object's placement accounts for, each
  *  empty station deleted (one holding items is counted by their deletes),
  *  one for a new order of the stations, the setting, and each detail
- *  field. The frames are compared as the next write carries them
- *  (`manifestNow`). */
+ *  field; an item moved between a story and the free items counts once,
+ *  as its station's frame. The frames are compared as the next write
+ *  carries them (`manifestNow`). */
 export function changeCount(state: TourDocumentState): number {
   const written = state.written;
   const base = manifestNow(state);
@@ -1370,9 +1407,23 @@ export function changeCount(state: TourDocumentState): number {
   const nowFrames = framesOf(base);
   const nowIds = new Set(nowFrames.map((f) => f.id));
   const named = new Set(documentObjects(state).map((o) => o.object.station));
-  const changed = nowFrames.filter(
+  const reframed = nowFrames.filter(
     (f) => writtenFrames.has(f.id) && !sameFrame(f, writtenFrames.get(f.id)),
-  ).length;
+  );
+  const changed = reframed.length;
+  // An item moved between a story and the free items (`childMoved`) is
+  // one change: its station's frame, counted above - not its object
+  // record, or its tombstone, as well. Such an item is a story entry of
+  // that frame on one side of the move.
+  const moved = new Set(
+    reframed.flatMap((f) => {
+      const was = writtenFrames.get(f.id);
+      return [
+        ...tourStationChildIds(f),
+        ...(was === undefined ? [] : tourStationChildIds(was)),
+      ];
+    }),
+  );
   const added = nowFrames.filter(
     (f) => !writtenFrames.has(f.id) && !named.has(f.id),
   ).length;
@@ -1382,8 +1433,8 @@ export function changeCount(state: TourDocumentState): number {
   const now = effectiveDetails(state);
   const details = DETAIL_FIELDS.filter((f) => now[f] !== written[f]).length;
   return (
-    unsavedEntries(state).length +
-    state.deleted.length +
+    unsavedEntries(state).filter((e) => !moved.has(e.object.id)).length +
+    state.deleted.filter((id) => !moved.has(id)).length +
     changed +
     added +
     removed +
@@ -2621,12 +2672,13 @@ function allFrames(state: TourDocumentState): StationFrame[] {
  *  works on, listed whatever it holds. */
 function framesToList(
   state: TourDocumentState,
-  editedId?: string,
+  ...editedIds: (string | undefined)[]
 ): StationFrame[] {
   const own = new Set(state.stations.map((f) => f.id));
   const named = new Set(documentObjects(state).map((o) => o.object.station));
+  const wanted = new Set(editedIds);
   return allFrames(state).filter(
-    (f) => own.has(f.id) || named.has(f.id) || f.id === editedId,
+    (f) => own.has(f.id) || named.has(f.id) || wanted.has(f.id),
   );
 }
 
@@ -2637,11 +2689,11 @@ function framesToList(
  *  emptied one stays unlisted). */
 function framesHolding(
   state: TourDocumentState,
-  stationId: string,
+  ...stationIds: string[]
 ): readonly StationFrame[] {
-  return state.stations.some((s) => s.id === stationId)
+  return stationIds.every((id) => state.stations.some((s) => s.id === id))
     ? state.stations
-    : framesToList(state, stationId);
+    : framesToList(state, ...stationIds);
 }
 
 /** What a copy's title adds to the original's. */
@@ -2882,6 +2934,176 @@ function storyChildDelete(
   if (before.written === null || frame === undefined) return before;
   const out = withoutStoryChild(frame, payload.child);
   return out === null ? before : frameReplaced(before, out.frame, payload.what);
+}
+
+/** Whether the tour a reload opens holds every file `block` names: the
+ *  one last written in place once that write arrived (`inPlaceAssets`: a
+ *  write still running, or one that failed, does not count, and a
+ *  download after it leaves it on disk), else the one opened here. */
+function filesOnDisk(
+  state: TourDocumentState,
+  block: { readonly kind?: unknown },
+): boolean {
+  const held = new Set(
+    state.save.inPlaceAssets ?? (state.opened?.assets ?? []).map((a) => a.id),
+  );
+  return tourBlockAssetIds(block).every((a) => held.has(a));
+}
+
+/** Whether `id` is a free item naming a file the tour a reload opens does
+ *  not hold yet (`filesOnDisk`): it cannot go into a story until a save
+ *  in place, or an open of the saved file, puts that file there - the
+ *  move's `unsaved` refusal, which the tree's drag and the inspector ask
+ *  before they offer a story. */
+export function freeItemUnsaved(state: TourDocumentState, id: string): boolean {
+  const manifest = manifestToWrite(state);
+  const place = manifest === null ? null : tourChildPlace(manifest, id);
+  if (place === null || place.story !== undefined) return false;
+  const block = tourFreeBlocks(place.station).find((b) => b.id === id);
+  return block !== undefined && !filesOnDisk(state, block);
+}
+
+/** What a move of the station item `id` (`childMoved`) would do, by the
+ *  move rule (`station-children-moves.ts`) over the station as the next
+ *  write carries it: the station after it, how many answers lost their
+ *  jump and whether the item took its kind's world floor; nothing; or why
+ *  not. One refusal more than the rule's: `unsaved`, a free item naming a
+ *  file the tour a reload opens does not hold yet (`freeItemUnsaved`: a
+ *  photo taken here, a file brought in, until a save in place). A
+ *  story's entries are drafted in the station's frame, which a reload
+ *  reads against that tour's files, so that frame would be lost. */
+export function childMoveChange(
+  state: TourDocumentState,
+  id: string,
+  to: ChildMoveTo,
+):
+  | {
+      readonly kind: "moved";
+      readonly stations: readonly TourStation[];
+      readonly answers: number;
+      readonly floored: boolean;
+    }
+  | { readonly kind: "unchanged" }
+  | {
+      readonly kind: "refused";
+      readonly reason: Exclude<ChildMoveRefusal, "unchanged"> | "unsaved";
+    } {
+  const manifest = manifestToWrite(state);
+  const place = manifest === null ? null : tourChildPlace(manifest, id);
+  if (place === null) return { kind: "refused", reason: "missing" };
+  if (to.place === "station") {
+    // Onto another station: a free item there stays an object record, a
+    // story stays in the frames, so a file a reload lacks loses nothing.
+    const target = manifest?.stations.find((s) => s.id === to.station);
+    if (target === undefined) return { kind: "refused", reason: "missing" };
+    const across = movedToStation(place.station, target, id);
+    if ("refused" in across) {
+      return across.refused === "unchanged"
+        ? { kind: "unchanged" }
+        : { kind: "refused", reason: across.refused };
+    }
+    return {
+      kind: "moved",
+      stations: [across.from, across.to],
+      answers: across.answers,
+      floored: across.floored,
+    };
+  }
+  const out = movedChild(place.station, id, to);
+  if ("refused" in out) {
+    return out.refused === "unchanged"
+      ? { kind: "unchanged" }
+      : { kind: "refused", reason: out.refused };
+  }
+  const leaving =
+    place.story === undefined
+      ? tourFreeBlocks(place.station).find((b) => b.id === id)
+      : undefined;
+  if (leaving !== undefined && !filesOnDisk(state, leaving)) {
+    return { kind: "refused", reason: "unsaved" };
+  }
+  return {
+    kind: "moved",
+    stations: [out.station],
+    answers: out.answers,
+    floored: out.floored,
+  };
+}
+
+/** A station item moved (`childMoved`), as one step: the station's frame
+ *  takes its stories as the move leaves them; a free item leaving is
+ *  deleted as an object (a tombstone for one the file holds), and one
+ *  arriving is put as an object at the world place its pose in the
+ *  station gives (a tombstone of its id withdrawn). */
+function childMove(
+  before: TourDocumentState,
+  payload: { id: string; to: ChildMoveTo; what: string },
+): TourDocumentState {
+  const { id } = payload;
+  const change = childMoveChange(before, id, payload.to);
+  if (before.written === null || change.kind !== "moved") return before;
+  const { stations } = change;
+  const all = allFrames(before);
+  const next = new Map<string, StationFrame>();
+  for (const station of stations) {
+    const frame = all.find((f) => f.id === station.id);
+    if (frame === undefined) return before;
+    next.set(frame.id, { ...frame, children: tourStories(station) });
+  }
+  // The station whose free items hold the item after the move, if any.
+  const holder = stations.find((s) =>
+    tourFreeBlocks(s).some((b) => b.id === id),
+  );
+  const found = documentObjects(before).find((o) => o.object.id === id);
+  let lists = { placed: [...before.placed], deleted: [...before.deleted] };
+  if (found !== undefined && holder === undefined) {
+    lists = deleteObject(lists, found);
+  } else if (holder !== undefined) {
+    const [at] = tourObjects({
+      stations: [
+        {
+          ...holder,
+          children: tourFreeBlocks(holder).filter((b) => b.id === id),
+        },
+      ],
+      assets: manifestNow(before)?.assets ?? [],
+    });
+    if (at === undefined) return before;
+    // A free item that stays free (onto another station) keeps its own
+    // record, its new station and place aside; one arriving from a story
+    // is read from its block.
+    const object =
+      found === undefined
+        ? at
+        : {
+            ...found.object,
+            geo: at.geo,
+            ...(at.station === undefined ? {} : { station: at.station }),
+          };
+    lists = {
+      placed: upsertPlaced(lists.placed, { object }),
+      deleted: lists.deleted.filter((d) => d !== id),
+    };
+  }
+  const ids = [...next.keys()];
+  const frames = framesHolding(before, ...ids).map((s) => next.get(s.id) ?? s);
+  const placed = lists.placed;
+  // The station an item left may be an automatic one it emptied.
+  const left = ids.length > 1 ? ids[0] : undefined;
+  return edited(
+    before,
+    {
+      placed,
+      deleted: lists.deleted,
+      stations: withoutEmptied(
+        { ...before, placed, deleted: lists.deleted, stations: frames },
+        [left],
+      ),
+      touched: { ...before.touched, stations: true },
+      framesRecorded: true,
+    },
+    payload.what,
+  );
 }
 
 /** A station added at `at` (`stationAdded`), as one step: untitled (named
@@ -3428,6 +3650,14 @@ const tourDocumentSlice = createSlice({
     ) {
       return storyChildDelete(plain(state), action.payload);
     },
+    /** A station item moved (`childMoveChange`): one step; a refused
+     *  move changes nothing. */
+    childMoved(
+      state,
+      action: PayloadAction<{ id: string; to: ChildMoveTo; what: string }>,
+    ) {
+      return childMove(plain(state), action.payload);
+    },
     /** A station added at `at`, untitled (the tree names it by its
      *  number), with the automatic radii and nothing in it: it keeps
      *  itself as added by hand (`handMade`). Its id is minted outside the
@@ -3809,13 +4039,17 @@ const tourDocumentSlice = createSlice({
           action.payload.timings === undefined
             ? before.timingsWritten
             : { ...before.timingsWritten, ...action.payload.timings },
-        // An in-place write names its view once it arrives
-        // (`saveDelivered`); a download leaves no in-place file.
+        // An in-place write names its view and its files once it arrives
+        // (`saveDelivered`); a download names no in-place view, and the
+        // files on disk stay what the last write in place left there.
         save: saveWith(
           before.save,
           action.payload.inPlaceAt === undefined
-            ? { inPlaceAt: null, inPlaceWriting: null }
-            : { inPlaceWriting: action.payload.inPlaceAt },
+            ? { inPlaceAt: null, inPlaceWriting: null, writingAssets: null }
+            : {
+                inPlaceWriting: action.payload.inPlaceAt,
+                writingAssets: written.assets.map((a) => a.id),
+              },
         ),
       };
     },
@@ -3893,9 +4127,15 @@ const tourDocumentSlice = createSlice({
         save: saveWith(before.save, {
           delivered: action.payload,
           error: null,
-          // The in-place write arrived: the disk holds its view now.
+          // The in-place write arrived: the disk holds its view and its
+          // files now.
           ...(action.payload.inPlace && before.save.inPlaceWriting !== null
-            ? { inPlaceAt: before.save.inPlaceWriting, inPlaceWriting: null }
+            ? {
+                inPlaceAt: before.save.inPlaceWriting,
+                inPlaceWriting: null,
+                inPlaceAssets: before.save.writingAssets,
+                writingAssets: null,
+              }
             : {}),
         }),
       };
@@ -4149,6 +4389,7 @@ export const isDocumentEdit = isAnyOf(
   tourDocumentActions.storyDeleted,
   tourDocumentActions.storyChildAdded,
   tourDocumentActions.storyChildDeleted,
+  tourDocumentActions.childMoved,
   tourDocumentActions.stationAdded,
   tourDocumentActions.stationDeleted,
   tourDocumentActions.stationsReordered,

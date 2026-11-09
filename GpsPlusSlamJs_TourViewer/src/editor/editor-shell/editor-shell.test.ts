@@ -171,6 +171,7 @@ function setUp() {
     stations: {
       add: vi.fn(),
       reorder: vi.fn(),
+      moveChild: vi.fn(),
       split: vi.fn(),
       duplicate: vi.fn(),
       remove: vi.fn(),
