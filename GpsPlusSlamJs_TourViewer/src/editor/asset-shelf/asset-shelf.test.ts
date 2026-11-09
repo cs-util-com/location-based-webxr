@@ -194,6 +194,7 @@ describe("the shelf's runner", () => {
       path: `content/${A}.png`,
       width: 40,
       height: 30,
+      originalChosen: true,
     });
     expect(row(A)).toMatchObject({
       status: "kept",
@@ -235,6 +236,27 @@ describe("the shelf's runner", () => {
     expect(row(A)?.status).toBe("running");
     expect(swap).toHaveBeenCalledTimes(1);
     expect(shelf.remove(C)).toBeNull();
+  });
+
+  // Why: an original may be large. A file removed from the shelf must not
+  // keep its original until the tour closes; only the removal's undo may
+  // hold it, and the undo brings "use the original" back with the file.
+  it("lets an original go with its entry, and its undo brings it back", async () => {
+    const { shelf, fake, row, settle } = setup();
+    shelf.add(image(A), "a.png", 1000, "added");
+    await settle();
+    fake.finish(small, "webp");
+    await settle();
+    expect(shelf.holdsOriginal(A)).toBe(true);
+    const undo = shelf.remove(A);
+    expect(shelf.holdsOriginal(A)).toBe(false);
+    undo!();
+    expect(shelf.holdsOriginal(A)).toBe(true);
+    expect(row(A)?.canUseOriginal).toBe(true);
+    await expect(shelf.useOriginal(A)).resolves.toBe(true);
+    // A second undo of the same removal changes nothing.
+    undo!();
+    expect(shelf.holdsOriginal(A)).toBe(false);
   });
 
   it("close stops every job and the host; nothing runs afterwards", async () => {

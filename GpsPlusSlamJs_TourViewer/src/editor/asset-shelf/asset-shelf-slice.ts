@@ -75,6 +75,9 @@ interface EntryAddedPayload {
   /** Queued at once; otherwise idle - or kept, with `keptReason`. */
   readonly queued: boolean;
   readonly keptReason?: string;
+  /** A kept file the author may ask to make smaller again (one whose
+   *  original they chose, `originalUsed`). */
+  readonly keptRetryable?: boolean;
 }
 
 /** `state` with entry `id` replaced by `next(entry)`; unchanged when it
@@ -108,7 +111,12 @@ const assetShelfSlice = createSlice({
         ? jobQueued(IDLE_JOB)
         : p.keptReason === undefined
           ? IDLE_JOB
-          : { ...IDLE_JOB, phase: "kept", reason: p.keptReason };
+          : {
+              ...IDLE_JOB,
+              phase: "kept",
+              reason: p.keptReason,
+              retryable: p.keptRetryable === true,
+            };
       const entry: ShelfEntry = {
         id: p.id,
         kind: p.kind,

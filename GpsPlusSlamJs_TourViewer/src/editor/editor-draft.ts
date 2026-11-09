@@ -550,6 +550,10 @@ interface DraftFile {
   readonly asset: TourAsset;
   readonly blob: Blob;
   readonly original?: { readonly asset: TourAsset; readonly blob?: Blob };
+  /** A plain file the creator set back from its smaller file ("use the
+   *  original"): a reload puts it on the shelf as that choice left it,
+   *  never queued to be made smaller again. */
+  readonly originalChosen?: true;
 }
 
 /** Where `file`'s own bytes are kept: `asset:<id>` for a plain file,
@@ -573,13 +577,16 @@ function keysOf(file: DraftFile): string[] {
 /** `file` as the `assets` list names it: a plain record, or one with the
  *  record it replaced and whether its bytes are kept. */
 function listItem(file: DraftFile): unknown {
-  return file.original === undefined
-    ? file.asset
-    : {
-        ...file.asset,
-        original: file.original.asset,
-        originalKept: file.original.blob !== undefined,
-      };
+  if (file.original === undefined) {
+    return file.originalChosen === true
+      ? { ...file.asset, originalChosen: true }
+      : file.asset;
+  }
+  return {
+    ...file.asset,
+    original: file.original.asset,
+    originalKept: file.original.blob !== undefined,
+  };
 }
 
 /** A record the format takes: its path `content/<id>.<ext>` of an
@@ -604,6 +611,7 @@ interface ListedFile {
   readonly asset: TourAsset;
   readonly original?: TourAsset;
   readonly originalKept: boolean;
+  readonly originalChosen?: true;
 }
 
 /** The `assets` list as written, each record one the format takes, and a
@@ -620,15 +628,23 @@ function assetListOf(text: string | undefined): ListedFile[] | null {
   const listed: ListedFile[] = [];
   for (const item of data as unknown[]) {
     if (!readsAsAsset(item)) return null;
-    const { original, originalKept, ...asset } = item as TourAsset & {
-      readonly original?: unknown;
-      readonly originalKept?: unknown;
-    };
+    const { original, originalKept, originalChosen, ...asset } =
+      item as TourAsset & {
+        readonly original?: unknown;
+        readonly originalKept?: unknown;
+        readonly originalChosen?: unknown;
+      };
     if (original === undefined && originalKept === undefined) {
-      listed.push({ asset, originalKept: false });
+      if (originalChosen !== undefined && originalChosen !== true) return null;
+      listed.push({
+        asset,
+        originalKept: false,
+        ...(originalChosen === true ? { originalChosen: true as const } : {}),
+      });
       continue;
     }
     if (
+      originalChosen !== undefined ||
       !readsAsAsset(original) ||
       original.id !== asset.id ||
       typeof originalKept !== "boolean"
@@ -755,8 +771,14 @@ interface DraftFileWrites {
    *  back are kept, since a save still running may land other bytes over
    *  that file. `blob` undefined: what stands without a smaller file (the
    *  file on disk's bytes: nothing held). False when it did not land, or
-   *  for an id held nowhere. */
-  swapAsset(asset: TourAsset, blob: Blob | undefined): Promise<boolean>;
+   *  for an id held nowhere. `originalChosen`: the creator's "use the
+   *  original" - a file brought in that stands as its plain original
+   *  again remembers it (`DraftFile.originalChosen`). */
+  swapAsset(
+    asset: TourAsset,
+    blob: Blob | undefined,
+    originalChosen?: boolean,
+  ): Promise<boolean>;
   /** Whether the draft keeps the bytes a smaller file replaced ("use the
    *  original"): until a save that wrote the smaller file landed. */
   holdsOriginal(id: string): boolean;
@@ -768,8 +790,17 @@ export interface EditorDraft
    *  given the writes, the page's save path the notes. */
   writes(): EditorTourDraft;
   /** A tour opened: hold its draft, read it, clear what the file carries,
-   *  and say what to offer. Awaited before the tour shows. */
-  open(fileKey: string, manifest: TourManifest): Promise<EditorDraftOpened>;
+   *  and say what to offer. Awaited before the tour shows. `sizeInFile`
+   *  gives the size of an entry (by its path in the tour's folder) the
+   *  opened file holds: a smaller file the file lists at its path is the
+   *  file's own only when the sizes agree (a save by download wrote it),
+   *  since the path alone does not say which bytes are there. Without it a
+   *  smaller file is always kept. */
+  open(
+    fileKey: string,
+    manifest: TourManifest,
+    sizeInFile?: (path: string) => number | undefined,
+  ): Promise<EditorDraftOpened>;
   /** The offer was restored (the session wrote what it applied). */
   restored(): void;
   /** "Delete it": the offer's records go, minus ids edited since the
@@ -1458,7 +1489,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
   // `built`, `landed` and `moved` are reached only through `writes()`,
   // bound to the tour open when it was called.
   const api: DraftApi = {
-    async open(fileKey, manifest) {
+    async open(fileKey, manifest, sizeInFile) {
       close();
       const mine = generation;
       told = false;
@@ -1500,18 +1531,47 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
           ? undefined
           : new Blob([bytes], { type: stored.type });
       };
-      for (const { asset, original, originalKept } of listed ?? []) {
-        // A plain file the file on disk lists at its path is its own; a
-        // smaller file may share the path with other bytes, so it stays.
-        if (original === undefined && pathInFile.get(asset.id) === asset.path)
-          continue;
+      for (const { asset, original, originalKept, originalChosen } of listed ??
+        []) {
+        // A file the file on disk lists at its path is its own when the
+        // entry there has its size (`sizeInFile`): the path alone does not
+        // say which bytes are there - a save that started before "use the
+        // original" lands the smaller file at the original's path. Without
+        // sizes a plain file is its own by its path, and a smaller file
+        // stays (it may share the path with other bytes).
+        const ownAtPath = (blob: Blob): boolean =>
+          pathInFile.get(asset.id) === asset.path &&
+          (sizeInFile === undefined
+            ? original === undefined
+            : sizeInFile(asset.path) === blob.size);
         if (original === undefined) {
+          if (
+            sizeInFile === undefined &&
+            pathInFile.get(asset.id) === asset.path
+          ) {
+            continue;
+          }
           const blob = await bytesAt(`${ASSET_PREFIX}${asset.id}`);
           if (mine !== generation) return none;
+          if (blob !== undefined && ownAtPath(blob)) continue;
           if (blob === undefined) lost = true;
-          else files.set(asset.id, { asset, blob });
+          else {
+            files.set(asset.id, {
+              asset,
+              blob,
+              ...(originalChosen === true ? { originalChosen } : {}),
+            });
+          }
           continue;
         }
+        const blob = await bytesAt(
+          bytesKey({ asset, blob: new Blob(), original: { asset: original } }),
+        );
+        if (mine !== generation) return none;
+        // At its path with bytes of its size (a save by download wrote
+        // it there): the file's own now, its original with it. A smaller
+        // file and the bytes it replaced never share a size.
+        if (blob !== undefined && ownAtPath(blob)) continue;
         const kept = originalKept
           ? await bytesAt(`${ASSET_PREFIX}${asset.id}`)
           : undefined;
@@ -1521,10 +1581,6 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
           kept === undefined
             ? { asset: original }
             : { asset: original, blob: kept };
-        const blob = await bytesAt(
-          bytesKey({ asset, blob: new Blob(), original: was }),
-        );
-        if (mine !== generation) return none;
         if (blob !== undefined)
           files.set(asset.id, { asset, blob, original: was });
         else {
@@ -1786,8 +1842,10 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         saveAsset: (asset, blob) =>
           live() ? api.saveAsset(asset, blob) : Promise.resolve(true),
         holdsFile: (id) => api.holdsFile(id),
-        swapAsset: (asset, blob) =>
-          live() ? api.swapAsset(asset, blob) : Promise.resolve(true),
+        swapAsset: (asset, blob, originalChosen) =>
+          live()
+            ? api.swapAsset(asset, blob, originalChosen)
+            : Promise.resolve(true),
         holdsOriginal: (id) => api.holdsOriginal(id),
         built: (written) => {
           if (live()) api.built(written);
@@ -1995,7 +2053,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       return keepFile(s, file);
     },
     holdsFile: (id) => !filesNotKept.has(id),
-    swapAsset(asset, blob) {
+    swapAsset(asset, blob, originalChosen) {
       const id = asset.id;
       const prev = files.get(id);
       const onDisk = opened?.assets.find((a) => a.id === id);
@@ -2016,7 +2074,13 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
             ? undefined
             : { asset: original.asset, blob: back }
           : blob === back && asset.path === original.asset.path
-            ? { asset: original.asset, blob }
+            ? {
+                asset: original.asset,
+                blob,
+                ...(originalChosen === true
+                  ? { originalChosen: true as const }
+                  : {}),
+              }
             : { asset, blob, original };
       const before = prev === undefined ? [] : keysOf(prev);
       if (next === undefined) files.delete(id);

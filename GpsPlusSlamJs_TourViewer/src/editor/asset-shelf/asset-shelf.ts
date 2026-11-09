@@ -51,6 +51,8 @@ interface ShelfSwap {
   readonly path: string;
   readonly width?: number;
   readonly height?: number;
+  /** "Use the original": the creator's choice, remembered by the draft. */
+  readonly originalChosen?: true;
 }
 
 /** An original a smaller file replaced: its record, and its bytes, read
@@ -110,15 +112,24 @@ export interface AssetShelf {
     sizes: { readonly originalBytes: number; readonly optimizedBytes: number },
     original?: HeldOriginal,
   ): void;
+  /** A reload put back a file brought in whose original the creator
+   *  chose ("use the original"): on the shelf as that choice left it -
+   *  kept, and retryable - never queued by itself. A second add of an id is no change. */
+  originalKept(asset: TourAsset, name: string, bytes: number): void;
   /** Retry a retryable end; false when there is none. */
   retry(id: string): boolean;
   /** Put the original back in place of the smaller file; false when it
    *  is not offered (`ShelfRow.canUseOriginal`) or the swap was refused. */
   useOriginal(id: string): Promise<boolean>;
-  /** The file leaves the shelf, its job stopped; the returned undo puts it
-   *  back (queued again when it was waiting or running). Null for an id
-   *  the shelf does not hold. */
+  /** The file leaves the shelf, its job stopped and its original no longer
+   *  kept by the shelf; the returned undo puts it back (queued again when
+   *  it was waiting or running), with that original - held by the undo
+   *  alone, so dropping the undo lets it go. Null for an id the shelf does
+   *  not hold. */
   remove(id: string): (() => void) | null;
+  /** Whether the shelf keeps the original of `id` ("use the original"):
+   *  bytes that may be large. */
+  holdsOriginal(id: string): boolean;
   /** "Optimize this tour": every opened tour's file still idle is queued;
    *  how many were. */
   optimizeTour(): number;
@@ -143,7 +154,7 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
 
   /** Each original no longer offered - a save wrote the smaller file's
    *  bytes, or the job left "optimized" - is let go: it may be large. One
-   *  whose entry left the shelf stays for the removal's undo. */
+   *  whose entry left the shelf went with it (`remove`). */
   function freeOriginals(): void {
     if (closed || originals.size === 0) return;
     for (const row of selectShelfRows(store.getState())) {
@@ -280,6 +291,21 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
       );
       pump();
     },
+    originalKept(asset, name, bytes) {
+      if (closed) return;
+      dispatch(
+        act.entryAdded({
+          id: asset.id,
+          kind: asset.kind,
+          name,
+          origin: "added",
+          originalBytes: bytes,
+          queued: false,
+          keptReason: ORIGINAL_USED,
+          keptRetryable: true,
+        }),
+      );
+    },
     restored(asset, name, sizes, original) {
       if (closed) return;
       stopJob(asset.id);
@@ -320,6 +346,7 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
         path: asset.path,
         ...(asset.width === undefined ? {} : { width: asset.width }),
         ...(asset.height === undefined ? {} : { height: asset.height }),
+        originalChosen: true,
       });
       if (swapped.kind === "refused" || closed) return false;
       originals.delete(id);
@@ -330,10 +357,17 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
       const entry = entries()[id];
       if (closed || entry === undefined) return null;
       stopJob(id);
+      // The undo alone keeps it: an original may be large, and a removal
+      // nobody takes back must not hold it until the tour closes.
+      let held = originals.get(id);
+      originals.delete(id);
       dispatch(act.entryRemoved({ id }));
       pump();
       return () => {
+        if (closed || entries()[id] !== undefined) return;
         const waiting = entry.phase === "queued" || entry.phase === "running";
+        if (held !== undefined) originals.set(id, held);
+        held = undefined;
         dispatch(
           act.entryRestored({
             entry: waiting
@@ -344,6 +378,7 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
         pump();
       };
     },
+    holdsOriginal: (id) => originals.has(id),
     optimizeTour() {
       if (closed) return 0;
       let queued = 0;

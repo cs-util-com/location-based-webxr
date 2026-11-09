@@ -80,9 +80,10 @@ async function offeredAfterReload(
   stores: { open: MemoryDraftStores["open"] },
   manifest: TourManifest,
   key = K1,
+  sizeInFile?: (path: string) => number | undefined,
 ): Promise<{ path: string; text: string; original?: string }[]> {
   const again = draftOf(stores);
-  const { offer } = await again.open(key, manifest);
+  const { offer } = await again.open(key, manifest, sizeInFile);
   const files = offer?.files ?? [];
   const out = await Promise.all(
     files.map(async (f) => ({
@@ -267,6 +268,59 @@ describe("the draft of a smaller file", () => {
     expect(await offeredAfterReload(stores, opened(), K2)).toEqual([
       { path: OPUS.path, text: "OggS", original: "RIFF" },
     ]);
+  });
+
+  // Why: a save by download writes the smaller file into a NEW file and
+  // lands nothing in place, so the draft keeps the entry. Opening the
+  // downloaded file must not offer it again on every reload: the file
+  // lists it at its path with bytes of its size, so it is the file's own.
+  // The path alone is no proof - a file at the same path with bytes of
+  // another size (the original, or another swap) keeps the entry - and
+  // without sizes the entry is kept, as before.
+  it("lets go of a smaller file the opened file holds at its path with its size", async () => {
+    const stores = memoryDraftStores();
+    const draft = await swapped(stores);
+    draft.close();
+    const downloaded = { ...tourOf([PIN, ESSAY]), assets: [OPUS] };
+    const sizes = (size: number) => (path: string) =>
+      path === OPUS.path ? size : undefined;
+    expect(
+      await offeredAfterReload(stores, downloaded, K1, sizes(OGGS.size + 7)),
+    ).toEqual([{ path: OPUS.path, text: "OggS", original: "RIFF" }]);
+    expect(await offeredAfterReload(stores, downloaded, K1)).toEqual([
+      { path: OPUS.path, text: "OggS", original: "RIFF" },
+    ]);
+    expect(
+      await offeredAfterReload(stores, downloaded, K1, sizes(OGGS.size)),
+    ).toEqual([]);
+    // Let go for good: the next open finds nothing, sizes or not.
+    expect(await offeredAfterReload(stores, downloaded, K1)).toEqual([]);
+    expect([...(stores.spaces.get(SPACE)?.keys() ?? [])]).not.toContain(
+      `asset:${ID}`,
+    );
+  });
+
+  // Why: a save can land other bytes at a brought-in file's path than the
+  // draft holds - a smaller WAV at the same path, when the creator then
+  // chose the original while that save ran. The path alone would drop the
+  // draft's file and lose the original the creator chose; its size tells.
+  it("keeps a brought-in file the opened file lists at its path with other bytes", async () => {
+    const stores = memoryDraftStores();
+    const draft = draftOf(stores);
+    await draft.open(K1, opened());
+    await draft.saveAsset(WAV, RIFF);
+    await draft.saveObject(ESSAY);
+    await draft.idle();
+    draft.close();
+    const saved = { ...tourOf([PIN, ESSAY]), assets: [WAV] };
+    const sizes = (size: number) => (path: string) =>
+      path === WAV.path ? size : undefined;
+    expect(
+      await offeredAfterReload(stores, saved, K1, sizes(RIFF.size + 3)),
+    ).toEqual([{ path: WAV.path, text: "RIFF" }]);
+    expect(
+      await offeredAfterReload(stores, saved, K1, sizes(RIFF.size)),
+    ).toEqual([]);
   });
 
   // Why: a tab closed between any two of the draft's writes must leave a

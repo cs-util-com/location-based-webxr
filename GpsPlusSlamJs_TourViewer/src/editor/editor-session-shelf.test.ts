@@ -17,6 +17,10 @@ import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
 import { readStoredEntryBytes } from "gps-plus-slam-app-framework/test-utils/zip-central-directory";
 import { describe, expect, it, vi } from "vitest";
 
+import {
+  freeDraftLocks,
+  memoryDraftStores,
+} from "../test-support/memory-draft-stores.js";
 import { tourOf } from "../test-support/tour-of.js";
 import { openTourFile, type TourSession } from "../tour-session.js";
 import { editorStore } from "../test-support/editor-store.js";
@@ -27,6 +31,7 @@ import {
 } from "./asset-shelf/asset-optimizers.js";
 import { selectShelfRows } from "./asset-shelf/asset-shelf-slice.js";
 import { fakeOptimizer } from "./asset-shelf/test-support/fake-optimizer.js";
+import { createEditorDraft } from "./editor-draft.js";
 import { createEditorSession } from "./editor-session.js";
 
 const ESSAY: TourObject = {
@@ -226,5 +231,86 @@ describe("a smaller file that keeps its path", () => {
     const saved = await editor.save({ keepScan: false });
     expect(await entryText(saved.blob, `content/${id}.wav`)).toBe("RIFF-sm");
     await session.close();
+  });
+});
+
+describe('the creator\'s "use the original" across a reload', () => {
+  // Why: a reload drops the runner's queue, so a plain file brought in is
+  // queued again - but one the creator set back with "use the original"
+  // is plain too, and queuing it would undo their choice behind their
+  // back (and make it smaller again at the next save). The draft
+  // remembers the choice, and the shelf shows it as it was left.
+  it("is kept as chosen, not queued again", async () => {
+    const stores = memoryDraftStores();
+    const K = "local-file:00000000000000000000000000000009";
+    const openEditor = async () => {
+      const session = await openedTour();
+      const draft = createEditorDraft({
+        openStore: stores.open,
+        holdLock: freeDraftLocks,
+        noBackup: () => undefined,
+      });
+      const { offer } = await draft.open(K, MANIFEST);
+      const store = editorStore();
+      const audio = fakeOptimizer();
+      const editor = createEditorSession({
+        session,
+        manifest: MANIFEST,
+        levels: new Map(),
+        store,
+        draft: draft.writes(),
+        optimizers: { ...ASSET_OPTIMIZERS, audio },
+        optimizerHost: {
+          run: () => Promise.reject(new Error("unused")),
+          close: () => undefined,
+        },
+      });
+      if (offer !== null) editor.restore(offer);
+      const leave = async () => {
+        await draft.idle();
+        editor.shelf.close();
+        draft.close();
+        await session.close();
+      };
+      return { editor, audio, store, leave };
+    };
+    const settle = () => new Promise((r) => setTimeout(r, 0));
+    const first = await openEditor();
+    await first.editor.editNarration("t1", {
+      kind: "voice",
+      file: new Blob(["RIFF-original-voice-long-enough"]),
+      fileName: "voice.wav",
+    });
+    const facts = await first.editor.narration("t1");
+    if (facts.kind !== "narration" || facts.audioId === null) {
+      throw new Error("no voice");
+    }
+    const id = facts.audioId;
+    await settle();
+    first.audio.finish(new Blob(["OggS"]), "opus");
+    await settle();
+    expect(await first.editor.shelf.useOriginal(id)).toBe(true);
+    const chosen = selectShelfRows(first.store.getState()).find(
+      (r) => r.id === id,
+    );
+    expect(chosen?.status).not.toBe("queued");
+    await first.leave();
+
+    const again = await openEditor();
+    await settle();
+    const row = selectShelfRows(again.store.getState()).find(
+      (r) => r.id === id,
+    );
+    expect(row).toMatchObject({ status: chosen?.status, origin: "added" });
+    expect(row?.reason).toBe(chosen?.reason);
+    expect(row?.retryable).toBe(chosen?.retryable);
+    expect(chosen?.retryable).toBe(true);
+    expect(again.audio.calls).toHaveLength(0);
+    // And it stays so through one more reload.
+    await again.leave();
+    const third = await openEditor();
+    await settle();
+    expect(third.audio.calls).toHaveLength(0);
+    await third.leave();
   });
 });

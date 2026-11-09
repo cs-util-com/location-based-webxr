@@ -329,6 +329,9 @@ interface EditorRestore {
      *  draft kept them. On the shelf as made smaller, that original
      *  offered. */
     readonly original?: { readonly asset: TourAsset; readonly blob?: Blob };
+    /** A file brought in whose original the creator chose ("use the
+     *  original"): on the shelf as that choice left it, not queued. */
+    readonly originalChosen?: true;
   }[];
 }
 
@@ -350,6 +353,9 @@ interface AssetSwap {
   readonly path: string;
   readonly width?: number;
   readonly height?: number;
+  /** The creator's "use the original": the draft remembers it, so a
+   *  reload does not queue the file to be made smaller again. */
+  readonly originalChosen?: true;
 }
 
 /** A smaller file now stands in for the asset's (`swapAsset`).
@@ -569,7 +575,11 @@ export interface EditorSessionDraft extends DraftObjectWrites {
    *  written before the table and the document take it; whether it
    *  landed. `blob` undefined: back to what stands without one (the file
    *  on disk's bytes for its asset). */
-  swapAsset(asset: TourAsset, blob: Blob | undefined): Promise<boolean>;
+  swapAsset(
+    asset: TourAsset,
+    blob: Blob | undefined,
+    originalChosen?: boolean,
+  ): Promise<boolean>;
 }
 
 /** One image a tour may show as its cover (W2): a placed photo, or an
@@ -1417,7 +1427,11 @@ export function createEditorSession(input: {
       state.addedAssets.find((a) => a.id === id) ??
       state.written?.assets.find((a) => a.id === id);
     const wasBlob = files.get(id);
-    const backedUp = await draft.swapAsset(judged.asset, file.blob);
+    const backedUp = await draft.swapAsset(
+      judged.asset,
+      file.blob,
+      file.originalChosen === true,
+    );
     const final = judgedSwap(id, file);
     if (final === null) {
       // The draft took what the document now refuses (this open was
@@ -2566,7 +2580,8 @@ export function createEditorSession(input: {
   }
 
   /** A file a restore put back, on the shelf (`restore`): a plain one
-   *  brought in is queued as a new one is; a smaller file stands optimized
+   *  brought in is queued as a new one is, unless the creator chose its
+   *  original there (kept as that choice left it); a smaller file stands optimized
    *  - unless its record is its original's and it is no smaller (the
    *  original put back there) - with that original offered while its
    *  bytes can be read: the draft's, or the opened file's own entry. */
@@ -2575,7 +2590,9 @@ export function createEditorSession(input: {
   ): void {
     const { asset, blob, original } = file;
     if (original === undefined) {
-      shelf.add(asset, asset.path, blob.size, "added");
+      if (file.originalChosen === true) {
+        shelf.originalKept(asset, asset.path, blob.size);
+      } else shelf.add(asset, asset.path, blob.size, "added");
       return;
     }
     const wrap = session.manifestWrap;

@@ -2436,9 +2436,16 @@ async function openFile(
   // The draft is read inside the open, before the tour shows (E2c plan
   // review #7): what an earlier visit left is offered with the tour.
   document.body.dataset["draft"] = "writing";
+  // The opened file's entry sizes: a smaller file it already holds at
+  // its path (a save by download) is no work of the draft's any more.
+  const wrap = outcome.session.manifestWrap;
+  const entrySizes = new Map(
+    outcome.session.entries.map((e) => [e.filename, e.size]),
+  );
   const drafted = await draft.open(
     outcome.session.archive.url,
     outcome.manifest,
+    (path) => entrySizes.get(`${wrap}${path}`),
   );
   setBusy(false, "");
   details.close();
