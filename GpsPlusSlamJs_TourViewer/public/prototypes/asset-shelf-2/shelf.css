@@ -1,0 +1,1928 @@
+/* Asset shelf prototype 2: the shelf as its own docked panel at the right
+ * edge. Tokens and measures follow the editor's shell (editor-shell.css)
+ * and the chosen explorer prototype. */
+:root {
+  --bg0: #18191c;
+  --bg1: #1f2023;
+  --bg2: #26282c;
+  --bg3: #2f3136;
+  --bg4: #383a40;
+  --panel: rgb(31 32 35 / 97%);
+  --line: #313338;
+  --line2: #3c3f46;
+  --text: #d9dbe0;
+  --muted: #8a8f99;
+  --dim: #646973;
+  --accent: #e9a23b;
+  --accentBg: rgb(233 162 59 / 14%);
+  --accentLine: rgb(233 162 59 / 55%);
+  --accentText: #f3c47e;
+  --danger: #d97d79;
+  --dangerBg: rgb(217 125 121 / 12%);
+  --ok: #7fb77a;
+  --okBg: rgb(127 183 122 / 12%);
+  --info: #8fa6c0;
+  --focus: #5b9cf0;
+  --mono: "Cascadia Mono", consolas, "SF Mono", ui-monospace, menlo, monospace;
+  --treeW: 248px;
+  --inspW: 290px;
+  --shelfW: 300px;
+  --railW: 38px;
+  --shelfCur: var(--shelfW);
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: grid;
+  grid-template-rows: 40px 3px minmax(0, 1fr) 24px;
+  overflow: hidden;
+  background: var(--bg0);
+  color: var(--text);
+  font: 12px/1.4 "Segoe UI", system-ui, -apple-system, "Helvetica Neue", arial, sans-serif;
+}
+
+body.shelfFolded {
+  --shelfCur: var(--railW);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+svg.i {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 1.35;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+svg.i.big {
+  width: 34px;
+  height: 34px;
+  stroke-width: 1.1;
+}
+
+.sp {
+  flex: 1;
+}
+
+.showS,
+.phoneOnly {
+  display: none !important;
+}
+
+/* --- top bar ------------------------------------------------------------ */
+#top {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg1);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 24px;
+  margin-right: 4px;
+  padding-right: 10px;
+  border-right: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.brand b {
+  font-weight: 600;
+}
+
+.brand .doc {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+}
+
+.mbtn {
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  white-space: nowrap;
+}
+
+.mbtn:hover {
+  background: var(--bg3);
+}
+
+.unsaved {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px;
+  color: var(--accentText);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.unsaved::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.tbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--line2);
+  border-radius: 4px;
+  background: var(--bg3);
+  white-space: nowrap;
+}
+
+.tbtn:hover {
+  border-color: #5a5f69;
+}
+
+.tbtn.proto {
+  border-style: dashed;
+  border-color: var(--accentLine);
+  background: transparent;
+  color: var(--accentText);
+}
+
+#loadbar {
+  background: var(--accent);
+}
+
+.badge {
+  min-width: 16px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #1c1c1c;
+  font: 600 10px/15px var(--mono);
+  text-align: center;
+}
+
+.badge.bad {
+  background: var(--danger);
+}
+
+/* --- the view and its docks --------------------------------------------- */
+#main {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+#map {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #1d2126;
+}
+
+#mapsvg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#pins {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.pin {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px 3px 3px;
+  border: 1px solid var(--line2);
+  border-radius: 14px;
+  background: rgb(38 40 44 / 92%);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 35%);
+  white-space: nowrap;
+  pointer-events: auto;
+  transform: translate(-50%, -50%);
+}
+
+.pin .badge {
+  min-width: 20px;
+  height: 20px;
+  border-radius: 10px;
+  background: #3d5a78;
+  color: #e6f0fa;
+  line-height: 20px;
+}
+
+.pin.sel {
+  border-color: var(--accentLine);
+}
+
+.pin.sel .badge {
+  background: var(--accent);
+  color: #1c1c1c;
+}
+
+.dock {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-top: 0;
+  border-bottom: 0;
+  background: var(--panel);
+  box-shadow: 0 8px 22px rgb(0 0 0 / 35%);
+}
+
+#tree {
+  left: 0;
+  width: var(--treeW);
+  border-left: 0;
+}
+
+#tree.folded {
+  bottom: auto;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0 0 8px;
+}
+
+#tree.folded .pbody,
+#tree.folded .treefoot {
+  display: none;
+}
+
+#tree.folded #treeFold svg {
+  transform: rotate(180deg);
+}
+
+#insp {
+  right: var(--shelfCur);
+  width: var(--inspW);
+  transition: right 0.16s ease;
+}
+
+#shelf {
+  right: 0;
+  width: var(--shelfCur);
+  border-right: 0;
+  transition: width 0.16s ease;
+}
+
+.phead {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+  padding: 0 6px 0 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.phead .ttl {
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.phead .count {
+  margin-left: 4px;
+  color: var(--dim);
+  font: 10px var(--mono);
+}
+
+.shead {
+  padding-left: 4px;
+}
+
+.ib {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.ib:hover {
+  background: var(--bg3);
+  color: var(--text);
+}
+
+.ib.acc {
+  color: var(--accentText);
+}
+
+.pbody {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.pbody::-webkit-scrollbar {
+  width: 10px;
+}
+
+.pbody::-webkit-scrollbar-thumb {
+  border: 3px solid var(--bg1);
+  border-radius: 6px;
+  background: var(--bg4);
+}
+
+.treefoot,
+.shelffoot {
+  display: grid;
+  flex: none;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 8px;
+  padding: 7px 12px 8px;
+  border-top: 1px solid var(--line);
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.shelffoot {
+  display: block;
+}
+
+/* --- the tree ------------------------------------------------------------ */
+#rows {
+  padding: 4px 0 30px;
+}
+
+.row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding-right: 6px;
+  padding-left: calc(var(--d) * 16px + 4px);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+.row:hover {
+  background: rgb(255 255 255 / 3.5%);
+}
+
+.row.sel {
+  background: var(--accentBg);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.row.st {
+  height: 28px;
+  font-weight: 600;
+}
+
+.row .tw {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+}
+
+.row .tw svg {
+  width: 12px;
+  height: 12px;
+  transition: transform 0.12s;
+}
+
+.row .tw.open svg {
+  transform: rotate(90deg);
+}
+
+.row .tw.none {
+  visibility: hidden;
+}
+
+.row .sbadge {
+  flex: none;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: #3d5a78;
+  color: #e6f0fa;
+  font: 600 10px/16px var(--mono);
+  text-align: center;
+}
+
+.row.sel .sbadge {
+  background: var(--accent);
+  color: #1c1c1c;
+}
+
+.row .ti {
+  color: var(--muted);
+}
+
+.row .ti.story {
+  color: var(--accentText);
+}
+
+.row .nm {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row:not(.st) .nm {
+  font-weight: 400;
+}
+
+.row .meta {
+  flex: none;
+  color: var(--dim);
+  font: 10px var(--mono);
+}
+
+.row .meta.none {
+  font-style: italic;
+}
+
+.row.flash {
+  animation: flash 1.2s ease-out;
+}
+
+@keyframes flash {
+  0%,
+  30% {
+    background: rgb(233 162 59 / 35%);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+/* An asset's state mark on the rows that use it. */
+.mk {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  color: var(--accentText);
+  font: 10px var(--mono);
+}
+
+.mk svg {
+  width: 12px;
+  height: 12px;
+}
+
+.mk.failed {
+  color: var(--danger);
+}
+
+.mk.queued {
+  color: var(--muted);
+}
+
+.spin {
+  width: 11px;
+  height: 11px;
+  flex: none;
+  border: 1.5px solid rgb(243 196 126 / 30%);
+  border-top-color: var(--accentText);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Drag targets: every valid one outlined while a card is dragged, the one
+ * under the pointer filled. */
+body.dragging * {
+  cursor: grabbing !important;
+}
+
+body.dragging .drop-ok {
+  outline: 1px dashed var(--accentLine);
+  outline-offset: -2px;
+}
+
+body.dragging .drop-hover {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  background: rgb(233 162 59 / 22%) !important;
+}
+
+body.dragging .row:not(.drop-ok) {
+  opacity: 0.45;
+}
+
+#ghost {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 260px;
+  padding: 5px 10px 5px 5px;
+  border: 1px solid var(--accentLine);
+  border-radius: 6px;
+  background: #2a2d32;
+  box-shadow: 0 10px 26px rgb(0 0 0 / 55%);
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translate(12px, 12px);
+}
+
+#ghost .thumb {
+  width: 28px;
+  height: 28px;
+}
+
+#ghost .gt {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#ghost .gh {
+  color: var(--dim);
+  font-size: 11px;
+}
+
+/* --- the inspector -------------------------------------------------------- */
+#insp .phead {
+  gap: 6px;
+  height: 40px;
+  padding-left: 8px;
+}
+
+.hic {
+  display: inline-flex;
+  flex: none;
+  justify-content: center;
+  width: 22px;
+  color: var(--accentText);
+}
+
+.htitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crumb {
+  padding: 6px 12px 2px;
+  overflow: hidden;
+  color: var(--dim);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sec {
+  padding: 4px 12px 12px;
+}
+
+.sech {
+  margin: 10px 0 4px;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.f {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  margin: 4px 0;
+}
+
+.f.top {
+  align-items: start;
+}
+
+.f > label {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.f.top > label {
+  padding-top: 5px;
+}
+
+.tfield {
+  width: 100%;
+  min-width: 0;
+  height: 26px;
+  padding: 0 7px;
+  border: 1px solid var(--line2);
+  border-radius: 3px;
+  outline: none;
+  background: var(--bg0);
+}
+
+textarea.tfield {
+  height: 64px;
+  padding: 5px 7px;
+  resize: vertical;
+}
+
+.tfield:focus {
+  border-color: var(--focus);
+}
+
+.range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.range input {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+
+.range .rv {
+  width: 40px;
+  color: var(--muted);
+  font: 11px var(--mono);
+  text-align: right;
+}
+
+.note {
+  margin: 4px 0;
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+/* The item's file field: a picker button and, under it, what the phone
+ * gets while the file is being optimized. */
+.filefield {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 5px 8px 5px 5px;
+  border: 1px solid var(--line2);
+  border-radius: 5px;
+  background: var(--bg0);
+  text-align: left;
+}
+
+.filefield:hover {
+  border-color: #5a5f69;
+}
+
+.filefield.empty {
+  border-style: dashed;
+  color: var(--muted);
+}
+
+.filefield .ffm {
+  flex: 1;
+  min-width: 0;
+}
+
+.filefield .ffn,
+.filefield .ffs {
+  display: block;
+}
+
+.filefield .ffn {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filefield .ffs {
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.fstate {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--accentLine);
+  border-radius: 5px;
+  background: var(--accentBg);
+  line-height: 1.45;
+}
+
+.fstate .fsh {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--accentText);
+  font-weight: 600;
+}
+
+.fstate p {
+  margin: 4px 0 0;
+  color: var(--text);
+}
+
+.fstate .bar {
+  margin-top: 7px;
+}
+
+.fstate.ready {
+  border-color: rgb(127 183 122 / 45%);
+  background: var(--okBg);
+}
+
+.fstate.ready .fsh {
+  color: var(--ok);
+}
+
+.fstate.failed {
+  border-color: rgb(217 125 121 / 50%);
+  background: var(--dangerBg);
+}
+
+.fstate.failed .fsh {
+  color: var(--danger);
+}
+
+.fstate.pulse {
+  animation: pulse 1.4s ease-out;
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgb(127 183 122 / 60%);
+  }
+  100% {
+    box-shadow: 0 0 0 10px rgb(127 183 122 / 0%);
+  }
+}
+
+.lnk {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accentText);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--line2);
+  border-radius: 4px;
+  background: var(--bg3);
+  white-space: nowrap;
+}
+
+.btn:hover {
+  border-color: #5a5f69;
+  background: var(--bg4);
+}
+
+.btn svg {
+  width: 14px;
+  height: 14px;
+  color: var(--accentText);
+}
+
+.btn.danger {
+  border-color: rgb(217 125 121 / 55%);
+  color: var(--danger);
+}
+
+.btn.danger svg {
+  color: var(--danger);
+}
+
+.btn.sm {
+  height: 22px;
+  padding: 0 7px;
+  font-size: 11px;
+}
+
+.btnrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+/* --- the shelf ------------------------------------------------------------ */
+.sumline {
+  flex: none;
+  padding: 7px 12px 8px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.sumline .bar {
+  margin-top: 5px;
+}
+
+.sumline b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.sumline .save {
+  color: var(--ok);
+}
+
+.chips {
+  display: flex;
+  flex: none;
+  gap: 4px;
+  padding: 6px 8px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--line);
+  scrollbar-width: none;
+}
+
+.chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--line2);
+  border-radius: 11px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.chip.on {
+  border-color: var(--accentLine);
+  background: var(--accentBg);
+  color: var(--accentText);
+}
+
+.chip .cn {
+  color: var(--dim);
+  font: 10px var(--mono);
+}
+
+#shelfList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 8px 24px;
+}
+
+.empty {
+  margin: 18px 8px;
+  padding: 18px 14px;
+  border: 1px dashed var(--line2);
+  border-radius: 8px;
+  color: var(--muted);
+  line-height: 1.5;
+  text-align: center;
+}
+
+.empty .btnrow {
+  justify-content: center;
+}
+
+.card {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg2);
+  user-select: none;
+}
+
+.card:hover {
+  border-color: var(--line2);
+}
+
+.card.open {
+  border-color: var(--accentLine);
+}
+
+.card.failed {
+  border-color: rgb(217 125 121 / 45%);
+}
+
+.card.flash {
+  animation: cflash 1.4s ease-out;
+}
+
+@keyframes cflash {
+  0%,
+  35% {
+    background: rgb(233 162 59 / 25%);
+  }
+  100% {
+    background: var(--bg2);
+  }
+}
+
+.card.new {
+  animation: cin 0.35s ease-out;
+}
+
+@keyframes cin {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+
+.card.dragsrc {
+  opacity: 0.5;
+}
+
+.crow {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 7px 6px 7px 7px;
+  cursor: grab;
+}
+
+.thumb {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--bg4) center / cover no-repeat;
+  color: var(--text);
+  touch-action: none;
+}
+
+.thumb.k-sound {
+  background-color: #34404f;
+  color: #a9c6e8;
+}
+
+.thumb.k-video {
+  background-color: #3b3245;
+  color: #d4bdf0;
+}
+
+.thumb.k-model {
+  background-color: #3a4136;
+  color: #c3dcae;
+}
+
+.thumb.k-picture {
+  background-color: #463c2e;
+  color: #f0d3a3;
+}
+
+.thumb.k-unknown {
+  background-color: #3a3a3a;
+  color: var(--muted);
+}
+
+.thumb.has-img svg {
+  display: none;
+}
+
+.thumb.has-img.k-video svg.play {
+  display: block;
+  width: 18px;
+  height: 18px;
+  color: #fff;
+  fill: rgb(0 0 0 / 35%);
+}
+
+.cmain {
+  flex: 1;
+  min-width: 0;
+}
+
+.ctop {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cname {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ckind {
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.cstate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  margin-top: 3px;
+  font-size: 11px;
+}
+
+.cstate svg {
+  width: 12px;
+  height: 12px;
+}
+
+.cstate.queued {
+  color: var(--muted);
+}
+
+.cstate.ready {
+  flex-wrap: nowrap;
+  color: var(--ok);
+  white-space: nowrap;
+}
+
+.cstate.failed {
+  color: var(--danger);
+}
+
+.cstate .ph {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cstate .pc {
+  color: var(--accentText);
+  font: 10.5px var(--mono);
+}
+
+.cstate .sz {
+  color: var(--text);
+  font: 10.5px var(--mono);
+}
+
+.cstate .gain {
+  padding: 0 5px;
+  border-radius: 3px;
+  background: var(--okBg);
+  color: var(--ok);
+  font: 10px/16px var(--mono);
+}
+
+.cstate .why {
+  flex-basis: 100%;
+  color: var(--text);
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.bar {
+  display: block;
+  flex-basis: 100%;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--bg4);
+}
+
+.bar i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 0.12s linear;
+}
+
+.cside {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.uses {
+  flex: none;
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid var(--line2);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--accentText);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.uses:hover {
+  border-color: var(--accentLine);
+  background: var(--accentBg);
+}
+
+.uses.zero {
+  border-color: transparent;
+  color: var(--dim);
+  cursor: default;
+}
+
+.ib.del {
+  width: 22px;
+  height: 22px;
+}
+
+.ib.del svg {
+  width: 14px;
+  height: 14px;
+}
+
+.ib.del:hover {
+  color: var(--danger);
+}
+
+.cmore {
+  padding: 0 8px 8px 58px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.cmore .btnrow {
+  margin-top: 6px;
+}
+
+.cconfirm {
+  margin: 0 7px 7px;
+  padding: 8px 9px;
+  border: 1px solid rgb(217 125 121 / 50%);
+  border-radius: 5px;
+  background: var(--dangerBg);
+  line-height: 1.45;
+}
+
+.cconfirm ul {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  color: var(--muted);
+}
+
+/* The folded shelf: a rail with a ring per file still in the works. */
+#rail {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+}
+
+#shelf.folded > :not(#rail) {
+  display: none;
+}
+
+#shelf.folded > .shead {
+  display: none;
+}
+
+#shelf.folded #rail {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+#rail .rhead {
+  position: relative;
+}
+
+#rail .rhead .badge {
+  position: absolute;
+  top: -3px;
+  right: -6px;
+  pointer-events: none;
+}
+
+#rail .rlabel {
+  margin: 4px 0;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  writing-mode: vertical-rl;
+}
+
+#rail .rings {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ring {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+}
+
+.ring:hover {
+  background: var(--bg3);
+}
+
+.ring svg.rg {
+  position: absolute;
+  inset: 0;
+  width: 28px;
+  height: 28px;
+  transform: rotate(-90deg);
+}
+
+.ring .rg circle {
+  fill: none;
+  stroke-width: 2.2;
+}
+
+.ring .rg .bg {
+  stroke: var(--bg4);
+}
+
+.ring .rg .fg {
+  stroke: var(--accent);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.12s linear;
+}
+
+.ring.failed {
+  color: var(--danger);
+}
+
+.ring.failed .rg .bg {
+  stroke: var(--danger);
+}
+
+.ring.ready {
+  color: var(--ok);
+}
+
+.ring.ready .rg .bg {
+  stroke: rgb(127 183 122 / 55%);
+}
+
+.ring > svg.i {
+  width: 13px;
+  height: 13px;
+}
+
+#rail .rmore {
+  color: var(--dim);
+  font: 10px var(--mono);
+}
+
+/* --- the bottom bar -------------------------------------------------------- */
+#bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 0 0 0 10px;
+  border-top: 1px solid var(--line);
+  background: var(--bg1);
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+#bar .credits {
+  color: var(--dim);
+}
+
+.tog {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  padding: 0 9px;
+  border: 0;
+  border-left: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.tog:hover {
+  background: var(--bg2);
+  color: var(--text);
+}
+
+.tog svg {
+  width: 14px;
+  height: 14px;
+}
+
+.tog[aria-pressed="true"] {
+  background: var(--bg2);
+  color: var(--accentText);
+}
+
+.tog[aria-pressed="true"]::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  right: 0;
+  left: 0;
+  height: 2px;
+  background: var(--accent);
+}
+
+/* --- notes over the map ---------------------------------------------------- */
+#notes {
+  position: absolute;
+  top: 12px;
+  left: calc(var(--treeW) + 12px);
+  z-index: 4;
+  width: min(360px, calc(100% - var(--treeW) - var(--inspW) - var(--shelfCur) - 24px));
+  min-width: 220px;
+  border: 1px solid var(--line2);
+  border-radius: 8px;
+  background: rgb(38 40 44 / 95%);
+  box-shadow: 0 8px 22px rgb(0 0 0 / 35%);
+}
+
+body:not(.hasSel) #notes {
+  width: min(360px, calc(100% - var(--treeW) - var(--shelfCur) - 24px));
+}
+
+#notes summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  color: var(--accentText);
+  cursor: pointer;
+  list-style: none;
+}
+
+#notes summary::-webkit-details-marker {
+  display: none;
+}
+
+#notes .nb {
+  max-height: 52vh;
+  overflow: auto;
+  padding: 0 12px 10px;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+#notes p {
+  margin: 0 0 6px;
+}
+
+#notes ul {
+  margin: 0 0 8px;
+  padding-left: 16px;
+}
+
+.nrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.seg {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--line2);
+  border-radius: 4px;
+}
+
+.seg button {
+  height: 22px;
+  padding: 0 9px;
+  border: 0;
+  border-right: 1px solid var(--line2);
+  background: var(--bg1);
+  color: var(--muted);
+}
+
+.seg button:last-child {
+  border-right: 0;
+}
+
+.seg button.on {
+  background: var(--accentBg);
+  color: var(--accentText);
+}
+
+#phonePill {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--accentLine);
+  border-radius: 15px;
+  background: rgb(38 40 44 / 95%);
+  color: var(--accentText);
+  box-shadow: 0 6px 16px rgb(0 0 0 / 40%);
+}
+
+#phonePill.bad {
+  border-color: rgb(217 125 121 / 60%);
+  color: var(--danger);
+}
+
+/* --- drop overlay, popover, toast ------------------------------------------ */
+#dropOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgb(10 11 13 / 62%);
+  pointer-events: none;
+}
+
+#dropOverlay::before {
+  content: "";
+  position: absolute;
+  inset: 10px;
+  border: 2px dashed var(--accentLine);
+  border-radius: 12px;
+}
+
+.dropbox {
+  position: relative;
+  max-width: 380px;
+  padding: 22px 24px;
+  border: 1px solid var(--accentLine);
+  border-radius: 12px;
+  background: #24272c;
+  color: var(--accentText);
+  text-align: center;
+  box-shadow: 0 16px 40px rgb(0 0 0 / 55%);
+}
+
+.dropbox .dt {
+  margin-top: 8px;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.dropbox .ds {
+  margin-top: 4px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.dfiles {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 5px;
+  margin-top: 10px;
+}
+
+.dfiles span {
+  padding: 2px 7px;
+  border: 1px solid var(--line2);
+  border-radius: 10px;
+  color: var(--text);
+  font: 10.5px var(--mono);
+}
+
+/* Over the page while files are dragged in: the shelf (or its rail) lights
+ * up as where they will land. */
+body.filedrag #shelf {
+  z-index: 51;
+  border-left: 2px solid var(--accent);
+  box-shadow: -10px 0 30px rgb(233 162 59 / 25%);
+}
+
+#pop {
+  position: fixed;
+  z-index: 45;
+  min-width: 220px;
+  max-width: min(320px, calc(100vw - 16px));
+  max-height: min(380px, calc(100vh - 16px));
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid var(--line2);
+  border-radius: 6px;
+  background: #2a2d32;
+  box-shadow: 0 10px 28px rgb(0 0 0 / 50%);
+}
+
+.mhead {
+  padding: 6px 9px 3px;
+  color: var(--dim);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.mi {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 30px;
+  padding: 3px 9px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  text-align: left;
+}
+
+.mi:hover,
+.mi:focus-visible {
+  background: var(--bg4);
+}
+
+.mi > svg {
+  color: var(--accentText);
+}
+
+.mi .mt {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mi .mh {
+  flex: none;
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.mi.cur {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.mi .thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 3px;
+}
+
+.mi .thumb svg {
+  width: 13px;
+  height: 13px;
+}
+
+.msep {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--line2);
+}
+
+#toast {
+  position: fixed;
+  bottom: 36px;
+  left: 50%;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100vw - 32px);
+  padding: 8px 12px;
+  border: 1px solid var(--line2);
+  border-radius: 6px;
+  background: #2f3237;
+  box-shadow: 0 10px 26px rgb(0 0 0 / 50%);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 8px);
+  transition: opacity 0.15s, transform 0.15s;
+}
+
+#toast.show {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, 0);
+}
+
+#toast button {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accentText);
+  font-weight: 600;
+}
+
+/* --- narrower windows ------------------------------------------------------ */
+@media (width <= 1100px) {
+  :root {
+    --treeW: 210px;
+    --inspW: 260px;
+    --shelfW: 262px;
+  }
+}
+
+@media (width <= 900px) {
+  :root {
+    --inspW: 248px;
+    --shelfW: 246px;
+  }
+
+  .hideM {
+    display: none !important;
+  }
+
+  .cmore {
+    padding-left: 8px;
+  }
+
+  .cstate .gain {
+    display: none;
+  }
+}
+
+/* A phone in landscape (and any short window): denser rows, no feet. */
+@media (height <= 560px) {
+  .treefoot,
+  .shelffoot {
+    display: none;
+  }
+
+  .thumb {
+    width: 34px;
+    height: 34px;
+  }
+
+  .crow {
+    padding: 5px 5px 5px 6px;
+  }
+
+  .sumline {
+    padding: 5px 10px 6px;
+  }
+
+  #shelfList {
+    gap: 4px;
+    padding: 6px 6px 16px;
+  }
+
+  #notes .nb {
+    max-height: 40vh;
+  }
+}
+
+/* A phone: the docks are sheets over the foot of the page; the list, the
+ * details and the assets each a sheet of its own. */
+@media (width <= 700px) {
+  :root {
+    --treeW: 0px;
+    --inspW: 0px;
+    --shelfCur: 0px;
+  }
+
+  .hideS {
+    display: none !important;
+  }
+
+  .showS {
+    display: inline !important;
+  }
+
+  .phoneOnly {
+    display: inline-flex !important;
+  }
+
+  #tree,
+  #insp,
+  #shelf {
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: auto;
+    height: 62%;
+    border: 0;
+    border-top: 1px solid var(--line2);
+    border-radius: 10px 10px 0 0;
+    background: var(--bg1);
+    box-shadow: 0 -10px 26px rgb(0 0 0 / 45%);
+    transition: none;
+  }
+
+  .cstate .gain {
+    display: inline;
+  }
+
+  #tree,
+  #insp,
+  #shelf {
+    display: none;
+  }
+
+  body.sheet-list:not(.hasSel) #tree {
+    display: flex;
+  }
+
+  body.hasSel:not(.sheet-assets) #insp {
+    display: flex;
+    z-index: 7;
+    height: 66%;
+  }
+
+  body.sheet-assets #shelf {
+    display: flex;
+    z-index: 8;
+    height: 70%;
+  }
+
+  /* A phone never folds the shelf to its rail (shelf.js): its sheet
+   * closes instead, and the pill over the map keeps the progress. */
+  #shelfFold,
+  #treeFold {
+    display: none;
+  }
+
+  .phead {
+    position: relative;
+    height: 42px;
+    padding-top: 6px;
+  }
+
+  .phead::before {
+    content: "";
+    position: absolute;
+    top: 4px;
+    left: 50%;
+    width: 34px;
+    height: 3px;
+    border-radius: 2px;
+    background: #4a4f57;
+    transform: translateX(-50%);
+  }
+
+  .shead {
+    padding-left: 12px;
+  }
+
+  #notes,
+  body:not(.hasSel) #notes {
+    top: 52px;
+    left: 12px;
+    width: calc(100% - 24px);
+    min-width: 0;
+  }
+
+  .row {
+    height: 34px;
+  }
+
+  .row.st {
+    height: 36px;
+  }
+
+  .treefoot,
+  .shelffoot {
+    display: none;
+  }
+
+  .crow {
+    cursor: pointer;
+  }
+
+  .cside .uses {
+    height: 26px;
+    padding: 0 9px;
+  }
+
+  .ib.del {
+    width: 30px;
+    height: 30px;
+  }
+
+  #bar .credits,
+  .tog .tl {
+    display: none;
+  }
+
+  /* Over the map, never over the sheet the author is working in. */
+  #toast {
+    top: 56px;
+    bottom: auto;
+    width: max-content;
+    transform: translate(-50%, -8px);
+  }
+
+  #toast.show {
+    transform: translate(-50%, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before {
+    animation-duration: 0.01ms !important;
+    transition: none !important;
+  }
+}
