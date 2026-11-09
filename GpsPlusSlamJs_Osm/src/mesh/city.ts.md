@@ -18,8 +18,17 @@ the same ground.
 - `cityGround(frame, field?) → CityGround` - `{ frame, groundHeightM? }`:
   the field's `heightAt` at a position's ENU metres, or flat (no sampler)
   without a field. One derivation, so every layer stands on one surface.
-- `buildCity(features, ground) → City` - `{ volumes, barriers, buildings,
-trees, roads, roadCount }`. `volumes` and `barriers` are the builders' own results (a caller
+- `buildCity(features, ground, { window }) → City` - `{ volumes, barriers,
+buildings, trees, cosmeticTrees, roads, roadCount }`. `window` (a lat/lng
+  `Bbox`) is REQUIRED (city objects plan 2026-11-07-2315 section 4): the
+  bounding box of the data the caller fetched; everything invented from a
+  relation (the cosmetic trees today) stays inside it. RangeError without it.
+  `cosmeticTrees` are `buildCosmeticTrees`' placements (woods, orchards,
+  tree rows; rank order, `cosmetic: true`), excluded from every built
+  building footprint (also those outside `withinM`) and from road half
+  widths, kept within `withinM`; never in `trees`.
+- `buildCity(features, ground, { window, cosmeticTrees: false })` builds no
+  cosmetic trees (default true, the owner's choice). `volumes` and `barriers` are the builders' own results (a caller
   that needs them, OsmDemo for its POI hosts and counters, does not build
   twice); `buildings` are `MeshChunk`s with per-vertex `colors` (LINEAR light,
   `linearChunkColours`; `roads` stay raw sRGB),
@@ -103,7 +112,9 @@ building; the shell phase stable and in [0, 1); empty in, empty out;
 `cityGround` flat without a field and reading the field at the position's ENU
 metres; `withinM` dropping what lies outside, keeping all without it, keeping a
 building's parts together (`s3db-parts.test.ts`), and
-refusing a non-positive window; roads only when asked, the roads and paths
+refusing a non-positive window; the cosmetic trees on by default, in their
+own field, none when switched off, none inside a built house, within
+`withinM`, and the build refused without a window; roads only when asked, the roads and paths
 coloured by class and surface and never a tunnel, draped on the ground, kept
 within the window; the seeded palette by default (walls and flat or pitched
 roofs from the key, a pitched tag drawn as a prism in a flat grey, a part

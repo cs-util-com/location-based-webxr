@@ -45,6 +45,7 @@ function groupOf(layer: LayerKind): LayerGroup {
       return "overlays";
     case "buildings":
     case "trees":
+    case "woods":
     case "plates":
     case "roads":
     case "poi":
@@ -154,6 +155,10 @@ function labelFor(layer: LayerKind): string {
       return "buildings";
     case "trees":
       return "trees";
+    case "woods":
+      // The invented trees of mapped woods, orchards and tree rows (city
+      // objects plan 2026-11-07-2315 M2a), apart from the mapped "trees".
+      return "woods";
     case "plates":
       // "landuse", NOT "ground" and NOT "OSM areas", and both rejections are the
       // point. It said "ground" until the ground-mode picker landed beside it

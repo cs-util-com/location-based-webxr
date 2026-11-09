@@ -97,6 +97,10 @@ async function start(id, target, heights, firstRings) {
       const city = buildCity(data.features, data.ground, {
         withinM: TERRAIN_EXTENT_M,
         roads: true,
+        // The fetched data's box (city objects plan 2026-11-07-2315 section
+        // 4); the cosmetic woods stay off on the globe until objects M2b.
+        window: data.window,
+        cosmeticTrees: false,
       });
       built = true;
       self.postMessage(

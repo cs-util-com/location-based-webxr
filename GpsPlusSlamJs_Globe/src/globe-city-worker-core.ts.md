@@ -64,6 +64,10 @@ filed follow-up.
   `ok: false` and `finished` `settled`.
 - No city stands on invented heights: `buildCity` runs only on the
   library's deliveries, within `TERRAIN_EXTENT_M`.
+- The build window is the delivery's `window` (the loaded tiles' box,
+  city objects plan 2026-11-07-2315 section 4), and `cosmeticTrees: false`:
+  the globe draws no cosmetic woods until objects M2b wires them, so the
+  worker builds none.
 
 ## Example
 

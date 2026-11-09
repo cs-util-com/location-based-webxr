@@ -7,6 +7,7 @@ import type {
   OsmTileResult,
   OsmTileTimings,
 } from "../source/osm-data-source.js";
+import { cellToBoundingBox } from "../source/overpass-query.js";
 import { RateLimitedError } from "../source/overpass-source.js";
 import { MemoryBlobStore } from "../source/memory-blob-store.js";
 import { CachingSource } from "../source/caching-source.js";
@@ -414,6 +415,29 @@ describe("loadCityData", () => {
     expect(delivered.map((d) => d.stage)).toEqual(["first", "full"]);
     expect(delivered[0]?.features.length).toBe(firstTiles.length);
     expect(delivered[1]?.features.length).toBe(plan.overpassTiles.length);
+  });
+
+  // WHY (city objects plan 2026-11-07-2315 section 4): buildCity needs the
+  // window of the data actually fetched, so nothing invented (woods, tint, the
+  // roof prior) reads a relation far outside it. Each delivery carries the
+  // union of its loaded tiles' Overpass boxes, growing with the rings.
+  it("carries the window of the tiles loaded so far, growing with the rings", async () => {
+    const plan = multiTilePlan();
+    const union = (tiles: readonly string[]) => {
+      const boxes = tiles.map(cellToBoundingBox);
+      return {
+        south: Math.min(...boxes.map((b) => b.south)),
+        west: Math.min(...boxes.map((b) => b.west)),
+        north: Math.max(...boxes.map((b) => b.north)),
+        east: Math.max(...boxes.map((b) => b.east)),
+      };
+    };
+    const { delivered } = await run(plan, {
+      source: fakeSource(),
+      heightFetch: fakeHeights().fetch,
+    });
+    expect(delivered[0]?.window).toEqual(union(plan.rings[0]?.tiles ?? []));
+    expect(delivered[1]?.window).toEqual(union(plan.overpassTiles));
   });
 
   it("delivers once when the first rings asked for are every ring", async () => {

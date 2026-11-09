@@ -63,6 +63,11 @@ WebGL.
     claim was about the settings copied.
 - **The margin applies to this view only.** The text names the ground
   mode. It is not the DEC-R4-5 sweep, which covers every sun point.
+  It measures the view as drawn, cosmetic woods included, so at a mapped
+  wood it can read "below the bound": the owner relaxed DEC-R4-5 for wooded
+  scenes (2026-11-08, city objects plan 2026-11-07-2315 section 17), and the
+  e2e sweep in `scene-3d.spec.js` runs with the `woods` layer off for that
+  reason. The bound itself is unchanged.
 - **Escape closes it from anywhere while it is open.** The listener is on
   the document and only while open. Focus returns to the opener only when it
   was inside the panel.

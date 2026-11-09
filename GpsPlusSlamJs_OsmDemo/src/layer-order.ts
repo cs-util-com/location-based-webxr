@@ -63,6 +63,7 @@ export function groundLift(layer: LayerKind): number {
     // one of the signs it never belonged in the registry.
     case "buildings":
     case "trees":
+    case "woods":
     case "poi":
     case "underground":
       // `underground` is BELOW the ground rather than on it, so it has no place

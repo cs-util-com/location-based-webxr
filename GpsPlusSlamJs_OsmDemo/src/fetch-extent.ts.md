@@ -7,6 +7,11 @@ the demo can draw it and put a number on it.
 
 ## Public API
 
+- `fetchedWindow(tiles, clip): Bounds | undefined` - the union of the loaded
+  tiles' `tileBounds`, cut to `clip` (the drawn ground); undefined when no tile
+  is loaded or they do not overlap. The worker passes it to `buildCity` as the
+  build window (city objects plan 2026-11-07-2315 M2a), so invented trees stay
+  on fetched, drawn ground. Tested in `fetch-extent.test.ts` ("the build window").
 - `tileBounds(tile: string): Bounds` — the H3 cell's bounding box, i.e. exactly
   what `buildTileQuery` asks Overpass for.
 - `summariseExtent(tile: string): ExtentSummary` — `widthKm`, `heightKm`,

@@ -37,8 +37,13 @@ import {
   streetColour,
 } from "./street-roads.js";
 
-/** The page's own settings, from the link: `?joins=&gap=&edges=&marks=&cut=`. */
+/**
+ * The page's own settings, from the link:
+ * `?style=&joins=&gap=&edges=&marks=&cut=`.
+ */
 const SETTINGS = {
+  /** How a way's segments join: one mitred strip, or today's discs. */
+  style: { values: ["mitre", "discs"], fallback: "mitre" },
   joins: { values: [0, 5, 10, 15, 30], fallback: ROAD_PARAMS.straightDeg },
   /** The widest notch a dropped disc may open, centimetres; 0 is no limit. */
   gap: { values: [0, 5, 10, 25], fallback: 10 },
@@ -50,6 +55,7 @@ const SETTINGS = {
 /** The thresholds the page measures on every load, whatever it draws. */
 const SWEEP_DEG = [0, 2, 5, 10, 15, 20, 30];
 const SWEEP_GAP_CM = [0, 5, 10, 25];
+const SWEEP_MITRE_LIMIT = [1.5, 2, 3, 4];
 
 /** Mapped pedestrian areas (squares) a person stands on, drawn flat. */
 const AREA_Y = 0.004;
@@ -66,7 +72,8 @@ function readSettings() {
   const params = new URLSearchParams(location.search);
   const out = {};
   for (const [name, { values, fallback }] of Object.entries(SETTINGS)) {
-    const value = Number(params.get(name));
+    const raw = params.get(name);
+    const value = typeof fallback === "number" ? Number(raw) : raw;
     out[name] = params.has(name) && values.includes(value) ? value : fallback;
   }
   return out;
@@ -353,7 +360,11 @@ function addControls() {
     }
     panel.insertBefore(node, stats);
   };
-  row("Road joins: no disc under", "joins", [
+  row("Road joins", "style", [
+    ["mitre", "mitre strip"],
+    ["discs", "discs"],
+  ]);
+  row("Discs: none under", "joins", [
     [0, "today"],
     [5, "5°"],
     [10, "10°"],
@@ -409,12 +420,45 @@ function objectsFor(features, ctx) {
       };
     }),
   );
+  const mitreSweep = SWEEP_MITRE_LIMIT.map((mitreLimit) => {
+    const { stats } = buildRibbons(ways, {
+      widthOf,
+      colourOf,
+      joinStyle: "mitre",
+      mitreLimit,
+    });
+    return {
+      mitreLimit,
+      triangles:
+        stats.quadTriangles + stats.joinTriangles + stats.discTriangles,
+      mitres: stats.mitres,
+      bevels: stats.bevels,
+      fallbacks: stats.fallbacks,
+      discs: stats.discsKept,
+      maxOvershootM: Number(stats.maxOvershootM.toFixed(3)),
+    };
+  });
   const built = buildRibbons(ways, {
     widthOf,
     colourOf,
+    joinStyle: settings.style,
     straightDeg: settings.joins,
     maxGapM: maxGap(settings.gap),
   });
+  const discsBuilt =
+    settings.style === "discs"
+      ? built
+      : buildRibbons(ways, {
+          widthOf,
+          colourOf,
+          joinStyle: "discs",
+          straightDeg: settings.joins,
+          maxGapM: maxGap(settings.gap),
+        });
+  const mitreBuilt =
+    settings.style === "mitre"
+      ? built
+      : buildRibbons(ways, { widthOf, colourOf, joinStyle: "mitre" });
 
   const nodes = features
     .filter((f) => f.type === "node")
@@ -453,7 +497,12 @@ function objectsFor(features, ctx) {
     settings,
     todayRoadTriangles: triangleTotal(ctx.city.roads),
     sweep,
+    mitreSweep,
     roadTriangles: built.positions.length / 9,
+    roadTrianglesByStyle: {
+      discs: discsBuilt.positions.length / 9,
+      mitre: mitreBuilt.positions.length / 9,
+    },
     markTriangles,
     areaTriangles: marks.positions.length / 9 - markTriangles,
     stripes: stripes.length,

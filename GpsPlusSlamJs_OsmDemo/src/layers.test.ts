@@ -37,6 +37,9 @@ describe("the layer set", () => {
       "areas",
       "buildings",
       "trees",
+      // The invented trees of mapped woods, orchards and rows (city objects
+      // plan 2026-11-07-2315 M2a): their own switch, on by default (the owner).
+      "woods",
       "plates",
       "roads",
       "poi",
@@ -93,7 +96,7 @@ describe("the layer set", () => {
     );
     expect([...off].sort()).toEqual(["cells", "plates", "underground"]);
     expect([...on].sort()).toEqual(
-      ["areas", "buildings", "poi", "roads", "trees"].sort(),
+      ["areas", "buildings", "poi", "roads", "trees", "woods"].sort(),
     );
   });
 

@@ -12,7 +12,9 @@ union, and two runtime guards. No behaviour.
   is generic over it, and the worker's `handle` switches on it. Adding a call
   means editing exactly this one type plus the two places the compiler then
   points at.
-- `TransferableMesh` — built geometry plus the status-line counters.
+- `TransferableMesh` — built geometry plus the status-line counters. Since
+  objects M2a it carries `cosmeticTrees` (the woods layer's invented trees,
+  plain placements, structured-cloned like `trees`).
 - `UpdateResult`, `TerrainResult` — the two compound results.
   - `TerrainResult.demSourceId` — the worker provider's own `sourceId`
     (`mapterhorn+terrarium`), reported **on the result rather than shared as a

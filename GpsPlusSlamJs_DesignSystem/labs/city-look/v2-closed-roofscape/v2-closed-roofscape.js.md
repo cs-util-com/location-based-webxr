@@ -22,7 +22,8 @@ as first chosen, for a before and after on one page), `audit` (counts the kept t
 
 ## Invariants and assumptions
 
-- The kept buildings come from `ctx.buildCity` on the features minus the roofed
+- The kept buildings come from `ctx.buildCity` (window `ctx.fixture.bbox`,
+  cosmetic trees off: only the buildings are read) on the features minus the roofed
   ones, so their geometry and colours are today's; `audit=1` measures it (0 on
   both fixtures).
 - Draw calls: today's building chunks plus one mesh for all invented houses. No

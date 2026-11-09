@@ -27,6 +27,11 @@ import {
   type BuildingPalette,
 } from "./building-palette.js";
 import { buildBuildings, type BuildingVolume } from "./buildings.js";
+import type { Bbox } from "../spatial/clip.js";
+import {
+  buildCosmeticTrees,
+  type CosmeticTreePlacement,
+} from "./cosmetic-trees.js";
 import {
   chunkMeshes,
   linearChunkColours,
@@ -54,6 +59,18 @@ export interface CityGround {
  * (globe city plan 2026-10-05-0040 §12.4 R12). Absent: everything is kept.
  */
 export interface CityOptions {
+  /**
+   * The bounding box (lat/lng) of the data the caller fetched. Required: a
+   * relation reaches far outside any fetch (a forest, a boundary), and what
+   * is invented from it (cosmetic trees) is placed only inside this box
+   * (city objects plan 2026-11-07-2315 section 4).
+   */
+  readonly window: Bbox;
+  /**
+   * Also invent the trees of mapped woods, orchards and tree rows
+   * (`buildCosmeticTrees`). Default true (the owner: on); false builds none.
+   */
+  readonly cosmeticTrees?: boolean;
   readonly withinM?: number;
   /**
    * Also build the roads and paths (`buildRoads`: ribbons draped per vertex
@@ -85,6 +102,12 @@ export interface City {
   readonly buildings: readonly MeshChunk[];
   /** One placement per `natural=tree` node. */
   readonly trees: readonly TreePlacement[];
+  /**
+   * The invented trees of woods, orchards and tree rows, in rank order,
+   * every one `cosmetic: true`; never in `trees`. Empty with
+   * `cosmeticTrees: false`.
+   */
+  readonly cosmeticTrees: readonly CosmeticTreePlacement[];
   /**
    * The road and path ribbons merged per chunk, a colour per vertex; empty
    * unless `roads` was asked for.
@@ -120,9 +143,12 @@ export function cityGround(
 export function buildCity(
   features: Iterable<OsmFeature>,
   ground: CityGround,
-  options: CityOptions = {},
+  options: CityOptions,
 ): City {
   const { withinM, palette = "seeded" } = options;
+  if (options.window === undefined) {
+    throw new RangeError("buildCity needs a window (the fetched bbox)");
+  }
   if (withinM !== undefined && !(withinM > 0)) {
     throw new RangeError(`withinM must be a positive number, got ${withinM}`);
   }
@@ -135,7 +161,8 @@ export function buildCity(
     withinM === undefined ||
     (Math.abs(p.x) <= withinM && Math.abs(p.y) <= withinM);
   const all = [...features];
-  const volumes = withinWindow(buildBuildings(all, ground), inside);
+  const built = buildBuildings(all, ground);
+  const volumes = withinWindow(built, inside);
   const barriers = buildBarriers(all, ground).filter((b) =>
     inside(meshCentroidEnu(b.mesh)),
   );
@@ -206,7 +233,25 @@ export function buildCity(
   const { roads, roadCount } = options.roads
     ? cityRoads(all, ground, inside, tagsByKey)
     : { roads: [], roadCount: 0 };
-  return { volumes, barriers, buildings, trees, roads, roadCount };
+  // Every built footprint excludes, not only the kept ones: a house just
+  // outside `withinM` still has no tree growing through it.
+  const cosmeticTrees =
+    options.cosmeticTrees === false
+      ? []
+      : buildCosmeticTrees(all, {
+          ...ground,
+          window: options.window,
+          excludeRings: built.map((v) => v.footprint),
+        }).filter((t) => inside(t.position));
+  return {
+    volumes,
+    barriers,
+    buildings,
+    trees,
+    cosmeticTrees,
+    roads,
+    roadCount,
+  };
 }
 
 /**

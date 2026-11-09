@@ -151,7 +151,11 @@ function buildingsFor(features, ctx) {
 
   const replaced = new Set(plans.map((plan) => plan.key));
   const kept = features.filter((feature) => !replaced.has(featureKey(feature)));
-  const { buildings } = ctx.buildCity(kept, ctx.ground, { roads: false });
+  const { buildings } = ctx.buildCity(kept, ctx.ground, {
+    roads: false,
+    window: ctx.fixture.bbox,
+    cosmeticTrees: false,
+  });
   const objects = ctx.buildingObjects(buildings);
   const list = Array.isArray(objects) ? objects : [objects];
   if (search.has("audit")) {

@@ -29,6 +29,8 @@ import { CORPUS_SITES } from "../places/sites.js";
 
 const FRAME = enuFrameAt({ lat: 0, lng: 0 });
 const DEG_PER_METRE = 1 / ENU_METRES_PER_DEG_LAT;
+/** The fetched window a city build is given: the box around FRAME's origin. */
+const WINDOW = { south: -0.05, west: -0.05, north: 0.05, east: 0.05 };
 
 function way(
   id: number,
@@ -349,7 +351,11 @@ describe("a building cut by the city window", () => {
       box(2, { "building:part": "yes", height: "20" }, [60, -20, 100, 20]),
       box(3, { "building:part": "yes", height: "40" }, [100, -20, 140, 20]),
     ];
-    const city = buildCity(features, { frame: FRAME }, { withinM: 100 });
+    const city = buildCity(
+      features,
+      { frame: FRAME },
+      { window: WINDOW, withinM: 100 },
+    );
     const kept = city.volumes.map((v) => v.feature).sort();
     expect([[], ["way/2", "way/3"]]).toContainEqual(kept);
   });
@@ -402,7 +408,7 @@ describe("colour of a building:part", () => {
 
   /** The packed 0xrrggbb drawn at a volume's first vertex. */
   function drawnColour(features: OsmFeature[], feature: string): number {
-    const city = buildCity(features, { frame: FRAME });
+    const city = buildCity(features, { frame: FRAME }, { window: WINDOW });
     const volume = city.volumes.find((v) => v.feature === feature);
     if (volume === undefined) throw new Error(`${feature} not drawn`);
     const [x, y, z] = [...volume.mesh.positions.slice(0, 3)];
@@ -478,6 +484,7 @@ describe("colour of a building:part", () => {
         ),
       ],
       { frame: FRAME },
+      { window: WINDOW },
     );
     const chunk = city.buildings[0];
     expect(chunk?.colors).toBeDefined();
@@ -517,6 +524,7 @@ describe("colour of a building:part", () => {
           ),
         ],
         { frame: FRAME },
+        { window: WINDOW },
       );
       expect(city.buildings).toHaveLength(1);
       const chunk = city.buildings[0];
@@ -627,6 +635,7 @@ describe("colour of a building:part", () => {
           },
         ],
         { frame: FRAME },
+        { window: WINDOW },
       );
       const ranges = city.volumes[0]?.roofVertexRanges ?? [];
       expect(ranges).toHaveLength(2);
@@ -654,7 +663,7 @@ describe("colour of a building:part", () => {
       box(1, { building: "yes", "roof:colour": "red" }, [-10, -10, 10, 10]),
       box(2, { "building:part": "yes", height: "9" }, [-10, -10, 10, 10]),
     ];
-    const city = buildCity(features, { frame: FRAME });
+    const city = buildCity(features, { frame: FRAME }, { window: WINDOW });
     const chunk = city.buildings[0];
     const n = chunk?.mesh.normals ?? new Float32Array();
     const c = chunk?.colors ?? new Float32Array();

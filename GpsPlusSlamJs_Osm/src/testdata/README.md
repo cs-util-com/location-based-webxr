@@ -243,3 +243,20 @@ differential rather than argued about. Its only consumer is
   up — it lives in `sites/` only because it belongs to the Cologne extract.
 - Re-capture with `node scripts/capture-non-areal.mjs cologne-cathedral`. It hits
   donated public infrastructure, so it is a script and never a gate.
+
+## `sites/woodland-hinterzarten.json` - the woods scene, not a corpus site
+
+- **Copied byte for byte from the city-look lab**
+  (`GpsPlusSlamJs_DesignSystem/labs/city-look/fixtures/woodland-hinterzarten.json`,
+  provenance in that folder's `PROVENANCE.md`): Hinterzarten in the Black
+  Forest, 640 x 640 m around 47.9030 N, 8.1070 E, one Overpass answer of
+  2026-11-07 built by `buildTileQuery`, ODbL, nothing removed. It is the only
+  captured scene with real woods (25 wood or forest ways, 2 forest relations,
+  an orchard, 2 tree rows, 126 mapped trees), the scene of the O1 quiet-greens
+  lab the owner chose.
+- **Not in `CORPUS_SITES`**: the place table feeds the demo's location picker
+  and every corpus-wide test; this file serves the cosmetic-trees tests only
+  (city objects plan 2026-11-07-2315 M2a), loaded by `loadSite` directly.
+- **Its two forest relations (112835, 67504) reach far outside the box**, which
+  is what the build window test needs: their invented trees must stay inside
+  the capture's `bbox`.

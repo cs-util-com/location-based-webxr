@@ -24,6 +24,7 @@ import type { TransferableMesh } from "./worker/protocol.js";
 const NO_LAYERS = {
   buildings: false,
   trees: false,
+  woods: false,
   plates: false,
   roads: false,
   areas: false,

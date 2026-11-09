@@ -19,7 +19,7 @@ the counters and the layers only OsmDemo draws.
 ## Public API
 
 - `DRAWN_BY_MESH` — the layer ids whose geometry comes out of the worker's mesh
-  (`buildings`, `trees`, `plates`). The declared truth the table is checked
+  (`buildings`, `trees`, `woods`, `plates`, ...). The declared truth the table is checked
   against.
 - `MeshLayers` — `Partial<Record<MeshLayerKind, boolean>>` (the union is module-
   internal; reach it via `MeshLayerDescriptor["layer"]` if ever needed). Partial
@@ -31,6 +31,10 @@ the counters and the layers only OsmDemo draws.
 - `drawMeshLayers(mesh, layers?) → { objects, stats }` — builds every enabled
   layer. No error modes: an empty layer yields no objects, and an unknown key in
   `layers` is ignored because the loop is driven by the table, not by the input.
+- `showCosmetic(root, visible)` — shows or hides every object under `root`
+  tagged `userData.cosmetic` (the woods layer), leaving mapped objects alone.
+  Absolute, so idempotent after a rebuild. `BuildingView.setArShellMaterial`
+  calls it: the woods are off in AR (owner decision, objects M2a).
 - `meshLayerSelection(layers: LayerSet) → MeshLayers` — narrows the registry's
   full set to the mesh layers.
 - `wantsAnyMeshLayer(layers: LayerSet) → boolean` — whether `render` has
@@ -154,3 +158,13 @@ the two tagged materials scale, idempotent, bad gains refused):
   `Mesh` per tree, distinct geometry per variant, the instance matrix's position
   and scale, and the `sharedResources` flag that stops `clear()` disposing a
   geometry every later frame depends on.
+
+## The woods layer (objects M2a, city objects plan 2026-11-07-2315)
+
+- Row `woods`: `cosmeticTreeObjects(mesh.cosmeticTrees)` from the Osm library,
+  the invented trees of woods, orchards and tree rows (`mesh/cosmetic-trees.ts`).
+  On by default (owner), counter `woods`. Its instanced meshes carry
+  `userData.cosmetic = true` and are never in the pick set: picking one
+  resolves to no feature, because there is none.
+- Hidden in AR by `showCosmetic` (above). Tests: `mesh-layers.test.ts`
+  ("the woods layer", "showCosmetic"), `building-view-content.test.ts`.

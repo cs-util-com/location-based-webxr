@@ -25,7 +25,8 @@ triangles }`
   - The drawing buffer is always 800 x 600 at pixel ratio 1, the size of the
     "today" pictures, so the two halves frame alike at any screen size.
   - The city is `buildCity` within 400 m, drawn with `buildingObjects`: the
-    consumers' own path, so a fix in either shows here.
+    consumers' own path, so a fix in either shows here. Its `window` is the
+    fixture's `bbox` (the fetched box, required since objects M2a).
   - Plain lights and no tone mapping: the page judges geometry and colour, not
     the look (the city look lab is where looks are compared).
   - Controls are links; changing building or camera reloads the page.

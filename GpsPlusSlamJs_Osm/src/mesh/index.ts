@@ -214,6 +214,19 @@ export {
 
 // The city a renderer draws, assembled once for every consumer (globe city
 // plan 2026-10-05-0040 §14 L3; it was inline in OsmDemo's worker).
+export type {
+  BuildCosmeticTreesOptions,
+  CosmeticTreePlacement,
+  CosmeticTreeSource,
+} from "./cosmetic-trees.js";
+export {
+  COSMETIC_ROAD_MARGIN_M,
+  COSMETIC_TREE_CAP,
+  COSMETIC_WOOD_DENSITY_PER_M2,
+  buildCosmeticTrees,
+  cosmeticRank,
+  cosmeticTreeSource,
+} from "./cosmetic-trees.js";
 export type { City, CityGround, CityOptions } from "./city.js";
 export { buildCity, cityGround } from "./city.js";
 export { shellRandFor } from "./shell-rand.js";

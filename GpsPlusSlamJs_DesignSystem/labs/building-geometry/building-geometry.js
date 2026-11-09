@@ -75,7 +75,10 @@ async function loadFeatures(id) {
   const response = await fetch(fixtureUrl(id));
   if (!response.ok) throw new Error(`fixture ${id}: ${response.status}`);
   const fixture = await response.json();
-  return parseOverpassJson(fixture.payload).features;
+  return {
+    features: parseOverpassJson(fixture.payload).features,
+    window: fixture.bbox,
+  };
 }
 
 function buildChrome(state, capture) {
@@ -198,11 +201,12 @@ async function run(api) {
   api.palette = state.palette;
   const chrome = buildChrome(state, capture);
 
-  const features = await loadFeatures(state.building.id);
+  const { features, window } = await loadFeatures(state.building.id);
   const target = features.find((f) => featureKey(f) === state.building.target);
   if (!target) throw new Error(`target ${state.building.target} not found`);
   const frame = enuFrameAt(originOf(target));
   const city = buildCity(features, cityGround(frame, undefined), {
+    window,
     withinM: WITHIN_M,
     palette: state.palette,
   });
