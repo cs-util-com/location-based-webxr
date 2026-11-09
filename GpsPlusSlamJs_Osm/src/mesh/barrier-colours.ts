@@ -11,10 +11,13 @@ import { barrierKind, type BarrierKind } from "./barriers.js";
 import { parseOsmColour, type Rgb } from "./feature-colours.js";
 import { linearToSrgb, srgbToLinear } from "./srgb.js";
 
+/** A wall's sRGB, also the colour of tags of no solid kind. */
+const WALL_RGB: Rgb = 0xa59e93;
+
 /** sRGB per kind. Muted on purpose: barriers sit behind the buildings. */
 export const BARRIER_KIND_RGB: ReadonlyMap<BarrierKind, Rgb> = new Map([
   ["hedge", 0x6a785d],
-  ["wall", 0xa59e93],
+  ["wall", WALL_RGB],
   ["city_wall", 0x9b9081],
   ["retaining_wall", 0x9d9d98],
   ["fence", 0x7d7366],
@@ -35,8 +38,6 @@ export const BARRIER_MATERIAL_RGB: ReadonlyMap<string, Rgb> = new Map([
 
 /** Share of a tagged `colour` in the result; the rest is the base colour. */
 export const TAGGED_BARRIER_COLOUR_SHARE = 0.5;
-
-const WALL_RGB = 0xa59e93;
 
 function mixLinear(base: Rgb, tagged: Rgb, share: number): Rgb {
   let out = 0;
