@@ -42,15 +42,23 @@ export {
   splitAtGates,
 } from "./barrier-gates.js";
 
-export type { BarrierDimensions } from "./barriers.js";
+export type { BarrierDimensions, BarrierKind } from "./barriers.js";
 export {
   barrierCentrelines,
+  barrierKind,
   isSolidBarrier,
   resolveBarrier,
   DEFAULT_BARRIER_HEIGHT_M,
   DEFAULT_CITY_WALL_HEIGHT_M,
   DEFAULT_BARRIER_THICKNESS_M,
 } from "./barriers.js";
+
+export {
+  BARRIER_KIND_RGB,
+  BARRIER_MATERIAL_RGB,
+  TAGGED_BARRIER_COLOUR_SHARE,
+  barrierColour,
+} from "./barrier-colours.js";
 
 export type { BarrierVolume, BuildBarriersOptions } from "./barrier-volumes.js";
 export { buildBarriers } from "./barrier-volumes.js";
@@ -85,13 +93,25 @@ export {
   roadColour,
 } from "./feature-colours.js";
 
+export type { BuildingColours, BuildingPalette } from "./building-palette.js";
+export {
+  FLAT_ROOF_TONES,
+  PITCHED_ROOF_TONES,
+  WALL_TONES,
+  allPaletteColours,
+  seededBuildingColours,
+} from "./building-palette.js";
+
 export type { MeshChunk } from "./chunk-meshes.js";
 export {
   CHUNK_SIZE_M,
   chunkKeyFor,
   chunkMeshes,
+  linearChunkColours,
   meshCentroidEnu,
 } from "./chunk-meshes.js";
+
+export { linearToSrgb, srgbToLinear } from "./srgb.js";
 
 export type { AreaPlate, BuildPlatesOptions } from "./plates.js";
 export { buildAreaPlates, isPlateArea } from "./plates.js";
@@ -162,13 +182,25 @@ export {
   rankPoiKinds,
 } from "./poi-ranking.js";
 
-export type { BuildTreesOptions, TreePlacement, TreeVariant } from "./trees.js";
+export type {
+  BuildTreesOptions,
+  TreeClass,
+  TreeInstances,
+  TreePlacement,
+  TreeVariant,
+} from "./trees.js";
 export {
   DEFAULT_CROWN_RATIO,
   DEFAULT_TREE_HEIGHT_M,
+  MAX_TREE_CROWN_M,
+  MAX_TREE_HEIGHT_M,
+  TREE_COLOUR_JITTER,
+  TREE_PALETTE,
   buildTrees,
   isTree,
   packInstances,
+  treeClass,
+  treeColour,
 } from "./trees.js";
 // The shared deterministic hash. It lived in `trees.ts` until §4a gave POI
 // markers the same variation; see `stable-jitter.ts` for why one copy matters.
@@ -182,6 +214,19 @@ export {
 
 // The city a renderer draws, assembled once for every consumer (globe city
 // plan 2026-10-05-0040 §14 L3; it was inline in OsmDemo's worker).
+export type {
+  BuildCosmeticTreesOptions,
+  CosmeticTreePlacement,
+  CosmeticTreeSource,
+} from "./cosmetic-trees.js";
+export {
+  COSMETIC_ROAD_MARGIN_M,
+  COSMETIC_TREE_CAP,
+  COSMETIC_WOOD_DENSITY_PER_M2,
+  buildCosmeticTrees,
+  cosmeticRank,
+  cosmeticTreeSource,
+} from "./cosmetic-trees.js";
 export type { City, CityGround, CityOptions } from "./city.js";
 export { buildCity, cityGround } from "./city.js";
 export { shellRandFor } from "./shell-rand.js";

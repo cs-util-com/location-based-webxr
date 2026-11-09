@@ -45,39 +45,42 @@ import { MeshBuilder, type MeshData } from "./mesh-data.js";
  * numerous in a residential working set and are not two lanes wide. Expressed as
  * a lane count rather than as a width override, so there is still one mechanism.
  */
-const DEFAULT_LANES: Readonly<Record<string, number>> = {
-  motorway: 2,
-  trunk: 2,
-  primary: 2,
-  secondary: 2,
-  tertiary: 2,
-  unclassified: 2,
-  residential: 2,
-  living_street: 2,
-  busway: 2,
-  motorway_link: 1,
-  trunk_link: 1,
-  primary_link: 1,
-  secondary_link: 1,
-  tertiary_link: 1,
-  track: 1,
-  service: 1,
-};
+const DEFAULT_LANES: ReadonlyMap<string, number> = new Map([
+  ["motorway", 2],
+  ["trunk", 2],
+  ["primary", 2],
+  ["secondary", 2],
+  ["tertiary", 2],
+  ["unclassified", 2],
+  ["residential", 2],
+  ["living_street", 2],
+  ["busway", 2],
+  ["motorway_link", 1],
+  ["trunk_link", 1],
+  ["primary_link", 1],
+  ["secondary_link", 1],
+  ["tertiary_link", 1],
+  ["track", 1],
+  ["service", 1],
+]);
 
 /**
  * Classes with no lanes at all, given a flat width.
  *
  * A footway has no lanes, so multiplying a fictional lane count by a lane width
  * would be arithmetic dressed up as data.
+ *
+ * A `Map`, like `DEFAULT_LANES`: `highway` is free text, and on a plain object
+ * `constructor` found an inherited function (M1 review finding 2).
  */
-const PATH_WIDTH_M: Readonly<Record<string, number>> = {
-  footway: 2,
-  path: 2,
-  steps: 2,
-  pedestrian: 2,
-  bridleway: 2,
-  cycleway: 3,
-};
+const PATH_WIDTH_M: ReadonlyMap<string, number> = new Map([
+  ["footway", 2],
+  ["path", 2],
+  ["steps", 2],
+  ["pedestrian", 2],
+  ["bridleway", 2],
+  ["cycleway", 3],
+]);
 
 /** Lanes assumed for a `highway` value nothing else recognises. */
 const UNKNOWN_CLASS_LANES = 2;
@@ -122,12 +125,12 @@ export function roadWidthM(tags: OsmTags): number {
   if (tagged !== undefined && tagged > 0) return tagged;
 
   const highway = record["highway"] ?? "";
-  const flat = PATH_WIDTH_M[highway];
+  const flat = PATH_WIDTH_M.get(highway);
   if (flat !== undefined) return flat;
 
   const lanes =
     parseLanes(record["lanes"]) ??
-    DEFAULT_LANES[highway] ??
+    DEFAULT_LANES.get(highway) ??
     UNKNOWN_CLASS_LANES;
   return lanes * laneWidthM(lanes);
 }
@@ -160,11 +163,9 @@ export function isPedestrianPath(feature: OsmFeature): boolean {
   if (!isRoad(feature)) return false;
   const tags = feature.tags as Record<string, string> | undefined;
   const highway = tags?.["highway"];
-  // `noUncheckedIndexedAccess` makes the lookup `string | undefined`, and
-  // `undefined in PATH_WIDTH_M` is a type error rather than a false — narrow
-  // first. `isRoad` has already established the tag exists; the compiler cannot
-  // see that across the call.
-  return highway !== undefined && highway in PATH_WIDTH_M;
+  // Narrowed first: `isRoad` has already established the tag exists, but the
+  // compiler cannot see that across the call.
+  return highway !== undefined && PATH_WIDTH_M.has(highway);
 }
 
 /**

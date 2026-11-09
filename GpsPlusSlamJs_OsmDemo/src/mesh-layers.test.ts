@@ -26,6 +26,7 @@ import {
   drawMeshLayers,
   meshLayerSelection,
   poiMarkerPosition,
+  showCosmetic,
 } from "./mesh-layers.js";
 import type { TransferableMesh } from "./worker/protocol.js";
 
@@ -69,6 +70,19 @@ function fullMesh(): TransferableMesh {
         crownDiameterM: 4,
         rotationY: 0.5,
         variant: "unknown",
+        colour: 0x737c66,
+      },
+    ],
+    cosmeticTrees: [
+      {
+        feature: "way/77",
+        position: { x: 30, y: 40 },
+        groundHeightM: 53,
+        heightM: 12,
+        crownDiameterM: 7,
+        rotationY: 0.2,
+        variant: "needleleaved",
+        colour: 0x52665c,
       },
     ],
     plates: oneChunk(),
@@ -102,6 +116,7 @@ function emptyMesh(): TransferableMesh {
     // still a draw call and a disposal obligation.
     buildings: [],
     trees: [],
+    cosmeticTrees: [],
     plates: [],
     plateCount: 0,
     roads: [],
@@ -162,16 +177,17 @@ describe("MESH_LAYERS — the table itself", () => {
     // field that can only ever be wrong.
     const { objects } = drawMeshLayers(fullMesh());
     // Buildings, plates, roads, one area slab, one instanced tree mesh, one
-    // instanced POI mesh.
-    expect(objects).toHaveLength(6);
+    // instanced woods mesh, one instanced POI mesh.
+    expect(objects).toHaveLength(7);
   });
 });
 
 describe("drawMeshLayers — what reaches the scene", () => {
   it("draws every layer that is on", () => {
     const { objects } = drawMeshLayers(fullMesh(), ALL_ON);
-    // Buildings, plates, roads, one area slab, one tree cone, one POI marker.
-    expect(objects).toHaveLength(6);
+    // Buildings, plates, roads, one area slab, one tree, one woods mesh, one
+    // POI marker.
+    expect(objects).toHaveLength(7);
     for (const object of objects) expect(object).toBeInstanceOf(THREE.Object3D);
   });
 
@@ -180,6 +196,7 @@ describe("drawMeshLayers — what reaches the scene", () => {
       ...ALL_ON,
       buildings: false,
       trees: false,
+      woods: false,
       plates: false,
       poi: false,
       roads: false,
@@ -204,6 +221,7 @@ describe("drawMeshLayers — what reaches the scene", () => {
       ...ALL_ON,
       buildings: false,
       trees: false,
+      woods: false,
       poi: false,
       roads: false,
       areas: false,
@@ -288,6 +306,7 @@ describe("per-feature colour reaches the geometry (W22/W23)", () => {
     const { objects } = drawMeshLayers(mesh, {
       buildings: layer === "buildings",
       trees: false,
+      woods: false,
       plates: false,
       roads: layer === "roads",
       poi: false,
@@ -336,6 +355,7 @@ describe("per-feature colour reaches the geometry (W22/W23)", () => {
     const { objects } = drawMeshLayers(mesh, {
       buildings: true,
       trees: false,
+      woods: false,
       plates: false,
       roads: false,
       poi: false,
@@ -361,6 +381,7 @@ describe("materials — what the light has to work with (W13)", () => {
     const { objects } = drawMeshLayers(fullMesh(), {
       buildings: false,
       trees: false,
+      woods: false,
       plates: false,
       roads: false,
       poi: false,
@@ -422,6 +443,7 @@ describe("materials — what the light has to work with (W13)", () => {
         {
           buildings: false,
           trees: false,
+          woods: false,
           plates: false,
           roads: false,
           poi: false,
@@ -454,6 +476,7 @@ describe("drawMeshLayers — trees are instanced, one mesh per variant (W6)", ()
           crownDiameterM: 4,
           rotationY: 0,
           variant: "broadleaved",
+          colour: 0x737c66,
         },
         {
           feature: "node/2",
@@ -463,6 +486,7 @@ describe("drawMeshLayers — trees are instanced, one mesh per variant (W6)", ()
           crownDiameterM: 5,
           rotationY: 0.5,
           variant: "broadleaved",
+          colour: 0x737c66,
         },
         {
           feature: "node/3",
@@ -472,6 +496,7 @@ describe("drawMeshLayers — trees are instanced, one mesh per variant (W6)", ()
           crownDiameterM: 6,
           rotationY: 1,
           variant: "needleleaved",
+          colour: 0x737c66,
         },
       ],
     };
@@ -484,6 +509,7 @@ describe("drawMeshLayers — trees are instanced, one mesh per variant (W6)", ()
     const { objects } = drawMeshLayers(mesh, {
       buildings: false,
       trees: true,
+      woods: false,
       plates: false,
       roads: false,
       poi: false,
@@ -585,6 +611,7 @@ describe("drawMeshLayers — POI markers get their own models (W19)", () => {
     const { objects } = drawMeshLayers(mesh, {
       buildings: false,
       trees: false,
+      woods: false,
       plates: false,
       roads: false,
       poi: true,
@@ -715,6 +742,7 @@ describe("drawMeshLayers — region slabs", () => {
         ...ALL_ON,
         buildings: false,
         trees: false,
+        woods: false,
         plates: false,
         poi: false,
         roads: false,
@@ -737,6 +765,7 @@ describe("drawMeshLayers — region slabs", () => {
       ...ALL_ON,
       buildings: false,
       trees: false,
+      woods: false,
       plates: false,
       poi: false,
       roads: false,
@@ -755,6 +784,7 @@ describe("drawMeshLayers — region slabs", () => {
       ...ALL_ON,
       buildings: false,
       trees: false,
+      woods: false,
       plates: false,
       poi: false,
       roads: false,
@@ -796,6 +826,7 @@ describe("drawMeshLayers — the counters", () => {
       approximateRoofs: 2,
       barriers: 4,
       trees: 1,
+      woods: 1,
       plates: 3,
       plateTriangles: 1,
       poi: 1,
@@ -813,13 +844,14 @@ describe("drawMeshLayers — the counters", () => {
       ...ALL_ON,
       buildings: false,
       trees: false,
+      woods: false,
       plates: false,
       poi: false,
       roads: false,
       areas: false,
     });
     for (const value of Object.values(stats)) expect(value).toBe(0);
-    expect(Object.keys(stats)).toHaveLength(13);
+    expect(Object.keys(stats)).toHaveLength(14);
   });
 });
 
@@ -857,6 +889,7 @@ describe("the transparent layers composite deterministically", () => {
     const { objects } = drawMeshLayers(fullMesh(), {
       buildings: false,
       trees: false,
+      woods: false,
       plates: false,
       poi: false,
       roads: false,
@@ -891,6 +924,7 @@ describe("the transparent layers composite deterministically", () => {
     const { objects } = drawMeshLayers(fullMesh(), {
       buildings: false,
       trees: false,
+      woods: false,
       plates: false,
       poi: false,
       roads: false,
@@ -922,6 +956,7 @@ describe("region slabs carry their identity into the scene", () => {
     const { objects } = drawMeshLayers(fullMesh(), {
       buildings: false,
       trees: false,
+      woods: false,
       plates: false,
       poi: false,
       roads: false,
@@ -1058,5 +1093,75 @@ describe("applySurfaceGain — the noon brightening (plan 2026-09-24-0901)", () 
     const group = new THREE.Group();
     expect(() => applySurfaceGain(group, Number.NaN)).toThrow(RangeError);
     expect(() => applySurfaceGain(group, 0)).toThrow(RangeError);
+  });
+});
+
+/**
+ * WHY THESE TESTS MATTER (city objects plan 2026-11-07-2315 M2a). The woods
+ * are invented trees, and the owner wanted them ON by default but switchable:
+ * the `woods` row must draw exactly the cosmetic placements, flagged
+ * `userData.cosmetic` so AR and picking can tell them from mapped trees, and
+ * switching it off must remove them while the mapped trees stay.
+ */
+describe("drawMeshLayers - the woods layer", () => {
+  const only = (woods: boolean) =>
+    drawMeshLayers(fullMesh(), {
+      buildings: false,
+      trees: true,
+      woods,
+      plates: false,
+      roads: false,
+      poi: false,
+      areas: false,
+    });
+
+  it("draws the cosmetic trees, flagged, beside the mapped ones", () => {
+    const { objects, stats } = only(true);
+    const cosmetic = objects.filter((o) => o.userData["cosmetic"] === true);
+    expect(cosmetic).toHaveLength(1);
+    expect((cosmetic[0] as THREE.InstancedMesh).count).toBe(1);
+    expect(objects.filter((o) => o.userData["cosmetic"] !== true)).toHaveLength(
+      1,
+    );
+    expect(stats.woods).toBe(1);
+    expect(stats.trees).toBe(1);
+  });
+
+  it("removes only them when switched off", () => {
+    const { objects, stats } = only(false);
+    expect(objects.some((o) => o.userData["cosmetic"] === true)).toBe(false);
+    expect(objects).toHaveLength(1);
+    expect(stats.woods).toBe(0);
+    expect(stats.trees).toBe(1);
+  });
+});
+
+/**
+ * WHY THIS TEST MATTERS. Owner decision for objects M2a: the cosmetic woods
+ * are OFF in AR (they would stand in the real street). The view calls this
+ * on AR entry and exit and after every rebuild, so it must hide only the
+ * cosmetic objects and restore them exactly.
+ */
+describe("showCosmetic", () => {
+  it("hides only the cosmetic objects and shows them again", () => {
+    const { objects } = drawMeshLayers(fullMesh(), {
+      buildings: false,
+      trees: true,
+      woods: true,
+      plates: false,
+      roads: false,
+      poi: false,
+      areas: false,
+    });
+    const root = new THREE.Group();
+    root.add(...objects);
+    const cosmetic = objects.find((o) => o.userData["cosmetic"] === true)!;
+    const mapped = objects.find((o) => o.userData["cosmetic"] !== true)!;
+    showCosmetic(root, false);
+    expect(cosmetic.visible).toBe(false);
+    expect(mapped.visible).toBe(true);
+    showCosmetic(root, true);
+    expect(cosmetic.visible).toBe(true);
+    expect(mapped.visible).toBe(true);
   });
 });

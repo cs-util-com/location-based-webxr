@@ -27,6 +27,19 @@
     them along the city's up and `roadOffset` (0, off) sets a polygon
     offset pulling them forward in depth: they drape on the library's
     heights, the relief's source and zoom but not its drawn mesh;
+  - `buildingLight` (default `GLOBE_BUILDING_LIGHT`, 3) sets the
+    colour of every building's material (the library's `userData.solid`
+    meshes), so their vertex colours are multiplied by it; roads and trees
+    keep 1. RangeError for one that is not a positive finite number. Why
+    (r1162): since r1158 the library's building chunks carry LINEAR vertex
+    colours, and the owner chose to keep them correct and raise each
+    consumer's light ("Korrekt lassen, Licht anheben"). OsmDemo raises an
+    env-map intensity on its buildings (`BUILDING_SKY_LIGHT`); the globe has
+    no environment light, so its lever is this gain on the building
+    material alone, not the grade's exposure, which would also brighten the
+    relief, the sea and the sky. 3 is the swept value closest to main's building luma
+    in the r1162 probe (median 175 and mean 179 against main's 181 and 178;
+    3.5 gives 185 and 187, 2.5 gives 162 and 169);
   - `heightsUrl`: the relief's height source, passed to the worker with
     every load so the city stands on the heights the ground is drawn from
     (G1 1d); checked by `cityHeights`, RangeError for a template it cannot
@@ -126,7 +139,8 @@
 - Tests: `globe-city.test.ts` (recording fakes of the worker, the
   three.js entry and the clock: the messages posted, reuse and
   supersession, the handle's pacing, settling and abort, the objects
-  placed at the frame with the roads lifted and offset, the dithered
+  placed at the frame with the roads lifted and offset, the building
+  light on the buildings alone and its refusals, the dithered
   arrival fade, failures and a crashed worker, dispose). The buildings
   themselves are the design system's `labs/globe/globe-city.smoke.spec.mjs`
   (the roads and walls drawn at Lucerne from routed fixtures; the city at

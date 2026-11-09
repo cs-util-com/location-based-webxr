@@ -35,11 +35,21 @@ const READY = {
   "/index.html": null,
   "/3d/index.html": "__lookdev",
   "/labs/ar-shadows/index.html": "__arShadowsLab",
+  "/labs/building-geometry/index.html": "__buildingGeometry",
   "/labs/globe/index.html": "__globeLab",
   "/labs/globe-terrain/index.html": "__terrainCarrier",
   "/labs/terrain/index.html": "__terrainLab",
   "/labs/terrain/compare.html": "__terrainCompare",
+  "/labs/city-look/index.html": null,
+  "/labs/city-look/views.html": null,
 };
+
+/**
+ * The city look gallery's variant pages: one folder each, added in parallel,
+ * all on one harness and so all with one ready signal. Their own smoke opens
+ * them (labs/city-look/city-look.smoke.spec.mjs).
+ */
+const CITY_LOOK_VARIANT = /^\/labs\/city-look\/[^/]+\/index\.html$/;
 
 /**
  * A screenshot's largest channel standard deviation must exceed this to
@@ -106,7 +116,9 @@ async function drawnStdev(page) {
 
 test("every deployable page has a ready signal here @pr", () => {
   const pages = ["/index.html", ...discoverEntries(ROOT)];
-  expect(pages.filter((p) => !(p in READY))).toEqual([]);
+  expect(
+    pages.filter((p) => !(p in READY) && !CITY_LOOK_VARIANT.test(p)),
+  ).toEqual([]);
 });
 
 test("the catalog page opens without errors @pr", async ({ page }) => {
@@ -382,5 +394,23 @@ test("the AR shadows lab opens and draws without errors @pr", async ({
   expect(problems).toEqual([]);
   const stdev = await drawnStdev(page);
   console.log(`AR shadows lab drawn: stdev ${stdev.toFixed(1)}`);
+  expect(stdev).toBeGreaterThan(DRAWN_MIN_STDEV);
+});
+
+// Why this test matters: the building geometry lab is how the owner checks the
+// OSM roof and part fixes by eye; its default view loads the largest site
+// fixture and builds the city in the page, so it is what still catches a
+// library module the page cannot import or a fixture the route does not serve.
+// Untagged: a lab is not a core flow a pull request could break, so it runs in
+// the full run only (tests/repo-config/e2e-pr-tier.test.js).
+test("the building geometry lab opens and draws without errors", async ({
+  page,
+}) => {
+  const problems = await watch(page);
+  await page.goto("/labs/building-geometry/");
+  await ready(page, "__buildingGeometry");
+  expect(problems).toEqual([]);
+  const stdev = await drawnStdev(page);
+  console.log(`building geometry lab drawn: stdev ${stdev.toFixed(1)}`);
   expect(stdev).toBeGreaterThan(DRAWN_MIN_STDEV);
 });

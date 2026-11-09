@@ -62,7 +62,8 @@ const volumes = buildBarriers(features, {
   frame,
   groundHeightM: (p) => field.heightAt(frame.toEnu(p)),
 });
-// Drawn with the buildings, no toggle and no distinct colour (DEC-R11-11):
+// Drawn with the buildings, no toggle (DEC-R11-11); coloured per kind by
+// `barrierColour` since the owner's O1 choice (2026-11-07):
 const drawn = [...buildingVolumes, ...volumes];
 ```
 

@@ -65,6 +65,11 @@ export interface TransferableMesh {
   readonly buildings: readonly MeshChunk[];
   readonly trees: readonly TreePlacement[];
   /**
+   * The invented trees of woods, orchards and tree rows (`City.cosmeticTrees`,
+   * rank order), drawn by the `woods` layer; never among `trees`.
+   */
+  readonly cosmeticTrees: readonly TreePlacement[];
+  /**
    * Ground areas, CHUNKED like the buildings and for the same reason (W20).
    *
    * This said "one merged mesh" until PR #239, which is what it was before W20:

@@ -157,3 +157,9 @@ was drawn. Nothing in the picture says which half is stale.
 **The rule this all reduces to:** a layer may be absent, and a layer may be
 current, but a layer may never be _stale_. Absence is visible and self-reporting;
 staleness is invisible and self-consistent.
+
+## `woods` (objects M2a, 2026-11-08)
+
+- The cosmetic woods, orchards and tree rows (invented positions, crowns only),
+  listed after `trees` and so ON by default (owner decision). Off in AR, which
+  `BuildingView` enforces rather than this registry.

@@ -20,15 +20,26 @@ import {
   type LatLng,
   type OsmFeature,
 } from "../model/osm-feature.js";
+import { barrierColour } from "./barrier-colours.js";
 import { buildBarriers, type BarrierVolume } from "./barrier-volumes.js";
+import {
+  seededBuildingColours,
+  type BuildingPalette,
+} from "./building-palette.js";
 import { buildBuildings, type BuildingVolume } from "./buildings.js";
+import type { Bbox } from "../spatial/clip.js";
+import {
+  buildCosmeticTrees,
+  type CosmeticTreePlacement,
+} from "./cosmetic-trees.js";
 import {
   chunkMeshes,
+  linearChunkColours,
   meshCentroidEnu,
   type MeshChunk,
 } from "./chunk-meshes.js";
 import type { EnuFrame, EnuPoint } from "./enu.js";
-import { buildingColour, roadColour } from "./feature-colours.js";
+import { buildingColour, roadColour, roofColour } from "./feature-colours.js";
 import { buildRoads } from "./roads.js";
 import { shellRandFor } from "./shell-rand.js";
 import { buildTrees, type TreePlacement } from "./trees.js";
@@ -48,6 +59,18 @@ export interface CityGround {
  * (globe city plan 2026-10-05-0040 §12.4 R12). Absent: everything is kept.
  */
 export interface CityOptions {
+  /**
+   * The bounding box (lat/lng) of the data the caller fetched. Required: a
+   * relation reaches far outside any fetch (a forest, a boundary), and what
+   * is invented from it (cosmetic trees) is placed only inside this box
+   * (city objects plan 2026-11-07-2315 section 4).
+   */
+  readonly window: Bbox;
+  /**
+   * Also invent the trees of mapped woods, orchards and tree rows
+   * (`buildCosmeticTrees`). Default true (the owner: on); false builds none.
+   */
+  readonly cosmeticTrees?: boolean;
   readonly withinM?: number;
   /**
    * Also build the roads and paths (`buildRoads`: ribbons draped per vertex
@@ -56,6 +79,14 @@ export interface CityOptions {
    * consumer that draws none builds none.
    */
   readonly roads?: boolean;
+  /**
+   * Which colours a building without a colour tag takes (city objects plan
+   * 2026-11-07-2315 M7). `"seeded"` (default): the warm palette of
+   * `building-palette.ts`, picked per building from its key, its roof by
+   * its shape. `"class"`: `buildingColour` and `roofColour` by tag and
+   * material, the colours before M7. Colour tags win under both.
+   */
+  readonly palette?: BuildingPalette;
 }
 
 /** What `buildCity` returns. */
@@ -71,6 +102,12 @@ export interface City {
   readonly buildings: readonly MeshChunk[];
   /** One placement per `natural=tree` node. */
   readonly trees: readonly TreePlacement[];
+  /**
+   * The invented trees of woods, orchards and tree rows, in rank order,
+   * every one `cosmetic: true`; never in `trees`. Empty with
+   * `cosmeticTrees: false`.
+   */
+  readonly cosmeticTrees: readonly CosmeticTreePlacement[];
   /**
    * The road and path ribbons merged per chunk, a colour per vertex; empty
    * unless `roads` was asked for.
@@ -106,19 +143,26 @@ export function cityGround(
 export function buildCity(
   features: Iterable<OsmFeature>,
   ground: CityGround,
-  options: CityOptions = {},
+  options: CityOptions,
 ): City {
-  const { withinM } = options;
+  const { withinM, palette = "seeded" } = options;
+  if (options.window === undefined) {
+    throw new RangeError("buildCity needs a window (the fetched bbox)");
+  }
   if (withinM !== undefined && !(withinM > 0)) {
     throw new RangeError(`withinM must be a positive number, got ${withinM}`);
+  }
+  if (palette !== "seeded" && palette !== "class") {
+    throw new RangeError(
+      `palette must be "seeded" or "class", got ${String(palette)}`,
+    );
   }
   const inside = (p: EnuPoint): boolean =>
     withinM === undefined ||
     (Math.abs(p.x) <= withinM && Math.abs(p.y) <= withinM);
   const all = [...features];
-  const volumes = buildBuildings(all, ground).filter((v) =>
-    inside(meshCentroidEnu(v.mesh)),
-  );
+  const built = buildBuildings(all, ground);
+  const volumes = withinWindow(built, inside);
   const barriers = buildBarriers(all, ground).filter((b) =>
     inside(meshCentroidEnu(b.mesh)),
   );
@@ -127,37 +171,97 @@ export function buildCity(
   const tagsByKey = new Map(
     all.map((feature) => [featureKey(feature), feature.tags]),
   );
-  // A `building:part` takes its PARENT's tags for its colour: the parts of
-  // one building are one building, and colouring them independently would
-  // stripe a cathedral by whichever part carried which tag. A barrier has no
-  // parent and is simply itself.
+  // A `building:part` is coloured by its OWN colour tags first and by its
+  // outline's when it has none (`buildingColour`, bug 8): an untagged part
+  // stays the colour of the building it belongs to, so an untagged cathedral
+  // is not striped, and a part a mapper coloured is drawn that colour. A
+  // barrier has no outline and is simply itself.
+  //
+  // Under the seeded palette a part passes its OUTLINE's key, so an untagged
+  // cathedral draws one wall tone and one roof tone across all its parts.
   const drawn = [
-    ...volumes.map((volume) => ({
-      mesh: volume.mesh,
-      tags:
-        tagsByKey.get(volume.parentFeature ?? volume.feature) ??
-        tagsByKey.get(volume.feature) ??
-        {},
-    })),
+    ...volumes.map((volume) => {
+      const tags = tagsByKey.get(volume.feature) ?? {};
+      const outline =
+        volume.parentFeature === undefined
+          ? undefined
+          : tagsByKey.get(volume.parentFeature);
+      return {
+        mesh: volume.mesh,
+        roofVertexRanges: volume.roofVertexRanges,
+        ...(palette === "seeded"
+          ? seededBuildingColours(
+              tags,
+              outline,
+              volume.parentFeature ?? volume.feature,
+              drawsPitchedRoof(volume),
+            )
+          : {
+              wall: buildingColour(tags, outline),
+              roof: roofColour(tags, outline),
+            }),
+      };
+    }),
     ...barriers.map((barrier) => ({
       mesh: barrier.mesh,
-      tags: tagsByKey.get(barrier.feature) ?? {},
+      // A barrier has no roof block: it is all wall, in its own muted kind
+      // colour, not a building's.
+      roofVertexRanges: [],
+      wall: barrierColour(tagsByKey.get(barrier.feature) ?? {}),
+      roof: undefined,
     })),
   ];
-  const buildings = chunkMeshes(
-    drawn,
-    (item) => item.mesh,
-    (item) => meshCentroidEnu(item.mesh),
-    undefined,
-    (item) => buildingColour(item.tags),
-    // The shell shader's phase, from the feature's own geometry, so it is
-    // stable across rebuilds (an index would re-shuffle on every refresh).
-    (item) => shellRandFor(item.mesh),
+  // Linear light, as three.js shades (plan 2026-11-07-2315 section 7). The
+  // whole chunk is converted, roof vertices included, so a tagged roof colour
+  // is in the same colour space as its walls.
+  const buildings = linearChunkColours(
+    chunkMeshes(
+      drawn,
+      (item) => item.mesh,
+      (item) => meshCentroidEnu(item.mesh),
+      undefined,
+      (item) => item.wall,
+      // The shell shader's phase, from the feature's own geometry, so it is
+      // stable across rebuilds (an index would re-shuffle on every refresh).
+      (item) => shellRandFor(item.mesh),
+      (item) =>
+        item.roof === undefined
+          ? undefined
+          : { colour: item.roof, vertexRanges: item.roofVertexRanges },
+    ),
   );
   const { roads, roadCount } = options.roads
     ? cityRoads(all, ground, inside, tagsByKey)
     : { roads: [], roadCount: 0 };
-  return { volumes, barriers, buildings, trees, roads, roadCount };
+  // Every built footprint excludes, not only the kept ones: a house just
+  // outside `withinM` still has no tree growing through it.
+  const cosmeticTrees =
+    options.cosmeticTrees === false
+      ? []
+      : buildCosmeticTrees(all, {
+          ...ground,
+          window: options.window,
+          excludeRings: built.flatMap((v) => v.outerRings),
+        }).filter((t) => inside(t.position));
+  return {
+    volumes,
+    barriers,
+    buildings,
+    trees,
+    cosmeticTrees,
+    roads,
+    roadCount,
+  };
+}
+
+/**
+ * True when the ladder drew a sloped roof on some polygon of the volume: the
+ * clay and slate tones go on what is drawn, so a pitched tag the ladder had to
+ * draw as a flat lid ("flat" cap, "prism") takes the flat greys (M7 review
+ * MINOR 4). A volume without polygons reads as flat.
+ */
+function drawsPitchedRoof(volume: BuildingVolume): boolean {
+  return volume.roofMethods.some((m) => m !== "flat" && m !== "prism");
 }
 
 /**
@@ -184,4 +288,34 @@ function cityRoads(
     ),
     roadCount: ribbons.length,
   };
+}
+
+/**
+ * The volumes whose BUILDING is inside the window (2026-11-07, bug 10).
+ *
+ * Decided per building, not per volume: the parts of one outline share one
+ * verdict, taken at the mean of their mesh centroids. Per volume, a modelled
+ * building on the window's edge kept some parts and lost others, which drew
+ * half a cathedral at the globe city's rim. A building is its outline key, or
+ * its own key when it has no parent.
+ */
+function withinWindow(
+  volumes: readonly BuildingVolume[],
+  inside: (p: EnuPoint) => boolean,
+): BuildingVolume[] {
+  const sums = new Map<string, { x: number; y: number; n: number }>();
+  for (const volume of volumes) {
+    const key = volume.parentFeature ?? volume.feature;
+    const c = meshCentroidEnu(volume.mesh);
+    const sum = sums.get(key) ?? { x: 0, y: 0, n: 0 };
+    sum.x += c.x;
+    sum.y += c.y;
+    sum.n += 1;
+    sums.set(key, sum);
+  }
+  const kept = new Set<string>();
+  for (const [key, sum] of sums) {
+    if (inside({ x: sum.x / sum.n, y: sum.y / sum.n })) kept.add(key);
+  }
+  return volumes.filter((v) => kept.has(v.parentFeature ?? v.feature));
 }

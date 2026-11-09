@@ -23,7 +23,9 @@ zoom, heightsUrl?, firstRings? }` and `{ kind: "abort", id }`; replies
 - Made by `editor3d-globe.ts` as
   `new Worker(new URL("./globe-city-worker.ts", import.meta.url), { type: "module" })`,
   so Vite bundles it with its imports.
-- All logic and validation are the core's; this file only wires it.
+- All logic and validation are the core's; this file only wires it. The
+  build window (the delivery's loaded-tile box) and the cosmetic woods
+  switch (off until objects M2b) are set in the core too.
 
 ## Examples
 

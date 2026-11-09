@@ -82,6 +82,7 @@ function everyLayer(): TransferableMesh {
         crownDiameterM: 4,
         rotationY: 0.5,
         variant: "unknown",
+        colour: 0x737c66,
       },
     ],
     plates: oneChunk(),
@@ -141,6 +142,9 @@ function meshLayerMaterials(): { material: THREE.Material; where: string }[] {
   const { objects } = drawMeshLayers(everyLayer(), {
     buildings: true,
     trees: true,
+    // The cosmetic woods are hidden in AR (owner decision, objects M2a), so
+    // they are not AR content; their material is the trees layer one anyway.
+    woods: false,
     plates: true,
     roads: true,
     poi: true,

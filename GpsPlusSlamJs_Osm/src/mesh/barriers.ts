@@ -111,9 +111,52 @@ function isCityWall(tags: OsmTags): boolean {
   return tags["barrier"] === "city_wall" || tags["historic"] === "citywalls";
 }
 
+/** The solid barrier kinds, each with its own untagged size and colour. */
+export type BarrierKind =
+  "wall" | "city_wall" | "retaining_wall" | "fence" | "hedge";
+
+/**
+ * The untagged size of each kind, metres (city objects plan 2026-11-07-2315
+ * M1). THE ONE SOURCE: navigation and drawing both read it through
+ * `resolveBarrier`, so a fence is never drawn 1.2 m tall and indexed as 2 m.
+ *
+ * - wall and hedge 2 m: the owner's (DEC-R11-2); fence 1.2 m: the owner's;
+ * - city wall 6 m: `DEFAULT_CITY_WALL_HEIGHT_M`;
+ * - retaining wall 1 m (session): it holds a slope rather than standing free,
+ *   and 1 m is still an obstacle above `STEP_THRESHOLD_M` (0.5 m); this
+ *   lowers DEC-R11-2's 2 m for it in navigation too;
+ * - every thickness (session, the O1 lab's guesses): hedge 0.8, wall and
+ *   retaining wall 0.4, city wall 1.2, fence 0.12. The navigation veto is a
+ *   segment crossing, blind to thickness, so thickness moves the drawing and
+ *   the cells a barrier covers only.
+ *
+ * A `Map`, so a prototype name as a `barrier` value finds nothing.
+ */
+const BARRIER_SIZES: ReadonlyMap<BarrierKind, BarrierDimensions> = new Map([
+  ["hedge", { heightM: DEFAULT_BARRIER_HEIGHT_M, thicknessM: 0.8 }],
+  ["wall", { heightM: DEFAULT_BARRIER_HEIGHT_M, thicknessM: 0.4 }],
+  ["city_wall", { heightM: DEFAULT_CITY_WALL_HEIGHT_M, thicknessM: 1.2 }],
+  ["retaining_wall", { heightM: 1, thicknessM: 0.4 }],
+  ["fence", { heightM: 1.2, thicknessM: 0.12 }],
+]);
+
+/**
+ * Which solid kind a feature's tags name, or `undefined`. A city wall under
+ * either tag (`isCityWall`) wins over its `barrier` value.
+ */
+export function barrierKind(tags: OsmTags): BarrierKind | undefined {
+  if (isCityWall(tags)) return "city_wall";
+  const value = tags["barrier"] ?? "";
+  return SOLID_BARRIERS.has(value) ? (value as BarrierKind) : undefined;
+}
+
 /**
  * A barrier's height and thickness in metres, both guaranteed finite and
  * positive.
+ *
+ * Tagged `height` and `width` win; otherwise the kind's size
+ * (`BARRIER_SIZES`), and for tags of no known kind the 2 m and 0.5 m
+ * constants.
  *
  * THAT GUARANTEE IS LOAD-BEARING. A non-finite height reaching the column model
  * makes every step involving it non-adjacent — an invisible wall sealing off
@@ -122,15 +165,19 @@ function isCityWall(tags: OsmTags): boolean {
  * defensive formality.
  */
 export function resolveBarrier(tags: OsmTags): BarrierDimensions {
-  const fallback = isCityWall(tags)
-    ? DEFAULT_CITY_WALL_HEIGHT_M
-    : DEFAULT_BARRIER_HEIGHT_M;
+  const kind = barrierKind(tags);
+  const fallback = (kind === undefined
+    ? undefined
+    : BARRIER_SIZES.get(kind)) ?? {
+    heightM: DEFAULT_BARRIER_HEIGHT_M,
+    thicknessM: DEFAULT_BARRIER_THICKNESS_M,
+  };
 
   return {
-    heightM: positiveOr(parseLengthMetres(tags["height"]), fallback),
+    heightM: positiveOr(parseLengthMetres(tags["height"]), fallback.heightM),
     thicknessM: positiveOr(
       parseLengthMetres(tags["width"]),
-      DEFAULT_BARRIER_THICKNESS_M,
+      fallback.thicknessM,
     ),
   };
 }

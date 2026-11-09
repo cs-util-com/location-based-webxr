@@ -21,12 +21,12 @@
  */
 
 import type { EnuPoint } from "./enu.js";
-import { isCounterClockwise } from "./enu.js";
 import { triangulate } from "./triangulate.js";
 import type { RoofShape } from "./building-heights.js";
 import type { MeshData } from "./mesh-data.js";
 import { MeshBuilder } from "./mesh-data.js";
-import { buildRoof } from "./roof.js";
+import { buildRoof, type RoofMethod } from "./roof.js";
+import { addWalls } from "./walls.js";
 
 export interface ExtrudeOptions {
   /** Where the walls start, metres above the frame's ground plane. */
@@ -36,6 +36,10 @@ export interface ExtrudeOptions {
   /** The very top. Equals `eaveHeightM` for a flat roof. */
   readonly totalHeightM: number;
   readonly roofShape: RoofShape;
+  /** `roof:direction`, degrees clockwise from north; see `RoofOptions`. */
+  readonly roofDirectionDeg?: number;
+  /** `roof:orientation=across`; see `RoofOptions`. */
+  readonly roofOrientation?: "across";
   /** Ground elevation to offset the whole volume by. */
   readonly groundHeightM?: number;
   /**
@@ -65,6 +69,28 @@ export interface ExtrudeOptions {
 export interface ExtrudedBuilding extends MeshData {
   /** True when the ROOF was approximated rather than generated exactly. */
   readonly roofIsApproximate: boolean;
+  /**
+   * The vertices the roof builder emitted, `[start, end)` (review finding 3).
+   *
+   * The roof's surfaces are ONE contiguous block between the walls and the
+   * floor, followed by any vertical walls the roof brings (gables, a prism's
+   * sides), so a consumer can tell roof from wall by position in the buffer
+   * instead of by the normal. Painting by "faces up" left an onion's lower, downward-facing
+   * half in the wall colour.
+   */
+  readonly roofVertices: VertexRange;
+  /**
+   * The ladder step that drew the roof (`RoofMesh.method`). A pitched tag can
+   * still be drawn as a flat lid ("flat", "prism"), and the seeded palette
+   * colours the roof that was drawn, not the one tagged (M7 review MINOR 4).
+   */
+  readonly roofMethod: RoofMethod;
+}
+
+/** A half-open range of vertex indices, `[start, end)`. */
+export interface VertexRange {
+  readonly start: number;
+  readonly end: number;
 }
 
 /** An empty mesh, used for footprints that cannot form a volume. */
@@ -75,6 +101,8 @@ const EMPTY: ExtrudedBuilding = {
   triangleCount: 0,
   forcedEars: 0,
   roofIsApproximate: false,
+  roofVertices: { start: 0, end: 0 },
+  roofMethod: "flat",
 };
 
 /**
@@ -113,8 +141,21 @@ export function extrudeBuilding(
     shape: options.roofShape,
     eaveHeightM: eave,
     ridgeHeightM: ground + options.totalHeightM,
+    ...(options.roofDirectionDeg === undefined
+      ? {}
+      : { directionDeg: options.roofDirectionDeg }),
+    ...(options.roofOrientation === undefined
+      ? {}
+      : { orientation: options.roofOrientation }),
   });
+  const roofStart = builder.vertexCount;
   builder.append(roof);
+  // Only the roof SURFACES: the gables and prism sides a roof brings with it
+  // follow them in the block and are wall.
+  const roofVertices = {
+    start: roofStart,
+    end: roofStart + roof.surfaceVertices,
+  };
 
   if (options.includeFloor === true || options.minHeightM > 0) {
     // A floating part's underside IS visible from the street below, which is
@@ -125,57 +166,9 @@ export function extrudeBuilding(
   return {
     ...builder.build(cap.forcedEars + roof.forcedEars),
     roofIsApproximate: roof.isApproximate,
+    roofVertices,
+    roofMethod: roof.method,
   };
-}
-
-/** Adds the quad strip for one ring between two heights. */
-function addWalls(
-  builder: MeshBuilder,
-  ring: readonly EnuPoint[],
-  bottomM: number,
-  topM: number,
-  outward: boolean,
-): void {
-  if (topM <= bottomM) return;
-
-  const points = closedRing(ring);
-  if (points.length < 3) return;
-
-  // Normalise winding so the emitted quads face consistently, then flip for
-  // holes. Real OSM rings arrive both ways round.
-  const ccw = isCounterClockwise(points);
-  const ordered = ccw === outward ? points : [...points].reverse();
-
-  for (let i = 0; i < ordered.length; i++) {
-    const a = ordered[i];
-    const b = ordered[(i + 1) % ordered.length];
-    if (a === undefined || b === undefined) continue;
-
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const length = Math.hypot(dx, dy);
-    if (length === 0) continue; // repeated node: a zero-area wall
-    // Outward normal of a CCW ring is (dy, -dx) normalised, with Y up in 3D.
-    const nx = dy / length;
-    const nz = -dx / length;
-
-    const i0 = builder.vertex(a.x, bottomM, a.y, nx, 0, nz);
-    const i1 = builder.vertex(b.x, bottomM, b.y, nx, 0, nz);
-    const i2 = builder.vertex(b.x, topM, b.y, nx, 0, nz);
-    const i3 = builder.vertex(a.x, topM, a.y, nx, 0, nz);
-    // REVERSED, for the same reason `addCap` reverses: everything in this file
-    // works in the ENU frame — a counter-clockwise ring in (east, north) reads
-    // as clockwise once Y is up — so the straightforward (i0, i1, i2) would
-    // wind these quads INWARD while the normal above points outward, leaving
-    // the wall lit correctly and culled backwards. `side: DoubleSide` in the
-    // demo hides that, which is exactly why it needs a test rather than a look.
-    //
-    // This is NOT the ENU→render reflection; `MeshBuilder` owns that and
-    // applies it to every vertex and every triangle centrally. This ordering is
-    // about the ring's own winding and would be needed either way.
-    builder.triangle(i0, i2, i1);
-    builder.triangle(i0, i3, i2);
-  }
 }
 
 /** Adds a horizontal cap at `heightM`. `up` chooses which way it faces. */
@@ -200,23 +193,6 @@ function addCap(
     if (up) builder.triangle(a, c, b);
     else builder.triangle(a, b, c);
   }
-}
-
-/** Appends the first point if the ring is not already closed. */
-function closedRing(ring: readonly EnuPoint[]): EnuPoint[] {
-  const points = [...ring];
-  const first = points[0];
-  const last = points[points.length - 1];
-  if (
-    points.length > 1 &&
-    first !== undefined &&
-    last !== undefined &&
-    first.x === last.x &&
-    first.y === last.y
-  ) {
-    points.pop();
-  }
-  return points;
 }
 
 /**

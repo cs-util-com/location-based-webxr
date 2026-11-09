@@ -29,6 +29,8 @@ export interface CityWorkerDelivery {
   readonly stage: unknown;
   readonly features: readonly unknown[];
   readonly ground: unknown;
+  /** The loaded tiles' box, `buildCity`'s window. */
+  readonly window: unknown;
   readonly tiles: {
     readonly loaded: number;
     readonly missing: readonly unknown[];
@@ -79,7 +81,12 @@ export interface CityWorkerOsm {
   buildCity(
     features: never,
     ground: never,
-    options: { withinM: number; roads: boolean },
+    options: {
+      withinM: number;
+      roads: boolean;
+      window: never;
+      cosmeticTrees: boolean;
+    },
   ): {
     readonly buildings: readonly CityWorkerChunk[];
     readonly trees: { readonly length: number };
@@ -260,6 +267,11 @@ export function createCityWorkerCore(deps: CityWorkerDeps): CityWorkerCore {
           {
             withinM: osm.TERRAIN_EXTENT_M,
             roads: true,
+            // The fetched data's box (city objects plan 2026-11-07-2315
+            // section 4). The cosmetic woods stay off here until objects M2b
+            // wires the globe, so nothing is built that is not drawn.
+            window: data.window as never,
+            cosmeticTrees: false,
           },
         );
         built = true;

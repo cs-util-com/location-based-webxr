@@ -61,51 +61,58 @@ export const DEFAULT_ROAD_RGB: Rgb = 0x8b909c;
  * Chosen so a city reads at a glance: homes warm and pale, commerce cooler,
  * industry drab, civic and religious buildings stony. Everything stays within a
  * narrow lightness band so the skyline does not turn into a chart.
+ *
+ * EVERY TABLE IN THIS FILE IS A MAP, not a plain object (review finding 5,
+ * 2026-11-07). Tag values are free text, and on an object `constructor` or
+ * `toString` finds an inherited function: `building:colour=constructor` drew a
+ * building in NaN. A map holds only what is written here.
  */
-const BUILDING_CLASS_RGB: Readonly<Record<string, Rgb>> = {
-  house: 0xd8c9b4,
-  detached: 0xd8c9b4,
-  semidetached_house: 0xd8c9b4,
-  residential: 0xd2c4b2,
-  apartments: 0xc9bda9,
-  terrace: 0xd0bfa9,
-  bungalow: 0xd8c9b4,
-  hut: 0xb9a184,
-  cabin: 0xb9a184,
-  farm: 0xc9b295,
-  farm_auxiliary: 0xb8a68c,
-  barn: 0xa8886a,
-  stable: 0xa8886a,
-  greenhouse: 0xbcd0cc,
-  commercial: 0xb4bcc8,
-  retail: 0xc2b7c4,
-  supermarket: 0xc2b7c4,
-  office: 0xa9b6c6,
-  hotel: 0xc6b6bd,
-  industrial: 0x9fa5a8,
-  warehouse: 0x9aa0a4,
-  service: 0x9aa0a4,
-  garage: 0x9aa0a4,
-  garages: 0x9aa0a4,
-  church: 0xbdb4a6,
-  chapel: 0xbdb4a6,
-  cathedral: 0xbdb4a6,
-  mosque: 0xbdb4a6,
-  synagogue: 0xbdb4a6,
-  temple: 0xbdb4a6,
-  school: 0xc6c2ab,
-  university: 0xc6c2ab,
-  college: 0xc6c2ab,
-  kindergarten: 0xc9c3a8,
-  hospital: 0xc4c9cd,
-  public: 0xbec5cb,
-  civic: 0xbec5cb,
-  train_station: 0xb0aab4,
-  transportation: 0xb0aab4,
-  roof: 0xa6a9ad,
-  construction: 0xb2ada2,
-  ruins: 0xa79f92,
-};
+const BUILDING_CLASS_RGB: ReadonlyMap<string, Rgb> = new Map(
+  Object.entries({
+    house: 0xd8c9b4,
+    detached: 0xd8c9b4,
+    semidetached_house: 0xd8c9b4,
+    residential: 0xd2c4b2,
+    apartments: 0xc9bda9,
+    terrace: 0xd0bfa9,
+    bungalow: 0xd8c9b4,
+    hut: 0xb9a184,
+    cabin: 0xb9a184,
+    farm: 0xc9b295,
+    farm_auxiliary: 0xb8a68c,
+    barn: 0xa8886a,
+    stable: 0xa8886a,
+    greenhouse: 0xbcd0cc,
+    commercial: 0xb4bcc8,
+    retail: 0xc2b7c4,
+    supermarket: 0xc2b7c4,
+    office: 0xa9b6c6,
+    hotel: 0xc6b6bd,
+    industrial: 0x9fa5a8,
+    warehouse: 0x9aa0a4,
+    service: 0x9aa0a4,
+    garage: 0x9aa0a4,
+    garages: 0x9aa0a4,
+    church: 0xbdb4a6,
+    chapel: 0xbdb4a6,
+    cathedral: 0xbdb4a6,
+    mosque: 0xbdb4a6,
+    synagogue: 0xbdb4a6,
+    temple: 0xbdb4a6,
+    school: 0xc6c2ab,
+    university: 0xc6c2ab,
+    college: 0xc6c2ab,
+    kindergarten: 0xc9c3a8,
+    hospital: 0xc4c9cd,
+    public: 0xbec5cb,
+    civic: 0xbec5cb,
+    train_station: 0xb0aab4,
+    transportation: 0xb0aab4,
+    roof: 0xa6a9ad,
+    construction: 0xb2ada2,
+    ruins: 0xa79f92,
+  }),
+);
 
 /**
  * Colour by `building:material`, when a mapper has said what it is made of.
@@ -113,27 +120,29 @@ const BUILDING_CLASS_RGB: Readonly<Record<string, Rgb>> = {
  * Modelled on `streets-gl`'s `getFacadeParamsFromTags`, which does the same
  * lookup with the same intent. Values are muted versions of the real material.
  */
-const BUILDING_MATERIAL_RGB: Readonly<Record<string, Rgb>> = {
-  brick: 0xa8705c,
-  brick_block: 0xa8705c,
-  concrete: 0xb4b4b0,
-  cement_block: 0xb4b4b0,
-  stone: 0xb7b2a6,
-  sandstone: 0xc4b393,
-  limestone: 0xc6c0ae,
-  marble: 0xd6d2c8,
-  wood: 0xb08b5f,
-  timber_framing: 0xc3ad8d,
-  glass: 0x9fb6c4,
-  mirror: 0x9fb6c4,
-  metal: 0xa9aeb4,
-  steel: 0xa9aeb4,
-  plaster: 0xd0cabe,
-  plastered: 0xd0cabe,
-  stucco: 0xd0cabe,
-  clay: 0xbe8f6d,
-  adobe: 0xc9a077,
-};
+const BUILDING_MATERIAL_RGB: ReadonlyMap<string, Rgb> = new Map(
+  Object.entries({
+    brick: 0xa8705c,
+    brick_block: 0xa8705c,
+    concrete: 0xb4b4b0,
+    cement_block: 0xb4b4b0,
+    stone: 0xb7b2a6,
+    sandstone: 0xc4b393,
+    limestone: 0xc6c0ae,
+    marble: 0xd6d2c8,
+    wood: 0xb08b5f,
+    timber_framing: 0xc3ad8d,
+    glass: 0x9fb6c4,
+    mirror: 0x9fb6c4,
+    metal: 0xa9aeb4,
+    steel: 0xa9aeb4,
+    plaster: 0xd0cabe,
+    plastered: 0xd0cabe,
+    stucco: 0xd0cabe,
+    clay: 0xbe8f6d,
+    adobe: 0xc9a077,
+  }),
+);
 
 /**
  * Colour by `highway=*`.
@@ -142,48 +151,50 @@ const BUILDING_MATERIAL_RGB: Readonly<Record<string, Rgb>> = {
  * warmer, paths and tracks browner, so the hierarchy reads without a legend.
  * Every one of these is contrast-checked against the ground.
  */
-const ROAD_CLASS_RGB: Readonly<Record<string, Rgb>> = {
-  // CAR CLASSES ARE NEAR-ACHROMATIC (DEC-R7b-4a). They used to be warm beiges,
-  // which put them in the same hue family as the paths and left the two
-  // separated only by ~2 levels of lightness. Grey has no hue to confuse, which
-  // is what makes the asymmetry work: the paths carry all the colour.
-  motorway: 0xc2c4c6,
-  motorway_link: 0xc2c4c6,
-  trunk: 0xbcbec1,
-  trunk_link: 0xbcbec1,
-  primary: 0xb6b8bc,
-  primary_link: 0xb6b8bc,
-  secondary: 0xaeb0b4,
-  secondary_link: 0xaeb0b4,
-  tertiary: 0xa8aaae,
-  tertiary_link: 0xa8aaae,
-  unclassified: 0xa4a6a8,
-  residential: 0xa0a3a8,
-  living_street: 0x9fa1a6,
-  // Five hex digits here (0x969aa) parsed as a dark blue and the lightness
-  // band caught it — a service road would have rendered near-black against the
-  // ground, which is precisely the failure DEC-R2-13 measured.
-  service: 0x9699a4,
-  busway: 0x9aa4b0,
+const ROAD_CLASS_RGB: ReadonlyMap<string, Rgb> = new Map(
+  Object.entries({
+    // CAR CLASSES ARE NEAR-ACHROMATIC (DEC-R7b-4a). They used to be warm beiges,
+    // which put them in the same hue family as the paths and left the two
+    // separated only by ~2 levels of lightness. Grey has no hue to confuse, which
+    // is what makes the asymmetry work: the paths carry all the colour.
+    motorway: 0xc2c4c6,
+    motorway_link: 0xc2c4c6,
+    trunk: 0xbcbec1,
+    trunk_link: 0xbcbec1,
+    primary: 0xb6b8bc,
+    primary_link: 0xb6b8bc,
+    secondary: 0xaeb0b4,
+    secondary_link: 0xaeb0b4,
+    tertiary: 0xa8aaae,
+    tertiary_link: 0xa8aaae,
+    unclassified: 0xa4a6a8,
+    residential: 0xa0a3a8,
+    living_street: 0x9fa1a6,
+    // Five hex digits here (0x969aa) parsed as a dark blue and the lightness
+    // band caught it — a service road would have rendered near-black against the
+    // ground, which is precisely the failure DEC-R2-13 measured.
+    service: 0x9699a4,
+    busway: 0x9aa4b0,
 
-  // PEDESTRIAN CLASSES ARE WARM AND SATURATED. The heat ramp is Viridis —
-  // purple through yellow, entirely cool — so a brown path cannot compete with
-  // the loudest thing on screen, which is what the muted-palette rule protects.
-  // Every one stays inside the 120–215 lightness band the buildings share; the
-  // hue does the separating, so none of them has to go dark to be legible.
-  pedestrian: 0xbfa079,
-  footway: 0xb5926a,
-  path: 0xa9855c,
-  steps: 0xc09b6e,
-  cycleway: 0xb08d5f,
+    // PEDESTRIAN CLASSES ARE WARM AND SATURATED. The heat ramp is Viridis —
+    // purple through yellow, entirely cool — so a brown path cannot compete with
+    // the loudest thing on screen, which is what the muted-palette rule protects.
+    // Every one stays inside the 120–215 lightness band the buildings share; the
+    // hue does the separating, so none of them has to go dark to be legible.
+    pedestrian: 0xbfa079,
+    footway: 0xb5926a,
+    path: 0xa9855c,
+    steps: 0xc09b6e,
+    cycleway: 0xb08d5f,
 
-  // NOT pedestrian classes, and left alone. A track is an unpaved rural way and
-  // a bridleway is for horses; both already sit in this brown and neither was
-  // what the session asked about. Folding them in would answer a question
-  // nobody put.
-  track: 0x9d8f78,
-  bridleway: 0x9d8f78,
-};
+    // NOT pedestrian classes, and left alone. A track is an unpaved rural way and
+    // a bridleway is for horses; both already sit in this brown and neither was
+    // what the session asked about. Folding them in would answer a question
+    // nobody put.
+    track: 0x9d8f78,
+    bridleway: 0x9d8f78,
+  }),
+);
 
 /**
  * Colour by `surface`, when a mapper has said what the road is made of.
@@ -192,32 +203,68 @@ const ROAD_CLASS_RGB: Readonly<Record<string, Rgb>> = {
  * surface rather than by class, and the values here are its palette moved into
  * this scene's lightness band.
  */
-const SURFACE_RGB: Readonly<Record<string, Rgb>> = {
-  asphalt: 0x9a9ea4,
-  concrete: 0xb0b0ac,
-  paving_stones: 0xb4aea6,
-  sett: 0xa8a29a,
-  cobblestone: 0xa8a29a,
-  paved: 0xa4a6aa,
-  gravel: 0xa89e8c,
-  fine_gravel: 0xb4ab99,
-  compacted: 0xac9f88,
-  dirt: 0x9c8262,
-  ground: 0x9c8f76,
-  earth: 0x9c8262,
-  unpaved: 0xa2947c,
-  grass: 0x8ba173,
-  sand: 0xc4b48a,
-  wood: 0xb08b5f,
-  metal: 0xa9aeb4,
-};
+const SURFACE_RGB: ReadonlyMap<string, Rgb> = new Map(
+  Object.entries({
+    asphalt: 0x9a9ea4,
+    concrete: 0xb0b0ac,
+    paving_stones: 0xb4aea6,
+    sett: 0xa8a29a,
+    cobblestone: 0xa8a29a,
+    paved: 0xa4a6aa,
+    gravel: 0xa89e8c,
+    fine_gravel: 0xb4ab99,
+    compacted: 0xac9f88,
+    dirt: 0x9c8262,
+    ground: 0x9c8f76,
+    earth: 0x9c8262,
+    unpaved: 0xa2947c,
+    grass: 0x8ba173,
+    sand: 0xc4b48a,
+    wood: 0xb08b5f,
+    metal: 0xa9aeb4,
+  }),
+);
 
 /**
- * Parses `building:colour`, which OSM allows as `#rrggbb` or a CSS name.
+ * The colour names mappers actually type, with their CSS values.
  *
- * NAMES ARE NOT RESOLVED, deliberately: the CSS list is 148 entries of which a
- * handful appear in OSM, and a wrong colour is worse than the class default —
- * it looks like a decision. Only the hex forms are read.
+ * WHY A SHORT TABLE AND NOT THE CSS LIST. The OSM wiki (Key:building:colour,
+ * read 2026-11-07) prefers `#rrggbb` and allows "basic" names, and says
+ * renderers interpret those differently. The corpus of 3 108 colour values on
+ * building and roof tags has 2 597 in hex; every name it uses, from `grey`
+ * (377 times) down to `blue` (twice), is here. A name outside the table still
+ * falls through to the class colour: a wrong colour looks like a decision,
+ * so only names that were seen in use are resolved. `darkbrown` and
+ * `multiple` occur too and are not colours CSS defines, so they are not read.
+ *
+ * The values are the CSS ones, unmuted: a mapper who wrote `red` said red.
+ */
+const NAMED_COLOUR_RGB: ReadonlyMap<string, Rgb> = new Map(
+  Object.entries({
+    grey: 0x808080,
+    gray: 0x808080,
+    white: 0xffffff,
+    lightgrey: 0xd3d3d3,
+    lightgray: 0xd3d3d3,
+    darkgrey: 0xa9a9a9,
+    darkgray: 0xa9a9a9,
+    red: 0xff0000,
+    gold: 0xffd700,
+    lightgreen: 0x90ee90,
+    black: 0x000000,
+    green: 0x008000,
+    burlywood: 0xdeb887,
+    lightblue: 0xadd8e6,
+    skyblue: 0x87ceeb,
+    firebrick: 0xb22222,
+    brown: 0xa52a2a,
+    blue: 0x0000ff,
+  }),
+);
+
+/**
+ * Parses an OSM colour value (`building:colour`, `roof:colour`): `#rrggbb`,
+ * `#rgb`, or one of the names in `NAMED_COLOUR_RGB`.
  *
  * Returns `undefined` for anything malformed rather than black: a building that
  * renders black reads as a rendering failure, and `#gggggg` is a real thing
@@ -229,26 +276,50 @@ export function parseOsmColour(raw: string | undefined): Rgb | undefined {
   const long = /^#([0-9a-f]{6})$/.exec(text);
   if (long?.[1] !== undefined) return Number.parseInt(long[1], 16);
   const short = /^#([0-9a-f]{3})$/.exec(text);
-  if (short?.[1] === undefined) return undefined;
+  if (short?.[1] === undefined) return NAMED_COLOUR_RGB.get(text);
   // `#abc` is `#aabbcc`, not `#0a0b0c`.
   const [r, g, b] = [...short[1]] as [string, string, string];
   return Number.parseInt(`${r}${r}${g}${g}${b}${b}`, 16);
 }
 
 /**
- * The colour of one building.
+ * The colour of one building, or of one `building:part` of it.
  *
  * Precedence: `building:colour`, then `building:material`, then `building=*`,
  * then the default. Highest first, which is the order a mapper's intent runs in
  * — an explicit colour is a statement about THIS building, a material is a
  * statement about its construction, and a class is a statement about its use.
+ *
+ * A PART'S OWN TAGS WIN OVER ITS OUTLINE'S (bug 8 of the 2026-11-07 findings,
+ * accepted recommendation). Simple 3D Buildings lets the colour and material tags sit on
+ * both, and a part that carries one is a mapper saying this part differs: the
+ * copper spire on a stone tower. Only when the part says nothing does it take
+ * its outline's colour, which keeps an untagged cathedral one colour rather
+ * than striped by whichever part happened to carry a tag. The class is always
+ * the outline's: `building:part=*` describes the shape, not the use.
  */
-export function buildingColour(tags: OsmTags): Rgb {
-  return (
+export function buildingColour(tags: OsmTags, outline?: OsmTags): Rgb {
+  const own =
     parseOsmColour(tags["building:colour"]) ??
-    BUILDING_MATERIAL_RGB[tags["building:material"] ?? ""] ??
-    BUILDING_CLASS_RGB[tags["building"] ?? ""] ??
-    DEFAULT_BUILDING_RGB
+    BUILDING_MATERIAL_RGB.get(tags["building:material"] ?? "");
+  if (own !== undefined) return own;
+  if (outline !== undefined) return buildingColour(outline);
+  return BUILDING_CLASS_RGB.get(tags["building"] ?? "") ?? DEFAULT_BUILDING_RGB;
+}
+
+/**
+ * The colour of a building's roof, or `undefined` when no `roof:colour` says
+ * one, in which case the roof is drawn in the building's colour.
+ *
+ * The part's own tag first, then its outline's: a `roof:colour` on the outline
+ * describes the roofs of the building, and once the outline is hidden behind
+ * its parts those roofs are the parts'. `roof:material` is not read; no
+ * table for it exists and the findings did not ask for one.
+ */
+export function roofColour(tags: OsmTags, outline?: OsmTags): Rgb | undefined {
+  return (
+    parseOsmColour(tags["roof:colour"]) ??
+    parseOsmColour(outline?.["roof:colour"])
   );
 }
 
@@ -291,11 +362,11 @@ const PEDESTRIAN = new Set<string>(PEDESTRIAN_CLASSES);
 export function roadColour(tags: OsmTags): Rgb {
   const highway = tags["highway"] ?? "";
   if (PEDESTRIAN.has(highway)) {
-    return ROAD_CLASS_RGB[highway] ?? DEFAULT_ROAD_RGB;
+    return ROAD_CLASS_RGB.get(highway) ?? DEFAULT_ROAD_RGB;
   }
   return (
-    SURFACE_RGB[tags["surface"] ?? ""] ??
-    ROAD_CLASS_RGB[highway] ??
+    SURFACE_RGB.get(tags["surface"] ?? "") ??
+    ROAD_CLASS_RGB.get(highway) ??
     DEFAULT_ROAD_RGB
   );
 }
@@ -303,8 +374,8 @@ export function roadColour(tags: OsmTags): Rgb {
 /** Every colour a road can take, for the contrast check. */
 export function allRoadColours(): Rgb[] {
   return [
-    ...Object.values(ROAD_CLASS_RGB),
-    ...Object.values(SURFACE_RGB),
+    ...ROAD_CLASS_RGB.values(),
+    ...SURFACE_RGB.values(),
     DEFAULT_ROAD_RGB,
   ];
 }
@@ -312,8 +383,8 @@ export function allRoadColours(): Rgb[] {
 /** Every colour a building can take, for the palette-range check. */
 export function allBuildingColours(): Rgb[] {
   return [
-    ...Object.values(BUILDING_CLASS_RGB),
-    ...Object.values(BUILDING_MATERIAL_RGB),
+    ...BUILDING_CLASS_RGB.values(),
+    ...BUILDING_MATERIAL_RGB.values(),
     DEFAULT_BUILDING_RGB,
   ];
 }

@@ -30,10 +30,30 @@ OSM does not say how tall an untagged wall is. The owner settled it:
 numbers, which is honest — but most walls are untagged, so the curtain wall
 would have stayed passable.
 
+## Sizes per kind (city objects plan 2026-11-07-2315 M1)
+
+One table, `BARRIER_SIZES` (a `Map`, so `barrier=constructor` falls through
+to the defaults), read by `resolveBarrier` and so by the drawing AND the
+navigation index:
+
+- hedge 2 m, 0.8 m thick; wall 2 m, 0.4 m (2 m is DEC-R11-2);
+- city wall 6 m, 1.2 m;
+- retaining wall 1 m, 0.4 m (session): **this lowers DEC-R11-2's 2 m for
+  retaining walls in navigation too**; at 1 m it is still an obstacle above
+  `STEP_THRESHOLD_M` (0.5 m);
+- fence 1.2 m (the owner's), 0.12 m.
+
+Every thickness and the retaining wall's height are the O1 lab's guesses,
+marked (session). A tag set of no known kind keeps the 2 m / 0.5 m constants.
+
 ## Public API
 
 - `isSolidBarrier(feature) => boolean`
-- `resolveBarrier(tags) => { heightM, thicknessM }`
+- `resolveBarrier(tags) => { heightM, thicknessM }` — tagged `height` and
+  `width` win, else the kind's size, else 2 m and 0.5 m.
+- `barrierKind(tags) => BarrierKind | undefined` — `wall`, `city_wall`,
+  `retaining_wall`, `fence` or `hedge`; a city wall under either tag first.
+  Its colour is `barrierColour` in [`barrier-colours.ts`](./barrier-colours.ts.md).
 - `barrierCentrelines(feature, gates) => readonly (readonly LatLng[])[]` — every
   lat/lng line the barrier runs along, **with mapped gates opened**. Empty when
   the geometry is unusable; a line of fewer than two nodes is dropped.
@@ -103,7 +123,10 @@ around thin air. Both are bugs a reader would diagnose in the wrong file, so the
 below-threshold), nodes, unknown values, the defaults as literal numbers, tagged
 heights winning, unit forms, unparseable and non-positive heights, and the
 finite-and-positive invariant over `NaN`, `Infinity`, `1e400` and a negative
-width.
+width; the per-kind sizes with tagged values winning, and prototype names
+falling back. `site-barriers.test.ts` pins Heidelberg's drawn kinds (25
+walls, 16 retaining walls, 7 fences, 2 hedges), each at its resolved height
+and indexed.
 
 The geometry is covered next door: `barrier-shape.*` for the quads,
 `barrier-volumes.*` for the extrusion — including a property that a barrier is

@@ -4,7 +4,9 @@ import {
   CHUNK_SIZE_M,
   chunkKeyFor,
   chunkMeshes,
+  linearChunkColours,
   meshCentroidEnu,
+  type RoofPaint,
 } from "./chunk-meshes.js";
 import { MeshBuilder, type MeshData } from "./mesh-data.js";
 import { box, composed } from "./poi-primitives.js";
@@ -196,6 +198,124 @@ describe("chunkMeshes — per-feature colours (W22/W23)", () => {
  * buildings breathe in lockstep, which looks deliberate too. The only way either
  * is caught is here, where the feature boundaries still exist.
  */
+describe("chunkMeshes - roof colours (bug 8, review finding 3)", () => {
+  // WHY THESE TESTS MATTER. `roof:colour` was read nowhere and a chunk held one
+  // colour per feature, so a red-tiled roof on white walls drew all white.
+  // BASELINE MOVED BY PLAN (review finding 3, 2026-11-07): the roof was told
+  // apart by an upward normal, which left an onion's downward-facing lower
+  // half in the wall colour. It is now the item's roof vertex ranges, and
+  // every vertex in them: since M2 of the skeleton-roof plan the ranges hold
+  // only the roof's own surfaces (gables follow outside them), so no normal
+  // epsilon decides what is roof. These pin that rule on a cube whose whole
+  // mesh is declared roof (every face paints, sides included), that a vertex
+  // outside the ranges never paints, and that a feature with no roof colour is
+  // unchanged.
+  const paint = (roof: RoofPaint | undefined) =>
+    chunkMeshes(
+      [cube(0, 0)],
+      (m) => m,
+      () => ({ x: 0, y: 0 }),
+      undefined,
+      () => 0xffffff,
+      undefined,
+      () => roof,
+    )[0];
+  const CUBE_VERTICES = cube(0, 0).positions.length / 3;
+
+  /** "r,g,b" per vertex, split by whether the face is vertical. */
+  function byFacing(chunk: ReturnType<typeof paint>): {
+    vertical: Set<string>;
+    other: Set<string>;
+  } {
+    const normals = chunk?.mesh.normals ?? new Float32Array();
+    const colors = chunk?.colors ?? new Float32Array();
+    const vertical = new Set<string>();
+    const other = new Set<string>();
+    for (let i = 0; i < normals.length / 3; i++) {
+      const rgb = [...colors.slice(i * 3, i * 3 + 3)].join(",");
+      (Math.abs(normals[i * 3 + 1] as number) < 1e-6 ? vertical : other).add(
+        rgb,
+      );
+    }
+    return { vertical, other };
+  }
+
+  it("paints every vertex of the roof ranges, whatever it faces", () => {
+    const { vertical, other } = byFacing(
+      paint({
+        colour: 0xff0000,
+        vertexRanges: [{ start: 0, end: CUBE_VERTICES }],
+      }),
+    );
+    // Both sets non-empty and one colour each: equality with one-element sets.
+    expect(other).toEqual(new Set(["1,0,0"]));
+    expect(vertical).toEqual(new Set(["1,0,0"]));
+  });
+
+  it("paints only the range, so a part of the mesh keeps the wall colour", () => {
+    const chunk = paint({
+      colour: 0xff0000,
+      vertexRanges: [{ start: 0, end: 4 }],
+    });
+    const colors = [...(chunk?.colors ?? new Float32Array())];
+    expect(new Set(colors.slice(0, 12))).toEqual(new Set([1, 0]));
+    expect(new Set(colors.slice(12))).toEqual(new Set([1]));
+  });
+
+  it("never paints a vertex outside the ranges, whatever it faces", () => {
+    const { vertical, other } = byFacing(
+      paint({ colour: 0xff0000, vertexRanges: [] }),
+    );
+    expect(other).toEqual(new Set(["1,1,1"]));
+    expect(vertical).toEqual(new Set(["1,1,1"]));
+  });
+
+  it("clamps a range that runs past the mesh, so it cannot paint a neighbour", () => {
+    // Defensive: the ranges come from the caller. Two cubes in one chunk, the
+    // first declaring a range far past its own end.
+    const items: { mesh: MeshData; roof?: RoofPaint }[] = [
+      {
+        mesh: cube(0, 0),
+        roof: { colour: 0xff0000, vertexRanges: [{ start: -5, end: 1e9 }] },
+      },
+      { mesh: cube(1, 0) },
+    ];
+    const chunk = chunkMeshes(
+      items,
+      (item) => item.mesh,
+      () => ({ x: 0, y: 0 }),
+      undefined,
+      () => 0xffffff,
+      undefined,
+      (item) => item.roof,
+    )[0];
+    const colors = chunk?.colors ?? new Float32Array();
+    const second = [...colors.slice(CUBE_VERTICES * 3)];
+    expect(second.length).toBe(CUBE_VERTICES * 3);
+    expect(new Set(second)).toEqual(new Set([1]));
+  });
+
+  it("is unchanged for a feature without a roof colour", () => {
+    const plain = chunkMeshes(
+      [cube(0, 0)],
+      (m) => m,
+      () => ({ x: 0, y: 0 }),
+      undefined,
+      () => 0x336699,
+    )[0];
+    const unpainted = chunkMeshes(
+      [cube(0, 0)],
+      (m) => m,
+      () => ({ x: 0, y: 0 }),
+      undefined,
+      () => 0x336699,
+      undefined,
+      () => undefined,
+    )[0];
+    expect(unpainted?.colors).toEqual(plain?.colors);
+  });
+});
+
 describe("chunkMeshes shell attributes", () => {
   /** A box from y=base to y=top, as two triangles' worth of vertices. */
   const column = (base: number, top: number): MeshData => ({
@@ -304,5 +424,51 @@ describe("chunkMeshes shell attributes", () => {
     expect(chunk?.colors?.[0]).toBeCloseTo(1, 6);
     expect(chunk?.featureRand?.[0]).toBeCloseTo(0.5, 6);
     expect(chunk?.height01).toBeDefined();
+  });
+});
+
+describe("linearChunkColours", () => {
+  // WHY THIS MATTERS (city objects plan 2026-11-07-2315 section 7). three.js
+  // shades in linear light; the palettes are sRGB. The O1 and V2 labs built
+  // their colours through THREE.Color, which converts, while the library wrote
+  // raw bytes, so tagged buildings drew lighter and greyer than the lab's own
+  // houses beside them (the two-toned Heidelberg). Building chunks are
+  // converted here; road chunks stay raw, as the O3 picture the owner chose.
+  const chunked = chunkMeshes(
+    [cube(0, 0), cube(3, 0)],
+    (m) => m,
+    (m) => meshCentroidEnu(m),
+    undefined,
+    (m) => (m === undefined ? 0 : 0x80ff00),
+  );
+
+  it("converts every vertex colour from sRGB to linear light", () => {
+    const linear = linearChunkColours(chunked);
+    expect(linear).toHaveLength(chunked.length);
+    const c = linear[0]!.colors!;
+    // 0x80 is 0.2158605 linear, 0xff stays 1, 0 stays 0.
+    expect(c[0]).toBeCloseTo(0.2158605, 6);
+    expect(c[1]).toBeCloseTo(1, 6);
+    expect(c[2]).toBe(0);
+    expect(c.length).toBe(chunked[0]!.colors!.length);
+  });
+
+  it("leaves the input untouched and keeps every other field", () => {
+    // WHY: the chunk is shared with the counters and the shell attributes;
+    // converting in place would convert twice on a second call.
+    const before = chunked[0]!.colors![0];
+    const linear = linearChunkColours(chunked);
+    expect(chunked[0]!.colors![0]).toBe(before);
+    expect(linear[0]!.mesh).toBe(chunked[0]!.mesh);
+    expect(linear[0]!.key).toBe(chunked[0]!.key);
+  });
+
+  it("passes a chunk without colours through", () => {
+    const bare = chunkMeshes(
+      [cube(0, 0)],
+      (m) => m,
+      (m) => meshCentroidEnu(m),
+    );
+    expect(linearChunkColours(bare)[0]).toBe(bare[0]);
   });
 });

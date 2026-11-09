@@ -29,8 +29,10 @@
  * @see chunk-meshes.ts.md
  */
 
+import { srgbToLinear } from "./srgb.js";
 import type { EnuPoint } from "./enu.js";
 import { mergeMeshes } from "./extrude.js";
+import type { VertexRange } from "./extrude.js";
 import type { MeshData } from "./mesh-data.js";
 
 /**
@@ -127,11 +129,21 @@ export function chunkMeshes<T>(
    * extra `Float32Array`s for bytes they never read.
    */
   shellRandOf?: (item: T) => number,
+  /**
+   * The item's ROOF colour and where its roof is, or `undefined` for an item
+   * whose roof is its wall colour. Read only together with `colourOf`.
+   *
+   * A ROOF VERTEX IS ONE IN `vertexRanges`, review finding 3. The ranges are
+   * the roof builder's own surfaces (`RoofMesh.surfaceVertices`), so the floor
+   * of a floating part and the gable ends a roof brings with it (both outside
+   * them) keep the wall colour, while an onion's lower, downward-facing half is
+   * roof. Until 2026-11-07 it was "the normal points up", which drew half a
+   * copper onion in the wall colour, and until M2 of the skeleton-roof plan the
+   * gables were told apart by a normal epsilon.
+   */
+  roofOf?: (item: T) => RoofPaint | undefined,
 ): MeshChunk[] {
-  const grouped = new Map<
-    string,
-    { mesh: MeshData; colour: number; rand: number }[]
-  >();
+  const grouped = new Map<string, ChunkPart[]>();
   for (const item of items) {
     const mesh = meshOf(item);
     // A feature that produced no triangles must not create a chunk — see above.
@@ -141,6 +153,7 @@ export function chunkMeshes<T>(
     list.push({
       mesh,
       colour: colourOf?.(item) ?? 0xffffff,
+      roof: roofOf?.(item),
       rand: shellRandOf?.(item) ?? 0,
     });
     grouped.set(key, list);
@@ -157,27 +170,79 @@ export function chunkMeshes<T>(
     if (colourOf === undefined) {
       return shell === undefined ? { key, mesh } : { key, mesh, ...shell };
     }
-    // FLAT PER FEATURE, never interpolated across one: a building whose walls
-    // faded from one class colour to its neighbour's would read as a gradient
-    // someone chose. The merge preserves order, so filling in the same order is
-    // what keeps a colour on the feature it belongs to.
-    const colors = new Float32Array((mesh.positions.length / 3) * 3);
-    let at = 0;
-    for (const part of parts) {
-      const r = ((part.colour >> 16) & 0xff) / 255;
-      const g = ((part.colour >> 8) & 0xff) / 255;
-      const b = (part.colour & 0xff) / 255;
-      for (let i = 0; i < part.mesh.positions.length / 3; i++) {
-        colors[at] = r;
-        colors[at + 1] = g;
-        colors[at + 2] = b;
-        at += 3;
-      }
-    }
+    const colors = vertexColours(parts, mesh.positions.length / 3);
     return shell === undefined
       ? { key, mesh, colors }
       : { key, mesh, colors, ...shell };
   });
+}
+
+/** One item's mesh with what `chunkMeshes` paints on it. */
+interface ChunkPart {
+  readonly mesh: MeshData;
+  readonly colour: number;
+  readonly roof: RoofPaint | undefined;
+  readonly rand: number;
+}
+
+/** A roof colour and the vertices of the item's mesh it applies to. */
+export interface RoofPaint {
+  /** Packed `0xrrggbb`. */
+  readonly colour: number;
+  /** Half-open vertex ranges of the roof in the item's own mesh. */
+  readonly vertexRanges: readonly VertexRange[];
+}
+
+/** A packed `0xrrggbb` as three 0..1 channels. */
+function channels(colour: number): readonly [number, number, number] {
+  return [
+    ((colour >> 16) & 0xff) / 255,
+    ((colour >> 8) & 0xff) / 255,
+    (colour & 0xff) / 255,
+  ];
+}
+
+/**
+ * The per-vertex colours of one chunk's parts, in merge order.
+ *
+ * FLAT PER FEATURE, never interpolated across one: a building whose walls
+ * faded from one class colour to its neighbour's would read as a gradient
+ * someone chose. The merge preserves order, so filling in the same order is
+ * what keeps a colour on the feature it belongs to. A part with a roof colour
+ * paints the vertices of its roof ranges with it; ranges are
+ * clamped to the part's own vertices, so a bad range cannot paint a neighbour.
+ */
+function vertexColours(
+  parts: readonly ChunkPart[],
+  vertexCount: number,
+): Float32Array {
+  const colors = new Float32Array(vertexCount * 3);
+  let at = 0;
+  for (const part of parts) {
+    const count = part.mesh.positions.length / 3;
+    const wall = channels(part.colour);
+    for (let i = 0; i < count; i++) colors.set(wall, at + i * 3);
+    if (part.roof !== undefined) paintRoof(colors, at, part.mesh, part.roof);
+    at += count * 3;
+  }
+  return colors;
+}
+
+/** Paints one part's roof ranges, starting at float offset `at`. */
+function paintRoof(
+  colors: Float32Array,
+  at: number,
+  mesh: MeshData,
+  roof: RoofPaint,
+): void {
+  const count = mesh.positions.length / 3;
+  const rgb = channels(roof.colour);
+  for (const range of roof.vertexRanges) {
+    const end = Math.min(range.end, count);
+    for (let i = Math.max(0, range.start); i < end; i++) {
+      colors.set(rgb, at + i * 3);
+    }
+  }
 }
 
 /**
@@ -241,4 +306,33 @@ export function meshCentroidEnu(mesh: MeshData): EnuPoint {
     z += mesh.positions[i + 2] as number;
   }
   return { x: x / count, y: -(z / count) };
+}
+
+/** sRGB byte to linear light, once per byte rather than once per vertex. */
+const LINEAR_OF_BYTE = Float32Array.from({ length: 256 }, (_, i) =>
+  srgbToLinear(i / 255),
+);
+
+/**
+ * The chunks with their vertex colours converted from sRGB to linear light
+ * (city objects plan 2026-11-07-2315 section 7). Building chunks go through
+ * it, because three.js shades in linear light and the palettes are sRGB; road
+ * chunks do not, as the O3 picture the owner chose drew them raw.
+ *
+ * Returns new chunks with a new `colors` array and leaves the input as it
+ * was, so a second call cannot convert twice. A chunk without colours is
+ * passed through as is. A colour is read back to its byte first (the fill
+ * writes byte / 255), so the conversion is a table lookup.
+ */
+export function linearChunkColours(chunks: readonly MeshChunk[]): MeshChunk[] {
+  return chunks.map((chunk) => {
+    const raw = chunk.colors;
+    if (raw === undefined) return chunk;
+    const colors = new Float32Array(raw.length);
+    for (let i = 0; i < raw.length; i++) {
+      const byte = Math.round((raw[i] ?? 0) * 255);
+      colors[i] = LINEAR_OF_BYTE[byte < 0 ? 0 : byte > 255 ? 255 : byte] ?? 0;
+    }
+    return { ...chunk, colors };
+  });
 }

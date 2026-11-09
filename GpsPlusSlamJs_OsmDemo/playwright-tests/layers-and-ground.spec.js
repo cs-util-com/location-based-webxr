@@ -56,9 +56,10 @@ test.describe("the layer toggles", () => {
       // The attribute is what "is a layer switch" actually means.
       await expect(
         page.locator("#layers input[type=checkbox][data-layer]"),
-      ).toHaveCount(8);
+      ).toHaveCount(9);
 
-      // FIVE OF EIGHT START ON (DEC-R7b-5, DEC-R7b-6). Round 4 turned every
+      // SIX OF NINE START ON (DEC-R7b-5, DEC-R7b-6; `woods` joined, on, in objects
+      // M2a). Round 4 turned every
       // layer on; round 8 took plates and cells back off after a session saw the
       // demo with the terrain relief carrying the ground; the underground
       // diagnostic joined them off by default. Both halves are asserted, because
@@ -73,6 +74,7 @@ test.describe("the layer toggles", () => {
       await expect(page.locator("#layer-underground")).not.toBeChecked();
       await expect(page.locator("#layer-buildings")).toBeChecked();
       await expect(page.locator("#layer-trees")).toBeChecked();
+      await expect(page.locator("#layer-woods")).toBeChecked();
       await expect(page.locator("#layer-areas")).toBeChecked();
       await expect(page.locator("#layer-poi")).toBeChecked();
       // W9 turned every layer on by default, so a test about switching a layer ON
@@ -119,6 +121,23 @@ test.describe("the layer toggles", () => {
       // Roads back on, so the next step starts from the boot state this one did.
       await page.locator("#layer-roads").check();
       await expect(page.locator("#layer-roads")).toBeChecked();
+    });
+
+    await test.step("draws the cosmetic woods by default and removes them when switched off", async () => {
+      // WHY THIS TEST MATTERS (objects M2a, owner decision: woods ON by default,
+      // a switch). The park fixture maps one natural=wood, so the default
+      // build invents trees in it and the status line counts them; switching
+      // the layer off must drop the count (the layer is not built, not merely
+      // hidden) without a refetch, and switching it on brings them back.
+      const status = page.locator("#status");
+      await expect(status).toContainText(/[1-9]\d* woods/);
+      const before = counts.overpassQuery;
+      await page.locator("#layer-woods").uncheck();
+      await expect(status).not.toContainText(/\d+ woods/);
+      await expect(status).toContainText(/[1-9]\d* volumes/);
+      await page.locator("#layer-woods").check();
+      await expect(status).toContainText(/[1-9]\d* woods/);
+      expect(counts.overpassQuery).toBe(before);
     });
 
     await test.step("draws ground plates when the layer is switched on", async () => {
@@ -355,7 +374,7 @@ test.describe("the layer toggles", () => {
     // remains, and what is visible underneath is the DoubleSide affordance grid.
     // These steps pin the half that could regress silently.
     // THE SKY STEP RUNS FIRST, and the order is the fusion's own rule rather
-    // than taste: it is fully reversible (seven switches back on), while the step
+    // than taste: it is fully reversible (eight switches back on), while the step
     // below MOVES THE USER, which reloads the terrain and cannot be undone. An
     // irreversible step goes last or it hands every later step a world it did
     // not ask for.
@@ -364,6 +383,8 @@ test.describe("the layer toggles", () => {
       "areas",
       "buildings",
       "trees",
+      // The cosmetic woods (objects M2a) are a layer too, on by default.
+      "woods",
       "plates",
       "roads",
       "poi",

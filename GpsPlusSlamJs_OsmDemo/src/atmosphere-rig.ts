@@ -114,9 +114,31 @@ export const NATURAL_LIGHT_ADAPTATION = 0.83;
 /**
  * The sky light on the buildings: the scene environment's intensity on the
  * building materials, as a factor (`applyBuildingSkyLight`). The owner's
- * pick (DEC-LIGHT-9).
+ * pick was 1.4 (DEC-LIGHT-9), chosen while the building colours entered the
+ * shader as sRGB values, i.e. too bright.
+ *
+ * 3 SINCE r1158 (owner 2026-11-09, "Korrekt lassen, Licht anheben"): the
+ * building chunks now carry LINEAR colours (`linearChunkColours`, r1135),
+ * which darkened the lit city (June noon 64.3 -> 48.8 against its floor
+ * 61.47 = 0.95 x 64.7), and the owner chose to keep the conversion and raise
+ * the light. This knob, not the EV, because it lights only what the
+ * conversion darkened: the buildings. Measured 2026-11-09 (OsmDemo e2e,
+ * Cologne fixture, heat grid off; lit luma at June noon / Sep noon / 24
+ * degrees / Nov 8 13:00; every heat-grid margin unchanged, the lowest 6.07
+ * at June noon in `cpu-slope`):
+ * - 1.4: 48.8 / 58.9 / 65.1 / 42.7
+ * - 2: 54.7 / 64.6 / 69.7 / 46.9
+ * - 2.5: 59.6 / 69.2 / 73.3 / 50.5 (below the June-noon floor)
+ * - 3: 65.3 / 74.0 / 77.7 / 54.3 (clears it by 3.8)
+ * The EV alternative first cleared the floor at -2.65 (64.3) but took the
+ * June-noon margin from 6.07 to 5.43 and brightened the twilight points by
+ * about a third (15.9 -> 21.7 at -2.9 degrees); the sky light at 3 moves it
+ * by 1.3 (15.9 -> 17.2) and the night not at all (its environment is near
+ * zero).
+ * The verdict would flip only if the June-noon reading drifted down by more
+ * than 3.8 between runs (it repeated to 0.1 across the r1155 and r1158 runs).
  */
-export const BUILDING_SKY_LIGHT = 1.4;
+export const BUILDING_SKY_LIGHT = 3;
 
 /** The sun light's intensity at the model's reference elevation (45°): the demo's old white-light value. */
 const SUN_INTENSITY = 1.1;
@@ -186,6 +208,50 @@ export function surfaceGainAt(
   return 1 + (max - 1) * Math.min(1, Math.max(0, t));
 }
 
+/**
+ * The night floor (r1155, owner 2026-11-08: "Nachts Grundhelligkeit"): a faint,
+ * cool ambient light standing in for moonlight and city glow. Below about -6°
+ * the physical sky's environment light goes to nothing and the city went
+ * black; with the floor the buildings, trees and roads stay just
+ * distinguishable while the scene still reads as night.
+ *
+ * Zero down to `fromDeg` (the end of civil twilight), so no day or twilight
+ * look the DEC-R4-5 sweep approved changes; rising linearly to `intensity`
+ * at `fullDeg` (the end of nautical twilight) and constant below. A fixed
+ * display-level light: the sky's exposure, which the light dialog tunes,
+ * does not scale it.
+ *
+ * 0.15 is a recommendation pending the owner's pick, from the r1155 sweep
+ * (Heidelberg 2026-11-08, mean frame luma 1440x900 at 18:30 / 22:00):
+ * 0 → 0.8 / 0.8, 0.04 → 1.8 / 1.9, 0.08 → 3.1 / 3.1, 0.15 → 5.2 / 5.3,
+ * 0.3 → 10.8 / 10.8. Below 0.08 the city stays black; 0.3 reads as dusk, not
+ * night, and takes the heat grid's margin at −12.1° from 9.04 to 6.57.
+ */
+export const NIGHT_FLOOR = {
+  intensity: 0.15,
+  colour: 0x9fb4d8,
+  fromDeg: -6,
+  fullDeg: -12,
+} as const;
+
+/** The night floor light's object name (tests and the light check find it by it). */
+export const NIGHT_FLOOR_NAME = "night-floor";
+
+/**
+ * The night floor's weight for a sun elevation (radians): 0 at and above
+ * {@link NIGHT_FLOOR}.fromDeg, 1 at and below its `fullDeg`, linear between.
+ *
+ * @throws RangeError for a non-finite elevation.
+ */
+export function nightFloorWeight(elevationRad: number): number {
+  if (!Number.isFinite(elevationRad)) {
+    throw new RangeError(`sun elevation must be finite, got ${elevationRad}`);
+  }
+  const { fromDeg, fullDeg } = NIGHT_FLOOR;
+  const t = (fromDeg - (elevationRad * 180) / Math.PI) / (fromDeg - fullDeg);
+  return Math.min(1, Math.max(0, t));
+}
+
 /** What the rig uses of `SkyAtmosphere` (the seam its tests stub). */
 export type SkyLike = Pick<
   SkyAtmosphere,
@@ -231,6 +297,8 @@ export class AtmosphereRig {
   private readonly sun: THREE.DirectionalLight;
   private readonly sky: SkyLike | undefined;
   private readonly fallback: FallbackParts | undefined;
+  /** The night floor, in both paths (see {@link NIGHT_FLOOR}). */
+  private readonly nightFloor: THREE.AmbientLight;
   /** Removes the context-restore listener (physical sky only). */
   private readonly unsubscribeRestore: () => void;
   private sunSet = false;
@@ -244,6 +312,9 @@ export class AtmosphereRig {
     this.scene = options.scene;
     this.sun = options.sun;
     this.haze = new AtmosphereHaze({ visibilityKm: VISIBILITY_KM });
+    this.nightFloor = new THREE.AmbientLight(NIGHT_FLOOR.colour, 0);
+    this.nightFloor.name = NIGHT_FLOOR_NAME;
+    this.scene.add(this.nightFloor);
     const create =
       options.createSky ??
       ((o: Parameters<NonNullable<AtmosphereRigOptions["createSky"]>>[0]) =>
@@ -302,6 +373,8 @@ export class AtmosphereRig {
     const direction = sunDirection(angles);
     this.sunSet = true;
     this.lastDirection = direction;
+    this.nightFloor.intensity =
+      NIGHT_FLOOR.intensity * nightFloorWeight(angles.elevationRad);
     if (this.sky !== undefined) {
       this.sky.configure({ sunDirection: direction });
       this.syncFromSky(this.sky);
@@ -362,6 +435,8 @@ export class AtmosphereRig {
   /** Releases the sky, the haze's texture and the fallback's objects. */
   dispose(): void {
     this.unsubscribeRestore();
+    this.scene.remove(this.nightFloor);
+    this.nightFloor.dispose();
     this.sky?.dispose();
     this.haze.dispose();
     if (this.fallback !== undefined) {

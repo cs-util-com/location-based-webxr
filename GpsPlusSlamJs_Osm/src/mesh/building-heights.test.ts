@@ -6,6 +6,7 @@
  * and keeps it isolated so the fix cannot quietly be lost inside a larger suite.
  */
 
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import { resolveHeights } from "./building-heights.js";
@@ -94,5 +95,91 @@ describe("min_height against a tagged height", () => {
       min_height: "30",
     });
     expect(heights.totalHeightM).toBeGreaterThan(30);
+  });
+});
+
+describe("roof:direction and roof:orientation", () => {
+  // Why these tests matter: the two tags only reach the roof generator through
+  // `resolveHeights`, so a value it drops or misreads turns a roof with no
+  // error anywhere. Key:roof:direction allows degrees or a 16-point compass
+  // name; a value it does not define must leave the default in place rather
+  // than tilt the roof towards north.
+  it.each([
+    ["90", 90],
+    ["-90", 270],
+    ["450", 90],
+    [" ssw ", 202.5],
+    ["NW", 315],
+  ])("reads roof:direction=%s as %d degrees", (value, degrees) => {
+    const heights = resolveHeights({
+      building: "yes",
+      "roof:direction": value,
+    });
+    expect(heights.roofDirectionDeg).toBeCloseTo(degrees);
+  });
+
+  it.each(["", "uphill", "12 deg", "N-E"])(
+    "ignores roof:direction=%j it cannot read",
+    (value) => {
+      const heights = resolveHeights({
+        building: "yes",
+        "roof:direction": value,
+      });
+      expect(heights.roofDirectionDeg).toBeUndefined();
+    },
+  );
+
+  it("reads roof:orientation=across and leaves along as the default", () => {
+    expect(
+      resolveHeights({ building: "yes", "roof:orientation": "Across" })
+        .roofOrientation,
+    ).toBe("across");
+    expect(
+      resolveHeights({ building: "yes", "roof:orientation": "along" })
+        .roofOrientation,
+    ).toBeUndefined();
+  });
+
+  it.each([
+    ["cone", "pyramidal"],
+    ["half-hipped", "hipped"],
+    ["mansard", "hipped"],
+    ["saltbox", "gabled"],
+    ["gambrel", "gambrel"],
+    ["round", "round"],
+    ["onion", "onion"],
+  ])("draws roof:shape=%s as %s", (tag, shape) => {
+    // The aliases are the nearest generated shape, chosen so the roof keeps its
+    // height and silhouette; the flat fallback would put the roof on the walls.
+    const heights = resolveHeights({
+      building: "yes",
+      height: "20",
+      "roof:height": "6",
+      "roof:shape": tag,
+    });
+    expect(heights.roofShape).toBe(shape);
+  });
+});
+
+describe("roof:shape values that name Object.prototype members (review finding 5)", () => {
+  // WHY THIS TEST MATTERS. The alias table was a plain object, so
+  // `roof:shape=toString` resolved to an inherited function and `__proto__` to
+  // an object, and either reached the roof builder as a "shape". A free-text
+  // tag must fall through to the documented default, a flat roof.
+  it("resolves every one of them to a flat roof", () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...Object.getOwnPropertyNames(Object.prototype)),
+        (name) => {
+          const heights = resolveHeights({
+            building: "yes",
+            height: "10",
+            "roof:height": "3",
+            "roof:shape": name,
+          });
+          expect(heights.roofShape).toBe("flat");
+        },
+      ),
+    );
   });
 });

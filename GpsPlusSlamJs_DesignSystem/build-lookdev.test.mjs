@@ -57,6 +57,30 @@ describe("discoverEntries", () => {
     }
   });
 
+  // City look plan 2026-11-07-0631: a lab can hold a gallery of pages, one
+  // folder each, added by parallel agents; a folder's page is found the same
+  // way, and a folder without one (fixtures) is no page.
+  it("lists a page in a lab's subfolder after the lab's own pages", () => {
+    const root = fixture({
+      "labs/gallery/index.html": "<title>Gallery</title>",
+      "labs/gallery/compare.html": "<title>Compare</title>",
+      "labs/gallery/v2/index.html": "<title>Two</title>",
+      "labs/gallery/v1/index.html": "<title>One</title>",
+      "labs/gallery/fixtures/data.json": "{}",
+      "labs/notes/v1/index.html": "<title>No lab page above it</title>",
+    });
+    try {
+      assert.deepEqual(discoverEntries(root), [
+        "/labs/gallery/index.html",
+        "/labs/gallery/compare.html",
+        "/labs/gallery/v1/index.html",
+        "/labs/gallery/v2/index.html",
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   // Globe round-5 §3.3: a lab can carry a second page (the terrain lab's
   // colour comparison, compare.html) that must reach the preview too.
   it("lists a lab's further pages after its index page, sorted", () => {
@@ -691,6 +715,34 @@ describe("buildLookdev with the real terrain lab", () => {
 // the lab loads it with a dynamic `import("...")`, which the deploy must
 // still ship (followed like a static import), and which the boot graph,
 // the static imports alone, must never include.
+// Why: the city look lab's fixtures are fetched at runtime, so only the
+// literal `new URL(…, import.meta.url)` brings them into the deploy; a page
+// without them is a blank canvas on the owner's phone.
+describe("buildLookdev with the real city look lab", () => {
+  let out;
+  let files;
+  before(() => {
+    out = mkdtempSync(join(tmpdir(), "lookdev-city-look-"));
+    files = buildLookdev({ outDir: out, base: "/lookdev/" });
+  });
+  after(() => rmSync(out, { recursive: true, force: true }));
+
+  it("ships the index, V0, both fixtures, the library and the real ramp", () => {
+    for (const path of [
+      "labs/city-look/index.html",
+      "labs/city-look/v0-today/index.html",
+      "labs/city-look/city-look.css",
+      "labs/city-look/fixtures/lucerne-meggen.json",
+      "labs/city-look/fixtures/heidelberg-altstadt.json",
+      "osm-lib/mesh/city.js",
+      "osm/heat-colours.js",
+      "vendor/three/examples/jsm/postprocessing/GTAOPass.js",
+    ]) {
+      assert.ok(files.includes(path), path);
+    }
+  });
+});
+
 describe("buildLookdev and dynamic imports", () => {
   let root;
   let out;
@@ -809,5 +861,59 @@ describe("the globe lab's boot graph", () => {
         f.startsWith("osm/arrival-"),
     );
     assert.deepEqual(offenders, []);
+  });
+});
+
+describe("buildLookdev: new URL written the way the formatter writes it", () => {
+  // Why this test matters: Prettier breaks a long `new URL(path, import.meta.url)`
+  // over lines and adds a trailing comma, and the crawl's pattern did not
+  // allow that comma. The building geometry lab named seven of its eight
+  // fixtures that way, so the deploy shipped one and the preview page failed
+  // on a 404 that the local server, which serves every file, never showed.
+  let root;
+  let out;
+  let files;
+  before(() => {
+    root = fixture({
+      "labs/wrapped/index.html":
+        "<title>Wrapped lab</title>" +
+        '<script type="module" src="./wrapped.js"></script>',
+      "labs/wrapped/wrapped.js":
+        "export const DATA = new URL(\n" +
+        '  "./a-rather-long-fixture-name.json",\n' +
+        "  import.meta.url,\n" +
+        ");\n" +
+        "const w = new Worker(\n" +
+        '  new URL("./wrapped-worker.js", import.meta.url,),\n' +
+        '  { type: "module" },\n' +
+        ");\n",
+      "labs/wrapped/a-rather-long-fixture-name.json": "{}\n",
+      "labs/wrapped/wrapped-worker.js": "export {};\n",
+    });
+    out = mkdtempSync(join(tmpdir(), "lookdev-wrapped-"));
+    files = buildLookdev({
+      outDir: out,
+      base: "/lookdev/",
+      packageRoot: root,
+      routes: [],
+    });
+  });
+  after(() => {
+    for (const dir of [root, out])
+      rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("ships a fetched file named across lines with a trailing comma", () => {
+    assert.ok(
+      files.includes("labs/wrapped/a-rather-long-fixture-name.json"),
+      files.join(", "),
+    );
+  });
+
+  it("ships a Worker named the same way", () => {
+    assert.ok(
+      files.includes("labs/wrapped/wrapped-worker.js"),
+      files.join(", "),
+    );
   });
 });

@@ -52,6 +52,9 @@ fetch rather than as a tagging distinction.
 
 - `tall-structures.test.ts` — the selector and the height rule, with most of the
   effort on what must not be drawn.
-- `nested-outlines.test.ts` — the fixture proof: the Südturm is extruded at its
-  tagged height, the Nordturm is still drawn exactly once, the five `Sockel`
+- `nested-outlines.test.ts` — the fixture proof: the Südturm is NOT extruded,
+  because its spire parts fill it (`buildings.ts` skips a tall structure its
+  parts cover by the outline's 90 % rule, 2026-11-07, bug 3 and review finding
+  9), a partless tower still is at its tagged height
+  and not guessed, the Nordturm is still drawn exactly once, the five `Sockel`
   parts are untouched, and none of the fixture's street furniture appears.

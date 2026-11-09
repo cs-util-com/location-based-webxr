@@ -20,6 +20,7 @@ import {
 import type { EnuPoint } from "./enu.js";
 import {
   DEFAULT_BUILDING_HEIGHT_M,
+  type RoofShape,
   parseLengthMetres,
   resolveHeights,
 } from "./building-heights.js";
@@ -192,8 +193,12 @@ describe("height resolution", () => {
 
   it("falls back to flat for a roof shape it cannot generate", () => {
     // A flat roof of the right footprint at the right height is a far smaller
-    // error than a confidently wrong `gambrel`.
-    expect(resolveHeights({ "roof:shape": "gambrel" }).roofShape).toBe("flat");
+    // error than a confidently wrong one. `quadruple_saltbox` is a real value
+    // (five in the corpus) with no generated relative; `gambrel`, which this
+    // test used to name, is generated since the S3DB roof fixes.
+    expect(
+      resolveHeights({ "roof:shape": "quadruple_saltbox" }).roofShape,
+    ).toBe("flat");
     expect(resolveHeights({ "roof:shape": "gabled" }).roofShape).toBe("gabled");
   });
 });
@@ -362,11 +367,15 @@ describe("building:part", () => {
     id: 2,
     tags: { "building:part": "yes", height: "157" },
     geometry: [
-      { lat: 50.94145, lng: 6.95845 },
-      { lat: 50.94145, lng: 6.95865 },
-      { lat: 50.94165, lng: 6.95865 },
-      { lat: 50.94165, lng: 6.95845 },
-      { lat: 50.94145, lng: 6.95845 },
+      // THE PART FILLS ITS OUTLINE. Since the 2026-11-07 coverage rule
+      // (`part-coverage.ts`) an outline is hidden only when its parts cover
+      // 90 % of it; a small tower inside a large outline now draws both, and
+      // `s3db-parts.test.ts` pins that case. These tests are about the filled one.
+      { lat: 50.9413, lng: 6.9583 },
+      { lat: 50.9413, lng: 6.9593 },
+      { lat: 50.9418, lng: 6.9593 },
+      { lat: 50.9418, lng: 6.9583 },
+      { lat: 50.9413, lng: 6.9583 },
     ],
   };
 
@@ -416,6 +425,21 @@ describe("trees", () => {
     id,
     position: { lat, lng: ORIGIN.lng },
     tags: { natural: "tree", ...tags },
+  });
+
+  it("reads a leaf type that names an Object.prototype member as unknown (M1 review finding 2)", () => {
+    // WHY THIS TEST MATTERS. The leaf-type table was a plain object, so
+    // `leaf_type=constructor` found the inherited function and the tree took a
+    // function as its variant, which `packInstances` files under no geometry:
+    // the tree was dropped. OSM values are free text.
+    for (const name of Object.getOwnPropertyNames(Object.prototype)) {
+      for (const key of ["leaf_type", "wood"]) {
+        const [placement] = buildTrees([tree(1, 50.9413, { [key]: name })], {
+          frame,
+        });
+        expect(placement?.variant, `${key}=${name}`).toBe("unknown");
+      }
+    }
   });
 
   it("places one instance per tree node", () => {
@@ -868,5 +892,36 @@ describe("buildings below the surface are not extruded", () => {
     expect(
       buildBuildings([building(5, { layer: "2" })], { frame }),
     ).toHaveLength(1);
+  });
+});
+
+describe("extrudeBuilding with a shape that names an Object.prototype member (review finding 5)", () => {
+  // WHY THIS TEST MATTERS. `RoofShape` is a type, and a JavaScript caller (or a
+  // cast) can still hand `extrudeBuilding` any string. The profile tables were
+  // plain objects, so `toString` found the inherited function, the revolve ran
+  // over a "profile" with no points, and the building came back with walls and
+  // no roof at all: open at the top. Such a shape must close flat at the eave.
+  it("closes the building with a flat roof at the eave", () => {
+    const ring: EnuPoint[] = [
+      { x: 0, y: 0 },
+      { x: 20, y: 0 },
+      { x: 20, y: 10 },
+      { x: 0, y: 10 },
+    ];
+    const flat = extrudeBuilding([ring], {
+      minHeightM: 0,
+      eaveHeightM: 8,
+      totalHeightM: 12,
+      roofShape: "flat",
+    });
+    for (const name of Object.getOwnPropertyNames(Object.prototype)) {
+      const mesh = extrudeBuilding([ring], {
+        minHeightM: 0,
+        eaveHeightM: 8,
+        totalHeightM: 12,
+        roofShape: name as RoofShape,
+      });
+      expect(mesh.triangleCount, name).toBe(flat.triangleCount);
+    }
   });
 });

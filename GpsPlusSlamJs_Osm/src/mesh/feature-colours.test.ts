@@ -1,3 +1,4 @@
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -141,15 +142,28 @@ describe("parseOsmColour", () => {
     // a real thing people type. Falling through to the class colour is the
     // honest answer.
     expect(parseOsmColour("#gggggg")).toBeUndefined();
-    expect(parseOsmColour("beige")).toBeUndefined();
+    expect(parseOsmColour("darkbrown")).toBeUndefined();
     expect(parseOsmColour("")).toBeUndefined();
     expect(parseOsmColour(undefined)).toBeUndefined();
   });
 
-  it("does NOT resolve CSS colour names, deliberately", () => {
-    // The CSS list is 148 entries of which a handful appear in OSM, and a wrong
-    // colour is worse than the class default because it looks like a decision.
-    expect(parseOsmColour("red")).toBeUndefined();
+  it("resolves the colour names the corpus uses, to their CSS values", () => {
+    // WHY (bug 8 of the 2026-11-07 findings): 511 of the corpus's 3 108 colour
+    // values are names, `grey` alone 377 of them, and every one was dropped to
+    // the class colour. The wiki allows basic names, so a mapper who typed
+    // `red` said red.
+    expect(parseOsmColour("grey")).toBe(0x808080);
+    expect(parseOsmColour("gray")).toBe(0x808080);
+    expect(parseOsmColour(" Red ")).toBe(0xff0000);
+    expect(parseOsmColour("lightgrey")).toBe(0xd3d3d3);
+    expect(parseOsmColour("gold")).toBe(0xffd700);
+  });
+
+  it("still does NOT resolve a CSS name nobody in the corpus uses", () => {
+    // A wrong colour is worse than the class default because it looks like a
+    // decision, so the table holds only names seen in use; `beige` is CSS
+    // but not among them.
+    expect(parseOsmColour("beige")).toBeUndefined();
   });
 });
 
@@ -220,6 +234,45 @@ describe("pedestrian ways read differently from car roads", () => {
       const value = luma(roadColour({ highway }));
       expect(value, highway).toBeGreaterThan(120);
       expect(value, highway).toBeLessThan(215);
+    }
+  });
+});
+
+describe("tag values that name Object.prototype members (review finding 5)", () => {
+  // WHY THIS TEST MATTERS. The colour tables were plain objects, so a tag
+  // value of `constructor` or `toString` found the inherited function rather
+  // than nothing: `building:colour=constructor` coloured a building with a
+  // function, which the buffer reads as NaN, and `__proto__` found an object.
+  // OSM values are free text, so every name below can arrive in a tile.
+  const PROTOTYPE_NAMES = Object.getOwnPropertyNames(Object.prototype);
+
+  it("parses none of them as a colour", () => {
+    for (const name of PROTOTYPE_NAMES) {
+      expect(parseOsmColour(name), name).toBeUndefined();
+    }
+  });
+
+  it("falls through to the default colour on every colour, material and class tag", () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...PROTOTYPE_NAMES),
+        fc.constantFrom("building:colour", "building:material", "building"),
+        (name, key) => {
+          expect(buildingColour({ [key]: name })).toBe(DEFAULT_BUILDING_RGB);
+          expect(
+            buildingColour({ "building:part": "yes" }, { [key]: name }),
+          ).toBe(DEFAULT_BUILDING_RGB);
+        },
+      ),
+    );
+  });
+
+  it("falls through to the default on a road's class and surface", () => {
+    for (const name of PROTOTYPE_NAMES) {
+      expect(roadColour({ highway: name }), name).toBe(DEFAULT_ROAD_RGB);
+      expect(roadColour({ highway: name, surface: name }), name).toBe(
+        DEFAULT_ROAD_RGB,
+      );
     }
   });
 });

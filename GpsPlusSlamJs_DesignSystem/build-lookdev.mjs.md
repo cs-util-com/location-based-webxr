@@ -22,7 +22,9 @@ followDynamic?, workerImports?, siteRootPrefixes? })` → the written paths rela
   - `discoverEntries(packageRoot)` → the deployable pages as URL paths:
     `/3d/index.html` first (when present), then every
     `labs/<name>/index.html`, sorted, each followed by its lab's further
-    top-level pages (`*.html`, sorted: the terrain lab's `compare.html`).
+    top-level pages (`*.html`, sorted: the terrain lab's `compare.html`)
+    and its folders' index pages, one level deep (sorted: the city look
+    gallery's `v0-today/index.html`).
 - How it works:
   - for every page from `discoverEntries` (the main page and the lab
     pages, programme plan 2026-09-26-0539 DEC-PRG-2): reads it and its
@@ -49,7 +51,8 @@ followDynamic?, workerImports?, siteRootPrefixes? })` → the written paths rela
     `w/vendor/h3-js/LICENSE` for the globe city's worker), so a worker's
     graph never adds a plain-path file to a page's boot graph.
     Any other `new URL("x", import.meta.url)` is crawled when it names a
-    `.js`/`.mjs` module and copied byte for byte otherwise;
+    `.js`/`.mjs` module and copied byte for byte otherwise, also when the
+    formatter has broken the call over lines with a trailing comma;
   - follows literal dynamic `import("x")`s in our own sources, outside
     comments (a JSDoc `{import("x").T}` is a type, not an import; not under
     `/vendor/`: 3d-tiles-renderer's chunks import optional packages no

@@ -12,11 +12,18 @@
  * it is the most complete implementation of the schema anywhere:
  *
  * - A building's parts are the `building:part` areas geometrically inside its
- *   outline (OSM2World also accepts `type=building` relation members with role
- *   `part`; we support both).
- * - **If a building has parts, the outline itself is NOT extruded** — the parts
- *   replace it. Extruding both is the single most visible S3DB mistake: every
- *   detailed building gets a box drawn through it.
+ *   outline. OSM2World also accepts `type=building` relation members with role
+ *   `part`; WE DO NOT: the tile query does not fetch those relations (they
+ *   carry only `type`, so a keyed selector cannot catch them, and the
+ *   relation selector is kept keyed on purpose; see `overpass-query.ts`), and
+ *   `toGeometry` refuses the type. A part mapped outside its outline is
+ *   therefore drawn on its own.
+ * - **If a building's parts fill its outline, the outline itself is NOT
+ *   extruded** — the parts replace it. Extruding both is the single most
+ *   visible S3DB mistake: every detailed building gets a box drawn through it.
+ *   "Fill" is {@link PART_COVERAGE_TO_HIDE_OUTLINE} of its area
+ *   (`part-coverage.ts`); an outline its mapper only half filled is drawn as
+ *   well as its parts, or the rest of the building disappears.
  * - If it has no parts, the outline is its own only part.
  *
  * @see buildings.ts.md
@@ -43,8 +50,15 @@ import {
   resolveHeights,
 } from "./building-heights.js";
 import type { BuildingHeights } from "./building-heights.js";
-import { extrudeBuilding } from "./extrude.js";
+import { extrudeBuilding, mergeMeshes } from "./extrude.js";
+import type { ExtrudedBuilding, VertexRange } from "./extrude.js";
+import type { RoofMethod } from "./roof.js";
 import type { MeshData } from "./mesh-data.js";
+import {
+  PART_COVERAGE_TO_HIDE_OUTLINE,
+  partCoverage,
+} from "./part-coverage.js";
+import type { PlanarPolygon } from "./part-coverage.js";
 
 /** One extruded volume, with the provenance to trace it back to OSM. */
 export interface BuildingVolume {
@@ -63,6 +77,19 @@ export interface BuildingVolume {
    */
   readonly roofIsApproximate: boolean;
   /**
+   * The roof's vertices in `mesh`, one range per polygon (review finding 3).
+   *
+   * Carried so `chunkMeshes` paints the roof colour on what the roof builder
+   * drew, not on whatever faces up; see `ExtrudedBuilding.roofVertices`.
+   */
+  readonly roofVertexRanges: readonly VertexRange[];
+  /**
+   * The ladder step that drew each polygon's roof, in the order of
+   * `roofVertexRanges`. A pitched tag drawn as a flat lid ("flat", "prism")
+   * takes a flat roof colour under the seeded palette (M7 review MINOR 4).
+   */
+  readonly roofMethods: readonly RoofMethod[];
+  /**
    * The OUTER ring in ENU metres, kept so a consumer can ask what ground this
    * volume covers (F33, §5).
    *
@@ -72,6 +99,14 @@ export interface BuildingVolume {
    * here belongs on this building's roof instead of at its own node.
    */
   readonly footprint: readonly EnuPoint[];
+  /**
+   * EVERY polygon's outer ring in ENU metres: `footprint` is the first of
+   * them, and a multipolygon building has one per part.
+   *
+   * `buildCity` keeps the invented trees out of all of them (r1158 review
+   * MINOR 4: excluding `footprint` alone grew woods inside every other part).
+   */
+  readonly outerRings: readonly (readonly EnuPoint[])[];
   /**
    * The volume's highest point, in the SAME frame as a marker's ground height
    * (DEC-S2, stage 1).
@@ -97,6 +132,12 @@ export interface BuildBuildingsOptions {
   readonly frame: EnuFrame;
   /** Ground elevation per feature, metres. Defaults to 0 everywhere. */
   readonly groundHeightM?: (position: LatLng) => number;
+  /**
+   * The share of an outline its parts must cover before the outline is hidden.
+   * Defaults to {@link PART_COVERAGE_TO_HIDE_OUTLINE}; an option so the corpus
+   * sweep and the lab can vary it, not for production callers.
+   */
+  readonly partCoverageToHideOutline?: number;
 }
 
 /**
@@ -111,13 +152,19 @@ export function buildBuildings(
   options: BuildBuildingsOptions,
 ): BuildingVolume[] {
   const { outlines, parts } = collectFootprints(features, options.frame);
-  const { claimed, partsByOutline } = assignPartsToOutlines(outlines, parts);
+  const { claimed, partsByOutline } = assignPartsToOutlines(
+    outlines,
+    parts,
+    options.partCoverageToHideOutline,
+  );
 
   const volumes: BuildingVolume[] = [];
 
   for (const outline of outlines) {
     const key = featureKey(outline.feature);
-    // A building WITH parts is not extruded itself — the parts replace it.
+    // A building whose parts FILL it is not extruded itself — the parts replace
+    // it. `claimed` holds only those; a half-filled outline falls through and
+    // is drawn on the same ground as its parts.
     // Drawing both is the most visible S3DB mistake there is, and since R5-7 it
     // is also what fixes the NESTED case: `assignPartsToOutlines` gives each part
     // to the smallest outline containing it, so Cologne Cathedral's
@@ -132,14 +179,19 @@ export function buildBuildings(
     // four legitimate buildings — an `industrial` under the cathedral and three
     // `kiosk`s in Heidelberg. Nesting inside a modelled building simply does not
     // imply duplicating it: a kiosk in a station concourse is a real building.
+    //
+    // WHAT DOES COUNT NOW (review finding 2): a nested outline's ground, and its
+    // parts, toward the coverage of an outline that HAS parts somewhere (see
+    // `filledOutlines`). That is the 90 % rule measured honestly, not the rule
+    // above: an outline with no parts anywhere is never hidden.
     if (claimed.has(key)) continue;
     volumes.push(
       volumeFor(
         outline.feature,
-        outline.rings,
+        outline.polygons,
         undefined,
         options,
-        groundUnder([outline], options),
+        groundUnder([outline, ...(partsByOutline.get(key) ?? [])], options),
       ),
     );
   }
@@ -173,7 +225,7 @@ export function buildBuildings(
     );
     for (const part of list) {
       volumes.push(
-        volumeFor(part.feature, part.rings, outlineKey, options, group),
+        volumeFor(part.feature, part.polygons, outlineKey, options, group),
       );
     }
   }
@@ -197,7 +249,7 @@ export function buildBuildings(
     volumes.push(
       volumeFor(
         part.feature,
-        part.rings,
+        part.polygons,
         undefined,
         options,
         groundUnder([part], options),
@@ -215,14 +267,19 @@ export function buildBuildings(
   // carries BOTH `building=tower` and `man_made=tower` — is extruded exactly
   // once. Without that the two selectors would each produce a 157 m prism in the
   // same place, which is invisible until it z-fights.
-  volumes.push(...tallStructureVolumes(features, options));
+  volumes.push(...tallStructureVolumes(features, options, parts));
 
   return volumes;
 }
 
+/**
+ * A footprint in the local ENU frame: every polygon of the feature, each outer
+ * ring first, then its holes. One polygon for a way; a multipolygon with
+ * several outers keeps them all (one building drawn in two wings).
+ */
 interface Footprint {
   readonly feature: OsmFeature;
-  readonly rings: EnuPoint[][];
+  readonly polygons: EnuPoint[][][];
 }
 
 /**
@@ -236,7 +293,7 @@ interface Footprint {
  */
 interface PlanarFootprint {
   readonly feature: OsmFeature;
-  readonly rings: readonly (readonly PlanarPoint[])[];
+  readonly polygons: readonly PlanarPolygon[];
 }
 
 /** A building volume as the obstacle index sees it: lat/lng, no frame. */
@@ -317,20 +374,18 @@ export function solidBuildingFootprints(
     feature.tags["building"] !== "roof";
 
   for (const outline of outlines) {
-    // An outline WITH parts is not solid itself — the parts replace it, which
-    // is what keeps a courtyard between them open.
+    // An outline its parts FILL is not solid itself — the parts replace it,
+    // which is what keeps a courtyard between them open. A half-filled one is
+    // solid, because it is drawn.
     if (claimed.has(featureKey(outline.feature))) continue;
     if (!obstructsTheGround(outline.feature)) continue;
-    solid.push({ feature: outline.feature, rings: outline.rings });
+    // One entry per polygon: a building in two wings blocks both.
+    solid.push(...solidsOf(outline));
   }
   for (const [outlineKey, list] of partsByOutline) {
     for (const part of list) {
       if (!obstructsTheGround(part.feature)) continue;
-      solid.push({
-        feature: part.feature,
-        parentFeature: outlineKey,
-        rings: part.rings,
-      });
+      solid.push(...solidsOf(part, outlineKey));
     }
   }
   // A part with no containing outline is still a real volume — a tile boundary
@@ -341,10 +396,22 @@ export function solidBuildingFootprints(
   for (const part of parts) {
     if (placed.has(part.feature)) continue;
     if (!obstructsTheGround(part.feature)) continue;
-    solid.push({ feature: part.feature, rings: part.rings });
+    solid.push(...solidsOf(part));
   }
 
   return solid;
+}
+
+/** One solid footprint per polygon of `footprint`. */
+function solidsOf(
+  footprint: PlanarFootprint,
+  parentFeature?: OsmFeatureKey,
+): SolidFootprint[] {
+  return footprint.polygons.map((rings) =>
+    parentFeature === undefined
+      ? { feature: footprint.feature, rings }
+      : { feature: footprint.feature, parentFeature, rings },
+  );
 }
 
 /** Splits the buildable features into outlines and parts, in lat/lng. */
@@ -361,22 +428,22 @@ function collectPlanarFootprints(features: Iterable<OsmFeature>): {
     if (isBelowSurface(feature)) continue;
     const part = isBuildingPart(feature);
     if (!part && !isBuilding(feature)) continue;
-    const rings = toPlanarRings(feature);
-    if (rings === undefined) continue;
-    (part ? parts : outlines).push({ feature, rings });
+    const polygons = toPlanarPolygons(feature);
+    if (polygons === undefined) continue;
+    (part ? parts : outlines).push({ feature, polygons });
   }
   return { outlines, parts };
 }
 
-/** A feature's rings as `x = lng, y = lat`, or `undefined` when unusable. */
-function toPlanarRings(
-  feature: OsmFeature,
-): readonly (readonly PlanarPoint[])[] | undefined {
+/** A feature's polygons as `x = lng, y = lat`, or `undefined` when unusable. */
+function toPlanarPolygons(feature: OsmFeature): PlanarPolygon[] | undefined {
   const geometry = toGeometry(feature);
   if (!geometry.ok) return undefined;
-  const rings = ringsOf(geometry.geometry);
-  if (rings.length === 0) return undefined;
-  return rings.map((ring) => ring.map((p) => ({ x: p.lng, y: p.lat })));
+  const polygons = polygonsOf(geometry.geometry);
+  if (polygons.length === 0) return undefined;
+  return polygons.map((rings) =>
+    rings.map((ring) => ring.map((p) => ({ x: p.lng, y: p.lat }))),
+  );
 }
 
 /**
@@ -389,11 +456,25 @@ function toPlanarRings(
  *
  * Cologne's Südturm is the case that named it — `man_made=tower` with no
  * `building` tag, a 157 m landmark that rendered as nothing.
+ *
+ * **A TOWER ITS PARTS FILL IS NOT DRAWN** (2026-11-07, bug 3 of the geometry
+ * findings). The same S3DB rule as for an outline: the Südturm's spire is
+ * `building:part`s up to 155 m inside its area, and a prism over them hid the
+ * spire. Since review finding 9 it is the outline's coverage rule too: the
+ * parts whose representative point lies inside the area must cover
+ * `partCoverageToHideOutline` of it. "Any part inside" hid a whole shaft for
+ * one small canopy at its foot; the Südturm is 100 % covered and still goes.
+ * The parts are NOT reassigned to the tower, so their ground and parent stay
+ * what the outline pass gave them.
  */
 function tallStructureVolumes(
   features: Iterable<OsmFeature>,
   options: BuildBuildingsOptions,
+  parts: readonly Footprint[],
 ): BuildingVolume[] {
+  const partPoints = parts.map((part) =>
+    representativePoint(part.polygons[0]?.[0] ?? []),
+  );
   const volumes: BuildingVolume[] = [];
   for (const feature of features) {
     if (!isTallStructure(feature)) continue;
@@ -402,20 +483,55 @@ function tallStructureVolumes(
     // landmark-sized lie in a view whose whole job is being checked by eye.
     const heightM = tallStructureHeightM(feature);
     if (heightM === undefined) continue;
-    const rings = toEnuRings(feature, options.frame);
-    if (rings === undefined) continue;
+    const polygons = toEnuPolygons(feature, options.frame);
+    if (polygons === undefined) continue;
+    const inside = partsInside(polygons, parts, partPoints);
+    if (
+      inside.length > 0 &&
+      partCoverage(polygons, inside) >=
+        (options.partCoverageToHideOutline ?? PART_COVERAGE_TO_HIDE_OUTLINE)
+    ) {
+      continue;
+    }
     volumes.push(
       volumeFor(
         feature,
-        rings,
+        polygons,
         undefined,
         options,
-        groundUnder([{ feature, rings }], options),
+        groundUnder([{ feature, polygons }], options),
         heightM,
       ),
     );
   }
   return volumes;
+}
+
+/**
+ * The polygons of the `parts` whose point (`points[i]` for `parts[i]`) lies
+ * inside any outer ring of `polygons`.
+ */
+function partsInside(
+  polygons: readonly EnuPoint[][][],
+  parts: readonly Footprint[],
+  points: readonly PlanarPoint[],
+): EnuPoint[][][][] {
+  const outers = polygons.map((polygon) => {
+    const outer = polygon[0] ?? [];
+    return { outer, bounds: ringBounds(outer) };
+  });
+  return parts
+    .filter((_, i) => {
+      const point = points[i];
+      return (
+        point !== undefined &&
+        outers.some(
+          ({ outer, bounds }) =>
+            withinBounds(bounds, point) && containsPoint(outer, point),
+        )
+      );
+    })
+    .map((part) => part.polygons);
 }
 
 /** Splits the input into building outlines and `building:part` volumes. */
@@ -437,9 +553,9 @@ function collectFootprints(
     if (isBelowSurface(feature)) continue;
     const part = isBuildingPart(feature);
     if (!part && !isBuilding(feature)) continue;
-    const rings = toEnuRings(feature, frame);
-    if (rings === undefined) continue;
-    (part ? parts : outlines).push({ feature, rings });
+    const polygons = toEnuPolygons(feature, frame);
+    if (polygons === undefined) continue;
+    (part ? parts : outlines).push({ feature, polygons });
   }
   return { outlines, parts };
 }
@@ -484,15 +600,23 @@ function collectFootprints(
  * the best area so far", before running any point-in-polygon test — is 4-7x
  * faster than the code this round started from. Two float comparisons discard
  * the overwhelming majority of (part, outline) pairs on a city tile.
+ *
+ * `claimed` HOLDS ONLY THE OUTLINES ITS PARTS FILL (2026-11-07, bug 5): those
+ * whose parts cover at least `hideAtCoverage` of them (`part-coverage.ts`).
+ * `partsByOutline` still holds every assignment, filled or not, so a
+ * half-filled outline and its parts share one ground.
+ *
+ * EVERY POLYGON OF A MULTIPOLYGON OUTLINE IS INDEXED, under the one key, so a
+ * part in either wing of a building drawn in two pieces belongs to it.
  */
 function assignPartsToOutlines<F extends PlanarFootprint>(
   outlines: readonly F[],
   parts: readonly F[],
+  hideAtCoverage: number = PART_COVERAGE_TO_HIDE_OUTLINE,
 ): {
   claimed: Set<OsmFeatureKey>;
   partsByOutline: Map<OsmFeatureKey, F[]>;
 } {
-  const claimed = new Set<OsmFeatureKey>();
   const partsByOutline = new Map<OsmFeatureKey, F[]>();
 
   // GENERIC OVER THE FOOTPRINT, so one implementation of this rule serves both
@@ -501,15 +625,19 @@ function assignPartsToOutlines<F extends PlanarFootprint>(
   // itself is affine-invariant, which is why that is sound rather than merely
   // convenient — see `PlanarFootprint`.
 
-  // Once per outline, not once per (part, outline) pair.
-  const indexed = outlines.map((outline) => {
-    const ring = outline.rings[0] ?? [];
-    return {
-      ring,
-      area: ringArea(ring),
-      bounds: ringBounds(ring),
-      key: featureKey(outline.feature),
-    };
+  // Once per outline polygon, not once per (part, outline) pair. The area that
+  // ranks a candidate is the whole outline's, so both wings of one building
+  // compete as one building.
+  const indexed = outlines.flatMap((outline) => {
+    const key = featureKey(outline.feature);
+    const area = outline.polygons.reduce(
+      (sum, polygon) => sum + ringArea(polygon[0] ?? []),
+      0,
+    );
+    return outline.polygons.map((polygon) => {
+      const ring = polygon[0] ?? [];
+      return { ring, area, bounds: ringBounds(ring), key };
+    });
   });
 
   // INDEXED, NOT SCANNED (2026-08-22). `smallestContaining` used to walk every
@@ -525,19 +653,128 @@ function assignPartsToOutlines<F extends PlanarFootprint>(
   const grid = buildHostGrid(indexed.map((outline) => outline.bounds));
 
   for (const part of parts) {
-    const point = representativePoint(part.rings[0] ?? []);
+    const point = representativePoint(part.polygons[0]?.[0] ?? []);
     const best = smallestContaining(indexed, grid.candidatesAt(point), point);
     if (best === undefined) continue;
-    claimed.add(best);
     const list = partsByOutline.get(best) ?? [];
     list.push(part);
     partsByOutline.set(best, list);
   }
-  return { claimed, partsByOutline };
+  return {
+    claimed: filledOutlines(
+      outlines,
+      partsByOutline,
+      hideAtCoverage,
+      enclosingOutlines(outlines, indexed, grid),
+    ),
+    partsByOutline,
+  };
+}
+
+/**
+ * Each outline's PARENT: the smallest OTHER outline containing its
+ * representative point, ranked strictly above it on (area, key).
+ *
+ * Strictly above, so the relation is a forest by construction: two identical
+ * outlines cannot each be the other's parent, and no chain can loop.
+ */
+function enclosingOutlines<F extends PlanarFootprint>(
+  outlines: readonly F[],
+  indexed: readonly IndexedOutline[],
+  grid: { candidatesAt(point: PlanarPoint): readonly number[] },
+): Map<OsmFeatureKey, OsmFeatureKey> {
+  const areaByKey = new Map<OsmFeatureKey, number>();
+  for (const entry of indexed) areaByKey.set(entry.key, entry.area);
+  const parentOf = new Map<OsmFeatureKey, OsmFeatureKey>();
+  for (const outline of outlines) {
+    const key = featureKey(outline.feature);
+    const point = representativePoint(outline.polygons[0]?.[0] ?? []);
+    const parent = smallestContaining(
+      indexed,
+      grid.candidatesAt(point),
+      point,
+      {
+        area: areaByKey.get(key) ?? 0,
+        key,
+      },
+    );
+    if (parent !== undefined) parentOf.set(key, parent);
+  }
+  return parentOf;
+}
+
+/**
+ * The keys of the outlines whose parts cover `hideAtCoverage` of them.
+ *
+ * NESTED OUTLINES COUNT (2026-11-07, review finding 2). A part goes to the
+ * SMALLEST containing outline, so a cathedral whose tower is its own nested
+ * outline never saw the tower's parts: with the nave modelled and the tower
+ * at 15 %, the 157 m cathedral outline was drawn as a box through the model.
+ * So an outline's covered ground is its own parts, plus every outline nested
+ * in it (at any depth) by its own polygon, plus their parts.
+ *
+ * ONLY AN OUTLINE WITH PARTS SOMEWHERE IS A CANDIDATE, its own or a nested
+ * outline's. Nesting alone hides nothing: the removed nesting rule deleted
+ * Heidelberg's kiosks (see `buildBuildings`), and a station with a kiosk in
+ * it and no parts anywhere is two real buildings.
+ */
+function filledOutlines<F extends PlanarFootprint>(
+  outlines: readonly F[],
+  partsByOutline: ReadonlyMap<OsmFeatureKey, readonly F[]>,
+  hideAtCoverage: number,
+  parentOf: ReadonlyMap<OsmFeatureKey, OsmFeatureKey>,
+): Set<OsmFeatureKey> {
+  const children = new Map<OsmFeatureKey, F[]>();
+  for (const outline of outlines) {
+    const parent = parentOf.get(featureKey(outline.feature));
+    if (parent === undefined) continue;
+    const list = children.get(parent) ?? [];
+    list.push(outline);
+    children.set(parent, list);
+  }
+
+  const filled = new Set<OsmFeatureKey>();
+  for (const outline of outlines) {
+    const key = featureKey(outline.feature);
+    const covering = coveringOf(key, children, partsByOutline);
+    if (covering === undefined) continue;
+    if (partCoverage(outline.polygons, covering) >= hideAtCoverage) {
+      filled.add(key);
+    }
+  }
+  return filled;
+}
+
+/**
+ * What covers the outline `key`: its own parts, every outline nested in it at
+ * any depth, and their parts. `undefined` when no part is among them, so the
+ * outline is no candidate for hiding (see `filledOutlines`).
+ */
+function coveringOf<F extends PlanarFootprint>(
+  key: OsmFeatureKey,
+  children: ReadonlyMap<OsmFeatureKey, readonly F[]>,
+  partsByOutline: ReadonlyMap<OsmFeatureKey, readonly F[]>,
+): (readonly PlanarPolygon[])[] | undefined {
+  const own = partsByOutline.get(key) ?? [];
+  const covering = own.map((part) => part.polygons);
+  let hasParts = own.length > 0;
+  // Depth-first; the parent relation is a forest, so this terminates.
+  const stack = [...(children.get(key) ?? [])];
+  for (let nested = stack.pop(); nested !== undefined; nested = stack.pop()) {
+    const nestedKey = featureKey(nested.feature);
+    const nestedParts = partsByOutline.get(nestedKey) ?? [];
+    if (nestedParts.length > 0) hasParts = true;
+    covering.push(nested.polygons, ...nestedParts.map((p) => p.polygons));
+    stack.push(...(children.get(nestedKey) ?? []));
+  }
+  return hasParts ? covering : undefined;
 }
 
 /**
  * The key of the smallest indexed outline containing `point`, ties on key.
+ *
+ * With `above`, only outlines ranked strictly above it on (area, key) take
+ * part: that is how an outline finds the one it is nested in.
  *
  * `candidates` are indices into `indexed` — whatever the grid says could
  * contain the point. It is a SUPERSET, so the bounds test below is still run:
@@ -548,28 +785,30 @@ function smallestContaining(
   indexed: readonly IndexedOutline[],
   candidates: readonly number[],
   point: PlanarPoint,
+  above?: { readonly area: number; readonly key: OsmFeatureKey },
 ): OsmFeatureKey | undefined {
-  let bestKey: OsmFeatureKey | undefined;
-  let bestArea = Infinity;
+  let best: IndexedOutline | undefined;
 
   for (const index of candidates) {
     const candidate = indexed[index] as IndexedOutline;
     if (!withinBounds(candidate.bounds, point)) continue;
-    // A strictly larger area cannot win, and an equal one only wins on the key
-    // tie-break — so in neither case is the polygon test worth running.
-    if (candidate.area > bestArea) continue;
-    if (
-      candidate.area === bestArea &&
-      bestKey !== undefined &&
-      candidate.key >= bestKey
-    ) {
-      continue;
-    }
+    if (above !== undefined && !ranksAbove(candidate, above)) continue;
+    // A candidate that does not rank below the best so far (a larger area, or
+    // an equal one losing the key tie-break) cannot win, so the polygon test is
+    // not worth running.
+    if (best !== undefined && !ranksAbove(best, candidate)) continue;
     if (!containsPoint(candidate.ring, point)) continue;
-    bestKey = candidate.key;
-    bestArea = candidate.area;
+    best = candidate;
   }
-  return bestKey;
+  return best?.key;
+}
+
+/** Whether `a` ranks strictly above `b` on (area, key). */
+function ranksAbove(
+  a: { readonly area: number; readonly key: OsmFeatureKey },
+  b: { readonly area: number; readonly key: OsmFeatureKey },
+): boolean {
+  return a.area > b.area || (a.area === b.area && a.key > b.key);
 }
 
 function withinBounds(bounds: RingBounds, point: PlanarPoint): boolean {
@@ -657,9 +896,10 @@ function groundUnder(
 
   let lowest = Infinity;
   let highest = -Infinity;
-  for (const footprint of footprints) {
-    const outer = footprint.rings[0];
-    if (outer === undefined) continue;
+  const outers = footprints.flatMap((footprint) =>
+    footprint.polygons.map((polygon) => polygon[0] ?? []),
+  );
+  for (const outer of outers) {
     for (const point of outer) {
       const height = sample(options.frame.toLatLng(point));
       // A provider that answers NaN would otherwise poison every vertex of the
@@ -676,7 +916,12 @@ function groundUnder(
 
 function volumeFor(
   feature: OsmFeature,
-  rings: EnuPoint[][],
+  /**
+   * Every polygon of the feature. Each is extruded with the same heights and
+   * the meshes are merged, so a building in two wings is ONE volume with one
+   * key: consumers index volumes by feature key.
+   */
+  polygons: EnuPoint[][][],
   parentFeature: OsmFeatureKey | undefined,
   options: BuildBuildingsOptions,
   /**
@@ -713,7 +958,60 @@ function volumeFor(
           heightIsGuessed: false,
         };
 
-  const mesh = extrudeBuilding(rings, {
+  const meshes = polygons.map((rings) => extrudeOne(rings, heights, ground));
+  const mesh =
+    meshes.length === 1 ? (meshes[0] as MeshData) : mergeMeshes(meshes);
+  const roofIsApproximate = meshes.some((m) => m.roofIsApproximate);
+  // `mergeMeshes` keeps the order, so each polygon's roof moves by the
+  // vertices of the polygons before it.
+  const roofVertexRanges: VertexRange[] = [];
+  let offset = 0;
+  for (const m of meshes) {
+    roofVertexRanges.push({
+      start: m.roofVertices.start + offset,
+      end: m.roofVertices.end + offset,
+    });
+    offset += m.positions.length / 3;
+  }
+  const roofMethods = meshes.map((m) => m.roofMethod);
+  const footprint = polygons[0]?.[0] ?? [];
+  const outerRings = polygons.map((rings) => rings[0] ?? []);
+  // The absolute top: the base the walls actually stand on, plus the height the
+  // roof reaches above that base.
+  const topHeightM = ground.lowest + heights.totalHeightM + ground.rise;
+  return parentFeature === undefined
+    ? {
+        feature: featureKey(feature),
+        heights,
+        mesh,
+        roofIsApproximate,
+        roofVertexRanges,
+        roofMethods,
+        footprint,
+        outerRings,
+        topHeightM,
+      }
+    : {
+        feature: featureKey(feature),
+        parentFeature,
+        heights,
+        footprint,
+        outerRings,
+        mesh,
+        roofIsApproximate,
+        roofVertexRanges,
+        roofMethods,
+        topHeightM,
+      };
+}
+
+/** One polygon extruded on the building's ground. */
+function extrudeOne(
+  rings: EnuPoint[][],
+  heights: BuildingHeights,
+  ground: { lowest: number; rise: number },
+): ExtrudedBuilding {
+  return extrudeBuilding(rings, {
     minHeightM: heights.minHeightM,
     // THE WALLS RUN DOWN TO THE LOWEST GROUND, THE ROOF STAYS ABOVE THE HIGHEST.
     // Both halves are needed and neither alone is right: basing at the minimum
@@ -728,59 +1026,46 @@ function volumeFor(
     eaveHeightM: heights.eaveHeightM + ground.rise,
     totalHeightM: heights.totalHeightM + ground.rise,
     roofShape: heights.roofShape,
+    ...(heights.roofDirectionDeg === undefined
+      ? {}
+      : { roofDirectionDeg: heights.roofDirectionDeg }),
+    ...(heights.roofOrientation === undefined
+      ? {}
+      : { roofOrientation: heights.roofOrientation }),
     groundHeightM: ground.lowest,
   });
-
-  const roofIsApproximate = mesh.roofIsApproximate;
-  const footprint = rings[0] ?? [];
-  // The absolute top: the base the walls actually stand on, plus the height the
-  // roof reaches above that base.
-  const topHeightM = ground.lowest + heights.totalHeightM + ground.rise;
-  return parentFeature === undefined
-    ? {
-        feature: featureKey(feature),
-        heights,
-        mesh,
-        roofIsApproximate,
-        footprint,
-        topHeightM,
-      }
-    : {
-        feature: featureKey(feature),
-        parentFeature,
-        heights,
-        footprint,
-        mesh,
-        roofIsApproximate,
-        topHeightM,
-      };
 }
 
-/** A feature's rings in the local ENU frame, or `undefined` if it has none. */
-function toEnuRings(
+/** A feature's polygons in the local ENU frame, or `undefined` if it has none. */
+function toEnuPolygons(
   feature: OsmFeature,
   frame: EnuFrame,
-): EnuPoint[][] | undefined {
+): EnuPoint[][][] | undefined {
   const geometry = toGeometry(feature);
   if (!geometry.ok) return undefined;
-  const rings = ringsOf(geometry.geometry);
-  if (rings.length === 0) return undefined;
-  return rings.map((ring) => ringToEnu(ring, frame));
+  const polygons = polygonsOf(geometry.geometry);
+  if (polygons.length === 0) return undefined;
+  return polygons.map((rings) => rings.map((ring) => ringToEnu(ring, frame)));
 }
 
 /**
- * The rings of an areal geometry.
+ * The polygons of an areal geometry, each outer ring first, then its holes.
  *
- * A multipolygon contributes only its FIRST polygon: a building mapped as
- * several disjoint polygons is a data error rather than a shape, and extruding
- * all of them with one set of heights would be inventing buildings.
+ * EVERY POLYGON OF A MULTIPOLYGON (2026-11-07, bug 12). This used to keep only
+ * the first, on the belief that several outers are a data error. They are not:
+ * the multipolygon wiki page draws one building in separate pieces this way
+ * (a building over a road, two wings joined underground), and the tags,
+ * heights included, apply to every outer. Dropping all but one erased real
+ * walls.
  */
-function ringsOf(geometry: OsmGeometry): readonly (readonly LatLng[])[] {
+function polygonsOf(
+  geometry: OsmGeometry,
+): readonly (readonly (readonly LatLng[])[])[] {
   switch (geometry.kind) {
     case "polygon":
-      return geometry.rings;
+      return geometry.rings.length === 0 ? [] : [geometry.rings];
     case "multipolygon":
-      return geometry.polygons[0] ?? [];
+      return geometry.polygons.filter((polygon) => polygon.length > 0);
     default:
       return [];
   }

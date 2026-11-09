@@ -67,12 +67,16 @@ const STYLESHEET = /<link[^>]*rel="stylesheet"[^>]*href="([^"]+)"/g;
  * against the module that names it. Terrain plan 2026-09-27-0605 §9, finding 3.
  */
 const WORKER_BY_URL =
-  /new\s+(?:Shared)?Worker\s*\(\s*new\s+URL\s*\(\s*["']([^"']+)["']\s*,\s*import\.meta\.url\s*\)/g;
+  /new\s+(?:Shared)?Worker\s*\(\s*new\s+URL\s*\(\s*["']([^"']+)["']\s*,\s*import\.meta\.url\s*,?\s*\)/g;
 /** A Worker named by a plain string: resolved against the PAGE, not the module. */
 const WORKER_BY_STRING = /new\s+(?:Shared)?Worker\s*\(\s*["']([^"']+)["']/g;
-/** Any other `new URL("x", import.meta.url)`: a module or a fetched asset. */
+/**
+ * Any other `new URL("x", import.meta.url)`: a module or a fetched asset. Both
+ * URL patterns allow the trailing comma the formatter adds when it breaks the
+ * call over lines.
+ */
 const META_URL =
-  /new\s+URL\s*\(\s*["']([^"']+)["']\s*,\s*import\.meta\.url\s*\)/g;
+  /new\s+URL\s*\(\s*["']([^"']+)["']\s*,\s*import\.meta\.url\s*,?\s*\)/g;
 /**
  * A dynamic `import("x")` with a literal specifier: a module loaded later
  * (the globe's arrival prefetch at the pin press, round-5 plan
@@ -116,8 +120,9 @@ const escapeHtml = (text) =>
  * The deployable pages under `packageRoot`, as URL paths: the main page
  * first (when present), then every `labs/<name>/index.html`, sorted, each
  * followed by its lab's further top-level pages (`*.html`, sorted; e.g.
- * the terrain lab's `compare.html`). A folder without an index page is not
- * a lab.
+ * the terrain lab's `compare.html`) and its folders' index pages (sorted;
+ * the city look gallery's `v0-today/index.html`, one level deep). A folder
+ * without an index page is not a lab.
  *
  * @param {string} packageRoot
  * @returns {string[]}
@@ -141,6 +146,12 @@ export function discoverEntries(packageRoot) {
         .filter((f) => f.endsWith(".html") && f !== "index.html")
         .sort()
         .map((f) => `/${LABS_DIR}/${name}/${f}`),
+      ...readdirSync(join(labs, name), { withFileTypes: true })
+        .filter((d) => d.isDirectory())
+        .map((d) => d.name)
+        .filter((sub) => existsSync(join(labs, name, sub, "index.html")))
+        .sort()
+        .map((sub) => `/${LABS_DIR}/${name}/${sub}/index.html`),
     ]),
   ];
 }

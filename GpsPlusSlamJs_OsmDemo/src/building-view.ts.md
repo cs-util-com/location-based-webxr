@@ -266,7 +266,11 @@ map scored.
 - **`guessedHeights` and `approximateRoofs` are surfaced.** They are the mesh
   layer's two honesty flags and this is the only place they become visible —
   which is how the census figures (16 % with `height`, 12 % non-flat roofs) get
-  confirmed on real data rather than quoted.
+  confirmed on real data rather than quoted. Since the skeleton roof (plan M2)
+  `approximateRoofs` counts roofs that are NOT the tagged shape over the real
+  outline (fallbacks, gambrel and round off a rectangle); a non-rectangular
+  footprint alone no longer counts, so the figure dropped (on the 13 corpus
+  fixtures, 125 of the 508 ridged roofs before M2, 48 after).
 - **OPEN FOLLOW-UP: this view has NO north reference, and that is a real gap.**
   The camera is parked at `(140, 110, 140)` looking at the origin, with nothing
   in the scene naming a compass direction — so a city mirrored north/south looks
@@ -540,3 +544,13 @@ field ask that raised the default was literally about zooming further out.
   and a restored link can land on nothing. Accepted deliberately: the recovery
   is visible and immediate (zoom back in, or turn the dial up), whereas a
   silently truncated share link is neither.
+
+## `setArShellMaterial()` also hides the cosmetic woods (objects M2a)
+
+- Owner decision: the woods layer's invented trees are off in AR, where they
+  would stand in the real street. `setArShellMaterial(material)` calls
+  `showCosmetic(this.group, material === undefined)`, so the switch rides the
+  held shell material, which `render()` re-applies after every rebuild: a
+  refetch during AR cannot bring them back, and leaving AR shows them again.
+- Pinned by `building-view-content.test.ts` (a source-text test, as the view
+  cannot be built in vitest) and `mesh-layers.test.ts` ("showCosmetic").

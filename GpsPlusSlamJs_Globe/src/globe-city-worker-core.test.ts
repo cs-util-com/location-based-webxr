@@ -52,6 +52,7 @@ function fakes() {
     finished: ReturnType<typeof deferred<Report>>;
   }[] = [];
   const plans: { target: unknown; heights: unknown }[] = [];
+  const built: unknown[] = [];
   let stores = 0;
   const store = deferred<unknown>();
   const shared = chunk();
@@ -89,14 +90,17 @@ function fakes() {
       createCityTileSource: () => ({ source: true }),
       createCachingTileFetch: () => heightFetch,
       browserPngDecoder: () => ({ decode: true }),
-      buildCity: () => ({
-        buildings: [shared, chunk()],
-        trees: [],
-        roads: [shared],
-        volumes: [1, 2, 3],
-        barriers: [],
-        roadCount: 1,
-      }),
+      buildCity: (_features, _ground, options) => {
+        built.push(options);
+        return {
+          buildings: [shared, chunk()],
+          trees: [],
+          roads: [shared],
+          volumes: [1, 2, 3],
+          barriers: [],
+          roadCount: 1,
+        };
+      },
       loadCityData: (plan, options) => {
         const load = {
           plan,
@@ -121,6 +125,7 @@ function fakes() {
     posted,
     loads,
     plans,
+    built,
     store,
     asked,
     net,
@@ -169,9 +174,21 @@ describe("createCityWorkerCore", () => {
       stage: "first",
       features: [{}, {}],
       ground: {},
+      window: { south: 48.1, west: 11.5, north: 48.2, east: 11.6 },
       tiles: { loaded: 4, missing: ["t"] },
       groundM: 515.5,
     });
+    // The build window is the delivery's (city objects plan 2026-11-07-2315
+    // section 4); the cosmetic woods stay off on the globe until M2b wires
+    // them, so the worker builds nothing it would not draw.
+    expect(f.built).toEqual([
+      {
+        withinM: 3000,
+        roads: true,
+        window: { south: 48.1, west: 11.5, north: 48.2, east: 11.6 },
+        cosmeticTrees: false,
+      },
+    ]);
     load.firstPass.resolve({ outcome: "settled" });
     await settle();
     load.finished.resolve({

@@ -134,6 +134,15 @@ const VERTEX_SHADER = /* glsl */ `
  *
  * `viewFacing` uses `abs(dot(N, V))` so a back face is as lit as a front one at
  * the same angle; the front/back distinction is carried by `uBackBoost` alone.
+ *
+ * THE VERTEX COLOUR IS ENCODED BACK TO sRGB BEFORE THE MIX (r1162). The
+ * building chunks carry LINEAR colours since r1158 (`linearChunkColours`), and
+ * the owner chose to keep them and raise each consumer's light ("Korrekt
+ * lassen, Licht anheben"). This shell is unlit, so it has no light to raise,
+ * and it writes its colour raw (above): mixing the linear value in made walls
+ * about 12 % and roofs about 19 % darker than the approved look. Three's own
+ * `sRGBTransferOETF` (part of every `ShaderMaterial`'s fragment prefix, so not
+ * declared here) gives back exactly the sRGB value the shell mixed before.
  */
 const FRAGMENT_SHADER = /* glsl */ `
   precision mediump float;
@@ -155,7 +164,7 @@ const FRAGMENT_SHADER = /* glsl */ `
     float pulse = 1.0 + uPulseAmount * sin(uTime * uPulseSpeed + vHeight01 * 5.0 + vRand * 6.2831);
     float sideBoost = gl_FrontFacing ? 1.0 : (1.0 + uBackBoost);
     float energy = uOpacity * (0.16 + 0.84 * rim) * pulse * sideBoost;
-    vec3 tint = mix(uTint, vVertexColor, uColourMix);
+    vec3 tint = mix(uTint, sRGBTransferOETF(vec4(vVertexColor, 1.0)).rgb, uColourMix);
     gl_FragColor = vec4(tint * energy, clamp(energy, 0.0, 1.0));
   }
 `;

@@ -39,6 +39,10 @@ merged surface per way, draped on terrain.
   ordinary and `Number` returns `NaN`, which the fallback would then swallow — a
   tagged road silently becoming an untagged one at a plausible width. The tree
   builder learned this first.
+- **The class tables (`DEFAULT_LANES`, `PATH_WIDTH_M`) are `Map`s** (M1 review
+  finding 2, 2026-11-08): on plain objects `highway=constructor` found an
+  inherited function as its width and `toString` counted as a footpath. Every
+  prototype name now gets the unknown-class width and is not a path.
 - **A `lanes` value that is not a positive integer is ignored.** `lanes=1;2` and
   `lanes=none` both occur.
 - **Geometry is segment quads PLUS a disc at every vertex (DEC-R2-13).** Two

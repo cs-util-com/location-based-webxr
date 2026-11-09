@@ -34,10 +34,17 @@ finished, abort() }`. Options: `source`, `heightFetch` (e.g.
     `retryDelaysMs?` (default 10 / 30 / 60 s), `undulationMetres?`
     (default 0: the tiles' heights, the globe relief's convention),
     `sleep?` (a test seam).
-    - `onData({ stage, features, ground, groundM, tiles })`: `first` after
+    - `onData({ stage, features, ground, groundM, window, tiles })`: `first` after
       the first rings (only when more rings follow), `full` after every
       ring, `retry` after a retry that brought something new. `ground` is
       `buildCity`'s input (`cityGround` on the frame at the target).
+      `window` is the union of the loaded tiles' Overpass boxes
+      (`cellToBoundingBox`), the data actually fetched, and so
+      `buildCity`'s required `window` (city objects plan 2026-11-07-2315
+      section 4); it grows with each delivery. Nothing is delivered before
+      a tile has loaded, so the window is never the empty union (+-Infinity,
+      which buildCity refuses); a load whose every tile fails delivers
+      nothing (r1158 review, pinned by a test).
     - `finished` resolves `{ outcome: settled | aborted, counts,
 missingTiles, missingHeights, elapsedMs }`, never rejects.
     - RangeError at the call: a plan with more than one height template (a
@@ -75,7 +82,8 @@ missingTiles, missingHeights, elapsedMs }`, never rejects.
     source: createCityTileSource(store, { userAgent: "my-app (example.org)" }),
     heightFetch: createCachingTileFetch({ store }),
     decodePng: browserPngDecoder(),
-    onData: (data) => draw(buildCity(data.features, data.ground)),
+    onData: (data) =>
+      draw(buildCity(data.features, data.ground, { window: data.window })),
   });
   ```
 

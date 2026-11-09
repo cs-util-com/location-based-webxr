@@ -39,14 +39,38 @@ colour that matched the sky at one time of day.
   handed to the sky at construction (the framework's default is 0.75) and
   used by the fallback. It acts almost only below the reference light, so
   it sets how dark dawn, dusk and twilight get.
-- `BUILDING_SKY_LIGHT` (1.4) — the sky light on the buildings, the default
-  of the light dialog's slider (`applyBuildingSkyLight`).
+- `BUILDING_SKY_LIGHT` (3) — the sky light on the buildings, the default
+  of the light dialog's slider (`applyBuildingSkyLight`). The owner's pick
+  was 1.4 (DEC-LIGHT-9); r1158 raised it to 3 when the building chunks
+  moved to linear colours (`linearChunkColours`, r1135), which had darkened
+  the lit city below the June-noon floor (48.8 against 61.47). The owner
+  chose to keep the conversion and raise the light (2026-11-09). The sky
+  light, not the EV, because it reaches only the buildings: at 3 every
+  heat-grid margin is unchanged (lowest 6.07, June noon) and June noon reads
+  65.3; the EV cleared the floor first at −2.65 (64.3) with the June-noon
+  margin down to 5.43 and the twilight about a third brighter. The full
+  sweep (1.4 / 2 / 2.5 / 3 and EV −2.9 / −2.65 / −2.4 at ten sun points)
+  is in the constant's doc comment.
 - **The CPU fallback sky gets the same EV**, but its dome and fog are not
   tone-mapped (by earlier design), while geometry goes through Neutral: on
   a device without float targets the dome now outshines the lit city more
   than it did under ACES (M3 review finding 5; the e2e runs on the physical
   sky only, so this is unmeasured).
 - `SkyLike` — the part of `SkyAtmosphere` the rig uses (the test seam).
+- `NIGHT_FLOOR` ({ intensity 0.15, colour 0x9fb4d8, fromDeg -6, fullDeg -12 };
+  0.15 is a recommendation pending the owner's pick, the r1155 sweep 0 to
+  0.3 is in the source comment),
+  `NIGHT_FLOOR_NAME` ("night-floor") and `nightFloorWeight(elevationRad)` -
+  the night floor (r1155, owner 2026-11-08 "Nachts Grundhelligkeit"): one cool
+  `AmbientLight` the rig adds to the scene in BOTH paths, at intensity
+  `NIGHT_FLOOR.intensity x nightFloorWeight`. The weight is exactly 0 at and
+  above -6 deg (so no day or twilight look the DEC-R4-5 sweep approved
+  changes), linear to 1 at -12 deg, 1 below; `RangeError` for a non-finite
+  elevation. A fixed display-level light: the light dialog's exposure does not
+  scale it (the sky puts its exposure into `environmentIntensity` and the sun
+  light, not into the renderer). OsmDemo only: the framework's `SkyAtmosphere`
+  and `fallbackSky` are untouched, and AR imports only the tone mapping from
+  this file. `dispose()` removes it.
 
 ## Invariants & assumptions
 
@@ -57,7 +81,8 @@ colour that matched the sky at one time of day.
   (DEC-SUN-12; the value entering the curve, not the look: Neutral renders
   mids and highlights brighter than ACES did). **Since 2026-09-25 the
   owner's pick from the light dialog** (plan 2026-09-24-2140 §13-§15,
-  DEC-LIGHT-9/10): −3.15 EV with adaptation 0.83, sky light 1.4 and the
+  DEC-LIGHT-9/10): −3.15 EV with adaptation 0.83, sky light 1.4 (3 since
+  r1158, see `BUILDING_SKY_LIGHT`) and the
   noon gain ×1.8, measured together at every DEC-R4-5 sun point (lowest
   margin 6.08; the 3.6° morning 17.6 against its lit-city floor of 16.8).
   Before that the sky's natural light got **−2.75 EV**, bounded from both
@@ -146,6 +171,11 @@ renderer.render(scene, camera);
   synced, late materials hazed and replaced hooks healed, disposal; the
   fallback's dome, hemisphere light, fog and sun, the dome on the camera, its
   clean-up, and that other errors are not swallowed.
+- The night floor (same file): off by day and at -2.9 deg, full at -30 deg,
+  cool, one light, untouched by an exposure change, the same in the fallback,
+  removed on dispose. `atmosphere-rig.property.test.ts`: the weight is in
+  [0, 1], exactly 0 above the ramp and 1 below it, and never rises with the
+  sun.
 - Pixels: OsmDemo's e2e suite (every lit-geometry and heat-ramp check runs
   under this sky); the sky's shaders themselves are checked by the look-dev
   smoke (`GpsPlusSlamJs_DesignSystem/3d/lookdev.smoke.spec.mjs` (removed; in git history)).

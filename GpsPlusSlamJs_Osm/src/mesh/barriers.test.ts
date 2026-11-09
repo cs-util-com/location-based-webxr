@@ -192,16 +192,59 @@ describe("resolveBarrier", () => {
     );
   });
 
-  it("takes thickness from width, falling back to the constant", () => {
-    expect(resolveBarrier({ barrier: "wall" }).thicknessM).toBe(
-      DEFAULT_BARRIER_THICKNESS_M,
-    );
+  it("takes thickness from width, falling back to the kind's thickness", () => {
+    // The wall's own 0.4 m since the city objects plan M1; the 0.5 m constant
+    // is left for tags of no known kind only.
+    expect(resolveBarrier({ barrier: "wall" }).thicknessM).toBe(0.4);
     expect(resolveBarrier({ barrier: "wall", width: "1.2" }).thicknessM).toBe(
       1.2,
     );
     expect(resolveBarrier({ barrier: "wall", width: "junk" }).thicknessM).toBe(
-      DEFAULT_BARRIER_THICKNESS_M,
+      0.4,
     );
+    expect(resolveBarrier({}).thicknessM).toBe(DEFAULT_BARRIER_THICKNESS_M);
+    expect(resolveBarrier({}).heightM).toBe(DEFAULT_BARRIER_HEIGHT_M);
+  });
+
+  it("gives each kind its own untagged size, and tagged values still win", () => {
+    // WHY THIS MATTERS. These sizes are drawn AND indexed for navigation from
+    // this one function, so a 1.2 m fence is never drawn at 1.2 m while the
+    // agent treats it as 2 m. The fence's 1.2 m is the owner's; the others
+    // are the O1 lab's guesses (session, city objects plan M1). The retaining
+    // wall's 1 m lowers DEC-R11-2's 2 m in navigation too, and stays an
+    // obstacle above the 0.5 m step threshold.
+    const sizes: [OsmTags, number, number][] = [
+      [{ barrier: "hedge" }, 2, 0.8],
+      [{ barrier: "wall" }, 2, 0.4],
+      [{ barrier: "city_wall" }, 6, 1.2],
+      [{ historic: "citywalls" }, 6, 1.2],
+      [{ barrier: "retaining_wall" }, 1, 0.4],
+      [{ barrier: "fence" }, 1.2, 0.12],
+    ];
+    for (const [tags, heightM, thicknessM] of sizes) {
+      expect(resolveBarrier(tags), JSON.stringify(tags)).toEqual({
+        heightM,
+        thicknessM,
+      });
+      expect(
+        resolveBarrier({ ...tags, height: "3.5", width: "0.3" }),
+        JSON.stringify(tags),
+      ).toEqual({ heightM: 3.5, thicknessM: 0.3 });
+    }
+    expect(
+      resolveBarrier({ barrier: "retaining_wall" }).heightM,
+    ).toBeGreaterThan(0.5);
+  });
+
+  it("reads prototype names as no known kind", () => {
+    // WHY THIS MATTERS. A plain-object table found inherited functions for
+    // `barrier=constructor`; the table is a Map, so the fallback applies.
+    for (const value of ["constructor", "__proto__", "toString"]) {
+      expect(resolveBarrier({ barrier: value })).toEqual({
+        heightM: DEFAULT_BARRIER_HEIGHT_M,
+        thicknessM: DEFAULT_BARRIER_THICKNESS_M,
+      });
+    }
   });
 
   it("always returns finite, positive numbers", () => {

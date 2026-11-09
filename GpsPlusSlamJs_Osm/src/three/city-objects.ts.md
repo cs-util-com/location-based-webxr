@@ -21,7 +21,9 @@ three-free; three.js is an optional peer, loaded only by this entry.
   `userData.solid` on the mesh.
 - `treeObjects(placements)` → one `InstancedMesh` per tree variant present
   (`packInstances` groups and reflects ENU to scene), on shared geometry and
-  material, each flagged `userData.sharedResources`. Empty in, empty out.
+  material, each flagged `userData.sharedResources`, each instance coloured
+  through `instanceColor` from the placement sRGB colour (converted with
+  `SRGBColorSpace`). Empty in, empty out.
 - `roadObjects(chunks)` → one mesh per road chunk (`buildCity` with
   `roads`), OsmDemo's look moved here (round-4 plan 2026-10-11-0122
   DEC-R4-7): white plus vertex colours, opaque (a vertex disc overlaps its
@@ -29,8 +31,16 @@ three-free; three.js is an optional peer, loaded only by this entry.
   roughness 0.9, `userData.neutralSurface`; each carries
   `userData.cityLayer = "roads"` and lies at its ground (the lift off a
   drawn ground is each app's: OsmDemo's ladder, the globe's relief).
-- `cityObjects(city)` → buildings, then trees, then roads (when the city
-  has them), for a `buildCity` result.
+- `cosmeticTreeObjects(placements)` → `treeObjects` for `City.cosmeticTrees`,
+  each mesh flagged `userData = { sharedResources: true, cosmetic: true }`
+  so an app can hide the invented trees (OsmDemo's `woods` layer, AR)
+  without touching the mapped ones. Instances keep the build's rank order
+  within each form (`packInstances` preserves order), so drawing the first n
+  thins a wood evenly (city objects plan 2026-11-07-2315 M2a; the phone
+  governor of M2b).
+- `cityObjects(city)` → buildings, then trees, then the cosmetic trees (when
+  the city has them), then roads (when the city has them), for a
+  `buildCity` result.
 - `disposeCityObjects(objects)` → disposes each mesh's geometry and
   materials, skipping any object flagged `sharedResources`.
 
@@ -57,8 +67,20 @@ three-free; three.js is an optional peer, loaded only by this entry.
   composed straight from `packInstances` (position, a rotation about the
   vertical, a (crown, height, crown) scale). Low segment counts on purpose
   (an AR overlay before a desktop scene; the flat low-polygon look is the
-  house style). `unknown` leaf type keeps the cone drawn before the type was
-  read.
+  house style).
+- **Crown-only forms, ported from the O1 quiet-greens lab** (city objects
+  plan 2026-11-07-2315 M1): a hull of revolution, 5 sides, poles at y 0 and
+  y 1, the crown tapering to the ground (no trunk, the owner default). Broad
+  and neutral are 20 triangles, needle (a cone) 10. An `unknown` leaf type is
+  the NEUTRAL form, a narrower plain egg, never the fir cone it was before
+  (DEC-R4-10: no confident wrong shape). Radii are half the lab profile
+  values because the unit crown here has unit diameter (the instance scale is
+  `crownDiameterM`), the lab unit radius with a half-crown scale.
+- **The tree material is white, vertex-coloured, flat, roughness 0.9.** The
+  instance colour carries the class; the per-vertex grey (0.86 at the foot to
+  1.04 at the top) darkens the underside and is raw, as in the lab. The
+  colour is converted from sRGB through `THREE.Color`, the colour-space rule
+  of section 7 of that plan for trees.
 - One three.js copy: the package's three is a dev dependency at the
   consumers' version and external in the build, so `instanceof` checks in a
   consumer still hold.
@@ -81,7 +103,10 @@ disposeCityObjects(objects);
 `city-objects.test.ts` - the geometry's attributes with and without the
 optional ones; one mesh per chunk with the settled material and flags, a
 material per chunk; one instanced mesh per variant present on shared
-resources, none for no trees; disposal freeing a building's own geometry and
+resources, none for no trees; the instance colour converted from sRGB; the
+three forms (triangle counts, vertex shade, unit bounds, the material); disposal freeing a building's own geometry and
 material and never the trees' shared geometry; the road row's material,
-layer flag and zero lift, and roads in `cityObjects` only when built. OsmDemo's
+layer flag and zero lift, and roads in `cityObjects` only when built; the
+cosmetic meshes flagged, one per form, in rank order, and drawn by
+`cityObjects` only when the city has them. OsmDemo's
 `mesh-layers.test.ts` covers the rows that delegate here.

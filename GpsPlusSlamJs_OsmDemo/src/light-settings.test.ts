@@ -48,6 +48,19 @@ describe("DEFAULT_LIGHT_SETTINGS", () => {
     }
   });
 
+  // WHY (r1158): the dialog is for finding a better look from the shipped
+  // one, so every slider must reach past its default in BOTH directions. The
+  // sky light on buildings was raised to its old slider end (1.4 -> 3, to
+  // carry the linear-light building colours), which would have left the
+  // owner no way to brighten the buildings further.
+  it("leaves every slider room on both sides of its default", () => {
+    for (const f of FIELDS) {
+      const r = LIGHT_SETTING_RANGES[f];
+      expect(DEFAULT_LIGHT_SETTINGS[f], f).toBeGreaterThan(r.min);
+      expect(DEFAULT_LIGHT_SETTINGS[f], f).toBeLessThan(r.max);
+    }
+  });
+
   // WHY: the ramp at the defaults must be today's ramp at every sun.
   it("gives today's surface gain", () => {
     const gain = gainOf(DEFAULT_LIGHT_SETTINGS);

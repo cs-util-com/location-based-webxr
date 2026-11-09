@@ -48,6 +48,7 @@ import {
   buildingObjects,
   geometryFrom,
   roadObjects,
+  cosmeticTreeObjects,
   treeObjects,
 } from "gps-plus-slam-osm/three";
 
@@ -70,6 +71,7 @@ import type { TransferableMesh } from "./worker/protocol.js";
 export const DRAWN_BY_MESH = [
   "buildings",
   "trees",
+  "woods",
   "plates",
   "poi",
   "roads",
@@ -107,6 +109,8 @@ export interface BuildingStats {
    */
   readonly barriers: number;
   readonly trees: number;
+  /** Invented trees drawn (woods, orchards, tree rows; the `woods` layer). */
+  readonly woods: number;
   /** Ground areas drawn. Reported because a silent 0 is the failure mode. */
   readonly plates: number;
   /** Their merged triangle count — a non-zero plate count with zero triangles
@@ -139,6 +143,7 @@ const NO_STATS: BuildingStats = {
   approximateRoofs: 0,
   barriers: 0,
   trees: 0,
+  woods: 0,
   plates: 0,
   plateTriangles: 0,
   poi: 0,
@@ -394,6 +399,16 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
     // disposes them (three.js would silently draw nothing afterwards).
     build: (mesh) => treeObjects(mesh.trees),
     counters: (mesh) => ({ trees: mesh.trees.length }),
+  },
+  {
+    layer: "woods",
+    // The library's `cosmeticTreeObjects`: the invented trees of woods,
+    // orchards and tree rows (city objects plan 2026-11-07-2315 M2a), on the
+    // same shared resources as `trees`, each mesh flagged
+    // `userData.cosmetic` (hidden in AR, never a pick target), instances in
+    // the build's rank order.
+    build: (mesh) => cosmeticTreeObjects(mesh.cosmeticTrees),
+    counters: (mesh) => ({ woods: mesh.cosmeticTrees.length }),
   },
   {
     layer: "areas",
@@ -738,5 +753,18 @@ export function applySurfaceGain(root: THREE.Object3D, gain: number): void {
       if (m.userData["neutralSurface"] !== true) continue;
       if (m instanceof THREE.MeshStandardMaterial) m.color.setScalar(gain);
     }
+  });
+}
+
+/**
+ * Shows or hides the COSMETIC objects under `root` (those tagged
+ * `userData.cosmetic`, i.e. the woods layer's invented trees). Owner decision
+ * (objects M2a): the woods are off in AR, where an invented tree would stand
+ * in the real street. Absolute, so re-applying after a rebuild is idempotent;
+ * mapped objects are never touched.
+ */
+export function showCosmetic(root: THREE.Object3D, visible: boolean): void {
+  root.traverse((object) => {
+    if (object.userData["cosmetic"] === true) object.visible = visible;
   });
 }

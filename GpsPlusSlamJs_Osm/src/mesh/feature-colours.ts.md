@@ -5,13 +5,23 @@
 Turns OSM tags into a muted material colour for buildings and roads, so the
 scene stops being one grey for every building and one grey for every road.
 
+Since city objects M7 (2026-11-08) these class colours are `buildCity`'s
+`palette: "class"`; by default an untagged building takes the seeded palette
+of `building-palette.ts`, which shares `parseOsmColour` and `roofColour`.
+
 ## Public API
 
 - `Rgb` — packed `0xrrggbb`.
-- `buildingColour(tags): Rgb` — `building:colour` → `building:material` →
-  `building=*` → default.
+- `buildingColour(tags, outline?): Rgb` — `building:colour` →
+  `building:material` → `building=*` → default. With `outline` (a
+  `building:part`'s outline tags) the part's own colour or material wins and
+  only a part that says neither takes the outline's colour (bug 8).
+- `roofColour(tags, outline?): Rgb | undefined` — `roof:colour`, the part's
+  own first, then the outline's; `undefined` means the roof is drawn in the
+  building's colour.
 - `roadColour(tags): Rgb` — `surface` → `highway=*` → default.
-- `parseOsmColour(raw): Rgb | undefined` — `#rgb` and `#rrggbb` only.
+- `parseOsmColour(raw): Rgb | undefined` — `#rgb`, `#rrggbb`, and the colour
+  names the corpus uses.
 - `allBuildingColours()`, `allRoadColours()` — the palettes, for the tests.
 - `luma(colour)`, `channelDistance(a, b)` — the measures the tests assert with.
 - `REFERENCE_GROUND_RGB`, `DEFAULT_BUILDING_RGB`, `DEFAULT_ROAD_RGB`.
@@ -38,9 +48,22 @@ scene stops being one grey for every building and one grey for every road.
 - **A malformed colour falls through rather than parsing to black.** `#gggggg`
   is a real thing people type, and a black building reads as a rendering
   failure.
-- **CSS colour names are deliberately not resolved.** The list is 148 entries of
-  which a handful appear in OSM, and a wrong colour is worse than the class
-  default because it looks like a decision.
+- **Only the colour names seen in use are resolved**, to their CSS values (bug
+  8, accepted recommendation 2026-11-07). The OSM wiki's Key:building:colour prefers
+  hex and allows basic names; the corpus has 3 108 colour values, 2 597 hex,
+  and the table holds every name among the rest (`grey` 377 times down to
+  `blue` twice). A name outside it still falls through, because a wrong colour
+  is worse than the class default: it looks like a decision. `darkbrown` and
+  `multiple` occur and are not CSS colours.
+- **Every lookup table is a `Map`, never a plain object** (review finding 5,
+  2026-11-07). Tag values are free text; on an object `constructor`,
+  `__proto__` or `toString` find inherited members, and
+  `building:colour=constructor` drew a building in NaN. Those names now fall
+  through to the defaults like any unknown value.
+- **A part's own colour tags beat its outline's; the class is always the
+  outline's.** S3DB allows the colour tags on both, and a part that carries one
+  says it differs. An untagged part takes the outline's colour, so an untagged
+  cathedral is still one colour.
 - **`REFERENCE_GROUND_RGB` is a copy of a value the demo owns**, which is the
   duplication this project distrusts — so the test asserts a _relationship_
   (contrast), and changing the demo's ground makes the test wrong rather than
@@ -52,6 +75,8 @@ scene stops being one grey for every building and one grey for every road.
 buildingColour({ building: "house" }); // class
 buildingColour({ "building:material": "brick" }); // material wins
 buildingColour({ "building:colour": "#8899aa" }); // explicit wins
+buildingColour({ "building:part": "yes" }, { "building:colour": "red" }); // 0xff0000
+roofColour({}, { "roof:colour": "#aa3322" }); // 0xaa3322, from the outline
 roadColour({ highway: "residential", surface: "gravel" }); // surface wins
 ```
 

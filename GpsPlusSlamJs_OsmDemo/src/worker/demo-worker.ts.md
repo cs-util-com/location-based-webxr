@@ -139,3 +139,12 @@ The `update` handler reports `terrainWaitMs`, `meshMs` and its own
 - **`prefetchMs`** — queueing the background neighbour ring. Small and
   synchronous, enumerated because an unenumerated step in this handler is
   exactly what the residual exists to catch.
+
+## The build window and the cosmetic woods (objects M2a, 2026-11-08)
+
+- `buildCity` takes a required `window`: `fetchedWindow(loadedTiles,
+plateClip)`, the loaded tiles' boxes cut to the drawn ground. With no
+  loaded tile inside the plate the window falls back to the plate clip and the
+  cosmetic trees are switched off, so nothing is invented on unfetched ground.
+- The mesh carries `cosmeticTrees` (`City.cosmeticTrees`) to the page, for the
+  `woods` layer.

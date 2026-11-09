@@ -59,6 +59,7 @@ import { cityGround, type CityGround } from "../mesh/city.js";
 import { ENU_METRES_PER_DEG_LNG_EQUATOR } from "../mesh/enu.js";
 import type { LatLng, OsmFeature } from "../model/osm-feature.js";
 import { loadTiles } from "../source/area-loader.js";
+import { cellToBoundingBox } from "../source/overpass-query.js";
 import { CachingSource } from "../source/caching-source.js";
 import type { OsmBlobStore } from "../source/osm-blob-store.js";
 import type {
@@ -66,6 +67,7 @@ import type {
   OsmTileResult,
 } from "../source/osm-data-source.js";
 import { OverpassSource } from "../source/overpass-source.js";
+import type { Bbox } from "../spatial/clip.js";
 import { mergeTiles } from "../spatial/merge-tiles.js";
 import {
   PROGRESSIVE_RADII,
@@ -296,6 +298,12 @@ export interface CityData {
   readonly ground: CityGround;
   /** The height at the target, metres (the tiles' datum plus the option's). */
   readonly groundM: number;
+  /**
+   * The union of the loaded tiles' Overpass boxes: the data actually fetched,
+   * which is `buildCity`'s `window` (city objects plan 2026-11-07-2315
+   * section 4). Grows with each delivery.
+   */
+  readonly window: Bbox;
   readonly tiles: {
     readonly loaded: number;
     /** Tiles of the delivered rings still missing (failed or deferred). */
@@ -562,6 +570,22 @@ function cityTiles(
   return { results, missing, load };
 }
 
+/** The union of the tiles' Overpass boxes (at least one tile). */
+function windowOf(tiles: readonly string[]): Bbox {
+  let south = Infinity;
+  let west = Infinity;
+  let north = -Infinity;
+  let east = -Infinity;
+  for (const tile of tiles) {
+    const box = cellToBoundingBox(tile);
+    south = Math.min(south, box.south);
+    west = Math.min(west, box.west);
+    north = Math.max(north, box.north);
+    east = Math.max(east, box.east);
+  }
+  return { south, west, north, east };
+}
+
 /**
  * Loads the city's data of `plan` and delivers it through `onData`: after the
  * first rings, after every ring, and after any retry that brought something
@@ -628,6 +652,8 @@ export function loadCityData(
     const { ground, groundM } = heights.state;
     const size = tiles.results.size;
     if (outcome !== undefined || ground === undefined) return;
+    // size === 0 is also windowOf's guard: with no tile loaded the window
+    // would be +-Infinity, which buildCity's woods refuse (pinned by a test).
     if (size === 0 || size === delivered) return;
     delivered = size;
     options.onData({
@@ -635,6 +661,7 @@ export function loadCityData(
       features: [...mergeTiles([...tiles.results.values()]).features.values()],
       ground,
       groundM,
+      window: windowOf([...tiles.results.keys()]),
       tiles: { loaded: size, missing: [...tiles.missing] },
     });
   };

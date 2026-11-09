@@ -51,6 +51,29 @@ export function unit(key: string, salt: string): number {
 }
 
 /**
+ * `unit` with an avalanche finaliser (MurmurHash3's fmix32) over the hash.
+ *
+ * FNV-1a mixes each character into the low bits only as far as the following
+ * characters carry it, and the salt comes LAST, so two salts of one key share
+ * most of their state: over sequential ids the wall and roof picks of the
+ * building palette came out correlated (M7 review NIT 6, chi-square 140-230
+ * against 74.7). The finaliser makes every input bit reach every output bit.
+ *
+ * A separate function, not a change to `unit`: every tree's yaw, every POI's
+ * jitter and every skeleton nudge are pinned to `unit`'s values, and the
+ * roof ladder's test footprints were found against them.
+ */
+export function mixedUnit(key: string, salt: string): number {
+  let h = stableHash(`${key}#${salt}`);
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x85ebca6b) >>> 0;
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35) >>> 0;
+  h ^= h >>> 16;
+  return (h >>> 0) / 0x1_0000_0000;
+}
+
+/**
  * How far a POI marker's size may stray from its model's true size, as a
  * fraction.
  *
@@ -88,4 +111,22 @@ export function stableRotationY(key: string): number {
  */
 export function stablePoiScale(key: string): number {
   return 1 + (unit(key, POI_SCALE_SALT) * 2 - 1) * POI_SCALE_JITTER;
+}
+
+/** The salts for the two axes of `stableNudge`. */
+const NUDGE_X_SALT = "nx";
+const NUDGE_Y_SALT = "ny";
+
+/**
+ * A planar offset in `[-1, 1)` on each axis for a key.
+ *
+ * Scaled by the caller, it moves a point off an exact degeneracy (two walls
+ * exactly parallel, two events at exactly one time) the same way on every run
+ * and every device. `roof-skeleton.ts` nudges every footprint corner by it.
+ */
+export function stableNudge(key: string): { x: number; y: number } {
+  return {
+    x: unit(key, NUDGE_X_SALT) * 2 - 1,
+    y: unit(key, NUDGE_Y_SALT) * 2 - 1,
+  };
 }
