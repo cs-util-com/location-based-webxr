@@ -846,8 +846,10 @@ The dev hook adds `view3dModelParts()` and
 A move of a station's item or story (`stations.moveChild`, from the
 tree's drag or the inspector's buttons) is one step; one onto another
 station asks first (`confirmPausingFrames` with `stationMoveQuestion`:
-it will stand at that station's centre and needs placing again), writes
-nothing on no, says `Moved to "<station>"` in its toast, and answers
+an item will stand at that station's centre, a story's entries keep
+their layout around it, and either needs placing again), writes nothing
+on no, says `Moved to "<station>"` in its toast with the same rule for
+an item or a whole story, and answers
 whether it moved (the shell then flies the view there); its toast names the
 answers that now go on to the next entry and an item now standing in the
 world in its kind's usual view, and a refusal is said in a toast.

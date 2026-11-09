@@ -6,7 +6,9 @@
  * the world (its view, or its kind's world floor by the framework's rule),
  * one entering a story moves on by a tap, and the answers that jumped to a
  * block leaving its story are dropped. A move onto another station
- * (`movedToStation`) stands the item at that station's centre. The document's reducer writes the moves (`tour-document.ts`);
+ * (`movedToStation`) stands a single item at that station's centre; a
+ * whole story goes with its steps keeping their layout around the new
+ * centre. The document's reducer writes the moves (`tour-document.ts`);
  * the editor's tree and inspector read the list helpers to offer only a
  * move the rule takes.
  *

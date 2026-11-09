@@ -60,8 +60,10 @@ app's: the kit has none of its own.
   `drop-before`, `drop-after`, `drop-into` or `drop-across` (one at a time); every mark
   goes at the end.
 - A slot drop that `movedAcross` (`tree-reorder.ts`) answers null for
-  (where it was) writes nothing. An into drop is always handed on: only
-  the app knows whether its end is where the item already is.
+  (where it was) writes nothing. An into drop is judged the same way at
+  its list's end (the drawn rows' order, as for a slot drop): an entry
+  already last in that list is refused, marked nothing and "Not possible
+  here", never handed on as a step that changes nothing.
 - A redraw mid-drag (any store change) carries the drag on when a row
   with the same list and id is drawn again (marked again), and ends it
   unwritten at the next move or the release when there is none.

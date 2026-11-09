@@ -28,6 +28,7 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   finishedFileName,
+  finishedManifest,
   pendingAfterRebuild,
   rebuildFinishedTour,
 } from "./finish-rebuild.js";
@@ -835,5 +836,47 @@ describe("a long text's media survive a Finish", () => {
       expect(names, kept).toContain(`${WRAP}${kept}`);
     }
     expect(names).not.toContain(`${WRAP}timing/gone.json`);
+  });
+});
+
+describe("finishedManifest keeps a story step's picture across a deleted photo", () => {
+  // Why: a photo moved into a story that was then deleted lives on only in
+  // an undo step's story block. The content step drops a deleted photo's
+  // own image; `keepStoryAssets` (story blocks only) puts it back, while an
+  // id that `keepAssets` (the whole undo history) alone names stays gone.
+  // A photo deleted where it stood free must not keep its bytes in every
+  // copy, and one an undo step shows inside a story must not lose them.
+  // Were the story set fed the whole history's ids, both photos would come
+  // back; were it empty, neither would.
+  it("puts back the image a story step names, and only that one", () => {
+    const manifest = tourOf(
+      [seated(photo("in-story")), seated(photo("free"))],
+      {
+        stations: [HERE],
+      },
+    );
+    expect(manifest.assets.map((a) => a.id).sort()).toEqual([
+      "free",
+      "in-story",
+    ]);
+    const written = finishedManifest({
+      manifest,
+      placed: [],
+      deleted: ["in-story", "free"],
+      keepAssets: new Set(["in-story", "free"]),
+      keepStoryAssets: new Set(["in-story"]),
+    });
+    expect(written.assets.map((a) => a.id)).toEqual(["in-story"]);
+  });
+
+  it("puts back nothing when no story step names the image", () => {
+    const manifest = tourOf([seated(photo("free"))], { stations: [HERE] });
+    const written = finishedManifest({
+      manifest,
+      placed: [],
+      deleted: ["free"],
+      keepAssets: new Set(["free"]),
+    });
+    expect(written.assets).toEqual([]);
   });
 });

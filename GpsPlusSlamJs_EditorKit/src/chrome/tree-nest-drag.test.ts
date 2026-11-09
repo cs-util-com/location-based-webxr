@@ -209,10 +209,11 @@ describe("createNestDrag", () => {
     expect(move).not.toHaveBeenCalled();
   });
 
-  // Why: the owner's report - a free item picked up beside a story snapped
-  // into the story's list wherever the pointer was, could not be dropped
-  // back, and went into the story on release. With the free items unordered
-  // (as the Tour Viewer's are), nothing near its own place takes it.
+  // Why: a drag over its own place must never force a drop. A free item
+  // picked up beside a story once snapped into the story's list wherever
+  // the pointer was, could not be dropped back, and went into the story on
+  // release. With the free items unordered (as the Tour Viewer's are),
+  // nothing near its own place takes it.
   it("lands only where the pointer is, never at the nearest list that takes it", () => {
     const { grip, move, body } = setUp({ accepts: acceptsUnordered });
     pointer(grip("p"), "pointerdown", 130);
@@ -229,6 +230,27 @@ describe("createNestDrag", () => {
     expect(move).toHaveBeenCalledWith(
       { list: "free", id: "p" },
       { list: "story:B", into: true },
+    );
+  });
+
+  // Why: a drop into a folder lands at its list's end, so an entry that is
+  // already its story's last would be "moved" to where it stands. Marking
+  // that as a drop would promise a change and write a no-op step; it must
+  // read as refused, like a slot drop beside its own place.
+  it("refuses a drop into its own story when it is already the last entry", () => {
+    const { grip, move, body } = setUp();
+    const root = document.documentElement;
+    pointer(grip("a2"), "pointerdown", 70);
+    pointer(window, "pointermove", 30);
+    expect(body.querySelector(DROPS)).toBe(null);
+    expect(root.dataset["nestDrag"]).toBe("refused");
+    pointer(window, "pointerup", 30);
+    expect(move).not.toHaveBeenCalled();
+    // The first entry dropped into the same story still moves to its end.
+    dragTo(grip("a1"), 50, 30);
+    expect(move).toHaveBeenCalledWith(
+      { list: "story:A", id: "a1" },
+      { list: "story:A", into: true },
     );
   });
 

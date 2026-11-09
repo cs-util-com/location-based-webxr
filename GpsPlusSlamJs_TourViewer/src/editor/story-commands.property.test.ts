@@ -266,8 +266,15 @@ describe("the tree's story commands", () => {
   // so the save must keep the image's file for an undo across it.
   it("keep a photo's image after the photo moved into a new story and the story was deleted", async () => {
     const { session, manifest } = await opened();
-    // The checks are inside the helper; resolving is the pass.
-    const run = commandsKeepTheTour(session, manifest);
+    // The checks are inside the helper; resolving is the pass. The seed's
+    // indexes are the property's, so the case also checks that it still
+    // builds the scene it names: after the move, the photo is a story's.
+    const storyChildren: string[][] = [];
+    const run = commandsKeepTheTour(session, manifest, (tour) => {
+      storyChildren.push(
+        storiesIn(tour).flatMap((s) => s.children.map((ch) => ch.id)),
+      );
+    });
     await expect(
       run([
         { kind: "add", at: 2 },
@@ -275,13 +282,20 @@ describe("the tree's story commands", () => {
         { kind: "delete", at: 4 },
       ]),
     ).resolves.toBeUndefined();
+    expect(storyChildren[1]).toContain("p");
+    expect(storyChildren[2]).not.toContain("p");
     await session.close();
   }, 30_000);
 });
 
 /** Drives `commands` through a fresh editor session and draft, checking
- *  after every step and after a draft reload (the property above). */
-function commandsKeepTheTour(session: TourSession, manifest: TourManifest) {
+ *  after every step and after a draft reload (the property above);
+ *  `afterStep` sees the tour after each command. */
+function commandsKeepTheTour(
+  session: TourSession,
+  manifest: TourManifest,
+  afterStep?: (tour: TourManifest) => void,
+) {
   return async (commands: readonly Command[]): Promise<void> => {
     const store = createTourViewerStore();
     const stores = memoryDraftStores();
@@ -417,6 +431,7 @@ function commandsKeepTheTour(session: TourSession, manifest: TourManifest) {
       expect(() =>
         parseTourManifest(JSON.parse(serializeTourManifest(now))),
       ).not.toThrow();
+      afterStep?.(now);
     }
     const before = await writtenJson(
       (await editor.save({ keepScan: false })).blob,
@@ -442,13 +457,23 @@ function commandsKeepTheTour(session: TourSession, manifest: TourManifest) {
     );
     again.close();
     // The draft keeps the tour, not its undo steps: an asset only an undo
-    // step still names (`historyAssetIds`) is kept by the first save and
-    // not by the reloaded one, which has no step that could bring it back.
-    // Compared without those; every asset the tour itself names counts.
+    // step still names (`historyAssetIds`) is kept by the first save, while
+    // the reloaded one has a single step, the restore, whose view before it
+    // is the opened tour. Compared without those; every asset the tour
+    // itself names counts.
     const parse = moved ? freeByName : parseTourManifest;
     const read = (json: Record<string, unknown>) =>
       withReferencedAssets(parse(json));
     expect(read(after)).toEqual(read(before));
+    // The comparison above filters both sides, so it alone would pass a
+    // reloaded save that carries a stray asset. Beyond what its tour names,
+    // the reloaded save may keep only what its one step (the restore) can
+    // bring back: the opened tour's assets. Not "exactly what its tour
+    // names": deleting a story drops a character image the opened tour
+    // names, and the undo of the restore still needs that file.
+    const afterTour = parse(after);
+    const opened = new Set(manifest.assets.map((a) => a.id));
+    expect(afterTour).toEqual(withReferencedAssets(afterTour, opened));
     expect(before.assets).toEqual(manifest.assets);
   };
 }

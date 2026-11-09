@@ -246,14 +246,16 @@ export function createNestDrag(deps: {
   };
 
   /** Whether `drop` moves the item at all: a slot drop next to where it
-   *  already stands writes nothing. */
+   *  already stands writes nothing, and nor does a drop into the list it
+   *  already ends (an into drop lands at the list's end). */
   const changes = (from: NestPlace, row: HTMLElement, drop: NestDrop) => {
-    if (!("slot" in drop)) return true;
+    if ("across" in drop) return true;
     const scope = row.closest(deps.scope);
     const lists = scope === null ? {} : listsOf(rowsIn(scope));
     const index = (lists[from.list] ?? []).indexOf(from.id);
     if (index < 0) return false;
-    const to = { list: drop.list, slot: drop.slot };
+    const slot = "slot" in drop ? drop.slot : (lists[drop.list] ?? []).length;
+    const to = { list: drop.list, slot };
     return movedAcross(lists, { list: from.list, index }, to) !== null;
   };
 

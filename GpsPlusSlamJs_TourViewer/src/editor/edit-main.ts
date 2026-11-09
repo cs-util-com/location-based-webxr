@@ -1758,9 +1758,15 @@ function moveChild(id: string, to: ChildMoveTo): boolean {
   }
   if (outcome.kind !== "moved") return false;
   tourChanged();
+  // A story goes whole, its steps keeping their layout around the new
+  // station's centre; a single item stands at that centre.
+  const across =
+    movingSubject(id).kind === "story"
+      ? "its steps keep their layout around the station's centre; place it again there."
+      : "it stands at the station's centre; place it again there.";
   const notes: string[] =
     to.place === "station"
-      ? [`Moved to "${stationTitleOf(to.station)}": place it again there.`]
+      ? [`Moved to "${stationTitleOf(to.station)}": ${across}`]
       : [];
   if (outcome.answers > 0) {
     notes.push(
