@@ -103,9 +103,10 @@ footway crossing it.
     more than the old count. Measured on the three O3 scenes (disc per vertex,
     then r1161 with junction breaks, then r1164): Heidelberg 8,884 / 5,164 /
     4,700, Meggen 18,490 / 10,786 / 8,450, Park Slope 11,404 / 9,484 / 6,292
-    (r1164 pinned in `testdata/sites/site-roads.test.ts`). r1161's counts
-    were the same at mitre limits 1.5 to 4 and about 9 % higher at 1 (every
-    join bevelled).
+    (r1164 pinned in `testdata/sites/site-roads.test.ts`). Swept on r1164
+    (r1167): limit 4 draws the same as the default 2, 1.5 one triangle more
+    per scene, and 1 (every join bevelled) 5,206 / 9,567 / 6,734, 7 to 13 %
+    more.
   - **What M4a's spec asked for, and how the strip answers it**: the spec was
     written for O3's first answer, dropping the disc on near-straight vertices
     (`straightDeg`, a notch limit); the owner then chose the mitre strip, which
@@ -151,7 +152,12 @@ at 570 m and low at 100 m; the globe's eye camera at landing (near 0.51 m) 30
 and 100 m from the crossing; the Tour Editor's camera (near 0.3 x height) 30 m
 and 300 m up. Two renderers: an Intel Iris Xe through ANGLE/D3D11 (a real GPU)
 and SwiftShader (the software renderer CI's browsers use). Both report a
-24-bit depth buffer. Percentages are of the overlap's pixels.
+24-bit depth buffer. Percentages are of the overlap's pixels. A pixel counts
+only where both strips cover it in their own mask renders of the same frame,
+so a counted pixel is a lost depth test, not an edge. r1167 measured each gap
+at three crossing positions (the crossing at the look-at point and moved
+15 m and 18 m off it, the camera following), because a threshold read at one
+position moved by a millimetre between them.
 
 - **The 0 mm column (main before M4a: every road coplanar) was added in r1164**
   so "better than before" is measured: on the real GPU 8-66 % of the overlap
@@ -159,12 +165,25 @@ and SwiftShader (the software renderer CI's browsers use). Both report a
   300 m). On SwiftShader two views read 0 at 0 mm (globe landing 100 m, editor
   300 m): the coplanar tie resolves the same way every frame there, so those
   views cannot show fighting at all, which is not a clean gap.
-- **(a) Geometric gaps (what the builder does).** On the real GPU a gap of
-  1.5 mm or more is clean in every view except 570 m, where 3 of 96 pixels
-  differ at every gap up to 20 mm (17 mm included), i.e. that view's edge
-  noise. The worst figure is the editor camera 300 m up at 0.5 mm: **31.9 %**
-  (65.8 % at 0 mm, 2.2 % at 1 mm). On SwiftShader even 5 mm shows through 37 %
-  at 226 m and 10 % at 570 m.
+- **(a) Geometric gaps (what the builder does), real GPU.** Clean at every
+  gap from 1.5 mm at all three positions in the close views (OsmDemo 41 m
+  and low 100 m, globe 30 and 100 m, editor 30 m; from 0.5 mm at the
+  look-at point, r1164), in the editor at 300 m and in the deep globe view
+  at 200 m. **OsmDemo's 226 m boot view is the binding
+  one**: 10.2 / 2.6 / 1.5 % at 1.5 mm, 9.3 / 1.5 / 1.3 % at 1.7 mm (the three positions),
+  2.4 / 1.7 / 0 % at 2.8 mm, 0 / 1.0 / 0 % at 3 mm, clean from 3.4 mm.
+  **OsmDemo at 570 m fights at every gap up to 10.2 mm** (3-37 % of about 96
+  pixels; 7.3 / 24.0 / 5.2 % at 10.2 mm) and is clean or 3 pixels from
+  16.8 mm. r1164's sentence that it showed 3 of 96 pixels at every gap up to
+  20 mm and was therefore edge noise was wrong twice: 10 and 20 mm read 0
+  there, and the mask method cannot count an edge.
+- **SwiftShader** (CI's renderer) is worse everywhere and no gap up to 18 mm
+  is clean in every view: at 3 mm the 226 m view fights 1-48 %, the low
+  100 m view 13-58 %, the editor at 300 m 0-57 %; at 10.2 mm the deep globe
+  view 0-16 %, 570 m 0-12 % and the editor at 300 m 0-27 %; at 18 mm 570 m
+  (5.4 %) and the editor at 300 m (6.7 %) still fight at one position each.
+  The editor's 0 % at the look-at point is the coplanar tie resolving one way
+  every frame there; 15 m off it the same view fights 67 % at 1.5 mm.
 - **The globe landing at 200 m, measured properly (r1164).** r1161 read n/a:
   a 12 m crossing 200 m from a 1.7 m eye is under one pixel row. A deep
   overlap (a 20 m wide way under a 100 m wide one, 60 m deep) gives 1,152
@@ -178,21 +197,49 @@ and SwiftShader (the software renderer CI's browsers use). Both report a
   the factor scales with the surface's depth slope, which at an oblique view is
   decimetres a pixel, so it would break OsmDemo's 4 cm ladder (areas and heat
   cells over the roads). Units alone (no factor) fight in most views (5-60 %).
-- **So neither candidate is clean everywhere, and the step stays 5 mm until
-  the owner decides.** At 5 mm the strip-to-strip gap between classes (at
-  least 0.6 step = 3 mm) is clean on the real GPU in every view measured; an
-  END disc of a higher class over a lower class's strip can be 0.1 step
-  (0.5 mm) apart and fights up to 31.9 % (editor 300 m), 19.3 % (globe 200 m)
-  and 12.6 % (226 m); two ways of ONE class tie within 0.4 step and fight
-  where their colours differ (a `surface` tag). Since r1164 discs exist
-  only at ends and fallbacks, so the 0.1-step case is rarer than in r1161.
-  SwiftShader fights at 5 mm at 226 m, 570 m and the deep globe view. Phone
-  GPUs were not measured. **The value that reverses it:** a 17 mm step (class
-  gap 10.2 mm, end-disc gap 1.7 mm) is clean in every GPU view, and on
-  SwiftShader everywhere but the deep globe view (16.4 %); clean there too
-  needs a class gap of 17 mm, a 28 mm step. 17 mm puts the top road 6.6 cm up,
-  so OsmDemo's 4 cm ladder would widen to 8 cm (kept as a scratchpad patch,
-  not committed).
+- **The gaps per step, and what each leaves.** The builder's gaps: between
+  two classes' strips at least 0.6 step, a higher class's END disc over a
+  lower class's strip at least 0.1 step (discs exist only at ends and
+  fallbacks since r1164), two ways of one class anywhere from 0 to 0.4 step
+  (a tie wherever their tie fractions are close, at any step). Real GPU,
+  three positions:
+  - **5 mm (today)**: strips 3 mm apart, clean except 226 m (one position,
+    1.0 %) and 570 m (3 / 25 / 16 %); end discs 0.5 mm, fighting 12.6 % at 226 m, 31.9 % in
+    the editor at 300 m, 19.3 % in the deep globe view.
+  - **17 mm**: strips 10.2 mm, clean except 570 m (5-24 %); end discs
+    1.7 mm, clean in the editor at 300 m and the globe, **NOT at 226 m (9.3 /
+    1.5 / 1.3 %)** nor at 570 m. r1164 said the 17 mm disc gap was clean on
+    the GPU everywhere; it read 1.5 mm's 0 from views other than 226 m.
+  - **28 mm**: strips 16.8 mm, clean (570 m: 3 pixels at one position); end
+    discs 2.8 mm, still 2.4 / 1.7 / 0 % at 226 m and 16-38 % at 570 m.
+  - **34 mm**, the smallest step whose end-disc gap (3.4 mm) is clean on the
+    GPU at 226 m and in the editor at 300 m at all three positions (30 mm
+    gives 3 mm, clean at two of three): strips 20.4 mm apart (18 mm measured clean but for 3 pixels at
+    570 m), the top road
+    3.9 steps = 13.3 cm up, so OsmDemo's 4 cm ladder would widen to about
+    14 cm. End discs at 570 m still fight (11-19 % at 3.4 mm).
+  - Main before M4a (0 mm): 8-66 % in every view.
+  - Phone GPUs were not measured; SwiftShader is above.
+- **The alternative for the end discs, measured, not built (the owner's
+  call).** Placing a way's discs at its strip's own height instead of half a
+  step below makes the disc-over-lower-strip gap equal the strip gap (0.6
+  step) and leaves a disc coplanar only with its own strip, whose colour it
+  shares. At 5 mm that is 3 mm: on the GPU 0 / 1.0 / 0 % at 226 m, clean in
+  the editor at 300 m and the globe, so it **removes the 0.5 mm disc case
+  without a larger step** in every view but 570 m, which fights at 3 mm for
+  strips anyway. At 17 mm it is 10.2 mm, clean but for 570 m. Discs a quarter
+  step below their strip (half of today's drop) give 0.35 step: 1.75 mm at 5 mm, 9.0 / 1.5 / 0.3 % at 226 m, so no better than the
+  17 mm step's discs. The drop exists so a way's own disc does not poke
+  through its strip; unmeasured here is how much a per-vertex drape on a
+  slope moves a disc rim against the strip (the spike is flat), which
+  matters for every option above that relies on a few millimetres.
+- **So the step stays 5 mm until the owner decides.** No candidate is clean
+  everywhere: 570 m fights up to 10 mm on the GPU, SwiftShader up to 18 mm,
+  and one class's ties do not depend on the step. The cheapest measured
+  improvement is the end-disc alternative at 5 mm; a larger step is needed
+  only to clear 226 m's end discs (34 mm) or 570 m's strips (about 17 mm),
+  each widening OsmDemo's 4 cm ladder. A 17 mm patch (ladder 8 cm) is kept
+  in the scratchpad, not committed.
 - **Real scenes did not separate the variants (r1164).** OsmDemo's Heidelberg
   corpus (boot view 226 m, a close view) and the Tour Editor globe at 300 m,
   shot with main, r1161, r1164 and the 17 mm variant, a camera nudge against
