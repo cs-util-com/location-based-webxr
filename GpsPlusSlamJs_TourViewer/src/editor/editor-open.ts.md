@@ -60,7 +60,7 @@ not be read. The editor left them out: ...`), and that the next save
   blocks, named by `objectTitle` (the id only for a block the manifest
   does not hold), and that the next save writes them without it; null
   for none. Whole blocks a reader cannot show are not listed.
-- `flattenedFoldersLine(manifest): string | null` - the toast for a tour
+- `flattenedFoldersLine(manifest): string | null` (module-private, read through the open notices above) - the toast for a tour
   whose stations hold plain folders (`FLATTENED_FOLDERS_LINE`): the editor
   keeps stories and free items only (`tour-document.ts`, `framesOf` and
   `withTourContent`), so the next save writes each folder's items one by

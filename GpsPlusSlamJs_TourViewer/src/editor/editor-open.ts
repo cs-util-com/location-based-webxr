@@ -196,7 +196,7 @@ export const FLATTENED_FOLDERS_LINE =
  * the grouping, with any empty folder, is gone - never a silent loss.
  * Null when no station holds a folder (a story is not a plain folder).
  */
-export function flattenedFoldersLine(
+function flattenedFoldersLine(
   manifest: Pick<TourManifest, "stations">,
 ): string | null {
   return manifest.stations.some((s) => s.children.some(isTourFolder))
