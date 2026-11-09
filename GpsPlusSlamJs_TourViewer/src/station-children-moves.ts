@@ -32,7 +32,7 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-story";
 
 import { NARRATION_DEFAULT_RADIUS_M } from "./kinds/audio/sound-reach.js";
-import { withoutStoryChild } from "./tour-story-edit.js";
+import { withoutStoryChild, withStory } from "./tour-story-edit.js";
 
 interface Holder {
   readonly children: readonly TourStationChild[];
@@ -295,17 +295,6 @@ export type StationMove<H> =
 /** `block` standing at its station's centre, its turn kept. */
 function centred(block: TourBlock): TourBlock {
   return { ...block, pose: { ...block.pose, position: [0, 0, 0] } };
-}
-
-/** `holder` with `story` after its last story, ahead of its free items. */
-function withStory<H extends Holder>(holder: H, story: TourStory): H {
-  const children = [...holder.children];
-  let at = 0;
-  children.forEach((c, index) => {
-    if (isStory(c)) at = index + 1;
-  });
-  children.splice(at, 0, story);
-  return { ...holder, children };
 }
 
 /**

@@ -10,8 +10,11 @@ document's story actions (`storyAdded`, `storyRenamed`, `storyDeleted`,
 
 - `newStory(id, title)` -> an empty `TourStory`, or null for a title the
   format refuses (`TOUR_STORY_TITLE_RULE`).
-- `withStory(holder, story)` -> the holder with the story after its stories,
-  before its free blocks.
+- `withStory(holder, story, after?)` -> the holder with the story right
+  after the story `after` (a copy beside its original), else after its
+  stories, before its free blocks. The one slot rule: a new story, a copy
+  and a story moved from another station (`station-children-moves.ts`)
+  all go through it.
 - `withStoryTitle(holder, id, title)` -> the holder renamed, or null.
 - `withoutStory(holder, id)` -> the holder without it, or null.
 - `withStoryChild(holder, id, child)` -> the holder with the child at the

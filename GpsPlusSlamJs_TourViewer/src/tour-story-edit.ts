@@ -35,19 +35,35 @@ export function newStory(id: string, title: string): TourStory | null {
     : { id, kind: "folder", role: "story", title: text, children: [] };
 }
 
-/** `holder` with `story` after its stories, before its free blocks: where
- *  the writer lists it. */
-export function withStory<H extends Holder>(holder: H, story: TourStory): H {
-  const after = holder.children.reduce(
-    (at, child, i) => (isStory(child) ? i + 1 : at),
-    0,
-  );
+/**
+ * `holder` with `story` in the one slot a story is put in: right after the
+ * story `after` names, else (no `after`, or one the holder does not hold
+ * as a story) after its last story, before its free blocks: where the
+ * writer lists it. Every story insertion (a new one, a copy, one moved
+ * from another station) goes through here.
+ */
+export function withStory<H extends Holder>(
+  holder: H,
+  story: TourStory,
+  after?: string,
+): H {
+  const named =
+    after === undefined
+      ? -1
+      : holder.children.findIndex((c) => isStory(c) && c.id === after);
+  const at =
+    named >= 0
+      ? named + 1
+      : holder.children.reduce(
+          (slot, child, i) => (isStory(child) ? i + 1 : slot),
+          0,
+        );
   return {
     ...holder,
     children: [
-      ...holder.children.slice(0, after),
+      ...holder.children.slice(0, at),
       story,
-      ...holder.children.slice(after),
+      ...holder.children.slice(at),
     ],
   };
 }

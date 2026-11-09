@@ -92,6 +92,34 @@ describe("withStory", () => {
     expect(next.children.map((c) => c.id)).toEqual(["one", "two", "free-1"]);
   });
 
+  // Why: a copy belongs beside its original, where the creator looks for
+  // it, not at the end of a long list of stories.
+  it("puts a story right after the one named, before a later story", () => {
+    const made = newStory("copy", "Copy") as TourStory;
+    const next = withStory(
+      frame([storyOf("one", []), storyOf("two", []), FREE]),
+      made,
+      "one",
+    );
+    expect(next.children.map((c) => c.id)).toEqual([
+      "one",
+      "copy",
+      "two",
+      "free-1",
+    ]);
+  });
+
+  // Why: a name that is no story of the holder (a free block's id, an id
+  // gone meanwhile) must not put the story among the free blocks.
+  it.each(["free-1", "gone"])(
+    "puts it after the last story when %s names no story",
+    (after) => {
+      const made = newStory("copy", "Copy") as TourStory;
+      const next = withStory(frame([storyOf("one", []), FREE]), made, after);
+      expect(next.children.map((c) => c.id)).toEqual(["one", "copy", "free-1"]);
+    },
+  );
+
   it("puts the first story before the free blocks", () => {
     const made = newStory("one", "One") as TourStory;
     const next = withStory(frame([FREE]), made);
