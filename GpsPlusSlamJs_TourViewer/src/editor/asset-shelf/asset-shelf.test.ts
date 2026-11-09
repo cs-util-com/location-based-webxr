@@ -23,6 +23,7 @@ import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media
 import { ASSET_OPTIMIZERS, type OptimizerHost } from "./asset-optimizers.js";
 import {
   NOT_SMALLER,
+  RESULT_TOO_LARGE,
   NO_OPTIMIZER,
   createAssetShelf,
   type AssetShelfDeps,
@@ -179,7 +180,9 @@ describe("the shelf's runner", () => {
 
   // Why: a save refuses a file over the entry cap, so a result over it
   // must never land. When the original fits, it is simply kept: the honest
-  // end is "not smaller", never a non-retryable "too large".
+  // end says the result came out too large - never a non-retryable "too
+  // large" for the file, and not "would save less than a tenth", which is
+  // another reason.
   it("keeps an original that fits when only the result is over the entry cap", async () => {
     const { shelf, fake, swap, row, settle } = setup({ maxFileBytes: 1500 });
     shelf.add(image(A), "a.png", 1000, "added");
@@ -187,7 +190,7 @@ describe("the shelf's runner", () => {
     fake.finish(new Blob([new Uint8Array(1600)]), "webp");
     await settle();
     expect(swap).not.toHaveBeenCalled();
-    expect(row(A)).toMatchObject({ status: "kept", reason: NOT_SMALLER });
+    expect(row(A)).toMatchObject({ status: "kept", reason: RESULT_TOO_LARGE });
   });
 
   // Why: a save also refuses a picture over the pixel cap
@@ -202,7 +205,7 @@ describe("the shelf's runner", () => {
     fake.finish(small, "webp", { width: side, height: side + 1 });
     await settle();
     expect(swap).not.toHaveBeenCalled();
-    expect(row(A)).toMatchObject({ status: "kept", reason: NOT_SMALLER });
+    expect(row(A)).toMatchObject({ status: "kept", reason: RESULT_TOO_LARGE });
     shelf.add(image(B), "b.png", 1000, "added");
     await settle();
     fake.finish(small, "webp", { width: side, height: side });
