@@ -23,7 +23,10 @@ import type {
 } from "gps-plus-slam-app-framework/ar/tour-details";
 import type { TourIntegrityError } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import type { TourBlockDrop } from "gps-plus-slam-app-framework/ar/tour-block-read";
-import { tourStationBlocks } from "gps-plus-slam-app-framework/ar/tour-story";
+import {
+  isTourFolder,
+  tourStationBlocks,
+} from "gps-plus-slam-app-framework/ar/tour-story";
 import { objectTitle } from "../object-describe.js";
 import { describeOpenError, olderFormatRefusal } from "../open-errors.js";
 import { stationTitle } from "../station-run.js";
@@ -42,7 +45,7 @@ export type EditorOpen =
       /** The details, station descriptions and card images the reader
        *  left out (a hand-edited file, a card image whose picture is
        *  gone): the next save writes the tour without them
-       *  (`droppedDetailsLine`, `droppedStationFieldsLine`). */
+       *  (`openedNoticeLines`). */
       readonly dropped: readonly TourManifestDrop[];
     }
   | {
@@ -180,6 +183,39 @@ export function droppedBlockFieldsLine(
   });
   const where = ids.length === 1 ? "the item" : "those items";
   return `A text of ${listed(names)} could not be read, so the editor left it out: the next save writes ${where} without it. Write it again in the item.`;
+}
+
+/** Said once a tour opened that groups items in plain folders. */
+export const FLATTENED_FOLDERS_LINE =
+  "This tour groups items in folders. The editor does not keep folders yet: the next save writes their items one by one, each where it stands, and leaves the folders out.";
+
+/**
+ * Said once a tour opened whose stations hold plain folders. The editor
+ * flattens them on open (its stations hold stories and free items only),
+ * so the next save writes each item at the place its folders put it, and
+ * the grouping, with any empty folder, is gone - never a silent loss.
+ * Null when no station holds a folder (a story is not a plain folder).
+ */
+export function flattenedFoldersLine(
+  manifest: Pick<TourManifest, "stations">,
+): string | null {
+  return manifest.stations.some((s) => s.children.some(isTourFolder))
+    ? FLATTENED_FOLDERS_LINE
+    : null;
+}
+
+/** Every line said once a tour opened, in the order shown: the dropped
+ *  details, station fields and item texts, then the flattened folders. */
+export function openedNoticeLines(
+  dropped: readonly TourManifestDrop[],
+  manifest: Pick<TourManifest, "stations">,
+): string[] {
+  return [
+    droppedDetailsLine(dropped),
+    droppedStationFieldsLine(dropped, manifest),
+    droppedBlockFieldsLine(dropped, manifest),
+    flattenedFoldersLine(manifest),
+  ].filter((line): line is string => line !== null);
 }
 
 /** `words` as a sentence lists them: "a", "a and b", "a, b and c". */

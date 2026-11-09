@@ -37,7 +37,7 @@ const plain: TourFolder = {
   id: "plain",
   kind: "folder",
   pose: { position: [2, 0, 0], rotation: [0, 0, 0, 1] },
-  scale: 2,
+  scale: 1,
   children: [pin("loose"), inner],
 };
 const folderIds = ["plain", "inner", "loose", "deep"];

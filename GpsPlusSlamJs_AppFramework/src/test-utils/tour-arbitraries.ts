@@ -51,10 +51,7 @@ import {
   type TourBlockKind,
   type TourTextRule,
 } from '../ar/tour-blocks.js';
-import {
-  TOUR_FOLDER_SCALE_RANGE,
-  TOUR_STORY_TITLE_RULE,
-} from '../ar/tour-story.js';
+import { TOUR_STORY_TITLE_RULE } from '../ar/tour-story.js';
 
 /** The assets every generated block names: one or two of each kind, with
  *  ids the block id generator also produces (they may collide). */
@@ -614,15 +611,15 @@ export interface TourChildrenPlacement {
   readonly all: readonly string[];
 }
 
-/** A plain folder's optional pose and scale (bounds of the reader's). */
+/** A plain folder's optional pose and scale (the reader takes only 1,
+ *  until a renderer scales a whole group). Poses within
+ *  `tourLocalPoseArbitrary`'s reach and turned about Up only, so even the
+ *  deepest nest the sizes ask for (8 folders) keeps every composed block
+ *  within the format's 10 km of its station. */
 const folderFrameArbitrary = fc.record(
   {
     pose: tourLocalPoseArbitrary,
-    scale: fc.double({
-      min: TOUR_FOLDER_SCALE_RANGE.min,
-      max: TOUR_FOLDER_SCALE_RANGE.max,
-      noNaN: true,
-    }),
+    scale: fc.constant(1),
   },
   { requiredKeys: [] }
 );

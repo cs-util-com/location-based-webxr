@@ -100,12 +100,7 @@ import { storyRows } from "./editor-shell/tree-model.js";
 import type { GestureEdit } from "../editor3d/gesture.js";
 import { askMove, moveNote } from "../move-question.js";
 import { confirmPausingFrames } from "./browser-question.js";
-import {
-  droppedBlockFieldsLine,
-  droppedDetailsLine,
-  droppedStationFieldsLine,
-  openTourForEditing,
-} from "./editor-open.js";
+import { openedNoticeLines, openTourForEditing } from "./editor-open.js";
 import {
   holdPageInert,
   revealPadding,
@@ -2557,14 +2552,10 @@ async function openFile(
   sayUnreadDraft();
   keepStorage();
   // Details, station descriptions, card images and block texts the reader
-  // dropped are said, never lost silently by the next save;
-  // kept until closed, as an instruction.
-  for (const line of [
-    droppedDetailsLine(outcome.dropped),
-    droppedStationFieldsLine(outcome.dropped, outcome.manifest),
-    droppedBlockFieldsLine(outcome.dropped, outcome.manifest),
-  ]) {
-    if (line !== null) fileToasts.push(toast(line, undefined, null));
+  // dropped, and plain folders the editor flattens, are said, never lost
+  // silently by the next save; kept until closed, as an instruction.
+  for (const line of openedNoticeLines(outcome.dropped, outcome.manifest)) {
+    fileToasts.push(toast(line, undefined, null));
   }
   if (drafted.superseded !== null) {
     fileToasts.push(toast(drafted.superseded, undefined, null));

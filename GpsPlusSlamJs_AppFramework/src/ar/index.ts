@@ -326,10 +326,11 @@ export {
 export {
   composeTourFolderPose,
   decomposeTourFolderPose,
+} from './tour-folder-pose.js';
+export {
   geoPoseRotation,
   itemGeoPose,
   localPoseOf,
-  tourFlatFreeBlocks,
   tourFreeBlocks,
   tourObjectBlock,
   tourObjects,
@@ -378,7 +379,6 @@ export {
   isStory,
   isTourBlockChild,
   isTourFolder,
-  TOUR_FOLDER_SCALE_RANGE,
   tourChildPlace,
   tourStationBlocks,
   tourStationChildIds,

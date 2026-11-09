@@ -17,13 +17,15 @@
   `{ kind: 'folder', role: 'story', title, children }` (was
   `kind: 'story'`), read and written in that shape. A folder without a
   role is a plain folder: it groups free blocks and plain folders, nests
-  at any depth, and carries an optional `pose` and uniform `scale`
-  (`TOUR_FOLDER_SCALE_RANGE`). A story stands only at a station's top and
+  at any depth, and carries an optional `pose` (a rigid frame; its
+  `scale` is read only as 1, since a scale other than 1 waits for a
+  renderer that scales the whole group). A child's offset with its
+  folders' poses composed in stays within `TOUR_ITEM_MAX_OFFSET_M`, as a
+  single pose's does. A story stands only at a station's top and
   holds no folder. `isTourStory` is now `isStory`, with `isTourFolder`
   and `isTourBlockChild`; `tourChildrenFreeBlocks` is gone (use
   `tourFreeBlocks`, which flattens plain folders, or the new
-  `tourFlatFreeBlocks`, `composeTourFolderPose` and
-  `decomposeTourFolderPose`); `TourChildrenPlace` carries a `path`.
+  `composeTourFolderPose` and `decomposeTourFolderPose`); `TourChildrenPlace` carries a `path`.
 - A video's and a sound's `transcript` and a character's `caption` are
   optional: a blank one no longer fails the write.
 

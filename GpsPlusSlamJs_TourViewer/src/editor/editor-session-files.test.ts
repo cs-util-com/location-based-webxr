@@ -31,6 +31,7 @@ import {
 } from "../test-support/memory-draft-stores.js";
 import { createEditorDraft, type EditorDraft } from "./editor-draft.js";
 import { createEditorSession, type EditorSession } from "./editor-session.js";
+import { stationContent, storyOf } from "../test-support/station-content.js";
 
 const K = "local-file:00000000000000000000000000000009";
 
@@ -463,6 +464,87 @@ describe("property: a reload after any voices, removals and undos", () => {
       }),
       { numRuns: 40 },
     );
+    await session.close();
+  });
+});
+
+describe("a duplicated story's pictures", () => {
+  // Why: a story's copy names the same image files as the original (only
+  // the story and its children get new ids), on purpose: the bytes are
+  // identical, and a save keeps every file any block still names. This
+  // pins that the sharing is safe: deleting the original must not take
+  // the copy's picture with it, or the copy would save naming a file the
+  // tour no longer carries.
+  it("keeps the picture's file after the original is deleted and the tour saved", async () => {
+    const pose = { position: [0, 0, 0], rotation: [0, 0, 0, 1] } as const;
+    const manifest = parseTourManifest(
+      JSON.parse(
+        serializeTourManifest(
+          tourOf([], {
+            assets: [
+              {
+                id: "art",
+                path: "content/art.jpg",
+                kind: "image",
+                width: 4,
+                height: 3,
+              },
+            ],
+            stations: [
+              {
+                id: "mill",
+                title: "The mill",
+                geo: {
+                  lat: 48.52,
+                  lon: 9.05,
+                  alt: 340,
+                  rotation: [0, 0, 0, 1],
+                },
+                activateRadiusM: 50,
+                foundRadiusM: 25,
+                hint: "arrow",
+                ...stationContent([
+                  storyOf("tale", [
+                    {
+                      id: "pic",
+                      kind: "picture",
+                      view: "plane",
+                      image: "art",
+                      widthM: 1,
+                      pose,
+                    },
+                  ]),
+                ]),
+              },
+            ],
+          }),
+        ),
+      ),
+    );
+    const zip = await packFilesAsZip([
+      { path: "tour.json", data: serializeTourManifest(manifest) },
+      { path: "content/art.jpg", data: "the miller's portrait" },
+    ]);
+    const session = await openTourFile(
+      new File([zip], "tour.zip", { type: "application/zip" }),
+    );
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      store: editorStore(),
+    });
+    const copy = editor.duplicateStory("tale");
+    if (copy.kind !== "duplicated") throw new Error(copy.kind);
+    expect(editor.deleteStory("tale").kind).toBe("deleted");
+
+    const blob = (await editor.save({ keepScan: false })).blob;
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const saved = parseTourManifest(JSON.parse(entryText(bytes, "tour.json")));
+    const story = saved.stations[0]?.children[0];
+    expect(story?.id).toBe(copy.id);
+    expect(saved.assets.map((a) => a.id)).toEqual(["art"]);
+    expect(entryText(bytes, "content/art.jpg")).toBe("the miller's portrait");
     await session.close();
   });
 });

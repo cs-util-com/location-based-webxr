@@ -20,14 +20,8 @@ its station) - what a viewer places and a creator's drafts hold.
 - `tourFreeBlocks(station): TourBlock[]` - the station's free blocks: the
   block children of the station and of its plain folders at any depth, not
   those of its stories, in the file's order, each with its folders' poses
-  composed in (`tourFlatFreeBlocks`).
-- `tourFlatFreeBlocks(children): TourFlatBlock[]` - the same, with the
-  product of the folders' scales per block (`{ block, scale }`, 1 outside
-  any folder). The ONE place plain folders are flattened.
-- `composeTourFolderPose(folder, pose)` / `decomposeTourFolderPose(folder,
-pose)` - a pose in a plain folder's frame to its holder's frame and
-  back: `p = p_f + R_f (s p_c)`, `q = R_f q_c`. `folder` is
-  `TourFolderFrame` (its `pose` and `scale`).
+  composed in (`composeTourFolderPose`, from `tour-folder-pose.ts`). The
+  ONE place plain folders are flattened.
 - `tourObjects({ stations, assets }): TourObject[]` - every free block in
   the world, with `station` set, in station order; a picture carries its
   image asset inline (`imageAsset`, looked up in `assets`).
@@ -48,14 +42,16 @@ pose)` - a pose in a plain folder's frame to its holder's frame and
   height reads back exactly. The round-trip properties bound it at a
   millimetre (geo->local->geo and
   local->geo->local, stations at latitudes -60..60, blocks within 1 km).
-- **Double precision quaternion arithmetic** of its own: `qr-pose.ts`
-  `composePose` uses gl-matrix's float32 arrays.
+- **Double precision quaternion arithmetic**, shared with
+  `tour-folder-pose.ts`: `qr-pose.ts` `composePose` uses gl-matrix's
+  float32 arrays.
 - **A plain folder is a frame.** Its children's poses are given in it;
-  a folder with no pose and scale 1 (or none) returns the pose itself, bit
-  for bit. Nested folders compose innermost first. The scale moves blocks
-  apart; no renderer resizes a block by it yet. A composed offset is not
-  re-bounded by `TOUR_ITEM_MAX_OFFSET_M`: a folder far out holding a
-  block far out can stand further than a single pose may.
+  a folder with no pose returns the pose itself, bit for bit. Nested
+  folders compose innermost first. A folder is rigid: its scale is always
+  1 (a scale other than 1 waits for a renderer that scales the whole
+  group). The reader (`tour-story.ts`) bounds a composed offset by
+  `TOUR_ITEM_MAX_OFFSET_M`, so a flattened block's pose is one a writer
+  accepts.
 - **Nothing here writes a local pose back.** A local pose changes only when
   an editor sets a new one; a station's move changes the station's geo
   pose, and every block follows by construction.
@@ -85,7 +81,7 @@ const all = tourObjects(manifest); // [{ id, kind, geo, station, ... }]
   station order, a picture with its asset) and `tourObjectBlock` back.
 - `tour-station-pose.folders.property.test.ts` - compose then decompose
   returns the pose within 1e-6 m and 1e-12 on 1 - |q.q'|, swept over
-  offsets 0.01 m to 10 km and scales 0.25-4 (worst gap held under a
-  hundredth of the tolerance); a quarter-turn example; no pose and scale 1
-  are the identity by reference; nested folders flattened innermost first
-  with their scales multiplied.
+  offsets 0.01 m to 10 km; a quarter-turn example; no pose (and an empty
+  folder path) is the identity by reference; nested folders flattened
+  innermost first in document order; two nested folders whose turns do not
+  commute against a position and rotation worked out by hand.

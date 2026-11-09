@@ -23,6 +23,7 @@ import {
   childMayGo,
   childStepTo,
   movedChild,
+  movedToStation,
   storyList,
 } from "./station-children-moves.js";
 
@@ -288,6 +289,50 @@ describe("movedChild", () => {
     expect(
       movedChild(holder, "p", { place: "story", story: "a", index: 5 }),
     ).toEqual({ refused: "missing" });
+  });
+});
+
+describe("a plain folder, which the editor never hands a move", () => {
+  // Why: the editor's stations come flattened, so no move there sees a
+  // plain folder; but a holder admits folders, and a move that went on
+  // would take the item at the folder's index in the station's list - the
+  // wrong one. The guard refuses a folder and anything in it as missing,
+  // and changes nothing.
+  const folder: TourStationChild = {
+    id: "f",
+    kind: "folder",
+    children: [
+      pin("inside"),
+      { id: "g", kind: "folder", children: [pin("deeper")] },
+    ],
+  };
+  const holder = station([story("a", [line("a1")]), folder, pin("p")]);
+  const before = JSON.stringify(holder);
+
+  it("refuses a folder and anything in it as missing, moving nothing", () => {
+    for (const id of ["f", "inside", "g", "deeper"]) {
+      expect(movedChild(holder, id, { place: "free" })).toEqual({
+        refused: "missing",
+      });
+      expect(
+        movedChild(holder, id, { place: "story", story: "a", index: 0 }),
+      ).toEqual({ refused: "missing" });
+      expect(movedToStation(holder, { id: "t", children: [] }, id)).toEqual({
+        refused: "missing",
+      });
+      expect(childStepTo(holder, id, "later")).toBeNull();
+    }
+    expect(JSON.stringify(holder)).toBe(before);
+  });
+
+  it("still moves the station's own free item past the folder", () => {
+    const out = movedChild(holder, "p", {
+      place: "story",
+      story: "a",
+      index: 1,
+    });
+    if (!("station" in out)) throw new Error(out.refused);
+    expect(ids(storyOf(out.station, "a").children)).toEqual(["a1", "p"]);
   });
 });
 

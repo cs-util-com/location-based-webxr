@@ -6,8 +6,8 @@ list of children: a free block (`tour-blocks.ts`, standing in the world)
 or a FOLDER. Every container is a folder (`kind: 'folder'`); a folder
 with `role: 'story'` is a STORY, which holds its own ordered list of
 blocks, choices and quizzes; a folder without a role is a PLAIN FOLDER,
-which groups free blocks and plain folders under an optional `pose` and a
-uniform `scale`. A block lives in one place, so being in a story is what
+which groups free blocks and plain folders under an optional `pose` (a
+rigid frame: its `scale` is only ever 1). A block lives in one place, so being in a story is what
 shows it.
 The manifest reads every station's children here (`tour-stations.ts`).
 
@@ -22,15 +22,16 @@ The manifest reads every station's children here (`tour-stations.ts`).
     (`stations[0].children[2].children[1].options[0].goto`).
 - Types: `TourStationChild` (`TourBlock | TourStory | TourFolder`),
   `TourStory` (`{ id, kind: 'folder', role: 'story', title, children }`),
-  `TourFolder` (`{ id, kind: 'folder', pose?, scale?, children }`, its
+  `TourFolder` (`{ id, kind: 'folder', pose?, scale?: 1, children }`, its
   children `TourFolderChild`: free blocks and plain folders),
   `TourContainer` (`TourStory | TourFolder`), `TourStoryChild`
   (`TourStoryBlock | TourChoice | TourQuizEntry`), `TourStoryBlock` (a
   block with `advance`), `TourChoice` (`{ id, kind: 'choice', prompt,
 options }`), `TourQuizEntry` (`TourQuiz` with `id` and `kind: 'quiz'`),
   `TourChildDrop` (a `TourBlockDrop`, `{ kind: 'child', child, reason }`,
-  or `{ kind: 'option', child, option, reason }` for a way on a kept choice
-  lost with the child it named), `TourChildrenPlace` (`{ index, path,
+  `{ kind: 'option', child, option, reason }` for a way on a kept choice
+  lost with the child it named, or `{ kind: 'folderScale', folder, reason }`
+  for a plain folder's scale read as 1), `TourChildrenPlace` (`{ index, path,
 story? }`: `path` the containers holding the child, outermost first,
   empty at the station's top; `story` the innermost one when it is a
   story),
@@ -40,7 +41,6 @@ points, answer }`), `TourQuizAnswer`, `TourQuizOption`, `TourStepAdvance`
 - `TOUR_CHILD_KINDS` - `folder`, `choice`, `quiz`: disjoint from the block
   kinds, so `kind` alone tells a block from a container.
 - `TOUR_FOLDER_ROLES` - `story`, the one role a folder may carry.
-- `TOUR_FOLDER_SCALE_RANGE` - a plain folder's `scale`: 0.01-100.
 - `TOUR_STORY_TITLE_RULE` - required, 1-80 code points (`tourTextCount`).
 - The three-way split, the one way to ask: `isStory`, `isTourFolder`
   (a plain folder) and `isTourBlockChild`; every station child is exactly
@@ -71,8 +71,17 @@ id)` (null when no child has it).
   as at the top) and plain folders; nothing but blocks, choices and
   quizzes stands in a story. A story takes no `pose` or `scale`. A plain
   folder has no title and may be empty; its `pose` is read as a block's
-  (`parseTourLocalPose`) and its `scale` must lie in
-  `TOUR_FOLDER_SCALE_RANGE`.
+  (`parseTourLocalPose`). Its `scale` may only be 1 (or absent): a scale
+  other than 1 waits for a renderer that scales the whole group, since
+  scaling positions alone would move a group's blocks apart while their
+  sizes stay. Any other value fails strict; lenient reads the folder
+  without it, reported as a `folderScale` drop.
+- A child's offset with its folders' poses composed in
+  (`composeTourFolderPath`) stays within `TOUR_ITEM_MAX_OFFSET_M` along
+  each axis, as a single pose's must: a folder far out holding a block far
+  out would otherwise read, and then fail every save once the editor
+  flattens it. The innermost folder holding such a block fails strict and
+  is left out, reported as a `child` drop, under lenient.
 - A free block must stand in a world view; its `advance`, like a choice's
   or a quiz's, is ignored. A story block takes any view of its kind (an
   unknown one reads as `card`) and an `advance`.
@@ -142,8 +151,10 @@ const free = tourFreeBlocks({ children }); // tour-station-pose.ts
   fails); unknown kinds at both levels; lenient pruning, stranded choices
   and reports; structural faults under lenient; the list functions.
 - `tour-folders.test.ts`: a read per shape (story, plain folder with and
-  without pose and scale, empty, nested), the scale range at both ends and
-  just outside, every illegal nesting refused strict and left out lenient,
+  without pose and scale, empty, nested), a scale other than 1 refused
+  strict and read as 1 lenient (reported), the composed-offset bound swept
+  at its edge (in, on and just past it), turned by a folder's rotation,
+  nested, and dropped lenient, every illegal nesting refused strict and left out lenient,
   ids shared across folders, the exclusive three-way split, the walkers,
   places with paths, and the writer writing a story in the folder shape.
 - `tour-folders.property.test.ts`: generated stations with nested plain

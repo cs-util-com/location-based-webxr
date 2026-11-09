@@ -200,7 +200,10 @@ never state). Design:
       least n from 2 while that name is taken, so a delete never makes a
       name repeat), `renameStory(id, title)`, `duplicateStory(id)` (mints a
       new id for the story and each child; a picture block shares its
-      asset with the original, as a station's copy does), `deleteStory(id)` (says how
+      image file with the original on purpose, as a station's copy does:
+      the bytes are the same, and a save keeps every file any block still
+      names, so deleting either one never takes the other's picture;
+      `editor-session-files.test.ts` pins it), `deleteStory(id)` (says how
       many children went and `stationGone` when its untitled automatic
       station, kept by nothing else, went with it),
       `addToStory(storyId, kind)`, `deleteStoryChild(id)` (says how many

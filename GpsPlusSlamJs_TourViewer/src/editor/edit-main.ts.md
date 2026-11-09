@@ -103,8 +103,12 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   tour without them; station descriptions and card images the reader
   left out (format minor 2: a picture gone, or a value a hand edit broke)
   in a toast of their own, naming each station by its rail name
-  (`droppedStationFieldsLine`); and a block's text over its cap in a
-  third, naming each block (`droppedBlockFieldsLine`).
+  (`droppedStationFieldsLine`); a block's text over its cap in a
+  third, naming each block (`droppedBlockFieldsLine`); and plain folders,
+  which the editor flattens on open, in a fourth
+  (`flattenedFoldersLine`): the next save writes their items one by one,
+  each where it stands, without the grouping. All four come from
+  `openedNoticeLines`, so a test can see them without the page.
 - **A failure latched during the open** (`integrityFailure()` right after
   it) refuses the tour (E1 review #6).
 - **A late integrity failure** (`onIntegrityFailure`, the background

@@ -530,11 +530,11 @@ describe('children: a file of a newer minor (lenient)', () => {
       { lenient: true, drops }
     );
     expect(read).toEqual([storyOf('a', [{ ...text, advance: tap }])]);
-    expect(drops.map((d) => ('child' in d ? d.child : d.block))).toEqual([
-      'gone',
-      'c1',
-      'c0',
-    ]);
+    expect(
+      drops.map((d) =>
+        'child' in d ? d.child : 'block' in d ? d.block : d.folder
+      )
+    ).toEqual(['gone', 'c1', 'c0']);
   });
 
   it('a quiz of an unknown answer type is skipped and reported', () => {

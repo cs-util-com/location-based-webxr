@@ -60,6 +60,15 @@ not be read. The editor left them out: ...`), and that the next save
   blocks, named by `objectTitle` (the id only for a block the manifest
   does not hold), and that the next save writes them without it; null
   for none. Whole blocks a reader cannot show are not listed.
+- `flattenedFoldersLine(manifest): string | null` - the toast for a tour
+  whose stations hold plain folders (`FLATTENED_FOLDERS_LINE`): the editor
+  keeps stories and free items only (`tour-document.ts`, `framesOf` and
+  `withTourContent`), so the next save writes each folder's items one by
+  one at the place its folders put them (the framework's
+  `tourFreeBlocks`), and the grouping, with any empty folder, is gone.
+  Null when no station holds one; a story is not a plain folder.
+- `openedNoticeLines(dropped, manifest): string[]` - every line above
+  that applies, in the order the page shows them (`edit-main.ts`).
 - `EditorOpen`, `NOT_A_TOUR`, `NOT_A_ZIP`.
 
 ## Invariants & assumptions

@@ -17,9 +17,10 @@
  * never changes unless an editor sets a new one (a station moves rigidly,
  * its blocks' local poses stay bit-identical).
  *
- * Double precision throughout: `qr-pose.ts`'s `composePose` goes through
- * gl-matrix's float32 arrays, which would cost centimetres at an absolute
- * altitude of 500 m.
+ * Double precision throughout (`tour-folder-pose.ts`'s quaternion
+ * arithmetic): `qr-pose.ts`'s `composePose` goes through gl-matrix's
+ * float32 arrays, which would cost centimetres at an absolute altitude of
+ * 500 m.
  *
  * @see tour-station-pose.ts.md
  */
@@ -28,47 +29,25 @@ import type { Quaternion } from 'gps-plus-slam-js';
 
 import { calcRelativeCoordsInMeters } from '../core/index.js';
 import type { QrGeoPose } from './qr/qr-gps-vote.js';
-import {
-  mintQrGeoPose,
-  renormalizeUnitQuaternion,
-} from './qr/qr-geo-pose-minting.js';
+import { mintQrGeoPose } from './qr/qr-geo-pose-minting.js';
 import { rotateVectorByQuaternion } from './qr/qr-pose.js';
 import type { TourAsset } from './tour-assets.js';
 import type { TourBlock } from './tour-blocks.js';
+import {
+  composeTourFolderPose,
+  IDENTITY_QUATERNION as IDENTITY,
+  quaternionInverse as conjugate,
+  quaternionProduct as multiply,
+  unitQuaternion as unit,
+} from './tour-folder-pose.js';
 import type { TourLocalPose } from './tour-items.js';
 import type { TourManifest, TourObject } from './tour-manifest.js';
 import {
-  isTourFolder,
   isTourBlockChild,
-  type TourFolder,
+  isTourFolder,
   type TourStationChild,
   type TourStationHolder,
 } from './tour-story.js';
-
-const IDENTITY: Quaternion = [0, 0, 0, 1];
-
-/** The product `a * b` of two quaternions `[x, y, z, w]`. */
-function multiply(a: Quaternion, b: Quaternion): Quaternion {
-  const [ax, ay, az, aw] = a;
-  const [bx, by, bz, bw] = b;
-  return [
-    aw * bx + ax * bw + ay * bz - az * by,
-    aw * by - ax * bz + ay * bw + az * bx,
-    aw * bz + ax * by - ay * bx + az * bw,
-    aw * bw - ax * bx - ay * by - az * bz,
-  ];
-}
-
-/** The inverse of a unit quaternion. */
-function conjugate(q: Quaternion): Quaternion {
-  return [-q[0], -q[1], -q[2], q[3]];
-}
-
-/** A unit quaternion back to unit length after arithmetic (never fails
- *  for a product of unit quaternions). */
-function unit(q: Quaternion): Quaternion {
-  return renormalizeUnitQuaternion(q) ?? IDENTITY;
-}
 
 /**
  * A geo pose's rotation against north: its quaternion, else the rotation
@@ -142,99 +121,28 @@ function placed(
   } as TourObject;
 }
 
-/** What a plain folder applies to the poses of its children. */
-export type TourFolderFrame = Pick<TourFolder, 'pose' | 'scale'>;
-
-/**
- * Where a pose given in a plain folder's frame stands in the folder's
- * holder: `p = p_f + R_f (s p_c)`, `q = R_f q_c`. A folder with no pose and
- * no scale (or scale 1) is the identity: the pose comes back as it is,
- * bit for bit.
- */
-export function composeTourFolderPose(
-  folder: TourFolderFrame,
-  pose: TourLocalPose
-): TourLocalPose {
-  const scale = folder.scale ?? 1;
-  if (folder.pose === undefined && scale === 1) return pose;
-  const frame: TourLocalPose = folder.pose ?? {
-    position: [0, 0, 0],
-    rotation: IDENTITY,
-  };
-  const [x, y, z] = pose.position;
-  const [n, u, e] = rotateVectorByQuaternion(frame.rotation, [
-    x * scale,
-    y * scale,
-    z * scale,
-  ]);
-  const [fn, fu, fe] = frame.position;
-  return {
-    // `+ 0` canonicalizes -0, as `localPoseOf` does.
-    position: [fn + n + 0, fu + u + 0, fe + e + 0],
-    rotation: unit(multiply(frame.rotation, pose.rotation)),
-  };
-}
-
-/** The inverse of {@link composeTourFolderPose}: a pose in the folder's
- *  holder, given in the folder's own frame. */
-export function decomposeTourFolderPose(
-  folder: TourFolderFrame,
-  pose: TourLocalPose
-): TourLocalPose {
-  const scale = folder.scale ?? 1;
-  if (folder.pose === undefined && scale === 1) return pose;
-  const frame: TourLocalPose = folder.pose ?? {
-    position: [0, 0, 0],
-    rotation: IDENTITY,
-  };
-  const inverse = conjugate(frame.rotation);
-  const [n, u, e] = rotateVectorByQuaternion(inverse, [
-    pose.position[0] - frame.position[0],
-    pose.position[1] - frame.position[1],
-    pose.position[2] - frame.position[2],
-  ]);
-  return {
-    position: [n / scale + 0, u / scale + 0, e / scale + 0],
-    rotation: unit(multiply(inverse, pose.rotation)),
-  };
-}
-
-/** A free block as the world shows it: its pose in its station's frame
- *  (its folders' poses composed in), and the product of its folders'
- *  scales (1 outside any folder). */
-export interface TourFlatBlock {
-  readonly block: TourBlock;
-  readonly scale: number;
-}
-
-/**
- * The free blocks of a children list with every plain folder flattened
- * away, at any depth: each block's pose composed through its folders
- * ({@link composeTourFolderPose}), innermost first, and their scales
- * multiplied. Stories are not free blocks and are left out. In document
- * order. What the scale means for a block's size is the renderer's: none
- * applies it yet, so a scaled folder moves its blocks apart without
- * resizing them.
- */
-export function tourFlatFreeBlocks(
-  children: readonly TourStationChild[]
-): TourFlatBlock[] {
-  return children.flatMap((child): TourFlatBlock[] => {
-    if (isTourBlockChild(child)) return [{ block: child, scale: 1 }];
+/** The free blocks of a children list with every plain folder flattened
+ *  away, at any depth, each block's pose composed through its folders
+ *  (`composeTourFolderPose`, innermost first). Stories are not free
+ *  blocks and are left out. In document order. */
+function flatFreeBlocks(children: readonly TourStationChild[]): TourBlock[] {
+  return children.flatMap((child): TourBlock[] => {
+    if (isTourBlockChild(child)) return [child];
     if (!isTourFolder(child)) return [];
-    const folderScale = child.scale ?? 1;
-    return tourFlatFreeBlocks(child.children).map(({ block, scale }) => ({
-      block: { ...block, pose: composeTourFolderPose(child, block.pose) },
-      scale: folderScale * scale,
+    return flatFreeBlocks(child.children).map((block) => ({
+      ...block,
+      pose: composeTourFolderPose(child, block.pose),
     }));
   });
 }
 
 /** A station's FREE blocks, which stand in the world while it is shown: the
- *  block children of the station and of its plain folders, each with its
- *  pose in the station's frame ({@link tourFlatFreeBlocks}). */
+ *  block children of the station and of its plain folders at any depth,
+ *  each with its pose in the station's frame (its folders' poses composed
+ *  in; a folder is a rigid frame, since its scale is always 1). The ONE
+ *  place plain folders are flattened. */
 export function tourFreeBlocks(station: TourStationHolder): TourBlock[] {
-  return tourFlatFreeBlocks(station.children).map(({ block }) => block);
+  return flatFreeBlocks(station.children);
 }
 
 /** The tour's free blocks in the world, each naming its station, in

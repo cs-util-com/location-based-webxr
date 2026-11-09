@@ -8,9 +8,11 @@
  *   choices and quizzes, and stands only at a station's top. A block lives
  *   in exactly one place, so being inside a story is what shows it.
  * - a PLAIN folder (no role) groups free blocks and other plain folders,
- *   with an optional local `pose` and uniform `scale` that its children's
- *   poses are relative to (`tour-station-pose.ts` composes them). It never
- *   holds a story, and a story never holds a folder.
+ *   with an optional local `pose` that its children's poses are relative
+ *   to (`tour-folder-pose.ts` composes them), and a `scale` that is 1 or
+ *   absent until a renderer scales a whole group. Composed, every block
+ *   stays within `TOUR_ITEM_MAX_OFFSET_M` of its station, as a single pose
+ *   does. It never holds a story, and a story never holds a folder.
  *
  * Ids of blocks, folders, choices and quizzes are one namespace across the
  * tour; a choice's `goto` names a child of its own story. The order of the
@@ -61,7 +63,15 @@ import {
   tourTextOf,
   type TourFail,
 } from './tour-fields.js';
-import { parseTourLocalPose, type TourLocalPose } from './tour-items.js';
+import {
+  composeTourFolderPath,
+  type TourFolderFrame,
+} from './tour-folder-pose.js';
+import {
+  parseTourLocalPose,
+  TOUR_ITEM_MAX_OFFSET_M,
+  type TourLocalPose,
+} from './tour-items.js';
 
 export type TourStepAdvance =
   | { readonly mode: 'tap' }
@@ -322,13 +332,6 @@ export const TOUR_CHILD_KINDS = ['folder', 'choice', 'quiz'] as const;
 /** The roles a folder may have; no role is a plain folder. */
 export const TOUR_FOLDER_ROLES = ['story'] as const;
 
-/** A plain folder's uniform `scale`: a finite number in this range, both
- *  ends included (1 when absent). The bounds keep a child's composed
- *  offset within a few orders of magnitude of its own: nothing below a
- *  hundredth (which would collapse a group to a point) or above a hundred
- *  (which would throw a metre-sized group kilometres away). */
-export const TOUR_FOLDER_SCALE_RANGE = { min: 0.01, max: 100 } as const;
-
 /** A story's title: required, at most 80 code points by `tourTextCount`
  *  (the picker shows it). */
 export const TOUR_STORY_TITLE_RULE = {
@@ -372,15 +375,19 @@ export interface TourStory {
 export type TourFolderChild = TourBlock | TourFolder;
 
 /** A plain folder: free blocks and plain folders grouped, their poses
- *  relative to the folder's own `pose` (none: the holder's frame) and
- *  scaled by its `scale` (absent: 1). May be empty. */
+ *  relative to the folder's own `pose` (none: the holder's frame). May be
+ *  empty. A rigid frame: its `scale` is 1 or absent, the reader takes no
+ *  other value, since no renderer scales a whole group yet. Scaling the
+ *  blocks' positions alone would move them apart while their sizes stay,
+ *  so a scale other than 1 waits for a renderer that applies it to the
+ *  group once. */
 export interface TourFolder {
   readonly id: string;
   readonly kind: 'folder';
   /** Never set: what tells a plain folder from a story. */
   readonly role?: undefined;
   readonly pose?: TourLocalPose;
-  readonly scale?: number;
+  readonly scale?: 1;
   readonly children: readonly TourFolderChild[];
 }
 
@@ -394,9 +401,15 @@ export type TourStationChild = TourBlock | TourStory | TourFolder;
 /** What the children reader left out: a block or a block's field (as the
  *  block reader reports it), or a whole child it cannot show in its place
  *  (a story, choice or quiz it skipped included), or one way on a choice
- *  lost because the child it named was left out (`child` is the choice). */
+ *  lost because the child it named was left out (`child` is the choice),
+ *  or a plain folder's scale other than 1 read as 1 (`folder`). */
 export type TourChildDrop =
   | TourBlockDrop
+  | {
+      readonly kind: 'folderScale';
+      readonly folder: string;
+      readonly reason: string;
+    }
   | { readonly kind: 'child'; readonly child: string; readonly reason: string }
   | {
       readonly kind: 'option';
@@ -623,56 +636,83 @@ function readStory(
 }
 
 /** A child in a place this reader does not take (a story inside a plain
- *  folder): refused at this reader's own minor, skipped and reported in a
- *  newer one. */
+ *  folder, a folder of an unknown role, a folder whose block stands too far
+ *  from its station): refused at this reader's own minor, skipped and
+ *  reported in a newer one. */
 function misplacedChild(ctx: ChildrenContext, id: string, reason: string) {
   if (!ctx.lenient) return ctx.fail(reason);
   return dropChild(ctx, id, reason);
 }
 
-/** A plain folder's scale: absent, or a finite number in
- *  {@link TOUR_FOLDER_SCALE_RANGE}. */
+/** A plain folder's scale: absent, or 1. Any other value waits for a
+ *  renderer that scales the whole group (see {@link TourFolder}): refused
+ *  at this reader's own minor; read as 1 and reported in a newer one. */
 function readFolderScale(
   value: unknown,
+  id: string,
   at: string,
-  fail: TourFail
-): number | undefined {
-  if (value === undefined) return undefined;
-  const { min, max } = TOUR_FOLDER_SCALE_RANGE;
-  if (!isFiniteNumber(value) || value < min || value > max) {
-    return fail(
-      `"${at}" must be a number from ${String(min)} to ${String(max)}`
-    );
-  }
-  return value;
+  ctx: ChildrenContext
+): 1 | undefined {
+  if (value === undefined || value === 1) return value;
+  const reason = `"${at}" must be 1: a folder's scale waits for a renderer that scales the whole group`;
+  if (!ctx.lenient) return ctx.fail(reason);
+  ctx.options.onDropped?.({ kind: 'folderScale', folder: id, reason });
+  return undefined;
+}
+
+/** Whether a block's pose, composed through the folders that hold it
+ *  (outermost first), stands further from its station along an axis than
+ *  a single pose may ({@link TOUR_ITEM_MAX_OFFSET_M}). Each pose is
+ *  bounded on its own, but a sum of them is not: the writer, which writes
+ *  every block at its composed pose, would refuse the tour. */
+function beyondStation(
+  pose: TourLocalPose,
+  folders: readonly TourFolderFrame[]
+): boolean {
+  return composeTourFolderPath(folders, pose).position.some(
+    (v) => !(Math.abs(v) <= TOUR_ITEM_MAX_OFFSET_M)
+  );
 }
 
 /** A plain folder: its pose and scale if given, and its children, each a
- *  free block or a plain folder (a story here is misplaced). */
+ *  free block or a plain folder (a story here is misplaced). `holders`
+ *  are the folders around it, outermost first. A folder whose block
+ *  stands too far from its station once composed is refused strict and
+ *  left out, reported, under lenient. */
 function readPlainFolder(
   v: Record<string, unknown>,
   id: string,
   at: string,
-  ctx: ChildrenContext
-): TourFolder {
+  ctx: ChildrenContext,
+  holders: readonly TourFolderFrame[]
+): TourFolder | null {
   const pose =
     v.pose === undefined
       ? undefined
       : parseTourLocalPose(v.pose, `${at}.pose`, ctx.fail);
-  const scale = readFolderScale(v.scale, `${at}.scale`, ctx.fail);
+  const scale = readFolderScale(v.scale, id, `${at}.scale`, ctx);
+  const frames = [...holders, pose === undefined ? {} : { pose }];
+  let far: string | undefined;
   const children = requireTourArray(
     v.children,
     `${at}.children`,
     ctx.fail
   ).flatMap((c, i): TourFolderChild[] => {
-    const child = readStationChild(
-      c,
-      `${at}.children[${String(i)}]`,
-      ctx,
-      false
-    );
-    return child === null || isStory(child) ? [] : [child];
+    const cat = `${at}.children[${String(i)}]`;
+    const child = readStationChild(c, cat, ctx, frames);
+    if (child === null || isStory(child)) return [];
+    if (isTourBlockChild(child) && beyondStation(child.pose, frames)) {
+      far ??= cat;
+    }
+    return [child];
   });
+  if (far !== undefined) {
+    return misplacedChild(
+      ctx,
+      id,
+      `"${far}.pose.position" stands more than ${String(TOUR_ITEM_MAX_OFFSET_M)} m from its station along an axis once its folders' poses are composed in`
+    );
+  }
   return {
     id,
     kind: 'folder',
@@ -682,13 +722,14 @@ function readPlainFolder(
   };
 }
 
-/** A station's child, at its top (`top`) or inside a plain folder: a
- *  free block, a story (only at the top) or a plain folder. */
+/** A station's child, at its top (no `holders`) or inside the plain
+ *  folders `holders` (outermost first): a free block, a story (only at the
+ *  top) or a plain folder. */
 function readStationChild(
   value: unknown,
   at: string,
   ctx: ChildrenContext,
-  top: boolean
+  holders: readonly TourFolderFrame[]
 ): TourStationChild | null {
   if (!isRecord(value)) return ctx.fail(`"${at}" must be an object`);
   const id = requireTourId(value.id, `${at}.id`, ctx.fail);
@@ -701,7 +742,7 @@ function readStationChild(
     return unknownChild(ctx, id, at, 'a block kind or folder');
   }
   if (role === 'story') {
-    return top
+    return holders.length === 0
       ? readStory(value, id, at, ctx)
       : misplacedChild(
           ctx,
@@ -712,7 +753,7 @@ function readStationChild(
   if (role !== undefined) {
     return misplacedChild(ctx, id, `"${at}.role" must be "story" or absent`);
   }
-  return readPlainFolder(value, id, at, ctx);
+  return readPlainFolder(value, id, at, ctx, holders);
 }
 
 /** One station's children as read, and every child id its file names -
@@ -751,7 +792,7 @@ export function parseTourStationChildren(
   };
   const children = requireTourArray(value, at, options.fail).flatMap(
     (c, i): TourStationChild[] => {
-      const child = readStationChild(c, `${at}[${String(i)}]`, ctx, true);
+      const child = readStationChild(c, `${at}[${String(i)}]`, ctx, []);
       return child === null ? [] : [child];
     }
   );

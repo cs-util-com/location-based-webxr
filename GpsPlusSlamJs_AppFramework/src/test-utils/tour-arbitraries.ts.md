@@ -38,8 +38,10 @@ maxStoryChildren?, maxFolders? })` - a valid version 5 children list
   child of the same story or continue, and quizzes of every answer type;
   free blocks in a world view; stories and free blocks in a shuffled
   order; every id in the list unique. With `maxFolders` > 0, plain
-  folders (optional pose and scale) nest in the top level or in each
-  other and hold some of the free blocks.
+  folders (optional pose, turned about Up, and optional `scale: 1`, the
+  only value the reader takes) nest in the top level or in each other and
+  hold some of the free blocks; every composed block stays within the
+  format's 10 km of its station at the deepest nest (8 folders).
 - `tourStationChildrenPlacedArbitrary(size?)` - the same list with
   `placed` (`TourChildrenPlacement`): the generator's own record of
   every id it put where (stories, story blocks, top-level blocks, folder

@@ -22,8 +22,11 @@ the editor's tree (`editor-shell.ts`, `shell-tree.ts`) and inspector
   (they go on to the next entry); `floored` says the item took its kind's
   world floor for a view.
 - `ChildMoveRefusal`: `missing` (no such item, story or slot; also a
-  plain folder and anything inside one: the editor moves neither, as it
-  shows a folder's blocks as free items and a save writes them so), `ownStory`
+  plain folder and anything inside one, not in a list this module moves.
+  Not reachable from the editor, whose stations come flattened
+  (`manifestToWrite` holds stories and free items only); kept as a guard,
+  since a `Holder` admits folders and a move that went on would take the
+  wrong item from the station's list), `ownStory`
   (a choice or a quiz leaves only within its story: its answers name that
   story's entries), `noNesting` (a story into a story or among the free
   items, a free item among the stories), `cannotStandFree` (a model without

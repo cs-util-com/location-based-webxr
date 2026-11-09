@@ -19,12 +19,14 @@ import {
   droppedBlockFieldsLine,
   droppedDetailsLine,
   droppedStationFieldsLine,
+  FLATTENED_FOLDERS_LINE,
   NOT_A_TOUR,
   NOT_A_ZIP,
+  openedNoticeLines,
   openTourForEditing,
 } from "./editor-open.js";
 import { createEditorSession } from "./editor-session.js";
-import { stationContent } from "../test-support/station-content.js";
+import { stationContent, storyOf } from "../test-support/station-content.js";
 import { tourOf } from "../test-support/tour-of.js";
 
 async function zipFile(
@@ -239,6 +241,78 @@ describe("openTourForEditing", () => {
     );
     expect(droppedBlockFieldsLine([], out.manifest)).toBeNull();
     await out.session.close();
+  });
+
+  it("says once a tour opened that its plain folders are flattened, and only then", async () => {
+    // Why: the editor keeps stories and free items only, so a tour that
+    // groups items in plain folders is flattened on open and the next
+    // save writes the items one by one, without the grouping. Unsaid, the
+    // creator would lose the folders without a word. A story is a folder
+    // too in the file, and must not set the line off.
+    const POSE = { position: [0, 0, 0], rotation: [0, 0, 0, 1] } as const;
+    const pin = {
+      id: "p1",
+      kind: "shortText",
+      view: "pin",
+      caption: "Gate",
+      pose: POSE,
+    } as const;
+    const card = {
+      id: "c1",
+      kind: "shortText",
+      view: "card",
+      caption: "Hi",
+      pose: POSE,
+    } as const;
+    const tourJson = (children: unknown[]) =>
+      JSON.stringify({
+        version: 5,
+        minor: 0,
+        order: "fixed",
+        assets: [],
+        stations: [
+          {
+            id: "well",
+            title: "The well",
+            geo: { lat: 48.52, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
+            activateRadiusM: 50,
+            foundRadiusM: 25,
+            hint: "arrow",
+            children,
+          },
+        ],
+      });
+    const grouped = await openTourForEditing(
+      await zipFile([
+        {
+          path: "tour.json",
+          data: tourJson([
+            storyOf("s", [card]),
+            {
+              id: "f",
+              kind: "folder",
+              pose: { position: [5, 0, 0], rotation: [0, 0, 0, 1] },
+              children: [pin],
+            },
+          ]),
+        },
+      ]),
+    );
+    expect(grouped.kind).toBe("opened");
+    if (grouped.kind !== "opened") return;
+    expect(openedNoticeLines(grouped.dropped, grouped.manifest)).toEqual([
+      FLATTENED_FOLDERS_LINE,
+    ]);
+    await grouped.session.close();
+    const plain = await openTourForEditing(
+      await zipFile([
+        { path: "tour.json", data: tourJson([storyOf("s", [card]), pin]) },
+      ]),
+    );
+    expect(plain.kind).toBe("opened");
+    if (plain.kind !== "opened") return;
+    expect(openedNoticeLines(plain.dropped, plain.manifest)).toEqual([]);
+    await plain.session.close();
   });
 
   it("refuses a zip that carries no tour.json and no code", async () => {
