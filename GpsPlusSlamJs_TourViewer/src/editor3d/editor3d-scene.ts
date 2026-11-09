@@ -171,6 +171,10 @@ export interface Editor3dView {
   /** Move the orbit to `m` from its centre, keeping its tilt and heading
    *  (the page's checks), within the orbit's limits. */
   setDistance(m: number): void;
+  /** Orbit to the heading `deg` (as `readout` reads it), keeping the
+   *  orbit's centre, tilt and distance (the page's checks). The older
+   *  view only: the globe's camera turns where it stands. */
+  setHeading?(deg: number): void;
   /** Fly to the page's selection (`station:<id>`, an item's id or a
    *  code's level id): a station framed, an item or a code brought to a
    *  working distance. False for one the tour has no place for. */
@@ -237,6 +241,12 @@ export interface Editor3dView {
    *  page's checks). */
   screenOf(selection: string): readonly [number, number] | null;
   handleScreen(part: GizmoPart): readonly [number, number] | null;
+  /** What a press at a canvas point (CSS px) lies on: the object it
+   *  picks and whether it meets the move disc (the page's checks). */
+  underAt(
+    x: number,
+    y: number,
+  ): { readonly pick: string | null; readonly onDisc: boolean };
   /** The gizmo's drawn sizes (px), or null without one (the page's
    *  checks). */
   gizmoSizes(): {
@@ -730,6 +740,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
         stationSelected: ui.selected?.startsWith(STATION) ?? false,
         standing,
         camera: camera.position,
+        eye: camera,
         viewportPx,
         fovDeg: EDITOR_CAMERA.fovDeg,
       });
@@ -766,6 +777,11 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
         camera.position
           .copy(controls.target)
           .add(new THREE.Vector3().setFromSpherical(spherical));
+        controls.update();
+      },
+      setHeading(deg) {
+        dropMomentum();
+        placeOrbit({ ...poseNow(), azimuthRad: -deg * DEG });
         controls.update();
       },
       flyTo(selection) {
@@ -850,6 +866,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
         const at = editing.handleScreen(part);
         return at === null ? null : [at.x, at.y];
       },
+      underAt: (x, y) => editing.underAt({ x, y }),
       gizmoSizes: () => editing.handleSizes(),
       modelParts: () => editing.modelParts(),
       modelScreenOf(id, at) {

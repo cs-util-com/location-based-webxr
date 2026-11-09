@@ -660,11 +660,16 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
         view3d: () => Editor3dStats | null;
         view3dTilt: (deg: number) => void;
         view3dDistance: (m: number) => void;
+        view3dHeading: (deg: number) => void;
         view3dBuildings: (on: boolean) => void;
         view3dPointOf: (
           selection: string,
         ) => readonly [number, number, number] | null;
         view3dScreenOf: (selection: string) => readonly [number, number] | null;
+        view3dUnder: (
+          x: number,
+          y: number,
+        ) => { readonly pick: string | null; readonly onDisc: boolean } | null;
         view3dHandle: (
           part: "middle" | "knob" | "dot",
         ) => readonly [number, number] | null;
@@ -692,11 +697,15 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
     view3dDistance: (m) => {
       shown3d?.setDistance(m);
     },
+    view3dHeading: (deg) => {
+      shown3d?.setHeading?.(deg);
+    },
     view3dBuildings: (on) => {
       shown3d?.setBuildings?.(on);
     },
     view3dPointOf: (selection) => shown3d?.pointOf(selection) ?? null,
     view3dScreenOf: (selection) => shown3d?.screenOf(selection) ?? null,
+    view3dUnder: (x, y) => shown3d?.underAt(x, y) ?? null,
     view3dHandle: (part) => shown3d?.handleScreen(part) ?? null,
     view3dGizmoSizes: () => shown3d?.gizmoSizes() ?? null,
     view3dModelParts: () => shown3d?.modelParts() ?? null,

@@ -32,9 +32,11 @@ layout, `editor3d-input.ts` feeds the pointer and the keys.
   stalk. RangeError for a scale that is not finite and > 0.
 - `handleAt({ pointer, knob, dots, onDisc, underPointer })` -> `"move"`,
   `"turn"`, `"dot"` or null (the camera's): the knob and the dots first
-  (the nearest within half its drawn size), then an object under the
-  pointer (the selected one moves; another takes no handle, so a click
-  selects it), then the move disc.
+  (the nearest within half its drawn size), then another object under
+  the pointer (no handle, so a click selects it), then the move disc. The
+  disc alone moves: the selected object's body off the disc is no handle
+  (a tap selects, a drag turns the camera), and the disc moves even where
+  that body covers it.
 - `turnedHeadingDeg(heading, fromDeg, toDeg, snap)`: whole degrees, 15
   with `snap`; in [0, 360).
 - `draggedRadiusM(distanceM, fine)`: half metres (tenths with `fine`),
@@ -80,8 +82,10 @@ sceneKey({
 ## Tests
 
 `gizmo-maths.test.ts`: `viewHeightAtOneM` at 50, 60 and 90 degrees; the layout for a station, a pin and a model; the
-minimum sizes; the hit order (the sprites first, the nearest wins; an
-object under the pointer; the disc); the turn, radius and size rules with
+minimum sizes, and the move disc's touch size swept over camera
+distances of 5-300 m; the hit order, one case per thing under a press
+(the body, the disc, the disc under the body, the knob, a dot, another
+item, empty ground); the turn, radius and size rules with
 their bounds; every key of the design and the keys left to others; and a
 property: the knob's distance and bearing from the centre and the parts'
 bounds over random subjects and scales.

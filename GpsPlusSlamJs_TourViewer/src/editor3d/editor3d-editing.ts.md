@@ -36,6 +36,8 @@ pure gesture maths reads (`GestureWorld`).
   - `groundAt(place)` - the ground's ellipsoidal height at a place
     (`world.groundAt`), null where none has loaded.
   - `screenOf(selection)`, `handleScreen("middle" | "knob" | "dot")`,
+    `underAt(pointer)` (what a press there picks, and whether it meets
+    the move disc),
     `handleSizes()` - for the page's checks: CSS px on the canvas.
   - `dispose()`.
 - Types `GizmoPart`, `EditingCamera` (`lock(on)`, the optional

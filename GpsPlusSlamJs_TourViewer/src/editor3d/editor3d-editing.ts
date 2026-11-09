@@ -587,6 +587,21 @@ export function createSceneEditing(deps: SceneEditingDeps) {
         : (layer.itemPointOf(selection) ?? layer.codePointOf(selection));
       return at === null ? null : screenOf(fromLayer(at));
     },
+    /** What a press at `pointer` (CSS px on the canvas) lies on: the
+     *  object it picks and whether it meets the move disc (the page's
+     *  checks; the same reads as `handleAt`). */
+    underAt(pointer: ScreenPoint): {
+      readonly pick: string | null;
+      readonly onDisc: boolean;
+    } {
+      const ray = rayAt(pointer);
+      return {
+        pick: layer.pick(ray),
+        onDisc:
+          gizmo.parts.disc.visible &&
+          ray.intersectObject(gizmo.parts.disc).length > 0,
+      };
+    },
     handleScreen(part: GizmoPart): ScreenPoint | null {
       const o =
         part === "middle"

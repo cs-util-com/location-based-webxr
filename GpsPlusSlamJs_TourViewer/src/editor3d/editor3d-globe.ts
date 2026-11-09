@@ -1175,6 +1175,7 @@ export async function openGlobeEditor(
         stationSelected: ui.selected?.startsWith(STATION) ?? false,
         standing,
         camera: cameraTour,
+        eye: camera,
         viewportPx,
         fovDeg: GLOBE_EDITOR_LOOK.fovYDeg,
       });
@@ -1648,6 +1649,7 @@ export async function openGlobeEditor(
         const at = editing.handleScreen(part);
         return at === null ? null : [at.x, at.y];
       },
+      underAt: (x, y) => editing.underAt({ x, y }),
       gizmoSizes: () => editing.handleSizes(),
       modelParts: () => editing.modelParts(),
       modelScreenOf(id, at) {

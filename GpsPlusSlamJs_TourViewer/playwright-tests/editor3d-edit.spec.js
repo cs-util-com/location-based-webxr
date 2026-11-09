@@ -276,6 +276,98 @@ test("drags a selected pin over the ground with the mouse: one step, kept above 
     .toEqual(after.item.pose);
 });
 
+/**
+ * A canvas point on the pin's own drawing that does not meet the move
+ * disc, searched on a grid round the pin's point in one round trip.
+ * @param {import("@playwright/test").Page} page
+ */
+async function pinBodyOffDisc(page) {
+  const at = await page.evaluate((id) => {
+    const hook = /** @type {any} */ (window).__tourEditor;
+    const centre = hook.view3dScreenOf(id);
+    if (centre === null) return null;
+    for (let r = 0; r <= 120; r += 4) {
+      for (let a = 0; a < 360; a += 15) {
+        const x = centre[0] + r * Math.cos((a * Math.PI) / 180);
+        const y = centre[1] + r * Math.sin((a * Math.PI) / 180);
+        const under = hook.view3dUnder(x, y);
+        if (under?.pick === id && !under.onDisc) return [x, y];
+      }
+    }
+    return null;
+  }, PIN);
+  return onPage(page, at);
+}
+
+// Why: only the move disc moves an item. A drag on the item's own body
+// (here the pin's label, off the disc) must turn the camera and leave the
+// pose alone, or a large item swallows every drag meant for the view; a
+// tap there still selects it, and the disc still moves it.
+test("a drag on the selected pin's body turns the camera and leaves the pin; a tap there selects it; the disc moves it", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const station = await openWithPin(page);
+  await selectPin(page, station);
+  const before = pinOf(await manifest(page));
+  const steps = await changes(page);
+  const body = await pinBodyOffDisc(page);
+  const camera = await cameraAt(page);
+  await page.mouse.move(body.x, body.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i++) {
+    await page.mouse.move(body.x + i * 8, body.y + i * 3);
+  }
+  await page.mouse.up();
+  await afterFrames(page, 3);
+  expect(await changes(page)).toBe(steps);
+  expect(pinOf(await manifest(page))?.item.pose).toEqual(before?.item.pose);
+  expect(await cameraAt(page)).not.toEqual(camera);
+  // A tap on the body selects the pin.
+  await page.keyboard.press("Escape");
+  await expect.poll(() => selected(page)).toBeNull();
+  await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
+  const tap = await pinPoint(page);
+  await page.mouse.click(tap.x, tap.y);
+  await expect.poll(() => selected(page)).toBe(PIN);
+  await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
+  // The disc moves it, one step.
+  const from = await handle(page, "middle");
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i++) {
+    await page.mouse.move(from.x + i * 8, from.y + i * 3);
+  }
+  await page.mouse.up();
+  await expect.poll(() => changes(page)).toBe(steps + 1);
+  const after = pinOf(await manifest(page));
+  if (before === null || after === null) throw new Error("the pin is gone");
+  expect(horizontalM(before.item, after.item)).toBeGreaterThan(0.5);
+});
+
+/**
+ * Where a tap reaches the pin with nothing selected (no disc drawn): the
+ * nearest canvas point to its own that picks it (a character standing
+ * nearer the camera may cover its middle).
+ * @param {import("@playwright/test").Page} page
+ */
+async function pinPoint(page) {
+  const at = await page.evaluate((id) => {
+    const hook = /** @type {any} */ (window).__tourEditor;
+    const centre = hook.view3dScreenOf(id);
+    if (centre === null) return null;
+    for (let r = 0; r <= 120; r += 4) {
+      for (let a = 0; a < 360; a += 15) {
+        const x = centre[0] + r * Math.cos((a * Math.PI) / 180);
+        const y = centre[1] + r * Math.sin((a * Math.PI) / 180);
+        if (hook.view3dUnder(x, y)?.pick === id) return [x, y];
+      }
+    }
+    return null;
+  }, PIN);
+  return onPage(page, at);
+}
+
 // Why: a move keeps an item in its station, so a drag out of its circle
 // must drop it there, outside the circle, with no station made, and say
 // so. The ring's warning colour during the drag is held by the stations
