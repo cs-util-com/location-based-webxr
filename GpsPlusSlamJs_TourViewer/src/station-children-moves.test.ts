@@ -334,6 +334,23 @@ describe("a plain folder, which the editor never hands a move", () => {
     if (!("station" in out)) throw new Error(out.refused);
     expect(ids(storyOf(out.station, "a").children)).toEqual(["a1", "p"]);
   });
+
+  it("reorders the stories around a folder between them, every other child keeping its slot", () => {
+    // Why: a story reorder rebuilt the list as the stories then everything
+    // else, which carried a folder standing between two stories (as a
+    // hand-written file may have it) to a new place. A reorder of the
+    // stories changes the stories' order and nothing else.
+    const between = station([
+      story("a", [line("a1")]),
+      folder,
+      story("b", []),
+      pin("p"),
+    ]);
+    const out = movedChild(between, "b", { place: "stories", index: 0 });
+    if (!("station" in out)) throw new Error(out.refused);
+    expect(ids(out.station.children)).toEqual(["b", "f", "a", "p"]);
+    expect(out.station.children[1]).toBe(folder);
+  });
 });
 
 describe("the tree's lists of a station", () => {

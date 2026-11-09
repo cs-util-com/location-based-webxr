@@ -166,7 +166,8 @@ function intoStory<H extends Holder>(
   return withStoryChildren(holder, story, children);
 }
 
-/** The station's stories in a new order, the free items after them. */
+/** The station's stories in a new order, each in a slot a story held:
+ *  every other child (a free item, a plain folder) keeps its own slot. */
 function movedStory<H extends Holder>(
   holder: H,
   id: string,
@@ -184,13 +185,13 @@ function movedStory<H extends Holder>(
   );
   if (order === null) return refused("unchanged");
   const byId = new Map(stories.map((s) => [s.id, s]));
+  let next = 0;
   return {
     station: {
       ...holder,
-      children: [
-        ...order.map((sid) => byId.get(sid) as TourStory),
-        ...holder.children.filter((c) => !isStory(c)),
-      ],
+      children: holder.children.map((c) =>
+        isStory(c) ? (byId.get(order[next++] as string) as TourStory) : c,
+      ),
     },
     answers: 0,
     floored: false,

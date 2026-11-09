@@ -89,7 +89,8 @@ the editor's tree (`editor-shell.ts`, `shell-tree.ts`) and inspector
   (`withoutStoryChild`); inside its own story they stay, as they still
   resolve.
 - Stories stay before the free items (the writer's order); a move of a
-  story reorders only the stories.
+  story reorders only the stories: each lands in a slot a story held, and
+  every other child (a free item, a plain folder) keeps its own slot.
 - A move onto another station never keeps an item's world place: a free
   item or an entry stands at the new centre, a story keeps its entries'
   offsets (`movedToStation` above). Never changes its inputs.
