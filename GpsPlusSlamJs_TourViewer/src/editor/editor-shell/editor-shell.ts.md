@@ -154,22 +154,22 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   `origin` for the inspector); a type only, so the page's code never
   holds the 3D view's.
 - `ShellEditCommands.model(itemId, edit)` - a model's own edit, as typed
-  (`inspector-edits.ts`) or pressed (`modelAct`).
-- `modelAct` answers a model's part buttons: a view chosen; a note or a
-  section brought into focus (pressed again: out of it); the 3D view asked
-  to wait for a click on the model (`modelPickAsked`; pressed again: no
-  longer), placing a part again also focusing it; a part deleted (focus and
-  wait cleared when written); a section flipped (its normal negated, a zero
-  kept 0); the clip's autoplay turned.
+  (`inspector-edits.ts`) or pressed (its panel, `../kind-panels/model-panel.ts`).
+  `ShellEditCommands` is exported for the kinds' panels (`PanelContext.edits`).
 
-- A long text's writer and preview come from one `createLongTextDock`
-  (`../long-text/long-text-dock.ts`): `sync` hands it the selected item's
-  `longText` model on every draw (null closes it), `act` takes the clicks
-  it owns, and `flush` writes pending typing before a selection change or
-  a save. Its body goes through `edits.block(id, "body", ...)` and its view
-  through the new `edits.view(id, view)` (`editor.editBlockView`). The
-  shell's generic field input skips its fields: only an input drawn under
-  a field name (`data-field`) is written by the shell.
+- The kinds' own parts of the inspector come from one `createKindPanels`
+  (`../kind-panels/kind-panels.ts`): `sync` hands it the inspector's model
+  on every draw (every panel follows it; a long text's preview closes with
+  its selection) and its answer is drawn by `drawInspector`; a press
+  (`data-act`) goes to the selected item's kind's panel first, and one it
+  takes draws again and ends there; `flush` writes pending typing before a
+  selection change or a save. A long text's panel is its dock
+  (`../long-text/long-text-dock.ts`, body through `edits.block(id, "body",
+...)`, view through `edits.view`); a model's answers its part buttons,
+  the 3D view's wait and focus going to `modelPickAsked` and
+  `modelFocused`. The shell's generic field input skips a writer's fields:
+  only an input drawn under a field name (`data-field`) is written by
+  the shell.
 - The inspector's station extras: `contents` folds Contents (kept across
   selections), `add-content` opens the tree's type menu for the station,
   `goto:<id>` selects and flies as a tree row does, and the radius slider
@@ -218,10 +218,33 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   was pressed, or at an end on the other one; the new place is said in a
   polite live region (`#shell-said`, hidden but read: "Now Station n of
   N").
+- **Moves inside a station:** a story's, an entry's or a free item's grip
+  (`data-move`) drags it with the editor kit's `createNestDrag`
+  (`tree-nest-drag.ts`) among its station's stories, into a story (onto
+  its row, or a slot among its entries) or out to the free items (onto
+  the card's head); a drop the move rule refuses (`childMayGo`) is not
+  offered, nor a story to a free item whose file the tour on disk lacks
+  (`freeItemUnsaved`), Escape ends a drag with no write, and one drop is one
+  `stations.moveChild`. The drag lands only on the row under the pointer:
+  over its own place, a refused row or empty space it marks nothing, its
+  ghost (labelled with the row's `.nm` text) shows "Not possible here" and
+  the page the not-allowed cursor (`editor-shell.css`: `.nest-ghost`,
+  `data-nest-drag`), and a release writes nothing. Over another station's card the drag
+  marks that card (`drop-across`) where `movedToStation` lets the item go
+  there; a release asks first (`stationMoveQuestion`) and, on yes, moves
+  it to that station's centre and flies the view there (`moveToStation`).
+  The inspector's "Move to station..." picker (`data-move-station`) is
+  the same move for the phone and the keyboard. Earlier and Later of a
+  story or an entry step it in its list (`childStepTo`); the
+  inspector's Move buttons (`move-to:<list>`) put it into that list,
+  keeping the selection and moving the focus to the first Move button
+  left, else to Earlier.
 - **Delete in the inspector** moves the focus to the row button (`.head > .pick`) of the tree card now in
   the deleted station's place (the one before it, at the end), for an
   item to its station's card, and to the view's box when the tree is
-  folded or empty: it never falls to the page.
+  folded or empty: it never falls to the page. A delete that asks first
+  (a station's, a story's) and is answered no leaves the selection as it
+  was, and the focus on the Delete that was pressed.
 - **The view's box** (`#view3d`, `tabindex="-1"`) shows a ring only when
   a key brought the focus there (`:focus-visible`), as the ground menu's
   Escape does.

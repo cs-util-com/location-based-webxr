@@ -33,6 +33,10 @@ import {
   TOUR_BLOCK_VIEWS,
   TOUR_MODEL_ANIMATION_RULES,
   TOUR_MODEL_MAX_NOTES,
+  TOUR_AUDIO_MAX_RADIUS_M,
+  TOUR_AUDIO_MAX_REACH_M,
+  TOUR_AUDIO_MIN_RADIUS_M,
+  TOUR_AUDIO_MIN_REACH_M,
   TOUR_MODEL_MAX_SECTIONS,
   TOUR_MODEL_MAX_SIZE_M,
   TOUR_MODEL_MIN_DIRECTION_LENGTH,
@@ -239,12 +243,24 @@ const KIND_FIELDS: Record<
       title: optionalText(r.video.title),
       poster: fc.option(fc.constantFrom(...IMAGE_ASSETS), { nil: undefined }),
     }),
-  audio: () =>
-    fc.record({
-      audio: fc.constant('voice'),
-      transcript: tourTextArbitrary(r.audio.transcript),
-      title: optionalText(r.audio.title),
-    }),
+  audio: (view) =>
+    fc
+      .record({
+        audio: fc.constant('voice'),
+        transcript: tourTextArbitrary(r.audio.transcript),
+        title: optionalText(r.audio.title),
+        // Required in their own view, kept (optional) in every other.
+        radiusM:
+          view === 'spot'
+            ? audioRadius
+            : fc.option(audioRadius, { nil: undefined }),
+        reach: audioReaches(view === 'zone'),
+        volume:
+          view === 'zone'
+            ? audioVolume
+            : fc.option(audioVolume, { nil: undefined }),
+      })
+      .map(({ reach, ...fields }) => ({ ...fields, ...reach })),
   model: (view) =>
     fc.record({
       asset: fc.constant('arch'),
@@ -326,6 +342,44 @@ export const tourModelAnimationArbitrary = fc.record({
   autoplay: fc.boolean(),
 });
 
+const audioRadius = fc.double({
+  min: TOUR_AUDIO_MIN_RADIUS_M,
+  max: TOUR_AUDIO_MAX_RADIUS_M,
+  noNaN: true,
+});
+const audioReach = fc.double({
+  min: TOUR_AUDIO_MIN_REACH_M,
+  max: TOUR_AUDIO_MAX_REACH_M,
+  noNaN: true,
+});
+/** An ambient zone's reach (`maxM`, required when `required`) and its
+ *  optional inner calm (`minM`): within the reach bounds, and below
+ *  `maxM` when both stand, as the reader asks. */
+function audioReaches(
+  required: boolean
+): fc.Arbitrary<{ maxM: number | undefined; minM: number | undefined }> {
+  return fc
+    .record({
+      maxM: required ? audioReach : fc.option(audioReach, { nil: undefined }),
+      calm: fc.option(
+        fc.double({ min: 0, max: 1, maxExcluded: true, noNaN: true }),
+        { nil: undefined }
+      ),
+    })
+    .map(({ maxM, calm }) => {
+      if (calm === undefined) return { maxM, minM: undefined };
+      const top = maxM ?? TOUR_AUDIO_MAX_REACH_M;
+      const minM =
+        TOUR_AUDIO_MIN_REACH_M + calm * (top - TOUR_AUDIO_MIN_REACH_M);
+      // A reach at the floor leaves no room for a calm below it.
+      return {
+        maxM,
+        minM: maxM === undefined || minM < maxM ? minM : undefined,
+      };
+    });
+}
+const audioVolume = fc.double({ min: 0, max: 1, noNaN: true });
+
 const modelSize = fc.double({
   min: TOUR_MODEL_MIN_SIZE_M,
   max: TOUR_MODEL_MAX_SIZE_M,
@@ -341,7 +395,7 @@ export const TOUR_FREE_VIEWS: Readonly<
   longText: ['lectern', 'reading'],
   picture: ['plane'],
   video: ['card'],
-  audio: ['card'],
+  audio: ['spot', 'zone'],
   model: TOUR_MODEL_WORLD_VIEWS,
   character: TOUR_CHARACTER_VIEWS,
 };

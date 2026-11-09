@@ -63,19 +63,25 @@ editor's own namespace, one tab at a time. Design:
     lands in the new tour's namespace with the new tour's `seen` (milestone
     review #6), and a save of the old tour that lands while the next one
     opens moves nothing of the new tour's draft (E2b-2 milestone review #1).
-  - `open(fileKey, manifest)` - closes the last tour's hold, holds
+  - `open(fileKey, manifest, sizeInFile?)` - closes the last tour's hold, holds
     `editor:<fileKey>`, reads it, clears what the file carries, and
     resolves `{ offer, superseded, backedUp }`: `offer` (`objects`,
     `deleted`, `made?` - the ids among `objects` that are copies made here
     (below), `pictures?` - those copies' photo bytes by id, `settings?` -
     the record when the file does not carry it,
-    `text` from `restoreOfferText`, changes and deletions named apart, a
+    `text` from `restoreOfferText`, changes and deletions named apart (an
+    item moved between a story and the free items is its station's
+    changed frame alone: its object record or tombstone is neither a
+    change nor a deletion of its own), a
     changed setting counted as a change and NAMED with its value - "It is
     "This tour needs no GPS" turned on." alone, "One of the changes is
     ..." beside notes, M1b-2 milestone review #3; changed details counted
     one per field and named by field - "Changed: the tour's details (name,
     contact)." - W2; moved stations counted one each and named "the
-    position of a station" / "the positions of N stations"),
+    position of a station" / "the positions of N stations"; changes and
+    deletions are counted by id, so one a moved station carries is not
+    counted twice, and each smaller file for an asset of the opened file
+    counts as one change of its own),
     `settingsWhat` (how `restoredLine` names the settings part: the
     setting, "this tour's details", "this tour's station positions", or
     "this tour's settings" for more than one kind), or null; `superseded` -
@@ -163,8 +169,11 @@ editor's own namespace, one tab at a time. Design:
   only when no file this browser opened showed the id (no `seen` base),
   it names a station the file or the record knows, and, for a photo, the
   draft holds its bytes (a copy's picture is in no file yet: it is
-  written with the record and offered in `pictures`). Any other such
-  record counts as given way (said with the replaced ones), as before.
+  written with the record and offered in `pictures`). A copy whose
+  picture does not read is part of the draft that did not read
+  (`unreadDraft`), never counted as replaced, and goes (PR #876 review).
+  Any other such record counts as given way (said with the replaced
+  ones), as before.
   The same rule also lets an object an undo re-added after an in-place
   save wrote its delete through, when its record carries no `seen` base
   (it was never edited before that delete): no test pins that case yet.
@@ -285,9 +294,9 @@ editor's own namespace, one tab at a time. Design:
 ## The files
 
 - A file brought in is kept as `asset:<id>` (its bytes) beside `assets` (the list of their `TourAsset`s), in that order, before the record naming it (`saveAsset(asset, blob)`, whether both landed; a write that did not land is said as any other: `noBackup("storage")`).
-- `open` reads the list and the bytes, skipping a file the opened manifest lists (its own now). A list that does not read, or a file it names that is missing, is told (`unreadDraft`, once), and an offered record naming a file held nowhere is left out (`objectAssetsHeld`), except a long text whose voice is gone: it is offered with the opened file's narration (`withFiledNarration`), its words kept. `holdsFile(id)` is false for a file whose write did not land. The offer carries `files`; with nothing offered they go, and every `asset:` entry the list does not name is removed.
-- `open` copies each file's bytes into memory. The store hands out a snapshot of the entry (`handle.getFile()`), whose reads fail once the entry is removed; a landed save or a key move removes it while the session may still need the bytes (a preview, a save after an undo brings the file back). An entry that does not read is told as a missing one. The restored photos' pictures (`draft-persistence.ts`) are still handed over as snapshots: the same exposure, not yet covered.
-- A landed save drops the files its manifest lists; a discard drops the offered files this visit did not bring in again; a key move carries them, and its carried records and settings wait for the carried files (each still queued at the move, in its own chain): a tab closed mid-move never leaves the new key a record naming a file it lacks.
+- `open` reads the list and the bytes, skipping a file the opened manifest lists (its own now). A list that does not read, or a file it names that is missing, is told (`unreadDraft`, once), and an offered record naming a file held nowhere is left out (`objectAssetsHeld`), except a long text whose voice is gone: it is offered with the opened file's narration (`withFiledNarration`), its words kept. `holdsFile(id)` is false for a file whose last write did not land in this open: a key move that carries the file counts as its write, and a close forgets it (the same bytes kept by another tour's draft are held there). The offer carries `files`; with nothing offered they go, and every `asset:` entry the list does not name is removed.
+- `open` copies each file's bytes into memory. The store hands out a snapshot of the entry (`handle.getFile()`), whose reads fail once the entry is removed; a landed save or a key move removes it while the session may still need the bytes (a preview, a save after an undo brings the file back). An entry that does not read is told as a missing one. The restored photos' pictures are copied the same way (`readDraft`, `draft-persistence.ts`): a restore writes a copied photo's record and picture into the very entry its snapshot read from.
+- A landed save drops the files its manifest lists; a discard drops the offered files this visit did not bring in again; a key move carries them, and its carried records that name a carried file, and its settings (a station's story may name one), wait for the carried files (each still queued at the move, in its own chain): a tab closed mid-move never leaves the new key a record naming a file it lacks. A record naming none, and a deletion, are written at once, so a tab closed while a large file is still being written does not keep them only in the old key.
 - Tests: `editor-draft.test.ts` ("the files a draft keeps").
 
 ## Examples
@@ -342,7 +351,8 @@ reload - seen red, the record outlived the save; a record restored over
 a file moved and renamed elsewhere bringing back only the station edited
 here, at the file's pose - seen red, "the details of 2 stations"; a copy
 made here, saved in place, deleted, saved in place and undone, offered
-after a reload);
+after a reload; a copied photo whose picture does not read told as
+unread, not as replaced - seen red, the superseded line);
 an edit claimed against the meta on disk when the pruning write was refused
 (PR #622 A); a close right after "Delete it" holding until its meta write
 landed (PR #622 B); a refused first meta write said, and the backup no
@@ -350,3 +360,17 @@ longer claimed (PR #626 1); the pre-save file reopened in this tab right
 after a key move, not "another tab" (PR #626 2). A
 scoped mutation pass (12 mutants of the rules above) killed all 12. The page's walks are in
 `playwright-tests/editor.spec.js` (the E2c block).
+
+## Smaller files (`swapAsset`, `holdsOriginal`)
+
+A smaller file replaces an asset's bytes under the same id. The key lifecycle:
+
+- `asset:<id>` holds a plain file's bytes (a file brought in).
+- A swapped entry keeps its own bytes under `asset:<id>.<ext>` (the new path's extension). The `assets` list names it as `{ ...asset, original, originalKept }`.
+  - For a file brought in, the original's bytes stay under `asset:<id>` (`originalKept: true`), and "use the original" is offered (`holdsOriginal`).
+  - For an asset of the file on disk, the original is in that file; nothing is kept (`originalKept: false`).
+- Write order of a swap: the new bytes, then the list (taken when the write is queued, never when it runs), then the keys only the previous entry used. A crash between any two writes leaves every listed record with the bytes of its own path (`editor-draft-swap.test.ts`).
+- `swapAsset(asset, blob)`: `blob` undefined goes back to the plain entry, or, with no bytes kept, the entry goes. The very Blob the entry holds as its original at the same path brings the plain entry back (no put). Any other bytes - also the original of an asset of the file on disk, read back from that file - are kept as the entry's own, because a save still running may write the smaller file over the file on disk.
+- `landed(written, fileKey, wrote?)` spends an entry only when the written tour lists the id AT the entry's path AND the write carried the entry's own bytes: `wrote` (the save's `wrote`, id to the Blob it wrote) holds that very Blob, or, without an entry in `wrote`, the entry has no original (the file on disk already held it). Listed at the other path, or written with other bytes (a save already running when the swap or "use the original" came), everything is kept.
+- `open` skips a listed entry only when the opened file lists the same id and path AND, given `sizeInFile` (path to the size of the opened file's entry there; the page passes it from the archive's entries), that entry has the size of the draft's bytes at that path - the smaller file's for a smaller entry, the file's own for a plain one. A save that ran while the creator swapped or chose the original can land other bytes at the same path, and the path alone would drop the draft's file, or offer a smaller file the downloaded file already holds on every reload. Without `sizeInFile` only a plain entry without an original is skipped by its path. A plain entry for which the creator chose "use the original" carries `originalChosen` (`swapAsset(asset, blob, true)`), offered back with the file so the shelf does not queue it again; an entry whose smaller bytes are gone falls back to its kept original (told: `unreadDraft`). A swap of an asset the opened file carries makes the offer non-null and counts as a change in its words. `tidyFiles` and `dropFiles` use every key of each entry; a key move carries the original's bytes too.
+- Tests: `editor-draft-swap.test.ts`.

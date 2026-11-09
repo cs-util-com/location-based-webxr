@@ -105,6 +105,33 @@ describe("createSceneAudio", () => {
     expect(ended).not.toHaveBeenCalled();
   });
 
+  // Why: our pause excuses an AbortError only. A resume the browser
+  // refuses for another reason (no gesture, a lost source) leaves nothing
+  // to carry the clip on, even when a pause of ours followed it, so the
+  // clip ends; held for good, its step would wait until a tap.
+  it("a resume refused for another reason ends the clip, even after our pause", async () => {
+    let refuse = (): void => undefined;
+    let pending = false;
+    const { audio } = harness(() =>
+      pending
+        ? new Promise((_, reject) => {
+            refuse = () => {
+              reject(new DOMException("no gesture", "NotAllowedError"));
+            };
+          })
+        : Promise.resolve(),
+    );
+    const ended = vi.fn();
+    await audio.play(new Blob(), ended);
+    audio.pause();
+    pending = true;
+    audio.resume();
+    audio.pause();
+    refuse();
+    await settle();
+    expect(ended).toHaveBeenCalledTimes(1);
+  });
+
   // Why: only our own pause makes a resume's AbortError harmless. Without
   // one (the browser or the system paused the element) nothing will carry
   // the clip on, so a step waiting for its end would wait until a tap: the

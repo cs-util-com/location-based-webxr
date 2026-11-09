@@ -257,7 +257,7 @@ export function buildCity(
       : buildCosmeticTrees(all, {
           ...ground,
           window: options.window,
-          excludeRings: built.map((v) => v.footprint),
+          excludeRings: built.flatMap((v) => v.outerRings),
         }).filter((t) => inside(t.position));
   return {
     volumes,

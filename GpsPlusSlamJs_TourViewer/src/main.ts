@@ -21,6 +21,7 @@ import {
   selectAlignmentMatrix,
 } from "gps-plus-slam-app-framework/state";
 import { debugUiEnabledFromSearch } from "gps-plus-slam-app-framework/utils/debug-flag";
+import { guardSlidersIn } from "gps-plus-slam-app-framework/utils/slider-scroll-guard";
 import {
   createTapCounter,
   wantsRecording,
@@ -39,7 +40,6 @@ import { getBuildInfo } from "gps-plus-slam-app-framework/utils/build-info";
 
 import { wireArchiveOpen } from "./archive-open.js";
 import { createModelVisitor, mountModelVisitorDom } from "./model-visitor.js";
-import { turnShownLecternUnderTap } from "./lectern-view.js";
 import { pictureAssetPath } from "./long-text-pictures.js";
 import { createLongTextSheet } from "./long-text-sheet.js";
 import { createCaptionsFollow } from "./captions-follow.js";
@@ -51,11 +51,16 @@ import {
   visitorPrefsLoaded,
 } from "./visitor-prefs-slice.js";
 import { loadVisitorPrefs, storeVisitorChoice } from "./visitor-prefs.js";
-import {
-  readingSheetContent,
-  shownReadingSignUnderTap,
-} from "./reading-sign.js";
+import { readingSheetContent } from "./reading-sign.js";
 import "./model-visitor.css";
+import { screenIn, tapShownWorldPart, tickWorldParts } from "./world-part.js";
+import { createWorldSound } from "./world-sound.js";
+import {
+  bindSoundToggle,
+  createSoundSetting,
+  silencedFocus,
+  whileShown,
+} from "./sound-setting.js";
 import { wireArEntry } from "./ar-entry.js";
 import { createAuthoringRecording } from "./authoring-recording.js";
 import { arSessionLive, wireCreatorSetup } from "./creator-setup.js";
@@ -899,7 +904,22 @@ const escapeButton = element<HTMLButtonElement>("scan-escape");
 // The visitor's narrated texts (one voice per text, shared by its sheet
 // and its captions strip; each read-along read when its text opens).
 // Their voices are read through the stations' prefetch cache.
-const voiceFocus = createVoiceFocus();
+// Sound on or off for every tour: off holds the running voice and lets
+// none start by itself (the list's sound button). A hidden page is silent
+// as well.
+const soundSetting = createSoundSetting({ storage: stepStore });
+const audible = whileShown(soundSetting, document, window);
+bindSoundToggle(element<HTMLButtonElement>("walk-sound"), soundSetting);
+// A vertical swipe that starts on a slider (the narration card's scrub
+// bar) scrolls instead of moving it.
+guardSlidersIn(document);
+// A tap that plays any voice with sound off turns it on: the toggle tells
+// the truth.
+const voiceFocus = silencedFocus(createVoiceFocus(), audible, {
+  turnOn: () => {
+    soundSetting.set(true);
+  },
+});
 const narration = createNarrationVisitor({
   focus: voiceFocus,
   tour: () => ctx.session,
@@ -910,7 +930,27 @@ const narration = createNarrationVisitor({
     walkToast.announce(message);
   },
 });
+// The free sounds in the world: a narration on the voice channel above,
+// an ambient sound in the background, lowered under any voice.
+const worldSound = createWorldSound({
+  focus: voiceFocus,
+  sound: audible,
+  onError: () => {
+    const message = "A sound could not be played here.";
+    walkToast.say([message]);
+    walkToast.announce(message);
+  },
+});
 const viewer = createViewerPlacement({
+  worldSound,
+  // Where a narration circle opens its player card.
+  worldScreen: screenIn(element("narration-card-root"), {
+    onError: () => {
+      const message = "A narration card could not be shown again.";
+      walkToast.say([message]);
+      walkToast.announce(message);
+    },
+  }),
   ctx,
   mode,
   arStore,
@@ -923,6 +963,10 @@ const viewer = createViewerPlacement({
   // It holds story media only, so a return reads an
   // item photo from the archive again until item photos join it.
   loadContent: (path) => stations.loadContent(path),
+  // A reading sign's tap opens its text in the sheet.
+  openReading: (block) => {
+    openLongText(block);
+  },
   narration,
   // The `tourViewing/*` log (M1b): only where a recording can run, and
   // silent until it does.
@@ -1076,6 +1120,9 @@ hooks.tickStations = () => {
   captionsFollow?.sync();
   // A model's view, its notes and its card.
   modelVisitor.tick(performance.now());
+  // The free items' parts in the world: a sound's distance, a circle's
+  // inside.
+  tickWorldParts(seams.getScene(), seams.getViewerCamera(), performance.now());
 };
 hooks.stationCodeLocked = stations.codeLocked;
 hooks.unlockStationAudio = stations.unlockAudio;
@@ -1226,24 +1273,14 @@ hooks.visitorTap = (tap) => {
   routeVisitorTap(tap, {
     character: stations.characterTapped,
     model: (t) => modelVisitor.tapped(t),
-    // A reading stand under the tap turns its page.
-    lectern: (t) =>
-      turnShownLecternUnderTap(
+    // A world part under the tap: a reading stand turns its page, a
+    // reading sign opens its text in the sheet (`openReading` above).
+    part: (t) =>
+      tapShownWorldPart(
         seams.getScene(),
         (targets, at) => seams.pickObjectInView(targets, at),
         t,
       ),
-    // A reading sign under the tap opens its text in the sheet.
-    reading: (t) => {
-      const sign = shownReadingSignUnderTap(
-        seams.getScene(),
-        (targets, at) => seams.pickObjectInView(targets, at),
-        t,
-      );
-      if (sign === null) return false;
-      openLongText(sign.block);
-      return true;
-    },
     pinSheet,
   });
 };

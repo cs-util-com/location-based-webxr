@@ -14,9 +14,11 @@ import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 // Activates the licence the station frame's geodesy needs.
 import "../test-support/tour-of.js";
+import { ADD_CHOICES, isAddable } from "../kinds/edit-kinds.js";
 import {
   addNewItem,
   freePinSpot,
+  KIND_ADD,
   newLongText,
   newPin,
   newStoryEntry,
@@ -52,6 +54,29 @@ function station(
     ),
   } as unknown as TourStation;
 }
+
+// Why this test matters: what a kind starts as when added (at a station,
+// and as a story entry) is its one row here; the add menu's addable kinds
+// and these rows must be the same set, or a menu line adds nothing.
+describe("KIND_ADD", () => {
+  it("has one row, with an item and an entry, for every addable kind of the add menu", () => {
+    const addable = ADD_CHOICES.filter(isAddable).map((c) => c.kind);
+    expect(Object.keys(KIND_ADD)).toEqual(addable);
+    for (const row of Object.values(KIND_ADD)) {
+      expect(typeof row.item).toBe("function");
+      expect(typeof row.entry).toBe("function");
+    }
+  });
+
+  it("types each row's item maker by its kind", () => {
+    // Why: a row whose maker makes another kind's item would add the wrong
+    // thing from the menu; it must fail to compile, not at a visitor.
+    // @ts-expect-error a long text's maker is no short text's
+    const wrong: (typeof KIND_ADD)["shortText"]["item"] =
+      KIND_ADD.longText.item;
+    expect(wrong).toBe(KIND_ADD.longText.item);
+  });
+});
 
 describe("freePinSpot", () => {
   it("starts 4 m north of an empty station's anchor", () => {

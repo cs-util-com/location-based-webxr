@@ -19,7 +19,7 @@ import {
   initialEditorViewState,
   type EditorViewState,
 } from "../editor-view.js";
-import { STATION_PREFIX } from "../editor-model.js";
+import { STATION_PREFIX, STORY_PREFIX } from "../editor-model.js";
 import {
   treeClick,
   treeClickPlan,
@@ -31,54 +31,99 @@ import {
   treeFoldOf,
   type TreeInput,
 } from "./tree-model.js";
-import {
-  stationContent,
-  stationBlocks,
-} from "../../test-support/station-content.js";
+import { stationContent, storyOf } from "../../test-support/station-content.js";
+import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import { tourStories } from "gps-plus-slam-app-framework/ar/tour-story";
 
 const POSE = { position: [0, 0, 0], rotation: [0, 0, 0, 1] } as const;
 
-/** Up to 12 stations with distinct ids, each with up to 3 pins. */
+/** A pin of id `id`. */
+const pin = (id: string) =>
+  ({
+    id,
+    kind: "shortText",
+    view: "pin",
+    caption: "A pin",
+    createdAtIso: "2026-10-22T10:00:00Z",
+    pose: POSE,
+  }) as const;
+
+/** Up to 12 stations with distinct ids, each with up to 3 pins and up to
+ *  2 stories of up to 2 pins: a story is a folder inside its station, so
+ *  the tree's nested folds are reached too. */
 const stationList = fc
   .uniqueArray(fc.stringMatching(/^[a-z0-9]{1,4}$/), { maxLength: 12 })
   .chain((ids) =>
     fc.tuple(
       ...ids.map((id) =>
-        fc.integer({ min: 0, max: 3 }).map(
-          (n) =>
-            ({
-              id,
-              geo: { lat: 48, lon: 11, alt: 500, headingDeg: 0 },
-              activateRadiusM: 50,
-              foundRadiusM: 25,
-              hint: "arrow",
-              ...stationContent(
-                Array.from({ length: n }, (_, i) => ({
-                  id: `${id}-pin${String(i)}`,
-                  kind: "shortText",
-                  view: "pin",
-                  caption: "A pin",
-                  createdAtIso: "2026-10-22T10:00:00Z",
-                  pose: POSE,
-                })),
-              ),
-            }) as unknown as TourStation,
-        ),
+        fc
+          .tuple(
+            fc.integer({ min: 0, max: 3 }),
+            fc.array(fc.integer({ min: 0, max: 2 }), { maxLength: 2 }),
+          )
+          .map(
+            ([n, stories]) =>
+              ({
+                id,
+                geo: { lat: 48, lon: 11, alt: 500, headingDeg: 0 },
+                activateRadiusM: 50,
+                foundRadiusM: 25,
+                hint: "arrow",
+                ...stationContent([
+                  ...Array.from({ length: n }, (_, i) =>
+                    pin(`${id}-pin${String(i)}`),
+                  ),
+                  ...stories.map((size, j) => {
+                    const tale = `${id}-tale${String(j)}`;
+                    return storyOf(
+                      tale,
+                      Array.from({ length: size }, (_, c) =>
+                        pin(`${tale}-${String(c)}`),
+                      ),
+                    );
+                  }),
+                ]),
+              }) as unknown as TourStation,
+          ),
       ),
     ),
   );
 
+/** What a click on `station` may land on: the station, a free item, a
+ *  story, or a story's child. */
+function clickable(station: TourStation): string[] {
+  return [
+    `${STATION_PREFIX}${station.id}`,
+    ...tourFreeBlocks(station).map((b) => b.id),
+    ...tourStories(station).flatMap((story) => [
+      `${STORY_PREFIX}${story.id}`,
+      ...story.children.map((c) => c.id),
+    ]),
+  ];
+}
+
+/** The station's stories' ids, in the tree's order. */
+const storiesOf = (stations: readonly TourStation[]): string[] =>
+  stations.flatMap((s) => tourStories(s).map((story) => story.id));
+
 /** One step a creator takes in the tree: a fold, a section, a click. */
 type Step =
   | { kind: "fold"; at: number; open: boolean }
+  | { kind: "storyFold"; at: number; story: number; open: boolean }
   | { kind: "stray"; open: boolean }
   | { kind: "section"; section: "stations" | "codes" | "layers"; open: boolean }
-  | { kind: "click"; at: number; item: boolean; gap: number; detail: number };
+  | { kind: "click"; at: number; pick: number; gap: number; detail: number };
 
 const step: fc.Arbitrary<Step> = fc.oneof(
   fc.record({
     kind: fc.constant("fold" as const),
     at: fc.nat(),
+    open: fc.boolean(),
+  }),
+  fc.record({
+    kind: fc.constant("storyFold" as const),
+    at: fc.nat(),
+    story: fc.nat(),
     open: fc.boolean(),
   }),
   fc.record({ kind: fc.constant("stray" as const), open: fc.boolean() }),
@@ -94,7 +139,7 @@ const step: fc.Arbitrary<Step> = fc.oneof(
   fc.record({
     kind: fc.constant("click" as const),
     at: fc.nat(),
-    item: fc.boolean(),
+    pick: fc.nat(),
     gap: fc.integer({ min: 0, max: 1000 }),
     detail: fc.integer({ min: 1, max: 2 }),
   }),
@@ -135,9 +180,17 @@ function run(stations: readonly TourStation[], steps: readonly Step[]) {
       view = reduce(view, act.stationFolded({ id: target.id, open: s.open }));
       continue;
     }
+    if (s.kind === "storyFold") {
+      const stories = tourStories(target);
+      const story = stories[s.story % Math.max(1, stories.length)];
+      if (story !== undefined) {
+        view = reduce(view, act.storyFolded({ id: story.id, open: s.open }));
+      }
+      continue;
+    }
     clock += s.gap;
-    const item = s.item ? stationBlocks(target)[0] : undefined;
-    const id = item?.id ?? `station:${target.id}`;
+    const ids = clickable(target);
+    const id = ids[s.pick % ids.length] ?? `${STATION_PREFIX}${target.id}`;
     const click = treeClick({
       id,
       at: clock,
@@ -185,6 +238,9 @@ describe("the tree's fold state, for any station list and any run of steps", () 
           expect(fold.openStations).toEqual(
             s.map((x) => x.id).filter((id) => view.openStations.includes(id)),
           );
+          expect(fold.openStories).toEqual(
+            storiesOf(s).filter((id) => view.openStories.includes(id)),
+          );
           expect(fold.openSections).toEqual(view.openSections);
         },
       ),
@@ -206,6 +262,9 @@ describe("the tree's fold state, for any station list and any run of steps", () 
           );
           for (const id of fold.openStations) {
             fresh = reduce(fresh, act.stationFolded({ id, open: true }));
+          }
+          for (const id of fold.openStories) {
+            fresh = reduce(fresh, act.storyFolded({ id, open: true }));
           }
           for (const [section, open] of Object.entries(fold.openSections)) {
             fresh = reduce(

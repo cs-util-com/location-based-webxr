@@ -46,6 +46,7 @@ import {
   type EditorViewState,
 } from "./editor-view.js";
 import {
+  childMoveChange,
   manifestToWrite,
   selectTourDocument,
   stationDeleteRefusal,
@@ -54,6 +55,8 @@ import {
   type TourSaveHolder,
   type TourSaveStatus,
 } from "../tour-document.js";
+import type { ChildMoveTo } from "../station-children-moves.js";
+import { stationMoveQuestion } from "./station-move-question.js";
 import { describeIntegrityError, olderFormatRefusal } from "../open-errors.js";
 import { debugCapturesOf, type DebugCapture } from "../debug-captures.js";
 import { pictureProblem } from "../image-cap.js";
@@ -158,8 +161,10 @@ import {
   type AutosaveOutcome,
 } from "gps-plus-slam-app-framework/storage/autosave";
 import {
+  childCalled,
   copyFileName,
   createEditorSession,
+  EDITOR_SESSION_SLICES,
   datedFileName,
   type EditorSave,
   type EditorSession,
@@ -369,6 +374,7 @@ function element<T extends HTMLElement>(id: string): T {
 // runs once a store exists).
 const store = createTourViewerStore(undefined, {
   editorView: editorViewReducer,
+  ...EDITOR_SESSION_SLICES,
 });
 
 /** The page's chrome state (`editorView`): what is selected, in flight,
@@ -1726,6 +1732,74 @@ function reorderStations(order: readonly string[]): void {
   else if (outcome.kind === "reordered") tourChanged();
 }
 
+/** A station's item moved within its station (the tree's drag, the
+ *  inspector's Move to, Earlier and Later) or onto another one (the drag
+ *  onto its card, the inspector's Move to station): one step, the
+ *  selection kept. A move onto another station asks first
+ *  (`stationMoveQuestion`: the item will stand at its centre); answered
+ *  no, nothing is written. What the move changed beyond its place is
+ *  said: answers that led to it now go on, or the view it took to stand in
+ *  the world. Whether it moved. */
+function moveChild(id: string, to: ChildMoveTo): boolean {
+  if (editor === null) return false;
+  if (
+    to.place === "station" &&
+    childMoveChange(store.getState().tourDocument, id, to).kind === "moved" &&
+    !confirmPausingFrames(
+      stationMoveQuestion(movingSubject(id), stationTitleOf(to.station)),
+    )
+  ) {
+    return false;
+  }
+  endUndo();
+  const outcome = editor.moveChild(id, to);
+  refresh();
+  if (outcome.kind === "refused") {
+    toast(outcome.reason);
+    return false;
+  }
+  if (outcome.kind !== "moved") return false;
+  tourChanged();
+  // A story goes whole, its steps keeping their layout around the new
+  // station's centre; a single item stands at that centre.
+  const across =
+    movingSubject(id).kind === "story"
+      ? "its steps keep their layout around the station's centre; place it again there."
+      : "it stands at the station's centre; place it again there.";
+  const notes: string[] =
+    to.place === "station"
+      ? [`Moved to "${stationTitleOf(to.station)}": ${across}`]
+      : [];
+  if (outcome.answers > 0) {
+    notes.push(
+      outcome.answers === 1
+        ? "1 answer that led to it now goes on to the next entry."
+        : `${String(outcome.answers)} answers that led to it now go on to the next entry.`,
+    );
+  }
+  if (outcome.floored) {
+    notes.push(
+      `"${itemCalled(id)}" now stands in the world in its kind's usual view.`,
+    );
+  }
+  if (notes.length > 0) toast(notes.join(" "));
+  return true;
+}
+
+/** What a move of the station child `id` moves, named as the history
+ *  names it (`childCalled`): a story, or one item. */
+function movingSubject(id: string): {
+  kind: "story" | "item";
+  name: string;
+} {
+  const tour = manifestToWrite(store.getState().tourDocument);
+  if (tour === null) return { kind: "item", name: "" };
+  const story = tour.stations.some((s) =>
+    tourStories(s).some((t) => t.id === id),
+  );
+  return { kind: story ? "story" : "item", name: childCalled(tour, id) };
+}
+
 /** An item given a station of its own where it stands ("Move to a new
  *  station"): one step; the new station is selected and said. */
 function splitItem(id: string): void {
@@ -1994,6 +2068,8 @@ function setBusy(on: boolean, text: string): void {
 /** The opened file's hold and target, and the written bytes' session, go
  *  with the tour they belong to. */
 function leaveFile(): void {
+  // The shelf's jobs belong to the tour that leaves.
+  editor?.shelf.close();
   const was = lock;
   lock = null;
   was?.release();
@@ -2275,11 +2351,12 @@ async function attachTarget(
       // before the target came are saved once the delay has passed) -
       // unless every save of it would rewrite more than the cap (E2b-2
       // milestone review #3: the cost is linear in the file's size).
-      // The files brought in before the target came ride along too.
-      const largeTour = !autosaveFits(
-        file.size + mine.addedBytes(),
-        autosaveMaxBytes,
-      );
+      // The files brought in before the target came ride along too - those
+      // the write keeps: one nothing names is left out of it. Judged as
+      // `judgeAutosave` judges it after every edit (`nextSaveBytes`): on
+      // the tour's size, not the attached file's, which falls behind once
+      // a copy was saved before the target came (editor-files.spec.js).
+      const largeTour = !autosaveFits(mine.nextSaveBytes(), autosaveMaxBytes);
       store.dispatch(tourDocumentActions.saveLimited({ largeTour }));
       autosave.enable(!largeTour);
       renderSaveState();
@@ -2359,9 +2436,16 @@ async function openFile(
   // The draft is read inside the open, before the tour shows (E2c plan
   // review #7): what an earlier visit left is offered with the tour.
   document.body.dataset["draft"] = "writing";
+  // The opened file's entry sizes: a smaller file it already holds at
+  // its path (a save by download) is no work of the draft's any more.
+  const wrap = outcome.session.manifestWrap;
+  const entrySizes = new Map(
+    outcome.session.entries.map((e) => [e.filename, e.size]),
+  );
   const drafted = await draft.open(
     outcome.session.archive.url,
     outcome.manifest,
+    (path) => entrySizes.get(`${wrap}${path}`),
   );
   setBusy(false, "");
   details.close();
@@ -2710,7 +2794,7 @@ async function deliver(
   // (the M4b fix re-review #4).
   if (editor === mine && writtenKey !== null) {
     // A no-op once another tour's draft began to open (review #1).
-    writes?.landed(save.written, writtenKey);
+    writes?.landed(save.written, writtenKey, save.wrote);
     fileKey = writtenKey;
   }
   // The photos read from this page's copy of what it wrote, never from
@@ -2759,7 +2843,7 @@ async function writeChosen(
     return { arrived: false, inPlace: false };
   }
   if (editor === mine && writtenKey !== null) {
-    writes?.landed(save.written, writtenKey);
+    writes?.landed(save.written, writtenKey, save.wrote);
     fileKey = writtenKey;
   }
   await readPhotosFrom(mine, written).catch(() => undefined);
@@ -4071,6 +4155,7 @@ const shell = createEditorShell({
   stations: {
     add: addStationAt,
     reorder: reorderStations,
+    moveChild,
     split: splitItem,
     duplicate: (selection) => {
       void duplicateSelection(selection);

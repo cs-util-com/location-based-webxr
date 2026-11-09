@@ -21,6 +21,7 @@ export {
 } from "./dock-rule.js";
 export { movedTo } from "./tree-reorder.js";
 export { createTreeDrag } from "./tree-drag.js";
+export { createNestDrag } from "./tree-nest-drag.js";
 export {
   NO_TREE_CLICK,
   treeClick,

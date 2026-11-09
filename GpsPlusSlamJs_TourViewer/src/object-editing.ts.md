@@ -70,7 +70,12 @@ draft writes and history. Wired by `creator-setup.ts`, drawn by
   changes the station in one step, No keeps it where the reticle put it,
   and the note says which (`moveNote`). A selection of another object, a
   `reset`, an edit of the tour or a new visit under the question withdraw
-  the Move, unwritten and said. The visit's settle goes through
+  the Move, unwritten and said. While it asks, the row's other actions
+  (Edit, Move, Delete, and Close in AR) are off, as for any busy row, and
+  that is kept on purpose: the question names this pin, so a Delete under
+  it would leave Yes and No about a pin that is gone, and Close would be a
+  third, silent answer. The question's own buttons answer it, and a tap
+  that selects something else (or nothing) withdraws it. The visit's settle goes through
   `creator-document.ts` and never asks.
 - **A move takes the settle's alignment** (`planMove`, `visit-settle.ts`):
   corrected through the code when this visit saw a stored code (D10b), so

@@ -51,3 +51,15 @@ export function trackedPaths(ref, cwd) {
 export function changedPaths(ref, cwd) {
   return [...trackedPaths(ref, cwd), ...untrackedPaths(cwd)];
 }
+
+/**
+ * @param {string} ref - the diff base
+ * @param {string} cwd - the repo root
+ * @returns {string[]} tracked changes vs `ref`, then the untracked FILES
+ *   (never the collapsed folder `git status` shows for a new directory), as
+ *   the impact graph and the changed-files stages need them
+ * @throws when git fails
+ */
+export function changedFiles(ref, cwd) {
+  return [...trackedPaths(ref, cwd), ...gitLines(['ls-files', '--others', '--exclude-standard'], cwd)];
+}

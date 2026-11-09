@@ -1,0 +1,346 @@
+{
+  "normal": {
+    "question": "Before the fountain over there was built, something else stood in its place. Which of these was it?",
+    "points": 10,
+    "showScore": false,
+    "answer": {
+      "type": "single",
+      "correct": "well",
+      "options": [
+        {
+          "id": "well",
+          "label": "A well with a roof",
+          "scene": {
+            "at": {
+              "x": -2.25,
+              "z": 3.6
+            },
+            "picture": {
+              "art": "market",
+              "spot": "left",
+              "size": 1
+            },
+            "model": {
+              "stock": "well",
+              "spot": "right",
+              "size": 1
+            },
+            "words": {
+              "text": "Water for every house",
+              "spot": "back"
+            }
+          },
+          "outcome": {
+            "effect": "grow",
+            "says": "A well. Everyone came here for water, so the market grew around it. The fountain took its place in 1880, on the same spot.",
+            "at": {
+              "x": -8,
+              "z": -6
+            },
+            "scale": 8
+          }
+        },
+        {
+          "id": "cross",
+          "label": "A market cross",
+          "scene": {
+            "at": {
+              "x": -0.75,
+              "z": 3
+            },
+            "picture": {
+              "art": "cross",
+              "spot": "left",
+              "size": 1
+            },
+            "model": {
+              "stock": "cross",
+              "spot": "right",
+              "size": 1
+            },
+            "words": {
+              "text": "Where the laws were read",
+              "spot": "back"
+            }
+          },
+          "outcome": {
+            "effect": "fade",
+            "says": "Not a cross. The market cross stood by the gate, where the carts came in."
+          }
+        },
+        {
+          "id": "tree",
+          "label": "A lime tree",
+          "scene": {
+            "at": {
+              "x": 0.75,
+              "z": 3
+            },
+            "picture": {
+              "art": "tree",
+              "spot": "left",
+              "size": 1
+            },
+            "model": {
+              "stock": "tree",
+              "spot": "right",
+              "size": 1
+            },
+            "words": {
+              "text": "Shade for the traders",
+              "spot": "back"
+            }
+          },
+          "outcome": {
+            "effect": "fall",
+            "says": "A tree in the middle of a market? The carts would have knocked it down within a winter."
+          }
+        },
+        {
+          "id": "statue",
+          "label": "A statue of the founder",
+          "scene": {
+            "at": {
+              "x": 2.25,
+              "z": 3.6
+            },
+            "picture": {
+              "art": "statue",
+              "spot": "left",
+              "size": 1
+            },
+            "model": {
+              "stock": "statue",
+              "spot": "right",
+              "size": 1
+            },
+            "words": {
+              "text": "A founder in bronze",
+              "spot": "back"
+            }
+          },
+          "outcome": {
+            "effect": "fade",
+            "says": "The statue came later, in 1902, and it was never here: it stands across the square."
+          }
+        }
+      ]
+    },
+    "edit": {
+      "scene": "0",
+      "preview": "still"
+    }
+  },
+  "longest": {
+    "question": "Before you walk on, look carefully at all four of these little scenes, at the pictures, the models and the words on each of them, and tell me which one shows what the traders of this square really sold here.",
+    "points": 20,
+    "showScore": true,
+    "answer": {
+      "type": "single",
+      "correct": "salt",
+      "options": [
+        {
+          "id": "salt",
+          "label": "Salt from the mines up in the hills to the east",
+          "scene": {
+            "picture": {
+              "art": "market",
+              "spot": "back",
+              "size": 1.4
+            },
+            "model": {
+              "stock": "own",
+              "spot": "left",
+              "size": 1.5,
+              "parts": [
+                {
+                  "shape": "cylinder",
+                  "dims": {
+                    "r": 0.07,
+                    "h": 0.12
+                  },
+                  "pose": {
+                    "x": -0.06,
+                    "y": 0,
+                    "z": 0
+                  },
+                  "colour": "#8a6a48"
+                },
+                {
+                  "shape": "cylinder",
+                  "dims": {
+                    "r": 0.07,
+                    "h": 0.12
+                  },
+                  "pose": {
+                    "x": 0.09,
+                    "y": 0,
+                    "z": 0.02
+                  },
+                  "colour": "#7a5a3a"
+                },
+                {
+                  "shape": "cone",
+                  "dims": {
+                    "r": 0.065,
+                    "h": 0.06
+                  },
+                  "pose": {
+                    "x": -0.06,
+                    "y": 0.12,
+                    "z": 0
+                  },
+                  "colour": "#f4f1ea"
+                },
+                {
+                  "shape": "cone",
+                  "dims": {
+                    "r": 0.065,
+                    "h": 0.06
+                  },
+                  "pose": {
+                    "x": 0.09,
+                    "y": 0.12,
+                    "z": 0.02
+                  },
+                  "colour": "#f4f1ea"
+                },
+                {
+                  "shape": "box",
+                  "dims": {
+                    "w": 0.3,
+                    "h": 0.02,
+                    "d": 0.18
+                  },
+                  "pose": {
+                    "x": 0.02,
+                    "y": 0,
+                    "z": 0
+                  },
+                  "colour": "#5a3b26"
+                }
+              ]
+            },
+            "words": {
+              "text": "Worth more than silver in a hard winter",
+              "spot": "back"
+            },
+            "at": {
+              "x": -2.25,
+              "z": 3.1
+            }
+          },
+          "outcome": {
+            "effect": "alive",
+            "says": "Salt. It came down from the mines in the hills on carts, and every family in the valley needed it to keep meat through the winter, so the traders of this square became very rich indeed."
+          }
+        },
+        {
+          "id": "silk",
+          "label": "Silk that came all the way over the sea",
+          "scene": {
+            "picture": {
+              "art": "market",
+              "spot": "right",
+              "size": 1.4
+            },
+            "model": {
+              "stock": "stall",
+              "spot": "left",
+              "size": 1.5
+            },
+            "words": {
+              "text": "Bright cloth for the wedding of a lord",
+              "spot": "back"
+            },
+            "at": {
+              "x": -0.75,
+              "z": 2.5
+            }
+          },
+          "outcome": {
+            "effect": "fade",
+            "says": "Silk was sold, but only twice a year at the great fairs, and never by the traders who lived around this square, who could not have paid for a single bolt of it."
+          }
+        },
+        {
+          "id": "timber",
+          "label": "Timber cut in the forests along the river",
+          "scene": {
+            "picture": {
+              "art": "tree",
+              "spot": "right",
+              "size": 1.4
+            },
+            "model": {
+              "stock": "tree",
+              "spot": "left",
+              "size": 1.5
+            },
+            "words": {
+              "text": "Floated down the river every spring",
+              "spot": "back"
+            },
+            "at": {
+              "x": 0.75,
+              "z": 2.5
+            }
+          },
+          "outcome": {
+            "effect": "fall",
+            "says": "Timber came down the river, but it was sold at the landing stage below the town walls, because no cart could have brought whole trunks up the steep lane into this square."
+          }
+        },
+        {
+          "id": "stone",
+          "label": "Stone from the quarry for the new town walls",
+          "scene": {
+            "picture": {
+              "art": "cross",
+              "spot": "right",
+              "size": 1.4
+            },
+            "model": {
+              "stock": "cross",
+              "spot": "left",
+              "size": 1.5
+            },
+            "words": {
+              "text": "Every block was counted by the council",
+              "spot": "back"
+            },
+            "at": {
+              "x": 2.25,
+              "z": 3.1
+            }
+          },
+          "outcome": {
+            "effect": "fade",
+            "says": "Stone was never traded here: the council owned the quarry and carted every block straight to the walls, which is why the old account books of the square never mention it once."
+          }
+        }
+      ]
+    },
+    "edit": {
+      "scene": "0",
+      "preview": "still"
+    }
+  },
+  "missing": {
+    "question": "Which of these is older?",
+    "answer": {
+      "type": "single",
+      "correct": "gate",
+      "options": [
+        {
+          "id": "gate",
+          "label": "The gate"
+        },
+        {
+          "id": "hall",
+          "label": "The hall"
+        }
+      ]
+    }
+  }
+}

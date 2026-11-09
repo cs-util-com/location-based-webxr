@@ -31,7 +31,7 @@ the counters and the layers only OsmDemo draws.
 - `drawMeshLayers(mesh, layers?) → { objects, stats }` — builds every enabled
   layer. No error modes: an empty layer yields no objects, and an unknown key in
   `layers` is ignored because the loop is driven by the table, not by the input.
-- `showCosmetic(root, visible)` — shows or hides every object under `root`
+- `showCosmetic(root, visible)` - shows or hides every object under `root`
   tagged `userData.cosmetic` (the woods layer), leaving mapped objects alone.
   Absolute, so idempotent after a rebuild. `BuildingView.setArShellMaterial`
   calls it: the woods are off in AR (owner decision, objects M2a).

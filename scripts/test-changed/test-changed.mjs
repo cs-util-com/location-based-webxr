@@ -54,7 +54,8 @@
 //   read it, and the run prints ONE line naming everything it runs.
 
 import { spawnSync } from 'node:child_process';
-import { readFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -84,6 +85,7 @@ import {
   selectPackages,
 } from './select.mjs';
 import { trackedPaths, untrackedPaths } from './changed-paths.mjs';
+import { IMPACT_FILE_ENV, graphDependents, writeImpactCache } from './graph-dependents.mjs';
 
 const WORKSPACE_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
@@ -310,13 +312,38 @@ function runInOrder(commands) {
   return 0;
 }
 
+const fastOptions = fastGateOptions(process.env);
+/**
+ * The fast gate's dependents: the packages the import graph reaches beyond
+ * the changed ones (impact-graph.mjs), not every pnpm dependent. A test-only
+ * change reaches none. Other runs keep every dependent.
+ * @returns {string[] | undefined} pnpm names, or undefined outside the fast gate
+ */
+function fastGateDependents() {
+  if (!fastOptions.relatedUnitEnv || names.length === 0) return undefined;
+  const { dirs, line, impact, changed } = graphDependents({ root: WORKSPACE_ROOT, ref, changedDirs: selection.packages });
+  console.log(line);
+  if (impact && changed) {
+    // Built once: every package's unit stage reads this instead of
+    // rebuilding the graph (related-unit.mjs). Removed on a normal exit; a
+    // run killed by a signal (Ctrl-C) leaves the temp dir behind.
+    const dir = mkdtempSync(path.join(tmpdir(), 'test-changed-impact-'));
+    const file = path.join(dir, 'impact.json');
+    writeImpactCache(file, { ref, root: WORKSPACE_ROOT, changed, impact });
+    process.env[IMPACT_FILE_ENV] = file;
+    process.on('exit', () => rmSync(dir, { recursive: true, force: true }));
+  }
+  return dirs?.map(packageName);
+}
+
 const status = runInOrder(
   gateCommands(names, {
     skipBrowserEnv: SKIP_BROWSER_ENV,
     rootChecks: selection.rootChecks ?? [],
     docOnlyNames,
     ref,
-    ...fastGateOptions(process.env),
+    ...fastOptions,
+    dependents: fastGateDependents(),
   })
 );
 

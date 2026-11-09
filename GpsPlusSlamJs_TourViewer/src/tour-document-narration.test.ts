@@ -307,4 +307,134 @@ describe("draftableObject: what a draft keeps of a narration", () => {
       narration: { audio: "voice", synthetic: false },
     });
   });
+  // Why: a file brought in whose write did not land (a full disk) is held
+  // nowhere after a reload, and a record naming it is then left out whole.
+  // That holds for every kind that names a file, not only a narration: a
+  // model naming such a file keeps the written file's asset and every other
+  // edit (its size, its pose: PR #876 review, the whole record was taken
+  // back), and a new one naming it is drafted not at all, never as a record
+  // naming a missing file.
+  it("drafts a model naming a file the draft could not keep with the written file's asset and its other edits, or not at all", () => {
+    const STATUE: TourAsset = {
+      id: "statue",
+      path: "content/statue.glb",
+      kind: "model",
+    };
+    const NEW_STATUE: TourAsset = {
+      id: "statue2",
+      path: "content/statue2.glb",
+      kind: "model",
+    };
+    const model = {
+      id: "m",
+      kind: "model",
+      view: "placed",
+      asset: "statue",
+      sizeM: 2,
+      createdAtIso: "2026-10-31T00:00:02.000Z",
+      geo: {
+        lat: 47.5,
+        lon: 8.7,
+        alt: 400,
+        rotation: [0, 0, 0, 1],
+        headingDeg: 0,
+      },
+      station: "st-m",
+    } as const satisfies TourObject;
+    const state = reduce(
+      reduce(
+        initialTourDocumentState,
+        act.opened({ manifest: tourOf([model], { assets: [STATUE] }) }),
+      ),
+      act.assetsAdded({ assets: [NEW_STATUE] }),
+    );
+    const written = documentObjects(state).find(
+      (o) => o.object.id === "m",
+    )?.object;
+    expect(written?.kind === "model" ? written.asset : null).toBe("statue");
+    const moved = { ...model.geo, lat: 47.5001 };
+    const renamed: TourObject = {
+      ...model,
+      asset: "statue2",
+      sizeM: 3,
+      geo: moved,
+    };
+    const notKept = (id: string): boolean => id !== "statue2";
+    expect(draftableObject(renamed, state)).toBe(renamed);
+    expect(draftableObject(renamed, state, notKept)).toEqual({
+      ...renamed,
+      asset: "statue",
+    });
+    expect(
+      draftableObject({ ...renamed, id: "m-new" }, state, notKept),
+    ).toBeNull();
+  });
+
+  // Why (#881 review): a picture names its file twice, as `image` and as
+  // the inline `imageAsset` (`imageAsset.id === image`, which the draft
+  // record writes as its asset). Putting back only the string left the
+  // record naming the written file as its image and the file held nowhere
+  // as its asset: a restore then asks for a content entry the zip lacks.
+  it("puts a picture's image and its inline asset back together", () => {
+    const OLD_IMAGE: TourAsset = {
+      id: "photo-a",
+      path: "content/photo-a.jpg",
+      kind: "image",
+      width: 4,
+      height: 3,
+    };
+    const NEW_IMAGE: TourAsset = {
+      id: "photo-b",
+      path: "content/photo-b.jpg",
+      kind: "image",
+      width: 8,
+      height: 6,
+    };
+    const picture = {
+      id: "ph",
+      kind: "picture",
+      view: "plane",
+      image: "photo-a",
+      widthM: 1,
+      imageAsset: OLD_IMAGE,
+      createdAtIso: "2026-10-31T00:00:03.000Z",
+      geo: {
+        lat: 47.5,
+        lon: 8.7,
+        alt: 400,
+        rotation: [0, 0, 0, 1],
+        headingDeg: 0,
+      },
+      station: "st-ph",
+    } as const satisfies TourObject;
+    const state = reduce(
+      reduce(
+        initialTourDocumentState,
+        act.opened({ manifest: tourOf([picture], { assets: [OLD_IMAGE] }) }),
+      ),
+      act.assetsAdded({ assets: [NEW_IMAGE] }),
+    );
+    const written = documentObjects(state).find(
+      (o) => o.object.id === "ph",
+    )?.object;
+    expect(written?.kind === "picture" ? written.imageAsset.id : null).toBe(
+      "photo-a",
+    );
+    const replaced: TourObject = {
+      ...picture,
+      image: "photo-b",
+      imageAsset: NEW_IMAGE,
+      widthM: 2,
+    };
+    const notKept = (id: string): boolean => id !== "photo-b";
+    const kept = draftableObject(replaced, state, notKept);
+    expect(kept).toEqual({
+      ...replaced,
+      image: "photo-a",
+      imageAsset: written?.kind === "picture" ? written.imageAsset : null,
+    });
+    expect(kept?.kind === "picture" ? kept.imageAsset.id : null).toBe(
+      kept?.kind === "picture" ? kept.image : undefined,
+    );
+  });
 });

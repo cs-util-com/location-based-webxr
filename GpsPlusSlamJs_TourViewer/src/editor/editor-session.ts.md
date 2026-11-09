@@ -32,8 +32,10 @@ never state). Design:
 - `createEditorSession({ session, manifest, levels, fileName?, draft?, loadPhoto?, store? }): EditorSession`
   (`manifest` as `openTourForEditing` opened it; the document drops a
   file's debug camera captures)
-  - `store` - the page's `createTourViewerStore()`; a fresh one when
-    absent (tests). Creating the session dispatches `opened` (with a
+  - `store` - the page's store, built with the editor's page slices
+    `EDITOR_SESSION_SLICES` (`{ assetShelf }`, exported here so the page
+    and the tests mount the same set; `EditorSessionStore` is its type);
+    a fresh one when absent (tests). Creating the session dispatches `opened` (with a
     fresh `newTourId()` for a tour without an id, Q-I): whatever
     the store's document held is gone, and an older session on the same
     store is disowned (`generation`) - its edits are refused with
@@ -66,6 +68,10 @@ never state). Design:
     (`zip-blob.ts`; right after an in-place write the page's copy may not
     read yet, M4a review #5). A save waits for the pictures being read.
   - `model()` - the `EditorModel` of the tour with the edits applied.
+  - `moveChild(id, to)` refuses in words; an `unsaved` refusal names the
+    item's kind ("Save the tour first: an audio added here can go into a
+    story once the tour's file holds it."), read from the tour as the next
+    write carries it (a free item placed here is an object record).
   - `changeCount()` - edits and deletions not yet in a saved file, by
     content (a text edited back is no change), plus one while the "needs no
     GPS" setting differs from the saved file, plus one per detail that
@@ -199,6 +205,16 @@ never state). Design:
       answers no longer lead anywhere), `setStoryAdvance(id, advance)` - the
       tree's and the inspector's story edits, each one step, a refusal said
       in the creator's words.
+    - `moveChild(id, to)` - a station's item or story moved within its
+      station, or onto another (`{ place: "station", station }`, standing
+      at its centre) (`ChildMoveTo` of `station-children-moves.ts`; the tree's
+      drag and the inspector's Earlier, Later and Move buttons), one step
+      (`childMoved`): `{ kind: "moved", answers, floored }` (how many
+      answers that led to it now go on to the next entry, and whether it
+      took its kind's world view), `{ kind: "unchanged" }`, or a refusal
+      in words (a choice or a quiz leaving its story, a story into a story,
+      a model without a size standing free, a picture made here before the
+      tour holds its file).
     - `groundItems([{ id, alt }])` - "Put on the ground": the altitudes the
       page measured, ONE step for all; refused whole for an unknown id or
       a height beyond an item's reach of its station (`HEIGHT_REFUSED`).
@@ -397,6 +413,10 @@ changes`; a label is cut at 40 characters (`truncated`, split-safe), a label-les
   (`editor-draft.ts`).
 - `stationLocked` (optional input): `moveStation` refuses a station it names as locked with `STATION_LOCKED`, before anything is dispatched. A station's radius, title, delete and copy are not pose edits and stay open. Undo and redo are outside the lock: they replay steps already made. So is a draft's Restore (`restore`): it puts back station poses the creator made in an earlier visit, locked or not - a replay of their own work, as an undo is. Without the input (the phone, a test) every station moves as before.
 
+## Files over the caps
+
+`fileReaders.limits` (default `TOUR_FILE_LIMITS`) and `fileReaders.shrinks` reach `readTourFile`; the session keeps each added file's name by asset id and hands the save handle `maxFileBytes` (entry cap less margin) and `fileNameOf`, so a save that would write a file still over the cap is refused with words naming it. `shrinks` is derived from the shelf's optimizer table (`optimizerShrinks`, set before `fileReaders` so a test may still override it); every row is null in this build, so today a file over the cap is refused at the drop as before.
+
 ## Tests
 
 `editor-session.test.ts` on real zips: an edit, a move and a delete reach
@@ -480,7 +500,27 @@ examples).
 - One files table (`files`, asset id to Blob) for every file's bytes the session holds; no other map of bytes.
 - `addFile(file, fileName, kinds?)`: reads the file at once (`readTourFile`, `tour-files.ts`) - a dropped `File` moved or deleted later does not matter - checked against the caps on `tourBytes()`, named by its sha256. Bytes the tour holds already (an asset of that id, or a signed tour's entry of that hash) are that asset, nothing added. Each new file (and a video's minted poster) goes into the table and the draft (`saveAsset`, before the asset is listed, so before any record naming it), then `assetsAdded`. Answers `{ kind: "added", asset, poster?, backedUp }` or a refusal in words; `backedUp` false when the draft did not keep it.
 - `fileReaders` (input): `measureModel` (a model's largest side; 0 refuses it as showing nothing) and `posterOf` (a video's first frame), the page's browser readers; absent in a test, a model is taken unmeasured and a video without a poster.
-- `addedBytes()`: what the next save adds to the written file (`saves.addedBytes`, the snapshot's rule): the files brought in, the timing texts and the copied or restored photos' pictures it lacks. `tourBytes()`: the newest written file's size (the opened entries' before a save) plus `addedBytes()` - what the caps are judged on. `nextSaveBytes()`: the same, but only the added bytes the write keeps (`saves.addedBytes(state, true)`: a file nothing names any more, after an undo whose redo a later edit dropped, is left out) - what the autosave's cap is judged on, both ways.
-- `contentOf(path)`: a file brought in, by its entry, for a preview before a save writes it.
+- `addedBytes()`: what the next save adds to the written file (`saves.addedBytes`, the snapshot's rule): the files brought in, the timing texts and the copied or restored photos' pictures it lacks, less the old entries a smaller file replaces (so below zero when a swap saves more than the rest adds). `tourBytes()`: the newest written file's size (the opened entries' before a save) plus `addedBytes()` - what the caps are judged on. `nextSaveBytes()`: the same, but only the added bytes the write keeps (`saves.addedBytes(state, true)`: a file nothing names any more, after an undo whose redo a later edit dropped, is left out) - what the autosave's cap is judged on, both ways: after every edit (`judgeAutosave`) and when a save target comes (`attachTarget`; the tour's size, not the attached file's, which differs once a copy was saved before the target came).
+- `contentOf(path)`: a file brought in, by the id its entry names (`content/<id>.<ext>`), for a preview before a save writes it. By id, because a placed picture's inline `imageAsset` keeps the path it had before a swap: that path reads the smaller file.
+- `swapAsset(id, { blob, path, width?, height? })`: a smaller file in place of an asset's under the same id. Judged first by the document's own rule (`assetOptimized` run on the current state), so a refused file never reaches the table; then the table holds the new bytes and the record is listed at the new path. The next save writes the new entry and removes the old one; a save already running writes the original. Answers `{ kind: "swapped" }` or a refusal in words. Not yet followed by the draft. A re-drop of the original bytes finds the swapped record (`knownFile` prefers `addedAssets`).
 - `restore(offer)`: the offer's `files` go into the table before the records are dispatched; a record naming a file held nowhere is skipped.
-- Tests: `editor-session-files.test.ts` (the table, the refusals, one file for two narrations, a put that fails, a reload with its file, and a property over voices, removals and undos: the reloaded document equals the one shown and every named file is in the save).
+- Tests: `editor-session-swap.test.ts` (a save before and after a swap, a swap before the first save, a save running when the swap lands, the refusals, `nextSaveBytes` and `tourBytes` after a swap, a placed photo's old path and its copy, the draft rollback of a refused swap); `editor-session-overcap.test.ts` (a sound over the entry cap that may be made smaller comes in, every save is refused in words naming its file until a smaller file replaces it, and a reload that restores the large file is refused the same way); `editor-session-files.test.ts` (the table, the refusals, one file for two narrations, a put that fails, a reload with its file, and a property over voices, removals and undos: the reloaded document equals the one shown and every named file is in the save).
+
+## `swapAsset` with a draft, and restoring a swap
+
+- `swapAsset` is async: judged by the document's rule, written to the draft (`EditorSessionDraft.swapAsset`, with the new record), judged again, then the files table and the document take it in one synchronous step. Without a draft it is taken before the first await. `backedUp` false: the draft could not keep it.
+- `restore`: an offered file whose id the written tour lists is a smaller file for that asset. It is left out of `restored.assets` and dispatched as `assetOptimized` after the rest, counted among `changed`.
+- `restore` puts every restored file the document lists back on the shelf: a plain file as `added` (queued again, so an over-cap file is made smaller and the save stops refusing once it lands) unless the creator chose "use the original" for it (`originalChosen`, kept in the draft by `swapAsset`'s third argument): that one comes back kept, with the original-used words and a retry (`shelf.originalKept`), a smaller file with its kept original as optimized (`shelf.restored`, the original loaded from the draft's bytes, else from the opened file's entry). A smaller file at the same path that is not smaller is left off.
+- A save resolves with `wrote` (id to the Blob it wrote): the page hands it to the draft's `landed`, which spends an entry only when its own bytes were written.
+- The save's refusal of an over-cap file says it is being made smaller only while the shelf has a job queued or running for it (`shrinking`); otherwise it says nothing is, and what to do.
+- A placed picture embeds its `imageAsset` record, which keeps the old path after a swap (the written tour is right: a reader inflates the record from the manifest by id). `contentOf` resolves by id, and a copy of a photo (`copiedObject`) takes the record `addedAssets` holds, so its entry gets the new file's extension. A preview keys its cache on `assetSwaps`, not on the inline path.
+- A swap the second check refuses after the draft wrote it (the open was replaced, or the asset left the tour) is taken back out of the draft: the draft gets the record that stood before. Not when the document already lists the same record (the same swap landed meanwhile): the draft agrees then.
+- Tests: `editor-session-swap.test.ts`.
+
+## The asset shelf
+
+- `shelf: AssetShelf` (`asset-shelf/asset-shelf.ts`), created per session on the session's store. Input `optimizers?` (default `ASSET_OPTIMIZERS`) and `optimizerHost?` (default a lazy Worker host, `createOptimizerHost(spawnOptimizerWorker)`, which spawns nothing until a row runs).
+- Creating the session clears the shelf and adds every asset of the written tour as `opened`, idle, sized from its archive entry: an opened tour's files are made smaller only on `shelf.optimizeTour()`.
+- `addFile` puts a NEW file on the shelf as `added` (a file already in the tour is not added twice).
+- The shelf reads bytes from the files table, else the opened archive's entry; it swaps through `swapAsset`; its cap is the entry cap less margin, as the save's.
+- Tests: `asset-shelf/asset-shelf.test.ts` (the runner), `editor-session-shelf.test.ts` (the wiring), `editor-session-shelf.property.test.ts` (a real draft; any order of a voice brought in, an opened picture made smaller at its own path, job ends, use the original, retry, saves awaited or still running, undo, redo, a reload and a crash: every save writes each listed asset at its path with bytes of its type and, for a picture, of its listed size, nothing unlisted; a reload brings back the same named assets and bytes; every file brought in is on the shelf).

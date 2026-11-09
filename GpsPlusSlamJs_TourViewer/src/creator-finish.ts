@@ -23,6 +23,7 @@ import { FINISH_LABELS, finishReadiness } from "./qr-author-mode.js";
 import { authoringFinished } from "./tour-authoring-actions.js";
 import {
   historyAssetIds,
+  historyStoryAssetIds,
   historyTimingEntries,
   manifestNow,
 } from "./tour-document.js";
@@ -258,6 +259,7 @@ export function wireCreatorFinish(deps: {
           deleted,
           // What an undo after this Finish may still show (a cover).
           keepAssets: historyAssetIds(tour.state()),
+          keepStoryAssets: historyStoryAssetIds(tour.state()),
           keepEntries: historyTimingEntries(tour.state()),
           levels,
           keepScan: dom.keepScanInput.checked,

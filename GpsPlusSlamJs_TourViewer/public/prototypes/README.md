@@ -143,6 +143,11 @@ wired into its logic: every interaction is faked.
   flies in from space and the map loads (a calm camera with one line of
   text; a loading board in the left rail; an editor that works during the
   flight); each has a network-case strip; made 2026-10-30.
+- `character-library-1/` - the character maker as a full-screen dialog with
+  its own address (`maker.html`) and a library of characters on this device;
+  a character is saved and imported as one PNG file with its settings in a
+  text chunk; a paste button, four outdoor backdrops and a collapsed "Adjust
+  the cut" with sliders; the image generator is faked; made 2026-11-08.
 - `character-sheet-1-guided-steps/` ... `character-sheet-3-make-your-character/` -
   three directions for making a guide character from an image AI (guided
   steps, one inspector panel, a playful card with a live stand-in); made
@@ -214,15 +219,44 @@ wired into its logic: every interaction is faked.
   video stay stopped until tapped; a character or a video may start by itself
   only if its settings say so and nothing else plays; the AR view shows no
   lists of items in its HUD.
+- `audio-narration-spot-1/` - a narration sound placed in the world, for a
+  visitor: one circle on the ground with rising light, a player card only
+  inside it (plays on a tap, pauses on leaving, carries on at return, stays
+  off once stopped) and an ambient glow nearby that turns quieter while the
+  narration plays. Three looks of the circle (motes, curtain, plume), a
+  walk-through, position noise and an edit view. The look is a kind module
+  (`kind.js`, `kind.css`, `sample.json`) that the page only hosts; the voice
+  and the market sound are generated in the page; made 2026-11-08.
+- `audio-narration-spot-2/` - a second round of the narration circle's look:
+  the plume and four new looks (embers, a helix, fireflies, sonar rings), each
+  one instanced particle draw in the narration orange next to the warm
+  ambient glow, with a per-look cost readout; made 2026-11-08.
 - `editor-import-1-drop-into-scene/` and `editor-import-2-tour-library/` -
   two directions for bringing pictures and 3D models into the desktop
   editor: straight onto the place, or a checked library shelf first; the
   size limits on both pages are guesses; made 2026-11-06.
+- `quiz-world-stage/` and `quiz-world-1-fan/` ... `quiz-world-7-answer-scenes/` -
+  quizzes whose answers stand in a walkable place, all on one shared stage
+  (`quiz-world-stage/README.md` is the contract a kind module follows); 1-4
+  made 2026-11-07, 5-7 (the creator places the answers, find them first,
+  answers as small scenes) made 2026-11-08. Each page says why its 3D carries
+  meaning and the strongest case against; the plain card,
+  `quiz-visitor-1-story-card/`, is the baseline.
+- `model-lod-1/` - a mesh simplifier written for the page (edge collapses
+  ordered by a quadric error) on three scanned rocks from Poly Haven (CC0):
+  a quality slider for the triangle count an author keeps, a distance
+  slider for the level a viewer would see, and a wireframe view; made
+  2026-11-08.
 - `story-editor-1-step-cards/` ... `story-editor-3-inline-script/` - three
   directions for the story editor (step cards, a flow graph, an inline
   script), each with the same sample station, every edit on an in-memory
   model with undo, the deletion questions, and a preview through a branch;
   made 2026-10-29.
+- `story-editor-1-step-cards-r2/` - a second round of the step cards: on a
+  phone a tapped step fills the screen and Back goes up one level, on a
+  desktop cards open in place; a choice may go back to an earlier step or end
+  the story, and a warning names only a loop no answer can leave; made
+  2026-11-08.
 - `use-cases-true-colour/` - the start page's use-case pictures in the
   look the page does not use (the place dimmed, the tour's pictures in
   their own colours), with a switch to the shipped route-light look;

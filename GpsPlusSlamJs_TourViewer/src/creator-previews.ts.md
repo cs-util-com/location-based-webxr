@@ -48,6 +48,11 @@ photo is decoded from.
 
 ## Invariants & assumptions
 
+- **No world door here, on purpose.** A preview draws one authoring object
+  (`TourObject`) through `renderTourObjects`, which knows pins, long texts
+  and pictures and leaves every other kind out: it has no world arm, so a
+  `worldPart` here would never be asked. A door kind gets its preview
+  through the door once this page draws blocks rather than objects.
 - **Where a preview goes** (decision D2, plan §3.2, M2c): an object placed
   in THIS visit is rigid in AR, under the world group at its odometry pose;
   anything else has only its geo and is placed from it in the earlier

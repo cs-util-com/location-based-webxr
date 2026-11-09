@@ -35,6 +35,7 @@ import {
   effectiveDetails,
   framesOf,
   historyAssetIds,
+  historyStoryAssetIds,
   initialTourDocumentState,
   manifestNow,
   manifestToWrite,
@@ -487,6 +488,37 @@ describe("tour document: a station's description and card image (G2 build plan M
       act.settingsChanged({ needsNoGps: true, what: "setting" }),
     );
     expect(historyAssetIds(state).has("art")).toBe(true);
+  });
+
+  // Why: the two history sets keep assets by different rules. A story
+  // step's image is put back by a write even when it is a deleted photo's
+  // own (`keepStoryAssets`), a card image is not. Were a card image in the
+  // story set, a deleted photo named as a card image would keep its bytes
+  // in every copy; were a story step's image missing, an undo across the
+  // save would show that step without its picture.
+  it("a story step's image is in both history sets, a card image only in the whole one", () => {
+    let state = openedWith("a", {
+      image: "art",
+      ...stationContent([
+        storyOf("s1", [
+          {
+            id: "step-picture",
+            kind: "picture",
+            view: "card",
+            image: "step-art",
+            widthM: 1,
+            pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+            advance: { mode: "tap" },
+          },
+        ]),
+      ]),
+    });
+    state = reduce(
+      state,
+      act.settingsChanged({ needsNoGps: true, what: "setting" }),
+    );
+    expect(historyAssetIds(state)).toEqual(new Set(["art", "step-art"]));
+    expect(historyStoryAssetIds(state)).toEqual(new Set(["step-art"]));
   });
 });
 

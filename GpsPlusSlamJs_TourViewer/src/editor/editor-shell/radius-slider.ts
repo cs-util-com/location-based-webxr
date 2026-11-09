@@ -108,9 +108,20 @@ export function wireRadiusSlider(deps: {
       ? target
       : null;
 
+  /** A press that moved nothing started no drag, so `finish` never
+   *  forgets its finger: its own release does. */
+  const pressOver = (event: PointerEvent) => {
+    if (pointer !== null && event.pointerId !== pointer) return;
+    doc.removeEventListener("pointerup", pressOver, true);
+    doc.removeEventListener("pointercancel", pressOver, true);
+    if (drag === null) pointer = null;
+  };
+
   deps.root.addEventListener("pointerdown", (event) => {
     if (drag === null && sliderOf(event.target) !== null) {
       pointer = event.pointerId;
+      doc.addEventListener("pointerup", pressOver, true);
+      doc.addEventListener("pointercancel", pressOver, true);
     }
   });
 

@@ -29,7 +29,8 @@
  *
  * A tour is played one station at a time by `renderTourStation`: a group
  * at the station's geo pose, its FREE blocks (pins, pictures' planes,
- * placed models when the caller can load one) children at their LOCAL
+ * reading stands and signs, and every other kind's part through the world
+ * door, placed models among them) children at their LOCAL
  * poses, so a station moves them all. A block a
  * story step shows is the story's, never drawn here. The visitor's page
  * renders a station only while its content shows (visitor plan
@@ -56,24 +57,18 @@ import type {
   TourPicture,
   TourPin,
   TourStation,
-  TourAudioBlock,
-  TourVideoBlock,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";
-import { TOUR_MODEL_WORLD_VIEWS } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
 import type { LatLong, Matrix4 } from "gps-plus-slam-app-framework/core";
-import { disposeObject3D } from "gps-plus-slam-app-framework/visualization/three-dispose";
 import { Euler, Group, Quaternion, type Object3D, type Texture } from "three";
 
 import { placeCapturedImagePlanes } from "./image-planes.js";
-import { modelScale } from "./model-scale.js";
 import {
-  mountModelView,
-  type ModelViewEnv,
-  type ModelViewHandle,
-  type TourModelBlock,
-} from "./model-views.js";
+  mountWorldPart,
+  unmountWorldPart,
+  type WorldPart,
+} from "./world-part.js";
 
 /** Ids are file stems (`content/<id>.jpg`) and must be unique in the
  *  manifest: 12 base-36 characters of randomness, path-safe by construction. */
@@ -273,7 +268,8 @@ export interface TourObjectRendererDeps {
 }
 
 export interface RenderedTourObjects {
-  /** Objects actually placed (a photo whose texture failed is left out). */
+  /** Objects actually placed (a photo whose texture failed is left out;
+   *  a world part whose `ready` rejects leaves it then). */
   count: number;
   /** Ids of objects that could not be rendered, for the status line. */
   skipped: string[];
@@ -312,38 +308,21 @@ export type TourStationRendererDeps = Omit<TourObjectRendererDeps, "poseOf"> & {
   readonly assets: readonly TourAsset[];
   readonly alive?: () => boolean;
   /**
-   * A placed model's `.glb` by its archive entry, as a three scene (the
-   * visitor: the open tour's read and `loadGlbModel`, station blocks plan
-   * B2b). Absent: a placed model is left out quietly, as before (the 3D
-   * editor draws its own models on the group).
-   */
-  readonly loadModel?: (entryName: string) => Promise<Object3D | null>;
-  /**
-   * What a model's world view needs from the page (`model-views.ts`): the
-   * renderer's clipping switch for a cutaway. Absent: a cutaway's planes
-   * are set, and drawn only where the renderer already clips.
-   */
-  readonly modelViews?: ModelViewEnv;
-  /**
    * The view a block is drawn in (the visitor's page: `shownView` of
    * `visitor-prefs.ts`, design §4), at the block's own pose. Absent: the
    * creator's view. A view no world drawing has is drawn as nothing.
    */
   readonly viewOf?: (block: TourBlock) => string;
   /**
-   * A free video's or a free sound's look in the world, built by the page.
-   * Absent, or null for a block: nothing is drawn for it, quietly (no look
-   * exists yet, and a stand-in would be a marker nobody chose). A free
-   * character is no business of this renderer: the page's free host stands
-   * him (`free-items.ts`).
+   * The world door: a block's part in the world by its kind's row (the
+   * page passes `worldPartOf` of `play-kinds.ts` with its environment),
+   * asked of every block no drawing above has, whatever its kind. Absent,
+   * or null for a block: nothing is drawn for it, quietly (a stand-in
+   * would be a marker nobody chose). A free character stands by the
+   * page's free host (`free-items.ts`), so his row gives no part here.
    */
-  readonly makeFreeItem?: (
-    block: TourFreeLookBlock,
-  ) => { object: Object3D; dispose(): void } | null;
+  readonly worldPart?: (block: TourBlock) => WorldPart | null;
 };
-
-/** The blocks `makeFreeItem` builds: the free ones in a `card` view. */
-type TourFreeLookBlock = TourVideoBlock | TourAudioBlock;
 
 /**
  * Play one station of a tour: a group at the station's geo pose in the
@@ -397,7 +376,11 @@ export async function renderStationBlocks(
   );
   deps.scene.add(frame);
   return {
-    count: part.count,
+    // Read through: a part that fails after the station shows leaves the
+    // count then (`renderContent`).
+    get count() {
+      return part.count;
+    },
     skipped: part.skipped,
     root: frame,
     dispose: () => {
@@ -409,10 +392,9 @@ export async function renderStationBlocks(
 }
 
 /** What the renderer draws of one free block: a label with its text, a
- *  plane with its picture's archive entry, a model in a world view with
- *  its file's entry, its size and its block (null entry: the tour lacks
- *  its asset), a reading stand or a reading sign with its title and body,
- *  or nothing. */
+ *  plane with its picture's archive entry (null: the tour lacks its
+ *  asset), a reading stand or a reading sign with its title and body, a
+ *  block for the world door, or nothing. */
 type Drawn =
   | { readonly id: string; readonly as: "label"; readonly text: string }
   | {
@@ -428,18 +410,7 @@ type Drawn =
       readonly body: string;
     }
   | { readonly id: string; readonly as: "plane"; readonly entry: string | null }
-  | {
-      readonly id: string;
-      readonly as: "model";
-      readonly entry: string | null;
-      readonly sizeM: number;
-      readonly block: TourModelBlock;
-    }
-  | {
-      readonly id: string;
-      readonly as: "free";
-      readonly block: TourFreeLookBlock;
-    }
+  | { readonly id: string; readonly as: "world"; readonly block: TourBlock }
   | { readonly id: string; readonly as: "none" };
 
 /** The views a long text stands in the world in; `captions` is a
@@ -501,7 +472,8 @@ function drawnObject(object: TourObject): Drawn {
 }
 
 /** A station's free block as drawn: a picture's file is the tour's asset
- *  of its `image`. A block in a view no world drawing has is nothing. */
+ *  of its `image`. A block in a view no drawing here has goes to the
+ *  world door (`worldPart`). */
 function drawnBlock(
   block: TourBlock,
   paths: ReadonlyMap<string, string>,
@@ -515,56 +487,80 @@ function drawnBlock(
   if (block.kind === "picture" && block.view === "plane") {
     return { id: block.id, as: "plane", entry: paths.get(block.image) ?? null };
   }
-  if (
-    block.kind === "model" &&
-    (TOUR_MODEL_WORLD_VIEWS as readonly string[]).includes(block.view) &&
-    block.sizeM !== undefined
-  ) {
-    return {
-      id: block.id,
-      as: "model",
-      entry: paths.get(block.asset) ?? null,
-      sizeM: block.sizeM,
-      block,
-    };
-  }
-  if (block.kind === "video" || block.kind === "audio") {
-    return { id: block.id, as: "free", block };
-  }
-  return { id: block.id, as: "none" };
+  return { id: block.id, as: "world", block };
 }
 
-/** The one renderer: pins as labels, pictures as planes, models at their
- *  size (`modelScale`) in their world view (`mountModelView`, found again
- *  through `mountedModelViews`), reading stands by `makeLectern`,
- *  reading signs by `makeReadingSign` and a free video's or sound's look
- *  by `makeFreeItem`, each at
+/** The one renderer: pins as labels, pictures as planes, reading stands
+ *  by `makeLectern`, reading signs by `makeReadingSign` and any other
+ *  block's part (a placed model's among them, `kinds/model/world.ts`) by
+ *  the world door (`worldPart`, mounted while it stands), each at
  *  its pose in `scene`'s frame, under one group added once everything
  *  decoded. */
 async function renderContent(
   objects: readonly { readonly drawn: Drawn; readonly pose: ObjectPoseNue }[],
   deps: Omit<TourObjectRendererDeps, "poseOf"> & {
     alive?: () => boolean;
-    loadModel?: TourStationRendererDeps["loadModel"];
-    modelViews?: ModelViewEnv;
-    makeFreeItem?: TourStationRendererDeps["makeFreeItem"];
+    worldPart?: TourStationRendererDeps["worldPart"];
   },
 ): Promise<RenderedTourObjects> {
   const labels: { object: Object3D; dispose(): void }[] = [];
   const stands: { object: Object3D; dispose(): void }[] = [];
-  const models: Object3D[] = [];
-  const views: ModelViewHandle[] = [];
-  const disposeModels = (): void => {
-    // The views first: they give the models back their own materials,
-    // which `disposeObject3D` then frees.
-    for (const view of views) view.dispose();
-    for (const model of models) disposeObject3D(model);
-    for (const stand of stands) stand.dispose();
+  const parts: WorldPart[] = [];
+  /** Frees everything made, `first` (the labels' and photos' frees)
+   *  included. One free that throws strands none after it: every one
+   *  runs, and the first throw then reaches the caller (PR #874 review). */
+  const freeAll = (first: readonly (() => void)[]): void => {
+    const errors: unknown[] = [];
+    const attempt = (free: () => void): void => {
+      try {
+        free();
+      } catch (error) {
+        errors.push(error);
+      }
+    };
+    for (const free of first) attempt(free);
+    for (const stand of stands) attempt(() => stand.dispose());
+    // Freed first: a part that frees itself only while still mounted
+    // (the stand's `if (!unmountWorldPart(part)) return;`) would free
+    // nothing after an unmount. The unmount then covers a part whose
+    // dispose leaves the set alone, or throws.
+    for (const part of parts) {
+      attempt(() => part.dispose());
+      unmountWorldPart(part);
+    }
+    // The first error is the one the caller is told.
+    if (errors.length > 0) throw errors[0];
   };
   const photoPoses: ObjectPoseNue[] = [];
   const photoIds: string[] = [];
   const textures: Texture[] = [];
   const skipped: string[] = [];
+  /** Set once the station (or a construction that threw) freed its
+   *  parts: a part's late rejection then changes nothing. */
+  let freed = false;
+  /** Takes away a part whose `ready` rejects (an asset the tour lacks, a
+   *  file that fails), leaving the station that already shows: freed,
+   *  unmounted, out of the group and the count, and named in `skipped`.
+   *  Attached as the part is placed, so a rejection that arrives while
+   *  later blocks still decode, or after a construction that threw, is
+   *  always handled. */
+  const dropFailed = (id: string, part: WorldPart): void => {
+    part.ready?.catch(() => {
+      if (freed) return;
+      const at = parts.indexOf(part);
+      if (at === -1) return;
+      parts.splice(at, 1);
+      part.object.removeFromParent();
+      try {
+        part.dispose();
+      } catch {
+        // No caller to tell: the part leaves the station either way.
+      } finally {
+        unmountWorldPart(part);
+      }
+      skipped.push(id);
+    });
+  };
   // One group, added to the scene only once everything decoded (M5 review
   // #6): pins used to land one by one while photos trickled in, and a
   // session ending mid-run left them in the scene with no owner. Photos
@@ -586,25 +582,29 @@ async function renderContent(
         labels.push(label);
         continue;
       }
-      if (drawn.as === "none" || (drawn.as === "model" && !deps.loadModel)) {
-        // Nothing this renderer draws (or a model with no loader: the 3D
-        // editor draws its own): left out quietly, as a lenient read
+      if (drawn.as === "none") {
+        // Nothing this renderer draws: left out quietly, as a lenient read
         // leaves out what it cannot show. Not in `skipped`: "could not
         // load" would claim a download failed.
         continue;
       }
-      if (drawn.as === "free") {
-        const look = deps.makeFreeItem?.(drawn.block) ?? null;
-        if (look === null) continue;
-        look.object.position.set(...pose.positionNue);
-        look.object.quaternion.set(...pose.rotationNue);
-        look.object.userData["objectId"] = drawn.id;
-        stands.push(look);
+      if (drawn.as === "world") {
+        const part = deps.worldPart?.(drawn.block) ?? null;
+        if (part === null) continue;
+        // Placed at once: a part that loads (a model's file) never holds
+        // back the station's other blocks. One that cannot show what it
+        // loads is taken away when it says so (`dropFailed`).
+        part.object.position.set(...pose.positionNue);
+        part.object.quaternion.set(...pose.rotationNue);
+        part.object.userData["objectId"] = drawn.id;
+        mountWorldPart(part);
+        parts.push(part);
+        dropFailed(drawn.id, part);
         continue;
       }
       if (drawn.as === "lectern" || drawn.as === "reading") {
         // No builder (the 3D editor, the creator's previews): left out
-        // quietly, as a model without a loader.
+        // quietly, as a block the world door answers null for.
         const make =
           drawn.as === "lectern" ? deps.makeLectern : deps.makeReadingSign;
         const stand = make?.({
@@ -617,28 +617,6 @@ async function renderContent(
         uprightTurn(pose.rotationNue, stand.object.quaternion);
         stand.object.userData["objectId"] = drawn.id;
         stands.push(stand);
-        continue;
-      }
-      if (drawn.as === "model") {
-        const model =
-          drawn.entry === null
-            ? null
-            : await deps
-                .loadModel?.(drawn.entry)
-                .catch((): Object3D | null => null);
-        if (model === null || model === undefined) {
-          skipped.push(drawn.id);
-          continue;
-        }
-        // The size the tour names, by the one rule every page shares;
-        // every view keeps it (a toy multiplies it by its own factor).
-        const scale = modelScale(model, drawn.sizeM);
-        model.scale.setScalar(scale);
-        model.position.set(...pose.positionNue);
-        model.quaternion.set(...pose.rotationNue);
-        model.userData["objectId"] = drawn.id;
-        models.push(model);
-        views.push(mountModelView(model, drawn.block, scale, deps.modelViews));
         continue;
       }
       const texture =
@@ -665,33 +643,47 @@ async function renderContent(
       const id = photoIds[i];
       if (id !== undefined) plane.userData["objectId"] = id;
     });
-    // The models and the stands after the planes, so the planes' order
+    // The stands and the parts after the planes, so the planes' order
     // above holds.
-    for (const model of models) group.add(model);
     for (const stand of stands) group.add(stand.object);
+    for (const part of parts) group.add(part.object);
   } catch (error) {
     // A constructor that throws half way (a label without a canvas) must
     // not strand what was made before it: a station is drawn and freed
-    // again as the visitor walks.
-    for (const label of labels) label.dispose();
-    for (const texture of textures) texture.dispose();
-    disposeModels();
+    // again as the visitor walks. The construction error is the one the
+    // caller is told: a free failing after it is its consequence, and
+    // would hide the cause (PR #874 review).
+    freed = true;
+    try {
+      freeAll([
+        ...labels.map((label) => () => label.dispose()),
+        ...textures.map((texture) => () => texture.dispose()),
+      ]);
+    } catch {
+      // Everything was still freed (`freeAll` runs each one).
+    }
     throw error;
   }
   deps.scene.add(group);
-  return {
-    count: labels.length + planes.count + models.length + stands.length,
+  const rendered: RenderedTourObjects = {
+    // Live: a part `dropFailed` takes away leaves the count.
+    get count() {
+      return labels.length + planes.count + stands.length + parts.length;
+    },
     root: group,
     skipped,
     dispose: () => {
+      freed = true;
       // From whatever holds it now - the creator's previews move a group
       // between frames (code book plan M5b) - and from the node it was
       // added to (the e2e fakes' nodes set no `parent`).
       group.removeFromParent();
       deps.scene.remove(group);
-      for (const label of labels) label.dispose();
-      planes.dispose();
-      disposeModels();
+      freeAll([
+        ...labels.map((label) => () => label.dispose()),
+        () => planes.dispose(),
+      ]);
     },
   };
+  return rendered;
 }

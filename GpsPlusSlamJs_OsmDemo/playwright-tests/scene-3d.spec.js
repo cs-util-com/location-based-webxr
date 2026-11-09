@@ -1136,6 +1136,28 @@ const rotateUnder = async (page, dy) => {
     .toBe(true);
 };
 
+/**
+ * The building edges a pose must show over its sky-only baseline to count as
+ * the deep pose under the city (r1162 delta review, MAJOR 1). Measured on the
+ * fixture at every 40 px turn: turn 1 is the shallow pose (690 edges over a
+ * sky of 0, seeded palette; 1025 class), turn 2 the deep one (1001 over 46 =
+ * 955 seeded; 1360 over 46 = 1314 class), and turns 3-5 repeat turn 2 exactly
+ * (the rotation goes no further). 800 sits between 690 and 955: it fails the
+ * shallow pose with the seeded palette and passes the deep pose with either.
+ * CI (Linux SwiftShader) renders the same deep pose with 999 edges, not
+ * 1001-1122 (r1167, three retries), so with the sky's 46 (assumed: the
+ * sky-only count on CI was not measured) its geometry is
+ * about 953: a margin of about 19 % over 800 there, 19 % locally (955).
+ * Reversing values: a floor above about 950 fails the deep pose on CI, and
+ * the deep pose losing about a sixth of its edges (under 800) fails it
+ * everywhere; a shallow pose gaining about a sixth (over 800) only lets the
+ * loop stop one turn early, as before this bound, and the residual check
+ * still runs there.
+ * The class palette's shallow pose (1025) already passes, so with that
+ * palette the bound rests on the ratio and meanY checks.
+ */
+const BENEATH_GEOMETRY_MIN = 800;
+
 /** Shows the buildings from beneath, and no ground under them. */
 async function underTheWorldSteps(page) {
   await test.step("shows the buildings from beneath, and no ground under them", async () => {
@@ -1168,36 +1190,53 @@ async function underTheWorldSteps(page) {
     // viewport — the first version of this test used 90 px, worked at one size
     // and put the buildings out of frame at another.
     //
-    // The stop condition is the proof: the buildings are in frame AND their
-    // centre of mass is in the upper third, which is what "looking up at them
-    // from underneath" means and what looking down at them cannot produce.
+    // The stop condition is the proof: the buildings' centre of mass is in
+    // the upper third, which is what "looking up at them from underneath"
+    // means and what looking down at them cannot produce, AND they are in
+    // frame: their edges are at least ten times the sky's at the same pose
+    // (the sky-only baseline below), AND there is a deep pose's worth of
+    // building geometry over that sky (BENEATH_GEOMETRY_MIN). The ratio alone
+    // was not enough (r1162 delta review): the first turn's sky has 0 edges,
+    // so "a tenth of the sky" reduced to "any building edge" and the loop
+    // stopped one turn early, at the shallow pose.
     let withBuildings = { count: 0, meanY: 1 };
+    let skyOnly = { count: Infinity, meanY: 1 };
     let steps = 0;
     while (steps < 8) {
       await rotateUnder(page, 40);
       steps++;
       withBuildings = await countNonSkyPixels(page);
-      if (withBuildings.count > 1000 && withBuildings.meanY < 0.35) break;
+      if (withBuildings.meanY >= 0.35) continue;
+      skyOnly = await skyOnlyFrameAfter(page, steps);
+      const geometry = withBuildings.count - skyOnly.count;
+      if (
+        skyOnly.count < withBuildings.count / 10 &&
+        geometry > BENEATH_GEOMETRY_MIN
+      )
+        break;
     }
-    expect(withBuildings.count).toBeGreaterThan(1000);
     expect(withBuildings.meanY).toBeLessThan(0.35);
+    expect(withBuildings.count - skyOnly.count).toBeGreaterThan(
+      BENEATH_GEOMETRY_MIN,
+    );
 
     // THE SKY-ONLY BASELINE (r1155). From beneath, the frame keeps a few
     // dozen hard edges that are not geometry: the scattering sky converges to
     // a steep point at the nadir, and the orbit target's dot sits beside it
     // (measured 2026-11-08: 68 edges, 53 at the apex and 15 at the dot, with
-    // buildings and trees off). That fixed cost broke the old bare 20x ratio
-    // once the seeded palette made the buildings from below a little softer
-    // (1122 edges, so 56 allowed). So the sky is measured on its own: a second
+    // buildings and trees off; 46 at the deep pose since r1162). That fixed
+    // cost broke the old bare 20x ratio once the seeded palette made the
+    // buildings from below a little softer. So the sky is measured on its own: a second
     // page boots the same fixture, turns EVERY layer off, buildings and trees
     // included, and turns the same number of steps. Its frame is the sky at
     // this pose, by construction rather than by the hide step under test.
-    const skyOnly = await skyOnlyFrameAfter(page, steps);
+    // It is taken in the loop above, at each pose that is beneath the city.
     // AND NO GROUND UNDER THEM: in "No ground" with nothing on, the frame from
     // below is that small sky remainder. A ground plane drawn under the world
     // would put its silhouette across the whole width (hundreds of edges).
-    // The bound is a tenth of the buildings' edges: measured 68 against 1122
-    // (16x), so it would only flip if the sky alone reached 1/10 of the city.
+    // The bound is a tenth of the buildings' edges: measured 46 against 1001
+    // (seeded palette) and 1360 (class palette) at the deep pose, so it would
+    // only flip if the sky alone reached 1/10 of the city.
     expect(skyOnly.count).toBeLessThan(withBuildings.count / 10);
 
     // AND THE GEOMETRY IS GONE. With the buildings and trees off here, what
@@ -1502,6 +1541,79 @@ const marginFor = async (page, mode) => {
 };
 
 /**
+ * The least mean luma (Rec. 709, 0-255) of the BUILDINGS at the night point,
+ * −30.1° over the Cologne fixture: what the night floor (`NIGHT_FLOOR` in
+ * `atmosphere-rig.ts`) must keep them above. Measured in r1162 (about
+ * 5 100 building pixels each) at floor intensity 0 / 0.04 / 0.08 / 0.15:
+ * 2.39 / 3.24 / 4.42 / 6.88. 4 fails a floor of 0.04 and below (any floor
+ * under about 0.07) and leaves the shipped 0.15 a margin of 2.9; a bound
+ * above 6.9 would fail the shipped floor itself.
+ */
+const NIGHT_BUILDING_LUMA_MIN = 4;
+
+/**
+ * Mean luma (Rec. 709, 0-255) of the pixels the buildings change: the frame
+ * with them against the frame without, a pixel counting when a channel moves
+ * by more than 8. The buildings are switched back on before returning.
+ *
+ * WHY NOT THE WHOLE FRAME (r1162): the night floor lights the buildings, and
+ * in this fixture the frame is mostly ground and sky, which it does not
+ * light: the frame's mean at −30.1° is 33.5 with the floor and 31.1 without,
+ * too close to bound, while the r1155 sweep's 5.2 against 0.8 was another
+ * scene (Heidelberg, the real payload).
+ */
+const buildingPixelLuma = async (page) => {
+  const snap = (key) =>
+    page.evaluate((k) => {
+      const el = document.querySelector("#scene canvas");
+      if (!(el instanceof HTMLCanvasElement)) return -1;
+      const probe = document.createElement("canvas");
+      probe.width = el.width;
+      probe.height = el.height;
+      const ctx = probe.getContext("2d");
+      if (ctx === null) return -1;
+      ctx.drawImage(el, 0, 0);
+      const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
+      window[k] = data;
+      let sum = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        sum += (data[i] ?? 0) + (data[i + 1] ?? 0) + (data[i + 2] ?? 0);
+      }
+      return sum;
+    }, key);
+  const settle = { timeout: 15_000 };
+  const withSum = await snap("__buildingLumaWith");
+  const buildings = page.locator("#layer-buildings");
+  await buildings.uncheck();
+  await expect
+    .poll(() => snap("__buildingLumaWithout"), settle)
+    .not.toBe(withSum);
+  const withoutSum = await snap("__buildingLumaWithout");
+  await buildings.check();
+  await expect
+    .poll(() => snap("__buildingLumaBack"), settle)
+    .not.toBe(withoutSum);
+  return page.evaluate(() => {
+    const a = window.__buildingLumaWith;
+    const b = window.__buildingLumaWithout;
+    let sum = 0;
+    let n = 0;
+    for (let i = 0; i < a.length; i += 4) {
+      const moved = Math.max(
+        Math.abs(a[i] - b[i]),
+        Math.abs(a[i + 1] - b[i + 1]),
+        Math.abs(a[i + 2] - b[i + 2]),
+      );
+      if (moved > 8) {
+        sum += 0.2126 * a[i] + 0.7152 * a[i + 1] + 0.0722 * a[i + 2];
+        n += 1;
+      }
+    }
+    return { n, mean: n === 0 ? -1 : sum / n };
+  });
+};
+
+/**
  * The time-of-day control and the constraint it is most likely to breach
  * (§1, DEC-R6-3, DEC-R6-4, DEC-R4-5).
  *
@@ -1572,7 +1684,8 @@ test.describe("the time of day", () => {
   const SUN_POINTS = [
     // [label, date, apparent solar time, lit-surface luma under ACES −2 EV,
     //  the share of it the point must reach (half by default); null = the
-    //  night, margins only]
+    //  night, no lit-surface value; and, at the night, the least mean luma
+    //  of the building pixels, NIGHT_BUILDING_LUMA_MIN]
     ["the golden hour (3.6°)", "2026-09-23", "17:36", 42.6],
     ["a 3.6° morning", "2026-09-23", "06:23", 33.6],
     ["a 24° morning", "2026-09-23", "08:41", 96.8],
@@ -1584,10 +1697,29 @@ test.describe("the time of day", () => {
     // value: that metric counts WARM pixels (r >= b) and the night floor is
     // cool, so at −30° it reads 0 however visible the city is; the floor's
     // presence and ramp are held by `atmosphere-rig.test.ts`.
+    //
+    // THE NIGHT'S CITY IS NOT BLACK (r1162, the r1158 review's MINOR 3): the
+    // margins alone reward darkness, and the night floor is what keeps the
+    // city readable at −30°, so the buildings' mean luma with the heat grid
+    // off is held there (NIGHT_BUILDING_LUMA_MIN says what it rests on).
     ["nautical dusk at −12.1°", "2026-09-23", "19:16", null],
-    ["the night at −30.1°", "2026-09-23", "21:28", null],
+    [
+      "the night at −30.1°",
+      "2026-09-23",
+      "21:28",
+      null,
+      0.5,
+      NIGHT_BUILDING_LUMA_MIN,
+    ],
   ];
-  for (const [label, date, time, approvedLit, share = 0.5] of SUN_POINTS) {
+  for (const [
+    label,
+    date,
+    time,
+    approvedLit,
+    share = 0.5,
+    minBuildingLuma = null,
+  ] of SUN_POINTS) {
     test(`DEC-R4-5: the heat ramp stays the loudest thing at ${label}`, async ({
       page,
     }) => {
@@ -1596,7 +1728,13 @@ test.describe("the time of day", () => {
         `/?lat=${50.9231}&lng=${6.9445}&date=${date}&time=${time}`,
       );
       await waitForRefresh(page);
-      await expectHeatRampLoudest(page, label, approvedLit, share);
+      await expectHeatRampLoudest(
+        page,
+        label,
+        approvedLit,
+        share,
+        minBuildingLuma,
+      );
     });
   }
 });
@@ -1606,7 +1744,13 @@ test.describe("the time of day", () => {
  * default ground, and the lit city's brightness with the grid off. Leaves the
  * ground in the default mode with the cells ON.
  */
-async function expectHeatRampLoudest(page, label, approvedLit, share = 0.5) {
+async function expectHeatRampLoudest(
+  page,
+  label,
+  approvedLit,
+  share = 0.5,
+  minBuildingLuma = null,
+) {
   const DEFAULT_MODE = "cpu-slope";
   // THE SCENE THIS RULE IS ABOUT HAS NO COSMETIC WOODS. The owner relaxed
   // DEC-R4-5 for wooded scenes ("Regel lockern", 2026-11-08, city objects plan
@@ -1620,16 +1764,27 @@ async function expectHeatRampLoudest(page, label, approvedLit, share = 0.5) {
   await page.locator("#layer-cells").uncheck();
   await settledChroma(page);
   const lit = await litSurfaceLuma(page);
+  const frame = await meanLuma(page);
   const plain = await marginFor(page, "cpu");
   const byDefault = await marginFor(page, DEFAULT_MODE);
   console.log(
-    `DEC-R4-5 ${label}: plain ${plain.toFixed(2)}, ${DEFAULT_MODE} ${byDefault.toFixed(2)}, lit surfaces ${lit.toFixed(1)} (approved ${approvedLit}), luma with cells ${(await meanLuma(page)).toFixed(1)}`,
+    `DEC-R4-5 ${label}: plain ${plain.toFixed(2)}, ${DEFAULT_MODE} ${byDefault.toFixed(2)}, lit surfaces ${lit.toFixed(1)} (approved ${approvedLit}), frame luma without cells ${frame.toFixed(2)}, luma with cells ${(await meanLuma(page)).toFixed(1)}`,
   );
   expect(plain, `plain ground at ${label}`).toBeGreaterThan(5);
   expect(byDefault, `${DEFAULT_MODE} at ${label}`).toBeGreaterThan(5);
   if (approvedLit !== null) {
     expect(lit, `lit surfaces at ${label}`).toBeGreaterThan(
       approvedLit * share,
+    );
+  }
+  if (minBuildingLuma !== null) {
+    const city = await buildingPixelLuma(page);
+    console.log(
+      `${label}: building pixels ${city.n}, building luma ${city.mean.toFixed(2)}`,
+    );
+    expect(city.n, `building pixels at ${label}`).toBeGreaterThan(1000);
+    expect(city.mean, `building luma at ${label}`).toBeGreaterThan(
+      minBuildingLuma,
     );
   }
   await woods.check();

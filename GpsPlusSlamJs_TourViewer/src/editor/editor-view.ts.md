@@ -45,6 +45,8 @@ chrome reads, one copy for every view of the page.
       tree); emptied when a tour is opened or closed
       (`tourDocumentActions.opened` / `closed`), so another tour's
       station of the same id does not open unfolded;
+    - `openStories` - the tree's unfolded stories, by id, in the order
+      they were unfolded, ignored and emptied as `openStations` are;
     - `openSections` - `TreeSection` (`stations`, `codes`, `layers`) to
       open, all open at start;
     - `foldedDocks` - `ShellDock` (`tree`, `inspector`) to folded, none

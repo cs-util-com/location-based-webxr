@@ -54,6 +54,8 @@ await audio.play(voiceBlob, () => {}); // later, no tap needed
 
 - `scene-audio.test.ts` - every clip through the one unlocked element; one
   unlock and its URL released; a new clip stops and releases the previous;
-  the end calls back once; a refusal passes on; a resume cut short by a
-  pause ends nothing; the WAV's header fields;
-  the clip's length, and null while it is unknown.
+  the end calls back once; a refusal passes on; a pause and its resume,
+  and a refused resume ends the clip; a resume cut short by a pause ends
+  nothing, and the converse, a resume aborted with no pause of ours, ends
+  the clip; nothing resumes once the clip stopped; the WAV's header fields;
+  the clip's length and what is left of it, and null while it is unknown.

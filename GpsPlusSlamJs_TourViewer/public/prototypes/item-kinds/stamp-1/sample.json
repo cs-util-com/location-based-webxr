@@ -1,12 +1,28 @@
 {
   "name": "The gate stamp",
   "words": "Stamped at the old gate. Tap to hear it land.",
-  "block": {
-    "kind": "stamp",
-    "name": "The gate stamp",
-    "words": "Stamped at the old gate. Tap to hear it land.",
-    "image": "stamp-image",
-    "sound": "stamp-sound"
+  "records": {
+    "normal": {
+      "kind": "stamp",
+      "view": "post",
+      "name": "The gate stamp",
+      "words": "Stamped at the old gate. Tap to hear it land.",
+      "image": "stamp-image",
+      "sound": "stamp-sound"
+    },
+    "longest": {
+      "kind": "stamp",
+      "view": "post",
+      "name": "The stamp of the weavers' guild by the gate",
+      "words": "Every cart that came through the old gate was stamped here, and the toll was written beside the stamp in the gate book, which the guild kept until the fire.",
+      "image": "stamp-image",
+      "sound": "stamp-sound"
+    },
+    "missing": {
+      "kind": "stamp",
+      "view": "post",
+      "words": "Stamped at the old gate. Tap to hear it land."
+    }
   },
   "assets": [
     {

@@ -20,6 +20,8 @@ import type {
   TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { SignedTourManifest } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
+import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
+import { DEFAULT_ARCHIVE_LIMITS } from "gps-plus-slam-app-framework/storage";
 import { hostedObjects } from "./authoring-draft.js";
 import {
   finishedFileName,
@@ -28,7 +30,9 @@ import {
 } from "./finish-rebuild.js";
 import { isCapturedPhoto } from "./tour-content.js";
 import {
+  assetBytesPending,
   historyAssetIds,
+  historyStoryAssetIds,
   historyTimingEntries,
   manifestNow,
   manifestToWrite,
@@ -100,6 +104,7 @@ interface TourSaveSnapshot {
   readonly manifest: TourManifest;
   /** The assets the history still names (`historyAssetIds`): kept. */
   readonly keepAssets: ReadonlySet<string>;
+  readonly keepStoryAssets: ReadonlySet<string>;
   /** The read-along entries the history still names
    *  (`historyTimingEntries`): kept. */
   readonly keepEntries: ReadonlySet<string>;
@@ -120,7 +125,21 @@ interface TourSaveSnapshot {
     readonly path: string;
     readonly data: string | Blob;
   }[];
+  /** The written file's entries a smaller file replaced (`replacedOf`):
+   *  removed, whatever the write keeps. */
+  readonly replaced: readonly string[];
+  /** The swap counts it starts from (`saved`'s `swaps`). */
+  readonly swaps: Readonly<Record<string, number>>;
+  /** The bytes it writes for each asset, by id (`SavedTour.wrote`). */
+  readonly wrote: ReadonlyMap<string, Blob>;
 }
+
+/** A save's file, and the bytes it wrote for each asset, by id: a draft
+ *  spends a smaller file only when these are its bytes, since the same
+ *  path may hold other bytes (a save that started before the swap). */
+export type SavedTour = FinishedTour & {
+  readonly wrote: ReadonlyMap<string, Blob>;
+};
 
 interface TourSaves {
   /** The name every save of this open is written under: the opened
@@ -141,7 +160,7 @@ interface TourSaves {
      *  place): the document then knows where in its history the file on
      *  disk stands (D33). Default: a download. */
     readonly inPlace?: boolean;
-  }): TourDocumentThunk<Promise<FinishedTour>>;
+  }): TourDocumentThunk<Promise<SavedTour>>;
   /** Run `start` after the saves queued before it (at once when none
    *  runs: its first steps run inside the dispatch), counted by the
    *  document - ended BEFORE the caller hears the end, so an undo asked
@@ -151,7 +170,9 @@ interface TourSaves {
   snapshot(): TourDocumentThunk<TourSaveSnapshot>;
   /** The bytes a save of `state` adds to the written file: the pictures
    *  of the captured photos it does not host, the timing texts and the
-   *  files brought in it lacks (the snapshot's own rule). With
+   *  files brought in it lacks (the snapshot's own rule), less the old
+   *  entries a smaller file replaces (`assetOptimized`): below zero when
+   *  the swaps save more than the rest adds. With
    *  `keptOnly`, only the files the write keeps: one nothing names (an
    *  undo took it out and a later edit dropped its redo, or a file not
    *  named yet) is left out. */
@@ -188,11 +209,31 @@ export function createTourSaves(input: {
   readonly fileOf: (id: string) => Blob | undefined;
   /** Settles once the pictures being read are read. */
   readonly picturesRead: () => Promise<unknown>;
+  /** The largest file a save writes (default: the archive's entry cap);
+   *  a larger one, or a picture over the pixel cap, refuses the save. */
+  readonly maxFileBytes?: number;
+  /** The name a file brought in had, by asset id, for that refusal's
+   *  words. */
+  readonly fileNameOf?: (id: string) => string | undefined;
+  /** Whether a job is making the file of asset `id` smaller now (queued
+   *  or running), so that refusal can say so; absent: it says so always. */
+  readonly shrinking?: (id: string) => boolean;
 }): TourSaves {
   const { tour, generation } = input;
   let newest: NewestBytes | null = null;
   /** The end of the last queued run, for the next to start after. */
   let tail: Promise<unknown> = Promise.resolve();
+  /** The newest bytes' entry sizes, by path in the tour's folder: the
+   *  opened file's, then each landed save's files written and entries
+   *  replaced. What a swap's old entry takes out of the next save
+   *  (`addedBytes`); an entry not known here counts 0. */
+  const entrySizes = new Map(
+    tour.entries.flatMap((e) =>
+      e.filename.startsWith(tour.manifestWrap)
+        ? [[e.filename.slice(tour.manifestWrap.length), e.size] as const]
+        : [],
+    ),
+  );
 
   function snapshotOf(state: TourDocumentState): TourSaveSnapshot {
     const manifest = manifestNow(state);
@@ -202,11 +243,15 @@ export function createTourSaves(input: {
       deleted: [...state.deleted],
       manifest,
       keepAssets: historyAssetIds(state),
+      keepStoryAssets: historyStoryAssetIds(state),
       keepEntries: historyTimingEntries(state),
       stationsAtStart: state.stations,
       position: state.position,
       timings: state.timings,
       files: filesOf(state),
+      replaced: replacedOf(state),
+      swaps: state.assetSwaps,
+      wrote: new Map(assetFilesOf(state).map((f) => [f.id, f.blob])),
     };
   }
 
@@ -233,21 +278,77 @@ export function createTourSaves(input: {
     });
   }
 
-  /** The snapshot's `files`: the texts and the files brought in that the
-   *  written file lacks. */
+  /** The files brought in or replaced here whose bytes the written file
+   *  lacks (`assetBytesPending`): at another path, or other bytes at the
+   *  same path (a smaller file of the same format, the original put back),
+   *  with the bytes the page keeps. */
+  function assetFilesOf(
+    state: TourDocumentState,
+  ): { readonly id: string; readonly path: string; readonly blob: Blob }[] {
+    return state.addedAssets.flatMap((asset) => {
+      const blob = assetBytesPending(state, asset.id)
+        ? input.fileOf(asset.id)
+        : undefined;
+      return blob === undefined
+        ? []
+        : [{ id: asset.id, path: asset.path, blob }];
+    });
+  }
+
+  /** The snapshot's `files`: the texts the written file lacks, and the
+   *  files `assetFilesOf` names. */
   function filesOf(state: TourDocumentState): TourSaveSnapshot["files"] {
-    const listed = new Set((state.written?.assets ?? []).map((a) => a.id));
     return [
       ...Object.entries(state.timings).flatMap(([path, text]) =>
         text === null || text === state.timingsWritten[path]
           ? []
           : [{ path, data: text }],
       ),
-      ...state.addedAssets.flatMap((asset) => {
-        const blob = listed.has(asset.id) ? undefined : input.fileOf(asset.id);
-        return blob === undefined ? [] : [{ path: asset.path, data: blob }];
-      }),
+      ...assetFilesOf(state).map(({ path, blob }) => ({ path, data: blob })),
     ];
+  }
+
+  /** The written file's entries a save of `state` writes again at the same
+   *  path: what they held leaves the file (`addedBytes`). */
+  function rewrittenOf(state: TourDocumentState): readonly string[] {
+    const listed = writtenPaths(state);
+    return assetFilesOf(state).flatMap(({ id, path }) =>
+      listed.get(id) === path ? [path] : [],
+    );
+  }
+
+  /** The snapshot's `replaced`: the written path of each asset whose
+   *  record here names another path (`assetOptimized`). Derived from the
+   *  paths, so a save already running when the swap lands leaves it to
+   *  the next one. */
+  function replacedOf(state: TourDocumentState): readonly string[] {
+    const listed = writtenPaths(state);
+    return state.addedAssets.flatMap((asset) => {
+      const was = listed.get(asset.id);
+      return was === undefined || was === asset.path ? [] : [was];
+    });
+  }
+
+  /** The words refusing a save of `snap`: a file it writes is over the
+   *  entry cap (or a picture over the pixel cap), so no reader would open
+   *  the zip - an original still being made smaller. Null when none is. */
+  function oversizedFile(snap: TourSaveSnapshot): string | null {
+    const maxBytes = input.maxFileBytes ?? DEFAULT_ARCHIVE_LIMITS.maxEntryBytes;
+    for (const { path, data } of snap.files) {
+      const asset = snap.manifest.assets.find((a) => a.path === path);
+      if (asset === undefined || typeof data === "string") continue;
+      const pixels = (asset.width ?? 0) * (asset.height ?? 0);
+      if (data.size <= maxBytes && pixels <= TOUR_MAX_IMAGE_PIXELS) continue;
+      const name = input.fileNameOf?.(asset.id);
+      const what =
+        name === undefined
+          ? `${KIND_WORDS[asset.kind]} of this tour`
+          : `"${name}"`;
+      return input.shrinking?.(asset.id) === false
+        ? `${what} is too large to save, and nothing is making it smaller. Use a smaller file, or remove it.`
+        : `${what} is still too large to save - it is being made smaller. Save again once it is ready, or remove it.`;
+    }
+    return null;
   }
 
   const saves: TourSaves = {
@@ -265,7 +366,7 @@ export function createTourSaves(input: {
             await saves.picturesRead();
             const finished = await saves.rebuild(snap, options.keepScan);
             dispatch(saves.land(finished, snap, options.inPlace === true));
-            return finished;
+            return { ...finished, wrote: snap.wrote };
           }),
         );
     },
@@ -317,10 +418,12 @@ export function createTourSaves(input: {
             );
       for (const { path, data } of files) {
         if (kept !== null && !kept.has(path)) continue;
-        sum +=
-          typeof data === "string"
-            ? encoder.encode(data).byteLength
-            : data.size;
+        sum += sizeOf(data, encoder);
+      }
+      // The old entries a smaller file replaces leave the file, and so do
+      // the old bytes of an entry written again at its path.
+      for (const path of [...replacedOf(state), ...rewrittenOf(state)]) {
+        sum -= entrySizes.get(path) ?? 0;
       }
       return sum;
     },
@@ -328,6 +431,8 @@ export function createTourSaves(input: {
       await input.picturesRead();
     },
     async rebuild(snap, keepScan, whole) {
+      const oversized = oversizedFile(snap);
+      if (oversized !== null) throw new Error(oversized);
       const finished = await rebuildFinishedTour({
         tour:
           whole === undefined
@@ -343,8 +448,10 @@ export function createTourSaves(input: {
         placed: snap.placed,
         deleted: snap.deleted,
         keepAssets: snap.keepAssets,
+        keepStoryAssets: snap.keepStoryAssets,
         keepEntries: snap.keepEntries,
         files: snap.files,
+        replaced: snap.replaced,
         levels: [],
         keepScan,
         previous: newest,
@@ -354,6 +461,11 @@ export function createTourSaves(input: {
     },
     land(finished, snap, inPlace = false) {
       return (dispatch) => {
+        const encoder = new TextEncoder();
+        for (const path of snap.replaced) entrySizes.delete(path);
+        for (const { path, data } of snap.files) {
+          entrySizes.set(path, sizeOf(data, encoder));
+        }
         newest = {
           blob: finished.blob,
           ...(finished.signedManifest === undefined
@@ -376,6 +488,7 @@ export function createTourSaves(input: {
             written: finished.written,
             appliedDeletions: snap.deleted,
             stationsAtStart: snap.stationsAtStart,
+            swaps: snap.swaps,
             ...(inPlace ? { inPlaceAt: snap.position } : {}),
             ...(entries.length === 0
               ? {}
@@ -395,4 +508,22 @@ export function createTourSaves(input: {
     },
   };
   return saves;
+}
+
+/** A kind as the oversized refusal names it, at the start of a sentence. */
+const KIND_WORDS = {
+  image: "A picture",
+  audio: "A sound",
+  video: "A video",
+  model: "A 3D model",
+} as const;
+
+/** The bytes `data` takes in the zip (a text as UTF-8). */
+function sizeOf(data: string | Blob, encoder: TextEncoder): number {
+  return typeof data === "string" ? encoder.encode(data).byteLength : data.size;
+}
+
+/** The written file's asset paths, by asset id. */
+function writtenPaths(state: TourDocumentState): ReadonlyMap<string, string> {
+  return new Map((state.written?.assets ?? []).map((a) => [a.id, a.path]));
 }

@@ -46,6 +46,11 @@ export const SPECS = {
   "editor.spec.js": { project: "dom", area: "editor", lane: 1 },
   "editor3d-add-palette.spec.js": { project: "webgl", area: "editor", lane: 2 },
   "editor3d-character.spec.js": { project: "webgl", area: "editor", lane: 4 },
+  "editor3d-child-moves.spec.js": {
+    project: "webgl",
+    area: "editor",
+    lane: 3,
+  },
   "editor3d-edit.spec.js": { project: "webgl", area: "editor", lane: 3 },
   "editor3d-globe-approach.spec.js": {
     project: "webgl",

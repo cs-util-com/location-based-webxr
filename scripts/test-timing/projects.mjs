@@ -619,6 +619,7 @@ export const PROJECTS = [
         "./src/workers/occlusion-mesher.worker.ts",
         "./src/editor3d/globe-city-worker.ts",
         "./src/editor3d/globe-cloud-bake-worker.ts",
+        "./src/editor/asset-shelf/asset-optimizer.worker.ts",
       ]).map((stage) =>
         stage.name === "lint:css"
           ? {
@@ -994,14 +995,22 @@ export function gateBaseCommand(stage, env = {}) {
   }
   // A CHANGED package's unit stage in the per-commit gate: only the tests
   // related to the change (scripts/test-changed/related-unit.mjs). The ref is
-  // set for the changed packages only (select.mjs `gateCommands`), so a
-  // dependent, the milestone run and a package's own gate run the suite.
-  return skipBrowser &&
-    Boolean(env[UNIT_RELATED_ENV]) &&
-    stage.name === "test:unit" &&
-    stage.counts === "vitest"
-    ? `node ${RELATED_UNIT_SCRIPT} ${command}`
-    : command;
+  // set for the changed packages and the dependents the import graph reaches
+  // (select.mjs `gateCommands`); the milestone run and a package's own gate
+  // run the suite.
+  const fastGate = skipBrowser && Boolean(env[UNIT_RELATED_ENV]);
+  if (fastGate && stage.name === "test:unit" && stage.counts === "vitest") {
+    return `node ${RELATED_UNIT_SCRIPT} ${command}`;
+  }
+  // Format checks only the changed files in the per-commit gate
+  // (scripts/test-changed/changed-files-stage.mjs); the package-wide run is
+  // the milestone run's, a package's own gate's and CI's. Lint always runs
+  // whole: its typed rules read across files and its --max-warnings budgets
+  // are package-wide, and a dependent's diff narrowed it to no file at all.
+  if (fastGate && stage.name === "format") {
+    return `node ${CHANGED_FILES_SCRIPT} ${command}`;
+  }
+  return command;
 }
 
 /** Env var with the diff base for a changed package's related unit run. */
@@ -1009,6 +1018,9 @@ export const UNIT_RELATED_ENV = "GATE_UNIT_RELATED_REF";
 
 /** The related-unit wrapper, relative to a package directory. */
 export const RELATED_UNIT_SCRIPT = "../scripts/test-changed/related-unit.mjs";
+
+/** The changed-files wrapper of the format stage, relative to a package directory. */
+export const CHANGED_FILES_SCRIPT = "../scripts/test-changed/changed-files-stage.mjs";
 
 /** Env var that puts a gate run in DEC-G2's dependent mode. */
 export const SKIP_BROWSER_ENV = "GATE_SKIP_BROWSER_STAGES";

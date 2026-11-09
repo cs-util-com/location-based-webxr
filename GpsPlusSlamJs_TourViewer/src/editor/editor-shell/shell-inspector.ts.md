@@ -9,7 +9,7 @@ value writes is `inspector-edits.ts`'s, and the shell commits it.
 
 ## Public API
 
-- `drawInspector(dock, model, { folded, positionOpen, busy? }, pictures)` -
+- `drawInspector(dock, model, { folded, positionOpen, contentsOpen?, busy? }, pictures, panel?)` -
   `dock` is `{ root, head, body }` (`#shell-inspector`,
   `#inspector-head`, `#inspector-body`); a null model hides the dock.
   Drawn again only when the model or the state changed (the last draw's
@@ -99,7 +99,7 @@ content` (Chromium, the editor's browser; elsewhere it stays three
     group's name once on entering it, so two blocks' "Title" fields are
     told apart by their group without the head said again per field. A story block's text field is named
     `block:<id>:<field>` and drawn as an item's other texts are
-    (`blockTextField`, its count under it). Where these controls sit is this build's choice, made before the
+    (`blockTextField`, its count under it; a number field, a sound's radius, reach or volume, is a decimal box with its unit and no count). Where these controls sit is this build's choice, made before the
     owner's prototype round on the editor's character UI.
   - A story's choice or quiz: its summary (`ul.steplines`), read here and
     not edited, and "Delete choice" / "Delete quiz".
@@ -139,7 +139,13 @@ content` (Chromium, the editor's browser; elsewhere it stays three
 - A station's line ("Station n of N", `.sub`) holds Earlier and Later
   (`data-act` `earlier` / `later`, icon buttons named "Earlier in the
   tour" and "Later in the tour", disabled at the tour's ends): the
-  keyboard's way to reorder.
+  keyboard's way to reorder. A story's and an entry's line holds the same
+  pair ("Earlier in the story", "Later in the story", or "among the
+  stories" for a story), and the commands add one Move button per target
+  of `moves` (`data-act` `move-to:<list>`), and, where `moves.stations`
+  is not empty, a "Move to station..." picker (`select[data-move-station]`,
+  named "Move to station", its first option disabled) whose choice the
+  shell moves to that station's centre, asked first.
 - The selection's commands in words (`.acts`, the prototype's): a
   station's "Put items on the ground"
   (`ground-items`, its note "N off", off when none is) and "Delete
@@ -152,32 +158,18 @@ content` (Chromium, the editor's browser; elsewhere it stays three
   `.danger`, shows its key in a `<kbd>` hidden from screen readers and
   announces it by `aria-keyshortcuts="Delete"`. A code has none
   (read-only in the 3D view).
-- A model's parts (`modelParts`, after Size, before Position), as the
-  station blocks prototype's editor mode arranges them:
-  - `.isec.mview` - the view as chips (`data-act="view:<view>"`,
-    `aria-pressed`), and a line on what the view does; a model with notes
-    in any view but Hotspots adds "Its notes show only in Hotspots."
-    (they are drawn in no other view);
-  - `.isec.manim` - the clip's name (`anim-name`) and "Plays by itself"
-    (`anim-autoplay`, disabled without a clip);
-  - `.isec.mnotes` - a card per note (`.anno[data-note]`, `.on` in
-    focus): its number (`note:<i>`), title (`note-title:<i>`) and text
-    (`note-text:<i>`) with their counters, "Pick on model"
-    (`note-place:<i>`), Delete (`note-delete:<i>`) and its place; then
-    "+ Add note (click the model)" (`note-add`, disabled when full), and a
-    hint when the view does not show notes;
-  - `.isec.msections` - a card per section (`.anno[data-section]`): its
-    number, name (`section-name:<i>`), "Place on model", Flip and Delete;
-    then "+ Add section (click the model)" and what a section does.
-  - A button waiting for a click on the model reads "Click the model...",
-    pressed (`.mini.on`).
-
-- A free long text (`model.longText`) is drawn as its title's field and
-  its writer (`InspectorState.writer`, a node `long-text-dock.ts` owns and
-  the inspector only places, so typing never rebuilds it), with Preview
-  (`lt-preview`) and Wider (`lt-wide`) in the head, pressed while on
-  (`InspectorState.longText`). The writer sits between the narration's
-  spot and Position; its fields are not drawn again under their names.
+- A kind's own part of an item (`panel`, a `KindPanelDraw` from
+  `../kind-panels/kind-panel.ts`), drawn without naming the kind: its
+  `title()` in place of the head's own, its `head()` buttons before the
+  fold, its `kept` node right under the sub line (a long text's writer,
+  which `long-text-dock.ts` owns and the inspector only places, so typing
+  never rebuilds it; it stays in the page across draws), and its
+  `parts()` after the item's fields, before Position; with `ownsFields`
+  the item's fields are not drawn. Its `key` is part of what a draw is
+  compared by. A model's size, view, clip, notes and sections are its
+  panel's (`model-panel.ts.md`), a long text's title, Preview and Wider
+  its (`long-text-panel.ts.md`); without its panel an item shows none of
+  them.
 
 - A station's Contents (`.contents`, `data-act="contents"`, open unless
   `contentsOpen` is false): its items (`inspector-contents.ts`) and Add
@@ -185,6 +177,9 @@ content` (Chromium, the editor's browser; elsewhere it stays three
   number (`radius-slider.ts`).
 
 ## Invariants & assumptions
+
+- Its small pieces (`el`, `typed`, `numberField`, `chipGroup`, ...) are
+  `inspector-fields.ts`'s, shared with the kinds' panels.
 
 - Nothing here writes: the shell reads the typed fields and the
   commands' `data-act`. A code stays read-only (`<output>`s).

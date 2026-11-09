@@ -47,3 +47,7 @@ the inspector's "Wider" width and whether the preview shows.
 ## Narration
 
 The dock passes the shell's `readNarration` / `editNarration` (and `voiceMaxBytes`, the page's autosave cap, when given) to the writer as `narration: { read, edit, voiceMaxBytes }`.
+
+## As a panel
+
+`long-text-panel.ts` wraps the dock as the long text's row of the inspector's kind panels (`../kind-panels/kind-panels.ts`); the shell no longer makes the dock itself.

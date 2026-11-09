@@ -1,0 +1,22 @@
+{
+  "normal": {
+    "ask": "Something small here glows. Can you find it and tap it?",
+    "reply": "There it is. Small things are easy to walk past.",
+    "hint": "Look beside the sign.",
+    "showScore": false,
+    "colour": "amber",
+    "sign": { "x": -0.4, "z": -0.6 }
+  },
+  "longest": {
+    "ask": "Before you walk on, look carefully around this whole square, past the fountain and the statue, and find the one small light that does not belong to any lamp post.",
+    "reply": "That is the one. People have crossed this square for centuries and most of them never noticed it, so you can feel a little proud of yourself now.",
+    "hint": "It is lower than you think, about the height of your hand, and it moves a little as if it were breathing slowly.",
+    "showScore": true,
+    "colour": "teal",
+    "sign": { "x": 0.6, "z": -1.2 }
+  },
+  "missing": {
+    "ask": "Find the small light.",
+    "reply": "Found."
+  }
+}

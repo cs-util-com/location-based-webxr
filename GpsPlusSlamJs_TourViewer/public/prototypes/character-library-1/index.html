@@ -1,0 +1,601 @@
+<!doctype html>
+<!-- Throwaway prototype: the tour editor picks characters up from the on-device character library. The maker opens in a full-screen dialog (maker.html in a same-origin frame) or on its own at maker.html. Not wired to the app. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Characters from the library</title>
+    <link rel="stylesheet" href="common.css" />
+    <style>
+      html,
+      body {
+        overflow: hidden;
+      }
+      .editor {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        grid-template-rows: 52px 1fr;
+      }
+      .ed-bar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 0 18px;
+        background: var(--card);
+        border-bottom: 1px solid var(--line-soft);
+        min-width: 0;
+      }
+      .ed-bar b {
+        font-family: var(--serif);
+        font-size: 19px;
+        white-space: nowrap;
+      }
+      .ed-bar .tag {
+        margin-left: auto;
+        font-size: 12px;
+        color: var(--ink-3);
+        text-align: right;
+      }
+      .ed-main {
+        display: grid;
+        grid-template-columns: 260px 1fr 400px;
+        gap: 14px;
+        padding: 14px;
+        min-height: 0;
+      }
+      .ed-panel {
+        background: var(--card);
+        border: 1px solid var(--line-soft);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        padding: 16px;
+        overflow: auto;
+        min-width: 0;
+      }
+      .ed-stations ol {
+        margin: 10px 0 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 8px;
+      }
+      .ed-stations li {
+        padding: 10px 12px;
+        border-radius: 12px;
+        background: #fff;
+        border: 1px solid var(--line-soft);
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      .ed-stations li i {
+        font-style: normal;
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        background: var(--route);
+        color: #fff;
+        display: grid;
+        place-items: center;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .ed-map {
+        border-radius: var(--radius);
+        background: var(--paper-3);
+        overflow: hidden;
+      }
+      .ed-map svg {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      .settings {
+        display: grid;
+        gap: 14px;
+        align-content: start;
+      }
+      .settings h2 {
+        font-family: var(--serif);
+        font-size: 22px;
+        line-height: 1.15;
+      }
+      .settings h3 {
+        font-size: 15px;
+      }
+      .sec-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .pickup {
+        background: var(--ok-soft);
+        border: 1.5px solid #9fc08f;
+        border-radius: 14px;
+        padding: 12px 14px;
+        display: grid;
+        gap: 10px;
+      }
+      .pickup .row {
+        gap: 8px;
+      }
+      hr {
+        border: 0;
+        border-top: 1px solid var(--line-soft);
+        margin: 2px 0;
+        width: 100%;
+      }
+      .about {
+        font-size: 13.5px;
+      }
+      .about p + p {
+        margin-top: 8px;
+      }
+
+      /* the maker, as a full-screen dialog of the editor */
+      dialog.maker {
+        width: 100vw;
+        height: 100dvh;
+        max-width: none;
+        max-height: none;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        background: var(--card);
+      }
+      dialog.maker[open] {
+        display: grid;
+        grid-template-rows: 44px 1fr;
+      }
+      dialog.maker::backdrop {
+        background: rgb(42 40 36 / 40%);
+      }
+      .dlg-bar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0 10px;
+        background: var(--ink);
+        color: var(--card);
+      }
+      .dlg-bar button {
+        border: 0;
+        background: rgb(255 255 255 / 12%);
+        color: var(--card);
+        border-radius: 999px;
+        padding: 6px 14px;
+        min-height: 36px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .dlg-bar span {
+        font-size: 13px;
+        opacity: 0.8;
+        margin-left: auto;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      dialog.maker iframe {
+        border: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+
+      /* phone and phone landscape: only the settings, as in creator mode */
+      @media (max-width: 899px) {
+        .ed-main {
+          grid-template-columns: minmax(0, 1fr);
+          padding: 10px 16px;
+        }
+        .ed-stations,
+        .ed-map {
+          display: none;
+        }
+        .ed-panel {
+          box-shadow: none;
+          max-width: 640px;
+          width: 100%;
+          justify-self: center;
+        }
+        .ed-bar .tag {
+          display: none;
+        }
+      }
+      @media (max-height: 520px) {
+        .editor {
+          grid-template-rows: 40px 1fr;
+        }
+        dialog.maker[open] {
+          grid-template-rows: 38px 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="editor">
+      <div class="ed-bar">
+        <b>Old Town Walk</b><span class="dim small">Tour editor</span
+        ><span class="tag">Prototype - nothing leaves this device</span>
+      </div>
+      <div class="ed-main">
+        <div class="ed-panel ed-stations">
+          <p class="kicker">Stations</p>
+          <ol>
+            <li><i>1</i>Market fountain</li>
+            <li><i>2</i>The old mill</li>
+            <li><i>3</i>Town wall gate</li>
+            <li><i>4</i>Chapel steps</li>
+            <li><i>5</i>Riverside lookout</li>
+          </ol>
+        </div>
+        <div class="ed-map" aria-hidden="true">
+          <svg viewBox="0 0 600 600" preserveAspectRatio="xMidYMid slice">
+            <rect width="600" height="600" fill="#e4dac0" />
+            <path
+              d="M0 420 C120 380 200 470 320 430 S520 360 600 400"
+              stroke="#b9cfe0"
+              stroke-width="40"
+              fill="none"
+            />
+            <path
+              d="M80 120 L220 210 L330 160 L420 300 L520 260"
+              stroke="#cf4428"
+              stroke-width="5"
+              stroke-dasharray="10 8"
+              fill="none"
+            />
+            <g fill="#cf4428">
+              <circle cx="80" cy="120" r="12" />
+              <circle cx="220" cy="210" r="12" />
+              <circle cx="330" cy="160" r="12" />
+              <circle cx="420" cy="300" r="12" />
+              <circle cx="520" cy="260" r="12" />
+            </g>
+          </svg>
+        </div>
+        <div class="ed-panel settings" id="settings">
+          <p class="kicker">Tour settings</p>
+          <div>
+            <h2>Characters</h2>
+            <p class="small dim">
+              Guides who stand at your stations, talk, and point the way to the
+              next one.
+            </p>
+          </div>
+
+          <div class="sec-head">
+            <h3>In this tour</h3>
+            <span class="quiet-line" id="tourCount"></span>
+          </div>
+          <ul class="lib" id="tourList"></ul>
+
+          <div class="pickup" id="pickup" hidden aria-live="polite"></div>
+
+          <hr />
+          <div class="sec-head">
+            <h3>On this device</h3>
+            <span class="quiet-line" id="libStatus" aria-live="polite"></span>
+          </div>
+          <ul class="lib" id="libList"></ul>
+          <div class="row">
+            <button class="btn primary" id="makeBtn" type="button">
+              Make a character
+            </button>
+            <button class="btn" id="importBtn" type="button">
+              Import character...
+            </button>
+          </div>
+          <div class="errcard" id="impErr" hidden role="alert"></div>
+          <div class="askcard" id="impAsk" hidden></div>
+          <p class="small">
+            <button class="link" id="manageBtn" type="button">
+              Rename or delete characters on this device
+            </button>
+            <br />
+            <a class="link" href="maker.html" target="_blank" rel="noopener"
+              >Open the character maker on its own</a
+            >
+            <span class="dim">- to make several in a row</span>
+          </p>
+          <details class="more">
+            <summary>Try "Import character..." with prepared files</summary>
+            <p class="small dim" style="margin-bottom: 8px">
+              A character travels between devices as one PNG picture with its
+              name inside. These files show what is accepted and what is
+              refused.
+            </p>
+            <div class="chips" id="prepared"></div>
+          </details>
+          <details class="more about">
+            <summary>How this prototype works</summary>
+            <p>
+              The character maker saves each character into a library on this
+              device. This page has no line to the maker: it looks into the
+              library again when you close the maker, and when you come back to
+              this tab from the maker in another tab.
+            </p>
+            <p>
+              Adding a character copies its pictures into the tour, so the tour
+              keeps it even if it is later deleted from this device.
+            </p>
+            <p>
+              <button class="link" id="resetBtn" type="button">
+                Reset the prototype
+              </button>
+              <span class="dim">(clears the library and this tour)</span>
+            </p>
+          </details>
+        </div>
+      </div>
+    </div>
+
+    <dialog class="maker" id="makerDlg" aria-label="Character maker">
+      <div class="dlg-bar">
+        <button id="dlgBack" type="button">&lsaquo; Back to the tour</button>
+        <span>Old Town Walk</span>
+      </div>
+      <iframe id="makerFrame" title="Character maker"></iframe>
+    </dialog>
+
+    <div class="toasts" id="toasts" aria-live="polite"></div>
+    <input type="file" id="impFile" accept="image/png,image/*" hidden />
+
+    <script src="library.js"></script>
+    <script src="ui.js"></script>
+    <script>
+      "use strict";
+      const $ = (s, r = document) => r.querySelector(s);
+      const { esc, toast, busy } = CharUi;
+      const TOUR = "charlib1:tour";
+      const SEEN = "charlib1:seen";
+
+      // ------------------------------------------------------------ the tour (its own copies)
+      let tour = { chars: [] };
+      let seen = null; // library ids this editor has already shown
+      try {
+        tour = JSON.parse(localStorage.getItem(TOUR)) || tour;
+        const s = localStorage.getItem(SEEN);
+        if (s) seen = new Set(JSON.parse(s));
+      } catch {}
+      const saveTour = () => {
+        try {
+          localStorage.setItem(TOUR, JSON.stringify(tour));
+          localStorage.setItem(SEEN, JSON.stringify([...(seen || [])]));
+        } catch {}
+      };
+      const inTour = (id) => tour.chars.some((c) => c.libraryId === id);
+      let pending = []; // records new on this device, offered in the pick-up banner
+      let entries = [];
+
+      function renderTour() {
+        const ul = $("#tourList");
+        ul.innerHTML = "";
+        $("#tourCount").textContent = tour.chars.length
+          ? tour.chars.length + (tour.chars.length === 1 ? " character" : " characters")
+          : "";
+        if (!tour.chars.length) {
+          ul.innerHTML =
+            '<li class="empty-line" style="display:block">No character in this tour yet. Add one from this device below, or make one.</li>';
+          return;
+        }
+        for (const c of tour.chars) {
+          const li = document.createElement("li");
+          li.innerHTML = `<img class="thumb" alt="" src="${c.thumb}" /><div class="who"><b>${esc(c.name)}</b><span class="meta"><span class="state">In this tour</span></span></div><div class="acts"><button class="btn small" type="button">Remove</button></div>`;
+          li.querySelector("button").onclick = () => {
+            const i = tour.chars.indexOf(c);
+            tour.chars.splice(i, 1);
+            saveTour();
+            renderAll();
+            toast(c.name + " is no longer in this tour. It stays on this device.", false, {
+              label: "Undo",
+              run: () => {
+                tour.chars.splice(i, 0, c);
+                saveTour();
+                renderAll();
+              },
+            });
+          };
+          ul.append(li);
+        }
+      }
+
+      async function renderLib() {
+        const ul = $("#libList");
+        ul.innerHTML = "";
+        if (!entries.length) {
+          ul.innerHTML =
+            '<li class="empty-line" style="display:block">No characters on this device yet.</li>';
+          return;
+        }
+        const freshIds = new Set(pending.map((p) => p.libraryId));
+        for (const e of entries) {
+          const li = document.createElement("li");
+          if (freshIds.has(e.libraryId)) li.classList.add("fresh");
+          const state = inTour(e.libraryId)
+            ? '<span class="state">In this tour</span>'
+            : freshIds.has(e.libraryId)
+              ? '<span class="state info">New</span>'
+              : e.autoName
+                ? '<span class="state warn">No name yet</span>'
+                : "";
+          li.innerHTML = `<img class="thumb" alt="" src="${await CharUi.thumbUrl(e.libraryId)}" /><div class="who"><b>${esc(e.name)}</b><span class="meta">${state}<span>${esc(CharLib.when(e.createdAtIso))}</span></span></div><div class="acts"></div>`;
+          if (!inTour(e.libraryId)) {
+            const b = document.createElement("button");
+            b.className = "btn small";
+            b.type = "button";
+            b.textContent = "Add to tour";
+            b.onclick = () => addToTour(e, b);
+            li.querySelector(".acts").append(b);
+          }
+          ul.append(li);
+        }
+      }
+
+      function renderPickup() {
+        const box = $("#pickup");
+        pending = pending.filter((p) => !inTour(p.libraryId) && entries.some((e) => e.libraryId === p.libraryId));
+        box.hidden = !pending.length;
+        if (!pending.length) return;
+        const names = pending.map((p) => esc(p.name));
+        const list =
+          names.length === 1 ? names[0] : names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
+        box.innerHTML = `<p><b>New on this device: ${list}.</b> ${pending.length === 1 ? "Add it to this tour?" : "Add them to this tour?"}</p><div class="row"><button class="btn primary small" type="button" data-all>${pending.length === 1 ? "Add " + names[0] + " to the tour" : "Add all " + pending.length + " to the tour"}</button><button class="btn small" type="button" data-later>Not now</button></div>`;
+        box.querySelector("[data-all]").onclick = (ev) => addAll(ev.target);
+        box.querySelector("[data-later]").onclick = () => {
+          pending = [];
+          renderAll();
+        };
+      }
+      const renderAll = () => {
+        renderTour();
+        renderPickup();
+        renderLib();
+      };
+
+      // ------------------------------------------------------------ picking up from the library
+      // The only hand-off: read the library again. When the maker's dialog
+      // closes, when this tab comes back to the front, and when the page opens.
+      let relisting = null;
+      async function relist(reason) {
+        if (relisting) return relisting;
+        relisting = (async () => {
+          $("#libStatus").textContent = "Looking on this device...";
+          try {
+            const res = await CharLib.list();
+            entries = res.entries;
+            const first = seen === null;
+            if (first) seen = new Set();
+            const fresh = entries.filter((e) => !seen.has(e.libraryId) && !inTour(e.libraryId));
+            if (!first)
+              for (const f of fresh)
+                if (!pending.some((p) => p.libraryId === f.libraryId)) pending.push(f);
+            for (const e of entries) seen.add(e.libraryId);
+            saveTour();
+            const t = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+            $("#libStatus").textContent =
+              {
+                closed: "looked again when the maker closed, ",
+                back: "looked again when you came back, ",
+                load: "looked when this page opened, ",
+                import: "looked again after the import, ",
+              }[reason] + t;
+            renderAll();
+            if (reason === "closed" && !fresh.length) toast("Nothing new on this device");
+          } catch (e) {
+            $("#libStatus").textContent = "";
+            toast("The characters on this device could not be read: " + e.message, true);
+          }
+        })();
+        try {
+          await relisting;
+        } finally {
+          relisting = null;
+        }
+      }
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible" && !$("#makerDlg").open) relist("back");
+      });
+
+      async function addToTour(e, btn) {
+        return busy(btn, "Adding...", async () => {
+          try {
+            const f = await CharLib.files(e.libraryId);
+            const c = await CharUi.cropThumb(f.image);
+            await CharLib.sleep(300); // copying two pictures into the tour
+            tour.chars.push({
+              tourId: "t" + Date.now().toString(36),
+              libraryId: e.libraryId,
+              name: e.name,
+              thumb: c.toDataURL("image/png"),
+            });
+            pending = pending.filter((p) => p.libraryId !== e.libraryId);
+            saveTour();
+            renderAll();
+            toast(e.name + " is in this tour now");
+            return true;
+          } catch (err) {
+            toast("Adding did not work: " + err.message + ". Try again.", true);
+            return false;
+          }
+        });
+      }
+      async function addAll(btn) {
+        const list = [...pending];
+        await busy(btn, "Adding...", async () => {
+          for (const e of list) await addToTour(e, null);
+        });
+      }
+
+      // ------------------------------------------------------------ the maker in a full-screen dialog
+      const dlg = $("#makerDlg");
+      function openMaker(start) {
+        $("#makerFrame").src = "maker.html?in=editor" + (start ? "&start=new" : "");
+        dlg.showModal();
+      }
+      $("#makeBtn").onclick = () => openMaker(true);
+      $("#manageBtn").onclick = () => openMaker(false);
+      $("#dlgBack").onclick = () => dlg.close();
+      dlg.addEventListener("close", () => {
+        $("#makerFrame").src = "about:blank";
+        relist("closed");
+      });
+
+      // ------------------------------------------------------------ "Import character..."
+      $("#importBtn").onclick = () => $("#impFile").click();
+      $("#impFile").addEventListener("change", () => {
+        const f = $("#impFile").files[0];
+        $("#impFile").value = "";
+        if (f) importCharacter(f);
+      });
+      async function importCharacter(file) {
+        const btn = $("#importBtn");
+        const r = await busy(btn, "Reading the file...", () =>
+          CharUi.importFlow(file, $("#impErr"), $("#impAsk"), () => $("#impFile").click()),
+        );
+        if (!r) return;
+        await busy(btn, "Importing...", async () => {
+          try {
+            const rec = await CharLib.save({
+              name: r.name,
+              steady: r.record && r.record.steady,
+              describedAs: r.record && r.record.describedAs,
+              frames: r.framesBlob,
+              image: r.imageBlob,
+              from: "imported file",
+            });
+            (seen || (seen = new Set())).add(rec.libraryId);
+            const res = await CharLib.list();
+            entries = res.entries;
+            await addToTour(rec, null);
+            toast("Imported " + rec.name + ": it is in this tour, and kept on this device");
+          } catch (e) {
+            toast("Importing did not work: " + e.message, true);
+          }
+        });
+      }
+      CharUi.preparedChips($("#prepared"), (f) => importCharacter(f));
+
+      $("#resetBtn").onclick = (ev) =>
+        busy(ev.target, "Resetting...", async () => {
+          await CharLib.resetAll();
+          tour = { chars: [] };
+          seen = null;
+          pending = [];
+          await CharLib.seedOnce();
+          await relist("load");
+          toast("The prototype starts fresh");
+        });
+
+      // ------------------------------------------------------------ start
+      (async () => {
+        await CharLib.seedOnce().catch(() => {});
+        await relist("load");
+      })();
+    </script>
+  </body>
+</html>

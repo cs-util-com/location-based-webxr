@@ -225,13 +225,13 @@ export function startLecternCheck(host: HTMLElement): void {
       -((event.clientY - rect.top) / rect.height) * 2 + 1,
     );
     raycaster.setFromCamera(ndc, camera);
-    if (raycaster.intersectObject(stand.page, false).length > 0) stand.turn();
+    if (raycaster.intersectObject(stand.page, false).length > 0) stand.tap();
   });
 
   const hook: LecternCheck = {
     show,
     turn() {
-      stand?.turn();
+      stand?.tap();
     },
     standAt,
     state() {

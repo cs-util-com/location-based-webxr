@@ -63,19 +63,19 @@ test.describe("the item lab", () => {
     expect(errors).toEqual([]);
   });
 
-  test("moves through the two-step story and reports its end once", async ({
+  // Why this test matters: the scene view shows its Continue button on a
+  // tap step, so the button a person sees must move the story on; the hook's
+  // `next` alone would pass with a dead button.
+  test("moves through the two-step story by its Continue button and reports its end once", async ({
     page,
   }) => {
     await openLab(page);
-    await page.evaluate(() => {
-      window.__itemLab?.next();
-    });
+    const proceed = page.getByRole("button", { name: "Continue" });
+    await proceed.click();
     await expect(page.locator("#lab-text")).toHaveText(
       "The story's next step.",
     );
-    await page.evaluate(() => {
-      window.__itemLab?.next();
-    });
+    await proceed.click();
     await expect.poll(async () => (await state(page)).story.ended).toBe(1);
     const free = (await state(page)).free;
     expect(free.standing).toBe(true);
@@ -224,6 +224,169 @@ test.describe("the item lab", () => {
     await expect(page.locator("#lab-error")).toContainText("could not be read");
     await page.goto("/item-lab.html?kind=..%2Fx");
     await expect(page.locator("#lab-error")).toContainText("not the name");
+  });
+
+  // Why this test matters: a kind's `assets(block)` is untyped code from a
+  // session's folder. One that throws must fail once, as the page loads,
+  // with its words on the page, not on every frame behind a running lab.
+  test("says so at load when the kind's assets() throws", async ({ page }) => {
+    const errors = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.route("**/prototypes/item-kinds/broken-1/kind.js", (route) =>
+      route.fulfill({
+        contentType: "text/javascript",
+        body: [
+          "export function card(block, host) { host.slots.text.textContent = 'x'; }",
+          "export function assets() { throw new Error('assets broke'); }",
+        ].join("\n"),
+      }),
+    );
+    await page.route("**/prototypes/item-kinds/broken-1/sample.json", (route) =>
+      route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          name: "Broken",
+          words: "Broken words.",
+          records: {
+            normal: { kind: "broken" },
+            longest: { kind: "broken" },
+            missing: { kind: "broken" },
+          },
+          assets: [{ id: "pic", kind: "image", file: "pic.png" }],
+        }),
+      }),
+    );
+    await page.goto("/item-lab.html?kind=broken-1");
+    await expect(page.locator("#lab-error")).toContainText("assets broke");
+    expect(await page.evaluate(() => window.__itemLab)).toBeUndefined();
+    expect(errors).toEqual([]);
+  });
+
+  // Why this test matters: a kind's world view is built through the same
+  // environment a station gives it, so the lab must stand it in both modes
+  // and show that edit holds it still while play moves it; a part that
+  // only stood would pass a look at the page.
+  test("the world view stands in play and in edit, still only in edit", async ({
+    page,
+  }) => {
+    await openLab(page);
+    await expect.poll(async () => (await state(page)).world.moving).toBe(true);
+    let world = (await state(page)).world;
+    expect(world).toMatchObject({ has: true, mode: "play", standing: true });
+    expect(world.cost.calls).toBeGreaterThan(0);
+    expect(world.cost.calls).toBeLessThanOrEqual(30);
+    expect(world.cost.triangles).toBeLessThanOrEqual(50_000);
+    await expect(page.locator("#lab-cost")).toContainText("draw calls");
+    await page.getByRole("button", { name: "Edit mode" }).click();
+    await expect.poll(async () => (await state(page)).world.mode).toBe("edit");
+    await page.evaluate(() => window.__itemLab?.settle());
+    world = (await state(page)).world;
+    expect(world.standing).toBe(true);
+    expect(world.moving).toBe(false);
+  });
+
+  // Why this test matters: a tap is cast against the part's tapTarget by
+  // the real pick, so a click where the plate is drawn must reach the part
+  // and not the figure beside it.
+  test("a click on the world view's plate reaches it, not the figure", async ({
+    page,
+  }) => {
+    await openLab(page);
+    await page.evaluate(() => window.__itemLab?.settle());
+    const target = (await state(page)).world.target;
+    if (target === null) throw new Error("no tap target");
+    const box = await page.locator("#lab-world canvas").boundingBox();
+    if (box === null) throw new Error("no canvas");
+    await page.mouse.click(
+      box.x + ((target[0] + 1) / 2) * box.width,
+      box.y + ((1 - target[1]) / 2) * box.height,
+    );
+    await expect.poll(async () => (await state(page)).world.taps).toBe(1);
+    expect((await state(page)).sound.free).toBe(false);
+  });
+
+  // Why this test matters: a kind is tried on its normal, longest and
+  // missing records; what read() fixed must reach the page, and the
+  // missing record (no picture, no sound) must still stand its words.
+  test("switches records and says what read() fixed", async ({ page }) => {
+    await openLab(page);
+    await page.getByRole("button", { name: "The longest record" }).click();
+    await expect(page.locator("#lab-problems")).toContainText("name cut");
+    await page.getByRole("button", { name: "The missing record" }).click();
+    await expect(page.locator("#lab-speaker")).toHaveText("A stamp");
+    await expect(page.locator("#lab-problems")).toContainText("no name");
+    const now = await state(page);
+    expect(now.record).toBe("missing");
+    expect(now.declared).toEqual([]);
+    expect(now.world.standing).toBe(true);
+    await page.getByRole("button", { name: "The normal record" }).click();
+    await expect(page.locator("#lab-problems")).toHaveText("");
+  });
+
+  // Why this test matters: a world view freed with its station must give
+  // back every geometry and texture it made; ten rounds through the real
+  // renderer show a leak a single round could hide in noise.
+  test("ten world-view rounds leave no geometry or texture behind", async ({
+    page,
+  }) => {
+    await openLab(page);
+    const left = await page.evaluate(() => window.__itemLab?.rounds(10));
+    expect(left).toEqual({ geometries: 0, textures: 0 });
+  });
+
+  // Why this test matters: a kind is judged on a bright and a dark
+  // backdrop; the control must really repaint the sky behind it.
+  test("the dark backdrop darkens the sky", async ({ page }) => {
+    await openLab(page);
+    const sky = async () => {
+      await page.evaluate(() => window.__itemLab?.settle());
+      const box = await page.locator("#lab-world canvas").boundingBox();
+      if (box === null) throw new Error("no canvas");
+      const shot = await page.screenshot({
+        clip: { x: box.x + 2, y: box.y + 2, width: 4, height: 4 },
+      });
+      return page.evaluate(async (base64) => {
+        const image = new Image();
+        image.src = `data:image/png;base64,${base64}`;
+        await image.decode();
+        const canvas = document.createElement("canvas");
+        canvas.width = image.width;
+        canvas.height = image.height;
+        const ctx = canvas.getContext("2d");
+        if (ctx === null) throw new Error("no canvas");
+        ctx.drawImage(image, 0, 0);
+        const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+        return (r + g + b) / 3;
+      }, shot.toString("base64"));
+    };
+    expect(await sky()).toBeGreaterThan(180);
+    await page.getByRole("button", { name: "Dark backdrop" }).click();
+    expect((await state(page)).world.backdrop).toBe("dark");
+    expect(await sky()).toBeLessThan(80);
+  });
+
+  // Why this test matters: world() is untyped code from a session's
+  // folder; one that throws must say why under the station and leave the
+  // rest of the lab running.
+  test("a world() that throws says so and the lab runs on", async ({
+    page,
+  }) => {
+    await page.route(
+      "**/prototypes/item-kinds/stamp-1/kind.js",
+      async (route) => {
+        const response = await route.fetch();
+        const body = (await response.text()).replace(
+          "export function world(block, env) {",
+          "export function world(block, env) { throw new Error('world broke');",
+        );
+        await route.fulfill({ response, body });
+      },
+    );
+    await openLab(page);
+    await expect(page.locator("#lab-cost")).toContainText("world broke");
+    const now = await state(page);
+    expect(now.world.standing).toBe(false);
+    expect(now.free.standing).toBe(true);
   });
 
   for (const viewport of VIEWPORTS) {

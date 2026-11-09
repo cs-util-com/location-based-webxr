@@ -28,6 +28,7 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   finishedFileName,
+  finishedManifest,
   pendingAfterRebuild,
   rebuildFinishedTour,
 } from "./finish-rebuild.js";
@@ -296,6 +297,43 @@ describe("rebuildFinishedTour (M6 E0: the Finish's rules, shared)", () => {
       "p1",
       "b",
     ]);
+    await tour.close();
+  });
+
+  // Why: a smaller file replaces a photo's picture under the same id, so
+  // the manifest lists the asset at its new path while the picture's own
+  // inline record still names the old one. A picture written at the
+  // inline path is an entry no manifest names, holding bytes of another
+  // type than its extension says - and the listed path stays empty when
+  // nothing else writes it.
+  it("writes a placed photo's picture at the path the written tour lists for it, once", async () => {
+    const tour = await plainTour([]);
+    const webp = new Blob(["webp"], { type: "image/webp" });
+    const object = seated(photo("p1"));
+    const listed = {
+      ...hereTour(),
+      assets: [{ ...photo("p1").imageAsset, path: "content/p1.webp" }],
+    };
+    for (const files of [[], [{ path: "content/p1.webp", data: webp }]]) {
+      const result = await rebuildFinishedTour({
+        ...NO_EDITS,
+        tour,
+        manifest: listed,
+        placed: [{ object, blob: webp }],
+        files,
+      });
+      const names = await namesOf(result!.blob);
+      expect(names).not.toContain(`${WRAP}content/p1.jpg`);
+      expect(names.filter((n) => n === `${WRAP}content/p1.webp`)).toHaveLength(
+        1,
+      );
+      await expect(
+        textOf(result!.blob, `${WRAP}content/p1.webp`),
+      ).resolves.toBe("webp");
+      expect(result!.written.assets.map((a) => a.path)).toEqual([
+        "content/p1.webp",
+      ]);
+    }
     await tour.close();
   });
 
@@ -835,5 +873,95 @@ describe("a long text's media survive a Finish", () => {
       expect(names, kept).toContain(`${WRAP}${kept}`);
     }
     expect(names).not.toContain(`${WRAP}timing/gone.json`);
+  });
+});
+
+describe("finishedManifest keeps a story step's picture across a deleted photo", () => {
+  // Why: a photo moved into a story that was then deleted lives on only in
+  // an undo step's story block. The content step drops a deleted photo's
+  // own image; `keepStoryAssets` (story blocks only) puts it back, while an
+  // id that `keepAssets` (the whole undo history) alone names stays gone.
+  // A photo deleted where it stood free must not keep its bytes in every
+  // copy, and one an undo step shows inside a story must not lose them.
+  // Were the story set fed the whole history's ids, both photos would come
+  // back; were it empty, neither would.
+  it("puts back the image a story step names, and only that one", () => {
+    const manifest = tourOf(
+      [seated(photo("in-story")), seated(photo("free"))],
+      {
+        stations: [HERE],
+      },
+    );
+    expect(manifest.assets.map((a) => a.id).sort()).toEqual([
+      "free",
+      "in-story",
+    ]);
+    const written = finishedManifest({
+      manifest,
+      placed: [],
+      deleted: ["in-story", "free"],
+      keepAssets: new Set(["in-story", "free"]),
+      keepStoryAssets: new Set(["in-story"]),
+    });
+    expect(written.assets.map((a) => a.id)).toEqual(["in-story"]);
+  });
+
+  it("puts back nothing when no story step names the image", () => {
+    const manifest = tourOf([seated(photo("free"))], { stations: [HERE] });
+    const written = finishedManifest({
+      manifest,
+      placed: [],
+      deleted: ["free"],
+      keepAssets: new Set(["free"]),
+    });
+    expect(written.assets).toEqual([]);
+  });
+});
+
+describe("a smaller file of a photo an undo step keeps", () => {
+  // Why: a smaller file replaces its asset's file under the same id, and
+  // the document lists the asset at its new path. When that photo is
+  // deleted but an undo step's story block still names its image, the
+  // write puts the asset back from the document's list - which must be the
+  // NEW record, with the new bytes written at the new path and the old
+  // entry removed. Were the old record put back, the manifest would name
+  // an entry the same write removes; were the new bytes left out, an undo
+  // across the save would show the picture as the original or not at all.
+  it("lists the new path, writes the new bytes there and removes the old entry", async () => {
+    const opened = tourOf([seated(photo("in-story"))], { stations: [HERE] });
+    const tour = await open(
+      await packFilesAsZip([
+        { path: `${WRAP}tour.json`, data: serializeTourManifest(opened) },
+        { path: `${WRAP}content/in-story.jpg`, data: "original" },
+      ]),
+    );
+    // As the document lists it after the swap (`manifestNow`).
+    const swapped: TourManifest = {
+      ...opened,
+      assets: opened.assets.map((a) =>
+        a.id === "in-story" ? { ...a, path: "content/in-story.webp" } : a,
+      ),
+    };
+    const result = await rebuildFinishedTour({
+      tour,
+      manifest: swapped,
+      ...NO_EDITS,
+      deleted: ["in-story"],
+      keepAssets: new Set(["in-story"]),
+      keepStoryAssets: new Set(["in-story"]),
+      files: [{ path: "content/in-story.webp", data: new Blob(["smaller"]) }],
+      replaced: ["content/in-story.jpg"],
+    });
+    expect(result).not.toBeNull();
+    const written = await zipManifest(result!.blob);
+    expect(written.assets.filter((a) => a.id === "in-story")).toEqual([
+      expect.objectContaining({ path: "content/in-story.webp" }),
+    ]);
+    expect(await textOf(result!.blob, `${WRAP}content/in-story.webp`)).toBe(
+      "smaller",
+    );
+    expect(await namesOf(result!.blob)).not.toContain(
+      `${WRAP}content/in-story.jpg`,
+    );
   });
 });

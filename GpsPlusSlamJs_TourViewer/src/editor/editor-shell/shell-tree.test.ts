@@ -135,6 +135,41 @@ describe("a story's folder", () => {
     ).toBe("Hide the entries");
   });
 
+  // Why: the nested drag (`tree-nest-drag.ts`) reads a row's list and
+  // id, and the rows a drop goes into, from these; a row drawn without
+  // them cannot be moved, and one with the wrong list would move its item
+  // somewhere else. Each grip is outside the row's buttons' text, no
+  // button of its own.
+  it("gives each story, entry and free item a grip and its list, and names where a drop goes in", () => {
+    const { body } = drawn({ openStories: ["legend", "empty"] });
+    const rowOf = (selector: string) =>
+      body.querySelector<HTMLElement>(selector)?.dataset;
+    expect(rowOf('.folder[data-story="legend"]')).toMatchObject({
+      list: "stories",
+      item: "legend",
+      into: "story:legend",
+    });
+    expect(rowOf('[data-select="l1"]')).toMatchObject({
+      list: "story:legend",
+      item: "l1",
+    });
+    expect(rowOf('[data-select="kay"]')).toMatchObject({
+      list: "free",
+      item: "kay",
+    });
+    expect(rowOf(".emptyrow.deep")?.["into"]).toBe("story:empty");
+    expect(rowOf(".card > .head")?.["into"]).toBe("free");
+    expect(
+      [...body.querySelectorAll<HTMLElement>("[data-move]")].map(
+        (g) => g.dataset["move"],
+      ),
+    ).toEqual(["legend", "l1", "empty", "kay"]);
+    for (const grip of body.querySelectorAll("[data-move]")) {
+      expect(grip.getAttribute("aria-hidden")).toBe("true");
+      expect(grip.closest(".nm")).toBeNull();
+    }
+  });
+
   it("says an open empty story has no entries, with the way to add one", () => {
     const { body } = drawn({ openStories: ["empty"] });
     const empty = body.querySelector(".emptyrow.deep");
@@ -515,6 +550,8 @@ describe("drawTree", () => {
     expect(cards.map((c) => c.dataset["station"])).toEqual(["gate"]);
     expect(cards[0]?.querySelector(".kids")?.textContent).toBe("The arch");
     expect(dock.body.querySelector(".nomatch")).toBeNull();
+    // A drop would place an item among rows the search hides: no grips.
+    expect(dock.body.querySelector("[data-move]")).toBeNull();
     draw("zebra");
     expect(dock.body.querySelectorAll(".card")).toHaveLength(0);
     expect(dock.body.querySelector(".nomatch")?.textContent).toBe(

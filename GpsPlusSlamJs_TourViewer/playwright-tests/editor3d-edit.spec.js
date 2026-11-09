@@ -307,7 +307,9 @@ test("a pin dragged out of its circle warns on the ring and stays in its station
     .toBe(station);
   const after = pinOf(await manifest(page));
   if (after === null) throw new Error("the pin is gone");
-  expect(Math.hypot(...after.item.pose.position)).toBeGreaterThan(4);
+  // Out of the circle on the ground: the up component is no distance.
+  const [x = 0, , z = 0] = after.item.pose.position;
+  expect(Math.hypot(x, z)).toBeGreaterThan(4);
   expect((await manifest(page)).stations).toHaveLength(stations);
   await expect(
     page.locator(".toast", { hasText: "outside its circle" }),

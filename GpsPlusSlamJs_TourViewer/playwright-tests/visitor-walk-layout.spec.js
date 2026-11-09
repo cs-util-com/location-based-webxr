@@ -478,7 +478,7 @@ for (const viewport of VIEWPORTS) {
       // The list open: its close button, its title, its first row and that
       // row's Skip on the screen.
       await page.getByTestId("walk-grab").click();
-      for (const id of ["walk-close", "walk-list-title"]) {
+      for (const id of ["walk-sound", "walk-close", "walk-list-title"]) {
         onScreen(await box(page, id), id);
       }
       onScreen(await boxOf(page.getByTestId("walk-row").first()), "first row");

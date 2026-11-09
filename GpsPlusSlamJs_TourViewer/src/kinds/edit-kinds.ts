@@ -10,15 +10,35 @@
  *
  * @see edit-kinds.ts.md
  */
-import type { TourBlockKind } from "gps-plus-slam-app-framework/ar/tour-kinds";
+import {
+  TOUR_AUDIO_MAX_RADIUS_M,
+  TOUR_AUDIO_MAX_REACH_M,
+  TOUR_AUDIO_MIN_RADIUS_M,
+  TOUR_AUDIO_MIN_REACH_M,
+  type TourBlockKind,
+} from "gps-plus-slam-app-framework/ar/tour-kinds";
 
-/** One text field of a kind, as the inspector draws it. */
+/** A number a field takes: the format's bounds, its unit, and whether the
+ *  views it shows in need it. */
+interface NumberSpec {
+  readonly min: number;
+  readonly max: number;
+  /** Shown beside the box ("m"; "" for none). */
+  readonly unit: string;
+  readonly required: boolean;
+}
+
+/** One field of a kind, as the inspector draws it. */
 export interface FieldSpec {
   /** The block's own field (`data-field` in the inspector). */
   readonly name: string;
   readonly label: string;
   /** Prose: a text area that keeps its lines, else one line. */
   readonly prose: boolean;
+  /** A number, not a text (`block-fields.ts` reads the typed decimal). */
+  readonly number?: NumberSpec;
+  /** Only in these views (the ones that read it); none: in every view. */
+  readonly views?: readonly string[];
 }
 
 /** How a kind is added from nothing: its line in the tree's type menu (and,
@@ -66,6 +86,54 @@ const TRANSCRIPT = {
   label: "Transcript",
   prose: true,
 } as const;
+
+/** A sound's world fields, each in the view that reads it, bounded as
+ *  the format bounds them (`tour-kinds.ts` `audioWorld`). */
+const AUDIO_WORLD: readonly FieldSpec[] = [
+  {
+    name: "radiusM",
+    label: "Radius",
+    prose: false,
+    views: ["spot"],
+    number: {
+      min: TOUR_AUDIO_MIN_RADIUS_M,
+      max: TOUR_AUDIO_MAX_RADIUS_M,
+      unit: "m",
+      required: true,
+    },
+  },
+  {
+    name: "maxM",
+    label: "Reach",
+    prose: false,
+    views: ["zone"],
+    number: {
+      min: TOUR_AUDIO_MIN_REACH_M,
+      max: TOUR_AUDIO_MAX_REACH_M,
+      unit: "m",
+      required: true,
+    },
+  },
+  {
+    name: "minM",
+    label: "Full volume within",
+    prose: false,
+    views: ["zone"],
+    number: {
+      min: TOUR_AUDIO_MIN_REACH_M,
+      max: TOUR_AUDIO_MAX_REACH_M,
+      unit: "m",
+      required: false,
+    },
+  },
+  {
+    name: "volume",
+    label: "Volume",
+    prose: false,
+    views: ["zone"],
+    number: { min: 0, max: 1, unit: "", required: true },
+  },
+];
 
 /** THE list. Key order is the order of every derived menu. */
 export const KIND_EDIT = {
@@ -133,8 +201,11 @@ export const KIND_EDIT = {
     thing: "sound",
     look: "audio",
     searchWords: "audio sound",
-    inWorld: false,
-    fields: [TITLE, TRANSCRIPT],
+    // Free, a sound always stands in the world (a narration circle or a
+    // zone, `tour-kinds.ts` `freeViews`); the editor shows the same
+    // part, still and silent.
+    inWorld: true,
+    fields: [TITLE, TRANSCRIPT, ...AUDIO_WORLD],
   },
   model: {
     label: "3D model",

@@ -1,0 +1,37 @@
+<!doctype html>
+<!-- Prototype: quiz answers as four small scenes of items, with a consequence after the pick. Throwaway; not wired to the app. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="robots" content="noindex" />
+    <title>Answers As Scenes</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <script type="module">
+      import { loadSamples, runStage } from "../quiz-world-stage/stage.js";
+      import { kind } from "./kind.js";
+      const samples = await loadSamples("./sample.json");
+      if (samples)
+        runStage({
+          kind,
+          samples,
+          title: "Answers As Scenes",
+          story: {
+            before:
+              "This square has not always looked the way it does now. Stay with me a moment: four small scenes are waiting for you over there.",
+          },
+        });
+    </script>
+  </body>
+</html>

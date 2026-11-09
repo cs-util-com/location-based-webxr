@@ -1,0 +1,108 @@
+{
+  "name": "A narration in the world, and an ambient sound near it",
+  "records": {
+    "normal": {
+      "kind": "audio",
+      "view": "spot",
+      "title": "The old well",
+      "audio": "well-voice",
+      "radiusM": 6,
+      "lines": [
+        {
+          "at": 0.6,
+          "text": "You are standing where the town well stood for three hundred years."
+        },
+        {
+          "at": 5.8,
+          "text": "Every morning the square filled with people carrying buckets, and news."
+        },
+        {
+          "at": 11.4,
+          "text": "In dry summers a guard sat here, so that nobody took more than their share."
+        },
+        {
+          "at": 17.2,
+          "text": "When water pipes reached the houses in 1902, the well was covered over."
+        },
+        {
+          "at": 22.8,
+          "text": "The ring of paving stones around you still marks its edge."
+        },
+        {
+          "at": 27.6,
+          "text": "Look down: the darker stones in the middle are the old well head."
+        },
+        {
+          "at": 32.6,
+          "text": "Walk on toward the market, and listen to it as you go."
+        }
+      ]
+    },
+    "longest": {
+      "kind": "audio",
+      "view": "spot",
+      "title": "The weavers' guild house and the long quarrel over the market hall roof, 1612-50",
+      "audio": "guild-voice",
+      "radiusM": 6,
+      "lines": [
+        {
+          "at": 0.6,
+          "text": "In the spring of 1612 the weavers' guild, which had grown rich on the wool trade along the river, asked the town council for permission to build a second floor above the open market hall, so that its members could meet, store their cloth and keep their accounts under one roof."
+        },
+        {
+          "at": 14.5,
+          "text": "The council agreed, but the butchers, who sold their meat in the hall below, refused to pay for a new roof that would mostly serve the weavers."
+        },
+        {
+          "at": 23.5,
+          "text": "The quarrel went on for almost forty years, through two fires, a flood and a war, and it was settled only when both guilds had run out of money."
+        },
+        {
+          "at": 33.5,
+          "text": "The roof you see today is the one they finally agreed on in 1650."
+        }
+      ]
+    },
+    "missingOptional": {
+      "kind": "audio",
+      "view": "spot",
+      "title": "A short greeting",
+      "audio": "greeting-voice"
+    },
+    "ambient": {
+      "kind": "audio",
+      "view": "zone",
+      "title": "Market sounds",
+      "audio": "market-bed",
+      "maxM": 14,
+      "minM": 4,
+      "volume": 0.6
+    }
+  },
+  "assets": [
+    {
+      "id": "well-voice",
+      "kind": "audio",
+      "generated": "speech-like",
+      "seconds": 37
+    },
+    {
+      "id": "guild-voice",
+      "kind": "audio",
+      "generated": "speech-like",
+      "seconds": 38
+    },
+    {
+      "id": "greeting-voice",
+      "kind": "audio",
+      "generated": "speech-like",
+      "seconds": 12
+    },
+    {
+      "id": "market-bed",
+      "kind": "audio",
+      "generated": "market murmur, loops",
+      "seconds": 12
+    }
+  ]
+}

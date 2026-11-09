@@ -132,8 +132,9 @@ export const NATURAL_LIGHT_ADAPTATION = 0.83;
  * - 3: 65.3 / 74.0 / 77.7 / 54.3 (clears it by 3.8)
  * The EV alternative first cleared the floor at -2.65 (64.3) but took the
  * June-noon margin from 6.07 to 5.43 and brightened the twilight points by
- * about a third (15.9 -> 21.7 at -2.9 degrees); the sky light moves twilight
- * by less than 1 and the night not at all (its environment is near zero).
+ * about a third (15.9 -> 21.7 at -2.9 degrees); the sky light at 3 moves it
+ * by 1.3 (15.9 -> 17.2) and the night not at all (its environment is near
+ * zero).
  * The verdict would flip only if the June-noon reading drifted down by more
  * than 3.8 between runs (it repeated to 0.1 across the r1155 and r1158 runs).
  */

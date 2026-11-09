@@ -12,6 +12,7 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
 
 ## Behaviour
 
+- Leaving a file (`leaveFile`) closes the session's asset shelf first, so no optimization job of the old tour lands in the next one.
 - Every slider of the page takes the framework's scroll guard at load, so a
   vertical swipe on the radius slider scrolls its panel on a phone.
 
@@ -714,7 +715,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   (`undelivered`, a Blob; the store holds only that one waits).
 - **The page's chrome state is the store's too** (`editorView`,
   `editor-view.ts`, mounted only here: `createTourViewerStore(undefined,
-{ editorView })`): the selection, `busy`, the marker being dragged and
+{ editorView, ...EDITOR_SESSION_SLICES })`, the session's own slices -
+  the asset shelf - beside it): the selection, `busy`, the marker being dragged and
   its drop, `keepsWalk`, `openedWalk`, `doneBusy`, whether a save waits
   to be delivered, the card's outcome line and the file picker's
   `picking`. The page reads them through `ui()` and changes them only by
@@ -842,6 +844,17 @@ The dev hook adds `view3dModelParts()` and
 `view3dModelScreen(id, at)` for `editor3d-model.spec.js`.
 
 ### Stories in the tree
+
+A move of a station's item or story (`stations.moveChild`, from the
+tree's drag or the inspector's buttons) is one step; one onto another
+station asks first (`confirmPausingFrames` with `stationMoveQuestion`:
+an item will stand at that station's centre, a story's entries keep
+their layout around it, and either needs placing again), writes nothing
+on no, says `Moved to "<station>"` in its toast with the same rule for
+an item or a whole story, and answers
+whether it moved (the shell then flies the view there); its toast names the
+answers that now go on to the next entry and an item now standing in the
+world in its kind's usual view, and a refusal is said in a toast.
 
 The tree's add makes a story (`addStoryTo`) or an entry (`addToStoryEntry`),
 selects it, says it in a toast, one step each. Deleting a story asks first

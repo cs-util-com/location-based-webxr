@@ -24,8 +24,9 @@ buildings, trees, cosmeticTrees, roads, roadCount }`. `window` (a lat/lng
   bounding box of the data the caller fetched; everything invented from a
   relation (the cosmetic trees today) stays inside it. RangeError without it.
   `cosmeticTrees` are `buildCosmeticTrees`' placements (woods, orchards,
-  tree rows; rank order, `cosmetic: true`), excluded from every built
-  building footprint (also those outside `withinM`) and from road half
+  tree rows; rank order, `cosmetic: true`), excluded from every outer
+  ring of every built building (each part of a multipolygon, `outerRings`;
+  also those outside `withinM`) and from road half
   widths, kept within `withinM`; never in `trees`.
 - `buildCity(features, ground, { window, cosmeticTrees: false })` builds no
   cosmetic trees (default true, the owner's choice). `volumes` and `barriers` are the builders' own results (a caller

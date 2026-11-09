@@ -157,6 +157,91 @@ function fanfareWav() {
   return Buffer.concat([header, data]);
 }
 
+/** 16-bit mono PCM `samples` at `rate` as a WAV file. */
+function wavOf(samples, rate) {
+  const data = Buffer.alloc(samples.length * 2);
+  samples.forEach((s, i) => data.writeInt16LE(s, i * 2));
+  const header = Buffer.alloc(44);
+  header.write("RIFF", 0, "ascii");
+  header.writeUInt32LE(36 + data.length, 4);
+  header.write("WAVE", 8, "ascii");
+  header.write("fmt ", 12, "ascii");
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20); // PCM
+  header.writeUInt16LE(1, 22); // mono
+  header.writeUInt32LE(rate, 24);
+  header.writeUInt32LE(rate * 2, 28);
+  header.writeUInt16LE(2, 32);
+  header.writeUInt16LE(16, 34);
+  header.write("data", 36, "ascii");
+  header.writeUInt32LE(data.length, 40);
+  return Buffer.concat([header, data]);
+}
+
+/** A seeded generator (mulberry32), so a rebuild writes the same bytes. */
+function seeded(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// --- The narration: a stand-in for a guide's voice, 8 kHz mono. ---
+// No recorded voice is licence-clean to ship, so this is a hummed line:
+// syllable-long glides of a low buzz through two vowel-like resonances,
+// in three phrases, one per sentence of its transcript.
+function narrationWav() {
+  const rate = 8_000;
+  const random = seeded(7);
+  const samples = [];
+  for (let phrase = 0; phrase < 3; phrase += 1) {
+    const syllables = 6 + phrase;
+    for (let s = 0; s < syllables; s += 1) {
+      const count = Math.round(rate * (0.16 + 0.12 * random()));
+      const pitch = 120 + 30 * random() - 4 * s;
+      const formant = 500 + 700 * random();
+      for (let i = 0; i < count; i += 1) {
+        const t = i / rate;
+        const envelope = Math.sin((Math.PI * i) / count);
+        const buzz =
+          Math.sin(2 * Math.PI * pitch * t) +
+          0.5 *
+            Math.sin(2 * Math.PI * formant * t) *
+            Math.sin(2 * Math.PI * pitch * t);
+        samples.push(Math.round(0.25 * 32767 * envelope * buzz * 0.66));
+      }
+    }
+    for (let i = 0; i < rate * 0.5; i += 1) samples.push(0);
+  }
+  return wavOf(samples, rate);
+}
+
+// --- The market: a soft murmur that loops, 8 kHz mono. ---
+// Smoothed noise under a slow swell, faded at both ends of the loop so a
+// zone repeating it never clicks.
+function marketWav() {
+  const rate = 8_000;
+  const seconds = 6;
+  const count = rate * seconds;
+  const random = seeded(11);
+  const samples = [];
+  let low = 0;
+  for (let i = 0; i < count; i += 1) {
+    low += 0.08 * (random() * 2 - 1 - low);
+    const swell = 0.7 + 0.3 * Math.sin((2 * Math.PI * i) / count);
+    const edge = Math.min(1, i / 800, (count - i) / 800);
+    samples.push(Math.round(0.5 * 32767 * low * swell * edge * 4));
+  }
+  return wavOf(
+    samples.map((s) => Math.max(-32767, Math.min(32767, s))),
+    rate,
+  );
+}
+
 // --- The arch: two pillars and a lintel, one grey mesh, a GLB. ---
 function boxGeometry(cx, cy, cz, sx, sy, sz, positions, indices) {
   const base = positions.length / 3;
@@ -311,6 +396,8 @@ export function buildSampleTour() {
           height: knight.height,
         },
         { id: "fanfare", path: "content/fanfare.wav" },
+        { id: "voice", path: "content/voice.wav" },
+        { id: "market", path: "content/market.wav" },
         { id: "arch", path: "content/arch.glb" },
       ],
       stations: [
@@ -349,6 +436,19 @@ export function buildSampleTour() {
               image: "knight",
               caption: "I polish his armour. Every single day.",
               pose: { position: [-3, 0, 2], rotation: [0, 0, 0, 1] },
+            },
+            {
+              // A narration circle: its card opens within 6 m and plays
+              // on a tap. Its sound is a hummed stand-in for a voice.
+              id: "column-voice",
+              kind: "audio",
+              view: "spot",
+              audio: "voice",
+              title: "The column's story",
+              transcript:
+                "The column was raised in 1638. It thanks the city for surviving the war. The figure on top is the Virgin Mary.",
+              radiusM: 6,
+              pose: { position: [4, 0, 3], rotation: [0, 0, 0, 1] },
             },
             {
               id: "konrad-welcome",
@@ -413,6 +513,18 @@ export function buildSampleTour() {
               title: "The market square",
               body: "For centuries this square was the city's market. Grain was sold here, and until 1854 the square was called Schrannenplatz, after the grain trade.",
               pose: { position: [-2.5, 0, 2.5], rotation: [0, 0, 0, 1] },
+            },
+            {
+              // Heard by itself within 20 m, at full within 4 m.
+              id: "market-sound",
+              kind: "audio",
+              view: "zone",
+              audio: "market",
+              title: "The market",
+              maxM: 20,
+              minM: 4,
+              volume: 0.5,
+              pose: { position: [-4, 0, -3], rotation: [0, 0, 0, 1] },
             },
             {
               id: "old-gate",
@@ -500,6 +612,8 @@ export function buildSampleTour() {
     files: {
       "content/knight.png": knight.bytes,
       "content/fanfare.wav": fanfareWav(),
+      "content/voice.wav": narrationWav(),
+      "content/market.wav": marketWav(),
       "content/arch.glb": archGlb(),
     },
   };

@@ -23,7 +23,13 @@
  * - `data-add` - a card's "+", `data-fill` - its empty line's "Add
  *   content": the station the type menu adds to (`tree-add-menu.ts`);
  * - `data-storyadd` - a story's "+", `data-storyfill` - its empty line's
- *   "Add the first entry": the story the type menu adds to.
+ *   "Add the first entry": the story the type menu adds to;
+ * - `data-move` - an item's or a story's grip (no button): the row it
+ *   drags (`tree-nest-drag.ts`); none while a search runs;
+ * - `data-list` and `data-item` - an item's or a story's row: the list
+ *   it stands in (`free`, `story:<id>`, `stories`) and its id there;
+ * - `data-into` - a row a drop goes into: a story's row and its empty
+ *   line (`story:<id>`), a station's row (`free`, its free items).
  *
  * @see shell-tree.ts.md
  */
@@ -36,6 +42,11 @@ import type {
   TreeModel,
 } from "./tree-model.js";
 import type { TreeSection } from "../editor-view.js";
+import {
+  FREE_LIST,
+  STORIES_LIST,
+  storyList,
+} from "../../station-children-moves.js";
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -111,13 +122,33 @@ function sectionHeader(
   return head;
 }
 
+/** The grip an item or a story is dragged by within its station
+ *  (`tree-nest-drag.ts`): no button - the inspector's Move to, Earlier
+ *  and Later are the keyboard's way. None while a search runs: a drop
+ *  would place it among rows the search hides. */
+function moveGrip(id: string): HTMLElement {
+  const grip = el("span", "grip");
+  grip.dataset["move"] = id;
+  grip.title = "Drag to move it in its station";
+  grip.setAttribute("aria-hidden", "true");
+  grip.append(shellIcon("grip"));
+  return grip;
+}
+
 /** An item's row: its kind's icon, its name and, for a story's entry, its
- *  place; `deep` inside a story folder. */
-function childOf(child: TreeChild, deep: boolean): HTMLButtonElement {
-  const row = button(deep ? "kid deep" : "kid");
+ *  place; in `list` (a story's, deeper, or the free items). */
+function childOf(
+  child: TreeChild,
+  list: string,
+  searching: boolean,
+): HTMLButtonElement {
+  const row = button(list === FREE_LIST ? "kid" : "kid deep");
   row.classList.toggle("sel", child.selected);
   row.setAttribute("aria-pressed", String(child.selected));
   row.dataset["select"] = child.id;
+  row.dataset["list"] = list;
+  row.dataset["item"] = child.id;
+  if (!searching) row.append(moveGrip(child.id));
   const icon = el("span", `ic ${child.kind}`);
   icon.append(shellIcon(child.kind));
   row.append(icon, el("span", "nm", child.title));
@@ -130,11 +161,15 @@ function childOf(child: TreeChild, deep: boolean): HTMLButtonElement {
 /** A story's row (its arrow, its name, its count, its "+": none inside
  *  another) and, when it is open, its entries under it, or the line that
  *  says it has none. */
-function folderOf(folder: TreeFolder): HTMLElement[] {
+function folderOf(folder: TreeFolder, searching: boolean): HTMLElement[] {
   const row = el("div", "folder");
   row.classList.toggle("sel", folder.selected);
   row.classList.toggle("ctx", folder.context);
   row.dataset["story"] = folder.id;
+  row.dataset["list"] = STORIES_LIST;
+  row.dataset["item"] = folder.id;
+  row.dataset["into"] = storyList(folder.id);
+  if (!searching) row.append(moveGrip(folder.id));
   const fold = button("tw");
   fold.dataset["folder"] = folder.id;
   fold.setAttribute("aria-expanded", String(folder.open));
@@ -158,9 +193,11 @@ function folderOf(folder: TreeFolder): HTMLElement[] {
   row.append(fold, pick, el("span", "meta", String(folder.count)), add);
   if (!folder.open) return [row];
   if (folder.children.length > 0 || folder.count > 0) {
-    return [row, ...folder.children.map((c) => childOf(c, true))];
+    const list = storyList(folder.id);
+    return [row, ...folder.children.map((c) => childOf(c, list, searching))];
   }
   const empty = el("div", "emptyrow deep", "No entries yet. ");
+  empty.dataset["into"] = storyList(folder.id);
   const fill = button("fill");
   fill.dataset["storyfill"] = folder.id;
   fill.textContent = "Add the first entry";
@@ -185,6 +222,8 @@ function cardOf(
   // (the number chip, then the name beside it, cut with an ellipsis),
   // then its marks - none inside another.
   const head = el("div", "head");
+  // A drop on the station's row: out of a story, among its free items.
+  head.dataset["into"] = FREE_LIST;
   const pick = button("pick");
   pick.dataset["select"] = card.selection;
   pick.title = card.title;
@@ -245,8 +284,12 @@ function cardOf(
       box.append(pic);
     }
     const kids = el("div", "kids");
-    for (const folder of card.folders) kids.append(...folderOf(folder));
-    for (const child of card.children) kids.append(childOf(child, false));
+    for (const folder of card.folders) {
+      kids.append(...folderOf(folder, searching));
+    }
+    for (const child of card.children) {
+      kids.append(childOf(child, FREE_LIST, searching));
+    }
     if (card.folders.length === 0 && card.children.length === 0) {
       const empty = el("div", "emptyrow", "Nothing here yet. ");
       const fill = button("fill");

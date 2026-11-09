@@ -155,7 +155,7 @@ test("a station copied with Ctrl+D during a search is in the list", async ({
 
 /**
  * A new item selected in a folded station, then a search that finds neither
- * of them. Returns the search field and the station's card.
+ * of them. Returns the search field, the station's card and its id.
  * @param {import("@playwright/test").Page} page
  */
 async function selectItemHiddenBySearch(page) {
@@ -181,7 +181,7 @@ async function selectItemHiddenBySearch(page) {
   await expect(cards).toHaveCount(1);
   await expect(card).toHaveCount(0);
   await search.blur();
-  return { search, card };
+  return { search, card, id };
 }
 
 test("an item copied with Ctrl+D during a search is in the list, in its unfolded station", async ({
@@ -210,8 +210,8 @@ test("an item moved out of every circle during a search stays in its station and
 }) => {
   // Why: a move once gave an item that left every circle a station of
   // its own; now it keeps its station and says so. Moved while a search
-  // hides it, it must still be in that station when the search ends, and
-  // the list must not gain a station.
+  // hides it, the search stays as the creator typed it, and when it ends
+  // the item is still in that station and the list has gained none.
   test.setTimeout(180_000);
   await open3dAt(page, 1280);
   const { search, card } = await selectItemHiddenBySearch(page);
@@ -222,13 +222,40 @@ test("an item moved out of every circle during a search stays in its station and
   await expect(
     page.locator(".toast", { hasText: "outside its circle" }),
   ).not.toHaveCount(0);
-  await expect(
-    page.locator(".toast", { hasText: "in a station of its own" }),
-  ).toHaveCount(0);
+  await expect(search).toHaveValue("town hall");
+  await expect(card).toHaveCount(0);
   await search.fill("");
   await expect(page.locator("#tree-body .card[data-station]")).toHaveCount(3);
-  if ((await card.locator(".tw").getAttribute("aria-expanded")) !== "true") {
-    await card.locator(".tw").click();
-  }
+  await expect(card.locator(".head .tw")).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  await card.locator(".head .tw").click();
   await expect(card.locator(".kid.sel")).toBeVisible();
+});
+
+test("an item moved to a new station during a search ends the search, the new station selected and unfolded", async ({
+  page,
+}) => {
+  // Why: the station the move makes matches the search no better than the
+  // item did, so the search has to end for the creator to see what the
+  // move made: the new station in the list, selected, the item in it.
+  test.setTimeout(180_000);
+  await open3dAt(page, 1280);
+  const { search, card, id } = await selectItemHiddenBySearch(page);
+  await page.locator('#shell-inspector [data-act="split"]').click();
+  await expect(
+    page.locator(".toast", { hasText: "New station" }),
+  ).not.toHaveCount(0);
+  await expect(search).toHaveValue("");
+  await expect(page.locator("#tree-body .card[data-station]")).toHaveCount(4);
+  const made = page.locator("#tree-body .card.sel");
+  await expect(made).toBeVisible();
+  expect(await made.getAttribute("data-station")).not.toBe(id);
+  await expect(made.locator(".head .tw")).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  await expect(made.locator(".kid")).toHaveCount(1);
+  await expect(card).toBeVisible();
 });

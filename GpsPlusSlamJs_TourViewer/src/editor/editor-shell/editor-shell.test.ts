@@ -171,6 +171,7 @@ function setUp() {
     stations: {
       add: vi.fn(),
       reorder: vi.fn(),
+      moveChild: vi.fn(),
       split: vi.fn(),
       duplicate: vi.fn(),
       remove: vi.fn(),
@@ -1938,6 +1939,33 @@ describe("on a phone's side", () => {
     vi.stubGlobal("innerWidth", 844);
     window.dispatchEvent(new Event("resize"));
     expect(store.getState().editorView.foldedDocks.tree).toBe(false);
+    shell.hide();
+  });
+});
+
+describe("the inspector's Delete, declined", () => {
+  // Why: a station's delete asks first, as a story's does. Answered no,
+  // the station stays selected, and the focus must stay on the Delete the
+  // creator pressed: moved to a tree card it reads as the delete done, and
+  // the next key acts on another row. Answered yes, the focus moves on.
+  it.each([
+    ["declined", false],
+    ["confirmed", true],
+  ])("a %s delete: the focus stays on Delete only for a no", (_, yes) => {
+    const { deps, select, shell } = setUp();
+    vi.mocked(deps.stations.remove).mockImplementation(() => {
+      if (yes) select(null);
+    });
+    select("station:a");
+    const del = document.querySelector<HTMLButtonElement>(
+      '#shell-inspector [data-act="delete"]',
+    );
+    if (del === null) throw new Error("no Delete in the inspector");
+    del.focus();
+    del.click();
+    expect(deps.stations.remove).toHaveBeenCalledWith("station:a");
+    // On Delete after a no only.
+    expect(document.activeElement === del).toBe(!yes);
     shell.hide();
   });
 });

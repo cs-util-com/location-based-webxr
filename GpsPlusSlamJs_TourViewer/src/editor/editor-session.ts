@@ -9,6 +9,7 @@
  */
 
 import {
+  isTourStory,
   isTourStoryBlock,
   tourChildPlace,
   tourStationChildIds,
@@ -64,6 +65,7 @@ import {
 import {
   canStep,
   changeCount,
+  childMoveChange,
   coverImageIds,
   detailsChange,
   documentObjects,
@@ -71,6 +73,7 @@ import {
   isCapturedPhoto,
   isDocumentEdit,
   manifestNow,
+  manifestToWrite,
   objectAssetsHeld,
   objectFits,
   nextStep,
@@ -88,6 +91,7 @@ import {
   type StationStoryAdvanceEdit,
   type TourDocumentState,
 } from "../tour-document.js";
+import type { ChildMoveTo } from "../station-children-moves.js";
 import { newObjectId } from "../content-placement.js";
 import {
   STATION_RADIUS_MAX_M,
@@ -98,13 +102,10 @@ import { newTourId } from "../tour-file-key.js";
 import {
   createTourSaves,
   dispatchThunk,
+  type SavedTour,
   TOUR_REPLACED,
 } from "../tour-document-save.js";
-import type { FinishedTour } from "../finish-rebuild.js";
-import {
-  createTourViewerStore,
-  type TourViewerStore,
-} from "../tour-viewer-session.js";
+import { createTourViewerStore } from "../tour-viewer-session.js";
 import type { DetailsOutcome } from "./details-dialog.js";
 import type { EditorTourSettings } from "./editor-draft.js";
 import {
@@ -120,7 +121,29 @@ import { STATION_LOCKED } from "./editor-view.js";
 import { checkNoGps, type NoGpsCheck } from "./no-gps-check.js";
 import { readZipBlobEntry, zipBlobEntryNames } from "../zip-blob.js";
 import { truncated } from "../truncated.js";
-import { readTourFile, type TourFileContext } from "./tour-files.js";
+import {
+  readTourFile,
+  TOUR_FILE_LIMITS,
+  type TourFileContext,
+} from "./tour-files.js";
+import {
+  ASSET_OPTIMIZERS,
+  optimizerShrinks,
+  type OptimizerHost,
+  type OptimizerTable,
+} from "./asset-shelf/asset-optimizers.js";
+import {
+  createAssetShelf,
+  type AssetShelf,
+} from "./asset-shelf/asset-shelf.js";
+import {
+  assetShelfActions,
+  assetShelfReducer,
+} from "./asset-shelf/asset-shelf-slice.js";
+import {
+  createOptimizerHost,
+  spawnOptimizerWorker,
+} from "./asset-shelf/optimizer-client.js";
 import { newStory, withoutStoryChild } from "../tour-story-edit.js";
 import { newStoryEntry } from "./new-pin.js";
 
@@ -213,6 +236,9 @@ export interface EditorSave {
   /** The manifest the zip carries (the draft's `written` versions, M6
    *  E2c). */
   readonly written: TourManifest;
+  /** The bytes it wrote for each asset, by id: the draft spends a file it
+   *  holds only when these are its bytes (`landed`). */
+  readonly wrote: ReadonlyMap<string, Blob>;
 }
 
 /** Said when "Move the debug data out" finds no walk in the newest
@@ -294,11 +320,49 @@ interface EditorRestore {
   readonly pictures?: ReadonlyMap<string, Blob>;
   /** The files brought in there, with their bytes: listed again first,
    *  so the objects naming them come back (one naming a file held
-   *  nowhere does not). */
+   *  nowhere does not). One the written tour lists is a smaller file for
+   *  that asset: put back as a swap (`assetOptimized`), after the rest. */
   readonly files?: readonly {
     readonly asset: TourAsset;
     readonly blob: Blob;
+    /** A smaller file's: the record it replaced, with its bytes when the
+     *  draft kept them. On the shelf as made smaller, that original
+     *  offered. */
+    readonly original?: { readonly asset: TourAsset; readonly blob?: Blob };
+    /** A file brought in whose original the creator chose ("use the
+     *  original"): on the shelf as that choice left it, not queued. */
+    readonly originalChosen?: true;
   }[];
+}
+
+/** The editor's own slices an editor session's store must hold, passed as
+ *  the page's slices (`createTourViewerStore`'s `pageReducers`), so the
+ *  phone's store never names them: the asset shelf's plain data. */
+export const EDITOR_SESSION_SLICES = { assetShelf: assetShelfReducer };
+
+/** A store an editor session runs on: the tour viewer's, with
+ *  `EDITOR_SESSION_SLICES`. */
+export type EditorSessionStore = ReturnType<
+  typeof createTourViewerStore<typeof EDITOR_SESSION_SLICES>
+>;
+
+/** A smaller file for an asset (`swapAsset`): its bytes, its path
+ *  (`content/<id>.<ext>`) and, for an image, its new size in pixels. */
+interface AssetSwap {
+  readonly blob: Blob;
+  readonly path: string;
+  readonly width?: number;
+  readonly height?: number;
+  /** The creator's "use the original": the draft remembers it, so a
+   *  reload does not queue the file to be made smaller again. */
+  readonly originalChosen?: true;
+}
+
+/** A smaller file now stands in for the asset's (`swapAsset`).
+ *  `backedUp` false: the draft could not keep it (the page says so). */
+interface EditorSwapped {
+  readonly kind: "swapped";
+  readonly backedUp: boolean;
 }
 
 /** A file brought into the tour (`addFile`): its asset - the one the tour
@@ -349,6 +413,56 @@ const NO_SUCH_STORY = "That is no longer in this tour.";
 function storyChildName(child: TourStoryChild): string {
   if (isTourStoryBlock(child)) return objectTitle(child);
   return child.kind === "choice" ? child.prompt : child.question;
+}
+
+/** Said for a move of a station's item the format refuses, by why (an
+ *  unsaved file is said by `unsavedRefusal`, naming the item's kind). */
+const MOVE_REFUSALS: Readonly<
+  Record<"missing" | "ownStory" | "noNesting" | "cannotStandFree", string>
+> = {
+  missing: NO_SUCH_STORY,
+  ownStory:
+    "A choice or a quiz stays in its story: its answers lead to that story's entries.",
+  noNesting: "It cannot go there: a story holds no story.",
+  cannotStandFree:
+    "A model without a size cannot stand in the world: give it a size first.",
+};
+
+/** Said for a story's item that cannot leave its story, by its kind. */
+function cannotStandFreeRefusal(manifest: TourManifest, id: string): string {
+  const place = tourChildPlace(manifest, id);
+  const item =
+    place?.story === undefined ? undefined : place.story.children[place.index];
+  return item?.kind === "video"
+    ? "A video plays only in a story for now: it cannot stand in the world by itself."
+    : MOVE_REFUSALS.cannotStandFree;
+}
+
+/** Said for a free item whose file the tour on disk does not hold yet,
+ *  naming its kind ("an audio", "a 3D model"). */
+function unsavedRefusal(manifest: TourManifest, id: string): string {
+  const place = tourChildPlace(manifest, id);
+  const item = place === null ? undefined : place.station.children[place.index];
+  const what =
+    item === undefined || isTourStory(item)
+      ? "an item"
+      : kindWithArticle(item.kind);
+  return `Save the tour first: ${what} added here can go into a story once the tour's file holds it.`;
+}
+
+/** What the history calls the station's item or story `id`: a story by
+ *  its title, a story's child as its delete does, a free item by the one
+ *  rule (`objectTitle`). */
+export function childCalled(manifest: TourManifest, id: string): string {
+  const place = tourChildPlace(manifest, id);
+  if (place === null) return "the item";
+  if (place.story !== undefined) {
+    const entry = place.story.children[place.index];
+    return entry === undefined ? "the item" : storyChildName(entry);
+  }
+  const free = place.station.children[place.index];
+  if (free === undefined) return "the item";
+  return isTourStory(free) ? free.title : objectTitle(free);
 }
 
 /** Said for a delete of the tour's last station. */
@@ -449,6 +563,11 @@ const HEIGHT_REFUSED = `That height cannot be set: an item must stay within ${St
 /** Said when an edit could not be applied (the tour changed under it). */
 const NOT_APPLIED = "That change could not be made to the tour as it is now.";
 
+/** Said when a smaller file cannot replace an asset's: the tour does not
+ *  hold the asset, or the new file is not one the format takes for it. */
+const SWAP_REFUSED =
+  "That smaller file could not replace the one in the tour: the tour no longer holds that file, or the new file is not of its kind.";
+
 /** A station as the undo's words name it. */
 function stationName(frame: { readonly title?: string }): string {
   return frame.title === undefined ? "a station" : `"${frame.title}"`;
@@ -462,6 +581,15 @@ export interface EditorSessionDraft extends DraftObjectWrites {
   /** A file brought in, with its bytes: written before the record that
    *  names it; whether it landed. */
   saveAsset(asset: TourAsset, blob: Blob): Promise<boolean>;
+  /** A smaller file for an asset (its new record), under the same id:
+   *  written before the table and the document take it; whether it
+   *  landed. `blob` undefined: back to what stands without one (the file
+   *  on disk's bytes for its asset). */
+  swapAsset(
+    asset: TourAsset,
+    blob: Blob | undefined,
+    originalChosen?: boolean,
+  ): Promise<boolean>;
 }
 
 /** One image a tour may show as its cover (W2): a placed photo, or an
@@ -473,6 +601,10 @@ interface CoverChoice {
 }
 
 export interface EditorSession {
+  /** The asset shelf of this open (`asset-shelf.ts`): every file brought
+   *  in is queued there to be made smaller, an opened tour's files wait
+   *  for "Optimize this tour". The page closes it with the tour. */
+  readonly shelf: AssetShelf;
   /** The tour as it stands with the edits, for the rail and the map. */
   model(): EditorModel;
   /** Edits and deletions not yet in a saved file, by content: a text
@@ -607,6 +739,18 @@ export interface EditorSession {
     id: string,
     advance: StationStoryAdvanceEdit["advance"],
   ): { kind: "edited" | "unchanged" } | EditorRefusal;
+  /** An item of a station moved `to` another place in its station (a
+   *  story's id for a story): one step. `answers` says how many answers
+   *  that led to it now go on to the next entry, `floored` that it took
+   *  its kind's view to stand in the world. Refused in words for a move
+   *  the format cannot carry (`station-children-moves.ts`). */
+  moveChild(
+    id: string,
+    to: ChildMoveTo,
+  ):
+    | { kind: "moved"; answers: number; floored: boolean }
+    | { kind: "unchanged" }
+    | EditorRefusal;
   /** Put the stations in `order` (every station once): one step. */
   reorderStations(
     order: readonly string[],
@@ -721,8 +865,24 @@ export interface EditorSession {
    *  is left out). What the autosave's cap is judged by. */
   nextSaveBytes(): number;
   /** A file brought in, by its entry (`content/<id>.<ext>`), until a
-   *  save wrote it: what a preview shows. */
+   *  save wrote it: what a preview shows. Resolved by the id the entry
+   *  names, so the path a placed picture still names after a swap reads
+   *  the smaller file. */
   contentOf(path: string): Blob | undefined;
+  /** A smaller file in place of an asset's, under the same id (so no
+   *  item, narration or step changes): kept in the files table and listed
+   *  at its new path (`assetOptimized`, no step). The next save writes it
+   *  and removes the old entry; one already running writes the original.
+   *  Written to the draft first, then the table and the document in one
+   *  synchronous step (the table is by id: a save between them would
+   *  write the new bytes under the old path). Refused in words, changing
+   *  nothing, for an id the tour does not hold, a path the format would
+   *  refuse for that asset's kind, or the record the tour already lists -
+   *  judged before the draft's write and again after it. */
+  swapAsset(
+    id: string,
+    file: AssetSwap,
+  ): Promise<EditorSwapped | EditorRefusal>;
   /** Put a draft's work back by the session's own rules (M6 E2c): an
    *  object the tour carries gets the draft's version, a deletion its
    *  tombstone; live work on an id wins, and an id the tour no longer
@@ -781,8 +941,9 @@ export function createEditorSession(input: {
   readonly loadPhoto?: (image: string) => Promise<Blob>;
   /** The store holding the tour document (D29): the page's own, so its
    *  views read the same state; a fresh one when absent (tests). Opening
-   *  the session opens the document in it - whatever it held is gone. */
-  readonly store?: TourViewerStore;
+   *  the session opens the document in it - whatever it held is gone. It
+   *  holds `EDITOR_SESSION_SLICES`. */
+  readonly store?: EditorSessionStore;
   /** Whether a station's pose is locked (the page's view state): its move,
    *  turn and lift are then refused; its radius, name, delete and copy
    *  stay open. None: nothing is locked (the phone, a test). */
@@ -790,10 +951,21 @@ export function createEditorSession(input: {
   /** What a file brought in is measured by (the page's model loader and
    *  video element, `readTourFile`); none: a model is taken unmeasured
    *  and a video without a poster. */
-  readonly fileReaders?: Pick<TourFileContext, "measureModel" | "posterOf">;
+  readonly fileReaders?: Pick<
+    TourFileContext,
+    "measureModel" | "posterOf" | "limits" | "shrinks"
+  >;
+  /** The shelf's optimizers, one row per kind (default: this build's,
+   *  `ASSET_OPTIMIZERS`); a kind with one may bring a file over the caps
+   *  in (`shrinks`, unless `fileReaders` says otherwise). */
+  readonly optimizers?: OptimizerTable;
+  /** The Worker the optimizers hand their heavy part to (default: the
+   *  module Worker, spawned on the first run that needs it). */
+  readonly optimizerHost?: OptimizerHost;
 }): EditorSession {
   const { session, levels } = input;
-  const store: TourViewerStore = input.store ?? createTourViewerStore();
+  const store: EditorSessionStore =
+    input.store ?? createTourViewerStore(undefined, EDITOR_SESSION_SLICES);
   // A tour without an id of its own is given one, once (Q-I).
   store.dispatch(
     tourDocumentActions.opened({
@@ -820,11 +992,21 @@ export function createEditorSession(input: {
   const pictureReads = new Set<Promise<void>>();
   const loadPhoto =
     input.loadPhoto ?? ((image: string) => session.loadContentEntry(image));
+  /** The names the files brought in here had, by asset id: what a save
+   *  refused for one still too large says. */
+  const fileNames = new Map<string, string>();
+  const limits = input.fileReaders?.limits ?? TOUR_FILE_LIMITS;
   const saves = createTourSaves({
     tour: session,
     generation,
     fileOf: (id) => files.get(id),
     picturesRead: () => Promise.all(pictureReads),
+    maxFileBytes: limits.maxEntryBytes - limits.marginBytes,
+    fileNameOf: (id) => fileNames.get(id),
+    shrinking: (id) => {
+      const phase = store.getState().assetShelf.entries[id]?.phase;
+      return phase === "queued" || phase === "running";
+    },
   });
   /** What the opened file weighs: its entries' sizes. */
   const openedBytes = session.entries.reduce((sum, e) => sum + e.size, 0);
@@ -1198,7 +1380,8 @@ export function createEditorSession(input: {
    *  at. */
   function knownFile(sha: string): TourAsset | undefined {
     const state = own();
-    const assets = [...(state.written?.assets ?? []), ...state.addedAssets];
+    // The record brought in first: after a swap it names the new path.
+    const assets = [...state.addedAssets, ...(state.written?.assets ?? [])];
     const named = assets.find((a) => a.id === sha);
     if (named !== undefined || session.integrity.kind !== "listed") {
       return named;
@@ -1208,6 +1391,75 @@ export function createEditorSession(input: {
     return (state.written?.assets ?? []).find(
       (a) => listed[`${wrap}${a.path}`]?.sha256 === sha,
     );
+  }
+
+  /** A swap judged by the document's own rule, with the record it makes;
+   *  null when the document refuses it (or this open is replaced). */
+  function judgedSwap(
+    id: string,
+    { path, width, height }: Omit<AssetSwap, "blob">,
+  ): {
+    readonly action: ReturnType<typeof tourDocumentActions.assetOptimized>;
+    readonly asset: TourAsset;
+  } | null {
+    const before = mine();
+    if (before === null) return null;
+    const action = tourDocumentActions.assetOptimized({
+      id,
+      path,
+      ...(width === undefined ? {} : { width }),
+      ...(height === undefined ? {} : { height }),
+    });
+    const after = tourDocumentReducer(before, action);
+    const asset = after.addedAssets.find((a) => a.id === id);
+    return after === before || asset === undefined ? null : { action, asset };
+  }
+
+  const swapRefused: EditorRefusal = { kind: "refused", reason: SWAP_REFUSED };
+
+  /** `swapAsset`: judged first, so a refused file never reaches the draft
+   *  or the table. */
+  async function swapAsset(
+    id: string,
+    file: AssetSwap,
+  ): Promise<EditorSwapped | EditorRefusal> {
+    const judged = judgedSwap(id, file);
+    if (judged === null) return swapRefused;
+    // Without a draft the swap is taken before the first await: a save
+    // started right after the call sees it.
+    if (draft === undefined) {
+      files.set(id, file.blob);
+      store.dispatch(judged.action);
+      return { kind: "swapped", backedUp: true };
+    }
+    const state = own();
+    const was =
+      state.addedAssets.find((a) => a.id === id) ??
+      state.written?.assets.find((a) => a.id === id);
+    const wasBlob = files.get(id);
+    const backedUp = await draft.swapAsset(
+      judged.asset,
+      file.blob,
+      file.originalChosen === true,
+    );
+    const final = judgedSwap(id, file);
+    if (final === null) {
+      // The draft took what the document now refuses (this open was
+      // replaced, or the asset left the tour): it gets the record that
+      // stood before back, so no later open offers the refused file -
+      // with the bytes held here, or none for an asset of the opened file
+      // never replaced (the file on disk's stand).
+      // Not when the same swap landed meanwhile: the draft agrees then.
+      const listed = own().addedAssets.find((a) => a.id === id);
+      const same = JSON.stringify(listed) === JSON.stringify(judged.asset);
+      if (was !== undefined && !same) {
+        await draft.swapAsset(was, wasBlob);
+      }
+      return swapRefused;
+    }
+    files.set(id, file.blob);
+    store.dispatch(final.action);
+    return { kind: "swapped", backedUp };
   }
 
   /** `addFile`: read, kept in the table and the draft, then listed. */
@@ -1221,6 +1473,7 @@ export function createEditorSession(input: {
       tourBytes: tourBytes(),
       known: knownFile,
       ...(kinds === undefined ? {} : { kinds }),
+      shrinks: optimizerShrinks(optimizers),
       ...input.fileReaders,
     });
     if (read.kind === "refused") return read;
@@ -1232,6 +1485,7 @@ export function createEditorSession(input: {
     let backedUp = true;
     for (const { asset, blob } of brought) {
       files.set(asset.id, blob);
+      if (asset === read.asset) fileNames.set(asset.id, fileName);
       // Before the asset is listed, so before any record naming it.
       if (draft !== undefined && !(await draft.saveAsset(asset, blob))) {
         backedUp = false;
@@ -1245,6 +1499,11 @@ export function createEditorSession(input: {
         }),
       );
     }
+    // On the shelf once listed, so its swap finds the record (a minted
+    // poster is small already).
+    if (read.isNew) {
+      shelf.add(read.asset, fileName, read.blob.size, "added");
+    }
     return {
       kind: "added",
       asset: read.asset,
@@ -1253,13 +1512,56 @@ export function createEditorSession(input: {
     };
   }
 
+  const optimizers = input.optimizers ?? ASSET_OPTIMIZERS;
+  const shelf = createAssetShelf({
+    store,
+    optimizers,
+    host: input.optimizerHost ?? createOptimizerHost(spawnOptimizerWorker),
+    maxFileBytes: limits.maxEntryBytes - limits.marginBytes,
+    bytesOf: async (id) => {
+      const held = files.get(id);
+      if (held !== undefined) return held;
+      const record = own().written?.assets.find((a) => a.id === id);
+      return record === undefined
+        ? undefined
+        : session.loadContentEntry(record.path);
+    },
+    recordOf: (id) => {
+      const state = own();
+      return (
+        state.addedAssets.find((a) => a.id === id) ??
+        state.written?.assets.find((a) => a.id === id)
+      );
+    },
+    swap: (id, file) => swapAsset(id, file),
+  });
+  // The opened tour's files wait on the shelf for "Optimize this tour".
+  store.dispatch(assetShelfActions.cleared());
+  {
+    const wrap = session.manifestWrap;
+    const sizes = new Map(session.entries.map((e) => [e.filename, e.size]));
+    for (const asset of own().written?.assets ?? []) {
+      shelf.add(
+        asset,
+        asset.path,
+        sizes.get(`${wrap}${asset.path}`) ?? 0,
+        "opened",
+      );
+    }
+  }
+
   return {
+    shelf,
     addFile,
+    swapAsset,
     addedBytes,
     tourBytes,
     nextSaveBytes,
     contentOf(path) {
-      const asset = own().addedAssets.find((a) => a.path === path);
+      // By the id the entry names (`content/<id>.<ext>`): a placed
+      // picture's inline record keeps the path it had before a swap.
+      const id = /^content\/([^/]+)\.[a-z0-9]+$/.exec(path)?.[1];
+      const asset = own().addedAssets.find((a) => a.id === id);
       return asset === undefined ? undefined : files.get(asset.id);
     },
     model() {
@@ -1653,6 +1955,39 @@ export function createEditorSession(input: {
         ? { kind: "edited" }
         : notApplied;
     },
+    moveChild(id, to) {
+      const state = mine();
+      const manifest = state === null ? null : manifestNow(state);
+      if (state === null || manifest === null) return notInTour;
+      const change = childMoveChange(state, id, to);
+      if (change.kind === "unchanged") return change;
+      // The items as the next write carries them: a free item placed here
+      // is an object record, not in the frames alone.
+      const items = manifestToWrite(state) ?? manifest;
+      if (change.kind === "refused") {
+        return {
+          kind: "refused",
+          reason:
+            change.reason === "unsaved"
+              ? unsavedRefusal(items, id)
+              : change.reason === "cannotStandFree"
+                ? cannotStandFreeRefusal(items, id)
+                : MOVE_REFUSALS[change.reason],
+        };
+      }
+      const name = childCalled(items, id);
+      return took(() =>
+        store.dispatch(
+          tourDocumentActions.childMoved({
+            id,
+            to,
+            what: `the move of "${name}"`,
+          }),
+        ),
+      )
+        ? { kind: "moved", answers: change.answers, floored: change.floored }
+        : notApplied;
+    },
     reorderStations(order) {
       const state = mine();
       if (state === null) return notInTour;
@@ -2039,7 +2374,15 @@ export function createEditorSession(input: {
         work.pictures?.get(object.id) ?? files.get(object.id);
       // The files the offer brings, and the objects naming files held
       // nowhere left out (the restore's own rule, `objectAssetsHeld`).
-      const offeredFiles = work.files ?? [];
+      // A file the written tour lists already is a smaller file for that
+      // asset: a swap, put back after the rest.
+      const writtenIds = new Set(written().assets.map((a) => a.id));
+      const offeredSwaps = (work.files ?? []).filter((f) =>
+        writtenIds.has(f.asset.id),
+      );
+      const offeredFiles = (work.files ?? []).filter(
+        (f) => !writtenIds.has(f.asset.id),
+      );
       const assets = offeredFiles.map((f) => f.asset);
       const heldIds = new Set(
         [...written().assets, ...state.addedAssets, ...assets].map((a) => a.id),
@@ -2085,7 +2428,8 @@ export function createEditorSession(input: {
         (id) => !live.has(id) && find(id) !== undefined,
       );
       // The stations the draft's objects were seated in that the tour
-      // lacks (a far move started one), whole: back before the objects.
+      // lacks ("Move to a new station" started one), whole: back before
+      // the objects.
       const created = settings?.createdStations ?? [];
       // With the stations added by hand there: untitled and empty, each
       // keeps itself here as it did there.
@@ -2152,7 +2496,27 @@ export function createEditorSession(input: {
           }),
         );
       }
-      return { changed, deleted: deleted.length };
+      // Each by the document's own rule, as `swapAsset` judges it; the
+      // draft holds it already.
+      let swapped = 0;
+      const onShelf: (typeof offeredSwaps)[number][] = [];
+      for (const file of offeredSwaps) {
+        const judged = judgedSwap(file.asset.id, file.asset);
+        if (judged === null) continue;
+        files.set(file.asset.id, file.blob);
+        store.dispatch(judged.action);
+        onShelf.push(file);
+        swapped += 1;
+      }
+      // The shelf as the draft left it: a reload dropped the runner's
+      // queue, so a file brought in is queued again (an over-cap one would
+      // refuse every save for good otherwise), and one made smaller there
+      // stands optimized, its original offered.
+      const listedNow = new Set(own().addedAssets.map((a) => a.id));
+      for (const file of [...offeredFiles, ...onShelf]) {
+        if (listedNow.has(file.asset.id)) shelveRestored(file);
+      }
+      return { changed: changed + swapped, deleted: deleted.length };
     },
     save(options) {
       // The document's save (`tour-document-save.ts`): a thunk, queued with
@@ -2166,7 +2530,10 @@ export function createEditorSession(input: {
           if (mine() === null) throw new Error(TOUR_REPLACED);
           const snap = dispatchThunk(store, saves.snapshot());
           await saves.picturesRead();
-          const copy = saveOf(await saves.rebuild(snap, options.keepScan));
+          const copy = saveOf({
+            ...(await saves.rebuild(snap, options.keepScan)),
+            wrote: snap.wrote,
+          });
           return { ...copy, filename: copyFileName(copy.filename) };
         }),
       );
@@ -2214,13 +2581,62 @@ export function createEditorSession(input: {
       : zipBlobEntryNames(newest.blob);
   }
 
-  function saveOf(finished: FinishedTour): EditorSave {
+  function saveOf(finished: SavedTour): EditorSave {
     return {
       blob: finished.blob,
       filename: savedName,
       scanLeftOut: finished.scanLeftOut,
       written: finished.written,
+      wrote: finished.wrote,
     };
+  }
+
+  /** A file a restore put back, on the shelf (`restore`): a plain one
+   *  brought in is queued as a new one is, unless the creator chose its
+   *  original there (kept as that choice left it); a smaller file stands optimized
+   *  - unless its record is its original's and it is no smaller (the
+   *  original put back there) - with that original offered while its
+   *  bytes can be read: the draft's, or the opened file's own entry. */
+  function shelveRestored(
+    file: NonNullable<EditorRestore["files"]>[number],
+  ): void {
+    const { asset, blob, original } = file;
+    if (original === undefined) {
+      if (file.originalChosen === true) {
+        shelf.originalKept(asset, asset.path, blob.size);
+      } else shelf.add(asset, asset.path, blob.size, "added");
+      return;
+    }
+    const wrap = session.manifestWrap;
+    const onDisk = input.manifest.assets.find((a) => a.id === asset.id);
+    const fromDisk =
+      onDisk !== undefined && onDisk.path === original.asset.path;
+    const originalBytes =
+      original.blob?.size ??
+      (fromDisk
+        ? session.entries.find((e) => e.filename === `${wrap}${onDisk.path}`)
+            ?.size
+        : undefined) ??
+      blob.size;
+    if (asset.path === original.asset.path && blob.size >= originalBytes) {
+      return;
+    }
+    const kept = original.blob;
+    const load =
+      kept !== undefined
+        ? () => Promise.resolve<Blob | undefined>(kept)
+        : fromDisk
+          ? () =>
+              session
+                .loadContentEntry(original.asset.path)
+                .catch(() => undefined)
+          : undefined;
+    shelf.restored(
+      asset,
+      asset.path,
+      { originalBytes, optimizedBytes: blob.size },
+      load === undefined ? undefined : { asset: original.asset, load },
+    );
   }
 
   /** The tour a debug bundle names (`debug-bundle.json`): a listed
@@ -2278,7 +2694,7 @@ export function createEditorSession(input: {
     return {
       kind: "ready",
       walk: { blob: bundle.blob, filename: bundle.filename },
-      save: saveOf(finished),
+      save: saveOf({ ...finished, wrote: snap.wrote }),
       current: () => saves.newest() === base,
       commit(inPlace) {
         if (saves.newest() !== base) {

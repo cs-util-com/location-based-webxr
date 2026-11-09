@@ -29,7 +29,7 @@ import {
   tourFileKeyOfFile,
   type TourSession,
 } from "../tour-session.js";
-import { createTourViewerStore } from "../tour-viewer-session.js";
+import { editorStore } from "../test-support/editor-store.js";
 import { selectTourDocument, tourDocumentActions } from "../tour-document.js";
 import {
   copyFileName,
@@ -71,7 +71,7 @@ import {
 } from "../test-support/station-content.js";
 
 beforeAll(() => {
-  createTourViewerStore();
+  editorStore();
 });
 
 function pin(id: string, label = `pin ${id}`): TourPin {
@@ -141,8 +141,6 @@ async function carried(
     parseTourManifest(JSON.parse(new TextDecoder().decode(bytes))),
   );
 }
-
-/** The saved `tour.json` as written, before any parse fills defaults. */
 
 describe("createEditorSession", () => {
   it("edits a pin's text, moves a note and deletes one, and the save carries all three", async () => {
@@ -655,6 +653,10 @@ function loggedDraft(): EditorSessionDraft & { calls: string[] } {
     },
     saveAsset: (asset) => {
       calls.push(`asset ${asset.id}`);
+      return Promise.resolve(true);
+    },
+    swapAsset: (asset) => {
+      calls.push(`swap ${asset.id}`);
       return Promise.resolve(true);
     },
   };
@@ -1685,7 +1687,7 @@ describe("createEditorSession, undo and redo (W2)", () => {
     const draft = draftOf();
     await draft.open(K, manifest);
     const writes = draft.writes();
-    const store = createTourViewerStore();
+    const store = editorStore();
     const doc = () => selectTourDocument(store.getState());
     const editor = createEditorSession({
       session,
@@ -2361,7 +2363,7 @@ describe("moving the walk out (W2, D19)", () => {
 describe("createEditorSession, the tour document (D29-D31)", () => {
   it("edits the store's document: the page reads what the session changed", async () => {
     const { session, manifest } = await opened([pin("a"), pin("b")]);
-    const store = createTourViewerStore();
+    const store = editorStore();
     const editor = createEditorSession({
       session,
       manifest,
@@ -2388,7 +2390,7 @@ describe("createEditorSession, the tour document (D29-D31)", () => {
   it("a later open on the same store disowns the earlier session: its edits are refused, its save refused, it reads only its own tour", async () => {
     const first = await opened([pin("a")]);
     const second = await opened([pin("z")]);
-    const store = createTourViewerStore();
+    const store = editorStore();
     const old = createEditorSession({
       session: first.session,
       manifest: first.manifest,
@@ -2440,7 +2442,7 @@ describe("createEditorSession, the tour document (D29-D31)", () => {
   it("a replaced session reads its tour as it stood when replaced, an edit no read followed included", async () => {
     const first = await opened([pin("a")]);
     const second = await opened([pin("z")]);
-    const store = createTourViewerStore();
+    const store = editorStore();
     const old = createEditorSession({
       session: first.session,
       manifest: first.manifest,

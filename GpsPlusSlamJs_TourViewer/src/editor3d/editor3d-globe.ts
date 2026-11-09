@@ -78,9 +78,7 @@
  */
 import * as THREE from "three";
 
-import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
 import { solarPosition } from "gps-plus-slam-app-framework/geo/solar-position";
-import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
 import {
   createGlobeCameraControls,
   createGlobeCity,
@@ -108,9 +106,6 @@ import {
   groundPointOfRay,
 } from "gps-plus-slam-globe/editor";
 
-import { loadGlbModel } from "../glb-model.js";
-import { mountLectern } from "../lectern-view.js";
-import { createPinLabel } from "../pin-label.js";
 import { manifestToWrite } from "../tour-document.js";
 import { isStationLocked } from "../editor/editor-view.js";
 import {
@@ -136,6 +131,7 @@ import {
   DEFAULT_CODE_SIZE_M,
   createStationsLayer,
 } from "./editor3d-stations.js";
+import { editorDrawings } from "./editor3d-drawings.js";
 import { createEditorTerrain, reliefDeviceClass } from "./editor3d-terrain.js";
 import { mountEditorCity, type EditorCity } from "./editor3d-globe-city.js";
 import { mountCredits } from "./editor3d-credits.js";
@@ -697,14 +693,7 @@ export async function openGlobeEditor(
       ellipsoid,
       worldFromEcef: tourFromEcef,
       undulationAt,
-      makeLabel: createPinLabel,
-      makeLectern: mountLectern,
-      loadPhotoTexture: async (entry) =>
-        decodeFrameTexture(await deps.loadContent(entry), 2, {
-          maxPixels: TOUR_MAX_IMAGE_PIXELS,
-        }),
-      loadContent: (entry) => deps.loadContent(entry),
-      loadGlbModel,
+      ...editorDrawings((entry) => deps.loadContent(entry)),
       makeBillboard: (number, title, selected) =>
         createBillboard(number, title, selected, billboardView()),
       makeCodeSquare: (sizeM) => createCodeSquare(sizeM, codeFace),

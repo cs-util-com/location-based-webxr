@@ -652,6 +652,8 @@ export function loadCityData(
     const { ground, groundM } = heights.state;
     const size = tiles.results.size;
     if (outcome !== undefined || ground === undefined) return;
+    // size === 0 is also windowOf's guard: with no tile loaded the window
+    // would be +-Infinity, which buildCity's woods refuse (pinned by a test).
     if (size === 0 || size === delivered) return;
     delivered = size;
     options.onData({

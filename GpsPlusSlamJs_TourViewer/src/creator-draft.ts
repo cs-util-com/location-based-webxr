@@ -1126,6 +1126,14 @@ export function wireCreatorDraft(deps: {
       if (stale()) return;
       const stored = await readDraft(store);
       if (stale()) return;
+      // A captured photo whose bytes did not read is dropped by the read
+      // (its restore would name a content entry the zip lacks); the
+      // creator is told, never left to find it gone (PR #876 review).
+      if ((stored?.photosUnread ?? 0) > 0 && unreadNote === null) {
+        unreadNote = DRAFT_PART_UNREAD;
+        ctx.placementNote = unreadNote;
+        deps.render();
+      }
       // Per-tour state: never carry the previous tour's rejections into
       // this one's meta.
       draftRejected = stored?.rejectedIds ?? [];

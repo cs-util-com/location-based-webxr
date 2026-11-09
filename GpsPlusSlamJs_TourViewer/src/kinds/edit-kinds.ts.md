@@ -39,10 +39,19 @@ there.
   - `inWorld` - the editor draws and edits it in the world
     (`tour-content.ts` `worldBlocks`, the object list, the inspector's
     item); one that is not stands in the tree and its own inspector, and a
-    write keeps it untouched.
-  - `fields` - its text fields in the inspector's order (`FieldSpec`:
-    `name`, `label`, `prose`), besides a short text's caption, which the
-    head types (`editor/block-fields.ts`).
+    write keeps it untouched. `true` promises a drawing: the inspector
+    then offers the item's handles, so the kind needs something that draws
+    it (a case of `content-placement.ts` `drawnBlock`, or the world part
+    its play kind's `world` builds, `play-kinds.ts` `worldPartOf`).
+    Without one the handles would move a
+    block nothing shows.
+  - `fields` - its fields in the inspector's order (`FieldSpec`:
+    `name`, `label`, `prose`, `number?` - a number's bounds, unit and
+    need, the bounds the format's (`tour-kinds.ts` `TOUR_AUDIO_*`) -
+    and `views?` - the views that read it, none: every view), besides a
+    short text's caption, which the head types (`editor/block-fields.ts`).
+    Audio lists a narration circle's radius (`spot`) and a zone's reach,
+    calm and volume (`zone`).
   - `add` - its line in the tree's add menu (`KindAdd`: `label`, `hint`,
     `words`, `addable`); a row without one is not offered at all, and one
     with `addable: false` is listed, says why, and adds nothing.
@@ -71,8 +80,8 @@ there.
   `inspector-model.ts` (an item or a free block's own inspector).
 - Fields: `editor/block-fields.ts`.
 - Adding: `editor/editor-shell/tree-add-menu.ts`, `add-palette-model.ts`,
-  `editor/new-pin.ts` (`MAKE_ITEM`, `MAKE_ENTRY`, both keyed by `AddKind`,
-  so an addable row without a maker fails to compile), `editor-shell.ts`.
+  `editor/new-pin.ts` (`KIND_ADD`, one row per `AddKind`, so an addable
+  row without its start fails to compile), `editor-shell.ts`.
 
 ## Invariants & assumptions
 
@@ -108,6 +117,21 @@ there.
 - What the editor can do with a kind is unchanged by this list: it only
   says it. Short and long text are addable, a picture is listed off,
   video, audio, model and character are not offered.
+
+## The editor half of a row
+
+- A kind's own part of the item inspector (what no field spec says: a
+  long text's writer, a model's notes and sections) is its panel, in
+  `editor/kind-panels/kind-panels.ts` `KIND_PANELS`, keyed by the same
+  kind type. It cannot live here: the creator pages outside the editor
+  read this list, and top-level modules may not reach editor DOM code.
+- `new-pin.ts` `KIND_ADD` (what an added kind starts as, at a station
+  and as a story entry) stays there, one row per `AddKind`, so an
+  addable kind without one fails to compile. Folding it here would be a
+  runtime import cycle: `edit-kinds.ts` -> `editor/new-pin.ts` ->
+  `tour-document.ts` -> `tour-content.ts` -> `edit-kinds.ts`, and it
+  would put an editor module and the tour document under every creator
+  page that reads this list.
 
 ## Not folded, and why
 

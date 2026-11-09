@@ -567,6 +567,12 @@ export interface StoredDraft {
    * session writes afterwards can be in the list.
    */
   storedIds: readonly string[];
+  /**
+   * How many photo records the read dropped because their bytes did not
+   * read (`photoBytesRequired`, the phone's rule): part of the draft that
+   * did not read, which the caller tells the creator (PR #876 review).
+   */
+  photosUnread: number;
 }
 
 /**
@@ -613,6 +619,7 @@ export async function readDraft(
   const rejected = new Set(rejectedIdsOf(meta.rejected));
   const objects: TourObject[] = [];
   const photos = new Map<string, Blob>();
+  let photosUnread = 0;
   // One snapshot, both prefixes: a photo file whose record never landed has
   // no `object:` key at all, so listing only those would miss it.
   // Sliced by the prefix that MATCHED, not by the first colon. The colon
@@ -666,7 +673,16 @@ export async function readDraft(
     // A captured photo's bytes are its picture's own file; a picture
     // naming an asset of the tour has none here.
     if (object.kind !== "picture" || object.image !== object.id) continue;
-    const blob = await store.getBlob(photoKey(object.id));
+    // Copied into memory now: the store hands out a snapshot of the entry
+    // (`handle.getFile()`), whose reads fail once the entry is written
+    // again or removed - and a restore writes this very entry again. A
+    // snapshot that does not read is a missing photo.
+    const stored = await store.getBlob(photoKey(object.id));
+    const bytes = await stored?.arrayBuffer().catch(() => undefined);
+    const blob =
+      stored === undefined || bytes === undefined
+        ? undefined
+        : new Blob([bytes], { type: stored.type });
     // A photo record whose bytes are gone would name a content entry the
     // rebuilt zip does not contain, which is the failure mode PR #435 was
     // about. Drop the record with them - unless the caller's photos live
@@ -674,6 +690,7 @@ export async function readDraft(
     if (blob === undefined && options.photoBytesRequired === false) continue;
     if (blob === undefined) {
       objects.pop();
+      photosUnread += 1;
       continue;
     }
     photos.set(object.id, blob);
@@ -711,6 +728,7 @@ export async function readDraft(
     rejectedOnDisk: [...rejected],
     visits,
     storedIds,
+    photosUnread,
   };
 }
 
