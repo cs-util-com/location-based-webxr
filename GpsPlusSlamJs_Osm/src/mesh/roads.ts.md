@@ -169,8 +169,8 @@ position moved by a millimetre between them.
   gap from 1.5 mm at all three positions in the close views (OsmDemo 41 m
   and low 100 m, globe 30 and 100 m, editor 30 m; from 0.5 mm at the
   look-at point, r1164), in the editor at 300 m and in the deep globe view
-  at 200 m. **OsmDemo's 226 m boot view is the binding
-  one**: 10.2 / 2.6 / 1.5 % at 1.5 mm, 9.3 / 1.5 / 1.3 % at 1.7 mm (the three positions),
+  at 200 m. **OsmDemo's 226 m boot view is the binding one**: 10.2 / 2.6 /
+  1.5 % at 1.5 mm, 9.3 / 1.5 / 1.3 % at 1.7 mm (the three positions),
   2.4 / 1.7 / 0 % at 2.8 mm, 0 / 1.0 / 0 % at 3 mm, clean from 3.4 mm.
   **OsmDemo at 570 m fights at every gap up to 10.2 mm** (3-37 % of about 96
   pixels; 7.3 / 24.0 / 5.2 % at 10.2 mm) and is clean or 3 pixels from
@@ -202,22 +202,28 @@ position moved by a millimetre between them.
   lower class's strip at least 0.1 step (discs exist only at ends and
   fallbacks since r1164), two ways of one class anywhere from 0 to 0.4 step
   (a tie wherever their tie fractions are close, at any step). Real GPU,
-  three positions:
+  three positions unless named otherwise:
   - **5 mm (today)**: strips 3 mm apart, clean except 226 m (one position,
-    1.0 %) and 570 m (3 / 25 / 16 %); end discs 0.5 mm, fighting 12.6 % at 226 m, 31.9 % in
-    the editor at 300 m, 19.3 % in the deep globe view.
+    1.0 %) and 570 m (3 / 25 / 16 %); end discs 0.5 mm, fighting 12.6 % at
+    226 m, 31.9 % in the editor at 300 m and 19.3 % in the deep globe view
+    (r1164, look-at point only).
   - **17 mm**: strips 10.2 mm, clean except 570 m (5-24 %); end discs
     1.7 mm, clean in the editor at 300 m and the globe, **NOT at 226 m (9.3 /
     1.5 / 1.3 %)** nor at 570 m. r1164 said the 17 mm disc gap was clean on
     the GPU everywhere; it read 1.5 mm's 0 from views other than 226 m.
-  - **28 mm**: strips 16.8 mm, clean (570 m: 3 pixels at one position); end
-    discs 2.8 mm, still 2.4 / 1.7 / 0 % at 226 m and 16-38 % at 570 m.
-  - **34 mm**, the smallest step whose end-disc gap (3.4 mm) is clean on the
-    GPU at 226 m and in the editor at 300 m at all three positions (30 mm
-    gives 3 mm, clean at two of three): strips 20.4 mm apart (18 mm measured clean but for 3 pixels at
-    570 m), the top road
-    3.9 steps = 13.3 cm up, so OsmDemo's 4 cm ladder would widen to about
-    14 cm. End discs at 570 m still fight (11-19 % at 3.4 mm).
+  - **28 mm**: strips 16.8 mm, clean except 3 pixels (3 %) at 570 m at one
+    position; end discs 2.8 mm, still 2.4 / 1.7 / 0 % at 226 m and 16-38 %
+    at 570 m.
+  - **34 mm**, the smallest MEASURED step whose end-disc gap (3.4 mm) is
+    clean on the GPU at 226 m and in the editor at 300 m at all three
+    positions. Nothing between 3 mm (clean at two of three, 7 pixels at the
+    third) and 3.4 mm was measured, so a 31-33 mm step is untested; the
+    verdict rests on three positions of about 640 pixels each (1 pixel is
+    0.16 %), and a fourth position or more frames could move the threshold
+    either way. Strips 20.4 mm apart (18 mm measured clean but for 3 pixels
+    at 570 m); the top road sits 3.9 steps = 13.3 cm up, so OsmDemo's 4 cm
+    ladder would widen to about 14 cm. End discs at 570 m still fight
+    (11-19 % at 3.4 mm).
   - Main before M4a (0 mm): 8-66 % in every view.
   - Phone GPUs were not measured; SwiftShader is above.
 - **The alternative for the end discs, measured, not built (the owner's
@@ -225,21 +231,24 @@ position moved by a millimetre between them.
   step below makes the disc-over-lower-strip gap equal the strip gap (0.6
   step) and leaves a disc coplanar only with its own strip, whose colour it
   shares. At 5 mm that is 3 mm: on the GPU 0 / 1.0 / 0 % at 226 m, clean in
-  the editor at 300 m and the globe, so it **removes the 0.5 mm disc case
-  without a larger step** in every view but 570 m, which fights at 3 mm for
-  strips anyway. At 17 mm it is 10.2 mm, clean but for 570 m. Discs a quarter
-  step below their strip (half of today's drop) give 0.35 step: 1.75 mm at 5 mm, 9.0 / 1.5 / 0.3 % at 226 m, so no better than the
-  17 mm step's discs. The drop exists so a way's own disc does not poke
-  through its strip; unmeasured here is how much a per-vertex drape on a
-  slope moves a disc rim against the strip (the spike is flat), which
-  matters for every option above that relies on a few millimetres.
+  the editor at 300 m and the globe, so it **reduces the 0.5 mm disc case
+  from 12.6 % to at most 1.0 % at 226 m without a larger step**, and clears
+  it in every other view but 570 m, which fights at 3 mm for strips anyway.
+  At 17 mm it is 10.2 mm, clean but for 570 m. Discs a quarter step below
+  their strip (half of today's drop) give 0.35 step: 1.75 mm at 5 mm, 9.0 /
+  1.5 / 0.3 % at 226 m, so no better than the 17 mm step's discs. The drop
+  exists so a way's own disc does not poke through its strip; unmeasured
+  here is how much a per-vertex drape on a slope moves a disc rim against
+  the strip (the spike is flat), which matters for every option above that
+  relies on a few millimetres.
 - **So the step stays 5 mm until the owner decides.** No candidate is clean
-  everywhere: 570 m fights up to 10 mm on the GPU, SwiftShader up to 18 mm,
-  and one class's ties do not depend on the step. The cheapest measured
-  improvement is the end-disc alternative at 5 mm; a larger step is needed
-  only to clear 226 m's end discs (34 mm) or 570 m's strips (about 17 mm),
-  each widening OsmDemo's 4 cm ladder. A 17 mm patch (ladder 8 cm) is kept
-  in the scratchpad, not committed.
+  everywhere: 570 m fights up to 10.2 mm on the GPU, SwiftShader up to
+  18 mm, and one class's ties do not depend on the step. The cheapest
+  measured improvement is the end-disc alternative at 5 mm. A larger step
+  is needed only to clear 226 m's end discs (a 34 mm step, gap 3.4 mm) or
+  570 m's strips (a 28 mm step, gap 16.8 mm, 3 pixels left at one
+  position); a 17 mm step clears neither. Each widens OsmDemo's 4 cm
+  ladder. A 17 mm variant (ladder 8 cm) was tried and is not committed.
 - **Real scenes did not separate the variants (r1164).** OsmDemo's Heidelberg
   corpus (boot view 226 m, a close view) and the Tour Editor globe at 300 m,
   shot with main, r1161, r1164 and the 17 mm variant, a camera nudge against
