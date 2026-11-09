@@ -46,11 +46,16 @@ exposureAdaptation, exposureEv }`.
   AR shell replaces only the buildings'), so AR is unchanged only at the
   defaults.
 - The URL's fields are keyed, so their order does not matter; a new field
-  or new defaults leave every value an old link states as it was.
+  or new defaults leave every value an old link states as it was, with one
+  exception in the parser: a stated ramp end that no longer rises against
+  a changed default at the other end falls back to the default ramp.
 - **Old links (r1158, the #905 review).** A field a link leaves out means
   TODAY's default, not the default of the day the link was copied. The one
-  default raised since links exist is the sky light on buildings, 1.4 -> 3
-  (r1158), so an old link without `sky` now opens at 3. That is the honest
+  default raised since the light dialog's defaults shipped (2026-09-25,
+  four of them at once) is the sky light on buildings, 1.4 -> 3 (r1158), so
+  an old link without `sky` now opens at 3. A link copied on the dialog's
+  first day (2026-09-24), before those four shipped, reads today's values
+  for every field it leaves out in the same way. That is the honest
   reading rather than a slip: r1158 also made the building colours linear,
   so 1.4 no longer renders what it rendered when such a link was copied, and
   pinning old links to 1.4 would only make them darker than either the old

@@ -28,9 +28,10 @@
     offset pulling them forward in depth: they drape on the library's
     heights, the relief's source and zoom but not its drawn mesh;
   - `buildingLight` (default `GLOBE_BUILDING_LIGHT`, 3) sets the
-    colour of every building's material (the library's `userData.cityLayer = "buildings"`
-    meshes, not its picking marker `solid`), so their vertex colours are multiplied by it; roads and trees
-    keep 1. RangeError for one that is not a positive finite number. Why
+    colour of every building's material (the library's
+    `userData.cityLayer = "buildings"` meshes, not its picking marker
+    `solid`), so their vertex colours are multiplied by it; roads and
+    trees keep 1. RangeError for one that is not a positive finite number. Why
     (r1162): since r1158 the library's building chunks carry LINEAR vertex
     colours, and the owner chose to keep them correct and raise each
     consumer's light ("Korrekt lassen, Licht anheben"). OsmDemo raises an

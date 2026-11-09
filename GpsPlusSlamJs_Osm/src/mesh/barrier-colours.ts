@@ -50,16 +50,7 @@ function mixLinear(base: Rgb, tagged: Rgb, share: number): Rgb {
   return out >>> 0;
 }
 
-/**
- * The packed sRGB colour of a barrier with these tags.
- *
- * - The kind colour, a wall's for tags of no solid kind.
- * - Replaced by the material colour (`material`, then `fence_type`, then
- *   `wall` on a wall), except on a hedge, which is leaves.
- * - Then a parseable `colour` (else `building:colour`) is mixed in at
- *   `TAGGED_BARRIER_COLOUR_SHARE`, in linear light. Named colours resolve
- *   through the one parser (`parseOsmColour`).
- */
+/** A barrier's kind or material colour, before any tagged colour. */
 function baseColour(tags: OsmTags): Rgb {
   const kind = barrierKind(tags);
   const kindRgb =
@@ -72,6 +63,16 @@ function baseColour(tags: OsmTags): Rgb {
   return BARRIER_MATERIAL_RGB.get(material ?? "") ?? kindRgb;
 }
 
+/**
+ * The packed sRGB colour of a barrier with these tags.
+ *
+ * - The kind colour, a wall's for tags of no solid kind.
+ * - Replaced by the material colour (`material`, then `fence_type`, then
+ *   `wall` on a wall), except on a hedge, which is leaves.
+ * - Then a parseable `colour` (else `building:colour`) is mixed in at
+ *   `TAGGED_BARRIER_COLOUR_SHARE`, in linear light. Named colours resolve
+ *   through the one parser (`parseOsmColour`).
+ */
 export function barrierColour(tags: OsmTags): Rgb {
   const base = baseColour(tags);
   const tagged =

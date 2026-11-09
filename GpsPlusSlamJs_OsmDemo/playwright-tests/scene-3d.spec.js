@@ -1204,9 +1204,11 @@ async function underTheWorldSteps(page) {
     let steps = 0;
     // THE ROTATION STOPS AT THE POLE (turns 3-5 repeat turn 2 exactly), so
     // two turns in a row with the same counts mean no further turn can
-    // change the answer: the loop ends there and the assertions below fail
-    // with their own message, instead of running all 8 turns (each booting
-    // a sky-only page) into the test's timeout (r1162 re-judge, NIT 1).
+    // change the answer: the loop ends there, before booting another
+    // sky-only page for a pose whose sky it has already measured, and the
+    // assertions below fail with their own message. Without the stop each
+    // repeated pose under the city re-measured that sky, and a missed floor
+    // ran into the test's timeout (r1162 re-judge, NIT 1).
     let previous = "";
     while (steps < 8) {
       await rotateUnder(page, 40);
