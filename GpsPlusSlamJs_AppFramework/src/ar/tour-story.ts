@@ -663,8 +663,11 @@ function readFolderScale(
 /** Whether a block's pose, composed through the folders that hold it
  *  (outermost first), stands further from its station along an axis than
  *  a single pose may ({@link TOUR_ITEM_MAX_OFFSET_M}). Each pose is
- *  bounded on its own, but a sum of them is not: the writer, which writes
- *  every block at its composed pose, would refuse the tour. */
+ *  bounded on its own, but a sum of them is not: the world view
+ *  (`tourFreeBlocks`) would stand such a block further out than any block
+ *  of the format may stand, and an editor writing it at its pose in the
+ *  station (the block taken out of its folder) would have that write
+ *  refused. */
 function beyondStation(
   pose: TourLocalPose,
   folders: readonly TourFolderFrame[]
