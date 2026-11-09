@@ -74,6 +74,13 @@ pose, with orbit limits from `freeOrbitLimits`. `views.html` lists such links pe
   link, come back to the same view.
 - The fixture URLs are literal, because the deploy's crawl copies only those.
 - A failure is shown on the page and stored in `error`, never swallowed.
+- **Known gap (r1162):** since r1158 the building chunks carry LINEAR vertex colours, and this
+  page still lights them with the sun and hemisphere it was tuned with for the old sRGB
+  values, so its buildings (today's and every variant that reuses `buildingObjects`) read
+  up to a fifth darker (roofs -19 %, walls -12 % in the AR tint) than when the variants were judged. The consumers raised their light
+  per consumer (the globe's `buildingLight`, OsmDemo's `BUILDING_SKY_LIGHT` and the AR
+  shader's sRGB encode); this lab did not, because a raise here changes the look of the
+  prototypes the owner already compared and needs a sweep per variant. Filed as a follow-up.
 
 ## Example: a minimal variant page
 

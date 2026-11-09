@@ -29,6 +29,11 @@ triangles }`
     fixture's `bbox` (the fetched box, required since objects M2a).
   - Plain lights and no tone mapping: the page judges geometry and colour, not
     the look (the city look lab is where looks are compared).
+  - **Known gap (r1162):** since r1158 the building colours are LINEAR, so
+    "Now" reads up to a fifth darker than the "today" pictures captured
+    before, from the colour change alone, not from geometry. The lights here
+    were not raised (the consumers raised theirs); a raise needs a factor
+    measured against the "today" pictures. Filed as a follow-up.
   - Controls are links; changing building or camera reloads the page.
 - **Capturing "today" again** (only to add a camera, and only from a checkout
   of the commit before the fixes): serve the package (`PORT=4820

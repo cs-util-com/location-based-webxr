@@ -1136,6 +1136,28 @@ const rotateUnder = async (page, dy) => {
     .toBe(true);
 };
 
+/**
+ * The building edges a pose must show over its sky-only baseline to count as
+ * the deep pose under the city (r1162 delta review, MAJOR 1). Measured on the
+ * fixture at every 40 px turn: turn 1 is the shallow pose (690 edges over a
+ * sky of 0, seeded palette; 1025 class), turn 2 the deep one (1001 over 46 =
+ * 955 seeded; 1360 over 46 = 1314 class), and turns 3-5 repeat turn 2 exactly
+ * (the rotation goes no further). 800 sits between 690 and 955: it fails the
+ * shallow pose with the seeded palette and passes the deep pose with either.
+ * CI (Linux SwiftShader) renders the same deep pose with 999 edges, not
+ * 1001-1122 (r1167, three retries), so with the sky's 46 (assumed: the
+ * sky-only count on CI was not measured) its geometry is
+ * about 953: a margin of about 19 % over 800 there, 19 % locally (955).
+ * Reversing values: a floor above about 950 fails the deep pose on CI, and
+ * the deep pose losing about a sixth of its edges (under 800) fails it
+ * everywhere; a shallow pose gaining about a sixth (over 800) only lets the
+ * loop stop one turn early, as before this bound, and the residual check
+ * still runs there.
+ * The class palette's shallow pose (1025) already passes, so with that
+ * palette the bound rests on the ratio and meanY checks.
+ */
+const BENEATH_GEOMETRY_MIN = 800;
+
 /** Shows the buildings from beneath, and no ground under them. */
 async function underTheWorldSteps(page) {
   await test.step("shows the buildings from beneath, and no ground under them", async () => {
@@ -1172,11 +1194,11 @@ async function underTheWorldSteps(page) {
     // the upper third, which is what "looking up at them from underneath"
     // means and what looking down at them cannot produce, AND they are in
     // frame: their edges are at least ten times the sky's at the same pose
-    // (the sky-only baseline below). RELATIVE, not an absolute count (r1162,
-    // the r1158 review's MINOR 2): the old "more than 1000 edges" passed at
-    // 1001 once the seeded palette softened the buildings from below, so it
-    // said nothing about the pose; a tenth of the city is what the sky check
-    // below needs anyway.
+    // (the sky-only baseline below), AND there is a deep pose's worth of
+    // building geometry over that sky (BENEATH_GEOMETRY_MIN). The ratio alone
+    // was not enough (r1162 delta review): the first turn's sky has 0 edges,
+    // so "a tenth of the sky" reduced to "any building edge" and the loop
+    // stopped one turn early, at the shallow pose.
     let withBuildings = { count: 0, meanY: 1 };
     let skyOnly = { count: Infinity, meanY: 1 };
     let steps = 0;
@@ -1186,17 +1208,25 @@ async function underTheWorldSteps(page) {
       withBuildings = await countNonSkyPixels(page);
       if (withBuildings.meanY >= 0.35) continue;
       skyOnly = await skyOnlyFrameAfter(page, steps);
-      if (skyOnly.count < withBuildings.count / 10) break;
+      const geometry = withBuildings.count - skyOnly.count;
+      if (
+        skyOnly.count < withBuildings.count / 10 &&
+        geometry > BENEATH_GEOMETRY_MIN
+      )
+        break;
     }
     expect(withBuildings.meanY).toBeLessThan(0.35);
+    expect(withBuildings.count - skyOnly.count).toBeGreaterThan(
+      BENEATH_GEOMETRY_MIN,
+    );
 
     // THE SKY-ONLY BASELINE (r1155). From beneath, the frame keeps a few
     // dozen hard edges that are not geometry: the scattering sky converges to
     // a steep point at the nadir, and the orbit target's dot sits beside it
     // (measured 2026-11-08: 68 edges, 53 at the apex and 15 at the dot, with
-    // buildings and trees off). That fixed cost broke the old bare 20x ratio
-    // once the seeded palette made the buildings from below a little softer
-    // (1122 edges, so 56 allowed). So the sky is measured on its own: a second
+    // buildings and trees off; 46 at the deep pose since r1162). That fixed
+    // cost broke the old bare 20x ratio once the seeded palette made the
+    // buildings from below a little softer. So the sky is measured on its own: a second
     // page boots the same fixture, turns EVERY layer off, buildings and trees
     // included, and turns the same number of steps. Its frame is the sky at
     // this pose, by construction rather than by the hide step under test.
@@ -1204,8 +1234,9 @@ async function underTheWorldSteps(page) {
     // AND NO GROUND UNDER THEM: in "No ground" with nothing on, the frame from
     // below is that small sky remainder. A ground plane drawn under the world
     // would put its silhouette across the whole width (hundreds of edges).
-    // The bound is a tenth of the buildings' edges: measured 68 against 1122
-    // (16x), so it would only flip if the sky alone reached 1/10 of the city.
+    // The bound is a tenth of the buildings' edges: measured 46 against 1001
+    // (seeded palette) and 1360 (class palette) at the deep pose, so it would
+    // only flip if the sky alone reached 1/10 of the city.
     expect(skyOnly.count).toBeLessThan(withBuildings.count / 10);
 
     // AND THE GEOMETRY IS GONE. With the buildings and trees off here, what
@@ -1551,16 +1582,20 @@ const buildingPixelLuma = async (page) => {
       return sum;
     }, key);
   const settle = { timeout: 15_000 };
-  const withSum = await snap("__r1162With");
+  const withSum = await snap("__buildingLumaWith");
   const buildings = page.locator("#layer-buildings");
   await buildings.uncheck();
-  await expect.poll(() => snap("__r1162Without"), settle).not.toBe(withSum);
-  const withoutSum = await snap("__r1162Without");
+  await expect
+    .poll(() => snap("__buildingLumaWithout"), settle)
+    .not.toBe(withSum);
+  const withoutSum = await snap("__buildingLumaWithout");
   await buildings.check();
-  await expect.poll(() => snap("__r1162Back"), settle).not.toBe(withoutSum);
+  await expect
+    .poll(() => snap("__buildingLumaBack"), settle)
+    .not.toBe(withoutSum);
   return page.evaluate(() => {
-    const a = window.__r1162With;
-    const b = window.__r1162Without;
+    const a = window.__buildingLumaWith;
+    const b = window.__buildingLumaWithout;
     let sum = 0;
     let n = 0;
     for (let i = 0; i < a.length; i += 4) {
@@ -1649,8 +1684,8 @@ test.describe("the time of day", () => {
   const SUN_POINTS = [
     // [label, date, apparent solar time, lit-surface luma under ACES −2 EV,
     //  the share of it the point must reach (half by default); null = the
-    //  night, no lit-surface value; and, at the night, the least mean frame
-    //  luma with the heat grid off]
+    //  night, no lit-surface value; and, at the night, the least mean luma
+    //  of the building pixels, NIGHT_BUILDING_LUMA_MIN]
     ["the golden hour (3.6°)", "2026-09-23", "17:36", 42.6],
     ["a 3.6° morning", "2026-09-23", "06:23", 33.6],
     ["a 24° morning", "2026-09-23", "08:41", 96.8],
