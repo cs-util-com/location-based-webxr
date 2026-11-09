@@ -56,14 +56,17 @@ const code: InspectorModel = {
 };
 
 describe("barActions for what stands nowhere", () => {
-  // Why: a story and its entries have no place in the world to copy, and
-  // the bar's Duplicate would copy a world item: a button that did nothing
-  // would read as broken.
-  it("offers nothing for a story, an entry or a free block", () => {
+  // Why: a story's entries have no place in the world to copy, and the
+  // bar's Duplicate would copy a world item: a button that did nothing
+  // would read as broken. A story is copied whole, so it has Duplicate,
+  // but nothing to copy the position of or to turn.
+  it("offers a story Duplicate alone, an entry or a free block nothing", () => {
     const base = { id: "x", stationId: "s", title: "T", sub: "" };
     expect(
-      barActions({ ...base, kind: "story", storyId: "x", entries: [] }),
-    ).toEqual([]);
+      barActions({ ...base, kind: "story", storyId: "x", entries: [] }).map(
+        (a) => a.action,
+      ),
+    ).toEqual(["duplicate"]);
     expect(
       barActions({
         ...base,

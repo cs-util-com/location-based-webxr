@@ -1456,13 +1456,18 @@ function deleteStoryEntry(id: string, story: TourStory): void {
 }
 
 /**
- * Copy a note, or a station with its notes, beside itself (the 3D view's
+ * Copy a note, a story (`story:<id>`, right after itself), or a station
+ * with its notes, beside itself (the bar's Duplicate, the 3D view's
  * Ctrl+D): one step; the copy is selected and a toast names it. A photo's
  * picture is read first; a tour switched meanwhile drops the result.
  */
 async function duplicateSelection(id: string): Promise<void> {
   const mine = editor;
   if (mine === null) return;
+  if (id.startsWith(STORY_PREFIX)) {
+    duplicateStorySelection(id.slice(STORY_PREFIX.length));
+    return;
+  }
   const called = itemCalled(id);
   endUndo();
   const outcome = id.startsWith(STATION_PREFIX)
@@ -1485,6 +1490,26 @@ async function duplicateSelection(id: string): Promise<void> {
   if (home !== undefined) showRowsOf(home.id);
   select(outcome.id);
   toast(said);
+  tourChanged();
+}
+
+/** The story `storyId` copied right after itself: the copy selected
+ *  with its folder open, said once it was made; one step. */
+function duplicateStorySelection(storyId: string): void {
+  if (editor === null) return;
+  endUndo();
+  const outcome = editor.duplicateStory(storyId);
+  refresh();
+  if (outcome.kind === "refused") {
+    toast(outcome.reason);
+    return;
+  }
+  const copy = manifestToWrite(store.getState().tourDocument)
+    ?.stations.flatMap((s) => tourStories(s))
+    .find((s) => s.id === outcome.id);
+  store.dispatch(editorViewActions.storyFolded({ id: outcome.id, open: true }));
+  select(`${STORY_PREFIX}${outcome.id}`);
+  toast(`Duplicated ${copy === undefined ? "the story" : `"${copy.title}"`}`);
   tourChanged();
 }
 

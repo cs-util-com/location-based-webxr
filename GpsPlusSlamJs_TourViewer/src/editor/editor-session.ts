@@ -729,6 +729,11 @@ export interface EditorSession {
     storyId: string,
   ):
     { kind: "deleted"; children: number; stationGone: boolean } | EditorRefusal;
+  /** Copy a story right after itself, "... copy", with everything it
+   *  holds under new ids: one step. */
+  duplicateStory(
+    storyId: string,
+  ): { kind: "duplicated"; id: string } | EditorRefusal;
   /** A new entry at the end of a story: one step. */
   addToStory(
     storyId: string,
@@ -1856,6 +1861,34 @@ export function createEditorSession(input: {
         ),
       )
         ? { kind: "edited" }
+        : notApplied;
+    },
+    duplicateStory(storyId) {
+      const state = mine();
+      if (state === null) return notInTour;
+      const story = storyNow(state, storyId);
+      if (story === undefined) {
+        return { kind: "refused", reason: NO_SUCH_STORY };
+      }
+      // The story and every child get a new id: child ids are unique
+      // across the tour.
+      const newIds = Object.fromEntries(
+        [story.id, ...story.children.map((c) => c.id)].map((id) => [
+          id,
+          newObjectId(),
+        ]),
+      );
+      const id = newIds[story.id] as string;
+      return took(() =>
+        store.dispatch(
+          tourDocumentActions.storyDuplicated({
+            story: storyId,
+            newIds,
+            what: `the copy of the story "${story.title}"`,
+          }),
+        ),
+      )
+        ? { kind: "duplicated", id }
         : notApplied;
     },
     deleteStory(storyId) {

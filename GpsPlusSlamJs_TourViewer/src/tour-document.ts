@@ -24,6 +24,7 @@ import {
   tourStationChildIds,
   tourStationStoryBlocks,
   tourStories,
+  TOUR_STORY_TITLE_RULE,
   type TourStory,
   type TourStoryBlock,
   type TourStepAdvance,
@@ -2700,10 +2701,10 @@ function framesHolding(
 const COPY_MARK = " copy";
 
 /** A copy's title: `title` and the mark, `title` shortened to fit the
- *  title's bound (`TOUR_TITLE_MAX_CHARS`, counted as the field counts
- *  it, in code points). */
-function copyTitle(title: string): string {
-  const room = TOUR_TITLE_MAX_CHARS - [...COPY_MARK].length;
+ *  title's bound `max` (a station's `TOUR_TITLE_MAX_CHARS` unless
+ *  told; counted as the field counts it, in code points). */
+function copyTitle(title: string, max = TOUR_TITLE_MAX_CHARS): string {
+  const room = max - [...COPY_MARK].length;
   const chars = [...title];
   const kept =
     chars.length <= room ? title : chars.slice(0, room).join("").trimEnd();
@@ -2882,6 +2883,51 @@ function storyAdd(
   const story = newStory(payload.id, payload.title);
   if (frame === undefined || story === null) return before;
   return frameReplaced(before, withStory(frame, story), payload.what);
+}
+
+/** What `storyDuplicated` carries: the new ids are minted outside the
+ *  reducer. */
+interface StoryDuplicatePayload {
+  readonly story: string;
+  /** A new id for the story and for EVERY child it holds, by its old id
+   *  (child ids are unique across the tour). */
+  readonly newIds: Readonly<Record<string, string>>;
+  readonly what: string;
+}
+
+/** A story copied right after itself in its station (`storyDuplicated`),
+ *  as one step: titled "... copy" (shortened to fit), every child under
+ *  its new id, its choices' jumps going to the copies. */
+function storyDuplicate(
+  before: TourDocumentState,
+  payload: StoryDuplicatePayload,
+): TourDocumentState {
+  if (before.written === null) return before;
+  const frame = frameOfStory(before, payload.story);
+  const story =
+    frame === undefined
+      ? undefined
+      : tourStories(frame).find((s) => s.id === payload.story);
+  if (frame === undefined || story === undefined) return before;
+  const minted = [story.id, ...story.children.map((c) => c.id)].map(
+    (id) => payload.newIds[id],
+  );
+  if (
+    minted.some((id) => id === undefined || !freeObjectId(before, id)) ||
+    new Set(minted).size !== minted.length
+  ) {
+    return before;
+  }
+  const copy = copiedStory(story, (id) => payload.newIds[id] ?? id);
+  const titled: TourStory = {
+    ...copy,
+    title: copyTitle(story.title, TOUR_STORY_TITLE_RULE.max),
+  };
+  return frameReplaced(
+    before,
+    withStory(frame, titled, story.id),
+    payload.what,
+  );
 }
 
 /** A story's title set (`storyRenamed`), as one step. */
@@ -3622,6 +3668,13 @@ const tourDocumentSlice = createSlice({
       action: PayloadAction<{ story: string; title: string; what: string }>,
     ) {
       return storyRename(plain(state), action.payload);
+    },
+    /** A story copied right after itself, titled "... copy", its
+     *  children under the new ids the page gives and its choices' jumps
+     *  going to the copies: one step. An unknown story, a taken id or a
+     *  child without a new id changes nothing. */
+    storyDuplicated(state, action: PayloadAction<StoryDuplicatePayload>) {
+      return storyDuplicate(plain(state), action.payload);
     },
     /** A story deleted with its children: one step. */
     storyDeleted(
@@ -4387,6 +4440,7 @@ export const isDocumentEdit = isAnyOf(
   tourDocumentActions.storyAdded,
   tourDocumentActions.storyRenamed,
   tourDocumentActions.storyDeleted,
+  tourDocumentActions.storyDuplicated,
   tourDocumentActions.storyChildAdded,
   tourDocumentActions.storyChildDeleted,
   tourDocumentActions.childMoved,

@@ -198,7 +198,9 @@ never state). Design:
       ids are unique across the tour).
     - `addStory(stationId)` (named "New story", or "New story n" with the
       least n from 2 while that name is taken, so a delete never makes a
-      name repeat), `renameStory(id, title)`, `deleteStory(id)` (says how
+      name repeat), `renameStory(id, title)`, `duplicateStory(id)` (mints a
+      new id for the story and each child; a picture block shares its
+      asset with the original, as a station's copy does), `deleteStory(id)` (says how
       many children went and `stationGone` when its untitled automatic
       station, kept by nothing else, went with it),
       `addToStory(storyId, kind)`, `deleteStoryChild(id)` (says how many

@@ -759,8 +759,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     the same on the card ("... - not saved yet.");
   - `remove` (`deleteSelection`, the card's Delete too) deletes an item
     with the toast's Undo, or a station (`deleteStation`);
-  - `duplicate` (`duplicateSelection`, Ctrl+D) copies an item or a
-    station beside itself, ends a running search and unfolds the station
+  - `duplicate` (`duplicateSelection`, Ctrl+D) copies a story right after
+    itself (`duplicateStorySelection`: the copy selected, its folder open,
+    "Duplicated "<title> copy""), or an item or a station beside itself,
+    ends a running search and unfolds the station
     the copy is in (`showRowsOf`: the copy's name matches what was typed
     no better), selects the copy and says "Duplicated ...";
   - `groundMenu` hands a right click's (a long press's) ground menu to the

@@ -203,6 +203,7 @@ type Command =
   | { kind: "add"; at: number }
   | { kind: "rename"; at: number; title: string }
   | { kind: "delete"; at: number }
+  | { kind: "duplicate"; at: number }
   | { kind: "addChild"; at: number; make: "shortText" | "longText" }
   | { kind: "deleteChild"; at: number }
   | { kind: "move"; at: number; to: number }
@@ -219,6 +220,7 @@ const command: fc.Arbitrary<Command> = fc.oneof(
     title: fc.constantFrom("Renamed", "  spaced ", "", "x".repeat(81)),
   }),
   fc.record({ kind: fc.constant("delete" as const), at }),
+  fc.record({ kind: fc.constant("duplicate" as const), at }),
   fc.record({
     kind: fc.constant("addChild" as const),
     at,
@@ -350,6 +352,15 @@ function commandsKeepTheTour(
         case "delete": {
           const story = round(stories, c.at);
           if (story !== undefined) editor.deleteStory(story.id);
+          break;
+        }
+        case "duplicate": {
+          // A copy of any story, even one copied before: always a step.
+          const story = round(stories, c.at);
+          if (story !== undefined) {
+            mustStep = true;
+            editor.duplicateStory(story.id);
+          }
           break;
         }
         case "addChild": {

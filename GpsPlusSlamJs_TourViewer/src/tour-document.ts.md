@@ -274,7 +274,11 @@ largeTour?, cannotSave? })`.
 - The 3D editor's station edits, each ONE step (refused, changing nothing,
   before an open, for an unknown station or item, or for a value the
   format refuses - the page asks the exported guard first and says why):
-  - `storyAdded`, `storyRenamed`, `storyDeleted`, `storyChildAdded`,
+  - `storyAdded`, `storyRenamed`, `storyDuplicated` (the story right
+    after itself, "... copy" shortened to the story title's 80 code
+    points, every child under the new id the page gives, its choices'
+    jumps going to the copies; refused whole for a missing, taken or
+    shared new id), `storyDeleted`, `storyChildAdded`,
     `storyChildDeleted` (which prunes the `goto`s that led to the child) - one
     history entry each and a draft write; the maths is `tour-story-edit.ts`,
     and `story-commands.property.test.ts` holds that after any sequence and

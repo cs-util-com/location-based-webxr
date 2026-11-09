@@ -1,4 +1,6 @@
 // @ts-check
+import { readFileSync } from "node:fs";
+
 import { expect, test } from "@playwright/test";
 import {
   TextReader,
@@ -1459,4 +1461,104 @@ test.describe("on a touch screen", () => {
       expect(hit, `${String(dx)}, ${String(dy)}`).toBe("gate");
     }
   });
+});
+
+// Why: a creator copies a story to make a variant of it. Only the page
+// shows the tree's selection, the bar's Duplicate, the session, the toast
+// and the draft agreeing: the copy right after its original, under new
+// ids, one step, and back whole from the draft after a reload.
+test("a story duplicated from the tree stands right after its original and comes back from the draft after a reload", async ({
+  page,
+  context,
+}) => {
+  test.slow();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await context.addInitScript(() => {
+    // @ts-expect-error - absent in this browser for the test.
+    delete window.showOpenFilePicker;
+    // @ts-expect-error - absent in this browser for the test.
+    delete window.showSaveFilePicker;
+  });
+  await answerHosts(page);
+  await page.goto("/edit.html?globe=0");
+  await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
+  const zip = readFileSync(
+    new URL("../public/samples/marienplatz-tour.zip", import.meta.url),
+  );
+  await openZip(page, zip, "marienplatz-tour.zip");
+  await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
+    timeout: 60_000,
+  });
+  /**
+   * The gate's stories, as the tour holds them.
+   * @param {import("@playwright/test").Page} p
+   * @returns {Promise<any[]>}
+   */
+  const storiesOf = async (p) =>
+    (await tourNow(p)).stations
+      .find((/** @type {any} */ s) => s.id === "gate")
+      .children.filter((/** @type {any} */ c) => c.role === "story");
+  const before = await storiesOf(page);
+  expect(before.length).toBeGreaterThanOrEqual(2);
+  const original = before[0];
+  const start = await revision(page);
+
+  // Select the first story by its folder's name, unfolding the station
+  // when it is folded.
+  const gate = card(page, "gate");
+  const name = gate.locator(`.fname[data-select="story:${original.id}"]`);
+  if (!(await name.isVisible())) await gate.locator(".head .tw").click();
+  await name.click();
+  await expect.poll(() => selected(page)).toBe(`story:${original.id}`);
+
+  await page.locator('#shell-acts [data-bar="duplicate"]').click();
+  await expect(
+    page.locator(".toast", {
+      hasText: `Duplicated "${original.title} copy"`,
+    }),
+  ).toBeVisible();
+  const after = await storiesOf(page);
+  expect(after.map((/** @type {any} */ s) => s.id)).toEqual([
+    original.id,
+    expect.any(String),
+    ...before.slice(1).map((/** @type {any} */ s) => s.id),
+  ]);
+  const copy = after[1];
+  expect(copy.id).not.toBe(original.id);
+  expect(copy.title).toBe(`${original.title} copy`);
+  expect(copy.children.length).toBe(original.children.length);
+  const originalIds = new Set(
+    original.children.map((/** @type {any} */ c) => c.id),
+  );
+  expect(
+    copy.children.filter((/** @type {any} */ c) => originalIds.has(c.id)),
+  ).toEqual([]);
+  expect(await selected(page)).toBe(`story:${copy.id}`);
+  await expect(gate.locator(`.folder[data-story="${copy.id}"] .nm`)).toHaveText(
+    copy.title,
+  );
+  expect(await revision(page)).toBe(start + 1);
+
+  await expect(page.locator("body")).toHaveAttribute("data-draft", "saved");
+  const saved = await tourNow(page);
+  await page.close();
+
+  const next = await context.newPage();
+  await next.setViewportSize({ width: 1440, height: 900 });
+  await answerHosts(next);
+  await next.goto("/edit.html?globe=0");
+  await expect(next.locator("body")).toHaveAttribute("data-editor", "ready");
+  await openZip(next, zip, "marienplatz-tour.zip");
+  const offer = next.locator(".toast.draft-offer");
+  await expect(offer).toBeVisible({ timeout: 30_000 });
+  await offer.locator("button", { hasText: "Restore" }).click();
+  await expect(offer).toHaveCount(0);
+  await expect
+    .poll(async () => (await storiesOf(next)).map((s) => s.id))
+    .toEqual(after.map((/** @type {any} */ s) => s.id));
+  // The sample carries no tour id, so each open mints its own: the rest
+  // of the tour must come back as it was.
+  const { tourId: _was, ...kept } = saved;
+  const { tourId: _now, ...back } = await tourNow(next);
+  expect(back).toEqual(kept);
 });
