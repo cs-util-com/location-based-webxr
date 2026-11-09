@@ -43,6 +43,31 @@ of `feature-colours.ts`.
 - Kept out of `allBuildingColours()`: that list's luma band (120-215) is for
   the class wall colours, and the darker roofs would leave it on purpose.
 
+## Brightness (r1155 sweep, 2026-11-08)
+
+The owner asked for the palette "etwas heller", with the June-noon lit-surface
+floor (61.47 = 0.95 x 64.7, `scene-3d.spec.js`) as the bar. Every tone was
+lifted in OKLab, L' = L + f(1 - L), chroma unchanged (all stay below 80). The
+heat grid's margins do not depend on the palette (identical for every f).
+
+- June-noon lit luma by lift f (e2e, Cologne fixture), then Heidelberg
+  2026-11-08 13:00 at 1440x900:
+  - f 0 (these tones): 48.8; 36.5
+  - f 0.1: 51.3; 39.1
+  - f 0.2: 53.9; 41.9
+  - f 0.3: 56.8; 44.8
+  - f 0.4: 59.7; 47.9
+  - f 0.5: 62.6, clears the floor; 51.3
+  - the class palette: 53.3, also below the floor; 57.2
+- The floor is first cleared at about f 0.46, and f 0.5 turns the walls
+  near white (f3e6d1 ...) and the clay roofs pale salmon, so no lift was
+  committed: the tones above are unchanged.
+- The cause of the June-noon red is not this palette but the linear-light
+  conversion of building chunks (`linearChunkColours` in `city.ts`): with
+  that conversion bypassed, June noon reads 62.6 with these tones and 64.3
+  with the class palette, both above the floor. Whether the floor or the
+  conversion is re-judged is the owner's call.
+
 ## Examples
 
 ```ts
