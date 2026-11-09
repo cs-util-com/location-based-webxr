@@ -276,3 +276,46 @@ describe("tag values that name Object.prototype members (review finding 5)", () 
     }
   });
 });
+
+/**
+ * Separately mapped sidewalks (city objects plan 2026-11-07-2315 M4a, the
+ * owner's O3 choice). WHY: a `footway=sidewalk` beside a carriageway is paved
+ * concrete, and in the footway tan it read as a dirt path along every street.
+ * It stays in the warm pedestrian family (the class wins, DEC-R7b-4), lighter.
+ * Only a mapped sidewalk way changes; `sidewalk=*` on a carriageway invents
+ * nothing.
+ */
+describe("sidewalks", () => {
+  const SIDEWALK = { highway: "footway", footway: "sidewalk" };
+
+  it("draws a mapped sidewalk in O3's light warm tone, whatever its surface", () => {
+    expect(roadColour(SIDEWALK)).toBe(0xc6b49c);
+    expect(roadColour({ ...SIDEWALK, surface: "asphalt" })).toBe(0xc6b49c);
+  });
+
+  it("is lighter than the footway tan and still warm and saturated", () => {
+    const sidewalk = roadColour(SIDEWALK);
+    expect(luma(sidewalk)).toBeGreaterThan(
+      luma(roadColour({ highway: "footway" })),
+    );
+    expect(saturation(sidewalk)).toBeGreaterThan(0.16);
+    expect((sidewalk >> 16) & 0xff).toBeGreaterThan(sidewalk & 0xff);
+  });
+
+  it("is one of the road colours the contrast and band checks cover", () => {
+    expect(allRoadColours()).toContain(0xc6b49c);
+  });
+
+  it("changes nothing else: a crossing, a plain footway, a carriageway with sidewalk tags", () => {
+    const footway = roadColour({ highway: "footway" });
+    expect(roadColour({ highway: "footway", footway: "crossing" })).toBe(
+      footway,
+    );
+    expect(roadColour({ highway: "residential", sidewalk: "both" })).toBe(
+      roadColour({ highway: "residential" }),
+    );
+    expect(roadColour({ highway: "path", footway: "sidewalk" })).toBe(
+      roadColour({ highway: "path" }),
+    );
+  });
+});

@@ -19,7 +19,11 @@ of `building-palette.ts`, which shares `parseOsmColour` and `roofColour`.
 - `roofColour(tags, outline?): Rgb | undefined` — `roof:colour`, the part's
   own first, then the outline's; `undefined` means the roof is drawn in the
   building's colour.
-- `roadColour(tags): Rgb` — `surface` → `highway=*` → default.
+- `roadColour(tags): Rgb` — `surface` → `highway=*` → default. A separately
+  mapped sidewalk (`highway=footway` + `footway=sidewalk`) is `0xc6b49c`,
+  lighter than the footway tan and still warm (objects plan M4a, O3's tone;
+  the class still wins over `surface`); nothing is invented from `sidewalk=*`
+  on a carriageway.
 - `parseOsmColour(raw): Rgb | undefined` — `#rgb`, `#rrggbb`, and the colour
   names the corpus uses.
 - `allBuildingColours()`, `allRoadColours()` — the palettes, for the tests.
