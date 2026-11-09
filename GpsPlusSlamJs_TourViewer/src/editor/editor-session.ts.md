@@ -213,8 +213,9 @@ never state). Design:
       answers that led to it now go on to the next entry, and whether it
       took its kind's world view), `{ kind: "unchanged" }`, or a refusal
       in words (a choice or a quiz leaving its story, a story into a story,
-      a model without a size standing free, a picture made here before the
-      tour holds its file).
+      a model without a size standing free, a video standing free - "A
+      video plays only in a story for now: it cannot stand in the world by
+      itself." - a picture made here before the tour holds its file).
     - `groundItems([{ id, alt }])` - "Put on the ground": the altitudes the
       page measured, ONE step for all; refused whole for an unknown id or
       a height beyond an item's reach of its station (`HEIGHT_REFUSED`).

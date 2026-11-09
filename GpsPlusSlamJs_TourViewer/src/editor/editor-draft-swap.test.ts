@@ -323,6 +323,48 @@ describe("the draft of a smaller file", () => {
     ).toEqual([]);
   });
 
+  // Why: an open's tidy removes the bytes of a file the file on disk now
+  // holds before it rewrites the list, so a reload between the two finds
+  // the list naming bytes that are gone. With the entry sizes passed in
+  // those bytes are read, and their absence must not be said as a draft
+  // that did not read: the file on disk carries that file at its path. A
+  // file the disk does not hold there is still said lost.
+  it("says nothing lost for bytes tidied away that the file on disk holds", async () => {
+    const stores = memoryDraftStores();
+    const draft = draftOf(stores);
+    await draft.open(K1, opened());
+    await draft.saveAsset(WAV, RIFF);
+    await draft.saveObject(ESSAY);
+    await draft.idle();
+    draft.close();
+    const unread = async (
+      manifest: TourManifest,
+      sizeInFile: (path: string) => number | undefined,
+    ): Promise<number> => {
+      stores.spaces.get(SPACE)?.delete(`asset:${ID}`);
+      let said = 0;
+      const again = createEditorDraft({
+        openStore: stores.open,
+        holdLock: freeDraftLocks,
+        noBackup: () => undefined,
+        unreadDraft: () => {
+          said += 1;
+        },
+      });
+      await again.open(K1, manifest, sizeInFile);
+      await again.idle();
+      again.close();
+      return said;
+    };
+    const saved = { ...tourOf([PIN, ESSAY]), assets: [WAV] };
+    expect(await unread(saved, () => undefined)).toBe(1);
+    expect(
+      await unread(saved, (path) =>
+        path === WAV.path ? RIFF.size : undefined,
+      ),
+    ).toBe(0);
+  });
+
   // Why: a tab closed between any two of the draft's writes must leave a
   // namespace that reads - every record offered with the bytes of its own
   // path, the id offered once - and the next open tidies what is stray.

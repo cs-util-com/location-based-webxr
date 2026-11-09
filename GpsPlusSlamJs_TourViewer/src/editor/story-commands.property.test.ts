@@ -27,6 +27,7 @@ import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
 
 import {
   documentObjects,
+  historyAssetIds,
   manifestToWrite,
   tourDocumentActions,
 } from "../tour-document.js";
@@ -510,18 +511,21 @@ function commandsKeepTheTour(
     const opened = new Set(manifest.assets.map((a) => a.id));
     expect(afterTour).toEqual(withReferencedAssets(afterTour, opened));
     // The first save keeps the opened tour's files as they were, in their
-    // order; beside them only the voices this run brought in (an undo step
-    // may still name one whose text is gone, so that save keeps it).
-    const brought = new Set(
-      store.getState().tourDocument.addedAssets.map((a) => a.id),
+    // order; beside them only what its tour or a step of the undo history
+    // names (`historyAssetIds`: an undo step may still name a voice whose
+    // text is gone, so that save keeps it) - the bound production writes.
+    const beforeTour = parseTourManifest(before);
+    const named = new Set(
+      withReferencedAssets(beforeTour).assets.map((a) => a.id),
     );
-    const beforeAssets = parseTourManifest(before).assets;
-    expect(beforeAssets.filter((a) => opened.has(a.id))).toEqual(
+    const history = historyAssetIds(store.getState().tourDocument);
+    expect(beforeTour.assets.filter((a) => opened.has(a.id))).toEqual(
       manifest.assets,
     );
-    for (const asset of beforeAssets) {
-      if (opened.has(asset.id)) continue;
-      expect(brought.has(asset.id), asset.path).toBe(true);
+    for (const asset of beforeTour.assets) {
+      if (opened.has(asset.id) || named.has(asset.id)) continue;
+      expect(history.has(asset.id), asset.path).toBe(true);
+      // The only files this run brings in are voices.
       expect(asset.kind).toBe("audio");
     }
   };

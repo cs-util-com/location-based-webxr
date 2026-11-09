@@ -1554,8 +1554,16 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
           const blob = await bytesAt(`${ASSET_PREFIX}${asset.id}`);
           if (mine !== generation) return none;
           if (blob !== undefined && ownAtPath(blob)) continue;
-          if (blob === undefined) lost = true;
-          else {
+          if (blob === undefined) {
+            // Bytes gone while the file on disk holds an entry at the
+            // record's path: an open's tidy removed them as the file's own
+            // before it rewrote the list, and a reload came between. The
+            // file carries it, so nothing of the draft's is lost.
+            const onDisk =
+              pathInFile.get(asset.id) === asset.path &&
+              sizeInFile?.(asset.path) !== undefined;
+            if (!onDisk) lost = true;
+          } else {
             files.set(asset.id, {
               asset,
               blob,

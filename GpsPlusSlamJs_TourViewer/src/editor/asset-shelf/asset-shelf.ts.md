@@ -14,7 +14,9 @@
 
 - First in, first out by arrival (`seq`), at most `slots` jobs at once; each end starts the next.
 - A result is judged here, not by the optimizer:
-  - over the entry cap, or a "kept" for an original over the cap: failed, NOT retryable, with words telling the author to use a smaller file or remove it;
+  - "over the cap" means over the entry cap in bytes OR over `TOUR_MAX_IMAGE_PIXELS` (width x height; a result that declares no size keeps the original's): the two caps a save refuses, so a file over either would block every save;
+  - a result over the cap, or a "kept", for an original over the cap: failed, NOT retryable, with words telling the author to use a smaller file or remove it;
+  - a result over the cap for an original that fits: kept with `NOT_SMALLER` - the original stays, nothing failed;
   - not at least 10 % smaller (`settings.keepAbove`): kept with `NOT_SMALLER` (an over-cap original is exempt, any fitting result is taken);
   - otherwise the session's swap to `content/<id>.<extension>`; a refusal fails, retryable, with its words.
 - A job's late end (after `remove`, after `close`) changes nothing: every await is followed by an ownership check.

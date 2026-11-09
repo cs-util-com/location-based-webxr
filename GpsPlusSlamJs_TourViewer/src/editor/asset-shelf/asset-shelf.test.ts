@@ -18,6 +18,8 @@ import {
   tourDocumentActions as doc,
   tourDocumentReducer,
 } from "../../tour-document.js";
+import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
+
 import { ASSET_OPTIMIZERS, type OptimizerHost } from "./asset-optimizers.js";
 import {
   NOT_SMALLER,
@@ -173,6 +175,66 @@ describe("the shelf's runner", () => {
     fake.finish(new Blob([new Uint8Array(600)]), "webp");
     await settle();
     expect(row(B)).toMatchObject({ status: "failed", retryable: false });
+  });
+
+  // Why: a save refuses a file over the entry cap, so a result over it
+  // must never land. When the original fits, it is simply kept: the honest
+  // end is "not smaller", never a non-retryable "too large".
+  it("keeps an original that fits when only the result is over the entry cap", async () => {
+    const { shelf, fake, swap, row, settle } = setup({ maxFileBytes: 1500 });
+    shelf.add(image(A), "a.png", 1000, "added");
+    await settle();
+    fake.finish(new Blob([new Uint8Array(1600)]), "webp");
+    await settle();
+    expect(swap).not.toHaveBeenCalled();
+    expect(row(A)).toMatchObject({ status: "kept", reason: NOT_SMALLER });
+  });
+
+  // Why: a save also refuses a picture over the pixel cap
+  // (TOUR_MAX_IMAGE_PIXELS), so a small result declaring an oversized width
+  // or height would land as "optimized" and then block every save. The
+  // cap is probed at its edge: exactly at it lands, one row more does not.
+  it("judges a result's declared pixels against the pixel cap", async () => {
+    const side = Math.sqrt(TOUR_MAX_IMAGE_PIXELS);
+    const { shelf, fake, swap, row, settle } = setup();
+    shelf.add(image(A), "a.png", 1000, "added");
+    await settle();
+    fake.finish(small, "webp", { width: side, height: side + 1 });
+    await settle();
+    expect(swap).not.toHaveBeenCalled();
+    expect(row(A)).toMatchObject({ status: "kept", reason: NOT_SMALLER });
+    shelf.add(image(B), "b.png", 1000, "added");
+    await settle();
+    fake.finish(small, "webp", { width: side, height: side });
+    await settle();
+    expect(row(B)?.status).toBe("optimized");
+  });
+
+  // Why: an original over the pixel cap can stay only once made smaller.
+  // A result that is still over it fails for good; one under it is taken
+  // even when it saves little in bytes (it is what lets the tour save).
+  it("an original over the pixel cap fails unless the result fits, which is taken", async () => {
+    const huge = (id: string): TourAsset => ({
+      ...image(id),
+      width: 5000,
+      height: 5000,
+    });
+    const { shelf, fake, swap, row, settle } = setup({ recordOf: huge });
+    shelf.add(huge(A), "a.png", 1000, "added");
+    await settle();
+    fake.finish(small, "webp");
+    await settle();
+    expect(swap).not.toHaveBeenCalled();
+    expect(row(A)).toMatchObject({ status: "failed", retryable: false });
+    expect(row(A)?.reason).toMatch(/too large to stay in the tour/);
+    shelf.add(huge(B), "b.png", 1000, "added");
+    await settle();
+    fake.finish(new Blob([new Uint8Array(990)]), "webp", {
+      width: 4000,
+      height: 4000,
+    });
+    await settle();
+    expect(row(B)?.status).toBe("optimized");
   });
 
   it("a kind without an optimizer comes in kept, with words", () => {

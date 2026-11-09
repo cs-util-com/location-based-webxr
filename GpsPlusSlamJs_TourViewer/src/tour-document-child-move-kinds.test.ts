@@ -192,16 +192,19 @@ describe("every kind moved out of a story", () => {
       new Set(tourBlockKinds()),
     );
     expect(CASES.some((c) => !c.free)).toBe(true);
-    // Every kind no free host shows is among the refused cases below,
-    // checked against the move rule itself.
+    // Every kind no free host shows is refused by the move rule itself in
+    // every view: asked of the rule, not of the table's own `free` flag
+    // (which is derived from `SHOWN_FREE` and so could never disagree).
     for (const kind of tourBlockKinds()) {
       if (SHOWN_FREE[kind] !== null) continue;
       const cases = CASES.filter((c) => c.block["kind"] === kind);
       expect(cases.length, kind).toBeGreaterThan(0);
-      expect(
-        cases.every((c) => !c.free),
-        kind,
-      ).toBe(true);
+      for (const { name, block } of cases) {
+        expect(
+          childMoveChange(open(tourWith(block)), "it", { place: "free" }),
+          name,
+        ).toEqual({ kind: "refused", reason: "cannotStandFree" });
+      }
     }
   });
 

@@ -434,7 +434,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     the background, E2b-1 review #9) - the delay and the max wait bound how
     often.
 - **The draft (M6 E2c).** Read inside the open, before the tour shows
-  (`draft.open` over the session's file key). What an earlier visit left is
+  (`draft.open` over the session's file key, with the opened archive's
+  entry sizes by path, so a file the draft holds that the file on disk
+  already carries at its path with its size is let go, and bytes an open's
+  tidy removed for such a file are not said lost). What an earlier visit left is
   offered in a toast that stays until answered (`.draft-offer`): Restore
   (`session.restore`, live edits winning; `editor-draft.ts` `restoredLine`:
   "N earlier changes are back - not saved yet", or why nothing came back in

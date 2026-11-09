@@ -5,7 +5,8 @@
  * `assetShelf` slice (`asset-shelf-slice.ts`); the Blobs - an original
  * kept for "use the original" - stay here. Jobs run first in, first out,
  * `slots` at a time; each result is judged (not at least 10 % smaller
- * keeps the original, still over the entry cap fails with words) and a
+ * keeps the original, still over the entry or pixel cap fails with words)
+ * and a
  * good one goes through the session's swap, which re-checks it against
  * the document. A save never waits for a job.
  *
@@ -14,6 +15,7 @@
 
 import type { UnknownAction } from "@reduxjs/toolkit";
 import type { TourAsset } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
 import { DEFAULT_ARCHIVE_LIMITS } from "gps-plus-slam-app-framework/storage";
 
 import type { TourDocumentState } from "../../tour-document.js";
@@ -233,12 +235,28 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
     outcome: OptimizeOutcome,
     stop: AbortController,
   ): Promise<void> {
-    const overCap = source.size > maxBytes;
-    if (outcome.kind === "kept" || outcome.blob.size > maxBytes) {
-      if (overCap || outcome.kind === "optimized") {
+    // The caps a save checks (bytes per entry, a picture's pixels): a file
+    // over either blocks every save, so the shelf must never land one.
+    const fits = (bytes: number, width?: number, height?: number) =>
+      bytes <= maxBytes && (width ?? 0) * (height ?? 0) <= TOUR_MAX_IMAGE_PIXELS;
+    const overCap = !fits(source.size, before.width, before.height);
+    if (outcome.kind === "kept") {
+      if (overCap) {
         dispatch(act.jobFailed({ id, reason: TOO_LARGE, retryable: false }));
       } else {
         dispatch(act.jobKept({ id, reason: outcome.reason }));
+      }
+      return;
+    }
+    // A result keeps the original's size when it declares none.
+    const width = outcome.width ?? before.width;
+    const height = outcome.height ?? before.height;
+    if (!fits(outcome.blob.size, width, height)) {
+      // An original that fits stays; only one that does not is a failure.
+      if (overCap) {
+        dispatch(act.jobFailed({ id, reason: TOO_LARGE, retryable: false }));
+      } else {
+        dispatch(act.jobKept({ id, reason: NOT_SMALLER }));
       }
       return;
     }
