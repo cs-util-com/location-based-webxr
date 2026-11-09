@@ -532,31 +532,118 @@ describe("Heidelberg under the seeded palette", () => {
   const tagsByKey = new Map(features.map((f) => [featureKey(f), f.tags]));
 
   /**
-   * The seeded roof a colourless volume must carry. The colour follows the
-   * DRAWN roof (M7 review MINOR 4): a pitched tag the ladder drew as a flat
-   * lid takes a flat grey.
+   * The seeded roof of every colourless roof-tagged volume, written out
+   * (r1158 review NIT 8): deriving "drawn pitched" in the test copied
+   * `drawsPitchedRoof`'s predicate, so the test agreed with the code by
+   * construction. Measured from the build in r1162 (2026-11-09); the flat
+   * greys are the three volumes the ladder drew as a flat lid (r1155). A
+   * change here changes what the owner sees, so make it on purpose.
    */
-  const seededRoofOf = (
+  const EXPECTED_ROOF: Readonly<Record<string, number>> = {
+    "way/1186132976": 0x86604f,
+    "way/1186685291": 0x7f6a60,
+    "way/1186937591": 0x6b625e,
+    "way/1186937594": 0x7f6a60,
+    "way/171041984": 0x8c6152,
+    "way/171691889": 0x5c5a5c,
+    "way/171691898": 0x6b625e,
+    "way/171691908": 0x7f6a60,
+    "way/173307427": 0x96705f,
+    "way/173307431": 0x7a7772,
+    "way/179552475": 0x7c5a4e,
+    "way/179632696": 0x7c5a4e,
+    "way/179632697": 0x6b625e,
+    "way/179632701": 0x8c6152,
+    "way/180070497": 0x5c5a5c,
+    "way/180108327": 0x7c5a4e,
+    "way/180108329": 0x86604f,
+    "way/194261904": 0x86604f,
+    "way/247081690": 0x7f6a60,
+    "way/247081694": 0x7c5a4e,
+    "way/247081696": 0x7f6a60,
+    "way/247081699": 0x7c5a4e,
+    "way/247081700": 0x96705f,
+    "way/247521016": 0x7f6a60,
+    "way/247521018": 0x96705f,
+    "way/247521026": 0x7f6a60,
+    "way/247521032": 0x7f6a60,
+    "way/247521039": 0x8c6152,
+    "way/247521041": 0x7f6a60,
+    "way/247521047": 0x6b625e,
+    "way/247521048": 0x86604f,
+    "way/247521050": 0x8c6152,
+    "way/247521051": 0x86604f,
+    "way/247530220": 0x6b625e,
+    "way/247530235": 0x96705f,
+    "way/247530242": 0x7c5a4e,
+    "way/247530258": 0x7f6a60,
+    "way/247530267": 0x7f6a60,
+    "way/247530268": 0x5c5a5c,
+    "way/247530277": 0x5c5a5c,
+    "way/247530879": 0x96705f,
+    "way/247844774": 0x96705f,
+    "way/247844780": 0x86604f,
+    "way/249335947": 0x86604f,
+    "way/249335949": 0x7c5a4e,
+    "way/249335950": 0x6b625e,
+    "way/249335951": 0x96705f,
+    "way/249335953": 0x7c5a4e,
+    "way/249335959": 0x96705f,
+    "way/249335960": 0x86604f,
+    "way/312573949": 0x8c6152,
+    "way/312575197": 0x96705f,
+    "way/312575198": 0x6b625e,
+    "way/32200572": 0x96705f,
+    "way/402203251": 0x5c5a5c,
+    "way/402203255": 0x7f6a60,
+    "way/402203257": 0x8c6152,
+    "way/402203261": 0x7f6a60,
+    "way/402203265": 0x6b625e,
+    "way/402203267": 0x5c5a5c,
+    "way/402203270": 0x8c6152,
+    "way/432183120": 0x8c6152,
+    "way/436749608": 0x7f6a60,
+    "way/575939606": 0x8a8782,
+    "way/91529284": 0x7a7772,
+    "way/92139230": 0x8c6152,
+    "way/92139255": 0x7c5a4e,
+    "way/92139269": 0x86604f,
+    "way/95012506": 0x86604f,
+  };
+  const FLAT_LID = new Set(["way/173307431", "way/575939606", "way/91529284"]);
+
+  /**
+   * Whether the chunks carry `roof` (linear) at this volume's first roof
+   * vertex, found by its position. True for a volume with no roof vertices.
+   */
+  const roofCarried = (
     volume: (typeof city.volumes)[number],
-    tags: Record<string, string>,
-    outlineTags: Record<string, string> | undefined,
-  ): { roof: number; drawnPitched: boolean } => {
-    const drawnPitched = volume.roofMethods.some(
-      (m) => m !== "flat" && m !== "prism",
-    );
-    const key = volume.parentFeature ?? volume.feature;
-    const { roof } = seededBuildingColours(
-      tags,
-      outlineTags,
-      key,
-      drawnPitched,
-    );
-    expect(drawnPitched ? PITCHED_ROOF_TONES : FLAT_ROOF_TONES).toContain(roof);
-    return { roof, drawnPitched };
+    roof: number,
+  ): boolean => {
+    const r = volume.roofVertexRanges[0];
+    if (r === undefined || r.end <= r.start) return true;
+    const p = volume.mesh.positions;
+    const at = [p[r.start * 3], p[r.start * 3 + 1], p[r.start * 3 + 2]];
+    const want = linearUnpacked(roof);
+    return city.buildings.some((chunk) => {
+      const q = chunk.mesh.positions;
+      const c = chunk.colors ?? [];
+      for (let i = 0; i < q.length; i += 3) {
+        if (
+          q[i] === at[0] &&
+          q[i + 1] === at[1] &&
+          q[i + 2] === at[2] &&
+          c[i] === want[0] &&
+          c[i + 1] === want[1] &&
+          c[i + 2] === want[2]
+        )
+          return true;
+      }
+      return false;
+    });
   };
 
   it("roofs every roof-tagged building from the palette unless it is colour-tagged", () => {
-    const linear = (rgb: number) => linearUnpacked(rgb);
     let pitched = 0;
     let tagged = 0;
     let palette = 0;
@@ -573,31 +660,14 @@ describe("Heidelberg under the seeded palette", () => {
         tagged += 1;
         continue;
       }
-      const { roof, drawnPitched } = seededRoofOf(volume, tags, outlineTags);
-      if (!drawnPitched) flatLid += 1;
-      // The roof vertices carry it: find this volume's first roof vertex in
-      // the chunks by its position.
-      const r = volume.roofVertexRanges[0];
-      if (r === undefined || r.end <= r.start) continue;
-      const p = volume.mesh.positions;
-      const at = [p[r.start * 3], p[r.start * 3 + 1], p[r.start * 3 + 2]];
-      const found = city.buildings.some((chunk) => {
-        const q = chunk.mesh.positions;
-        const c = chunk.colors ?? [];
-        for (let i = 0; i < q.length; i += 3) {
-          if (q[i] === at[0] && q[i + 1] === at[1] && q[i + 2] === at[2]) {
-            const want = linear(roof);
-            if (
-              c[i] === want[0] &&
-              c[i + 1] === want[1] &&
-              c[i + 2] === want[2]
-            )
-              return true;
-          }
-        }
-        return false;
-      });
-      expect(found, `${volume.feature} roof`).toBe(true);
+      const roof = EXPECTED_ROOF[volume.feature];
+      expect(roof, `${volume.feature} has an expected roof`).toBeDefined();
+      if (roof === undefined) continue;
+      const flat = FLAT_LID.has(volume.feature);
+      expect(flat ? FLAT_ROOF_TONES : PITCHED_ROOF_TONES).toContain(roof);
+      if (flat) flatLid += 1;
+      // The roof vertices carry it.
+      expect(roofCarried(volume, roof), `${volume.feature} roof`).toBe(true);
       palette += 1;
     }
     // Counted in VOLUMES (parts count singly): 150 pitched volumes of 93
@@ -706,6 +776,47 @@ describe("buildCity, cosmetic trees", () => {
     expect(without.cosmeticTrees.length).toBeGreaterThan(
       city.cosmeticTrees.length,
     );
+  });
+
+  // WHY (r1158 review MINOR 4): a multipolygon building has one outer ring
+  // per polygon, and the exclusion took only the first, so woods grew inside
+  // every other part of it. Two halls in the forest, one relation.
+  it("keeps them out of every outer ring of a multipolygon building", () => {
+    const rect = (lat: number, lng: number) => [
+      { lat, lng },
+      { lat, lng: lng + 0.0007 },
+      { lat: lat + 0.0004, lng: lng + 0.0007 },
+      { lat: lat + 0.0004, lng },
+      { lat, lng },
+    ];
+    const halls = [rect(50.9502, 6.9603), rect(50.9505, 6.9612)];
+    const twoHalls: OsmFeature = {
+      type: "relation",
+      id: 22,
+      tags: { type: "multipolygon", building: "yes" },
+      members: halls.map((geometry, i) => ({
+        type: "way" as const,
+        ref: 31 + i,
+        role: "outer",
+        geometry,
+      })),
+    };
+    const city = buildCity([forest, twoHalls], { frame }, { window: W });
+    expect(city.volumes).toHaveLength(1);
+    const without = buildCity([forest], { frame }, { window: W });
+    for (const hall of halls) {
+      const ring = hall.map((p) => frame.toEnu(p));
+      const xs = ring.map((p) => p.x);
+      const ys = ring.map((p) => p.y);
+      const inside = (t: { position: { x: number; y: number } }) =>
+        t.position.x > Math.min(...xs) &&
+        t.position.x < Math.max(...xs) &&
+        t.position.y > Math.min(...ys) &&
+        t.position.y < Math.max(...ys);
+      // The forest alone grows trees there, so an empty hall is the exclusion.
+      expect(without.cosmeticTrees.filter(inside).length).toBeGreaterThan(0);
+      expect(city.cosmeticTrees.filter(inside)).toEqual([]);
+    }
   });
 
   it("keeps them within withinM like everything else", () => {

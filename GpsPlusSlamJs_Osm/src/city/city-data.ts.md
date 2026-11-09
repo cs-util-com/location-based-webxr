@@ -41,7 +41,10 @@ finished, abort() }`. Options: `source`, `heightFetch` (e.g.
       `window` is the union of the loaded tiles' Overpass boxes
       (`cellToBoundingBox`), the data actually fetched, and so
       `buildCity`'s required `window` (city objects plan 2026-11-07-2315
-      section 4); it grows with each delivery.
+      section 4); it grows with each delivery. Nothing is delivered before
+      a tile has loaded, so the window is never the empty union (+-Infinity,
+      which buildCity refuses); a load whose every tile fails delivers
+      nothing (r1158 review, pinned by a test).
     - `finished` resolves `{ outcome: settled | aborted, counts,
 missingTiles, missingHeights, elapsedMs }`, never rejects.
     - RangeError at the call: a plan with more than one height template (a

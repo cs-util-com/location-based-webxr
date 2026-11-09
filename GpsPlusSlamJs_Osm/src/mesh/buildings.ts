@@ -100,6 +100,14 @@ export interface BuildingVolume {
    */
   readonly footprint: readonly EnuPoint[];
   /**
+   * EVERY polygon's outer ring in ENU metres: `footprint` is the first of
+   * them, and a multipolygon building has one per part.
+   *
+   * `buildCity` keeps the invented trees out of all of them (r1158 review
+   * MINOR 4: excluding `footprint` alone grew woods inside every other part).
+   */
+  readonly outerRings: readonly (readonly EnuPoint[])[];
+  /**
    * The volume's highest point, in the SAME frame as a marker's ground height
    * (DEC-S2, stage 1).
    *
@@ -967,6 +975,7 @@ function volumeFor(
   }
   const roofMethods = meshes.map((m) => m.roofMethod);
   const footprint = polygons[0]?.[0] ?? [];
+  const outerRings = polygons.map((rings) => rings[0] ?? []);
   // The absolute top: the base the walls actually stand on, plus the height the
   // roof reaches above that base.
   const topHeightM = ground.lowest + heights.totalHeightM + ground.rise;
@@ -979,6 +988,7 @@ function volumeFor(
         roofVertexRanges,
         roofMethods,
         footprint,
+        outerRings,
         topHeightM,
       }
     : {
@@ -986,6 +996,7 @@ function volumeFor(
         parentFeature,
         heights,
         footprint,
+        outerRings,
         mesh,
         roofIsApproximate,
         roofVertexRanges,

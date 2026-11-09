@@ -440,6 +440,24 @@ describe("loadCityData", () => {
     expect(delivered[1]?.window).toEqual(union(plan.overpassTiles));
   });
 
+  // WHY (r1158 review): the window is the union of the LOADED tiles' boxes,
+  // so with none loaded it would be south +Infinity and north -Infinity, a
+  // window buildCity's woods refuse (RangeError). No delivery is made before
+  // a tile has loaded; pinned so the guard in deliver() cannot go quietly.
+  it("never delivers a window when no Overpass tile loaded", async () => {
+    const plan = multiTilePlan();
+    const failing = Object.fromEntries(
+      plan.overpassTiles.map((tile) => [tile, 99]),
+    );
+    const { delivered, report } = await run(plan, {
+      source: fakeSource({ failing }),
+      heightFetch: fakeHeights().fetch,
+      retryDelaysMs: [1],
+    });
+    expect(delivered.map((d) => d.window)).toEqual([]);
+    expect(report.missingTiles).toHaveLength(plan.overpassTiles.length);
+  });
+
   it("delivers once when the first rings asked for are every ring", async () => {
     const plan = multiTilePlan();
     const { delivered } = await run(plan, {
