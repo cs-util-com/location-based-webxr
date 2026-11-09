@@ -22,10 +22,13 @@ import type { OsmFeature } from "../model/osm-feature.js";
 import { enuFrameAt } from "./enu.js";
 import type { MeshData } from "./mesh-data.js";
 import {
+  ROAD_MITRE_LIMIT,
+  ROAD_RANK_STEP_M,
   buildRoads,
   isBridgeCrossing,
   isPedestrianPath,
   isRoad,
+  roadRank,
   roadWidthM,
 } from "./roads.js";
 
@@ -245,12 +248,13 @@ describe("buildRoads — geometry", () => {
   });
 
   it("leaves NO GAP at a right-angle corner", () => {
-    // THE PROPERTY THE DISC EXISTS FOR. Two quads meeting at 90 degrees leave a
-    // wedge of bare ground on the outside of the turn; a disc of the road's own
-    // width centred on the shared vertex fills it by construction.
+    // Two quads meeting at 90 degrees leave a wedge of bare ground on the
+    // outside of the turn. Until M4a a disc on the shared vertex filled it;
+    // since M4a the mitre joint does (the strip's two sides meet on the
+    // bisector), and this test pins the outcome whichever closes it.
     //
     // Sampled just OUTSIDE the corner vertex on the diagonal — the deepest part
-    // of the wedge, and the point a mitre would have to compute.
+    // of the wedge.
     const corner = buildRoads(
       [way({ highway: "residential" }, [at(0, 0), at(60, 0), at(60, 60)])],
       options,
@@ -260,7 +264,7 @@ describe("buildRoads — geometry", () => {
     expect(coversPoint(mesh, 60, 0)).toBe(true);
     // 2 m out along the outer diagonal: inside a 6 m road's 3 m radius.
     expect(coversPoint(mesh, 61.4, -1.4)).toBe(true);
-    // And still bounded — a disc is not an excuse for unbounded geometry.
+    // And still bounded — a join is not an excuse for unbounded geometry.
     expect(coversPoint(mesh, 68, -8)).toBe(false);
   });
 
@@ -583,6 +587,390 @@ describe("highway values that name Object.prototype members (M1 review finding 2
         tags: { highway: name },
       };
       expect(isPedestrianPath(feature), name).toBe(false);
+    }
+  });
+});
+
+/** Triangles in a set of ribbons. */
+function triangles(ribbons: readonly { mesh: MeshData }[]): number {
+  return ribbons.reduce((sum, r) => sum + r.mesh.indices.length / 3, 0);
+}
+
+/** A turn of `deg` (left, counter-clockwise) at (0, 0), segments `len` long. */
+function bend(deg: number, len = 20): { lat: number; lng: number }[] {
+  const r = (deg * Math.PI) / 180;
+  return [at(-len, 0), at(0, 0), at(Math.cos(r) * len, Math.sin(r) * len)];
+}
+
+/** The heights (render y) of every vertex at ENU (east, north). */
+function heightsAt(mesh: MeshData, east: number, north: number): number[] {
+  const found: number[] = [];
+  for (let i = 0; i < mesh.positions.length; i += 3) {
+    if (
+      Math.abs((mesh.positions[i] ?? 0) - east) < 1e-3 &&
+      Math.abs((mesh.positions[i + 2] ?? 0) + north) < 1e-3
+    ) {
+      found.push(mesh.positions[i + 1] ?? 0);
+    }
+  }
+  return found;
+}
+
+/** Every vertex height (render y) of a mesh. */
+function allHeights(mesh: MeshData): number[] {
+  const out: number[] = [];
+  for (let i = 1; i < mesh.positions.length; i += 3) {
+    out.push(mesh.positions[i] ?? 0);
+  }
+  return out;
+}
+
+/**
+ * The mitre strip (city objects plan 2026-11-07-2315 M4a, owner decision
+ * 2026-11-09 in its section 22). WHY THESE TESTS MATTER: a disc at every
+ * vertex (DEC-R2-13) cost eight triangles per vertex, and dropping the disc
+ * at near-straight points left the sawtooth the owner rejected on the O3
+ * lab. The strip has to keep DEC-R2-13's promise (no gap at any angle)
+ * without either: the counts pin "two triangles a segment, one per bevel,
+ * eight per disc, discs only at ends, junctions and fallbacks", and the
+ * coverage checks pin that no notch opens on either side.
+ */
+describe("buildRoads - the mitre strip (M4a)", () => {
+  /** Two triangles a segment plus two end discs: a way with no joins to close. */
+  const plain = (points: number): number => 2 * (points - 1) + 2 * 8;
+
+  it("ships the mitre limit 2 as the default (bevels above 120 degrees)", () => {
+    expect(ROAD_MITRE_LIMIT).toBe(2);
+  });
+
+  it("mitres a hair-thin turn even at limit 1 rather than bevelling a sliver", () => {
+    // Found by the property test (seed -787614213): at limit 1 every turn
+    // above zero exceeds the limit, and a turn of a millionth of a degree
+    // (float noise on a straight way) got a bevel triangle with no area. Such
+    // a turn's mitre is as long as the half width to the micrometre, so it is
+    // mitred; a bevel is drawn only when its gap is at least a millimetre.
+    const road = buildRoads(
+      [
+        way({ highway: "footway" }, [
+          at(0, 0),
+          at(3, 0),
+          at(5.999999999999999, 6.345980621479719e-8),
+        ]),
+      ],
+      {
+        frame: FRAME,
+        mitreLimit: 1,
+      },
+    );
+    expect(triangles(road)).toBe(plain(3));
+    const mesh = road[0]?.mesh as MeshData;
+    for (let i = 0; i + 2 < mesh.indices.length; i += 3) {
+      const p = (k: number): [number, number] => {
+        const base = (mesh.indices[i + k] ?? 0) * 3;
+        return [mesh.positions[base] ?? 0, -(mesh.positions[base + 2] ?? 0)];
+      };
+      const [a, b, c] = [p(0), p(1), p(2)];
+      const area =
+        ((b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1])) / 2;
+      expect(area).toBeGreaterThan(1e-6);
+    }
+    // A clear 30-degree turn at limit 1 still bevels.
+    expect(
+      triangles(
+        buildRoads([way({ highway: "footway" }, bend(30))], {
+          frame: FRAME,
+          mitreLimit: 1,
+        }),
+      ),
+    ).toBe(plain(3) + 1);
+  });
+
+  it("draws a straight way as two triangles a segment plus its two end discs", () => {
+    const road = buildRoads(
+      [
+        way({ highway: "residential" }, [
+          at(0, 0),
+          at(10, 0),
+          at(20, 0),
+          at(30, 0),
+        ]),
+      ],
+      { frame: FRAME },
+    );
+    expect(triangles(road)).toBe(plain(4));
+    // The rounded end caps of DEC-R2-13 stay.
+    expect(coversPoint(road[0]?.mesh as MeshData, -2.9, 0)).toBe(true);
+    expect(coversPoint(road[0]?.mesh as MeshData, 32.9, 0)).toBe(true);
+  });
+
+  it("leaves no notch on either side of a near-straight curve (the owner's O3 defect)", () => {
+    // A 6 m road along an arc turning 4 degrees at every vertex: the case the
+    // dropped discs left a sawtooth on. Both sides are sampled at 97 % of the
+    // half width on the bisector at every vertex, the deepest point of a
+    // notch, and the strip covers them with no interior disc.
+    const enu: { x: number; y: number }[] = [];
+    let heading = 0;
+    let x = 0;
+    let y = 0;
+    for (let i = 0; i < 12; i += 1) {
+      enu.push({ x, y });
+      x += 15 * Math.cos(heading);
+      y += 15 * Math.sin(heading);
+      heading += (4 * Math.PI) / 180;
+    }
+    const road = buildRoads(
+      [
+        way(
+          { highway: "residential" },
+          enu.map((p) => at(p.x, p.y)),
+        ),
+      ],
+      { frame: FRAME },
+    );
+    const mesh = road[0]?.mesh as MeshData;
+    expect(triangles(road)).toBe(plain(12));
+    for (let k = 1; k + 1 < enu.length; k += 1) {
+      const p = enu[k] as { x: number; y: number };
+      const before = enu[k - 1] as { x: number; y: number };
+      const after = enu[k + 1] as { x: number; y: number };
+      const bisector =
+        (Math.atan2(p.y - before.y, p.x - before.x) +
+          Math.atan2(after.y - p.y, after.x - p.x)) /
+        2;
+      for (const side of [1, -1]) {
+        expect(
+          coversPoint(
+            mesh,
+            p.x - side * Math.sin(bisector) * 2.9,
+            p.y + side * Math.cos(bisector) * 2.9,
+          ),
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("mitres a 90 degree turn at the default limit, and bevels it under a limit of 1.4", () => {
+    // 1 / cos(45 deg) = 1.414: a mitre at 2, a bevel at 1.4. The mitre point
+    // of a 6 m road is (3, -3) from the corner on the outside of this left
+    // turn; the bevel cuts it off and costs one triangle.
+    const geometry = [at(-20, 0), at(0, 0), at(0, 20)];
+    const mitred = buildRoads([way({ highway: "residential" }, geometry)], {
+      frame: FRAME,
+    });
+    const bevelled = buildRoads([way({ highway: "residential" }, geometry)], {
+      frame: FRAME,
+      mitreLimit: 1.4,
+    });
+    expect(triangles(mitred)).toBe(plain(3));
+    expect(triangles(bevelled)).toBe(plain(3) + 1);
+    expect(coversPoint(mitred[0]?.mesh as MeshData, 2.9, -2.9)).toBe(true);
+    expect(coversPoint(bevelled[0]?.mesh as MeshData, 2.9, -2.9)).toBe(false);
+    // The bevel still closes the wedge up to its chord.
+    expect(coversPoint(bevelled[0]?.mesh as MeshData, 1.4, -1.4)).toBe(true);
+  });
+
+  it("bevels a 130 degree turn at the default limit", () => {
+    // 1 / cos(65 deg) = 2.37 > 2.
+    expect(
+      triangles(
+        buildRoads([way({ highway: "residential" }, bend(130))], {
+          frame: FRAME,
+        }),
+      ),
+    ).toBe(plain(3) + 1);
+    // 1 / cos(55 deg) = 1.74: still a mitre.
+    expect(
+      triangles(
+        buildRoads([way({ highway: "residential" }, bend(110))], {
+          frame: FRAME,
+        }),
+      ),
+    ).toBe(plain(3));
+  });
+
+  it("falls back to a disc where the inner mitre point would run past half a neighbouring segment", () => {
+    // A 6 m road turning 90 degrees: the inner point reaches h tan(45) = 3 m
+    // along each segment, more than half of a 4 m segment. Two joins on one
+    // short segment could cross and fold the strip, so the point takes a disc.
+    const road = buildRoads(
+      [way({ highway: "residential" }, [at(-20, 0), at(0, 0), at(0, 4)])],
+      { frame: FRAME },
+    );
+    expect(triangles(road)).toBe(plain(3) + 8);
+    expect(coversPoint(road[0]?.mesh as MeshData, 2, -2)).toBe(true);
+  });
+
+  it("falls back to a disc at a hairpin (a full reversal)", () => {
+    const road = buildRoads(
+      [way({ highway: "footway" }, [at(0, 0), at(20, 0), at(0, 0.0001)])],
+      { frame: FRAME },
+    );
+    expect(triangles(road)).toBe(plain(3) + 8);
+    expect(coversPoint(road[0]?.mesh as MeshData, 20.9, 0)).toBe(true);
+  });
+
+  it("breaks the strip at a junction and keeps its disc there", () => {
+    const through = way(
+      { highway: "residential" },
+      [at(-30, 0), at(0, 0), at(30, 0)],
+      1,
+    );
+    const side = way({ highway: "footway" }, [at(0, 0), at(0, 30)], 2);
+    const ribbons = buildRoads([through, side], { frame: FRAME });
+    // Straight through, yet the shared point keeps its disc.
+    expect(triangles(ribbons.slice(0, 1))).toBe(plain(3) + 8);
+    expect(triangles(ribbons.slice(1))).toBe(plain(2));
+  });
+
+  it("keeps a disc at a point one way visits twice", () => {
+    // A figure eight: (30, 0) is passed twice and is a junction of the way
+    // with itself, so it keeps its disc on both visits. (60, 30) turns 135
+    // degrees, over the mitre limit, and takes one bevel triangle.
+    const road = buildRoads(
+      [
+        way({ highway: "footway" }, [
+          at(0, 0),
+          at(30, 0),
+          at(60, 0),
+          at(60, 30),
+          at(30, 0),
+          at(0, -30),
+        ]),
+      ],
+      { frame: FRAME },
+    );
+    expect(triangles(road)).toBe(plain(6) + 2 * 8 + 1);
+  });
+
+  it("does not depend on the input order of the ways", () => {
+    const a = way(
+      { highway: "residential" },
+      [at(-30, 0), at(0, 0), at(30, 5)],
+      1,
+    );
+    const b = way({ highway: "footway" }, [at(0, 0), at(0, 30)], 2);
+    const ab = buildRoads([a, b], { frame: FRAME });
+    const ba = buildRoads([b, a], { frame: FRAME });
+    expect(ab[0]?.mesh.positions).toEqual(ba[1]?.mesh.positions);
+    expect(ab[1]?.mesh.positions).toEqual(ba[0]?.mesh.positions);
+  });
+
+  it("winds every strip, bevel and disc triangle face up, none degenerate", () => {
+    // Strictly positive: a folded strip shows up as a NEGATIVE face here.
+    for (const deg of [0, 30, 90, 130, 170]) {
+      for (const mitreLimit of [1, 2, 4]) {
+        const road = buildRoads([way({ highway: "primary" }, bend(deg))], {
+          frame: FRAME,
+          mitreLimit,
+        });
+        const mesh = road[0]?.mesh as MeshData;
+        for (let i = 0; i + 2 < mesh.indices.length; i += 3) {
+          expect(faceUpness(mesh, i)).toBeGreaterThan(1e-6);
+        }
+      }
+    }
+  });
+
+  it("refuses a mitre limit below 1 or not finite", () => {
+    const features = [way({ highway: "footway" }, [at(0, 0), at(30, 0)])];
+    for (const mitreLimit of [0.99, -1, Number.NaN, Infinity]) {
+      expect(() => buildRoads(features, { frame: FRAME, mitreLimit })).toThrow(
+        RangeError,
+      );
+    }
+    expect(() =>
+      buildRoads(features, { frame: FRAME, mitreLimit: 1 }),
+    ).not.toThrow();
+  });
+});
+
+/**
+ * Class order (M4a): a carriageway covers the footway that crosses it, and a
+ * way's discs sit under its own strip. WHY: the ribbons of one chunk are one
+ * mesh at one ground height, so two overlapping ribbons z-fight or show
+ * whichever the depth test happens to keep. The lift is geometric, inside
+ * one rung of OsmDemo's 4 cm ground ladder (the M4a spike's choice).
+ */
+describe("buildRoads - class order (M4a)", () => {
+  it("ranks paths lowest, then service and track, then local streets, then the rest", () => {
+    expect(roadRank({ highway: "footway" })).toBe(0);
+    expect(roadRank({ highway: "footway", footway: "sidewalk" })).toBe(0);
+    expect(roadRank({ highway: "cycleway" })).toBe(0);
+    expect(roadRank({ highway: "steps" })).toBe(0);
+    expect(roadRank({ highway: "service" })).toBe(1);
+    expect(roadRank({ highway: "track" })).toBe(1);
+    expect(roadRank({ highway: "residential" })).toBe(2);
+    expect(roadRank({ highway: "living_street" })).toBe(2);
+    expect(roadRank({ highway: "primary" })).toBe(3);
+    expect(roadRank({ highway: "some_future_value" })).toBe(3);
+    expect(roadRank({})).toBe(3);
+    // A free-text value never finds an inherited property.
+    expect(roadRank({ highway: "constructor" })).toBe(3);
+  });
+
+  it("lifts a carriageway above the footway that crosses it", () => {
+    const ribbons = buildRoads(
+      [
+        way({ highway: "footway" }, [at(0, -20), at(0, 0), at(0, 20)], 1),
+        way({ highway: "residential" }, [at(-30, 0), at(0, 0), at(30, 0)], 2),
+      ],
+      { frame: FRAME },
+    );
+    const footway = allHeights(ribbons[0]?.mesh as MeshData);
+    const road = allHeights(ribbons[1]?.mesh as MeshData);
+    expect(Math.min(...road)).toBeGreaterThan(Math.max(...footway));
+  });
+
+  it("puts a way's discs under its own strip", () => {
+    const road = buildRoads(
+      [way({ highway: "residential" }, [at(0, 0), at(30, 0)])],
+      { frame: FRAME },
+    );
+    const mesh = road[0]?.mesh as MeshData;
+    // The end disc's centre against the strip's corner beside it. The disc's
+    // rim has a vertex at that corner too, so the corner carries two heights:
+    // the disc's (equal to its centre) and the strip's, above it.
+    const [disc] = heightsAt(mesh, 0, 0);
+    const corner = heightsAt(mesh, 0, 3);
+    expect(disc).toBeDefined();
+    expect(corner).toHaveLength(2);
+    expect(Math.min(...corner)).toBeCloseTo(disc as number, 9);
+    expect(Math.max(...corner)).toBeGreaterThan(disc as number);
+  });
+
+  it("keeps every lift inside 2 cm, under half of OsmDemo's 4 cm ground rung", () => {
+    // M4b's zebras need the room above (2.5 cm), and the areas rung of
+    // OsmDemo's ladder (`layer-order.ts`) starts 4 cm above the roads'.
+    const ribbons = buildRoads(
+      [
+        way({ highway: "primary" }, [at(0, 0), at(30, 0)], 1),
+        way({ highway: "footway" }, [at(0, 5), at(30, 5)], 2),
+      ],
+      { frame: FRAME },
+    );
+    for (const r of ribbons) {
+      for (const h of allHeights(r.mesh)) {
+        expect(h).toBeGreaterThanOrEqual(0);
+        expect(h).toBeLessThan(0.02);
+      }
+    }
+    expect(ROAD_RANK_STEP_M).toBeGreaterThan(0);
+  });
+
+  it("draws everything on the ground with a rank step of 0 (today's heights)", () => {
+    const ribbons = buildRoads(
+      [way({ highway: "primary" }, [at(0, 0), at(30, 0)])],
+      { frame: FRAME, rankStepM: 0 },
+    );
+    for (const h of allHeights(ribbons[0]?.mesh as MeshData)) expect(h).toBe(0);
+  });
+
+  it("refuses a rank step that is negative or not finite", () => {
+    const features = [way({ highway: "footway" }, [at(0, 0), at(30, 0)])];
+    for (const rankStepM of [-0.001, Number.NaN, Infinity]) {
+      expect(() => buildRoads(features, { frame: FRAME, rankStepM })).toThrow(
+        RangeError,
+      );
     }
   });
 });

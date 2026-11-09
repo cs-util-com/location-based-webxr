@@ -3,20 +3,39 @@
 ## Purpose
 
 Road ribbons (W13, DEC-R2-12 / DEC-R2-13) — the hardest builder in round 2. One
-merged surface per way, draped on terrain.
+merged surface per way, draped on terrain. Since M4a of the city objects plan
+(`GpsPlusSlamJs_Docs/docs/2026-11-07-2315-city-objects-and-roofscape-into-library-plan.md`)
+each way is one mitred strip rather than a quad per segment plus a disc at every
+vertex, and the classes are stacked by a small lift so a carriageway covers a
+footway crossing it.
 
 ## Public API
 
 - `roadWidthM(tags) → number` — drawn width in metres. **Never `NaN`, never 0.**
 - `isRoad(feature) → boolean` — whether this builder owns the feature.
-- `BuildRoadsOptions` — `{ frame, groundHeightM? }`, the same shape every other
-  builder here takes.
+- `BuildRoadsOptions` - `{ frame, groundHeightM?, mitreLimit?, rankStepM? }`.
+  - `mitreLimit` (default `ROAD_MITRE_LIMIT` = 2): the longest mitre, as a
+    multiple of the half-width, before a join is bevelled. 2 bevels turns over
+    120 degrees. Must be finite and at least 1, else `RangeError`.
+  - `rankStepM` (default `ROAD_RANK_STEP_M` = 0.005 m): the lift between two
+    road classes. Must be finite and at least 0, else `RangeError`; 0 puts every
+    road on the ground.
+- `roadRank(tags) → 0 | 1 | 2 | 3` - the class order: paths (footway, path,
+  steps, pedestrian, cycleway, bridleway, platform) 0, `track` / `service` 1,
+  `residential` / `living_street` / `unclassified` 2, everything else 3.
 - `RoadRibbon` — `{ feature, widthM, mesh }`.
-- `buildRoads(features, options) → RoadRibbon[]` — in input order. Never throws;
-  a degenerate way yields an empty mesh rather than `NaN` geometry.
+- `buildRoads(features, options) → RoadRibbon[]` - in input order. Throws only
+  on invalid options (above); a degenerate way yields an empty mesh rather than
+  `NaN` geometry.
 
 ## Invariants & assumptions
 
+- **Not decomposable over a delta (since M4a).** The junction set (nodes two
+  ways share) is computed over the whole call, so building two halves and
+  concatenating mitres through junctions whose partner way is in the other
+  half. Always call it once over the full feature list, as `buildCity` does.
+  `GpsPlusSlamJs_OsmDemo/src/worker/mesh-decomposability-evidence.test.ts`
+  pins the mechanism.
 - **Width comes from LANES, not from the highway class.** Precedence: `width`
   tag → `lanes` × lane width → the class's default lanes × lane width. This is
   the resolution of round 2's last open `[confirm]`, and the oracle is
@@ -45,13 +64,44 @@ merged surface per way, draped on terrain.
   prototype name now gets the unknown-class width and is not a path.
 - **A `lanes` value that is not a positive integer is ignored.** `lanes=1;2` and
   `lanes=none` both occur.
-- **Geometry is segment quads PLUS a disc at every vertex (DEC-R2-13).** Two
-  quads meeting at an angle leave a wedge of bare ground on the outside of the
-  turn. A disc of the road's own width centred on each vertex fills it **by
-  construction, at any angle, with no special cases**. Its only cost is overlap,
-  which is invisible because DEC-R2-13 already requires roads to be opaque.
-  - Discs are placed at the END vertices too. A rounded cap costs the same eight
-    triangles and stops a road ending in a hard edge across the carriageway.
+- **Geometry is one mitred strip per way, with discs only where a strip cannot
+  join (M4a, replacing DEC-R2-13's disc at every vertex).** The disc filled the
+  wedge outside a turn by construction, but cost eight triangles at every vertex
+  and drew a bump on every gentle curve where its rim overlapped the quads.
+  - **An interior vertex is MITRED**: both edges meet at the point on the
+    bisector of the two segment normals, `h / cos(t / 2)` from the centre line
+    (h the half-width, t the turn). Two triangles a segment, nothing at the join,
+    no notch on a near-straight curve.
+  - **A sharp turn is BEVELLED**: when `1 / cos(t / 2)` exceeds `mitreLimit`
+    (and the gap between the two outer corners is at least 1 mm; a smaller gap
+    is mitred, since limit 1 would otherwise bevel float noise into a sliver)
+    the outer side keeps both segment corners and one triangle closes the gap;
+    the inner side still meets at the mitre point.
+  - **The DISC survives where a strip cannot join**: at both ends (the rounded
+    cap), at a JUNCTION (a point shared by two ways, or visited twice by one,
+    matched on exact ENU coordinates, so the joining road's own disc and strip
+    meet there), and as a FALLBACK when the inner mitre would reach past half of
+    either neighbouring segment (`h * tan(t / 2)`), or at a hairpin. There the
+    strip breaks into two sections, each ending flat, and the disc covers both.
+  - **Triangle count is exactly 2 per segment + 1 per bevel + 8 per disc**, never
+    more than the old count. Measured on the three O3 scenes: Heidelberg 8,884 to
+    5,164, Meggen 18,490 to 10,786, Park Slope 11,404 to 9,484 (pinned in
+    `testdata/sites/site-roads.test.ts`); the same at mitre limits 1.5 to 4, and
+    about 9 % more at 1 (every join bevelled).
+  - **What M4a's spec asked for, and how the strip answers it**: the spec was
+    written for O3's first answer, dropping the disc on near-straight vertices
+    (`straightDeg`, a notch limit); the owner then chose the mitre strip, which
+    has no such parameters because it leaves no notch to limit. O3's kerb lines
+    and their `kerbTaperM` are NOT ported: plan §3 left the kerb in the lab.
+- **Classes are stacked by a lift, not by draw order (M4a class order).** A way
+  of rank r sits `rankStepM * (r + 0.4 * f)` above the ground at its discs and
+  half a step higher along its strip, where f in [0, 1) is a hash (FNV-1a) of
+  the feature key, so two ways of one class at a junction never share a depth.
+  So a carriageway covers a footway that crosses it, and a way's own discs sit
+  under its strip rather than poking through at a junction. At the default 5 mm
+  step the highest road is 3.9 steps = 1.95 cm up, under the 4 cm rung
+  `layer-order.ts` gives roads above the plates. Whether these millimetres separate
+  on screen was measured: see the depth spike below.
 - **Terrain is sampled PER VERTEX**, like the plates and unlike a building. A
   road is a long surface; one sample would cut into the hill at one end and float
   at the other — the artefact DEC-R2-19 removed.
@@ -69,6 +119,43 @@ merged surface per way, draped on terrain.
   platform.** This is triangulated geometry either way; it is not a choice being
   made here.
 
+## The depth spike (M4a, 2026-11-09): do millimetre ranks separate on screen?
+
+Measured, not assumed: a 2 m footway under a 12 m carriageway at a given
+vertical gap, rendered by three.js in Chromium, 12 frames with up to 5 cm of
+camera wobble, counting the carriageway pixels where the footway shows
+through. Views: OsmDemo's camera (near 0.5 m) at 41 m, at its 226 m boot view,
+at 570 m and low at 100 m; the globe's eye camera at landing (near 0.51 m) 30
+and 100 m from the crossing; the Tour Editor's camera (near 0.3 x height) 30 m
+and 300 m up. Two renderers: an Intel Iris Xe through ANGLE/D3D11 (a real GPU)
+and SwiftShader (the software renderer CI's browsers use). Both report a
+24-bit depth buffer. Percentages are of the overlap's pixels.
+
+- **(a) Geometric gaps (what the builder does).** On the real GPU a 3 mm gap
+  is clean in every view up to the 226 m boot view; 1-1.5 mm shows the footway
+  through about 10-12 % of the overlap at 226 m and 300 m up; at 570 m about
+  3 % shows through at every gap up to 5 mm and none at 10 mm. On SwiftShader
+  even 5 mm shows through 37 % at 226 m and 10 % at 570 m; 10 mm is clean in
+  every view.
+- **(b) A polygon offset per rank.** With the slope factor (factor = units = 1)
+  it is clean between roads in every view, but the same offset at 3 pulls a
+  road through a layer 4 cm above it in EVERY view on both renderers (100 %):
+  the factor scales with the surface's depth slope, which at an oblique view is
+  decimetres a pixel, so it would break OsmDemo's 4 cm ladder (areas and heat
+  cells over the roads). Units alone (no factor) fight in most views (5-60 %).
+- **So neither candidate is clean everywhere.** The builder keeps (a) at a
+  5 mm step: no extra draw, strictly better than before M4a (every road at one
+  height, so any overlap of two colours fought), and its strip-to-strip gap
+  between classes (at least 0.6 step = 3 mm) measured clean on the real GPU
+  up to the boot view. It does NOT hold beyond about 500 m, on software
+  rendering, or at the one smaller gap the lab's lift leaves: a higher class's
+  junction DISC over a lower class's strip can be as little as 0.1 step
+  (0.5 mm) apart, which fights at 226 m. Two ways of ONE class tie within 0.4
+  step and fight where their colours differ (a `surface` tag). Phone GPUs
+  were not measured. The step that would reverse the verdict: 10 mm gaps are
+  clean everywhere measured, which at 0.6 step needs a 17 mm step and a top
+  road 6.6 cm up, past the 4 cm rung. The decision is open in the M4a report.
+
 ## Examples
 
 ```ts
@@ -81,24 +168,37 @@ const merged = mergeMeshes(ribbons.map((r) => r.mesh));
 
 ## Tests
 
-`roads.test.ts` — 18 tests.
+- `roads.test.ts`
+  - **`roadWidthM`** — the width tag wins (including `7 m`); lanes-derived width;
+    the single-lane 4 m rule; per-class defaults; `service` at 4 m; flat path
+    widths; an unknown class gets a finite documented default; a malformed
+    `lanes` is ignored.
+  - **`isRoad`** — accepts a highway way; rejects nodes, untagged ways, tunnels,
+    covered ways and highway areas.
+  - **`buildRoads`** — a straight way is covered across its width and not beyond
+    it; **no gap at a right-angle corner**; **no hole at a three-way junction**;
+    per-vertex ground sampling; degenerate ways stay finite; all vertex data
+    finite on a real-ish polyline.
+  - **The mitre strip** — exact triangle counts for a straight way, a mitre, a
+    bevel (90 degrees at limit 1.4, 130 degrees at 2), the short-segment and
+    hairpin fallbacks, a junction disc and a figure eight; **a 4-degree curve
+    has no notch**; input order does not change the mesh; every triangle faces
+    up; invalid limits throw.
+  - **Class order** — the rank table; a carriageway above a crossing footway; a
+    way's disc under its own strip; every lift in [0, 2 cm); a zero step puts
+    everything on the ground; invalid steps throw.
+- `roads.property.test.ts` (fast-check) — on random polylines (3-40 m steps,
+  turns up to 175 degrees) and gentle curves, at limits 1, 1.5, 2 and 4: no
+  folded triangle, every segment's half-width rectangle and every mitred outer
+  wedge covered, ends carry discs, the count is exactly its parts and never
+  above the old one; and the build is deterministic.
+- `testdata/sites/site-roads.test.ts` — the three O3 scenes' counts, pinned.
 
-- **`roadWidthM`** — the width tag wins (including `7 m`); lanes-derived width;
-  the single-lane 4 m rule; per-class defaults; `service` at 4 m; flat path
-  widths; an unknown class gets a finite documented default; a malformed `lanes`
-  is ignored.
-- **`isRoad`** — accepts a highway way; rejects nodes, untagged ways, tunnels,
-  covered ways and highway areas.
-- **`buildRoads`** — a straight way is covered across its width and not beyond
-  it; **no gap at a right-angle corner**; **no hole at a three-way junction**;
-  per-vertex ground sampling; degenerate ways stay finite; all vertex data finite
-  on a real-ish polyline.
-
-The junction tests assert **coverage**, not triangle counts — a count passes on
+The coverage tests assert **coverage**, not only counts — a count passes on
 geometry full of holes. The helper does a plan-view point-in-triangle test and
 explicitly rejects degenerate triangles, so the "not covered" assertions cannot
-silently become no-ops. Mutation-checked: removing the discs fails
-"leaves NO GAP at a right-angle corner" and nothing else.
+silently become no-ops. Mutation-checked (M4a): a missing fold guard, mitring
+every join, a wrong mitre length and a bevel at the wrong end each fail a test.
 
 ## `isPedestrianPath(feature)` — the path-ness signal (DEC-R2)
 

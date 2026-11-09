@@ -125,10 +125,13 @@ export { buildRegionSlabs } from "./region-slabs.js";
 
 export type { BuildRoadsOptions, RoadRibbon } from "./roads.js";
 export {
+  ROAD_MITRE_LIMIT,
+  ROAD_RANK_STEP_M,
   buildRoads,
   isBridgeCrossing,
   isPedestrianPath,
   isRoad,
+  roadRank,
   roadWidthM,
 } from "./roads.js";
 
