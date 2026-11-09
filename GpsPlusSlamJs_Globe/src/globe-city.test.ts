@@ -76,9 +76,9 @@ function fakeThree() {
           THREE.Material | THREE.Material[]
         >(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial());
         m.name = name;
+        // The library names each mesh's layer (`buildings` on a building
+        // chunk, `roads` on a road); the building light keys on it.
         m.userData.cityLayer = layer;
-        // The library marks a building mesh `solid` (its picking blocker).
-        if (layer === "buildings") m.userData.solid = true;
         return m;
       };
       const out: THREE.Object3D[] = [];

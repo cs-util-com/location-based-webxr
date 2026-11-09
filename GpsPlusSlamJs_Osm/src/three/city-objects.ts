@@ -91,6 +91,10 @@ export function geometryFrom(
  * facade resolves to nothing rather than to the ground behind it). Per chunk,
  * so it cannot say which building in it is passable (a canopy is drawn and
  * still swallows the click; filed in OsmDemo).
+ *
+ * And `userData.cityLayer = "buildings"`, as a road carries `"roads"`: the
+ * name a consumer keys a building-only treatment on (the globe's building
+ * light), so that treatment does not ride on the picking marker.
  */
 export function buildingObjects(chunks: readonly MeshChunk[]): THREE.Mesh[] {
   return chunks.map((chunk) => {
@@ -110,6 +114,7 @@ export function buildingObjects(chunks: readonly MeshChunk[]): THREE.Mesh[] {
       }),
     );
     object.userData["solid"] = true;
+    object.userData["cityLayer"] = "buildings";
     return object;
   });
 }

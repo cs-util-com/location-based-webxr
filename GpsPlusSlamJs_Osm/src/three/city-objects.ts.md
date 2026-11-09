@@ -18,7 +18,7 @@ three-free; three.js is an optional peer, loaded only by this entry.
 - `buildingObjects(chunks)` → one `Mesh` per `MeshChunk`, each with its own
   `MeshStandardMaterial` (white, `vertexColors`, `FrontSide`, `flatShading`,
   roughness 0.55, metalness 0, `userData.neutralSurface`) and
-  `userData.solid` on the mesh.
+  `userData.solid` and `userData.cityLayer = "buildings"` on the mesh.
 - `treeObjects(placements)` → one `InstancedMesh` per tree variant present
   (`packInstances` groups and reflects ENU to scene), on shared geometry and
   material, each flagged `userData.sharedResources`, each instance coloured
@@ -60,6 +60,10 @@ three-free; three.js is an optional peer, loaded only by this entry.
 - **`userData.solid`** marks a mesh as a picking blocker; per chunk, so it
   cannot tell which building in it is passable (a canopy still swallows a
   click; filed in OsmDemo).
+- **`userData.cityLayer`** names the layer: `"buildings"` on a building
+  chunk, `"roads"` on a road. A consumer keys a layer-only treatment on it,
+  never on `solid` (the globe's building light, `globe-city.ts`; #905
+  review): the picking marker may change for picking's sake.
 - **Tree resources are shared and made on first use**, not at import, so
   importing the entry costs nothing. Three.js does not throw for a disposed
   geometry, it silently draws nothing, which is why they are flagged and

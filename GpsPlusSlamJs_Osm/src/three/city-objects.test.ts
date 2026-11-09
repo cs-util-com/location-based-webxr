@@ -96,6 +96,10 @@ describe("buildingObjects", () => {
     // The flags OsmDemo's lighting and picking read.
     expect(material.userData["neutralSurface"]).toBe(true);
     expect(m.userData["solid"]).toBe(true);
+    // The globe's building light keys on this layer name, not on the picking
+    // marker above (#905 review): without it the globe's buildings would
+    // drop back to the linear colours' dark look with no test failing there.
+    expect(m.userData["cityLayer"]).toBe("buildings");
   });
 
   // WHY: a hoisted, shared building material is either disposed on the first
