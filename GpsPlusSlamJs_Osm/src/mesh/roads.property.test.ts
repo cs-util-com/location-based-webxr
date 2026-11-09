@@ -353,9 +353,11 @@ describe("road ribbons - properties (M4a mitre strip)", () => {
   // WHY (M4a review MINOR 3 and NIT 7): ways share nodes in every real
   // city, and since a junction is no longer a break the strip must stay
   // whole through a shared node as through any other: every way's own
-  // segments covered, every shared node covered by each way at it, nothing
-  // folded, and each way's ribbon exactly what it is when built alone (the
-  // property that makes roads buildable over a delta).
+  // segments covered (which covers every node it passes, shared or not:
+  // `expectSegmentsCovered` samples each segment's ends on its centre line),
+  // nothing folded, and each way's ribbon exactly what it is when built
+  // alone, positions and indices (the property that makes roads buildable
+  // over a delta).
   it("keeps every junction of a random network covered, unfolded and per way", () => {
     fc.assert(
       fc.property(network, mitreLimit, ({ nodes, ways }, limit) => {
@@ -369,10 +371,6 @@ describe("road ribbons - properties (M4a mitre strip)", () => {
           frame: FRAME,
           mitreLimit: limit,
         });
-        const uses = new Map<number, number>();
-        for (const w of ways) {
-          for (const n of new Set(w.path)) uses.set(n, (uses.get(n) ?? 0) + 1);
-        }
         ways.forEach((w, i) => {
           const mesh = together[i]?.mesh as MeshData;
           const tris = planTriangles(mesh);
@@ -381,11 +379,6 @@ describe("road ribbons - properties (M4a mitre strip)", () => {
           }
           const enu = enuOf(w.path.map((n) => nodes[n] as P));
           expectSegmentsCovered(tris, enu, roadWidthM(w.tags) / 2);
-          for (const n of w.path) {
-            if ((uses.get(n) ?? 0) < 2) continue;
-            const [q] = enuOf([nodes[n] as P]);
-            expect(tris.some((tri) => inside(tri, q as P))).toBe(true);
-          }
           const [alone] = buildRoads([features[i] as OsmFeature], {
             frame: FRAME,
             mitreLimit: limit,
@@ -393,6 +386,7 @@ describe("road ribbons - properties (M4a mitre strip)", () => {
           expect([...(alone?.mesh.positions ?? [])]).toEqual([
             ...mesh.positions,
           ]);
+          expect([...(alone?.mesh.indices ?? [])]).toEqual([...mesh.indices]);
         });
       }),
       { numRuns: 150 },

@@ -289,7 +289,10 @@ function roadBuildOptions(
   roads: CityOptions["roads"],
   ground: CityGround,
 ): BuildRoadsOptions | undefined {
-  if (roads === undefined || roads === false) return undefined;
+  // null arrives from JSON-shaped options and means "no roads", as false does.
+  if (roads === undefined || roads === null || roads === false) {
+    return undefined;
+  }
   if (roads === true) return ground;
   const { mitreLimit, rankStepM } = roads;
   return {

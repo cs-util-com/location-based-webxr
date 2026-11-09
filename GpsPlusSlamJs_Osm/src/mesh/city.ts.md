@@ -48,7 +48,8 @@ buildings, trees, cosmeticTrees, roads, roadCount }`. `window` (a lat/lng
   ways and highway areas left out; paths included) within the window, merged
   per chunk with a colour per vertex (`roadColour`: class and surface), and
   `roadCount`. Without it `roads` is empty and `roadCount` 0: a consumer
-  that draws no roads builds none. OsmDemo chunked and coloured them inline
+  that draws no roads builds none; `null` reads as `false` (r1164 review
+  NIT 4: it threw a TypeError). OsmDemo chunked and coloured them inline
   in its worker until 2026-10-11.
 - `roads` may instead be a `CityRoadOptions` object, `{ rankStepM?,
 mitreLimit? }` (city objects plan 2026-11-07-2315 M4a, review MINOR 4):
@@ -122,7 +123,7 @@ metres; `withinM` dropping what lies outside, keeping all without it, keeping a
 building's parts together (`s3db-parts.test.ts`), and
 refusing a non-positive window; the cosmetic trees on by default, in their
 own field, none when switched off, none inside a built house, within
-`withinM`, and the build refused without a window; roads only when asked, the roads and paths
+`withinM`, and the build refused without a window; roads only when asked (`null` as `false`), the roads and paths
 coloured by class and surface and never a tunnel, draped on the ground, kept
 within the window; the seeded palette by default (walls and flat or pitched
 roofs from the key, a pitched tag drawn as a prism in a flat grey, a part

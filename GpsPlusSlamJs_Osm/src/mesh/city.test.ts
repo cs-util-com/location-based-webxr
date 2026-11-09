@@ -438,6 +438,23 @@ describe("buildCity with roads", () => {
     expect(triangles({})).toBe(triangles(true));
   });
 
+  // WHY (r1164 delta review NIT 4): `roads` comes from a consumer's options
+  // object, often parsed JSON, where an absent value is easily `null`. Read
+  // as an object it threw a TypeError from the destructuring; it means "no
+  // roads", as false does.
+  it("treats roads: null like false", () => {
+    const city = buildCity(
+      [ROAD],
+      { frame },
+      {
+        window: W,
+        roads: null as unknown as Parameters<typeof buildCity>[2]["roads"],
+      },
+    );
+    expect(city.roads).toEqual([]);
+    expect(city.roadCount).toBe(0);
+  });
+
   it("refuses invalid road options as the builder does", () => {
     expect(() =>
       buildCity([ROAD], { frame }, { window: W, roads: { mitreLimit: 0.5 } }),

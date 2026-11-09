@@ -16,8 +16,10 @@ import { buildCity } from "../../mesh/city.js";
  * and 9,484; running through junctions (the M4a review's MINOR 3, r1164)
  * draws 4,700, 8,450 and 6,292, 47, 54 and 45 percent fewer than the discs.
  * A change to the joins, the junction rule or the fallback moves these
- * counts, and the change then has to say why. Pinned at the default mitre limit; the limit's sweep (1, 1.5, 2, 4)
- * is in the M4a report.
+ * counts, and the change then has to say why. Pinned at the default mitre
+ * limit 2; swept on these counts (r1167), limit 4 draws the same, 1.5 one
+ * triangle more per scene, and 1 (every join bevelled) 5,206, 9,567 and
+ * 6,734, 7 to 13 percent more.
  */
 const PINNED: Record<string, number> = {
   "heidelberg-altstadt": 4700,
