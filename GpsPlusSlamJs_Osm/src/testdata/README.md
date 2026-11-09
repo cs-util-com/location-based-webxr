@@ -260,3 +260,18 @@ differential rather than argued about. Its only consumer is
 - **Its two forest relations (112835, 67504) reach far outside the box**, which
   is what the build window test needs: their invented trees must stay inside
   the capture's `bbox`.
+
+## `sites/lucerne-meggen.json` and `sites/nyc-park-slope.json` - the road scenes, not corpus sites
+
+- **Copied byte for byte from the city-look lab**
+  (`GpsPlusSlamJs_DesignSystem/labs/city-look/fixtures/`, provenance in that
+  folder's `PROVENANCE.md`), ODbL. Meggen: a detached-house suburb east of
+  Lucerne, 640 x 640 m around 47.0468 N, 8.3745 E, one Overpass answer of
+  2026-11-07 built by `buildTileQuery`, with one 2.1 MB Alps boundary relation
+  removed and named in the file's `droppedOversizeRelations`. Park Slope:
+  Brooklyn's brownstone blocks, 640 x 640 m around 40.6725 N, 73.9790 W, same
+  query form, nothing removed.
+- **Not in `CORPUS_SITES`**: together with Heidelberg they are the three scenes
+  the owner judged the O3 street lab on, so they pin the road mesh's triangle
+  counts (`site-roads.test.ts`, city objects plan 2026-11-07-2315 M4a), loaded by
+  `loadSite` directly.
