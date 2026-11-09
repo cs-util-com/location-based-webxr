@@ -8,7 +8,7 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
-import { dropSlot, movedTo } from "./tree-reorder.js";
+import { dropSlot, movedAcross, movedTo } from "./tree-reorder.js";
 
 describe("dropSlot", () => {
   it("is the slot before the first card whose middle lies below the pointer", () => {
@@ -76,6 +76,103 @@ describe("movedTo", () => {
           const others = (l: readonly string[]) =>
             l.filter((id) => id !== list[from]);
           expect(others(moved)).toEqual(others(list));
+        },
+      ),
+    );
+  });
+});
+
+// Why: the tree's nested drag moves an item between a station's lists (a
+// story's entries, its free items); an off-by-one or a lost id here would
+// drop the item in the wrong story or write it twice.
+describe("movedAcross", () => {
+  const LISTS = { a: ["a1", "a2"], b: ["b1"] };
+
+  it("moves inside one list by movedTo's rule, null where it was", () => {
+    expect(
+      movedAcross(LISTS, { list: "a", index: 0 }, { list: "a", slot: 2 }),
+    ).toEqual({ a: ["a2", "a1"], b: ["b1"] });
+    expect(
+      movedAcross(LISTS, { list: "a", index: 0 }, { list: "a", slot: 1 }),
+    ).toBeNull();
+  });
+
+  it("moves across two lists to the slot, into an empty list too", () => {
+    expect(
+      movedAcross(LISTS, { list: "a", index: 1 }, { list: "b", slot: 0 }),
+    ).toEqual({ a: ["a1"], b: ["a2", "b1"] });
+    expect(
+      movedAcross(LISTS, { list: "b", index: 0 }, { list: "c", slot: 0 }),
+    ).toEqual({ a: ["a1", "a2"], b: [], c: ["b1"] });
+  });
+
+  it("refuses a list, a place or a slot that is not there", () => {
+    expect(() =>
+      movedAcross(LISTS, { list: "x", index: 0 }, { list: "a", slot: 0 }),
+    ).toThrow(RangeError);
+    expect(() =>
+      movedAcross(LISTS, { list: "a", index: 2 }, { list: "b", slot: 0 }),
+    ).toThrow(RangeError);
+    expect(() =>
+      movedAcross(LISTS, { list: "a", index: 0 }, { list: "b", slot: 2 }),
+    ).toThrow(RangeError);
+    expect(() =>
+      movedAcross(
+        LISTS,
+        { list: "toString", index: 0 },
+        { list: "a", slot: 0 },
+      ),
+    ).toThrow(RangeError);
+  });
+
+  it("loses and doubles nothing, and the move back undoes it (property)", () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.nat({ max: 4 }), { minLength: 1, maxLength: 4 }),
+        fc.nat(),
+        fc.nat(),
+        fc.nat(),
+        fc.nat(),
+        (sizes, rawFrom, rawIndex, rawTo, rawSlot) => {
+          const lists: Record<string, string[]> = {};
+          sizes.forEach((n, l) => {
+            lists[`l${String(l)}`] = Array.from(
+              { length: n },
+              (_, i) => `l${String(l)}-${String(i)}`,
+            );
+          });
+          const names = Object.keys(lists);
+          const filled = names.filter((n) => (lists[n] ?? []).length > 0);
+          if (filled.length === 0) return;
+          const fromList = filled[rawFrom % filled.length] as string;
+          const source = lists[fromList] ?? [];
+          const index = rawIndex % source.length;
+          const toList = names[rawTo % names.length] as string;
+          const room = (lists[toList] ?? []).length + 1;
+          const slot = rawSlot % room;
+          const out = movedAcross(
+            lists,
+            { list: fromList, index },
+            { list: toList, slot },
+          );
+          const all = (l: Record<string, readonly string[]>) =>
+            Object.values(l).flat().sort();
+          // Only a move within its own list may come back as "unchanged".
+          expect(out === null ? toList : fromList).toBe(fromList);
+          if (out === null) return;
+          expect(all(out)).toEqual(all(lists));
+          const id = source[index] as string;
+          const at = (out[toList] ?? []).indexOf(id);
+          const back = movedAcross(
+            out,
+            { list: toList, index: at },
+            {
+              list: fromList,
+              slot:
+                toList === fromList ? (at < index ? index + 1 : index) : index,
+            },
+          );
+          expect(back).toEqual(lists);
         },
       ),
     );

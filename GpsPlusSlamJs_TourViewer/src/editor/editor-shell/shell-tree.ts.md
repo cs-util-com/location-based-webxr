@@ -51,6 +51,12 @@ stationsHead, fold, body }` (`#shell-tree`, `#tree-stations`,
   - `data-layer` - a chip, with `aria-pressed`;
   - `data-add` - a card's "+", and `data-fill` - its empty line's "Add
     content": the station's id, the station the type menu adds to;
+  - `data-move` - the grip of a story, an entry or a free item (a
+    `<span>` outside its buttons, hidden from screen readers; none while
+    a search runs): the item `createNestDrag` drags, with its row's
+    `data-list` (`stories`, `story:<id>` or `free`) and `data-item`.
+    `data-into` names the list a drop on that row goes into: a story's
+    row and its empty line its story, the card's head the free items.
   - `data-drag` - a card's grip (`.grip`, a `<span>` beside the card's
     buttons, never inside one, hidden from screen readers, titled "Drag
     to change its place in the tour"): the station `tree-drag.ts` drags.

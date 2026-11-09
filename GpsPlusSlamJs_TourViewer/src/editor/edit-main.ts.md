@@ -843,6 +843,15 @@ The dev hook adds `view3dModelParts()` and
 
 ### Stories in the tree
 
+A move of a station's item or story (`stations.moveChild`, from the
+tree's drag or the inspector's buttons) is one step; one onto another
+station asks first (`confirmPausingFrames` with `stationMoveQuestion`:
+it will stand at that station's centre and needs placing again), writes
+nothing on no, says `Moved to "<station>"` in its toast, and answers
+whether it moved (the shell then flies the view there); its toast names the
+answers that now go on to the next entry and an item now standing in the
+world in its kind's usual view, and a refusal is said in a toast.
+
 The tree's add makes a story (`addStoryTo`) or an entry (`addToStoryEntry`),
 selects it, says it in a toast, one step each. Deleting a story asks first
 (`confirmPausingFrames`, naming what goes with it: its entries, and its

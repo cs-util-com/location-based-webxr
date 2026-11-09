@@ -29,6 +29,7 @@ import {
 import { isCapturedPhoto } from "./tour-content.js";
 import {
   historyAssetIds,
+  historyStoryAssetIds,
   historyTimingEntries,
   manifestNow,
   manifestToWrite,
@@ -100,6 +101,7 @@ interface TourSaveSnapshot {
   readonly manifest: TourManifest;
   /** The assets the history still names (`historyAssetIds`): kept. */
   readonly keepAssets: ReadonlySet<string>;
+  readonly keepStoryAssets: ReadonlySet<string>;
   /** The read-along entries the history still names
    *  (`historyTimingEntries`): kept. */
   readonly keepEntries: ReadonlySet<string>;
@@ -202,6 +204,7 @@ export function createTourSaves(input: {
       deleted: [...state.deleted],
       manifest,
       keepAssets: historyAssetIds(state),
+      keepStoryAssets: historyStoryAssetIds(state),
       keepEntries: historyTimingEntries(state),
       stationsAtStart: state.stations,
       position: state.position,
@@ -343,6 +346,7 @@ export function createTourSaves(input: {
         placed: snap.placed,
         deleted: snap.deleted,
         keepAssets: snap.keepAssets,
+        keepStoryAssets: snap.keepStoryAssets,
         keepEntries: snap.keepEntries,
         files: snap.files,
         levels: [],

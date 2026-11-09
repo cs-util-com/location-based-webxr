@@ -218,6 +218,27 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   was pressed, or at an end on the other one; the new place is said in a
   polite live region (`#shell-said`, hidden but read: "Now Station n of
   N").
+- **Moves inside a station:** a story's, an entry's or a free item's grip
+  (`data-move`) drags it with the editor kit's `createNestDrag`
+  (`tree-nest-drag.ts`) among its station's stories, into a story (onto
+  its row, or a slot among its entries) or out to the free items (onto
+  the card's head); a drop the move rule refuses (`childMayGo`) is not
+  offered, nor a story to a free item whose file the tour on disk lacks
+  (`freeItemUnsaved`), Escape ends a drag with no write, and one drop is one
+  `stations.moveChild`. The drag lands only on the row under the pointer:
+  over its own place, a refused row or empty space it marks nothing, its
+  ghost (labelled with the row's `.nm` text) shows "Not possible here" and
+  the page the not-allowed cursor (`editor-shell.css`: `.nest-ghost`,
+  `data-nest-drag`), and a release writes nothing. Over another station's card the drag
+  marks that card (`drop-across`) where `movedToStation` lets the item go
+  there; a release asks first (`stationMoveQuestion`) and, on yes, moves
+  it to that station's centre and flies the view there (`moveToStation`).
+  The inspector's "Move to station..." picker (`data-move-station`) is
+  the same move for the phone and the keyboard. Earlier and Later of a
+  story or an entry step it in its list (`childStepTo`); the
+  inspector's Move buttons (`move-to:<list>`) put it into that list,
+  keeping the selection and moving the focus to the first Move button
+  left, else to Earlier.
 - **Delete in the inspector** moves the focus to the row button (`.head > .pick`) of the tree card now in
   the deleted station's place (the one before it, at the end), for an
   item to its station's card, and to the view's box when the tree is

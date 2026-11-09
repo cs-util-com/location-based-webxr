@@ -75,7 +75,9 @@ reducers' building blocks, so a page cannot apply them differently.
   `walk`), `rebuilds` (the session's queued rebuilds: an undo waits),
   `queued` (a Save waiting for the autosave), `built`, `delivered`
   (in place or downloaded, under which name), `largeTour`, `cannotSave`,
-  `inPlaceAt` and `resave` (D33, below).
+  `inPlaceAt` and `resave` (D33, below), and `inPlaceAssets` /
+  `writingAssets` (the files the last arrived write in place holds, and
+  those of the in-place build still being written).
 
 - `newStationArmed` - the phone's "New station here" is armed: the
   next placement starts its own station. An
@@ -278,6 +280,45 @@ largeTour?, cannotSave? })`.
     and `story-commands.property.test.ts` holds that after any sequence and
     its undos the writer accepts the document and a draft reload equals it.
     `stationEdited` with `storyAdvance` sets how a story's block moves on.
+  - `childMoved({ id, to, what })` - an item of a station moved inside it
+    (a free item into a story and out, an entry between stories or within
+    one, a story among the stories) or onto another station (`{ place:
+"station", station }`: both frames and the item's object record in the
+    same step, the item standing at that station's centre, a whole story
+    keeping its entries' offsets; an automatic station it empties goes, as
+    `withoutEmptied` says), one history entry. A free item that stays free
+    keeps its own record, with its new station and world place. Counted
+    by `changeCount` as the frames and records it changed: a free item
+    onto another station is one change (its record), a story two (both
+    frames). The rule is
+    `station-children-moves.ts`, asked through the exported guard
+    `childMoveChange(state, id, to)` (`moved` with `answers` and `floored`,
+    `stations`: the one or two stations after it, `unchanged`, or
+    `refused` with the rule's reason or `unsaved` (never for a move onto
+    another station: there the item stays a record or in the frames): a free
+    item naming a file the tour on disk does not hold yet, whose story
+    frame a draft reload could not read). "On disk" is the file a reload
+    opens: the one written in place once such a write arrived (its files
+    are `save.inPlaceAssets`, named by `saveDelivered`, not when the save
+    is built: a write still running or one that failed does not count),
+    else the opened one. A download leaves the file on disk where it was:
+    it neither counts a file as saved nor forgets the last write in place.
+    `freeItemUnsaved(state, id)` says the same for one
+    free item, so the tree's drag and the inspector offer it no story. A free item leaving is deleted
+    as an object (a tombstone when the file holds it); one arriving is put
+    as an object at the world place its pose gives, a tombstone of its id
+    withdrawn. Tests: `tour-document-child-move.test.ts` (undo, redo, a
+    draft reload) and `tour-document-child-move.property.test.ts` (random
+    moves keep the tour readable and every id once; undoing all of them
+    gives back the tour exactly; `tour-document-child-move-kinds.test.ts`:
+    every kind in every story view moved out and read back strictly, a
+    model with and without a size, and the `unsaved` refusal).
+  - A free item's place among the free items is not kept by a draft
+    reload: the format keeps the file's order (`tour-story.ts.md`), but
+    the draft records no order for free items, so an item a move took out
+    of a story can come back at another place among them - the tree then
+    lists the station's free items in another order after a restore.
+    Nothing reads that order (they all stand in the world at once).
   - `stationEdited({ stationId, edit, what })` - a station's title, found
     radius (`isStationRadius`, 2 m to 300 m inclusive; the preload radius
     follows at twice it, `preloadRadiusM`), description or card image
@@ -483,6 +524,12 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
   history no longer names them. The stations are the document's as they
   are, and a write assigns nothing. The creator's station HUD (`creator-stations.ts`)
   reads its stations from it.
+- `historyStoryAssetIds(state)` - the part of `historyAssetIds` the
+  undo and redo steps' story blocks name (`keepStoryAssets` of every
+  write): kept even where it is a captured photo's own image, so a photo
+  moved into a story that was then deleted keeps its file for the undo
+  that brings the story back. A cover or card image does not keep a
+  deleted photo's image.
 - `historyTimingEntries(state)` - the read-along entries
   (`timing/<blockId>.json`, relative to the tour's folder) the undo and
   redo steps' long texts name, story or free. Every write keeps them
@@ -499,7 +546,9 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
   document's own frames, the setting and each detail field differing from
   the written file. A frame is compared by its data, never by the order
   its keys were built in (`same-json.ts`), so a station moved back is no
-  change.
+  change. An item moved between a story and the free items counts once,
+  as its station's changed frame: its object record or tombstone is not
+  counted again.
 - `effectiveDetails(state)` - the cover only while its image is in the tour.
 - `coverImageIds(state)` - the images the tour may show as its cover (its
   photos as they stand, its image assets that are no captured photo's own:
