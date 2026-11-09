@@ -28,6 +28,7 @@
  * @see inspector-model.ts.md
  */
 import {
+  isTourStory,
   isTourStoryBlock,
   tourChildPlace,
   tourStories,
@@ -75,6 +76,14 @@ import {
   type BlockField,
 } from "../block-fields.js";
 import { STORY_PREFIX } from "../editor-model.js";
+import {
+  FREE_LIST,
+  childMayGo,
+  childStepTo,
+  movedChild,
+  movedToStation,
+  storyList,
+} from "../../station-children-moves.js";
 import { eastNorthOf, tourCentre } from "../tour-origin.js";
 import { outsideItems } from "./tour-problems.js";
 import {
@@ -157,11 +166,33 @@ interface StationInspector {
   readonly contents: readonly StationContent[];
 }
 
+/** Where a station's item or story may move within its station: one
+ *  place earlier or later in its list (`step`; null for a free item, as
+ *  the free items have no order), and the lists it may go into (`targets`:
+ *  out of its story, into another story of its station), each with its
+ *  button's words, and the other stations it may go onto (`stations`, by
+ *  their titles: the inspector's Move to station). */
+interface InspectorMoves {
+  readonly step: { readonly earlier: boolean; readonly later: boolean } | null;
+  readonly targets: readonly {
+    readonly list: string;
+    readonly label: string;
+  }[];
+  readonly stations: readonly {
+    readonly id: string;
+    readonly label: string;
+  }[];
+}
+
 /** A story, selected by `story:<id>`. */
 interface StoryInspector {
   readonly kind: "story";
   readonly storyId: string;
   readonly stationId: string;
+  /** Where it may move in its station (the inspector's Earlier, Later
+   *  and Move to). */
+  readonly moves?: InspectorMoves;
+
   readonly title: string;
   /** Its station, numbered as the tree numbers it. */
   readonly sub: string;
@@ -178,6 +209,10 @@ interface StoryEntryInspector {
   readonly kind: "storyEntry";
   readonly id: string;
   readonly stationId: string;
+  /** Where it may move in its station (the inspector's Earlier, Later
+   *  and Move to). */
+  readonly moves?: InspectorMoves;
+
   /** Its row's kind in the tree. */
   readonly rowKind: TreeRowKind;
   readonly title: string;
@@ -197,6 +232,10 @@ interface StoryStepInspector {
   readonly stepKind: "choice" | "quiz";
   readonly id: string;
   readonly stationId: string;
+  /** Where it may move in its station (the inspector's Earlier, Later
+   *  and Move to). */
+  readonly moves?: InspectorMoves;
+
   readonly title: string;
   readonly sub: string;
   /** The summary's label. */
@@ -212,6 +251,10 @@ interface FreeBlockInspector {
   readonly itemKind: Exclude<TourBlockKind, WorldKind>;
   readonly id: string;
   readonly stationId: string;
+  /** Where it may move in its station (the inspector's Earlier, Later
+   *  and Move to). */
+  readonly moves?: InspectorMoves;
+
   readonly title: string;
   readonly sub: string;
   readonly fields: readonly BlockField[];
@@ -354,6 +397,10 @@ interface ItemInspector {
   readonly sub: string;
   /** Its station's id. */
   readonly stationId: string;
+  /** Where it may move in its station (the inspector's Earlier, Later
+   *  and Move to). */
+  readonly moves?: InspectorMoves;
+
   /** A pin's text, the field to edit; null for a photo or a model (their
    *  caption is not edited here). */
   readonly text: string | null;
@@ -586,6 +633,64 @@ function choiceLines(choice: TourChoice, story: TourStory): string[] {
   });
 }
 
+/** Where the station's item or story `id` may move in its station
+ *  (`station-children-moves.ts`): the steps and lists the move rule
+ *  takes, so no button offers a move it would refuse. A free item whose
+ *  file the tour on disk does not hold yet (`keepsFree`) goes into no
+ *  story: the document refuses that move (`freeItemUnsaved`); onto another
+ *  station it may go (it stays a free item there). */
+function movesOf(
+  id: string,
+  stations: readonly TourStation[],
+  keepsFree = false,
+): InspectorMoves {
+  const place = tourChildPlace({ stations }, id);
+  if (place === null) return { step: null, targets: [], stations: [] };
+  const { station, story } = place;
+  const own = story === undefined ? station.children[place.index] : undefined;
+  // The free items have no order: a free item has no step.
+  const ordered =
+    story !== undefined || (own !== undefined && isTourStory(own));
+  return {
+    step: ordered
+      ? {
+          earlier: childStepTo(station, id, "earlier") !== null,
+          later: childStepTo(station, id, "later") !== null,
+        }
+      : null,
+    targets: keepsFree ? [] : moveTargets(station, id, story?.id),
+    stations: stations.flatMap((other, index) =>
+      other.id !== station.id &&
+      !("refused" in movedToStation(station, other, id))
+        ? [{ id: other.id, label: stationTitle(other, index + 1) }]
+        : [],
+    ),
+  };
+}
+
+/** The lists of `station` its item `id` (in the story `from`, if any)
+ *  may go into: out of its story, when it can stand in the world, and
+ *  into each other story that takes it. */
+function moveTargets(
+  station: TourStation,
+  id: string,
+  from: string | undefined,
+): { list: string; label: string }[] {
+  const targets: { list: string; label: string }[] = [];
+  const out =
+    from !== undefined &&
+    childMayGo(station, id, FREE_LIST) &&
+    !("refused" in movedChild(station, id, { place: "free" }));
+  if (out) targets.push({ list: FREE_LIST, label: "Move out of the story" });
+  for (const other of tourStories(station)) {
+    const list = storyList(other.id);
+    if (other.id !== from && childMayGo(station, id, list)) {
+      targets.push({ list, label: `Move into "${other.title}"` });
+    }
+  }
+  return targets;
+}
+
 /** The inspector of the story's child `selected`, or null for an id that
  *  is no story's child. */
 function storyChildInspector(
@@ -605,6 +710,7 @@ function storyChildInspector(
       kind: "storyEntry",
       id: child.id,
       stationId: station.id,
+      moves: movesOf(child.id, stations),
       rowKind: storyRows({ children: [child] })[0]?.kind ?? "text",
       title: objectTitle(child),
       sub: `${crumb} / ${KIND_EDIT[child.kind].label}, ${entry}`,
@@ -619,6 +725,7 @@ function storyChildInspector(
     kind: "storyStep",
     id: child.id,
     stationId: station.id,
+    moves: movesOf(child.id, stations),
     heading: "Answers",
   } as const;
   return child.kind === "choice"
@@ -651,6 +758,7 @@ function storyInspector(
       kind: "story",
       storyId,
       stationId: station.id,
+      moves: movesOf(storyId, stations),
       title: story.title,
       sub: `${String(number)} ${stationTitle(station, number)} / Story`,
       entries: storyRows(story),
@@ -664,6 +772,7 @@ function storyInspector(
 function freeBlockInspector(
   selected: string,
   stations: readonly TourStation[],
+  keepsFree: boolean,
 ): InspectorModel | null {
   for (const [index, station] of stations.entries()) {
     const block = tourFreeBlocks(station).find((b) => b.id === selected);
@@ -676,6 +785,7 @@ function freeBlockInspector(
       itemKind: kind,
       id: block.id,
       stationId: station.id,
+      moves: movesOf(block.id, stations, keepsFree),
       title: objectTitle(block),
       sub: `${KIND_EDIT[block.kind].label} in ${stationTitle(station, index + 1)}`,
       fields: blockFields(block),
@@ -705,6 +815,9 @@ export function buildInspector(input: {
   readonly modelPick?: ModelPick | null;
   /** Changes whenever the tour's read-along texts do; none given: "". */
   readonly timingsStamp?: string;
+  /** The selected free item's file is not in the tour on disk yet, so it
+   *  is offered no story (`freeItemUnsaved`); none given: it is. */
+  readonly selectedFileUnsaved?: boolean;
 }): InspectorModel | null {
   const { selected, stations, groundAt } = input;
   if (selected === null) return null;
@@ -760,6 +873,7 @@ export function buildInspector(input: {
       title: objectTitle(item),
       sub: `${KIND_EDIT[item.kind].label} in ${stationTitle(station, index + 1)}`,
       stationId: station.id,
+      moves: movesOf(item.id, stations, input.selectedFileUnsaved === true),
       text: item.kind === "shortText" ? item.caption : null,
       sizeM: item.kind === "model" ? (item.sizeM ?? null) : null,
       fields: blockFields(item),
@@ -810,7 +924,11 @@ export function buildInspector(input: {
       groundOffM: itemOffGround(item, station, groundAt),
     };
   }
-  const free = freeBlockInspector(selected, stations);
+  const free = freeBlockInspector(
+    selected,
+    stations,
+    input.selectedFileUnsaved === true,
+  );
   if (free !== null) return free;
   const code = input.codes.find((c) => c.id === selected);
   if (code === undefined) return null;

@@ -9,6 +9,7 @@
  */
 
 import {
+  isTourStory,
   isTourStoryBlock,
   tourChildPlace,
   tourStationChildIds,
@@ -64,6 +65,7 @@ import {
 import {
   canStep,
   changeCount,
+  childMoveChange,
   coverImageIds,
   detailsChange,
   documentObjects,
@@ -71,6 +73,7 @@ import {
   isCapturedPhoto,
   isDocumentEdit,
   manifestNow,
+  manifestToWrite,
   objectAssetsHeld,
   objectFits,
   nextStep,
@@ -88,6 +91,7 @@ import {
   type StationStoryAdvanceEdit,
   type TourDocumentState,
 } from "../tour-document.js";
+import type { ChildMoveTo } from "../station-children-moves.js";
 import { newObjectId } from "../content-placement.js";
 import {
   STATION_RADIUS_MAX_M,
@@ -351,6 +355,46 @@ function storyChildName(child: TourStoryChild): string {
   return child.kind === "choice" ? child.prompt : child.question;
 }
 
+/** Said for a move of a station's item the format refuses, by why (an
+ *  unsaved file is said by `unsavedRefusal`, naming the item's kind). */
+const MOVE_REFUSALS: Readonly<
+  Record<"missing" | "ownStory" | "noNesting" | "cannotStandFree", string>
+> = {
+  missing: NO_SUCH_STORY,
+  ownStory:
+    "A choice or a quiz stays in its story: its answers lead to that story's entries.",
+  noNesting: "It cannot go there: a story holds no story.",
+  cannotStandFree:
+    "A model without a size cannot stand in the world: give it a size first.",
+};
+
+/** Said for a free item whose file the tour on disk does not hold yet,
+ *  naming its kind ("an audio", "a 3D model"). */
+function unsavedRefusal(manifest: TourManifest, id: string): string {
+  const place = tourChildPlace(manifest, id);
+  const item = place === null ? undefined : place.station.children[place.index];
+  const what =
+    item === undefined || isTourStory(item)
+      ? "an item"
+      : kindWithArticle(item.kind);
+  return `Save the tour first: ${what} added here can go into a story once the tour's file holds it.`;
+}
+
+/** What the history calls the station's item or story `id`: a story by
+ *  its title, a story's child as its delete does, a free item by the one
+ *  rule (`objectTitle`). */
+export function childCalled(manifest: TourManifest, id: string): string {
+  const place = tourChildPlace(manifest, id);
+  if (place === null) return "the item";
+  if (place.story !== undefined) {
+    const entry = place.story.children[place.index];
+    return entry === undefined ? "the item" : storyChildName(entry);
+  }
+  const free = place.station.children[place.index];
+  if (free === undefined) return "the item";
+  return isTourStory(free) ? free.title : objectTitle(free);
+}
+
 /** Said for a delete of the tour's last station. */
 const LAST_STATION =
   "A tour needs at least one station, so its last station cannot be deleted.";
@@ -607,6 +651,18 @@ export interface EditorSession {
     id: string,
     advance: StationStoryAdvanceEdit["advance"],
   ): { kind: "edited" | "unchanged" } | EditorRefusal;
+  /** An item of a station moved `to` another place in its station (a
+   *  story's id for a story): one step. `answers` says how many answers
+   *  that led to it now go on to the next entry, `floored` that it took
+   *  its kind's view to stand in the world. Refused in words for a move
+   *  the format cannot carry (`station-children-moves.ts`). */
+  moveChild(
+    id: string,
+    to: ChildMoveTo,
+  ):
+    | { kind: "moved"; answers: number; floored: boolean }
+    | { kind: "unchanged" }
+    | EditorRefusal;
   /** Put the stations in `order` (every station once): one step. */
   reorderStations(
     order: readonly string[],
@@ -1651,6 +1707,37 @@ export function createEditorSession(input: {
         ),
       )
         ? { kind: "edited" }
+        : notApplied;
+    },
+    moveChild(id, to) {
+      const state = mine();
+      const manifest = state === null ? null : manifestNow(state);
+      if (state === null || manifest === null) return notInTour;
+      const change = childMoveChange(state, id, to);
+      if (change.kind === "unchanged") return change;
+      // The items as the next write carries them: a free item placed here
+      // is an object record, not in the frames alone.
+      const items = manifestToWrite(state) ?? manifest;
+      if (change.kind === "refused") {
+        return {
+          kind: "refused",
+          reason:
+            change.reason === "unsaved"
+              ? unsavedRefusal(items, id)
+              : MOVE_REFUSALS[change.reason],
+        };
+      }
+      const name = childCalled(items, id);
+      return took(() =>
+        store.dispatch(
+          tourDocumentActions.childMoved({
+            id,
+            to,
+            what: `the move of "${name}"`,
+          }),
+        ),
+      )
+        ? { kind: "moved", answers: change.answers, floored: change.floored }
         : notApplied;
     },
     reorderStations(order) {

@@ -113,8 +113,12 @@ describe("the sample tour (public/samples/marienplatz-tour.zip)", () => {
         ["shortText", "pin"],
         ["character", "speak"],
         ["character", "bubble"],
+        ["audio", "spot"],
       ],
-      [["longText", "lectern"]],
+      [
+        ["longText", "lectern"],
+        ["audio", "zone"],
+      ],
       [["shortText", "pin"]],
     ]);
     for (const item of free.flat()) {
@@ -195,6 +199,36 @@ describe("the sample tour (public/samples/marienplatz-tour.zip)", () => {
     expect(checkGlbInert(files.get("content/arch.glb")!)).toEqual({ ok: true });
   });
 
+  // Why: the sample is where a free sound is first heard on a phone - a
+  // narration circle at the column (played on a tap, its transcript the
+  // card's sentences) and a market zone at the gate (heard by itself). Both
+  // files are generated (nothing to license), WAV, and small enough to
+  // fetch over a phone's connection.
+  it("carries a narration and an ambient sound, each a small generated WAV", async () => {
+    const files = await entries();
+    const manifest = parseTourManifest(
+      JSON.parse(new TextDecoder().decode(files.get("tour.json"))) as unknown,
+    );
+    const sounds = manifest.stations
+      .flatMap((s) => s.children)
+      .flatMap((c) => (c.kind === "audio" ? [c] : []));
+    expect(sounds.map((s) => [s.id, s.view])).toEqual([
+      ["column-voice", "spot"],
+      ["market-sound", "zone"],
+    ]);
+    const [voice, market] = sounds;
+    expect(voice?.radiusM).toBe(6);
+    expect(voice?.transcript?.split(". ").length).toBeGreaterThan(1);
+    expect(market).toMatchObject({ maxM: 20, minM: 4, volume: 0.5 });
+    for (const sound of sounds) {
+      const path = manifest.assets.find((a) => a.id === sound.audio)?.path;
+      const bytes = files.get(path ?? "");
+      expect(path).toMatch(/\.wav$/);
+      expect(new TextDecoder().decode(bytes?.slice(0, 4))).toBe("RIFF");
+      expect(bytes?.length ?? Infinity).toBeLessThan(400_000);
+    }
+  });
+
   it("stores its entries uncompressed, so a visitor can stream them", async () => {
     const reader = new ZipReader(new BlobReader(new Blob([readFileSync(ZIP)])));
     const list = await reader.getEntries();
@@ -214,16 +248,17 @@ describe("the sample tour (public/samples/marienplatz-tour.zip)", () => {
     // Re-recorded when the tour moved to format 5 (its script writes it
     // through this writer, so the file is the writer's own bytes), and
     // when it gained the toll story and its free items (content only), and
-    // two characters standing free (content only).
+    // two characters standing free, and a narration circle and a market
+    // zone (content only).
     const files = await entries();
     const json = JSON.parse(
       new TextDecoder().decode(files.get("tour.json")),
     ) as unknown;
     const written = serializeTourManifest(parseTourManifest(json));
     expect(written).toBe(new TextDecoder().decode(files.get("tour.json")));
-    expect(written.length).toBe(9407);
+    expect(written.length).toBe(10626);
     expect(createHash("sha256").update(written).digest("hex")).toBe(
-      "a744f1c7d6d527bf70b9e516d74a858b2642bf8c33dd22f82eabf9a8b1b71be3",
+      "a6578c1daa157f72c9ae3018b064a5a928aa748665c597e8fbc7ad465b76883e",
     );
   });
 });

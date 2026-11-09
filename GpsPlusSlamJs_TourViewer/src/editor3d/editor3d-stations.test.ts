@@ -50,6 +50,7 @@ import {
   type WorldEnv,
   type WorldPart,
 } from "../world-part.js";
+import { worldPartOf } from "../play-kinds.js";
 import {
   stationContent,
   stationBlocks,
@@ -185,6 +186,8 @@ function deps(over: Partial<StationsLayerDeps> = {}) {
       log.squares.push(sizeM);
       return new THREE.Mesh(new THREE.PlaneGeometry(sizeM, sizeM));
     },
+    // The visitor's door, as the page gives it: models stand through it.
+    worldPart: worldPartOf,
     ...over,
   };
   return { d, parent, log };
@@ -312,7 +315,9 @@ describe("createStationsLayer", () => {
   });
 
   // Why: a placed model's `sizeM` is its largest side (the format's rule):
-  // a 2 x 4 x 1 m model at 8 m is scaled by 2, at its local pose.
+  // a 2 x 4 x 1 m model at 8 m is scaled by 2, at its local pose. It
+  // stands through the visitor's world door: the part is placed, the
+  // model in it scaled.
   it("draws a placed model at its size, at its pose in the station", async () => {
     const { d } = deps();
     const layer = createStationsLayer(d);
@@ -328,14 +333,16 @@ describe("createStationsLayer", () => {
     const models = layer.models("a");
     expect(models).toHaveLength(1);
     expect(models[0]!.scale.x).toBeCloseTo(2, 9);
-    expect(models[0]!.position.toArray()).toEqual([0, 0, 2]);
+    expect(models[0]!.parent?.position.toArray()).toEqual([0, 0, 2]);
+    layer.dispose();
   });
 
-  // Why: the 3D view draws a model by its file, pose and size; its notes,
-  // sections and view are drawn apart (`editor3d-model-parts.ts`). An
+  // Why: the 3D view draws a model by its file, pose, size and view; its
+  // notes and sections are drawn apart (`editor3d-model-parts.ts`). An
   // edit of those must not load the file again: while it loads, the model
-  // is not drawn and a click waited for on it meets nothing.
-  it("keeps a model drawn through an edit of its notes, sections or view, and draws it anew when it moves", async () => {
+  // is not drawn and a click waited for on it meets nothing. A new view
+  // or pose draws it anew, as the visitor would see it.
+  it("keeps a model drawn through an edit of its notes or sections, and draws it anew when its view or pose changes", async () => {
     const { d } = deps();
     const layer = createStationsLayer(d);
     const assets = [
@@ -349,7 +356,6 @@ describe("createStationsLayer", () => {
     expect(drawn).not.toBeNull();
     const annotated = {
       ...placed,
-      view: "hotspots",
       annotations: [{ position: [0, 1, 0], normal: [0, 1, 0], title: "Top" }],
       sections: [{ name: "Cut", position: [0, 0, 0], normal: [1, 0, 0] }],
     } as TourBlock;
@@ -360,15 +366,24 @@ describe("createStationsLayer", () => {
     layer.update(view(0, 0, null));
     expect(layer.modelObject("m")).toBe(drawn);
     expect(layer.stats().renders).toBe(1);
+    const viewed = { ...annotated, view: "hotspots" } as TourBlock;
+    layer.setTour(manifest([station("a", 0, 0, [viewed])], assets), new Map());
+    layer.update(view(0, 0, null));
+    await settle();
+    expect(layer.stats().renders).toBe(2);
+    expect(layer.modelObject("m")).not.toBe(drawn);
     const moved = {
-      ...annotated,
+      ...viewed,
       pose: { position: [0, 0, 3], rotation: [0, 0, 0, 1] },
     } as TourBlock;
     layer.setTour(manifest([station("a", 0, 0, [moved])], assets), new Map());
     layer.update(view(0, 0, null));
     await settle();
-    expect(layer.stats().renders).toBe(2);
-    expect(layer.modelObject("m")?.position.toArray()).toEqual([0, 0, 3]);
+    expect(layer.stats().renders).toBe(3);
+    expect(layer.modelObject("m")?.parent?.position.toArray()).toEqual([
+      0, 0, 3,
+    ]);
+    layer.dispose();
   });
 
   // Why: a model whose file is gone or broken leaves the station drawn;
@@ -389,6 +404,38 @@ describe("createStationsLayer", () => {
     await settle();
     expect(layer.models("a")).toHaveLength(0);
     expect(layer.photoPlanes("a")).toHaveLength(1);
+  });
+
+  // Why: a free model in the card or stage view stands nothing in the
+  // station's world for a visitor (the card is a panel, the stage is the
+  // story's), and the editor's 3D view draws what the visitor sees, so
+  // it draws none either - and does not read its file.
+  it("draws no free model in the card or stage view, and reads no file for it", async () => {
+    let parsed = 0;
+    const { d } = deps({
+      loadGlbModel: () => {
+        parsed += 1;
+        return Promise.resolve(new THREE.Mesh(new THREE.BoxGeometry()));
+      },
+    });
+    const layer = createStationsLayer(d);
+    const card = { ...model("c", "horse", 8), view: "card" } as TourBlock;
+    const stage = { ...model("s", "horse", 8), view: "stage" } as TourBlock;
+    layer.setTour(
+      manifest(
+        [station("a", 0, 0, [card, stage, photo("p")])],
+        [{ id: "horse", path: "content/horse.glb", kind: "model" }],
+      ),
+      new Map(),
+    );
+    layer.update(view(0, 0, null));
+    await settle();
+    expect(layer.models("a")).toHaveLength(0);
+    expect(layer.modelObject("c")).toBeNull();
+    expect(layer.modelObject("s")).toBeNull();
+    expect(parsed).toBe(0);
+    expect(layer.photoPlanes("a")).toHaveLength(1);
+    layer.dispose();
   });
 
   // Why: a printed code is drawn at its printed size (0.2 m when the tour
@@ -1160,12 +1207,13 @@ describe("createStationsLayer", () => {
     // The photo is back where the tour has it.
     expect(plane.position.toArray()).toEqual([1, 1.5, 0]);
     expect(plane.quaternion.angleTo(new THREE.Quaternion())).toBeLessThan(1e-9);
-    expect(horse.position.z).toBeCloseTo(5, 3);
+    expect(horse.parent?.position.z).toBeCloseTo(5, 3);
     expect(horse.scale.x).toBeCloseTo(4, 9);
     layer.setPreview(null);
     layer.update(view(0, 0, "a", 1));
-    expect(horse.position.toArray()).toEqual([0, 0, 2]);
+    expect(horse.parent?.position.toArray()).toEqual([0, 0, 2]);
     expect(horse.scale.x).toBeCloseTo(2, 9);
+    layer.dispose();
   });
 
   // Why: a free long text stands in the world on its reading stand
@@ -1402,6 +1450,9 @@ describe("createStationsLayer", () => {
       const freed: string[] = [];
       const made: WorldPart[] = [];
       const part = (block: TourBlock, env: WorldEnv): WorldPart | null => {
+        // A model stands through the visitor's own part (its file, size
+        // and view); the box stands for every other kind.
+        if (block.kind === "model") return worldPartOf(block, env);
         asked.push({ block, env });
         const object = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
         const made1: WorldPart = {
@@ -1510,13 +1561,13 @@ describe("createStationsLayer", () => {
       const ray = new THREE.Raycaster();
       ray.setFromCamera(new THREE.Vector2(0, 0), camera);
       expect(layer.pick(ray)).toBe("song");
-      // Located where it stands (the view flies to it), yet no gesture's
-      // target: the gizmo moves the world blocks only (the rows that say
+      // Located where it stands (the view flies to it), and a gesture's
+      // target: the gizmo moves the world blocks (the rows that say
       // `inWorld`, `editor3d-editing.ts` `targetOf`), and a free sound is
-      // none, so it is selected by a click and not dragged.
+      // one, so its circle or zone is moved and turned like a pin.
       const located = layer.itemPointOf("song");
       expect(located?.distanceTo(at)).toBeLessThan(1e-6);
-      expect(worldBlocks(a).map((b) => b.id)).toEqual(["p"]);
+      expect(worldBlocks(a).map((b) => b.id)).toEqual(["p", "song"]);
       // A drag's preview moves it and turns it as the pose says, tilt
       // included; cleared, it is back.
       const dragged = new THREE.Quaternion().setFromEuler(
@@ -1623,10 +1674,9 @@ describe("createStationsLayer", () => {
       expect(parent.children).toHaveLength(0);
     });
 
-    // Why (#881 review): the models were freed before the renderer's
-    // dispose, outside the guard the ring and the pole had - a model
-    // whose free threw skipped `rendered.dispose()`, which is what
-    // unmounts the station's parts and frees its labels and textures.
+    // Why: a model whose free throws must not skip the rest of the
+    // station's free (`rendered.dispose()` unmounts the station's parts
+    // and frees its labels and textures).
     it("a model whose free throws still frees the station's parts", async () => {
       const editor = door();
       const { d, parent } = deps({
@@ -1656,11 +1706,54 @@ describe("createStationsLayer", () => {
       layer.update(view(0, 0, null, 1));
       await settle();
       expect(editor.made).toHaveLength(1);
-      expect(mountedWorldParts()).toEqual(editor.made);
+      // The box part and the model's part.
+      expect(mountedWorldParts()).toHaveLength(2);
       expect(() => layer.dispose()).toThrow("model free broke");
       expect(editor.freed).toEqual(["song"]);
       expect(mountedWorldParts()).toEqual([]);
       expect(parent.children).toHaveLength(0);
+    });
+
+    // Why: a model is a tree of meshes; a throwing geometry dispose inside
+    // one model aborted the traverse and stranded every mesh after it, its
+    // GPU buffers and materials included.
+    it("a mesh whose geometry free throws still frees the model's other meshes", async () => {
+      const freed: string[] = [];
+      const { d } = deps({
+        loadGlbModel: () => {
+          const broken = new THREE.BoxGeometry(1, 1, 1);
+          broken.dispose = () => {
+            throw new Error("mesh free broke");
+          };
+          const fine = new THREE.BoxGeometry(1, 1, 1);
+          fine.dispose = () => {
+            freed.push("geometry");
+          };
+          const material = new THREE.MeshBasicMaterial();
+          material.dispose = () => {
+            freed.push("material");
+          };
+          const g = new THREE.Group();
+          g.add(new THREE.Mesh(broken), new THREE.Mesh(fine, material));
+          return Promise.resolve(g);
+        },
+      });
+      const layer = createStationsLayer(d);
+      const a = station("a", 0, 0, [spot, model("m", "horse", 2)]);
+      layer.setTour(
+        manifest(
+          [a],
+          [
+            ...assets,
+            { id: "horse", path: "content/horse.glb", kind: "model" },
+          ],
+        ),
+        new Map(),
+      );
+      layer.update(view(0, 0, null, 1));
+      await settle();
+      expect(() => layer.dispose()).toThrow("mesh free broke");
+      expect(freed).toEqual(["geometry", "material"]);
     });
   });
 

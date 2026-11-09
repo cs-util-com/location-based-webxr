@@ -6,7 +6,7 @@
  * must end in "no poster" (the import goes on without one), never in a
  * hang or a throw, and the object URL must be let go either way.
  */
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { videoPosterOf, type PosterVideo } from "./video-poster.js";
 
@@ -99,6 +99,10 @@ function deps(
   };
 }
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe("videoPosterOf", () => {
   it("draws the frame just after the start at the video's own size", async () => {
     const d = deps("frame");
@@ -187,6 +191,27 @@ describe("videoPosterOf", () => {
       expect(d.drawn).toEqual([{ w: 640, h: 360 }]);
       expect(d.revoked).toEqual(["blob:video"]);
     }
+  });
+
+  // Why: when the clip never took the far seek it is still at the start,
+  // so the fallback's seek back to the start answers at once; the second
+  // wait it starts must still be cleared, not left to fire after the
+  // poster is made.
+  it("leaves no timer behind when the fallback's seek to the start answers at once", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const d = deps("frame", Number.POSITIVE_INFINITY);
+    Object.defineProperty(d.video, "currentTime", {
+      get: () => 0,
+      set: () => undefined,
+    });
+    d.options.timeoutMs = 60_000;
+    const poster = videoPosterOf(new Blob(["v"]), {
+      ...d.options,
+      lengthTimeoutMs: 10,
+    });
+    await vi.advanceTimersByTimeAsync(10);
+    expect(await (await poster)?.text()).toBe("jpeg");
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("scales a large frame down to the longest side it keeps", async () => {

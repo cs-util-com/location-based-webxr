@@ -44,8 +44,32 @@ import { mountedModelViews } from "./model-views";
 import {
   mountedWorldParts,
   unmountWorldPart,
+  worldEnv,
   type WorldPart,
 } from "./world-part";
+import { worldPartOf } from "./play-kinds";
+
+/** Lets the files a world part asked for land: the renderer never waits
+ *  for them (a model holds back no other block). */
+function filesLanded(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/** The visitor's world door for models: each file is read by its path,
+ *  and `parse` turns the path into the model (or fails). */
+function modelDoor(
+  assets: readonly TourAsset[],
+  parse: (path: string) => Promise<Object3D>,
+  enableClipping: () => void = () => undefined,
+) {
+  const env = worldEnv(
+    "play",
+    assets,
+    (path) => Promise.resolve(new Blob([path])),
+    { parseModel: async (blob) => parse(await blob.text()), enableClipping },
+  );
+  return (block: TourBlock) => worldPartOf(block, env);
+}
 import { contentSegment } from "./tour-flow";
 import { stationContent } from "./test-support/station-content.js";
 
@@ -524,13 +548,11 @@ describe("renderTourStation", () => {
     }));
   }
 
-  // Why (station blocks plan B2b step 1): a placed model was left out
-  // for the visitor (B2a's rule of no visible change). Drawn now, at the
-  // size the tour names (`sizeM`, its largest side) by the one shared
-  // scale rule (`modelScale`, the 3D editor's), at its local pose in the
-  // station's frame; a model whose file fails is named in `skipped`, and
-  // a renderer given no model loader (the editor draws its own) leaves it
-  // out quietly as before.
+  // Why: a placed model stands through the world door like every other
+  // kind, at the size the tour names (`sizeM`, its largest side) by the
+  // one shared scale rule (`modelScale`), its part at its local pose in
+  // the station's frame; a model whose file fails is named in `skipped`,
+  // and a renderer given no door leaves it out quietly.
   it("draws a placed model at its sizeM by the shared scale rule, at its local pose", async () => {
     const scene = new Group();
     const stationGeo = geoAt({ ...ZERO, alt: 400 }, 10, 0, 5, yaw(0));
@@ -567,13 +589,16 @@ describe("renderTourStation", () => {
       zero: ZERO,
       makeLabel: labelStub,
       loadPhotoTexture: () => Promise.resolve(new Texture()),
-      loadModel: (entry) => {
+      worldPart: modelDoor(assets, (entry) => {
         loaded.push(entry);
         return entry === "content/horse.glb"
           ? Promise.resolve(new Mesh(geometry))
           : Promise.reject(new Error("bad glb"));
-      },
+      }),
     });
+    // The station stands before its files arrive; once they have, the
+    // broken one is gone and named.
+    await filesLanded();
     expect(loaded).toEqual(["content/horse.glb", "content/broken.glb"]);
     expect(rendered.count).toBe(1);
     expect(rendered.skipped).toEqual(["m2"]);
@@ -582,14 +607,15 @@ describe("renderTourStation", () => {
       if (o.userData["objectId"] === "m1") found = o;
     });
     expect(found, "the model is drawn under the station").toBeDefined();
-    // Its largest side (2 m) made 3 m: the factor 1.5, the editor's rule.
-    expect(found!.scale.x).toBeCloseTo(1.5, 12);
+    // Its largest side (2 m) made 3 m: the factor 1.5, the editor's rule,
+    // on the model in the part; the part is at the pose.
+    expect(found!.children[0]?.scale.x).toBeCloseTo(1.5, 12);
     expect(found!.position.toArray()).toEqual([1, 0, 2]);
     expect(found!.quaternion.toArray()).toEqual(pose.rotation);
     rendered.dispose();
     expect(disposed, "its geometry is freed with the station").toBe(1);
 
-    // No loader: left out quietly, as before B2b.
+    // No door: left out quietly.
     const quiet = await renderTourStation(station, {
       assets,
       scene,
@@ -600,6 +626,222 @@ describe("renderTourStation", () => {
     expect(quiet.count).toBe(0);
     expect(quiet.skipped).toEqual([]);
     quiet.dispose();
+  });
+
+  // Why: a model file can be large, and the other blocks of its station
+  // must never wait for it. The pin stands (and the station's group is in
+  // the scene) while the model still loads; a load that then fails takes
+  // only the model's part away - freed, unmounted, out of the group,
+  // named in `skipped` and no longer counted - and a station freed while
+  // its model still loads frees the part once, ignoring a late failure.
+  it("shows a station's other blocks before its model loads, and drops a model that fails later", async () => {
+    const scene = new Group();
+    const stationGeo = geoAt({ ...ZERO, alt: 400 }, 10, 0, 5, yaw(0));
+    const pose = {
+      position: [1, 0, 2] as [number, number, number],
+      rotation: yaw(0),
+    };
+    const pin = {
+      id: "pin",
+      kind: "shortText" as const,
+      view: "pin" as const,
+      caption: "Here",
+      pose,
+    };
+    const model = {
+      id: "m",
+      kind: "model" as const,
+      view: "placed" as const,
+      asset: "horse",
+      sizeM: 2,
+      createdAtIso: NOW,
+      pose,
+    };
+    const assets: TourAsset[] = [
+      { id: "horse", path: "content/horse.glb", kind: "model" },
+    ];
+    const pending: ((error: Error) => void)[] = [];
+    const door = modelDoor(
+      assets,
+      () =>
+        new Promise<Object3D>((_resolve, reject) => {
+          pending.push(reject);
+        }),
+    );
+    let partDisposed = 0;
+    const counted = (block: TourBlock) => {
+      const part = door(block);
+      if (part === null) return null;
+      const dispose = part.dispose.bind(part);
+      part.dispose = () => {
+        partDisposed += 1;
+        dispose();
+      };
+      return part;
+    };
+    const rendered = await renderTourStation(
+      stationAt("s", stationGeo, [pin, model]),
+      {
+        assets,
+        scene,
+        zero: ZERO,
+        makeLabel: labelStub,
+        loadPhotoTexture: () => Promise.resolve(new Texture()),
+        worldPart: counted,
+      },
+    );
+    await filesLanded();
+    expect(pending, "the model still loads").toHaveLength(1);
+    const ids = () => {
+      const found: unknown[] = [];
+      rendered.root.traverse((o) => {
+        if (o.userData["objectId"] !== undefined) {
+          found.push(o.userData["objectId"]);
+        }
+      });
+      return found;
+    };
+    expect(scene.children).toContain(rendered.root);
+    expect(ids()).toEqual(["pin", "m"]);
+    expect(rendered.count).toBe(2);
+    const part = mountedWorldParts().at(-1);
+    expect(part?.object.userData["objectId"]).toBe("m");
+
+    pending[0]!(new Error("bad glb"));
+    await filesLanded();
+    expect(ids()).toEqual(["pin"]);
+    expect(rendered.count).toBe(1);
+    expect(rendered.skipped).toEqual(["m"]);
+    expect(partDisposed).toBe(1);
+    expect(mountedWorldParts()).not.toContain(part);
+    rendered.dispose();
+    expect(partDisposed, "freed once, not again with the station").toBe(1);
+
+    // Freed while loading: the part goes with the station, and the late
+    // failure neither frees it again nor names it.
+    const early = await renderTourStation(
+      stationAt("s", stationGeo, [pin, model]),
+      {
+        assets,
+        scene,
+        zero: ZERO,
+        makeLabel: labelStub,
+        loadPhotoTexture: () => Promise.resolve(new Texture()),
+        worldPart: counted,
+      },
+    );
+    await filesLanded();
+    early.dispose();
+    expect(partDisposed).toBe(2);
+    pending[1]!(new Error("bad glb"));
+    await filesLanded();
+    expect(partDisposed).toBe(2);
+    expect(early.skipped).toEqual([]);
+  });
+
+  // Why: a part's `ready` can reject while the renderer still decodes
+  // the blocks after it (a photo crosses tasks), or a later block can
+  // throw before the station stands at all. Either way the rejection must
+  // be handled the moment the part is placed: an unhandled rejection is
+  // reported as a crash. A part whose free throws on that path is still
+  // taken out of the station, quietly.
+  it("handles a part's early rejection while later blocks decode, after a throw, and when its free throws", async () => {
+    const stationGeo = geoAt({ ...ZERO, alt: 400 }, 10, 0, 5, yaw(0));
+    const pose = {
+      position: [1, 0, 2] as [number, number, number],
+      rotation: yaw(0),
+    };
+    const model = {
+      id: "m",
+      kind: "model" as const,
+      view: "placed" as const,
+      asset: "horse",
+      sizeM: 2,
+      createdAtIso: NOW,
+      pose,
+    };
+    const photo = {
+      id: "p",
+      kind: "picture" as const,
+      view: "plane" as const,
+      image: "g",
+      widthM: 1,
+      createdAtIso: NOW,
+      pose,
+    };
+    const pin = {
+      id: "pin",
+      kind: "shortText" as const,
+      view: "pin" as const,
+      caption: "Here",
+      pose,
+    };
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const failing = (throwOnFree: boolean) => () => {
+        const part: WorldPart = {
+          object: new Group(),
+          ready: Promise.reject(new Error("bad glb")),
+          dispose: () => {
+            if (throwOnFree) throw new Error("free failed");
+          },
+        };
+        return part;
+      };
+      // A photo that decodes a task later, after the rejection.
+      const slowPhoto = () =>
+        new Promise<Texture>((resolve) =>
+          setTimeout(() => resolve(new Texture()), 5),
+        );
+      for (const throwOnFree of [false, true]) {
+        const rendered = await renderTourStation(
+          stationAt("s", stationGeo, [model, photo]),
+          {
+            assets: photoAssets("g"),
+            scene: new Group(),
+            zero: ZERO,
+            makeLabel: labelStub,
+            loadPhotoTexture: slowPhoto,
+            worldPart: failing(throwOnFree),
+          },
+        );
+        await filesLanded();
+        expect(rendered.skipped).toEqual(["m"]);
+        expect(rendered.count).toBe(1);
+        expect(
+          mountedWorldParts().map(
+            (p): unknown => p.object.userData["objectId"],
+          ),
+        ).not.toContain("m");
+        rendered.dispose();
+      }
+
+      // A later block throws: the part is freed with the construction, and
+      // its rejection is still handled.
+      let throwingLabel = 0;
+      await expect(
+        renderTourStation(stationAt("s", stationGeo, [model, pin]), {
+          assets: [],
+          scene: new Group(),
+          zero: ZERO,
+          makeLabel: () => {
+            throwingLabel += 1;
+            throw new Error("no canvas");
+          },
+          loadPhotoTexture: slowPhoto,
+          worldPart: failing(false),
+        }),
+      ).rejects.toThrow("no canvas");
+      expect(throwingLabel).toBe(1);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
   });
 
   // Why (station blocks, the reading stand): a long text in the
@@ -1181,21 +1423,28 @@ describe("renderTourStation", () => {
       freed += 1;
     };
     let clipping = 0;
+    const assets: TourAsset[] = [
+      { id: "horse", path: "content/horse.glb", kind: "model" },
+    ];
     const rendered = await renderTourStation(station, {
-      assets: [{ id: "horse", path: "content/horse.glb", kind: "model" }],
+      assets,
       scene,
       zero: ZERO,
       makeLabel: labelStub,
       loadPhotoTexture: () => Promise.resolve(new Texture()),
-      loadModel: () =>
-        Promise.resolve(new Mesh(new BoxGeometry(2, 0.5, 1), own)),
-      modelViews: { enableClipping: () => (clipping += 1) },
+      worldPart: modelDoor(
+        assets,
+        () => Promise.resolve(new Mesh(new BoxGeometry(2, 0.5, 1), own)),
+        () => (clipping += 1),
+      ),
     });
+    await filesLanded();
     expect(rendered.count).toBe(views.length);
     const drawn = new Map<string, Object3D>();
     rendered.root.traverse((o) => {
       const id = o.userData["objectId"];
-      if (typeof id === "string") drawn.set(id, o);
+      // The model is the one child of its part.
+      if (typeof id === "string") drawn.set(id, o.children[0]!);
     });
     for (const view of views) {
       const model = drawn.get(view)!;

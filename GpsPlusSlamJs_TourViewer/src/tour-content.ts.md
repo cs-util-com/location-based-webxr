@@ -29,10 +29,11 @@ camera captures are debug data, never in a station (an earlier file's
   (below), the one the tour document's station rule starts.
 - `WorldBlock`, `worldBlocks(station)`: a station's free blocks
   (`tourFreeBlocks`, the ones outside its stories) as the short texts,
-  pictures, long texts (on their reading stands) and models
+  pictures, long texts (on their reading stands), models and sounds (a
+  narration circle or a zone)
   the creator pages draw and edit: the kinds whose row in the editor's
   list says `inWorld` (`kinds/edit-kinds.ts` `isWorldKind`). A free
-  video, sound or character is not among them yet: those pages have no
+  video or character is not among them yet: those pages have no
   drawing for one, and
   `withTourContent` keeps it, stored files included.
 - `isCapturedPhoto(object)`: a picture whose image asset carries its own

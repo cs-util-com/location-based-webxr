@@ -123,6 +123,22 @@ describe("createKindPanels", () => {
     expect(panels.sync(PIN)).toBeNull();
   });
 
+  it("draws the selected kind's panel, even when another panel also draws", () => {
+    // Why: every panel follows the selection, and one that draws without
+    // being selected must not cover the selected kind's draw.
+    const panel = (title: string) => () => ({
+      sync: () => ({ title }) as unknown as KindPanelDraw,
+      act: () => false,
+      flush: () => undefined,
+    });
+    const panels = createKindPanels(context().ctx, {
+      ...KIND_PANELS,
+      shortText: panel("short"),
+      model: panel("model"),
+    });
+    expect(panels.sync(PIN)).toEqual({ title: "short" });
+  });
+
   it("draws a model's size, view, clip, notes and sections as its parts", () => {
     const draw = createKindPanels(context().ctx).sync(item());
     expect(draw).not.toBeNull();

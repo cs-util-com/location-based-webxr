@@ -7,8 +7,8 @@ A standalone check page, linked from nothing, where a session tries a new kind o
 ## The page
 
 - Left, in a story: the kind and a plain card as a two-step story, in the real scene view, with stand-ins for the stage and the sound.
-- Right, in a station: a small three.js scene with the real free host. A tap on the item does what the real host does.
-- Below: start again, stop, a tap in each context, a second sound, the end of the sound, a walk away, held files, and one control per file to lose it.
+- Right, in a station: a small three.js scene with the real free host, and the kind's world view beside the figure when it has one. A tap on the item does what the real host does. Under it, the cost line (`#lab-cost`) and what the kind's `read` fixed in the record shown (`#lab-problems`).
+- Below: start again, stop, a tap in each context, a second sound, the end of the sound, a walk away, held files, one control per record, play or edit, a tap in the world, ten rounds, the dark backdrop, and one control per file to lose it.
 - At the bottom: the page's state, as the e2e reads it through `window.__itemLab`.
 
 Design: `src/checks/item-lab.ts.md`, which also lists what the free host lacks.

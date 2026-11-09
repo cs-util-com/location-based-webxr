@@ -230,6 +230,29 @@ function changedFrames(
   };
 }
 
+/** The items an offered record moves between a story and the free items:
+ *  the story entries of each station whose frame it edits, in its frame or
+ *  in the file's. Such an item's object record (out of a story) or
+ *  tombstone (into one) is part of that frame's change, counted there and
+ *  never as a change or a deletion of its own. */
+function movedIds(
+  settings: EditorTourSettings | undefined,
+  manifest: TourManifest,
+): ReadonlySet<string> {
+  if (settings === undefined) return new Set();
+  const edited = new Set(changedFrames(settings, settingsOf(manifest)).edited);
+  const entries = (frames: readonly StationFrame[]) =>
+    frames
+      .filter((f) => edited.has(f.id))
+      .flatMap((f) =>
+        tourStories(f).flatMap((s) => s.children.map((c) => c.id)),
+      );
+  return new Set([
+    ...entries(settings.frames ?? []),
+    ...entries(settingsOf(manifest).frames ?? []),
+  ]);
+}
+
 /** How many changes a record's frames count as. */
 function frameChangeCount(changes: FrameChanges): number {
   return (
@@ -1396,15 +1419,18 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       };
       /** The offer's words, and how its settings part is named. */
       const offerWords = (
-        notes: number,
-        gone: number,
+        notes: readonly string[],
+        gone: readonly string[],
       ): { text: string; settingsWhat?: string } => {
         const what =
           settings === undefined
             ? undefined
             : settingsWhatOf(settings, manifest);
+        const moved = movedIds(settings, manifest);
+        const own = (ids: readonly string[]) =>
+          ids.filter((id) => !moved.has(id)).length;
         return {
-          text: offerText(notes, gone, settings, manifest),
+          text: offerText(own(notes), own(gone), settings, manifest),
           ...(what === undefined ? {} : { settingsWhat: what }),
         };
       };
@@ -1430,7 +1456,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         tidyFiles(s);
         sayUnread();
         return {
-          offer: offer === null ? null : { ...offer, ...offerWords(0, 0) },
+          offer: offer === null ? null : { ...offer, ...offerWords([], []) },
           superseded: null,
           backedUp: true,
         };
@@ -1549,7 +1575,10 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
             ? null
             : {
                 ...offer,
-                ...offerWords(waiting.length, deleted.length),
+                ...offerWords(
+                  waiting.map((o) => o.id),
+                  deleted,
+                ),
               },
         superseded:
           replaced === 0 ? null : supersededLine(replaced, SUPERSEDED_WHERE),
