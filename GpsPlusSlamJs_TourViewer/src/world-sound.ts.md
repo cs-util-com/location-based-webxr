@@ -33,10 +33,7 @@ sound, on one of two channels.
 - `WorldSoundDeps` - `focus` (the page's voice focus), and optional `audio`
   (an element factory, default `new Audio()`), `sound` (a `SoundGate`, the
   page's setting while the page is shown, `sound-setting.ts` `whileShown`;
-  default always on), `turnSoundOn?()` (a tap played a voice while sound
-  was off: the page turns its setting on, `main.ts` `soundSetting.set(true)`,
-  so the sound button never reads "off" while a voice is heard; called after
-  the play), `onError`, `createUrl`, `revokeUrl`.
+  default always on), `onError`, `createUrl`, `revokeUrl`.
 - `createWorldSound(deps)` -> `WorldSound` with `sound(load, channel)`; `load`
   reads the file once, when it first plays.
 - `SILENT_SOUND`, `SILENT_WORLD_SOUND` - do nothing: the editor's, and a page
@@ -47,7 +44,8 @@ sound, on one of two channels.
 - Nothing is read or played before a `play()` (a voice) or a first non-zero
   `level` (a background).
 - With the gate off a voice does not carry on at return (a tap still plays
-  it: the visitor's own ask, and turns the sound on through `turnSoundOn`) and a background is PAUSED, at once (the
+  it: the visitor's own ask, and the page's focus turns the sound on, as for
+  every voice: `sound-setting.ts` `silencedFocus`) and a background is PAUSED, at once (the
   gate's change re-checks every live background, since a hidden page runs
   no frames), and not read before it may be heard: sound off loads and
   plays nothing, never a file at volume 0. The distance loudness is the

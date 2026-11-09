@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
 
-import { createVoiceFocus, type Voice } from "./voice-focus.js";
+import type { NarrationPlayer } from "./narration-player.js";
+import { createVoiceFocus, focusedPlayer, type Voice } from "./voice-focus.js";
 import {
   bindSoundToggle,
   silencedFocus,
@@ -176,5 +177,95 @@ describe("the sound while the page is shown", () => {
     win.dispatchEvent(new Event("pagehide"));
     win.dispatchEvent(new Event("pageshow"));
     expect(heard).toEqual([false, true, false, true]);
+  });
+});
+
+describe("a tap with sound off", () => {
+  /** A narration player that only records what it is asked. */
+  function fakePlayer() {
+    let playing = false;
+    const calls: string[] = [];
+    const inner = {
+      nowMs: () => 0,
+      durationMs: () => 0,
+      playing: () => playing,
+      seek: () => undefined,
+      onChange: () => () => undefined,
+      play: () => {
+        playing = true;
+        calls.push("play");
+      },
+      pause: () => {
+        playing = false;
+        calls.push("pause");
+      },
+      dispose: () => undefined,
+    } as unknown as NarrationPlayer;
+    return { inner, calls, playing: () => playing };
+  }
+
+  /** The page's wiring: the focus turns the setting on, as main.ts does. */
+  function wired(storage: ReturnType<typeof memory>) {
+    const setting = createSoundSetting({ storage });
+    const focus = silencedFocus(createVoiceFocus(), setting, {
+      turnOn: () => {
+        setting.set(true);
+      },
+    });
+    return { setting, focus };
+  }
+
+  // Why: a visitor who taps something that speaks wants to hear it, and
+  // the sound button must not say "off" while a voice is heard. The hook
+  // sits in the page's one focus, so a narrated text or a figure (a
+  // focused player) gets it exactly as a narration circle does.
+  it("turns the sound on, saves it, and the voice plays", () => {
+    const storage = memory();
+    const { setting, focus } = wired(storage);
+    setting.set(false);
+    const player = fakePlayer();
+    const voice = focusedPlayer(player.inner, focus);
+    voice.play();
+    expect(setting.on()).toBe(true);
+    expect(createSoundSetting({ storage }).on()).toBe(true);
+    expect(player.calls).toEqual(["play"]);
+    expect(player.playing()).toBe(true);
+  });
+
+  // Why: turning on carries the quiet voice on; the tapped voice must stay
+  // the one heard, not the one the setting held when it went off.
+  it("carries no voice kept quiet on in place of the tapped one", () => {
+    const { setting, focus } = wired(memory());
+    const calls: string[] = [];
+    const held: Voice = {
+      hold: () => calls.push("held hold"),
+      carryOn: () => calls.push("held carryOn"),
+      stop: () => calls.push("held stop"),
+    };
+    focus.selfStart(held);
+    setting.set(false);
+    const tapped: Voice = {
+      hold: () => calls.push("tapped hold"),
+      carryOn: () => calls.push("tapped carryOn"),
+      stop: () => calls.push("tapped stop"),
+    };
+    focus.tapped(tapped);
+    expect(setting.on()).toBe(true);
+    expect(focus.running()).toBe(tapped);
+    expect(calls).not.toContain("held carryOn");
+    expect(calls).not.toContain("tapped hold");
+  });
+
+  // Why: with sound on a tap is an ordinary tap: nothing is written.
+  it("changes nothing when sound is already on", () => {
+    const storage = memory();
+    const turnOn = vi.fn();
+    const setting = createSoundSetting({ storage });
+    const focus = silencedFocus(createVoiceFocus(), setting, { turnOn });
+    const player = fakePlayer();
+    focusedPlayer(player.inner, focus).play();
+    expect(turnOn).not.toHaveBeenCalled();
+    expect(storage.items.size).toBe(0);
+    expect(player.calls).toEqual(["play"]);
   });
 });

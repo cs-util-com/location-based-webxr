@@ -913,7 +913,13 @@ bindSoundToggle(element<HTMLButtonElement>("walk-sound"), soundSetting);
 // A vertical swipe that starts on a slider (the narration card's scrub
 // bar) scrolls instead of moving it.
 guardSlidersIn(document);
-const voiceFocus = silencedFocus(createVoiceFocus(), audible);
+// A tap that plays any voice with sound off turns it on: the toggle tells
+// the truth.
+const voiceFocus = silencedFocus(createVoiceFocus(), audible, {
+  turnOn: () => {
+    soundSetting.set(true);
+  },
+});
 const narration = createNarrationVisitor({
   focus: voiceFocus,
   tour: () => ctx.session,
@@ -929,10 +935,6 @@ const narration = createNarrationVisitor({
 const worldSound = createWorldSound({
   focus: voiceFocus,
   sound: audible,
-  // A tap that plays with sound off turns it on: the toggle tells the truth.
-  turnSoundOn: () => {
-    soundSetting.set(true);
-  },
   onError: () => {
     const message = "A sound could not be played here.";
     walkToast.say([message]);

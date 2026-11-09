@@ -128,13 +128,23 @@ export function bindSoundToggle(
  * included, and turning it off holds the running voice, which stays the
  * channel's. That voice is the quiet one: back on, it carries on. A voice
  * handed the channel while off is the quiet one the same way. A tap still
- * plays: it is the visitor's own ask.
+ * plays: it is the visitor's own ask, and with sound off it turns the
+ * sound on (`turnOn`, the page's setting), for every voice alike: the
+ * sound button must never say "off" while a voice is heard, and a visitor
+ * who taps to hear something wants sound.
  *
  * Every voice reaches `focus` behind a gate of its own (kept per voice, so
  * the channel's identity checks hold); `running()` answers the voice the
  * caller gave.
  */
-export function silencedFocus(focus: VoiceFocus, sound: SoundGate): VoiceFocus {
+export function silencedFocus(
+  focus: VoiceFocus,
+  sound: SoundGate,
+  options: {
+    /** Turns the page's setting on (saved); none: a tap leaves it. */
+    readonly turnOn?: () => void;
+  } = {},
+): VoiceFocus {
   const gates = new WeakMap<Voice, Voice>();
   const voices = new WeakMap<Voice, Voice>();
   /** The running voice kept quiet by the gate. */
@@ -177,6 +187,9 @@ export function silencedFocus(focus: VoiceFocus, sound: SoundGate): VoiceFocus {
     tapped(voice) {
       quiet = null;
       focus.tapped(gated(voice));
+      // After the hand-over, with nothing kept quiet: turning on carries
+      // no other voice on, and the tapped one is the channel's.
+      if (!sound.on()) options.turnOn?.();
     },
     selfStart: (voice) => sound.on() && focus.selfStart(gated(voice)),
     ended(voice) {

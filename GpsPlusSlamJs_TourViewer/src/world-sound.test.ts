@@ -95,7 +95,11 @@ function setup(options: { soundOn?: boolean; refuse?: boolean } = {}) {
   if (options.soundOn === false) setting.set(false);
   const page = fakePage();
   const audible = whileShown(setting, page.doc, page.win);
-  const focus = silencedFocus(createVoiceFocus(), audible);
+  const focus = silencedFocus(createVoiceFocus(), audible, {
+    turnOn: () => {
+      setting.set(true);
+    },
+  });
   const made: ReturnType<typeof fakeAudio>[] = [];
   const errors: unknown[] = [];
   const sound = createWorldSound({
@@ -106,9 +110,6 @@ function setup(options: { soundOn?: boolean; refuse?: boolean } = {}) {
       return a;
     },
     sound: audible,
-    turnSoundOn: () => {
-      setting.set(true);
-    },
     onError: (e) => errors.push(e),
     createUrl: () => "blob:x",
     revokeUrl: () => undefined,

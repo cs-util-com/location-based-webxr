@@ -22,8 +22,10 @@ at return (visible again, `pageshow`) it is the setting again: ambient
 plays by its level, the held voice carries on.
 
 A tap still plays a voice: it is the visitor's own ask, and it turns the
-setting on (`world-sound.ts` `turnSoundOn`), so the toggle reads "Sound on"
-while that voice is heard.
+setting on (`silencedFocus`'s `turnOn`, `main.ts` `soundSetting.set(true)`,
+so saved), for EVERY voice alike - a narration circle, a free sound, a
+narrated text, a figure, a story's clip - so the toggle reads "Sound on"
+while that voice is heard. A tap with sound already on changes nothing.
 
 ## Public API
 
@@ -39,8 +41,9 @@ while that voice is heard.
 - `whileShown(setting, doc, win)` - a `SoundGate`: `setting` and the page
   shown (`doc.visibilityState` not `"hidden"`, no `pagehide` without a
   later `pageshow`). Listens for the page's life; nothing to unbind.
-- `silencedFocus(focus, gate)` - `focus` with `selfStart` refused while
-  off, every voice's `carryOn` gated (a hand-over while off leaves the
+- `silencedFocus(focus, gate, { turnOn? })` - `focus` with `selfStart`
+  refused while off, a `tapped` while off calling `turnOn` (after the
+  hand-over, with nothing kept quiet, so no other voice carries on), every voice's `carryOn` gated (a hand-over while off leaves the
   new running voice quiet), the running voice held when it goes off and
   the quiet one carried on when it comes back. Each voice reaches `focus`
   behind one gate object of its own (a `WeakMap`), so `running()` answers
@@ -75,8 +78,10 @@ setting.set(false); // the running voice is held
 
 `sound-setting.test.ts`: the default, the remembered off beside the views,
 a view choice keeping it, the listeners, no storage and a throwing one, the
-button, the focus under the setting (the quiet voice carried on), and
-`whileShown`. `sound-setting.property.test.ts`: through any sequence of
+button, the focus under the setting (the quiet voice carried on),
+`whileShown`, and a tap with sound off (the setting turned on and saved,
+the voice playing through a focused player, no quiet voice carried on in
+its place; with sound on, nothing written). `sound-setting.property.test.ts`: through any sequence of
 taps, starts, ends and switches, no voice carries on while off and, on, no
 silent voice holds the channel. `world-sound.test.ts` drives the real
 hand-over (a queued voice behind a freed held one) and the hidden page. `visitor-walk-layout.spec.js` holds
