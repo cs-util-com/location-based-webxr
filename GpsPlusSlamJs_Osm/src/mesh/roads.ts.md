@@ -153,30 +153,76 @@ and 300 m up. Two renderers: an Intel Iris Xe through ANGLE/D3D11 (a real GPU)
 and SwiftShader (the software renderer CI's browsers use). Both report a
 24-bit depth buffer. Percentages are of the overlap's pixels.
 
-- **(a) Geometric gaps (what the builder does).** On the real GPU a 3 mm gap
-  is clean in every view up to the 226 m boot view; 1-1.5 mm shows the footway
-  through about 10-12 % of the overlap at 226 m and 300 m up; at 570 m about
-  3 % shows through at every gap up to 5 mm and none at 10 mm. On SwiftShader
-  even 5 mm shows through 37 % at 226 m and 10 % at 570 m; 10 mm is clean in
-  every view.
+- **The 0 mm column (main before M4a: every road coplanar) was added in r1164**
+  so "better than before" is measured: on the real GPU 8-66 % of the overlap
+  fights in every view (36 % at 41 m, 19 % at 226 m, 66 % in the editor at
+  300 m). On SwiftShader two views read 0 at 0 mm (globe landing 100 m, editor
+  300 m): the coplanar tie resolves the same way every frame there, so those
+  views cannot show fighting at all, which is not a clean gap.
+- **(a) Geometric gaps (what the builder does).** On the real GPU a gap of
+  1.5 mm or more is clean in every view except 570 m, where 3 of 96 pixels
+  differ at every gap up to 20 mm (17 mm included), i.e. that view's edge
+  noise. The worst figure is the editor camera 300 m up at 0.5 mm: **31.9 %**
+  (65.8 % at 0 mm, 2.2 % at 1 mm). On SwiftShader even 5 mm shows through 37 %
+  at 226 m and 10 % at 570 m.
+- **The globe landing at 200 m, measured properly (r1164).** r1161 read n/a:
+  a 12 m crossing 200 m from a 1.7 m eye is under one pixel row. A deep
+  overlap (a 20 m wide way under a 100 m wide one, 60 m deep) gives 1,152
+  pixels: on the GPU 65.6 % at 0 mm, 19.3 % at 0.5 mm, 7.3 % at 1 mm, clean
+  from 1.5 mm; on SwiftShader 100 % up to 5 mm, 16.4 % at 10 mm, clean at
+  17 mm. Globe roads sit 2 m above the relief (`placeRoad`), so this view
+  is about the roads among themselves.
 - **(b) A polygon offset per rank.** With the slope factor (factor = units = 1)
   it is clean between roads in every view, but the same offset at 3 pulls a
   road through a layer 4 cm above it in EVERY view on both renderers (100 %):
   the factor scales with the surface's depth slope, which at an oblique view is
   decimetres a pixel, so it would break OsmDemo's 4 cm ladder (areas and heat
   cells over the roads). Units alone (no factor) fight in most views (5-60 %).
-- **So neither candidate is clean everywhere.** The builder keeps (a) at a
-  5 mm step: no extra draw, strictly better than before M4a (every road at one
-  height, so any overlap of two colours fought), and its strip-to-strip gap
-  between classes (at least 0.6 step = 3 mm) measured clean on the real GPU
-  up to the boot view. It does NOT hold beyond about 500 m, on software
-  rendering, or at the one smaller gap the lab's lift leaves: a higher class's
-  junction DISC over a lower class's strip can be as little as 0.1 step
-  (0.5 mm) apart, which fights at 226 m. Two ways of ONE class tie within 0.4
-  step and fight where their colours differ (a `surface` tag). Phone GPUs
-  were not measured. The step that would reverse the verdict: 10 mm gaps are
-  clean everywhere measured, which at 0.6 step needs a 17 mm step and a top
-  road 6.6 cm up, past the 4 cm rung. The decision is open in the M4a report.
+- **So neither candidate is clean everywhere, and the step stays 5 mm until
+  the owner decides.** At 5 mm the strip-to-strip gap between classes (at
+  least 0.6 step = 3 mm) is clean on the real GPU in every view measured; an
+  END disc of a higher class over a lower class's strip can be 0.1 step
+  (0.5 mm) apart and fights up to 31.9 % (editor 300 m), 19.3 % (globe 200 m)
+  and 12.6 % (226 m); two ways of ONE class tie within 0.4 step and fight
+  where their colours differ (a `surface` tag). Since r1164 discs exist
+  only at ends and fallbacks, so the 0.1-step case is rarer than in r1161.
+  SwiftShader fights at 5 mm at 226 m, 570 m and the deep globe view. Phone
+  GPUs were not measured. **The value that reverses it:** a 17 mm step (class
+  gap 10.2 mm, end-disc gap 1.7 mm) is clean in every GPU view, and on
+  SwiftShader everywhere but the deep globe view (16.4 %); clean there too
+  needs a class gap of 17 mm, a 28 mm step. 17 mm puts the top road 6.6 cm up,
+  so OsmDemo's 4 cm ladder would widen to 8 cm (kept as a scratchpad patch,
+  not committed).
+- **Real scenes did not separate the variants (r1164).** OsmDemo's Heidelberg
+  corpus (boot view 226 m, a close view) and the Tour Editor globe at 300 m,
+  shot with main, r1161, r1164 and the 17 mm variant, a camera nudge against
+  a re-shot floor: every nudge count sat at its own floor (within about 60
+  of 1.3 million pixels), and the variants differed less than the floor moved
+  between runs. At those distances roads are a few pixels wide and their
+  overlaps a handful, under the method's noise. The two Schlossberg views
+  (a residential street ending on a service road, on the castle hill) put the
+  camera behind the hill and show no roads, so they are no evidence either
+  way. The spike above is the quantitative evidence; the decision is open in
+  the M4a report.
+
+## Build time (M4a review MINOR 2, measured r1164)
+
+r1161 reported single runs (Heidelberg 11.2 to 7.5 ms, Meggen 10.7 to 13.1,
+Park Slope 6.8 to 11.1, the lab 4.9 to 8.2), too noisy to call a speed-up or
+a slow-down. Measured again: `buildRoads` alone, the three O3 scenes,
+variants interleaved in one Node 24 process with a GC before each run, 10
+warm-up rounds then the median (min-max) of 30, on devbox-win11 under the
+machine slot:
+
+- Heidelberg: before M4a 4.85 ms (3.7-7.2), r1161 5.47 (4.5-10.5), r1164
+  4.19 (3.5-6.4)
+- Meggen: 8.56 (6.6-12.4), 9.41 (7.1-16.7), 6.78 (5.8-13.7)
+- Park Slope: 6.61 (5.2-10.4), 8.16 (6.6-13.3), 5.95 (4.5-8.5)
+
+So r1161's junction pass cost about 10-25 % over the disc builder, and r1164
+is 10-20 % faster than the disc builder; the ranges overlap, so read it as
+"no slower", not as a speed-up to rely on. The lab row was the same
+Heidelberg feature set and is covered by the first line.
 
 ## Examples
 
