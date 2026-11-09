@@ -1,0 +1,105 @@
+{
+  "normal": {
+    "question": "Before the stalls opened, the market women washed their greens somewhere on this square. Go and stand where you think it was.",
+    "points": 10,
+    "answer": {
+      "type": "single",
+      "options": [
+        {
+          "id": "fountain",
+          "label": "At the fountain",
+          "at": { "x": -6.2, "z": -4.3 }
+        },
+        {
+          "id": "statue",
+          "label": "By the statue",
+          "at": { "x": 7.2, "z": -5.5 }
+        },
+        { "id": "tree", "label": "Under the tree", "at": { "x": 9.5, "z": 4.2 } },
+        {
+          "id": "bench",
+          "label": "Beside the bench",
+          "at": { "x": -8.2, "z": 5.2 }
+        }
+      ],
+      "correct": "fountain"
+    },
+    "circle": 5,
+    "warnGap": 7
+  },
+  "crowded": {
+    "question": "The old well stood somewhere in the middle of the square. Stand where you think it was.",
+    "points": 10,
+    "answer": {
+      "type": "single",
+      "options": [
+        {
+          "id": "west",
+          "label": "Far left of the middle",
+          "at": { "x": -4.5, "z": 0 }
+        },
+        {
+          "id": "left",
+          "label": "Just left of the middle",
+          "at": { "x": -1.5, "z": 0 }
+        },
+        {
+          "id": "right",
+          "label": "Just right of the middle",
+          "at": { "x": 1.5, "z": 0 }
+        },
+        {
+          "id": "east",
+          "label": "Far right of the middle",
+          "at": { "x": 4.5, "z": 0 }
+        }
+      ],
+      "correct": "left"
+    },
+    "circle": 5,
+    "warnGap": 7
+  },
+  "longest": {
+    "question": "Walk once around the whole square and look at the fountain, the statue, the tree and the bench before you decide. Which of them was put here last, long after the others had stood for a hundred years?",
+    "points": 20,
+    "answer": {
+      "type": "single",
+      "options": [
+        {
+          "id": "fountain",
+          "label": "The fountain with its wide stone basin and its little spout",
+          "at": { "x": -6.2, "z": -4.3 }
+        },
+        {
+          "id": "statue",
+          "label": "The green figure on its plinth, looking at the hall",
+          "at": { "x": 7.2, "z": -5.5 }
+        },
+        {
+          "id": "tree",
+          "label": "The broad tree on the patch of grass by the corner",
+          "at": { "x": 9.5, "z": 4.2 }
+        },
+        {
+          "id": "bench",
+          "label": "The wooden bench on the south side, looking towards the gate",
+          "at": { "x": -8.2, "z": 5.2 }
+        }
+      ],
+      "correct": "bench"
+    },
+    "circle": 6,
+    "warnGap": 7
+  },
+  "missing": {
+    "question": "Where is the best view of the clock?",
+    "answer": {
+      "type": "single",
+      "options": [
+        { "label": "By the fountain", "at": { "x": -6.2, "z": -4.3 } },
+        { "label": "At the gate" },
+        { "label": "By the statue", "at": { "x": 30, "z": -9 } }
+      ]
+    }
+  }
+}

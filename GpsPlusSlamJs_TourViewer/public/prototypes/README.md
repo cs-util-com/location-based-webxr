@@ -235,6 +235,13 @@ wired into its logic: every interaction is faked.
   two directions for bringing pictures and 3D models into the desktop
   editor: straight onto the place, or a checked library shelf first; the
   size limits on both pages are guesses; made 2026-11-06.
+- `quiz-world-stage/` and `quiz-world-1-fan/` ... `quiz-world-7-answer-scenes/` -
+  quizzes whose answers stand in a walkable place, all on one shared stage
+  (`quiz-world-stage/README.md` is the contract a kind module follows); 1-4
+  made 2026-11-07, 5-7 (the creator places the answers, find them first,
+  answers as small scenes) made 2026-11-08. Each page says why its 3D carries
+  meaning and the strongest case against; the plain card,
+  `quiz-visitor-1-story-card/`, is the baseline.
 - `model-lod-1/` - a mesh simplifier written for the page (edge collapses
   ordered by a quadric error) on three scanned rocks from Poly Haven (CC0):
   a quality slider for the triangle count an author keeps, a distance

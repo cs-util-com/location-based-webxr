@@ -1,0 +1,147 @@
+{
+  "normal": {
+    "mode": "choose",
+    "ask": "Which of these has stood here the longest?",
+    "answers": [
+      {
+        "id": "a",
+        "text": "The clock tower",
+        "on": "tower",
+        "up": 0,
+        "reach": 5.5,
+        "says": "The tower. Its first stones were laid before this square had a name."
+      },
+      {
+        "id": "b",
+        "text": "The fountain",
+        "on": "fountain",
+        "up": 0,
+        "reach": 3.2,
+        "says": "Younger than it looks. The fountain only came with the water pipes."
+      },
+      {
+        "id": "c",
+        "text": "The statue",
+        "on": "statue",
+        "up": 0,
+        "reach": 2.4,
+        "says": "Him? He arrived a hundred years ago and has been pointing at things ever since."
+      },
+      {
+        "id": "d",
+        "text": "The hall door",
+        "on": "hall",
+        "up": 0,
+        "reach": 2.6,
+        "says": "The hall was rebuilt after a fire, door and all."
+      }
+    ],
+    "right": "a",
+    "retry": true,
+    "confirm": true,
+    "list": "folded",
+    "listAfter": 45,
+    "points": 10,
+    "showScore": false,
+    "drift": 0
+  },
+  "longest": {
+    "mode": "choose",
+    "ask": "Take your time and look around this whole square, past the water, the bronze and the old stone walls, and tell me which of these was already standing here on the day the first market was held.",
+    "answers": [
+      {
+        "id": "a",
+        "text": "The clock tower by the hall",
+        "on": "tower",
+        "up": 0,
+        "reach": 5.5,
+        "says": "The tower. Everything else in this square was built with its shadow already falling across the stones, and the masons of later years had to work around it."
+      },
+      {
+        "id": "b",
+        "text": "The fountain in the corner",
+        "on": "fountain",
+        "up": 0,
+        "reach": 3.2,
+        "says": "It looks old because the water has worn it, but it came a long time after the first stalls, when the town finally laid its pipes."
+      },
+      {
+        "id": "c",
+        "text": "The bronze figure on stone",
+        "on": "statue",
+        "up": 0,
+        "reach": 2.4,
+        "says": "The bronze is the newest thing you can see from here, although the block under it may well be older than the man standing on it."
+      },
+      {
+        "id": "d",
+        "text": "The gate in the south wall",
+        "on": "gate",
+        "up": 0,
+        "reach": 3.4,
+        "says": "The gate has been rebuilt twice, and only the lowest stones on the left are as old as the people here like to claim."
+      }
+    ],
+    "right": "a",
+    "retry": false,
+    "confirm": true,
+    "list": "open",
+    "listAfter": 0,
+    "points": 25,
+    "showScore": true,
+    "drift": 0
+  },
+  "missing": {
+    "ask": "Which of these is the oldest?",
+    "answers": [
+      { "text": "The tower", "on": "tower" },
+      { "text": "The fountain", "on": "fountain" },
+      { "text": "The bench", "on": "bench" }
+    ]
+  },
+  "typed": {
+    "mode": "typed",
+    "ask": "The tower's clock stopped long ago and nobody has wound it since. What hour does it show?",
+    "placeholder": "Type the hour",
+    "answers": [
+      {
+        "id": "a",
+        "text": "The clock",
+        "on": "tower",
+        "up": 1.7,
+        "reach": 3
+      }
+    ],
+    "sayRight": "Three o'clock. The story goes that the keeper stopped it himself, on the day of a wedding he did not approve of.",
+    "sayWrong": "That is not what the hands say. The long one points straight up, so look at the short one.",
+    "sayLast": "Not quite. Have another look at it on your way out.",
+    "salt": "clock-7f3a",
+    "accept": [
+      "01dd47b5cc894ccff2416eea660f8a6782833028fd913d9e1c99a2191470babd",
+      "546787b57f8e89df21cf2d61718e23b12e380f513b60e0a8bca5f3f893e5dac8",
+      "0697539a8d887c780b93ad7f6cef20b804db0cb8a9f4f57520bfe45a7708de75",
+      "d01ad5fc2fd001f92e33385ea965ed47ccecc30e1e89c39d7a0d92f5df215c1d",
+      "8dbc173aaa077d5045b6f1f5553df37d24138c475473f4af163a1bcb510ce03e",
+      "5f132c54ab1e750aec9cf209766fb4b3e962e2099c4badc49360ebd66969e213",
+      "263aab226f5ce76d310f9e5642dcd9d48a636680cbac9725864c3a26cb257437",
+      "c9348d74a98164ba9a91c60fd83824c8b830b68551301bb00547078a89a6484b"
+    ],
+    "retry": true,
+    "points": 10,
+    "showScore": false,
+    "drift": 0
+  },
+  "done": {
+    "mode": "choose",
+    "ask": "Which of these has stood here the longest?",
+    "answers": [
+      { "id": "a", "text": "The clock tower", "on": "tower", "reach": 5.5 },
+      { "id": "b", "text": "The fountain", "on": "fountain", "reach": 3.2 },
+      { "id": "c", "text": "The statue", "on": "statue", "reach": 2.4 },
+      { "id": "d", "text": "The hall door", "on": "hall", "reach": 2.6 }
+    ],
+    "right": "a",
+    "points": 10,
+    "visit": { "result": "right", "picked": "a", "crossed": ["b"] }
+  }
+}

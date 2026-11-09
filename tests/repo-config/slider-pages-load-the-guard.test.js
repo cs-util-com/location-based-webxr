@@ -223,6 +223,39 @@ const EXEMPT = new Map([
     'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-visitor-2-guide-asks/index.html',
     'design prototype in the inspiration gallery, wired to nothing',
   ],
+  // The quiz-world pages get their sliders from the shared stage's edit panel, built at runtime
+  // from each kind's fields and reached through an inline module script, which this check does
+  // not follow. They are listed so the exemption is a decision rather than a blind spot.
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-1-fan/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-2-on-the-things/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-3-walk-to-it/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-4-card-unfolds/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-5-creator-places/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-7-answer-scenes/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  // Its card also builds sliders of its own (found radius, hint delay, position error): test
+  // aids that change only the draft's own feel.
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-6-find-first/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
   [
     'GpsPlusSlamJs_TourViewer/public/prototypes/character-library-1/maker.html',
     'design prototype in the inspiration gallery, wired to nothing',

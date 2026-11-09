@@ -1,0 +1,98 @@
+{
+  "normal": {
+    "answerBy": "pick",
+    "ask": "Look up at the clock tower. What shape is its roof?",
+    "answers": [
+      { "text": "A round dome" },
+      { "text": "A four-sided point" },
+      { "text": "A flat terrace" },
+      { "text": "Two small spires" }
+    ],
+    "right": "1",
+    "retry": true,
+    "points": 10,
+    "showScore": false,
+    "say": {
+      "right": "A four-sided point. You look up, most people do not.",
+      "retry": "Not quite. Have another look at the top of the tower.",
+      "wrong": "No, it is a four-sided point. Look on your way past."
+    },
+    "fanWidth": 100,
+    "reach": 2.5,
+    "preview": { "x": 0, "z": 0 }
+  },
+  "three": {
+    "answerBy": "pick",
+    "ask": "How many posts hold up the gate out of the square?",
+    "answers": [{ "text": "1" }, { "text": "2" }, { "text": "4" }],
+    "right": "1",
+    "retry": false,
+    "points": 10,
+    "showScore": true,
+    "say": {
+      "right": "Two. One each side, and a beam across.",
+      "wrong": "Two. One each side, and a beam across. No second try on this one."
+    },
+    "fanWidth": 80,
+    "reach": 2.5,
+    "preview": { "x": 0, "z": 0 }
+  },
+  "typed": {
+    "answerBy": "typed",
+    "ask": "What does the white disc on the tower show? One word will do.",
+    "placeholder": "Type the word",
+    "salt": "q7f2-square",
+    "sha256": [
+      "da6db66bb234ef6d560888cbd8a2c39d96043f1a13f7db7bfc412e98654fefb6",
+      "03efeb9de8cd9afb5091e25b1ffca1082c0ea25c97da71b32e7ebcd3b8a6228b"
+    ],
+    "retry": true,
+    "points": 10,
+    "say": {
+      "right": "The clock. It has been four minutes late since anyone can remember.",
+      "retry": "That is not it. Look at the two black hands.",
+      "wrong": "It is the clock. Have another look on your way out."
+    },
+    "reach": 2.5,
+    "preview": { "x": 0, "z": 0 }
+  },
+  "done": {
+    "answerBy": "pick",
+    "ask": "Which of these stands in the square?",
+    "answers": [
+      { "text": "A fountain" },
+      { "text": "A windmill" },
+      { "text": "A lighthouse" }
+    ],
+    "right": "0",
+    "done": { "result": "right", "picked": 0, "tries": 0, "earned": 10 },
+    "preview": { "x": 0, "z": 0 }
+  },
+  "longest": {
+    "answerBy": "pick",
+    "ask": "Before you walk on, take a slow look around this whole square, past the fountain and the statue and along the low wall, and tell me which of these four things you could not find anywhere at all.",
+    "answers": [
+      { "text": "A green figure standing on a stone block in the open" },
+      { "text": "A bench with its back to the wall, facing the morning" },
+      { "text": "A stone bowl with water in it and a column in the middle" },
+      { "text": "A wooden market stall with a striped roof over a counter" }
+    ],
+    "right": "3",
+    "retry": true,
+    "points": 25,
+    "showScore": true,
+    "say": {
+      "right": "The market stall. It has not stood here for a hundred years, and yet people still swear they bought apples from it last autumn.",
+      "retry": "Not that one, that one is really here if you look. Turn around once more and go through what you can see, one thing at a time.",
+      "wrong": "The market stall is the one that is missing. The other three are all around you, so have a look at them on your way to the gate."
+    },
+    "fanWidth": 140,
+    "reach": 3,
+    "preview": { "x": 1, "z": 1 }
+  },
+  "missing": {
+    "ask": "Which side of the square has the gate?",
+    "answers": [{ "text": "South" }, { "text": "West" }, { "text": "North" }],
+    "right": "0"
+  }
+}
