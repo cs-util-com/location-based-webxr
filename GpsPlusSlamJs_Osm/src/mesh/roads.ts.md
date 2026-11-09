@@ -127,8 +127,11 @@ footway crossing it.
     and their `kerbTaperM` are NOT ported: plan §3 left the kerb in the lab.
 - **Classes are stacked by a lift, not by draw order (M4a class order).** A way
   of rank r sits `rankStepM * (r + 0.4 * f)` above the ground, its strip and
-  its discs alike, where f in [0, 1) is a hash (FNV-1a) of the feature key, so
-  two ways of one class at a junction never share a depth. So a carriageway
+  its discs alike, where f in [0, 1) is a 32-bit hash (FNV-1a) of the feature
+  key, so two ways of one class at a junction rarely share a depth. It does
+  not rule a tie out: two ways of one class sit 0 to 0.4 step apart, and two
+  close fractions are as good as a tie at any step (see "The gaps per step"
+  below). So a carriageway
   covers a footway that crosses it. A way's discs sit at its strip's own height
   (owner decision 2026-11-09, r1171), coplanar only with that strip, whose
   colour they share; until r1171 they sat half a step under it, which left a
