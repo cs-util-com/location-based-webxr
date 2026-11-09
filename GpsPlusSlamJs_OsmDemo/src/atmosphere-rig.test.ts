@@ -20,6 +20,9 @@ import {
   BUILDING_SKY_LIGHT,
   NATURAL_LIGHT_ADAPTATION,
   NATURAL_LIGHT_COMPENSATION_EV,
+  NIGHT_FLOOR,
+  NIGHT_FLOOR_NAME,
+  nightFloorWeight,
   surfaceGainAt,
   CLOUD_COVER,
   NOON_SURFACE_GAIN,
@@ -415,5 +418,75 @@ describe("AtmosphereRig, M3 review fixes", () => {
     };
     canvas.dispatchEvent(new Event("webglcontextrestored"));
     expect(sun.intensity).toBe(42);
+  });
+});
+
+describe("AtmosphereRig night floor (r1155, owner: Nachts Grundhelligkeit)", () => {
+  // WHY: below about -6 deg the physical sky's environment goes to nothing and
+  // the city went black. The owner wants it still clearly night, but the
+  // buildings, trees and roads just distinguishable. A faint, cool ambient
+  // light that fades in only after civil twilight is that floor. It must not
+  // touch the day or the twilight looks the DEC-R4-5 sweep approved, so the
+  // weight is pinned to exactly 0 above the ramp.
+  const floorOf = (scene: THREE.Scene) =>
+    scene.getObjectByName(NIGHT_FLOOR_NAME) as THREE.AmbientLight | undefined;
+
+  it("fades in only after civil twilight, full from the ramp's end down", () => {
+    const at = (deg: number) => nightFloorWeight((deg * Math.PI) / 180);
+    expect(at(30)).toBe(0);
+    expect(at(0)).toBe(0);
+    expect(at(-2.9)).toBe(0);
+    expect(at(NIGHT_FLOOR.fromDeg)).toBe(0);
+    expect(at((NIGHT_FLOOR.fromDeg + NIGHT_FLOOR.fullDeg) / 2)).toBeCloseTo(
+      0.5,
+      12,
+    );
+    expect(at(NIGHT_FLOOR.fullDeg)).toBe(1);
+    expect(at(-30)).toBe(1);
+    expect(at(-90)).toBe(1);
+    expect(() => nightFloorWeight(Number.NaN)).toThrow(RangeError);
+  });
+
+  it("adds one cool ambient light, off by day, at the floor at night", () => {
+    const { view, scene } = rig();
+    const floor = floorOf(scene);
+    expect(floor).toBeInstanceOf(THREE.AmbientLight);
+    view.setSun(sunAt(45));
+    expect(floor!.intensity).toBe(0);
+    view.setSun(sunAt(-2.9));
+    expect(floor!.intensity).toBe(0);
+    view.setSun(sunAt(-30));
+    expect(floor!.intensity).toBeCloseTo(NIGHT_FLOOR.intensity, 12);
+    expect(NIGHT_FLOOR.intensity).toBeGreaterThan(0);
+    // Cool: moonlight and city glow read blue, never warm like the sun.
+    expect(floor!.color.b).toBeGreaterThan(floor!.color.r);
+    expect(
+      scene.children.filter((c) => c.name === NIGHT_FLOOR_NAME),
+    ).toHaveLength(1);
+  });
+
+  // The light dialog's exposure must not move the floor: it is a fixed
+  // display-level light, not a copy of the sky's exposure.
+  it("keeps the floor through an exposure change", () => {
+    const { view, scene } = rig();
+    view.setSun(sunAt(-30));
+    view.setExposure({ ev: -1, adaptation: 0.5 });
+    expect(floorOf(scene)!.intensity).toBeCloseTo(NIGHT_FLOOR.intensity, 12);
+  });
+
+  it("lights the fallback's night the same way", () => {
+    const { view, scene } = rig({ unsupported: true });
+    view.setSun(sunAt(-30));
+    expect(floorOf(scene)!.intensity).toBeCloseTo(NIGHT_FLOOR.intensity, 12);
+    view.setSun(sunAt(20));
+    expect(floorOf(scene)!.intensity).toBe(0);
+  });
+
+  it("removes the floor on dispose, on both paths", () => {
+    for (const unsupported of [false, true]) {
+      const { view, scene } = rig({ unsupported });
+      view.dispose();
+      expect(floorOf(scene)).toBeUndefined();
+    }
   });
 });

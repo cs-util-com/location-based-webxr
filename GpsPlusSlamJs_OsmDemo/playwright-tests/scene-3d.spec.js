@@ -1507,13 +1507,21 @@ test.describe("the time of day", () => {
   // its boot.
   const SUN_POINTS = [
     // [label, date, apparent solar time, lit-surface luma under ACES −2 EV,
-    //  the share of it the point must reach (half by default)]
+    //  the share of it the point must reach (half by default); null = the
+    //  night, margins only]
     ["the golden hour (3.6°)", "2026-09-23", "17:36", 42.6],
     ["a 3.6° morning", "2026-09-23", "06:23", 33.6],
     ["a 24° morning", "2026-09-23", "08:41", 96.8],
     ["the September noon (38.9°)", "2026-09-23", "12:00", 75.1],
     ["civil twilight at −2.9°", "2026-09-23", "18:17", 20.8],
     ["civil twilight at −5.9°", "2026-09-23", "18:36", 16.5],
+    // The night (r1155): the heat grid must stay the loudest thing under the
+    // night floor (`NIGHT_FLOOR` in `atmosphere-rig.ts`) too. No lit-surface
+    // value: that metric counts WARM pixels (r >= b) and the night floor is
+    // cool, so at −30° it reads 0 however visible the city is; the floor's
+    // presence and ramp are held by `atmosphere-rig.test.ts`.
+    ["nautical dusk at −12.1°", "2026-09-23", "19:16", null],
+    ["the night at −30.1°", "2026-09-23", "21:28", null],
   ];
   for (const [label, date, time, approvedLit, share = 0.5] of SUN_POINTS) {
     test(`DEC-R4-5: the heat ramp stays the loudest thing at ${label}`, async ({
@@ -1547,7 +1555,11 @@ async function expectHeatRampLoudest(page, label, approvedLit, share = 0.5) {
   );
   expect(plain, `plain ground at ${label}`).toBeGreaterThan(5);
   expect(byDefault, `${DEFAULT_MODE} at ${label}`).toBeGreaterThan(5);
-  expect(lit, `lit surfaces at ${label}`).toBeGreaterThan(approvedLit * share);
+  if (approvedLit !== null) {
+    expect(lit, `lit surfaces at ${label}`).toBeGreaterThan(
+      approvedLit * share,
+    );
+  }
 }
 
 /**

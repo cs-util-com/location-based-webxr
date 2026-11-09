@@ -47,6 +47,20 @@ colour that matched the sky at one time of day.
   than it did under ACES (M3 review finding 5; the e2e runs on the physical
   sky only, so this is unmeasured).
 - `SkyLike` — the part of `SkyAtmosphere` the rig uses (the test seam).
+- `NIGHT_FLOOR` ({ intensity 0.15, colour 0x9fb4d8, fromDeg -6, fullDeg -12 };
+  0.15 is a recommendation pending the owner's pick, the r1155 sweep 0 to
+  0.3 is in the source comment),
+  `NIGHT_FLOOR_NAME` ("night-floor") and `nightFloorWeight(elevationRad)` -
+  the night floor (r1155, owner 2026-11-08 "Nachts Grundhelligkeit"): one cool
+  `AmbientLight` the rig adds to the scene in BOTH paths, at intensity
+  `NIGHT_FLOOR.intensity x nightFloorWeight`. The weight is exactly 0 at and
+  above -6 deg (so no day or twilight look the DEC-R4-5 sweep approved
+  changes), linear to 1 at -12 deg, 1 below; `RangeError` for a non-finite
+  elevation. A fixed display-level light: the light dialog's exposure does not
+  scale it (the sky puts its exposure into `environmentIntensity` and the sun
+  light, not into the renderer). OsmDemo only: the framework's `SkyAtmosphere`
+  and `fallbackSky` are untouched, and AR imports only the tone mapping from
+  this file. `dispose()` removes it.
 
 ## Invariants & assumptions
 
@@ -146,6 +160,11 @@ renderer.render(scene, camera);
   synced, late materials hazed and replaced hooks healed, disposal; the
   fallback's dome, hemisphere light, fog and sun, the dome on the camera, its
   clean-up, and that other errors are not swallowed.
+- The night floor (same file): off by day and at -2.9 deg, full at -30 deg,
+  cool, one light, untouched by an exposure change, the same in the fallback,
+  removed on dispose. `atmosphere-rig.property.test.ts`: the weight is in
+  [0, 1], exactly 0 above the ramp and 1 below it, and never rises with the
+  sun.
 - Pixels: OsmDemo's e2e suite (every lit-geometry and heat-ramp check runs
   under this sky); the sky's shaders themselves are checked by the look-dev
   smoke (`GpsPlusSlamJs_DesignSystem/3d/lookdev.smoke.spec.mjs` (removed; in git history)).
