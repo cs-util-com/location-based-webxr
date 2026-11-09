@@ -1168,30 +1168,83 @@ async function underTheWorldSteps(page) {
     // centre of mass is in the upper third, which is what "looking up at them
     // from underneath" means and what looking down at them cannot produce.
     let withBuildings = { count: 0, meanY: 1 };
-    for (let step = 0; step < 8; step++) {
+    let steps = 0;
+    while (steps < 8) {
       await rotateUnder(page, 40);
+      steps++;
       withBuildings = await countNonSkyPixels(page);
       if (withBuildings.count > 1000 && withBuildings.meanY < 0.35) break;
     }
     expect(withBuildings.count).toBeGreaterThan(1000);
     expect(withBuildings.meanY).toBeLessThan(0.35);
 
-    // AND NOTHING ELSE IS THERE. With the buildings and trees off too, the frame
-    // has essentially no hard edges left — so the "ground layer" seen from below
-    // is the background, not a surface. If a ground plane were ever drawn under
-    // the world, its silhouette would put edges straight back.
-    //
-    // A RATIO RATHER THAN ZERO (§1). The old helper matched the painted sky.s
-    // exact colours, so "not sky" could be exactly 0. An edge count cannot be:
-    // a scattering sky carries a sun, and tone mapping can steepen a gradient
-    // enough to trip a step here and there. What is being claimed is that the
-    // geometry is gone, and a 20x drop says that without depending on a palette.
+    // THE SKY-ONLY BASELINE (r1155). From beneath, the frame keeps a few
+    // dozen hard edges that are not geometry: the scattering sky converges to
+    // a steep point at the nadir, and the orbit target's dot sits beside it
+    // (measured 2026-11-08: 68 edges, 53 at the apex and 15 at the dot, with
+    // buildings and trees off). That fixed cost broke the old bare 20x ratio
+    // once the seeded palette made the buildings from below a little softer
+    // (1122 edges, so 56 allowed). So the sky is measured on its own: a second
+    // page boots the same fixture, turns EVERY layer off, buildings and trees
+    // included, and turns the same number of steps. Its frame is the sky at
+    // this pose, by construction rather than by the hide step under test.
+    const skyOnly = await skyOnlyFrameAfter(page, steps);
+    // AND NO GROUND UNDER THEM: in "No ground" with nothing on, the frame from
+    // below is that small sky remainder. A ground plane drawn under the world
+    // would put its silhouette across the whole width (hundreds of edges).
+    // The bound is a tenth of the buildings' edges: measured 68 against 1122
+    // (16x), so it would only flip if the sky alone reached 1/10 of the city.
+    expect(skyOnly.count).toBeLessThan(withBuildings.count / 10);
+
+    // AND THE GEOMETRY IS GONE. With the buildings and trees off here, what
+    // is left over the sky-only baseline must be a 20th of what the buildings
+    // put over it. A ratio rather than zero (§1): a scattering sky carries a
+    // sun, and tone mapping can steepen a gradient enough to trip a step here
+    // and there between two boots. Proven to go red with the hide step removed.
     await page.locator("#layer-buildings").uncheck();
     await page.locator("#layer-trees").uncheck();
+    const geometryEdges = (count) => count - skyOnly.count;
     await expect
-      .poll(async () => (await countNonSkyPixels(page)).count)
-      .toBeLessThan(withBuildings.count / 20);
+      .poll(async () => {
+        const residual = (await countNonSkyPixels(page)).count;
+        console.log(
+          `beneath: with buildings ${withBuildings.count}, sky only ${skyOnly.count}, residual ${residual}`,
+        );
+        return geometryEdges(residual);
+      })
+      .toBeLessThan(geometryEdges(withBuildings.count) / 20);
   });
+}
+
+/**
+ * The sky at the pose `underTheWorldSteps` reached, in a second page of the
+ * same context: the same fixture and viewport, every layer and the ground
+ * off from the start, and the same number of turns. Returns its edge count.
+ */
+async function skyOnlyFrameAfter(page, steps) {
+  const sky = await page.context().newPage();
+  try {
+    await stubNetwork(sky);
+    await sky.goto(AT_FIXTURE);
+    await waitForRefresh(sky);
+    await sky.locator("#ground-mode").selectOption("none");
+    for (const layer of [
+      "cells",
+      "plates",
+      "roads",
+      "areas",
+      "poi",
+      "buildings",
+      "trees",
+    ]) {
+      const box = sky.locator(`#layer-${layer}`);
+      if (await box.isChecked()) await box.uncheck();
+    }
+    for (let i = 0; i < steps; i++) await rotateUnder(sky, 40);
+    return await countNonSkyPixels(sky);
+  } finally {
+    await sky.close();
+  }
 }
 
 /**
