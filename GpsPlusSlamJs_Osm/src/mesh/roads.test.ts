@@ -632,7 +632,7 @@ function allHeights(mesh: MeshData): number[] {
  * at near-straight points left the sawtooth the owner rejected on the O3
  * lab. The strip has to keep DEC-R2-13's promise (no gap at any angle)
  * without either: the counts pin "two triangles a segment, one per bevel,
- * eight per disc, discs only at ends, junctions and fallbacks", and the
+ * eight per disc, discs only at ends and fallbacks", and the
  * coverage checks pin that no notch opens on either side.
  */
 describe("buildRoads - the mitre strip (M4a)", () => {
@@ -809,23 +809,60 @@ describe("buildRoads - the mitre strip (M4a)", () => {
     expect(coversPoint(road[0]?.mesh as MeshData, 20.9, 0)).toBe(true);
   });
 
-  it("breaks the strip at a junction and keeps its disc there", () => {
+  it("runs a way through a junction like any other point: no break, no disc (M4a review MINOR 3)", () => {
+    // WHY: without a kerb the junction disc drew nothing the strip did not,
+    // cost eight triangles a junction, and made every ribbon depend on the
+    // whole feature list. The way that ENDS at the junction brings its own
+    // end disc; the way that runs through is one strip, mitred where it turns.
     const through = way(
       { highway: "residential" },
       [at(-30, 0), at(0, 0), at(30, 0)],
       1,
     );
-    const side = way({ highway: "footway" }, [at(0, 0), at(0, 30)], 2);
-    const ribbons = buildRoads([through, side], { frame: FRAME });
-    // Straight through, yet the shared point keeps its disc.
-    expect(triangles(ribbons.slice(0, 1))).toBe(plain(3) + 8);
-    expect(triangles(ribbons.slice(1))).toBe(plain(2));
+    const turning = way(
+      { highway: "residential" },
+      [at(0, -30), at(0, 0), at(30, 30)],
+      2,
+    );
+    const side = way({ highway: "footway" }, [at(0, 0), at(0, 30)], 3);
+    const ribbons = buildRoads([through, turning, side], { frame: FRAME });
+    expect(triangles(ribbons.slice(0, 1))).toBe(plain(3));
+    // 45 degrees at the shared point: a mitre, as anywhere else.
+    expect(triangles(ribbons.slice(1, 2))).toBe(plain(3));
+    expect(triangles(ribbons.slice(2))).toBe(plain(2));
+    // The junction is still covered by both carriageways.
+    expect(coversPoint(ribbons[0]?.mesh as MeshData, 0, 2.9)).toBe(true);
+    expect(coversPoint(ribbons[1]?.mesh as MeshData, -2.9, 0)).toBe(true);
   });
 
-  it("keeps a disc at a point one way visits twice", () => {
-    // A figure eight: (30, 0) is passed twice and is a junction of the way
-    // with itself, so it keeps its disc on both visits. (60, 30) turns 135
-    // degrees, over the mitre limit, and takes one bevel triangle.
+  it("builds every way from its own geometry alone, so roads can be built over a delta", () => {
+    // WHY: the M4a junction set made `buildRoads` a whole-call pass, the one
+    // reason roads left the decomposable builders. Each way alone must give
+    // exactly the ribbon it gives among the others.
+    const a = way(
+      { highway: "residential" },
+      [at(-30, 0), at(0, 0), at(30, 5)],
+      1,
+    );
+    const b = way({ highway: "footway" }, [at(0, 0), at(0, 30)], 2);
+    const together = buildRoads([a, b], { frame: FRAME });
+    const alone = [
+      ...buildRoads([a], { frame: FRAME }),
+      ...buildRoads([b], { frame: FRAME }),
+    ];
+    expect(alone.map((r) => [...r.mesh.positions])).toEqual(
+      together.map((r) => [...r.mesh.positions]),
+    );
+    expect(alone.map((r) => [...r.mesh.indices])).toEqual(
+      together.map((r) => [...r.mesh.indices]),
+    );
+  });
+
+  it("mitres through a point one way visits twice", () => {
+    // A figure eight: (30, 0) is passed twice, straight both times, and is
+    // mitred like any point (the strip overlaps itself in its own colour).
+    // (60, 30) turns 135 degrees, over the mitre limit, and takes one bevel
+    // triangle.
     const road = buildRoads(
       [
         way({ highway: "footway" }, [
@@ -839,7 +876,7 @@ describe("buildRoads - the mitre strip (M4a)", () => {
       ],
       { frame: FRAME },
     );
-    expect(triangles(road)).toBe(plain(6) + 2 * 8 + 1);
+    expect(triangles(road)).toBe(plain(6) + 1);
   });
 
   it("does not depend on the input order of the ways", () => {

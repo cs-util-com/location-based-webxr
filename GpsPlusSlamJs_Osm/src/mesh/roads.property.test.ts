@@ -65,6 +65,61 @@ const tags = fc.constantFrom<Record<string, string>>(
 
 const mitreLimit = fc.constantFrom(1, 1.5, 2, 4);
 
+/**
+ * A small street network: a 4 x 4 lattice of nodes 15-40 m apart, jittered,
+ * and two to five ways walking it from node to neighbouring node, so ways
+ * share nodes (ends on another way, crossings, a way visiting a node twice,
+ * hairpins where a walk steps back).
+ */
+const network = fc
+  .record({
+    spacing: fc.double({ min: 15, max: 40, noNaN: true }),
+    jitter: fc.array(fc.double({ min: -4, max: 4, noNaN: true }), {
+      minLength: 32,
+      maxLength: 32,
+    }),
+    ways: fc.array(
+      fc.record({
+        start: fc.nat({ max: 15 }),
+        steps: fc.array(fc.nat({ max: 3 }), { minLength: 1, maxLength: 6 }),
+        tags,
+      }),
+      { minLength: 2, maxLength: 5 },
+    ),
+  })
+  .map(({ spacing, jitter, ways }) => {
+    const nodes: P[] = [];
+    for (let i = 0; i < 16; i += 1) {
+      nodes.push({
+        x: (i % 4) * spacing + (jitter[2 * i] ?? 0),
+        y: Math.floor(i / 4) * spacing + (jitter[2 * i + 1] ?? 0),
+      });
+    }
+    const moves = [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ] as const;
+    return {
+      nodes,
+      ways: ways.map(({ start, steps, tags: t }) => {
+        const path = [start];
+        for (const step of steps) {
+          const at = path[path.length - 1] as number;
+          const [dx, dy] = moves[step] as readonly [number, number];
+          const col = (at % 4) + dx;
+          const row = Math.floor(at / 4) + dy;
+          // A step off the lattice is not taken.
+          if (col < 0 || col > 3 || row < 0 || row > 3) continue;
+          path.push(row * 4 + col);
+        }
+        return { path, tags: t };
+      }),
+    };
+  })
+  .filter(({ ways }) => ways.every((w) => w.path.length >= 2));
+
 function feature(t: Record<string, string>, points: readonly P[]): OsmFeature {
   return {
     type: "way",
@@ -171,21 +226,43 @@ function expectSegmentsCovered(
   }
 }
 
-/** What the builder drew at interior vertex `k`: a disc, a bevel or a mitre. */
-function joinAt(
-  mesh: MeshData,
+/**
+ * The join interior vertex `k` must get, from its geometry and the limit
+ * alone (never from the mesh):
+ * - a DISC at a hairpin, or where the inner mitre point would run past half
+ *   of either neighbouring segment (`h tan(t / 2)`): two joins on one short
+ *   segment could otherwise cross and fold the strip;
+ * - a BEVEL where the mitre is longer than `limit` half widths
+ *   (`1 / cos(t / 2)`) and the bevel's chord is at least 1 mm;
+ * - a MITRE otherwise.
+ * `undefined` within float noise of a threshold, where either answer is
+ * right and the case is skipped rather than asserted on a coin toss.
+ */
+function expectedJoin(
   enu: readonly P[],
   k: number,
   half: number,
   limit: number,
-): "disc" | "bevel" | "mitre" {
+): "disc" | "bevel" | "mitre" | undefined {
+  const a = enu[k - 1] as P;
   const p = enu[k] as P;
-  if (hasCentreAt(mesh, p)) return "disc";
-  const turn = turnDeg(enu[k - 1] as P, p, enu[k + 1] as P);
-  const ratio = 1 / Math.cos((turn * Math.PI) / 360);
-  // The builder mitres a bevel gap under 1 mm whatever the limit.
-  const gap = 2 * half * Math.sin((turn * Math.PI) / 360);
-  return ratio > limit && gap >= 1e-3 ? "bevel" : "mitre";
+  const c = enu[k + 1] as P;
+  const halfTurn = (turnDeg(a, p, c) * Math.PI) / 360;
+  const shortest = Math.min(
+    Math.hypot(p.x - a.x, p.y - a.y),
+    Math.hypot(c.x - p.x, c.y - p.y),
+  );
+  const near = (x: number, y: number): boolean =>
+    Math.abs(x - y) <= 1e-7 * Math.max(1, Math.abs(y));
+  if (near(halfTurn, Math.PI / 2)) return undefined;
+  if (halfTurn > Math.PI / 2) return "disc";
+  const reach = half * Math.tan(halfTurn);
+  if (near(reach, shortest / 2)) return undefined;
+  if (reach > shortest / 2) return "disc";
+  const ratio = 1 / Math.cos(halfTurn);
+  const chord = 2 * half * Math.sin(halfTurn);
+  if (near(ratio, limit) || near(chord, 1e-3)) return undefined;
+  return ratio > limit && chord >= 1e-3 ? "bevel" : "mitre";
 }
 
 /**
@@ -220,7 +297,7 @@ function expectOuterWedgeCovered(
 describe("road ribbons - properties (M4a mitre strip)", () => {
   // WHY THIS MATTERS: the strip replaces DEC-R2-13's disc at every vertex,
   // whose one promise was "no gap at any angle, with no special cases". The
-  // strip has special cases (mitre, bevel, fallback, junction), so the
+  // strip has special cases (mitre, bevel, fallback), so the
   // promise must hold for every polyline rather than for the handful the
   // unit tests draw: nothing folds, every segment's half-width rectangle and
   // every mitred outer wedge is covered, the triangle count is exactly its
@@ -248,13 +325,16 @@ describe("road ribbons - properties (M4a mitre strip)", () => {
 
           expectSegmentsCovered(tris, enu, half);
 
-          // Ends keep their discs; count the interior discs and bevels.
+          // Ends keep their discs; every interior vertex gets the join its
+          // geometry calls for, and a disc exactly where one is due.
           expect(hasCentreAt(mesh, enu[0] as P)).toBe(true);
           expect(hasCentreAt(mesh, enu[enu.length - 1] as P)).toBe(true);
           let discs = 2;
           let bevels = 0;
           for (let k = 1; k + 1 < enu.length; k += 1) {
-            const join = joinAt(mesh, enu, k, half, limit);
+            const join = expectedJoin(enu, k, half, limit);
+            fc.pre(join !== undefined);
+            expect(hasCentreAt(mesh, enu[k] as P)).toBe(join === "disc");
             if (join === "disc") discs += 1;
             else if (join === "bevel") bevels += 1;
             else expectOuterWedgeCovered(tris, enu, k, half);
@@ -270,17 +350,52 @@ describe("road ribbons - properties (M4a mitre strip)", () => {
     );
   });
 
-  // WHY: the city is rebuilt in a worker and diffed; a strip that depended
-  // on anything but its input would flicker between builds.
-  it("is deterministic", () => {
+  // WHY (M4a review MINOR 3 and NIT 7): ways share nodes in every real
+  // city, and since a junction is no longer a break the strip must stay
+  // whole through a shared node as through any other: every way's own
+  // segments covered, every shared node covered by each way at it, nothing
+  // folded, and each way's ribbon exactly what it is when built alone (the
+  // property that makes roads buildable over a delta).
+  it("keeps every junction of a random network covered, unfolded and per way", () => {
     fc.assert(
-      fc.property(polyline, tags, (points, t) => {
-        const once = buildRoads([feature(t, points)], { frame: FRAME });
-        const twice = buildRoads([feature(t, points)], { frame: FRAME });
-        expect(once[0]?.mesh.positions).toEqual(twice[0]?.mesh.positions);
-        expect(once[0]?.mesh.indices).toEqual(twice[0]?.mesh.indices);
+      fc.property(network, mitreLimit, ({ nodes, ways }, limit) => {
+        const features = ways.map((w, i) => ({
+          type: "way",
+          id: i + 1,
+          tags: w.tags,
+          geometry: w.path.map((n) => FRAME.toLatLng(nodes[n] as P)),
+        })) as unknown as OsmFeature[];
+        const together = buildRoads(features, {
+          frame: FRAME,
+          mitreLimit: limit,
+        });
+        const uses = new Map<number, number>();
+        for (const w of ways) {
+          for (const n of new Set(w.path)) uses.set(n, (uses.get(n) ?? 0) + 1);
+        }
+        ways.forEach((w, i) => {
+          const mesh = together[i]?.mesh as MeshData;
+          const tris = planTriangles(mesh);
+          for (const tri of tris) {
+            expect(signedArea(tri)).toBeGreaterThan(1e-6);
+          }
+          const enu = enuOf(w.path.map((n) => nodes[n] as P));
+          expectSegmentsCovered(tris, enu, roadWidthM(w.tags) / 2);
+          for (const n of w.path) {
+            if ((uses.get(n) ?? 0) < 2) continue;
+            const [q] = enuOf([nodes[n] as P]);
+            expect(tris.some((tri) => inside(tri, q as P))).toBe(true);
+          }
+          const [alone] = buildRoads([features[i] as OsmFeature], {
+            frame: FRAME,
+            mitreLimit: limit,
+          });
+          expect([...(alone?.mesh.positions ?? [])]).toEqual([
+            ...mesh.positions,
+          ]);
+        });
       }),
-      { numRuns: 100 },
+      { numRuns: 150 },
     );
   });
 });

@@ -16,13 +16,18 @@
  * rejected on his phone. The strip is gap-free without either cost.
  *
  * WHERE THE DISC SURVIVES (DEC-R2-13's other half): at the ends (a rounded cap
- * instead of a hard edge across the carriageway), at junctions (a point two
- * ways share, or one way visits twice: the strip breaks there and the disc
- * closes the join whichever ways meet), and as a FALLBACK where the inner
- * mitre point would run more than half way along a neighbouring segment, or at
- * a hairpin. That budget is what guarantees two joins on one short segment can
- * never cross and fold the strip; a clamped inner point would no longer lie on
- * both edge lines.
+ * instead of a hard edge across the carriageway), and as a FALLBACK where the
+ * inner mitre point would run more than half way along a neighbouring
+ * segment, or at a hairpin. That budget is what guarantees two joins on one
+ * short segment can never cross and fold the strip; a clamped inner point
+ * would no longer lie on both edge lines.
+ *
+ * A JUNCTION IS NOT A BREAK (M4a review, r1164). A way runs through a node it
+ * shares with another way like through any other point, mitred where it
+ * turns; the way that ends there brings its own end disc. Breaking the strip
+ * there bought nothing visible without a kerb, cost eight triangles a
+ * junction, and made every ribbon depend on the whole feature list. So each
+ * ribbon depends on its own way alone, and roads can be built over a delta.
  *
  * CLASS ORDER. A carriageway covers the footway that crosses it: each way is
  * lifted by its class rank, and its own discs sit under its own strip. The
@@ -336,11 +341,12 @@ export function buildRoads(
   options: BuildRoadsOptions,
 ): RoadRibbon[] {
   const { mitreLimit, rankStepM } = validatedOptions(options);
-  const ways = roadWays(features, options);
-  const junctions = junctionKeys(ways.map((w) => w.points));
-
   const ribbons: RoadRibbon[] = [];
-  for (const { feature, points } of ways) {
+  for (const feature of features) {
+    if (!isRoad(feature)) continue;
+    const geometry = (feature as { geometry?: readonly LatLng[] }).geometry;
+    if (geometry === undefined) continue;
+    const points = dedupe(geometry.map((p) => options.frame.toEnu(p)));
     const key = featureKey(feature);
     const widthM = roadWidthM(feature.tags);
     // A zero-length segment has no direction, so its normal is 0/0 = NaN —
@@ -349,16 +355,12 @@ export function buildRoads(
       ribbons.push({ feature: key, widthM, mesh: new MeshBuilder().build() });
       continue;
     }
-    const breaks = new Set<number>();
-    for (let i = 1; i + 1 < points.length; i += 1) {
-      if (junctions.has(pointKey(points[i] as EnuPoint))) breaks.add(i);
-    }
     const discLiftM =
       rankStepM * (roadRank(feature.tags) + TIE_LIFT_STEPS * keyFraction(key));
     ribbons.push({
       feature: key,
       widthM,
-      mesh: ribbonMesh(mitreStrip(points, widthM / 2, breaks, mitreLimit), {
+      mesh: ribbonMesh(mitreStrip(points, widthM / 2, mitreLimit), {
         points,
         half: widthM / 2,
         discLiftM,
@@ -388,51 +390,6 @@ function validatedOptions(options: BuildRoadsOptions): {
     );
   }
   return { mitreLimit, rankStepM };
-}
-
-/**
- * Every road's ENU points, before any ribbon is built: the junctions are a
- * property of the whole set, computed once per build.
- */
-function roadWays(
-  features: Iterable<OsmFeature>,
-  options: BuildRoadsOptions,
-): { feature: OsmFeature; points: EnuPoint[] }[] {
-  const ways: { feature: OsmFeature; points: EnuPoint[] }[] = [];
-  for (const feature of features) {
-    if (!isRoad(feature)) continue;
-    const geometry = (feature as { geometry?: readonly LatLng[] }).geometry;
-    if (geometry === undefined) continue;
-    ways.push({
-      feature,
-      points: dedupe(geometry.map((p) => options.frame.toEnu(p))),
-    });
-  }
-  return ways;
-}
-
-/**
- * A point's identity for the junction set. Exact: a node two ways share has
- * one coordinate, so both ways project it to the same floats in one frame.
- */
-function pointKey(p: EnuPoint): string {
-  return `${p.x},${p.y}`;
-}
-
-/** Points two or more ways share, or one way visits twice. */
-function junctionKeys(ways: readonly (readonly EnuPoint[])[]): Set<string> {
-  const seen = new Set<string>();
-  const junctions = new Set<string>();
-  for (const points of ways) {
-    const own = new Set<string>();
-    for (const p of points) {
-      const key = pointKey(p);
-      if (own.has(key) || seen.has(key)) junctions.add(key);
-      own.add(key);
-    }
-    for (const key of own) seen.add(key);
-  }
-  return junctions;
 }
 
 /** A stable [0, 1) per OSM key (FNV-1a), so a way's tie lift never moves. */
@@ -480,20 +437,18 @@ interface Strip {
 
 /**
  * One way's continuous strip with mitre joins. `points` are ENU metres
- * without consecutive duplicates (at least two), `half` the half width,
- * `breaks` the interior indices that are junctions.
+ * without consecutive duplicates (at least two), `half` the half width.
  *
  * At an interior point both sides meet at the mitre point, on the bisector of
  * the two segment normals at `h / cos(t/2)`. Above `mitreLimit` the outer
  * side is bevelled: its two plain corners plus one fill triangle, the inner
  * side keeping the mitre point. Where the inner point would run more than
  * half way along either neighbouring segment (`h tan(t/2)`), or at a hairpin,
- * the point falls back to a disc and the strip breaks there, as at a junction.
+ * the point falls back to a disc and the strip breaks there.
  */
 function mitreStrip(
   points: readonly EnuPoint[],
   half: number,
-  breaks: ReadonlySet<number>,
   mitreLimit: number,
 ): Strip {
   const n = points.length;
@@ -529,7 +484,7 @@ function mitreStrip(
     const folds =
       halfTurn >= Math.PI / 2 - 1e-9 ||
       half * Math.tan(halfTurn) > 0.5 * Math.min(dIn.len, dOut.len);
-    if (breaks.has(k) || folds) {
+    if (folds) {
       ends[k - 1] = plain(k, dIn);
       starts[k] = plain(k, dOut);
       discs.push(k);
@@ -626,7 +581,7 @@ function ribbonMesh(
     builder.triangle(corner(a), corner(c), corner(b));
   }
 
-  // The discs: ends, junctions and fallbacks, under the strip.
+  // The discs: ends and fallbacks, under the strip.
   for (const k of strip.discs) {
     const point = points[k] as EnuPoint;
     const centre = vertex(point.x, point.y, discLiftM);

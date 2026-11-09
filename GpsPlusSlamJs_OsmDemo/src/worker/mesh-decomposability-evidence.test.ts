@@ -6,16 +6,16 @@
  * per-feature builders are genuinely per-feature, so building `A` and `B`
  * separately and concatenating gives exactly what building `A ++ B` gives. If
  * that holds, an arriving tile costs only its own geometry instead of the whole
- * city's. **Three of the five builders violate it**, and this file is the
+ * city's. **Two of the five builders violate it**, and this file is the
  * executable record of which, because the assumption is the kind that gets
  * re-made every time somebody reads "the mesh grows linearly with features".
  *
- * **Since the M4a mitre strip (2026-11-09) roads are a third.** A road now
- * breaks its strip into a disc only where another way shares a node, and which
- * nodes are shared is a property of the whole call. The cost figures below were
- * measured with the earlier disc-per-vertex roads; with roads moved across, the
- * decomposable remainder is trees and plates, 68 ms of 648 ms (10.5%), which
- * only strengthens the verdict that took the work item off the build list.
+ * Roads stay on the decomposable side through the M4a mitre strip. Its first
+ * cut (r1161) broke the strip at every node another way shared, which made
+ * each ribbon depend on the whole call and moved roads across; the M4a
+ * review's MINOR 3 (r1164) dropped that break, so each ribbon is again built
+ * from its own way alone. The cost figures below were measured with the
+ * earlier disc-per-vertex roads.
  *
  * WHAT THIS COST, measured on devbox-win11 against a live res-7 Cologne tile
  * (32 261 features, 21.3 MB, 2026-09-21):
@@ -149,6 +149,7 @@ describe("builders that CAN be run over a delta", () => {
       (f: readonly OsmFeature[]) => readonly Built[]
     > = {
       trees: (f) => buildTrees(f, options),
+      roads: (f) => buildRoads(f, options),
       plates: (f) => buildAreaPlates(f, { ...options, clipTo }),
     };
 
@@ -201,33 +202,6 @@ describe("builders that CANNOT, and exactly how each one breaks", () => {
     expect(inThree.length).toBeGreaterThan(whole.length);
     // And it is a genuinely different SET, not a reordering.
     expect(featureSet(inThree)).not.toEqual(featureSet(whole));
-  });
-
-  it("buildRoads keeps every feature but LOSES junction discs across the cut", () => {
-    // THE MECHANISM: the mitre strip runs through a way's interior nodes and
-    // breaks into a disc only where another way shares the node (a junction).
-    // Whether a node is shared is decided over the whole feature list, so a
-    // way whose crossing partner landed in another piece is mitred straight
-    // through: the same roads come back with FEWER vertices. A delta would need
-    // the junction set of everything already held, which is a global pass.
-    const { features, centre } = fixture("street-corner");
-    const options = { frame: enuFrameAt(centre) };
-    const vertices = (items: readonly Built[]): number =>
-      items.reduce((sum, item) => sum + (item.mesh?.positions.length ?? 0), 0);
-
-    const whole = buildRoads(features, options);
-    const third = Math.floor(features.length / 3);
-    const inThree = [
-      ...buildRoads(features.slice(0, third), options),
-      ...buildRoads(features.slice(third, third * 2), options),
-      ...buildRoads(features.slice(third * 2), options),
-    ];
-
-    expect(whole.length).toBeGreaterThan(0);
-    // Same features...
-    expect(featureSet(inThree)).toEqual(featureSet(whole));
-    // ...fewer junction discs.
-    expect(vertices(inThree)).toBeLessThan(vertices(whole));
   });
 
   it("buildBarriers keeps every feature but MOVES their vertices", () => {

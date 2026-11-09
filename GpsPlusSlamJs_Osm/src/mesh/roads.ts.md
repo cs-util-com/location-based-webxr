@@ -23,6 +23,11 @@ footway crossing it.
 - `roadRank(tags) → 0 | 1 | 2 | 3` - the class order: paths (footway, path,
   steps, pedestrian, cycleway, bridleway, platform) 0, `track` / `service` 1,
   `residential` / `living_street` / `unclassified` 2, everything else 3.
+- `ROAD_MITRE_LIMIT`, `ROAD_RANK_STEP_M` and `roadRank` are exported from
+  this module for its tests, NOT from the package entry (M4a review MINOR 4):
+  no production caller needs them, and a consumer sets the look through
+  `buildCity`'s `roads: { mitreLimit, rankStepM }` (`CityRoadOptions`, see
+  `city.ts.md`), which passes them through to the validation below.
 - `RoadRibbon` — `{ feature, widthM, mesh }`.
 - `buildRoads(features, options) → RoadRibbon[]` - in input order. Throws only
   on invalid options (above); a degenerate way yields an empty mesh rather than
@@ -30,12 +35,16 @@ footway crossing it.
 
 ## Invariants & assumptions
 
-- **Not decomposable over a delta (since M4a).** The junction set (nodes two
-  ways share) is computed over the whole call, so building two halves and
-  concatenating mitres through junctions whose partner way is in the other
-  half. Always call it once over the full feature list, as `buildCity` does.
+- **Decomposable over a delta: each ribbon depends on its own way alone.**
+  Building two halves and concatenating gives exactly the whole call's
+  ribbons. M4a's first cut (r1161) broke the strip at every node another way
+  shared, which made it depend on the whole call; the review's MINOR 3
+  (r1164) dropped that break. Pinned by `roads.test.ts` ("builds every way
+  from its own geometry alone"), `roads.property.test.ts` (random networks,
+  alone equals together) and
   `GpsPlusSlamJs_OsmDemo/src/worker/mesh-decomposability-evidence.test.ts`
-  pins the mechanism.
+  (roads back among the builders that can run over a delta, on real
+  fixtures).
 - **Width comes from LANES, not from the highway class.** Precedence: `width`
   tag → `lanes` × lane width → the class's default lanes × lane width. This is
   the resolution of round 2's last open `[confirm]`, and the oracle is
@@ -78,16 +87,25 @@ footway crossing it.
     the outer side keeps both segment corners and one triangle closes the gap;
     the inner side still meets at the mitre point.
   - **The DISC survives where a strip cannot join**: at both ends (the rounded
-    cap), at a JUNCTION (a point shared by two ways, or visited twice by one,
-    matched on exact ENU coordinates, so the joining road's own disc and strip
-    meet there), and as a FALLBACK when the inner mitre would reach past half of
+    cap), and as a FALLBACK when the inner mitre would reach past half of
     either neighbouring segment (`h * tan(t / 2)`), or at a hairpin. There the
     strip breaks into two sections, each ending flat, and the disc covers both.
+  - **A JUNCTION IS NOT A BREAK (M4a review MINOR 3, r1164).** A way runs
+    through a node it shares with another way like through any other point,
+    mitred where it turns, bevelled or a fallback disc where the angle says so;
+    the way that ENDS there brings its own end disc, which covers the joint.
+    r1161 broke both strips there and added a disc: without a kerb that bought
+    nothing visible, cost eight triangles a junction and made roads
+    non-decomposable. The same holds for a point one way visits twice (a
+    figure eight): mitred, no disc. Junction coverage on random networks is a
+    property test.
   - **Triangle count is exactly 2 per segment + 1 per bevel + 8 per disc**, never
-    more than the old count. Measured on the three O3 scenes: Heidelberg 8,884 to
-    5,164, Meggen 18,490 to 10,786, Park Slope 11,404 to 9,484 (pinned in
-    `testdata/sites/site-roads.test.ts`); the same at mitre limits 1.5 to 4, and
-    about 9 % more at 1 (every join bevelled).
+    more than the old count. Measured on the three O3 scenes (disc per vertex,
+    then r1161 with junction breaks, then r1164): Heidelberg 8,884 / 5,164 /
+    4,700, Meggen 18,490 / 10,786 / 8,450, Park Slope 11,404 / 9,484 / 6,292
+    (r1164 pinned in `testdata/sites/site-roads.test.ts`). r1161's counts
+    were the same at mitre limits 1.5 to 4 and about 9 % higher at 1 (every
+    join bevelled).
   - **What M4a's spec asked for, and how the strip answers it**: the spec was
     written for O3's first answer, dropping the disc on near-straight vertices
     (`straightDeg`, a notch limit); the owner then chose the mitre strip, which
@@ -102,6 +120,10 @@ footway crossing it.
   step the highest road is 3.9 steps = 1.95 cm up, under the 4 cm rung
   `layer-order.ts` gives roads above the plates. Whether these millimetres separate
   on screen was measured: see the depth spike below.
+  - **The rank reads `highway` only; `bridge` and `layer` are ignored**, so a
+    footbridge over a primary is drawn under it where they overlap. Filed, not
+    fixed (M4a review MINOR 5):
+    [`2026-11-09-1241-road-class-order-ignores-bridge-and-layer-followup.md`](../../docs/2026-11-09-1241-road-class-order-ignores-bridge-and-layer-followup.md).
 - **Terrain is sampled PER VERTEX**, like the plates and unlike a building. A
   road is a long surface; one sample would cut into the hill at one end and float
   at the other — the artefact DEC-R2-19 removed.
@@ -169,30 +191,42 @@ const merged = mergeMeshes(ribbons.map((r) => r.mesh));
 ## Tests
 
 - `roads.test.ts`
-  - **`roadWidthM`** — the width tag wins (including `7 m`); lanes-derived width;
+  - **`roadWidthM`** - the width tag wins (including `7 m`); lanes-derived width;
     the single-lane 4 m rule; per-class defaults; `service` at 4 m; flat path
     widths; an unknown class gets a finite documented default; a malformed
     `lanes` is ignored.
-  - **`isRoad`** — accepts a highway way; rejects nodes, untagged ways, tunnels,
+  - **`isRoad`** - accepts a highway way; rejects nodes, untagged ways, tunnels,
     covered ways and highway areas.
-  - **`buildRoads`** — a straight way is covered across its width and not beyond
+  - **`buildRoads`** - a straight way is covered across its width and not beyond
     it; **no gap at a right-angle corner**; **no hole at a three-way junction**;
     per-vertex ground sampling; degenerate ways stay finite; all vertex data
     finite on a real-ish polyline.
-  - **The mitre strip** — exact triangle counts for a straight way, a mitre, a
+  - **The mitre strip** - exact triangle counts for a straight way, a mitre, a
     bevel (90 degrees at limit 1.4, 130 degrees at 2), the short-segment and
-    hairpin fallbacks, a junction disc and a figure eight; **a 4-degree curve
-    has no notch**; input order does not change the mesh; every triangle faces
-    up; invalid limits throw.
-  - **Class order** — the rank table; a carriageway above a crossing footway; a
+    hairpin fallbacks, a way running through a junction (no break, no disc)
+    and a figure eight (mitred through its doubled point); **a 4-degree curve
+    has no notch**; each way built from its own geometry alone; input order
+    does not change the mesh; every triangle faces up; invalid limits throw.
+  - **Class order** - the rank table; a carriageway above a crossing footway; a
     way's disc under its own strip; every lift in [0, 2 cm); a zero step puts
     everything on the ground; invalid steps throw.
-- `roads.property.test.ts` (fast-check) — on random polylines (3-40 m steps,
+- `roads.property.test.ts` (fast-check) - on random polylines (3-40 m steps,
   turns up to 175 degrees) and gentle curves, at limits 1, 1.5, 2 and 4: no
   folded triangle, every segment's half-width rectangle and every mitred outer
   wedge covered, ends carry discs, the count is exactly its parts and never
-  above the old one; and the build is deterministic.
-- `testdata/sites/site-roads.test.ts` — the three O3 scenes' counts, pinned.
+  above the old one. The expected join at each vertex (disc, bevel or mitre)
+  is computed in the test from the turn angle, the segment lengths and the
+  limit, not from the builder's own rule; a vertex within 1e-7 of a threshold
+  is skipped (`fc.pre`). A second property builds random small networks
+  (2-5 random walks on a jittered 4x4 lattice, so ways share nodes): no fold,
+  every segment covered, every shared node covered by each way through it, and
+  each way built alone equals the same way built with the others. (r1161's
+  "the build is deterministic" property was dropped as near-tautological.)
+- `testdata/sites/site-roads.test.ts` - the three O3 scenes' counts, pinned.
+- `city.test.ts` - `buildCity` passes `roads: { rankStepM, mitreLimit }`
+  through (a zero step puts every road on the ground, a 1.2 limit bevels a
+  right angle, `{}` equals `true`) and refuses invalid values as the
+  builder does.
 
 The coverage tests assert **coverage**, not only counts — a count passes on
 geometry full of holes. The helper does a plan-view point-in-triangle test and
