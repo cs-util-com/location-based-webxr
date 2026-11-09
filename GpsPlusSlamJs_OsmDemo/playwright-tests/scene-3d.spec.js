@@ -1202,10 +1202,19 @@ async function underTheWorldSteps(page) {
     let withBuildings = { count: 0, meanY: 1 };
     let skyOnly = { count: Infinity, meanY: 1 };
     let steps = 0;
+    // THE ROTATION STOPS AT THE POLE (turns 3-5 repeat turn 2 exactly), so
+    // two turns in a row with the same counts mean no further turn can
+    // change the answer: the loop ends there and the assertions below fail
+    // with their own message, instead of running all 8 turns (each booting
+    // a sky-only page) into the test's timeout (r1162 re-judge, NIT 1).
+    let previous = "";
     while (steps < 8) {
       await rotateUnder(page, 40);
       steps++;
       withBuildings = await countNonSkyPixels(page);
+      const counts = `${withBuildings.count}/${withBuildings.meanY}`;
+      if (counts === previous) break;
+      previous = counts;
       if (withBuildings.meanY >= 0.35) continue;
       skyOnly = await skyOnlyFrameAfter(page, steps);
       const geometry = withBuildings.count - skyOnly.count;
@@ -1596,6 +1605,13 @@ const buildingPixelLuma = async (page) => {
   return page.evaluate(() => {
     const a = window.__buildingLumaWith;
     const b = window.__buildingLumaWithout;
+    // A resize between the two snapshots would compare unrelated pixels
+    // (or read past the shorter one) and still return a number.
+    if (!a || !b || a.length !== b.length) {
+      throw new Error(
+        `buildingPixelLuma: the frames differ in size (${a?.length} and ${b?.length} bytes); the canvas changed between the snapshots`,
+      );
+    }
     let sum = 0;
     let n = 0;
     for (let i = 0; i < a.length; i += 4) {
@@ -1700,8 +1716,11 @@ test.describe("the time of day", () => {
     //
     // THE NIGHT'S CITY IS NOT BLACK (r1162, the r1158 review's MINOR 3): the
     // margins alone reward darkness, and the night floor is what keeps the
-    // city readable at −30°, so the buildings' mean luma with the heat grid
-    // off is held there (NIGHT_BUILDING_LUMA_MIN says what it rests on).
+    // city readable at −30°, so the buildings' mean luma is held there
+    // (NIGHT_BUILDING_LUMA_MIN says what it rests on). The heat grid is ON
+    // then, as `marginFor` leaves it: `buildingPixelLuma` reads only the
+    // pixels the buildings change, so the cells count only where a building
+    // hides them, and the luma read there is the building's.
     ["nautical dusk at −12.1°", "2026-09-23", "19:16", null],
     [
       "the night at −30.1°",
