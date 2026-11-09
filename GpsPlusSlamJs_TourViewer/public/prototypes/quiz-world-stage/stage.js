@@ -1172,6 +1172,7 @@ export function runStage(options) {
   let cardHandle = null;
   let panelHandle = null;
   let finished = false;
+  let skipWakesAt = 0;
   let said = { text: "", mood: "calm", ask: false, eyebrow: "A question" };
   let outside = false;
   let sampleName = sampleNames[0];
@@ -1374,9 +1375,18 @@ export function runStage(options) {
     else if (finished)
       ui.acts.innerHTML =
         '<button type="button" class="btn primary" data-act="next">Continue</button>';
-    else
+    else {
       ui.acts.innerHTML =
         '<button type="button" class="btn" data-act="next">Skip this question</button>';
+      // Skip appears where Continue was just tapped: it wakes a moment later,
+      // so a double tap does not skip the question it just opened.
+      const wait = skipWakesAt - performance.now();
+      if (wait > 0) {
+        const skip = ui.acts.querySelector('[data-act="next"]');
+        skip.disabled = true;
+        setTimeout(() => (skip.disabled = false), wait);
+      }
+    }
   }
 
   function restart() {
@@ -1397,6 +1407,7 @@ export function runStage(options) {
     if (act !== "next") return;
     if (step === "before") {
       step = "kind";
+      skipWakesAt = performance.now() + 450;
       openWorld();
       renderStory(true);
     } else if (step === "kind") {

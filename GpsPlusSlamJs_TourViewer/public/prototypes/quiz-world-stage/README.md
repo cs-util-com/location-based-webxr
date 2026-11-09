@@ -65,6 +65,8 @@ export const kind = {
 };
 ```
 
+- `read(v, view, tools)`: `view` mirrors the app's envelope view; this stage never sets it and
+  always passes `null`, so a kind must work without it.
 - `world` runs when the story reaches the kind, and in Edit. The object stays until Restart.
 - `object`: metres, Y up, origin at the item's foot. Never set its own position or heading from
   outside knowledge: the stage hangs it from a holder.
