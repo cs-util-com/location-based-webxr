@@ -20,6 +20,7 @@ import {
   type TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
+  isStory,
   tourStories,
   type TourStory,
 } from "gps-plus-slam-app-framework/ar/tour-story";
@@ -373,7 +374,7 @@ function commandsKeepTheTour(
           // it takes is one step.
           const items = (tour()?.stations ?? []).flatMap((st) =>
             st.children.flatMap((ch) =>
-              ch.kind === "story"
+              isStory(ch)
                 ? [
                     { st, id: ch.id },
                     ...ch.children.map((e) => ({ st, id: e.id })),
@@ -545,9 +546,9 @@ function freeByName(json: Record<string, unknown>): TourManifest {
     stations: tour.stations.map((station) => ({
       ...station,
       children: [
-        ...station.children.filter((c) => c.kind === "story"),
+        ...station.children.filter((c) => isStory(c)),
         ...station.children
-          .filter((c) => c.kind !== "story")
+          .filter((c) => !isStory(c))
           .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
       ],
     })),

@@ -28,7 +28,7 @@
  * @see inspector-model.ts.md
  */
 import {
-  isTourStory,
+  isStory,
   isTourStoryBlock,
   tourChildPlace,
   tourStories,
@@ -647,10 +647,12 @@ function movesOf(
   const place = tourChildPlace({ stations }, id);
   if (place === null) return { step: null, targets: [], stations: [] };
   const { station, story } = place;
-  const own = story === undefined ? station.children[place.index] : undefined;
+  const own =
+    story === undefined && place.path.length === 0
+      ? station.children[place.index]
+      : undefined;
   // The free items have no order: a free item has no step.
-  const ordered =
-    story !== undefined || (own !== undefined && isTourStory(own));
+  const ordered = story !== undefined || (own !== undefined && isStory(own));
   return {
     step: ordered
       ? {

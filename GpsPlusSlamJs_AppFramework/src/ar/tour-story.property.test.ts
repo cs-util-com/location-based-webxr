@@ -39,12 +39,13 @@ import {
   type TourTextRule,
 } from './tour-blocks';
 import { parseTourAssets } from './tour-assets';
+import { tourFreeBlocks } from './tour-station-pose';
 import {
   checkTourChildIdsUnique,
+  isStory,
   parseTourStationChildren,
   TOUR_STORY_TITLE_RULE,
   tourChildrenBlocks,
-  tourChildrenFreeBlocks,
   tourChildrenPlace,
   tourChildrenStories,
   type TourChildDrop,
@@ -151,16 +152,16 @@ function children(
   return childrenRead(list, options).children;
 }
 
-/** Every child of a children list, stories' children included, in
- *  document order. */
+/** Every child of a children list, the children of its folders (stories
+ *  among them) included, in document order. */
 function allChildren(list: readonly Child[]): Child[] {
   return list.flatMap((c) =>
-    c['kind'] === 'story' ? [c, ...(c['children'] as Child[])] : [c]
+    c['kind'] === 'folder' ? [c, ...allChildren(c['children'] as Child[])] : [c]
   );
 }
 
 const isBlockRecord = (c: Child): boolean =>
-  !['story', 'choice', 'quiz'].includes(c['kind'] as string);
+  !['folder', 'choice', 'quiz'].includes(c['kind'] as string);
 
 const CHILDREN_SIZES = [
   { maxStories: 1, maxFreeBlocks: 1, maxStoryChildren: 2 },
@@ -199,11 +200,9 @@ describe('children (properties)', () => {
             all.filter(isBlockRecord).map((c) => c['id'])
           );
           // Stories and free blocks split the list, each in its order.
-          expect(tourChildrenStories(parsed)).toEqual(
-            parsed.filter((c) => c.kind === 'story')
-          );
-          expect(tourChildrenFreeBlocks(parsed)).toEqual(
-            parsed.filter((c) => c.kind !== 'story')
+          expect(tourChildrenStories(parsed)).toEqual(parsed.filter(isStory));
+          expect(tourFreeBlocks({ children: parsed })).toEqual(
+            parsed.filter((c) => !isStory(c))
           );
           const ids = all.map((c) => c['id'] as string);
           const places = ids.map((id) => tourChildrenPlace(parsed, id));
@@ -314,7 +313,7 @@ function injectNewerChildren(list: Child[], pick: number): void {
     }
   };
   for (const child of list) {
-    if (child['kind'] !== 'story') {
+    if (child['role'] !== 'story') {
       block(child, false);
       continue;
     }
@@ -380,7 +379,7 @@ describe('a list of a newer minor (properties)', () => {
             )
           ).toEqual([]);
           expect(
-            tourChildrenFreeBlocks(read).filter(
+            tourFreeBlocks({ children: read }).filter(
               (b) =>
                 !(TOUR_FREE_BLOCK_VIEWS[b.kind] as readonly string[]).includes(
                   b.view
@@ -457,7 +456,15 @@ describe('a list of a newer minor (properties)', () => {
           pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
         });
         const read = children(
-          [{ id: 'story', kind: 'story', title: 'T', children: kids }],
+          [
+            {
+              id: 'story',
+              kind: 'folder',
+              role: 'story',
+              title: 'T',
+              children: kids,
+            },
+          ],
           { lenient: true }
         );
         expect(tourChildrenStories(read)[0]?.children).toEqual([]);

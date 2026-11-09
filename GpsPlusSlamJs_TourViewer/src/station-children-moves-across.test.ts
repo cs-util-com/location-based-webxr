@@ -42,7 +42,8 @@ const line = (id: string, view = "card"): TourStoryChild =>
 
 const story = (id: string, children: TourStoryChild[]): TourStory => ({
   id,
-  kind: "story",
+  kind: "folder",
+  role: "story",
   title: id,
   children,
 });

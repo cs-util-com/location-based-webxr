@@ -38,7 +38,10 @@ import type { TourBlock } from './tour-blocks.js';
 import type { TourLocalPose } from './tour-items.js';
 import type { TourManifest, TourObject } from './tour-manifest.js';
 import {
-  tourChildrenFreeBlocks,
+  isTourFolder,
+  isTourBlockChild,
+  type TourFolder,
+  type TourStationChild,
   type TourStationHolder,
 } from './tour-story.js';
 
@@ -139,10 +142,99 @@ function placed(
   } as TourObject;
 }
 
-/** A station's FREE blocks: the block children of the station itself, which
- *  stand in the world while it is shown. */
+/** What a plain folder applies to the poses of its children. */
+export type TourFolderFrame = Pick<TourFolder, 'pose' | 'scale'>;
+
+/**
+ * Where a pose given in a plain folder's frame stands in the folder's
+ * holder: `p = p_f + R_f (s p_c)`, `q = R_f q_c`. A folder with no pose and
+ * no scale (or scale 1) is the identity: the pose comes back as it is,
+ * bit for bit.
+ */
+export function composeTourFolderPose(
+  folder: TourFolderFrame,
+  pose: TourLocalPose
+): TourLocalPose {
+  const scale = folder.scale ?? 1;
+  if (folder.pose === undefined && scale === 1) return pose;
+  const frame: TourLocalPose = folder.pose ?? {
+    position: [0, 0, 0],
+    rotation: IDENTITY,
+  };
+  const [x, y, z] = pose.position;
+  const [n, u, e] = rotateVectorByQuaternion(frame.rotation, [
+    x * scale,
+    y * scale,
+    z * scale,
+  ]);
+  const [fn, fu, fe] = frame.position;
+  return {
+    // `+ 0` canonicalizes -0, as `localPoseOf` does.
+    position: [fn + n + 0, fu + u + 0, fe + e + 0],
+    rotation: unit(multiply(frame.rotation, pose.rotation)),
+  };
+}
+
+/** The inverse of {@link composeTourFolderPose}: a pose in the folder's
+ *  holder, given in the folder's own frame. */
+export function decomposeTourFolderPose(
+  folder: TourFolderFrame,
+  pose: TourLocalPose
+): TourLocalPose {
+  const scale = folder.scale ?? 1;
+  if (folder.pose === undefined && scale === 1) return pose;
+  const frame: TourLocalPose = folder.pose ?? {
+    position: [0, 0, 0],
+    rotation: IDENTITY,
+  };
+  const inverse = conjugate(frame.rotation);
+  const [n, u, e] = rotateVectorByQuaternion(inverse, [
+    pose.position[0] - frame.position[0],
+    pose.position[1] - frame.position[1],
+    pose.position[2] - frame.position[2],
+  ]);
+  return {
+    position: [n / scale + 0, u / scale + 0, e / scale + 0],
+    rotation: unit(multiply(inverse, pose.rotation)),
+  };
+}
+
+/** A free block as the world shows it: its pose in its station's frame
+ *  (its folders' poses composed in), and the product of its folders'
+ *  scales (1 outside any folder). */
+export interface TourFlatBlock {
+  readonly block: TourBlock;
+  readonly scale: number;
+}
+
+/**
+ * The free blocks of a children list with every plain folder flattened
+ * away, at any depth: each block's pose composed through its folders
+ * ({@link composeTourFolderPose}), innermost first, and their scales
+ * multiplied. Stories are not free blocks and are left out. In document
+ * order. What the scale means for a block's size is the renderer's: none
+ * applies it yet, so a scaled folder moves its blocks apart without
+ * resizing them.
+ */
+export function tourFlatFreeBlocks(
+  children: readonly TourStationChild[]
+): TourFlatBlock[] {
+  return children.flatMap((child): TourFlatBlock[] => {
+    if (isTourBlockChild(child)) return [{ block: child, scale: 1 }];
+    if (!isTourFolder(child)) return [];
+    const folderScale = child.scale ?? 1;
+    return tourFlatFreeBlocks(child.children).map(({ block, scale }) => ({
+      block: { ...block, pose: composeTourFolderPose(child, block.pose) },
+      scale: folderScale * scale,
+    }));
+  });
+}
+
+/** A station's FREE blocks, which stand in the world while it is shown: the
+ *  block children of the station and of its plain folders, each with its
+ *  pose in the station's frame ({@link tourFlatFreeBlocks}). */
 export function tourFreeBlocks(station: TourStationHolder): TourBlock[] {
-  return tourChildrenFreeBlocks(station.children);
+  return tourFlatFreeBlocks(station.children).map(({ block }) => block);
 }
 
 /** The tour's free blocks in the world, each naming its station, in

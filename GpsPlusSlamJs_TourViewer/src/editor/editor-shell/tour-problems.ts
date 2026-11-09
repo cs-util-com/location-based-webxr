@@ -9,7 +9,8 @@
  *
  * @see tour-problems.ts.md
  */
-import { isTourStory } from "gps-plus-slam-app-framework/ar/tour-story";
+import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import { isStory } from "gps-plus-slam-app-framework/ar/tour-story";
 import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
@@ -173,8 +174,11 @@ export function tourProblems(stations: readonly TourStation[]): ProblemGroup[] {
  *  story with a child that plays (a choice is content too, and holds no
  *  block; a quiz does not play yet). */
 function hasContent(station: TourStation): boolean {
-  return station.children.some(
-    (child) => !isTourStory(child) || child.children.some(isPlayableInK4),
+  return (
+    tourFreeBlocks(station).length > 0 ||
+    station.children.some(
+      (child) => isStory(child) && child.children.some(isPlayableInK4),
+    )
   );
 }
 

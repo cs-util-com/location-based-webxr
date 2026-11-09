@@ -1,11 +1,20 @@
 /**
  * What a station holds in `tour.json` version 5: ONE ordered list of
- * CHILDREN, each a free block (standing in the world) or a STORY, which
- * holds its own ordered list of blocks, choices and quizzes. A block lives
- * in exactly one place, so being inside a story is what shows it. Ids of
- * blocks, stories, choices and quizzes are one namespace across the tour; a
- * choice's `goto` names a child of its own story. The order of the file is
- * kept as written: nothing assumes free blocks first.
+ * CHILDREN, each a free block (standing in the world) or a FOLDER. Every
+ * container is a folder (`kind: 'folder'`); its `role` says what rules it
+ * follows:
+ *
+ * - a STORY (`role: 'story'`) holds its own ordered list of blocks,
+ *   choices and quizzes, and stands only at a station's top. A block lives
+ *   in exactly one place, so being inside a story is what shows it.
+ * - a PLAIN folder (no role) groups free blocks and other plain folders,
+ *   with an optional local `pose` and uniform `scale` that its children's
+ *   poses are relative to (`tour-station-pose.ts` composes them). It never
+ *   holds a story, and a story never holds a folder.
+ *
+ * Ids of blocks, folders, choices and quizzes are one namespace across the
+ * tour; a choice's `goto` names a child of its own story. The order of the
+ * file is kept as written: nothing assumes free blocks first.
  *
  * - a story block: any view of its kind, and an `advance`: how it moves on,
  *   a tap (also when absent), by itself after some seconds, or by itself
@@ -22,7 +31,8 @@
  *   something to play.
  *
  * LENIENT for a NEWER MINOR (as `tour-blocks.ts`): a child of an unknown
- * kind, a quiz of an unknown answer type and a block the reader skipped are
+ * kind, a folder of an unknown role or in a place this reader does not
+ * take, a quiz of an unknown answer type and a block the reader skipped are
  * left out and reported; a choice then keeps only the options whose child
  * is still there (an option with no `goto` always is), and a choice left
  * with fewer than two goes too - repeated, since that can strand another.
@@ -51,6 +61,7 @@ import {
   tourTextOf,
   type TourFail,
 } from './tour-fields.js';
+import { parseTourLocalPose, type TourLocalPose } from './tour-items.js';
 
 export type TourStepAdvance =
   | { readonly mode: 'tap' }
@@ -302,10 +313,21 @@ function parseChoice(
 
 // --- a station's children ----------------------------------------------
 
-/** The kinds a child may have besides the block kinds: a station's story,
- *  and a story's choice and quiz. Disjoint from `TourBlockKind`, so `kind`
- *  alone tells every child apart. */
-export const TOUR_CHILD_KINDS = ['story', 'choice', 'quiz'] as const;
+/** The kinds a child may have besides the block kinds: a station's folder
+ *  (a story is a folder with `role: 'story'`), and a story's choice and
+ *  quiz. Disjoint from `TourBlockKind`, so `kind` alone tells a block from
+ *  everything else. */
+export const TOUR_CHILD_KINDS = ['folder', 'choice', 'quiz'] as const;
+
+/** The roles a folder may have; no role is a plain folder. */
+export const TOUR_FOLDER_ROLES = ['story'] as const;
+
+/** A plain folder's uniform `scale`: a finite number in this range, both
+ *  ends included (1 when absent). The bounds keep a child's composed
+ *  offset within a few orders of magnitude of its own: nothing below a
+ *  hundredth (which would collapse a group to a point) or above a hundred
+ *  (which would throw a metre-sized group kilometres away). */
+export const TOUR_FOLDER_SCALE_RANGE = { min: 0.01, max: 100 } as const;
 
 /** A story's title: required, at most 80 code points by `tourTextCount`
  *  (the picker shows it). */
@@ -336,16 +358,38 @@ export interface TourQuizEntry extends TourQuiz {
 /** A story's child, in the order a visitor meets it. */
 export type TourStoryChild = TourStoryBlock | TourChoice | TourQuizEntry;
 
-/** A story: a title and its own ordered children; may be empty. */
+/** A story: a folder with the story role, a title and its own ordered
+ *  children; may be empty. It stands only at a station's top. */
 export interface TourStory {
   readonly id: string;
-  readonly kind: 'story';
+  readonly kind: 'folder';
+  readonly role: 'story';
   readonly title: string;
   readonly children: readonly TourStoryChild[];
 }
 
-/** A station's child: a free block (standing in the world) or a story. */
-export type TourStationChild = TourBlock | TourStory;
+/** What a plain folder holds: free blocks and plain folders. */
+export type TourFolderChild = TourBlock | TourFolder;
+
+/** A plain folder: free blocks and plain folders grouped, their poses
+ *  relative to the folder's own `pose` (none: the holder's frame) and
+ *  scaled by its `scale` (absent: 1). May be empty. */
+export interface TourFolder {
+  readonly id: string;
+  readonly kind: 'folder';
+  /** Never set: what tells a plain folder from a story. */
+  readonly role?: undefined;
+  readonly pose?: TourLocalPose;
+  readonly scale?: number;
+  readonly children: readonly TourFolderChild[];
+}
+
+/** Anything that holds children in a station: a story or a plain folder. */
+export type TourContainer = TourStory | TourFolder;
+
+/** A station's child: a free block (standing in the world), a story, or a
+ *  plain folder. */
+export type TourStationChild = TourBlock | TourStory | TourFolder;
 
 /** What the children reader left out: a block or a block's field (as the
  *  block reader reports it), or a whole child it cannot show in its place
@@ -558,26 +602,117 @@ function readStory(
     return ctx.fail(`${titleAt} ${checked.reason}`);
   }
   const children = readStoryChildren(v.children, `${at}.children`, ctx);
-  if (checked.ok) return { id, kind: 'story', title: checked.value, children };
+  // Nothing places a story by a pose yet: one carrying a pose or a scale
+  // would be written back as if it meant something. A newer minor may give
+  // it one; this reader ignores the fields then, as any unknown field.
+  if ((v.pose !== undefined || v.scale !== undefined) && !ctx.lenient) {
+    return ctx.fail(`"${at}" is a story: it takes no pose or scale`);
+  }
+  if (checked.ok) {
+    return {
+      id,
+      kind: 'folder',
+      role: 'story',
+      title: checked.value,
+      children,
+    };
+  }
   const reason = `${titleAt} ${checked.reason}`;
   if (!ctx.lenient) return ctx.fail(reason);
   return dropChild(ctx, id, reason);
 }
 
+/** A child in a place this reader does not take (a story inside a plain
+ *  folder): refused at this reader's own minor, skipped and reported in a
+ *  newer one. */
+function misplacedChild(ctx: ChildrenContext, id: string, reason: string) {
+  if (!ctx.lenient) return ctx.fail(reason);
+  return dropChild(ctx, id, reason);
+}
+
+/** A plain folder's scale: absent, or a finite number in
+ *  {@link TOUR_FOLDER_SCALE_RANGE}. */
+function readFolderScale(
+  value: unknown,
+  at: string,
+  fail: TourFail
+): number | undefined {
+  if (value === undefined) return undefined;
+  const { min, max } = TOUR_FOLDER_SCALE_RANGE;
+  if (!isFiniteNumber(value) || value < min || value > max) {
+    return fail(
+      `"${at}" must be a number from ${String(min)} to ${String(max)}`
+    );
+  }
+  return value;
+}
+
+/** A plain folder: its pose and scale if given, and its children, each a
+ *  free block or a plain folder (a story here is misplaced). */
+function readPlainFolder(
+  v: Record<string, unknown>,
+  id: string,
+  at: string,
+  ctx: ChildrenContext
+): TourFolder {
+  const pose =
+    v.pose === undefined
+      ? undefined
+      : parseTourLocalPose(v.pose, `${at}.pose`, ctx.fail);
+  const scale = readFolderScale(v.scale, `${at}.scale`, ctx.fail);
+  const children = requireTourArray(
+    v.children,
+    `${at}.children`,
+    ctx.fail
+  ).flatMap((c, i): TourFolderChild[] => {
+    const child = readStationChild(
+      c,
+      `${at}.children[${String(i)}]`,
+      ctx,
+      false
+    );
+    return child === null || isStory(child) ? [] : [child];
+  });
+  return {
+    id,
+    kind: 'folder',
+    ...(pose === undefined ? {} : { pose }),
+    ...(scale === undefined ? {} : { scale }),
+    children,
+  };
+}
+
+/** A station's child, at its top (`top`) or inside a plain folder: a
+ *  free block, a story (only at the top) or a plain folder. */
 function readStationChild(
   value: unknown,
   at: string,
-  ctx: ChildrenContext
+  ctx: ChildrenContext,
+  top: boolean
 ): TourStationChild | null {
   if (!isRecord(value)) return ctx.fail(`"${at}" must be an object`);
   const id = requireTourId(value.id, `${at}.id`, ctx.fail);
   ctx.ids.push(id);
-  const { kind } = value;
+  const { kind, role } = value;
   if (typeof kind === 'string' && BLOCK_KINDS.has(kind)) {
     return readFreeBlock(value, at, ctx);
   }
-  if (kind === 'story') return readStory(value, id, at, ctx);
-  return unknownChild(ctx, id, at, 'a block kind or story');
+  if (kind !== 'folder') {
+    return unknownChild(ctx, id, at, 'a block kind or folder');
+  }
+  if (role === 'story') {
+    return top
+      ? readStory(value, id, at, ctx)
+      : misplacedChild(
+          ctx,
+          id,
+          `"${at}" is a story inside a folder: a story stands only at a station's top`
+        );
+  }
+  if (role !== undefined) {
+    return misplacedChild(ctx, id, `"${at}.role" must be "story" or absent`);
+  }
+  return readPlainFolder(value, id, at, ctx);
 }
 
 /** One station's children as read, and every child id its file names -
@@ -590,10 +725,11 @@ export interface TourStationChildrenRead {
 
 /**
  * Read one station's `children` (the list `value`, at `at`): every block
- * checked (`tour-blocks.ts`), every free block standing in the world, every
- * story titled, every `goto` naming a child of its own story, and every id
- * unique in the station (blocks, stories, choices and quizzes are one
- * namespace; across stations: {@link checkTourChildIdsUnique}). The order
+ * checked (`tour-blocks.ts`), every free block standing in the world (in a
+ * plain folder too), every story titled and at the station's top, every
+ * `goto` naming a child of its own story, and every id unique in the
+ * station (blocks, folders, choices and quizzes are one namespace; across
+ * stations: {@link checkTourChildIdsUnique}). The order
  * of the file is kept. Throws through `fail` naming the first violation; a
  * lenient reader (a newer minor) leaves out what it cannot show, reports
  * each through `onDropped`, prunes the options that named it and drops the
@@ -615,7 +751,7 @@ export function parseTourStationChildren(
   };
   const children = requireTourArray(value, at, options.fail).flatMap(
     (c, i): TourStationChild[] => {
-      const child = readStationChild(c, `${at}[${String(i)}]`, ctx);
+      const child = readStationChild(c, `${at}[${String(i)}]`, ctx, true);
       return child === null ? [] : [child];
     }
   );
@@ -623,9 +759,23 @@ export function parseTourStationChildren(
   return { children, ids: ctx.ids };
 }
 
-/** Whether a station's child is a story (else it is a free block). */
-export function isTourStory(child: TourStationChild): child is TourStory {
-  return child.kind === 'story';
+// --- what a child is: a block, a story or a plain folder ----------------
+
+/** Whether a station's child is a story: the one way to ask, since a story
+ *  is a folder by its role. */
+export function isStory(child: TourStationChild): child is TourStory {
+  return child.kind === 'folder' && child.role === 'story';
+}
+
+/** Whether a station's child is a plain folder. */
+export function isTourFolder(child: TourStationChild): child is TourFolder {
+  return child.kind === 'folder' && child.role === undefined;
+}
+
+/** Whether a station's child is a block (else a story or a plain
+ *  folder). */
+export function isTourBlockChild(child: TourStationChild): child is TourBlock {
+  return child.kind !== 'folder';
 }
 
 /** Whether a story's child is a block (else a choice or a quiz). */
@@ -635,19 +785,12 @@ export function isTourStoryBlock(
   return child.kind !== 'choice' && child.kind !== 'quiz';
 }
 
-/** The stories of a children list, in its order. */
+/** The stories of a children list, in its order. Does not descend: a story
+ *  stands only at a station's top. */
 export function tourChildrenStories(
   children: readonly TourStationChild[]
 ): TourStory[] {
-  return children.filter(isTourStory);
-}
-
-/** The free blocks of a children list (they stand in the world), in its
- *  order. */
-export function tourChildrenFreeBlocks(
-  children: readonly TourStationChild[]
-): TourBlock[] {
-  return children.filter((c): c is TourBlock => !isTourStory(c));
+  return children.filter(isStory);
 }
 
 /** The blocks of a story's children, in its order. */
@@ -657,36 +800,55 @@ export function tourStoryChildrenBlocks(
   return children.filter(isTourStoryBlock);
 }
 
-/** Every block of a children list, free and in stories, each once, in
- *  document order. */
+/** Every block of a children list - free, in plain folders at any depth and
+ *  in stories - each once, in document order. A block in a plain folder
+ *  comes as the file has it: its pose relative to its folder (the world
+ *  view composes it: `tourFreeBlocks` in `tour-station-pose.ts`). */
 export function tourChildrenBlocks(
   children: readonly TourStationChild[]
 ): (TourBlock | TourStoryBlock)[] {
-  return children.flatMap((c) =>
-    isTourStory(c) ? tourStoryChildrenBlocks(c.children) : [c]
-  );
+  return children.flatMap((c): (TourBlock | TourStoryBlock)[] => {
+    if (isStory(c)) return tourStoryChildrenBlocks(c.children);
+    if (isTourFolder(c)) return tourChildrenBlocks(c.children);
+    return [c];
+  });
 }
 
-/** Where a child is: its index in the station's list, or its story and its
- *  index there. */
+/** Where a child is: the containers that hold it, outermost first (none:
+ *  the station's own list), its index in the innermost one's children, and
+ *  its story when the innermost container is one. */
 export interface TourChildrenPlace {
   readonly index: number;
+  readonly path: readonly TourContainer[];
   readonly story?: TourStory;
 }
 
-/** The place of the child with `id` in a children list; null when none
- *  has it. */
+function placeIn(
+  children: readonly (TourStationChild | TourStoryChild)[],
+  id: string,
+  path: readonly TourContainer[]
+): TourChildrenPlace | null {
+  for (const [index, child] of children.entries()) {
+    if (child.id === id) {
+      const inner = path[path.length - 1];
+      return inner !== undefined && isStory(inner)
+        ? { index, path, story: inner }
+        : { index, path };
+    }
+    if (child.kind !== 'folder') continue;
+    const found = placeIn(child.children, id, [...path, child]);
+    if (found !== null) return found;
+  }
+  return null;
+}
+
+/** The place of the child with `id` in a children list, at any depth; null
+ *  when none has it. */
 export function tourChildrenPlace(
   children: readonly TourStationChild[],
   id: string
 ): TourChildrenPlace | null {
-  for (const [index, child] of children.entries()) {
-    if (child.id === id) return { index };
-    if (!isTourStory(child)) continue;
-    const inStory = child.children.findIndex((c) => c.id === id);
-    if (inStory >= 0) return { index: inStory, story: child };
-  }
-  return null;
+  return placeIn(children, id, []);
 }
 
 /** Child ids are unique across the tour, not only within a station: one
@@ -703,7 +865,8 @@ export function checkTourChildIdsUnique(
   );
 }
 
-/** A station's stories, in its order. */
+/** A station's stories, in its order (its top only: a story stands
+ *  nowhere else). */
 export function tourStories(
   station: Pick<TourStationHolder, 'children'>
 ): TourStory[] {
@@ -722,24 +885,31 @@ export function tourStationStoryBlocks(
   return tourStories(station).flatMap(tourStoryBlocks);
 }
 
-/** Every block of a station, free and in stories, each once, in document
- *  order. */
+/** Every block of a station, free, in plain folders and in stories, each
+ *  once, in document order ({@link tourChildrenBlocks}). */
 export function tourStationBlocks(
   station: Pick<TourStationHolder, 'children'>
 ): (TourBlock | TourStoryBlock)[] {
   return tourChildrenBlocks(station.children);
 }
 
-/** Every id of a station's children, stories and the children of stories
- *  included, in document order: one namespace across the tour. */
+function childIds(
+  children: readonly (TourStationChild | TourStoryChild)[]
+): string[] {
+  return children.flatMap((child) =>
+    child.kind === 'folder'
+      ? [child.id, ...childIds(child.children)]
+      : [child.id]
+  );
+}
+
+/** Every id of a station's children, the folders' and stories' and what
+ *  they hold at any depth included, in document order: one namespace
+ *  across the tour. */
 export function tourStationChildIds(
   station: Pick<TourStationHolder, 'children'>
 ): string[] {
-  return station.children.flatMap((child) =>
-    isTourStory(child)
-      ? [child.id, ...child.children.map((c) => c.id)]
-      : [child.id]
-  );
+  return childIds(station.children);
 }
 
 /** Where a child of a tour stands. */

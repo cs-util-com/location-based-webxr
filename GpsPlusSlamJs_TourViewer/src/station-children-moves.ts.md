@@ -21,7 +21,9 @@ the editor's tree (`editor-shell.ts`, `shell-tree.ts`) and inspector
   `{ refused }`. `answers` counts the choices' options that lost their jump
   (they go on to the next entry); `floored` says the item took its kind's
   world floor for a view.
-- `ChildMoveRefusal`: `missing` (no such item, story or slot), `ownStory`
+- `ChildMoveRefusal`: `missing` (no such item, story or slot; also a
+  plain folder and anything inside one: the editor moves neither, as it
+  shows a folder's blocks as free items and a save writes them so), `ownStory`
   (a choice or a quiz leaves only within its story: its answers name that
   story's entries), `noNesting` (a story into a story or among the free
   items, a free item among the stories), `cannotStandFree` (a model without

@@ -9,7 +9,8 @@
  */
 
 import {
-  isTourStory,
+  isStory,
+  isTourBlockChild,
   isTourStoryBlock,
   tourChildPlace,
   tourStationChildIds,
@@ -442,9 +443,12 @@ function cannotStandFreeRefusal(manifest: TourManifest, id: string): string {
  *  naming its kind ("an audio", "a 3D model"). */
 function unsavedRefusal(manifest: TourManifest, id: string): string {
   const place = tourChildPlace(manifest, id);
-  const item = place === null ? undefined : place.station.children[place.index];
+  const item =
+    place === null || place.path.length > 0
+      ? undefined
+      : place.station.children[place.index];
   const what =
-    item === undefined || isTourStory(item)
+    item === undefined || !isTourBlockChild(item)
       ? "an item"
       : kindWithArticle(item.kind);
   return `Save the tour first: ${what} added here can go into a story once the tour's file holds it.`;
@@ -460,9 +464,11 @@ export function childCalled(manifest: TourManifest, id: string): string {
     const entry = place.story.children[place.index];
     return entry === undefined ? "the item" : storyChildName(entry);
   }
-  const free = place.station.children[place.index];
+  const free =
+    place.path.length > 0 ? undefined : place.station.children[place.index];
   if (free === undefined) return "the item";
-  return isTourStory(free) ? free.title : objectTitle(free);
+  if (isStory(free)) return free.title;
+  return isTourBlockChild(free) ? objectTitle(free) : "the item";
 }
 
 /** Said for a delete of the tour's last station. */

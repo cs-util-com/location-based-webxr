@@ -350,7 +350,7 @@ test("a story is a folder of the tree: added, named, filled, its entry's texts s
   const stories = async () =>
     (await tourNow(page)).stations
       .find((/** @type {any} */ s) => s.id === "gate")
-      .children.filter((/** @type {any} */ c) => c.kind === "story");
+      .children.filter((/** @type {any} */ c) => c.role === "story");
   const before = (await stories()).length;
   const start = await revision(page);
   const gate = card(page, "gate");

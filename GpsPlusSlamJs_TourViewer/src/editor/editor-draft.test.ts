@@ -1287,7 +1287,8 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
       children: [
         {
           id: "tale",
-          kind: "story",
+          kind: "folder",
+          role: "story",
           title: "The tale",
           children: [
             {

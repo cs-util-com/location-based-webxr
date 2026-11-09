@@ -284,7 +284,8 @@ function stationOf(fields: Record<string, unknown>): TourStation {
     children: [
       {
         id: "story",
-        kind: "story",
+        kind: "folder",
+        role: "story",
         title: "A story",
         children: steps as unknown as TourStoryChild[],
       },

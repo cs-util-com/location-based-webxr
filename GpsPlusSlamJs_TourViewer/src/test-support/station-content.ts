@@ -1,7 +1,7 @@
 /**
  * Test-only: a station's content written as a station's children, the one
- * way the Tour Viewer's tests build it. A station holds free blocks and
- * stories; a story holds its blocks, choices and quizzes in the order a
+ * way the Tour Viewer's tests build it. A station holds free blocks,
+ * plain folders of free blocks, and stories; a story holds its blocks, choices and quizzes in the order a
  * visitor meets them, so being in a story is what shows a block.
  *
  * `stationBlocks` reads every block of a station back, wherever it sits.
@@ -10,10 +10,12 @@
 import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
-  isTourStory,
+  isStory,
+  isTourFolder,
   isTourStoryBlock,
   tourStationBlocks,
   type TourChoice,
+  type TourFolderChild,
   type TourQuizEntry,
   type TourStationChild,
   type TourStepAdvance,
@@ -41,7 +43,8 @@ export function storyOf(
 ): TourStory {
   return {
     id,
-    kind: "story",
+    kind: "folder",
+    role: "story",
     title,
     children: children.map((child): TourStory["children"][number] =>
       isChoiceOrQuiz(child) ? child : { advance: { mode: "tap" }, ...child },
@@ -70,25 +73,45 @@ export function stationContent(
   return { children };
 }
 
-/** The content of `station` with `edit` applied to every block, free and in
- *  stories, keeping where each one sits. */
+/** `children` of a plain folder with `edit` applied to every block, at
+ *  any depth. */
+function editedFolderChildren(
+  children: readonly TourFolderChild[],
+  edit: (block: TourBlock) => TourBlock,
+): TourFolderChild[] {
+  return children.map((child) =>
+    isTourFolder(child)
+      ? { ...child, children: editedFolderChildren(child.children, edit) }
+      : edit(child),
+  );
+}
+
+/** The content of `station` with `edit` applied to every block, free, in
+ *  stories and in plain folders, keeping where each one sits. */
 export function editedBlocks(
   station: Pick<TourStation, "children">,
   edit: (block: TourBlock) => TourBlock,
 ): Pick<TourStation, "children"> {
   return {
-    children: station.children.map((child) =>
-      isTourStory(child)
-        ? {
-            ...child,
-            children: child.children.map((kid) =>
-              isTourStoryBlock(kid)
-                ? { ...edit(kid), advance: kid.advance }
-                : kid,
-            ),
-          }
-        : edit(child),
-    ),
+    children: station.children.map((child): TourStationChild => {
+      if (isStory(child)) {
+        return {
+          ...child,
+          children: child.children.map((kid) =>
+            isTourStoryBlock(kid)
+              ? { ...edit(kid), advance: kid.advance }
+              : kid,
+          ),
+        };
+      }
+      if (isTourFolder(child)) {
+        return {
+          ...child,
+          children: editedFolderChildren(child.children, edit),
+        };
+      }
+      return edit(child);
+    }),
   };
 }
 

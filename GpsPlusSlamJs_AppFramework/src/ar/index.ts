@@ -324,9 +324,12 @@ export {
   type TourStationDrop,
 } from './tour-manifest.js';
 export {
+  composeTourFolderPose,
+  decomposeTourFolderPose,
   geoPoseRotation,
   itemGeoPose,
   localPoseOf,
+  tourFlatFreeBlocks,
   tourFreeBlocks,
   tourObjectBlock,
   tourObjects,
@@ -372,6 +375,10 @@ export {
   type TourTimingText,
 } from './tour-timing.js';
 export {
+  isStory,
+  isTourBlockChild,
+  isTourFolder,
+  TOUR_FOLDER_SCALE_RANGE,
   tourChildPlace,
   tourStationBlocks,
   tourStationChildIds,

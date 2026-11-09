@@ -19,7 +19,7 @@
  */
 
 import {
-  isTourStory,
+  isStory,
   tourChildPlace,
   tourStationChildIds,
   tourStationStoryBlocks,
@@ -2440,7 +2440,7 @@ function withStoryBlock(
   return {
     ...frame,
     children: frame.children.map((child) =>
-      isTourStory(child)
+      isStory(child)
         ? {
             ...child,
             children: child.children.map((c) =>

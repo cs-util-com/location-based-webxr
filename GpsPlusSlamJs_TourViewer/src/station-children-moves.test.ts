@@ -9,10 +9,11 @@
  */
 import { describe, expect, it } from "vitest";
 import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
-import type {
-  TourStationChild,
-  TourStory,
-  TourStoryChild,
+import {
+  isStory,
+  type TourStationChild,
+  type TourStory,
+  type TourStoryChild,
 } from "gps-plus-slam-app-framework/ar/tour-story";
 
 import {
@@ -48,7 +49,8 @@ const line = (id: string, view = "card"): TourStoryChild =>
 
 const story = (id: string, children: TourStoryChild[]): TourStory => ({
   id,
-  kind: "story",
+  kind: "folder",
+  role: "story",
   title: id,
   children,
 });
@@ -74,7 +76,7 @@ function storyOf(
   id: string,
 ) {
   const found = holder.children.find(
-    (c): c is TourStory => c.kind === "story" && c.id === id,
+    (c): c is TourStory => isStory(c) && c.id === id,
   );
   if (found === undefined) throw new Error(`no story ${id}`);
   return found;

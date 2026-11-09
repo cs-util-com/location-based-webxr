@@ -64,7 +64,8 @@ function station(
         : [
             {
               id: `${id}-story`,
-              kind: 'story',
+              kind: 'folder',
+              role: 'story',
               title: id,
               children: blocks.map((b) => ({
                 ...(b as object),

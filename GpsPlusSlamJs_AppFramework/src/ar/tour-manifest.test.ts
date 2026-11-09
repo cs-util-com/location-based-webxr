@@ -72,7 +72,8 @@ const GEO = { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 30 };
 
 const storyOf = (id: string, children: unknown[]) => ({
   id,
-  kind: 'story',
+  kind: 'folder',
+  role: 'story',
   title: 'A story',
   children,
 });

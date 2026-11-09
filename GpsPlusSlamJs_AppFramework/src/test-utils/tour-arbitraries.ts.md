@@ -31,12 +31,19 @@ reason; no production module imports it.
   when both stand, so the reader's `minM < maxM` rule is under property
   coverage.
 - `tourStationChildrenArbitrary({ maxStories?, maxFreeBlocks?,
-maxStoryChildren? })` - a valid version 5 children list (defaults 4, 4,
-  5): titled stories (possibly empty) of blocks in any view with an
+maxStoryChildren?, maxFolders? })` - a valid version 5 children list
+  (defaults 4, 4, 5, 0): titled stories (`kind: 'folder', role: 'story'`,
+  possibly empty) of blocks in any view with an
   advance of every mode, choices whose options jump back or forward to a
   child of the same story or continue, and quizzes of every answer type;
   free blocks in a world view; stories and free blocks in a shuffled
-  order; every id in the list unique.
+  order; every id in the list unique. With `maxFolders` > 0, plain
+  folders (optional pose and scale) nest in the top level or in each
+  other and hold some of the free blocks.
+- `tourStationChildrenPlacedArbitrary(size?)` - the same list with
+  `placed` (`TourChildrenPlacement`): the generator's own record of
+  every id it put where (stories, story blocks, top-level blocks, folder
+  blocks, folders, all), the oracle for the walkers' properties.
 - `tourManifestArbitrary(size?)` - a valid version 5 `tour.json` record
   of one to four stations, each with a generated children list (the size as
   for `tourStationChildrenArbitrary`), child ids unique across the tour (an

@@ -10,7 +10,7 @@
  */
 import { checkTourBlockText } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import {
-  isTourStory,
+  isStory,
   TOUR_STORY_TITLE_RULE,
   type TourStationChild,
   type TourStory,
@@ -32,14 +32,14 @@ export function newStory(id: string, title: string): TourStory | null {
   const text = storyTitle(title);
   return text === null
     ? null
-    : { id, kind: "story", title: text, children: [] };
+    : { id, kind: "folder", role: "story", title: text, children: [] };
 }
 
 /** `holder` with `story` after its stories, before its free blocks: where
  *  the writer lists it. */
 export function withStory<H extends Holder>(holder: H, story: TourStory): H {
   const after = holder.children.reduce(
-    (at, child, i) => (isTourStory(child) ? i + 1 : at),
+    (at, child, i) => (isStory(child) ? i + 1 : at),
     0,
   );
   return {
@@ -58,11 +58,11 @@ function withStoryChanged<H extends Holder>(
   id: string,
   change: (story: TourStory) => TourStory,
 ): H | null {
-  if (!holder.children.some((c) => isTourStory(c) && c.id === id)) return null;
+  if (!holder.children.some((c) => isStory(c) && c.id === id)) return null;
   return {
     ...holder,
     children: holder.children.map((c) =>
-      isTourStory(c) && c.id === id ? change(c) : c,
+      isStory(c) && c.id === id ? change(c) : c,
     ),
   };
 }
@@ -85,7 +85,7 @@ export function withoutStory<H extends Holder>(
   holder: H,
   id: string,
 ): H | null {
-  return holder.children.some((c) => isTourStory(c) && c.id === id)
+  return holder.children.some((c) => isStory(c) && c.id === id)
     ? { ...holder, children: holder.children.filter((c) => c.id !== id) }
     : null;
 }
@@ -132,7 +132,7 @@ export function withoutStoryChild<H extends Holder>(
   id: string,
 ): { readonly frame: H; readonly answers: number } | null {
   const story = holder.children
-    .filter(isTourStory)
+    .filter(isStory)
     .find((s) => s.children.some((c) => c.id === id));
   if (story === undefined) return null;
   const kept = story.children

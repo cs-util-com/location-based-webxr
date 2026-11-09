@@ -69,7 +69,8 @@ describe("newStory", () => {
   it("makes an empty story with the title trimmed", () => {
     expect(newStory("s", "  Story 1 ")).toEqual({
       id: "s",
-      kind: "story",
+      kind: "folder",
+      role: "story",
       title: "Story 1",
       children: [],
     });
