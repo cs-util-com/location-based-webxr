@@ -1242,6 +1242,7 @@ async function skyOnlyFrameAfter(page, steps) {
       "poi",
       "buildings",
       "trees",
+      "woods",
     ]) {
       const box = sky.locator(`#layer-${layer}`);
       if (await box.isChecked()) await box.uncheck();
@@ -2204,6 +2205,11 @@ test.describe("the light dialog", () => {
       await page.locator("#light-gainMax").press("Escape");
       await expect(dialog).toBeHidden();
       await page.locator("#layer-cells").uncheck();
+      // WOODS OFF, as in the DEC-R4-5 check above (r1158): the fixture maps a
+      // wood, and its crowns stand in front of the lit facades. With them on
+      // the readout read 24.9 at this view against 65.3 without them, so the
+      // levers would be judged on the trees rather than on the lit city.
+      await page.locator("#layer-woods").uncheck();
       await settledChroma(page);
       // The dialog opens from its button and the l key, and closes with Escape.
       await page.locator("#light-open").click();
@@ -2230,6 +2236,9 @@ test.describe("the light dialog", () => {
       const tuned = await readoutLuma(page);
       await page.reload();
       await waitForRefresh(page);
+      // The same view as before the reload: the woods boot on.
+      await page.locator("#layer-woods").uncheck();
+      await settledChroma(page);
       await page.locator("#light-open").click();
       await expect(page.locator("#light-gainMax")).toHaveValue("2");
       // WHY (review, 2026-09-24): the sliders showing the values is not the
