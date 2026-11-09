@@ -17,6 +17,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   CITY_ARRIVAL_FADE_MS,
+  GLOBE_BUILDING_LIGHT,
   type GlobeCityThree,
   createGlobeCity,
 } from "./globe-city.js";
@@ -76,6 +77,8 @@ function fakeThree() {
         >(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial());
         m.name = name;
         m.userData.cityLayer = layer;
+        // The library marks a building mesh `solid` (its picking blocker).
+        if (layer === "buildings") m.userData.solid = true;
         return m;
       };
       const out: THREE.Object3D[] = [];
@@ -109,6 +112,7 @@ function setup(
     roadOffset?: number;
     heightsUrl?: string;
     deepHeightsZoom?: number;
+    buildingLight?: number;
     three?: () => Promise<GlobeCityThree>;
   } = {},
 ) {
@@ -482,6 +486,45 @@ describe("createGlobeCity: a delivery drawn", () => {
       mainMs: 0,
     });
     expect(city.state().load?.stages).toEqual(["first"]);
+  });
+
+  // Why: the building chunks carry LINEAR colours since r1158 and the
+  // owner chose to keep them and raise the light per consumer ("Korrekt
+  // lassen, Licht anheben"). The globe has no environment light, so its
+  // lever is a gain on the building material's colour: only the buildings,
+  // never the roads or the (shared) tree material, whose colours did not
+  // change; a factor on every object would brighten them too.
+  it("lights the buildings alone by the building light", async () => {
+    for (const [made, factor] of [
+      [setup(), GLOBE_BUILDING_LIGHT],
+      [setup({ buildingLight: 1.5 }), 1.5],
+    ] as const) {
+      made.city.load(BERN, { zoom: 12 });
+      made.workers[0]?.reply(delivery(1));
+      await flush();
+      const colours = made.city.root.children.flatMap((o) => {
+        const { material } = o as THREE.Mesh;
+        const all = Array.isArray(material) ? material : [material];
+        return all.map((m) => {
+          const { r, g, b } = (m as THREE.MeshBasicMaterial).color;
+          return [o.name, r, g, b];
+        });
+      });
+      expect(colours).toEqual([
+        ["b1", factor, factor, factor],
+        ["b2", factor, factor, factor],
+        ["r1", 1, 1, 1],
+        ["t1", 1, 1, 1],
+        ["t1", 1, 1, 1],
+      ]);
+    }
+    expect(GLOBE_BUILDING_LIGHT).toBeGreaterThan(1);
+  });
+
+  it("refuses a building light that is not a positive finite number", () => {
+    for (const buildingLight of [0, -1, Number.NaN, Infinity]) {
+      expect(() => setup({ buildingLight })).toThrow(RangeError);
+    }
   });
 
   it("lifts the roads by 2 m without an offset by default, and draws none when off", async () => {

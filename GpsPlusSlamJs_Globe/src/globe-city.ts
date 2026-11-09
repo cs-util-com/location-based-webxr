@@ -37,6 +37,33 @@ import type { LatLng } from "./globe-target.js";
  */
 export const CITY_ARRIVAL_FADE_MS = 1500;
 
+/**
+ * The light on the buildings, as a gain on their material's colour (the
+ * library's white `MeshStandardMaterial` with vertex colours): the globe's
+ * counterpart of OsmDemo's `BUILDING_SKY_LIGHT`. The globe lights with a sun
+ * and (in the editor) a hemisphere light but no environment, so a colour
+ * gain is the one lever that scales every light on the buildings and on
+ * nothing else; the grade's exposure would also lift the relief, the sea and
+ * the sky.
+ *
+ * WHY ABOVE 1 (owner 2026-11-09, "Korrekt lassen, Licht anheben"): the
+ * building chunks carry LINEAR colours since r1158 (`linearChunkColours`),
+ * which darkened the globe's buildings by about 40 % (changed-pixel luma
+ * p50 109 against main's 181, r1158 probe); the conversion stays and each
+ * consumer's light is raised so the city looks as before.
+ *
+ * WHY 3 (r1162 sweep, the same probe, building pixels in the TourViewer
+ * editor's globe; main p50 180.9 / mean 177.6): 1.4 gives p50 120 / mean
+ * 136, 1.9 143 / 157, 2.5 162 / 169, 3 175 / 179, 3.5 185 / 187. 3 is the
+ * closest on the mean and 6 below on the median; 3.5 would win on the
+ * median alone (4 above) but overshoots the mean by 10. The shape cannot
+ * match exactly (a gain on linear colour is not main's sRGB curve: p10 138
+ * against 86), and the palette change of r1158 alone accounts for main 181
+ * -> 153 (seeded palette, no linear conversion), which about 2.2 would
+ * restore instead.
+ */
+export const GLOBE_BUILDING_LIGHT = 3;
+
 /** One job family's counts, as the worker reports them. */
 interface CityJobCounts {
   total: number;
@@ -105,6 +132,12 @@ export interface GlobeCityOptions {
   deepHeightsZoom?: number;
   /** The clock of the arrival fade (ms; default `performance.now`). */
   now?: () => number;
+  /**
+   * The buildings' light, a gain on their colour (default
+   * `GLOBE_BUILDING_LIGHT`). RangeError for one that is not a positive
+   * finite number.
+   */
+  buildingLight?: number;
 }
 
 /** The current load as `state()` reports it. */
@@ -251,6 +284,19 @@ function placeRoad(o: THREE.Object3D, liftM: number, offset: number): void {
   }
 }
 
+/**
+ * A building mesh (the library marks it `solid`, its picking blocker) lit
+ * by `light`: its colour, white in the library, set to the gain. The roads
+ * and the shared tree material are left alone.
+ */
+function lightBuilding(o: THREE.Object3D, light: number): void {
+  if (o.userData.solid !== true) return;
+  for (const m of materialsOf(o)) {
+    const { color } = m as THREE.MeshStandardMaterial;
+    if (color instanceof THREE.Color) color.setScalar(light);
+  }
+}
+
 /** A heights zoom checked: an integer 1-15 (RangeError naming `what`). */
 function checkZoom(zoom: number, what: string): void {
   const { min, max } = CITY_HEIGHTS_ZOOM;
@@ -317,7 +363,13 @@ export function createGlobeCity({
   heightsUrl,
   deepHeightsZoom,
   now = () => performance.now(),
+  buildingLight = GLOBE_BUILDING_LIGHT,
 }: GlobeCityOptions): GlobeCity {
+  if (!(Number.isFinite(buildingLight) && buildingLight > 0)) {
+    throw new RangeError(
+      `a city needs a positive finite building light, got ${buildingLight}`,
+    );
+  }
   if (heightsUrl !== undefined) cityHeights(1, heightsUrl);
   if (deepHeightsZoom !== undefined) {
     checkZoom(deepHeightsZoom, "a city needs a deep heights zoom");
@@ -404,6 +456,7 @@ export function createGlobeCity({
     });
     for (const o of objects) {
       placeRoad(o, roadLiftM, roadOffset);
+      lightBuilding(o, buildingLight);
       root.add(o);
     }
     const mainMs = now() - drawnAt;

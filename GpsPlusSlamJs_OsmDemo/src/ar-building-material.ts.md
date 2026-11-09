@@ -48,6 +48,17 @@ building.
   distinctions stay legible in AR — which is what `feature-colours.test.ts`
   protects — while the scene still reads as cyan. **`colourMix: 0` reproduces
   the approved screenshot exactly.**
+- **The vertex colour is encoded back to sRGB before the mix** (r1162). The
+  building chunks carry LINEAR colours since r1158 (`linearChunkColours`),
+  and the owner chose to keep them and raise each consumer's light ("Korrekt
+  lassen, Licht anheben"). This shell is unlit (no light to raise) and writes
+  `gl_FragColor` raw, so the linear value mixed in raw made the mixed tint's
+  luma 11.6 % darker on walls and 19.4 % on pitched and flat roofs than on
+  main. `sRGBTransferOETF(vec4(vVertexColor, 1.0)).rgb` (three's own
+  function, part of every `ShaderMaterial`'s fragment prefix, so it is not
+  declared in the shader) restores main's value (within 0.002 of main's luma
+  per tone family). The shader was compiled once in headless Chromium (no
+  errors; a misspelt function name does fail there), since no e2e enters AR.
 
 ## ⚠️ The risk that cannot be checked from a desk
 
@@ -79,7 +90,9 @@ Open: [`docs/2026-08-17-2220-ar-shell-colour-pipeline-followup.md`](../docs/2026
 shader declares is supplied (derived from the shader source, so adding a uniform
 without wiring it cannot pass), the two attribute declarations, the owner's
 parameters against the lab defaults, the colour-mix escape hatch, and that a
-non-finite clock is refused.
+non-finite clock is refused. Since r1162 also the sRGB encode of the vertex
+colour: the source line, three's OETF on the library's linear tones giving the
+palette back, and the mixed tint's luma equal to main's.
 
 ## Related
 

@@ -16,6 +16,12 @@
 
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
+import {
+  FLAT_ROOF_TONES,
+  PITCHED_ROOF_TONES,
+  WALL_TONES,
+  srgbToLinear,
+} from "gps-plus-slam-osm";
 
 import {
   AR_SHELL_PARAMS,
@@ -91,5 +97,81 @@ describe("createArBuildingMaterial", () => {
     shell.setTime(Number.NaN);
     shell.setTime(Number.POSITIVE_INFINITY);
     expect(shell.material.uniforms["uTime"]?.value).toBe(3);
+  });
+});
+
+/**
+ * Why these tests matter: the building chunks carry LINEAR vertex colours
+ * since r1158 (`linearChunkColours`), and the owner chose to keep them and
+ * raise each consumer's light ("Korrekt lassen, Licht anheben"). This shell
+ * is unlit and writes `gl_FragColor` raw (no colour-space chunk), so it has
+ * no light to raise: mixing the linear colour in raw made walls about 12 %
+ * and roofs about 19 % darker than on main. The fix encodes the vertex
+ * colour back to sRGB before the mix, with three's own `sRGBTransferOETF`
+ * (in every `ShaderMaterial`'s fragment prefix), which restores exactly the
+ * value main mixed in. A shader cannot run here, so the source is pinned and
+ * the arithmetic is mirrored: three's OETF on the library's linear tones
+ * gives the palette's sRGB tones back, and the mixed tint's luma is main's.
+ */
+describe("the AR shell's vertex colour, encoded back to sRGB", () => {
+  /** three's `sRGBTransferOETF`, per channel, as its GLSL writes it. */
+  const oetf = (v: number) =>
+    v <= 0.0031308 ? v * 12.92 : 1.055 * v ** 0.41666 - 0.055;
+  const channels = (rgb: number) => [
+    ((rgb >> 16) & 0xff) / 255,
+    ((rgb >> 8) & 0xff) / 255,
+    (rgb & 0xff) / 255,
+  ];
+  const luma = ([r, g, b]: number[]) =>
+    0.2126 * (r ?? 0) + 0.7152 * (g ?? 0) + 0.0722 * (b ?? 0);
+  const tones = [
+    ["walls", WALL_TONES],
+    ["pitched roofs", PITCHED_ROOF_TONES],
+    ["flat roofs", FLAT_ROOF_TONES],
+  ] as const;
+
+  it("encodes the vertex colour with three's OETF before the mix", () => {
+    const { material } = createArBuildingMaterial();
+    const source = material.fragmentShader.replace(/\s+/g, " ");
+    expect(source).toContain("sRGBTransferOETF(vec4(vVertexColor, 1.0)).rgb");
+    // Never mixed in raw: every read of the varying is the encoded one.
+    expect(source.match(/vVertexColor/g)).toHaveLength(2);
+  });
+
+  it("gives back the palette's sRGB tones from the library's linear ones", () => {
+    for (const [, set] of tones) {
+      for (const tone of set) {
+        for (const c of channels(tone)) {
+          expect(Math.abs(oetf(srgbToLinear(c)) - c)).toBeLessThan(0.5 / 255);
+        }
+      }
+    }
+  });
+
+  it("mixes the tint to main's luma, where the raw linear colour was darker", () => {
+    const { material } = createArBuildingMaterial();
+    const tint = material.uniforms["uTint"]?.value as THREE.Color;
+    const mix = AR_SHELL_PARAMS.colourMix;
+    const shell = (rgb: number[]) =>
+      luma(
+        [tint.r, tint.g, tint.b].map(
+          (t, i) => t * (1 - mix) + (rgb[i] ?? 0) * mix,
+        ),
+      );
+    for (const [what, set] of tones) {
+      let main = 0;
+      let raw = 0;
+      let encoded = 0;
+      for (const tone of set) {
+        const srgb = channels(tone);
+        const linear = srgb.map(srgbToLinear);
+        main += shell(srgb);
+        raw += shell(linear);
+        encoded += shell(linear.map(oetf));
+      }
+      // The defect the encode removes: measurably darker than main.
+      expect(raw / main, what).toBeLessThan(0.9);
+      expect(Math.abs(encoded / main - 1), what).toBeLessThan(0.002);
+    }
   });
 });
