@@ -8,7 +8,11 @@
  * look can be shared and pasted back. This is a deliberate exception to
  * DEC-R12-5 (presentation state stays out of the URL): the owner asked for
  * it (plan 2026-09-24-2140, DEC-LIGHT-4), and the keyed, versioned form keeps
- * old links meaning what they said.
+ * every value a link STATES. A field a link leaves out means today's
+ * default, so a new default changes such a link: r1158 raised the sky light
+ * on buildings from 1.4 to 3, and an old link without `sky` now opens at 3.
+ * Deliberate (light-settings.ts.md, "Old links"): the linear building colours
+ * of r1158 changed what 1.4 renders, so no value could keep such a link's look.
  *
  * @see light-settings.ts.md
  */

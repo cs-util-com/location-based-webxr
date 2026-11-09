@@ -31,8 +31,8 @@ exposureAdaptation, exposureEv }`.
   another version or a bare list is ignored.
 - `serializeLightSettings(settings)`: the `?light=` value with only the
   fields that differ from the defaults, or `null` for the defaults (the URL
-  stays clean). Keyed, so an old link keeps meaning what it said after a new
-  field or new defaults (plan §7).
+  stays clean). Keyed, so an old link keeps every value it states after a new
+  field or new defaults (plan §7); what it leaves out follows the defaults.
 - The adaptation's range is 0.5-1: measured, lowering it barely changes
   noon and mostly darkens dawn and dusk (plan §8).
 - `describeLightSettings(settings)`: the Copy line, e.g.
@@ -46,7 +46,17 @@ exposureAdaptation, exposureEv }`.
   AR shell replaces only the buildings'), so AR is unchanged only at the
   defaults.
 - The URL's fields are keyed, so their order does not matter; a new field
-  or new defaults leave an old link meaning what it said.
+  or new defaults leave every value an old link states as it was.
+- **Old links (r1158, the #905 review).** A field a link leaves out means
+  TODAY's default, not the default of the day the link was copied. The one
+  default raised since links exist is the sky light on buildings, 1.4 -> 3
+  (r1158), so an old link without `sky` now opens at 3. That is the honest
+  reading rather than a slip: r1158 also made the building colours linear,
+  so 1.4 no longer renders what it rendered when such a link was copied, and
+  pinning old links to 1.4 would only make them darker than either the old
+  or the new look. Keeping them would have needed a version per default
+  change (`v2:`), machinery with no look left to preserve. A link that set
+  `sky` keeps its value (`light-settings.test.ts`).
 - Values are rounded to three decimals on the way in and out, so a round
   trip through the URL is exact for any value a slider can produce.
 

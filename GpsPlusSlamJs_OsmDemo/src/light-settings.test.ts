@@ -149,6 +149,19 @@ describe("parseLightSettings and serializeLightSettings", () => {
     expect(parseLightSettings("?light=1.8,20,45,1,0.75,-2.5")).toEqual(d);
   });
 
+  // WHY (#905 review): r1158 raised the sky light on buildings 1.4 -> 3. A
+  // link keeps what it STATES, so one that set the old default keeps it; one
+  // that left `sky` out follows today's default (the sidecar's "Old links"
+  // says why that is the honest reading: the linear building colours changed
+  // what 1.4 renders).
+  it("keeps a stated sky light, and gives today's default to a link without one", () => {
+    expect(parseLightSettings("?light=v1:sky=1.4").buildingSkyLight).toBe(1.4);
+    expect(parseLightSettings("?light=v1:gain=1.8").buildingSkyLight).toBe(
+      BUILDING_SKY_LIGHT,
+    );
+    expect(BUILDING_SKY_LIGHT).toBe(3);
+  });
+
   it("writes only the fields that differ from the defaults", () => {
     expect(
       serializeLightSettings({ ...DEFAULT_LIGHT_SETTINGS, gainMax: 2 }),
