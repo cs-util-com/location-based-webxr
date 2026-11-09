@@ -17,6 +17,7 @@ import {
   TOUR_AUDIO_MIN_REACH_M,
   type TourBlockKind,
 } from "gps-plus-slam-app-framework/ar/tour-kinds";
+import type { TourAssetKind } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 /** A number a field takes: the format's bounds, its unit, and whether the
  *  views it shows in need it. */
@@ -51,6 +52,12 @@ interface KindAdd {
   readonly words: string;
   /** Off: listed, said why, and adds nothing. */
   readonly addable: boolean;
+  /** Made from a file of this kind: the add opens the file picker, and
+   *  the file goes onto the asset shelf (`add-file-item.ts`). */
+  readonly file?: TourAssetKind;
+  /** Added to a story only, and why (shown on a station's menu, where it
+   *  is off): no free host draws it. */
+  readonly storyOnly?: string;
 }
 
 /** What the editor knows of one kind. */
@@ -181,9 +188,10 @@ export const KIND_EDIT = {
     ],
     add: {
       label: "Picture",
-      hint: "Taken on site with the phone",
+      hint: "A picture file, shown as a plane",
       words: "picture photo image",
-      addable: false,
+      addable: true,
+      file: "image",
     },
   },
   video: {
@@ -194,6 +202,14 @@ export const KIND_EDIT = {
     searchWords: "video film",
     inWorld: false,
     fields: [TITLE, TRANSCRIPT],
+    add: {
+      label: "Video",
+      hint: "A video file, played in a story",
+      words: "video film clip movie",
+      addable: true,
+      file: "video",
+      storyOnly: "A video plays in a story: add it to one",
+    },
   },
   audio: {
     label: "Audio",
@@ -206,6 +222,13 @@ export const KIND_EDIT = {
     // part, still and silent.
     inWorld: true,
     fields: [TITLE, TRANSCRIPT, ...AUDIO_WORLD],
+    add: {
+      label: "Sound",
+      hint: "A sound file, heard in a circle",
+      words: "sound audio voice music narration",
+      addable: true,
+      file: "audio",
+    },
   },
   model: {
     label: "3D model",
@@ -215,6 +238,13 @@ export const KIND_EDIT = {
     searchWords: "3d model",
     inWorld: true,
     fields: [TITLE],
+    add: {
+      label: "3D model",
+      hint: "A .glb file, placed at 2 m",
+      words: "3d model glb object",
+      addable: true,
+      file: "model",
+    },
   },
   character: {
     label: "Character",
@@ -227,6 +257,12 @@ export const KIND_EDIT = {
       { name: "name", label: "Name", prose: false },
       { name: "caption", label: "Caption", prose: true },
     ],
+    add: {
+      label: "Character",
+      hint: "Coming: made step by step in the character maker",
+      words: "character figure guide person",
+      addable: false,
+    },
   },
 } as const satisfies { readonly [K in TourBlockKind]: KindEditRow };
 
@@ -248,6 +284,34 @@ export type AddKind = {
     ? K
     : never;
 }[TourBlockKind];
+
+/** The addable kinds made from a file (`KindAdd.file`). */
+export type FileAddKind = {
+  [K in AddKind]: Rows[K] extends { readonly add: { readonly file: string } }
+    ? K
+    : never;
+}[AddKind];
+
+/** The addable kinds made from nothing but words: a short or long text. */
+export type TextAddKind = Exclude<AddKind, FileAddKind>;
+
+/** Whether `kind` is made from a file. */
+export function isFileAddKind(kind: AddKind): kind is FileAddKind {
+  const add: KindAdd = KIND_EDIT[kind].add;
+  return add.file !== undefined;
+}
+
+/** Why `kind` is added to a story only (`KindAdd.storyOnly`), or
+ *  undefined for a kind that also stands at a station. */
+export function storyOnlyReason(kind: TourBlockKind): string | undefined {
+  const row: KindEditRow = KIND_EDIT[kind];
+  return row.add?.storyOnly;
+}
+
+/** Whether `kind` is added to a story only (`KindAdd.storyOnly`). */
+export function isStoryOnly(kind: TourBlockKind): boolean {
+  return storyOnlyReason(kind) !== undefined;
+}
 
 /** Whether the editor draws and edits `kind` in the world. */
 export function isWorldKind(kind: TourBlockKind): kind is WorldKind {

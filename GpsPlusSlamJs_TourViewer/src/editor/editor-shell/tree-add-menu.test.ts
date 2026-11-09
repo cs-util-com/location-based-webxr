@@ -109,12 +109,23 @@ describe("the menu for a story", () => {
     const { root } = forStory();
     key(root, "End");
     expect((document.activeElement as HTMLElement).dataset["kind"]).toBe(
-      "picture",
+      "character",
     );
     key(root, "ArrowDown");
     expect((document.activeElement as HTMLElement).dataset["kind"]).toBe(
       "shortText",
     );
+  });
+
+  // Why: a video plays only in a story, so a story's menu is where it is
+  // added; it must be on there, saying what it is.
+  it("offers a video in a story", () => {
+    const { root, chooseForStory } = forStory();
+    const video = root.querySelector<HTMLElement>('[data-kind="video"]');
+    expect(video?.getAttribute("aria-disabled")).toBeNull();
+    expect(video?.textContent).toContain("A video file, played in a story");
+    video?.click();
+    expect(chooseForStory).toHaveBeenCalledWith("legend", "video");
   });
 
   it("offers a story again on a station's +", () => {
@@ -130,7 +141,7 @@ describe("the menu for a story", () => {
 });
 
 describe("createTreeAddMenu", () => {
-  it("opens as a menu titled by its station, the focus on its first item, the picture off with its reason", () => {
+  it("opens as a menu titled by its station, the focus on its first item, the video and the character off with their reasons", () => {
     const { root, item } = opened();
     expect(root.hidden).toBe(false);
     expect(root.getAttribute("role")).toBe("menu");
@@ -149,30 +160,42 @@ describe("createTreeAddMenu", () => {
         (i) => i.dataset["kind"],
       ),
     ).toEqual([...ADD_CHOICES.map((c) => c.kind), "story"]);
-    const picture = item("picture");
-    expect(picture?.getAttribute("aria-disabled")).toBe("true");
-    expect(picture?.textContent).toContain("Taken on site with the phone");
-    expect(item("longText")?.getAttribute("aria-disabled")).toBeNull();
+    const character = item("character");
+    expect(character?.getAttribute("aria-disabled")).toBe("true");
+    expect(character?.textContent).toContain("Coming");
+    const video = item("video");
+    expect(video?.getAttribute("aria-disabled")).toBe("true");
+    expect(video?.textContent).toContain(
+      "A video plays in a story: add it to one",
+    );
+    for (const kind of ["longText", "picture", "audio", "model"]) {
+      expect(item(kind)?.getAttribute("aria-disabled")).toBeNull();
+    }
   });
 
-  it("moves with the arrows, Home, End and a letter, through the item that is off too", () => {
+  it("moves with the arrows, Home, End and a letter, through the items that are off too", () => {
     const { root, item } = opened();
     key(root, "ArrowDown");
     expect(document.activeElement).toBe(item("longText"));
     key(root, "ArrowDown");
     expect(document.activeElement).toBe(item("picture"));
     key(root, "ArrowDown");
+    expect(document.activeElement).toBe(item("video"));
+    key(root, "End");
     expect(document.activeElement).toBe(item("story"));
+    key(root, "ArrowUp");
+    expect(document.activeElement).toBe(item("character"));
+    key(root, "ArrowDown");
     key(root, "ArrowDown");
     expect(document.activeElement).toBe(item("shortText"));
     key(root, "ArrowUp");
     expect(document.activeElement).toBe(item("story"));
     key(root, "Home");
     expect(document.activeElement).toBe(item("shortText"));
-    key(root, "End");
-    expect(document.activeElement).toBe(item("story"));
     key(root, "l");
     expect(document.activeElement).toBe(item("longText"));
+    key(root, "s");
+    expect(document.activeElement).toBe(item("audio"));
     key(root, "s");
     expect(document.activeElement).toBe(item("story"));
     key(root, "s");
@@ -201,9 +224,10 @@ describe("createTreeAddMenu", () => {
     expect(document.activeElement).toBe(details);
   });
 
-  it("adds nothing for the item that is off, and stays open", () => {
+  it("adds nothing for an item that is off, and stays open", () => {
     const { root, item } = opened();
-    item("picture")?.click();
+    item("character")?.click();
+    item("video")?.click();
     expect(choose).not.toHaveBeenCalled();
     expect(root.hidden).toBe(false);
   });

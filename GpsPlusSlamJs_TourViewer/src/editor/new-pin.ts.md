@@ -37,12 +37,13 @@ reason }`): the add itself - the new pin or long text of the station,
   nothing was added.", `place` not called) or when `place` refuses (its
   words). The page toasts the refusal.
 
-- `KIND_ADD`: one row per addable kind (`AddKind`, in the add menu's
-  order): `item(input)`, what it starts as at a station's free spot (typed per kind, so a row with another kind's maker fails to compile), and
+- `KIND_ADD`: one row per addable kind made from words alone
+  (`TextAddKind`, in the add menu's order; a file's kind starts from its
+  file: `new-file-item.ts`): `item(input)`, what it starts as at a station's free spot (typed per kind, so a row with another kind's maker fails to compile), and
   `entry(n)`, its own fields as a story's `n`-th entry of that kind. The
   add path reads it and names no kind.
 - `newStoryEntry(story, kind, id)` -> `TourStoryBlock`: a card a story shows,
-  a short or a long text (`AddKind`), at the station's origin, moving on by
+  a short or a long text (`TextAddKind`), at the station's origin, moving on by
   a tap, numbered within its kind in the story.
 
 ## Invariants & assumptions

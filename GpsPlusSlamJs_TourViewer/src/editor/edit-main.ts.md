@@ -866,7 +866,15 @@ answers that now go on to the next entry and an item now standing in the
 world in its kind's usual view, and a refusal is said in a toast.
 
 The tree's add makes a story (`addStoryTo`) or an entry (`addToStoryEntry`),
-selects it, says it in a toast, one step each. Deleting a story asks first
+selects it, says it in a toast, one step each. A kind made from a file
+(picture, video, sound, 3D model) goes through `addFromFile`
+(`add-file-item.ts`): the page's one file picker (`file-picker.ts`, a
+cancel adds and says nothing), a held toast `Adding "<file>"...`
+(`data-testid="add-file-busy"`) while the file is read onto the shelf,
+then the item at the station's free spot or the story's end as one step,
+selected and named in a toast (`Added the sound "<title>" to "<station>"`),
+or the refusal in a toast; a file the draft could not keep adds the
+usual warning. Deleting a story asks first
 (`confirmPausingFrames`, naming what goes with it: its entries, and its
 untitled automatic station by name when that goes too, `delete-questions.ts`
 `storyDeleteQuestion`), and its toast says when the station went with it;

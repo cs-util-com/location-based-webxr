@@ -10,7 +10,7 @@ where, best first; Enter adds the first.
 
 - `PaletteStation` - `{ id, number, title }`, a station in the tour's
   order (`number` from 1).
-- `PaletteAdd` - `{ kind: AddKind ("shortText" | "longText"), stationId }` or
+- `PaletteAdd` - `{ kind: AddKind (a kind that adds at a station), stationId }` or
   `{ kind: "station" }`: what a row adds.
 - `PaletteRow` - `{ add, label, place, icon }`: the kind in words
   ("Short text", "Long text", "New station"), where it goes ("in 2 The
@@ -20,7 +20,7 @@ where, best first; Enter adds the first.
   by the labels of the rows, in their order.
 - `paletteRows(query, stations, selectedStationId, kind = null)` ->
   `PaletteRow[]`:
-  - candidates: every addable kind of `ADD_CHOICES` (`../../kinds/edit-kinds.ts`)
+  - candidates: every addable kind of `ADD_CHOICES` (`../../kinds/edit-kinds.ts`) that is not story-only
     in every station, then a new station;
   - an empty query lists the default place's rows only: the selected
     station's (else the first station's) kinds and the new station;
@@ -42,8 +42,9 @@ where, best first; Enter adds the first.
 
 ## Invariants & assumptions
 
-- The picture (`addable: false`) is never offered: it adds nothing from
-  the editor.
+- A character (`addable: false`) is never offered, nor a video
+  (`storyOnly`: the palette adds at stations, and a video plays only in a
+  story). A picture, a sound and a 3D model are, opening the file picker.
 - A selected id that is not among `stations` counts as no selection.
 - No row is listed twice; a word matching nothing lists nothing (no
   fallback to the default place).
@@ -62,7 +63,7 @@ paletteRows("long steps", stations, "gate");
 the first station, kind and place in one query, an exact station
 number over the selection among 12 stations, a query in another
 Unicode form, the label's rank, no
-match and no picture, a tour without stations, case and spaces, and a
+match and no video or character, the file kinds found by their words, a tour without stations, case and spaces, and a
 property over 30 stations (each row once, the cap, a kind alone first at
 the selection); the kind filter, and `highlightParts` with overlaps, a
 single letter, a query in another Unicode form and a query full of

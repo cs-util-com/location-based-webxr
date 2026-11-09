@@ -14,7 +14,7 @@ import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 // Activates the licence the station frame's geodesy needs.
 import "../test-support/tour-of.js";
-import { ADD_CHOICES, isAddable } from "../kinds/edit-kinds.js";
+import { ADD_CHOICES, isAddable, isFileAddKind } from "../kinds/edit-kinds.js";
 import {
   addNewItem,
   freePinSpot,
@@ -57,10 +57,13 @@ function station(
 
 // Why this test matters: what a kind starts as when added (at a station,
 // and as a story entry) is its one row here; the add menu's addable kinds
-// and these rows must be the same set, or a menu line adds nothing.
+// and these rows must be the same set, or a menu line adds nothing. A kind
+// made from a file starts from its file instead (`new-file-item.ts`).
 describe("KIND_ADD", () => {
-  it("has one row, with an item and an entry, for every addable kind of the add menu", () => {
-    const addable = ADD_CHOICES.filter(isAddable).map((c) => c.kind);
+  it("has one row, with an item and an entry, for every addable kind of the add menu made from words", () => {
+    const addable = ADD_CHOICES.filter(isAddable)
+      .map((c) => c.kind)
+      .filter((kind) => !isFileAddKind(kind));
     expect(Object.keys(KIND_ADD)).toEqual(addable);
     for (const row of Object.values(KIND_ADD)) {
       expect(typeof row.item).toBe("function");

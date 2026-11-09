@@ -61,9 +61,12 @@ import { describeIntegrityError, olderFormatRefusal } from "../open-errors.js";
 import { debugCapturesOf, type DebugCapture } from "../debug-captures.js";
 import { pictureProblem } from "../image-cap.js";
 import {
+  isFileAddKind,
+  KIND_EDIT,
   kindNoun,
   kindWithArticle,
   type AddKind,
+  type FileAddKind,
 } from "../kinds/edit-kinds.js";
 import { objectTitle } from "../object-describe.js";
 import { scanEntryNames } from "../tour-read-set.js";
@@ -190,6 +193,13 @@ import {
   type TypedEditOutcome,
 } from "./editor-shell/editor-shell.js";
 import { addNewItem } from "./new-pin.js";
+import {
+  addFileItem,
+  placeFileItem,
+  type FileAddTarget,
+} from "./add-file-item.js";
+import { createFilePicker } from "./file-picker.js";
+import { fileItemTitle } from "./new-file-item.js";
 import { newObjectId } from "../content-placement.js";
 import type { InspectorCode } from "./editor-shell/inspector-model.js";
 import { stationTitle } from "../station-run.js";
@@ -1623,6 +1633,10 @@ function judgeAutosave(): void {
 function addItemTo(stationId: string, kind: AddKind): void {
   const open = editor;
   if (open === null) return;
+  if (isFileAddKind(kind)) {
+    void addFromFile(kind, { kind: "station", stationId });
+    return;
+  }
   const outcome = addNewItem({
     stations: manifestToWrite(store.getState().tourDocument)?.stations ?? [],
     stationId,
@@ -1667,6 +1681,10 @@ function addStoryTo(stationId: string): void {
  *  selected, said once it was made; one step. */
 function addToStoryEntry(storyId: string, kind: AddKind): void {
   if (editor === null) return;
+  if (isFileAddKind(kind)) {
+    void addFromFile(kind, { kind: "story", storyId });
+    return;
+  }
   endUndo();
   const outcome = editor.addToStory(storyId, kind);
   refresh();
@@ -1678,6 +1696,75 @@ function addToStoryEntry(storyId: string, kind: AddKind): void {
   toast(
     `Added ${kindWithArticle(kind)} to the story "${storyNamed(storyId)?.title ?? ""}"`,
   );
+  tourChanged();
+}
+
+/** The file picker the add menu's file kinds open. */
+const filePicker = createFilePicker(document.body);
+
+/**
+ * The add of a `kind` item from a file at `at` (`add-file-item.ts`):
+ * `file` when given (a drop), else the one picked. While the file is read
+ * a toast says so; then the new item is selected and named with its
+ * place, or the refusal is said; a cancelled picker says nothing. One
+ * step. Resolves once it is all said.
+ */
+async function addFromFile(
+  kind: FileAddKind,
+  at: FileAddTarget,
+  file?: File,
+): Promise<void> {
+  const open = editor;
+  if (open === null) return;
+  const outcome = await addFileItem(
+    kind,
+    at,
+    {
+      pick: (k) => filePicker.pick(KIND_EDIT[k].add.file),
+      busy: (name) => {
+        const shown = toast(`Adding "${name}"...`, undefined, null, false);
+        shown.dataset["testid"] = "add-file-busy";
+        return () => {
+          shown.remove();
+        };
+      },
+      addFile: (blob, name, kinds) => open.addFile(blob, name, kinds),
+      place: (to, source) => {
+        endUndo();
+        const placed = placeFileItem({
+          target: to,
+          source,
+          stations:
+            manifestToWrite(store.getState().tourDocument)?.stations ?? [],
+          id: newObjectId(),
+          nowIso: new Date().toISOString(),
+          groundAt: (place) => shown3d?.groundAt(place) ?? null,
+          place: (object) => open.place(object),
+          addEntryToStory: (storyId, child) =>
+            open.addEntryToStory(storyId, child),
+        });
+        refresh();
+        return placed;
+      },
+    },
+    file,
+  );
+  if (outcome.kind === "cancelled") return;
+  if (outcome.kind === "refused") {
+    toast(outcome.reason);
+    return;
+  }
+  select(outcome.id);
+  const title = fileItemTitle(outcome.fileName, kind);
+  const where =
+    at.kind === "station"
+      ? `"${stationTitleOf(at.stationId)}"`
+      : `the story "${storyNamed(at.storyId)?.title ?? ""}"`;
+  const word = KIND_EDIT[kind].add.label;
+  toast(
+    `Added the ${word.charAt(0).toLowerCase()}${word.slice(1)} "${title}" to ${where}`,
+  );
+  if (!outcome.backedUp) toast(FILE_NOT_KEPT);
   tourChanged();
 }
 

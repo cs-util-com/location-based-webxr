@@ -17,6 +17,7 @@ import {
   tourStationStoryBlocks,
   tourStories,
   type TourStory,
+  type TourStoryBlock,
   type TourStoryChild,
 } from "gps-plus-slam-app-framework/ar/tour-story";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
@@ -114,7 +115,7 @@ import {
   blockFields,
   storyBlockFields,
 } from "./block-fields.js";
-import { kindWithArticle, type AddKind } from "../kinds/edit-kinds.js";
+import { kindWithArticle, type TextAddKind } from "../kinds/edit-kinds.js";
 import { objectOwnText, objectTitle } from "../object-describe.js";
 import { applyModelEdit, type ModelEdit } from "./model-edits.js";
 import { buildEditorModel, type EditorModel } from "./editor-model.js";
@@ -737,7 +738,14 @@ export interface EditorSession {
   /** A new entry at the end of a story: one step. */
   addToStory(
     storyId: string,
-    kind: AddKind,
+    kind: TextAddKind,
+  ): { kind: "added"; id: string } | EditorRefusal;
+  /** A made entry at the end of a story (a file's, `new-file-item.ts`):
+   *  one step. Refused for a story the tour does not carry and for an id
+   *  it carries already. */
+  addEntryToStory(
+    storyId: string,
+    child: TourStoryBlock,
   ): { kind: "added"; id: string } | EditorRefusal;
   /** Delete a story's child: one step; `answers` says how many answers
    *  that led to it now go on to the next child. */
@@ -1283,6 +1291,32 @@ export function createEditorSession(input: {
   }
 
   const notApplied: EditorRefusal = { kind: "refused", reason: NOT_APPLIED };
+
+  /** `child` at the end of the story `storyId`: one step. */
+  function addEntryToStory(
+    storyId: string,
+    child: TourStoryBlock,
+  ): { kind: "added"; id: string } | EditorRefusal {
+    const state = mine();
+    if (state === null) return notInTour;
+    if (storyNow(state, storyId) === undefined) {
+      return { kind: "refused", reason: NO_SUCH_STORY };
+    }
+    if (find(child.id) !== undefined) {
+      return { kind: "refused", reason: ALREADY_IN_TOUR };
+    }
+    return took(() =>
+      store.dispatch(
+        tourDocumentActions.storyChildAdded({
+          story: storyId,
+          child,
+          what: `the new entry "${storyChildName(child)}"`,
+        }),
+      ),
+    )
+      ? { kind: "added", id: child.id }
+      : notApplied;
+  }
   const noSuchStation: EditorRefusal = {
     kind: "refused",
     reason: NO_SUCH_STATION,
@@ -1930,19 +1964,12 @@ export function createEditorSession(input: {
       if (story === undefined) {
         return { kind: "refused", reason: NO_SUCH_STORY };
       }
-      const child = newStoryEntry(story, kind, newObjectId());
-      return took(() =>
-        store.dispatch(
-          tourDocumentActions.storyChildAdded({
-            story: storyId,
-            child,
-            what: `the new entry "${storyChildName(child)}"`,
-          }),
-        ),
-      )
-        ? { kind: "added", id: child.id }
-        : notApplied;
+      return addEntryToStory(
+        storyId,
+        newStoryEntry(story, kind, newObjectId()),
+      );
     },
+    addEntryToStory,
     deleteStoryChild(id) {
       const state = mine();
       const manifest = state === null ? null : manifestNow(state);

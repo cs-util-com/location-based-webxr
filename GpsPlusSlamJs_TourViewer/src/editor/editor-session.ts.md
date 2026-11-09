@@ -206,7 +206,10 @@ never state). Design:
       `editor-session-files.test.ts` pins it), `deleteStory(id)` (says how
       many children went and `stationGone` when its untitled automatic
       station, kept by nothing else, went with it),
-      `addToStory(storyId, kind)`, `deleteStoryChild(id)` (says how many
+      `addToStory(storyId, kind)` (a kind made from words), `addEntryToStory(storyId,
+child)` (an entry made elsewhere - a file's, `new-file-item.ts` -
+      added at the story's end, refused for a story that is gone or an id
+      the tour holds), `deleteStoryChild(id)` (says how many
       answers no longer lead anywhere), `setStoryAdvance(id, advance)` - the
       tree's and the inspector's story edits, each one step, a refusal said
       in the creator's words.
