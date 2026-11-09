@@ -51,7 +51,8 @@ export type ChildMoveTo =
 /** Why a move is not made: no such item, story or slot; a choice or a quiz
  *  leaving its story (its answers name that story's entries); a story
  *  into a story or among the free items, or a free item among the stories;
- *  a block that cannot stand in the world (a model without a size); or the
+ *  a block that cannot stand in the world (a model without a size, or a
+ *  video: no free host shows one yet, so it would stand unseen); or the
  *  item would stay where it is. */
 export type ChildMoveRefusal =
   "missing" | "ownStory" | "noNesting" | "cannotStandFree" | "unchanged";
@@ -101,6 +102,9 @@ function freeBlock(
 ): { block: TourBlock; floored: boolean } | null {
   const { advance: _advance, ...free } = block;
   if (free.kind === "model" && free.sizeM === undefined) return null;
+  // The format takes a free video, but no host draws one yet
+  // (`free-items.ts`): out of its story it would be an item nobody sees.
+  if (free.kind === "video") return null;
   const views: readonly string[] = TOUR_FREE_BLOCK_VIEWS[free.kind];
   if (views.includes(free.view)) {
     return { block: free, floored: false };
@@ -368,8 +372,8 @@ function storyOfList(holder: Holder, list: string): TourStory | undefined {
  * Whether `holder`'s item `id` may go into the list `list`: exactly when
  * `movedChild` takes a drop there, or keeps the item where it is (a drop
  * on its own place). So a story goes only among the stories, a choice or a
- * quiz only within its own story, a model without a size never out of its
- * story, and any other item into any story of its station or among its
+ * quiz only within its own story, a model without a size or a video never
+ * out of its story, and any other item into any story of its station or among its
  * free items. The tree's drag offers only these; asking the rule itself is
  * what keeps the two from disagreeing. A drop's slot
  * changes no refusal but "unchanged", so the first slot answers for all.

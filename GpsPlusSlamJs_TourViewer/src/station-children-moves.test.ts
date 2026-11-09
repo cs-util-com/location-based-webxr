@@ -134,6 +134,57 @@ describe("movedChild", () => {
     expect(out).toEqual({ refused: "cannotStandFree" });
   });
 
+  // Why: a story card sound has no radius, and its narration circle takes
+  // the editor's starting one; one that already carries a radius carries
+  // the author's, which a move must not overwrite with the default.
+  it("keeps the radius a story card sound already carries when it leaves", () => {
+    const sound = (radiusM?: number) =>
+      ({
+        id: "s",
+        kind: "audio",
+        view: "card",
+        audio: "snd",
+        pose: POSE,
+        advance: TAP,
+        ...(radiusM === undefined ? {} : { radiusM }),
+      }) as unknown as TourStoryChild;
+    const out = movedChild(station([story("a", [sound(17)])]), "s", {
+      place: "free",
+    });
+    if (!("station" in out)) throw new Error(out.refused);
+    expect(out.station.children[1]).toMatchObject({
+      view: "spot",
+      radiusM: 17,
+    });
+    expect(out.floored).toBe(true);
+    const fresh = movedChild(station([story("a", [sound()])]), "s", {
+      place: "free",
+    });
+    if (!("station" in fresh)) throw new Error(fresh.refused);
+    expect(fresh.station.children[1]).toMatchObject({ view: "spot" });
+    expect(
+      (fresh.station.children[1] as unknown as { radiusM?: number }).radiusM,
+    ).not.toBe(17);
+  });
+
+  // Why: no free host draws a video yet, so out of its story it would be
+  // an item nobody sees; it stays, as a model without a size does.
+  it("refuses a video out of a story, and offers it no way out", () => {
+    const video = {
+      id: "v",
+      kind: "video",
+      view: "card",
+      video: "clip",
+      pose: POSE,
+      advance: TAP,
+    } as unknown as TourStoryChild;
+    const holder = station([story("a", [video])]);
+    expect(movedChild(holder, "v", { place: "free" })).toEqual({
+      refused: "cannotStandFree",
+    });
+    expect(childMayGo(holder, "v", FREE_LIST)).toBe(false);
+  });
+
   it("moves a block between two stories, keeping its advance", () => {
     const auto = { ...line("a1"), advance: { mode: "auto", afterS: 3 } };
     const out = movedChild(

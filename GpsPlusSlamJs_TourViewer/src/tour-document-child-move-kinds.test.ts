@@ -9,6 +9,10 @@
  * a view it gains is covered without an edit here), moves it out through
  * the document, and reads the written tour back with `parseTourManifest`.
  *
+ * Standing free in the format is not enough: each kind out of a story must
+ * also be shown by a free host (`SHOWN_FREE`), or be refused. A kind no
+ * host shows yet (a video) would otherwise become an item nobody sees.
+ *
  * The second part pins the one refusal the document adds to the move
  * rule: a free item whose file the tour a reload opens does not hold yet.
  * That tour is the one written in place once such a write arrived, and the
@@ -19,7 +23,10 @@ import {
   TOUR_FREE_BLOCK_VIEWS,
   tourFloorView,
 } from "gps-plus-slam-app-framework/ar/tour-blocks";
-import { tourBlockKinds } from "gps-plus-slam-app-framework/ar/tour-kinds";
+import {
+  tourBlockKinds,
+  type TourBlockKind,
+} from "gps-plus-slam-app-framework/ar/tour-kinds";
 import {
   parseTourManifest,
   serializeTourManifest,
@@ -76,12 +83,26 @@ const FLOOR_DEFAULTS: Record<string, Record<string, unknown>> = {
   audio: { radiusM: NARRATION_DEFAULT_RADIUS_M },
 };
 
+/** How a visitor meets each kind standing free, or null for a kind no free
+ *  host shows yet. Typed over every kind, so a kind the format gains does
+ *  not compile here until someone says how it is shown. */
+const SHOWN_FREE: Record<TourBlockKind, string | null> = {
+  shortText: "a label (content-placement.ts)",
+  longText: "a reading stand or sign (content-placement.ts)",
+  picture: "a plane (content-placement.ts)",
+  model: "its world part (kinds/model/world.ts)",
+  audio: "heard in its narration circle or zone",
+  character: "a figure on a stage of his own (free-items.ts)",
+  video: null,
+};
+
 const MODEL_WORLD = new Set(TOUR_FREE_BLOCK_VIEWS.model as readonly string[]);
 
 interface Case {
   readonly name: string;
   readonly block: Record<string, unknown>;
-  /** It can stand in the world (a model only with a size). */
+  /** It can stand in the world: a model only with a size, a video not
+   *  until a free host shows one. */
   readonly free: boolean;
 }
 
@@ -98,7 +119,13 @@ const CASES: Case[] = tourBlockKinds().flatMap((kind) =>
       ...VIEW_FIELDS[kind]?.[view],
     };
     if (kind !== "model")
-      return [{ name: `${kind} ${view}`, block, free: true }];
+      return [
+        {
+          name: `${kind} ${view}`,
+          block,
+          free: SHOWN_FREE[kind] !== null,
+        },
+      ];
     const sized = { ...block, sizeM: 2 };
     return [
       // A staged model is shown at its file's own size: it takes none.
@@ -165,9 +192,21 @@ describe("every kind moved out of a story", () => {
       new Set(tourBlockKinds()),
     );
     expect(CASES.some((c) => !c.free)).toBe(true);
+    // Every kind no free host shows is among the refused cases below,
+    // checked against the move rule itself.
+    for (const kind of tourBlockKinds()) {
+      if (SHOWN_FREE[kind] !== null) continue;
+      const cases = CASES.filter((c) => c.block["kind"] === kind);
+      expect(cases.length, kind).toBeGreaterThan(0);
+      expect(
+        cases.every((c) => !c.free),
+        kind,
+      ).toBe(true);
+    }
   });
 
-  // A model without a size cannot stand in the world: refused, unchanged.
+  // A model without a size, or a kind no free host shows, cannot stand in
+  // the world: refused, unchanged.
   it.each(CASES.filter((c) => !c.free))("$name", ({ block }) => {
     const before = open(tourWith(block));
     expect(childMoveChange(before, "it", { place: "free" })).toEqual({
