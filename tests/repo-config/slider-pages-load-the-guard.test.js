@@ -112,6 +112,10 @@ const EXEMPT = new Map([
     'design prototype in the inspiration gallery, wired to nothing',
   ],
   [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/model-lod-1/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
     'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-1-narrated-text/index.html',
     'design prototype in the inspiration gallery, wired to nothing',
   ],
@@ -250,6 +254,10 @@ const EXEMPT = new Map([
   // aids that change only the draft's own feel.
   [
     'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-6-find-first/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/character-library-1/maker.html',
     'design prototype in the inspiration gallery, wired to nothing',
   ],
 ]);
