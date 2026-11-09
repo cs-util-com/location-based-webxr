@@ -47,7 +47,10 @@ the reading sign (`reading-sign.ts`) are world parts too.
   closes, the older is built again, so its own close still closes it (two
   overlapping narration circles hand the screen back and forth); a build
   that throws shows nothing and gives the screen back; a stale close does
-  nothing. First user: the
+  nothing. A close never throws: when the panel it brings back fails to
+  build again, that error goes to `screenIn(host, { onError })` (the
+  page's walk toast; default `console.error`), so a part's dispose that
+  closes its panel first still frees its sound and its look. First user: the
   narration circle's player card.
 - `WorldPart` - `object` (what stands; placed by the renderer, never by the
   part), `tapTarget?` (what a tap is cast against; none: no tap),

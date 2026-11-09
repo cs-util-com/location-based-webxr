@@ -61,5 +61,7 @@ margin and carry on at return, the visitor's pause staying off, `onInside`,
 the editor's silence, and dispose. `spot-card.test.ts`: the card opens
 inside and closes outside, its button plays and pauses, a heard narration
 plays again from 0, the first circle's card back after leaving an
-overlapping one, and no card in the editor or after dispose. `play.test.ts`: the world door picks it
+overlapping one, a dispose that still frees the voice and the look when
+the panel it pushed aside fails to build again (told once), and no card
+in the editor or after dispose. `play.test.ts`: the world door picks it
 for `spot`.

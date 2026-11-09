@@ -62,11 +62,26 @@ interface ScreenEntry {
   cleanUp: (() => void) | null;
 }
 
+/** What a screen tells the page. */
+export interface ScreenOptions {
+  /** A pushed-aside panel failed to build again when a newer one closed;
+   *  default `console.error`. */
+  readonly onError?: (error: unknown) => void;
+}
+
 /** A screen in `host` (the page's panel root): one panel at a time, the
  *  newest shown. A newer one takes the older one down (its clean-up
  *  runs) and, once it closes, the older one is built again: two
  *  overlapping narration circles hand the screen back and forth. */
-export function screenIn(host: HTMLElement): WorldScreen {
+export function screenIn(
+  host: HTMLElement,
+  options: ScreenOptions = {},
+): WorldScreen {
+  const onError =
+    options.onError ??
+    ((error: unknown) => {
+      console.error(error);
+    });
   /** Every panel asked for and not closed, the newest last. */
   const asked: ScreenEntry[] = [];
   const takeDown = (entry: ScreenEntry): void => {
@@ -115,7 +130,14 @@ export function screenIn(host: HTMLElement): WorldScreen {
         try {
           takeDown(entry);
         } finally {
-          showNewest();
+          // The rebuild is the other panel's: its throw is told, never
+          // thrown into this close, which a part's dispose runs before
+          // freeing its sound and its look.
+          try {
+            showNewest();
+          } catch (error) {
+            onError(error);
+          }
         }
       };
     },

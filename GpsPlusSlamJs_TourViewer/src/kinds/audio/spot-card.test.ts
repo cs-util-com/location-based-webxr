@@ -6,6 +6,7 @@
  * its button must follow the circle's tap rule, and the editor - which
  * builds the same part, still and silent - must never open one.
  */
+import { type BufferGeometry, Mesh, Points } from "three";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -117,6 +118,46 @@ describe("a narration circle's card", () => {
     expect(shown()).toEqual([]);
     a.dispose();
     b.dispose();
+  });
+
+  // Why: closing this circle's card builds the panel it pushed aside again.
+  // A throw from that rebuild belongs to the other panel; it must not
+  // escape the close and skip the rest of this part's dispose, or the
+  // voice keeps its element and file and the circle its geometry. It is
+  // told once, through the screen's error channel.
+  it("frees its voice and look even when the panel it pushed aside fails to rebuild", () => {
+    const host = document.createElement("div");
+    const errors: unknown[] = [];
+    const screen = screenIn(host, { onError: (e) => errors.push(e) });
+    let builds = 0;
+    screen.show(() => {
+      builds += 1;
+      if (builds > 1) throw new Error("no rebuild");
+      return () => undefined;
+    });
+    const { env, sounds } = recordingEnv("play");
+    const part = spotPart(audioBlock("spot", { radiusM: 6 }), {
+      ...env,
+      screen,
+    });
+    part.update?.(at(0));
+    part.tap?.();
+    expect(host.querySelector("[data-testid=narration-card]")).not.toBeNull();
+    let geometriesFreed = 0;
+    part.object.traverse((o) => {
+      if (o instanceof Mesh || o instanceof Points) {
+        (o.geometry as BufferGeometry).addEventListener(
+          "dispose",
+          () => (geometriesFreed += 1),
+        );
+      }
+    });
+    expect(() => part.dispose()).not.toThrow();
+    expect(sounds[0]?.calls.at(-1)).toBe("dispose");
+    expect(geometriesFreed).toBeGreaterThan(0);
+    expect(errors).toHaveLength(1);
+    expect((errors[0] as Error).message).toBe("no rebuild");
+    expect(host.childElementCount).toBe(0);
   });
 
   it("goes with the part, and never opens in the editor", () => {

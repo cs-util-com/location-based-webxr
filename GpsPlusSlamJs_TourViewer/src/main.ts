@@ -944,7 +944,13 @@ const worldSound = createWorldSound({
 const viewer = createViewerPlacement({
   worldSound,
   // Where a narration circle opens its player card.
-  worldScreen: screenIn(element("narration-card-root")),
+  worldScreen: screenIn(element("narration-card-root"), {
+    onError: () => {
+      const message = "A narration card could not be shown again.";
+      walkToast.say([message]);
+      walkToast.announce(message);
+    },
+  }),
   ctx,
   mode,
   arStore,
