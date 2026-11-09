@@ -1490,6 +1490,49 @@ describe("createStationsLayer", () => {
       layer.dispose();
     });
 
+    // Why: a part's look may hang on the camera - the editor's speaker
+    // icon keeps its least size on the screen and faces the camera, a
+    // character card turns toward it. Nothing ticked parts in the editor
+    // before, so this pins that each frame hands them the camera, its
+    // lens and the viewer in the part's parent frame, as play does.
+    it("hands each part the camera, its lens and the viewer every frame it is given a camera", async () => {
+      const editor = door();
+      const frames: Parameters<NonNullable<WorldPart["update"]>>[0][] = [];
+      const ticking = (block: TourBlock, env: WorldEnv): WorldPart | null => {
+        const made = editor.part(block, env);
+        if (made === null) return null;
+        return { ...made, update: (frame) => frames.push(frame) };
+      };
+      const { d } = deps({ worldPart: ticking });
+      const layer = createStationsLayer(d);
+      const a = station("a", 0, 0, [spot]);
+      layer.setTour(manifest([a], assets), new Map());
+      layer.update(view(0, 0, "a", 1));
+      await settle();
+      // Without a camera nothing is ticked.
+      layer.update(view(0, 0, "a", 1));
+      expect(frames).toHaveLength(0);
+      const eye = new THREE.PerspectiveCamera(50, 1, 0.1, 5000);
+      eye.position.set(10, 540, -4);
+      layer.update({ ...view(0, 0, "a", 1), eye });
+      expect(frames).toHaveLength(1);
+      const frame = frames[0]!;
+      expect(frame.camera).toBe(eye);
+      // The editor's 50 degree lens over a 900 px view.
+      expect(frame.metresPerPxAtOneM).toBeCloseTo(
+        (2 * Math.tan((25 * Math.PI) / 180)) / 900,
+        12,
+      );
+      // The viewer in the part's parent frame: where the camera stands
+      // seen from the part's own parent.
+      const parent = editor.made[0]!.object.parent!;
+      const local = parent.worldToLocal(eye.position.clone());
+      expect(frame.viewer[0]).toBeCloseTo(local.x, 6);
+      expect(frame.viewer[1]).toBeCloseTo(local.y, 6);
+      expect(frame.viewer[2]).toBeCloseTo(local.z, 6);
+      layer.dispose();
+    });
+
     // Not only "the editor agrees with play" (both place the part with
     // the same pose, so that alone would pass a shared mistake): each is
     // held to the block's own pose, in its station's frame, over turns

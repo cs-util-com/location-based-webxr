@@ -95,6 +95,25 @@ describe("a narration circle in the world", () => {
     part.dispose();
   });
 
+  // Why: a narration has the same editor mark as an ambient sound, so a
+  // creator finds both the same way; the visitor never sees it.
+  it("wears the editor's speaker icon in the editor only", () => {
+    const named = (mode: "play" | "edit") => {
+      const part = spotPart(
+        audioBlock("spot", { radiusM: 6 }),
+        recordingEnv(mode).env,
+      );
+      let found = false;
+      part.object.traverse((o) => {
+        if (o.name === "sound-icon") found = true;
+      });
+      part.dispose();
+      return found;
+    };
+    expect(named("edit")).toBe(true);
+    expect(named("play")).toBe(false);
+  });
+
   it("frees its voice and its look", () => {
     const { part, voice } = circle();
     part.update?.(at(0));

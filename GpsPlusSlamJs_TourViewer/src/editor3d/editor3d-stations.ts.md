@@ -30,7 +30,9 @@ ray (`pick`).
   `stationSelected` (the selection is that station itself), `standing`
   (`morphStanding`), `camera` (the camera's position in the world),
   `viewportPx` and `fovDeg` (the view's height in CSS px and the camera's
-  vertical lens: what a code's size on screen is worked out from).
+  vertical lens: what a code's size on screen is worked out from), and
+  the optional `eye` (the camera itself: given, each drawn part with an
+  `update` is ticked, see below).
 - `LayerPreview` - `{ kind: "station", id, geo, foundRadiusM }` or
   `{ kind: "item", id, geo, sizeM }` (ellipsoidal geo poses, as the file).
 - `DEFAULT_CODE_SIZE_M` - 0.2; `BILLBOARD_LIFT_M` - 4.6 (how much higher a
@@ -62,6 +64,12 @@ standing`). A distance, size or focal length that is not a positive
     updated); a change of its `view` draws it anew, as the visitor sees
     it;
   - `update(view)` - each frame: near-K (`nearStations`), the morph;
+    with `view.eye`, each part of a shown station that has an `update`
+    is handed a `WorldFrame`: the page clock, the camera's position in
+    the part's parent frame (as the visitor's `tickWorldParts` gives it),
+    the camera and `metresPerPxAtOneM` (1 / `focalPxOf`), so a part can
+    keep a size on the screen or face the camera (the speaker icon,
+    `kinds/audio/sound-icon.ts`) without importing the editor;
   - `stats()` - `{ stations, codes, codeScales, shown, renders }`
     (`codeScales`: each code's drawn size over its printed one);
   - `codeCorners()` - each code's drawn square as its four corners in
@@ -288,7 +296,9 @@ item's station lighter; a part from the world door built in the
 editor's mode from the block the visitor's page builds it from, both at
 the block's own pose over six turns (none to upside down), kept through
 the morph, picked and located but no gesture's target, moved and turned
-by a preview and freed with the layer; a part whose dispose throws
+by a preview and freed with the layer; each part ticked with the
+camera, its lens and the viewer in its parent's frame only when a
+camera is given; a part whose dispose throws
 leaving its station freed and drawn again later, every station freed
 on dispose, a model whose free throws still freeing the station's
 parts, and a mesh whose geometry free throws still freeing the model's

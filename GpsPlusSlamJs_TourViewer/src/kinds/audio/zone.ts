@@ -4,7 +4,10 @@
  * centre, through the background channel; it has no stop of its own, so
  * it takes no tap. Its mark is a glow on the ground whose gradient is the
  * loudness curve (`zoneGlow`). In the editor it is the same glow, still
- * and silent.
+ * and silent, with two marks the visitor never sees: the hearing range as
+ * a ring drawn over the ground (`rangeRing`), and a speaker icon at the
+ * centre (`soundIcon`), which is all the editor picks it by - a press
+ * inside the range is a press on the ground.
  *
  * @see zone.ts.md
  */
@@ -14,12 +17,15 @@ import {
   CircleGeometry,
   Group,
   Mesh,
+  RingGeometry,
   ShaderMaterial,
+  Vector3,
   type Object3D,
 } from "three";
 
 import type { WorldEnv, WorldPart } from "../../world-part.js";
 import type { SoundHandle } from "../../world-sound.js";
+import { soundIcon } from "./sound-icon.js";
 import {
   AMBIENT_DEFAULT_MAX_M,
   zoneGain,
@@ -86,28 +92,157 @@ function zoneGlow(reach: ZoneReach): {
   };
 }
 
+/** The range ring's line: at least `px` CSS px wide on the screen and
+ *  `minWidthM`, never wider than `maxWidthM` (nor the range). */
+export const RANGE_RING = Object.freeze({
+  px: 3,
+  minWidthM: 0.12,
+  maxWidthM: 4,
+});
+
+/** Draws over the scene's default order, under the icon and the
+ *  found-radius rings (20). */
+const RANGE_RING_RENDER_ORDER = 19;
+
+/**
+ * The range ring's width (m) seen `distanceM` from the camera through a
+ * lens of `metresPerPxAtOneM` (metres one CSS px covers 1 m from the
+ * camera): `RANGE_RING.px` on the screen, within `minWidthM` and
+ * `maxWidthM` and never wider than the range `maxM`. A distance or lens
+ * that is not a positive finite number gives `minWidthM`.
+ */
+export function rangeRingWidthM(
+  distanceM: number,
+  metresPerPxAtOneM: number,
+  maxM: number,
+): number {
+  const cap = Math.min(RANGE_RING.maxWidthM, Math.max(maxM, 0));
+  const ok =
+    Number.isFinite(distanceM) &&
+    distanceM > 0 &&
+    Number.isFinite(metresPerPxAtOneM) &&
+    metresPerPxAtOneM > 0;
+  const wanted = ok
+    ? Math.max(
+        RANGE_RING.minWidthM,
+        RANGE_RING.px * distanceM * metresPerPxAtOneM,
+      )
+    : RANGE_RING.minWidthM;
+  return Math.min(cap, wanted);
+}
+
+/**
+ * The hearing range for the editor: a line on the circle of `maxM`, its
+ * inner edge drawn by a shader so its width follows the camera without new
+ * geometry. Flat, it cannot follow a sloped ground, so it is drawn with no
+ * depth test, over the relief and buildings, as the found-radius ring is.
+ */
+function rangeRing(maxM: number): {
+  readonly object: Mesh;
+  setWidthM(widthM: number): void;
+  dispose(): void;
+} {
+  const geometry = new RingGeometry(
+    Math.max(maxM - RANGE_RING.maxWidthM, 0),
+    maxM,
+    128,
+  );
+  const material = new ShaderMaterial({
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+    uniforms: {
+      uOuter: { value: maxM },
+      uWidth: { value: RANGE_RING.minWidthM },
+    },
+    vertexShader: /* glsl */ `
+      varying vec2 vPos;
+      void main() {
+        vPos = position.xy;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform float uOuter;
+      uniform float uWidth;
+      varying vec2 vPos;
+      void main() {
+        if (length(vPos) < uOuter - uWidth) discard;
+        gl_FragColor = vec4(1.0, 0.75, 0.32, 0.9);
+      }`,
+  });
+  const ring = new Mesh(geometry, material);
+  ring.name = "sound-range";
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.05;
+  ring.renderOrder = RANGE_RING_RENDER_ORDER;
+  return {
+    object: ring,
+    setWidthM(widthM) {
+      const uniform = material.uniforms["uWidth"];
+      if (uniform !== undefined) uniform.value = widthM;
+    },
+    dispose() {
+      geometry.dispose();
+      material.dispose();
+    },
+  };
+}
+
+/** Not hit by a ray: the editor picks a sound by its icon alone. */
+const unpicked = (object: Object3D): void => {
+  object.raycast = () => undefined;
+};
+
+const camWorld = new Vector3();
+const centreWorld = new Vector3();
+
 export function zonePart(block: TourAudioBlock, env: WorldEnv): WorldPart {
   const reach = zoneReachOf(block);
   const object = new Group();
   const glow = zoneGlow(reach);
   object.add(glow.object);
   let sound: SoundHandle | null = null;
+  if (env.mode === "play") {
+    return {
+      object,
+      update(frame) {
+        const [x, , z] = frame.viewer;
+        const d = Math.hypot(x - object.position.x, z - object.position.z);
+        sound ??= env.sound(block.audio, "background");
+        sound.level(zoneGain(d, reach), frame.seconds);
+      },
+      dispose() {
+        sound?.dispose();
+        sound = null;
+        glow.dispose();
+      },
+    };
+  }
+  const ring = rangeRing(reach.maxM);
+  const icon = soundIcon();
+  unpicked(glow.object);
+  unpicked(ring.object);
+  object.add(ring.object, icon.object);
   return {
     object,
-    ...(env.mode === "play"
-      ? {
-          update(frame) {
-            const [x, , z] = frame.viewer;
-            const d = Math.hypot(x - object.position.x, z - object.position.z);
-            sound ??= env.sound(block.audio, "background");
-            sound.level(zoneGain(d, reach), frame.seconds);
-          },
-        }
-      : {}),
+    update(frame) {
+      icon.update(frame);
+      const camera = frame.camera;
+      if (camera === undefined) return;
+      camera.getWorldPosition(camWorld);
+      object.getWorldPosition(centreWorld);
+      ring.setWidthM(
+        rangeRingWidthM(
+          camWorld.distanceTo(centreWorld),
+          frame.metresPerPxAtOneM ?? Number.NaN,
+          reach.maxM,
+        ),
+      );
+    },
     dispose() {
-      sound?.dispose();
-      sound = null;
       glow.dispose();
+      ring.dispose();
+      icon.dispose();
     },
   };
 }

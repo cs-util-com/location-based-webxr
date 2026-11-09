@@ -15,7 +15,9 @@
  * its anchor, on the side its face looks to, never under the wall it hangs
  * on - and the billboards and their poles rise. Models, reading stands
  * and the parts of the world door (`worldPart`, the visitor's, asked in
- * the editor's mode) keep their pose;
+ * the editor's mode) keep their pose, and each frame a part with an
+ * `update` is handed the camera (`StationsLayerView.eye`): a character's
+ * card turns toward it, a sound's icon faces it at its least size;
  * pins (the phone's labels) stand. Laid flat, a code is drawn at least
  * `CODE_SCREEN_PX` on screen (`codeGrowth`): grown with the camera's
  * distance wherever its printed size would look smaller, its printed size
@@ -132,6 +134,9 @@ export interface StationsLayerView {
    *  what a code's size on screen is worked out from (`focalPxOf`). */
   readonly viewportPx: number;
   readonly fovDeg: number;
+  /** The camera drawing the view: handed with its lens to each drawn
+   *  world part that has an `update`. Absent: no part is ticked. */
+  readonly eye?: THREE.Camera;
 }
 
 /** A code's printed side when the tour does not say (m). */
@@ -257,6 +262,8 @@ interface StationContent {
   /** Each photo plane and its upright quaternion (a drag's preview
    *  turns it). */
   readonly photos: { mesh: THREE.Mesh; upright: THREE.Quaternion }[];
+  /** The world parts drawn for it that take a frame (`update`). */
+  readonly parts: WorldPart[];
 }
 
 interface StationEntry {
@@ -317,6 +324,7 @@ const previewFrame = new THREE.Matrix4();
 const tourFrame = new THREE.Matrix4();
 const faceUp = new THREE.Quaternion();
 const normal = new THREE.Vector3();
+const eyeLocal = new THREE.Vector3();
 
 /** A code's square as the morph moves it: its pose where it was measured,
  *  and where its middle goes as it lies flat. */
@@ -631,6 +639,7 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       ring,
       pole,
       photos: [],
+      parts: [],
     };
     entry.content = content;
     renders++;
@@ -652,7 +661,10 @@ export function createStationsLayer(deps: StationsLayerDeps) {
         : {
             worldPart: (block: TourBlock) => {
               const part = deps.worldPart?.(block, env) ?? null;
-              if (part !== null) partObjects.add(part.object);
+              if (part !== null) {
+                partObjects.add(part.object);
+                if (part.update !== undefined) content.parts.push(part);
+              }
               return part;
             },
           }),
@@ -881,6 +893,31 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     poseDrawn(entry, p.id, item.pose, null);
   };
 
+  /** Each drawn part that takes a frame, of a station shown: the page
+   *  clock, the camera's position in the part's parent frame (as the
+   *  visitor's `tickWorldParts` gives it), the camera and its lens. A
+   *  part a failed load took out (no parent) is skipped. */
+  const tickParts = (eye: THREE.Camera, metresPerPxAtOneM: number) => {
+    const seconds = performance.now() / 1000;
+    eye.updateMatrixWorld();
+    for (const entry of stations.values()) {
+      if (entry.content === null || !entry.root.visible) continue;
+      for (const part of entry.content.parts) {
+        const parent = part.object.parent;
+        if (parent === null) continue;
+        parent.updateWorldMatrix(true, false);
+        eye.getWorldPosition(eyeLocal);
+        parent.worldToLocal(eyeLocal);
+        part.update?.({
+          seconds,
+          viewer: [eyeLocal.x, eyeLocal.y, eyeLocal.z],
+          camera: eye,
+          metresPerPxAtOneM,
+        });
+      }
+    }
+  };
+
   return {
     group,
     /** Place every station and code of `manifest` (null: none). */
@@ -983,6 +1020,7 @@ export function createStationsLayer(deps: StationsLayerDeps) {
           .multiplyScalar((1 - view.standing) * grown)
           .add(code.base);
       }
+      if (view.eye !== undefined) tickParts(view.eye, 1 / focal);
     },
     /** Draw a drag's preview (null: none; what the last one showed is
      *  drawn where the tour has it again). */

@@ -54,7 +54,9 @@ the reading sign (`reading-sign.ts`) are world parts too.
   narration circle's player card.
 - `WorldPart` - `object` (what stands; placed by the renderer, never by the
   part), `tapTarget?` (what a tap is cast against; none: no tap),
-  `update?({ seconds, viewer })` (driven by `tickWorldParts`), `tap?()`,
+  `update?({ seconds, viewer, camera?, metresPerPxAtOneM? })` (driven by
+  `tickWorldParts` in play, by the editor's stations layer in the editor,
+  which also hands the camera and its lens), `tap?()`,
   `ready?` (a promise that settles once a part that loads something
   stands; the renderer places the part at once and never waits for it, so
   a model file holds back no other block, and a rejection then disposes
