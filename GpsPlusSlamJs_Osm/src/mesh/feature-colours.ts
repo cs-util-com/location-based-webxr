@@ -361,6 +361,9 @@ const PEDESTRIAN = new Set<string>(PEDESTRIAN_CLASSES);
  */
 export function roadColour(tags: OsmTags): Rgb {
   const highway = tags["highway"] ?? "";
+  if (highway === "footway" && tags["footway"] === "sidewalk") {
+    return SIDEWALK_RGB;
+  }
   if (PEDESTRIAN.has(highway)) {
     return ROAD_CLASS_RGB.get(highway) ?? DEFAULT_ROAD_RGB;
   }
@@ -371,9 +374,19 @@ export function roadColour(tags: OsmTags): Rgb {
   );
 }
 
+/**
+ * A separately mapped sidewalk (`highway=footway` + `footway=sidewalk`):
+ * paved concrete, so lighter than the footway tan, still warm, inside the
+ * pedestrian family (the class wins, DEC-R7b-4). O3's tone, chosen by the
+ * owner (city objects plan 2026-11-07-2315 M4a). Nothing is invented from
+ * `sidewalk=*` on a carriageway.
+ */
+const SIDEWALK_RGB: Rgb = 0xc6b49c;
+
 /** Every colour a road can take, for the contrast check. */
 export function allRoadColours(): Rgb[] {
   return [
+    SIDEWALK_RGB,
     ...ROAD_CLASS_RGB.values(),
     ...SURFACE_RGB.values(),
     DEFAULT_ROAD_RGB,

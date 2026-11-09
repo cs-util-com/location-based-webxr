@@ -227,6 +227,6 @@ export {
   cosmeticRank,
   cosmeticTreeSource,
 } from "./cosmetic-trees.js";
-export type { City, CityGround, CityOptions } from "./city.js";
+export type { City, CityGround, CityOptions, CityRoadOptions } from "./city.js";
 export { buildCity, cityGround } from "./city.js";
 export { shellRandFor } from "./shell-rand.js";

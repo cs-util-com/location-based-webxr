@@ -11,10 +11,13 @@ import { barrierKind, type BarrierKind } from "./barriers.js";
 import { parseOsmColour, type Rgb } from "./feature-colours.js";
 import { linearToSrgb, srgbToLinear } from "./srgb.js";
 
+/** A wall's sRGB, also the colour of tags of no solid kind. */
+const WALL_RGB: Rgb = 0xa59e93;
+
 /** sRGB per kind. Muted on purpose: barriers sit behind the buildings. */
 export const BARRIER_KIND_RGB: ReadonlyMap<BarrierKind, Rgb> = new Map([
   ["hedge", 0x6a785d],
-  ["wall", 0xa59e93],
+  ["wall", WALL_RGB],
   ["city_wall", 0x9b9081],
   ["retaining_wall", 0x9d9d98],
   ["fence", 0x7d7366],
@@ -36,8 +39,6 @@ export const BARRIER_MATERIAL_RGB: ReadonlyMap<string, Rgb> = new Map([
 /** Share of a tagged `colour` in the result; the rest is the base colour. */
 export const TAGGED_BARRIER_COLOUR_SHARE = 0.5;
 
-const WALL_RGB = 0xa59e93;
-
 function mixLinear(base: Rgb, tagged: Rgb, share: number): Rgb {
   let out = 0;
   for (const shift of [16, 8, 0]) {
@@ -49,16 +50,7 @@ function mixLinear(base: Rgb, tagged: Rgb, share: number): Rgb {
   return out >>> 0;
 }
 
-/**
- * The packed sRGB colour of a barrier with these tags.
- *
- * - The kind colour, a wall's for tags of no solid kind.
- * - Replaced by the material colour (`material`, then `fence_type`, then
- *   `wall` on a wall), except on a hedge, which is leaves.
- * - Then a parseable `colour` (else `building:colour`) is mixed in at
- *   `TAGGED_BARRIER_COLOUR_SHARE`, in linear light. Named colours resolve
- *   through the one parser (`parseOsmColour`).
- */
+/** A barrier's kind or material colour, before any tagged colour. */
 function baseColour(tags: OsmTags): Rgb {
   const kind = barrierKind(tags);
   const kindRgb =
@@ -71,6 +63,16 @@ function baseColour(tags: OsmTags): Rgb {
   return BARRIER_MATERIAL_RGB.get(material ?? "") ?? kindRgb;
 }
 
+/**
+ * The packed sRGB colour of a barrier with these tags.
+ *
+ * - The kind colour, a wall's for tags of no solid kind.
+ * - Replaced by the material colour (`material`, then `fence_type`, then
+ *   `wall` on a wall), except on a hedge, which is leaves.
+ * - Then a parseable `colour` (else `building:colour`) is mixed in at
+ *   `TAGGED_BARRIER_COLOUR_SHARE`, in linear light. Named colours resolve
+ *   through the one parser (`parseOsmColour`).
+ */
 export function barrierColour(tags: OsmTags): Rgb {
   const base = baseColour(tags);
   const tagged =

@@ -10,6 +10,13 @@
  * executable record of which, because the assumption is the kind that gets
  * re-made every time somebody reads "the mesh grows linearly with features".
  *
+ * Roads stay on the decomposable side through the M4a mitre strip. Its first
+ * cut (r1161) broke the strip at every node another way shared, which made
+ * each ribbon depend on the whole call and moved roads across; the M4a
+ * review's MINOR 3 (r1164) dropped that break, so each ribbon is again built
+ * from its own way alone. The cost figures below were measured with the
+ * earlier disc-per-vertex roads.
+ *
  * WHAT THIS COST, measured on devbox-win11 against a live res-7 Cologne tile
  * (32 261 features, 21.3 MB, 2026-09-21):
  *

@@ -285,12 +285,12 @@ function placeRoad(o: THREE.Object3D, liftM: number, offset: number): void {
 }
 
 /**
- * A building mesh (the library marks it `solid`, its picking blocker) lit
- * by `light`: its colour, white in the library, set to the gain. The roads
+ * A building mesh (the library names its layer `cityLayer = "buildings"`)
+ * lit by `light`: its colour, white in the library, set to the gain. The roads
  * and the shared tree material are left alone.
  */
 function lightBuilding(o: THREE.Object3D, light: number): void {
-  if (o.userData.solid !== true) return;
+  if (o.userData.cityLayer !== "buildings") return;
   for (const m of materialsOf(o)) {
     const { color } = m as THREE.MeshStandardMaterial;
     if (color instanceof THREE.Color) color.setScalar(light);
