@@ -923,7 +923,7 @@ describe("buildRoads - the mitre strip (M4a)", () => {
 
 /**
  * Class order (M4a): a carriageway covers the footway that crosses it, and a
- * way's discs sit under its own strip. WHY: the ribbons of one chunk are one
+ * way's discs sit at its own strip's height. WHY: the ribbons of one chunk are one
  * mesh at one ground height, so two overlapping ribbons z-fight or show
  * whichever the depth test happens to keep. The lift is geometric, inside
  * one rung of OsmDemo's 4 cm ground ladder (the M4a spike's choice).
@@ -958,21 +958,27 @@ describe("buildRoads - class order (M4a)", () => {
     expect(Math.min(...road)).toBeGreaterThan(Math.max(...footway));
   });
 
-  it("puts a way's discs under its own strip", () => {
+  it("puts a way's discs at its own strip's height, never under it", () => {
+    // WHY (owner decision 2026-11-09, city objects plan section 27): a disc
+    // half a step under its strip left a higher class's END disc 0.1 step
+    // (0.5 mm) over a lower class's strip, which fought on the GPU at 226 m
+    // (12.6 % of the overlap). At the strip's own height the disc is
+    // coplanar only with its own strip, whose colour it shares, and every gap
+    // to another class is the strips' 0.6 step. The end disc's centre and
+    // the strip's corner beside it, where the disc's rim has a vertex too.
     const road = buildRoads(
       [way({ highway: "residential" }, [at(0, 0), at(30, 0)])],
       { frame: FRAME },
     );
     const mesh = road[0]?.mesh as MeshData;
-    // The end disc's centre against the strip's corner beside it. The disc's
-    // rim has a vertex at that corner too, so the corner carries two heights:
-    // the disc's (equal to its centre) and the strip's, above it.
     const [disc] = heightsAt(mesh, 0, 0);
     const corner = heightsAt(mesh, 0, 3);
     expect(disc).toBeDefined();
     expect(corner).toHaveLength(2);
-    expect(Math.min(...corner)).toBeCloseTo(disc as number, 9);
-    expect(Math.max(...corner)).toBeGreaterThan(disc as number);
+    for (const h of corner) expect(h).toBeCloseTo(disc as number, 9);
+    // Rank 2 at the default step: the lift is 2 + 0.4 f steps, f in [0, 1).
+    expect(disc).toBeGreaterThanOrEqual(2 * ROAD_RANK_STEP_M);
+    expect(disc).toBeLessThan(2.4 * ROAD_RANK_STEP_M);
   });
 
   it("keeps every lift inside 2 cm, under half of OsmDemo's 4 cm ground rung", () => {

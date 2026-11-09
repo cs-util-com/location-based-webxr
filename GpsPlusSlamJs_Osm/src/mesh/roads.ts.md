@@ -113,12 +113,15 @@ footway crossing it.
     has no such parameters because it leaves no notch to limit. O3's kerb lines
     and their `kerbTaperM` are NOT ported: plan §3 left the kerb in the lab.
 - **Classes are stacked by a lift, not by draw order (M4a class order).** A way
-  of rank r sits `rankStepM * (r + 0.4 * f)` above the ground at its discs and
-  half a step higher along its strip, where f in [0, 1) is a hash (FNV-1a) of
-  the feature key, so two ways of one class at a junction never share a depth.
-  So a carriageway covers a footway that crosses it, and a way's own discs sit
-  under its strip rather than poking through at a junction. At the default 5 mm
-  step the highest road is 3.9 steps = 1.95 cm up, under the 4 cm rung
+  of rank r sits `rankStepM * (r + 0.4 * f)` above the ground, its strip and
+  its discs alike, where f in [0, 1) is a hash (FNV-1a) of the feature key, so
+  two ways of one class at a junction never share a depth. So a carriageway
+  covers a footway that crosses it. A way's discs sit at its strip's own height
+  (owner decision 2026-11-09, r1171), coplanar only with that strip, whose
+  colour they share; until r1171 they sat half a step under it, which left a
+  higher class's end disc 0.1 step (0.5 mm) over a lower class's strip, a gap
+  the depth buffer does not resolve (see the depth spike below). At the default
+  5 mm step the highest road is 3.4 steps = 1.7 cm up, under the 4 cm rung
   `layer-order.ts` gives roads above the plates. Whether these millimetres separate
   on screen was measured: see the depth spike below.
   - **The rank reads `highway` only; `bridge` and `layer` are ignored**, so a
@@ -226,8 +229,9 @@ position moved by a millimetre between them.
     (11-19 % at 3.4 mm).
   - Main before M4a (0 mm): 8-66 % in every view.
   - Phone GPUs were not measured; SwiftShader is above.
-- **The alternative for the end discs, measured, not built (the owner's
-  call).** Placing a way's discs at its strip's own height instead of half a
+- **The alternative for the end discs, measured in r1164 and BUILT in r1171
+  (owner decision 2026-11-09; its real-code numbers are in the next
+  section).** Placing a way's discs at its strip's own height instead of half a
   step below makes the disc-over-lower-strip gap equal the strip gap (0.6
   step) and leaves a disc coplanar only with its own strip, whose colour it
   shares. At 5 mm that is 3 mm: on the GPU 0 / 1.0 / 0 % at 226 m, clean in
@@ -240,8 +244,9 @@ position moved by a millimetre between them.
   exists so a way's own disc does not poke through its strip; unmeasured
   here is how much a per-vertex drape on a slope moves a disc rim against
   the strip (the spike is flat), which matters for every option above that
-  relies on a few millimetres.
-- **So the step stays 5 mm until the owner decides.** No candidate is clean
+  relies on a few millimetres. (Measured in r1171: see the drape bullet in
+  the next section.)
+- **So the step stayed 5 mm (the owner kept it on 2026-11-09).** No candidate is clean
   everywhere: 570 m fights up to 10.2 mm on the GPU, SwiftShader up to
   18 mm, and one class's ties do not depend on the step. The cheapest
   measured improvement is the end-disc alternative at 5 mm. A larger step
@@ -258,8 +263,84 @@ position moved by a millimetre between them.
   overlaps a handful, under the method's noise. The two Schlossberg views
   (a residential street ending on a service road, on the castle hill) put the
   camera behind the hill and show no roads, so they are no evidence either
-  way. The spike above is the quantitative evidence; the decision is open in
-  the M4a report.
+  way. The spike above is the quantitative evidence; the owner decided on it
+  (next section).
+
+## The decision and its numbers on the real code (r1171, 2026-11-09)
+
+The owner kept the 5 mm step and moved the discs to their strip's height; no
+wider ladder. Measured again with the real `buildRoads` (bundled from the
+source before, c1ecfcba0, and after), not a stand-in pair of quads. Three
+cases: **end** (a footway's end disc under a crossing service way, the case
+the change targets), **lowEnd** (the service way's end disc over the footway)
+and **cross** (two strips crossing, no disc; its gaps are equal before and
+after, so it is the control: it shows what the strips' 2.5 mm absolute shift
+alone does to the depth quantisation). Feature keys chosen for the worst tie
+fractions (footway f near 1, service f near 0); footway 2 m, service 12 m
+(20 m and 100 m for the deep globe view). Percent of the overlap's pixels
+losing the depth test, three crossing positions, 12 frames each.
+
+- **Real GPU (Iris Xe, ANGLE/D3D11), flat, 5 mm, end case, before -> after**
+  (the three positions):
+  - OsmDemo close 41 m: 0 / 0 / 0 -> 0 / 0 / 0
+  - OsmDemo 226 m boot view: 4.56 / 13.84 / 12.58 -> 0 / 0.31 / 0.16
+  - OsmDemo 570 m: 25.0 / 15.6 / 8.5 -> 21.9 / 20.8 / 6.1 (fights for strips
+    anyway; noise both ways)
+  - OsmDemo low 100 m: 1.04 / 1.67 / 1.67 -> 0 / 0 / 0
+  - Globe landing 30 m: 0 -> 0; 100 m: 9.6 / 6.7 / 5.8 -> 0 / 0 / 0
+  - Globe landing 200 m deep: 7.6 / 7.2 / 7.1 -> 0 / 0 / 0
+  - Editor 300 m: 33.6 / 33.6 / 33.1 -> 0 / 0 / 0; editor 30 m: 0 -> 0
+- **The step swept at 3, 5 and 8 mm, flat and on a 25 % slope** (camera fixed,
+  the scene moved by 0, 1.3, 2.5 and 3.7 mm against the quantisation, three
+  positions each: mean / max percent over the 12 readings), 226 m and the
+  editor at 300 m:
+  - end, 226 m, flat: before 10.5 / 15.4, 8.7 / 13.8, 6.5 / 11.2; after
+    3.0 / 7.1, 0.6 / 2.4, 0 / 0
+  - end, 226 m, slope: before 15.5 / 41.7, 6.0 / 12.2, 6.1 / 11.6; after
+    12.7 / 24.3, 2.4 / 6.3, 0.2 / 1.6
+  - end, editor 300 m: before 8-16 mean, 22-36 max at every step and both
+    grounds; after 0 everywhere
+  - lowEnd, 226 m, flat: before 4.0 / 7.0, 2.1 / 5.1, 0 / 0; after
+    5.3 / 11.0, 2.0 / 5.9, 0.2 / 0.8
+  - lowEnd, 226 m, slope: before 10.2 / 25.3, 1.6 / 4.2, 0.1 / 1.3; after
+    18.4 / 35.3, 2.5 / 7.5, 0.9 / 3.1
+  - cross (control), 226 m, flat: before 5.0 / 8.8, 1.6 / 3.5, 0 / 0; after
+    4.5 / 10.8, 1.6 / 4.9, 0.1 / 0.5
+  - cross (control), 226 m, slope: before 8.9 / 22.7, 1.3 / 3.9, 0.1 / 0.7;
+    after 15.1 / 27.1, 1.7 / 5.0, 0.6 / 2.1
+  - lowEnd and cross in the editor at 300 m: 0 before and after.
+- **SwiftShader** is dominated by quantisation: the cross control alone swings
+  from 5.5 to 86.7 % in the editor at 30 m at 3 mm between before and after,
+  with equal gaps. At 5 mm flat the end case improves in most views (close
+  41 m about 20 -> 0.2 %, 226 m 22-25 -> 14-17 %, editor 300 m 62 -> 45 %,
+  globe 30 m about 7 -> 0.5 %, editor 30 m 2.2 -> 0), and some cells get
+  worse together with the control (low 100 m on the slope: lowEnd 0 -> 22 %,
+  cross 0 -> 12.8 %), so they are read as the shifted pattern, not the discs.
+- **The slope result.** The end case gains on the slope as on the flat. The
+  lowEnd case is the one that moves the other way: at 5 mm on the 25 % slope
+  its mean at 226 m rises 1.6 -> 2.5 % while the control rises 1.3 -> 1.7 %,
+  so about 0.5 points beyond the strips' shift; at 3 mm it rises by about as
+  much as the control (+8.2 against +6.2). That is inside the spread between
+  positions (max 4.2 -> 7.5 %); more positions could flip its sign. On the
+  CPU (below) lowEnd is +0.1 to +0.5 points worse on a curved hill. Read as:
+  no regression large enough to stop on, one case to watch.
+- **The drape on curved ground (CPU, both builds).** The heights a GPU would
+  interpolate, sampled every 25 cm over 150 random placements (seed 777) of
+  each case at 3, 5 and 8 mm, against a heightfield that is barycentric on a
+  12 m triangle grid: on flat ground and planes of 10 and 25 % the end case's
+  smallest gap goes from 0.7 mm (14 % of samples under 2 mm) to 3.2 mm (none
+  under 2 mm) at 5 mm; cross and lowEnd do not change. On a curved hill (an
+  80 m Gaussian, sigma 150 m) **the per-vertex drape itself inverts the order
+  in about half of every overlap at any step** (end 28.2 -> 25.5 %, cross
+  49.8 % both, lowEnd 55.3 -> 55.5 % at 5 mm), because a strip's straight
+  chord between vertices leaves the curved ground by decimetres, against a
+  step of millimetres. That error predates the class order and no step fixes
+  it; filed:
+  [`2026-11-09-2155-road-drape-chord-error-inverts-class-order-followup.md`](../../docs/2026-11-09-2155-road-drape-chord-error-inverts-class-order-followup.md).
+- **What would reverse these verdicts:** a slope steeper than 25 % or a tighter
+  hill, other tie fractions than the worst pair, more crossing positions (the
+  lowEnd difference is inside their spread), and phone GPUs, which were not
+  measured.
 
 ## Build time (M4a review MINOR 2, measured r1164)
 
@@ -310,7 +391,7 @@ const merged = mergeMeshes(ribbons.map((r) => r.mesh));
     has no notch**; each way built from its own geometry alone; input order
     does not change the mesh; every triangle faces up; invalid limits throw.
   - **Class order** - the rank table; a carriageway above a crossing footway; a
-    way's disc under its own strip; every lift in [0, 2 cm); a zero step puts
+    way's discs at its own strip's height, never under it; every lift in [0, 2 cm); a zero step puts
     everything on the ground; invalid steps throw.
 - `roads.property.test.ts` (fast-check) - on random polylines (3-40 m steps,
   turns up to 175 degrees) and gentle curves, at limits 1, 1.5, 2 and 4: no
@@ -324,6 +405,10 @@ const merged = mergeMeshes(ribbons.map((r) => r.mesh));
   every segment covered, every shared node covered by each way through it, and
   each way built alone equals the same way built with the others. (r1161's
   "the build is deterministic" property was dropped as near-tautological.)
+  A third property (r1171) lifts every vertex of a way, discs and strip
+  alike, by one height above the ground, inside its rank's band
+  `[step * rank, step * (rank + 0.4)]`, on random steps (1-10 mm) and on a
+  sloped, rippled ground: a disc is never under its strip.
 - `testdata/sites/site-roads.test.ts` - the three O3 scenes' counts, pinned.
 - `city.test.ts` - `buildCity` passes `roads: { rankStepM, mitreLimit }`
   through (a zero step puts every road on the ground, a 1.2 limit bevels a

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { OsmFeature } from "../model/osm-feature.js";
 import { enuFrameAt } from "./enu.js";
 import type { MeshData } from "./mesh-data.js";
-import { buildRoads, roadWidthM } from "./roads.js";
+import { buildRoads, roadRank, roadWidthM } from "./roads.js";
 
 const FRAME = enuFrameAt({ lat: 50.9413, lng: 6.9583 });
 
@@ -390,6 +390,52 @@ describe("road ribbons - properties (M4a mitre strip)", () => {
         });
       }),
       { numRuns: 150 },
+    );
+  });
+
+  // WHY (owner decision 2026-11-09, city objects plan section 27): the class
+  // order rests on millimetres, so every vertex of a way, the strip's and
+  // every disc's (ends, hairpins, too-short segments), must sit at ONE lift
+  // above the ground under it, `step * (rank + 0.4 f)` with f in [0, 1). A
+  // disc lower than its strip shrinks the gap to the class below it (the
+  // 0.5 mm end disc that fought at 226 m); a disc higher pokes through.
+  // Sampled on a sloped, rippled ground, so the drape cannot hide an offset.
+  it("lifts every disc and strip vertex of a way by one lift, its rank's", () => {
+    fc.assert(
+      fc.property(
+        polyline,
+        tags,
+        fc.double({ min: 0.001, max: 0.01, noNaN: true }),
+        fc.double({ min: -0.3, max: 0.3, noNaN: true }),
+        (points, t, step, slope) => {
+          const ground = (east: number, north: number): number =>
+            slope * east + 0.5 * Math.sin(north / 7);
+          const [ribbon] = buildRoads([feature(t, points)], {
+            frame: FRAME,
+            rankStepM: step,
+            groundHeightM: (p) => {
+              const e = FRAME.toEnu(p);
+              return ground(e.x, e.y);
+            },
+          });
+          const pos = (ribbon?.mesh as MeshData).positions;
+          const lifts: number[] = [];
+          for (let i = 0; i < pos.length; i += 3) {
+            const east = pos[i] ?? 0;
+            const north = -(pos[i + 2] ?? 0);
+            lifts.push((pos[i + 1] ?? 0) - ground(east, north));
+          }
+          const rank = roadRank(t);
+          // Float32 positions over grounds of up to ~100 m: 0.05 mm, under a
+          // tenth of the smallest step and far under the old 0.5 step drop.
+          for (const lift of lifts) {
+            expect(Math.abs(lift - (lifts[0] as number))).toBeLessThan(5e-5);
+            expect(lift).toBeGreaterThan(step * rank - 5e-5);
+            expect(lift).toBeLessThan(step * (rank + 0.4) + 5e-5);
+          }
+        },
+      ),
+      { numRuns: 200 },
     );
   });
 });

@@ -30,8 +30,9 @@
  * ribbon depends on its own way alone, and roads can be built over a delta.
  *
  * CLASS ORDER. A carriageway covers the footway that crosses it: each way is
- * lifted by its class rank, and its own discs sit under its own strip. The
- * lift is geometric and fits inside one rung of OsmDemo's 4 cm ground ladder.
+ * lifted by its class rank, its discs at its strip's own height (owner
+ * decision 2026-11-09). The lift is geometric and fits inside one rung of
+ * OsmDemo's 4 cm ground ladder.
  *
  * WHY `three`'s `Line` IS NOT AN OPTION: `linewidth > 1` is unsupported on every
  * major platform. This is triangulated geometry either way, and that is not a
@@ -276,9 +277,9 @@ export const ROAD_MITRE_LIMIT = 2;
 
 /**
  * The default height between two class ranks, metres (the M4a spike's
- * choice, see `roads.ts.md`). The highest lift is 3.9 steps (rank 3, the
- * tie lift and the disc drop), so 2 cm stays free under OsmDemo's next rung
- * (4 cm) for M4b's zebras.
+ * choice, see `roads.ts.md`). The highest lift is 3.4 steps (rank 3 and
+ * the tie lift), so over 2 cm stays free under OsmDemo's next rung (4 cm)
+ * for M4b's zebras.
  */
 export const ROAD_RANK_STEP_M = 0.005;
 
@@ -320,9 +321,6 @@ export function roadRank(tags: OsmTags): number {
  */
 const TIE_LIFT_STEPS = 0.4;
 
-/** How far a way's discs sit under its own strip, in steps. */
-const DISC_DROP_STEPS = 0.5;
-
 export interface RoadRibbon {
   readonly feature: OsmFeatureKey;
   readonly widthM: number;
@@ -355,7 +353,10 @@ export function buildRoads(
       ribbons.push({ feature: key, widthM, mesh: new MeshBuilder().build() });
       continue;
     }
-    const discLiftM =
+    // One lift for the whole way, its discs included: a disc under its strip
+    // would leave it a fraction of a step over the class below, which the
+    // depth buffer does not resolve (roads.ts.md, "The depth spike").
+    const liftM =
       rankStepM * (roadRank(feature.tags) + TIE_LIFT_STEPS * keyFraction(key));
     ribbons.push({
       feature: key,
@@ -363,8 +364,7 @@ export function buildRoads(
       mesh: ribbonMesh(mitreStrip(points, widthM / 2, mitreLimit), {
         points,
         half: widthM / 2,
-        discLiftM,
-        stripLiftM: discLiftM + rankStepM * DISC_DROP_STEPS,
+        liftM,
         options,
       }),
     });
@@ -536,17 +536,16 @@ function ribbonMesh(
   input: {
     readonly points: readonly EnuPoint[];
     readonly half: number;
-    readonly discLiftM: number;
-    readonly stripLiftM: number;
+    readonly liftM: number;
     readonly options: BuildRoadsOptions;
   },
 ): MeshData {
-  const { points, half, discLiftM, stripLiftM, options } = input;
+  const { points, half, liftM, options } = input;
   const builder = new MeshBuilder();
   const sample = options.groundHeightM;
 
   /** Adds one vertex, sampling the ground under it. Normal is straight up. */
-  const vertex = (x: number, y: number, liftM: number): number => {
+  const vertex = (x: number, y: number): number => {
     const height =
       sample === undefined ? 0 : sample(options.frame.toLatLng({ x, y }));
     return builder.vertex(
@@ -563,7 +562,7 @@ function ribbonMesh(
   const corner = (c: Corner): number => {
     let i = index.get(c);
     if (i === undefined) {
-      i = vertex(c.x, c.y, stripLiftM);
+      i = vertex(c.x, c.y);
       index.set(c, i);
     }
     return i;
@@ -581,17 +580,16 @@ function ribbonMesh(
     builder.triangle(corner(a), corner(c), corner(b));
   }
 
-  // The discs: ends and fallbacks, under the strip.
+  // The discs: ends and fallbacks, at the strip's height.
   for (const k of strip.discs) {
     const point = points[k] as EnuPoint;
-    const centre = vertex(point.x, point.y, discLiftM);
-    let previous = vertex(point.x + half, point.y, discLiftM);
+    const centre = vertex(point.x, point.y);
+    let previous = vertex(point.x + half, point.y);
     for (let step = 1; step <= DISC_SEGMENTS; step += 1) {
       const angle = (step / DISC_SEGMENTS) * Math.PI * 2;
       const next = vertex(
         point.x + Math.cos(angle) * half,
         point.y + Math.sin(angle) * half,
-        discLiftM,
       );
       // Same reversal as the strip above, for the same reason.
       builder.triangle(centre, next, previous);
