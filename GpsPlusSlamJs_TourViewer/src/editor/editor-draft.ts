@@ -2038,9 +2038,18 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       }
       // A live record takes its id's stale tombstone away (an offered
       // deletion edited meanwhile), once the record landed.
-      return write(id, (store) =>
-        writeDraftLiveRecord(store, object, blob, seen),
-      );
+      const base = bases.get(id);
+      return write(id, async (store) => {
+        const wrote = await writeDraftLiveRecord(store, object, blob, seen);
+        // A record forgotten (an undo back to what a running save writes)
+        // took its stored base with it; written again (the redo), it must
+        // still name the versions this browser wrote, or a reload after
+        // that save lands does not offer it.
+        if (wrote && base !== undefined && base.written.length > 0) {
+          await writeDraftBase(store, id, base);
+        }
+        return wrote;
+      });
     },
     saveDeletion(id) {
       pending.set(id, null);

@@ -526,6 +526,11 @@ describe("the shelf, the save and the draft, in any order", () => {
             ],
           ],
           [["optimizeTour", "finishPicture", "save", "reload", "save"]],
+          // A second voice while a save of the first runs, undone (back to
+          // what that save writes, so the draft forgets the record) and
+          // redone, then a reload: the record written again must still know
+          // the version the save wrote, or the reload drops the redone voice.
+          [["voice", "startSave", "voice", "undo", "redo", "reload"]],
         ],
       },
     );
