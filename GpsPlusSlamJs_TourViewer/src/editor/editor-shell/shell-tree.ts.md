@@ -41,7 +41,9 @@ stationsHead, fold, body }` (`#shell-tree`, `#tree-stations`,
     "Rename (F2)"; a `.cb` checkbox; while renamed, `.fname` holds the
     name field `input.renin`, `data-ren`, in place of the button, the
     count and the pen; when open its items `.kid.deep.infolder`, the last
-    `.last`, on a teal guide line, or `.emptyrow.deep.infolder` "Empty -
+    `.last`, on a teal guide line (`.ctx`, the folder's teal band, while
+    the folder is selected and the item is not: they move with it), or
+    `.emptyrow.deep.infolder` "Empty -
     drag items here" with its `data-into`),
     then its items (`.kid`), or `.emptyrow` "Nothing here yet. " with its
     `.fill` "Add content" (`data-fill`), the same menu. Every free item's

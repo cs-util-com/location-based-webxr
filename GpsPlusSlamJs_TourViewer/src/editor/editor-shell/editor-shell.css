@@ -3925,14 +3925,16 @@ body[data-view="3d"] #toasts {
   height: 13px;
 }
 
-.selbar .abtn.primary {
-  border-color: var(--s-accent);
-  background: var(--s-accent);
-  color: #1c1c1c;
+.selbar .abtn.primary:not(:disabled) {
+  border-color: var(--s-accent-line);
+  background: var(--s-accent-bg);
+  color: var(--s-accent-text);
 }
 
+/* Off, the primary one too: no fill, dim words, its place kept. */
 .selbar .abtn:disabled {
-  opacity: 0.45;
+  background: transparent;
+  color: var(--s-dim);
   cursor: default;
 }
 
@@ -3941,12 +3943,12 @@ body[data-view="3d"] #toasts {
   outline-offset: 1px;
 }
 
-@media (width <= 700px) {
+@media (width <= 700px), (pointer: coarse) {
   .emptyrow.infolder {
     height: 32px;
   }
 
   .selbar .abtn {
-    height: 34px;
+    height: 32px;
   }
 }

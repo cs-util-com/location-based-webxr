@@ -727,6 +727,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       pictures,
       panels.sync(model),
     );
+    // A phone ticking rows in the Select mode keeps its sheet the list.
+    inspector.root.hidden = model === null || shownSheet(model) === "tree";
   };
 
   /** The tree is folded for the approach, not by the creator. */
@@ -778,13 +780,15 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     }
   };
 
-  /** The sheet a phone shows now: the details over the list. `model` is
-   *  the inspector's, when the caller has it built. */
+  /** The sheet a phone shows now: the details over the list, except in
+   *  the Select mode, whose ticks need the list. `model` is the
+   *  inspector's, when the caller has it built. */
   const shownSheet = (
     model: InspectorModel | null = inspectorModel(state().editorView),
   ): SheetKind | null => {
     const ui = state().editorView;
     if (!phoneSheets(window.innerWidth)) return null;
+    if (ui.selectMode) return "tree";
     if (model !== null) return "details";
     return ui.foldedDocks.tree ? null : "tree";
   };
@@ -1076,8 +1080,21 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
    *  the selection it was typed for; a ground command waiting is called
    *  off. */
   let lastSelected: string | null = null;
+  let lastSelectMode = state().editorView.selectMode;
   const onStore = () => {
-    const { selected } = state().editorView;
+    const { selected, selectMode } = state().editorView;
+    // A tick in the Select mode selects its row but lays out no docks (a
+    // phone's details would cover the list being ticked); Done does.
+    const ticked = selectMode !== lastSelectMode;
+    lastSelectMode = selectMode;
+    if (
+      ticked &&
+      !selectMode &&
+      selected !== null &&
+      selected === lastSelected
+    ) {
+      applyDocks("selected");
+    }
     if (selected !== lastSelected) {
       const was = lastSelected;
       lastSelected = selected;
@@ -1088,7 +1105,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       const pending = typedField();
       if (pending !== null) commitField(pending, was);
       panels.flush();
-      if (selected !== null) applyDocks("selected");
+      if (selected !== null && !selectMode) applyDocks("selected");
     }
     draw();
   };

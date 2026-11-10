@@ -284,9 +284,12 @@ function plainFolderRows(
     const n = folder.children.length;
     return [
       row,
-      ...folder.children.map((c, i) =>
-        childOf(c, into, searching, i === n - 1),
-      ),
+      ...folder.children.map((c, i) => {
+        const kid = childOf(c, into, searching, i === n - 1);
+        // A selected folder carries its items: they wear its band.
+        kid.classList.toggle("ctx", folder.selected && !c.selected);
+        return kid;
+      }),
     ];
   }
   if (folder.count > 0) return [row];

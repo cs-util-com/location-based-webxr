@@ -6,7 +6,14 @@ import {
   serializeTourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
-import { SQUARE_GROUND_M, answerHosts, openZip } from "./editor3d-fixture.js";
+import {
+  SQUARE_GROUND_M,
+  answerHosts,
+  boxIn,
+  layoutOf,
+  openZip,
+  styleIn,
+} from "./editor3d-fixture.js";
 
 /**
  * Why these tests matter: a station's items are grouped into plain folders
@@ -185,6 +192,10 @@ async function openFolders(page, zip) {
  * @param {import("@playwright/test").Page} page
  */
 async function unfold(page) {
+  // A phone shows the tree on its List button's press.
+  if (!(await page.locator("#tree-body").isVisible())) {
+    await page.locator("#studio-list").click();
+  }
   const card = page.locator('#tree-body .card[data-station="a"]');
   const p = card.locator('.kid[data-select="p"]');
   if (!(await p.isVisible())) await card.locator(".head .tw").click();
@@ -333,3 +344,109 @@ test("a folder dropped onto a story, or a folder's item, says Not possible here 
     expect(await groups(page)).toEqual({ Yard: ["y"], free: ["p", "q", "r"] });
   }
 });
+
+/**
+ * The tree's folder rows as chosen, at a phone, a phone held sideways and
+ * a desktop: a folder's row at the free items' depth, its items one step
+ * (16 px) deeper and right under it, the rows 26 px high (32 px on a
+ * narrow screen), the selected folder's items on its teal band, and the
+ * picked rows' bar with a tinted Group, an off button without a fill and
+ * 16 px checkboxes inside their rows.
+ */
+const VIEWS = [
+  { name: "phone", width: 390, height: 844, row: 32, button: 32 },
+  { name: "sideways", width: 844, height: 390, row: 26, button: 28 },
+  { name: "desktop", width: 1440, height: 900, row: 26, button: 28 },
+];
+
+for (const view of VIEWS) {
+  test(`the folder rows keep their chosen arrangement (${view.name})`, async ({
+    page,
+  }) => {
+    test.slow();
+    await page.setViewportSize({ width: view.width, height: view.height });
+    await openFolders(page, await foldersTour());
+    const card = await unfold(page);
+    const yard = '#tree-body .gfolder[data-plainfolder="yard"]';
+    const inYard = '#tree-body .kid.infolder[data-select="y"]';
+    const free = '#tree-body .kid[data-list="free"][data-select="p"]';
+    const rows = [yard, inYard, free];
+    const icons = [`${yard} .ic`, `${inYard} .ic`, `${free} .ic`];
+    const band = ["background-color", "padding-left"];
+
+    // The folder selected: its item wears its band.
+    await card
+      .locator(`.gfolder[data-plainfolder="yard"] button.fname`)
+      .click();
+    await expect(
+      card.locator('.kid.infolder.ctx[data-select="y"]'),
+    ).toHaveCount(1);
+    // A phone shows the scene on a row's tap: the tree again.
+    await unfold(page);
+    const at = await layoutOf(page, [...rows, ...icons], band);
+    const [folderRow, kidRow, freeRow] = rows.map((s) => boxIn(at, s));
+    const [folderIcon, kidIcon, freeIcon] = icons.map((s) => boxIn(at, s));
+    for (const r of [folderRow, kidRow, freeRow]) {
+      expect(Math.round(r?.height ?? 0)).toBe(view.row);
+    }
+    // Stacked with no gap: the item right under its folder, the free
+    // items right under the folder's last item.
+    expect(
+      Math.abs((kidRow?.y ?? 0) - (folderRow?.y ?? 0) - view.row),
+    ).toBeLessThan(1);
+    expect(
+      Math.abs((freeRow?.y ?? 0) - (kidRow?.y ?? 0) - view.row),
+    ).toBeLessThan(1);
+    // The folder's icon at the free items' depth, its item's 16 px deeper.
+    expect(Math.abs((folderIcon?.x ?? 0) - (freeIcon?.x ?? 0))).toBeLessThan(1);
+    expect(Math.round((kidIcon?.x ?? 0) - (freeIcon?.x ?? 0))).toBe(16);
+    expect(styleIn(at, inYard, "padding-left")).toBe("76px");
+    expect(styleIn(at, inYard, "background-color")).toBe(
+      "rgba(87, 196, 184, 0.1)",
+    );
+    expect(styleIn(at, free, "background-color")).toBe("rgba(0, 0, 0, 0)");
+
+    // The Select mode begins with the selected folder ticked; two items
+    // ticked beside it: Group is off (no folder in a folder), with no
+    // fill, and Ungroup on.
+    const group = '#tree-selbar [data-selbar="group"]';
+    const ungroup = '#tree-selbar [data-selbar="ungroup"]';
+    const ticks = '#tree-body .kid[data-list="free"] .cb';
+    await page.locator("#tree-select").click();
+    await card.locator('.kid[data-select="p"]').click();
+    await card.locator('.kid[data-select="q"]').click();
+    await expect(page.locator("#tree-selbar")).toContainText("3 selected");
+    const off = await layoutOf(page, [group, ungroup], ["background-color"]);
+    expect(styleIn(off, group, "background-color")).toBe("rgba(0, 0, 0, 0)");
+    expect(styleIn(off, ungroup, "background-color")).not.toBe(
+      "rgba(0, 0, 0, 0)",
+    );
+
+    // The folder unticked, two items left: Group is on, tinted, not filled.
+    await card
+      .locator(`.gfolder[data-plainfolder="yard"] button.fname`)
+      .click();
+    await expect(page.locator("#tree-selbar")).toContainText("2 selected");
+    const picked = await layoutOf(
+      page,
+      [group, ungroup, ticks, free],
+      ["background-color", "color"],
+    );
+    expect(Math.round(boxIn(picked, group).height)).toBe(view.button);
+    expect(Math.round(boxIn(picked, ungroup).height)).toBe(view.button);
+    expect(styleIn(picked, group, "background-color")).toBe(
+      "rgba(233, 162, 59, 0.14)",
+    );
+    // Ungroup cannot act on two free items: off, with no fill.
+    expect(styleIn(picked, ungroup, "background-color")).toBe(
+      "rgba(0, 0, 0, 0)",
+    );
+    const tick = boxIn(picked, ticks, 0);
+    const pRow = boxIn(picked, free);
+    expect([Math.round(tick.width), Math.round(tick.height)]).toEqual([16, 16]);
+    expect(tick.x + tick.width).toBeLessThanOrEqual(pRow.x + pRow.width);
+    expect(
+      Math.abs(tick.y + tick.height / 2 - (pRow.y + pRow.height / 2)),
+    ).toBeLessThan(1);
+  });
+}

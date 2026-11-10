@@ -1853,6 +1853,25 @@ describe("on a phone", () => {
     shell.hide();
   });
 
+  // Why: the Select mode is a phone's way to tick several rows; were the
+  // first tick to bring up its details, the list would be gone before the
+  // second. Done hands the sheet back to the details.
+  it("keeps the list while rows are ticked in the Select mode", () => {
+    const { store, shell } = setUp();
+    store.dispatch(editorViewActions.selectModeSet({ on: true }));
+    store.dispatch(editorViewActions.selected({ id: "station:a" }));
+    const details = () =>
+      document.getElementById("shell-inspector") as HTMLElement;
+    expect(treeDock().classList.contains("collapsed")).toBe(false);
+    expect(details().hidden).toBe(true);
+    expect(sheetShare()).toBe("0.62");
+    store.dispatch(editorViewActions.selectModeSet({ on: false }));
+    expect(treeDock().classList.contains("collapsed")).toBe(true);
+    expect(details().hidden).toBe(false);
+    expect(sheetShare()).toBe("0.66");
+    shell.hide();
+  });
+
   // Why: the tree is out of sight under the details, so the menu's way
   // back is the button that opened it, and the add draws that button away.
   it("keeps the focus in sight when the details open the add menu", () => {
@@ -2068,6 +2087,35 @@ describe("the tree's plain folders", () => {
       ].map((k) => k.dataset["select"]),
     ).toEqual(["p", "q"]);
     expect(new Set(folderIds(store)).size).toBe(1);
+    shell.hide();
+  });
+
+  // Why: a selected folder moves its items along, so the tree marks them
+  // with the folder's band; an item picked on its own is not marked, it
+  // shows its own selection instead.
+  it("marks a selected folder's items as moving with it", () => {
+    const { shell, store } = setUpFolders();
+    click(row("p"));
+    click(row("q"), { ctrlKey: true });
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "g", code: "KeyG", ctrlKey: true }),
+    );
+    document
+      .querySelector<HTMLInputElement>("#tree-body input.renin")
+      ?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+      );
+    const banded = () =>
+      [
+        ...document.querySelectorAll<HTMLElement>(
+          "#tree-body .kid.infolder.ctx",
+        ),
+      ].map((k) => k.dataset["select"]);
+    expect(banded()).toEqual(["p", "q"]);
+    // Picked beside its folder, an item shows its own selection instead.
+    click(row("p"), { ctrlKey: true });
+    expect(store.getState().editorView.picked).toContain("p");
+    expect(banded()).toEqual(["q"]);
     shell.hide();
   });
 

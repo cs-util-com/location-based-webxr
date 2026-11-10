@@ -187,7 +187,10 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
     screen a long press on such a row (`long-press.ts`, `LONG_PRESS`)
     enters the Select mode with that row ticked, and the click that
     follows the press is swallowed. Each pick selects its last row too
-    (the inspector and 3D follow it).
+    (the inspector and 3D follow it). In the Select mode a selection lays
+    out no docks and a phone's sheet stays the list (the details dock
+    `hidden`), so the details never cover the rows being ticked; Done lays
+    them out for the selection.
   - **Group and Ungroup.** Ctrl+G (or the bar's Group) groups the picked
     rows (`groupRows`) into a new folder, unfolds its station, ends the
     Select mode, selects the folder and opens its name field with the
