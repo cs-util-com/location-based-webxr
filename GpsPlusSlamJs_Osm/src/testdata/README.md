@@ -275,3 +275,18 @@ differential rather than argued about. Its only consumer is
   the owner judged the O3 street lab on, so they pin the road mesh's triangle
   counts (`site-roads.test.ts`, city objects plan 2026-11-07-2315 M4a), loaded by
   `loadSite` directly.
+
+## `sites/lucerne-reuss.json` - the water scene of the land-use tint
+
+- **Copied byte for byte from the city-look lab**
+  (`GpsPlusSlamJs_DesignSystem/labs/city-look/fixtures/`, provenance in that
+  folder's `PROVENANCE.md`), ODbL. Lucerne's old town on the Reuss, the
+  Kapellbruecke and the lake's end, 640 x 640 m around 47.0517 N, 8.3077 E,
+  one Overpass answer of 2026-11-07 built by `buildTileQuery`, with two
+  oversize boundary relations removed and named in its
+  `droppedOversizeRelations`.
+- **Not in `CORPUS_SITES`**: O2 judged the painted ground at Meggen and here
+  (water about 25 percent of the box), so its coverage floor pins
+  `ground-tint.test.ts`; `colour-identity.test.ts` holds its colours, its
+  digest computed from the 7f1d01edd source (OSM demo colour schemes plan
+  2026-11-10-0841, S2).

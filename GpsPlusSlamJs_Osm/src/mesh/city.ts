@@ -45,6 +45,7 @@ import {
 } from "./chunk-meshes.js";
 import type { EnuFrame, EnuPoint } from "./enu.js";
 import { buildingColour, roadColour, roofColour } from "./feature-colours.js";
+import { buildGroundTint, type GroundTint } from "./ground-tint.js";
 import { buildRoads, type BuildRoadsOptions } from "./roads.js";
 import { shellRandFor } from "./shell-rand.js";
 import { buildTrees, type TreePlacement } from "./trees.js";
@@ -103,6 +104,13 @@ export interface CityOptions {
    * throws `RangeError`.
    */
   readonly colours?: CityColourScheme;
+  /**
+   * Paint the land use into a ground tint over `window` (`ground-tint.ts`,
+   * city objects plan 2026-11-07-2315 M3), in the scheme's `landUse` colours
+   * over its `ground`. Default false: no consumer pays for a raster it does
+   * not draw (the Globe and the Tour Editor ask for none).
+   */
+  readonly groundTint?: boolean;
 }
 
 /**
@@ -142,6 +150,8 @@ export interface City {
   readonly roads: readonly MeshChunk[];
   /** Road and path ways built (0 unless asked for). */
   readonly roadCount: number;
+  /** The painted land use over `window`, only with `groundTint: true`. */
+  readonly groundTint?: GroundTint;
 }
 
 /**
@@ -281,7 +291,7 @@ export function buildCity(
           excludeRings: built.flatMap((v) => v.outerRings),
           treePalette: colours.trees,
         }).filter((t) => inside(t.position));
-  return {
+  const city = {
     volumes,
     barriers,
     buildings,
@@ -290,6 +300,27 @@ export function buildCity(
     roads,
     roadCount,
   };
+  return { ...city, ...cityGroundTint(all, ground, options, colours) };
+}
+
+/**
+ * The land use painted over the window in the scheme's colours, as the
+ * `groundTint` field, or nothing when it was not asked for.
+ */
+function cityGroundTint(
+  all: readonly OsmFeature[],
+  ground: CityGround,
+  options: CityOptions & { readonly window: Bbox },
+  colours: CityColourScheme,
+): { readonly groundTint?: GroundTint } {
+  if (options.groundTint !== true) return {};
+  const groundTint = buildGroundTint(all, {
+    frame: ground.frame,
+    window: options.window,
+    ground: colours.ground,
+    landUse: colours.landUse,
+  });
+  return { groundTint };
 }
 
 /**

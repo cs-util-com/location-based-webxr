@@ -72,6 +72,9 @@ const SITES = [
   "manhattan-midtown",
   "sylt-westerland",
   "tokyo-shinjuku",
+  // Added with the land-use tint (S2); its digest was computed from the
+  // base commit 7f1d01edd source, before any scheme code read the fixture.
+  "lucerne-reuss",
 ] as const;
 
 type Palette = NonNullable<CityOptions["palette"]>;
@@ -208,6 +211,18 @@ const GOLDEN: Record<(typeof SITES)[number], Record<Palette, Digests>> = {
       buildings: "16709dfa82b9cbe7",
       roads: "232fd87618d9d169",
       trees: "85d600403415f088",
+    },
+  },
+  "lucerne-reuss": {
+    seeded: {
+      buildings: "9b6ec42adbdbfff1",
+      roads: "e44fdae2352e6eaf",
+      trees: "5f474d2260d18a2f",
+    },
+    class: {
+      buildings: "450dffee795926a6",
+      roads: "e44fdae2352e6eaf",
+      trees: "5f474d2260d18a2f",
     },
   },
 };

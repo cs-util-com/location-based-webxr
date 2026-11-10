@@ -145,7 +145,13 @@ use.
 - Under `palette: "class"` the class colours of buildings are unchanged by a
   scheme; everything else (roads, barriers, trees) follows it.
 - **The identity guard**: `colour-identity.test.ts` holds the colour buffers
-  and tree colours of eleven fixture sites, under both palettes, with no
+  and tree colours of twelve fixture sites, under both palettes, with no
   scheme and with the default passed explicitly, to golden digests recorded
-  at 7f1d01edd before schemes existed. The Globe, the Tour Editor and the
-  labs build without a scheme, so this is what holds them unchanged.
+  at 7f1d01edd before schemes existed (Reuss, added later, was digested from
+  that commit's source too). The Globe, the Tour Editor and the labs build
+  without a scheme, so this is what holds them unchanged.
+- `CityOptions.groundTint?: boolean` (default false): `City.groundTint` is
+  the land use painted over `window` (`ground-tint.ts`) in the scheme's
+  `landUse` colours over its `ground`. Absent unless asked, so the Globe and
+  the Tour Editor (no tint, owner) build no raster. Tested in
+  `ground-tint.test.ts` ("buildCity's ground tint").

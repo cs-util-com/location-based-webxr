@@ -77,4 +77,4 @@ const city = buildCity(features, ground, {
   tags painted over every building colour is a scheme tone; every road
   colour comes from the scheme.
 - `colour-identity.test.ts` - the default, absent or explicit, reproduces
-  the golden digests recorded before schemes at eleven sites.
+  the golden digests recorded before schemes at twelve sites.

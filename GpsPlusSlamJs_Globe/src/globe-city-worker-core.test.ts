@@ -189,6 +189,12 @@ describe("createCityWorkerCore", () => {
         cosmeticTrees: false,
       },
     ]);
+    // The Tour Editor builds through this core and has no land-use tint and
+    // no colour scheme (owner; OSM demo colour schemes plan 2026-11-10-0841
+    // D10). toEqual ignores an undefined key, so the absence is pinned by
+    // name: the editor neither pays for a raster nor changes colour.
+    expect(f.built[0]).not.toHaveProperty("groundTint");
+    expect(f.built[0]).not.toHaveProperty("colours");
     load.firstPass.resolve({ outcome: "settled" });
     await settle();
     load.finished.resolve({

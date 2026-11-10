@@ -241,9 +241,16 @@ export {
   DEFAULT_CITY_COLOUR_SCHEME,
   validateCityColourScheme,
 } from "./colour-scheme.js";
-export type { GroundClass } from "./ground-tint.js";
+export type {
+  BuildGroundTintOptions,
+  GroundClass,
+  GroundTint,
+} from "./ground-tint.js";
 export {
+  buildGroundTint,
   DEFAULT_GROUND_RGB,
+  DEFAULT_GROUND_TINT_TEXEL_M,
+  groundClassOf,
   DEFAULT_LAND_USE_RGB,
   GROUND_CLASS_NAMES,
 } from "./ground-tint.js";

@@ -12,3 +12,12 @@ export {
   roadObjects,
   treeObjects,
 } from "./city-objects.js";
+export type {
+  AppliedGroundTint,
+  ApplyGroundTintOptions,
+} from "./ground-tint.js";
+export {
+  applyGroundTint,
+  GROUND_TINT_FADE_M,
+  groundTintTexture,
+} from "./ground-tint.js";
