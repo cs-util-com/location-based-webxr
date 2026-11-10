@@ -190,11 +190,23 @@ describe("KIND_EDIT", () => {
       choose: () => undefined,
       chooseForStory: () => undefined,
     });
-    const items = [
+    const all = [
       ...document.querySelectorAll<HTMLElement>(
         '#tree-add-menu [role="menuitem"]',
       ),
-    ].filter((item) => item.dataset["kind"] !== "story");
+    ];
+    // The menu's two entries that are no kind's add row: the story, and
+    // the character, who is made in the character maker first. Named here
+    // so a third one cannot slip past the rows unnoticed.
+    const ownEntries = ["character", "story"];
+    expect(
+      all
+        .map((item) => item.dataset["kind"] ?? "")
+        .filter((k) => ownEntries.includes(k)),
+    ).toEqual(ownEntries);
+    const items = all.filter(
+      (item) => !ownEntries.includes(item.dataset["kind"] ?? ""),
+    );
     expect(items.map((item) => item.dataset["kind"])).toEqual(listed);
     expect(
       items
