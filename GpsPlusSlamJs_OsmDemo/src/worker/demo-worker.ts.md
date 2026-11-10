@@ -155,3 +155,12 @@ plateClip)`, the loaded tiles' boxes cut to the drawn ground. With no
 window as the city; the page switches it with a uniform, so the layer switch
 never costs a rebuild. Its class buffer is copied, not transferred (the
 `colors` lesson in `transferablesOf`).
+
+## The colour scheme (colour schemes plan 2026-11-10-0841)
+
+The `update` handler checks the request's scheme name against
+`colour-schemes.ts` before any work, hands it to the planner (part of the
+build key) and to `buildCity` as `colours` (even the default, which the
+library's identity test proves byte-identical), and stamps the mesh with it.
+A full build that throws is rethrown as `colourSchemeBuildFailure(scheme, cause)`
+so the page can tell its own switch's failure from an Overpass error.

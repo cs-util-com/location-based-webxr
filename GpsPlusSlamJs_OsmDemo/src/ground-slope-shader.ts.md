@@ -68,3 +68,8 @@ colours)` writes them in place (no recompile), `RangeError` for a channel
   outside [0, 1], nothing written then.
 - Tested in `ground-slope-shader.test.ts` (defaults equal the old literals, no
   literal left, writes in place, refusal).
+
+Since S4 the colour data (`LinearRgb`, `GroundSlopeColours`,
+`DEFAULT_GROUND_SLOPE_COLOURS`, the validation) lives in
+`ground-slope-colours.ts`, which has no three.js import, because the colour
+scheme table that names it is also read by the worker.

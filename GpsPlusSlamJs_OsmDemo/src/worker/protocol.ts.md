@@ -101,3 +101,12 @@ unknown kinds, a missing id and a malformed abort.
 `TransferableMesh.groundTint?: GroundTint` - the land-use tint over the build
 window. Cloneable (a typed array, numbers, a Map); COPIED rather than
 transferred (about 2 MB at most), see `demo-worker.ts`.
+
+## `colourScheme` (colour schemes plan 2026-11-10-0841 section 4.4)
+
+- Request: `update.request.colourScheme?` - the scheme's NAME; omitted is the
+  default. The worker refuses a name outside the table as that scheme's build
+  failure.
+- Reply: `TransferableMesh.colourScheme?` - the scheme the mesh was built in;
+  the page's ground, plates and trim follow it, and the dropdown's switch ends
+  on it.

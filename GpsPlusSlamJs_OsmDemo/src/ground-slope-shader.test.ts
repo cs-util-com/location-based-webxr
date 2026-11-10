@@ -23,11 +23,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   SLOPE_SHADER_ANCHORS,
-  DEFAULT_GROUND_SLOPE_COLOURS,
   installGroundSlope,
   setGroundSlopeColours,
   slopeColourUniforms,
 } from "./ground-slope-shader.js";
+import { DEFAULT_GROUND_SLOPE_COLOURS } from "./ground-slope-colours.js";
 
 /** A shader object shaped like the one three hands `onBeforeCompile`. */
 function shaderStub(): THREE.WebGLProgramParametersWithUniforms {

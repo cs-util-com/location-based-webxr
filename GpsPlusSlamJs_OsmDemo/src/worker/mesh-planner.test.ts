@@ -21,6 +21,7 @@ const AT: MeshInputs = {
   position: { lat: 50.9413, lng: 6.9583 },
   loadedTileCount: 1,
   terrainStamp: 1,
+  colourScheme: "today",
 };
 
 describe("createMeshPlanner", () => {
@@ -123,6 +124,18 @@ describe("createMeshPlanner", () => {
     planner.needsFullBuild(AT);
 
     expect(planner.needsFullBuild({ ...AT, terrainStamp: 2 })).toBe(true);
+  });
+
+  it("rebuilds for a colour-scheme change, and only once", () => {
+    // Why this test matters: the colours are in the buffers (D1), so a switch
+    // must rebuild; the second pass of the same click must not (W6).
+    const planner = createMeshPlanner();
+    planner.needsFullBuild(AT);
+    expect(planner.needsFullBuild({ ...AT, colourScheme: "night" })).toBe(true);
+    expect(planner.needsFullBuild({ ...AT, colourScheme: "night" })).toBe(
+      false,
+    );
+    expect(planner.needsFullBuild(AT)).toBe(true);
   });
 
   it("does NOT rebuild for a category change", () => {

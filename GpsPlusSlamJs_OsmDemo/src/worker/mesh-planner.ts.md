@@ -89,3 +89,9 @@ measurement cannot pass for a planner that stopped consulting position at all.
 The reply SHAPE this feeds (`MeshUpdate`, a discriminated `full` | `regions`) is
 covered on the main-thread side by `refresh-cycle.test.ts` — that a
 regions-only pass merges into the held mesh rather than blanking the buildings.
+
+## The colour scheme (colour schemes plan 2026-11-10-0841, D1)
+
+`MeshInputs.colourScheme` is part of the key: the city's colours are baked into
+its buffers, so a switch is a full rebuild and the passes after it are not.
+Tested in `mesh-planner.test.ts`.

@@ -130,3 +130,12 @@ writePlace(placeUrl, { position });
   sun pins set, replaced and every other key kept.
 
 No test data required.
+
+## `scheme` (colour schemes plan 2026-11-10-0841, D6)
+
+The fourth writer: `schemeQuery(search, name | null)` / `writeScheme(url, name | null)`
+own `scheme` only; `null` (the default scheme) removes the key, so
+`?scheme=today` is never written. The read side is `resolveColourScheme` in
+`colour-schemes.ts`. Presentation state, the second documented exception to
+DEC-R12-5 after the light. Tested in `url-state.test.ts` (own key only,
+default removes, a property over arbitrary queries, no write when unchanged).

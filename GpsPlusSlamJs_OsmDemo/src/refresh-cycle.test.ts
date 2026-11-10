@@ -1157,3 +1157,47 @@ describe("the click-path breakdown is reported exactly once per PUBLISHED ring",
     expect(seen).toEqual([]);
   });
 });
+
+describe("the colour scheme (colour schemes plan 2026-11-10-0841)", () => {
+  it("sends what the getter answers at POST time, and nothing without a getter", async () => {
+    // Why this test matters: AR's default (D9) is decided per request; a
+    // value captured once would keep sending the choice after AR entry, and
+    // a caller without a getter must send no scheme (the worker's default).
+    const sent: (string | undefined)[] = [];
+    const make = (colourScheme?: () => string) => {
+      const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+      return createRefreshCycle({
+        store: demo.store,
+        actions: demo.actions,
+        anchors: createAnchorHolder(COLOGNE),
+        worker: {
+          call: (_kind, payload) => {
+            sent.push(payload.colourScheme);
+            return Promise.resolve({
+              snapshot: {
+                ...snapshot(payload.category),
+                radius: payload.radius,
+              },
+              mesh: { kind: "regions" as const, regions: [], underground: [] },
+              workerTimings: ZERO_WORKER_TIMINGS,
+            });
+          },
+        },
+        onMesh: () => {},
+        ...(colourScheme === undefined ? {} : { colourScheme }),
+      });
+    };
+    let answer = "today";
+    const refresh = make(() => answer);
+    await refresh();
+    const firstRun = sent.splice(0);
+    answer = "night";
+    await refresh();
+    const secondRun = sent.splice(0);
+    await make()();
+    expect(firstRun.length).toBeGreaterThan(0);
+    expect(new Set(firstRun)).toEqual(new Set(["today"]));
+    expect(new Set(secondRun)).toEqual(new Set(["night"]));
+    expect(new Set(sent)).toEqual(new Set([undefined]));
+  });
+});

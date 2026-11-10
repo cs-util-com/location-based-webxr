@@ -1028,6 +1028,8 @@
       header[data-collapsed="true"] .hint,
       header[data-collapsed="true"] #status,
       header[data-collapsed="true"] #ground-mode-label,
+      header[data-collapsed="true"] #colour-scheme-label,
+      header[data-collapsed="true"] #colour-scheme-status,
       header[data-collapsed="true"] #layer-group-world,
       header[data-collapsed="true"] #layer-group-diagnostics,
       header[data-collapsed="true"] #sun-group {
@@ -1624,6 +1626,16 @@
         ground
         <select id="ground-mode"></select>
       </label>
+      <!-- THE COLOUR SCHEMES (colour schemes plan 2026-11-10-0841, D6): looks
+           for the whole city, filled from `colour-schemes.ts`. "colour
+           scheme", not "colours": the land-use switch is "land-use colours",
+           and e2e locators match accessible names by substring. The status
+           beside it says while a switch is being built. -->
+      <label class="layer-toggle" id="colour-scheme-label">
+        colour scheme
+        <select id="colour-scheme"></select>
+      </label>
+      <span id="colour-scheme-status" role="status" aria-live="polite"></span>
       <!-- A DIAGNOSTIC, outside the layer registry because it draws nothing in
            the scene. Off by default (DEC-R3-18) so the demo's default picture is
            unchanged. Since W6 it is the only member of the debug group — the

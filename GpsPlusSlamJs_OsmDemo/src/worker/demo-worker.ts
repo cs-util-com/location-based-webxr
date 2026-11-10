@@ -81,6 +81,13 @@ import {
 } from "gps-plus-slam-osm";
 import { createTerrainField, type TerrainField } from "gps-plus-slam-osm";
 import { terrainWindowFor } from "gps-plus-slam-osm";
+import {
+  DEFAULT_COLOUR_SCHEME,
+  colourSchemeBuildFailure,
+  colourSchemeOf,
+  isColourSchemeName,
+  type ColourSchemeName,
+} from "../colour-schemes.js";
 import { createMeshPlanner } from "./mesh-planner.js";
 import { createObstacleIndexCache } from "./obstacle-index-cache.js";
 import { osmStoreWarn } from "./osm-store-warn.js";
@@ -296,6 +303,8 @@ function buildMesh(
    * 2026-11-07-2315 M2a).
    */
   loadedTiles: readonly string[] = [],
+  /** The colours to build in (colour schemes plan 2026-11-10-0841, D1). */
+  scheme: ColourSchemeName = DEFAULT_COLOUR_SCHEME,
 ): TransferableMesh {
   const options = meshOptions(frameOrigin);
   const all = [...features];
@@ -335,6 +344,10 @@ function buildMesh(
     // full pass whatever the layer switch says: the switch is a uniform on the
     // page, and a rebuild per click would cost a full mesh step.
     groundTint: true,
+    // THE SCHEME'S COLOURS, passed even for the default: the library's
+    // identity test holds that the explicit default builds byte-identical
+    // buffers to none at all.
+    colours: colourSchemeOf(scheme).city,
   });
   const { volumes, barriers, trees } = city;
   // Per-vertex terrain again: a region can be hundreds of metres across.
@@ -442,6 +455,7 @@ function buildMesh(
     poi,
     roads: city.roads,
     roadCount: city.roadCount,
+    colourScheme: scheme,
     // COPIED, not transferred: at the 2 m texel and the largest window it is
     // about 2 MB, and the `colors` lesson in `transferablesOf` (a moved
     // buffer something re-read) is not worth relearning for a copy that cheap.
@@ -548,11 +562,13 @@ function meshUpdateFor(
   },
   pipeline: DemoPipeline,
   frameOrigin: LatLng,
+  scheme: ColourSchemeName,
 ): WorkerCalls["update"]["result"]["mesh"] {
   const full = meshPlanner.needsFullBuild({
     position: snapshot.position,
     loadedTileCount: pipeline.loadedTileCount(),
     terrainStamp,
+    colourScheme: scheme,
   });
 
   if (!full) {
@@ -563,17 +579,31 @@ function meshUpdateFor(
       underground: packUnderground(snapshot.undergroundOutlines, options.frame),
     };
   }
-  return {
-    kind: "full",
-    mesh: buildMesh(
-      pipeline.features().values(),
-      snapshot.position,
-      frameOrigin,
-      snapshot.regions,
-      snapshot.undergroundOutlines,
-      snapshot.loadedTiles,
-    ),
-  };
+  // A FAILED BUILD NAMES ITS SCHEME (colour schemes plan 4.4): only the
+  // message crosses the RPC boundary, and the dropdown reverts a switch only
+  // when the build it waits for is the one that failed.
+  try {
+    return {
+      kind: "full",
+      mesh: buildMesh(
+        pipeline.features().values(),
+        snapshot.position,
+        frameOrigin,
+        snapshot.regions,
+        snapshot.undergroundOutlines,
+        snapshot.loadedTiles,
+        scheme,
+      ),
+    };
+  } catch (error) {
+    throw new Error(
+      colourSchemeBuildFailure(
+        scheme,
+        error instanceof Error ? error.message : String(error),
+      ),
+      { cause: error },
+    );
+  }
 }
 
 /** The state, or a clear error rather than a confusing `undefined` dereference. */
@@ -682,8 +712,18 @@ async function handle<K extends WorkerCallKind>(
         includeUnderground,
         postedAtEpochMs,
         geoidUndulationM,
+        colourScheme,
       } = payload as WorkerCalls["update"]["request"];
       const { pipeline, prefetch } = requireState();
+      // THE SCHEME IS A NAME, looked up in the table the page reads; one this
+      // worker does not know is refused before any work, as that scheme's
+      // build failure.
+      const scheme = colourScheme ?? DEFAULT_COLOUR_SCHEME;
+      if (!isColourSchemeName(scheme)) {
+        throw new Error(
+          colourSchemeBuildFailure(scheme, "no such colour scheme"),
+        );
+      }
       // THE QUEUE WAIT — post to dispatch, the one measurement here that has
       // to cross the boundary. `nowEpochMs()` is `timeOrigin + now()`, an
       // absolute timeline both sides share, so this is a real duration rather
@@ -783,7 +823,12 @@ async function handle<K extends WorkerCallKind>(
       // is legitimately near-zero on passes 2 and 3 — which is why every line
       // is tagged with its ring rather than summed per click.
       const meshStart = nowMs();
-      const mesh = meshUpdateFor(snapshot, pipeline, frameOrigin ?? position);
+      const mesh = meshUpdateFor(
+        snapshot,
+        pipeline,
+        frameOrigin ?? position,
+        scheme,
+      );
       const meshMs = Math.max(0, nowMs() - meshStart);
       // WHAT THIS MESH IS STANDING ON (F1d). Recorded unconditionally, INCLUDING
       // when the planner decided against a full rebuild: the record answers

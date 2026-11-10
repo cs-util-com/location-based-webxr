@@ -181,6 +181,12 @@ export interface MeshLayerContext {
    * cached payload and never re-runs it.
    */
   readonly drawnHostLayers: ReadonlySet<PoiHostLayer>;
+  /**
+   * The landuse plates' colour, `0xrrggbb` (colour schemes plan
+   * 2026-11-10-0841): the scheme of the mesh being drawn. Absent means
+   * {@link PLATE_COLOUR}, today's.
+   */
+  readonly plateColour?: number;
 }
 
 /**
@@ -362,7 +368,7 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
   },
   {
     layer: "plates",
-    build: (mesh) =>
+    build: (mesh, context) =>
       mesh.plates.map((chunk) => {
         const plate = new THREE.Mesh(
           geometryFrom(chunk.mesh),
@@ -372,7 +378,7 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
             // and left this literal behind, which inverted the pair and is half
             // of what the sixth session saw as black polygons (the other and
             // larger half was the inverted winding, fixed in `plates.ts`).
-            color: PLATE_COLOUR,
+            color: context.plateColour ?? PLATE_COLOUR,
             roughness: 0.85,
             flatShading: true,
             // SINGLE-SIDED. A plate is horizontal with an upward normal by

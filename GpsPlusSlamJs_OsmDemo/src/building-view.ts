@@ -51,8 +51,9 @@ import {
   installGroundSlope,
   setGroundSlopeColours,
   slopeColourUniforms,
-  type GroundSlopeColours,
 } from "./ground-slope-shader.js";
+import type { GroundSlopeColours } from "./ground-slope-colours.js";
+import { MAX_BRIGHTNESS_TRIM, MIN_BRIGHTNESS_TRIM } from "./colour-schemes.js";
 import { landUseTint, type LandUseTint } from "./land-use-tint.js";
 import {
   applyBuildingSkyLight,
@@ -475,6 +476,11 @@ export class BuildingView {
    * every rebuild re-applies it: new meshes arrive at factor 1.
    */
   private surfaceGain = 1;
+  /**
+   * The colour scheme's brightness trim (colour schemes plan 2026-11-10-0841
+   * D4), multiplied into {@link surfaceGain} wherever that is applied.
+   */
+  private brightnessTrim = 1;
   /** The light dialog's settings (plan 2026-09-24-2140); the shipped look by default. */
   private lightSettings: LightSettings = DEFAULT_LIGHT_SETTINGS;
   /** The flat plane's vertex positions, kept so terrain can be re-applied. */
@@ -1250,6 +1256,29 @@ export class BuildingView {
   }
 
   /**
+   * The colour scheme's brightness trim (colour schemes plan 2026-11-10-0841
+   * section 4.4, D4): multiplied into the noon gain, so it reaches buildings
+   * and roads (the `neutralSurface` materials) and nothing else; the gain is
+   * 1 below its start angle, so at night the trim acts alone. `RangeError`
+   * outside 0.5-2.
+   */
+  setBrightnessTrim(trim: number): void {
+    if (
+      !Number.isFinite(trim) ||
+      trim < MIN_BRIGHTNESS_TRIM ||
+      trim > MAX_BRIGHTNESS_TRIM
+    ) {
+      throw new RangeError(
+        `brightness trim ${String(trim)} is outside ${MIN_BRIGHTNESS_TRIM}-${MAX_BRIGHTNESS_TRIM}`,
+      );
+    }
+    if (trim === this.brightnessTrim) return;
+    this.brightnessTrim = trim;
+    applySurfaceGain(this.group, this.surfaceGain * this.brightnessTrim);
+    this.requestFrame();
+  }
+
+  /**
    * Writes a `color` attribute over the ground plane, from the terrain field.
    *
    * The mechanics — where the heights come from, and why the attribute is
@@ -1690,7 +1719,7 @@ export class BuildingView {
       this.sunAngles.elevationRad,
       gainOf(this.lightSettings),
     );
-    applySurfaceGain(this.group, this.surfaceGain);
+    applySurfaceGain(this.group, this.surfaceGain * this.brightnessTrim);
   }
 
   /**
@@ -1875,7 +1904,7 @@ export class BuildingView {
     for (const object of objects) this.group.add(object);
     // New meshes arrive at factor 1; the noon brightening is held on the
     // view for exactly this (the lesson of the AR shell material below).
-    applySurfaceGain(this.group, this.surfaceGain);
+    applySurfaceGain(this.group, this.surfaceGain * this.brightnessTrim);
     // RE-APPLIED AFTER EVERY REBUILD. The objects above are brand new and carry
     // the desktop material; without this a refetch mid-session would silently
     // drop the AR look at whatever moment the user walked far enough to trigger

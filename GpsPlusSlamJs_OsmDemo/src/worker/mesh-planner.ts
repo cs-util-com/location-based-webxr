@@ -14,7 +14,9 @@
  * - **the position**, because the mesh is built in an ENU frame anchored there,
  *   so every vertex in the scene moves when the user does;
  * - **the feature set**, which grows only by loading another fetch tile;
- * - **the terrain**, because every builder samples heights from it.
+ * - **the terrain**, because every builder samples heights from it;
+ * - **the colour scheme** (colour schemes plan 2026-11-10-0841, D1), because
+ *   the city's colours are baked into its buffers.
  *
  * A widening ring changes none of them. Neither does a category change — which
  * is a second, unlooked-for win: switching category used to rebuild the city too.
@@ -36,6 +38,8 @@ export interface MeshInputs {
   readonly loadedTileCount: number;
   /** Bumped whenever the held heightfield is replaced. */
   readonly terrainStamp: number;
+  /** The colour scheme's name; a switch is a rebuild, nothing else is. */
+  readonly colourScheme: string;
 }
 
 export interface MeshPlanner {
@@ -72,13 +76,14 @@ function bucket(value: number): number {
   return Math.round(value / POSITION_BUCKET_DEG);
 }
 
-/** `latBucket,lngBucket,tiles,stamp` — coarse in space, exact in the rest. */
+/** `latBucket,lngBucket,tiles,stamp,scheme` — coarse in space, exact in the rest. */
 function keyOf(inputs: MeshInputs): string {
   return [
     bucket(inputs.position.lat),
     bucket(inputs.position.lng),
     inputs.loadedTileCount,
     inputs.terrainStamp,
+    inputs.colourScheme,
   ].join("|");
 }
 

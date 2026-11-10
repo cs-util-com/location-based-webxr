@@ -17,7 +17,9 @@ import { ZERO_STAGE_TIMINGS } from "./snapshot-timings-fixture.js";
 import { describe, it, expect, vi } from "vitest";
 
 import {
+  colourSchemeChanged,
   createDemoStore,
+  selectColourScheme,
   selectOsmView,
   summariseSnapshot,
 } from "./osm-store.js";
@@ -275,5 +277,31 @@ describe("the demo store after the framework migration", () => {
     // The counterweight: the migration must not have moved the demo's state.
     const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
     expect(selectOsmView(demo.store.getState()).category).toBe("walkable");
+  });
+});
+
+describe("the colour scheme (colour schemes plan 2026-11-10-0841)", () => {
+  it("starts at the link's scheme or the default, and takes only the table's names", () => {
+    // Why this test matters: the scheme is the worker's build key; a name
+    // outside the table must never reach it, and a link's scheme must be
+    // the boot state, not a change after boot (which would rebuild twice).
+    const plain = createDemoStore({
+      start: { lat: 50, lng: 7 },
+      category: "x",
+    });
+    expect(selectColourScheme(plain.store.getState())).toBe("today");
+    const linked = createDemoStore({
+      start: { lat: 50, lng: 7 },
+      category: "x",
+      colourScheme: "today",
+    });
+    expect(selectColourScheme(linked.store.getState())).toBe("today");
+    plain.store.dispatch({ type: "colourScheme/changed", payload: "neon" });
+    plain.store.dispatch({ type: "colourScheme/changed", payload: "toString" });
+    expect(selectColourScheme(plain.store.getState())).toBe("today");
+    plain.store.dispatch(colourSchemeChanged("today"));
+    expect(selectColourScheme(plain.store.getState())).toBe("today");
+    // The framework's slice is untouched by it.
+    expect(selectOsmView(plain.store.getState()).category).toBe("x");
   });
 });

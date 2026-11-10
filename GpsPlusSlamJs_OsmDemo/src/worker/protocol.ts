@@ -107,6 +107,12 @@ export interface TransferableMesh {
    */
   readonly groundTint?: GroundTint;
   /**
+   * The colour scheme this mesh was BUILT in (colour schemes plan
+   * 2026-11-10-0841): the page applies that scheme's ground, plates and trim,
+   * and the dropdown's switch ends on it. Absent means the default.
+   */
+  readonly colourScheme?: string;
+  /**
    * The below-surface features' outlines, in ENU, packed x,y per point.
    *
    * HERE RATHER THAN IN THE SNAPSHOT because the frame lives in the worker, as
@@ -361,6 +367,13 @@ export interface WorkerCalls {
        */
       readonly geoidUndulationM?: number;
       readonly category: string;
+      /**
+       * The colour scheme to build in, by NAME (colour schemes plan
+       * 2026-11-10-0841 section 4.4): the worker looks it up in the table the
+       * page reads, so it is never handed an unvalidated scheme. Omitted means
+       * the default; AR always sends the default (D9).
+       */
+      readonly colourScheme?: string;
       /**
        * Rings of chunks to score (W16). Omitted means the first pass's radius.
        *

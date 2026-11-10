@@ -37,6 +37,11 @@ import {
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 import type { GeoEvent, LatLng } from "gps-plus-slam-osm";
 
+import {
+  DEFAULT_COLOUR_SCHEME,
+  isColourSchemeName,
+  type ColourSchemeName,
+} from "./colour-schemes.js";
 import type { DemoSnapshot } from "./demo-pipeline.js";
 import { DEFAULT_GROUND_MODE } from "./ground-mode.js";
 import { DEFAULT_LAYERS, type LayerSet } from "./layers.js";
@@ -54,11 +59,56 @@ import { DEFAULT_LAYERS, type LayerSet } from "./layers.js";
  */
 export interface DemoRootState {
   readonly osmView: OsmViewState<DemoSnapshot, GeoEvent>;
+  /**
+   * The chosen colour scheme (colour schemes plan 2026-11-10-0841 section
+   * 4.4). The demo's own reducer rather than a field of the framework's
+   * `osmView` slice: the framework is published and has no business naming
+   * this demo's looks, and a field there would pull every framework
+   * dependant into this change.
+   */
+  readonly colourScheme: ColourSchemeName;
 }
 
 export interface CreateDemoStoreOptions {
   readonly start: LatLng;
   readonly category: string;
+  /** The scheme at boot, from the link (`?scheme=`); the default when absent. */
+  readonly colourScheme?: ColourSchemeName;
+}
+
+const COLOUR_SCHEME_CHANGED = "colourScheme/changed";
+
+/** The one action of the colour-scheme reducer. */
+export interface ColourSchemeChanged {
+  readonly type: typeof COLOUR_SCHEME_CHANGED;
+  readonly payload: ColourSchemeName;
+}
+
+/** The dropdown's choice (or a revert of it). */
+export function colourSchemeChanged(
+  name: ColourSchemeName,
+): ColourSchemeChanged {
+  return { type: COLOUR_SCHEME_CHANGED, payload: name };
+}
+
+/**
+ * The colour-scheme reducer, starting at `initial`. A payload that is not a
+ * scheme name is ignored (the state stays), so nothing outside the table can
+ * reach the worker's build key.
+ */
+function colourSchemeReducer(initial: ColourSchemeName) {
+  return (
+    state: ColourSchemeName = initial,
+    action: { readonly type: string; readonly payload?: unknown },
+  ): ColourSchemeName => {
+    if (action.type !== COLOUR_SCHEME_CHANGED) return state;
+    return isColourSchemeName(action.payload) ? action.payload : state;
+  };
+}
+
+/** The chosen colour scheme. */
+export function selectColourScheme(state: DemoRootState): ColourSchemeName {
+  return state.colourScheme;
 }
 
 /**
@@ -161,7 +211,12 @@ export function createDemoStore(options: CreateDemoStoreOptions) {
     // real backend here would start writing GPS actions to OPFS behind the
     // user's back.
     storageBackend: new NullStorageBackend(),
-    extraReducers: { osmView: slice.reducer },
+    extraReducers: {
+      osmView: slice.reducer,
+      colourScheme: colourSchemeReducer(
+        options.colourScheme ?? DEFAULT_COLOUR_SCHEME,
+      ),
+    },
     // RESTORED AFTER THE MIGRATION DROPPED IT. The old bare store passed this
     // as ; the factory hardcoded its own and had no
     // hook, so for one commit devtools deep-walked the whole ~931-cell snapshot

@@ -33,6 +33,12 @@
 
 import * as THREE from "three";
 
+import {
+  DEFAULT_GROUND_SLOPE_COLOURS,
+  validateGroundSlopeColours,
+  type GroundSlopeColours,
+  type LinearRgb,
+} from "./ground-slope-colours.js";
 import { FLAT_FADE_STEEPNESS, ISOCLINE_FREQUENCY } from "./terrain-slope.js";
 
 /**
@@ -47,36 +53,8 @@ export const SLOPE_SHADER_ANCHORS = {
   fragment: ["#include <common>", "#include <opaque_fragment>"],
 } as const;
 
-/** A LINEAR rgb triple, as the shader uses it (not sRGB). */
-export type LinearRgb = readonly [number, number, number];
-
-/**
- * The slope treatment's four colours, in LINEAR rgb (colour schemes plan
- * 2026-11-10-0841 section 4.4).
- *
- * They were GLSL literals until the schemes made them a choice. They are kept
- * linear rather than written as sRGB hex so the default reproduces the
- * literals exactly: a hex would be rounded to 8 bits and decoded, and the
- * default look would move by a fraction of a level for no reason.
- */
-export interface GroundSlopeColours {
-  /** The aspect tint's end for slopes facing away from the sun's side. */
-  readonly cool: LinearRgb;
-  /** The aspect tint's other end. */
-  readonly warm: LinearRgb;
-  /** The isoclines. */
-  readonly isoline: LinearRgb;
-  /** The rim added at grazing angles. */
-  readonly rim: LinearRgb;
-}
-
-/** Today's colours, the literals the shader carried until the schemes. */
-export const DEFAULT_GROUND_SLOPE_COLOURS: GroundSlopeColours = {
-  cool: [0.1, 0.25, 0.35],
-  warm: [0.35, 0.2, 0.15],
-  isoline: [0.62, 0.74, 0.92],
-  rim: [0.2, 0.2, 0.2],
-};
+// THE COLOURS THEMSELVES live in `ground-slope-colours.ts` (plain data, no
+// three.js), so the colour-scheme table the worker also reads can name them.
 
 /** Uniforms the patch adds, shared so one write reaches every ground material. */
 export interface SlopeUniforms {
@@ -118,13 +96,8 @@ export function setGroundSlopeColours(
     [uniforms.uSlopeIsoline, colours.isoline],
     [uniforms.uSlopeRim, colours.rim],
   ] as const;
-  for (const [, rgb] of pairs) {
-    if (!rgb.every((c) => Number.isFinite(c) && c >= 0 && c <= 1)) {
-      throw new RangeError(
-        `slope colour [${rgb.join(", ")}] is not linear rgb in [0, 1]`,
-      );
-    }
-  }
+  // All four checked before any is written, so a refusal changes nothing.
+  validateGroundSlopeColours(colours);
   for (const [uniform, rgb] of pairs) uniform.value.set(...rgb);
 }
 

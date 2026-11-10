@@ -29,6 +29,7 @@ import {
   showCosmetic,
 } from "./mesh-layers.js";
 import type { TransferableMesh } from "./worker/protocol.js";
+import { PLATE_COLOUR } from "./surface-colours.js";
 
 /** One triangle, enough for a layer to have something to draw. */
 function triangle(): {
@@ -227,6 +228,34 @@ describe("drawMeshLayers — what reaches the scene", () => {
       areas: false,
     });
     expect(objects[0]?.position.y).toBeCloseTo(groundLift("plates"), 10);
+  });
+
+  it("paints the plates in the context's colour, today's when it names none", () => {
+    // Why this test matters: the plates follow the scheme of the mesh being
+    // drawn (colour schemes plan 2026-11-10-0841); a context without one must
+    // keep today's colour, which the e2e gates were measured with.
+    const platesOnly = {
+      ...ALL_ON,
+      buildings: false,
+      trees: false,
+      woods: false,
+      poi: false,
+      roads: false,
+      areas: false,
+    };
+    const colourOf = (context?: { plateColour?: number }): number => {
+      const { objects } = drawMeshLayers(fullMesh(), platesOnly, {
+        colourForScore: () => 0,
+        ...context,
+      });
+      const plate = objects[0];
+      if (!(plate instanceof THREE.Mesh)) throw new Error("no plate drawn");
+      return (plate.material as THREE.MeshStandardMaterial).color.getHex();
+    };
+    expect(colourOf()).toBe(new THREE.Color(PLATE_COLOUR).getHex());
+    expect(colourOf({ plateColour: 0x123456 })).toBe(
+      new THREE.Color(0x123456).getHex(),
+    );
   });
 
   it("counts every layer it drew when no selection is given (W9)", () => {

@@ -45,6 +45,7 @@ import {
   sunPinnedHref,
   writeCamera,
   writeLight,
+  writeScheme,
   writePlace,
 } from "./url-state.js";
 import { createLightDialog } from "./light-dialog.js";
@@ -177,7 +178,19 @@ import { attachLayerToggles, withLayerBusy } from "./layer-toggles.js";
 import { attachSitePicker } from "./site-picker.js";
 import { isLayerEnabled, layersNeedingData, type LayerSet } from "./layers.js";
 import { meshLayerSelection, wantsAnyMeshLayer } from "./mesh-layers.js";
-import { createDemoStore, selectLayers, selectOsmView } from "./osm-store.js";
+import {
+  colourSchemeChanged,
+  createDemoStore,
+  selectColourScheme,
+  selectLayers,
+  selectOsmView,
+} from "./osm-store.js";
+import {
+  DEFAULT_COLOUR_SCHEME,
+  colourSchemeOf,
+  resolveColourScheme,
+} from "./colour-schemes.js";
+import { attachColourSchemeSwitch } from "./colour-scheme-switch.js";
 import {
   createRefreshCycle,
   isFinalRing,
@@ -354,6 +367,11 @@ async function main(): Promise<void> {
   const { store, actions, subscribe } = createDemoStore({
     start,
     category: categorySelect.value,
+    // THE LINK'S SCHEME (colour schemes plan 2026-11-10-0841, D6); unknown
+    // names open the default with one warning.
+    colourScheme: resolveColourScheme(
+      new URLSearchParams(window.location.search).get("scheme"),
+    ),
   });
   reportFatal = (message) => {
     store.dispatch(actions.fetchFailed(`the worker failed: ${message}`));
@@ -466,6 +484,15 @@ async function main(): Promise<void> {
   }
   groundPicker.addEventListener("change", () => {
     store.dispatch(actions.groundModeChanged(groundPicker.value));
+  });
+  // THE COLOUR SCHEMES (colour schemes plan 2026-11-10-0841 section 4.4):
+  // the dropdown records the choice; the subscriber further down rebuilds
+  // and writes the link, and `onMesh` ends the switch on the echoing mesh.
+  const schemeSwitch = attachColourSchemeSwitch({
+    select: el<HTMLSelectElement>("colour-scheme"),
+    status: el("colour-scheme-status"),
+    initial: selectColourScheme(store.getState()),
+    choose: (name) => store.dispatch(colourSchemeChanged(name)),
   });
 
   // THE PERF PANELS (W14, DEC-R3-18). Its own switch rather than a layer — it
@@ -1057,6 +1084,12 @@ async function main(): Promise<void> {
     // terrain load's requested datum identical — the worker's gate compares
     // them, and two independent samples would be two chances to disagree.
     geoidUndulationM: () => arUndulationM,
+    // THE SCHEME, read at post time like the datum: AR always builds the
+    // default (D9), and the choice and the link stay as they are.
+    colourScheme: () =>
+      arSession === undefined
+        ? selectColourScheme(store.getState())
+        : DEFAULT_COLOUR_SCHEME,
     // WHAT DRIVES BOTH LOADING INDICATORS. Not the store's `loading.phase`:
     // this cycle dispatches `fetchStarted` once, above the ring loop, and every
     // ring's `snapshotReady` sets the phase back to idle — so the phase is idle
@@ -1095,6 +1128,13 @@ async function main(): Promise<void> {
     onMesh: (built) => {
       if (built.kind === "full") {
         latestMesh = built.mesh;
+        // THE PAGE'S COLOURS FOLLOW THE MESH'S SCHEME, not the choice, so the
+        // ground never changes before the buildings it belongs with and AR's
+        // default build gets the default ground (colour-schemes.ts).
+        const look = colourSchemeOf(built.mesh.colourScheme);
+        buildingView.setGroundColours(look.city.ground, look.ground.slope);
+        buildingView.setBrightnessTrim(look.brightnessTrim);
+        schemeSwitch.meshDrawn(built.mesh.colourScheme);
         return;
       }
       if (latestMesh === undefined) return;
@@ -1721,6 +1761,7 @@ async function main(): Promise<void> {
       state.hint === undefined ? state.label : `${state.label} — ${state.hint}`,
     );
     arButton.dataset["arActive"] = String(arSession !== undefined);
+    schemeSwitch.setArActive(arSession !== undefined);
     // Cleared rather than left stale: the hint explains a DISABLED state, and
     // a tooltip surviving into the enabled one describes a condition that no
     // longer holds.
@@ -2832,6 +2873,7 @@ async function main(): Promise<void> {
           const { r, g, b } = heatColour(score, scale);
           return (r << 16) | (g << 8) | b;
         },
+        plateColour: colourSchemeOf(latestMesh.colourScheme).ground.plates,
       });
     } else if (!wantsMeshLayers) {
       buildingView.clearScene();
@@ -3068,7 +3110,11 @@ async function main(): Promise<void> {
       // ACCEPTED COST: a toast is transient where the header stayed open
       // until dismissed, so an error can now be missed by looking away. The
       // owner chose that knowingly.
-      if (loading.phase === "error") toast.show(loading.message);
+      if (loading.phase === "error") {
+        toast.show(loading.message);
+        // A switch whose own build failed goes back to what is drawn.
+        schemeSwitch.failed(loading.message);
+      }
     },
   );
 
@@ -3160,6 +3206,21 @@ async function main(): Promise<void> {
       void currentPass;
     },
   );
+
+  // THE COLOUR SCHEME'S CHANGE (colour schemes plan 2026-11-10-0841 section
+  // 4.4): an ordinary refresh rebuilds it, because the name is in the
+  // worker's build key; the link follows (the default writes nothing). A
+  // plain store subscription: the scheme lives outside the `osmView` slice.
+  let shownScheme = selectColourScheme(store.getState());
+  const schemeUrl = browserPlaceUrl(window);
+  store.subscribe(() => {
+    const scheme = selectColourScheme(store.getState());
+    if (scheme === shownScheme) return;
+    shownScheme = scheme;
+    schemeSwitch.show(scheme);
+    writeScheme(schemeUrl, scheme === DEFAULT_COLOUR_SCHEME ? null : scheme);
+    void refresh();
+  });
 
   subscribe(
     (view) => view.category,

@@ -56,3 +56,14 @@ store.dispatch(actions.positionChanged({ lat: 50.94, lng: 6.95 }));
 `osm-store.test.ts` — the slice is mounted where the selectors look; dispatching a real `DemoSnapshot` logs nothing for the rest of the state (**not** a guard on the snapshot itself — see the invariant above); `subscribe` fires only on change, fires with `undefined` when a failed fetch clears the snapshot, and stops after unsubscribing; `summariseSnapshot` replaces the cells with a count and tolerates an empty state.
 
 The framework slice's own behaviour (the `fetchFailed` / `nonFatalError` split, the JSON round-trip) is tested in `GpsPlusSlamJs_AppFramework/src/state/osm-view-slice.{test,property.test}.ts` and deliberately not re-tested here.
+
+## The colour scheme (colour schemes plan 2026-11-10-0841 section 4.4)
+
+- `DemoRootState.colourScheme` - the chosen scheme, a demo-owned reducer beside
+  the framework's `osmView` (the framework is published and must not name the
+  demo's looks). Starts at `CreateDemoStoreOptions.colourScheme` (the link's)
+  or the default.
+- `colourSchemeChanged(name)` - its one action; a payload outside the table is
+  ignored, so nothing but a table name reaches the worker's build key.
+- `selectColourScheme(state)`.
+- Tested in `osm-store.test.ts`.

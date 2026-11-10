@@ -565,3 +565,7 @@ field ask that raised the default was literally about zooming further out.
 - `setGroundColours(ground, slope)` - the scheme's ground (sRGB, the material
   colour while no tint is applied) and the slope treatment's linear colours.
 - `dispose()` frees the tint's texture before the material.
+- `setBrightnessTrim(trim)` (colour schemes plan 4.4, D4) - multiplied into the
+  noon gain wherever it is applied (the frame loop and `render`), so it reaches
+  buildings and roads only; `RangeError` outside 0.5-2. `main.ts` sets it,
+  with the ground colours, from the scheme each full mesh was built in.

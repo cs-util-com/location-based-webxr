@@ -78,6 +78,8 @@ interface RefreshWorker {
        * cannot distinguish an ellipsoidal field from a window-centre one.
        */
       geoidUndulationM?: number;
+      /** The colour scheme's name (colour schemes plan 2026-11-10-0841). */
+      colourScheme?: string;
     },
     options: { signal: AbortSignal },
   ): Promise<UpdateResult>;
@@ -153,6 +155,14 @@ export interface RefreshCycleOptions extends StoreAccess {
    */
   readonly geoidUndulationM?: () => number | undefined;
   /**
+   * The colour scheme the build must use, read at POST time like the datum
+   * (colour schemes plan 2026-11-10-0841 section 4.4): the page answers the
+   * default while AR runs (D9) whatever is chosen, so the choice and the link
+   * stay untouched and AR's own passes are the rebuilds. Omitted sends none,
+   * which the worker reads as the default.
+   */
+  readonly colourScheme?: () => string;
+  /**
    * The nine-stage breakdown for one pass, once it is complete.
    *
    * **A callback rather than a `console.info` here**, for the reason `onMesh`
@@ -202,6 +212,25 @@ export interface RefreshCycleOptions extends StoreAccess {
 /** `Error` messages when we have one, the value's text when we do not. */
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * The fields read at POST time rather than at construction: the datum and the
+ * colour scheme both change with the mode (AR entry draws the default colours
+ * on the AR datum). Spread conditionally because `exactOptionalPropertyTypes`
+ * distinguishes absent from undefined, and the protocol means ABSENT by
+ * "desktop datum" and "default colours".
+ */
+function postTimeReads(options: RefreshCycleOptions): {
+  geoidUndulationM?: number;
+  colourScheme?: string;
+} {
+  const datum = options.geoidUndulationM?.();
+  const colourScheme = options.colourScheme?.();
+  return {
+    ...(datum === undefined ? {} : { geoidUndulationM: datum }),
+    ...(colourScheme === undefined ? {} : { colourScheme }),
+  };
 }
 
 /**
@@ -284,7 +313,6 @@ export function createRefreshCycle(
           // which makes a cross-boundary timestamp subtraction an offset rather
           // than an elapsed time — and every existing timing in this demo is
           // taken inside the worker, so nothing here warned about it.
-          const datum = options.geoidUndulationM?.();
           const callStart = nowMs();
           const { snapshot, mesh, workerTimings } = await worker.call(
             "update",
@@ -306,7 +334,7 @@ export function createRefreshCycle(
               // changes with the mode. Spread conditionally because
               // `exactOptionalPropertyTypes` distinguishes absent from undefined,
               // and the protocol means ABSENT by "desktop datum".
-              ...(datum === undefined ? {} : { geoidUndulationM: datum }),
+              ...postTimeReads(options),
             },
             { signal },
           );

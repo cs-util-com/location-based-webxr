@@ -95,3 +95,10 @@ page-side stages and hands the composed breakdown to a callback.
   time at all — the per-ring algebra cancels it. Opened after the dispatch, as
   it was until the r504 review, that stage was unmeasurable everywhere while
   three documents claimed it was covered.
+
+## The colour scheme (colour schemes plan 2026-11-10-0841 section 4.4)
+
+`RefreshCycleOptions.colourScheme?: () => string` is read at POST time, per
+ring, like the datum, and sent as `colourScheme`; `main.ts` answers the
+default while AR runs (D9). Omitted sends none (the worker's default).
+Tested in `refresh-cycle.test.ts`.
