@@ -15,7 +15,7 @@ zip's and this device's - with **Edit text**, **Move to the reticle** and
     the Finish writes them (`object-editing.ts` `authoringObjects`).
   - `state.codes` - the stored codes' geo; each row says how far the object
     is from the nearest one ("11 m from the code", whole metres).
-  - An object gets a row when its view stands in the world (its placement row is `posed`, `placement/placement-rows.ts`): a free video (a card) gets none; a free sound has one (a narration circle or a zone). A free character stands in the world but gets none either: no creator page offers him a Move yet.
+  - EVERY object gets exactly one row, whatever its kind and view: no filter here can drop an item (`placement/list-rows.contract.test.ts` holds this for a document of every kind and view, free and in nested folders). Where it stands is offered only for a view the world shows (its placement row is `posed`, `placement/placement-rows.ts`): a card (a free video, say) has no code distance and no Move.
   - `state.inAr` - on the page every row is in `rows`; in AR `rows` holds
     only the selected object (none while nothing is selected, with
     `SELECT_HINT`), and there is no heading.

@@ -113,6 +113,7 @@ import {
 } from "./inspector-edits.js";
 import {
   buildInspector,
+  detailsOnPhone,
   inspectorHint,
   type InspectorCode,
   type InspectorModel,
@@ -714,6 +715,14 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     });
   };
 
+  /** `model` as the docks and a phone's sheets see it: none on a phone
+   *  for a selection with no details there (`detailsOnPhone`), whose tap
+   *  keeps the list. */
+  const sheetModel = (model: InspectorModel | null): InspectorModel | null =>
+    model !== null && phoneSheets(window.innerWidth) && !detailsOnPhone(model)
+      ? null
+      : model;
+
   /** The inspector drawn from the store and the ground now (a draw that
    *  changes nothing is skipped): also each readout tick, so the ground
    *  arriving shows. */
@@ -731,7 +740,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       panels.sync(model),
     );
     // A phone ticking rows in the Select mode keeps its sheet the list.
-    inspector.root.hidden = model === null || shownSheet(model) === "tree";
+    inspector.root.hidden =
+      sheetModel(model) === null || shownSheet(model) === "tree";
   };
 
   /** The tree is folded for the approach, not by the creator. */
@@ -759,7 +769,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     model: InspectorModel | null = inspectorModel(state().editorView),
   ) => {
     const ui = state().editorView;
-    const inspectorShows = model !== null;
+    const inspectorShows = sheetModel(model) !== null;
     const phone = phoneSheets(window.innerWidth);
     // Turned sideways, the list the details covered stands beside them.
     const turnedWide = change === "resized" && onPhone && !phone;
@@ -792,7 +802,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     const ui = state().editorView;
     if (!phoneSheets(window.innerWidth)) return null;
     if (ui.selectMode) return "tree";
-    if (model !== null) return "details";
+    if (sheetModel(model) !== null) return "details";
     return ui.foldedDocks.tree ? null : "tree";
   };
   /** The selection let go and the list shown: on a phone, the way back
@@ -2279,7 +2289,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         {
           widthPx: window.innerWidth,
           folded: { tree: false, inspector: ui.foldedDocks.inspector },
-          inspectorShows: inspectorModel(ui) !== null,
+          inspectorShows: sheetModel(inspectorModel(ui)) !== null,
         },
         SHELL_DOCK_LAYOUT,
       );

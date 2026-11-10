@@ -48,7 +48,9 @@ nor while the dock is folded.
 
 **On a phone** (700 px wide or less, `phone-sheet.ts`) the docks are sheets
 over the foot of the page with the map above them: the list when nothing
-is selected, the details over it when something is, each with a grip
+is selected, the details over it when something is (unless
+its inspector model has no phone details, `detailsOnPhone`: a folder tap
+keeps the list, its band and the 3D handles), each with a grip
 (drag to resize, down past the floor to dismiss). The share of the page
 is one CSS number on the body (`--s-sheet-share`), which the canvas reads
 too, so the map ends where the sheet begins and is told of its new size

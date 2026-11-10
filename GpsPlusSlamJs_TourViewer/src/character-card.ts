@@ -105,8 +105,8 @@ function card(block: TourCharacterBlock, host: ItemCardHost): void {
       await standFigure(host, blob, look);
     });
   }
-  // A look hands the host his voice as what a tap on him reaches (the
-  // bubble view's tap opens or shuts the bubble); the host decides
+  // A look hands the host his voice as what a tap on him reaches (a
+  // voiceless bubble view's tap opens or shuts the bubble); the host decides
   // whether it also plays with the step. A card view's voice is not
   // the voice of a figure the visitor taps: his look (if one stands) is
   // left alone.

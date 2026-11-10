@@ -338,7 +338,9 @@ function itemEdit(
   const axis = AXIS[field];
   const extent = field === "size" ? entry.place.extent : null;
   const sized = extent !== null && extent.kind === "size";
-  const known = axis !== undefined || field === "heading" || sized;
+  // A heading only where turning it shows (its placement row's `turns`).
+  const turned = field === "heading" && entry.place.turns;
+  const known = axis !== undefined || turned || sized;
   if (!known) return NONE;
   const typed = typedNumber(value);
   if (typed === null) return { kind: "invalid", reason: NOT_A_NUMBER };
@@ -357,7 +359,7 @@ function itemEdit(
           },
         };
   }
-  if (field === "heading") {
+  if (turned) {
     return turnTo(item.id, headingOfRotation(pose.rotation), typed);
   }
   if (axis === undefined) return NONE;

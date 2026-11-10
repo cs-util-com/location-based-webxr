@@ -281,11 +281,13 @@ describe("inspectorEdit", () => {
       selection: "station:a",
       deg: 60,
     });
-    expect(edit("pin-1", "heading", "-90")).toEqual({
+    expect(edit("model-1", "heading", "-90")).toEqual({
       kind: "turn",
-      selection: "pin-1",
+      selection: "model-1",
       deg: -90,
     });
+    // A pin faces the visitor (its row does not turn): no turn to write.
+    expect(edit("pin-1", "heading", "-90")).toEqual({ kind: "none" });
     // The short way round: 350 from 30 is a turn of -40.
     expect(edit("station:a", "heading", "350")).toMatchObject({ deg: -40 });
   });
@@ -559,8 +561,8 @@ describe("inspectorEdit: a story character's facing", () => {
 describe("inspectorEdit: an item in a turned folder", () => {
   const s = Math.SQRT1_2;
   // A folder 10 m north and 2 m up, turned a quarter about up (its north
-  // to the station's west), holding a pin 5 m north and 1 m up in it: 10 m
-  // north, 5 m west and 3 m up of the anchor in the station's frame.
+  // to the station's west), holding a picture 5 m north and 1 m up in it:
+  // 10 m north, 5 m west and 3 m up of the anchor in the station's frame.
   const station = {
     ...STATIONS[0]!,
     children: [
@@ -571,9 +573,10 @@ describe("inspectorEdit: an item in a turned folder", () => {
         children: [
           {
             id: "deep",
-            kind: "shortText",
-            view: "pin",
-            caption: "Deep",
+            kind: "picture",
+            view: "plane",
+            image: "deep-photo",
+            widthM: 1,
             createdAtIso: AT,
             pose: { position: [5, 1, 0], rotation: [0, 0, 0, 1] },
           },

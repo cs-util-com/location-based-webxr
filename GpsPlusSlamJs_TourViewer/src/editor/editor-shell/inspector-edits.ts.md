@@ -53,7 +53,8 @@ id, title }`. A story's block selected: its texts and a character's facing
     the item's altitude alone (`groundItems`), its latitude, longitude
     and turn untouched. A pose through the station's frame and back moves
     an item sideways by up to about a micrometre (float32).
-  - A `heading`, of a station or an item: `{ kind: "turn", selection, deg
+  - A `heading`, of a station or an item whose placement row `turns`
+    (one that faces the visitor gets `none`): `{ kind: "turn", selection, deg
 }`, the short way round from the heading it has now (the page turns it
     as the 3D view's turn does).
   - A `size` (a model's largest side, a picture's width: the size extent

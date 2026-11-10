@@ -21,7 +21,7 @@ import type {
   TourCharacterBlock,
   TourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import { tourFreeEntries } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import type { SelectTargetRay } from "gps-plus-slam-app-framework/ar";
 import type { Object3D } from "three";
 
@@ -101,6 +101,9 @@ export interface FreeItems {
 interface Figure {
   readonly stationId: string;
   readonly block: TourCharacterBlock;
+  /** How much larger than his own size he is drawn: the scale of the
+   *  folders holding him, as the editor draws him. */
+  readonly scale: number;
   stage: FreeStage | null;
   player: FocusedPlayer | null;
   /** He stands in his station (or is being stood). */
@@ -146,12 +149,13 @@ export function createFreeItems(deps: FreeItemsDeps): FreeItems {
 
   function figuresOf(tour: Pick<TourManifest, "stations"> | null): Figure[] {
     return (tour?.stations ?? []).flatMap((station) =>
-      tourFreeBlocks(station).flatMap((block) =>
+      tourFreeEntries(station).flatMap(({ block, scale }) =>
         block.kind === "character"
           ? [
               {
                 stationId: station.id,
                 block,
+                scale,
                 stage: null,
                 player: null,
                 standing: false,
@@ -242,8 +246,9 @@ export function createFreeItems(deps: FreeItemsDeps): FreeItems {
           stationId,
           blob,
           undefined,
-          // His line has no card to sit in here.
-          { ...look, noCard: true },
+          // His line has no card to sit in here; his folders' scale
+          // grows him.
+          { ...look, noCard: true, scale: figure.scale },
         ),
     };
     const showing = (): boolean => run === figure.run;
@@ -361,9 +366,11 @@ export function createFreeItems(deps: FreeItemsDeps): FreeItems {
       const figure = hit === null ? undefined : owners.get(hit);
       if (figure === undefined) return false;
       const { target } = figure;
-      if (target?.bubble === true) {
-        figure.stage?.toggleBubble();
-      } else if (target?.voice !== undefined) {
+      // A voiceless bubble's tap shuts or opens it; a voiced one plays
+      // like any look, its bubble showing while he speaks.
+      if (target?.voice === undefined) {
+        if (target?.bubble === true) figure.stage?.toggleBubble();
+      } else {
         const player = playerOf(figure, target.voice);
         if (player.playing()) {
           tell(figure, "idle");

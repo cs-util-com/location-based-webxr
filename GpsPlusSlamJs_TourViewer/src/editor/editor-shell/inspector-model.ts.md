@@ -44,7 +44,10 @@ origin?, groundAt? })` ->
     <station>, 2 items", its items at any depth), `scale`
     (`InspectorScale`: its placement row's label, meaning and bounds and
     the tour's value, 1 for none), `offset` and `headingDeg` (its origin
-    in its station's frame, its holders composed in), `groundOffM`; read
+    in its station's frame, its holders composed in), `groundOffM`,
+    `phoneDetails: false` (a phone shows no details sheet for it: a tap
+    keeps the list and the folder's band, and the 3D handles move, turn
+    and scale it; its typed fields are for a wider window); read
     through `placeableOf`, so it shows what the gizmo moves;
   - `StoryInspector` - `kind: "story"` (selection `story:<id>`), `storyId`,
     `stationId`, `title`, `sub` ("2 The gate / Story") and `entries`
@@ -97,6 +100,9 @@ view, advance, facingDeg }`) and `advance { mode, afterS }`;
   a rotation that is not finite, and null for one that turns the forward
   straight up or down (no bearing then: its north and east parts are
   both under 1e-9).
+- `detailsOnPhone(model)` - whether a phone shows `model` as its details
+  sheet: true unless the model says `phoneDetails: false` (a folder). The
+  shell asks this, never the selection's kind.
 - `inspectorHint(model | null)` - the bottom bar's hint: the handles the
   selection's gizmo has in the 3D view (a station: move, radius dot,
   turn; an item: move and turn, a size dot where it has an `extent` (a

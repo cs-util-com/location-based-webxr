@@ -485,6 +485,10 @@ interface FolderInspector {
   /** Its origin's height over the ground (m); null before the ground
    *  there has loaded. */
   readonly groundOffM: number | null;
+  /** A phone shows no details sheet for it: a tap keeps the list, where
+   *  its band marks the items that move with it, and its 3D handles move,
+   *  turn and scale it. Its typed fields are a wider window's. */
+  readonly phoneDetails: false;
 }
 
 interface CodeInspector {
@@ -504,6 +508,12 @@ export type InspectorModel =
   | StoryInspector
   | StoryEntryInspector
   | StoryStepInspector;
+
+/** Whether a phone shows `model` as its details sheet over the list;
+ *  false for a selection whose model says it has none there. */
+export function detailsOnPhone(model: InspectorModel): boolean {
+  return !("phoneDetails" in model) || model.phoneDetails;
+}
 
 /** The bottom bar's hint for the selection: the handles its gizmo has in
  *  the 3D view, or how to select when nothing is. A code is read-only
@@ -864,6 +874,7 @@ function folderInspector(
     },
     headingDeg: headingOfRotation(inStation.rotation),
     groundOffM: offGroundOf(place.geo, groundAt),
+    phoneDetails: false,
   };
 }
 

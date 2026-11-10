@@ -85,8 +85,10 @@ status line and what an end means.
   it was stopped is dropped. **His voice failing on a tap after his
   story** (the panel is hidden, so the status line is not seen) is said
   through `sayFailure` ("The voice could not be played here."); during a
-  story the status line says it, as for any media. The bubble view's tap shuts or opens the bubble
-  (its voice, when it has one, still plays with the step). The `card`
+  story the status line says it, as for any media. The bubble view's tap is any look's tap when it has a voice
+  (replay, or stop while it plays; the look shows the bubble while he speaks
+  and shuts it when the voice ends or the step moves on); a voiceless
+  bubble's tap shuts or opens the bubble. The `card`
   view plays the voice with the step too, as a sound that is not his. **The tap stays his whenever he stands:** after his step and after
   the story (the stage is released, `stage.release`, absent: `clear`, so
   he stays in the world) a tap still plays his voice; only a cleared look
@@ -261,7 +263,7 @@ view.offer(foundStation); // plays at once, or waits behind "Play: …"
   the story reaches a block with a world view (`worldBlockReachedBy`),
   after a tap, a timer or a choice alike. The card still shows its words;
   the app keeps the block standing in the world from then on. Never for a
-  card or a stage block.
+  card.
 - Tests: `scene-view.test.ts` "a story's world blocks (B2b)";
   `shown-blocks.property.test.ts` drives this view under any action
   sequence.
@@ -294,8 +296,8 @@ view.offer(foundStation); // plays at once, or waits behind "Play: …"
 - Tests: `scene-view.test.ts` "a declared character's frames sheet" (every story view from the sheet, the portrait also from the image, the fallback with no failure line, no sheet), and "a character's story views and the advance
   when the line ends" (every story view handed to the stage as a look, a
   card with no figure; his voice with his step in every look, a tap
-  stopping it and the next playing it again, the bubble view's tap
-  shutting its bubble; the voice told to
+  stopping it and the next playing it again, the bubble view too, a
+  voiceless bubble's tap shutting its bubble; the voice told to
   the stage; `lineEnd` on the voice's end, never before; the reading time
   with no voice or a failing one; the hold; the portrait; the voice on a
   tap, its stop and replay, the bubble's tap, a dropped loading voice, the

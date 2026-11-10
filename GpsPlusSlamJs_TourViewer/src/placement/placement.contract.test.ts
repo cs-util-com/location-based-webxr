@@ -471,10 +471,17 @@ describe("the placement rows against the editor's drawing", () => {
     "%s is drawn twice as large at twice its size",
     async (_name, kind, view, row) => {
       const spec = row.extent!;
+      // The size written where the ROW says it lives, the field the dots
+      // and the inspector write: a row naming a field the drawing ignores
+      // draws the same at both sizes and fails here.
+      const sized = (value: number): TourBlock => ({
+        ...blockOf(kind, view, 0),
+        [spec.field]: value,
+      });
       // Over the range: from the least size to well inside the largest.
       for (const value of [spec.min, 1, spec.max / 4]) {
-        const once = await drawnBox(blockOf(kind, view, 0, value));
-        const twice = await drawnBox(blockOf(kind, view, 0, 2 * value));
+        const once = await drawnBox(sized(value));
+        const twice = await drawnBox(sized(2 * value));
         const ratio = largestSide(twice!) / largestSide(once!);
         expect(Math.abs(ratio - 2), `at ${String(value)}`).toBeLessThan(0.02);
       }

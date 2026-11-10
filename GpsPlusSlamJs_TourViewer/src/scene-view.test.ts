@@ -1550,9 +1550,11 @@ describe("a character's story views and the advance when the line ends", () => {
   // Why this test matters: inside a story his voice plays with his step,
   // in every look, as the knight's greeting did when the story reached
   // him; a tap on him while he speaks stops him, and the next plays him
-  // again. The bubble view's tap opens and shuts its bubble instead.
-  it("plays a story view's voice with its step, stops it on a tap and plays it again on the next, and lets the bubble view's tap shut its bubble", async () => {
+  // again. The bubble view is no different: its bubble shows while he
+  // speaks (the look's own rule), so the replay shows it again.
+  it("plays a story view's voice with its step, stops it on a tap and plays it again on the next, the bubble view too", async () => {
     for (const view of [
+      "bubble",
       "speak",
       "two-stations",
       "portrait",
@@ -1573,14 +1575,18 @@ describe("a character's story views and the advance when the line ends", () => {
       expect(h.audio.play, view).toHaveBeenCalledTimes(2);
       expect(h.stage.setVoice).toHaveBeenLastCalledWith("speaking");
     }
+  });
+
+  // Why this test matters: a voiceless bubble has nothing to replay, so
+  // its tap still shuts and opens the bubble.
+  it("lets a voiceless bubble view's tap shut its bubble", async () => {
     const b = harness();
-    b.view.offer(station("gate", [knight("a", "bubble", { mode: "tap" })]));
+    b.view.offer(
+      station("gate", [knight("a", "bubble", { mode: "tap" }, false)]),
+    );
     await settle();
-    expect(b.audio.play).toHaveBeenCalledTimes(1);
-    expect(b.stage.setVoice).toHaveBeenLastCalledWith("speaking");
     expect(b.view.characterTapped()).toBe(true);
-    await settle();
-    expect(b.audio.play).toHaveBeenCalledTimes(1);
+    expect(b.audio.play).not.toHaveBeenCalled();
     expect(b.stage.toggleBubble).toHaveBeenCalledTimes(1);
   });
 

@@ -116,8 +116,9 @@ content` (Chromium, the editor's browser; elsewhere it stays three
     its white dots change to type (a model's Size, a picture's Width,
     `data-field` `size`, with what it means and its bounds), and under
     "Position" its Offset east and north, Height
-    (up from the anchor) and Heading to type, in its station's frame (its
-    folders composed in).
+    (up from the anchor) and, only where its placement row `turns`, Heading
+    to type, in its station's frame (its folders composed in). A thing
+    that faces the visitor (a pin, a reading sign, a sound) has no Heading.
   - Typed fields carry `data-field` (`title`, `description`,
     `radius`, `east`, `north`, `height`, `heading`, `size`) and the
     tour's value as `defaultValue`: the shell commits a field whose text

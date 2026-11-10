@@ -57,6 +57,7 @@ import {
 import type { FigureSource, PaintedFigure } from "./character-canvas.js";
 import type { FigureMemo } from "./figure-memo.js";
 import { restYawOf, type StageCharacterView } from "./character-views.js";
+import { drawInherited } from "./placement/place-scale.js";
 import {
   Group,
   Quaternion,
@@ -79,6 +80,9 @@ export interface StageCharacterLook {
   /** The image is his frames sheet (four poses in one row), which the look
    *  slices; default false (one pose). */
   readonly sheet?: boolean;
+  /** How much larger than his own size to draw him: the scale of the
+   *  folders holding him; absent: 1. */
+  readonly scale?: number;
   /** The block's pose in the station's frame (NUE m, a quaternion [x, y,
    *  z, w]); absent: on the station's spot, facing its +Z. */
   readonly pose?: {
@@ -424,6 +428,7 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
           : { painters: deps.lookPainters }),
       });
       look.root.name = "station-character";
+      drawInherited(look.root, lookSpec.scale ?? 1);
       await mount(mine, stationId, look, onWaiting, lookSpec.pose);
     },
     clear,

@@ -29,7 +29,7 @@ const WORLD_VIEWS: ReadonlySet<string> = new Set(TOUR_MODEL_WORLD_VIEWS);
 
 /**
  * `block`'s part: null in a view that stands nothing in the station (the
- * card, the story's stage) or with no size to scale by. Its `ready`
+ * card) or with no size to scale by. Its `ready`
  * settles once the model stands, and rejects when its file cannot be
  * read. The model carries `tourScale` in its `userData` (the editor finds
  * its models by it) and the place-scale mark of its size

@@ -2122,6 +2122,56 @@ describe("the tree's plain folders", () => {
     shell.hide();
   });
 
+  // Why: on a phone a folder's tap keeps the list, as the chosen
+  // tree-first arrangement does: its band shows which items move with it
+  // and its 3D handles move, turn and scale it. Were its details to cover
+  // the list, the band could never be seen there. An item's tap still
+  // turns the sheet into its details.
+  it("keeps the list and the band on a phone when a folder is selected", () => {
+    vi.stubGlobal("innerWidth", 390);
+    try {
+      const { shell, store } = setUpFolders();
+      click(row("p"));
+      click(row("q"), { ctrlKey: true });
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "g", code: "KeyG", ctrlKey: true }),
+      );
+      document
+        .querySelector<HTMLInputElement>("#tree-body input.renin")
+        ?.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+        );
+      const folder = store.getState().editorView.selected ?? "";
+      expect(folder.startsWith("folder:")).toBe(true);
+      // Back to the list, then the folder's row tapped there.
+      document.getElementById("studio-list")?.click();
+      expect(store.getState().editorView.selected).toBeNull();
+      const name = document.querySelector<HTMLElement>(
+        "#tree-body .gfolder button.fname",
+      );
+      if (name === null) throw new Error("no folder row");
+      click(name);
+      expect(store.getState().editorView.selected).toBe(folder);
+      const treeDock = document.getElementById("shell-tree") as HTMLElement;
+      const inspector = document.getElementById("shell-inspector");
+      expect(treeDock.classList.contains("collapsed")).toBe(false);
+      expect(inspector?.hidden).toBe(true);
+      expect(
+        [
+          ...document.querySelectorAll<HTMLElement>(
+            "#tree-body .kid.infolder.ctx",
+          ),
+        ].map((k) => k.dataset["select"]),
+      ).toEqual(["p", "q"]);
+      store.dispatch(editorViewActions.selected({ id: "r" }));
+      expect(treeDock.classList.contains("collapsed")).toBe(true);
+      expect(inspector?.hidden).toBe(false);
+      shell.hide();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   // Why: Shift+click picks the rows between, as a file explorer does, and
   // Ungroup takes a folder apart with its items left picked.
   it("picks a range with Shift+click, and ungroups from the bar", () => {

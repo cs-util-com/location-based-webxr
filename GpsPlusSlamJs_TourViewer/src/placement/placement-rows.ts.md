@@ -73,4 +73,11 @@ view would be the first such kind).
   view, a literal table of every row, `card` exactly poseless, the
   bounds equal to the format's constants) and against the editor's
   drawing through the stations layer and the page's world door (drawn,
-  turning at 45, 90 and 135 degrees, a size doubled over its range).
+  turning at 45, 90 and 135 degrees, a size doubled over its range, set
+  through the row's own `extent.field`).
+- `placement-consumers.contract.test.ts` - the inspector against `turns`:
+  every posed (kind, view) shows a Heading field and writes a typed
+  heading as a turn exactly when its row turns.
+- `list-rows.contract.test.ts` - every item of a document holding every
+  (kind, view), free, in nested plain folders and in a story, has exactly
+  one row in the tree, and every free one exactly one in the object list.

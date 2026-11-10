@@ -15,8 +15,9 @@ does. Plan:
 
 - `createSceneStage(deps): SceneStage`
   - `showCharacter(stationId, imageBlob, onWaiting, look)` with
-    `look: StageCharacterLook { view, name, line, voiced?, sheet?, pose?, noCard? }`
-    (`sheet`: the image is a frames sheet the look slices). The decoded
+    `look: StageCharacterLook { view, name, line, voiced?, sheet?, pose?, noCard?, scale? }`
+    (`sheet`: the image is a frames sheet the look slices; `scale`: how much
+    larger to draw him, his folders' scale, applied with `drawInherited`). The decoded
     image (`decodeTexture` measures the figure from its own header, never
     the size the tour declares) is painted into a character look and the
     decoded texture is freed.
@@ -45,7 +46,7 @@ does. Plan:
   - `characterTapTargets()` - the parts of the standing look that show
     (`CharacterLook.tapTargets`), for the visitor's tap; empty while none
     stands in the scene;
-  - `toggleBubble()` - the bubble view's tap;
+  - `toggleBubble()` - a voiceless bubble view's tap;
   - `faceVisitor(nue)` - mount what waits for its position (the look turns
     itself; the holder is never turned).
   - `follow(isShown)` - which stations' content shows now (the present

@@ -511,8 +511,8 @@ written, hand })` (the hosted texts enter the book);
 ## Selectors and pure rules
 
 - `selectTourDocument(root)` - the slice in a store's state.
-- Re-exported from `tour-content.ts` for the pages, read-only: `worldBlocks`
-  and `WorldBlock` (a station's free blocks), `isCapturedPhoto` and `ownedAssetIds` (the pictures that own their image asset), `folderChains` (each plain folder's chain from its station, outermost first). A page reads
+- Re-exported from `tour-content.ts` for the pages, read-only:
+  `isCapturedPhoto` and `ownedAssetIds` (the pictures that own their image asset), `folderChains` (each plain folder's chain from its station, outermost first). A page reads
   them here, never from `tour-content.ts` (the boundary rule
   `document-rules-through-tour-document`).
 - `assetUsesOf(state)` - per asset id, how many places name it: each

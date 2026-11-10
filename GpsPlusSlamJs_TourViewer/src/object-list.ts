@@ -126,19 +126,16 @@ function standing(entry: ObjectListEntry): string {
     : "new, not yet in the zip";
 }
 
-function rowOf(
-  entry: ObjectListEntry,
-  state: ObjectListState,
-): ObjectRowModel | null {
+/** Every object's row: no kind or view is left out, so every item of the
+ *  tour can be found, edited and deleted here. Where it stands (the
+ *  distance, the Move) is offered only for a view the world shows: a
+ *  card stands nowhere. */
+function rowOf(entry: ObjectListEntry, state: ObjectListState): ObjectRowModel {
   const { object } = entry;
-  // A view the world does not show (a card) has no row here, and nor
-  // has a free character: no creator page offers him a Move or a look
-  // yet, so a row could say nothing true about him.
-  if (blockPlacement(object.kind, object.view)?.posed !== true) return null;
-  if (object.kind === "character") return null;
+  const posed = blockPlacement(object.kind, object.view)?.posed === true;
   const busy = state.busy.get(object.id) ?? null;
   const title = objectTitle(object);
-  const distance = codeDistanceLine(object, state.codes);
+  const distance = posed ? codeDistanceLine(object, state.codes) : "";
   return {
     id: object.id,
     kind: KIND_EDIT[object.kind].look,
@@ -154,7 +151,7 @@ function rowOf(
     selected: object.id === state.selectedId,
     busy,
     canEditText: object.kind === "shortText",
-    canMove: object.kind === "shortText" && state.inAr,
+    canMove: posed && object.kind === "shortText" && state.inAr,
     canDeselect: state.inAr && object.id === state.selectedId,
     enabled: busy === null && !state.locked,
   };
@@ -162,7 +159,7 @@ function rowOf(
 
 /** What the list shows for `state` (pure). */
 export function objectListModel(state: ObjectListState): ObjectListModel {
-  const rows = state.entries.flatMap((entry) => rowOf(entry, state) ?? []);
+  const rows = state.entries.map((entry) => rowOf(entry, state));
   const count = rows.length;
   const heading = `Objects in this tour (${String(count)})`;
   const hasPins = rows.some((row) => row.kind === "pin");

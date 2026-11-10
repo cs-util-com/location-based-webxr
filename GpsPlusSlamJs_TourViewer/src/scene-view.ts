@@ -183,9 +183,9 @@ export interface SceneView {
   continueTapped(): void;
   /** A tap on the step's character (his figure, bubble or pop-up stage in
    *  the world, or his portrait in the card): his voice, which played with
-   *  the step, plays again, or stops while it plays; the bubble view's
-   *  bubble shuts or opens. False when the step shows no character in a
-   *  look. */
+   *  the step, plays again, or stops while it plays (a bubble view's
+   *  bubble shows while he speaks); a voiceless bubble view's bubble
+   *  shuts or opens. False when the step shows no character in a look. */
   characterTapped(): boolean;
   /** The `?debug=1` lines of the story: a frames sheet that could not be
    *  read (he stands in his one pose), naming it; none otherwise. */
@@ -837,11 +837,13 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     characterTapped() {
       const target = tapTarget;
       if (target === null) return false;
-      if (target.bubble) {
-        deps.stage.toggleBubble?.();
+      // A voiceless bubble has nothing to replay: its tap shuts or opens
+      // it. A voiced one plays like any look, its bubble showing while he
+      // speaks.
+      if (target.voice === undefined) {
+        if (target.bubble) deps.stage.toggleBubble?.();
         return true;
       }
-      if (target.voice === undefined) return true;
       // The step's own sound or clip is out: the tap is taken (it hit
       // him) and plays nothing over it, nor stops it - its end is what a
       // lineEnd step waits for.

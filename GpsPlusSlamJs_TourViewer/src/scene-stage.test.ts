@@ -14,6 +14,7 @@ import { createFigureMemo } from "./figure-memo";
 import type { CharacterLook } from "./character-look";
 import type * as CharacterLookModule from "./character-look";
 import { fakeCharacterPainters } from "./test-support/fake-character-painters";
+import { inheritedScaleOf } from "./placement/place-scale";
 
 /**
  * Why these tests matter: the character has to stand ON his place at the
@@ -88,6 +89,19 @@ function harness(
 }
 
 describe("createSceneStage", () => {
+  // Why: a character in a scaled folder is drawn that much larger, in the
+  // visitor as in the editor; the look's own height must grow with it.
+  it("draws a character as much larger as the scale it is given", async () => {
+    const h = harness();
+    await h.stage.showCharacter("gate", new Blob(["png"]), undefined, {
+      ...ANN,
+      scale: 2,
+    });
+    const root = h.scene.getObjectByName("station-character")!;
+    expect(root.scale.toArray()).toEqual([2, 2, 2]);
+    expect(inheritedScaleOf(root)).toBe(2);
+  });
+
   it("stands a character on the station's spot, feet on its altitude, his height kept", async () => {
     const h = harness();
     await h.stage.showCharacter("gate", new Blob(["png"]), undefined, ANN);

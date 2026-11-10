@@ -825,11 +825,15 @@ function itemParts(
   }
   if (model.extent !== null) parts.push(extentParts(model.extent));
   if (panel !== null) parts.push(...panel.parts());
+  // A heading only where turning it shows (its placement row's `turns`):
+  // a pin, a reading sign or a sound faces the visitor whatever it is.
   const heading = model.headingDeg === null ? "-" : fixed(model.headingDeg, 0);
   parts.push(
     ...disclosure(
       state.positionOpen,
-      `${fixed(o.upM, 1)} m up  ${heading} deg`,
+      model.turns
+        ? `${fixed(o.upM, 1)} m up  ${heading} deg`
+        : `${fixed(o.upM, 1)} m up`,
       () => [
         vectorField(
           "Offset",
@@ -840,11 +844,22 @@ function itemParts(
           "m",
         ),
         numberField("Height", "height", fixed(o.upM, 2), "m"),
-        numberField("Heading", "heading", headingText(model.headingDeg), "deg"),
+        ...(model.turns
+          ? [
+              numberField(
+                "Heading",
+                "heading",
+                headingText(model.headingDeg),
+                "deg",
+              ),
+            ]
+          : []),
         el(
           "div",
           "note",
-          "Metres east / north of its station's anchor, in the station's frame; the height up from the anchor; the heading relative to the station.",
+          model.turns
+            ? "Metres east / north of its station's anchor, in the station's frame; the height up from the anchor; the heading relative to the station."
+            : "Metres east / north of its station's anchor, in the station's frame; the height up from the anchor. It faces the visitor, so it has no heading.",
         ),
       ],
     ),
