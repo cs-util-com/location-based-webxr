@@ -161,27 +161,28 @@ export function buildCosmeticTrees(
     .filter(isTree)
     .flatMap((f) => (f.type === "node" ? [frame.toEnu(f.position)] : []));
 
+  // APPENDED ONE BY ONE, never `push(...list)`: a spread passes one
+  // argument per element and throws `RangeError: Maximum call stack size
+  // exceeded` above roughly 100-125 k, which one large forest reaches.
   const candidates: Candidate[] = [];
   const taken = new Set<string>();
   for (const source of sources) {
     const geometry = toGeometry(source.feature);
     if (!geometry.ok) continue;
-    if (source.source === "tree_row") {
-      candidates.push(
-        ...rowCandidates(source, geometry.geometry, window, (at) =>
-          mapped.some((t) => distance(t, frame.toEnu(at)) <= TREE_ROW_CLEAR_M),
-        ),
-      );
-    } else {
-      candidates.push(
-        ...areaCandidates(source, geometry.geometry, {
-          window,
-          density,
-          taken,
-          blocked: (at) => blocked(frame.toEnu(at)),
-        }),
-      );
-    }
+    const found =
+      source.source === "tree_row"
+        ? rowCandidates(source, geometry.geometry, window, (at) =>
+            mapped.some(
+              (t) => distance(t, frame.toEnu(at)) <= TREE_ROW_CLEAR_M,
+            ),
+          )
+        : areaCandidates(source, geometry.geometry, {
+            window,
+            density,
+            taken,
+            blocked: (at) => blocked(frame.toEnu(at)),
+          });
+    for (const candidate of found) candidates.push(candidate);
   }
   return ranked(candidates, cap).map((c) => placementOf(c, options));
 }
