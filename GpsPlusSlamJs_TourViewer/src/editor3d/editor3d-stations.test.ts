@@ -40,6 +40,7 @@ import {
   type StationsLayerDeps,
 } from "./editor3d-stations.js";
 import { isInterfacePart } from "./globe-interface-pass.js";
+import { pickOnlyOnPill } from "./editor3d-marks.js";
 import { buildLecternStand } from "../lectern-view.js";
 import { buildReadingSign } from "../reading-sign.js";
 import { renderTourStation } from "../content-placement.js";
@@ -861,6 +862,121 @@ describe("createStationsLayer", () => {
     // From its side, away from the billboard: the box alone.
     const side = box.clone().add(new THREE.Vector3(0, 0, 20));
     expect(layer.pick(ray(side, box))).toBe("m");
+    layer.dispose();
+  });
+
+  // Why: a billboard's sprite is its whole 512 x 128 canvas, but its pill
+  // is drawn only `width` px wide, centred, with transparent rows above and
+  // below. A click on a model seen through the transparent margin must
+  // select the model; a click on the pill over it still selects the station.
+  it("picks a billboard only on its drawn pill, not on its transparent margin", async () => {
+    const { d } = deps({
+      makeBillboard: () => {
+        const s = new THREE.Sprite();
+        // 0.4 m wide for the canvas's 512 px, a pill 128 px wide drawn on
+        // it: the pill spans 0.1 m, the margin the 0.15 m either side.
+        s.scale.set(0.4, 0.1, 1);
+        pickOnlyOnPill(s, 128);
+        return s;
+      },
+    });
+    const layer = createStationsLayer(d);
+    layer.setTour(
+      manifest(
+        [station("a", 0, 0, [model("m", "box", 2)])],
+        [{ id: "box", path: "content/box.glb", kind: "model" }],
+      ),
+      new Map(),
+    );
+    layer.update(view(0, 0, null, 1));
+    await settle();
+    layer.update(view(0, 0, null, 1));
+    d.parent.updateMatrixWorld(true);
+    const board = layer.billboardOf("a")!.getWorldPosition(new THREE.Vector3());
+    const box = new THREE.Box3()
+      .setFromObject(layer.modelObject("m")!)
+      .getCenter(new THREE.Vector3());
+    const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
+    camera.position.copy(
+      box.clone().add(box.clone().sub(board).normalize().multiplyScalar(20)),
+    );
+    camera.lookAt(board);
+    camera.updateMatrixWorld(true);
+    const right = new THREE.Vector3().setFromMatrixColumn(
+      camera.matrixWorld,
+      0,
+    );
+    const up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+    /** A ray from the camera through `at` on the billboard. */
+    const through = (at: THREE.Vector3) => {
+      const r = new THREE.Raycaster();
+      const ndc = at.clone().project(camera);
+      r.setFromCamera(new THREE.Vector2(ndc.x, ndc.y), camera);
+      return r;
+    };
+    const kindsOf = (r: THREE.Raycaster) =>
+      r
+        .intersectObject(d.parent, true)
+        .map((h) => (h.object instanceof THREE.Sprite ? "sprite" : "mesh"));
+    // Through the side margin (uv x 0.875): the box alone, no billboard.
+    const margin = through(board.clone().addScaledVector(right, 0.15));
+    expect(kindsOf(margin)[0]).toBe("mesh");
+    expect(kindsOf(margin)).not.toContain("sprite");
+    expect(layer.pick(margin)).toBe("m");
+    // Through the transparent rows above the pill (uv y 0.95): the box.
+    const above = through(board.clone().addScaledVector(up, 0.045));
+    expect(kindsOf(above)[0]).toBe("mesh");
+    expect(layer.pick(above)).toBe("m");
+    // Through the pill, over the box: the station.
+    const pill = through(board.clone().addScaledVector(right, 0.03));
+    expect(kindsOf(pill)[0]).toBe("mesh");
+    expect(kindsOf(pill)).toContain("sprite");
+    expect(layer.pick(pill)).toBe("station:a");
+    layer.dispose();
+  });
+
+  // Why: where two parts drawn over everything overlap on the screen, the
+  // one drawn last (the higher render order) is the one seen, so a click
+  // there selects it even when the other is nearer; between equal orders
+  // the nearer one wins.
+  it("between overlapping parts drawn over everything, picks the higher render order, then the nearer", () => {
+    const { d } = deps({
+      makeBillboard: (_number, _title, selected) => {
+        const s = new THREE.Sprite();
+        s.renderOrder = selected ? 31 : 30;
+        return s;
+      },
+    });
+    const layer = createStationsLayer(d);
+    // b stands 10 m north of a, behind it seen from the south.
+    layer.setTour(
+      manifest([station("a", 0, 0), station("b", 0, 10)]),
+      new Map(),
+    );
+    const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
+    const pickFromSouth = () => {
+      d.parent.updateMatrixWorld(true);
+      const a = layer.billboardOf("a")!.getWorldPosition(new THREE.Vector3());
+      camera.position.set(a.x, a.y, a.z + 30);
+      camera.lookAt(a);
+      camera.updateMatrixWorld(true);
+      const r = new THREE.Raycaster();
+      r.setFromCamera(new THREE.Vector2(0, 0), camera);
+      const sprites = r
+        .intersectObject(d.parent, true)
+        .filter((h) => h.object instanceof THREE.Sprite);
+      expect(sprites.length).toBe(2);
+      return layer.pick(r);
+    };
+    // b selected (31) behind a (30): b is drawn over a.
+    layer.update(view(0, 0, "b"));
+    expect(pickFromSouth()).toBe("station:b");
+    // a selected: the higher order and the nearer.
+    layer.update(view(0, 0, "a"));
+    expect(pickFromSouth()).toBe("station:a");
+    // Equal orders: the nearer, a.
+    layer.update(view(0, 0, null));
+    expect(pickFromSouth()).toBe("station:a");
     layer.dispose();
   });
 

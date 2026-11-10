@@ -1034,18 +1034,25 @@ export function createStationsLayer(deps: StationsLayerDeps) {
      *  id, a code's level id), or null; rings and poles are none. What
      *  is drawn over everything (`isInterfacePart`: a billboard, a
      *  sound's icon) comes before a nearer part with a depth test, as it
-     *  shows in front of it: a click selects what is seen. */
+     *  shows in front of it: a click selects what is seen. Between such
+     *  parts the one drawn last (the highest render order) is seen, and
+     *  between equal orders the nearer. */
     pick(raycaster: THREE.Raycaster): string | null {
       group.updateMatrixWorld();
       let nearest: string | null = null;
+      let top: { pick: string; order: number } | null = null;
+      // Hits come nearest first, so a farther one replaces only on a
+      // strictly higher order.
       for (const hit of raycaster.intersectObject(group, true)) {
         if (!drawnInGroup(hit.object, group)) continue;
         const pick = pickOf(hit.object);
         if (pick === null) continue;
-        if (isInterfacePart(hit.object)) return pick;
-        nearest ??= pick;
+        if (isInterfacePart(hit.object)) {
+          const order = hit.object.renderOrder;
+          if (top === null || order > top.order) top = { pick, order };
+        } else nearest ??= pick;
       }
-      return nearest;
+      return top?.pick ?? nearest;
     },
     /** For the page's checks: the stations and what is drawn. */
     stats() {

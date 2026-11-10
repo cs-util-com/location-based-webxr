@@ -96,7 +96,10 @@ standing`). A distance, size or focal length that is not a positive
     (its object id) or a code's square (its level id); null for none.
     What is drawn over everything (`isInterfacePart`: a billboard, a
     sound's icon) comes before a nearer part with a depth test, since it
-    shows in front of it: a click selects what is seen;
+    shows in front of it: a click selects what is seen. Between such
+    parts the highest render order wins (it is drawn last, so seen), and
+    between equal orders the nearer. A billboard takes a ray only on its
+    drawn pill (`pickOnlyOnPill` in `editor3d-marks.ts`);
   - `setShown({ names, codes })` - the billboards and poles, and the code
     squares, off or on (the layer chips); `codesVisible()`;
   - `setHidden(stationIds, levelIds)` - the globe view's visibility rule
@@ -255,8 +258,9 @@ printed size, focalPxOf(view))` times its printed size: `CODE_SCREEN_PX`
   with an object.
 - **Writes nothing** to the tour or the store; a preview moves only the
   drawn objects, and is re-applied after a station's items render.
-- `pick` is by distance along the ray (the nearest hit wins), not
-  billboards first.
+- `pick` takes what is seen: a part drawn over everything first (the
+  highest render order, then the nearest), else the nearest depth-tested
+  hit along the ray.
 - **Not yet:** billboards are not decluttered, and photos are drawn at
   their own size, not scaled up to a readable size from far away.
 
@@ -283,7 +287,10 @@ store): each station at its drawn height where it stands; only the near
 and selected stations rendered, and what leaves freed; a model kept
 drawn through an edit of its notes or sections, drawn anew when its view
 changes or it moves; the pick preferring a part drawn over everything
-to a nearer depth-tested one; a billboard per
+to a nearer depth-tested one, and between two such parts the higher
+render order, then the nearer; a billboard picked on its drawn pill
+only, a model seen through its transparent margin picked instead; a
+billboard per
 station rising with the morph; photos flat looking down and upright
 tilted; a model at its size and pose; a model that cannot be read left
 out; no free model in the card or stage view, its file not read; every code as a square of its printed size, laid flat face up in front

@@ -20,6 +20,9 @@ import { truncated } from "../truncated.js";
 const BILLBOARD_W = 512;
 const BILLBOARD_H = 128;
 const BILLBOARD_SCREEN_PX = 34;
+/** The pill's rows on the canvas: transparent above and below. */
+const PILL_TOP = 18;
+const PILL_H = 92;
 
 const FONT = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
 
@@ -66,7 +69,7 @@ export function createBillboard(
     width = Math.min(BILLBOARD_W, numW + nameW + 3 * pad + 8);
     const x0 = (BILLBOARD_W - width) / 2;
     ctx.fillStyle = "rgba(28, 29, 32, 0.88)";
-    roundRect(ctx, x0, 18, width, 92, 14);
+    roundRect(ctx, x0, PILL_TOP, width, PILL_H, 14);
     ctx.fill();
     ctx.strokeStyle = selected ? "#e9a23b" : "rgba(255, 255, 255, 0.14)";
     ctx.lineWidth = 4;
@@ -100,8 +103,38 @@ export function createBillboard(
   sprite.renderOrder = selected ? 31 : 30;
   sprite.name = `billboard ${String(number)}`;
   sprite.userData["width"] = width;
+  pickOnlyOnPill(sprite, width);
   resizeBillboard(sprite, view);
   return sprite;
+}
+
+const spriteRaycast = THREE.Sprite.prototype.raycast;
+
+/**
+ * Keep a billboard's ray hits only on its drawn pill: `widthPx` of the
+ * canvas's 512 wide, centred, rows 18 to 110 of its 128. The sprite is the
+ * whole canvas, so without this a click on what is seen through its
+ * transparent margin would select the station.
+ */
+export function pickOnlyOnPill(sprite: THREE.Sprite, widthPx: number): void {
+  const halfU = Math.min(BILLBOARD_W, Math.max(0, widthPx)) / BILLBOARD_W / 2;
+  // The canvas is uploaded flipped (uv y 0 at its bottom row); the pill's
+  // rows are the same distance from either edge.
+  const v0 = PILL_TOP / BILLBOARD_H;
+  const v1 = (PILL_TOP + PILL_H) / BILLBOARD_H;
+  sprite.raycast = function (raycaster, hits) {
+    const start = hits.length;
+    spriteRaycast.call(this, raycaster, hits);
+    for (let i = hits.length - 1; i >= start; i--) {
+      const uv = hits[i]!.uv;
+      const onPill =
+        uv !== undefined &&
+        Math.abs(uv.x - 0.5) <= halfU &&
+        uv.y >= v0 &&
+        uv.y <= v1;
+      if (!onPill) hits.splice(i, 1);
+    }
+  };
 }
 
 /** Keep `sprite` about 34 px tall on a viewport `viewportPx` tall. */
