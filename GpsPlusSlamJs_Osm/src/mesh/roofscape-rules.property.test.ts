@@ -95,11 +95,14 @@ describe("neighbourhoodPriors, as properties", () => {
           for (const self of entries) {
             const { roofs, flat } = bruteForceFlat(entries, self);
             const prior = priors.get(self.key);
-            if (roofs >= P.priorMinEvidence) {
-              expect(prior?.pitched).toBe(flat / roofs < P.flatShareMin);
-            } else {
-              expect(prior?.why).not.toMatch(/roofs nearby/);
-            }
+            // With enough votes the verdict is the vote; without, no verdict
+            // may claim to come from the votes.
+            const enough = roofs >= P.priorMinEvidence;
+            const expected = enough ? flat / roofs < P.flatShareMin : undefined;
+            const actual = enough ? prior?.pitched : undefined;
+            expect(actual).toBe(expected);
+            const claimsVotes = /roofs nearby/.test(prior?.why ?? "");
+            expect(claimsVotes && !enough).toBe(false);
           }
         },
       ),

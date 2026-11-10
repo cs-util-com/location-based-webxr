@@ -65,9 +65,9 @@ describe("keepReason", () => {
   });
 
   it("leaves a building with parts, and one below the surface, alone", () => {
-    expect(
-      keepReason({ building: "church" }, { ...low, hasParts: true }),
-    ).toBe("parts");
+    expect(keepReason({ building: "church" }, { ...low, hasParts: true })).toBe(
+      "parts",
+    );
     expect(
       keepReason({ building: "yes" }, { ...low, belowSurface: true }),
     ).toBe("below surface");
@@ -77,9 +77,9 @@ describe("keepReason", () => {
     const tall = { building: "yes", height: "16" };
     expect(keepReason(tall, low)).toBe("tall");
     expect(keepReason(tall, { ...low, heightLimitM: 20 })).toBeUndefined();
-    expect(
-      keepReason({ building: "yes", "building:levels": "5" }, low),
-    ).toBe("tall");
+    expect(keepReason({ building: "yes", "building:levels": "5" }, low)).toBe(
+      "tall",
+    );
   });
 });
 
@@ -118,12 +118,18 @@ describe("the invented heights", () => {
     expect(h).toBeGreaterThanOrEqual(22.25);
     expect(h).toBeLessThanOrEqual(26.75);
     expect(
-      refusedHeightM({ building: "yes", height: "12.5" }, 120, "way/9", flat, P),
+      refusedHeightM(
+        { building: "yes", height: "12.5" },
+        120,
+        "way/9",
+        flat,
+        P,
+      ),
     ).toBe(12.5);
     const few = { ...flat, heights: [30, 30] };
-    expect(
-      refusedHeightM({ building: "yes" }, 120, "way/9", few, P),
-    ).toBe(inventedEaveHeightM({ building: "yes" }, 120, "way/9"));
+    expect(refusedHeightM({ building: "yes" }, 120, "way/9", few, P)).toBe(
+      inventedEaveHeightM({ building: "yes" }, 120, "way/9"),
+    );
   });
 });
 
@@ -295,7 +301,11 @@ describe("the local roof prior", () => {
       tags: { building: "yes", "roof:shape": "flat" },
       at: pt(x, 0),
     });
-    const self: PriorEntry = { key: "way/self", tags: { building: "yes" }, at: pt(0, 0) };
+    const self: PriorEntry = {
+      key: "way/self",
+      tags: { building: "yes" },
+      at: pt(0, 0),
+    };
     const inside = [1, 2, 3, 4, 5].map((i) => flat(i, 199.9));
     const outside = [1, 2, 3, 4, 5].map((i) => flat(i, 200.1));
     expect(
