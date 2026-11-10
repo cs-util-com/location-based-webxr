@@ -459,7 +459,7 @@ export function buildSampleTour() {
                 {
                   id: "konrad-greets",
                   kind: "character",
-                  view: "speak",
+                  view: "stage",
                   name: "Sir Konrad",
                   image: "knight",
                   caption:
@@ -553,7 +553,7 @@ export function buildSampleTour() {
                 {
                   id: "konrad-toll",
                   kind: "character",
-                  view: "speak",
+                  view: "stage",
                   name: "Sir Konrad",
                   image: "knight",
                   caption:
@@ -600,7 +600,7 @@ export function buildSampleTour() {
                 {
                   id: "konrad-farewell",
                   kind: "character",
-                  view: "speak",
+                  view: "stage",
                   name: "Sir Konrad",
                   image: "knight",
                   caption: "You found every place. Farewell, and thank you!",
