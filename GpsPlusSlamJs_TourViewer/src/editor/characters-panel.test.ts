@@ -128,7 +128,12 @@ function memoryLibrary(initial: CharacterRecord[] = []) {
       check("files");
       const rec = entries.find((e) => e.libraryId === id);
       if (!rec) throw new Error("gone");
-      return Promise.resolve({ record: rec, frames: png(), image: png() });
+      // Each character's own four poses, so the tour tells them apart.
+      return Promise.resolve({
+        record: rec,
+        frames: new Blob([`poses of ${id}`], { type: "image/png" }),
+        image: png(),
+      });
     }),
     tidy: vi.fn(),
   };
@@ -139,11 +144,15 @@ function memoryLibrary(initial: CharacterRecord[] = []) {
   };
 }
 
-/** A tour in memory, with a refusal to give on the next declare. */
+/** A tour in memory, with a refusal to give on the next declare. It
+ *  mints its own ids (`t1`, `t2`, ...) and names a file by its text, as
+ *  the real tour names one by its bytes. */
 function memoryTour() {
   const chars: TourCharacter[] = [];
   let refuseNext: string | null = null;
   let gate: Promise<void> | null = null;
+  let minted = 0;
+  const fileId = async (file: Blob) => `file:${await file.text()}`;
   const tour: CharactersPanelTour = {
     characters: () => chars,
     declare: vi.fn(
@@ -154,15 +163,18 @@ function memoryTour() {
           refuseNext = null;
           return { kind: "refused" as const, reason };
         }
-        chars.push({
-          id: input.id,
+        minted += 1;
+        const character = {
+          id: `t${String(minted)}`,
           name: input.name,
-          image: `${input.id}-1`,
-          frames: `${input.id}-4`,
-        });
-        return { kind: "declared" as const };
+          image: await fileId(input.image),
+          frames: await fileId(input.frames),
+        };
+        chars.push(character);
+        return { kind: "declared" as const, character };
       },
     ),
+    fileId,
     remove: vi.fn((id: string) => {
       const at = chars.findIndex((c) => c.id === id);
       if (at < 0) return { kind: "refused" as const, reason: "not here" };
@@ -294,7 +306,7 @@ describe("Add to tour", () => {
     expect(add?.disabled).toBe(true);
     release();
     await settled();
-    expect(s.t.chars.map((c) => c.id)).toEqual(["c1"]);
+    expect(s.t.chars.map((c) => c.name)).toEqual(["Rita"]);
     expect(s.toasts()).toContain("Rita is in this tour now");
     expect(s.d.tourList.textContent).toContain("Rita");
     expect(s.libRow("c1")?.textContent).toContain("In this tour");
@@ -344,7 +356,7 @@ describe("the banner", () => {
     expect(s.d.pickup.textContent).toContain("Ada and Max");
     all?.click();
     await settled(10);
-    expect(s.t.chars.map((c) => c.id).sort()).toEqual(["c2", "c3"]);
+    expect(s.t.chars.map((c) => c.name).sort()).toEqual(["Ada", "Max"]);
     expect(s.d.pickup.hidden).toBe(true);
   });
 
@@ -455,8 +467,8 @@ describe("makeForTour (the add menu's Character)", () => {
     s.library.entries.unshift(record("c2", "Max", "2026-11-10T12:00:00.000Z"));
     s.d.maker.close();
     const got = await made;
-    expect(got?.id).toBe("c2");
-    expect(s.t.chars.map((c) => c.id)).toEqual(["c2"]);
+    expect(got?.name).toBe("Max");
+    expect(s.t.chars).toEqual([got]);
     expect(s.seen.ids).toContain("c2");
   });
 
@@ -606,5 +618,67 @@ describe("with the list closed", () => {
     await made;
     expect(s.d.toasts.textContent).toBe("");
     expect(s.said).toHaveLength(1);
+  });
+});
+
+describe("the tour's own character ids", () => {
+  // Why: the device library's id tells when a character was made; a tour
+  // is shared, so that id must never reach it. The tour mints its own id,
+  // and the list still knows which device character is in the tour by
+  // his four poses.
+  it("declares without the device id and still shows him as in the tour", async () => {
+    const s = setup({ lib: [record("c1777000000abcdef", "Rita")] });
+    s.panel.open();
+    await settled();
+    s.libRow("c1777000000abcdef")
+      ?.querySelector<HTMLButtonElement>("[data-add]")
+      ?.click();
+    await settled(10);
+    const input = vi.mocked(s.t.tour.declare).mock.calls[0]?.[0];
+    expect(Object.keys(input ?? {}).sort()).toEqual([
+      "frames",
+      "image",
+      "name",
+    ]);
+    expect(s.t.chars.map((c) => c.id)).toEqual(["t1"]);
+    expect(s.libRow("c1777000000abcdef")?.textContent).toContain(
+      "In this tour",
+    );
+  });
+
+  // Why: a tour opened later holds the character under its own id; the
+  // list must still see that the device's character is in it (no "Add to
+  // tour" offered twice), which only the four poses can tell.
+  it("knows a character of an opened tour by his four poses", async () => {
+    const s = setup({ lib: [record("c1", "Rita"), record("c2", "Max")] });
+    s.t.chars.push({
+      id: "k7",
+      name: "Rita",
+      image: "x",
+      frames: "file:poses of c1",
+    });
+    s.panel.open();
+    await settled(10);
+    expect(s.libRow("c1")?.textContent).toContain("In this tour");
+    expect(s.libRow("c1")?.querySelector("[data-add]")).toBeNull();
+    expect(s.libRow("c2")?.querySelector("[data-add]")).not.toBeNull();
+  });
+
+  // Why: the add menu's Character must hand back the tour's character
+  // when the one just made is in the tour already, not add him twice.
+  it("makeForTour hands back the character the tour holds already", async () => {
+    const s = setup({ lib: [] });
+    const made = s.panel.makeForTour();
+    await settled();
+    s.library.entries.unshift(record("c9", "Ada"));
+    s.t.chars.push({
+      id: "k1",
+      name: "Ada",
+      image: "x",
+      frames: "file:poses of c9",
+    });
+    s.d.maker.close();
+    expect((await made)?.id).toBe("k1");
+    expect(s.t.tour.declare).not.toHaveBeenCalled();
   });
 });

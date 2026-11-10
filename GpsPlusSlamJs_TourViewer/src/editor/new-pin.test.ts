@@ -343,15 +343,20 @@ describe("newCharacter", () => {
     expect(out).toEqual({ kind: "refused", reason: "too far" });
   });
 
-  it("makes a story card naming the declaration", () => {
-    expect(newCharacterEntry(rita, "e1")).toMatchObject({
+  // Why: a character in a story is a 3D character like a free one: the
+  // view a free character starts in, at a place of his own in the
+  // station's frame, moving on by a tap as every new story entry does.
+  it("makes a story entry naming the declaration, standing at the given spot", () => {
+    const entry = newCharacterEntry(rita, "e1", { northM: 4, eastM: -2 });
+    expect(entry).toMatchObject({
       id: "e1",
       kind: "character",
-      view: "card",
+      view: "speak",
       character: "c1abc",
       name: "Ranger Rita",
       image: "rita1",
       advance: { mode: "tap" },
+      pose: { position: [4, 0, -2], rotation: [0, 0, 0, 1] },
     });
   });
 });

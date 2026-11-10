@@ -83,6 +83,9 @@ passed-on refusal and its placed item.
   -> `NewItemOutcome`: the add menu's Character, placed. It is refused in
   the same cases as `addNewItem` (a station that is gone, or `place`'s
   words).
-- `newCharacterEntry(character, id)` -> `TourStoryBlock`: the declared
-  character as a story's card (tap to move on).
+- `newCharacterEntry(character, id, spot)` -> `TourStoryBlock`: the
+  declared character as a story's entry, a 3D character like a free one
+  (view `speak`), standing at `spot` (`{ northM, eastM }` in the station's
+  frame, the caller's `freePinSpot`), facing north, tap to move on. It
+  shares its id, pose and advance with `newStoryEntry` (`storyEntryShell`).
 - Tested in `new-pin.test.ts` ("newCharacter").

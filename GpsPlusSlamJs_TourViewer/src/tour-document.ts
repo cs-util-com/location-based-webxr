@@ -142,6 +142,7 @@ import {
   characterChanges,
   characterDeclareRefusal,
   characterImageIds,
+  restoredCharacters,
   withCharacters,
 } from "./declared-characters.js";
 import {
@@ -2158,21 +2159,6 @@ function characterRemove(
     },
     payload.what,
   );
-}
-
-/** A draft's characters as a restore takes them: each whose picture (and
- *  four poses) the tour holds, once per id, at most the format's cap. */
-function restoredCharacters(
-  recorded: readonly TourCharacter[],
-  held: ReadonlySet<string>,
-): TourCharacter[] {
-  const kept: TourCharacter[] = [];
-  for (const character of recorded) {
-    if (characterDeclareRefusal(kept, character, held) === null) {
-      kept.push(character);
-    }
-  }
-  return kept;
 }
 
 /** A smaller file in place of an asset's (`assetOptimized`). */

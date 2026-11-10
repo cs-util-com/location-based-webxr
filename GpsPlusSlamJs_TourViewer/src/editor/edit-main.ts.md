@@ -953,11 +953,13 @@ on a desktop.
 - File, "Characters…" (`#file-characters`, disabled when no tour is open)
   opens the Characters list (`characters-panel.ts`).
   - Its tour adapter (`charactersTour`) wraps the session's character
-    methods, and refreshes and tells the autosave after each change.
+    methods, and refreshes and tells the autosave after each change; each
+    change (the Undo's restore too) ends a pending delete Undo first.
+    `fileId` names a file as the tour does (`tourFileId`).
   - The library is opened once (`characterLibraryNow`).
 - `dialogOpen()` counts the list and the maker, and the page's Escape
   handler leaves them to their own dialog.
 - The add menu's Character (`addCharacterTo`) calls `makeForTour()`. In a
   station the character then stands free (`addNewCharacter`, selected,
-  toast `Added X to "Station"`); in a story it becomes the story's last card
-  (`addCharacterToStory`).
+  toast `Added X to "Station"`); in a story it becomes the story's last
+  entry, standing at the station's free spot (`addCharacterToStory`).

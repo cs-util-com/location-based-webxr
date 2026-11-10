@@ -24,6 +24,9 @@ editor session keeps what it returns in its one files table
     entry cap or a picture over the pixel cap that `context.shrinks` took
     to be made smaller: no save writes it until a smaller file replaces it
     (`tour-document-save.ts` refuses the save in words).
+- `tourFileId(data)`: the id the tour gives these bytes (their sha256), the
+  one `readTourFile` names an asset by. The Characters list uses it to know
+  a device character's four poses in a tour.
 - `TourFileContext`
   - `tourBytes` - what the tour weighs now (`EditorSession.tourBytes()`).
   - `known(sha)` - the asset the tour holds for these bytes.

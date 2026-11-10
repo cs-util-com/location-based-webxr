@@ -199,6 +199,7 @@ import {
   createCharactersPanel,
   type CharactersPanelTour,
 } from "./characters-panel.js";
+import { tourFileId } from "./tour-files.js";
 import { newObjectId } from "../content-placement.js";
 import type { InspectorCode } from "./editor-shell/inspector-model.js";
 import { stationTitle } from "../station-run.js";
@@ -585,11 +586,16 @@ function charactersTour(): CharactersPanelTour | null {
       endUndo();
       return changed(await open.declareCharacter(input));
     },
+    fileId: async (file) =>
+      tourFileId(new Uint8Array(await file.arrayBuffer())),
     remove: (id) => {
       endUndo();
       return changed(open.removeCharacter(id));
     },
-    restore: (character) => changed(open.restoreCharacter(character)),
+    restore: (character) => {
+      endUndo();
+      return changed(open.restoreCharacter(character));
+    },
     image: (id) => open.characterImage(id),
     title: () => open.details().name,
   };

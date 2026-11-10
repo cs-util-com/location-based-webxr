@@ -1187,7 +1187,6 @@ const ROWS: readonly Row[] = [
     run: async (p) => {
       await p.editStations((e) =>
         e.declareCharacter({
-          id: "c1abc",
           name: "Ranger Rita",
           image: pngBlob(8, 4),
           frames: pngBlob(16, 4),

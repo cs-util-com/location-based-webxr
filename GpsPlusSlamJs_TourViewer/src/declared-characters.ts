@@ -31,8 +31,15 @@ export function characterDeclareRefusal(
   if (!TOUR_ID_PATTERN.test(character.id)) {
     return "This character has no id a tour can carry.";
   }
-  if (declared.some((c) => c.id === character.id)) {
-    return `${character.name} is in this tour already.`;
+  // The tour mints each id, so the same character added again comes with
+  // a new one: the same four poses (one file, named by its bytes) tell.
+  const same = declared.find(
+    (c) =>
+      c.id === character.id ||
+      (c.frames !== undefined && c.frames === character.frames),
+  );
+  if (same !== undefined) {
+    return `${same.name} is in this tour already.`;
   }
   if (declared.length >= MAX_TOUR_CHARACTERS) {
     return `A tour holds at most ${String(MAX_TOUR_CHARACTERS)} characters.`;
@@ -54,6 +61,28 @@ export function characterDeclareRefusal(
     }
   }
   return null;
+}
+
+/** A draft's characters as a restore takes them: each whose picture (and
+ *  four poses) the tour holds, once per id, at most the format's cap. One
+ *  whose four poses alone the tour lacks (the draft keeps the small
+ *  picture first, so a draft that ran out of room holds it alone) is kept
+ *  without them, which the format allows: dropping him would leave every
+ *  item naming him dangling. */
+export function restoredCharacters(
+  recorded: readonly TourCharacter[],
+  held: ReadonlySet<string>,
+): TourCharacter[] {
+  const kept: TourCharacter[] = [];
+  for (const character of recorded) {
+    const sheetLost =
+      character.frames !== undefined && !held.has(character.frames);
+    const taken: TourCharacter = sheetLost
+      ? { id: character.id, name: character.name, image: character.image }
+      : character;
+    if (characterDeclareRefusal(kept, taken, held) === null) kept.push(taken);
+  }
+  return kept;
 }
 
 /** How many changes lead from `written`'s characters to `now`: each one

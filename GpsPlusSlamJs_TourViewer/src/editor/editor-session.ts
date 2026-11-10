@@ -100,6 +100,7 @@ import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characte
 import {
   characterChanges,
   characterDeclareRefusal,
+  characterImageIds,
 } from "../declared-characters.js";
 import {
   STATION_RADIUS_MAX_M,
@@ -153,7 +154,7 @@ import {
   spawnOptimizerWorker,
 } from "./asset-shelf/optimizer-client.js";
 import { newStory, withoutStoryChild } from "../tour-story-edit.js";
-import { newCharacterEntry, newStoryEntry } from "./new-pin.js";
+import { freePinSpot, newCharacterEntry, newStoryEntry } from "./new-pin.js";
 
 /** One of the tour's objects as it stands, with this page's entry. */
 type AuthoringObject = ReturnType<typeof documentObjects>[number];
@@ -371,6 +372,15 @@ interface AssetSwap {
 interface EditorSwapped {
   readonly kind: "swapped";
   readonly backedUp: boolean;
+}
+
+/** How `addFile` brings a file in. `asMade`: the file stays byte for byte
+ *  as given - never put on the asset shelf (whose optimizers re-encode),
+ *  and judged by the caps as it is, never by what an optimizer would make
+ *  of it. A character's pictures come in so: his four poses are cut by
+ *  position, and a re-encoded sheet is no longer the one he was made as. */
+interface AddFileOptions {
+  readonly asMade?: boolean;
 }
 
 /** A file brought into the tour (`addFile`): its asset - the one the tour
@@ -653,17 +663,21 @@ export interface EditorSession {
   coverChoices(): CoverChoice[];
   /** The tour's declared characters as they stand. */
   characters(): readonly TourCharacter[];
-  /** A character declared for the tour under `id` (the on-device
-   *  library's id, so the same character is declared once): its picture
-   *  and its four poses brought in as images (`addFile`), then one step.
-   *  Refused in words, changing nothing, for a file the tour cannot carry
-   *  or a declaration the document refuses (`characterRefusal`). */
+  /** A character declared for the tour under an id the tour mints (a
+   *  library's own id never enters the tour): his four poses and his
+   *  picture brought in as images, untouched by the asset shelf
+   *  (`addFile`'s `asMade`), then one step. The same four poses declared
+   *  already are refused before the picture is brought in. Refused in
+   *  words, changing nothing, for a file the tour cannot carry or a
+   *  declaration the document refuses (`characterRefusal`). */
   declareCharacter(input: {
-    readonly id: string;
     readonly name: string;
     readonly image: Blob;
     readonly frames: Blob;
-  }): Promise<{ kind: "declared"; backedUp: boolean } | EditorRefusal>;
+  }): Promise<
+    | { kind: "declared"; character: TourCharacter; backedUp: boolean }
+    | EditorRefusal
+  >;
   /** A declared character taken out, as one step; refused in words while
    *  an item names him (`characterRemoveRefusal`). */
   removeCharacter(id: string): { kind: "removed" } | EditorRefusal;
@@ -672,13 +686,14 @@ export interface EditorSession {
   characterImage(id: string): Promise<Blob | undefined>;
   /** A character just removed declared again as he was (the Characters
    *  list's Undo): one step; refused in words where the document refuses
-   *  him (`characterRefusal`: a picture the tour no longer holds, a name
-   *  taken meanwhile). */
+   *  him (`characterRefusal`: a picture the tour no longer holds, the same
+   *  four poses declared again meanwhile). */
   restoreCharacter(
     character: TourCharacter,
   ): { kind: "declared" } | EditorRefusal;
   /** The declared character `characterId` as a new entry at the end of a
-   *  story (a card, `newCharacterEntry`): one step. */
+   *  story (`newCharacterEntry`), standing at its station's free spot
+   *  (`freePinSpot`): one step. */
   addCharacterToStory(
     storyId: string,
     characterId: string,
@@ -905,6 +920,7 @@ export interface EditorSession {
     file: Blob,
     fileName: string,
     kinds?: readonly TourAssetKind[],
+    options?: AddFileOptions,
   ): Promise<EditorFileAdded | EditorRefusal>;
   /** What the next save adds to the newest written file: the files
    *  brought in, the timing texts and the copied or restored photos'
@@ -1521,13 +1537,15 @@ export function createEditorSession(input: {
     file: Blob,
     fileName: string,
     kinds?: readonly TourAssetKind[],
+    options: AddFileOptions = {},
   ): Promise<EditorFileAdded | EditorRefusal> {
     if (mine() === null) return notInTour;
+    const asMade = options.asMade === true;
     const read = await readTourFile(file, fileName, {
       tourBytes: tourBytes(),
       known: knownFile,
       ...(kinds === undefined ? {} : { kinds }),
-      shrinks: optimizerShrinks(optimizers),
+      shrinks: asMade ? () => false : optimizerShrinks(optimizers),
       ...input.fileReaders,
     });
     if (read.kind === "refused") return read;
@@ -1554,8 +1572,8 @@ export function createEditorSession(input: {
       );
     }
     // On the shelf once listed, so its swap finds the record (a minted
-    // poster is small already).
-    if (read.isNew) {
+    // poster is small already); a file kept as made never goes there.
+    if (read.isNew && !asMade) {
       shelf.add(read.asset, fileName, read.blob.size, "added");
     }
     return {
@@ -1589,12 +1607,19 @@ export function createEditorSession(input: {
     },
     swap: (id, file) => swapAsset(id, file),
   });
+  /** The files kept as made (`AddFileOptions`): the declared characters'
+   *  pictures. Never on the shelf, however they came in. */
+  const keptAsMade = (): Set<string> =>
+    new Set(characterImageIds(own().characters));
+
   // The opened tour's files wait on the shelf for "Optimize this tour".
   store.dispatch(assetShelfActions.cleared());
   {
     const wrap = session.manifestWrap;
     const sizes = new Map(session.entries.map((e) => [e.filename, e.size]));
+    const asMade = keptAsMade();
     for (const asset of own().written?.assets ?? []) {
+      if (asMade.has(asset.id)) continue;
       shelf.add(
         asset,
         asset.path,
@@ -1692,20 +1717,37 @@ export function createEditorSession(input: {
     characters() {
       return own().characters;
     },
-    async declareCharacter({ id, name, image, frames }) {
+    async declareCharacter({ name, image, frames }) {
       if (mine() === null) return notInTour;
-      // The id, the name and the cap first, its picture standing in as
-      // held: a declaration the document refuses brings no file in.
+      const id = newObjectId();
+      // The name and the cap first, its picture standing in as held: a
+      // declaration the document refuses brings no file in.
       const early = characterDeclareRefusal(
         own().characters,
         { id, name, image: id },
         new Set([id]),
       );
       if (early !== null) return { kind: "refused", reason: early };
-      const picture = await addFile(image, `${name}.png`, ["image"]);
-      if (picture.kind === "refused") return picture;
-      const sheet = await addFile(frames, `${name} poses.png`, ["image"]);
+      const asMade = { asMade: true } as const;
+      // The four poses first: the same ones declared already are the same
+      // file, so a second add is refused before the picture comes in.
+      const sheet = await addFile(
+        frames,
+        `${name} poses.png`,
+        ["image"],
+        asMade,
+      );
       if (sheet.kind === "refused") return sheet;
+      const twice = characterDeclareRefusal(
+        own().characters,
+        { id, name, image: sheet.asset.id, frames: sheet.asset.id },
+        new Set([sheet.asset.id]),
+      );
+      if (twice !== null && /already/.test(twice)) {
+        return { kind: "refused", reason: twice };
+      }
+      const picture = await addFile(image, `${name}.png`, ["image"], asMade);
+      if (picture.kind === "refused") return picture;
       const character: TourCharacter = {
         id,
         name,
@@ -1722,6 +1764,7 @@ export function createEditorSession(input: {
       );
       return {
         kind: "declared",
+        character,
         backedUp: picture.backedUp && sheet.backedUp,
       };
     },
@@ -1758,7 +1801,14 @@ export function createEditorSession(input: {
       if (character === undefined) {
         return { kind: "refused", reason: NO_SUCH_CHARACTER };
       }
-      const child = newCharacterEntry(character, newObjectId());
+      const station = manifestNow(state)?.stations.find((s) =>
+        tourStories(s).some((t) => t.id === storyId),
+      );
+      const child = newCharacterEntry(
+        character,
+        newObjectId(),
+        station === undefined ? { northM: 0, eastM: 0 } : freePinSpot(station),
+      );
       return took(() =>
         store.dispatch(
           tourDocumentActions.storyChildAdded({
@@ -2786,6 +2836,7 @@ export function createEditorSession(input: {
     file: NonNullable<EditorRestore["files"]>[number],
   ): void {
     const { asset, blob, original } = file;
+    if (keptAsMade().has(asset.id)) return;
     if (original === undefined) {
       if (file.originalChosen === true) {
         shelf.originalKept(asset, asset.path, blob.size);

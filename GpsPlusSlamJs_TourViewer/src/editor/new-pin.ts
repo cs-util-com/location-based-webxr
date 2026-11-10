@@ -134,18 +134,42 @@ export function newCharacter(
   };
 }
 
-/** The declared character `character` as a new entry at the end of a
- *  story: a card a visitor taps on from, as `newStoryEntry`'s. */
+/** What every new story entry shares: its id, a tap to move on, and its
+ *  pose in the station's frame (north, up, east; facing north) - the
+ *  station's middle unless a spot is given. */
+function storyEntryShell(
+  id: string,
+  spot: { readonly northM: number; readonly eastM: number } = {
+    northM: 0,
+    eastM: 0,
+  },
+) {
+  return {
+    id,
+    pose: {
+      position: [spot.northM, 0, spot.eastM],
+      rotation: [0, 0, 0, 1],
+    },
+    advance: { mode: "tap" },
+  } as const;
+}
+
+/**
+ * The declared character `character` as a new entry at the end of a
+ * story: a 3D character as one standing free is (the view a character
+ * starts in, `speak`), standing at `spot` in the station's frame (the
+ * caller's free spot, `freePinSpot`), moving on by a tap as every new
+ * story entry does.
+ */
 export function newCharacterEntry(
   character: TourCharacter,
   id: string,
+  spot: { readonly northM: number; readonly eastM: number },
 ): TourStoryBlock {
   return {
-    id,
+    ...storyEntryShell(id, spot),
     kind: "character",
-    view: "card",
-    pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-    advance: { mode: "tap" },
+    view: "speak",
     name: character.name,
     image: character.image,
     character: character.id,
@@ -241,13 +265,11 @@ export function newStoryEntry(
   id: string,
 ): TourStoryBlock {
   const n = story.children.filter((c) => c.kind === kind).length + 1;
-  const shared = {
-    id,
+  return {
+    ...storyEntryShell(id),
     view: "card",
-    pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-    advance: { mode: "tap" },
-  } as const;
-  return { ...shared, ...KIND_ADD[kind].entry(n) };
+    ...KIND_ADD[kind].entry(n),
+  };
 }
 
 /**

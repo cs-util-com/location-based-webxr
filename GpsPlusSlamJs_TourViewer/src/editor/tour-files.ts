@@ -249,7 +249,7 @@ async function assetOf(
   blob: Blob,
   context: TourFileContext,
 ): Promise<{ asset: TourAsset; blob: Blob; isNew: boolean }> {
-  const sha = await sha256Hex(data);
+  const sha = await tourFileId(data);
   const held = context.known(sha);
   if (held?.kind === kind) return { asset: held, blob, isNew: false };
   const size = kind === "image" ? await imageInfoOfBlob(blob) : null;
@@ -285,4 +285,10 @@ async function posterFor(
   const ext = info.type === "jpeg" ? "jpg" : info.type;
   const data = new Uint8Array(await poster.arrayBuffer());
   return assetOf(data, ext, "image", poster, context);
+}
+
+/** The id the tour gives a file: the hash of its bytes, so the same bytes
+ *  are one asset however often they come in. */
+export function tourFileId(data: Uint8Array): Promise<string> {
+  return sha256Hex(data);
 }

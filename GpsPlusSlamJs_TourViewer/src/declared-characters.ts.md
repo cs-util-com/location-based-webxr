@@ -17,7 +17,10 @@ state.
   this order, first hit wins:
   - an id the format cannot carry ("This character has no id a tour can
     carry.");
-  - an id already declared ("NAME is in this tour already.");
+  - an id already declared, or the same four poses as a declared one (the
+    tour mints each id, so the same character added again comes under a
+    new id; his poses, one file named by its bytes, tell): "NAME is in
+    this tour already.", NAME the declared one's;
   - the cap ("A tour holds at most 32 characters.");
   - the name, by the format's own text rule for a character name (1-80
     characters);
@@ -37,6 +40,11 @@ state.
 - `parseRecordedCharacters(value)`: a lenient read of a draft's record:
   each entry that does not read as a character is left out, the rest
   kept, deduplicated by id; `undefined` when the value is not a list.
+- `restoredCharacters(recorded, held)`: a draft's characters as a restore
+  takes them, each by `characterDeclareRefusal` against the ones kept so
+  far. One whose four poses alone are not held (a draft that ran out of
+  room keeps the small picture first) is kept without `frames`, which the
+  format allows; dropping him would leave every item naming him dangling.
 
 ## Invariants & assumptions
 
@@ -62,8 +70,10 @@ if (why === null)
 
 ## Tests
 
-`declared-characters.test.ts` covers each refusal, the cap, the change
-count, the write and the lenient parse through the tour document;
+`declared-characters.test.ts` covers each refusal (the same poses under
+another id too), the cap, the change count, the write, the lenient parse
+through the tour document, the restore without a lost pose sheet, and the
+refusal to remove a character an item still names (with its count);
 `tour-document-parity.test.ts` has the desktop-only row that declares a
 character through the editor session, reloads and restores the draft and
 saves.

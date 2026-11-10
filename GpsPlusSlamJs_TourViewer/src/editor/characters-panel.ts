@@ -11,7 +11,10 @@
  * maker's dialog closes, and when this tab comes back to the front (the
  * maker may have run in another tab). Adding copies a character's two
  * pictures into the tour, so the tour keeps it even if it is later
- * deleted from this device.
+ * deleted from this device. The tour gives the character an id of its
+ * own; the device's id (which tells when he was made) never enters the
+ * tour. A device character counts as in the tour when the tour holds his
+ * four poses (the same file, named by its bytes: `fileId`).
  *
  * The add menu's "Character" goes through `makeForTour`: the maker opens
  * on a new character, and once it closes the newest character saved
@@ -34,13 +37,17 @@ type Refused = { readonly kind: "refused"; readonly reason: string };
 /** What the list needs of the open tour (the editor session's). */
 export interface CharactersPanelTour {
   characters(): readonly TourCharacter[];
-  /** Brings both pictures in and declares the character: one step. */
+  /** Brings both pictures in and declares the character under an id the
+   *  tour mints: one step. Resolves with the declared character. */
   declare(input: {
-    readonly id: string;
     readonly name: string;
     readonly image: Blob;
     readonly frames: Blob;
-  }): Promise<{ readonly kind: "declared" } | Refused>;
+  }): Promise<
+    { readonly kind: "declared"; readonly character: TourCharacter } | Refused
+  >;
+  /** The id the tour gives a file's bytes (its assets are named by them). */
+  fileId(file: Blob): Promise<string>;
   remove(id: string): { readonly kind: "removed" } | Refused;
   /** Declares again a character just removed (its pictures still held). */
   restore(character: TourCharacter): { readonly kind: "declared" } | Refused;
@@ -183,11 +190,36 @@ export function createCharactersPanel(
     );
   }
 
-  const inTour = (id: string): boolean =>
-    deps
-      .tour()
-      ?.characters()
-      .some((c) => c.id === id) ?? false;
+  /** Each device character's four poses as the tour would name them,
+   *  learnt once per character (his files never change once saved). */
+  const sheetOf = new Map<string, string>();
+  async function learnSheets(list: readonly CharacterRecord[]): Promise<void> {
+    const tour = deps.tour();
+    const todo = list.filter((e) => !sheetOf.has(e.libraryId));
+    if (tour === null || todo.length === 0) return;
+    const lib = await deps.library();
+    for (const e of todo) {
+      try {
+        const files = await lib.files(e.libraryId);
+        sheetOf.set(e.libraryId, await tour.fileId(files.frames));
+      } catch {
+        // Unread: shown as not in the tour; adding him says what failed.
+      }
+    }
+  }
+
+  /** The tour's character made from the device's `libraryId`, if any. */
+  const inTourAs = (libraryId: string): TourCharacter | undefined => {
+    const sheet = sheetOf.get(libraryId);
+    return sheet === undefined
+      ? undefined
+      : deps
+          .tour()
+          ?.characters()
+          .find((c) => c.frames === sheet);
+  };
+  const inTour = (libraryId: string): boolean =>
+    inTourAs(libraryId) !== undefined;
 
   function remember(): void {
     seenStore.write([...(seen ?? [])]);
@@ -328,6 +360,7 @@ export function createCharactersPanel(
       try {
         const res = await (await deps.library()).list();
         entries = [...res.entries];
+        await learnSheets(entries);
         const first = seen === null;
         const known = seen ?? new Set<string>();
         seen = known;
@@ -379,7 +412,6 @@ export function createCharactersPanel(
       try {
         const files = await (await deps.library()).files(e.libraryId);
         const out = await tour.declare({
-          id: e.libraryId,
           name: e.name,
           image: files.image,
           frames: files.frames,
@@ -388,10 +420,13 @@ export function createCharactersPanel(
           toast(`${e.name} was not added: ${out.reason}`, true);
           return null;
         }
+        if (out.character.frames !== undefined) {
+          sheetOf.set(e.libraryId, out.character.frames);
+        }
         pending = pending.filter((p) => p.libraryId !== e.libraryId);
         renderAll();
         if (!quiet) toast(`${e.name} is in this tour now`);
-        return tour.characters().find((c) => c.id === e.libraryId) ?? null;
+        return out.character;
       } catch (err) {
         toast(`Adding did not work: ${reasonOf(err)}. Try again.`, true);
         return null;
@@ -551,9 +586,8 @@ export function createCharactersPanel(
       }
       (seen ??= new Set()).add(made.libraryId);
       remember();
-      const tour = deps.tour();
-      const already = tour?.characters().find((c) => c.id === made.libraryId);
-      return already ?? (await addToTour(made, null, true));
+      await learnSheets([made]);
+      return inTourAs(made.libraryId) ?? (await addToTour(made, null, true));
     },
   };
 }

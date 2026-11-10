@@ -50,6 +50,11 @@ The page look follows the chosen prototype
   the maker's dialog closes, and when the tab comes back to the front while
   the list shows and the maker does not (the maker may have run in another
   tab). The status line names the moment, with the time.
+- The tour gives each character its own id; the library id (which tells
+  when he was made) never reaches the tour. A library character counts as
+  in the tour when the tour declares his four poses: the list learns each
+  one's poses as the tour names them (`tour.fileId`, once per character)
+  when it reads the library.
 - A "new" character is a library id not seen before and not in the tour. On
   the very first read (no seen ids kept yet), every character counts as
   seen.
