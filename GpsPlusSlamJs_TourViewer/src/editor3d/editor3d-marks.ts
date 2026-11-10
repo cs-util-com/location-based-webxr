@@ -108,8 +108,6 @@ export function createBillboard(
   return sprite;
 }
 
-const spriteRaycast = THREE.Sprite.prototype.raycast;
-
 /**
  * Keep a billboard's ray hits only on its drawn pill: `widthPx` of the
  * canvas's 512 wide, centred, rows 18 to 110 of its 128. The sprite is the
@@ -122,9 +120,9 @@ export function pickOnlyOnPill(sprite: THREE.Sprite, widthPx: number): void {
   // rows are the same distance from either edge.
   const v0 = PILL_TOP / BILLBOARD_H;
   const v1 = (PILL_TOP + PILL_H) / BILLBOARD_H;
-  sprite.raycast = function (raycaster, hits) {
+  sprite.raycast = (raycaster, hits) => {
     const start = hits.length;
-    spriteRaycast.call(this, raycaster, hits);
+    THREE.Sprite.prototype.raycast.call(sprite, raycaster, hits);
     for (let i = hits.length - 1; i >= start; i--) {
       const uv = hits[i]!.uv;
       const onPill =
