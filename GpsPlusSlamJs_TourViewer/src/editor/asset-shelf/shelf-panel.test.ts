@@ -309,6 +309,60 @@ describe("acting on a file", () => {
     expect(deps.show).toHaveBeenCalledWith("s1");
     expect($("#shelf-pop")).toBeNull();
   });
+
+  // The phone has no drag: "Use in..." is its way to put a shelf file into
+  // the tour, so the menu must name the groups and hand the chosen key on.
+  it("offers the places a file may go in, by group, and uses the chosen one", () => {
+    rows = [row()];
+    const use = vi.fn();
+    const choices = vi.fn(() => [
+      {
+        head: "A new sound in a station",
+        choices: [
+          { key: "station:s1", label: "1 Gate", icon: "station" as const },
+        ],
+      },
+      {
+        head: "Replace the file of",
+        choices: [
+          { key: "item:o1", label: "Bells - 1 Gate", icon: "swap" as const },
+        ],
+      },
+    ]);
+    panel({ useIn: { choices, use } });
+    (actIn("a", "toggle") as HTMLElement).click();
+    actIn("a", "usein")?.click();
+    expect(choices).toHaveBeenCalledWith("a");
+    const pop = $("#shelf-pop");
+    expect(
+      [...(pop?.querySelectorAll(".mhead") ?? [])].map((h) => h.textContent),
+    ).toEqual(["A new sound in a station", "Replace the file of"]);
+    const items = [...document.querySelectorAll<HTMLElement>("#shelf-pop .mi")];
+    expect(items.map((i) => i.textContent)).toEqual([
+      "1 Gate",
+      "Bells - 1 Gate",
+    ]);
+    items[1]?.click();
+    expect(use).toHaveBeenCalledWith("a", "item:o1");
+    expect($("#shelf-pop")).toBeNull();
+  });
+
+  it("says when there is nowhere to use a file yet", () => {
+    rows = [row()];
+    panel({ useIn: { choices: () => [], use: vi.fn() } });
+    (actIn("a", "toggle") as HTMLElement).click();
+    actIn("a", "usein")?.click();
+    expect($("#shelf-pop .mhead")?.textContent).toBe(
+      "Nowhere yet: add a station or a story first",
+    );
+  });
+
+  it("offers no Use in without the command", () => {
+    rows = [row()];
+    panel();
+    (actIn("a", "toggle") as HTMLElement).click();
+    expect(actIn("a", "usein")).toBeNull();
+  });
 });
 
 describe("folding and the phone", () => {

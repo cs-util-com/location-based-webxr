@@ -988,3 +988,9 @@ on a desktop.
   item now shows ..." or the refusal; one step (`setItemFile`).
 - The shell's `fileNameOf` reads the shelf's names, so the inspector shows
   a file by the name it came in under.
+- The shelf's "Use in..." (`useIn`): its choices are `useInChoices` over
+  the manifest to write for the file `assetOf` finds; `useShelfFileIn`
+  takes the chosen key - a station or a story adds an item made from the
+  file there (`placeFrom`, as a drop does; selected, then "Added the ..."),
+  an item takes the file (`setItemAsset`; "The item now shows ..."). One
+  step either way; a refusal is said.

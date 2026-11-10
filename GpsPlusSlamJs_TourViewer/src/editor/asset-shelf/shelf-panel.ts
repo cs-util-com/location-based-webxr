@@ -17,6 +17,7 @@ import { shellIcon, type ShellIcon } from "gps-plus-slam-editor-kit/chrome";
 import { el } from "../editor-shell/inspector-fields.js";
 import type { AssetPlace } from "./asset-places.js";
 import type { ShelfRow } from "./asset-shelf-slice.js";
+import type { UseInChoice, UseInGroup } from "./use-in-choices.js";
 import {
   cardKindLine,
   cardMore,
@@ -56,6 +57,10 @@ const OWN_ICONS = {
 } as const;
 
 type OwnIcon = keyof typeof OWN_ICONS;
+
+/** The icon of each kind of "Use in..." choice. */
+const USE_IN_ICONS: Readonly<Record<UseInChoice["icon"], ShellIcon | OwnIcon>> =
+  { station: "station", story: "story", swap: "pencil" };
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -110,9 +115,13 @@ export interface ShelfPanelDeps {
   readonly placesOf: (id: string) => readonly AssetPlace[];
   /** Selects and shows a place (`AssetPlace.selection`). */
   readonly show: (selection: string) => void;
-  /** Offers the places to use the file in, from `anchor`; absent, the
-   *  card offers no "Use in...". */
-  readonly useIn?: (id: string, anchor: HTMLElement) => void;
+  /** "Use in...": where the file may be used (`use-in-choices.ts`) and
+   *  its use there by a choice's key; absent, the card offers no "Use
+   *  in...". */
+  readonly useIn?: {
+    readonly choices: (id: string) => readonly UseInGroup[];
+    readonly use: (id: string, key: string) => void;
+  };
   readonly toast: (text: string, action?: ShelfToastAction) => void;
   /** Keeps the fold; null where nothing can be kept. */
   readonly storage: Pick<Storage, "getItem" | "setItem"> | null;
@@ -323,34 +332,72 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
   }
 
   function openUses(row: ShelfRow, anchor: HTMLElement): void {
+    openPop(anchor, `${row.name} is used in`, (box) => {
+      box.append(el("div", "mhead", `${row.name} is used in`));
+      for (const place of deps.placesOf(row.id)) {
+        const item = button("mi", "go", "", "jump");
+        item.setAttribute("role", "menuitem");
+        item.append(el("span", "mt", place.label));
+        item.addEventListener("click", () => {
+          closePop(false);
+          deps.show(place.selection);
+        });
+        box.append(item);
+      }
+      if (deps.useIn !== undefined) {
+        box.append(el("div", "msep"));
+        const item = button("mi", "usein", "", "plus");
+        item.setAttribute("role", "menuitem");
+        item.append(el("span", "mt", "Use it somewhere else..."));
+        item.addEventListener("click", () => {
+          openUseIn(row, anchor);
+        });
+        box.append(item);
+      }
+    });
+  }
+
+  /** "Use in...": the places the file may go, by group (`useIn.choices`);
+   *  a choice uses it there (`useIn.use`). */
+  function openUseIn(row: ShelfRow, anchor: HTMLElement): void {
+    const useIn = deps.useIn;
+    if (useIn === undefined) return;
+    openPop(anchor, `Use ${row.name} in`, (box) => {
+      const groups = useIn.choices(row.id);
+      if (groups.length === 0) {
+        box.append(
+          el("div", "mhead", "Nowhere yet: add a station or a story first"),
+        );
+      }
+      for (const group of groups) {
+        box.append(el("div", "mhead", group.head));
+        for (const choice of group.choices) {
+          const item = button("mi", "pick", "", USE_IN_ICONS[choice.icon]);
+          item.setAttribute("role", "menuitem");
+          item.dataset["key"] = choice.key;
+          item.append(el("span", "mt", choice.label));
+          item.addEventListener("click", () => {
+            closePop(false);
+            useIn.use(row.id, choice.key);
+          });
+          box.append(item);
+        }
+      }
+    });
+  }
+
+  /** The popover `label` names, filled by `fill`, under `anchor`. */
+  function openPop(
+    anchor: HTMLElement,
+    label: string,
+    fill: (box: HTMLElement) => void,
+  ): void {
     closePop(false);
     const box = el("div", "as-pop");
     box.id = "shelf-pop";
     box.setAttribute("role", "menu");
-    box.setAttribute("aria-label", `${row.name} is used in`);
-    box.append(el("div", "mhead", `${row.name} is used in`));
-    for (const place of deps.placesOf(row.id)) {
-      const item = button("mi", "go", "", "jump");
-      item.setAttribute("role", "menuitem");
-      item.append(el("span", "mt", place.label));
-      item.addEventListener("click", () => {
-        closePop(false);
-        deps.show(place.selection);
-      });
-      box.append(item);
-    }
-    const useIn = deps.useIn;
-    if (useIn !== undefined) {
-      box.append(el("div", "msep"));
-      const item = button("mi", "usein", "", "plus");
-      item.setAttribute("role", "menuitem");
-      item.append(el("span", "mt", "Use it somewhere else..."));
-      item.addEventListener("click", () => {
-        closePop(false);
-        useIn(row.id, anchor);
-      });
-      box.append(item);
-    }
+    box.setAttribute("aria-label", label);
+    fill(box);
     host.append(box);
     placePop(box, anchor);
     const outside = (event: Event) => {
@@ -858,9 +905,7 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
       redraw();
     },
     uses: openUses,
-    usein: (row, target) => {
-      deps.useIn?.(row.id, target);
-    },
+    usein: openUseIn,
     retry: (row) => {
       deps.retry(row.id);
     },

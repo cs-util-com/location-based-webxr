@@ -38,6 +38,12 @@ const FILE_KINDS = (Object.keys(KIND_EDIT) as TourBlockKind[]).flatMap(
   },
 );
 
+/** The kind of item made from a file of the asset kind `kind` (an image
+ *  makes a picture); null for one no item is made from. */
+export function fileAddKindOfAsset(kind: string): FileAddKind | null {
+  return FILE_KINDS.find((row) => row.file === kind)?.kind ?? null;
+}
+
 /** The kind of item a file of this name makes, by its extension (the
  *  tour's media allowlist); null for any file a tour does not take. */
 export function fileAddKindOf(fileName: string): FileAddKind | null {
@@ -45,7 +51,7 @@ export function fileAddKindOf(fileName: string): FileAddKind | null {
   if (dot < 0) return null;
   const media = tourMediaTypeOf(fileName.slice(dot + 1).toLowerCase());
   if (media === null) return null;
-  return FILE_KINDS.find((row) => row.file === media.kind)?.kind ?? null;
+  return fileAddKindOfAsset(media.kind);
 }
 
 /**

@@ -13,6 +13,9 @@ the drawn elements' data and the file's name and changes nothing.
   menu's) or `{ kind: "item", id }` (an item's file field).
 - `FILE_FIELD_ATTR` (`data-filefield`) - the attribute an item's file
   field carries, the block's id (`editor-shell/inspector-file.ts`).
+- `fileAddKindOfAsset(kind)` -> `FileAddKind | null`: the add kind an asset
+  kind is the file of (`image` is a picture); null for a kind no item is
+  made from.
 - `fileAddKindOf(fileName)` -> `FileAddKind | null`: by the extension,
   any case, through the tour's media allowlist (`tourMediaTypeOf`) and the
   kind whose `add.file` is that asset kind; null for anything a tour does

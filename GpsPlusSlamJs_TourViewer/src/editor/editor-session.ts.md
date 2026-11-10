@@ -392,6 +392,13 @@ changes`; a label is cut at 40 characters (`truncated`, split-safe), a label-les
   `imageAsset` follows), a story block through the station edit
   `storyFile` (a video takes the new minted poster, or none). Refused for a
   gone id, a block made of words, and what `addFile` refuses.
+- `setItemAsset(id, assetId)` - the same for a file the tour lists
+  already (the shelf's "Use in..."): one step, no read; a video in a story
+  then shows no poster. Refused for a gone id or file, a block made of
+  words, and a file not of the block's kind ("That file is not of the kind
+  this item is made from.").
+- `assetOf(id)` - a listed file by its id (brought in here, or in the
+  written tour); undefined for none.
 
 ## Invariants & assumptions
 

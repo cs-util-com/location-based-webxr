@@ -25,8 +25,10 @@ shelf runner (`asset-shelf.ts`); every word comes from
   - `deps.addFiles()`: opens the picker for files to add.
   - `deps.placesOf(id)`: where the tour uses a file (`asset-places.ts`).
   - `deps.show(selection)`: selects and shows one of those places.
-  - `deps.useIn?(id, anchor)`: offers places to use a file in; absent, no
-    card offers "Use in...".
+  - `deps.useIn?`: `choices(id)` the groups of places a file may go
+    (`use-in-choices.ts`), `use(id, key)` uses it at the chosen one; absent,
+    no card offers "Use in...". The menu shows each group under its head,
+    or "Nowhere yet: add a station or a story first" for none.
   - `deps.toast(text, action?)`: the page's toast; the action has a label
     and a `run`.
   - `deps.storage`: keeps the fold (`SHELF_FOLD_KEY`, `"1"` folded); null
@@ -112,7 +114,8 @@ const panel = createShelfPanel({
 their text-only names, the summary and "Optimize this tour", filters,
 Retry, "Use the original" with its transitional state and both toasts,
 deleting an unused file with its Undo, the used-file dialog with its
-places, the popover showing a place and closing on Escape, the fold kept
+places, the popover showing a place and closing on Escape, "Use in..."
+with its groups, its empty state and its absence without the command, the fold kept
 in storage, the rail's rings, the bottom bar's toggle, the phone's sheet
 and pill, a progress update that moves only the bar and keeps the focus,
 and nothing drawn after `destroy`. The words are `shelf-panel-model.test.ts`'s.

@@ -386,3 +386,51 @@ describe("replacing an item's file", () => {
     await session.close();
   });
 });
+
+describe("using a shelf file in an item", () => {
+  // Why: "Use in..." on the shelf hands an item a file the tour already
+  // lists; it must be one undo step, find the file by its id, and refuse a
+  // file of another kind rather than make a sound play a picture.
+  it("gives a sound another listed sound as one undo step, and refuses a picture", async () => {
+    const session = await openedTour();
+    const { editor, add, manifest } = setup(session);
+    await add(
+      "audio",
+      { kind: "station", stationId: STATION },
+      new Blob(["RIFF-a"]),
+      "a.wav",
+      "snd",
+    );
+    const other = await editor.addFile(new Blob(["RIFF-b"]), "b.wav");
+    const pic = await editor.addFile(png(10, 10), "p.png");
+    if (other.kind === "refused" || pic.kind === "refused")
+      throw new Error("not added");
+    expect(editor.assetOf(other.asset.id)).toEqual(other.asset);
+    expect(editor.assetOf("nothing")).toBeUndefined();
+    const soundOf = () =>
+      manifest()
+        .stations.flatMap((s) => s.children)
+        .find((c) => c.id === "snd") as { audio: string } | undefined;
+    const old = soundOf()?.audio;
+    const before = editor.revision();
+    expect(editor.setItemAsset("snd", pic.asset.id)).toEqual({
+      kind: "refused",
+      reason: "That file is not of the kind this item is made from.",
+    });
+    expect(editor.setItemAsset("snd", "nothing")).toMatchObject({
+      kind: "refused",
+    });
+    expect(editor.revision()).toBe(before);
+    expect(editor.setItemAsset("snd", other.asset.id)).toEqual({
+      kind: "edited",
+    });
+    expect(soundOf()?.audio).toBe(other.asset.id);
+    expect(editor.revision()).toBe(before + 1);
+    expect(editor.setItemAsset("snd", other.asset.id)).toEqual({
+      kind: "unchanged",
+    });
+    expect(editor.undo().kind).not.toBe("refused");
+    expect(soundOf()?.audio).toBe(old);
+    await session.close();
+  });
+});

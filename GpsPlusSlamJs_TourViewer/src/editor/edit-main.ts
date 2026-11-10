@@ -210,11 +210,13 @@ import {
   dragHasFiles,
   FILE_FIELD_ATTR,
   fileAddKindOf,
+  fileAddKindOfAsset,
   fileDropTarget,
 } from "./file-drop.js";
+import { useInChoices, useInTarget } from "./asset-shelf/use-in-choices.js";
 import { fileBlockOf } from "./editor-shell/inspector-file.js";
 import { blockFileKind } from "../block-file.js";
-import { fileItemTitle } from "./new-file-item.js";
+import { fileItemTitle, type FileItemSource } from "./new-file-item.js";
 import { newObjectId } from "../content-placement.js";
 import type { InspectorCode } from "./editor-shell/inspector-model.js";
 import { stationTitle } from "../station-run.js";
@@ -1783,6 +1785,20 @@ function openShelfPanel(open: EditorSession): void {
     show: (selection) => {
       select(selection, true);
     },
+    useIn: {
+      choices: (id) => {
+        const asset = open.assetOf(id);
+        return asset === undefined
+          ? []
+          : useInChoices(
+              { id, kind: asset.kind },
+              manifestToWrite(store.getState().tourDocument)?.stations ?? [],
+            );
+      },
+      use: (id, key) => {
+        useShelfFileIn(open, id, key);
+      },
+    },
     toast: (text, action) => {
       toast(
         text,
@@ -1829,23 +1845,7 @@ async function addFromFile(
         };
       },
       addFile: (blob, name, kinds) => open.addFile(blob, name, kinds),
-      place: (to, source) => {
-        endUndo();
-        const placed = placeFileItem({
-          target: to,
-          source,
-          stations:
-            manifestToWrite(store.getState().tourDocument)?.stations ?? [],
-          id: newObjectId(),
-          nowIso: new Date().toISOString(),
-          groundAt: (place) => shown3d?.groundAt(place) ?? null,
-          place: (object) => open.place(object),
-          addEntryToStory: (storyId, child) =>
-            open.addEntryToStory(storyId, child),
-        });
-        refresh();
-        return placed;
-      },
+      place: (to, source) => placeFrom(open, to, source),
     },
     file,
   );
@@ -1855,7 +1855,39 @@ async function addFromFile(
     return;
   }
   select(outcome.id);
-  const title = fileItemTitle(outcome.fileName, kind);
+  sayAdded(kind, at, outcome.fileName);
+  if (!outcome.backedUp) toast(FILE_NOT_KEPT);
+  tourChanged();
+}
+
+/** The item `source` makes placed at `to` (`placeFileItem`): one step. */
+function placeFrom(
+  open: EditorSession,
+  to: FileAddTarget,
+  source: FileItemSource,
+): ReturnType<typeof placeFileItem> {
+  endUndo();
+  const placed = placeFileItem({
+    target: to,
+    source,
+    stations: manifestToWrite(store.getState().tourDocument)?.stations ?? [],
+    id: newObjectId(),
+    nowIso: new Date().toISOString(),
+    groundAt: (place) => shown3d?.groundAt(place) ?? null,
+    place: (object) => open.place(object),
+    addEntryToStory: (storyId, child) => open.addEntryToStory(storyId, child),
+  });
+  refresh();
+  return placed;
+}
+
+/** Says which `kind` item, made from `fileName`, was added at `at`. */
+function sayAdded(
+  kind: FileAddKind,
+  at: FileAddTarget,
+  fileName: string,
+): void {
+  const title = fileItemTitle(fileName, kind);
   const where =
     at.kind === "station"
       ? `"${stationTitleOf(at.stationId)}"`
@@ -1864,7 +1896,45 @@ async function addFromFile(
   toast(
     `Added the ${word.charAt(0).toLowerCase()}${word.slice(1)} "${title}" to ${where}`,
   );
-  if (!outcome.backedUp) toast(FILE_NOT_KEPT);
+}
+
+/**
+ * The shelf's "Use in..." of the file `assetId`: the choice `key`
+ * (`use-in-choices.ts`) adds an item made from it at a station or a
+ * story, or makes an item of its kind show it. One step; the outcome or
+ * the refusal is said.
+ */
+function useShelfFileIn(
+  open: EditorSession,
+  assetId: string,
+  key: string,
+): void {
+  const chosen = useInTarget(key);
+  const asset = open.assetOf(assetId);
+  if (chosen === null || asset === undefined) return;
+  const fileName =
+    store.getState().assetShelf.entries[assetId]?.name ?? "the file";
+  if (chosen.kind === "item") {
+    endUndo();
+    const outcome = open.setItemAsset(chosen.id, assetId);
+    refresh();
+    if (outcome.kind === "refused") {
+      toast(outcome.reason);
+      return;
+    }
+    toast(`The item now shows "${fileName}"`);
+    if (outcome.kind === "edited") tourChanged();
+    return;
+  }
+  const kind = fileAddKindOfAsset(asset.kind);
+  if (kind === null) return;
+  const placed = placeFrom(open, chosen, { kind, asset, fileName });
+  if (placed.kind === "refused") {
+    toast(placed.reason);
+    return;
+  }
+  select(placed.id);
+  sayAdded(kind, chosen, fileName);
   tourChanged();
 }
 

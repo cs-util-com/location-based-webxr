@@ -9,7 +9,12 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 
-import { dragHasFiles, fileAddKindOf, fileDropTarget } from "./file-drop.js";
+import {
+  dragHasFiles,
+  fileAddKindOf,
+  fileAddKindOfAsset,
+  fileDropTarget,
+} from "./file-drop.js";
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -94,6 +99,14 @@ describe("fileDropTarget", () => {
     expect(
       fileDropTarget(at('[data-select="station:s1"]'), elsewhere),
     ).toBeNull();
+  });
+});
+
+describe("fileAddKindOfAsset", () => {
+  it("names the item kind an asset kind makes, and none for others", () => {
+    expect(fileAddKindOfAsset("image")).toBe("picture");
+    expect(fileAddKindOfAsset("model")).toBe("model");
+    expect(fileAddKindOfAsset("timing")).toBeNull();
   });
 });
 
