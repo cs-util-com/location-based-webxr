@@ -11,11 +11,10 @@ sees it.
 
 ## Public API
 
-- `SOUND_ICON` - `{ sizeM: 0.9, minPx: 40, liftM: 0.6 }`: its diameter in
-  the world when near, its least diameter on the screen (CSS px), and the
-  gap between the ground and its lower edge.
-- `SOUND_ICON_RENDER_ORDER` - 20: over the scene and the found-radius
-  rings, under the gizmo (21 and up).
+- `SOUND_ICON` - `{ sizeM: 0.9, minPx: 48, liftM: 0.6 }`: its diameter in
+  the world when near, its least diameter on the screen (CSS px, the
+  common touch-target size), and the gap between the ground and its
+  lower edge.
 - `soundIconSizeM(distanceM, metresPerPxAtOneM)` - its diameter (m):
   `sizeM`, or `minPx * distanceM * metresPerPxAtOneM` where that is more.
   A distance or lens that is not a positive finite number gives `sizeM`.
@@ -30,6 +29,9 @@ sees it.
   waves), no canvas, so it draws and is tested the same in Node.
 - Every mesh has `depthTest: false`: the relief and buildings never hide
   it.
+- Every mesh draws at render order 20.5 (module-private): after the scene
+  and the found-radius rings (20), so it never ties with a ring, and
+  before the gizmo (21 and up), so the gizmo's disc stays on top.
 - Facing: its face's turn is its parent's world turn undone, then the
   camera's, so it faces the camera through any turned parent.
 - Its size is worked out from where its middle stood the frame before (a
@@ -52,5 +54,6 @@ icon.update({ camera, metresPerPxAtOneM });
 `sound-icon.test.ts`: its least size on the screen across 5 m to 300 m at
 50 and 70 degree lenses over 600 and 844 px views, its world size near,
 the fallback for bad input, facing the camera through a turned parent at
-the right size, standing still without a camera, and no depth test.
+the right size, standing still without a camera, no depth test, and its
+draw order between the rings and the gizmo.
 `zone.test.ts` and `spot.test.ts`: worn in the editor only.

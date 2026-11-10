@@ -29,16 +29,17 @@ import {
 export const SOUND_ICON = Object.freeze({
   /** Its diameter in the world when near (m). */
   sizeM: 0.9,
-  /** Its least diameter on the screen (CSS px): a fair touch target, and
-   *  large enough that its speaker reads from far off. */
-  minPx: 40,
+  /** Its least diameter on the screen (CSS px): the common touch-target
+   *  size, and large enough that its speaker reads from far off. */
+  minPx: 48,
   /** The gap between the ground and its lower edge (m). */
   liftM: 0.6,
 });
 
-/** Draws over the scene's default order and the found-radius rings (20),
- *  under the gizmo (21 and up), so the gizmo's disc stays on top. */
-export const SOUND_ICON_RENDER_ORDER = 20;
+/** Draws after the scene's default order and the found-radius rings (20),
+ *  so it never ties with a ring, and before the gizmo (21 and up), so the
+ *  gizmo's disc stays on top. */
+const SOUND_ICON_RENDER_ORDER = 20.5;
 
 /**
  * The icon's diameter (m) seen `distanceM` from the camera through a lens
@@ -62,7 +63,7 @@ export function soundIconSizeM(
 }
 
 /** What the icon reads each frame. */
-export interface SoundIconFrame {
+interface SoundIconFrame {
   readonly camera?: Camera;
   readonly metresPerPxAtOneM?: number;
 }

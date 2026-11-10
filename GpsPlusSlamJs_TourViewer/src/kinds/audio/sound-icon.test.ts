@@ -37,6 +37,8 @@ describe("the speaker icon's size", () => {
           expect(onScreenPx).toBeGreaterThanOrEqual(SOUND_ICON.minPx - 1e-9);
           expect(sizeM).toBeGreaterThanOrEqual(SOUND_ICON.sizeM);
         }
+        // Its floor is the common 48 px touch-target size.
+        expect(SOUND_ICON.minPx).toBeGreaterThanOrEqual(48);
         // Near enough, its world size shows larger than the floor.
         expect(soundIconSizeM(5, perPx)).toBe(SOUND_ICON.sizeM);
       }
@@ -79,7 +81,7 @@ describe("the speaker icon", () => {
     icon.dispose();
   });
 
-  it("stands still without a camera, and draws over the ground", () => {
+  it("stands still without a camera, and draws over the ground between the rings and the gizmo", () => {
     const icon = soundIcon();
     icon.update({});
     const face = icon.object.children[0];
@@ -90,6 +92,10 @@ describe("the speaker icon", () => {
       meshes++;
       const material = o.material as MeshBasicMaterial;
       expect(material.depthTest).toBe(false);
+      // After the found-radius rings (20), never tied with them; before the
+      // gizmo's disc (21), so the gizmo stays on top.
+      expect(o.renderOrder).toBeGreaterThan(20);
+      expect(o.renderOrder).toBeLessThan(21);
     });
     expect(meshes).toBeGreaterThan(0);
     icon.dispose();
