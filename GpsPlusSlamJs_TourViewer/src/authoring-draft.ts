@@ -202,7 +202,7 @@ export function hostedObjects(manifest: TourManifest | null): HostedObjects {
         return false;
       }
       // Compared BEFORE the round trip, which writes the hosted station
-      // into the object and would hide a re-assignment (M5a review L2).
+      // into the object and would hide a re-assignment.
       // Only to a station the file has, as the writer reads it
       // (`withTourContent`): a station it does not have is no move.
       if (

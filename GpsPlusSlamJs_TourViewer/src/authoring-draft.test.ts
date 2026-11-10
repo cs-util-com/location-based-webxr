@@ -163,7 +163,7 @@ describe("draftObjectsNotYetHosted", () => {
     expect(draftObjectsNotYetHosted(draft, manifestOf([]))).toHaveLength(2);
   });
 
-  // Why (M5a review L2): the hosted comparison re-expresses a draft object
+  // Why: the hosted comparison re-expresses a draft object
   // in its HOSTED station's frame to absorb the round trip's micrometres,
   // and that step overwrote the object's own `station` - so an object moved
   // into another station at the same spot read as already saved, was never
