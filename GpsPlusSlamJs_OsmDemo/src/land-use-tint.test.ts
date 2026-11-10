@@ -119,7 +119,7 @@ describe("landUseTint", () => {
   });
 
   it("gives the material the scheme's ground whenever no tint is applied", () => {
-    // WHY (review MAJOR 1): the scheme's ground has one owner in both states; a
+    // WHY: the scheme's ground has one owner in both states; a
     // ground set while a tint is applied must land when the tint goes.
     const material = groundMaterial();
     const control = landUseTint(material);

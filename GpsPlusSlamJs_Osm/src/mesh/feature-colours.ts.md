@@ -103,7 +103,7 @@ accepted and rejected forms.
   calls it so) is unchanged.
 - `roadsBySurface` false lets the class beat `surface` for car roads (a
   by-class scheme at surface-heavy Heidelberg); pedestrian classes and the
-  sidewalk keep their precedence in every scheme (DEC-R7b-4, r1175).
+  sidewalk keep their precedence in every scheme (DEC-R7b-4).
 - Road colours are written RAW into the chunk buffers (no linear
   conversion), so a scheme's road hex renders lighter than the same hex on a
   wall; pinned in `colour-scheme.test.ts`.

@@ -1553,10 +1553,14 @@ const marginFor = async (page, mode) => {
 
 /**
  * How much the land-use tint must raise the frame's mean green excess over
- * the Volksgarten fixture, in levels. PROVISIONAL until the first browser run
- * measures it; then set well below the measured step.
+ * the Volksgarten fixture, in levels. MEASURED in the first browser run
+ * (headless Chromium, this test's pose and viewport): 11.60 with the tint
+ * off, 14.76 on, a step of 3.16. Set to 2.0, leaving 1.16 levels (about a
+ * third of the step) for renderer variance; a tint that greened the park
+ * by less than two thirds of today's step fails, and a measured step below
+ * 2.0 on another renderer is the value that would reverse this.
  */
-const TINT_GREEN_STEP = 0.5;
+const TINT_GREEN_STEP = 2.0;
 
 /** Mean green excess of the 3D canvas: g minus the mean of r and b, 0-255. */
 const meanGreenExcess = (page) =>
@@ -1584,7 +1588,8 @@ test.describe("the land-use tint (city objects plan 2026-11-07-2315 M3)", () => 
   // itself: the fixture is Cologne's Volksgarten, so a working tint greens the
   // frame; the heat grid must stay the loudest thing over a tinted ground
   // (DEC-R4-5 binds the default scheme, D8); and switching it off must give
-  // back today's ground exactly, which is what the old gates rely on.
+  // back the switched-off ground exactly, which is what the old gates rely
+  // on.
   test("greens the Volksgarten, keeps the heat grid the loudest, and off restores today's ground", async ({
     page,
   }) => {
@@ -1615,7 +1620,13 @@ test.describe("the land-use tint (city objects plan 2026-11-07-2315 M3)", () => 
       greenOff + TINT_GREEN_STEP,
     );
 
-    // Off again: today's ground, pixel for pixel within the probe's threshold.
+    // Off again: the switched-off picture, pixel for pixel within the probe's
+    // threshold. The stash was taken with the tint APPLIED and switched off
+    // (the desktop always builds one, so a never-tinted ground is not
+    // reachable here); that switched off equals a never-tinted ground rests
+    // on the unit tests of the shader's neutral (`three/ground-tint.test.ts`
+    // in the library, "switches off to the neutral ground") and of the
+    // material colour (`land-use-tint.test.ts`).
     await tint.uncheck();
     await expect
       .poll(async () => (await diffFromStash(page, 24)).differing, REPAINT)
@@ -1681,6 +1692,21 @@ test.describe("the colour schemes (colour schemes plan 2026-11-10-0841)", () => 
     await page.goto(`${base}&scheme=night`);
     await waitForRefresh(page);
     await expect(select).toHaveValue("night");
+  });
+
+  test("a link naming the default or an unknown scheme loses the parameter on boot", async ({
+    page,
+  }) => {
+    // Why this test matters: the link must name the scheme the page shows;
+    // one naming a scheme the page does not show would be passed on as if it
+    // meant something.
+    await stubNetwork(page);
+    for (const name of ["today", "neon"]) {
+      await page.goto(`/?lat=${50.9231}&lng=${6.9445}&scheme=${name}`);
+      await waitForRefresh(page);
+      await expect(page.locator("#colour-scheme")).toHaveValue("today");
+      await expect(page).not.toHaveURL(/[?&]scheme=/);
+    }
   });
 });
 
@@ -1915,7 +1941,7 @@ async function expectHeatRampLoudest(
   const woods = page.locator("#layer-woods");
   await woods.uncheck();
   // THE LAND-USE TINT OFF TOO (colour schemes plan 2026-11-10-0841 section
-  // 4.3, review MAJOR 4): `litSurfaceLuma` counts warm low-chroma pixels, and
+  // 4.3): `litSurfaceLuma` counts warm low-chroma pixels, and
   // O2's commercial, park, farmland and sand colours pass that filter while
   // today's ground fails it, so with the tint on this gate would partly
   // measure ground against floors set for buildings and roads. Off, the

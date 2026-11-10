@@ -60,7 +60,7 @@ const LIFT_STEPS: Readonly<Record<LayerKind, number>> = {
   // and are separated by their own geometry.
   //
   // `terrainDebug` used to be here for a DIFFERENT reason with the same answer
-  // — it re-coloured the ground plane in place, so a lifted copy would z-fight
+  // - it re-coloured the ground plane in place, so a lifted copy would z-fight
   // with the very plane it replaced. That is now a ground MODE rather than a
   // layer (W6, DEC-R5-4), and needing a bespoke reason to sit in this table was
   // one of the signs it never belonged in the registry.

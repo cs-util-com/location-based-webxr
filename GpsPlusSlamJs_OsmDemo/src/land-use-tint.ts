@@ -12,7 +12,7 @@
  * one rule says it: drawn = a tint is applied AND wanted AND not the ramp.
  *
  * THE MATERIAL COLOUR HAS ONE OWNER IN BOTH STATES (colour schemes plan
- * 2026-11-10-0841 section 4.3, review MAJOR 1). With a tint applied the
+ * 2026-11-10-0841 section 4.3). With a tint applied the
  * material is white and the patch multiplies by the tint's neutral (the
  * scheme's ground) or a class colour; without one the material carries the
  * scheme's ground itself. `setGroundColour` stores the ground and writes it

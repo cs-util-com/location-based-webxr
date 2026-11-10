@@ -228,7 +228,7 @@ describe("roadsBySurface", () => {
   // WHY: Heidelberg is heavily surface-tagged (sett, asphalt, paving stones),
   // so a scheme that colours roads by class (Map) would draw almost nothing
   // by class while surface beats class. False must let the class win for car
-  // roads, and pedestrian classes keep their class either way (r1175).
+  // roads, and pedestrian classes keep their class either way.
   const residential = heidelbergFeatures.filter(
     (f) => f.tags["highway"] === "residential" && f.tags["surface"] === "sett",
   );
