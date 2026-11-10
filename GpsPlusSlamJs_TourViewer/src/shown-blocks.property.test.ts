@@ -72,7 +72,7 @@ function blockOf(id: string, shape: number): TourBlock {
       return {
         id,
         kind: "model",
-        view: "stage",
+        view: "card",
         asset: "glb",
         title: id,
         pose: POSE,
@@ -81,7 +81,7 @@ function blockOf(id: string, shape: number): TourBlock {
       return {
         id,
         kind: "character",
-        view: "stage",
+        view: "speak",
         name: "K",
         image: "img",
         caption: id,
@@ -227,7 +227,6 @@ describe("a story's world (property)", () => {
           audio: { play: () => Promise.resolve(), stop: () => undefined },
           stage: {
             showCharacter: () => Promise.resolve(),
-            showModel: () => Promise.resolve(),
             clear: () => undefined,
           },
           checkPicture: () => Promise.resolve(null),

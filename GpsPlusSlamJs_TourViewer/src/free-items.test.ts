@@ -284,6 +284,22 @@ describe("createFreeItems", () => {
     expect(stages[0]!.shown).toEqual([]);
   });
 
+  // Why: inside a story his voice plays with his step, but a character
+  // standing free outside a story has no step - he speaks only when
+  // tapped, so walking past him is quiet.
+  it("plays nothing of a free character's voice until he is tapped", async () => {
+    const t = make();
+    t.free.follow(t.here);
+    await settle();
+    t.free.follow(t.here);
+    await settle();
+    const stage = t.stages[0]!;
+    expect(stage.shown).not.toEqual([]);
+    expect(t.players.some((p) => p.playing())).toBe(false);
+    expect(stage.voices.map(([v]) => v)).not.toContain("speaking");
+    expect(t.focus.running()).toBeNull();
+  });
+
   // Why: a tap plays him, a tap while he speaks stops him and leaves him off
   // until tapped, and he tells his look so its ring follows.
   it("a tap plays his voice, and a tap while he speaks stops it for good", async () => {

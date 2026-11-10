@@ -36,13 +36,13 @@ import { isTourId } from './tour-fields.js';
 import type { TourLocalPose } from './tour-items.js';
 import { tourTimingEntryName } from './tour-timing.js';
 
-/** The views a character speaks in in a story, besides
- *  `stage` and `card`: a speech bubble over his head (`bubble`);
- *  the bubble with his voice on a tap (`speak`); the bubble, and once his
- *  line has ended he beckons along the tour (`two-stations`); a portrait
- *  card at the foot of the screen (`portrait`); a paper stage that unfolds
- *  at the station (`popup`). He takes them as a step and standing free
- *  in a station (`TOUR_FREE_BLOCK_VIEWS`). */
+/** The views a character stands in, besides `card`: a speech bubble over
+ *  his head (`bubble`); the bubble with his voice, which a tap plays
+ *  (`speak`); the bubble, and once his line has ended he beckons along
+ *  the tour (`two-stations`); a portrait card at the foot of the screen
+ *  (`portrait`); a paper stage that unfolds at the station (`popup`). He
+ *  takes them as a step and standing free in a station
+ *  (`TOUR_FREE_BLOCK_VIEWS`). */
 export const TOUR_CHARACTER_VIEWS = [
   'bubble',
   'speak',
@@ -84,8 +84,8 @@ const VIDEO_VIEWS = ['card'] as const;
  * a tap inside it) or an ambient zone (`zone`: it plays by itself within
  * its reach, louder toward the centre). */
 const AUDIO_VIEWS = ['spot', 'zone', 'card'] as const;
-const MODEL_VIEWS = [...TOUR_MODEL_WORLD_VIEWS, 'stage', 'card'] as const;
-const CHARACTER_VIEWS = ['stage', ...TOUR_CHARACTER_VIEWS, 'card'] as const;
+const MODEL_VIEWS = [...TOUR_MODEL_WORLD_VIEWS, 'card'] as const;
+const CHARACTER_VIEWS = [...TOUR_CHARACTER_VIEWS, 'card'] as const;
 
 /* Each kind's capped texts. */
 const SHORT_TEXT_RULES = { caption: required(40), description: optional(160) };
@@ -176,7 +176,7 @@ interface TourBlockEnvelope<K extends string, V extends string> {
   readonly kind: K;
   readonly view: V;
   /** Where it stands in its station's frame; views that do not use it
-   *  (`card`, `stage`) ignore it. */
+   *  (`card`) ignore it. */
   readonly pose: TourLocalPose;
   /** When it was made, for the editor's ordering. */
   readonly createdAtIso?: string;
@@ -306,7 +306,7 @@ export interface TourModelBlock extends TourBlockEnvelope<
   /** A model asset. */
   readonly asset: string;
   /** The scaled model's largest side in metres: required in every world
-   *  view, refused on the stage (mounted at its file's own size). */
+   *  view. */
   readonly sizeM?: number;
   readonly title?: string;
   /** Its clip. */
@@ -338,8 +338,8 @@ export interface TourCharacterBlock extends TourBlockEnvelope<
   readonly voice?: string;
 }
 
-/** A model's size by its view: required in every world view, refused on
- *  the stage, optional in a card or a view this reader does not know. */
+/** A model's size by its view: required in every world view, optional in
+ *  a card or a view this reader does not know. */
 function modelSize(
   v: TourBlockFields,
   view: string | null,
@@ -350,12 +350,6 @@ function modelSize(
     return problem(
       ctx,
       `"${ctx.at}.sizeM" is required for a model in the world (${view})`
-    );
-  }
-  if (view === 'stage') {
-    return problem(
-      ctx,
-      `"${ctx.at}.sizeM" is only for a placed model: a staged one is shown at its file's own size`
     );
   }
   const bounds = [TOUR_MODEL_MIN_SIZE_M, TOUR_MODEL_MAX_SIZE_M] as const;
@@ -713,9 +707,8 @@ export interface TourKindRow<B extends { readonly view: string }> {
   /** The views this reader draws. */
   readonly views: readonly B['view'][];
   /** The views a FREE block may hold. Every kind works directly in a
-   *  station; a view may belong to a story alone (`stage` always, `card`
-   *  for a kind with a look of its own in the world, which nothing would
-   *  reach). */
+   *  station; a view may belong to a story alone (`card` for a
+   *  kind with a look of its own in the world, which nothing would reach). */
   readonly freeViews: readonly B['view'][];
   /** The views drawn in the world for as long as their block is present
    *  (`TOUR_WORLD_VIEWS`). */

@@ -376,6 +376,31 @@ function geoAt(northM, eastM, altM) {
   };
 }
 
+// A story's knight stands 1 m off his station's spot toward where the
+// visitor comes from, facing that way (the walk is unchanged: he greets
+// the visitor as he arrives). `fromDeg`: that direction's heading,
+// clockwise from north; the station's frame has x north, y up, z east.
+function facingFrom(fromDeg) {
+  const round = (v) => Math.round(v * 1e6) / 1e6 || 0;
+  const r = (fromDeg * Math.PI) / 180;
+  const half = ((90 - fromDeg) * Math.PI) / 360;
+  return {
+    position: [round(Math.cos(r)), 0, round(Math.sin(r))],
+    rotation: [0, round(Math.sin(half)), 0, round(Math.cos(half))],
+  };
+}
+
+/** The heading (degrees) from the station at (north, east) to the one at
+ *  (fromNorth, fromEast), in metres from the column. */
+function headingTo([north, east], [fromNorth, fromEast]) {
+  const deg = (Math.atan2(fromEast - east, fromNorth - north) * 180) / Math.PI;
+  return (deg + 360) % 360;
+}
+
+const AT_COLUMN = [0, 0];
+const AT_GATE = [-10, 28];
+const AT_STEPS = [25, 12];
+
 export function buildSampleTour() {
   const knight = knightPng();
   return {
@@ -404,7 +429,7 @@ export function buildSampleTour() {
         {
           id: "column",
           title: "The column",
-          geo: geoAt(0, 0, 561.5),
+          geo: geoAt(...AT_COLUMN, 561.5),
           activateRadiusM: 30,
           foundRadiusM: 5,
           hint: "arrow",
@@ -459,13 +484,14 @@ export function buildSampleTour() {
                 {
                   id: "konrad-greets",
                   kind: "character",
-                  view: "stage",
+                  view: "speak",
                   name: "Sir Konrad",
                   image: "knight",
                   caption:
                     "Halt, traveller! I guard this square. Will you help me find the old gate?",
                   voice: "fanfare",
-                  pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+                  // The walk starts here: he faces south.
+                  pose: facingFrom(180),
                   advance: { mode: "tap" },
                 },
                 {
@@ -502,7 +528,7 @@ export function buildSampleTour() {
         {
           id: "gate",
           title: "The old gate",
-          geo: geoAt(-10, 28, 559.9),
+          geo: geoAt(...AT_GATE, 559.9),
           activateRadiusM: 30,
           foundRadiusM: 5,
           hint: "arrow",
@@ -536,8 +562,10 @@ export function buildSampleTour() {
                 {
                   id: "old-arch",
                   kind: "model",
-                  view: "stage",
+                  view: "placed",
                   asset: "arch",
+                  // The arch file's own largest side: drawn at scale 1.
+                  sizeM: 3,
                   title: "Here stood the old gate. Imagine riding through it.",
                   pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
                   advance: { mode: "tap" },
@@ -553,12 +581,12 @@ export function buildSampleTour() {
                 {
                   id: "konrad-toll",
                   kind: "character",
-                  view: "stage",
+                  view: "speak",
                   name: "Sir Konrad",
                   image: "knight",
                   caption:
                     "Every cart paid its toll at this gate. You, traveller, may pass for free.",
-                  pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+                  pose: facingFrom(headingTo(AT_GATE, AT_COLUMN)),
                   advance: { mode: "tap" },
                 },
                 {
@@ -577,7 +605,7 @@ export function buildSampleTour() {
         {
           id: "steps",
           title: "The town hall steps",
-          geo: geoAt(25, 12, 561.9),
+          geo: geoAt(...AT_STEPS, 561.9),
           activateRadiusM: 30,
           foundRadiusM: 5,
           hint: "arrow",
@@ -600,11 +628,11 @@ export function buildSampleTour() {
                 {
                   id: "konrad-farewell",
                   kind: "character",
-                  view: "stage",
+                  view: "speak",
                   name: "Sir Konrad",
                   image: "knight",
                   caption: "You found every place. Farewell, and thank you!",
-                  pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+                  pose: facingFrom(headingTo(AT_STEPS, AT_GATE)),
                   advance: { mode: "tap" },
                 },
               ],

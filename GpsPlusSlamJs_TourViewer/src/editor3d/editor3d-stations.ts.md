@@ -236,9 +236,8 @@ printed size, focalPxOf(view))` times its printed size: `CODE_SCREEN_PX`
   its size by `modelScale`; a preview of another size
   scales the model in the part from its `tourScale`. A model whose file
   cannot be read, or one without a size, is left out. A free model in the
-  `card` or `stage` view is drawn here no more than the visitor's station
-  draws it (the card is a panel, the stage the story's), and its file is
-  not read. The page must give
+  `card` view is drawn here no more than the visitor's station draws it
+  (the card is a panel), and its file is not read. The page must give
   `worldPart` (`editor3d-drawings.ts` does): without it no model is
   drawn.
 - **Names the globe's interface pass reads** (`globe-interface-pass.ts`):
@@ -296,7 +295,7 @@ only, a model seen through its transparent margin picked instead; a
 billboard per
 station rising with the morph; photos flat looking down and upright
 tilted; a model at its size and pose; a model that cannot be read left
-out; no free model in the card or stage view, its file not read; every code as a square of its printed size, laid flat face up in front
+out; no free model in the card view, its file not read; every code as a square of its printed size, laid flat face up in front
 of its anchor looking down and upright tilted, and one lying face up
 left as it lies; a code laid flat drawn its size on screen from high
 above with no cap (its gap with it, picked at its grown size, its corners

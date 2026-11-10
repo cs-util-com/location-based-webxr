@@ -28,7 +28,7 @@ the rest of the visit, kept with the walk (`visitor-walk-slice.ts`
 ## Invariants & assumptions
 
 - Never a `card` (the story panel's, closed on the next step) nor a
-  `stage` figure or model (the stage's one figure, `scene-stage.ts`).
+  character (the story's one figure, `scene-stage.ts`).
 - A free block is never also counted as reached: it is drawn as the
   station's `items` part already.
 - A reached id that names no block of the station (a walk kept across an

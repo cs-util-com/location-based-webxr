@@ -243,7 +243,7 @@ export function createFreeItems(deps: FreeItemsDeps): FreeItems {
           blob,
           undefined,
           // His line has no card to sit in here.
-          look === undefined ? undefined : { ...look, noCard: true },
+          { ...look, noCard: true },
         ),
     };
     const showing = (): boolean => run === figure.run;

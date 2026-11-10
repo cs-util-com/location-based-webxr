@@ -126,7 +126,7 @@ describe("movedChild", () => {
     const model = {
       id: "m",
       kind: "model",
-      view: "stage",
+      view: "card",
       model: "arch",
       pose: POSE,
       advance: TAP,

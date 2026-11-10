@@ -407,11 +407,10 @@ describe("createStationsLayer", () => {
     expect(layer.photoPlanes("a")).toHaveLength(1);
   });
 
-  // Why: a free model in the card or stage view stands nothing in the
-  // station's world for a visitor (the card is a panel, the stage is the
-  // story's), and the editor's 3D view draws what the visitor sees, so
+  // Why: a free model in the card view stands nothing in the station's
+  // world for a visitor (the card is a panel), and the editor's 3D view draws what the visitor sees, so
   // it draws none either - and does not read its file.
-  it("draws no free model in the card or stage view, and reads no file for it", async () => {
+  it("draws no free model in the card view, and reads no file for it", async () => {
     let parsed = 0;
     const { d } = deps({
       loadGlbModel: () => {
@@ -421,10 +420,9 @@ describe("createStationsLayer", () => {
     });
     const layer = createStationsLayer(d);
     const card = { ...model("c", "horse", 8), view: "card" } as TourBlock;
-    const stage = { ...model("s", "horse", 8), view: "stage" } as TourBlock;
     layer.setTour(
       manifest(
-        [station("a", 0, 0, [card, stage, photo("p")])],
+        [station("a", 0, 0, [card, photo("p")])],
         [{ id: "horse", path: "content/horse.glb", kind: "model" }],
       ),
       new Map(),
@@ -433,7 +431,6 @@ describe("createStationsLayer", () => {
     await settle();
     expect(layer.models("a")).toHaveLength(0);
     expect(layer.modelObject("c")).toBeNull();
-    expect(layer.modelObject("s")).toBeNull();
     expect(parsed).toBe(0);
     expect(layer.photoPlanes("a")).toHaveLength(1);
     layer.dispose();

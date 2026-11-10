@@ -1,5 +1,5 @@
 {
-  "recordedWith": "the version 5 writer as the format switched to version 5; re-recorded only for a change meant to change the written bytes; re-recorded when every container became a folder (a story written as kind \"folder\", role \"story\"), the bytes otherwise unchanged",
+  "recordedWith": "the version 5 writer as the format switched to version 5; re-recorded only for a change meant to change the written bytes; re-recorded when every container became a folder (a story written as kind \"folder\", role \"story\"), the bytes otherwise unchanged; re-recorded when the stage view was retired (its two character cases now speak), the bytes otherwise unchanged",
   "cases": [
     {
       "input": {
@@ -1366,7 +1366,7 @@
                   {
                     "id": "Qfd9hBK_50d_C-HCJ_m-1-_J_l-ey_-_--bF-U93__I_---Q-7s0NH9__e0490_a",
                     "kind": "character",
-                    "view": "stage",
+                    "view": "speak",
                     "pose": {
                       "position": [
                         -3.5637598275547234e-210, -8.4e-323,
@@ -1476,7 +1476,7 @@
         ],
         "needsNoGps": true
       },
-      "sha256": "ff5e4ea08cda87a13cded39a8645bd9eab238f6b14ff015e241ee71c7704759b",
+      "sha256": "7aae0ec5e58f8f00788cde36ac45ff45954ea74e7f54666752f2c9a83f6e6d1f",
       "bytes": 9378
     },
     {
@@ -3478,7 +3478,7 @@
                   {
                     "id": "__s_---_t_8_",
                     "kind": "character",
-                    "view": "stage",
+                    "view": "speak",
                     "pose": {
                       "position": [
                         4.009588477927541e-64, 49.999999999999915,
@@ -3598,7 +3598,7 @@
           }
         ]
       },
-      "sha256": "08bd4602074db7a9cacac65871859f6052e31b08cec33caf503e0fd3a1ff9948",
+      "sha256": "19240e4b0b7560f602db371c7379c01b29615f45dbc573cfbe2bc331af6c80db",
       "bytes": 6554
     }
   ]

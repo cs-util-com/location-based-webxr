@@ -113,7 +113,7 @@ describe("movedToStation", () => {
     const model = {
       id: "m",
       kind: "model",
-      view: "stage",
+      view: "card",
       asset: "x",
       pose: POSE,
       advance: TAP,

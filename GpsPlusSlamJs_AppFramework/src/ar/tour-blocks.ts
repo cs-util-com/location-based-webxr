@@ -114,9 +114,9 @@ export const TOUR_BLOCK_VIEWS = perKind('views');
 
 /** The views drawn in the world for as long as their block is present: a
  *  story block in one stands from the moment its story reaches it. `card`
- *  opens only when a step shows it, a character's views are the stage's,
- *  and a `stage` figure lives only while a story runs. Renderers ask this
- *  set, never a copy of it. */
+ *  opens only when a step shows it, and a character's views are his look's
+ *  (a story stands him while it runs). Renderers ask this set, never a
+ *  copy of it. */
 export const TOUR_WORLD_VIEWS: ReadonlySet<string> = new Set(
   tourBlockKinds().flatMap((kind): readonly string[] => {
     return TOUR_KINDS[kind].worldViews;

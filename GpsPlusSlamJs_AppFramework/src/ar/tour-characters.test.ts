@@ -387,14 +387,15 @@ describe("the character's five views and the line's end", () => {
     }
   );
 
-  it('refuses a free character on the stage: that figure lives with a story', () => {
+  it('refuses the retired stage view: it is no view of his', () => {
+    // Why: a character in a story stands in one of his looks at his own
+    // place, as one standing free does; the stage (a figure on the
+    // station's spot) is gone, and a tour naming it must not read.
     const free = {
       ...station('gate', []),
       children: [figure({ view: 'stage' })],
     };
-    expect(() => parseTourManifest(tour({ stations: [free] }))).toThrow(
-      /block "w1" stands free in its station/
-    );
+    expect(() => parseTourManifest(tour({ stations: [free] }))).toThrow(/view/);
   });
 
   it('reads the advance "when the line ends", and refuses an unknown mode at its own minor', () => {

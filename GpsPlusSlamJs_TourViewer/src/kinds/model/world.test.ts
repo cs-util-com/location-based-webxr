@@ -99,13 +99,11 @@ describe("modelWorld", () => {
     expect(mountedModelViews().some((h) => h.model === mesh)).toBe(false);
   });
 
-  // Why: the card and stage views stand nothing in the station's world
-  // (the stage is the story's), and a model with no size cannot be scaled
+  // Why: the card view stands nothing in the station's world, and a model with no size cannot be scaled
   // by the shared rule: none of them is a part, and none reads its file.
   it("gives no part for a view that stands nothing, or a model with no size", () => {
     const env = envOf(() => Promise.reject(new Error("never read")));
     expect(modelWorld(blockOf({ view: "card" }), env)).toBeNull();
-    expect(modelWorld(blockOf({ view: "stage" }), env)).toBeNull();
     const { sizeM: _drop, ...noSize } = blockOf();
     expect(modelWorld(noSize as TourModelBlock, env)).toBeNull();
     expect(env.asked).toEqual([]);

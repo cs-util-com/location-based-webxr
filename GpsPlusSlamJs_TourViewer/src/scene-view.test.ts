@@ -421,7 +421,6 @@ function harness(
           _look?: unknown,
         ) => Promise.resolve()),
     ),
-    showModel: vi.fn(() => Promise.resolve()),
     clear: vi.fn(),
     release: vi.fn(),
     toggleBubble: vi.fn(),
@@ -515,7 +514,7 @@ describe("createSceneView", () => {
       station("gate", [
         showing("k", {
           kind: "character",
-          view: "stage",
+          view: "speak",
           name: "Sir Kay",
           image: "knight",
           caption: "Welcome, traveller.",
@@ -533,6 +532,7 @@ describe("createSceneView", () => {
       "gate",
       expect.any(Blob),
       expect.any(Function),
+      expect.objectContaining({ view: "speak", name: "Sir Kay" }),
     );
     expect(h.audio.play).toHaveBeenCalledTimes(1);
     expect(h.dom.status.textContent).toBe("");
@@ -557,7 +557,7 @@ describe("createSceneView", () => {
       station("gate", [
         showing("k", {
           kind: "character",
-          view: "stage",
+          view: "speak",
           name: "Sir Kay",
           image: "knight",
           caption: "Welcome, traveller.",
@@ -591,7 +591,7 @@ describe("createSceneView", () => {
       station("gate", [
         showing("k", {
           kind: "character",
-          view: "stage",
+          view: "speak",
           name: "Sir Kay",
           image: "knight",
           caption: "Welcome, traveller.",
@@ -658,7 +658,7 @@ describe("createSceneView", () => {
       station("gate", [
         showing("k", {
           kind: "character",
-          view: "stage",
+          view: "speak",
           name: "Sir Kay",
           image: "knight",
           caption: "Welcome, traveller.",
@@ -674,11 +674,10 @@ describe("createSceneView", () => {
     expect(h.dom.status.textContent).toBe("");
   });
 
-  // Why: a block shown in the scene card stays in the card. A character or
-  // a model stands in the world only in its stage view; in the card its
-  // words (and a character's voice) are all there is, so a card never
-  // makes a figure appear at the station.
-  it("stages a figure or a model only in its stage view; in the card it says the words and a character's voice still plays", async () => {
+  // Why: a block shown in the scene card stays in the card. In the card a
+  // character's or a model's words (and a character's voice) are all
+  // there is, so a card never makes a figure appear at the station.
+  it("stands no figure for a card; it says the words and a character's voice still plays", async () => {
     const h = harness();
     h.view.offer(
       station("gate", [
@@ -707,7 +706,7 @@ describe("createSceneView", () => {
     expect(h.dom.speaker.hidden).toBe(true);
     expect(h.dom.text.textContent).toBe("The arch");
     await settle();
-    expect(h.stage.showModel).not.toHaveBeenCalled();
+    expect(h.stage.showCharacter).not.toHaveBeenCalled();
   });
 
   // Why (station blocks plan B2b step 3): the video card plays - its
@@ -892,17 +891,19 @@ describe("createSceneView", () => {
     });
     broken.view.offer(
       station("s", [
-        showing("m", {
-          kind: "model",
-          view: "stage",
-          asset: "arch",
-          title: "The arch",
+        showing("k", {
+          kind: "character",
+          view: "speak",
+          name: "Sir Kay",
+          image: "knight",
+          caption: "Welcome, traveller.",
         }),
       ]),
     );
     await settle();
+    expect(broken.dom.text.textContent).toBe("Welcome, traveller.");
     expect(broken.dom.status.textContent).toMatch(/could not be loaded/);
-    expect(broken.stage.showModel).not.toHaveBeenCalled();
+    expect(broken.stage.showCharacter).not.toHaveBeenCalled();
   });
 
   it("drops a picture that arrives after the visitor moved on, and revokes every URL it made", async () => {
@@ -1239,9 +1240,9 @@ describe("a story's world blocks (B2b)", () => {
   // world view (a pin, a plane, a placed model) stands in the world from
   // the moment its step is reached, for the rest of the visit. The view
   // is where a step is reached, so it says which world block it reached -
-  // after a tap, after a choice - and never a card or a stage block,
-  // whose lifetimes are the panel's and the stage's.
-  it("says each world block a step reaches, after a tap and after a choice, and no card or stage block", () => {
+  // after a tap, after a choice - and never a card or a character, whose
+  // lifetimes are the panel's and the story stage's.
+  it("says each world block a step reaches, after a tap and after a choice, and no card or character", () => {
     const reached: string[] = [];
     const h = harness({
       onBlockShown: (stationId, blockId) => {
@@ -1256,7 +1257,7 @@ describe("a story's world blocks (B2b)", () => {
     const card = tap("words", "Some words");
     const figure = showing("figure", {
       kind: "character",
-      view: "stage",
+      view: "speak",
       name: "K",
       image: "knight",
       caption: "Halt",
@@ -1294,7 +1295,7 @@ describe("a story's world blocks (B2b)", () => {
     );
     expect(reached).toEqual([`s:${blockOf(sign)}`]);
     h.view.continueTapped(); // the card
-    h.view.continueTapped(); // the stage figure
+    h.view.continueTapped(); // the figure
     expect(reached).toEqual([`s:${blockOf(sign)}`]);
     h.view.continueTapped(); // the choice
     h.lastChoices()[1]!.click(); // the model
@@ -1407,14 +1408,7 @@ describe("a character's story views and the advance when the line ends", () => {
   /** A step showing the knight in `view`, moving on as `advance` says. */
   function knight(
     id: string,
-    view:
-      | "stage"
-      | "bubble"
-      | "speak"
-      | "two-stations"
-      | "portrait"
-      | "popup"
-      | "card",
+    view: "bubble" | "speak" | "two-stations" | "portrait" | "popup" | "card",
     advance: TourStepAdvance,
     voice = true,
   ): Step {
@@ -1439,13 +1433,14 @@ describe("a character's story views and the advance when the line ends", () => {
   }
 
   // Why this test matters: a story view is drawn by the stage's character
-  // look, so the stage must be told the view, the name and the line.
-  it("hands a story view to the stage as a character look, and the stage view as the plain cut-out", async () => {
+  // look, so the stage must be told the view, the name and the line; a
+  // card stands no figure.
+  it("hands every story view to the stage as a character look, and a card none", async () => {
     const h = harness();
     h.view.offer(
       station("gate", [
         knight("a", "bubble", { mode: "tap" }),
-        knight("b", "stage", { mode: "tap" }),
+        knight("b", "portrait", { mode: "tap" }),
         knight("c", "card", { mode: "tap" }),
       ]),
     );
@@ -1459,7 +1454,10 @@ describe("a character's story views and the advance when the line ends", () => {
     });
     h.view.continueTapped();
     await settle();
-    expect(h.stage.showCharacter.mock.calls[1]?.[3]).toBeUndefined();
+    expect(h.stage.showCharacter.mock.calls[1]?.[3]).toMatchObject({
+      view: "portrait",
+      name: "Sir Kay",
+    });
     h.view.continueTapped();
     await settle();
     expect(h.stage.showCharacter).toHaveBeenCalledTimes(2);
@@ -1476,9 +1474,7 @@ describe("a character's story views and the advance when the line ends", () => {
       ]),
     );
     await settle();
-    expect(h.audio.play).not.toHaveBeenCalled();
-    expect(h.view.characterTapped()).toBe(true);
-    await settle();
+    expect(h.audio.play).toHaveBeenCalledTimes(1);
     expect(h.stage.setVoice).toHaveBeenLastCalledWith("speaking");
     endVoice(h);
     expect(h.stage.setVoice).toHaveBeenLastCalledWith("spoken");
@@ -1496,7 +1492,6 @@ describe("a character's story views and the advance when the line ends", () => {
         tap("b", "Onwards."),
       ]),
     );
-    h.view.characterTapped();
     await settle();
     expect(h.timers.filter((t) => !t.cancelled)).toHaveLength(0);
     expect(h.view.progress()?.autoMs).toBeNull();
@@ -1530,7 +1525,6 @@ describe("a character's story views and the advance when the line ends", () => {
         tap("b", "Onwards."),
       ]),
     );
-    failing.view.characterTapped();
     await settle();
     await settle();
     const left = failing.timers.filter((t) => !t.cancelled);
@@ -1553,12 +1547,11 @@ describe("a character's story views and the advance when the line ends", () => {
     expect(h.timers.filter((t) => !t.cancelled)).toHaveLength(1);
   });
 
-  // Why this test matters: in the prototype his voice plays on a tap on
-  // him (the figure, the bubble, the stage, the portrait), never by
-  // itself, and the bubble view has none - a tap there opens and shuts
-  // its bubble. A tap while he speaks stops him. The stage and card views
-  // keep playing the voice with the step, as format 4.0 did.
-  it("plays a story view's voice on a tap, stops it on the next, and lets the bubble view's tap shut its bubble", async () => {
+  // Why this test matters: inside a story his voice plays with his step,
+  // in every look, as the knight's greeting did when the story reached
+  // him; a tap on him while he speaks stops him, and the next plays him
+  // again. The bubble view's tap opens and shuts its bubble instead.
+  it("plays a story view's voice with its step, stops it on a tap and plays it again on the next, and lets the bubble view's tap shut its bubble", async () => {
     for (const view of [
       "speak",
       "two-stations",
@@ -1568,37 +1561,32 @@ describe("a character's story views and the advance when the line ends", () => {
       const h = harness();
       h.view.offer(station("gate", [knight("a", view, { mode: "tap" })]));
       await settle();
-      expect(h.audio.play, view).not.toHaveBeenCalled();
-      expect(h.view.characterTapped()).toBe(true);
-      await settle();
       expect(h.audio.play, view).toHaveBeenCalledTimes(1);
       expect(h.stage.setVoice).toHaveBeenLastCalledWith("speaking");
       h.audio.stop.mockClear();
       expect(h.view.characterTapped()).toBe(true);
       expect(h.audio.stop, view).toHaveBeenCalledTimes(1);
       expect(h.stage.setVoice).toHaveBeenLastCalledWith("idle");
-      // A third tap plays him again.
+      // The next tap plays him again.
       h.view.characterTapped();
       await settle();
       expect(h.audio.play, view).toHaveBeenCalledTimes(2);
+      expect(h.stage.setVoice).toHaveBeenLastCalledWith("speaking");
     }
     const b = harness();
     b.view.offer(station("gate", [knight("a", "bubble", { mode: "tap" })]));
     await settle();
+    expect(b.audio.play).toHaveBeenCalledTimes(1);
+    expect(b.stage.setVoice).toHaveBeenLastCalledWith("speaking");
     expect(b.view.characterTapped()).toBe(true);
     await settle();
-    expect(b.audio.play).not.toHaveBeenCalled();
+    expect(b.audio.play).toHaveBeenCalledTimes(1);
     expect(b.stage.toggleBubble).toHaveBeenCalledTimes(1);
-    const staged = harness();
-    staged.view.offer(station("gate", [knight("a", "stage", { mode: "tap" })]));
-    await settle();
-    expect(staged.audio.play).toHaveBeenCalledTimes(1);
-    expect(staged.view.characterTapped()).toBe(false);
   });
 
   // Why this test matters: a voice still loading when the visitor taps
-  // again must not start after the stop.
-  it("drops a voice that was still loading when the tap stopped it", async () => {
+  // must not start after the stop.
+  it("drops a voice that was still loading when a tap stopped it", async () => {
     let release: (b: Blob) => void = () => undefined;
     const h = harness({
       loadAsset: (path) =>
@@ -1610,17 +1598,16 @@ describe("a character's story views and the advance when the line ends", () => {
     });
     h.view.offer(station("gate", [knight("a", "speak", { mode: "tap" })]));
     h.view.characterTapped();
-    h.view.characterTapped();
     release(new Blob(["voice"]));
     await settle();
     await settle();
     expect(h.audio.play).not.toHaveBeenCalled();
   });
 
-  // Why this test matters: a lineEnd step whose voice waits for a tap
-  // moves on after the words' reading time when nobody taps, and a tap
-  // that starts the voice holds it until the voice has ended.
-  it("waits for a tapped voice on a lineEnd step, and the reading time without one", async () => {
+  // Why this test matters: a lineEnd step waits for his voice, which
+  // plays with the step, and a tap that stops it moves the step on after
+  // the voice's short tail only.
+  it("waits for his voice on a lineEnd step, and only its tail once a tap stops it", async () => {
     const h = harness();
     h.view.offer(
       station("gate", [
@@ -1628,13 +1615,9 @@ describe("a character's story views and the advance when the line ends", () => {
         tap("b", "Onwards."),
       ]),
     );
-    const reading = h.timers.filter((t) => !t.cancelled);
-    expect(reading).toHaveLength(1);
-    expect(reading[0]?.ms).toBeGreaterThan(1500);
-    h.view.characterTapped();
     await settle();
     expect(h.timers.filter((t) => !t.cancelled)).toHaveLength(0);
-    endVoice(h);
+    h.view.characterTapped();
     expect(h.timers.filter((t) => !t.cancelled).map((t) => t.ms)).toEqual([
       600,
     ]);
@@ -1653,10 +1636,11 @@ describe("a character's story views and the advance when the line ends", () => {
       ]),
     );
     await settle();
+    expect(h.audio.play).toHaveBeenCalledTimes(1);
     h.view.continueTapped();
     expect(h.view.characterTapped()).toBe(true);
     await settle();
-    expect(h.audio.play).toHaveBeenCalledTimes(1);
+    expect(h.audio.play).toHaveBeenCalledTimes(2);
     expect(h.stage.setVoice).toHaveBeenLastCalledWith("speaking");
     endVoice(h);
     expect(h.stage.setVoice).toHaveBeenLastCalledWith("spoken");
@@ -1666,37 +1650,30 @@ describe("a character's story views and the advance when the line ends", () => {
     h.stage.clear.mockClear();
     expect(h.view.characterTapped()).toBe(true);
     await settle();
-    expect(h.audio.play).toHaveBeenCalledTimes(2);
+    expect(h.audio.play).toHaveBeenCalledTimes(3);
     expect(h.stage.setVoice).toHaveBeenLastCalledWith("speaking");
     h.view.stopAll();
     expect(h.stage.clear).toHaveBeenCalled();
     expect(h.view.characterTapped()).toBe(false);
   });
 
-  // Why this test matters: a plain figure or a model that takes the stage
-  // replaces him, and a new story clears the stage: a tap then has no
-  // character of a story view to play.
-  it("drops his tap when a plain figure, a model or a new story takes the stage", async () => {
+  // Why this test matters: the next character of the story takes his
+  // place, so a tap then is on the newcomer and plays nothing of his; a
+  // new story clears the stage, and a tap then has no character to play.
+  it("hands his tap to the next character of the story, and drops it when a new story takes the stage", async () => {
     const h = harness();
     h.view.offer(
       station("gate", [
         knight("a", "speak", { mode: "tap" }),
-        knight("b", "stage", { mode: "tap" }, false),
+        knight("b", "portrait", { mode: "tap" }, false),
       ]),
     );
     await settle();
+    expect(h.audio.play).toHaveBeenCalledTimes(1);
     h.view.continueTapped();
-    expect(h.view.characterTapped()).toBe(false);
-    const m = harness();
-    m.view.offer(
-      station("gate", [
-        knight("a", "speak", { mode: "tap" }),
-        showing("m", { kind: "model", view: "stage", asset: "arch" }),
-      ]),
-    );
+    expect(h.view.characterTapped()).toBe(true);
     await settle();
-    m.view.continueTapped();
-    expect(m.view.characterTapped()).toBe(false);
+    expect(h.audio.play).toHaveBeenCalledTimes(1);
     const n = harness();
     n.view.offer(station("gate", [knight("a", "speak", { mode: "tap" })]));
     await settle();
@@ -1731,12 +1708,13 @@ describe("a character's story views and the advance when the line ends", () => {
     await settle();
     h.view.continueTapped();
     await settle();
-    expect(h.audio.play).toHaveBeenCalledTimes(1);
+    // His voice with his step, then the step's own sound.
+    expect(h.audio.play).toHaveBeenCalledTimes(2);
     h.audio.stop.mockClear();
     h.stage.setVoice.mockClear();
     expect(h.view.characterTapped()).toBe(true);
     await settle();
-    expect(h.audio.play).toHaveBeenCalledTimes(1);
+    expect(h.audio.play).toHaveBeenCalledTimes(2);
     expect(h.audio.stop).not.toHaveBeenCalled();
     expect(h.stage.setVoice).not.toHaveBeenCalled();
     endVoice(h);
@@ -1768,15 +1746,17 @@ describe("a character's story views and the advance when the line ends", () => {
       ]),
     );
     await settle();
+    // His voice with his step.
+    expect(h.audio.play).toHaveBeenCalledTimes(1);
     h.view.continueTapped();
     await settle();
     expect(h.view.characterTapped()).toBe(true);
     await settle();
-    expect(h.audio.play).not.toHaveBeenCalled();
+    expect(h.audio.play).toHaveBeenCalledTimes(1);
     h.dom.video.onplay?.(new Event("play"));
     expect(h.view.characterTapped()).toBe(true);
     await settle();
-    expect(h.audio.play).not.toHaveBeenCalled();
+    expect(h.audio.play).toHaveBeenCalledTimes(1);
     h.dom.video.onended?.(new Event("ended"));
     const live = h.timers.filter((t) => !t.cancelled);
     expect(live.map((t) => t.ms)).toEqual([600]);
@@ -1785,9 +1765,9 @@ describe("a character's story views and the advance when the line ends", () => {
   });
 
   // Why this test matters: the "a video plays" hold lasts its step only:
-  // on the next step a tap on him plays his voice again. And a clip that
-  // cannot be read has no sound to clash with, so it holds nothing.
-  it("lets a tap play his voice after a video step, and in one whose clip cannot be read", async () => {
+  // on the next step his voice plays again. And a clip that cannot be read
+  // has no sound to clash with, so it holds nothing.
+  it("plays his voice again after a video step, and on a tap in one whose clip cannot be read", async () => {
     const video = {
       ...showing("v", {
         kind: "video",
@@ -1806,16 +1786,15 @@ describe("a character's story views and the advance when the line ends", () => {
       ]),
     );
     await settle();
-    h.view.continueTapped();
-    await settle();
-    expect(h.view.characterTapped()).toBe(true);
-    await settle();
-    expect(h.audio.play).not.toHaveBeenCalled();
+    expect(h.audio.play).toHaveBeenCalledTimes(1);
     h.view.continueTapped();
     await settle();
     expect(h.view.characterTapped()).toBe(true);
     await settle();
     expect(h.audio.play).toHaveBeenCalledTimes(1);
+    h.view.continueTapped();
+    await settle();
+    expect(h.audio.play).toHaveBeenCalledTimes(2);
 
     const lost = harness({
       loadAsset: (path) =>
@@ -1832,7 +1811,7 @@ describe("a character's story views and the advance when the line ends", () => {
     await settle();
     expect(lost.view.characterTapped()).toBe(true);
     await settle();
-    expect(lost.audio.play).toHaveBeenCalledTimes(1);
+    expect(lost.audio.play).toHaveBeenCalledTimes(2);
   });
 
   // Why this test matters: a clip that loads but cannot be decoded never
@@ -1866,9 +1845,10 @@ describe("a character's story views and the advance when the line ends", () => {
     expect(h.dom.status.textContent).toContain(
       "The video could not be played here",
     );
+    expect(h.audio.play).toHaveBeenCalledTimes(1);
     expect(h.view.characterTapped()).toBe(true);
     await settle();
-    expect(h.audio.play).toHaveBeenCalledTimes(1);
+    expect(h.audio.play).toHaveBeenCalledTimes(2);
     h.view.continueTapped();
     expect(h.dom.video.onerror).toBeNull();
   });
@@ -1893,20 +1873,23 @@ describe("a character's story views and the advance when the line ends", () => {
       ]),
     );
     await settle();
+    // His own voice played with his step; from here on only the card's.
+    expect(h.audio.play).toHaveBeenCalledTimes(1);
+    h.stage.setVoice.mockClear();
     h.view.continueTapped();
     await settle();
-    expect(h.audio.play).toHaveBeenCalledTimes(1);
+    expect(h.audio.play).toHaveBeenCalledTimes(2);
     const said = (): unknown[] =>
       h.stage.setVoice.mock.calls.map((call) => call[0] as unknown);
     expect(said()).not.toContain("speaking");
     expect(h.view.characterTapped()).toBe(true);
     await settle();
-    expect(h.audio.play).toHaveBeenCalledTimes(1);
+    expect(h.audio.play).toHaveBeenCalledTimes(2);
     endVoice(h);
     expect(said()).not.toContain("spoken");
     expect(h.view.characterTapped()).toBe(true);
     await settle();
-    expect(h.audio.play).toHaveBeenCalledTimes(2);
+    expect(h.audio.play).toHaveBeenCalledTimes(3);
     expect(h.stage.setVoice).toHaveBeenLastCalledWith("speaking");
   });
 
@@ -1977,7 +1960,6 @@ describe("a character's story views and the advance when the line ends", () => {
     const h = harness({ durationMs: () => 4200 });
     h.view.offer(station("gate", [knight("a", "speak", { mode: "tap" })]));
     await settle();
-    h.view.characterTapped();
     await settle();
     expect(h.stage.setVoice).toHaveBeenLastCalledWith("speaking", 4200);
   });
@@ -2109,7 +2091,7 @@ describe("a declared character's frames sheet", () => {
       { id: "kay", name: "Sir Kay", image: "knight", frames: "knight-sheet" },
     ],
   ]);
-  const step = (id: string, view: "speak" | "stage" | "portrait") =>
+  const step = (id: string, view: "speak" | "portrait") =>
     showing(id, {
       kind: "character",
       view,
@@ -2119,9 +2101,9 @@ describe("a declared character's frames sheet", () => {
       caption: "Welcome.",
     });
 
-  it("stands a story view from the sheet, the stage view from his image", async () => {
+  it("stands every story view from the sheet", async () => {
     const h = harness({ characters: kay });
-    h.view.offer(station("gate", [step("a", "speak"), step("b", "stage")]));
+    h.view.offer(station("gate", [step("a", "speak"), step("b", "portrait")]));
     await settle();
     const first = h.stage.showCharacter.mock.calls[0]!;
     expect(await first[1].text()).toBe("content/knight-sheet.webp");
@@ -2129,8 +2111,8 @@ describe("a declared character's frames sheet", () => {
     h.view.continueTapped();
     await settle();
     const second = h.stage.showCharacter.mock.calls[1]!;
-    expect(await second[1].text()).toBe("content/knight.png");
-    expect(second[3]).toBeUndefined();
+    expect(await second[1].text()).toBe("content/knight-sheet.webp");
+    expect(second[3]).toMatchObject({ view: "portrait", sheet: true });
   });
 
   it("keeps the portrait his image while the world figure is the sheet", async () => {
@@ -2201,7 +2183,6 @@ describe("a declared character's frames sheet", () => {
         }),
       ]),
     );
-    expect(h.view.characterTapped()).toBe(true);
     await settle();
     await settle();
     expect(h.dom.status.textContent).toMatch(/sound did not play/);

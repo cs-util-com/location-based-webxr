@@ -477,7 +477,7 @@ describe("withReferencedAssets", () => {
       "a character's image and voice",
       {
         kind: "character",
-        view: "stage",
+        view: "speak",
         name: "Guide",
         image: "guide",
         caption: "Hello",
@@ -517,7 +517,11 @@ describe("withReferencedAssets", () => {
       },
       ["picture", "clip"],
     ],
-    ["a model", { kind: "model", view: "stage", asset: "statue" }, ["statue"]],
+    [
+      "a model",
+      { kind: "model", view: "placed", asset: "statue", sizeM: 3 },
+      ["statue"],
+    ],
     [
       "a long text",
       { kind: "longText", view: "card", title: "Note", body: "Read me" },
@@ -576,7 +580,7 @@ describe("withReferencedAssets", () => {
       100,
     );
     const manifest = telling([
-      { kind: "model", view: "stage", asset: "statue" },
+      { kind: "model", view: "placed", asset: "statue", sizeM: 3 },
     ]);
     expect(
       kept({ ...manifest, stations: [...manifest.stations, second] }),

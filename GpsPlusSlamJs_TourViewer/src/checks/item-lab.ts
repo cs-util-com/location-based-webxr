@@ -237,15 +237,10 @@ function fakeStage(say: (line: string) => void) {
     showCharacter(
       _id: string,
       _blob: Blob,
-      _wait?: () => void,
-      look?: { readonly name: string; readonly view: string },
+      _wait: (() => void) | undefined,
+      look: { readonly name: string; readonly view: string },
     ) {
-      who = `${look?.name ?? "a figure"} (${look?.view ?? "stage"})`;
-      tell();
-      return Promise.resolve();
-    },
-    showModel() {
-      who = "a model";
+      who = `${look.name} (${look.view})`;
       tell();
       return Promise.resolve();
     },
@@ -497,7 +492,6 @@ function runItemLab(kind: ItemKind, folder: URL): ItemLab {
         decodeFigure(blob, (b, divisor) =>
           decodeFrameTexture(b, divisor, { maxPixels: TOUR_MAX_IMAGE_PIXELS }),
         ),
-      loadModel: () => Promise.reject(new Error("the lab stands no model")),
       registerFrame: (fn) => {
         frames.add(fn);
         return () => {
@@ -515,7 +509,7 @@ function runItemLab(kind: ItemKind, folder: URL): ItemLab {
         await stage.showCharacter(id, blob, wait, look);
         if (mine !== standings) return;
         figure.standing = true;
-        figure.line = look?.line ?? "";
+        figure.line = look.line;
       }) as typeof stage.showCharacter,
       setVoice: ((voice, ms) => {
         figure.voice = voice;

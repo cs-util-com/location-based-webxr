@@ -116,7 +116,7 @@ const LONE: TourStation = {
       {
         id: "guard",
         kind: "character",
-        view: "stage",
+        view: "speak",
         pose: POSE,
         name: "The watchman",
         image: "cut",

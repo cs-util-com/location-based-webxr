@@ -70,8 +70,8 @@ VisitorStations` - `{ tick, loadContent, codeLocked, unlockAudio, stop }`
   `decodeFrameTexture`, one at a time through a `keyed-chain` key, via
   `decodeFigure` (its size read from its own header, refused over the tour
   pixel cap, scaled to 2048 px); a story picture is checked
-  by `pictureProblem` before its `<img>`; a model by `seams.loadGlbModel`
-  after `loadContentEntry`'s `checkGlbInert`, which also measures every
+  by `pictureProblem` before its `<img>`; a model stands in the world
+  through its row (`kinds/model/world.ts`), never on the stage, after `loadContentEntry`'s `checkGlbInert`, which also measures every
   image inside it.
 - The breadcrumbs (`breadcrumbs.ts`) follow the guide's `onGuide`, one
   trail for the page.

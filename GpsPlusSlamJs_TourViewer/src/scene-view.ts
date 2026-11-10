@@ -181,10 +181,11 @@ export interface SceneView {
   playNextNow(): void;
   /** The continue tap. */
   continueTapped(): void;
-  /** A tap on the step's character (his figure, bubble or stage in the
-   *  world, or his portrait in the card): a story view's voice plays, or
-   *  stops while it plays; the bubble view's bubble shuts or opens. False
-   *  when the step shows no character in a story view. */
+  /** A tap on the step's character (his figure, bubble or pop-up stage in
+   *  the world, or his portrait in the card): his voice, which played with
+   *  the step, plays again, or stops while it plays; the bubble view's
+   *  bubble shuts or opens. False when the step shows no character in a
+   *  look. */
   characterTapped(): boolean;
   /** The `?debug=1` lines of the story: a frames sheet that could not be
    *  read (he stands in his one pose), naming it; none otherwise. */
@@ -241,7 +242,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
    *  plays (the bubble view: whose bubble a tap shuts): set by his step
    *  and kept after it and after his story - he stays in the world and a
    *  tap works whenever he stands (the prototype's rule) - until the
-   *  stage is cleared or another figure or model takes it. */
+   *  stage is cleared or another figure takes it. */
   let tapTarget: ItemTapTarget | null = null;
   /** The step held (`holdStep`): no timer runs. */
   let held = false;
@@ -263,7 +264,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
   const liveUrls: string[] = [];
   /* The step's media share one status line (r881 re-review M1: one
    *  asset's settle blanked another's line). What it says, per step: */
-  /** The figure or model the stage holds back for the visitor's position. */
+  /** The figure the stage holds back for the visitor's position. */
   let figureWait: string | null = null;
   /** The media still loading, in the order they started. */
   const loading: string[] = [];
@@ -404,7 +405,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
       });
   }
 
-  /** Show a figure or model on the stage. While the stage holds it back
+  /** Show a figure on the stage. While the stage holds it back
    *  for the visitor's position (no GPS zero, or no heading yet: r881
    *  re-review M-B) the status says so; once it stands that line goes. */
   async function stageFigure(
@@ -544,7 +545,6 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     // calls on the stage (clear, release, voice, bubble).
     const world: ItemWorld = {
       showCharacter: (...a) => deps.stage.showCharacter(...a),
-      showModel: (...a) => deps.stage.showModel(...a),
     };
     return {
       slots: dom,
@@ -562,7 +562,12 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
             draw(world, { stationId: station.id, onWaiting }),
           ),
         tapTarget(target) {
+          if (token !== renderToken) return;
           tapTarget = target;
+          // In a story his voice plays with his step, in every look; a
+          // tap on him stops it while it plays and plays it again after
+          // (`characterTapped`).
+          if (target?.voice !== undefined) playSound(target.voice, true);
         },
       },
       clip: videoClip,

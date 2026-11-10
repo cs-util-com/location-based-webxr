@@ -11,8 +11,8 @@ kind's part, and the 3D editor (`editor3d-stations.ts`) builds it in
 ## Public API
 
 - `modelWorld(block, env) -> WorldPart | null`
-  - null for a view that stands nothing in the station's world (`card`,
-    the story's `stage`; the world views are the framework's
+  - null for a view that stands nothing in the station's world (`card`;
+    the world views are the framework's
     `TOUR_MODEL_WORLD_VIEWS`: placed, ghost, hotspots, cutaway, toy) and
     for a block with no `sizeM` (the shared scale rule needs one). No file
     is read then.

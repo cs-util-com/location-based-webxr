@@ -19,11 +19,11 @@ part, and the free host (`free-items.ts`) stands free characters.
 
 ## Public API
 
-- `EDITOR_CHARACTER_VIEW` - `"speak"`: the story look a character whose
-  view has none of its own stands in.
-- `editorCharacterView(view)` -> the look drawn: a story view
-  (`isStageCharacterView`) as itself; `stage`, or a view the looks do
-  not know, as `EDITOR_CHARACTER_VIEW`; null for `card` (the visitor
+- `EDITOR_CHARACTER_VIEW` - `"speak"` (the format's floor for a character, the
+  view a new character gets): the look a view the looks do not know stands in.
+- `editorCharacterView(view)` -> the look drawn: a look's view
+  (`isStageCharacterView`) as itself; a view the looks do not know as
+  `EDITOR_CHARACTER_VIEW`; null for `card` (the visitor
   sees nothing of him in the world).
 - `PICKED_CHARACTER_PARTS` - the look's mesh names a press selects him by:
   his figure (front, back) and the pop-up's figure and backdrop. Every
@@ -64,8 +64,8 @@ part?.update?.({ seconds: 1, viewer: [0, 1.6, 5], camera });
 ## Tests
 
 `world.test.ts`: null in play and in the card view, picked by his
-figure alone (speak and pop-up), `stage` drawn in
-the default story look and a story view in its own (no card), his
+figure alone (speak and pop-up), a view the looks do not know drawn in
+the default look and a story view in its own (no card), his
 figure at least half square on from four headings round him (in front,
 both sides, behind) over two poses and two distances, at least 0.85
 square on every 5 degrees all the way round over two poses, the swing
