@@ -14,7 +14,7 @@ import { tourFreeEntries } from "gps-plus-slam-app-framework/ar/tour-station-pos
 import { FOLDER_PREFIX } from "../editor/editor-model.js";
 
 /** The outline's colour: the tree's folder teal. */
-export const FOLDER_OUTLINE_COLOUR = 0x57c4b8;
+const FOLDER_OUTLINE_COLOUR = 0x57c4b8;
 
 /** How strongly the outline shows (0..1): light, so it never hides the
  *  selection's own outline or the item. */
