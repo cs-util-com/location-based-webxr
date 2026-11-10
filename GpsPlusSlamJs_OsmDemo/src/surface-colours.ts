@@ -31,6 +31,12 @@
  * Lighter and more neutral than the near-black it started as: a dark surface has
  * almost no dynamic range for a highlight to live in, and the slope tint needs
  * somewhere to show rather than fighting a blue base.
+ *
+ * THE SAME VALUE AS the library's default ground (`DEFAULT_GROUND_RGB`),
+ * which the land-use tint and the default colour scheme paint. A literal, not
+ * an import: the design-system labs serve this file as plain JavaScript with
+ * no resolver for the library's bare specifier. `surface-colours.test.ts`
+ * holds the two equal.
  */
 export const GROUND_COLOUR = 0x6b7280;
 

@@ -18,6 +18,7 @@
  * these two files answer different halves of the same report.
  */
 
+import { DEFAULT_GROUND_RGB } from "gps-plus-slam-osm";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -63,6 +64,14 @@ describe("the ground/plate relationship", () => {
     // that argument applies to the plates lying on it just as much.
     expect(chroma(GROUND_COLOUR)).toBeLessThan(40);
     expect(chroma(PLATE_COLOUR)).toBeLessThan(40);
+  });
+});
+
+describe("the ground's one value", () => {
+  it("is the library's default ground, which the land-use tint paints", () => {
+    // Why this test matters: the plane and the tint's untagged texels are the
+    // same ground; two literals in two packages drift unless held together.
+    expect(GROUND_COLOUR).toBe(DEFAULT_GROUND_RGB);
   });
 });
 
