@@ -2,8 +2,7 @@
  * The land-use ground tint: which mapped area paints which class into the
  * ground, in which muted colour, in which order, rasterised into a class
  * index over the build window (city objects plan 2026-11-07-2315 M3, a port
- * of the O2 painted-ground prototype the owner chose; OSM demo colour
- * schemes plan 2026-11-10-0841 section 4.3 for the scheme's colours).
+ * of the O2 painted-ground prototype the owner chose).
  *
  * A PURE RASTERISER, not `OffscreenCanvas`: it runs in both workers and in
  * node tests, and it is deterministic (the same features paint the same

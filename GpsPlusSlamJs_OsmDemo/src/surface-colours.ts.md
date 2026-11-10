@@ -8,7 +8,7 @@ assumed.
 
 ## Public API
 
-- `GROUND_COLOUR` — `0x6b7280`, the ground plane (DEC-R6-6). It equals the
+- `GROUND_COLOUR` - `0x6b7280`, the ground plane (DEC-R6-6). It equals the
   library's `DEFAULT_GROUND_RGB`, which the land-use tint and the default
   colour scheme paint, held by a test (a literal because the design-system
   labs load this file without a resolver for the library).

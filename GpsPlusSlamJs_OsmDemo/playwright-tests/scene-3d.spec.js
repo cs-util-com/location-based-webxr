@@ -1582,7 +1582,7 @@ const meanGreenExcess = (page) =>
   });
 
 test.describe("the land-use tint (city objects plan 2026-11-07-2315 M3)", () => {
-  // WHY THIS TEST MATTERS (colour schemes plan 2026-11-10-0841 section 4.3):
+  // WHY THIS TEST MATTERS:
   // the tint is on by default (owner Q6), so the default picture changed and
   // the old gates measure it with the tint OFF. This is the gate of the tint
   // itself: the fixture is Cologne's Volksgarten, so a working tint greens the
