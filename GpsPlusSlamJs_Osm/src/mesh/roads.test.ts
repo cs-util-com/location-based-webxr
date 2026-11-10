@@ -401,6 +401,7 @@ describe("isPedestrianPath (DEC-R2)", () => {
       "path",
       "steps",
       "pedestrian",
+      "platform",
       "bridleway",
       "cycleway",
     ]) {
@@ -1007,6 +1008,47 @@ describe("buildRoads - class order (M4a)", () => {
     for (const highway of PEDESTRIAN_CLASSES) {
       expect(isPedestrianPath(way(highway)), highway).toBe(true);
     }
+    // The colour list is still a second list (feature-colours.ts), so pin
+    // the other direction over every `highway` value OSM documents for
+    // ways: the only path that is not a pedestrian colour class is
+    // `bridleway`. A path added to `PATH_WIDTH_M` alone fails here, unless
+    // it is a value missing from this list.
+    // Named here, not spread from `PEDESTRIAN_CLASSES`: a class missing
+    // from the colour list must still be in this one.
+    const documented = [
+      ...classes,
+      "footway",
+      "path",
+      "steps",
+      "pedestrian",
+      "platform",
+      "cycleway",
+      "tertiary",
+      "secondary",
+      "trunk",
+      "motorway_link",
+      "trunk_link",
+      "primary_link",
+      "secondary_link",
+      "tertiary_link",
+      "road",
+      "corridor",
+      "bus_guideway",
+      "escape",
+      "raceway",
+      "via_ferrata",
+      "elevator",
+      "construction",
+      "proposed",
+    ];
+    const pathsWithoutPedestrianColour = documented.filter(
+      (highway) =>
+        isPedestrianPath(way(highway)) &&
+        !(PEDESTRIAN_CLASSES as readonly string[]).includes(highway),
+    );
+    expect(new Set(pathsWithoutPedestrianColour)).toEqual(
+      new Set(["bridleway"]),
+    );
   });
 
   it("lifts a carriageway above the footway that crosses it", () => {

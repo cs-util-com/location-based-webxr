@@ -65,7 +65,10 @@ footway crossing it.
   dressed up as data.
   - **`PATH_WIDTH_M` is the file's one path list**: `isPedestrianPath` tests
     its keys and `ROAD_RANK` derives its rank-0 entries from them, so a path
-    class cannot reach one table alone. That happened once (#909 review):
+    class cannot reach one of this file's tables alone. The colour list
+    (`PEDESTRIAN_CLASSES` in `feature-colours.ts`) is still separate; a test
+    in `roads.test.ts` pins that the only path outside it is `bridleway`,
+    over every `highway` value OSM documents for ways. That happened once (#909 review):
     `platform` was in the rank table only, so a `highway=platform` way drew
     6 m wide (the unknown-class width) and took `surface` first for its
     colour.
