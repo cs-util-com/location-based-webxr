@@ -115,6 +115,10 @@ move the camera only, and a second finger during a drag cancels it.
   E, PageUp and PageDown then are not).
 - A code has no target: no handles, no Del, no Ctrl+D (read-only in the
   3D view, as on the map).
+- A plain folder (`folder:<id>`) has no delete or copy of its own yet:
+  Del and Ctrl+D say so (`FOLDER_DELETE_NOT_YET`,
+  `FOLDER_DUPLICATE_NOT_YET`, `folder-commands.ts`) and keep the
+  browser's own keys off.
 - A locked station (`poseLocked`) takes no nudge, turn or lift key: the press is refused and said once (`STATION_LOCKED`; a held key's repeats say nothing more). Delete and copy keys still work on it.
 
 ## Examples
@@ -135,7 +139,7 @@ drag; a press off the gizmo, or on a code, starts nothing; a click selects
 what is under it or nothing, a moved press selects nothing; a double tap
 and a double click frame, and on nothing zoom toward the point; a double
 tap answers once though the browser adds a dblclick; every key of the design, a held key as one
-gesture, Del, Backspace and Ctrl+D, the keys left to others, fields and
+gesture, Del, Backspace and Ctrl+D (said on a folder), the keys left to others, fields and
 dialogs, codes, and keys during a drag; with nothing selected only the
 arrows are taken from the page. A cancel (an undo) and a pointercancel
 write nothing; the right button and a press during a key hold start no

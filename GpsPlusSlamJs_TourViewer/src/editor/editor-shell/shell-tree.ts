@@ -42,6 +42,7 @@
  */
 import type { ShellPictures } from "./shell-pictures.js";
 import { shellIcon } from "gps-plus-slam-editor-kit/chrome";
+import { TOUR_FOLDER_TITLE_RULE } from "gps-plus-slam-app-framework/ar/tour-story";
 import type {
   TreeCard,
   TreeChild,
@@ -92,17 +93,38 @@ const KEYS = [
 
 type ControlKey = (typeof KEYS)[number];
 
+/** A focused control by its data, and a text field's caret (its
+ *  selection's ends), which a redraw gives back with the focus. */
+interface FocusedControl {
+  readonly key: ControlKey;
+  readonly value: string;
+  readonly caret: readonly [number, number] | null;
+}
+
 /** Which control of `body` has the focus, by its data, or null. */
-function focusedControl(
-  body: HTMLElement,
-): { key: ControlKey; value: string } | null {
+function focusedControl(body: HTMLElement): FocusedControl | null {
   const active = document.activeElement;
   if (!(active instanceof HTMLElement) || !body.contains(active)) return null;
+  const caret =
+    active instanceof HTMLInputElement &&
+    active.selectionStart !== null &&
+    active.selectionEnd !== null
+      ? ([active.selectionStart, active.selectionEnd] as const)
+      : null;
   for (const key of KEYS) {
     const value = active.dataset[key];
-    if (value !== undefined) return { key, value };
+    if (value !== undefined) return { key, value, caret };
   }
   return null;
+}
+
+/** The focus given back to `control`'s new element, with its caret. */
+function refocus(body: HTMLElement, control: FocusedControl): void {
+  const again = controlOf(body, control);
+  again?.focus();
+  if (again instanceof HTMLInputElement && control.caret !== null) {
+    again.setSelectionRange(control.caret[0], control.caret[1]);
+  }
 }
 
 /** The control of `body` known by `control`, or none. */
@@ -257,6 +279,9 @@ function plainFolderRows(
     const field = el("input", "renin");
     field.type = "text";
     field.value = renaming.text;
+    // The format's cap (UTF-16 units here, code points there: never
+    // more than the reader takes, at most fewer for the rarest letters).
+    field.maxLength = TOUR_FOLDER_TITLE_RULE.max;
     field.dataset["ren"] = folder.id;
     field.setAttribute("aria-label", "The folder's name");
     box.append(icon, field);
@@ -555,7 +580,7 @@ export function drawTree(
     parts.push(chips);
   }
   dock.body.replaceChildren(...parts);
-  if (focused !== null) controlOf(dock.body, focused)?.focus();
+  if (focused !== null) refocus(dock.body, focused);
 }
 
 /** The selection bar's model (`../folder-commands.ts` `selectionBarOf`). */

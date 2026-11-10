@@ -18,6 +18,7 @@ import { tourOf } from "../test-support/tour-of.js";
 import {
   documentObjects,
   initialTourDocumentState,
+  manifestToWrite,
   tourDocumentActions as act,
   tourDocumentReducer as reduce,
   type TourDocumentState,
@@ -25,7 +26,9 @@ import {
 import { folderRefusalLine } from "../tour-folder-edit.js";
 import {
   createFolderCommands,
+  FOLDER_NAME_TOO_LONG,
   groupRows,
+  NOTHING_TO_GROUP,
   ONE_ITEM_LINE,
   selectionBarOf,
   nextFolderTitle,
@@ -85,10 +88,10 @@ function tour(): TourManifest {
   return parseTourManifest(JSON.parse(serializeTourManifest(wire)));
 }
 
-function setup() {
+function setup(manifest: TourManifest = tour()) {
   let state: TourDocumentState = reduce(
     initialTourDocumentState,
-    act.opened({ manifest: tour() }),
+    act.opened({ manifest }),
   );
   const said: string[] = [];
   let changed = 0;
@@ -146,7 +149,6 @@ describe("createFolderCommands - group", () => {
       [["folder:yard", "p"], "oneLevel"],
       [["p", "g"], "notHere"],
       [["nope"], "notHere"],
-      [[], "notHere"],
     ];
     for (const [picked, reason] of cases) {
       const t = setup();
@@ -157,6 +159,18 @@ describe("createFolderCommands - group", () => {
       expect(t.changed()).toBe(0);
       expect(pickedGroupRefusal(before, picked)).toBe(reason);
     }
+  });
+
+  // Why: Ctrl+G with nothing picked is no refusal of a folder rule, so
+  // "a folder holds items of one station" would send the creator looking
+  // for a wrong reason; it says what to do instead.
+  it("says to pick items first when nothing is picked, and changes nothing", () => {
+    const t = setup();
+    const before = t.state();
+    expect(t.commands.group([])).toBeNull();
+    expect(t.state()).toBe(before);
+    expect(t.said).toEqual([NOTHING_TO_GROUP]);
+    expect(t.before()).toBe(0);
   });
 
   it("takes the next free number for a new folder's name", () => {
@@ -179,10 +193,12 @@ describe("createFolderCommands - ungroup, move, rename", () => {
     expect(t.said).toEqual(["Ungrouped - 2 items stay where they are"]);
   });
 
-  it("refuses to ungroup a folder the tour lacks", () => {
+  // Why: a folder gone from the tour (an undo since the pick) is no
+  // matter of stations; the line names what happened.
+  it("refuses to ungroup a folder the tour lacks, saying it is gone", () => {
     const t = setup();
     expect(t.commands.ungroup("nope")).toBeNull();
-    expect(t.said).toEqual([folderRefusalLine("notHere")]);
+    expect(t.said).toEqual([folderRefusalLine("gone")]);
   });
 
   it("moves an item into a folder and out again, each said", () => {
@@ -206,6 +222,47 @@ describe("createFolderCommands - ungroup, move, rename", () => {
     expect(t.said).toEqual([folderRefusalLine("notHere")]);
   });
 
+  // Why: the store refuses a pose past the format's 10 km bound in a
+  // folder; the page must say that reason, not a generic "one station".
+  it("refuses an item that would stand past the 10 km bound in the folder, saying so", () => {
+    const wire = tourOf([], {
+      stations: [
+        {
+          id: "wide",
+          title: "The wide field",
+          geo: { ...AT, rotation: [0, 0, 0, 1] },
+          activateRadiusM: 50,
+          foundRadiusM: 25,
+          hint: "arrow",
+          ...stationContent([
+            pin("w", [-6000, 0, 0]),
+            {
+              id: "east",
+              kind: "folder",
+              title: "East",
+              pose: { position: [6000, 0, 0], rotation: [0, 0, 0, 1] },
+              children: [pin("e", [1, 0, 0])],
+            },
+          ]),
+        },
+      ],
+    });
+    const t = setup(parseTourManifest(JSON.parse(serializeTourManifest(wire))));
+    const before = t.state();
+    expect(t.commands.moveInto("w", "east")).toBe(false);
+    expect(t.state()).toBe(before);
+    expect(t.said).toEqual([folderRefusalLine("tooFar")]);
+  });
+
+  // Why: dropping an item into the folder it is in already changes
+  // nothing; a "Not possible here" for it would call a no-op a failure.
+  it("says nothing when an item is moved into the folder it is in", () => {
+    const t = setup();
+    expect(t.commands.moveInto("a", "yard")).toBe(false);
+    expect(t.said).toEqual([]);
+    expect(t.changed()).toBe(0);
+  });
+
   it("says nothing when an item outside any folder is moved out", () => {
     const t = setup();
     expect(t.commands.moveInto("p", null)).toBe(false);
@@ -224,7 +281,32 @@ describe("createFolderCommands - ungroup, move, rename", () => {
     expect(t.commands.rename("yard", " Benches ")).toBe(true);
     expect(plainFolderOf(t.state(), "yard")?.folder.title).toBe("Benches");
     expect(t.commands.rename("yard", "x".repeat(500))).toBe(false);
-    expect(t.said).toEqual(["That name is too long for a folder"]);
+    // The cap is said, so the creator knows how far to shorten it.
+    expect(t.said).toEqual([FOLDER_NAME_TOO_LONG]);
+    expect(FOLDER_NAME_TOO_LONG).toContain("80 characters");
+  });
+
+  // Why: a folder row dragged among the station's folders reaches the
+  // tour only here; a drop on its own place is no undo step, and a folder
+  // gone since the drag began says so.
+  it("puts a folder at a place among its station's folders, as one step", () => {
+    const t = setup();
+    t.commands.group(["p", "q"]);
+    const folders = () =>
+      manifestToWrite(t.state())
+        ?.stations[0]?.children.filter((c) => c.kind === "folder")
+        .map((c) => c.id);
+    expect(folders()).toEqual(["yard", "made"]);
+    const past = t.state().past.length;
+    t.said.length = 0;
+    expect(t.commands.reorder("made", 0)).toBe(true);
+    expect(folders()).toEqual(["made", "yard"]);
+    expect(t.state().past.length).toBe(past + 1);
+    expect(t.commands.reorder("made", 0)).toBe(false);
+    expect(t.state().past.length).toBe(past + 1);
+    expect(t.said).toEqual([]);
+    expect(t.commands.reorder("nope", 0)).toBe(false);
+    expect(t.said).toEqual([folderRefusalLine("gone")]);
   });
 });
 

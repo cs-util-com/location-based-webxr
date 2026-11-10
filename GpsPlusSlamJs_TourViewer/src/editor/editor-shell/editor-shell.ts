@@ -37,7 +37,10 @@
  *
  * @see editor-shell.ts.md
  */
-import { tourChildPlace } from "gps-plus-slam-app-framework/ar/tour-story";
+import {
+  isTourFolder,
+  tourChildPlace,
+} from "gps-plus-slam-app-framework/ar/tour-story";
 import type { UnknownAction } from "@reduxjs/toolkit";
 
 import type { Editor3dView } from "../../editor3d/editor3d-scene.js";
@@ -878,9 +881,20 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     }
   };
 
+  /** Whether the tree is being drawn: a focus lost to its redraw (the
+   *  folder's name field replaced while typed in) ends no rename. */
+  let drawingTree = false;
   /** The tree drawn from the store and its search as they stand; a
    *  search typed over another tour is emptied first. */
   const drawTreeNow = () => {
+    drawingTree = true;
+    try {
+      drawTreeOnce();
+    } finally {
+      drawingTree = false;
+    }
+  };
+  const drawTreeOnce = () => {
     const tour = manifest();
     const { editorView: ui, tourDocument: doc } = state();
     if (doc.generation !== searchedTour) {
@@ -1392,6 +1406,10 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       pickRows(event.shiftKey && !ui.selectMode ? rangeTo(id) : toggled(id));
       return;
     }
+    // A row that takes no tick ends the Select mode: it is selected alone.
+    if (ui.selectMode) {
+      store.dispatch(editorViewActions.selectModeSet({ on: false }));
+    }
     const click = treeClick({
       id,
       at: event.timeStamp,
@@ -1566,6 +1584,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   });
   tree.body.addEventListener("focusout", (event) => {
     if (
+      !drawingTree &&
       event.target instanceof HTMLInputElement &&
       event.target.dataset["ren"] === renaming?.id
     ) {
@@ -1718,7 +1737,41 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   // another station's card as a whole (asked first, `moveToStation`). A
   // list offered is one the move takes; a free item among the free items
   // is no move (they have no order), and one whose file the tour on disk
-  // lacks goes into no story (`freeItemUnsaved`).
+  // lacks goes into no story (`freeItemUnsaved`). A plain folder at its
+  // station's top moves among the station's folders only: its row's
+  // place among them, or the last place for a drop on the station's row.
+  /** The ids of the plain folders at the top of `folderId`'s station, in
+   *  order, when it is one of them; else null. */
+  const topFoldersBeside = (folderId: string): string[] | null => {
+    const place = plainFolderOf(state().tourDocument, folderId);
+    const station = manifest()?.stations.find((s) => s.id === place?.stationId);
+    const ids = (station?.children ?? []).filter(isTourFolder).map((f) => f.id);
+    return ids.includes(folderId) ? ids : null;
+  };
+  /** Where among its station's top folders a folder dropped at `drop`
+   *  lands: the folders drawn before the drop's slot (itself left out),
+   *  or the last place for a drop into the free items. */
+  const folderIndexAt = (
+    folderId: string,
+    tops: readonly string[],
+    drop: { readonly slot: number } | { readonly into: true },
+  ): number => {
+    if ("into" in drop) return tops.length - 1;
+    const card = [
+      ...tree.body.querySelectorAll<HTMLElement>(".card[data-station]"),
+    ].find((c) =>
+      [...c.querySelectorAll<HTMLElement>("[data-item]")].some(
+        (r) => r.dataset["item"] === folderId,
+      ),
+    );
+    const listed = [
+      ...(card?.querySelectorAll<HTMLElement>("[data-list][data-item]") ?? []),
+    ].filter((r) => r.dataset["list"] === FREE_LIST);
+    return listed.slice(0, drop.slot).filter((r) => {
+      const id = r.dataset["item"] ?? "";
+      return id !== folderId && tops.includes(id);
+    }).length;
+  };
   createNestDrag({
     body: tree.body,
     grip: "[data-move]",
@@ -1754,9 +1807,11 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     },
     accepts: (from, to) => {
       const doc = state().tourDocument;
-      // A folder stays where it is: one level of folders, and none in a
-      // story (the drag says "Not possible here").
-      if (plainFolderOf(doc, from.id) !== null) return false;
+      // A folder moves among its station's folders: one level of folders,
+      // and none in a story (the drag says "Not possible here").
+      if (plainFolderOf(doc, from.id) !== null) {
+        return to === FREE_LIST && topFoldersBeside(from.id) !== null;
+      }
       if (to.startsWith(FOLDER_PREFIX)) {
         if (from.list === to) return false;
         return (
@@ -1787,6 +1842,11 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       }
       if (drop.list.startsWith(FOLDER_PREFIX)) {
         deps.folders.moveInto(from.id, drop.list.slice(FOLDER_PREFIX.length));
+        return;
+      }
+      const tops = topFoldersBeside(from.id);
+      if (tops !== null) {
+        deps.folders.reorder(from.id, folderIndexAt(from.id, tops, drop));
         return;
       }
       if (from.list.startsWith(FOLDER_PREFIX)) {

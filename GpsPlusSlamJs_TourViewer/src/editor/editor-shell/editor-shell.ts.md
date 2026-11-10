@@ -187,7 +187,11 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
     screen a long press on such a row (`long-press.ts`, `LONG_PRESS`)
     enters the Select mode with that row ticked, and the click that
     follows the press is swallowed. Each pick selects its last row too
-    (the inspector and 3D follow it). In the Select mode a selection lays
+    (the inspector and 3D follow it). In the Select mode a tap on a row
+    that takes no tick (a station, a story, a story's entry, a code) ends
+    the Select mode and selects that row alone, as the chosen prototype
+    does. Ctrl+G with nothing to group says `NOTHING_TO_GROUP`. In the
+    Select mode a selection lays
     out no docks and a phone's sheet stays the list (the details dock
     `hidden`), so the details never cover the rows being ticked; Done lays
     them out for the selection.
@@ -254,7 +258,12 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   (`data-move`) drags it with the editor kit's `createNestDrag`
   (`tree-nest-drag.ts`) among its station's stories, into a story (onto
   its row, or a slot among its entries) or out to the free items (onto
-  the card's head); a drop the move rule refuses (`childMayGo`) is not
+  the card's head). A plain folder's grip (at its station's top) drags it
+  among the station's folders: a slot among the free list's rows puts it
+  after the folders drawn before that slot, a drop on the card's head
+  puts it last; one drop is one `folders.reorder`. A folder inside
+  another, into another folder, into a story or to another station is
+  not offered. A drop the move rule refuses (`childMayGo`) is not
   offered, nor a story to a free item whose file the tour on disk lacks
   (`freeItemUnsaved`), Escape ends a drag with no write, and one drop is one
   `stations.moveChild`. The drag lands only on the row under the pointer:
@@ -365,7 +374,8 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
 - **A draw is not "leaving" a field.** Chromium fires `focusout` on a
   focused field a draw takes out of the page, synchronously, in the
   middle of the draw; the focusout handler commits only while no draw
-  runs (`inspectorDrawing`), and the draw carries the typed text and the
+  runs (`inspectorDrawing`; the tree's folder name field likewise,
+  `drawingTree`, so a redraw never writes a half-typed name), and the draw carries the typed text and the
   focus over to the field drawn again. Without that, a draw while typing
   (the readout's tick as the ground loads, a change made elsewhere)
   committed the half-typed text as its own undo step and, through the
@@ -435,7 +445,12 @@ else shell.hide();
   name, renamed by Enter; a Shift range grouped from the bar, Escape
   keeping the name, Ungroup picking the freed items; the Select mode's
   button and Done, and a touch long press entering it with the press's
-  click swallowed. In a browser: `playwright-tests/editor3d-folders.spec.js`.
+  click swallowed; a tap on a station's row ending the Select mode;
+  Ctrl+G with nothing picked; the name field's cap, and a redraw while
+  typing (its focus loss reported, as Chromium does) keeping the typed
+  name, the focus and the caret, nothing written until Enter. In a
+  browser: `playwright-tests/editor3d-folders.spec.js` (a folder's drag
+  among its station's folders too).
 
 The rules it applies are unit-tested in their own files
 (`tree-click.test.ts`, `tree-model.test.ts`,

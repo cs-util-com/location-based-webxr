@@ -21,6 +21,7 @@ import {
   droppedChildrenLine,
   droppedDetailsLine,
   droppedFolderScalesLine,
+  droppedFolderTitlesLine,
   droppedStationFieldsLine,
   NOT_A_TOUR,
   NOT_A_ZIP,
@@ -400,6 +401,72 @@ describe("openTourForEditing", () => {
         { kind: "field", block: "b", field: "title", reason: "r" },
       ]),
     ).toBeNull();
+  });
+
+  it("says how many folder names a newer editor's tour lost, and that the next save writes them without", async () => {
+    // Why: a newer editor may allow longer folder names than this one.
+    // The reader leaves such a name out rather than refusing the tour, so
+    // the folder shows as "Folder" and the next save writes it without
+    // its name; unsaid, that is a silent loss. The name is gone, so the
+    // folder is counted, not named.
+    const POSE = { position: [0, 0, 0], rotation: [0, 0, 0, 1] } as const;
+    const pin = (id: string) => ({
+      id,
+      kind: "shortText",
+      view: "pin",
+      caption: `Pin ${id}`,
+      pose: POSE,
+    });
+    const data = JSON.stringify({
+      version: 5,
+      // A newer minor than this reader's: read leniently.
+      minor: TOUR_MANIFEST_MINOR + 1,
+      order: "fixed",
+      assets: [],
+      stations: [
+        {
+          id: "well",
+          title: "The well",
+          geo: { lat: 48.52, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
+          activateRadiusM: 50,
+          foundRadiusM: 25,
+          hint: "arrow",
+          children: [
+            {
+              id: "f1",
+              kind: "folder",
+              title: "x".repeat(81),
+              pose: POSE,
+              children: [pin("a")],
+            },
+            {
+              id: "f2",
+              kind: "folder",
+              title: "Benches",
+              pose: POSE,
+              children: [pin("b")],
+            },
+          ],
+        },
+      ],
+    });
+    const out = await openTourForEditing(
+      await zipFile([{ path: "tour.json", data }]),
+    );
+    expect(out.kind).toBe("opened");
+    if (out.kind !== "opened") return;
+    expect(openedNoticeLines(out.dropped, out.manifest)).toEqual([
+      'A folder\'s name was too long for this editor (a newer editor allows more), so it shows as "Folder": the next save writes it without its name. Name it again in the list.',
+    ]);
+    await out.session.close();
+    const title = (folder: string) =>
+      ({ kind: "folderTitle", folder, reason: "r" }) as const;
+    expect(
+      droppedFolderTitlesLine([title("f1"), title("f2"), title("f1")]),
+    ).toBe(
+      '2 folders\' names were too long for this editor (a newer editor allows more), so they show as "Folder": the next save writes them without their names. Name them again in the list.',
+    );
+    expect(droppedFolderTitlesLine([])).toBeNull();
   });
 
   it("shows every opened notice, then a superseded draft's line, as toasts that stay until closed", () => {

@@ -47,6 +47,11 @@ import {
 } from "./gesture.js";
 import { sceneKey, type GizmoHandle, type ScreenPoint } from "./gizmo-maths.js";
 import { createLongPress, LONG_PRESS } from "../editor/long-press.js";
+import { FOLDER_PREFIX } from "../editor/editor-model.js";
+import {
+  FOLDER_DELETE_NOT_YET,
+  FOLDER_DUPLICATE_NOT_YET,
+} from "../editor/folder-commands.js";
 import { twoFingerMode, type FingerPair } from "./two-finger.js";
 
 /** What the input reads of the scene and asks of it. */
@@ -479,6 +484,17 @@ export function createSceneInput(input: {
     if (key === null) return;
     const selection = page.selected();
     if (key.kind === "delete" || key.kind === "duplicate") {
+      // A plain folder has no delete or copy of its own yet: said, with
+      // what to do instead (and the browser's Ctrl+D kept off).
+      if (selection?.startsWith(FOLDER_PREFIX) === true) {
+        event.preventDefault();
+        page.say(
+          key.kind === "delete"
+            ? FOLDER_DELETE_NOT_YET
+            : FOLDER_DUPLICATE_NOT_YET,
+        );
+        return;
+      }
       // A code (no target) is read-only here, as on the map.
       if (selection === null || scene.target(selection) === null) return;
       event.preventDefault();
