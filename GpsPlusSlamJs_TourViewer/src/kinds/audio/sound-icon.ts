@@ -77,6 +77,19 @@ export interface SoundIcon {
   dispose(): void;
 }
 
+/** The icon's group's name, which `showSoundIcons` finds it by. */
+const SOUND_ICON_NAME = "sound-icon";
+
+/**
+ * Show (true) or hide every speaker icon under `root` (the page's checks:
+ * the same pixels drawn with the icon and without it).
+ */
+export function showSoundIcons(root: Object3D, on: boolean): void {
+  root.traverse((o) => {
+    if (o.name === SOUND_ICON_NAME) o.visible = on;
+  });
+}
+
 const BACKGROUND = 0x1f2430;
 const GLYPH = 0xffd27a;
 
@@ -101,7 +114,7 @@ const camQ = new Quaternion();
 /** The icon, `SOUND_ICON.sizeM` across until its first `update`. */
 export function soundIcon(): SoundIcon {
   const object = new Group();
-  object.name = "sound-icon";
+  object.name = SOUND_ICON_NAME;
   const face = new Group();
   object.add(face);
   const geometries: BufferGeometry[] = [];

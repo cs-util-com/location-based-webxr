@@ -212,8 +212,8 @@ surfaceShadow }`, or null where the ground sky cannot draw).
   and null above it: the tree's "+" then says to come closer instead of
   adding a station kilometres in the air.
 - Editing is the OrbitControls view's (`createSceneEditing`): `turn`,
-  `cancelGesture`, `handleScreen`, `underAt`, `gizmoSizes`, `modelParts` and
-  `modelScreenOf` are the editing's. Its camera leases the globe's
+  `cancelGesture`, `handleScreen`, `underAt`, `gizmoSizes`, `modelParts`,
+  `showSoundIcons` and `modelScreenOf` are the editing's. Its camera leases the globe's
   controls off for a handle drag (`GlobeCameraControls.lease`), and the
   view's `gestureBusy` is true while the controls or an edit's gesture
   run, so the world frame recentres only between gestures. The ECEF

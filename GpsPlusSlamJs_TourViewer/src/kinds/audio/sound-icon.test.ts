@@ -17,7 +17,12 @@ import {
 } from "three";
 import { describe, expect, it } from "vitest";
 
-import { SOUND_ICON, soundIcon, soundIconSizeM } from "./sound-icon.js";
+import {
+  SOUND_ICON,
+  showSoundIcons,
+  soundIcon,
+  soundIconSizeM,
+} from "./sound-icon.js";
 
 /** Metres per CSS px at 1 m through a vertical lens of `fovDeg` over a
  *  view `heightPx` tall. */
@@ -99,5 +104,30 @@ describe("the speaker icon", () => {
     });
     expect(meshes).toBeGreaterThan(0);
     icon.dispose();
+  });
+});
+
+// Why: the e2e proves the icon is seen over the relief by drawing the same
+// pixels with it and without it; this holds that the switch reaches every
+// icon under a root, at any depth, and touches nothing else.
+describe("showSoundIcons", () => {
+  it("hides and shows every icon under a root and leaves the rest alone", () => {
+    const root = new Group();
+    const other = new Group();
+    const nested = new Group();
+    const a = soundIcon();
+    const b = soundIcon();
+    root.add(a.object, nested, other);
+    nested.add(b.object);
+    showSoundIcons(root, false);
+    expect(a.object.visible).toBe(false);
+    expect(b.object.visible).toBe(false);
+    expect(other.visible).toBe(true);
+    expect(nested.visible).toBe(true);
+    showSoundIcons(root, true);
+    expect(a.object.visible).toBe(true);
+    expect(b.object.visible).toBe(true);
+    a.dispose();
+    b.dispose();
   });
 });

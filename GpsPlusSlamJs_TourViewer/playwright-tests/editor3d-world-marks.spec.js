@@ -154,18 +154,21 @@ const TOP_DISTANCE_M = 60;
  *  of it, and well under the camera. */
 const RELIEF_ABOVE_STATIONS_M = 8;
 
+/** Half the side of the square of pixels read round the icon's middle
+ *  (CSS px): 17 px across, inside the icon's 48 px disc. */
+const BOX_HALF_PX = 8;
+
 /**
- * The share of the pixels within 8 px of (`x`, `y`) on the canvas (CSS px)
- * that are the icon's colours: its dark blue-grey disc (all channels under
- * 90, blue over red) or its amber speaker (red over 190, red over blue by
- * 70). The relief's grey and the station's blue ring are neither. From a
- * screenshot: a software-drawn WebGL keeps no drawing buffer to read back.
+ * The pixels within `BOX_HALF_PX` of (`x`, `y`) on the canvas (CSS px),
+ * as RGBA bytes. From a screenshot: a software-drawn WebGL keeps no drawing
+ * buffer to read back.
  * @param {import("@playwright/test").Page} page
  * @param {{ x: number, y: number }} canvas the canvas's place on the page
  * @param {readonly [number, number]} at
+ * @returns {Promise<number[]>}
  */
-async function iconColourShare(page, canvas, at) {
-  const R = 8;
+async function pixelsAround(page, canvas, at) {
+  const R = BOX_HALF_PX;
   const png = await page.screenshot({
     clip: {
       x: canvas.x + at[0] - R,
@@ -183,27 +186,63 @@ async function iconColourShare(page, canvas, at) {
     const context = canvas.getContext("2d");
     if (context === null) throw new Error("no 2d context");
     context.drawImage(bitmap, 0, 0);
-    const { data } = context.getImageData(0, 0, bitmap.width, bitmap.height);
-    let icon = 0;
-    for (let i = 0; i < data.length; i += 4) {
-      const r = data[i] ?? 0;
-      const g = data[i + 1] ?? 0;
-      const b = data[i + 2] ?? 0;
-      const disc = r < 90 && g < 90 && b < 90 && b > r;
-      const speaker = r > 190 && r - b > 70;
-      if (disc || speaker) icon++;
-    }
-    return icon / (data.length / 4);
+    return [...context.getImageData(0, 0, bitmap.width, bitmap.height).data];
   }, png.toString("base64"));
+}
+
+/**
+ * The share of the pixels that the icon turned into its own colours: they
+ * differ from the same pixels drawn without it (by over 48 in the sum of
+ * the channels), and `shown` has them in the icon's colours - its dark
+ * blue-grey disc (all channels under 90, blue over red) or its amber
+ * speaker and rim (red over 190, red over blue by 70). Whatever else is
+ * drawn there (the relief, a ring in the same amber) is in both and does
+ * not count.
+ * @param {readonly number[]} shown
+ * @param {readonly number[]} hidden
+ */
+function iconShare(shown, hidden) {
+  let icon = 0;
+  for (let i = 0; i < shown.length; i += 4) {
+    const r = shown[i] ?? 0;
+    const g = shown[i + 1] ?? 0;
+    const b = shown[i + 2] ?? 0;
+    const changed =
+      Math.abs(r - (hidden[i] ?? 0)) +
+        Math.abs(g - (hidden[i + 1] ?? 0)) +
+        Math.abs(b - (hidden[i + 2] ?? 0)) >
+      48;
+    const disc = r < 90 && g < 90 && b < 90 && b > r;
+    const speaker = r > 190 && r - b > 70;
+    if (changed && (disc || speaker)) icon++;
+  }
+  return icon / (shown.length / 4);
+}
+
+/**
+ * The sounds' speaker icons shown or hidden, a few frames drawn after.
+ * @param {import("@playwright/test").Page} page
+ * @param {boolean} on
+ */
+async function soundIcons(page, on) {
+  await page.evaluate(
+    (shown) => /** @type {any} */ (window).__tourEditor.view3dSoundIcons(shown),
+    on,
+  );
+  await afterFrames(page, 4);
 }
 
 // Why: the claim the icon exists for. The relief stands 8 m above the
 // station, so it is in front of the whole icon from the top view; the
-// pixels at the icon's middle must still be the icon's own. Drawn with a
-// depth test the relief's grey would show there instead. The older view:
-// on the globe a street-level camera looks over coarse tiles that sag
-// below the stations (see the found-radius spec), and the globe draws the
-// same material (`isInterfacePart`).
+// pixels at the icon's middle must still be the icon's own. The same
+// pixels are read with the icon and without it, in the one view: the
+// station's selected ring passes under the icon in the same amber, so a
+// sample elsewhere on the screen (the first control, 120 px away, fell on
+// that ring) says nothing. Drawn with a depth test the relief hides the
+// icon and the two reads are the same. The older view: on the globe a
+// street-level camera looks over coarse tiles that sag below the stations
+// (see the found-radius spec), and the globe draws the same material
+// (`isInterfacePart`).
 test("an ambient sound's icon is seen where the relief stands in front of it", async ({
   page,
 }) => {
@@ -248,17 +287,16 @@ test("an ambient sound's icon is seen where the relief stands in front of it", a
   expect(middle, "no point of the canvas reaches the sound").not.toBeNull();
   const canvas = await page.locator("#view3d canvas").boundingBox();
   if (canvas === null || middle === null) throw new Error("no canvas");
-  const share = await iconColourShare(page, canvas, middle);
-  // Measured with the icon drawn: most of the 17 px square; with a depth
-  // test the relief hides it and the share is 0.
-  expect(share).toBeGreaterThan(0.5);
-  // Away from the icon, on the relief, the colours are not the icon's:
-  // the check tells the icon from the ground.
-  const away = await iconColourShare(page, canvas, [
-    middle[0] + 120,
-    middle[1],
-  ]);
-  expect(away).toBeLessThan(0.1);
+  const shown = await pixelsAround(page, canvas, middle);
+  await soundIcons(page, false);
+  const hidden = await pixelsAround(page, canvas, middle);
+  await soundIcons(page, true);
+  // Measured at 40, 60 and 90 m, boxes 9 to 33 px across and change
+  // tolerances 24 to 96: 0.59 to 0.92 with the icon drawn (0.85 here), and
+  // 0 everywhere with a depth test, where the relief hides it. The ring's
+  // amber under the icon alone fills 0.12 to 0.43 of the box.
+  // Two reads with the icon drawn did not differ in any pixel.
+  expect(iconShare(shown, hidden)).toBeGreaterThan(0.5);
   expect(await rejections(page)).toEqual([]);
 });
 

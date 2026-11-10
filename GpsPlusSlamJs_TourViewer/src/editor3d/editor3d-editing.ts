@@ -40,6 +40,7 @@ import {
   type ModelPick,
 } from "../editor/editor-view.js";
 import type { ModelEdit } from "../editor/model-edits.js";
+import { showSoundIcons } from "../kinds/audio/sound-icon.js";
 import { worldBlocks } from "../tour-document.js";
 import {
   clampedPose,
@@ -631,6 +632,10 @@ export function createSceneEditing(deps: SceneEditingDeps) {
     /** For the page's checks: the selected model's note discs on the
      *  canvas and its section planes. */
     modelParts: () => parts.stats(),
+    /** Show or hide the sounds' speaker icons (the page's checks). */
+    showSoundIcons(on: boolean): void {
+      showSoundIcons(deps.scene, on);
+    },
     /** Where a point of a drawn model (its own space) is on the screen,
      *  or null (the page's checks click its surface there). */
     modelScreenOf(

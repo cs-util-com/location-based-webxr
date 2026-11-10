@@ -22,6 +22,10 @@ sees it.
   group (named `sound-icon`) whose foot is at the origin; `update` reads
   `{ camera?, metresPerPxAtOneM? }` (a `WorldFrame` fits); `dispose`
   frees its geometries and materials.
+- `showSoundIcons(root, on)` - shows or hides every icon under `root`
+  (found by its group's name), for the page's checks: the editor's
+  `view3dSoundIcons` hook draws the same pixels with the icon and without
+  it (`editor3d-world-marks.spec.js`).
 
 ## Invariants & assumptions
 
@@ -55,5 +59,6 @@ icon.update({ camera, metresPerPxAtOneM });
 50 and 70 degree lenses over 600 and 844 px views, its world size near,
 the fallback for bad input, facing the camera through a turned parent at
 the right size, standing still without a camera, no depth test, and its
-draw order between the rings and the gizmo.
+draw order between the rings and the gizmo, and `showSoundIcons` reaching
+every icon under a root and nothing else.
 `zone.test.ts` and `spot.test.ts`: worn in the editor only.

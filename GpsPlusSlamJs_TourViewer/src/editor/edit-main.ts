@@ -679,6 +679,7 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
           id: string,
           at: readonly [number, number, number],
         ) => readonly [number, number] | null;
+        view3dSoundIcons: (on: boolean) => void;
         manifest: () => ReturnType<typeof manifestToWrite>;
         selected: () => string | null;
         dropTour: (reason: string) => void;
@@ -710,6 +711,9 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
     view3dGizmoSizes: () => shown3d?.gizmoSizes() ?? null,
     view3dModelParts: () => shown3d?.modelParts() ?? null,
     view3dModelScreen: (id, at) => shown3d?.modelScreenOf(id, at) ?? null,
+    view3dSoundIcons: (on) => {
+      shown3d?.showSoundIcons(on);
+    },
     manifest: () => manifestToWrite(store.getState().tourDocument),
     selected: () => ui().selected,
     // What a late integrity failure does to the open tour (`openFile`'s

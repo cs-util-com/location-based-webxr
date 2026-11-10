@@ -852,7 +852,9 @@ view3dGizmoSizes(), manifest(), selected(), dropTour(reason) }`): an e2e reaches
 The shell's and the 3D view's `model` edits go through
 `writeInspectorEdit` to the session's `editModel` (a refusal toasted).
 The dev hook adds `view3dModelParts()` and
-`view3dModelScreen(id, at)` for `editor3d-model.spec.js`.
+`view3dModelScreen(id, at)` for `editor3d-model.spec.js`;
+`view3dSoundIcons(on)` for `editor3d-world-marks.spec.js` (the same
+pixels with the sounds' icons and without them).
 
 ### Stories in the tree
 

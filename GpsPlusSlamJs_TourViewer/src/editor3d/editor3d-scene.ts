@@ -261,6 +261,9 @@ export interface Editor3dView {
     readonly discs: readonly (readonly [number, number] | null)[];
     readonly planes: number;
   };
+  /** Show (true) or hide every sound's speaker icon (the page's checks:
+   *  the same pixels with the icon and without it). */
+  showSoundIcons(on: boolean): void;
   /** Where a point of a drawn model (its own space) is on the canvas
    *  (CSS px), or null until it is drawn (the page's checks). */
   modelScreenOf(
@@ -869,6 +872,9 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
       underAt: (x, y) => editing.underAt({ x, y }),
       gizmoSizes: () => editing.handleSizes(),
       modelParts: () => editing.modelParts(),
+      showSoundIcons: (on) => {
+        editing.showSoundIcons(on);
+      },
       modelScreenOf(id, at) {
         const p = editing.modelScreenOf(id, at);
         return p === null ? null : [p.x, p.y];

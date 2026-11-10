@@ -1652,6 +1652,9 @@ export async function openGlobeEditor(
       underAt: (x, y) => editing.underAt({ x, y }),
       gizmoSizes: () => editing.handleSizes(),
       modelParts: () => editing.modelParts(),
+      showSoundIcons: (on) => {
+        editing.showSoundIcons(on);
+      },
       modelScreenOf(id, at) {
         const p = editing.modelScreenOf(id, at);
         return p === null ? null : [p.x, p.y];
