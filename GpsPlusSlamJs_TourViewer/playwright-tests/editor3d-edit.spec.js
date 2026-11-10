@@ -345,6 +345,47 @@ test("a drag on the selected pin's body turns the camera and leaves the pin; a t
   expect(horizontalM(before.item, after.item)).toBeGreaterThan(0.5);
 });
 
+// Why: the move disc of a selected station covers whatever stands at its
+// middle (the sample's cards stand at their station's point). A press there
+// on another item must select that item, as a tap does anywhere else: the
+// disc moves only where nothing else is under the pointer.
+test("a tap on another item inside the selected station's move disc selects it", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const station = await openWithPin(page);
+  await page.locator(`#tree-body [data-select="station:${station}"]`).click();
+  await expect.poll(() => selected(page)).toBe(`station:${station}`);
+  await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
+  // The sample's stations are locked, and a locked station has no disc.
+  const lock = page.locator("#shell-inspector [data-act='lock']");
+  await expect(lock).toHaveAttribute("aria-pressed", "true");
+  await lock.click();
+  await expect(lock).toHaveAttribute("aria-pressed", "false");
+  await handle(page, "middle");
+  const steps = await changes(page);
+  // A point where the press meets both the pin and the station's disc.
+  const at = await page.evaluate((id) => {
+    const hook = /** @type {any} */ (window).__tourEditor;
+    const centre = hook.view3dScreenOf(id);
+    if (centre === null) return null;
+    for (let r = 0; r <= 120; r += 2) {
+      for (let a = 0; a < 360; a += 10) {
+        const x = centre[0] + r * Math.cos((a * Math.PI) / 180);
+        const y = centre[1] + r * Math.sin((a * Math.PI) / 180);
+        const under = hook.view3dUnder(x, y);
+        if (under?.pick === id && under.onDisc === true) return [x, y];
+      }
+    }
+    return null;
+  }, PIN);
+  expect(at, "no point meets both the pin and the disc").not.toBeNull();
+  const tap = await onPage(page, at);
+  await page.mouse.click(tap.x, tap.y);
+  await expect.poll(() => selected(page)).toBe(PIN);
+  expect(await changes(page)).toBe(steps);
+});
+
 /**
  * Where a tap reaches the pin with nothing selected (no disc drawn): the
  * nearest canvas point to its own that picks it (a character standing

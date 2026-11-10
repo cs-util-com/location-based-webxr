@@ -33,9 +33,12 @@ sees it.
   waves), no canvas, so it draws and is tested the same in Node.
 - Every mesh has `depthTest: false`: the relief and buildings never hide
   it.
-- Every mesh draws at render order 20.5 (module-private): after the scene
-  and the found-radius rings (20), so it never ties with a ring, and
-  before the gizmo (21 and up), so the gizmo's disc stays on top.
+- Every mesh draws at render order 21.5 (module-private): after the scene,
+  the found-radius rings (20) and the gizmo's move disc (21), and before
+  the gizmo's ring and stalk (22) and its handles. Another item under the
+  pointer takes the press over the selected item's disc (`handleAt`), so
+  the icon is drawn on top of the disc where it wins the press
+  (`editor3d-gizmo.test.ts` pins the order against the disc's).
 - Facing: its face's turn is its parent's world turn undone, then the
   camera's, so it faces the camera through any turned parent.
 - Its size is worked out from where its middle stood the frame before (a

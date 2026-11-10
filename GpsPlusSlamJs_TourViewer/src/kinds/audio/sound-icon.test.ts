@@ -86,7 +86,7 @@ describe("the speaker icon", () => {
     icon.dispose();
   });
 
-  it("stands still without a camera, and draws over the ground between the rings and the gizmo", () => {
+  it("stands still without a camera, and draws over the ground between the move disc and the gizmo's ring", () => {
     const icon = soundIcon();
     icon.update({});
     const face = icon.object.children[0];
@@ -97,10 +97,11 @@ describe("the speaker icon", () => {
       meshes++;
       const material = o.material as MeshBasicMaterial;
       expect(material.depthTest).toBe(false);
-      // After the found-radius rings (20), never tied with them; before the
-      // gizmo's disc (21), so the gizmo stays on top.
-      expect(o.renderOrder).toBeGreaterThan(20);
-      expect(o.renderOrder).toBeLessThan(21);
+      // After the found-radius rings (20) and the gizmo's move disc (21),
+      // so a press on the icon over the disc takes what is seen; before
+      // the gizmo's ring and stalk (22).
+      expect(o.renderOrder).toBeGreaterThan(21);
+      expect(o.renderOrder).toBeLessThan(22);
     });
     expect(meshes).toBeGreaterThan(0);
     icon.dispose();

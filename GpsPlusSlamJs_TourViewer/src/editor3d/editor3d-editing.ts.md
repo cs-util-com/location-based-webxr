@@ -101,10 +101,6 @@ pure gesture maths reads (`GestureWorld`).
   distance, a twist turns the azimuth, a pan keeps the ground under the
   fingers' midpoint (on the level plane at the orbit's centre); every
   step within the orbit's limits (`clampedPose`).
-- The gizmo's hit test (`handleAt`) reads `layer.pickDrawn`: another
-  item under the pointer refuses the move disc only when it is drawn after
-  the disc (a higher render order, such as a station's billboard); a mark
-  the disc is drawn over (a sound's icon) leaves the press to the disc.
 - `stationLocked(stationId)` (a dependency, the page's view state): a station's target carries `locked`, its layout is not posable, and `handleAt` is asked with `posable`, so a locked station's gizmo is its radius dots alone.
 
 ## Examples

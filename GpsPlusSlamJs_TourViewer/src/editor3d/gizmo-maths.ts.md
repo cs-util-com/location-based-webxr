@@ -30,13 +30,14 @@ layout, `editor3d-input.ts` feeds the pointer and the keys.
   is the tour's own), the move disc, the four dots (a station or a model,
   at heading + 45 + i x 90 degrees), the knob along the heading, the
   stalk. RangeError for a scale that is not finite and > 0.
-- `handleAt({ pointer, knob, dots, onDisc, underPointer, otherOverDisc, posable })` -> `"move"`,
+- `handleAt({ pointer, knob, dots, onDisc, underPointer })` -> `"move"`,
   `"turn"`, `"dot"` or null (the camera's): the knob and the dots first
   (the nearest within half its drawn size), then another object under
-  the pointer (no handle, so a click selects it) unless the disc is drawn
-  over it there (`otherOverDisc: false`: another item's mark below the
-  disc in the draw order, such as a sound's icon), then the move disc. The
-  disc alone moves: the selected object's body off the disc is no handle
+  the pointer (no handle, so a click selects it, even over the disc), then
+  the move disc. What another item draws without a depth test is therefore
+  drawn over the disc (a sound's icon at 21.5 against the disc's 21,
+  `editor3d-gizmo.test.ts`), so the creator sees on top what a press
+  takes. The disc alone moves: the selected object's body off the disc is no handle
   (a tap selects, a drag turns the camera), and the disc moves even where
   that body covers it.
 - `turnedHeadingDeg(heading, fromDeg, toDeg, snap)`: whole degrees, 15
@@ -87,7 +88,7 @@ sceneKey({
 minimum sizes, and the move disc's touch size swept over camera
 distances of 5-300 m; the hit order, one case per thing under a press
 (the body, the disc, the disc under the body, the knob, a dot, another
-item, another item drawn beneath the disc, empty ground); the turn, radius and size rules with
+item, empty ground); the turn, radius and size rules with
 their bounds; every key of the design and the keys left to others; and a
 property: the knob's distance and bearing from the centre and the parts'
 bounds over random subjects and scales.

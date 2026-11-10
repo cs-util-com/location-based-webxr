@@ -48,7 +48,9 @@ gizmo.update({ layout, spritePerPx, groundY, hovered: "turn" });
 `editor3d-gizmo.test.ts` (plain textures, Node has no canvas): a
 station's knob, dots and disc where the layout has them and no ring; a
 pin's ring and no dots, the hovered knob larger; everything hidden
-without a selection and out of the scene once disposed. The on-screen
+without a selection and out of the scene once disposed; the move disc
+drawn under a sound's icon and its ring and stalk over it (what another
+item draws over the disc takes the press, `handleAt`). The on-screen
 sizes in a browser: `playwright-tests/editor3d-edit.spec.js`.
 
 A locked station's drawing is checked in `editor3d-edit.spec.js` (no knob and no middle on the screen, the dots shown).

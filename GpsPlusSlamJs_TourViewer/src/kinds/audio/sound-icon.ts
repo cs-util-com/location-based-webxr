@@ -36,10 +36,11 @@ export const SOUND_ICON = Object.freeze({
   liftM: 0.6,
 });
 
-/** Draws after the scene's default order and the found-radius rings (20),
- *  so it never ties with a ring, and before the gizmo (21 and up), so the
- *  gizmo's disc stays on top. */
-const SOUND_ICON_RENDER_ORDER = 20.5;
+/** Draws after the scene's default order, the found-radius rings (20) and
+ *  the gizmo's move disc (21): another item takes a press on it even over
+ *  the selected item's disc, so it is drawn on top there, as seen. Before
+ *  the gizmo's ring and stalk (22) and its handles. */
+const SOUND_ICON_RENDER_ORDER = 21.5;
 
 /**
  * The icon's diameter (m) seen `distanceM` from the camera through a lens

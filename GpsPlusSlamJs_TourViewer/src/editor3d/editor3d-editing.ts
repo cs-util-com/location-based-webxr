@@ -417,14 +417,8 @@ export function createSceneEditing(deps: SceneEditingDeps) {
       if (layout === null) return null;
       const ray = rayAt(pointer);
       const selection = deps.page.selected();
-      const drawn = layer.pickDrawn(ray);
-      const under = drawn?.pick ?? null;
+      const under = layer.pick(ray);
       const onDisc = ray.intersectObject(gizmo.parts.disc).length > 0;
-      // The disc is drawn over everything below its own render order, so
-      // only a part drawn after it hides it from the pointer.
-      const otherOverDisc =
-        drawn?.drawnOrder != null &&
-        drawn.drawnOrder > gizmo.parts.disc.renderOrder;
       return handleAt({
         pointer,
         knob: gizmo.parts.knob.visible
@@ -439,7 +433,6 @@ export function createSceneEditing(deps: SceneEditingDeps) {
         onDisc,
         underPointer:
           under === null ? null : under === selection ? "selected" : "other",
-        otherOverDisc,
         posable: layout.posable,
       });
     },
