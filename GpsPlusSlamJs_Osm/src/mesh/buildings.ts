@@ -161,23 +161,16 @@ export interface BuildBuildingsOptions {
 }
 
 /**
- * Extrudes every building in `features`, honouring `building:part`.
- *
- * Features that are not buildings are ignored. A feature whose geometry cannot
- * be built is skipped rather than throwing — same contract as the rest of the
- * package, because the planet contains relations that cannot be closed.
+ * The volume of every outline that is drawn: its library volume, or with
+ * `inventedRoofs` its invented roof or lid where it has a plan.
  */
-export function buildBuildings(
-  features: Iterable<OsmFeature>,
+function outlineVolumes(
+  outlines: readonly Footprint[],
+  parts: readonly Footprint[],
+  claimed: ReadonlySet<OsmFeatureKey>,
+  partsByOutline: ReadonlyMap<OsmFeatureKey, readonly Footprint[]>,
   options: BuildBuildingsOptions,
 ): BuildingVolume[] {
-  const { outlines, parts } = collectFootprints(features, options.frame);
-  const { claimed, partsByOutline } = assignPartsToOutlines(
-    outlines,
-    parts,
-    options.partCoverageToHideOutline,
-  );
-
   const volumes: BuildingVolume[] = [];
   const invented =
     options.inventedRoofs === true
@@ -185,7 +178,6 @@ export function buildBuildings(
           inventedFootprints(outlines, parts, partsByOutline, claimed),
         )
       : undefined;
-
   for (const outline of outlines) {
     const key = featureKey(outline.feature);
     // A building whose parts FILL it is not extruded itself — the parts replace
@@ -228,6 +220,34 @@ export function buildBuildings(
         : inventedVolume(outline.feature, outline.polygons, plan, ground),
     );
   }
+  return volumes;
+}
+
+/**
+ * Extrudes every building in `features`, honouring `building:part`.
+ *
+ * Features that are not buildings are ignored. A feature whose geometry cannot
+ * be built is skipped rather than throwing — same contract as the rest of the
+ * package, because the planet contains relations that cannot be closed.
+ */
+export function buildBuildings(
+  features: Iterable<OsmFeature>,
+  options: BuildBuildingsOptions,
+): BuildingVolume[] {
+  const { outlines, parts } = collectFootprints(features, options.frame);
+  const { claimed, partsByOutline } = assignPartsToOutlines(
+    outlines,
+    parts,
+    options.partCoverageToHideOutline,
+  );
+
+  const volumes = outlineVolumes(
+    outlines,
+    parts,
+    claimed,
+    partsByOutline,
+    options,
+  );
 
   // INDEXED ONCE, for the same reason as `placed` below. `outlineOf` did
   // `outlines.find(...)` — recomputing `featureKey` (a template-literal string

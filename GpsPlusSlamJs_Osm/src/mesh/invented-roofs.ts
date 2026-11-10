@@ -160,18 +160,25 @@ function planOne(
       heightM: refusedHeightM(tags, area, key, prior, params),
     };
   }
-  const rings = orientedRings(given, params.simplifyToleranceM);
+  return roofFor(footprint, area, walls, params);
+}
+
+/** The roof of a building granted one, or a lid when no sound roof fits. */
+function roofFor(
+  footprint: InventedFootprint,
+  area: number,
+  walls: SegmentGrid,
+  params: RoofscapeParams,
+): InventedPlan | undefined {
+  const { key, tags } = footprint;
+  const rings = orientedRings(
+    footprint.polygons[0] ?? [],
+    params.simplifyToleranceM,
+  );
   if (rings === undefined) return undefined;
   const outer = rings[0] as EnuPoint[];
   const shared = sharedWalls(outer, key, walls.near(outer), params);
-  const sacred = isSacred(tags);
-  const tan = sacred
-    ? params.sacredTan
-    : params.tanMin +
-      mixedUnit(key, "roofscape-pitch") * (params.tanMax - params.tanMin);
-  const wantsGable =
-    sacred || mixedUnit(key, "roofscape-gable") < params.gableShare;
-  const best = bestRoof(rings, shared, { wantsGable, tan }, params);
+  const best = bestRoof(rings, shared, houseOf(tags, key, params), params);
   const eave = inventedEaveHeightM(tags, area, key);
   if (best === undefined) {
     return { kind: "lid", why: "no sound roof", heightM: eave };
@@ -182,6 +189,21 @@ function planOne(
   const eaveM =
     stated !== undefined && stated > 0 ? Math.max(2, stated - rise) : eave;
   return { kind: "roof", rings, ...best, eaveM, totalM: eaveM + rise };
+}
+
+/** The seeded slope and gable wish of one house; a sacred building's are fixed. */
+function houseOf(
+  tags: OsmTags,
+  key: string,
+  params: RoofscapeParams,
+): { readonly wantsGable: boolean; readonly tan: number } {
+  if (isSacred(tags)) return { wantsGable: true, tan: params.sacredTan };
+  return {
+    wantsGable: mixedUnit(key, "roofscape-gable") < params.gableShare,
+    tan:
+      params.tanMin +
+      mixedUnit(key, "roofscape-pitch") * (params.tanMax - params.tanMin),
+  };
 }
 
 /**
@@ -211,6 +233,36 @@ interface BestRoof {
   readonly tan: number;
 }
 
+type Rings = readonly (readonly EnuPoint[])[];
+
+/** The outer walls standing vertical, and the style that makes. */
+interface VerticalWalls {
+  readonly zero: ReadonlySet<number>;
+  readonly style: InventedRoof["style"];
+}
+
+/**
+ * One skeleton run with the outer walls in `zero` vertical, or undefined:
+ * any failure means "not this run", and the next one, or a lid, follows.
+ */
+function runSkeleton(
+  over: Rings,
+  zero: ReadonlySet<number>,
+  maxT?: number,
+): SkeletonRoof | undefined {
+  try {
+    const roof = skeletonRoof(over, {
+      weights: over.map((ring, r) =>
+        ring.map((_, i) => (r === 0 && zero.has(i) ? 0 : 1)),
+      ),
+      ...(maxT === undefined ? {} : { maxT }),
+    });
+    return roof.ridgeT > 0 ? roof : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * The most house-like roof the footprint takes: vertical on shared walls
  * (else none), gables on chosen wing ends when the house wants them and the
@@ -219,7 +271,7 @@ interface BestRoof {
  * cut flat at `maxRiseM` instead. Undefined when no run is sound.
  */
 function bestRoof(
-  rings: readonly (readonly EnuPoint[])[],
+  rings: Rings,
   shared: readonly boolean[],
   house: { readonly wantsGable: boolean; readonly tan: number },
   params: RoofscapeParams,
@@ -228,65 +280,68 @@ function bestRoof(
   shared.forEach((is, i) => {
     if (is) sharedSet.add(i);
   });
-  const run = (
-    over: readonly (readonly EnuPoint[])[],
-    zero: ReadonlySet<number>,
-    maxT?: number,
-  ): SkeletonRoof | undefined => {
-    try {
-      const roof = skeletonRoof(over, {
-        weights: over.map((ring, r) =>
-          ring.map((_, i) => (r === 0 && zero.has(i) ? 0 : 1)),
-        ),
-        ...(maxT === undefined ? {} : { maxT }),
-      });
-      return roof.ridgeT > 0 ? roof : undefined;
-    } catch {
-      // Any failure means "not this run": the next one, or a lid, follows.
-      return undefined;
-    }
-  };
+  const walls = verticalWalls(rings, shared, sharedSet, house, params);
+  if (walls === undefined) return undefined;
+  const fit = (over: Rings) =>
+    fitRoof(over, walls, sharedSet, house.tan, params);
+  const eaved = eaveRings(rings, walls.zero, params.overhangM);
+  return (eaved === undefined ? undefined : fit(eaved)) ?? fit(rings);
+}
 
+/**
+ * Which outer walls stand vertical: the shared ones if a run with them is
+ * sound (else none), plus the chosen gable ends if the house wants gables
+ * and a run with them is sound too. Undefined when no run at all is sound.
+ */
+function verticalWalls(
+  rings: Rings,
+  shared: readonly boolean[],
+  sharedSet: ReadonlySet<number>,
+  house: { readonly wantsGable: boolean },
+  params: RoofscapeParams,
+): VerticalWalls | undefined {
   let zero: ReadonlySet<number> = sharedSet;
-  let roof = run(rings, zero);
+  let roof = runSkeleton(rings, zero);
   if (roof === undefined && zero.size > 0) {
     zero = new Set();
-    roof = run(rings, zero);
+    roof = runSkeleton(rings, zero);
   }
   if (roof === undefined) return undefined;
-  let style: InventedRoof["style"] = zero.size > 0 ? "shared" : "hip";
-  if (house.wantsGable) {
-    const ends = chooseGableEnds(
-      wingEnds(roof),
-      rings[0] ?? [],
-      shared,
-      params,
-    );
-    if (ends.size > 0) {
-      const withEnds = new Set([...zero, ...ends]);
-      if (run(rings, withEnds) !== undefined) {
-        zero = withEnds;
-        style = "gable";
-      }
-    }
-  }
-
-  const finish = (
-    over: readonly (readonly EnuPoint[])[],
-  ): BestRoof | undefined => {
-    const whole = run(over, zero);
-    if (whole === undefined) return undefined;
-    const fitted = Math.min(house.tan, params.maxRiseM / whole.ridgeT);
-    if (fitted >= params.tanFloor) {
-      return { style, roofRings: over, roof: whole, tan: fitted };
-    }
-    // Too wide for a whole roof: slopes up to the limit, a flat top after it.
-    const cut = run(over, sharedSet, params.maxRiseM / params.tanFloor);
-    if (cut === undefined) return undefined;
-    return { style: "cut", roofRings: over, roof: cut, tan: params.tanFloor };
+  const plain: VerticalWalls = {
+    zero,
+    style: zero.size > 0 ? "shared" : "hip",
   };
-  const eaved = eaveRings(rings, zero, params.overhangM);
-  return (eaved === undefined ? undefined : finish(eaved)) ?? finish(rings);
+  if (!house.wantsGable) return plain;
+  const ends = chooseGableEnds(wingEnds(roof), rings[0] ?? [], shared, params);
+  if (ends.size === 0) return plain;
+  const withEnds = new Set([...zero, ...ends]);
+  return runSkeleton(rings, withEnds) === undefined
+    ? plain
+    : { zero: withEnds, style: "gable" };
+}
+
+/**
+ * The roof over `over` with `walls` vertical, its slope flattened to keep the
+ * rise within `maxRiseM`; below `tanFloor` it is cut flat at the limit
+ * instead (shared walls vertical, no gables). Undefined when no run is sound.
+ */
+function fitRoof(
+  over: Rings,
+  walls: VerticalWalls,
+  sharedSet: ReadonlySet<number>,
+  tan: number,
+  params: RoofscapeParams,
+): BestRoof | undefined {
+  const whole = runSkeleton(over, walls.zero);
+  if (whole === undefined) return undefined;
+  const fitted = Math.min(tan, params.maxRiseM / whole.ridgeT);
+  if (fitted >= params.tanFloor) {
+    return { style: walls.style, roofRings: over, roof: whole, tan: fitted };
+  }
+  // Too wide for a whole roof: slopes up to the limit, a flat top after it.
+  const cut = runSkeleton(over, sharedSet, params.maxRiseM / params.tanFloor);
+  if (cut === undefined) return undefined;
+  return { style: "cut", roofRings: over, roof: cut, tan: params.tanFloor };
 }
 
 /** The rings the eaves follow: slopes reach past the wall, gables do not. */

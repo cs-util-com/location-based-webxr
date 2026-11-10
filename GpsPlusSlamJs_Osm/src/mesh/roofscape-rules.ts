@@ -199,17 +199,25 @@ export function keepReason(
   if (isPart(tags)) return "part";
   if (context.belowSurface) return "below surface";
   if (context.hasParts) return "parts";
-  if (tags["roof:shape"] !== undefined) return "tagged roof";
-  if (tags["roof:height"] !== undefined || tags["roof:levels"] !== undefined) {
-    return "tagged roof";
-  }
-  if ((parseLengthMetres(tags["min_height"]) ?? 0) > 0) return "floating";
-  if (Number(tags["building:min_level"]) > 0) return "floating";
-  if (NEVER_PITCHED.has(tags["building"] ?? "")) return "no roof by class";
+  const tagged = taggedKeepReason(tags);
+  if (tagged !== undefined) return tagged;
   const height = taggedHeightM(tags);
   return height !== undefined && height > context.heightLimitM
     ? "tall"
     : undefined;
+}
+
+/** The keep reasons the building's own roof, base and class tags give. */
+function taggedKeepReason(tags: OsmTags): KeepReason | undefined {
+  const roofTagged =
+    tags["roof:shape"] !== undefined ||
+    tags["roof:height"] !== undefined ||
+    tags["roof:levels"] !== undefined;
+  if (roofTagged) return "tagged roof";
+  if ((parseLengthMetres(tags["min_height"]) ?? 0) > 0) return "floating";
+  if (Number(tags["building:min_level"]) > 0) return "floating";
+  if (NEVER_PITCHED.has(tags["building"] ?? "")) return "no roof by class";
+  return undefined;
 }
 
 const between = (key: string, salt: string, low: number, high: number) =>
@@ -374,51 +382,87 @@ export function neighbourhoodPriors(
     if (list === undefined) grid.set(cell, [p]);
     else list.push(p);
   }
+  const candidates = (at: EnuPoint): PriorPoint[] => {
+    const cx = cellOf(at.x);
+    const cy = cellOf(at.y);
+    const out: PriorPoint[] = [];
+    for (let gx = cx - 1; gx <= cx + 1; gx++) {
+      for (let gy = cy - 1; gy <= cy + 1; gy++) {
+        out.push(...(grid.get(`${gx},${gy}`) ?? []));
+      }
+    }
+    return out;
+  };
 
   const priors = new Map<string, NeighbourhoodPrior>();
   for (const self of points) {
-    let roofs = 0;
-    let flat = 0;
-    let outlines = 0;
-    let tall = 0;
-    const heights: number[] = [];
-    const cx = cellOf(self.at.x);
-    const cy = cellOf(self.at.y);
-    for (let gx = cx - 1; gx <= cx + 1; gx++) {
-      for (let gy = cy - 1; gy <= cy + 1; gy++) {
-        for (const other of grid.get(`${gx},${gy}`) ?? []) {
-          const dx = other.at.x - self.at.x;
-          const dy = other.at.y - self.at.y;
-          if (dx * dx + dy * dy > radius * radius) continue;
-          if (other.roof !== undefined) {
-            roofs += 1;
-            if (other.roof === "flat") flat += 1;
-          }
-          if (!other.outline) continue;
-          outlines += 1;
-          if (other.height !== undefined) {
-            heights.push(other.height);
-            if (other.height >= params.tallM) tall += 1;
-          }
-        }
+    const tally: PriorTally = {
+      roofs: 0,
+      flat: 0,
+      outlines: 0,
+      tall: 0,
+      heights: [],
+    };
+    for (const other of candidates(self.at)) {
+      const dx = other.at.x - self.at.x;
+      const dy = other.at.y - self.at.y;
+      if (dx * dx + dy * dy <= radius * radius) {
+        countNeighbour(tally, other, params);
       }
     }
-    heights.sort((a, b) => a - b);
-    let pitched = true;
-    let why = "no evidence";
-    if (roofs >= params.priorMinEvidence) {
-      pitched = flat / roofs < params.flatShareMin;
-      why = pitched ? "pitched roofs nearby" : "flat roofs nearby";
-    } else if (
-      outlines >= params.priorMinEvidence &&
-      tall / outlines >= params.tallShareMin
-    ) {
-      pitched = false;
-      why = "tall neighbourhood";
-    }
-    priors.set(self.key, { pitched, why, heights });
+    priors.set(self.key, priorOf(tally, params));
   }
   return priors;
+}
+
+/** What one building's neighbourhood holds, counted for its prior. */
+interface PriorTally {
+  roofs: number;
+  flat: number;
+  outlines: number;
+  tall: number;
+  readonly heights: number[];
+}
+
+/** Counts one neighbour within the radius (the building itself included). */
+function countNeighbour(
+  tally: PriorTally,
+  other: PriorPoint,
+  params: RoofscapeParams,
+): void {
+  if (other.roof !== undefined) {
+    tally.roofs += 1;
+    if (other.roof === "flat") tally.flat += 1;
+  }
+  if (!other.outline) return;
+  tally.outlines += 1;
+  if (other.height === undefined) return;
+  tally.heights.push(other.height);
+  if (other.height >= params.tallM) tally.tall += 1;
+}
+
+/**
+ * The prior a tally gives: tagged roof shapes decide when there are enough
+ * of them, else a mostly tall neighbourhood reads as flat-roofed, else
+ * nothing is known.
+ */
+function priorOf(
+  tally: PriorTally,
+  params: RoofscapeParams,
+): NeighbourhoodPrior {
+  const heights = [...tally.heights].sort((a, b) => a - b);
+  if (tally.roofs >= params.priorMinEvidence) {
+    const pitched = tally.flat / tally.roofs < params.flatShareMin;
+    const why = pitched ? "pitched roofs nearby" : "flat roofs nearby";
+    return { pitched, why, heights };
+  }
+  if (
+    tally.outlines >= params.priorMinEvidence &&
+    tally.tall / tally.outlines >= params.tallShareMin
+  ) {
+    return { pitched: false, why: "tall neighbourhood", heights };
+  }
+  return { pitched: true, why: "no evidence", heights };
 }
 
 function pointLineGap(p: EnuPoint, a: EnuPoint, b: EnuPoint): number {
