@@ -33,6 +33,7 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-story";
 import { describe, expect, it } from "vitest";
 
+import { hostedObjects } from "./authoring-draft.js";
 import { presentWorldBlocks } from "./shown-blocks.js";
 import { stationContent, storyOf } from "./test-support/station-content.js";
 import { tourOf } from "./test-support/tour-of.js";
@@ -223,7 +224,9 @@ function wellChildren(manifest: TourManifest): string[] {
 }
 
 /** What a reload brings back (the draft's record and the objects'
- *  records, restored into a fresh open). */
+ *  records, restored into a fresh open): only the objects the file does
+ *  not already hold as they are, as a restore offers them
+ *  (`draftObjectsNotYetHosted`). */
 function reloaded(
   state: TourDocumentState,
   manifest: TourManifest,
@@ -233,12 +236,17 @@ function reloaded(
     manifest,
   );
   if (record === undefined) throw new Error("the record did not read");
+  const hosted = hostedObjects(manifest);
   return reduce(
     opened(manifest),
     act.restored({
-      objects: state.placed.map((p) =>
-        parseTourObject(JSON.parse(JSON.stringify(tourObjectRecord(p.object)))),
-      ),
+      objects: state.placed
+        .filter((p) => !hosted.holds(p.object))
+        .map((p) =>
+          parseTourObject(
+            JSON.parse(JSON.stringify(tourObjectRecord(p.object))),
+          ),
+        ),
       deleted: [...state.deleted],
       ...(record.frames === undefined ? {} : { frames: record.frames }),
       ...(record.order === undefined ? {} : { order: record.order }),

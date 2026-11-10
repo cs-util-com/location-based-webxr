@@ -33,6 +33,8 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-story";
 import { describe, expect, it } from "vitest";
 
+import { hostedObjects } from "./authoring-draft.js";
+
 import { stationContent, storyOf } from "./test-support/station-content.js";
 import { tourOf } from "./test-support/tour-of.js";
 import {
@@ -257,9 +259,14 @@ function reloaded(
   return reduce(
     opened(manifest),
     act.restored({
-      objects: state.placed.map((p) =>
-        parseTourObject(JSON.parse(JSON.stringify(tourObjectRecord(p.object)))),
-      ),
+      // Only what the file does not already hold, as a restore offers it.
+      objects: state.placed
+        .filter((p) => !hostedObjects(manifest).holds(p.object))
+        .map((p) =>
+          parseTourObject(
+            JSON.parse(JSON.stringify(tourObjectRecord(p.object))),
+          ),
+        ),
       deleted: [...state.deleted],
       ...(record.frames === undefined ? {} : { frames: record.frames }),
       ...(record.order === undefined ? {} : { order: record.order }),

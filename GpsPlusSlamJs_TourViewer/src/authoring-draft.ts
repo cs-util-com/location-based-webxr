@@ -169,6 +169,17 @@ export interface HostedObjects {
   holds(object: TourObject): boolean;
 }
 
+/** Whether two folder paths (`TourObject.folder`, absent for none) are
+ *  the same. */
+function sameFolders(
+  a: readonly string[] | undefined,
+  b: readonly string[] | undefined,
+): boolean {
+  const x = a ?? [];
+  const y = b ?? [];
+  return x.length === y.length && x.every((id, i) => id === y[i]);
+}
+
 /** The hosted file's pins and photos; none without a file. */
 export function hostedObjects(manifest: TourManifest | null): HostedObjects {
   const objects = manifest === null ? [] : tourObjects(manifest);
@@ -183,6 +194,13 @@ export function hostedObjects(manifest: TourManifest | null): HostedObjects {
       if (key === undefined) return false;
       if (key === objectContentKey(object)) return true;
       const home = byId.get(object.id)?.station;
+      // Another folder is another place in the file's structure, though
+      // the item stands still: the file does not hold it as it is. Asked
+      // before the round trip, which knows only the file's folders and
+      // would drop one the file lacks.
+      if (!sameFolders(object.folder, byId.get(object.id)?.folder)) {
+        return false;
+      }
       // Compared BEFORE the round trip, which writes the hosted station
       // into the object and would hide a re-assignment (M5a review L2).
       // Only to a station the file has, as the writer reads it
