@@ -76,6 +76,9 @@ const entryFiles = [
   'src/ar/tour-items.ts',
   'src/ar/tour-kinds.ts',
   'src/ar/tour-station-pose.ts',
+  // A plain folder's pose composed and taken apart, for an editor that
+  // writes folders back.
+  'src/ar/tour-folder-pose.ts',
   // Version 4's media assets, station blocks and the story that shows
   // them, deep-imported by the Tour Viewer the same way.
   'src/ar/tour-assets.ts',

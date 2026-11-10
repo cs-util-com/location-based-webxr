@@ -18,6 +18,10 @@ double-precision quaternion arithmetic the station frame
 - `composeTourFolderPath(folders, pose): TourLocalPose` - through a chain
   of folders, outermost first, composed innermost first; an empty chain
   returns `pose` itself.
+- `decomposeTourFolderPath(folders, pose): TourLocalPose` - the inverse:
+  a pose in the frame holding the outermost folder, given in the
+  innermost's frame, decomposed outermost first. What an editor writes an
+  item back into its folder with.
 - `quaternionProduct(a, b)`, `quaternionInverse(q)` (of a unit
   quaternion), `unitQuaternion(q)` (renormalized, the identity for a
   degenerate one), `IDENTITY_QUATERNION`. Not on the package's root
@@ -53,6 +57,8 @@ const inStation = composeTourFolderPath([outer, inner], block.pose);
 - `tour-station-pose.folders.property.test.ts` - compose then decompose
   returns the pose within declared tolerances, swept over offset reaches;
   a quarter-turn example; no pose is the identity by reference; two nested
-  folders with non-commuting rotations against a hand-computed result.
+  folders with non-commuting rotations against a hand-computed result; a
+  path of up to three folders through `composeTourFolderPath` and back
+  through `decomposeTourFolderPath`, swept over the same reaches.
 - `tour-folders.test.ts` - the reader's bound on a composed offset, which
   goes through `composeTourFolderPath`.

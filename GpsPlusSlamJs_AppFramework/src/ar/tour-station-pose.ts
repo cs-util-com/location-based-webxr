@@ -104,12 +104,14 @@ export function itemGeoPose(
 }
 
 /** A free block in the world: its fields, its geo pose and its station,
- *  and a picture's image asset (`assets`, which the reader resolved). */
+ *  the plain folders holding it (none: absent), and a picture's image
+ *  asset (`assets`, which the reader resolved). */
 function placed(
-  block: TourBlock,
+  entry: TourFreeEntry,
   station: { readonly id: string; readonly geo: QrGeoPose },
   assets: ReadonlyMap<string, TourAsset>
 ): TourObject {
+  const { block, folder } = entry;
   const { pose, ...fields } = block;
   const imageAsset =
     block.kind === 'picture' ? assets.get(block.image) : undefined;
@@ -117,23 +119,44 @@ function placed(
     ...fields,
     geo: itemGeoPose(pose, station.geo),
     station: station.id,
+    ...(folder.length === 0 ? {} : { folder }),
     ...(imageAsset === undefined ? {} : { imageAsset }),
   } as TourObject;
 }
 
+/** A free block of a station, its pose in the station's frame, and the
+ *  ids of the plain folders holding it, outermost first (none: it stands
+ *  at the station's top). */
+export interface TourFreeEntry {
+  readonly block: TourBlock;
+  readonly folder: readonly string[];
+}
+
 /** The free blocks of a children list with every plain folder flattened
  *  away, at any depth, each block's pose composed through its folders
- *  (`composeTourFolderPose`, innermost first). Stories are not free
- *  blocks and are left out. In document order. */
-function flatFreeBlocks(children: readonly TourStationChild[]): TourBlock[] {
-  return children.flatMap((child): TourBlock[] => {
-    if (isTourBlockChild(child)) return [child];
+ *  (`composeTourFolderPose`, innermost first) and the folders named.
+ *  Stories are not free blocks and are left out. In document order. */
+function freeEntries(
+  children: readonly TourStationChild[],
+  path: readonly string[]
+): TourFreeEntry[] {
+  return children.flatMap((child): TourFreeEntry[] => {
+    if (isTourBlockChild(child)) return [{ block: child, folder: path }];
     if (!isTourFolder(child)) return [];
-    return flatFreeBlocks(child.children).map((block) => ({
-      ...block,
-      pose: composeTourFolderPose(child, block.pose),
+    return freeEntries(child.children, [...path, child.id]).map((entry) => ({
+      block: {
+        ...entry.block,
+        pose: composeTourFolderPose(child, entry.block.pose),
+      },
+      folder: entry.folder,
     }));
   });
+}
+
+/** A station's free blocks as {@link tourFreeBlocks} gives them, each with
+ *  the plain folders holding it ({@link TourFreeEntry}). */
+export function tourFreeEntries(station: TourStationHolder): TourFreeEntry[] {
+  return freeEntries(station.children, []);
 }
 
 /** A station's FREE blocks, which stand in the world while it is shown: the
@@ -142,28 +165,29 @@ function flatFreeBlocks(children: readonly TourStationChild[]): TourBlock[] {
  *  in; a folder is a rigid frame, since its scale is always 1). The ONE
  *  place plain folders are flattened. */
 export function tourFreeBlocks(station: TourStationHolder): TourBlock[] {
-  return flatFreeBlocks(station.children);
+  return freeEntries(station.children, []).map((entry) => entry.block);
 }
 
-/** The tour's free blocks in the world, each naming its station, in
- *  station order (a reader settled each one's world view). */
+/** The tour's free blocks in the world, each naming its station and the
+ *  plain folders holding it (`folder`), in station order (a reader
+ *  settled each one's world view). */
 export function tourObjects(
   manifest: Pick<TourManifest, 'stations' | 'assets'>
 ): TourObject[] {
   const assets = new Map(manifest.assets.map((a) => [a.id, a]));
   return manifest.stations.flatMap((station) =>
-    tourFreeBlocks(station).map((block) => placed(block, station, assets))
+    tourFreeEntries(station).map((entry) => placed(entry, station, assets))
   );
 }
 
-/** The free block an object is, at `pose` in its station: the object
- *  without its geo pose, its station and a picture's inline asset (the
- *  tour lists the asset). */
+/** The free block an object is, at `pose` in its holder (its station, or
+ *  the folder holding it): the object without its geo pose, its station,
+ *  its folders and a picture's inline asset (the tour lists the asset). */
 export function tourObjectBlock(
   object: TourObject,
   pose: TourLocalPose
 ): TourBlock {
-  const { geo: _geo, station: _station, ...rest } = object;
+  const { geo: _geo, station: _station, folder: _folder, ...rest } = object;
   const { imageAsset: _asset, ...fields } = rest as typeof rest & {
     imageAsset?: TourAsset;
   };

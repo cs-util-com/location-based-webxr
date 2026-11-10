@@ -97,6 +97,20 @@ export function decomposeTourFolderPose(
   };
 }
 
+/** The inverse of {@link composeTourFolderPath}: a pose in the frame that
+ *  holds the outermost of `folders` (outermost first), given in the
+ *  innermost's frame - decomposed outermost first. No folders: the pose
+ *  itself. */
+export function decomposeTourFolderPath(
+  folders: readonly TourFolderFrame[],
+  pose: TourLocalPose
+): TourLocalPose {
+  return folders.reduce(
+    (outer, folder) => decomposeTourFolderPose(folder, outer),
+    pose
+  );
+}
+
 /** A pose given in the innermost of `folders` (outermost first) in the
  *  frame that holds the outermost: composed innermost first. No folders:
  *  the pose itself. */

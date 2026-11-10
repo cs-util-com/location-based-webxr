@@ -340,6 +340,10 @@ export const TOUR_STORY_TITLE_RULE = {
   required: true,
 } as const satisfies TourTextRule;
 
+/** A plain folder's title: optional; when given, at most 80 code points
+ *  and not blank, as a story's (an editor's tree names a group by it). */
+export const TOUR_FOLDER_TITLE_RULE = TOUR_STORY_TITLE_RULE;
+
 /** A block inside a story: shown when the visitor reaches it. */
 export type TourStoryBlock = TourBlock & { readonly advance: TourStepAdvance };
 
@@ -386,6 +390,8 @@ export interface TourFolder {
   readonly kind: 'folder';
   /** Never set: what tells a plain folder from a story. */
   readonly role?: undefined;
+  /** The group's name (`TOUR_FOLDER_TITLE_RULE`); absent for none. */
+  readonly title?: string;
   readonly pose?: TourLocalPose;
   readonly scale?: 1;
   readonly children: readonly TourFolderChild[];
@@ -402,11 +408,17 @@ export type TourStationChild = TourBlock | TourStory | TourFolder;
  *  block reader reports it), or a whole child it cannot show in its place
  *  (a story, choice or quiz it skipped included), or one way on a choice
  *  lost because the child it named was left out (`child` is the choice),
- *  or a plain folder's scale other than 1 read as 1 (`folder`). */
+ *  or a plain folder's scale other than 1 read as 1, or its title over its
+ *  cap left out (`folder`). */
 export type TourChildDrop =
   | TourBlockDrop
   | {
       readonly kind: 'folderScale';
+      readonly folder: string;
+      readonly reason: string;
+    }
+  | {
+      readonly kind: 'folderTitle';
       readonly folder: string;
       readonly reason: string;
     }
@@ -660,6 +672,27 @@ function readFolderScale(
   return undefined;
 }
 
+/** A plain folder's title: absent, or text by `TOUR_FOLDER_TITLE_RULE`.
+ *  One that is no text or blank fails at every minor (a writer never
+ *  writes one); one over its cap fails a file of this reader's minor and
+ *  is left out, reported, in a newer one's (which may widen the cap). */
+function readFolderTitle(
+  value: unknown,
+  id: string,
+  at: string,
+  ctx: ChildrenContext
+): string | undefined {
+  if (value === undefined) return undefined;
+  const checked = checkTourBlockText(TOUR_FOLDER_TITLE_RULE, value);
+  if (checked.ok) return checked.value;
+  const reason = `"${at}" ${checked.reason}`;
+  if (typeof value !== 'string' || checked.blank === true || !ctx.lenient) {
+    return ctx.fail(reason);
+  }
+  ctx.options.onDropped?.({ kind: 'folderTitle', folder: id, reason });
+  return undefined;
+}
+
 /** Whether a block's pose, composed through the folders that hold it
  *  (outermost first), stands further from its station along an axis than
  *  a single pose may ({@link TOUR_ITEM_MAX_OFFSET_M}). Each pose is
@@ -677,7 +710,7 @@ function beyondStation(
   );
 }
 
-/** A plain folder: its pose and scale if given, and its children, each a
+/** A plain folder: its title, pose and scale if given, and its children, each a
  *  free block or a plain folder (a story here is misplaced). `holders`
  *  are the folders around it, outermost first. A folder whose block
  *  stands too far from its station once composed is refused strict and
@@ -693,6 +726,7 @@ function readPlainFolder(
     v.pose === undefined
       ? undefined
       : parseTourLocalPose(v.pose, `${at}.pose`, ctx.fail);
+  const title = readFolderTitle(v.title, id, `${at}.title`, ctx);
   const scale = readFolderScale(v.scale, id, `${at}.scale`, ctx);
   const frames = [...holders, pose === undefined ? {} : { pose }];
   let far: string | undefined;
@@ -719,6 +753,7 @@ function readPlainFolder(
   return {
     id,
     kind: 'folder',
+    ...(title === undefined ? {} : { title }),
     ...(pose === undefined ? {} : { pose }),
     ...(scale === undefined ? {} : { scale }),
     children,
