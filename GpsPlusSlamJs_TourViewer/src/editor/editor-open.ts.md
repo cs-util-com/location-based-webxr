@@ -65,6 +65,11 @@ not be read. The editor left them out: ...`), and that the next save
   out: which folders, by their names ("a folder without a name" for one
   with none), that their items show at their own size, and that the next
   save writes the folders without it; null for none.
+- `droppedFolderTitlesLine(dropped): string | null` - for the plain
+  folders whose names the reader left out (over this editor's cap of 80,
+  in a newer minor's file): how many (the names are gone, so they are
+  counted), that each shows as "Folder", and that the next save writes
+  them without their names; null for none.
 - `droppedChildrenLine(dropped): string | null` - for whole items the
   reader could not read (a `child` or a `block` drop: a newer kind, a
   choice left with fewer than two ways on): how many (they are gone from
@@ -87,7 +92,7 @@ not be read. The editor left them out: ...`), and that the next save
 
 ## Tests
 
-The folder-size and whole-item lines on a newer minor's tour read
+The folder-size, folder-name and whole-item lines on a newer minor's tour read
 leniently (and on hand-made drops: one folder, repeated ids, none), and
 `showOpenedNotices`'s order and stay-until-closed toasts, are in
 `editor-open.test.ts` too.

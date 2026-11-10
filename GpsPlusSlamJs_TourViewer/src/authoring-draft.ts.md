@@ -49,7 +49,7 @@ where)`, owner question Q-E2-2's default; `where` is the phone's "on this
   offer it again in every later draft and save. An object that names
   another station of the hosted file is never held, however close it
   stands: that is a re-assignment, compared before the round trip (which
-  writes the hosted station in; M5a review L2). Nor is an object whose
+  writes the hosted station in). Nor is an object whose
   plain folders (`folder`) differ from the hosted copy's, though it did
   not move: grouped into a new folder or taken out of one, it is an edit
   the draft must keep (the round trip knows only the file's folders and

@@ -1712,3 +1712,23 @@ describe("tour document: a placed 3D model rides along unchanged", () => {
     expect(changeCount(saved)).toBe(0);
   });
 });
+
+describe("manifestToWrite per state", () => {
+  // Why: the tree's drag asks for the manifest on every hover, several
+  // times, and a hover must stay well under a frame. Measured in the
+  // editor with the CPU throttled 4x, one call took about 5 ms at 100
+  // items, 14 ms at 300 and 42 ms at 1000. A state never changes, so its
+  // manifest is computed once and the same object answers again; a new
+  // state (any action the reducer took) computes its own.
+  it("answers the same state with the same manifest, and a new state with its own", () => {
+    const state = open();
+    const first = manifestToWrite(state);
+    expect(first).not.toBeNull();
+    expect(manifestToWrite(state)).toBe(first);
+    const saved = save(state);
+    const after = manifestToWrite(saved);
+    expect(after).not.toBe(first);
+    expect(after).toEqual(first);
+    expect(manifestToWrite(initialTourDocumentState)).toBeNull();
+  });
+});

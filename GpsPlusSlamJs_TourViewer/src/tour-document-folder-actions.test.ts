@@ -44,6 +44,7 @@ import {
   groupRefusal,
   initialTourDocumentState,
   manifestToWrite,
+  objectsFolderRefusal,
   tourDocumentActions as act,
   tourDocumentReducer as reduce,
   type TourDocumentState,
@@ -202,8 +203,13 @@ function expectNothingMoved(
   }
 }
 
-/** The plain folder `id` of station "well" in `manifest`, or undefined. */
-function folderIn(manifest: TourManifest, id: string): TourFolder | undefined {
+/** The plain folder `id` of station `stationId` (default "well") in
+ *  `manifest`, or undefined. */
+function folderIn(
+  manifest: TourManifest,
+  id: string,
+  stationId = "well",
+): TourFolder | undefined {
   const find = (list: readonly TourStationChild[]): TourFolder | undefined => {
     for (const child of list) {
       if (!isTourFolder(child)) continue;
@@ -213,7 +219,9 @@ function folderIn(manifest: TourManifest, id: string): TourFolder | undefined {
     }
     return undefined;
   };
-  return find(manifest.stations.find((s) => s.id === "well")?.children ?? []);
+  return find(
+    manifest.stations.find((s) => s.id === stationId)?.children ?? [],
+  );
 }
 
 function wellChildren(manifest: TourManifest): string[] {
@@ -631,6 +639,318 @@ describe("the visitor", () => {
         }
       }
       expect(seen).toBe(shown.size);
+    }
+  });
+});
+
+describe("an item that changes station", () => {
+  // Why: a folder belongs to its station. An item that joins another
+  // station, or gets a station of its own, keeping its old folder path
+  // would name a folder its new station lacks: the tree would draw it in
+  // no folder while Group refuses it as "already in a folder", and moving
+  // it back would drop it into the old folder unasked.
+  it("leaves its folder when it joins another station, and comes back free", () => {
+    const start = opened(tour());
+    const a = objectOf(start, "a");
+    const joined = reduce(
+      start,
+      act.moved({ object: a, joinStation: "gate", what: "join" }),
+    );
+    expect(objectOf(joined, "a").station).toBe("gate");
+    expect(objectOf(joined, "a").folder).toBeUndefined();
+    expectSameGeo(objectOf(joined, "a").geo, a.geo);
+    expect(groupRefusal(joined, ["a", "g"])).toBeNull();
+    expect(folderIn(saved(joined), "outer")?.children.map((c) => c.id)).toEqual(
+      ["inner"],
+    );
+    const back = reduce(
+      joined,
+      act.moved({
+        object: objectOf(joined, "a"),
+        joinStation: "well",
+        what: "back",
+      }),
+    );
+    expect(objectOf(back, "a").folder).toBeUndefined();
+    expect(wellChildren(saved(back))).toContain("a");
+    expect(folderIn(saved(back), "outer")?.children.map((c) => c.id)).toEqual([
+      "inner",
+    ]);
+    expect(groupRefusal(back, ["a", "p"])).toBeNull();
+  });
+
+  it("leaves its folder when it gets a station of its own", () => {
+    const start = opened(tour());
+    const a = objectOf(start, "a");
+    const split = reduce(
+      start,
+      act.moved({
+        object: a,
+        newStation: true,
+        afterHome: true,
+        newStationId: "own",
+        what: "split",
+      }),
+    );
+    expect(objectOf(split, "a").station).toBe("own");
+    expect(objectOf(split, "a").folder).toBeUndefined();
+    expectSameGeo(objectOf(split, "a").geo, a.geo);
+    expect(groupRefusal(split, ["a"])).toBeNull();
+    expect(tourObjects(saved(split)).map((o) => o.id)).toContain("a");
+  });
+});
+
+describe("duplicating a station that holds folders", () => {
+  // Why: a station's copy must hold copies of its folders under new ids
+  // (a folder id is unique across the tour), its items in the copied
+  // folders, nested ones too, each item standing in its folder as the
+  // original does; and the visitor must see the copy's items where the
+  // editor shows them.
+  it("copies the folders under new ids, nested ones too, with the items where they stood in them", () => {
+    for (const [yawDeg, offsetM] of SWEEP) {
+      const start = opened(tour(yawDeg, offsetM));
+      const ids = [
+        "miller",
+        "m1",
+        "p",
+        "q",
+        "r",
+        "a",
+        "b",
+        "outer",
+        "inner",
+        "spare",
+      ];
+      const after = reduce(
+        start,
+        act.stationDuplicated({
+          stationId: "well",
+          newStationId: "well2",
+          newItemIds: Object.fromEntries(ids.map((id) => [id, `${id}2`])),
+          createdAtIso: "2026-11-10T00:00:00.000Z",
+          what: "copy",
+        }),
+      );
+      expect(after.past).toHaveLength(start.past.length + 1);
+      expect(objectOf(after, "a2").folder).toEqual(["outer2"]);
+      expect(objectOf(after, "b2").folder).toEqual(["outer2", "inner2"]);
+      expect(objectOf(after, "a").folder).toEqual(["outer"]);
+      const out = saved(after);
+      const outer = folderIn(out, "outer");
+      const copy = folderIn(out, "outer2", "well2");
+      expect(copy?.title).toBe("Courtyard");
+      expect(copy?.pose).toEqual(outer?.pose);
+      expect(copy?.children.map((c) => c.id)).toEqual(
+        outer?.children.map((c) => `${c.id}2`),
+      );
+      expect(
+        folderIn(out, "inner2", "well2")?.children.map((c) => c.id),
+      ).toEqual(["b2"]);
+      expect(folderIn(out, "spare2", "well2")?.children).toEqual([]);
+      // Each copied item stands in its copied folder as the original does.
+      type Posed = { readonly pose?: { position: number[]; rotation: Quat } };
+      const poseIn = (folder: TourFolder | undefined, id: string) =>
+        (folder?.children.find((c) => c.id === id) as Posed | undefined)?.pose;
+      const copied = poseIn(copy, "a2");
+      const original = poseIn(outer, "a");
+      if (copied === undefined || original === undefined) {
+        throw new Error("no pose in the folder");
+      }
+      // 0.1 mm, the declared latitude and longitude tolerance: the copy is
+      // moved through geodetic coordinates, which re-express its frame.
+      for (const i of [0, 1, 2]) {
+        expect(
+          Math.abs((copied.position[i] ?? NaN) - (original.position[i] ?? NaN)),
+        ).toBeLessThanOrEqual(1e-4);
+      }
+      expect(
+        rotationGap(copied.rotation, original.rotation),
+      ).toBeLessThanOrEqual(ROTATION_TOLERANCE);
+      // The visitor sees every copied item where the editor shows it.
+      const shown = new Map(
+        documentObjects(after).map((o) => [o.object.id, o.object.geo]),
+      );
+      const well2 = out.stations.find((s) => s.id === "well2");
+      if (well2 === undefined) throw new Error("no copy");
+      const blocks = presentWorldBlocks(well2, []);
+      expect(blocks.map((b) => b.id).sort()).toEqual([
+        "a2",
+        "b2",
+        "p2",
+        "q2",
+        "r2",
+      ]);
+      for (const block of blocks) {
+        const geo = shown.get(block.id);
+        if (geo === undefined) throw new Error(`unknown block ${block.id}`);
+        expectSameGeo(itemGeoPose(block.pose, well2.geo), geo);
+      }
+    }
+  });
+});
+
+/** Station "far" holding a pin 9 km east and two 9 km west (1 km north
+ *  and south of each other): near the format's 10 km bound of an item in
+ *  its frame. */
+function farTour(): TourManifest {
+  const wire = tourOf([], {
+    stations: [
+      {
+        id: "far",
+        title: "Far",
+        geo: { ...AT, rotation: [0, 0, 0, 1] },
+        activateRadiusM: 50,
+        foundRadiusM: 25,
+        hint: "arrow",
+        ...stationContent([
+          pin("e", [9000, 0, 0]),
+          pin("w1", [-9000, 0, 1000]),
+          pin("w2", [-9000, 0, -1000]),
+        ]),
+      },
+    ],
+  });
+  return parseTourManifest(JSON.parse(serializeTourManifest(wire)));
+}
+
+describe("the format's 10 km bound in a folder", () => {
+  // Why: an item's pose in its folder is bounded like one in its station
+  // (10 km per axis). A new folder stands at its items' centroid, so items
+  // far apart can each be within their station's bound and still past it
+  // in the folder: the file would hold a pose the reader refuses, and the
+  // item would vanish for the visitor. The edit must be refused, naming
+  // why.
+  it("refuses a group that would put an item past the bound in its new folder, and takes one within it", () => {
+    const start = opened(farTour());
+    // Centroid x = -3000: "e" would stand 12 km from its folder.
+    expect(groupRefusal(start, ["e", "w1", "w2"])).toBe("tooFar");
+    expect(reduce(start, group(["e", "w1", "w2"]))).toBe(start);
+    // Centroid x = 0: each 9 km from it.
+    expect(groupRefusal(start, ["e", "w1"])).toBeNull();
+    const after = reduce(start, group(["e", "w1"]));
+    expect(after).not.toBe(start);
+    expect(
+      tourObjects(saved(after))
+        .map((o) => o.id)
+        .sort(),
+    ).toEqual(["e", "w1", "w2"]);
+  });
+
+  it("refuses a move into a folder that would put the item past the bound, naming why", () => {
+    const start = reduce(opened(farTour()), group(["w1", "w2"]));
+    // The folder stands at x = -9000: "e" would stand 18 km from it.
+    expect(objectsFolderRefusal(start, ["e"], "grp")).toBe("tooFar");
+    expect(
+      reduce(
+        start,
+        act.objectsFoldered({ ids: ["e"], folderId: "grp", what: "in" }),
+      ),
+    ).toBe(start);
+    expect(objectsFolderRefusal(start, ["e"], "nothing")).toBe("notHere");
+    expect(objectsFolderRefusal(start, ["nope"], "grp")).toBe("notHere");
+    expect(objectsFolderRefusal(start, ["w1"], null)).toBeNull();
+  });
+});
+
+describe("reordering the folders of a station", () => {
+  // Why: the tree's folder rows have a drag grip, as the chosen design
+  // has: a folder dropped among its station's folders must land there,
+  // in the editor and in the saved file, as one step, moving nothing in
+  // the world.
+  it("puts a folder at its new place among its station's folders, as one step", () => {
+    const tourFile = tour();
+    const start = opened(tourFile);
+    const after = reduce(
+      start,
+      act.folderReordered({
+        stationId: "well",
+        folderId: "spare",
+        index: 0,
+        what: "order",
+      }),
+    );
+    expect(after.past).toHaveLength(start.past.length + 1);
+    expect(wellChildren(saved(after))).toEqual([
+      "miller",
+      "spare",
+      "outer",
+      "p",
+      "q",
+      "r",
+    ]);
+    expectNothingMoved(start, after);
+    expect(saved(reloaded(after, tourFile))).toEqual(saved(after));
+  });
+
+  it("refuses an unknown folder, a folder inside another, its own place and a place that is no index", () => {
+    const start = opened(tour());
+    for (const [folderId, index] of [
+      ["nothing", 0],
+      ["inner", 0],
+      ["outer", 0],
+      ["spare", 1],
+      ["spare", -1],
+      ["spare", 0.5],
+    ] as const) {
+      expect(
+        reduce(
+          start,
+          act.folderReordered({
+            stationId: "well",
+            folderId,
+            index,
+            what: "o",
+          }),
+        ),
+      ).toBe(start);
+    }
+  });
+});
+
+describe("undo and redo of every folder action", () => {
+  // Why: each folder action is one undo step; an undo must give back the
+  // tour as it was, and a redo the tour as the action left it - the
+  // saved file and every item's place.
+  it("undoes and redoes each one exactly", () => {
+    const actions = [
+      act.folderMoved({
+        stationId: "well",
+        folderId: "outer",
+        pose: { position: [-6, 2, 9], rotation: [...yaw(120)] },
+        what: "move",
+      }),
+      group(["p", "q"]),
+      act.folderUngrouped({ stationId: "well", folderId: "outer", what: "u" }),
+      act.objectsFoldered({ ids: ["p"], folderId: "inner", what: "in" }),
+      act.objectsFoldered({ ids: ["a"], folderId: null, what: "out" }),
+      act.folderRenamed({
+        stationId: "well",
+        folderId: "inner",
+        title: "Fountain",
+        what: "rename",
+      }),
+      act.folderDeleted({ stationId: "well", folderId: "outer", what: "del" }),
+      act.folderReordered({
+        stationId: "well",
+        folderId: "spare",
+        index: 0,
+        what: "order",
+      }),
+    ];
+    for (const action of actions) {
+      const start = opened(tour());
+      const after = reduce(start, action);
+      expect(after, action.type).not.toBe(start);
+      const undone = reduce(after, act.undone());
+      expect(saved(undone), action.type).toEqual(saved(start));
+      // The items themselves, not the bookkeeping of which are pending: a
+      // step may hold an item as the file has it rather than as an entry.
+      const items = (s: TourDocumentState) =>
+        documentObjects(s).map((o) => o.object);
+      expect(items(undone), action.type).toEqual(items(start));
+      const redone = reduce(undone, act.redone());
+      expect(saved(redone), action.type).toEqual(saved(after));
+      expect(items(redone), action.type).toEqual(items(after));
     }
   });
 });

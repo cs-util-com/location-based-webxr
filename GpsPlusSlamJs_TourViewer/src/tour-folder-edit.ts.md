@@ -22,7 +22,14 @@ alone.
   - `folderIntoItself` - a folder into itself or a folder inside it;
   - `oneLevel` - the editor groups one level deep (no folder inside a
     folder, no group of items already in one);
-  - `notHere` - items of several stations, or something that is no item.
+  - `notHere` - items of several stations, or something that is no item;
+  - `tooFar` - an item would stand past the format's 10 km bound in its
+    folder;
+  - `staysInStation` - an item in a folder stays in its station (the
+    tree's drag across stations and "Move to a new station" both refuse
+    it, with this one line);
+  - `gone` - the folder is no longer in the tour (an undo since it was
+    picked or dragged).
 - `FOLDER_NOT_POSSIBLE` ("Not possible here") and
   `folderRefusalLine(reason)` - that line and the reason, for a page.
 - `folderTitle(title): string | null` - the trimmed title, or null for
@@ -62,4 +69,7 @@ const named = folderTitle(input) ?? undefined; // null: refuse
   adding at depth, the title rule in code points, every refusal line.
 - `tour-document-folder-actions.test.ts` - the actions built on it: one
   undo step each, world poses kept (swept over folder yaw and offset),
-  refusals, the draft reload and the visitor's view.
+  refusals, the draft reload and the visitor's view; an item that
+  changes station leaving its folder; a station's copy with nested
+  folders; the 10 km bound (`tooFar`); the folders' reorder; undo and
+  redo of every folder action.

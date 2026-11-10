@@ -32,7 +32,7 @@ import type * as TourDocument from "../../tour-document.js";
 import { createTourViewerStore } from "../../tour-viewer-session.js";
 import { editorViewActions, editorViewReducer } from "../editor-view.js";
 import { createEditorShell, type EditorShellDeps } from "./editor-shell.js";
-import { createFolderCommands } from "../folder-commands.js";
+import { createFolderCommands, NOTHING_TO_GROUP } from "../folder-commands.js";
 import {
   stationContent,
   storyOf,
@@ -2184,6 +2184,93 @@ describe("the tree's plain folders", () => {
     );
     click(target);
     expect(store.getState().editorView.picked).toEqual(["q", "r"]);
+    shell.hide();
+  });
+
+  // Why: in the Select mode only items and folders take a tick. A tap on
+  // a station's row (no tick to give) ends the Select mode and selects
+  // that row alone, as the chosen tree design does - never a selection
+  // hidden behind a mode that still shows ticks.
+  it("ends the Select mode on a tap of a row that takes no tick, selecting it alone", () => {
+    const { store, shell } = setUpFolders();
+    document.getElementById("tree-select")?.click();
+    click(row("p"));
+    click(row("q"));
+    expect(store.getState().editorView.picked).toEqual(["p", "q"]);
+    click(row("station:w"));
+    expect(store.getState().editorView.selectMode).toBe(false);
+    expect(store.getState().editorView.picked).toEqual([]);
+    expect(store.getState().editorView.selected).toBe("station:w");
+    shell.hide();
+  });
+
+  // Why: Ctrl+G with nothing picked is no refusal of a folder rule; the
+  // line says what to do instead of a wrong reason.
+  it("says to pick items first on Ctrl+G with nothing selected", () => {
+    const { deps, store, shell } = setUpFolders();
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "g", code: "KeyG", ctrlKey: true }),
+    );
+    expect(deps.say).toHaveBeenCalledWith(NOTHING_TO_GROUP);
+    expect(folderIds(store)).toEqual([]);
+    shell.hide();
+  });
+
+  // Why: the tree redraws on any store change (an autosave, a selection
+  // elsewhere) while a folder's name is typed. A redraw replaces the name
+  // field; a browser that reports the removed field's focus loss would
+  // write the half-typed name, and a refocus without the caret would put
+  // the next keys at the end. The field must come back as typed, focused,
+  // with its caret where it was, and nothing written until Enter.
+  it("keeps a half-typed folder name, its focus and its caret across a tree redraw", () => {
+    const { store, shell } = setUpFolders();
+    click(row("p"));
+    click(row("q"), { ctrlKey: true });
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "g", code: "KeyG", ctrlKey: true }),
+    );
+    const field = () => {
+      const found = document.querySelector<HTMLInputElement>(
+        "#tree-body input.renin",
+      );
+      if (found === null) throw new Error("no name field");
+      return found;
+    };
+    // The format's cap, so the field cannot take a name the reader drops.
+    expect(field().maxLength).toBe(80);
+    field().value = "Bnches";
+    field().dispatchEvent(new Event("input", { bubbles: true }));
+    field().setSelectionRange(1, 1);
+    // A removed focused element reports its focus loss (as Chrome does).
+    const original = Element.prototype.replaceChildren;
+    const patched: typeof original = function (this: Element, ...nodes) {
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && this.contains(active)) {
+        active.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+      }
+      original.apply(this, nodes);
+    };
+    Element.prototype.replaceChildren = patched;
+    try {
+      store.dispatch(editorViewActions.folderFolded({ id: "x", folded: true }));
+    } finally {
+      Element.prototype.replaceChildren = original;
+    }
+    const titles = () =>
+      [...document.querySelectorAll("#tree-body .gfolder .nm")].map(
+        (n) => n.textContent,
+      );
+    expect(field().value).toBe("Bnches");
+    expect(document.activeElement).toBe(field());
+    expect(field().selectionStart).toBe(1);
+    expect(field().selectionEnd).toBe(1);
+    expect(titles()).toEqual([]);
+    field().setRangeText("e", 1, 1, "end");
+    field().dispatchEvent(new Event("input", { bubbles: true }));
+    field().dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+    expect(titles()).toEqual(["Benches"]);
     shell.hide();
   });
 });

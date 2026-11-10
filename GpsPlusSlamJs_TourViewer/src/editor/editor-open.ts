@@ -241,6 +241,24 @@ export function droppedFolderScalesLine(
 }
 
 /**
+ * Said once a tour opened with plain folders whose names its reader left
+ * out (over this editor's cap: a newer editor may allow more): how many,
+ * that each shows as "Folder", and that the next save writes them
+ * without their names. The names are gone from the tour as opened, so
+ * the folders are counted, not named. Null when none was dropped.
+ */
+export function droppedFolderTitlesLine(
+  dropped: readonly TourManifestDrop[],
+): string | null {
+  const n = new Set(childDropsOf(dropped, "folderTitle").map((d) => d.folder))
+    .size;
+  if (n === 0) return null;
+  return n === 1
+    ? 'A folder\'s name was too long for this editor (a newer editor allows more), so it shows as "Folder": the next save writes it without its name. Name it again in the list.'
+    : `${String(n)} folders' names were too long for this editor (a newer editor allows more), so they show as "Folder": the next save writes them without their names. Name them again in the list.`;
+}
+
+/**
  * Said once a tour opened with items its reader could not read at all (a
  * newer editor's kind, or a choice left with fewer than two ways on): how
  * many, and that the next save writes the tour without them. They are
@@ -261,7 +279,8 @@ export function droppedChildrenLine(
 }
 
 /** Every line said once a tour opened, in the order shown: the dropped
- *  details, station fields, item texts, folder sizes and whole items.
+ *  details, station fields, item texts, folder sizes, folder names and
+ *  whole items.
  *  The plain folders themselves need no line: the editor keeps them, and
  *  the next save writes them back. */
 export function openedNoticeLines(
@@ -273,6 +292,7 @@ export function openedNoticeLines(
     droppedStationFieldsLine(dropped, manifest),
     droppedBlockFieldsLine(dropped, manifest),
     droppedFolderScalesLine(dropped, manifest),
+    droppedFolderTitlesLine(dropped),
     droppedChildrenLine(dropped),
   ].filter((line): line is string => line !== null);
 }

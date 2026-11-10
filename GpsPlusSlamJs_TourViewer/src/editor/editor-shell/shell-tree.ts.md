@@ -39,7 +39,8 @@ stationsHead, fold, body }` (`#shell-tree`, `#tree-stations`,
     name, `data-select="folder:<id>"`, titled "<name> (a folder: a group in
     the scene)"; `.meta` "N items"; `.ren` the pen, `data-rename`, titled
     "Rename (F2)"; a `.cb` checkbox; while renamed, `.fname` holds the
-    name field `input.renin`, `data-ren`, in place of the button, the
+    name field `input.renin`, `data-ren`, `maxLength` the format's cap
+    (80; UTF-16 units, so never more than the reader takes), in place of the button, the
     count and the pen; when open its items `.kid.deep.infolder`, the last
     `.last`, on a teal guide line (`.ctx`, the folder's teal band, while
     the folder is selected and the item is not: they move with it), or
@@ -72,7 +73,7 @@ stationsHead, fold, body }` (`#shell-tree`, `#tree-stations`,
   (the inspector shows it).
 
   After a redraw the focus goes back to the control that had it (found
-  by its data attribute). The drawn elements carry what the shell's
+  by its data attribute), a text field's caret with it. The drawn elements carry what the shell's
   clicks read:
   - `data-select` - a card's `.pick`, an item's or a code's row (with
     `aria-pressed`): the page's selection id;

@@ -146,6 +146,7 @@ import {
   spawnOptimizerWorker,
 } from "./asset-shelf/optimizer-client.js";
 import { newStory, withoutStoryChild } from "../tour-story-edit.js";
+import { folderRefusalLine } from "../tour-folder-edit.js";
 import { newStoryEntry } from "./new-pin.js";
 
 /** One of the tour's objects as it stands, with this page's entry. */
@@ -2340,6 +2341,13 @@ export function createEditorSession(input: {
     moveToNewStation(id) {
       const found = find(id);
       if (found === undefined) return notInTour;
+      // A folder's item stays in its station, as the tree's drag says.
+      if (found.object.folder !== undefined) {
+        return {
+          kind: "refused",
+          reason: folderRefusalLine("staysInStation"),
+        };
+      }
       // Where it stands and as it is turned: only its station changes.
       store.dispatch(
         tourDocumentActions.moved({

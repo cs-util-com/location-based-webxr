@@ -14,6 +14,7 @@ import type { UnknownAction } from "@reduxjs/toolkit";
 import {
   isTourBlockChild,
   isTourFolder,
+  TOUR_FOLDER_TITLE_RULE,
   type TourFolder,
   type TourStationChild,
 } from "gps-plus-slam-app-framework/ar/tour-story";
@@ -25,6 +26,7 @@ import {
   folderDropRefusal,
   groupRefusal,
   manifestToWrite,
+  objectsFolderRefusal,
   tourDocumentActions,
   type TourDocumentState,
 } from "../tour-document.js";
@@ -83,6 +85,20 @@ export function plainFolderOf(
   }
   return null;
 }
+
+/** Said for Group with nothing picked: no folder rule refused it. */
+export const NOTHING_TO_GROUP = "Pick items to group them";
+
+/** Said for Delete on a plain folder: no delete of its own yet. */
+export const FOLDER_DELETE_NOT_YET =
+  "A folder cannot be deleted yet - ungroup it (Ctrl+Shift+G), then delete its items";
+
+/** Said for Ctrl+D on a plain folder: no copy of its own yet. */
+export const FOLDER_DUPLICATE_NOT_YET =
+  "A folder cannot be duplicated yet - duplicate its items instead";
+
+/** Said for a folder name over the format's cap, naming the cap. */
+export const FOLDER_NAME_TOO_LONG = `That name is too long for a folder - ${String(TOUR_FOLDER_TITLE_RULE.max)} characters at most`;
 
 /** A folder's name as the tree shows it: its title, else "Folder". */
 export function folderName(folder: Pick<TourFolder, "title">): string {
@@ -153,6 +169,10 @@ export interface FolderCommands {
   /** The folder's name: whether it changed. A blank or unchanged name
    *  changes nothing, quietly (the tree puts the old one back). */
   rename(folderId: string, title: string): boolean;
+  /** A folder at its station's top put at `index` among the station's
+   *  top-level folders (the tree's drag of a folder row): whether it
+   *  moved. Its own place is no step, quietly. */
+  reorder(folderId: string, index: number): boolean;
 }
 
 function counted(n: number, one: string, many: string): string {
@@ -186,6 +206,10 @@ export function createFolderCommands(deps: FolderCommandDeps): FolderCommands {
 
   return {
     group(picked) {
+      if (picked.length === 0) {
+        deps.say(NOTHING_TO_GROUP);
+        return null;
+      }
       const state = deps.getState();
       const why = pickedGroupRefusal(state, picked);
       if (why !== null) return refused(why);
@@ -203,6 +227,8 @@ export function createFolderCommands(deps: FolderCommandDeps): FolderCommands {
           what: `the new folder "${title}"`,
         }),
       );
+      // Not reached in practice: the reducer's other refusals are a taken
+      // id and a refused title, and both are made fresh here.
       if (!took) return refused("notHere");
       deps.say(
         `Grouped ${counted(picked.length, "item", "items")} into a folder - type its name`,
@@ -211,7 +237,7 @@ export function createFolderCommands(deps: FolderCommandDeps): FolderCommands {
     },
     ungroup(folderId) {
       const place = plainFolderOf(deps.getState(), folderId);
-      if (place === null) return refused("notHere");
+      if (place === null) return refused("gone");
       const took = edit(
         tourDocumentActions.folderUngrouped({
           stationId: place.stationId,
@@ -219,7 +245,8 @@ export function createFolderCommands(deps: FolderCommandDeps): FolderCommands {
           what: `the ungroup of "${folderName(place.folder)}"`,
         }),
       );
-      if (!took) return refused("notHere");
+      // The reducer refuses only a folder it lacks.
+      if (!took) return refused("gone");
       const n = place.itemIds.length;
       deps.say(
         n === 1
@@ -244,11 +271,12 @@ export function createFolderCommands(deps: FolderCommandDeps): FolderCommands {
         }
         return took;
       }
-      const why = folderDropRefusal(
-        state,
-        { kind: "item", id: itemId },
-        { kind: "folder", id: folderId },
-      );
+      const why =
+        folderDropRefusal(
+          state,
+          { kind: "item", id: itemId },
+          { kind: "folder", id: folderId },
+        ) ?? objectsFolderRefusal(state, [itemId], folderId);
       if (why !== null) {
         refused(why);
         return false;
@@ -262,10 +290,9 @@ export function createFolderCommands(deps: FolderCommandDeps): FolderCommands {
           what: `the move of "${title}" into "${name}"`,
         }),
       );
-      if (!took) {
-        refused("notHere");
-        return false;
-      }
+      // Past both refusals, a move the tour does not take changes no
+      // folder: the item is in that folder already, which is no failure.
+      if (!took) return false;
       deps.say(`"${title}" now in "${name}" - kept its place in the scene`);
       return true;
     },
@@ -275,7 +302,7 @@ export function createFolderCommands(deps: FolderCommandDeps): FolderCommands {
       if (place === null) return false;
       const written = folderTitle(title);
       if (written === null) {
-        deps.say("That name is too long for a folder");
+        deps.say(FOLDER_NAME_TOO_LONG);
         return false;
       }
       // The same name again (a name field left as it was) is no edit.
@@ -286,6 +313,23 @@ export function createFolderCommands(deps: FolderCommandDeps): FolderCommands {
           folderId,
           title: written,
           what: `the name of "${folderName(place.folder)}"`,
+        }),
+      );
+    },
+    reorder(folderId, index) {
+      const place = plainFolderOf(deps.getState(), folderId);
+      if (place === null) {
+        refused("gone");
+        return false;
+      }
+      // The reducer refuses its own place, a nested folder and an index
+      // out of range: the tree offers none of them, so each is quiet.
+      return edit(
+        tourDocumentActions.folderReordered({
+          stationId: place.stationId,
+          folderId,
+          index,
+          what: `the place of "${folderName(place.folder)}"`,
         }),
       );
     },

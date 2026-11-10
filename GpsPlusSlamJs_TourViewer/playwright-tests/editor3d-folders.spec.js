@@ -346,6 +346,63 @@ test("a folder dropped onto a story, or a folder's item, says Not possible here 
 });
 
 /**
+ * Station A's plain folders by title, in the tour's order.
+ * @param {import("@playwright/test").Page} page
+ * @returns {Promise<string[]>}
+ */
+function folderOrder(page) {
+  return page.evaluate(() =>
+    /** @type {any} */ (window).__tourEditor
+      .manifest()
+      .stations[0].children.filter(
+        (/** @type {any} */ c) => c.kind === "folder" && c.role === undefined,
+      )
+      .map((/** @type {any} */ c) => c.title),
+  );
+}
+
+// Why: a folder row carries a grip, so its drag must do what it shows:
+// above another folder's row it goes before that folder, onto the
+// station's row it goes last among the folders - each one step, written
+// to the tour, nothing moving in the scene.
+test("a folder dragged by its grip moves among its station's folders", async ({
+  page,
+}) => {
+  test.slow();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openFolders(page, await foldersTour());
+  const card = await unfold(page);
+  await card.locator('.kid[data-select="p"]').click();
+  await card.locator('.kid[data-select="q"]').click({ modifiers: ["Control"] });
+  await page.keyboard.press("Control+g");
+  const name = card.locator("input.renin");
+  await name.fill("Benches");
+  await name.press("Enter");
+  await expect.poll(() => folderOrder(page)).toEqual(["Yard", "Benches"]);
+  const benches = await folderId(page, "Benches");
+  const start = await revision(page);
+
+  // Onto the top edge of Yard's row: before it.
+  const yardRow = await box(card.locator('.gfolder[data-plainfolder="yard"]'));
+  await drag(page, benches, {
+    x: yardRow.x + yardRow.width / 2,
+    y: yardRow.y + 2,
+  });
+  await expect.poll(() => folderOrder(page)).toEqual(["Benches", "Yard"]);
+  expect(await revision(page)).toBe(start + 1);
+
+  // Onto the station's row: last among the folders.
+  await drag(page, benches, middle(await box(card.locator(":scope > .head"))));
+  await expect.poll(() => folderOrder(page)).toEqual(["Yard", "Benches"]);
+  expect(await revision(page)).toBe(start + 2);
+  expect(await groups(page)).toEqual({
+    Yard: ["y"],
+    Benches: ["p", "q"],
+    free: ["r"],
+  });
+});
+
+/**
  * The tree's folder rows as chosen, at a phone, a phone held sideways and
  * a desktop: a folder's row at the free items' depth, its items one step
  * (16 px) deeper and right under it, the rows 26 px high (32 px on a
