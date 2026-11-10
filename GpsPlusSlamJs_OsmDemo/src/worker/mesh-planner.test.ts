@@ -16,6 +16,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  meshBuildChoices,
   meshBuildKey,
   needsFullBuild,
   type MeshInputs,
@@ -182,6 +183,21 @@ describe("needsFullBuild", () => {
     expect(
       meshBuildKey({ ...AT, choices: { roofs: true, colourScheme: "today" } }),
     ).toBe(meshBuildKey(on));
+  });
+
+  it("keys the ground tint, which an omitted request field builds", () => {
+    // Why this test matters: AR skips the tint, so leaving AR must rebuild
+    // the city WITH it, and a page that never sends the field must keep
+    // getting the tinted build it always had.
+    const omitted = meshBuildChoices({ colourScheme: "today" });
+    expect(omitted).toEqual({ colourScheme: "today", groundTint: true });
+    const skipped = meshBuildChoices({
+      colourScheme: "today",
+      groundTint: false,
+    });
+    expect(meshBuildKey({ ...AT, choices: skipped })).not.toBe(
+      meshBuildKey({ ...AT, choices: omitted }),
+    );
   });
 
   it("does NOT rebuild for a category change", () => {

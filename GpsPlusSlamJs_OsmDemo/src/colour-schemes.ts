@@ -153,6 +153,14 @@ export function colourSchemeOf(name: string | undefined): ColourScheme {
 }
 
 /**
+ * The `?scheme=` value that names `name` in a link: `null` (no parameter)
+ * for the default, so a link carries a scheme only when it is not today's.
+ */
+export function schemeLinkValue(name: ColourSchemeName): string | null {
+  return name === DEFAULT_COLOUR_SCHEME ? null : name;
+}
+
+/**
  * A name from a link (`?scheme=`): absent gives the default silently, an
  * unknown name gives the default with one warning, as `?grade=` does.
  */

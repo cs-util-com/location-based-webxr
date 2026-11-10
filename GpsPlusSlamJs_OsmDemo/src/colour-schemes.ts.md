@@ -25,6 +25,9 @@ dialog (D4).
 - `resolveColourScheme(name | null, warn?)` - a link's `?scheme=`: absent gives
   the default silently, unknown gives the default with one warning (the
   `?grade=` rule of `globe-grade.ts`).
+- `schemeLinkValue(name)` - the `?scheme=` value naming a scheme: `null` (no
+  parameter) for the default. `main.ts` writes it on boot and on every
+  switch, so an unknown or default name leaves the link at once.
 
 ## Invariants & assumptions
 

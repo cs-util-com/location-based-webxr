@@ -12,6 +12,9 @@ city, or may it send only the region slabs?** (W6, finding R3-3.)
 - `needsFullBuild(inputs, drawnKey: string | undefined): boolean` - pure:
   `true` whenever the page does not already draw a mesh with this key
   (`drawnKey` is the key the page sent back, `undefined` when it draws none).
+- `meshBuildChoices({ colourScheme, groundTint? })` - one request's build
+  choices with omitted fields filled as before they existed (`groundTint`
+  defaults to `true`).
 - `MeshInputs` - `position`, `loadedTileCount`, `terrainStamp`, `choices`
   (the named build switches: `colourScheme`, and each later switch).
 

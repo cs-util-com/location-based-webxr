@@ -125,3 +125,10 @@ transferred (about 2 MB at most), see `demo-worker.ts`.
   draws, absent when it draws none. The worker builds in full whenever this
   pass's key differs, so a dropped reply never leaves the page on an older
   build while the worker believes it current.
+
+## `groundTint`
+
+- Request: `update.request.groundTint?` - whether the full build includes the
+  land-use ground tint; omitted means `true`. The page sends `false` while AR
+  runs (AR draws no ground plane). It is a build choice, so it is in the build
+  key and a change rebuilds.

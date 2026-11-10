@@ -78,6 +78,21 @@ function bucket(value: number): number {
 }
 
 /**
+ * The build choices of one update request, with every omitted field filled
+ * with what the page drew before the field existed: an omitted `groundTint`
+ * builds the land-use tint. AR sends `false` because it draws no ground.
+ */
+export function meshBuildChoices(request: {
+  readonly colourScheme: string;
+  readonly groundTint?: boolean;
+}): { readonly colourScheme: string; readonly groundTint: boolean } {
+  return {
+    colourScheme: request.colourScheme,
+    groundTint: request.groundTint ?? true,
+  };
+}
+
+/**
  * The build's identity: `latBucket|lngBucket|tiles|stamp|name=value...`,
  * coarse in space and exact in the rest, the choices sorted by name. The
  * worker stamps it on every full mesh and the page sends it back.

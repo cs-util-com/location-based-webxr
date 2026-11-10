@@ -389,6 +389,13 @@ export interface WorkerCalls {
        */
       readonly drawnBuildKey?: string;
       /**
+       * Whether the full build includes the land-use ground tint. The page
+       * sends `false` while AR runs, which draws no ground plane, so AR
+       * pays neither the rasterise nor the texture. Omitted means `true`.
+       * Part of the build key, so leaving AR rebuilds with the tint.
+       */
+      readonly groundTint?: boolean;
+      /**
        * Rings of chunks to score (W16). Omitted means the first pass's radius.
        *
        * The progressive path is repeated `update` calls with a growing radius

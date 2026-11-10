@@ -204,6 +204,38 @@ None. Entry point only, loaded by `index.html`.
     query, which is why `cameraQuery` updates its keys in place rather than
     deleting and re-appending them.
 
+- **The colour scheme** (colour schemes plan 2026-11-10-0841):
+  - **`?scheme=<name>`** boots in that scheme through `resolveColourScheme`
+    (an unknown name opens the default with one console warning). The link
+    then always names the scheme the page shows: `writeScheme(schemeLinkValue(...))`
+    runs once at boot, so the default's own name or an unknown one leaves the
+    link at once, and again on every switch (the default writes no
+    parameter). Like every writer it goes through `history.replaceState`.
+  - **The switch** is `attachColourSchemeSwitch` on `#colour-scheme`: a
+    choice dispatches `colourSchemeChanged`; a plain store subscription
+    shows it, writes the link and runs an ordinary `refresh()`, which
+    rebuilds because the scheme is a build choice in the worker's key.
+    `onMesh` calls `schemeSwitch.meshDrawn` with the scheme the drawn mesh
+    echoes, which ends "Applying...".
+  - **Failures:** `onBuildFailed` passes a failed city build's scheme to
+    `schemeSwitch.failed(name)` (only that scheme's own failure reverts the
+    select), and the loading-error subscriber calls `schemeSwitch.failed()`
+    for every other failure, which ends the wait and keeps the choice.
+  - **AR always builds the default** (D9): the refresh cycle's
+    `colourScheme` getter answers `DEFAULT_COLOUR_SCHEME` while
+    `arSession` is set, and `schemeSwitch.setArActive` disables the select
+    with its reason, so neither the choice nor the link changes in AR.
+  - **The drawn build:** `drawnBuildKey: () => latestMesh?.buildKey` tells
+    the worker which full build the page draws, so a dropped reply is rebuilt.
+- **The land-use tint:**
+  - **The layer switch** (`tint` in the layer bar) is a uniform, not a mesh
+    layer: the layers subscriber calls `buildingView.setLandUseTint(on)`,
+    and boot sets it once from the store, so toggling never rebuilds.
+  - **AR builds no tint:** `groundTint: () => arSession === undefined` on the
+    refresh cycle, because AR draws no ground plane (the ground lives on the
+    desktop scene, outside the content AR reparents). Leaving AR rebuilds
+    with the tint, since the flag is a build choice.
+
 ## Examples
 
 ```bash

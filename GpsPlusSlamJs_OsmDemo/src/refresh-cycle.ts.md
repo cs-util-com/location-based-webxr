@@ -107,6 +107,11 @@ Tested in `refresh-cycle.test.ts`.
 as `drawnBuildKey` (`main.ts`: `latestMesh?.buildKey`), so the worker rebuilds
 whenever the page does not draw this pass's build.
 
+`groundTint?: () => boolean` is read at post time and sent as `groundTint`;
+`main.ts` answers `false` while AR runs, so AR's passes skip the land-use
+tint. Omitted sends none (the worker builds the tint). Tested in
+`refresh-cycle.test.ts`.
+
 `onBuildFailed?: (failed: MeshBuildChoices) => void` is called with a failed
 city build's choices (`failedBuildOf(error)`) BEFORE `fetchFailed` is
 dispatched, so the switch can revert its own failed build before the store's

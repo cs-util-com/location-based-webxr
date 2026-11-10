@@ -8,6 +8,7 @@ import {
   colourSchemeOf,
   isColourSchemeName,
   resolveColourScheme,
+  schemeLinkValue,
   validateColourScheme,
   type ColourScheme,
 } from "./colour-schemes.js";
@@ -100,6 +101,15 @@ describe("names", () => {
     expect(colourSchemeOf(undefined)).toBe(COLOUR_SCHEMES.today);
   });
 
+  it("names the link's value for a scheme: none for the default", () => {
+    // Why this test matters: the page writes this on boot as well as on a
+    // switch, so a link naming the default or an unknown scheme loses the
+    // parameter at once instead of carrying a name the page does not show.
+    expect(schemeLinkValue(resolveColourScheme("neon", () => {}))).toBeNull();
+    expect(schemeLinkValue("today")).toBeNull();
+    expect(schemeLinkValue("night")).toBe("night");
+  });
+
   it("resolves a link's name: absent silently, unknown with one warning", () => {
     // Why this test matters: an old or mistyped link must open the default
     // and say why once, the `?grade=` rule.
@@ -135,15 +145,24 @@ const PATH_CLASSES = new Set([
   "bridleway",
 ]);
 
-/** Mean L* of the walls, of the car roads, and the ground's. */
+/**
+ * Mean L* of the walls, of the car roads with every surface colour, and the
+ * ground's. A HEX PROXY, not rendered contrast: roads render their colours
+ * raw, so their hex is close to what is drawn, but walls are lit and shaded,
+ * roofs are left out, and nothing here sees the light, the fog or the tint.
+ */
 function groupLightness(scheme: ColourScheme): {
   buildings: number;
   roads: number;
   ground: number;
 } {
-  const streets = [...scheme.city.roads]
-    .filter(([key]) => !PATH_CLASSES.has(key))
-    .map(([, rgb]) => lightness(rgb));
+  // Where a scheme ranks surface first, a `surface` colour replaces the
+  // class colour on a car road carrying the tag, so the surfaces are part of
+  // what a street can look like.
+  const streets = [
+    ...[...scheme.city.roads].filter(([key]) => !PATH_CLASSES.has(key)),
+    ...(scheme.city.roadsBySurface ? scheme.city.roadSurfaces : []),
+  ].map(([, rgb]) => lightness(rgb));
   return {
     buildings: meanOf(scheme.city.walls.map(lightness)),
     roads: meanOf(streets),

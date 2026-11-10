@@ -72,6 +72,32 @@ Chosen: RGBA8 with mipmaps at 2 m (1 m measured no better at these views).
 What would reverse the texel: a street-level view right at a class edge,
 which the spike did not render.
 
+## Cost per build (`ground-tint.bench.ts`)
+
+Means on devbox-win11, Node 24, default colour scheme. Two sites: Heidelberg
+Altstadt (dense, small land-use areas) and Lucerne Meggen (suburb, large
+meadows and woods). Two windows each: the fixture's bbox, and the OSM demo's
+largest window (4.8 km square, `TERRAIN_EXTENT_M = 2400`; the 2048-texel cap
+coarsens the texel to 2.34 m).
+
+- Heidelberg, fixture bbox (179 x 188 texels): rasterise 1.25 ms, texel
+  expansion (`groundTintTexture`) 0.21 ms, class bytes 33.7 KB, texture
+  134.6 KB plus 44.9 KB of mips.
+- Heidelberg, 4.8 km (2048 x 2042): rasterise 83 ms, expansion 21 ms, class
+  bytes 4.18 MB, texture 16.7 MB plus 5.6 MB of mips.
+- Meggen, fixture bbox (320 x 320): rasterise 6.2 ms, expansion 0.68 ms,
+  class bytes 102 KB, texture 410 KB plus 137 KB of mips.
+- Meggen, 4.8 km (2048 x 2042): rasterise 90 ms, expansion 20 ms, class bytes
+  4.18 MB, texture 16.7 MB plus 5.6 MB of mips.
+- `buildCity` on the fixture bbox with and without the tint: Heidelberg 72.0
+  against 66.8 ms, Meggen 24.0 against 22.8 ms (within the runs' 8-11 percent
+  spread).
+
+At the full window the cost is the cap, not the site: both sites land on
+the same 2048-texel raster, so the rasterise is ~85-90 ms whatever the
+density and the transfer and texture sizes are fixed. A caller that draws
+no ground (the demo's AR) passes `groundTint: false`.
+
 ## Tests
 
 - `ground-tint.test.ts` - the class table (incl. a hard pitch as a court,

@@ -87,6 +87,8 @@ interface RefreshWorker {
       colourScheme?: string;
       /** The build key of the full mesh the page draws; see `protocol.ts`. */
       drawnBuildKey?: string;
+      /** Whether to build the land-use ground tint; see `protocol.ts`. */
+      groundTint?: boolean;
     },
     options: { signal: AbortSignal },
   ): Promise<UpdateResult>;
@@ -176,6 +178,12 @@ export interface RefreshCycleOptions extends StoreAccess {
    */
   readonly drawnBuildKey?: () => string | undefined;
   /**
+   * Whether the build should include the land-use ground tint, read at post
+   * time: the page answers `false` while AR runs, because AR draws no ground
+   * plane. Omitted sends none, which the worker reads as `true`.
+   */
+  readonly groundTint?: () => boolean;
+  /**
    * A city build failed in the worker: the choices it was built with. Called
    * BEFORE the error reaches the store, so a switch can tell its own failed
    * build from any other failure before the error ends its wait.
@@ -244,14 +252,17 @@ function postTimeReads(options: RefreshCycleOptions): {
   geoidUndulationM?: number;
   colourScheme?: string;
   drawnBuildKey?: string;
+  groundTint?: boolean;
 } {
   const datum = options.geoidUndulationM?.();
   const colourScheme = options.colourScheme?.();
   const drawnBuildKey = options.drawnBuildKey?.();
+  const groundTint = options.groundTint?.();
   return {
     ...(datum === undefined ? {} : { geoidUndulationM: datum }),
     ...(colourScheme === undefined ? {} : { colourScheme }),
     ...(drawnBuildKey === undefined ? {} : { drawnBuildKey }),
+    ...(groundTint === undefined ? {} : { groundTint }),
   };
 }
 

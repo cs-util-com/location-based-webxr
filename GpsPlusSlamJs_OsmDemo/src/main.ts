@@ -189,6 +189,7 @@ import {
   DEFAULT_COLOUR_SCHEME,
   colourSchemeOf,
   resolveColourScheme,
+  schemeLinkValue,
 } from "./colour-schemes.js";
 import { attachColourSchemeSwitch } from "./colour-scheme-switch.js";
 import {
@@ -1094,6 +1095,9 @@ async function main(): Promise<void> {
     // never reached the page (an aborted pass) instead of sending slabs for
     // a mesh this side does not have.
     drawnBuildKey: () => latestMesh?.buildKey,
+    // THE GROUND TINT ONLY WHERE A GROUND IS DRAWN: AR shows no ground plane,
+    // so its passes skip the tint's rasterise, transfer and texture.
+    groundTint: () => arSession === undefined,
     // A FAILED CITY BUILD names its choices; reported before the error
     // reaches the store, so the switch reverts only its own failed build.
     onBuildFailed: (failed) => schemeSwitch.failed(failed.colourScheme),
@@ -3219,14 +3223,17 @@ async function main(): Promise<void> {
   // 4.4): an ordinary refresh rebuilds it, because the name is in the
   // worker's build key; the link follows (the default writes nothing). A
   // plain store subscription: the scheme lives outside the `osmView` slice.
+  // THE LINK SHOWS THE SCHEME THE PAGE SHOWS, from boot: an unknown name
+  // (already reported once) or the default's own name is removed at once.
   let shownScheme = selectColourScheme(store.getState());
   const schemeUrl = browserPlaceUrl(window);
+  writeScheme(schemeUrl, schemeLinkValue(shownScheme));
   store.subscribe(() => {
     const scheme = selectColourScheme(store.getState());
     if (scheme === shownScheme) return;
     shownScheme = scheme;
     schemeSwitch.show(scheme);
-    writeScheme(schemeUrl, scheme === DEFAULT_COLOUR_SCHEME ? null : scheme);
+    writeScheme(schemeUrl, schemeLinkValue(scheme));
     void refresh();
   });
 

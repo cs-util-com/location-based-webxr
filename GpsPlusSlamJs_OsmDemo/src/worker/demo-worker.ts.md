@@ -170,3 +170,13 @@ Full build or regions only is `needsFullBuild(inputs, drawnBuildKey)` from
 `mesh-planner.ts`: the page sends the `buildKey` of the mesh it draws, and
 every full mesh carries its own, so a reply dropped on the way (an aborted
 pass) is rebuilt on the next pass instead of answered with slabs.
+
+The land-use ground tint is built on every full pass unless the request sends
+`groundTint: false`, which the page does while AR runs: AR draws no ground
+plane, and the tint at the demo's window is a ~4 MB class raster costing
+~85 ms in this worker and ~20 ms of texel expansion on the page
+(`gps-plus-slam-osm` `ground-tint.bench.ts`). On desktop it is built whatever
+the tint layer switch says, because that switch is a uniform and skipping the
+tint while it is off would make switching it on cost a full rebuild. The flag
+is one of the build choices (`meshBuildChoices`), so leaving AR rebuilds the
+city with the tint.

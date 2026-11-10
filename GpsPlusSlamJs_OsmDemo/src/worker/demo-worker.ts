@@ -87,7 +87,11 @@ import {
   isColourSchemeName,
   type ColourSchemeName,
 } from "../colour-schemes.js";
-import { meshBuildKey, needsFullBuild } from "./mesh-planner.js";
+import {
+  meshBuildChoices,
+  meshBuildKey,
+  needsFullBuild,
+} from "./mesh-planner.js";
 import { createObstacleIndexCache } from "./obstacle-index-cache.js";
 import { osmStoreWarn } from "./osm-store-warn.js";
 import { createPrefetchQueue, type PrefetchQueue } from "./prefetch-queue.js";
@@ -306,6 +310,8 @@ function buildMesh(
   loadedTiles: readonly string[] = [],
   /** The colours to build in (colour schemes plan 2026-11-10-0841, D1). */
   scheme: ColourSchemeName = DEFAULT_COLOUR_SCHEME,
+  /** Whether to rasterise the land-use ground tint (AR draws no ground). */
+  groundTint = true,
 ): Omit<TransferableMesh, "buildKey"> {
   const options = meshOptions(frameOrigin);
   const all = [...features];
@@ -341,10 +347,13 @@ function buildMesh(
     cosmeticTrees: window !== undefined,
     roads: true,
     // THE LAND-USE TINT (city objects plan 2026-11-07-2315 M3): rasterised
-    // over the same window, so it ends where the city's data ends. Built every
-    // full pass whatever the layer switch says: the switch is a uniform on the
-    // page, and a rebuild per click would cost a full mesh step.
-    groundTint: true,
+    // over the same window, so it ends where the city's data ends. Built on
+    // every desktop full pass whatever the layer switch says: the switch is a
+    // uniform on the page, and a rebuild per toggle would cost a full mesh
+    // step. Skipped in AR, which draws no ground plane: at the demo's window
+    // the tint is a ~4 MB class raster, ~85 ms here and ~20 ms of texel
+    // expansion on the page (`ground-tint.bench.ts`).
+    groundTint,
     // THE SCHEME'S COLOURS, passed even for the default: the library's
     // identity test holds that the explicit default builds byte-identical
     // buffers to none at all.
@@ -558,10 +567,12 @@ function meshUpdateFor(
   scheme: ColourSchemeName,
   /** The key of the full mesh the page draws (`undefined`: none). */
   drawnBuildKey: string | undefined,
+  /** Whether the full build includes the ground tint. */
+  groundTint: boolean,
 ): WorkerCalls["update"]["result"]["mesh"] {
   // FULL BUILD VERSUS REGIONS ONLY (W6), decided in `mesh-planner.ts` against
   // the mesh the PAGE draws, so a reply dropped on the way is rebuilt.
-  const choices = { colourScheme: scheme };
+  const choices = meshBuildChoices({ colourScheme: scheme, groundTint });
   const inputs = {
     position: snapshot.position,
     loadedTileCount: pipeline.loadedTileCount(),
@@ -592,6 +603,7 @@ function meshUpdateFor(
           snapshot.undergroundOutlines,
           snapshot.loadedTiles,
           scheme,
+          choices.groundTint,
         ),
       },
     };
@@ -712,6 +724,7 @@ async function handle<K extends WorkerCallKind>(
         geoidUndulationM,
         colourScheme,
         drawnBuildKey,
+        groundTint,
       } = payload as WorkerCalls["update"]["request"];
       const { pipeline, prefetch } = requireState();
       // THE SCHEME IS A NAME, looked up in the table the page reads; one this
@@ -828,6 +841,7 @@ async function handle<K extends WorkerCallKind>(
         frameOrigin ?? position,
         scheme,
         drawnBuildKey,
+        groundTint ?? true,
       );
       const meshMs = Math.max(0, nowMs() - meshStart);
       // WHAT THIS MESH IS STANDING ON (F1d). Recorded unconditionally, INCLUDING
