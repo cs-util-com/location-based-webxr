@@ -546,5 +546,35 @@ describe("a duplicated story's pictures", () => {
     expect(saved.assets.map((a) => a.id)).toEqual(["art"]);
     expect(entryText(bytes, "content/art.jpg")).toBe("the miller's portrait");
     await session.close();
+
+    // The saved file opened in a fresh session, whose undo history holds
+    // nothing that still names "art", and saved again: only the copy's own
+    // picture can keep the file now, so a save that ignored which files
+    // the copy names would drop it here.
+    const reopened = await openTourFile(
+      new File([blob], "tour.zip", { type: "application/zip" }),
+    );
+    const fresh = createEditorSession({
+      session: reopened,
+      manifest: saved,
+      levels: new Map(),
+      store: editorStore(),
+    });
+    const again = new Uint8Array(
+      await (await fresh.save({ keepScan: false })).blob.arrayBuffer(),
+    );
+    const resaved = parseTourManifest(
+      JSON.parse(entryText(again, "tour.json")),
+    );
+    const copyStory = resaved.stations[0]?.children[0];
+    expect(copyStory?.id).toBe(copy.id);
+    expect(
+      copyStory?.kind === "folder"
+        ? copyStory.children.flatMap((c) => tourBlockAssetIds(c))
+        : [],
+    ).toEqual(["art"]);
+    expect(resaved.assets.map((a) => a.id)).toEqual(["art"]);
+    expect(entryText(again, "content/art.jpg")).toBe("the miller's portrait");
+    await reopened.close();
   });
 });
