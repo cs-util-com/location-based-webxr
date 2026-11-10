@@ -39,8 +39,11 @@ layout, `editor3d-input.ts` feeds the pointer and the keys.
 - `handleAt({ pointer, knob, dots, onDisc, underPointer })` -> `"move"`,
   `"turn"`, `"dot"` or null (the camera's): the knob and the dots first
   (the nearest within half its drawn size), then another object under
-  the pointer (no handle, so a click selects it), then the move disc. The
-  disc alone moves: the selected object's body off the disc is no handle
+  the pointer (no handle, so a click selects it, even over the disc), then
+  the move disc. What another item draws without a depth test is therefore
+  drawn over the disc (a sound's icon at 21.5 against the disc's 21,
+  `editor3d-gizmo.test.ts`), so the creator sees on top what a press
+  takes. The disc alone moves: the selected object's body off the disc is no handle
   (a tap selects, a drag turns the camera), and the disc moves even where
   that body covers it.
 - `turnedHeadingDeg(heading, fromDeg, toDeg, snap)`: whole degrees, 15

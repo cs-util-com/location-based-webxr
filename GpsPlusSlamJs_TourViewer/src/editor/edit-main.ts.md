@@ -839,8 +839,8 @@ view3dGizmoSizes(), view3dFolderOutlines(), manifest(), selected(), dropTour(rea
   hides the globe view's buildings (the view's `setBuildings`; no chip yet), `view3dPointOf(selection)` says
   where a selection stands in its world; `view3dScreenOf`, `view3dHandle`
   and `view3dGizmoSizes` say where a selection and the gizmo's handles are
-  on the canvas and how large, `view3dUnder(x, y)` what a
-  press at a canvas point picks and whether it meets the move disc; `view3dFolderOutlines()` how many teal
+  on the canvas and how large, `view3dUnder(x, y)` what a press at a
+  canvas point picks and whether it meets the move disc; `view3dFolderOutlines()` how many teal
   boxes show around a selected folder's items (null on the map); `manifest()` is what a save would write
   now and `selected()` the selection; `dropTour(reason)` drops the open
   tour as a late integrity failure does, at the moment the e2e chooses.
