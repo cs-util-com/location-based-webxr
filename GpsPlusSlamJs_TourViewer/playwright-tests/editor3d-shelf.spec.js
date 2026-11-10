@@ -10,7 +10,11 @@ import { encodeRgbPng } from "../../scripts/e2e/terrarium-png.mjs";
 import {
   afterFrames,
   answerHosts,
+  boxIn,
+  capture,
+  layoutOf,
   openSampleIn3d,
+  shownIn,
   view3d,
 } from "./editor3d-fixture.js";
 import { stationBlocks } from "./tour-fixture.mjs";
@@ -274,4 +278,134 @@ test("a picture dropped onto a story's row becomes the story's last entry and a 
   await expect(
     page.locator("#shell-shelf .as-cname", { hasText: "market-view.png" }),
   ).toBeVisible();
+});
+
+/**
+ * Drop `files` on the 3D view, as a creator drops them anywhere on the page.
+ * @param {import("@playwright/test").Page} page
+ * @param {{ name: string, type: string, bytes: number[] }[]} files
+ */
+async function dropOnPage(page, files) {
+  await page.locator("#view3d").evaluate((target, list) => {
+    const data = new DataTransfer();
+    for (const f of list) {
+      data.items.add(
+        new File([new Uint8Array(f.bytes)], f.name, { type: f.type }),
+      );
+    }
+    for (const type of ["dragover", "drop"]) {
+      target.dispatchEvent(
+        new DragEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: data,
+        }),
+      );
+    }
+  }, files);
+}
+
+/**
+ * The gaps between the cards of a `layoutOf` read, top to bottom.
+ * @param {Record<string, import("./editor3d-fixture.js").LaidOut[]>} layout
+ */
+function cardGaps(layout) {
+  const boxes = (layout["#shell-shelf .as-card"] ?? []).map((c) => c.box);
+  const gaps = [];
+  for (let i = 1; i < boxes.length; i++) {
+    const above = boxes[i - 1];
+    const below = boxes[i];
+    if (above && below) gaps.push(below.y - (above.y + above.height));
+  }
+  return gaps;
+}
+
+const SHELF_PARTS = [
+  "#shell-shelf",
+  "#shell-shelf .as-head",
+  "#shell-shelf .as-card",
+  "#shell-shelf .as-foot",
+  "#shell-tree",
+  "#shell-bar",
+];
+
+// The positions and gaps are the chosen prototype's
+// (public/prototypes/asset-shelf-2), read from it at the same three sizes:
+// a 300 px dock at the right edge on a desktop (246 px in a phone's
+// landscape window), cards 8 px in from the panel and 6 px apart (4 px in
+// landscape), the foot only where the window is tall, and on a phone a
+// sheet across the whole width that ends on the bottom bar.
+test("the Assets panel sits where the chosen prototype puts it, on a desktop, a phone in landscape and a phone", async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  await openSampleIn3d(page);
+  // A desktop opens with the shelf open, as the prototype does.
+  await expect(page.locator("#shell-shelf")).not.toHaveClass(/folded/);
+  const before = await page.locator("#shell-shelf .as-card").count();
+  await dropOnPage(page, [
+    {
+      name: "market-view.png",
+      type: "image/png",
+      bytes: [...encodeRgbPng(4, 3, new Array(36).fill(200))],
+    },
+    { name: "bell.wav", type: "audio/wav", bytes: [...silenceWav()] },
+  ]);
+  await expect(page.locator("#shell-shelf .as-card")).toHaveCount(before + 2);
+
+  // A desktop.
+  let layout = await layoutOf(page, SHELF_PARTS);
+  let shelf = boxIn(layout, "#shell-shelf");
+  let tree = boxIn(layout, "#shell-tree");
+  expect(shelf.width).toBe(300);
+  expect(shelf.x + shelf.width).toBe(1440);
+  expect(shelf.y).toBe(tree.y);
+  expect(shelf.y + shelf.height).toBe(tree.y + tree.height);
+  expect(boxIn(layout, "#shell-shelf .as-head").height).toBe(36);
+  let card = boxIn(layout, "#shell-shelf .as-card", 0);
+  expect(card.x - shelf.x).toBe(9); // its 1 px border and 8 px in
+  expect(shelf.x + shelf.width - (card.x + card.width)).toBe(8);
+  for (const gap of cardGaps(layout)) expect(gap).toBeCloseTo(6, 0);
+  expect(shownIn(layout, "#shell-shelf .as-foot")).toBe(true);
+  const foot = boxIn(layout, "#shell-shelf .as-foot");
+  expect(foot.y + foot.height).toBeCloseTo(shelf.y + shelf.height, 0);
+  await capture(page, "test-results/shelf-layout-desktop.png");
+
+  // A phone in landscape: narrower, denser, no foot.
+  await page.setViewportSize({ width: 844, height: 390 });
+  await afterFrames(page, 2);
+  layout = await layoutOf(page, SHELF_PARTS);
+  shelf = boxIn(layout, "#shell-shelf");
+  tree = boxIn(layout, "#shell-tree");
+  expect(shelf.width).toBe(246);
+  expect(shelf.x + shelf.width).toBe(844);
+  expect(shelf.y).toBe(tree.y);
+  card = boxIn(layout, "#shell-shelf .as-card", 0);
+  expect(card.x - shelf.x).toBe(7); // its 1 px border and 6 px in
+  for (const gap of cardGaps(layout)) expect(gap).toBeCloseTo(4, 0);
+  expect(shownIn(layout, "#shell-shelf .as-foot")).toBe(false);
+  await capture(page, "test-results/shelf-layout-landscape.png");
+
+  // A phone: closed until asked for, then a sheet of its own.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await afterFrames(page, 2);
+  await expect(page.locator("#shell-shelf")).toBeHidden();
+  await page.locator("#shelf-toggle").click();
+  await expect(page.locator("#shell-shelf")).toBeVisible();
+  layout = await layoutOf(page, SHELF_PARTS);
+  shelf = boxIn(layout, "#shell-shelf");
+  const bar = boxIn(layout, "#shell-bar");
+  expect(shelf.x).toBe(0);
+  expect(shelf.width).toBe(390);
+  expect(shelf.y + shelf.height).toBeCloseTo(bar.y, 0);
+  // Its top about a third down, the map above it in view (the
+  // prototype's at 276 px of 844).
+  expect(shelf.y).toBeGreaterThan(844 * 0.25);
+  expect(shelf.y).toBeLessThan(844 * 0.4);
+  card = boxIn(layout, "#shell-shelf .as-card", 0);
+  expect(card.x).toBe(8);
+  expect(card.width).toBe(374);
+  for (const gap of cardGaps(layout)) expect(gap).toBeCloseTo(6, 0);
+  expect(shownIn(layout, "#shell-shelf .as-foot")).toBe(false);
+  await capture(page, "test-results/shelf-layout-phone.png");
 });
