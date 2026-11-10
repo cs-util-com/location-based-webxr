@@ -93,7 +93,10 @@ standing`). A distance, size or focal length that is not a positive
     its size); the tour as drawn is untouched and comes back on null;
   - `pick(raycaster)` - the nearest visible thing under the ray: a
     station's billboard (`station:<id>`), an item's label, plane or model
-    (its object id) or a code's square (its level id); null for none;
+    (its object id) or a code's square (its level id); null for none.
+    What is drawn over everything (`isInterfacePart`: a billboard, a
+    sound's icon) comes before a nearer part with a depth test, since it
+    shows in front of it: a click selects what is seen;
   - `setShown({ names, codes })` - the billboards and poles, and the code
     squares, off or on (the layer chips); `codesVisible()`;
   - `setHidden(stationIds, levelIds)` - the globe view's visibility rule
@@ -279,7 +282,8 @@ renderer.setAnimationLoop(() => {
 store): each station at its drawn height where it stands; only the near
 and selected stations rendered, and what leaves freed; a model kept
 drawn through an edit of its notes or sections, drawn anew when its view
-changes or it moves; a billboard per
+changes or it moves; the pick preferring a part drawn over everything
+to a nearer depth-tested one; a billboard per
 station rising with the morph; photos flat looking down and upright
 tilted; a model at its size and pose; a model that cannot be read left
 out; no free model in the card or stage view, its file not read; every code as a square of its printed size, laid flat face up in front

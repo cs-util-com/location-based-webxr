@@ -74,6 +74,7 @@ import { worldEnv, type WorldEnv, type WorldPart } from "../world-part.js";
 import { pointRootMatrix, type GlobeEllipsoid } from "./editor3d-tour-root.js";
 import { NEAR_STATIONS, nearStations } from "./editor3d-visibility.js";
 import { viewHeightAtOneM } from "./gizmo-maths.js";
+import { isInterfacePart } from "./globe-interface-pass.js";
 
 /** What the layer needs from the page (the drawing is the page's: Node,
  *  where the tests run, has no canvas). */
@@ -1030,15 +1031,21 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       if (next !== null) applyPreview(next);
     },
     /** The selection the ray meets first (`station:<id>`, an item's
-     *  id, a code's level id), or null; rings and poles are none. */
+     *  id, a code's level id), or null; rings and poles are none. What
+     *  is drawn over everything (`isInterfacePart`: a billboard, a
+     *  sound's icon) comes before a nearer part with a depth test, as it
+     *  shows in front of it: a click selects what is seen. */
     pick(raycaster: THREE.Raycaster): string | null {
       group.updateMatrixWorld();
+      let nearest: string | null = null;
       for (const hit of raycaster.intersectObject(group, true)) {
         if (!drawnInGroup(hit.object, group)) continue;
         const pick = pickOf(hit.object);
-        if (pick !== null) return pick;
+        if (pick === null) continue;
+        if (isInterfacePart(hit.object)) return pick;
+        nearest ??= pick;
       }
-      return null;
+      return nearest;
     },
     /** For the page's checks: the stations and what is drawn. */
     stats() {

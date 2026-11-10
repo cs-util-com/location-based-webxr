@@ -18,11 +18,13 @@ import {
  * Why these tests matter: in the editor's 3D view a sound has no body of
  * its own - an ambient sound's glow is faint and lies under any rise of the
  * relief - so its speaker icon is how a creator finds and selects it. A
- * unit test holds the icon's size and that only it takes a ray; only the
- * page shows it drawn over real relief, where the station's own camera
- * puts it, and a click on it reaching the selection. The ground here is
- * uneven on purpose: on flat ground the glow alone would have been enough.
- * Both views are held: the globe is the editor's default.
+ * unit test holds the icon's size and that only it takes a ray. The page
+ * holds two things. First, that the icon is SEEN where the relief stands in
+ * front of it: the canvas's pixels at the icon's point are read and must be
+ * the icon's colours (the pick alone cannot say so, it never meets the
+ * relief). Second, that from the station's own camera over uneven ground a
+ * press reaches it and selects the sound, on both views (the globe is the
+ * editor's default).
  *
  * A free character had no drawing in the editor at all. He stands now in
  * the visitor's character look, turning toward the camera, so the camera
@@ -109,7 +111,7 @@ for (const [name, link] of [
   ["the older view", OLDER_VIEW],
   ["the globe", GLOBE_VIEW],
 ]) {
-  test(`an ambient sound's icon shows over uneven ground from the station's camera, and a click on it selects the sound, on ${name}`, async ({
+  test(`from the station's camera over uneven ground a click on an ambient sound's icon selects the sound, on ${name}`, async ({
     page,
   }) => {
     test.setTimeout(240_000);
@@ -141,6 +143,124 @@ for (const [name, link] of [
     expect(await rejections(page)).toEqual([]);
   });
 }
+
+/** The top view's distance for the check (m). From straight above the
+ *  icon lies flat facing up, at its lift and half its size over its foot:
+ *  48 px across at 60 m is about 3.4 m, so its face is about 2.3 m up. */
+const TOP_DISTANCE_M = 60;
+
+/** How far the relief stands above the sample's stations (m): well over
+ *  the icon's face at `TOP_DISTANCE_M`, so the relief is in front of all
+ *  of it, and well under the camera. */
+const RELIEF_ABOVE_STATIONS_M = 8;
+
+/**
+ * The share of the pixels within 8 px of (`x`, `y`) on the canvas (CSS px)
+ * that are the icon's colours: its dark blue-grey disc (all channels under
+ * 90, blue over red) or its amber speaker (red over 190, red over blue by
+ * 70). The relief's grey and the station's blue ring are neither. From a
+ * screenshot: a software-drawn WebGL keeps no drawing buffer to read back.
+ * @param {import("@playwright/test").Page} page
+ * @param {{ x: number, y: number }} canvas the canvas's place on the page
+ * @param {readonly [number, number]} at
+ */
+async function iconColourShare(page, canvas, at) {
+  const R = 8;
+  const png = await page.screenshot({
+    clip: {
+      x: canvas.x + at[0] - R,
+      y: canvas.y + at[1] - R,
+      width: 2 * R + 1,
+      height: 2 * R + 1,
+    },
+  });
+  return page.evaluate(async (b64) => {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const bitmap = await createImageBitmap(
+      new Blob([bytes], { type: "image/png" }),
+    );
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const context = canvas.getContext("2d");
+    if (context === null) throw new Error("no 2d context");
+    context.drawImage(bitmap, 0, 0);
+    const { data } = context.getImageData(0, 0, bitmap.width, bitmap.height);
+    let icon = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i] ?? 0;
+      const g = data[i + 1] ?? 0;
+      const b = data[i + 2] ?? 0;
+      const disc = r < 90 && g < 90 && b < 90 && b > r;
+      const speaker = r > 190 && r - b > 70;
+      if (disc || speaker) icon++;
+    }
+    return icon / (data.length / 4);
+  }, png.toString("base64"));
+}
+
+// Why: the claim the icon exists for. The relief stands 8 m above the
+// station, so it is in front of the whole icon from the top view; the
+// pixels at the icon's middle must still be the icon's own. Drawn with a
+// depth test the relief's grey would show there instead. The older view:
+// on the globe a street-level camera looks over coarse tiles that sag
+// below the stations (see the found-radius spec), and the globe draws the
+// same material (`isInterfacePart`).
+test("an ambient sound's icon is seen where the relief stands in front of it", async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  await openSample3d(
+    page,
+    OLDER_VIEW,
+    () => SQUARE_GROUND_M + RELIEF_ABOVE_STATIONS_M,
+  );
+  await selectStation(page, STATION);
+  await page.keyboard.press("t");
+  await expect.poll(async () => (await view3d(page))?.top).toBe(true);
+  await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
+  await page.evaluate(
+    (m) => /** @type {any} */ (window).__tourEditor.view3dDistance(m),
+    TOP_DISTANCE_M,
+  );
+  expect((await view3d(page))?.distanceM).toBeCloseTo(TOP_DISTANCE_M, 0);
+  // The relief has reached the station.
+  await afterFrames(page, 120);
+
+  // The icon's middle on the screen: the middle of the points a press
+  // there reaches it by.
+  const middle = await page.evaluate((id) => {
+    const hook = /** @type {any} */ (window).__tourEditor;
+    const foot = hook.view3dScreenOf(id);
+    if (foot === null) return null;
+    let sx = 0;
+    let sy = 0;
+    let n = 0;
+    for (let dx = -80; dx <= 80; dx += 2) {
+      for (let dy = -80; dy <= 80; dy += 2) {
+        if (hook.view3dUnder(foot[0] + dx, foot[1] + dy)?.pick === id) {
+          sx += foot[0] + dx;
+          sy += foot[1] + dy;
+          n++;
+        }
+      }
+    }
+    return n === 0 ? null : /** @type {[number, number]} */ ([sx / n, sy / n]);
+  }, SOUND);
+  expect(middle, "no point of the canvas reaches the sound").not.toBeNull();
+  const canvas = await page.locator("#view3d canvas").boundingBox();
+  if (canvas === null || middle === null) throw new Error("no canvas");
+  const share = await iconColourShare(page, canvas, middle);
+  // Measured with the icon drawn: most of the 17 px square; with a depth
+  // test the relief hides it and the share is 0.
+  expect(share).toBeGreaterThan(0.5);
+  // Away from the icon, on the relief, the colours are not the icon's:
+  // the check tells the icon from the ground.
+  const away = await iconColourShare(page, canvas, [
+    middle[0] + 120,
+    middle[1],
+  ]);
+  expect(away).toBeLessThan(0.1);
+  expect(await rejections(page)).toEqual([]);
+});
 
 /** The sample's free characters, at its first station. */
 const CHARACTERS = ["column-herald", "column-squire"];

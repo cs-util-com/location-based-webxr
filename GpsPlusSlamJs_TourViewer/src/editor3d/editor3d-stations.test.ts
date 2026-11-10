@@ -816,6 +816,54 @@ describe("createStationsLayer", () => {
     expect(layer.codesVisible()).toBe(true);
   });
 
+  // Why: what is drawn over everything (a billboard, a sound's icon) shows
+  // in front of a nearer item with a depth test, so a click on what the
+  // creator sees there must select it, not the item hidden behind it on
+  // the screen. A ray meeting only the item still selects the item.
+  it("picks what is seen: a part drawn over everything before a nearer depth-tested one", async () => {
+    const { d } = deps();
+    const layer = createStationsLayer(d);
+    layer.setTour(
+      manifest(
+        [station("a", 0, 0, [model("m", "box", 2)])],
+        [{ id: "box", path: "content/box.glb", kind: "model" }],
+      ),
+      new Map(),
+    );
+    layer.update(view(0, 0, null, 1));
+    await settle();
+    layer.update(view(0, 0, null, 1));
+    const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
+    const ray = (from: THREE.Vector3, to: THREE.Vector3) => {
+      camera.position.copy(from);
+      camera.lookAt(to);
+      camera.updateMatrixWorld(true);
+      const r = new THREE.Raycaster();
+      r.setFromCamera(new THREE.Vector2(0, 0), camera);
+      return r;
+    };
+    d.parent.updateMatrixWorld(true);
+    const board = layer.billboardOf("a")!.getWorldPosition(new THREE.Vector3());
+    const box = new THREE.Box3()
+      .setFromObject(layer.modelObject("m")!)
+      .getCenter(new THREE.Vector3());
+    // From beyond the box, through it, to the billboard behind it.
+    const from = box
+      .clone()
+      .add(box.clone().sub(board).normalize().multiplyScalar(20));
+    const kinds = ray(from, board)
+      .intersectObject(d.parent, true)
+      .map((h) => (h.object instanceof THREE.Sprite ? "sprite" : "mesh"));
+    // The box is met first, the billboard after it.
+    expect(kinds[0]).toBe("mesh");
+    expect(kinds).toContain("sprite");
+    expect(layer.pick(ray(from, board))).toBe("station:a");
+    // From its side, away from the billboard: the box alone.
+    const side = box.clone().add(new THREE.Vector3(0, 0, 20));
+    expect(layer.pick(ray(side, box))).toBe("m");
+    layer.dispose();
+  });
+
   // Why: on the globe view the visibility rule hides a station too small
   // or too crowded on screen, and a code too small, one by one; what is
   // hidden must not draw (its billboard, its root with its items) nor be
