@@ -19,6 +19,12 @@ import { enuFrameAt } from "./enu.js";
  * a digest; that is a visible change to every app and needs the owner's look,
  * never a re-pin to make this green.
  *
+ * INVENTED ROOFS ARE OFF HERE, deliberately (the toggles plan, M8): an
+ * invented roof is new geometry, not a colour change, so it moves the
+ * buildings digest by construction. Off, the city draws the buildings it
+ * drew when the digests were recorded, which is what this test guards; the
+ * roofs themselves are held by `site-invented-roofs.test.ts`.
+ *
  * The options mirror the Globe's call (`globe-city-worker-core.ts`: roads on)
  * with the cosmetic trees ON (the Globe has them off today; on here so their
  * colours are held too) and no `withinM` (everything kept, the widest
@@ -238,6 +244,7 @@ describe("city colours without a scheme are byte-identical to before schemes", (
           window: site.bbox,
           roads: true,
           cosmeticTrees: true,
+          inventedRoofs: false,
           palette,
         });
         expect(digestsOf(city)).toEqual(GOLDEN[id][palette]);
@@ -248,6 +255,7 @@ describe("city colours without a scheme are byte-identical to before schemes", (
           window: site.bbox,
           roads: true,
           cosmeticTrees: true,
+          inventedRoofs: false,
           palette,
           colours: DEFAULT_CITY_COLOUR_SCHEME,
         });

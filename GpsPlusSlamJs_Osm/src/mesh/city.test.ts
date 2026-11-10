@@ -595,7 +595,13 @@ describe("Heidelberg under the seeded palette", () => {
   if (site === undefined) throw new Error("heidelberg-altstadt not in corpus");
   const features = parseOverpassJson(loadSite(site.id).payload).features;
   const ground = { frame: enuFrameAt(site.position) };
-  const city = buildCity(features, ground, { window: loadSite(site.id).bbox });
+  // INVENTED ROOFS OFF for the pinned table below: it is about the roofs the
+  // map tags, measured before invented roofs existed. The invented ones are
+  // checked on their own at the end of this block.
+  const city = buildCity(features, ground, {
+    window: loadSite(site.id).bbox,
+    inventedRoofs: false,
+  });
   const tagsByKey = new Map(features.map((f) => [featureKey(f), f.tags]));
 
   /**
@@ -747,6 +753,77 @@ describe("Heidelberg under the seeded palette", () => {
       palette: 69,
       flatLid: 3,
     });
+  });
+
+  it("paints every invented roof in a pitched palette tone", () => {
+    // Why: an invented roof is drawn by the skeleton, so the city must colour
+    // its surfaces as a pitched roof (not as wall or flat lid); a roof
+    // painted in the wall colour reads as a grey box from above.
+    const roofed = buildCity(features, ground, {
+      window: loadSite(site.id).bbox,
+    });
+    const tones = new Set(
+      PITCHED_ROOF_TONES.map((rgb) => linearUnpacked(rgb).join(",")),
+    );
+    // Every colour drawn at each position: a gable's apex and the top of a
+    // wall share positions with roof vertices and carry the wall colour.
+    const coloursAt = new Map<string, Set<string>>();
+    for (const chunk of roofed.buildings) {
+      const q = chunk.mesh.positions;
+      const c = chunk.colors ?? [];
+      for (let i = 0; i < q.length; i += 3) {
+        const k = `${q[i]},${q[i + 1]},${q[i + 2]}`;
+        const set = coloursAt.get(k) ?? new Set<string>();
+        set.add(`${c[i]},${c[i + 1]},${c[i + 2]}`);
+        coloursAt.set(k, set);
+      }
+    }
+    const invented = roofed.volumes.filter((v) => v.roofIsInvented);
+    expect(invented.length).toBeGreaterThan(100);
+    let palette = 0;
+    for (const volume of invented) {
+      const r = volume.roofVertexRanges[0];
+      expect(r !== undefined && r.end > r.start).toBe(true);
+      // The roof range's highest vertex.
+      const p = volume.mesh.positions;
+      let at = (r?.start ?? 0) * 3;
+      for (let v = r?.start ?? 0; v < (r?.end ?? 0); v++) {
+        if ((p[v * 3 + 1] as number) > (p[at + 1] as number)) at = v * 3;
+      }
+      const key = `${p[at]},${p[at + 1]},${p[at + 2]}`;
+      // A `roof:colour` is no keep reason (only shape, height and levels
+      // are), so a colour-tagged roof can be invented: it keeps its colour.
+      const tagged = roofColour(tagsByKey.get(volume.feature) ?? {}, undefined);
+      const drawn = [...(coloursAt.get(key) ?? [])];
+      if (tagged === undefined) palette += 1;
+      expect(
+        tagged === undefined
+          ? drawn.some((c) => tones.has(c))
+          : drawn.includes(linearUnpacked(tagged).join(",")),
+        volume.feature,
+      ).toBe(true);
+    }
+    expect(palette).toBeGreaterThan(100);
+  });
+
+  it("gives the AR shell one value per vertex with invented roofs on", () => {
+    // Why: the AR shell reads height01 and featureRand per vertex. Invented
+    // roofs add vertices (soffits, gables) to many volumes; an attribute
+    // sized from anything but the merged vertex count shifts every later
+    // building's glow and pulse, which renders without an error.
+    const roofed = buildCity(features, ground, {
+      window: loadSite(site.id).bbox,
+    });
+    expect(roofed.volumes.some((v) => v.roofIsInvented)).toBe(true);
+    for (const chunk of roofed.buildings) {
+      const vertices = chunk.mesh.positions.length / 3;
+      expect(chunk.height01?.length).toBe(vertices);
+      expect(chunk.featureRand?.length).toBe(vertices);
+      expect(chunk.colors?.length).toBe(vertices * 3);
+      for (const h of chunk.height01 ?? []) {
+        expect(h >= 0 && h <= 1).toBe(true);
+      }
+    }
   });
 
   it("draws no class colour that the palette, a tag or a barrier did not give", () => {

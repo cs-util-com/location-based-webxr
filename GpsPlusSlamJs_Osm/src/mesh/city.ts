@@ -111,6 +111,15 @@ export interface CityOptions {
    * not draw (the Globe and the Tour Editor ask for none).
    */
   readonly groundTint?: boolean;
+  /**
+   * Invent a roof, or a flat lid at an invented height, for every building
+   * the map says nothing about (`buildBuildings`, `invented-roofs.ts`).
+   * Default true (the owner: on); false draws every building from its tags
+   * alone, as before invented roofs. The navigation index takes the same
+   * heights by default (`buildObstacleIndex`), so a consumer that switches
+   * this off switches it off there too.
+   */
+  readonly inventedRoofs?: boolean;
 }
 
 /**
@@ -202,7 +211,10 @@ export function buildCity(
     withinM === undefined ||
     (Math.abs(p.x) <= withinM && Math.abs(p.y) <= withinM);
   const all = [...features];
-  const built = buildBuildings(all, ground);
+  const built = buildBuildings(all, {
+    ...ground,
+    inventedRoofs: options.inventedRoofs ?? true,
+  });
   const volumes = withinWindow(built, inside);
   const barriers = buildBarriers(all, ground).filter((b) =>
     inside(meshCentroidEnu(b.mesh)),

@@ -155,3 +155,13 @@ use.
   `landUse` colours over its `ground`. Absent unless asked, so the Globe and
   the Tour Editor (no tint, owner) build no raster. Tested in
   `ground-tint.test.ts` ("buildCity's ground tint").
+- `CityOptions.inventedRoofs?: boolean` (default true, the owner's default
+  look): passed to `buildBuildings`, so every building the map says nothing
+  about takes an invented roof or lid ([`invented-roofs.ts`](invented-roofs.ts.md)).
+  An invented roof is drawn by the skeleton, so `drawsPitchedRoof` colours
+  it from the pitched tones; a lid takes a flat tone. The colour identity
+  test passes `false`: an invented roof is new geometry and moves the
+  buildings digest by construction. Tested in `city.test.ts` (Heidelberg:
+  pitched tones or the tagged `roof:colour` on every invented roof, and the
+  AR shell attributes one value per vertex) and
+  `site-invented-roofs.test.ts`.
