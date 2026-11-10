@@ -148,3 +148,10 @@ plateClip)`, the loaded tiles' boxes cut to the drawn ground. With no
   cosmetic trees are switched off, so nothing is invented on unfetched ground.
 - The mesh carries `cosmeticTrees` (`City.cosmeticTrees`) to the page, for the
   `woods` layer.
+
+## The land-use tint (colour schemes plan 2026-11-10-0841 S3)
+
+`buildCity` is asked for `groundTint: true` on every full pass, over the same
+window as the city; the page switches it with a uniform, so the layer switch
+never costs a rebuild. Its class buffer is copied, not transferred (the
+`colors` lesson in `transferablesOf`).

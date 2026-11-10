@@ -554,3 +554,14 @@ field ask that raised the default was literally about zooming further out.
   refetch during AR cannot bring them back, and leaving AR shows them again.
 - Pinned by `building-view-content.test.ts` (a source-text test, as the view
   cannot be built in vitest) and `mesh-layers.test.ts` ("showCosmetic").
+
+## Land-use tint and scheme ground colours (colour schemes plan 2026-11-10-0841 S3)
+
+- `render(mesh)` hands `mesh.groundTint` to a `land-use-tint.ts` control on
+  the lit ground material (every build, so a build without one drops it).
+- `setLandUseTint(on)` - the `tint` layer switch, a uniform write;
+  `setGroundAppearance` also tells the control (the ramp hides the tint).
+  `landUseTintShowing()` reports the result.
+- `setGroundColours(ground, slope)` - the scheme's ground (sRGB, the material
+  colour while no tint is applied) and the slope treatment's linear colours.
+- `dispose()` frees the tint's texture before the material.

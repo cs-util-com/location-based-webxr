@@ -41,6 +41,11 @@ describe("the layer set", () => {
       // plan 2026-11-07-2315 M2a): their own switch, on by default (the owner).
       "woods",
       "plates",
+      // The land-use tint in the ground (city objects plan 2026-11-07-2315
+      // M3, owner Q6): a switch in this list by the owner's choice, although
+      // it recolours the ground in place like the retired ramp did; it needs
+      // no lift and no data, and the height ramp hides it.
+      "tint",
       "roads",
       "poi",
       // A DIAGNOSTIC, unlike everything above it: `underground` draws what the
@@ -96,7 +101,7 @@ describe("the layer set", () => {
     );
     expect([...off].sort()).toEqual(["cells", "plates", "underground"]);
     expect([...on].sort()).toEqual(
-      ["areas", "buildings", "poi", "roads", "trees", "woods"].sort(),
+      ["areas", "buildings", "poi", "roads", "tint", "trees", "woods"].sort(),
     );
   });
 

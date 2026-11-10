@@ -330,6 +330,11 @@ function buildMesh(
     window: window ?? plateClip,
     cosmeticTrees: window !== undefined,
     roads: true,
+    // THE LAND-USE TINT (city objects plan 2026-11-07-2315 M3): rasterised
+    // over the same window, so it ends where the city's data ends. Built every
+    // full pass whatever the layer switch says: the switch is a uniform on the
+    // page, and a rebuild per click would cost a full mesh step.
+    groundTint: true,
   });
   const { volumes, barriers, trees } = city;
   // Per-vertex terrain again: a region can be hundreds of metres across.
@@ -437,6 +442,10 @@ function buildMesh(
     poi,
     roads: city.roads,
     roadCount: city.roadCount,
+    // COPIED, not transferred: at the 2 m texel and the largest window it is
+    // about 2 MB, and the `colors` lesson in `transferablesOf` (a moved
+    // buffer something re-read) is not worth relearning for a copy that cheap.
+    ...(city.groundTint === undefined ? {} : { groundTint: city.groundTint }),
     // CONVERTED HERE because this is where the frame is. Every other piece of
     // scene geometry is built in this function for the same reason, and
     // `recentre` invalidates ENU coordinates, so a page-side copy of the frame

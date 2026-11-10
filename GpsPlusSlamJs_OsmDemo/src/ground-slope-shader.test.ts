@@ -23,7 +23,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   SLOPE_SHADER_ANCHORS,
+  DEFAULT_GROUND_SLOPE_COLOURS,
   installGroundSlope,
+  setGroundSlopeColours,
+  slopeColourUniforms,
 } from "./ground-slope-shader.js";
 
 /** A shader object shaped like the one three hands `onBeforeCompile`. */
@@ -61,7 +64,10 @@ describe("the slope patch's anchors", () => {
 describe("installGroundSlope", () => {
   it("actually rewrites both shaders", () => {
     const material = new THREE.MeshStandardMaterial();
-    installGroundSlope(material, { uSlope: { value: 1 } });
+    installGroundSlope(material, {
+      uSlope: { value: 1 },
+      ...slopeColourUniforms(),
+    });
     const shader = shaderStub();
     material.onBeforeCompile.call(
       material,
@@ -81,7 +87,10 @@ describe("installGroundSlope", () => {
       shader.vertexShader = `// displacement\n${shader.vertexShader}`;
     });
     material.onBeforeCompile = first;
-    installGroundSlope(material, { uSlope: { value: 1 } });
+    installGroundSlope(material, {
+      uSlope: { value: 1 },
+      ...slopeColourUniforms(),
+    });
 
     const shader = shaderStub();
     material.onBeforeCompile.call(
@@ -98,7 +107,7 @@ describe("installGroundSlope", () => {
   it("shares the uniform object, so one write reaches every material", () => {
     // The ground has two materials (plain and ramp) and both are patched. A
     // copied uniform would make the toggle work on one of them.
-    const uniforms = { uSlope: { value: 0 } };
+    const uniforms = { uSlope: { value: 0 }, ...slopeColourUniforms() };
     const material = new THREE.MeshStandardMaterial();
     installGroundSlope(material, uniforms);
     const shader = shaderStub();
@@ -115,7 +124,75 @@ describe("installGroundSlope", () => {
     // GPU — another way to get a silent no-op.
     const material = new THREE.MeshStandardMaterial();
     material.needsUpdate = false;
-    installGroundSlope(material, { uSlope: { value: 1 } });
+    installGroundSlope(material, {
+      uSlope: { value: 1 },
+      ...slopeColourUniforms(),
+    });
     expect(material.version).toBeGreaterThan(0);
+  });
+});
+
+describe("the slope colours (colour schemes plan 2026-11-10-0841 section 4.4)", () => {
+  it("default to exactly the literals the shader carried", () => {
+    // WHY: the default scheme must leave the default look unchanged; the
+    // colours became uniforms only so other schemes can move them.
+    expect(DEFAULT_GROUND_SLOPE_COLOURS).toEqual({
+      cool: [0.1, 0.25, 0.35],
+      warm: [0.35, 0.2, 0.15],
+      isoline: [0.62, 0.74, 0.92],
+      rim: [0.2, 0.2, 0.2],
+    });
+    const u = slopeColourUniforms();
+    expect(u.uSlopeCool.value.toArray()).toEqual([0.1, 0.25, 0.35]);
+    expect(u.uSlopeRim.value.toArray()).toEqual([0.2, 0.2, 0.2]);
+  });
+
+  it("are read from uniforms, no literal left in the patch", () => {
+    // WHY: a literal left behind would ignore the scheme on that one term.
+    const material = new THREE.MeshStandardMaterial();
+    installGroundSlope(material, {
+      uSlope: { value: 1 },
+      ...slopeColourUniforms(),
+    });
+    const shader = shaderStub();
+    material.onBeforeCompile(shader, {} as THREE.WebGLRenderer);
+    for (const name of [
+      "uSlopeCool",
+      "uSlopeWarm",
+      "uSlopeIsoline",
+      "uSlopeRim",
+    ]) {
+      expect(shader.fragmentShader).toContain(`uniform vec3 ${name};`);
+      expect(shader.uniforms[name]).toBeDefined();
+    }
+    expect(shader.fragmentShader).not.toContain("vec3(0.62, 0.74, 0.92)");
+    expect(shader.fragmentShader).not.toContain("vec3(0.10, 0.25, 0.35)");
+  });
+
+  it("are written in place by setGroundSlopeColours, and refused out of range", () => {
+    // WHY: a scheme switch writes the shared uniform objects (no recompile);
+    // a channel outside [0, 1] is a scheme typo and must not reach the GPU.
+    const uniforms = { uSlope: { value: 1 }, ...slopeColourUniforms() };
+    const cool = uniforms.uSlopeCool;
+    setGroundSlopeColours(uniforms, {
+      ...DEFAULT_GROUND_SLOPE_COLOURS,
+      cool: [0.5, 0.5, 0.5],
+    });
+    expect(uniforms.uSlopeCool).toBe(cool);
+    expect(cool.value.toArray()).toEqual([0.5, 0.5, 0.5]);
+    for (const bad of [
+      [-0.1, 0, 0],
+      [0, 1.1, 0],
+      [0, 0, Number.NaN],
+    ] as const) {
+      expect(() =>
+        setGroundSlopeColours(uniforms, {
+          ...DEFAULT_GROUND_SLOPE_COLOURS,
+          rim: bad,
+        }),
+      ).toThrow(RangeError);
+    }
+    // Nothing written by a refused call.
+    expect(uniforms.uSlopeRim.value.toArray()).toEqual([0.2, 0.2, 0.2]);
   });
 });

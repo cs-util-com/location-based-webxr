@@ -47,7 +47,13 @@ import {
   type CellPreset,
 } from "./cell-presets.js";
 import { cellFaceMaterial, cellOutlineMaterial } from "./cell-materials.js";
-import { installGroundSlope } from "./ground-slope-shader.js";
+import {
+  installGroundSlope,
+  setGroundSlopeColours,
+  slopeColourUniforms,
+  type GroundSlopeColours,
+} from "./ground-slope-shader.js";
+import { landUseTint, type LandUseTint } from "./land-use-tint.js";
 import {
   applyBuildingSkyLight,
   applySurfaceGain,
@@ -488,6 +494,13 @@ export class BuildingView {
    * to eliminate.
    */
   private readonly groundRampMaterial: THREE.MeshBasicMaterial;
+  /**
+   * The land-use tint on the lit ground material (city objects plan
+   * 2026-11-07-2315 M3, owner Q6): the latest build's raster, the layer
+   * switch and the appearance, with one rule for whether it shows. It also
+   * owns that material's colour, which is white under a tint.
+   */
+  private readonly landUse: LandUseTint;
   /** Whether the ramp is showing, so a terrain update knows to recolour. */
   private groundDebug = false;
   /** Which appearance is showing, so a repeated set is a no-op (§2). */
@@ -529,6 +542,8 @@ export class BuildingView {
      * every toggle costs a program build and the picker stutters.
      */
     uSlope: { value: 0 },
+    /** The slope treatment's colours, linear; a scheme writes them (S3). */
+    ...slopeColourUniforms(),
   };
   /**
    * What the last frame cost the GPU (W10, N5).
@@ -736,6 +751,14 @@ export class BuildingView {
     );
     this.ground.rotation.x = -Math.PI / 2;
     this.groundMaterial = this.ground.material;
+    if (!(this.groundMaterial instanceof THREE.MeshStandardMaterial)) {
+      throw new TypeError("the ground material must be a MeshStandardMaterial");
+    }
+    // Anisotropy because the ground is seen at grazing angles, where a
+    // mipmapped texture blurs along the view without it.
+    this.landUse = landUseTint(this.groundMaterial, {
+      anisotropy: this.renderer.capabilities.getMaxAnisotropy(),
+    });
     this.groundRampMaterial = new THREE.MeshBasicMaterial({
       vertexColors: true,
     });
@@ -1188,6 +1211,7 @@ export class BuildingView {
   setGroundAppearance(appearance: GroundAppearance): void {
     if (appearance === this.groundAppearance) return;
     this.groundAppearance = appearance;
+    this.landUse.setAppearance(appearance);
     this.groundDebug = appearance === "ramp";
     if (this.groundDebug) this.applyGroundRamp();
     this.groundUniforms.uSlope.value = appearance === "slope" ? 1 : 0;
@@ -1196,6 +1220,32 @@ export class BuildingView {
       : this.groundMaterial;
     // On demand rendering: without this the swap is invisible until the camera
     // moves, which is finding R2-3 in a new place.
+    this.requestFrame();
+  }
+
+  /**
+   * The "land-use colours" layer switch (owner Q6). A uniform write, so it
+   * needs no rebuild; hidden anyway under the height ramp.
+   */
+  setLandUseTint(on: boolean): void {
+    this.landUse.setWanted(on);
+    this.requestFrame();
+  }
+
+  /** Whether the land-use tint is drawn now, for the status line and tests. */
+  landUseTintShowing(): boolean {
+    return this.landUse.showing();
+  }
+
+  /**
+   * The ground's colours from a scheme (colour schemes plan 2026-11-10-0841
+   * section 4.4): the material colour while no tint is applied (`ground`,
+   * sRGB `0xrrggbb`) and the slope treatment's four linear colours. Uniform
+   * and colour writes only, no recompile.
+   */
+  setGroundColours(ground: number, slope: GroundSlopeColours): void {
+    this.landUse.setGroundColour(ground);
+    setGroundSlopeColours(this.groundUniforms, slope);
     this.requestFrame();
   }
 
@@ -1813,6 +1863,9 @@ export class BuildingView {
     context?: Omit<MeshLayerContext, "drawnHostLayers">,
   ): BuildingStats {
     this.clear();
+    // THE TINT FOLLOWS EVERY BUILD, including a build without one (it is then
+    // dropped): it is the ground of the window the meshes were built for.
+    this.landUse.setTint(mesh.groundTint);
     // ONE LINE PER LAYER'S WORTH OF WORK, in `mesh-layers.ts`. This used to be a
     // pair of branches per layer — one to draw it, one ternary per counter to zero
     // its contribution when off — which reached complexity 21 with three layers and
@@ -2443,6 +2496,8 @@ export class BuildingView {
     // material twice and never freed the standard one. Naming both is the only
     // form that does not depend on which mode the view happened to be in.
     this.ground.geometry.dispose();
+    // The tint's texture is not on the material's dispose path.
+    this.landUse.dispose();
     this.groundMaterial.dispose();
     // The sky owns its LUT render targets, the environment map, its mesh and
     // the haze's texture. `AtmosphereRig.dispose()` clears `scene.environment`

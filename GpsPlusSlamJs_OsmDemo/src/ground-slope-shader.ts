@@ -31,7 +31,7 @@
  * @see ground-slope-shader.ts.md
  */
 
-import type * as THREE from "three";
+import * as THREE from "three";
 
 import { FLAT_FADE_STEEPNESS, ISOCLINE_FREQUENCY } from "./terrain-slope.js";
 
@@ -47,10 +47,85 @@ export const SLOPE_SHADER_ANCHORS = {
   fragment: ["#include <common>", "#include <opaque_fragment>"],
 } as const;
 
+/** A LINEAR rgb triple, as the shader uses it (not sRGB). */
+export type LinearRgb = readonly [number, number, number];
+
+/**
+ * The slope treatment's four colours, in LINEAR rgb (colour schemes plan
+ * 2026-11-10-0841 section 4.4).
+ *
+ * They were GLSL literals until the schemes made them a choice. They are kept
+ * linear rather than written as sRGB hex so the default reproduces the
+ * literals exactly: a hex would be rounded to 8 bits and decoded, and the
+ * default look would move by a fraction of a level for no reason.
+ */
+export interface GroundSlopeColours {
+  /** The aspect tint's end for slopes facing away from the sun's side. */
+  readonly cool: LinearRgb;
+  /** The aspect tint's other end. */
+  readonly warm: LinearRgb;
+  /** The isoclines. */
+  readonly isoline: LinearRgb;
+  /** The rim added at grazing angles. */
+  readonly rim: LinearRgb;
+}
+
+/** Today's colours, the literals the shader carried until the schemes. */
+export const DEFAULT_GROUND_SLOPE_COLOURS: GroundSlopeColours = {
+  cool: [0.1, 0.25, 0.35],
+  warm: [0.35, 0.2, 0.15],
+  isoline: [0.62, 0.74, 0.92],
+  rim: [0.2, 0.2, 0.2],
+};
+
 /** Uniforms the patch adds, shared so one write reaches every ground material. */
 export interface SlopeUniforms {
   /** 1 while the treatment is on, 0 while the ground is plain. */
   readonly uSlope: { value: number };
+  /** The four colours of {@link GroundSlopeColours}, linear. */
+  readonly uSlopeCool: { value: THREE.Vector3 };
+  readonly uSlopeWarm: { value: THREE.Vector3 };
+  readonly uSlopeIsoline: { value: THREE.Vector3 };
+  readonly uSlopeRim: { value: THREE.Vector3 };
+}
+
+/** The colour uniforms holding {@link DEFAULT_GROUND_SLOPE_COLOURS}. */
+export function slopeColourUniforms(): Omit<SlopeUniforms, "uSlope"> {
+  const v = (rgb: LinearRgb): { value: THREE.Vector3 } => ({
+    value: new THREE.Vector3(...rgb),
+  });
+  const d = DEFAULT_GROUND_SLOPE_COLOURS;
+  return {
+    uSlopeCool: v(d.cool),
+    uSlopeWarm: v(d.warm),
+    uSlopeIsoline: v(d.isoline),
+    uSlopeRim: v(d.rim),
+  };
+}
+
+/**
+ * Writes a scheme's slope colours into the shared uniforms: no recompile, so a
+ * scheme switch costs a uniform upload. `RangeError` for a channel that is not
+ * a finite number in [0, 1].
+ */
+export function setGroundSlopeColours(
+  uniforms: SlopeUniforms,
+  colours: GroundSlopeColours,
+): void {
+  const pairs = [
+    [uniforms.uSlopeCool, colours.cool],
+    [uniforms.uSlopeWarm, colours.warm],
+    [uniforms.uSlopeIsoline, colours.isoline],
+    [uniforms.uSlopeRim, colours.rim],
+  ] as const;
+  for (const [, rgb] of pairs) {
+    if (!rgb.every((c) => Number.isFinite(c) && c >= 0 && c <= 1)) {
+      throw new RangeError(
+        `slope colour [${rgb.join(", ")}] is not linear rgb in [0, 1]`,
+      );
+    }
+  }
+  for (const [uniform, rgb] of pairs) uniform.value.set(...rgb);
 }
 
 /**
@@ -108,7 +183,11 @@ export function installGroundSlope(
         "#include <common>",
         `#include <common>
         varying vec3 vGroundWorldNormal;
-        uniform float uSlope;`,
+        uniform float uSlope;
+        uniform vec3 uSlopeCool;
+        uniform vec3 uSlopeWarm;
+        uniform vec3 uSlopeIsoline;
+        uniform vec3 uSlopeRim;`,
       )
       .replace(
         "#include <opaque_fragment>",
@@ -127,9 +206,7 @@ export function installGroundSlope(
             // ASPECT TINT. Mirrors \`slopeAspect\`.
             float aspect = atan(gn.x, gn.z);
             float warmth = (sin(aspect) + 1.0) * 0.5;
-            vec3 cool = vec3(0.10, 0.25, 0.35);
-            vec3 warm = vec3(0.35, 0.20, 0.15);
-            vec3 tint = mix(cool, warm, warmth);
+            vec3 tint = mix(uSlopeCool, uSlopeWarm, warmth);
             outgoingLight = mix(
               outgoingLight,
               outgoingLight * (0.65 + tint),
@@ -143,12 +220,12 @@ export function installGroundSlope(
             float phase = steepness * ${ISOCLINE_FREQUENCY.toFixed(1)};
             float width = fwidth(phase);
             float line = smoothstep(width * 1.5, 0.0, abs(fract(phase) - 0.5));
-            outgoingLight = mix(outgoingLight, vec3(0.62, 0.74, 0.92), line * strength * 0.55);
+            outgoingLight = mix(outgoingLight, uSlopeIsoline, line * strength * 0.55);
 
             // RIM. Brightens grazing angles, which is what picks out a crease.
             vec3 viewDir = normalize(vViewPosition);
             float rim = smoothstep(0.6, 1.0, 1.0 - max(dot(viewDir, normal), 0.0));
-            outgoingLight += vec3(0.20) * rim * strength;
+            outgoingLight += uSlopeRim * rim * strength;
           }
         }
         #include <opaque_fragment>`,

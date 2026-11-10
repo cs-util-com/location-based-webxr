@@ -37,25 +37,28 @@ import {
 // knip is right that a second public name earns nothing.
 type LayerGroup = "overlays" | "world" | "diagnostics";
 
-/** Which group each layer belongs to. Exhaustive over the union by construction. */
+/**
+ * Which group each layer belongs to. Exhaustive over the union by construction:
+ * a `Record` keyed by `LayerKind` fails to compile when a layer is missing.
+ */
+const GROUP_OF: Readonly<Record<LayerKind, LayerGroup>> = {
+  cells: "overlays",
+  areas: "overlays",
+  buildings: "world",
+  trees: "world",
+  woods: "world",
+  plates: "world",
+  tint: "world",
+  roads: "world",
+  poi: "world",
+  // A DIAGNOSTIC, not a thing in the world: it draws what the scorer REFUSED
+  // to look at, so it belongs beside the other "why does it look like that"
+  // switches rather than among the buildings and trees.
+  underground: "diagnostics",
+};
+
 function groupOf(layer: LayerKind): LayerGroup {
-  switch (layer) {
-    case "cells":
-    case "areas":
-      return "overlays";
-    case "buildings":
-    case "trees":
-    case "woods":
-    case "plates":
-    case "roads":
-    case "poi":
-      return "world";
-    // A DIAGNOSTIC, not a thing in the world: it draws what the scorer REFUSED
-    // to look at, so it belongs beside the other "why does it look like that"
-    // switches rather than among the buildings and trees.
-    case "underground":
-      return "diagnostics";
-  }
+  return GROUP_OF[layer];
 }
 
 /** Group captions, in the order the groups appear. */
@@ -144,43 +147,43 @@ function sideEffectOf(layer: LayerKind): string | undefined {
   return "Also hides the pool, pitch and parking markers whose area this draws — the area already says what they say.";
 }
 
-/** Human-readable name for a layer. Short, because they sit in a crowded bar. */
+/**
+ * Human-readable name for a layer. Short, because they sit in a crowded bar.
+ * A `Record` keyed by `LayerKind`, so a new layer without a label fails to
+ * compile.
+ */
+const LABELS: Readonly<Record<LayerKind, string>> = {
+  cells: "cells",
+  areas: "areas",
+  buildings: "buildings",
+  trees: "trees",
+  // The invented trees of mapped woods, orchards and tree rows (city
+  // objects plan 2026-11-07-2315 M2a), apart from the mapped "trees".
+  woods: "woods",
+  // "landuse", NOT "ground" and NOT "OSM areas", and both rejections are the
+  // point. It said "ground" until the ground-mode picker landed beside it
+  // (W11), and two controls labelled "ground" meaning different things — one
+  // a layer of OSM landuse/amenity/leisure/natural polygons, the other which
+  // SURFACE is drawn — is unreadable: picking "No ground" while something
+  // labelled "ground" is still on screen looks like the picker failed. The
+  // picker owns the word, because it is the one with a "none".
+  //
+  // "OSM areas" was the first replacement and it collided with the
+  // `areas` layer — the merged affordance regions — for a human reading the
+  // bar and for two e2e locators addressing "areas" by accessible name. What
+  // the builder actually selects is `PLATE_KEYS`: amenity, landuse, leisure,
+  // natural. "landuse" is the honest short name for that set.
+  plates: "landuse",
+  roads: "roads",
+  poi: "POI",
+  // NOT "landuse" again: the plates switch carries that word, and e2e
+  // locators address both by accessible name, which matches substrings.
+  tint: "land-use colours",
+  underground: "underground",
+};
+
 function labelFor(layer: LayerKind): string {
-  switch (layer) {
-    case "cells":
-      return "cells";
-    case "areas":
-      return "areas";
-    case "buildings":
-      return "buildings";
-    case "trees":
-      return "trees";
-    case "woods":
-      // The invented trees of mapped woods, orchards and tree rows (city
-      // objects plan 2026-11-07-2315 M2a), apart from the mapped "trees".
-      return "woods";
-    case "plates":
-      // "landuse", NOT "ground" and NOT "OSM areas", and both rejections are the
-      // point. It said "ground" until the ground-mode picker landed beside it
-      // (W11), and two controls labelled "ground" meaning different things — one
-      // a layer of OSM landuse/amenity/leisure/natural polygons, the other which
-      // SURFACE is drawn — is unreadable: picking "No ground" while something
-      // labelled "ground" is still on screen looks like the picker failed. The
-      // picker owns the word, because it is the one with a "none".
-      //
-      // "OSM areas" was the first replacement and it collided with the
-      // `areas` layer — the merged affordance regions — for a human reading the
-      // bar and for two e2e locators addressing "areas" by accessible name. What
-      // the builder actually selects is `PLATE_KEYS`: amenity, landuse, leisure,
-      // natural. "landuse" is the honest short name for that set.
-      return "landuse";
-    case "roads":
-      return "roads";
-    case "poi":
-      return "POI";
-    case "underground":
-      return "underground";
-  }
+  return LABELS[layer];
 }
 
 export function attachLayerToggles(options: LayerTogglesOptions): LayerToggles {

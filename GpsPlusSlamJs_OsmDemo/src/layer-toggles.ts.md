@@ -150,3 +150,11 @@ is set and nothing happens.
 
 - Label "woods", beside "trees": invented trees in mapped woods, orchards and
   tree rows. The switch is the owner's on/off for them (default on).
+
+## Since S3 (colour schemes plan 2026-11-10-0841)
+
+`groupOf` and `labelFor` read `Record<LayerKind, ...>` tables (exhaustive at
+compile time) instead of switches, which the new `tint` layer took over the
+complexity limit. `tint` is in the world group, labelled "land-use colours":
+not "landuse" again, because the plates switch carries that word and e2e
+locators match accessible names by substring.

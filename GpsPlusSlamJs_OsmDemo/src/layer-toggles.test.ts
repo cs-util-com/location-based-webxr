@@ -384,6 +384,7 @@ describe("where an extra control lands inside its group", () => {
       "layer-trees",
       "layer-woods",
       "layer-plates",
+      "layer-tint",
       "layer-roads",
       "layer-poi",
     ]);

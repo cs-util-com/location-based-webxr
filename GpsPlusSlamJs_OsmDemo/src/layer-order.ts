@@ -44,34 +44,39 @@ const STEP_M = 0.04;
  * them float.
  */
 export function groundLift(layer: LayerKind): number {
-  switch (layer) {
-    case "plates":
-      return STEP_M;
-    case "roads":
-      return STEP_M * 2;
-    case "areas":
-      return STEP_M * 3;
-    case "cells":
-      return STEP_M * 4;
-    // Nothing to lift: buildings, trees and POI markers stand up from the ground
-    // and are separated by their own geometry.
-    //
-    // `terrainDebug` used to be here for a DIFFERENT reason with the same answer
-    // — it re-coloured the ground plane in place, so a lifted copy would z-fight
-    // with the very plane it replaced. That is now a ground MODE rather than a
-    // layer (W6, DEC-R5-4), and needing a bespoke reason to sit in this table was
-    // one of the signs it never belonged in the registry.
-    case "buildings":
-    case "trees":
-    case "woods":
-    case "poi":
-    case "underground":
-      // `underground` is BELOW the ground rather than on it, so it has no place
-      // on the lift ladder: it is drawn at the features' own depth, and lifting
-      // it towards the surface would defeat the one thing it exists to show.
-      return 0;
-  }
+  return LIFT_STEPS[layer] * STEP_M;
 }
+
+/**
+ * Each layer's rung on the lift ladder, in `STEP_M`s. A `Record` keyed by
+ * `LayerKind`, so a new layer without an answer fails to compile.
+ */
+const LIFT_STEPS: Readonly<Record<LayerKind, number>> = {
+  plates: 1,
+  roads: 2,
+  areas: 3,
+  cells: 4,
+  // Nothing to lift: buildings, trees and POI markers stand up from the ground
+  // and are separated by their own geometry.
+  //
+  // `terrainDebug` used to be here for a DIFFERENT reason with the same answer
+  // — it re-coloured the ground plane in place, so a lifted copy would z-fight
+  // with the very plane it replaced. That is now a ground MODE rather than a
+  // layer (W6, DEC-R5-4), and needing a bespoke reason to sit in this table was
+  // one of the signs it never belonged in the registry.
+  buildings: 0,
+  trees: 0,
+  woods: 0,
+  poi: 0,
+  // The land-use tint is drawn INSIDE the ground's own shader (the owner put
+  // its switch in the layer list, city objects plan Q6), so there is no second
+  // surface to separate from it.
+  tint: 0,
+  // `underground` is BELOW the ground rather than on it, so it has no place
+  // on the lift ladder: it is drawn at the features' own depth, and lifting
+  // it towards the surface would defeat the one thing it exists to show.
+  underground: 0,
+};
 
 /**
  * The ground layers, lowest first.

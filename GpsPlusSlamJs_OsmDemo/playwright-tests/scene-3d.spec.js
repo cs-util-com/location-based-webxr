@@ -1552,6 +1552,84 @@ const marginFor = async (page, mode) => {
 };
 
 /**
+ * How much the land-use tint must raise the frame's mean green excess over
+ * the Volksgarten fixture, in levels. PROVISIONAL until the first browser run
+ * measures it; then set well below the measured step.
+ */
+const TINT_GREEN_STEP = 0.5;
+
+/** Mean green excess of the 3D canvas: g minus the mean of r and b, 0-255. */
+const meanGreenExcess = (page) =>
+  page.evaluate(() => {
+    const el = document.querySelector("#scene canvas");
+    if (!(el instanceof HTMLCanvasElement)) return Number.NaN;
+    const probe = document.createElement("canvas");
+    probe.width = el.width;
+    probe.height = el.height;
+    const ctx = probe.getContext("2d");
+    if (ctx === null) return Number.NaN;
+    ctx.drawImage(el, 0, 0);
+    const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
+    let sum = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      sum += (data[i + 1] ?? 0) - ((data[i] ?? 0) + (data[i + 2] ?? 0)) / 2;
+    }
+    return sum / (data.length / 4);
+  });
+
+test.describe("the land-use tint (city objects plan 2026-11-07-2315 M3)", () => {
+  // WHY THIS TEST MATTERS (colour schemes plan 2026-11-10-0841 section 4.3):
+  // the tint is on by default (owner Q6), so the default picture changed and
+  // the old gates measure it with the tint OFF. This is the gate of the tint
+  // itself: the fixture is Cologne's Volksgarten, so a working tint greens the
+  // frame; the heat grid must stay the loudest thing over a tinted ground
+  // (DEC-R4-5 binds the default scheme, D8); and switching it off must give
+  // back today's ground exactly, which is what the old gates rely on.
+  test("greens the Volksgarten, keeps the heat grid the loudest, and off restores today's ground", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    await page.goto(
+      `/?lat=${50.9231}&lng=${6.9445}&date=2026-06-21&time=12:00`,
+    );
+    await waitForRefresh(page);
+    await installFrameProbe(page);
+    const tint = page.locator("#layer-tint");
+    await expect(tint).toBeChecked();
+    await page.locator("#layer-cells").uncheck();
+    await page.locator("#layer-woods").uncheck();
+
+    await tint.uncheck();
+    await stashStableFrame(page);
+    const greenOff = await meanGreenExcess(page);
+    await tint.check();
+    await expect
+      .poll(async () => (await diffFromStash(page, 24)).differing, REPAINT)
+      .toBeGreaterThan(0);
+    await settledChroma(page);
+    const greenOn = await meanGreenExcess(page);
+    console.log(
+      `land-use tint: green excess off ${greenOff.toFixed(2)}, on ${greenOn.toFixed(2)}`,
+    );
+    expect(greenOn, "the park greens the frame").toBeGreaterThan(
+      greenOff + TINT_GREEN_STEP,
+    );
+
+    // Off again: today's ground, pixel for pixel within the probe's threshold.
+    await tint.uncheck();
+    await expect
+      .poll(async () => (await diffFromStash(page, 24)).differing, REPAINT)
+      .toBe(0);
+
+    // The heat grid over the tinted ground, by the DEC-R4-5 bound (5).
+    await tint.check();
+    const margin = await marginFor(page, "cpu-slope");
+    console.log(`land-use tint: heat grid adds ${margin.toFixed(2)} chroma`);
+    expect(margin, "heat grid over the tinted ground").toBeGreaterThan(5);
+  });
+});
+
+/**
  * The least mean luma (Rec. 709, 0-255) of the BUILDINGS at the night point,
  * −30.1° over the Cologne fixture: what the night floor (`NIGHT_FLOOR` in
  * `atmosphere-rig.ts`) must keep them above. Measured in r1162 (about
@@ -1781,6 +1859,15 @@ async function expectHeatRampLoudest(
   // default, so they are switched back on before returning.
   const woods = page.locator("#layer-woods");
   await woods.uncheck();
+  // THE LAND-USE TINT OFF TOO (colour schemes plan 2026-11-10-0841 section
+  // 4.3, review MAJOR 4): `litSurfaceLuma` counts warm low-chroma pixels, and
+  // O2's commercial, park, farmland and sand colours pass that filter while
+  // today's ground fails it, so with the tint on this gate would partly
+  // measure ground against floors set for buildings and roads. Off, the
+  // ground is today's exactly, and no floor moves. The tint has its own e2e
+  // below in this file. On by default, so switched back on below.
+  const tint = page.locator("#layer-tint");
+  await tint.uncheck();
   // The lit city first, heat grid off, in the default ground mode.
   await page.locator("#layer-cells").uncheck();
   await settledChroma(page);
@@ -1809,6 +1896,7 @@ async function expectHeatRampLoudest(
     );
   }
   await woods.check();
+  await tint.check();
 }
 
 /**
@@ -2386,6 +2474,10 @@ test.describe("the light dialog", () => {
       // the readout read 24.9 at this view against 65.3 without them, so the
       // levers would be judged on the trees rather than on the lit city.
       await page.locator("#layer-woods").uncheck();
+      // And the land-use tint off, for the reason `expectHeatRampLoudest`
+      // gives: the readout counts warm low-chroma pixels, which O2's ground
+      // colours are, and the levers are about the lit city.
+      await page.locator("#layer-tint").uncheck();
       await settledChroma(page);
       // The dialog opens from its button and the l key, and closes with Escape.
       await page.locator("#light-open").click();
@@ -2412,8 +2504,9 @@ test.describe("the light dialog", () => {
       const tuned = await readoutLuma(page);
       await page.reload();
       await waitForRefresh(page);
-      // The same view as before the reload: the woods boot on.
+      // The same view as before the reload: the woods and the tint boot on.
       await page.locator("#layer-woods").uncheck();
+      await page.locator("#layer-tint").uncheck();
       await settledChroma(page);
       await page.locator("#light-open").click();
       await expect(page.locator("#light-gainMax")).toHaveValue("2");

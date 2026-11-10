@@ -27,6 +27,7 @@
  */
 
 import type {
+  GroundTint,
   MeshChunk,
   CellExplanation,
   RacingProviderStats,
@@ -99,6 +100,12 @@ export interface TransferableMesh {
    */
   readonly roads: readonly MeshChunk[];
   readonly roadCount: number;
+  /**
+   * The land-use tint over the build window (city objects plan 2026-11-07-2315
+   * M3): a class byte per texel plus the scheme's palette. Absent when the
+   * build had no window to paint. Cloneable: typed array, numbers, a Map.
+   */
+  readonly groundTint?: GroundTint;
   /**
    * The below-surface features' outlines, in ENU, packed x,y per point.
    *

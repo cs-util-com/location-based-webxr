@@ -3197,6 +3197,9 @@ async function main(): Promise<void> {
       // still keeps it while `cells` is on. The `.layer-busy` comment is
       // narrowed to say exactly that — busy stays visible, inapplicable goes.
       paintShowBelow(layers);
+      // The land-use tint is a uniform on the ground, not a mesh layer, so it
+      // follows the switch here rather than through a redraw.
+      buildingView.setLandUseTint(isLayerEnabled(layers, "tint"));
       // TURNING THE CELL LAYER ON HAS TO FETCH THE CELLS (round 10, stage B).
       // Every other layer only changes what is drawn from data already held, so
       // a redraw is enough; `cells` is different because the snapshot
@@ -3319,6 +3322,9 @@ async function main(): Promise<void> {
   // default `cpu-ramp`, which is not `GROUND_MODES[0]`, so the coincidence
   // breaks: the picker would have read "CPU ground" over a ramped scene.
   applyGroundMode(selectOsmView(store.getState()).groundMode);
+  buildingView.setLandUseTint(
+    isLayerEnabled(selectLayers(store.getState()), "tint"),
+  );
 
   /**
    * The details panel follows the selection, from whichever view produced it.
