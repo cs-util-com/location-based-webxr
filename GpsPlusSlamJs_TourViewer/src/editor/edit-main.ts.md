@@ -897,8 +897,10 @@ button selects it with a pan (`select(selection, true)`). A phone is
 a change of it redraws the panel. "Add files..." opens the picker for
 several files of every kind (`filePicker.pickMany`) and `addToShelf`
 reads each one onto the shelf through the session's `addFile`, used
-nowhere yet (a save leaves out what nothing uses): a refusal is said per
-file, the last file added is revealed and a toast says how many arrived.
+nowhere yet (a save leaves out what nothing uses): a busy toast
+(`data-testid="shelf-add-busy"`) while they are read, a refusal or a
+throw said per file, a picker that fails said, the last file added
+revealed and a toast saying how many arrived.
 
 ## Tests
 
@@ -992,9 +994,20 @@ on a desktop.
   (`addedFileOf`): a picture's, or a video's minted poster's; an opened
   tour's files keep the kind's icon. The page reads a video once through
   `videoLookOf` (`video-poster.ts`) for its poster and its length.
-- The shelf's delete of a file in use (`removeUsed`) is
-  `deleteFileAndUses`: the delete toast ends first, the selection goes and
-  the page redraws, as after any delete; the panel's Undo redraws again.
+- The shelf's delete of a file in use (`removeUsed`): its confirm reads
+  the session's `deletePlan`; the delete is `deleteShelfFileInUse` over
+  `deleteFileAndUses`, said through `deleted` like any delete ("Deleted
+  <name>.", the page's Undo toast, held against the autosave by
+  `undoOffer`); a refusal is said. A delete that made no step (nothing
+  used it after all) is said without an Undo.
+- The shelf's "Replace everywhere" (`replace`): `replaceEverywhere` picks
+  a file of the old one's kind, shows a busy toast
+  (`data-testid="replace-everywhere-busy"`) while it is read, then
+  `replaceFile`'s one step said with the page's Undo (`offerUndo`:
+  '"<name>" is used in N items now.'), or the refusal.
+- `offerUndo(said)` is the Undo toast every delete and the replace share:
+  its Undo is the stack's while the step is the newest; tapped after a
+  newer change it says so instead of doing nothing.
 - The shelf's "Use in..." (`useIn`): its choices are `useInChoices` over
   the manifest to write for the file `assetOf` finds; `useShelfFileIn`
   takes the chosen key - a station or a story adds an item made from the

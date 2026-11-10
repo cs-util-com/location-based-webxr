@@ -21,9 +21,13 @@ tree's add menu, the Ctrl+K palette and a dropped file all go through it.
 - `placeFileItem({ target, source, stations, id, nowIso, groundAt, place,
 addEntryToStory })` - makes the item (`new-file-item.ts`) and places
   it: through `place` (the tour's own checks) at a station, through
-  `addEntryToStory` in a story.
+  `addEntryToStory` in a story (the entry at the free spot of the
+  story's station; a story gone meanwhile is refused with
+  `FILE_STORY_GONE`).
 - `FILE_ADD_FAILED` ("That file could not be added."), `FILE_STATION_GONE`
-  ("That station is no longer in this tour - nothing was added.").
+  ("That station is no longer in this tour - nothing was added."),
+  `FILE_STORY_GONE` ("That story is no longer in this tour - nothing was
+  added.").
 
 ## Invariants & assumptions
 
@@ -54,7 +58,7 @@ if (outcome.kind === "refused") toast(outcome.reason);
 
 `add-file-item.test.ts` (each outcome, the busy state ended on each, a
 dropped file and a poster, throws at every step; `placeFileItem` at a
-station, in a story, a gone station, a video at a station, the tour's
+station, in a story, a gone story, a gone station, a video at a station, the tour's
 refusal) and `editor-session-add-file.test.ts` (a real session: one undo
 step, the file on the shelf while it runs, the file resolving before and
 after the smaller one replaced it, a save, a refusal leaving the revision

@@ -23,6 +23,16 @@
 - A crash (`OptimizerCrashed`) is passed to the state machine as `crashed`, which queues the job again while attempts remain.
 - The original's record and a loader of its bytes are kept in memory for "use the original"; the row offers it only while the written file does not hold the smaller file's bytes (`selectShelfRows`). The runner subscribes to the store and frees an original (`originalFreed`) as soon as its row stops offering it; a removal lets it go at once, held only by the removal's undo, which puts it back (a removal never undone frees it with the undo).
 - A save never waits for a job: it writes the original until the swap.
+- The keep rule: a file a character declaration names (his figure or his
+  pose sheet, `CHARACTER_KEPT`) is never optimized - kept with those
+  words at `add`, checked again before a queued job runs and again
+  before its swap lands (a character may be declared while it runs).
+- The shelf keeps every file an item names: a removed card's entry is
+  remembered, and when the document names its file again (the page's
+  Undo of a delete, a redo, the file used again) the card comes back
+  (`entryRestored`), queued again when it was waiting or running. Its
+  original is not held again. A second `add` of a card already there
+  changes nothing.
 
 ## Not here yet
 
@@ -31,4 +41,6 @@
 
 ## Tests
 
-`asset-shelf.test.ts` with `test-support/fake-optimizer.ts`: order and slots, progress, the swap, the 10 % rule, refused swaps and retry, crash retry, over-cap failures, no optimizer, use the original, optimize this tour, remove with undo, close, unreadable bytes.
+`asset-shelf.test.ts` with `test-support/fake-optimizer.ts`: order and slots, progress, the swap, the 10 % rule, refused swaps and retry, crash retry, over-cap failures, no optimizer, use the original, optimize this tour, remove with undo, close, unreadable bytes; the keep
+rule at add, before a run and before a swap (a fake optimizer); a card
+put back when the document names its file again.

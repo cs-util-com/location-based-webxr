@@ -4,7 +4,9 @@
  * with a progress pill over the map while it is closed, and the bottom
  * bar's "Assets" toggle with its badge. Per file a card: its kind, its
  * state and sizes, Retry, "Use the original", where it is used and a
- * delete (an unused file goes with an Undo; a used one says where first).
+ * delete (an unused file goes with an Undo; a used one says where first
+ * and what the delete does, the page deleting it), and "Replace in N
+ * items..." for a used file (the page picks and switches the file).
  * Over the list a summary of what a phone downloads, with "Optimize this
  * tour" for the opened tour's files. It reads the shelf's rows
  * (`selectShelfRows`) and acts through the shelf (`asset-shelf.ts`);
@@ -111,10 +113,27 @@ export interface ShelfPanelDeps {
   readonly retry: (id: string) => boolean;
   readonly useOriginal: (id: string) => Promise<boolean>;
   readonly remove: (id: string) => (() => void) | null;
-  /** Deletes a file in use with every use of it, returning the undo
-   *  (null when nothing was deleted). Without it a file in use is not
-   *  deleted: the confirm says where it is used. */
-  readonly removeUsed?: (id: string) => (() => void) | null;
+  /** A file in use deleted with every use of it: `plan` says in plain
+   *  words what the delete does ("Deletes 2 items, removes it from 1
+   *  other.") or why it cannot be done; `run` deletes it, the page saying
+   *  so with its own Undo. Without it a file in use is not deleted: the
+   *  confirm says where it is used. */
+  readonly removeUsed?: {
+    readonly plan: (
+      id: string,
+    ) =>
+      | { readonly kind: "plan"; readonly words: string }
+      | { readonly kind: "refused"; readonly reason: string };
+    readonly run: (id: string) => void;
+  };
+  /** "Replace everywhere": how many items and places a file's replace
+   *  switches (`count`; 0, no offer) and the replace itself (`run`: the
+   *  page picks the new file, switches every use in one step and says the
+   *  outcome; settled once all that is done). Absent, no offer. */
+  readonly replace?: {
+    readonly count: (id: string) => number;
+    readonly run: (id: string) => Promise<void>;
+  };
   readonly optimizeTour: () => number;
   /** Opens the picker for files to add. */
   readonly addFiles: () => void;
@@ -162,6 +181,13 @@ interface PanelState {
   confirm: string | null;
   /** Files whose "Use the original" is under way. */
   readonly goingBack: Set<string>;
+  /** Files whose "Replace everywhere" is under way. */
+  readonly replacing: Set<string>;
+}
+
+/** "Replace in 5 items...": the replace's offer with its count. */
+function replaceLabel(n: number): string {
+  return `Replace in ${String(n)} item${n === 1 ? "" : "s"}...`;
 }
 
 function readFolded(storage: ShelfPanelDeps["storage"]): boolean {
@@ -307,6 +333,7 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     openCard: null,
     confirm: null,
     goingBack: new Set(),
+    replacing: new Set(),
   };
   let drawnKey: string | null = null;
   /** The thumbnails' object URLs by file id, with the bytes each was
@@ -424,6 +451,19 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     const useIn = deps.useIn;
     if (useIn === undefined) return;
     openPop(anchor, `Use ${row.name} in`, (box) => {
+      // A phone puts files to work here, so the replace is offered here
+      // too.
+      const replacing = deps.phone() ? replaceCountOf(row) : 0;
+      if (replacing > 0) {
+        const item = button("mi", "replace", "", "pencil");
+        item.setAttribute("role", "menuitem");
+        item.append(el("span", "mt", replaceLabel(replacing)));
+        item.addEventListener("click", () => {
+          closePop(false);
+          void replace(row);
+        });
+        box.append(item, el("div", "msep"));
+      }
       const groups = useIn.choices(row.id);
       if (groups.length === 0) {
         box.append(
@@ -654,6 +694,19 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     if (row.placesInUse > 0) {
       buttons.append(button("btn small", "uses", "Show where", "jump"));
     }
+    const replacing = replaceCountOf(row);
+    if (replacing > 0) {
+      const busy = state.replacing.has(row.id);
+      const b = button(
+        "btn small",
+        "replace",
+        busy ? "Replacing..." : replaceLabel(replacing),
+        "pencil",
+      );
+      b.disabled = busy;
+      if (busy) b.setAttribute("aria-busy", "true");
+      buttons.append(b);
+    }
     if (buttons.childElementCount > 0) more.append(buttons);
     return more;
   }
@@ -663,12 +716,13 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     box.setAttribute("role", "alertdialog");
     box.setAttribute("aria-label", `Delete ${row.name}`);
     const places = deps.placesOf(row.id);
+    const plan = deps.removeUsed?.plan(row.id);
     const words = el("div", "");
     words.append(
       el("b", "", `${row.name} is used in ${placesWord(places.length)}.`),
-      deps.removeUsed === undefined
+      plan === undefined
         ? " Take it out of them first; then it can be deleted."
-        : ` Deleting it takes ${places.length === 1 ? "that" : "them"} out too.`,
+        : ` ${plan.kind === "plan" ? plan.words : plan.reason}`,
     );
     const where = el("ul", "");
     for (const place of places) {
@@ -683,7 +737,7 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     }
     const buttons = el("div", "btnrow");
     buttons.append(button("btn small", "delno", "Keep it"));
-    if (deps.removeUsed !== undefined) {
+    if (plan?.kind === "plan") {
       buttons.append(button("btn small danger", "delyes", "Delete", "trash"));
     }
     box.append(words, where, buttons);
@@ -857,6 +911,7 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
       state.openCard ?? "",
       state.confirm ?? "",
       [...state.goingBack].join(","),
+      [...state.replacing].join(","),
     ].join("\u0003");
     if (key === drawnKey) live(rows);
     else full(rows);
@@ -911,18 +966,35 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     return deps.rows().find((r) => r.id === id);
   }
 
-  /** A file in use deleted with its places, after the confirm: one Undo
-   *  brings the file and them back. */
+  /** A file in use deleted with its places, after the confirm: the page
+   *  deletes it and says so, with its Undo. */
   function removeUsed(row: ShelfRow): void {
     state.confirm = null;
-    const places = deps.placesOf(row.id).length;
-    const undo = deps.removeUsed?.(row.id) ?? null;
     redraw();
-    if (undo === null) return;
-    deps.toast(`${row.name} deleted, taken out of ${placesWord(places)}.`, {
-      label: "Undo",
-      run: undo,
-    });
+    deps.removeUsed?.run(row.id);
+  }
+
+  /** How many places the replace of `row`'s file switches; 0 when it is
+   *  not offered. */
+  function replaceCountOf(row: ShelfRow): number {
+    if (deps.replace === undefined || row.status === "failed") return 0;
+    return deps.replace.count(row.id);
+  }
+
+  /** "Replace everywhere", the card busy until the page settled it; the
+   *  page says the outcome, a failure it did not catch is said here. */
+  async function replace(row: ShelfRow): Promise<void> {
+    if (deps.replace === undefined || state.replacing.has(row.id)) return;
+    state.replacing.add(row.id);
+    redraw();
+    try {
+      await deps.replace.run(row.id);
+    } catch {
+      deps.toast(`${row.name} could not be replaced.`);
+    } finally {
+      state.replacing.delete(row.id);
+      redraw();
+    }
   }
 
   function remove(row: ShelfRow): void {
@@ -933,7 +1005,17 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
       return;
     }
     const undo = deps.remove(row.id);
-    if (undo === null) return;
+    if (undo === null) {
+      deps.toast(
+        `${row.name} could not be deleted: it is no longer on the shelf.`,
+      );
+      return;
+    }
+    // The shelf keeps every file the tour names: such a card comes back.
+    if (rowOf(row.id) !== undefined) {
+      deps.toast(`${row.name} stays on the shelf: the tour still uses it.`);
+      return;
+    }
     deps.toast(`${row.name} deleted.`, { label: "Undo", run: undo });
   }
 
@@ -998,6 +1080,9 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     },
     useorig: (row) => {
       void useOriginal(row);
+    },
+    replace: (row) => {
+      void replace(row);
     },
     del: remove,
     delyes: removeUsed,

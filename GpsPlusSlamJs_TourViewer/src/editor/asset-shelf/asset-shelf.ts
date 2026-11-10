@@ -18,7 +18,7 @@ import type { TourAsset } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
 import { DEFAULT_ARCHIVE_LIMITS } from "gps-plus-slam-app-framework/storage";
 
-import type { TourDocumentState } from "../../tour-document.js";
+import { fileUsesOf, type TourDocumentState } from "../../tour-document.js";
 import {
   OptimizerCrashed,
   type OptimizeOutcome,
@@ -43,6 +43,10 @@ export const NO_OPTIMIZER =
   "This kind of file cannot be made smaller yet; it is used as it is.";
 export const NOT_SMALLER =
   "Kept as it was: a smaller version would save less than a tenth.";
+/** A character's figure or pose sheet: its cells are cut by position, so
+ *  its bytes stay exactly as drawn. */
+export const CHARACTER_KEPT =
+  "Kept as it is: a character is drawn with it, and his pictures stay exactly as drawn.";
 const ORIGINAL_USED = "The original is used, as you asked.";
 const UNREADABLE = "Its bytes could not be read to make it smaller.";
 const TOO_LARGE =
@@ -150,9 +154,21 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
   const running = new Map<string, AbortController>();
   /** The originals a smaller file replaced, while they are offered. */
   const originals = new Map<string, HeldOriginal>();
+  /** The cards removed from the shelf, as they were (no original): one
+   *  comes back when the document names its file again - the page's Undo
+   *  of a delete brings the items back through the document alone. */
+  const removed = new Map<string, ShelfEntry>();
+  let seenDocument: TourDocumentState | null = null;
   let closed = false;
 
   const entries = () => store.getState().assetShelf.entries;
+  /** Whether a character declaration names the file (his figure or his
+   *  pose sheet). A file is its bytes, so a picture of the same bytes
+   *  shares it and is kept with it. */
+  const drawnByCharacter = (id: string) =>
+    (store.getState().tourDocument.written?.characters ?? []).some(
+      (c) => c.image === id || c.frames === id,
+    );
   const dispatch = (action: UnknownAction) => {
     if (!closed) store.dispatch(action);
   };
@@ -168,7 +184,28 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
       dispatch(act.originalFreed({ id: row.id }));
     }
   }
-  const unsubscribe = store.subscribe(freeOriginals);
+  /** Each removed card whose file an item names again is back on the
+   *  shelf (queued again when it was waiting). */
+  function putBackNamed(): void {
+    if (closed || removed.size === 0) return;
+    const document = store.getState().tourDocument;
+    if (document === seenDocument) return;
+    seenDocument = document;
+    for (const [id, entry] of removed) {
+      const uses = fileUsesOf(document, id);
+      const named =
+        uses.own.length + uses.mentions.length + uses.inline.length > 0 ||
+        uses.cards.length + uses.characters.length > 0;
+      if (!named) continue;
+      removed.delete(id);
+      dispatch(act.entryRestored({ entry: asPutBack(entry) }));
+    }
+    pump();
+  }
+  const unsubscribe = store.subscribe(() => {
+    freeOriginals();
+    putBackNamed();
+  });
 
   function pump(): void {
     if (closed) return;
@@ -194,6 +231,10 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
     try {
       if (optimizer === null) {
         dispatch(act.jobKept({ id, reason: NO_OPTIMIZER }));
+        return;
+      }
+      if (drawnByCharacter(id)) {
+        dispatch(act.jobKept({ id, reason: CHARACTER_KEPT }));
         return;
       }
       const source = await deps.bytesOf(id);
@@ -264,6 +305,11 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
       }
       return;
     }
+    // A character may have taken the file on while its job ran.
+    if (drawnByCharacter(id)) {
+      dispatch(act.jobKept({ id, reason: CHARACTER_KEPT }));
+      return;
+    }
     if (!overCap && outcome.blob.size > source.size * settings.keepAbove) {
       dispatch(act.jobKept({ id, reason: NOT_SMALLER }));
       return;
@@ -289,6 +335,15 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
     );
   }
 
+  /** A removed card as it comes back: a job it was waiting for or running
+   *  starts again; an original it offered is no longer held. */
+  function asPutBack(entry: ShelfEntry): ShelfEntry {
+    const waiting = entry.phase === "queued" || entry.phase === "running";
+    return waiting
+      ? { ...entry, phase: "queued", progress: 0, attempts: 0 }
+      : entry;
+  }
+
   function stopJob(id: string): void {
     const stop = running.get(id);
     if (stop === undefined) return;
@@ -299,7 +354,14 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
   return {
     add(asset, name, bytes, origin, look) {
       if (closed) return;
+      removed.delete(asset.id);
       const optimizable = optimizers[asset.kind] !== null;
+      const drawn = drawnByCharacter(asset.id);
+      const keptReason = !optimizable
+        ? NO_OPTIMIZER
+        : drawn
+          ? CHARACTER_KEPT
+          : undefined;
       dispatch(
         act.entryAdded({
           id: asset.id,
@@ -307,8 +369,8 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
           name,
           origin,
           originalBytes: bytes,
-          queued: optimizable && origin === "added",
-          ...(optimizable ? {} : { keptReason: NO_OPTIMIZER }),
+          queued: keptReason === undefined && origin === "added",
+          ...(keptReason === undefined ? {} : { keptReason }),
           ...(look === undefined ? {} : { look }),
         }),
       );
@@ -385,19 +447,22 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
       let held = originals.get(id);
       originals.delete(id);
       dispatch(act.entryRemoved({ id }));
+      removed.set(id, { ...entry, originalHeld: false });
+      seenDocument = null;
+      putBackNamed();
       pump();
       return () => {
         if (closed || entries()[id] !== undefined) return;
-        const waiting = entry.phase === "queued" || entry.phase === "running";
+        removed.delete(id);
         if (held !== undefined) originals.set(id, held);
-        held = undefined;
         dispatch(
           act.entryRestored({
-            entry: waiting
-              ? { ...entry, phase: "queued", progress: 0, attempts: 0 }
-              : entry,
+            entry: asPutBack(
+              held === undefined ? { ...entry, originalHeld: false } : entry,
+            ),
           }),
         );
+        held = undefined;
         pump();
       };
     },

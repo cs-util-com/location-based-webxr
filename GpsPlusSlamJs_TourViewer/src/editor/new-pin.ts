@@ -153,24 +153,38 @@ export function addNewItem(
 const NEW_LONG_TEXT_BODY = "Write the text here.";
 
 /**
- * A new entry at the end of `story`: a card a visitor taps on from, in its
- * station's middle, "New pin n" or "New long text n" with n one more than
- * the story's cards of that kind. Moved in the room later, as any story
- * block.
+ * What every new story entry starts as, made from words or from a file
+ * (`new-file-item.ts`): a card a visitor taps on from, id `id`, posed at
+ * its station's free spot (`freePinSpot`) - a real place should it leave
+ * the story for the world, never the anchor's own point under the station
+ * marker.
+ */
+export function storyEntryShell(station: TourStation, id: string) {
+  const spot = freePinSpot(station);
+  return {
+    id,
+    view: "card",
+    pose: {
+      position: [spot.northM, 0, spot.eastM],
+      rotation: [0, 0, 0, 1],
+    },
+    advance: { mode: "tap" },
+  } as const;
+}
+
+/**
+ * A new entry at the end of `story` of `station` (`storyEntryShell`),
+ * "New pin n" or "New long text n" with n one more than the story's cards
+ * of that kind. Moved in the room later, as any story block.
  */
 export function newStoryEntry(
+  station: TourStation,
   story: TourStory,
   kind: TextAddKind,
   id: string,
 ): TourStoryBlock {
   const n = story.children.filter((c) => c.kind === kind).length + 1;
-  const shared = {
-    id,
-    view: "card",
-    pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-    advance: { mode: "tap" },
-  } as const;
-  return { ...shared, ...KIND_ADD[kind].entry(n) };
+  return { ...storyEntryShell(station, id), ...KIND_ADD[kind].entry(n) };
 }
 
 /**

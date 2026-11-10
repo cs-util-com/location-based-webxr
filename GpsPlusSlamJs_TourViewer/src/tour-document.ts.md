@@ -407,11 +407,27 @@ geo?, what })` - a copy inserted after the original (any station the
   - `itemsGrounded({ items: [{ id, alt }], what })` - several items' new
     altitudes ("put on the ground", the page measures the ground) as one
     step; an unknown id refuses the whole step.
-  - `fileUsesDeleted({ assetId, what })` - every use of a file taken out
-    in one step (the shelf's delete of a file in use): the free items and
-    story entries made from it deleted, a station's card image of it
-    cleared; an emptied automatic station goes too. A file nothing uses
-    changes nothing.
+  - `fileUsesDeleted({ assetId, what })` - the shelf's delete of a file
+    in use, in one step, by how each block names it (`fileUsesOf`,
+    `file-uses.ts`): the free items and story entries made of it deleted
+    (an emptied automatic station goes too), the ones only mentioning it
+    (a narration, a poster, a character's voice) without that field, a
+    station's card image of it cleared. Refused, unchanged, while a long
+    text shows the picture inside its words or a character declaration
+    is drawn with it. A file nothing uses changes nothing.
+  - `fileReplaced({ from, to, what })` - "Replace everywhere": every
+    reference to `from` names `to` in one step (`withFileSwitched`): the
+    items made of it, the mentions, the `asset:` targets of a long text,
+    a station's card image; a free picture's record follows. Refused,
+    unchanged, for the same file, a `to` the tour does not list, a file
+    of another kind, and a file a character declaration is drawn with.
+  - `fileUsesOf(state, assetId)` (a reader) - the blocks naming a file,
+    by how: `own`, `mentions`, `inline`, `cards` and the names of the
+    `characters` drawn with it.
+  - A free picture's `imageAsset` is read from its file's record as it
+    stands (`documentObjects`), so the shelf's swap to a smaller file
+    never leaves a stale copy in the picture (a captured photo keeps its
+    own record).
   - `modelResized({ id, sizeM, what })` - a placed model's size, within
     `TOUR_MODEL_MIN_SIZE_M`..`TOUR_MODEL_MAX_SIZE_M` (0.05 m to 500 m).
   - `moved` with `newStation: true` - "Move to a new station": the item

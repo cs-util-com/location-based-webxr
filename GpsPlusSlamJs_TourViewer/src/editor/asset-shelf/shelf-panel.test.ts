@@ -205,7 +205,12 @@ describe("acting on a file", () => {
   it("deletes an unused file with an Undo", () => {
     rows = [row()];
     const undo = vi.fn();
-    const { deps } = panel({ remove: vi.fn(() => undo) });
+    const { deps } = panel({
+      remove: vi.fn(() => {
+        rows = [];
+        return undo;
+      }),
+    });
     (actIn("a", "del") as HTMLButtonElement).click();
     expect(deps.remove).toHaveBeenCalledWith("a");
     expect(deps.toast).toHaveBeenCalledWith("bells.wav deleted.", {
@@ -215,26 +220,75 @@ describe("acting on a file", () => {
   });
 
   // Why: a file in use is deleted with its places (the format has no
-  // empty file field), so the confirm must say so and name them, and
-  // the delete must come with an Undo that brings them back.
-  it("deletes a file in use with its places after the confirm, with an Undo", () => {
+  // empty file field), so the confirm must say in plain words what goes
+  // and what only loses the file, and the delete is the page's (its toast
+  // and its Undo are the page's step undo, held against the autosave).
+  it("says what the delete of a file in use does, then leaves the delete to the page", () => {
     rows = [row({ placesInUse: 1 })];
-    const undo = vi.fn();
-    const removeUsed = vi.fn<(id: string) => (() => void) | null>(() => undo);
-    const { deps } = panel({ removeUsed });
+    const run = vi.fn();
+    const plan = vi.fn(() => ({
+      kind: "plan" as const,
+      words: "Deletes 1 item, removes it from 2 others.",
+    }));
+    const { deps } = panel({ removeUsed: { plan, run } });
     (actIn("a", "del") as HTMLButtonElement).click();
     const confirm = card("a")?.querySelector('[role="alertdialog"]');
+    expect(plan).toHaveBeenCalledWith("a");
     expect(confirm?.textContent).toContain("bells.wav is used in 1 place.");
-    expect(confirm?.textContent).toContain("Deleting it takes that out too.");
-    expect(removeUsed).not.toHaveBeenCalled();
-    (actIn("a", "delyes") as HTMLButtonElement).click();
-    expect(removeUsed).toHaveBeenCalledWith("a");
-    expect(deps.remove).not.toHaveBeenCalled();
-    expect(deps.toast).toHaveBeenCalledWith(
-      "bells.wav deleted, taken out of 1 place.",
-      { label: "Undo", run: undo },
+    expect(confirm?.textContent).toContain(
+      "Deletes 1 item, removes it from 2 others.",
     );
+    expect(run).not.toHaveBeenCalled();
+    (actIn("a", "delyes") as HTMLButtonElement).click();
+    expect(run).toHaveBeenCalledWith("a");
+    expect(deps.remove).not.toHaveBeenCalled();
+    expect(deps.toast).not.toHaveBeenCalled();
     expect(card("a")?.querySelector('[role="alertdialog"]')).toBeNull();
+  });
+
+  // Why: a long text showing the picture inside its words, or a character
+  // drawn with it, refuses the delete; the confirm says why and offers no
+  // Delete that would do nothing.
+  it("says why a file in use cannot be deleted, with no Delete", () => {
+    rows = [row({ placesInUse: 1 })];
+    const run = vi.fn();
+    panel({
+      removeUsed: {
+        plan: () => ({
+          kind: "refused",
+          reason: '"The gate" shows this picture inside its text.',
+        }),
+        run,
+      },
+    });
+    (actIn("a", "del") as HTMLButtonElement).click();
+    const confirm = card("a")?.querySelector('[role="alertdialog"]');
+    expect(confirm?.textContent).toContain(
+      '"The gate" shows this picture inside its text.',
+    );
+    expect(actIn("a", "delyes")).toBeNull();
+    expect(actIn("a", "delno")).not.toBeNull();
+  });
+
+  // Why: a delete that does nothing must never be silent.
+  it("says why an unused file was not deleted", () => {
+    rows = [row()];
+    const { deps } = panel({ remove: vi.fn(() => null) });
+    (actIn("a", "del") as HTMLButtonElement).click();
+    expect(deps.toast).toHaveBeenCalledWith(
+      "bells.wav could not be deleted: it is no longer on the shelf.",
+    );
+  });
+
+  // Why: the shelf keeps every file the tour names, so a card counted as
+  // unused but still named comes straight back; the creator is told.
+  it("says when the card stays because the tour still uses the file", () => {
+    rows = [row()];
+    const { deps } = panel({ remove: vi.fn(() => vi.fn()) });
+    (actIn("a", "del") as HTMLButtonElement).click();
+    expect(deps.toast).toHaveBeenCalledWith(
+      "bells.wav stays on the shelf: the tour still uses it.",
+    );
   });
 
   // Why: deleting a file in use would empty the fields that use it; the
@@ -255,6 +309,90 @@ describe("acting on a file", () => {
     (actIn("a", "delno") as HTMLButtonElement).click();
     expect(card("a")?.querySelector('[role="alertdialog"]')).toBeNull();
     expect(document.activeElement).toBe(actIn("a", "del"));
+  });
+
+  // Why: "Replace everywhere" switches every item using the file in one
+  // step; the card says beforehand how many, works visibly while the new
+  // file is picked and read, and comes back once it settled.
+  it("offers to replace a used file in its items, busy until it settled", async () => {
+    rows = [row({ placesInUse: 5 })];
+    let settle: () => void = () => undefined;
+    const run = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    panel({ replace: { count: () => 5, run } });
+    (actIn("a", "toggle") as HTMLElement).click();
+    const b = actIn("a", "replace") as HTMLButtonElement;
+    expect(b.textContent).toBe("Replace in 5 items...");
+    b.click();
+    expect(run).toHaveBeenCalledWith("a");
+    const busy = actIn("a", "replace") as HTMLButtonElement;
+    expect(busy.disabled).toBe(true);
+    expect(busy.getAttribute("aria-busy")).toBe("true");
+    expect(busy.textContent).toBe("Replacing...");
+    busy.click();
+    expect(run).toHaveBeenCalledTimes(1);
+    settle();
+    await vi.waitFor(() => {
+      expect((actIn("a", "replace") as HTMLButtonElement).disabled).toBe(false);
+    });
+    expect(actIn("a", "replace")?.textContent).toBe("Replace in 5 items...");
+  });
+
+  it("says when the replace failed, the button back", async () => {
+    rows = [row({ placesInUse: 1 })];
+    const { deps } = panel({
+      replace: { count: () => 1, run: () => Promise.reject(new Error("x")) },
+    });
+    (actIn("a", "toggle") as HTMLElement).click();
+    expect(actIn("a", "replace")?.textContent).toBe("Replace in 1 item...");
+    (actIn("a", "replace") as HTMLButtonElement).click();
+    await vi.waitFor(() => {
+      expect(deps.toast).toHaveBeenCalledWith(
+        "bells.wav could not be replaced.",
+      );
+    });
+    expect((actIn("a", "replace") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("offers no replace for a file nothing uses", () => {
+    rows = [row()];
+    panel({ replace: { count: () => 0, run: vi.fn() } });
+    (actIn("a", "toggle") as HTMLElement).click();
+    expect(actIn("a", "replace")).toBeNull();
+  });
+
+  // Why: on a phone "Use in..." is where a file is put to work, so the
+  // replace is offered there too.
+  it("offers the replace in Use in on a phone", () => {
+    phone = true;
+    rows = [row({ placesInUse: 2 })];
+    const run = vi.fn(() => Promise.resolve());
+    panel({
+      replace: { count: () => 2, run },
+      useIn: { choices: () => [], use: vi.fn() },
+    });
+    (actIn("a", "toggle") as HTMLElement).click();
+    actIn("a", "usein")?.click();
+    const item = $<HTMLElement>('#shelf-pop [data-act="replace"]');
+    expect(item?.textContent).toBe("Replace in 2 items...");
+    item?.click();
+    expect(run).toHaveBeenCalledWith("a");
+    expect($("#shelf-pop")).toBeNull();
+  });
+
+  it("offers no replace in Use in on a desktop", () => {
+    rows = [row({ placesInUse: 2 })];
+    panel({
+      replace: { count: () => 2, run: vi.fn() },
+      useIn: { choices: () => [], use: vi.fn() },
+    });
+    (actIn("a", "toggle") as HTMLElement).click();
+    actIn("a", "usein")?.click();
+    expect($('#shelf-pop [data-act="replace"]')).toBeNull();
   });
 
   it("retries a failed file and optimizes the opened tour", () => {

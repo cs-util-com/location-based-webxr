@@ -17,11 +17,12 @@ import { describe, expect, it, vi, type Mock } from "vitest";
 
 import "../test-support/tour-of.js";
 import type { FileAddKind } from "../kinds/edit-kinds.js";
-import { stationContent } from "../test-support/station-content.js";
+import { stationContent, storyOf } from "../test-support/station-content.js";
 import {
   addFileItem,
   FILE_ADD_FAILED,
   FILE_STATION_GONE,
+  FILE_STORY_GONE,
   placeFileItem,
   type FileAddDeps,
   type FileAddTarget,
@@ -177,7 +178,7 @@ describe("placeFileItem", () => {
     activateRadiusM: 50,
     foundRadiusM: 25,
     hint: "arrow",
-    ...stationContent([]),
+    ...stationContent([storyOf("t", [])]),
   } as unknown as TourStation;
 
   function input(kind: FileAddKind, target: FileAddTarget) {
@@ -222,6 +223,17 @@ describe("placeFileItem", () => {
       expect.objectContaining({ id: "new", kind: "model", view: "card" }),
     );
     expect(i.place).not.toHaveBeenCalled();
+  });
+
+  // Why: a story's entry stands at its station's free spot, so the
+  // story's station must be found; a story gone meanwhile adds nothing.
+  it("refuses a story that is gone, adding nothing", () => {
+    const i = input("audio", { kind: "story", storyId: "gone" });
+    expect(placeFileItem(i)).toEqual({
+      kind: "refused",
+      reason: FILE_STORY_GONE,
+    });
+    expect(i.addEntryToStory).not.toHaveBeenCalled();
   });
 
   it("refuses a station that is gone, and a video at a station, placing nothing", () => {

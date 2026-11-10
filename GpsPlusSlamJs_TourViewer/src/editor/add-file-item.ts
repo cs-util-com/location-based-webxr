@@ -15,7 +15,10 @@ import type {
   TourObject,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import type { TourStoryBlock } from "gps-plus-slam-app-framework/ar/tour-story";
+import {
+  tourStories,
+  type TourStoryBlock,
+} from "gps-plus-slam-app-framework/ar/tour-story";
 
 import {
   KIND_EDIT,
@@ -135,6 +138,11 @@ interface Refused {
 export const FILE_STATION_GONE =
   "That station is no longer in this tour - nothing was added.";
 
+/** Why a story's file add found no story: it went between the press and
+ *  the add. */
+export const FILE_STORY_GONE =
+  "That story is no longer in this tour - nothing was added.";
+
 /**
  * Place the item `source` makes at `target`: at a station's free spot
  * (`newFileItem`, through `place`, the tour's own check), or at the end of
@@ -157,9 +165,15 @@ export function placeFileItem(input: {
 }): { readonly kind: "added"; readonly id: string } | Refused {
   const { target, source } = input;
   if (target.kind === "story") {
+    const holder = input.stations.find((s) =>
+      tourStories(s).some((story) => story.id === target.storyId),
+    );
+    if (holder === undefined) {
+      return { kind: "refused", reason: FILE_STORY_GONE };
+    }
     return input.addEntryToStory(
       target.storyId,
-      newFileStoryEntry(source, input.id),
+      newFileStoryEntry(holder, source, input.id),
     );
   }
   const station = input.stations.find((s) => s.id === target.stationId);

@@ -19,6 +19,7 @@ import {
   tourObjectRecord,
   type TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { TOUR_KINDS } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 // Activates the licence the station frame's geodesy needs.
@@ -33,6 +34,7 @@ import {
   newFileItem,
   newFileStoryEntry,
 } from "./new-file-item.js";
+import { freePinSpot, newStoryEntry } from "./new-pin.js";
 
 const AT = "2026-11-09T10:00:00Z";
 const KINDS: readonly FileAddKind[] = ["picture", "audio", "video", "model"];
@@ -161,6 +163,15 @@ describe("newFileItem", () => {
     });
   });
 
+  // Why: the views a free block may hold are the format's (its kind
+  // table); a view written here beside it would drift from it unseen.
+  it("stands each free kind in the format's first free view", () => {
+    for (const kind of ["picture", "audio", "model"] as const) {
+      const item = newFileItem(input(), source(kind));
+      expect(item?.view).toBe(TOUR_KINDS[kind].freeViews[0]);
+    }
+  });
+
   // Why: no free host draws a video, so it would be an item nobody sees.
   it("makes no free video", () => {
     expect(newFileItem(input(), source("video", "flood.mp4"))).toBeNull();
@@ -199,37 +210,49 @@ describe("newFileItem", () => {
 });
 
 describe("newFileStoryEntry", () => {
-  it("makes each kind a card that moves on by a tap, at the station's middle", () => {
+  // Why: an entry made from a file and one made from words start alike
+  // (one shape, `new-pin.ts`'s): a card a visitor taps on from, standing
+  // at the station's free spot, a real place should it leave the story -
+  // never the anchor's own point.
+  it("makes each kind a card that moves on by a tap, at the station's free spot", () => {
+    const s = station(25, 3);
+    const spot = freePinSpot(s);
+    const words = newStoryEntry(s, { children: [] } as never, "shortText", "w");
     for (const kind of KINDS) {
-      const entry = newFileStoryEntry(source(kind), `e-${kind}`);
+      const entry = newFileStoryEntry(s, source(kind), `e-${kind}`);
       expect(entry).toMatchObject({
         id: `e-${kind}`,
         kind,
-        view: "card",
-        advance: { mode: "tap" },
-        pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+        view: words.view,
+        advance: words.advance,
+        pose: {
+          position: [spot.northM, 0, spot.eastM],
+          rotation: [0, 0, 0, 1],
+        },
         title: "Bell tower",
       });
+      expect(entry.pose).toEqual(words.pose);
     }
   });
 
   it("carries each kind's file, sizes and a video's poster", () => {
-    expect(newFileStoryEntry(source("picture"), "p")).toMatchObject({
+    const s = station();
+    expect(newFileStoryEntry(s, source("picture"), "p")).toMatchObject({
       image: "img1",
       widthM: NEW_PICTURE_WIDTH_M,
     });
-    expect(newFileStoryEntry(source("audio"), "a")).toMatchObject({
+    expect(newFileStoryEntry(s, source("audio"), "a")).toMatchObject({
       audio: "snd1",
     });
-    expect(newFileStoryEntry(source("model"), "m")).toMatchObject({
+    expect(newFileStoryEntry(s, source("model"), "m")).toMatchObject({
       asset: "glb1",
       sizeM: NEW_MODEL_SIZE_M,
     });
-    expect(newFileStoryEntry(source("video"), "v")).toMatchObject({
+    expect(newFileStoryEntry(s, source("video"), "v")).toMatchObject({
       video: "vid1",
       poster: "pst1",
     });
     const { poster: _poster, ...bare } = source("video");
-    expect(newFileStoryEntry(bare, "v")).not.toHaveProperty("poster");
+    expect(newFileStoryEntry(s, bare, "v")).not.toHaveProperty("poster");
   });
 });

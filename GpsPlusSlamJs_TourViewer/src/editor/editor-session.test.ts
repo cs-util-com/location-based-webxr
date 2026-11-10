@@ -1792,6 +1792,24 @@ describe("createEditorSession, undo and redo (W2)", () => {
     await session.close();
   });
 
+  // Why: the shelf lists a captured photo's picture as a file, and
+  // deleting that file deletes the photo made of it. Its undo after a save
+  // took the picture out of the file needs the picture kept, as for the
+  // photo's own delete; without the keep step it is refused.
+  it("a photo deleted with its file from the shelf comes back with its picture after a save", async () => {
+    const { session, manifest } = await opened([photo("f")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    expect(editor.deleteFileAndUses("f").kind).toBe("deleted");
+    await editor.save({ keepScan: false });
+    expect(editor.undo().kind).toBe("undone");
+    expect(await editor.pictureOf("f")?.text()).toBe("f");
+    await session.close();
+  });
+
   it("a photo deleted after a save keeps its picture from the session's own last bytes when the page's copy does not read", async () => {
     // Why (M4a review #5): right after the first in-place write the opened
     // file no longer reads, and the page may not have opened its copy of

@@ -401,11 +401,32 @@ changes`; a label is cut at 40 characters (`truncated`, split-safe), a label-les
   brought in (the shelf's entry keeps its id); undefined for none.
 - `addedFileOf(id)` - the bytes of a file this session brought in (the
   shelf's thumbnails); undefined for an opened tour's file.
-- `deleteFileAndUses(assetId)` - the shelf's delete of a file in use:
-  every use goes in one step (`fileUsesDeleted`), then the shelf entry.
-  The returned undo puts the entry back first (a picture's undo needs its
-  bytes), then takes the step back while it is still the newest; after a
-  later edit the uses stay out. Null for a file the shelf does not hold.
+- `deletePlan(assetId)` - what deleting the shelf's file would do, in
+  plain words (`fileDeleteWords`: "Deletes 2 items, removes it from 1
+  other."), or why it cannot be deleted (`fileUseRefusal`): a long text
+  shows the picture inside its words (named, "Take it out of the text
+  first."), a character of the tour is drawn with it, the shelf no
+  longer holds it.
+- `deleteFileAndUses(assetId)` - the shelf's delete of a file in use, as
+  `deletePlan` says: the items made of it deleted, the ones mentioning it
+  (a narration, a poster, a voice, read from the format's references,
+  `file-uses.ts`) and a station's card image without it, in one step
+  (`fileUsesDeleted`) - an undo like any other, which brings the card
+  back with the items (the shelf puts back a card whose file the tour
+  names again) - then the shelf entry. A captured photo made of the file
+  keeps its picture for an undo after a save. Returns `{ kind:
+"deleted", what, words }` or the plan's refusal; the page offers its
+  own Undo.
+- `replaceCount(assetId)` - how many items and station cards use the
+  file: what "Replace everywhere" switches.
+- `replaceFile(assetId, file, fileName)` - "Replace everywhere": `file`
+  brought in as `addFile` does for the old file's kind (onto the shelf),
+  then every use switched to it in one step (`fileReplaced`). Refused in
+  words for a file the shelf no longer holds, one a character of the
+  tour is drawn with (a character's pictures stay exactly as drawn), a
+  file of another kind, and the same file.
+- `addFile` always hands the file to the shelf: a file the tour holds
+  already gets its card back when it had left the shelf.
 - `addFile` hands the shelf a video's minted poster id and length
   (`ShelfVideoLook`), so its card shows the poster and can warn.
 - `assetOf(id)` - a listed file by its id (brought in here, or in the

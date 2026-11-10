@@ -26,8 +26,15 @@ declares a kind or a field, because a tour is untrusted input.
     null when a lenient reader does not know it. Built with the toolkit
     (`tour-block-read.ts`).
   - `refs(block)`: the assets the block names, shown or not.
-- `TourAssetRef` - `{ id, kind, required }`. `required` false is what the
-  format lets be missing: a picture a long text's body names.
+- `TourAssetRef` - `{ id, kind, required, field, optional? }`. `required`
+  false is what the format lets be missing: a picture a long text's body
+  names. `field` is the block's field that names it (`image`, `poster`,
+  `narration` - a record holding it -, `body` - a text naming it).
+  `optional` says the block stands without that field (a narration, a
+  poster, a voice); a required reference that is not optional is the
+  block's own file. The editor reads these to tell a block made of a file
+  (its delete deletes the block) from one that only mentions it (the
+  field is dropped, or switched by "Replace everywhere").
 - `isTourBlockKind(value)`, `tourBlockKinds()`.
 - `tourBlockRefs(block)` - the row's `refs`; empty for no known kind. Takes
   any value with a `kind`, since it also runs on a draft's unchecked record.

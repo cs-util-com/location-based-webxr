@@ -22,6 +22,15 @@ shelf runner (`asset-shelf.ts`); every word comes from
   - `deps.retry`, `deps.useOriginal`, `deps.remove`, `deps.optimizeTour`:
     the runner's commands. `remove` returns the undo, or null when the
     file is not on the shelf.
+  - `deps.removeUsed?`: the delete of a file in use. `plan(id)` says in
+    plain words what the delete does ("Deletes 2 items, removes it from 1
+    other.", the session's `deletePlan`) or why it cannot be done (a long
+    text shows the picture inside its words, a character is drawn with
+    it); `run(id)` deletes it, the page saying so with its own Undo.
+  - `deps.replace?`: "Replace everywhere". `count(id)` is how many items
+    and places the replace switches (0: not offered); `run(id)` picks the
+    new file and switches every use in one step, the page saying the
+    outcome; it settles once all is said.
   - `deps.addFiles()`: opens the picker for files to add.
   - `deps.placesOf(id)`: where the tour uses a file (`asset-places.ts`).
   - `deps.show(selection)`: selects and shows one of those places.
@@ -57,16 +66,25 @@ shelf runner (`asset-shelf.ts`); every word comes from
   click or Enter/Space on the card's row opens its details: "Use it
   somewhere else..." (with `useIn`), "Use the original" (when the row
   allows it; disabled with "Going back..." while it works, then a toast
-  either way) and the places.
-- Delete: an unused file goes at once, with a toast and its Undo. A used
-  file first opens an alert dialog that lists the places (each a button
-  that shows it) and offers "Keep it", focused; closing it returns the
-  focus to the delete button. With `deps.removeUsed` the dialog says
-  the places go with the file and offers "Delete": the file and every
-  place go in one step, and the toast "<name> deleted, taken out of N
-  places." carries the Undo that brings all back. The format has no
-  empty file field, so a place goes rather than staying empty. Without
-  `removeUsed` the dialog asks for the places to be changed first.
+  either way), the places and "Replace in N items..." (with
+  `deps.replace`, for a file something uses; disabled with
+  "Replacing..." and `aria-busy` while it works, back once it settled; a
+  failure the page did not catch is said: "<name> could not be
+  replaced."). On a phone the "Use in..." menu offers the replace too, at
+  its top.
+- Delete: an unused file goes at once, with a toast and its Undo; a
+  delete that does nothing says why ("could not be deleted: it is no
+  longer on the shelf", or "stays on the shelf: the tour still uses it"
+  when the shelf put its card back because the tour names the file). A
+  used file first opens an alert dialog that lists the places (each a
+  button that shows it) and offers "Keep it", focused; closing it
+  returns the focus to the delete button. With `deps.removeUsed` the
+  dialog says in plain words what the delete does (its `plan`) and
+  offers "Delete": the items made of the file go, the ones only
+  mentioning it (a narration, a poster, a voice) lose it, in one step
+  the page says with its Undo. When the plan refuses, the dialog says why
+  and offers no Delete. Without `removeUsed` the dialog asks for the
+  places to be changed first.
 - The popover (`#shelf-pop`, a menu) lists the places; arrows move between
   them, Escape closes it and returns the focus, a pointerdown outside
   closes it.
@@ -79,8 +97,8 @@ shelf runner (`asset-shelf.ts`); every word comes from
   (`.as-badge`, `.error` when something failed) counts what is under way
   or failed.
 - Redraw: a full redraw only when the rows' shape (`shapeKey`, which
-  leaves out progress), the filter, the open card, the dialog or a
-  "Use the original" under way changed; otherwise only the bars,
+  leaves out progress), the filter, the open card, the dialog, a
+  "Use the original" or a replace under way changed; otherwise only the bars,
   percentages and rings move, so a running job never steals focus or
   scroll. A full redraw puts the focus back on the same file's same
   button.
@@ -110,6 +128,8 @@ const panel = createShelfPanel({
   useOriginal: (id) => shelf.useOriginal(id),
   remove: (id) => shelf.remove(id),
   optimizeTour: () => shelf.optimizeTour(),
+  removeUsed: { plan: (id) => session.deletePlan(id), run: deleteInUse },
+  replace: { count: (id) => session.replaceCount(id), run: replaceEverywhere },
   addFiles: () => void picker.pickMany().then(addToShelf),
   placesOf: (id) => assetPlaces(stations(), id),
   show: (selection) => select(selection, true),
@@ -124,8 +144,11 @@ const panel = createShelfPanel({
 `shelf-panel.test.ts` (jsdom): the frame and the empty state, cards and
 their text-only names, the summary and "Optimize this tour", filters,
 Retry, "Use the original" with its transitional state and both toasts,
-deleting an unused file with its Undo, the used-file dialog with its
-places, the popover showing a place and closing on Escape, "Use in..."
+deleting an unused file with its Undo, a delete that did nothing said,
+the used-file dialog with its places, its plan's words handing the
+delete to the page, a refused plan with no Delete, "Replace in N
+items..." busy until settled, its failure said, no offer for an unused
+file, the offer in "Use in..." on a phone only, the popover showing a place and closing on Escape, "Use in..."
 with its groups, its empty state and its absence without the command, the fold kept
 in storage, the rail's rings, the bottom bar's toggle, the phone's sheet
 and pill, a progress update that moves only the bar and keeps the focus,

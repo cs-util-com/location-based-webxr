@@ -1413,8 +1413,18 @@ function deleted(
   }
   select(null);
   refresh();
-  // The toast's Undo is the stack's (W2), while this delete is the
-  // newest edit; a newer one ends the toast.
+  offerUndo(said);
+}
+
+/** Said when a toast's Undo is tapped after a newer change. */
+const UNDO_NOT_NEWEST =
+  "A newer change came after it: undo the newer changes first.";
+
+/** The toast saying `said` of the step just made, with its Undo: the
+ *  edit stack's while that step is the newest edit; a newer one ends the
+ *  toast. The autosave waits for it (`editing`). */
+function offerUndo(said: string): void {
+  if (editor === null) return;
   const mine = editor;
   const at = editor.revision();
   const t = toast(said, {
@@ -1422,6 +1432,8 @@ function deleted(
     run: () => {
       if (editor !== mine || mine.revision() !== at) {
         endUndo();
+        // Never silent: the step is no longer the newest one.
+        if (editor === mine) toast(UNDO_NOT_NEWEST);
         return;
       }
       runStep("undo");
@@ -1739,16 +1751,35 @@ async function addToShelf(files: readonly File[]): Promise<void> {
   let added: string | null = null;
   let count = 0;
   let backedUp = true;
-  for (const file of files) {
-    const outcome = await open.addFile(file, file.name);
-    if (editor !== open) return;
-    if (outcome.kind === "refused") {
-      toast(`${file.name}: ${outcome.reason}`);
-      continue;
+  // While the files are read, a toast says so (the async-UI rule).
+  const shown = toast(
+    files.length === 1
+      ? `Adding "${files[0]?.name ?? ""}"...`
+      : `Adding ${String(files.length)} files...`,
+    undefined,
+    null,
+    false,
+  );
+  shown.dataset["testid"] = "shelf-add-busy";
+  try {
+    for (const file of files) {
+      let outcome: Awaited<ReturnType<EditorSession["addFile"]>>;
+      try {
+        outcome = await open.addFile(file, file.name);
+      } catch {
+        outcome = { kind: "refused", reason: FILE_ADD_FAILED };
+      }
+      if (editor !== open) return;
+      if (outcome.kind === "refused") {
+        toast(`${file.name}: ${outcome.reason}`);
+        continue;
+      }
+      added = outcome.asset.id;
+      count += 1;
+      if (!outcome.backedUp) backedUp = false;
     }
-    added = outcome.asset.id;
-    count += 1;
-    if (!outcome.backedUp) backedUp = false;
+  } finally {
+    shown.remove();
   }
   if (added === null) return;
   shelfPanel?.reveal(added);
@@ -1758,6 +1789,72 @@ async function addToShelf(files: readonly File[]): Promise<void> {
       : `${String(count)} files are on the shelf.`,
   );
   if (!backedUp) toast(FILE_NOT_KEPT);
+}
+
+/** The shelf's delete of the file `id` in use: its items deleted and the
+ *  others without it, in one step said with its Undo (`deleted`); a
+ *  refusal said. */
+function deleteShelfFileInUse(open: EditorSession, id: string): void {
+  if (editor !== open) return;
+  endUndo();
+  const name = store.getState().assetShelf.entries[id]?.name ?? "The file";
+  const before = open.revision();
+  const outcome = open.deleteFileAndUses(id);
+  if (outcome.kind === "deleted" && open.revision() === before) {
+    // Nothing of the tour used it after all: only its card went, and
+    // there is no step for an Undo to take back.
+    refresh();
+    toast(`Deleted ${name}.`);
+    return;
+  }
+  // The confirm said what goes; the toast names the file, with its Undo.
+  deleted(outcome, `Deleted ${name}.`);
+}
+
+/**
+ * The shelf's "Replace everywhere" of the file `id`: a file of its kind
+ * picked, a toast while it is read, then every use switched in one step
+ * said with its Undo; a refusal said, a cancelled picker says nothing.
+ * Resolves once it is all said.
+ */
+async function replaceEverywhere(
+  open: EditorSession,
+  id: string,
+): Promise<void> {
+  const asset = open.assetOf(id);
+  if (asset === undefined) {
+    toast("That file is no longer on the shelf.");
+    return;
+  }
+  let picked: File | null;
+  try {
+    picked = await filePicker.pick(asset.kind);
+  } catch {
+    toast(FILE_ADD_FAILED);
+    return;
+  }
+  if (picked === null || editor !== open) return;
+  const shown = toast(`Reading "${picked.name}"...`, undefined, null, false);
+  shown.dataset["testid"] = "replace-everywhere-busy";
+  endUndo();
+  let outcome: Awaited<ReturnType<EditorSession["replaceFile"]>>;
+  try {
+    outcome = await open.replaceFile(id, picked, picked.name);
+  } catch {
+    outcome = { kind: "refused", reason: FILE_ADD_FAILED };
+  } finally {
+    shown.remove();
+  }
+  if (editor !== open) return;
+  refresh();
+  if (outcome.kind === "refused") {
+    toast(outcome.reason);
+    return;
+  }
+  offerUndo(
+    `"${picked.name}" is used in ${String(outcome.items)} item${outcome.items === 1 ? "" : "s"} now.`,
+  );
+  if (!outcome.backedUp) toast(FILE_NOT_KEPT);
 }
 
 /** The shelf's panel for the tour just opened, on its session's shelf. */
@@ -1773,24 +1870,26 @@ function openShelfPanel(open: EditorSession): void {
     retry: (id) => open.shelf.retry(id),
     useOriginal: (id) => open.shelf.useOriginal(id),
     remove: (id) => open.shelf.remove(id),
-    // A file in use goes with its places, one step; the page redraws as
-    // after any delete, and again after the Undo.
-    removeUsed: (id) => {
-      endUndo();
-      const undo = open.deleteFileAndUses(id);
-      if (undo === null) return null;
-      select(null);
-      refresh();
-      tourChanged();
-      return () => {
-        undo();
-        refresh();
-        tourChanged();
-      };
+    // A file in use goes with its uses in one step, said and undone like
+    // any delete (the shelf puts its card back with the items).
+    removeUsed: {
+      plan: (id) => open.deletePlan(id),
+      run: (id) => {
+        deleteShelfFileInUse(open, id);
+      },
+    },
+    replace: {
+      count: (id) => open.replaceCount(id),
+      run: (id) => replaceEverywhere(open, id),
     },
     optimizeTour: () => open.shelf.optimizeTour(),
     addFiles: () => {
-      void filePicker.pickMany().then(addToShelf);
+      filePicker
+        .pickMany()
+        .then(addToShelf)
+        .catch(() => {
+          toast(FILE_ADD_FAILED);
+        });
     },
     thumbOf: (row) =>
       open.addedFileOf(row.kind === "video" ? (row.posterId ?? "") : row.id),

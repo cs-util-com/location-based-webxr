@@ -26,13 +26,17 @@ kind made from a file never needs a gesture to be valid.
   code points, never inside one), the kind's add label when nothing is
   left ("Sound", "Video").
 - `newFileItem(input, source)` -> `TourObject | null`: at the station's
-  free spot (`new-pin.ts` `freeGeo`): a picture as a plane with its image
-  inline (`imageAsset`), a sound as a narration circle (`spot`), a model
-  placed at its size; `null` for a video (no free host draws one; the
-  caller refuses with the kind's `storyOnly` words).
-- `newFileStoryEntry(source, id)` -> `TourStoryBlock`: a card at the
-  station's middle that moves on by a tap, titled from the file, with its
-  kind's file field (a video with its poster when it has one).
+  free spot (`new-pin.ts` `freeGeo`), in the first view the format's kind
+  table lets a free block hold (`TOUR_KINDS[kind].freeViews`): a picture
+  as a plane with its image inline (`imageAsset`), a sound as a narration
+  circle (`spot`), a model placed at its size; `null` for a video (no
+  free host draws one; the caller refuses with the kind's `storyOnly`
+  words).
+- `newFileStoryEntry(station, source, id)` -> `TourStoryBlock`: the shape
+  every new entry starts in (`new-pin.ts` `storyEntryShell`: a card that
+  moves on by a tap, at the station's free spot, never the anchor's own
+  point), titled from the file, with its kind's file field (a video with
+  its poster when it has one).
 
 ## Invariants & assumptions
 
@@ -61,5 +65,7 @@ newFileItem(
 every title passes its kind's rule), each kind's starting fields, no free
 video, a format round trip per kind, and a sweep over station radii (3 to
 60 m) and fills (0 to 12 items) that the item stands inside the circle;
-story entries per kind, with and without a poster.
+story entries per kind at the station's free spot in the shape a
+words' entry has, with and without a poster; each free kind in the
+format's first free view.
 `editor-session-add-file.test.ts` runs it inside a real session.

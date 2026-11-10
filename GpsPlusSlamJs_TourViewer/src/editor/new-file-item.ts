@@ -2,22 +2,35 @@
  * The add menu's file kinds as data (pure): what a picture, a sound, a
  * video or a 3D model brought in from a file starts as - standing free at
  * its station's free spot (`new-pin.ts`), or as an entry at the end of a
- * story - named after its file, with each kind's starting size and reach.
+ * story (one entry shape with words' entries, `storyEntryShell`) - named
+ * after its file, with each kind's starting size and reach, standing free
+ * in the first view the format's kind table lets a free block hold.
  *
  * @see new-file-item.ts.md
  */
 import type { TourAsset } from "gps-plus-slam-app-framework/ar/tour-assets";
 import { TOUR_BLOCK_TEXT_RULES } from "gps-plus-slam-app-framework/ar/tour-blocks";
+import { TOUR_KINDS } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import type {
   TourModel,
   TourObject,
   TourPicture,
+  TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { TourStoryBlock } from "gps-plus-slam-app-framework/ar/tour-story";
 
 import { NARRATION_DEFAULT_RADIUS_M } from "../kinds/audio/sound-reach.js";
 import { KIND_EDIT, type FileAddKind } from "../kinds/edit-kinds.js";
-import { freeGeo, type NewItemInput } from "./new-pin.js";
+import { freeGeo, storyEntryShell, type NewItemInput } from "./new-pin.js";
+
+/** The view a free block of `kind` starts in: the first its kind table
+ *  lets a free block hold (its floor where it lists none). */
+function freeView<K extends "picture" | "audio" | "model">(
+  kind: K,
+): (typeof TOUR_KINDS)[K]["floor"] {
+  const row = TOUR_KINDS[kind];
+  return row.freeViews[0] ?? row.floor;
+}
 
 /** A new picture's width in the world (m): a photo taken on site starts
  *  as wide (`content-placement.ts`), so both kinds of picture meet the
@@ -81,7 +94,7 @@ export function newFileItem(
       const picture: TourPicture = {
         ...shared,
         kind: "picture",
-        view: "plane",
+        view: freeView("picture"),
         image: source.asset.id,
         widthM: NEW_PICTURE_WIDTH_M,
         imageAsset: source.asset,
@@ -92,7 +105,7 @@ export function newFileItem(
       const model: TourModel = {
         ...shared,
         kind: "model",
-        view: "placed",
+        view: freeView("model"),
         asset: source.asset.id,
         sizeM: NEW_MODEL_SIZE_M,
       };
@@ -105,7 +118,7 @@ export function newFileItem(
       return {
         ...shared,
         kind: "audio",
-        view: "spot",
+        view: freeView("audio"),
         audio: source.asset.id,
         radiusM: NEW_SOUND_RADIUS_M,
       } as unknown as TourObject;
@@ -115,22 +128,21 @@ export function newFileItem(
 }
 
 /**
- * The entry `source` makes at the end of a story, id `id`: a card a
- * visitor taps on from, in its station's middle (as `newStoryEntry`), a
- * picture `NEW_PICTURE_WIDTH_M` wide, a model at `NEW_MODEL_SIZE_M`, a
- * video with its poster when one was minted.
+ * The entry `source` makes at the end of a story of `station`, id `id`:
+ * the shape every new entry starts in (`storyEntryShell`: a card tapped
+ * on from, at the station's free spot), a picture `NEW_PICTURE_WIDTH_M`
+ * wide, a model at `NEW_MODEL_SIZE_M`, a video with its poster when one
+ * was minted.
  */
 export function newFileStoryEntry(
+  station: TourStation,
   source: FileItemSource,
   id: string,
 ): TourStoryBlock {
   const shared = {
-    id,
-    view: "card",
-    pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-    advance: { mode: "tap" },
+    ...storyEntryShell(station, id),
     title: fileItemTitle(source.fileName, source.kind),
-  } as const;
+  };
   switch (source.kind) {
     case "picture":
       return {

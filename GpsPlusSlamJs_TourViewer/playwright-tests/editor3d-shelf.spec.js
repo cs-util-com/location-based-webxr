@@ -280,6 +280,70 @@ test("a picture dropped onto a story's row becomes the story's last entry and a 
   ).toBeVisible();
 });
 
+test("a file in use is deleted from the shelf with its item and comes back whole with the Undo, and its Replace switches the item in one step", async ({
+  page,
+}) => {
+  // Why: the shelf's delete of a file in use and its "Replace everywhere"
+  // are steps of the page's edit stack, said with the page's Undo toast;
+  // the shelf puts the card back when the item naming its file returns.
+  // Each part passes its unit tests alone; only the page proves the
+  // toast, the stack and the shelf work together.
+  test.setTimeout(240_000);
+  await openSampleIn3d(page);
+  await addFromMenu(page, "gate", "audio", {
+    name: "toll.wav",
+    mimeType: "audio/wav",
+    buffer: silenceWav(),
+  });
+  await expect(page.locator(".toast", { hasText: '"toll"' })).toBeVisible();
+  const sound = String(await selected(page));
+  const audioOf = async () =>
+    (await blocksOf(page, "gate")).find((b) => b.id === sound)?.audio;
+  const old = await audioOf();
+  expect(typeof old).toBe("string");
+  const shelf = page.locator("#shell-shelf");
+  const card = shelf.locator(".as-card", {
+    has: page.locator(".as-cname", { hasText: "toll.wav" }),
+  });
+
+  await card.locator('[data-act="del"]').click();
+  const confirm = card.locator('[role="alertdialog"]');
+  await expect(confirm).toContainText("Deletes 1 item.");
+  await confirm.locator('[data-act="delyes"]').click();
+  const said = page.locator(".toast", { hasText: "Deleted toll.wav." });
+  await expect(said).toBeVisible();
+  await expect(card).toHaveCount(0);
+  expect(await audioOf()).toBeUndefined();
+  await said.locator("button", { hasText: "Undo" }).click();
+  await expect(page.locator(".toast", { hasText: "Undone" })).toBeVisible();
+  expect(await audioOf()).toBe(old);
+  await expect(card).toHaveCount(1);
+
+  // Replace everywhere: a sound of other bytes, picked for the same kind.
+  await card.locator('[data-act="toggle"]').click();
+  const replace = card.locator('[data-act="replace"]');
+  await expect(replace).toHaveText("Replace in 1 item...");
+  const chooser = page.waitForEvent("filechooser");
+  await replace.click();
+  const other = silenceWav();
+  other.writeInt16LE(1200, 44);
+  await (
+    await chooser
+  ).setFiles({ name: "chime.wav", mimeType: "audio/wav", buffer: other });
+  const replaced = page.locator(".toast", {
+    hasText: '"chime.wav" is used in 1 item now.',
+  });
+  await expect(replaced).toBeVisible();
+  const now = await audioOf();
+  expect(now).not.toBe(old);
+  await expect(
+    shelf.locator(".as-cname", { hasText: "chime.wav" }),
+  ).toBeVisible();
+  await replaced.locator("button", { hasText: "Undo" }).click();
+  await expect(page.locator(".toast", { hasText: "Undone" })).toBeVisible();
+  expect(await audioOf()).toBe(old);
+});
+
 /**
  * Drop `files` on the 3D view, as a creator drops them anywhere on the page.
  * @param {import("@playwright/test").Page} page

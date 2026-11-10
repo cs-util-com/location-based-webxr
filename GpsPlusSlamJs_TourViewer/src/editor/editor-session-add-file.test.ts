@@ -21,7 +21,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { editorStore } from "../test-support/editor-store.js";
 import { stationIdOf, tourOf } from "../test-support/tour-of.js";
-import { manifestToWrite } from "../tour-document.js";
+import { documentObjects, manifestToWrite } from "../tour-document.js";
 import { openTourFile, type TourSession } from "../tour-session.js";
 import { placeFileItem, type FileAddTarget } from "./add-file-item.js";
 import {
@@ -494,27 +494,35 @@ describe("a video's poster and length on the shelf", () => {
 });
 
 describe("deleting a file the tour uses", () => {
-  // Why: the shelf's delete of a file in use takes its places out with it
-  // (the format has no empty file field). They must all go in ONE step,
-  // free items and story entries alike, and the Undo must bring every
-  // one of them back with the file, or the creator loses work to a click.
-  it("takes out its free item and its story entry with the file as one step, and the Undo puts all back", async () => {
+  // Why: the shelf's delete of a file in use deletes only the items MADE
+  // of it (the format has no empty file field); an item that only
+  // mentions it (a long text's narration) keeps standing without it, and
+  // a long text showing a picture inside its words refuses the delete,
+  // naming itself. Everything goes in ONE step of the edit stack, so the
+  // page's Undo (and Ctrl+Z) brings every item back - and the file's card
+  // with them, since the shelf lists every file an item names.
+  const bells = () => new Blob(["RIFF-church-bells"]);
+
+  /** A long text at the station, `extra` its narration or its body. */
+  const essay = (id: string, extra: Partial<TourObject>): TourObject =>
+    ({ ...ESSAY, id, ...extra }) as TourObject;
+
+  it("deletes the items made of it in one step, and the undo brings them and its card back", async () => {
     const session = await openedTour();
     const { editor, add, childIds, manifest, rows, settle } = setup(session);
     const story = editor.addStory(STATION);
     if (story.kind !== "added") throw new Error("no story");
-    const bells = new Blob(["RIFF-church-bells"]);
     await add(
       "audio",
       { kind: "station", stationId: STATION },
-      bells,
+      bells(),
       "bells.wav",
       "free",
     );
     await add(
       "audio",
       { kind: "story", storyId: story.id },
-      bells,
+      bells(),
       "bells.wav",
       "told",
     );
@@ -525,19 +533,102 @@ describe("deleting a file the tour uses", () => {
       )[0]?.children.map((c) => c.id) ?? [];
     expect(rows()).toEqual([expect.objectContaining({ placesInUse: 2 })]);
     const assetId = rows()[0]?.id ?? "";
+    expect(editor.deletePlan(assetId)).toEqual({
+      kind: "plan",
+      words: "Deletes 2 items.",
+    });
     const before = editor.revision();
 
-    const undo = editor.deleteFileAndUses(assetId);
+    expect(editor.deleteFileAndUses(assetId)).toEqual({
+      kind: "deleted",
+      what: "the delete of bells.wav",
+      words: "Deletes 2 items.",
+    });
 
-    expect(undo).not.toBeNull();
     expect(childIds()).not.toContain("free");
     expect(childIds()).toContain("t1");
     expect(entries()).toEqual([]);
     expect(rows()).toEqual([]);
     expect(editor.revision()).toBe(before + 1);
-    undo?.();
+    expect(editor.undo()).toEqual({
+      kind: "undone",
+      what: "the delete of bells.wav",
+    });
     expect(childIds()).toContain("free");
     expect(entries()).toEqual(["told"]);
+    expect(rows()).toEqual([expect.objectContaining({ id: assetId })]);
+    // A redo deletes the items again; the card stays, as for any file
+    // the tour holds.
+    expect(editor.redo().kind).toBe("redone");
+    expect(childIds()).not.toContain("free");
+    expect(rows()).toEqual([expect.objectContaining({ id: assetId })]);
+    await session.close();
+  });
+
+  it("takes a sound out of a long text's narration, keeping the long text", async () => {
+    const session = await openedTour();
+    const { editor, add, childIds, manifest, rows, settle } = setup(session);
+    await add(
+      "audio",
+      { kind: "station", stationId: STATION },
+      bells(),
+      "bells.wav",
+      "free",
+    );
+    await settle();
+    const assetId = rows()[0]?.id ?? "";
+    expect(
+      editor.place(
+        essay("t2", { narration: { audio: assetId, synthetic: false } }),
+      ).kind,
+    ).toBe("placed");
+    const narration = () =>
+      (
+        manifest()
+          .stations.flatMap((s) => s.children)
+          .find((c) => c.id === "t2") as { narration?: unknown } | undefined
+      )?.narration;
+    expect(editor.deletePlan(assetId)).toEqual({
+      kind: "plan",
+      words: "Deletes 1 item, removes it from 1 other.",
+    });
+    expect(editor.deleteFileAndUses(assetId).kind).toBe("deleted");
+    expect(childIds()).not.toContain("free");
+    expect(childIds()).toContain("t2");
+    expect(narration()).toBeUndefined();
+    expect(editor.undo().kind).toBe("undone");
+    expect(narration()).toEqual({ audio: assetId, synthetic: false });
+    await session.close();
+  });
+
+  it("refuses the delete of a picture a long text shows inside its words, saying which", async () => {
+    const session = await openedTour();
+    const { editor, add, childIds, rows, settle } = setup(session);
+    await add(
+      "picture",
+      { kind: "station", stationId: STATION },
+      png(40, 30),
+      "gate.png",
+      "pic",
+    );
+    await settle();
+    const assetId = rows()[0]?.id ?? "";
+    editor.place(
+      essay("t3", {
+        title: "The gate in 1890",
+        body: `The gate:\n\n![Gate](asset:${assetId})\n`,
+      }),
+    );
+    const before = editor.revision();
+    const refusal = {
+      kind: "refused",
+      reason:
+        '"The gate in 1890" shows this picture inside its text. Take it out of the text first.',
+    };
+    expect(editor.deletePlan(assetId)).toEqual(refusal);
+    expect(editor.deleteFileAndUses(assetId)).toEqual(refusal);
+    expect(editor.revision()).toBe(before);
+    expect(childIds()).toContain("pic");
     expect(rows()).toEqual([expect.objectContaining({ id: assetId })]);
     await session.close();
   });
@@ -558,22 +649,236 @@ describe("deleting a file the tour uses", () => {
     const image = () =>
       manifest().stations.find((s) => s.id === STATION)?.image;
     expect(image()).toBe(assetId);
+    expect(editor.deletePlan(assetId)).toEqual({
+      kind: "plan",
+      words: "Deletes 1 item, removes it from 1 other.",
+    });
     const before = editor.revision();
-    const undo = editor.deleteFileAndUses(assetId);
+    expect(editor.deleteFileAndUses(assetId).kind).toBe("deleted");
     expect(image()).toBeUndefined();
     expect(editor.revision()).toBe(before + 1);
-    undo?.();
+    expect(editor.undo().kind).toBe("undone");
     expect(image()).toBe(assetId);
     await session.close();
   });
-  it("changes nothing for a file the shelf does not hold", async () => {
+
+  // Why: the delete's Undo is the edit stack's, which waits while a save
+  // runs; the refusal must be said (the page toasts it and keeps its
+  // Undo), and the undo must work once the save has ended.
+  it("refuses an undo while a save runs, in words, and undoes once it ended", async () => {
+    const session = await openedTour();
+    const { editor, add, childIds, rows, settle } = setup(session);
+    await add(
+      "audio",
+      { kind: "station", stationId: STATION },
+      bells(),
+      "bells.wav",
+      "free",
+    );
+    await settle();
+    const assetId = rows()[0]?.id ?? "";
+    expect(editor.deleteFileAndUses(assetId).kind).toBe("deleted");
+    const saving = editor.save({ keepScan: false });
+    expect(editor.undo()).toEqual({
+      kind: "refused",
+      reason: expect.stringMatching(/save is running/),
+    });
+    expect(childIds()).not.toContain("free");
+    await saving;
+    expect(editor.undo().kind).toBe("undone");
+    expect(childIds()).toContain("free");
+    expect(rows()).toEqual([expect.objectContaining({ id: assetId })]);
+    await session.close();
+  });
+
+  // Why: after a newer edit the delete is no longer the newest step; the
+  // stack takes back the newer edit first, and the delete's own undo must
+  // still bring its items AND the card back (the card is the shelf's,
+  // outside the stack, so only the shelf's put-back can return it).
+  it("undoes the delete after a newer edit, the newer edit first, its items and card after", async () => {
+    const session = await openedTour();
+    const { editor, add, childIds, rows, settle } = setup(session);
+    await add(
+      "audio",
+      { kind: "station", stationId: STATION },
+      bells(),
+      "bells.wav",
+      "free",
+    );
+    await settle();
+    const assetId = rows()[0]?.id ?? "";
+    expect(editor.deleteFileAndUses(assetId).kind).toBe("deleted");
+    expect(editor.place(essay("t4", {})).kind).toBe("placed");
+    expect(rows()).toEqual([]);
+    expect(editor.undo().kind).toBe("undone");
+    expect(childIds()).not.toContain("t4");
+    expect(childIds()).not.toContain("free");
+    expect(rows()).toEqual([]);
+    expect(editor.undo()).toEqual({
+      kind: "undone",
+      what: "the delete of bells.wav",
+    });
+    expect(childIds()).toContain("free");
+    expect(rows()).toEqual([expect.objectContaining({ id: assetId })]);
+    await session.close();
+  });
+
+  it("refuses a file the shelf does not hold, in words", async () => {
     const session = await openedTour();
     const { editor, childIds } = setup(session);
     const before = editor.revision();
-    expect(editor.deleteFileAndUses("not-here")).toBeNull();
+    expect(editor.deleteFileAndUses("not-here")).toEqual({
+      kind: "refused",
+      reason: "That file is no longer on the shelf.",
+    });
     expect(editor.revision()).toBe(before);
     expect(childIds()).toEqual(["t1"]);
     await session.close();
+  });
+
+  // Why: a file the tour holds keeps its card. Adding the same bytes
+  // again after its card was deleted must bring the card back, not
+  // leave a file on the shelf's blind side.
+  it("puts a deleted card back when the same file is added again", async () => {
+    const session = await openedTour();
+    const { editor, rows } = setup(session);
+    const first = await editor.addFile(bells(), "bells.wav");
+    if (first.kind === "refused") throw new Error(first.reason);
+    expect(editor.shelf.remove(first.asset.id)).not.toBeNull();
+    expect(rows()).toEqual([]);
+    const again = await editor.addFile(bells(), "bells-again.wav");
+    expect(again).toMatchObject({ kind: "added", asset: first.asset });
+    expect(rows()).toEqual([expect.objectContaining({ id: first.asset.id })]);
+    await session.close();
+  });
+});
+
+describe("replacing a file everywhere", () => {
+  // Why: "Replace everywhere" must switch EVERY use of a file - the items
+  // made of it and the ones only mentioning it (a narration) - in one
+  // step that one undo takes back whole, and must refuse a file of
+  // another kind rather than make a sound play a picture.
+  it("switches the items made of it and a narration in one step, and the undo switches all back", async () => {
+    const session = await openedTour();
+    const { editor, add, manifest, rows, settle } = setup(session);
+    const story = editor.addStory(STATION);
+    if (story.kind !== "added") throw new Error("no story");
+    await add(
+      "audio",
+      { kind: "station", stationId: STATION },
+      new Blob(["RIFF-old"]),
+      "old.wav",
+      "free",
+    );
+    await add(
+      "audio",
+      { kind: "story", storyId: story.id },
+      new Blob(["RIFF-old"]),
+      "old.wav",
+      "told",
+    );
+    await settle();
+    const old = rows()[0]?.id ?? "";
+    editor.place({
+      ...ESSAY,
+      id: "t2",
+      narration: { audio: old, synthetic: false },
+    });
+    const audios = () =>
+      manifest()
+        .stations.flatMap((s) => [
+          ...s.children,
+          ...tourStories(s).flatMap((t) => t.children),
+        ])
+        .map((c) => {
+          const block = c as { audio?: string; narration?: { audio: string } };
+          return block.audio ?? block.narration?.audio;
+        })
+        .filter((a) => a !== undefined);
+    expect(audios()).toEqual([old, old, old]);
+    expect(editor.replaceCount(old)).toBe(3);
+    const before = editor.revision();
+    const outcome = await editor.replaceFile(
+      old,
+      new Blob(["RIFF-new-bells"]),
+      "new.wav",
+    );
+    expect(outcome).toMatchObject({
+      kind: "replaced",
+      what: "the replace of old.wav",
+      items: 3,
+    });
+    expect(editor.revision()).toBe(before + 1);
+    const fresh = rows().find((r) => r.name === "new.wav")?.id;
+    expect(fresh).toBeDefined();
+    expect(audios()).toEqual([fresh, fresh, fresh]);
+    expect(editor.undo().kind).toBe("undone");
+    expect(audios()).toEqual([old, old, old]);
+    await session.close();
+  });
+
+  it("refuses a file of another kind, the same file and a file no longer on the shelf, changing nothing", async () => {
+    const session = await openedTour();
+    const { editor, add, rows, settle } = setup(session);
+    await add(
+      "audio",
+      { kind: "station", stationId: STATION },
+      new Blob(["RIFF-old"]),
+      "old.wav",
+      "free",
+    );
+    await settle();
+    const old = rows()[0]?.id ?? "";
+    const before = editor.revision();
+    expect(await editor.replaceFile(old, png(10, 10), "pic.png")).toMatchObject(
+      { kind: "refused" },
+    );
+    expect(
+      await editor.replaceFile(old, new Blob(["RIFF-old"]), "same.wav"),
+    ).toEqual({
+      kind: "refused",
+      reason: "That is the same file: nothing changes.",
+    });
+    expect(
+      await editor.replaceFile("gone", new Blob(["RIFF-x"]), "x.wav"),
+    ).toEqual({
+      kind: "refused",
+      reason: "That file is no longer on the shelf.",
+    });
+    expect(editor.revision()).toBe(before);
+    await session.close();
+  });
+});
+
+describe("a free picture made from a file, after the shelf made it smaller", () => {
+  // Why: the shelf's swap replaces the file's record (its path, its
+  // size); the picture item must read that record, not the copy it took
+  // when it was made, or the 3D view and a save name a file gone stale.
+  it("reads the smaller file's record", async () => {
+    const session = await openedTour();
+    const { add, pictures, rows, settle, store } = setup(session);
+    await add(
+      "picture",
+      { kind: "station", stationId: STATION },
+      png(40, 30),
+      "gate.png",
+      "pic",
+    );
+    await settle();
+    const assetId = rows()[0]?.id ?? "";
+    pictures.finish(new Blob(["WEBP-small"]), "webp", {
+      width: 40,
+      height: 30,
+    });
+    await settle();
+    await settle();
+    expect(rows()[0]?.status).toBe("optimized");
+    const found = documentObjects(store.getState().tourDocument).find(
+      (o) => o.object.id === "pic",
+    );
+    expect(found?.object).toMatchObject({
+      imageAsset: { id: assetId, path: `content/${assetId}.webp` },
+    });
   });
 });
 

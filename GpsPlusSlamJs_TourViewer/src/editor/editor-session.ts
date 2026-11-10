@@ -31,7 +31,6 @@ import type {
   TourPicture,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { tourBlockAssetIds } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import {
   TOUR_MEDIA_EXTENSIONS,
   tourMediaTypeOf,
@@ -74,6 +73,7 @@ import {
   detailsChange,
   documentObjects,
   effectiveDetails,
+  fileUsesOf,
   isCapturedPhoto,
   isDocumentEdit,
   manifestNow,
@@ -91,10 +91,12 @@ import {
   tourDocumentActions,
   tourDocumentReducer,
   unsavedEntries,
+  type FileUses,
   type StationEdit,
   type StationStoryAdvanceEdit,
   type TourDocumentState,
 } from "../tour-document.js";
+import { fileUseOf } from "../file-uses.js";
 import type { ChildMoveTo } from "../station-children-moves.js";
 import { newObjectId } from "../content-placement.js";
 import {
@@ -164,6 +166,57 @@ const SAVE_RUNNING = "A save is running - undo or redo once it has finished.";
  *  the file, and its picture could not be kept. */
 const PICTURE_GONE =
   "This photo's picture is no longer at hand, so its delete cannot be undone here.";
+
+/** Said for a file the shelf no longer holds (deleted meanwhile). */
+const NOT_ON_SHELF = "That file is no longer on the shelf.";
+/** Said when the file picked to replace a file is that file itself. */
+const SAME_FILE = "That is the same file: nothing changes.";
+
+/** Why the file of `uses` cannot be deleted or replaced here; null when
+ *  it can be. A long text showing a picture inside its words names it
+ *  there, and only its text can take it out; a character declaration is
+ *  not edited here, and his pictures stay exactly as drawn. */
+function fileUseRefusal(
+  uses: FileUses,
+  doing: "deleted" | "replaced",
+): string | null {
+  const character = uses.characters[0];
+  if (character !== undefined) {
+    return `The character "${character}" is drawn with this file, so it cannot be ${doing} here: a character's pictures stay exactly as drawn.`;
+  }
+  const text = uses.inline[0];
+  if (text !== undefined && doing === "deleted") {
+    return `"${objectTitle(text)}" shows this picture inside its text. Take it out of the text first.`;
+  }
+  return null;
+}
+
+/** "3 items", "1 other": a count with its noun. */
+function counted(n: number, noun: string): string {
+  return `${String(n)} ${noun}${n === 1 ? "" : "s"}`;
+}
+
+/** What the delete of a file used by `uses` does, in plain words: the
+ *  items made of it go, the others (a narration, a poster, a voice, a
+ *  station's card) only lose it. */
+export function fileDeleteWords(uses: FileUses): string {
+  const own = uses.own.length;
+  const others = uses.mentions.length + uses.cards.length;
+  if (own === 0 && others === 0) return "Deletes the file.";
+  if (others === 0) return `Deletes ${counted(own, "item")}.`;
+  if (own === 0) return `Removes it from ${counted(others, "place")}.`;
+  return `Deletes ${counted(own, "item")}, removes it from ${counted(others, "other")}.`;
+}
+
+/** How many items and station cards `uses` counts. */
+function usesCount(uses: FileUses): number {
+  return (
+    uses.own.length +
+    uses.mentions.length +
+    uses.inline.length +
+    uses.cards.length
+  );
+}
 
 /** An object as the undo's words name it: its text, shortened, or what
  *  it is. */
@@ -918,14 +971,41 @@ export interface EditorSession {
   /** The bytes of a file this session brought in, by its id (the
    *  shelf's thumbnails); undefined for one of the opened tour. */
   addedFileOf(id: string): Blob | undefined;
+  /** What deleting the shelf's file `assetId` would do, in plain words
+   *  (`fileDeleteWords`: "Deletes 2 items, removes it from 1 other."),
+   *  or why it cannot be deleted: a long text shows it inside its words,
+   *  a character of the tour is drawn with it, the shelf no longer holds
+   *  it. */
+  deletePlan(assetId: string): { kind: "plan"; words: string } | EditorRefusal;
   /** Delete the shelf's file `assetId` with every use of it (the shelf's
-   *  delete of a file in use): its items, story entries and station card
-   *  images go in one step (`fileUsesDeleted`), then its shelf entry. The
-   *  returned undo puts the entry back, and takes that step back while it
-   *  is still the last one (after a later edit the uses stay out: an undo
-   *  of that edit comes first). Null, changing nothing, for a file the
-   *  shelf does not hold. */
-  deleteFileAndUses(assetId: string): (() => void) | null;
+   *  delete of a file in use), as `deletePlan` says: the items made of it
+   *  go, the others lose it, in one step (`fileUsesDeleted`) - an undo
+   *  like any other, which brings the file's card back with its items
+   *  (the shelf puts back a card whose file an item names again) - then
+   *  its card. `what` names the step. Refused, changing nothing, as
+   *  `deletePlan` refuses. */
+  deleteFileAndUses(
+    assetId: string,
+  ): { kind: "deleted"; what: string; words: string } | EditorRefusal;
+  /** How many items and station cards use the file `assetId`: what its
+   *  "Replace everywhere" switches. */
+  replaceCount(assetId: string): number;
+  /** "Replace everywhere": `file` brought in as `addFile` does, for the
+   *  kind of `assetId` (it goes on the shelf like any file), then every
+   *  use of `assetId` switched to it in one step (`fileReplaced`) - the
+   *  items made of it, the ones mentioning it, the pictures a long text
+   *  shows. Refused in words, changing nothing in the tour, for a file the
+   *  shelf does not hold, a file a character of the tour is drawn with, a
+   *  file of another kind (`addFile`'s refusal), the same file, and a
+   *  file nothing uses. */
+  replaceFile(
+    assetId: string,
+    file: Blob,
+    fileName: string,
+  ): Promise<
+    | { kind: "replaced"; what: string; items: number; backedUp: boolean }
+    | EditorRefusal
+  >;
   /** What the next save adds to the newest written file: the files
    *  brought in, the timing texts and the copied or restored photos'
    *  pictures it does not hold yet. */
@@ -1562,6 +1642,71 @@ export function createEditorSession(input: {
     return { kind: "swapped", backedUp };
   }
 
+  /** The shelf's file `assetId` with its uses as they stand, or why it
+   *  cannot be deleted (`fileUseRefusal`). */
+  function deletePlanOf(
+    assetId: string,
+  ): { kind: "plan"; name: string; uses: FileUses } | EditorRefusal {
+    const state = mine();
+    if (state === null) return notInTour;
+    const entry = store.getState().assetShelf.entries[assetId];
+    if (entry === undefined) return { kind: "refused", reason: NOT_ON_SHELF };
+    const uses = fileUsesOf(state, assetId);
+    const refused = fileUseRefusal(uses, "deleted");
+    return refused === null
+      ? { kind: "plan", name: entry.name, uses }
+      : { kind: "refused", reason: refused };
+  }
+
+  /** `replaceFile`: the use checked, the new file brought in for the old
+   *  one's kind, then the one step switching every use. */
+  async function replaceFile(
+    assetId: string,
+    file: Blob,
+    fileName: string,
+  ): Promise<
+    | { kind: "replaced"; what: string; items: number; backedUp: boolean }
+    | EditorRefusal
+  > {
+    const state = mine();
+    if (state === null) return notInTour;
+    const entry = store.getState().assetShelf.entries[assetId];
+    const old = assetOf(assetId);
+    if (entry === undefined || old === undefined) {
+      return { kind: "refused", reason: NOT_ON_SHELF };
+    }
+    const refused = fileUseRefusal(fileUsesOf(state, assetId), "replaced");
+    if (refused !== null) return { kind: "refused", reason: refused };
+    const added = await addFile(file, fileName, [old.kind]);
+    if (added.kind === "refused") return added;
+    const after = mine();
+    if (after === null) return notInTour;
+    if (added.asset.id === assetId) {
+      return { kind: "refused", reason: SAME_FILE };
+    }
+    // Read again: the tour may have changed while the file was read.
+    const uses = fileUsesOf(after, assetId);
+    const again = fileUseRefusal(uses, "replaced");
+    if (again !== null) return { kind: "refused", reason: again };
+    const what = `the replace of ${entry.name}`;
+    const switched = took(() =>
+      store.dispatch(
+        tourDocumentActions.fileReplaced({
+          from: assetId,
+          to: added.asset.id,
+          what,
+        }),
+      ),
+    );
+    if (!switched) return notApplied;
+    return {
+      kind: "replaced",
+      what,
+      items: usesCount(uses),
+      backedUp: added.backedUp,
+    };
+  }
+
   /** `addFile`: read, kept in the table and the draft, then listed. */
   async function addFile(
     file: Blob,
@@ -1600,8 +1745,10 @@ export function createEditorSession(input: {
       );
     }
     // On the shelf once listed, so its swap finds the record (a minted
-    // poster is small already).
-    if (read.isNew) {
+    // poster is small already). A file the tour holds already gets its
+    // card back when it left the shelf; a second add of a card is no
+    // change.
+    {
       shelf.add(read.asset, fileName, read.blob.size, "added", {
         ...(read.poster === undefined
           ? {}
@@ -1779,35 +1926,43 @@ export function createEditorSession(input: {
       const posterId = store.getState().assetShelf.entries[assetId]?.posterId;
       return posterId === undefined ? undefined : assetOf(posterId);
     },
+    deletePlan(assetId) {
+      const planned = deletePlanOf(assetId);
+      return planned.kind === "refused"
+        ? planned
+        : { kind: "plan", words: fileDeleteWords(planned.uses) };
+    },
     deleteFileAndUses(assetId) {
+      const planned = deletePlanOf(assetId);
+      if (planned.kind === "refused") return planned;
       const state = mine();
-      const entry = store.getState().assetShelf.entries[assetId];
-      if (state === null || entry === undefined) return null;
+      if (state === null) return notInTour;
+      // A captured photo made of the file: its picture kept for an undo
+      // after a save took it out of the file.
       for (const found of documentObjects(state)) {
-        if (tourBlockAssetIds(found.object).includes(assetId)) {
+        if (fileUseOf(found.object, assetId)?.kind === "own") {
           keepPicture(found);
         }
       }
-      const stepped = took(() =>
-        store.dispatch(
-          tourDocumentActions.fileUsesDeleted({
-            assetId,
-            what: `the delete of ${entry.name}`,
-          }),
-        ),
-      );
-      const after = doc().revision;
-      const putBack = shelf.remove(assetId);
-      if (putBack === null) {
-        if (stepped) step("undo");
-        return null;
+      const what = `the delete of ${planned.name}`;
+      if (
+        usesCount(planned.uses) > 0 &&
+        !took(() =>
+          store.dispatch(
+            tourDocumentActions.fileUsesDeleted({ assetId, what }),
+          ),
+        )
+      ) {
+        return notApplied;
       }
-      // The file first: the undo of a picture's delete needs its bytes.
-      return () => {
-        putBack();
-        if (stepped && doc().revision === after) step("undo");
-      };
+      shelf.remove(assetId);
+      return { kind: "deleted", what, words: fileDeleteWords(planned.uses) };
     },
+    replaceCount: (assetId) => {
+      const state = mine();
+      return state === null ? 0 : usesCount(fileUsesOf(state, assetId));
+    },
+    replaceFile,
     addedFileOf: (id) =>
       own().addedAssets.some((a) => a.id === id) ? files.get(id) : undefined,
     assetOf,
@@ -2173,13 +2328,16 @@ export function createEditorSession(input: {
     addToStory(storyId, kind) {
       const state = mine();
       if (state === null) return notInTour;
+      const station = manifestNow(state)?.stations.find((s) =>
+        tourStories(s).some((story) => story.id === storyId),
+      );
       const story = storyNow(state, storyId);
-      if (story === undefined) {
+      if (story === undefined || station === undefined) {
         return { kind: "refused", reason: NO_SUCH_STORY };
       }
       return addEntryToStory(
         storyId,
-        newStoryEntry(story, kind, newObjectId()),
+        newStoryEntry(station, story, kind, newObjectId()),
       );
     },
     addEntryToStory,

@@ -8,7 +8,10 @@
  * after its file was removed must change nothing.
  */
 import { configureStore } from "@reduxjs/toolkit";
-import type { TourAsset } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type {
+  TourAsset,
+  TourObject,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 import { describe, expect, it, vi } from "vitest";
@@ -22,6 +25,7 @@ import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media
 
 import { ASSET_OPTIMIZERS, type OptimizerHost } from "./asset-optimizers.js";
 import {
+  CHARACTER_KEPT,
   NOT_SMALLER,
   NO_OPTIMIZER,
   createAssetShelf,
@@ -341,5 +345,104 @@ describe("the shelf's runner", () => {
     shelf.add(image(A), "a.png", 1000, "added");
     await settle();
     expect(row(A)).toMatchObject({ status: "failed", retryable: true });
+  });
+});
+
+describe("the keep rule for a character's files", () => {
+  // Why: a character's figure and his pose sheet must stay byte for byte
+  // as drawn (the sheet's cells are cut by position), so the shelf never
+  // makes a file a character declaration names smaller - when it is added,
+  // when "Optimize this tour" asks, and when a declaration takes the file
+  // on while its job runs. A picture with the same bytes shares the file,
+  // so it stays untouched too. A fake optimizer stands in for the image
+  // row, which this build does not fill yet.
+  function withCharacters(
+    store: ReturnType<typeof setup>["store"],
+    character: { readonly image: string; readonly frames?: string },
+  ): void {
+    store.dispatch(
+      doc.opened({
+        manifest: {
+          ...tourOf([]),
+          characters: [{ id: "sir", name: "Sir", ...character }],
+        },
+      }),
+    );
+    store.dispatch(doc.assetsAdded({ assets: [image(A), image(B), image(C)] }));
+  }
+
+  it("keeps the figure and the pose sheet as they are, and runs the rest", async () => {
+    const { store, shelf, fake, row, settle } = setup();
+    withCharacters(store, { image: A, frames: B });
+    shelf.add(image(A), "sir.png", 1000, "added");
+    shelf.add(image(B), "sir-poses.png", 1000, "added");
+    shelf.add(image(C), "gate.png", 1000, "added");
+    await settle();
+    expect(row(A)).toMatchObject({ status: "kept", reason: CHARACTER_KEPT });
+    expect(row(B)).toMatchObject({ status: "kept", reason: CHARACTER_KEPT });
+    expect(fake.calls).toHaveLength(1);
+    expect(row(C)?.status).toBe("running");
+  });
+
+  it('keeps a character\'s file that "Optimize this tour" queues', async () => {
+    const { store, shelf, fake, row, settle } = setup();
+    withCharacters(store, { image: A });
+    shelf.add(image(A), "sir.png", 1000, "opened");
+    shelf.optimizeTour();
+    await settle();
+    expect(fake.calls).toHaveLength(0);
+    expect(row(A)).toMatchObject({ status: "kept", reason: CHARACTER_KEPT });
+  });
+
+  it("does not swap a file a character took on while its job ran", async () => {
+    const { store, shelf, fake, swap, row, settle } = setup();
+    shelf.add(image(C), "gate.png", 1000, "added");
+    await settle();
+    expect(fake.calls).toHaveLength(1);
+    withCharacters(store, { image: C });
+    fake.finish(small, "webp", { width: 16, height: 12 });
+    await settle();
+    expect(swap).not.toHaveBeenCalled();
+    expect(row(C)).toMatchObject({ status: "kept", reason: CHARACTER_KEPT });
+  });
+});
+
+describe("a removed file whose items come back", () => {
+  // Why: the shelf lists every file an item names. Deleting a file in use
+  // takes its card off the shelf, and the page's Undo brings the items
+  // back through the document alone; without this the file would be in
+  // the tour again with no card to optimize, replace or delete it.
+  function pictureOf(id: string): TourObject {
+    return {
+      id: `pic-${id.slice(0, 4)}`,
+      kind: "picture",
+      view: "plane",
+      image: id,
+      widthM: 1,
+      imageAsset: image(id),
+      createdAtIso: "2026-09-09T00:00:00.000Z",
+      geo: { lat: 47.5, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
+    };
+  }
+
+  it("puts the card back when the document names the file again, and only then", async () => {
+    const { store, shelf, row, settle } = setup();
+    store.dispatch(doc.opened({ manifest: tourOf([pictureOf(C)]) }));
+    store.dispatch(doc.assetsAdded({ assets: [image(A), image(B)] }));
+    shelf.add(image(A), "a.png", 1000, "added");
+    shelf.add(image(B), "b.png", 1000, "added");
+    await settle();
+    shelf.remove(A);
+    shelf.remove(B);
+    expect(row(A)).toBeUndefined();
+    store.dispatch(
+      doc.edited({
+        object: { ...pictureOf(A), station: `st-${pictureOf(C).id}` },
+        what: "a picture",
+      }),
+    );
+    await settle();
+    expect(row(A)).toMatchObject({ name: "a.png", status: "running" });
+    expect(row(B)).toBeUndefined();
   });
 });

@@ -24,6 +24,7 @@ import {
   tourStationChildIds,
   tourStationStoryBlocks,
   tourStories,
+  tourStoryChildrenBlocks,
   TOUR_STORY_TITLE_RULE,
   type TourStory,
   type TourStoryBlock,
@@ -138,6 +139,7 @@ import {
 } from "./tour-content.js";
 import { sameJson } from "./same-json.js";
 import { blockFileKind, withBlockFile } from "./block-file.js";
+import { fileUseOf, withFileSwitched, withoutFields } from "./file-uses.js";
 import {
   movedChild,
   movedToStation,
@@ -879,14 +881,42 @@ function framed(state: TourDocumentState): TourManifest | null {
  *  is whether the written FILE holds the object, not the framed tour: one
  *  moved out of a station that was then deleted is still in the file (in
  *  the station's written items), so its delete needs a tombstone - the
- *  draft and the rebuild know a delete by its tombstone alone. */
+ *  draft and the rebuild know a delete by its tombstone alone. A picture
+ *  made from a file carries its file's record as the tour holds it NOW
+ *  (`withCurrentImage`). */
 export function documentObjects(state: TourDocumentState): AuthoringObject[] {
   const base = framed(state);
   if (base === null || state.written === null) return [];
   const inFile = new Set(tourObjects(state.written).map((o) => o.id));
-  return authoringObjects(tourObjects(base), state.placed, state.deleted).map(
-    (o) => (o.hosted || !inFile.has(o.object.id) ? o : { ...o, hosted: true }),
+  const records = new Map(
+    [...state.written.assets, ...state.addedAssets].map((a) => [a.id, a]),
   );
+  return authoringObjects(tourObjects(base), state.placed, state.deleted).map(
+    (o) => {
+      const object = withCurrentImage(o.object, records);
+      const found = object === o.object ? o : { ...o, object };
+      return found.hosted || !inFile.has(found.object.id)
+        ? found
+        : { ...found, hosted: true };
+    },
+  );
+}
+
+/** `object` with, for a picture made from a file (no captured photo), the
+ *  record `records` holds for its image: the inline copy an edit took
+ *  goes stale once the shelf swaps the file for a smaller one
+ *  (`assetOptimized` replaces the record, not the copies). */
+function withCurrentImage(
+  object: TourObject,
+  records: ReadonlyMap<string, TourAsset>,
+): TourObject {
+  // A captured photo (`isCapturedPhoto`: its image is its own id) holds
+  // its picture under its id, never a record of the tour.
+  if (object.kind !== "picture" || object.image === object.id) return object;
+  const record = records.get(object.image);
+  return record === undefined || sameJson(record, object.imageAsset)
+    ? object
+    : { ...object, imageAsset: record };
 }
 
 /** The details as shown and written: a cover whose image is gone (a
@@ -3021,13 +3051,63 @@ function storyChildDelete(
   return out === null ? before : frameReplaced(before, out.frame, payload.what);
 }
 
+/** What the file `assetId` is to the tour as it stands (`fileUsesOf`):
+ *  the items made of it, the items that only mention it, the long texts
+ *  showing it inside their words, the stations whose card image it is,
+ *  and the names of the tour's characters drawn with it (his figure or
+ *  his pose sheet). Items are free blocks and the blocks stories show. */
+export interface FileUses {
+  readonly own: readonly (TourObject | TourBlock)[];
+  readonly mentions: readonly (TourObject | TourBlock)[];
+  readonly inline: readonly (TourObject | TourBlock)[];
+  readonly cards: readonly string[];
+  readonly characters: readonly string[];
+}
+
+/**
+ * Where the tour as it stands uses the file `assetId`, each block classed
+ * by how it uses it (`file-uses.ts`): what the shelf's delete of a file in
+ * use says, and refuses on (a long text showing it, a character drawn
+ * with it), before `fileUsesDeleted` does it.
+ */
+export function fileUsesOf(
+  state: TourDocumentState,
+  assetId: string,
+): FileUses {
+  const own: (TourObject | TourBlock)[] = [];
+  const mentions: (TourObject | TourBlock)[] = [];
+  const inline: (TourObject | TourBlock)[] = [];
+  const sort = (block: TourObject | TourBlock): void => {
+    const use = fileUseOf(block, assetId);
+    if (use?.kind === "own") own.push(block);
+    else if (use?.kind === "mention") mentions.push(block);
+    else if (use?.kind === "inline") inline.push(block);
+  };
+  for (const found of documentObjects(state)) sort(found.object);
+  const cards: string[] = [];
+  for (const frame of allFrames(state)) {
+    for (const story of tourStories(frame)) {
+      tourStoryChildrenBlocks(story.children).forEach(sort);
+    }
+    if (frame.image === assetId) cards.push(frame.id);
+  }
+  const characters = (state.written?.characters ?? [])
+    .filter((c) => c.image === assetId || c.frames === assetId)
+    .map((c) => c.name);
+  return { own, mentions, inline, cards, characters };
+}
+
 /**
  * Every use of the file `assetId` taken out (`fileUsesDeleted`, the
- * shelf's delete of a file in use): the free items and story entries made
- * from it deleted, a station's card image of it cleared - one step, so an
- * undo brings them all back. A station a delete empties goes too when it
- * is an automatic one (`withoutEmptied`). Nothing using it changes
- * nothing.
+ * shelf's delete of a file in use), by how each block uses it
+ * (`fileUsesOf`): the free items and story entries MADE of it deleted,
+ * the optional fields of those that only mention it dropped (a long
+ * text's narration, a video's poster, a character's voice), a station's
+ * card image of it cleared - one step, so an undo brings them all back. A
+ * station a delete empties goes too when it is an automatic one
+ * (`withoutEmptied`). Refused - unchanged - while a long text shows it
+ * inside its words or a character of the tour is drawn with it; nothing
+ * using it changes nothing.
  */
 function fileUsesDelete(
   before: TourDocumentState,
@@ -3035,29 +3115,58 @@ function fileUsesDelete(
 ): TourDocumentState {
   if (before.written === null) return before;
   const { assetId } = payload;
-  const uses = (block: { readonly kind?: unknown }): boolean =>
-    tourBlockAssetIds(block).includes(assetId);
+  const uses = fileUsesOf(before, assetId);
+  if (uses.inline.length > 0 || uses.characters.length > 0) return before;
   let lists = { placed: [...before.placed], deleted: [...before.deleted] };
   const left: (string | undefined)[] = [];
   for (const found of documentObjects(before)) {
-    if (!uses(found.object)) continue;
-    lists = deleteObject(lists, found);
-    left.push(found.object.station);
+    const use = fileUseOf(found.object, assetId);
+    if (use?.kind === "own") {
+      lists = deleteObject(lists, found);
+      left.push(found.object.station);
+    } else if (use?.kind === "mention") {
+      const object = withoutFields(found.object, use.fields);
+      const station = object.station ?? homeOf(before, object.id);
+      lists = {
+        ...lists,
+        placed: upsertPlaced(lists.placed, {
+          object: station === undefined ? object : { ...object, station },
+        }),
+      };
+    }
   }
+  const mentioned = uses.mentions.length > 0;
   const frames = new Map<string, StationFrame>();
   for (const frame of allFrames(before)) {
     let next = frame;
     for (const story of tourStories(frame)) {
-      for (const child of story.children) {
-        if (!uses(child)) continue;
-        next = withoutStoryChild(next, child.id)?.frame ?? next;
+      for (const child of tourStoryChildrenBlocks(story.children)) {
+        const use = fileUseOf(child, assetId);
+        if (use?.kind === "own") {
+          next = withoutStoryChild(next, child.id)?.frame ?? next;
+        } else if (use?.kind === "mention") {
+          next = withStoryBlock(next, withoutFields(child, use.fields));
+        }
       }
     }
     if (next.image === assetId) next = withoutField(next, "image");
     if (next !== frame) frames.set(frame.id, next);
   }
-  const itemsGone = left.length > 0;
-  if (!itemsGone && frames.size === 0) return before;
+  if (left.length === 0 && !mentioned && frames.size === 0) return before;
+  return filesEdited(before, lists, frames, left, payload.what);
+}
+
+/** One step of a file's edit across the tour (`fileUsesDelete`,
+ *  `fileReplace`): the object lists `lists`, the station frames `frames`
+ *  changed (by id), and the stations `left` by a deleted item - an
+ *  automatic one emptied goes (`withoutEmptied`). */
+function filesEdited(
+  before: TourDocumentState,
+  lists: Pick<TourDocumentState, "placed" | "deleted">,
+  frames: ReadonlyMap<string, StationFrame>,
+  left: readonly (string | undefined)[],
+  what: string,
+): TourDocumentState {
   const listed =
     frames.size === 0
       ? before.stations
@@ -3078,7 +3187,77 @@ function fileUsesDelete(
             framesRecorded: true,
           }),
     },
-    payload.what,
+    what,
+  );
+}
+
+/** What `fileReplaced` carries: the file `from` every use switches from,
+ *  the file `to` it switches to. */
+export interface FileReplacedPayload {
+  readonly from: string;
+  readonly to: string;
+  readonly what: string;
+}
+
+/**
+ * Every use of the file `from` switched to the file `to` (`fileReplaced`,
+ * the shelf's "Replace everywhere"): the items made of it, the fields
+ * that mention it (a narration, a poster, a voice), the pictures a long
+ * text shows inside its words and a station's card image - one step, so
+ * an undo brings the old file back everywhere. A free picture's inline
+ * record becomes the new file's. Unchanged for a `to` the tour does not
+ * list or of another kind than `from`, for `from` itself, for a file a
+ * character of the tour is drawn with, and when nothing uses `from`.
+ */
+function fileReplace(
+  before: TourDocumentState,
+  { from, to, what }: FileReplacedPayload,
+): TourDocumentState {
+  if (before.written === null || from === to) return before;
+  const listed = [...before.addedAssets, ...before.written.assets];
+  const old = listed.find((a) => a.id === from);
+  const next = listed.find((a) => a.id === to);
+  if (old === undefined || next === undefined || old.kind !== next.kind) {
+    return before;
+  }
+  // A character declaration is not edited here: his file stays.
+  if (fileUsesOf(before, from).characters.length > 0) return before;
+  let placed = [...before.placed];
+  let objectsSwitched = false;
+  for (const found of documentObjects(before)) {
+    const switched = withFileSwitched(found.object, from, to);
+    if (switched === null) continue;
+    objectsSwitched = true;
+    const filed =
+      switched.kind === "picture" && switched.image === to
+        ? { ...switched, imageAsset: next }
+        : switched;
+    const station = filed.station ?? homeOf(before, filed.id);
+    placed = upsertPlaced(placed, {
+      object: station === undefined ? filed : { ...filed, station },
+    });
+  }
+  const frames = new Map<string, StationFrame>();
+  for (const frame of allFrames(before)) {
+    let switchedFrame = frame;
+    for (const story of tourStories(frame)) {
+      for (const child of tourStoryChildrenBlocks(story.children)) {
+        const switched = withFileSwitched(child, from, to);
+        if (switched !== null)
+          switchedFrame = withStoryBlock(switchedFrame, switched);
+      }
+    }
+    if (switchedFrame.image === from)
+      switchedFrame = { ...switchedFrame, image: to };
+    if (switchedFrame !== frame) frames.set(frame.id, switchedFrame);
+  }
+  if (!objectsSwitched && frames.size === 0) return before;
+  return filesEdited(
+    before,
+    { placed, deleted: before.deleted },
+    frames,
+    [],
+    what,
   );
 }
 
@@ -3810,6 +3989,12 @@ const tourDocumentSlice = createSlice({
       action: PayloadAction<{ assetId: string; what: string }>,
     ) {
       return fileUsesDelete(plain(state), action.payload);
+    },
+    /** Every use of a file switched to another of its kind
+     *  (`fileReplace`): one step; refused - unchanged - for a file of
+     *  another kind, and when nothing uses it. */
+    fileReplaced(state, action: PayloadAction<FileReplacedPayload>) {
+      return fileReplace(plain(state), action.payload);
     },
     /** A station item moved (`childMoveChange`): one step; a refused
      *  move changes nothing. */
