@@ -1009,7 +1009,7 @@ describe("buildRoads - class order (M4a)", () => {
       expect(isPedestrianPath(way(highway)), highway).toBe(true);
     }
     // The colour list is still a second list (feature-colours.ts), so pin
-    // the other direction over every `highway` value OSM documents for
+    // the other direction over the common `highway` values OSM documents for
     // ways: the only path that is not a pedestrian colour class is
     // `bridleway`. A path added to `PATH_WIDTH_M` alone fails here, unless
     // it is a value missing from this list.

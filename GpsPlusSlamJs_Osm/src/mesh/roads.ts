@@ -91,10 +91,11 @@ const DEFAULT_LANES: ReadonlyMap<string, number> = new Map([
  *
  * THE ONE PATH LIST of this file: `isPedestrianPath` tests against its keys
  * and `ROAD_RANK` puts exactly these at rank 0, so a class added here is a
- * path in this file's tables at once (the colour list, `PEDESTRIAN_CLASSES`
- * in feature-colours.ts, is separate and held to it by a test) (#909 review: `platform` once reached the rank
- * table alone and drew 6 m wide). `platform` is a bus or tram platform
- * mapped as a way, a pedestrian surface; it takes the pedestrian width.
+ * path in this file's tables at once. The colour list, `PEDESTRIAN_CLASSES`
+ * in feature-colours.ts, is separate and held to it by a test. (#909
+ * review: `platform` once reached the rank table alone and drew 6 m wide.)
+ * `platform` is a bus or tram platform mapped as a way, a pedestrian
+ * surface; it takes the pedestrian width.
  */
 const PATH_WIDTH_M: ReadonlyMap<string, number> = new Map([
   ["footway", 2],

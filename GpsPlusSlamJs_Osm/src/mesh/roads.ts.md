@@ -68,7 +68,7 @@ footway crossing it.
     class cannot reach one of this file's tables alone. The colour list
     (`PEDESTRIAN_CLASSES` in `feature-colours.ts`) is still separate; a test
     in `roads.test.ts` pins that the only path outside it is `bridleway`,
-    over every `highway` value OSM documents for ways. That happened once (#909 review):
+    over the common `highway` values OSM documents for ways. That happened once (#909 review):
     `platform` was in the rank table only, so a `highway=platform` way drew
     6 m wide (the unknown-class width) and took `surface` first for its
     colour.
