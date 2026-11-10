@@ -118,6 +118,7 @@ import {
   type InspectorCode,
   type InspectorModel,
 } from "./inspector-model.js";
+import { inspectorFileOf, REPLACE_FILE_ACT } from "./inspector-file.js";
 import {
   controlName,
   drawInspector,
@@ -259,6 +260,10 @@ export interface ShellEditCommands {
     itemId: string,
     change: NarrationChange,
   ): Promise<TypedEditOutcome>;
+  /** Another file for the item `itemId` (its inspector's "Replace..."):
+   *  picked and given by the page, one undo step; none: no such row's
+   *  button does anything. */
+  replaceFile?(itemId: string): void;
   /** The largest voice file a long text takes (the page's autosave cap;
    *  none: the default cap). */
   readonly voiceMaxBytes?: number;
@@ -282,6 +287,9 @@ export interface EditorShellDeps {
   readonly step: (which: "undo" | "redo") => void;
   /** The open tour's codes, in the phone's numbering. */
   readonly codes: () => readonly InspectorCode[];
+  /** The name a file was brought in under, by its asset id (the shelf's);
+   *  none: the inspector names a file by its entry. */
+  readonly fileNameOf?: (assetId: string) => string | undefined;
   /** A picture's bytes from the open tour (its content path). */
   readonly loadPicture: (path: string) => Promise<Blob>;
   /** A dialog of the page shows: the shell's keys stay out of it. */
@@ -700,7 +708,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     // second).
     if (ui.selected === null) return null;
     const tour = manifest();
-    return buildInspector({
+    const built = buildInspector({
       selected: ui.selected,
       stations: tour?.stations ?? [],
       assets: tour?.assets ?? [],
@@ -713,6 +721,13 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       timingsStamp: timingsStampOf(state().tourDocument.timings),
       selectedFileUnsaved: freeItemUnsaved(state().tourDocument, ui.selected),
     });
+    const file = inspectorFileOf(
+      ui.selected,
+      tour?.stations ?? [],
+      tour?.assets ?? [],
+      deps.fileNameOf,
+    );
+    return built === null || file === null ? built : { ...built, file };
   };
 
   /** `model` as the docks and a phone's sheets see it: none on a phone
@@ -1956,6 +1971,11 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     if (act === "earlier" || act === "later") moveSelected(selected, act);
     if (act?.startsWith("move-to:") === true) {
       moveSelectedTo(selected, act.slice("move-to:".length));
+    }
+    if (act === REPLACE_FILE_ACT) {
+      const model = inspectorModel(state().editorView);
+      if (model?.file !== undefined)
+        deps.edits.replaceFile?.(model.file.blockId);
     }
     if (act === "delete") deleteSelected(selected);
     if (act === "split") deps.stations.split(selected);

@@ -20,7 +20,7 @@ import type {
   TourStoryBlock,
 } from "gps-plus-slam-app-framework/ar/tour-story";
 
-import type { AddKind } from "../kinds/edit-kinds.js";
+import type { TextAddKind } from "../kinds/edit-kinds.js";
 import { posedBlocks } from "../placement/placeables.js";
 
 /** How far a new pin keeps from every item of its station (m). */
@@ -76,8 +76,9 @@ export interface NewItemInput {
 }
 
 /** A new item's geo pose: the station's free spot, on the ground there
- *  (the anchor's height where none has loaded). */
-function freeGeo(input: NewItemInput): TourPin["geo"] {
+ *  (the anchor's height where none has loaded). A file's item
+ *  (`new-file-item.ts`) stands there too. */
+export function freeGeo(input: NewItemInput): TourPin["geo"] {
   const { station } = input;
   const spot = freePinSpot(station);
   const geo = itemGeoPose(
@@ -135,7 +136,7 @@ export function addNewItem(
   input: Omit<NewItemInput, "station"> & {
     readonly stations: readonly TourStation[];
     readonly stationId: string;
-    readonly kind: AddKind;
+    readonly kind: TextAddKind;
     readonly place: (
       item: TourPin | TourReadingSign,
     ) =>
@@ -160,24 +161,38 @@ export function addNewItem(
 const NEW_LONG_TEXT_BODY = "Write the text here.";
 
 /**
- * A new entry at the end of `story`: a card a visitor taps on from, in its
- * station's middle, "New pin n" or "New long text n" with n one more than
- * the story's cards of that kind. Moved in the room later, as any story
- * block.
+ * What every new story entry starts as, made from words or from a file
+ * (`new-file-item.ts`): a card a visitor taps on from, id `id`, posed at
+ * its station's free spot (`freePinSpot`) - a real place should it leave
+ * the story for the world, never the anchor's own point under the station
+ * marker.
+ */
+export function storyEntryShell(station: TourStation, id: string) {
+  const spot = freePinSpot(station);
+  return {
+    id,
+    view: "card",
+    pose: {
+      position: [spot.northM, 0, spot.eastM],
+      rotation: [0, 0, 0, 1],
+    },
+    advance: { mode: "tap" },
+  } as const;
+}
+
+/**
+ * A new entry at the end of `story` of `station` (`storyEntryShell`),
+ * "New pin n" or "New long text n" with n one more than the story's cards
+ * of that kind. Moved in the room later, as any story block.
  */
 export function newStoryEntry(
+  station: TourStation,
   story: TourStory,
-  kind: AddKind,
+  kind: TextAddKind,
   id: string,
 ): TourStoryBlock {
   const n = story.children.filter((c) => c.kind === kind).length + 1;
-  const shared = {
-    id,
-    view: "card",
-    pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-    advance: { mode: "tap" },
-  } as const;
-  return { ...shared, ...KIND_ADD[kind].entry(n) };
+  return { ...storyEntryShell(station, id), ...KIND_ADD[kind].entry(n) };
 }
 
 /**
@@ -200,7 +215,7 @@ export function newLongText(input: NewItemInput): TourReadingSign {
 
 /** One addable kind's start: what it is at a station's free spot, and as
  *  a story entry numbered `n`. */
-interface KindAddRow<K extends AddKind> {
+interface KindAddRow<K extends TextAddKind> {
   readonly item: (
     input: NewItemInput,
   ) => Extract<TourPin | TourReadingSign, { kind: K }>;
@@ -214,10 +229,11 @@ interface KindAddRow<K extends AddKind> {
 
 /** What each addable kind starts as, one row per kind: the editor half of
  *  the add line of its row in `kinds/edit-kinds.ts` (which may not hold
- *  these: it would then import this editor module under every creator
- *  page that reads the list). Keyed by the addable kinds, in the add
- *  menu's order: a kind its row makes addable needs one. */
-export const KIND_ADD: { readonly [K in AddKind]: KindAddRow<K> } = {
+ *  these: it would then import this module, and through `tour-document`
+ *  and `tour-content` itself again). Keyed by the addable kinds made from
+ *  words alone, in the add menu's order: a kind its row makes addable
+ *  without a file needs one (a file's kind is `new-file-item.ts`'s). */
+export const KIND_ADD: { readonly [K in TextAddKind]: KindAddRow<K> } = {
   shortText: {
     item: newPin,
     entry: (n) => ({ kind: "shortText", caption: `New pin ${String(n)}` }),

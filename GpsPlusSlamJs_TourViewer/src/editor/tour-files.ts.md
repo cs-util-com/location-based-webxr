@@ -40,8 +40,10 @@ editor session keeps what it returns in its one files table
     `ASSET_CEILING_PIXELS` (8192 x 8192, a 48 MP photo fits), both
     PROVISIONAL until a phone memory measurement sets them; they guard the
     decode against huge files and crafted headers.
-  - `posterOf?(blob)` - a video's poster picture; null or a rejection
-    mints none.
+  - `videoLookOf?(blob)` - a video's poster picture and length, read
+    through one element (`video-poster.ts`); a null poster or a rejection
+    mints none, a null length leaves `seconds` out. A video read gives
+    `seconds` when its length was known (the shelf's size warning).
   - `limits?` - `TourFileLimits`, default `TOUR_FILE_LIMITS`.
 - `TOUR_FILE_LIMITS` - the archive reader's caps
   (`DEFAULT_ARCHIVE_LIMITS`: an entry 256 MiB, an archive 1024 MiB) less a

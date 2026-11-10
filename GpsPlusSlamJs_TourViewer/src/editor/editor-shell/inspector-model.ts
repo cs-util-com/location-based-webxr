@@ -86,6 +86,7 @@ import {
   storyList,
 } from "../../station-children-moves.js";
 import { eastNorthOf, tourCentre } from "../tour-origin.js";
+import type { InspectorFile } from "./inspector-file.js";
 import { outsideItems } from "./tour-problems.js";
 import {
   stationContents,
@@ -500,14 +501,19 @@ interface CodeInspector {
   readonly position: InspectorPosition | null;
 }
 
-export type InspectorModel =
+export type InspectorModel = (
   | StationInspector
   | ItemInspector
   | FolderInspector
   | CodeInspector
   | StoryInspector
   | StoryEntryInspector
-  | StoryStepInspector;
+  | StoryStepInspector
+) & {
+  /** The selected item's file (`inspector-file.ts`), the shell's to add;
+   *  none for one made of words. */
+  readonly file?: InspectorFile;
+};
 
 /** Whether a phone shows `model` as its details sheet over the list;
  *  false for a selection whose model says it has none there. */

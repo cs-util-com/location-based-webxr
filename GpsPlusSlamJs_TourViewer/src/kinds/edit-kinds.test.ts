@@ -175,36 +175,69 @@ describe("KIND_EDIT", () => {
   it("offers in the add menu and the palette exactly the rows that say they are addable", () => {
     const listed = tourBlockKinds().filter((k) => rowOf(k).add !== undefined);
     const addable = listed.filter((k) => rowOf(k).add?.addable === true);
+    // A video is added in a story only: off on a station's menu, not in
+    // the palette, which adds at stations.
+    const atStation = addable.filter(
+      (k) => rowOf(k).add?.storyOnly === undefined,
+    );
     document.body.replaceChildren();
-    createTreeAddMenu({
+    const menu = createTreeAddMenu({
       body: document.createElement("div"),
       host: document.body,
       choose: () => undefined,
       chooseForStory: () => undefined,
     });
-    const items = [
-      ...document.querySelectorAll<HTMLElement>(
-        '#tree-add-menu [role="menuitem"]',
-      ),
-    ].filter((item) => item.dataset["kind"] !== "story");
-    expect(items.map((item) => item.dataset["kind"])).toEqual(listed);
-    expect(
-      items
+    const items = () =>
+      [
+        ...document.querySelectorAll<HTMLElement>(
+          '#tree-add-menu [role="menuitem"]',
+        ),
+      ].filter((item) => item.dataset["kind"] !== "story");
+    const on = () =>
+      items()
         .filter((item) => item.getAttribute("aria-disabled") !== "true")
-        .map((item) => item.dataset["kind"]),
-    ).toEqual(addable);
+        .map((item) => item.dataset["kind"]);
+    const plus = document.createElement("button");
+    document.body.append(plus);
+    expect(items().map((item) => item.dataset["kind"])).toEqual(listed);
+    menu.openFor(plus, "s", "Station");
+    expect(on()).toEqual(atStation);
+    menu.close(false);
+    menu.openForStory(plus, "t", "Story");
+    expect(on()).toEqual(addable);
+    menu.close(false);
     expect(
       PALETTE_KINDS.map((k) => k.kind).filter((k) => k !== "station"),
-    ).toEqual(addable);
+    ).toEqual(atStation);
     document.body.replaceChildren();
   });
 
-  it("keeps today's editor: a short and a long text are addable, a picture is listed off", () => {
+  // Why: the add menu is the editor's whole reach; a kind dropped from it
+  // or turned on by accident changes what a creator can make.
+  it("lists every kind with a way to add it, a character off until it can be made", () => {
     const listed = tourBlockKinds().filter((k) => rowOf(k).add !== undefined);
-    expect(listed).toEqual(["shortText", "longText", "picture"]);
+    expect(listed).toEqual([
+      "shortText",
+      "longText",
+      "picture",
+      "video",
+      "audio",
+      "model",
+      "character",
+    ]);
     expect(listed.filter((k) => rowOf(k).add?.addable === true)).toEqual([
       "shortText",
       "longText",
+      "picture",
+      "video",
+      "audio",
+      "model",
+    ]);
+    expect(listed.filter((k) => rowOf(k).add?.file !== undefined)).toEqual([
+      "picture",
+      "video",
+      "audio",
+      "model",
     ]);
   });
 });

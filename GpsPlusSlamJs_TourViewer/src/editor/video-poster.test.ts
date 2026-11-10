@@ -8,7 +8,17 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { videoPosterOf, type PosterVideo } from "./video-poster.js";
+import {
+  videoLookOf,
+  type PosterVideo,
+  type VideoPosterOptions,
+} from "./video-poster.js";
+
+/** The poster alone, as most of these tests read it. */
+const videoPosterOf = async (
+  blob: Blob,
+  options: VideoPosterOptions,
+): Promise<Blob | null> => (await videoLookOf(blob, options)).poster;
 
 /** A video element stand-in that plays `script` once its src is set. */
 function fakeVideo(
@@ -220,5 +230,41 @@ describe("videoPosterOf", () => {
     d.video.videoHeight = 2160;
     await videoPosterOf(new Blob(["v"]), d.options);
     expect(d.drawn).toEqual([{ w: 1920, h: 1080 }]);
+  });
+});
+
+describe("videoLookOf", () => {
+  // Why: the shelf warns about a video large for its length, and the
+  // length must come from the element that minted the poster - a
+  // recorded clip's Infinity resolved by the seek, an unknown one never
+  // guessed, and a known length kept even when no poster could be drawn.
+  it("gives the poster with the length the poster's element read", async () => {
+    const d = deps("frame", 12);
+    const look = await videoLookOf(new Blob(["v"]), d.options);
+    expect(await look.poster?.text()).toBe("jpeg");
+    expect(look.seconds).toBe(12);
+    const recorded = deps("frame", Number.POSITIVE_INFINITY, 3);
+    recorded.options.timeoutMs = 60_000;
+    expect((await videoLookOf(new Blob(["v"]), recorded.options)).seconds).toBe(
+      3,
+    );
+  });
+
+  it("gives no length it does not know, and a known one without a poster", async () => {
+    for (const duration of [0, Number.NaN]) {
+      const d = deps("frame", duration);
+      d.options.timeoutMs = 60_000;
+      expect(
+        (await videoLookOf(new Blob(["v"]), d.options)).seconds,
+      ).toBeNull();
+    }
+    const empty = await videoLookOf(new Blob(["v"]), deps("empty", 9).options);
+    expect(empty).toEqual({ poster: null, seconds: 9 });
+    const never = deps("frame", Number.POSITIVE_INFINITY);
+    never.options.timeoutMs = 60_000;
+    Object.assign(never.options, { lengthTimeoutMs: 0 });
+    expect(
+      (await videoLookOf(new Blob(["v"]), never.options)).seconds,
+    ).toBeNull();
   });
 });

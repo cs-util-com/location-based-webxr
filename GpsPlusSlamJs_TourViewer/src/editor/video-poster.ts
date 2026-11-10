@@ -1,6 +1,6 @@
 /**
  * A video's poster: its frame just after the start, as a JPEG, read once
- * when the video is brought into the tour (`readTourFile`'s `posterOf`);
+ * when the video is brought into the tour (`readTourFile`'s `videoLookOf`, which also gives its length);
  * a recorded clip's unknown length is read first.
  * The browser's own decoder reads it; a video it refuses, one that does
  * not load within the time allowed, or one with no picture gives none.
@@ -67,11 +67,20 @@ function drawOnCanvas(
   });
 }
 
-/** `blob`'s poster, or null when none could be read. Never rejects. */
-export async function videoPosterOf(
+/** What reading a video once gives: its poster (null when none could be
+ *  read) and its length in seconds (null when the browser did not know
+ *  it). */
+export interface VideoLook {
+  readonly poster: Blob | null;
+  readonly seconds: number | null;
+}
+
+/** `blob`'s poster and length, read through one video element (the
+ *  length is the one the poster's seek read). Never rejects. */
+export async function videoLookOf(
   blob: Blob,
   options: VideoPosterOptions = {},
-): Promise<Blob | null> {
+): Promise<VideoLook> {
   const urls = options.objectUrl ?? {
     create: (b: Blob) => URL.createObjectURL(b),
     revoke: (u: string) => {
@@ -157,17 +166,19 @@ export async function videoPosterOf(
       video.preload = "auto";
       video.src = url;
     });
-    const { videoWidth: w, videoHeight: h } = video;
-    if (!seeked || !(w > 0 && h > 0)) return null;
+    const { videoWidth: w, videoHeight: h, duration } = video;
+    const seconds = Number.isFinite(duration) && duration > 0 ? duration : null;
+    if (!seeked || !(w > 0 && h > 0)) return { poster: null, seconds };
     const scale = Math.min(1, POSTER_MAX_SIDE / Math.max(w, h));
     const draw = options.draw ?? drawOnCanvas;
-    return await draw(
+    const poster = await draw(
       video,
       Math.max(1, Math.round(w * scale)),
       Math.max(1, Math.round(h * scale)),
     );
+    return { poster, seconds };
   } catch {
-    return null;
+    return { poster: null, seconds: null };
   } finally {
     video.removeAttribute("src");
     video.load();

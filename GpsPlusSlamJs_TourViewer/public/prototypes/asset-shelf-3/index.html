@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Asset Shelf: Rail of Rings</title>
+    <!--
+  Throwaway prototype: the tour editor's asset shelf, direction "a rail of
+  rings". The shelf is not a panel at all while you work: it is a slim rail
+  on the far right edge, one round chip per asset, and the ring around each
+  chip is its state (dashed = queued, a growing arc = optimizing, a full
+  green ring = ready, a red notch = failed). Hovering a chip opens a card
+  beside it; the rail's head expands the rail into a drawer that slides over
+  the inspector, with every asset in a row. Files dropped anywhere land on
+  the rail with a short flight. On a phone the rail turns into a floating
+  tray of chips riding on top of the bottom sheet. Chips drag straight from
+  the rail onto a station, a story, an item row, a map pin or an item's file
+  field. Processing is faked with timers, all data is sample data, nothing
+  is saved, no libraries.
+-->
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header id="top">
+      <div class="brand">
+        <b>Old Town Walk</b><span class="doc">old-town-walk.tour</span>
+      </div>
+      <button class="mbtn" type="button" data-act="menu">File</button>
+      <button class="mbtn hideS" type="button" data-act="menu">Edit</button>
+      <button class="mbtn hideS" type="button" data-act="menu">View</button>
+      <span class="unsaved" id="unsaved" hidden>Not saved</span>
+      <span class="sp"></span>
+      <button class="tbtn showS" id="listBtn" type="button" data-act="list">
+        <svg class="i" viewBox="0 0 16 16"><path d="M3 4h10M3 8h10M3 12h10" /></svg>List
+      </button>
+      <button class="tbtn acc" type="button" data-act="simulate" title="Drop four sample files: a sound, a picture, a video and a 3D model">
+        <svg class="i" viewBox="0 0 16 16"><path d="M8 2v8M4.5 6.5 8 10l3.5-3.5M3 13h10" /></svg><span class="lbl">Simulate drop</span><span class="lblS">Drop 4</span>
+      </button>
+      <button class="tbtn" type="button" data-act="addFiles" title="Add files from this device" aria-label="Add files">
+        <svg class="i" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" /></svg><span class="lbl hideM">Add files</span>
+      </button>
+      <input type="file" id="fileIn" multiple hidden />
+    </header>
+    <div id="loadbar"></div>
+
+    <main id="main">
+      <!-- the explorer tree (left) -->
+      <nav id="tree" class="panel" aria-label="Tour">
+        <div class="grip" aria-hidden="true"></div>
+        <div class="phead"><span class="ptitle">Explorer</span></div>
+        <div class="pbody" id="treeBody"></div>
+      </nav>
+
+      <!-- the 3D view, mocked as a flat map with pins -->
+      <section id="scene" aria-label="3D view (mock)">
+        <svg class="river" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M-5 78 C 20 70, 30 88, 55 72 S 85 60, 105 66" />
+        </svg>
+        <div id="pins"></div>
+        <div class="sceneHint">3D view (mock): the pins are drop targets too</div>
+      </section>
+
+      <!-- the inspector (right) -->
+      <aside id="insp" class="panel" aria-label="Details">
+        <div class="grip" aria-hidden="true"></div>
+        <div id="inspInner"></div>
+      </aside>
+
+      <!-- the shelf: a slim rail of asset chips on the far right edge -->
+      <aside id="rail" aria-label="Asset shelf">
+        <button id="railHead" type="button" data-act="drawer" aria-expanded="false" title="Open the shelf">
+          <svg class="ring agg" viewBox="0 0 40 40" aria-hidden="true">
+            <circle class="trk" cx="20" cy="20" r="18" pathLength="100" />
+            <circle class="arc" data-arc="agg" cx="20" cy="20" r="18" pathLength="100" stroke-dasharray="0 100" />
+          </svg>
+          <svg class="i shelfIco" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 9.5h3l1 1.8h3l1-1.8h3v3.5h-11z" /><path d="M8 2.5v5.5M5.6 5.6 8 8l2.4-2.4" /></svg>
+          <span class="railCount" id="railCount">0</span>
+        </button>
+        <ul id="chips" aria-label="Assets"></ul>
+        <div class="railEmpty" id="railEmpty">drop files</div>
+        <button class="railAdd" type="button" data-act="addFiles" title="Add files" aria-label="Add files">
+          <svg class="i" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" /></svg>
+        </button>
+      </aside>
+
+      <!-- the rail, expanded: a drawer over the inspector -->
+      <section id="drawer" aria-label="Asset shelf, expanded" aria-hidden="true">
+        <div class="dhead">
+          <div>
+            <div class="dtitle">Shelf</div>
+            <div class="dsum" id="dsum"></div>
+          </div>
+          <button class="x" type="button" data-act="drawer" aria-label="Close the shelf">
+            <svg class="i" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" /></svg>
+          </button>
+        </div>
+        <div class="dfilters" id="dfilters" role="tablist"></div>
+        <div class="dlist" id="dlist"></div>
+        <div class="dfoot">
+          Drag a row by its picture onto a station, a story or an item.
+        </div>
+      </section>
+
+      <div id="armBar" hidden></div>
+    </main>
+
+    <footer id="bar">
+      <span id="saveState">All changes saved</span>
+      <span class="sp"></span>
+      <button type="button" id="shelfState" data-act="drawer"></button>
+    </footer>
+
+    <!-- the card beside a chip -->
+    <div id="card" role="dialog" aria-label="Asset" hidden></div>
+    <!-- a file picker for a file field -->
+    <div id="picker" role="dialog" aria-label="Choose a file" hidden></div>
+    <!-- the drop target over the whole page -->
+    <div id="drop" hidden>
+      <div id="dropZone">
+        <svg class="i big" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v8M4.5 6.5 8 10l3.5-3.5M3 13h10" /></svg>
+        <div class="dz1">Drop to put them on the shelf</div>
+        <div class="dz2">You keep working while they are made light for phones outdoors:</div>
+        <ul class="dzk">
+          <li><i style="--k: var(--k-audio)"></i>Sounds to a small standard format</li>
+          <li><i style="--k: var(--k-image)"></i>Pictures to a sensible size and JPEG quality</li>
+          <li><i style="--k: var(--k-video)"></i>Videos to 720p</li>
+          <li><i style="--k: var(--k-model)"></i>3D models made lighter</li>
+        </ul>
+        <div class="dz3"><span class="lbl">They land on the rail <span aria-hidden="true">→</span></span><span class="lblS">They land in the tray above the sheet <span aria-hidden="true">↑</span></span></div>
+      </div>
+    </div>
+    <dialog id="dlg"></dialog>
+    <div id="toasts" aria-live="polite"></div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

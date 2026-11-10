@@ -39,13 +39,19 @@ reason }`): the add itself - the new pin or long text of the station,
   nothing was added.", `place` not called) or when `place` refuses (its
   words). The page toasts the refusal.
 
-- `KIND_ADD`: one row per addable kind (`AddKind`, in the add menu's
-  order): `item(input)`, what it starts as at a station's free spot (typed per kind, so a row with another kind's maker fails to compile), and
+- `KIND_ADD`: one row per addable kind made from words alone
+  (`TextAddKind`, in the add menu's order; a file's kind starts from its
+  file: `new-file-item.ts`): `item(input)`, what it starts as at a station's free spot (typed per kind, so a row with another kind's maker fails to compile), and
   `entry(n)`, its own fields as a story's `n`-th entry of that kind. The
   add path reads it and names no kind.
-- `newStoryEntry(story, kind, id)` -> `TourStoryBlock`: a card a story shows,
-  a short or a long text (`AddKind`), at the station's origin, moving on by
-  a tap, numbered within its kind in the story.
+- `storyEntryShell(station, id)`: what every new story entry starts as,
+  made from words or from a file (`new-file-item.ts`): a card moving on
+  by a tap, posed at the station's free spot (`freePinSpot`), a real
+  place should it leave the story for the world, never the anchor's own
+  point.
+- `newStoryEntry(station, story, kind, id)` -> `TourStoryBlock`: a card a
+  story shows, a short or a long text (`TextAddKind`), in the
+  `storyEntryShell`, numbered within its kind in the story.
 
 ## Invariants & assumptions
 
@@ -73,4 +79,5 @@ property that the spot is inside the circle for any items and radius;
 the pin's fields, its place in the frame, its height with and without
 the ground; the long text's fields and its round trip through the file's
 record (it parses back as written); `addNewItem`'s gone station, its
-passed-on refusal and its placed item.
+passed-on refusal and its placed item; a story entry's numbering and its
+pose at the free spot.

@@ -43,11 +43,22 @@ there.
     Audio lists a narration circle's radius (`spot`) and a zone's reach,
     calm and volume (`zone`).
   - `add` - its line in the tree's add menu (`KindAdd`: `label`, `hint`,
-    `words`, `addable`); a row without one is not offered at all, and one
-    with `addable: false` is listed, says why, and adds nothing.
+    `words`, `addable`, and for a kind made from a file `file`: the
+    asset kind its file must be, and `storyOnly`: why it is added to a
+    story only - a video, which no free host draws); a row without one is
+    not offered at all, and one with `addable: false` is listed, says why,
+    and adds nothing (a character: "Coming: made step by step in the
+    character maker").
 - `KindLook`, `AddKind` (and the unexported `KindAdd`, a row's add line) - types derived from the rows: the
-  looks and the kinds with `add.addable: true` (today
-  `"shortText" | "longText"`).
+  looks and the kinds with `add.addable: true` (short and long text,
+  picture, video, audio, model).
+- `FileAddKind`, `TextAddKind` - the addable kinds made from a file
+  (`add.file`: picture, video, audio, model) and the rest (short and long
+  text, made from words alone: `editor/new-pin.ts`).
+- `isFileAddKind(kind)` - type guard on `add.file`.
+- `storyOnlyReason(kind)`, `isStoryOnly(kind)` - the `add.storyOnly`
+  words, or undefined; the station's menu shows them on the kind, off,
+  and the palette (which adds at stations) leaves the kind out.
 - Whether a block stands in the world, turns and has size dots is not a
   kind's: it is its VIEW's, in `placement/placement-rows.ts` (a kind may
   stand in the world in one view and be a card in another), held to the
@@ -108,8 +119,9 @@ there.
   kind is exhaustive.
 - Each `look` is unique (the tree tells rows apart by it).
 - What the editor can do with a kind is unchanged by this list: it only
-  says it. Short and long text are addable, a picture is listed off,
-  video, audio, model and character are not offered.
+  says it. Short and long text, picture, video, sound and 3D model are
+  addable (the four files through `editor/add-file-item.ts`), a video in a
+  story only; a character is listed off.
 
 ## The editor half of a row
 
@@ -147,14 +159,18 @@ there.
 ```ts
 KIND_EDIT.longText.label; // "Long text"
 kindWithArticle("audio"); // "an audio"
-ADD_CHOICES.filter(isAddable).map((c) => c.kind); // ["shortText", "longText"]
+ADD_CHOICES.filter(isAddable).map((c) => c.kind);
+// ["shortText", "longText", "picture", "video", "audio", "model"]
+storyOnlyReason("video"); // "A video plays in a story: add it to one"
 ```
 
 ## Tests
 
 `edit-kinds.test.ts`: a row for every kind of the format and no other, in
 its order; every row's words non-empty; unique looks; every search word
-finds its row in the tree, free and inside a story; the add menu lists and enables, and the
-palette offers, exactly the rows that say so; and today's editor kept
-(short and long text addable, the picture listed off). Seen red with a
+finds its row in the tree, free and inside a story; the add menu lists
+and enables (a station's menu without the story-only video, a story's
+with it), and the palette offers, exactly the rows that say so; and the
+editor's reach pinned (every kind listed, the character off, the four
+file kinds). Seen red with a
 row removed.

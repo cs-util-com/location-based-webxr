@@ -14,7 +14,7 @@ import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 // Activates the licence the station frame's geodesy needs.
 import "../test-support/tour-of.js";
-import { ADD_CHOICES, isAddable } from "../kinds/edit-kinds.js";
+import { ADD_CHOICES, isAddable, isFileAddKind } from "../kinds/edit-kinds.js";
 import {
   addNewItem,
   freePinSpot,
@@ -57,10 +57,13 @@ function station(
 
 // Why this test matters: what a kind starts as when added (at a station,
 // and as a story entry) is its one row here; the add menu's addable kinds
-// and these rows must be the same set, or a menu line adds nothing.
+// and these rows must be the same set, or a menu line adds nothing. A kind
+// made from a file starts from its file instead (`new-file-item.ts`).
 describe("KIND_ADD", () => {
-  it("has one row, with an item and an entry, for every addable kind of the add menu", () => {
-    const addable = ADD_CHOICES.filter(isAddable).map((c) => c.kind);
+  it("has one row, with an item and an entry, for every addable kind of the add menu made from words", () => {
+    const addable = ADD_CHOICES.filter(isAddable)
+      .map((c) => c.kind)
+      .filter((kind) => !isFileAddKind(kind));
     expect(Object.keys(KIND_ADD)).toEqual(addable);
     for (const row of Object.values(KIND_ADD)) {
       expect(typeof row.item).toBe("function");
@@ -292,13 +295,15 @@ describe("newLongText", () => {
   });
 });
 
-// Why: a story's entry is shown in the card while the story runs, so it
-// stands at the station's own origin and moves on by a tap; the number in
-// its text counts its own kind, or two new entries would read the same.
+// Why: a story's entry is shown in the card while the story runs and
+// moves on by a tap; its pose is where it stands once it leaves the story
+// for the world, so it must be a real place of its station (its free
+// spot), never the anchor's own point under the station marker. The number
+// in its text counts its own kind, or two new entries would read the same.
 describe("newStoryEntry", () => {
   it("makes a card that moves on by a tap, numbered within its kind", () => {
     const story = { children: [{ kind: "shortText" }] } as never;
-    const pin = newStoryEntry(story, "shortText", "p");
+    const pin = newStoryEntry(station([]), story, "shortText", "p");
     expect(pin).toMatchObject({
       id: "p",
       kind: "shortText",
@@ -306,11 +311,31 @@ describe("newStoryEntry", () => {
       caption: "New pin 2",
       advance: { mode: "tap" },
     });
-    expect(newStoryEntry(story, "longText", "t")).toMatchObject({
+    expect(newStoryEntry(station([]), story, "longText", "t")).toMatchObject({
       kind: "longText",
       view: "card",
       title: "New long text 1",
       advance: { mode: "tap" },
     });
+  });
+
+  it("stands at its station's free spot, never at the anchor", () => {
+    const story = { children: [] } as never;
+    for (const s of [
+      station([]),
+      station([
+        [4, 0],
+        [0, 4],
+      ]),
+      station([], 3),
+    ]) {
+      const spot = freePinSpot(s);
+      const entry = newStoryEntry(s, story, "shortText", "p");
+      expect(entry.pose).toEqual({
+        position: [spot.northM, 0, spot.eastM],
+        rotation: [0, 0, 0, 1],
+      });
+      expect(Math.hypot(spot.northM, spot.eastM)).toBeGreaterThan(0);
+    }
   });
 });

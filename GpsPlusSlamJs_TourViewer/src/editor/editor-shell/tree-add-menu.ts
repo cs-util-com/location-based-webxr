@@ -1,11 +1,13 @@
 /**
  * The tree's type menu: what a station row's "+" (and its empty line's
  * "Add content") adds in place - a kind its row says is addable
- * (`KIND_EDIT` `add`; today a short text or a long text), at a free spot
- * of that station, or a story; a story row's "+" (and its empty line, and
- * its inspector's "Add entry...") adds such a kind into that story; a kind
- * listed but not addable (a picture: it is taken on site with the phone)
- * is shown off, with the reason. The head names the place. One menu for every row, opened
+ * (`KIND_EDIT` `add`: a text, or a picture, a sound or a 3D model from a
+ * file), at a free spot of that station, or a story; a story row's "+"
+ * (and its empty line, and its inspector's "Add entry...") adds such a
+ * kind into that story, a video among them; a kind listed but not
+ * addable (a character: the character maker is still to come), and on a
+ * station's menu a kind added to a story only (a video), is shown off,
+ * with the reason. The head names the place. One menu for every row, opened
  * under the
  * button pressed, the WAI-ARIA menu's keys inside it: the arrows, Home and
  * End move among its items (an item that is off keeps its place, said by
@@ -119,11 +121,22 @@ export function createTreeAddMenu(deps: {
     item.append(shellIcon(icon), label, hint);
     return item;
   };
-  for (const choice of ADD_CHOICES) {
+  const kindItems = ADD_CHOICES.map((choice) => {
     const item = itemOf(choice.kind, choice.label, choice.hint, choice.look);
     setItemDisabled(item, !choice.addable);
     menu.append(item);
-  }
+    return { choice, item };
+  });
+  /** Each kind on or off for `place`, with the words that say why: a
+   *  kind added to a story only is off on a station's menu. */
+  const fitTo = (place: "station" | "story"): void => {
+    for (const { choice, item } of kindItems) {
+      const storyOnly = place === "station" ? choice.storyOnly : undefined;
+      setItemDisabled(item, !choice.addable || storyOnly !== undefined);
+      const hint = item.querySelector(".hint");
+      if (hint !== null) hint.textContent = storyOnly ?? choice.hint;
+    }
+  };
   // A story goes behind a line: it is a folder, the others are what fills
   // one.
   const storyPart = document.createElement("div");
@@ -181,6 +194,7 @@ export function createTreeAddMenu(deps: {
     head.textContent = words;
     menu.setAttribute("aria-label", words);
     storyPart.hidden = to.kind === "story";
+    fitTo(to.kind);
     menu.hidden = false;
     const { left, top } = addMenuSpot(
       anchor.getBoundingClientRect(),

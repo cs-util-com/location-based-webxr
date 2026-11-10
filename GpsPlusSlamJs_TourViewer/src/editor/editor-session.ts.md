@@ -106,6 +106,9 @@ never state). Design:
     images as they stand (its placed photos and image assets,
     `tourImageIds`) with their zip entry (`tourCoverEntry`); a recorded
     walk photo has no id and is no choice.
+  - `coverChoices()` reads the assets as they stand (`manifestNow`, files
+    brought in this session too), the same ones `coverImageIds` admits, so
+    the picker always lists, and checks, the cover `details()` shows.
   - `noGpsCheck()` - `no-gps-check.ts`'s `checkNoGps` over the open
     tour's stations and codes: what the setting's warnings are about (the
     stations farther than 40 m from every code that can place the tour,
@@ -206,7 +209,10 @@ never state). Design:
       `editor-session-files.test.ts` pins it), `deleteStory(id)` (says how
       many children went and `stationGone` when its untitled automatic
       station, kept by nothing else, went with it),
-      `addToStory(storyId, kind)`, `deleteStoryChild(id)` (says how many
+      `addToStory(storyId, kind)` (a kind made from words), `addEntryToStory(storyId,
+child)` (an entry made elsewhere - a file's, `new-file-item.ts` -
+      added at the story's end, refused for a story that is gone or an id
+      the tour holds), `deleteStoryChild(id)` (says how many
       answers no longer lead anywhere), `setStoryAdvance(id, advance)` - the
       tree's and the inspector's story edits, each one step, a refusal said
       in the creator's words.
@@ -400,6 +406,56 @@ changes`; a label is cut at 40 characters (`truncated`, split-safe), a label-les
   pressed included - takes the model out of the rule for good; an undo
   does not put it back.
 
+- `setItemFile(id, file, fileName)` - the item `id` (free, or a block a
+  station's story shows) made from `file` from now on: brought in as
+  `addFile` does for the block's file kind (`../block-file.ts`), then one
+  step - a free block through `edited` (a free picture's inline
+  `imageAsset` follows), a story block through the station edit
+  `storyFile` (a video takes the new minted poster, or none). Refused for a
+  gone id, a block made of words, and what `addFile` refuses.
+- `setItemAsset(id, assetId)` - the same for a file the tour lists
+  already (the shelf's "Use in..."): one step, no read; a video in a story
+  takes the poster minted with the file (`posterOf`), or none. Refused for a gone id or file, a block made of
+  words, and a file not of the block's kind ("That file is not of the kind
+  this item is made from.").
+- `posterOf(assetId)` - the poster minted with a video this session
+  brought in (the shelf's entry keeps its id); undefined for none.
+- `addedFileOf(id)` - the bytes of a file this session brought in (the
+  shelf's thumbnails); undefined for an opened tour's file.
+- `deletePlan(assetId)` - what deleting the shelf's file would do, in
+  plain words (`fileDeleteWords`: "Deletes 2 items, removes it from 1
+  other."), or why it cannot be deleted (`fileUseRefusal`): a long text
+  shows the picture inside its words (named, "Take it out of the text
+  first."), a character of the tour is drawn with it, the shelf no
+  longer holds it.
+- `deleteFileAndUses(assetId)` - the shelf's delete of a file in use, as
+  `deletePlan` says: the items made of it deleted, the ones mentioning it
+  (a narration, a poster, a voice, read from the format's references,
+  `file-uses.ts`) and a station's card image without it, in one step
+  (`fileUsesDeleted`) - an undo like any other, which brings the card
+  back with the items (the shelf puts back a card whose file the tour
+  names again) - then the shelf entry. A captured photo made of the file
+  keeps its picture for an undo after a save. Returns `{ kind:
+"deleted", what, words }` or the plan's refusal; where nothing used
+  the file any more (a confirm gone stale) no step is made, only the
+  card goes, and the outcome carries `undo`, the card's own put-back,
+  which the page offers on its toast; after a step the page offers the
+  edit stack's Undo.
+- `replaceCount(assetId)` - how many items and station cards use the
+  file: what "Replace everywhere" switches.
+- `replaceFile(assetId, file, fileName)` - "Replace everywhere": `file`
+  brought in as `addFile` does for the old file's kind (onto the shelf),
+  then every use switched to it in one step (`fileReplaced`). Refused in
+  words for a file the shelf no longer holds, one a character of the
+  tour is drawn with (a character's pictures stay exactly as drawn), a
+  file of another kind, and the same file.
+- `addFile` always hands the file to the shelf: a file the tour holds
+  already gets its card back when it had left the shelf.
+- `addFile` hands the shelf a video's minted poster id and length
+  (`ShelfVideoLook`), so its card shows the poster and can warn.
+- `assetOf(id)` - a listed file by its id (brought in here, or in the
+  written tour); undefined for none.
+
 ## Invariants & assumptions
 
 - `find()` never throws (E2c plan review #11, decided): an id the tour no
@@ -525,7 +581,7 @@ examples).
 
 - One files table (`files`, asset id to Blob) for every file's bytes the session holds; no other map of bytes.
 - `addFile(file, fileName, kinds?)`: reads the file at once (`readTourFile`, `tour-files.ts`) - a dropped `File` moved or deleted later does not matter - checked against the caps on `tourBytes()`, named by its sha256. Bytes the tour holds already (an asset of that id, or a signed tour's entry of that hash) are that asset, nothing added. Each new file (and a video's minted poster) goes into the table and the draft (`saveAsset`, before the asset is listed, so before any record naming it), then `assetsAdded`. Answers `{ kind: "added", asset, poster?, backedUp }` or a refusal in words; `backedUp` false when the draft did not keep it.
-- `fileReaders` (input): `measureModel` (a model's largest side; 0 refuses it as showing nothing) and `posterOf` (a video's first frame), the page's browser readers; absent in a test, a model is taken unmeasured and a video without a poster.
+- `fileReaders` (input): `measureModel` (a model's largest side; 0 refuses it as showing nothing) and `videoLookOf` (a video's poster and length, one element), the page's browser readers; absent in a test, a model is taken unmeasured and a video without a poster.
 - `addedBytes()`: what the next save adds to the written file (`saves.addedBytes`, the snapshot's rule): the files brought in, the timing texts and the copied or restored photos' pictures it lacks, less the old entries a smaller file replaces (so below zero when a swap saves more than the rest adds). `tourBytes()`: the newest written file's size (the opened entries' before a save) plus `addedBytes()` - what the caps are judged on. `nextSaveBytes()`: the same, but only the added bytes the write keeps (`saves.addedBytes(state, true)`: a file nothing names any more, after an undo whose redo a later edit dropped, is left out) - what the autosave's cap is judged on, both ways: after every edit (`judgeAutosave`) and when a save target comes (`attachTarget`; the tour's size, not the attached file's, which differs once a copy was saved before the target came).
 - `contentOf(path)`: a file brought in, by the id its entry names (`content/<id>.<ext>`), for a preview before a save writes it. By id, because a placed picture's inline `imageAsset` keeps the path it had before a swap: that path reads the smaller file.
 - `swapAsset(id, { blob, path, width?, height? })`: a smaller file in place of an asset's under the same id. Judged first by the document's own rule (`assetOptimized` run on the current state), so a refused file never reaches the table; then the table holds the new bytes and the record is listed at the new path. The next save writes the new entry and removes the old one; a save already running writes the original. Answers `{ kind: "swapped" }` or a refusal in words. Not yet followed by the draft. A re-drop of the original bytes finds the swapped record (`knownFile` prefers `addedAssets`).

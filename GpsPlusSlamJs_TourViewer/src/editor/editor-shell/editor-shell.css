@@ -387,7 +387,8 @@ body {
 }
 
 #shell-inspector {
-  right: 0;
+  /* Left of the asset shelf (`--s-shelf-cur`, asset-shelf/shelf-panel.css). */
+  right: var(--s-shelf-cur, 0px);
   width: var(--s-insp-w);
   border-right: 0;
 }
@@ -1652,7 +1653,7 @@ button.thumb:focus-visible {
  * the bottom panel while it is open. */
 #map-controls {
   position: absolute;
-  right: 12px;
+  right: calc(var(--s-shelf-cur, 0px) + 12px);
   bottom: calc(14px + var(--s-panel-h, 0px));
   z-index: 4;
   display: flex;
@@ -1662,7 +1663,7 @@ button.thumb:focus-visible {
 }
 
 #shell-inspector:not([hidden], .collapsed) ~ #map-controls {
-  right: calc(var(--s-insp-w) + 12px);
+  right: calc(var(--s-insp-w) + var(--s-shelf-cur, 0px) + 12px);
 }
 
 .pill {
@@ -1888,7 +1889,7 @@ body[data-view="3d"] #view3d .view3d-canvas {
 
 #shell-panel {
   position: absolute;
-  right: 0;
+  right: var(--s-shelf-cur, 0px);
   bottom: 0;
   left: 0;
   z-index: 4;
@@ -1912,7 +1913,7 @@ body[data-view="3d"] #view3d .view3d-canvas {
 }
 
 #shell-inspector:not([hidden], .collapsed) ~ #shell-panel:not(.span) {
-  right: var(--s-insp-w);
+  right: calc(var(--s-insp-w) + var(--s-shelf-cur, 0px));
 }
 
 #view3d.panel-span .dock:not(.collapsed) {

@@ -292,7 +292,8 @@ test("a row's + adds a short or a long text in place, from the mouse and from th
   await expect(menu).toBeVisible();
   await expect(plus).toHaveAttribute("aria-expanded", "true");
   await expect(menu.locator('[data-kind="shortText"]')).toBeFocused();
-  await expect(menu.locator('[data-kind="picture"]')).toHaveAttribute(
+  // A video plays only in a story: off on a station's menu.
+  await expect(menu.locator('[data-kind="video"]')).toHaveAttribute(
     "aria-disabled",
     "true",
   );
@@ -1176,16 +1177,20 @@ test("the tree's add, its grips and the bar's actions sit in place at a phone, a
       "#shell-toggles",
       "#shell-tree",
       "#shell-inspector",
+      "#shell-shelf",
       "#shell-acts .sact",
       "#shell-acts .sact .lbl",
     ]);
     // A station selected on a desktop: the tree keeps its width beside
-    // the inspector, which stands at the window's right edge.
+    // the inspector, which stands against the Assets panel, open at the
+    // window's right edge.
     if (size.width > 1100) {
       const tree = boxIn(l, "#shell-tree");
       const inspector = boxIn(l, "#shell-inspector");
+      const shelf = boxIn(l, "#shell-shelf");
       expect(tree.width).toBe(248);
-      expect(inspector.x + inspector.width).toBe(size.width);
+      expect(shelf.x + shelf.width).toBe(size.width);
+      expect(inspector.x + inspector.width).toBe(shelf.x);
       expect(inspector.x).toBeGreaterThanOrEqual(tree.x + tree.width);
     }
     const bar = boxIn(l, "#shell-bar");

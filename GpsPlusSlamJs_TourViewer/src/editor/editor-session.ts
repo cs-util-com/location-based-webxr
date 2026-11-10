@@ -19,6 +19,7 @@ import {
   TOUR_FOLDER_MAX_SCALE,
   TOUR_FOLDER_MIN_SCALE,
   type TourStory,
+  type TourStoryBlock,
   type TourStoryChild,
 } from "gps-plus-slam-app-framework/ar/tour-story";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
@@ -32,6 +33,7 @@ import type {
   TourNarration,
   TourObject,
   TourPicture,
+  TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   TOUR_MEDIA_EXTENSIONS,
@@ -73,6 +75,8 @@ import {
   detailsChange,
   documentObjects,
   effectiveDetails,
+  fileUseCount,
+  fileUsesOf,
   isCapturedPhoto,
   isDocumentEdit,
   manifestNow,
@@ -91,10 +95,12 @@ import {
   tourDocumentActions,
   tourDocumentReducer,
   unsavedEntries,
+  type FileUses,
   type StationEdit,
   type StationStoryAdvanceEdit,
   type TourDocumentState,
 } from "../tour-document.js";
+import { fileUseOf } from "../file-uses.js";
 import type { ChildMoveTo } from "../station-children-moves.js";
 import { newObjectId } from "../content-placement.js";
 import { folderName } from "./folder-commands.js";
@@ -103,6 +109,8 @@ import {
   STATION_RADIUS_MIN_M,
 } from "../station-geometry.js";
 import { followDocument } from "../tour-document-draft.js";
+import { blockFileKind, withBlockFile } from "../block-file.js";
+import { sameJson } from "../same-json.js";
 import { newTourId } from "../tour-file-key.js";
 import {
   createTourSaves,
@@ -118,7 +126,7 @@ import {
   blockFields,
   storyBlockFields,
 } from "./block-fields.js";
-import { kindWithArticle, type AddKind } from "../kinds/edit-kinds.js";
+import { kindWithArticle, type TextAddKind } from "../kinds/edit-kinds.js";
 import { objectOwnText, objectTitle } from "../object-describe.js";
 import { applyModelEdit, type ModelEdit } from "./model-edits.js";
 import { buildEditorModel, type EditorModel } from "./editor-model.js";
@@ -168,6 +176,61 @@ const SAVE_RUNNING = "A save is running - undo or redo once it has finished.";
  *  the file, and its picture could not be kept. */
 const PICTURE_GONE =
   "This photo's picture is no longer at hand, so its delete cannot be undone here.";
+
+/** Said for a file the shelf no longer holds (deleted meanwhile). */
+const NOT_ON_SHELF = "That file is no longer on the shelf.";
+/** Said when the file picked to replace a file is that file itself. */
+const SAME_FILE = "That is the same file: nothing changes.";
+
+/** Why the file of `uses` cannot be deleted or replaced here; null when
+ *  it can be. A long text showing a picture inside its words names it
+ *  there, and only its text can take it out; a character declaration is
+ *  not edited here, and his pictures stay exactly as drawn. */
+function fileUseRefusal(
+  uses: FileUses,
+  doing: "deleted" | "replaced",
+): string | null {
+  const character = uses.characters[0];
+  if (character !== undefined) {
+    return `The character "${character}" is drawn with this file, so it cannot be ${doing} here: a character's pictures stay exactly as drawn.`;
+  }
+  const text = uses.inline[0];
+  if (text !== undefined && doing === "deleted") {
+    return `"${objectTitle(text)}" shows this picture inside its text. Take it out of the text first.`;
+  }
+  return null;
+}
+
+/** "3 items", "1 other": a count with its noun. */
+function counted(n: number, noun: string): string {
+  return `${String(n)} ${noun}${n === 1 ? "" : "s"}`;
+}
+
+/** What the delete of a file used by `uses` does, in plain words: the
+ *  items made of it go, the others (a narration, a poster, a voice, a
+ *  station's card) only lose it, and the tour's cover of it is taken
+ *  off. */
+function fileDeleteWords(uses: FileUses): string {
+  const own = uses.own.length;
+  const others = uses.mentions.length + uses.cards.length;
+  const parts: string[] = [];
+  if (own > 0) parts.push(`Deletes ${counted(own, "item")}`);
+  if (others > 0) {
+    parts.push(
+      own > 0
+        ? `removes it from ${counted(others, "other")}`
+        : `Removes it from ${counted(others, "place")}`,
+    );
+  }
+  if (uses.cover) {
+    parts.push(
+      parts.length > 0
+        ? "takes it off as the tour's cover"
+        : "Takes it off as the tour's cover",
+    );
+  }
+  return parts.length === 0 ? "Deletes the file." : `${parts.join(", ")}.`;
+}
 
 /** An object as the undo's words name it: its text, shortened, or what
  *  it is. */
@@ -395,10 +458,13 @@ const STATION_REFUSALS: Readonly<
     | "image"
     | "character"
     | "storyText"
-    | "storyAdvance",
+    | "storyAdvance"
+    | "storyFile",
     string
   >
 > = {
+  storyFile:
+    "That file cannot stand in for that block's own: it is no file of its kind in this tour.",
   title: `A station's name can be at most ${String(TOUR_TITLE_MAX_CHARS)} characters long.`,
   radius: `A station's radius must be from ${String(STATION_RADIUS_MIN_M)} m to ${String(STATION_RADIUS_MAX_M)} m.`,
   description: `A station's description can be at most ${String(TOUR_DESCRIPTION_MAX_CHARS)} characters long.`,
@@ -568,6 +634,12 @@ const FOLDER_SCALE_RANGE = `Its scale must be from ${String(TOUR_FOLDER_MIN_SCAL
  *  beyond its station's reach. */
 const FOLDER_TOO_FAR = `It cannot go that far: everything in a folder must stay within ${String(TOUR_ITEM_MAX_OFFSET_M / 1000)} km of its station.`;
 const NOT_A_MODEL_EDIT = "Only a 3D model has notes, sections and views.";
+
+/** Said for a file given to an item made of words. */
+const NOT_MADE_OF_A_FILE = "That item is not made from a file.";
+
+/** Said for a file of another kind than the item is made from. */
+const NOT_ITS_KIND = "That file is not of the kind this item is made from.";
 
 /** Said for a view a block's kind does not have. */
 const NOT_ITS_VIEW = "This block cannot be shown that way.";
@@ -758,7 +830,14 @@ export interface EditorSession {
   /** A new entry at the end of a story: one step. */
   addToStory(
     storyId: string,
-    kind: AddKind,
+    kind: TextAddKind,
+  ): { kind: "added"; id: string } | EditorRefusal;
+  /** A made entry at the end of a story (a file's, `new-file-item.ts`):
+   *  one step. Refused for a story the tour does not carry and for an id
+   *  it carries already. */
+  addEntryToStory(
+    storyId: string,
+    child: TourStoryBlock,
   ): { kind: "added"; id: string } | EditorRefusal;
   /** Delete a story's child: one step; `answers` says how many answers
    *  that led to it now go on to the next child. */
@@ -903,6 +982,86 @@ export interface EditorSession {
     fileName: string,
     kinds?: readonly TourAssetKind[],
   ): Promise<EditorFileAdded | EditorRefusal>;
+  /** Make the item `id` - a free block or a block a station's story
+   *  shows, made from a file (`block-file.ts`) - from `file` from now on:
+   *  brought in as `addFile` does, for the block's own file kind, then
+   *  one step (the file itself takes none). A free picture's inline
+   *  record follows its file; a video in a story takes the poster minted
+   *  for the new file, or none. Refused in words, changing nothing, for
+   *  an id the tour does not carry, a block made of words, and a file
+   *  `addFile` refuses. */
+  setItemFile(
+    id: string,
+    file: Blob,
+    fileName: string,
+  ): Promise<
+    { kind: "edited" | "unchanged"; backedUp: boolean } | EditorRefusal
+  >;
+  /** The item `id` made from the file `assetId` the tour lists already (a
+   *  file on the shelf, its "Use in..."): one step, as `setItemFile` once
+   *  its file is in; a video in a story takes the poster minted with it
+   *  (`posterOf`), or none. Refused in
+   *  words, changing nothing, for an id or a file the tour does not carry,
+   *  a block made of words and a file of another kind. */
+  setItemAsset(
+    id: string,
+    assetId: string,
+  ): { kind: "edited" | "unchanged" } | EditorRefusal;
+  /** A file the tour lists, by its id: brought in here or in the written
+   *  tour; undefined for none. */
+  assetOf(id: string): TourAsset | undefined;
+  /** The poster minted with the video `assetId` this session brought in;
+   *  undefined for none (another kind, an opened tour's video). */
+  posterOf(assetId: string): TourAsset | undefined;
+  /** The bytes of a file this session brought in, by its id (the
+   *  shelf's thumbnails); undefined for one of the opened tour. */
+  addedFileOf(id: string): Blob | undefined;
+  /** What deleting the shelf's file `assetId` would do, in plain words
+   *  (`fileDeleteWords`: "Deletes 2 items, removes it from 1 other."),
+   *  or why it cannot be deleted: a long text shows it inside its words,
+   *  a character of the tour is drawn with it, the shelf no longer holds
+   *  it. */
+  deletePlan(assetId: string): { kind: "plan"; words: string } | EditorRefusal;
+  /** Delete the shelf's file `assetId` with every use of it (the shelf's
+   *  delete of a file in use), as `deletePlan` says: the items made of it
+   *  go, the others lose it, in one step (`fileUsesDeleted`) - an undo
+   *  like any other, which brings the file's card back with its items
+   *  (the shelf puts back a card whose file an item names again) - then
+   *  its card. `what` names the step. Where nothing used the file any
+   *  more (a confirm gone stale) no step is made and only its card goes:
+   *  `undo` then puts the card back, as the plain delete's Undo does.
+   *  Refused, changing nothing, as `deletePlan` refuses. */
+  deleteFileAndUses(assetId: string):
+    | {
+        kind: "deleted";
+        what: string;
+        words: string;
+        undo?: () => void;
+      }
+    | EditorRefusal;
+  /** How many places use the file `assetId` (`fileUseCount`: items,
+   *  station cards, the cover): what its "Replace everywhere" switches; 0
+   *  where it is not offered - nothing uses the file, or the replace
+   *  would be refused whatever file is picked (a character is drawn with
+   *  it). */
+  replaceCount(assetId: string): number;
+  /** "Replace everywhere": `file` brought in as `addFile` does, for the
+   *  kind of `assetId` (it goes on the shelf like any file), then every
+   *  use of `assetId` switched to it in one step (`fileReplaced`) - the
+   *  items made of it, the ones mentioning it, the pictures a long text
+   *  shows, a station's card, the tour's cover; a video made of it takes
+   *  the new video's poster, or none. Refused in words, changing nothing in the tour, for a file the
+   *  shelf does not hold, a file a character of the tour is drawn with, a
+   *  file of another kind (`addFile`'s refusal), the same file, and a
+   *  file nothing uses. */
+  replaceFile(
+    assetId: string,
+    file: Blob,
+    fileName: string,
+  ): Promise<
+    | { kind: "replaced"; what: string; items: number; backedUp: boolean }
+    | EditorRefusal
+  >;
   /** What the next save adds to the newest written file: the files
    *  brought in, the timing texts and the copied or restored photos'
    *  pictures it does not hold yet. */
@@ -1004,7 +1163,7 @@ export function createEditorSession(input: {
    *  and a video without a poster. */
   readonly fileReaders?: Pick<
     TourFileContext,
-    "measureModel" | "posterOf" | "limits" | "shrinks"
+    "measureModel" | "videoLookOf" | "limits" | "shrinks"
   >;
   /** The shelf's optimizers, one row per kind (default: this build's,
    *  `ASSET_OPTIMIZERS`); a kind with one may bring a file over the caps
@@ -1341,6 +1500,32 @@ export function createEditorSession(input: {
     }
     return null;
   }
+
+  /** `child` at the end of the story `storyId`: one step. */
+  function addEntryToStory(
+    storyId: string,
+    child: TourStoryBlock,
+  ): { kind: "added"; id: string } | EditorRefusal {
+    const state = mine();
+    if (state === null) return notInTour;
+    if (storyNow(state, storyId) === undefined) {
+      return { kind: "refused", reason: NO_SUCH_STORY };
+    }
+    if (find(child.id) !== undefined) {
+      return { kind: "refused", reason: ALREADY_IN_TOUR };
+    }
+    return took(() =>
+      store.dispatch(
+        tourDocumentActions.storyChildAdded({
+          story: storyId,
+          child,
+          what: `the new entry "${storyChildName(child)}"`,
+        }),
+      ),
+    )
+      ? { kind: "added", id: child.id }
+      : notApplied;
+  }
   const noSuchStation: EditorRefusal = {
     kind: "refused",
     reason: NO_SUCH_STATION,
@@ -1531,6 +1716,73 @@ export function createEditorSession(input: {
     return { kind: "swapped", backedUp };
   }
 
+  /** The shelf's file `assetId` with its uses as they stand, or why it
+   *  cannot be deleted (`fileUseRefusal`). */
+  function deletePlanOf(
+    assetId: string,
+  ): { kind: "plan"; name: string; uses: FileUses } | EditorRefusal {
+    const state = mine();
+    if (state === null) return notInTour;
+    const entry = store.getState().assetShelf.entries[assetId];
+    if (entry === undefined) return { kind: "refused", reason: NOT_ON_SHELF };
+    const uses = fileUsesOf(state, assetId);
+    const refused = fileUseRefusal(uses, "deleted");
+    return refused === null
+      ? { kind: "plan", name: entry.name, uses }
+      : { kind: "refused", reason: refused };
+  }
+
+  /** `replaceFile`: the use checked, the new file brought in for the old
+   *  one's kind, then the one step switching every use. */
+  async function replaceFile(
+    assetId: string,
+    file: Blob,
+    fileName: string,
+  ): Promise<
+    | { kind: "replaced"; what: string; items: number; backedUp: boolean }
+    | EditorRefusal
+  > {
+    const state = mine();
+    if (state === null) return notInTour;
+    const entry = store.getState().assetShelf.entries[assetId];
+    const old = assetOf(assetId);
+    if (entry === undefined || old === undefined) {
+      return { kind: "refused", reason: NOT_ON_SHELF };
+    }
+    const refused = fileUseRefusal(fileUsesOf(state, assetId), "replaced");
+    if (refused !== null) return { kind: "refused", reason: refused };
+    const added = await addFile(file, fileName, [old.kind]);
+    if (added.kind === "refused") return added;
+    const after = mine();
+    if (after === null) return notInTour;
+    if (added.asset.id === assetId) {
+      return { kind: "refused", reason: SAME_FILE };
+    }
+    // Read again: the tour may have changed while the file was read.
+    const uses = fileUsesOf(after, assetId);
+    const again = fileUseRefusal(uses, "replaced");
+    if (again !== null) return { kind: "refused", reason: again };
+    const what = `the replace of ${entry.name}`;
+    const switched = took(() =>
+      store.dispatch(
+        tourDocumentActions.fileReplaced({
+          from: assetId,
+          to: added.asset.id,
+          // A video's items take the new video's poster, or none.
+          ...(added.poster === undefined ? {} : { poster: added.poster.id }),
+          what,
+        }),
+      ),
+    );
+    if (!switched) return notApplied;
+    return {
+      kind: "replaced",
+      what,
+      items: fileUseCount(uses),
+      backedUp: added.backedUp,
+    };
+  }
+
   /** `addFile`: read, kept in the table and the draft, then listed. */
   async function addFile(
     file: Blob,
@@ -1569,9 +1821,16 @@ export function createEditorSession(input: {
       );
     }
     // On the shelf once listed, so its swap finds the record (a minted
-    // poster is small already).
-    if (read.isNew) {
-      shelf.add(read.asset, fileName, read.blob.size, "added");
+    // poster is small already). A file the tour holds already gets its
+    // card back when it left the shelf; a second add of a card is no
+    // change.
+    {
+      shelf.add(read.asset, fileName, read.blob.size, "added", {
+        ...(read.poster === undefined
+          ? {}
+          : { posterId: read.poster.asset.id }),
+        ...(read.seconds === undefined ? {} : { seconds: read.seconds }),
+      });
     }
     return {
       kind: "added",
@@ -1579,6 +1838,114 @@ export function createEditorSession(input: {
       ...(read.poster === undefined ? {} : { poster: read.poster.asset }),
       backedUp,
     };
+  }
+
+  /** The block `id` made from a file as it stands now: free (a world
+   *  item or a free block), or in a station's story; null for none. */
+  function fileBlockNow(id: string):
+    | { readonly free: TourObject; readonly inStory?: undefined }
+    | {
+        readonly free?: undefined;
+        readonly inStory: {
+          readonly station: TourStation;
+          readonly block: TourStoryBlock;
+        };
+      }
+    | null {
+    const free = find(id)?.object;
+    if (free !== undefined) return { free };
+    const state = mine();
+    for (const station of (state === null ? null : manifestNow(state))
+      ?.stations ?? []) {
+      const block = tourStationStoryBlocks(station).find((b) => b.id === id);
+      if (block !== undefined) return { inStory: { station, block } };
+    }
+    return null;
+  }
+
+  /** The tour's file `id`: brought in here, or in the written tour. */
+  function assetOf(id: string): TourAsset | undefined {
+    const state = own();
+    return (
+      state.addedAssets.find((a) => a.id === id) ??
+      state.written?.assets.find((a) => a.id === id)
+    );
+  }
+
+  /** The item `id` made from `asset` (a video in a story with `poster`,
+   *  or none): the one edit naming it, as `setItemFile` and
+   *  `setItemAsset` share it. */
+  function applyItemFile(
+    id: string,
+    asset: TourAsset,
+    poster?: TourAsset,
+  ): { kind: "edited" | "unchanged" } | EditorRefusal {
+    const found = fileBlockNow(id);
+    if (found === null) return notInTour;
+    const kind = blockFileKind(found.free ?? found.inStory.block);
+    if (kind === null) return { kind: "refused", reason: NOT_MADE_OF_A_FILE };
+    if (asset.kind !== kind) return { kind: "refused", reason: NOT_ITS_KIND };
+    if (found.free !== undefined) {
+      const filed = withBlockFile(found.free, asset.id);
+      if (filed === null) return notInTour;
+      const after =
+        filed.kind === "picture" ? { ...filed, imageAsset: asset } : filed;
+      if (sameJson(after, found.free)) return { kind: "unchanged" };
+      const applied = took(() =>
+        store.dispatch(
+          tourDocumentActions.edited({
+            object: after,
+            what: `the file of ${objectName(found.free)}`,
+          }),
+        ),
+      );
+      return applied ? { kind: "edited" } : notApplied;
+    }
+    const { station, block } = found.inStory;
+    const edit: StationEdit = {
+      storyFile: {
+        block: id,
+        asset: asset.id,
+        ...(poster === undefined ? {} : { poster: poster.id }),
+      },
+    };
+    const state = mine();
+    if (state === null) return notInTour;
+    const change = stationEditChange(state, station.id, edit);
+    if (change.kind === "missing") return notInTour;
+    if (change.kind === "refused") {
+      return { kind: "refused", reason: STATION_REFUSALS[change.reason] };
+    }
+    if (change.kind === "unchanged") return { kind: "unchanged" };
+    const applied = took(() =>
+      store.dispatch(
+        tourDocumentActions.stationEdited({
+          stationId: station.id,
+          edit,
+          what: `the file of "${objectTitle(block)}"`,
+        }),
+      ),
+    );
+    return applied ? { kind: "edited" } : notApplied;
+  }
+
+  /** `setItemFile`: the block's file kind read, the file brought in for
+   *  it, then the one edit naming it. */
+  async function setItemFile(
+    id: string,
+    file: Blob,
+    fileName: string,
+  ): Promise<
+    { kind: "edited" | "unchanged"; backedUp: boolean } | EditorRefusal
+  > {
+    const before = fileBlockNow(id);
+    if (before === null) return notInTour;
+    const kind = blockFileKind(before.free ?? before.inStory.block);
+    if (kind === null) return { kind: "refused", reason: NOT_MADE_OF_A_FILE };
+    const added = await addFile(file, fileName, [kind]);
+    if (added.kind === "refused") return added;
+    const set = applyItemFile(id, added.asset, added.poster);
+    return set.kind === "refused" ? set : { ...set, backedUp: added.backedUp };
   }
 
   const optimizers = input.optimizers ?? ASSET_OPTIMIZERS;
@@ -1622,6 +1989,66 @@ export function createEditorSession(input: {
   return {
     shelf,
     addFile,
+    setItemFile,
+    setItemAsset: (id, assetId) => {
+      const asset = assetOf(assetId);
+      if (asset === undefined) return notInTour;
+      // A video takes the poster minted with it, when the shelf knows one.
+      const posterId = store.getState().assetShelf.entries[assetId]?.posterId;
+      const poster = posterId === undefined ? undefined : assetOf(posterId);
+      return applyItemFile(id, asset, poster);
+    },
+    posterOf: (assetId) => {
+      const posterId = store.getState().assetShelf.entries[assetId]?.posterId;
+      return posterId === undefined ? undefined : assetOf(posterId);
+    },
+    deletePlan(assetId) {
+      const planned = deletePlanOf(assetId);
+      return planned.kind === "refused"
+        ? planned
+        : { kind: "plan", words: fileDeleteWords(planned.uses) };
+    },
+    deleteFileAndUses(assetId) {
+      const planned = deletePlanOf(assetId);
+      if (planned.kind === "refused") return planned;
+      const state = mine();
+      if (state === null) return notInTour;
+      // A captured photo made of the file: its picture kept for an undo
+      // after a save took it out of the file.
+      for (const found of documentObjects(state)) {
+        if (fileUseOf(found.object, assetId)?.kind === "own") {
+          keepPicture(found);
+        }
+      }
+      const what = `the delete of ${planned.name}`;
+      if (
+        fileUseCount(planned.uses) > 0 &&
+        !took(() =>
+          store.dispatch(
+            tourDocumentActions.fileUsesDeleted({ assetId, what }),
+          ),
+        )
+      ) {
+        return notApplied;
+      }
+      const undo = shelf.remove(assetId);
+      const words = fileDeleteWords(planned.uses);
+      // With no step made, the card's own Undo is the only way back.
+      return fileUseCount(planned.uses) === 0 && undo !== null
+        ? { kind: "deleted", what, words, undo }
+        : { kind: "deleted", what, words };
+    },
+    replaceCount: (assetId) => {
+      const state = mine();
+      if (state === null) return 0;
+      const uses = fileUsesOf(state, assetId);
+      // Offered only where it will not be refused after the picker.
+      return fileUseRefusal(uses, "replaced") === null ? fileUseCount(uses) : 0;
+    },
+    replaceFile,
+    addedFileOf: (id) =>
+      own().addedAssets.some((a) => a.id === id) ? files.get(id) : undefined,
+    assetOf,
     swapAsset,
     addedBytes,
     tourBytes,
@@ -1705,7 +2132,9 @@ export function createEditorSession(input: {
       return { kind: "changed" };
     },
     coverChoices() {
-      const tour = { objects: current(), assets: written().assets };
+      // The assets as they stand, files brought in here too: the same the
+      // cover may name (`coverImageIds`), or the picker would check none.
+      const tour = { objects: current(), assets: now().assets };
       return [...coverIds()].flatMap((id) => {
         const image = tourCoverEntry({ ...tour, cover: id });
         return image === null ? [] : [{ id, image }];
@@ -1984,23 +2413,19 @@ export function createEditorSession(input: {
     addToStory(storyId, kind) {
       const state = mine();
       if (state === null) return notInTour;
+      const station = manifestNow(state)?.stations.find((s) =>
+        tourStories(s).some((story) => story.id === storyId),
+      );
       const story = storyNow(state, storyId);
-      if (story === undefined) {
+      if (story === undefined || station === undefined) {
         return { kind: "refused", reason: NO_SUCH_STORY };
       }
-      const child = newStoryEntry(story, kind, newObjectId());
-      return took(() =>
-        store.dispatch(
-          tourDocumentActions.storyChildAdded({
-            story: storyId,
-            child,
-            what: `the new entry "${storyChildName(child)}"`,
-          }),
-        ),
-      )
-        ? { kind: "added", id: child.id }
-        : notApplied;
+      return addEntryToStory(
+        storyId,
+        newStoryEntry(station, story, kind, newObjectId()),
+      );
     },
+    addEntryToStory,
     deleteStoryChild(id) {
       const state = mine();
       const manifest = state === null ? null : manifestNow(state);

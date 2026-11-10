@@ -47,6 +47,7 @@ import {
 } from "./editor-view.js";
 import {
   childMoveChange,
+  fileUsesOf,
   manifestToWrite,
   selectTourDocument,
   stationDeleteRefusal,
@@ -61,9 +62,12 @@ import { describeIntegrityError, olderFormatRefusal } from "../open-errors.js";
 import { debugCapturesOf, type DebugCapture } from "../debug-captures.js";
 import { pictureProblem } from "../image-cap.js";
 import {
+  isFileAddKind,
+  KIND_EDIT,
   kindNoun,
   kindWithArticle,
   type AddKind,
+  type FileAddKind,
 } from "../kinds/edit-kinds.js";
 import { objectTitle } from "../object-describe.js";
 import { scanEntryNames } from "../tour-read-set.js";
@@ -146,6 +150,17 @@ import {
   type WalkMoveOutcome,
 } from "./done-dialog.js";
 import {
+  assetPlaces,
+  TOUR_COVER_SELECTION,
+} from "./asset-shelf/asset-places.js";
+import { createShelfPageActions } from "./asset-shelf/shelf-page-actions.js";
+import { undoTap } from "./undo-offer.js";
+import { selectShelfRows } from "./asset-shelf/asset-shelf-slice.js";
+import {
+  createShelfPanel,
+  type ShelfPanel,
+} from "./asset-shelf/shelf-panel.js";
+import {
   TOUR_HOSTS,
   hostOfLink,
   readTourHost,
@@ -169,7 +184,7 @@ import {
   type EditorSession,
   type NarrationChange,
 } from "./editor-session.js";
-import { videoPosterOf } from "./video-poster.js";
+import { videoLookOf } from "./video-poster.js";
 import { waitForSaveSlot } from "gps-plus-slam-app-framework/storage/save-slot-wait";
 import { guardSlidersIn } from "gps-plus-slam-app-framework/utils/slider-scroll-guard";
 import {
@@ -194,6 +209,25 @@ import {
   type TypedEditOutcome,
 } from "./editor-shell/editor-shell.js";
 import { addNewItem } from "./new-pin.js";
+import {
+  addFileItem,
+  FILE_ADD_FAILED,
+  FILE_NOT_KEPT,
+  placeFileItem,
+  type FileAddTarget,
+} from "./add-file-item.js";
+import { createFilePicker } from "./file-picker.js";
+import {
+  dragHasFiles,
+  FILE_FIELD_ATTR,
+  fileAddKindOf,
+  fileAddKindOfAsset,
+  fileDropTarget,
+} from "./file-drop.js";
+import { useInChoices, useInTarget } from "./asset-shelf/use-in-choices.js";
+import { fileBlockOf } from "./editor-shell/inspector-file.js";
+import { blockFileKind } from "../block-file.js";
+import { fileItemTitle, type FileItemSource } from "./new-file-item.js";
 import { newObjectId } from "../content-placement.js";
 import type { InspectorCode } from "./editor-shell/inspector-model.js";
 import { stationTitle } from "../station-run.js";
@@ -1405,19 +1439,26 @@ function deleted(
   }
   select(null);
   refresh();
-  // The toast's Undo is the stack's (W2), while this delete is the
-  // newest edit; a newer one ends the toast.
+  offerUndo(said);
+}
+
+/** The toast saying `said` of the step just made, with its Undo: the
+ *  edit stack's while that step is the newest edit; a newer one ends the
+ *  toast. The autosave waits for it (`editing`). */
+function offerUndo(said: string): void {
+  if (editor === null) return;
   const mine = editor;
   const at = editor.revision();
   const t = toast(said, {
     label: "Undo",
-    run: () => {
-      if (editor !== mine || mine.revision() !== at) {
-        endUndo();
-        return;
-      }
-      runStep("undo");
-    },
+    run: undoTap(mine, at, {
+      current: () => editor,
+      end: endUndo,
+      undo: () => {
+        runStep("undo");
+      },
+      say: (text) => toast(text),
+    }),
   });
   undoOffer = {
     toast: t,
@@ -1608,11 +1649,6 @@ async function writeNarrationEdit(
   return "written";
 }
 
-/** Said when a file brought in could not be kept in this browser: it is
- *  in the tour, but a reload before a save would lose it. */
-const FILE_NOT_KEPT =
-  "The file is in the tour, but this browser could not keep a copy of it. Save the tour before you close this page.";
-
 /** An edit made: the autosave's cap judged again (an edit may drop the
  *  redo steps naming a file brought in, so the next save no longer writes
  *  it), then the autosave told. */
@@ -1645,6 +1681,10 @@ function judgeAutosave(): void {
 function addItemTo(stationId: string, kind: AddKind): void {
   const open = editor;
   if (open === null) return;
+  if (isFileAddKind(kind)) {
+    void addFromFile(kind, { kind: "station", stationId });
+    return;
+  }
   const outcome = addNewItem({
     stations: manifestToWrite(store.getState().tourDocument)?.stations ?? [],
     stationId,
@@ -1689,6 +1729,10 @@ function addStoryTo(stationId: string): void {
  *  selected, said once it was made; one step. */
 function addToStoryEntry(storyId: string, kind: AddKind): void {
   if (editor === null) return;
+  if (isFileAddKind(kind)) {
+    void addFromFile(kind, { kind: "story", storyId });
+    return;
+  }
   endUndo();
   const outcome = editor.addToStory(storyId, kind);
   refresh();
@@ -1701,6 +1745,325 @@ function addToStoryEntry(storyId: string, kind: AddKind): void {
     `Added ${kindWithArticle(kind)} to the story "${storyNamed(storyId)?.title ?? ""}"`,
   );
   tourChanged();
+}
+
+/** The file picker the add menu's file kinds open. */
+const filePicker = createFilePicker(document.body);
+
+/** The asset shelf's panel of the open tour (`asset-shelf/shelf-panel.ts`). */
+let shelfPanel: ShelfPanel | null = null;
+
+/** A phone's layout: the shelf is a sheet (shelf-panel.css's width). */
+const phoneLayout = window.matchMedia("(width <= 700px)");
+phoneLayout.addEventListener("change", () => {
+  shelfPanel?.refresh();
+});
+
+/** A toast of the shelf's, its button (an Undo) pressed once. */
+function shelfToast(
+  text: string,
+  action?: { readonly label: string; readonly run: () => void },
+): void {
+  toast(
+    text,
+    action === undefined
+      ? undefined
+      : {
+          label: action.label,
+          run: (button) => {
+            button.disabled = true;
+            action.run();
+          },
+        },
+  );
+}
+
+/** The shelf's commands on the page: its adds, the delete of a file in
+ *  use and "Replace everywhere", with their toasts. */
+const shelfActions = createShelfPageActions({
+  current: () => editor,
+  toast: shelfToast,
+  busy: (text, testId) => {
+    const shown = toast(text, undefined, null, false);
+    shown.dataset["testid"] = testId;
+    return shown;
+  },
+  pick: (kind) => filePicker.pick(kind),
+  pickMany: () => filePicker.pickMany(),
+  reveal: (id) => {
+    shelfPanel?.reveal(id);
+  },
+  refresh,
+  endUndo,
+  offerUndo,
+  deleted,
+  nameOf: (id) => store.getState().assetShelf.entries[id]?.name,
+});
+
+/** The shelf's panel for the tour just opened, on its session's shelf. */
+function openShelfPanel(open: EditorSession): void {
+  shelfPanel?.destroy();
+  shelfPanel = createShelfPanel({
+    root: element("shell-shelf"),
+    toggle: element<HTMLButtonElement>("shelf-toggle"),
+    pill: element<HTMLButtonElement>("shelf-pill"),
+    host: document.body,
+    rows: () => selectShelfRows(store.getState()),
+    subscribe: (listener) => store.subscribe(listener),
+    retry: (id) => open.shelf.retry(id),
+    useOriginal: (id) => open.shelf.useOriginal(id),
+    remove: (id) => open.shelf.remove(id),
+    // A file in use goes with its uses in one step, said and undone like
+    // any delete (the shelf puts its card back with the items).
+    removeUsed: {
+      plan: (id) => open.deletePlan(id),
+      run: (id) => {
+        shelfActions.deleteInUse(open, id);
+      },
+    },
+    replace: {
+      count: (id) => open.replaceCount(id),
+      run: (id) => shelfActions.replaceEverywhere(open, id),
+    },
+    optimizeTour: () => open.shelf.optimizeTour(),
+    addFiles: () => {
+      void shelfActions.addFiles(open);
+    },
+    thumbOf: (row) =>
+      open.addedFileOf(row.kind === "video" ? (row.posterId ?? "") : row.id),
+    placesOf: (id) => {
+      const state = store.getState().tourDocument;
+      return assetPlaces(
+        manifestToWrite(state)?.stations ?? [],
+        fileUsesOf(state, id),
+      );
+    },
+    show: (selection) => {
+      if (selection === TOUR_COVER_SELECTION) openDetails();
+      else select(selection, true);
+    },
+    useIn: {
+      choices: (id) => {
+        const asset = open.assetOf(id);
+        return asset === undefined
+          ? []
+          : useInChoices(
+              { id, kind: asset.kind },
+              manifestToWrite(store.getState().tourDocument)?.stations ?? [],
+            );
+      },
+      use: (id, key) => {
+        useShelfFileIn(open, id, key);
+      },
+    },
+    toast: shelfToast,
+    storage: browserStorage(),
+    phone: () => phoneLayout.matches,
+  });
+}
+
+/**
+ * The add of a `kind` item from a file at `at` (`add-file-item.ts`):
+ * `file` when given (a drop), else the one picked. While the file is read
+ * a toast says so; then the new item is selected and named with its
+ * place, or the refusal is said; a cancelled picker says nothing. One
+ * step. Resolves once it is all said.
+ */
+async function addFromFile(
+  kind: FileAddKind,
+  at: FileAddTarget,
+  file?: File,
+): Promise<void> {
+  const open = editor;
+  if (open === null) return;
+  const outcome = await addFileItem(
+    kind,
+    at,
+    {
+      pick: (k) => filePicker.pick(KIND_EDIT[k].add.file),
+      busy: (name) => {
+        const shown = toast(`Adding "${name}"...`, undefined, null, false);
+        shown.dataset["testid"] = "add-file-busy";
+        return () => {
+          shown.remove();
+        };
+      },
+      addFile: (blob, name, kinds) => open.addFile(blob, name, kinds),
+      place: (to, source) => placeFrom(open, to, source),
+    },
+    file,
+  );
+  if (outcome.kind === "cancelled") return;
+  if (outcome.kind === "refused") {
+    toast(outcome.reason);
+    return;
+  }
+  select(outcome.id);
+  sayAdded(kind, at, outcome.fileName);
+  if (!outcome.backedUp) toast(FILE_NOT_KEPT);
+  tourChanged();
+}
+
+/** The item `source` makes placed at `to` (`placeFileItem`): one step. */
+function placeFrom(
+  open: EditorSession,
+  to: FileAddTarget,
+  source: FileItemSource,
+): ReturnType<typeof placeFileItem> {
+  endUndo();
+  const placed = placeFileItem({
+    target: to,
+    source,
+    stations: manifestToWrite(store.getState().tourDocument)?.stations ?? [],
+    id: newObjectId(),
+    nowIso: new Date().toISOString(),
+    groundAt: (place) => shown3d?.groundAt(place) ?? null,
+    place: (object) => open.place(object),
+    addEntryToStory: (storyId, child) => open.addEntryToStory(storyId, child),
+  });
+  refresh();
+  return placed;
+}
+
+/** Says which `kind` item, made from `fileName`, was added at `at`. */
+function sayAdded(
+  kind: FileAddKind,
+  at: FileAddTarget,
+  fileName: string,
+): void {
+  const title = fileItemTitle(fileName, kind);
+  const where =
+    at.kind === "station"
+      ? `"${stationTitleOf(at.stationId)}"`
+      : `the story "${storyNamed(at.storyId)?.title ?? ""}"`;
+  const word = KIND_EDIT[kind].add.label;
+  toast(
+    `Added the ${word.charAt(0).toLowerCase()}${word.slice(1)} "${title}" to ${where}`,
+  );
+}
+
+/**
+ * The shelf's "Use in..." of the file `assetId`: the choice `key`
+ * (`use-in-choices.ts`) adds an item made from it at a station or a
+ * story, or makes an item of its kind show it. One step; the outcome or
+ * the refusal is said.
+ */
+function useShelfFileIn(
+  open: EditorSession,
+  assetId: string,
+  key: string,
+): void {
+  const chosen = useInTarget(key);
+  const asset = open.assetOf(assetId);
+  if (chosen === null || asset === undefined) return;
+  const fileName =
+    store.getState().assetShelf.entries[assetId]?.name ?? "the file";
+  if (chosen.kind === "item") {
+    endUndo();
+    const outcome = open.setItemAsset(chosen.id, assetId);
+    refresh();
+    if (outcome.kind === "refused") {
+      toast(outcome.reason);
+      return;
+    }
+    toast(`The item now shows "${fileName}"`);
+    if (outcome.kind === "edited") tourChanged();
+    return;
+  }
+  const kind = fileAddKindOfAsset(asset.kind);
+  if (kind === null) return;
+  const poster = open.posterOf(assetId);
+  const placed = placeFrom(open, chosen, {
+    kind,
+    asset,
+    fileName,
+    ...(poster === undefined ? {} : { poster }),
+  });
+  if (placed.kind === "refused") {
+    toast(placed.reason);
+    return;
+  }
+  select(placed.id);
+  sayAdded(kind, chosen, fileName);
+  tourChanged();
+}
+
+/**
+ * The item `id` made from `file` from now on (a file dropped on its file
+ * field, or chosen with its "Replace..."): a toast while the file is
+ * read, then the outcome said, a refusal on the error toast; one step.
+ */
+async function useAsItemFile(id: string, file: File): Promise<void> {
+  const open = editor;
+  if (open === null) return;
+  const shown = toast(`Reading "${file.name}"...`, undefined, null, false);
+  shown.dataset["testid"] = "replace-file-busy";
+  endUndo();
+  let outcome: Awaited<ReturnType<EditorSession["setItemFile"]>>;
+  try {
+    outcome = await open.setItemFile(id, file, file.name);
+  } catch {
+    outcome = { kind: "refused", reason: FILE_ADD_FAILED };
+  } finally {
+    shown.remove();
+  }
+  if (editor !== open) return;
+  refresh();
+  if (outcome.kind === "refused") {
+    toast(outcome.reason);
+    return;
+  }
+  toast(`The item now shows "${file.name}"`);
+  if (!outcome.backedUp) toast(FILE_NOT_KEPT);
+  if (outcome.kind === "edited") tourChanged();
+  else judgeAutosave();
+}
+
+/** The inspector's "Replace..." of the item `id`: a file of its own kind
+ *  picked, then used (`useAsItemFile`); a cancelled picker does nothing. */
+async function replaceItemFile(id: string): Promise<void> {
+  const block = fileBlockOf(
+    id,
+    manifestToWrite(store.getState().tourDocument)?.stations ?? [],
+  );
+  const kind = block === null ? null : blockFileKind(block);
+  if (kind === null) return;
+  let picked: File | null;
+  try {
+    picked = await filePicker.pick(kind);
+  } catch {
+    toast(FILE_ADD_FAILED);
+    return;
+  }
+  if (picked !== null) await useAsItemFile(id, picked);
+}
+
+/**
+ * Files dropped in the open editor (`file-drop.ts`): each onto the shelf,
+ * and used where it was dropped - a station's or a story's row adds the
+ * item there (`addFromFile`, one step each), an item's file field gives
+ * the item that file (`useAsItemFile`). A file a tour does not take is
+ * said by name and left out.
+ */
+async function dropFiles(
+  files: readonly File[],
+  at: Element | null,
+): Promise<void> {
+  if (editor === null) return;
+  const dropTarget = fileDropTarget(at, element("shell-tree"));
+  const loose: File[] = [];
+  for (const file of files) {
+    const kind = fileAddKindOf(file.name);
+    if (kind === null) {
+      toast(`"${file.name}" is not a picture, sound, video or 3D model.`);
+      continue;
+    }
+    if (dropTarget === null) loose.push(file);
+    else if (dropTarget.kind === "item") {
+      await useAsItemFile(dropTarget.id, file);
+    } else await addFromFile(kind, dropTarget, file);
+  }
+  if (editor !== null) await shelfActions.addToShelf(editor, loose);
 }
 
 /** A station made in this session (added, split off, copied) starts
@@ -1903,15 +2266,13 @@ function showCovers(chosen: string | null): void {
   const none = coverChoice("", "None", chosen === null);
   none.thumb.textContent = "No cover";
   coverList.append(none.choice);
-  const open = photos.current() ?? session;
   for (const c of choices) {
     const title = model?.items.find((i) => i.id === c.id)?.title ?? c.id;
     const { choice, thumb } = coverChoice(c.id, title, c.id === chosen);
     coverList.append(choice);
-    if (open === null) continue;
     const urls = coverUrls;
-    void open
-      .loadContentEntry(c.image)
+    // A file brought in here is read from the session (`readContent`).
+    void readContent(c.image)
       .then((blob) => {
         // A dialog closed (or opened again) meanwhile has let go of these.
         if (urls !== coverUrls) return;
@@ -2342,6 +2703,8 @@ function dropTour(reason: string): void {
   const open = session;
   session = null;
   editor = null;
+  shelfPanel?.destroy();
+  shelfPanel = null;
   model = null;
   fileKey = null;
   tourDraft = null;
@@ -2538,11 +2901,12 @@ async function openFile(
         ]);
         return largestSide(await loadGlbModel(blob));
       },
-      posterOf: (blob) => videoPosterOf(blob),
+      videoLookOf: (blob) => videoLookOf(blob),
     },
   });
   model = editor.model();
   openedLevels = outcome.levels;
+  openShelfPanel(editor);
   // The debug data switch only for a tour that carries a walk (S-D10:
   // the saved copy leaves it out unless asked, E2 plan review #4), and
   // unticked (M2 of the debug-captures plan, E2): the walk is saved apart.
@@ -3611,6 +3975,49 @@ drop.addEventListener("drop", (event) => {
   const file = event.dataTransfer?.files[0];
   if (file !== undefined) void openFile(file);
 });
+// A file dragged over the open editor: the page shows that it takes files
+// (`body.file-drag`), and the row or file field it would be used in
+// (`.file-over`). The opening page's drop box and the debug panel keep
+// their own drops.
+let fileDropOver: Element | null = null;
+function markFileDrop(next: Element | null): void {
+  if (next === fileDropOver) return;
+  fileDropOver?.classList.remove("file-over");
+  fileDropOver = next;
+  fileDropOver?.classList.add("file-over");
+}
+/** The element a file drag is over, when the editor takes it there. */
+function fileDragAt(event: DragEvent): Element | null | undefined {
+  if (editor === null || !dragHasFiles(event)) return undefined;
+  const at = event.target instanceof Element ? event.target : null;
+  if (at !== null && (drop.contains(at) || debugPanel.contains(at))) {
+    return undefined;
+  }
+  return at;
+}
+document.addEventListener("dragover", (event) => {
+  const at = fileDragAt(event);
+  if (at === undefined) return;
+  document.body.classList.add("file-drag");
+  markFileDrop(
+    fileDropTarget(at, element("shell-tree")) === null
+      ? null
+      : (at?.closest(`[${FILE_FIELD_ATTR}], [data-select]`) ?? null),
+  );
+});
+document.addEventListener("dragleave", (event) => {
+  if (event.relatedTarget === null) {
+    document.body.classList.remove("file-drag");
+    markFileDrop(null);
+  }
+});
+document.addEventListener("drop", (event) => {
+  document.body.classList.remove("file-drag");
+  markFileDrop(null);
+  const at = fileDragAt(event);
+  if (at === undefined) return;
+  void dropFiles(Array.from(event.dataTransfer?.files ?? []), at);
+});
 sampleButton.addEventListener("click", () => {
   if (ui().busy) return;
   // First, in the click: where to save it (`askOpenSaveFile`).
@@ -4188,6 +4595,7 @@ const shell = createEditorShell({
   },
   step: runStep,
   codes: shellCodes,
+  fileNameOf: (id) => store.getState().assetShelf.entries[id]?.name,
   loadPicture: readContent,
   dialogOpen,
   stations: {
@@ -4227,6 +4635,9 @@ const shell = createEditorShell({
           })
         : editor.narration(id),
     editNarration: writeNarrationEdit,
+    replaceFile: (id) => {
+      void replaceItemFile(id);
+    },
     voiceMaxBytes: autosaveMaxBytes,
   },
   // The tree's Group, Ungroup, moves into and out of a folder and its

@@ -672,12 +672,33 @@ export interface TourAssetRef {
   readonly id: string;
   readonly kind: TourAssetKind;
   readonly required: boolean;
+  /** The block's own field that names it: the field holding the id (a
+   *  picture's `image`, a video's `poster`), the record holding it (a long
+   *  text's `narration`), or the text naming it (a long text's `body`). */
+  readonly field: string;
+  /** The block stands without that field (a long text's narration, a
+   *  video's poster, a character's voice): dropping the field drops the
+   *  reference. A required reference that is not optional is the block's
+   *  own file: the block is made of it. */
+  readonly optional?: true;
 }
 
-/** The reference `id` makes, when it is an id at all: `refs` also runs over
- *  a draft's raw record, before its fields were checked. */
-function refTo(id: unknown, kind: TourAssetKind): TourAssetRef[] {
-  return isTourId(id) ? [{ id, kind, required: true }] : [];
+/** The reference `id` makes in the field `field`, when it is an id at
+ *  all: `refs` also runs over a draft's raw record, before its fields were
+ *  checked. `standsWithout`: the block stands without the field
+ *  ({@link TourAssetRef.optional}). */
+function refTo(
+  id: unknown,
+  kind: TourAssetKind,
+  field: string,
+  standsWithout?: 'optional'
+): TourAssetRef[] {
+  if (!isTourId(id)) return [];
+  return [
+    standsWithout === undefined
+      ? { id, kind, required: true, field }
+      : { id, kind, required: true, field, optional: true },
+  ];
 }
 
 /** One line per kind: what the list's rows are checked against. */
@@ -764,8 +785,16 @@ export const TOUR_KINDS = {
           : [];
       const narration: unknown = b.narration;
       return [
-        ...body.map((id) => ({ id, kind: 'image', required: false }) as const),
-        ...refTo(isRecord(narration) ? narration.audio : undefined, 'audio'),
+        ...body.map(
+          (id) =>
+            ({ id, kind: 'image', required: false, field: 'body' }) as const
+        ),
+        ...refTo(
+          isRecord(narration) ? narration.audio : undefined,
+          'audio',
+          'narration',
+          'optional'
+        ),
       ];
     },
   },
@@ -788,7 +817,7 @@ export const TOUR_KINDS = {
         ctx
       ),
     }),
-    refs: (b) => refTo(b.image, 'image'),
+    refs: (b) => refTo(b.image, 'image', 'image'),
   },
   video: {
     sinceMinor: 0,
@@ -805,7 +834,10 @@ export const TOUR_KINDS = {
       ...optionalText(v, 'title', VIDEO_RULES.title, ctx),
       ...optionalAssetRef(v, 'poster', 'image', ctx),
     }),
-    refs: (b) => [...refTo(b.video, 'video'), ...refTo(b.poster, 'image')],
+    refs: (b) => [
+      ...refTo(b.video, 'video', 'video'),
+      ...refTo(b.poster, 'image', 'poster', 'optional'),
+    ],
   },
   audio: {
     sinceMinor: 0,
@@ -821,7 +853,7 @@ export const TOUR_KINDS = {
       ...optionalText(v, 'title', AUDIO_RULES.title, ctx),
       ...audioWorld(v, view, ctx),
     }),
-    refs: (b) => refTo(b.audio, 'audio'),
+    refs: (b) => refTo(b.audio, 'audio', 'audio'),
   },
   model: {
     sinceMinor: 0,
@@ -838,7 +870,7 @@ export const TOUR_KINDS = {
       ...modelNotes(v, ctx),
       ...modelSections(v, ctx),
     }),
-    refs: (b) => refTo(b.asset, 'model'),
+    refs: (b) => refTo(b.asset, 'model', 'asset'),
   },
   character: {
     sinceMinor: 0,
@@ -853,7 +885,10 @@ export const TOUR_KINDS = {
       ...optionalText(v, 'caption', CHARACTER_RULES.caption, ctx),
       ...optionalAssetRef(v, 'voice', 'audio', ctx),
     }),
-    refs: (b) => [...refTo(b.image, 'image'), ...refTo(b.voice, 'audio')],
+    refs: (b) => [
+      ...refTo(b.image, 'image', 'image'),
+      ...refTo(b.voice, 'audio', 'voice', 'optional'),
+    ],
   },
 } as const satisfies {
   readonly [K in TourBlockKind]: TourKindRow<TourBlockOfKind[K]>;

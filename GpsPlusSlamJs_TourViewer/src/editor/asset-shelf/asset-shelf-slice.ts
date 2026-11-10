@@ -21,7 +21,8 @@ import type { TourAssetKind } from "gps-plus-slam-app-framework/ar/tour-manifest
 
 import {
   assetBytesPending,
-  assetUsesOf,
+  fileUseCount,
+  fileUsesAll,
   type TourDocumentState,
 } from "../../tour-document.js";
 import {
@@ -54,6 +55,15 @@ export interface ShelfEntry extends ShelfJob {
   readonly originalHeld: boolean;
   /** Arrival order: the queue is first in, first out. */
   readonly seq: number;
+  /** A video's: the poster minted with it, and its length in seconds. */
+  readonly posterId?: string;
+  readonly seconds?: number;
+}
+
+/** What a video brought in carries beyond its asset (`AssetShelf.add`). */
+export interface ShelfVideoLook {
+  readonly posterId?: string;
+  readonly seconds?: number;
 }
 
 export interface AssetShelfState {
@@ -78,6 +88,15 @@ interface EntryAddedPayload {
   /** A kept file the author may ask to make smaller again (one whose
    *  original they chose, `originalUsed`). */
   readonly keptRetryable?: boolean;
+  readonly look?: ShelfVideoLook;
+}
+
+/** The look's fields that are set, for an entry. */
+function lookOf(look: ShelfVideoLook | undefined): ShelfVideoLook {
+  return {
+    ...(look?.posterId === undefined ? {} : { posterId: look.posterId }),
+    ...(look?.seconds === undefined ? {} : { seconds: look.seconds }),
+  };
 }
 
 /** `state` with entry `id` replaced by `next(entry)`; unchanged when it
@@ -125,6 +144,7 @@ const assetShelfSlice = createSlice({
         originalBytes: p.originalBytes,
         originalHeld: false,
         seq: state.nextSeq,
+        ...lookOf(p.look),
         ...job,
       };
       return {
@@ -276,7 +296,8 @@ export interface ShelfRow {
   readonly estimatedBytes: number;
   /** 0-based among the queued, null when not queued. */
   readonly queuePosition: number | null;
-  /** Blocks (and station cards) that use the file. */
+  /** The places that use the file (`fileUseCount`): blocks, station
+   *  cards, characters and the cover. */
   readonly placesInUse: number;
   /** How often a smaller file replaced the asset's: a preview built from
    *  the old bytes reloads when this changes. */
@@ -284,6 +305,9 @@ export interface ShelfRow {
   /** The original's bytes are kept and no save wrote the smaller file's
    *  bytes yet (`assetBytesPending`, the draft's own rule). */
   readonly canUseOriginal: boolean;
+  /** A video's poster (an image asset id) and length, when known. */
+  readonly posterId?: string;
+  readonly seconds?: number;
 }
 
 interface ShelfRoot {
@@ -299,7 +323,11 @@ export const selectShelfRows = createSelector(
   (shelf, doc): ShelfRow[] => {
     const entries = Object.values(shelf.entries).sort((a, b) => a.seq - b.seq);
     const queued = entries.filter((e) => e.phase === "queued").map((e) => e.id);
-    const uses = assetUsesOf(doc);
+    const uses = fileUsesAll(doc);
+    const usedIn = (id: string): number => {
+      const used = uses.get(id);
+      return used === undefined ? 0 : fileUseCount(used);
+    };
     return entries.map((e) => {
       const position = queued.indexOf(e.id);
       return {
@@ -317,12 +345,13 @@ export const selectShelfRows = createSelector(
           : { optimizedBytes: e.optimizedBytes }),
         estimatedBytes: e.optimizedBytes ?? e.originalBytes,
         queuePosition: position < 0 ? null : position,
-        placesInUse: uses.get(e.id) ?? 0,
+        placesInUse: usedIn(e.id),
         swaps: doc.assetSwaps[e.id] ?? 0,
         canUseOriginal:
           e.phase === "optimized" &&
           e.originalHeld &&
           assetBytesPending(doc, e.id),
+        ...lookOf(e),
       };
     });
   },
