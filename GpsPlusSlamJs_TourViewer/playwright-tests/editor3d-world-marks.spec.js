@@ -237,8 +237,7 @@ async function soundIcons(page, on) {
 // pixels at the icon's middle must still be the icon's own. The same
 // pixels are read with the icon and without it, in the one view: the
 // station's selected ring passes under the icon in the same amber, so a
-// sample elsewhere on the screen (the first control, 120 px away, fell on
-// that ring) says nothing. Drawn with a depth test the relief hides the
+// sample elsewhere on the screen says nothing about the icon. Drawn with a depth test the relief hides the
 // icon and the two reads are the same. The older view: on the globe a
 // street-level camera looks over coarse tiles that sag below the stations
 // (see the found-radius spec), and the globe draws the same material
@@ -261,8 +260,17 @@ test("an ambient sound's icon is seen where the relief stands in front of it", a
     TOP_DISTANCE_M,
   );
   expect((await view3d(page))?.distanceM).toBeCloseTo(TOP_DISTANCE_M, 0);
-  // The relief has reached the station.
-  await afterFrames(page, 120);
+  // The relief has reached the station: the ground drawn under it stands
+  // where the hosts put it.
+  await expect
+    .poll(async () => {
+      const at = (await view3d(page))?.ground?.find(
+        (/** @type {{ id: string }} */ g) => g.id === STATION,
+      );
+      return at?.groundM ?? null;
+    })
+    .toBeCloseTo(SQUARE_GROUND_M + RELIEF_ABOVE_STATIONS_M, 0);
+  await afterFrames(page, 4);
 
   // The icon's middle on the screen: the middle of the points a press
   // there reaches it by.

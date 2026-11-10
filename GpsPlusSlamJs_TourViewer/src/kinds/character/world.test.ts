@@ -322,10 +322,11 @@ describe("characterWorld", () => {
     at(95);
     part.update?.({ seconds: 6.05, viewer: [0, 0, 0], camera });
     const after = yaw();
-    // Turning toward -60 (his back to the camera), but less than a third
-    // of the way in one 50 ms frame.
+    // Turning toward -60 (his back to the camera), but eased: the step
+    // from 5.95 s to 6.05 s is the look's 0.1 s clamp, so at its ease rate
+    // of 4 a second he covers at most 1 - e^-0.4 of the 120 degrees.
     expect(after).toBeLessThan(before);
-    expect(before - after).toBeLessThan(40);
+    expect(before - after).toBeLessThan(120 * (1 - Math.exp(-0.4)) + 1);
     for (let i = 2; i < 120; i++) {
       part.update?.({ seconds: 6 + i * 0.05, viewer: [0, 0, 0], camera });
     }

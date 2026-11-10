@@ -9,7 +9,8 @@ visitor's look, which stands edge-on about 150 degrees round, a camera
 more than 90 degrees round sees his back turned toward it (the look's
 `backToCamera`), so he is never edge-on in the editor: at least cos 30
 (0.87) square on from every heading, the swing eased as the camera
-crosses his side. The pop-up view does not turn at all (as for the
+crosses his side. That holds where he settles: during the eased turn of
+about 0.3 s as the camera crosses his side he passes edge-on. The pop-up view does not turn at all (as for the
 visitor), so it can still stand edge-on from its side. It is the character row's world part (`character-card.ts`
 `CHARACTER_PLAY.world`), reached through the one world door
 (`world-part.ts`), so the editor's stations layer draws it like any

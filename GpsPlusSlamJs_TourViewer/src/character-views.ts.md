@@ -41,8 +41,8 @@ The rules for a recurring character's five world views (`bubble`, `speak`, `two-
 
 ## Tests
 
-- `character-views.test.ts`: the table, the distances, the side choice, the reading time, `restYawOf` and `facingYaw`, `facingDegOf` and `facingRotation` (the four headings, a turn about Up alone, no rotation for a heading that is no number; `character-views.property.test.ts`: any heading read back as itself, 0 to 360), and the word timing (the prototype's numbers, the active word, the mouth frames).
+- `character-views.test.ts`: the table, the distances, the side choice, the reading time, `restYawOf` and `facingYaw` (with `backToCamera` at least 0.85 square on every 5 degrees round over three rests), `facingDegOf` and `facingRotation` (the four headings, a turn about Up alone, no rotation for a heading that is no number; `character-views.property.test.ts`: any heading read back as itself, 0 to 360), and the word timing (the prototype's numbers, the active word, the mouth frames).
 - `character-views.property.test.ts` (also: the read-along runs forward over the line's words, the mouth open only inside a word):
-  - `facingYaw` never turns more than 60 degrees from rest, and faces a camera inside that cone exactly; with `backToCamera` it is at least 0.85 square on every 5 degrees round over three rests (`character-views.test.ts`);
+  - `facingYaw` never turns more than 60 degrees from rest, and faces a camera inside that cone exactly;
   - the beckon only points at an undone other station;
   - the reading time and the floor are bounded.
