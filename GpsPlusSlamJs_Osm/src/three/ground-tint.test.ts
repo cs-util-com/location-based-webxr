@@ -106,6 +106,39 @@ describe("applyGroundTint", () => {
     expect(material.customProgramCacheKey()).not.toContain("ground-tint");
   });
 
+  // WHY: three.js runs `onBeforeCompile` only when a material has no
+  // program for its cache key yet, and then keeps the uniforms of THAT
+  // compile. A rebuild drops one tint and applies the next under the same key,
+  // so the program compiled for the first tint is reused: before this was
+  // fixed it sampled the first tint, freed (a null texture), and the ground
+  // went dark after every rebuild (colour schemes plan 2026-11-10-0841, the
+  // switch e2e). The uniforms bound at the first compile must carry the
+  // current tint.
+  it("feeds a later tint to the program compiled for an earlier one", () => {
+    const material = new THREE.MeshStandardMaterial();
+    const first = applyGroundTint(material, tint());
+    const compiled = shader();
+    material.onBeforeCompile(compiled, {} as THREE.WebGLRenderer);
+    first.dispose();
+    const next = tint({ originX: 10, palette: [0x112233, 0xff0000, 0x00ff00] });
+    const second = applyGroundTint(material, next, { enabled: false });
+    const u = compiled.uniforms;
+    expect(u["groundTint"]?.value).toBeInstanceOf(THREE.DataTexture);
+    expect(u["groundOrigin"]?.value).toEqual(new THREE.Vector2(10, -2));
+    const neutral = new THREE.Color(0x112233);
+    expect(u["groundNeutral"]?.value).toEqual(
+      new THREE.Vector3(neutral.r, neutral.g, neutral.b),
+    );
+    expect(u["groundOn"]?.value).toBe(0);
+    // A stale handle no longer reaches the live tint.
+    first.setEnabled(true);
+    first.dispose();
+    expect(u["groundOn"]?.value).toBe(0);
+    expect(u["groundTint"]?.value).toBeInstanceOf(THREE.DataTexture);
+    second.setEnabled(true);
+    expect(u["groundOn"]?.value).toBe(1);
+  });
+
   it.each([-1, Number.NaN])("refuses fade %s", (fadeM) => {
     expect(() =>
       applyGroundTint(new THREE.MeshStandardMaterial(), tint(), { fadeM }),

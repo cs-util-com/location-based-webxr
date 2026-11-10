@@ -63,6 +63,45 @@ export function groundTintTexture(
   return texture;
 }
 
+/** The tint uniforms of one material (see `tintUniformsOf`). */
+interface TintUniforms {
+  readonly groundTint: { value: THREE.Texture | null };
+  readonly groundOrigin: { value: THREE.Vector2 };
+  readonly groundSize: { value: THREE.Vector2 };
+  readonly groundNeutral: { value: THREE.Vector3 };
+  readonly groundFade: { value: number };
+  readonly groundOn: { value: number };
+  /** The application whose values these are; an older handle is inert. */
+  owner: object | undefined;
+}
+
+/**
+ * ONE SET OF UNIFORM OBJECTS PER MATERIAL, reused by every application.
+ * three.js runs `onBeforeCompile` only when the material has no program for
+ * its cache key yet, and then keeps binding the uniforms of THAT compile. A
+ * rebuild disposes one tint and applies the next under the same key, so the
+ * program compiled for the first tint is reused; fresh uniform objects per
+ * application would leave it sampling the first, freed texture.
+ */
+const tintUniformsOf = new WeakMap<THREE.Material, TintUniforms>();
+
+function uniformsFor(material: THREE.Material): TintUniforms {
+  let uniforms = tintUniformsOf.get(material);
+  if (uniforms === undefined) {
+    uniforms = {
+      groundTint: { value: null },
+      groundOrigin: { value: new THREE.Vector2() },
+      groundSize: { value: new THREE.Vector2() },
+      groundNeutral: { value: new THREE.Vector3() },
+      groundFade: { value: GROUND_TINT_FADE_M },
+      groundOn: { value: 1 },
+      owner: undefined,
+    };
+    tintUniformsOf.set(material, uniforms);
+  }
+  return uniforms;
+}
+
 /**
  * Patches `material` (a lit three material whose world xz plane is east and
  * minus north, the render convention) to draw `tint`. Sets the material's
@@ -81,25 +120,29 @@ export function applyGroundTint(
   const texture = groundTintTexture(tint, options.anisotropy);
   const neutral = new THREE.Color(tint.palette[0] ?? 0);
   const previousColour = material.color.clone();
-  const uniforms = {
-    groundTint: { value: texture as THREE.Texture | null },
-    groundOrigin: { value: new THREE.Vector2(tint.originX, tint.originY) },
-    groundSize: {
-      value: new THREE.Vector2(
-        tint.width * tint.texelM,
-        tint.height * tint.texelM,
-      ),
-    },
-    groundNeutral: {
-      value: new THREE.Vector3(neutral.r, neutral.g, neutral.b),
-    },
-    groundFade: { value: Math.max(0.01, fadeM) },
-    groundOn: { value: 1 },
-  };
+  const uniforms = uniformsFor(material);
+  const handle = {};
+  uniforms.owner = handle;
+  uniforms.groundTint.value = texture;
+  uniforms.groundOrigin.value.set(tint.originX, tint.originY);
+  uniforms.groundSize.value.set(
+    tint.width * tint.texelM,
+    tint.height * tint.texelM,
+  );
+  uniforms.groundNeutral.value.set(neutral.r, neutral.g, neutral.b);
+  uniforms.groundFade.value = Math.max(0.01, fadeM);
+  const live = (): boolean => uniforms.owner === handle;
   const previous = material.onBeforeCompile.bind(material);
   material.onBeforeCompile = (shader, renderer) => {
     previous(shader, renderer);
-    Object.assign(shader.uniforms, uniforms);
+    Object.assign(shader.uniforms, {
+      groundTint: uniforms.groundTint,
+      groundOrigin: uniforms.groundOrigin,
+      groundSize: uniforms.groundSize,
+      groundNeutral: uniforms.groundNeutral,
+      groundFade: uniforms.groundFade,
+      groundOn: uniforms.groundOn,
+    });
     shader.vertexShader = shader.vertexShader
       .replace(
         "#include <common>",
@@ -141,7 +184,7 @@ export function applyGroundTint(
   // Off (groundOn 0) the patch multiplies by the neutral everywhere, which
   // is exactly the plain ground, so the material stays white in both states.
   const setEnabled = (on: boolean): void => {
-    uniforms.groundOn.value = on ? 1 : 0;
+    if (live()) uniforms.groundOn.value = on ? 1 : 0;
   };
   setEnabled(options.enabled !== false);
   material.color.set(0xffffff);
@@ -150,6 +193,8 @@ export function applyGroundTint(
     setEnabled,
     dispose() {
       texture.dispose();
+      if (!live()) return;
+      uniforms.owner = undefined;
       uniforms.groundTint.value = null;
       material.onBeforeCompile = previous;
       material.customProgramCacheKey = previousKey;

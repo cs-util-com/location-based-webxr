@@ -31,10 +31,20 @@ the neutral ground over the last `GROUND_TINT_FADE_M` (40 m) of the window
   the texture is decoded from sRGB by the GPU, so both sides are linear.
 - `dispose()` frees the texture and restores the material's own hook,
   cache key and colour.
+- **One set of uniform objects per material**, reused by every
+  application (a module `WeakMap`). three.js runs `onBeforeCompile` only when
+  a material has no program for its cache key yet and keeps binding the
+  uniforms of that compile, so a dispose-then-apply under the same key
+  (every rebuild in the OSM demo) reuses the first program: fresh uniform
+  objects per application left it sampling the first, freed texture and the
+  ground went dark after every rebuild (found 2026-11-10 by the colour-scheme
+  switch e2e). Only the latest application is live: an older handle's
+  `setEnabled` and `dispose` do nothing to the material.
 - Why RGBA8 and not an R8 index: the spike in `mesh/ground-tint.ts.md`.
 
 ## Tests
 
 - `ground-tint.test.ts` - texel bytes and order, colour space and mipmaps,
   unknown class bytes, the size check, the shader patch and its uniforms, a
-  chained hook, the cache key, the switch, `dispose`, the fade check.
+  chained hook, the cache key, the switch, `dispose`, the fade check; a later tint reaching the program
+  compiled for an earlier one, and a stale handle being inert.
