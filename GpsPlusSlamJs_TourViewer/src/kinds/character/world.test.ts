@@ -194,6 +194,8 @@ describe("characterWorld", () => {
       part.dispose();
     }
     expect(firstHit.speak).toBe("character-front");
+    // The pop-up, unfolded at 5 m: its own figure on the stage.
+    expect(firstHit.popup).toBe("character-popfigure");
   });
 
   it("rejects ready when his image cannot be read, and stands nothing", async () => {
