@@ -167,6 +167,11 @@ interface TourPlacement {
   /** The station whose block this is; absent on a creator's draft object
    *  that no station holds yet (the automatic-station rule assigns one). */
   readonly station?: string;
+  /** The ids of the plain folders holding the block in its station,
+   *  outermost first; absent at the station's top. The geo pose is the
+   *  WORLD pose either way: a writer turns it back into a pose in the
+   *  innermost folder. */
+  readonly folder?: readonly string[];
 }
 
 /** A free block in the world: its fields without the local pose, and
@@ -242,6 +247,8 @@ export interface TourObjectRecord {
   };
   readonly geo: QrGeoPose;
   readonly station?: string;
+  /** The plain folders holding it (`TourObject.folder`); absent for none. */
+  readonly folder?: readonly string[];
 }
 
 export interface TourManifest extends TourDetails {
@@ -375,6 +382,23 @@ function recordCharacters(
     : new Map<string, { name: string; image: string }>();
 }
 
+/** A record's folders: absent, or a non-empty list of folder ids,
+ *  outermost first. */
+function recordFolder(
+  folder: unknown,
+  at: string
+): readonly string[] | undefined {
+  if (folder === undefined) return undefined;
+  if (
+    Array.isArray(folder) &&
+    folder.length > 0 &&
+    folder.every((id) => isTourId(id))
+  ) {
+    return folder;
+  }
+  return fail(`"${at}.folder" must be a non-empty list of folder ids`);
+}
+
 /** A record's station: absent, or a station id. */
 function recordStation(station: unknown, at: string): string | undefined {
   if (station === undefined || isTourId(station)) return station;
@@ -411,12 +435,14 @@ export function parseTourObject(value: unknown, at = 'object'): TourObject {
   if (placed === undefined) return fail(`"${at}.block" must be a block`);
   const geo = parseGeoPose(value.geo, { path: `${at}.geo`, fail });
   const station = recordStation(value.station, at);
+  const folder = recordFolder(value.folder, at);
   const { pose: _pose, ...fields } = placed;
   const [imageAsset] = placed.kind === 'picture' ? assets : [];
   return {
     ...fields,
     geo,
     ...(station === undefined ? {} : { station }),
+    ...(folder === undefined ? {} : { folder }),
     ...(imageAsset === undefined ? {} : { imageAsset }),
   } as TourObject;
 }
@@ -424,7 +450,7 @@ export function parseTourObject(value: unknown, at = 'object'): TourObject {
 /** An object as a creator's draft stores it ({@link TourObjectRecord}),
  *  read back by {@link parseTourObject}. */
 export function tourObjectRecord(object: TourObject): TourObjectRecord {
-  const { geo, station, ...rest } = object;
+  const { geo, station, folder, ...rest } = object;
   const { imageAsset, ...block } = rest as typeof rest & {
     imageAsset?: TourAsset;
   };
@@ -444,6 +470,7 @@ export function tourObjectRecord(object: TourObject): TourObjectRecord {
         }),
     geo,
     ...(station === undefined ? {} : { station }),
+    ...(folder === undefined ? {} : { folder }),
   };
 }
 

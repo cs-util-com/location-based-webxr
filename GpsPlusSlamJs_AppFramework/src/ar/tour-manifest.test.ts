@@ -804,6 +804,21 @@ describe('parseTourObject and tourObjectRecord (the world view a draft keeps)', 
     expect(parseTourObject(tourObjectRecord(typed))).toEqual(object);
   });
 
+  it('carries the folders holding an object, outside its block, and refuses a malformed list', () => {
+    // Why: a draft keeps a folder's items as world objects; without the
+    // folders a reload would put each item back at the station's top.
+    const grouped = { ...worldPin, station: 'gate', folder: ['f', 'g'] };
+    const record = tourObjectRecord(grouped);
+    expect(record.folder).toEqual(['f', 'g']);
+    expect('folder' in record.block).toBe(false);
+    expect(parseTourObject(record)).toEqual(grouped);
+    for (const folder of [[], 'f', [''], [3]]) {
+      expect(() => parseTourObject({ ...record, folder })).toThrow(
+        /folder" must be a non-empty list of folder ids/
+      );
+    }
+  });
+
   it('reads a world pin, with or without its station, from its record', () => {
     expect(parseTourObject(tourObjectRecord(worldPin))).toEqual(worldPin);
     const stationed = { ...worldPin, station: 'gate' };

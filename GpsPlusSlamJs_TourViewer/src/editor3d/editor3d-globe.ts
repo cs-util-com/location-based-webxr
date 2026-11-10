@@ -1655,6 +1655,7 @@ export async function openGlobeEditor(
       showSoundIcons: (on) => {
         editing.showSoundIcons(on);
       },
+      folderOutlines: () => editing.folderOutlines(),
       modelScreenOf(id, at) {
         const p = editing.modelScreenOf(id, at);
         return p === null ? null : [p.x, p.y];

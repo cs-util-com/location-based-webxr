@@ -5,7 +5,10 @@
 A finger's long press timed by the page. iOS sends no `contextmenu` for a
 long press, so without it the 3D view's ground menu ("New station here")
 could not open on an iPhone or an iPad. `editor3d-input.ts` uses it for
-every touch on the scene.
+every touch on the scene, and the station tree (`editor-shell/editor-shell.ts`)
+for a long press on a row, which enters the Select mode. It lives in
+`src/editor/`, not with the 3D view, because the tree is in the edit page's
+first load and the 3D view's code must not be (`app-bundle.test.ts`).
 
 ## Public API
 

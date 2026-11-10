@@ -22,7 +22,7 @@ The manifest reads every station's children here (`tour-stations.ts`).
     (`stations[0].children[2].children[1].options[0].goto`).
 - Types: `TourStationChild` (`TourBlock | TourStory | TourFolder`),
   `TourStory` (`{ id, kind: 'folder', role: 'story', title, children }`),
-  `TourFolder` (`{ id, kind: 'folder', pose?, scale?: 1, children }`, its
+  `TourFolder` (`{ id, kind: 'folder', title?, pose?, scale?: 1, children }`, its
   children `TourFolderChild`: free blocks and plain folders),
   `TourContainer` (`TourStory | TourFolder`), `TourStoryChild`
   (`TourStoryBlock | TourChoice | TourQuizEntry`), `TourStoryBlock` (a
@@ -30,8 +30,9 @@ The manifest reads every station's children here (`tour-stations.ts`).
 options }`), `TourQuizEntry` (`TourQuiz` with `id` and `kind: 'quiz'`),
   `TourChildDrop` (a `TourBlockDrop`, `{ kind: 'child', child, reason }`,
   `{ kind: 'option', child, option, reason }` for a way on a kept choice
-  lost with the child it named, or `{ kind: 'folderScale', folder, reason }`
-  for a plain folder's scale read as 1), `TourChildrenPlace` (`{ index, path,
+  lost with the child it named, `{ kind: 'folderScale', folder, reason }`
+  for a plain folder's scale read as 1, or `{ kind: 'folderTitle', folder,
+reason }` for its title over its cap left out), `TourChildrenPlace` (`{ index, path,
 story? }`: `path` the containers holding the child, outermost first,
   empty at the station's top; `story` the innermost one when it is a
   story),
@@ -70,7 +71,10 @@ id)` (null when no child has it).
   nest in each other at any depth and hold free blocks (in a world view,
   as at the top) and plain folders; nothing but blocks, choices and
   quizzes stands in a story. A story takes no `pose` or `scale`. A plain
-  folder has no title and may be empty; its `pose` is read as a block's
+  folder may be empty and may carry a `title` (`TOUR_FOLDER_TITLE_RULE`,
+  the story title's rule: an editor's tree names a group by it): one that
+  is no text or blank fails at every minor, one over its cap fails strict
+  and is left out lenient, reported as a `folderTitle` drop. Its `pose` is read as a block's
   (`parseTourLocalPose`). Its `scale` may only be 1 (or absent): a scale
   other than 1 waits for a renderer that scales the whole group, since
   scaling positions alone would move a group's blocks apart while their
@@ -151,7 +155,8 @@ const free = tourFreeBlocks({ children }); // tour-station-pose.ts
   fails); unknown kinds at both levels; lenient pruning, stranded choices
   and reports; structural faults under lenient; the list functions.
 - `tour-folders.test.ts`: a read per shape (story, plain folder with and
-  without pose and scale, empty, nested), a scale other than 1 refused
+  without pose and scale, empty, nested), a folder's title (read, refused
+  blank or not text, over its cap refused strict and dropped lenient), a scale other than 1 refused
   strict and read as 1 lenient (reported), the composed-offset bound swept
   at its edge (in, on and just past it), turned by a folder's rotation,
   nested, and dropped lenient, every illegal nesting refused strict and left out lenient,

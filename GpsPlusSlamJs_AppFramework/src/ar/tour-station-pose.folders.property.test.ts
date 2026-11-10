@@ -14,6 +14,8 @@
  * order gives another answer.
  */
 
+// Activates the core library's licence before any module under test loads.
+import '../test-setup';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
@@ -23,10 +25,16 @@ import type { TourBlock } from './tour-blocks';
 import {
   composeTourFolderPath,
   composeTourFolderPose,
+  decomposeTourFolderPath,
   decomposeTourFolderPose,
 } from './tour-folder-pose';
 import type { TourLocalPose } from './tour-items';
-import { tourFreeBlocks } from './tour-station-pose';
+import {
+  tourFreeBlocks,
+  tourFreeEntries,
+  tourObjectBlock,
+  tourObjects,
+} from './tour-station-pose';
 import type { TourFolder, TourStationChild } from './tour-story';
 
 /** A unit quaternion from three uniform numbers (Shoemake), so every
@@ -120,6 +128,35 @@ describe('composing a folder pose (properties)', () => {
     expect(rotationGap(out.rotation, QUARTER_ABOUT_UP)).toBeLessThan(1e-15);
   });
 
+  // An editor writes an item back into its folder through every folder
+  // holding it: the path's round trip must return the item's own pose,
+  // at every depth the format allows, or each save would drift it.
+  for (const reach of REACHES) {
+    it(`compose then decompose a path of up to three folders returns the pose (offsets up to ${String(reach)} m)`, () => {
+      fc.assert(
+        fc.property(
+          fc.array(poseArbitrary(reach), { minLength: 1, maxLength: 3 }),
+          poseArbitrary(reach),
+          (folderPoses, pose) => {
+            const folders = folderPoses.map((p) => ({ pose: p }));
+            const back = decomposeTourFolderPath(
+              folders,
+              composeTourFolderPath(folders, pose)
+            );
+            // Each level adds its own rounding: the bound grows with depth.
+            expect(positionGap(back, pose)).toBeLessThanOrEqual(
+              POSITION_TOLERANCE_M * folders.length
+            );
+            expect(
+              rotationGap(back.rotation, pose.rotation)
+            ).toBeLessThanOrEqual(ROTATION_TOLERANCE * folders.length);
+          }
+        ),
+        { numRuns: 200 }
+      );
+    });
+  }
+
   it('no pose is the identity, bit for bit, and so is an empty path', () => {
     fc.assert(
       fc.property(poseArbitrary(10_000), (pose) => {
@@ -127,8 +164,74 @@ describe('composing a folder pose (properties)', () => {
         expect(decomposeTourFolderPose({}, pose)).toBe(pose);
         expect(composeTourFolderPath([], pose)).toBe(pose);
         expect(composeTourFolderPath([{}, {}], pose)).toBe(pose);
+        expect(decomposeTourFolderPath([], pose)).toBe(pose);
+        expect(decomposeTourFolderPath([{}, {}], pose)).toBe(pose);
       })
     );
+  });
+});
+
+describe('the world view names the folders holding a block', () => {
+  // Why: the editor holds a folder's items as world objects and writes
+  // each back into its folder; the object must say which folders hold it,
+  // or a save would lose the grouping. The block written back must not
+  // carry that name: the file says it by nesting.
+  const at = (id: string, position: [number, number, number]): TourBlock => ({
+    id,
+    kind: 'shortText',
+    view: 'pin',
+    caption: id,
+    pose: { position, rotation: [0, 0, 0, 1] },
+  });
+  const station = {
+    id: 'st',
+    geo: { lat: 48, lon: 11, alt: 500, rotation: [0, 0, 0, 1] as Quaternion },
+    children: [
+      at('top', [1, 0, 0]),
+      {
+        id: 'outer',
+        kind: 'folder' as const,
+        pose: {
+          position: [5, 0, 0] as [number, number, number],
+          rotation: [0, 0, 0, 1] as Quaternion,
+        },
+        children: [
+          at('a', [1, 0, 0]),
+          {
+            id: 'inner',
+            kind: 'folder' as const,
+            children: [at('b', [0, 0, 1])],
+          },
+        ],
+      },
+    ],
+  };
+
+  it('gives each free block its folders, outermost first, and none at the top', () => {
+    expect(tourFreeEntries(station).map((e) => [e.block.id, e.folder])).toEqual(
+      [
+        ['top', []],
+        ['a', ['outer']],
+        ['b', ['outer', 'inner']],
+      ]
+    );
+    const objects = tourObjects({ stations: [station as never], assets: [] });
+    expect(objects.map((o) => [o.id, o.folder])).toEqual([
+      ['top', undefined],
+      ['a', ['outer']],
+      ['b', ['outer', 'inner']],
+    ]);
+    expect('folder' in (objects[0] ?? {})).toBe(false);
+  });
+
+  it('writes the block back without its folders, its station or its geo pose', () => {
+    const [, a] = tourObjects({ stations: [station as never], assets: [] });
+    if (a === undefined) throw new Error('no object');
+    const pose = {
+      position: [1, 0, 0] as [number, number, number],
+      rotation: IDENTITY,
+    };
+    expect(tourObjectBlock(a, pose)).toEqual(at('a', [1, 0, 0]));
   });
 });
 

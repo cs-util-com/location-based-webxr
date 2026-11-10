@@ -59,16 +59,30 @@ not be read. The editor left them out: ...`), and that the next save
   description over its cap: the block is kept, the text is not): which
   blocks, named by `objectTitle` (the id only for a block the manifest
   does not hold), and that the next save writes them without it; null
-  for none. Whole blocks a reader cannot show are not listed.
-- `flattenedFoldersLine(manifest): string | null` (module-private, read through the open notices above) - the toast for a tour
-  whose stations hold plain folders (`FLATTENED_FOLDERS_LINE`): the editor
-  keeps stories and free items only (`tour-document.ts`, `framesOf` and
-  `withTourContent`), so the next save writes each folder's items one by
-  one at the place its folders put them (the framework's
-  `tourFreeBlocks`), and the grouping, with any empty folder, is gone.
-  Null when no station holds one; a story is not a plain folder.
+  for none. Whole blocks a reader cannot show are not listed here.
+- `droppedFolderScalesLine(dropped, manifest): string | null` - for the
+  plain folders whose size (`scale`, a newer editor's) the reader left
+  out: which folders, by their names ("a folder without a name" for one
+  with none), that their items show at their own size, and that the next
+  save writes the folders without it; null for none.
+- `droppedFolderTitlesLine(dropped): string | null` - for the plain
+  folders whose names the reader left out (over this editor's cap of 80,
+  in a newer minor's file): how many (the names are gone, so they are
+  counted), that each shows as "Folder", and that the next save writes
+  them without their names; null for none.
+- `droppedChildrenLine(dropped): string | null` - for whole items the
+  reader could not read (a `child` or a `block` drop: a newer kind, a
+  choice left with fewer than two ways on): how many (they are gone from
+  the tour as opened, so they cannot be named), and that the next save
+  writes the tour without them; null for none.
 - `openedNoticeLines(dropped, manifest): string[]` - every line above
-  that applies, in the order the page shows them (`edit-main.ts`).
+  that applies, in the order the page shows them (`edit-main.ts`). The
+  plain folders themselves take no line: the editor keeps them (`tour-document.ts`,
+  `framesOf` and `withTourContent`) and the next save writes them back.
+- `showOpenedNotices(lines, superseded, toast): T[]` - shows the lines,
+  then a superseded draft's line, each as a toast that stays until closed
+  (`holdMs` null), in that order; returns the toasts for the page to close
+  with the file.
 - `EditorOpen`, `NOT_A_TOUR`, `NOT_A_ZIP`.
 
 ## Invariants & assumptions
@@ -77,6 +91,11 @@ not be read. The editor left them out: ...`), and that the next save
 - Never throws: every failure is a `refused` with a sentence.
 
 ## Tests
+
+The folder-size, folder-name and whole-item lines on a newer minor's tour read
+leniently (and on hand-made drops: one folder, repeated ids, none), and
+`showOpenedNotices`'s order and stay-until-closed toasts, are in
+`editor-open.test.ts` too.
 
 `editor-open.test.ts` on real zips: a tour, a zip without a tour, a broken
 `tour.json`, a non-zip name (the opener never called), a zip the opener

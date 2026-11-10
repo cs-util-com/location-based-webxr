@@ -22,12 +22,17 @@ its station) - what a viewer places and a creator's drafts hold.
   those of its stories, in the file's order, each with its folders' poses
   composed in (`composeTourFolderPose`, from `tour-folder-pose.ts`). The
   ONE place plain folders are flattened.
+- `tourFreeEntries(station): TourFreeEntry[]` - the same blocks, each as
+  `{ block, folder }`: `folder` the ids of the plain folders holding it,
+  outermost first (empty at the station's top).
 - `tourObjects({ stations, assets }): TourObject[]` - every free block in
-  the world, with `station` set, in station order; a picture carries its
+  the world, with `station` set and `folder` set for a block inside plain
+  folders (absent at the top), in station order; a picture carries its
   image asset inline (`imageAsset`, looked up in `assets`).
 - `tourObjectBlock(object, pose): TourBlock` - the free block an object
-  is, at `pose` in its station: the object without its geo pose, its
-  station and a picture's inline asset (the tour lists the asset).
+  is, at `pose` in its holder (its station, or the innermost folder
+  holding it): the object without its geo pose, its station, its folders
+  and a picture's inline asset (the tour lists the asset).
 
 ## Invariants & assumptions
 
@@ -84,4 +89,8 @@ const all = tourObjects(manifest); // [{ id, kind, geo, station, ... }]
   offsets 0.01 m to 10 km; a quarter-turn example; no pose (and an empty
   folder path) is the identity by reference; nested folders flattened
   innermost first in document order; two nested folders whose turns do not
-  commute against a position and rotation worked out by hand.
+  commute against a position and rotation worked out by hand; a path of
+  one to three folders composed then decomposed (`decomposeTourFolderPath`)
+  within the same tolerances per level, swept over the same reaches; the
+  world view naming each block's folders (`tourFreeEntries`,
+  `tourObjects`) and `tourObjectBlock` writing a block without them.

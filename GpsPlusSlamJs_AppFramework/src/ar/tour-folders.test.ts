@@ -146,6 +146,42 @@ describe('folders: each shape reads', () => {
     ]);
   });
 
+  // Why: an editor names each group it makes, and a tree shows the name;
+  // a name that cannot be shown must not reach the file, and a newer
+  // minor's longer name must not cost the whole group.
+  it("a plain folder's title reads; one that is no text or blank is refused at every minor", () => {
+    const named = folder('f', [pin('a')], { title: 'Gate group' });
+    expect(read([named])).toEqual([named]);
+    for (const title of ['', '   ', 3, null]) {
+      for (const lenient of [false, true]) {
+        expect(() =>
+          read([folder('f', [pin('a')], { title })], { lenient })
+        ).toThrow(/children\[0\]\.title" (is empty|must be text)/);
+      }
+    }
+  });
+
+  it("a plain folder's title over its cap is refused strict, and left out and reported lenient", () => {
+    const long = 'x'.repeat(81);
+    expect(read([folder('f', [], { title: 'x'.repeat(80) })])).toEqual([
+      folder('f', [], { title: 'x'.repeat(80) }),
+    ]);
+    expect(() => read([folder('f', [], { title: long })])).toThrow(
+      /children\[0\]\.title" is longer than 80 characters/
+    );
+    const drops: TourChildDrop[] = [];
+    expect(
+      read([folder('f', [pin('a')], { title: long })], { lenient: true, drops })
+    ).toEqual([folder('f', [pin('a')])]);
+    expect(drops).toEqual([
+      {
+        kind: 'folderTitle',
+        folder: 'f',
+        reason: expect.stringMatching(/title" is longer than 80/),
+      },
+    ]);
+  });
+
   it("a folder's pose is checked as a block's is", () => {
     expect(() =>
       read([

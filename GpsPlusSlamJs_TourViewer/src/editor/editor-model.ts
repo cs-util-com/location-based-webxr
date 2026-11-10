@@ -70,6 +70,10 @@ export const STATION_PREFIX = "station:";
  *  page's object lists, so it is told from a block by this. */
 export const STORY_PREFIX = "story:";
 
+/** A plain folder's id in the selection: a folder is no object of the
+ *  page's lists either. */
+export const FOLDER_PREFIX = "folder:";
+
 function noteMeta(object: TourObject, codes: readonly QrGeoPose[]): string {
   const distance = codeDistanceLine(object, codes);
   // The kind in the one rule's words (`object-describe.ts`), so no kind
@@ -228,7 +232,7 @@ export function photoSource(item: EditorItem): string | null {
 /**
  * The station of the page's selection: the selected station
  * (`station:<id>`), or the station holding the selected item, story
- * (`story:<id>`) or story's child; null for a code, an id the tour does not
+ * (`story:<id>`), plain folder (`folder:<id>`) or story's child; null for a code, an id the tour does not
  * have, or no selection. The 3D view's near-K rule draws it, and the tree's
  * click, add and delete follow it.
  */
@@ -245,7 +249,9 @@ export function selectedStationOf(
   }
   const id = selected.startsWith(STORY_PREFIX)
     ? selected.slice(STORY_PREFIX.length)
-    : selected;
+    : selected.startsWith(FOLDER_PREFIX)
+      ? selected.slice(FOLDER_PREFIX.length)
+      : selected;
   return (
     manifest.stations.find((s) => tourStationChildIds(s).includes(id))?.id ??
     null

@@ -37,12 +37,17 @@
  *
  * @see editor-shell.ts.md
  */
-import { tourChildPlace } from "gps-plus-slam-app-framework/ar/tour-story";
+import {
+  isTourFolder,
+  tourChildPlace,
+} from "gps-plus-slam-app-framework/ar/tour-story";
 import type { UnknownAction } from "@reduxjs/toolkit";
 
 import type { Editor3dView } from "../../editor3d/editor3d-scene.js";
 import type { GestureEdit } from "../../editor3d/gesture.js";
+import { createLongPress, LONG_PRESS } from "../long-press.js";
 import {
+  folderDropRefusal,
   freeItemUnsaved,
   manifestToWrite,
   nextStep,
@@ -59,10 +64,19 @@ import {
   type TreeSection,
 } from "../editor-view.js";
 import {
+  FOLDER_PREFIX,
   STATION_PREFIX,
   STORY_PREFIX,
   selectedStationOf,
 } from "../editor-model.js";
+import {
+  folderName,
+  groupRows,
+  pickedGroupRefusal,
+  plainFolderOf,
+  selectionBarOf,
+  type FolderCommands,
+} from "../folder-commands.js";
 import type { ModelEdit } from "../model-edits.js";
 import {
   inComposite,
@@ -120,9 +134,10 @@ import {
 import { wireRadiusSlider } from "./radius-slider.js";
 import { createShellPictures } from "./shell-pictures.js";
 import { tourProblems } from "./tour-problems.js";
-import { drawTree } from "./shell-tree.js";
+import { drawSelectionBar, drawTree, type TreeRenaming } from "./shell-tree.js";
 import {
   FREE_LIST,
+  STORIES_LIST,
   childDropTo,
   childMayGo,
   childStepTo,
@@ -272,6 +287,9 @@ export interface EditorShellDeps {
   readonly dialogOpen: () => boolean;
   readonly stations: ShellStationCommands;
   readonly edits: ShellEditCommands;
+  /** The plain folders' commands (Group, Ungroup, a move into or out of a
+   *  folder, a rename): each one undo step, its outcome said. */
+  readonly folders: FolderCommands;
   /** A passing line (the page's toast). */
   readonly say: (text: string) => void;
 }
@@ -417,7 +435,11 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     collapse: byId<HTMLButtonElement>("tree-collapse"),
     search: byId<HTMLInputElement>("tree-search"),
     body: byId("tree-body"),
+    selectMode: byId<HTMLButtonElement>("tree-select"),
+    selbar: byId("tree-selbar"),
   };
+  /** The plain folder whose name is being typed in the tree, as typed. */
+  let renaming: TreeRenaming | null = null;
   // A row's "+" and an empty station's "Add content": one type menu.
   const addMenu = createTreeAddMenu({
     body: tree.body,
@@ -708,6 +730,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       pictures,
       panels.sync(model),
     );
+    // A phone ticking rows in the Select mode keeps its sheet the list.
+    inspector.root.hidden = model === null || shownSheet(model) === "tree";
   };
 
   /** The tree is folded for the approach, not by the creator. */
@@ -759,13 +783,15 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     }
   };
 
-  /** The sheet a phone shows now: the details over the list. `model` is
-   *  the inspector's, when the caller has it built. */
+  /** The sheet a phone shows now: the details over the list, except in
+   *  the Select mode, whose ticks need the list. `model` is the
+   *  inspector's, when the caller has it built. */
   const shownSheet = (
     model: InspectorModel | null = inspectorModel(state().editorView),
   ): SheetKind | null => {
     const ui = state().editorView;
     if (!phoneSheets(window.innerWidth)) return null;
+    if (ui.selectMode) return "tree";
     if (model !== null) return "details";
     return ui.foldedDocks.tree ? null : "tree";
   };
@@ -855,9 +881,20 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     }
   };
 
+  /** Whether the tree is being drawn: a focus lost to its redraw (the
+   *  folder's name field replaced while typed in) ends no rename. */
+  let drawingTree = false;
   /** The tree drawn from the store and its search as they stand; a
    *  search typed over another tour is emptied first. */
   const drawTreeNow = () => {
+    drawingTree = true;
+    try {
+      drawTreeOnce();
+    } finally {
+      drawingTree = false;
+    }
+  };
+  const drawTreeOnce = () => {
     const tour = manifest();
     const { editorView: ui, tourDocument: doc } = state();
     if (doc.generation !== searchedTour) {
@@ -874,7 +911,21 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       query: tree.search.value,
       searchFolded: [...searchFolded],
     });
-    drawTree(tree, drawnTree, ui.foldedDocks.tree, pictures);
+    drawTree(tree, drawnTree, ui.foldedDocks.tree, pictures, {
+      renaming,
+      selectMode: ui.selectMode,
+      groupHint: ui.selected === null && !ui.selectMode,
+    });
+    const rows = groupRows(doc, ui);
+    drawSelectionBar(
+      tree.selbar,
+      selectionBarOf({
+        rows,
+        selectMode: ui.selectMode,
+        refusal: pickedGroupRefusal(doc, rows),
+      }),
+    );
+    tree.selectMode.setAttribute("aria-pressed", String(ui.selectMode));
   };
 
   const draw = () => {
@@ -1043,8 +1094,21 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
    *  the selection it was typed for; a ground command waiting is called
    *  off. */
   let lastSelected: string | null = null;
+  let lastSelectMode = state().editorView.selectMode;
   const onStore = () => {
-    const { selected } = state().editorView;
+    const { selected, selectMode } = state().editorView;
+    // A tick in the Select mode selects its row but lays out no docks (a
+    // phone's details would cover the list being ticked); Done does.
+    const ticked = selectMode !== lastSelectMode;
+    lastSelectMode = selectMode;
+    if (
+      ticked &&
+      !selectMode &&
+      selected !== null &&
+      selected === lastSelected
+    ) {
+      applyDocks("selected");
+    }
     if (selected !== lastSelected) {
       const was = lastSelected;
       lastSelected = selected;
@@ -1055,7 +1119,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       const pending = typedField();
       if (pending !== null) commitField(pending, was);
       panels.flush();
-      if (selected !== null) applyDocks("selected");
+      if (selected !== null && !selectMode) applyDocks("selected");
     }
     draw();
   };
@@ -1314,9 +1378,38 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       store.dispatch(editorViewActions.storyFolded({ id: story, open: !open }));
       return;
     }
+    const plainFold = target.closest<HTMLElement>("[data-pfold]");
+    if (plainFold !== null) {
+      const id = plainFold.dataset["pfold"] ?? "";
+      const folded = state().editorView.foldedFolders.includes(id);
+      store.dispatch(editorViewActions.folderFolded({ id, folded: !folded }));
+      return;
+    }
+    const pen = target.closest<HTMLElement>("[data-rename]");
+    if (pen !== null) {
+      startRename(pen.dataset["rename"] ?? "");
+      return;
+    }
     const row = target.closest<HTMLElement>("[data-select]");
     const id = row?.dataset["select"];
     if (id === undefined) return;
+    if (pressed) {
+      // A long press picked the row already (and began the Select mode).
+      pressed = false;
+      return;
+    }
+    const ui = state().editorView;
+    if (
+      pickable(id) &&
+      (event.ctrlKey || event.metaKey || event.shiftKey || ui.selectMode)
+    ) {
+      pickRows(event.shiftKey && !ui.selectMode ? rangeTo(id) : toggled(id));
+      return;
+    }
+    // A row that takes no tick ends the Select mode: it is selected alone.
+    if (ui.selectMode) {
+      store.dispatch(editorViewActions.selectModeSet({ on: false }));
+    }
     const click = treeClick({
       id,
       at: event.timeStamp,
@@ -1337,10 +1430,17 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       store.dispatch(
         depth === 0
           ? editorViewActions.stationFolded({ id: holder, open: true })
-          : editorViewActions.storyFolded({ id: holder, open: true }),
+          : isPlainFolder(holder)
+            ? editorViewActions.folderFolded({ id: holder, folded: false })
+            : editorViewActions.storyFolded({ id: holder, open: true }),
       );
     });
-    if (plan.toggle !== null) {
+    if (plan.toggle !== null && isPlainFolder(plan.toggle)) {
+      const folded = state().editorView.foldedFolders.includes(plan.toggle);
+      store.dispatch(
+        editorViewActions.folderFolded({ id: plan.toggle, folded: !folded }),
+      );
+    } else if (plan.toggle !== null) {
       const open = state().editorView.openStories.includes(plan.toggle);
       store.dispatch(
         editorViewActions.storyFolded({ id: plan.toggle, open: !open }),
@@ -1357,6 +1457,196 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       );
     }
     if (plan.fly && plan.select !== null) flyToSelection(plan.select);
+  });
+  // --- the plain folders: picking several rows, Group, Ungroup, rename ----
+  /** Whether `id` is a plain folder of the open tour. */
+  function isPlainFolder(id: string): boolean {
+    return plainFolderOf(state().tourDocument, id) !== null;
+  }
+  /** Whether a row (its selection id) can be picked with others: a free
+   *  item or a plain folder (`groupRows`). */
+  function pickable(id: string): boolean {
+    return (
+      groupRows(state().tourDocument, { selected: null, picked: [id] }).length >
+      0
+    );
+  }
+  /** The rows picked now (the selection alone when none is). */
+  function pickedRows(): string[] {
+    return groupRows(state().tourDocument, state().editorView);
+  }
+  /** The picked rows with `id` added, or taken out when it was in. */
+  function toggled(id: string): string[] {
+    const rows = pickedRows();
+    return rows.includes(id) ? rows.filter((r) => r !== id) : [...rows, id];
+  }
+  /** The rows from the selection to `id`, as the tree shows them, `id`
+   *  last; `id` alone without a selection among them. */
+  function rangeTo(id: string): string[] {
+    const shown = [
+      ...new Set(
+        [...tree.body.querySelectorAll<HTMLElement>("[data-select]")]
+          .map((e) => e.dataset["select"] ?? "")
+          .filter(pickable),
+      ),
+    ];
+    const anchor = state().editorView.selected;
+    const from = anchor === null ? -1 : shown.indexOf(anchor);
+    const to = shown.indexOf(id);
+    if (from < 0 || to < 0) return [id];
+    return from <= to
+      ? shown.slice(from, to + 1)
+      : shown.slice(to, from + 1).reverse();
+  }
+  /** `ids` picked, the last one the selection (none: nothing selected). */
+  function pickRows(ids: readonly string[]): void {
+    const last = ids.at(-1);
+    if (last === undefined) {
+      deps.select(null);
+      return;
+    }
+    deps.select(last);
+    store.dispatch(editorViewActions.picked({ ids }));
+  }
+  /** Group (Ctrl+G, the bar's Group): the picked rows in a new folder,
+   *  shown and selected, its name field open to type in. */
+  function groupPicked(): void {
+    const id = deps.folders.group(pickedRows());
+    if (id === null) return;
+    const place = plainFolderOf(state().tourDocument, id);
+    if (place !== null) {
+      store.dispatch(
+        editorViewActions.stationFolded({ id: place.stationId, open: true }),
+      );
+    }
+    store.dispatch(editorViewActions.selectModeSet({ on: false }));
+    deps.select(`${FOLDER_PREFIX}${id}`);
+    startRename(id);
+  }
+  /** Ungroup (Ctrl+Shift+G, the bar's Ungroup): each picked folder taken
+   *  apart, the items it held picked. */
+  function ungroupPicked(): void {
+    const folders = pickedRows().filter((r) => r.startsWith(FOLDER_PREFIX));
+    if (folders.length === 0) {
+      deps.say("Pick a folder to ungroup it");
+      return;
+    }
+    const freed = folders.flatMap(
+      (r) => deps.folders.ungroup(r.slice(FOLDER_PREFIX.length)) ?? [],
+    );
+    store.dispatch(editorViewActions.selectModeSet({ on: false }));
+    pickRows(freed);
+  }
+  /** The folder's name field in place of its name, its text selected. */
+  function startRename(id: string): void {
+    const place = plainFolderOf(state().tourDocument, id);
+    if (place === null) return;
+    renaming = { id, text: folderName(place.folder) };
+    drawTreeNow();
+    const field = tree.body.querySelector<HTMLInputElement>("input.renin");
+    field?.focus();
+    field?.select();
+  }
+  /** The name typed written (a blank or unchanged one writes nothing), or
+   *  dropped; the focus back on the folder's row. */
+  function endRename(write: boolean): void {
+    const typed = renaming;
+    if (typed === null) return;
+    renaming = null;
+    if (write) deps.folders.rename(typed.id, typed.text);
+    drawTreeNow();
+    const selection = `${FOLDER_PREFIX}${typed.id}`;
+    [...tree.body.querySelectorAll<HTMLElement>("[data-select]")]
+      .find((e) => e.dataset["select"] === selection)
+      ?.focus();
+  }
+  tree.body.addEventListener("input", (event) => {
+    const field = event.target;
+    if (
+      field instanceof HTMLInputElement &&
+      renaming !== null &&
+      field.dataset["ren"] === renaming.id
+    ) {
+      renaming = { id: renaming.id, text: field.value };
+    }
+  });
+  tree.body.addEventListener("keydown", (event) => {
+    if (!(event.target instanceof HTMLInputElement)) return;
+    if (event.target.dataset["ren"] === undefined) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      endRename(true);
+    } else if (event.key === "Escape") {
+      // The page's Escape (drop the selection) waits for the next press.
+      event.stopPropagation();
+      endRename(false);
+    }
+  });
+  tree.body.addEventListener("focusout", (event) => {
+    if (
+      !drawingTree &&
+      event.target instanceof HTMLInputElement &&
+      event.target.dataset["ren"] === renaming?.id
+    ) {
+      endRename(true);
+    }
+  });
+  tree.selbar.addEventListener("click", (event) => {
+    const what = (event.target as Element).closest<HTMLElement>("[data-selbar]")
+      ?.dataset["selbar"];
+    if (what === "group") groupPicked();
+    else if (what === "ungroup") ungroupPicked();
+    else if (what === "done") {
+      store.dispatch(editorViewActions.selectModeSet({ on: false }));
+    }
+  });
+  tree.selectMode.addEventListener("click", () => {
+    const on = !state().editorView.selectMode;
+    store.dispatch(editorViewActions.selectModeSet({ on }));
+  });
+  // A finger's long press on a row starts the Select mode with that row
+  // ticked (a mouse has Ctrl and Shift); the click that ends it is spent.
+  let pressed = false;
+  let pressRow: string | null = null;
+  const longPress = createLongPress({
+    holdMs: LONG_PRESS.holdMs,
+    tolerancePx: LONG_PRESS.tolerancePx,
+    schedule: (run, ms) => window.setTimeout(run, ms),
+    cancel: (hold) => {
+      window.clearTimeout(hold);
+    },
+    fire: () => {
+      const id = pressRow;
+      if (id === null || !pickable(id)) return;
+      pressed = true;
+      store.dispatch(editorViewActions.selectModeSet({ on: true }));
+      const rows = pickedRows();
+      pickRows(rows.includes(id) ? rows : [...rows, id]);
+    },
+  });
+  tree.body.addEventListener("pointerdown", (event) => {
+    pressed = false;
+    pressRow = null;
+    if (event.pointerType === "mouse") return;
+    const at = event.target as Element;
+    // A grip's press is the drag's.
+    if (at.closest("[data-move], [data-drag]") !== null) return;
+    const id = at.closest<HTMLElement>("[data-select]")?.dataset["select"];
+    if (id === undefined || !pickable(id)) return;
+    pressRow = id;
+    longPress.down(event.pointerId, { x: event.clientX, y: event.clientY });
+  });
+  tree.body.addEventListener("pointermove", (event) => {
+    longPress.move(event.pointerId, { x: event.clientX, y: event.clientY });
+  });
+  for (const end of ["pointerup", "pointercancel"] as const) {
+    tree.body.addEventListener(end, (event) => {
+      longPress.end(event.pointerId);
+    });
+  }
+  tree.body.addEventListener("contextmenu", (event) => {
+    // The browser's own menu for the long press would cover the ticks.
+    if (pressed) event.preventDefault();
   });
   tree.stationsHead.addEventListener("click", () => {
     creatorTouchesTree();
@@ -1447,7 +1737,41 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   // another station's card as a whole (asked first, `moveToStation`). A
   // list offered is one the move takes; a free item among the free items
   // is no move (they have no order), and one whose file the tour on disk
-  // lacks goes into no story (`freeItemUnsaved`).
+  // lacks goes into no story (`freeItemUnsaved`). A plain folder at its
+  // station's top moves among the station's folders only: its row's
+  // place among them, or the last place for a drop on the station's row.
+  /** The ids of the plain folders at the top of `folderId`'s station, in
+   *  order, when it is one of them; else null. */
+  const topFoldersBeside = (folderId: string): string[] | null => {
+    const place = plainFolderOf(state().tourDocument, folderId);
+    const station = manifest()?.stations.find((s) => s.id === place?.stationId);
+    const ids = (station?.children ?? []).filter(isTourFolder).map((f) => f.id);
+    return ids.includes(folderId) ? ids : null;
+  };
+  /** Where among its station's top folders a folder dropped at `drop`
+   *  lands: the folders drawn before the drop's slot (itself left out),
+   *  or the last place for a drop into the free items. */
+  const folderIndexAt = (
+    folderId: string,
+    tops: readonly string[],
+    drop: { readonly slot: number } | { readonly into: true },
+  ): number => {
+    if ("into" in drop) return tops.length - 1;
+    const card = [
+      ...tree.body.querySelectorAll<HTMLElement>(".card[data-station]"),
+    ].find((c) =>
+      [...c.querySelectorAll<HTMLElement>("[data-item]")].some(
+        (r) => r.dataset["item"] === folderId,
+      ),
+    );
+    const listed = [
+      ...(card?.querySelectorAll<HTMLElement>("[data-list][data-item]") ?? []),
+    ].filter((r) => r.dataset["list"] === FREE_LIST);
+    return listed.slice(0, drop.slot).filter((r) => {
+      const id = r.dataset["item"] ?? "";
+      return id !== folderId && tops.includes(id);
+    }).length;
+  };
   createNestDrag({
     body: tree.body,
     grip: "[data-move]",
@@ -1464,6 +1788,13 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     across: {
       keyOf: (card) => card.dataset["station"] ?? null,
       accepts: (from, key) => {
+        // A folder and a folder's item stay in their station.
+        if (
+          from.list.startsWith(FOLDER_PREFIX) ||
+          plainFolderOf(state().tourDocument, from.id) !== null
+        ) {
+          return false;
+        }
         const tour = manifest();
         const place = tour === null ? null : tourChildPlace(tour, from.id);
         const target = tour?.stations.find((s) => s.id === key);
@@ -1475,6 +1806,27 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       },
     },
     accepts: (from, to) => {
+      const doc = state().tourDocument;
+      // A folder moves among its station's folders: one level of folders,
+      // and none in a story (the drag says "Not possible here").
+      if (plainFolderOf(doc, from.id) !== null) {
+        return to === FREE_LIST && topFoldersBeside(from.id) !== null;
+      }
+      if (to.startsWith(FOLDER_PREFIX)) {
+        if (from.list === to) return false;
+        return (
+          folderDropRefusal(
+            doc,
+            {
+              kind: from.list === STORIES_LIST ? "story" : "item",
+              id: from.id,
+            },
+            { kind: "folder", id: to.slice(FOLDER_PREFIX.length) },
+          ) === null
+        );
+      }
+      // Out of a folder: to its station's other free items only.
+      if (from.list.startsWith(FOLDER_PREFIX)) return to === FREE_LIST;
       if (from.list === FREE_LIST && to === FREE_LIST) return false;
       if (to !== FREE_LIST && freeItemUnsaved(state().tourDocument, from.id)) {
         return false;
@@ -1486,6 +1838,19 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     move: (from, drop) => {
       if ("across" in drop) {
         moveToStation(from.id, drop.across);
+        return;
+      }
+      if (drop.list.startsWith(FOLDER_PREFIX)) {
+        deps.folders.moveInto(from.id, drop.list.slice(FOLDER_PREFIX.length));
+        return;
+      }
+      const tops = topFoldersBeside(from.id);
+      if (tops !== null) {
+        deps.folders.reorder(from.id, folderIndexAt(from.id, tops, drop));
+        return;
+      }
+      if (from.list.startsWith(FOLDER_PREFIX)) {
+        deps.folders.moveInto(from.id, null);
         return;
       }
       const tour = manifest();
@@ -1760,6 +2125,31 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       event.preventDefault();
       event.stopPropagation();
       palette.open();
+      return;
+    }
+    if (
+      (event.ctrlKey || event.metaKey) &&
+      !event.altKey &&
+      event.code === "KeyG" &&
+      !inField(event.target) &&
+      !deps.dialogOpen()
+    ) {
+      // The browser's own Ctrl+G (find again) never runs here.
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.shiftKey) ungroupPicked();
+      else groupPicked();
+      return;
+    }
+    const chosen = state().editorView.selected;
+    if (
+      event.key === "F2" &&
+      chosen?.startsWith(FOLDER_PREFIX) === true &&
+      !inField(event.target) &&
+      !deps.dialogOpen()
+    ) {
+      event.preventDefault();
+      startRename(chosen.slice(FOLDER_PREFIX.length));
       return;
     }
     if (

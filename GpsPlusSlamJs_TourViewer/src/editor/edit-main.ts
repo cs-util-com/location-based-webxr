@@ -95,12 +95,17 @@ import {
   type EditorItem,
   type EditorModel,
 } from "./editor-model.js";
+import { createFolderCommands } from "./folder-commands.js";
 import { applySceneEdit } from "./scene-edits.js";
 import { storyRows } from "./editor-shell/tree-model.js";
 import type { GestureEdit } from "../editor3d/gesture.js";
 import { askMove, moveNote } from "../move-question.js";
 import { confirmPausingFrames } from "./browser-question.js";
-import { openedNoticeLines, openTourForEditing } from "./editor-open.js";
+import {
+  openedNoticeLines,
+  openTourForEditing,
+  showOpenedNotices,
+} from "./editor-open.js";
 import {
   holdPageInert,
   revealPadding,
@@ -675,6 +680,7 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
         ) => readonly [number, number] | null;
         view3dGizmoSizes: () => ReturnType<Editor3dView["gizmoSizes"]>;
         view3dModelParts: () => ReturnType<Editor3dView["modelParts"]> | null;
+        view3dFolderOutlines: () => number | null;
         view3dModelScreen: (
           id: string,
           at: readonly [number, number, number],
@@ -710,6 +716,7 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
     view3dHandle: (part) => shown3d?.handleScreen(part) ?? null,
     view3dGizmoSizes: () => shown3d?.gizmoSizes() ?? null,
     view3dModelParts: () => shown3d?.modelParts() ?? null,
+    view3dFolderOutlines: () => shown3d?.folderOutlines() ?? null,
     view3dModelScreen: (id, at) => shown3d?.modelScreenOf(id, at) ?? null,
     view3dSoundIcons: (on) => {
       shown3d?.showSoundIcons(on);
@@ -2564,15 +2571,15 @@ async function openFile(
   sayNoBackup();
   sayUnreadDraft();
   keepStorage();
-  // Details, station descriptions, card images and block texts the reader
-  // dropped, and plain folders the editor flattens, are said, never lost
-  // silently by the next save; kept until closed, as an instruction.
-  for (const line of openedNoticeLines(outcome.dropped, outcome.manifest)) {
-    fileToasts.push(toast(line, undefined, null));
-  }
-  if (drafted.superseded !== null) {
-    fileToasts.push(toast(drafted.superseded, undefined, null));
-  }
+  // What the reader dropped is said, never lost silently by the next
+  // save; kept until closed, as an instruction.
+  fileToasts.push(
+    ...showOpenedNotices(
+      openedNoticeLines(outcome.dropped, outcome.manifest),
+      drafted.superseded,
+      toast,
+    ),
+  );
   // A tour opened afresh into the 3D view flies in; a draft to restore
   // goes straight to it, as does a later switch from the map.
   approachNext = drafted.offer === null && opensIn3d();
@@ -4220,6 +4227,20 @@ const shell = createEditorShell({
     editNarration: writeNarrationEdit,
     voiceMaxBytes: autosaveMaxBytes,
   },
+  // The tree's Group, Ungroup, moves into and out of a folder and its
+  // rename: each one step, its outcome said in a toast.
+  folders: createFolderCommands({
+    getState: () => store.getState().tourDocument,
+    dispatch: (action) => store.dispatch(action),
+    before: endUndo,
+    changed: () => {
+      refresh();
+      tourChanged();
+    },
+    say: (text) => {
+      toast(text);
+    },
+  }),
   say: (text) => {
     toast(text);
   },

@@ -26,7 +26,8 @@ import {
 } from "gps-plus-slam-app-framework/storage";
 import { readStoredEntryBytes } from "gps-plus-slam-app-framework/test-utils/zip-central-directory";
 import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
-import { manifestToWrite } from "../tour-document.js";
+import { manifestToWrite, tourDocumentActions } from "../tour-document.js";
+import { folderRefusalLine } from "../tour-folder-edit.js";
 import { openTourFile, type TourSession } from "../tour-session.js";
 import { editorStore } from "../test-support/editor-store.js";
 import { photoKey } from "../draft-persistence.js";
@@ -564,6 +565,37 @@ describe("the editor session's station edits", () => {
     expect(editor.moveToNewStation("nope")).toMatchObject({
       kind: "refused",
     });
+    await session.close();
+  });
+
+  // Why: a folder belongs to its station, so a folder's item stays in
+  // its station - the tree's drag refuses to carry it to another one.
+  // "Move to a new station" must follow the same rule with the same
+  // words, not split it out and leave its folder behind.
+  it("moveToNewStation refuses a folder's item as the tree does, saying why, and moves nothing", async () => {
+    const { session, manifest } = await opened();
+    const store = editorStore();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      store,
+    });
+    store.dispatch(
+      tourDocumentActions.folderGrouped({
+        folderId: "grp",
+        title: "Benches",
+        ids: ["b"],
+        what: "group",
+      }),
+    );
+    const tour = () => manifestToWrite(store.getState().tourDocument);
+    const before = tour();
+    expect(editor.moveToNewStation("b")).toEqual({
+      kind: "refused",
+      reason: folderRefusalLine("staysInStation"),
+    });
+    expect(tour()).toEqual(before);
     await session.close();
   });
 

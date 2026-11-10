@@ -531,3 +531,111 @@ describe("stationGroups", () => {
     ]);
   });
 });
+
+describe("a station's plain folders", () => {
+  /** Station "a": a pin, folder "yard" ("Benches") holding a photo and
+   *  folder "deep" (a file may nest one) holding the model, then an
+   *  untitled empty folder "spare". */
+  function grouped(view: Partial<TreeInput["view"]> = {}, query?: string) {
+    return buildTree(
+      input({
+        stations: [
+          station("a", { title: "Market Square" }, [
+            PIN,
+            {
+              id: "yard",
+              kind: "folder",
+              title: "Benches",
+              pose: POSE,
+              children: [
+                PHOTO,
+                {
+                  id: "deep",
+                  kind: "folder",
+                  pose: POSE,
+                  children: [MODEL],
+                },
+              ],
+            },
+            { id: "spare", kind: "folder", children: [] },
+          ] as unknown as TourBlock[]),
+        ],
+        view: { ...initialEditorViewState, openStations: ["a"], ...view },
+        ...(query === undefined ? {} : { query }),
+      }),
+    ).cards[0];
+  }
+
+  // Why: a grouped item must be listed once, in its folder, never also
+  // among the station's free items; a nested folder's items show in the
+  // outer folder (the editor groups one level deep).
+  it("lists each top folder with its items, the rest free, all counted", () => {
+    const card = grouped();
+    expect(
+      card?.groups.map((g) => [g.selection, g.title, g.open, g.count]),
+    ).toEqual([
+      ["folder:yard", "Benches", true, 2],
+      ["folder:spare", "Folder", true, 0],
+    ]);
+    expect(card?.groups[0]?.children.map((c) => c.id)).toEqual([
+      PHOTO.id,
+      MODEL.id,
+    ]);
+    expect(card?.children.map((c) => c.id)).toEqual([PIN.id]);
+    expect(card?.count).toBe(3);
+  });
+
+  // Why: the tree's multi-selection is drawn from `picked` as well as
+  // `selected`; a folder whose item is picked is its context.
+  it("marks picked rows and folders, and a folder of a picked item", () => {
+    const card = grouped({
+      selected: PHOTO.id,
+      picked: [PIN.id, PHOTO.id],
+    });
+    expect(card?.children[0]?.selected).toBe(true);
+    expect(card?.groups[0]?.children[0]?.selected).toBe(true);
+    expect(card?.groups[0]?.context).toBe(true);
+    expect(card?.groups[0]?.selected).toBe(false);
+    const folder = grouped({ selected: "folder:spare" });
+    expect(folder?.groups[1]?.selected).toBe(true);
+  });
+
+  it("folds a folder the view lists folded", () => {
+    expect(grouped({ foldedFolders: ["yard"] })?.groups[0]?.open).toBe(false);
+  });
+
+  // Why: a search must find an item inside a folder and show it there,
+  // and find a folder by its name with all its items.
+  it("finds an item in a folder, and a folder by its name", () => {
+    const byItem = grouped({}, "photo");
+    expect(byItem?.groups.map((g) => g.id)).toEqual(["yard"]);
+    expect(byItem?.groups[0]?.children.map((c) => c.id)).toEqual([PHOTO.id]);
+    expect(byItem?.groups[0]?.count).toBe(2);
+    const byName = grouped({}, "benches");
+    expect(byName?.groups.map((g) => [g.id, g.children.length])).toEqual([
+      ["yard", 2],
+    ]);
+    expect(byName?.children).toEqual([]);
+  });
+
+  // Why: the click rule unfolds a folder for a click on its item, so
+  // its items belong to it, not to the station's own children.
+  it("gives the click rule each folder as a nested group", () => {
+    const [groups] = stationGroups([
+      station("a", {}, [
+        PIN,
+        {
+          id: "yard",
+          kind: "folder",
+          pose: POSE,
+          children: [PHOTO],
+        },
+      ] as unknown as TourBlock[]),
+    ]);
+    expect(groups).toEqual({
+      id: "a",
+      children: [PIN.id],
+      groups: [{ id: "yard", selection: "folder:yard", children: [PHOTO.id] }],
+    });
+  });
+});

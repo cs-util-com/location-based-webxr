@@ -33,7 +33,10 @@ AR (tour editor plan 2026-10-17-1816, W1).
   while the tour loads). Inside it the studio shell's parts
   (`src/editor/editor-shell/editor-shell.ts`): the tree dock
   `#shell-tree` (`#tree-stations`, `#tree-add` - the "+" that adds a
-  station at the centre of the view -, `#tree-fold`, `#tree-body`), the
+  station at the centre of the view -, `#tree-select` - the Select mode's
+  button, `aria-pressed`, a phone's way to tick several rows -,
+  `#tree-fold`, `#tree-body`, `#tree-selbar` - the selection bar: the
+  picked rows' count, Group, Ungroup and, in the Select mode, Done), the
   inspector dock `#shell-inspector` (`#inspector-head`,
   `#inspector-body`, hidden without a selection), the map controls
   `#map-controls` (`#compass` with `#compass-needle`, `#zoom-in`,

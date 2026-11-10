@@ -8,7 +8,7 @@
 - `AssetShelf`:
   - `add(asset, name, bytes, origin)`: a file brought in is queued (kept with `NO_OPTIMIZER` when its kind has no row); an opened tour's file waits idle.
   - `retry(id)`; `useOriginal(id)` (swaps the original back, telling the session it was the creator's choice (`originalChosen`); false when not offered or refused); `originalKept(asset, name, bytes)` (a file brought in for which the creator chose the original before a reload: kept with the original-used words, retryable, never queued); `holdsOriginal(id)` (whether its original is held for "use the original"); `remove(id)` (stops its job; returns an undo that puts it back, queued again when it was waiting or running; null for an unknown id); `optimizeTour()` (queues every idle opened file whose kind has a row; returns how many); `close()`.
-- Words: `NO_OPTIMIZER`, `NOT_SMALLER`.
+- Words: `NO_OPTIMIZER`, `NOT_SMALLER`, `RESULT_TOO_LARGE`.
 
 ## Invariants
 
@@ -16,7 +16,7 @@
 - A result is judged here, not by the optimizer:
   - "over the cap" means over the entry cap in bytes OR over `TOUR_MAX_IMAGE_PIXELS` (width x height; a result that declares no size keeps the original's): the two caps a save refuses, so a file over either would block every save;
   - a result over the cap, or a "kept", for an original over the cap: failed, NOT retryable, with words telling the author to use a smaller file or remove it;
-  - a result over the cap for an original that fits: kept with `NOT_SMALLER` - the original stays, nothing failed;
+  - a result over the cap for an original that fits: kept with `RESULT_TOO_LARGE` - the original stays, nothing failed, and the words name the real reason (the result was too large, not too little smaller);
   - not at least 10 % smaller (`settings.keepAbove`): kept with `NOT_SMALLER` (an over-cap original is exempt, any fitting result is taken);
   - otherwise the session's swap to `content/<id>.<extension>`; a refusal fails, retryable, with its words.
 - A job's late end (after `remove`, after `close`) changes nothing: every await is followed by an ownership check.

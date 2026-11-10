@@ -10,6 +10,20 @@
   derived from it. New: `tourBlockRefs` and `tourBlockAssetIds` (the assets a
   block names), `sinceMinor` per kind, so a tour is written at the minor its
   kinds need, and the read toolkit `ar/tour-block-read`.
+- **Plain folders can be written back** (`ar/tour-station-pose`,
+  `ar/tour-folder-pose`, `ar/tour-manifest`, `ar/tour-story`): a world
+  object (`TourObject`) names the plain folders holding its block in
+  `folder` (ids, outermost first; absent at the station's top), set by
+  `tourObjects` and the new `tourFreeEntries`, kept by a creator's draft
+  record (`tourObjectRecord` / `parseTourObject`) and left out of the
+  block by `tourObjectBlock`. `decomposeTourFolderPath` turns a pose in
+  the station back into one in the innermost folder, so a writer can put
+  each object into its folder rather than flattening the group. A plain
+  folder may carry a `title` (`TOUR_FOLDER_TITLE_RULE`, the story title's
+  rule); one over its cap is left out of a newer minor's file and
+  reported as a `folderTitle` drop.
+- `TourChildDrop` names a plain folder's scale other than 1, read as 1,
+  as a `folderScale` drop.
 
 ### Changed
 

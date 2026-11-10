@@ -1,14 +1,19 @@
 /**
  * The 3D view's tree, as data (pure): an explorer row per station - its
- * number, name, item count, lock, card picture and items (story folders
- * before free items) - the codes, and a chip per layer the view can show,
+ * number, name, item count, lock, card picture and items (story folders,
+ * then plain folders with their items, then free items) - the codes,
+ * which rows are picked, and a chip per layer the view can show,
  * drawn from the tour, `editorView` and the tree's search alone. The DOM
  * is `shell-tree.ts`'s.
  *
  * @see tree-model.ts.md
  */
-import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import {
+  tourFreeBlocks,
+  tourFreeEntries,
+} from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import {
+  isTourFolder,
   isTourStoryBlock,
   tourStories,
   type TourStory,
@@ -25,7 +30,7 @@ import type { TreeGroup } from "gps-plus-slam-editor-kit/chrome";
 import { worldBlocks } from "../../tour-document.js";
 
 import { stationTitle } from "../../station-run.js";
-import { matchesQuery, STORY_PREFIX } from "../editor-model.js";
+import { FOLDER_PREFIX, matchesQuery, STORY_PREFIX } from "../editor-model.js";
 import type {
   EditorViewState,
   ShellLayer,
@@ -66,6 +71,9 @@ function entryWords(child: TourStoryChild): string {
 /** What a folder's row is found by besides its title. */
 const STORY_SEARCH_WORDS = "story folder";
 
+/** What a plain folder's row is found by besides its title. */
+const PLAIN_FOLDER_SEARCH_WORDS = "folder group";
+
 /** An item of a station, as its row lists it. */
 export interface TreeChild {
   readonly id: string;
@@ -94,6 +102,28 @@ export interface TreeFolder {
   /** How many entries it holds, found by a search or not. */
   readonly count: number;
   /** Its entries (those a search found, while one runs). */
+  readonly children: readonly TreeChild[];
+}
+
+/** A plain folder of a station: a group of its items in the scene, which
+ *  move together and have no order among themselves. A folder inside it
+ *  (a file may have one; the editor groups one level deep) is listed in
+ *  it: its items are this folder's rows. */
+export interface TreePlainFolder {
+  readonly id: string;
+  /** The page's selection id for the folder (`folder:<id>`). */
+  readonly selection: string;
+  /** Its title, else "Folder". */
+  readonly title: string;
+  /** Its items listed: every folder is, until folded. */
+  readonly open: boolean;
+  /** Selected, or one of the rows picked (`EditorViewState.picked`). */
+  readonly selected: boolean;
+  /** One of its items is selected. */
+  readonly context: boolean;
+  /** How many items it holds, found by a search or not. */
+  readonly count: number;
+  /** Its items (those a search found, while one runs). */
   readonly children: readonly TreeChild[];
 }
 
@@ -169,7 +199,10 @@ export interface TreeCard {
   readonly context: boolean;
   /** Its story folders, listed before its free items. */
   readonly folders: readonly TreeFolder[];
-  /** Its free items (those a search found, while one runs). */
+  /** Its plain folders, listed after its stories, before its other free
+   *  items (the saved file's order: groups first). */
+  readonly groups: readonly TreePlainFolder[];
+  /** Its free items in no folder (those a search found, while one runs). */
   readonly children: readonly TreeChild[];
 }
 
@@ -211,7 +244,12 @@ export interface TreeInput {
     EditorViewState,
     "selected" | "openStations" | "openSections" | "hiddenLayers"
   > &
-    Partial<Pick<EditorViewState, "unlockedStations" | "openStories">>;
+    Partial<
+      Pick<
+        EditorViewState,
+        "unlockedStations" | "openStories" | "picked" | "foldedFolders"
+      >
+    >;
   /** The layers the view can show, a chip each, in this order. */
   readonly layers: readonly ShellLayer[];
   /** The tree's search (none: every station, every code). */
@@ -305,31 +343,72 @@ export function buildTree(input: TreeInput): TreeModel {
   const open = new Set(view.openStations);
   const searchFolded = new Set(input.searchFolded ?? []);
   const unlocked = new Set(view.unlockedStations ?? []);
+  const folded = new Set(view.foldedFolders ?? []);
+  const picked = new Set(view.picked ?? []);
+  /** Selected, or one of the rows picked. */
+  const isPicked = (id: string): boolean =>
+    id === view.selected || picked.has(id);
   const cards = stations.flatMap((station, index): TreeCard[] => {
     const selection = `station:${station.id}`;
     const description = station.description?.trim() ?? "";
     const title = stationTitle(station, index + 1);
-    const blocks = tourFreeBlocks(station);
-    const items = blocks.map((block): TreeChild => ({
+    const entries = tourFreeEntries(station);
+    const items = entries.map(({ block }): TreeChild => ({
       id: block.id,
       ...blockRow(block),
-      selected: block.id === view.selected,
+      selected: isPicked(block.id),
     }));
     const stationFound = matchesQuery(query, [title, description]);
-    const found = stationFound
-      ? items
-      : items.filter((c, i) => {
-          const block = blocks[i];
-          return (
-            block !== undefined &&
-            matchesQuery(query, [c.title, KIND_EDIT[block.kind].searchWords])
-          );
-        });
+    const finds = (c: TreeChild, i: number): boolean => {
+      const block = entries[i]?.block;
+      return (
+        block !== undefined &&
+        matchesQuery(query, [c.title, KIND_EDIT[block.kind].searchWords])
+      );
+    };
+    const found = items.filter(
+      (c, i) =>
+        entries[i]?.folder.length === 0 && (stationFound || finds(c, i)),
+    );
+    const groups = station.children.flatMap((child): TreePlainFolder[] => {
+      if (!isTourFolder(child)) return [];
+      const folderSelection = `${FOLDER_PREFIX}${child.id}`;
+      const folderTitle = child.title ?? "Folder";
+      const listed =
+        stationFound ||
+        matchesQuery(query, [folderTitle, PLAIN_FOLDER_SEARCH_WORDS]);
+      const inIt = items.flatMap((c, i) =>
+        entries[i]?.folder[0] === child.id ? [{ c, i }] : [],
+      );
+      const shown = inIt.flatMap(({ c, i }) =>
+        listed || finds(c, i) ? [c] : [],
+      );
+      if (!listed && shown.length === 0) return [];
+      return [
+        {
+          id: child.id,
+          selection: folderSelection,
+          title: folderTitle,
+          open: !folded.has(child.id),
+          selected: isPicked(folderSelection),
+          context: inIt.some(({ c }) => c.selected),
+          count: inIt.length,
+          children: shown,
+        },
+      ];
+    });
     const folders = tourStories(station).flatMap((story) => {
       const folder = folderOf(story, stationFound, input, query);
       return folder === null ? [] : [folder];
     });
-    if (found.length === 0 && folders.length === 0 && !stationFound) return [];
+    if (
+      found.length === 0 &&
+      folders.length === 0 &&
+      groups.length === 0 &&
+      !stationFound
+    ) {
+      return [];
+    }
     const entryCount = tourStories(station).reduce(
       (sum, story) => sum + story.children.length,
       0,
@@ -355,6 +434,7 @@ export function buildTree(input: TreeInput): TreeModel {
         selected: view.selected === selection,
         context: inStory || items.some((i) => i.selected),
         folders,
+        groups,
         children: found,
       },
     ];
@@ -404,11 +484,30 @@ export function treeFoldOf(tree: TreeModel): {
 export function stationGroups(stations: readonly TourStation[]): TreeGroup[] {
   return stations.map((s) => ({
     id: s.id,
-    children: tourFreeBlocks(s).map((block) => block.id),
-    groups: tourStories(s).map((story) => ({
-      id: story.id,
-      selection: `${STORY_PREFIX}${story.id}`,
-      children: story.children.map((child) => child.id),
-    })),
+    children: tourFreeEntries(s)
+      .filter((e) => e.folder.length === 0)
+      .map((e) => e.block.id),
+    groups: [
+      ...tourStories(s).map((story) => ({
+        id: story.id,
+        selection: `${STORY_PREFIX}${story.id}`,
+        children: story.children.map((child) => child.id),
+      })),
+      // A plain folder holds its items in the click rule too: a click on
+      // one unfolds the folder (the shell tells it from a story).
+      ...s.children.flatMap((child) =>
+        isTourFolder(child)
+          ? [
+              {
+                id: child.id,
+                selection: `${FOLDER_PREFIX}${child.id}`,
+                children: tourFreeEntries(s)
+                  .filter((e) => e.folder[0] === child.id)
+                  .map((e) => e.block.id),
+              },
+            ]
+          : [],
+      ),
+    ],
   }));
 }
