@@ -72,3 +72,17 @@ the pin's fields, its place in the frame, its height with and without
 the ground; the long text's fields and its round trip through the file's
 record (it parses back as written); `addNewItem`'s gone station, its
 passed-on refusal and its placed item.
+
+## Characters
+
+- `newCharacter({ ...NewItemInput, character })` -> `FreeCharacter`: the
+  tour's declared character standing free at the station's free spot, on
+  the ground there, in the `speak` view. `name` and `image` are copied from
+  the declaration, and `character` names it.
+- `addNewCharacter({ stations, stationId, character, id, nowIso, groundAt, place })`
+  -> `NewItemOutcome`: the add menu's Character, placed. It is refused in
+  the same cases as `addNewItem` (a station that is gone, or `place`'s
+  words).
+- `newCharacterEntry(character, id)` -> `TourStoryBlock`: the declared
+  character as a story's card (tap to move on).
+- Tested in `new-pin.test.ts` ("newCharacter").

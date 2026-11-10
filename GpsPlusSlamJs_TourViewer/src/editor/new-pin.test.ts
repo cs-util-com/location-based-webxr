@@ -16,9 +16,12 @@ import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import "../test-support/tour-of.js";
 import { ADD_CHOICES, isAddable } from "../kinds/edit-kinds.js";
 import {
+  addNewCharacter,
   addNewItem,
   freePinSpot,
   KIND_ADD,
+  newCharacter,
+  newCharacterEntry,
   newLongText,
   newPin,
   newStoryEntry,
@@ -269,6 +272,85 @@ describe("newStoryEntry", () => {
       kind: "longText",
       view: "card",
       title: "New long text 1",
+      advance: { mode: "tap" },
+    });
+  });
+});
+
+// Why this test matters: the add menu's Character stands the character the
+// maker just made in the station; it must name the declaration (so his
+// name and pictures follow it), stand clear of what is there, read back
+// as the format reads it, and be refused in words for a gone station.
+describe("newCharacter", () => {
+  const rita = {
+    id: "c1abc",
+    name: "Ranger Rita",
+    image: "rita1",
+    frames: "rita4",
+  };
+
+  it("stands the declared character at the free spot, in the speak view", () => {
+    const made = newCharacter({
+      station: station([[4, 0]]),
+      id: "n1",
+      nowIso: AT,
+      groundAt: () => 517,
+      character: rita,
+    });
+    expect(made).toMatchObject({
+      id: "n1",
+      kind: "character",
+      view: "speak",
+      name: "Ranger Rita",
+      image: "rita1",
+      character: "c1abc",
+      station: "s",
+    });
+    expect(made.geo.alt).toBe(517);
+    expect(
+      parseTourObject(JSON.parse(JSON.stringify(tourObjectRecord(made)))),
+    ).toEqual(made);
+  });
+
+  it("is refused for a gone station, nothing placed", () => {
+    const place = vi.fn(() => ({ kind: "placed" as const }));
+    const out = addNewCharacter({
+      stations: [station([])],
+      stationId: "gone",
+      character: rita,
+      id: "n1",
+      nowIso: AT,
+      groundAt: () => null,
+      place,
+    });
+    expect(out).toMatchObject({
+      kind: "refused",
+      reason: expect.stringMatching(/no longer/),
+    });
+    expect(place).not.toHaveBeenCalled();
+  });
+
+  it("hands the place's refusal on", () => {
+    const out = addNewCharacter({
+      stations: [station([])],
+      stationId: "s",
+      character: rita,
+      id: "n1",
+      nowIso: AT,
+      groundAt: () => null,
+      place: () => ({ kind: "refused", reason: "too far" }),
+    });
+    expect(out).toEqual({ kind: "refused", reason: "too far" });
+  });
+
+  it("makes a story card naming the declaration", () => {
+    expect(newCharacterEntry(rita, "e1")).toMatchObject({
+      id: "e1",
+      kind: "character",
+      view: "card",
+      character: "c1abc",
+      name: "Ranger Rita",
+      image: "rita1",
       advance: { mode: "tap" },
     });
   });

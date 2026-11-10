@@ -1,0 +1,482 @@
+/*
+ * The tour editor's Characters list and the character maker's dialog
+ * (characters-panel.ts): the character maker's paper look, scoped to the
+ * two dialogs so neither the editor's own look nor theirs leaks into the
+ * other. The editor's global `.btn`, `.row`, `.thumb` and `.toast` rules
+ * carry over into these dialogs, so each one is set here in full.
+ */
+.charpanel,
+.charmaker {
+  --ink: #2a2824;
+  --ink-dim: #57534a;
+  --ink-3: #8c8577;
+  --paper: #f4eedf;
+  --card: #fbf8ef;
+  --line: #c9bea3;
+  --line-soft: #e6dcc5;
+  --accent-ink: #8a4b00;
+  --ok: #3d6b3a;
+  --ok-soft: #dfe9d6;
+  --warn: #9a6a00;
+  --warn-soft: #f6e7c1;
+  --danger: #a3321f;
+  --danger-soft: #f7dcd4;
+  --serif:
+    "Iowan Old Style", "Palatino Linotype", palatino, "Book Antiqua", georgia,
+    serif;
+  --sans: system-ui, -apple-system, "Segoe UI", roboto, sans-serif;
+  --shadow: 0 1px 2px rgb(42 40 36 / 8%), 0 10px 32px rgb(42 40 36 / 16%);
+
+  color-scheme: light;
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+/* ------------------------------------------------------------ the list */
+
+dialog.charpanel {
+  position: fixed;
+  inset: 0 0 0 auto;
+  width: min(400px, 100vw);
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 16px;
+  border: 0;
+  border-left: 1px solid var(--line-soft);
+  background: var(--card);
+  box-shadow: var(--shadow);
+  overflow: auto;
+}
+dialog.charpanel[open] {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+dialog.charpanel::backdrop {
+  background: rgb(42 40 36 / 18%);
+}
+/* phone and phone landscape: the whole window, as the maker's own page */
+@media (max-width: 899px) {
+  dialog.charpanel {
+    inset: 0;
+    width: 100vw;
+    height: 100dvh;
+    padding: 10px 16px 16px;
+    border: 0;
+    box-shadow: none;
+  }
+  dialog.charpanel > * {
+    width: 100%;
+    max-width: 640px;
+    justify-self: center;
+  }
+}
+.charpanel *,
+.charmaker * {
+  box-sizing: border-box;
+}
+.charpanel :is(h2, h3, p) {
+  margin: 0;
+}
+.charpanel button,
+.charpanel input {
+  font: inherit;
+  color: inherit;
+}
+.charpanel :focus-visible,
+.charmaker :focus-visible {
+  outline: 2px solid var(--accent-ink);
+  outline-offset: 2px;
+}
+.charpanel .cp-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.charpanel .kicker {
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.charpanel h2 {
+  font-family: var(--serif);
+  font-size: 22px;
+  line-height: 1.15;
+}
+.charpanel h3 {
+  font-size: 15px;
+}
+.charpanel .dim {
+  color: var(--ink-dim);
+}
+.charpanel .small {
+  font-size: 13.5px;
+}
+.charpanel .sec-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.charpanel .quiet-line {
+  font-size: 13px;
+  color: var(--ink-dim);
+}
+.charpanel hr {
+  border: 0;
+  border-top: 1px solid var(--line-soft);
+  margin: 2px 0;
+  width: 100%;
+}
+
+/* the buttons, in full: the editor's `.btn` would show through */
+.charpanel .btn {
+  border: 1.5px solid var(--ink);
+  background: transparent;
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 9px 16px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 15px;
+  line-height: 1.2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  height: auto;
+  width: auto;
+  text-align: center;
+  box-shadow: none;
+}
+.charpanel .btn:hover {
+  background: rgb(42 40 36 / 6%);
+}
+.charpanel .btn.primary {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--card);
+}
+.charpanel .btn.primary:hover {
+  background: #3d3a34;
+}
+.charpanel .btn:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+.charpanel .btn.small {
+  min-height: 36px;
+  padding: 6px 12px;
+  font-size: 13.5px;
+}
+.charpanel .link {
+  border: 0;
+  background: none;
+  padding: 4px 0;
+  color: var(--accent-ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  font-weight: 600;
+  min-height: 32px;
+}
+.charpanel .link:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+.charpanel .close {
+  border: 0;
+  background: none;
+  font-size: 22px;
+  line-height: 1;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  cursor: pointer;
+  color: var(--ink-dim);
+}
+.charpanel .close:hover {
+  background: rgb(42 40 36 / 6%);
+}
+
+/* `.row` in full: the editor's tree rows share the name */
+.charpanel .row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  width: auto;
+  height: auto;
+  padding: 0;
+  position: static;
+  white-space: normal;
+  cursor: auto;
+  user-select: auto;
+  border: 0;
+  background: none;
+}
+
+/* "Import character...": the name field, the refusal and the question */
+.charpanel input[type="text"] {
+  width: 100%;
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #fff;
+  font-weight: 400;
+}
+.charpanel input[type="text"]:focus {
+  outline: none;
+  border-color: var(--ink);
+}
+.charpanel label.field {
+  display: grid;
+  gap: 6px;
+  font-weight: 600;
+}
+.charpanel .field-msg {
+  color: var(--danger);
+  font-weight: 600;
+  font-size: 14px;
+}
+.charpanel .errcard {
+  border: 1.5px solid var(--danger);
+  background: var(--danger-soft);
+  border-radius: 14px;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+.charpanel .errcard h3 {
+  font-size: 16.5px;
+  color: var(--danger);
+}
+.charpanel .askcard {
+  border: 1.5px solid var(--line);
+  background: #fff;
+  border-radius: 14px;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+.charpanel .askcard .ask-head {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: 12px;
+  align-items: center;
+}
+
+/* the two lists */
+.charpanel .lib {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.charpanel .lib > li {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  background: #fff;
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  padding: 8px 10px;
+}
+.charpanel .lib > li.fresh {
+  border-color: var(--ok);
+  box-shadow: 0 0 0 3px var(--ok-soft);
+}
+.charpanel .lib > li.empty-line {
+  display: block;
+  padding: 14px;
+  border: 1.5px dashed var(--line);
+  background: none;
+  color: var(--ink-dim);
+  font-size: 14px;
+}
+/* `.thumb` in full: the editor's photo thumbnails share the name */
+.charpanel .thumb {
+  width: 56px;
+  height: 72px;
+  border: 0;
+  border-radius: 10px;
+  object-fit: cover;
+  display: block;
+  background: linear-gradient(
+    #cfe3ee,
+    #eef3e6 60%,
+    #9aa77e 60%,
+    #9aa77e 64%,
+    #8fb36b 64%,
+    #5f8a45
+  );
+}
+.charpanel .lib .who {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.charpanel .lib .who b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.charpanel .lib .meta {
+  font-size: 12.5px;
+  color: var(--ink-dim);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+}
+.charpanel .lib .acts {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.charpanel .state {
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--ok-soft);
+  color: var(--ok);
+  white-space: nowrap;
+}
+.charpanel .state.warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.charpanel .state.info {
+  background: #e6edf5;
+  color: #34557a;
+}
+.charpanel .pickup {
+  background: var(--ok-soft);
+  border: 1.5px solid #9fc08f;
+  border-radius: 14px;
+  padding: 12px 14px;
+  display: grid;
+  gap: 10px;
+}
+.charpanel .pickup .row {
+  gap: 8px;
+}
+
+/* the list's own toasts and Undo (the page's sit under the dialog) */
+.charpanel .cp-toasts {
+  position: fixed;
+  left: 50%;
+  top: 8px;
+  transform: translateX(-50%);
+  display: grid;
+  gap: 8px;
+  z-index: 1;
+  width: min(440px, calc(100vw - 32px));
+  pointer-events: none;
+}
+.charpanel .cp-toasts .toast,
+.charpanel .cp-undo .toast {
+  position: static;
+  inset: auto;
+  max-width: none;
+  margin: 0;
+  background: var(--ink);
+  color: var(--card);
+  border: 0;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 14.5px;
+  box-shadow: var(--shadow);
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  pointer-events: auto;
+}
+.charpanel .toast span {
+  flex: 1;
+}
+.charpanel .toast button {
+  border: 0;
+  background: none;
+  color: #fbe2a6;
+  font-weight: 700;
+  cursor: pointer;
+  min-height: 32px;
+  text-decoration: underline;
+}
+.charpanel .toast.err {
+  background: var(--danger);
+  color: #fff;
+}
+
+/* ------------------------------------------------- the maker's dialog */
+
+dialog.charmaker {
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: var(--card);
+}
+dialog.charmaker[open] {
+  display: grid;
+  grid-template-rows: 44px 1fr;
+}
+dialog.charmaker::backdrop {
+  background: rgb(42 40 36 / 40%);
+}
+.charmaker .dlg-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  background: var(--ink);
+  color: var(--card);
+  min-width: 0;
+}
+.charmaker .dlg-bar button {
+  border: 0;
+  background: rgb(255 255 255 / 12%);
+  color: var(--card);
+  border-radius: 999px;
+  padding: 6px 14px;
+  min-height: 36px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.charmaker .dlg-bar span {
+  font-size: 13px;
+  opacity: 0.8;
+  margin-left: auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.charmaker iframe {
+  border: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+@media (max-height: 520px) {
+  dialog.charmaker[open] {
+    grid-template-rows: 38px 1fr;
+  }
+}

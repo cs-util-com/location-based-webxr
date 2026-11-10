@@ -228,6 +228,13 @@ export interface ShellEditCommands {
   addStory(stationId: string): void;
   /** A new entry of `kind` in the story, selected, one undo step. */
   addToStory(storyId: string, kind: AddKind): void;
+  /** The add menu's Character: the character maker opens on a new
+   *  character, which is then added to the station (standing free) or to
+   *  the end of the story. */
+  addCharacter(to: {
+    readonly kind: "station" | "story";
+    readonly id: string;
+  }): void;
   /** A story's title, typed in its inspector. */
   storyTitle(storyId: string, title: string): TypedEditOutcome;
   /** How a story's block moves on. */
@@ -427,6 +434,12 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         addStoryIn(id);
         return;
       }
+      if (kind === "character") {
+        clearSearch();
+        store.dispatch(editorViewActions.stationFolded({ id, open: true }));
+        deps.edits.addCharacter({ kind: "station", id });
+        return;
+      }
       addInPlace(id, kind);
       // Added from the details on a phone: the draw took the button away.
       if (document.activeElement === document.body) {
@@ -434,6 +447,12 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       }
     },
     chooseForStory: (id, kind) => {
+      if (kind === "character") {
+        clearSearch();
+        revealStory(id);
+        deps.edits.addCharacter({ kind: "story", id });
+        return;
+      }
       addInStory(id, kind);
       if (document.activeElement === document.body) {
         focusControl(inspector.root, '[data-act="close"]');

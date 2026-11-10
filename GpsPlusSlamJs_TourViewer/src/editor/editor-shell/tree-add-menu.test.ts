@@ -12,8 +12,12 @@
 import fc from "fast-check";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ADD_CHOICES, type AddKind } from "../../kinds/edit-kinds.js";
-import { addMenuSpot, createTreeAddMenu } from "./tree-add-menu.js";
+import { ADD_CHOICES } from "../../kinds/edit-kinds.js";
+import {
+  addMenuSpot,
+  createTreeAddMenu,
+  type TreeAddChoice,
+} from "./tree-add-menu.js";
 
 /** A tree body with one station's "+". */
 function plusFor(body: HTMLElement, id: string): HTMLButtonElement {
@@ -25,14 +29,12 @@ function plusFor(body: HTMLElement, id: string): HTMLButtonElement {
 }
 
 let body: HTMLElement;
-let choose: ReturnType<
-  typeof vi.fn<(id: string, kind: AddKind | "story") => void>
->;
+let choose: ReturnType<typeof vi.fn<(id: string, kind: TreeAddChoice) => void>>;
 
 beforeEach(() => {
   body = document.createElement("div");
   document.body.replaceChildren(body);
-  choose = vi.fn<(id: string, kind: AddKind | "story") => void>();
+  choose = vi.fn<(id: string, kind: TreeAddChoice) => void>();
 });
 
 afterEach(() => {
@@ -72,7 +74,8 @@ function key(target: Element, k: string): KeyboardEvent {
 // menu must not offer one there.
 describe("the menu for a story", () => {
   function forStory() {
-    const chooseForStory = vi.fn<(id: string, kind: AddKind) => void>();
+    const chooseForStory =
+      vi.fn<(id: string, kind: Exclude<TreeAddChoice, "story">) => void>();
     const menu = createTreeAddMenu({
       body,
       host: document.body,
@@ -109,12 +112,22 @@ describe("the menu for a story", () => {
     const { root } = forStory();
     key(root, "End");
     expect((document.activeElement as HTMLElement).dataset["kind"]).toBe(
-      "picture",
+      "character",
     );
     key(root, "ArrowDown");
     expect((document.activeElement as HTMLElement).dataset["kind"]).toBe(
       "shortText",
     );
+  });
+
+  // Why: a character is made in the maker before it is added, so it has an
+  // item of its own; it must reach the story it was asked for, not its
+  // station.
+  it("offers a character, added into the story", () => {
+    const { root, chooseForStory } = forStory();
+    root.querySelector<HTMLElement>('[data-kind="character"]')?.click();
+    expect(chooseForStory).toHaveBeenCalledWith("legend", "character");
+    expect(choose).not.toHaveBeenCalled();
   });
 
   it("offers a story again on a station's +", () => {
@@ -148,7 +161,7 @@ describe("createTreeAddMenu", () => {
       [...root.querySelectorAll<HTMLElement>('[role="menuitem"]')].map(
         (i) => i.dataset["kind"],
       ),
-    ).toEqual([...ADD_CHOICES.map((c) => c.kind), "story"]);
+    ).toEqual([...ADD_CHOICES.map((c) => c.kind), "character", "story"]);
     const picture = item("picture");
     expect(picture?.getAttribute("aria-disabled")).toBe("true");
     expect(picture?.textContent).toContain("Taken on site with the phone");
@@ -161,6 +174,8 @@ describe("createTreeAddMenu", () => {
     expect(document.activeElement).toBe(item("longText"));
     key(root, "ArrowDown");
     expect(document.activeElement).toBe(item("picture"));
+    key(root, "ArrowDown");
+    expect(document.activeElement).toBe(item("character"));
     key(root, "ArrowDown");
     expect(document.activeElement).toBe(item("story"));
     key(root, "ArrowDown");

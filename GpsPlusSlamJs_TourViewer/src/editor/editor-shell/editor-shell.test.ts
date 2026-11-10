@@ -154,6 +154,7 @@ function setUp() {
     addItem: vi.fn(),
     addStory: vi.fn(),
     addToStory: vi.fn(),
+    addCharacter: vi.fn(),
     storyTitle: vi.fn(() => "written" as const),
     storyAdvance: vi.fn(() => "written" as const),
     narration: vi.fn(() =>
@@ -1967,5 +1968,26 @@ describe("the inspector's Delete, declined", () => {
     // On Delete after a no only.
     expect(document.activeElement === del).toBe(!yes);
     shell.hide();
+  });
+});
+
+describe("the add menu's Character", () => {
+  const plus = (id: string) =>
+    document.querySelector<HTMLElement>(`#tree-body [data-add="${id}"]`);
+  // Why: the add menu's Character runs the maker first, so the shell hands
+  // the place over and adds nothing itself; the station still unfolds so
+  // the character shows once he is added.
+  it("hands a Character over with its station, unfolded", () => {
+    const { edits, store } = setUp();
+    plus("b")?.click();
+    document
+      .querySelector<HTMLElement>('#tree-add-menu [data-kind="character"]')
+      ?.click();
+    expect(edits.addCharacter).toHaveBeenCalledWith({
+      kind: "station",
+      id: "b",
+    });
+    expect(edits.addItem).not.toHaveBeenCalled();
+    expect(store.getState().editorView.openStations).toContain("b");
   });
 });

@@ -530,3 +530,30 @@ examples).
 - `addFile` puts a NEW file on the shelf as `added` (a file already in the tour is not added twice).
 - The shelf reads bytes from the files table, else the opened archive's entry; it swaps through `swapAsset`; its cap is the entry cap less margin, as the save's.
 - Tests: `asset-shelf/asset-shelf.test.ts` (the runner), `editor-session-shelf.test.ts` (the wiring), `editor-session-shelf.property.test.ts` (a real draft; any order of a voice brought in, an opened picture made smaller at its own path, job ends, use the original, retry, saves awaited or still running, undo, redo, a reload and a crash: every save writes each listed asset at its path with bytes of its type and, for a picture, of its listed size, nothing unlisted; a reload brings back the same named assets and bytes; every file brought in is on the shelf).
+
+## Characters
+
+- `characters()`: the declared characters of the open tour.
+- `declareCharacter({ id, name, image, frames })`: brings both pictures in
+  as image files (as `addFile` does: hashed, kept in the files table and
+  the draft) and declares the character as one step. Refuses
+  (`{ kind: "refused", reason }`) before bringing anything in when the id,
+  the name, the cap or a duplicate already refuse it, and after when a
+  file is not a readable image; on success `{ kind: "declared", backedUp }`.
+- `removeCharacter(id)`: one undo step, refused while an item names the
+  character.
+- `characterImage(id)`: the blob of a declared character's picture, from
+  the files table or the tour's own content.
+- A restore brings the recorded characters back with the other settings.
+- Tests: `tour-document-parity.test.ts` (declare, reload, restore, save)
+  and `declared-characters.test.ts` for the document rules.
+
+## Characters list and story cards
+
+- `restoreCharacter(character)` declares again a character that was just
+  removed (the Characters list's Undo). It is refused in the same cases as
+  `characterRefusal`.
+- `addCharacterToStory(storyId, characterId)` adds the declared character
+  as a card at the end of the story (`newCharacterEntry`), as one undo
+  step. It is refused, with the reason, when the story or the character has
+  gone in the meantime.

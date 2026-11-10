@@ -6,7 +6,9 @@
  *
  * @see new-pin.ts.md
  */
+import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characters";
 import type {
+  TourObject,
   TourPin,
   TourReadingSign,
   TourStation,
@@ -107,6 +109,49 @@ export function newPin(input: NewItemInput): TourPin {
   };
 }
 
+/** A character standing free in a station. */
+export type FreeCharacter = Extract<TourObject, { kind: "character" }>;
+
+/**
+ * The tour's declared character `character` standing free in `station`
+ * (the add menu's Character, once the maker made him): at its free spot,
+ * on the ground there, in the view a character starts in (`speak`), his
+ * name and picture the declaration's.
+ */
+export function newCharacter(
+  input: NewItemInput & { readonly character: TourCharacter },
+): FreeCharacter {
+  return {
+    id: input.id,
+    kind: "character",
+    view: "speak",
+    name: input.character.name,
+    image: input.character.image,
+    character: input.character.id,
+    createdAtIso: input.nowIso,
+    geo: freeGeo(input),
+    station: input.station.id,
+  };
+}
+
+/** The declared character `character` as a new entry at the end of a
+ *  story: a card a visitor taps on from, as `newStoryEntry`'s. */
+export function newCharacterEntry(
+  character: TourCharacter,
+  id: string,
+): TourStoryBlock {
+  return {
+    id,
+    kind: "character",
+    view: "card",
+    pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+    advance: { mode: "tap" },
+    name: character.name,
+    image: character.image,
+    character: character.id,
+  };
+}
+
 /** Why an add found no station: it went (an undo, a delete) between
  *  the press and the add. */
 const STATION_GONE =
@@ -114,7 +159,10 @@ const STATION_GONE =
 
 /** What an add came to: the item placed, or why not. */
 export type NewItemOutcome =
-  | { readonly kind: "added"; readonly item: TourPin | TourReadingSign }
+  | {
+      readonly kind: "added";
+      readonly item: TourPin | TourReadingSign | FreeCharacter;
+    }
   | { readonly kind: "refused"; readonly reason: string };
 
 /**
@@ -144,6 +192,36 @@ export function addNewItem(
     groundAt: input.groundAt,
   };
   const item = KIND_ADD[input.kind].item(made);
+  const placed = input.place(item);
+  return placed.kind === "placed" ? { kind: "added", item } : placed;
+}
+
+/**
+ * The add menu's Character in place: the declared character `character`
+ * standing free in the station `stationId` (`newCharacter`), handed to
+ * `place`; refused in words as `addNewItem`.
+ */
+export function addNewCharacter(
+  input: Omit<NewItemInput, "station"> & {
+    readonly stations: readonly TourStation[];
+    readonly stationId: string;
+    readonly character: TourCharacter;
+    readonly place: (
+      item: FreeCharacter,
+    ) =>
+      | { readonly kind: "placed" }
+      | { readonly kind: "refused"; readonly reason: string };
+  },
+): NewItemOutcome {
+  const station = input.stations.find((s) => s.id === input.stationId);
+  if (station === undefined) return { kind: "refused", reason: STATION_GONE };
+  const item = newCharacter({
+    station,
+    id: input.id,
+    nowIso: input.nowIso,
+    groundAt: input.groundAt,
+    character: input.character,
+  });
   const placed = input.place(item);
   return placed.kind === "placed" ? { kind: "added", item } : placed;
 }

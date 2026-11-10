@@ -374,3 +374,11 @@ A smaller file replaces an asset's bytes under the same id. The key lifecycle:
 - `landed(written, fileKey, wrote?)` spends an entry only when the written tour lists the id AT the entry's path AND the write carried the entry's own bytes: `wrote` (the save's `wrote`, id to the Blob it wrote) holds that very Blob, or, without an entry in `wrote`, the entry has no original (the file on disk already held it). Listed at the other path, or written with other bytes (a save already running when the swap or "use the original" came), everything is kept.
 - `open` skips a listed entry only when the opened file lists the same id and path AND, given `sizeInFile` (path to the size of the opened file's entry there; the page passes it from the archive's entries), that entry has the size of the draft's bytes at that path - the smaller file's for a smaller entry, the file's own for a plain one. A save that ran while the creator swapped or chose the original can land other bytes at the same path, and the path alone would drop the draft's file, or offer a smaller file the downloaded file already holds on every reload. Without `sizeInFile` only a plain entry without an original is skipped by its path. A plain entry for which the creator chose "use the original" carries `originalChosen` (`swapAsset(asset, blob, true)`), offered back with the file so the shelf does not queue it again; an entry whose smaller bytes are gone falls back to its kept original (told: `unreadDraft`). A plain entry whose bytes are gone while the opened file holds an entry at its path (an open's `tidyFiles` removes the bytes before it rewrites the list, and a reload came between) is not told: the file on disk carries it. A swap of an asset the opened file carries makes the offer non-null and counts as a change in its words. `tidyFiles` and `dropFiles` use every key of each entry; a key move carries the original's bytes too.
 - Tests: `editor-draft-swap.test.ts`.
+
+## Characters
+
+`EditorTourSettings.characters` is part of the settings a draft records
+and restores; `settingsOf(manifest)` reads them, `settingsChanges` counts
+them (`characters`), the restore offer names "the tour's characters" and
+the restored line "the characters". Compared per declaration
+(`changedCharacters`), so an unchanged list writes nothing.

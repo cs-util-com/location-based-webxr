@@ -41,6 +41,10 @@ export interface TreeAddMenu {
   isOpen(): boolean;
 }
 
+/** What the menu adds: an addable kind, a character (made in the
+ *  character maker first, then added) or a story. */
+export type TreeAddChoice = AddKind | "character" | "story";
+
 /** The menu's least distance from the window's edges (px). */
 const EDGE_PX = 8;
 
@@ -86,9 +90,12 @@ export function createTreeAddMenu(deps: {
   /** Where the menu goes (the page's body). */
   readonly host: HTMLElement;
   /** Add `kind` to the station; run after the menu closed. */
-  readonly choose: (stationId: string, kind: AddKind | "story") => void;
+  readonly choose: (stationId: string, kind: TreeAddChoice) => void;
   /** Add `kind` to the story; run after the menu closed. */
-  readonly chooseForStory: (storyId: string, kind: AddKind) => void;
+  readonly chooseForStory: (
+    storyId: string,
+    kind: Exclude<TreeAddChoice, "story">,
+  ) => void;
 }): TreeAddMenu {
   const menu = document.createElement("div");
   menu.id = "tree-add-menu";
@@ -124,6 +131,16 @@ export function createTreeAddMenu(deps: {
     setItemDisabled(item, !choice.addable);
     menu.append(item);
   }
+  // A character is made in the character maker first: not a kind row's
+  // empty start, so it has an item of its own.
+  menu.append(
+    itemOf(
+      "character",
+      "Character",
+      "Make one in the character maker, then add it here",
+      "character",
+    ),
+  );
   // A story goes behind a line: it is a folder, the others are what fills
   // one.
   const storyPart = document.createElement("div");
@@ -224,7 +241,7 @@ export function createTreeAddMenu(deps: {
     if (item === null || target === null) return;
     if (item.getAttribute("aria-disabled") === "true") return;
     const from = target;
-    const kind = item.dataset["kind"] as AddKind | "story";
+    const kind = item.dataset["kind"] as TreeAddChoice;
     close(true);
     if (from.kind === "station") deps.choose(from.id, kind);
     else if (kind !== "story") deps.chooseForStory(from.id, kind);

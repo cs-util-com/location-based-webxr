@@ -873,3 +873,25 @@ store.dispatch(tourDocumentActions.undone());
   - Refused (state unchanged) for an id the tour does not hold, a path that is not `content/<id>.<ext>` of an extension of the asset's kind, or a size that is no positive whole number. The record the document already lists counts as a swap too (new bytes in the same format), and so does swapping back to the original path.
   - `swapsWritten[id]`: the swap count whose bytes the written file holds, set by `saved` from the snapshot's `swaps`. `assetBytesPending(state, id)`: the id is in `addedAssets` and the written file lists it at another path or holds another swap's bytes - what the next save writes for it, and what the shelf's "use the original" rests on.
 - Tests: `tour-document-assets.test.ts`, `tour-document-swap.test.ts`.
+
+## Characters (`characterDeclared`, `characterRemoved`)
+
+- The state holds `characters` (the tour's declared characters, opened
+  from the manifest) and `charactersRecorded` (a declaration was edited,
+  so the draft's settings record carries the list).
+- `characterDeclared({ character, what })` adds one declaration as one
+  undo step; refused (the state returned unchanged) for every reason of
+  `characterDeclareRefusal`, checked against the image assets the document
+  holds. `characterRefusal(state, character)` gives the sentence first
+  ("No tour is open." before an open).
+- `characterRemoved({ id, what })` removes one as one undo step; refused
+  while an item (a story block or a free object) still names the
+  character, because the format refuses a reference to an undeclared
+  character. `characterRemoveRefusal(state, id)` gives the sentence.
+- Both actions are created outside the slice and handled in
+  `extraReducers`, like the later actions: one more case reducer in the
+  slice makes its type too long for the compiler.
+- The undo views carry the characters; `historyAssetIds` keeps their
+  pictures; `changeCount` counts them; `manifestNow` writes them via
+  `withCharacters`; a restore keeps only declarations whose files are held.
+- Tests: `declared-characters.test.ts`.

@@ -68,6 +68,8 @@ import {
   changeCount,
   childMoveChange,
   coverImageIds,
+  characterRefusal,
+  characterRemoveRefusal,
   detailsChange,
   documentObjects,
   effectiveDetails,
@@ -94,6 +96,11 @@ import {
 } from "../tour-document.js";
 import type { ChildMoveTo } from "../station-children-moves.js";
 import { newObjectId } from "../content-placement.js";
+import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characters";
+import {
+  characterChanges,
+  characterDeclareRefusal,
+} from "../declared-characters.js";
 import {
   STATION_RADIUS_MAX_M,
   STATION_RADIUS_MIN_M,
@@ -146,7 +153,7 @@ import {
   spawnOptimizerWorker,
 } from "./asset-shelf/optimizer-client.js";
 import { newStory, withoutStoryChild } from "../tour-story-edit.js";
-import { newStoryEntry } from "./new-pin.js";
+import { newCharacterEntry, newStoryEntry } from "./new-pin.js";
 
 /** One of the tour's objects as it stands, with this page's entry. */
 type AuthoringObject = ReturnType<typeof documentObjects>[number];
@@ -409,6 +416,10 @@ const STORY_TITLE = "A story needs a name of at most 80 characters.";
 /** Said for a story or a story's child that is gone. */
 const NO_SUCH_STORY = "That is no longer in this tour.";
 
+/** A character the add asked for went (an undo, a remove) meanwhile. */
+const NO_SUCH_CHARACTER =
+  "That character is no longer in this tour - nothing was added.";
+
 /** What the document calls a story's child: a block by its text, a choice
  *  by its prompt, a quiz by its question. */
 function storyChildName(child: TourStoryChild): string {
@@ -640,6 +651,38 @@ export interface EditorSession {
   /** The images the tour may show as its cover: its placed photos and
    *  image assets, as they stand with the edits. */
   coverChoices(): CoverChoice[];
+  /** The tour's declared characters as they stand. */
+  characters(): readonly TourCharacter[];
+  /** A character declared for the tour under `id` (the on-device
+   *  library's id, so the same character is declared once): its picture
+   *  and its four poses brought in as images (`addFile`), then one step.
+   *  Refused in words, changing nothing, for a file the tour cannot carry
+   *  or a declaration the document refuses (`characterRefusal`). */
+  declareCharacter(input: {
+    readonly id: string;
+    readonly name: string;
+    readonly image: Blob;
+    readonly frames: Blob;
+  }): Promise<{ kind: "declared"; backedUp: boolean } | EditorRefusal>;
+  /** A declared character taken out, as one step; refused in words while
+   *  an item names him (`characterRemoveRefusal`). */
+  removeCharacter(id: string): { kind: "removed" } | EditorRefusal;
+  /** A declared character's picture, for its thumbnail; undefined when
+   *  the tour does not hold it. */
+  characterImage(id: string): Promise<Blob | undefined>;
+  /** A character just removed declared again as he was (the Characters
+   *  list's Undo): one step; refused in words where the document refuses
+   *  him (`characterRefusal`: a picture the tour no longer holds, a name
+   *  taken meanwhile). */
+  restoreCharacter(
+    character: TourCharacter,
+  ): { kind: "declared" } | EditorRefusal;
+  /** The declared character `characterId` as a new entry at the end of a
+   *  story (a card, `newCharacterEntry`): one step. */
+  addCharacterToStory(
+    storyId: string,
+    characterId: string,
+  ): { kind: "added"; id: string } | EditorRefusal;
   /** What the setting's warnings are about: the code-less stations, the
    *  stations on a code the viewer cannot use, and whether a code can
    *  place the tour (`no-gps-check.ts`). */
@@ -1646,6 +1689,100 @@ export function createEditorSession(input: {
       );
       return { kind: "changed" };
     },
+    characters() {
+      return own().characters;
+    },
+    async declareCharacter({ id, name, image, frames }) {
+      if (mine() === null) return notInTour;
+      // The id, the name and the cap first, its picture standing in as
+      // held: a declaration the document refuses brings no file in.
+      const early = characterDeclareRefusal(
+        own().characters,
+        { id, name, image: id },
+        new Set([id]),
+      );
+      if (early !== null) return { kind: "refused", reason: early };
+      const picture = await addFile(image, `${name}.png`, ["image"]);
+      if (picture.kind === "refused") return picture;
+      const sheet = await addFile(frames, `${name} poses.png`, ["image"]);
+      if (sheet.kind === "refused") return sheet;
+      const character: TourCharacter = {
+        id,
+        name,
+        image: picture.asset.id,
+        frames: sheet.asset.id,
+      };
+      const reason = characterRefusal(own(), character);
+      if (reason !== null) return { kind: "refused", reason };
+      store.dispatch(
+        tourDocumentActions.characterDeclared({
+          character,
+          what: `adding ${name}`,
+        }),
+      );
+      return {
+        kind: "declared",
+        backedUp: picture.backedUp && sheet.backedUp,
+      };
+    },
+    removeCharacter(id) {
+      if (mine() === null) return notInTour;
+      const reason = characterRemoveRefusal(own(), id);
+      if (reason !== null) return { kind: "refused", reason };
+      const name = own().characters.find((c) => c.id === id)?.name ?? "";
+      store.dispatch(
+        tourDocumentActions.characterRemoved({ id, what: `removing ${name}` }),
+      );
+      return { kind: "removed" };
+    },
+    restoreCharacter(character) {
+      if (mine() === null) return notInTour;
+      const reason = characterRefusal(own(), character);
+      if (reason !== null) return { kind: "refused", reason };
+      store.dispatch(
+        tourDocumentActions.characterDeclared({
+          character,
+          what: `adding ${character.name} again`,
+        }),
+      );
+      return { kind: "declared" };
+    },
+    addCharacterToStory(storyId, characterId) {
+      const state = mine();
+      if (state === null) return notInTour;
+      const story = storyNow(state, storyId);
+      if (story === undefined) {
+        return { kind: "refused", reason: NO_SUCH_STORY };
+      }
+      const character = own().characters.find((c) => c.id === characterId);
+      if (character === undefined) {
+        return { kind: "refused", reason: NO_SUCH_CHARACTER };
+      }
+      const child = newCharacterEntry(character, newObjectId());
+      return took(() =>
+        store.dispatch(
+          tourDocumentActions.storyChildAdded({
+            story: storyId,
+            child,
+            what: `the new entry "${storyChildName(child)}"`,
+          }),
+        ),
+      )
+        ? { kind: "added", id: child.id }
+        : notApplied;
+    },
+    async characterImage(id) {
+      const character = own().characters.find((c) => c.id === id);
+      if (character === undefined) return undefined;
+      const held = files.get(character.image);
+      if (held !== undefined) return held;
+      const record = own().written?.assets.find(
+        (a) => a.id === character.image,
+      );
+      return record === undefined
+        ? undefined
+        : session.loadContentEntry(record.path);
+    },
     coverChoices() {
       const tour = { objects: current(), assets: written().assets };
       return [...coverIds()].flatMap((id) => {
@@ -2466,6 +2603,12 @@ export function createEditorSession(input: {
       const deleted = work.deleted.filter(
         (id) => !live.has(id) && find(id) !== undefined,
       );
+      // The tour's characters there, whole - unless one was declared or
+      // removed here meanwhile: live work wins.
+      const characterWork =
+        settings?.characters === undefined || state.charactersRecorded
+          ? {}
+          : { characters: settings.characters };
       // The stations the draft's objects were seated in that the tour
       // lacks ("Move to a new station" started one), whole: back before
       // the objects.
@@ -2494,6 +2637,7 @@ export function createEditorSession(input: {
           ...(stations.length === 0 ? {} : { stations }),
           ...createdStations,
           ...framesWork,
+          ...characterWork,
           what: "",
         }),
       );
@@ -2511,7 +2655,8 @@ export function createEditorSession(input: {
         stations.length +
         stationEditsBetween(state, withObjects) +
         (needsNoGps === undefined ? 0 : 1) +
-        detailFields;
+        detailFields +
+        characterChanges(state.characters, withObjects.characters);
       if (changed + deleted.length > 0) {
         // The copies' pictures first: the draft's write of each restored
         // copy carries its picture, and a save needs it.
@@ -2531,6 +2676,7 @@ export function createEditorSession(input: {
             ...(stations.length === 0 ? {} : { stations }),
             ...createdStations,
             ...framesWork,
+            ...characterWork,
             what: "the restored changes",
           }),
         );

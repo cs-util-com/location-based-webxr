@@ -481,3 +481,11 @@ position, Move to a new station). Its parts' own tests:
 ## Narration
 
 `ShellEditCommands.narration` and `.editNarration` reach the session; the dock passes them, with `.voiceMaxBytes` (the page's autosave cap), to the writer's Narration section. A stamp per state of the tour's `timings` (`timingsStampOf`) goes into `buildInspector`, so the section re-reads when a timing changes without the narration record changing.
+
+## The add menu's Character
+
+`ShellEditCommands.addCharacter({ kind: "station" | "story", id })`: the
+shell unfolds the station (or reveals the story), clears the search and
+hands the place over. The page then opens the character maker and adds the
+character that was made (`edit-main.ts`, `addCharacterTo`). Tested in
+`editor-shell.test.ts` ("the add menu's Character").

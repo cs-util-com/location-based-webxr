@@ -13,21 +13,15 @@ import { escapeHtml as esc } from "gps-plus-slam-app-framework/utils/escape-html
 import { guardSlidersIn } from "gps-plus-slam-app-framework/utils/slider-scroll-guard";
 import { createToast } from "gps-plus-slam-app-framework/utils/toast-core";
 
-import {
-  checkSheetPixels,
-  exchangeBytes,
-  exchangeFileName,
-  ImportRefusal,
-  inspectExchange,
-} from "./character-exchange.js";
+import { exchangeBytes, exchangeFileName } from "./character-exchange.js";
+import { createImportFlow } from "./character-import.js";
 import {
   type CharacterLibrary,
   createCharacterLibrary,
 } from "./character-library.js";
 import type { CharacterRecord } from "./character-record.js";
+import { cropThumb, whenMade } from "./character-thumb.js";
 import { CutFailed, type CutWorker, createCutClient } from "./cut-client.js";
-import { CUT_SETTINGS } from "./cut-settings.js";
-import { decodePicture } from "./decode-picture.js";
 import {
   type BackdropId,
   CUT_CHOICE_DEFAULTS,
@@ -188,56 +182,6 @@ $("#homeLead").textContent = EMBEDDED
 
 const thumbs = new Map<string, string>();
 
-/** Head and upper body of the resting pose, for the list. */
-async function cropThumb(blob: Blob): Promise<string> {
-  const bmp = await createImageBitmap(blob);
-  const w = bmp.width;
-  const h = bmp.height;
-  const c = document.createElement("canvas");
-  c.width = w;
-  c.height = h;
-  const ctx = c.getContext("2d", { willReadFrequently: true });
-  if (!ctx) return "";
-  ctx.drawImage(bmp, 0, 0);
-  bmp.close();
-  const d = ctx.getImageData(0, 0, w, h).data;
-  let top = h;
-  let bottom = 0;
-  let left = w;
-  let right = 0;
-  for (let y = 0; y < h; y += 2) {
-    for (let x = 0; x < w; x += 2) {
-      if (d[(y * w + x) * 4 + 3]! > 128) {
-        top = Math.min(top, y);
-        bottom = Math.max(bottom, y);
-        left = Math.min(left, x);
-        right = Math.max(right, x);
-      }
-    }
-  }
-  const out = document.createElement("canvas");
-  out.width = 112;
-  out.height = 144;
-  if (bottom > top) {
-    const figH = bottom - top;
-    const ch = figH * 0.62;
-    const cw = (ch * 112) / 144;
-    out
-      .getContext("2d")
-      ?.drawImage(
-        c,
-        (left + right) / 2 - cw / 2,
-        top - figH * 0.05,
-        cw,
-        ch,
-        0,
-        0,
-        112,
-        144,
-      );
-  }
-  return out.toDataURL("image/png");
-}
 async function thumbUrl(lib: CharacterLibrary, id: string): Promise<string> {
   const known = thumbs.get(id);
   if (known !== undefined) return known;
@@ -249,21 +193,6 @@ async function thumbUrl(lib: CharacterLibrary, id: string): Promise<string> {
   }
   thumbs.set(id, url);
   return url;
-}
-
-function whenMade(iso: string): string {
-  const t = new Date(iso);
-  const now = new Date();
-  const days = Math.floor((now.getTime() - t.getTime()) / 864e5);
-  if (days < 1 && now.getDate() === t.getDate()) {
-    const time = t.toLocaleTimeString("en-GB", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-    return `made today, ${time}`;
-  }
-  if (days < 2) return "made yesterday";
-  return `made ${days} days ago`;
 }
 
 let homeSeq = 0;
@@ -473,129 +402,12 @@ impFile.addEventListener("change", () => {
   if (f) void importIntoLibrary(f);
 });
 
-interface Accepted {
-  readonly name: string;
-  readonly steady: boolean;
-  readonly describedAs: string;
-  readonly framesBlob: Blob;
-  readonly imageBlob: Blob;
-}
-
-/** The first pose of a sheet, as its own picture. */
-function firstCell(img: RgbaImage): Promise<Blob> {
-  const cellW = Math.floor(img.width / 4);
-  const c = document.createElement("canvas");
-  c.width = cellW;
-  c.height = img.height;
-  c.getContext("2d")?.drawImage(
-    canvasOf(img),
-    0,
-    0,
-    cellW,
-    img.height,
-    0,
-    0,
-    cellW,
-    img.height,
-  );
-  return pngOf(c);
-}
-
-async function inspectFile(file: File): Promise<Accepted & { note: string }> {
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const info = inspectExchange(bytes, file.type);
-  let img: RgbaImage;
-  try {
-    // The bytes are a checked PNG by now; a file the system gave no type
-    // (or the wrong one) is still decoded as what it is.
-    img = await decodePicture(
-      new Blob([bytes], { type: "image/png" }),
-      CUT_SETTINGS,
-    );
-  } catch {
-    throw new ImportRefusal(
-      "This picture could not be opened",
-      "The file may be damaged. Ask for it again.",
-    );
-  }
-  checkSheetPixels(img);
-  return {
-    name: info.name,
-    steady: info.steady,
-    describedAs: info.describedAs,
-    note: info.note,
-    framesBlob: new Blob([bytes], { type: "image/png" }),
-    imageBlob: await firstCell(img),
-  };
-}
-
-let pendingAsk: ((v: Accepted | null) => void) | null = null;
-
-/** Inspects the file; a refusal is drawn into the error card, a file
- *  without a name asks for one. Resolves to the accepted file or null. */
-async function importFlow(file: File): Promise<Accepted | null> {
-  pendingAsk?.(null);
-  const errBox = $("#homeErr");
-  const askBox = $("#homeAsk");
-  errBox.hidden = true;
-  askBox.hidden = true;
-  let r: Accepted & { note: string };
-  try {
-    r = await inspectFile(file);
-  } catch (e) {
-    const known = e instanceof ImportRefusal;
-    const title = known ? e.title : "This file did not work";
-    const words = known
-      ? e.words
-      : "Something unexpected went wrong while reading it. Try again, or choose another file.";
-    errBox.innerHTML = `<h3>${esc(title)}</h3><p>${esc(words)}</p><p class="small dim">Nothing was added.</p><div class="row"><button class="btn small" type="button" data-again>Choose another file</button><button class="link small" type="button" data-dismiss>Close</button></div>`;
-    errBox.hidden = false;
-    $("[data-dismiss]", errBox).addEventListener(
-      "click",
-      () => (errBox.hidden = true),
-    );
-    $("[data-again]", errBox).addEventListener("click", () => impFile.click());
-    errBox.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    toast(`Not imported: ${title.toLowerCase()}`, true);
-    return null;
-  }
-  if (r.name) return r;
-  const url = URL.createObjectURL(r.imageBlob);
-  askBox.innerHTML = `<div class="ask-head"><img class="thumb" alt="" src="${url}" /><div><b>This character has no name inside</b><p class="small dim">${esc(r.note || "The file is a good sheet, but its name did not come with it.")} What is it called?</p></div></div>
-    <label class="field">Name<input type="text" maxlength="40" placeholder="For example: Ranger Rita" data-name /></label>
-    <p class="field-msg" data-msg hidden>Give it a name first, at least one letter.</p>
-    <div class="row"><button class="btn primary small" type="button" data-keep>Import it</button><button class="btn small" type="button" data-cancel>Cancel</button></div>`;
-  askBox.hidden = false;
-  const input = $<HTMLInputElement>("[data-name]", askBox);
-  input.focus({ preventScroll: true });
-  askBox.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  return new Promise((resolve) => {
-    const done = (v: Accepted | null): void => {
-      if (pendingAsk === done) pendingAsk = null;
-      askBox.hidden = true;
-      URL.revokeObjectURL(url);
-      resolve(v);
-    };
-    const keep = (): void => {
-      const n = input.value.trim();
-      if (!n) {
-        $("[data-msg]", askBox).hidden = false;
-        input.focus();
-        return;
-      }
-      done({ ...r, name: n });
-    };
-    pendingAsk = done;
-    $("[data-keep]", askBox).addEventListener("click", keep);
-    input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") keep();
-    });
-    $("[data-cancel]", askBox).addEventListener("click", () => {
-      done(null);
-      toast("Not imported");
-    });
-  });
-}
+const importFlow = createImportFlow({
+  errBox: $("#homeErr"),
+  askBox: $("#homeAsk"),
+  chooseAgain: () => impFile.click(),
+  toast,
+});
 
 async function importIntoLibrary(file: File): Promise<void> {
   const r = await busy(importBtn, "Reading the file...", () =>

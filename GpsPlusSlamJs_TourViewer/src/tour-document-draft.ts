@@ -39,6 +39,8 @@ import {
   type TourDocumentState,
 } from "./tour-document.js";
 import { sameJson } from "./same-json.js";
+import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characters";
+import { parseRecordedCharacters } from "./declared-characters.js";
 
 /** The tour-level settings a draft keeps: the setting, and the details
  *  once they were set or restored (`editor/editor-draft.ts` THE
@@ -71,6 +73,10 @@ export interface TourSettingsRecord {
    *  (`handMade`): they keep themselves though untitled and empty.
    *  Recorded with `frames`; absent when none. */
   readonly handMadeStations?: readonly string[];
+  /** The tour's declared characters, whole, once one was declared,
+   *  removed or restored here (`charactersRecorded`). Absent: no opinion
+   *  about them. */
+  readonly characters?: readonly TourCharacter[];
 }
 
 /** The settings record's file in a draft namespace, on both pages. Not a
@@ -265,6 +271,7 @@ function readSettingsRecord(
     const order = parseIds(record["order"]);
     const deletedStations = parseIds(record["deletedStations"]);
     const handMade = parseIds(record["handMadeStations"]);
+    const characters = parseRecordedCharacters(record["characters"]);
     return {
       needsNoGps,
       ...(details === undefined ? {} : { details }),
@@ -280,6 +287,7 @@ function readSettingsRecord(
       ...(handMade === undefined || handMade.length === 0
         ? {}
         : { handMadeStations: handMade }),
+      ...(characters === undefined ? {} : { characters }),
     };
   } catch {
     return undefined;
@@ -343,6 +351,7 @@ export function settingsRecord(state: TourDocumentState): TourSettingsRecord {
     ...(order === undefined ? {} : { order }),
     ...(gone.length === 0 ? {} : { deletedStations: gone }),
     ...(handMade.length === 0 ? {} : { handMadeStations: handMade }),
+    ...(state.charactersRecorded ? { characters: state.characters } : {}),
   };
 }
 

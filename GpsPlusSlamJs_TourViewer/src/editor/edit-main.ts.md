@@ -947,3 +947,17 @@ on a desktop.
 ## Narration
 
 `writeNarrationEdit` runs a section's change through the session (`editNarration`), redraws, and says a refusal through the page's toast, and a voice whose file the draft could not keep (`notBackedUp`) with `FILE_NOT_KEPT`; it then judges the autosave again (`judgeAutosave`: off once `nextSaveBytes()` is over the cap, on again once it is back under (an undo alone keeps the file in the save, since its redo names it; the edit that drops that redo frees it); asked by every edit through `tourChanged` (the test hook's `edited()` too), by an unchanged narration answer and after every save; never for a tour not written in place or one that `cannotSave`. `nextSaveBytes()` counts the opened file by its entries' sizes until a save, so a tour opened just over the cap by its zip overhead alone may turn autosave on at its first judged edit). The session's `fileReaders` are three's loader with `largestSide` (imported on first use) and `videoPosterOf`; `readContent` reads a file brought in from the session (`contentOf`) before the opened file; the shell's `narration` command reads `EditorSession.narration`, and `voiceMaxBytes` hands the section the configured autosave cap (`autosaveMaxBytes`) as its voice file limit.
+
+## Characters
+
+- File, "Characters…" (`#file-characters`, disabled when no tour is open)
+  opens the Characters list (`characters-panel.ts`).
+  - Its tour adapter (`charactersTour`) wraps the session's character
+    methods, and refreshes and tells the autosave after each change.
+  - The library is opened once (`characterLibraryNow`).
+- `dialogOpen()` counts the list and the maker, and the page's Escape
+  handler leaves them to their own dialog.
+- The add menu's Character (`addCharacterTo`) calls `makeForTour()`. In a
+  station the character then stands free (`addNewCharacter`, selected,
+  toast `Added X to "Station"`); in a story it becomes the story's last card
+  (`addCharacterToStory`).

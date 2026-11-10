@@ -189,7 +189,16 @@ import {
   createEditorShell,
   type TypedEditOutcome,
 } from "./editor-shell/editor-shell.js";
-import { addNewItem } from "./new-pin.js";
+import { addNewCharacter, addNewItem } from "./new-pin.js";
+import {
+  createCharacterLibrary,
+  type CharacterLibrary,
+} from "../characters/character-library.js";
+import { opfsLibraryStore } from "../characters/opfs-library-store.js";
+import {
+  createCharactersPanel,
+  type CharactersPanelTour,
+} from "./characters-panel.js";
 import { newObjectId } from "../content-placement.js";
 import type { InspectorCode } from "./editor-shell/inspector-model.js";
 import { stationTitle } from "../station-run.js";
@@ -445,6 +454,8 @@ const saveCopyButton = element<HTMLButtonElement>("file-save-copy");
  *  opens its dialog. */
 const doneButton = element<HTMLButtonElement>("file-publish");
 const fileDetailsButton = element<HTMLButtonElement>("file-details");
+/** "Characters…": the tour's characters and the ones on this device. */
+const fileCharactersButton = element<HTMLButtonElement>("file-characters");
 const fileMenuButton = element<HTMLButtonElement>("file-menu-btn");
 const saveStatus = element("save-status");
 /** The mark beside File while changes are not saved (the status's words
@@ -545,6 +556,76 @@ let letGo: Promise<void> = Promise.resolve();
 /** Toasts about this file that mean nothing once another tour is open. */
 const fileToasts: HTMLElement[] = [];
 let editor: EditorSession | null = null;
+
+/** The character maker's library on this device, opened once. */
+let characterLibrary: Promise<CharacterLibrary> | null = null;
+function characterLibraryNow(): Promise<CharacterLibrary> {
+  characterLibrary ??= opfsLibraryStore().then((libraryStore) =>
+    createCharacterLibrary(libraryStore),
+  );
+  characterLibrary.catch(() => {
+    characterLibrary = null;
+  });
+  return characterLibrary;
+}
+
+/** The open tour as the Characters list sees it: each change one step,
+ *  told to the autosave like any edit. */
+function charactersTour(): CharactersPanelTour | null {
+  const open = editor;
+  if (open === null) return null;
+  const changed = <T>(out: T): T => {
+    refresh();
+    tourChanged();
+    return out;
+  };
+  return {
+    characters: () => open.characters(),
+    declare: async (input) => {
+      endUndo();
+      return changed(await open.declareCharacter(input));
+    },
+    remove: (id) => {
+      endUndo();
+      return changed(open.removeCharacter(id));
+    },
+    restore: (character) => changed(open.restoreCharacter(character)),
+    image: (id) => open.characterImage(id),
+    title: () => open.details().name,
+  };
+}
+
+/** The Characters list (File, "Characters…") and the maker over the
+ *  editor (`characters-panel.ts`). */
+const characters = createCharactersPanel({
+  dom: {
+    panel: element<HTMLDialogElement>("characters-panel"),
+    close: element<HTMLButtonElement>("characters-close"),
+    tourList: element<HTMLUListElement>("characters-tour"),
+    tourCount: element("characters-tour-count"),
+    pickup: element("characters-pickup"),
+    libList: element<HTMLUListElement>("characters-lib"),
+    libStatus: element("characters-lib-status"),
+    make: element<HTMLButtonElement>("characters-make"),
+    importButton: element<HTMLButtonElement>("characters-import"),
+    importFile: element<HTMLInputElement>("characters-import-file"),
+    importError: element("characters-import-error"),
+    importAsk: element("characters-import-ask"),
+    manage: element<HTMLButtonElement>("characters-manage"),
+    toasts: element("characters-toasts"),
+    undoBox: element("characters-undo"),
+    maker: element<HTMLDialogElement>("characters-maker"),
+    makerFrame: element<HTMLIFrameElement>("characters-maker-frame"),
+    makerBack: element<HTMLButtonElement>("characters-maker-back"),
+    makerTour: element("characters-maker-tour"),
+  },
+  tour: charactersTour,
+  library: characterLibraryNow,
+  makerUrl: "./characters.html",
+  say: (text) => {
+    toast(text);
+  },
+});
 /** The open tour's codes as opened (the 3D view draws them; read-only). */
 let openedLevels: ReadonlyMap<string, QrLevel> = new Map();
 /** The 3D view while it shows (the view switch holds its handle too). */
@@ -930,6 +1011,7 @@ function renderFileItems(): void {
     setItemDisabled(doneButton, editor === null || walkMoving());
   }
   setItemDisabled(fileDetailsButton, editor === null);
+  setItemDisabled(fileCharactersButton, editor === null);
   // On whenever a tour is open and no save runs: a click commits the
   // card's typing first, so a disabled button would swallow the first
   // edit (E2a review #3).
@@ -1646,6 +1728,55 @@ function addItemTo(stationId: string, kind: AddKind): void {
   tourChanged();
 }
 
+/** The add menu's Character: the maker opens on a new character, which
+ *  then stands free in the station (`addNewCharacter`) or ends the story
+ *  as a card; selected and said once it was added, a refusal toasted. The
+ *  declaration and the add are a step each. */
+async function addCharacterTo(to: {
+  readonly kind: "station" | "story";
+  readonly id: string;
+}): Promise<void> {
+  const made = await characters.makeForTour();
+  const open = editor;
+  if (made === null || open === null) return;
+  if (to.kind === "story") {
+    endUndo();
+    const out = open.addCharacterToStory(to.id, made.id);
+    refresh();
+    if (out.kind === "refused") {
+      toast(out.reason);
+      return;
+    }
+    select(out.id);
+    toast(
+      `Added ${made.name} to the story "${storyNamed(to.id)?.title ?? ""}"`,
+    );
+    tourChanged();
+    return;
+  }
+  const outcome = addNewCharacter({
+    stations: manifestToWrite(store.getState().tourDocument)?.stations ?? [],
+    stationId: to.id,
+    character: made,
+    id: newObjectId(),
+    nowIso: new Date().toISOString(),
+    groundAt: (place) => shown3d?.groundAt(place) ?? null,
+    place: (item) => {
+      endUndo();
+      const placed = open.place(item);
+      refresh();
+      return placed;
+    },
+  });
+  if (outcome.kind === "refused") {
+    toast(outcome.reason);
+    return;
+  }
+  select(outcome.item.id);
+  toast(`Added ${made.name} to "${stationTitleOf(to.id)}"`);
+  tourChanged();
+}
+
 /** The tree's add of a story to `stationId`: a new story, selected with its
  *  folder open, said once it was made; one step. */
 function addStoryTo(stationId: string): void {
@@ -1991,7 +2122,12 @@ tourName.addEventListener("click", openDetails);
 
 /** One of the page's dialogs shows. */
 function dialogOpen(): boolean {
-  return !modal.hidden || details.isOpen() || done.isOpen();
+  return (
+    !modal.hidden ||
+    details.isOpen() ||
+    done.isOpen() ||
+    characters.dialogOpen()
+  );
 }
 
 /** Whether `event` is the letter `letter` with Ctrl (or Cmd) and no Alt:
@@ -2058,6 +2194,8 @@ document.addEventListener("keydown", (event) => {
   }
   if (undoKeys(event)) return;
   if (event.key !== "Escape") return;
+  // The dialog's own Escape closes it (a native modal dialog).
+  if (characters.dialogOpen()) return;
   if (details.isOpen()) {
     details.close();
     return;
@@ -3508,6 +3646,9 @@ saveCopyButton.addEventListener("click", () => {
 fileDetailsButton.addEventListener("click", () => {
   openDetails();
 });
+fileCharactersButton.addEventListener("click", () => {
+  if (editor !== null) characters.open();
+});
 // "Keep the debug data in the tour file": what the next save keeps, until
 // a save was built (the switch then hides).
 keepWalk.addEventListener("click", () => {
@@ -4193,6 +4334,9 @@ const shell = createEditorShell({
     addItem: addItemTo,
     addStory: addStoryTo,
     addToStory: addToStoryEntry,
+    addCharacter: (to) => {
+      void addCharacterTo(to);
+    },
     storyTitle: (id, title) =>
       writeInspectorEdit((e) => e.renameStory(id, title)),
     storyAdvance: (id, advance) =>

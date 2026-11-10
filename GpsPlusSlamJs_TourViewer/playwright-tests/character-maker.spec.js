@@ -1,6 +1,8 @@
 // @ts-check
 import { expect, test } from "@playwright/test";
 
+import { drawSheet } from "./character-sheet.js";
+
 /**
  * Why this test matters: the character maker (`characters.html`) is the
  * only way a guide character gets onto a device, and most of what can go
@@ -23,44 +25,6 @@ const VIEWPORTS = [
   { name: "phone sideways", width: 844, height: 390 },
   { name: "desktop", width: 1440, height: 900 },
 ];
-
-/** Four outlined figures on near-white, the fourth pointing to the right,
- *  the mouths closed, half open, wide open, closed. Runs in the page. */
-function drawSheet() {
-  const w = 1536;
-  const h = 1024;
-  const c = document.createElement("canvas");
-  c.width = w;
-  c.height = h;
-  const x = /** @type {CanvasRenderingContext2D} */ (c.getContext("2d"));
-  x.fillStyle = "#fefefe";
-  x.fillRect(0, 0, w, h);
-  const H = 560;
-  const foot = 880;
-  for (const k of [0, 1, 2, 3]) {
-    const cx = (k + 0.5) * (w / 4);
-    x.lineWidth = 6;
-    x.strokeStyle = "#221a14";
-    x.fillStyle = "#d67a30";
-    x.beginPath();
-    x.ellipse(cx, foot - H * 0.33, H * 0.17, H * 0.33, 0, 0, Math.PI * 2);
-    x.fill();
-    x.stroke();
-    x.beginPath();
-    x.arc(cx, foot - H * 0.8, H * 0.15, 0, Math.PI * 2);
-    x.fill();
-    x.stroke();
-    if (k === 3) {
-      x.beginPath();
-      x.rect(cx + H * 0.12, foot - H * 0.55, H * 0.2, H * 0.06);
-      x.fill();
-      x.stroke();
-    }
-    x.fillStyle = "#461616";
-    x.fillRect(cx - 20, foot - H * 0.74, 40, k === 1 ? 10 : k === 2 ? 22 : 3);
-  }
-  return c.toDataURL("image/png").split(",")[1];
-}
 
 /** A plain white picture: nothing to cut. */
 function drawBlank() {

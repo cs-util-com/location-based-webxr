@@ -42,11 +42,17 @@ export const SPECS = {
   "code-auto-move.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "creator-indoor.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "creator-stations.spec.js": { project: "dom", area: "viewer", lane: 2 },
+  "editor-characters.spec.js": { project: "dom", area: "both", lane: 1 },
   "editor-entry.spec.js": { project: "dom", area: "editor", lane: 1 },
   "editor-files.spec.js": { project: "dom", area: "editor", lane: 1 },
   "editor.spec.js": { project: "dom", area: "editor", lane: 1 },
   "editor3d-add-palette.spec.js": { project: "webgl", area: "editor", lane: 2 },
   "editor3d-character.spec.js": { project: "webgl", area: "editor", lane: 4 },
+  "editor3d-characters.spec.js": {
+    project: "webgl",
+    area: "editor",
+    lane: 2,
+  },
   "editor3d-child-moves.spec.js": {
     project: "webgl",
     area: "editor",
