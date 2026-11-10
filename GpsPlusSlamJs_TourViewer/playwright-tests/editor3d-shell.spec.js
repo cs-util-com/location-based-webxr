@@ -1130,11 +1130,12 @@ test("the tree can be used from the keyboard alone", async ({ page }) => {
   // scene's Credits button closes the view, after the docks).
   expect(visited.findIndex((v) => !v.inBar)).toBe(bar.length);
   expect(keys[bar.length]).toBe("tree-stations");
-  // Then the tree: its head ("Stations", "Fold every station", "+", the
-  // fold arrow), its search, then each card's fold arrow, its row and
-  // its "+".
-  expect(keys.slice(-10)).toEqual([
+  // Then the tree: its head ("Stations", the Select mode, "Fold every
+  // station", "+", the fold arrow), its search, then each card's fold
+  // arrow, its row and its "+".
+  expect(keys.slice(-11)).toEqual([
     "tree-stations",
+    "tree-select",
     "tree-collapse",
     "tree-add",
     "tree-fold",
