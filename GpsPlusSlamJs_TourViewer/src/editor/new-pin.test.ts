@@ -16,9 +16,13 @@ import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import "../test-support/tour-of.js";
 import { ADD_CHOICES, isAddable, isFileAddKind } from "../kinds/edit-kinds.js";
 import {
+  addNewCharacter,
   addNewItem,
   freePinSpot,
+  freeStorySpot,
   KIND_ADD,
+  newCharacter,
+  newCharacterEntry,
   newLongText,
   newPin,
   newStoryEntry,
@@ -27,7 +31,7 @@ import {
   parseTourObject,
   tourObjectRecord,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { stationContent } from "../test-support/station-content.js";
+import { stationContent, storyOf } from "../test-support/station-content.js";
 
 const AT = "2026-10-25T10:00:00Z";
 
@@ -130,6 +134,28 @@ describe("freePinSpot", () => {
       children: [turned],
     } as unknown as TourStation);
     expect(Math.hypot(clear.northM - 4, clear.eastM)).toBeGreaterThan(2.2);
+  });
+
+  // Why: a story's entries stand in the station's room as its free items
+  // do; a spot that ignored them would stand a new item (two characters
+  // added to stories) on the very place an entry already takes.
+  it("keeps clear of the station's story entries as well", () => {
+    const s = {
+      ...station([]),
+      ...stationContent([
+        storyOf("st", [
+          {
+            id: "e1",
+            kind: "shortText",
+            view: "card",
+            caption: "Hello",
+            pose: { position: [4, 0, 0], rotation: [0, 0, 0, 1] },
+          },
+        ]),
+      ]),
+    } as TourStation;
+    const spot = freePinSpot(s);
+    expect(Math.hypot(spot.northM - 4, spot.eastM)).toBeGreaterThan(2.2);
   });
 
   it("stays inside a small station's circle", () => {
@@ -337,5 +363,106 @@ describe("newStoryEntry", () => {
       });
       expect(Math.hypot(spot.northM, spot.eastM)).toBeGreaterThan(0);
     }
+  });
+});
+
+// Why this test matters: the add menu's Character stands the character the
+// maker just made in the station; it must name the declaration (so his
+// name and pictures follow it), stand clear of what is there, read back
+// as the format reads it, and be refused in words for a gone station.
+describe("newCharacter", () => {
+  const rita = {
+    id: "c1abc",
+    name: "Ranger Rita",
+    image: "rita1",
+    frames: "rita4",
+  };
+
+  it("stands the declared character at the free spot, in the speak view", () => {
+    const made = newCharacter({
+      station: station([[4, 0]]),
+      id: "n1",
+      nowIso: AT,
+      groundAt: () => 517,
+      character: rita,
+    });
+    expect(made).toMatchObject({
+      id: "n1",
+      kind: "character",
+      view: "speak",
+      name: "Ranger Rita",
+      image: "rita1",
+      character: "c1abc",
+      station: "s",
+    });
+    expect(made.geo.alt).toBe(517);
+    expect(
+      parseTourObject(JSON.parse(JSON.stringify(tourObjectRecord(made)))),
+    ).toEqual(made);
+  });
+
+  it("is refused for a gone station, nothing placed", () => {
+    const place = vi.fn(() => ({ kind: "placed" as const }));
+    const out = addNewCharacter({
+      stations: [station([])],
+      stationId: "gone",
+      character: rita,
+      id: "n1",
+      nowIso: AT,
+      groundAt: () => null,
+      place,
+    });
+    expect(out).toMatchObject({
+      kind: "refused",
+      reason: expect.stringMatching(/no longer/),
+    });
+    expect(place).not.toHaveBeenCalled();
+  });
+
+  it("hands the place's refusal on", () => {
+    const out = addNewCharacter({
+      stations: [station([])],
+      stationId: "s",
+      character: rita,
+      id: "n1",
+      nowIso: AT,
+      groundAt: () => null,
+      place: () => ({ kind: "refused", reason: "too far" }),
+    });
+    expect(out).toEqual({ kind: "refused", reason: "too far" });
+  });
+
+  // Why: a character in a story is a 3D character like a free one: the
+  // view a free character starts in, at a place of his own in the
+  // station's frame, moving on by a tap as every new story entry does.
+  // Why: a character in a story stands on the ground as a free one does;
+  // at the anchor's height he floats or sinks wherever the ground slopes.
+  it("finds a story entry's spot on the ground there, at the anchor's height where none has loaded", () => {
+    const s = station([[4, 0]]);
+    const onGround = freeStorySpot(s, () => 517.25);
+    const free = freePinSpot(s);
+    expect(onGround.northM).toBeCloseTo(free.northM, 9);
+    expect(onGround.eastM).toBeCloseTo(free.eastM, 9);
+    expect(onGround.upM).toBeCloseTo(517.25 - 520, 3);
+    expect(freeStorySpot(s, () => null).upM).toBe(0);
+    expect(freeStorySpot(s, () => Number.NaN).upM).toBe(0);
+    const entry = newCharacterEntry(rita, "e2", onGround);
+    expect(
+      (entry as { pose: { position: readonly number[] } }).pose.position[1],
+    ).toBeCloseTo(-2.75, 3);
+  });
+
+  it("makes a story entry naming the declaration, standing at the given spot", () => {
+    const entry = newCharacterEntry(rita, "e1", { northM: 4, eastM: -2 });
+    expect(entry).toMatchObject({
+      id: "e1",
+      kind: "character",
+      view: "speak",
+      character: "c1abc",
+      name: "Ranger Rita",
+      image: "rita1",
+      advance: { mode: "tap" },
+      pose: { position: [4, 0, -2], rotation: [0, 0, 0, 1] },
+    });
   });
 });

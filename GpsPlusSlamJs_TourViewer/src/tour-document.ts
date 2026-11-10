@@ -169,6 +169,14 @@ import {
   withoutFolder,
   type FolderRefusal,
 } from "./tour-folder-edit.js";
+import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characters";
+import {
+  characterChanges,
+  characterDeclareRefusal,
+  characterImageIds,
+  restoredCharacters,
+  withCharacters,
+} from "./declared-characters.js";
 import {
   movedChild,
   movedToStation,
@@ -216,6 +224,8 @@ export interface TourDocumentView {
   /** The read-along texts at this step (`timings`), by entry; absent
    *  for none set. */
   readonly timings?: Readonly<Record<string, string | null>>;
+  /** The tour's declared characters at this step; absent for none. */
+  readonly characters?: readonly TourCharacter[];
 }
 
 /** A code's saved text a step sets (plan M3b): `to`, while the code still
@@ -417,6 +427,12 @@ export interface TourDocumentState {
    *  read concurrently, so either may land first. Their own actions write
    *  them; the book goes at a tour's close (`codesForgotten`). */
   readonly codes: DocumentCodes;
+  /** The tour's declared characters as they stand (the written ones,
+   *  with those declared or removed here). */
+  readonly characters: readonly TourCharacter[];
+  /** The draft's settings record carries the characters (once one was
+   *  declared, removed or restored here). */
+  readonly charactersRecorded: boolean;
 }
 
 /** How many steps are kept: enough for a working session, bounded. */
@@ -662,6 +678,8 @@ export const initialTourDocumentState: TourDocumentState = {
   assetSwaps: {},
   swapsWritten: {},
   codes: NO_CODES,
+  characters: [],
+  charactersRecorded: false,
 };
 
 // --- the pure rules ---------------------------------------------------------
@@ -1105,12 +1123,15 @@ export function timingChanges(state: TourDocumentState): number {
 export function manifestNow(state: TourDocumentState): TourManifest | null {
   const base = framed(state);
   if (base === null) return null;
-  return withDetails(
-    withNeedsNoGps(
-      withAdded(withEffectiveImages(state, base), state.addedAssets),
-      state.needsNoGps,
+  return withCharacters(
+    withDetails(
+      withNeedsNoGps(
+        withAdded(withEffectiveImages(state, base), state.addedAssets),
+        state.needsNoGps,
+      ),
+      effectiveDetails(state),
     ),
-    effectiveDetails(state),
+    state.characters,
   );
 }
 
@@ -1207,6 +1228,7 @@ export function historyAssetIds(state: TourDocumentState): Set<string> {
       for (const id of objectAssetIds(object)) ids.add(id);
     }
     if (view.details.cover !== undefined) ids.add(view.details.cover);
+    for (const id of characterImageIds(view.characters ?? [])) ids.add(id);
   }
   return ids;
 }
@@ -1542,7 +1564,8 @@ export function changeCount(state: TourDocumentState): number {
     (sameOrder(state.stations, written.stations) ? 0 : 1) +
     (state.needsNoGps !== (written.needsNoGps === true) ? 1 : 0) +
     details +
-    timingChanges(state)
+    timingChanges(state) +
+    characterChanges(written.characters ?? [], state.characters)
   );
 }
 
@@ -1607,6 +1630,7 @@ export function viewOf(state: TourDocumentState): TourDocumentView {
     ...(Object.keys(state.timings).length === 0
       ? {}
       : { timings: state.timings }),
+    ...(state.characters.length === 0 ? {} : { characters: state.characters }),
   };
 }
 
@@ -1770,6 +1794,8 @@ function goTo(
   );
   const stationsMoved = framesMoved(view.stations, state.stations);
   const framesChanged = framesEdited(view.stations, state.stations);
+  const characters = view.characters ?? [];
+  const charactersMoved = !sameJson(characters, state.characters);
   return {
     ...state,
     ...contentAt(state.written, view, keptStationsOf(state)),
@@ -1786,6 +1812,8 @@ function goTo(
     detailsRecorded: state.detailsRecorded || detailsMoved,
     stationsRecorded: state.stationsRecorded || stationsMoved,
     framesRecorded: state.framesRecorded || framesChanged,
+    characters,
+    charactersRecorded: state.charactersRecorded || charactersMoved,
   };
 }
 
@@ -1905,6 +1933,9 @@ interface TourRestore {
   /** The files a draft kept (`addedAssets` there): listed again before
    *  the frames and objects naming them come back. */
   readonly assets?: readonly TourAsset[];
+  /** The tour's characters a draft recorded: they replace the document's,
+   *  each whose files the tour does not hold left out. */
+  readonly characters?: readonly TourCharacter[];
 }
 
 /**
@@ -2135,6 +2166,97 @@ function assetsAdd(
   return addedAssets === null || addedAssets === before.addedAssets
     ? before
     : { ...before, addedAssets };
+}
+
+// --- the characters --------------------------------------------------------
+
+/** The image files the tour holds now: the written file's and those
+ *  brought in here. */
+function heldImageIds(state: TourDocumentState): Set<string> {
+  return new Set(
+    [...(state.written?.assets ?? []), ...state.addedAssets]
+      .filter((a) => a.kind === "image")
+      .map((a) => a.id),
+  );
+}
+
+/** Why the document would not declare `character` now, in words; null
+ *  when it would. Nothing is declared before an open. */
+export function characterRefusal(
+  state: TourDocumentState,
+  character: TourCharacter,
+): string | null {
+  if (state.written === null) return "No tour is open.";
+  return characterDeclareRefusal(
+    state.characters,
+    character,
+    heldImageIds(state),
+  );
+}
+
+/** How many items name the character `id`: a story's character block,
+ *  or a character standing free. */
+function itemsNaming(state: TourDocumentState, id: string): number {
+  const names = (block: object): boolean =>
+    (block as { readonly character?: unknown }).character === id;
+  return (
+    documentFrames(state).flatMap((f) =>
+      tourStationStoryBlocks(f).filter(names),
+    ).length + documentObjects(state).filter((o) => names(o.object)).length
+  );
+}
+
+/** Why the document would not remove the character `id`, in words; null
+ *  when it would. A character an item still names stays: the format
+ *  refuses a reference to a character the tour does not declare. */
+export function characterRemoveRefusal(
+  state: TourDocumentState,
+  id: string,
+): string | null {
+  const character = state.characters.find((c) => c.id === id);
+  if (state.written === null || character === undefined) {
+    return "That character is no longer in this tour.";
+  }
+  const naming = itemsNaming(state, id);
+  if (naming === 0) return null;
+  return naming === 1
+    ? `${character.name} still speaks in one item. Remove that item first.`
+    : `${character.name} still speaks in ${String(naming)} items. Remove them first.`;
+}
+
+/** `character` declared (`characterDeclared`), as one step; nothing when
+ *  `characterRefusal` names a reason. */
+function characterDeclare(
+  before: TourDocumentState,
+  payload: { readonly character: TourCharacter; readonly what: string },
+): TourDocumentState {
+  if (characterRefusal(before, payload.character) !== null) return before;
+  return edited(
+    before,
+    {
+      characters: [...before.characters, payload.character],
+      charactersRecorded: true,
+    },
+    payload.what,
+  );
+}
+
+/** The character `id` removed (`characterRemoved`), as one step; nothing
+ *  when `characterRemoveRefusal` names a reason. Its files stay listed
+ *  for an undo; a write drops what nothing names. */
+function characterRemove(
+  before: TourDocumentState,
+  payload: { readonly id: string; readonly what: string },
+): TourDocumentState {
+  if (characterRemoveRefusal(before, payload.id) !== null) return before;
+  return edited(
+    before,
+    {
+      characters: before.characters.filter((c) => c.id !== payload.id),
+      charactersRecorded: true,
+    },
+    payload.what,
+  );
 }
 
 /** A smaller file in place of an asset's (`assetOptimized`). */
@@ -4582,6 +4704,18 @@ const folderDeleted = createAction<{
   folderId: string;
   what: string;
 }>("tourDocument/folderDeleted");
+/** A character declared for the tour (`characterDeclare`); beside the
+ *  slice's actions for the same reason. */
+const characterDeclared = createAction<{
+  readonly character: TourCharacter;
+  readonly what: string;
+}>("tourDocument/characterDeclared");
+
+/** A declared character taken out of the tour (`characterRemove`). */
+const characterRemoved = createAction<{
+  readonly id: string;
+  readonly what: string;
+}>("tourDocument/characterRemoved");
 
 const tourDocumentSlice = createSlice({
   name: "tourDocument",
@@ -4613,6 +4747,7 @@ const tourDocumentSlice = createSlice({
         stations: framesOf(manifest),
         needsNoGps: manifest.needsNoGps === true,
         details: detailsOf(manifest),
+        characters: manifest.characters ?? [],
       };
     },
     /** A new object (placed in AR, or on the map): not for an id the
@@ -5099,6 +5234,12 @@ const tourDocumentSlice = createSlice({
             ...(work.details === undefined
               ? {}
               : { details: work.details, detailsRecorded: true }),
+            ...(work.characters === undefined
+              ? {}
+              : {
+                  characters: restoredCharacters(work.characters, heldAssets),
+                  charactersRecorded: true,
+                }),
           },
           work.what,
         );
@@ -5524,6 +5665,12 @@ const tourDocumentSlice = createSlice({
     builder.addCase(folderReordered, (state, action) =>
       folderReorder(plain(state), action.payload),
     );
+    builder.addCase(characterDeclared, (state, action) =>
+      characterDeclare(plain(state), action.payload),
+    );
+    builder.addCase(characterRemoved, (state, action) =>
+      characterRemove(plain(state), action.payload),
+    );
   },
 });
 
@@ -5542,6 +5689,8 @@ export const tourDocumentActions = {
   folderRenamed,
   folderDeleted,
   folderReordered,
+  characterDeclared,
+  characterRemoved,
 };
 
 export const tourDocumentReducer = tourDocumentSlice.reducer;
@@ -5583,6 +5732,8 @@ export const isDocumentEdit = isAnyOf(
   tourDocumentActions.folderReordered,
   tourDocumentActions.settingsChanged,
   tourDocumentActions.detailsChanged,
+  tourDocumentActions.characterDeclared,
+  tourDocumentActions.characterRemoved,
   tourDocumentActions.undone,
   tourDocumentActions.redone,
   tourDocumentActions.restored,

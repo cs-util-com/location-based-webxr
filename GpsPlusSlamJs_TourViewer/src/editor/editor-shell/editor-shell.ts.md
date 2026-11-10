@@ -544,3 +544,11 @@ The inspector's model gets `file` (`inspector-file.ts`) for a block made
 from a file, named through `deps.fileNameOf`; its "Replace..."
 (`REPLACE_FILE_ACT`) calls `deps.edits.replaceFile(blockId)`, which the
 page answers with a picker and the session's `setItemFile`.
+
+## The add menu's Character
+
+`ShellEditCommands.addCharacter({ kind: "station" | "story", id })`: the
+shell unfolds the station (or reveals the story), clears the search and
+hands the place over. The page then opens the character maker and adds the
+character that was made (`edit-main.ts`, `addCharacterTo`). Tested in
+`editor-shell.test.ts` ("the add menu's Character").

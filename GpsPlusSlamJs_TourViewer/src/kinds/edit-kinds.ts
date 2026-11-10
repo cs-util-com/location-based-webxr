@@ -244,12 +244,6 @@ export const KIND_EDIT = {
       { name: "name", label: "Name", prose: false },
       { name: "caption", label: "Caption", prose: true },
     ],
-    add: {
-      label: "Character",
-      hint: "Coming: made step by step in the character maker",
-      words: "character figure guide person",
-      addable: false,
-    },
   },
 } as const satisfies { readonly [K in TourBlockKind]: KindEditRow };
 

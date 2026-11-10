@@ -15,6 +15,7 @@
     <!-- A long text's writer in the inspector and its phone preview
          (long-text-writer.ts, long-text-preview.ts). -->
     <link rel="stylesheet" href="/src/editor/long-text/long-text-editor.css" />
+    <link rel="stylesheet" href="/src/editor/characters-panel.css" />
   </head>
   <body>
     <!-- The top bar first: the keyboard reaches it before the map, the 3D
@@ -74,6 +75,15 @@
               aria-disabled="true"
             >
               Tour details…
+            </button>
+            <button
+              role="menuitem"
+              type="button"
+              id="file-characters"
+              aria-haspopup="dialog"
+              aria-disabled="true"
+            >
+              Characters…
             </button>
             <button role="menuitem" type="button" id="file-debug-add">
               Add debug data…
@@ -658,6 +668,105 @@
         Show it
       </button>
     </div>
+
+    <!-- The tour's characters and the ones on this device (characters-panel.ts). -->
+    <dialog
+      class="charpanel"
+      id="characters-panel"
+      aria-labelledby="characters-title"
+    >
+      <div class="cp-top">
+        <p class="kicker">Tour settings</p>
+        <button
+          class="close"
+          id="characters-close"
+          type="button"
+          aria-label="Close the characters"
+        >
+          ×
+        </button>
+      </div>
+      <div>
+        <h2 id="characters-title">Characters</h2>
+        <p class="small dim">
+          Guides who stand at your stations, talk, and point the way to the next
+          one.
+        </p>
+      </div>
+      <div class="sec-head">
+        <h3>In this tour</h3>
+        <span class="quiet-line" id="characters-tour-count"></span>
+      </div>
+      <ul class="lib" id="characters-tour"></ul>
+      <div class="cp-undo" id="characters-undo" aria-live="polite"></div>
+      <div
+        class="pickup"
+        id="characters-pickup"
+        hidden
+        aria-live="polite"
+      ></div>
+      <hr />
+      <div class="sec-head">
+        <h3>On this device</h3>
+        <span
+          class="quiet-line"
+          id="characters-lib-status"
+          aria-live="polite"
+        ></span>
+      </div>
+      <ul class="lib" id="characters-lib"></ul>
+      <div class="row">
+        <button class="btn primary" id="characters-make" type="button">
+          Make a character
+        </button>
+        <button class="btn" id="characters-import" type="button">
+          Import character...
+        </button>
+        <input
+          type="file"
+          id="characters-import-file"
+          accept="image/png,.png"
+          hidden
+        />
+      </div>
+      <div
+        class="errcard"
+        id="characters-import-error"
+        hidden
+        role="alert"
+      ></div>
+      <div class="askcard" id="characters-import-ask" hidden></div>
+      <p class="small">
+        <button class="link" id="characters-manage" type="button">
+          Rename or delete characters on this device
+        </button>
+        <br />
+        <a class="link" href="./characters.html" target="_blank" rel="noopener"
+          >Open the character maker on its own</a
+        >
+        <span class="dim">- to make several in a row</span>
+      </p>
+      <div class="cp-toasts" id="characters-toasts" aria-live="polite"></div>
+    </dialog>
+
+    <!-- The character maker over the editor, in a same-origin frame. -->
+    <dialog
+      class="charmaker"
+      id="characters-maker"
+      aria-label="Character maker"
+    >
+      <div class="dlg-bar">
+        <button id="characters-maker-back" type="button">
+          ‹ Back to the tour
+        </button>
+        <span id="characters-maker-tour"></span>
+      </div>
+      <iframe
+        id="characters-maker-frame"
+        title="Character maker"
+        src="about:blank"
+      ></iframe>
+    </dialog>
 
     <div id="toasts" aria-live="polite"></div>
 

@@ -15,8 +15,9 @@ has loaded and seated in the station it was added to.
   radius), 12 places a ring starting due north and going clockwise, that
   keeps more than 2.2 m from every item standing in the world where it
   stands (`posedBlocks` of `../placement/placeables.ts`: an item in a
-  folder through its folders, a free character too); with none free, 4 m
-  north (or the radius, if smaller).
+  folder through its folders, a free character too) and from every story
+  entry of the station, so two characters of one station never share a
+  spot; with none free, 4 m north (or the radius, if smaller).
 - `NewItemInput` - `{ station, id, nowIso, groundAt }`, what each new
   item is made from.
 - `newPin(input)` -> `TourPin`: a pin (a short
@@ -81,3 +82,29 @@ the ground; the long text's fields and its round trip through the file's
 record (it parses back as written); `addNewItem`'s gone station, its
 passed-on refusal and its placed item; a story entry's numbering and its
 pose at the free spot.
+
+## Characters
+
+- `newCharacter({ ...NewItemInput, character })` -> `FreeCharacter`: the
+  tour's declared character standing free at the station's free spot, on
+  the ground there, in the `speak` view. `name` and `image` are copied from
+  the declaration, and `character` names it.
+- `addNewCharacter({ stations, stationId, character, id, nowIso, groundAt, place })`
+  -> `NewItemOutcome`: the add menu's Character, placed. It is refused in
+  the same cases as `addNewItem` (a station that is gone, or `place`'s
+  words).
+- `freeStorySpot(station, groundAt)` -> `StorySpot` (`{ northM, eastM,
+upM }` in the station's frame): the free spot (`freePinSpot`), its
+  `upM` the ground's height there above the spot at the anchor's height
+  (0 where none has loaded), so a story entry stands on the ground as a
+  free item does. Assumes the station's frame is upright (its rotation a
+  heading only), as the free items' height does.
+- `newCharacterEntry(character, id, spot)` -> `TourStoryBlock`: the
+  declared character as a story's entry, a 3D character like a free one
+  (view `speak`), standing at `spot` (a `StorySpot` in the station's
+  frame, the caller's `freeStorySpot`; `upM` 0 when absent), facing
+  north, tap to move on. It
+  shares its id, pose and advance with `newStoryEntry` (`storyEntryShell`,
+  both through the private `entryAt`).
+- Tested in `new-pin.test.ts` ("newCharacter": the entry's spot and its
+  height on the ground; "freePinSpot": clear of a story's entry).

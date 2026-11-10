@@ -76,3 +76,12 @@ the item that is off adding nothing; Escape stopping at the menu; Tab and
 a press outside closing it; `addMenuSpot` below, at the edges, above, and
 a property that it stays inside the window. The shell's
 `editor-shell.test.ts` covers the focus after the add's own redraw.
+
+## Character
+
+The menu has a "Character" item after the kinds and before the story ("Make
+one in the character maker, then add it here"). It is not a `KIND_EDIT` add
+row, because a character has to be made in the maker first. The choice
+(`TreeAddChoice` `"character"`) goes to `choose` / `chooseForStory` like the
+others, and the page runs the maker (`characters-panel.ts`, `makeForTour`).
+The Ctrl+K palette does not offer it.

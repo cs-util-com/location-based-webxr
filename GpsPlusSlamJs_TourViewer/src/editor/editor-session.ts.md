@@ -603,6 +603,47 @@ examples).
 
 - `shelf: AssetShelf` (`asset-shelf/asset-shelf.ts`), created per session on the session's store. Input `optimizers?` (default `ASSET_OPTIMIZERS`) and `optimizerHost?` (default a lazy Worker host, `createOptimizerHost(spawnOptimizerWorker)`, which spawns nothing until a row runs).
 - Creating the session clears the shelf and adds every asset of the written tour as `opened`, idle, sized from its archive entry: an opened tour's files are made smaller only on `shelf.optimizeTour()`.
-- `addFile` puts a NEW file on the shelf as `added` (a file already in the tour is not added twice).
+- `addFile` puts a NEW file on the shelf as `added` (a file already in the tour is not added twice), unless it is kept as made (`asMade`).
+- A declared character's pictures are never on the shelf: not when declared, not from an opened tour, not from a restored draft (`keptAsMade`).
 - The shelf reads bytes from the files table, else the opened archive's entry; it swaps through `swapAsset`; its cap is the entry cap less margin, as the save's.
 - Tests: `asset-shelf/asset-shelf.test.ts` (the runner), `editor-session-shelf.test.ts` (the wiring), `editor-session-shelf.property.test.ts` (a real draft; any order of a voice brought in, an opened picture made smaller at its own path, job ends, use the original, retry, saves awaited or still running, undo, redo, a reload and a crash: every save writes each listed asset at its path with bytes of its type and, for a picture, of its listed size, nothing unlisted; a reload brings back the same named assets and bytes; every file brought in is on the shelf).
+
+## Characters
+
+- `characters()`: the declared characters of the open tour.
+- `declareCharacter({ name, image, frames })`: mints the character's id
+  (`newObjectId`; an id from elsewhere, such as the device library's, never
+  enters the tour), brings his four poses and then his picture in as image
+  files kept as made (`addFile`'s `asMade`: hashed, kept in the files table
+  and the draft, never on the asset shelf, so no optimizer re-encodes the
+  sheet his poses are cut from) and declares him as one step. Refuses
+  (`{ kind: "refused", reason }`) before bringing anything in when the
+  name or the cap refuse it, before the picture when the same four poses
+  are declared already, and when a file is not a readable image; on
+  success `{ kind: "declared", character, backedUp }`.
+- `removeCharacter(id)`: one undo step, refused while an item names the
+  character.
+- `characterImage(id)`: the blob of a declared character's picture, from
+  the files table or the tour's own content.
+- A restore brings the recorded characters back with the other settings.
+- Tests: `tour-document-parity.test.ts` (declare, reload, restore, save)
+  and `declared-characters.test.ts` for the document rules.
+
+## Characters list and story cards
+
+- `restoreCharacter(character)` declares again a character that was just
+  removed (the Characters list's Undo). It is refused in the same cases as
+  `characterRefusal`.
+- `addCharacterToStory(storyId, characterId, groundAt?)` adds the declared
+  character at the end of the story (`newCharacterEntry`: a 3D character,
+  view `speak`, at the free spot of the story's station, `freeStorySpot`:
+  clear of its free items, those placed since the last save included, and
+  of its stories' entries, on the ground there by `groundAt`, the anchor's
+  height where none has loaded or none is given), as one undo step. It is refused, with the reason, when the story or the
+  character has gone in the meantime.
+- Tests: `editor-session-characters.test.ts` (minted ids, the same
+  character twice, the remove refusal while an entry names him, the
+  story entry's view and spot, two characters of one story apart, a
+  story's character clear of a free one and on the ground, the pictures
+  kept off the shelf with an image optimizer set, also after a draft's
+  restore).

@@ -75,6 +75,9 @@ keys), and writes only through the page's `edits`.
   - `setRealTime?(on)` - optional: the globe view's clock, the real time
     now (true) or held in daylight over the tour (false, its default);
     this view has no sky of its own and leaves it out;
+  - `setPaused(on)` - stops drawing while true (the loop still runs and
+    returns at once; the frame clock pauses, so the gap is no slow frame);
+    the editor sets it while the character maker covers the page;
   - `setClouds?(on)` - optional: the globe view's heavy clouds on (true,
     their default) or off; this view has no clouds and leaves it out;
   - `setBuildings?(on)` - optional: the globe view's OSM buildings shown

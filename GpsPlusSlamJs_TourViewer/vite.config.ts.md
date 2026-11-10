@@ -24,6 +24,8 @@ The Tour Viewer's Vite config: the dev server (the e2e's too) and the build.
   already have a tour?" box and step 5 on a device without AR (tour editor
   plan 2026-10-17-1816, W1). And `legal.html`, which forwards to the
   site-wide legal page at `/legal/` (`legal.html.md`), at `/tour/legal.html`.
+  And `characters.html`, the character maker and the library of characters
+  on this device (`characters.html.md`), at `/tour/characters.html`.
   And `file-access-check.html`, an on-device check of what a phone's
   browser lets the editor do with a file it saves, linked from nothing
   (`file-access-check.html.md`), at `/tour/file-access-check.html`.

@@ -12,8 +12,12 @@
 import fc from "fast-check";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ADD_CHOICES, type AddKind } from "../../kinds/edit-kinds.js";
-import { addMenuSpot, createTreeAddMenu } from "./tree-add-menu.js";
+import { ADD_CHOICES } from "../../kinds/edit-kinds.js";
+import {
+  addMenuSpot,
+  createTreeAddMenu,
+  type TreeAddChoice,
+} from "./tree-add-menu.js";
 
 /** A tree body with one station's "+". */
 function plusFor(body: HTMLElement, id: string): HTMLButtonElement {
@@ -25,14 +29,12 @@ function plusFor(body: HTMLElement, id: string): HTMLButtonElement {
 }
 
 let body: HTMLElement;
-let choose: ReturnType<
-  typeof vi.fn<(id: string, kind: AddKind | "story") => void>
->;
+let choose: ReturnType<typeof vi.fn<(id: string, kind: TreeAddChoice) => void>>;
 
 beforeEach(() => {
   body = document.createElement("div");
   document.body.replaceChildren(body);
-  choose = vi.fn<(id: string, kind: AddKind | "story") => void>();
+  choose = vi.fn<(id: string, kind: TreeAddChoice) => void>();
 });
 
 afterEach(() => {
@@ -72,7 +74,8 @@ function key(target: Element, k: string): KeyboardEvent {
 // menu must not offer one there.
 describe("the menu for a story", () => {
   function forStory() {
-    const chooseForStory = vi.fn<(id: string, kind: AddKind) => void>();
+    const chooseForStory =
+      vi.fn<(id: string, kind: Exclude<TreeAddChoice, "story">) => void>();
     const menu = createTreeAddMenu({
       body,
       host: document.body,
@@ -128,6 +131,16 @@ describe("the menu for a story", () => {
     expect(chooseForStory).toHaveBeenCalledWith("legend", "video");
   });
 
+  // Why: a character is made in the maker before it is added, so it has an
+  // item of its own; it must reach the story it was asked for, not its
+  // station.
+  it("offers a character, added into the story", () => {
+    const { root, chooseForStory } = forStory();
+    root.querySelector<HTMLElement>('[data-kind="character"]')?.click();
+    expect(chooseForStory).toHaveBeenCalledWith("legend", "character");
+    expect(choose).not.toHaveBeenCalled();
+  });
+
   it("offers a story again on a station's +", () => {
     const { menu, root } = forStory();
     menu.close(false);
@@ -159,10 +172,10 @@ describe("createTreeAddMenu", () => {
       [...root.querySelectorAll<HTMLElement>('[role="menuitem"]')].map(
         (i) => i.dataset["kind"],
       ),
-    ).toEqual([...ADD_CHOICES.map((c) => c.kind), "story"]);
+    ).toEqual([...ADD_CHOICES.map((c) => c.kind), "character", "story"]);
     const character = item("character");
-    expect(character?.getAttribute("aria-disabled")).toBe("true");
-    expect(character?.textContent).toContain("Coming");
+    expect(character?.getAttribute("aria-disabled")).toBeNull();
+    expect(character?.textContent).toContain("character maker");
     const video = item("video");
     expect(video?.getAttribute("aria-disabled")).toBe("true");
     expect(video?.textContent).toContain(
@@ -226,7 +239,7 @@ describe("createTreeAddMenu", () => {
 
   it("adds nothing for an item that is off, and stays open", () => {
     const { root, item } = opened();
-    item("character")?.click();
+    // A station's video is off: it plays in a story only.
     item("video")?.click();
     expect(choose).not.toHaveBeenCalled();
     expect(root.hidden).toBe(false);

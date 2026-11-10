@@ -47,8 +47,9 @@ there.
     asset kind its file must be, and `storyOnly`: why it is added to a
     story only - a video, which no free host draws); a row without one is
     not offered at all, and one with `addable: false` is listed, says why,
-    and adds nothing (a character: "Coming: made step by step in the
-    character maker").
+    and adds nothing. The character has no add line: the add menu's own
+    Character entry (`editor/editor-shell/tree-add-menu.ts`) makes him in
+    the character maker first.
 - `KindLook`, `AddKind` (and the unexported `KindAdd`, a row's add line) - types derived from the rows: the
   looks and the kinds with `add.addable: true` (short and long text,
   picture, video, audio, model).
@@ -171,6 +172,7 @@ its order; every row's words non-empty; unique looks; every search word
 finds its row in the tree, free and inside a story; the add menu lists
 and enables (a station's menu without the story-only video, a story's
 with it), and the palette offers, exactly the rows that say so; and the
-editor's reach pinned (every kind listed, the character off, the four
+editor's reach pinned (every kind with an add line listed, the character
+through the menu's own entry, the four
 file kinds). Seen red with a
 row removed.

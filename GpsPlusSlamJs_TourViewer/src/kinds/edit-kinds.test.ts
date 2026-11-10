@@ -187,12 +187,22 @@ describe("KIND_EDIT", () => {
       choose: () => undefined,
       chooseForStory: () => undefined,
     });
+    const all = () => [
+      ...document.querySelectorAll<HTMLElement>(
+        '#tree-add-menu [role="menuitem"]',
+      ),
+    ];
+    // The menu's two entries that are no kind's add row: the story, and
+    // the character, who is made in the character maker first. Named here
+    // so a third one cannot slip past the rows unnoticed.
+    const ownEntries = ["character", "story"];
+    expect(
+      all()
+        .map((item) => item.dataset["kind"] ?? "")
+        .filter((k) => ownEntries.includes(k)),
+    ).toEqual(ownEntries);
     const items = () =>
-      [
-        ...document.querySelectorAll<HTMLElement>(
-          '#tree-add-menu [role="menuitem"]',
-        ),
-      ].filter((item) => item.dataset["kind"] !== "story");
+      all().filter((item) => !ownEntries.includes(item.dataset["kind"] ?? ""));
     const on = () =>
       items()
         .filter((item) => item.getAttribute("aria-disabled") !== "true")
@@ -213,8 +223,9 @@ describe("KIND_EDIT", () => {
   });
 
   // Why: the add menu is the editor's whole reach; a kind dropped from it
-  // or turned on by accident changes what a creator can make.
-  it("lists every kind with a way to add it, a character off until it can be made", () => {
+  // or turned on by accident changes what a creator can make. A character
+  // has no add row: the menu's own Character makes him in the maker first.
+  it("lists every kind with a way to add it, the character through the menu's own entry", () => {
     const listed = tourBlockKinds().filter((k) => rowOf(k).add !== undefined);
     expect(listed).toEqual([
       "shortText",
@@ -223,7 +234,6 @@ describe("KIND_EDIT", () => {
       "video",
       "audio",
       "model",
-      "character",
     ]);
     expect(listed.filter((k) => rowOf(k).add?.addable === true)).toEqual([
       "shortText",

@@ -1025,3 +1025,28 @@ on a desktop.
   file there (`placeFrom`, as a drop does; selected, then "Added the ..."),
   an item takes the file (`setItemAsset`; "The item now shows ..."). One
   step either way; a refusal is said.
+
+## Characters
+
+- File, "Characters…" (`#file-characters`, disabled when no tour is open)
+  opens the Characters list (`characters-panel.ts`).
+  - Its tour adapter (`charactersTour`) wraps the session's character
+    methods, and refreshes and tells the autosave after each change; each
+    change (the Undo's restore too) ends a pending delete Undo first.
+    `fileId` names a file as the tour does (`tourFileId`).
+  - The library is opened once (`characterLibraryNow`).
+- `dialogOpen()` counts the list and the maker, and the page's Escape
+  handler leaves them to their own dialog.
+- While the maker shows, the 3D view does not draw (`makerShown` to
+  `setPaused`).
+- The add menu's Character (`addCharacterTo`) calls `makeForTour({ hold })`.
+  From the maker's close until the outcome a held toast says "Adding the
+  character to the tour..." (`aria-busy`), with a Close as the page's
+  other held toasts have, so an add that never settles cannot leave it up
+  for good; `makeForTour` takes it down once the add settled, before the
+  outcome's toast, and says a failure after the close itself; one before
+  it is said here ("The character was not added: ..."). In a
+  station the character then stands free (`addNewCharacter`, selected,
+  toast `Added X to "Station"`); in a story it becomes the story's last
+  entry, standing at the station's free spot on the ground
+  (`addCharacterToStory` with the 3D view's `groundAt`).
