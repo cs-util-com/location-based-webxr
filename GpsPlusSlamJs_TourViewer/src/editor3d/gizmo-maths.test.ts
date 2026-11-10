@@ -283,6 +283,39 @@ describe("which handle the pointer is on", () => {
       ).toBeNull();
     });
 
+    // Why: the disc is drawn over most marks (a sound's speaker icon lies
+    // below it in the draw order, both without a depth test), so a press
+    // where the disc is seen on top of another item's mark is a press on
+    // the disc; refusing it left an item standing on another's icon
+    // unmovable. Only a mark drawn over the disc (a station's billboard)
+    // still takes the press.
+    it("another item drawn beneath the disc: the disc moves", () => {
+      expect(
+        handleAt({
+          ...base,
+          onDisc: true,
+          underPointer: "other",
+          otherOverDisc: false,
+        }),
+      ).toBe("move");
+      expect(
+        handleAt({
+          ...base,
+          onDisc: true,
+          underPointer: "other",
+          otherOverDisc: true,
+        }),
+      ).toBeNull();
+      expect(
+        handleAt({
+          ...base,
+          onDisc: false,
+          underPointer: "other",
+          otherOverDisc: false,
+        }),
+      ).toBeNull();
+    });
+
     it("empty ground: the camera's", () => {
       expect(
         handleAt({ ...base, onDisc: false, underPointer: null }),

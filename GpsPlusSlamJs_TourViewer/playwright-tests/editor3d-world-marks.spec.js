@@ -117,8 +117,25 @@ for (const [name, link] of [
     test.setTimeout(240_000);
     await openSample3d(page, link, hills);
     await selectStation(page, STATION);
-    // The relief has reached the station.
-    await afterFrames(page, 60);
+    // The relief has reached the station: the ground drawn under it has
+    // loaded and holds still between two reads (the hills give each
+    // station its own height, so there is no one value to wait for).
+    /** @type {number | null} */
+    let lastGroundM = null;
+    await expect
+      .poll(async () => {
+        const at = (await view3d(page))?.ground?.find(
+          (/** @type {{ id: string }} */ g) => g.id === STATION,
+        );
+        const groundM = at?.groundM ?? null;
+        const settled =
+          groundM !== null &&
+          lastGroundM !== null &&
+          Math.abs(groundM - lastGroundM) < 0.01;
+        lastGroundM = groundM;
+        return settled;
+      })
+      .toBe(true);
 
     const at = await iconPoint(page);
     expect(at, "no point of the canvas reaches the sound").not.toBeNull();

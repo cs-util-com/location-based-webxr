@@ -919,6 +919,28 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     }
   };
 
+  /** `pick` with how the picked part is drawn (see `pickDrawn` below). */
+  function pickDrawn(
+    raycaster: THREE.Raycaster,
+  ): { pick: string; drawnOrder: number | null } | null {
+    group.updateMatrixWorld();
+    let nearest: string | null = null;
+    let top: { pick: string; order: number } | null = null;
+    // Hits come nearest first, so a farther one replaces only on a
+    // strictly higher order.
+    for (const hit of raycaster.intersectObject(group, true)) {
+      if (!drawnInGroup(hit.object, group)) continue;
+      const pick = pickOf(hit.object);
+      if (pick === null) continue;
+      if (isInterfacePart(hit.object)) {
+        const order = hit.object.renderOrder;
+        if (top === null || order > top.order) top = { pick, order };
+      } else nearest ??= pick;
+    }
+    if (top !== null) return { pick: top.pick, drawnOrder: top.order };
+    return nearest === null ? null : { pick: nearest, drawnOrder: null };
+  }
+
   return {
     group,
     /** Place every station and code of `manifest` (null: none). */
@@ -1038,22 +1060,13 @@ export function createStationsLayer(deps: StationsLayerDeps) {
      *  parts the one drawn last (the highest render order) is seen, and
      *  between equal orders the nearer. */
     pick(raycaster: THREE.Raycaster): string | null {
-      group.updateMatrixWorld();
-      let nearest: string | null = null;
-      let top: { pick: string; order: number } | null = null;
-      // Hits come nearest first, so a farther one replaces only on a
-      // strictly higher order.
-      for (const hit of raycaster.intersectObject(group, true)) {
-        if (!drawnInGroup(hit.object, group)) continue;
-        const pick = pickOf(hit.object);
-        if (pick === null) continue;
-        if (isInterfacePart(hit.object)) {
-          const order = hit.object.renderOrder;
-          if (top === null || order > top.order) top = { pick, order };
-        } else nearest ??= pick;
-      }
-      return top?.pick ?? nearest;
+      return pickDrawn(raycaster)?.pick ?? null;
     },
+    /** `pick` with how it is drawn: `drawnOrder` is the render order of
+     *  the part drawn over everything that was picked, null for a body
+     *  with a depth test (so a caller drawing its own part over
+     *  everything can tell whether the pick hides it). */
+    pickDrawn,
     /** For the page's checks: the stations and what is drawn. */
     stats() {
       return {

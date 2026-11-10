@@ -211,8 +211,9 @@ export type GizmoHandle = "move" | "turn" | "dot";
  * The handle under the pointer, by the design's order: the knob and the
  * dots first (whichever is nearest, within half its drawn size); then
  * another object under the pointer takes no handle (a click there selects
- * it); then the move disc, which moves even where the selected object's
- * own body covers it. The selected object's body off the disc is no
+ * it) unless the disc is drawn over it there (`otherOverDisc` false); then
+ * the move disc, which moves even where the selected object's own body
+ * covers it. The selected object's body off the disc is no
  * handle - a tap there selects, a drag turns the camera - so a large item
  * never takes a drag meant for the view. Null: the pointer moves the
  * camera. Not `posable` (a locked station): the dots
@@ -227,6 +228,9 @@ export function handleAt(input: {
   readonly onDisc: boolean;
   /** What object the pointer is over: the selected one, another, none. */
   readonly underPointer: "selected" | "other" | null;
+  /** The other object is drawn over the move disc (default true); false
+   *  where the disc is seen on top of it, so a press there is the disc's. */
+  readonly otherOverDisc?: boolean;
   /** The middle and the knob are handles (default true). */
   readonly posable?: boolean;
 }): GizmoHandle | null {
@@ -247,7 +251,9 @@ export function handleAt(input: {
   const found = best as { handle: GizmoHandle; d: number } | null;
   if (found !== null) return found.handle;
   if (!posable) return null;
-  if (input.underPointer === "other") return null;
+  if (input.underPointer === "other" && input.otherOverDisc !== false) {
+    return null;
+  }
   return input.onDisc ? "move" : null;
 }
 

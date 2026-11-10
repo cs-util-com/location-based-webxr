@@ -859,9 +859,20 @@ describe("createStationsLayer", () => {
     expect(kinds[0]).toBe("mesh");
     expect(kinds).toContain("sprite");
     expect(layer.pick(ray(from, board))).toBe("station:a");
+    // Why: the gizmo's move disc is drawn without a depth test too, so
+    // whether a picked part hides it depends on the part's render order;
+    // a depth-tested body has none to compare (it never hides the disc).
+    expect(layer.pickDrawn(ray(from, board))).toEqual({
+      pick: "station:a",
+      drawnOrder: layer.billboardOf("a")!.renderOrder,
+    });
     // From its side, away from the billboard: the box alone.
     const side = box.clone().add(new THREE.Vector3(0, 0, 20));
     expect(layer.pick(ray(side, box))).toBe("m");
+    expect(layer.pickDrawn(ray(side, box))).toEqual({
+      pick: "m",
+      drawnOrder: null,
+    });
     layer.dispose();
   });
 

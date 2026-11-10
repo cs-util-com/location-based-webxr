@@ -100,6 +100,10 @@ standing`). A distance, size or focal length that is not a positive
     parts the highest render order wins (it is drawn last, so seen), and
     between equal orders the nearer. A billboard takes a ray only on its
     drawn pill (`pickOnlyOnPill` in `editor3d-marks.ts`);
+  - `pickDrawn(raycaster)` - `pick` with how the picked part is drawn:
+    `{ pick, drawnOrder }`, `drawnOrder` the render order of a part
+    drawn over everything, null for a depth-tested body; null for none.
+    The gizmo reads it to tell whether a pick hides its move disc;
   - `setShown({ names, codes })` - the billboards and poles, and the code
     squares, off or on (the layer chips); `codesVisible()`;
   - `setHidden(stationIds, levelIds)` - the globe view's visibility rule
@@ -288,7 +292,8 @@ and selected stations rendered, and what leaves freed; a model kept
 drawn through an edit of its notes or sections, drawn anew when its view
 changes or it moves; the pick preferring a part drawn over everything
 to a nearer depth-tested one, and between two such parts the higher
-render order, then the nearer; a billboard picked on its drawn pill
+render order, then the nearer, and `pickDrawn` naming that order (none for a
+depth-tested body); a billboard picked on its drawn pill
 only, a model seen through its transparent margin picked instead; a
 billboard per
 station rising with the morph; photos flat looking down and upright

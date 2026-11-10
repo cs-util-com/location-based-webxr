@@ -56,7 +56,7 @@ interface WorldFrame {
   readonly camera?: Camera;
   /** How many metres one CSS px covers 1 m from `camera` (its lens over
    *  the view's height): a size on the screen at a distance `d` is
-   *  `px * d * metresPerPxAtOneM` metres. Absent with `camera`. */
+   *  `px * d * metresPerPxAtOneM` metres. Absent without `camera`. */
   readonly metresPerPxAtOneM?: number;
 }
 
