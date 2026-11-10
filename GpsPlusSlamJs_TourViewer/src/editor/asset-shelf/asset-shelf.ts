@@ -42,6 +42,11 @@ export const NO_OPTIMIZER =
   "This kind of file cannot be made smaller yet; it is used as it is.";
 export const NOT_SMALLER =
   "Kept as it was: a smaller version would save less than a tenth.";
+/** The original fits, but what the optimizer made from it would not: it
+ *  is kept, and the words say the result was too large, not too little
+ *  smaller. */
+export const RESULT_TOO_LARGE =
+  "Kept as it was: the version made from it came out larger than a tour takes.";
 const ORIGINAL_USED = "The original is used, as you asked.";
 const UNREADABLE = "Its bytes could not be read to make it smaller.";
 const TOO_LARGE =
@@ -257,7 +262,7 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
       if (overCap) {
         dispatch(act.jobFailed({ id, reason: TOO_LARGE, retryable: false }));
       } else {
-        dispatch(act.jobKept({ id, reason: NOT_SMALLER }));
+        dispatch(act.jobKept({ id, reason: RESULT_TOO_LARGE }));
       }
       return;
     }

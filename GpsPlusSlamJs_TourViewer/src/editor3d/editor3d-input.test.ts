@@ -24,7 +24,7 @@ import {
 import type { GestureEdit, GestureTarget, GestureWorld } from "./gesture.js";
 import type { GizmoHandle, ScreenPoint } from "./gizmo-maths.js";
 import { GLOBE_GESTURES, routeGlobeInput } from "./globe-gestures.js";
-import { LONG_PRESS } from "./long-press.js";
+import { LONG_PRESS } from "../editor/long-press.js";
 import { liftedGeo, nudgedGeo, turnedGeo } from "./pose-edits.js";
 
 // The geodesy is licence-gated; the store activates it (as the page does).

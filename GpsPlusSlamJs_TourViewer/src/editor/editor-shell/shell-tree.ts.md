@@ -9,7 +9,7 @@ its picture, story folders and items below that line.
 
 ## Public API
 
-- `drawTree(dock, tree, folded, pictures)` - `dock` is `{ root,
+- `drawTree(dock, tree, folded, pictures, rows = {})` - `dock` is `{ root,
 stationsHead, fold, body }` (`#shell-tree`, `#tree-stations`,
   `#tree-fold`, `#tree-body`); replaces the body's children and the
   heads' contents. Every control is a `<button>` (none inside
@@ -33,8 +33,38 @@ stationsHead, fold, body }` (`#shell-tree`, `#tree-stations`,
     `data-select="story:<id>"`; `.meta` its entry count; `.add`,
     `data-storyadd`; its entries `.kid.deep`, their place in `.meta`, under it
     when open, or `.emptyrow.deep` with "Add the first entry", `data-storyfill`),
+    then its plain folders (`.folder.gfolder`, `data-plainfolder` its id,
+    `data-list="free"`, `data-item`, `data-into="folder:<id>"`: its grip,
+    `.tw` its fold, `data-pfold`; `.fname` its teal icon `.ic.fold` and
+    name, `data-select="folder:<id>"`, titled "<name> (a folder: a group in
+    the scene)"; `.meta` "N items"; `.ren` the pen, `data-rename`, titled
+    "Rename (F2)"; a `.cb` checkbox; while renamed, `.fname` holds the
+    name field `input.renin`, `data-ren`, in place of the button, the
+    count and the pen; when open its items `.kid.deep.infolder`, the last
+    `.last`, on a teal guide line (`.ctx`, the folder's teal band, while
+    the folder is selected and the item is not: they move with it), or
+    `.emptyrow.deep.infolder` "Empty -
+    drag items here" with its `data-into`),
     then its items (`.kid`), or `.emptyrow` "Nothing here yet. " with its
-    `.fill` "Add content" (`data-fill`), the same menu.
+    `.fill` "Add content" (`data-fill`), the same menu. Every free item's
+    and in-folder item's row ends in a `.cb` checkbox (`.cb.on` when
+    picked), shown only in the Select mode.
+
+  `rows` (`TreeRowsState`) says what the model does not: `renaming` (a
+  `TreeRenaming` `{ id, text }`: the folder whose name field shows, with
+  its text as typed), `selectMode` (the body gets `.selmode`: checkboxes
+  show, counts hide) and `groupHint` (a `.hint` after the cards on how to
+  group, its `.fine` words for a mouse and `.coarse` for a finger; the
+  stylesheet shows the one that fits).
+
+- `drawSelectionBar(bar, model)` - the picked rows' bar
+  (`#tree-selbar`) from `selectionBarOf` (`folder-commands.ts`): hidden
+  when `show` is false; else `.cnt` ("Tick rows" or "N selected"), the
+  `.abtn.primary` Group (`data-selbar="group"`), Ungroup
+  (`data-selbar="ungroup"`), Done in the Select mode
+  (`data-selbar="done"`), then `.why` when there is a line to say. A
+  button that cannot act is drawn disabled, not left out, and the focus
+  stays on the button that had it.
 
   A search that finds nothing draws `.nomatch` 'Nothing matches "..."'
   at the body's top (wrapped anywhere: a long word typed stays inside
@@ -54,9 +84,12 @@ stationsHead, fold, body }` (`#shell-tree`, `#tree-stations`,
   - `data-move` - the grip of a story, an entry or a free item (a
     `<span>` outside its buttons, hidden from screen readers; none while
     a search runs): the item `createNestDrag` drags, with its row's
-    `data-list` (`stories`, `story:<id>` or `free`) and `data-item`.
-    `data-into` names the list a drop on that row goes into: a story's
-    row and its empty line its story, the card's head the free items.
+    `data-list` (`stories`, `story:<id>`, `folder:<id>` or `free`) and
+    `data-item`. `data-into` names the list a drop on that row goes
+    into: a story's row and its empty line its story, a plain folder's row
+    and its empty line the folder, the card's head the free items.
+  - `data-pfold` - a plain folder's fold arrow, `data-rename` its pen,
+    `data-ren` its name field while renamed: the folder's id.
   - `data-drag` - a card's grip (`.grip`, a `<span>` beside the card's
     buttons, never inside one, hidden from screen readers, titled "Drag
     to change its place in the tour"): the station `tree-drag.ts` drags.
@@ -67,7 +100,9 @@ stationsHead, fold, body }` (`#shell-tree`, `#tree-stations`,
     and on a touch screen.
 
 - Classes: `.card` (`.sel`, `.ctx`, `.open` while unfolded), `.head`,
-  `.lockg`, `.meta`, `.add`, `.pic`, `.folder`, `.kid` (`.deep`), `.emptyrow`,
+  `.lockg`, `.meta`, `.add`, `.pic`, `.folder` (`.gfolder`), `.kid` (`.deep`,
+  `.infolder`, `.last`), `.emptyrow`, `.cb` (`.on`), `.ren`, `.renin`, `.hint`,
+  `.selmode` on the body,
   `.nomatch`, `.row`, `.chip` (`.on`), `.collapsed` on the dock.
 
 ## Invariants & assumptions
@@ -118,6 +153,9 @@ station shown; the focus kept on the pressed control across a redraw;
 the folded dock; each card's grip, outside its buttons; the unlocked
 station's mark (and no locked one's); a search's rows and its "Nothing
 matches"; story folders drawn before the free items (a hand-made model).
+The plain folders' rows, the checkboxes, the name field and the selection
+bar are driven through the shell in `editor-shell.test.ts` ("the tree's
+plain folders") and in a browser in `playwright-tests/editor3d-folders.spec.js`.
 `shell-tree.property.test.ts`: for any names (short, 40-400 characters,
 spaces, line breaks, markup-looking text) every folded card is the same
 one-row structure with the name as text and the full name in the title;

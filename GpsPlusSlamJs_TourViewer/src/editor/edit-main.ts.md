@@ -104,11 +104,13 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   left out (format minor 2: a picture gone, or a value a hand edit broke)
   in a toast of their own, naming each station by its rail name
   (`droppedStationFieldsLine`); a block's text over its cap in a
-  third, naming each block (`droppedBlockFieldsLine`); and plain folders,
-  which the editor flattens on open, in a fourth
-  (`flattenedFoldersLine`): the next save writes their items one by one,
-  each where it stands, without the grouping. All four come from
-  `openedNoticeLines`, so a test can see them without the page.
+  third, naming each block (`droppedBlockFieldsLine`); plain folders'
+  sizes a newer editor wrote (`droppedFolderScalesLine`) and whole items
+  the reader could not read (`droppedChildrenLine`) in a fourth and a
+  fifth. All come from `openedNoticeLines` and are shown by
+  `showOpenedNotices`, so a test can see them without the page. The
+  plain folders themselves take no toast: the editor keeps them and the
+  next save writes them back.
 - **A failure latched during the open** (`integrityFailure()` right after
   it) refuses the tour (E1 review #6).
 - **A late integrity failure** (`onIntegrityFailure`, the background
@@ -827,7 +829,7 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
 - **The dev server's test hook** `window.__tourEditor` (`{ editor(),
 edited(), view3d(), view3dTilt(deg), view3dDistance(m), view3dHeading(deg), view3dBuildings(on),
 view3dPointOf(selection), view3dScreenOf(selection), view3dHandle(part), view3dUnder(x, y),
-view3dGizmoSizes(), manifest(), selected(), dropTour(reason) }`): an e2e reaches the editor session's edits no control of
+view3dGizmoSizes(), view3dFolderOutlines(), manifest(), selected(), dropTour(reason) }`): an e2e reaches the editor session's edits no control of
   this page offers yet, then `edited()` follows them as an edit made here
   would (refresh, autosave told); `view3d()` is the shown 3D view's
   `stats()` (null on the map), `view3dTilt(deg)` tilts its orbit and
@@ -836,8 +838,9 @@ view3dGizmoSizes(), manifest(), selected(), dropTour(reason) }`): an e2e reaches
   hides the globe view's buildings (the view's `setBuildings`; no chip yet), `view3dPointOf(selection)` says
   where a selection stands in its world; `view3dScreenOf`, `view3dHandle`
   and `view3dGizmoSizes` say where a selection and the gizmo's handles are
-  on the canvas and how large, `view3dUnder(x, y)` what a press at a
-  canvas point picks and whether it meets the move disc; `manifest()` is what a save would write
+  on the canvas and how large, `view3dUnder(x, y)` what a
+  press at a canvas point picks and whether it meets the move disc; `view3dFolderOutlines()` how many teal
+  boxes show around a selected folder's items (null on the map); `manifest()` is what a save would write
   now and `selected()` the selection; `dropTour(reason)` drops the open
   tour as a late integrity failure does, at the moment the e2e chooses.
   Guarded by `import.meta.env.DEV &&

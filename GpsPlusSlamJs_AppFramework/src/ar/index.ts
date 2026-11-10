@@ -324,7 +324,9 @@ export {
   type TourStationDrop,
 } from './tour-manifest.js';
 export {
+  composeTourFolderPath,
   composeTourFolderPose,
+  decomposeTourFolderPath,
   decomposeTourFolderPose,
 } from './tour-folder-pose.js';
 export {
@@ -332,7 +334,9 @@ export {
   itemGeoPose,
   localPoseOf,
   tourFreeBlocks,
+  tourFreeEntries,
   tourObjectBlock,
+  type TourFreeEntry,
   tourObjects,
 } from './tour-station-pose.js';
 export { TOUR_ITEM_MAX_OFFSET_M } from './tour-items.js';

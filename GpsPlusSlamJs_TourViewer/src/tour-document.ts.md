@@ -22,7 +22,9 @@ reducers' building blocks, so a page cannot apply them differently.
 - `opened`, `written` - the tour as opened, and as last written (the
   opened one until a save landed); null before an open.
 - `stations: StationFrame[]` - every station without its free blocks (`geo`,
-  radii, title, its stories with everything in them): the frames as they stand, moved by `stationMoved`,
+  radii, title, its stories with everything in them, its plain folders
+  with their poses, titles and nested folders but none of their blocks,
+  `frameChildren`): the frames as they stand, moved by `stationMoved`,
   started by the station rule (below) and dropped with the last object of
   an automatic one, in the order they were made.
 - `placed: EditEntry[]` - objects placed, edited or moved, in the world,
@@ -404,6 +406,38 @@ geo?, what })` - a copy inserted after the original (any station the
   - `itemsGrounded({ items: [{ id, alt }], what })` - several items' new
     altitudes ("put on the ground", the page measures the ground) as one
     step; an unknown id refuses the whole step.
+  - `folderMoved({ stationId, folderId, pose, what })` - a plain
+    folder's new pose in its holder (its station or the folder around
+    it), as one step: its items move rigidly with it and keep their
+    poses in it (written ones follow the frame's folder by themselves;
+    those with an entry are moved through the old and the new folders).
+    Its scale stays 1. Refused (the same state): an unknown station or
+    folder, a pose the format would refuse (`parseTourLocalPose`), an
+    unchanged pose, or one that takes any of its items past the
+    station's bound. An item moved on its own (`moved`) keeps its
+    folders and changes only its own pose in them.
+  - `folderGrouped({ folderId, title, ids, what })` - items of one
+    station grouped in a new plain folder at their centroid, turned like
+    the station (yaw 0), titled by the creator (`folderTitle`); every
+    item keeps its world pose and names the folder. Refused: a
+    `groupRefusal`, a taken id, a title the format refuses.
+  - `folderUngrouped({ stationId, folderId, what })` - the folder taken
+    apart: its items and its own folders go to its holder, each where it
+    stood (`withoutFolder` with lift).
+  - `objectsFoldered({ ids, folderId, what })` - items into the folder
+    `folderId` of their station, or (null) out to the station's top,
+    each keeping its world pose. Refused: an unknown item, a folder its
+    station lacks, a pose in the folder past the format's bound; a move
+    that changes no item's folder is no step.
+  - `folderRenamed({ stationId, folderId, title, what })` - the title;
+    a blank, over-long or unchanged one is refused.
+  - `folderDeleted({ stationId, folderId, what })` - the folder with its
+    folders and every item in them (a written item gets a tombstone);
+    the page asks first.
+  - Each folder action is one undo step and is recorded for the draft
+    (`framesRecorded`; the items through their entries, which carry
+    `folder`). No page dispatches them yet: the tree's folder rows,
+    multi-select and drag come next.
   - `modelResized({ id, sizeM, what })` - a placed model's size, within
     `TOUR_MODEL_MIN_SIZE_M`..`TOUR_MODEL_MAX_SIZE_M` (0.05 m to 500 m).
   - `moved` with `newStation: true` - "Move to a new station": the item
@@ -501,6 +535,15 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
   `tour-document-story-text.test.ts` (the same, per kind and field, and
   a property: any sequence of such edits saves a tour the format reads,
   every cap held, the free block untouched).
+- `groupRefusal(state, ids)` - why the items `ids` cannot be grouped
+  (`tour-folder-edit.ts` `FolderRefusal`): `notHere` for none, a repeat, a
+  story, an unknown id or two stations; `oneLevel` when one stands in a
+  folder already; null when they can.
+- `folderDropRefusal(state, dragged, onto)` - why the tree's drag may not
+  drop `dragged` (an item, a folder or a story) onto `onto` (a folder, a
+  story or a station): a story into a folder, a folder into a story,
+  into itself or a folder inside it, into another folder (one level),
+  an item into another station's folder; null when it may.
 - `stationDeleteRefusal(state, id)` - `missing`, `last` (a tour keeps at
   least one station) or null.
 - `documentFrames(state)` - every frame the next write carries, whole and

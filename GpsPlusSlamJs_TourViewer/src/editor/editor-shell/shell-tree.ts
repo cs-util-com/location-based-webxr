@@ -3,8 +3,11 @@
  * file explorer draws one: a row per station (its grip, its fold arrow,
  * its number and name, a mark when it is unlocked, its count when
  * folded), unfolded its picture, its story folders (a story's fold arrow,
- * its name, its count and its "+", and when open its numbered entries) and
- * its free items, then the codes and the layer chips.
+ * its name, its count and its "+", and when open its numbered entries), its
+ * plain folders (a fold arrow, a name, a count and a pen, and when open
+ * their items on a guide line) and its other free items, then the codes
+ * and the layer chips. In the Select mode each item's and folder's row
+ * shows a checkbox.
  * Everything from the tour is set as text, never as markup. Every control
  * is a button (a card's row, its fold arrow, a folder's arrow and name, an
  * item's and a code's row, a header, a chip), none inside another, so the
@@ -29,7 +32,11 @@
  * - `data-list` and `data-item` - an item's or a story's row: the list
  *   it stands in (`free`, `story:<id>`, `stories`) and its id there;
  * - `data-into` - a row a drop goes into: a story's row and its empty
- *   line (`story:<id>`), a station's row (`free`, its free items).
+ *   line (`story:<id>`), a plain folder's row and its empty line
+ *   (`folder:<id>`), a station's row (`free`, its free items);
+ * - `data-pfold` - a plain folder's fold arrow: the folder's id;
+ * - `data-rename` - a plain folder's pen: the folder it renames;
+ *   `data-ren` - the name field that replaces its name meanwhile.
  *
  * @see shell-tree.ts.md
  */
@@ -40,7 +47,9 @@ import type {
   TreeChild,
   TreeFolder,
   TreeModel,
+  TreePlainFolder,
 } from "./tree-model.js";
+import { FOLDER_PREFIX } from "../editor-model.js";
 import type { TreeSection } from "../editor-view.js";
 import {
   FREE_LIST,
@@ -76,6 +85,9 @@ const KEYS = [
   "fill",
   "storyadd",
   "storyfill",
+  "pfold",
+  "rename",
+  "ren",
 ] as const;
 
 type ControlKey = (typeof KEYS)[number];
@@ -101,6 +113,34 @@ function controlOf(
   return [...body.querySelectorAll<HTMLElement>(`[data-${control.key}]`)].find(
     (e) => e.dataset[control.key] === control.value,
   );
+}
+
+/** The line on how to group, one for a mouse and one for a finger (the
+ *  style shows the one that fits the screen's pointer). */
+function groupHint(): HTMLElement {
+  const hint = el("div", "hint");
+  const words = (className: string, parts: readonly (string | [string])[]) => {
+    const line = el("span", className);
+    for (const part of parts) {
+      line.append(typeof part === "string" ? part : el("b", "", part[0]));
+    }
+    return line;
+  };
+  hint.append(
+    words("fine", [
+      "To group: Ctrl+click or Shift+click a few items, then ",
+      ["Group"],
+      " (Ctrl+G).",
+    ]),
+    words("coarse", [
+      "To group: tap ",
+      ["Select"],
+      " (or long-press a row), tick a few items, then ",
+      ["Group"],
+      ".",
+    ]),
+  );
+  return hint;
 }
 
 /** A section's header button: its fold arrow, its name and its count. */
@@ -135,14 +175,33 @@ function moveGrip(id: string): HTMLElement {
   return grip;
 }
 
+/** The Select mode's checkbox of a row (shown only in that mode): a mark;
+ *  the row's own `aria-pressed` says whether it is picked. */
+function checkbox(on: boolean): HTMLElement {
+  const box = el("span", on ? "cb on" : "cb");
+  box.setAttribute("aria-hidden", "true");
+  box.append(shellIcon("check"));
+  return box;
+}
+
 /** An item's row: its kind's icon, its name and, for a story's entry, its
- *  place; in `list` (a story's, deeper, or the free items). */
+ *  place; in `list` (a story's or a plain folder's, deeper, or the free
+ *  items). A plain folder's items stand on its guide line, the last one
+ *  ending it. */
 function childOf(
   child: TreeChild,
   list: string,
   searching: boolean,
+  last = false,
 ): HTMLButtonElement {
-  const row = button(list === FREE_LIST ? "kid" : "kid deep");
+  const inFolder = list.startsWith(FOLDER_PREFIX);
+  const row = button(
+    list === FREE_LIST
+      ? "kid"
+      : inFolder
+        ? `kid deep infolder${last ? " last" : ""}`
+        : "kid deep",
+  );
   row.classList.toggle("sel", child.selected);
   row.setAttribute("aria-pressed", String(child.selected));
   row.dataset["select"] = child.id;
@@ -155,7 +214,88 @@ function childOf(
   if (child.place !== undefined) {
     row.append(el("span", "meta", String(child.place)));
   }
+  if (list === FREE_LIST || inFolder) row.append(checkbox(child.selected));
   return row;
+}
+
+/** The name field of a plain folder being renamed, its text as typed. */
+export interface TreeRenaming {
+  readonly id: string;
+  readonly text: string;
+}
+
+/** A plain folder's row (its grip, its arrow, its name or, being renamed,
+ *  the name field, its count, its pen and its checkbox: none inside
+ *  another) and, open, its items or the line that says it has none. */
+function plainFolderRows(
+  folder: TreePlainFolder,
+  searching: boolean,
+  renaming: TreeRenaming | null,
+): HTMLElement[] {
+  const into = `${FOLDER_PREFIX}${folder.id}`;
+  const row = el("div", "folder gfolder");
+  row.classList.toggle("sel", folder.selected);
+  row.classList.toggle("ctx", folder.context);
+  row.dataset["plainfolder"] = folder.id;
+  row.dataset["list"] = FREE_LIST;
+  row.dataset["item"] = folder.id;
+  row.dataset["into"] = into;
+  if (!searching) row.append(moveGrip(folder.id));
+  const fold = button("tw");
+  fold.dataset["pfold"] = folder.id;
+  fold.setAttribute("aria-expanded", String(folder.open));
+  fold.title = folder.open
+    ? "Hide the folder's items"
+    : "Show the folder's items";
+  fold.setAttribute("aria-label", fold.title);
+  fold.append(shellIcon(folder.open ? "down" : "right"));
+  row.append(fold);
+  const icon = el("span", "ic fold");
+  icon.append(shellIcon("folder"));
+  if (renaming?.id === folder.id) {
+    const box = el("span", "fname");
+    const field = el("input", "renin");
+    field.type = "text";
+    field.value = renaming.text;
+    field.dataset["ren"] = folder.id;
+    field.setAttribute("aria-label", "The folder's name");
+    box.append(icon, field);
+    row.append(box);
+  } else {
+    const pick = button("fname");
+    pick.dataset["select"] = folder.selection;
+    pick.title = `${folder.title} (a folder: a group in the scene)`;
+    pick.setAttribute("aria-pressed", String(folder.selected));
+    pick.append(icon, el("span", "nm", folder.title));
+    const count = el(
+      "span",
+      "meta",
+      folder.count === 1 ? "1 item" : `${String(folder.count)} items`,
+    );
+    const pen = button("ren");
+    pen.dataset["rename"] = folder.id;
+    pen.title = "Rename (F2)";
+    pen.setAttribute("aria-label", `Rename "${folder.title}"`);
+    pen.append(shellIcon("pencil"));
+    row.append(pick, count, pen, checkbox(folder.selected));
+  }
+  if (!folder.open) return [row];
+  if (folder.children.length > 0) {
+    const n = folder.children.length;
+    return [
+      row,
+      ...folder.children.map((c, i) => {
+        const kid = childOf(c, into, searching, i === n - 1);
+        // A selected folder carries its items: they wear its band.
+        kid.classList.toggle("ctx", folder.selected && !c.selected);
+        return kid;
+      }),
+    ];
+  }
+  if (folder.count > 0) return [row];
+  const empty = el("div", "emptyrow deep infolder", "Empty - drag items here");
+  empty.dataset["into"] = into;
+  return [row, empty];
 }
 
 /** A story's row (its arrow, its name, its count, its "+": none inside
@@ -211,6 +351,7 @@ function cardOf(
   card: TreeCard,
   pictures: ShellPictures,
   searching: boolean,
+  renaming: TreeRenaming | null,
 ): HTMLElement {
   const box = el("div", "card");
   box.classList.toggle("sel", card.selected);
@@ -287,10 +428,17 @@ function cardOf(
     for (const folder of card.folders) {
       kids.append(...folderOf(folder, searching));
     }
+    for (const folder of card.groups) {
+      kids.append(...plainFolderRows(folder, searching, renaming));
+    }
     for (const child of card.children) {
       kids.append(childOf(child, FREE_LIST, searching));
     }
-    if (card.folders.length === 0 && card.children.length === 0) {
+    if (
+      card.folders.length === 0 &&
+      card.groups.length === 0 &&
+      card.children.length === 0
+    ) {
       const empty = el("div", "emptyrow", "Nothing here yet. ");
       const fill = button("fill");
       fill.dataset["fill"] = card.id;
@@ -303,6 +451,15 @@ function cardOf(
     box.append(kids);
   }
   return box;
+}
+
+/** How the rows are drawn beyond the model: the folder being renamed,
+ *  the Select mode (checkboxes), and whether the line on how to group
+ *  shows (nothing picked). */
+export interface TreeRowsState {
+  readonly renaming?: TreeRenaming | null;
+  readonly selectMode?: boolean;
+  readonly groupHint?: boolean;
 }
 
 /**
@@ -320,8 +477,11 @@ export function drawTree(
   tree: TreeModel,
   folded: boolean,
   pictures: ShellPictures,
+  rows: TreeRowsState = {},
 ): void {
   const focused = focusedControl(dock.body);
+  const renaming = rows.renaming ?? null;
+  dock.body.classList.toggle("selmode", rows.selectMode === true);
   dock.root.classList.toggle("collapsed", folded);
   dock.fold.replaceChildren(shellIcon(folded ? "down" : "up"));
   dock.fold.title = folded ? "Show the panel" : "Collapse the panel";
@@ -341,8 +501,11 @@ export function drawTree(
   if (tree.sections.stations) {
     const cards = el("div", "cards");
     for (const card of tree.cards)
-      cards.append(cardOf(card, pictures, tree.query !== ""));
+      cards.append(cardOf(card, pictures, tree.query !== "", renaming));
     parts.push(cards);
+    if (rows.groupHint === true && tree.cards.length > 0) {
+      parts.push(groupHint());
+    }
   }
   const codesHead = el("div", "sec");
   codesHead.append(
@@ -393,4 +556,66 @@ export function drawTree(
   }
   dock.body.replaceChildren(...parts);
   if (focused !== null) controlOf(dock.body, focused)?.focus();
+}
+
+/** The selection bar's model (`../folder-commands.ts` `selectionBarOf`). */
+interface SelectionBarModel {
+  readonly show: boolean;
+  readonly count: number;
+  readonly group: boolean;
+  readonly ungroup: boolean;
+  readonly done: boolean;
+  readonly why: string | null;
+}
+
+/**
+ * The picked rows' bar under the tree: their count, Group (the primary
+ * one), Ungroup and, in the Select mode, Done, then the line on why Group
+ * is off; hidden when it has nothing to act on. A button that cannot act
+ * is disabled, never left out, so the bar keeps its shape as rows are
+ * ticked. Its clicks are the shell's: `data-selbar` (`group`, `ungroup`,
+ * `done`).
+ */
+export function drawSelectionBar(
+  bar: HTMLElement,
+  model: SelectionBarModel,
+): void {
+  bar.hidden = !model.show;
+  if (!model.show) {
+    bar.replaceChildren();
+    return;
+  }
+  const focused =
+    document.activeElement instanceof HTMLElement &&
+    bar.contains(document.activeElement)
+      ? (document.activeElement.dataset["selbar"] ?? null)
+      : null;
+  const act = (
+    what: string,
+    icon: "folder" | "outdent" | "check",
+    label: string,
+    on: boolean,
+    primary = false,
+  ) => {
+    const b = button(primary ? "abtn primary" : "abtn");
+    b.dataset["selbar"] = what;
+    b.disabled = !on;
+    b.append(shellIcon(icon), el("span", "", label));
+    return b;
+  };
+  const parts: HTMLElement[] = [
+    el(
+      "span",
+      "cnt",
+      model.count === 0 ? "Tick rows" : `${String(model.count)} selected`,
+    ),
+    act("group", "folder", "Group", model.group, true),
+    act("ungroup", "outdent", "Ungroup", model.ungroup),
+  ];
+  if (model.done) parts.push(act("done", "check", "Done", true));
+  if (model.why !== null) parts.push(el("span", "why", model.why));
+  bar.replaceChildren(...parts);
+  if (focused !== null) {
+    bar.querySelector<HTMLElement>(`[data-selbar="${focused}"]`)?.focus();
+  }
 }

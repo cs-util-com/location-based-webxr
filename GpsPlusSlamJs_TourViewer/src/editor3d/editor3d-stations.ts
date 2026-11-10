@@ -1186,6 +1186,12 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     photoPlanes(id: string): THREE.Mesh[] {
       return (stations.get(id)?.content?.photos ?? []).map((p) => p.mesh);
     },
+    /** Each drawn object of an item (its label or plane, a model): none
+     *  for one not drawn now (a selected folder's outline boxes them). */
+    itemObjects(id: string): THREE.Object3D[] {
+      const entry = entryOfItem(id);
+      return entry === null ? [] : drawnOf(entry, id);
+    },
     /** An item's drawn model (the glb in its part, under its pose and
      *  size), or null for one not drawn now. */
     modelObject(id: string): THREE.Object3D | null {

@@ -28,6 +28,14 @@ children }`; `count` is how many items it holds, `unlocked` whether
 children }`), listed before them, a folder's `children` its entries with
     their 1-based `place`; free items carry no place; `children` of a station
     list every free block, a video, an audio and a character too;
+  - `groups` - the station's plain folders (`TreePlainFolder` `{ id,
+selection: "folder:<id>", title, open, selected, context, count, children }`),
+    listed after the story folders and before the items in no folder; a
+    folder inside a folder (a file may hold one) is listed in its
+    outermost folder; open unless `foldedFolders` names it; a row is
+    selected when it is `selected` or among `picked`; a search lists a
+    folder whole when its title (or "folder group") holds the text, else
+    only its matching items;
   - `storyRows(story)` - a story's entries as `{ id, kind, title, place }`;
   - `stationContents(station)` - its stories (selected as `story:<id>`), then
     its free items, as the inspector's Contents lists them;
@@ -58,7 +66,8 @@ children }`), listed before them, a folder's `children` its entries with
 - `stationGroups(stations)` -> the editor kit's `TreeGroup[]`: each
   station's id with its free items' ids as its children and its stories
   as groups inside it (selected as `story:<id>`, their entries' ids as
-  their children), for the tree's click rule (`treeClickPlan`).
+  their children), then its plain folders (selected as `folder:<id>`,
+  their items as their children), for the tree's click rule (`treeClickPlan`).
 - `StationContent` (`{ id, kind, title }`) - the shape
   `stationContents` lists (above).
 

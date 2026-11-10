@@ -10,7 +10,20 @@ and placed model with its geo pose, as the framework's `tourObjects`
 reads a station's free blocks. They write through `withTourContent`,
 which puts every object into the station it names as a free block at a
 LOCAL pose, beside the station's story blocks, and lists a captured
-photo's image asset. A tour has no loose pins. The walk's
+photo's image asset. A tour has no loose pins.
+
+Plain folders are kept. An object names the folders holding it
+(`folder`, outermost first, as the framework's `tourObjects` reads
+them); the write puts it into the innermost of them its station still
+has, at its pose in that folder's frame (`decomposeTourFolderPath`), and
+one whose folder is gone at the station's top. A folder's own pose and
+title are the station's frame's (the tour document moves them); a folder
+stays when its last item leaves. At every level groups come first
+(stories and folders, in their order), then items. An object nobody
+moved (same station, same innermost folder, the very geo its stored pose
+reads as) keeps its stored pose verbatim, so a save never nudges a
+block, and an item moved on its own changes only its own pose in its
+folder, never the folder's. The walk's
 camera captures are debug data, never in a station (an earlier file's
 `captureSpots` is an unknown field to the framework's reader).
 
@@ -22,9 +35,23 @@ camera captures are debug data, never in a station (an earlier file's
   chosen, not measured.
 - `asStored(object, station) -> TourObject`: the object as `station` stores
   it and the world view reads it back, its geo taken through the station's
-  frame and back. A saved object differs from the placed one by the
+  frame and the folders holding it there and back, naming those folders
+  (none, and no `folder`, when its folder is not the station's). A saved
+  object differs from the placed one by the
   micrometres of that round trip, so a page comparing a placement with the
   saved file compares this one (the authoring draft's `hostedObjects`).
+- `folderChains(station)`: every plain folder of a station (or a frame)
+  by id, as its chain of folders, outermost first, ending in itself.
+- `folderChainOf(object, chains)`: the chain an object is written into,
+  down to the innermost folder it names; empty when `chains` lacks it.
+- `frameChildren(station)` (with the module-private `folderSkeleton`): a plain folder as a
+  frame holds it (its own fields and its plain folders, none of its
+  blocks), and a station's stories and skeleton folders in its order.
+- `withWrittenBlocks(frame, written)`: a frame's children with the free
+  blocks the written station carries, each in the frame's folder that
+  held it (its pose there verbatim, so it follows that folder wherever
+  the frame puts it); one whose folder the frame lacks at the top, at
+  its pose in the station.
 - `automaticStationFrame(id, at)`: a new automatic station's frame
   (below), the one the tour document's station rule starts.
 - `WorldBlock`, `worldBlocks(station)`: a station's free blocks
@@ -44,8 +71,9 @@ camera captures are debug data, never in a station (an earlier file's
   is, gone with it; a cover or card image naming it names the photo.
 - `withTourContent(manifest, { objects }) -> TourManifest`: the manifest
   with `objects` as its free blocks, each in the station it names (or,
-  naming none, the one the manifest holds it in) beside the station's
-  story blocks, the stations kept as they are and in their order, and the
+  naming none, the one the manifest holds it in) and in the folder it
+  names there (above), beside the station's stories and folders, the
+  stations kept as they are and in their order, and the
   captured photos' assets those of `objects` (a deleted photo's asset
   goes unless another object or a story block still names its image,
   B2a review 2; a kept one stays in its place; a new one's is listed). Throws an `Error` naming the object for

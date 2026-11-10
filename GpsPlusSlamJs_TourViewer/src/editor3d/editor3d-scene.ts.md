@@ -99,7 +99,9 @@ keys), and writes only through the page's `edits`.
   `screenOf(selection)`, `handleScreen(part)`, `underAt(x, y)` (what a
   press there picks, and whether it meets the move disc) and
   `gizmoSizes()` - CSS px
-  on the canvas, for the page's checks.
+  on the canvas, for the page's checks. `folderOutlines()` - how many teal boxes show
+  around a selected plain folder's items (`folder-outline.ts`), for the
+  same checks; the globe view answers it too.
 - `stats()` also carries the orbit's `target`, `distanceM`, the
   `camera`'s position, whether a flight is `flying`, and `top`.
 - Types `Editor3dDeps`, `Editor3dEdits`, `Editor3dStats` (the store it

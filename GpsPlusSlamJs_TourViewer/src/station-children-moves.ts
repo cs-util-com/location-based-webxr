@@ -85,13 +85,13 @@ function reorderedIds(ids: readonly string[], from: number, slot: number) {
 
 const refused = (reason: ChildMoveRefusal) => ({ refused: reason }) as const;
 
-/** Whether `place` lies inside a plain folder. Not reachable from the
- *  editor: its stations come flattened (`manifestToWrite`: stories and free
- *  items only, every folder's items written one by one where they stand),
- *  so no place there is in a folder. Kept as a guard because a `Holder`
- *  admits folders, and a move that went on would put a folder's child at
- *  its folder's index in the station's list - the wrong item. Such a
- *  place is refused as `missing`: not in a list this module moves. */
+/** Whether `place` lies inside a plain folder. This module moves the
+ *  children of a station's top and of its stories only; moves into, out
+ *  of and within a plain folder are the folder actions'
+ *  (`tour-document.ts`), which keep each item's world pose. A move that
+ *  went on here would put a folder's child at its folder's index in the
+ *  station's list - the wrong item - so such a place is refused as
+ *  `missing`: not in a list this module moves. */
 const inPlainFolder = (place: TourChildrenPlace): boolean =>
   place.path.length > 0 && place.story === undefined;
 
@@ -166,7 +166,8 @@ function intoStory<H extends Holder>(
   return withStoryChildren(holder, story, children);
 }
 
-/** The station's stories in a new order, the free items after them. */
+/** The station's stories in a new order, each in a slot a story held:
+ *  every other child (a free item, a plain folder) keeps its own slot. */
 function movedStory<H extends Holder>(
   holder: H,
   id: string,
@@ -184,13 +185,13 @@ function movedStory<H extends Holder>(
   );
   if (order === null) return refused("unchanged");
   const byId = new Map(stories.map((s) => [s.id, s]));
+  let next = 0;
   return {
     station: {
       ...holder,
-      children: [
-        ...order.map((sid) => byId.get(sid) as TourStory),
-        ...holder.children.filter((c) => !isStory(c)),
-      ],
+      children: holder.children.map((c) =>
+        isStory(c) ? (byId.get(order[next++] as string) as TourStory) : c,
+      ),
     },
     answers: 0,
     floored: false,
