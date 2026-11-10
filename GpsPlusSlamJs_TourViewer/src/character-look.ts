@@ -155,6 +155,10 @@ interface CharacterLookParts {
   /** The creator's facing (rad about Up, 0 facing +Z east; the block
    *  pose's yaw, `restYawOf`); default 0. */
   readonly restYaw?: number;
+  /** From more than 90 degrees round he turns his back to the camera
+   *  rather than stand edge-on (`facingYaw`'s `backToCamera`): the
+   *  editor's look. Default false, the visitor's. */
+  readonly backToCamera?: boolean;
   /** His line has a voice, which a tap plays: the bubble or the scroll
    *  says so. Default false. */
   readonly voiced?: boolean;
@@ -294,6 +298,7 @@ export function createCharacterLook(
       : CHARACTER_DEFAULT_HEIGHT_M;
   const name = options.name;
   const line = options.line;
+  const backToCamera = options.backToCamera === true;
   let restYaw =
     options.restYaw !== undefined && Number.isFinite(options.restYaw)
       ? options.restYaw
@@ -560,7 +565,7 @@ export function createCharacterLook(
     // Facing: from the creator's facing toward the camera, by at most 60
     // degrees (the beckon is his frame and the footer, not a turn); the
     // pop-up rests at the creator's facing.
-    const target = facingYaw(restYaw, toCam, look.turns);
+    const target = facingYaw(restYaw, toCam, look.turns, backToCamera);
     if (snap || !turned) turnYaw = target;
     else {
       const k = 1 - Math.exp(-dt * TURN_EASE);

@@ -29,8 +29,8 @@ import {
  * 60 degrees: drawn flat at a fixed turn he would vanish edge-on from the
  * side. These hold that he stands only in the editor (the visitor's free
  * host is untouched), in the look of his view (the old `stage` view in
- * the default story look), showing a face from in front, the sides and
- * behind (edge-on only about 150 degrees round), and that a
+ * the default story look), never edge-on from any heading round him (his
+ * back turns to a camera behind him, the swing eased), and that a
  * file that cannot be read takes the part out and a dispose frees it.
  */
 
@@ -276,19 +276,58 @@ describe("characterWorld", () => {
     }
   });
 
-  // Why: the look turns at most 60 degrees from his facing, so between the
-  // side and straight behind there is a heading where his figure stands
-  // edge-on: 150 degrees round, exactly. Within 120 degrees of his
-  // facing it is at least half square on. This pins that limit of the
-  // visitor's look, which the editor shares, so a change to it is seen.
-  it("stands edge-on 150 degrees round from his facing, the limit of a 60 degree turn", async () => {
-    for (let relDeg = -120; relDeg <= 120; relDeg += 15) {
-      expect(
-        await squareness(0, relDeg, 8),
-        `${relDeg} deg`,
-      ).toBeGreaterThanOrEqual(0.5 - 1e-6);
+  // Why: in the editor he is drawn to be found and picked, so he must
+  // never stand edge-on. The visitor's look, turning at most 60 degrees,
+  // stands him edge-on 150 degrees round; the editor's turns his back to
+  // a camera more than 90 degrees round instead. Swept every 5 degrees
+  // all the way round, over two poses.
+  it("never stands edge-on: at least 0.85 square on from every heading round him", async () => {
+    for (const poseYawDeg of [0, 70]) {
+      for (let relDeg = -180; relDeg <= 180; relDeg += 5) {
+        expect(
+          await squareness(poseYawDeg, relDeg, 8),
+          `pose ${poseYawDeg} deg, ${relDeg} deg round`,
+        ).toBeGreaterThanOrEqual(0.85);
+      }
     }
-    expect(await squareness(0, 150, 8)).toBeLessThan(0.02);
-    expect(await squareness(0, -150, 8)).toBeLessThan(0.02);
+  });
+
+  // Why: crossing his side, his target turn jumps from one 60 degree
+  // limit to the other (his face to his back). It must ease over several
+  // frames, not snap in one.
+  it("eases the swing as the camera crosses his side", async () => {
+    const { part } = await standing();
+    const camera = new PerspectiveCamera(50, 1, 0.05, 600);
+    const at = (relDeg: number) => {
+      const h = (relDeg * Math.PI) / 180;
+      camera.position.set(8 * Math.sin(h), 1.6, 8 * Math.cos(h));
+      camera.lookAt(0, 1.2, 0);
+      camera.updateMatrixWorld(true);
+    };
+    const yaw = () => {
+      const figure = made.at(-1)?.look.parts.figure;
+      if (figure === undefined) throw new Error("no look");
+      part.object.updateMatrixWorld(true);
+      const d = figure.getWorldDirection(new Vector3());
+      return (Math.atan2(d.x, d.z) * 180) / Math.PI;
+    };
+    at(85);
+    for (let i = 0; i < 120; i++) {
+      part.update?.({ seconds: i * 0.05, viewer: [0, 0, 0], camera });
+    }
+    const before = yaw();
+    expect(before).toBeCloseTo(60, 3);
+    at(95);
+    part.update?.({ seconds: 6.05, viewer: [0, 0, 0], camera });
+    const after = yaw();
+    // Turning toward -60 (his back to the camera), but less than a third
+    // of the way in one 50 ms frame.
+    expect(after).toBeLessThan(before);
+    expect(before - after).toBeLessThan(40);
+    for (let i = 2; i < 120; i++) {
+      part.update?.({ seconds: 6 + i * 0.05, viewer: [0, 0, 0], camera });
+    }
+    expect(yaw()).toBeCloseTo(-60, 3);
+    part.dispose();
   });
 });

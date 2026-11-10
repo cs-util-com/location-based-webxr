@@ -1,9 +1,9 @@
 /**
  * A free character in the editor's world: the visitor's character look
  * (`character-look.ts`, the die-cut figure that turns toward the camera
- * by at most 60 degrees from his facing: a face shows from in front, the
- * sides and behind, edge-on only about 150 degrees round) behind the one
- * world door
+ * by at most 60 degrees from his facing), here with his back turned to a
+ * camera more than 90 degrees round, so he is never edge-on, behind the
+ * one world door
  * (`world-part.ts`), in the look of his chosen view. A view with no world
  * look of its own (`stage`) stands in the default story look
  * (`EDITOR_CHARACTER_VIEW`); the `card` view stands nothing, as the
@@ -97,6 +97,9 @@ export function characterWorld(
         poses,
         // Outside a story: no card holds his line.
         noCard: true,
+        // Never edge-on in the editor: from behind his back turns to the
+        // camera.
+        backToCamera: true,
         ...(deps.painters === undefined ? {} : { painters: deps.painters }),
       });
       made.root.name = "editor-character";
