@@ -123,3 +123,12 @@ variant-grouped packing, and hash stability.
 `mesh-orientation.test.ts` — the frame split above: a tree 50 m north packs to
 `z ≈ −50` while its placement keeps `position.y ≈ +50`. That file is where every
 "which way is north" assertion in the package lives.
+
+## Colour schemes (OSM demo colour schemes plan 2026-11-10-0841)
+
+- `TreeKey` names the seven keys of `TREE_PALETTE`.
+- `treeColour(cls, key, jitter?, palette?)`: the palette is an optional
+  fourth parameter (default `TREE_PALETTE`); the jitter applies to any
+  palette.
+- `BuildTreesOptions.treePalette` passes a scheme's `trees` through
+  `buildTrees`; absent, `TREE_PALETTE`.

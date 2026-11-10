@@ -228,13 +228,26 @@ export function treeClass(tags: Readonly<Record<string, string>>): TreeClass {
   return { leafType, leafCycle, source };
 }
 
+/** A key of `TREE_PALETTE` (and of a colour scheme's `trees`). */
+export type TreeKey =
+  | "broadleaved/deciduous"
+  | "broadleaved/unknown"
+  | "broadleaved/evergreen"
+  | "needleleaved/evergreen"
+  | "needleleaved/unknown"
+  | "needleleaved/deciduous"
+  | "unknown";
+
 /**
  * The muted tree palette, packed sRGB, keyed `leafType/leafCycle`, plus
  * `unknown` for every tree whose leaf type is not known (mixed included).
  * Chroma 19 to 40 (max minus min channel) against today's 62: the trees sit
  * back and the heat ramp stays the loudest colour in the scene.
  */
-export const TREE_PALETTE: ReadonlyMap<string, number> = new Map([
+export const TREE_PALETTE: ReadonlyMap<TreeKey, number> = new Map<
+  TreeKey,
+  number
+>([
   ["broadleaved/deciduous", 0x7b8663],
   ["broadleaved/unknown", 0x77845f],
   ["broadleaved/evergreen", 0x5f6e55],
@@ -254,12 +267,13 @@ export function treeColour(
   cls: Pick<TreeClass, "leafType" | "leafCycle">,
   key: string,
   jitter: number = TREE_COLOUR_JITTER,
+  palette: ReadonlyMap<string, number> = TREE_PALETTE,
 ): number {
   const base =
     (cls.leafType === "broadleaved" || cls.leafType === "needleleaved"
-      ? TREE_PALETTE.get(`${cls.leafType}/${cls.leafCycle}`)
+      ? palette.get(`${cls.leafType}/${cls.leafCycle}`)
       : undefined) ??
-    TREE_PALETTE.get("unknown") ??
+    palette.get("unknown") ??
     0;
   const spread = Number.isFinite(jitter) ? jitter : 0;
   const lightness = 1 + (unit(key, "l") - 0.5) * spread;
@@ -298,6 +312,8 @@ export function isTree(feature: OsmFeature): boolean {
 export interface BuildTreesOptions {
   readonly frame: EnuFrame;
   readonly groundHeightM?: (position: LatLng) => number;
+  /** The crown palette (a colour scheme's `trees`). Default `TREE_PALETTE`. */
+  readonly treePalette?: ReadonlyMap<string, number>;
 }
 
 /**
@@ -341,7 +357,7 @@ export function buildTrees(
       // expression is where that quietly stops being true.
       rotationY: stableRotationY(key),
       variant: variantOf(cls),
-      colour: treeColour(cls, key),
+      colour: treeColour(cls, key, TREE_COLOUR_JITTER, options.treePalette),
     });
   }
 

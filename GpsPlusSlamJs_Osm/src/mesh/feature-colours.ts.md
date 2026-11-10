@@ -94,3 +94,16 @@ roadColour({ highway: "footway", surface: "asphalt" }); // the class wins
 builders, the fallbacks, the lightness band and saturation ceiling for both
 palettes, the ground-contrast floor for every road colour, and the parser's
 accepted and rejected forms.
+
+## Colour schemes (OSM demo colour schemes plan 2026-11-10-0841)
+
+- `roadColour(tags, colours?)` takes an optional `RoadColours` (a colour
+  scheme's road part, `colour-scheme.ts`); absent, `DEFAULT_ROAD_COLOURS`,
+  built from this file's own tables, so the one-argument call (the O3 lab
+  calls it so) is unchanged.
+- `roadsBySurface` false lets the class beat `surface` for car roads (a
+  by-class scheme at surface-heavy Heidelberg); pedestrian classes and the
+  sidewalk keep their precedence in every scheme (DEC-R7b-4, r1175).
+- Road colours are written RAW into the chunk buffers (no linear
+  conversion), so a scheme's road hex renders lighter than the same hex on a
+  wall; pinned in `colour-scheme.test.ts`.

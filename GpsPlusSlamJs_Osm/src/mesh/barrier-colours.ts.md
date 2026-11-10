@@ -60,3 +60,12 @@ an independent computation, `building:colour`, and unparseable colours.
 `barrier-colours.property.test.ts` - untagged colours stay muted (chroma at
 most 56) and mid-light (luma 100 to 170); a tagged colour lands between base
 and tag per channel; any tag soup gives a deterministic 24-bit colour.
+
+## Colour schemes (OSM demo colour schemes plan 2026-11-10-0841)
+
+- `barrierColour(tags, colours?)` takes an optional `BarrierColours`;
+  absent, `DEFAULT_BARRIER_COLOURS` (the two maps above).
+- `honourColourTags` false mixes no tagged `colour` in (D7 extended to
+  barriers by the session, owner go 2026-11-10); materials still colour from
+  the scheme's `barrierMaterials`. Tags of no solid kind take the scheme's
+  wall colour.

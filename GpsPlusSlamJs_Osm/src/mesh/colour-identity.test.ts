@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { loadSite } from "../test-utils/load-fixtures.js";
 import { parseOverpassJson } from "../model/overpass-parser.js";
 import { buildCity, type City, type CityOptions } from "./city.js";
+import { DEFAULT_CITY_COLOUR_SCHEME } from "./colour-scheme.js";
 import type { MeshChunk } from "./chunk-meshes.js";
 import { enuFrameAt } from "./enu.js";
 
@@ -223,6 +224,17 @@ describe("city colours without a scheme are byte-identical to before schemes", (
           roads: true,
           cosmeticTrees: true,
           palette,
+        });
+        expect(digestsOf(city)).toEqual(GOLDEN[id][palette]);
+      });
+      // The default passed explicitly is the same as no scheme at all.
+      it(`${id}, ${palette} palette, the default scheme passed explicitly`, () => {
+        const city = buildCity(features, ground, {
+          window: site.bbox,
+          roads: true,
+          cosmeticTrees: true,
+          palette,
+          colours: DEFAULT_CITY_COLOUR_SCHEME,
         });
         expect(digestsOf(city)).toEqual(GOLDEN[id][palette]);
       });

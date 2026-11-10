@@ -27,6 +27,11 @@ import {
   type BuildingPalette,
 } from "./building-palette.js";
 import { buildBuildings, type BuildingVolume } from "./buildings.js";
+import {
+  DEFAULT_CITY_COLOUR_SCHEME,
+  validateCityColourScheme,
+  type CityColourScheme,
+} from "./colour-scheme.js";
 import type { Bbox } from "../spatial/clip.js";
 import {
   buildCosmeticTrees,
@@ -90,6 +95,14 @@ export interface CityOptions {
    * material, the colours before M7. Colour tags win under both.
    */
   readonly palette?: BuildingPalette;
+  /**
+   * Every colour the city is painted in (`colour-scheme.ts`, OSM demo colour
+   * schemes plan 2026-11-10-0841). Absent: `DEFAULT_CITY_COLOUR_SCHEME`,
+   * today's colours byte for byte. Under `palette: "class"` a scheme
+   * changes everything but the class colours of buildings. A malformed scheme
+   * throws `RangeError`.
+   */
+  readonly colours?: CityColourScheme;
 }
 
 /**
@@ -160,6 +173,10 @@ export function buildCity(
   options: CityOptions,
 ): City {
   const { withinM, palette = "seeded" } = options;
+  const colours =
+    options.colours === undefined
+      ? DEFAULT_CITY_COLOUR_SCHEME
+      : validateCityColourScheme(options.colours);
   if (options.window === undefined) {
     throw new RangeError("buildCity needs a window (the fetched bbox)");
   }
@@ -180,7 +197,10 @@ export function buildCity(
   const barriers = buildBarriers(all, ground).filter((b) =>
     inside(meshCentroidEnu(b.mesh)),
   );
-  const trees = buildTrees(all, ground).filter((t) => inside(t.position));
+  const trees = buildTrees(all, {
+    ...ground,
+    treePalette: colours.trees,
+  }).filter((t) => inside(t.position));
   // TAGS BY KEY: the builders return a feature key, not the tags.
   const tagsByKey = new Map(
     all.map((feature) => [featureKey(feature), feature.tags]),
@@ -209,6 +229,7 @@ export function buildCity(
               outline,
               volume.parentFeature ?? volume.feature,
               drawsPitchedRoof(volume),
+              colours,
             )
           : {
               wall: buildingColour(tags, outline),
@@ -221,7 +242,7 @@ export function buildCity(
       // A barrier has no roof block: it is all wall, in its own muted kind
       // colour, not a building's.
       roofVertexRanges: [],
-      wall: barrierColour(tagsByKey.get(barrier.feature) ?? {}),
+      wall: barrierColour(tagsByKey.get(barrier.feature) ?? {}, colours),
       roof: undefined,
     })),
   ];
@@ -248,7 +269,7 @@ export function buildCity(
   const { roads, roadCount } =
     roadOptions === undefined
       ? { roads: [], roadCount: 0 }
-      : cityRoads(all, roadOptions, inside, tagsByKey);
+      : cityRoads(all, roadOptions, inside, tagsByKey, colours);
   // Every built footprint excludes, not only the kept ones: a house just
   // outside `withinM` still has no tree growing through it.
   const cosmeticTrees =
@@ -258,6 +279,7 @@ export function buildCity(
           ...ground,
           window: options.window,
           excludeRings: built.flatMap((v) => v.outerRings),
+          treePalette: colours.trees,
         }).filter((t) => inside(t.position));
   return {
     volumes,
@@ -312,6 +334,7 @@ function cityRoads(
   ground: BuildRoadsOptions,
   inside: (p: EnuPoint) => boolean,
   tagsByKey: ReadonlyMap<string, OsmFeature["tags"]>,
+  colours: CityColourScheme,
 ): { roads: MeshChunk[]; roadCount: number } {
   const ribbons = buildRoads(all, ground).filter((road) =>
     inside(meshCentroidEnu(road.mesh)),
@@ -322,7 +345,7 @@ function cityRoads(
       (road) => road.mesh,
       (road) => meshCentroidEnu(road.mesh),
       undefined,
-      (road) => roadColour(tagsByKey.get(road.feature) ?? {}),
+      (road) => roadColour(tagsByKey.get(road.feature) ?? {}, colours),
     ),
     roadCount: ribbons.length,
   };

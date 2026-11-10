@@ -364,19 +364,41 @@ const PEDESTRIAN = new Set<string>(PEDESTRIAN_CLASSES);
  * Being able to see which ways you can walk on was judged worth more than the
  * material of the ones you can.
  */
-export function roadColour(tags: OsmTags): Rgb {
+export function roadColour(
+  tags: OsmTags,
+  colours: RoadColours = DEFAULT_ROAD_COLOURS,
+): Rgb {
   const highway = tags["highway"] ?? "";
   if (highway === "footway" && tags["footway"] === "sidewalk") {
-    return SIDEWALK_RGB;
+    return colours.sidewalk;
   }
   if (PEDESTRIAN.has(highway)) {
-    return ROAD_CLASS_RGB.get(highway) ?? DEFAULT_ROAD_RGB;
+    return colours.roads.get(highway) ?? colours.defaultRoad;
   }
   return (
-    SURFACE_RGB.get(tags["surface"] ?? "") ??
-    ROAD_CLASS_RGB.get(highway) ??
-    DEFAULT_ROAD_RGB
+    surfaceColour(tags, colours) ??
+    colours.roads.get(highway) ??
+    colours.defaultRoad
   );
+}
+
+/** A car road's surface colour, when the colours rank surface first. */
+function surfaceColour(tags: OsmTags, colours: RoadColours): Rgb | undefined {
+  if (!colours.roadsBySurface) return undefined;
+  return colours.roadSurfaces.get(tags["surface"] ?? "");
+}
+
+/**
+ * The colours `roadColour` reads (a colour scheme's road part,
+ * `colour-scheme.ts`). `roadsBySurface` false colours car roads by their
+ * class alone; pedestrian classes take their class first either way.
+ */
+export interface RoadColours {
+  readonly roadsBySurface: boolean;
+  readonly roads: ReadonlyMap<string, Rgb>;
+  readonly roadSurfaces: ReadonlyMap<string, Rgb>;
+  readonly sidewalk: Rgb;
+  readonly defaultRoad: Rgb;
 }
 
 /**
@@ -387,6 +409,15 @@ export function roadColour(tags: OsmTags): Rgb {
  * `sidewalk=*` on a carriageway.
  */
 const SIDEWALK_RGB: Rgb = 0xc6b49c;
+
+/** Today's road colours, the default scheme's (built from the tables above). */
+export const DEFAULT_ROAD_COLOURS: RoadColours = {
+  roadsBySurface: true,
+  roads: ROAD_CLASS_RGB,
+  roadSurfaces: SURFACE_RGB,
+  sidewalk: SIDEWALK_RGB,
+  defaultRoad: DEFAULT_ROAD_RGB,
+};
 
 /** Every colour a road can take, for the contrast check. */
 export function allRoadColours(): Rgb[] {

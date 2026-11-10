@@ -53,7 +53,9 @@ export {
   DEFAULT_BARRIER_THICKNESS_M,
 } from "./barriers.js";
 
+export type { BarrierColours } from "./barrier-colours.js";
 export {
+  DEFAULT_BARRIER_COLOURS,
   BARRIER_KIND_RGB,
   BARRIER_MATERIAL_RGB,
   TAGGED_BARRIER_COLOUR_SHARE,
@@ -79,8 +81,9 @@ export type {
 } from "./buildings.js";
 export { buildBuildings, solidBuildingFootprints } from "./buildings.js";
 
-export type { Rgb } from "./feature-colours.js";
+export type { RoadColours, Rgb } from "./feature-colours.js";
 export {
+  DEFAULT_ROAD_COLOURS,
   DEFAULT_BUILDING_RGB,
   DEFAULT_ROAD_RGB,
   REFERENCE_GROUND_RGB,
@@ -93,8 +96,13 @@ export {
   roadColour,
 } from "./feature-colours.js";
 
-export type { BuildingColours, BuildingPalette } from "./building-palette.js";
+export type {
+  BuildingColours,
+  BuildingPalette,
+  PaletteColours,
+} from "./building-palette.js";
 export {
+  DEFAULT_PALETTE_COLOURS,
   FLAT_ROOF_TONES,
   PITCHED_ROOF_TONES,
   WALL_TONES,
@@ -186,6 +194,7 @@ export type {
   BuildTreesOptions,
   TreeClass,
   TreeInstances,
+  TreeKey,
   TreePlacement,
   TreeVariant,
 } from "./trees.js";
@@ -227,6 +236,17 @@ export {
   cosmeticRank,
   cosmeticTreeSource,
 } from "./cosmetic-trees.js";
+export type { CityColourScheme } from "./colour-scheme.js";
+export {
+  DEFAULT_CITY_COLOUR_SCHEME,
+  validateCityColourScheme,
+} from "./colour-scheme.js";
+export type { GroundClass } from "./ground-tint.js";
+export {
+  DEFAULT_GROUND_RGB,
+  DEFAULT_LAND_USE_RGB,
+  GROUND_CLASS_NAMES,
+} from "./ground-tint.js";
 export type { City, CityGround, CityOptions, CityRoadOptions } from "./city.js";
 export { buildCity, cityGround } from "./city.js";
 export { shellRandFor } from "./shell-rand.js";

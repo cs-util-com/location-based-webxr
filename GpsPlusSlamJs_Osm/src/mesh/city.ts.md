@@ -135,3 +135,17 @@ roof vertices: 150 pitched volumes, 81 roof-coloured, 69 seeded, 3 of them
 drawn as flat lids and so grey; no stray
 colour anywhere). OsmDemo's worker tests and browser suite cover the same assembly in
 use.
+
+## Colour schemes (OSM demo colour schemes plan 2026-11-10-0841)
+
+- `CityOptions.colours?: CityColourScheme` (`colour-scheme.ts`): absent,
+  `DEFAULT_CITY_COLOUR_SCHEME`; present, validated at this boundary
+  (`RangeError` for a malformed scheme) and passed to the palette, road,
+  barrier and tree colour functions.
+- Under `palette: "class"` the class colours of buildings are unchanged by a
+  scheme; everything else (roads, barriers, trees) follows it.
+- **The identity guard**: `colour-identity.test.ts` holds the colour buffers
+  and tree colours of eleven fixture sites, under both palettes, with no
+  scheme and with the default passed explicitly, to golden digests recorded
+  at 7f1d01edd before schemes existed. The Globe, the Tour Editor and the
+  labs build without a scheme, so this is what holds them unchanged.
