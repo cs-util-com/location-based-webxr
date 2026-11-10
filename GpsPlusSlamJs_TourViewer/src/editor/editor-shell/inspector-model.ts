@@ -457,7 +457,7 @@ interface ItemInspector {
 
 /** A plain folder's scale as its inspector types it: its placement
  *  row's factor (`CONTAINER_PLACEMENT`). */
-export interface InspectorScale {
+interface InspectorScale {
   readonly label: string;
   readonly meaning: string;
   /** The tour's value (1: none written). */
