@@ -21,7 +21,8 @@ import type { TourAssetKind } from "gps-plus-slam-app-framework/ar/tour-manifest
 
 import {
   assetBytesPending,
-  assetUsesOf,
+  fileUseCount,
+  fileUsesAll,
   type TourDocumentState,
 } from "../../tour-document.js";
 import {
@@ -295,7 +296,8 @@ export interface ShelfRow {
   readonly estimatedBytes: number;
   /** 0-based among the queued, null when not queued. */
   readonly queuePosition: number | null;
-  /** Blocks (and station cards) that use the file. */
+  /** The places that use the file (`fileUseCount`): blocks, station
+   *  cards, characters and the cover. */
   readonly placesInUse: number;
   /** How often a smaller file replaced the asset's: a preview built from
    *  the old bytes reloads when this changes. */
@@ -321,7 +323,11 @@ export const selectShelfRows = createSelector(
   (shelf, doc): ShelfRow[] => {
     const entries = Object.values(shelf.entries).sort((a, b) => a.seq - b.seq);
     const queued = entries.filter((e) => e.phase === "queued").map((e) => e.id);
-    const uses = assetUsesOf(doc);
+    const uses = fileUsesAll(doc);
+    const usedIn = (id: string): number => {
+      const used = uses.get(id);
+      return used === undefined ? 0 : fileUseCount(used);
+    };
     return entries.map((e) => {
       const position = queued.indexOf(e.id);
       return {
@@ -339,7 +345,7 @@ export const selectShelfRows = createSelector(
           : { optimizedBytes: e.optimizedBytes }),
         estimatedBytes: e.optimizedBytes ?? e.originalBytes,
         queuePosition: position < 0 ? null : position,
-        placesInUse: uses.get(e.id) ?? 0,
+        placesInUse: usedIn(e.id),
         swaps: doc.assetSwaps[e.id] ?? 0,
         canUseOriginal:
           e.phase === "optimized" &&

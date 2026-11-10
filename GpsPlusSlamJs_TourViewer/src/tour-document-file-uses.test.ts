@@ -25,6 +25,9 @@ import { describe, expect, it } from "vitest";
 import { tourOf } from "./test-support/tour-of.js";
 import {
   documentObjects,
+  effectiveDetails,
+  fileUseCount,
+  fileUsesAll,
   fileUsesOf,
   manifestToWrite,
   tourDocumentActions as doc,
@@ -291,6 +294,138 @@ describe("a free picture's record", () => {
     const found = documentObjects(state).find((o) => o.object.id === "new-pic");
     expect(found?.object).toMatchObject({
       imageAsset: { id: "pic3", path: "content/pic3.webp" },
+    });
+  });
+});
+
+describe("the tour's cover and a file's count of uses", () => {
+  // Why: "which places use a file" is one walk (`fileUsesAll`). The
+  // card's "Used in N", the delete's words and Replace's count all read
+  // it, so they can never disagree, and the tour's cover is one of the
+  // places - a cover-only file is in use, not a file nothing needs.
+  const COVER = picture("cov1");
+  const covered = (objects: readonly TourObject[], cover: string) =>
+    opened(objects, { assets: [...ASSETS, COVER], cover });
+
+  it("counts the cover as a use, and each block, card and character once", () => {
+    const state = covered([NARRATED, FREE_PICTURE], "cov1");
+    expect(fileUsesOf(state, "cov1").cover).toBe(true);
+    expect(fileUseCount(fileUsesOf(state, "cov1"))).toBe(1);
+    expect(fileUsesOf(state, "pic1").cover).toBe(false);
+    // snd1: the sound "bells", the narration of "told", the miller's voice.
+    expect(fileUseCount(fileUsesOf(state, "snd1"))).toBe(3);
+    expect(fileUseCount(fileUsesOf(state, "nothing"))).toBe(0);
+  });
+
+  it("finds every file's uses in one walk, the same as one file's", () => {
+    const state = covered([NARRATED, ILLUSTRATED, FREE_PICTURE], "pic1");
+    const all = fileUsesAll(state);
+    for (const id of ["snd1", "pic1", "pic2", "pst1", "vid1", "cov1"]) {
+      expect(all.get(id) ?? fileUsesOf(state, "nothing")).toEqual(
+        fileUsesOf(state, id),
+      );
+    }
+    expect(all.get("pic1")?.cover).toBe(true);
+  });
+
+  it("a delete of a cover-only file takes the cover off, in one step an undo takes back", () => {
+    const before = covered([], "cov1");
+    const after = tourDocumentReducer(
+      before,
+      doc.fileUsesDeleted({ assetId: "cov1", what: "the delete" }),
+    );
+    expect(after.revision).toBe(before.revision + 1);
+    expect(effectiveDetails(after).cover).toBeUndefined();
+    const undone = tourDocumentReducer(after, doc.undone());
+    expect(effectiveDetails(undone).cover).toBe("cov1");
+  });
+
+  it("a delete of a picture's file that is also the cover takes both", () => {
+    const after = tourDocumentReducer(
+      covered([FREE_PICTURE], "pic1"),
+      doc.fileUsesDeleted({ assetId: "pic1", what: "the delete" }),
+    );
+    expect(documentObjects(after).map((o) => o.object.id)).not.toContain(
+      "free-pic",
+    );
+    expect(after.details.cover).toBeUndefined();
+  });
+
+  it("a replace switches the cover with the pictures", () => {
+    const after = tourDocumentReducer(
+      covered([FREE_PICTURE], "pic1"),
+      doc.fileReplaced({ from: "pic1", to: "pic2", what: "the replace" }),
+    );
+    expect(effectiveDetails(after).cover).toBe("pic2");
+  });
+
+  it("a replace of a cover-only file by a file brought in keeps the new cover, and an undo the old", () => {
+    let state = covered([], "cov1");
+    state = tourDocumentReducer(
+      state,
+      doc.assetsAdded({ assets: [picture("new1")] }),
+    );
+    const after = tourDocumentReducer(
+      state,
+      doc.fileReplaced({ from: "cov1", to: "new1", what: "the replace" }),
+    );
+    expect(after.revision).toBe(state.revision + 1);
+    expect(effectiveDetails(after).cover).toBe("new1");
+    expect(manifestToWrite(after)?.cover).toBe("new1");
+    const undone = tourDocumentReducer(after, doc.undone());
+    expect(effectiveDetails(undone).cover).toBe("cov1");
+  });
+});
+
+describe("a replaced video's poster (fileReplaced)", () => {
+  // Why: the old poster is a still of the OLD video; kept, every visitor
+  // would see a frame of a video that is no longer there. The replace
+  // does what one item's file change does (`withBlockFile`): the new
+  // video's poster, or none.
+  const withVideo = () =>
+    tourDocumentReducer(
+      opened([]),
+      doc.assetsAdded({
+        assets: [
+          { id: "vid2", path: "content/vid2.mp4", kind: "video" },
+          picture("pst2"),
+        ],
+      }),
+    );
+
+  it("takes the poster made for the new video", () => {
+    const after = tourDocumentReducer(
+      withVideo(),
+      doc.fileReplaced({
+        from: "vid1",
+        to: "vid2",
+        poster: "pst2",
+        what: "the replace",
+      }),
+    );
+    expect(block(after, "flood")).toMatchObject({
+      video: "vid2",
+      poster: "pst2",
+    });
+  });
+
+  it("drops the old video's poster when the new video has none", () => {
+    const after = tourDocumentReducer(
+      withVideo(),
+      doc.fileReplaced({ from: "vid1", to: "vid2", what: "the replace" }),
+    );
+    expect(block(after, "flood")).toMatchObject({ video: "vid2" });
+    expect(block(after, "flood")?.["poster"]).toBeUndefined();
+  });
+
+  it("switches a poster that is itself the replaced picture", () => {
+    const after = tourDocumentReducer(
+      opened([]),
+      doc.fileReplaced({ from: "pst1", to: "pic1", what: "the replace" }),
+    );
+    expect(block(after, "flood")).toMatchObject({
+      video: "vid1",
+      poster: "pic1",
     });
   });
 });

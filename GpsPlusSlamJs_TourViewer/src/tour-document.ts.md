@@ -412,18 +412,23 @@ geo?, what })` - a copy inserted after the original (any station the
     `file-uses.ts`): the free items and story entries made of it deleted
     (an emptied automatic station goes too), the ones only mentioning it
     (a narration, a poster, a character's voice) without that field, a
-    station's card image of it cleared. Refused, unchanged, while a long
+    station's card image of it cleared, the tour's cover of it removed. Refused, unchanged, while a long
     text shows the picture inside its words or a character declaration
     is drawn with it. A file nothing uses changes nothing.
   - `fileReplaced({ from, to, what })` - "Replace everywhere": every
     reference to `from` names `to` in one step (`withFileSwitched`): the
     items made of it, the mentions, the `asset:` targets of a long text,
-    a station's card image; a free picture's record follows. Refused,
+    a station's card image, the tour's cover; a free picture's record follows,
+    and a replaced video's own poster becomes `poster` when one is given
+    (it must be a listed image). Refused,
     unchanged, for the same file, a `to` the tour does not list, a file
     of another kind, and a file a character declaration is drawn with.
-  - `fileUsesOf(state, assetId)` (a reader) - the blocks naming a file,
-    by how: `own`, `mentions`, `inline`, `cards` and the names of the
-    `characters` drawn with it.
+  - `fileUsesOf(state, assetId)` (a reader) - the places naming a file,
+    by how: `own`, `mentions`, `inline`, `cards`, the names of the
+    `characters` drawn with it and `cover` (the tour's cover shown). It
+    reads `fileUsesAll(state)`, one walk for every file, which the shelf's
+    "Used in" count also reads; `fileUseCount(uses)` is the count of places
+    (the cover one place).
   - A free picture's `imageAsset` is read from its file's record as it
     stands (`documentObjects`), so the shelf's swap to a smaller file
     never leaves a stale copy in the picture (a captured photo keeps its
@@ -476,10 +481,6 @@ written, hand })` (the hosted texts enter the book);
   and `WorldBlock` (a station's free blocks), `isCapturedPhoto` and `ownedAssetIds` (the pictures that own their image asset). A page reads
   them here, never from `tour-content.ts` (the boundary rule
   `document-rules-through-tour-document`).
-- `assetUsesOf(state)` - per asset id, how many places name it: each
-  document object or story block (`tourBlockAssetIds`) and each station's
-  steps and picture, one count per place however often it names the id.
-  The asset shelf's `placesInUse`.
 - The codes: `documentCodes(state)` (the book, in order),
   `codeSavedText(state, id)`, `codeLiveText(state, id)` (`liveText`
   against the hosted texts as they stand), `levelsToWrite(state)` and
@@ -591,7 +592,9 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
 - `coverImageIds(state)` - the images the tour may show as its cover (its
   photos as they stand, its image assets that are no captured photo's own:
   a deleted photo's asset, still listed in the file written last, keeps
-  no cover; `creator-document.test.ts`, "only the tombstones change").
+  no cover; `creator-document.test.ts`, "only the tombstones change"),
+  and the pictures added from a file this session (so a cover replaced by
+  a new file keeps showing).
 - `detailsChange(state, form)` - a details form checked by the format's
   rules (`checkDetailsForm`), as both pages check it: `changed` with the
   details to dispatch, `unchanged`, or `refused` with the reason in words.

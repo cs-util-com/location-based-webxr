@@ -326,7 +326,7 @@ describe("acting on a file", () => {
     panel({ replace: { count: () => 5, run } });
     (actIn("a", "toggle") as HTMLElement).click();
     const b = actIn("a", "replace") as HTMLButtonElement;
-    expect(b.textContent).toBe("Replace in 5 items...");
+    expect(b.textContent).toBe("Replace in 5 places...");
     b.click();
     expect(run).toHaveBeenCalledWith("a");
     const busy = actIn("a", "replace") as HTMLButtonElement;
@@ -339,7 +339,7 @@ describe("acting on a file", () => {
     await vi.waitFor(() => {
       expect((actIn("a", "replace") as HTMLButtonElement).disabled).toBe(false);
     });
-    expect(actIn("a", "replace")?.textContent).toBe("Replace in 5 items...");
+    expect(actIn("a", "replace")?.textContent).toBe("Replace in 5 places...");
   });
 
   it("says when the replace failed, the button back", async () => {
@@ -348,7 +348,7 @@ describe("acting on a file", () => {
       replace: { count: () => 1, run: () => Promise.reject(new Error("x")) },
     });
     (actIn("a", "toggle") as HTMLElement).click();
-    expect(actIn("a", "replace")?.textContent).toBe("Replace in 1 item...");
+    expect(actIn("a", "replace")?.textContent).toBe("Replace in 1 place...");
     (actIn("a", "replace") as HTMLButtonElement).click();
     await vi.waitFor(() => {
       expect(deps.toast).toHaveBeenCalledWith(
@@ -378,7 +378,7 @@ describe("acting on a file", () => {
     (actIn("a", "toggle") as HTMLElement).click();
     actIn("a", "usein")?.click();
     const item = $<HTMLElement>('#shelf-pop [data-act="replace"]');
-    expect(item?.textContent).toBe("Replace in 2 items...");
+    expect(item?.textContent).toBe("Replace in 2 places...");
     item?.click();
     expect(run).toHaveBeenCalledWith("a");
     expect($("#shelf-pop")).toBeNull();

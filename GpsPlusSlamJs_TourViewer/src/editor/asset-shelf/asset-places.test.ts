@@ -10,7 +10,8 @@ import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { describe, expect, it } from "vitest";
 
 import { stationContent, storyOf } from "../../test-support/station-content.js";
-import { assetPlaces } from "./asset-places.js";
+import type { FileUses } from "../../tour-document.js";
+import { assetPlaces, TOUR_COVER_SELECTION } from "./asset-places.js";
 
 const POSE = { position: [0, 0, 0], rotation: [0, 0, 0, 1] } as const;
 
@@ -41,6 +42,21 @@ function station(
   };
 }
 
+/** The uses `fileUsesOf` would find: the blocks by id, the cards by
+ *  station id. */
+const uses = (
+  blocks: readonly string[],
+  extra: Partial<FileUses> = {},
+): FileUses => ({
+  own: blocks.map((id) => ({ id }) as never),
+  mentions: [],
+  inline: [],
+  cards: [],
+  characters: [],
+  cover: false,
+  ...extra,
+});
+
 describe("assetPlaces", () => {
   // An untitled item is named by its kind, as everywhere in the editor
   // (`objectTitle`).
@@ -56,7 +72,9 @@ describe("assetPlaces", () => {
         { title: "The old gate", image: "bells" },
       ),
     ];
-    expect(assetPlaces(stations, "bells")).toEqual([
+    expect(
+      assetPlaces(stations, uses(["s1", "free"], { cards: ["b"] })),
+    ).toEqual([
       {
         selection: "station:b",
         label: "2 The old gate › station picture",
@@ -68,13 +86,32 @@ describe("assetPlaces", () => {
 
   it("names an untitled station by its number and an untitled story as a story", () => {
     const stations = [station("a", [storyOf("st", [sound("s1", "f")], " ")])];
-    expect(assetPlaces(stations, "f")).toEqual([
+    expect(assetPlaces(stations, uses(["s1"]))).toEqual([
       { selection: "s1", label: "1 Station 1 › Story › Audio" },
     ]);
   });
 
   it("is empty for a file nothing uses", () => {
-    expect(assetPlaces([station("a", [sound("s", "x")])], "y")).toEqual([]);
-    expect(assetPlaces([], "y")).toEqual([]);
+    expect(assetPlaces([station("a", [sound("s", "x")])], uses([]))).toEqual(
+      [],
+    );
+    expect(assetPlaces([], uses([]))).toEqual([]);
+  });
+
+  // Why: a character drawn with the file and the tour's cover are places
+  // too; left out, the delete warning would hide them and the list would
+  // be shorter than the card's "Used in" count.
+  it("lists the characters drawn with the file and the cover after the stations", () => {
+    const stations = [station("a", [sound("s1", "f")])];
+    expect(
+      assetPlaces(
+        stations,
+        uses(["s1"], { characters: ["The miller"], cover: true }),
+      ),
+    ).toEqual([
+      { selection: "s1", label: "1 Station 1 › Audio" },
+      { label: 'Character "The miller"' },
+      { selection: TOUR_COVER_SELECTION, label: "The tour's cover" },
+    ]);
   });
 });

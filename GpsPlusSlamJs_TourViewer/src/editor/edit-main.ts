@@ -47,6 +47,7 @@ import {
 } from "./editor-view.js";
 import {
   childMoveChange,
+  fileUsesOf,
   manifestToWrite,
   selectTourDocument,
   stationDeleteRefusal,
@@ -144,7 +145,12 @@ import {
   type DoneSaved,
   type WalkMoveOutcome,
 } from "./done-dialog.js";
-import { assetPlaces } from "./asset-shelf/asset-places.js";
+import {
+  assetPlaces,
+  TOUR_COVER_SELECTION,
+} from "./asset-shelf/asset-places.js";
+import { createShelfPageActions } from "./asset-shelf/shelf-page-actions.js";
+import { undoTap } from "./undo-offer.js";
 import { selectShelfRows } from "./asset-shelf/asset-shelf-slice.js";
 import {
   createShelfPanel,
@@ -202,6 +208,7 @@ import { addNewItem } from "./new-pin.js";
 import {
   addFileItem,
   FILE_ADD_FAILED,
+  FILE_NOT_KEPT,
   placeFileItem,
   type FileAddTarget,
 } from "./add-file-item.js";
@@ -1416,10 +1423,6 @@ function deleted(
   offerUndo(said);
 }
 
-/** Said when a toast's Undo is tapped after a newer change. */
-const UNDO_NOT_NEWEST =
-  "A newer change came after it: undo the newer changes first.";
-
 /** The toast saying `said` of the step just made, with its Undo: the
  *  edit stack's while that step is the newest edit; a newer one ends the
  *  toast. The autosave waits for it (`editing`). */
@@ -1429,15 +1432,14 @@ function offerUndo(said: string): void {
   const at = editor.revision();
   const t = toast(said, {
     label: "Undo",
-    run: () => {
-      if (editor !== mine || mine.revision() !== at) {
-        endUndo();
-        // Never silent: the step is no longer the newest one.
-        if (editor === mine) toast(UNDO_NOT_NEWEST);
-        return;
-      }
-      runStep("undo");
-    },
+    run: undoTap(mine, at, {
+      current: () => editor,
+      end: endUndo,
+      undo: () => {
+        runStep("undo");
+      },
+      say: (text) => toast(text),
+    }),
   });
   undoOffer = {
     toast: t,
@@ -1625,11 +1627,6 @@ async function writeNarrationEdit(
   return "written";
 }
 
-/** Said when a file brought in could not be kept in this browser: it is
- *  in the tour, but a reload before a save would lose it. */
-const FILE_NOT_KEPT =
-  "The file is in the tour, but this browser could not keep a copy of it. Save the tour before you close this page.";
-
 /** An edit made: the autosave's cap judged again (an edit may drop the
  *  redo steps naming a file brought in, so the next save no longer writes
  *  it), then the autosave told. */
@@ -1740,122 +1737,29 @@ phoneLayout.addEventListener("change", () => {
   shelfPanel?.refresh();
 });
 
-/**
- * Files put on the shelf (its "Add files..."), each read and listed as
- * the add does (`addFile`), used nowhere yet: a save leaves out what no
- * place uses. A refusal is said by the file; the last one added is shown.
- */
-async function addToShelf(files: readonly File[]): Promise<void> {
-  const open = editor;
-  if (open === null || files.length === 0) return;
-  let added: string | null = null;
-  let count = 0;
-  let backedUp = true;
-  // While the files are read, a toast says so (the async-UI rule).
-  const shown = toast(
-    files.length === 1
-      ? `Adding "${files[0]?.name ?? ""}"...`
-      : `Adding ${String(files.length)} files...`,
-    undefined,
-    null,
-    false,
-  );
-  shown.dataset["testid"] = "shelf-add-busy";
-  try {
-    for (const file of files) {
-      let outcome: Awaited<ReturnType<EditorSession["addFile"]>>;
-      try {
-        outcome = await open.addFile(file, file.name);
-      } catch {
-        outcome = { kind: "refused", reason: FILE_ADD_FAILED };
-      }
-      if (editor !== open) return;
-      if (outcome.kind === "refused") {
-        toast(`${file.name}: ${outcome.reason}`);
-        continue;
-      }
-      added = outcome.asset.id;
-      count += 1;
-      if (!outcome.backedUp) backedUp = false;
-    }
-  } finally {
-    shown.remove();
-  }
-  if (added === null) return;
-  shelfPanel?.reveal(added);
-  toast(
-    count === 1
-      ? "The file is on the shelf."
-      : `${String(count)} files are on the shelf.`,
-  );
-  if (!backedUp) toast(FILE_NOT_KEPT);
-}
-
-/** The shelf's delete of the file `id` in use: its items deleted and the
- *  others without it, in one step said with its Undo (`deleted`); a
- *  refusal said. */
-function deleteShelfFileInUse(open: EditorSession, id: string): void {
-  if (editor !== open) return;
-  endUndo();
-  const name = store.getState().assetShelf.entries[id]?.name ?? "The file";
-  const before = open.revision();
-  const outcome = open.deleteFileAndUses(id);
-  if (outcome.kind === "deleted" && open.revision() === before) {
-    // Nothing of the tour used it after all: only its card went, and
-    // there is no step for an Undo to take back.
-    refresh();
-    toast(`Deleted ${name}.`);
-    return;
-  }
-  // The confirm said what goes; the toast names the file, with its Undo.
-  deleted(outcome, `Deleted ${name}.`);
-}
-
-/**
- * The shelf's "Replace everywhere" of the file `id`: a file of its kind
- * picked, a toast while it is read, then every use switched in one step
- * said with its Undo; a refusal said, a cancelled picker says nothing.
- * Resolves once it is all said.
- */
-async function replaceEverywhere(
-  open: EditorSession,
-  id: string,
-): Promise<void> {
-  const asset = open.assetOf(id);
-  if (asset === undefined) {
-    toast("That file is no longer on the shelf.");
-    return;
-  }
-  let picked: File | null;
-  try {
-    picked = await filePicker.pick(asset.kind);
-  } catch {
-    toast(FILE_ADD_FAILED);
-    return;
-  }
-  if (picked === null || editor !== open) return;
-  const shown = toast(`Reading "${picked.name}"...`, undefined, null, false);
-  shown.dataset["testid"] = "replace-everywhere-busy";
-  endUndo();
-  let outcome: Awaited<ReturnType<EditorSession["replaceFile"]>>;
-  try {
-    outcome = await open.replaceFile(id, picked, picked.name);
-  } catch {
-    outcome = { kind: "refused", reason: FILE_ADD_FAILED };
-  } finally {
-    shown.remove();
-  }
-  if (editor !== open) return;
-  refresh();
-  if (outcome.kind === "refused") {
-    toast(outcome.reason);
-    return;
-  }
-  offerUndo(
-    `"${picked.name}" is used in ${String(outcome.items)} item${outcome.items === 1 ? "" : "s"} now.`,
-  );
-  if (!outcome.backedUp) toast(FILE_NOT_KEPT);
-}
+/** The shelf's commands on the page: its adds, the delete of a file in
+ *  use and "Replace everywhere", with their toasts. */
+const shelfActions = createShelfPageActions({
+  current: () => editor,
+  toast: (text) => {
+    toast(text);
+  },
+  busy: (text, testId) => {
+    const shown = toast(text, undefined, null, false);
+    shown.dataset["testid"] = testId;
+    return shown;
+  },
+  pick: (kind) => filePicker.pick(kind),
+  pickMany: () => filePicker.pickMany(),
+  reveal: (id) => {
+    shelfPanel?.reveal(id);
+  },
+  refresh,
+  endUndo,
+  offerUndo,
+  deleted,
+  nameOf: (id) => store.getState().assetShelf.entries[id]?.name,
+});
 
 /** The shelf's panel for the tour just opened, on its session's shelf. */
 function openShelfPanel(open: EditorSession): void {
@@ -1875,31 +1779,29 @@ function openShelfPanel(open: EditorSession): void {
     removeUsed: {
       plan: (id) => open.deletePlan(id),
       run: (id) => {
-        deleteShelfFileInUse(open, id);
+        shelfActions.deleteInUse(open, id);
       },
     },
     replace: {
       count: (id) => open.replaceCount(id),
-      run: (id) => replaceEverywhere(open, id),
+      run: (id) => shelfActions.replaceEverywhere(open, id),
     },
     optimizeTour: () => open.shelf.optimizeTour(),
     addFiles: () => {
-      filePicker
-        .pickMany()
-        .then(addToShelf)
-        .catch(() => {
-          toast(FILE_ADD_FAILED);
-        });
+      void shelfActions.addFiles(open);
     },
     thumbOf: (row) =>
       open.addedFileOf(row.kind === "video" ? (row.posterId ?? "") : row.id),
-    placesOf: (id) =>
-      assetPlaces(
-        manifestToWrite(store.getState().tourDocument)?.stations ?? [],
-        id,
-      ),
+    placesOf: (id) => {
+      const state = store.getState().tourDocument;
+      return assetPlaces(
+        manifestToWrite(state)?.stations ?? [],
+        fileUsesOf(state, id),
+      );
+    },
     show: (selection) => {
-      select(selection, true);
+      if (selection === TOUR_COVER_SELECTION) openDetails();
+      else select(selection, true);
     },
     useIn: {
       choices: (id) => {
@@ -2135,7 +2037,7 @@ async function dropFiles(
       await useAsItemFile(dropTarget.id, file);
     } else await addFromFile(kind, dropTarget, file);
   }
-  await addToShelf(loose);
+  if (editor !== null) await shelfActions.addToShelf(editor, loose);
 }
 
 /** A station made in this session (added, split off, copied) starts

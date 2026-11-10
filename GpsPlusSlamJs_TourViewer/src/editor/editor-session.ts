@@ -73,6 +73,7 @@ import {
   detailsChange,
   documentObjects,
   effectiveDetails,
+  fileUseCount,
   fileUsesOf,
   isCapturedPhoto,
   isDocumentEdit,
@@ -198,24 +199,28 @@ function counted(n: number, noun: string): string {
 
 /** What the delete of a file used by `uses` does, in plain words: the
  *  items made of it go, the others (a narration, a poster, a voice, a
- *  station's card) only lose it. */
+ *  station's card) only lose it, and the tour's cover of it is taken
+ *  off. */
 function fileDeleteWords(uses: FileUses): string {
   const own = uses.own.length;
   const others = uses.mentions.length + uses.cards.length;
-  if (own === 0 && others === 0) return "Deletes the file.";
-  if (others === 0) return `Deletes ${counted(own, "item")}.`;
-  if (own === 0) return `Removes it from ${counted(others, "place")}.`;
-  return `Deletes ${counted(own, "item")}, removes it from ${counted(others, "other")}.`;
-}
-
-/** How many items and station cards `uses` counts. */
-function usesCount(uses: FileUses): number {
-  return (
-    uses.own.length +
-    uses.mentions.length +
-    uses.inline.length +
-    uses.cards.length
-  );
+  const parts: string[] = [];
+  if (own > 0) parts.push(`Deletes ${counted(own, "item")}`);
+  if (others > 0) {
+    parts.push(
+      own > 0
+        ? `removes it from ${counted(others, "other")}`
+        : `Removes it from ${counted(others, "place")}`,
+    );
+  }
+  if (uses.cover) {
+    parts.push(
+      parts.length > 0
+        ? "takes it off as the tour's cover"
+        : "Takes it off as the tour's cover",
+    );
+  }
+  return parts.length === 0 ? "Deletes the file." : `${parts.join(", ")}.`;
 }
 
 /** An object as the undo's words name it: its text, shortened, or what
@@ -987,14 +992,18 @@ export interface EditorSession {
   deleteFileAndUses(
     assetId: string,
   ): { kind: "deleted"; what: string; words: string } | EditorRefusal;
-  /** How many items and station cards use the file `assetId`: what its
-   *  "Replace everywhere" switches. */
+  /** How many places use the file `assetId` (`fileUseCount`: items,
+   *  station cards, the cover): what its "Replace everywhere" switches; 0
+   *  where it is not offered - nothing uses the file, or the replace
+   *  would be refused whatever file is picked (a character is drawn with
+   *  it). */
   replaceCount(assetId: string): number;
   /** "Replace everywhere": `file` brought in as `addFile` does, for the
    *  kind of `assetId` (it goes on the shelf like any file), then every
    *  use of `assetId` switched to it in one step (`fileReplaced`) - the
    *  items made of it, the ones mentioning it, the pictures a long text
-   *  shows. Refused in words, changing nothing in the tour, for a file the
+   *  shows, a station's card, the tour's cover; a video made of it takes
+   *  the new video's poster, or none. Refused in words, changing nothing in the tour, for a file the
    *  shelf does not hold, a file a character of the tour is drawn with, a
    *  file of another kind (`addFile`'s refusal), the same file, and a
    *  file nothing uses. */
@@ -1694,6 +1703,8 @@ export function createEditorSession(input: {
         tourDocumentActions.fileReplaced({
           from: assetId,
           to: added.asset.id,
+          // A video's items take the new video's poster, or none.
+          ...(added.poster === undefined ? {} : { poster: added.poster.id }),
           what,
         }),
       ),
@@ -1702,7 +1713,7 @@ export function createEditorSession(input: {
     return {
       kind: "replaced",
       what,
-      items: usesCount(uses),
+      items: fileUseCount(uses),
       backedUp: added.backedUp,
     };
   }
@@ -1946,7 +1957,7 @@ export function createEditorSession(input: {
       }
       const what = `the delete of ${planned.name}`;
       if (
-        usesCount(planned.uses) > 0 &&
+        fileUseCount(planned.uses) > 0 &&
         !took(() =>
           store.dispatch(
             tourDocumentActions.fileUsesDeleted({ assetId, what }),
@@ -1960,7 +1971,10 @@ export function createEditorSession(input: {
     },
     replaceCount: (assetId) => {
       const state = mine();
-      return state === null ? 0 : usesCount(fileUsesOf(state, assetId));
+      if (state === null) return 0;
+      const uses = fileUsesOf(state, assetId);
+      // Offered only where it will not be refused after the picker.
+      return fileUseRefusal(uses, "replaced") === null ? fileUseCount(uses) : 0;
     },
     replaceFile,
     addedFileOf: (id) =>

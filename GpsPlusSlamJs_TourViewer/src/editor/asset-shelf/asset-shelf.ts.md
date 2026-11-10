@@ -27,9 +27,13 @@
   pose sheet, `CHARACTER_KEPT`) is never optimized - kept with those
   words at `add`, checked again before a queued job runs and again
   before its swap lands (a character may be declared while it runs).
-- The shelf keeps every file an item names: a removed card's entry is
-  remembered, and when the document names its file again (the page's
-  Undo of a delete, a redo, the file used again) the card comes back
+  Which files a character names is read from the document's one walk
+  of a file's uses (`fileUsesOf`), never a list of its own.
+- The shelf keeps every file the tour uses: a removed card's entry is
+  remembered, and when the document uses its file again
+  (`fileUseCount` above 0: an item, a station card, a character or the
+  tour's cover; the page's Undo of a delete, a redo, the file used
+  again) the card comes back
   (`entryRestored`), queued again when it was waiting or running. Its
   original is not held again. A second `add` of a card already there
   changes nothing.

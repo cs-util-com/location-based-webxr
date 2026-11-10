@@ -904,3 +904,136 @@ describe("deleting a picture made from a file", () => {
     await session.close();
   });
 });
+
+describe("the tour's cover, a video's poster and a character's file on the shelf", () => {
+  // Why: the shelf's count, its delete and its "Replace everywhere" read
+  // one walk of a file's uses, and the tour's cover is one of them. A
+  // cover-only file is in use: its delete must say it takes the cover
+  // off and must be one undoable step that brings the card back; its
+  // replace must move the cover to the new picture, not drop it silently.
+  // A replaced video must not keep the still of the old video; and a file
+  // a character is drawn with must not be offered a replace that is
+  // refused only after the picker.
+  async function coverSetup() {
+    const session = await openedTour();
+    const kit = setup(session);
+    const added = await kit.editor.addFile(png(40, 30), "cover.png");
+    if (added.kind === "refused") throw new Error(added.reason);
+    const id = added.asset.id;
+    expect(
+      kit.editor.setDetails({ ...kit.editor.details(), cover: id }).kind,
+    ).not.toBe("refused");
+    return { ...kit, session, id };
+  }
+
+  it("names the cover in the delete's words, takes it off in one step, and the undo brings it and the card back", async () => {
+    const { editor, rows, session, id } = await coverSetup();
+    expect(rows()).toEqual([expect.objectContaining({ id, placesInUse: 1 })]);
+    expect(editor.deletePlan(id)).toEqual({
+      kind: "plan",
+      words: "Takes it off as the tour's cover.",
+    });
+    const before = editor.revision();
+    expect(editor.deleteFileAndUses(id).kind).toBe("deleted");
+    expect(editor.revision()).toBe(before + 1);
+    expect(editor.details().cover).toBeNull();
+    expect(rows()).toEqual([]);
+    expect(editor.undo().kind).toBe("undone");
+    expect(editor.details().cover).toBe(id);
+    expect(rows()).toEqual([expect.objectContaining({ id })]);
+    await session.close();
+  });
+
+  it("moves the cover to the new picture on Replace everywhere", async () => {
+    const { editor, rows, session, id } = await coverSetup();
+    expect(editor.replaceCount(id)).toBe(1);
+    const outcome = await editor.replaceFile(id, png(20, 20), "new.png");
+    expect(outcome).toMatchObject({ kind: "replaced", items: 1 });
+    const fresh = rows().find((r) => r.name === "new.png")?.id;
+    expect(fresh).toBeDefined();
+    expect(editor.details().cover).toBe(fresh);
+    expect(editor.undo().kind).toBe("undone");
+    expect(editor.details().cover).toBe(id);
+    await session.close();
+  });
+
+  it("gives a replaced video the new video's poster", async () => {
+    const session = await openedTour();
+    const { editor, add, manifest, settle } = setup(session, {
+      fileReaders: {
+        videoLookOf: (blob) =>
+          Promise.resolve({
+            poster: png(16 + blob.size, 9),
+            seconds: 20,
+          }),
+      },
+    });
+    const story = editor.addStory(STATION);
+    if (story.kind !== "added") throw new Error("no story");
+    await add(
+      "video",
+      { kind: "story", storyId: story.id },
+      new Blob(["old-flood-video"]),
+      "old.mp4",
+      "vid",
+    );
+    await settle();
+    const entry = () =>
+      tourStories(
+        manifest().stations.find((s) => s.id === STATION) ?? { children: [] },
+      )[0]?.children.find((c) => c.id === "vid") as
+        { video: string; poster?: string } | undefined;
+    const old = entry();
+    if (old?.poster === undefined) throw new Error("no poster");
+    const outcome = await editor.replaceFile(
+      old.video,
+      new Blob(["the-new-flood-video-bytes"]),
+      "new.mp4",
+    );
+    expect(outcome.kind).toBe("replaced");
+    const now = entry();
+    expect(now?.video).not.toBe(old.video);
+    expect(now?.poster).toBeDefined();
+    expect(now?.poster).not.toBe(old.poster);
+    expect(now?.poster).toBe(editor.posterOf(now?.video ?? "")?.id ?? "none");
+    await session.close();
+  });
+
+  it("offers no replace for a file a character is drawn with", async () => {
+    const sheet = png(40, 30);
+    const manifest = parseTourManifest(
+      JSON.parse(
+        serializeTourManifest(
+          tourOf([ESSAY], {
+            assets: [
+              {
+                id: "sir",
+                path: "content/sir.png",
+                kind: "image",
+                width: 40,
+                height: 30,
+              },
+            ],
+            characters: [{ id: "c", name: "Sir", image: "sir" }],
+          }),
+        ),
+      ),
+    );
+    const zip = await packFilesAsZip([
+      { path: "tour.json", data: serializeTourManifest(manifest) },
+      {
+        path: "content/sir.png",
+        data: new Uint8Array(await sheet.arrayBuffer()),
+      },
+    ]);
+    const session = await openTourFile(
+      new File([zip], "tour.zip", { type: "application/zip" }),
+    );
+    const { editor, rows } = setup(session, { manifest });
+    expect(rows()).toEqual([
+      expect.objectContaining({ id: "sir", placesInUse: 1 }),
+    ]);
+    expect(editor.replaceCount("sir")).toBe(0);
+    await session.close();
+  });
+});

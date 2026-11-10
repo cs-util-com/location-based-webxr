@@ -322,7 +322,7 @@ test("a file in use is deleted from the shelf with its item and comes back whole
   // Replace everywhere: a sound of other bytes, picked for the same kind.
   await card.locator('[data-act="toggle"]').click();
   const replace = card.locator('[data-act="replace"]');
-  await expect(replace).toHaveText("Replace in 1 item...");
+  await expect(replace).toHaveText("Replace in 1 place...");
   const chooser = page.waitForEvent("filechooser");
   await replace.click();
   const other = silenceWav();
@@ -331,7 +331,7 @@ test("a file in use is deleted from the shelf with its item and comes back whole
     await chooser
   ).setFiles({ name: "chime.wav", mimeType: "audio/wav", buffer: other });
   const replaced = page.locator(".toast", {
-    hasText: '"chime.wav" is used in 1 item now.',
+    hasText: '"chime.wav" is used in 1 place now.',
   });
   await expect(replaced).toBeVisible();
   const now = await audioOf();

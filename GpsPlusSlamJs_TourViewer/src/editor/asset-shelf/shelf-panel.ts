@@ -6,7 +6,7 @@
  * state and sizes, Retry, "Use the original", where it is used and a
  * delete (an unused file goes with an Undo; a used one says where first
  * and what the delete does, the page deleting it), and "Replace in N
- * items..." for a used file (the page picks and switches the file).
+ * places..." for a used file (the page picks and switches the file).
  * Over the list a summary of what a phone downloads, with "Optimize this
  * tour" for the opened tour's files. It reads the shelf's rows
  * (`selectShelfRows`) and acts through the shelf (`asset-shelf.ts`);
@@ -185,9 +185,10 @@ interface PanelState {
   readonly replacing: Set<string>;
 }
 
-/** "Replace in 5 items...": the replace's offer with its count. */
+/** "Replace in 5 places...": the replace's offer with its count (items,
+ *  station cards, the tour's cover). */
 function replaceLabel(n: number): string {
-  return `Replace in ${String(n)} item${n === 1 ? "" : "s"}...`;
+  return `Replace in ${String(n)} place${n === 1 ? "" : "s"}...`;
 }
 
 function readFolded(storage: ShelfPanelDeps["storage"]): boolean {
@@ -423,12 +424,18 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     openPop(anchor, `${row.name} is used in`, (box) => {
       box.append(el("div", "mhead", `${row.name} is used in`));
       for (const place of deps.placesOf(row.id)) {
+        const { selection } = place;
+        // A place nothing selects (a character) is named, not offered.
+        if (selection === undefined) {
+          box.append(el("div", "mhead", place.label));
+          continue;
+        }
         const item = button("mi", "go", "", "jump");
         item.setAttribute("role", "menuitem");
         item.append(el("span", "mt", place.label));
         item.addEventListener("click", () => {
           closePop(false);
-          deps.show(place.selection);
+          deps.show(selection);
         });
         box.append(item);
       }
@@ -727,12 +734,17 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     const where = el("ul", "");
     for (const place of places) {
       const li = el("li", "");
-      const go = el("button", "as-link", place.label);
-      go.type = "button";
-      go.addEventListener("click", () => {
-        deps.show(place.selection);
-      });
-      li.append(go);
+      const { selection } = place;
+      if (selection === undefined) {
+        li.textContent = place.label;
+      } else {
+        const go = el("button", "as-link", place.label);
+        go.type = "button";
+        go.addEventListener("click", () => {
+          deps.show(selection);
+        });
+        li.append(go);
+      }
       where.append(li);
     }
     const buttons = el("div", "btnrow");

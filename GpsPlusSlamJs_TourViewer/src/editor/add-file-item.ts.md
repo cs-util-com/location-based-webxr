@@ -28,6 +28,9 @@ addEntryToStory })` - makes the item (`new-file-item.ts`) and places
   ("That station is no longer in this tour - nothing was added."),
   `FILE_STORY_GONE` ("That story is no longer in this tour - nothing was
   added.").
+- `FILE_NOT_KEPT`: said when a file brought in is in the tour but this
+  browser could not keep a copy of it (a reload before a save would lose
+  it); the page and the shelf's page actions say it.
 
 ## Invariants & assumptions
 

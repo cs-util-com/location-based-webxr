@@ -895,12 +895,14 @@ places come from `assetPlaces` over the manifest to write, and a place's
 button selects it with a pan (`select(selection, true)`). A phone is
 `(width <= 700px)`, the width at which shelf-panel.css makes it a sheet;
 a change of it redraws the panel. "Add files..." opens the picker for
-several files of every kind (`filePicker.pickMany`) and `addToShelf`
-reads each one onto the shelf through the session's `addFile`, used
+several files of every kind (`filePicker.pickMany`) and the shelf page
+actions' `addToShelf` (`asset-shelf/shelf-page-actions.ts`) read each one onto the shelf through the session's `addFile`, used
 nowhere yet (a save leaves out what nothing uses): a busy toast
 (`data-testid="shelf-add-busy"`) while they are read, a refusal or a
 throw said per file, a picker that fails said, the last file added
-revealed and a toast saying how many arrived.
+revealed and a toast saying how many arrived. A place with no selection
+(a character) is plain text; the tour's cover place (`TOUR_COVER_SELECTION`)
+opens the tour details.
 
 ## Tests
 
@@ -995,18 +997,19 @@ on a desktop.
   tour's files keep the kind's icon. The page reads a video once through
   `videoLookOf` (`video-poster.ts`) for its poster and its length.
 - The shelf's delete of a file in use (`removeUsed`): its confirm reads
-  the session's `deletePlan`; the delete is `deleteShelfFileInUse` over
+  the session's `deletePlan`; the delete is the shelf page actions' `deleteInUse` over
   `deleteFileAndUses`, said through `deleted` like any delete ("Deleted
   <name>.", the page's Undo toast, held against the autosave by
   `undoOffer`); a refusal is said. A delete that made no step (nothing
   used it after all) is said without an Undo.
-- The shelf's "Replace everywhere" (`replace`): `replaceEverywhere` picks
+- The shelf's "Replace everywhere" (`replace`): the shelf page actions'
+  `replaceEverywhere` picks
   a file of the old one's kind, shows a busy toast
   (`data-testid="replace-everywhere-busy"`) while it is read, then
   `replaceFile`'s one step said with the page's Undo (`offerUndo`:
-  '"<name>" is used in N items now.'), or the refusal.
-- `offerUndo(said)` is the Undo toast every delete and the replace share:
-  its Undo is the stack's while the step is the newest; tapped after a
+  '"<name>" is used in N places now.'), or the refusal.
+- `offerUndo(said)` is the Undo toast every delete and the replace share
+  (its tap is `undoTap`, `undo-offer.ts`): its Undo is the stack's while the step is the newest; tapped after a
   newer change it says so instead of doing nothing.
 - The shelf's "Use in..." (`useIn`): its choices are `useInChoices` over
   the manifest to write for the file `assetOf` finds; `useShelfFileIn`

@@ -18,7 +18,11 @@ import type { TourAsset } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
 import { DEFAULT_ARCHIVE_LIMITS } from "gps-plus-slam-app-framework/storage";
 
-import { fileUsesOf, type TourDocumentState } from "../../tour-document.js";
+import {
+  fileUseCount,
+  fileUsesOf,
+  type TourDocumentState,
+} from "../../tour-document.js";
 import {
   OptimizerCrashed,
   type OptimizeOutcome,
@@ -163,12 +167,11 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
 
   const entries = () => store.getState().assetShelf.entries;
   /** Whether a character declaration names the file (his figure or his
-   *  pose sheet). A file is its bytes, so a picture of the same bytes
+   *  pose sheet), by the document's one walk of a file's uses
+   *  (`fileUsesOf`). A file is its bytes, so a picture of the same bytes
    *  shares it and is kept with it. */
   const drawnByCharacter = (id: string) =>
-    (store.getState().tourDocument.written?.characters ?? []).some(
-      (c) => c.image === id || c.frames === id,
-    );
+    fileUsesOf(store.getState().tourDocument, id).characters.length > 0;
   const dispatch = (action: UnknownAction) => {
     if (!closed) store.dispatch(action);
   };
@@ -192,11 +195,7 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
     if (document === seenDocument) return;
     seenDocument = document;
     for (const [id, entry] of removed) {
-      const uses = fileUsesOf(document, id);
-      const named =
-        uses.own.length + uses.mentions.length + uses.inline.length > 0 ||
-        uses.cards.length + uses.characters.length > 0;
-      if (!named) continue;
+      if (fileUseCount(fileUsesOf(document, id)) === 0) continue;
       removed.delete(id);
       dispatch(act.entryRestored({ entry: asPutBack(entry) }));
     }

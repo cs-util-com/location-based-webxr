@@ -58,6 +58,10 @@ shelf runner (`asset-shelf.ts`); every word comes from
 
 ## Behaviour
 
+- A place with no selection (a character drawn with the file) is named in
+  the popover and the delete dialog but offers no jump; the cover's
+  selection (`TOUR_COVER_SELECTION`) makes the page open the tour's
+  details.
 - A card: thumbnail icon per kind, name (text, never markup), its places
   ("Used in N places" as a button opening the popover, or "Not used"),
   the kind line (`Sound · WAV · 9.0 MB`) and the state line (queued with
@@ -66,8 +70,10 @@ shelf runner (`asset-shelf.ts`); every word comes from
   click or Enter/Space on the card's row opens its details: "Use it
   somewhere else..." (with `useIn`), "Use the original" (when the row
   allows it; disabled with "Going back..." while it works, then a toast
-  either way), the places and "Replace in N items..." (with
-  `deps.replace`, for a file something uses; disabled with
+  either way), the places and "Replace in N places..." (with
+  `deps.replace`, for a file something uses and a replace would not
+  refuse whatever file is picked - `count` is 0 for a file a character
+  is drawn with, whose card already says why it is kept; disabled with
   "Replacing..." and `aria-busy` while it works, back once it settled; a
   failure the page did not catch is said: "<name> could not be
   replaced."). On a phone the "Use in..." menu offers the replace too, at
@@ -147,7 +153,7 @@ Retry, "Use the original" with its transitional state and both toasts,
 deleting an unused file with its Undo, a delete that did nothing said,
 the used-file dialog with its places, its plan's words handing the
 delete to the page, a refused plan with no Delete, "Replace in N
-items..." busy until settled, its failure said, no offer for an unused
+places..." busy until settled, its failure said, no offer for an unused
 file, the offer in "Use in..." on a phone only, the popover showing a place and closing on Escape, "Use in..."
 with its groups, its empty state and its absence without the command, the fold kept
 in storage, the rail's rings, the bottom bar's toggle, the phone's sheet

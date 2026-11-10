@@ -82,6 +82,11 @@ export type FileAddOutcome =
 /** Said when reading the file failed in a way nobody foresaw. */
 export const FILE_ADD_FAILED = "That file could not be added.";
 
+/** Said when a file brought in could not be kept in this browser: it is
+ *  in the tour, but a reload before a save would lose it. */
+export const FILE_NOT_KEPT =
+  "The file is in the tour, but this browser could not keep a copy of it. Save the tour before you close this page.";
+
 /**
  * Add a `kind` item from a file at `target`: `file` when one is given (a
  * drop), else the one picked. A cancelled picker adds nothing and is

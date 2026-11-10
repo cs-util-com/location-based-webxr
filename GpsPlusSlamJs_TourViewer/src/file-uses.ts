@@ -19,6 +19,11 @@ export type FileUse =
   /** Named only in optional fields the block stands without. */
   | { readonly kind: "mention"; readonly fields: readonly string[] };
 
+/** The ids of the files `block` names anywhere, each once. */
+export function fileIdsOf(block: { readonly kind?: unknown }): string[] {
+  return [...new Set(tourBlockRefs(block).map((ref) => ref.id))];
+}
+
 /**
  * How `block` uses the file `assetId`; null when it names it nowhere. A
  * block made of the file is `own` whatever else names it there; one whose
