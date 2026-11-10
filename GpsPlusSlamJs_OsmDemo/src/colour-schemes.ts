@@ -23,6 +23,17 @@ import {
 } from "gps-plus-slam-osm";
 
 import {
+  ARCHITECT,
+  BLUEPRINT,
+  CONTRAST,
+  MAP,
+  MEDITERRANEAN,
+  MONO,
+  NIGHT,
+  NORDIC,
+  PASTEL,
+} from "./colour-scheme-looks.js";
+import {
   DEFAULT_GROUND_SLOPE_COLOURS,
   validateGroundSlopeColours,
   type GroundSlopeColours,
@@ -105,6 +116,15 @@ const TODAY: ColourScheme = {
  */
 export const COLOUR_SCHEMES = Object.freeze({
   today: TODAY,
+  architect: ARCHITECT,
+  blueprint: BLUEPRINT,
+  mediterranean: MEDITERRANEAN,
+  nordic: NORDIC,
+  pastel: PASTEL,
+  map: MAP,
+  night: NIGHT,
+  mono: MONO,
+  contrast: CONTRAST,
 } satisfies Record<string, ColourScheme>);
 
 export type ColourSchemeName = keyof typeof COLOUR_SCHEMES;

@@ -14,7 +14,7 @@ import {
   type ColourScheme,
 } from "./colour-schemes.js";
 import { DEFAULT_GROUND_SLOPE_COLOURS } from "./ground-slope-colours.js";
-import { PLATE_COLOUR } from "./surface-colours.js";
+import { PLATE_COLOUR, relativeLuminance } from "./surface-colours.js";
 
 describe("the colour-scheme table", () => {
   it("has the default first and the default is today's look, by reference", () => {
@@ -123,5 +123,133 @@ describe("the build-failure message", () => {
     expect(failedColourSchemeOf(message)).toBe("today");
     expect(failedColourSchemeOf("Overpass answered 429")).toBeUndefined();
     expect(failedColourSchemeOf(`x ${message}`)).toBeUndefined();
+  });
+});
+
+/** CIE L* (0-100) of a packed sRGB colour, from the renderer's own luminance. */
+function lightness(colour: number): number {
+  const y = relativeLuminance(colour);
+  return y > 216 / 24389 ? 116 * Math.cbrt(y) - 16 : (24389 / 27) * y;
+}
+
+function meanOf(values: readonly number[]): number {
+  return values.reduce((sum, v) => sum + v, 0) / values.length;
+}
+
+/** The classes a car does not use; the rest are the streets. */
+const PATH_CLASSES = new Set([
+  "pedestrian",
+  "footway",
+  "path",
+  "steps",
+  "cycleway",
+  "platform",
+  "track",
+  "bridleway",
+]);
+
+/** Mean L* of the walls, of the car roads, and the ground's. */
+function groupLightness(scheme: ColourScheme): {
+  buildings: number;
+  roads: number;
+  ground: number;
+} {
+  const streets = [...scheme.city.roads]
+    .filter(([key]) => !PATH_CLASSES.has(key))
+    .map(([, rgb]) => lightness(rgb));
+  return {
+    buildings: meanOf(scheme.city.walls.map(lightness)),
+    roads: meanOf(streets),
+    ground: lightness(scheme.city.ground),
+  };
+}
+
+/** The smallest of the three pairwise lightness distances. */
+function leastDistance(scheme: ColourScheme): number {
+  const { buildings, roads, ground } = groupLightness(scheme);
+  return Math.min(
+    Math.abs(buildings - roads),
+    Math.abs(buildings - ground),
+    Math.abs(roads - ground),
+  );
+}
+
+/**
+ * The floor on {@link leastDistance}, in L* units. SWEPT in S5 (see
+ * `colour-scheme-looks.ts.md`): today's look is the weakest scheme (walls
+ * against roads), so a floor above its distance fails the default itself and
+ * is the value that reverses the verdict.
+ */
+const MIN_LIGHTNESS_DISTANCE = 8;
+
+describe("the ten schemes", () => {
+  it("are the plan's ten, in its order", () => {
+    // Why this test matters: the dropdown order and the link names are the
+    // owner's vocabulary for rating them (D5); a renamed key breaks every
+    // `?scheme=` link he has sent.
+    expect(COLOUR_SCHEME_NAMES).toEqual([
+      "today",
+      "architect",
+      "blueprint",
+      "mediterranean",
+      "nordic",
+      "pastel",
+      "map",
+      "night",
+      "mono",
+      "contrast",
+    ]);
+  });
+
+  it("keep buildings, roads and ground apart in lightness", () => {
+    // Why this test matters: a scheme whose streets match its walls or its
+    // ground loses the streets (plan 4.5), and the trim scales buildings and
+    // roads together, so only the colours can keep them apart.
+    for (const name of COLOUR_SCHEME_NAMES) {
+      const scheme = COLOUR_SCHEMES[name];
+      expect(
+        leastDistance(scheme),
+        `${name}: ${JSON.stringify(groupLightness(scheme))}`,
+      ).toBeGreaterThanOrEqual(MIN_LIGHTNESS_DISTANCE);
+    }
+  });
+
+  it("keep the plates lighter than the ground", () => {
+    // Why this test matters: the plates mark land use on the ground and read
+    // only as lighter patches (surface-colours.ts); a darker plate looks like
+    // a hole.
+    for (const name of COLOUR_SCHEME_NAMES) {
+      const scheme = COLOUR_SCHEMES[name];
+      expect(relativeLuminance(scheme.ground.plates), name).toBeGreaterThan(
+        relativeLuminance(scheme.city.ground),
+      );
+    }
+  });
+
+  it("honour colour tags only in the realistic schemes, and the map colours roads by class", () => {
+    // Why this test matters: D7 gives every scheme its own tag rule, and the
+    // map's roads are its point: a surface colour would override the class.
+    const honouring = COLOUR_SCHEME_NAMES.filter(
+      (name) => COLOUR_SCHEMES[name].city.honourColourTags,
+    );
+    expect(honouring).toEqual(["today", "mediterranean", "nordic"]);
+    expect(COLOUR_SCHEMES.map.city.roadsBySurface).toBe(false);
+  });
+
+  it("leave only the default on today's city colours", () => {
+    // Why this test matters: D8 binds DEC-R4-5 to the default alone; another
+    // scheme sharing the default's object would hide that it was never tuned.
+    for (const name of COLOUR_SCHEME_NAMES.slice(1)) {
+      expect(COLOUR_SCHEMES[name].city, name).not.toBe(
+        DEFAULT_CITY_COLOUR_SCHEME,
+      );
+    }
+  });
+
+  it("trim the night up and the architect's model down", () => {
+    // Why this test matters: the plan's two trims (4.5); night must read at
+    // noon, the model must not glare.
+    expect(COLOUR_SCHEMES.night.brightnessTrim).toBeGreaterThan(1);
+    expect(COLOUR_SCHEMES.architect.brightnessTrim).toBeLessThan(1);
   });
 });

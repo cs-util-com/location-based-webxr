@@ -1629,6 +1629,61 @@ test.describe("the land-use tint (city objects plan 2026-11-07-2315 M3)", () => 
   });
 });
 
+test.describe("the colour schemes (colour schemes plan 2026-11-10-0841)", () => {
+  // WHY THIS TEST MATTERS (plan 4.4, D6): the dropdown is the owner's tool
+  // for rating the schemes on the phone. It must repaint the city, say
+  // "Applying" until the mesh built in the chosen colours is drawn (the
+  // echo, not the click), write the choice into the link, and give back
+  // today's picture exactly when the default is chosen again; a link with
+  // `?scheme=` must boot in that scheme.
+  test("a switch repaints the city, says Applying until the echo, writes the link, and the link boots it", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    const base = `/?lat=${50.9231}&lng=${6.9445}&date=2026-06-21&time=12:00`;
+    await page.goto(base);
+    await waitForRefresh(page);
+    await installFrameProbe(page);
+    const select = page.locator("#colour-scheme");
+    const status = page.locator("#colour-scheme-status");
+    await expect(select).toHaveValue("today");
+    await page.evaluate(() => {
+      const el = document.querySelector("#colour-scheme-status");
+      const seen = [];
+      window.__schemeStatus = seen;
+      if (el === null) return;
+      new MutationObserver(() => seen.push(el.textContent ?? "")).observe(el, {
+        childList: true,
+        characterData: true,
+        subtree: true,
+      });
+    });
+    await stashStableFrame(page);
+
+    await select.selectOption("night");
+    await expect
+      .poll(async () => (await diffFromStash(page, 24)).differing, REPAINT)
+      .toBeGreaterThan(0);
+    await expect(status).toHaveText("");
+    await expect(select).toBeEnabled();
+    expect(await page.evaluate(() => window.__schemeStatus)).toContain(
+      "Applying Night...",
+    );
+    await expect(page).toHaveURL(/[?&]scheme=night(&|$)/);
+
+    // Back to the default: no link key, and today's picture.
+    await select.selectOption("today");
+    await expect(page).not.toHaveURL(/[?&]scheme=/);
+    await expect
+      .poll(async () => (await diffFromStash(page, 24)).differing, REPAINT)
+      .toBe(0);
+
+    await page.goto(`${base}&scheme=night`);
+    await waitForRefresh(page);
+    await expect(select).toHaveValue("night");
+  });
+});
+
 /**
  * The least mean luma (Rec. 709, 0-255) of the BUILDINGS at the night point,
  * −30.1° over the Cologne fixture: what the night floor (`NIGHT_FLOOR` in
