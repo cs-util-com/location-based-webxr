@@ -13,7 +13,7 @@ patch that consumes them is `ground-slope-shader.ts`.
 - `GroundSlopeColours` - `{cool, warm, isoline, rim}`.
 - `DEFAULT_GROUND_SLOPE_COLOURS` - the GLSL literals the shader carried before
   the colour schemes (colour schemes plan 2026-11-10-0841 section 4.4), frozen.
-- `slopeColourList(colours)` - the four in a fixed order.
+- (internal) `slopeColourList(colours)` - the four in a fixed order; not exported.
 - `validateGroundSlopeColours(colours)` - `RangeError` for a triple that is
   not three finite numbers in [0, 1]; returns its input.
 

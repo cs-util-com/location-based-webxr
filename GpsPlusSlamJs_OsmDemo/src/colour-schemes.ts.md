@@ -10,7 +10,7 @@ dialog (D4).
 ## Public API
 
 - `ColourScheme` - `{label, city: CityColourScheme, ground: GroundColours, brightnessTrim}`.
-  - `GroundColours` - `{slope: GroundSlopeColours (linear), plates: 0xrrggbb}`.
+  - `GroundColours` (module-internal, not exported) - `{slope: GroundSlopeColours (linear), plates: 0xrrggbb}`.
   - `brightnessTrim` in `MIN_BRIGHTNESS_TRIM` (0.5) .. `MAX_BRIGHTNESS_TRIM` (2).
 - `COLOUR_SCHEMES` - the table, in dropdown order: `today`, then the nine
   looks of `colour-scheme-looks.ts` (architect, blueprint, mediterranean,

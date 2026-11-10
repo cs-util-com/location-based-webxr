@@ -41,9 +41,7 @@ export const DEFAULT_GROUND_SLOPE_COLOURS: GroundSlopeColours =
   });
 
 /** The four colours in a fixed order, for loops that must visit all of them. */
-export function slopeColourList(
-  colours: GroundSlopeColours,
-): readonly LinearRgb[] {
+function slopeColourList(colours: GroundSlopeColours): readonly LinearRgb[] {
   return [colours.cool, colours.warm, colours.isoline, colours.rim];
 }
 

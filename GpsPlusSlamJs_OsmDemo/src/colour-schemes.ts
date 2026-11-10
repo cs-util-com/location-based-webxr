@@ -41,7 +41,7 @@ import {
 import { PLATE_COLOUR } from "./surface-colours.js";
 
 /** The colours the page applies itself, without a rebuild. */
-export interface GroundColours {
+interface GroundColours {
   /** The slope treatment's colours (linear). */
   readonly slope: GroundSlopeColours;
   /** The landuse plates, sRGB `0xrrggbb`; lighter than the ground. */
