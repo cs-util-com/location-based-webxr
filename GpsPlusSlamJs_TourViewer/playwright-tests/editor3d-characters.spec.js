@@ -64,11 +64,12 @@ test("the add menu's Character: made in the maker over the editor, standing in t
   page,
   context,
 }) => {
-  // Two editor pages and the maker beside software-drawn 3D views:
-  // measured 2026-11-10 alone on this machine, the run took 3.3 min with
-  // its server start (CI=1, one worker); the budget leaves room for a
-  // slower runner.
-  test.setTimeout(360_000);
+  // Two editor pages and the maker over a software-drawn 3D view, which
+  // pauses while the maker shows: measured 2026-11-10 at 1440 x 900, the
+  // cut took about 1 s, the save 0.1 s and the add 3.5-3.8 s (12-23 s,
+  // 19 s and 25 s before the pause). The budget leaves a slower runner
+  // room for the two page loads.
+  test.setTimeout(180_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   await context.addInitScript(() => {
     // The save goes to a download, and the file input opens it again.
@@ -100,18 +101,45 @@ test("the add menu's Character: made in the maker over the editor, standing in t
   await expect(maker.locator("#savedBox")).toContainText(
     "Go back to your tour with the button at the top",
   );
+  // Every toast the page shows from here on, so the short working toast
+  // is seen even when it is gone before an assertion could look.
+  await page.evaluate(() => {
+    const box = /** @type {HTMLElement} */ (document.getElementById("toasts"));
+    /** @type {string[]} */
+    const seen = [];
+    new MutationObserver((records) => {
+      for (const r of records)
+        for (const n of r.addedNodes) seen.push(n.textContent ?? "");
+    }).observe(box, { childList: true });
+    /** @type {any} */ (window).__toastsSeen = seen;
+  });
   await page.locator("#characters-maker-back").click();
   await expect(dialog).toBeHidden();
 
   // Back in the tour: declared, standing in the station, selected, said.
-  // His pictures are read and copied in beside the software-drawn view,
-  // so the outcome gets time; any outcome is waited for, so a refusal
-  // fails with the words the page said.
-  const outcome = page
-    .locator(".toast")
-    .filter({ hasText: /Ranger Rita|nothing was added|could not be read/ });
-  await expect(outcome.first()).toBeVisible({ timeout: 60_000 });
+  // His pictures are read and copied in beside the software-drawn view
+  // (3.5-3.8 s measured), so the outcome gets time; any outcome is waited
+  // for, so a refusal fails with the words the page said. The working
+  // toast shown from the maker's close is gone with the outcome.
+  const outcome = page.locator(".toast").filter({
+    hasText: /Ranger Rita|nothing was added|could not be read|was not added/,
+  });
+  await expect(outcome.first()).toBeVisible({ timeout: 30_000 });
   await expect(outcome.first()).toContainText('Added Ranger Rita to "');
+  await expect(
+    page.locator(".toast", { hasText: "Adding the character to the tour" }),
+  ).toHaveCount(0);
+  const seen = await page.evaluate(
+    () => /** @type {any} */ (window).__toastsSeen,
+  );
+  const working = seen.findIndex((/** @type {string} */ t) =>
+    t.includes("Adding the character to the tour..."),
+  );
+  const added = seen.findIndex((/** @type {string} */ t) =>
+    t.includes("Added Ranger Rita"),
+  );
+  expect(working).toBeGreaterThanOrEqual(0);
+  expect(working).toBeLessThan(added);
   const made = await tourNow(page);
   const rita = (made.characters ?? []).find(
     (/** @type {any} */ c) => c.name === "Ranger Rita",

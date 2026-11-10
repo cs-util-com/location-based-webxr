@@ -184,6 +184,10 @@ export interface Editor3dView {
   zoom(step: 1 | -1): void;
   /** Turn the view north up. */
   northUp(): void;
+  /** Stop drawing (true) while something covers the whole view, such as
+   *  the character maker, so its work gets the machine; false draws
+   *  again. The gap counts as no slow frame. */
+  setPaused(on: boolean): void;
   /** The globe view's clock: the sky at the real time now (true), or held
    *  in daylight over the tour (false, its default). Absent: the view has
    *  no sky of its own. */
@@ -741,7 +745,12 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
     // An error in a frame stops the drawing: before the first frame the
     // open fails with it, once shown the page is told (never a frozen view,
     // nor a load that never ends).
+    let paused = false;
     renderer.setAnimationLoop((now) => {
+      if (paused) {
+        frameClock.pause();
+        return;
+      }
       try {
         frame(now);
       } catch (error) {
@@ -756,6 +765,9 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
     shown = true;
     return {
       dispose,
+      setPaused(on) {
+        paused = on;
+      },
       setTilt(deg) {
         const offset = camera.position.clone().sub(controls.target);
         const spherical = new THREE.Spherical().setFromVector3(offset);

@@ -959,7 +959,13 @@ on a desktop.
   - The library is opened once (`characterLibraryNow`).
 - `dialogOpen()` counts the list and the maker, and the page's Escape
   handler leaves them to their own dialog.
-- The add menu's Character (`addCharacterTo`) calls `makeForTour()`. In a
+- While the maker shows, the 3D view does not draw (`makerShown` to
+  `setPaused`).
+- The add menu's Character (`addCharacterTo`) calls `makeForTour()`. From
+  the maker's close until the outcome a held toast says "Adding the
+  character to the tour..." (`aria-busy`), removed before the outcome's
+  toast; an unexpected failure is said ("The character was not added:
+  ..."). In a
   station the character then stands free (`addNewCharacter`, selected,
   toast `Added X to "Station"`); in a story it becomes the story's last
   entry, standing at the station's free spot (`addCharacterToStory`).

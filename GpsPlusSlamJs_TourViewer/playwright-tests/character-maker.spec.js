@@ -218,5 +218,71 @@ test.describe("character maker", () => {
         expect(rail.width).toBeGreaterThan(vp.width * 0.8);
       }
     });
+
+    // Why: the save step and the library view are the two the creator
+    // meets every time; a style change that stacked the picture over the
+    // name, or let the buttons drift off the column, would pass a check
+    // for presence alone. The numbers are the prototype's, measured side
+    // by side at these viewports.
+    test(`keeps the prototype's save step and library view on a ${vp.name}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      await toStep4(page);
+      await bringPicture(page, drawSheet);
+      await expect(page.locator('[data-panel="4"]')).toBeVisible();
+      await page.locator("#nextBtn").click();
+      await page.locator("#charName").fill("Ranger Rita");
+      /** @param {string} selector */
+      const box = async (selector) => {
+        const b = await page.locator(selector).first().boundingBox();
+        if (b === null) throw new Error(`${selector} is not laid out`);
+        return b;
+      };
+      const head = await box('[data-panel="5"] h2');
+      const grid = await box(".save-grid");
+      const pic = await box("#pvSave");
+      const name = await box("#charName");
+      const facts = await box("#facts");
+      // The picture on the left at 3:4, the name and the facts beside it,
+      // 16 px apart, the name field to the grid's right edge.
+      expect(head.y + head.height).toBeLessThanOrEqual(grid.y);
+      expect(Math.abs(pic.x - grid.x)).toBeLessThan(2);
+      expect(Math.abs(pic.y - grid.y)).toBeLessThan(2);
+      expect(Math.abs(pic.width / pic.height - 0.75)).toBeLessThan(0.02);
+      expect(Math.round(name.x - (pic.x + pic.width))).toBe(16);
+      expect(
+        Math.abs(name.x + name.width - (grid.x + grid.width)),
+      ).toBeLessThan(2);
+      expect(facts.y).toBeGreaterThan(name.y + name.height);
+      expect(Math.abs(facts.x - name.x)).toBeLessThan(2);
+
+      await page.locator("#nextBtn").click();
+      await expect(page.locator("#savedBox")).toBeVisible();
+      await page.locator("#toHome").click();
+      await expect(
+        page.locator("#libList li", { hasText: "Ranger Rita" }),
+      ).toBeVisible();
+      const lead = await box("#homeLead");
+      const make = await box("#makeBtn");
+      const imp = await box("#importBtn");
+      const libHead = await box(".lib-head");
+      const list = await box("#libList");
+      const row = await box("#libList li");
+      // The two buttons on one line under the lead, starting at its left
+      // edge, 10 px apart; the list's head 16 px under them; each row the
+      // list's whole width.
+      expect(make.y).toBeGreaterThan(lead.y + lead.height - 1);
+      expect(Math.abs(make.x - lead.x)).toBeLessThan(2);
+      expect(
+        Math.abs(make.y + make.height / 2 - (imp.y + imp.height / 2)),
+      ).toBeLessThan(2);
+      expect(Math.round(imp.x - (make.x + make.width))).toBe(10);
+      expect(Math.round(libHead.y - (make.y + make.height))).toBe(16);
+      expect(Math.abs(libHead.x - lead.x)).toBeLessThan(2);
+      expect(list.y).toBeGreaterThanOrEqual(libHead.y + libHead.height);
+      expect(Math.abs(row.width - list.width)).toBeLessThan(2);
+      expect(Math.abs(row.x - lead.x)).toBeLessThan(2);
+    });
   }
 });

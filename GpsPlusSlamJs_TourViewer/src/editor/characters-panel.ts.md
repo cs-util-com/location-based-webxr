@@ -31,11 +31,17 @@ The page look follows the chosen prototype
   - `deps.seen`: which library ids the editor has shown before. Defaults to
     `localSeenStore()` with key `characters:seen-in-editor`.
   - `deps.now`: the clock, for the "looked ..., HH:MM" line.
+  - `deps.makerShown(shown)` (optional): told true when the maker's dialog
+    opens and false when it closes; the editor stops drawing its 3D view
+    meanwhile, so the cut and the save get the machine.
 - `CharactersPanel`
   - `open()`: shows the list and reads the library.
   - `isOpen()`: whether the list shows. `dialogOpen()`: whether the list or
     the maker shows; the editor keeps its keys out of both.
-  - `makeForTour()`: opens the maker on a new character. When the maker
+  - `makeForTour(hooks?)`: opens the maker on a new character;
+    `hooks.closed()` is called once the maker has closed, before the new
+    character is looked for and added (the add menu shows its working
+    state from then). When the maker
     closes, the newest character saved in the meantime is declared in the
     tour and returned. It returns null in three cases:
     - none was saved ("No new character was saved, so nothing was added");
@@ -82,8 +88,11 @@ The page look follows the chosen prototype
   - "Imported X: it is in this tour, and kept on this device".
 - The list has its own toasts and Undo inside the dialog, because the
   page's toasts would sit under a modal dialog.
-- The maker's dialog closes with "‹ Back to the tour", or with Escape
-  outside the frame. Closing empties the frame, so the maker stops running.
+- The maker's dialog closes with "‹ Back to the tour", or with Escape,
+  outside the frame or inside it (a key pressed in the maker reaches the
+  frame's own document, so the panel listens there on each load; an
+  Escape the maker used itself, `defaultPrevented`, is left alone).
+  Closing empties the frame, so the maker stops running.
 
 ## Invariants and assumptions
 
@@ -117,6 +126,8 @@ const made = await characters.makeForTour(); // TourCharacter | null
   - add: busy state, success, refusal and failure; "add all"; "not now";
   - remove and its Undo, and a refused remove;
   - the maker: its URL, closing it, and the "nothing new" line;
+  - the maker over the editor: `makerShown` on open and close, `closed`
+    before the add, Escape inside the frame;
   - coming back to the tab;
   - `makeForTour`: made, none saved, refused, library unreadable;
   - import: the busy steps, a refusal, a failed save, a cancelled name

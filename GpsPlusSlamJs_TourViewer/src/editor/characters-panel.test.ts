@@ -232,6 +232,7 @@ function setup(
   const library = memoryLibrary(opts.lib);
   const t = memoryTour();
   const said: string[] = [];
+  const shown: boolean[] = [];
   const seen = memorySeen(opts.seen === undefined ? null : opts.seen);
   const panel = createCharactersPanel({
     dom: d,
@@ -241,11 +242,12 @@ function setup(
     say: (text) => said.push(text),
     seen,
     now: () => new Date("2026-11-10T12:34:00Z"),
+    makerShown: (on) => shown.push(on),
   });
   const toasts = () => d.toasts.textContent ?? "";
   const libRow = (id: string) =>
     d.libList.querySelector<HTMLElement>(`li[data-id="${id}"]`);
-  return { d, library, t, said, seen, panel, toasts, libRow };
+  return { d, library, t, said, shown, seen, panel, toasts, libRow };
 }
 
 beforeEach(() => {
@@ -723,5 +725,64 @@ describe("the tour's own character ids", () => {
     s.d.maker.close();
     expect((await made)?.id).toBe("k1");
     expect(s.t.tour.declare).not.toHaveBeenCalled();
+  });
+});
+
+describe("the maker over the editor", () => {
+  // Why: the editor stops drawing its 3D view while the maker covers it,
+  // so the cut and the save get the machine; a close that did not tell it
+  // would leave the view frozen for good.
+  it("tells the editor when the maker covers the page and when it no longer does", async () => {
+    const s = setup();
+    s.d.make.click();
+    expect(s.shown).toEqual([true]);
+    s.d.makerBack.click();
+    await settled();
+    expect(s.shown).toEqual([true, false]);
+  });
+
+  // Why: the add menu shows its working state from the maker's close
+  // until the character is in the tour; called before the close it would
+  // cover the maker, called after the add it would show nothing.
+  it("makeForTour says when the maker closed, before the character is added", async () => {
+    const s = setup();
+    const order: string[] = [];
+    vi.mocked(s.t.tour.declare).mockImplementationOnce(async (c) => {
+      order.push("declare");
+      return Promise.resolve({
+        kind: "declared",
+        character: { id: "t9", name: c.name, image: "i", frames: "f" },
+      });
+    });
+    const made = s.panel.makeForTour({ closed: () => order.push("closed") });
+    await settled();
+    expect(order).toEqual([]);
+    s.library.entries.unshift(record("c2", "Max", "2026-11-10T12:00:00.000Z"));
+    s.d.maker.close();
+    await made;
+    expect(order).toEqual(["closed", "declare"]);
+  });
+
+  // Why: a key pressed in the maker reaches the frame's document, not the
+  // dialog, so without this Escape would do nothing inside the maker.
+  it("Escape inside the maker leaves it like Back to the tour; a key the maker used does not", async () => {
+    const s = setup();
+    s.d.make.click();
+    s.d.makerFrame.dispatchEvent(new Event("load"));
+    const inner = s.d.makerFrame.contentDocument;
+    expect(inner).not.toBeNull();
+    const used = new KeyboardEvent("keydown", {
+      key: "Escape",
+      cancelable: true,
+    });
+    used.preventDefault();
+    inner?.dispatchEvent(used);
+    expect(s.d.maker.open).toBe(true);
+    inner?.dispatchEvent(new KeyboardEvent("keydown", { key: "a" }));
+    expect(s.d.maker.open).toBe(true);
+    inner?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(s.d.maker.open).toBe(false);
+    await settled();
+    expect(s.shown).toEqual([true, false]);
   });
 });

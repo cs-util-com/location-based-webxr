@@ -628,6 +628,9 @@ const characters = createCharactersPanel({
   tour: charactersTour,
   library: characterLibraryNow,
   makerUrl: "./characters.html",
+  makerShown: (shown) => {
+    shown3d?.setPaused(shown);
+  },
   say: (text) => {
     toast(text);
   },
@@ -1737,12 +1740,37 @@ function addItemTo(stationId: string, kind: AddKind): void {
 /** The add menu's Character: the maker opens on a new character, which
  *  then stands free in the station (`addNewCharacter`) or ends the story
  *  as a card; selected and said once it was added, a refusal toasted. The
- *  declaration and the add are a step each. */
+ *  declaration and the add are a step each. From the maker's close until
+ *  the outcome a toast says the work is under way (copying his pictures
+ *  in takes a moment). */
 async function addCharacterTo(to: {
   readonly kind: "station" | "story";
   readonly id: string;
 }): Promise<void> {
-  const made = await characters.makeForTour();
+  let working: HTMLElement | null = null;
+  let made: Awaited<ReturnType<typeof characters.makeForTour>>;
+  try {
+    made = await characters.makeForTour({
+      closed: () => {
+        working = toast(
+          "Adding the character to the tour...",
+          undefined,
+          null,
+          false,
+        );
+        working.setAttribute("aria-busy", "true");
+      },
+    });
+  } catch (error) {
+    toast(
+      `The character was not added: ${error instanceof Error ? error.message : String(error)}`,
+      undefined,
+      null,
+    );
+    return;
+  } finally {
+    (working as HTMLElement | null)?.remove();
+  }
   const open = editor;
   if (made === null || open === null) return;
   if (to.kind === "story") {

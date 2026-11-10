@@ -95,6 +95,15 @@ export interface CharactersPanelDeps {
   readonly say: (text: string) => void;
   readonly seen?: SeenStore;
   readonly now?: () => Date;
+  /** The maker covers the page (true) or no longer does (false): the
+   *  editor stops drawing its 3D view meanwhile. */
+  readonly makerShown?: (shown: boolean) => void;
+}
+
+/** What `makeForTour` tells its caller on the way. */
+interface MakeForTourHooks {
+  /** The maker closed; the new character is being looked for and added. */
+  readonly closed?: () => void;
 }
 
 export interface CharactersPanel {
@@ -106,7 +115,7 @@ export interface CharactersPanel {
   /** Opens the maker on a new character; once it closes, adds the newest
    *  character saved meanwhile to the tour and resolves with it (null:
    *  none was saved, or adding it was refused - said either way). */
-  makeForTour(): Promise<TourCharacter | null>;
+  makeForTour(hooks?: MakeForTourHooks): Promise<TourCharacter | null>;
 }
 
 /** Where the editor remembers which characters it has shown. */
@@ -467,6 +476,7 @@ export function createCharactersPanel(
     dom.makerFrame.src = `${deps.makerUrl}?in=editor${startNew ? "&start=new" : ""}`;
     dom.makerTour.textContent = deps.tour()?.title() ?? "";
     dom.maker.showModal();
+    deps.makerShown?.(true);
     return new Promise((resolve) => {
       makerClosed = resolve;
     });
@@ -480,8 +490,25 @@ export function createCharactersPanel(
   dom.makerBack.addEventListener("click", () => {
     dom.maker.close();
   });
+  // A key pressed in the maker goes to the frame's own document, so the
+  // dialog's Escape never sees it: Escape there leaves like "Back to the
+  // tour", unless the maker used the key itself.
+  dom.makerFrame.addEventListener("load", () => {
+    let inner: Document | null;
+    try {
+      inner = dom.makerFrame.contentDocument;
+    } catch {
+      inner = null;
+    }
+    inner?.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !e.defaultPrevented && dom.maker.open) {
+        dom.maker.close();
+      }
+    });
+  });
   dom.maker.addEventListener("close", () => {
     dom.makerFrame.src = "about:blank";
+    deps.makerShown?.(false);
     const waiting = makerClosed;
     makerClosed = null;
     waiting?.();
@@ -564,7 +591,7 @@ export function createCharactersPanel(
     },
     isOpen,
     dialogOpen: () => isOpen() || dom.maker.open,
-    async makeForTour() {
+    async makeForTour(hooks) {
       if (deps.tour() === null) return null;
       let before: Set<string>;
       try {
@@ -578,6 +605,7 @@ export function createCharactersPanel(
         return null;
       }
       await openMaker(true);
+      hooks?.closed?.();
       let made: CharacterRecord | undefined;
       try {
         const listing = await (await deps.library()).list();

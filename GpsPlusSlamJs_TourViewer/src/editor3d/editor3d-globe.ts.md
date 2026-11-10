@@ -109,6 +109,10 @@ ground.
 
 ## The verbs
 
+- `setPaused(on)`: while true the loop returns at once and the frame clock
+  pauses (the gap is no slow frame); the editor sets it while the
+  character maker covers the page, so the cut and the save get the
+  machine.
 - The clock: daylight by default, `view.startClock` held (`scale` null with
   a `startMs`) at `daylightStartMs(Date.now(), centre.lng)`; `setRealTime(true)`
   restarts it at the real time now, `false` back in daylight. `stats().globe.clock`

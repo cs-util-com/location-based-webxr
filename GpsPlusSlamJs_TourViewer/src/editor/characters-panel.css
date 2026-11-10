@@ -74,6 +74,11 @@ dialog.charpanel::backdrop {
     max-width: 640px;
     justify-self: center;
   }
+  /* the button row too (its own rule below sets it to auto), so the
+     buttons start at the column's left edge */
+  dialog.charpanel > .row {
+    width: 100%;
+  }
 }
 .charpanel *,
 .charmaker * {
@@ -110,8 +115,11 @@ dialog.charpanel::backdrop {
   font-size: 22px;
   line-height: 1.15;
 }
+/* the section heads in the panel's own type, not the editor's serif */
 .charpanel h3 {
+  font-family: var(--sans);
   font-size: 15px;
+  font-weight: 700;
 }
 .charpanel .dim {
   color: var(--ink-dim);

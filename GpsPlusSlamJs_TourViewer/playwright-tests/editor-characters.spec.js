@@ -191,5 +191,18 @@ for (const vp of VIEWPORTS) {
     expect(imp.x).toBeGreaterThan(make.x + make.width);
     // The gap between them: the prototype's 10 px row gap.
     expect(Math.round(imp.x - (make.x + make.width))).toBe(10);
+    // "Make a character" starts at the column's left edge, as the title.
+    expect(Math.abs(make.x - title.x)).toBeLessThan(2);
+    // The section heads in the panel's own type, as the prototype's.
+    const fonts = await page.evaluate(() => {
+      const head = document.querySelector("#characters-panel h3");
+      const panel = document.querySelector("#characters-panel");
+      if (!head || !panel) return null;
+      return [
+        getComputedStyle(head).fontFamily,
+        getComputedStyle(panel).fontFamily,
+      ];
+    });
+    expect(fonts?.[0]).toBe(fonts?.[1]);
   });
 }
