@@ -16,10 +16,14 @@ import {
   tourStationChildIds,
   tourStationStoryBlocks,
   tourStories,
+  TOUR_FOLDER_MAX_SCALE,
+  TOUR_FOLDER_MIN_SCALE,
   type TourStory,
   type TourStoryChild,
 } from "gps-plus-slam-app-framework/ar/tour-story";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
+import { decomposeTourFolderPath } from "gps-plus-slam-app-framework/ar/tour-folder-pose";
+import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import type {
   TourAsset,
@@ -78,6 +82,7 @@ import {
   nextStep,
   objectMoveChange,
   picturesNeeded,
+  folderChains,
   pinTextChange,
   selectTourDocument,
   stationDeleteRefusal,
@@ -92,6 +97,7 @@ import {
 } from "../tour-document.js";
 import type { ChildMoveTo } from "../station-children-moves.js";
 import { newObjectId } from "../content-placement.js";
+import { folderName } from "./folder-commands.js";
 import {
   STATION_RADIUS_MAX_M,
   STATION_RADIUS_MIN_M,
@@ -551,6 +557,16 @@ export type NarrationChange =
 
 /** Said for a size given to a block whose row has none. */
 const NO_EXTENT = "This item has no size to set.";
+
+/** Said for a plain folder the tour no longer carries. */
+const NO_SUCH_FOLDER = "That folder is no longer in this tour.";
+
+/** Said for a folder's scale out of the format's bounds. */
+const FOLDER_SCALE_RANGE = `Its scale must be from ${String(TOUR_FOLDER_MIN_SCALE)} to ${String(TOUR_FOLDER_MAX_SCALE)} times.`;
+
+/** Said for a folder's move or scale that would take one of its items
+ *  beyond its station's reach. */
+const FOLDER_TOO_FAR = `It cannot go that far: everything in a folder must stay within ${String(TOUR_ITEM_MAX_OFFSET_M / 1000)} km of its station.`;
 const NOT_A_MODEL_EDIT = "Only a 3D model has notes, sections and views.";
 
 /** Said for a view a block's kind does not have. */
@@ -824,6 +840,22 @@ export interface EditorSession {
    *  value out of the row's bounds. */
   setExtent(
     id: string,
+    value: number,
+  ): { kind: "resized" | "unchanged" } | EditorRefusal;
+  /** Put a plain folder's origin at a whole pose (position, height and
+   *  turn): its items move rigidly with it, each keeping its pose in it.
+   *  One step. Refused for a folder the tour lacks, a spot on no map, and
+   *  a move that takes any of its items beyond its station's reach. */
+  moveFolder(
+    folderId: string,
+    geo: QrGeoPose,
+  ): { kind: "moved" | "unchanged" } | EditorRefusal;
+  /** Set a plain folder's scale (0.1 to 10 times): its whole group grows
+   *  about its origin, sizes and distances alike. One step. Refused for a
+   *  folder the tour lacks, a scale out of the bounds, and one that takes
+   *  any of its items beyond its station's reach. */
+  scaleFolder(
+    folderId: string,
     value: number,
   ): { kind: "resized" | "unchanged" } | EditorRefusal;
   /** Put an item at a whole pose (position, height and turn): it keeps
@@ -1291,6 +1323,24 @@ export function createEditorSession(input: {
   }
 
   const notApplied: EditorRefusal = { kind: "refused", reason: NOT_APPLIED };
+  const noSuchFolder: EditorRefusal = {
+    kind: "refused",
+    reason: NO_SUCH_FOLDER,
+  };
+
+  /** The plain folder `folderId` of the tour as `state` writes it: its
+   *  station, the chain down to it (its holders, then itself) and itself;
+   *  null for one no station holds. */
+  function folderOf(state: TourDocumentState, folderId: string) {
+    for (const station of manifestNow(state)?.stations ?? []) {
+      const chain = folderChains(station).get(folderId);
+      const folder = chain?.at(-1);
+      if (chain !== undefined && folder !== undefined) {
+        return { station, chain, folder };
+      }
+    }
+    return null;
+  }
   const noSuchStation: EditorRefusal = {
     kind: "refused",
     reason: NO_SUCH_STATION,
@@ -2324,6 +2374,56 @@ export function createEditorSession(input: {
       )
         ? { kind: "resized" }
         : notApplied;
+    },
+    moveFolder(folderId, geo) {
+      const state = mine();
+      if (state === null) return notInTour;
+      const found = folderOf(state, folderId);
+      if (found === null) return noSuchFolder;
+      if (!onMap(geo)) return { kind: "refused", reason: NOT_ON_MAP };
+      const { station, chain, folder } = found;
+      const pose = decomposeTourFolderPath(
+        chain.slice(0, -1),
+        localPoseOf(geo, station.geo),
+      );
+      if (JSON.stringify(pose) === JSON.stringify(folder.pose ?? null)) {
+        return { kind: "unchanged" };
+      }
+      return took(() =>
+        store.dispatch(
+          tourDocumentActions.folderMoved({
+            stationId: station.id,
+            folderId,
+            pose,
+            what: `the move of ${folderName(folder)}`,
+          }),
+        ),
+      )
+        ? { kind: "moved" }
+        : { kind: "refused", reason: FOLDER_TOO_FAR };
+    },
+    scaleFolder(folderId, value) {
+      const state = mine();
+      if (state === null) return notInTour;
+      const found = folderOf(state, folderId);
+      if (found === null) return noSuchFolder;
+      if (!(value >= TOUR_FOLDER_MIN_SCALE && value <= TOUR_FOLDER_MAX_SCALE)) {
+        return { kind: "refused", reason: FOLDER_SCALE_RANGE };
+      }
+      const { station, folder } = found;
+      if ((folder.scale ?? 1) === value) return { kind: "unchanged" };
+      return took(() =>
+        store.dispatch(
+          tourDocumentActions.folderScaled({
+            stationId: station.id,
+            folderId,
+            scale: value,
+            what: `the scale of ${folderName(folder)}`,
+          }),
+        ),
+      )
+        ? { kind: "resized" }
+        : { kind: "refused", reason: FOLDER_TOO_FAR };
     },
     pose(id, geo, options = {}) {
       const found = find(id);

@@ -8,10 +8,12 @@
  * through gl-matrix's float32 arrays, which would cost centimetres at an
  * absolute altitude of 500 m.
  *
- * A folder's `scale` is not applied here: the format takes only 1 until a
- * renderer scales a whole group (`tour-story.ts`), so a folder is a rigid
- * frame. Applying a scale to positions alone would move a group's blocks
- * apart while their sizes stay, which is no resize at all.
+ * A folder's `scale` makes the whole group larger: a child's offset grows
+ * with it here (`p = p_f + s R_f p_c`), and a renderer draws the child
+ * that much larger too ({@link composedTourFolderScale}), its sizes and
+ * reaches with it. Scaling positions alone would move a group's blocks
+ * apart while their sizes stay, which is no resize at all, so a renderer
+ * of a folder's blocks applies both.
  *
  * Kept apart from `tour-station-pose.ts` because the children reader
  * (`tour-story.ts`) bounds a composed offset with it, and the station
@@ -52,23 +54,40 @@ export function unitQuaternion(q: Quaternion): Quaternion {
   return renormalizeUnitQuaternion(q) ?? IDENTITY_QUATERNION;
 }
 
-/** What a plain folder applies to the poses of its children: its pose. */
+/** What a plain folder applies to the poses of its children: its pose,
+ *  and its scale (absent: 1). */
 export interface TourFolderFrame {
   readonly pose?: TourLocalPose;
+  readonly scale?: number;
+}
+
+type Offset = TourLocalPose['position'];
+
+function scaled(v: Offset, scale: number): Offset {
+  return scale === 1 ? v : [v[0] * scale, v[1] * scale, v[2] * scale];
 }
 
 /**
  * Where a pose given in a plain folder's frame stands in the folder's
- * holder: `p = p_f + R_f p_c`, `q = R_f q_c`. A folder with no pose is the
- * identity: the pose comes back as it is, bit for bit.
+ * holder: `p = p_f + s R_f p_c`, `q = R_f q_c`. A folder with no pose and
+ * a scale of 1 (or none) is the identity: the pose comes back as it is,
+ * bit for bit.
  */
 export function composeTourFolderPose(
   folder: TourFolderFrame,
   pose: TourLocalPose
 ): TourLocalPose {
   const frame = folder.pose;
-  if (frame === undefined) return pose;
-  const [n, u, e] = rotateVectorByQuaternion(frame.rotation, pose.position);
+  const scale = folder.scale ?? 1;
+  if (frame === undefined && scale === 1) return pose;
+  const offset = scaled(pose.position, scale);
+  if (frame === undefined) {
+    return {
+      position: [offset[0] + 0, offset[1] + 0, offset[2] + 0],
+      rotation: pose.rotation,
+    };
+  }
+  const [n, u, e] = rotateVectorByQuaternion(frame.rotation, offset);
   const [fn, fu, fe] = frame.position;
   return {
     // `+ 0` canonicalizes -0, which JSON cannot carry (round trips exact).
@@ -84,17 +103,34 @@ export function decomposeTourFolderPose(
   pose: TourLocalPose
 ): TourLocalPose {
   const frame = folder.pose;
-  if (frame === undefined) return pose;
-  const inverse = quaternionInverse(frame.rotation);
-  const [n, u, e] = rotateVectorByQuaternion(inverse, [
-    pose.position[0] - frame.position[0],
-    pose.position[1] - frame.position[1],
-    pose.position[2] - frame.position[2],
-  ]);
+  const scale = folder.scale ?? 1;
+  if (frame === undefined && scale === 1) return pose;
+  const inverse =
+    frame === undefined ? undefined : quaternionInverse(frame.rotation);
+  const [n, u, e] =
+    frame === undefined || inverse === undefined
+      ? pose.position
+      : rotateVectorByQuaternion(inverse, [
+          pose.position[0] - frame.position[0],
+          pose.position[1] - frame.position[1],
+          pose.position[2] - frame.position[2],
+        ]);
   return {
-    position: [n + 0, u + 0, e + 0],
-    rotation: unitQuaternion(quaternionProduct(inverse, pose.rotation)),
+    position: [n / scale + 0, u / scale + 0, e / scale + 0],
+    rotation:
+      inverse === undefined
+        ? pose.rotation
+        : unitQuaternion(quaternionProduct(inverse, pose.rotation)),
   };
+}
+
+/** How much larger the innermost of `folders` (outermost first) draws
+ *  what it holds, in the frame holding the outermost: the product of
+ *  their scales (none: 1). */
+export function composedTourFolderScale(
+  folders: readonly TourFolderFrame[]
+): number {
+  return folders.reduce((product, folder) => product * (folder.scale ?? 1), 1);
 }
 
 /** The inverse of {@link composeTourFolderPath}: a pose in the frame that

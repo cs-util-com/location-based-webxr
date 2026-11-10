@@ -19,6 +19,10 @@
  *   and its heading there, and how far it stands off the ground; none of
  *   that for one with no place in the world (a video); for a long text,
  *   what its writer shows (`InspectorLongText`).
+ * - A plain folder (`folder:<id>`): its name, its station and how many
+ *   items it holds, its scale (how much larger it draws its items and
+ *   their distances), and where its origin stands in its station's frame
+ *   with its heading there, and how far that stands off the ground.
  * - A story (`story:<id>`): its title, its place and its numbered entries.
  * - A story's block: its texts, how it moves on and, for a character, what
  *   is set of him; a story's choice or quiz: a summary, read here and not
@@ -59,15 +63,20 @@ import { KIND_EDIT } from "../../kinds/edit-kinds.js";
 import { objectTitle } from "../../object-describe.js";
 import { readingSheetContent } from "../../reading-sign.js";
 import { stationTitle } from "../../station-run.js";
-import { ownedAssetIds } from "../../tour-document.js";
-import { posedEntries, posedEntryOf } from "../../placement/placeables.js";
+import { folderChains, ownedAssetIds } from "../../tour-document.js";
+import {
+  placeableOf,
+  posedEntries,
+  posedEntryOf,
+} from "../../placement/placeables.js";
 import type { ExtentSpec } from "../../placement/placement-rows.js";
 import {
   blockFields,
   storyBlockFields,
   type BlockField,
 } from "../block-fields.js";
-import { STORY_PREFIX } from "../editor-model.js";
+import { FOLDER_PREFIX, STORY_PREFIX } from "../editor-model.js";
+import { folderName } from "../folder-commands.js";
 import {
   FREE_LIST,
   childMayGo,
@@ -446,6 +455,38 @@ interface ItemInspector {
   readonly groundOffM: number | null;
 }
 
+/** A plain folder's scale as its inspector types it: its placement
+ *  row's factor (`CONTAINER_PLACEMENT`). */
+export interface InspectorScale {
+  readonly label: string;
+  readonly meaning: string;
+  /** The tour's value (1: none written). */
+  readonly value: number;
+  readonly min: number;
+  readonly max: number;
+}
+
+interface FolderInspector {
+  readonly kind: "folder";
+  readonly folderId: string;
+  /** Its station's id. */
+  readonly stationId: string;
+  readonly title: string;
+  readonly sub: string;
+  readonly scale: InspectorScale;
+  /** Its origin in its station's frame (m), its holders composed in. */
+  readonly offset: {
+    readonly northM: number;
+    readonly upM: number;
+    readonly eastM: number;
+  };
+  /** Relative to its station; null for a rotation that is no number. */
+  readonly headingDeg: number | null;
+  /** Its origin's height over the ground (m); null before the ground
+   *  there has loaded. */
+  readonly groundOffM: number | null;
+}
+
 interface CodeInspector {
   readonly kind: "code";
   readonly title: string;
@@ -458,6 +499,7 @@ interface CodeInspector {
 export type InspectorModel =
   | StationInspector
   | ItemInspector
+  | FolderInspector
   | CodeInspector
   | StoryInspector
   | StoryEntryInspector
@@ -482,6 +524,9 @@ export function inspectorHint(model: InspectorModel | null): string {
     const turn = model.turns ? ", the round arrow to turn" : "";
     const resize = model.extent !== null ? ", a white dot to resize" : "";
     return `${model.title} - drag the middle to move along the ground${turn}${resize}`;
+  }
+  if (model.kind === "folder") {
+    return `${model.title} - drag the middle to move its items together, a white dot to scale them, the round arrow to turn`;
   }
   if (model.kind === "story") {
     return `${model.title} - its entries play in order; its + in the list adds one, Esc deselects`;
@@ -775,6 +820,53 @@ function storyInspector(
   return null;
 }
 
+/** The plain folder `selected` (`folder:<id>`) names, as its inspector;
+ *  null for one the tour lacks. */
+function folderInspector(
+  selected: string,
+  stations: readonly TourStation[],
+  groundAt: InspectorGround | undefined,
+): FolderInspector | null {
+  const place = placeableOf({ stations }, selected);
+  const index = stations.findIndex((s) => s.id === place?.stationId);
+  const station = stations[index];
+  const id = selected.slice(FOLDER_PREFIX.length);
+  const folder =
+    station === undefined ? undefined : folderChains(station).get(id)?.at(-1);
+  if (
+    place === null ||
+    place.inStation === null ||
+    place.extent === null ||
+    station === undefined ||
+    folder === undefined
+  ) {
+    return null;
+  }
+  const n = place.members.length;
+  const { extent, inStation } = place;
+  return {
+    kind: "folder",
+    folderId: id,
+    stationId: station.id,
+    title: folderName(folder),
+    sub: `Folder in ${stationTitle(station, index + 1)}, ${n === 1 ? "1 item" : `${String(n)} items`}`,
+    scale: {
+      label: extent.label,
+      meaning: extent.meaning,
+      value: extent.value,
+      min: extent.min,
+      max: extent.max,
+    },
+    offset: {
+      northM: inStation.position[0],
+      upM: inStation.position[1],
+      eastM: inStation.position[2],
+    },
+    headingDeg: headingOfRotation(inStation.rotation),
+    groundOffM: offGroundOf(place.geo, groundAt),
+  };
+}
+
 /** The inspector for `selected` (the page's selection id), or null when
  *  nothing is selected or the tour does not have it. */
 export function buildInspector(input: {
@@ -841,6 +933,9 @@ export function buildInspector(input: {
   }
   if (selected.startsWith(STORY_PREFIX)) {
     return storyInspector(selected.slice(STORY_PREFIX.length), stations);
+  }
+  if (selected.startsWith(FOLDER_PREFIX)) {
+    return folderInspector(selected, stations, groundAt);
   }
   const inStory = storyChildInspector(selected, stations);
   if (inStory !== null) return inStory;

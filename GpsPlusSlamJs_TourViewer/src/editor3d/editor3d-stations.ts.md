@@ -89,7 +89,9 @@ standing`). A distance, size or focal length that is not a positive
     the layer's frame (`deps.parent`'s), see the invariant below;
   - `setPreview(preview | null)` - a `LayerPreview` shown in place of the
     tour's pose until null: a station's place (its billboard, ring, items
-    and models follow) and found radius, or an item's place (a reading
+    and models follow) and found radius, a plain folder's origin and
+    scale (its items drawn through it, further out and larger, by
+    `drawInherited`), or an item's place (a reading
     stand turned by `uprightTurn` only, as the renderer turns it, on
     the drag and when cleared; a model also
     its size); the tour as drawn is untouched and comes back on null;
@@ -306,7 +308,9 @@ above with no cap (its gap with it, picked at its grown size, its corners
 for the page's measure, its printed size near or tilted up) and for the
 view's own height; where an item and a
 code stand, drawn or not; a station's and an item's (a model's) preview
-shown and taken back; a moved station, its items and the codes kept in
+shown and taken back; a scaled folder's picture drawn further out and
+larger, following a drag of the folder's origin and scale and back when
+cleared; a moved station, its items and the codes kept in
 the layer's frame after the world frame moved (the globe's nesting), also
 once deselected; the selected station's circle amber and a selected
 item's station lighter; a part from the world door built in the

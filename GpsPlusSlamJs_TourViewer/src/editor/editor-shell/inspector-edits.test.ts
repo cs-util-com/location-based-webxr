@@ -639,3 +639,86 @@ describe("inspectorEdit: an item in a turned folder", () => {
     });
   });
 });
+
+// Why: a folder's inspector shows its origin and heading in its station's
+// frame and the factor its items are drawn at, so what is typed there must
+// move, turn or scale the folder itself, its items following; written as
+// an item's edit, it would move one item out of its group.
+describe("inspectorEdit: a turned folder", () => {
+  const s = Math.SQRT1_2;
+  // A folder 10 m north and 2 m up, turned a quarter about up.
+  const station = {
+    ...STATIONS[0]!,
+    children: [
+      {
+        id: "f",
+        kind: "folder",
+        pose: { position: [10, 2, 0], rotation: [0, s, 0, s] },
+        children: [
+          {
+            id: "deep",
+            kind: "shortText",
+            view: "pin",
+            caption: "Deep",
+            createdAtIso: AT,
+            pose: { position: [5, 1, 0], rotation: [0, 0, 0, 1] },
+          },
+        ],
+      },
+    ],
+  } as unknown as TourStation;
+  const typed = (field: string, value: string, selected = "folder:f") =>
+    inspectorEdit({
+      selected,
+      stations: [station],
+      origin: ORIGIN,
+      field,
+      value,
+    });
+  const poseOf = (field: string, value: string) => {
+    const out = typed(field, value);
+    if (out.kind !== "scene" || out.edit.kind !== "pose") {
+      throw new Error(`not a pose: ${JSON.stringify(out)}`);
+    }
+    expect(out.edit.ref).toEqual({ kind: "folder", id: "f" });
+    return localPoseOf(out.edit.geo, station.geo);
+  };
+
+  it("writes a typed scale as the folder's, and nothing for the one it has", () => {
+    expect(typed("scale", "2")).toEqual({
+      kind: "scene",
+      edit: { kind: "extent", ref: { kind: "folder", id: "f" }, value: 2 },
+    });
+    expect(typed("scale", "1")).toEqual({ kind: "none" });
+    expect(typed("scale", "big")).toEqual({
+      kind: "invalid",
+      reason: "Type a number, like 12.5",
+    });
+  });
+
+  it("moves the folder to a typed offset or height in its station's frame, and turns it to a typed heading", () => {
+    for (const [field, value, want] of [
+      ["east", "3", [10, 2, 3]],
+      ["north", "-4", [-4, 2, 0]],
+      ["height", "4", [10, 4, 0]],
+    ] as const) {
+      const local = poseOf(field, value);
+      for (const [i, w] of want.entries()) {
+        expect(local.position[i]).toBeCloseTo(w, 3);
+      }
+    }
+    expect(typed("north", "10")).toEqual({ kind: "none" });
+    expect(typed("heading", "-90")).toEqual({ kind: "none" });
+    expect(typed("heading", "0")).toEqual({
+      kind: "turn",
+      selection: "folder:f",
+      deg: 90,
+    });
+  });
+
+  it("writes nothing for a field a folder has not, or a folder the tour lacks", () => {
+    expect(typed("title", "Benches")).toEqual({ kind: "none" });
+    expect(typed("size", "2")).toEqual({ kind: "none" });
+    expect(typed("scale", "2", "folder:nope")).toEqual({ kind: "none" });
+  });
+});

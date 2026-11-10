@@ -1377,6 +1377,57 @@ describe("createStationsLayer", () => {
     layer.dispose();
   });
 
+  // Why: a folder's scale makes its whole group larger, so the editor
+  // must draw its items further out and larger, and a drag of the folder
+  // (its origin, its scale) must carry them the same way and put them
+  // back when cleared. A folder 10 m north, scale 2, holding a picture
+  // 1 m north and 1.5 m up of width 1: drawn at [12, 3, 0], twice as wide.
+  it("draws a scaled folder's items larger, and follows a drag of the folder", async () => {
+    const { d } = deps();
+    const layer = createStationsLayer(d);
+    const a = {
+      ...station("a", 0, 0),
+      ...stationContent([
+        {
+          id: "f",
+          kind: "folder",
+          pose: { position: [10, 0, 0], rotation: [0, 0, 0, 1] },
+          scale: 2,
+          children: [photo("p")],
+        },
+      ]),
+    };
+    layer.setTour(manifest([a], []), new Map());
+    layer.update(view(0, 0, "a"));
+    await settle();
+    const plane = layer.photoPlanes("a")[0]!;
+    layer.update(view(0, 0, "a", 1));
+    const at = (x: number, y: number, z: number) => {
+      expect(plane.position.x).toBeCloseTo(x, 3);
+      expect(plane.position.y).toBeCloseTo(y, 3);
+      expect(plane.position.z).toBeCloseTo(z, 3);
+    };
+    at(12, 3, 0);
+    const drawn = plane.scale.toArray();
+    expect(drawn[0]).toBeCloseTo(2, 9);
+    layer.setPreview({
+      ref: { kind: "folder", id: "f" },
+      geo: itemGeoPose({ position: [20, 0, 0], rotation: [0, 0, 0, 1] }, a.geo),
+      value: 3,
+    });
+    layer.update(view(0, 0, "a", 1));
+    at(23, 4.5, 0);
+    expect(plane.scale.x).toBeCloseTo(3, 9);
+    expect(plane.scale.y / plane.scale.x).toBeCloseTo(drawn[1] / drawn[0], 9);
+    layer.setPreview(null);
+    layer.update(view(0, 0, "a", 1));
+    at(12, 3, 0);
+    for (const [i, v] of drawn.entries()) {
+      expect(plane.scale.getComponent(i)).toBeCloseTo(v, 9);
+    }
+    layer.dispose();
+  });
+
   // Why: a picture's width dots preview like a model's size - the plane
   // drawn at the dragged width, its aspect kept - and the plane comes
   // back to the tour's width when the drag is cleared.

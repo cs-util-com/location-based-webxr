@@ -75,6 +75,10 @@ content` (Chromium, the editor's browser; elsewhere it stays three
     position cannot be read has its Radius and that line in its fields,
     and says so. The radius sits with the position because both say where
     the station is felt; an item's disclosure stays "Position".
+  - A plain folder: the folder icon, its name and "Folder in <station>,
+    <n> items"; its Scale to type (`scale`, "x") with its meaning and
+    bounds; under "Place", its offset east and north, height and heading
+    in its station's frame. Its items follow every one.
   - A story: its name to type in the head (`data-field="story-title"`, its
     count under it), its "Entries" fold ("<n>, played in order"), a numbered
     `.kids` row each, `goto:<id>`), "Add entry..." (`add-entry`) and
@@ -210,7 +214,8 @@ frame, a code without a position, and the folded head. The page by
 `playwright-tests/editor3d-inspector.spec.js` (the edits, saved and
 opened again, and the fields' layout at four window sizes).
 
-`shell-inspector.test.ts` also covers the ground changing under a drawn station (only its ground button updated, the typed field and its focus kept), the lock button's place, state and words, and its absence for a station without a position; Earlier and Later beside a station's place, off at the ends; and the commands in words per kind (a station's Delete with its key, an item's two, none for a code).
+`shell-inspector.test.ts` also covers a plain folder's Scale and Place
+fields, the ground changing under a drawn station (only its ground button updated, the typed field and its focus kept), the lock button's place, state and words, and its absence for a station without a position; Earlier and Later beside a station's place, off at the ends; and the commands in words per kind (a station's Delete with its key, an item's two, none for a code).
 
 It also covers a story (its name, its numbered Entries, its Add entry and
 its Delete, an empty one), a choice's and a quiz's summary, an item with

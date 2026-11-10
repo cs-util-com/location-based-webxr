@@ -415,11 +415,20 @@ geo?, what })` - a copy inserted after the original (any station the
     it), as one step: its items move rigidly with it and keep their
     poses in it (written ones follow the frame's folder by themselves;
     those with an entry are moved through the old and the new folders).
-    Its scale stays 1. Refused (the same state): an unknown station or
+    Refused (the same state): an unknown station or
     folder, a pose the format would refuse (`parseTourLocalPose`), an
     unchanged pose, or one that takes any of its items past the
     station's bound. An item moved on its own (`moved`) keeps its
     folders and changes only its own pose in them.
+  - `folderScaled({ stationId, folderId, scale, what })` - a plain
+    folder's new scale, as one step: its whole group grows about its
+    origin, each item keeping its pose in it, so it stands that much
+    further out and is drawn that much larger (a scale of 1 is written
+    as none). Refused (the same state): an unknown station or folder, a
+    scale out of the format's bounds (`TOUR_FOLDER_MIN_SCALE` to
+    `TOUR_FOLDER_MAX_SCALE`), an unchanged scale, or one that takes any
+    of its items past the station's bound. It and `folderMoved` share
+    one reframing of the folder (`folderReframe`).
   - `folderGrouped({ folderId, title, ids, what })` - items of one
     station grouped in a new plain folder at their centroid, turned like
     the station (yaw 0), titled by the creator (`folderTitle`); every
@@ -450,9 +459,10 @@ geo?, what })` - a copy inserted after the original (any station the
     the frame; `objectsFoldered` changes only items, which the draft
     carries through their entries (each names its `folder`).
   - Which have a page: group, ungroup, `objectsFoldered`, rename and
-    reorder (the tree, `folder-commands.ts`). `folderMoved` (the gizmo)
-    and `folderDeleted` (a folder's delete with its confirmation) have
-    none yet.
+    reorder (the tree, `folder-commands.ts`); `folderMoved` and
+    `folderScaled` (the gizmo and the folder's inspector, through the
+    session's `moveFolder` and `scaleFolder`). `folderDeleted` (a
+    folder's delete with its confirmation) has none yet.
   - `blockNumberSet({ id, field, value, what })` - a block's size: the
     field its placement row's `size` extent names
     (`placement/placement-rows.ts`), a placed model's `sizeM` (0.05 m to
@@ -502,7 +512,7 @@ written, hand })` (the hosted texts enter the book);
 
 - `selectTourDocument(root)` - the slice in a store's state.
 - Re-exported from `tour-content.ts` for the pages, read-only: `worldBlocks`
-  and `WorldBlock` (a station's free blocks), `isCapturedPhoto` and `ownedAssetIds` (the pictures that own their image asset). A page reads
+  and `WorldBlock` (a station's free blocks), `isCapturedPhoto` and `ownedAssetIds` (the pictures that own their image asset), `folderChains` (each plain folder's chain from its station, outermost first). A page reads
   them here, never from `tour-content.ts` (the boundary rule
   `document-rules-through-tour-document`).
 - `assetUsesOf(state)` - per asset id, how many places name it: each

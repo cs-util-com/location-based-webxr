@@ -130,6 +130,9 @@ function placed(
 export interface TourFreeEntry {
   readonly block: TourBlock;
   readonly folder: readonly string[];
+  /** How much larger its folders draw it: the product of their scales
+   *  (`composedTourFolderScale`), 1 at the station's top. */
+  readonly scale: number;
 }
 
 /** The free blocks of a children list with every plain folder flattened
@@ -141,7 +144,9 @@ function freeEntries(
   path: readonly string[]
 ): TourFreeEntry[] {
   return children.flatMap((child): TourFreeEntry[] => {
-    if (isTourBlockChild(child)) return [{ block: child, folder: path }];
+    if (isTourBlockChild(child)) {
+      return [{ block: child, folder: path, scale: 1 }];
+    }
     if (!isTourFolder(child)) return [];
     return freeEntries(child.children, [...path, child.id]).map((entry) => ({
       block: {
@@ -149,6 +154,7 @@ function freeEntries(
         pose: composeTourFolderPose(child, entry.block.pose),
       },
       folder: entry.folder,
+      scale: entry.scale * (child.scale ?? 1),
     }));
   });
 }
@@ -161,9 +167,9 @@ export function tourFreeEntries(station: TourStationHolder): TourFreeEntry[] {
 
 /** A station's FREE blocks, which stand in the world while it is shown: the
  *  block children of the station and of its plain folders at any depth,
- *  each with its pose in the station's frame (its folders' poses composed
- *  in; a folder is a rigid frame, since its scale is always 1). The ONE
- *  place plain folders are flattened. */
+ *  each with its pose in the station's frame (its folders' poses and
+ *  scales composed in; how much larger to draw each is the `scale` of
+ *  {@link tourFreeEntries}). The ONE place plain folders are flattened. */
 export function tourFreeBlocks(station: TourStationHolder): TourBlock[] {
   return freeEntries(station.children, []).map((entry) => entry.block);
 }

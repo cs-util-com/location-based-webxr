@@ -23,6 +23,10 @@ import type {
   TOUR_KINDS,
   TourBlockKind,
 } from "gps-plus-slam-app-framework/ar/tour-kinds";
+import {
+  TOUR_FOLDER_MAX_SCALE,
+  TOUR_FOLDER_MIN_SCALE,
+} from "gps-plus-slam-app-framework/ar/tour-story";
 
 /**
  * What a placeable's dots change. Three meanings, kept apart:
@@ -143,8 +147,8 @@ export const CONTAINER_PLACEMENT: ViewPlacement = {
     field: "scale",
     label: "Scale",
     meaning: "How much larger it draws its items, and their distances",
-    min: 0.1,
-    max: 10,
+    min: TOUR_FOLDER_MIN_SCALE,
+    max: TOUR_FOLDER_MAX_SCALE,
   },
 };
 

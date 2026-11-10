@@ -15,7 +15,9 @@ ground glow whose fade is the loudness curve.
   whose shader draws the alpha of the `zoneGain` curve, warm and faint.
 - `zonePart(block, env)` -> `WorldPart`: the glow; in play an `update` that
   sets the background sound's level (`zoneGain` of the horizontal distance
-  from the object's position) every frame. In the editor: still and
+  from the object's position, divided by the scale its folders draw it at:
+  `inheritedScaleOf` of `../../placement/place-scale.ts`, so its reach
+  grows with its drawn glow) every frame. In the editor: still and
   silent, the glow plus the speaker icon at the centre (`sound-icon.ts`)
   and the hearing range as a ring at `maxM`; only the icon is picked.
 - `RANGE_RING` - `{ px: 3, minWidthM: 0.12, maxWidthM: 4 }`: the range

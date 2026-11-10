@@ -39,6 +39,13 @@ origin?, groundAt? })` ->
     in tenths of a metre, 0 within `ON_GROUND_M`; null while unknown),
     `position` (`InspectorPosition`), or null when the
     station's point or the origin cannot be read;
+  - `FolderInspector` - `kind: "folder"` (selection `folder:<id>`),
+    `folderId`, `stationId`, `title` (`folderName`), `sub` ("Folder in
+    <station>, 2 items", its items at any depth), `scale`
+    (`InspectorScale`: its placement row's label, meaning and bounds and
+    the tour's value, 1 for none), `offset` and `headingDeg` (its origin
+    in its station's frame, its holders composed in), `groundOffM`; read
+    through `placeableOf`, so it shows what the gizmo moves;
   - `StoryInspector` - `kind: "story"` (selection `story:<id>`), `storyId`,
     `stationId`, `title`, `sub` ("2 The gate / Story") and `entries`
     (`storyRows` of `tree-model.ts`: `{ id, kind, title, place }`);
@@ -154,7 +161,10 @@ place; a free character as an item with its place and turn; an item in
 a turned folder with its offset in the station's frame and its height
 off the ground where it stands.
 
-`inspector-model.test.ts` also covers `locked` and the locked hint, and
+`inspector-model.test.ts` also covers a plain folder (its name, station
+and item count, its scale and bounds, its origin and heading in its
+station's frame, its ground, its hint; none for one the tour lacks),
+`locked` and the locked hint, and
 the values the inspector edits: a station's own name, the card's
 choices with the one shown marked, the items outside the circle, a
 position from a given origin, how far a station and its items stand off

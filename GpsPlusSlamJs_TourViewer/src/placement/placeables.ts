@@ -1,6 +1,7 @@
 /**
  * Everything the 3D editor can place, as one shape: a PLACEABLE. A free
- * block in a view the world shows, or a station, each with its pose in
+ * block in a view the world shows, a plain folder, or a station, each
+ * with its pose in
  * the world and in its holder, what its row says about turning, lifting
  * and its dots (`placement-rows.ts`), and whether it is locked. The gizmo,
  * the gestures, the keys and the inspector read a placeable and never ask
@@ -14,6 +15,7 @@
  */
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import {
+  composedTourFolderScale,
   composeTourFolderPath,
   type TourFolderFrame,
 } from "gps-plus-slam-app-framework/ar/tour-folder-pose";
@@ -27,11 +29,13 @@ import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import {
   isTourBlockChild,
   isTourFolder,
+  type TourFolder,
   type TourStationChild,
 } from "gps-plus-slam-app-framework/ar/tour-story";
 
-import { STATION_PREFIX } from "../editor/editor-model.js";
+import { FOLDER_PREFIX, STATION_PREFIX } from "../editor/editor-model.js";
 import {
+  CONTAINER_PLACEMENT,
   STATION_PLACEMENT,
   blockPlacement,
   type ExtentSpec,
@@ -42,6 +46,7 @@ import {
  *  per kind of HOLDER, never per block kind. */
 export type PlaceRef =
   | { readonly kind: "block"; readonly id: string }
+  | { readonly kind: "folder"; readonly id: string }
   | { readonly kind: "station"; readonly id: string };
 
 /** A placeable's dots: what they change, and the value now. */
@@ -49,7 +54,8 @@ export type PlaceExtent = ExtentSpec & { readonly value: number };
 
 export interface Placeable {
   readonly ref: PlaceRef;
-  /** Its key in the page's selection (`<id>`, `station:<id>`). */
+  /** Its key in the page's selection (`<id>`, `folder:<id>`,
+   *  `station:<id>`). */
   readonly selection: string;
   /** Its station (a station: itself). */
   readonly stationId: string;
@@ -72,8 +78,9 @@ export interface Placeable {
   readonly extent: PlaceExtent | null;
   /** Only its dots may be dragged (a station the creator locked). */
   readonly locked: boolean;
-  /** The block ids whose drawings follow it: itself for a block, none for
-   *  a station (its whole drawing moves). */
+  /** The block ids whose drawings follow it: itself for a block, the
+   *  posed blocks it holds at any depth for a folder, none for a station
+   *  (its whole drawing moves). */
   readonly members: readonly string[];
 }
 
@@ -113,7 +120,7 @@ function blockPlaceable(
     geo: itemGeoPose(inStation, station.geo),
     local: block.pose,
     inStation,
-    inheritedScale: 1,
+    inheritedScale: composedTourFolderScale(folders),
     turns: row.turns,
     lifts: row.lifts,
     extent: extentOf(row, block),
@@ -159,6 +166,58 @@ export function posedBlocks(station: TourStation): readonly Placeable[] {
   return posedEntries(station).map((e) => e.place);
 }
 
+/** The pose of a folder with none: its holder's frame. */
+const NO_POSE: TourLocalPose = {
+  position: [0, 0, 0],
+  rotation: [0, 0, 0, 1],
+};
+
+/** The plain folder ending `chain` (its holders, outermost first, then
+ *  itself) of `station` as a placeable: its pivot is its origin, its dots
+ *  its scale. */
+function folderPlaceable(
+  station: TourStation,
+  chain: readonly TourFolder[],
+): Placeable | null {
+  const folder = chain.at(-1);
+  if (folder === undefined) return null;
+  const holders = chain.slice(0, -1);
+  const local = folder.pose ?? NO_POSE;
+  const inStation = composeTourFolderPath(holders, local);
+  return {
+    ref: { kind: "folder", id: folder.id },
+    selection: `${FOLDER_PREFIX}${folder.id}`,
+    stationId: station.id,
+    folderPath: holders.map((f) => f.id),
+    geo: itemGeoPose(inStation, station.geo),
+    local,
+    inStation,
+    inheritedScale: composedTourFolderScale(holders),
+    turns: CONTAINER_PLACEMENT.turns,
+    lifts: CONTAINER_PLACEMENT.lifts,
+    extent: extentOf(CONTAINER_PLACEMENT, { scale: folder.scale ?? 1 }),
+    locked: false,
+    members: walk(folder.children, station, chain).map((e) => e.block.id),
+  };
+}
+
+/** The chain down to the plain folder `id` in `children` (below
+ *  `above`), or null. */
+function folderChainIn(
+  children: readonly TourStationChild[],
+  id: string,
+  above: readonly TourFolder[],
+): readonly TourFolder[] | null {
+  for (const child of children) {
+    if (!isTourFolder(child)) continue;
+    const chain = [...above, child];
+    if (child.id === id) return chain;
+    const inner = folderChainIn(child.children, id, chain);
+    if (inner !== null) return inner;
+  }
+  return null;
+}
+
 /** `station` as a placeable. */
 function stationPlaceable(station: TourStation, scope: PlaceScope): Placeable {
   return {
@@ -178,7 +237,9 @@ function stationPlaceable(station: TourStation, scope: PlaceScope): Placeable {
   };
 }
 
-/** Every placeable of `tour`: each station, then its posed blocks. */
+/** Every placeable of `tour`: each station, then its posed blocks. Its
+ *  plain folders are placeables only by name (`placeableOf`): the world
+ *  draws no mark of a folder to pick. */
 export function placeablesOf(
   tour: Pick<TourManifest, "stations">,
   scope: PlaceScope = {},
@@ -190,9 +251,9 @@ export function placeablesOf(
 }
 
 /** The placeable the page's `selection` names; null for one that names
- *  nothing placeable (a code, a card, a block the tour lacks). */
+ *  nothing placeable (a code, a card, a block or folder the tour lacks). */
 export function placeableOf(
-  tour: Pick<TourManifest, "stations">,
+  tour: { readonly stations: readonly TourStation[] },
   selection: string,
   scope: PlaceScope = {},
 ): Placeable | null {
@@ -200,6 +261,14 @@ export function placeableOf(
     const id = selection.slice(STATION_PREFIX.length);
     const station = tour.stations.find((s) => s.id === id);
     return station === undefined ? null : stationPlaceable(station, scope);
+  }
+  if (selection.startsWith(FOLDER_PREFIX)) {
+    const id = selection.slice(FOLDER_PREFIX.length);
+    for (const station of tour.stations) {
+      const chain = folderChainIn(station.children, id, []);
+      if (chain !== null) return folderPlaceable(station, chain);
+    }
+    return null;
   }
   for (const station of tour.stations) {
     const found = posedBlocks(station).find((p) => p.selection === selection);

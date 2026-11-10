@@ -25,7 +25,9 @@ comes back with the words the page says.
   - a station's extent -> `editor.editStation(id, { foundRadiusM })`;
   - a block's extent -> `editor.setExtent(id, value)` (the session
     refuses a block whose row has no size, or a value out of its row's
-    bounds).
+    bounds);
+  - a plain folder's pose -> `editor.moveFolder(id, geo)`, its extent
+    (its scale) -> `editor.scaleFolder(id, value)`: its items follow it.
 - Type `PlaceEditOutcome`.
 
 ## Invariants & assumptions
@@ -47,8 +49,8 @@ if (outcome.kind === "refused") toast(outcome.reason);
 
 ## Tests
 
-`place-edits.test.ts`: each edit goes to its one call, once; a refusal is
-passed on with its words. `place-edits.property.test.ts`: a drag over
+`place-edits.test.ts`: each edit goes to its one call, once (a folder's
+move and scale too); a refusal is passed on with its words. `place-edits.property.test.ts`: a drag over
 random hills (amplitude 0, 5, 50, 300 m; reach 10, 100, 1000 m; patchy
 unloaded ground) keeps the item's height above the ground at every step;
 a gesture (an item's move and turn; a station's move, turn and radius;

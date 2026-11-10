@@ -229,6 +229,19 @@ never state). Design:
       placed model's `sizeM`, 0.05 m to 500 m, a picture's `widthM`,
       0.05 m to 50 m; refused out of the row's bounds ("Its size must be
       from ..."), and for a block whose row has no size (`NO_EXTENT`).
+    - `moveFolder(folderId, geo)` - a plain folder's origin at a whole
+      pose (the gizmo's drag of a folder chosen in the tree, its typed
+      place): written as its pose in its holder (`folderMoved`), its
+      items following rigidly; "unchanged" for the pose it has; refused
+      for a folder the tour lacks (`NO_SUCH_FOLDER`), a spot on no map,
+      and a move the document refuses (an item beyond its station's
+      reach, `FOLDER_TOO_FAR`).
+    - `scaleFolder(folderId, value)` - a plain folder's scale, 0.1 to 10
+      times (`folderScaled`): its whole group grows about its origin;
+      "unchanged" for the scale it has (none counts as 1); refused out of
+      the bounds ("Its scale must be from 0.1 to 10 times."), for a
+      folder the tour lacks, and like `moveFolder` for an item taken too
+      far.
     - `pose(id, geo, { newStation?, joinStation? })` - an item at a whole
       pose (position, height, turn), keeping its station or changing to
       `joinStation`, refused like `move`; `newStation` ("Move to a new
@@ -478,7 +491,9 @@ undo step, and each refusal in words changing nothing; an edit the document
 drops (the radius of a station a delete emptied) "unchanged"; the last station
 refused, another deleted as one step; a copied photo station saving the
 copy's picture under its own content file; an item moved into a station
-of its own and items put on the ground as one step; renamed, added,
+of its own and items put on the ground as one step; a folder moved and
+scaled with its items, each one step, and its refusals in words changing
+nothing; renamed, added,
 copied, deleted and reordered stations coming back from the real draft
 after a reload as the save had them.
 The tour document (D29-D31): a later open on the same store disowning the

@@ -1010,3 +1010,66 @@ describe("buildInspector: the values the inspector edits", () => {
     expect(at("model-1")).toMatchObject({ text: null });
   });
 });
+
+// Why: a folder chosen in the tree is moved, turned and scaled as one, so
+// its inspector must show the same origin, heading and scale the gizmo
+// moves: its pose in its station's frame and the factor its items are
+// drawn at. A folder 10 m north and 2 m up, turned a quarter, scaled by 2.
+describe("buildInspector: a plain folder", () => {
+  const folder = {
+    id: "f",
+    kind: "folder",
+    title: "Benches",
+    pose: { position: [10, 2, 0], rotation: turn(90) },
+    scale: 2,
+    children: [
+      {
+        id: "deep",
+        kind: "shortText",
+        view: "pin",
+        caption: "Deep",
+        createdAtIso: AT,
+        pose: { position: [5, 1, 0], rotation: [0, 0, 0, 1] },
+      },
+    ],
+  };
+  const station = {
+    ...STATIONS[0]!,
+    children: [folder],
+  } as unknown as TourStation;
+  const at = (selected: string, groundAt?: () => number) =>
+    buildInspector({
+      selected,
+      stations: [station],
+      assets: [],
+      codes: CODES,
+      ...(groundAt === undefined ? {} : { groundAt }),
+    });
+
+  it("shows its name, station and items, its scale, and its origin and heading in its station", () => {
+    const shown = at("folder:f");
+    expect(shown).toMatchObject({
+      kind: "folder",
+      folderId: "f",
+      stationId: "a",
+      title: "Benches",
+      scale: { value: 2, min: 0.1, max: 10 },
+      groundOffM: null,
+    });
+    if (shown?.kind !== "folder") return;
+    expect(shown.sub).toMatch(/^Folder in .*Market Square, 1 item$/);
+    expect(shown.offset.northM).toBeCloseTo(10, 9);
+    expect(shown.offset.upM).toBeCloseTo(2, 9);
+    expect(shown.offset.eastM).toBeCloseTo(0, 9);
+    expect(shown.headingDeg).toBeCloseTo(270, 6);
+    expect(inspectorHint(shown)).toBe(
+      "Benches - drag the middle to move its items together, a white dot to scale them, the round arrow to turn",
+    );
+    // Its ground judged under its origin, 2 m over the anchor.
+    expect(at("folder:f", () => 562.25)).toMatchObject({ groundOffM: 2 });
+  });
+
+  it("shows nothing for a folder the tour lacks", () => {
+    expect(at("folder:nope")).toBeNull();
+  });
+});

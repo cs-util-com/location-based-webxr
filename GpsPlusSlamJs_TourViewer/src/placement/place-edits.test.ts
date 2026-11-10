@@ -15,6 +15,7 @@ const GEO = { lat: 1, lon: 2, alt: 3, headingDeg: 4 };
 const BLOCK = { kind: "block", id: "p" } as const;
 const MODEL = { kind: "block", id: "m" } as const;
 const STATION = { kind: "station", id: "st" } as const;
+const FOLDER = { kind: "folder", id: "f" } as const;
 
 function fakeSession(refuse = false) {
   const outcome = refuse
@@ -33,13 +34,24 @@ function fakeSession(refuse = false) {
         ? { kind: "refused" as const, reason: "No." }
         : { kind: "resized" as const },
     ),
+    moveFolder: vi.fn(() => outcome),
+    scaleFolder: vi.fn(() =>
+      refuse
+        ? { kind: "refused" as const, reason: "No." }
+        : { kind: "resized" as const },
+    ),
   };
 }
 
 const asSession = (s: ReturnType<typeof fakeSession>) =>
   s as unknown as Pick<
     EditorSession,
-    "pose" | "moveStation" | "editStation" | "setExtent"
+    | "pose"
+    | "moveStation"
+    | "editStation"
+    | "setExtent"
+    | "moveFolder"
+    | "scaleFolder"
   >;
 
 describe("a placement edit", () => {
@@ -55,7 +67,18 @@ describe("a placement edit", () => {
     expect(s.editStation).toHaveBeenCalledWith("st", { foundRadiusM: 9 });
     applyPlaceEdit(asSession(s), { kind: "extent", ref: MODEL, value: 2 });
     expect(s.setExtent).toHaveBeenCalledWith("m", 2);
-    for (const call of [s.pose, s.moveStation, s.editStation, s.setExtent]) {
+    applyPlaceEdit(asSession(s), { kind: "pose", ref: FOLDER, geo: GEO }, "b");
+    expect(s.moveFolder).toHaveBeenCalledWith("f", GEO);
+    applyPlaceEdit(asSession(s), { kind: "extent", ref: FOLDER, value: 3 });
+    expect(s.scaleFolder).toHaveBeenCalledWith("f", 3);
+    for (const call of [
+      s.pose,
+      s.moveStation,
+      s.editStation,
+      s.setExtent,
+      s.moveFolder,
+      s.scaleFolder,
+    ]) {
       expect(call).toHaveBeenCalledTimes(1);
     }
   });
@@ -77,6 +100,8 @@ describe("a placement edit", () => {
       { kind: "pose", ref: STATION, geo: GEO },
       { kind: "extent", ref: STATION, value: 9 },
       { kind: "extent", ref: MODEL, value: 2 },
+      { kind: "pose", ref: FOLDER, geo: GEO },
+      { kind: "extent", ref: FOLDER, value: 3 },
     ];
     for (const edit of edits) {
       expect(applyPlaceEdit(asSession(s), edit)).toEqual({

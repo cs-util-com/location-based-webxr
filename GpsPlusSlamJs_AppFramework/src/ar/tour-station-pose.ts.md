@@ -52,9 +52,10 @@ its station) - what a viewer places and a creator's drafts hold.
   float32 arrays.
 - **A plain folder is a frame.** Its children's poses are given in it;
   a folder with no pose returns the pose itself, bit for bit. Nested
-  folders compose innermost first. A folder is rigid: its scale is always
-  1 (a scale other than 1 waits for a renderer that scales the whole
-  group). The reader (`tour-story.ts`) bounds a composed offset by
+  folders compose innermost first. A folder's scale multiplies its
+  children's offsets, and `tourFreeEntries` gives each block the product
+  of its folders' scales (`scale`, 1 at the top) for a renderer to draw
+  it that much larger. The reader (`tour-story.ts`) bounds a composed offset by
   `TOUR_ITEM_MAX_OFFSET_M`, so a flattened block's pose is one a writer
   accepts.
 - **Nothing here writes a local pose back.** A local pose changes only when

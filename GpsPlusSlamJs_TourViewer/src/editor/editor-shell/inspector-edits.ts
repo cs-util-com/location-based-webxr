@@ -22,6 +22,10 @@
  * - A heading, of a station or an item: the turn from the heading it has
  *   now, the short way round.
  * - A model's size.
+ * - A plain folder's scale (`scale`), east, north, height and heading:
+ *   its origin's offset in its station's frame (its holders composed in)
+ *   and its turn there, written as the folder's pose or scale, its items
+ *   following.
  * - A model's note title or text (`note-title:<i>`, `note-text:<i>`), a
  *   section's name (`section-name:<i>`) and its clip's name
  *   (`anim-name`, its autoplay kept, on for a first clip): a model edit
@@ -47,12 +51,18 @@ import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
 
 import type { PlaceEdit } from "../../placement/place-edits.js";
 import {
+  placeableOf,
   posedEntries,
   posedEntryOf,
+  type Placeable,
   type PosedBlock,
 } from "../../placement/placeables.js";
 import type { StationEdit } from "../../tour-document.js";
-import { STATION_PREFIX, STORY_PREFIX } from "../editor-model.js";
+import {
+  FOLDER_PREFIX,
+  STATION_PREFIX,
+  STORY_PREFIX,
+} from "../editor-model.js";
 import { eastNorthOf, placeAtEastNorth } from "../tour-origin.js";
 import { blockFields, storyBlockFields, typedNumber } from "../block-fields.js";
 import type { ModelEdit } from "../model-edits.js";
@@ -362,14 +372,54 @@ function itemEdit(
   };
 }
 
+/** A field typed for the plain folder `place` of `station`: its scale,
+ *  and its origin's offset (height too) and heading in its station's
+ *  frame, each written as the folder's own pose or scale. */
+function folderEdit(
+  place: Placeable,
+  station: TourStation,
+  field: string,
+  value: string,
+): InspectorEdit {
+  const axis = AXIS[field];
+  const known = axis !== undefined || field === "heading" || field === "scale";
+  const pose = place.inStation;
+  if (!known || pose === null) return NONE;
+  const typed = typedNumber(value);
+  if (typed === null) return { kind: "invalid", reason: NOT_A_NUMBER };
+  if (field === "scale") {
+    return place.extent !== null && Math.abs(typed - place.extent.value) < SAME
+      ? NONE
+      : {
+          kind: "scene",
+          edit: { kind: "extent", ref: place.ref, value: typed },
+        };
+  }
+  if (field === "heading") {
+    return turnTo(place.selection, headingOfRotation(pose.rotation), typed);
+  }
+  if (axis === undefined) return NONE;
+  if (Math.abs(pose.position[axis] - typed) < SAME) return NONE;
+  const position: [number, number, number] = [...pose.position];
+  position[axis] = typed;
+  return {
+    kind: "scene",
+    edit: {
+      kind: "pose",
+      ref: place.ref,
+      geo: itemGeoPose({ ...pose, position }, station.geo),
+    },
+  };
+}
+
 /**
  * The edit `value` typed into `field` writes for `selected` (the page's
- * selection: `station:<id>`, `story:<id>` or an item's id), its metres
+ * selection: `station:<id>`, `folder:<id>`, `story:<id>` or an item's id), its metres
  * measured from
  * `origin` (the 3D view's; null: a station's place is not typed). Fields:
  * `title`, `description`, `radius`, `east`, `north`, `height`, `heading`,
- * `size`. A selection the tour lacks, a code, and a field the selection
- * has not write nothing.
+ * `size`, `scale`. A selection the tour lacks, a code, and a field the
+ * selection has not write nothing.
  */
 export function inspectorEdit(input: {
   readonly selected: string;
@@ -388,6 +438,13 @@ export function inspectorEdit(input: {
     return station === undefined
       ? NONE
       : stationEdit(station, field, value, input.origin);
+  }
+  if (selected.startsWith(FOLDER_PREFIX)) {
+    const place = placeableOf({ stations }, selected);
+    const station = stations.find((s) => s.id === place?.stationId);
+    return place === null || station === undefined
+      ? NONE
+      : folderEdit(place, station, field, value);
   }
   if (selected.startsWith(STORY_PREFIX)) {
     const id = selected.slice(STORY_PREFIX.length);

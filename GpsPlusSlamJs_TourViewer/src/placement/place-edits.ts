@@ -10,7 +10,9 @@
  * - a station's pose through `moveStation` (its blocks follow rigidly);
  * - a station's dots (its found radius) through `editStation`;
  * - a block's dots (a model's size, a picture's width) through
- *   `setExtent`.
+ *   `setExtent`;
+ * - a plain folder's pose through `moveFolder`, its dots (its scale)
+ *   through `scaleFolder` (its items follow it either way).
  *
  * A refusal comes back with its words for the page to say.
  *
@@ -33,7 +35,12 @@ export type PlaceEdit =
 /** The session calls a placement edit uses. */
 type PlaceEditSession = Pick<
   EditorSession,
-  "pose" | "moveStation" | "editStation" | "setExtent"
+  | "pose"
+  | "moveStation"
+  | "editStation"
+  | "setExtent"
+  | "moveFolder"
+  | "scaleFolder"
 >;
 
 /** Applied, or refused with the reason the creator reads. */
@@ -53,14 +60,18 @@ export function applyPlaceEdit(
     edit.kind === "pose"
       ? ref.kind === "station"
         ? editor.moveStation(ref.id, edit.geo)
-        : editor.pose(
-            ref.id,
-            edit.geo,
-            joinStation === undefined ? {} : { joinStation },
-          )
+        : ref.kind === "folder"
+          ? editor.moveFolder(ref.id, edit.geo)
+          : editor.pose(
+              ref.id,
+              edit.geo,
+              joinStation === undefined ? {} : { joinStation },
+            )
       : ref.kind === "station"
         ? editor.editStation(ref.id, { foundRadiusM: edit.value })
-        : editor.setExtent(ref.id, edit.value);
+        : ref.kind === "folder"
+          ? editor.scaleFolder(ref.id, edit.value)
+          : editor.setExtent(ref.id, edit.value);
   return outcome.kind === "refused"
     ? { kind: "refused", reason: outcome.reason }
     : { kind: "applied" };

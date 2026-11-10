@@ -14,7 +14,9 @@
  * head showing the name as text (AU-2: a borderless name in the head read
  * as a heading); its `radius`, `east`, `north` and `heading`; a pin's `title`
  * (its text); an item's `east`, `north`, `height`, `heading` and a
- * model's `size`), each drawn with the tour's value as its default, so
+ * model's `size`; a plain folder's `scale` and, under its Place, its
+ * `east`, `north`, `height` and `heading`), each drawn with the tour's
+ * value as its default, so
  * the shell commits a field only when its text differs; a locked
  * station's place and heading are read-only. The rest are `<output>`s.
  * Every value is tied to its label, so a screen reader reads the two
@@ -372,6 +374,7 @@ function actionInPlace(
 
 type StationModel = Extract<InspectorModel, { kind: "station" }>;
 type ItemModel = Extract<InspectorModel, { kind: "item" }>;
+type FolderModel = Extract<InspectorModel, { kind: "folder" }>;
 type CodeModel = Extract<InspectorModel, { kind: "code" }>;
 type StoryModel = Extract<InspectorModel, { kind: "story" }>;
 type StoryEntryModel = Extract<InspectorModel, { kind: "storyEntry" }>;
@@ -849,6 +852,49 @@ function itemParts(
   return parts;
 }
 
+/** A plain folder's parts: its scale to type, and its Place (its
+ *  origin's offset, height and heading in its station's frame) folded
+ *  away as an item's position is. Its items follow either. */
+function folderParts(model: FolderModel, state: InspectorState): HTMLElement[] {
+  const o = model.offset;
+  const { scale } = model;
+  const section = el("div", "isec");
+  section.append(
+    numberField(scale.label, "scale", fixed(scale.value, 2), "x"),
+    el(
+      "div",
+      "note",
+      `${scale.meaning}, from ${String(scale.min)} to ${String(scale.max)} times. Drag a white dot to scale.`,
+    ),
+  );
+  const heading = model.headingDeg === null ? "-" : fixed(model.headingDeg, 0);
+  return [
+    section,
+    ...disclosure(
+      state.positionOpen,
+      `${fixed(o.upM, 1)} m up  ${heading} deg`,
+      () => [
+        vectorField(
+          "Offset",
+          [
+            ["E", "east", "east", fixed(o.eastM, 2)],
+            ["N", "north", "north", fixed(o.northM, 2)],
+          ],
+          "m",
+        ),
+        numberField("Height", "height", fixed(o.upM, 2), "m"),
+        numberField("Heading", "heading", headingText(model.headingDeg), "deg"),
+        el(
+          "div",
+          "note",
+          "Where the folder's origin stands: metres east / north of its station's anchor, in the station's frame; the height up from the anchor; the heading relative to the station. Its items move with it.",
+        ),
+      ],
+      { label: "Place", title: "Position and heading of the folder" },
+    ),
+  ];
+}
+
 function codeParts(model: CodeModel, state: InspectorState): HTMLElement[] {
   const section = el("div", "isec");
   section.append(
@@ -1131,6 +1177,8 @@ function headLook(model: InspectorModel): {
       return { look: model.stepKind, icon: model.stepKind };
     case "station":
       return { look: "station", icon: "station" };
+    case "folder":
+      return { look: "fold", icon: "folder" };
     case "story":
       return { look: "story", icon: "storyOpen" };
     case "code":
@@ -1207,6 +1255,8 @@ function partsOf(
       return stationParts(model, state, pictures, sub);
     case "item":
       return itemParts(model, state, panel);
+    case "folder":
+      return folderParts(model, state);
     case "story":
       return storyParts(model, state);
     case "storyEntry":

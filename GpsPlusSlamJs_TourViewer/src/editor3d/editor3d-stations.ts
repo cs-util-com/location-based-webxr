@@ -54,6 +54,10 @@ import { localPlaneToEnu } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import {
+  composeTourFolderPath,
+  decomposeTourFolderPath,
+} from "gps-plus-slam-app-framework/ar/tour-folder-pose";
+import {
   localPoseOf,
   tourFreeBlocks,
 } from "gps-plus-slam-app-framework/ar/tour-station-pose";
@@ -73,8 +77,9 @@ import {
 import { worldEnv, type WorldEnv, type WorldPart } from "../world-part.js";
 import { pointRootMatrix, type GlobeEllipsoid } from "./editor3d-tour-root.js";
 import { NEAR_STATIONS, nearStations } from "./editor3d-visibility.js";
-import type { PlaceRef } from "../placement/placeables.js";
-import { drawAtExtent } from "../placement/place-scale.js";
+import { posedEntries, type PlaceRef } from "../placement/placeables.js";
+import { drawAtExtent, drawInherited } from "../placement/place-scale.js";
+import { folderChains } from "../tour-document.js";
 import { viewHeightAtOneM } from "./gizmo-maths.js";
 import { isInterfacePart } from "./globe-interface-pass.js";
 
@@ -204,8 +209,8 @@ export const BILLBOARD_LIFT_M = 4.6;
 const BILLBOARD_BASE_M = 0.6;
 
 /** What a drag shows: a placeable at another pose, its dots at another
- *  value (a station's found radius, a model's size, a picture's width;
- *  null: as the tour has it). */
+ *  value (a station's found radius, a model's size, a picture's width, a
+ *  folder's scale; null: as the tour has it). */
 export interface LayerPreview {
   readonly ref: PlaceRef;
   readonly geo: QrGeoPose;
@@ -844,6 +849,56 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     }
   };
 
+  const entryOfFolder = (id: string): StationEntry | null => {
+    for (const entry of stations.values()) {
+      if (folderChains(entry.station).has(id)) return entry;
+    }
+    return null;
+  };
+
+  /** Draw the items of the plain folder `folderId` as if its origin stood
+   *  at `geo` and its scale were `scale` (null: as the tour has them):
+   *  each through the folders inside it, then the folder at its new
+   *  frame, then its holders, drawn that much larger. */
+  const poseFolderDrawn = (
+    entry: StationEntry,
+    folderId: string,
+    geo: QrGeoPose | null,
+    scale: number | null,
+  ) => {
+    const chains = folderChains(entry.station);
+    const chain = chains.get(folderId);
+    const folder = chain?.at(-1);
+    if (chain === undefined || folder === undefined) return;
+    const holders = chain.slice(0, -1);
+    const own = folder.scale ?? 1;
+    const pose =
+      geo === null
+        ? folder.pose
+        : decomposeTourFolderPath(holders, localPoseOf(geo, entry.station.geo));
+    const frame = {
+      ...(pose === undefined ? {} : { pose }),
+      scale: scale ?? own,
+    };
+    for (const { block, place } of posedEntries(entry.station)) {
+      if (!place.folderPath.includes(folderId)) continue;
+      const innermost = chains.get(place.folderPath.at(-1) ?? "") ?? chain;
+      const within = composeTourFolderPath(
+        innermost.slice(chain.length),
+        block.pose,
+      );
+      poseDrawn(
+        entry,
+        block.id,
+        composeTourFolderPath([...holders, frame], within),
+        null,
+      );
+      for (const o of drawnOf(entry, block.id)) {
+        drawInherited(o, (place.inheritedScale * frame.scale) / own);
+      }
+    }
+  };
+
   /** Draw `p` where the drag has it. */
   const applyPreview = (p: LayerPreview) => {
     if (p.ref.kind === "station") {
@@ -858,6 +913,11 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       const k =
         (p.value ?? entry.station.foundRadiusM) / entry.station.foundRadiusM;
       entry.content?.ring.scale.set(k, 1, k);
+      return;
+    }
+    if (p.ref.kind === "folder") {
+      const entry = entryOfFolder(p.ref.id);
+      if (entry !== null) poseFolderDrawn(entry, p.ref.id, p.geo, p.value);
       return;
     }
     const { id } = p.ref;
@@ -875,6 +935,11 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       entry.root.updateMatrixWorld(true);
       entry.shownPoint.copy(entry.point);
       entry.content?.ring.scale.set(1, 1, 1);
+      return;
+    }
+    if (p.ref.kind === "folder") {
+      const entry = entryOfFolder(p.ref.id);
+      if (entry !== null) poseFolderDrawn(entry, p.ref.id, null, null);
       return;
     }
     const { id } = p.ref;

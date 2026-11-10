@@ -16,6 +16,7 @@
 
 import type { TourAudioBlock } from "gps-plus-slam-app-framework/ar/tour-kinds";
 
+import { inheritedScaleOf } from "../../placement/place-scale.js";
 import type { WorldEnv, WorldPart } from "../../world-part.js";
 import type { SoundHandle } from "../../world-sound.js";
 import { narrationCard, type NarrationCard } from "./narration-card.js";
@@ -100,7 +101,11 @@ export function spotPart(block: TourAudioBlock, env: WorldEnv): SpotPart {
             look.tick(frame.seconds);
             const [x, , z] = frame.viewer;
             const { position } = look.object;
-            const d = Math.hypot(x - position.x, z - position.z);
+            // In its own metres: a folder that draws it larger widens
+            // its circle with it.
+            const d =
+              Math.hypot(x - position.x, z - position.z) /
+              inheritedScaleOf(look.object);
             const now = circleInside(d, radiusM, NARRATION_MARGIN_M, inside);
             if (now === inside) {
               card?.render();

@@ -26,6 +26,8 @@ import {
   tourStationChildIds,
   tourStationStoryBlocks,
   tourStories,
+  TOUR_FOLDER_MAX_SCALE,
+  TOUR_FOLDER_MIN_SCALE,
   TOUR_STORY_TITLE_RULE,
   type TourStory,
   type TourStoryBlock,
@@ -170,7 +172,11 @@ export type { LevelText } from "./code-book.js";
 /** The world view's readers (`tour-content.ts`), for the pages: which
  *  pictures are captured photos and own their image asset. Read-only; the
  *  rules stay behind the document. */
-export { isCapturedPhoto, ownedAssetIds } from "./tour-content.js";
+export {
+  folderChains,
+  isCapturedPhoto,
+  ownedAssetIds,
+} from "./tour-content.js";
 
 /** A station as the document edits it: its pose (D17), its own fields and
  *  its story - its steps and the blocks they show (`blocks` holds those
@@ -3516,33 +3522,82 @@ function readPose(pose: TourLocalPose): TourLocalPose | null {
   }
 }
 
+/** What `folderScaled` carries: a plain folder's new scale. */
+interface FolderScalePayload {
+  readonly stationId: string;
+  readonly folderId: string;
+  readonly scale: number;
+  readonly what: string;
+}
+
 /**
  * A plain folder moved to `pose` in its holder (`folderMoved`), as one
  * step: its items move rigidly with it, so each keeps its pose in the
- * folder. Its written items follow by themselves (a frame's folder holds
- * their poses in it, `withWrittenBlocks`); those this page holds an entry
- * for are moved with it, each through the old and the new folders. The
- * folder's scale stays 1. `before` for a station or folder it lacks, a
- * pose the format would refuse, an unchanged pose, or a move that would
- * take any of its items beyond its station's bound.
+ * folder (`folderReframe`). `before` for a pose the format would refuse
+ * or an unchanged pose.
  */
 function folderMove(
   before: TourDocumentState,
   payload: FolderMovePayload,
 ): TourDocumentState {
+  const pose = readPose(payload.pose);
+  if (pose === null) return before;
+  return folderReframe(before, payload, (old) =>
+    sameJson(old.pose ?? null, pose) ? null : { ...old, pose },
+  );
+}
+
+/**
+ * A plain folder given the scale `scale` (`folderScaled`), as one step:
+ * its whole group grows about its origin, so each item keeps its pose in
+ * the folder and stands, and is drawn, that much further out and larger
+ * (`folderReframe`). A scale of 1 is written as none. `before` for a
+ * scale out of the format's bounds or an unchanged one.
+ */
+function folderScale(
+  before: TourDocumentState,
+  payload: FolderScalePayload,
+): TourDocumentState {
+  const { scale } = payload;
+  if (!(scale >= TOUR_FOLDER_MIN_SCALE && scale <= TOUR_FOLDER_MAX_SCALE)) {
+    return before;
+  }
+  return folderReframe(before, payload, (old) => {
+    if ((old.scale ?? 1) === scale) return null;
+    const { scale: _was, ...rest } = old;
+    return scale === 1 ? rest : { ...rest, scale };
+  });
+}
+
+/**
+ * A plain folder of `payload`'s station changed by `change` (its pose or
+ * its scale; null: no change), as one step: its items keep their poses in
+ * it. Its written items follow by themselves (a frame's folder holds
+ * their poses in it, `withWrittenBlocks`); those this page holds an entry
+ * for are moved with it, each through the old and the new folders.
+ * `before` for a station or folder it lacks, no change, or a change that
+ * would take any of its items beyond its station's bound.
+ */
+function folderReframe(
+  before: TourDocumentState,
+  payload: {
+    readonly stationId: string;
+    readonly folderId: string;
+    readonly what: string;
+  },
+  change: (old: TourFolder) => TourFolder | null,
+): TourDocumentState {
   if (before.written === null) return before;
   const frame = before.stations.find((s) => s.id === payload.stationId);
-  const pose = readPose(payload.pose);
-  if (frame === undefined || pose === null) return before;
+  if (frame === undefined) return before;
   const chains = folderChains(frame);
   const old = chains.get(payload.folderId)?.at(-1);
-  if (old === undefined || sameJson(old.pose ?? null, pose)) return before;
+  if (old === undefined) return before;
+  const next = change(old);
+  if (next === null) return before;
   const moved: StationFrame = {
     ...frame,
-    children: withFolder(frame.children, payload.folderId, (f) => ({
-      ...f,
-      pose,
-    })),
+    children: withFolder(frame.children, payload.folderId, () => next),
   };
   const nextChains = folderChains(moved);
   const pending = new Set(before.placed.map((p) => p.object.id));
@@ -3559,9 +3614,10 @@ function folderMove(
       folderChainOf(object, nextChains),
       decomposeTourFolderPath(folderChainOf(object, chains), inStation),
     );
-    const next = { ...object, geo: itemGeoPose(local, frame.geo) };
-    if (!fitsStation(next.geo, frame.id, [moved])) return before;
-    if (pending.has(object.id)) placed = upsertPlaced(placed, { object: next });
+    const carried = { ...object, geo: itemGeoPose(local, frame.geo) };
+    if (!fitsStation(carried.geo, frame.id, [moved])) return before;
+    if (pending.has(object.id))
+      placed = upsertPlaced(placed, { object: carried });
   }
   return edited(
     before,
@@ -4098,6 +4154,12 @@ const assetOptimized = createAction<AssetOptimizedPayload>(
 /** A plain folder moved with its items (`folderMove`); beside the
  *  slice's actions for the same reason. */
 const folderMoved = createAction<FolderMovePayload>("tourDocument/folderMoved");
+
+/** A plain folder scaled with its items (`folderScale`); beside the
+ *  slice's actions for the same reason. */
+const folderScaled = createAction<FolderScalePayload>(
+  "tourDocument/folderScaled",
+);
 
 /** Items grouped in a new folder (`folderGroup`); beside the slice's
  *  actions for the same reason. */
@@ -5048,6 +5110,9 @@ const tourDocumentSlice = createSlice({
     builder.addCase(folderMoved, (state, action) =>
       folderMove(plain(state), action.payload),
     );
+    builder.addCase(folderScaled, (state, action) =>
+      folderScale(plain(state), action.payload),
+    );
     builder.addCase(folderGrouped, (state, action) =>
       folderGroup(plain(state), action.payload),
     );
@@ -5077,6 +5142,7 @@ export const tourDocumentActions = {
   assetsAdded,
   assetOptimized,
   folderMoved,
+  folderScaled,
   folderGrouped,
   folderUngrouped,
   objectsFoldered,
@@ -5115,6 +5181,7 @@ export const isDocumentEdit = isAnyOf(
   tourDocumentActions.settleApplied,
   tourDocumentActions.narrationEdited,
   tourDocumentActions.folderMoved,
+  tourDocumentActions.folderScaled,
   tourDocumentActions.folderGrouped,
   tourDocumentActions.folderUngrouped,
   tourDocumentActions.objectsFoldered,

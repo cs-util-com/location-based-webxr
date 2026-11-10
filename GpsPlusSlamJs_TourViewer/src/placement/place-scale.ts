@@ -6,13 +6,19 @@
  * (`markPlaceScale`); a preview scales that object by the ratio of the
  * dragged value to the drawn one (`drawAtExtent`).
  *
+ * It also holds how much larger than its own size a block is drawn: the
+ * scale of the folders holding it (`drawInherited`), which a sound's
+ * hearing range grows with too (`inheritedScaleOf`).
+ *
  * @see place-scale.ts.md
  */
 import type { Object3D } from "three";
 
-/** The `userData` keys: the scale drawn, and the extent it was drawn at. */
+/** The `userData` keys: the scale drawn, the extent it was drawn at, and
+ *  the folders' scale it is drawn at. */
 const SCALE = "placeScale";
 const EXTENT = "placeExtent";
+const INHERITED = "placeInherited";
 
 /** Mark `object`'s scale now as the one its extent `extent` was drawn
  *  at. A non-positive or non-finite extent marks nothing. */
@@ -60,4 +66,37 @@ export function drawAtExtent(root: Object3D, value: number | null): void {
       ? 1
       : value / mark.extent;
   object.scale.set(mark.scale[0] * f, mark.scale[1] * f, mark.scale[2] * f);
+}
+
+/** Whether `scale` is one a drawing can be made larger by. */
+function isScale(scale: unknown): scale is number {
+  return typeof scale === "number" && Number.isFinite(scale) && scale > 0;
+}
+
+/** How much larger than its own size `object` (a drawn block's root) is
+ *  drawn: the scale `drawInherited` last set; 1 for none. */
+export function inheritedScaleOf(object: Object3D): number {
+  const scale: unknown = object.userData[INHERITED];
+  return isScale(scale) ? scale : 1;
+}
+
+/** Draw `object` (a drawn block's root) `scale` times larger than its
+ *  own size: the scale of the folders holding it. Set, not added: a
+ *  second call with another scale (a folder's scale being dragged)
+ *  replaces the first, and one with the tour's scale draws it as the
+ *  tour has it again. Its own place-scale mark, if it carries one,
+ *  grows with it, so `drawAtExtent` keeps the folders' scale. A scale
+ *  that is no positive number draws it at 1. */
+export function drawInherited(object: Object3D, scale: number): void {
+  const next = isScale(scale) ? scale : 1;
+  const was = inheritedScaleOf(object);
+  if (next === was) return;
+  const f = next / was;
+  object.scale.multiplyScalar(f);
+  const mark = markOf(object);
+  if (mark !== null) {
+    object.userData[SCALE] = mark.scale.map((v) => v * f);
+  }
+  if (next === 1) delete object.userData[INHERITED];
+  else object.userData[INHERITED] = next;
 }

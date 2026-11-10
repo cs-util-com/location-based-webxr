@@ -14,6 +14,12 @@ editor session as one undo step.
   - `selected` is the page's selection (`station:<id>` or an item's id);
     `stations` the tour's; `origin` the 3D view's centre (null: a
     station's place is not typed).
+  - A plain folder's (`folder:<id>`) `scale`: a scene `extent` edit of the
+    folder; its `east`, `north` and `height`: a scene `pose` edit of the
+    folder, the typed axis changed in its station's frame (its height too:
+    a folder has no altitude of its own to write); its `heading`: a turn
+    of `folder:<id>` against its heading in its station. Its items follow
+    each. Any other field, or a folder the tour lacks: none.
   - A station's `title`, `description` and `radius`: `{ kind: "station",
 stationId, edit }` (a `StationEdit` of `tour-document.ts`). A radius
     lower than its items is allowed: they stay where they are.
@@ -116,5 +122,5 @@ groundEdit({
 
 ## Tests
 
-`inspector-edits.test.ts`: a station's title, description and radius; a pin's text and no model caption; a typed title written for every kind of block (so no "title" falls through as a field the kind lacks); a station moved to the typed east and north, height and heading kept; the turn to a typed heading; an item's typed offset; an item in a turned folder, its typed offset in the station's frame, and grounded where it stands; a typed height as the altitude alone; a model's size; a value that is no number (hex, exponents, thousands separators among them) and the plain decimals that are, an unchanged one; a selection the tour lacks, a code, an unknown field. `groundEdit`: an item once its ground has loaded, a station's items as one edit, a station's anchor with its turn kept, nothing for what stands on the ground already. End to end:
+`inspector-edits.test.ts`: a station's title, description and radius; a pin's text and no model caption; a typed title written for every kind of block (so no "title" falls through as a field the kind lacks); a station moved to the typed east and north, height and heading kept; the turn to a typed heading; an item's typed offset; an item in a turned folder, its typed offset in the station's frame, and grounded where it stands; a turned folder's typed scale, offset, height and heading, and nothing for the values it has, an unknown field or a folder the tour lacks; a typed height as the altitude alone; a model's size; a value that is no number (hex, exponents, thousands separators among them) and the plain decimals that are, an unchanged one; a selection the tour lacks, a code, an unknown field. `groundEdit`: an item once its ground has loaded, a station's items as one edit, a station's anchor with its turn kept, nothing for what stands on the ground already. End to end:
 `playwright-tests/editor3d-inspector.spec.js`.
