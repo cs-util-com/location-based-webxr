@@ -63,11 +63,20 @@ export async function makeCharacter(maker, page, name) {
     mimeType: "image/png",
     buffer: Buffer.from(b64, "base64"),
   });
+  // The cut runs in a worker; beside a software-drawn 3D view it shares
+  // the machine, so it gets longer than the default. A cut that failed
+  // says so in the maker, and that text is what the failure shows.
+  await expect(
+    maker.locator('[data-panel="4"]:not([hidden]), #cutErr:not([hidden])'),
+  ).toBeVisible({ timeout: 60_000 });
+  await expect(maker.locator("#cutErr")).toBeHidden();
   await expect(maker.locator('[data-panel="4"]')).toBeVisible();
   await maker.locator("#nextBtn").click();
   await maker.locator("#charName").fill(name);
   await maker.locator("#nextBtn").click();
+  // Writing the pictures shares the machine with the 3D view as well.
   await expect(maker.locator("#savedBox")).toContainText(
     `${name} is on this device now`,
+    { timeout: 60_000 },
   );
 }

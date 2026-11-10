@@ -64,7 +64,11 @@ test("the add menu's Character: made in the maker over the editor, standing in t
   page,
   context,
 }) => {
-  test.slow();
+  // Two editor pages and the maker beside software-drawn 3D views:
+  // measured 2026-11-10 alone on this machine, the run took 3.3 min with
+  // its server start (CI=1, one worker); the budget leaves room for a
+  // slower runner.
+  test.setTimeout(360_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   await context.addInitScript(() => {
     // The save goes to a download, and the file input opens it again.
@@ -100,9 +104,14 @@ test("the add menu's Character: made in the maker over the editor, standing in t
   await expect(dialog).toBeHidden();
 
   // Back in the tour: declared, standing in the station, selected, said.
-  await expect(
-    page.locator(".toast", { hasText: 'Added Ranger Rita to "' }),
-  ).toBeVisible();
+  // His pictures are read and copied in beside the software-drawn view,
+  // so the outcome gets time; any outcome is waited for, so a refusal
+  // fails with the words the page said.
+  const outcome = page
+    .locator(".toast")
+    .filter({ hasText: /Ranger Rita|nothing was added|could not be read/ });
+  await expect(outcome.first()).toBeVisible({ timeout: 60_000 });
+  await expect(outcome.first()).toContainText('Added Ranger Rita to "');
   const made = await tourNow(page);
   const rita = (made.characters ?? []).find(
     (/** @type {any} */ c) => c.name === "Ranger Rita",

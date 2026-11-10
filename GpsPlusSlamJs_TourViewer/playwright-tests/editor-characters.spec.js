@@ -104,9 +104,9 @@ test("the list takes a character from this device into the tour, removes him wit
   await expect(row).toContainText("In this tour");
   const declared = () =>
     page.evaluate(() =>
-      /** @type {any} */ (
-        (window).__tourEditor.manifest().characters ?? []
-      ).map((/** @type {any} */ c) => c.name),
+      /** @type {any} */ (window.__tourEditor.manifest().characters ?? []).map(
+        (/** @type {any} */ c) => c.name,
+      ),
     );
   expect(await declared()).toEqual(["Ranger Rita"]);
 
