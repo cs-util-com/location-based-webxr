@@ -60,9 +60,25 @@ footway crossing it.
   lanes wide. Expressed as a lane count rather than a width override, so there is
   still one mechanism.
 - **Paths bypass the lane model entirely** — `footway`/`path`/`steps`/
-  `pedestrian`/`bridleway` 2 m, `cycleway` 3 m. A footway has no lanes, and
-  multiplying a fictional lane count by a lane width is arithmetic dressed up as
-  data.
+  `pedestrian`/`platform`/`bridleway` 2 m, `cycleway` 3 m. A footway has no
+  lanes, and multiplying a fictional lane count by a lane width is arithmetic
+  dressed up as data.
+  - **`PATH_WIDTH_M` is the file's one path list**: `isPedestrianPath` tests
+    its keys and `ROAD_RANK` derives its rank-0 entries from them, so a path
+    class cannot reach one of this file's tables alone. The colour list
+    (`PEDESTRIAN_CLASSES` in `feature-colours.ts`) is still separate; a test
+    in `roads.test.ts` pins that the only path outside it is `bridleway`,
+    over the common `highway` values OSM documents for ways. That happened once (#909 review):
+    `platform` was in the rank table only, so a `highway=platform` way drew
+    6 m wide (the unknown-class width) and took `surface` first for its
+    colour.
+  - **`platform` is a bus or tram platform mapped as a way** (OSM wiki,
+    `Tag:highway=platform`: where passengers wait, a pedestrian surface), so
+    it takes the pedestrian width, 2 m, and the pedestrian colour
+    (`feature-colours.ts`). OSM2World gives `platform` and `pedestrian` alike
+    4 m; this package gives both 2 m, and a tagged `width` wins either way.
+    It is also a pedestrian path for routing (`isPedestrianPath`), walkable
+    along like a footway.
 - **`parseLengthMetres`, never `Number`, for the `width` tag.** `width=7 m` is
   ordinary and `Number` returns `NaN`, which the fallback would then swallow — a
   tagged road silently becoming an untagged one at a plausible width. The tree
@@ -114,8 +130,11 @@ footway crossing it.
     and their `kerbTaperM` are NOT ported: plan §3 left the kerb in the lab.
 - **Classes are stacked by a lift, not by draw order (M4a class order).** A way
   of rank r sits `rankStepM * (r + 0.4 * f)` above the ground, its strip and
-  its discs alike, where f in [0, 1) is a hash (FNV-1a) of the feature key, so
-  two ways of one class at a junction never share a depth. So a carriageway
+  its discs alike, where f in [0, 1) is a 32-bit hash (FNV-1a) of the feature
+  key, so two ways of one class at a junction rarely share a depth. It does
+  not rule a tie out: two ways of one class sit 0 to 0.4 step apart, and two
+  close fractions are as good as a tie at any step (see "The gaps per step"
+  below). So a carriageway
   covers a footway that crosses it. A way's discs sit at its strip's own height
   (owner decision 2026-11-09, r1171), coplanar only with that strip, whose
   colour they share; until r1171 they sat half a step under it, which left a

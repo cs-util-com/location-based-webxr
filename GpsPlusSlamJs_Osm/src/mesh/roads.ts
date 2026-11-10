@@ -88,12 +88,21 @@ const DEFAULT_LANES: ReadonlyMap<string, number> = new Map([
  *
  * A `Map`, like `DEFAULT_LANES`: `highway` is free text, and on a plain object
  * `constructor` found an inherited function (M1 review finding 2).
+ *
+ * THE ONE PATH LIST of this file: `isPedestrianPath` tests against its keys
+ * and `ROAD_RANK` puts exactly these at rank 0, so a class added here is a
+ * path in this file's tables at once. The colour list, `PEDESTRIAN_CLASSES`
+ * in feature-colours.ts, is separate and held to it by a test. (#909
+ * review: `platform` once reached the rank table alone and drew 6 m wide.)
+ * `platform` is a bus or tram platform mapped as a way, a pedestrian
+ * surface; it takes the pedestrian width.
  */
 const PATH_WIDTH_M: ReadonlyMap<string, number> = new Map([
   ["footway", 2],
   ["path", 2],
   ["steps", 2],
   ["pedestrian", 2],
+  ["platform", 2],
   ["bridleway", 2],
   ["cycleway", 3],
 ]);
@@ -286,16 +295,11 @@ export const ROAD_RANK_STEP_M = 0.005;
 /**
  * Who covers whom where two ribbons overlap (M4a): paths 0, service and
  * track 1, local streets 2, every other class 3. A `Map`: `highway` is free
- * text (M1 review finding 2). O3's table.
+ * text (M1 review finding 2). O3's table; its paths are `PATH_WIDTH_M`'s
+ * keys, so the two cannot disagree.
  */
 const ROAD_RANK: ReadonlyMap<string, number> = new Map([
-  ["footway", 0],
-  ["path", 0],
-  ["steps", 0],
-  ["pedestrian", 0],
-  ["cycleway", 0],
-  ["bridleway", 0],
-  ["platform", 0],
+  ...[...PATH_WIDTH_M.keys()].map((path): [string, number] => [path, 0]),
   ["track", 1],
   ["service", 1],
   ["residential", 2],

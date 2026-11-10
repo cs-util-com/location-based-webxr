@@ -39,10 +39,11 @@ stably wrong in the other direction.
   A millimetre rule here would be thrown away by it.
 - **A cheaper interim rule needs a decision**: let `layer` (and `bridge`)
   dominate the rank, e.g. `rank + 4 * clamp(layer, 0, 2)`. At the 5 mm step
-  a `layer=2` footbridge becomes rank 8: its discs at 8 to 8.4 steps (4.0 to
-  4.2 cm) and its strip half a step higher (4.25 to 4.45 cm, about 4.3 cm;
-  corrected in r1167, it read 5.5 cm), past OsmDemo's 4 cm rung for the
-  areas above the roads, so the ladder would have to widen (the same trade the
+  a `layer=2` footbridge becomes rank 8: its strip and its discs at 8 to 8.4
+  steps, 4.0 to 4.2 cm (since r1171 a way's discs sit at its strip's own
+  height; before, the strip sat half a step above them, 4.25 to 4.45 cm), at
+  or past OsmDemo's 4 cm rung for the areas above the roads, so the ladder
+  would have to widen (the same trade the
   parked 17 mm step decision weighs). Negative layers (`layer=-1` under a
   bridge) would need the opposite clamp.
 - **How often it shows is unmeasured.** First step for whoever picks this up:
