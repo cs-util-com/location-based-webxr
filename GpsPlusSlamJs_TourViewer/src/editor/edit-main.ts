@@ -1741,24 +1741,23 @@ function addItemTo(stationId: string, kind: AddKind): void {
  *  then stands free in the station (`addNewCharacter`) or ends the story
  *  as a card; selected and said once it was added, a refusal toasted. The
  *  declaration and the add are a step each. From the maker's close until
- *  the outcome a toast says the work is under way (copying his pictures
- *  in takes a moment). */
+ *  the outcome a held toast with a Close says the work is under way
+ *  (copying his pictures in takes a moment; `makeForTour` takes it down). */
 async function addCharacterTo(to: {
   readonly kind: "station" | "story";
   readonly id: string;
 }): Promise<void> {
-  let working: HTMLElement | null = null;
   let made: Awaited<ReturnType<typeof characters.makeForTour>>;
   try {
     made = await characters.makeForTour({
-      closed: () => {
-        working = toast(
-          "Adding the character to the tour...",
-          undefined,
-          null,
-          false,
-        );
+      // Held with a Close, as the page's other held toasts are: an add
+      // that never settles must not leave a line nobody can take away.
+      hold: (text) => {
+        const working = toast(text, undefined, null);
         working.setAttribute("aria-busy", "true");
+        return () => {
+          working.remove();
+        };
       },
     });
   } catch (error) {
@@ -1768,14 +1767,16 @@ async function addCharacterTo(to: {
       null,
     );
     return;
-  } finally {
-    (working as HTMLElement | null)?.remove();
   }
   const open = editor;
   if (made === null || open === null) return;
   if (to.kind === "story") {
     endUndo();
-    const out = open.addCharacterToStory(to.id, made.id);
+    const out = open.addCharacterToStory(
+      to.id,
+      made.id,
+      (place) => shown3d?.groundAt(place) ?? null,
+    );
     refresh();
     if (out.kind === "refused") {
       toast(out.reason);

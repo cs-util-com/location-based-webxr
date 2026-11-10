@@ -102,9 +102,14 @@ export interface CharactersPanelDeps {
 
 /** What `makeForTour` tells its caller on the way. */
 interface MakeForTourHooks {
-  /** The maker closed; the new character is being looked for and added. */
-  readonly closed?: () => void;
+  /** The maker closed: shows `text` while the new character is looked
+   *  for and added, and returns what takes it down again, which
+   *  `makeForTour` calls once that settled, whatever the outcome. */
+  readonly hold?: (text: string) => () => void;
 }
+
+/** What the page holds up from the maker's close until the add settled. */
+const ADDING_CHARACTER = "Adding the character to the tour...";
 
 export interface CharactersPanel {
   /** Shows the list and looks into the library. */
@@ -407,6 +412,35 @@ export function createCharactersPanel(
     return relisting;
   }
 
+  /** The newest character saved since the library held `before`, added
+   *  to the tour (or the one the tour holds already); null where none was
+   *  saved or the add was refused (said). */
+  async function addMadeMeanwhile(
+    before: ReadonlySet<string>,
+  ): Promise<TourCharacter | null> {
+    let made: CharacterRecord | undefined;
+    try {
+      const listing = await (await deps.library()).list();
+      made = listing.entries
+        .filter((e) => !before.has(e.libraryId))
+        .sort((a, b) => b.createdAtIso.localeCompare(a.createdAtIso))[0];
+    } catch (e) {
+      toast(
+        `The characters on this device could not be read: ${reasonOf(e)}`,
+        true,
+      );
+      return null;
+    }
+    if (made === undefined) {
+      toast("No new character was saved, so nothing was added");
+      return null;
+    }
+    (seen ??= new Set()).add(made.libraryId);
+    remember();
+    await learnSheets([made]);
+    return inTourAs(made.libraryId) ?? (await addToTour(made, null, true));
+  }
+
   /** Adds a library character to the tour; the button (if any) shows the
    *  work. Resolves with the declared character, or null (said); `quiet`
    *  leaves the success to the caller to say. */
@@ -605,28 +639,15 @@ export function createCharactersPanel(
         return null;
       }
       await openMaker(true);
-      hooks?.closed?.();
-      let made: CharacterRecord | undefined;
+      const release = hooks?.hold?.(ADDING_CHARACTER) ?? (() => {});
       try {
-        const listing = await (await deps.library()).list();
-        made = listing.entries
-          .filter((e) => !before.has(e.libraryId))
-          .sort((a, b) => b.createdAtIso.localeCompare(a.createdAtIso))[0];
+        return await addMadeMeanwhile(before);
       } catch (e) {
-        toast(
-          `The characters on this device could not be read: ${reasonOf(e)}`,
-          true,
-        );
+        toast(`The character was not added: ${reasonOf(e)}`, true);
         return null;
+      } finally {
+        release();
       }
-      if (made === undefined) {
-        toast("No new character was saved, so nothing was added");
-        return null;
-      }
-      (seen ??= new Set()).add(made.libraryId);
-      remember();
-      await learnSheets([made]);
-      return inTourAs(made.libraryId) ?? (await addToTour(made, null, true));
     },
   };
 }

@@ -39,9 +39,12 @@ The page look follows the chosen prototype
   - `isOpen()`: whether the list shows. `dialogOpen()`: whether the list or
     the maker shows; the editor keeps its keys out of both.
   - `makeForTour(hooks?)`: opens the maker on a new character;
-    `hooks.closed()` is called once the maker has closed, before the new
-    character is looked for and added (the add menu shows its working
-    state from then). When the maker
+    `hooks.hold(text)` is called once the maker has closed, before the new
+    character is looked for and added, with "Adding the character to the
+    tour..."; the page shows it and returns what takes it down, which
+    `makeForTour` calls once the add settled, whatever the outcome (made,
+    none saved, refused, or a failure after the close, which is said:
+    "The character was not added: ..." and returns null). When the maker
     closes, the newest character saved in the meantime is declared in the
     tour and returned. It returns null in three cases:
     - none was saved ("No new character was saved, so nothing was added");
@@ -126,8 +129,10 @@ const made = await characters.makeForTour(); // TourCharacter | null
   - add: busy state, success, refusal and failure; "add all"; "not now";
   - remove and its Undo, and a refused remove;
   - the maker: its URL, closing it, and the "nothing new" line;
-  - the maker over the editor: `makerShown` on open and close, `closed`
-    before the add, Escape inside the frame;
+  - the maker over the editor: `makerShown` on open and close, `hold`
+    from the close until the add settled (taken down after a success,
+    after nothing saved and after a failure after the close, which is
+    said), Escape inside the frame;
   - coming back to the tab;
   - `makeForTour`: made, none saved, refused, library unreadable;
   - import: the busy steps, a refusal, a failed save, a cancelled name

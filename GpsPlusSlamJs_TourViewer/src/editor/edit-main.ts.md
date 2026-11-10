@@ -961,11 +961,14 @@ on a desktop.
   handler leaves them to their own dialog.
 - While the maker shows, the 3D view does not draw (`makerShown` to
   `setPaused`).
-- The add menu's Character (`addCharacterTo`) calls `makeForTour()`. From
-  the maker's close until the outcome a held toast says "Adding the
-  character to the tour..." (`aria-busy`), removed before the outcome's
-  toast; an unexpected failure is said ("The character was not added:
-  ..."). In a
+- The add menu's Character (`addCharacterTo`) calls `makeForTour({ hold })`.
+  From the maker's close until the outcome a held toast says "Adding the
+  character to the tour..." (`aria-busy`), with a Close as the page's
+  other held toasts have, so an add that never settles cannot leave it up
+  for good; `makeForTour` takes it down once the add settled, before the
+  outcome's toast, and says a failure after the close itself; one before
+  it is said here ("The character was not added: ..."). In a
   station the character then stands free (`addNewCharacter`, selected,
   toast `Added X to "Station"`); in a story it becomes the story's last
-  entry, standing at the station's free spot (`addCharacterToStory`).
+  entry, standing at the station's free spot on the ground
+  (`addCharacterToStory` with the 3D view's `groundAt`).

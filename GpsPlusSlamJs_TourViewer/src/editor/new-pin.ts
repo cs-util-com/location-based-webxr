@@ -13,10 +13,14 @@ import type {
   TourReadingSign,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
-import type {
-  TourStory,
-  TourStoryBlock,
+import {
+  itemGeoPose,
+  tourFreeBlocks,
+} from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import {
+  tourStationStoryBlocks,
+  type TourStory,
+  type TourStoryBlock,
 } from "gps-plus-slam-app-framework/ar/tour-story";
 
 import type { AddKind } from "../kinds/edit-kinds.js";
@@ -34,14 +38,20 @@ const PER_RING = 12;
  * Where a new pin goes in `station`'s frame (metres north and east of its
  * anchor): the first place on rings of 4 to 10 m (each within the found
  * radius), starting due north and going round, that keeps `CLEAR_M` from
- * every item; with none free, 4 m north (or the radius, if smaller).
+ * every item - the free ones of any kind (a character or a video too,
+ * which the 3D view does not draw yet) and the stories' entries, so two
+ * characters of one station never share a spot; with none free, 4 m north (or the
+ * radius, if smaller).
  */
 export function freePinSpot(station: TourStation): {
   northM: number;
   eastM: number;
 } {
   const radius = Math.max(0, station.foundRadiusM);
-  const taken = worldBlocks(station).map((i) => ({
+  const taken = [
+    ...tourFreeBlocks(station),
+    ...tourStationStoryBlocks(station),
+  ].map((i) => ({
     north: i.pose.position[0],
     east: i.pose.position[2],
   }));
@@ -71,20 +81,51 @@ export interface NewItemInput {
   }) => number | null;
 }
 
-/** A new item's geo pose: the station's free spot, on the ground there
- *  (the anchor's height where none has loaded). */
-function freeGeo(input: NewItemInput): TourPin["geo"] {
-  const { station } = input;
+/** The ground's height at a place, or null (not loaded, or not finite). */
+type GroundAt = NewItemInput["groundAt"];
+
+/** The station's free spot as a geo pose, and how far the ground there
+ *  lies above that spot at the anchor's height (0 where none has
+ *  loaded). */
+function freeSpotOnGround(
+  station: TourStation,
+  groundAt: GroundAt,
+): { readonly geo: TourPin["geo"]; readonly upM: number } {
   const spot = freePinSpot(station);
   const geo = itemGeoPose(
     { position: [spot.northM, 0, spot.eastM], rotation: [0, 0, 0, 1] },
     station.geo,
   );
-  const ground = input.groundAt({ lat: geo.lat, lon: geo.lon });
+  const ground = groundAt({ lat: geo.lat, lon: geo.lon });
   return {
-    ...geo,
-    alt: ground !== null && Number.isFinite(ground) ? ground : geo.alt,
+    geo,
+    upM: ground !== null && Number.isFinite(ground) ? ground - geo.alt : 0,
   };
+}
+
+/** A new item's geo pose: the station's free spot, on the ground there
+ *  (the anchor's height where none has loaded). */
+function freeGeo(input: NewItemInput): TourPin["geo"] {
+  const { geo, upM } = freeSpotOnGround(input.station, input.groundAt);
+  return { ...geo, alt: geo.alt + upM };
+}
+
+/** A story entry's place in its station's frame (m north, east, up). */
+interface StorySpot {
+  readonly northM: number;
+  readonly eastM: number;
+  readonly upM?: number;
+}
+
+/** Where a new story entry of `station` stands, in its frame: the free
+ *  spot (`freePinSpot`), on the ground there by `groundAt` as a free
+ *  item stands (the anchor's height where none has loaded). */
+export function freeStorySpot(
+  station: TourStation,
+  groundAt: GroundAt,
+): StorySpot {
+  const spot = freePinSpot(station);
+  return { ...spot, upM: freeSpotOnGround(station, groundAt).upM };
 }
 
 /** One more than how many items of `kind` the station holds. */
@@ -139,15 +180,12 @@ export function newCharacter(
  *  station's middle unless a spot is given. */
 function storyEntryShell(
   id: string,
-  spot: { readonly northM: number; readonly eastM: number } = {
-    northM: 0,
-    eastM: 0,
-  },
+  spot: StorySpot = { northM: 0, eastM: 0 },
 ) {
   return {
     id,
     pose: {
-      position: [spot.northM, 0, spot.eastM],
+      position: [spot.northM, spot.upM ?? 0, spot.eastM],
       rotation: [0, 0, 0, 1],
     },
     advance: { mode: "tap" },
@@ -158,13 +196,13 @@ function storyEntryShell(
  * The declared character `character` as a new entry at the end of a
  * story: a 3D character as one standing free is (the view a character
  * starts in, `speak`), standing at `spot` in the station's frame (the
- * caller's free spot, `freePinSpot`), moving on by a tap as every new
- * story entry does.
+ * caller's free spot on the ground, `freeStorySpot`), moving on by a tap
+ * as every new story entry does.
  */
 export function newCharacterEntry(
   character: TourCharacter,
   id: string,
-  spot: { readonly northM: number; readonly eastM: number },
+  spot: StorySpot,
 ): TourStoryBlock {
   return {
     ...storyEntryShell(id, spot),

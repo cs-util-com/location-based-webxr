@@ -25,12 +25,18 @@ import {
 } from "./asset-shelf/asset-optimizers.js";
 import { selectShelfRows } from "./asset-shelf/asset-shelf-slice.js";
 import { fakeOptimizer } from "./asset-shelf/test-support/fake-optimizer.js";
-import { freePinSpot } from "./new-pin.js";
+import { freePinSpot, newCharacter } from "./new-pin.js";
+import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { openTourFile } from "../tour-session.js";
 import { editorStore } from "../test-support/editor-store.js";
 import { pngBlob } from "../test-support/png-blob.js";
 import { tourOf } from "../test-support/tour-of.js";
 import { createEditorSession } from "./editor-session.js";
+import { createEditorDraft } from "./editor-draft.js";
+import {
+  freeDraftLocks,
+  memoryDraftStores,
+} from "../test-support/memory-draft-stores.js";
 
 const pin: TourObject = {
   id: "p1",
@@ -244,6 +250,85 @@ describe("addCharacterToStory", () => {
     );
   });
 
+  /** The local [north, up, east] of the story entry `id` in `e`'s tour. */
+  const entryAt = (
+    written: () => ReturnType<typeof manifestToWrite>,
+    id: string,
+  ): readonly number[] => {
+    const child = (written()?.stations ?? [])
+      .flatMap((s) => tourStories(s))
+      .flatMap((s) => s.children)
+      .find((c) => c.id === id);
+    return (
+      (child as { pose?: { position: number[] } } | undefined)?.pose
+        ?.position ?? [Number.NaN, Number.NaN, Number.NaN]
+    );
+  };
+  const apart = (a: readonly number[], b: readonly number[]) =>
+    Math.hypot((a[0] ?? 0) - (b[0] ?? 0), (a[2] ?? 0) - (b[2] ?? 0));
+
+  // Why: the free spot once counted only the free items, so a second
+  // character added to a story stood inside the first.
+  it("stands two characters of one story apart", async () => {
+    const { e, written } = await editor();
+    const rita1 = await declared(e);
+    const max = await declared(e, {
+      name: "Max",
+      image: pngBlob(9, 4),
+      frames: pngBlob(20, 4),
+    });
+    const story = e.addStory(written()?.stations[0]?.id ?? "");
+    if (story.kind !== "added") throw new Error("no story");
+    const a = e.addCharacterToStory(story.id, rita1.id);
+    const b = e.addCharacterToStory(story.id, max.id);
+    if (a.kind !== "added" || b.kind !== "added") throw new Error("not added");
+    expect(
+      apart(entryAt(written, a.id), entryAt(written, b.id)),
+    ).toBeGreaterThan(2.2);
+  });
+
+  // Why: a story's character and a free character of one station share
+  // the station's room, so the story's one keeps clear of the free one.
+  it("stands a story's character clear of a free character of the station", async () => {
+    const { e, written } = await editor();
+    const made = await declared(e);
+    const station = written()?.stations[0];
+    if (station === undefined) throw new Error("no station");
+    const free = newCharacter({
+      station,
+      id: "free1",
+      nowIso: "2026-11-10T00:00:00.000Z",
+      groundAt: () => null,
+      character: made,
+    });
+    expect(e.place(free)).toEqual({ kind: "placed" });
+    const freeAt = localPoseOf(free.geo, station.geo).position;
+    const story = e.addStory(station.id);
+    if (story.kind !== "added") throw new Error("no story");
+    const out = e.addCharacterToStory(story.id, made.id);
+    if (out.kind !== "added") throw new Error("not added");
+    expect(apart(entryAt(written, out.id), freeAt)).toBeGreaterThan(2.2);
+  });
+
+  // Why: a free character stands on the ground; one in a story must too,
+  // not at the anchor's height (he floats or sinks on a slope).
+  it("stands a story's character on the ground where it has loaded", async () => {
+    const { e, written } = await editor();
+    const made = await declared(e);
+    const station = written()?.stations[0];
+    const story = e.addStory(station?.id ?? "");
+    if (story.kind !== "added" || station === undefined) {
+      throw new Error("no story");
+    }
+    const out = e.addCharacterToStory(
+      story.id,
+      made.id,
+      () => station.geo.alt - 1.5,
+    );
+    if (out.kind !== "added") throw new Error("not added");
+    expect(entryAt(written, out.id)[1]).toBeCloseTo(-1.5, 3);
+  });
+
   it("refuses a character the tour does not declare, and a gone story", async () => {
     const { e, written } = await editor();
     const station = written()?.stations[0]?.id ?? "";
@@ -278,6 +363,74 @@ describe("a character's pictures and the asset shelf", () => {
     await settle();
     expect(rows().map((r) => r.id)).toContain(other.asset.id);
     expect(pictures.calls).toHaveLength(1);
+  });
+
+  // Why: a reload puts the draft's files back on the shelf, queued again;
+  // a character declared but not saved yet comes back that way too, and
+  // his pictures must not be queued then either.
+  it("keeps a restored draft's character pictures off the shelf", async () => {
+    const stores = memoryDraftStores();
+    const K = "local-file:00000000000000000000000000000011";
+    const openEditor = async () => {
+      const zip = await packFilesAsZip([
+        { path: "tour.json", data: serializeTourManifest(MANIFEST) },
+      ]);
+      const session = await openTourFile(
+        new File([zip], "tour.zip", { type: "application/zip" }),
+      );
+      const draft = createEditorDraft({
+        openStore: stores.open,
+        holdLock: freeDraftLocks,
+        noBackup: () => undefined,
+      });
+      const { offer } = await draft.open(K, MANIFEST);
+      const store = editorStore();
+      const pictures = fakeOptimizer();
+      const e = createEditorSession({
+        session,
+        manifest: MANIFEST,
+        levels: new Map(),
+        store,
+        draft: draft.writes(),
+        optimizers: { ...ASSET_OPTIMIZERS, image: pictures },
+        optimizerHost: {
+          run: () => Promise.reject(new Error("unused")),
+          close: () => undefined,
+        },
+      });
+      if (offer !== null) e.restore(offer);
+      const leave = async () => {
+        await draft.idle();
+        e.shelf.close();
+        draft.close();
+        await session.close();
+      };
+      return {
+        e,
+        pictures,
+        rows: () => selectShelfRows(store.getState()),
+        leave,
+      };
+    };
+    const first = await openEditor();
+    const made = await declared(first.e);
+    // The control: an ordinary picture brought in comes back queued.
+    const other = await first.e.addFile(pngBlob(30, 20), "photo.png", [
+      "image",
+    ]);
+    if (other.kind !== "added") throw new Error("not added");
+    await settle();
+    await first.leave();
+
+    const again = await openEditor();
+    await settle();
+    expect(again.e.characters().map((c) => c.id)).toEqual([made.id]);
+    const ids = again.rows().map((r) => r.id);
+    expect(ids).toContain(other.asset.id);
+    expect(ids).not.toContain(made.image);
+    expect(ids).not.toContain(made.frames);
+    expect(again.pictures.calls).toHaveLength(1);
+    await again.leave();
   });
 
   it("keeps an opened tour's character pictures off the shelf, so Optimize this tour cannot reach them", async () => {

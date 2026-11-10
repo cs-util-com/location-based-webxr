@@ -19,6 +19,7 @@ import {
   addNewCharacter,
   addNewItem,
   freePinSpot,
+  freeStorySpot,
   KIND_ADD,
   newCharacter,
   newCharacterEntry,
@@ -30,7 +31,7 @@ import {
   parseTourObject,
   tourObjectRecord,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { stationContent } from "../test-support/station-content.js";
+import { stationContent, storyOf } from "../test-support/station-content.js";
 
 const AT = "2026-10-25T10:00:00Z";
 
@@ -88,6 +89,28 @@ describe("freePinSpot", () => {
 
   it("keeps clear of the items already there", () => {
     const spot = freePinSpot(station([[4, 0]]));
+    expect(Math.hypot(spot.northM - 4, spot.eastM)).toBeGreaterThan(2.2);
+  });
+
+  // Why: a story's entries stand in the station's room as its free items
+  // do; a spot that ignored them would stand a new item (two characters
+  // added to stories) on the very place an entry already takes.
+  it("keeps clear of the station's story entries as well", () => {
+    const s = {
+      ...station([]),
+      ...stationContent([
+        storyOf("st", [
+          {
+            id: "e1",
+            kind: "shortText",
+            view: "card",
+            caption: "Hello",
+            pose: { position: [4, 0, 0], rotation: [0, 0, 0, 1] },
+          },
+        ]),
+      ]),
+    } as TourStation;
+    const spot = freePinSpot(s);
     expect(Math.hypot(spot.northM - 4, spot.eastM)).toBeGreaterThan(2.2);
   });
 
@@ -346,6 +369,23 @@ describe("newCharacter", () => {
   // Why: a character in a story is a 3D character like a free one: the
   // view a free character starts in, at a place of his own in the
   // station's frame, moving on by a tap as every new story entry does.
+  // Why: a character in a story stands on the ground as a free one does;
+  // at the anchor's height he floats or sinks wherever the ground slopes.
+  it("finds a story entry's spot on the ground there, at the anchor's height where none has loaded", () => {
+    const s = station([[4, 0]]);
+    const onGround = freeStorySpot(s, () => 517.25);
+    const free = freePinSpot(s);
+    expect(onGround.northM).toBeCloseTo(free.northM, 9);
+    expect(onGround.eastM).toBeCloseTo(free.eastM, 9);
+    expect(onGround.upM).toBeCloseTo(517.25 - 520, 3);
+    expect(freeStorySpot(s, () => null).upM).toBe(0);
+    expect(freeStorySpot(s, () => Number.NaN).upM).toBe(0);
+    const entry = newCharacterEntry(rita, "e2", onGround);
+    expect(
+      (entry as { pose: { position: readonly number[] } }).pose.position[1],
+    ).toBeCloseTo(-2.75, 3);
+  });
+
   it("makes a story entry naming the declaration, standing at the given spot", () => {
     const entry = newCharacterEntry(rita, "e1", { northM: 4, eastM: -2 });
     expect(entry).toMatchObject({

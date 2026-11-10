@@ -234,10 +234,14 @@ function setup(
   const said: string[] = [];
   const shown: boolean[] = [];
   const seen = memorySeen(opts.seen === undefined ? null : opts.seen);
+  /** How the panel reaches the library; a test may swap it midway. */
+  const reach = {
+    library: (): Promise<CharacterLibrary> => Promise.resolve(library.lib),
+  };
   const panel = createCharactersPanel({
     dom: d,
     tour: () => t.tour,
-    library: () => Promise.resolve(library.lib),
+    library: () => reach.library(),
     makerUrl: "./characters.html",
     say: (text) => said.push(text),
     seen,
@@ -247,7 +251,7 @@ function setup(
   const toasts = () => d.toasts.textContent ?? "";
   const libRow = (id: string) =>
     d.libList.querySelector<HTMLElement>(`li[data-id="${id}"]`);
-  return { d, library, t, said, shown, seen, panel, toasts, libRow };
+  return { d, library, reach, t, said, shown, seen, panel, toasts, libRow };
 }
 
 beforeEach(() => {
@@ -744,7 +748,7 @@ describe("the maker over the editor", () => {
   // Why: the add menu shows its working state from the maker's close
   // until the character is in the tour; called before the close it would
   // cover the maker, called after the add it would show nothing.
-  it("makeForTour says when the maker closed, before the character is added", async () => {
+  it("makeForTour holds its line from the maker's close until the character is added, then takes it down", async () => {
     const s = setup();
     const order: string[] = [];
     vi.mocked(s.t.tour.declare).mockImplementationOnce(async (c) => {
@@ -754,13 +758,69 @@ describe("the maker over the editor", () => {
         character: { id: "t9", name: c.name, image: "i", frames: "f" },
       });
     });
-    const made = s.panel.makeForTour({ closed: () => order.push("closed") });
+    const made = s.panel.makeForTour({
+      hold: (text) => {
+        order.push(`hold: ${text}`);
+        return () => order.push("release");
+      },
+    });
     await settled();
     expect(order).toEqual([]);
     s.library.entries.unshift(record("c2", "Max", "2026-11-10T12:00:00.000Z"));
     s.d.maker.close();
     await made;
-    expect(order).toEqual(["closed", "declare"]);
+    expect(order).toEqual([
+      "hold: Adding the character to the tour...",
+      "declare",
+      "release",
+    ]);
+  });
+
+  // Why: the page's held line has no time limit of its own; an add that
+  // fails after the maker closed (the device's storage gone between the
+  // listing and reading his poses) must take it down and say why, or the
+  // line stays up over the editor until a reload.
+  it("makeForTour takes its line down and says why when the add fails after the close", async () => {
+    const s = setup();
+    const held: string[] = [];
+    const made = s.panel.makeForTour({
+      hold: () => {
+        held.push("hold");
+        return () => held.push("release");
+      },
+    });
+    await settled();
+    s.library.entries.unshift(record("c2", "Max", "2026-11-10T12:00:00.000Z"));
+    // The listing after the close reads the library; the next reach fails.
+    let reaches = 0;
+    s.reach.library = () => {
+      reaches += 1;
+      return reaches === 1
+        ? Promise.resolve(s.library.lib)
+        : Promise.reject(new Error("storage gone"));
+    };
+    s.d.maker.close();
+    expect(await made).toBeNull();
+    expect(held).toEqual(["hold", "release"]);
+    expect(s.said).toContain("The character was not added: storage gone");
+    expect(s.t.chars).toEqual([]);
+  });
+
+  // Why: the maker closed with nothing saved is said, and the held line
+  // goes with it rather than staying up over the editor.
+  it("makeForTour takes its line down when nothing was saved", async () => {
+    const s = setup();
+    const held: string[] = [];
+    const made = s.panel.makeForTour({
+      hold: () => {
+        held.push("hold");
+        return () => held.push("release");
+      },
+    });
+    await settled();
+    s.d.maker.close();
+    expect(await made).toBeNull();
+    expect(held).toEqual(["hold", "release"]);
   });
 
   // Why: a key pressed in the maker reaches the frame's document, not the

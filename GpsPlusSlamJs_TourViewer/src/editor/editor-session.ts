@@ -154,7 +154,7 @@ import {
   spawnOptimizerWorker,
 } from "./asset-shelf/optimizer-client.js";
 import { newStory, withoutStoryChild } from "../tour-story-edit.js";
-import { freePinSpot, newCharacterEntry, newStoryEntry } from "./new-pin.js";
+import { freeStorySpot, newCharacterEntry, newStoryEntry } from "./new-pin.js";
 
 /** One of the tour's objects as it stands, with this page's entry. */
 type AuthoringObject = ReturnType<typeof documentObjects>[number];
@@ -693,10 +693,16 @@ export interface EditorSession {
   ): { kind: "declared" } | EditorRefusal;
   /** The declared character `characterId` as a new entry at the end of a
    *  story (`newCharacterEntry`), standing at its station's free spot
-   *  (`freePinSpot`): one step. */
+   *  (`freeStorySpot`: clear of its free items and its stories' entries)
+   *  on the ground there by `groundAt` (the anchor's height where none has
+   *  loaded, or none is given): one step. */
   addCharacterToStory(
     storyId: string,
     characterId: string,
+    groundAt?: (place: {
+      readonly lat: number;
+      readonly lon: number;
+    }) => number | null,
   ): { kind: "added"; id: string } | EditorRefusal;
   /** What the setting's warnings are about: the code-less stations, the
    *  stations on a code the viewer cannot use, and whether a code can
@@ -1790,7 +1796,7 @@ export function createEditorSession(input: {
       );
       return { kind: "declared" };
     },
-    addCharacterToStory(storyId, characterId) {
+    addCharacterToStory(storyId, characterId, groundAt = () => null) {
       const state = mine();
       if (state === null) return notInTour;
       const story = storyNow(state, storyId);
@@ -1801,13 +1807,17 @@ export function createEditorSession(input: {
       if (character === undefined) {
         return { kind: "refused", reason: NO_SUCH_CHARACTER };
       }
-      const station = manifestNow(state)?.stations.find((s) =>
+      // The tour as the next write has it: its free items placed here
+      // since the last save take their spots too.
+      const station = manifestToWrite(state)?.stations.find((s) =>
         tourStories(s).some((t) => t.id === storyId),
       );
       const child = newCharacterEntry(
         character,
         newObjectId(),
-        station === undefined ? { northM: 0, eastM: 0 } : freePinSpot(station),
+        station === undefined
+          ? { northM: 0, eastM: 0 }
+          : freeStorySpot(station, groundAt),
       );
       return took(() =>
         store.dispatch(

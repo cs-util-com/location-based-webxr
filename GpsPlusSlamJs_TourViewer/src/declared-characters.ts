@@ -65,10 +65,12 @@ export function characterDeclareRefusal(
 
 /** A draft's characters as a restore takes them: each whose picture (and
  *  four poses) the tour holds, once per id, at most the format's cap. One
- *  whose four poses alone the tour lacks (the draft keeps the small
- *  picture first, so a draft that ran out of room holds it alone) is kept
- *  without them, which the format allows: dropping him would leave every
- *  item naming him dangling. */
+ *  whose four poses alone the tour lacks (a draft that lost that one file)
+ *  is kept without them, which the format allows: dropping him would leave
+ *  every item naming him dangling. The declare brings the four poses in
+ *  first and the picture second, so a draft that ran out of room between
+ *  the two lacks the picture instead: that declaration is dropped, and the
+ *  items naming him with it. */
 export function restoredCharacters(
   recorded: readonly TourCharacter[],
   held: ReadonlySet<string>,

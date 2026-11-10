@@ -558,12 +558,16 @@ examples).
 - `restoreCharacter(character)` declares again a character that was just
   removed (the Characters list's Undo). It is refused in the same cases as
   `characterRefusal`.
-- `addCharacterToStory(storyId, characterId)` adds the declared character
-  at the end of the story (`newCharacterEntry`: a 3D character, view
-  `speak`, at the free spot of the story's station, `freePinSpot`), as one
-  undo step. It is refused, with the reason, when the story or the
+- `addCharacterToStory(storyId, characterId, groundAt?)` adds the declared
+  character at the end of the story (`newCharacterEntry`: a 3D character,
+  view `speak`, at the free spot of the story's station, `freeStorySpot`:
+  clear of its free items, those placed since the last save included, and
+  of its stories' entries, on the ground there by `groundAt`, the anchor's
+  height where none has loaded or none is given), as one undo step. It is refused, with the reason, when the story or the
   character has gone in the meantime.
 - Tests: `editor-session-characters.test.ts` (minted ids, the same
   character twice, the remove refusal while an entry names him, the
-  story entry's view and spot, the pictures kept off the shelf with an
-  image optimizer set).
+  story entry's view and spot, two characters of one story apart, a
+  story's character clear of a free one and on the ground, the pictures
+  kept off the shelf with an image optimizer set, also after a draft's
+  restore).

@@ -42,9 +42,14 @@ state.
   kept, deduplicated by id; `undefined` when the value is not a list.
 - `restoredCharacters(recorded, held)`: a draft's characters as a restore
   takes them, each by `characterDeclareRefusal` against the ones kept so
-  far. One whose four poses alone are not held (a draft that ran out of
-  room keeps the small picture first) is kept without `frames`, which the
-  format allows; dropping him would leave every item naming him dangling.
+  far. One whose four poses alone are not held (a draft that lost that one
+  file) is kept without `frames`, which the format allows; dropping him
+  would leave every item naming him dangling.
+  - The declare writes the four poses first and the picture second
+    (`EditorSession.declareCharacter`), so a draft that ran out of room
+    between the two lacks the picture, not the poses: that declaration is
+    dropped, and the items naming him with it (nothing is left naming a
+    character the tour lacks).
 
 ## Invariants & assumptions
 

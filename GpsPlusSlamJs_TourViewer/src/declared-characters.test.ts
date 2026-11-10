@@ -188,11 +188,12 @@ describe("the draft's settings record", () => {
     expect(s.charactersRecorded).toBe(true);
   });
 
-  // Why: the draft keeps the small picture before the large sheet, so a
-  // draft that ran out of room holds the picture alone. Dropping the whole
-  // declaration then would leave every item naming him dangling, and a
-  // strict read refuses such a tour; the format takes a character without
-  // his four poses.
+  // Why: a draft can lose the four poses alone (the declare writes them
+  // first and the picture second, so running out of room loses the
+  // picture; a sheet alone lost is a file gone otherwise). Dropping the
+  // whole declaration then would leave every item naming him dangling,
+  // and a strict read refuses such a tour; the format takes a character
+  // without his four poses.
   it("a restore keeps a character whose four poses alone are missing, without them", () => {
     const sheetLost = { ...rita, frames: "lost4" };
     const s = tourDocumentReducer(
