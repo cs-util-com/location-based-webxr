@@ -33,6 +33,7 @@ function result(): SheetAnalysis {
     mode: "white",
     gaps: [1, 2, 3],
     size: { w: 10, h: 10 },
+    specks: 0,
   };
 }
 

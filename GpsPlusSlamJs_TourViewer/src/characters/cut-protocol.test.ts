@@ -13,6 +13,7 @@ function result(): SheetAnalysis {
     mode: "white",
     gaps: [1, 2, 3],
     size: { w: 10, h: 10 },
+    specks: 2,
   };
 }
 
@@ -68,6 +69,11 @@ describe("answerOf", () => {
       frames: [0, 1, 2].map(() => blankImage(4, 8)).concat(blankImage(5, 8)),
     };
     expect(answerOf({ type: "done", job: 8, result: mixed })).toMatchObject({
+      type: "failed",
+    });
+    // A speck count that is no count is a result that does not read.
+    const noCount = { ...result(), specks: -1 };
+    expect(answerOf({ type: "done", job: 9, result: noCount })).toMatchObject({
       type: "failed",
     });
   });

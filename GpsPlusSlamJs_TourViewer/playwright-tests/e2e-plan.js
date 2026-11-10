@@ -37,6 +37,7 @@ export const SPECS = {
   "ar-layout.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "ar-mode.spec.js": { project: "dom", area: "viewer", lane: 1 },
   "blocks-tour.spec.js": { project: "webgl", area: "both", lane: 4 },
+  "character-maker.spec.js": { project: "dom", area: "viewer", lane: 1 },
   "character-views.spec.js": { project: "webgl", area: "viewer", lane: 4 },
   "code-auto-move.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "creator-indoor.spec.js": { project: "dom", area: "viewer", lane: 2 },

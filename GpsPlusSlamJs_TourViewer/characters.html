@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Character maker</title>
+    <link rel="icon" href="data:," />
+  </head>
+  <body data-view="home">
+    <div class="app" id="app">
+      <header class="head">
+        <button
+          class="btn small steps-only"
+          id="toHome"
+          type="button"
+          aria-label="All characters on this device"
+        >
+          &lsaquo; All characters
+        </button>
+        <div class="t">
+          <p class="kicker">Character maker</p>
+          <h1 id="title">Your characters</h1>
+        </div>
+        <div class="rail-slot" id="railSlot"></div>
+        <button class="link small steps-only" id="restart" type="button">
+          Start over
+        </button>
+        <a class="link small home-only" id="toEditor" href="./edit.html" hidden
+          >Tour editor</a
+        >
+      </header>
+      <nav class="rail" id="rail" aria-label="Steps"><ol id="steps"></ol></nav>
+      <p class="where" id="where" aria-live="polite"></p>
+
+      <main class="body" id="body">
+        <!-- the library on this device -->
+        <section class="panel home home-only" id="home">
+          <p class="lead" id="homeLead"></p>
+          <div class="row">
+            <button class="btn primary big" id="makeBtn" type="button">
+              Make a character
+            </button>
+            <button class="btn" id="importBtn" type="button">
+              Import character...
+            </button>
+          </div>
+          <div class="draft" id="draftRow" hidden></div>
+          <div class="errcard" id="homeErr" hidden role="alert"></div>
+          <div class="askcard" id="homeAsk" hidden></div>
+          <div class="lib-head">
+            <h2>On this device</h2>
+            <span class="quiet-line" id="libCount" aria-live="polite"></span>
+          </div>
+          <ul class="lib manage" id="libList"></ul>
+          <p class="quiet-line" id="interrupted" hidden></p>
+        </section>
+
+        <!-- 1 describe -->
+        <section class="panel" data-panel="0" hidden>
+          <div class="greet" data-greet hidden></div>
+          <h2>Who is your character?</h2>
+          <p class="lead">
+            A guide stands at your stations, talks, and points visitors on to
+            the next one. You do not need to draw: an image AI draws it, and
+            this page does the cutting.
+          </p>
+          <label class="field">
+            Describe your character in a few words
+            <textarea
+              id="desc"
+              rows="3"
+              placeholder="For example: a friendly fox park ranger with a green hat, flat cartoon style"
+            ></textarea>
+          </label>
+          <p class="field-msg" id="descMsg" hidden>
+            Write a few words about your character first. Any idea is fine.
+          </p>
+          <div>
+            <p class="small dim" style="margin-bottom: 6px">
+              Need an idea? Tap one to start from it.
+            </p>
+            <div class="chips chip-ideas" id="ideas"></div>
+          </div>
+          <p class="tip">
+            <b>Tip:</b> flat cartoon styles with clean outlines move most
+            smoothly when they talk.
+          </p>
+          <p class="small">
+            Already have a picture from an image AI?
+            <button class="link" type="button" data-go="3">
+              Bring it in now
+            </button>
+          </p>
+        </section>
+
+        <!-- 2 prompt -->
+        <section class="panel" data-panel="1" hidden>
+          <h2>Copy the prompt</h2>
+          <p class="lead">
+            This is the whole text for the image AI. Your words are
+            <mark style="background: #fbe2a6">highlighted</mark>. This page
+            sends nothing anywhere: you copy it and paste it yourself.
+          </p>
+          <pre
+            class="prompt"
+            id="prompt"
+            tabindex="0"
+            aria-label="The prompt for the image AI"
+          ></pre>
+          <div class="row">
+            <button class="btn primary big" id="copyBtn" type="button">
+              Copy the prompt
+            </button>
+            <button class="link" type="button" data-go="0">
+              Change my description
+            </button>
+          </div>
+          <p class="copy-msg" id="copyMsg" aria-live="polite"></p>
+        </section>
+
+        <!-- 3 generate -->
+        <section class="panel" data-panel="2" hidden>
+          <h2>Make the picture in your image AI</h2>
+          <ol class="howto">
+            <li>
+              <span><b>Open your image AI</b>and start a new chat.</span>
+            </li>
+            <li>
+              <span
+                ><b>Paste the prompt and send it</b>On a phone, long-press the
+                text box and choose Paste.</span
+              >
+            </li>
+            <li>
+              <span
+                ><b>Wait for the picture</b>It should show four figures of your
+                character in a row.</span
+              >
+            </li>
+            <li>
+              <span
+                ><b>Keep the picture</b>Copy it, or save it to your photos or
+                files.</span
+              >
+            </li>
+          </ol>
+        </section>
+
+        <!-- 4 image -->
+        <section class="panel" data-panel="3" hidden>
+          <div class="greet" data-greet hidden></div>
+          <h2>Bring the picture back</h2>
+          <p class="lead">
+            Choose or paste the picture your image AI made. This page cuts it
+            into the four poses right away, on this device.
+          </p>
+          <div class="drop" id="drop">
+            <div class="row">
+              <button class="btn primary big" id="pickBtn" type="button">
+                Choose the picture
+              </button>
+              <button class="btn big" id="pasteBtn" type="button">
+                Paste picture
+              </button>
+            </div>
+            <span class="small dim" id="dropHint"
+              >from your photos or files, or the picture you copied</span
+            >
+          </div>
+          <ol class="phases" id="phases" hidden aria-live="polite"></ol>
+          <div class="errcard" id="cutErr" hidden role="alert"></div>
+        </section>
+
+        <!-- 5 check -->
+        <section class="panel" data-panel="4" hidden>
+          <div class="greet" data-greet hidden></div>
+          <h2>Check your character</h2>
+          <div class="summary" id="summary"></div>
+          <div class="seg-row">
+            Seen on
+            <div
+              class="seg"
+              id="groundSeg"
+              role="group"
+              aria-label="Backdrop"
+            ></div>
+          </div>
+          <div class="stage" id="stage">
+            <figure>
+              <canvas id="pvTalk" width="300" height="400"></canvas>
+              <figcaption>Talking</figcaption>
+            </figure>
+            <figure>
+              <canvas id="pvBeckon" width="300" height="400"></canvas>
+              <figcaption>Pointing the way</figcaption>
+            </figure>
+            <figure class="frames-fig">
+              <div class="frames" id="framesStrip"></div>
+              <figcaption>The four poses as they will be saved</figcaption>
+            </figure>
+          </div>
+          <details class="more" id="cutBox">
+            <summary>Adjust the cut</summary>
+            <div class="cut-grid">
+              <div class="cut-preview">
+                <figure>
+                  <canvas id="pvCutTalk" width="210" height="280"></canvas>
+                  <figcaption>Talking</figcaption>
+                </figure>
+                <figure>
+                  <canvas id="pvFeet" width="320" height="200"></canvas>
+                  <figcaption>Close-up of the feet</figcaption>
+                </figure>
+              </div>
+              <p class="small dim">
+                Most pictures need nothing here. Stray dots at the feet show up
+                first in the moving close-up; it stays in view while you change
+                a setting.
+              </p>
+              <label class="rng"
+                ><span class="lbl"
+                  >Background tolerance <output id="oTol"></output></span
+                ><input type="range" id="rTol" min="8" max="80" step="1" /><span
+                  class="hint"
+                  >How far a dot may be from the background colour and still be
+                  cut away.</span
+                ></label
+              >
+              <label class="check-line"
+                ><input type="checkbox" id="cShadow" /> Remove a ground
+                shadow</label
+              >
+              <label class="rng" id="floorRow"
+                ><span class="lbl"
+                  >How light a shadow must be
+                  <output id="oFloor"></output></span
+                ><input
+                  type="range"
+                  id="rFloor"
+                  min="150"
+                  max="230"
+                  step="1"
+                /><span class="hint"
+                  >Lower takes darker grey shadows away too.</span
+                ></label
+              >
+              <label class="rng"
+                ><span class="lbl"
+                  >Clean small specks <output id="oSpeck"></output></span
+                ><input
+                  type="range"
+                  id="rSpeck"
+                  min="0"
+                  max="500"
+                  step="4"
+                /><span class="hint"
+                  >Loose bits smaller than this are removed.</span
+                ></label
+              >
+              <label class="rng"
+                ><span class="lbl"
+                  >Edge softness <output id="oEdge"></output></span
+                ><input
+                  type="range"
+                  id="rEdge"
+                  min="32"
+                  max="160"
+                  step="4"
+                /><span class="hint"
+                  >Higher gives a softer outline.</span
+                ></label
+              >
+              <p class="cut-status" id="cutStatus" aria-live="polite"></p>
+              <div>
+                <button class="btn small" id="cutReset" type="button">
+                  Back to the usual settings
+                </button>
+              </div>
+            </div>
+          </details>
+          <div class="talk-style" id="talkStyle"></div>
+          <details class="more">
+            <summary>Something not right?</summary>
+            <ul>
+              <li>
+                <span>I have a better picture</span
+                ><button class="btn small" type="button" id="betterPic">
+                  Choose another picture
+                </button>
+              </li>
+              <li>
+                <span>It is not the character I described</span
+                ><button class="btn small" type="button" data-go="0">
+                  Change the description
+                </button>
+              </li>
+            </ul>
+          </details>
+        </section>
+
+        <!-- 6 save -->
+        <section class="panel" data-panel="5" hidden>
+          <h2>Name and save your character</h2>
+          <div class="save-grid">
+            <canvas id="pvSave" width="300" height="400"></canvas>
+            <div style="display: grid; gap: 12px; min-width: 0">
+              <label class="field"
+                >What is your character called?<input
+                  type="text"
+                  id="charName"
+                  placeholder="For example: Ranger Rita"
+                  maxlength="40"
+              /></label>
+              <ul class="facts" id="facts"></ul>
+            </div>
+          </div>
+          <div class="saved" id="savedBox" hidden></div>
+        </section>
+      </main>
+
+      <footer class="actions">
+        <button class="btn" id="backBtn" type="button">Back</button>
+        <span class="spacer"></span>
+        <button class="btn primary" id="nextBtn" type="button">Next</button>
+      </footer>
+    </div>
+
+    <div class="toasts" id="toasts">
+      <div class="undo-box" id="undoBox"></div>
+    </div>
+    <input type="file" id="picFile" accept="image/*" hidden />
+    <input type="file" id="impFile" accept="image/png,image/*" hidden />
+
+    <script type="module" src="./src/characters/maker-main.ts"></script>
+  </body>
+</html>

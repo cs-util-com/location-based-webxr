@@ -23,6 +23,8 @@ describe("analyzeSheet", () => {
     expect(r.mode).toBe("white");
     expect(r.gaps).toHaveLength(3);
     expect(r.size).toEqual({ w: 800, h: 520 });
+    // The status line of "Adjust the cut" reports this count.
+    expect(Number.isSafeInteger(r.specks) && r.specks >= 0).toBe(true);
     expect(seen).toEqual(
       ["background", "poses", "align", "check"].flatMap((p) => [
         `${p}:running`,

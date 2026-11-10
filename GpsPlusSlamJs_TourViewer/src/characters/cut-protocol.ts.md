@@ -13,7 +13,7 @@
 ## Invariants
 
 - No DOM, no `new Worker`: shared by the Worker, its service, the client and the tests.
-- A `done` whose frames do not read (not four images of one size with matching buffers) becomes a `failed` for its job, so the page is never left waiting.
+- A `done` whose frames do not read (not four images of one size with matching buffers), or whose `specks` is no count, becomes a `failed` for its job, so the page is never left waiting.
 - The idle and beckon frames are the same objects in both frame sets; `transferOf` lists their buffers once (a buffer listed twice throws in `postMessage`).
 
 ## Tests

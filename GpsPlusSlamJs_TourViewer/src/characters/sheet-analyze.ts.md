@@ -6,7 +6,7 @@
 
 - `CUT_PHASES`: the steps in order with their labels (read, background, poses, align, check).
 - `PhaseState`: running, done or failed; `PhaseListener(phase, state, note?)`.
-- `SheetAnalysis { frames, steadyFrames, check, mode, gaps, size }`: what the page shows and saves (both variants, so "as drawn" and "steady" switch without a re-cut).
+- `SheetAnalysis { frames, steadyFrames, check, mode, gaps, size, specks }`: what the page shows and saves (both variants, so "as drawn" and "steady" switch without a re-cut); `specks` is the count of loose specks the island filter cleaned away, for the status line of "Adjust the cut".
 - `checkPictureSize(w, h, s)`: refuses a picture above `maxPixels` ("too big") or under 240 x 120 ("too small").
 - `analyzeSheet(img, s, listener)`: background, poses, align, check; each step reports running, then done (with a short note) or failed, and a failure throws its `CutError`.
 

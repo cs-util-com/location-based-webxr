@@ -122,7 +122,9 @@ function isResult(v: unknown): v is SheetAnalysis {
     (r.mode === "alpha" || r.mode === "white") &&
     Array.isArray(r.gaps) &&
     typeof r.size === "object" &&
-    r.size !== null
+    r.size !== null &&
+    Number.isSafeInteger(r.specks) &&
+    (r.specks as number) >= 0
   );
 }
 

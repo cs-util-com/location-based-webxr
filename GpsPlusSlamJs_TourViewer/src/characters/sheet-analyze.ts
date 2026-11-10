@@ -45,6 +45,9 @@ export interface SheetAnalysis {
   readonly mode: "alpha" | "white";
   readonly gaps: readonly number[];
   readonly size: { readonly w: number; readonly h: number };
+  /** Loose specks the island filter cleaned away (0 for a transparent
+   *  picture), for the "Adjust the cut" status line. */
+  readonly specks: number;
 }
 
 /** Refuses a picture too big for the device or too small for four poses. */
@@ -134,5 +137,6 @@ export function analyzeSheet(
     mode: cut.mode,
     gaps: found.gaps,
     size: { w, h },
+    specks: cut.specks,
   };
 }
