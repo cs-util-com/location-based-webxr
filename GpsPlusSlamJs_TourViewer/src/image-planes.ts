@@ -23,7 +23,8 @@ export interface PlacedImagePlanes {
   dispose(): void;
 }
 
-const PLANE_WIDTH_M = 1;
+/** A plane whose pose names no width is 1 m wide (a captured photo). */
+const DEFAULT_WIDTH_M = 1;
 const FALLBACK_ASPECT = 4 / 3;
 
 /**
@@ -39,6 +40,8 @@ export function placeCapturedImagePlanes(options: {
   poses: readonly {
     positionNue: readonly [number, number, number];
     rotationNue: readonly [number, number, number, number];
+    /** Its width in metres (the picture's `widthM`); absent: 1 m. */
+    widthM?: number;
   }[];
   textures: readonly Texture[];
 }): PlacedImagePlanes {
@@ -47,8 +50,8 @@ export function placeCapturedImagePlanes(options: {
   // ONE geometry, scaled per mesh — this path places EVERY capture (D4),
   // and a geometry per plane is the unbounded allocation the recorder's
   // frame-tile visualizer already avoids the same way (milestone review,
-  // finding 4). Aspect rides mesh.scale.y; dispose frees it once.
-  const sharedGeometry = new PlaneGeometry(PLANE_WIDTH_M, PLANE_WIDTH_M);
+  // finding 4). Width and aspect ride mesh.scale; dispose frees it once.
+  const sharedGeometry = new PlaneGeometry(1, 1);
   const count = Math.min(poses.length, textures.length);
   for (let i = 0; i < count; i += 1) {
     const texture = textures[i];
@@ -67,7 +70,8 @@ export function placeCapturedImagePlanes(options: {
       sharedGeometry,
       new MeshBasicMaterial({ map: texture }),
     );
-    mesh.scale.set(1, 1 / aspect, 1);
+    const widthM = pose.widthM ?? DEFAULT_WIDTH_M;
+    mesh.scale.set(widthM, widthM / aspect, 1);
     mesh.position.set(
       pose.positionNue[0],
       pose.positionNue[1],

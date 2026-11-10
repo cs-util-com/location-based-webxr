@@ -10,8 +10,9 @@ camera faced, placed at the SCENE ROOT in raw GPS-world NUE.
 - `placeCapturedImagePlanes({ scene, poses, textures }): PlacedImagePlanes`
   - one plane per captured photo at its capture position with the
     capture's world-NUE QUATERNION verbatim (front faces the photographer's
-    viewpoint - a window back in time), 1 m wide and sized by the image's
-    aspect (4:3 without one); poses and textures are paired, the excess of
+    viewpoint - a window back in time), as wide as the pose's `widthM`
+    (the picture's real width; 1 m when absent) and as high as the image's
+    aspect makes it (4:3 without one); poses and textures are paired, the excess of
     either skipped. Returns `{ count, dispose() }`.
 - `PlacedImagePlanes` - `{ count, dispose() }`.
 
@@ -41,4 +42,5 @@ planes.dispose();
 ## Tests
 
 `image-planes.test.ts` - the capture quaternion verbatim at the capture
-position, pose/texture pairing, aspect sizing and full disposal.
+position, pose/texture pairing, aspect sizing, the width swept from 5 cm to
+100 m (a pose without one stays 1 m) and full disposal.

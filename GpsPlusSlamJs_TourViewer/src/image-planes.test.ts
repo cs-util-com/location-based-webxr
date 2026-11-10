@@ -78,4 +78,27 @@ describe("placeCapturedImagePlanes", () => {
     expect(wide.dispose).toHaveBeenCalled();
     expect(materialDispose).toHaveBeenCalled();
   });
+
+  it("draws each plane its pose's width wide (1 m when it names none), the aspect kept", () => {
+    // Why this matters: a picture's width in the file is its real size in
+    // the world. Every plane used to be 1 m wide whatever the file said,
+    // which captured photos (all 1 m) hid. Swept over widths from a
+    // thumbnail to a billboard so no one value hides a fixed size.
+    for (const widthM of [0.05, 1, 3, 12.5, 100]) {
+      const scene = new Object3D();
+      const placed = placeCapturedImagePlanes({
+        scene,
+        poses: [
+          { positionNue: [0, 0, 0], rotationNue: [0, 0, 0, 1], widthM },
+          { positionNue: [0, 0, 0], rotationNue: [0, 0, 0, 1] },
+        ],
+        textures: [fakeTexture(400, 200), fakeTexture(400, 200)],
+      });
+      const [sized, plain] = scene.children as Mesh[];
+      expect(sized!.scale.x).toBeCloseTo(widthM, 10);
+      expect(sized!.scale.y).toBeCloseTo(widthM / 2, 10);
+      expect(plain!.scale.toArray()).toEqual([1, 0.5, 1]);
+      placed.dispose();
+    }
+  });
 });

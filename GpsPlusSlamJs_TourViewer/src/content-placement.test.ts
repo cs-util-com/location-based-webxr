@@ -548,6 +548,49 @@ describe("renderTourStation", () => {
     }));
   }
 
+  // Why: a picture's widthM is its real width in the world, in the
+  // visitor and in the 3D editor (both draw through this renderer). The
+  // plane used to be 1 m wide whatever the file said; a 1 m picture must
+  // stay exactly as it was.
+  it("draws a picture plane its widthM wide, a 1 m one unchanged", async () => {
+    const geo = geoAt({ ...ZERO, alt: 400 }, 10, 0, 0, yaw(0));
+    const picture = (id: string, widthM: number) => ({
+      id,
+      kind: "picture" as const,
+      view: "plane" as const,
+      image: id,
+      widthM,
+      createdAtIso: NOW,
+      pose: {
+        position: [0, 1.4, 3] as [number, number, number],
+        rotation: yaw(0),
+      },
+    });
+    const texture = () => {
+      const t = new Texture();
+      t.image = { width: 4, height: 3 };
+      return t;
+    };
+    const rendered = await renderTourStation(
+      stationAt("s", geo, [picture("one", 1), picture("three", 3)]),
+      {
+        assets: photoAssets("one", "three"),
+        scene: new Group(),
+        zero: ZERO,
+        makeLabel: labelStub,
+        loadPhotoTexture: () => Promise.resolve(texture()),
+      },
+    );
+    const planes = rendered.root.children[0]!.children;
+    const byId = (id: string) =>
+      planes.find((p) => p.userData["objectId"] === id)!;
+    expect(byId("one").scale.x).toBeCloseTo(1, 10);
+    expect(byId("one").scale.y).toBeCloseTo(0.75, 10);
+    expect(byId("three").scale.x).toBeCloseTo(3, 10);
+    expect(byId("three").scale.y).toBeCloseTo(2.25, 10);
+    rendered.dispose();
+  });
+
   // Why: a placed model stands through the world door like every other
   // kind, at the size the tour names (`sizeM`, its largest side) by the
   // one shared scale rule (`modelScale`), its part at its local pose in

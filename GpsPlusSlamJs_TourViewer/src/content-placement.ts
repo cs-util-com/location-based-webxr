@@ -410,7 +410,12 @@ type Drawn =
       readonly title: string;
       readonly body: string;
     }
-  | { readonly id: string; readonly as: "plane"; readonly entry: string | null }
+  | {
+      readonly id: string;
+      readonly as: "plane";
+      readonly entry: string | null;
+      readonly widthM: number;
+    }
   | { readonly id: string; readonly as: "world"; readonly block: TourBlock }
   | { readonly id: string; readonly as: "none" };
 
@@ -463,7 +468,12 @@ function drawnObject(object: TourObject): Drawn {
     case "longText":
       return longTextOf(object);
     case "picture":
-      return { id: object.id, as: "plane", entry: object.imageAsset.path };
+      return {
+        id: object.id,
+        as: "plane",
+        entry: object.imageAsset.path,
+        widthM: object.widthM,
+      };
     case "model":
     case "video":
     case "audio":
@@ -486,7 +496,12 @@ function drawnBlock(
     return longTextOf(block);
   }
   if (block.kind === "picture" && block.view === "plane") {
-    return { id: block.id, as: "plane", entry: paths.get(block.image) ?? null };
+    return {
+      id: block.id,
+      as: "plane",
+      entry: paths.get(block.image) ?? null,
+      widthM: block.widthM,
+    };
   }
   return { id: block.id, as: "world", block };
 }
@@ -532,7 +547,7 @@ async function renderContent(
     // The first error is the one the caller is told.
     if (errors.length > 0) throw errors[0];
   };
-  const photoPoses: ObjectPoseNue[] = [];
+  const photoPoses: (ObjectPoseNue & { readonly widthM: number })[] = [];
   const photoIds: string[] = [];
   const textures: Texture[] = [];
   const skipped: string[] = [];
@@ -630,7 +645,7 @@ async function renderContent(
         skipped.push(drawn.id);
         continue;
       }
-      photoPoses.push(pose);
+      photoPoses.push({ ...pose, widthM: drawn.widthM });
       photoIds.push(drawn.id);
       textures.push(texture);
     }
