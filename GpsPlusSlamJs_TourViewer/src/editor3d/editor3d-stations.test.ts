@@ -44,7 +44,7 @@ import { pickOnlyOnPill } from "./editor3d-marks.js";
 import { buildLecternStand } from "../lectern-view.js";
 import { buildReadingSign } from "../reading-sign.js";
 import { renderTourStation } from "../content-placement.js";
-import { worldBlocks } from "../tour-document.js";
+import { posedBlocks } from "../placement/placeables.js";
 import {
   mountedWorldParts,
   worldEnv,
@@ -1764,12 +1764,12 @@ describe("createStationsLayer", () => {
       ray.setFromCamera(new THREE.Vector2(0, 0), camera);
       expect(layer.pick(ray)).toBe("song");
       // Located where it stands (the view flies to it), and a gesture's
-      // target: the gizmo moves the world blocks (the rows that say
-      // `inWorld`, `editor3d-editing.ts` `targetOf`), and a free sound is
-      // one, so its circle or zone is moved and turned like a pin.
+      // target: the gizmo moves the posed blocks (`placement/placeables.ts`,
+      // `editor3d-editing.ts` `targetOf`), and a free sound is one, so its
+      // circle or zone is moved like a pin.
       const located = layer.itemPointOf("song");
       expect(located?.distanceTo(at)).toBeLessThan(1e-6);
-      expect(worldBlocks(a).map((b) => b.id)).toEqual(["p", "song"]);
+      expect(posedBlocks(a).map((b) => b.ref.id)).toEqual(["p", "song"]);
       // A drag's preview moves it and turns it as the pose says, tilt
       // included; cleared, it is back.
       const dragged = new THREE.Quaternion().setFromEuler(

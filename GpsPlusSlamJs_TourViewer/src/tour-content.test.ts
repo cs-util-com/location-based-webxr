@@ -26,7 +26,10 @@ import {
   parseTourManifest,
   serializeTourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import {
+  tourFreeBlocks,
+  tourObjects,
+} from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { tourManifestArbitrary } from "gps-plus-slam-app-framework/test-utils/tour-arbitraries";
 import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
@@ -41,7 +44,6 @@ import {
   stepRequiredAssetIds,
   withReferencedAssets,
   withTourContent,
-  worldBlocks,
 } from "./tour-content.js";
 import { withCaption } from "./test-support/tour-of.js";
 import {
@@ -156,7 +158,12 @@ describe("withTourContent", () => {
       "film",
       "still",
     ]);
-    expect(worldBlocks(next.stations[0]!).map((b) => b.id)).toEqual(["a"]);
+    // The new pin goes after them, and nothing else is added or lost.
+    expect(tourFreeBlocks(next.stations[0]!).map((b) => b.id)).toEqual([
+      "v",
+      "c",
+      "a",
+    ]);
   });
 
   it("an object nobody moved keeps its local pose bit for bit, its station, and its order", () => {

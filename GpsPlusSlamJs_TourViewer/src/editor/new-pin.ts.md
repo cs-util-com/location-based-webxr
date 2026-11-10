@@ -13,8 +13,10 @@ has loaded and seated in the station it was added to.
 - `freePinSpot(station)` -> `{ northM, eastM }` in the station's frame:
   the first place on rings of 4, 6, 8 and 10 m (each capped at the found
   radius), 12 places a ring starting due north and going clockwise, that
-  keeps more than 2.2 m from every item; with none free, 4 m north (or
-  the radius, if smaller).
+  keeps more than 2.2 m from every item standing in the world where it
+  stands (`posedBlocks` of `../placement/placeables.ts`: an item in a
+  folder through its folders, a free character too); with none free, 4 m
+  north (or the radius, if smaller).
 - `NewItemInput` - `{ station, id, nowIso, groundAt }`, what each new
   item is made from.
 - `newPin(input)` -> `TourPin`: a pin (a short

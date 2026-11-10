@@ -21,17 +21,20 @@ its station's circle" that the inspector's count reads too.
   once written.
 - `ProblemGroup` - `{ stationId, number, title, problems }`, `number`
   1-based, `title` as `stationTitle` gives it.
-- `outsideItems(station)` -> the station's items (`worldBlocks`) whose
-  ground distance from its centre (the station frame's north and east,
-  `pose.position[0]` and `[2]`) is more than `foundRadiusM`; on the circle
-  is inside, the height never counts.
+- `outsideItems(station)` -> the station's items standing in the world
+  (`posedEntries` of `../../placement/placeables.ts`, each a block with its
+  placeable; a free character among them) whose ground distance from its
+  centre (the station frame's north and east, where the item stands with
+  its folders composed) is more than `foundRadiusM`; on the circle is
+  inside, the height never counts.
 - `tourProblems(stations)` -> one group per station that has a problem:
   - warning: "Outside its station's circle (N m from the centre, circle
     R m)" for each item of `outsideItems`, who = `objectTitle(item)`,
     with two fixes. "Move to a new station" is the explicit way out. "Move
     inside": the item moved along the line it stands on to 4 m inside the
     circle (halfway to the centre for a circle of 8 m or less), its
-    heading kept. Its `edit(groundAt?)`: where
+    heading kept; an item in a folder is written by its place in the
+    world, so the document re-expresses it in its folder. Its `edit(groundAt?)`: where
     `groundAt` (the view's loaded ground, as "Put on the ground" reads it)
     has the ground at both the old and the new spot, the item keeps its
     height over the ground (a move of tens of metres on a slope would
@@ -71,6 +74,8 @@ const counts = problemCounts(groups); // { error: 0, warning: 1, note: 0 }
 `tour-problems.test.ts`: nothing for a tour without a problem, the
 outside warning with its distances, the circle's edge counting as inside,
 the empty station's note named by its number, the "Move inside" fix
-(along its line, height kept; halfway in on a small circle), the counts, and a property:
+(along its line, height kept; halfway in on a small circle), an item in
+a turned folder judged and moved where it stands, a free character warned
+like any item, the counts, and a property:
 `outsideItems` is the ground distance against the circle whatever the
 height. The inspector's "outside" count is `inspector-model.test.ts`'s.

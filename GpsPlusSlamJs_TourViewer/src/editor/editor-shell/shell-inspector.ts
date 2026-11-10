@@ -5,9 +5,9 @@
  * its radius first, a slider beside its number (`radius-slider.ts`); an
  * item's "Position"), a station's items under its Contents
  * (`inspector-contents.ts`). A story shows its Entries, a story's block its
- * texts and how it moves on, a choice or a quiz a summary, a free block with
- * no place in the world its texts, each with its Delete. Text only, never
- * markup.
+ * texts and how it moves on, a choice or a quiz a summary, an item with no
+ * place in the world (a video) its texts, each with its Delete. Text only,
+ * never markup.
  *
  * The fields a creator types carry `data-field` (a station's `title` and
  * `description`, labelled Name and Description at the top of the body, the
@@ -375,7 +375,6 @@ type CodeModel = Extract<InspectorModel, { kind: "code" }>;
 type StoryModel = Extract<InspectorModel, { kind: "story" }>;
 type StoryEntryModel = Extract<InspectorModel, { kind: "storyEntry" }>;
 type StoryStepModel = Extract<InspectorModel, { kind: "storyStep" }>;
-type FreeBlockModel = Extract<InspectorModel, { kind: "freeBlock" }>;
 
 /** The card picture's choices: a button each, the shown one pressed. */
 function imagePicker(
@@ -758,22 +757,17 @@ function storyStepParts(model: StoryStepModel): HTMLElement[] {
   ];
 }
 
-/** A free block with no place in the world: its texts and its Delete. */
-function freeBlockParts(model: FreeBlockModel): HTMLElement[] {
-  const box = el("div", "isec");
-  box.append(...model.fields.flatMap(blockTextField));
-  return [
-    box,
-    actions([
-      action("delete", "trash", `Delete ${kindNoun(model.itemKind)}`, {
-        key: DELETE_KEY,
-      }),
-    ]),
-  ];
+/** An item's Delete, with its key. */
+function itemDelete(model: ItemModel): HTMLButtonElement {
+  return action("delete", "trash", `Delete ${kindNoun(model.itemKind)}`, {
+    key: DELETE_KEY,
+  });
 }
 
 /** An item's parts: its commands, its fields (unless its kind's panel
- *  types them itself), its panel's parts, its position. */
+ *  types them itself), its panel's parts, its position. An item with no
+ *  place in the world (a video) has its texts, its panel's parts and its
+ *  Delete only: nothing to move, ground or split off. */
 function itemParts(
   model: ItemModel,
   state: InspectorState,
@@ -786,6 +780,15 @@ function itemParts(
     why.id = PIN_LINES_ID;
     parts.push(why);
   }
+  const o = model.offset;
+  if (o === null) {
+    const box = el("div", "isec");
+    box.append(...fields.flatMap(blockTextField));
+    parts.push(box);
+    if (panel !== null) parts.push(...panel.parts());
+    parts.push(actions([itemDelete(model)]));
+    return parts;
+  }
   parts.push(
     actions([
       action("split", "split", "Move to a new station"),
@@ -794,9 +797,7 @@ function itemParts(
         note: offText(model.groundOffM),
         busy: state.busy,
       }),
-      action("delete", "trash", `Delete ${kindNoun(model.itemKind)}`, {
-        key: DELETE_KEY,
-      }),
+      itemDelete(model),
     ]),
   );
   if (fields.length > 0) {
@@ -805,7 +806,6 @@ function itemParts(
     parts.push(section);
   }
   if (panel !== null) parts.push(...panel.parts());
-  const o = model.offset;
   const heading = model.headingDeg === null ? "-" : fixed(model.headingDeg, 0);
   parts.push(
     ...disclosure(
@@ -1105,8 +1105,7 @@ function headLook(model: InspectorModel): {
   readonly icon: ShellIcon;
 } {
   switch (model.kind) {
-    case "item":
-    case "freeBlock": {
+    case "item": {
       const { look } = KIND_EDIT[model.itemKind];
       return { look, icon: look };
     }
@@ -1198,8 +1197,6 @@ function partsOf(
       return storyEntryParts(model);
     case "storyStep":
       return storyStepParts(model);
-    case "freeBlock":
-      return freeBlockParts(model);
     default:
       return codeParts(model, state);
   }

@@ -44,6 +44,7 @@ const item: InspectorModel = {
   longText: null,
   offset: { northM: 2, upM: 0.5, eastM: -1.25 },
   headingDeg: 15,
+  turns: false,
   groundOffM: null,
 };
 
@@ -76,9 +77,17 @@ describe("barActions for what stands nowhere", () => {
         lines: [],
       }),
     ).toEqual([]);
-    expect(
-      barActions({ ...base, kind: "freeBlock", itemKind: "video", fields: [] }),
-    ).toEqual([]);
+    // A video is an item with no place in the world: nothing to copy,
+    // turn or duplicate there.
+    const video: InspectorModel = {
+      ...item,
+      itemKind: "video",
+      text: null,
+      offset: null,
+      headingDeg: null,
+    };
+    expect(barActions(video)).toEqual([]);
+    expect(positionText(video)).toBeNull();
   });
 });
 

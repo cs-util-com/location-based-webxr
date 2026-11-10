@@ -46,8 +46,10 @@ export function barActions(model: InspectorModel | null): readonly BarButton[] {
   // A story stands nowhere in the world: nothing to copy or turn, but it
   // can be copied whole.
   if (model.kind === "story") return [BUTTONS.duplicate];
-  // What else stands nowhere in the world: nothing at all.
+  // What else stands nowhere in the world: nothing at all (an item with
+  // no place there, a video, neither).
   if (!["station", "item", "code"].includes(model.kind)) return [];
+  if (model.kind === "item" && model.offset === null) return [];
   const copy = positionText(model) === null ? [] : [BUTTONS.copy];
   if (model.kind === "code") return copy;
   if (model.kind === "station") return [BUTTONS.duplicate, ...copy];
@@ -74,6 +76,7 @@ function heading(deg: number | null): string {
 export function positionText(model: InspectorModel | null): string | null {
   if (model === null) return null;
   if (model.kind === "item") {
+    if (model.offset === null) return null;
     const { northM, eastM, upM } = model.offset;
     return `${metres(northM)} m north, ${metres(eastM)} m east, ${metres(upM)} m up of its station, ${heading(model.headingDeg)}`;
   }

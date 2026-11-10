@@ -12,16 +12,17 @@
  *   and its heading, and whether that position is locked (every station
  *   is, until unlocked); with the ground known, how far it and its items
  *   stand off it.
- * - An item (pin, photo, 3D model, long text): its name (a pin's text to
- *   edit), its kind and station, a model's size, its offset in the
- *   station's frame and its heading there, and how far it stands off the
- *   ground; for a long text, what its writer shows (`InspectorLongText`).
+ * - A free item (pin, photo, 3D model, long text, sound, character, video):
+ *   its name (a pin's text to edit), its kind and station, a model's size,
+ *   its texts; where it stands in the world (`placement/placeables.ts`),
+ *   its offset in its holder's frame (its folder's, else its station's)
+ *   and its heading there, and how far it stands off the ground; none of
+ *   that for one with no place in the world (a video); for a long text,
+ *   what its writer shows (`InspectorLongText`).
  * - A story (`story:<id>`): its title, its place and its numbered entries.
  * - A story's block: its texts, how it moves on and, for a character, what
  *   is set of him; a story's choice or quiz: a summary, read here and not
  *   edited.
- * - A free block with no place in the world (a video, an audio, a
- *   character): its texts.
  * - A code: its name, its line, its print size and where it stands, in
  *   the same metres.
  *
@@ -42,10 +43,7 @@ import type {
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
-import {
-  itemGeoPose,
-  tourFreeBlocks,
-} from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import {
   TOUR_CHARACTER_VIEWS,
   TOUR_MODEL_MAX_NOTES,
@@ -57,19 +55,12 @@ import {
 import type { ModelFocus, ModelPick } from "../editor-view.js";
 import { facingDegOf } from "../../character-views.js";
 
-import {
-  isWorldKind,
-  KIND_EDIT,
-  type WorldKind,
-} from "../../kinds/edit-kinds.js";
+import { KIND_EDIT } from "../../kinds/edit-kinds.js";
 import { objectTitle } from "../../object-describe.js";
 import { readingSheetContent } from "../../reading-sign.js";
 import { stationTitle } from "../../station-run.js";
-import {
-  ownedAssetIds,
-  worldBlocks,
-  type WorldBlock,
-} from "../../tour-document.js";
+import { ownedAssetIds } from "../../tour-document.js";
+import { posedEntries, posedEntryOf } from "../../placement/placeables.js";
 import {
   blockFields,
   storyBlockFields,
@@ -244,22 +235,6 @@ interface StoryStepInspector {
   readonly lines: readonly string[];
 }
 
-/** A free block with no place in the world: of a kind its row does not
- *  draw there (`KIND_EDIT` `inWorld`). */
-interface FreeBlockInspector {
-  readonly kind: "freeBlock";
-  readonly itemKind: Exclude<TourBlockKind, WorldKind>;
-  readonly id: string;
-  readonly stationId: string;
-  /** Where it may move in its station (the inspector's Earlier, Later
-   *  and Move to). */
-  readonly moves?: InspectorMoves;
-
-  readonly title: string;
-  readonly sub: string;
-  readonly fields: readonly BlockField[];
-}
-
 /** A block of a story, as its entry's inspector shows it. */
 interface InspectorStoryBlock {
   readonly id: string;
@@ -392,7 +367,7 @@ function textPictures(
 
 interface ItemInspector {
   readonly kind: "item";
-  readonly itemKind: WorldKind;
+  readonly itemKind: TourBlockKind;
   readonly title: string;
   readonly sub: string;
   /** Its station's id. */
@@ -415,14 +390,20 @@ interface ItemInspector {
   readonly model: InspectorModelParts | null;
   /** A long text's writer's data; null for any other item. */
   readonly longText: InspectorLongText | null;
-  /** In the station's frame (m). */
+  /** In its station's frame (m), its folders composed in: where it stands
+   *  from the anchor; null for an item with no place in the world (a
+   *  video). */
   readonly offset: {
     readonly northM: number;
     readonly upM: number;
     readonly eastM: number;
-  };
-  /** Relative to the station; null for a rotation that is no number. */
+  } | null;
+  /** Relative to its station; null for a rotation that is no number or an
+   *  item with no place in the world. */
   readonly headingDeg: number | null;
+  /** Its gizmo turns it (its placement row's `turns`): a pin or a sound
+   *  faces the visitor instead; false for one with no place. */
+  readonly turns: boolean;
   /** Its height over the ground (m); null before the ground there has
    *  loaded. */
   readonly groundOffM: number | null;
@@ -443,8 +424,7 @@ export type InspectorModel =
   | CodeInspector
   | StoryInspector
   | StoryEntryInspector
-  | StoryStepInspector
-  | FreeBlockInspector;
+  | StoryStepInspector;
 
 /** The bottom bar's hint for the selection: the handles its gizmo has in
  *  the 3D view, or how to select when nothing is. A code is read-only
@@ -459,8 +439,12 @@ export function inspectorHint(model: InspectorModel | null): string {
       : `${model.title} - drag the middle to move (its items follow), a white dot for the radius, the round arrow to turn`;
   }
   if (model.kind === "item") {
+    if (model.offset === null) {
+      return `${model.title} - it has no place in the 3D view; Esc deselects`;
+    }
+    const turn = model.turns ? ", the round arrow to turn" : "";
     const resize = model.itemKind === "model" ? ", a white dot to resize" : "";
-    return `${model.title} - drag the middle to move along the ground, the round arrow to turn${resize}`;
+    return `${model.title} - drag the middle to move along the ground${turn}${resize}`;
   }
   if (model.kind === "story") {
     return `${model.title} - its entries play in order; its + in the list adds one, Esc deselects`;
@@ -533,7 +517,7 @@ function cardImages(
     return [image];
   };
   const images: InspectorImage[] = [
-    ...worldBlocks(station).flatMap((i) => {
+    ...tourFreeBlocks(station).flatMap((i) => {
       if (i.kind !== "picture") return [];
       const path = assets.find(
         (a) => a.id === i.image && a.kind === "image",
@@ -575,21 +559,6 @@ function offGroundOf(
   return ground === null || !Number.isFinite(ground)
     ? null
     : shownOff(geo.alt - ground);
-}
-
-/** `item`'s height over the ground; null for one that cannot be placed
- *  or before the ground under it has loaded. */
-function itemOffGround(
-  item: WorldBlock,
-  station: TourStation,
-  groundAt: InspectorGround | undefined,
-): number | null {
-  if (groundAt === undefined) return null;
-  try {
-    return offGroundOf(itemGeoPose(item.pose, station.geo), groundAt);
-  } catch {
-    return null;
-  }
 }
 
 /** A quiz's points and answers, the right one said. */
@@ -769,33 +738,6 @@ function storyInspector(
   return null;
 }
 
-/** The inspector of the free block `selected` that stands nowhere in the
- *  world, or null for any other id. */
-function freeBlockInspector(
-  selected: string,
-  stations: readonly TourStation[],
-  keepsFree: boolean,
-): InspectorModel | null {
-  for (const [index, station] of stations.entries()) {
-    const block = tourFreeBlocks(station).find((b) => b.id === selected);
-    if (block === undefined) continue;
-    const { kind } = block;
-    // A block the world draws has the item inspector instead.
-    if (isWorldKind(kind)) continue;
-    return {
-      kind: "freeBlock",
-      itemKind: kind,
-      id: block.id,
-      stationId: station.id,
-      moves: movesOf(block.id, stations, keepsFree),
-      title: objectTitle(block),
-      sub: `${KIND_EDIT[block.kind].label} in ${stationTitle(station, index + 1)}`,
-      fields: blockFields(block),
-    };
-  }
-  return null;
-}
-
 /** The inspector for `selected` (the page's selection id), or null when
  *  nothing is selected or the tour does not have it. */
 export function buildInspector(input: {
@@ -836,8 +778,8 @@ export function buildInspector(input: {
     const station = stations[index];
     if (station === undefined) return null;
     const description = station.description?.trim() ?? "";
-    const offs = worldBlocks(station).map((item) =>
-      itemOffGround(item, station, groundAt),
+    const offs = posedEntries(station).map((item) =>
+      offGroundOf(item.place.geo, groundAt),
     );
     return {
       kind: "station",
@@ -866,9 +808,12 @@ export function buildInspector(input: {
   const inStory = storyChildInspector(selected, stations);
   if (inStory !== null) return inStory;
   for (const [index, station] of stations.entries()) {
-    const item = worldBlocks(station).find((i) => i.id === selected);
+    const item = tourFreeBlocks(station).find((i) => i.id === selected);
     if (item === undefined) continue;
-    const [northM, upM, eastM] = item.pose.position;
+    // Where it stands in the world, through its folders; none for a view
+    // with no place there (a video's card).
+    const place = posedEntryOf(station, item.id)?.place ?? null;
+    const inStation = place?.inStation ?? null;
     return {
       kind: "item",
       itemKind: item.kind,
@@ -921,17 +866,20 @@ export function buildInspector(input: {
               pictures: textPictures(input.assets),
             }
           : null,
-      offset: { northM, upM, eastM },
-      headingDeg: headingOfRotation(item.pose.rotation),
-      groundOffM: itemOffGround(item, station, groundAt),
+      offset:
+        inStation === null
+          ? null
+          : {
+              northM: inStation.position[0],
+              upM: inStation.position[1],
+              eastM: inStation.position[2],
+            },
+      headingDeg:
+        inStation === null ? null : headingOfRotation(inStation.rotation),
+      turns: place?.turns ?? false,
+      groundOffM: place === null ? null : offGroundOf(place.geo, groundAt),
     };
   }
-  const free = freeBlockInspector(
-    selected,
-    stations,
-    input.selectedFileUnsaved === true,
-  );
-  if (free !== null) return free;
   const code = input.codes.find((c) => c.id === selected);
   if (code === undefined) return null;
   return {

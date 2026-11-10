@@ -549,3 +549,91 @@ describe("inspectorEdit: a story character's facing", () => {
     expect(typed("character-facing:nobody", "10")).toEqual({ kind: "none" });
   });
 });
+
+// Why: an item in a folder is shown by its pose in that folder, so what is
+// typed there is in the folder's frame and must land where the folder puts
+// it in the world; read in the station's frame, the item would jump by the
+// folder's offset and turn. Its ground is judged where it stands too.
+describe("inspectorEdit: an item in a turned folder", () => {
+  const s = Math.SQRT1_2;
+  // A folder 10 m north and 2 m up, turned a quarter about up (its north
+  // to the station's west), holding a pin 5 m north and 1 m up in it: 10 m
+  // north, 5 m west and 3 m up of the anchor in the station's frame.
+  const station = {
+    ...STATIONS[0]!,
+    children: [
+      {
+        id: "f",
+        kind: "folder",
+        pose: { position: [10, 2, 0], rotation: [0, s, 0, s] },
+        children: [
+          {
+            id: "deep",
+            kind: "shortText",
+            view: "pin",
+            caption: "Deep",
+            createdAtIso: AT,
+            pose: { position: [5, 1, 0], rotation: [0, 0, 0, 1] },
+          },
+        ],
+      },
+    ],
+  } as unknown as TourStation;
+  const typed = (field: string, value: string) =>
+    inspectorEdit({
+      selected: "deep",
+      stations: [station],
+      origin: ORIGIN,
+      field,
+      value,
+    });
+
+  // Why: the inspector shows an item in a folder where it stands from the
+  // anchor, so a typed offset is read in that same frame and written
+  // where it names in the world; reading it in the folder's frame would
+  // move the item by the folder's pose.
+  it("reads a typed offset in the station's frame, its folder composed in", () => {
+    // East 3: from 5 m west to 3 m east, north and height kept.
+    const moved = typed("east", "3");
+    if (moved.kind !== "scene" || moved.edit.kind !== "pose") {
+      throw new Error(`not a pose: ${JSON.stringify(moved)}`);
+    }
+    expect(moved.edit.ref).toEqual({ kind: "block", id: "deep" });
+    const local = localPoseOf(moved.edit.geo, station.geo);
+    for (const [i, w] of [10, 3, 3].entries()) {
+      expect(local.position[i]).toBeCloseTo(w, 3);
+    }
+    // Its north as it stands, 10: nothing to write.
+    expect(typed("north", "10")).toEqual({ kind: "none" });
+    // A height of 4: 4 m over the anchor.
+    const lifted = typed("height", "4");
+    if (lifted.kind !== "height") throw new Error("not a height");
+    expect(lifted.alt).toBeCloseTo(station.geo.alt + 4, 6);
+    // A heading typed against its heading in the station (the folder's
+    // quarter turn): typing that heading again writes nothing.
+    expect(typed("heading", "-90")).toEqual({ kind: "none" });
+    expect(typed("heading", "0")).toEqual({
+      kind: "turn",
+      selection: "deep",
+      deg: 90,
+    });
+  });
+
+  it("judges its ground where it stands, through the folder", () => {
+    // It stands 3 m over the anchor: on ground 3 m up it is on it already.
+    const flat = (alt: number) => () => alt;
+    const at = (which: "ground" | "ground-items", alt: number) =>
+      groundEdit({
+        selected: which === "ground" ? "deep" : "station:a",
+        stations: [station],
+        which,
+        groundAt: flat(alt),
+      });
+    expect(at("ground", station.geo.alt + 3)).toEqual({ kind: "none" });
+    expect(at("ground-items", station.geo.alt + 3)).toEqual({ kind: "none" });
+    expect(at("ground", station.geo.alt)).toEqual({
+      kind: "ground-items",
+      items: [{ id: "deep", alt: station.geo.alt }],
+    });
+  });
+});

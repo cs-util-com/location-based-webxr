@@ -14,8 +14,8 @@
  * - A text of a free block that stands nowhere in the world: its edit.
  * - A station's east and north: its anchor at the place those metres name
  *   from the 3D view's origin (`placeAtEastNorth`), height and turn kept.
- * - An item's east and north: its offset in its station's frame, the
- *   other two and its turn kept.
+ * - An item's east and north: its offset in its station's frame (its
+ *   folders composed in), the other two and its turn kept.
  * - An item's height: its altitude alone (`height`), its place and turn
  *   exactly as they are; a pose through the station's frame and back
  *   would move it sideways by its rounding.
@@ -43,13 +43,15 @@ import {
   itemGeoPose,
   tourFreeBlocks,
 } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
 
 import type { PlaceEdit } from "../../placement/place-edits.js";
 import {
-  worldBlocks,
-  type StationEdit,
-  type WorldBlock,
-} from "../../tour-document.js";
+  posedEntries,
+  posedEntryOf,
+  type PosedBlock,
+} from "../../placement/placeables.js";
+import type { StationEdit } from "../../tour-document.js";
 import { STATION_PREFIX, STORY_PREFIX } from "../editor-model.js";
 import { eastNorthOf, placeAtEastNorth } from "../tour-origin.js";
 import { blockFields, storyBlockFields, typedNumber } from "../block-fields.js";
@@ -273,7 +275,7 @@ const AXIS: Readonly<Record<string, 0 | 1 | 2>> = {
 /** A model's own field (`note-title:2`) as its edit, or null for a
  *  field that is none of them. */
 function modelFieldEdit(
-  item: Extract<WorldBlock, { kind: "model" }>,
+  item: Extract<TourBlock, { kind: "model" }>,
   field: string,
   value: string,
 ): InspectorEdit | null {
@@ -303,12 +305,16 @@ function modelFieldEdit(
   return { kind: "model", id: item.id, edit };
 }
 
+/** A field typed for the posed block `entry` of `station`: its texts,
+ *  its size, and its offset and heading in its station's frame. */
 function itemEdit(
-  item: WorldBlock,
+  entry: PosedBlock,
   station: TourStation,
   field: string,
   value: string,
 ): InspectorEdit {
+  const item = entry.block;
+  const pose = entry.place.inStation ?? item.pose;
   if (item.kind === "model") {
     const edit = modelFieldEdit(item, field, value);
     if (edit !== null) return edit;
@@ -340,26 +346,17 @@ function itemEdit(
         };
   }
   if (field === "heading") {
-    return turnTo(item.id, headingOfRotation(item.pose.rotation), typed);
+    return turnTo(item.id, headingOfRotation(pose.rotation), typed);
   }
   if (axis === undefined) return NONE;
-  if (Math.abs(item.pose.position[axis] - typed) < SAME) return NONE;
-  const position: [number, number, number] = [...item.pose.position];
+  if (Math.abs(pose.position[axis] - typed) < SAME) return NONE;
+  const position: [number, number, number] = [...pose.position];
   position[axis] = typed;
-  if (field === "height") {
-    return {
-      kind: "height",
-      id: item.id,
-      alt: itemGeoPose({ ...item.pose, position }, station.geo).alt,
-    };
-  }
+  const geo = itemGeoPose({ ...pose, position }, station.geo);
+  if (field === "height") return { kind: "height", id: item.id, alt: geo.alt };
   return {
     kind: "scene",
-    edit: {
-      kind: "pose",
-      ref: { kind: "block", id: item.id },
-      geo: itemGeoPose({ ...item.pose, position }, station.geo),
-    },
+    edit: { kind: "pose", ref: entry.place.ref, geo },
   };
 }
 
@@ -404,8 +401,8 @@ export function inspectorEdit(input: {
     return storyEntryEdit(place.station, selected, field, value, input.origin);
   }
   for (const station of stations) {
-    const item = worldBlocks(station).find((i) => i.id === selected);
-    if (item !== undefined) return itemEdit(item, station, field, value);
+    const item = posedEntryOf(station, selected);
+    if (item !== null) return itemEdit(item, station, field, value);
     const free = tourFreeBlocks(station).find((b) => b.id === selected);
     if (free !== undefined) {
       return blockFields(free).some((f) => f.name === field)
@@ -434,19 +431,19 @@ type GroundAt = (place: {
   readonly lon: number;
 }) => number | null;
 
-/** The items of `station` among `ids` with the ground under each; null
- *  while the ground under any of them has not loaded. */
+/** `items` with the ground under each, where each stands in the world
+ *  (through its folders); null while the ground under any of them has
+ *  not loaded. */
 function groundedItems(
-  station: TourStation,
-  items: readonly WorldBlock[],
+  items: readonly PosedBlock[],
   groundAt: GroundAt,
 ): { id: string; alt: number; off: number }[] | null {
   const out: { id: string; alt: number; off: number }[] = [];
-  for (const item of items) {
-    const geo = itemGeoPose(item.pose, station.geo);
+  for (const { block, place } of items) {
+    const { geo } = place;
     const ground = groundAt({ lat: geo.lat, lon: geo.lon });
     if (ground === null || !Number.isFinite(ground)) return null;
-    out.push({ id: item.id, alt: ground, off: geo.alt - ground });
+    out.push({ id: block.id, alt: ground, off: geo.alt - ground });
   }
   return out;
 }
@@ -472,7 +469,7 @@ export function groundEdit(input: {
     const station = stations.find((s) => s.id === id);
     if (station === undefined) return NO_GROUND;
     if (which === "ground-items") {
-      const items = groundedItems(station, worldBlocks(station), groundAt);
+      const items = groundedItems(posedEntries(station), groundAt);
       if (items === null) return null;
       const off = items.filter((i) => Math.abs(i.off) > ON_GROUND_M);
       return off.length === 0
@@ -496,13 +493,16 @@ export function groundEdit(input: {
   }
   if (which !== "ground") return NO_GROUND;
   for (const station of stations) {
-    const item = worldBlocks(station).find((i) => i.id === selected);
-    if (item === undefined) continue;
-    const [grounded] = groundedItems(station, [item], groundAt) ?? [];
+    const item = posedEntryOf(station, selected);
+    if (item === null) continue;
+    const [grounded] = groundedItems([item], groundAt) ?? [];
     if (grounded === undefined) return null;
     return Math.abs(grounded.off) <= ON_GROUND_M
       ? NO_GROUND
-      : { kind: "ground-items", items: [{ id: item.id, alt: grounded.alt }] };
+      : {
+          kind: "ground-items",
+          items: [{ id: item.block.id, alt: grounded.alt }],
+        };
   }
   return NO_GROUND;
 }

@@ -130,6 +130,7 @@ function placeable(
     folderPath: [],
     geo: GEO(headingDeg),
     local: null,
+    inStation: null,
     inheritedScale: 1,
     turns: row.turns,
     lifts: row.lifts,

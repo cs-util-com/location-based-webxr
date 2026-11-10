@@ -22,6 +22,9 @@ find what stands in the world, and it reads the facts of each from
     station (`composeTourFolderPath`, then `itemGeoPose`);
   - `local` - its pose in its holder as the file stores it (null for a
     station, whose frame is the earth);
+  - `inStation` - its pose in its station's frame, composed through its
+    folders (null for a station): where it stands from the anchor, which
+    the circle and the free-spot rules judge;
   - `inheritedScale` - the scale its holders apply (1 while folders are
     rigid);
   - `turns`, `lifts`, `extent` (null: no dots, or a value the block
@@ -32,6 +35,12 @@ find what stands in the world, and it reads the facts of each from
   tour does not.
 - `posedBlocks(station)` - the posed blocks of one station in document
   order, through every plain folder; story steps are not among them.
+- `PosedBlock` - `{ block, place }`: a posed block with its placeable,
+  for the readers that need the block's own fields beside its place.
+- `posedEntries(station)` - `posedBlocks` with their blocks;
+  `posedEntryOf(station, id)` - one of them, or null for a block the
+  station does not hold in a posed view.
+
 - `placeablesOf(tour, scope?)` - each station, then its posed blocks.
 - `placeableOf(tour, selection, scope?)` - the placeable a selection
   names, or null (a code, a card, an unknown id).

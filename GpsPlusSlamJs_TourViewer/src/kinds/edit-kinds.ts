@@ -2,8 +2,9 @@
  * The editor's list of kinds: one row per kind of the format
  * (`TOUR_KINDS`), saying everything the creator pages and the desktop
  * editor know of it - its words, its look (the icon and the style the
- * pages draw it with), the words a search finds it by, whether the editor
- * draws it in the world, its text fields, and whether and how it is added.
+ * pages draw it with), the words a search finds it by, its text fields,
+ * and whether and how it is added. Whether and how a block stands in the
+ * world is its view's, not its kind's (`placement/placement-rows.ts`).
  * Keyed by the format's kind type, so a kind the format gains and this
  * list lacks is a compile error here. Pure data; the pages derive their
  * menus, rows and words from it.
@@ -69,10 +70,6 @@ export interface KindEditRow {
   readonly look: string;
   /** The words the tree's search finds it by besides its name. */
   readonly searchWords: string;
-  /** The editor draws and edits it in the world (`worldBlocks`); one that
-   *  is not stands in the tree and its inspector alone, and a write keeps
-   *  it untouched. */
-  readonly inWorld: boolean;
   /** Its text fields in the inspector's order, besides a short text's
    *  caption, which the head types (`block-fields.ts`). */
   readonly fields: readonly FieldSpec[];
@@ -143,7 +140,6 @@ export const KIND_EDIT = {
     thing: "pin",
     look: "pin",
     searchWords: "pin note short text",
-    inWorld: true,
     fields: [{ name: "description", label: "Description", prose: true }],
     add: {
       label: "Short text",
@@ -158,7 +154,6 @@ export const KIND_EDIT = {
     thing: "reading stand",
     look: "text",
     searchWords: "long text reading sign",
-    inWorld: true,
     fields: [TITLE, { name: "body", label: "Body", prose: true }],
     add: {
       label: "Long text",
@@ -173,7 +168,6 @@ export const KIND_EDIT = {
     thing: "photo",
     look: "photo",
     searchWords: "photo note picture",
-    inWorld: true,
     fields: [
       TITLE,
       { name: "caption", label: "Caption", prose: true },
@@ -192,7 +186,6 @@ export const KIND_EDIT = {
     thing: "video",
     look: "video",
     searchWords: "video film",
-    inWorld: false,
     fields: [TITLE, TRANSCRIPT],
   },
   audio: {
@@ -201,10 +194,6 @@ export const KIND_EDIT = {
     thing: "sound",
     look: "audio",
     searchWords: "audio sound",
-    // Free, a sound always stands in the world (a narration circle or a
-    // zone, `tour-kinds.ts` `freeViews`); the editor shows the same
-    // part, still and silent.
-    inWorld: true,
     fields: [TITLE, TRANSCRIPT, ...AUDIO_WORLD],
   },
   model: {
@@ -213,7 +202,6 @@ export const KIND_EDIT = {
     thing: "3D model",
     look: "model",
     searchWords: "3d model",
-    inWorld: true,
     fields: [TITLE],
   },
   character: {
@@ -222,7 +210,6 @@ export const KIND_EDIT = {
     thing: "character",
     look: "character",
     searchWords: "character figure guide",
-    inWorld: false,
     fields: [
       { name: "name", label: "Name", prose: false },
       { name: "caption", label: "Caption", prose: true },
@@ -235,11 +222,6 @@ type Rows = typeof KIND_EDIT;
 /** A kind's look ({@link KindEditRow.look}). */
 export type KindLook = Rows[TourBlockKind]["look"];
 
-/** The kinds the editor draws and edits in the world. */
-export type WorldKind = {
-  [K in TourBlockKind]: Rows[K]["inWorld"] extends true ? K : never;
-}[TourBlockKind];
-
 /** The kinds the editor can make from nothing. */
 export type AddKind = {
   [K in TourBlockKind]: Rows[K] extends {
@@ -248,11 +230,6 @@ export type AddKind = {
     ? K
     : never;
 }[TourBlockKind];
-
-/** Whether the editor draws and edits `kind` in the world. */
-export function isWorldKind(kind: TourBlockKind): kind is WorldKind {
-  return KIND_EDIT[kind].inWorld;
-}
 
 /** A kind's word inside a sentence ("the delete of the long text"): its
  *  label with the first letter lower-cased ("3D" kept). */

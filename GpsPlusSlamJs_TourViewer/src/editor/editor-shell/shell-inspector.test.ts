@@ -30,6 +30,24 @@ import { stationContent } from "../../test-support/station-content.js";
 
 const AT = "2026-10-22T10:00:00Z";
 
+/** A free video's inspector: an item with no place in the world. */
+const NO_PLACE = {
+  kind: "item",
+  itemKind: "video",
+  title: "A clip",
+  sub: "Video in The old gate",
+  stationId: "gate",
+  text: null,
+  sizeM: null,
+  model: null,
+  longText: null,
+  offset: null,
+  headingDeg: null,
+  turns: false,
+
+  groundOffM: null,
+} as const;
+
 const STATIONS = [
   {
     id: "gate",
@@ -348,16 +366,13 @@ describe("drawInspector", () => {
     ).toContain("Delete choice");
   });
 
+  // Why: a video has no place in the world, so its inspector has nothing
+  // to move, ground or split off: its texts and its Delete only.
   it("draws a free video's texts and its Delete", () => {
     drawInspector(
       dock,
       {
-        kind: "freeBlock",
-        itemKind: "video",
-        id: "clip",
-        stationId: "gate",
-        title: "A clip",
-        sub: "Video in The old gate",
+        ...NO_PLACE,
         fields: [
           {
             name: "title",
@@ -380,6 +395,12 @@ describe("drawInspector", () => {
     expect(
       dock.body.querySelector('[data-act="delete"]')?.textContent,
     ).toContain("Delete video");
+    expect(
+      [...dock.body.querySelectorAll("[data-act]")].map(
+        (b) => (b as HTMLElement).dataset["act"],
+      ),
+    ).toEqual(["delete"]);
+    expect(dock.body.querySelector('[data-field="east"]')).toBeNull();
   });
 
   // Why: a sound's radius, reach and volume are numbers (block-fields.ts
@@ -389,12 +410,7 @@ describe("drawInspector", () => {
     drawInspector(
       dock,
       {
-        kind: "freeBlock",
-        itemKind: "video",
-        id: "clip",
-        stationId: "gate",
-        title: "A clip",
-        sub: "Video in The old gate",
+        ...NO_PLACE,
         fields: [
           {
             name: "radiusM",

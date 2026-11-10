@@ -22,7 +22,8 @@
 
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { isWorldKind, KIND_EDIT, type KindLook } from "./kinds/edit-kinds.js";
+import { KIND_EDIT, type KindLook } from "./kinds/edit-kinds.js";
+import { blockPlacement } from "./placement/placement-rows.js";
 import { codeDistanceLine, objectTitle } from "./object-describe.js";
 
 /** One object as the list sees it. */
@@ -130,8 +131,11 @@ function rowOf(
   state: ObjectListState,
 ): ObjectRowModel | null {
   const { object } = entry;
-  // A kind the creator pages do not draw in the world has no row here.
-  if (!isWorldKind(object.kind)) return null;
+  // A view the world does not show (a card) has no row here, and nor
+  // has a free character: no creator page offers him a Move or a look
+  // yet, so a row could say nothing true about him.
+  if (blockPlacement(object.kind, object.view)?.posed !== true) return null;
+  if (object.kind === "character") return null;
   const busy = state.busy.get(object.id) ?? null;
   const title = objectTitle(object);
   const distance = codeDistanceLine(object, state.codes);

@@ -3,7 +3,8 @@
  * Problems tab and the badge on its toggle): grouped by station, in the
  * tour's order, the worst first within a station. An item outside its
  * station's circle is a warning (a visitor at the station never finds
- * it); a station with nothing in it is a note. A problem one click can
+ * it), judged where it stands (`placement/placeables.ts`: through its
+ * folders); a station with nothing in it is a note. A problem one click can
  * mend carries its fixes: an outside item is moved inside, along its
  * line, or given a station of its own where it stands.
  *
@@ -17,8 +18,8 @@ import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { objectTitle } from "../../object-describe.js";
 import { isPlayableInK4 } from "../../scene-player.js";
 import { stationTitle } from "../../station-run.js";
-import { worldBlocks, type WorldBlock } from "../../tour-document.js";
 import type { PlaceEdit } from "../../placement/place-edits.js";
+import { posedEntries, type PosedBlock } from "../../placement/placeables.js";
 import { STATION_PREFIX } from "../editor-model.js";
 
 export type ProblemSeverity = "error" | "warning" | "note";
@@ -70,19 +71,24 @@ const SEVERITY_ORDER: Readonly<Record<ProblemSeverity, number>> = {
   note: 2,
 };
 
-/** How far (m, along the ground) an item stands from its station's
- *  centre: the station frame's north and east. */
-function groundDistanceM(item: WorldBlock): number {
-  return Math.hypot(item.pose.position[0], item.pose.position[2]);
+/** Where a posed block stands in its station's frame (its folders
+ *  composed). */
+function inStationOf(item: PosedBlock) {
+  return item.place.inStation ?? item.block.pose;
 }
 
-/** The station's items standing outside its circle (farther from its
- *  centre along the ground than `foundRadiusM`; on the circle is
- *  inside). The inspector's "outside" count is this rule too. */
-export function outsideItems(
-  station: Pick<TourStation, "children" | "foundRadiusM">,
-): WorldBlock[] {
-  return worldBlocks(station).filter(
+/** How far (m, along the ground) an item stands from its station's
+ *  centre: the station frame's north and east. */
+function groundDistanceM(item: PosedBlock): number {
+  const [north, , east] = inStationOf(item).position;
+  return Math.hypot(north, east);
+}
+
+/** The station's items standing in the world outside its circle
+ *  (farther from its centre along the ground than `foundRadiusM`; on the
+ *  circle is inside). The inspector's "outside" count is this rule too. */
+export function outsideItems(station: TourStation): PosedBlock[] {
+  return posedEntries(station).filter(
     (item) => groundDistanceM(item) > station.foundRadiusM,
   );
 }
@@ -108,21 +114,22 @@ function groundOf(
  *  the station's frame. */
 function moveInside(
   station: TourStation,
-  item: WorldBlock,
+  item: PosedBlock,
   groundAt: GroundAt | undefined,
 ): Extract<PlaceEdit, { kind: "pose" }> {
   const r = station.foundRadiusM;
   const to = r > 2 * INSIDE_BY_M ? r - INSIDE_BY_M : r / 2;
   const scale = to / groundDistanceM(item);
-  const [north, up, east] = item.pose.position;
+  const pose = inStationOf(item);
+  const [north, up, east] = pose.position;
   const position: [number, number, number] = [north * scale, up, east * scale];
-  const geo = itemGeoPose({ ...item.pose, position }, station.geo);
-  const was = itemGeoPose(item.pose, station.geo);
+  const geo = itemGeoPose({ ...pose, position }, station.geo);
+  const was = item.place.geo;
   const groundWas = groundOf(groundAt, was);
   const groundNow = groundOf(groundAt, geo);
   return {
     kind: "pose",
-    ref: { kind: "block", id: item.id },
+    ref: item.place.ref,
     geo:
       groundWas === null || groundNow === null
         ? geo
@@ -142,13 +149,13 @@ export function tourProblems(stations: readonly TourStation[]): ProblemGroup[] {
       )} m from the centre, circle ${String(
         Math.round(station.foundRadiusM),
       )} m)`,
-      who: objectTitle(item),
-      select: item.id,
+      who: objectTitle(item.block),
+      select: item.place.selection,
       fixes: [
         {
           label: "Move inside",
           edit: (groundAt) => moveInside(station, item, groundAt),
-          done: `Moved "${objectTitle(item)}" inside its station's circle`,
+          done: `Moved "${objectTitle(item.block)}" inside its station's circle`,
         },
         { label: "Move to a new station", split: true },
       ],

@@ -88,6 +88,47 @@ describe("freePinSpot", () => {
     expect(Math.hypot(spot.northM - 4, spot.eastM)).toBeGreaterThan(2.2);
   });
 
+  // Why: the spot keeps clear of whatever stands in the world where it
+  // stands: a free character as much as a pin, and an item in a turned
+  // folder where its folder puts it, not where its own pose alone would.
+  it("keeps clear of a free character and of an item where its folder puts it", () => {
+    const zz = {
+      id: "zz",
+      kind: "character",
+      view: "speak",
+      name: "Zz",
+      image: "cut",
+      pose: { position: [4, 0, 0], rotation: [0, 0, 0, 1] },
+    };
+    const spot = freePinSpot({
+      ...station([]),
+      children: [zz],
+    } as unknown as TourStation);
+    expect(Math.hypot(spot.northM - 4, spot.eastM)).toBeGreaterThan(2.2);
+    // A folder 4 m south, turned half a turn, holds a pin 8 m north in
+    // it: it stands 4 m north of the anchor.
+    const turned = {
+      id: "f",
+      kind: "folder",
+      pose: { position: [-4, 0, 0], rotation: [0, 1, 0, 0] },
+      children: [
+        {
+          id: "deep",
+          kind: "shortText",
+          view: "pin",
+          caption: "Deep",
+          createdAtIso: AT,
+          pose: { position: [-8, 0, 0], rotation: [0, 0, 0, 1] },
+        },
+      ],
+    };
+    const clear = freePinSpot({
+      ...station([]),
+      children: [turned],
+    } as unknown as TourStation);
+    expect(Math.hypot(clear.northM - 4, clear.eastM)).toBeGreaterThan(2.2);
+  });
+
   it("stays inside a small station's circle", () => {
     const spot = freePinSpot(station([], 2));
     expect(Math.hypot(spot.northM, spot.eastM)).toBeLessThanOrEqual(2);

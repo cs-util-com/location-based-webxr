@@ -61,6 +61,9 @@ export interface Placeable {
   /** Its pose in its holder (the innermost folder, else the station), as
    *  the file stores it; null for a station, whose frame is the earth. */
   readonly local: TourLocalPose | null;
+  /** Its pose in its station's frame, composed through its folders: where
+   *  it stands from the station's anchor; null for a station. */
+  readonly inStation: TourLocalPose | null;
   /** The scale its holders apply to it (1: none). */
   readonly inheritedScale: number;
   readonly turns: boolean;
@@ -101,13 +104,15 @@ function blockPlaceable(
 ): Placeable | null {
   const row = blockPlacement(block.kind, block.view);
   if (row === null || !row.posed) return null;
+  const inStation = composeTourFolderPath(folders, block.pose);
   return {
     ref: { kind: "block", id: block.id },
     selection: block.id,
     stationId: station.id,
     folderPath: folders.map((f) => f.id),
-    geo: itemGeoPose(composeTourFolderPath(folders, block.pose), station.geo),
+    geo: itemGeoPose(inStation, station.geo),
     local: block.pose,
+    inStation,
     inheritedScale: 1,
     turns: row.turns,
     lifts: row.lifts,
@@ -117,6 +122,13 @@ function blockPlaceable(
   };
 }
 
+/** A posed block with the placeable it is: for the readers that need
+ *  the block's own fields beside its place (its title, its texts). */
+export interface PosedBlock {
+  readonly block: TourBlock;
+  readonly place: Placeable;
+}
+
 /** The posed blocks of `children` (a station's, or a folder's inside
  *  `folders`), through every plain folder, in document order. Stories
  *  are left out: their blocks are steps, not free blocks. */
@@ -124,21 +136,27 @@ function walk(
   children: readonly TourStationChild[],
   station: TourStation,
   folders: readonly (TourFolderFrame & { readonly id: string })[],
-): Placeable[] {
-  return children.flatMap((child): Placeable[] => {
+): PosedBlock[] {
+  return children.flatMap((child): PosedBlock[] => {
     if (isTourBlockChild(child)) {
-      const placeable = blockPlaceable(child, station, folders);
-      return placeable === null ? [] : [placeable];
+      const place = blockPlaceable(child, station, folders);
+      return place === null ? [] : [{ block: child, place }];
     }
     if (!isTourFolder(child)) return [];
     return walk(child.children, station, [...folders, child]);
   });
 }
 
+/** The posed blocks of `station` with their blocks, wherever its plain
+ *  folders hold them, in document order. */
+export function posedEntries(station: TourStation): readonly PosedBlock[] {
+  return walk(station.children, station, []);
+}
+
 /** The posed blocks of `station`, wherever its plain folders hold them:
  *  what the world shows of it, each with its pose and handles. */
 export function posedBlocks(station: TourStation): readonly Placeable[] {
-  return walk(station.children, station, []);
+  return posedEntries(station).map((e) => e.place);
 }
 
 /** `station` as a placeable. */
@@ -150,6 +168,7 @@ function stationPlaceable(station: TourStation, scope: PlaceScope): Placeable {
     folderPath: [],
     geo: station.geo,
     local: null,
+    inStation: null,
     inheritedScale: 1,
     turns: STATION_PLACEMENT.turns,
     lifts: STATION_PLACEMENT.lifts,
@@ -187,4 +206,13 @@ export function placeableOf(
     if (found !== undefined) return found;
   }
   return null;
+}
+
+/** The posed block `id` of `station` with its block; null for one the
+ *  station does not hold in a posed view. */
+export function posedEntryOf(
+  station: TourStation,
+  id: string,
+): PosedBlock | null {
+  return posedEntries(station).find((e) => e.block.id === id) ?? null;
 }

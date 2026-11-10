@@ -343,15 +343,117 @@ describe("buildInspector", () => {
       });
     });
 
+    // Why: a video's card has no place in the world, so it is an item with
+    // its texts and no offset, heading or ground to show or edit, and the
+    // hint says the 3D view has no handle for it.
     it("shows a free block with no place in the world by its texts", () => {
       const model = inStory("clip");
-      expect(model?.kind).toBe("freeBlock");
-      if (model?.kind !== "freeBlock") return;
+      expect(model?.kind).toBe("item");
+      if (model?.kind !== "item") return;
       expect(model.title).toBe("A clip");
       expect(model.sub).toBe("Video in The gate");
       expect(model.stationId).toBe("b");
       expect(model.itemKind).toBe("video");
       expect(model.fields.map((f) => f.name)).toEqual(["title", "transcript"]);
+      expect(model).toMatchObject({
+        offset: null,
+        headingDeg: null,
+        turns: false,
+        groundOffM: null,
+      });
+      expect(inspectorHint(model)).toBe(
+        "A clip - it has no place in the 3D view; Esc deselects",
+      );
+    });
+
+    // Why: a free character stands in the world like any item, so he gets
+    // the item's inspector - his place, his turn, the ground under him -
+    // where he had his texts alone.
+    it("shows a free character as an item with his place and his turn", () => {
+      const zz = {
+        id: "zz",
+        kind: "character",
+        view: "speak",
+        name: "Zz",
+        image: "cut",
+        pose: { position: [3, 0, -4], rotation: turn(-90) },
+      };
+      const station = {
+        ...STATIONS[0]!,
+        children: [zz],
+      } as unknown as TourStation;
+      const model = buildInspector({
+        selected: "zz",
+        stations: [station],
+        assets: [],
+        codes: CODES,
+        groundAt: () => 562.25,
+      });
+      expect(model).toMatchObject({
+        kind: "item",
+        itemKind: "character",
+        offset: { northM: 3, upM: 0, eastM: -4 },
+        turns: true,
+      });
+      if (model?.kind !== "item") return;
+      expect(model.headingDeg).toBeCloseTo(90, 6);
+      expect(model.groundOffM).toBe(0);
+      expect(inspectorHint(model)).toBe(
+        "Zz - drag the middle to move along the ground, the round arrow to turn",
+      );
+    });
+
+    // Why: an item in a folder shows where it stands from its station's
+    // anchor, its folder composed in, as it always has, and its height off
+    // the ground is judged there too. A folder 10 m north and 2 m up,
+    // turned a quarter, holds a pin 5 m north and 1 m up in it: 10 m north,
+    // 5 m west and 3 m over the anchor.
+    it("shows an item in a folder where it stands from the anchor", () => {
+      const folder = {
+        id: "f",
+        kind: "folder",
+        pose: { position: [10, 2, 0], rotation: turn(90) },
+        children: [
+          {
+            id: "deep",
+            kind: "shortText",
+            view: "pin",
+            caption: "Deep",
+            createdAtIso: AT,
+            pose: { position: [5, 1, 0], rotation: [0, 0, 0, 1] },
+          },
+        ],
+      };
+      const station = {
+        ...STATIONS[0]!,
+        children: [folder],
+      } as unknown as TourStation;
+      const at = (groundAt?: () => number) =>
+        buildInspector({
+          selected: "deep",
+          stations: [station],
+          assets: [],
+          codes: CODES,
+          ...(groundAt === undefined ? {} : { groundAt }),
+        });
+      const shown = at();
+      expect(shown).toMatchObject({ kind: "item", groundOffM: null });
+      if (shown?.kind !== "item") return;
+      expect(shown.offset?.northM).toBeCloseTo(10, 9);
+      expect(shown.offset?.upM).toBeCloseTo(3, 9);
+      expect(shown.offset?.eastM).toBeCloseTo(-5, 9);
+      expect(shown.headingDeg).toBeCloseTo(270, 6);
+      expect(at(() => 562.25)).toMatchObject({ groundOffM: 3 });
+      // The station's count of items off the ground judges it there too.
+      expect(
+        buildInspector({
+          selected: "station:a",
+          stations: [station],
+          assets: [],
+          codes: CODES,
+          groundAt: () => 565.25,
+        }),
+      ).toMatchObject({ offGround: 0 });
     });
 
     // Why: a free sound stands in the world (a narration circle or a
@@ -474,6 +576,8 @@ describe("buildInspector", () => {
       ],
       offset: { northM: 4, upM: 1.5, eastM: -2 },
       headingDeg: 0,
+      // A pin faces the visitor: its gizmo has no round arrow.
+      turns: false,
       groundOffM: null,
     });
     expect(inspect("model-1")).toMatchObject({
@@ -483,6 +587,7 @@ describe("buildInspector", () => {
       sizeM: 2.4,
       fields: [{ name: "title", label: "Title", max: 80, prose: false }],
       headingDeg: 90,
+      turns: true,
     });
   });
 
@@ -544,8 +649,9 @@ describe("inspectorHint", () => {
     expect(inspectorHint(inspect("station:a", ["a"]))).toBe(
       "Market Square - drag the middle to move (its items follow), a white dot for the radius, the round arrow to turn",
     );
+    // A pin faces the visitor, so its gizmo has no round arrow to name.
     expect(inspectorHint(inspect("pin-1"))).toBe(
-      "Fountain, 1612 - drag the middle to move along the ground, the round arrow to turn",
+      "Fountain, 1612 - drag the middle to move along the ground",
     );
     expect(inspectorHint(inspect("model-1"))).toBe(
       "3D model - drag the middle to move along the ground, the round arrow to turn, a white dot to resize",

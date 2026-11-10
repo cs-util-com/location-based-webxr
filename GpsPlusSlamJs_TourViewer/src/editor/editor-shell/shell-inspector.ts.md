@@ -103,11 +103,15 @@ content` (Chromium, the editor's browser; elsewhere it stays three
     owner's prototype round on the editor's character UI.
   - A story's choice or quiz: its summary (`ul.steplines`), read here and
     not edited, and "Delete choice" / "Delete quiz".
-  - A free video, audio or character: its texts and its Delete.
-  - An item: what it is and its station (a pin's text to type in the
-    head, "Pin text"), its commands, a model's Size to type, and under
-    "Position" its Offset east and north, Height (up from the anchor)
-    and Heading to type, in its station's frame.
+  - An item with no place in the world (a video, its `offset` null): its
+    texts, its kind panel's parts and its Delete; no split, no ground, no
+    Position.
+  - An item standing in the world (a pin, a picture, a model, a long
+    text, a sound, a free character): what it is and its station (a
+    pin's text to type in the head, "Pin text"), its commands, a model's
+    Size to type, and under "Position" its Offset east and north, Height
+    (up from the anchor) and Heading to type, in its station's frame (its
+    folders composed in).
   - Typed fields carry `data-field` (`title`, `description`,
     `radius`, `east`, `north`, `height`, `heading`, `size`) and the
     tour's value as `defaultValue`: the shell commits a field whose text
@@ -207,7 +211,8 @@ opened again, and the fields' layout at four window sizes).
 `shell-inspector.test.ts` also covers the ground changing under a drawn station (only its ground button updated, the typed field and its focus kept), the lock button's place, state and words, and its absence for a station without a position; Earlier and Later beside a station's place, off at the ends; and the commands in words per kind (a station's Delete with its key, an item's two, none for a code).
 
 It also covers a story (its name, its numbered Entries, its Add entry and
-its Delete, an empty one), a choice's and a quiz's summary, a free block, a
+its Delete, an empty one), a choice's and a quiz's summary, an item with
+no place in the world (its texts and Delete only), a
 story block's moves-on chips and seconds, a story
 character's view and advance chips (the one in use pressed, each group
 named) and his facing, none for a long text, a story block's texts

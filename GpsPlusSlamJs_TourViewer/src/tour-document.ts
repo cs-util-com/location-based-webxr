@@ -168,16 +168,10 @@ import {
 import type { CodeMeasurement } from "./visit-settle.js";
 
 export type { LevelText } from "./code-book.js";
-/** The world view's readers (`tour-content.ts`), for the pages: the
- *  free blocks of a station, and which pictures are captured photos and
- *  own their image asset. Read-only; the
+/** The world view's readers (`tour-content.ts`), for the pages: which
+ *  pictures are captured photos and own their image asset. Read-only; the
  *  rules stay behind the document. */
-export {
-  isCapturedPhoto,
-  ownedAssetIds,
-  worldBlocks,
-  type WorldBlock,
-} from "./tour-content.js";
+export { isCapturedPhoto, ownedAssetIds } from "./tour-content.js";
 
 /** A station as the document edits it: its pose (D17), its own fields and
  *  its story - its steps and the blocks they show (`blocks` holds those

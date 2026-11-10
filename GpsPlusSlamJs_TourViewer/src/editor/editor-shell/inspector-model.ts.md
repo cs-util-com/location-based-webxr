@@ -52,9 +52,8 @@ view, advance, facingDeg }`) and `advance { mode, afterS }`;
     `id`, `stationId`, `title`, `sub`, `heading` and `lines`: where each answer
     leads, or a quiz's points and its answers with the right one said (a typed
     answer's check is not said);
-  - `FreeBlockInspector` - `kind: "freeBlock"`, a free video, audio or
-    character: `itemKind`, `id`, `stationId`, `title`, `sub`, `fields`;
-  - `ItemInspector` - `kind: "item"`, `itemKind`, title, `sub` naming
+  - `ItemInspector` - `kind: "item"`, every free block (a video and a
+    free character too), `itemKind`, title, `sub` naming
     its kind in the one word every creator page uses and its station ("Pin in
     Market Square", "Photo in ...", "3D model in ...", `KIND_EDIT` label; the
     title by `objectTitle`), `stationId`, `text` (a pin's caption to edit; null for a
@@ -62,9 +61,13 @@ view, advance, facingDeg }`) and `advance { mode, afterS }`;
     other text fields to type, `blockFields` of `../block-fields.ts`:
     a short text's description, a picture's title, caption and alt text,
     a model's title), `offset`
-    (`northM`, `upM`, `eastM` in the station's frame), `headingDeg`,
-    `groundOffM` (its height over the ground, rounded as the station's;
-    null while unknown);
+    (`northM`, `upM`, `eastM` in the station's frame, its folders composed
+    in; null for a block with no place in the world, a video),
+    `headingDeg` (in the same frame; null with no place), `turns` (its
+    placement row's: its gizmo has the round arrow), and `groundOffM` (the height
+    over the ground of where it stands in the world, through its
+    folders, `posedEntryOf` of `../../placement/placeables.ts`; rounded as
+    the station's; null while unknown or with no place);
   - `CodeInspector` - `kind: "code"`, title, `sub` (its line),
     `printSizeM`, `position` or null when it has none;
   - `InspectorPosition` - `eastM` and `northM` from `origin` when it
@@ -119,7 +122,13 @@ view, advance, facingDeg }`) and `advance { mode, afterS }`;
   compares stations by those metres; latitude and longitude are what the
   map shows.
 - A station's position is its own point; an item's is its offset in its
-  station's frame (north, up, east).
+  station's frame (north, up, east), its folders composed in, which is
+  also the frame its typed fields write back (`inspector-edits.ts`). Its
+  height off the ground and the station's count of items off the ground
+  are judged where it stands in the world.
+- The hint names the round arrow only for an item whose gizmo turns it
+  (`turns`), the white dot only for a model, and says an item with no
+  place in the world has none in the 3D view.
 - A station's model carries `locked` (from `unlockedStations`, locked by default). A locked station's hint names its radius dot and says how to unlock it, never a drag the lock refuses.
 
 ## Examples
@@ -135,7 +144,11 @@ if (model?.kind === "station") console.log(model.position?.eastM);
 one; a station's, an item's and a code's fields (and a code without a
 position); a station east and north of the tour's centre in metres;
 `headingOfRotation` for turns about up, and none for a forward turned
-straight up or down; `inspectorHint` for each kind and for none.
+straight up or down; `inspectorHint` for each kind and for none (a pin
+with no round arrow, a video with no place); a video as an item with no
+place; a free character as an item with its place and turn; an item in
+a turned folder with its offset in the station's frame and its height
+off the ground where it stands.
 
 `inspector-model.test.ts` also covers `locked` and the locked hint, and
 the values the inspector edits: a station's own name, the card's

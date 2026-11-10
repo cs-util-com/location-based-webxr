@@ -83,7 +83,6 @@ import {
   type TourStationChild,
 } from "gps-plus-slam-app-framework/ar/tour-story";
 
-import { isWorldKind, type WorldKind } from "./kinds/edit-kinds.js";
 import { STATION_RADIUS_M, type StationPoint } from "./station-assign.js";
 
 /**
@@ -284,22 +283,6 @@ export function automaticStationFrame(
     hint: "arrow",
     children: [],
   };
-}
-
-/** A block the creator pages draw and edit in the world: one whose kind's
- *  row says so (`KIND_EDIT` `inWorld`). */
-export type WorldBlock = Extract<TourBlock, { readonly kind: WorldKind }>;
-
-/** A station's free blocks (`tourFreeBlocks`) the creator pages draw and
- *  edit: those of a kind its row draws in the world. Any other (today a
- *  free video or character) is not among them: those pages have no
- *  drawing for one yet, and a write keeps it (`withTourContent`). */
-export function worldBlocks(
-  station: Pick<TourStation, "children">,
-): WorldBlock[] {
-  return tourFreeBlocks(station).filter((b): b is WorldBlock =>
-    isWorldKind(b.kind),
-  );
 }
 
 /** A captured photo: a picture whose image asset has the picture's own id

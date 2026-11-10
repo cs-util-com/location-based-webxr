@@ -24,7 +24,6 @@ import { PALETTE_KINDS } from "../editor/editor-shell/add-palette-model.js";
 import { createTreeAddMenu } from "../editor/editor-shell/tree-add-menu.js";
 import { buildTree } from "../editor/editor-shell/tree-model.js";
 import { stationContent, storyOf } from "../test-support/station-content.js";
-import { worldBlocks } from "../tour-content.js";
 
 import {
   KIND_EDIT,
@@ -171,13 +170,6 @@ describe("KIND_EDIT", () => {
         });
       }
     }
-  });
-
-  it("draws in the world exactly the rows that say so", () => {
-    const all = stationOf(tourBlockKinds().map((kind) => SAMPLE[kind]));
-    expect(worldBlocks(all).map((b) => b.kind)).toEqual(
-      tourBlockKinds().filter((kind) => KIND_EDIT[kind].inWorld),
-    );
   });
 
   it("offers in the add menu and the palette exactly the rows that say they are addable", () => {

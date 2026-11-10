@@ -40,8 +40,11 @@ import {
 } from "../editor/editor-view.js";
 import type { ModelEdit } from "../editor/model-edits.js";
 import { showSoundIcons } from "../kinds/audio/sound-icon.js";
-import { placeableOf, type PlaceRef } from "../placement/placeables.js";
-import { worldBlocks } from "../tour-document.js";
+import {
+  placeableOf,
+  posedEntryOf,
+  type PlaceRef,
+} from "../placement/placeables.js";
 import {
   clampedPose,
   orbitPoseOf,
@@ -263,7 +266,7 @@ export function createSceneEditing(deps: SceneEditingDeps) {
   /** A model of the tour by its id, or null. */
   const modelOf = (id: string) => {
     for (const station of deps.tour()?.stations ?? []) {
-      const item = worldBlocks(station).find((i) => i.id === id);
+      const item = posedEntryOf(station, id)?.block;
       if (item !== undefined) return item.kind === "model" ? item : null;
     }
     return null;

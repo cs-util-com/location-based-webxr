@@ -11,14 +11,17 @@ import type {
   TourReadingSign,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import {
+  itemGeoPose,
+  tourFreeBlocks,
+} from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import type {
   TourStory,
   TourStoryBlock,
 } from "gps-plus-slam-app-framework/ar/tour-story";
 
 import type { AddKind } from "../kinds/edit-kinds.js";
-import { worldBlocks } from "../tour-document.js";
+import { posedBlocks } from "../placement/placeables.js";
 
 /** How far a new pin keeps from every item of its station (m). */
 const CLEAR_M = 2.2;
@@ -32,17 +35,20 @@ const PER_RING = 12;
  * Where a new pin goes in `station`'s frame (metres north and east of its
  * anchor): the first place on rings of 4 to 10 m (each within the found
  * radius), starting due north and going round, that keeps `CLEAR_M` from
- * every item; with none free, 4 m north (or the radius, if smaller).
+ * every item standing in the world (where it stands in the station's
+ * frame, its folders composed); with none free, 4 m north (or the
+ * radius, if smaller).
  */
 export function freePinSpot(station: TourStation): {
   northM: number;
   eastM: number;
 } {
   const radius = Math.max(0, station.foundRadiusM);
-  const taken = worldBlocks(station).map((i) => ({
-    north: i.pose.position[0],
-    east: i.pose.position[2],
-  }));
+  const taken = posedBlocks(station).flatMap((p) =>
+    p.inStation === null
+      ? []
+      : [{ north: p.inStation.position[0], east: p.inStation.position[2] }],
+  );
   for (const ring of RINGS_M) {
     const r = Math.min(ring, radius);
     for (let k = 0; k < PER_RING; k += 1) {
@@ -87,7 +93,9 @@ function freeGeo(input: NewItemInput): TourPin["geo"] {
 
 /** One more than how many items of `kind` the station holds. */
 function nextNumber(station: TourStation, kind: string): string {
-  return String(worldBlocks(station).filter((i) => i.kind === kind).length + 1);
+  return String(
+    tourFreeBlocks(station).filter((i) => i.kind === kind).length + 1,
+  );
 }
 
 /**
@@ -206,9 +214,9 @@ interface KindAddRow<K extends AddKind> {
 
 /** What each addable kind starts as, one row per kind: the editor half of
  *  the add line of its row in `kinds/edit-kinds.ts` (which may not hold
- *  these: it would then import this module, and through `tour-document`
- *  and `tour-content` itself again). Keyed by the addable kinds, in the
- *  add menu's order: a kind its row makes addable needs one. */
+ *  these: it would then import this editor module under every creator
+ *  page that reads the list). Keyed by the addable kinds, in the add
+ *  menu's order: a kind its row makes addable needs one. */
 export const KIND_ADD: { readonly [K in AddKind]: KindAddRow<K> } = {
   shortText: {
     item: newPin,
