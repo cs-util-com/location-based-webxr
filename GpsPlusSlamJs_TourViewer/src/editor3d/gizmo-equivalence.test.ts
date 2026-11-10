@@ -161,7 +161,9 @@ const POSED = Object.entries(BLOCK_PLACEMENT).flatMap(([kind, views]) =>
 
 // Swept: camera distances 5, 50 and 300 m (the editor's range) on a
 // phone's and a desktop's view height; headings 0, 37 and 270 degrees;
-// a model's size and a station's radius at their bounds and between.
+// a model's size, a picture's width and a station's radius at their
+// bounds and between. A picture's width dots are drawn as the frozen
+// layout drew a model's size: the same rule for every size extent.
 const DISTANCES = [5, 50, 300];
 const VIEWPORTS = [390, 900];
 const HEADINGS = [0, 37, 270];
@@ -171,7 +173,12 @@ describe("the gizmo through the placement rows against the frozen layout", () =>
     let compared = 0;
     for (const { kind, view, row } of POSED) {
       if (!row.turns) continue;
-      const sizes = kind === "model" ? [0.05, 2.4, 40, 500] : [1];
+      const sizes =
+        kind === "model"
+          ? [0.05, 2.4, 40, 500]
+          : kind === "picture"
+            ? [0.05, 1, 50]
+            : [1];
       for (const sizeM of sizes) {
         for (const headingDeg of HEADINGS) {
           const p = placeable(
@@ -185,7 +192,7 @@ describe("the gizmo through the placement rows against the frozen layout", () =>
             centre: CENTRE,
             headingDeg,
             radiusM: null,
-            sizeM: kind === "model" ? sizeM : null,
+            sizeM: row.extent?.kind === "size" ? sizeM : null,
           };
           for (const d of DISTANCES) {
             for (const px of VIEWPORTS) {
@@ -265,19 +272,19 @@ describe("the gizmo through the placement rows against the frozen layout", () =>
     }
   });
 
-  // Why: a picture's width has a row extent, but the session cannot
-  // write it yet; until it can, the picture's gizmo stays the old one -
-  // no dots that would drag to nothing.
-  it("withholds the dots the session cannot write yet (a picture's width)", () => {
+  // Why: a picture's width is written like a model's size (the session's
+  // `setExtent`), so its gizmo carries the dots of its row - the one
+  // place the new gizmo draws more than the frozen one did.
+  it("gives a picture the dots of its width", () => {
     const p = placeable(
       { kind: "block", id: "pic" },
       BLOCK_PLACEMENT.picture.plane,
       0,
       3,
     );
-    expect(p.extent).not.toBeNull();
-    expect(gestureTargetOf(p, CENTRE).extent).toBeNull();
-    expect(newLayout(p, mppAt(50, 900)).dots).toEqual([]);
+    expect(gestureTargetOf(p, CENTRE).extent).toEqual(p.extent);
+    expect(gestureTargetOf(p, CENTRE).extent?.field).toBe("widthM");
+    expect(newLayout(p, mppAt(50, 900)).dots).toHaveLength(4);
   });
 });
 

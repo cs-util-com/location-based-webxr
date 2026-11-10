@@ -673,6 +673,7 @@ describe("the keys on a locked station", () => {
       kind: "reach",
       field: "foundRadiusM",
       label: "Found radius",
+      meaning: "How near a visitor comes before it counts as found",
       min: 2,
       max: 300,
       value: 12,

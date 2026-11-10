@@ -28,7 +28,7 @@ function fakeSession(refuse = false) {
         ? { kind: "refused" as const, reason: "No." }
         : { kind: "edited" as const },
     ),
-    resizeModel: vi.fn(() =>
+    setExtent: vi.fn(() =>
       refuse
         ? { kind: "refused" as const, reason: "No." }
         : { kind: "resized" as const },
@@ -39,7 +39,7 @@ function fakeSession(refuse = false) {
 const asSession = (s: ReturnType<typeof fakeSession>) =>
   s as unknown as Pick<
     EditorSession,
-    "pose" | "moveStation" | "editStation" | "resizeModel"
+    "pose" | "moveStation" | "editStation" | "setExtent"
   >;
 
 describe("a placement edit", () => {
@@ -54,8 +54,8 @@ describe("a placement edit", () => {
     applyPlaceEdit(asSession(s), { kind: "extent", ref: STATION, value: 9 });
     expect(s.editStation).toHaveBeenCalledWith("st", { foundRadiusM: 9 });
     applyPlaceEdit(asSession(s), { kind: "extent", ref: MODEL, value: 2 });
-    expect(s.resizeModel).toHaveBeenCalledWith("m", 2);
-    for (const call of [s.pose, s.moveStation, s.editStation, s.resizeModel]) {
+    expect(s.setExtent).toHaveBeenCalledWith("m", 2);
+    for (const call of [s.pose, s.moveStation, s.editStation, s.setExtent]) {
       expect(call).toHaveBeenCalledTimes(1);
     }
   });

@@ -23,8 +23,9 @@ comes back with the words the page says.
   - a station's pose -> `editor.moveStation(id, geo)` (its blocks follow
     rigidly);
   - a station's extent -> `editor.editStation(id, { foundRadiusM })`;
-  - a block's extent -> `editor.resizeModel(id, value)` (the session
-    refuses a block that is no model).
+  - a block's extent -> `editor.setExtent(id, value)` (the session
+    refuses a block whose row has no size, or a value out of its row's
+    bounds).
 - Type `PlaceEditOutcome`.
 
 ## Invariants & assumptions

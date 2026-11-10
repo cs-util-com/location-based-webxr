@@ -74,6 +74,7 @@ import { worldEnv, type WorldEnv, type WorldPart } from "../world-part.js";
 import { pointRootMatrix, type GlobeEllipsoid } from "./editor3d-tour-root.js";
 import { NEAR_STATIONS, nearStations } from "./editor3d-visibility.js";
 import type { PlaceRef } from "../placement/placeables.js";
+import { drawAtExtent } from "../placement/place-scale.js";
 import { viewHeightAtOneM } from "./gizmo-maths.js";
 import { isInterfacePart } from "./globe-interface-pass.js";
 
@@ -203,8 +204,8 @@ export const BILLBOARD_LIFT_M = 4.6;
 const BILLBOARD_BASE_M = 0.6;
 
 /** What a drag shows: a placeable at another pose, its dots at another
- *  value (a station's found radius, a model's size; null: as the tour
- *  has it). */
+ *  value (a station's found radius, a model's size, a picture's width;
+ *  null: as the tour has it). */
 export interface LayerPreview {
   readonly ref: PlaceRef;
   readonly geo: QrGeoPose;
@@ -493,15 +494,6 @@ function modelIn(object: THREE.Object3D): THREE.Object3D | null {
     }
   });
   return found;
-}
-
-/** A part's model drawn at `sizeM` (null: its tour size), scaled from
- *  what was drawn. */
-function resizeModel(model: THREE.Object3D | null, sizeM: number | null): void {
-  const tourScale: unknown = model?.userData["tourScale"];
-  const tourSizeM: unknown = model?.userData["tourSizeM"];
-  if (typeof tourScale !== "number" || typeof tourSizeM !== "number") return;
-  model?.scale.setScalar(tourScale * ((sizeM ?? tourSizeM) / tourSizeM));
 }
 
 /** Whether `object` and every ancestor up to `top` is visible: a hidden
@@ -817,8 +809,9 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     return found;
   };
 
-  /** Put an item's drawing at `pose` in its station (a model at `sizeM`;
-   *  null: its tour size). */
+  /** Put an item's drawing at `pose` in its station, at the extent
+   *  `value` (a model's size, a picture's width; null: as the tour has
+   *  it), scaled from what was drawn (`placement/place-scale.ts`). */
   const poseDrawn = (
     entry: StationEntry,
     id: string,
@@ -826,7 +819,7 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       readonly position: readonly [number, number, number];
       readonly rotation: readonly [number, number, number, number];
     },
-    sizeM: number | null,
+    value: number | null,
   ) => {
     const turned = new THREE.Quaternion(...pose.rotation);
     for (const o of drawnOf(entry, id)) {
@@ -834,13 +827,14 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       const photo = entry.content?.photos.find((p) => p.mesh === o);
       if (photo !== undefined) {
         photo.upright.copy(turned);
+        drawAtExtent(o, value);
         continue;
       }
       if (partObjects.has(o)) {
         // As the renderer draws a part: the pose's rotation as it is; a
-        // model in it at the dragged size, scaled from what was drawn.
+        // model in it at the dragged size.
         o.quaternion.copy(turned);
-        resizeModel(modelIn(o), sizeM);
+        drawAtExtent(o, value);
         continue;
       }
       if (STANDS.has(o.name)) {

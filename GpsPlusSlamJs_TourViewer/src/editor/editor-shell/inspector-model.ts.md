@@ -57,7 +57,10 @@ view, advance, facingDeg }`) and `advance { mode, afterS }`;
     its kind in the one word every creator page uses and its station ("Pin in
     Market Square", "Photo in ...", "3D model in ...", `KIND_EDIT` label; the
     title by `objectTitle`), `stationId`, `text` (a pin's caption to edit; null for a
-    photo or a model), `sizeM` (a model's, else null), `fields` (its
+    photo or a model), `extent` (`InspectorExtent`: the size its white
+    dots change, as its placement row gives it - `field`, `label`,
+    `meaning`, the tour's `value`, `min`, `max`; a model's Size, a
+    picture's Width; null for an item with none), `fields` (its
     other text fields to type, `blockFields` of `../block-fields.ts`:
     a short text's description, a picture's title, caption and alt text,
     a model's title), `offset`
@@ -89,7 +92,8 @@ view, advance, facingDeg }`) and `advance { mode, afterS }`;
   both under 1e-9).
 - `inspectorHint(model | null)` - the bottom bar's hint: the handles the
   selection's gizmo has in the 3D view (a station: move, radius dot,
-  turn; an item: move and turn, a model also a size dot; a code: none,
+  turn; an item: move and turn, a size dot where it has an `extent` (a
+  model, a picture); a code: none,
   read-only), or how to select when nothing is (and that a right click
   on the ground starts a station).
 - `MODEL_VIEW_CHOICES` - the format's world views with their labels, in

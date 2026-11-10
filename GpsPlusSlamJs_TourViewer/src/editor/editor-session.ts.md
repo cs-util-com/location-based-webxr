@@ -224,8 +224,11 @@ never state). Design:
     - `groundItems([{ id, alt }])` - "Put on the ground": the altitudes the
       page measured, ONE step for all; refused whole for an unknown id or
       a height beyond an item's reach of its station (`HEIGHT_REFUSED`).
-    - `resizeModel(id, sizeM)` - a placed model's size, 0.05 m to 500 m
-      (`MODEL_SIZE`; `NOT_A_MODEL` for anything else).
+    - `setExtent(id, value)` - a block's size, the field its placement
+      row's `size` extent names (`../placement/placement-rows.ts`): a
+      placed model's `sizeM`, 0.05 m to 500 m, a picture's `widthM`,
+      0.05 m to 50 m; refused out of the row's bounds ("Its size must be
+      from ..."), and for a block whose row has no size (`NO_EXTENT`).
     - `pose(id, geo, { newStation?, joinStation? })` - an item at a whole
       pose (position, height, turn), keeping its station or changing to
       `joinStation`, refused like `move`; `newStation` ("Move to a new

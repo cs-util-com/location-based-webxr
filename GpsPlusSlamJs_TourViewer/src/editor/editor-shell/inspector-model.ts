@@ -61,6 +61,7 @@ import { readingSheetContent } from "../../reading-sign.js";
 import { stationTitle } from "../../station-run.js";
 import { ownedAssetIds } from "../../tour-document.js";
 import { posedEntries, posedEntryOf } from "../../placement/placeables.js";
+import type { ExtentSpec } from "../../placement/placement-rows.js";
 import {
   blockFields,
   storyBlockFields,
@@ -304,6 +305,41 @@ export const MODEL_VIEW_CHOICES: readonly {
   label: view.charAt(0).toUpperCase() + view.slice(1),
 }));
 
+/** The size of an item its white dots change, as its placement row
+ *  gives it (`placement/placement-rows.ts`). */
+export interface InspectorExtent {
+  /** The block's field it is (`sizeM`, `widthM`). */
+  readonly field: string;
+  /** Its name in the inspector ("Size", "Width"). */
+  readonly label: string;
+  /** What it is, in the creator's words ("Its largest side"). */
+  readonly meaning: string;
+  /** The tour's value (m). */
+  readonly value: number;
+  readonly min: number;
+  readonly max: number;
+}
+
+/** `item`'s size its row's `spec` names, with the tour's value; null for
+ *  no size extent (a station's reach, a folder's factor are not an
+ *  item's) or a block without the value. */
+function extentOf(
+  item: object,
+  spec: ExtentSpec | null,
+): InspectorExtent | null {
+  if (spec?.kind !== "size") return null;
+  const value: unknown = (item as Record<string, unknown>)[spec.field];
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return {
+    field: spec.field,
+    label: spec.label,
+    meaning: spec.meaning,
+    value,
+    min: spec.min,
+    max: spec.max,
+  };
+}
+
 /** A model's own parts as its inspector edits them. */
 export interface InspectorModelParts {
   readonly view: string;
@@ -379,8 +415,9 @@ interface ItemInspector {
   /** A pin's text, the field to edit; null for a photo or a model (their
    *  caption is not edited here). */
   readonly text: string | null;
-  /** A model's largest side (m); null for a pin or a photo. */
-  readonly sizeM: number | null;
+  /** The size its white dots change, to type (a model's largest side, a
+   *  picture's width); null for an item with none. */
+  readonly extent: InspectorExtent | null;
   /** Its other text fields to type, per kind (`block-fields.ts`, B2c): a
    *  short text's description, a picture's title, caption and alt text, a
    *  model's title. */
@@ -443,7 +480,7 @@ export function inspectorHint(model: InspectorModel | null): string {
       return `${model.title} - it has no place in the 3D view; Esc deselects`;
     }
     const turn = model.turns ? ", the round arrow to turn" : "";
-    const resize = model.itemKind === "model" ? ", a white dot to resize" : "";
+    const resize = model.extent !== null ? ", a white dot to resize" : "";
     return `${model.title} - drag the middle to move along the ground${turn}${resize}`;
   }
   if (model.kind === "story") {
@@ -822,7 +859,7 @@ export function buildInspector(input: {
       stationId: station.id,
       moves: movesOf(item.id, stations, input.selectedFileUnsaved === true),
       text: item.kind === "shortText" ? item.caption : null,
-      sizeM: item.kind === "model" ? (item.sizeM ?? null) : null,
+      extent: extentOf(item, place?.extent ?? null),
       fields: blockFields(item),
       model:
         item.kind === "model"

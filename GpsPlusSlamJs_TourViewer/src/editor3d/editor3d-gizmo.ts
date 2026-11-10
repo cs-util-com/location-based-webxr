@@ -1,7 +1,8 @@
 /**
  * The gizmo's drawing in the 3D view (the design's): a ring round an item
  * (a station's own circle is the tour's), four white dots on it for a
- * station's found radius or a model's size, a turn knob on a stalk along
+ * station's found radius, a model's size or a picture's width, a turn
+ * knob on a stalk along
  * the heading (only on what turns), and a move arrow lying on the ground
  * in the middle. One set
  * for the scene, placed on the selection each frame from its layout

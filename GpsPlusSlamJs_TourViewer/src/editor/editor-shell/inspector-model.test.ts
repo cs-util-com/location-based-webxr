@@ -557,7 +557,7 @@ describe("buildInspector", () => {
         stations: [{ id: "b", label: "Station 2" }],
       },
       text: "Fountain, 1612",
-      sizeM: null,
+      extent: null,
       // Only a model has notes, sections and a view.
       model: null,
       // Only a free long text has the writer.
@@ -584,7 +584,14 @@ describe("buildInspector", () => {
       itemKind: "model",
       title: "3D model",
       sub: "3D model in Market Square",
-      sizeM: 2.4,
+      extent: {
+        field: "sizeM",
+        label: "Size",
+        meaning: "Its largest side",
+        value: 2.4,
+        min: 0.05,
+        max: 500,
+      },
       fields: [{ name: "title", label: "Title", max: 80, prose: false }],
       headingDeg: 90,
       turns: true,
@@ -656,6 +663,34 @@ describe("inspectorHint", () => {
     expect(inspectorHint(inspect("model-1"))).toBe(
       "3D model - drag the middle to move along the ground, the round arrow to turn, a white dot to resize",
     );
+    // A picture's width has dots as a model's size does, and is typed
+    // under its row's name.
+    const photo = buildInspector({
+      selected: "photo-1",
+      stations: [
+        {
+          ...STATIONS[0]!,
+          ...stationContent([
+            {
+              id: "photo-1",
+              kind: "picture",
+              view: "plane",
+              image: "photo-1",
+              widthM: 1.5,
+              createdAtIso: AT,
+              pose: { position: [1, 1, 0], rotation: [0, 0, 0, 1] },
+            },
+          ]),
+        },
+      ],
+      assets: [],
+      codes: CODES,
+      unlockedStations: [],
+    });
+    expect(photo).toMatchObject({
+      extent: { field: "widthM", label: "Width", value: 1.5, max: 50 },
+    });
+    expect(inspectorHint(photo)).toMatch(/, a white dot to resize$/);
     expect(inspectorHint(inspect("level-1"))).toBe(
       "Code 1 - read-only here; F frames it, Esc deselects",
     );

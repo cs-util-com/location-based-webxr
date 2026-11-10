@@ -229,15 +229,25 @@ describe("the editor session's station edits", () => {
     expect(editor.editStation("nope", { title: "x" })).toMatchObject({
       kind: "refused",
     });
-    expect(editor.resizeModel("a", 3)).toMatchObject({ kind: "refused" });
-    expect(editor.resizeModel("m", 500.01)).toMatchObject({
+    expect(editor.setExtent("a", 3)).toMatchObject({ kind: "refused" });
+    expect(editor.setExtent("m", 500.01)).toMatchObject({
       kind: "refused",
     });
-    expect(editor.resizeModel("m", 0.05)).toEqual({ kind: "resized" });
+    expect(editor.setExtent("m", 0.05)).toEqual({ kind: "resized" });
     expect(editor.changeCount()).toBe(2);
     expect(editor.undo()).toMatchObject({ kind: "undone" });
     expect(editor.undo()).toMatchObject({ kind: "undone" });
     expect(editor.changeCount()).toBe(0);
+    // A picture's width, by the same call and its own row's bounds.
+    const wide = editor.setExtent("f", 50.01);
+    expect(wide).toMatchObject({ kind: "refused" });
+    expect(wide.kind === "refused" ? wide.reason : "").toBe(
+      "Its width must be from 0.05 m to 50 m.",
+    );
+    expect(editor.setExtent("f", 1)).toEqual({ kind: "unchanged" });
+    expect(editor.setExtent("f", 3)).toEqual({ kind: "resized" });
+    expect(editor.changeCount()).toBe(1);
+    expect(editor.undo()).toMatchObject({ kind: "undone" });
     await session.close();
   });
 

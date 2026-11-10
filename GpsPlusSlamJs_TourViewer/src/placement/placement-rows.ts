@@ -42,6 +42,8 @@ export interface ExtentSpec {
   readonly field: string;
   /** Its name in the inspector. */
   readonly label: string;
+  /** What the value is, in the creator's words (the inspector's note). */
+  readonly meaning: string;
   readonly min: number;
   readonly max: number;
 }
@@ -77,6 +79,7 @@ const MODEL: ViewPlacement = {
     kind: "size",
     field: "sizeM",
     label: "Size",
+    meaning: "Its largest side",
     min: TOUR_MODEL_MIN_SIZE_M,
     max: TOUR_MODEL_MAX_SIZE_M,
   },
@@ -97,6 +100,7 @@ export const BLOCK_PLACEMENT = {
         kind: "size",
         field: "widthM",
         label: "Width",
+        meaning: "Its width",
         min: TOUR_PICTURE_MIN_WIDTH_M,
         max: TOUR_PICTURE_MAX_WIDTH_M,
       },
@@ -134,7 +138,14 @@ export const CONTAINER_PLACEMENT: ViewPlacement = {
   posed: true,
   turns: true,
   lifts: true,
-  extent: { kind: "factor", field: "scale", label: "Scale", min: 0.1, max: 10 },
+  extent: {
+    kind: "factor",
+    field: "scale",
+    label: "Scale",
+    meaning: "How much larger it draws its items, and their distances",
+    min: 0.1,
+    max: 10,
+  },
 };
 
 /** A station: its frame is the earth, its height the ground's, and its
@@ -147,6 +158,7 @@ export const STATION_PLACEMENT: ViewPlacement = {
     kind: "reach",
     field: "foundRadiusM",
     label: "Found radius",
+    meaning: "How near a visitor comes before it counts as found",
     min: 2,
     max: 300,
   },

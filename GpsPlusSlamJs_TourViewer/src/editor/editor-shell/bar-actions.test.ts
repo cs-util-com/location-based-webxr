@@ -38,7 +38,7 @@ const item: InspectorModel = {
   sub: "Pin in Gate",
   stationId: "gate",
   text: "Hello",
-  sizeM: null,
+  extent: null,
   fields: [],
   model: null,
   longText: null,

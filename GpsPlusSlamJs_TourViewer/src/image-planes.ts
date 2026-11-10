@@ -17,6 +17,8 @@ import {
   type Texture,
 } from "three";
 
+import { markPlaceScale } from "./placement/place-scale.js";
+
 export interface PlacedImagePlanes {
   count: number;
   /** Remove from the scene and free geometry/material/texture. */
@@ -72,6 +74,8 @@ export function placeCapturedImagePlanes(options: {
     );
     const widthM = pose.widthM ?? DEFAULT_WIDTH_M;
     mesh.scale.set(widthM, widthM / aspect, 1);
+    // A drag's preview of another width scales from this.
+    markPlaceScale(mesh, widthM);
     mesh.position.set(
       pose.positionNue[0],
       pose.positionNue[1],

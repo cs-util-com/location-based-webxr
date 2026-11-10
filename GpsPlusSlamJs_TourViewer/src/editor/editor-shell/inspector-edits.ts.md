@@ -50,7 +50,9 @@ id, title }`. A story's block selected: its texts and a character's facing
   - A `heading`, of a station or an item: `{ kind: "turn", selection, deg
 }`, the short way round from the heading it has now (the page turns it
     as the 3D view's turn does).
-  - A model's `size`: an extent scene edit.
+  - A `size` (a model's largest side, a picture's width: the size extent
+    its placement row gives it): an extent scene edit; none for an item
+    whose row has no size.
   - A value equal to the tour's, a field the selection has not, a code,
     or a selection the tour lacks: `{ kind: "none" }`.
   - A number field with no number in it (blank, "ten"): `{ kind:

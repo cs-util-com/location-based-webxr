@@ -38,9 +38,8 @@ dots, and the dots' bounds, are its placement row's
   cancel out, or changed nothing).
 - `poseLocked(target)`: the target's `locked`.
 - `gestureTargetOf(placeable, centre)` -> `GestureTarget`: a placeable
-  as a gesture reads it. Of the dots, only those the session can write
-  are kept: a station's reach and a model's size (a picture's width is
-  withheld until an extent of any kind can be written).
+  as a gesture reads it, with every dot its row gives (a station's reach,
+  a model's size, a picture's width).
 - `gizmoSubjectOf(target, now, centre)` -> `GizmoSubject`: what the
   gizmo is drawn for, the target as a preview (or its rest) shows it.
 - Types `GroundUnder` (a point, or a miss: `not-loaded`, `below-start`,

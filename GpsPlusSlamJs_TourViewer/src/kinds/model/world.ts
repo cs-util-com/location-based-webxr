@@ -17,6 +17,7 @@ import { disposeObject3D } from "gps-plus-slam-app-framework/visualization/three
 import { Group, type Object3D } from "three";
 
 import { modelScale } from "../../model-scale.js";
+import { markPlaceScale } from "../../placement/place-scale.js";
 import {
   mountModelView,
   type ModelViewHandle,
@@ -30,8 +31,10 @@ const WORLD_VIEWS: ReadonlySet<string> = new Set(TOUR_MODEL_WORLD_VIEWS);
  * `block`'s part: null in a view that stands nothing in the station (the
  * card, the story's stage) or with no size to scale by. Its `ready`
  * settles once the model stands, and rejects when its file cannot be
- * read. The model carries `tourScale` and `tourSizeM` in its `userData`,
- * so a page resizing it for a preview scales from what was drawn. In
+ * read. The model carries `tourScale` in its `userData` (the editor finds
+ * its models by it) and the place-scale mark of its size
+ * (`placement/place-scale.ts`), so a page resizing it for a preview
+ * scales from what was drawn. In
  * `edit` the model stands plain, at its tour size, with no view mounted.
  */
 export function modelWorld(
@@ -64,7 +67,7 @@ export function modelWorld(
     // The scale the view left (a toy starts smaller): a preview of
     // another size scales from what is drawn.
     loaded.userData["tourScale"] = loaded.scale.x;
-    loaded.userData["tourSizeM"] = sizeM;
+    markPlaceScale(loaded, sizeM);
     object.add(loaded);
   });
   return {

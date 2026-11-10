@@ -235,8 +235,10 @@ printed size, focalPxOf(view))` times its printed size: `CODE_SCREEN_PX`
   placed model is the model row's part (`kinds/model/world.ts`) built in
   `edit` (the plain model, no view mounted: the layer drives no view's
   frame and no clipping), its file parsed by `loadGlbModel` and scaled to
-  its size by `modelScale`; a preview of another size
-  scales the model in the part from its `tourScale`. A model whose file
+  its size by `modelScale`; a preview of another size scales the model
+  in the part, and a preview of another width a picture's plane, from
+  the scale each was drawn at (`../placement/place-scale.ts`
+  `drawAtExtent`). A model whose file
   cannot be read, or one without a size, is left out. A free model in the
   `card` view is drawn here no more than the visitor's station draws it
   (the card is a panel), and its file is not read. The page must give

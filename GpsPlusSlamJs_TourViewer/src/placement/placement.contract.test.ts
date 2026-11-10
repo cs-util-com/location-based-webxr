@@ -187,6 +187,7 @@ describe("the placement rows against the format", () => {
         kind: "factor",
         field: "scale",
         label: "Scale",
+        meaning: "How much larger it draws its items, and their distances",
         min: 0.1,
         max: 10,
       },

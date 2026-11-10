@@ -453,8 +453,12 @@ geo?, what })` - a copy inserted after the original (any station the
     reorder (the tree, `folder-commands.ts`). `folderMoved` (the gizmo)
     and `folderDeleted` (a folder's delete with its confirmation) have
     none yet.
-  - `modelResized({ id, sizeM, what })` - a placed model's size, within
-    `TOUR_MODEL_MIN_SIZE_M`..`TOUR_MODEL_MAX_SIZE_M` (0.05 m to 500 m).
+  - `blockNumberSet({ id, field, value, what })` - a block's size: the
+    field its placement row's `size` extent names
+    (`placement/placement-rows.ts`), a placed model's `sizeM` (0.05 m to
+    500 m) or a picture's `widthM` (0.05 m to 50 m), within the row's
+    bounds; any other field, a block whose row has no size, an unknown id
+    or a value out of bounds changes nothing.
   - `moved` with `newStation: true` - "Move to a new station": the item
     starts a station of its own where it stands, even within its own
     station's radius.

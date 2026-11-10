@@ -40,7 +40,7 @@ function item(over: Partial<PanelItem> = {}): PanelItem {
     sub: "3D model in Gate",
     stationId: "s",
     text: null,
-    sizeM: 2,
+    extent: null,
     fields: [],
     model: PARTS,
     longText: null,
@@ -55,7 +55,6 @@ function item(over: Partial<PanelItem> = {}): PanelItem {
 const LONG = item({
   itemKind: "longText",
   title: "The gate",
-  sizeM: null,
   model: null,
   longText: {
     blockId: "t",
@@ -72,7 +71,6 @@ const LONG = item({
 const PIN = item({
   itemKind: "shortText",
   text: "Hi",
-  sizeM: null,
   model: null,
 });
 
@@ -140,7 +138,8 @@ describe("createKindPanels", () => {
     expect(panels.sync(PIN)).toEqual({ title: "short" });
   });
 
-  it("draws a model's size, view, clip, notes and sections as its parts", () => {
+  // The size is the item's, drawn by the shell for any item with one.
+  it("draws a model's view, clip, notes and sections as its parts", () => {
     const draw = createKindPanels(context().ctx).sync(item());
     expect(draw).not.toBeNull();
     expect(draw?.kept).toBeNull();
@@ -148,7 +147,6 @@ describe("createKindPanels", () => {
     expect(draw?.title()).toBeNull();
     expect(draw?.head()).toEqual([]);
     expect(draw?.parts().map((p) => p.className)).toEqual([
-      "isec",
       "isec mview",
       "isec manim",
       "isec mnotes",

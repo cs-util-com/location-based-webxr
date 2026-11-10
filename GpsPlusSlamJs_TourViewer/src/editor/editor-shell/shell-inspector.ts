@@ -55,6 +55,7 @@ import {
   CHARACTER_VIEW_CHOICES,
   ON_GROUND_M,
   type InspectorCharacter,
+  type InspectorExtent,
   type InspectorModel,
   type InspectorPosition,
 } from "./inspector-model.js";
@@ -764,6 +765,20 @@ function itemDelete(model: ItemModel): HTMLButtonElement {
   });
 }
 
+/** The size an item's white dots change, to type, with what it means. */
+function extentParts(extent: InspectorExtent): HTMLElement {
+  const section = el("div", "isec");
+  section.append(
+    numberField(extent.label, "size", fixed(extent.value, 2), "m"),
+    el(
+      "div",
+      "note",
+      `${extent.meaning}, from ${String(extent.min)} m to ${String(extent.max)} m. Drag a white dot to resize.`,
+    ),
+  );
+  return section;
+}
+
 /** An item's parts: its commands, its fields (unless its kind's panel
  *  types them itself), its panel's parts, its position. An item with no
  *  place in the world (a video) has its texts, its panel's parts and its
@@ -805,6 +820,7 @@ function itemParts(
     section.append(...fields.flatMap(blockTextField));
     parts.push(section);
   }
+  if (model.extent !== null) parts.push(extentParts(model.extent));
   if (panel !== null) parts.push(...panel.parts());
   const heading = model.headingDeg === null ? "-" : fixed(model.headingDeg, 0);
   parts.push(

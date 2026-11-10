@@ -92,7 +92,7 @@ describe("modelWorld", () => {
     // Its largest side (2 m) made 3 m: the factor 1.5, the shared rule.
     expect(mesh.scale.x).toBeCloseTo(1.5, 12);
     expect(mesh.userData["tourScale"]).toBeCloseTo(1.5, 12);
-    expect(mesh.userData["tourSizeM"]).toBe(3);
+    expect(mesh.userData["placeExtent"]).toBe(3);
     const view = mountedModelViews().find((h) => h.model === mesh);
     expect(view?.view).toBe("placed");
     part!.dispose();
@@ -245,7 +245,7 @@ describe("modelWorld", () => {
     // Its 2 m side made 100 m is a factor 50; the toy starts at 50 m.
     expect(mesh.scale.x).toBeCloseTo(25, 9);
     expect(mesh.userData["tourScale"]).toBe(mesh.scale.x);
-    expect(mesh.userData["tourSizeM"]).toBe(100);
+    expect(mesh.userData["placeExtent"]).toBe(100);
     part!.dispose();
   });
 

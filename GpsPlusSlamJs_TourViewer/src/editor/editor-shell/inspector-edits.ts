@@ -326,15 +326,17 @@ function itemEdit(
     return { kind: "block", id: item.id, field, value };
   }
   const axis = AXIS[field];
-  const known =
-    axis !== undefined ||
-    field === "heading" ||
-    (field === "size" && item.kind === "model");
+  const extent = field === "size" ? entry.place.extent : null;
+  const sized = extent !== null && extent.kind === "size";
+  const known = axis !== undefined || field === "heading" || sized;
   if (!known) return NONE;
   const typed = typedNumber(value);
   if (typed === null) return { kind: "invalid", reason: NOT_A_NUMBER };
-  if (field === "size" && item.kind === "model") {
-    return Math.abs(typed - (item.sizeM ?? Number.NaN)) < SAME
+  if (sized) {
+    const now: unknown = (item as unknown as Record<string, unknown>)[
+      extent.field
+    ];
+    return typeof now === "number" && Math.abs(typed - now) < SAME
       ? NONE
       : {
           kind: "scene",

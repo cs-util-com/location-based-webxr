@@ -108,8 +108,10 @@ content` (Chromium, the editor's browser; elsewhere it stays three
     Position.
   - An item standing in the world (a pin, a picture, a model, a long
     text, a sound, a free character): what it is and its station (a
-    pin's text to type in the head, "Pin text"), its commands, a model's
-    Size to type, and under "Position" its Offset east and north, Height
+    pin's text to type in the head, "Pin text"), its commands, the size
+    its white dots change to type (a model's Size, a picture's Width,
+    `data-field` `size`, with what it means and its bounds), and under
+    "Position" its Offset east and north, Height
     (up from the anchor) and Heading to type, in its station's frame (its
     folders composed in).
   - Typed fields carry `data-field` (`title`, `description`,
@@ -170,7 +172,7 @@ content` (Chromium, the editor's browser; elsewhere it stays three
   never rebuilds it; it stays in the page across draws), and its
   `parts()` after the item's fields, before Position; with `ownsFields`
   the item's fields are not drawn. Its `key` is part of what a draw is
-  compared by. A model's size, view, clip, notes and sections are its
+  compared by. A model's view, clip, notes and sections are its
   panel's (`model-panel.ts.md`), a long text's title, Preview and Wider
   its (`long-text-panel.ts.md`); without its panel an item shows none of
   them.

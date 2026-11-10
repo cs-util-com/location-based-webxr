@@ -41,8 +41,6 @@ import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-item
 import {
   TOUR_NARRATION_MAX_DURATION_MS,
   TOUR_FREE_BLOCK_VIEWS,
-  TOUR_MODEL_MAX_SIZE_M,
-  TOUR_MODEL_MIN_SIZE_M,
 } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import {
   TOUR_DESCRIPTION_MAX_CHARS,
@@ -148,6 +146,10 @@ import {
 import { newStory, withoutStoryChild } from "../tour-story-edit.js";
 import { folderRefusalLine } from "../tour-folder-edit.js";
 import { newStoryEntry } from "./new-pin.js";
+import {
+  blockPlacement,
+  type ExtentSpec,
+} from "../placement/placement-rows.js";
 
 /** One of the tour's objects as it stands, with this page's entry. */
 type AuthoringObject = ReturnType<typeof documentObjects>[number];
@@ -547,8 +549,8 @@ export type NarrationChange =
   /** The read-along entry's new text (a `TourTiming`, compact JSON). */
   | { readonly kind: "timing"; readonly text: string };
 
-/** Said for a size given to anything but a model. */
-const NOT_A_MODEL = "Only a 3D model has a size.";
+/** Said for a size given to a block whose row has none. */
+const NO_EXTENT = "This item has no size to set.";
 const NOT_A_MODEL_EDIT = "Only a 3D model has notes, sections and views.";
 
 /** Said for a view a block's kind does not have. */
@@ -556,8 +558,10 @@ const NOT_ITS_VIEW = "This block cannot be shown that way.";
 /** Said when a model's view is asked of the block path. */
 const MODEL_VIEW_ELSEWHERE = "A 3D model's view is set in its own fields.";
 
-/** Said for a model size out of bounds. */
-const MODEL_SIZE = `A model's size must be from ${String(TOUR_MODEL_MIN_SIZE_M)} m to ${String(TOUR_MODEL_MAX_SIZE_M)} m.`;
+/** Said for a size out of its row's bounds. */
+function extentRange(spec: ExtentSpec): string {
+  return `Its ${spec.label.toLowerCase()} must be from ${String(spec.min)} m to ${String(spec.max)} m.`;
+}
 
 /** Said when a photo's picture cannot be read for its copy. */
 const PICTURE_UNREAD =
@@ -814,10 +818,13 @@ export interface EditorSession {
     | { kind: "edited" | "unchanged"; readonly notBackedUp?: true }
     | EditorRefusal
   >;
-  /** Set a model's size (its largest side, 0.05 m to 500 m): one step. */
-  resizeModel(
+  /** Set a block's size, the number its placement row's dots change (a
+   *  model's largest side, 0.05 m to 500 m; a picture's width, 0.05 m to
+   *  50 m): one step. Refused for a block whose row has no size, or a
+   *  value out of the row's bounds. */
+  setExtent(
     id: string,
-    sizeM: number,
+    value: number,
   ): { kind: "resized" | "unchanged" } | EditorRefusal;
   /** Put an item at a whole pose (position, height and turn): it keeps
    *  its station, or changes to `joinStation`; `newStation` starts a
@@ -2290,23 +2297,28 @@ export function createEditorSession(input: {
       }
       return change.kind === "timing" ? { kind: "unchanged" } : notApplied;
     },
-    resizeModel(id, sizeM) {
+    setExtent(id, value) {
       const found = find(id);
       if (found === undefined) return notInTour;
       const object = found.object;
-      if (object.kind !== "model") {
-        return { kind: "refused", reason: NOT_A_MODEL };
+      const spec = blockPlacement(object.kind, object.view)?.extent;
+      if (spec === undefined || spec.kind !== "size") {
+        return { kind: "refused", reason: NO_EXTENT };
       }
-      if (!(sizeM >= TOUR_MODEL_MIN_SIZE_M && sizeM <= TOUR_MODEL_MAX_SIZE_M)) {
-        return { kind: "refused", reason: MODEL_SIZE };
+      if (!(value >= spec.min && value <= spec.max)) {
+        return { kind: "refused", reason: extentRange(spec) };
       }
-      if (object.sizeM === sizeM) return { kind: "unchanged" };
+      const held: unknown = (object as unknown as Record<string, unknown>)[
+        spec.field
+      ];
+      if (held === value) return { kind: "unchanged" };
       return took(() =>
         store.dispatch(
-          tourDocumentActions.modelResized({
+          tourDocumentActions.blockNumberSet({
             id,
-            sizeM,
-            what: `the size of ${objectName(object)}`,
+            field: spec.field,
+            value,
+            what: `the ${spec.label.toLowerCase()} of ${objectName(object)}`,
           }),
         ),
       )

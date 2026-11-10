@@ -62,8 +62,6 @@ import {
   checkTourBlockText,
   TOUR_BLOCK_TEXT_RULES,
   TOUR_BLOCK_VIEWS,
-  TOUR_MODEL_MAX_SIZE_M,
-  TOUR_MODEL_MIN_SIZE_M,
   tourTextCount,
   type TourBlock,
   type TourNarration,
@@ -112,6 +110,7 @@ import {
   type TourCode,
 } from "./code-book.js";
 import { newObjectId } from "./content-placement.js";
+import { blockPlacement } from "./placement/placement-rows.js";
 import { finishedManifest, pendingAfterRebuild } from "./finish-rebuild.js";
 import { stationHolding, type StationPoint } from "./station-assign.js";
 import {
@@ -3993,23 +3992,30 @@ function folderDelete(
   );
 }
 
-/** A model's size set (`modelResized`). */
-function modelResize(
+/** A block's size set (`blockNumberSet`): the field its placement row's
+ *  `size` extent names, within the row's bounds. */
+function numberSet(
   before: TourDocumentState,
-  payload: { id: string; sizeM: number; what: string },
+  payload: { id: string; field: string; value: number; what: string },
 ): TourDocumentState {
-  const { sizeM } = payload;
+  const { field, value } = payload;
   const object = documentObjects(before).find(
     (o) => o.object.id === payload.id,
   )?.object;
+  const spec =
+    object === undefined
+      ? undefined
+      : blockPlacement(object.kind, object.view)?.extent;
   if (
-    object?.kind !== "model" ||
-    !(sizeM >= TOUR_MODEL_MIN_SIZE_M && sizeM <= TOUR_MODEL_MAX_SIZE_M) ||
-    object.sizeM === sizeM
+    object === undefined ||
+    spec?.kind !== "size" ||
+    spec.field !== field ||
+    !(value >= spec.min && value <= spec.max) ||
+    (object as unknown as Record<string, unknown>)[field] === value
   ) {
     return before;
   }
-  return putObject(before, { ...object, sizeM }, payload.what);
+  return putObject(before, { ...object, [field]: value }, payload.what);
 }
 
 /** What a settle hands the document (`settleApplied`). */
@@ -4440,13 +4446,20 @@ const tourDocumentSlice = createSlice({
     ) {
       return itemsGround(plain(state), action.payload);
     },
-    /** A model's size (its largest side) set, from 0.05 m to 500 m: one
-     *  step. Not for another kind, an unknown id, or a size out of bounds. */
-    modelResized(
+    /** A block's size set - the field its placement row's `size` extent
+     *  names (a model's largest side, 0.05 m to 500 m; a picture's width,
+     *  0.05 m to 50 m): one step. Not for another field, a block whose row
+     *  has no size, an unknown id, or a value out of the row's bounds. */
+    blockNumberSet(
       state,
-      action: PayloadAction<{ id: string; sizeM: number; what: string }>,
+      action: PayloadAction<{
+        id: string;
+        field: string;
+        value: number;
+        what: string;
+      }>,
     ) {
-      return modelResize(plain(state), action.payload);
+      return numberSet(plain(state), action.payload);
     },
     /** A settle (plan M3b, Q-D): its station and object moves in its own
      *  order and the codes it re-minted, as ONE step - its undo takes them
@@ -5098,7 +5111,7 @@ export const isDocumentEdit = isAnyOf(
   tourDocumentActions.stationDuplicated,
   tourDocumentActions.objectDuplicated,
   tourDocumentActions.itemsGrounded,
-  tourDocumentActions.modelResized,
+  tourDocumentActions.blockNumberSet,
   tourDocumentActions.settleApplied,
   tourDocumentActions.narrationEdited,
   tourDocumentActions.folderMoved,

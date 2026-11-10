@@ -1377,6 +1377,36 @@ describe("createStationsLayer", () => {
     layer.dispose();
   });
 
+  // Why: a picture's width dots preview like a model's size - the plane
+  // drawn at the dragged width, its aspect kept - and the plane comes
+  // back to the tour's width when the drag is cleared.
+  it("draws a picture at a dragged width, and back when cleared", async () => {
+    const { d } = deps();
+    const layer = createStationsLayer(d);
+    const a = station("a", 0, 0, [photo("p")]);
+    layer.setTour(manifest([a], []), new Map());
+    layer.update(view(0, 0, "a"));
+    await settle();
+    const plane = layer.photoPlanes("a")[0]!;
+    const drawn = plane.scale.toArray();
+    expect(drawn[0]).toBeCloseTo(1, 9);
+    layer.setPreview({
+      ref: { kind: "block", id: "p" },
+      geo: itemGeoPose(
+        { position: [1, 1.5, 0], rotation: [0, 0, 0, 1] },
+        a.geo,
+      ),
+      value: 3,
+    });
+    layer.update(view(0, 0, "a", 1));
+    expect(plane.scale.x).toBeCloseTo(3, 9);
+    expect(plane.scale.y / plane.scale.x).toBeCloseTo(drawn[1] / drawn[0], 9);
+    layer.setPreview(null);
+    layer.update(view(0, 0, "a", 1));
+    expect(plane.scale.toArray()).toEqual(drawn);
+    layer.dispose();
+  });
+
   // Why: a free long text stands in the world on its reading stand
   // (format minor 3). The 3D editor drew none, so the creator could
   // neither see nor click it. Drawn by the page's builder, it keeps its

@@ -9,7 +9,8 @@
  *   `joinStation` answers otherwise);
  * - a station's pose through `moveStation` (its blocks follow rigidly);
  * - a station's dots (its found radius) through `editStation`;
- * - a block's dots (a model's size) through `resizeModel`.
+ * - a block's dots (a model's size, a picture's width) through
+ *   `setExtent`.
  *
  * A refusal comes back with its words for the page to say.
  *
@@ -32,7 +33,7 @@ export type PlaceEdit =
 /** The session calls a placement edit uses. */
 type PlaceEditSession = Pick<
   EditorSession,
-  "pose" | "moveStation" | "editStation" | "resizeModel"
+  "pose" | "moveStation" | "editStation" | "setExtent"
 >;
 
 /** Applied, or refused with the reason the creator reads. */
@@ -59,7 +60,7 @@ export function applyPlaceEdit(
           )
       : ref.kind === "station"
         ? editor.editStation(ref.id, { foundRadiusM: edit.value })
-        : editor.resizeModel(ref.id, edit.value);
+        : editor.setExtent(ref.id, edit.value);
   return outcome.kind === "refused"
     ? { kind: "refused", reason: outcome.reason }
     : { kind: "applied" };

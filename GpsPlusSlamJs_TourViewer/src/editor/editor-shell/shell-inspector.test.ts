@@ -38,7 +38,7 @@ const NO_PLACE = {
   sub: "Video in The old gate",
   stationId: "gate",
   text: null,
-  sizeM: null,
+  extent: null,
   model: null,
   longText: null,
   offset: null,
@@ -720,6 +720,8 @@ describe("drawInspector", () => {
       ["Title", ""],
       ["Caption", ""],
       ["Alt text", ""],
+      // Its width, the size its white dots change.
+      ["Width", "1.00 m"],
       ["Offset east", "-2.00 m"],
       ["Offset north", "4.00 m"],
       ["Height", "1.50 m"],

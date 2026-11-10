@@ -338,6 +338,8 @@ describe("inspectorEdit", () => {
       edit: { kind: "extent", ref: { kind: "block", id: "model-1" }, value: 3 },
     });
     expect(edit("pin-1", "size", "3")).toEqual({ kind: "none" });
+    // The tour's size again is no edit.
+    expect(edit("model-1", "size", "2.4")).toEqual({ kind: "none" });
   });
 
   it("says a value that is no number in words, and does nothing for an unchanged one", () => {

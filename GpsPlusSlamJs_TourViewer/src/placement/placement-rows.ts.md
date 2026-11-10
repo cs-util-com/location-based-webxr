@@ -25,7 +25,9 @@ view would be the first such kind).
 
 ## Public API
 
-- `ExtentSpec` - `{ kind: "size" | "reach" | "factor", field, label, min, max }`.
+- `ExtentSpec` - `{ kind: "size" | "reach" | "factor", field, label, meaning, min, max }`
+  (`meaning`: what the value is in the creator's words, the inspector's
+  note under a size field).
   `min` and `max` are inclusive; metres for `size` and `reach`, a ratio for
   `factor`.
 - `ViewPlacement` - `{ posed, turns, lifts, extent? }`.

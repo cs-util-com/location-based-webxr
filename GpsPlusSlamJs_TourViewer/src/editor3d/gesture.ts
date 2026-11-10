@@ -120,22 +120,17 @@ function sameGeo(a: QrGeoPose, b: QrGeoPose): boolean {
 }
 
 /** `p` as a gesture's target, its gizmo at `centre` (the ground under
- *  a block, a station's own point). Of the dots, the session writes a
- *  station's reach and a model's size; any other (a picture's width) is
- *  withheld until an extent of any kind can be written. */
+ *  a block, a station's own point), with every dot its row gives. */
 export function gestureTargetOf(
   p: Placeable,
   centre: WorldPoint,
 ): GestureTarget {
-  const writable =
-    p.extent !== null &&
-    (p.ref.kind === "station" || p.extent.field === "sizeM");
   return {
     ref: p.ref,
     geo: p.geo,
     turns: p.turns,
     lifts: p.lifts,
-    extent: writable ? p.extent : null,
+    extent: p.extent,
     locked: p.locked,
     centre,
   };

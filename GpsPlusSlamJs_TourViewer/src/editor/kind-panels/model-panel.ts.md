@@ -2,7 +2,7 @@
 
 ## Purpose
 
-A 3D model's panel in the item inspector. It draws the Size section, the view chips, the clip, the notes and the sections from the inspector's model parts, and answers their buttons as model edits or as the 3D view's wait and focus.
+A 3D model's panel in the item inspector. It draws the view chips, the clip, the notes and the sections from the inspector's model parts, and answers their buttons as model edits or as the 3D view's wait and focus. Its Size is the item's size field, drawn by the shell for every item with one (`../editor-shell/shell-inspector.ts`).
 
 ## Public API
 
@@ -11,9 +11,9 @@ A 3D model's panel in the item inspector. It draws the Size section, the view ch
   - `pickAsked(pick | null)`.
   - `focused(focus | null)`.
 - `createModelPanel(deps): KindPanel`:
-  - `sync` returns null unless the item has model parts. The draw has no kept node, no title, no head buttons and `ownsFields` false. Its parts are Size (when the item has a size), then `.mview`, `.manim`, `.mnotes`, `.msections`.
+  - `sync` returns null unless the item has model parts. The draw has no kept node, no title, no head buttons and `ownsFields` false. Its parts are `.mview`, `.manim`, `.mnotes`, `.msections`.
   - `act` handles `view:<v>`, `anim-autoplay`, `note:<i>`, `section:<i>`, `note-add`, `section-add`, `note-place:<i>`, `section-place:<i>`, `note-delete:<i>`, `section-delete:<i>` and `section-flip:<i>`. For any other act it returns false.
-  - `flush` does nothing: its fields (`size`, `anim-name`, `note-title:<i>`, `note-text:<i>`, `section-name:<i>`) are committed by the shell through `inspector-edits.ts`.
+  - `flush` does nothing: its fields (`anim-name`, `note-title:<i>`, `note-text:<i>`, `section-name:<i>`) are committed by the shell through `inspector-edits.ts`.
 
 ## Invariants & assumptions
 
