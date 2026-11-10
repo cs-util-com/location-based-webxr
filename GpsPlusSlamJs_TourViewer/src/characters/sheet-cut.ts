@@ -8,6 +8,8 @@
  * @see sheet-cut.ts.md
  */
 
+import { lowerMedian } from "gps-plus-slam-app-framework/utils/median";
+
 import type { CutSettings } from "./cut-settings.js";
 import type { RgbaImage } from "./rgba-image.js";
 
@@ -55,11 +57,6 @@ export interface Cut {
   readonly bg?: readonly [number, number, number];
   /** Separate figure specks the island filter turned into background. */
   readonly specks: number;
-}
-
-function median(values: readonly number[]): number {
-  const a = [...values].sort((x, y) => x - y);
-  return a.length > 0 ? a[a.length >> 1]! : 0;
 }
 
 /** Share of every seventh pixel that is not opaque: over 1 % means the
@@ -156,7 +153,7 @@ function checkFlatBorder(
   }
   const lum = (i: number): number =>
     0.3 * d[i * 4]! + 0.59 * d[i * 4 + 1]! + 0.11 * d[i * 4 + 2]!;
-  const otherLum = median(others.map(lum));
+  const otherLum = lowerMedian(others.map(lum));
   const bgLum = 0.3 * bg[0] + 0.59 * bg[1] + 0.11 * bg[2];
   if (others.length / border.length > 0.2 && otherLum > 140 && bgLum > 140) {
     throw new CutError(
@@ -324,7 +321,11 @@ function cutFlat(img: RgbaImage, s: CutSettings): Cut {
   const border = borderIndices(w, h);
   const channel = (c: number): number[] =>
     Array.from(border, (i) => d[i * 4 + c]!);
-  const bg: Rgb = [median(channel(0)), median(channel(1)), median(channel(2))];
+  const bg: Rgb = [
+    lowerMedian(channel(0)),
+    lowerMedian(channel(1)),
+    lowerMedian(channel(2)),
+  ];
   const tol = s.whiteTol;
   checkFlatBorder(d, border, bg, tol);
   const bgMask = floodBackground(

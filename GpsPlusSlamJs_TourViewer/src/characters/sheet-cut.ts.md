@@ -8,7 +8,7 @@
   - Codes: `not-image`, `decode`, `too-big`, `too-small`, `checkerboard`, `busy` (also for a picture that is almost all figure), `empty`, `joined`, `extra`, `missing`.
 - `cutBackground(img, s): Cut`: `{ alpha, rgb, mode, bg?, specks }`.
   - **Alpha mode**, when more than 1 % of sampled pixels have alpha under 250: alpha under `alphaThr` becomes 0, 240 and above becomes 255; `specks` is 0.
-  - **Flat mode** otherwise: the border's median colour is the background; a flood fill from the border takes every pixel within `whiteTol` of it, so light pixels enclosed by the outline (eye whites) stay figure.
+  - **Flat mode** otherwise: the border's median colour (the lower middle of an even count, the framework's `lowerMedian`, so always an observed value) is the background; a flood fill from the border takes every pixel within `whiteTol` of it, so light pixels enclosed by the outline (eye whites) stay figure.
     - With `shadowOn` the fill also passes light, colourless pixels (every channel at least `shadowFloor`, channels within `shadowSpread`): a soft ground shadow under a pose.
     - Then every separate figure piece under `islandMin` pixels (8-connected) becomes background and is counted in `specks`.
     - Edge pixels get an alpha ramp of width `edgeSoft` and the background colour is taken out of them.
