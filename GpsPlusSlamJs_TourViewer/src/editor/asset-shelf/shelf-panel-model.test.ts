@@ -15,6 +15,7 @@ import {
   cardKindLine,
   cardMore,
   cardState,
+  cardWarning,
   fileExt,
   filteredRows,
   formatBytes,
@@ -395,6 +396,46 @@ describe("shapeKey", () => {
     expect(shapeKey([base])).not.toBe(shapeKey([{ ...base, placesInUse: 2 }]));
     expect(shapeKey([base])).not.toBe(
       shapeKey([{ ...base, status: "failed" }]),
+    );
+  });
+});
+
+describe("cardWarning", () => {
+  // Why: the warning is for a video large for its length, judged on what
+  // the tour adds now; a video of unknown length or another kind of file
+  // must never carry it, and a redraw must follow a newly read look.
+  it("warns a video large for its length, and nothing else", () => {
+    const video = (over: Partial<ShelfRow>) =>
+      row({
+        kind: "video",
+        status: "kept",
+        optimizedBytes: undefined,
+        ...over,
+      });
+    expect(
+      cardWarning(video({ estimatedBytes: 120 * MB, seconds: 60 })),
+    ).toContain("about 120 MB a minute");
+    expect(
+      cardWarning(video({ estimatedBytes: 20 * MB, seconds: 60 })),
+    ).toBeNull();
+    expect(cardWarning(video({ estimatedBytes: 120 * MB }))).toBeNull();
+    expect(
+      cardWarning(
+        row({ kind: "audio", estimatedBytes: 120 * MB, seconds: 60 }),
+      ),
+    ).toBeNull();
+  });
+
+  it("redraws a card when its poster, its length or its bytes change", () => {
+    const base = row({ kind: "video" });
+    expect(shapeKey([row({ kind: "video", seconds: 9 })])).not.toBe(
+      shapeKey([base]),
+    );
+    expect(shapeKey([row({ kind: "video", posterId: "p" })])).not.toBe(
+      shapeKey([base]),
+    );
+    expect(shapeKey([row({ kind: "video", swaps: 1 })])).not.toBe(
+      shapeKey([base]),
     );
   });
 });

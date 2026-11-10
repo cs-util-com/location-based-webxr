@@ -54,6 +54,15 @@ export interface ShelfEntry extends ShelfJob {
   readonly originalHeld: boolean;
   /** Arrival order: the queue is first in, first out. */
   readonly seq: number;
+  /** A video's: the poster minted with it, and its length in seconds. */
+  readonly posterId?: string;
+  readonly seconds?: number;
+}
+
+/** What a video brought in carries beyond its asset (`AssetShelf.add`). */
+export interface ShelfVideoLook {
+  readonly posterId?: string;
+  readonly seconds?: number;
 }
 
 export interface AssetShelfState {
@@ -78,6 +87,15 @@ interface EntryAddedPayload {
   /** A kept file the author may ask to make smaller again (one whose
    *  original they chose, `originalUsed`). */
   readonly keptRetryable?: boolean;
+  readonly look?: ShelfVideoLook;
+}
+
+/** The look's fields that are set, for an entry. */
+function lookOf(look: ShelfVideoLook | undefined): ShelfVideoLook {
+  return {
+    ...(look?.posterId === undefined ? {} : { posterId: look.posterId }),
+    ...(look?.seconds === undefined ? {} : { seconds: look.seconds }),
+  };
 }
 
 /** `state` with entry `id` replaced by `next(entry)`; unchanged when it
@@ -125,6 +143,7 @@ const assetShelfSlice = createSlice({
         originalBytes: p.originalBytes,
         originalHeld: false,
         seq: state.nextSeq,
+        ...lookOf(p.look),
         ...job,
       };
       return {
@@ -284,6 +303,9 @@ export interface ShelfRow {
   /** The original's bytes are kept and no save wrote the smaller file's
    *  bytes yet (`assetBytesPending`, the draft's own rule). */
   readonly canUseOriginal: boolean;
+  /** A video's poster (an image asset id) and length, when known. */
+  readonly posterId?: string;
+  readonly seconds?: number;
 }
 
 interface ShelfRoot {
@@ -323,6 +345,7 @@ export const selectShelfRows = createSelector(
           e.phase === "optimized" &&
           e.originalHeld &&
           assetBytesPending(doc, e.id),
+        ...lookOf(e),
       };
     });
   },

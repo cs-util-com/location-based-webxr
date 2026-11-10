@@ -23,6 +23,8 @@ import { formatFileSize } from "gps-plus-slam-app-framework/utils/format-file-si
 import { imageInfoOfBlob } from "gps-plus-slam-app-framework/utils/image-header";
 import { sha256Hex } from "gps-plus-slam-app-framework/utils/sha256-hex";
 
+import type { VideoLook } from "./video-poster.js";
+
 /** The sizes an import is judged by: the archive reader's caps, and a
  *  margin below them for the manifest, the lists and the zip's own
  *  records, so a tour the editor took is one every reader opens. */
@@ -76,6 +78,8 @@ export interface TourFileRead {
   /** Over the entry cap or the pixel cap (`shrinks` took it): no save
    *  can write it until a smaller file replaces it. */
   readonly oversized?: true;
+  /** A video's length in seconds, as the poster's element read it. */
+  readonly seconds?: number;
   readonly poster?: {
     readonly asset: TourAsset;
     readonly blob: Blob;
@@ -99,9 +103,10 @@ export interface TourFileContext {
   /** A model's largest side (`largestSide`, the page's three loader); 0
    *  for one that shows nothing. Absent: a model is taken unmeasured. */
   readonly measureModel?: (blob: Blob) => Promise<number>;
-  /** A video's first frame as a picture (the page's video element); a
-   *  rejection or null mints none. */
-  readonly posterOf?: (blob: Blob) => Promise<Blob | null>;
+  /** A video's first frame as a picture and its length, read through one
+   *  video element (the page's, `videoLookOf`); a rejection or a null
+   *  poster mints none, a null length leaves `seconds` out. */
+  readonly videoLookOf?: (blob: Blob) => Promise<VideoLook>;
   readonly limits?: TourFileLimits;
   /** Whether a file of `kind` over the entry cap or the pixel cap may
    *  come in to be made smaller (below the ceilings). Absent: none may. */
@@ -191,14 +196,16 @@ export async function readTourFile(
   if (typeof checked === "object") return checked;
   const over =
     checked || file.size > maxEntry ? { oversized: true as const } : {};
-  if (type.kind !== "video" || context.posterOf === undefined) {
+  if (type.kind !== "video" || context.videoLookOf === undefined) {
     return { kind: "read", ...named, ...over };
   }
-  const poster = await posterFor(blob, context);
+  const look = await lookOf(blob, context);
+  const length = look.seconds === null ? {} : { seconds: look.seconds };
+  const poster = await posterFor(look.poster, context);
   if (poster === null || room(added(named), added(poster)) !== null) {
-    return { kind: "read", ...named, ...over };
+    return { kind: "read", ...named, ...over, ...length };
   }
-  return { kind: "read", ...named, ...over, poster };
+  return { kind: "read", ...named, ...over, ...length, poster };
 }
 
 function refused(reason: string): TourFileRefusal {
@@ -265,18 +272,26 @@ async function assetOf(
   };
 }
 
+/** A video's look (`videoLookOf`); a rejection reads as none. */
+async function lookOf(
+  video: Blob,
+  context: TourFileContext,
+): Promise<VideoLook> {
+  try {
+    return (
+      (await context.videoLookOf?.(video)) ?? { poster: null, seconds: null }
+    );
+  } catch {
+    return { poster: null, seconds: null };
+  }
+}
+
 /** A video's minted poster as an image asset, or null when none could be
  *  made or it is no picture a tour takes. */
 async function posterFor(
-  video: Blob,
+  poster: Blob | null,
   context: TourFileContext,
 ): Promise<{ asset: TourAsset; blob: Blob; isNew: boolean } | null> {
-  let poster: Blob | null;
-  try {
-    poster = (await context.posterOf?.(video)) ?? null;
-  } catch {
-    return null;
-  }
   if (poster === null) return null;
   const info = await imageInfoOfBlob(poster);
   if (info === null || info.width * info.height > TOUR_MAX_IMAGE_PIXELS) {

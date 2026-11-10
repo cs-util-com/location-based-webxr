@@ -37,8 +37,11 @@ and the phone's progress pill. Pure functions over the shelf's rows
 - `shelfBadge(rows)`: failures (bad) first, else files in the works, else
   null.
 - `pillView(rows)`: the phone pill's text, or null.
-- `shapeKey(rows)`: everything a full draw depends on except the
-  progress, so the panel moves bars alone between real changes.
+- `cardWarning(row)`: a video's words when it is large for its length
+  (`video-size.ts`, on `estimatedBytes` over `seconds`); null for other
+  kinds or no known length.
+- `shapeKey(rows)`: everything a full draw depends on (the swaps, a
+  video's poster and length too) except the progress, so the panel moves bars alone between real changes.
 
 ## Invariants & assumptions
 
@@ -61,4 +64,6 @@ const summary = shelfSummary(rows); // { kind: "busy", lead: "Optimizing 2 of 5"
 
 `shelf-panel-model.test.ts`: every state line, the summary's sums, the
 chips' fallback, the rail's cap and rest, the badge and pill ending with
-the work, and properties for the gain's and the rings' ranges.
+the work, a video's warning (and none for other kinds or no length),
+the redraw on a new poster, length or swap, and properties for the
+gain's and the rings' ranges.

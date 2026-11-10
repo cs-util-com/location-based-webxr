@@ -30,6 +30,7 @@ import {
   selectShelfRows,
   type AssetShelfState,
   type ShelfEntry,
+  type ShelfVideoLook,
 } from "./asset-shelf-slice.js";
 import {
   OPTIMIZER_SETTINGS,
@@ -98,12 +99,14 @@ export interface AssetShelfDeps {
 export interface AssetShelf {
   /** A file on the shelf: one brought in is queued at once (kept, with
    *  words, when its kind has no optimizer); an opened tour's waits for
-   *  `optimizeTour`. A second add of an id is no change. */
+   *  `optimizeTour`. A second add of an id is no change. A video carries
+   *  its minted poster and length (`look`), for its card. */
   add(
     asset: TourAsset,
     name: string,
     bytes: number,
     origin: ShelfEntry["origin"],
+    look?: ShelfVideoLook,
   ): void;
   /** A reload put back a smaller file the draft kept: on the shelf as
    *  optimized, no job run for it, its original offered when `original`
@@ -294,7 +297,7 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
   }
 
   return {
-    add(asset, name, bytes, origin) {
+    add(asset, name, bytes, origin, look) {
       if (closed) return;
       const optimizable = optimizers[asset.kind] !== null;
       dispatch(
@@ -306,6 +309,7 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
           originalBytes: bytes,
           queued: optimizable && origin === "added",
           ...(optimizable ? {} : { keptReason: NO_OPTIMIZER }),
+          ...(look === undefined ? {} : { look }),
         }),
       );
       pump();

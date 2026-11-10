@@ -8,7 +8,7 @@
 - `initialAssetShelfState`, `assetShelfReducer`, `assetShelfActions`:
   - `cleared` (a new open), `entryAdded` (queued, idle, or kept with `keptReason`, retryable with `keptRetryable`; a second add of an id is no change), `entryRemoved`, `entryRestored` (an undo);
   - job transitions by id: `jobQueued`, `jobStarted`, `jobProgress`, `jobOptimized { optimizedBytes, originalHeld }`, `jobKept`, `jobFailed`, `jobRetried`, `originalUsed` (drops `optimizedBytes`, clears `originalHeld`). An id the shelf does not hold is no change.
-- `selectShelfRows({ assetShelf, tourDocument })`: `ShelfRow[]` in arrival order, each `{ id, kind, name, origin, status, progress, reason?, retryable, originalBytes, optimizedBytes?, estimatedBytes, queuePosition, placesInUse, swaps, canUseOriginal }`. Memoized on both slices.
+- `selectShelfRows({ assetShelf, tourDocument })`: `ShelfRow[]` in arrival order, each `{ id, kind, name, origin, status, progress, reason?, retryable, originalBytes, optimizedBytes?, estimatedBytes, queuePosition, placesInUse, swaps, canUseOriginal, posterId?, seconds? }; `posterId`and`seconds`are a video's minted poster and length, as`entryAdded`'s `look` (`ShelfVideoLook`) gave them`. Memoized on both slices.
 
 ## Invariants
 

@@ -11,6 +11,7 @@ import type { TourAssetKind } from "gps-plus-slam-app-framework/ar/tour-manifest
 
 import type { ShelfPhase } from "./asset-jobs.js";
 import type { ShelfRow } from "./asset-shelf-slice.js";
+import { videoSizeWarning } from "./video-size.js";
 
 const MB = 1024 * 1024;
 
@@ -176,6 +177,14 @@ export function cardMore(row: ShelfRow): string {
         ? `The original (${original}) is used, and a phone downloads all of it.`
         : "";
   }
+}
+
+/** A video's warning when it is large for its length (`video-size.ts`,
+ *  the bytes the tour adds over the length the poster's element read);
+ *  null for other kinds, a known-small video, or no known length. */
+export function cardWarning(row: ShelfRow): string | null {
+  if (row.kind !== "video" || row.seconds === undefined) return null;
+  return videoSizeWarning(row.estimatedBytes, row.seconds);
 }
 
 /** The card's count of places: "Used in 2", or "Not used". */
@@ -394,6 +403,9 @@ export function shapeKey(rows: readonly ShelfRow[]): string {
         r.queuePosition ?? "",
         r.placesInUse,
         r.canUseOriginal,
+        r.swaps,
+        r.posterId ?? "",
+        r.seconds ?? "",
       ].join("\u0001"),
     )
     .join("\u0002");

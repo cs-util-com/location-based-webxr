@@ -6,7 +6,7 @@
 
 - `createAssetShelf(deps)`; `deps`: `store` (holding `assetShelf` and `tourDocument`), `optimizers` (`OptimizerTable`), `host`, `settings?`, `slots?` (default a phone's 1), `bytesOf(id)`, `recordOf(id)`, `swap(id, { blob, path, width?, height? })` (the session's `swapAsset`), `maxFileBytes?` (default the archive's entry cap).
 - `AssetShelf`:
-  - `add(asset, name, bytes, origin)`: a file brought in is queued (kept with `NO_OPTIMIZER` when its kind has no row); an opened tour's file waits idle.
+  - `add(asset, name, bytes, origin, look?)`: `look` is a video's minted poster id and length, kept on its entry. A file brought in is queued (kept with `NO_OPTIMIZER` when its kind has no row); an opened tour's file waits idle.
   - `retry(id)`; `useOriginal(id)` (swaps the original back, telling the session it was the creator's choice (`originalChosen`); false when not offered or refused); `originalKept(asset, name, bytes)` (a file brought in for which the creator chose the original before a reload: kept with the original-used words, retryable, never queued); `holdsOriginal(id)` (whether its original is held for "use the original"); `remove(id)` (stops its job; returns an undo that puts it back, queued again when it was waiting or running; null for an unknown id); `optimizeTour()` (queues every idle opened file whose kind has a row; returns how many); `close()`.
 - Words: `NO_OPTIMIZER`, `NOT_SMALLER`.
 
