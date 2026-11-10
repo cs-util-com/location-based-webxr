@@ -20,7 +20,7 @@ import { tourBlockAssetIds } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
-import { manifestToWrite } from "../tour-document.js";
+import { manifestToWrite, tourDocumentActions } from "../tour-document.js";
 import { openTourFile, type TourSession } from "../tour-session.js";
 import { editorStore } from "../test-support/editor-store.js";
 import { tourOf, withWorldObjects } from "../test-support/tour-of.js";
@@ -465,6 +465,156 @@ describe("property: a reload after any voices, removals and undos", () => {
       { numRuns: 40 },
     );
     await session.close();
+  });
+});
+
+describe("a tour with folders across a save and a fresh open", () => {
+  // Why: a folder lives in the station's frame, its items are the
+  // document's objects, and a picture's file is kept by the blocks that
+  // name it. A save, the saved file opened in a fresh session (no undo
+  // history, no draft) and saved again must give the same folders, nested
+  // ones too, the same items in them and the same files - a writer and a
+  // reader that disagreed on any of these would lose a folder, an item or
+  // a picture on the second save.
+  it("keeps its nested folders, their items and a picture's file in a folder", async () => {
+    const pose = (x: number) =>
+      ({ position: [x, 0, 1], rotation: [0, 0, 0, 1] }) as const;
+    const pin = (id: string, x: number) => ({
+      id,
+      kind: "shortText" as const,
+      view: "pin" as const,
+      caption: id,
+      createdAtIso: "2026-11-10T00:00:00.000Z",
+      pose: pose(x),
+    });
+    const manifest = parseTourManifest(
+      JSON.parse(
+        serializeTourManifest(
+          tourOf([], {
+            assets: [
+              {
+                id: "art",
+                path: "content/art.jpg",
+                kind: "image",
+                width: 4,
+                height: 3,
+              },
+            ],
+            stations: [
+              {
+                id: "mill",
+                title: "The mill",
+                geo: {
+                  lat: 48.52,
+                  lon: 9.05,
+                  alt: 340,
+                  rotation: [0, 0, 0, 1],
+                },
+                activateRadiusM: 50,
+                foundRadiusM: 25,
+                hint: "arrow",
+                ...stationContent([
+                  pin("p", 4),
+                  {
+                    id: "outer",
+                    kind: "folder",
+                    title: "Courtyard",
+                    pose: pose(2),
+                    children: [
+                      {
+                        id: "pic",
+                        kind: "picture",
+                        view: "plane",
+                        image: "art",
+                        widthM: 1,
+                        createdAtIso: "2026-11-10T00:00:00.000Z",
+                        pose: pose(1),
+                      },
+                      {
+                        id: "inner",
+                        kind: "folder",
+                        title: "Well",
+                        pose: pose(-1),
+                        children: [pin("b", 3)],
+                      },
+                    ],
+                  },
+                ]),
+              },
+            ],
+          }),
+        ),
+      ),
+    );
+    const zip = await packFilesAsZip([
+      { path: "tour.json", data: serializeTourManifest(manifest) },
+      { path: "content/art.jpg", data: "the miller's portrait" },
+    ]);
+    const session = await openTourFile(
+      new File([zip], "tour.zip", { type: "application/zip" }),
+    );
+    const store = editorStore();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      store,
+    });
+    store.dispatch(
+      tourDocumentActions.folderRenamed({
+        stationId: "mill",
+        folderId: "inner",
+        title: "Fountain",
+        what: "rename",
+      }),
+    );
+    store.dispatch(
+      tourDocumentActions.objectsFoldered({
+        ids: ["p"],
+        folderId: "outer",
+        what: "in",
+      }),
+    );
+    const blob = (await editor.save({ keepScan: false })).blob;
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const saved = parseTourManifest(JSON.parse(entryText(bytes, "tour.json")));
+    const outerOf = (tour: TourManifest) => {
+      const outer = tour.stations[0]?.children.find((c) => c.id === "outer");
+      return outer?.kind === "folder" ? outer : undefined;
+    };
+    const outer = outerOf(saved);
+    expect(outer?.children.map((c) => c.id).sort()).toEqual([
+      "inner",
+      "p",
+      "pic",
+    ]);
+    const inner = outer?.children.find((c) => c.id === "inner");
+    expect(inner?.kind === "folder" ? inner.title : null).toBe("Fountain");
+    expect(
+      inner?.kind === "folder" ? inner.children.map((c) => c.id) : [],
+    ).toEqual(["b"]);
+    expect(entryText(bytes, "content/art.jpg")).toBe("the miller's portrait");
+    await session.close();
+
+    const reopened = await openTourFile(
+      new File([blob], "tour.zip", { type: "application/zip" }),
+    );
+    const fresh = createEditorSession({
+      session: reopened,
+      manifest: saved,
+      levels: new Map(),
+      store: editorStore(),
+    });
+    const again = new Uint8Array(
+      await (await fresh.save({ keepScan: false })).blob.arrayBuffer(),
+    );
+    const resaved = parseTourManifest(
+      JSON.parse(entryText(again, "tour.json")),
+    );
+    expect(resaved.stations).toEqual(saved.stations);
+    expect(resaved.assets).toEqual(saved.assets);
+    expect(entryText(again, "content/art.jpg")).toBe("the miller's portrait");
+    await reopened.close();
   });
 });
 

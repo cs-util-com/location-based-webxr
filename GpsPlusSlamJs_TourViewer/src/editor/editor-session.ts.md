@@ -233,7 +233,9 @@ never state). Design:
     - `moveToNewStation(id)` - "Move to a new station" where the item
       stands, turned as it is, the new station right after the one it
       left (`afterHome`): one step, `{ kind: "moved", stationId }`
-      naming the station it made; refused for an id the tour lacks.
+      naming the station it made; refused for an id the tour lacks,
+      and for an item in a folder (`folderRefusalLine("staysInStation")`,
+      the tree's rule: a folder's item stays in its station).
   - `undo()` / `redo()` (W2 of the tour editor plan 2026-10-17-1816) - one
     step of the edit stack: `{ kind: "undone" | "redone", what }` (`what`
     names the step: `the text of "<label>"`, `the move of …`, `the delete

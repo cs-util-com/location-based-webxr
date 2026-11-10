@@ -131,6 +131,10 @@ afterHome?, joinStation? })`
     puts the station it starts right after the one the object left (in
     its place when that one is dropped as emptied) instead of at the
     end, and sets `framesRecorded` so the draft records that order.
+    An object that changes station (`joinStation`, or `newStation`)
+    leaves its plain folders (`seatedIn`), as `childMoved` does: a
+    folder belongs to its station, and moved back the object comes back
+    free, not into its old folder.
 - **Every object belongs to a station from the moment it is placed** (the
   station rule, `seatByRule`). It reads the stations of `manifestNow` (a
   written station no frame names still counts: seated in, it is listed
@@ -420,24 +424,35 @@ geo?, what })` - a copy inserted after the original (any station the
     station grouped in a new plain folder at their centroid, turned like
     the station (yaw 0), titled by the creator (`folderTitle`); every
     item keeps its world pose and names the folder. Refused: a
-    `groupRefusal`, a taken id, a title the format refuses.
+    `groupRefusal` (`tooFar` among them), a taken id, a title the format
+    refuses.
   - `folderUngrouped({ stationId, folderId, what })` - the folder taken
     apart: its items and its own folders go to its holder, each where it
     stood (`withoutFolder` with lift).
   - `objectsFoldered({ ids, folderId, what })` - items into the folder
     `folderId` of their station, or (null) out to the station's top,
-    each keeping its world pose. Refused: an unknown item, a folder its
-    station lacks, a pose in the folder past the format's bound; a move
-    that changes no item's folder is no step.
+    each keeping its world pose. Refused: `objectsFolderRefusal` (an
+    unknown item, a folder its station lacks, a pose in the folder past
+    the format's bound); a move that changes no item's folder is no step.
   - `folderRenamed({ stationId, folderId, title, what })` - the title;
     a blank, over-long or unchanged one is refused.
   - `folderDeleted({ stationId, folderId, what })` - the folder with its
     folders and every item in them (a written item gets a tombstone);
     the page asks first.
-  - Each folder action is one undo step and is recorded for the draft
-    (`framesRecorded`; the items through their entries, which carry
-    `folder`). No page dispatches them yet: the tree's folder rows,
-    multi-select and drag come next.
+  - `folderReordered({ stationId, folderId, index, what })` - a folder at
+    its station's top put at `index` among the station's top-level
+    folders (the tree's drag of a folder row); nothing moves. Refused: an
+    unknown folder, a folder inside another, an index that is no whole
+    number from 0 to the last folder, its own place.
+  - Each folder action is one undo step (a redo gives back what it did).
+    Those that change a frame's folder tree (group, ungroup, move,
+    reorder, rename, delete) set `framesRecorded` so the draft records
+    the frame; `objectsFoldered` changes only items, which the draft
+    carries through their entries (each names its `folder`).
+  - Which have a page: group, ungroup, `objectsFoldered`, rename and
+    reorder (the tree, `folder-commands.ts`). `folderMoved` (the gizmo)
+    and `folderDeleted` (a folder's delete with its confirmation) have
+    none yet.
   - `modelResized({ id, sizeM, what })` - a placed model's size, within
     `TOUR_MODEL_MIN_SIZE_M`..`TOUR_MODEL_MAX_SIZE_M` (0.05 m to 500 m).
   - `moved` with `newStation: true` - "Move to a new station": the item
@@ -538,7 +553,15 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
 - `groupRefusal(state, ids)` - why the items `ids` cannot be grouped
   (`tour-folder-edit.ts` `FolderRefusal`): `notHere` for none, a repeat, a
   story, an unknown id or two stations; `oneLevel` when one stands in a
-  folder already; null when they can.
+  folder already; `tooFar` when one would stand past the format's 10 km
+  bound (per axis) of the new folder at their centroid; null when they
+  can.
+- `objectsFolderRefusal(state, ids, folderId)` - why the items `ids`
+  cannot move into the folder `folderId` (null: out to the station's
+  top): `notHere` for an unknown item or a folder its station lacks,
+  `tooFar` for a pose in the folder past the bound; null when they can
+  (an item already there is none). The reducer and the page's command
+  share it, so the page says the reducer's real reason.
 - `folderDropRefusal(state, dragged, onto)` - why the tree's drag may not
   drop `dragged` (an item, a folder or a story) onto `onto` (a folder, a
   story or a station): a story into a folder, a folder into a story,
@@ -776,6 +799,13 @@ store.dispatch(tourDocumentActions.undone());
 
 ## Tests
 
+- `tour-document-folder-actions.test.ts` - the plain folders' actions
+  (group, ungroup, move in and out, rename, delete, reorder, a folder's
+  move): world poses kept (swept over folder yaw and offset), one step
+  each with its undo and redo, refusals with their reasons (the 10 km
+  bound too), the draft reload, the visitor's view, an item leaving its
+  folder when it changes station, and a station's copy with nested
+  folders.
 - `tour-document-codes.test.ts` - the hosted levels in both arrival
   orders with `opened`, an older open's late levels dropped and a newer
   one's replacing them, a failed read counting every saved code as new,

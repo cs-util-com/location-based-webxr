@@ -1199,11 +1199,24 @@ export function historyTimingEntries(state: TourDocumentState): Set<string> {
   return names;
 }
 
+/** Each state's manifest to write, computed once: a state never changes
+ *  (the reducer makes a new one for every change), and a drag in the
+ *  tree asks for it on every hover. Callers read it, never change it. */
+const writtenManifests = new WeakMap<TourDocumentState, TourManifest | null>();
+
 /** The manifest a write carries now (the Finish's rule,
  *  `finishedManifest`): what a save would write, without the zip - the
  *  same manifest (the r875 milestone review #7). The stations are the
- *  document's as they are: a write assigns nothing. */
+ *  document's as they are: a write assigns nothing. The same state
+ *  answers with the same object (`writtenManifests`). */
 export function manifestToWrite(state: TourDocumentState): TourManifest | null {
+  if (writtenManifests.has(state)) return writtenManifests.get(state) ?? null;
+  const manifest = computeManifestToWrite(state);
+  writtenManifests.set(state, manifest);
+  return manifest;
+}
+
+function computeManifestToWrite(state: TourDocumentState): TourManifest | null {
   const base = manifestNow(state);
   if (base === null) return null;
   return finishedManifest({
@@ -2274,6 +2287,14 @@ function unseated(object: TourObject): TourObject {
   return rest;
 }
 
+/** `object` in the station `station`: a change of station leaves its
+ *  folders (a folder belongs to its station), as `childMove` does. */
+function seatedIn(object: TourObject, station: string): TourObject {
+  return object.station === station
+    ? object
+    : { ...withoutField(object, "folder"), station };
+}
+
 /** The station the document's object `id` stands in, if any. */
 function homeOf(state: TourDocumentState, id: string): string | undefined {
   return documentObjects(state).find((o) => o.object.id === id)?.object.station;
@@ -2326,7 +2347,7 @@ function objectKept(
   const home = homeOf(before, object.id);
   if (home === undefined) return before;
   const station = joinStation ?? home;
-  const kept = { ...object, station };
+  const kept = seatedIn({ ...object, station: home }, station);
   if (!objectFits(before, kept)) return before;
   return station === home
     ? putObject(before, kept, what)
@@ -2349,7 +2370,8 @@ function objectMove(
   if (newStation !== true) return objectKept(before, object, what, joinStation);
   const home = homeOf(before, object.id);
   if (home === undefined) return before;
-  const seated = seatByRule(before, unseated(object), {
+  // A station of its own: the item leaves its folders (`seatedIn`).
+  const seated = seatByRule(before, unseated(withoutField(object, "folder")), {
     newStationId,
     newStation,
   });
@@ -3605,11 +3627,34 @@ function inFolders(object: TourObject, path: readonly string[]): TourObject {
   return path.length === 0 ? rest : { ...rest, folder: [...path] };
 }
 
+/** Whether a pose in a folder at `position` is within the format's
+ *  bound of an item in its holder (`TOUR_ITEM_MAX_OFFSET_M` per axis). */
+function withinFolderBound(position: readonly number[]): boolean {
+  return position.every((v) => Math.abs(v) <= TOUR_ITEM_MAX_OFFSET_M);
+}
+
+/** The centroid of `objects` in `frame`, where a new folder of them
+ *  stands (`folderGroup`). */
+function groupCentre(
+  objects: readonly TourObject[],
+  frame: StationFrame,
+): [number, number, number] {
+  const sum: [number, number, number] = [0, 0, 0];
+  for (const object of objects) {
+    const at = localPoseOf(object.geo, frame.geo).position;
+    for (const i of [0, 1, 2] as const) sum[i] += at[i];
+  }
+  const n = Math.max(1, objects.length);
+  return [sum[0] / n, sum[1] / n, sum[2] / n];
+}
+
 /**
  * Why the items `ids` cannot be grouped in a new folder (`folderGrouped`),
  * or null when they can: they must be items of one station (a story, an
- * unknown id or a second station is `notHere`), and none may stand in a
- * folder already - the editor groups one level deep (`oneLevel`).
+ * unknown id or a second station is `notHere`), none may stand in a
+ * folder already - the editor groups one level deep (`oneLevel`) - and
+ * each must stand within the format's bound of the new folder at their
+ * centroid (`tooFar`).
  */
 export function groupRefusal(
   state: TourDocumentState,
@@ -3622,7 +3667,51 @@ export function groupRefusal(
   if (found.length === 0 || new Set(ids).size !== ids.length) return "notHere";
   const stations = new Set(found.map((o) => o?.station));
   if (found.includes(undefined) || stations.size !== 1) return "notHere";
-  return found.some((o) => o?.folder !== undefined) ? "oneLevel" : null;
+  if (found.some((o) => o?.folder !== undefined)) return "oneLevel";
+  const items = found.filter((o): o is TourObject => o !== undefined);
+  const stationId = items[0]?.station;
+  const frame = stationId === undefined ? undefined : frameOf(state, stationId);
+  if (frame === undefined) return "notHere";
+  const centre = groupCentre(items, frame);
+  const far = items.some((o) => {
+    const at = localPoseOf(o.geo, frame.geo).position;
+    return !withinFolderBound(at.map((v, i) => v - (centre[i] ?? 0)));
+  });
+  return far ? "tooFar" : null;
+}
+
+/**
+ * Why the items `ids` cannot move into the plain folder `folderId` of
+ * their station, or out of their folders (`folderId` null)
+ * (`objectsFoldered`), or null when they can: an unknown item, or a
+ * folder its station lacks, is `notHere`; a pose in the folder past the
+ * format's bound is `tooFar`. An item already there is no refusal (the
+ * move leaves it).
+ */
+export function objectsFolderRefusal(
+  state: TourDocumentState,
+  ids: readonly string[],
+  folderId: string | null,
+): FolderRefusal | null {
+  const objects = new Map(
+    documentObjects(state).map((o) => [o.object.id, o.object]),
+  );
+  for (const id of ids) {
+    const object = objects.get(id);
+    const frame =
+      object?.station === undefined
+        ? undefined
+        : frameOf(state, object.station);
+    if (object === undefined || frame === undefined) return "notHere";
+    const chain = folderId === null ? [] : folderChains(frame).get(folderId);
+    if (chain === undefined) return "notHere";
+    const local = decomposeTourFolderPath(
+      chain,
+      localPoseOf(object.geo, frame.geo),
+    );
+    if (!withinFolderBound(local.position)) return "tooFar";
+  }
+  return null;
 }
 
 /**
@@ -3699,20 +3788,11 @@ function folderGroup(
   const frame =
     stationId === undefined ? undefined : frameOf(before, stationId);
   if (frame === undefined) return before;
-  const sum = [0, 0, 0];
-  for (const object of objects) {
-    const at = localPoseOf(object.geo, frame.geo).position;
-    for (const i of [0, 1, 2] as const) sum[i] = (sum[i] ?? 0) + at[i];
-  }
-  const n = objects.length;
   const folder: TourFolder = {
     id: payload.folderId,
     kind: "folder",
     title,
-    pose: {
-      position: [(sum[0] ?? 0) / n, (sum[1] ?? 0) / n, (sum[2] ?? 0) / n],
-      rotation: [0, 0, 0, 1],
-    },
+    pose: { position: groupCentre(objects, frame), rotation: [0, 0, 0, 1] },
     children: [],
   };
   let placed = before.placed;
@@ -3782,7 +3862,12 @@ function objectsFolder(
   before: TourDocumentState,
   payload: { ids: readonly string[]; folderId: string | null; what: string },
 ): TourDocumentState {
-  if (before.written === null) return before;
+  if (
+    before.written === null ||
+    objectsFolderRefusal(before, payload.ids, payload.folderId) !== null
+  ) {
+    return before;
+  }
   const objects = new Map(
     documentObjects(before).map((o) => [o.object.id, o.object]),
   );
@@ -3801,13 +3886,6 @@ function objectsFolder(
     if (chain === undefined) return before;
     const path = chain.map((f) => f.id);
     if (sameJson(object.folder ?? [], path)) continue;
-    const local = decomposeTourFolderPath(
-      chain,
-      localPoseOf(object.geo, frame.geo),
-    );
-    if (local.position.some((v) => !(Math.abs(v) <= TOUR_ITEM_MAX_OFFSET_M))) {
-      return before;
-    }
     placed = upsertPlaced(placed, { object: inFolders(object, path) });
   }
   if (placed === before.placed) return before;
@@ -3838,6 +3916,48 @@ function folderRename(
         title,
       })),
     },
+    { placed: before.placed, deleted: before.deleted },
+    payload.what,
+  );
+}
+
+/**
+ * A plain folder at the top of its station put at `index` among the
+ * station's top-level plain folders (`folderReordered`, the tree's drag
+ * of a folder row), as one step; nothing moves in the world. The same
+ * state for an unknown station or folder, a folder inside another, an
+ * index that is no whole number from 0 to the last folder, or its own
+ * place.
+ */
+function folderReorder(
+  before: TourDocumentState,
+  payload: { stationId: string; folderId: string; index: number; what: string },
+): TourDocumentState {
+  if (before.written === null) return before;
+  const frame = frameOf(before, payload.stationId);
+  if (frame === undefined) return before;
+  const folders = frame.children.filter(isTourFolder);
+  const from = folders.findIndex((f) => f.id === payload.folderId);
+  const { index } = payload;
+  const moving = folders[from];
+  if (
+    moving === undefined ||
+    !Number.isInteger(index) ||
+    index < 0 ||
+    index >= folders.length ||
+    index === from
+  ) {
+    return before;
+  }
+  const order = folders.filter((f) => f !== moving);
+  order.splice(index, 0, moving);
+  let next = 0;
+  const children = frame.children.map((child) =>
+    isTourFolder(child) ? (order[next++] ?? child) : child,
+  );
+  return foldersEdited(
+    before,
+    { ...frame, children },
     { placed: before.placed, deleted: before.deleted },
     payload.what,
   );
@@ -4006,6 +4126,14 @@ const folderRenamed = createAction<{
   title: string;
   what: string;
 }>("tourDocument/folderRenamed");
+
+/** A folder put elsewhere among its station's folders (`folderReorder`). */
+const folderReordered = createAction<{
+  stationId: string;
+  folderId: string;
+  index: number;
+  what: string;
+}>("tourDocument/folderReordered");
 
 /** A folder deleted with its content (`folderDelete`). */
 const folderDeleted = createAction<{
@@ -4928,6 +5056,9 @@ const tourDocumentSlice = createSlice({
     builder.addCase(folderDeleted, (state, action) =>
       folderDelete(plain(state), action.payload),
     );
+    builder.addCase(folderReordered, (state, action) =>
+      folderReorder(plain(state), action.payload),
+    );
   },
 });
 
@@ -4944,6 +5075,7 @@ export const tourDocumentActions = {
   objectsFoldered,
   folderRenamed,
   folderDeleted,
+  folderReordered,
 };
 
 export const tourDocumentReducer = tourDocumentSlice.reducer;
@@ -4981,6 +5113,7 @@ export const isDocumentEdit = isAnyOf(
   tourDocumentActions.objectsFoldered,
   tourDocumentActions.folderRenamed,
   tourDocumentActions.folderDeleted,
+  tourDocumentActions.folderReordered,
   tourDocumentActions.settingsChanged,
   tourDocumentActions.detailsChanged,
   tourDocumentActions.undone,

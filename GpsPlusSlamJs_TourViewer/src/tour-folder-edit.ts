@@ -27,7 +27,13 @@ export type FolderRefusal =
   /** The editor groups one level deep: no folder inside a folder. */
   | "oneLevel"
   /** Items of several stations, or something that is no item. */
-  | "notHere";
+  | "notHere"
+  /** An item would stand past the format's 10 km bound in its folder. */
+  | "tooFar"
+  /** A folder's item stays in its station (a folder belongs to one). */
+  | "staysInStation"
+  /** The folder is no longer in the tour (an undo since it was picked). */
+  | "gone";
 
 /** What a page says for a refused folder edit. */
 export const FOLDER_NOT_POSSIBLE = "Not possible here";
@@ -39,6 +45,10 @@ const REASONS: Readonly<Record<FolderRefusal, string>> = {
   oneLevel:
     "folders hold items, not other folders. Take the items out of their folder first.",
   notHere: "a folder holds items of one station.",
+  tooFar: "an item would stand more than 10 km from its folder.",
+  staysInStation:
+    "an item in a folder stays in its station. Take it out of its folder first.",
+  gone: "that folder is no longer in the tour.",
 };
 
 /** The line a page shows for `reason`: "Not possible here" and why. */
