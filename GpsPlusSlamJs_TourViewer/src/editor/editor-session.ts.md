@@ -385,6 +385,14 @@ changes`; a label is cut at 40 characters (`truncated`, split-safe), a label-les
   pressed included - takes the model out of the rule for good; an undo
   does not put it back.
 
+- `setItemFile(id, file, fileName)` - the item `id` (free, or a block a
+  station's story shows) made from `file` from now on: brought in as
+  `addFile` does for the block's file kind (`../block-file.ts`), then one
+  step - a free block through `edited` (a free picture's inline
+  `imageAsset` follows), a story block through the station edit
+  `storyFile` (a video takes the new minted poster, or none). Refused for a
+  gone id, a block made of words, and what `addFile` refuses.
+
 ## Invariants & assumptions
 
 - `find()` never throws (E2c plan review #11, decided): an id the tour no

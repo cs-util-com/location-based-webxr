@@ -971,3 +971,20 @@ on a desktop.
 ## Narration
 
 `writeNarrationEdit` runs a section's change through the session (`editNarration`), redraws, and says a refusal through the page's toast, and a voice whose file the draft could not keep (`notBackedUp`) with `FILE_NOT_KEPT`; it then judges the autosave again (`judgeAutosave`: off once `nextSaveBytes()` is over the cap, on again once it is back under (an undo alone keeps the file in the save, since its redo names it; the edit that drops that redo frees it); asked by every edit through `tourChanged` (the test hook's `edited()` too), by an unchanged narration answer and after every save; never for a tour not written in place or one that `cannotSave`. `nextSaveBytes()` counts the opened file by its entries' sizes until a save, so a tour opened just over the cap by its zip overhead alone may turn autosave on at its first judged edit). The session's `fileReaders` are three's loader with `largestSide` (imported on first use) and `videoPosterOf`; `readContent` reads a file brought in from the session (`contentOf`) before the opened file; the shell's `narration` command reads `EditorSession.narration`, and `voiceMaxBytes` hands the section the configured autosave cap (`autosaveMaxBytes`) as its voice file limit.
+
+## Files dropped anywhere, and an item's file replaced
+
+- A file dragged over the open editor marks the page (`body.file-drag`)
+  and the row or file field it would be used in (`.file-over`); the
+  opening page's drop box and the debug panel keep their own drops.
+- `dropFiles` (`file-drop.ts`): a file a tour does not take is said by
+  name; dropped on a station's or a story's row it is added there
+  (`addFromFile`, one step each); on an item's file field it becomes that
+  item's file (`useAsItemFile`); anywhere else it goes onto the shelf only
+  (`addToShelf`). Every file lands on the shelf either way.
+- `useAsItemFile` / `replaceItemFile` (the inspector's "Replace...", a
+  picker of the block's own file kind): a busy toast
+  (`data-testid="replace-file-busy"`) while the file is read, then "The
+  item now shows ..." or the refusal; one step (`setItemFile`).
+- The shell's `fileNameOf` reads the shelf's names, so the inspector shows
+  a file by the name it came in under.

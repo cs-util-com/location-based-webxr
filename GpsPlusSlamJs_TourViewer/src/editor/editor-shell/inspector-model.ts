@@ -85,6 +85,7 @@ import {
   storyList,
 } from "../../station-children-moves.js";
 import { eastNorthOf, tourCentre } from "../tour-origin.js";
+import type { InspectorFile } from "./inspector-file.js";
 import { outsideItems } from "./tour-problems.js";
 import {
   stationContents,
@@ -437,14 +438,19 @@ interface CodeInspector {
   readonly position: InspectorPosition | null;
 }
 
-export type InspectorModel =
+export type InspectorModel = (
   | StationInspector
   | ItemInspector
   | CodeInspector
   | StoryInspector
   | StoryEntryInspector
   | StoryStepInspector
-  | FreeBlockInspector;
+  | FreeBlockInspector
+) & {
+  /** The selected item's file (`inspector-file.ts`), the shell's to add;
+   *  none for one made of words. */
+  readonly file?: InspectorFile;
+};
 
 /** The bottom bar's hint for the selection: the handles its gizmo has in
  *  the 3D view, or how to select when nothing is. A code is read-only

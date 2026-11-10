@@ -201,10 +201,19 @@ import {
 import { addNewItem } from "./new-pin.js";
 import {
   addFileItem,
+  FILE_ADD_FAILED,
   placeFileItem,
   type FileAddTarget,
 } from "./add-file-item.js";
 import { createFilePicker } from "./file-picker.js";
+import {
+  dragHasFiles,
+  FILE_FIELD_ATTR,
+  fileAddKindOf,
+  fileDropTarget,
+} from "./file-drop.js";
+import { fileBlockOf } from "./editor-shell/inspector-file.js";
+import { blockFileKind } from "../block-file.js";
 import { fileItemTitle } from "./new-file-item.js";
 import { newObjectId } from "../content-placement.js";
 import type { InspectorCode } from "./editor-shell/inspector-model.js";
@@ -1857,6 +1866,84 @@ async function addFromFile(
   );
   if (!outcome.backedUp) toast(FILE_NOT_KEPT);
   tourChanged();
+}
+
+/**
+ * The item `id` made from `file` from now on (a file dropped on its file
+ * field, or chosen with its "Replace..."): a toast while the file is
+ * read, then the outcome said, a refusal on the error toast; one step.
+ */
+async function useAsItemFile(id: string, file: File): Promise<void> {
+  const open = editor;
+  if (open === null) return;
+  const shown = toast(`Reading "${file.name}"...`, undefined, null, false);
+  shown.dataset["testid"] = "replace-file-busy";
+  endUndo();
+  let outcome: Awaited<ReturnType<EditorSession["setItemFile"]>>;
+  try {
+    outcome = await open.setItemFile(id, file, file.name);
+  } catch {
+    outcome = { kind: "refused", reason: FILE_ADD_FAILED };
+  } finally {
+    shown.remove();
+  }
+  if (editor !== open) return;
+  refresh();
+  if (outcome.kind === "refused") {
+    toast(outcome.reason);
+    return;
+  }
+  toast(`The item now shows "${file.name}"`);
+  if (!outcome.backedUp) toast(FILE_NOT_KEPT);
+  if (outcome.kind === "edited") tourChanged();
+  else judgeAutosave();
+}
+
+/** The inspector's "Replace..." of the item `id`: a file of its own kind
+ *  picked, then used (`useAsItemFile`); a cancelled picker does nothing. */
+async function replaceItemFile(id: string): Promise<void> {
+  const block = fileBlockOf(
+    id,
+    manifestToWrite(store.getState().tourDocument)?.stations ?? [],
+  );
+  const kind = block === null ? null : blockFileKind(block);
+  if (kind === null) return;
+  let picked: File | null;
+  try {
+    picked = await filePicker.pick(kind);
+  } catch {
+    toast(FILE_ADD_FAILED);
+    return;
+  }
+  if (picked !== null) await useAsItemFile(id, picked);
+}
+
+/**
+ * Files dropped in the open editor (`file-drop.ts`): each onto the shelf,
+ * and used where it was dropped - a station's or a story's row adds the
+ * item there (`addFromFile`, one step each), an item's file field gives
+ * the item that file (`useAsItemFile`). A file a tour does not take is
+ * said by name and left out.
+ */
+async function dropFiles(
+  files: readonly File[],
+  at: Element | null,
+): Promise<void> {
+  if (editor === null) return;
+  const dropTarget = fileDropTarget(at, element("shell-tree"));
+  const loose: File[] = [];
+  for (const file of files) {
+    const kind = fileAddKindOf(file.name);
+    if (kind === null) {
+      toast(`"${file.name}" is not a picture, sound, video or 3D model.`);
+      continue;
+    }
+    if (dropTarget === null) loose.push(file);
+    else if (dropTarget.kind === "item") {
+      await useAsItemFile(dropTarget.id, file);
+    } else await addFromFile(kind, dropTarget, file);
+  }
+  await addToShelf(loose);
 }
 
 /** A station made in this session (added, split off, copied) starts
@@ -3770,6 +3857,49 @@ drop.addEventListener("drop", (event) => {
   const file = event.dataTransfer?.files[0];
   if (file !== undefined) void openFile(file);
 });
+// A file dragged over the open editor: the page shows that it takes files
+// (`body.file-drag`), and the row or file field it would be used in
+// (`.file-over`). The opening page's drop box and the debug panel keep
+// their own drops.
+let fileDropOver: Element | null = null;
+function markFileDrop(next: Element | null): void {
+  if (next === fileDropOver) return;
+  fileDropOver?.classList.remove("file-over");
+  fileDropOver = next;
+  fileDropOver?.classList.add("file-over");
+}
+/** The element a file drag is over, when the editor takes it there. */
+function fileDragAt(event: DragEvent): Element | null | undefined {
+  if (editor === null || !dragHasFiles(event)) return undefined;
+  const at = event.target instanceof Element ? event.target : null;
+  if (at !== null && (drop.contains(at) || debugPanel.contains(at))) {
+    return undefined;
+  }
+  return at;
+}
+document.addEventListener("dragover", (event) => {
+  const at = fileDragAt(event);
+  if (at === undefined) return;
+  document.body.classList.add("file-drag");
+  markFileDrop(
+    fileDropTarget(at, element("shell-tree")) === null
+      ? null
+      : (at?.closest(`[${FILE_FIELD_ATTR}], [data-select]`) ?? null),
+  );
+});
+document.addEventListener("dragleave", (event) => {
+  if (event.relatedTarget === null) {
+    document.body.classList.remove("file-drag");
+    markFileDrop(null);
+  }
+});
+document.addEventListener("drop", (event) => {
+  document.body.classList.remove("file-drag");
+  markFileDrop(null);
+  const at = fileDragAt(event);
+  if (at === undefined) return;
+  void dropFiles(Array.from(event.dataTransfer?.files ?? []), at);
+});
 sampleButton.addEventListener("click", () => {
   if (ui().busy) return;
   // First, in the click: where to save it (`askOpenSaveFile`).
@@ -4347,6 +4477,7 @@ const shell = createEditorShell({
   },
   step: runStep,
   codes: shellCodes,
+  fileNameOf: (id) => store.getState().assetShelf.entries[id]?.name,
   loadPicture: readContent,
   dialogOpen,
   stations: {
@@ -4386,6 +4517,9 @@ const shell = createEditorShell({
           })
         : editor.narration(id),
     editNarration: writeNarrationEdit,
+    replaceFile: (id) => {
+      void replaceItemFile(id);
+    },
     voiceMaxBytes: autosaveMaxBytes,
   },
   say: (text) => {

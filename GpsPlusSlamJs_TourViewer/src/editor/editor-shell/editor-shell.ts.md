@@ -481,3 +481,10 @@ position, Move to a new station). Its parts' own tests:
 ## Narration
 
 `ShellEditCommands.narration` and `.editNarration` reach the session; the dock passes them, with `.voiceMaxBytes` (the page's autosave cap), to the writer's Narration section. A stamp per state of the tour's `timings` (`timingsStampOf`) goes into `buildInspector`, so the section re-reads when a timing changes without the narration record changing.
+
+## An item's file
+
+The inspector's model gets `file` (`inspector-file.ts`) for a block made
+from a file, named through `deps.fileNameOf`; its "Replace..."
+(`REPLACE_FILE_ACT`) calls `deps.edits.replaceFile(blockId)`, which the
+page answers with a picker and the session's `setItemFile`.

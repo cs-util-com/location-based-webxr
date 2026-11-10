@@ -284,3 +284,105 @@ describe("adding an item from a file", () => {
     await session.close();
   });
 });
+
+describe("replacing an item's file", () => {
+  // Why: a file dropped on an item's file field (or chosen with Replace)
+  // must become that item's file at once, while the shelf still makes it
+  // smaller, as one undo step; for a free item and for a story's entry.
+  it("gives a free sound a new file as one undo step, resolving while the shelf job runs and after it ends", async () => {
+    const session = await openedTour();
+    const { editor, add, manifest, sounds, settle } = setup(session);
+    await add(
+      "audio",
+      { kind: "station", stationId: STATION },
+      new Blob(["RIFF-old"]),
+      "old.wav",
+      "snd",
+    );
+    await settle();
+    sounds.keep("already small");
+    await settle();
+    const soundOf = () =>
+      manifest()
+        .stations.flatMap((s) => s.children)
+        .find((c) => c.id === "snd") as { audio: string } | undefined;
+    const oldAudio = soundOf()?.audio;
+    const before = editor.revision();
+    const fresh = new Blob(["RIFF-new-bells"]);
+    const outcome = await editor.setItemFile("snd", fresh, "new.wav");
+    expect(outcome).toEqual({ kind: "edited", backedUp: true });
+    expect(editor.revision()).toBe(before + 1);
+    const audio = soundOf()?.audio;
+    expect(audio).not.toBe(oldAudio);
+    const path = `content/${String(audio)}.wav`;
+    await settle();
+    expect(sounds.calls).toHaveLength(1);
+    expect(await editor.contentOf(path)?.text()).toBe("RIFF-new-bells");
+    const small = new Blob(["OPUS-small"]);
+    sounds.finish(small, "ogg");
+    await settle();
+    await settle();
+    expect(editor.contentOf(path)).toBe(small);
+    expect(editor.undo().kind).not.toBe("refused");
+    expect(soundOf()?.audio).toBe(oldAudio);
+    await session.close();
+  });
+
+  it("gives a story's picture a new file as one undo step", async () => {
+    const session = await openedTour();
+    const { editor, add, manifest } = setup(session);
+    const story = editor.addStory(STATION);
+    if (story.kind !== "added") throw new Error("no story");
+    await add(
+      "picture",
+      { kind: "story", storyId: story.id },
+      png(40, 30),
+      "gate.png",
+      "pic",
+    );
+    const entry = () =>
+      tourStories(
+        manifest().stations.find((s) => s.id === STATION) ?? { children: [] },
+      )[0]?.children.find((c) => c.id === "pic") as
+        { image: string; title: string } | undefined;
+    const old = entry()?.image;
+    const before = editor.revision();
+    expect(await editor.setItemFile("pic", png(80, 60), "gate-2.png")).toEqual({
+      kind: "edited",
+      backedUp: true,
+    });
+    expect(editor.revision()).toBe(before + 1);
+    expect(entry()?.image).not.toBe(old);
+    expect(entry()?.title).toBe("gate");
+    expect(editor.undo().kind).not.toBe("refused");
+    expect(entry()?.image).toBe(old);
+    await session.close();
+  });
+
+  it("refuses a block made of words, a gone id and a file of another kind, changing nothing", async () => {
+    const session = await openedTour();
+    const { editor, add } = setup(session);
+    await add(
+      "audio",
+      { kind: "station", stationId: STATION },
+      new Blob(["RIFF-old"]),
+      "old.wav",
+      "snd",
+    );
+    const before = editor.revision();
+    expect(
+      await editor.setItemFile("t1", new Blob(["RIFF-x"]), "x.wav"),
+    ).toEqual({
+      kind: "refused",
+      reason: "That item is not made from a file.",
+    });
+    expect(
+      await editor.setItemFile("gone", new Blob(["RIFF-x"]), "x.wav"),
+    ).toMatchObject({ kind: "refused" });
+    expect(
+      await editor.setItemFile("snd", png(10, 10), "pic.png"),
+    ).toMatchObject({ kind: "refused" });
+    expect(editor.revision()).toBe(before);
+    await session.close();
+  });
+});

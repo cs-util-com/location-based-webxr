@@ -152,3 +152,9 @@ again under the creator's typing on every tile of finer ground.
 ## Narration key
 
 `InspectorLongText.narrationKey` is the narration record (JSON) plus the input's `timingsStamp`: the Narration section re-reads when it changes.
+
+## `file`
+
+`InspectorModel` carries an optional `file` (`inspector-file.ts`), added
+by the shell after `buildInspector`; `buildInspector` itself never sets
+it.

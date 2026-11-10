@@ -46,6 +46,7 @@
 import type { ShellPictures } from "./shell-pictures.js";
 import { FREE_LIST } from "../../station-children-moves.js";
 import { shellIcon, type ShellIcon } from "gps-plus-slam-editor-kit/chrome";
+import { fileFieldPart } from "./inspector-file.js";
 import {
   TOUR_STORY_TITLE_RULE,
   type TourStepAdvance,
@@ -1245,6 +1246,7 @@ function drawDock(
   const parts = [
     ...partsOf(model, state, pictures, sub, panel),
     ...moveParts(model, sub),
+    ...(model.file === undefined ? [] : [fileFieldPart(model.file)]),
   ];
   const before = [sub, ...(count === null ? [] : [count])];
   placeAround(dock.body, before, panel?.kept ?? null, parts);

@@ -226,3 +226,9 @@ is drawn again; a draw asked for inside a draw is not run, and
 shows on one line, read-only, its reason a line in the dock; a station's
 name and description of several lines stay editable, the description a
 text area holding its lines.
+
+## The file row
+
+After the moves, a model with `file` draws its "File" row
+(`inspector-file.ts` `fileFieldPart`): the name and "Replace...", the row
+a drop target for the item's file (`data-filefield`).

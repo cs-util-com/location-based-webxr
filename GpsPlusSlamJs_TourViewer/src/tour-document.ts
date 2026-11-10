@@ -137,6 +137,7 @@ import {
   stepRequiredAssetIds,
 } from "./tour-content.js";
 import { sameJson } from "./same-json.js";
+import { blockFileKind, withBlockFile } from "./block-file.js";
 import {
   movedChild,
   movedToStation,
@@ -2358,6 +2359,17 @@ export interface StationEdit {
   /** How the story block `block` moves on: on a tap, or by itself after
    *  `afterS` seconds. */
   readonly storyAdvance?: StationStoryAdvanceEdit;
+  /** The file of a block the station's story shows, replaced. */
+  readonly storyFile?: StationStoryFileEdit;
+}
+
+/** The story block `block` made from the file `asset` (an asset the tour
+ *  lists, of the block's own file kind) from now on; a video's poster
+ *  becomes `poster` (an image asset), or goes when none is given. */
+export interface StationStoryFileEdit {
+  readonly block: string;
+  readonly asset: string;
+  readonly poster?: string;
 }
 
 /** How a story block that is no character moves on. A character has his
@@ -2403,7 +2415,8 @@ export type StationEditChange =
         | "image"
         | "character"
         | "storyText"
-        | "storyAdvance";
+        | "storyAdvance"
+        | "storyFile";
     }
   | { readonly kind: "missing" };
 
@@ -2533,6 +2546,27 @@ function withStoryAdvance(
   return withStoryBlock(frame, { ...block, advance });
 }
 
+/** `frame` with its story block `edit.block` made from the file
+ *  `edit.asset` (`StationStoryFileEdit`); null when the block is none its
+ *  story shows or is made of words, or an asset is not one the tour lists
+ *  of the kind it stands for. */
+function withStoryFile(
+  state: TourDocumentState,
+  frame: StationFrame,
+  edit: StationStoryFileEdit,
+): StationFrame | null {
+  const block = tourStationStoryBlocks(frame).find((b) => b.id === edit.block);
+  if (block === undefined) return null;
+  const kind = blockFileKind(block);
+  const listed = [...(state.written?.assets ?? []), ...state.addedAssets];
+  const isKind = (id: string, k: string) =>
+    listed.some((a) => a.id === id && a.kind === k);
+  if (kind === null || !isKind(edit.asset, kind)) return null;
+  if (edit.poster !== undefined && !isKind(edit.poster, "image")) return null;
+  const filed = withBlockFile(block, edit.asset, edit.poster);
+  return filed === null ? null : withStoryBlock(frame, filed);
+}
+
 /**
  * What `edit` would make of the station `stationId`, by the format's rules
  * (both a page and the reducer ask it): a title of at most 80 characters
@@ -2591,6 +2625,11 @@ export function stationEditChange(
     const moved = withStoryAdvance(next, edit.storyAdvance);
     if (moved === null) return { kind: "refused", reason: "storyAdvance" };
     next = moved;
+  }
+  if (edit.storyFile !== undefined) {
+    const filed = withStoryFile(state, next, edit.storyFile);
+    if (filed === null) return { kind: "refused", reason: "storyFile" };
+    next = filed;
   }
   return sameJson(next, frame)
     ? { kind: "unchanged" }

@@ -100,6 +100,8 @@ import {
   STATION_RADIUS_MIN_M,
 } from "../station-geometry.js";
 import { followDocument } from "../tour-document-draft.js";
+import { blockFileKind, withBlockFile } from "../block-file.js";
+import { sameJson } from "../same-json.js";
 import { newTourId } from "../tour-file-key.js";
 import {
   createTourSaves,
@@ -387,10 +389,13 @@ const STATION_REFUSALS: Readonly<
     | "image"
     | "character"
     | "storyText"
-    | "storyAdvance",
+    | "storyAdvance"
+    | "storyFile",
     string
   >
 > = {
+  storyFile:
+    "That file cannot stand in for that block's own: it is no file of its kind in this tour.",
   title: `A station's name can be at most ${String(TOUR_TITLE_MAX_CHARS)} characters long.`,
   radius: `A station's radius must be from ${String(STATION_RADIUS_MIN_M)} m to ${String(STATION_RADIUS_MAX_M)} m.`,
   description: `A station's description can be at most ${String(TOUR_DESCRIPTION_MAX_CHARS)} characters long.`,
@@ -550,6 +555,9 @@ export type NarrationChange =
 /** Said for a size given to anything but a model. */
 const NOT_A_MODEL = "Only a 3D model has a size.";
 const NOT_A_MODEL_EDIT = "Only a 3D model has notes, sections and views.";
+
+/** Said for a file given to an item made of words. */
+const NOT_MADE_OF_A_FILE = "That item is not made from a file.";
 
 /** Said for a view a block's kind does not have. */
 const NOT_ITS_VIEW = "This block cannot be shown that way.";
@@ -871,6 +879,21 @@ export interface EditorSession {
     fileName: string,
     kinds?: readonly TourAssetKind[],
   ): Promise<EditorFileAdded | EditorRefusal>;
+  /** Make the item `id` - a free block or a block a station's story
+   *  shows, made from a file (`block-file.ts`) - from `file` from now on:
+   *  brought in as `addFile` does, for the block's own file kind, then
+   *  one step (the file itself takes none). A free picture's inline
+   *  record follows its file; a video in a story takes the poster minted
+   *  for the new file, or none. Refused in words, changing nothing, for
+   *  an id the tour does not carry, a block made of words, and a file
+   *  `addFile` refuses. */
+  setItemFile(
+    id: string,
+    file: Blob,
+    fileName: string,
+  ): Promise<
+    { kind: "edited" | "unchanged"; backedUp: boolean } | EditorRefusal
+  >;
   /** What the next save adds to the newest written file: the files
    *  brought in, the timing texts and the copied or restored photos'
    *  pictures it does not hold yet. */
@@ -1557,6 +1580,84 @@ export function createEditorSession(input: {
     };
   }
 
+  /** `setItemFile`: the block found as a free one or in a story, its file
+   *  brought in, then the one edit naming it. */
+  async function setItemFile(
+    id: string,
+    file: Blob,
+    fileName: string,
+  ): Promise<
+    { kind: "edited" | "unchanged"; backedUp: boolean } | EditorRefusal
+  > {
+    const blockOf = () => {
+      const free = find(id)?.object;
+      if (free !== undefined) return { free, inStory: undefined };
+      const state = mine();
+      for (const station of (state === null ? null : manifestNow(state))
+        ?.stations ?? []) {
+        const block = tourStationStoryBlocks(station).find((b) => b.id === id);
+        if (block !== undefined) {
+          return { free: undefined, inStory: { station, block } };
+        }
+      }
+      return null;
+    };
+    const before = blockOf();
+    if (before === null) return notInTour;
+    const kind = blockFileKind(before.free ?? before.inStory.block);
+    if (kind === null) return { kind: "refused", reason: NOT_MADE_OF_A_FILE };
+    const added = await addFile(file, fileName, [kind]);
+    if (added.kind === "refused") return added;
+    const { backedUp } = added;
+    // The block as it stands now: an edit may have landed while reading.
+    const latest = blockOf();
+    if (latest === null) return notInTour;
+    if (latest.free !== undefined) {
+      const filed = withBlockFile(latest.free, added.asset.id);
+      if (filed === null) return notInTour;
+      const after =
+        filed.kind === "picture"
+          ? { ...filed, imageAsset: added.asset }
+          : filed;
+      if (sameJson(after, latest.free)) return { kind: "unchanged", backedUp };
+      const applied = took(() =>
+        store.dispatch(
+          tourDocumentActions.edited({
+            object: after,
+            what: `the file of ${objectName(latest.free)}`,
+          }),
+        ),
+      );
+      return applied ? { kind: "edited", backedUp } : notApplied;
+    }
+    const { station, block } = latest.inStory;
+    const edit: StationEdit = {
+      storyFile: {
+        block: id,
+        asset: added.asset.id,
+        ...(added.poster === undefined ? {} : { poster: added.poster.id }),
+      },
+    };
+    const state = mine();
+    if (state === null) return notInTour;
+    const change = stationEditChange(state, station.id, edit);
+    if (change.kind === "missing") return notInTour;
+    if (change.kind === "refused") {
+      return { kind: "refused", reason: STATION_REFUSALS[change.reason] };
+    }
+    if (change.kind === "unchanged") return { kind: "unchanged", backedUp };
+    const applied = took(() =>
+      store.dispatch(
+        tourDocumentActions.stationEdited({
+          stationId: station.id,
+          edit,
+          what: `the file of "${objectTitle(block)}"`,
+        }),
+      ),
+    );
+    return applied ? { kind: "edited", backedUp } : notApplied;
+  }
+
   const optimizers = input.optimizers ?? ASSET_OPTIMIZERS;
   const shelf = createAssetShelf({
     store,
@@ -1598,6 +1699,7 @@ export function createEditorSession(input: {
   return {
     shelf,
     addFile,
+    setItemFile,
     swapAsset,
     addedBytes,
     tourBytes,
