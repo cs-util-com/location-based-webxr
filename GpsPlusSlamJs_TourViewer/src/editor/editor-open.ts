@@ -23,10 +23,7 @@ import type {
 } from "gps-plus-slam-app-framework/ar/tour-details";
 import type { TourIntegrityError } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import type { TourBlockDrop } from "gps-plus-slam-app-framework/ar/tour-block-read";
-import {
-  isTourFolder,
-  tourStationBlocks,
-} from "gps-plus-slam-app-framework/ar/tour-story";
+import { tourStationBlocks } from "gps-plus-slam-app-framework/ar/tour-story";
 import { objectTitle } from "../object-describe.js";
 import { describeOpenError, olderFormatRefusal } from "../open-errors.js";
 import { stationTitle } from "../station-run.js";
@@ -185,27 +182,9 @@ export function droppedBlockFieldsLine(
   return `A text of ${listed(names)} could not be read, so the editor left it out: the next save writes ${where} without it. Write it again in the item.`;
 }
 
-/** Said once a tour opened that groups items in plain folders. */
-export const FLATTENED_FOLDERS_LINE =
-  "This tour groups items in folders. The editor does not keep folders yet: the next save writes their items one by one, each where it stands, and leaves the folders out.";
-
-/**
- * Said once a tour opened whose stations hold plain folders. The editor
- * flattens them on open (its stations hold stories and free items only),
- * so the next save writes each item at the place its folders put it, and
- * the grouping, with any empty folder, is gone - never a silent loss.
- * Null when no station holds a folder (a story is not a plain folder).
- */
-function flattenedFoldersLine(
-  manifest: Pick<TourManifest, "stations">,
-): string | null {
-  return manifest.stations.some((s) => s.children.some(isTourFolder))
-    ? FLATTENED_FOLDERS_LINE
-    : null;
-}
-
 /** Every line said once a tour opened, in the order shown: the dropped
- *  details, station fields and item texts, then the flattened folders. */
+ *  details, station fields and item texts. Plain folders need no line:
+ *  the editor keeps them, and the next save writes them back. */
 export function openedNoticeLines(
   dropped: readonly TourManifestDrop[],
   manifest: Pick<TourManifest, "stations">,
@@ -214,7 +193,6 @@ export function openedNoticeLines(
     droppedDetailsLine(dropped),
     droppedStationFieldsLine(dropped, manifest),
     droppedBlockFieldsLine(dropped, manifest),
-    flattenedFoldersLine(manifest),
   ].filter((line): line is string => line !== null);
 }
 

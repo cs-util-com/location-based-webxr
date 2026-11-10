@@ -85,13 +85,13 @@ function reorderedIds(ids: readonly string[], from: number, slot: number) {
 
 const refused = (reason: ChildMoveRefusal) => ({ refused: reason }) as const;
 
-/** Whether `place` lies inside a plain folder. Not reachable from the
- *  editor: its stations come flattened (`manifestToWrite`: stories and free
- *  items only, every folder's items written one by one where they stand),
- *  so no place there is in a folder. Kept as a guard because a `Holder`
- *  admits folders, and a move that went on would put a folder's child at
- *  its folder's index in the station's list - the wrong item. Such a
- *  place is refused as `missing`: not in a list this module moves. */
+/** Whether `place` lies inside a plain folder. This module moves the
+ *  children of a station's top and of its stories only; moves into, out
+ *  of and within a plain folder are the folder actions'
+ *  (`tour-document.ts`), which keep each item's world pose. A move that
+ *  went on here would put a folder's child at its folder's index in the
+ *  station's list - the wrong item - so such a place is refused as
+ *  `missing`: not in a list this module moves. */
 const inPlainFolder = (place: TourChildrenPlace): boolean =>
   place.path.length > 0 && place.story === undefined;
 

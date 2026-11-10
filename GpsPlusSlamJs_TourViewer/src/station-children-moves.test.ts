@@ -292,9 +292,9 @@ describe("movedChild", () => {
   });
 });
 
-describe("a plain folder, which the editor never hands a move", () => {
-  // Why: the editor's stations come flattened, so no move there sees a
-  // plain folder; but a holder admits folders, and a move that went on
+describe("a plain folder, whose moves are not this module's", () => {
+  // Why: folder moves are the folder actions' (they keep world poses);
+  // but a holder admits folders, and a move that went on here
   // would take the item at the folder's index in the station's list - the
   // wrong one. The guard refuses a folder and anything in it as missing,
   // and changes nothing.

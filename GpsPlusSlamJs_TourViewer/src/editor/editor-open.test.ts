@@ -19,7 +19,6 @@ import {
   droppedBlockFieldsLine,
   droppedDetailsLine,
   droppedStationFieldsLine,
-  FLATTENED_FOLDERS_LINE,
   NOT_A_TOUR,
   NOT_A_ZIP,
   openedNoticeLines,
@@ -243,12 +242,11 @@ describe("openTourForEditing", () => {
     await out.session.close();
   });
 
-  it("says once a tour opened that its plain folders are flattened, and only then", async () => {
-    // Why: the editor keeps stories and free items only, so a tour that
-    // groups items in plain folders is flattened on open and the next
-    // save writes the items one by one, without the grouping. Unsaid, the
-    // creator would lose the folders without a word. A story is a folder
-    // too in the file, and must not set the line off.
+  it("says nothing about the plain folders a tour opened with: the editor keeps them", async () => {
+    // Why: the editor keeps plain folders and the next save writes them
+    // back, so no notice about losing them may appear; one would tell the
+    // creator of a loss that no longer happens. A story is a folder too
+    // in the file, and sets nothing off either.
     const POSE = { position: [0, 0, 0], rotation: [0, 0, 0, 1] } as const;
     const pin = {
       id: "p1",
@@ -300,9 +298,7 @@ describe("openTourForEditing", () => {
     );
     expect(grouped.kind).toBe("opened");
     if (grouped.kind !== "opened") return;
-    expect(openedNoticeLines(grouped.dropped, grouped.manifest)).toEqual([
-      FLATTENED_FOLDERS_LINE,
-    ]);
+    expect(openedNoticeLines(grouped.dropped, grouped.manifest)).toEqual([]);
     await grouped.session.close();
     const plain = await openTourForEditing(
       await zipFile([

@@ -2552,8 +2552,8 @@ async function openFile(
   sayUnreadDraft();
   keepStorage();
   // Details, station descriptions, card images and block texts the reader
-  // dropped, and plain folders the editor flattens, are said, never lost
-  // silently by the next save; kept until closed, as an instruction.
+  // dropped are said, never lost silently by the next save; kept until
+  // closed, as an instruction.
   for (const line of openedNoticeLines(outcome.dropped, outcome.manifest)) {
     fileToasts.push(toast(line, undefined, null));
   }
