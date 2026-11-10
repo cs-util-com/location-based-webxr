@@ -68,7 +68,10 @@ async function openedTour(): Promise<TourSession> {
   return openTourFile(new File([zip], "tour.zip", { type: "application/zip" }));
 }
 
-function setup(session: TourSession) {
+function setup(
+  session: TourSession,
+  extra: Partial<Parameters<typeof createEditorSession>[0]> = {},
+) {
   const store = editorStore();
   const sounds = fakeOptimizer();
   const pictures = fakeOptimizer();
@@ -83,6 +86,7 @@ function setup(session: TourSession) {
     store,
     optimizers: { ...ASSET_OPTIMIZERS, audio: sounds, image: pictures },
     optimizerHost: host,
+    ...extra,
   });
   const settle = () => new Promise((r) => setTimeout(r, 0));
   const manifest = () => {
@@ -431,6 +435,167 @@ describe("using a shelf file in an item", () => {
     });
     expect(editor.undo().kind).not.toBe("refused");
     expect(soundOf()?.audio).toBe(old);
+    await session.close();
+  });
+});
+
+describe("a video's poster and length on the shelf", () => {
+  // Why: the shelf's card shows a video's poster and warns when it is
+  // large for its length, and "Use in..." must give a story's video the
+  // poster minted with the file - all from the one read of the video.
+  it("keeps the minted poster and the length with the file, and gives the poster to a story video using it", async () => {
+    const session = await openedTour();
+    const { editor, add, manifest, rows } = setup(session, {
+      fileReaders: {
+        videoLookOf: (blob) =>
+          blob.size > 20
+            ? Promise.resolve({ poster: png(32, 18), seconds: 20 })
+            : Promise.resolve({ poster: null, seconds: null }),
+      },
+    });
+    const first = await editor.addFile(
+      new Blob(["fake-mp4-bytes-of-the-flood"]),
+      "flood.mp4",
+    );
+    if (first.kind !== "added" || first.poster === undefined) {
+      throw new Error("no poster");
+    }
+    const row = rows().find((r) => r.id === first.asset.id);
+    expect(row).toMatchObject({ posterId: first.poster.id, seconds: 20 });
+    expect(editor.posterOf(first.asset.id)).toEqual(first.poster);
+    expect(await editor.addedFileOf(first.poster.id)?.arrayBuffer()).toEqual(
+      await png(32, 18).arrayBuffer(),
+    );
+    const story = editor.addStory(STATION);
+    if (story.kind !== "added") throw new Error("no story");
+    await add(
+      "video",
+      { kind: "story", storyId: story.id },
+      new Blob(["short"]),
+      "short.mp4",
+      "vid",
+    );
+    const shortRow = rows().find((r) => r.name === "short.mp4");
+    expect(shortRow?.posterId).toBeUndefined();
+    expect(shortRow?.seconds).toBeUndefined();
+    expect(editor.setItemAsset("vid", first.asset.id)).toEqual({
+      kind: "edited",
+    });
+    const entry = tourStories(
+      manifest().stations.find((s) => s.id === STATION) ?? { children: [] },
+    )[0]?.children.find((c) => c.id === "vid") as
+      { video: string; poster?: string } | undefined;
+    expect(entry).toMatchObject({
+      video: first.asset.id,
+      poster: first.poster.id,
+    });
+    await session.close();
+  });
+});
+
+describe("deleting a file the tour uses", () => {
+  // Why: the shelf's delete of a file in use takes its places out with it
+  // (the format has no empty file field). They must all go in ONE step,
+  // free items and story entries alike, and the Undo must bring every
+  // one of them back with the file, or the creator loses work to a click.
+  it("takes out its free item and its story entry with the file as one step, and the Undo puts all back", async () => {
+    const session = await openedTour();
+    const { editor, add, childIds, manifest, rows, settle } = setup(session);
+    const story = editor.addStory(STATION);
+    if (story.kind !== "added") throw new Error("no story");
+    const bells = new Blob(["RIFF-church-bells"]);
+    await add(
+      "audio",
+      { kind: "station", stationId: STATION },
+      bells,
+      "bells.wav",
+      "free",
+    );
+    await add(
+      "audio",
+      { kind: "story", storyId: story.id },
+      bells,
+      "bells.wav",
+      "told",
+    );
+    await settle();
+    const entries = () =>
+      tourStories(
+        manifest().stations.find((s) => s.id === STATION) ?? { children: [] },
+      )[0]?.children.map((c) => c.id) ?? [];
+    expect(rows()).toEqual([expect.objectContaining({ placesInUse: 2 })]);
+    const assetId = rows()[0]?.id ?? "";
+    const before = editor.revision();
+
+    const undo = editor.deleteFileAndUses(assetId);
+
+    expect(undo).not.toBeNull();
+    expect(childIds()).not.toContain("free");
+    expect(childIds()).toContain("t1");
+    expect(entries()).toEqual([]);
+    expect(rows()).toEqual([]);
+    expect(editor.revision()).toBe(before + 1);
+    undo?.();
+    expect(childIds()).toContain("free");
+    expect(entries()).toEqual(["told"]);
+    expect(rows()).toEqual([expect.objectContaining({ id: assetId })]);
+    await session.close();
+  });
+
+  it("clears a station's card image of it in the same step", async () => {
+    const session = await openedTour();
+    const { editor, add, manifest, rows, settle } = setup(session);
+    await add(
+      "picture",
+      { kind: "station", stationId: STATION },
+      png(40, 30),
+      "gate.png",
+      "pic",
+    );
+    await settle();
+    const assetId = rows()[0]?.id ?? "";
+    expect(editor.editStation(STATION, { image: assetId }).kind).toBe("edited");
+    const image = () =>
+      manifest().stations.find((s) => s.id === STATION)?.image;
+    expect(image()).toBe(assetId);
+    const before = editor.revision();
+    const undo = editor.deleteFileAndUses(assetId);
+    expect(image()).toBeUndefined();
+    expect(editor.revision()).toBe(before + 1);
+    undo?.();
+    expect(image()).toBe(assetId);
+    await session.close();
+  });
+  it("changes nothing for a file the shelf does not hold", async () => {
+    const session = await openedTour();
+    const { editor, childIds } = setup(session);
+    const before = editor.revision();
+    expect(editor.deleteFileAndUses("not-here")).toBeNull();
+    expect(editor.revision()).toBe(before);
+    expect(childIds()).toEqual(["t1"]);
+    await session.close();
+  });
+});
+
+describe("deleting a picture made from a file", () => {
+  // Why: the undo of a delete refused when a picture it brings back has no
+  // bytes at hand - meant for a captured photo, whose picture is its own.
+  // A picture made from a file names an asset the tour keeps, so its
+  // delete must undo like any other, saved or not.
+  it("undoes the delete of a free picture added from a file", async () => {
+    const session = await openedTour();
+    const { editor, add, childIds } = setup(session);
+    await add(
+      "picture",
+      { kind: "station", stationId: STATION },
+      png(40, 30),
+      "gate.png",
+      "pic",
+    );
+    expect(editor.remove("pic").kind).toBe("deleted");
+    expect(childIds()).not.toContain("pic");
+    expect(editor.undo().kind).toBe("undone");
+    expect(childIds()).toContain("pic");
     await session.close();
   });
 });

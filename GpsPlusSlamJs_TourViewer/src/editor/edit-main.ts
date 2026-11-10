@@ -174,7 +174,7 @@ import {
   type EditorSession,
   type NarrationChange,
 } from "./editor-session.js";
-import { videoPosterOf } from "./video-poster.js";
+import { videoLookOf } from "./video-poster.js";
 import { waitForSaveSlot } from "gps-plus-slam-app-framework/storage/save-slot-wait";
 import { guardSlidersIn } from "gps-plus-slam-app-framework/utils/slider-scroll-guard";
 import {
@@ -1773,10 +1773,27 @@ function openShelfPanel(open: EditorSession): void {
     retry: (id) => open.shelf.retry(id),
     useOriginal: (id) => open.shelf.useOriginal(id),
     remove: (id) => open.shelf.remove(id),
+    // A file in use goes with its places, one step; the page redraws as
+    // after any delete, and again after the Undo.
+    removeUsed: (id) => {
+      endUndo();
+      const undo = open.deleteFileAndUses(id);
+      if (undo === null) return null;
+      select(null);
+      refresh();
+      tourChanged();
+      return () => {
+        undo();
+        refresh();
+        tourChanged();
+      };
+    },
     optimizeTour: () => open.shelf.optimizeTour(),
     addFiles: () => {
       void filePicker.pickMany().then(addToShelf);
     },
+    thumbOf: (row) =>
+      open.addedFileOf(row.kind === "video" ? (row.posterId ?? "") : row.id),
     placesOf: (id) =>
       assetPlaces(
         manifestToWrite(store.getState().tourDocument)?.stations ?? [],
@@ -1928,7 +1945,13 @@ function useShelfFileIn(
   }
   const kind = fileAddKindOfAsset(asset.kind);
   if (kind === null) return;
-  const placed = placeFrom(open, chosen, { kind, asset, fileName });
+  const poster = open.posterOf(assetId);
+  const placed = placeFrom(open, chosen, {
+    kind,
+    asset,
+    fileName,
+    ...(poster === undefined ? {} : { poster }),
+  });
   if (placed.kind === "refused") {
     toast(placed.reason);
     return;
@@ -2853,7 +2876,7 @@ async function openFile(
         ]);
         return largestSide(await loadGlbModel(blob));
       },
-      posterOf: (blob) => videoPosterOf(blob),
+      videoLookOf: (blob) => videoLookOf(blob),
     },
   });
   model = editor.model();

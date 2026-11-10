@@ -407,6 +407,11 @@ geo?, what })` - a copy inserted after the original (any station the
   - `itemsGrounded({ items: [{ id, alt }], what })` - several items' new
     altitudes ("put on the ground", the page measures the ground) as one
     step; an unknown id refuses the whole step.
+  - `fileUsesDeleted({ assetId, what })` - every use of a file taken out
+    in one step (the shelf's delete of a file in use): the free items and
+    story entries made from it deleted, a station's card image of it
+    cleared; an emptied automatic station goes too. A file nothing uses
+    changes nothing.
   - `modelResized({ id, sizeM, what })` - a placed model's size, within
     `TOUR_MODEL_MIN_SIZE_M`..`TOUR_MODEL_MAX_SIZE_M` (0.05 m to 500 m).
   - `moved` with `newStation: true` - "Move to a new station": the item
@@ -588,8 +593,9 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
 - `tourFieldChanges(state)` - `changeCount` less the objects': the moved
   frames, the setting and the detail fields not written yet.
 - `viewOf(state)`, `picturesNeeded(state, view)` - for a page's undo: a
-  step that brings back a photo the written file has no picture for needs
-  the page's picture.
+  step that brings back a captured photo the written file has no picture
+  for needs the page's picture (a picture made from a file names an asset
+  the tour keeps, and needs none).
 - `framesOf(manifest)`.
 - Module-internal (not exported: nothing outside the slice needs them, and
   the root dead-code check holds exports to their importers):

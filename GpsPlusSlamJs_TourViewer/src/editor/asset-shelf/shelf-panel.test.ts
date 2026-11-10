@@ -214,6 +214,29 @@ describe("acting on a file", () => {
     });
   });
 
+  // Why: a file in use is deleted with its places (the format has no
+  // empty file field), so the confirm must say so and name them, and
+  // the delete must come with an Undo that brings them back.
+  it("deletes a file in use with its places after the confirm, with an Undo", () => {
+    rows = [row({ placesInUse: 1 })];
+    const undo = vi.fn();
+    const removeUsed = vi.fn<(id: string) => (() => void) | null>(() => undo);
+    const { deps } = panel({ removeUsed });
+    (actIn("a", "del") as HTMLButtonElement).click();
+    const confirm = card("a")?.querySelector('[role="alertdialog"]');
+    expect(confirm?.textContent).toContain("bells.wav is used in 1 place.");
+    expect(confirm?.textContent).toContain("Deleting it takes that out too.");
+    expect(removeUsed).not.toHaveBeenCalled();
+    (actIn("a", "delyes") as HTMLButtonElement).click();
+    expect(removeUsed).toHaveBeenCalledWith("a");
+    expect(deps.remove).not.toHaveBeenCalled();
+    expect(deps.toast).toHaveBeenCalledWith(
+      "bells.wav deleted, taken out of 1 place.",
+      { label: "Undo", run: undo },
+    );
+    expect(card("a")?.querySelector('[role="alertdialog"]')).toBeNull();
+  });
+
   // Why: deleting a file in use would empty the fields that use it; the
   // creator is told where first, and nothing is deleted.
   it("deletes nothing in use, and says where it is used", () => {
@@ -427,5 +450,72 @@ describe("folding and the phone", () => {
     p.destroy();
     setRows([]);
     expect(card("a")).not.toBeNull();
+  });
+});
+
+describe("thumbnails and the video warning", () => {
+  // Why: the card is where an author recognises a file; a picture or a
+  // poster says more than a kind icon, and each object URL made for it
+  // must be let go when its bytes change, the file goes or the panel does.
+  it("shows a picture or a video's poster, with a play mark, and lets the URLs go", () => {
+    rows = [
+      row({ id: "p", kind: "image", name: "gate.jpg" }),
+      row({ id: "v", kind: "video", name: "flood.mp4", status: "kept" }),
+    ];
+    const made: string[] = [];
+    const revoked: string[] = [];
+    let pictureBytes = new Blob(["jpeg"]);
+    const poster = new Blob(["poster"]);
+    const { panel: p } = panel({
+      thumbOf: (r) =>
+        r.id === "p" ? pictureBytes : r.id === "v" ? poster : undefined,
+      objectUrl: {
+        create: () => {
+          const url = `blob:${String(made.length)}`;
+          made.push(url);
+          return url;
+        },
+        revoke: (u) => {
+          revoked.push(u);
+        },
+      },
+    });
+    const pic = card("p")?.querySelector<HTMLElement>(".as-thumb");
+    expect(pic?.classList.contains("has-img")).toBe(true);
+    expect(pic?.style.backgroundImage).toContain("blob:0");
+    expect(pic?.querySelector(".play")).toBeNull();
+    expect(card("v")?.querySelector(".as-thumb .play")).not.toBeNull();
+    expect(made).toEqual(["blob:0", "blob:1"]);
+    pictureBytes = new Blob(["jpeg-2"]);
+    setRows([row({ id: "p", kind: "image", name: "gate.jpg", swaps: 1 })]);
+    expect(revoked).toEqual(["blob:0", "blob:1"]);
+    expect(
+      card("p")?.querySelector<HTMLElement>(".as-thumb")?.style.backgroundImage,
+    ).toContain("blob:2");
+    p.destroy();
+    expect(revoked).toEqual(["blob:0", "blob:1", "blob:2"]);
+  });
+
+  it("draws the kind icon where there is no picture", () => {
+    rows = [row()];
+    panel({ thumbOf: () => undefined });
+    expect(
+      card("a")?.querySelector(".as-thumb")?.classList.contains("has-img"),
+    ).toBe(false);
+  });
+
+  it("warns on the card of a video large for its length, unopened", () => {
+    rows = [
+      row({
+        kind: "video",
+        status: "kept",
+        estimatedBytes: 120 * MB,
+        seconds: 60,
+      }),
+    ];
+    panel();
+    expect(card("a")?.querySelector(".as-warn")?.textContent).toContain(
+      "about 120 MB a minute",
+    );
   });
 });

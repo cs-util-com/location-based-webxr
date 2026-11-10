@@ -21,6 +21,7 @@ import type { UseInChoice, UseInGroup } from "./use-in-choices.js";
 import {
   cardKindLine,
   cardMore,
+  cardWarning,
   cardState,
   filteredRows,
   pillView,
@@ -54,6 +55,7 @@ const OWN_ICONS = {
     '<path d="M2 5.5l6-3 6 3-6 3z"/><path d="M2 5.5v5l6 3 6-3v-5M8 8.5v5"/>',
   back: '<path d="M10 3.5L5.5 8l4.5 4.5"/>',
   left: '<path d="M10 3.5L5.5 8l4.5 4.5"/>',
+  play: '<path d="M5.5 3.5l7 4.5-7 4.5z"/>',
 } as const;
 
 type OwnIcon = keyof typeof OWN_ICONS;
@@ -109,6 +111,10 @@ export interface ShelfPanelDeps {
   readonly retry: (id: string) => boolean;
   readonly useOriginal: (id: string) => Promise<boolean>;
   readonly remove: (id: string) => (() => void) | null;
+  /** Deletes a file in use with every use of it, returning the undo
+   *  (null when nothing was deleted). Without it a file in use is not
+   *  deleted: the confirm says where it is used. */
+  readonly removeUsed?: (id: string) => (() => void) | null;
   readonly optimizeTour: () => number;
   /** Opens the picker for files to add. */
   readonly addFiles: () => void;
@@ -121,6 +127,14 @@ export interface ShelfPanelDeps {
   readonly useIn?: {
     readonly choices: (id: string) => readonly UseInGroup[];
     readonly use: (id: string, key: string) => void;
+  };
+  /** The picture a card shows: a picture's bytes, a video's poster's;
+   *  absent or undefined, the kind's icon. */
+  readonly thumbOf?: (row: ShelfRow) => Blob | undefined;
+  /** Object URLs for the thumbnails (default: the browser's). */
+  readonly objectUrl?: {
+    readonly create: (blob: Blob) => string;
+    readonly revoke: (url: string) => void;
   };
   readonly toast: (text: string, action?: ShelfToastAction) => void;
   /** Keeps the fold; null where nothing can be kept. */
@@ -208,10 +222,22 @@ function setBar(b: Element | null, percent: number): void {
   if (fill !== null) fill.style.width = `${String(percent)}%`;
 }
 
-function thumb(row: ShelfRow): HTMLElement {
+/** A card's thumbnail: the kind's icon, or the picture at `url` (a
+ *  picture's own, a video's poster with a play mark). */
+function thumb(row: ShelfRow, url: string | null): HTMLElement {
   const look = SHELF_KINDS[row.kind].icon;
   const t = el("span", `as-thumb k-${look}`);
   t.append(icon(KIND_ICON[look]));
+  if (url !== null) {
+    t.classList.add("has-img");
+    // An object URL: "blob:" and the origin and a uuid, nothing to quote.
+    t.style.backgroundImage = `url("${url}")`;
+    if (row.kind === "video") {
+      const play = ownIcon("play");
+      play.classList.add("play");
+      t.append(play);
+    }
+  }
   return t;
 }
 
@@ -283,6 +309,41 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     goingBack: new Set(),
   };
   let drawnKey: string | null = null;
+  /** The thumbnails' object URLs by file id, with the bytes each was
+   *  made from: made once, revoked when the bytes change, the file goes
+   *  or the panel does. */
+  const thumbs = new Map<
+    string,
+    { readonly blob: Blob; readonly url: string }
+  >();
+  const urls = deps.objectUrl ?? {
+    create: (blob: Blob) => URL.createObjectURL(blob),
+    revoke: (url: string) => {
+      URL.revokeObjectURL(url);
+    },
+  };
+
+  function thumbUrl(row: ShelfRow): string | null {
+    const blob = deps.thumbOf?.(row);
+    const had = thumbs.get(row.id);
+    if (had !== undefined && had.blob === blob) return had.url;
+    if (had !== undefined) {
+      urls.revoke(had.url);
+      thumbs.delete(row.id);
+    }
+    if (blob === undefined) return null;
+    const url = urls.create(blob);
+    thumbs.set(row.id, { blob, url });
+    return url;
+  }
+
+  function dropGoneThumbs(rows: readonly ShelfRow[]): void {
+    for (const [id, { url }] of thumbs) {
+      if (rows.some((r) => r.id === id)) continue;
+      urls.revoke(url);
+      thumbs.delete(id);
+    }
+  }
 
   // --- the dock's frame, built once ---------------------------------------
   root.classList.add("as-shelf");
@@ -554,9 +615,15 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
       top.append(el("span", "as-uses zero", usesLabel(0)));
     }
     main.append(top, el("div", "as-ckind", cardKindLine(row)), stateEl(row));
+    const warning = cardWarning(row);
+    if (warning !== null) {
+      const warn = el("div", "as-warn");
+      warn.append(ownIcon("alert"), el("span", "", warning));
+      main.append(warn);
+    }
     const side = el("div", "as-cside");
     side.append(iconOnly("del", `Delete ${row.name}`, "trash", "ib as-del"));
-    crow.append(thumb(row), main, side);
+    crow.append(thumb(row, thumbUrl(row)), main, side);
     card.append(crow);
     if (state.confirm === row.id) {
       card.append(confirmEl(row));
@@ -599,7 +666,9 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     const words = el("div", "");
     words.append(
       el("b", "", `${row.name} is used in ${placesWord(places.length)}.`),
-      " Take it out of them first; then it can be deleted.",
+      deps.removeUsed === undefined
+        ? " Take it out of them first; then it can be deleted."
+        : ` Deleting it takes ${places.length === 1 ? "that" : "them"} out too.`,
     );
     const where = el("ul", "");
     for (const place of places) {
@@ -614,6 +683,9 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     }
     const buttons = el("div", "btnrow");
     buttons.append(button("btn small", "delno", "Keep it"));
+    if (deps.removeUsed !== undefined) {
+      buttons.append(button("btn small danger", "delyes", "Delete", "trash"));
+    }
     box.append(words, where, buttons);
     return box;
   }
@@ -788,6 +860,7 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     ].join("\u0003");
     if (key === drawnKey) live(rows);
     else full(rows);
+    dropGoneThumbs(rows);
     drawnKey = key;
     drawChrome(rows);
   }
@@ -836,6 +909,20 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
 
   function rowOf(id: string): ShelfRow | undefined {
     return deps.rows().find((r) => r.id === id);
+  }
+
+  /** A file in use deleted with its places, after the confirm: one Undo
+   *  brings the file and them back. */
+  function removeUsed(row: ShelfRow): void {
+    state.confirm = null;
+    const places = deps.placesOf(row.id).length;
+    const undo = deps.removeUsed?.(row.id) ?? null;
+    redraw();
+    if (undo === null) return;
+    deps.toast(`${row.name} deleted, taken out of ${placesWord(places)}.`, {
+      label: "Undo",
+      run: undo,
+    });
   }
 
   function remove(row: ShelfRow): void {
@@ -913,6 +1000,7 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
       void useOriginal(row);
     },
     del: remove,
+    delyes: removeUsed,
     delno: (row) => {
       state.confirm = null;
       redraw();
@@ -995,6 +1083,8 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     open,
     destroy() {
       unsubscribe();
+      for (const { url } of thumbs.values()) urls.revoke(url);
+      thumbs.clear();
       closePop(false);
       root.removeEventListener("click", onClick);
       root.removeEventListener("keydown", onKey);

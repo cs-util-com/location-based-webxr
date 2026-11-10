@@ -31,6 +31,7 @@ import type {
   TourPicture,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { tourBlockAssetIds } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import {
   TOUR_MEDIA_EXTENSIONS,
   tourMediaTypeOf,
@@ -900,7 +901,8 @@ export interface EditorSession {
   >;
   /** The item `id` made from the file `assetId` the tour lists already (a
    *  file on the shelf, its "Use in..."): one step, as `setItemFile` once
-   *  its file is in; a video in a story then shows no poster. Refused in
+   *  its file is in; a video in a story takes the poster minted with it
+   *  (`posterOf`), or none. Refused in
    *  words, changing nothing, for an id or a file the tour does not carry,
    *  a block made of words and a file of another kind. */
   setItemAsset(
@@ -910,6 +912,20 @@ export interface EditorSession {
   /** A file the tour lists, by its id: brought in here or in the written
    *  tour; undefined for none. */
   assetOf(id: string): TourAsset | undefined;
+  /** The poster minted with the video `assetId` this session brought in;
+   *  undefined for none (another kind, an opened tour's video). */
+  posterOf(assetId: string): TourAsset | undefined;
+  /** The bytes of a file this session brought in, by its id (the
+   *  shelf's thumbnails); undefined for one of the opened tour. */
+  addedFileOf(id: string): Blob | undefined;
+  /** Delete the shelf's file `assetId` with every use of it (the shelf's
+   *  delete of a file in use): its items, story entries and station card
+   *  images go in one step (`fileUsesDeleted`), then its shelf entry. The
+   *  returned undo puts the entry back, and takes that step back while it
+   *  is still the last one (after a later edit the uses stay out: an undo
+   *  of that edit comes first). Null, changing nothing, for a file the
+   *  shelf does not hold. */
+  deleteFileAndUses(assetId: string): (() => void) | null;
   /** What the next save adds to the newest written file: the files
    *  brought in, the timing texts and the copied or restored photos'
    *  pictures it does not hold yet. */
@@ -1011,7 +1027,7 @@ export function createEditorSession(input: {
    *  and a video without a poster. */
   readonly fileReaders?: Pick<
     TourFileContext,
-    "measureModel" | "posterOf" | "limits" | "shrinks"
+    "measureModel" | "videoLookOf" | "limits" | "shrinks"
   >;
   /** The shelf's optimizers, one row per kind (default: this build's,
    *  `ASSET_OPTIMIZERS`); a kind with one may bring a file over the caps
@@ -1586,7 +1602,12 @@ export function createEditorSession(input: {
     // On the shelf once listed, so its swap finds the record (a minted
     // poster is small already).
     if (read.isNew) {
-      shelf.add(read.asset, fileName, read.blob.size, "added");
+      shelf.add(read.asset, fileName, read.blob.size, "added", {
+        ...(read.poster === undefined
+          ? {}
+          : { posterId: read.poster.asset.id }),
+        ...(read.seconds === undefined ? {} : { seconds: read.seconds }),
+      });
     }
     return {
       kind: "added",
@@ -1748,8 +1769,47 @@ export function createEditorSession(input: {
     setItemFile,
     setItemAsset: (id, assetId) => {
       const asset = assetOf(assetId);
-      return asset === undefined ? notInTour : applyItemFile(id, asset);
+      if (asset === undefined) return notInTour;
+      // A video takes the poster minted with it, when the shelf knows one.
+      const posterId = store.getState().assetShelf.entries[assetId]?.posterId;
+      const poster = posterId === undefined ? undefined : assetOf(posterId);
+      return applyItemFile(id, asset, poster);
     },
+    posterOf: (assetId) => {
+      const posterId = store.getState().assetShelf.entries[assetId]?.posterId;
+      return posterId === undefined ? undefined : assetOf(posterId);
+    },
+    deleteFileAndUses(assetId) {
+      const state = mine();
+      const entry = store.getState().assetShelf.entries[assetId];
+      if (state === null || entry === undefined) return null;
+      for (const found of documentObjects(state)) {
+        if (tourBlockAssetIds(found.object).includes(assetId)) {
+          keepPicture(found);
+        }
+      }
+      const stepped = took(() =>
+        store.dispatch(
+          tourDocumentActions.fileUsesDeleted({
+            assetId,
+            what: `the delete of ${entry.name}`,
+          }),
+        ),
+      );
+      const after = doc().revision;
+      const putBack = shelf.remove(assetId);
+      if (putBack === null) {
+        if (stepped) step("undo");
+        return null;
+      }
+      // The file first: the undo of a picture's delete needs its bytes.
+      return () => {
+        putBack();
+        if (stepped && doc().revision === after) step("undo");
+      };
+    },
+    addedFileOf: (id) =>
+      own().addedAssets.some((a) => a.id === id) ? files.get(id) : undefined,
     assetOf,
     swapAsset,
     addedBytes,

@@ -988,6 +988,13 @@ on a desktop.
   item now shows ..." or the refusal; one step (`setItemFile`).
 - The shell's `fileNameOf` reads the shelf's names, so the inspector shows
   a file by the name it came in under.
+- The shelf's thumbnails (`thumbOf`) are the session's own bytes
+  (`addedFileOf`): a picture's, or a video's minted poster's; an opened
+  tour's files keep the kind's icon. The page reads a video once through
+  `videoLookOf` (`video-poster.ts`) for its poster and its length.
+- The shelf's delete of a file in use (`removeUsed`) is
+  `deleteFileAndUses`: the delete toast ends first, the selection goes and
+  the page redraws, as after any delete; the panel's Undo redraws again.
 - The shelf's "Use in..." (`useIn`): its choices are `useInChoices` over
   the manifest to write for the file `assetOf` finds; `useShelfFileIn`
   takes the chosen key - a station or a story adds an item made from the

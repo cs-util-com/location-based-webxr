@@ -223,6 +223,8 @@ body.shelf-folded #view3d {
 
 .as-thumb {
   display: flex;
+  position: relative;
+  overflow: hidden;
   flex: none;
   align-items: center;
   justify-content: center;
@@ -234,23 +236,41 @@ body.shelf-folded #view3d {
 }
 
 .as-thumb.k-sound {
-  background: #34404f;
+  background-color: #34404f;
   color: #a9c6e8;
 }
 
 .as-thumb.k-video {
-  background: #3b3245;
+  background-color: #3b3245;
   color: #d4bdf0;
 }
 
 .as-thumb.k-model {
-  background: #3a4136;
+  background-color: #3a4136;
   color: #c3dcae;
 }
 
 .as-thumb.k-picture {
-  background: #463c2e;
+  background-color: #463c2e;
   color: #f0d3a3;
+}
+
+.as-thumb.has-img {
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
+#shell-shelf .as-thumb.has-img svg.i {
+  display: none;
+}
+
+#shell-shelf .as-thumb.has-img svg.i.play {
+  display: block;
+  width: 18px;
+  height: 18px;
+  color: #fff;
+  fill: rgb(0 0 0 / 35%);
 }
 
 .as-cmain {
@@ -277,6 +297,24 @@ body.shelf-folded #view3d {
 .as-ckind {
   color: var(--s-dim);
   font-size: 11px;
+}
+
+/* A video large for its length: says so on the card, unopened. */
+.as-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin-top: 3px;
+  color: var(--s-accent);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+#shell-shelf .as-warn svg.i {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin-top: 1px;
 }
 
 .as-cstate {
@@ -431,6 +469,11 @@ body.shelf-folded #view3d {
   border-radius: 5px;
   background: rgb(217 125 121 / 12%);
   line-height: 1.45;
+}
+
+#shell-shelf .as-confirm .btn.danger {
+  border-color: rgb(217 125 121 / 55%);
+  color: var(--s-danger);
 }
 
 .as-confirm ul {

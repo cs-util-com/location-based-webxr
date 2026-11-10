@@ -1555,7 +1555,8 @@ function contentAt(
 
 /** The photos a step to `view` brings back that the written file has no
  *  picture for: the page must hold each one's picture, or the step is
- *  refused. */
+ *  refused. Only a captured photo (`isCapturedPhoto`): a picture made from
+ *  a file names an asset the tour keeps with the edits. */
 export function picturesNeeded(
   state: TourDocumentState,
   view: TourDocumentView,
@@ -1564,8 +1565,7 @@ export function picturesNeeded(
   const hosted = hostedObjects(state.written);
   return contentAt(state.written, view, keptStationsOf(state))
     .placed.filter(
-      (p) =>
-        p.object.kind === "picture" && hosted.key(p.object.id) === undefined,
+      (p) => isCapturedPhoto(p.object) && hosted.key(p.object.id) === undefined,
     )
     .map((p) => p.object.id);
 }
@@ -3021,6 +3021,67 @@ function storyChildDelete(
   return out === null ? before : frameReplaced(before, out.frame, payload.what);
 }
 
+/**
+ * Every use of the file `assetId` taken out (`fileUsesDeleted`, the
+ * shelf's delete of a file in use): the free items and story entries made
+ * from it deleted, a station's card image of it cleared - one step, so an
+ * undo brings them all back. A station a delete empties goes too when it
+ * is an automatic one (`withoutEmptied`). Nothing using it changes
+ * nothing.
+ */
+function fileUsesDelete(
+  before: TourDocumentState,
+  payload: { assetId: string; what: string },
+): TourDocumentState {
+  if (before.written === null) return before;
+  const { assetId } = payload;
+  const uses = (block: { readonly kind?: unknown }): boolean =>
+    tourBlockAssetIds(block).includes(assetId);
+  let lists = { placed: [...before.placed], deleted: [...before.deleted] };
+  const left: (string | undefined)[] = [];
+  for (const found of documentObjects(before)) {
+    if (!uses(found.object)) continue;
+    lists = deleteObject(lists, found);
+    left.push(found.object.station);
+  }
+  const frames = new Map<string, StationFrame>();
+  for (const frame of allFrames(before)) {
+    let next = frame;
+    for (const story of tourStories(frame)) {
+      for (const child of story.children) {
+        if (!uses(child)) continue;
+        next = withoutStoryChild(next, child.id)?.frame ?? next;
+      }
+    }
+    if (next.image === assetId) next = withoutField(next, "image");
+    if (next !== frame) frames.set(frame.id, next);
+  }
+  const itemsGone = left.length > 0;
+  if (!itemsGone && frames.size === 0) return before;
+  const listed =
+    frames.size === 0
+      ? before.stations
+      : framesHolding(before, ...frames.keys()).map(
+          (s) => frames.get(s.id) ?? s,
+        );
+  const after = { ...before, ...lists, stations: listed };
+  const stations = withoutEmptied(after, [...left, ...frames.keys()]);
+  return edited(
+    before,
+    {
+      ...lists,
+      stations,
+      ...(frames.size === 0
+        ? {}
+        : {
+            touched: { ...before.touched, stations: true },
+            framesRecorded: true,
+          }),
+    },
+    payload.what,
+  );
+}
+
 /** Whether the tour a reload opens holds every file `block` names: the
  *  one last written in place once that write arrived (`inPlaceAssets`: a
  *  write still running, or one that failed, does not count, and a
@@ -3741,6 +3802,14 @@ const tourDocumentSlice = createSlice({
       action: PayloadAction<{ child: string; what: string }>,
     ) {
       return storyChildDelete(plain(state), action.payload);
+    },
+    /** Every use of a file taken out with it (`fileUsesDelete`): one
+     *  step; a file nothing uses changes nothing. */
+    fileUsesDeleted(
+      state,
+      action: PayloadAction<{ assetId: string; what: string }>,
+    ) {
+      return fileUsesDelete(plain(state), action.payload);
     },
     /** A station item moved (`childMoveChange`): one step; a refused
      *  move changes nothing. */

@@ -29,6 +29,13 @@ shelf runner (`asset-shelf.ts`); every word comes from
     (`use-in-choices.ts`), `use(id, key)` uses it at the chosen one; absent,
     no card offers "Use in...". The menu shows each group under its head,
     or "Nowhere yet: add a station or a story first" for none.
+  - `deps.thumbOf?(row)`: the bytes a card shows as its thumbnail (a
+    picture's own, a video's poster's, with a play mark); undefined keeps
+    the kind's icon. Each gets one object URL (`deps.objectUrl`, default
+    the browser's), revoked when the bytes change, the file goes or the
+    panel is destroyed.
+  - A video large for its length carries `cardWarning`'s words on its
+    card (`.as-warn`), opened or not.
   - `deps.toast(text, action?)`: the page's toast; the action has a label
     and a `run`.
   - `deps.storage`: keeps the fold (`SHELF_FOLD_KEY`, `"1"` folded); null
@@ -52,10 +59,14 @@ shelf runner (`asset-shelf.ts`); every word comes from
   allows it; disabled with "Going back..." while it works, then a toast
   either way) and the places.
 - Delete: an unused file goes at once, with a toast and its Undo. A used
-  file is not deleted: an alert dialog lists the places (each a button
+  file first opens an alert dialog that lists the places (each a button
   that shows it) and offers "Keep it", focused; closing it returns the
-  focus to the delete button. Deleting a used file would leave its places
-  empty; the editor asks for those places to be changed first.
+  focus to the delete button. With `deps.removeUsed` the dialog says
+  the places go with the file and offers "Delete": the file and every
+  place go in one step, and the toast "<name> deleted, taken out of N
+  places." carries the Undo that brings all back. The format has no
+  empty file field, so a place goes rather than staying empty. Without
+  `removeUsed` the dialog asks for the places to be changed first.
 - The popover (`#shelf-pop`, a menu) lists the places; arrows move between
   them, Escape closes it and returns the focus, a pointerdown outside
   closes it.
@@ -118,4 +129,6 @@ places, the popover showing a place and closing on Escape, "Use in..."
 with its groups, its empty state and its absence without the command, the fold kept
 in storage, the rail's rings, the bottom bar's toggle, the phone's sheet
 and pill, a progress update that moves only the bar and keeps the focus,
-and nothing drawn after `destroy`. The words are `shelf-panel-model.test.ts`'s.
+the thumbnails (a picture, a poster with its play mark, the icon without
+one) with their object URLs let go, the video warning on an unopened
+card, and nothing drawn after `destroy`. The words are `shelf-panel-model.test.ts`'s.

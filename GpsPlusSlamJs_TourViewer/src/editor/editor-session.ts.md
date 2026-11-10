@@ -394,9 +394,20 @@ changes`; a label is cut at 40 characters (`truncated`, split-safe), a label-les
   gone id, a block made of words, and what `addFile` refuses.
 - `setItemAsset(id, assetId)` - the same for a file the tour lists
   already (the shelf's "Use in..."): one step, no read; a video in a story
-  then shows no poster. Refused for a gone id or file, a block made of
+  takes the poster minted with the file (`posterOf`), or none. Refused for a gone id or file, a block made of
   words, and a file not of the block's kind ("That file is not of the kind
   this item is made from.").
+- `posterOf(assetId)` - the poster minted with a video this session
+  brought in (the shelf's entry keeps its id); undefined for none.
+- `addedFileOf(id)` - the bytes of a file this session brought in (the
+  shelf's thumbnails); undefined for an opened tour's file.
+- `deleteFileAndUses(assetId)` - the shelf's delete of a file in use:
+  every use goes in one step (`fileUsesDeleted`), then the shelf entry.
+  The returned undo puts the entry back first (a picture's undo needs its
+  bytes), then takes the step back while it is still the newest; after a
+  later edit the uses stay out. Null for a file the shelf does not hold.
+- `addFile` hands the shelf a video's minted poster id and length
+  (`ShelfVideoLook`), so its card shows the poster and can warn.
 - `assetOf(id)` - a listed file by its id (brought in here, or in the
   written tour); undefined for none.
 
@@ -523,7 +534,7 @@ examples).
 
 - One files table (`files`, asset id to Blob) for every file's bytes the session holds; no other map of bytes.
 - `addFile(file, fileName, kinds?)`: reads the file at once (`readTourFile`, `tour-files.ts`) - a dropped `File` moved or deleted later does not matter - checked against the caps on `tourBytes()`, named by its sha256. Bytes the tour holds already (an asset of that id, or a signed tour's entry of that hash) are that asset, nothing added. Each new file (and a video's minted poster) goes into the table and the draft (`saveAsset`, before the asset is listed, so before any record naming it), then `assetsAdded`. Answers `{ kind: "added", asset, poster?, backedUp }` or a refusal in words; `backedUp` false when the draft did not keep it.
-- `fileReaders` (input): `measureModel` (a model's largest side; 0 refuses it as showing nothing) and `posterOf` (a video's first frame), the page's browser readers; absent in a test, a model is taken unmeasured and a video without a poster.
+- `fileReaders` (input): `measureModel` (a model's largest side; 0 refuses it as showing nothing) and `videoLookOf` (a video's poster and length, one element), the page's browser readers; absent in a test, a model is taken unmeasured and a video without a poster.
 - `addedBytes()`: what the next save adds to the written file (`saves.addedBytes`, the snapshot's rule): the files brought in, the timing texts and the copied or restored photos' pictures it lacks, less the old entries a smaller file replaces (so below zero when a swap saves more than the rest adds). `tourBytes()`: the newest written file's size (the opened entries' before a save) plus `addedBytes()` - what the caps are judged on. `nextSaveBytes()`: the same, but only the added bytes the write keeps (`saves.addedBytes(state, true)`: a file nothing names any more, after an undo whose redo a later edit dropped, is left out) - what the autosave's cap is judged on, both ways: after every edit (`judgeAutosave`) and when a save target comes (`attachTarget`; the tour's size, not the attached file's, which differs once a copy was saved before the target came).
 - `contentOf(path)`: a file brought in, by the id its entry names (`content/<id>.<ext>`), for a preview before a save writes it. By id, because a placed picture's inline `imageAsset` keeps the path it had before a swap: that path reads the smaller file.
 - `swapAsset(id, { blob, path, width?, height? })`: a smaller file in place of an asset's under the same id. Judged first by the document's own rule (`assetOptimized` run on the current state), so a refused file never reaches the table; then the table holds the new bytes and the record is listed at the new path. The next save writes the new entry and removes the old one; a save already running writes the original. Answers `{ kind: "swapped" }` or a refusal in words. Not yet followed by the draft. A re-drop of the original bytes finds the swapped record (`knownFile` prefers `addedAssets`).
