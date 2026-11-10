@@ -199,7 +199,7 @@ function counted(n: number, noun: string): string {
 /** What the delete of a file used by `uses` does, in plain words: the
  *  items made of it go, the others (a narration, a poster, a voice, a
  *  station's card) only lose it. */
-export function fileDeleteWords(uses: FileUses): string {
+function fileDeleteWords(uses: FileUses): string {
   const own = uses.own.length;
   const others = uses.mentions.length + uses.cards.length;
   if (own === 0 && others === 0) return "Deletes the file.";

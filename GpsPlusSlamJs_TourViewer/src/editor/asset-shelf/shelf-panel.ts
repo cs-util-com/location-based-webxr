@@ -92,7 +92,7 @@ const KIND_ICON = {
   model: "model",
 } as const satisfies Record<string, ShellIcon>;
 
-export interface ShelfToastAction {
+interface ShelfToastAction {
   readonly label: string;
   readonly run: () => void;
 }

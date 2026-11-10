@@ -293,7 +293,7 @@ export function shelfChips(
 }
 
 /** The filter in effect: one whose kind has left the shelf is "All". */
-export function shownFilter(
+function shownFilter(
   rows: readonly ShelfRow[],
   filter: ShelfFilter,
 ): ShelfFilter {
@@ -313,7 +313,7 @@ export function filteredRows(
 /** At most this many rings on the folded rail; the rest a count. */
 export const RAIL_RINGS = 7;
 
-export interface RailRing {
+interface RailRing {
   readonly id: string;
   readonly kind: TourAssetKind;
   readonly state: CardState;

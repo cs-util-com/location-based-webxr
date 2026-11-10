@@ -29,7 +29,8 @@ and the phone's progress pill. Pure functions over the shelf's rows
 - `shelfSummary(rows)`: empty, busy (count, mean progress) or done (ready
   count, what a phone downloads against the originals, gain), each with
   the opened tour's files not made smaller (`optour`).
-- `shelfChips(rows, filter)`, `shownFilter`, `filteredRows`: "All" and
+- `shelfChips(rows, filter)`, `filteredRows` (both through the internal
+  `shownFilter`): "All" and
   one chip per kind present; none under two files; a filter whose kind
   left the shelf falls back to "All".
 - `RAIL_RINGS` (7), `railView(rows)`: a ring per file queued, running or
