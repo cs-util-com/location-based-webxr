@@ -342,7 +342,11 @@ export const TOUR_STORY_TITLE_RULE = {
 
 /** A plain folder's title: optional; when given, at most 80 code points
  *  and not blank, as a story's (an editor's tree names a group by it). */
-export const TOUR_FOLDER_TITLE_RULE = TOUR_STORY_TITLE_RULE;
+export const TOUR_FOLDER_TITLE_RULE = {
+  max: 80,
+  unit: 'codePoints',
+  required: true,
+} as const satisfies TourTextRule;
 
 /** A block inside a story: shown when the visitor reaches it. */
 export type TourStoryBlock = TourBlock & { readonly advance: TourStepAdvance };

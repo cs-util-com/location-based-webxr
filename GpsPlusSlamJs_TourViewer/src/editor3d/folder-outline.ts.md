@@ -8,7 +8,7 @@ how the creator sees in the scene which items it groups.
 
 ## Public API
 
-- `FOLDER_OUTLINE_COLOUR` - `0x57c4b8`, the tree's folder teal.
+- The outlines draw in `0x57c4b8`, the tree's folder teal (module-private).
 - `folderItemIds(tour, folderId)` - the ids of the free items the plain
   folder `folderId` holds at any depth, in the tour's order (through
   `tourFreeEntries` and each entry's `folder` path). `[]` for a null tour,
