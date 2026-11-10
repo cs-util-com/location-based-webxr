@@ -46,7 +46,7 @@ import {
   type KeyGesture,
 } from "./gesture.js";
 import { sceneKey, type GizmoHandle, type ScreenPoint } from "./gizmo-maths.js";
-import { createLongPress, LONG_PRESS } from "./long-press.js";
+import { createLongPress, LONG_PRESS } from "../editor/long-press.js";
 import { twoFingerMode, type FingerPair } from "./two-finger.js";
 
 /** What the input reads of the scene and asks of it. */

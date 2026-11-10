@@ -1650,6 +1650,7 @@ export async function openGlobeEditor(
       },
       gizmoSizes: () => editing.handleSizes(),
       modelParts: () => editing.modelParts(),
+      folderOutlines: () => editing.folderOutlines(),
       modelScreenOf(id, at) {
         const p = editing.modelScreenOf(id, at);
         return p === null ? null : [p.x, p.y];

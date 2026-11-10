@@ -3661,3 +3661,292 @@ body[data-view="3d"] #toasts {
     height: 40px;
   }
 }
+
+/* Plain folders (the chosen tree-first prototype): a teal folder, its
+ * items unnumbered on a teal guide line under its fold arrow, a pen to
+ * rename it; in the Select mode a checkbox on every item's and folder's
+ * row, and the picked rows' bar under the tree. */
+#shell-tree {
+  --s-fold: #57c4b8;
+  --s-fold-bg: rgb(87 196 184 / 10%);
+  --s-fold-line: rgb(87 196 184 / 45%);
+}
+
+.ic.fold {
+  color: var(--s-fold);
+}
+
+.gfolder .meta {
+  color: rgb(87 196 184 / 75%);
+}
+
+.kid.ctx,
+.gfolder.ctx {
+  background: var(--s-fold-bg);
+}
+
+/* The guide line, at the folder's arrow (its 16 px from 40 px). */
+.kid.infolder::after,
+.emptyrow.infolder::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 48px;
+  width: 1px;
+  background: var(--s-fold-line);
+}
+
+.kid.infolder.last::after,
+.emptyrow.infolder::after {
+  bottom: 50%;
+}
+
+.kid.infolder:not(.sel)::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 48px;
+  width: 8px;
+  height: 1px;
+  background: var(--s-fold-line);
+}
+
+.emptyrow.infolder {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 26px;
+  margin: 0;
+  padding-left: 76px;
+  font-style: italic;
+}
+
+.gfolder .ren {
+  display: none;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--s-muted);
+  cursor: pointer;
+}
+
+.gfolder .ren svg.i {
+  width: 12px;
+  height: 12px;
+}
+
+.gfolder .ren:hover {
+  background: var(--s-bg3);
+  color: var(--s-text);
+}
+
+.gfolder.sel .ren,
+.gfolder:hover .ren,
+.gfolder .ren:focus-visible {
+  display: inline-flex;
+}
+
+.gfolder .ren:focus-visible {
+  outline: 2px solid var(--s-accent);
+  outline-offset: -2px;
+}
+
+.renin {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  padding: 0 5px;
+  border: 1px solid var(--s-focus);
+  border-radius: 3px;
+  outline: none;
+  background: var(--s-bg0);
+  color: var(--s-text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.cb {
+  display: none;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: auto;
+  border: 1.5px solid var(--s-muted);
+  border-radius: 3px;
+  color: transparent;
+}
+
+.cb svg.i {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2.4;
+}
+
+.cb.on {
+  border-color: var(--s-accent);
+  background: var(--s-accent);
+  color: #1c1c1c;
+}
+
+.selmode .cb {
+  display: inline-flex;
+}
+
+.selmode :is(.kid, .gfolder) .meta,
+.selmode .gfolder .ren {
+  display: none;
+}
+
+/* The line on how to group, under the stations while nothing is picked:
+ * the mouse's words, or a finger's. */
+.hint {
+  margin: 8px 10px;
+  padding: 7px 9px;
+  border: 1px dashed var(--s-line2);
+  border-radius: 5px;
+  color: var(--s-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.hint b {
+  color: var(--s-text);
+  font-weight: 600;
+}
+
+.hint .coarse {
+  display: none;
+}
+
+@media (width <= 700px), (pointer: coarse) {
+  .hint .fine {
+    display: none;
+  }
+
+  .hint .coarse {
+    display: inline;
+  }
+}
+
+/* The Select mode's button in the tree's head. */
+#tree-select {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid var(--s-line2);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--s-muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+#tree-select svg.i {
+  width: 12px;
+  height: 12px;
+}
+
+#tree-select:hover {
+  color: var(--s-text);
+}
+
+#tree-select[aria-pressed="true"] {
+  border-color: var(--s-accent-line);
+  background: var(--s-accent-bg);
+  color: var(--s-accent-text);
+}
+
+#tree-select:focus-visible {
+  outline: 2px solid var(--s-accent);
+  outline-offset: -2px;
+}
+
+/* The picked rows' bar under the tree. */
+.selbar {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 8px;
+  border-top: 1px solid var(--s-accent-line);
+  background: rgb(233 162 59 / 6%);
+}
+
+.selbar[hidden],
+.dock.collapsed .selbar {
+  display: none;
+}
+
+.selbar .cnt {
+  margin-right: auto;
+  color: var(--s-accent-text);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.selbar .why {
+  flex-basis: 100%;
+  color: var(--s-dim);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.selbar .abtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--s-line2);
+  border-radius: 4px;
+  background: var(--s-bg2);
+  color: var(--s-text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.selbar .abtn svg.i {
+  width: 13px;
+  height: 13px;
+}
+
+.selbar .abtn.primary {
+  border-color: var(--s-accent);
+  background: var(--s-accent);
+  color: #1c1c1c;
+}
+
+.selbar .abtn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.selbar .abtn:focus-visible {
+  outline: 2px solid var(--s-focus);
+  outline-offset: 1px;
+}
+
+@media (width <= 700px) {
+  .emptyrow.infolder {
+    height: 32px;
+  }
+
+  .selbar .abtn {
+    height: 34px;
+  }
+}

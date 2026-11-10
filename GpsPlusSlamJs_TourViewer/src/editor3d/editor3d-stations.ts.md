@@ -115,6 +115,9 @@ standing`). A distance, size or focal length that is not a positive
 - `modelObject(id)` - an item's drawn model (the glb in its world part,
   at its tour scale under the part's pose), or null while its station does
   not draw it; `models(id)` - the models a station draws now.
+- `itemObjects(id)` - every object a free item draws now (its label, its
+  plane, its model); none while its station does not draw it. The folder
+  outline (`folder-outline.ts`) measures its boxes around these.
 
 ## Invariants & assumptions
 

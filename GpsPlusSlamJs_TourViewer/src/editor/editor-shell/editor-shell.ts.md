@@ -109,7 +109,10 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
     false when the page refused it and said why), `groundItems(items)` (heights,
     one step), `addItem(stationId, kind)` (a short text or a long text,
     from the tree's add in place and the palette);
-  - `deps.say(text)` - a passing line (the page's toast).
+  - `deps.say(text)` - a passing line (the page's toast);
+  - `deps.folders` (`FolderCommands`, `../folder-commands.ts`) - Group,
+    Ungroup, the drag into or out of a plain folder and its rename, each
+    one undo step that says its outcome or its refusal.
 - `EditorShell.groundMenu(point, place)` - the 3D view's input asks for
   the ground menu (a right click, a long press): opened at `point` (px in
   the view) for `place` (null: no ground loaded there); nothing while the
@@ -175,6 +178,32 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   `goto:<id>` selects and flies as a tree row does, and the radius slider
   (`radius-slider.ts`) previews through `view.previewRadius` and is
   cancelled when the selection goes or the shell hides.
+
+- Plain folders in the tree (the chosen tree-first prototype):
+  - **Multi-select.** Ctrl (or Cmd) + click on an item's or a folder's row
+    adds it to the picked rows or takes it out, Shift + click picks the
+    rows from the selection to it in the tree's order; in the Select mode
+    (`#tree-select`, its `aria-pressed`) a plain click ticks. On a touch
+    screen a long press on such a row (`long-press.ts`, `LONG_PRESS`)
+    enters the Select mode with that row ticked, and the click that
+    follows the press is swallowed. Each pick selects its last row too
+    (the inspector and 3D follow it).
+  - **Group and Ungroup.** Ctrl+G (or the bar's Group) groups the picked
+    rows (`groupRows`) into a new folder, unfolds its station, ends the
+    Select mode, selects the folder and opens its name field with the
+    proposed name; Ctrl+Shift+G (or the bar's Ungroup) ungroups the
+    picked folders and picks the items they freed. Neither runs inside a
+    field or a dialog. The selection bar (`#tree-selbar`,
+    `drawSelectionBar`) shows its count, its buttons and why Group is
+    off.
+  - **Rename.** The pen, F2 on a selected folder, or a new group opens the
+    name field; Enter or leaving it writes the name, Escape keeps the old
+    one; the focus returns to the folder's row.
+  - **Nested drag.** An item drags into a folder's row or its empty line
+    and out of a folder onto the station's items; a folder never drags
+    into a folder; a folder or a folder's item dropped where it cannot go
+    (a story, another station) shows the drag's "Not possible here"
+    (`folderDropRefusal`) and changes nothing.
 
 ## Invariants & assumptions
 
@@ -397,6 +426,13 @@ else shell.hide();
 ```
 
 ## Tests
+
+- "the tree's plain folders" in `editor-shell.test.ts`: Ctrl+click and
+  Ctrl+G make a folder whose name field takes the focus with the proposed
+  name, renamed by Enter; a Shift range grouped from the bar, Escape
+  keeping the name, Ungroup picking the freed items; the Select mode's
+  button and Done, and a touch long press entering it with the press's
+  click swallowed. In a browser: `playwright-tests/editor3d-folders.spec.js`.
 
 The rules it applies are unit-tested in their own files
 (`tree-click.test.ts`, `tree-model.test.ts`,

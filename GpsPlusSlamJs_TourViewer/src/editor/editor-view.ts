@@ -156,6 +156,17 @@ export interface EditorViewState {
   /** A click on the selected model the 3D view waits for, or none;
    *  cleared with the selection, like `modelFocus`. */
   readonly modelPick: ModelPick | null;
+  /** The tree's several-row selection (Ctrl or Shift on a row, or the
+   *  Select mode's ticks): item ids and plain folders (`folder:<id>`), in
+   *  the order picked, `selected` the last of them. Empty while one row
+   *  or none is selected the plain way; a plain selection clears it. */
+  readonly picked: readonly string[];
+  /** The tree's Select mode (a phone's way to pick several rows): a tap
+   *  ticks or unticks a row. */
+  readonly selectMode: boolean;
+  /** The plain folders the tree lists folded (to their row), by id: a
+   *  folder is listed open until folded. */
+  readonly foldedFolders: readonly string[];
 }
 
 export const initialEditorViewState: EditorViewState = {
@@ -180,6 +191,9 @@ export const initialEditorViewState: EditorViewState = {
   unlockedStations: [],
   modelFocus: null,
   modelPick: null,
+  picked: [],
+  selectMode: false,
+  foldedFolders: [],
 };
 
 /** Whether a payload's flag is a flag: anything else changes nothing. */
@@ -203,6 +217,42 @@ const editorViewSlice = createSlice({
         state.modelPick = null;
       }
       state.selected = action.payload.id;
+      state.picked = [];
+    },
+    /** Several rows picked in the tree (none: the picking ends), the last
+     *  one selected. Ids that are not text, empty ones and repeats are
+     *  left out. */
+    picked(state, action: PayloadAction<{ ids: readonly string[] }>) {
+      const { ids } = action.payload;
+      if (!Array.isArray(ids)) return;
+      const kept = [
+        ...new Set(
+          ids.filter((id): id is string => typeof id === "string" && id !== ""),
+        ),
+      ];
+      state.picked = kept;
+      const last = kept.at(-1);
+      if (last === undefined) return;
+      if (state.selected !== last) {
+        state.modelFocus = null;
+        state.modelPick = null;
+      }
+      state.selected = last;
+    },
+    /** The tree's Select mode on or off. */
+    selectModeSet(state, action: PayloadAction<{ on: boolean }>) {
+      if (isFlag(action.payload.on)) state.selectMode = action.payload.on;
+    },
+    /** A plain folder of the tree folded to its row, or listed open. */
+    folderFolded(
+      state,
+      action: PayloadAction<{ id: string; folded: boolean }>,
+    ) {
+      const { id, folded } = action.payload;
+      if (typeof id !== "string" || id === "" || !isFlag(folded)) return;
+      const rest = state.foldedFolders.filter((f) => f !== id);
+      if (folded) rest.push(id);
+      state.foldedFolders = rest;
     },
     /** A note or a section of the selected model in focus, or none; one
      *  that is no part and index changes nothing. */
@@ -378,6 +428,9 @@ const editorViewSlice = createSlice({
       unlockedStations: string[];
       modelFocus: ModelFocus | null;
       modelPick: ModelPick | null;
+      picked: string[];
+      selectMode: boolean;
+      foldedFolders: string[];
     }) => {
       state.openStations = [];
       state.openStories = [];
@@ -387,6 +440,10 @@ const editorViewSlice = createSlice({
       state.unlockedStations = [];
       state.modelFocus = null;
       state.modelPick = null;
+      // The tree's picking and its folded folders are the tour's too.
+      state.picked = [];
+      state.selectMode = false;
+      state.foldedFolders = [];
     };
     builder
       .addCase(tourDocumentActions.opened, foldAll)

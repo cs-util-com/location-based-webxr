@@ -48,6 +48,7 @@ import {
   type OrbitPose,
 } from "./editor3d-flight.js";
 import { createGizmo, drawGizmoPictures } from "./editor3d-gizmo.js";
+import { createFolderOutline } from "./folder-outline.js";
 import {
   createModelParts,
   heldClickNext,
@@ -489,6 +490,12 @@ export function createSceneEditing(deps: SceneEditingDeps) {
     ...(deps.clickPx === undefined ? {} : { clickPx: deps.clickPx }),
   });
 
+  // A selected plain folder's items, each in a light teal box.
+  const outline = createFolderOutline({
+    scene: deps.scene,
+    itemObjects: (id) => layer.itemObjects(id),
+  });
+
   return {
     /** The place the view looks at, on the ground: the ground's
      *  ellipsoidal height there, or the point's own height where no
@@ -557,6 +564,7 @@ export function createSceneEditing(deps: SceneEditingDeps) {
         else if (next === "missed") deps.page.say(MISSED_MODEL);
       }
       parts.update();
+      outline.update(deps.tour(), deps.models.view().selected);
       layout = layoutNow();
       if (layout === null) {
         gizmo.update(null);
@@ -616,6 +624,9 @@ export function createSceneEditing(deps: SceneEditingDeps) {
     /** For the page's checks: the selected model's note discs on the
      *  canvas and its section planes. */
     modelParts: () => parts.stats(),
+    /** For the page's checks: how many items of a selected folder show
+     *  their outline box. */
+    folderOutlines: () => outline.count(),
     /** Where a point of a drawn model (its own space) is on the screen,
      *  or null (the page's checks click its surface there). */
     modelScreenOf(
@@ -630,6 +641,7 @@ export function createSceneEditing(deps: SceneEditingDeps) {
     dispose() {
       input.dispose();
       parts.dispose();
+      outline.dispose();
       layer.setPreview(null);
       gizmo.dispose();
     },

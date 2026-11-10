@@ -95,7 +95,9 @@ keys), and writes only through the page's `edits`.
 - Editing on `Editor3dView`: `cancelGesture()` (a gesture under way ends
   unwritten: the page calls it before an undo or a redo);
   `screenOf(selection)`, `handleScreen(part)` and `gizmoSizes()` - CSS px
-  on the canvas, for the page's checks.
+  on the canvas, for the page's checks. `folderOutlines()` - how many teal boxes show
+  around a selected plain folder's items (`folder-outline.ts`), for the
+  same checks; the globe view answers it too.
 - `stats()` also carries the orbit's `target`, `distanceM`, the
   `camera`'s position, whether a flight is `flying`, and `top`.
 - Types `Editor3dDeps`, `Editor3dEdits`, `Editor3dStats` (the store it

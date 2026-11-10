@@ -251,6 +251,9 @@ export interface Editor3dView {
     readonly discs: readonly (readonly [number, number] | null)[];
     readonly planes: number;
   };
+  /** How many items of a selected plain folder show their outline box
+   *  (the page's checks). */
+  folderOutlines(): number;
   /** Where a point of a drawn model (its own space) is on the canvas
    *  (CSS px), or null until it is drawn (the page's checks). */
   modelScreenOf(
@@ -852,6 +855,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
       },
       gizmoSizes: () => editing.handleSizes(),
       modelParts: () => editing.modelParts(),
+      folderOutlines: () => editing.folderOutlines(),
       modelScreenOf(id, at) {
         const p = editing.modelScreenOf(id, at);
         return p === null ? null : [p.x, p.y];
