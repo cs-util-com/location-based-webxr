@@ -61,7 +61,8 @@ describe("keepReason", () => {
       { building: "garages" },
       { "building:part": "yes" },
     ];
-    for (const tags of cases) expect(keepReason(tags, low), tags).toBeDefined();
+    for (const tags of cases)
+      expect(keepReason(tags, low), JSON.stringify(tags)).toBeDefined();
   });
 
   it("leaves a building with parts, and one below the surface, alone", () => {
@@ -234,7 +235,9 @@ describe("the local roof prior", () => {
 
   it("invents no pitched roof where most tagged roofs nearby are flat", () => {
     const priors = neighbourhoodPriors(
-      town(0, 8, (i) => (i < 6 ? { "roof:shape": "flat" } : {})),
+      town(0, 8, (i): Record<string, string> =>
+        i < 6 ? { "roof:shape": "flat" } : {},
+      ),
       P,
     );
     expect(priors.get("way/07")).toMatchObject({
@@ -332,7 +335,9 @@ describe("the local roof prior", () => {
 
   it("needs enough evidence before one tag decides a neighbourhood", () => {
     const priors = neighbourhoodPriors(
-      town(0, 12, (i) => (i === 0 ? { "roof:shape": "flat" } : {})),
+      town(0, 12, (i): Record<string, string> =>
+        i === 0 ? { "roof:shape": "flat" } : {},
+      ),
       P,
     );
     expect(priors.get("way/05")?.pitched).toBe(true);
