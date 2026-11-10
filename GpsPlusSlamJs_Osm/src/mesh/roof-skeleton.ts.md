@@ -66,6 +66,10 @@ slope, weight 0 stays put and sweeps a vertical gable. Planned and decided in
 - `faceTriangles(face)`, `capTriangles(cap)`: triangles in plan (the
   library's `triangulate`), as the face's own points.
 - `skeletonPlanArea(roof)`: the plan area of the slopes and caps.
+- `wingEnds(roof)`: the outer walls (indices as given) whose sloped face is one
+  triangle resting on the wall, its raised corners one apex within
+  `END_APEX_M`. Vertical faces and faces cut flat by `maxT` are none. The
+  invented roofscape chooses its own gables from these (`chooseGableEnds`).
 
 ## For invented roofs (M8)
 
@@ -75,6 +79,11 @@ passes the footprint, an invented roof with a 0.32 m eave overhang passes its
 offset ring, and the area check and the eave snap then use that ring. With
 `maxT` an invented roof cannot grow taller than a limit on a deep building.
 The tagged path uses neither: its pitch is `rise / ridgeT`, uncapped.
+
+Invented roofs call `skeletonRoof` directly, a few runs per house (shared
+walls, then gables, then the eave ring), not through `skeletonFootprint`:
+that cache serves the tagged ladder's hipped and gabled rungs over one ring,
+while an invented roof changes its weights and its ring between runs.
 
 ## Invariants and assumptions
 

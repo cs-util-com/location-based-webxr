@@ -8,6 +8,7 @@ import {
   skeletonPlanArea,
   skeletonRoof,
   SkeletonFailure,
+  wingEnds,
 } from "./roof-skeleton.js";
 import { containsPoint } from "../spatial/point-in-ring.js";
 
@@ -333,6 +334,38 @@ describe("skeletonRoof gable ends", () => {
     expect(gableWalls(along)).toEqual([1]);
     expect(gableWalls(across)).toEqual([4]);
     expect(gableWalls(both)).toEqual([1, 4]);
+  });
+});
+
+describe("wingEnds of a finished roof", () => {
+  // Why: an invented roof chooses its gables itself (not two side by side,
+  // within a length band, never on a shared wall), so it needs the candidates
+  // the tagged path keeps private: the outer walls whose whole slope is one
+  // triangle resting on the wall. The answers below are the arm ends of each
+  // shape, which the geometry fixes.
+  const sorted = (xs: readonly number[]): number[] =>
+    [...xs].sort((a, b) => a - b);
+
+  it("names the arm ends of a rectangle, an L, a T and a U", () => {
+    expect(sorted(wingEnds(skeletonRoof([RECT])))).toEqual([1, 3]);
+    expect(sorted(wingEnds(skeletonRoof([L_SHAPE])))).toEqual([1, 4]);
+    expect(sorted(wingEnds(skeletonRoof([T_SHAPE])))).toEqual([1, 4, 7]);
+    expect(sorted(wingEnds(skeletonRoof([U_SHAPE])))).toEqual([2, 6]);
+  });
+
+  it("counts walls as given, also for a clockwise ring", () => {
+    // The L reversed: corner k of the reversed ring is corner 5 - k of the
+    // original, so its wall i (corner i to i + 1) is the original's wall
+    // 4 - i, and the ends 1 and 4 become 3 and 0.
+    const reversed = [...L_SHAPE].reverse();
+    expect(sorted(wingEnds(skeletonRoof([reversed])))).toEqual([0, 3]);
+  });
+
+  it("leaves out walls that already stand as gables, and ends cut by maxT", () => {
+    const gabled = skeletonRoof([L_SHAPE], { weights: [[1, 0, 1, 1, 1, 1]] });
+    expect(sorted(wingEnds(gabled))).toEqual([4]);
+    // A rectangle cut below its ridge has trapezoids everywhere: no apex.
+    expect(wingEnds(skeletonRoof([RECT], { maxT: 1 }))).toEqual([]);
   });
 });
 
