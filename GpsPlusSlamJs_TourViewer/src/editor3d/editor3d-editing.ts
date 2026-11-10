@@ -29,7 +29,6 @@ import * as THREE from "three";
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { groundHit } from "gps-plus-slam-globe/editor";
 
 import type { GroundPlace } from "gps-plus-slam-editor-kit/chrome";
@@ -41,6 +40,7 @@ import {
 } from "../editor/editor-view.js";
 import type { ModelEdit } from "../editor/model-edits.js";
 import { showSoundIcons } from "../kinds/audio/sound-icon.js";
+import { placeableOf, type PlaceRef } from "../placement/placeables.js";
 import { worldBlocks } from "../tour-document.js";
 import {
   clampedPose,
@@ -68,7 +68,13 @@ import {
 import type { FingerPair } from "./two-finger.js";
 import type { createStationsLayer, LayerPreview } from "./editor3d-stations.js";
 import type { EditorTerrain } from "./editor3d-terrain.js";
-import type { GesturePreview, GestureTarget, GestureWorld } from "./gesture.js";
+import {
+  gestureTargetOf,
+  gizmoSubjectOf,
+  type GesturePreview,
+  type GestureTarget,
+  type GestureWorld,
+} from "./gesture.js";
 import {
   gizmoLayout,
   handleAt,
@@ -78,7 +84,7 @@ import {
   type WorldPoint,
   viewHeightAtOneM,
 } from "./gizmo-maths.js";
-import { headingOfGeo, turnedGeo } from "./pose-edits.js";
+import { turnedGeo } from "./pose-edits.js";
 import { mapGestureOf, tiltedPolarRad } from "./two-finger.js";
 
 const DEG = Math.PI / 180;
@@ -231,39 +237,27 @@ export function createSceneEditing(deps: SceneEditingDeps) {
     },
   };
 
-  /** The selection as a gesture's target (the ground under an item is
-   *  the gizmo's centre); null for a code or one the tour lacks. */
+  /** The ground under a placeable's pose, in the world: a block's is
+   *  the ground under it, a station's its own height (the ground's). */
+  const centreOf = (ref: PlaceRef, geo: GestureTarget["geo"]): WorldPoint => {
+    const c = worldOf(
+      ref.kind === "station"
+        ? geo
+        : { ...geo, alt: world.groundAt(geo) ?? geo.alt },
+    );
+    return { x: c.x, y: c.y, z: c.z };
+  };
+
+  /** The selection as a gesture's target, read as a placeable (its
+   *  handles are its row's); null for a code, a card or one the tour
+   *  lacks. */
   const targetOf = (selection: string): GestureTarget | null => {
     const tour = deps.tour();
     if (tour === null) return null;
-    if (selection.startsWith(STATION)) {
-      const id = selection.slice(STATION.length);
-      const station = tour.stations.find((s) => s.id === id);
-      if (station === undefined) return null;
-      const c = worldOf(station.geo);
-      return {
-        kind: "station",
-        id,
-        geo: station.geo,
-        foundRadiusM: station.foundRadiusM,
-        centre: { x: c.x, y: c.y, z: c.z },
-        locked: deps.stationLocked(id),
-      };
-    }
-    for (const station of tour.stations) {
-      const item = worldBlocks(station).find((i) => i.id === selection);
-      if (item === undefined) continue;
-      const geo = itemGeoPose(item.pose, station.geo);
-      const c = worldOf({ ...geo, alt: world.groundAt(geo) ?? geo.alt });
-      return {
-        kind: "item",
-        id: item.id,
-        geo,
-        sizeM: item.kind === "model" ? (item.sizeM ?? null) : null,
-        centre: { x: c.x, y: c.y, z: c.z },
-      };
-    }
-    return null;
+    const p = placeableOf(tour, selection, {
+      stationLocked: (id) => deps.stationLocked(id),
+    });
+    return p === null ? null : gestureTargetOf(p, centreOf(p.ref, p.geo));
   };
 
   /** A model of the tour by its id, or null. */
@@ -346,16 +340,7 @@ export function createSceneEditing(deps: SceneEditingDeps) {
   const showPreview = (target: GestureTarget, now: GesturePreview | null) => {
     preview = now === null ? null : { target, now };
     const shown: LayerPreview | null =
-      now === null
-        ? null
-        : target.kind === "station"
-          ? {
-              kind: "station",
-              id: target.id,
-              geo: now.geo,
-              foundRadiusM: now.foundRadiusM ?? target.foundRadiusM,
-            }
-          : { kind: "item", id: target.id, geo: now.geo, sizeM: now.sizeM };
+      now === null ? null : { ref: target.ref, geo: now.geo, value: now.value };
     layer.setPreview(shown);
   };
 
@@ -371,33 +356,24 @@ export function createSceneEditing(deps: SceneEditingDeps) {
     const target = targetOf(selection);
     if (target === null) return null;
     let centre = target.centre;
-    let geo = target.geo;
-    let radiusM = target.kind === "station" ? target.foundRadiusM : null;
-    let sizeM = target.kind === "item" ? target.sizeM : null;
-    if (preview !== null && preview.target.id === target.id) {
-      geo = preview.now.geo;
-      radiusM = preview.now.foundRadiusM ?? radiusM;
-      sizeM = preview.now.sizeM ?? sizeM;
-      const under =
-        target.kind === "item" ? (world.groundAt(geo) ?? geo.alt) : geo.alt;
-      const c = worldOf({ ...geo, alt: under });
-      centre = { x: c.x, y: c.y, z: c.z };
+    let now: GesturePreview = {
+      geo: target.geo,
+      value: target.extent?.value ?? null,
+    };
+    const { ref } = target;
+    const shown = preview?.target.ref;
+    if (preview !== null && shown?.kind === ref.kind && shown.id === ref.id) {
+      now = {
+        geo: preview.now.geo,
+        value: preview.now.value ?? now.value,
+      };
+      centre = centreOf(ref, now.geo);
     }
     const distance = camera.position.distanceTo(
       new THREE.Vector3(centre.x, centre.y, centre.z),
     );
     const metresPerPx = Math.max(1e-6, distance * spritePerPx());
-    return gizmoLayout(
-      {
-        kind: target.kind,
-        centre,
-        headingDeg: headingOfGeo(geo),
-        radiusM,
-        sizeM,
-        locked: target.kind === "station" && target.locked === true,
-      },
-      metresPerPx,
-    );
+    return gizmoLayout(gizmoSubjectOf(target, now, centre), metresPerPx);
   };
 
   const screenOf = (at: THREE.Vector3): ScreenPoint | null => {
@@ -528,23 +504,19 @@ export function createSceneEditing(deps: SceneEditingDeps) {
       if (target === null) return;
       showPreview(
         target,
-        radiusM === null
-          ? null
-          : { geo: target.geo, foundRadiusM: radiusM, sizeM: null },
+        radiusM === null ? null : { geo: target.geo, value: radiusM },
       );
     },
     /** Turn the selection `deg` clockwise about up, where it stands: one
-     *  edit through the page (a locked station's is refused there).
-     *  False for a selection without a pose here (a code). */
+     *  edit through the page (a locked station's is refused there). The
+     *  inspector's typed heading, so what does not show a turn is turned
+     *  too (only the knob and the keys read `turns`). False for a
+     *  selection without a pose here (a code). */
     turn(selection: string, deg: number): boolean {
       const target = targetOf(selection);
       if (target === null) return false;
       const geo = turnedGeo(target.geo, deg);
-      deps.page.commit(
-        target.kind === "station"
-          ? { kind: "station-pose", id: target.id, geo }
-          : { kind: "item-pose", id: target.id, geo },
-      );
+      deps.page.commit({ kind: "pose", ref: target.ref, geo });
       return true;
     },
     /** Each frame: the input's retries and a held click, then the gizmo

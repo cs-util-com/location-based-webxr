@@ -1661,7 +1661,10 @@ describe("the bottom panel", () => {
       .querySelector<HTMLButtonElement>("#shell-panel .prow .fix")
       ?.click();
     expect(edits.scene).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: "item-pose", id: "far" }),
+      expect.objectContaining({
+        kind: "pose",
+        ref: { kind: "block", id: "far" },
+      }),
     );
     expect(deps.say).toHaveBeenCalledWith(
       expect.stringMatching(/^Moved ".+" inside its station's circle$/),

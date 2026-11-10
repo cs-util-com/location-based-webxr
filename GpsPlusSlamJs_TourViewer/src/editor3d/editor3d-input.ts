@@ -34,12 +34,12 @@ import type { UnknownAction } from "@reduxjs/toolkit";
 
 import type { GroundPlace } from "gps-plus-slam-editor-kit/chrome";
 import { editorViewActions, STATION_LOCKED } from "../editor/editor-view.js";
+import type { PlaceEdit } from "../placement/place-edits.js";
 import {
   poseLocked,
   startGesture,
   startKeyGesture,
   type Gesture,
-  type GestureEdit,
   type GesturePreview,
   type GestureTarget,
   type GestureWorld,
@@ -98,7 +98,7 @@ export interface InputPage {
   selected(): string | null;
   select(id: string | null): void;
   /** Write a gesture's edit (one undo step). */
-  commit(edit: GestureEdit): void;
+  commit(edit: PlaceEdit): void;
   remove(selection: string): void;
   duplicate(selection: string): void;
   say(text: string): void;

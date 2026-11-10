@@ -33,8 +33,10 @@ ray (`pick`).
   vertical lens: what a code's size on screen is worked out from), and
   the optional `eye` (the camera itself: given, each drawn part with an
   `update` is ticked, see below).
-- `LayerPreview` - `{ kind: "station", id, geo, foundRadiusM }` or
-  `{ kind: "item", id, geo, sizeM }` (ellipsoidal geo poses, as the file).
+- `LayerPreview` - `{ ref, geo, value }`: the placeable
+  (`../placement/placeables.ts` `PlaceRef`, a station or a block), its
+  dragged pose (an ellipsoidal geo pose, as the file) and its dots' value
+  (a station's found radius, a model's size; null: as the tour has it).
 - `DEFAULT_CODE_SIZE_M` - 0.2; `BILLBOARD_LIFT_M` - 4.6 (how much higher a
   billboard stands upright than flat; flat it is 0.6 m over its station);
   `CODE_FLAT_GAP_M` - 0.07 (the gap between a code's anchor and the near

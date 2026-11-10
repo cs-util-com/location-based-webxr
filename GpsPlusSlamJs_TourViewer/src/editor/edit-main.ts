@@ -96,9 +96,8 @@ import {
   type EditorModel,
 } from "./editor-model.js";
 import { createFolderCommands } from "./folder-commands.js";
-import { applySceneEdit } from "./scene-edits.js";
 import { storyRows } from "./editor-shell/tree-model.js";
-import type { GestureEdit } from "../editor3d/gesture.js";
+import { applyPlaceEdit, type PlaceEdit } from "../placement/place-edits.js";
 import { askMove, moveNote } from "../move-question.js";
 import { confirmPausingFrames } from "./browser-question.js";
 import {
@@ -1528,17 +1527,20 @@ function duplicateStorySelection(storyId: string): void {
   tourChanged();
 }
 
-/** A gesture of the 3D view written (`scene-edits.ts`): one step; a
- *  refusal is said. Whether it was written. */
-function commitSceneEdit(edit: GestureEdit): boolean {
+/** A placement edit of the 3D view or the inspector written
+ *  (`../placement/place-edits.ts`): one step; a refusal is said. Whether
+ *  it was written. */
+function commitSceneEdit(edit: PlaceEdit): boolean {
   if (editor === null) return false;
   endUndo();
   const before = store.getState().tourDocument;
+  const movedBlock =
+    edit.kind === "pose" && edit.ref.kind === "block" ? edit.ref.id : null;
   const joinStation =
-    edit.kind === "item-pose"
-      ? askMove(before, edit.id, edit.geo, confirmPausingFrames)
+    movedBlock !== null && edit.kind === "pose"
+      ? askMove(before, movedBlock, edit.geo, confirmPausingFrames)
       : undefined;
-  const outcome = applySceneEdit(editor, edit, joinStation);
+  const outcome = applyPlaceEdit(editor, edit, joinStation);
   say(null);
   refresh();
   if (outcome.kind === "refused") {
@@ -1546,8 +1548,8 @@ function commitSceneEdit(edit: GestureEdit): boolean {
     return false;
   }
   if (joinStation !== undefined) showRowsOf(joinStation);
-  if (edit.kind === "item-pose") {
-    const note = moveNote(before, store.getState().tourDocument, edit.id);
+  if (movedBlock !== null) {
+    const note = moveNote(before, store.getState().tourDocument, movedBlock);
     if (note !== null) toast(note);
   }
   tourChanged();

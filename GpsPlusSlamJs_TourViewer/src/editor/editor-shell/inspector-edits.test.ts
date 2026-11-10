@@ -253,7 +253,11 @@ describe("inspectorEdit", () => {
   // station, measured from the same origin; its height and turn stay.
   it("moves a station to the east and north typed, its height and heading kept", () => {
     const moved = edit("station:a", "east", "-10");
-    if (moved.kind !== "scene" || moved.edit.kind !== "station-pose") {
+    if (
+      moved.kind !== "scene" ||
+      moved.edit.kind !== "pose" ||
+      moved.edit.ref.kind !== "station"
+    ) {
       throw new Error(`not a pose: ${JSON.stringify(moved)}`);
     }
     const before = eastNorthOf(STATIONS[0]!.geo, ORIGIN);
@@ -295,7 +299,11 @@ describe("inspectorEdit", () => {
       ["north", "-6", [-6, 1.5, -2]],
     ] as const) {
       const moved = edit("pin-1", field, value);
-      if (moved.kind !== "scene" || moved.edit.kind !== "item-pose") {
+      if (
+        moved.kind !== "scene" ||
+        moved.edit.kind !== "pose" ||
+        moved.edit.ref.kind !== "block"
+      ) {
         throw new Error(`not a pose: ${JSON.stringify(moved)}`);
       }
       const local = localPoseOf(moved.edit.geo, STATIONS[0]!.geo);
@@ -327,7 +335,7 @@ describe("inspectorEdit", () => {
   it("writes a model's size, and refuses a size for anything else", () => {
     expect(edit("model-1", "size", "3")).toEqual({
       kind: "scene",
-      edit: { kind: "size", id: "model-1", sizeM: 3 },
+      edit: { kind: "extent", ref: { kind: "block", id: "model-1" }, value: 3 },
     });
     expect(edit("pin-1", "size", "3")).toEqual({ kind: "none" });
   });
@@ -440,8 +448,8 @@ describe("groundEdit", () => {
     expect(ground("station:a", "ground", flat(518))).toEqual({
       kind: "scene",
       edit: {
-        kind: "station-pose",
-        id: "a",
+        kind: "pose",
+        ref: { kind: "station", id: "a" },
         geo: { lat: 48.1371, lon: 11.5751, alt: 518, headingDeg: 30 },
       },
     });

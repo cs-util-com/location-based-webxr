@@ -16,7 +16,7 @@ its station's circle" that the inspector's count reads too.
   (`station:<id>` or an item's id), and the one-click mend where there
   is one.
 - `ProblemFix` - `{ label, edit, done }`: the row's link, `edit()` the
-  `item-pose` edit the page writes (one undo step; made on the click, never
+  block's `pose` edit (`../../placement/place-edits.ts`) the page writes (one undo step; made on the click, never
   on a draw, since it needs the core licence), and what the page says
   once written.
 - `ProblemGroup` - `{ stationId, number, title, problems }`, `number`

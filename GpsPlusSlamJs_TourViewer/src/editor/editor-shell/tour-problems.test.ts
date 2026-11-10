@@ -112,8 +112,8 @@ describe("tourProblems", () => {
     // Why: an item left out of its circle has the second way out too.
     expect(split).toEqual({ label: "Move to a new station", split: true });
     const edit = fix.edit();
-    expect(edit.kind).toBe("item-pose");
-    expect(edit.id).toBe("far");
+    expect(edit.kind).toBe("pose");
+    expect(edit.ref).toEqual({ kind: "block", id: "far" });
     const geo = edit.geo;
     const northM = (geo.lat - 48.1) * 111_320;
     const eastM = (geo.lon - 11.5) * 111_320 * Math.cos((48.1 * Math.PI) / 180);

@@ -24,9 +24,42 @@ import {
   sceneKey,
   turnedHeadingDeg,
   viewHeightAtOneM,
+  type GizmoSubject,
 } from "./gizmo-maths.js";
+import {
+  STATION_PLACEMENT,
+  blockPlacement,
+} from "../placement/placement-rows.js";
 
 const CENTRE = { x: 10, y: 3, z: -4 };
+
+/** A turning item without dots (a lectern, a picture in this step). */
+const ITEM: GizmoSubject = {
+  centre: CENTRE,
+  headingDeg: 0,
+  turns: true,
+  extent: null,
+  locked: false,
+};
+/** A model of `sizeM`. */
+const model = (sizeM: number): GizmoSubject => ({
+  ...ITEM,
+  extent: { kind: "size", value: sizeM },
+});
+/** A station of found radius `radiusM`. */
+const station = (radiusM: number, headingDeg = 0): GizmoSubject => ({
+  ...ITEM,
+  headingDeg,
+  extent: { kind: "reach", value: radiusM },
+});
+
+/** The dots' bounds, from the placement rows (one copy of them). */
+function boundsOf(spec: { min: number; max: number } | undefined) {
+  if (spec === undefined) throw new Error("the row has no extent");
+  return { min: spec.min, max: spec.max };
+}
+const RADIUS = boundsOf(STATION_PLACEMENT.extent);
+const SIZE = boundsOf(blockPlacement("model", "placed")?.extent);
 
 function key(
   code: string,
@@ -51,38 +84,17 @@ function key(
 describe("the gizmo's layout", () => {
   it("puts an item's ring on the ground under it, at least 32 px or 1.25 m", () => {
     // 0.01 m a pixel: 32 px is 0.32 m, so the 1.25 m floor holds.
-    const near = gizmoLayout(
-      {
-        kind: "item",
-        centre: CENTRE,
-        headingDeg: 0,
-        radiusM: null,
-        sizeM: null,
-      },
-      0.01,
-    );
+    const near = gizmoLayout(ITEM, 0.01);
     expect(near.ringM).toBeCloseTo(1.25, 9);
     expect(near.moveM).toBeCloseTo(1.25, 9);
     expect(near.dots).toEqual([]);
     // 0.1 m a pixel: 32 px is 3.2 m.
-    const far = gizmoLayout(
-      {
-        kind: "item",
-        centre: CENTRE,
-        headingDeg: 0,
-        radiusM: null,
-        sizeM: null,
-      },
-      0.1,
-    );
+    const far = gizmoLayout(ITEM, 0.1);
     expect(far.ringM).toBeCloseTo(3.2, 9);
   });
 
   it("gives a model its four dots on a ring of 0.625 x its size", () => {
-    const layout = gizmoLayout(
-      { kind: "item", centre: CENTRE, headingDeg: 0, radiusM: null, sizeM: 8 },
-      0.01,
-    );
+    const layout = gizmoLayout(model(8), 0.01);
     expect(layout.ringM).toBeCloseTo(5, 9);
     expect(layout.dots).toHaveLength(4);
     // The first dot at 45 degrees from the heading (north-east): east is
@@ -93,16 +105,7 @@ describe("the gizmo's layout", () => {
   });
 
   it("puts a station's dots on its found radius, no ring, and a move disc of 26 px or 2.2 m", () => {
-    const layout = gizmoLayout(
-      {
-        kind: "station",
-        centre: CENTRE,
-        headingDeg: 90,
-        radiusM: 25,
-        sizeM: null,
-      },
-      0.2,
-    );
+    const layout = gizmoLayout(station(25, 90), 0.2);
     expect(layout.ringM).toBeNull();
     expect(layout.moveM).toBeCloseTo(5.2, 9);
     expect(layout.dots).toHaveLength(4);
@@ -110,26 +113,35 @@ describe("the gizmo's layout", () => {
       expect(Math.hypot(dot.x - CENTRE.x, dot.z - CENTRE.z)).toBeCloseTo(25, 9);
     }
     // Facing east: the knob 30 px past the circle, east of the centre.
-    expect(layout.knob.x).toBeCloseTo(CENTRE.x + 25 + 30 * 0.2, 9);
-    expect(layout.knob.z).toBeCloseTo(CENTRE.z, 9);
-    expect(layout.bar.fromM).toBe(25);
-    expect(layout.bar.lengthM).toBeCloseTo(6, 9);
-    expect(layout.bar.widthM).toBeCloseTo(0.4, 9);
+    expect(layout.knob?.x).toBeCloseTo(CENTRE.x + 25 + 30 * 0.2, 9);
+    expect(layout.knob?.z).toBeCloseTo(CENTRE.z, 9);
+    expect(layout.bar?.fromM).toBe(25);
+    expect(layout.bar?.lengthM).toBeCloseTo(6, 9);
+    expect(layout.bar?.widthM).toBeCloseTo(0.4, 9);
+  });
+
+  // Why: what always faces the camera or the viewer (a pin's label, a
+  // sound's icon) shows no turn, so its gizmo offers none - a knob there
+  // would turn a heading nobody ever sees. Its ring and disc stay.
+  it("draws no knob and no stalk for what does not turn", () => {
+    const pin = gizmoLayout({ ...ITEM, turns: false }, 0.01);
+    expect(pin.knob).toBeNull();
+    expect(pin.bar).toBeNull();
+    expect(pin.ringM).toBeCloseTo(1.25, 9);
+    expect(pin.posable).toBe(true);
+    expect(
+      handleAt({
+        pointer: { x: 0, y: 0 },
+        knob: null,
+        dots: [],
+        onDisc: true,
+        underPointer: "selected",
+      }),
+    ).toBe("move");
   });
 
   it("refuses a scale nobody can draw", () => {
-    expect(() =>
-      gizmoLayout(
-        {
-          kind: "item",
-          centre: CENTRE,
-          headingDeg: 0,
-          radiusM: null,
-          sizeM: null,
-        },
-        0,
-      ),
-    ).toThrow(RangeError);
+    expect(() => gizmoLayout(ITEM, 0)).toThrow(RangeError);
   });
 
   it("keeps the knob 30 px beyond the ring, along the heading, for any heading and zoom", () => {
@@ -138,22 +150,15 @@ describe("the gizmo's layout", () => {
         fc.double({ min: 0, max: 360, noNaN: true }),
         fc.double({ min: 1e-4, max: 5, noNaN: true }),
         (headingDeg, mpp) => {
-          const l = gizmoLayout(
-            {
-              kind: "item",
-              centre: CENTRE,
-              headingDeg,
-              radiusM: null,
-              sizeM: 3,
-            },
-            mpp,
-          );
+          const l = gizmoLayout({ ...model(3), headingDeg }, mpp);
           const ring = l.ringM ?? 0;
-          const dx = l.knob.x - CENTRE.x;
-          const dz = l.knob.z - CENTRE.z;
+          const knob = l.knob;
+          if (knob === null) throw new Error("a turning model has a knob");
+          const dx = knob.x - CENTRE.x;
+          const dz = knob.z - CENTRE.z;
           expect(Math.hypot(dx, dz)).toBeCloseTo(ring + 30 * mpp, 6);
           expect(
-            Math.abs(angleDiffDeg(compassDeg(CENTRE, l.knob), headingDeg)),
+            Math.abs(angleDiffDeg(compassDeg(CENTRE, knob), headingDeg)),
           ).toBeLessThan(1e-6);
         },
       ),
@@ -163,31 +168,11 @@ describe("the gizmo's layout", () => {
   // Why: a locked station's gizmo is its radius dots alone, so nothing
   // drawn invites a drag the lock would refuse.
   it("keeps a locked station's dots and takes its middle and knob", () => {
-    const subject = {
-      kind: "station" as const,
-      centre: CENTRE,
-      headingDeg: 0,
-      radiusM: 25,
-      sizeM: null,
-    };
+    const subject = station(25);
     expect(gizmoLayout(subject, 0.2).posable).toBe(true);
     const locked = gizmoLayout({ ...subject, locked: true }, 0.2);
     expect(locked.posable).toBe(false);
     expect(locked.dots).toHaveLength(4);
-    // A lock means nothing on an item.
-    expect(
-      gizmoLayout(
-        {
-          kind: "item",
-          centre: CENTRE,
-          headingDeg: 0,
-          radiusM: null,
-          sizeM: null,
-          locked: true,
-        },
-        0.2,
-      ).posable,
-    ).toBe(true);
   });
 });
 
@@ -300,34 +285,16 @@ describe("which handle the pointer is on", () => {
     for (const viewportPx of [390, 900]) {
       for (const distanceM of [5, 10, 20, 50, 100, 200, 300]) {
         const mpp = (distanceM * viewHeightAtOneM(50)) / viewportPx;
-        const item = gizmoLayout(
-          {
-            kind: "item",
-            centre: CENTRE,
-            headingDeg: 0,
-            radiusM: null,
-            sizeM: null,
-          },
-          mpp,
-        );
-        const station = gizmoLayout(
-          {
-            kind: "station",
-            centre: CENTRE,
-            headingDeg: 0,
-            radiusM: 25,
-            sizeM: null,
-          },
-          mpp,
-        );
+        const item = gizmoLayout(ITEM, mpp);
+        const disc = gizmoLayout(station(25), mpp);
         expect(item.moveM / mpp).toBeGreaterThanOrEqual(
           GIZMO.itemRingPx - 1e-9,
         );
         expect(item.moveM).toBeGreaterThanOrEqual(GIZMO.itemRingMinM);
-        expect(station.moveM / mpp).toBeGreaterThanOrEqual(
+        expect(disc.moveM / mpp).toBeGreaterThanOrEqual(
           GIZMO.stationMovePx - 1e-9,
         );
-        expect(station.moveM).toBeGreaterThanOrEqual(GIZMO.stationMoveMinM);
+        expect(disc.moveM).toBeGreaterThanOrEqual(GIZMO.stationMoveMinM);
       }
     }
   });
@@ -388,18 +355,27 @@ describe("the drag maths", () => {
   });
 
   it("sets a station's radius in half metres, tenths with Shift, within 2-300 m", () => {
-    expect(draggedRadiusM(12.34, false)).toBe(12.5);
-    expect(draggedRadiusM(12.34, true)).toBe(12.3);
-    expect(draggedRadiusM(0.2, false)).toBe(2);
-    expect(draggedRadiusM(9000, false)).toBe(300);
+    expect(RADIUS).toEqual({ min: 2, max: 300 });
+    expect(draggedRadiusM(12.34, false, RADIUS)).toBe(12.5);
+    expect(draggedRadiusM(12.34, true, RADIUS)).toBe(12.3);
+    expect(draggedRadiusM(0.2, false, RADIUS)).toBe(2);
+    expect(draggedRadiusM(9000, false, RADIUS)).toBe(300);
   });
 
   it("scales a model's size with the dot's distance, to 3 digits, within 0.05-500 m", () => {
-    expect(draggedSizeM(2, 4, 8)).toBe(4);
-    expect(draggedSizeM(2.4, 3, 4)).toBe(3.2);
-    expect(draggedSizeM(1.234, 1, 1)).toBe(1.23);
-    expect(draggedSizeM(1, 10, 0)).toBe(0.05);
-    expect(draggedSizeM(400, 1, 10)).toBe(500);
+    expect(SIZE).toEqual({ min: 0.05, max: 500 });
+    expect(draggedSizeM(2, 4, 8, SIZE)).toBe(4);
+    expect(draggedSizeM(2.4, 3, 4, SIZE)).toBe(3.2);
+    expect(draggedSizeM(1.234, 1, 1, SIZE)).toBe(1.23);
+    expect(draggedSizeM(1, 10, 0, SIZE)).toBe(0.05);
+    expect(draggedSizeM(400, 1, 10, SIZE)).toBe(500);
+  });
+
+  // Why: the bounds are the placement row's, so a row with other bounds
+  // (a picture's width) is held to its own, not to a model's.
+  it("holds a dot to the bounds it is given", () => {
+    expect(draggedSizeM(1, 1, 100, { min: 0.1, max: 50 })).toBe(50);
+    expect(draggedRadiusM(1, false, { min: 5, max: 10 })).toBe(5);
   });
 
   it("keeps any dragged radius and size inside the format's bounds", () => {
@@ -410,10 +386,10 @@ describe("the drag maths", () => {
         fc.double({ min: 0.05, max: 500, noNaN: true }),
         fc.double({ min: 0.2, max: 1e3, noNaN: true }),
         (d, fine, size0, d0) => {
-          const r = draggedRadiusM(d, fine);
+          const r = draggedRadiusM(d, fine, RADIUS);
           expect(r).toBeGreaterThanOrEqual(2);
           expect(r).toBeLessThanOrEqual(300);
-          const s = draggedSizeM(size0, d0, d);
+          const s = draggedSizeM(size0, d0, d, SIZE);
           expect(s).toBeGreaterThanOrEqual(0.05);
           expect(s).toBeLessThanOrEqual(500);
         },

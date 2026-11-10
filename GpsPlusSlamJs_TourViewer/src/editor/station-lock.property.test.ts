@@ -37,7 +37,7 @@ import {
   isStationLocked,
   STATION_LOCKED,
 } from "./editor-view.js";
-import { applySceneEdit } from "./scene-edits.js";
+import { applyPlaceEdit } from "../placement/place-edits.js";
 
 beforeAll(() => {
   editorStore();
@@ -378,7 +378,11 @@ describe("the station lock", () => {
     );
     store.dispatch(editorViewActions.gestureEnded());
     expect(
-      applySceneEdit(editor, { kind: "station-pose", id, geo: moved }),
+      applyPlaceEdit(editor, {
+        kind: "pose",
+        ref: { kind: "station", id },
+        geo: moved,
+      }),
     ).toEqual({ kind: "applied" });
     store.dispatch(editorViewActions.selected({ id: null }));
     expect(geoNow()).toEqual(moved);

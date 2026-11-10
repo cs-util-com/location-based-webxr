@@ -41,7 +41,7 @@ import { tourChildPlace } from "gps-plus-slam-app-framework/ar/tour-story";
 import type { UnknownAction } from "@reduxjs/toolkit";
 
 import type { Editor3dView } from "../../editor3d/editor3d-scene.js";
-import type { GestureEdit } from "../../editor3d/gesture.js";
+import type { PlaceEdit } from "../../placement/place-edits.js";
 import { createLongPress, LONG_PRESS } from "../long-press.js";
 import {
   folderDropRefusal,
@@ -227,7 +227,7 @@ export interface ShellEditCommands {
   model(itemId: string, edit: ModelEdit): TypedEditOutcome;
   /** A pose or a size, as the 3D view's gestures write them: whether it
    *  was written (false: refused, and the page said why). */
-  scene(edit: GestureEdit): boolean;
+  scene(edit: PlaceEdit): boolean;
   /** Items' heights (the ground under each, or a typed height), as one
    *  step; their places and turns kept. */
   groundItems(

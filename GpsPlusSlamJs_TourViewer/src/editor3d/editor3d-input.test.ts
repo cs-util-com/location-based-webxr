@@ -21,7 +21,9 @@ import {
   type InputPage,
   type InputScene,
 } from "./editor3d-input.js";
-import type { GestureEdit, GestureTarget, GestureWorld } from "./gesture.js";
+import type { PlaceEdit } from "../placement/place-edits.js";
+import { STATION_PLACEMENT } from "../placement/placement-rows.js";
+import type { GestureTarget, GestureWorld } from "./gesture.js";
 import type { GizmoHandle, ScreenPoint } from "./gizmo-maths.js";
 import { GLOBE_GESTURES, routeGlobeInput } from "./globe-gestures.js";
 import { LONG_PRESS } from "../editor/long-press.js";
@@ -32,13 +34,19 @@ beforeAll(() => {
   createTourViewerStore();
 });
 
+// It turns although a pin's label faces the camera: these tests are of
+// the input's key and pointer handling, which a turning item (a lectern)
+// shares; what does not turn is the gesture's (`gesture.test.ts`).
 const PIN: GestureTarget = {
-  kind: "item",
-  id: "pin",
+  ref: { kind: "block", id: "pin" },
   geo: { lat: 48.1, lon: 11.5, alt: 520, headingDeg: 0 },
-  sizeM: null,
+  turns: true,
+  lifts: true,
+  extent: null,
+  locked: false,
   centre: { x: 0, y: 0, z: 0 },
 };
+const PIN_REF = { kind: "block", id: "pin" } as const;
 
 /** A pixel is a metre (x east, the screen's y south); flat ground at
  *  518.5 m. */
@@ -64,7 +72,7 @@ function setup(
 ) {
   const log: string[] = [];
   const dispatched: UnknownAction[] = [];
-  const commits: GestureEdit[] = [];
+  const commits: PlaceEdit[] = [];
   let selected = options.selected === undefined ? "pin" : options.selected;
   const scene: InputScene = {
     target: (id) => (id === "pin" ? PIN : null),
@@ -201,7 +209,7 @@ describe("a drag of the gizmo", () => {
     window.dispatchEvent(pointer("pointerup", { x: 20, y: -20 }));
     expect(t.dispatched[1]).toEqual(editorViewActions.gestureEnded());
     expect(t.commits).toHaveLength(1);
-    expect(t.commits[0]?.kind).toBe("item-pose");
+    expect(t.commits[0]?.kind).toBe("pose");
     // The store first, then the edit, then the preview dropped (the tour
     // carries the edit by then: no frame shows the old pose).
     expect(t.log.slice(-4)).toEqual([
@@ -348,8 +356,8 @@ describe("the keys", () => {
     tap("ArrowRight");
     tap("ArrowUp", { shift: true });
     expect(t.commits).toEqual([
-      { kind: "item-pose", id: "pin", geo: nudgedGeo(PIN.geo, 0.1, 0, ground) },
-      { kind: "item-pose", id: "pin", geo: nudgedGeo(PIN.geo, 0, 1, ground) },
+      { kind: "pose", ref: PIN_REF, geo: nudgedGeo(PIN.geo, 0.1, 0, ground) },
+      { kind: "pose", ref: PIN_REF, geo: nudgedGeo(PIN.geo, 0, 1, ground) },
     ]);
     t.input.dispose();
   });
@@ -359,9 +367,7 @@ describe("the keys", () => {
     tap("KeyE");
     tap("KeyQ", { shift: true });
     tap("ArrowLeft", { alt: true });
-    expect(
-      t.commits.map((c) => (c.kind === "item-pose" ? c.geo : null)),
-    ).toEqual([
+    expect(t.commits.map((c) => (c.kind === "pose" ? c.geo : null))).toEqual([
       turnedGeo(PIN.geo, 5),
       turnedGeo(PIN.geo, -15),
       turnedGeo(PIN.geo, -5),
@@ -373,9 +379,10 @@ describe("the keys", () => {
     const t = setup();
     tap("PageUp");
     tap("PageDown", { shift: true });
-    expect(
-      t.commits.map((c) => (c.kind === "item-pose" ? c.geo : null)),
-    ).toEqual([liftedGeo(PIN.geo, 0.1), liftedGeo(PIN.geo, -1)]);
+    expect(t.commits.map((c) => (c.kind === "pose" ? c.geo : null))).toEqual([
+      liftedGeo(PIN.geo, 0.1),
+      liftedGeo(PIN.geo, -1),
+    ]);
     t.input.dispose();
   });
 
@@ -390,7 +397,7 @@ describe("the keys", () => {
     expect(t.dispatched.at(-1)).toEqual(editorViewActions.gestureEnded());
     let want = PIN.geo;
     for (let i = 0; i < 5; i++) want = nudgedGeo(want, 0.1, 0, ground);
-    expect(t.commits).toEqual([{ kind: "item-pose", id: "pin", geo: want }]);
+    expect(t.commits).toEqual([{ kind: "pose", ref: PIN_REF, geo: want }]);
     t.input.dispose();
   });
 
@@ -518,8 +525,8 @@ describe("a gesture's other ends", () => {
     t.input.frame();
     expect(t.commits).toEqual([
       {
-        kind: "item-pose",
-        id: "pin",
+        kind: "pose",
+        ref: PIN_REF,
         geo: nudgedGeo(
           nudgedGeo(PIN.geo, 0.1, 0, WORLD.groundAt),
           0.1,
@@ -543,8 +550,8 @@ describe("a gesture's other ends", () => {
     key("keydown", "ArrowRight");
     expect(t.commits).toEqual([
       {
-        kind: "item-pose",
-        id: "pin",
+        kind: "pose",
+        ref: PIN_REF,
         geo: nudgedGeo(PIN.geo, 0.1, 0, WORLD.groundAt),
       },
     ]);
@@ -639,10 +646,18 @@ describe("the keys with nothing selected", () => {
 // copy keys still work.
 describe("the keys on a locked station", () => {
   const LOCKED: GestureTarget = {
-    kind: "station",
-    id: "st",
+    ref: { kind: "station", id: "st" },
     geo: { lat: 48.1, lon: 11.5, alt: 520, headingDeg: 0 },
-    foundRadiusM: 12,
+    turns: STATION_PLACEMENT.turns,
+    lifts: STATION_PLACEMENT.lifts,
+    extent: {
+      kind: "reach",
+      field: "foundRadiusM",
+      label: "Found radius",
+      min: 2,
+      max: 300,
+      value: 12,
+    },
     centre: { x: 0, y: 0, z: 0 },
     locked: true,
   };

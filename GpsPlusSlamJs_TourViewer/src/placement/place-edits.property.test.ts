@@ -28,8 +28,9 @@ import {
   type GestureTarget,
   type GestureWorld,
 } from "../editor3d/gesture.js";
-import { createEditorSession } from "./editor-session.js";
-import { applySceneEdit } from "./scene-edits.js";
+import { createEditorSession } from "../editor/editor-session.js";
+import { applyPlaceEdit } from "./place-edits.js";
+import { STATION_PLACEMENT } from "./placement-rows.js";
 
 beforeAll(() => {
   editorStore();
@@ -141,10 +142,12 @@ describe("a dragged item over any ground", () => {
                 rotation: [0, 0, 0, 1] as [number, number, number, number],
               };
               const target: GestureTarget = {
-                kind: "item",
-                id: "p",
+                ref: { kind: "block", id: "p" },
                 geo,
-                sizeM: null,
+                turns: false,
+                lifts: true,
+                extent: null,
+                locked: false,
                 centre: { x: 0, y: 0, z: 0 },
               };
               const g = startGesture("move", target, { x: 0, y: 0 }, w);
@@ -210,19 +213,33 @@ describe("a gesture and its undo", () => {
             const tour = before?.stations ?? [];
             const station = tour.find((s) => s.id === stationIdOf("a"));
             if (station === undefined) throw new Error("no station a");
+            // The item turns here although a pin's row faces the camera:
+            // what is under test is the undo of a turn written through the
+            // session, which a turning row (a lectern, a picture) writes
+            // the same way.
             const target: GestureTarget = what.startsWith("item")
               ? {
-                  kind: "item",
-                  id: "a",
+                  ref: { kind: "block", id: "a" },
                   geo: objects[0]!.geo,
-                  sizeM: null,
+                  turns: true,
+                  lifts: true,
+                  extent: null,
+                  locked: false,
                   centre: { x: 0, y: 0, z: 0 },
                 }
               : {
-                  kind: "station",
-                  id: station.id,
+                  ref: { kind: "station", id: station.id },
                   geo: station.geo,
-                  foundRadiusM: station.foundRadiusM,
+                  turns: STATION_PLACEMENT.turns,
+                  lifts: STATION_PLACEMENT.lifts,
+                  extent:
+                    STATION_PLACEMENT.extent === undefined
+                      ? null
+                      : {
+                          ...STATION_PLACEMENT.extent,
+                          value: station.foundRadiusM,
+                        },
+                  locked: false,
                   centre: { x: 0, y: 0, z: 0 },
                 };
             const handle = what.endsWith("turn")
@@ -236,7 +253,7 @@ describe("a gesture and its undo", () => {
             const edit = g?.edit() ?? null;
             // A gesture that changed nothing writes nothing to undo.
             const applied =
-              edit === null ? "applied" : applySceneEdit(editor, edit).kind;
+              edit === null ? "applied" : applyPlaceEdit(editor, edit).kind;
             expect(applied).toBe("applied");
             const undone = edit === null ? "undone" : editor.undo().kind;
             expect(undone).toBe("undone");

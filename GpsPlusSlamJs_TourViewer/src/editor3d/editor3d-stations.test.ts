@@ -1186,10 +1186,9 @@ describe("createStationsLayer", () => {
     const before = worldOf(plane);
     const billboardBefore = layer.billboardOf("a")!.position.clone();
     layer.setPreview({
-      kind: "station",
-      id: "a",
+      ref: { kind: "station", id: "a" },
       geo: { ...a.geo, lat: a.geo.lat + 10 / M_PER_DEG_LAT },
-      foundRadiusM: 16,
+      value: 16,
     });
     layer.update(view(0, 0, "a"));
     const moved = worldOf(plane);
@@ -1252,7 +1251,11 @@ describe("createStationsLayer", () => {
     // Dragged 10 m east and let go: the tour carries the move, then the
     // preview is dropped (the input's order).
     const moved = { ...a.geo, lon: a.geo.lon + 10 / M_PER_DEG_LON };
-    layer.setPreview({ kind: "station", id: "a", geo: moved, foundRadiusM: 8 });
+    layer.setPreview({
+      ref: { kind: "station", id: "a" },
+      geo: moved,
+      value: 8,
+    });
     layer.update(view(0, 0, "a", 1, true));
     layer.setTour(manifest([{ ...a, geo: moved }, b]), code);
     layer.setPreview(null);
@@ -1300,10 +1303,9 @@ describe("createStationsLayer", () => {
     };
     const normal = ring().color.getHex();
     const at = (position: [number, number, number]) => ({
-      kind: "item" as const,
-      id: "p",
+      ref: { kind: "block" as const, id: "p" },
       geo: itemGeoPose({ position, rotation: [0, 0, 0, 1] }, a.geo),
-      sizeM: null,
+      value: null,
     });
     layer.setPreview(at([0, 1.5, a.foundRadiusM - 1]));
     layer.update(view(0, 0, "a", 1));
@@ -1349,20 +1351,18 @@ describe("createStationsLayer", () => {
         a.geo,
       );
     layer.setPreview({
-      kind: "item",
-      id: "p",
+      ref: { kind: "block", id: "p" },
       geo: turnedAway([1, 1.5, 3]),
-      sizeM: null,
+      value: null,
     });
     layer.update(view(0, 0, "a", 1));
     expect(plane.position.x).toBeCloseTo(1, 3);
     expect(plane.position.z).toBeCloseTo(3, 3);
     expect(plane.quaternion.angleTo(quarter)).toBeLessThan(1e-6);
     layer.setPreview({
-      kind: "item",
-      id: "m",
+      ref: { kind: "block", id: "m" },
       geo: turnedAway([0, 0, 5]),
-      sizeM: 16,
+      value: 16,
     });
     layer.update(view(0, 0, "a", 1));
     // The photo is back where the tour has it.
@@ -1430,8 +1430,7 @@ describe("createStationsLayer", () => {
       -Math.PI / 2,
     );
     layer.setPreview({
-      kind: "item",
-      id: "l",
+      ref: { kind: "block", id: "l" },
       geo: itemGeoPose(
         {
           position: [3, 0, 4],
@@ -1439,7 +1438,7 @@ describe("createStationsLayer", () => {
         },
         a.geo,
       ),
-      sizeM: null,
+      value: null,
     });
     layer.update(view(0, 0, "a", 1));
     expect(root.position.z).toBeCloseTo(4, 3);
@@ -1539,8 +1538,7 @@ describe("createStationsLayer", () => {
     expect(root.quaternion.angleTo(turn(40, 0))).toBeLessThan(1e-6);
     const dragged = turn(-70, -35);
     layer.setPreview({
-      kind: "item",
-      id: "lamp",
+      ref: { kind: "block", id: "lamp" },
       geo: itemGeoPose(
         {
           position: [3, 0, 4],
@@ -1548,7 +1546,7 @@ describe("createStationsLayer", () => {
         },
         a.geo,
       ),
-      sizeM: null,
+      value: null,
     });
     layer.update(view(0, 0, "a", 1));
     expect(root.quaternion.angleTo(turn(-70, 0))).toBeLessThan(1e-6);
@@ -1778,8 +1776,7 @@ describe("createStationsLayer", () => {
         new THREE.Euler(-0.4, -1.1, 0.1, "YXZ"),
       );
       layer.setPreview({
-        kind: "item",
-        id: "song",
+        ref: { kind: "block", id: "song" },
         geo: itemGeoPose(
           {
             position: [3, 0.5, 4],
@@ -1787,7 +1784,7 @@ describe("createStationsLayer", () => {
           },
           a.geo,
         ),
-        sizeM: null,
+        value: null,
       });
       layer.update(view(0, 0, "a", 1));
       expect(part.object.position.z).toBeCloseTo(4, 3);

@@ -44,7 +44,7 @@ import {
   tourFreeBlocks,
 } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
-import type { GestureEdit } from "../../editor3d/gesture.js";
+import type { PlaceEdit } from "../../placement/place-edits.js";
 import {
   worldBlocks,
   type StationEdit,
@@ -94,7 +94,7 @@ export type InspectorEdit =
   /** One of a model's own edits (`model-edits.ts`). */
   | { readonly kind: "model"; readonly id: string; readonly edit: ModelEdit }
   /** A pose or a size, written as the 3D view's gestures write them. */
-  | { readonly kind: "scene"; readonly edit: GestureEdit }
+  | { readonly kind: "scene"; readonly edit: PlaceEdit }
   /** A turn about up of `deg` clockwise. */
   | { readonly kind: "turn"; readonly selection: string; readonly deg: number }
   /** An item's altitude (ellipsoidal m), its place and turn kept. */
@@ -223,8 +223,8 @@ function stationEdit(
   return {
     kind: "scene",
     edit: {
-      kind: "station-pose",
-      id: stationId,
+      kind: "pose",
+      ref: { kind: "station", id: stationId },
       geo: { ...station.geo, lat: place.lat, lon: place.lon },
     },
   };
@@ -330,7 +330,14 @@ function itemEdit(
   if (field === "size" && item.kind === "model") {
     return Math.abs(typed - (item.sizeM ?? Number.NaN)) < SAME
       ? NONE
-      : { kind: "scene", edit: { kind: "size", id: item.id, sizeM: typed } };
+      : {
+          kind: "scene",
+          edit: {
+            kind: "extent",
+            ref: { kind: "block", id: item.id },
+            value: typed,
+          },
+        };
   }
   if (field === "heading") {
     return turnTo(item.id, headingOfRotation(item.pose.rotation), typed);
@@ -349,8 +356,8 @@ function itemEdit(
   return {
     kind: "scene",
     edit: {
-      kind: "item-pose",
-      id: item.id,
+      kind: "pose",
+      ref: { kind: "block", id: item.id },
       geo: itemGeoPose({ ...item.pose, position }, station.geo),
     },
   };
@@ -417,7 +424,7 @@ export type GroundEdit =
       readonly kind: "ground-items";
       readonly items: readonly { readonly id: string; readonly alt: number }[];
     }
-  | { readonly kind: "scene"; readonly edit: GestureEdit };
+  | { readonly kind: "scene"; readonly edit: PlaceEdit };
 
 const NO_GROUND: GroundEdit = { kind: "none" };
 
@@ -480,7 +487,11 @@ export function groundEdit(input: {
     if (Math.abs(station.geo.alt - ground) <= ON_GROUND_M) return NO_GROUND;
     return {
       kind: "scene",
-      edit: { kind: "station-pose", id, geo: { ...station.geo, alt: ground } },
+      edit: {
+        kind: "pose",
+        ref: { kind: "station", id },
+        geo: { ...station.geo, alt: ground },
+      },
     };
   }
   if (which !== "ground") return NO_GROUND;

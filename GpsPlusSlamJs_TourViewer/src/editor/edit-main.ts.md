@@ -755,9 +755,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   view reads the tour from the store and the codes the open read
   (`openedLevels`), and edits through the page's `edits`:
   - `commit` (`commitSceneEdit`) writes a finished gesture as one undo
-    step (`applySceneEdit` of `scene-edits.ts`): it ends a delete's Undo
+    step (`applyPlaceEdit` of `../placement/place-edits.ts`): it ends a delete's Undo
     offer, refreshes the views and tells autosave, or toasts a refusal.
-    An item pose that crosses into another station's circle asks first,
+    A block's pose that crosses into another station's circle asks first,
     in the blocking `confirmPausingFrames` (`askMove`, `move-question.ts`),
     so no drag is ever half applied; the drop stays drawn behind the
     question. What the write did to the item's station is said in a toast

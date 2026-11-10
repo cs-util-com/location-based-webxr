@@ -34,10 +34,11 @@ id, title }`. A story's block selected: its texts and a character's facing
     text's `description`, a picture's `title` / `caption` / `alt`, a
     model's `title`): `{ kind: "block", id, field, value }`, its cap
     checked by the session. A field the kind does not have: none.
-  - A station's `east` / `north`: `{ kind: "scene", edit: station-pose }`,
+  - A station's `east` / `north`: `{ kind: "scene", edit }` with a
+    station's pose (`../../placement/place-edits.ts`),
     its anchor at the place those metres name from `origin`
     (`placeAtEastNorth`), its height and turn kept.
-  - An item's `east` / `north`: an item-pose scene edit, its offset in
+  - An item's `east` / `north`: a block's pose as a scene edit, its offset in
     its station's frame ([north, up, east]) with that one axis changed.
   - An item's `height`: `{ kind: "height", id, alt }`, the altitude the
     typed up-offset gives in its station's frame; the shell writes it as
@@ -47,7 +48,7 @@ id, title }`. A story's block selected: its texts and a character's facing
   - A `heading`, of a station or an item: `{ kind: "turn", selection, deg
 }`, the short way round from the heading it has now (the page turns it
     as the 3D view's turn does).
-  - A model's `size`: a size scene edit.
+  - A model's `size`: an extent scene edit.
   - A value equal to the tour's, a field the selection has not, a code,
     or a selection the tour lacks: `{ kind: "none" }`.
   - A number field with no number in it (blank, "ten"): `{ kind:
@@ -62,7 +63,7 @@ id, title }`. A story's block selected: its texts and a character's facing
 - `groundEdit({ selected, stations, which, groundAt })` -> `GroundEdit |
 null`:
   - `which: "ground"` on a station: its anchor at the ground under it, as
-    a station-pose scene edit (so the lock holds it); on an item: its
+    a station's pose as a scene edit (so the lock holds it); on an item: its
     height at the ground under it (`ground-items` with one item).
   - `which: "ground-items"` on a station: every item off the ground, each
     at the ground under its own place, in one `ground-items` edit.

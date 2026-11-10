@@ -39,8 +39,8 @@
  * its view draws it anew, as the visitor would see it.
  *
  * While a drag of the 3D view runs, `setPreview` draws the dragged
- * station (its items, billboard and found radius with it) or item (a
- * model at its dragged size) where the drag has it, by moving what is
+ * placeable - a station (its items, billboard and found radius with it)
+ * or a block (a model at its dragged size) - where the drag has it, by moving what is
  * drawn - nothing is rendered again; cleared, everything is drawn where
  * the tour has it. `pick` says what a ray meets first: a station by its
  * billboard, an item by its drawing, a code by its square.
@@ -73,6 +73,7 @@ import {
 import { worldEnv, type WorldEnv, type WorldPart } from "../world-part.js";
 import { pointRootMatrix, type GlobeEllipsoid } from "./editor3d-tour-root.js";
 import { NEAR_STATIONS, nearStations } from "./editor3d-visibility.js";
+import type { PlaceRef } from "../placement/placeables.js";
 import { viewHeightAtOneM } from "./gizmo-maths.js";
 import { isInterfacePart } from "./globe-interface-pass.js";
 
@@ -201,21 +202,14 @@ export const BILLBOARD_LIFT_M = 4.6;
 /** A billboard's height over its station when flat (m). */
 const BILLBOARD_BASE_M = 0.6;
 
-/** What a drag shows: a station at another pose and found radius, or an
- *  item at another pose (a model at another size). */
-export type LayerPreview =
-  | {
-      readonly kind: "station";
-      readonly id: string;
-      readonly geo: QrGeoPose;
-      readonly foundRadiusM: number;
-    }
-  | {
-      readonly kind: "item";
-      readonly id: string;
-      readonly geo: QrGeoPose;
-      readonly sizeM: number | null;
-    };
+/** What a drag shows: a placeable at another pose, its dots at another
+ *  value (a station's found radius, a model's size; null: as the tour
+ *  has it). */
+export interface LayerPreview {
+  readonly ref: PlaceRef;
+  readonly geo: QrGeoPose;
+  readonly value: number | null;
+}
 
 /** The names `buildLecternStand` and `buildReadingSign` give a reading
  *  stand's and a reading sign's root: drawn upright, never as a photo. */
@@ -744,7 +738,10 @@ export function createStationsLayer(deps: StationsLayerDeps) {
 
   /** Whether a drag has one of `entry`'s items outside its circle now. */
   const itemOutOf = (entry: StationEntry): boolean => {
-    if (preview?.kind !== "item" || entryOfItem(preview.id) !== entry) {
+    if (
+      preview?.ref.kind !== "block" ||
+      entryOfItem(preview.ref.id) !== entry
+    ) {
       return false;
     }
     const [north, , east] = localPoseOf(
@@ -855,8 +852,8 @@ export function createStationsLayer(deps: StationsLayerDeps) {
 
   /** Draw `p` where the drag has it. */
   const applyPreview = (p: LayerPreview) => {
-    if (p.kind === "station") {
-      const entry = stations.get(p.id);
+    if (p.ref.kind === "station") {
+      const entry = stations.get(p.ref.id);
       if (entry === undefined) return;
       const shift = frameAt(p.geo, previewFrame).multiply(
         frameAt(entry.station.geo, tourFrame).invert(),
@@ -864,19 +861,21 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       entry.root.matrix.multiplyMatrices(shift, entry.base);
       entry.root.updateMatrixWorld(true);
       entry.shownPoint.copy(entry.point).applyMatrix4(shift);
-      const k = p.foundRadiusM / entry.station.foundRadiusM;
+      const k =
+        (p.value ?? entry.station.foundRadiusM) / entry.station.foundRadiusM;
       entry.content?.ring.scale.set(k, 1, k);
       return;
     }
-    const entry = entryOfItem(p.id);
+    const { id } = p.ref;
+    const entry = entryOfItem(id);
     if (entry === null) return;
-    poseDrawn(entry, p.id, localPoseOf(p.geo, entry.station.geo), p.sizeM);
+    poseDrawn(entry, id, localPoseOf(p.geo, entry.station.geo), p.value);
   };
 
   /** Draw what `p` showed where the tour has it again. */
   const clearPreview = (p: LayerPreview) => {
-    if (p.kind === "station") {
-      const entry = stations.get(p.id);
+    if (p.ref.kind === "station") {
+      const entry = stations.get(p.ref.id);
       if (entry === undefined) return;
       entry.root.matrix.copy(entry.base);
       entry.root.updateMatrixWorld(true);
@@ -884,14 +883,15 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       entry.content?.ring.scale.set(1, 1, 1);
       return;
     }
-    const entry = entryOfItem(p.id);
+    const { id } = p.ref;
+    const entry = entryOfItem(id);
     if (entry === null) return;
     // Any free block drawn (a part from the door too), as `itemPointOf`
-    // reads them; only world blocks are dragged today (the gizmo's
-    // `targetOf`), and a preview of another is put back the same way.
-    const item = tourFreeBlocks(entry.station).find((i) => i.id === p.id);
+    // reads them: whichever placeable a drag showed is put back the same
+    // way.
+    const item = tourFreeBlocks(entry.station).find((i) => i.id === id);
     if (item === undefined) return;
-    poseDrawn(entry, p.id, item.pose, null);
+    poseDrawn(entry, id, item.pose, null);
   };
 
   /** Each drawn part that takes a frame, of a station shown: the page
@@ -1149,7 +1149,9 @@ export function createStationsLayer(deps: StationsLayerDeps) {
      */
     setGrowth(scales: ReadonlyMap<string, number>) {
       for (const entry of stations.values()) {
-        if (preview?.kind === "station" && preview.id === entry.id) continue;
+        if (preview?.ref.kind === "station" && preview.ref.id === entry.id) {
+          continue;
+        }
         const s = scales.get(entry.id);
         if (s === undefined || s === 1 || !Number.isFinite(s)) {
           entry.root.matrix.copy(entry.base);

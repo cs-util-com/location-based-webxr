@@ -18,7 +18,7 @@ import { objectTitle } from "../../object-describe.js";
 import { isPlayableInK4 } from "../../scene-player.js";
 import { stationTitle } from "../../station-run.js";
 import { worldBlocks, type WorldBlock } from "../../tour-document.js";
-import type { GestureEdit } from "../../editor3d/gesture.js";
+import type { PlaceEdit } from "../../placement/place-edits.js";
 import { STATION_PREFIX } from "../editor-model.js";
 
 export type ProblemSeverity = "error" | "warning" | "note";
@@ -51,7 +51,7 @@ export type ProblemFix =
       readonly label: string;
       readonly edit: (
         groundAt?: GroundAt,
-      ) => Extract<GestureEdit, { kind: "item-pose" }>;
+      ) => Extract<PlaceEdit, { kind: "pose" }>;
       readonly done: string;
     }
   | { readonly label: string; readonly split: true };
@@ -110,7 +110,7 @@ function moveInside(
   station: TourStation,
   item: WorldBlock,
   groundAt: GroundAt | undefined,
-): Extract<GestureEdit, { kind: "item-pose" }> {
+): Extract<PlaceEdit, { kind: "pose" }> {
   const r = station.foundRadiusM;
   const to = r > 2 * INSIDE_BY_M ? r - INSIDE_BY_M : r / 2;
   const scale = to / groundDistanceM(item);
@@ -121,8 +121,8 @@ function moveInside(
   const groundWas = groundOf(groundAt, was);
   const groundNow = groundOf(groundAt, geo);
   return {
-    kind: "item-pose",
-    id: item.id,
+    kind: "pose",
+    ref: { kind: "block", id: item.id },
     geo:
       groundWas === null || groundNow === null
         ? geo
