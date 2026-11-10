@@ -305,8 +305,7 @@ describe("a story's voice held in the channel", () => {
       advance: { mode: "tap" },
     });
     t.view.offer(t.story);
-    await settle();
-    expect(t.view.characterTapped()).toBe(true);
+    // His voice plays with his step.
     await settle();
     t.focus.tapped(t.free);
     t.calls.length = 0;
@@ -327,8 +326,7 @@ describe("a story's voice held in the channel", () => {
       advance: { mode: "tap" },
     });
     t.view.offer(t.story);
-    await settle();
-    t.view.characterTapped();
+    // His voice plays with his step.
     await settle();
     expect(t.voices.at(-1)).toEqual(["speaking", 2000]);
     t.focus.tapped(t.free);
