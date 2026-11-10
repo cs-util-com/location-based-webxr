@@ -149,6 +149,9 @@ test("a station tour: the visitor at the code finds the first station, its knigh
   await expect
     .poll(() =>
       page.evaluate(() => {
+        // No XR frames run under the fakes: camera frames advance the fade
+        // from the gate's content to the well's.
+        /** @type {any} */ (window).__tourViewerTest.emitFrames(10);
         /** @param {any} o @returns {string[]} */
         const ids = (o) => [
           ...(typeof o.userData?.objectId === "string"
