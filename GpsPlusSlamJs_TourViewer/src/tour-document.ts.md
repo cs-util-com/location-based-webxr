@@ -379,7 +379,7 @@ field, value }`, `withStoryText`): a key of the format's
 geo?, what })` - a copy inserted after the original (any station the
     next write carries, as for `stationEdited`), titled `<title> copy`
     (the original's title shortened so the copy's fits 80 characters,
-    `copyTitle`), its card image kept when it names an image asset and
+    `copyTitle`), its card image kept when it names a free image asset (`freeImageAssets`) and
     dropped when it names the original's photo (the copy holds another),
     at `duplicateStationGeo` (twice the found radius plus 5 m
     east, so the two preload rings never overlap) or `geo`; each item is
@@ -515,7 +515,15 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
   its title cleared, saved): its delete, saved and undone, stays gone.
 - `stationImages(state)` (module-private) - the images each station's
   card may show, by station id: a photo of that station as the document
-  holds it, or an image asset. One pass over the objects per call.
+  holds it, or a free image asset (`freeImageAssets`). One pass over the
+  objects per call. `fileUsesAll` counts a card only where this admits
+  it, so "Used in" names the cards a save writes.
+- `freeImageAssets(state)` (module-private) - the image assets a cover,
+  a station's card, a station kept bare by its card (`withoutEmptied`)
+  and a duplicated station's card may name: the written tour's that are
+  no captured photo's own, and the pictures brought in this session that
+  are none either. One list, so a file "Replace everywhere" puts on a
+  cover or a card stays there in the next save.
 - `stationEditChange(state, id, edit)` - `edited` with the frame to
   dispatch, `unchanged`, `refused` with the field the format refuses
   (`title`, `radius`, `description`, `image`, `character`, `storyText`),
@@ -594,7 +602,7 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
   a deleted photo's asset, still listed in the file written last, keeps
   no cover; `creator-document.test.ts`, "only the tombstones change"),
   and the pictures added from a file this session (so a cover replaced by
-  a new file keeps showing).
+  a new file keeps showing); the assets are `freeImageAssets`.
 - `detailsChange(state, form)` - a details form checked by the format's
   rules (`checkDetailsForm`), as both pages check it: `changed` with the
   details to dispatch, `unchanged`, or `refused` with the reason in words.

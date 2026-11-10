@@ -16,7 +16,7 @@ import type { EditorSession } from "../editor-session.js";
 /** The session as the shelf's page commands use it. */
 export type ShelfPageSession = Pick<
   EditorSession,
-  "addFile" | "assetOf" | "deleteFileAndUses" | "replaceFile" | "revision"
+  "addFile" | "assetOf" | "deleteFileAndUses" | "replaceFile"
 >;
 
 /** Said for a file the shelf no longer holds. */
@@ -25,7 +25,11 @@ export const NOT_ON_SHELF = "That file is no longer on the shelf.";
 export interface ShelfPageDeps {
   /** The session open now; another one once the tour changed. */
   readonly current: () => unknown;
-  readonly toast: (text: string) => void;
+  /** A toast, with a button when `action` is given (an Undo). */
+  readonly toast: (
+    text: string,
+    action?: { readonly label: string; readonly run: () => void },
+  ) => void;
   /** A toast that stays until removed (a busy state), with its test id. */
   readonly busy: (text: string, testId: string) => { remove(): void };
   readonly pick: (kind: TourAssetKind) => Promise<File | null>;
@@ -123,13 +127,13 @@ export function createShelfPageActions(deps: ShelfPageDeps): ShelfPageActions {
       if (deps.current() !== open) return;
       deps.endUndo();
       const name = deps.nameOf(id) ?? "The file";
-      const before = open.revision();
       const outcome = open.deleteFileAndUses(id);
-      if (outcome.kind === "deleted" && open.revision() === before) {
-        // Nothing of the tour used it after all: only its card went, and
-        // there is no step for an Undo to take back.
+      if (outcome.kind === "deleted" && outcome.undo !== undefined) {
+        // Nothing of the tour used it after all: no step was made, only
+        // its card went, and the card's own Undo brings it back, as the
+        // plain delete's does.
         deps.refresh();
-        toast(`Deleted ${name}.`);
+        toast(`Deleted ${name}.`, { label: "Undo", run: outcome.undo });
         return;
       }
       // The confirm said what goes; the toast names the file, with its

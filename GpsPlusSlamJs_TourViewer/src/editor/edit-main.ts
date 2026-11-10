@@ -1737,13 +1737,30 @@ phoneLayout.addEventListener("change", () => {
   shelfPanel?.refresh();
 });
 
+/** A toast of the shelf's, its button (an Undo) pressed once. */
+function shelfToast(
+  text: string,
+  action?: { readonly label: string; readonly run: () => void },
+): void {
+  toast(
+    text,
+    action === undefined
+      ? undefined
+      : {
+          label: action.label,
+          run: (button) => {
+            button.disabled = true;
+            action.run();
+          },
+        },
+  );
+}
+
 /** The shelf's commands on the page: its adds, the delete of a file in
  *  use and "Replace everywhere", with their toasts. */
 const shelfActions = createShelfPageActions({
   current: () => editor,
-  toast: (text) => {
-    toast(text);
-  },
+  toast: shelfToast,
   busy: (text, testId) => {
     const shown = toast(text, undefined, null, false);
     shown.dataset["testid"] = testId;
@@ -1817,20 +1834,7 @@ function openShelfPanel(open: EditorSession): void {
         useShelfFileIn(open, id, key);
       },
     },
-    toast: (text, action) => {
-      toast(
-        text,
-        action === undefined
-          ? undefined
-          : {
-              label: action.label,
-              run: (button) => {
-                button.disabled = true;
-                action.run();
-              },
-            },
-      );
-    },
+    toast: shelfToast,
     storage: browserStorage(),
     phone: () => phoneLayout.matches,
   });
@@ -2240,15 +2244,13 @@ function showCovers(chosen: string | null): void {
   const none = coverChoice("", "None", chosen === null);
   none.thumb.textContent = "No cover";
   coverList.append(none.choice);
-  const open = photos.current() ?? session;
   for (const c of choices) {
     const title = model?.items.find((i) => i.id === c.id)?.title ?? c.id;
     const { choice, thumb } = coverChoice(c.id, title, c.id === chosen);
     coverList.append(choice);
-    if (open === null) continue;
     const urls = coverUrls;
-    void open
-      .loadContentEntry(c.image)
+    // A file brought in here is read from the session (`readContent`).
+    void readContent(c.image)
       .then((blob) => {
         // A dialog closed (or opened again) meanwhile has let go of these.
         if (urls !== coverUrls) return;

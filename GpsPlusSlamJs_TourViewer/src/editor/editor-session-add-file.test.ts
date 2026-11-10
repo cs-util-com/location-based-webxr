@@ -539,7 +539,8 @@ describe("deleting a file the tour uses", () => {
     });
     const before = editor.revision();
 
-    expect(editor.deleteFileAndUses(assetId)).toEqual({
+    // A step was made: its Undo is the edit stack's, none of the card's.
+    expect(editor.deleteFileAndUses(assetId)).toStrictEqual({
       kind: "deleted",
       what: "the delete of bells.wav",
       words: "Deletes 2 items.",
@@ -720,6 +721,24 @@ describe("deleting a file the tour uses", () => {
     });
     expect(childIds()).toContain("free");
     expect(rows()).toEqual([expect.objectContaining({ id: assetId })]);
+    await session.close();
+  });
+
+  // Why: from a stale confirm the tour may no longer use the file: no step
+  // is made, so the edit stack's Undo has nothing of it, and the card's own
+  // Undo (the plain delete's) is the only way back to the card.
+  it("hands back the card's own Undo when nothing used the file any more", async () => {
+    const session = await openedTour();
+    const { editor, rows } = setup(session);
+    const added = await editor.addFile(bells(), "bells.wav");
+    if (added.kind === "refused") throw new Error(added.reason);
+    const before = editor.revision();
+    const outcome = editor.deleteFileAndUses(added.asset.id);
+    if (outcome.kind !== "deleted") throw new Error("not deleted");
+    expect(editor.revision()).toBe(before);
+    expect(rows()).toEqual([]);
+    outcome.undo?.();
+    expect(rows()).toEqual([expect.objectContaining({ id: added.asset.id })]);
     await session.close();
   });
 
@@ -953,6 +972,56 @@ describe("the tour's cover, a video's poster and a character's file on the shelf
     expect(fresh).toBeDefined();
     expect(editor.details().cover).toBe(fresh);
     expect(editor.undo().kind).toBe("undone");
+    expect(editor.details().cover).toBe(id);
+    await session.close();
+  });
+
+  /** The details dialog's save as the page makes it: the cover is the
+   *  picker's checked choice, and the picker lists only `coverChoices`. */
+  const saveDetailsAsThePageDoes = (
+    editor: ReturnType<typeof setup>["editor"],
+  ) => {
+    const shown = editor.details();
+    const checked =
+      editor.coverChoices().find((c) => c.id === shown.cover)?.id ?? null;
+    return editor.setDetails({ ...shown, name: "Renamed", cover: checked });
+  };
+
+  // Why: the cover picker lists the cover only through `coverChoices`; a
+  // cover it misses is checked nowhere, and the next save of the dialog
+  // (for any field) would drop it without a word.
+  it("lists a cover replaced by a new file in the picker, and a details save keeps it", async () => {
+    const { editor, rows, session, id } = await coverSetup();
+    await editor.replaceFile(id, png(20, 20), "new.png");
+    const fresh = rows().find((r) => r.name === "new.png")?.id ?? "";
+    expect(editor.coverChoices()).toContainEqual({
+      id: fresh,
+      image: `content/${fresh}.png`,
+    });
+    expect(saveDetailsAsThePageDoes(editor).kind).toBe("changed");
+    expect(editor.details()).toMatchObject({ name: "Renamed", cover: fresh });
+    await session.close();
+  });
+
+  it("keeps a cover whose picture item was deleted in the picker and through a details save", async () => {
+    const session = await openedTour();
+    const { editor, add, rows, settle } = setup(session);
+    await add(
+      "picture",
+      { kind: "station", stationId: STATION },
+      png(40, 30),
+      "gate.png",
+      "pic",
+    );
+    await settle();
+    const id = rows()[0]?.id ?? "";
+    expect(editor.setDetails({ ...editor.details(), cover: id }).kind).toBe(
+      "changed",
+    );
+    expect(editor.remove("pic").kind).toBe("deleted");
+    expect(editor.details().cover).toBe(id);
+    expect(editor.coverChoices().map((c) => c.id)).toContain(id);
+    expect(saveDetailsAsThePageDoes(editor).kind).toBe("changed");
     expect(editor.details().cover).toBe(id);
     await session.close();
   });

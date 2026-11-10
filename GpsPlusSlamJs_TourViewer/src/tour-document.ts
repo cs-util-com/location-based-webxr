@@ -943,18 +943,25 @@ export function effectiveDetails(state: TourDocumentState): TourDetailFields {
  *  nothing else uses it, and its "Replace everywhere" of a cover-only
  *  file puts one there. */
 export function coverImageIds(state: TourDocumentState): Set<string> {
+  return tourImageIds({
+    objects: documentObjects(state).map((o) => o.object),
+    assets: freeImageAssets(state),
+  });
+}
+
+/** The image assets a cover or a station's card may show besides the
+ *  pictures: the written tour's that are no captured photo's own
+ *  (`imageAssetIds`), and the pictures brought in here (`addedAssets`)
+ *  that are none either. One list for both, so a file "Replace
+ *  everywhere" puts on a cover or a card is kept on either. */
+function freeImageAssets(state: TourDocumentState): TourAsset[] {
   const written = state.written;
   const free = written === null ? new Set<string>() : imageAssetIds(written);
   const owned = written === null ? new Set<string>() : ownedAssetIds(written);
-  return tourImageIds({
-    objects: documentObjects(state).map((o) => o.object),
-    assets: [
-      ...(written?.assets ?? []).filter((a) => free.has(a.id)),
-      ...state.addedAssets.filter(
-        (a) => a.kind === "image" && !owned.has(a.id),
-      ),
-    ],
-  });
+  return [
+    ...(written?.assets ?? []).filter((a) => free.has(a.id)),
+    ...state.addedAssets.filter((a) => a.kind === "image" && !owned.has(a.id)),
+  ];
 }
 
 /** What a details form would change, by the format's rules
@@ -1095,13 +1102,13 @@ function withAdded(
 }
 
 /** The images each station's card may show now, by station id: the image
- *  of a picture of that station as the document holds it, or an image
- *  asset of the written tour that is no captured photo's own. The tour's
- *  objects are read once, however many stations are asked. */
+ *  of a picture of that station as the document holds it, or a free image
+ *  asset (`freeImageAssets`, as the cover may). The tour's objects are
+ *  read once, however many stations are asked. */
 function stationImages(
   state: TourDocumentState,
 ): (stationId: string) => ReadonlySet<string> {
-  const assets = writtenImageAssets(state);
+  const assets = new Set(freeImageAssets(state).map((a) => a.id));
   const byStation = new Map<string, Set<string>>();
   for (const { object } of documentObjects(state)) {
     if (object.kind !== "picture" || object.station === undefined) continue;
@@ -1130,12 +1137,6 @@ function withEffectiveImages(
         : withoutField(station, "image"),
     ),
   };
-}
-
-/** The written tour's image assets that are no captured photo's own
- *  (`imageAssetIds`); none before a tour is written. */
-function writtenImageAssets(state: TourDocumentState): ReadonlySet<string> {
-  return state.written === null ? new Set() : imageAssetIds(state.written);
 }
 
 /** `value` without its optional field `key`. */
@@ -1391,7 +1392,7 @@ function withoutEmptied(
   const ids = new Set([...candidates].filter((id) => id !== undefined));
   if (ids.size === 0) return state.stations;
   const named = new Set(documentObjects(state).map((o) => o.object.station));
-  const imageAssets = writtenImageAssets(state);
+  const imageAssets = new Set(freeImageAssets(state).map((a) => a.id));
   const handMade = new Set(state.handMade);
   const gone = (frame: StationFrame): boolean =>
     ids.has(frame.id) &&
@@ -3118,11 +3119,15 @@ export function fileUsesAll(
     }
   };
   for (const found of documentObjects(state)) sort(found.object);
+  // A card counts as the save writes it (`withEffectiveImages`).
+  const imagesOf = stationImages(state);
   for (const frame of allFrames(state)) {
     for (const story of tourStories(frame)) {
       tourStoryChildrenBlocks(story.children).forEach(sort);
     }
-    if (frame.image !== undefined) of(frame.image).cards.push(frame.id);
+    if (frame.image !== undefined && imagesOf(frame.id).has(frame.image)) {
+      of(frame.image).cards.push(frame.id);
+    }
   }
   for (const character of state.written?.characters ?? []) {
     for (const id of new Set([character.image, character.frames])) {
@@ -3689,10 +3694,11 @@ function stationDuplicate(
   const renamed = (id: string): string => payload.newItemIds[id] ?? id;
   const geo = payload.geo ?? duplicateStationGeo(frame);
   if (!isGlobePoint(geo)) return before;
-  // A card image of an image asset stays valid on the copy; one of the
-  // station's own photo names a photo the copy does not hold.
+  // A card image of a free image asset (`freeImageAssets`) stays valid on
+  // the copy; one of the station's own photo names a photo it does not hold.
   const keepsImage =
-    frame.image !== undefined && imageAssetIds(before.written).has(frame.image);
+    frame.image !== undefined &&
+    freeImageAssets(before).some((a) => a.id === frame.image);
   const copy: StationFrame = {
     ...(keepsImage ? frame : withoutField(frame, "image")),
     id: payload.newStationId,

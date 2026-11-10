@@ -317,15 +317,17 @@ describe("the tour's cover and a file's count of uses", () => {
     expect(fileUseCount(fileUsesOf(state, "nothing"))).toBe(0);
   });
 
-  it("finds every file's uses in one walk, the same as one file's", () => {
+  // Why: the walk lists every file the tour uses and nothing else, each
+  // with the count one can check by hand against the tour above.
+  it("lists each file the tour uses, and only those, with its count", () => {
     const state = covered([NARRATED, ILLUSTRATED, FREE_PICTURE], "pic1");
-    const all = fileUsesAll(state);
-    for (const id of ["snd1", "pic1", "pic2", "pst1", "vid1", "cov1"]) {
-      expect(all.get(id) ?? fileUsesOf(state, "nothing")).toEqual(
-        fileUsesOf(state, id),
-      );
-    }
-    expect(all.get("pic1")?.cover).toBe(true);
+    const counts = Object.fromEntries(
+      [...fileUsesAll(state)].map(([id, uses]) => [id, fileUseCount(uses)]),
+    );
+    // snd1: "bells", the narration of "told", the miller's voice; pic1: the
+    // free picture, the long text showing it, the cover; pic2: the miller;
+    // vid1: the video "flood"; pst1: its poster. cov1 is listed but unused.
+    expect(counts).toEqual({ snd1: 3, pic1: 3, pic2: 1, vid1: 1, pst1: 1 });
   });
 
   it("a delete of a cover-only file takes the cover off, in one step an undo takes back", () => {
@@ -374,6 +376,56 @@ describe("the tour's cover and a file's count of uses", () => {
     expect(manifestToWrite(after)?.cover).toBe("new1");
     const undone = tourDocumentReducer(after, doc.undone());
     expect(effectiveDetails(undone).cover).toBe("cov1");
+  });
+});
+
+describe("a station's card image on Replace everywhere", () => {
+  // Why: a station's card may show a file that no picture of that station
+  // shows. Replace switches the card to the new file brought in here; the
+  // written tour must keep it, and the shelf's "Used in" must name the
+  // same station the save writes - one rule for both.
+  const CARDED = {
+    id: "s-card",
+    geo: { ...GEO, lat: 48.56 },
+    activateRadiusM: 50,
+    foundRadiusM: 25,
+    hint: "arrow",
+    image: "pic2",
+    children: [],
+  } as unknown as TourStation;
+
+  it("keeps the card on the new file, and the uses and the save agree", () => {
+    let state = opened([FREE_PICTURE], { stations: [STORIED, CARDED] });
+    state = tourDocumentReducer(
+      state,
+      doc.assetsAdded({ assets: [picture("new2")] }),
+    );
+    const after = tourDocumentReducer(
+      state,
+      doc.fileReplaced({ from: "pic2", to: "new2", what: "the replace" }),
+    );
+    const written = manifestToWrite(after);
+    expect(written?.stations.find((s) => s.id === "s-card")?.image).toBe(
+      "new2",
+    );
+    expect(written?.assets.map((a) => a.id)).toContain("new2");
+    expect(fileUsesOf(after, "new2").cards).toEqual(["s-card"]);
+    const undone = tourDocumentReducer(after, doc.undone());
+    expect(
+      manifestToWrite(undone)?.stations.find((s) => s.id === "s-card")?.image,
+    ).toBe("pic2");
+  });
+
+  it("counts no card the save would not write", () => {
+    // A card naming a file the tour does not list is none when written,
+    // so it is no use of that file either.
+    const state = opened([], {
+      stations: [STORIED, { ...CARDED, image: "gone" }],
+    });
+    expect(
+      manifestToWrite(state)?.stations.find((s) => s.id === "s-card")?.image,
+    ).toBeUndefined();
+    expect(fileUsesOf(state, "gone").cards).toEqual([]);
   });
 });
 

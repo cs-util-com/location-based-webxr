@@ -987,11 +987,18 @@ export interface EditorSession {
    *  go, the others lose it, in one step (`fileUsesDeleted`) - an undo
    *  like any other, which brings the file's card back with its items
    *  (the shelf puts back a card whose file an item names again) - then
-   *  its card. `what` names the step. Refused, changing nothing, as
-   *  `deletePlan` refuses. */
-  deleteFileAndUses(
-    assetId: string,
-  ): { kind: "deleted"; what: string; words: string } | EditorRefusal;
+   *  its card. `what` names the step. Where nothing used the file any
+   *  more (a confirm gone stale) no step is made and only its card goes:
+   *  `undo` then puts the card back, as the plain delete's Undo does.
+   *  Refused, changing nothing, as `deletePlan` refuses. */
+  deleteFileAndUses(assetId: string):
+    | {
+        kind: "deleted";
+        what: string;
+        words: string;
+        undo?: () => void;
+      }
+    | EditorRefusal;
   /** How many places use the file `assetId` (`fileUseCount`: items,
    *  station cards, the cover): what its "Replace everywhere" switches; 0
    *  where it is not offered - nothing uses the file, or the replace
@@ -1966,8 +1973,12 @@ export function createEditorSession(input: {
       ) {
         return notApplied;
       }
-      shelf.remove(assetId);
-      return { kind: "deleted", what, words: fileDeleteWords(planned.uses) };
+      const undo = shelf.remove(assetId);
+      const words = fileDeleteWords(planned.uses);
+      // With no step made, the card's own Undo is the only way back.
+      return fileUseCount(planned.uses) === 0 && undo !== null
+        ? { kind: "deleted", what, words, undo }
+        : { kind: "deleted", what, words };
     },
     replaceCount: (assetId) => {
       const state = mine();
@@ -2063,7 +2074,9 @@ export function createEditorSession(input: {
       return { kind: "changed" };
     },
     coverChoices() {
-      const tour = { objects: current(), assets: written().assets };
+      // The assets as they stand, files brought in here too: the same the
+      // cover may name (`coverImageIds`), or the picker would check none.
+      const tour = { objects: current(), assets: now().assets };
       return [...coverIds()].flatMap((id) => {
         const image = tourCoverEntry({ ...tour, cover: id });
         return image === null ? [] : [{ id, image }];

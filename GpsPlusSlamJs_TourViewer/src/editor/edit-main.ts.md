@@ -497,7 +497,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   tour's name in the top bar (`#tour-name`, a button) opens the details
   dialog (`details-dialog.ts`, `#details-modal`): name, description, cover
   and contact. The cover picker is drawn here: "None" and the session's
-  `coverChoices()` as radios, each with its picture read from the zip as
+  `coverChoices()` as radios, each with its picture read from the zip,
+  or from the session for a file brought in (`readContent`), as
   an object URL (released when the dialog closes). Apply goes through
   `session.setDetails`; a change refreshes, says "Tour details changed -
   not saved yet." and tells autosave (an edit like any other); no change

@@ -20,9 +20,10 @@ says its outcome, says a failure, and leaves nothing half done. The page
     `FILE_NOT_KEPT` is said when the draft could not keep one of them.
   - `deleteInUse(open, id)`: ends any open Undo offer, then
     `deleteFileAndUses`.
-    - A delete that made no step (the revision did not move, because
-      nothing used the file after all) is said as "Deleted <name>." with no
-      Undo.
+    - A delete that made no step (the session hands back the card's own
+      `undo`, because nothing used the file after all) is said as
+      "Deleted <name>." with that Undo on the toast, as the plain delete
+      of an unused file offers it.
     - Every other outcome goes through `deps.deleted`: the page's Undo, or
       the refusal said.
   - `replaceEverywhere(open, id)`:
@@ -42,8 +43,9 @@ now.`, plus `FILE_NOT_KEPT` when the file could not be kept.
 - Never rejects. Every busy toast is removed on every outcome (`finally`).
 - Once another tour is open (`deps.current() !== open`), nothing more is
   said or revealed.
-- No Undo offer is made for a delete that made no step: tapping it would
-  take back an older change.
+- A delete that made no step never goes through the page's Undo offer
+  (the edit stack's: tapping it would take back an older change); its
+  toast carries the card's own Undo instead.
 
 ## Tests
 
