@@ -393,6 +393,16 @@ const SHELF_PARTS = [
   "#shell-bar",
 ];
 
+// The panel eases its width (a 0.16 s transition), so a size read a frame
+// or two after a resize can land mid-way: wait until it has no animation
+// left.
+async function shelfSettled(page) {
+  await afterFrames(page, 2);
+  await page.waitForFunction(
+    () => document.getElementById("shell-shelf")?.getAnimations().length === 0,
+  );
+}
+
 // The positions and gaps are the chosen prototype's
 // (public/prototypes/asset-shelf-2), read from it at the same three sizes:
 // a 300 px dock at the right edge on a desktop (246 px in a phone's
@@ -437,7 +447,7 @@ test("the Assets panel sits where the chosen prototype puts it, on a desktop, a 
 
   // A phone in landscape: narrower, denser, no foot.
   await page.setViewportSize({ width: 844, height: 390 });
-  await afterFrames(page, 2);
+  await shelfSettled(page);
   layout = await layoutOf(page, SHELF_PARTS);
   shelf = boxIn(layout, "#shell-shelf");
   tree = boxIn(layout, "#shell-tree");
@@ -452,7 +462,7 @@ test("the Assets panel sits where the chosen prototype puts it, on a desktop, a 
 
   // A phone: closed until asked for, then a sheet of its own.
   await page.setViewportSize({ width: 390, height: 844 });
-  await afterFrames(page, 2);
+  await shelfSettled(page);
   await expect(page.locator("#shell-shelf")).toBeHidden();
   await page.locator("#shelf-toggle").click();
   await expect(page.locator("#shell-shelf")).toBeVisible();
