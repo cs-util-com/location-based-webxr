@@ -519,8 +519,9 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
   objects per call. `fileUsesAll` counts a card only where this admits
   it, so "Used in" names the cards a save writes.
 - `freeImageAssets(state)` (module-private) - the image assets a cover,
-  a station's card, a station kept bare by its card (`withoutEmptied`)
-  and a duplicated station's card may name: the written tour's that are
+  a station's card, a station kept bare by its card (`withoutEmptied`,
+  and `withFrames` through `keptStationsOf`'s `images`, so such a
+  station is also written) and a duplicated station's card may name: the written tour's that are
   no captured photo's own, and the pictures brought in this session that
   are none either. One list, so a file "Replace everywhere" puts on a
   cover or a card stays there in the next save.

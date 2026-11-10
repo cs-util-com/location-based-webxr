@@ -88,9 +88,6 @@ never state). Design:
     writer puts at minor 2) or leaves the field out (false is never
     written). The phone's Finish keeps the flag the same way: the rebuild
     spreads the opened manifest (`finish-rebuild.ts`).
-  - `coverChoices()` reads the assets as they stand (`manifestNow`, files
-    brought in this session too), the same ones `coverImageIds` admits, so
-    the picker always lists, and checks, the cover `details()` shows.
   - `details()` / `setDetails(form, needsNoGps?)` / `coverChoices()` (W2 of the tour
     editor plan 2026-10-17-1816) - the tour's name, description, cover and
     contact as a `DetailsForm` (`../tour-details-form.ts`), with the edits;
@@ -109,6 +106,9 @@ never state). Design:
     images as they stand (its placed photos and image assets,
     `tourImageIds`) with their zip entry (`tourCoverEntry`); a recorded
     walk photo has no id and is no choice.
+  - `coverChoices()` reads the assets as they stand (`manifestNow`, files
+    brought in this session too), the same ones `coverImageIds` admits, so
+    the picker always lists, and checks, the cover `details()` shows.
   - `noGpsCheck()` - `no-gps-check.ts`'s `checkNoGps` over the open
     tour's stations and codes: what the setting's warnings are about (the
     stations farther than 40 m from every code that can place the tour,
@@ -420,8 +420,9 @@ changes`; a label is cut at 40 characters (`truncated`, split-safe), a label-les
   keeps its picture for an undo after a save. Returns `{ kind:
 "deleted", what, words }` or the plan's refusal; where nothing used
   the file any more (a confirm gone stale) no step is made, only the
-  card goes, and the outcome carries `undo`, the card's own put-back; the page offers its
-  own Undo.
+  card goes, and the outcome carries `undo`, the card's own put-back,
+  which the page offers on its toast; after a step the page offers the
+  edit stack's Undo.
 - `replaceCount(assetId)` - how many items and station cards use the
   file: what "Replace everywhere" switches.
 - `replaceFile(assetId, file, fileName)` - "Replace everywhere": `file`

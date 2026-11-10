@@ -774,7 +774,9 @@ export function stationsGoneSinceOpen(state: TourDocumentState): string[] {
  * left: its items keep their home, and a write prunes it once they are
  * gone), one that keeps itself (or was added by hand) only while an
  * object of the document still stands in it - so one added, saved and
- * undone is gone rather than kept by its own title.
+ * undone is gone rather than kept by its own title. A card keeps a
+ * station when it names one of `keptBare.images` (`freeImageAssets`, as
+ * `withoutEmptied` reads them), else the written tour's free images.
  */
 function withFrames(
   written: TourManifest,
@@ -798,7 +800,7 @@ function withFrames(
         !gone.has(block.id) &&
         (movedTo.get(block.id) ?? station.id) === station.id,
     );
-  const imageAssets = imageAssetIds(written);
+  const imageAssets = keptBare.images ?? imageAssetIds(written);
   return {
     ...written,
     stations: [
@@ -844,10 +846,13 @@ function bareEmptyStations(manifest: TourManifest | null): Set<string> {
 
 /** The stations `withFrames` keeps though nothing names them: the bare
  *  empty ones of the tour as opened (`bareEmptyStations`), and those added
- *  by hand here (`handMade`), which keep themselves as a title would. */
+ *  by hand here (`handMade`), which keep themselves as a title would; and
+ *  `images`, the images a card keeps its station by (`freeImageAssets`:
+ *  files brought in too), else the written tour's. */
 interface KeptStations {
   readonly bare: ReadonlySet<string>;
   readonly handMade: ReadonlySet<string>;
+  readonly images?: ReadonlySet<string>;
 }
 
 const NONE_KEPT: KeptStations = { bare: new Set(), handMade: new Set() };
@@ -856,6 +861,7 @@ function keptStationsOf(state: TourDocumentState): KeptStations {
   return {
     bare: bareEmptyStations(state.opened),
     handMade: new Set(state.handMade),
+    images: new Set(freeImageAssets(state).map((a) => a.id)),
   };
 }
 

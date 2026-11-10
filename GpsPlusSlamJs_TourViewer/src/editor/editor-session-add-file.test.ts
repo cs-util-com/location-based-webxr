@@ -21,7 +21,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import { editorStore } from "../test-support/editor-store.js";
 import { stationIdOf, tourOf } from "../test-support/tour-of.js";
-import { documentObjects, manifestToWrite } from "../tour-document.js";
+import {
+  documentObjects,
+  fileUsesOf,
+  manifestToWrite,
+} from "../tour-document.js";
 import { openTourFile, type TourSession } from "../tour-session.js";
 import { placeFileItem, type FileAddTarget } from "./add-file-item.js";
 import {
@@ -898,6 +902,52 @@ describe("a free picture made from a file, after the shelf made it smaller", () 
     expect(found?.object).toMatchObject({
       imageAsset: { id: assetId, path: `content/${assetId}.webp` },
     });
+  });
+});
+
+describe("a station kept only by its card, a file brought in", () => {
+  // Why: a station with nothing else of its own is kept by its card image.
+  // A card made from a file brought in this session must keep it in the
+  // save as a written image would - or the save drops the station while
+  // the shelf's "Used in", the delete's words and Replace still count its
+  // card. The same holds for a copy of such a station.
+  it("writes the station and its copy with the card, and counts the cards the save writes", async () => {
+    const session = await openedTour();
+    const { editor, manifest, store } = setup(session);
+    const added = await editor.addFile(png(40, 30), "gate.png");
+    if (added.kind === "refused") throw new Error(added.reason);
+    const id = added.asset.id;
+    expect(
+      editor.place({
+        id: "far",
+        kind: "picture",
+        view: "plane",
+        image: id,
+        widthM: 1,
+        imageAsset: added.asset,
+        createdAtIso: "2026-11-09T10:00:00.000Z",
+        geo: { lat: 48.6, lon: 9.2, alt: 340, rotation: [0, 0, 0, 1] },
+      }).kind,
+    ).toBe("placed");
+    const station =
+      documentObjects(store.getState().tourDocument).find(
+        (o) => o.object.id === "far",
+      )?.object.station ?? "";
+    expect(station).not.toBe(STATION);
+    expect(editor.editStation(station, { image: id }).kind).toBe("edited");
+    expect(editor.remove("far").kind).toBe("deleted");
+    const carded = () =>
+      manifest()
+        .stations.filter((s) => s.image === id)
+        .map((s) => s.id);
+    expect(carded()).toEqual([station]);
+    const copied = await editor.duplicateStation(station);
+    if (copied.kind !== "duplicated") throw new Error("not duplicated");
+    expect(carded()).toEqual([station, copied.stationId]);
+    expect(fileUsesOf(store.getState().tourDocument, id).cards).toEqual(
+      carded(),
+    );
+    await session.close();
   });
 });
 
