@@ -30,7 +30,9 @@ the neutral ground over the last `GROUND_TINT_FADE_M` (40 m) of the window
 - The neutral is `tint.palette[0]`, converted by `THREE.Color` to linear;
   the texture is decoded from sRGB by the GPU, so both sides are linear.
 - `dispose()` frees the texture and restores the material's own hook,
-  cache key and colour.
+  cache key and colour: the very functions it found (called with the
+  material as `this` while patched), so repeated rebuilds leave no chain of
+  wrappers. Tested in `ground-tint.test.ts`.
 - **One set of uniform objects per material**, reused by every
   application (a module `WeakMap`). three.js runs `onBeforeCompile` only when
   a material has no program for its cache key yet and keeps binding the

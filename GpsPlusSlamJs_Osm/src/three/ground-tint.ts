@@ -132,9 +132,13 @@ export function applyGroundTint(
   uniforms.groundNeutral.value.set(neutral.r, neutral.g, neutral.b);
   uniforms.groundFade.value = Math.max(0.01, fadeM);
   const live = (): boolean => uniforms.owner === handle;
-  const previous = material.onBeforeCompile.bind(material);
+  // THE ORIGINALS ARE KEPT, called with the material as `this`, so dispose
+  // restores exactly them: a bound copy would leave one more wrapper behind
+  // on every rebuild.
+  // eslint-disable-next-line @typescript-eslint/unbound-method -- kept unbound on purpose and always called with `.call(material, ...)`.
+  const previous = material.onBeforeCompile;
   material.onBeforeCompile = (shader, renderer) => {
-    previous(shader, renderer);
+    previous.call(material, shader, renderer);
     Object.assign(shader.uniforms, {
       groundTint: uniforms.groundTint,
       groundOrigin: uniforms.groundOrigin,
@@ -179,8 +183,10 @@ export function applyGroundTint(
         ].join("\n"),
       );
   };
-  const previousKey = material.customProgramCacheKey.bind(material);
-  material.customProgramCacheKey = () => `${previousKey()}|ground-tint`;
+  // eslint-disable-next-line @typescript-eslint/unbound-method -- as `previous` above.
+  const previousKey = material.customProgramCacheKey;
+  material.customProgramCacheKey = () =>
+    `${previousKey.call(material)}|ground-tint`;
   // Off (groundOn 0) the patch multiplies by the neutral everywhere, which
   // is exactly the plain ground, so the material stays white in both states.
   const setEnabled = (on: boolean): void => {

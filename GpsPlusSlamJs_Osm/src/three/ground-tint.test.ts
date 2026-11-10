@@ -106,6 +106,19 @@ describe("applyGroundTint", () => {
     expect(material.customProgramCacheKey()).not.toContain("ground-tint");
   });
 
+  // WHY: a rebuild applies and disposes a tint on the same material every
+  // full pass. Restoring a BOUND copy of the hooks left a new wrapper in their
+  // place each time, so the chain behind `onBeforeCompile` and the cache key
+  // grew by one function per rebuild. Dispose must put back the originals.
+  it("restores the material's own hooks, not copies, after any number of rebuilds", () => {
+    const material = new THREE.MeshStandardMaterial({ color: 0x6b7280 });
+    const hook = material.onBeforeCompile;
+    const key = material.customProgramCacheKey;
+    for (let i = 0; i < 3; i++) applyGroundTint(material, tint()).dispose();
+    expect(material.onBeforeCompile).toBe(hook);
+    expect(material.customProgramCacheKey).toBe(key);
+  });
+
   // WHY: three.js runs `onBeforeCompile` only when a material has no
   // program for its cache key yet, and then keeps the uniforms of THAT
   // compile. A rebuild drops one tint and applies the next under the same key,
