@@ -9,11 +9,13 @@
  * the chosen scheme (`TransferableMesh.colourScheme`), which is the durable
  * end state the root CLAUDE.md asks the final state to reflect.
  *
- * WHY ONLY THE SCHEME'S OWN BUILD FAILURE REVERTS. An Overpass error or a
- * pass aborted by a GPS fix says nothing about the scheme; the next pass
- * carries the choice again and finishes the switch. A city build that failed
- * in the chosen colours does: the select goes back to what is drawn, and the
- * error itself stays on the status line (the existing error channel).
+ * WHY EVERY FAILURE ENDS THE SWITCH, AND ONLY ITS OWN REVERTS IT. After any
+ * failure the echo the switch waits for will not come, so the select is
+ * enabled again whatever failed. An Overpass or terrain error says nothing
+ * about the scheme, so the choice stays and the next pass builds it. A city
+ * build that failed in the chosen colours (the worker's structured
+ * `failedBuild`, never the message text) does: the select goes back to what
+ * is drawn. The error itself goes to the existing error channel.
  *
  * @see colour-scheme-switch.ts.md
  */
@@ -22,7 +24,6 @@ import {
   COLOUR_SCHEME_NAMES,
   DEFAULT_COLOUR_SCHEME,
   colourSchemeOf,
-  failedColourSchemeOf,
   isColourSchemeName,
   type ColourSchemeName,
 } from "./colour-schemes.js";
@@ -42,8 +43,11 @@ export interface ColourSchemeSwitch {
   show(name: ColourSchemeName): void;
   /** A full mesh was drawn, built in `scheme` (absent means the default). */
   meshDrawn(scheme: string | undefined): void;
-  /** The refresh failed with `message` (the status line's error). */
-  failed(message: string): void;
+  /**
+   * A refresh failed. `failedScheme` is the scheme of the city build that
+   * failed, absent for any other failure.
+   */
+  failed(failedScheme?: string): void;
   /** AR draws the default whatever is chosen (D9): the select is disabled. */
   setArActive(active: boolean): void;
   /** The scheme being applied, or `undefined` when none is. */
@@ -112,12 +116,13 @@ export function attachColourSchemeSwitch(
         paint();
       }
     },
-    failed(message) {
+    failed(failedScheme) {
       if (waitingFor === undefined) return;
-      if (failedColourSchemeOf(message) !== waitingFor) return;
+      const ownBuild = failedScheme === waitingFor;
       waitingFor = undefined;
-      select.value = drawn;
       paint();
+      if (!ownBuild) return;
+      select.value = drawn;
       choose(drawn);
     },
     setArActive(active) {

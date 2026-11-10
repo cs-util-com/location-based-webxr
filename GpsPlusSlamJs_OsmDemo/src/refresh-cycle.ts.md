@@ -102,3 +102,12 @@ page-side stages and hands the composed breakdown to a callback.
 ring, like the datum, and sent as `colourScheme`; `main.ts` answers the
 default while AR runs (D9). Omitted sends none (the worker's default).
 Tested in `refresh-cycle.test.ts`.
+
+`drawnBuildKey?: () => string | undefined` is read at post time too and sent
+as `drawnBuildKey` (`main.ts`: `latestMesh?.buildKey`), so the worker rebuilds
+whenever the page does not draw this pass's build.
+
+`onBuildFailed?: (failed: MeshBuildChoices) => void` is called with a failed
+city build's choices (`failedBuildOf(error)`) BEFORE `fetchFailed` is
+dispatched, so the switch can revert its own failed build before the store's
+error ends its wait.

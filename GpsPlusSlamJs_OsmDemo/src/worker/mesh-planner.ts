@@ -1,5 +1,5 @@
 /**
- * "Has anything the geometry depends on changed since the last full build?"
+ * "Has anything the geometry depends on changed since the mesh the page DRAWS?"
  *
  * WHY THIS EXISTS (W6, finding R3-3). Progressive scoring runs three passes per
  * click, and the first version rebuilt the ENTIRE city on every one of them —
@@ -15,8 +15,18 @@
  *   so every vertex in the scene moves when the user does;
  * - **the feature set**, which grows only by loading another fetch tile;
  * - **the terrain**, because every builder samples heights from it;
- * - **the colour scheme** (colour schemes plan 2026-11-10-0841, D1), because
- *   the city's colours are baked into its buffers.
+ * - **the build choices**: the colour scheme (colour schemes plan
+ *   2026-11-10-0841, D1), because the city's colours are baked into its
+ *   buffers, and every later switch that changes what is built. They are a
+ *   named map so a new switch joins the key without a change here.
+ *
+ * WHY THE PAGE'S DRAWN KEY, NOT THE LAST BUILD. A reply can be dropped: the
+ * page aborts a superseded call, and the worker drops the reply of an aborted
+ * request. A planner that remembered what it BUILT then answered the next pass
+ * with the same inputs with slabs only, so the page kept an older mesh (or
+ * none) and a switch waiting for the new one never finished. The page sends
+ * the key of the mesh it has drawn (`TransferableMesh.buildKey`), and only that
+ * mesh counts.
  *
  * A widening ring changes none of them. Neither does a category change — which
  * is a second, unlooked-for win: switching category used to rebuild the city too.
@@ -38,20 +48,11 @@ export interface MeshInputs {
   readonly loadedTileCount: number;
   /** Bumped whenever the held heightfield is replaced. */
   readonly terrainStamp: number;
-  /** The colour scheme's name; a switch is a rebuild, nothing else is. */
-  readonly colourScheme: string;
-}
-
-export interface MeshPlanner {
   /**
-   * Whether this pass must rebuild the geometry.
-   *
-   * **Records the inputs as the new baseline when it answers `true`**, so two
-   * consecutive calls with the same inputs answer `true` then `false`. That
-   * makes the caller's shape unavoidable — ask once per pass, build what you are
-   * told — rather than leaving a separate "commit" step that can be forgotten.
+   * What the user chose to build, by name (the colour scheme, later switches).
+   * A change of any value is a rebuild; the order of the names is not.
    */
-  needsFullBuild(inputs: MeshInputs): boolean;
+  readonly choices: Readonly<Record<string, string | boolean>>;
 }
 
 /**
@@ -76,19 +77,28 @@ function bucket(value: number): number {
   return Math.round(value / POSITION_BUCKET_DEG);
 }
 
-/** `latBucket,lngBucket,tiles,stamp,scheme` — coarse in space, exact in the rest. */
-function keyOf(inputs: MeshInputs): string {
+/**
+ * The build's identity: `latBucket|lngBucket|tiles|stamp|name=value...`,
+ * coarse in space and exact in the rest, the choices sorted by name. The
+ * worker stamps it on every full mesh and the page sends it back.
+ */
+export function meshBuildKey(inputs: MeshInputs): string {
+  const choices = Object.keys(inputs.choices)
+    .sort()
+    .map((name) => `${name}=${String(inputs.choices[name])}`);
   return [
     bucket(inputs.position.lat),
     bucket(inputs.position.lng),
     inputs.loadedTileCount,
     inputs.terrainStamp,
-    inputs.colourScheme,
+    ...choices,
   ].join("|");
 }
 
 /**
- * Builds a planner.
+ * Whether this pass must rebuild the geometry: whenever the page does not
+ * already draw a mesh with this pass's key. `drawnKey` is the key of the mesh
+ * on the page, `undefined` when it draws none.
  *
  * THE BIAS IS TOWARDS REBUILDING. Every input is compared exactly, so anything
  * this cannot prove is unchanged is treated as changed — a needless rebuild
@@ -96,14 +106,9 @@ function keyOf(inputs: MeshInputs): string {
  * position, which is the half-swapped scene this demo has repeatedly engineered
  * away.
  */
-export function createMeshPlanner(): MeshPlanner {
-  let lastBuilt: string | undefined;
-  return {
-    needsFullBuild(inputs: MeshInputs): boolean {
-      const key = keyOf(inputs);
-      if (key === lastBuilt) return false;
-      lastBuilt = key;
-      return true;
-    },
-  };
+export function needsFullBuild(
+  inputs: MeshInputs,
+  drawnKey: string | undefined,
+): boolean {
+  return meshBuildKey(inputs) !== drawnKey;
 }

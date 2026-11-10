@@ -29,7 +29,12 @@ union, and two runtime guards. No behaviour.
     older worker degrades to the composed-id-only HUD label.
 - `WorkerEnvelope` — what the main thread posts, including `{ kind: 'abort',
 target }`.
-- `WorkerReply` — `{ id, ok: true, value } | { id, ok: false, message }`.
+- `WorkerReply` - `{ id, ok: true, value } | { id, ok: false, message, failedBuild? }`;
+  `failedBuild` (`MeshBuildChoices`) is set only for a failed city build.
+- `MeshBuildChoices` - what the user chose to build (`colourScheme`; each
+  later build switch adds its field). `isMeshBuildChoices(value)` guards it.
+- `MeshBuildError` - the error class that carries `failedBuild` in the worker
+  and out of the RPC client; `failedBuildOf(error)` reads it back.
 - `isWorkerReply(value)`, `isWorkerEnvelope(value)` — guards for the two
   `message` handlers.
 
@@ -99,7 +104,8 @@ unknown kinds, a missing id and a malformed abort.
 ## `groundTint` (colour schemes plan 2026-11-10-0841 S3)
 
 `TransferableMesh.groundTint?: GroundTint` - the land-use tint over the build
-window. Cloneable (a typed array, numbers, a Map); COPIED rather than
+window. Cloneable (a typed array, numbers, the palette as an array of plain
+objects); COPIED rather than
 transferred (about 2 MB at most), see `demo-worker.ts`.
 
 ## `colourScheme` (colour schemes plan 2026-11-10-0841 section 4.4)
@@ -110,3 +116,12 @@ transferred (about 2 MB at most), see `demo-worker.ts`.
 - Reply: `TransferableMesh.colourScheme?` - the scheme the mesh was built in;
   the page's ground, plates and trim follow it, and the dropdown's switch ends
   on it.
+
+## `buildKey` / `drawnBuildKey`
+
+- Reply: `TransferableMesh.buildKey` - the full build's identity
+  (`meshBuildKey` in `mesh-planner.ts`).
+- Request: `update.request.drawnBuildKey?` - the key of the full mesh the page
+  draws, absent when it draws none. The worker builds in full whenever this
+  pass's key differs, so a dropped reply never leaves the page on an older
+  build while the worker believes it current.

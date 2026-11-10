@@ -83,12 +83,11 @@ import { createTerrainField, type TerrainField } from "gps-plus-slam-osm";
 import { terrainWindowFor } from "gps-plus-slam-osm";
 import {
   DEFAULT_COLOUR_SCHEME,
-  colourSchemeBuildFailure,
   colourSchemeOf,
   isColourSchemeName,
   type ColourSchemeName,
 } from "../colour-schemes.js";
-import { createMeshPlanner } from "./mesh-planner.js";
+import { meshBuildKey, needsFullBuild } from "./mesh-planner.js";
 import { createObstacleIndexCache } from "./obstacle-index-cache.js";
 import { osmStoreWarn } from "./osm-store-warn.js";
 import { createPrefetchQueue, type PrefetchQueue } from "./prefetch-queue.js";
@@ -103,7 +102,9 @@ import {
   type MeshBuildRecord,
 } from "./terrain-arrival.js";
 import {
+  failedBuildOf,
   isWorkerEnvelope,
+  MeshBuildError,
   type TransferableMesh,
   type WorkerCallKind,
   type UpdateResult,
@@ -305,7 +306,7 @@ function buildMesh(
   loadedTiles: readonly string[] = [],
   /** The colours to build in (colour schemes plan 2026-11-10-0841, D1). */
   scheme: ColourSchemeName = DEFAULT_COLOUR_SCHEME,
-): TransferableMesh {
+): Omit<TransferableMesh, "buildKey"> {
   const options = meshOptions(frameOrigin);
   const all = [...features];
   // Areas are clipped to what is actually rendered before they are triangulated.
@@ -477,14 +478,6 @@ function buildMesh(
 }
 
 /**
- * Decides whether a pass rebuilds the geometry or only re-sends the slabs (W6).
- *
- * The decision itself lives in `mesh-planner.ts`, where it can be tested without
- * a worker — this file only supplies the inputs and acts on the answer.
- */
-const meshPlanner = createMeshPlanner();
-
-/**
  * The navigation obstacle index, held across clicks (DEC-R11-16/19).
  *
  * NOT BUILT ON THE PUBLISH PATH, and that is DEC-R11-19 rather than DEC-R11-16
@@ -563,15 +556,20 @@ function meshUpdateFor(
   pipeline: DemoPipeline,
   frameOrigin: LatLng,
   scheme: ColourSchemeName,
+  /** The key of the full mesh the page draws (`undefined`: none). */
+  drawnBuildKey: string | undefined,
 ): WorkerCalls["update"]["result"]["mesh"] {
-  const full = meshPlanner.needsFullBuild({
+  // FULL BUILD VERSUS REGIONS ONLY (W6), decided in `mesh-planner.ts` against
+  // the mesh the PAGE draws, so a reply dropped on the way is rebuilt.
+  const choices = { colourScheme: scheme };
+  const inputs = {
     position: snapshot.position,
     loadedTileCount: pipeline.loadedTileCount(),
     terrainStamp,
-    colourScheme: scheme,
-  });
+    choices,
+  };
 
-  if (!full) {
+  if (!needsFullBuild(inputs, drawnBuildKey)) {
     const options = meshOptions(frameOrigin);
     return {
       kind: "regions",
@@ -579,29 +577,29 @@ function meshUpdateFor(
       underground: packUnderground(snapshot.undergroundOutlines, options.frame),
     };
   }
-  // A FAILED BUILD NAMES ITS SCHEME (colour schemes plan 4.4): only the
-  // message crosses the RPC boundary, and the dropdown reverts a switch only
-  // when the build it waits for is the one that failed.
+  // A FAILED BUILD CARRIES ITS CHOICES as a field of the reply, so the
+  // dropdown reverts a switch only when the build it waits for failed.
   try {
     return {
       kind: "full",
-      mesh: buildMesh(
-        pipeline.features().values(),
-        snapshot.position,
-        frameOrigin,
-        snapshot.regions,
-        snapshot.undergroundOutlines,
-        snapshot.loadedTiles,
-        scheme,
-      ),
+      mesh: {
+        buildKey: meshBuildKey(inputs),
+        ...buildMesh(
+          pipeline.features().values(),
+          snapshot.position,
+          frameOrigin,
+          snapshot.regions,
+          snapshot.undergroundOutlines,
+          snapshot.loadedTiles,
+          scheme,
+        ),
+      },
     };
   } catch (error) {
-    throw new Error(
-      colourSchemeBuildFailure(
-        scheme,
-        error instanceof Error ? error.message : String(error),
-      ),
-      { cause: error },
+    throw new MeshBuildError(
+      `building the city failed: ${error instanceof Error ? error.message : String(error)}`,
+      choices,
+      error,
     );
   }
 }
@@ -713,6 +711,7 @@ async function handle<K extends WorkerCallKind>(
         postedAtEpochMs,
         geoidUndulationM,
         colourScheme,
+        drawnBuildKey,
       } = payload as WorkerCalls["update"]["request"];
       const { pipeline, prefetch } = requireState();
       // THE SCHEME IS A NAME, looked up in the table the page reads; one this
@@ -720,9 +719,9 @@ async function handle<K extends WorkerCallKind>(
       // build failure.
       const scheme = colourScheme ?? DEFAULT_COLOUR_SCHEME;
       if (!isColourSchemeName(scheme)) {
-        throw new Error(
-          colourSchemeBuildFailure(scheme, "no such colour scheme"),
-        );
+        throw new MeshBuildError(`no such colour scheme: "${scheme}"`, {
+          colourScheme: scheme,
+        });
       }
       // THE QUEUE WAIT — post to dispatch, the one measurement here that has
       // to cross the boundary. `nowEpochMs()` is `timeOrigin + now()`, an
@@ -828,6 +827,7 @@ async function handle<K extends WorkerCallKind>(
         pipeline,
         frameOrigin ?? position,
         scheme,
+        drawnBuildKey,
       );
       const meshMs = Math.max(0, nowMs() - meshStart);
       // WHAT THIS MESH IS STANDING ON (F1d). Recorded unconditionally, INCLUDING
@@ -1374,10 +1374,12 @@ self.addEventListener("message", (event: MessageEvent) => {
       },
       (error: unknown) => {
         if (controller.signal.aborted) return;
+        const failedBuild = failedBuildOf(error);
         postToMain({
           id,
           ok: false,
           message: error instanceof Error ? error.message : String(error),
+          ...(failedBuild === undefined ? {} : { failedBuild }),
         });
       },
     )

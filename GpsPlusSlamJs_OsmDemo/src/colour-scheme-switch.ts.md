@@ -14,8 +14,13 @@ AR (D9).
 - `show(name)` - the store's choice changed; the select follows.
 - `meshDrawn(scheme)` - a full mesh built in `scheme` (absent = default) is
   drawn; ends the switch when it is the scheme being applied.
-- `failed(message)` - the refresh failed; reverts only when the message is the
-  build failure of the scheme being applied (`failedColourSchemeOf`).
+- `failed(failedScheme?)` - a refresh failed. ANY failure ends a switch in
+  progress and enables the select (the echo will not come); the choice stays,
+  so the next pass builds it. Only when `failedScheme` is the scheme being
+  applied (the worker's structured `failedBuild`, via the refresh cycle's
+  `onBuildFailed`) does the select and the store go back to what is drawn.
+  `main.ts` calls `failed(scheme)` from `onBuildFailed` first and
+  `failed()` from the store's error, so the order cannot lose the revert.
 - `setArActive(active)` - disables the select with `AR_REASON` as its title;
   entering AR drops a pending switch (AR's pass builds the default; the exit
   pass builds the choice).

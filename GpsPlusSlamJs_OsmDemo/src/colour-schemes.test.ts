@@ -5,9 +5,7 @@ import {
   COLOUR_SCHEME_NAMES,
   COLOUR_SCHEMES,
   DEFAULT_COLOUR_SCHEME,
-  colourSchemeBuildFailure,
   colourSchemeOf,
-  failedColourSchemeOf,
   isColourSchemeName,
   resolveColourScheme,
   validateColourScheme,
@@ -112,17 +110,6 @@ describe("names", () => {
     expect(resolveColourScheme("neon", warn)).toBe("today");
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0]?.[0])).toContain('"neon"');
-  });
-});
-
-describe("the build-failure message", () => {
-  it("names the scheme so the dropdown can tell its failure from others", () => {
-    // Why this test matters: only the message crosses the RPC boundary; the
-    // dropdown reverts only for its own scheme's build (plan 4.4).
-    const message = colourSchemeBuildFailure("today", "out of memory");
-    expect(failedColourSchemeOf(message)).toBe("today");
-    expect(failedColourSchemeOf("Overpass answered 429")).toBeUndefined();
-    expect(failedColourSchemeOf(`x ${message}`)).toBeUndefined();
   });
 });
 

@@ -29,7 +29,9 @@
  */
 
 import {
+  isMeshBuildChoices,
   isWorkerReply,
+  MeshBuildError,
   type WorkerCallKind,
   type WorkerCalls,
   type WorkerEnvelope,
@@ -108,7 +110,11 @@ export function createRpcClient(transport: Transport): RpcClient {
     if (data.ok) {
       entry.resolve(data.value);
     } else {
-      entry.reject(new Error(data.message));
+      entry.reject(
+        isMeshBuildChoices(data.failedBuild)
+          ? new MeshBuildError(data.message, data.failedBuild)
+          : new Error(data.message),
+      );
     }
   });
 

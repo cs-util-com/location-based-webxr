@@ -10,7 +10,9 @@ cancellation that reaches the worker, and cleanup.
 
 - `createRpcClient(transport): RpcClient`
   - `call(kind, payload, { signal? })` — resolves with the worker's value, rejects
-    with `Error(message)` on `ok: false`, rejects with `RpcAbortError` if the
+    with `Error(message)` on `ok: false` (a `MeshBuildError` when the reply
+    carries a well-formed `failedBuild`; a malformed one is dropped), rejects
+    with `RpcAbortError` if the
     signal fires. Typed by `WorkerCalls[kind]`.
   - `fail(message)` — records a fatal worker failure. Rejects every pending call
     **and every later one** with `message`, without terminating the transport.

@@ -10,7 +10,6 @@ import {
 } from "./colour-scheme-switch.js";
 import {
   COLOUR_SCHEME_NAMES,
-  colourSchemeBuildFailure,
   type ColourSchemeName,
 } from "./colour-schemes.js";
 
@@ -97,18 +96,33 @@ describe("a switch (needs a second scheme)", () => {
   );
 
   it.runIf(COLOUR_SCHEME_NAMES.length > 1)(
-    "reverts only when the chosen scheme's own build failed",
+    "ends the switch on ANY failure, and keeps the choice unless its own build failed",
     () => {
-      // Why this test matters: an Overpass error or another scheme's failure
-      // says nothing about this choice and must leave it (plan 4.4); its own
-      // failure returns the select and the store to what is drawn.
-      const { select, choose, control, other } = setup();
+      // Why this test matters: an Overpass or terrain error during the
+      // switch's pass means the echo will never come, so waiting for it left
+      // the select disabled for good. Any failure ends the wait; the choice
+      // stays (the next pass builds it), and only the chosen scheme's own
+      // build failure reverts to what is drawn.
+      const { select, status, choose, control, other } = setup();
       const name = other as ColourSchemeName;
       pick(select, name);
-      control.failed("Overpass answered 429");
-      control.failed(colourSchemeBuildFailure("today", "boom"));
-      expect(control.pending()).toBe(name);
-      control.failed(colourSchemeBuildFailure(name, "boom"));
+      control.failed();
+      expect(control.pending()).toBeUndefined();
+      expect(select.disabled).toBe(false);
+      expect(status.textContent).toBe("");
+      expect(select.value).toBe(name);
+      expect(choose).toHaveBeenLastCalledWith(name);
+
+      // Another scheme's failure (a build already in flight) also keeps it.
+      pick(select, "today");
+      pick(select, name);
+      control.failed("today");
+      expect(control.pending()).toBeUndefined();
+      expect(select.value).toBe(name);
+
+      pick(select, "today");
+      pick(select, name);
+      control.failed(name);
       expect(control.pending()).toBeUndefined();
       expect(select.value).toBe("today");
       expect(select.disabled).toBe(false);
@@ -149,7 +163,8 @@ describe("AR", () => {
     // Why this test matters: an ordinary build error must not dispatch a
     // scheme change behind the user's back.
     const { select, choose, control } = setup();
-    control.failed(colourSchemeBuildFailure("today", "boom"));
+    control.failed("today");
+    control.failed();
     control.meshDrawn("not-a-scheme");
     control.show("today");
     expect(choose).not.toHaveBeenCalled();

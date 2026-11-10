@@ -25,8 +25,6 @@ dialog (D4).
 - `resolveColourScheme(name | null, warn?)` - a link's `?scheme=`: absent gives
   the default silently, unknown gives the default with one warning (the
   `?grade=` rule of `globe-grade.ts`).
-- `colourSchemeBuildFailure(scheme, cause)` / `failedColourSchemeOf(message)` -
-  the worker's error for a city build that failed in a scheme, and its reader.
 
 ## Invariants & assumptions
 

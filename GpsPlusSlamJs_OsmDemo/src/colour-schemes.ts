@@ -168,25 +168,3 @@ export function resolveColourScheme(
   );
   return DEFAULT_COLOUR_SCHEME;
 }
-
-/**
- * The worker's error for a city build that failed in `scheme`'s colours.
- *
- * THE MESSAGE CARRIES THE NAME because only the message crosses the RPC
- * boundary, and the dropdown reverts only when the build of the scheme it is
- * waiting for failed (plan 4.4): an Overpass error or a build in another
- * scheme must leave the choice alone. {@link failedColourSchemeOf} reads it back.
- */
-export function colourSchemeBuildFailure(
-  scheme: string,
-  cause: string,
-): string {
-  return `building the city in the "${scheme}" colours failed: ${cause}`;
-}
-
-const BUILD_FAILURE = /^building the city in the "([^"]+)" colours failed: /;
-
-/** The scheme a {@link colourSchemeBuildFailure} message names, else `undefined`. */
-export function failedColourSchemeOf(message: string): string | undefined {
-  return BUILD_FAILURE.exec(message)?.[1];
-}

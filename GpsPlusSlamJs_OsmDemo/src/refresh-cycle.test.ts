@@ -35,7 +35,7 @@ import {
 import { createAnchorHolder } from "./scene-anchor.js";
 import type { DemoSnapshot } from "./demo-pipeline.js";
 import type { ClickSummary } from "./click-timings.js";
-import type { TransferableMesh } from "./worker/protocol.js";
+import { MeshBuildError, type TransferableMesh } from "./worker/protocol.js";
 
 const COLOGNE = { lat: 50.9413, lng: 6.9583 };
 
@@ -95,6 +95,7 @@ const EMPTY_MESH_DATA = {
 
 /** An empty mesh — these tests are about the cycle, not about geometry. */
 const NO_MESH: TransferableMesh = {
+  buildKey: "test",
   buildings: [],
   trees: [],
   cosmeticTrees: [],
@@ -1199,5 +1200,67 @@ describe("the colour scheme (colour schemes plan 2026-11-10-0841)", () => {
     expect(new Set(firstRun)).toEqual(new Set(["today"]));
     expect(new Set(secondRun)).toEqual(new Set(["night"]));
     expect(new Set(sent)).toEqual(new Set([undefined]));
+  });
+
+  it("sends the drawn mesh's build key, read at POST time", async () => {
+    // Why this test matters: the worker rebuilds whenever the page does not
+    // draw this pass's build; a key captured once would hide a dropped reply.
+    const sent: (string | undefined)[] = [];
+    const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+    const page: { drawn?: string } = {};
+    const refresh = createRefreshCycle({
+      store: demo.store,
+      actions: demo.actions,
+      anchors: createAnchorHolder(COLOGNE),
+      worker: {
+        call: (_kind, payload) => {
+          sent.push(payload.drawnBuildKey);
+          return Promise.resolve({
+            snapshot: { ...snapshot(payload.category), radius: payload.radius },
+            mesh: { kind: "regions" as const, regions: [], underground: [] },
+            workerTimings: ZERO_WORKER_TIMINGS,
+          });
+        },
+      },
+      onMesh: () => {},
+      drawnBuildKey: () => page.drawn,
+    });
+    await refresh();
+    page.drawn = "k1";
+    const before = sent.length;
+    await refresh();
+    expect(sent.slice(0, before).every((key) => key === undefined)).toBe(true);
+    expect(new Set(sent.slice(before))).toEqual(new Set(["k1"]));
+  });
+
+  it("reports a failed city build's choices BEFORE the error is dispatched", async () => {
+    // Why this test matters: the dropdown reverts only for its own scheme's
+    // failed build, and every failure also ends its wait through the store's
+    // error; the structured report must arrive first or the wait is gone.
+    const order: string[] = [];
+    const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+    demo.store.subscribe(() => {
+      if (selectOsmView(demo.store.getState()).loading.phase === "error") {
+        if (!order.includes("error")) order.push("error");
+      }
+    });
+    const failing = (error: Error) =>
+      createRefreshCycle({
+        store: demo.store,
+        actions: demo.actions,
+        anchors: createAnchorHolder(COLOGNE),
+        worker: { call: () => Promise.reject(error) },
+        onMesh: () => {},
+        onBuildFailed: (failed) => order.push(`build:${failed.colourScheme}`),
+      });
+    await failing(
+      new MeshBuildError("building the city failed: boom", {
+        colourScheme: "night",
+      }),
+    )();
+    expect(order).toEqual(["build:night", "error"]);
+    order.length = 0;
+    await failing(new Error("Overpass answered 429"))();
+    expect(order).toEqual(["error"]);
   });
 });

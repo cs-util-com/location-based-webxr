@@ -103,7 +103,8 @@ export interface TransferableMesh {
   /**
    * The land-use tint over the build window (city objects plan 2026-11-07-2315
    * M3): a class byte per texel plus the scheme's palette. Absent when the
-   * build had no window to paint. Cloneable: typed array, numbers, a Map.
+   * build had no window to paint. Cloneable: a typed array, numbers, and the
+   * palette as an array of plain objects.
    */
   readonly groundTint?: GroundTint;
   /**
@@ -112,6 +113,13 @@ export interface TransferableMesh {
    * and the dropdown's switch ends on it. Absent means the default.
    */
   readonly colourScheme?: string;
+  /**
+   * The identity of this build (`meshBuildKey` in `mesh-planner.ts`). The page
+   * sends it back as `drawnBuildKey` on its next `update`, so the worker
+   * rebuilds whenever the page does not draw this pass's build, including after
+   * a reply that was dropped on the way.
+   */
+  readonly buildKey: string;
   /**
    * The below-surface features' outlines, in ENU, packed x,y per point.
    *
@@ -374,6 +382,12 @@ export interface WorkerCalls {
        * the default; AR always sends the default (D9).
        */
       readonly colourScheme?: string;
+      /**
+       * The `buildKey` of the full mesh the page DRAWS, absent when it draws
+       * none. The worker builds in full whenever this pass's key differs, so
+       * a dropped reply cannot leave the page on an older build.
+       */
+      readonly drawnBuildKey?: string;
       /**
        * Rings of chunks to score (W16). Omitted means the first pass's radius.
        *
@@ -669,7 +683,49 @@ export type WorkerEnvelope =
  */
 export type WorkerReply =
   | { readonly id: number; readonly ok: true; readonly value: unknown }
-  | { readonly id: number; readonly ok: false; readonly message: string };
+  | {
+      readonly id: number;
+      readonly ok: false;
+      readonly message: string;
+      /**
+       * Set only when a city build failed: the choices it was built with, so
+       * the page can tell a switch's own failure from an Overpass error
+       * without reading the message.
+       */
+      readonly failedBuild?: MeshBuildChoices;
+    };
+
+/**
+ * What the user chose to build, as the worker received it. Every switch that
+ * changes the built city adds its field here; the planner keys on all of them.
+ */
+export interface MeshBuildChoices {
+  readonly colourScheme: string;
+}
+
+/**
+ * A city build that failed, thrown in the worker and carried across as the
+ * reply's `failedBuild` (and back out of the RPC client as this class).
+ */
+export class MeshBuildError extends Error {
+  readonly failedBuild: MeshBuildChoices;
+  constructor(message: string, failedBuild: MeshBuildChoices, cause?: unknown) {
+    super(message, cause === undefined ? undefined : { cause });
+    this.name = "MeshBuildError";
+    this.failedBuild = failedBuild;
+  }
+}
+
+/** True for a value shaped like {@link MeshBuildChoices}; guards the reply. */
+export function isMeshBuildChoices(value: unknown): value is MeshBuildChoices {
+  if (typeof value !== "object" || value === null) return false;
+  return typeof (value as { colourScheme?: unknown }).colourScheme === "string";
+}
+
+/** The failed build's choices, when `error` is a city build's failure. */
+export function failedBuildOf(error: unknown): MeshBuildChoices | undefined {
+  return error instanceof MeshBuildError ? error.failedBuild : undefined;
+}
 
 /** True for a value shaped like a reply. Guards the `message` event. */
 export function isWorkerReply(value: unknown): value is WorkerReply {

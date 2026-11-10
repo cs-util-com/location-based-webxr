@@ -162,5 +162,11 @@ The `update` handler checks the request's scheme name against
 `colour-schemes.ts` before any work, hands it to the planner (part of the
 build key) and to `buildCity` as `colours` (even the default, which the
 library's identity test proves byte-identical), and stamps the mesh with it.
-A full build that throws is rethrown as `colourSchemeBuildFailure(scheme, cause)`
-so the page can tell its own switch's failure from an Overpass error.
+A full build that throws is rethrown as a `MeshBuildError` carrying the build's
+choices, which the reply posts as `failedBuild`, so the page can tell its own
+switch's failure from an Overpass error without reading the message.
+
+Full build or regions only is `needsFullBuild(inputs, drawnBuildKey)` from
+`mesh-planner.ts`: the page sends the `buildKey` of the mesh it draws, and
+every full mesh carries its own, so a reply dropped on the way (an aborted
+pass) is rebuilt on the next pass instead of answered with slabs.

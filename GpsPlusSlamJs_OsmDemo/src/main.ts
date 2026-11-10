@@ -1090,6 +1090,13 @@ async function main(): Promise<void> {
       arSession === undefined
         ? selectColourScheme(store.getState())
         : DEFAULT_COLOUR_SCHEME,
+    // THE BUILD THE PAGE DRAWS, so the worker rebuilds after a reply that
+    // never reached the page (an aborted pass) instead of sending slabs for
+    // a mesh this side does not have.
+    drawnBuildKey: () => latestMesh?.buildKey,
+    // A FAILED CITY BUILD names its choices; reported before the error
+    // reaches the store, so the switch reverts only its own failed build.
+    onBuildFailed: (failed) => schemeSwitch.failed(failed.colourScheme),
     // WHAT DRIVES BOTH LOADING INDICATORS. Not the store's `loading.phase`:
     // this cycle dispatches `fetchStarted` once, above the ring loop, and every
     // ring's `snapshotReady` sets the phase back to idle — so the phase is idle
@@ -3112,8 +3119,9 @@ async function main(): Promise<void> {
       // owner chose that knowingly.
       if (loading.phase === "error") {
         toast.show(loading.message);
-        // A switch whose own build failed goes back to what is drawn.
-        schemeSwitch.failed(loading.message);
+        // Any failure ends a switch in progress; its echo will not come. A
+        // switch whose own build failed was reverted by `onBuildFailed`.
+        schemeSwitch.failed();
       }
     },
   );

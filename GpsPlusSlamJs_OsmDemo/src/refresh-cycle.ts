@@ -40,7 +40,12 @@ import { nowMs, nowEpochMs } from "./monotonic-clock.js";
 import { isLayerEnabled } from "./layers.js";
 import type { AnchorHolder } from "./scene-anchor.js";
 import { selectLayers, selectOsmView, type DemoStore } from "./osm-store.js";
-import type { MeshUpdate, UpdateResult } from "./worker/protocol.js";
+import {
+  failedBuildOf,
+  type MeshBuildChoices,
+  type MeshUpdate,
+  type UpdateResult,
+} from "./worker/protocol.js";
 
 /**
  * The part of the worker client this needs; narrowed so tests can fake it.
@@ -80,6 +85,8 @@ interface RefreshWorker {
       geoidUndulationM?: number;
       /** The colour scheme's name (colour schemes plan 2026-11-10-0841). */
       colourScheme?: string;
+      /** The build key of the full mesh the page draws; see `protocol.ts`. */
+      drawnBuildKey?: string;
     },
     options: { signal: AbortSignal },
   ): Promise<UpdateResult>;
@@ -163,6 +170,18 @@ export interface RefreshCycleOptions extends StoreAccess {
    */
   readonly colourScheme?: () => string;
   /**
+   * The `buildKey` of the full mesh the page DRAWS, read at post time, so the
+   * worker rebuilds whenever the page does not draw this pass's build (a
+   * dropped reply included). Omitted sends none, which always builds in full.
+   */
+  readonly drawnBuildKey?: () => string | undefined;
+  /**
+   * A city build failed in the worker: the choices it was built with. Called
+   * BEFORE the error reaches the store, so a switch can tell its own failed
+   * build from any other failure before the error ends its wait.
+   */
+  readonly onBuildFailed?: (failed: MeshBuildChoices) => void;
+  /**
    * The nine-stage breakdown for one pass, once it is complete.
    *
    * **A callback rather than a `console.info` here**, for the reason `onMesh`
@@ -224,12 +243,15 @@ function messageOf(error: unknown): string {
 function postTimeReads(options: RefreshCycleOptions): {
   geoidUndulationM?: number;
   colourScheme?: string;
+  drawnBuildKey?: string;
 } {
   const datum = options.geoidUndulationM?.();
   const colourScheme = options.colourScheme?.();
+  const drawnBuildKey = options.drawnBuildKey?.();
   return {
     ...(datum === undefined ? {} : { geoidUndulationM: datum }),
     ...(colourScheme === undefined ? {} : { colourScheme }),
+    ...(drawnBuildKey === undefined ? {} : { drawnBuildKey }),
   };
 }
 
@@ -433,6 +455,8 @@ export function createRefreshCycle(
         // The two guards further up do NOT cover this: they check the signal after
         // an await RESOLVES, and an aborted call rejects instead.
         if (signal.aborted) return;
+        const failedBuild = failedBuildOf(error);
+        if (failedBuild !== undefined) options.onBuildFailed?.(failedBuild);
         store.dispatch(actions.fetchFailed(messageOf(error)));
       }
     },

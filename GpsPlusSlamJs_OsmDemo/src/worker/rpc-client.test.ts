@@ -19,7 +19,7 @@ import {
   RpcAbortError,
   type Transport,
 } from "./rpc-client.js";
-import type { WorkerEnvelope } from "./protocol.js";
+import { failedBuildOf, type WorkerEnvelope } from "./protocol.js";
 
 /** A transport that records what was posted and lets a test reply by hand. */
 function fakeTransport() {
@@ -103,6 +103,48 @@ describe("createRpcClient", () => {
     fake.reply({ id: fake.posted[0]?.id, ok: false, message: "Overpass 429" });
 
     await expect(promise).rejects.toThrow("Overpass 429");
+  });
+
+  it("carries a failed city build's choices as a field, not in the text", async () => {
+    // Why this test matters: the colour-scheme switch reverts only when the
+    // build it waits for failed. Reading that from the message text broke as
+    // soon as the text changed; a field on the reply does not, and a failure
+    // without it (an Overpass error) must stay an ordinary error.
+    const fake = fakeTransport();
+    const client = createRpcClient(fake.transport);
+    const update = {
+      position: { lat: 50.94, lng: 6.96 },
+      category: "walkable",
+    };
+
+    const built = client.call("update", update);
+    fake.reply({
+      id: fake.posted[0]?.id,
+      ok: false,
+      message: "out of memory",
+      failedBuild: { colourScheme: "night" },
+    });
+    const error = await built.catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(Error);
+    expect(failedBuildOf(error)).toEqual({ colourScheme: "night" });
+
+    const fetched = client.call("update", update);
+    fake.reply({ id: fake.posted[1]?.id, ok: false, message: "Overpass 429" });
+    expect(
+      failedBuildOf(await fetched.catch((caught: unknown) => caught)),
+    ).toBe(undefined);
+
+    // A malformed field is dropped rather than trusted.
+    const odd = client.call("update", update);
+    fake.reply({
+      id: fake.posted[2]?.id,
+      ok: false,
+      message: "odd",
+      failedBuild: { colourScheme: 7 },
+    });
+    expect(failedBuildOf(await odd.catch((caught: unknown) => caught))).toBe(
+      undefined,
+    );
   });
 
   it("ignores foreign messages instead of crashing on them", async () => {

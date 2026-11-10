@@ -113,6 +113,7 @@ function fullMesh(): TransferableMesh {
 /** A mesh in which every layer is present but empty. */
 function emptyMesh(): TransferableMesh {
   return {
+    buildKey: "test",
     // NO chunks rather than one empty chunk (W20): an empty BufferGeometry is
     // still a draw call and a disposal obligation.
     buildings: [],

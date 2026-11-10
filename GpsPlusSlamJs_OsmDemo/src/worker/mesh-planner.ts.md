@@ -7,15 +7,25 @@ city, or may it send only the region slabs?** (W6, finding R3-3.)
 
 ## Public API
 
-- `createMeshPlanner(): MeshPlanner`
-  - `needsFullBuild(inputs: MeshInputs): boolean` — and it **records the inputs
-    as the new baseline whenever it answers `true`**, so two identical calls
-    answer `true` then `false`.
-- `MeshInputs` — `position`, `loadedTileCount`, `terrainStamp`.
+- `meshBuildKey(inputs: MeshInputs): string` - the build's identity; the worker
+  stamps it on every full mesh (`TransferableMesh.buildKey`).
+- `needsFullBuild(inputs, drawnKey: string | undefined): boolean` - pure:
+  `true` whenever the page does not already draw a mesh with this key
+  (`drawnKey` is the key the page sent back, `undefined` when it draws none).
+- `MeshInputs` - `position`, `loadedTileCount`, `terrainStamp`, `choices`
+  (the named build switches: `colourScheme`, and each later switch).
 
 ## Invariants & assumptions
 
-- **These three inputs are exactly what the geometry is a function of.**
+- **The PAGE's drawn key decides, not the last build.** A reply can be
+  dropped (the page aborts a superseded call; the worker drops the reply of
+  an aborted request). Remembering what was BUILT then answered the next
+  same-key pass with slabs only, so a colour switch waiting for its mesh
+  stayed on "Applying..." with the old colours drawn. With the drawn key a
+  dropped build is simply built again.
+- **The choices are a named map, sorted into the key**, so a new switch joins
+  the key without a change here and listing order is irrelevant.
+- **These inputs are exactly what the geometry is a function of.**
   - `position`, because the mesh is built in an ENU frame anchored there, so
     every vertex moves when the user does;
   - `loadedTileCount`, because the feature set only grows by loading another
@@ -34,22 +44,24 @@ city, or may it send only the region slabs?** (W6, finding R3-3.)
 - **The bias is towards rebuilding.** Anything the planner cannot prove unchanged
   counts as changed. A needless rebuild costs milliseconds; a skipped one leaves
   the city drawn for the previous position under the current position's cells.
-- **Only the LAST build is remembered.** Returning to a previous position
+- **Only the DRAWN build counts.** Returning to a previous position
   rebuilds, deliberately: a history of every position visited would be a leak,
   and one extra rebuild is cheaper than the bookkeeping.
 
 ## Examples
 
 ```ts
-const planner = createMeshPlanner();
-
-const full = planner.needsFullBuild({
+const inputs = {
   position: snapshot.position,
   loadedTileCount: pipeline.loadedTileCount(),
   terrainStamp,
-});
-return full
-  ? { kind: "full", mesh: buildMesh(features, snapshot.position, regions) }
+  choices: { colourScheme: scheme },
+};
+return needsFullBuild(inputs, request.drawnBuildKey)
+  ? {
+      kind: "full",
+      mesh: { buildKey: meshBuildKey(inputs), ...buildMesh(/* ... */) },
+    }
   : { kind: "regions", regions: buildRegionSlabs(regions, options) };
 ```
 
@@ -59,8 +71,9 @@ return full
 decision can be wrong in two directions with very different costs: too eager
 gives back the whole saving, too rare draws the previous position's city. The
 category-change test is the one that documents the unlooked-for win, and the
-"rebuilds again after returning" test pins the deliberate choice to remember only
-the last build.
+"rebuilds again after returning" test pins the deliberate choice to compare with the
+drawn build only. "rebuilds after a full build whose reply the page never drew"
+pins the dropped-reply case.
 
 **"The saving §1.2 claims, as a number" is a MEASUREMENT that happens to be a
 regression guard.** The claim — a step no longer re-extrudes the city — shipped
