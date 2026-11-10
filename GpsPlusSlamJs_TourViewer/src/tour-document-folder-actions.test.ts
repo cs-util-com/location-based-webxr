@@ -352,6 +352,59 @@ describe("taking a folder apart", () => {
     }
   });
 
+  // Why: a lifted subfolder must stand where it stood, as a folder of its
+  // own: its frame is where its items hang, where the editor puts its
+  // gizmo and where a later group move turns it. Its items alone would not
+  // show a wrong frame (each item's own pose is written against whatever
+  // frame the folder got), so the folder's pose itself is checked, against
+  // the outer folder's pose composed with its own, worked out here by hand
+  // rather than by the code under test.
+  it("puts a lifted subfolder where it stood: the outer folder's pose composed with its own", () => {
+    const product = (p: Quat, q: Quat): Quat => [
+      p[3] * q[0] + p[0] * q[3] + p[1] * q[2] - p[2] * q[1],
+      p[3] * q[1] - p[0] * q[2] + p[1] * q[3] + p[2] * q[0],
+      p[3] * q[2] + p[0] * q[1] - p[1] * q[0] + p[2] * q[3],
+      p[3] * q[3] - p[0] * q[0] - p[1] * q[1] - p[2] * q[2],
+    ];
+    const rotate = (q: Quat, v: Vec): Vec => {
+      const r = product(product(q, [v[0], v[1], v[2], 0]), [
+        -q[0],
+        -q[1],
+        -q[2],
+        q[3],
+      ]);
+      return [r[0], r[1], r[2]];
+    };
+    const INNER_POSITION: Vec = [0, 0.5, -4];
+    const INNER_ROTATION: Quat = [Math.SQRT1_2, 0, 0, Math.SQRT1_2];
+    for (const [yawDeg, offsetM] of SWEEP) {
+      const after = reduce(
+        opened(tour(yawDeg, offsetM)),
+        act.folderUngrouped({
+          stationId: "well",
+          folderId: "outer",
+          what: "u",
+        }),
+      );
+      const outerRotation = yaw(yawDeg);
+      const turned = rotate(outerRotation, INNER_POSITION);
+      const want = {
+        position: [offsetM + turned[0], 1 + turned[1], 3 + turned[2]],
+        rotation: product(outerRotation, INNER_ROTATION),
+      };
+      const pose = folderIn(saved(after), "inner")?.pose;
+      if (pose === undefined) throw new Error("the lifted folder has no pose");
+      for (const i of [0, 1, 2]) {
+        expect(
+          Math.abs((pose.position[i] ?? NaN) - (want.position[i] ?? NaN)),
+        ).toBeLessThanOrEqual(1e-6);
+      }
+      expect(rotationGap(pose.rotation, want.rotation)).toBeLessThanOrEqual(
+        1e-12,
+      );
+    }
+  });
+
   it("refuses an unknown station or folder, and a story", () => {
     const start = opened(tour());
     for (const [stationId, folderId] of [

@@ -101,7 +101,11 @@ import { storyRows } from "./editor-shell/tree-model.js";
 import type { GestureEdit } from "../editor3d/gesture.js";
 import { askMove, moveNote } from "../move-question.js";
 import { confirmPausingFrames } from "./browser-question.js";
-import { openedNoticeLines, openTourForEditing } from "./editor-open.js";
+import {
+  openedNoticeLines,
+  openTourForEditing,
+  showOpenedNotices,
+} from "./editor-open.js";
 import {
   holdPageInert,
   revealPadding,
@@ -2554,15 +2558,15 @@ async function openFile(
   sayNoBackup();
   sayUnreadDraft();
   keepStorage();
-  // Details, station descriptions, card images and block texts the reader
-  // dropped are said, never lost silently by the next save; kept until
-  // closed, as an instruction.
-  for (const line of openedNoticeLines(outcome.dropped, outcome.manifest)) {
-    fileToasts.push(toast(line, undefined, null));
-  }
-  if (drafted.superseded !== null) {
-    fileToasts.push(toast(drafted.superseded, undefined, null));
-  }
+  // What the reader dropped is said, never lost silently by the next
+  // save; kept until closed, as an instruction.
+  fileToasts.push(
+    ...showOpenedNotices(
+      openedNoticeLines(outcome.dropped, outcome.manifest),
+      drafted.superseded,
+      toast,
+    ),
+  );
   // A tour opened afresh into the 3D view flies in; a draft to restore
   // goes straight to it, as does a later switch from the map.
   approachNext = drafted.offer === null && opensIn3d();

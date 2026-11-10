@@ -14,15 +14,19 @@ import { sampleRecordingBytes } from "../test-support/sample-recording.js";
 import {
   createEmptyTourManifest,
   serializeTourManifest,
+  TOUR_MANIFEST_MINOR,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   droppedBlockFieldsLine,
+  droppedChildrenLine,
   droppedDetailsLine,
+  droppedFolderScalesLine,
   droppedStationFieldsLine,
   NOT_A_TOUR,
   NOT_A_ZIP,
   openedNoticeLines,
   openTourForEditing,
+  showOpenedNotices,
 } from "./editor-open.js";
 import { createEditorSession } from "./editor-session.js";
 import { stationContent, storyOf } from "../test-support/station-content.js";
@@ -309,6 +313,112 @@ describe("openTourForEditing", () => {
     if (plain.kind !== "opened") return;
     expect(openedNoticeLines(plain.dropped, plain.manifest)).toEqual([]);
     await plain.session.close();
+  });
+
+  it("says which folders' sizes and how many items a newer editor's tour lost, and that the next save writes it without them", async () => {
+    // Why: a tour from a newer editor may carry a folder's size this
+    // editor cannot show and items it cannot read. The reader leaves both
+    // out rather than refusing the tour, so the next save writes the tour
+    // without them; unsaid, that is a silent loss. The folders are named
+    // as the tree names them (their names, never the random id).
+    const POSE = { position: [0, 0, 0], rotation: [0, 0, 0, 1] } as const;
+    const pin = (id: string) => ({
+      id,
+      kind: "shortText",
+      view: "pin",
+      caption: `Pin ${id}`,
+      pose: POSE,
+    });
+    const data = JSON.stringify({
+      version: 5,
+      // A newer minor than this reader's: read leniently.
+      minor: TOUR_MANIFEST_MINOR + 1,
+      order: "fixed",
+      assets: [],
+      stations: [
+        {
+          id: "well",
+          title: "The well",
+          geo: { lat: 48.52, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
+          activateRadiusM: 50,
+          foundRadiusM: 25,
+          hint: "arrow",
+          children: [
+            {
+              id: "f1",
+              kind: "folder",
+              title: "Benches",
+              pose: POSE,
+              scale: 2,
+              children: [
+                pin("a"),
+                {
+                  id: "f2",
+                  kind: "folder",
+                  pose: POSE,
+                  scale: 0.5,
+                  children: [pin("b")],
+                },
+              ],
+            },
+            { id: "h1", kind: "hologram", pose: POSE },
+            pin("c"),
+          ],
+        },
+      ],
+    });
+    const out = await openTourForEditing(
+      await zipFile([{ path: "tour.json", data }]),
+    );
+    expect(out.kind).toBe("opened");
+    if (out.kind !== "opened") return;
+    expect(openedNoticeLines(out.dropped, out.manifest)).toEqual([
+      'The folders "Benches" and a folder without a name have a size this editor cannot show yet, so it shows their items at their own size: the next save writes the folders without it.',
+      "An item of this tour could not be read (a newer editor made it), so the editor left it out: the next save writes the tour without it.",
+    ]);
+    await out.session.close();
+    // One folder, two items, and nothing to say.
+    const scale = (folder: string) =>
+      ({ kind: "folderScale", folder, reason: "r" }) as const;
+    expect(
+      droppedFolderScalesLine([scale("f1"), scale("f1")], out.manifest),
+    ).toBe(
+      'The folder "Benches" has a size this editor cannot show yet, so it shows the folder\'s items at their own size: the next save writes the folder without it.',
+    );
+    expect(
+      droppedChildrenLine([
+        { kind: "child", child: "x", reason: "r" },
+        { kind: "block", block: "y", reason: "r" },
+        { kind: "child", child: "x", reason: "r" },
+      ]),
+    ).toBe(
+      "2 items of this tour could not be read (a newer editor made them), so the editor left them out: the next save writes the tour without them.",
+    );
+    expect(droppedFolderScalesLine([], out.manifest)).toBeNull();
+    expect(
+      droppedChildrenLine([
+        { kind: "field", block: "b", field: "title", reason: "r" },
+      ]),
+    ).toBeNull();
+  });
+
+  it("shows every opened notice, then a superseded draft's line, as toasts that stay until closed", () => {
+    // Why: these lines are instructions (set it again, write it again), so
+    // a toast that went after a few seconds would take them away before
+    // they were read; and the page closes them with the file, so each
+    // toast must come back to it.
+    const shown: [string, undefined, null][] = [];
+    const toasts = showOpenedNotices(["one", "two"], "draft", (...args) => {
+      shown.push(args);
+      return `toast:${args[0]}`;
+    });
+    expect(shown).toEqual([
+      ["one", undefined, null],
+      ["two", undefined, null],
+      ["draft", undefined, null],
+    ]);
+    expect(toasts).toEqual(["toast:one", "toast:two", "toast:draft"]);
+    expect(showOpenedNotices([], null, () => 1)).toEqual([]);
   });
 
   it("refuses a zip that carries no tour.json and no code", async () => {

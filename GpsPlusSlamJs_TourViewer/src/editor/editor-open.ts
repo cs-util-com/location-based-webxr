@@ -23,7 +23,13 @@ import type {
 } from "gps-plus-slam-app-framework/ar/tour-details";
 import type { TourIntegrityError } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import type { TourBlockDrop } from "gps-plus-slam-app-framework/ar/tour-block-read";
-import { tourStationBlocks } from "gps-plus-slam-app-framework/ar/tour-story";
+import {
+  isTourFolder,
+  tourStationBlocks,
+  type TourChildDrop,
+  type TourFolder,
+  type TourStationChild,
+} from "gps-plus-slam-app-framework/ar/tour-story";
 import { objectTitle } from "../object-describe.js";
 import { describeOpenError, olderFormatRefusal } from "../open-errors.js";
 import { stationTitle } from "../station-run.js";
@@ -182,9 +188,82 @@ export function droppedBlockFieldsLine(
   return `A text of ${listed(names)} could not be read, so the editor left it out: the next save writes ${where} without it. Write it again in the item.`;
 }
 
+/** Every plain folder of the tour, at any depth, by its id. */
+function plainFolders(
+  manifest: Pick<TourManifest, "stations">,
+): Map<string, TourFolder> {
+  const out = new Map<string, TourFolder>();
+  const walk = (list: readonly TourStationChild[]) => {
+    for (const child of list) {
+      if (!isTourFolder(child)) continue;
+      out.set(child.id, child);
+      walk(child.children);
+    }
+  };
+  for (const station of manifest.stations) walk(station.children);
+  return out;
+}
+
+/** A child drop of `kind` (the kinds a station's reader reports). */
+function childDropsOf<K extends TourChildDrop["kind"]>(
+  dropped: readonly TourManifestDrop[],
+  kind: K,
+): Extract<TourChildDrop, { kind: K }>[] {
+  return dropped.filter(
+    (d): d is Extract<TourChildDrop, { kind: K }> =>
+      "kind" in d && d.kind === kind,
+  );
+}
+
+/**
+ * Said once a tour opened with plain folders whose size its reader left
+ * out (a newer editor's scale, which this one cannot show yet): which
+ * folders, by name ("a folder without a name" for one that has none),
+ * that their items show at their own size, and that the next save writes
+ * the folders without it. Null when none was dropped.
+ */
+export function droppedFolderScalesLine(
+  dropped: readonly TourManifestDrop[],
+  manifest: Pick<TourManifest, "stations">,
+): string | null {
+  const ids = [
+    ...new Set(childDropsOf(dropped, "folderScale").map((d) => d.folder)),
+  ];
+  if (ids.length === 0) return null;
+  const folders = plainFolders(manifest);
+  const names = ids.map((id) => {
+    const title = folders.get(id)?.title;
+    return title === undefined ? "a folder without a name" : `"${title}"`;
+  });
+  return ids.length === 1
+    ? `The folder ${listed(names)} has a size this editor cannot show yet, so it shows the folder's items at their own size: the next save writes the folder without it.`
+    : `The folders ${listed(names)} have a size this editor cannot show yet, so it shows their items at their own size: the next save writes the folders without it.`;
+}
+
+/**
+ * Said once a tour opened with items its reader could not read at all (a
+ * newer editor's kind, or a choice left with fewer than two ways on): how
+ * many, and that the next save writes the tour without them. They are
+ * gone from the tour as opened, so they cannot be named. Null when none
+ * was dropped.
+ */
+export function droppedChildrenLine(
+  dropped: readonly TourManifestDrop[],
+): string | null {
+  const ids = new Set([
+    ...childDropsOf(dropped, "child").map((d) => d.child),
+    ...childDropsOf(dropped, "block").map((d) => d.block),
+  ]);
+  if (ids.size === 0) return null;
+  return ids.size === 1
+    ? "An item of this tour could not be read (a newer editor made it), so the editor left it out: the next save writes the tour without it."
+    : `${String(ids.size)} items of this tour could not be read (a newer editor made them), so the editor left them out: the next save writes the tour without them.`;
+}
+
 /** Every line said once a tour opened, in the order shown: the dropped
- *  details, station fields and item texts. Plain folders need no line:
- *  the editor keeps them, and the next save writes them back. */
+ *  details, station fields, item texts, folder sizes and whole items.
+ *  The plain folders themselves need no line: the editor keeps them, and
+ *  the next save writes them back. */
 export function openedNoticeLines(
   dropped: readonly TourManifestDrop[],
   manifest: Pick<TourManifest, "stations">,
@@ -193,7 +272,25 @@ export function openedNoticeLines(
     droppedDetailsLine(dropped),
     droppedStationFieldsLine(dropped, manifest),
     droppedBlockFieldsLine(dropped, manifest),
+    droppedFolderScalesLine(dropped, manifest),
+    droppedChildrenLine(dropped),
   ].filter((line): line is string => line !== null);
+}
+
+/**
+ * The opened tour's notices shown (`openedNoticeLines`, then the line on
+ * a draft the file superseded): each a toast that stays until the creator
+ * closes it (`holdMs` null; an instruction, never a passing line), in
+ * that order. Returns the toasts, which the page closes with the file.
+ */
+export function showOpenedNotices<T>(
+  lines: readonly string[],
+  superseded: string | null,
+  toast: (text: string, action: undefined, holdMs: null) => T,
+): T[] {
+  return [...lines, ...(superseded === null ? [] : [superseded])].map((line) =>
+    toast(line, undefined, null),
+  );
 }
 
 /** `words` as a sentence lists them: "a", "a and b", "a, b and c". */

@@ -52,6 +52,7 @@ export const SPECS = {
     lane: 3,
   },
   "editor3d-edit.spec.js": { project: "webgl", area: "editor", lane: 3 },
+  "editor3d-folders.spec.js": { project: "webgl", area: "editor", lane: 3 },
   "editor3d-globe-approach.spec.js": {
     project: "webgl",
     area: "editor",
