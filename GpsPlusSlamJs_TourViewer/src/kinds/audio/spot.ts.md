@@ -43,7 +43,9 @@ inside, its player card (`narration-card.ts`) is open on the page's screen
 - Its look is `narration-look.ts`'s, behind one function, until the look is
   decided. In the editor it also wears the speaker icon (`sound-icon.ts`)
   at its centre, ticked with the frame's camera; the visitor never sees
-  it.
+  it. There the icon is all a ray meets: the circle, the particles and
+  the invisible tap cylinder take none (in play the cylinder still takes
+  the visitor's tap).
 - Leaving the station disposes the part, so a held narration does not carry
   on across a station's reload.
 
@@ -60,7 +62,8 @@ part.tap?.(); // plays
 
 `spot.test.ts`: the tap only inside, the voice channel, hold beyond the
 margin and carry on at return, the visitor's pause staying off, `onInside`,
-the editor's silence, the speaker icon in the editor only, and dispose. `spot-card.test.ts`: the card opens
+the editor's silence, the speaker icon in the editor only, picked by its icon alone in the
+editor (the tap cylinder still rayable in play), and dispose. `spot-card.test.ts`: the card opens
 inside and closes outside, its button plays and pauses, a heard narration
 plays again from 0, the first circle's card back after leaving an
 overlapping one, a dispose that still frees the voice and the look when

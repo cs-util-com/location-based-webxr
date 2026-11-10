@@ -8,7 +8,8 @@
  * player card (`narrationCard`) opens on the page's screen while the
  * visitor is inside, at the same change `onInside` reports. In the editor:
  * the same circle, still and silent, and no card, with the editor's
- * speaker icon at its centre (`soundIcon`, as an ambient sound has).
+ * speaker icon at its centre (`soundIcon`, as an ambient sound has), which
+ * is all the editor picks it by.
  *
  * @see spot.ts.md
  */
@@ -40,7 +41,14 @@ export function spotPart(block: TourAudioBlock, env: WorldEnv): SpotPart {
   const play = env.mode === "play";
   /** The editor's mark; the visitor sees none. */
   const icon: SoundIcon | null = play ? null : soundIcon();
-  if (icon !== null) look.object.add(icon.object);
+  if (icon !== null) {
+    // The editor picks it by its icon alone: the circle, the particles
+    // and the invisible tap cylinder take no ray there.
+    look.object.traverse((o) => {
+      o.raycast = () => undefined;
+    });
+    look.object.add(icon.object);
+  }
   let inside = false;
   let voice: SoundHandle | null = null;
   const sound = (): SoundHandle => (voice ??= env.sound(block.audio, "voice"));
