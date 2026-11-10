@@ -213,7 +213,7 @@ export function buildCity(
   const all = [...features];
   const built = buildBuildings(all, {
     ...ground,
-    inventedRoofs: options.inventedRoofs ?? true,
+    inventedRoofs: options.inventedRoofs !== false,
   });
   const volumes = withinWindow(built, inside);
   const barriers = buildBarriers(all, ground).filter((b) =>

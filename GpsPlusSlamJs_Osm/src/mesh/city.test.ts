@@ -755,6 +755,39 @@ describe("Heidelberg under the seeded palette", () => {
     });
   });
 
+  /**
+   * Every colour drawn at each position of `chunks`: a gable's apex and the
+   * top of a wall share positions with roof vertices and carry the wall
+   * colour, so one position can hold several.
+   */
+  const coloursByPosition = (
+    chunks: ReturnType<typeof buildCity>["buildings"],
+  ): Map<string, Set<string>> => {
+    const coloursAt = new Map<string, Set<string>>();
+    for (const chunk of chunks) {
+      const q = chunk.mesh.positions;
+      const c = chunk.colors ?? [];
+      for (let i = 0; i < q.length; i += 3) {
+        const k = `${q[i]},${q[i + 1]},${q[i + 2]}`;
+        const set = coloursAt.get(k) ?? new Set<string>();
+        set.add(`${c[i]},${c[i + 1]},${c[i + 2]}`);
+        coloursAt.set(k, set);
+      }
+    }
+    return coloursAt;
+  };
+
+  /** The position of a volume's highest roof vertex, as `x,y,z`. */
+  const highestRoofVertex = (volume: (typeof city.volumes)[number]): string => {
+    const r = volume.roofVertexRanges[0] ?? { start: 0, end: 0 };
+    const p = volume.mesh.positions;
+    let at = r.start * 3;
+    for (let v = r.start; v < r.end; v++) {
+      if ((p[v * 3 + 1] as number) > (p[at + 1] as number)) at = v * 3;
+    }
+    return `${p[at]},${p[at + 1]},${p[at + 2]}`;
+  };
+
   it("paints every invented roof in a pitched palette tone", () => {
     // Why: an invented roof is drawn by the skeleton, so the city must colour
     // its surfaces as a pitched roof (not as wall or flat lid); a roof
@@ -765,43 +798,23 @@ describe("Heidelberg under the seeded palette", () => {
     const tones = new Set(
       PITCHED_ROOF_TONES.map((rgb) => linearUnpacked(rgb).join(",")),
     );
-    // Every colour drawn at each position: a gable's apex and the top of a
-    // wall share positions with roof vertices and carry the wall colour.
-    const coloursAt = new Map<string, Set<string>>();
-    for (const chunk of roofed.buildings) {
-      const q = chunk.mesh.positions;
-      const c = chunk.colors ?? [];
-      for (let i = 0; i < q.length; i += 3) {
-        const k = `${q[i]},${q[i + 1]},${q[i + 2]}`;
-        const set = coloursAt.get(k) ?? new Set<string>();
-        set.add(`${c[i]},${c[i + 1]},${c[i + 2]}`);
-        coloursAt.set(k, set);
-      }
-    }
+    const coloursAt = coloursByPosition(roofed.buildings);
     const invented = roofed.volumes.filter((v) => v.roofIsInvented);
     expect(invented.length).toBeGreaterThan(100);
     let palette = 0;
     for (const volume of invented) {
       const r = volume.roofVertexRanges[0];
       expect(r !== undefined && r.end > r.start).toBe(true);
-      // The roof range's highest vertex.
-      const p = volume.mesh.positions;
-      let at = (r?.start ?? 0) * 3;
-      for (let v = r?.start ?? 0; v < (r?.end ?? 0); v++) {
-        if ((p[v * 3 + 1] as number) > (p[at + 1] as number)) at = v * 3;
-      }
-      const key = `${p[at]},${p[at + 1]},${p[at + 2]}`;
       // A `roof:colour` is no keep reason (only shape, height and levels
       // are), so a colour-tagged roof can be invented: it keeps its colour.
       const tagged = roofColour(tagsByKey.get(volume.feature) ?? {}, undefined);
-      const drawn = [...(coloursAt.get(key) ?? [])];
-      if (tagged === undefined) palette += 1;
-      expect(
+      const drawn = [...(coloursAt.get(highestRoofVertex(volume)) ?? [])];
+      const want =
         tagged === undefined
           ? drawn.some((c) => tones.has(c))
-          : drawn.includes(linearUnpacked(tagged).join(",")),
-        volume.feature,
-      ).toBe(true);
+          : drawn.includes(linearUnpacked(tagged).join(","));
+      if (tagged === undefined) palette += 1;
+      expect(want, volume.feature).toBe(true);
     }
     expect(palette).toBeGreaterThan(100);
   });
