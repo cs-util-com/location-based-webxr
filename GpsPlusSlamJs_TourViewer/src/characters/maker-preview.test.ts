@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { BACKDROPS, beckonIndex, talkIndex } from "./maker-preview.js";
+import {
+  BACKDROPS,
+  beckonIndex,
+  createAnimSet,
+  talkIndex,
+} from "./maker-preview.js";
 
 describe("maker-preview", () => {
   // Why: the talking preview rests closed for a moment, then talks in the
@@ -32,5 +37,21 @@ describe("maker-preview", () => {
       "city",
       "snow",
     ]);
+  });
+});
+
+describe("createAnimSet", () => {
+  // Why: each re-cut rebuilds the talk-style previews with new canvases;
+  // kept by slot, the earlier ones go, so N re-cuts leave one set instead
+  // of N (each holding its canvas and the cut frames it draws).
+  it("N re-cuts leave one animation per slot", () => {
+    const set = createAnimSet<{ cut: number }>();
+    set.put("pvTalk", { cut: 0 });
+    for (let cut = 1; cut <= 7; cut++) {
+      set.put("pvDrawn", { cut });
+      set.put("pvSteady", { cut });
+    }
+    expect(set.size).toBe(3);
+    expect([...set.all()].map((a) => a.cut)).toEqual([0, 7, 7]);
   });
 });

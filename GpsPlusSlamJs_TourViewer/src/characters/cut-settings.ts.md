@@ -12,7 +12,7 @@
   - Poses: `minGapFrac` (a gap narrower than this share of the width joins two column groups), `specFrac` (a group under this share of the largest is a speck).
   - Frames: `cellW`, `cellH` (one frame, 512 x 1024).
   - Checks: `headBand`, `featherFrac`, `diffThr`, `jitterWarn`, `mouthMin`, `maxShift`.
-  - Size: `maxPixels` (a larger picture is refused before it is decoded into memory).
+  - Size: `maxPixels`, 4096 x 4096 (the tour's own cap for a picture a phone decodes); a larger picture is refused by its header before it is decoded into memory. Measured on a desktop with a synthetic sheet: 4.3 MP 0.9 s, 12 MP 2.5 s, 16 MP 2.1 s, 24 MP 2.7 s, 32 MP 4.6 s, 40 MP 6.6 s, the memory beside the picture growing from about 50 to 170 MiB; a phone is 4 to 6 times slower. A 12 MP phone photo passes, a 24 MP camera photo does not; the sheets the maker asks for are about 4 MP.
 - `CUT_SETTINGS`: the defaults. Their evidence is the sweep in `sheet-cut.ts.md`.
 - `cutSettingsOf(input: unknown): CutSettings`: reads settings from anything (a page, a stored choice, a Worker message).
 

@@ -501,6 +501,16 @@ export function createCharactersPanel(
     askBox: dom.importAsk,
     chooseAgain: () => dom.importFile.click(),
     toast,
+    during: (phase, work) =>
+      busy(
+        dom.importButton,
+        phase === "reading" ? "Reading the file..." : "Waiting for a name...",
+        work,
+      ),
+  });
+  // A name question left open would keep Import disabled for good.
+  dom.panel.addEventListener("close", () => {
+    importFlow.cancel();
   });
   dom.importButton.addEventListener("click", () => dom.importFile.click());
   dom.importFile.addEventListener("change", () => {
@@ -511,7 +521,7 @@ export function createCharactersPanel(
 
   async function importCharacter(file: Blob): Promise<void> {
     const button = dom.importButton;
-    const r = await busy(button, "Reading the file...", () => importFlow(file));
+    const r = await importFlow(file);
     if (r === null) return;
     await busy(button, "Importing...", async () => {
       try {
@@ -546,6 +556,7 @@ export function createCharactersPanel(
   return {
     open() {
       if (!isOpen()) dom.panel.showModal();
+      importFlow.cancel();
       dom.importError.hidden = true;
       dom.importAsk.hidden = true;
       renderAll();

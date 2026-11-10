@@ -93,6 +93,15 @@ export function newLibraryId(now: number, random: () => number): string {
   return `c${Math.max(0, Math.floor(now)).toString(36)}${tail}`;
 }
 
+/** The time (ms) a library id was made at (`newLibraryId`), or null for
+ *  an id that holds none. */
+export function libraryIdTime(id: string): number | null {
+  const m = /^c([0-9a-z]+)[0-9a-z]{6}$/.exec(id);
+  if (m === null) return null;
+  const t = parseInt(m[1] ?? "", 36);
+  return Number.isSafeInteger(t) ? t : null;
+}
+
 /**
  * The fields an exchange file may bring: only known ones, of the right
  * type. A missing format reads as unreadable, a higher one as newer.

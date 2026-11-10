@@ -174,3 +174,27 @@ export function drawFeet(
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(frame, 156, 899, 200, 125, 0, 0, w, h);
 }
+
+/** Preview animations kept by slot (a canvas's id). */
+export interface AnimSet<T> {
+  /** Keeps `anim` under `slot`, replacing the one there. */
+  put(slot: string, anim: T): void;
+  all(): IterableIterator<T>;
+  readonly size: number;
+}
+
+/** Preview animations by slot: a preview drawn again (each re-cut rebuilds
+ *  the talk-style canvases) replaces its earlier animation, so the old
+ *  canvases and the frames they drew are let go. */
+export function createAnimSet<T>(): AnimSet<T> {
+  const bySlot = new Map<string, T>();
+  return {
+    put(slot, anim) {
+      bySlot.set(slot, anim);
+    },
+    all: () => bySlot.values(),
+    get size() {
+      return bySlot.size;
+    },
+  };
+}

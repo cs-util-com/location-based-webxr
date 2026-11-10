@@ -71,7 +71,11 @@ export const CUT_SETTINGS: CutSettings = {
   jitterWarn: 0.05,
   mouthMin: 0.0015,
   maxShift: 3,
-  maxPixels: 40e6,
+  // The tour's own cap for a picture a phone decodes (4096 x 4096). Measured
+  // on a desktop: the cut takes about 2 s and 80 MiB beside the picture
+  // at 16 MP, 6.6 s and 170 MiB at 40 MP, and a phone is 4-6 times slower;
+  // a 12 MP phone photo passes, a 24 MP camera photo does not.
+  maxPixels: 4096 * 4096,
 };
 
 /** The range each setting is clamped to; a value outside it, or one that is

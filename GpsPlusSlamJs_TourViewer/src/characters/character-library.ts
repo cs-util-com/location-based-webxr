@@ -2,9 +2,12 @@
  * The character library on this device: each character is a folder with
  * `frames.png` (the cut sheet), `image.png` (the author's picture) and
  * `character.json` (the record). The record is written last, so a folder
- * without one is an interrupted save: `list()` skips and counts it and the
- * next `save()` removes it. A folder whose record does not read (damaged,
- * or written by a newer version) is skipped and counted too, but kept.
+ * without one is a save under way or an interrupted one. Only one older
+ * than `UNFINISHED_AGE_MS` (by the time in its id) counts as interrupted:
+ * `list()` skips and counts it and the next `save()` removes it; a younger
+ * one may be another tab's save in flight, so it is skipped and left. A
+ * folder whose record does not read (damaged, or written by a newer
+ * version) is skipped and counted too, but kept.
  *
  * Storage is behind `LibraryStore`, so the rules here are tested in memory
  * and the page passes the device store (`opfs-library-store.ts`).
@@ -16,10 +19,18 @@ import {
   cappedName,
   DEFAULT_TOOL,
   nameProblem,
+  libraryIdTime,
   newLibraryId,
   nextGuideName,
   recordOf,
 } from "./character-record.js";
+
+/** How old a folder without a record must be to count as an interrupted
+ *  save. A save writes two pictures of a few MB and a small record, under
+ *  a second even on a slow phone; a tab the browser froze in the
+ *  background mid-save may resume minutes later. Ten minutes covers both
+ *  with room, and costs only that a real leftover waits that long. */
+export const UNFINISHED_AGE_MS = 10 * 60_000;
 
 export type LibraryFile = "frames.png" | "image.png" | "character.json";
 
@@ -60,7 +71,7 @@ export interface CharacterLibrary {
   rename(id: string, name: string): Promise<CharacterRecord>;
   remove(id: string): Promise<void>;
   files(id: string): Promise<CharacterFiles>;
-  /** Removes the unfinished saves now, as the next save would. */
+  /** Removes the interrupted saves now, as the next save would. */
   tidy(): Promise<void>;
 }
 
@@ -89,6 +100,14 @@ export function createCharacterLibrary(
     }
   }
 
+  /** The folders without a record old enough to be interrupted saves (an
+   *  id that holds no time is one too). */
+  const stale = (ids: readonly string[], now: number): string[] =>
+    ids.filter((id) => {
+      const t = libraryIdTime(id);
+      return t === null || Math.abs(now - t) >= UNFINISHED_AGE_MS;
+    });
+
   async function scan(): Promise<{
     entries: CharacterRecord[];
     unreadable: number;
@@ -115,10 +134,10 @@ export function createCharacterLibrary(
 
   return {
     async save(req) {
-      const { entries, unfinished } = await scan();
-      for (const id of unfinished) await store.remove(id);
-      const given = cappedName(req.name);
       const now = clock.now();
+      const { entries, unfinished } = await scan();
+      for (const id of stale(unfinished, now)) await store.remove(id);
+      const given = cappedName(req.name);
       const rec: CharacterRecord = {
         format: CHARACTER_FORMAT,
         libraryId: newLibraryId(now, () => clock.random()),
@@ -136,8 +155,12 @@ export function createCharacterLibrary(
     },
 
     async list() {
+      const now = clock.now();
       const { entries, unreadable, unfinished } = await scan();
-      return { entries, interrupted: unreadable + unfinished.length };
+      return {
+        entries,
+        interrupted: unreadable + stale(unfinished, now).length,
+      };
     },
 
     async rename(id, name) {
@@ -154,7 +177,10 @@ export function createCharacterLibrary(
     },
 
     async tidy() {
-      for (const id of (await scan()).unfinished) await store.remove(id);
+      const now = clock.now();
+      for (const id of stale((await scan()).unfinished, now)) {
+        await store.remove(id);
+      }
     },
 
     async files(id) {

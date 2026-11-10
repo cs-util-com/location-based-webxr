@@ -78,6 +78,9 @@ describe("png-text", () => {
       hasAlpha: true,
     });
     expect(pngHeader(readChunks(png(2048, 1024, 2)))?.hasAlpha).toBe(false);
+    // grey with alpha carries transparency too; plain grey does not
+    expect(pngHeader(readChunks(png(2048, 1024, 4)))?.hasAlpha).toBe(true);
+    expect(pngHeader(readChunks(png(2048, 1024, 0)))?.hasAlpha).toBe(false);
     const trns = chunk("tRNS", new Uint8Array([0, 0, 0, 0, 0, 0]));
     expect(pngHeader(readChunks(png(2048, 1024, 2, [trns])))?.hasAlpha).toBe(
       true,
@@ -92,6 +95,19 @@ describe("png-text", () => {
     expect(() => readChunks(whole.subarray(0, whole.length - 6))).toThrow(
       PngDamaged,
     );
+  });
+
+  // Why: the record rides in a text chunk; a file changed in transit
+  // (one flipped byte in that chunk) must be refused as damaged, never
+  // read as a different record.
+  it("refuses a text chunk whose checksum does not match", () => {
+    const out = withTextChunk(png(8, 4, 6), "k", '{"name":"Rita"}');
+    const text = readChunks(out).find((c) => c.type === "tEXt")!;
+    const bad = out.slice();
+    const at = text.start + 8 + 3;
+    bad[at] = (bad[at] ?? 0) ^ 0x01;
+    expect(() => readChunks(bad)).toThrow(PngDamaged);
+    expect(() => readChunks(bad)).toThrow(/tEXt chunk's checksum/);
   });
 
   // Why: the exchange file carries the record in a text chunk; it must be

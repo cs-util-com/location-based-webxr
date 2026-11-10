@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { createCharacterLibrary } from "./character-library.js";
+import {
+  createCharacterLibrary,
+  UNFINISHED_AGE_MS,
+} from "./character-library.js";
+import { newLibraryId } from "./character-record.js";
 import { memoryLibraryStore } from "./test-support/memory-library-store.js";
 
 const png = (tag: string): Blob => new Blob([tag], { type: "image/png" });
@@ -13,7 +17,14 @@ function library() {
     now: () => (t += 60_000),
     random: () => (r = (r + 0.137) % 1),
   });
-  return { store, lib };
+  return {
+    store,
+    lib,
+    /** Moves the clock on, as a page left open would see it. */
+    later: (ms: number) => (t += ms),
+    /** The clock's reading without moving it. */
+    at: () => t,
+  };
 }
 
 const SAVE = {
@@ -46,9 +57,10 @@ describe("character-library", () => {
   // Why: a save interrupted before its record (a closed page) leaves a
   // folder the list must skip and count, and the next save tidies it.
   it("skips and later tidies an interrupted save", async () => {
-    const { store, lib } = library();
+    const { store, lib, later } = library();
     store.failNextWriteOf("character.json");
     await expect(lib.save(SAVE)).rejects.toThrow("the page closed");
+    later(UNFINISHED_AGE_MS);
     expect(await lib.list()).toEqual({ entries: [], interrupted: 1 });
     await lib.save({ ...SAVE, name: "Rosa" });
     const after = await lib.list();
@@ -59,9 +71,10 @@ describe("character-library", () => {
   // Why: "Tidy up now" removes the unfinished saves at once, and keeps a
   // record that only does not read (it may be from a newer version).
   it("tidies unfinished saves on request and keeps unreadable records", async () => {
-    const { store, lib } = library();
+    const { store, lib, later } = library();
     store.failNextWriteOf("character.json");
     await expect(lib.save(SAVE)).rejects.toThrow();
+    later(UNFINISHED_AGE_MS);
     await store.write("cbroken", "character.json", new Blob(["{nope"]));
     await lib.tidy();
     expect(await lib.list()).toEqual({ entries: [], interrupted: 1 });
@@ -135,5 +148,59 @@ describe("character-library", () => {
     expect(
       (await lib.save({ ...SAVE, name: "z".repeat(55) })).name,
     ).toHaveLength(40);
+  });
+});
+
+describe("the tidy-up spares a save in flight", () => {
+  // Why: another tab (the maker beside the editor) may be saving right
+  // now; its folder has no record YET. Only a folder older than
+  // UNFINISHED_AGE_MS, judged by the time in its id, is an interrupted
+  // save. Swept over ages from a moment to an hour around the cap.
+  const MIN = 60_000;
+  const ages = [
+    0,
+    1_000,
+    30_000,
+    2 * MIN,
+    9 * MIN,
+    9.9 * MIN,
+    10.1 * MIN,
+    11 * MIN,
+    60 * MIN,
+  ];
+  for (const age of ages) {
+    const old = age >= UNFINISHED_AGE_MS;
+    it(`a folder ${String(age / 1000)} s old is ${old ? "removed" : "kept"}`, async () => {
+      const { store, lib, at } = library();
+      // the clock moves 60 s on each read: the folder is dated from the
+      // moment the tidy-up will read
+      const id = newLibraryId(at() + 60_000 - age, () => 0.5);
+      await store.write(id, "frames.png", png("frames"));
+      await lib.tidy();
+      expect(await store.ids()).toEqual(old ? [] : [id]);
+    });
+  }
+
+  // Why: a save here must not remove the other tab's folder either.
+  it("a save keeps another tab's folder that is still being written", async () => {
+    const { store, lib, at } = library();
+    const other = newLibraryId(at(), () => 0.25);
+    await store.write(other, "frames.png", png("frames"));
+    await lib.save(SAVE);
+    expect(await store.ids()).toContain(other);
+    expect((await lib.list()).interrupted).toBe(0);
+  });
+
+  // Why: a folder whose id holds no time cannot be in flight from this
+  // code; it is left over, so it goes.
+  it("a folder whose id holds no time is removed", async () => {
+    const { store, lib } = library();
+    await store.write("junk", "frames.png", png("frames"));
+    await lib.tidy();
+    expect(await store.ids()).toEqual([]);
+  });
+
+  it("the age is ten minutes", () => {
+    expect(UNFINISHED_AGE_MS).toBe(10 * 60_000);
   });
 });

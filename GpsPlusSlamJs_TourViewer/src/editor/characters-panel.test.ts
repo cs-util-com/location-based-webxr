@@ -592,6 +592,49 @@ describe("Import character...", () => {
     expect(s.d.importButton.textContent).toBe("Import character...");
   });
 
+  // Why: while the name question stands the button says so (not that the
+  // file is still being read), and closing the list settles the question,
+  // so Import is never left disabled.
+  it("the name question has its own state, and closing the list ends it", async () => {
+    const s = setup();
+    s.panel.open();
+    await settled();
+    URL.createObjectURL = () => "blob:x";
+    URL.revokeObjectURL = () => {};
+    readFile.mockResolvedValue(accepted(""));
+    choose(s);
+    await settled();
+    expect(s.d.importAsk.hidden).toBe(false);
+    expect(s.d.importButton.textContent).toBe("Waiting for a name...");
+    expect(s.d.importButton.disabled).toBe(true);
+    s.d.panel.close();
+    s.d.panel.dispatchEvent(new Event("close"));
+    await settled(10);
+    expect(s.d.importButton.disabled).toBe(false);
+    expect(s.d.importButton.textContent).toBe("Import character...");
+    expect(s.library.lib.save).not.toHaveBeenCalled();
+  });
+
+  // Why: the other way the question settles - the author names the
+  // character - must free the button too and import him.
+  it("naming the character ends the question and imports him", async () => {
+    const s = setup();
+    s.panel.open();
+    await settled();
+    URL.createObjectURL = () => "blob:x";
+    URL.revokeObjectURL = () => {};
+    readFile.mockResolvedValue(accepted(""));
+    choose(s);
+    await settled();
+    s.d.importAsk.querySelector<HTMLInputElement>("[data-name]")!.value =
+      "Rita";
+    s.d.importAsk.querySelector<HTMLButtonElement>("[data-keep]")?.click();
+    await settled(10);
+    expect(s.t.chars.map((c) => c.name)).toEqual(["Rita"]);
+    expect(s.d.importButton.disabled).toBe(false);
+    expect(s.d.importButton.textContent).toBe("Import character...");
+  });
+
   it("a file without a name asks for one, and cancelling imports nothing", async () => {
     const s = setup();
     s.panel.open();

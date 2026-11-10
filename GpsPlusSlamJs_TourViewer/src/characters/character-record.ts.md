@@ -12,6 +12,7 @@
 - `cappedName(name)`: trimmed, inner whitespace collapsed, cut to 40 characters.
 - `nextGuideName(taken)`: "Guide 1", "Guide 2", ..., the first not taken.
 - `newLibraryId(now, random)`: a fresh folder name from the time and a random part.
+- `libraryIdTime(id)`: the time a library id was made at, or null for an id that holds none (the library's tidy-up judges a folder's age by it).
 
 ## Invariants
 

@@ -7,6 +7,8 @@
  * @see decode-picture.ts.md
  */
 
+import { imageInfoOfBlob } from "gps-plus-slam-app-framework/utils/image-header";
+
 import type { CutSettings } from "./cut-settings.js";
 import type { RgbaImage } from "./rgba-image.js";
 import { checkPictureSize } from "./sheet-analyze.js";
@@ -38,6 +40,11 @@ export async function decodePicture(
   if (refusal !== null) {
     throw refusal;
   }
+  // The size its header states, checked before the decode: decoding
+  // first would allocate the whole bitmap on the strength of that number.
+  // A header this does not read is left to the check after the decode.
+  const header = await imageInfoOfBlob(file);
+  if (header !== null) checkPictureSize(header.width, header.height, s);
   let bitmap: ImageBitmap;
   try {
     bitmap = await createImageBitmap(file, {

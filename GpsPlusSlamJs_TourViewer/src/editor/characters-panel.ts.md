@@ -73,8 +73,10 @@ The page look follows the chosen prototype
   declares him again as he was.
 - "Import character..." runs in three steps:
   - "Reading the file...": the shared flow of
-    `../characters/character-import.ts`, with its refusal card and name
-    question;
+    `../characters/character-import.ts`, with its refusal card;
+  - "Waiting for a name..." while its name question stands; closing the
+    list (or opening it again) settles the question with nothing, so
+    Import is never left disabled;
   - "Importing...": the character is saved to the library, marked seen and
     declared in the tour;
   - "Imported X: it is in this tour, and kept on this device".

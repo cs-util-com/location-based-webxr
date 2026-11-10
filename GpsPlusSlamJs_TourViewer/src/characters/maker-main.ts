@@ -43,6 +43,7 @@ import {
   BACKDROPS,
   beckonIndex,
   canvasOf,
+  createAnimSet,
   drawFeet,
   drawFigure,
   pngOf,
@@ -165,6 +166,8 @@ const reason = (e: unknown): string =>
 // ------------------------------------------------------------ views
 
 function setView(v: "home" | "steps"): void {
+  // The library's name question goes with the library view.
+  if (v !== "home") importFlow.cancel();
   document.body.dataset.view = v;
   $("#title").textContent =
     v === "home" ? "Your characters" : "Make a character";
@@ -407,12 +410,16 @@ const importFlow = createImportFlow({
   askBox: $("#homeAsk"),
   chooseAgain: () => impFile.click(),
   toast,
+  during: (phase, work) =>
+    busy(
+      importBtn,
+      phase === "reading" ? "Reading the file..." : "Waiting for a name...",
+      work,
+    ),
 });
 
 async function importIntoLibrary(file: File): Promise<void> {
-  const r = await busy(importBtn, "Reading the file...", () =>
-    importFlow(file),
-  );
+  const r = await importFlow(file);
   if (!r) return;
   await busy(importBtn, "Saving to this device...", async () => {
     try {
@@ -461,17 +468,18 @@ interface Anim {
   readonly draw: Draw;
   key: string;
 }
-const anims: Anim[] = [];
+/** By the canvas's id: a preview drawn again replaces its animation. */
+const anims = createAnimSet<Anim>();
 function anim(
   canvas: HTMLCanvasElement,
   kind: Anim["kind"],
   frames: Anim["frames"],
   draw: Draw = drawFigure,
 ): void {
-  anims.push({ canvas, kind, frames, draw, key: "" });
+  anims.put(canvas.id, { canvas, kind, frames, draw, key: "" });
 }
 function loop(t: number): void {
-  for (const a of anims) {
+  for (const a of anims.all()) {
     if (!a.canvas.isConnected || a.canvas.offsetParent === null) continue;
     const fr = a.frames();
     if (!fr) continue;

@@ -34,6 +34,14 @@ export interface AcceptedCharacter {
  *  not come with it (shown when a name is asked for). */
 export type ReadCharacter = AcceptedCharacter & { readonly note: string };
 
+/** The largest file taken as a character file, checked before it is read:
+ *  an exchange file is a 2048 x 1024 PNG, at most about 8.4 MB even with
+ *  no compression at all, so twice that leaves room for any real one. */
+export const IMPORT_MAX_BYTES = 16 * 1024 * 1024;
+
+const megabytes = (bytes: number): string =>
+  `${String(Math.round((bytes / (1024 * 1024)) * 10) / 10)} MB`;
+
 /** The first pose of a sheet, as its own picture. */
 function firstCell(img: RgbaImage): Promise<Blob> {
   const cellW = Math.floor(img.width / 4);
@@ -56,6 +64,12 @@ function firstCell(img: RgbaImage): Promise<Blob> {
 
 /** Reads `file` as a character; throws an `ImportRefusal` in words. */
 export async function readCharacterFile(file: Blob): Promise<ReadCharacter> {
+  if (file.size > IMPORT_MAX_BYTES) {
+    throw new ImportRefusal(
+      "This file is too large to be a character",
+      `A character file is at most ${megabytes(IMPORT_MAX_BYTES)}; this one is ${megabytes(file.size)}. Choose another file.`,
+    );
+  }
   const bytes = new Uint8Array(await file.arrayBuffer());
   const info = inspectExchange(bytes, file.type);
   let img: RgbaImage;
@@ -93,7 +107,22 @@ export interface ImportFlowDeps {
   readonly toast: (message: string, error?: boolean) => void;
   /** Reads the file (`readCharacterFile`; a stand-in in tests). */
   readonly read?: (file: Blob) => Promise<ReadCharacter>;
+  /** Runs each phase - reading the file, then (for a file without a name)
+   *  asking for one - so the page can show which one is under way. */
+  readonly during?: <T>(
+    phase: ImportPhase,
+    work: () => Promise<T>,
+  ) => Promise<T>;
 }
+
+/** The phases of one import: the file being read, the name asked for. */
+export type ImportPhase = "reading" | "asking";
+
+/** One file at a time (`createImportFlow`); `cancel()` settles an open
+ *  name question with nothing, quietly (its page closed or moved on). */
+export type ImportFlow = ((file: Blob) => Promise<AcceptedCharacter | null>) & {
+  cancel(): void;
+};
 
 function child<T extends HTMLElement>(root: HTMLElement, sel: string): T {
   const el = root.querySelector<T>(sel);
@@ -105,21 +134,21 @@ function child<T extends HTMLElement>(root: HTMLElement, sel: string): T {
  * The flow for one file at a time: a refusal is drawn into the error card
  * (and toasted), a file without a name asks for one. Resolves to the
  * accepted file, or null (refused, or the question cancelled). A second
- * file while a question is open cancels that question.
+ * file while a question is open cancels that question, as `cancel()` does.
  */
-export function createImportFlow(
-  deps: ImportFlowDeps,
-): (file: Blob) => Promise<AcceptedCharacter | null> {
+export function createImportFlow(deps: ImportFlowDeps): ImportFlow {
   const { errBox, askBox } = deps;
   const read = deps.read ?? readCharacterFile;
+  const during: NonNullable<ImportFlowDeps["during"]> =
+    deps.during ?? ((_phase, work) => work());
   let pendingAsk: ((v: AcceptedCharacter | null) => void) | null = null;
-  return async (file) => {
+  const run = async (file: Blob): Promise<AcceptedCharacter | null> => {
     pendingAsk?.(null);
     errBox.hidden = true;
     askBox.hidden = true;
     let r: ReadCharacter;
     try {
-      r = await read(file);
+      r = await during("reading", () => read(file));
     } catch (e) {
       const known = e instanceof ImportRefusal;
       const title = known ? e.title : "This file did not work";
@@ -147,6 +176,16 @@ export function createImportFlow(
     const input = child<HTMLInputElement>(askBox, "[data-name]");
     input.focus({ preventScroll: true });
     askBox.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    return during("asking", () => asked(r, input, url));
+  };
+
+  /** The open name question, settled by Import it, Cancel, a second file
+   *  or `cancel()`. */
+  function asked(
+    r: ReadCharacter,
+    input: HTMLInputElement,
+    url: string,
+  ): Promise<AcceptedCharacter | null> {
     return new Promise((resolve) => {
       const done = (v: AcceptedCharacter | null): void => {
         if (pendingAsk === done) pendingAsk = null;
@@ -173,5 +212,11 @@ export function createImportFlow(
         deps.toast("Not imported");
       });
     });
-  };
+  }
+
+  return Object.assign(run, {
+    cancel: () => {
+      pendingAsk?.(null);
+    },
+  });
 }
