@@ -187,6 +187,10 @@ async function selectPin(page, station) {
   // A second click on a station folds it again.
   if (!(await pin.isVisible())) {
     await page.locator(`#tree-body [data-select="station:${station}"]`).click();
+    // The station's flight ends first: a pick mid-flight keeps the
+    // distance the camera has then (`flightGoal`), so the pin would be
+    // framed at a distance that depends on the moment of the click.
+    await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
   }
   await pin.click();
   await expect.poll(() => selected(page)).toBe(PIN);
