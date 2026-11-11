@@ -9,8 +9,8 @@
  *   in exactly one place, so being inside a story is what shows it.
  * - a PLAIN folder (no role) groups free blocks and other plain folders,
  *   with an optional local `pose` that its children's poses are relative
- *   to (`tour-folder-pose.ts` composes them), and a `scale` that is 1 or
- *   absent until a renderer scales a whole group. Composed, every block
+ *   to (`tour-folder-pose.ts` composes them), and an optional `scale` that
+ *   makes the whole group larger, offsets and sizes alike. Composed, every block
  *   stays within `TOUR_ITEM_MAX_OFFSET_M` of its station, as a single pose
  *   does. It never holds a story, and a story never holds a folder.
  *
@@ -340,6 +340,11 @@ export const TOUR_STORY_TITLE_RULE = {
   required: true,
 } as const satisfies TourTextRule;
 
+/** The smallest and the largest scale a plain folder takes: a tenth and
+ *  ten times. */
+export const TOUR_FOLDER_MIN_SCALE = 0.1;
+export const TOUR_FOLDER_MAX_SCALE = 10;
+
 /** A plain folder's title: optional; when given, at most 80 code points
  *  and not blank, as a story's (an editor's tree names a group by it). */
 export const TOUR_FOLDER_TITLE_RULE = {
@@ -384,11 +389,10 @@ export type TourFolderChild = TourBlock | TourFolder;
 
 /** A plain folder: free blocks and plain folders grouped, their poses
  *  relative to the folder's own `pose` (none: the holder's frame). May be
- *  empty. A rigid frame: its `scale` is 1 or absent, the reader takes no
- *  other value, since no renderer scales a whole group yet. Scaling the
- *  blocks' positions alone would move them apart while their sizes stay,
- *  so a scale other than 1 waits for a renderer that applies it to the
- *  group once. */
+ *  empty. Its `scale` (absent: 1; from {@link TOUR_FOLDER_MIN_SCALE} to
+ *  {@link TOUR_FOLDER_MAX_SCALE}) makes the whole group larger: its
+ *  children's offsets (`tour-folder-pose.ts`) and how large a renderer
+ *  draws them, their sizes and reaches with them. */
 export interface TourFolder {
   readonly id: string;
   readonly kind: 'folder';
@@ -397,7 +401,7 @@ export interface TourFolder {
   /** The group's name (`TOUR_FOLDER_TITLE_RULE`); absent for none. */
   readonly title?: string;
   readonly pose?: TourLocalPose;
-  readonly scale?: 1;
+  readonly scale?: number;
   readonly children: readonly TourFolderChild[];
 }
 
@@ -412,7 +416,7 @@ export type TourStationChild = TourBlock | TourStory | TourFolder;
  *  block reader reports it), or a whole child it cannot show in its place
  *  (a story, choice or quiz it skipped included), or one way on a choice
  *  lost because the child it named was left out (`child` is the choice),
- *  or a plain folder's scale other than 1 read as 1, or its title over its
+ *  or a plain folder's scale out of its bounds read as 1, or its title over its
  *  cap left out (`folder`). */
 export type TourChildDrop =
   | TourBlockDrop
@@ -660,17 +664,25 @@ function misplacedChild(ctx: ChildrenContext, id: string, reason: string) {
   return dropChild(ctx, id, reason);
 }
 
-/** A plain folder's scale: absent, or 1. Any other value waits for a
- *  renderer that scales the whole group (see {@link TourFolder}): refused
- *  at this reader's own minor; read as 1 and reported in a newer one. */
+/** A plain folder's scale: absent, or a number from
+ *  {@link TOUR_FOLDER_MIN_SCALE} to {@link TOUR_FOLDER_MAX_SCALE}. Any
+ *  other value is refused at this reader's own minor; read as 1 and
+ *  reported in a newer one. */
 function readFolderScale(
   value: unknown,
   id: string,
   at: string,
   ctx: ChildrenContext
-): 1 | undefined {
-  if (value === undefined || value === 1) return value;
-  const reason = `"${at}" must be 1: a folder's scale waits for a renderer that scales the whole group`;
+): number | undefined {
+  if (value === undefined) return undefined;
+  if (
+    typeof value === 'number' &&
+    value >= TOUR_FOLDER_MIN_SCALE &&
+    value <= TOUR_FOLDER_MAX_SCALE
+  ) {
+    return value;
+  }
+  const reason = `"${at}" must be a number from ${String(TOUR_FOLDER_MIN_SCALE)} to ${String(TOUR_FOLDER_MAX_SCALE)}`;
   if (!ctx.lenient) return ctx.fail(reason);
   ctx.options.onDropped?.({ kind: 'folderScale', folder: id, reason });
   return undefined;
@@ -732,7 +744,13 @@ function readPlainFolder(
       : parseTourLocalPose(v.pose, `${at}.pose`, ctx.fail);
   const title = readFolderTitle(v.title, id, `${at}.title`, ctx);
   const scale = readFolderScale(v.scale, id, `${at}.scale`, ctx);
-  const frames = [...holders, pose === undefined ? {} : { pose }];
+  const frames: TourFolderFrame[] = [
+    ...holders,
+    {
+      ...(pose === undefined ? {} : { pose }),
+      ...(scale === undefined ? {} : { scale }),
+    },
+  ];
   let far: string | undefined;
   const children = requireTourArray(
     v.children,

@@ -27,7 +27,6 @@ import {
   fieldId,
   fixed,
   lineField,
-  numberField,
   typed,
 } from "../editor-shell/inspector-fields.js";
 import {
@@ -89,20 +88,6 @@ const VIEW_NOTE: Readonly<Record<string, string>> = {
   cutaway: "Cut open by its sections, one after the other.",
   toy: "The visitor may move and resize it.",
 };
-
-/** Its largest side to type, with what it means. */
-function sizeParts(sizeM: number): HTMLElement {
-  const section = el("div", "isec");
-  section.append(
-    numberField("Size", "size", fixed(sizeM, 2), "m"),
-    el(
-      "div",
-      "note",
-      "Its largest side, from 0.05 m to 500 m. Drag a white dot to resize.",
-    ),
-  );
-  return section;
-}
 
 /** A model's view, clip, notes and sections. */
 function modelParts(parts: InspectorModelParts): HTMLElement[] {
@@ -278,10 +263,7 @@ export function createModelPanel(deps: ModelPanelDeps): KindPanel {
         ownsFields: false,
         title: () => null,
         head: () => [],
-        parts: () => [
-          ...(item.sizeM === null ? [] : [sizeParts(item.sizeM)]),
-          ...modelParts(model),
-        ],
+        parts: () => modelParts(model),
       };
     },
     act(act, item, selected) {

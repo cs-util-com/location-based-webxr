@@ -27,7 +27,6 @@ import type {
 import { KIND_EDIT, type KindLook } from "../../kinds/edit-kinds.js";
 import { objectTitle } from "../../object-describe.js";
 import type { TreeGroup } from "gps-plus-slam-editor-kit/chrome";
-import { worldBlocks } from "../../tour-document.js";
 
 import { stationTitle } from "../../station-run.js";
 import { FOLDER_PREFIX, matchesQuery, STORY_PREFIX } from "../editor-model.js";
@@ -271,7 +270,7 @@ export function stationImagePath(
 ): string | null {
   const imagePath = (id: string): string | null =>
     assets.find((a) => a.id === id && a.kind === "image")?.path ?? null;
-  const photos = worldBlocks(station).flatMap((i) =>
+  const photos = tourFreeBlocks(station).flatMap((i) =>
     i.kind === "picture" ? [i] : [],
   );
   const named = station.image;

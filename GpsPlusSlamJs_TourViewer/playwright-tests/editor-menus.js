@@ -14,6 +14,7 @@ const FILE_ITEMS = /** @type {const} */ ({
   save: "#file-save",
   saveCopy: "#file-save-copy",
   details: "#file-details",
+  characters: "#file-characters",
   debugAdd: "#file-debug-add",
   keepWalk: "#file-keep-walk",
   publish: "#file-publish",

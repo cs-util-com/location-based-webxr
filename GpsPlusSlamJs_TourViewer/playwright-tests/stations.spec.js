@@ -145,15 +145,29 @@ test("a station tour: the visitor at the code finds the first station, its knigh
   for (let m = 5, s = 1; m <= 30; m += 5, s += 1) await standAt(page, m, 0, s);
   await expect(page.getByTestId("scene-title")).toHaveText("The well");
   await expect(page.getByTestId("scene-text")).toHaveText("The old arch.");
+  // Placed in the world with the station's content once its step is reached.
   await expect
     .poll(() =>
-      page.evaluate(() =>
-        /** @type {any} */ (window).__tourViewerTest.fakeScene.children.map(
-          (c) => c.name,
-        ),
-      ),
+      page.evaluate(() => {
+        // No XR frames run under the fakes: camera frames advance the fade
+        // from the gate's content to the well's.
+        /** @type {any} */ (window).__tourViewerTest.emitFrames(10);
+        /** @param {any} o @returns {string[]} */
+        const ids = (o) => [
+          ...(typeof o.userData?.objectId === "string"
+            ? [o.userData.objectId]
+            : []),
+          ...(o.children ?? []).flatMap(ids),
+        ];
+        const well = /** @type {any} */ (
+          window
+        ).__tourViewerTest.fakeScene.children.find(
+          (/** @type {any} */ c) => c.name === "station-content:well",
+        );
+        return well === undefined ? [] : ids(well);
+      }),
     )
-    .toContain("station-stage:well");
+    .toContain("old-arch");
   await expect(page.getByTestId("scene-status")).toHaveText("");
   await page.getByTestId("scene-continue").click();
 

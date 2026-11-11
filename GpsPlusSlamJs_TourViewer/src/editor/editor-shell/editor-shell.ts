@@ -44,7 +44,7 @@ import {
 import type { UnknownAction } from "@reduxjs/toolkit";
 
 import type { Editor3dView } from "../../editor3d/editor3d-scene.js";
-import type { GestureEdit } from "../../editor3d/gesture.js";
+import type { PlaceEdit } from "../../placement/place-edits.js";
 import { createLongPress, LONG_PRESS } from "../long-press.js";
 import {
   folderDropRefusal,
@@ -113,10 +113,12 @@ import {
 } from "./inspector-edits.js";
 import {
   buildInspector,
+  detailsOnPhone,
   inspectorHint,
   type InspectorCode,
   type InspectorModel,
 } from "./inspector-model.js";
+import { inspectorFileOf, REPLACE_FILE_ACT } from "./inspector-file.js";
 import {
   controlName,
   drawInspector,
@@ -230,7 +232,7 @@ export interface ShellEditCommands {
   model(itemId: string, edit: ModelEdit): TypedEditOutcome;
   /** A pose or a size, as the 3D view's gestures write them: whether it
    *  was written (false: refused, and the page said why). */
-  scene(edit: GestureEdit): boolean;
+  scene(edit: PlaceEdit): boolean;
   /** Items' heights (the ground under each, or a typed height), as one
    *  step; their places and turns kept. */
   groundItems(
@@ -243,6 +245,13 @@ export interface ShellEditCommands {
   addStory(stationId: string): void;
   /** A new entry of `kind` in the story, selected, one undo step. */
   addToStory(storyId: string, kind: AddKind): void;
+  /** The add menu's Character: the character maker opens on a new
+   *  character, which is then added to the station (standing free) or to
+   *  the end of the story. */
+  addCharacter(to: {
+    readonly kind: "station" | "story";
+    readonly id: string;
+  }): void;
   /** A story's title, typed in its inspector. */
   storyTitle(storyId: string, title: string): TypedEditOutcome;
   /** How a story's block moves on. */
@@ -258,6 +267,10 @@ export interface ShellEditCommands {
     itemId: string,
     change: NarrationChange,
   ): Promise<TypedEditOutcome>;
+  /** Another file for the item `itemId` (its inspector's "Replace..."):
+   *  picked and given by the page, one undo step; none: no such row's
+   *  button does anything. */
+  replaceFile?(itemId: string): void;
   /** The largest voice file a long text takes (the page's autosave cap;
    *  none: the default cap). */
   readonly voiceMaxBytes?: number;
@@ -281,6 +294,9 @@ export interface EditorShellDeps {
   readonly step: (which: "undo" | "redo") => void;
   /** The open tour's codes, in the phone's numbering. */
   readonly codes: () => readonly InspectorCode[];
+  /** The name a file was brought in under, by its asset id (the shelf's);
+   *  none: the inspector names a file by its entry. */
+  readonly fileNameOf?: (assetId: string) => string | undefined;
   /** A picture's bytes from the open tour (its content path). */
   readonly loadPicture: (path: string) => Promise<Blob>;
   /** A dialog of the page shows: the shell's keys stay out of it. */
@@ -309,7 +325,7 @@ export interface EditorShell {
    *  typed in, a long text's writer before its pause): the page calls it
    *  before a save, which writes the tour as the store holds it. */
   flush(): void;
-  /** The scene's ground menu at `point` (px in the view), for the
+  /** The scene's ground menu at `point` (px on the 3D canvas), for the
    *  ground's `place` there (null: none has loaded). */
   groundMenu(point: { x: number; y: number }, place: GroundPlace | null): void;
   /** Empties the tree's search: something the page just made is shown,
@@ -449,6 +465,12 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         addStoryIn(id);
         return;
       }
+      if (kind === "character") {
+        clearSearch();
+        store.dispatch(editorViewActions.stationFolded({ id, open: true }));
+        deps.edits.addCharacter({ kind: "station", id });
+        return;
+      }
       addInPlace(id, kind);
       // Added from the details on a phone: the draw took the button away.
       if (document.activeElement === document.body) {
@@ -456,6 +478,12 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       }
     },
     chooseForStory: (id, kind) => {
+      if (kind === "character") {
+        clearSearch();
+        revealStory(id);
+        deps.edits.addCharacter({ kind: "story", id });
+        return;
+      }
       addInStory(id, kind);
       if (document.activeElement === document.body) {
         focusControl(inspector.root, '[data-act="close"]');
@@ -699,7 +727,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     // second).
     if (ui.selected === null) return null;
     const tour = manifest();
-    return buildInspector({
+    const built = buildInspector({
       selected: ui.selected,
       stations: tour?.stations ?? [],
       assets: tour?.assets ?? [],
@@ -712,7 +740,22 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       timingsStamp: timingsStampOf(state().tourDocument.timings),
       selectedFileUnsaved: freeItemUnsaved(state().tourDocument, ui.selected),
     });
+    const file = inspectorFileOf(
+      ui.selected,
+      tour?.stations ?? [],
+      tour?.assets ?? [],
+      deps.fileNameOf,
+    );
+    return built === null || file === null ? built : { ...built, file };
   };
+
+  /** `model` as the docks and a phone's sheets see it: none on a phone
+   *  for a selection with no details there (`detailsOnPhone`), whose tap
+   *  keeps the list. */
+  const sheetModel = (model: InspectorModel | null): InspectorModel | null =>
+    model !== null && phoneSheets(window.innerWidth) && !detailsOnPhone(model)
+      ? null
+      : model;
 
   /** The inspector drawn from the store and the ground now (a draw that
    *  changes nothing is skipped): also each readout tick, so the ground
@@ -731,7 +774,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       panels.sync(model),
     );
     // A phone ticking rows in the Select mode keeps its sheet the list.
-    inspector.root.hidden = model === null || shownSheet(model) === "tree";
+    inspector.root.hidden =
+      sheetModel(model) === null || shownSheet(model) === "tree";
   };
 
   /** The tree is folded for the approach, not by the creator. */
@@ -759,7 +803,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     model: InspectorModel | null = inspectorModel(state().editorView),
   ) => {
     const ui = state().editorView;
-    const inspectorShows = model !== null;
+    const inspectorShows = sheetModel(model) !== null;
     const phone = phoneSheets(window.innerWidth);
     // Turned sideways, the list the details covered stands beside them.
     const turnedWide = change === "resized" && onPhone && !phone;
@@ -792,7 +836,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     const ui = state().editorView;
     if (!phoneSheets(window.innerWidth)) return null;
     if (ui.selectMode) return "tree";
-    if (model !== null) return "details";
+    if (sheetModel(model) !== null) return "details";
     return ui.foldedDocks.tree ? null : "tree";
   };
   /** The selection let go and the list shown: on a phone, the way back
@@ -1947,6 +1991,11 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     if (act?.startsWith("move-to:") === true) {
       moveSelectedTo(selected, act.slice("move-to:".length));
     }
+    if (act === REPLACE_FILE_ACT) {
+      const model = inspectorModel(state().editorView);
+      if (model?.file !== undefined)
+        deps.edits.replaceFile?.(model.file.blockId);
+    }
     if (act === "delete") deleteSelected(selected);
     if (act === "split") deps.stations.split(selected);
     if (act === "ground" || act === "ground-items") void runGround(act);
@@ -2262,7 +2311,19 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     },
     groundMenu(point, place) {
       if (view === null) return;
-      ground.openAt(point, place);
+      // The point is the canvas's, and the canvas covers only the view
+      // between the docks: the menu is placed in the view's box.
+      const canvas = viewBox.querySelector(".view3d-canvas");
+      if (canvas === null) {
+        ground.openAt(point, place);
+        return;
+      }
+      const c = canvas.getBoundingClientRect();
+      const b = viewBox.getBoundingClientRect();
+      ground.openAt(
+        { x: point.x + c.left - b.left, y: point.y + c.top - b.top },
+        place,
+      );
     },
     approachEnded(how) {
       if (!approachHold || view === null) return;
@@ -2279,7 +2340,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         {
           widthPx: window.innerWidth,
           folded: { tree: false, inspector: ui.foldedDocks.inspector },
-          inspectorShows: inspectorModel(ui) !== null,
+          inspectorShows: sheetModel(inspectorModel(ui)) !== null,
         },
         SHELL_DOCK_LAYOUT,
       );

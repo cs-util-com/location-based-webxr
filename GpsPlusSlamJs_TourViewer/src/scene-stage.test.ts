@@ -1,10 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  BoxGeometry,
   Group,
   Mesh,
-  MeshBasicMaterial,
-  MeshStandardMaterial,
   PerspectiveCamera,
   RingGeometry,
   Texture,
@@ -14,21 +11,64 @@ import {
 
 import { CHARACTER_HEIGHT_M, createSceneStage } from "./scene-stage";
 import { createFigureMemo } from "./figure-memo";
+import type { CharacterLook } from "./character-look";
+import type * as CharacterLookModule from "./character-look";
 import { fakeCharacterPainters } from "./test-support/fake-character-painters";
+import { inheritedScaleOf } from "./placement/place-scale";
 
 /**
- * Why these tests matter: the knight has to stand ON the station's spot,
- * feet on its altitude, turned to the visitor - a figure facing away or
- * floating at the zero is the first thing a visitor would notice. A story
- * that moved on before a big decode landed must not leave a stale figure in
- * the scene, and every figure taken away must free its GPU memory.
+ * Why these tests matter: the character has to stand ON his place at the
+ * station, feet on its altitude - a figure floating at the zero is the
+ * first thing a visitor would notice. A story that moved on before a big
+ * decode landed must not leave a stale figure in the scene, and every
+ * figure taken away must free its GPU memory.
  */
+
+/** Every look the stage makes, with the presence it was last given and
+ *  how often: the stage fades a look by its presence alone. */
+const made = vi.hoisted(
+  () =>
+    [] as {
+      look: CharacterLook;
+      presence: number;
+      writes: number;
+      disposed: boolean;
+    }[],
+);
+vi.mock("./character-look", async (importOriginal) => {
+  const real = await importOriginal<typeof CharacterLookModule>();
+  return {
+    ...real,
+    createCharacterLook: (
+      ...args: Parameters<typeof real.createCharacterLook>
+    ) => {
+      const look = real.createCharacterLook(...args);
+      const entry = { look, presence: 1, writes: 0, disposed: false };
+      const setPresence = look.setPresence.bind(look);
+      const dispose = look.dispose.bind(look);
+      look.setPresence = (alpha) => {
+        entry.presence = alpha;
+        entry.writes += 1;
+        setPresence(alpha);
+      };
+      look.dispose = () => {
+        entry.disposed = true;
+        dispose();
+      };
+      made.push(entry);
+      return look;
+    },
+  };
+});
+const lastLook = () => made[made.length - 1]!;
 
 function textureOf(width: number, height: number): Texture {
   const t = new Texture();
   t.image = { width, height };
   return t;
 }
+
+const ANN = { view: "speak", name: "Ann", line: "Hello." } as const;
 
 function harness(
   pose = {
@@ -43,100 +83,57 @@ function harness(
     decodeTexture: vi.fn((): Promise<Texture | null> =>
       Promise.resolve(textureOf(100, 200)),
     ),
-    loadModel: vi.fn((): Promise<Object3D> => {
-      const g = new Group();
-      g.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial()));
-      return Promise.resolve(g);
-    }),
+    lookPainters: fakeCharacterPainters().painters,
   };
   return { scene, deps, stage: createSceneStage(deps) };
 }
 
 describe("createSceneStage", () => {
-  it("stands a character on the station's spot, feet on its altitude, its aspect kept", async () => {
+  // Why: a character in a scaled folder is drawn that much larger, in the
+  // visitor as in the editor; the look's own height must grow with it.
+  it("draws a character as much larger as the scale it is given", async () => {
     const h = harness();
-    await h.stage.showCharacter("gate", new Blob(["png"]));
+    await h.stage.showCharacter("gate", new Blob(["png"]), undefined, {
+      ...ANN,
+      scale: 2,
+    });
+    const root = h.scene.getObjectByName("station-character")!;
+    expect(root.scale.toArray()).toEqual([2, 2, 2]);
+    expect(inheritedScaleOf(root)).toBe(2);
+  });
+
+  it("stands a character on the station's spot, feet on its altitude, his height kept", async () => {
+    const h = harness();
+    await h.stage.showCharacter("gate", new Blob(["png"]), undefined, ANN);
     expect(h.scene.children).toHaveLength(1);
     const holder = h.scene.children[0]!;
     expect(holder.position.toArray()).toEqual([10, 400, -5]);
-    const plane = holder.getObjectByName("station-character") as Mesh;
-    plane.geometry.computeBoundingBox();
-    const size = plane.geometry.boundingBox!.getSize(new Vector3());
-    expect(size.y).toBeCloseTo(CHARACTER_HEIGHT_M);
-    expect(size.x).toBeCloseTo(CHARACTER_HEIGHT_M / 2);
-    const feet =
-      plane.getWorldPosition(new Vector3()).y - CHARACTER_HEIGHT_M / 2;
-    expect(feet).toBeCloseTo(400);
-  });
-
-  it("turns the character to face the visitor, about the vertical only", async () => {
-    const h = harness();
-    await h.stage.showCharacter("gate", new Blob(["png"]));
-    // Visitor 10 m North of the station.
-    h.stage.faceVisitor([20, 401.6, -5]);
-    const holder = h.scene.children[0]!;
-    const facing = new Vector3(0, 0, 1).applyQuaternion(holder.quaternion);
-    expect(facing.x).toBeCloseTo(1);
-    expect(facing.y).toBeCloseTo(0);
-    expect(facing.z).toBeCloseTo(0);
-  });
-
-  it("places a model with the station's own rotation and never turns it", async () => {
-    const turned = [0, Math.sin(Math.PI / 4), 0, Math.cos(Math.PI / 4)] as [
-      number,
-      number,
-      number,
-      number,
-    ];
-    const h = harness({ positionNue: [1, 2, 3], rotationNue: turned });
-    await h.stage.showModel("arch", new Blob(["glb"]));
-    const holder = h.scene.children[0]!;
-    expect(holder.getObjectByName("station-model")).toBeDefined();
-    expect(holder.quaternion.toArray()).toEqual(turned);
-    h.stage.faceVisitor([100, 0, 100]);
-    expect(holder.quaternion.toArray()).toEqual(turned);
+    // The look's feet are its root's origin.
+    const root = holder.getObjectByName("station-character")!;
+    expect(root.getWorldPosition(new Vector3()).toArray()).toEqual([
+      10, 400, -5,
+    ]);
+    const front = holder.getObjectByName("character-front") as Mesh;
+    front.geometry.computeBoundingBox();
+    const box = front.geometry.boundingBox!;
+    // The fake painter cuts a 200 px figure with a 3 px rim around it.
+    const rim = (3 * CHARACTER_HEIGHT_M) / 200;
+    expect(box.min.y + rim).toBeCloseTo(0);
+    expect(box.max.y - rim).toBeCloseTo(CHARACTER_HEIGHT_M);
   });
 
   it("replaces what it shows, and clear frees the GPU memory", async () => {
     const h = harness();
-    await h.stage.showCharacter("gate", new Blob(["png"]));
-    const plane = h.scene.getObjectByName("station-character") as Mesh;
-    const geometryDispose = vi.spyOn(plane.geometry, "dispose");
-    const textureDispose = vi.spyOn(
-      (plane.material as MeshBasicMaterial).map!,
-      "dispose",
-    );
-    await h.stage.showModel("gate", new Blob(["glb"]));
+    await h.stage.showCharacter("gate", new Blob(["png"]), undefined, ANN);
+    const first = lastLook();
+    await h.stage.showCharacter("gate", new Blob(["png2"]), undefined, ANN);
     expect(h.scene.children).toHaveLength(1);
-    expect(geometryDispose).toHaveBeenCalled();
-    expect(textureDispose).toHaveBeenCalled();
+    expect(first.disposed).toBe(true);
+    const second = lastLook();
+    expect(second.disposed).toBe(false);
     h.stage.clear();
+    expect(second.disposed).toBe(true);
     expect(h.scene.children).toHaveLength(0);
-  });
-
-  it("frees every texture of a model it takes away, not only its colour map (R12)", async () => {
-    // Why this test matters (K4 review R12): a GLB's materials carry normal,
-    // roughness and emissive maps; freeing only `map` leaked them for every
-    // model a story showed.
-    const h = harness();
-    const normalMap = new Texture();
-    const emissiveMap = new Texture();
-    h.deps.loadModel.mockImplementationOnce(() => {
-      const g = new Group();
-      g.add(
-        new Mesh(
-          new BoxGeometry(),
-          new MeshStandardMaterial({ normalMap, emissiveMap }),
-        ),
-      );
-      return Promise.resolve(g);
-    });
-    const normalDispose = vi.spyOn(normalMap, "dispose");
-    const emissiveDispose = vi.spyOn(emissiveMap, "dispose");
-    await h.stage.showModel("arch", new Blob(["glb"]));
-    h.stage.clear();
-    expect(normalDispose).toHaveBeenCalledOnce();
-    expect(emissiveDispose).toHaveBeenCalledOnce();
   });
 
   it("drops a figure whose decode lands after the stage moved on", async () => {
@@ -145,7 +142,12 @@ describe("createSceneStage", () => {
     h.deps.decodeTexture.mockImplementationOnce(
       () => new Promise((r) => (land = r)),
     );
-    const pending = h.stage.showCharacter("gate", new Blob(["png"]));
+    const pending = h.stage.showCharacter(
+      "gate",
+      new Blob(["png"]),
+      undefined,
+      ANN,
+    );
     h.stage.clear();
     const late = textureOf(10, 10);
     const dispose = vi.spyOn(late, "dispose");
@@ -159,20 +161,22 @@ describe("createSceneStage", () => {
     const h = harness();
     h.deps.decodeTexture.mockResolvedValueOnce(null);
     await expect(
-      h.stage.showCharacter("gate", new Blob(["x"])),
+      h.stage.showCharacter("gate", new Blob(["x"]), undefined, ANN),
     ).rejects.toThrow(/did not decode/);
     expect(h.scene.children).toHaveLength(0);
   });
 
-  it("waits for the station's position and mounts once it has one, instead of failing for good (R8)", async () => {
-    // Why this test matters (K4 review R8): a story replayed before the GPS
-    // zero existed lost its figure for good (\"could not be loaded\").
+  it("waits for the station's position and mounts once it has one, instead of failing for good", async () => {
+    // Why this test matters: a story replayed before the GPS zero existed
+    // lost its figure for good ("could not be loaded").
     const h = harness();
     h.deps.poseOf.mockReturnValue(null);
     let settled = false;
-    const shown = h.stage.showModel("gate", new Blob(["x"])).then(() => {
-      settled = true;
-    });
+    const shown = h.stage
+      .showCharacter("gate", new Blob(["x"]), undefined, ANN)
+      .then(() => {
+        settled = true;
+      });
     await new Promise((r) => setTimeout(r, 0));
     expect(settled).toBe(false);
     expect(h.scene.children).toHaveLength(0);
@@ -191,10 +195,17 @@ describe("createSceneStage", () => {
   it("a waiting mount taken away by the next step is freed, and the show settles", async () => {
     const h = harness();
     h.deps.poseOf.mockReturnValue(null);
-    const shown = h.stage.showCharacter("gate", new Blob(["x"]));
+    const shown = h.stage.showCharacter(
+      "gate",
+      new Blob(["x"]),
+      undefined,
+      ANN,
+    );
     await new Promise((r) => setTimeout(r, 0));
+    const parked = lastLook();
     h.stage.clear();
     await shown;
+    expect(parked.disposed).toBe(true);
     h.deps.poseOf.mockReturnValue({
       positionNue: [1, 2, 3],
       rotationNue: [0, 0, 0, 1],
@@ -203,19 +214,19 @@ describe("createSceneStage", () => {
     expect(h.scene.children).toHaveLength(0);
   });
 
-  // Why (r881 re-review M-B): the station guide now holds the figure's
-  // pose back until the alignment has a heading, which can take a walk.
-  // The story must be able to say why the figure is not there yet, so the
-  // stage reports the moment a decoded figure starts to wait - once, and
-  // never for a figure that stands at once.
+  // Why: the station guide holds the figure's pose back until the
+  // alignment has a heading, which can take a walk. The story must be able
+  // to say why the figure is not there yet, so the stage reports the
+  // moment a decoded figure starts to wait - once, and never for a figure
+  // that stands at once.
   it("reports once when a decoded figure starts waiting for its position, never when it stands at once", async () => {
     const h = harness();
     const atOnce = vi.fn();
-    await h.stage.showCharacter("gate", new Blob(["x"]), atOnce);
+    await h.stage.showCharacter("gate", new Blob(["x"]), atOnce, ANN);
     expect(atOnce).not.toHaveBeenCalled();
     h.deps.poseOf.mockReturnValue(null);
     const waits = vi.fn();
-    const shown = h.stage.showModel("gate", new Blob(["x"]), waits);
+    const shown = h.stage.showCharacter("gate", new Blob(["x"]), waits, ANN);
     await new Promise((r) => setTimeout(r, 0));
     expect(waits).toHaveBeenCalledTimes(1);
     h.stage.faceVisitor([0, 0, 0]);
@@ -231,11 +242,11 @@ describe("createSceneStage", () => {
 });
 
 describe("the figure follows its station's presence (it fades, the story plays on)", () => {
-  // Why this matters: the owner's decision is that the figure fades with
-  // its station while the story panel and audio play on, and that stepping
-  // back shows it again - so the figure must leave the scene on leaving,
-  // come back on return without a second decode, and never appear while
-  // its station's content is not shown.
+  // Why this matters: the figure fades with its station while the story
+  // panel and audio play on, and stepping back shows it again - so the
+  // figure must leave the scene on leaving, come back on return without a
+  // second decode, and never appear while its station's content is not
+  // shown.
   const FADE = 400;
 
   function following() {
@@ -251,100 +262,79 @@ describe("the figure follows its station's presence (it fades, the story plays o
         rotationNue: [0, 0, 0, 1] as [number, number, number, number],
       }),
       decodeTexture,
-      loadModel: () => Promise.resolve(new Group()),
+      lookPainters: fakeCharacterPainters().painters,
       now: () => clock.ms,
       fadeMs: FADE,
     });
-    const opacity = (): number => {
-      const plane = scene.getObjectByName("station-character") as
-        Mesh | undefined;
-      return plane === undefined
-        ? -1
-        : (plane.material as MeshBasicMaterial).opacity;
-    };
-    return { clock, scene, stage, decodeTexture, opacity };
+    const show = () =>
+      stage.showCharacter("gate", new Blob(["png"]), undefined, ANN);
+    return { clock, scene, stage, decodeTexture, show };
   }
 
   it("fades out when its station stops showing, leaves the scene, and fades back in on return without decoding again", async () => {
     const h = following();
-    await h.stage.showCharacter("gate", new Blob(["png"]));
+    await h.show();
+    const look = lastLook();
     h.stage.follow(() => true);
     expect(h.scene.children).toHaveLength(1);
     h.stage.follow((id) => id !== "gate");
     h.clock.ms += FADE / 2;
     h.stage.follow((id) => id !== "gate");
-    expect(h.opacity()).toBeCloseTo(0.5, 6);
+    expect(look.presence).toBeCloseTo(0.5, 6);
     h.clock.ms += FADE / 2;
     h.stage.follow((id) => id !== "gate");
     expect(h.scene.children).toHaveLength(0);
+    expect(look.presence).toBe(0);
     h.stage.follow(() => true);
     expect(h.scene.children).toHaveLength(1);
-    expect(h.opacity()).toBe(0);
     h.clock.ms += FADE;
     h.stage.follow(() => true);
-    expect(h.opacity()).toBe(1);
+    expect(look.presence).toBe(1);
     expect(h.decodeTexture).toHaveBeenCalledTimes(1);
   });
 
-  // Why: the page calls `follow` on every tick; a figure
-  // standing at its settled opacity must not have its materials rewritten
-  // each time.
-  it("writes no material while the figure stands settled", async () => {
+  // Why: the page calls `follow` on every tick; a figure standing at its
+  // settled presence must not have it rewritten each time.
+  it("writes no presence while the figure stands settled", async () => {
     const h = following();
-    await h.stage.showCharacter("gate", new Blob(["png"]));
+    await h.show();
+    const look = lastLook();
     h.stage.follow(() => true);
-    const material = (h.scene.getObjectByName("station-character") as Mesh)
-      .material as MeshBasicMaterial;
-    let writes = 0;
-    let own = material.opacity;
-    Object.defineProperty(material, "opacity", {
-      get: () => own,
-      set: (v: number) => {
-        writes += 1;
-        own = v;
-      },
-    });
+    const before = look.writes;
     for (let i = 0; i < 5; i += 1) {
       h.clock.ms += 16;
       h.stage.follow(() => true);
     }
-    expect(writes).toBe(0);
+    expect(look.writes).toBe(before);
     // A fade still writes.
     h.clock.ms += FADE / 2;
     h.stage.follow(() => false);
     h.clock.ms += FADE / 4;
     h.stage.follow(() => false);
-    expect(writes).toBeGreaterThan(0);
+    expect(look.writes).toBeGreaterThan(before);
   });
 
   it("a figure decoded while its station is not shown waits off the scene", async () => {
     const h = following();
     h.stage.follow(() => false);
-    await h.stage.showCharacter("gate", new Blob(["png"]));
+    await h.show();
     expect(h.scene.children).toHaveLength(0);
+    expect(lastLook().presence).toBe(0);
     h.stage.follow(() => true);
     expect(h.scene.children).toHaveLength(1);
   });
 
   it("clear frees a figure that is off the scene", async () => {
     const h = following();
-    await h.stage.showCharacter("gate", new Blob(["png"]));
+    await h.show();
+    const look = lastLook();
     h.stage.follow(() => false);
     h.clock.ms += FADE;
     h.stage.follow(() => false);
-    const plane = h.scene.children.length === 0;
-    expect(plane).toBe(true);
-    const disposeSpy = vi.fn();
-    // Reach the hidden figure through a return, then hide it again.
-    h.stage.follow(() => true);
-    const material = (h.scene.getObjectByName("station-character") as Mesh)
-      .material as MeshBasicMaterial;
-    material.dispose = disposeSpy;
-    h.stage.follow(() => false);
-    h.clock.ms += FADE;
-    h.stage.follow(() => false);
+    expect(h.scene.children).toHaveLength(0);
+    expect(look.disposed).toBe(false);
     h.stage.clear();
-    expect(disposeSpy).toHaveBeenCalled();
+    expect(look.disposed).toBe(true);
     expect(h.scene.children).toHaveLength(0);
   });
 });
@@ -373,7 +363,6 @@ describe("a character in a story view stands as a character look", () => {
             rotationNue: [0, 0, 0, 1] as [number, number, number, number],
           }),
           decodeTexture: decodes,
-          loadModel: () => Promise.resolve(new Group()),
           lookPainters: painters,
           figures,
         });
@@ -446,7 +435,6 @@ describe("a character in a story view stands as a character look", () => {
         rotationNue: [0, 0, 0, 1] as [number, number, number, number],
       }),
       decodeTexture: () => Promise.resolve(textureOf(100, 200)),
-      loadModel: () => Promise.resolve(new Group()),
       now: () => clock.ms,
       fadeMs: 400,
       registerFrame: (fn) => {
@@ -553,7 +541,6 @@ describe("a character in a story view stands as a character look", () => {
         rotationNue: [0, s45, 0, s45] as [number, number, number, number],
       }),
       decodeTexture: () => Promise.resolve(textureOf(100, 200)),
-      loadModel: () => Promise.resolve(new Group()),
       getCamera: () => h.camera,
       lookPainters: fakeCharacterPainters().painters,
     });
@@ -634,19 +621,12 @@ describe("a character in a story view stands as a character look", () => {
     expect(ring()).toBe(true);
   });
 
-  it("releases a plain figure, a model or a look still waiting by clearing it", async () => {
+  it("releases a look still waiting by clearing it", async () => {
     const h = looking();
-    await h.stage.showCharacter("gate", new Blob(["png"]));
-    h.stage.release();
-    expect(h.scene.children).toHaveLength(0);
-    await h.stage.showModel("gate", new Blob(["glb"]));
-    h.stage.release();
-    expect(h.scene.children).toHaveLength(0);
     const parked = createSceneStage({
       getScene: () => h.scene,
       poseOf: () => null,
       decodeTexture: () => Promise.resolve(textureOf(100, 200)),
-      loadModel: () => Promise.resolve(new Group()),
       lookPainters: fakeCharacterPainters().painters,
     });
     const shown = parked.showCharacter(
@@ -681,7 +661,7 @@ describe("a character in a story view stands as a character look", () => {
     expect(bubbleOf(h.scene)?.visible).toBe(false);
     expect(names()).not.toContain("character-bubble");
     expect(names()).toContain("character-front");
-    await h.stage.showModel("gate", new Blob(["glb"]));
+    h.stage.clear();
     expect(names()).toEqual([]);
   });
 
@@ -714,7 +694,6 @@ describe("a look's figure", () => {
           rotationNue: [0, 0, 0, 1],
         }),
         decodeTexture: () => Promise.resolve(texture),
-        loadModel: () => Promise.resolve(new Group()),
         lookPainters: painters,
       });
       await stage.showCharacter("gate", new Blob(["png"]), undefined, {

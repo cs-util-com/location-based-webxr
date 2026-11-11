@@ -5,8 +5,9 @@
  * `editor3d-input.ts` feeds the pointer and the keys.
  *
  * The gizmo (the design's): a ring with four white dots (a station's found
- * radius, a model's size), a turn knob on a stalk along the heading, and a
- * move arrow lying on the ground in the middle. Its sizes are screen
+ * radius, a model's size: a placeable's extent), a turn knob on a stalk
+ * along the heading (only on what turns), and a move arrow lying on the
+ * ground in the middle. Its sizes are screen
  * pixels, turned into metres by the metres a pixel covers at the
  * selection (`metresPerPx`), so a handle stays grabbable at any zoom.
  *
@@ -64,11 +65,11 @@ export const KEY_STEPS = Object.freeze({
   liftShiftM: 1,
 });
 
-/** The bounds of a station's found radius and a model's size (m). */
-const RADIUS_MIN_M = 2;
-const RADIUS_MAX_M = 300;
-const SIZE_MIN_M = 0.05;
-const SIZE_MAX_M = 500;
+/** The bounds a dot's value is held in (its placement row's). */
+export interface DotBounds {
+  readonly min: number;
+  readonly max: number;
+}
 
 /** A point in the world (m). */
 export interface WorldPoint {
@@ -89,42 +90,48 @@ export interface ScreenPoint {
   readonly y: number;
 }
 
-/** What the gizmo is drawn for. */
+/** What the gizmo is drawn for: a placeable, as the gizmo reads it. */
 export interface GizmoSubject {
-  readonly kind: "station" | "item";
   /** The ground under the selection, in the world. */
   readonly centre: WorldPoint;
   /** Where it faces (degrees clockwise from north). */
   readonly headingDeg: number;
-  /** A station's found radius (m); null for an item. */
-  readonly radiusM: number | null;
-  /** A placed model's size (m); null for anything else. */
-  readonly sizeM: number | null;
-  /** A station whose pose is locked: only its radius dots are handles. */
-  readonly locked?: boolean;
+  /** Turning it shows: a knob on a stalk; false: neither. */
+  readonly turns: boolean;
+  /** Its dots and their value; null: none. A reach (a station's found
+   *  radius, m) has no ring of its own - the tour draws its circle - and
+   *  a move disc in the middle; a size (m) sets the ring round it; a
+   *  factor keeps an item's ring. */
+  readonly extent: {
+    readonly kind: "size" | "reach" | "factor";
+    readonly value: number;
+  } | null;
+  /** Its pose is locked: only its dots are handles. */
+  readonly locked: boolean;
 }
 
 /** Where the gizmo's parts lie (m, in the world). */
 export interface GizmoLayout {
   readonly centre: WorldPoint;
   /** The move disc, the knob and its stalk are handles (false: a locked
-   *  station, whose gizmo is its radius dots alone). */
+   *  placeable, whose gizmo is its dots alone). */
   readonly posable: boolean;
   readonly headingDeg: number;
-  /** The ring's radius (an item's); null for a station, whose own circle
+  /** The ring's radius; null for a reach (a station), whose own circle
    *  is drawn by the tour. */
   readonly ringM: number | null;
   /** The move arrow's disc radius. */
   readonly moveM: number;
-  /** The four dots (a station, a model), else none. */
+  /** The four dots (a placeable with an extent), else none. */
   readonly dots: readonly GroundSpot[];
-  readonly knob: GroundSpot;
-  /** The stalk from the ring to the knob. */
+  /** The turn knob; null for what does not turn. */
+  readonly knob: GroundSpot | null;
+  /** The stalk from the ring to the knob; null with the knob. */
   readonly bar: {
     readonly fromM: number;
     readonly lengthM: number;
     readonly widthM: number;
-  };
+  } | null;
 }
 
 const RAD = Math.PI / 180;
@@ -166,45 +173,47 @@ export function gizmoLayout(
       `the metres a pixel covers must be finite and > 0, got ${metresPerPx}`,
     );
   }
-  const station = subject.kind === "station";
-  const model = !station && subject.sizeM !== null;
-  const radius = station
-    ? (subject.radiusM ?? RADIUS_MIN_M)
+  const { extent } = subject;
+  const reaches = extent?.kind === "reach";
+  const radius = reaches
+    ? extent.value
     : Math.max(
-        model
-          ? GIZMO.modelRingPerSizeM * (subject.sizeM ?? 0)
+        extent?.kind === "size"
+          ? GIZMO.modelRingPerSizeM * extent.value
           : GIZMO.itemRingMinM,
         GIZMO.itemRingPx * metresPerPx,
       );
-  const moveM = station
+  const moveM = reaches
     ? Math.max(GIZMO.stationMoveMinM, GIZMO.stationMovePx * metresPerPx)
     : radius;
   const heading = subject.headingDeg;
   const dots =
-    station || model
-      ? [0, 1, 2, 3].map((i) =>
+    extent === null
+      ? []
+      : [0, 1, 2, 3].map((i) =>
           along(subject.centre, heading + 45 + i * 90, radius),
-        )
-      : [];
-  const reach = radius + GIZMO.knobGapPx * metresPerPx;
+        );
+  const knobM = radius + GIZMO.knobGapPx * metresPerPx;
   return {
     centre: subject.centre,
-    posable: !(station && subject.locked === true),
+    posable: !subject.locked,
     headingDeg: heading,
-    ringM: station ? null : radius,
+    ringM: reaches ? null : radius,
     moveM,
     dots,
-    knob: along(subject.centre, heading, reach),
-    bar: {
-      fromM: radius,
-      lengthM: reach - radius,
-      widthM: Math.max(GIZMO.barMinM, GIZMO.barPx * metresPerPx),
-    },
+    knob: subject.turns ? along(subject.centre, heading, knobM) : null,
+    bar: subject.turns
+      ? {
+          fromM: radius,
+          lengthM: knobM - radius,
+          widthM: Math.max(GIZMO.barMinM, GIZMO.barPx * metresPerPx),
+        }
+      : null,
   };
 }
 
 /** A part of the gizmo a pointer can take: the middle (move), the knob
- *  (turn) or a dot (a station's radius, a model's size). */
+ *  (turn) or a dot (a placeable's extent). */
 export type GizmoHandle = "move" | "turn" | "dot";
 
 /**
@@ -266,13 +275,18 @@ export function turnedHeadingDeg(
   return norm360(snap ? Math.round(h / 15) * 15 : Math.round(h));
 }
 
-/** A station's found radius from a dot dragged `distanceM` from its
- *  centre: half metres, tenths with `fine` (Shift), within 2-300 m. */
-export function draggedRadiusM(distanceM: number, fine: boolean): number {
+/** A reach (a station's found radius) from a dot dragged `distanceM`
+ *  from its centre: half metres, tenths with `fine` (Shift), within
+ *  `bounds` (its row's). */
+export function draggedRadiusM(
+  distanceM: number,
+  fine: boolean,
+  bounds: DotBounds,
+): number {
   const r = fine
     ? Math.round(distanceM * 10) / 10
     : Math.round(distanceM * 2) / 2;
-  return Math.min(RADIUS_MAX_M, Math.max(RADIUS_MIN_M, r));
+  return Math.min(bounds.max, Math.max(bounds.min, r));
 }
 
 /** `m` rounded to three significant digits. */
@@ -282,17 +296,18 @@ function threeDigits(m: number): number {
 }
 
 /**
- * A model's size after a dot that started `startM` from its centre moved
- * to `distanceM`: `sizeM` scaled by the ratio, three digits, within the
- * format's 0.05-500 m.
+ * A size (or a factor) after a dot that started `startM` from its centre
+ * moved to `distanceM`: `sizeM` scaled by the ratio, three digits, within
+ * `bounds` (its row's: a model's 0.05-500 m).
  */
 export function draggedSizeM(
   sizeM: number,
   startM: number,
   distanceM: number,
+  bounds: DotBounds,
 ): number {
   const scaled = (sizeM * Math.max(distanceM, 1e-3)) / startM;
-  return Math.min(SIZE_MAX_M, Math.max(SIZE_MIN_M, threeDigits(scaled)));
+  return Math.min(bounds.max, Math.max(bounds.min, threeDigits(scaled)));
 }
 
 /** A key the scene answers: a nudge (m east, north), a turn (degrees

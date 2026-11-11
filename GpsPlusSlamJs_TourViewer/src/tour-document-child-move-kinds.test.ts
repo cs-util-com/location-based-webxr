@@ -128,10 +128,7 @@ const CASES: Case[] = tourBlockKinds().flatMap((kind) =>
       ];
     const sized = { ...block, sizeM: 2 };
     return [
-      // A staged model is shown at its file's own size: it takes none.
-      ...(view === "stage"
-        ? []
-        : [{ name: `model ${view} with a size`, block: sized, free: true }]),
+      { name: `model ${view} with a size`, block: sized, free: true },
       // A model in the world needs a size even inside a story.
       ...(MODEL_WORLD.has(view)
         ? []

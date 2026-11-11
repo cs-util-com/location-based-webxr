@@ -77,9 +77,10 @@ function state(overrides: Partial<ObjectListState>): ObjectListState {
 }
 
 describe("objectListModel on the page", () => {
-  // Why: no creator page has a look for a free character yet, so a row
-  // could offer nothing true about him; the tour keeps him regardless.
-  it("names no free block a creator page cannot draw", () => {
+  // Why: every item must be findable here, so no kind or view drops a
+  // row; a card stands nowhere, so its row says no distance and offers
+  // no Move.
+  it("gives a free character and a card a row, the card without a distance", () => {
     const ann: TourObject = {
       id: "ann",
       kind: "character",
@@ -89,11 +90,25 @@ describe("objectListModel on the page", () => {
       image: "ann",
       caption: "Hello",
     };
+    const card: TourObject = {
+      id: "c",
+      kind: "video",
+      view: "card",
+      video: "clip",
+      geo: pin("c").geo,
+    };
+    const codes = [pin("code").geo];
     const model = objectListModel(
-      state({ entries: [entry(pin("a")), entry(ann)] }),
+      state({ codes, entries: [entry(pin("a")), entry(ann), entry(card)] }),
     );
-    expect(model.rows.map((r) => r.id)).toEqual(["a"]);
-    expect(model.heading).toBe("Objects in this tour (1)");
+    expect(model.rows.map((r) => r.id)).toEqual(["a", "ann", "c"]);
+    expect(model.heading).toBe("Objects in this tour (3)");
+    expect(model.rows[2]?.detail).not.toMatch(/from the code/);
+    expect(model.rows[0]?.detail).toMatch(/from the code/);
+    const inAr = objectListModel(
+      state({ inAr: true, selectedId: "c", entries: [entry(card)] }),
+    );
+    expect(inAr.rows[0]?.canMove).toBe(false);
   });
 
   it("lists every object with edit and delete, and no Move - that needs AR", () => {

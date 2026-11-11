@@ -200,13 +200,18 @@ test("on a phone's side both panels stay, the map between, and the close button 
   expect(list.y + list.height).toBeCloseTo(foot, 0);
 
   await station(page, "The old gate").click();
+  // The asset shelf shows as its rail beside the details (no room for its
+  // panel), the details against it.
+  const rail = page.locator("#shell-shelf");
+  await expect.poll(async () => (await box(rail)).width).toBe(38);
+  expect((await box(rail)).x).toBe(844 - 38);
   const sheet = await box(details(page));
-  expect(sheet.x).toBe(844 - 268);
+  expect(sheet.x).toBe(844 - 38 - 268);
   expect(sheet.width).toBe(268);
   expect(sheet.y + sheet.height).toBeCloseTo(foot, 0);
   // The list stays, unfolded, and the map keeps the room between them.
   expect(await box(tree(page))).toEqual(list);
-  expect(sheet.x - (list.x + list.width)).toBe(350);
+  expect(sheet.x - (list.x + list.width)).toBe(844 - 226 - 268 - 38);
   const controls = await box(page.locator("#map-controls"));
   expect(controls.x + controls.width).toBeLessThanOrEqual(sheet.x);
   await expect(page.locator('#inspector-head [data-act="back"]')).toBeHidden();

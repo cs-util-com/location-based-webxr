@@ -48,7 +48,9 @@ nor while the dock is folded.
 
 **On a phone** (700 px wide or less, `phone-sheet.ts`) the docks are sheets
 over the foot of the page with the map above them: the list when nothing
-is selected, the details over it when something is, each with a grip
+is selected, the details over it when something is (unless
+its inspector model has no phone details, `detailsOnPhone`: a folder tap
+keeps the list, its band and the 3D handles), each with a grip
 (drag to resize, down past the floor to dismiss). The share of the page
 is one CSS number on the body (`--s-sheet-share`), which the canvas reads
 too, so the map ends where the sheet begins and is told of its new size
@@ -114,8 +116,9 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
     Ungroup, the drag into or out of a plain folder and its rename, each
     one undo step that says its outcome or its refusal.
 - `EditorShell.groundMenu(point, place)` - the 3D view's input asks for
-  the ground menu (a right click, a long press): opened at `point` (px in
-  the view) for `place` (null: no ground loaded there); nothing while the
+  the ground menu (a right click, a long press): opened at `point` (px on
+  the 3D canvas, placed in the view's box: the canvas covers only the
+  view between the docks) for `place` (null: no ground loaded there); nothing while the
   view is hidden.
 - `EditorShell.show(view, { approach })` - the 3D view shows: the shell
   draws from the store, applies the dock rule's `opened`, follows the
@@ -535,3 +538,18 @@ position, Move to a new station). Its parts' own tests:
 ## Narration
 
 `ShellEditCommands.narration` and `.editNarration` reach the session; the dock passes them, with `.voiceMaxBytes` (the page's autosave cap), to the writer's Narration section. A stamp per state of the tour's `timings` (`timingsStampOf`) goes into `buildInspector`, so the section re-reads when a timing changes without the narration record changing.
+
+## An item's file
+
+The inspector's model gets `file` (`inspector-file.ts`) for a block made
+from a file, named through `deps.fileNameOf`; its "Replace..."
+(`REPLACE_FILE_ACT`) calls `deps.edits.replaceFile(blockId)`, which the
+page answers with a picker and the session's `setItemFile`.
+
+## The add menu's Character
+
+`ShellEditCommands.addCharacter({ kind: "station" | "story", id })`: the
+shell unfolds the station (or reveals the story), clears the search and
+hands the place over. The page then opens the character maker and adds the
+character that was made (`edit-main.ts`, `addCharacterTo`). Tested in
+`editor-shell.test.ts` ("the add menu's Character").

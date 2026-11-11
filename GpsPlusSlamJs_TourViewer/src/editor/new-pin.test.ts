@@ -14,11 +14,15 @@ import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 // Activates the licence the station frame's geodesy needs.
 import "../test-support/tour-of.js";
-import { ADD_CHOICES, isAddable } from "../kinds/edit-kinds.js";
+import { ADD_CHOICES, isAddable, isFileAddKind } from "../kinds/edit-kinds.js";
 import {
+  addNewCharacter,
   addNewItem,
   freePinSpot,
+  freeStorySpot,
   KIND_ADD,
+  newCharacter,
+  newCharacterEntry,
   newLongText,
   newPin,
   newStoryEntry,
@@ -27,7 +31,7 @@ import {
   parseTourObject,
   tourObjectRecord,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { stationContent } from "../test-support/station-content.js";
+import { stationContent, storyOf } from "../test-support/station-content.js";
 
 const AT = "2026-10-25T10:00:00Z";
 
@@ -57,10 +61,13 @@ function station(
 
 // Why this test matters: what a kind starts as when added (at a station,
 // and as a story entry) is its one row here; the add menu's addable kinds
-// and these rows must be the same set, or a menu line adds nothing.
+// and these rows must be the same set, or a menu line adds nothing. A kind
+// made from a file starts from its file instead (`new-file-item.ts`).
 describe("KIND_ADD", () => {
-  it("has one row, with an item and an entry, for every addable kind of the add menu", () => {
-    const addable = ADD_CHOICES.filter(isAddable).map((c) => c.kind);
+  it("has one row, with an item and an entry, for every addable kind of the add menu made from words", () => {
+    const addable = ADD_CHOICES.filter(isAddable)
+      .map((c) => c.kind)
+      .filter((kind) => !isFileAddKind(kind));
     expect(Object.keys(KIND_ADD)).toEqual(addable);
     for (const row of Object.values(KIND_ADD)) {
       expect(typeof row.item).toBe("function");
@@ -85,6 +92,69 @@ describe("freePinSpot", () => {
 
   it("keeps clear of the items already there", () => {
     const spot = freePinSpot(station([[4, 0]]));
+    expect(Math.hypot(spot.northM - 4, spot.eastM)).toBeGreaterThan(2.2);
+  });
+
+  // Why: the spot keeps clear of whatever stands in the world where it
+  // stands: a free character as much as a pin, and an item in a turned
+  // folder where its folder puts it, not where its own pose alone would.
+  it("keeps clear of a free character and of an item where its folder puts it", () => {
+    const zz = {
+      id: "zz",
+      kind: "character",
+      view: "speak",
+      name: "Zz",
+      image: "cut",
+      pose: { position: [4, 0, 0], rotation: [0, 0, 0, 1] },
+    };
+    const spot = freePinSpot({
+      ...station([]),
+      children: [zz],
+    } as unknown as TourStation);
+    expect(Math.hypot(spot.northM - 4, spot.eastM)).toBeGreaterThan(2.2);
+    // A folder 4 m south, turned half a turn, holds a pin 8 m north in
+    // it: it stands 4 m north of the anchor.
+    const turned = {
+      id: "f",
+      kind: "folder",
+      pose: { position: [-4, 0, 0], rotation: [0, 1, 0, 0] },
+      children: [
+        {
+          id: "deep",
+          kind: "shortText",
+          view: "pin",
+          caption: "Deep",
+          createdAtIso: AT,
+          pose: { position: [-8, 0, 0], rotation: [0, 0, 0, 1] },
+        },
+      ],
+    };
+    const clear = freePinSpot({
+      ...station([]),
+      children: [turned],
+    } as unknown as TourStation);
+    expect(Math.hypot(clear.northM - 4, clear.eastM)).toBeGreaterThan(2.2);
+  });
+
+  // Why: a story's entries stand in the station's room as its free items
+  // do; a spot that ignored them would stand a new item (two characters
+  // added to stories) on the very place an entry already takes.
+  it("keeps clear of the station's story entries as well", () => {
+    const s = {
+      ...station([]),
+      ...stationContent([
+        storyOf("st", [
+          {
+            id: "e1",
+            kind: "shortText",
+            view: "card",
+            caption: "Hello",
+            pose: { position: [4, 0, 0], rotation: [0, 0, 0, 1] },
+          },
+        ]),
+      ]),
+    } as TourStation;
+    const spot = freePinSpot(s);
     expect(Math.hypot(spot.northM - 4, spot.eastM)).toBeGreaterThan(2.2);
   });
 
@@ -251,13 +321,15 @@ describe("newLongText", () => {
   });
 });
 
-// Why: a story's entry is shown in the card while the story runs, so it
-// stands at the station's own origin and moves on by a tap; the number in
-// its text counts its own kind, or two new entries would read the same.
+// Why: a story's entry is shown in the card while the story runs and
+// moves on by a tap; its pose is where it stands once it leaves the story
+// for the world, so it must be a real place of its station (its free
+// spot), never the anchor's own point under the station marker. The number
+// in its text counts its own kind, or two new entries would read the same.
 describe("newStoryEntry", () => {
   it("makes a card that moves on by a tap, numbered within its kind", () => {
     const story = { children: [{ kind: "shortText" }] } as never;
-    const pin = newStoryEntry(story, "shortText", "p");
+    const pin = newStoryEntry(station([]), story, "shortText", "p");
     expect(pin).toMatchObject({
       id: "p",
       kind: "shortText",
@@ -265,11 +337,132 @@ describe("newStoryEntry", () => {
       caption: "New pin 2",
       advance: { mode: "tap" },
     });
-    expect(newStoryEntry(story, "longText", "t")).toMatchObject({
+    expect(newStoryEntry(station([]), story, "longText", "t")).toMatchObject({
       kind: "longText",
       view: "card",
       title: "New long text 1",
       advance: { mode: "tap" },
+    });
+  });
+
+  it("stands at its station's free spot, never at the anchor", () => {
+    const story = { children: [] } as never;
+    for (const s of [
+      station([]),
+      station([
+        [4, 0],
+        [0, 4],
+      ]),
+      station([], 3),
+    ]) {
+      const spot = freePinSpot(s);
+      const entry = newStoryEntry(s, story, "shortText", "p");
+      expect(entry.pose).toEqual({
+        position: [spot.northM, 0, spot.eastM],
+        rotation: [0, 0, 0, 1],
+      });
+      expect(Math.hypot(spot.northM, spot.eastM)).toBeGreaterThan(0);
+    }
+  });
+});
+
+// Why this test matters: the add menu's Character stands the character the
+// maker just made in the station; it must name the declaration (so his
+// name and pictures follow it), stand clear of what is there, read back
+// as the format reads it, and be refused in words for a gone station.
+describe("newCharacter", () => {
+  const rita = {
+    id: "c1abc",
+    name: "Ranger Rita",
+    image: "rita1",
+    frames: "rita4",
+  };
+
+  it("stands the declared character at the free spot, in the speak view", () => {
+    const made = newCharacter({
+      station: station([[4, 0]]),
+      id: "n1",
+      nowIso: AT,
+      groundAt: () => 517,
+      character: rita,
+    });
+    expect(made).toMatchObject({
+      id: "n1",
+      kind: "character",
+      view: "speak",
+      name: "Ranger Rita",
+      image: "rita1",
+      character: "c1abc",
+      station: "s",
+    });
+    expect(made.geo.alt).toBe(517);
+    expect(
+      parseTourObject(JSON.parse(JSON.stringify(tourObjectRecord(made)))),
+    ).toEqual(made);
+  });
+
+  it("is refused for a gone station, nothing placed", () => {
+    const place = vi.fn(() => ({ kind: "placed" as const }));
+    const out = addNewCharacter({
+      stations: [station([])],
+      stationId: "gone",
+      character: rita,
+      id: "n1",
+      nowIso: AT,
+      groundAt: () => null,
+      place,
+    });
+    expect(out).toMatchObject({
+      kind: "refused",
+      reason: expect.stringMatching(/no longer/),
+    });
+    expect(place).not.toHaveBeenCalled();
+  });
+
+  it("hands the place's refusal on", () => {
+    const out = addNewCharacter({
+      stations: [station([])],
+      stationId: "s",
+      character: rita,
+      id: "n1",
+      nowIso: AT,
+      groundAt: () => null,
+      place: () => ({ kind: "refused", reason: "too far" }),
+    });
+    expect(out).toEqual({ kind: "refused", reason: "too far" });
+  });
+
+  // Why: a character in a story is a 3D character like a free one: the
+  // view a free character starts in, at a place of his own in the
+  // station's frame, moving on by a tap as every new story entry does.
+  // Why: a character in a story stands on the ground as a free one does;
+  // at the anchor's height he floats or sinks wherever the ground slopes.
+  it("finds a story entry's spot on the ground there, at the anchor's height where none has loaded", () => {
+    const s = station([[4, 0]]);
+    const onGround = freeStorySpot(s, () => 517.25);
+    const free = freePinSpot(s);
+    expect(onGround.northM).toBeCloseTo(free.northM, 9);
+    expect(onGround.eastM).toBeCloseTo(free.eastM, 9);
+    expect(onGround.upM).toBeCloseTo(517.25 - 520, 3);
+    expect(freeStorySpot(s, () => null).upM).toBe(0);
+    expect(freeStorySpot(s, () => Number.NaN).upM).toBe(0);
+    const entry = newCharacterEntry(rita, "e2", onGround);
+    expect(
+      (entry as { pose: { position: readonly number[] } }).pose.position[1],
+    ).toBeCloseTo(-2.75, 3);
+  });
+
+  it("makes a story entry naming the declaration, standing at the given spot", () => {
+    const entry = newCharacterEntry(rita, "e1", { northM: 4, eastM: -2 });
+    expect(entry).toMatchObject({
+      id: "e1",
+      kind: "character",
+      view: "speak",
+      character: "c1abc",
+      name: "Ranger Rita",
+      image: "rita1",
+      advance: { mode: "tap" },
+      pose: { position: [4, 0, -2], rotation: [0, 0, 0, 1] },
     });
   });
 });

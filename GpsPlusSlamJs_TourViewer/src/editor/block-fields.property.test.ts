@@ -35,7 +35,7 @@ const BLOCKS = [
   {
     id: "ch",
     kind: "character",
-    view: "stage",
+    view: "speak",
     name: "N",
     image: "i",
     caption: "C",

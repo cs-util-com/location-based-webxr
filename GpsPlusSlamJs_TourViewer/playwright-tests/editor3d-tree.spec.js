@@ -292,7 +292,8 @@ test("a row's + adds a short or a long text in place, from the mouse and from th
   await expect(menu).toBeVisible();
   await expect(plus).toHaveAttribute("aria-expanded", "true");
   await expect(menu.locator('[data-kind="shortText"]')).toBeFocused();
-  await expect(menu.locator('[data-kind="picture"]')).toHaveAttribute(
+  // A video plays only in a story: off on a station's menu.
+  await expect(menu.locator('[data-kind="video"]')).toHaveAttribute(
     "aria-disabled",
     "true",
   );
@@ -580,6 +581,10 @@ test("New station here: a right click on the ground starts a station where it wa
   await page.mouse.click(at.x, at.y, { button: "right" });
   await expect(menu).toBeVisible();
   await expect(item).toBeFocused();
+  // It opens where the pointer was: the canvas starts right of the tree.
+  const opened = await box(menu);
+  expect(Math.abs(opened.x - at.x)).toBeLessThan(2);
+  expect(Math.abs(opened.y - at.y)).toBeLessThan(2);
   await page.keyboard.press("Escape");
   await expect(menu).toBeHidden();
   expect((await order(page)).length).toBe(3);
@@ -610,8 +615,17 @@ test("New station here: a right click on the ground starts a station where it wa
     (id) => /** @type {any} */ (window).__tourEditor.view3dScreenOf(id),
     `station:${added}`,
   );
-  expect(Math.abs(screen[0] - (at.x - canvas.x))).toBeLessThan(4);
-  expect(Math.abs(screen[1] - (at.y - canvas.y))).toBeLessThan(4);
+  // The new station's details opened beside the view, and the canvas
+  // covers only the view between the docks: narrower, at the same height.
+  // A point keeps its offset from the canvas's middle (the field of view
+  // is vertical), so the pressed pixel is found from the middle.
+  const now = await box(page.locator("#view3d canvas"));
+  const pressed = [
+    now.width / 2 + (at.x - (canvas.x + canvas.width / 2)),
+    now.height / 2 + (at.y - (canvas.y + canvas.height / 2)),
+  ];
+  expect(Math.abs(screen[0] - pressed[0])).toBeLessThan(4);
+  expect(Math.abs(screen[1] - pressed[1])).toBeLessThan(4);
   // On the ground: its height is the drawn ground's.
   const tour = await tourNow(page);
   expect(tour.stations[3].geo.alt).toBeCloseTo(SQUARE_GROUND_M + N_M, 0);
@@ -1176,16 +1190,20 @@ test("the tree's add, its grips and the bar's actions sit in place at a phone, a
       "#shell-toggles",
       "#shell-tree",
       "#shell-inspector",
+      "#shell-shelf",
       "#shell-acts .sact",
       "#shell-acts .sact .lbl",
     ]);
     // A station selected on a desktop: the tree keeps its width beside
-    // the inspector, which stands at the window's right edge.
+    // the inspector, which stands against the Assets panel, open at the
+    // window's right edge.
     if (size.width > 1100) {
       const tree = boxIn(l, "#shell-tree");
       const inspector = boxIn(l, "#shell-inspector");
+      const shelf = boxIn(l, "#shell-shelf");
       expect(tree.width).toBe(248);
-      expect(inspector.x + inspector.width).toBe(size.width);
+      expect(shelf.x + shelf.width).toBe(size.width);
+      expect(inspector.x + inspector.width).toBe(shelf.x);
       expect(inspector.x).toBeGreaterThanOrEqual(tree.x + tree.width);
     }
     const bar = boxIn(l, "#shell-bar");

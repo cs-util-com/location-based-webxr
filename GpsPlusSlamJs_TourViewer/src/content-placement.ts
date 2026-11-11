@@ -58,12 +58,13 @@ import type {
   TourPin,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import { tourFreeEntries } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
 import type { LatLong, Matrix4 } from "gps-plus-slam-app-framework/core";
 import { Euler, Group, Quaternion, type Object3D, type Texture } from "three";
 
 import { placeCapturedImagePlanes } from "./image-planes.js";
+import { drawInherited } from "./placement/place-scale.js";
 import {
   mountWorldPart,
   unmountWorldPart,
@@ -335,25 +336,35 @@ export type TourStationRendererDeps = Omit<TourObjectRendererDeps, "poseOf"> & {
  *
  * The station's group stands in the session's tangent plane, the blocks
  * in the station's: for a zero within a kilometre the two agree to well
- * under a centimetre (`content-placement.test.ts`, swept).
+ * under a centimetre (`content-placement.test.ts`, swept). A block in a
+ * scaled folder is drawn that much larger (`drawInherited`), its offset
+ * already scaled by the world view (`tourFreeEntries`).
  */
 export function renderTourStation(
   station: Pick<TourStation, "geo" | "children">,
   deps: TourStationRendererDeps,
 ): Promise<RenderedTourObjects> {
-  return renderStationBlocks(station, tourFreeBlocks(station), deps);
+  const entries = tourFreeEntries(station);
+  return renderStationBlocks(
+    station,
+    entries.map((e) => e.block),
+    deps,
+    new Map(entries.map((e) => [e.block.id, e.scale])),
+  );
 }
 
 /**
  * `blocks` of `station` as `renderTourStation` draws its free blocks: a
- * group at the station's geo pose, each block at its local pose. The
- * visitor draws a story block its story reached this way (station blocks
- * plan B2b, `shown-blocks.ts`).
+ * group at the station's geo pose, each block at its local pose, and
+ * `scales` times larger by its id (none: its own size). The visitor
+ * draws a story block its story reached this way (station blocks plan
+ * B2b, `shown-blocks.ts`).
  */
 export async function renderStationBlocks(
   station: Pick<TourStation, "geo">,
   blocks: readonly TourBlock[],
   deps: TourStationRendererDeps,
+  scales?: ReadonlyMap<string, number>,
 ): Promise<RenderedTourObjects> {
   const frame = new Group();
   const at = objectPoseNue(station.geo, deps.zero);
@@ -372,6 +383,7 @@ export async function renderStationBlocks(
         positionNue: block.pose.position,
         rotationNue: block.pose.rotation,
       },
+      scale: scales?.get(block.id) ?? 1,
     })),
     { ...deps, scene: frame },
   );
@@ -410,7 +422,12 @@ type Drawn =
       readonly title: string;
       readonly body: string;
     }
-  | { readonly id: string; readonly as: "plane"; readonly entry: string | null }
+  | {
+      readonly id: string;
+      readonly as: "plane";
+      readonly entry: string | null;
+      readonly widthM: number;
+    }
   | { readonly id: string; readonly as: "world"; readonly block: TourBlock }
   | { readonly id: string; readonly as: "none" };
 
@@ -463,7 +480,12 @@ function drawnObject(object: TourObject): Drawn {
     case "longText":
       return longTextOf(object);
     case "picture":
-      return { id: object.id, as: "plane", entry: object.imageAsset.path };
+      return {
+        id: object.id,
+        as: "plane",
+        entry: object.imageAsset.path,
+        widthM: object.widthM,
+      };
     case "model":
     case "video":
     case "audio":
@@ -486,7 +508,12 @@ function drawnBlock(
     return longTextOf(block);
   }
   if (block.kind === "picture" && block.view === "plane") {
-    return { id: block.id, as: "plane", entry: paths.get(block.image) ?? null };
+    return {
+      id: block.id,
+      as: "plane",
+      entry: paths.get(block.image) ?? null,
+      widthM: block.widthM,
+    };
   }
   return { id: block.id, as: "world", block };
 }
@@ -495,10 +522,14 @@ function drawnBlock(
  *  by `makeLectern`, reading signs by `makeReadingSign` and any other
  *  block's part (a placed model's among them, `kinds/model/world.ts`) by
  *  the world door (`worldPart`, mounted while it stands), each at
- *  its pose in `scene`'s frame, under one group added once everything
- *  decoded. */
+ *  its pose in `scene`'s frame and `scale` times its own size (none: 1,
+ *  `drawInherited`), under one group added once everything decoded. */
 async function renderContent(
-  objects: readonly { readonly drawn: Drawn; readonly pose: ObjectPoseNue }[],
+  objects: readonly {
+    readonly drawn: Drawn;
+    readonly pose: ObjectPoseNue;
+    readonly scale?: number;
+  }[],
   deps: Omit<TourObjectRendererDeps, "poseOf"> & {
     alive?: () => boolean;
     worldPart?: TourStationRendererDeps["worldPart"];
@@ -532,8 +563,9 @@ async function renderContent(
     // The first error is the one the caller is told.
     if (errors.length > 0) throw errors[0];
   };
-  const photoPoses: ObjectPoseNue[] = [];
+  const photoPoses: (ObjectPoseNue & { readonly widthM: number })[] = [];
   const photoIds: string[] = [];
+  const photoScales: number[] = [];
   const textures: Texture[] = [];
   const skipped: string[] = [];
   /** Set once the station (or a construction that threw) freed its
@@ -570,13 +602,14 @@ async function renderContent(
   const group = new Group();
   let planes: ReturnType<typeof placeCapturedImagePlanes>;
   try {
-    for (const { drawn, pose } of objects) {
+    for (const { drawn, pose, scale = 1 } of objects) {
       // Dropped meanwhile (the station's content no longer shows): decode
       // nothing more; the caller disposes what came back.
       if (deps.alive?.() === false) break;
       if (drawn.as === "label") {
         const label = deps.makeLabel(drawn.text);
         label.object.position.set(...pose.positionNue);
+        drawInherited(label.object, scale);
         // Names its block: the 3D editor picks and previews by it.
         label.object.userData["objectId"] = drawn.id;
         group.add(label.object);
@@ -597,6 +630,7 @@ async function renderContent(
         // loads is taken away when it says so (`dropFailed`).
         part.object.position.set(...pose.positionNue);
         part.object.quaternion.set(...pose.rotationNue);
+        drawInherited(part.object, scale);
         part.object.userData["objectId"] = drawn.id;
         mountWorldPart(part);
         parts.push(part);
@@ -616,6 +650,7 @@ async function renderContent(
         if (stand === undefined) continue;
         stand.object.position.set(...pose.positionNue);
         uprightTurn(pose.rotationNue, stand.object.quaternion);
+        drawInherited(stand.object, scale);
         stand.object.userData["objectId"] = drawn.id;
         stands.push(stand);
         continue;
@@ -630,8 +665,9 @@ async function renderContent(
         skipped.push(drawn.id);
         continue;
       }
-      photoPoses.push(pose);
+      photoPoses.push({ ...pose, widthM: drawn.widthM });
       photoIds.push(drawn.id);
+      photoScales.push(scale);
       textures.push(texture);
     }
     planes = placeCapturedImagePlanes({
@@ -643,6 +679,7 @@ async function renderContent(
     group.children.slice(labels.length).forEach((plane, i) => {
       const id = photoIds[i];
       if (id !== undefined) plane.userData["objectId"] = id;
+      drawInherited(plane, photoScales[i] ?? 1);
     });
     // The stands and the parts after the planes, so the planes' order
     // above holds.

@@ -29,8 +29,7 @@ export const BECKON_WITHIN_M = 14;
 /** ...and once he has been heard, or after this long open. */
 export const BECKON_AFTER_MS = 6000;
 
-/** The views the world look draws: the format's story views (`card` and
- *  `stage` are not among them). */
+/** The views the world look draws: every character view but `card`. */
 export type StageCharacterView = TourCharacterView;
 
 export function isStageCharacterView(

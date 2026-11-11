@@ -28,8 +28,8 @@ import {
  * through the visitor's own look, which turns toward the camera by at most
  * 60 degrees: drawn flat at a fixed turn he would vanish edge-on from the
  * side. These hold that he stands only in the editor (the visitor's free
- * host is untouched), in the look of his view (the old `stage` view in
- * the default story look), never edge-on from any heading round him (his
+ * host is untouched), in the look of his view (a view this viewer does not
+ * know in the default look), never edge-on from any heading round him (his
  * back turns to a camera behind him, the swing eased), and that a
  * file that cannot be read takes the part out and a dispose frees it.
  */
@@ -117,10 +117,10 @@ function lookOf(part: { object: Group | { children: unknown[] } }) {
 }
 
 describe("editorCharacterView", () => {
-  it("keeps a story view, stands stage in the default story look, and the card stands nothing", () => {
+  it("keeps a look's view, stands a view the looks do not know in the default look, and the card stands nothing", () => {
     expect(editorCharacterView("bubble")).toBe("bubble");
     expect(editorCharacterView("popup")).toBe("popup");
-    expect(editorCharacterView("stage")).toBe(EDITOR_CHARACTER_VIEW);
+    expect(editorCharacterView("juggle")).toBe(EDITOR_CHARACTER_VIEW);
     expect(EDITOR_CHARACTER_VIEW).toBe("speak");
     expect(editorCharacterView("card")).toBeNull();
   });
@@ -143,12 +143,15 @@ describe("characterWorld", () => {
     expect(part.object.children).toHaveLength(0);
   });
 
-  // Why: the default for a view with no world look; drawn as nothing,
+  // Why: the default for a view the looks do not know (a newer
+  // tour's); drawn as nothing,
   // the creator would again see no character where he stands.
-  it("stands a stage view in the default story look, and a story view in its own", async () => {
+  it("stands a view the looks do not know in the default look, and a look's view in its own", async () => {
     await standing({ view: "bubble" }).then(({ part }) => part.dispose());
     expect(made.at(-1)?.view).toBe("bubble");
-    const { part } = await standing({ view: "stage" });
+    const { part } = await standing({
+      view: "juggle" as TourCharacterBlock["view"],
+    });
     const camera = new PerspectiveCamera(50, 1, 0.05, 600);
     camera.position.set(0, 1.6, 6);
     camera.lookAt(0, 1.2, 0);

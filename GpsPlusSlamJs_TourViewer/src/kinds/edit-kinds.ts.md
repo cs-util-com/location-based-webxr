@@ -10,8 +10,7 @@ error at this list, not a silent fallback somewhere in a page. Pure data
 plus a few derived words; no DOM.
 
 It lives in `src/kinds/`, not in `src/editor/`, because the creator pages
-at the top of `src/` (the object list, the placement words, `worldBlocks`)
-read it too, and top-level modules may not import the editor. For the same
+at the top of `src/` (the object list, the placement words) read it too, and top-level modules may not import the editor. For the same
 reason a row's `look` is a plain word and not the editor kit's `ShellIcon`
 type: modules outside the editor may not import the kit. The editor's own
 modules that draw a look as an icon (`tree-add-menu.ts`,
@@ -36,15 +35,6 @@ there.
     per kind.
   - `searchWords` - the words the tree's search finds the kind by besides
     its name (the 2D rail's search reads the pin's and the photo's).
-  - `inWorld` - the editor draws and edits it in the world
-    (`tour-content.ts` `worldBlocks`, the object list, the inspector's
-    item); one that is not stands in the tree and its own inspector, and a
-    write keeps it untouched. `true` promises a drawing: the inspector
-    then offers the item's handles, so the kind needs something that draws
-    it (a case of `content-placement.ts` `drawnBlock`, or the world part
-    its play kind's `world` builds, `play-kinds.ts` `worldPartOf`).
-    Without one the handles would move a
-    block nothing shows.
   - `fields` - its fields in the inspector's order (`FieldSpec`:
     `name`, `label`, `prose`, `number?` - a number's bounds, unit and
     need, the bounds the format's (`tour-kinds.ts` `TOUR_AUDIO_*`) -
@@ -53,12 +43,27 @@ there.
     Audio lists a narration circle's radius (`spot`) and a zone's reach,
     calm and volume (`zone`).
   - `add` - its line in the tree's add menu (`KindAdd`: `label`, `hint`,
-    `words`, `addable`); a row without one is not offered at all, and one
-    with `addable: false` is listed, says why, and adds nothing.
-- `KindLook`, `WorldKind`, `AddKind` (and the unexported `KindAdd`, a row's add line) - types derived from the rows: the
-  looks, the kinds with `inWorld: true`, the kinds with `add.addable: true`
-  (today `"shortText" | "longText"`).
-- `isWorldKind(kind)` - type guard on `inWorld`.
+    `words`, `addable`, and for a kind made from a file `file`: the
+    asset kind its file must be, and `storyOnly`: why it is added to a
+    story only - a video, which no free host draws); a row without one is
+    not offered at all, and one with `addable: false` is listed, says why,
+    and adds nothing. The character has no add line: the add menu's own
+    Character entry (`editor/editor-shell/tree-add-menu.ts`) makes him in
+    the character maker first.
+- `KindLook`, `AddKind` (and the unexported `KindAdd`, a row's add line) - types derived from the rows: the
+  looks and the kinds with `add.addable: true` (short and long text,
+  picture, video, audio, model).
+- `FileAddKind`, `TextAddKind` - the addable kinds made from a file
+  (`add.file`: picture, video, audio, model) and the rest (short and long
+  text, made from words alone: `editor/new-pin.ts`).
+- `isFileAddKind(kind)` - type guard on `add.file`.
+- `storyOnlyReason(kind)`, `isStoryOnly(kind)` - the `add.storyOnly`
+  words, or undefined; the station's menu shows them on the kind, off,
+  and the palette (which adds at stations) leaves the kind out.
+- Whether a block stands in the world, turns and has size dots is not a
+  kind's: it is its VIEW's, in `placement/placement-rows.ts` (a kind may
+  stand in the world in one view and be a card in another), held to the
+  editor's drawing by `placement/placement.contract.test.ts`.
 - `kindNoun(kind)` - the label inside a sentence, its first letter
   lower-cased ("photo", "long text", "3D model").
 - `kindWithArticle(kind)` - "a pin", "an audio".
@@ -76,8 +81,8 @@ there.
   `editor/editor-shell/shell-inspector.ts` (the head icon and Delete).
 - Looks and search: `editor/editor-shell/tree-model.ts` (`blockRow`, the
   filters).
-- In the world: `tour-content.ts` `worldBlocks`, `object-list.ts`,
-  `inspector-model.ts` (an item or a free block's own inspector).
+- The object list's and the inspector's words (`object-list.ts`,
+  `inspector-model.ts`).
 - Fields: `editor/block-fields.ts`.
 - Adding: `editor/editor-shell/tree-add-menu.ts`, `add-palette-model.ts`,
   `editor/new-pin.ts` (`KIND_ADD`, one row per `AddKind`, so an addable
@@ -115,8 +120,9 @@ there.
   kind is exhaustive.
 - Each `look` is unique (the tree tells rows apart by it).
 - What the editor can do with a kind is unchanged by this list: it only
-  says it. Short and long text are addable, a picture is listed off,
-  video, audio, model and character are not offered.
+  says it. Short and long text, picture, video, sound and 3D model are
+  addable (the four files through `editor/add-file-item.ts`), a video in a
+  story only; a character is listed off.
 
 ## The editor half of a row
 
@@ -139,7 +145,7 @@ there.
   visitor side, not the editor's; their own list is the visitor's.
 - `shown-blocks.ts` `isWorldBlock`: decides by a block's view, not its
   kind (a character's speaking view stands in the world, its card does
-  not), a different question from `inWorld`.
+  not), the same question the placement rows answer per view.
 - `object-describe.ts` `objectOwnText`: its switch names the kinds with a
   caption or a name and ends in `default: return object.title`. Not
   silent: a new kind without a `title` fails to compile there.
@@ -154,15 +160,19 @@ there.
 ```ts
 KIND_EDIT.longText.label; // "Long text"
 kindWithArticle("audio"); // "an audio"
-ADD_CHOICES.filter(isAddable).map((c) => c.kind); // ["shortText", "longText"]
+ADD_CHOICES.filter(isAddable).map((c) => c.kind);
+// ["shortText", "longText", "picture", "video", "audio", "model"]
+storyOnlyReason("video"); // "A video plays in a story: add it to one"
 ```
 
 ## Tests
 
 `edit-kinds.test.ts`: a row for every kind of the format and no other, in
 its order; every row's words non-empty; unique looks; every search word
-finds its row in the tree, free and inside a story; `worldBlocks` draws
-exactly the `inWorld` rows; the add menu lists and enables, and the
-palette offers, exactly the rows that say so; and today's editor kept
-(short and long text addable, the picture listed off). Seen red with a
+finds its row in the tree, free and inside a story; the add menu lists
+and enables (a station's menu without the story-only video, a story's
+with it), and the palette offers, exactly the rows that say so; and the
+editor's reach pinned (every kind with an add line listed, the character
+through the menu's own entry, the four
+file kinds). Seen red with a
 row removed.

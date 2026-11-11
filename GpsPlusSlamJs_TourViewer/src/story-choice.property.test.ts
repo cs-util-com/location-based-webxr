@@ -105,7 +105,6 @@ function panel() {
     audio: { play: () => Promise.resolve(), stop: () => undefined },
     stage: {
       showCharacter: () => Promise.resolve(),
-      showModel: () => Promise.resolve(),
       clear: () => undefined,
     },
     checkPicture: () => Promise.resolve(null),

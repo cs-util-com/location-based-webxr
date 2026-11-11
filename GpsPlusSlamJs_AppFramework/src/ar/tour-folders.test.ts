@@ -1,8 +1,8 @@
 /**
  * Why this test matters: every container in a station is a folder. A story
  * is a folder with the story role and keeps every story rule; a plain
- * folder groups free blocks (and plain folders) under a pose (its scale
- * is 1 until a renderer scales a whole group).
+ * folder groups free blocks (and plain folders) under a pose and a scale
+ * that makes the whole group larger.
  * The two must never mix - a story inside a folder, or a folder inside a
  * story, would put blocks where the story player or the world view cannot
  * reach them - so each illegal nesting is refused here, by name, and a
@@ -90,7 +90,7 @@ describe('folders: each shape reads', () => {
     expect(s !== undefined && isStory(s)).toBe(true);
   });
 
-  it('a plain folder reads with no pose, a pose, a scale of 1, both, or empty', () => {
+  it('a plain folder reads with no pose, a pose, a scale, both, or empty', () => {
     const turned = {
       position: [1, 2, 3],
       rotation: [0, Math.SQRT1_2, 0, Math.SQRT1_2],
@@ -101,6 +101,9 @@ describe('folders: each shape reads', () => {
       folder('f3', [pin('c')], { scale: 1 }),
       folder('f4', [pin('d')], { pose: turned, scale: 1 }),
       folder('f5', []),
+      folder('f6', [pin('e')], { scale: 2 }),
+      folder('f7', [pin('f')], { pose: turned, scale: 0.1 }),
+      folder('f8', [pin('g')], { scale: 10 }),
     ];
     const got = read(shapes);
     expect(got).toEqual(shapes);
@@ -116,22 +119,33 @@ describe('folders: each shape reads', () => {
     );
   });
 
-  // Why: a folder's scale applied to its blocks' positions alone would
-  // move them apart while their sizes (a model's, a sound's reach, a
-  // picture's width) stay. Until a renderer scales the whole group once,
-  // the format takes only 1, so the later work never applies a scale on
-  // top of positions already scaled.
-  it('a scale other than 1 waits for a renderer that scales the whole group: refused strict', () => {
-    for (const scale of [2, 0.5, 0.01, 100, 1.000001, 0, -1, NaN, '1']) {
+  // Why: a folder's scale makes the whole group larger, and decomposing a
+  // pose divides by it, so a scale of zero, a negative one or one beyond
+  // any sensible group (a tenth to ten times) must never reach an
+  // editor: swept just past both bounds and over values that are no
+  // number at all.
+  it('a scale out of its bounds is refused strict', () => {
+    for (const scale of [
+      0.0999,
+      10.0001,
+      0.01,
+      100,
+      0,
+      -1,
+      NaN,
+      Infinity,
+      '1',
+      null,
+    ]) {
       expect(() => read([folder('f', [pin('a')], { scale })])).toThrow(
-        /children\[0\]\.scale" must be 1: a folder's scale waits for a renderer that scales the whole group/
+        /children\[0\]\.scale" must be a number from 0\.1 to 10/
       );
     }
   });
 
-  it('a scale other than 1 waits for a renderer that scales the whole group: lenient reads 1 and reports it', () => {
+  it('a scale out of its bounds: lenient reads 1 and reports it', () => {
     const drops: TourChildDrop[] = [];
-    const got = read([folder('f', [pin('a')], { pose, scale: 2 }), pin('b')], {
+    const got = read([folder('f', [pin('a')], { pose, scale: 20 }), pin('b')], {
       lenient: true,
       drops,
     });
@@ -141,7 +155,9 @@ describe('folders: each shape reads', () => {
       {
         kind: 'folderScale',
         folder: 'f',
-        reason: expect.stringMatching(/children\[0\]\.scale" must be 1/),
+        reason: expect.stringMatching(
+          /children\[0\]\.scale" must be a number from 0\.1 to 10/
+        ),
       },
     ]);
   });
@@ -408,6 +424,20 @@ describe('folders: a composed offset stays within the bound of a single pose', (
       expect(() => read(farOut(x))).toThrow(FAR);
     }
   );
+
+  // Why: a folder's scale moves its blocks out with it, so a block within
+  // reach in a folder of scale 1 can stand beyond it in a folder of scale
+  // 2; the editor would write it there and have the write refused.
+  it("composes the folder's scale: a block within reach unscaled is beyond it scaled", () => {
+    const of = (scale: number) =>
+      folder('f', [pinAt('a', [3000, 0, 0])], {
+        pose: at([4000, 0, 0]),
+        scale,
+      });
+    expect(read([of(1)])).toHaveLength(1);
+    expect(read([of(2)])).toHaveLength(1);
+    expect(() => read([of(2.0001)])).toThrow(FAR);
+  });
 
   it("composes the folder's turn: a block within reach unturned is beyond it turned", () => {
     // A quarter turn about Up takes East onto North: [0, 0, 3000] stands

@@ -123,14 +123,14 @@ const ITEMS: readonly ItemRow[] = [
     words: "Hail",
     fields: {
       kind: "character",
-      view: "stage",
+      view: "speak",
       name: "Sir",
       image: "knight",
       caption: "Hail",
       voice: "bell",
     },
     ends: "sound",
-    // A free character takes one of his world views, never the plain stage.
+    // The same character standing free (his look, no card).
     free: {
       kind: "character",
       view: "speak",
@@ -201,7 +201,13 @@ const ITEMS: readonly ItemRow[] = [
   {
     name: "model",
     words: "The arch",
-    fields: { kind: "model", view: "stage", asset: "arch", title: "The arch" },
+    fields: {
+      kind: "model",
+      view: "placed",
+      asset: "arch",
+      sizeM: 3,
+      title: "The arch",
+    },
     free: { kind: "model", view: "placed", asset: "arch", title: "The arch" },
     known: PLACED,
   },
@@ -332,7 +338,6 @@ function panel(
   };
   const stage = {
     showCharacter: vi.fn(() => Promise.resolve()),
-    showModel: vi.fn(() => Promise.resolve()),
     clear: vi.fn(),
   };
   const video = {
@@ -563,8 +568,6 @@ describe.each(ROWS)("the item contract: $name", (item) => {
     const { view, reads } = panel(undefined, undefined, showOf(item));
     view.offer(stationOf(item.fields));
     await flush();
-    view.characterTapped();
-    await flush();
     const declared = declaredOf(item);
     expect(declared).toEqual(expect.arrayContaining(reads));
     // A prototype has no format half yet: nothing writes it.
@@ -593,7 +596,6 @@ describe.each(ROWS)("the item contract: $name", (item) => {
     await flush();
     expect(audio.play).not.toHaveBeenCalled();
     expect(stage.showCharacter).not.toHaveBeenCalled();
-    expect(stage.showModel).not.toHaveBeenCalled();
     expect(urls.made).toBe(0);
     expect(dom.image.src).toBe("");
     expect(dom.video.src).toBe("");
@@ -607,8 +609,6 @@ describe.each(ROWS)("the item contract: $name", (item) => {
     );
     view.offer(stationOf(item.fields));
     await flush();
-    view.characterTapped();
-    await flush();
     audio.stop.mockClear();
     view.stopAll();
     expect(audio.stop).toHaveBeenCalled();
@@ -620,10 +620,6 @@ describe.each(ROWS)("the item contract: $name", (item) => {
     const run = panel(undefined, undefined, showOf(item));
     run.view.offer(stationOf(item.fields));
     await flush();
-    if (kindOfRow.has(item)) {
-      run.view.characterTapped();
-      await flush();
-    }
     if (item.ends === "sound" || kindOfRow.has(item)) {
       for (const end of [...run.voiceEnds, ...run.voiceEnds]) end();
     } else if (item.ends === "clip") {
@@ -639,10 +635,13 @@ describe.each(ROWS)("the item contract: $name", (item) => {
   });
 });
 
+// A model in a story stands in the world, whose renderer loads its file;
+// the panel shows its title only and reads nothing.
 describe.each(
   ROWS.filter(
     (i) =>
-      !["shortText", "longText"].includes(i.name) && declaredOf(i).length > 0,
+      !["shortText", "longText", "model"].includes(i.name) &&
+      declaredOf(i).length > 0,
   ),
 )("the item contract, with files: $name", (item) => {
   it("keeps its words and says so on the status line when its files are lost", async () => {
@@ -906,28 +905,26 @@ describe("the stage's world doors", () => {
   // it is handed and nothing else; the panel's own stage controls (clear,
   // release, the voice, the bubble) are the host's, and a kind from the
   // item lab is untyped code that could otherwise call them.
-  it("hands an item only the figure's and the model's doors", async () => {
+  it("hands an item only the figure's door", async () => {
     const seen: string[][] = [];
-    const { view, stage } = panel(undefined, undefined, (_shown, host) => {
-      void host.stage?.stand("probe", async (world, place) => {
+    const { view } = panel(undefined, undefined, (_shown, host) => {
+      void host.stage?.stand("probe", (world) => {
         seen.push(Object.keys(world).sort());
-        await world.showModel?.(place.stationId, new Blob(["m"]));
+        return Promise.resolve();
       });
     });
     view.offer(stationOf(ITEMS[0]?.fields ?? {}));
     await flush();
-    expect(seen).toEqual([["showCharacter", "showModel"]]);
-    expect(stage.showModel).toHaveBeenCalledTimes(1);
+    expect(seen).toEqual([["showCharacter"]]);
   });
 
-  // Why this test matters: a stage wired without the model's door would
-  // stand nothing for a model and say nothing; it must not compile.
-  it("refuses a stage without the model's door at compile time", () => {
-    // @ts-expect-error a stage needs both doors
-    const noModel: SceneViewDeps["stage"] = {
-      showCharacter: () => Promise.resolve(),
+  // Why this test matters: a stage wired without the figure's door would
+  // stand nothing for a character and say nothing; it must not compile.
+  it("refuses a stage without the figure's door at compile time", () => {
+    // @ts-expect-error a stage needs the figure's door
+    const noFigure: SceneViewDeps["stage"] = {
       clear: () => undefined,
     };
-    expect(noModel).toBeDefined();
+    expect(noFigure).toBeDefined();
   });
 });

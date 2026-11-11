@@ -499,7 +499,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   tour's name in the top bar (`#tour-name`, a button) opens the details
   dialog (`details-dialog.ts`, `#details-modal`): name, description, cover
   and contact. The cover picker is drawn here: "None" and the session's
-  `coverChoices()` as radios, each with its picture read from the zip as
+  `coverChoices()` as radios, each with its picture read from the zip,
+  or from the session for a file brought in (`readContent`), as
   an object URL (released when the dialog closes). Apply goes through
   `session.setDetails`; a change refreshes, says "Tour details changed -
   not saved yet." and tells autosave (an edit like any other); no change
@@ -755,9 +756,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   view reads the tour from the store and the codes the open read
   (`openedLevels`), and edits through the page's `edits`:
   - `commit` (`commitSceneEdit`) writes a finished gesture as one undo
-    step (`applySceneEdit` of `scene-edits.ts`): it ends a delete's Undo
+    step (`applyPlaceEdit` of `../placement/place-edits.ts`): it ends a delete's Undo
     offer, refreshes the views and tells autosave, or toasts a refusal.
-    An item pose that crosses into another station's circle asks first,
+    A block's pose that crosses into another station's circle asks first,
     in the blocking `confirmPausingFrames` (`askMove`, `move-question.ts`),
     so no drag is ever half applied; the drop stays drawn behind the
     question. What the write did to the item's station is said in a toast
@@ -873,7 +874,15 @@ answers that now go on to the next entry and an item now standing in the
 world in its kind's usual view, and a refusal is said in a toast.
 
 The tree's add makes a story (`addStoryTo`) or an entry (`addToStoryEntry`),
-selects it, says it in a toast, one step each. Deleting a story asks first
+selects it, says it in a toast, one step each. A kind made from a file
+(picture, video, sound, 3D model) goes through `addFromFile`
+(`add-file-item.ts`): the page's one file picker (`file-picker.ts`, a
+cancel adds and says nothing), a held toast `Adding "<file>"...`
+(`data-testid="add-file-busy"`) while the file is read onto the shelf,
+then the item at the station's free spot or the story's end as one step,
+selected and named in a toast (`Added the sound "<title>" to "<station>"`),
+or the refusal in a toast; a file the draft could not keep adds the
+usual warning. Deleting a story asks first
 (`confirmPausingFrames`, naming what goes with it: its entries, and its
 untitled automatic station by name when that goes too, `delete-questions.ts`
 `storyDeleteQuestion`), and its toast says when the station went with it;
@@ -882,6 +891,32 @@ by name, its free items by count), except when the tour refuses it (its last sta
 is said instead; an entry goes without a
 question, the toast's Undo taking it back and saying how many answers no
 longer lead to it. Every delete shares `deleted`, the toast and its Undo.
+
+### The asset shelf's panel
+
+The shelf is squeezed to its rail while the details panel is open on a
+window up to 900 px wide (`shelfSqueezed`); a MutationObserver on
+`#shell-inspector` and the window's resize redraw the panel, and opening
+the shelf while squeezed folds the details panel (`dockFolded`).
+
+Once a tour is open, `openShelfPanel` builds the shelf's panel
+(`asset-shelf/shelf-panel.ts`) in `#shell-shelf`, with the bar's
+`#shelf-toggle` and the phone's `#shelf-pill`, on that session's shelf; it
+is destroyed when the tour goes (`dropTour`). It reads
+`selectShelfRows(store.getState())` and redraws on the store's changes; its
+places come from `assetPlaces` over the manifest to write and the row's
+uses (`shelfRowUses`: a character's entry lists where his files are used), and a place's
+button selects it with a pan (`select(selection, true)`). A phone is
+`(width <= 700px)`, the width at which shelf-panel.css makes it a sheet;
+a change of it redraws the panel. "Add files..." opens the picker for
+several files of every kind (`filePicker.pickMany`) and the shelf page
+actions' `addToShelf` (`asset-shelf/shelf-page-actions.ts`) read each one onto the shelf through the session's `addFile`, used
+nowhere yet (a save leaves out what nothing uses): a busy toast
+(`data-testid="shelf-add-busy"`) while they are read, a refusal or a
+throw said per file, a picker that fails said, the last file added
+revealed and a toast saying how many arrived. A place with no selection
+(a character) is plain text; the tour's cover place (`TOUR_COVER_SELECTION`)
+opens the tour details.
 
 ## Tests
 
@@ -954,3 +989,70 @@ on a desktop.
 ## Narration
 
 `writeNarrationEdit` runs a section's change through the session (`editNarration`), redraws, and says a refusal through the page's toast, and a voice whose file the draft could not keep (`notBackedUp`) with `FILE_NOT_KEPT`; it then judges the autosave again (`judgeAutosave`: off once `nextSaveBytes()` is over the cap, on again once it is back under (an undo alone keeps the file in the save, since its redo names it; the edit that drops that redo frees it); asked by every edit through `tourChanged` (the test hook's `edited()` too), by an unchanged narration answer and after every save; never for a tour not written in place or one that `cannotSave`. `nextSaveBytes()` counts the opened file by its entries' sizes until a save, so a tour opened just over the cap by its zip overhead alone may turn autosave on at its first judged edit). The session's `fileReaders` are three's loader with `largestSide` (imported on first use) and `videoPosterOf`; `readContent` reads a file brought in from the session (`contentOf`) before the opened file; the shell's `narration` command reads `EditorSession.narration`, and `voiceMaxBytes` hands the section the configured autosave cap (`autosaveMaxBytes`) as its voice file limit.
+
+## Files dropped anywhere, and an item's file replaced
+
+- A file dragged over the open editor marks the page (`body.file-drag`)
+  and the row or file field it would be used in (`.file-over`); the
+  opening page's drop box and the debug panel keep their own drops.
+- `dropFiles` (`file-drop.ts`): a file a tour does not take is said by
+  name; dropped on a station's or a story's row it is added there
+  (`addFromFile`, one step each); on an item's file field it becomes that
+  item's file (`useAsItemFile`); anywhere else it goes onto the shelf only
+  (`addToShelf`). Every file lands on the shelf either way.
+- `useAsItemFile` / `replaceItemFile` (the inspector's "Replace...", a
+  picker of the block's own file kind): a busy toast
+  (`data-testid="replace-file-busy"`) while the file is read, then "The
+  item now shows ..." or the refusal; one step (`setItemFile`).
+- The shell's `fileNameOf` reads the shelf's names, so the inspector shows
+  a file by the name it came in under.
+- The shelf's thumbnails (`thumbOf`) are the session's own bytes
+  (`addedFileOf`): a picture's, or a video's minted poster's; an opened
+  tour's files keep the kind's icon. The page reads a video once through
+  `videoLookOf` (`video-poster.ts`) for its poster and its length.
+- The shelf's delete of a file in use (`removeUsed`): its confirm reads
+  the session's `deletePlan`; the delete is the shelf page actions' `deleteInUse` over
+  `deleteFileAndUses`, said through `deleted` like any delete ("Deleted
+  <name>.", the page's Undo toast, held against the autosave by
+  `undoOffer`); a refusal is said. A delete that made no step (nothing
+  used it after all) is said without an Undo.
+- The shelf's "Replace everywhere" (`replace`): the shelf page actions'
+  `replaceEverywhere` picks
+  a file of the old one's kind, shows a busy toast
+  (`data-testid="replace-everywhere-busy"`) while it is read, then
+  `replaceFile`'s one step said with the page's Undo (`offerUndo`:
+  '"<name>" is used in N places now.'), or the refusal.
+- `offerUndo(said)` is the Undo toast every delete and the replace share
+  (its tap is `undoTap`, `undo-offer.ts`): its Undo is the stack's while the step is the newest; tapped after a
+  newer change it says so instead of doing nothing.
+- The shelf's "Use in..." (`useIn`): its choices are `useInChoices` over
+  the manifest to write for the file `assetOf` finds; `useShelfFileIn`
+  takes the chosen key - a station or a story adds an item made from the
+  file there (`placeFrom`, as a drop does; selected, then "Added the ..."),
+  an item takes the file (`setItemAsset`; "The item now shows ..."). One
+  step either way; a refusal is said.
+
+## Characters
+
+- File, "Characters…" (`#file-characters`, disabled when no tour is open)
+  opens the Characters list (`characters-panel.ts`).
+  - Its tour adapter (`charactersTour`) wraps the session's character
+    methods, and refreshes and tells the autosave after each change; each
+    change (the Undo's restore too) ends a pending delete Undo first.
+    `fileId` names a file as the tour does (`tourFileId`).
+  - The library is opened once (`characterLibraryNow`).
+- `dialogOpen()` counts the list and the maker, and the page's Escape
+  handler leaves them to their own dialog.
+- While the maker shows, the 3D view does not draw (`makerShown` to
+  `setPaused`).
+- The add menu's Character (`addCharacterTo`) calls `makeForTour({ hold })`.
+  From the maker's close until the outcome a held toast says "Adding the
+  character to the tour..." (`aria-busy`), with a Close as the page's
+  other held toasts have, so an add that never settles cannot leave it up
+  for good; `makeForTour` takes it down once the add settled, before the
+  outcome's toast, and says a failure after the close itself; one before
+  it is said here ("The character was not added: ..."). In a
+  station the character then stands free (`addNewCharacter`, selected,
+  toast `Added X to "Station"`); in a story it becomes the story's last
+  entry, standing at the station's free spot on the ground
+  (`addCharacterToStory` with the 3D view's `groundAt`).

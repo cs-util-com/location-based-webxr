@@ -5,10 +5,10 @@
  * world pose back into the folder's frame, so composing then decomposing
  * has to return the block's own pose - otherwise every save would drift it.
  * The tolerances are declared and the offsets swept from a centimetre to
- * the format's 10 km bound. A folder is a rigid frame: its scale is always
- * 1 (the reader takes no other value until a renderer scales a whole
- * group), so nothing here scales. A folder with no pose must change
- * nothing at all, bit for bit: most folders will be that. Two nested
+ * the format's 10 km bound, and a folder's scale over its bounds (a tenth
+ * to ten times): decomposing divides by it. A folder with no pose and no
+ * scale must change nothing at all, bit for bit: most folders will be
+ * that. Two nested
  * folders whose turns do not commute are checked against a result worked
  * out by hand, an oracle independent of the code: composing in the wrong
  * order gives another answer.
@@ -23,6 +23,7 @@ import type { Quaternion } from 'gps-plus-slam-js';
 
 import type { TourBlock } from './tour-blocks';
 import {
+  composedTourFolderScale,
   composeTourFolderPath,
   composeTourFolderPose,
   decomposeTourFolderPath,
@@ -157,11 +158,83 @@ describe('composing a folder pose (properties)', () => {
     });
   }
 
+  // Swept: the scale at both bounds and between, and drawn over them.
+  const SCALES = [0.1, 0.5, 2, 10];
+  const scaleArbitrary = fc.double({ min: 0.1, max: 10, noNaN: true });
+  for (const reach of REACHES) {
+    it(`compose then decompose a path of scaled folders returns the pose (offsets up to ${String(reach)} m)`, () => {
+      fc.assert(
+        fc.property(
+          fc.array(
+            fc.record({
+              pose: poseArbitrary(reach),
+              scale: fc.oneof(fc.constantFrom(...SCALES), scaleArbitrary),
+            }),
+            { minLength: 1, maxLength: 3 }
+          ),
+          poseArbitrary(reach),
+          (folders, pose) => {
+            const back = decomposeTourFolderPath(
+              folders,
+              composeTourFolderPath(folders, pose)
+            );
+            expect(positionGap(back, pose)).toBeLessThanOrEqual(
+              POSITION_TOLERANCE_M * folders.length
+            );
+            expect(
+              rotationGap(back.rotation, pose.rotation)
+            ).toBeLessThanOrEqual(ROTATION_TOLERANCE * folders.length);
+          }
+        ),
+        { numRuns: 200 }
+      );
+    });
+  }
+
+  it('a scale with no pose scales the offset alone, and decomposes back', () => {
+    for (const scale of SCALES) {
+      const pose: TourLocalPose = {
+        position: [1, -2, 3],
+        rotation: QUARTER_ABOUT_UP,
+      };
+      const out = composeTourFolderPose({ scale }, pose);
+      expect(out.position).toEqual([scale, -2 * scale, 3 * scale]);
+      expect(out.rotation).toBe(pose.rotation);
+      const back = decomposeTourFolderPose({ scale }, out);
+      expect(positionGap(back, pose)).toBeLessThanOrEqual(1e-12);
+    }
+  });
+
+  it('a scaled, turned folder puts its child where worked out by hand', () => {
+    // R_up(90) [1, 0, 0] = [0, 0, -1]; scaled by 2, then moved 10 north:
+    // [10, 0, -2]. Scaling after moving would give [20, 0, -2].
+    const out = composeTourFolderPose(
+      {
+        pose: { position: [10, 0, 0], rotation: QUARTER_ABOUT_UP },
+        scale: 2,
+      },
+      { position: [1, 0, 0], rotation: IDENTITY }
+    );
+    expect(out.position[0]).toBeCloseTo(10, 12);
+    expect(out.position[1]).toBeCloseTo(0, 12);
+    expect(out.position[2]).toBeCloseTo(-2, 12);
+    expect(rotationGap(out.rotation, QUARTER_ABOUT_UP)).toBeLessThan(1e-15);
+  });
+
+  it('the composed scale is the product along the path, 1 for none', () => {
+    expect(composedTourFolderScale([])).toBe(1);
+    expect(composedTourFolderScale([{}, { scale: 1 }])).toBe(1);
+    expect(composedTourFolderScale([{ scale: 2 }, {}, { scale: 3 }])).toBe(6);
+    expect(composedTourFolderScale([{ scale: 0.5 }, { scale: 2 }])).toBe(1);
+  });
+
   it('no pose is the identity, bit for bit, and so is an empty path', () => {
     fc.assert(
       fc.property(poseArbitrary(10_000), (pose) => {
         expect(composeTourFolderPose({}, pose)).toBe(pose);
         expect(decomposeTourFolderPose({}, pose)).toBe(pose);
+        expect(composeTourFolderPose({ scale: 1 }, pose)).toBe(pose);
+        expect(decomposeTourFolderPose({ scale: 1 }, pose)).toBe(pose);
         expect(composeTourFolderPath([], pose)).toBe(pose);
         expect(composeTourFolderPath([{}, {}], pose)).toBe(pose);
         expect(decomposeTourFolderPath([], pose)).toBe(pose);
@@ -309,6 +382,38 @@ describe('flattening plain folders into free blocks', () => {
     expect(
       composeTourFolderPath([outer, inner], block('b', [1, 2, 3]).pose)
     ).toEqual(pose);
+  });
+
+  // Why: a renderer draws each block of a scaled folder that much larger,
+  // and only the flattening knows every folder holding it.
+  it("gives each free block the product of its folders' scales, and scales its offset", () => {
+    const inner: TourFolder = {
+      id: 'inner',
+      kind: 'folder',
+      scale: 3,
+      children: [block('b', [1, 0, 0])],
+    };
+    const outer: TourFolder = {
+      id: 'outer',
+      kind: 'folder',
+      pose: { position: [100, 0, 0], rotation: IDENTITY },
+      scale: 2,
+      children: [block('a', [1, 0, 0]), inner],
+    };
+    const entries = tourFreeEntries({
+      children: [block('top', [7, 0, 0]), outer],
+    });
+    expect(entries.map((e) => [e.block.id, e.scale])).toEqual([
+      ['top', 1],
+      ['a', 2],
+      ['b', 6],
+    ]);
+    // b: 3 x [1, 0, 0] in the inner folder, 2 x that plus 100 north.
+    expect(entries.map((e) => e.block.pose.position)).toEqual([
+      [7, 0, 0],
+      [102, 0, 0],
+      [106, 0, 0],
+    ]);
   });
 
   it('a block outside any folder is handed on as it is', () => {

@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Asset Shelf: In The Inspector</title>
+    <!--
+  Throwaway prototype: the tour editor's asset shelf, direction "a tab of the
+  right panel". The right panel (the inspector side) gets two tabs, Selection
+  and Assets; the shelf can also be pinned as a section under the selection.
+  Files dropped anywhere land on the shelf and are "optimized" by fake timers.
+  An asset can be used while it is still processing: drag it onto a station,
+  a story or a media item in the list, onto an item's file field, or pick it
+  from a menu. Original code, no libraries, made-up sample data, nothing is
+  saved or uploaded.
+-->
+    <link rel="stylesheet" href="shelf.css" />
+  </head>
+  <body class="sheet-list">
+    <header id="top">
+      <div class="brand">
+        <b class="hideS">Tour editor</b><span class="doc">Old Town Walk</span>
+      </div>
+      <button class="mbtn hideS" type="button" tabindex="-1">File</button>
+      <button class="mbtn hideS" type="button" tabindex="-1">View</button>
+      <span class="sp"></span>
+      <button class="tbtn" id="simDrop" type="button" title="Simulate dropping 4 files on the page">
+        <svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v8M5 8l3 3 3-3M3 13h10" /></svg>
+        <span class="hideS">Simulate drop</span><span class="showS">Drop 4</span>
+      </button>
+      <button class="tbtn" id="addFiles" type="button" title="Add files from this device">
+        <svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 11V3M5 6l3-3 3 3M3 11v2h10v-2" /></svg>
+        <span class="hideS">Add files</span>
+      </button>
+      <input type="file" id="fileInput" multiple hidden />
+    </header>
+    <div id="loadbar" aria-hidden="true"></div>
+
+    <main id="main">
+      <!-- The tree: stations, stories and items (a mock of the explorer). -->
+      <aside id="tree" class="dock" aria-label="Stations">
+        <div class="phead">
+          <span class="ttl">Stations</span><span class="count" id="stCount"></span>
+          <span class="sp"></span>
+          <button class="ib showS" id="listAssets" type="button" title="Open the asset shelf">
+            <span class="assetsbtn" id="listAssetsInner"></span>
+          </button>
+        </div>
+        <div class="pbody" id="rows" role="tree" aria-label="Stations and their items"></div>
+        <div class="treefoot hideS">Drag an asset from the shelf onto a station, a story or a media item.</div>
+      </aside>
+
+      <!-- The map (decoration: the stations as dots, clickable). -->
+      <section id="map" aria-label="Map">
+        <svg id="mapSvg" viewBox="0 0 1000 700" preserveAspectRatio="xMidYMid slice" aria-hidden="true"></svg>
+        <div id="notes" class="folded">
+          <button class="nhead" id="notesToggle" type="button" aria-expanded="false">
+            <svg class="i" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" /><path d="M8 7v4M8 5v.1" /></svg>
+            <span>Prototype: the shelf in the right panel</span>
+            <span class="sp"></span><span class="fold">open</span>
+          </button>
+          <div class="nbody">
+            <p>
+              <b>Idea.</b> The right panel gets two tabs: <b>Selection</b> (the inspector) and
+              <b>Assets</b> (the shelf). Files dropped anywhere land on the shelf and are optimized
+              in the background; the tab and the bottom bar show the progress.
+            </p>
+            <ul>
+              <li><b>Use while processing:</b> drag a card (by its grip on touch) onto a station, a story or a media item in the list, onto an item's file field, or press its <b>Use</b> button.</li>
+              <li><b>Pin as a section:</b> the split button in the shelf's head puts the shelf under the selection, so both show at once (not on a phone).</li>
+              <li><b>On a phone</b> the panel is the details sheet; the list's shelf button opens it on Assets.</li>
+              <li>The video fails once on purpose; retry it.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- The right panel: the selection's inspector and the asset shelf. -->
+      <aside id="panel" class="dock" aria-label="Selection and assets">
+        <div class="phead" id="panelHead">
+          <button class="ib showS" id="panelBack" type="button" title="Back to the list" aria-label="Back to the list">
+            <svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3L5 8l5 5" /></svg>
+          </button>
+          <div class="tabs" role="tablist" aria-label="Right panel">
+            <button class="tab" role="tab" id="tabSel" aria-controls="inspSec" type="button">Selection</button>
+            <button class="tab" role="tab" id="tabAssets" aria-controls="shelfSec" type="button">
+              <span>Assets</span><span class="tbadge" id="tabBadge"></span>
+            </button>
+          </div>
+          <span class="ttl splitttl">Selection</span>
+          <span class="sp"></span>
+          <button class="ib hideS" id="panelFold" type="button" title="Fold the panel" aria-label="Fold the panel">
+            <svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4l4 4-4 4" /></svg>
+          </button>
+          <button class="ib showS" id="panelClose" type="button" title="Close" aria-label="Close">
+            <svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
+          </button>
+        </div>
+        <div id="rail" aria-label="Folded panel">
+          <button class="ib" id="railSel" type="button" title="Selection" aria-label="Open the selection">
+            <svg class="i" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5" /><path d="M5 6h6M5 9h4" /></svg>
+          </button>
+          <button class="ib" id="railAssets" type="button" title="Assets" aria-label="Open the asset shelf"></button>
+        </div>
+        <div class="pstack" id="pstack">
+          <section id="inspSec" role="tabpanel" aria-labelledby="tabSel">
+            <div class="sechead">
+              <span class="ttl">Selection</span>
+            </div>
+            <div class="pbody" id="insp"></div>
+          </section>
+          <div class="splitter" id="splitter" role="separator" aria-orientation="horizontal" aria-label="Resize the shelf" tabindex="0"></div>
+          <section id="shelfSec" role="tabpanel" aria-labelledby="tabAssets">
+            <div class="sechead">
+              <span class="ttl">Assets</span><span class="count" id="secCount"></span>
+              <span class="sp"></span>
+            </div>
+            <div class="shelfhead" id="shelfHead"></div>
+            <div class="pbody" id="shelf" role="list" aria-label="Asset shelf"></div>
+            <div class="shelffoot">Drop files anywhere on the page.</div>
+          </section>
+        </div>
+      </aside>
+    </main>
+
+    <footer id="bar">
+      <span class="hideS">Map: sample tiles, made-up data</span>
+      <span class="sp"></span>
+      <button id="barAssets" type="button" title="Open the asset shelf"></button>
+    </footer>
+
+    <div id="dropzone" hidden>
+      <div class="dzbox">
+        <svg class="i big" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v8M5 8l3 3 3-3M3 13h10" /></svg>
+        <b>Drop to add to the asset shelf</b>
+        <span>Pictures, sounds, videos and 3D models (GLB) are made lighter for phones in the background. You can keep editing.</span>
+      </div>
+    </div>
+    <div id="pop" role="menu" hidden></div>
+    <div id="ghost" aria-hidden="true" hidden></div>
+    <div id="toast" role="status" aria-live="polite" hidden></div>
+    <dialog id="confirm">
+      <form method="dialog">
+        <h2 id="cfTitle"></h2>
+        <div id="cfBody"></div>
+        <div class="cfbtns">
+          <button value="cancel" class="tbtn" type="submit">Cancel</button>
+          <button value="ok" class="tbtn danger" id="cfOk" type="submit"></button>
+        </div>
+      </form>
+    </dialog>
+    <script src="shelf.js"></script>
+  </body>
+</html>

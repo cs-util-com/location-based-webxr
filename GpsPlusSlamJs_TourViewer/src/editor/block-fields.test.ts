@@ -85,7 +85,7 @@ const AUDIO = {
 const CHARACTER = {
   id: "c1",
   kind: "character",
-  view: "stage",
+  view: "speak",
   pose: POSE,
   name: "The watchman",
   image: "cut",

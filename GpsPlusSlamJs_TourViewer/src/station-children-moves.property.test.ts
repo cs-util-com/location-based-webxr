@@ -69,7 +69,7 @@ function entry(id: string, make: Make, to: string): TourStoryChild {
       return {
         id,
         kind: "model",
-        view: "stage",
+        view: "card",
         asset: "m",
         pose: POSE,
         advance: TAP,

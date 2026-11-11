@@ -35,8 +35,8 @@ far the visitor is from each offered station. Plan:
   voices; a character's figure in every view but the card - a story view
   of a declared character with a frames sheet (`characters`, by id;
   `deps.characters`) reads the sheet instead, the portrait view the sheet
-  and his image; a model in its `stage` or
-  `placed` view - a reached placed model stands in the world from its
+  and his image; a model in a world view
+  (placed, with a size) - a reached placed model stands in the world from its
   step on, B2b; never a video's file but its poster, the picture minted when the video was brought in; the list is `itemAssets` of `item-card.ts`), then the files of
   the station's free models, each in a world view (B2b, G2 follow-up 9: drawn with the
   station, so read ahead with it), then a free sound's file and a free character's
@@ -120,7 +120,7 @@ const blob = await prefetch.load(asset.path); // a hit when it was prefetched
   divisor, the
   radius, one read at a time, joining and hitting, a story-only read not
   kept, a failed read not kept, never a video's file but its poster, a
-  figure only in its stage view, a model in its stage or placed view
+  figure in every view but the card, a model in its placed view
   (B2b) and a voice in either, offline
   not retried for
   the same station (R4), a shared asset held until both stations are done

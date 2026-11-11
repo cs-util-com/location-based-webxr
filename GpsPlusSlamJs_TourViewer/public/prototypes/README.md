@@ -247,6 +247,12 @@ wired into its logic: every interaction is faked.
   a quality slider for the triangle count an author keeps, a distance
   slider for the level a viewer would see, and a wireframe view; made
   2026-11-08.
+- `asset-shelf-1/` ... `asset-shelf-3/` - three places for an asset shelf
+  on the editor's right side (a tab of the right panel, its own docked
+  panel, a rail of chips). Every file dropped anywhere lands on the shelf
+  and is optimized in the background; it can be used while it is, and the
+  original stands in until the optimized version is ready. Processing,
+  sizes and the failing file are simulated; made 2026-11-08.
 - `story-editor-1-step-cards/` ... `story-editor-3-inline-script/` - three
   directions for the story editor (step cards, a flow graph, an inline
   script), each with the same sample station, every edit on an in-memory

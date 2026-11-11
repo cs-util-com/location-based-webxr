@@ -28,6 +28,7 @@ import { readStoredEntryBytes } from "gps-plus-slam-app-framework/test-utils/zip
 import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { manifestToWrite, tourDocumentActions } from "../tour-document.js";
 import { folderRefusalLine } from "../tour-folder-edit.js";
+import { placeableOf } from "../placement/placeables.js";
 import { openTourFile, type TourSession } from "../tour-session.js";
 import { editorStore } from "../test-support/editor-store.js";
 import { photoKey } from "../draft-persistence.js";
@@ -229,15 +230,25 @@ describe("the editor session's station edits", () => {
     expect(editor.editStation("nope", { title: "x" })).toMatchObject({
       kind: "refused",
     });
-    expect(editor.resizeModel("a", 3)).toMatchObject({ kind: "refused" });
-    expect(editor.resizeModel("m", 500.01)).toMatchObject({
+    expect(editor.setExtent("a", 3)).toMatchObject({ kind: "refused" });
+    expect(editor.setExtent("m", 500.01)).toMatchObject({
       kind: "refused",
     });
-    expect(editor.resizeModel("m", 0.05)).toEqual({ kind: "resized" });
+    expect(editor.setExtent("m", 0.05)).toEqual({ kind: "resized" });
     expect(editor.changeCount()).toBe(2);
     expect(editor.undo()).toMatchObject({ kind: "undone" });
     expect(editor.undo()).toMatchObject({ kind: "undone" });
     expect(editor.changeCount()).toBe(0);
+    // A picture's width, by the same call and its own row's bounds.
+    const wide = editor.setExtent("f", 50.01);
+    expect(wide).toMatchObject({ kind: "refused" });
+    expect(wide.kind === "refused" ? wide.reason : "").toBe(
+      "Its width must be from 0.05 m to 50 m.",
+    );
+    expect(editor.setExtent("f", 1)).toEqual({ kind: "unchanged" });
+    expect(editor.setExtent("f", 3)).toEqual({ kind: "resized" });
+    expect(editor.changeCount()).toBe(1);
+    expect(editor.undo()).toMatchObject({ kind: "undone" });
     await session.close();
   });
 
@@ -596,6 +607,86 @@ describe("the editor session's station edits", () => {
       reason: folderRefusalLine("staysInStation"),
     });
     expect(tour()).toEqual(before);
+    await session.close();
+  });
+
+  // Why: the gizmo moves and scales a folder chosen in the tree through
+  // these two calls alone; each must be one undo step that carries the
+  // folder's items with it, and each refusal must say why in words and
+  // change nothing.
+  it("moveFolder and scaleFolder carry a folder's items, each one step, and refuse in words", async () => {
+    const { session, manifest } = await opened();
+    const store = editorStore();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      store,
+    });
+    store.dispatch(
+      tourDocumentActions.folderGrouped({
+        folderId: "grp",
+        title: "Benches",
+        ids: ["b"],
+        what: "group",
+      }),
+    );
+    const tour = () => {
+      const out = manifestToWrite(store.getState().tourDocument);
+      if (out === null) throw new Error("nothing open");
+      return out;
+    };
+    const steps = () => store.getState().tourDocument.past.length;
+    const geoOf = (id: string) => {
+      const found = tourObjects(tour()).find((o) => o.id === id);
+      if (found === undefined) throw new Error(`no item ${id}`);
+      return found.geo;
+    };
+    const folder = placeableOf(tour(), "folder:grp");
+    if (folder === null) throw new Error("no folder");
+    expect(folder.ref).toEqual({ kind: "folder", id: "grp" });
+
+    const bBefore = geoOf("b");
+    let was = steps();
+    expect(
+      editor.moveFolder("grp", { ...folder.geo, lat: folder.geo.lat + 1e-5 }),
+    ).toEqual({ kind: "moved" });
+    expect(steps()).toBe(was + 1);
+    expect(geoOf("b").lat - bBefore.lat).toBeCloseTo(1e-5, 9);
+    expect(geoOf("b").lon).toBeCloseTo(bBefore.lon, 9);
+
+    was = steps();
+    expect(editor.scaleFolder("grp", 2)).toEqual({ kind: "resized" });
+    expect(steps()).toBe(was + 1);
+    expect(placeableOf(tour(), "folder:grp")?.extent?.value).toBe(2);
+    expect(placeableOf(tour(), "b")?.inheritedScale).toBe(2);
+    expect(editor.scaleFolder("grp", 2)).toEqual({ kind: "unchanged" });
+
+    const before = tour();
+    was = steps();
+    for (const value of [0.0999, 10.0001, 0, Number.NaN]) {
+      expect(editor.scaleFolder("grp", value)).toEqual({
+        kind: "refused",
+        reason: "Its scale must be from 0.1 to 10 times.",
+      });
+    }
+    expect(editor.scaleFolder("nope", 2)).toEqual({
+      kind: "refused",
+      reason: "That folder is no longer in this tour.",
+    });
+    expect(editor.moveFolder("nope", folder.geo)).toEqual({
+      kind: "refused",
+      reason: "That folder is no longer in this tour.",
+    });
+    expect(
+      editor.moveFolder("grp", { ...folder.geo, lat: Number.NaN }),
+    ).toEqual({ kind: "refused", reason: "That spot is not on the map." });
+    // About 22 km north: beyond any station's reach.
+    expect(
+      editor.moveFolder("grp", { ...folder.geo, lat: folder.geo.lat + 0.2 }),
+    ).toMatchObject({ kind: "refused", reason: /stay within 10 km/ });
+    expect(tour()).toEqual(before);
+    expect(steps()).toBe(was);
     await session.close();
   });
 

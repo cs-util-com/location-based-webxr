@@ -277,8 +277,8 @@ describe("the Problems tab", () => {
     const mend: ProblemFix = {
       label: "Move inside",
       edit: () => ({
-        kind: "item-pose",
-        id: "far",
+        kind: "pose",
+        ref: { kind: "block", id: "far" },
         geo: { lat: 1, lon: 2, alt: 3, heading: 0 } as never,
       }),
       done: "Moved",

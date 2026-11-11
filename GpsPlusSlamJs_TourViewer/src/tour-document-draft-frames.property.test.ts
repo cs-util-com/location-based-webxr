@@ -254,10 +254,9 @@ const animation = everyField<TourModelAnimation>({
   autoplay: fc.boolean(),
 });
 
-/** A model's size follows its view: refused on the stage, required in the
- *  world, optional on a card. */
+/** A model's size follows its view: required in the world, optional on a
+ *  card. */
 const modelSize = (view: TourModelBlock["view"]) => {
-  if (view === "stage") return fc.constant(undefined);
   const size = fc.integer({ min: 1, max: 400 });
   return view === "card" ? maybe(size) : size;
 };
@@ -328,7 +327,6 @@ const BLOCKS: Record<TourBlockKind, (id: string) => fc.Arbitrary<TourBlock>> = {
         "hotspots",
         "cutaway",
         "toy",
-        "stage",
         "card",
       )
       .chain((view) =>
@@ -347,7 +345,6 @@ const BLOCKS: Record<TourBlockKind, (id: string) => fc.Arbitrary<TourBlock>> = {
     maybe(fc.constant(GUIDE)).chain((declared) =>
       everyField<TourCharacterBlock>({
         ...envelope(id, [
-          "stage",
           "bubble",
           "speak",
           "two-stations",

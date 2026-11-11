@@ -24,7 +24,6 @@ import { PALETTE_KINDS } from "../editor/editor-shell/add-palette-model.js";
 import { createTreeAddMenu } from "../editor/editor-shell/tree-add-menu.js";
 import { buildTree } from "../editor/editor-shell/tree-model.js";
 import { stationContent, storyOf } from "../test-support/station-content.js";
-import { worldBlocks } from "../tour-content.js";
 
 import {
   KIND_EDIT,
@@ -173,46 +172,82 @@ describe("KIND_EDIT", () => {
     }
   });
 
-  it("draws in the world exactly the rows that say so", () => {
-    const all = stationOf(tourBlockKinds().map((kind) => SAMPLE[kind]));
-    expect(worldBlocks(all).map((b) => b.kind)).toEqual(
-      tourBlockKinds().filter((kind) => KIND_EDIT[kind].inWorld),
-    );
-  });
-
   it("offers in the add menu and the palette exactly the rows that say they are addable", () => {
     const listed = tourBlockKinds().filter((k) => rowOf(k).add !== undefined);
     const addable = listed.filter((k) => rowOf(k).add?.addable === true);
+    // A video is added in a story only: off on a station's menu, not in
+    // the palette, which adds at stations.
+    const atStation = addable.filter(
+      (k) => rowOf(k).add?.storyOnly === undefined,
+    );
     document.body.replaceChildren();
-    createTreeAddMenu({
+    const menu = createTreeAddMenu({
       body: document.createElement("div"),
       host: document.body,
       choose: () => undefined,
       chooseForStory: () => undefined,
     });
-    const items = [
+    const all = () => [
       ...document.querySelectorAll<HTMLElement>(
         '#tree-add-menu [role="menuitem"]',
       ),
-    ].filter((item) => item.dataset["kind"] !== "story");
-    expect(items.map((item) => item.dataset["kind"])).toEqual(listed);
+    ];
+    // The menu's two entries that are no kind's add row: the story, and
+    // the character, who is made in the character maker first. Named here
+    // so a third one cannot slip past the rows unnoticed.
+    const ownEntries = ["character", "story"];
     expect(
-      items
+      all()
+        .map((item) => item.dataset["kind"] ?? "")
+        .filter((k) => ownEntries.includes(k)),
+    ).toEqual(ownEntries);
+    const items = () =>
+      all().filter((item) => !ownEntries.includes(item.dataset["kind"] ?? ""));
+    const on = () =>
+      items()
         .filter((item) => item.getAttribute("aria-disabled") !== "true")
-        .map((item) => item.dataset["kind"]),
-    ).toEqual(addable);
+        .map((item) => item.dataset["kind"]);
+    const plus = document.createElement("button");
+    document.body.append(plus);
+    expect(items().map((item) => item.dataset["kind"])).toEqual(listed);
+    menu.openFor(plus, "s", "Station");
+    expect(on()).toEqual(atStation);
+    menu.close(false);
+    menu.openForStory(plus, "t", "Story");
+    expect(on()).toEqual(addable);
+    menu.close(false);
     expect(
       PALETTE_KINDS.map((k) => k.kind).filter((k) => k !== "station"),
-    ).toEqual(addable);
+    ).toEqual(atStation);
     document.body.replaceChildren();
   });
 
-  it("keeps today's editor: a short and a long text are addable, a picture is listed off", () => {
+  // Why: the add menu is the editor's whole reach; a kind dropped from it
+  // or turned on by accident changes what a creator can make. A character
+  // has no add row: the menu's own Character makes him in the maker first.
+  it("lists every kind with a way to add it, the character through the menu's own entry", () => {
     const listed = tourBlockKinds().filter((k) => rowOf(k).add !== undefined);
-    expect(listed).toEqual(["shortText", "longText", "picture"]);
+    expect(listed).toEqual([
+      "shortText",
+      "longText",
+      "picture",
+      "video",
+      "audio",
+      "model",
+    ]);
     expect(listed.filter((k) => rowOf(k).add?.addable === true)).toEqual([
       "shortText",
       "longText",
+      "picture",
+      "video",
+      "audio",
+      "model",
+    ]);
+    expect(listed.filter((k) => rowOf(k).add?.file !== undefined)).toEqual([
+      "picture",
+      "video",
+      "audio",
+      "model",
     ]);
   });
 });

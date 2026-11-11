@@ -7,7 +7,7 @@ or a FOLDER. Every container is a folder (`kind: 'folder'`); a folder
 with `role: 'story'` is a STORY, which holds its own ordered list of
 blocks, choices and quizzes; a folder without a role is a PLAIN FOLDER,
 which groups free blocks and plain folders under an optional `pose` (a
-rigid frame: its `scale` is only ever 1). A block lives in one place, so being in a story is what
+frame, and an optional `scale` that makes the group larger). A block lives in one place, so being in a story is what
 shows it.
 The manifest reads every station's children here (`tour-stations.ts`).
 
@@ -22,7 +22,7 @@ The manifest reads every station's children here (`tour-stations.ts`).
     (`stations[0].children[2].children[1].options[0].goto`).
 - Types: `TourStationChild` (`TourBlock | TourStory | TourFolder`),
   `TourStory` (`{ id, kind: 'folder', role: 'story', title, children }`),
-  `TourFolder` (`{ id, kind: 'folder', title?, pose?, scale?: 1, children }`, its
+  `TourFolder` (`{ id, kind: 'folder', title?, pose?, scale?, children }`, its
   children `TourFolderChild`: free blocks and plain folders),
   `TourContainer` (`TourStory | TourFolder`), `TourStoryChild`
   (`TourStoryBlock | TourChoice | TourQuizEntry`), `TourStoryBlock` (a
@@ -31,7 +31,7 @@ options }`), `TourQuizEntry` (`TourQuiz` with `id` and `kind: 'quiz'`),
   `TourChildDrop` (a `TourBlockDrop`, `{ kind: 'child', child, reason }`,
   `{ kind: 'option', child, option, reason }` for a way on a kept choice
   lost with the child it named, `{ kind: 'folderScale', folder, reason }`
-  for a plain folder's scale read as 1, or `{ kind: 'folderTitle', folder,
+  for a plain folder's scale out of its bounds read as 1, or `{ kind: 'folderTitle', folder,
 reason }` for its title over its cap left out), `TourChildrenPlace` (`{ index, path,
 story? }`: `path` the containers holding the child, outermost first,
   empty at the station's top; `story` the innermost one when it is a
@@ -75,11 +75,12 @@ id)` (null when no child has it).
   the story title's rule: an editor's tree names a group by it): one that
   is no text or blank fails at every minor, one over its cap fails strict
   and is left out lenient, reported as a `folderTitle` drop. Its `pose` is read as a block's
-  (`parseTourLocalPose`). Its `scale` may only be 1 (or absent): a scale
-  other than 1 waits for a renderer that scales the whole group, since
-  scaling positions alone would move a group's blocks apart while their
-  sizes stay. Any other value fails strict; lenient reads the folder
-  without it, reported as a `folderScale` drop.
+  (`parseTourLocalPose`). Its `scale` is absent (1) or a number from
+  `TOUR_FOLDER_MIN_SCALE` (0.1) to `TOUR_FOLDER_MAX_SCALE` (10), both
+  exported: it makes the whole group larger, its children's offsets
+  (`tour-folder-pose.ts`) and how large a renderer draws them alike. Any
+  other value fails strict; lenient reads the folder without it,
+  reported as a `folderScale` drop.
 - A child's offset with its folders' poses composed in
   (`composeTourFolderPath`) stays within `TOUR_ITEM_MAX_OFFSET_M` along
   each axis, as a single pose's must: a folder far out holding a block far
@@ -156,8 +157,8 @@ const free = tourFreeBlocks({ children }); // tour-station-pose.ts
   and reports; structural faults under lenient; the list functions.
 - `tour-folders.test.ts`: a read per shape (story, plain folder with and
   without pose and scale, empty, nested), a folder's title (read, refused
-  blank or not text, over its cap refused strict and dropped lenient), a scale other than 1 refused
-  strict and read as 1 lenient (reported), the composed-offset bound swept
+  blank or not text, over its cap refused strict and dropped lenient), scales within the bounds read
+  and those out of them refused strict and read as 1 lenient (reported), the composed-offset bound swept
   at its edge (in, on and just past it), turned by a folder's rotation,
   nested, and dropped lenient, every illegal nesting refused strict and left out lenient,
   ids shared across folders, the exclusive three-way split, the walkers,

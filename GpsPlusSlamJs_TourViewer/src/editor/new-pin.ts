@@ -6,19 +6,25 @@
  *
  * @see new-pin.ts.md
  */
+import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characters";
 import type {
+  TourObject,
   TourPin,
   TourReadingSign,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
-import type {
-  TourStory,
-  TourStoryBlock,
+import {
+  itemGeoPose,
+  tourFreeBlocks,
+} from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import {
+  tourStationStoryBlocks,
+  type TourStory,
+  type TourStoryBlock,
 } from "gps-plus-slam-app-framework/ar/tour-story";
 
-import type { AddKind } from "../kinds/edit-kinds.js";
-import { worldBlocks } from "../tour-document.js";
+import type { TextAddKind } from "../kinds/edit-kinds.js";
+import { posedBlocks } from "../placement/placeables.js";
 
 /** How far a new pin keeps from every item of its station (m). */
 const CLEAR_M = 2.2;
@@ -32,17 +38,27 @@ const PER_RING = 12;
  * Where a new pin goes in `station`'s frame (metres north and east of its
  * anchor): the first place on rings of 4 to 10 m (each within the found
  * radius), starting due north and going round, that keeps `CLEAR_M` from
- * every item; with none free, 4 m north (or the radius, if smaller).
+ * every item standing in the world (where it stands in the station's
+ * frame, its folders composed) and every story entry of the station, so
+ * two characters of one station never share a spot; with none free, 4 m north (or the
+ * radius, if smaller).
  */
 export function freePinSpot(station: TourStation): {
   northM: number;
   eastM: number;
 } {
   const radius = Math.max(0, station.foundRadiusM);
-  const taken = worldBlocks(station).map((i) => ({
-    north: i.pose.position[0],
-    east: i.pose.position[2],
-  }));
+  const taken = [
+    ...posedBlocks(station).flatMap((p) =>
+      p.inStation === null
+        ? []
+        : [{ north: p.inStation.position[0], east: p.inStation.position[2] }],
+    ),
+    ...tourStationStoryBlocks(station).map((i) => ({
+      north: i.pose.position[0],
+      east: i.pose.position[2],
+    })),
+  ];
   for (const ring of RINGS_M) {
     const r = Math.min(ring, radius);
     for (let k = 0; k < PER_RING; k += 1) {
@@ -69,25 +85,59 @@ export interface NewItemInput {
   }) => number | null;
 }
 
-/** A new item's geo pose: the station's free spot, on the ground there
- *  (the anchor's height where none has loaded). */
-function freeGeo(input: NewItemInput): TourPin["geo"] {
-  const { station } = input;
+/** The ground's height at a place, or null (not loaded, or not finite). */
+type GroundAt = NewItemInput["groundAt"];
+
+/** The station's free spot as a geo pose, and how far the ground there
+ *  lies above that spot at the anchor's height (0 where none has
+ *  loaded). */
+function freeSpotOnGround(
+  station: TourStation,
+  groundAt: GroundAt,
+): { readonly geo: TourPin["geo"]; readonly upM: number } {
   const spot = freePinSpot(station);
   const geo = itemGeoPose(
     { position: [spot.northM, 0, spot.eastM], rotation: [0, 0, 0, 1] },
     station.geo,
   );
-  const ground = input.groundAt({ lat: geo.lat, lon: geo.lon });
+  const ground = groundAt({ lat: geo.lat, lon: geo.lon });
   return {
-    ...geo,
-    alt: ground !== null && Number.isFinite(ground) ? ground : geo.alt,
+    geo,
+    upM: ground !== null && Number.isFinite(ground) ? ground - geo.alt : 0,
   };
+}
+
+/** A new item's geo pose: the station's free spot, on the ground there
+ *  (the anchor's height where none has loaded). A file's item
+ *  (`new-file-item.ts`) stands there too. */
+export function freeGeo(input: NewItemInput): TourPin["geo"] {
+  const { geo, upM } = freeSpotOnGround(input.station, input.groundAt);
+  return { ...geo, alt: geo.alt + upM };
+}
+
+/** A story entry's place in its station's frame (m north, east, up). */
+interface StorySpot {
+  readonly northM: number;
+  readonly eastM: number;
+  readonly upM?: number;
+}
+
+/** Where a new story entry of `station` stands, in its frame: the free
+ *  spot (`freePinSpot`), on the ground there by `groundAt` as a free
+ *  item stands (the anchor's height where none has loaded). */
+export function freeStorySpot(
+  station: TourStation,
+  groundAt: GroundAt,
+): StorySpot {
+  const spot = freePinSpot(station);
+  return { ...spot, upM: freeSpotOnGround(station, groundAt).upM };
 }
 
 /** One more than how many items of `kind` the station holds. */
 function nextNumber(station: TourStation, kind: string): string {
-  return String(worldBlocks(station).filter((i) => i.kind === kind).length + 1);
+  return String(
+    tourFreeBlocks(station).filter((i) => i.kind === kind).length + 1,
+  );
 }
 
 /**
@@ -107,6 +157,67 @@ export function newPin(input: NewItemInput): TourPin {
   };
 }
 
+/** A character standing free in a station. */
+export type FreeCharacter = Extract<TourObject, { kind: "character" }>;
+
+/**
+ * The tour's declared character `character` standing free in `station`
+ * (the add menu's Character, once the maker made him): at its free spot,
+ * on the ground there, in the view a character starts in (`speak`), his
+ * name and picture the declaration's.
+ */
+export function newCharacter(
+  input: NewItemInput & { readonly character: TourCharacter },
+): FreeCharacter {
+  return {
+    id: input.id,
+    kind: "character",
+    view: "speak",
+    name: input.character.name,
+    image: input.character.image,
+    character: input.character.id,
+    createdAtIso: input.nowIso,
+    geo: freeGeo(input),
+    station: input.station.id,
+  };
+}
+
+/** What every new story entry shares: its id, a tap to move on, and its
+ *  pose at `spot` in the station's frame (north, up, east; facing
+ *  north). */
+function entryAt(id: string, spot: StorySpot) {
+  return {
+    id,
+    pose: {
+      position: [spot.northM, spot.upM ?? 0, spot.eastM],
+      rotation: [0, 0, 0, 1],
+    },
+    advance: { mode: "tap" },
+  } as const;
+}
+
+/**
+ * The declared character `character` as a new entry at the end of a
+ * story: a 3D character as one standing free is (the view a character
+ * starts in, `speak`), standing at `spot` in the station's frame (the
+ * caller's free spot on the ground, `freeStorySpot`), moving on by a tap
+ * as every new story entry does.
+ */
+export function newCharacterEntry(
+  character: TourCharacter,
+  id: string,
+  spot: StorySpot,
+): TourStoryBlock {
+  return {
+    ...entryAt(id, spot),
+    kind: "character",
+    view: "speak",
+    name: character.name,
+    image: character.image,
+    character: character.id,
+  };
+}
+
 /** Why an add found no station: it went (an undo, a delete) between
  *  the press and the add. */
 const STATION_GONE =
@@ -114,7 +225,10 @@ const STATION_GONE =
 
 /** What an add came to: the item placed, or why not. */
 export type NewItemOutcome =
-  | { readonly kind: "added"; readonly item: TourPin | TourReadingSign }
+  | {
+      readonly kind: "added";
+      readonly item: TourPin | TourReadingSign | FreeCharacter;
+    }
   | { readonly kind: "refused"; readonly reason: string };
 
 /**
@@ -127,7 +241,7 @@ export function addNewItem(
   input: Omit<NewItemInput, "station"> & {
     readonly stations: readonly TourStation[];
     readonly stationId: string;
-    readonly kind: AddKind;
+    readonly kind: TextAddKind;
     readonly place: (
       item: TourPin | TourReadingSign,
     ) =>
@@ -148,28 +262,63 @@ export function addNewItem(
   return placed.kind === "placed" ? { kind: "added", item } : placed;
 }
 
+/**
+ * The add menu's Character in place: the declared character `character`
+ * standing free in the station `stationId` (`newCharacter`), handed to
+ * `place`; refused in words as `addNewItem`.
+ */
+export function addNewCharacter(
+  input: Omit<NewItemInput, "station"> & {
+    readonly stations: readonly TourStation[];
+    readonly stationId: string;
+    readonly character: TourCharacter;
+    readonly place: (
+      item: FreeCharacter,
+    ) =>
+      | { readonly kind: "placed" }
+      | { readonly kind: "refused"; readonly reason: string };
+  },
+): NewItemOutcome {
+  const station = input.stations.find((s) => s.id === input.stationId);
+  if (station === undefined) return { kind: "refused", reason: STATION_GONE };
+  const item = newCharacter({
+    station,
+    id: input.id,
+    nowIso: input.nowIso,
+    groundAt: input.groundAt,
+    character: input.character,
+  });
+  const placed = input.place(item);
+  return placed.kind === "placed" ? { kind: "added", item } : placed;
+}
+
 /** The body a new long text starts with: the format requires one. */
 const NEW_LONG_TEXT_BODY = "Write the text here.";
 
 /**
- * A new entry at the end of `story`: a card a visitor taps on from, in its
- * station's middle, "New pin n" or "New long text n" with n one more than
- * the story's cards of that kind. Moved in the room later, as any story
- * block.
+ * What every new story entry starts as, made from words or from a file
+ * (`new-file-item.ts`): a card a visitor taps on from, id `id`, posed at
+ * its station's free spot (`freePinSpot`) - a real place should it leave
+ * the story for the world, never the anchor's own point under the station
+ * marker.
+ */
+export function storyEntryShell(station: TourStation, id: string) {
+  return { ...entryAt(id, freePinSpot(station)), view: "card" } as const;
+}
+
+/**
+ * A new entry at the end of `story` of `station` (`storyEntryShell`),
+ * "New pin n" or "New long text n" with n one more than the story's cards
+ * of that kind. Moved in the room later, as any story block.
  */
 export function newStoryEntry(
+  station: TourStation,
   story: TourStory,
-  kind: AddKind,
+  kind: TextAddKind,
   id: string,
 ): TourStoryBlock {
   const n = story.children.filter((c) => c.kind === kind).length + 1;
-  const shared = {
-    id,
-    view: "card",
-    pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-    advance: { mode: "tap" },
-  } as const;
-  return { ...shared, ...KIND_ADD[kind].entry(n) };
+  return { ...storyEntryShell(station, id), ...KIND_ADD[kind].entry(n) };
 }
 
 /**
@@ -192,7 +341,7 @@ export function newLongText(input: NewItemInput): TourReadingSign {
 
 /** One addable kind's start: what it is at a station's free spot, and as
  *  a story entry numbered `n`. */
-interface KindAddRow<K extends AddKind> {
+interface KindAddRow<K extends TextAddKind> {
   readonly item: (
     input: NewItemInput,
   ) => Extract<TourPin | TourReadingSign, { kind: K }>;
@@ -207,9 +356,10 @@ interface KindAddRow<K extends AddKind> {
 /** What each addable kind starts as, one row per kind: the editor half of
  *  the add line of its row in `kinds/edit-kinds.ts` (which may not hold
  *  these: it would then import this module, and through `tour-document`
- *  and `tour-content` itself again). Keyed by the addable kinds, in the
- *  add menu's order: a kind its row makes addable needs one. */
-export const KIND_ADD: { readonly [K in AddKind]: KindAddRow<K> } = {
+ *  and `tour-content` itself again). Keyed by the addable kinds made from
+ *  words alone, in the add menu's order: a kind its row makes addable
+ *  without a file needs one (a file's kind is `new-file-item.ts`'s). */
+export const KIND_ADD: { readonly [K in TextAddKind]: KindAddRow<K> } = {
   shortText: {
     item: newPin,
     entry: (n) => ({ kind: "shortText", caption: `New pin ${String(n)}` }),

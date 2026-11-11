@@ -131,7 +131,7 @@ describe("objectTitle", () => {
     expect(block({ kind: "video", view: "card", video: "v" })).toBe("Video");
     expect(block({ kind: "audio", view: "card", audio: "s" })).toBe("Audio");
     expect(
-      block({ kind: "character", view: "stage", name: " The watchman " }),
+      block({ kind: "character", view: "speak", name: " The watchman " }),
     ).toBe("The watchman");
     expect(
       block({ kind: "shortText", view: "pin", caption: " Look up " }),

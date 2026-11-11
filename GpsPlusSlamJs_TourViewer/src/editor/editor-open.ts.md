@@ -61,7 +61,7 @@ not be read. The editor left them out: ...`), and that the next save
   does not hold), and that the next save writes them without it; null
   for none. Whole blocks a reader cannot show are not listed here.
 - `droppedFolderScalesLine(dropped, manifest): string | null` - for the
-  plain folders whose size (`scale`, a newer editor's) the reader left
+  plain folders whose size (`scale`, a newer editor's outside 0.1 to 10) the reader left
   out: which folders, by their names ("a folder without a name" for one
   with none), that their items show at their own size, and that the next
   save writes the folders without it; null for none.

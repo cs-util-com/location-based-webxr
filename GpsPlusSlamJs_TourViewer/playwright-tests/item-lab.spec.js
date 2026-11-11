@@ -34,15 +34,27 @@ function state(page) {
   return page.evaluate(() => window.__itemLab?.state());
 }
 
-/** @param {import("@playwright/test").Page} page */
-async function tapBoth(page) {
-  await page.evaluate(() => {
-    window.__itemLab?.tap("story");
-  });
-  await page.waitForFunction(() => {
-    const now = window.__itemLab?.state();
-    return now?.sound.story === "playing";
-  });
+/**
+ * The story's voice playing: in a story it plays with its step, a tap on
+ * the figure stops it and a second plays it again.
+ * @param {import("@playwright/test").Page} page
+ */
+async function storySpeaking(page) {
+  /** @param {string} sound */
+  const until = (sound) =>
+    page.waitForFunction(
+      (sound) => window.__itemLab?.state()?.sound.story === sound,
+      sound,
+    );
+  const tap = () =>
+    page.evaluate(() => {
+      window.__itemLab?.tap("story");
+    });
+  await until("playing");
+  await tap();
+  await until("off");
+  await tap();
+  await until("playing");
 }
 
 test.describe("the item lab", () => {
@@ -137,7 +149,7 @@ test.describe("the item lab", () => {
     page,
   }) => {
     await openLab(page);
-    await tapBoth(page);
+    await storySpeaking(page);
     await page.evaluate(() => {
       window.__itemLab?.tap("free");
     });
@@ -162,7 +174,7 @@ test.describe("the item lab", () => {
     page,
   }) => {
     await openLab(page);
-    await tapBoth(page);
+    await storySpeaking(page);
     await page.evaluate(() => {
       window.__itemLab?.stop();
     });

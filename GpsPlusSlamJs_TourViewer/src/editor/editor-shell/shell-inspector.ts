@@ -5,16 +5,18 @@
  * its radius first, a slider beside its number (`radius-slider.ts`); an
  * item's "Position"), a station's items under its Contents
  * (`inspector-contents.ts`). A story shows its Entries, a story's block its
- * texts and how it moves on, a choice or a quiz a summary, a free block with
- * no place in the world its texts, each with its Delete. Text only, never
- * markup.
+ * texts and how it moves on, a choice or a quiz a summary, an item with no
+ * place in the world (a video) its texts, each with its Delete. Text only,
+ * never markup.
  *
  * The fields a creator types carry `data-field` (a station's `title` and
  * `description`, labelled Name and Description at the top of the body, the
  * head showing the name as text (AU-2: a borderless name in the head read
  * as a heading); its `radius`, `east`, `north` and `heading`; a pin's `title`
  * (its text); an item's `east`, `north`, `height`, `heading` and a
- * model's `size`), each drawn with the tour's value as its default, so
+ * model's `size`; a plain folder's `scale` and, under its Place, its
+ * `east`, `north`, `height` and `heading`), each drawn with the tour's
+ * value as its default, so
  * the shell commits a field only when its text differs; a locked
  * station's place and heading are read-only. The rest are `<output>`s.
  * Every value is tied to its label, so a screen reader reads the two
@@ -46,6 +48,7 @@
 import type { ShellPictures } from "./shell-pictures.js";
 import { FREE_LIST } from "../../station-children-moves.js";
 import { shellIcon, type ShellIcon } from "gps-plus-slam-editor-kit/chrome";
+import { fileFieldPart } from "./inspector-file.js";
 import {
   TOUR_STORY_TITLE_RULE,
   type TourStepAdvance,
@@ -55,6 +58,7 @@ import {
   CHARACTER_VIEW_CHOICES,
   ON_GROUND_M,
   type InspectorCharacter,
+  type InspectorExtent,
   type InspectorModel,
   type InspectorPosition,
 } from "./inspector-model.js";
@@ -371,11 +375,11 @@ function actionInPlace(
 
 type StationModel = Extract<InspectorModel, { kind: "station" }>;
 type ItemModel = Extract<InspectorModel, { kind: "item" }>;
+type FolderModel = Extract<InspectorModel, { kind: "folder" }>;
 type CodeModel = Extract<InspectorModel, { kind: "code" }>;
 type StoryModel = Extract<InspectorModel, { kind: "story" }>;
 type StoryEntryModel = Extract<InspectorModel, { kind: "storyEntry" }>;
 type StoryStepModel = Extract<InspectorModel, { kind: "storyStep" }>;
-type FreeBlockModel = Extract<InspectorModel, { kind: "freeBlock" }>;
 
 /** The card picture's choices: a button each, the shown one pressed. */
 function imagePicker(
@@ -758,22 +762,31 @@ function storyStepParts(model: StoryStepModel): HTMLElement[] {
   ];
 }
 
-/** A free block with no place in the world: its texts and its Delete. */
-function freeBlockParts(model: FreeBlockModel): HTMLElement[] {
-  const box = el("div", "isec");
-  box.append(...model.fields.flatMap(blockTextField));
-  return [
-    box,
-    actions([
-      action("delete", "trash", `Delete ${kindNoun(model.itemKind)}`, {
-        key: DELETE_KEY,
-      }),
-    ]),
-  ];
+/** An item's Delete, with its key. */
+function itemDelete(model: ItemModel): HTMLButtonElement {
+  return action("delete", "trash", `Delete ${kindNoun(model.itemKind)}`, {
+    key: DELETE_KEY,
+  });
+}
+
+/** The size an item's white dots change, to type, with what it means. */
+function extentParts(extent: InspectorExtent): HTMLElement {
+  const section = el("div", "isec");
+  section.append(
+    numberField(extent.label, "size", fixed(extent.value, 2), "m"),
+    el(
+      "div",
+      "note",
+      `${extent.meaning}, from ${String(extent.min)} m to ${String(extent.max)} m. Drag a white dot to resize.`,
+    ),
+  );
+  return section;
 }
 
 /** An item's parts: its commands, its fields (unless its kind's panel
- *  types them itself), its panel's parts, its position. */
+ *  types them itself), its panel's parts, its position. An item with no
+ *  place in the world (a video) has its texts, its panel's parts and its
+ *  Delete only: nothing to move, ground or split off. */
 function itemParts(
   model: ItemModel,
   state: InspectorState,
@@ -786,6 +799,15 @@ function itemParts(
     why.id = PIN_LINES_ID;
     parts.push(why);
   }
+  const o = model.offset;
+  if (o === null) {
+    const box = el("div", "isec");
+    box.append(...fields.flatMap(blockTextField));
+    parts.push(box);
+    if (panel !== null) parts.push(...panel.parts());
+    parts.push(actions([itemDelete(model)]));
+    return parts;
+  }
   parts.push(
     actions([
       action("split", "split", "Move to a new station"),
@@ -794,9 +816,7 @@ function itemParts(
         note: offText(model.groundOffM),
         busy: state.busy,
       }),
-      action("delete", "trash", `Delete ${kindNoun(model.itemKind)}`, {
-        key: DELETE_KEY,
-      }),
+      itemDelete(model),
     ]),
   );
   if (fields.length > 0) {
@@ -804,10 +824,68 @@ function itemParts(
     section.append(...fields.flatMap(blockTextField));
     parts.push(section);
   }
+  if (model.extent !== null) parts.push(extentParts(model.extent));
   if (panel !== null) parts.push(...panel.parts());
-  const o = model.offset;
+  // A heading only where turning it shows (its placement row's `turns`):
+  // a pin, a reading sign or a sound faces the visitor whatever it is.
   const heading = model.headingDeg === null ? "-" : fixed(model.headingDeg, 0);
   parts.push(
+    ...disclosure(
+      state.positionOpen,
+      model.turns
+        ? `${fixed(o.upM, 1)} m up  ${heading} deg`
+        : `${fixed(o.upM, 1)} m up`,
+      () => [
+        vectorField(
+          "Offset",
+          [
+            ["E", "east", "east", fixed(o.eastM, 2)],
+            ["N", "north", "north", fixed(o.northM, 2)],
+          ],
+          "m",
+        ),
+        numberField("Height", "height", fixed(o.upM, 2), "m"),
+        ...(model.turns
+          ? [
+              numberField(
+                "Heading",
+                "heading",
+                headingText(model.headingDeg),
+                "deg",
+              ),
+            ]
+          : []),
+        el(
+          "div",
+          "note",
+          model.turns
+            ? "Metres east / north of its station's anchor, in the station's frame; the height up from the anchor; the heading relative to the station."
+            : "Metres east / north of its station's anchor, in the station's frame; the height up from the anchor. It faces the visitor, so it has no heading.",
+        ),
+      ],
+    ),
+  );
+  return parts;
+}
+
+/** A plain folder's parts: its scale to type, and its Place (its
+ *  origin's offset, height and heading in its station's frame) folded
+ *  away as an item's position is. Its items follow either. */
+function folderParts(model: FolderModel, state: InspectorState): HTMLElement[] {
+  const o = model.offset;
+  const { scale } = model;
+  const section = el("div", "isec");
+  section.append(
+    numberField(scale.label, "scale", fixed(scale.value, 2), "x"),
+    el(
+      "div",
+      "note",
+      `${scale.meaning}, from ${String(scale.min)} to ${String(scale.max)} times. Drag a white dot to scale.`,
+    ),
+  );
+  const heading = model.headingDeg === null ? "-" : fixed(model.headingDeg, 0);
+  return [
+    section,
     ...disclosure(
       state.positionOpen,
       `${fixed(o.upM, 1)} m up  ${heading} deg`,
@@ -825,12 +903,12 @@ function itemParts(
         el(
           "div",
           "note",
-          "Metres east / north of its station's anchor, in the station's frame; the height up from the anchor; the heading relative to the station.",
+          "Where the folder's origin stands: metres east / north of its station's anchor, in the station's frame; the height up from the anchor; the heading relative to the station. Its items move with it.",
         ),
       ],
+      { label: "Place", title: "Position and heading of the folder" },
     ),
-  );
-  return parts;
+  ];
 }
 
 function codeParts(model: CodeModel, state: InspectorState): HTMLElement[] {
@@ -1105,8 +1183,7 @@ function headLook(model: InspectorModel): {
   readonly icon: ShellIcon;
 } {
   switch (model.kind) {
-    case "item":
-    case "freeBlock": {
+    case "item": {
       const { look } = KIND_EDIT[model.itemKind];
       return { look, icon: look };
     }
@@ -1116,6 +1193,8 @@ function headLook(model: InspectorModel): {
       return { look: model.stepKind, icon: model.stepKind };
     case "station":
       return { look: "station", icon: "station" };
+    case "folder":
+      return { look: "fold", icon: "folder" };
     case "story":
       return { look: "story", icon: "storyOpen" };
     case "code":
@@ -1192,14 +1271,14 @@ function partsOf(
       return stationParts(model, state, pictures, sub);
     case "item":
       return itemParts(model, state, panel);
+    case "folder":
+      return folderParts(model, state);
     case "story":
       return storyParts(model, state);
     case "storyEntry":
       return storyEntryParts(model);
     case "storyStep":
       return storyStepParts(model);
-    case "freeBlock":
-      return freeBlockParts(model);
     default:
       return codeParts(model, state);
   }
@@ -1245,6 +1324,7 @@ function drawDock(
   const parts = [
     ...partsOf(model, state, pictures, sub, panel),
     ...moveParts(model, sub),
+    ...(model.file === undefined ? [] : [fileFieldPart(model.file)]),
   ];
   const before = [sub, ...(count === null ? [] : [count])];
   placeAround(dock.body, before, panel?.kept ?? null, parts);

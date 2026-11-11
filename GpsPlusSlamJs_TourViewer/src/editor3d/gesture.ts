@@ -6,6 +6,10 @@
  * there) and draws the preview itself; nothing here dispatches, so a
  * drag's frames write nothing to the store.
  *
+ * A gesture reads a PLACEABLE (`../placement/placeables.ts`) and never
+ * asks what kind of thing it is: whether it turns, lifts or has dots is
+ * its row's (`../placement/placement-rows.ts`).
+ *
  * - **move** (the middle): the object follows the SAMPLED ground under
  *   the pointer (`groundUnder`, the globe's `groundHit`), offset by where
  *   it was grabbed, keeping its height above the ground (`placedGeo`);
@@ -14,26 +18,31 @@
  *   again each frame (`retry`) until the ground arrives; any other miss
  *   (the sky, under the ground, out of reach) is dropped, and the last
  *   spot found stays.
- * - **turn** (the knob): the heading follows the pointer's bearing round
- *   the centre on the level plane, whole degrees (15 with Shift).
- * - **dot**: a station's found radius (half metres, tenths with Shift,
- *   2-300 m), or a model's size (scaled by the dot's distance against
- *   where it was grabbed, 0.05-500 m). Pins and photos have no dots.
+ * - **turn** (the knob, on a placeable that turns): the heading follows
+ *   the pointer's bearing round the centre on the level plane, whole
+ *   degrees (15 with Shift).
+ * - **dot** (on a placeable with dots): a reach (a station's found radius:
+ *   half metres, tenths with Shift), or a size or a factor (scaled by the
+ *   dot's distance against where it was grabbed), within the bounds its
+ *   row gives.
  *
  * A hold of the keys (`startKeyGesture`) is one gesture too: its presses
- * nudge, turn or lift the pose reached so far, and its release writes one
- * edit.
+ * nudge, turn (what turns) or lift (what lifts) the pose reached so far,
+ * and its release writes one edit.
  *
  * @see gesture.ts.md
  */
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 
+import type { PlaceEdit } from "../placement/place-edits.js";
+import type { Placeable } from "../placement/placeables.js";
 import {
   compassDeg,
   draggedRadiusM,
   draggedSizeM,
   turnedHeadingDeg,
   type GizmoHandle,
+  type GizmoSubject,
   type SceneKey,
   type ScreenPoint,
   type WorldPoint,
@@ -68,50 +77,18 @@ export interface GestureWorld {
   groundAt(place: Place): number | null;
 }
 
-/** What a gesture edits: a station (its anchor and found radius) or an
- *  item (its pose, and a model's size), with the ground under it in the
- *  world (the gizmo's centre). */
-export type GestureTarget =
-  | {
-      readonly kind: "station";
-      readonly id: string;
-      readonly geo: QrGeoPose;
-      readonly foundRadiusM: number;
-      readonly centre: WorldPoint;
-      /** Its pose is locked: only its radius can be dragged. */
-      readonly locked?: boolean;
-    }
-  | {
-      readonly kind: "item";
-      readonly id: string;
-      readonly geo: QrGeoPose;
-      /** A placed model's size (m); null for a pin or a photo. */
-      readonly sizeM: number | null;
-      readonly centre: WorldPoint;
-    };
-
-/** The one edit a gesture writes. */
-export type GestureEdit =
-  | { readonly kind: "item-pose"; readonly id: string; readonly geo: QrGeoPose }
-  | {
-      readonly kind: "station-pose";
-      readonly id: string;
-      readonly geo: QrGeoPose;
-    }
-  | {
-      readonly kind: "radius";
-      readonly id: string;
-      readonly foundRadiusM: number;
-    }
-  | { readonly kind: "size"; readonly id: string; readonly sizeM: number };
+/** What a gesture edits: a placeable's pose, handles and dots, with the
+ *  ground under it in the world (the gizmo's centre). */
+export type GestureTarget = Pick<
+  Placeable,
+  "ref" | "geo" | "turns" | "lifts" | "extent" | "locked"
+> & { readonly centre: WorldPoint };
 
 /** What the scene shows while a gesture runs. */
 export interface GesturePreview {
   readonly geo: QrGeoPose;
-  /** A station's found radius; null for an item. */
-  readonly foundRadiusM: number | null;
-  /** A model's size; null for anything else. */
-  readonly sizeM: number | null;
+  /** The dots' value; null for a placeable without dots. */
+  readonly value: number | null;
 }
 
 export interface Gesture {
@@ -125,10 +102,10 @@ export interface Gesture {
   waiting(): boolean;
   preview(): GesturePreview;
   /** The edit to write on release, or null when nothing changed. */
-  edit(): GestureEdit | null;
+  edit(): PlaceEdit | null;
 }
 
-/** The least distance a model's dot counts from its centre (m). */
+/** The least distance a size's dot counts from its centre (m). */
 const MIN_DOT_M = 0.2;
 
 /** Whether two poses are the same pose, field by field. */
@@ -142,9 +119,51 @@ function sameGeo(a: QrGeoPose, b: QrGeoPose): boolean {
   );
 }
 
-/** Whether `target` is a station whose pose is locked. */
+/** `p` as a gesture's target, its gizmo at `centre` (the ground under
+ *  a block, a station's own point), with every dot its row gives. */
+export function gestureTargetOf(
+  p: Placeable,
+  centre: WorldPoint,
+): GestureTarget {
+  return {
+    ref: p.ref,
+    geo: p.geo,
+    turns: p.turns,
+    lifts: p.lifts,
+    extent: p.extent,
+    locked: p.locked,
+    centre,
+  };
+}
+
+/** What the gizmo is drawn for: `target` as `now` shows it, at
+ *  `centre`. */
+export function gizmoSubjectOf(
+  target: GestureTarget,
+  now: GesturePreview,
+  centre: WorldPoint,
+): GizmoSubject {
+  const { extent } = target;
+  return {
+    centre,
+    headingDeg: headingOfGeo(now.geo),
+    turns: target.turns,
+    extent:
+      extent === null || now.value === null
+        ? null
+        : { kind: extent.kind, value: now.value },
+    locked: target.locked,
+  };
+}
+
+/** Whether `target`'s pose is locked (only its dots may be dragged). */
 export function poseLocked(target: GestureTarget): boolean {
-  return target.kind === "station" && target.locked === true;
+  return target.locked;
+}
+
+/** What `target` shows before any gesture moved it. */
+function restingPreview(target: GestureTarget): GesturePreview {
+  return { geo: target.geo, value: target.extent?.value ?? null };
 }
 
 /** The ground under the pointer, else the level plane at `y`. */
@@ -160,8 +179,9 @@ function grabPoint(
 /**
  * A gesture of `handle` on `target`, grabbed at `pressedAt`; null when
  * there is nothing to grab there (neither ground nor the level plane
- * under the pointer) or the handle is not the target's (a dot on a pin or
- * a photo; the middle or the knob of a locked station).
+ * under the pointer) or the handle is not the target's (a dot on a
+ * placeable without dots, the knob on one that does not turn, the middle
+ * or the knob of a locked one).
  */
 export function startGesture(
   handle: GizmoHandle,
@@ -169,9 +189,9 @@ export function startGesture(
   pressedAt: ScreenPoint,
   world: GestureWorld,
 ): Gesture | null {
-  if (handle === "dot" && target.kind === "item" && target.sizeM === null) {
-    return null;
-  }
+  const { extent } = target;
+  if (handle === "dot" && extent === null) return null;
+  if (handle === "turn" && !target.turns) return null;
   if (handle !== "dot" && poseLocked(target)) return null;
   const centre = target.centre;
   const grab =
@@ -180,11 +200,7 @@ export function startGesture(
       : grabPoint(world, pressedAt, centre.y);
   if (grab === null) return null;
 
-  const start: GesturePreview = {
-    geo: target.geo,
-    foundRadiusM: target.kind === "station" ? target.foundRadiusM : null,
-    sizeM: target.kind === "item" ? target.sizeM : null,
-  };
+  const start = restingPreview(target);
   let now = start;
   let pending: { pointer: ScreenPoint; fine: boolean } | null = null;
 
@@ -234,13 +250,15 @@ export function startGesture(
       return true;
     }
     const p = grabPoint(world, pointer, centre.y);
-    if (p === null) return true;
+    if (p === null || extent === null) return true;
     const d = Math.hypot(p.x - centre.x, p.z - centre.z);
-    if (target.kind === "station") {
-      now = { ...now, foundRadiusM: draggedRadiusM(d, fine) };
-    } else if (target.sizeM !== null) {
-      now = { ...now, sizeM: draggedSizeM(target.sizeM, dotStart, d) };
-    }
+    now = {
+      ...now,
+      value:
+        extent.kind === "reach"
+          ? draggedRadiusM(d, fine, extent)
+          : draggedSizeM(extent.value, dotStart, d, extent),
+    };
     return true;
   };
 
@@ -258,21 +276,13 @@ export function startGesture(
     preview: () => now,
     edit() {
       if (handle === "dot") {
-        if (target.kind === "station") {
-          const r = now.foundRadiusM;
-          return r === null || r === start.foundRadiusM
-            ? null
-            : { kind: "radius", id: target.id, foundRadiusM: r };
-        }
-        const s = now.sizeM;
-        return s === null || s === start.sizeM
+        const value = now.value;
+        return value === null || value === start.value
           ? null
-          : { kind: "size", id: target.id, sizeM: s };
+          : { kind: "extent", ref: target.ref, value };
       }
       if (sameGeo(now.geo, start.geo)) return null;
-      return target.kind === "station"
-        ? { kind: "station-pose", id: target.id, geo: now.geo }
-        : { kind: "item-pose", id: target.id, geo: now.geo };
+      return { kind: "pose", ref: target.ref, geo: now.geo };
     },
   };
 }
@@ -288,14 +298,14 @@ export interface KeyGesture {
   press(key: PoseKey): void;
   preview(): GesturePreview;
   /** The edit to write, or null when nothing changed. */
-  edit(): GestureEdit | null;
+  edit(): PlaceEdit | null;
 }
 
 /**
  * A hold of the keys on `target`: each press applied in turn to the pose
  * it reached - a nudge keeps the height above the ground (`nudgedGeo`, by
- * `world.groundAt`), a turn turns about up, a lift raises an item (a
- * station's height is the ground's: a lift leaves it).
+ * `world.groundAt`), a turn turns about up what turns, a lift raises what
+ * lifts (a station's height is the ground's: a lift leaves it).
  */
 export function startKeyGesture(
   target: GestureTarget,
@@ -308,21 +318,15 @@ export function startKeyGesture(
       if (key.kind === "nudge") {
         geo = nudgedGeo(geo, key.eastM, key.northM, (p) => world.groundAt(p));
       } else if (key.kind === "turn") {
-        geo = turnedGeo(geo, key.deg);
-      } else if (target.kind === "item") {
+        if (target.turns) geo = turnedGeo(geo, key.deg);
+      } else if (target.lifts) {
         geo = liftedGeo(geo, key.m);
       }
     },
-    preview: () => ({
-      geo,
-      foundRadiusM: target.kind === "station" ? target.foundRadiusM : null,
-      sizeM: target.kind === "item" ? target.sizeM : null,
-    }),
+    preview: () => ({ ...restingPreview(target), geo }),
     edit() {
       if (sameGeo(geo, target.geo)) return null;
-      return target.kind === "station"
-        ? { kind: "station-pose", id: target.id, geo }
-        : { kind: "item-pose", id: target.id, geo };
+      return { kind: "pose", ref: target.ref, geo };
     },
   };
 }

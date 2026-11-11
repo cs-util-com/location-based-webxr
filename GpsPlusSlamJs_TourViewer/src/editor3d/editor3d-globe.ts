@@ -1493,7 +1493,12 @@ export async function openGlobeEditor(
     // laid-out canvas, so the loop draws once the box shows, and the open
     // resolves on its first tick. A frame that throws stops the drawing;
     // the page is told.
+    let paused = false;
     renderer.setAnimationLoop(() => {
+      if (paused) {
+        frameClock.pause();
+        return;
+      }
       if (canvas.clientWidth === 0 || canvas.clientHeight === 0) {
         // Not drawn: the gap until the next drawn frame is no slow frame.
         frameClock.pause();
@@ -1518,6 +1523,9 @@ export async function openGlobeEditor(
 
     return {
       dispose,
+      setPaused(on) {
+        paused = on;
+      },
       setTilt(deg) {
         placePose({ pitchDeg: Math.min(89, Math.max(0, deg)) - 90 });
       },

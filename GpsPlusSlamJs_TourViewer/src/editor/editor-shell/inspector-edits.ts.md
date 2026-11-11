@@ -14,6 +14,12 @@ editor session as one undo step.
   - `selected` is the page's selection (`station:<id>` or an item's id);
     `stations` the tour's; `origin` the 3D view's centre (null: a
     station's place is not typed).
+  - A plain folder's (`folder:<id>`) `scale`: a scene `extent` edit of the
+    folder; its `east`, `north` and `height`: a scene `pose` edit of the
+    folder, the typed axis changed in its station's frame (its height too:
+    a folder has no altitude of its own to write); its `heading`: a turn
+    of `folder:<id>` against its heading in its station. Its items follow
+    each. Any other field, or a folder the tour lacks: none.
   - A station's `title`, `description` and `radius`: `{ kind: "station",
 stationId, edit }` (a `StationEdit` of `tour-document.ts`). A radius
     lower than its items is allowed: they stay where they are.
@@ -34,20 +40,26 @@ id, title }`. A story's block selected: its texts and a character's facing
     text's `description`, a picture's `title` / `caption` / `alt`, a
     model's `title`): `{ kind: "block", id, field, value }`, its cap
     checked by the session. A field the kind does not have: none.
-  - A station's `east` / `north`: `{ kind: "scene", edit: station-pose }`,
+  - A station's `east` / `north`: `{ kind: "scene", edit }` with a
+    station's pose (`../../placement/place-edits.ts`),
     its anchor at the place those metres name from `origin`
     (`placeAtEastNorth`), its height and turn kept.
-  - An item's `east` / `north`: an item-pose scene edit, its offset in
-    its station's frame ([north, up, east]) with that one axis changed.
+  - An item's `east` / `north`: a block's pose as a scene edit, its offset in
+    its station's frame ([north, up, east], its folders composed in, as
+    the inspector shows it) with that one axis changed; the document
+    re-expresses it in its folder.
   - An item's `height`: `{ kind: "height", id, alt }`, the altitude the
     typed up-offset gives in its station's frame; the shell writes it as
     the item's altitude alone (`groundItems`), its latitude, longitude
     and turn untouched. A pose through the station's frame and back moves
     an item sideways by up to about a micrometre (float32).
-  - A `heading`, of a station or an item: `{ kind: "turn", selection, deg
+  - A `heading`, of a station or an item whose placement row `turns`
+    (one that faces the visitor gets `none`): `{ kind: "turn", selection, deg
 }`, the short way round from the heading it has now (the page turns it
     as the 3D view's turn does).
-  - A model's `size`: a size scene edit.
+  - A `size` (a model's largest side, a picture's width: the size extent
+    its placement row gives it): an extent scene edit; none for an item
+    whose row has no size.
   - A value equal to the tour's, a field the selection has not, a code,
     or a selection the tour lacks: `{ kind: "none" }`.
   - A number field with no number in it (blank, "ten"): `{ kind:
@@ -62,10 +74,12 @@ id, title }`. A story's block selected: its texts and a character's facing
 - `groundEdit({ selected, stations, which, groundAt })` -> `GroundEdit |
 null`:
   - `which: "ground"` on a station: its anchor at the ground under it, as
-    a station-pose scene edit (so the lock holds it); on an item: its
+    a station's pose as a scene edit (so the lock holds it); on an item: its
     height at the ground under it (`ground-items` with one item).
-  - `which: "ground-items"` on a station: every item off the ground, each
-    at the ground under its own place, in one `ground-items` edit.
+  - `which: "ground-items"` on a station: every item standing in the
+    world off the ground (`posedEntries`: those in its folders and its
+    free characters too), each at the ground under where it stands, in one
+    `ground-items` edit.
   - Those within `ON_GROUND_M` (0.05 m) of the ground are left out; with
     nothing left: none.
   - Null while the ground under any of them has not loaded: the shell
@@ -109,5 +123,5 @@ groundEdit({
 
 ## Tests
 
-`inspector-edits.test.ts`: a station's title, description and radius; a pin's text and no model caption; a typed title written for every kind of block (so no "title" falls through as a field the kind lacks); a station moved to the typed east and north, height and heading kept; the turn to a typed heading; an item's typed offset; a typed height as the altitude alone; a model's size; a value that is no number (hex, exponents, thousands separators among them) and the plain decimals that are, an unchanged one; a selection the tour lacks, a code, an unknown field. `groundEdit`: an item once its ground has loaded, a station's items as one edit, a station's anchor with its turn kept, nothing for what stands on the ground already. End to end:
+`inspector-edits.test.ts`: a station's title, description and radius; a pin's text and no model caption; a typed title written for every kind of block (so no "title" falls through as a field the kind lacks); a station moved to the typed east and north, height and heading kept; the turn to a typed heading; an item's typed offset; an item in a turned folder, its typed offset in the station's frame, and grounded where it stands; a turned folder's typed scale, offset, height and heading, and nothing for the values it has, an unknown field or a folder the tour lacks; a typed height as the altitude alone; a model's size; a value that is no number (hex, exponents, thousands separators among them) and the plain decimals that are, an unchanged one; a selection the tour lacks, a code, an unknown field. `groundEdit`: an item once its ground has loaded, a station's items as one edit, a station's anchor with its turn kept, nothing for what stands on the ground already. End to end:
 `playwright-tests/editor3d-inspector.spec.js`.

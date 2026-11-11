@@ -65,6 +65,7 @@ import {
 } from "./tour-session.js";
 import { createTourViewerSession } from "./tour-viewer-session.js";
 import { documentObjects, selectTourDocument } from "./tour-document.js";
+import { pngBlob } from "./test-support/png-blob.js";
 import { settle } from "./test-support/settle.js";
 import { stationIdOf, tourOf } from "./test-support/tour-of.js";
 import {
@@ -1172,6 +1173,34 @@ const ROWS: readonly Row[] = [
       });
       const home = stationHolding(written, "a");
       expect(stationBlocks(home!)[0]?.pose.position[1]).toBeCloseTo(-1.5, 6);
+    },
+  },
+  {
+    // Why: a character is declared in the editor with its two pictures;
+    // the declaration and both files must reach the saved tour, and come
+    // back from the draft after a reload.
+    name: "add a character, reload and restore the draft, save",
+    records: false,
+    byDesign: true,
+    diverges:
+      "by design: characters are added in the editor; the phone has no Characters list",
+    run: async (p) => {
+      await p.editStations((e) =>
+        e.declareCharacter({
+          name: "Ranger Rita",
+          image: pngBlob(8, 4),
+          frames: pngBlob(16, 4),
+        }),
+      );
+      return p.reopenRestored();
+    },
+    each: ({ written }) => {
+      const [rita, ...more] = written.characters ?? [];
+      expect(more).toEqual([]);
+      expect(rita?.name).toBe("Ranger Rita");
+      expect(written.assets.map((a) => a.id)).toEqual(
+        expect.arrayContaining([rita?.image, rita?.frames]),
+      );
     },
   },
   {

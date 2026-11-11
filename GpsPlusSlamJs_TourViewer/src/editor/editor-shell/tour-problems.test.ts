@@ -112,8 +112,8 @@ describe("tourProblems", () => {
     // Why: an item left out of its circle has the second way out too.
     expect(split).toEqual({ label: "Move to a new station", split: true });
     const edit = fix.edit();
-    expect(edit.kind).toBe("item-pose");
-    expect(edit.id).toBe("far");
+    expect(edit.kind).toBe("pose");
+    expect(edit.ref).toEqual({ kind: "block", id: "far" });
     const geo = edit.geo;
     const northM = (geo.lat - 48.1) * 111_320;
     const eastM = (geo.lon - 11.5) * 111_320 * Math.cos((48.1 * Math.PI) / 180);
@@ -266,6 +266,76 @@ describe("tourProblems", () => {
         },
       ]),
     ).toEqual([]);
+  });
+
+  // Why: an item in a folder stands where its folders put it, not where
+  // its own pose says in its folder. A folder 20 m north, turned a quarter
+  // about the vertical, puts a pin 20 m north in it at 20 m north and 20 m
+  // west of the centre: outside a 25 m circle though its own pose is not,
+  // and moved inside along the line it really stands on.
+  it("judges an item in a turned folder where it stands, and moves it there", () => {
+    const s45 = Math.SQRT1_2;
+    const folder = {
+      id: "f",
+      kind: "folder",
+      pose: { position: [20, 0, 0], rotation: [0, s45, 0, s45] },
+      children: [pin("deep", 20, 0, "Deep pin")],
+    };
+    const told = station("a", [], "Square");
+    const groups = tourProblems([
+      { ...told, children: [folder] } as unknown as TourStation,
+    ]);
+    expect(groups[0]?.problems[0]).toMatchObject({
+      severity: "warning",
+      what: "Outside its station's circle (28 m from the centre, circle 25 m)",
+      who: "Deep pin",
+      select: "deep",
+    });
+    const edit = moveInside(groups[0]).edit();
+    expect(edit.ref).toEqual({ kind: "block", id: "deep" });
+    const northM = (edit.geo.lat - 48.1) * 111_320;
+    const eastM =
+      (edit.geo.lon - 11.5) * 111_320 * Math.cos((48.1 * Math.PI) / 180);
+    expect(Math.hypot(northM, eastM)).toBeLessThan(25);
+    expect(Math.hypot(northM, eastM)).toBeGreaterThan(19);
+    expect(northM).toBeGreaterThan(0);
+    expect(eastM).toBeLessThan(0);
+    expect(Math.atan2(eastM, northM)).toBeCloseTo(-Math.PI / 4, 2);
+    expect(edit.geo.alt).toBeCloseTo(560 + 1.5, 6);
+    // The same pin with the folder unturned stands 40 m north: outside too,
+    // but by its composed distance, never its own 20 m.
+    const flat = {
+      ...folder,
+      pose: { ...folder.pose, rotation: [0, 0, 0, 1] },
+    };
+    expect(
+      tourProblems([{ ...told, children: [flat] } as unknown as TourStation])[0]
+        ?.problems[0]?.what,
+    ).toBe("Outside its station's circle (40 m from the centre, circle 25 m)");
+  });
+
+  // Why: a free character stands in the world like any item, so a visitor
+  // at the station never meets one left outside its circle either.
+  it("warns of a free character outside the circle like any item", () => {
+    const zz = {
+      id: "zz",
+      kind: "character",
+      view: "speak",
+      name: "Zz",
+      image: "cut",
+      createdAtIso: AT,
+      pose: { position: [40, 0, 0], rotation: [0, 0, 0, 1] },
+    };
+    const groups = tourProblems([station("a", [zz], "Square")]);
+    expect(groups[0]?.problems).toHaveLength(1);
+    expect(groups[0]?.problems[0]).toMatchObject({
+      severity: "warning",
+      select: "zz",
+    });
+    expect(moveInside(groups[0]).edit().ref).toEqual({
+      kind: "block",
+      id: "zz",
+    });
   });
 
   it("counts the problems by severity", () => {

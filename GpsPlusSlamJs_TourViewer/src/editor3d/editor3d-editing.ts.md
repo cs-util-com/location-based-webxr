@@ -30,9 +30,11 @@ pure gesture maths reads (`GestureWorld`).
     the ground's ellipsoidal height there, or the centre's own height
     plus the geoid's N where no ground has loaded (the tree's "+").
   - `turn(selection, deg)` - the selection turned `deg` clockwise about
-    up where it stands (`turnedGeo`), written as one gesture edit through
-    the page (a locked station's is refused there); false for one with
-    no pose here (a code).
+    up where it stands (`turnedGeo`), written as one placement edit
+    (`../placement/place-edits.ts`) through the page (a locked station's
+    is refused there); false for one with no pose here (a code). It is the
+    inspector's typed heading, so it turns also what shows no turn; only
+    the knob and the keys read `turns`.
   - `groundAt(place)` - the ground's ellipsoidal height at a place
     (`world.groundAt`), null where none has loaded.
   - `screenOf(selection)`, `handleScreen("middle" | "knob" | "dot")`,
@@ -82,6 +84,12 @@ pure gesture maths reads (`GestureWorld`).
   (`not-loaded` is what the gesture waits on).
 - A click on nothing the layer picks selects the station whose found
   radius holds the ground under the pointer (the nearest), else nothing.
+- The selection is read as a PLACEABLE (`../placement/placeables.ts`,
+  `placeableOf`): its pose composed through its folders, whether it
+  turns or lifts, its dots and its lock are its row's, never this file's.
+  A card, a code or a story's step is no target. Of the dots, a station's
+  reach and a model's size are shown; others (a picture's width) wait for
+  a write of any extent through the session.
 - An item's gizmo centre is the ground under it (where loaded, else its
   own height); a station's is its point.
 - **A locked camera stands still:** `lockCamera(true)` (a press on a

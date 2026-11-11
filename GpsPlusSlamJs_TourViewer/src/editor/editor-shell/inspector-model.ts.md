@@ -39,6 +39,16 @@ origin?, groundAt? })` ->
     in tenths of a metre, 0 within `ON_GROUND_M`; null while unknown),
     `position` (`InspectorPosition`), or null when the
     station's point or the origin cannot be read;
+  - `FolderInspector` - `kind: "folder"` (selection `folder:<id>`),
+    `folderId`, `stationId`, `title` (`folderName`), `sub` ("Folder in
+    <station>, 2 items", its items at any depth), `scale`
+    (`InspectorScale`: its placement row's label, meaning and bounds and
+    the tour's value, 1 for none), `offset` and `headingDeg` (its origin
+    in its station's frame, its holders composed in), `groundOffM`,
+    `phoneDetails: false` (a phone shows no details sheet for it: a tap
+    keeps the list and the folder's band, and the 3D handles move, turn
+    and scale it; its typed fields are for a wider window); read
+    through `placeableOf`, so it shows what the gizmo moves;
   - `StoryInspector` - `kind: "story"` (selection `story:<id>`), `storyId`,
     `stationId`, `title`, `sub` ("2 The gate / Story") and `entries`
     (`storyRows` of `tree-model.ts`: `{ id, kind, title, place }`);
@@ -52,19 +62,25 @@ view, advance, facingDeg }`) and `advance { mode, afterS }`;
     `id`, `stationId`, `title`, `sub`, `heading` and `lines`: where each answer
     leads, or a quiz's points and its answers with the right one said (a typed
     answer's check is not said);
-  - `FreeBlockInspector` - `kind: "freeBlock"`, a free video, audio or
-    character: `itemKind`, `id`, `stationId`, `title`, `sub`, `fields`;
-  - `ItemInspector` - `kind: "item"`, `itemKind`, title, `sub` naming
+  - `ItemInspector` - `kind: "item"`, every free block (a video and a
+    free character too), `itemKind`, title, `sub` naming
     its kind in the one word every creator page uses and its station ("Pin in
     Market Square", "Photo in ...", "3D model in ...", `KIND_EDIT` label; the
     title by `objectTitle`), `stationId`, `text` (a pin's caption to edit; null for a
-    photo or a model), `sizeM` (a model's, else null), `fields` (its
+    photo or a model), `extent` (`InspectorExtent`: the size its white
+    dots change, as its placement row gives it - `field`, `label`,
+    `meaning`, the tour's `value`, `min`, `max`; a model's Size, a
+    picture's Width; null for an item with none), `fields` (its
     other text fields to type, `blockFields` of `../block-fields.ts`:
     a short text's description, a picture's title, caption and alt text,
     a model's title), `offset`
-    (`northM`, `upM`, `eastM` in the station's frame), `headingDeg`,
-    `groundOffM` (its height over the ground, rounded as the station's;
-    null while unknown);
+    (`northM`, `upM`, `eastM` in the station's frame, its folders composed
+    in; null for a block with no place in the world, a video),
+    `headingDeg` (in the same frame; null with no place), `turns` (its
+    placement row's: its gizmo has the round arrow), and `groundOffM` (the height
+    over the ground of where it stands in the world, through its
+    folders, `posedEntryOf` of `../../placement/placeables.ts`; rounded as
+    the station's; null while unknown or with no place);
   - `CodeInspector` - `kind: "code"`, title, `sub` (its line),
     `printSizeM`, `position` or null when it has none;
   - `InspectorPosition` - `eastM` and `northM` from `origin` when it
@@ -84,9 +100,13 @@ view, advance, facingDeg }`) and `advance { mode, afterS }`;
   a rotation that is not finite, and null for one that turns the forward
   straight up or down (no bearing then: its north and east parts are
   both under 1e-9).
+- `detailsOnPhone(model)` - whether a phone shows `model` as its details
+  sheet: true unless the model says `phoneDetails: false` (a folder). The
+  shell asks this, never the selection's kind.
 - `inspectorHint(model | null)` - the bottom bar's hint: the handles the
   selection's gizmo has in the 3D view (a station: move, radius dot,
-  turn; an item: move and turn, a model also a size dot; a code: none,
+  turn; an item: move and turn, a size dot where it has an `extent` (a
+  model, a picture); a code: none,
   read-only), or how to select when nothing is (and that a right click
   on the ground starts a station).
 - `MODEL_VIEW_CHOICES` - the format's world views with their labels, in
@@ -119,7 +139,13 @@ view, advance, facingDeg }`) and `advance { mode, afterS }`;
   compares stations by those metres; latitude and longitude are what the
   map shows.
 - A station's position is its own point; an item's is its offset in its
-  station's frame (north, up, east).
+  station's frame (north, up, east), its folders composed in, which is
+  also the frame its typed fields write back (`inspector-edits.ts`). Its
+  height off the ground and the station's count of items off the ground
+  are judged where it stands in the world.
+- The hint names the round arrow only for an item whose gizmo turns it
+  (`turns`), the white dot only for a model, and says an item with no
+  place in the world has none in the 3D view.
 - A station's model carries `locked` (from `unlockedStations`, locked by default). A locked station's hint names its radius dot and says how to unlock it, never a drag the lock refuses.
 
 ## Examples
@@ -135,9 +161,16 @@ if (model?.kind === "station") console.log(model.position?.eastM);
 one; a station's, an item's and a code's fields (and a code without a
 position); a station east and north of the tour's centre in metres;
 `headingOfRotation` for turns about up, and none for a forward turned
-straight up or down; `inspectorHint` for each kind and for none.
+straight up or down; `inspectorHint` for each kind and for none (a pin
+with no round arrow, a video with no place); a video as an item with no
+place; a free character as an item with its place and turn; an item in
+a turned folder with its offset in the station's frame and its height
+off the ground where it stands.
 
-`inspector-model.test.ts` also covers `locked` and the locked hint, and
+`inspector-model.test.ts` also covers a plain folder (its name, station
+and item count, its scale and bounds, its origin and heading in its
+station's frame, its ground, its hint; none for one the tour lacks),
+`locked` and the locked hint, and
 the values the inspector edits: a station's own name, the card's
 choices with the one shown marked, the items outside the circle, a
 position from a given origin, how far a station and its items stand off
@@ -152,3 +185,9 @@ again under the creator's typing on every tile of finer ground.
 ## Narration key
 
 `InspectorLongText.narrationKey` is the narration record (JSON) plus the input's `timingsStamp`: the Narration section re-reads when it changes.
+
+## `file`
+
+`InspectorModel` carries an optional `file` (`inspector-file.ts`), added
+by the shell after `buildInspector`; `buildInspector` itself never sets
+it.

@@ -114,6 +114,8 @@ import {
   type StationPose,
 } from "../tour-document.js";
 import { sameJson } from "../same-json.js";
+import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characters";
+import { characterChanges } from "../declared-characters.js";
 import {
   changedStations,
   parseSettingsRecord,
@@ -151,6 +153,19 @@ export interface EditorTourSettings {
   /** The stations added by hand there (untitled and empty, each keeps
    *  itself). */
   readonly handMadeStations?: readonly string[];
+  /** The tour's declared characters, whole, once one was declared,
+   *  removed or restored here. Absent: no opinion about them. */
+  readonly characters?: readonly TourCharacter[];
+}
+
+/** The characters `wanted` changes against `against`'s (each added,
+ *  gone or declared otherwise); none for a record without them. */
+function changedCharacters(
+  wanted: EditorTourSettings,
+  against: EditorTourSettings,
+): number {
+  if (wanted.characters === undefined) return 0;
+  return characterChanges(against.characters ?? [], wanted.characters);
 }
 
 /** One of the details' fields (`tour-details-form.ts`), in the order the
@@ -273,7 +288,8 @@ function changesSettings(
     wanted.needsNoGps !== against.needsNoGps ||
     changedDetails(wanted.details, against.details).length > 0 ||
     changedStations(wanted.stations, against.stations).length > 0 ||
-    frameChangeCount(changedFrames(wanted, against)) > 0
+    frameChangeCount(changedFrames(wanted, against)) > 0 ||
+    changedCharacters(wanted, against) > 0
   );
 }
 
@@ -312,6 +328,7 @@ function sameRecord(
       "order",
       "deletedStations",
       "handMadeStations",
+      "characters",
     ] as const
   ).every((key) => sameJson(a[key], b[key]));
   return stationsAlike && changedDetails(a.details, b.details).length === 0;
@@ -327,6 +344,7 @@ const DETAILS_WHAT = "this tour's details";
 const BOTH_WHAT = "this tour's settings";
 const STATIONS_WHAT = "this tour's station positions";
 const FRAMES_WHAT = "this tour's stations";
+const CHARACTERS_WHAT = "this tour's characters";
 
 /** What an offered record changes against the opened file: whether the
  *  setting, and which details. */
@@ -338,6 +356,7 @@ function settingsChanges(
   readonly details: DetailField[];
   readonly stations: string[];
   readonly frames: FrameChanges;
+  readonly characters: number;
 } {
   const file = settingsOf(manifest);
   return {
@@ -345,6 +364,7 @@ function settingsChanges(
     details: changedDetails(settings.details, file.details),
     stations: changedStations(settings.stations, file.stations),
     frames: changedFrames(settings, file),
+    characters: changedCharacters(settings, file),
   };
 }
 
@@ -404,7 +424,8 @@ function settingsChangeCount(changes: SettingsChanges): number {
     (changes.noGps ? 1 : 0) +
     changes.details.length +
     changes.stations.length +
-    frameChangeCount(changes.frames)
+    frameChangeCount(changes.frames) +
+    changes.characters
   );
 }
 
@@ -434,6 +455,7 @@ function settingsParts(changes: SettingsChanges, noGps: string): string[] {
   if (added.length > 0) parts.push(`${stationsWord(added.length)} added`);
   if (deleted.length > 0) parts.push(`${stationsWord(deleted.length)} deleted`);
   if (reordered) parts.push("the order of the stations");
+  if (changes.characters > 0) parts.push("the tour's characters");
   return parts;
 }
 
@@ -449,8 +471,10 @@ function settingsWhatOf(
     changes.noGps,
     changes.details.length > 0,
     changes.stations.length > 0 || frames,
+    changes.characters > 0,
   ].filter(Boolean).length;
   if (kinds > 1) return BOTH_WHAT;
+  if (changes.characters > 0) return CHARACTERS_WHAT;
   if (changes.details.length > 0) return DETAILS_WHAT;
   if (frames) return FRAMES_WHAT;
   if (changes.stations.length > 0) return STATIONS_WHAT;
@@ -492,7 +516,9 @@ export function restoredLine(
           ? "the station positions"
           : what === FRAMES_WHAT
             ? "the stations"
-            : "the settings";
+            : what === CHARACTERS_WHAT
+              ? "the characters"
+              : "the settings";
   return `Nothing was restored: the notes and ${part} those changes were for are changed here already.`;
 }
 
@@ -527,6 +553,7 @@ function settingsOf(manifest: TourManifest): EditorTourSettings {
     details: detailsOf(manifest),
     stations: manifest.stations.map(({ id, geo }) => ({ id, geo })),
     frames: framesOf(manifest),
+    characters: manifest.characters ?? [],
   };
 }
 

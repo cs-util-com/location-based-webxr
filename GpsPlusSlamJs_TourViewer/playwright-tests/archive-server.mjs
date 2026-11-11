@@ -477,7 +477,7 @@ async function buildStationsZip({
                       told({
                         id: "sir-kay",
                         kind: "character",
-                        view: "stage",
+                        view: "speak",
                         name: "Sir Kay",
                         image: "knight",
                         caption: "Halt, traveller!",
@@ -535,8 +535,9 @@ async function buildStationsZip({
                 told({
                   id: "old-arch",
                   kind: "model",
-                  view: "stage",
+                  view: "placed",
                   asset: "arch",
+                  sizeM: 3,
                   title: "The old arch.",
                   pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
                 }),

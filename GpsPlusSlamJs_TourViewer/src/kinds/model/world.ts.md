@@ -11,8 +11,8 @@ kind's part, and the 3D editor (`editor3d-stations.ts`) builds it in
 ## Public API
 
 - `modelWorld(block, env) -> WorldPart | null`
-  - null for a view that stands nothing in the station's world (`card`,
-    the story's `stage`; the world views are the framework's
+  - null for a view that stands nothing in the station's world (`card`;
+    the world views are the framework's
     `TOUR_MODEL_WORLD_VIEWS`: placed, ghost, hotspots, cutaway, toy) and
     for a block with no `sizeM` (the shared scale rule needs one). No file
     is read then.
@@ -36,10 +36,11 @@ kind's part, and the 3D editor (`editor3d-stations.ts`) builds it in
 ## Invariants and assumptions
 
 - The model's `userData` carries `tourScale` (the scale drawn, read after
-  the view mounted: a toy starts smaller than its tour size) and
-  `tourSizeM`. The editor scales a dragged size from these
-  (`editor3d-stations.ts` `resizeModel`) and finds the model by them
-  (`modelObject`, `models`).
+  the view mounted: a toy starts smaller than its tour size), by which
+  the editor finds the model (`modelObject`, `models`), and the
+  place-scale mark of its size (`../../placement/place-scale.ts`
+  `markPlaceScale`), from which the editor scales a dragged size
+  (`editor3d-stations.ts`, `drawAtExtent`).
 - The scale is on the model, the pose on the group: the editor's notes and
   sections (`editor3d-model-parts.ts`) are in the model's own space and
   stay correct under both.

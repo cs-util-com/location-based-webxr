@@ -292,6 +292,9 @@ largeTour?, cannotSave? })`.
     and `story-commands.property.test.ts` holds that after any sequence and
     its undos the writer accepts the document and a draft reload equals it.
     `stationEdited` with `storyAdvance` sets how a story's block moves on.
+    `storyFile` gives a story block another file (an asset the tour lists of
+    the block's file kind, `block-file.ts`; a video's poster replaced or
+    removed); refused `storyFile` otherwise.
   - `childMoved({ id, to, what })` - an item of a station moved inside it
     (a free item into a story and out, an entry between stories or within
     one, a story among the stories) or onto another station (`{ place:
@@ -382,7 +385,7 @@ field, value }`, `withStoryText`): a key of the format's
 geo?, what })` - a copy inserted after the original (any station the
     next write carries, as for `stationEdited`), titled `<title> copy`
     (the original's title shortened so the copy's fits 80 characters,
-    `copyTitle`), its card image kept when it names an image asset and
+    `copyTitle`), its card image kept when it names a free image asset (`freeImageAssets`) and
     dropped when it names the original's photo (the copy holds another),
     at `duplicateStationGeo` (twice the found radius plus 5 m
     east, so the two preload rings never overlap) or `geo`; each item is
@@ -415,11 +418,20 @@ geo?, what })` - a copy inserted after the original (any station the
     it), as one step: its items move rigidly with it and keep their
     poses in it (written ones follow the frame's folder by themselves;
     those with an entry are moved through the old and the new folders).
-    Its scale stays 1. Refused (the same state): an unknown station or
+    Refused (the same state): an unknown station or
     folder, a pose the format would refuse (`parseTourLocalPose`), an
     unchanged pose, or one that takes any of its items past the
     station's bound. An item moved on its own (`moved`) keeps its
     folders and changes only its own pose in them.
+  - `folderScaled({ stationId, folderId, scale, what })` - a plain
+    folder's new scale, as one step: its whole group grows about its
+    origin, each item keeping its pose in it, so it stands that much
+    further out and is drawn that much larger (a scale of 1 is written
+    as none). Refused (the same state): an unknown station or folder, a
+    scale out of the format's bounds (`TOUR_FOLDER_MIN_SCALE` to
+    `TOUR_FOLDER_MAX_SCALE`), an unchanged scale, or one that takes any
+    of its items past the station's bound. It and `folderMoved` share
+    one reframing of the folder (`folderReframe`).
   - `folderGrouped({ folderId, title, ids, what })` - items of one
     station grouped in a new plain folder at their centroid, turned like
     the station (yaw 0), titled by the creator (`folderTitle`); every
@@ -450,11 +462,47 @@ geo?, what })` - a copy inserted after the original (any station the
     the frame; `objectsFoldered` changes only items, which the draft
     carries through their entries (each names its `folder`).
   - Which have a page: group, ungroup, `objectsFoldered`, rename and
-    reorder (the tree, `folder-commands.ts`). `folderMoved` (the gizmo)
-    and `folderDeleted` (a folder's delete with its confirmation) have
-    none yet.
-  - `modelResized({ id, sizeM, what })` - a placed model's size, within
-    `TOUR_MODEL_MIN_SIZE_M`..`TOUR_MODEL_MAX_SIZE_M` (0.05 m to 500 m).
+    reorder (the tree, `folder-commands.ts`); `folderMoved` and
+    `folderScaled` (the gizmo and the folder's inspector, through the
+    session's `moveFolder` and `scaleFolder`). `folderDeleted` (a
+    folder's delete with its confirmation) has none yet.
+  - `blockNumberSet({ id, field, value, what })` - a block's size: the
+    field its placement row's `size` extent names
+    (`placement/placement-rows.ts`), a placed model's `sizeM` (0.05 m to
+    500 m) or a picture's `widthM` (0.05 m to 50 m), within the row's
+    bounds; any other field, a block whose row has no size, an unknown id
+    or a value out of bounds changes nothing.
+  - `fileUsesDeleted({ assetId, what })` - the shelf's delete of a file
+    in use, in one step, by how each block names it (`fileUsesOf`,
+    `file-uses.ts`): the free items and story entries made of it deleted
+    (an emptied automatic station goes too), the ones only mentioning it
+    (a narration, a poster, a character's voice) without that field, a
+    station's card image of it cleared, the tour's cover of it removed. Refused, unchanged, while a long
+    text shows the picture inside its words or a character declaration
+    is drawn with it. A file nothing uses changes nothing.
+  - `fileReplaced({ from, to, what })` - "Replace everywhere": every
+    reference to `from` names `to` in one step (`withFileSwitched`): the
+    items made of it, the mentions, the `asset:` targets of a long text,
+    a station's card image, the tour's cover; a free picture's record follows,
+    and a replaced video's own poster becomes `poster` when one is given
+    (it must be a listed image). Refused,
+    unchanged, for the same file, a `to` the tour does not list, a file
+    of another kind, and a file a character declaration is drawn with.
+  - `fileUsesOf(state, assetId)` (a reader) - the places naming a file,
+    by how: `own`, `mentions`, `inline`, `cards`, the names of the
+    `characters` drawn with it and `cover` (the tour's cover shown). It
+    reads `fileUsesAll(state)`, one walk for every file, which the shelf's
+    "Used in" count also reads; `fileUseCount(uses)` is the count of places
+    (the cover one place). The walk reads the characters as they stand
+    (`state.characters`), so one declared since the last save counts.
+  - `characterFileUses(all, character)`: the uses of a character's files
+    together (the shelf's one entry per character): each place once, his
+    own declaration left out, another character drawn with the same file
+    kept.
+  - A free picture's `imageAsset` is read from its file's record as it
+    stands (`documentObjects`), so the shelf's swap to a smaller file
+    never leaves a stale copy in the picture (a captured photo keeps its
+    own record).
   - `moved` with `newStation: true` - "Move to a new station": the item
     starts a station of its own where it stands, even within its own
     station's radius.
@@ -497,14 +545,10 @@ written, hand })` (the hosted texts enter the book);
 ## Selectors and pure rules
 
 - `selectTourDocument(root)` - the slice in a store's state.
-- Re-exported from `tour-content.ts` for the pages, read-only: `worldBlocks`
-  and `WorldBlock` (a station's free blocks), `isCapturedPhoto` and `ownedAssetIds` (the pictures that own their image asset). A page reads
+- Re-exported from `tour-content.ts` for the pages, read-only:
+  `isCapturedPhoto` and `ownedAssetIds` (the pictures that own their image asset), `folderChains` (each plain folder's chain from its station, outermost first). A page reads
   them here, never from `tour-content.ts` (the boundary rule
   `document-rules-through-tour-document`).
-- `assetUsesOf(state)` - per asset id, how many places name it: each
-  document object or story block (`tourBlockAssetIds`) and each station's
-  steps and picture, one count per place however often it names the id.
-  The asset shelf's `placesInUse`.
 - The codes: `documentCodes(state)` (the book, in order),
   `codeSavedText(state, id)`, `codeLiveText(state, id)` (`liveText`
   against the hosted texts as they stand), `levelsToWrite(state)` and
@@ -539,7 +583,16 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
   its title cleared, saved): its delete, saved and undone, stays gone.
 - `stationImages(state)` (module-private) - the images each station's
   card may show, by station id: a photo of that station as the document
-  holds it, or an image asset. One pass over the objects per call.
+  holds it, or a free image asset (`freeImageAssets`). One pass over the
+  objects per call. `fileUsesAll` counts a card only where this admits
+  it, so "Used in" names the cards a save writes.
+- `freeImageAssets(state)` (module-private) - the image assets a cover,
+  a station's card, a station kept bare by its card (`withoutEmptied`,
+  and `withFrames` through `keptStationsOf`'s `images`, so such a
+  station is also written) and a duplicated station's card may name: the written tour's that are
+  no captured photo's own, and the pictures brought in this session that
+  are none either. One list, so a file "Replace everywhere" puts on a
+  cover or a card stays there in the next save.
 - `stationEditChange(state, id, edit)` - `edited` with the frame to
   dispatch, `unchanged`, `refused` with the field the format refuses
   (`title`, `radius`, `description`, `image`, `character`, `storyText`),
@@ -639,7 +692,9 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
 - `coverImageIds(state)` - the images the tour may show as its cover (its
   photos as they stand, its image assets that are no captured photo's own:
   a deleted photo's asset, still listed in the file written last, keeps
-  no cover; `creator-document.test.ts`, "only the tombstones change").
+  no cover; `creator-document.test.ts`, "only the tombstones change"),
+  and the pictures added from a file this session (so a cover replaced by
+  a new file keeps showing); the assets are `freeImageAssets`.
 - `detailsChange(state, form)` - a details form checked by the format's
   rules (`checkDetailsForm`), as both pages check it: `changed` with the
   details to dispatch, `unchanged`, or `refused` with the reason in words.
@@ -657,8 +712,9 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
 - `tourFieldChanges(state)` - `changeCount` less the objects': the moved
   frames, the setting and the detail fields not written yet.
 - `viewOf(state)`, `picturesNeeded(state, view)` - for a page's undo: a
-  step that brings back a photo the written file has no picture for needs
-  the page's picture.
+  step that brings back a captured photo the written file has no picture
+  for needs the page's picture (a picture made from a file names an asset
+  the tour keeps, and needs none).
 - `framesOf(manifest)`.
 - Module-internal (not exported: nothing outside the slice needs them, and
   the root dead-code check holds exports to their importers):
@@ -957,3 +1013,25 @@ store.dispatch(tourDocumentActions.undone());
   - Refused (state unchanged) for an id the tour does not hold, a path that is not `content/<id>.<ext>` of an extension of the asset's kind, or a size that is no positive whole number. The record the document already lists counts as a swap too (new bytes in the same format), and so does swapping back to the original path.
   - `swapsWritten[id]`: the swap count whose bytes the written file holds, set by `saved` from the snapshot's `swaps`. `assetBytesPending(state, id)`: the id is in `addedAssets` and the written file lists it at another path or holds another swap's bytes - what the next save writes for it, and what the shelf's "use the original" rests on.
 - Tests: `tour-document-assets.test.ts`, `tour-document-swap.test.ts`.
+
+## Characters (`characterDeclared`, `characterRemoved`)
+
+- The state holds `characters` (the tour's declared characters, opened
+  from the manifest) and `charactersRecorded` (a declaration was edited,
+  so the draft's settings record carries the list).
+- `characterDeclared({ character, what })` adds one declaration as one
+  undo step; refused (the state returned unchanged) for every reason of
+  `characterDeclareRefusal`, checked against the image assets the document
+  holds. `characterRefusal(state, character)` gives the sentence first
+  ("No tour is open." before an open).
+- `characterRemoved({ id, what })` removes one as one undo step; refused
+  while an item (a story block or a free object) still names the
+  character, because the format refuses a reference to an undeclared
+  character. `characterRemoveRefusal(state, id)` gives the sentence.
+- Both actions are created outside the slice and handled in
+  `extraReducers`, like the later actions: one more case reducer in the
+  slice makes its type too long for the compiler.
+- The undo views carry the characters; `historyAssetIds` keeps their
+  pictures; `changeCount` counts them; `manifestNow` writes them via
+  `withCharacters`; a restore keeps only declarations whose files are held.
+- Tests: `declared-characters.test.ts`.
