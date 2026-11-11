@@ -95,6 +95,28 @@ describe("the card", () => {
     expect(fileExt("photo.Large.jpeg")).toBe("JPEG");
   });
 
+  // Why: a character's entry holds his files; its kind line names him a
+  // character and counts the files, never one file's extension.
+  it("names a character's entry with its count of files", () => {
+    const files = [
+      { id: "a", name: "Sir.png", bytes: 1024 },
+      { id: "b", name: "Sir poses.png", bytes: 2048 },
+    ];
+    expect(
+      cardKindLine(
+        row({ kind: "image", character: { id: "sir", files }, originalBytes: 9 * 1024 * 1024 }),
+      ),
+    ).toBe("Character · 2 files · 9.0 MB");
+    expect(
+      cardKindLine(
+        row({
+          kind: "image",
+          character: { id: "sir", files: files.slice(0, 1) },
+        }),
+      ),
+    ).toMatch(/^Character · 1 file · /);
+  });
+
   it("says how many files are before a queued one", () => {
     expect(stateLine(row({ status: "queued", queuePosition: 2 }))).toEqual({
       kind: "queued",

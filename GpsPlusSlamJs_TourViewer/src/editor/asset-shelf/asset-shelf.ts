@@ -134,6 +134,16 @@ export interface AssetShelf {
    *  chose ("use the original"): on the shelf as that choice left it -
    *  kept, and retryable - never queued by itself. A second add of an id is no change. */
   originalKept(asset: TourAsset, name: string, bytes: number): void;
+  /** A file kept byte for byte as made (a character's figure or pose
+   *  sheet, which may come in before the declaration naming it): on the
+   *  shelf kept, with words, never queued - neither now nor by "Optimize
+   *  this tour" or Retry. A second add of an id is no change. */
+  addAsMade(
+    asset: TourAsset,
+    name: string,
+    bytes: number,
+    origin: ShelfEntry["origin"],
+  ): void;
   /** Retry a retryable end; false when there is none. */
   retry(id: string): boolean;
   /** Put the original back in place of the smaller file; false when it
@@ -392,6 +402,21 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
           queued: false,
           keptReason: ORIGINAL_USED,
           keptRetryable: true,
+        }),
+      );
+    },
+    addAsMade(asset, name, bytes, origin) {
+      if (closed) return;
+      removed.delete(asset.id);
+      dispatch(
+        act.entryAdded({
+          id: asset.id,
+          kind: asset.kind,
+          name,
+          origin,
+          originalBytes: bytes,
+          queued: false,
+          keptReason: CHARACTER_KEPT,
         }),
       );
     },

@@ -493,7 +493,12 @@ geo?, what })` - a copy inserted after the original (any station the
     `characters` drawn with it and `cover` (the tour's cover shown). It
     reads `fileUsesAll(state)`, one walk for every file, which the shelf's
     "Used in" count also reads; `fileUseCount(uses)` is the count of places
-    (the cover one place).
+    (the cover one place). The walk reads the characters as they stand
+    (`state.characters`), so one declared since the last save counts.
+  - `characterFileUses(all, character)`: the uses of a character's files
+    together (the shelf's one entry per character): each place once, his
+    own declaration left out, another character drawn with the same file
+    kept.
   - A free picture's `imageAsset` is read from its file's record as it
     stands (`documentObjects`), so the shelf's swap to a smaller file
     never leaves a stale copy in the picture (a captured photo keeps its

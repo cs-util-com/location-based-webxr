@@ -47,7 +47,6 @@ import {
 } from "./editor-view.js";
 import {
   childMoveChange,
-  fileUsesOf,
   manifestToWrite,
   selectTourDocument,
   stationDeleteRefusal,
@@ -155,7 +154,10 @@ import {
 } from "./asset-shelf/asset-places.js";
 import { createShelfPageActions } from "./asset-shelf/shelf-page-actions.js";
 import { undoTap } from "./undo-offer.js";
-import { selectShelfRows } from "./asset-shelf/asset-shelf-slice.js";
+import {
+  selectShelfRows,
+  shelfRowUses,
+} from "./asset-shelf/asset-shelf-slice.js";
 import {
   createShelfPanel,
   type ShelfPanel,
@@ -1997,11 +1999,12 @@ function openShelfPanel(open: EditorSession): void {
     },
     thumbOf: (row) =>
       open.addedFileOf(row.kind === "video" ? (row.posterId ?? "") : row.id),
+    // A character's entry: where his files are used, not he himself.
     placesOf: (id) => {
-      const state = store.getState().tourDocument;
+      const root = store.getState();
       return assetPlaces(
-        manifestToWrite(state)?.stations ?? [],
-        fileUsesOf(state, id),
+        manifestToWrite(root.tourDocument)?.stations ?? [],
+        shelfRowUses(root, id),
       );
     },
     show: (selection) => {

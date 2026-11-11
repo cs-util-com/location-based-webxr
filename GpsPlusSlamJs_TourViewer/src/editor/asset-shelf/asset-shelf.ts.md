@@ -7,7 +7,7 @@
 - `createAssetShelf(deps)`; `deps`: `store` (holding `assetShelf` and `tourDocument`), `optimizers` (`OptimizerTable`), `host`, `settings?`, `slots?` (default a phone's 1), `bytesOf(id)`, `recordOf(id)`, `swap(id, { blob, path, width?, height? })` (the session's `swapAsset`), `maxFileBytes?` (default the archive's entry cap).
 - `AssetShelf`:
   - `add(asset, name, bytes, origin, look?)`: `look` is a video's minted poster id and length, kept on its entry. A file brought in is queued (kept with `NO_OPTIMIZER` when its kind has no row); an opened tour's file waits idle.
-  - `retry(id)`; `useOriginal(id)` (swaps the original back, telling the session it was the creator's choice (`originalChosen`); false when not offered or refused); `originalKept(asset, name, bytes)` (a file brought in for which the creator chose the original before a reload: kept with the original-used words, retryable, never queued); `holdsOriginal(id)` (whether its original is held for "use the original"); `remove(id)` (stops its job; returns an undo that puts it back, queued again when it was waiting or running; null for an unknown id); `optimizeTour()` (queues every idle opened file whose kind has a row; returns how many); `close()`.
+  - `retry(id)`; `useOriginal(id)` (swaps the original back, telling the session it was the creator's choice (`originalChosen`); false when not offered or refused); `originalKept(asset, name, bytes)` (a file brought in for which the creator chose the original before a reload: kept with the original-used words, retryable, never queued); `addAsMade(asset, name, bytes, origin)` (a file kept as made, a character's picture: kept with `CHARACTER_KEPT`, not retryable, never queued); `holdsOriginal(id)` (whether its original is held for "use the original"); `remove(id)` (stops its job; returns an undo that puts it back, queued again when it was waiting or running; null for an unknown id); `optimizeTour()` (queues every idle opened file whose kind has a row; returns how many); `close()`.
 - Words: `NO_OPTIMIZER`, `NOT_SMALLER`, `RESULT_TOO_LARGE`.
 
 ## Invariants
@@ -47,4 +47,4 @@
 
 `asset-shelf.test.ts` with `test-support/fake-optimizer.ts`: order and slots, progress, the swap, the 10 % rule, refused swaps and retry, crash retry, over-cap failures, no optimizer, use the original, optimize this tour, remove with undo, close, unreadable bytes; the keep
 rule at add, before a run and before a swap (a fake optimizer); a card
-put back when the document names its file again.
+put back when the document names its file again; a file kept as made.

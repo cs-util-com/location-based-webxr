@@ -219,3 +219,100 @@ describe("the shelf's plain data", () => {
     }
   });
 });
+
+describe("a character on the shelf", () => {
+  const C = "c".repeat(64);
+  const SHEET: TourAsset = { ...ASSET, id: B, path: `content/${B}.png` };
+  const OTHER: TourAsset = { ...ASSET, id: C, path: `content/${C}.png` };
+  const kept = (id: string, name: string, originalBytes: number) =>
+    act.entryAdded({
+      id,
+      kind: "image",
+      name,
+      origin: "added",
+      originalBytes,
+      queued: false,
+      keptReason: "kept as drawn",
+    });
+  /** A tour declaring Sir, drawn with A (his figure) and B (his poses). */
+  function withSir(): TourDocumentState {
+    return tourDocumentReducer(
+      documentWith(ASSET, SHEET, OTHER),
+      doc.characterDeclared({
+        character: { id: "sir", name: "Sir", image: A, frames: B },
+        what: "adding Sir",
+      }),
+    );
+  }
+
+  // Why: a character's pose sheet and cut-out are one thing to the
+  // author - the character - so the shelf shows ONE entry named after
+  // him, holding his files, where it stood among the others, and no row
+  // per file.
+  it("folds his files into one row named after him, his files inside", () => {
+    const s = shelf(
+      added(C),
+      kept(B, "Sir poses.png", 300),
+      kept(A, "Sir.png", 100),
+    );
+    const [other, sir, ...rest] = rows(s, withSir());
+    expect(rest).toEqual([]);
+    expect(other).toMatchObject({ id: C });
+    expect(other?.character).toBeUndefined();
+    expect(sir).toMatchObject({
+      id: A,
+      name: "Sir",
+      kind: "image",
+      status: "kept",
+      reason: "kept as drawn",
+      originalBytes: 400,
+      estimatedBytes: 400,
+      placesInUse: 0,
+      canUseOriginal: false,
+      character: {
+        id: "sir",
+        files: [
+          { id: A, name: "Sir.png", bytes: 100 },
+          { id: B, name: "Sir poses.png", bytes: 300 },
+        ],
+      },
+    });
+  });
+
+  // Why: "Used in" on his entry is where his files are used - a story
+  // entry he speaks in counts, his own declaration does not.
+  it("counts the items drawn with his files, not his declaration", () => {
+    const speaking = tourDocumentReducer(
+      withSir(),
+      doc.placed({
+        object: {
+          id: "said",
+          kind: "character",
+          view: "speak",
+          name: "Sir",
+          image: A,
+          character: "sir",
+          createdAtIso: "2026-11-08T00:00:00.000Z",
+          geo: { lat: 48.52, lon: 9.05, alt: 400, headingDeg: 0 },
+        } as never,
+        what: "it",
+      }),
+    );
+    const s = shelf(kept(A, "Sir.png", 100), kept(B, "Sir poses.png", 300));
+    expect(rows(s, speaking)).toEqual([
+      expect.objectContaining({ id: A, placesInUse: 1 }),
+    ]);
+  });
+
+  it("shows a file as its own row once no character holds it", () => {
+    const s = shelf(kept(A, "Sir.png", 100), kept(B, "Sir poses.png", 300));
+    const gone = tourDocumentReducer(
+      withSir(),
+      doc.characterRemoved({ id: "sir", what: "removing Sir" }),
+    );
+    expect(rows(s, gone).map((r) => [r.id, r.character])).toEqual([
+      [A, undefined],
+      [B, undefined],
+    ]);
+  });
+});

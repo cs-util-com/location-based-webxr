@@ -24,6 +24,7 @@ import {
   cardKindLine,
   cardMore,
   cardWarning,
+  formatBytes,
   cardState,
   filteredRows,
   pillView,
@@ -254,7 +255,7 @@ function setBar(b: Element | null, percent: number): void {
 function thumb(row: ShelfRow, url: string | null): HTMLElement {
   const look = SHELF_KINDS[row.kind].icon;
   const t = el("span", `as-thumb k-${look}`);
-  t.append(icon(KIND_ICON[look]));
+  t.append(icon(row.character === undefined ? KIND_ICON[look] : "character"));
   if (url !== null) {
     t.classList.add("has-img");
     // An object URL: "blob:" and the origin and a uuid, nothing to quote.
@@ -682,8 +683,20 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
 
   function moreEl(row: ShelfRow): HTMLElement {
     const more = el("div", "as-more", cardMore(row));
+    // A character's entry: the files he is drawn with.
+    if (row.character !== undefined) {
+      const files = el("ul", "as-files");
+      for (const file of row.character.files) {
+        files.append(el("li", "", `${file.name} · ${formatBytes(file.bytes)}`));
+      }
+      more.append(files);
+    }
     const buttons = el("div", "btnrow");
-    if (deps.useIn !== undefined && row.status !== "failed") {
+    if (
+      deps.useIn !== undefined &&
+      row.status !== "failed" &&
+      row.character === undefined
+    ) {
       buttons.append(button("btn small", "usein", "Use in...", "plus"));
     }
     if (row.status === "optimized" && row.canUseOriginal) {
@@ -726,7 +739,14 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     const plan = deps.removeUsed?.plan(row.id);
     const words = el("div", "");
     words.append(
-      el("b", "", `${row.name} is used in ${placesWord(places.length)}.`),
+      el(
+        "b",
+        "",
+        // Only a character's entry asks with no place using it.
+        places.length === 0
+          ? `Delete ${row.name}?`
+          : `${row.name} is used in ${placesWord(places.length)}.`,
+      ),
       plan === undefined
         ? " Take it out of them first; then it can be deleted."
         : ` ${plan.kind === "plan" ? plan.words : plan.reason}`,
@@ -1010,7 +1030,9 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
   }
 
   function remove(row: ShelfRow): void {
-    if (row.placesInUse > 0) {
+    // A character's entry always asks: its delete takes the character out
+    // with his files, a step the page makes (`removeUsed`).
+    if (row.placesInUse > 0 || row.character !== undefined) {
       state.confirm = row.id;
       redraw();
       actOf(row.id, "delno")?.focus();

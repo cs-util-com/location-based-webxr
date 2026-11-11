@@ -70,9 +70,14 @@ export function fileExt(name: string): string {
   return ext === "" ? "FILE" : ext.toUpperCase();
 }
 
-/** A card's second line: "Sound · WAV · 9.0 MB" (the size it came in). */
+/** A card's second line: "Sound · WAV · 9.0 MB" (the size it came in);
+ *  a character's entry: "Character · 2 files · 1.2 MB". */
 export function cardKindLine(row: ShelfRow): string {
-  return `${SHELF_KINDS[row.kind].label} · ${fileExt(row.name)} · ${formatBytes(row.originalBytes)}`;
+  const size = formatBytes(row.originalBytes);
+  if (row.character !== undefined) {
+    return `Character · ${filesWord(row.character.files.length)} · ${size}`;
+  }
+  return `${SHELF_KINDS[row.kind].label} · ${fileExt(row.name)} · ${size}`;
 }
 
 /** 0 to 100, whole. */
@@ -406,6 +411,9 @@ export function shapeKey(rows: readonly ShelfRow[]): string {
         r.swaps,
         r.posterId ?? "",
         r.seconds ?? "",
+        (r.character?.files ?? [])
+          .map((f) => `${f.id}:${f.name}:${String(f.bytes)}`)
+          .join(","),
       ].join("\u0001"),
     )
     .join("\u0002");

@@ -349,13 +349,34 @@ describe("addCharacterToStory", () => {
 // re-encoded copy no longer matches the exchange file). These hold with a
 // picture optimizer set, as the shelf's image line will set one.
 describe("a character's pictures and the asset shelf", () => {
-  it("brings a declared character's pictures in untouched: never queued, not on the shelf", async () => {
+  // Why: a character's pose sheet and cut-out are one thing to the
+  // author, so the shelf shows ONE entry named after him with his files
+  // inside - kept as drawn, never queued for a smaller version.
+  it("brings a declared character's pictures in untouched: one shelf entry named after him, never queued", async () => {
     const { e, pictures, rows } = await editor();
     const made = await declared(e);
     await settle();
-    const ids = rows().map((r) => r.id);
-    expect(ids).not.toContain(made.image);
-    expect(ids).not.toContain(made.frames);
+    expect(rows()).toEqual([
+      expect.objectContaining({
+        id: made.image,
+        name: "Ranger Rita",
+        status: "kept",
+        placesInUse: 0,
+        character: {
+          id: made.id,
+          files: [
+            expect.objectContaining({
+              id: made.image,
+              name: "Ranger Rita.png",
+            }),
+            expect.objectContaining({
+              id: made.frames,
+              name: "Ranger Rita poses.png",
+            }),
+          ],
+        },
+      }),
+    ]);
     expect(pictures.calls).toHaveLength(0);
     // The control: an ordinary picture brought in is queued.
     const other = await e.addFile(pngBlob(30, 20), "photo.png", ["image"]);
@@ -368,7 +389,7 @@ describe("a character's pictures and the asset shelf", () => {
   // Why: a reload puts the draft's files back on the shelf, queued again;
   // a character declared but not saved yet comes back that way too, and
   // his pictures must not be queued then either.
-  it("keeps a restored draft's character pictures off the shelf", async () => {
+  it("keeps a restored draft's character pictures in his one entry, never queued", async () => {
     const stores = memoryDraftStores();
     const K = "local-file:00000000000000000000000000000011";
     const openEditor = async () => {
@@ -427,13 +448,17 @@ describe("a character's pictures and the asset shelf", () => {
     expect(again.e.characters().map((c) => c.id)).toEqual([made.id]);
     const ids = again.rows().map((r) => r.id);
     expect(ids).toContain(other.asset.id);
-    expect(ids).not.toContain(made.image);
     expect(ids).not.toContain(made.frames);
+    expect(again.rows().find((r) => r.id === made.image)).toMatchObject({
+      name: "Ranger Rita",
+      status: "kept",
+      character: { id: made.id },
+    });
     expect(again.pictures.calls).toHaveLength(1);
     await again.leave();
   });
 
-  it("keeps an opened tour's character pictures off the shelf, so Optimize this tour cannot reach them", async () => {
+  it("shows an opened tour's character as one kept entry that Optimize this tour cannot reach", async () => {
     const picture = pngBlob(8, 4);
     const sheet = pngBlob(16, 4);
     const idOf = async (b: Blob) =>
@@ -464,8 +489,81 @@ describe("a character's pictures and the asset shelf", () => {
     expect(e.characters()).toHaveLength(1);
     e.shelf.optimizeTour();
     await settle();
-    expect(rows().map((r) => r.id)).not.toContain(imageId);
-    expect(rows().map((r) => r.id)).not.toContain(framesId);
+    expect(rows()).toEqual([
+      expect.objectContaining({
+        id: imageId,
+        name: "Rita",
+        status: "kept",
+        character: {
+          id: "k1",
+          files: [
+            expect.objectContaining({ id: imageId }),
+            expect.objectContaining({ id: framesId }),
+          ],
+        },
+      }),
+    ]);
     expect(pictures.calls).toHaveLength(0);
+  });
+});
+
+// The shelf's one entry per character: its Delete takes the character out
+// with his files, as the Characters list's Remove does, and refuses in the
+// same words while an item still names him; it is one step the page's
+// Undo takes back. No Replace is offered: his pictures stay as drawn.
+describe("a character's shelf entry", () => {
+  it("deletes an unused character with his files in one step, and the undo brings both back", async () => {
+    const { e, rows } = await editor();
+    const made = await declared(e);
+    expect(e.replaceCount(made.image)).toBe(0);
+    const words = "Deletes the character and its 2 pictures.";
+    expect(e.deletePlan(made.image)).toEqual({ kind: "plan", words });
+    expect(e.deletePlan(made.frames ?? "")).toEqual({ kind: "plan", words });
+    expect(e.deleteFileAndUses(made.image)).toEqual({
+      kind: "deleted",
+      what: "the delete of Ranger Rita",
+      words,
+    });
+    expect(e.characters()).toEqual([]);
+    expect(rows()).toEqual([]);
+    expect(e.undo().kind).toBe("undone");
+    expect(e.characters()).toEqual([made]);
+    expect(rows()).toEqual([
+      expect.objectContaining({ id: made.image, name: "Ranger Rita" }),
+    ]);
+  });
+
+  it("refuses while he speaks in an item, in the Characters list's words", async () => {
+    const { e, rows, written } = await editor();
+    const made = await declared(e);
+    const station = written()?.stations[0]?.id ?? "";
+    const story = e.addStory(station);
+    if (story.kind !== "added") throw new Error("no story");
+    const entry = e.addCharacterToStory(story.id, made.id);
+    if (entry.kind !== "added") throw new Error("no entry");
+    const refused = {
+      kind: "refused",
+      reason: "Ranger Rita still speaks in one item. Remove that item first.",
+    };
+    expect(e.deletePlan(made.image)).toEqual(refused);
+    expect(e.deleteFileAndUses(made.image)).toEqual(refused);
+    expect(e.characters()).toHaveLength(1);
+    expect(rows()).toEqual([
+      expect.objectContaining({ id: made.image, placesInUse: 1 }),
+    ]);
+  });
+
+  it("leaves the shelf with the Characters list's Remove, and comes back with its Undo", async () => {
+    const { e, rows } = await editor();
+    const made = await declared(e);
+    expect(e.removeCharacter(made.id)).toEqual({ kind: "removed" });
+    expect(rows()).toEqual([]);
+    expect(e.restoreCharacter(made)).toEqual({ kind: "declared" });
+    expect(rows()).toEqual([
+      expect.objectContaining({
+        id: made.image,
+        character: expect.objectContaining({ id: made.id }),
+      }),
+    ]);
   });
 });

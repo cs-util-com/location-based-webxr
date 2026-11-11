@@ -899,7 +899,8 @@ Once a tour is open, `openShelfPanel` builds the shelf's panel
 `#shelf-toggle` and the phone's `#shelf-pill`, on that session's shelf; it
 is destroyed when the tour goes (`dropTour`). It reads
 `selectShelfRows(store.getState())` and redraws on the store's changes; its
-places come from `assetPlaces` over the manifest to write, and a place's
+places come from `assetPlaces` over the manifest to write and the row's
+uses (`shelfRowUses`: a character's entry lists where his files are used), and a place's
 button selects it with a pan (`select(selection, true)`). A phone is
 `(width <= 700px)`, the width at which shelf-panel.css makes it a sheet;
 a change of it redraws the panel. "Add files..." opens the picker for

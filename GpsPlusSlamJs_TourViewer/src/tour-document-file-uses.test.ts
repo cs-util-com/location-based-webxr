@@ -24,6 +24,7 @@ import { describe, expect, it } from "vitest";
 
 import { tourOf } from "./test-support/tour-of.js";
 import {
+  characterFileUses,
   documentObjects,
   effectiveDetails,
   fileUseCount,
@@ -479,5 +480,69 @@ describe("a replaced video's poster (fileReplaced)", () => {
       video: "vid1",
       poster: "pic1",
     });
+  });
+});
+
+describe("a declared character's files", () => {
+  // Why: a character declared in this editor is one of the document's
+  // characters before any save writes him. The walk must see him at
+  // once, or his pictures stand unprotected (made smaller, deleted or
+  // replaced) until the next save.
+  it("counts a character declared here, not only one the opened tour wrote", () => {
+    const before = opened([FREE_PICTURE]);
+    expect(fileUsesOf(before, "pic1").characters).toEqual([]);
+    const after = tourDocumentReducer(
+      before,
+      doc.characterDeclared({
+        character: { id: "sir", name: "Sir", image: "pic1" },
+        what: "adding Sir",
+      }),
+    );
+    expect(after.revision).toBe(before.revision + 1);
+    expect(fileUsesOf(after, "pic1").characters).toEqual(["Sir"]);
+    const gone = tourDocumentReducer(
+      after,
+      doc.characterRemoved({ id: "sir", what: "removing Sir" }),
+    );
+    expect(fileUsesOf(gone, "pic1").characters).toEqual([]);
+  });
+
+  // Why: the shelf shows a character as ONE entry holding his files, and
+  // its "Used in" is where those files are used - not the character
+  // himself, which would make every character "used" by his own
+  // declaration. A place using two of his files counts once.
+  it("merges the uses of his files into one, without his own declaration", () => {
+    const state = opened([FREE_PICTURE], {
+      characters: [{ id: "sir", name: "Sir", image: "pic1", frames: "pic2" }],
+    });
+    const sir = state.characters[0];
+    if (sir === undefined) throw new Error("no character");
+    const uses = characterFileUses(fileUsesAll(state), sir);
+    // pic1: the free picture; pic2: the miller (a story entry drawn with
+    // it).
+    expect(uses.own.map((b) => b.id).sort()).toEqual(["free-pic", "miller"]);
+    expect(uses.characters).toEqual([]);
+    expect(fileUseCount(uses)).toBe(2);
+    const twice = opened([FREE_PICTURE], {
+      characters: [{ id: "sir", name: "Sir", image: "pic1", frames: "pic1" }],
+    });
+    const one = twice.characters[0];
+    if (one === undefined) throw new Error("no character");
+    const once = characterFileUses(fileUsesAll(twice), one);
+    expect(once.own.map((b) => b.id)).toEqual(["free-pic"]);
+  });
+
+  it("keeps another character drawn with one of his files", () => {
+    const state = opened([], {
+      characters: [
+        { id: "sir", name: "Sir", image: "pic1" },
+        { id: "lady", name: "Lady", image: "pic1" },
+      ],
+    });
+    const sir = state.characters[0];
+    if (sir === undefined) throw new Error("no character");
+    expect(characterFileUses(fileUsesAll(state), sir).characters).toEqual([
+      "Lady",
+    ]);
   });
 });

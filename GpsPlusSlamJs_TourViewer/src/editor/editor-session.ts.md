@@ -604,7 +604,7 @@ examples).
 - `shelf: AssetShelf` (`asset-shelf/asset-shelf.ts`), created per session on the session's store. Input `optimizers?` (default `ASSET_OPTIMIZERS`) and `optimizerHost?` (default a lazy Worker host, `createOptimizerHost(spawnOptimizerWorker)`, which spawns nothing until a row runs).
 - Creating the session clears the shelf and adds every asset of the written tour as `opened`, idle, sized from its archive entry: an opened tour's files are made smaller only on `shelf.optimizeTour()`.
 - `addFile` puts a NEW file on the shelf as `added` (a file already in the tour is not added twice), unless it is kept as made (`asMade`).
-- A declared character's pictures are never on the shelf: not when declared, not from an opened tour, not from a restored draft (`keptAsMade`).
+- A declared character's pictures go on the shelf kept, never queued (`shelf.addAsMade`): when declared, from an opened tour, from a restored draft (`keptAsMade`). The shelf shows them as ONE entry named after him (`selectShelfRows`). Its Delete (`deletePlan` / `deleteFileAndUses` on either of his files) takes him out with his files as one step, "Deletes the character and its 2 pictures.", refused in `characterRemoveRefusal`'s words while an item names him; it offers no Replace.
 - The shelf reads bytes from the files table, else the opened archive's entry; it swaps through `swapAsset`; its cap is the entry cap less margin, as the save's.
 - Tests: `asset-shelf/asset-shelf.test.ts` (the runner), `editor-session-shelf.test.ts` (the wiring), `editor-session-shelf.property.test.ts` (a real draft; any order of a voice brought in, an opened picture made smaller at its own path, job ends, use the original, retry, saves awaited or still running, undo, redo, a reload and a crash: every save writes each listed asset at its path with bytes of its type and, for a picture, of its listed size, nothing unlisted; a reload brings back the same named assets and bytes; every file brought in is on the shelf).
 
@@ -615,14 +615,15 @@ examples).
   (`newObjectId`; an id from elsewhere, such as the device library's, never
   enters the tour), brings his four poses and then his picture in as image
   files kept as made (`addFile`'s `asMade`: hashed, kept in the files table
-  and the draft, never on the asset shelf, so no optimizer re-encodes the
+  and the draft, on the asset shelf only kept, so no optimizer re-encodes the
   sheet his poses are cut from) and declares him as one step. Refuses
   (`{ kind: "refused", reason }`) before bringing anything in when the
   name or the cap refuse it, before the picture when the same four poses
   are declared already, and when a file is not a readable image; on
   success `{ kind: "declared", character, backedUp }`.
 - `removeCharacter(id)`: one undo step, refused while an item names the
-  character.
+  character; his shelf entry goes with him and comes back with the undo
+  or `restoreCharacter` (the shelf puts back a card the tour names again).
 - `characterImage(id)`: the blob of a declared character's picture, from
   the files table or the tour's own content.
 - A restore brings the recorded characters back with the other settings.
@@ -645,5 +646,7 @@ examples).
   character twice, the remove refusal while an entry names him, the
   story entry's view and spot, two characters of one story apart, a
   story's character clear of a free one and on the ground, the pictures
-  kept off the shelf with an image optimizer set, also after a draft's
-  restore).
+  as one kept shelf entry with an image optimizer set, also after a
+  draft's restore and from an opened tour; the entry's delete with its
+  undo, its refusal while he speaks, Remove and restore taking it off
+  and back).

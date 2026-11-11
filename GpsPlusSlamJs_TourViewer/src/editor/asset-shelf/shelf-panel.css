@@ -462,6 +462,11 @@ body.shelf-folded #view3d {
   margin-top: 6px;
 }
 
+.as-files {
+  margin: 4px 0 0;
+  padding-left: 14px;
+}
+
 .as-confirm {
   margin: 0 7px 7px;
   padding: 8px 9px;

@@ -240,6 +240,15 @@ function fileDeleteWords(uses: FileUses): string {
   return parts.length === 0 ? "Deletes the file." : `${parts.join(", ")}.`;
 }
 
+/** What the delete of the character `character` does (the shelf's entry
+ *  holding his files): he goes, with the pictures he is drawn with. */
+function characterDeleteWords(character: TourCharacter): string {
+  const n = characterImageIds([character]).length;
+  return n === 1
+    ? "Deletes the character and its picture."
+    : `Deletes the character and its ${String(n)} pictures.`;
+}
+
 /** An object as the undo's words name it: its text, shortened, or what
  *  it is. */
 function objectName(object: TourObject): string {
@@ -771,7 +780,9 @@ export interface EditorSession {
     | { kind: "declared"; character: TourCharacter; backedUp: boolean }
     | EditorRefusal
   >;
-  /** A declared character taken out, as one step; refused in words while
+  /** A declared character taken out, as one step, and his files' entry
+   *  off the shelf (back with an undo or `restoreCharacter`, the shelf
+   *  putting back a card the tour names again); refused in words while
    *  an item names him (`characterRemoveRefusal`). */
   removeCharacter(id: string): { kind: "removed" } | EditorRefusal;
   /** A declared character's picture, for its thumbnail; undefined when
@@ -1084,8 +1095,9 @@ export interface EditorSession {
   /** What deleting the shelf's file `assetId` would do, in plain words
    *  (`fileDeleteWords`: "Deletes 2 items, removes it from 1 other."),
    *  or why it cannot be deleted: a long text shows it inside its words,
-   *  a character of the tour is drawn with it, the shelf no longer holds
-   *  it. */
+   *  the shelf no longer holds it. A declared character's file is his
+   *  shelf entry: its delete takes him out with his files, refused while
+   *  an item names him (`characterRemoveRefusal`'s words). */
   deletePlan(assetId: string): { kind: "plan"; words: string } | EditorRefusal;
   /** Delete the shelf's file `assetId` with every use of it (the shelf's
    *  delete of a file in use), as `deletePlan` says: the items made of it
@@ -1095,7 +1107,9 @@ export interface EditorSession {
    *  its card. `what` names the step. Where nothing used the file any
    *  more (a confirm gone stale) no step is made and only its card goes:
    *  `undo` then puts the card back, as the plain delete's Undo does.
-   *  Refused, changing nothing, as `deletePlan` refuses. */
+   *  A declared character's file takes him out as `removeCharacter`
+   *  does, as one step. Refused, changing nothing, as `deletePlan`
+   *  refuses. */
   deleteFileAndUses(assetId: string):
     | {
         kind: "deleted";
@@ -1890,8 +1904,10 @@ export function createEditorSession(input: {
     // On the shelf once listed, so its swap finds the record (a minted
     // poster is small already). A file the tour holds already gets its
     // card back when it left the shelf; a second add of a card is no
-    // change. A file kept as made never goes there.
-    if (!asMade) {
+    // change. A file kept as made goes there kept, never queued.
+    if (asMade) {
+      shelf.addAsMade(read.asset, fileName, read.blob.size, "added");
+    } else {
       shelf.add(read.asset, fileName, read.blob.size, "added", {
         ...(read.poster === undefined
           ? {}
@@ -2039,9 +2055,30 @@ export function createEditorSession(input: {
     swap: (id, file) => swapAsset(id, file),
   });
   /** The files kept as made (`AddFileOptions`): the declared characters'
-   *  pictures. Never on the shelf, however they came in. */
+   *  pictures. On the shelf kept, never queued, however they came in. */
   const keptAsMade = (): Set<string> =>
     new Set(characterImageIds(own().characters));
+  /** The declared character drawn with the file `assetId` (his figure or
+   *  his pose sheet): on the shelf, his files are his one entry. */
+  const characterOfFile = (
+    state: TourDocumentState,
+    assetId: string,
+  ): TourCharacter | undefined =>
+    state.characters.find((c) => characterImageIds([c]).includes(assetId));
+  /** `character` out of the tour as the one step `what`, and his files'
+   *  cards off the shelf; the shelf puts a card back once the tour names
+   *  its file again (an undo, `restoreCharacter`). False when the
+   *  document refused. */
+  function takeCharacterOut(character: TourCharacter, what: string): boolean {
+    const out = took(() =>
+      store.dispatch(
+        tourDocumentActions.characterRemoved({ id: character.id, what }),
+      ),
+    );
+    if (!out) return false;
+    for (const id of characterImageIds([character])) shelf.remove(id);
+    return true;
+  }
 
   // The opened tour's files wait on the shelf for "Optimize this tour".
   store.dispatch(assetShelfActions.cleared());
@@ -2050,13 +2087,10 @@ export function createEditorSession(input: {
     const sizes = new Map(session.entries.map((e) => [e.filename, e.size]));
     const asMade = keptAsMade();
     for (const asset of own().written?.assets ?? []) {
-      if (asMade.has(asset.id)) continue;
-      shelf.add(
-        asset,
-        asset.path,
-        sizes.get(`${wrap}${asset.path}`) ?? 0,
-        "opened",
-      );
+      const bytes = sizes.get(`${wrap}${asset.path}`) ?? 0;
+      if (asMade.has(asset.id)) {
+        shelf.addAsMade(asset, asset.path, bytes, "opened");
+      } else shelf.add(asset, asset.path, bytes, "opened");
     }
   }
 
@@ -2077,12 +2111,32 @@ export function createEditorSession(input: {
       return posterId === undefined ? undefined : assetOf(posterId);
     },
     deletePlan(assetId) {
+      const state = mine();
+      const character =
+        state === null ? undefined : characterOfFile(state, assetId);
+      if (state !== null && character !== undefined) {
+        const reason = characterRemoveRefusal(state, character.id);
+        return reason === null
+          ? { kind: "plan", words: characterDeleteWords(character) }
+          : { kind: "refused", reason };
+      }
       const planned = deletePlanOf(assetId);
       return planned.kind === "refused"
         ? planned
         : { kind: "plan", words: fileDeleteWords(planned.uses) };
     },
     deleteFileAndUses(assetId) {
+      const now = mine();
+      const character =
+        now === null ? undefined : characterOfFile(now, assetId);
+      if (now !== null && character !== undefined) {
+        const reason = characterRemoveRefusal(now, character.id);
+        if (reason !== null) return { kind: "refused", reason };
+        const what = `the delete of ${character.name}`;
+        return takeCharacterOut(character, what)
+          ? { kind: "deleted", what, words: characterDeleteWords(character) }
+          : notApplied;
+      }
       const planned = deletePlanOf(assetId);
       if (planned.kind === "refused") return planned;
       const state = mine();
@@ -2263,11 +2317,11 @@ export function createEditorSession(input: {
       if (mine() === null) return notInTour;
       const reason = characterRemoveRefusal(own(), id);
       if (reason !== null) return { kind: "refused", reason };
-      const name = own().characters.find((c) => c.id === id)?.name ?? "";
-      store.dispatch(
-        tourDocumentActions.characterRemoved({ id, what: `removing ${name}` }),
-      );
-      return { kind: "removed" };
+      const character = own().characters.find((c) => c.id === id);
+      if (character === undefined) return notApplied;
+      return takeCharacterOut(character, `removing ${character.name}`)
+        ? { kind: "removed" }
+        : notApplied;
     },
     restoreCharacter(character) {
       if (mine() === null) return notInTour;
@@ -3391,7 +3445,10 @@ export function createEditorSession(input: {
     file: NonNullable<EditorRestore["files"]>[number],
   ): void {
     const { asset, blob, original } = file;
-    if (keptAsMade().has(asset.id)) return;
+    if (keptAsMade().has(asset.id)) {
+      shelf.addAsMade(asset, asset.path, blob.size, "added");
+      return;
+    }
     if (original === undefined) {
       if (file.originalChosen === true) {
         shelf.originalKept(asset, asset.path, blob.size);

@@ -381,10 +381,42 @@ describe("the keep rule for a character's files", () => {
     shelf.add(image(B), "sir-poses.png", 1000, "added");
     shelf.add(image(C), "gate.png", 1000, "added");
     await settle();
-    expect(row(A)).toMatchObject({ status: "kept", reason: CHARACTER_KEPT });
-    expect(row(B)).toMatchObject({ status: "kept", reason: CHARACTER_KEPT });
+    // His two files are one row, named after him.
+    expect(row(A)).toMatchObject({
+      name: "Sir",
+      status: "kept",
+      reason: CHARACTER_KEPT,
+    });
+    expect(store.getState().assetShelf.entries[B]).toMatchObject({
+      phase: "kept",
+      reason: CHARACTER_KEPT,
+    });
     expect(fake.calls).toHaveLength(1);
     expect(row(C)?.status).toBe("running");
+  });
+
+  // Why: a character's files come in byte for byte as drawn (the
+  // session's `asMade`), before the declaration naming them is made, so
+  // the keep rule cannot see them yet. They still go on the shelf -
+  // inside his entry - but kept at once: never queued, no job ever
+  // started on them, and "Optimize this tour" and Retry skip them.
+  it("takes a file kept as made: on the shelf, kept, never queued", async () => {
+    const { store, shelf, fake, settle } = setup();
+    shelf.addAsMade(image(A), "sir.png", 1000, "added");
+    shelf.addAsMade(image(B), "sir-poses.png", 1000, "opened");
+    expect(shelf.optimizeTour()).toBe(0);
+    expect(shelf.retry(A)).toBe(false);
+    await settle();
+    expect(fake.calls).toHaveLength(0);
+    const { entries } = store.getState().assetShelf;
+    expect(entries[A]).toMatchObject({
+      phase: "kept",
+      reason: CHARACTER_KEPT,
+      retryable: false,
+      origin: "added",
+      name: "sir.png",
+    });
+    expect(entries[B]).toMatchObject({ phase: "kept", origin: "opened" });
   });
 
   it('keeps a character\'s file that "Optimize this tour" queues', async () => {

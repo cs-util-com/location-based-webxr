@@ -91,6 +91,10 @@ shelf runner (`asset-shelf.ts`); every word comes from
   the page says with its Undo. When the plan refuses, the dialog says why
   and offers no Delete. Without `removeUsed` the dialog asks for the
   places to be changed first.
+- A character's row (`row.character`): the character icon, his name, his
+  files listed in the open card ("Sir.png · 1.0 MB"), no "Use in...".
+  Its delete always asks first ("Delete Sir?" with the plan's words),
+  even unused, since it takes the character out; the page runs it.
 - The popover (`#shelf-pop`, a menu) lists the places; arrows move between
   them, Escape closes it and returns the focus, a pointerdown outside
   closes it.
@@ -154,7 +158,9 @@ deleting an unused file with its Undo, a delete that did nothing said,
 the used-file dialog with its places, its plan's words handing the
 delete to the page, a refused plan with no Delete, "Replace in N
 places..." busy until settled, its failure said, no offer for an unused
-file, the offer in "Use in..." on a phone only, the popover showing a place and closing on Escape, "Use in..."
+file, the offer in "Use in..." on a phone only, a character's one card
+(his files listed, no Use in, a delete that always asks, the places he
+speaks in with no Delete), the popover showing a place and closing on Escape, "Use in..."
 with its groups, its empty state and its absence without the command, the fold kept
 in storage, the rail's rings, the bottom bar's toggle, the phone's sheet
 and pill, a progress update that moves only the bar and keeps the focus,

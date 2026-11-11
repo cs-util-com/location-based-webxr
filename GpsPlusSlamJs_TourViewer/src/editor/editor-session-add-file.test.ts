@@ -1149,8 +1149,15 @@ describe("the tour's cover, a video's poster and a character's file on the shelf
       new File([zip], "tour.zip", { type: "application/zip" }),
     );
     const { editor, rows } = setup(session, { manifest });
+    // The file is his one shelf entry, named after him; nothing but his
+    // own declaration uses it, and no replace is offered.
     expect(rows()).toEqual([
-      expect.objectContaining({ id: "sir", placesInUse: 1 }),
+      expect.objectContaining({
+        id: "sir",
+        name: "Sir",
+        placesInUse: 0,
+        character: expect.objectContaining({ id: "c" }),
+      }),
     ]);
     expect(editor.replaceCount("sir")).toBe(0);
     await session.close();

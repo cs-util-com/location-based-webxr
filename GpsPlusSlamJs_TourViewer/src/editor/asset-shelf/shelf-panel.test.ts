@@ -657,3 +657,87 @@ describe("thumbnails and the video warning", () => {
     );
   });
 });
+
+describe("a character's entry", () => {
+  const sir = (over: Partial<ShelfRow> = {}) =>
+    row({
+      id: "fig",
+      kind: "image",
+      name: "Sir",
+      status: "kept",
+      reason: "Kept as it is.",
+      canUseOriginal: false,
+      originalBytes: 3 * MB,
+      estimatedBytes: 3 * MB,
+      character: {
+        id: "sir",
+        files: [
+          { id: "fig", name: "Sir.png", bytes: MB },
+          { id: "sheet", name: "Sir poses.png", bytes: 2 * MB },
+        ],
+      },
+      ...over,
+    });
+
+  // Why: his entry is one card named after him; opened, it lists the
+  // files he is drawn with, and offers no "Use in..." - his figure is not
+  // a picture to place elsewhere.
+  it("lists his files inside his one card, with no Use in", () => {
+    rows = [sir()];
+    panel({ useIn: { choices: () => [], use: vi.fn() } });
+    expect(document.querySelectorAll(".as-card")).toHaveLength(1);
+    expect(card("fig")?.querySelector(".as-cname")?.textContent).toBe("Sir");
+    expect(card("fig")?.querySelector(".as-ckind")?.textContent).toBe(
+      "Character · 2 files · 3.0 MB",
+    );
+    (actIn("fig", "toggle") as HTMLElement).click();
+    const files = [...(card("fig")?.querySelectorAll(".as-files li") ?? [])];
+    expect(files.map((li) => li.textContent)).toEqual([
+      "Sir.png · 1.0 MB",
+      "Sir poses.png · 2.0 MB",
+    ]);
+    expect(actIn("fig", "usein")).toBeNull();
+  });
+
+  // Why: deleting a character takes the declaration out with his files,
+  // so it always asks first - even when no item uses him - and the page
+  // does it as one step with its Undo; never the plain card delete.
+  it("asks before the delete of an unused character, and leaves it to the page", () => {
+    rows = [sir()];
+    const run = vi.fn();
+    const plan = vi.fn(() => ({
+      kind: "plan" as const,
+      words: "Deletes the character and its 2 pictures.",
+    }));
+    const { deps } = panel({ removeUsed: { plan, run }, placesOf: () => [] });
+    (actIn("fig", "del") as HTMLButtonElement).click();
+    const confirm = card("fig")?.querySelector('[role="alertdialog"]');
+    expect(confirm?.textContent).toContain("Delete Sir?");
+    expect(confirm?.textContent).toContain(
+      "Deletes the character and its 2 pictures.",
+    );
+    (actIn("fig", "delyes") as HTMLButtonElement).click();
+    expect(run).toHaveBeenCalledWith("fig");
+    expect(deps.remove).not.toHaveBeenCalled();
+  });
+
+  it("names where a character in use speaks, and offers no Delete", () => {
+    rows = [sir({ placesInUse: 1 })];
+    panel({
+      removeUsed: {
+        plan: () => ({
+          kind: "refused",
+          reason: "Sir still speaks in one item. Remove that item first.",
+        }),
+        run: vi.fn(),
+      },
+      placesOf: () => [{ selection: "e1", label: "1 Gate › Tale › Sir" }],
+    });
+    (actIn("fig", "del") as HTMLButtonElement).click();
+    const confirm = card("fig")?.querySelector('[role="alertdialog"]');
+    expect(confirm?.textContent).toContain("Sir is used in 1 place.");
+    expect(confirm?.textContent).toContain("Sir still speaks in one item.");
+    expect(confirm?.textContent).toContain("1 Gate › Tale › Sir");
+    expect(actIn("fig", "delyes")).toBeNull();
+  });
+});

@@ -3311,7 +3311,9 @@ export function fileUsesAll(
       of(frame.image).cards.push(frame.id);
     }
   }
-  for (const character of state.written?.characters ?? []) {
+  // The characters as they stand: one declared here protects his
+  // pictures before a save writes him.
+  for (const character of state.characters) {
     for (const id of new Set([character.image, character.frames])) {
       if (id !== undefined) of(id).characters.push(character.name);
     }
@@ -3327,6 +3329,41 @@ export function fileUsesOf(
   assetId: string,
 ): FileUses {
   return fileUsesAll(state).get(assetId) ?? NO_FILE_USES;
+}
+
+/** Where the files of `character` (his figure and his pose sheet) are
+ *  used, from the walk `all` (`fileUsesAll`), as one: each place once,
+ *  and his own declaration not among them (another character drawn with
+ *  one of his files is). The shelf's one entry per character counts and
+ *  lists these. */
+export function characterFileUses(
+  all: ReadonlyMap<string, FileUses>,
+  character: TourCharacter,
+): FileUses {
+  const ids = new Set([character.image, character.frames]);
+  const merged = [...ids].flatMap((id) => {
+    const uses = id === undefined ? undefined : all.get(id);
+    return uses === undefined ? [] : [uses];
+  });
+  const once = <T>(pick: (uses: FileUses) => readonly T[]): T[] => [
+    ...new Set(merged.flatMap(pick)),
+  ];
+  // His own name once per file is his declaration; a second one is
+  // another character of the same name.
+  const others = merged.flatMap((uses) => {
+    const names = [...uses.characters];
+    const own = names.indexOf(character.name);
+    if (own >= 0) names.splice(own, 1);
+    return names;
+  });
+  return {
+    own: once((u) => u.own),
+    mentions: once((u) => u.mentions),
+    inline: once((u) => u.inline),
+    cards: once((u) => u.cards),
+    characters: [...new Set(others)],
+    cover: merged.some((u) => u.cover),
+  };
 }
 
 /** How many places `uses` counts: each block, station card and character
