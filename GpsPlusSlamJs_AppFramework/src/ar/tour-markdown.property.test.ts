@@ -872,7 +872,9 @@ function brokenLeaf(
   expectedFrom: number,
   followed: boolean
 ): string | null {
-  if (leaf.from !== expectedFrom) return 'starts off its place';
+  if (leaf.from !== expectedFrom) {
+    return `starts off its place, expected ${expectedFrom}`;
+  }
   if (leaf.to <= leaf.from) return 'is empty';
   if (SPACE_AT_EDGE.test(text.slice(leaf.from, leaf.to))) {
     return 'has space at an edge';
@@ -894,7 +896,10 @@ function assertPlainTextInvariants(doc: TourMarkdown): void {
   let expectedFrom = 0;
   for (let i = 0; i < leaves.length && broken === null; i++) {
     const leaf = leaves[i];
-    if (leaf === undefined) break;
+    if (leaf === undefined) {
+      broken = `leaf ${i} is missing`;
+      break;
+    }
     const why = brokenLeaf(text, leaf, expectedFrom, i < leaves.length - 1);
     if (why !== null) broken = `leaf ${i} [${leaf.from}, ${leaf.to}) ${why}`;
     expectedFrom = leaf.to + 2;
