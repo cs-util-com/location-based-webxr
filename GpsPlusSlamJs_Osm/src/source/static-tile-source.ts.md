@@ -29,7 +29,8 @@ the library default is off.
    - 200: the body is the Overpass answer (the host sends its stored gzip
      with `Content-Encoding: gzip`, so the browser has decoded it). It is
      parsed with `parseOverpassJson`, exactly like a race answer. `fetchedAt`
-     is the host's `X-Filled-At` (when the data left Overpass), else now.
+     is the answer's `timestamp_osm_base` (the data's age, so an old file
+     never looks freshly fetched), else now.
      When the answer's `timestamp_osm_base` is older than `refreshAfterMs`,
      the host is sent one fire-and-forget `POST /fill` for that tile per
      session (not while fills are refused; a failed ask is ignored) and the

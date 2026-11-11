@@ -121,17 +121,13 @@ function setup(
 describe("StaticTileSource", () => {
   it("serves a stored tile from the host, parsed exactly like an Overpass answer", async () => {
     const { source, fallback, calls } = setup({
-      [`GET ${TILE_URL}`]: [
-        new Response(PAYLOAD, {
-          status: 200,
-          headers: { "x-filled-at": "2026-11-11T09:30:00.000Z" },
-        }),
-      ],
+      [`GET ${TILE_URL}`]: [new Response(PAYLOAD, { status: 200 })],
     });
     const result = await source.fetchTile(TILE);
     expect(result.tile).toBe(TILE);
-    // Provenance is when the host fetched the data, not when we read the file.
-    expect(result.fetchedAt).toBe(Date.parse("2026-11-11T09:30:00.000Z"));
+    // Provenance is the data's age (its osm_base), not when we read the file:
+    // a month-old file must not look freshly fetched to the cache.
+    expect(result.fetchedAt).toBe(Date.parse("2026-11-11T09:00:00Z"));
     expect(result.features).toHaveLength(1);
     expect(result.osmBaseTimestamp).toBe("2026-11-11T09:00:00Z");
     expect(result.schemaVersion).toBe(OVERPASS_SCHEMA_VERSION);
@@ -139,6 +135,14 @@ describe("StaticTileSource", () => {
     expect(result.timings?.servedBy).toBe("network");
     expect(fallback.calls).toEqual([]);
     expect(calls).toEqual([{ method: "GET", url: TILE_URL }]);
+  });
+
+  it("dates a stored tile without an osm_base by the time it was read", async () => {
+    const bare = JSON.stringify({ version: 0.6, elements: [] });
+    const { source } = setup({
+      [`GET ${TILE_URL}`]: [new Response(bare, { status: 200 })],
+    });
+    expect((await source.fetchTile(TILE)).fetchedAt).toBe(1_000_000);
   });
 
   it("asks for a missing tile to be filled, polls, and serves it once it is there", async () => {

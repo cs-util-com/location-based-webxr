@@ -109,9 +109,9 @@ function requireMs(name: string, value: number): number {
   return value;
 }
 
-/** When the host fetched the data (its `X-Filled-At`), if it says. */
-function filledAt(response: Response): number | undefined {
-  const at = Date.parse(response.headers.get("x-filled-at") ?? "");
+/** The data's age from its `osm_base`, if the answer carries a valid one. */
+function osmBaseMs(osmBase: string | undefined): number | undefined {
+  const at = Date.parse(osmBase ?? "");
   return Number.isFinite(at) ? at : undefined;
 }
 
@@ -293,7 +293,7 @@ export class StaticTileSource implements OsmDataSource {
     return {
       tile,
       features: parsed.features,
-      fetchedAt: filledAt(response) ?? this.now(),
+      fetchedAt: osmBaseMs(parsed.osmBaseTimestamp) ?? this.now(),
       sourceId: this.sourceId,
       schemaVersion: OVERPASS_SCHEMA_VERSION,
       skipped: parsed.skipped,

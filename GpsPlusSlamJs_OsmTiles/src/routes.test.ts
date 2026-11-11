@@ -10,7 +10,6 @@ import {
   recordFailure,
   writeDaily,
 } from "./fill-state";
-import type { ResponseCache } from "./bindings";
 import { FakeBucket, FakeLimiter, FakeQueue } from "./testing/fake-bindings";
 
 // Why these tests matter: these are the Worker's whole public surface. The
@@ -82,6 +81,9 @@ describe("GET a tile", () => {
     expect(response.headers.get("access-control-expose-headers")).toContain(
       "X-Osm-Base",
     );
+    // The fill time is not sent: it is a second date per place, and no
+    // client needs it (the data's own age is X-Osm-Base and the body).
+    expect(response.headers.get("x-filled-at")).toBeNull();
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(
       new Uint8Array([31, 139, 8, 0, 1, 2, 3]),
     );
@@ -159,36 +161,39 @@ describe("GET a tile", () => {
     expect(response.body).toBeNull();
   });
 
-  it("serves the manifest read from the stored tiles, open to everyone", async () => {
+  it("carries the ODbL notice on every stored tile, GET and HEAD", async () => {
+    // With no list of stored tiles, the licence travels with each file.
     const { bucket, deps } = setup();
     await storeTile(bucket, "2026-11-11T09:00:00Z");
-    const response = await handleRequest(get("/osm/v3/manifest.tsv"), deps);
-    expect(response.status).toBe(200);
-    expect(response.headers.get("access-control-allow-origin")).toBe("*");
-    expect(response.headers.get("cache-control")).toBe("public, max-age=300");
-    expect(await response.text()).toContain(
-      `${CELL}\t2026-11-11T09:00:00Z\t7\n`,
-    );
+    for (const method of ["GET", "HEAD"]) {
+      const response = await handleRequest(get(`/${KEY}`, { method }), deps);
+      expect(response.headers.get("link")).toBe(
+        '<https://www.openstreetmap.org/copyright>; rel="license"',
+      );
+      expect(response.headers.get("x-data-license")).toBe(
+        "ODbL-1.0; (c) OpenStreetMap contributors",
+      );
+      expect(response.headers.get("access-control-expose-headers")).toContain(
+        "X-Data-License",
+      );
+    }
   });
 
-  it("answers repeated manifest requests from the edge cache, listing R2 once", async () => {
-    // A listing costs one R2 operation per thousand tiles and the route is
-    // open to anyone, so its cost must not scale with the request rate.
+  it("publishes no list of stored tiles: the old manifest path is a plain 404", async () => {
+    // Privacy: a fill follows a viewer's GPS, so a stored cell can be the
+    // area around someone's home. A list with dates would show every such
+    // place in one request; without it, finding one takes a probe per cell.
     const { bucket, deps } = setup();
     await storeTile(bucket, "2026-11-11T09:00:00Z");
-    const cached = new Map<string, Response>();
-    const cache: ResponseCache = {
-      match: (request) => Promise.resolve(cached.get(request.url)?.clone()),
-      put: (request, response) => {
-        cached.set(request.url, response);
-        return Promise.resolve();
-      },
-    };
-    const withCache = { ...deps, cache };
-    const first = await handleRequest(get("/osm/v3/manifest.tsv"), withCache);
-    const second = await handleRequest(get("/osm/v3/manifest.tsv"), withCache);
-    expect(await second.text()).toBe(await first.text());
-    expect(bucket.listCalls).toHaveLength(1);
+    for (const method of ["GET", "HEAD"]) {
+      const response = await handleRequest(
+        get("/osm/v3/manifest.tsv", { method }),
+        deps,
+      );
+      expect(response.status).toBe(404);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+    }
+    expect(bucket.listCalls).toEqual([]);
   });
 
   it("says what the service is and names the licence at the root", async () => {
@@ -198,7 +203,7 @@ describe("GET a tile", () => {
     const text = await response.text();
     expect(text).toContain("OpenStreetMap contributors");
     expect(text).toContain("ODbL");
-    expect(text).toContain("/osm/v3/manifest.tsv");
+    expect(text).not.toContain("manifest");
   });
 });
 

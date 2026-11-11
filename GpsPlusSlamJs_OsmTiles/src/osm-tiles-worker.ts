@@ -6,7 +6,7 @@
  */
 
 import { DEFAULT_OVERPASS_ENDPOINTS } from "gps-plus-slam-osm/source/overpass-source";
-import type { FillMessage, OsmTilesEnv, ResponseCache } from "./bindings";
+import type { FillMessage, OsmTilesEnv } from "./bindings";
 import { clearPending, markPending, sweepPending } from "./fill-state";
 import { fillTile } from "./fill-tile";
 import { dailyUpstreamCap, handleRequest } from "./routes";
@@ -60,21 +60,9 @@ async function consumeOne(body: FillMessage, env: OsmTilesEnv): Promise<void> {
   }
 }
 
-/** `caches.default` where the runtime has it (workerd), else none. */
-function edgeCache(): ResponseCache | undefined {
-  const storage = (globalThis as { caches?: { default?: ResponseCache } })
-    .caches;
-  return storage?.default;
-}
-
 export default {
   fetch(request: Request, env: OsmTilesEnv): Promise<Response> {
-    const cache = edgeCache();
-    return handleRequest(request, {
-      env,
-      now: () => Date.now(),
-      ...(cache === undefined ? {} : { cache }),
-    });
+    return handleRequest(request, { env, now: () => Date.now() });
   },
 
   /**

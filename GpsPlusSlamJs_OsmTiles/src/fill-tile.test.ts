@@ -103,9 +103,7 @@ describe("fillTile", () => {
       endpoint: "lz4.overpass-api.de",
       rawBytes: String(raw.length),
     });
-    // The manifest is read from the stored tiles; a fill writes no list, and
-    // a success leaves no failure record (one is written before the attempt).
-    expect(bucket.objects.has("osm/v3/manifest.tsv")).toBe(false);
+    // A success leaves no failure record (one is written before the attempt).
     expect(await readFailure(bucket, CELL)).toBeUndefined();
     const daily = await readDaily(bucket, NOW);
     expect(daily).toMatchObject({ upstreamRequests: 1, fills: 1 });

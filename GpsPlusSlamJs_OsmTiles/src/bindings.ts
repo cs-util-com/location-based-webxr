@@ -74,12 +74,6 @@ export interface FillQueue {
   send(message: FillMessage): Promise<void>;
 }
 
-/** `caches.default` subset: the manifest's edge cache. */
-export interface ResponseCache {
-  match(request: Request): Promise<Response | undefined>;
-  put(request: Request, response: Response): Promise<void>;
-}
-
 /** Rate Limiting binding subset (approximate, per location). */
 export interface RateLimiter {
   limit(options: { key: string }): Promise<{ success: boolean }>;

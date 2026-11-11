@@ -5,8 +5,8 @@
 One tile fill as the serial queue consumer runs it: re-check the store, the
 failure record and the daily cap; fetch the client's exact query from the
 Overpass operators in turn; keep the bytes as sent; refuse a partial
-answer; never replace newer data with older; gzip; store. The manifest
-is read from the stored tiles (`manifest.ts`), so the fill writes no list.
+answer; never replace newer data with older; gzip; store. The fill writes
+no list of stored tiles; there is none (`routes.ts.md`).
 
 ## Public API
 

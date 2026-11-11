@@ -1,16 +1,12 @@
 /**
- * The Worker's HTTP surface: open GETs of stored tiles and the manifest,
- * and the guarded fill endpoint that enqueues a missing tile.
+ * The Worker's HTTP surface: open GETs of stored tiles, and the guarded
+ * fill endpoint that enqueues a missing tile. There is deliberately no list
+ * of stored tiles (see routes.ts.md, "No list of stored tiles").
  *
  * @see routes.ts.md
  */
 
-import type {
-  FillMessage,
-  OsmTilesEnv,
-  ResponseCache,
-  TileObjectHead,
-} from "./bindings";
+import type { FillMessage, OsmTilesEnv, TileObjectHead } from "./bindings";
 import {
   clearPending,
   listPending,
@@ -21,14 +17,11 @@ import {
   type PendingFill,
 } from "./fill-state";
 import { REFRESH_AGE_MS } from "./fill-tile";
-import { MANIFEST_PATH, manifestText } from "./manifest";
 import { parseTileCell, TILE_PREFIX, tileObjectKey } from "./tile-cell";
 
 export interface RouteDeps {
   readonly env: OsmTilesEnv;
   readonly now: () => number;
-  /** The edge cache for the manifest (`caches.default` in the Worker). */
-  readonly cache?: ResponseCache;
 }
 
 /** Upstream requests a UTC day may spend when the var is unset or invalid. */
@@ -59,7 +52,6 @@ const LOCAL_ORIGIN = /^http:\/\/(localhost|127\.0\.0\.1)(:\d{1,5})?$/;
 const SERVICE_TEXT = `osm-tiles: OpenStreetMap data as static files, one per H3 resolution-7 cell.
 
 GET  /osm/v3/<cell>.json.gz  the Overpass "out geom" JSON of that cell (gzip)
-GET  /osm/v3/manifest.tsv    every stored cell: cell, data timestamp, stored bytes
 POST /fill/v3/<cell>         ask for a missing cell to be filled (app origins only)
 
 Data (c) OpenStreetMap contributors, available under the Open Database
@@ -100,11 +92,15 @@ function maxPendingFills(env: OsmTilesEnv): number {
   return nonNegativeInt(env.MAX_PENDING_FILLS, DEFAULT_MAX_PENDING_FILLS);
 }
 
+/** The licence notice every stored tile carries, as there is no list to hold it. */
+const LICENSE_LINK = '<https://www.openstreetmap.org/copyright>; rel="license"';
+const DATA_LICENSE = "ODbL-1.0; (c) OpenStreetMap contributors";
+
 function openHeaders(): Headers {
   return new Headers({
     "access-control-allow-origin": "*",
     "access-control-expose-headers":
-      "X-Osm-Base, X-Filled-At, Last-Modified, ETag",
+      "X-Osm-Base, X-Data-License, Link, Last-Modified, ETag",
   });
 }
 
@@ -125,10 +121,10 @@ function tileHeaders(object: TileObjectHead): Headers {
   headers.set("cache-control", meta?.cacheControl ?? "public, max-age=86400");
   headers.set("etag", object.httpEtag);
   headers.set("last-modified", object.uploaded.toUTCString());
+  headers.set("link", LICENSE_LINK);
+  headers.set("x-data-license", DATA_LICENSE);
   const base = object.customMetadata?.["osmBase"];
   if (base !== undefined) headers.set("x-osm-base", base);
-  const filledAt = object.customMetadata?.["filledAt"];
-  if (filledAt !== undefined) headers.set("x-filled-at", filledAt);
   return headers;
 }
 
@@ -168,29 +164,6 @@ async function serveTile(
   const object = await deps.env.TILES.get(key);
   if (object === null) return notFound();
   return passThrough(object.body, 200, tileHeaders(object));
-}
-
-/**
- * The manifest, listed from R2 and kept five minutes in the edge cache: the
- * route is open to anyone and a listing costs one R2 operation per thousand
- * tiles, so the cost must not follow the request rate. Plain text, so the
- * double-gzip of stored gzip bodies (see `passThrough`) does not apply.
- */
-async function serveManifest(
-  request: Request,
-  deps: RouteDeps,
-): Promise<Response> {
-  const key = new Request(new URL(request.url).toString());
-  const hit = await deps.cache?.match(key);
-  if (hit !== undefined) return hit;
-  const headers = openHeaders();
-  headers.set("content-type", "text/tab-separated-values; charset=utf-8");
-  headers.set("cache-control", "public, max-age=300");
-  const body = await manifestText(deps.env.TILES);
-  if (deps.cache !== undefined) {
-    await deps.cache.put(key, new Response(body, { status: 200, headers }));
-  }
-  return new Response(body, { status: 200, headers });
 }
 
 function fillCors(origin: string): Headers {
@@ -369,11 +342,6 @@ export async function handleRequest(
     return handleFill(request, fill[1] as string, deps);
   }
   const readable = request.method === "GET" || request.method === "HEAD";
-  if (path === MANIFEST_PATH) {
-    return readable
-      ? serveManifest(request, deps)
-      : new Response(null, { status: 405 });
-  }
   const tile = TILE_PATH.exec(path);
   if (tile !== null) {
     if (request.method === "OPTIONS") {

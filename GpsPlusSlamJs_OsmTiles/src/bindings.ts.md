@@ -14,8 +14,7 @@ methods, so the unit tests can pass small fakes.
   (`BucketListOptions`: `prefix`, `limit`, `cursor`, `include`); a subset
   of `R2Bucket`.
 - `FillMessage` - `{ cell, kind: "fill" | "refresh", at }`, the queue body.
-- `FillQueue`, `RateLimiter`, `ResponseCache` (`caches.default`: `match`,
-  `put`) - one or two methods each.
+- `FillQueue`, `RateLimiter` - one method each.
 - `OsmTilesEnv` - `TILES`, `FILL_QUEUE`, optional `FILL_LIMITER`, and the
   string vars `DAILY_UPSTREAM_CAP`, `MAX_PENDING_FILLS`, `USER_AGENT`,
   `STORE_GZIP`.

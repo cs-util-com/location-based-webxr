@@ -8,8 +8,7 @@ into the HTTP routes and runs the serial queue consumer that fills tiles.
 ## Public API
 
 - default export `{ fetch, queue }`:
-  - `fetch(request, env)` - `handleRequest` with the clock and
-    `caches.default` (the manifest's edge cache) where the runtime has it.
+  - `fetch(request, env)` - `handleRequest` with the clock.
   - `queue(batch, env)` - for each message: validate the cell and kind;
     sweep the pending markers (stale ones and any still flagged running,
     which belong to a killed run) and mark this cell running; `fillTile`

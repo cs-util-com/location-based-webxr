@@ -6,8 +6,6 @@ a cell and then served to everyone from R2.
 
 - `GET /osm/v3/<cell>.json.gz` - the cell's Overpass `out geom` JSON, gzip,
   open to every origin (`Access-Control-Allow-Origin: *`).
-- `GET /osm/v3/manifest.tsv` - every stored cell with its data age, read
-  from the stored tiles.
 - `POST /fill/v3/<cell>` - ask for a missing cell (app origins only; per-IP
   limit; global daily cap; a short backlog, beyond which it answers busy at
   once). A serial queue consumer fetches the exact query the browser would
@@ -19,15 +17,21 @@ of `createCityTileSource`; on any refusal or delay it falls back to the
 direct Overpass race at once.
 
 Data (c) OpenStreetMap contributors, ODbL 1.0. The files are an unmodified
-copy of the Overpass answer; the manifest lists what is stored.
+copy of the Overpass answer, and each one carries the licence notice in its
+headers (`Link: <https://www.openstreetmap.org/copyright>; rel="license"`
+and `X-Data-License`).
+
+There is deliberately no list of stored cells. Fills follow viewers' GPS, so
+a stored cell can be the area around someone's home; a public list with
+dates would show every such place in one request, while without it finding
+an unknown place takes a probe per cell.
 
 ## Files
 
 - `src/osm-tiles-worker.ts` - the entry (routes + queue consumer).
 - `src/routes.ts` - the HTTP surface and the fill endpoint's guards.
 - `src/fill-tile.ts` - one fill; `src/fill-state.ts` - daily cap, failure
-  backoff, pending markers; `src/manifest.ts` - the manifest from an R2
-  listing; `src/overpass-body-check.ts` - completeness without parsing; `src/tile-cell.ts` - cell validation and keys;
+  backoff, pending markers; `src/overpass-body-check.ts` - completeness without parsing; `src/tile-cell.ts` - cell validation and keys;
   `src/bindings.ts` - binding shapes.
 
 ## Develop, test, deploy
