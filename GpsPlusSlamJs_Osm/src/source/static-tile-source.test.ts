@@ -60,7 +60,10 @@ class FallbackSpy implements OsmDataSource {
   readonly attribution = "fallback";
   readonly sourceId = "overpass";
   readonly calls: { tile: string; options?: FetchTileOptions }[] = [];
-  constructor(private readonly started?: () => void) {}
+  private readonly started: (() => void) | undefined;
+  constructor(started?: () => void) {
+    this.started = started;
+  }
   fetchTile(tile: string, options?: FetchTileOptions): Promise<OsmTileResult> {
     this.started?.();
     this.calls.push({ tile, ...(options === undefined ? {} : { options }) });
