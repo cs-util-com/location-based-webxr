@@ -413,17 +413,16 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
     deps.container.prepend(canvas);
     // The box is hidden until the first frame is drawn (the map stays in
     // view while the view loads): the window's size until it shows. Once
-    // shown, the height is the canvas's: the bottom panel shortens it
-    // (pushes the view up), to nothing when maximised.
-    const size = () => ({
-      w: Math.max(1, deps.container.clientWidth || window.innerWidth),
-      h: Math.max(
-        1,
-        deps.container.clientHeight > 0
-          ? canvas.clientHeight
-          : window.innerHeight,
-      ),
-    });
+    // shown, the size is the canvas's: the bottom panel shortens it
+    // (pushes the view up), to nothing when maximised, and the open docks
+    // narrow it (it covers only the view between them).
+    const size = () => {
+      const laidOut = deps.container.clientHeight > 0;
+      return {
+        w: Math.max(1, laidOut ? canvas.clientWidth : window.innerWidth),
+        h: Math.max(1, laidOut ? canvas.clientHeight : window.innerHeight),
+      };
+    };
     renderer.setSize(size().w, size().h, false);
 
     const ground = createEditorTerrain({

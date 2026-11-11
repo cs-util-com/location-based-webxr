@@ -134,6 +134,7 @@ const FRAME_PARTS = [
   "#shell-inspector",
   "#inspector-body",
   "#shell-shelf",
+  "#view3d .view3d-canvas",
   "#compass",
   "#zoom-in",
   "#zoom-out",
@@ -321,6 +322,22 @@ async function expectFrame(page, size) {
       ? must("#shell-inspector").x - 12
       : shelfX - 12;
   expect(zoomOut.x + zoomOut.width, at).toBeCloseTo(rightEdge, 0);
+  // The canvas covers only the view between the open docks (a phone's
+  // sheets lie under it, the width its own): what the view frames at its
+  // middle is in sight, never under a dock.
+  const canvas = must("#view3d .view3d-canvas");
+  const tree = !phone && shownNow("#tree-body") ? must("#shell-tree") : null;
+  const canvasLeft = tree === null ? 0 : tree.x + tree.width;
+  const canvasRight = phone
+    ? size.width
+    : shownNow("#inspector-body")
+      ? must("#shell-inspector").x
+      : shelfX;
+  expect(canvas.x, `the canvas ${at}`).toBeCloseTo(canvasLeft, 0);
+  expect(canvas.x + canvas.width, `the canvas ${at}`).toBeCloseTo(
+    canvasRight,
+    0,
+  );
   const controls = must("#map-controls");
   for (const id of ["#shell-tree", "#shell-inspector", "#shell-shelf"]) {
     if (!shownNow(id)) continue;

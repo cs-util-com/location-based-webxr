@@ -150,8 +150,10 @@ keys), and writes only through the page's `edits`.
   and the lens: a code laid flat is sized on screen by them), the render.
 - **Sizes:** the box is hidden while the view loads (the map stays in
   view), so the window's size stands in until it shows. Once shown, the
-  height is the canvas's: the bottom panel shortens the canvas (it pushes
-  the view up; none left when maximised). A ResizeObserver follows the
+  size is the canvas's: the editor shell's CSS narrows the canvas to the
+  part of the view no docked panel covers (so a selection framed on the
+  canvas centre is never under a panel), and the bottom panel shortens it
+  (it pushes the view up; none left when maximised). A ResizeObserver follows the
   box and the canvas and keeps the billboards' screen size; it also keeps
   the view's height the layer sizes codes by (read there, never per
   frame: a read of the box's size can force a layout).

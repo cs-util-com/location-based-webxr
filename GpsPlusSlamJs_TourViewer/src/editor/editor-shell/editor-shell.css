@@ -1877,6 +1877,30 @@ button.thumb:focus-visible {
 }
 
 /* --- the bottom panel ----------------------------------------------------- */
+/* The 3D view's canvas covers only the part of the view no dock covers:
+ * right of an open tree, left of an open inspector and of the asset shelf
+ * (its panel or its rail). The view centres what it frames on its canvas,
+ * so a selection lands in sight, between the docks; a folded dock's head
+ * leaves the canvas under it. On a phone the docks are sheets under the
+ * canvas, which keeps the width (below). */
+body[data-view="3d"] #view3d {
+  --s-view-left: 0px;
+  --s-view-right: var(--s-shelf-cur, 0px);
+}
+
+body[data-view="3d"] #view3d:has(#shell-tree:not([hidden], .collapsed)) {
+  --s-view-left: var(--s-tree-w);
+}
+
+body[data-view="3d"] #view3d:has(#shell-inspector:not([hidden], .collapsed)) {
+  --s-view-right: calc(var(--s-insp-w) + var(--s-shelf-cur, 0px));
+}
+
+body[data-view="3d"] #view3d .view3d-canvas {
+  width: calc(100% - var(--s-view-left) - var(--s-view-right));
+  margin-left: var(--s-view-left);
+}
+
 /* At the view's foot between the open docks (each runs down to the bottom
  * bar beside it), or under both with its span button, the docks then
  * ending at its top. Its height is `--s-panel-h` on the page, which the
@@ -2644,7 +2668,14 @@ body[data-view="3d"] #view3d .view3d-canvas {
    * element's details, the map above them. The sheet and the canvas share
    * the height over the bottom panel, by `--s-sheet-share`
    * (`phone-sheet.ts`), so the canvas ends at the sheet's top and what is
-   * flown to stays in sight. */
+   * flown to stays in sight. The canvas keeps the whole width. */
+  body[data-view="3d"] #view3d,
+  body[data-view="3d"] #view3d:has(#shell-tree:not([hidden], .collapsed)),
+  body[data-view="3d"] #view3d:has(#shell-inspector:not([hidden], .collapsed)) {
+    --s-view-left: 0px;
+    --s-view-right: 0px;
+  }
+
   body[data-view="3d"] #view3d .view3d-canvas {
     height: calc(
       (100% - var(--s-panel-h, 0px)) * (1 - var(--s-sheet-share, 0))
@@ -3324,7 +3355,8 @@ body[data-view="3d"] #view3d .view3d-canvas {
  * (`editor3d-model-parts.ts`), placed by a transform each frame. */
 .model-notes {
   position: absolute;
-  inset: 0;
+  /* Over the canvas, which leaves the docks' sides (above). */
+  inset: 0 var(--s-view-right, 0px) 0 var(--s-view-left, 0px);
   overflow: hidden;
   pointer-events: none;
 }
