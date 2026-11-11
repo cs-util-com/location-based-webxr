@@ -23,8 +23,8 @@ alone.
   - `oneLevel` - the editor groups one level deep (no folder inside a
     folder, no group of items already in one);
   - `notHere` - items of several stations, or something that is no item;
-  - `tooFar` - an item would stand past the format's 10 km bound in its
-    folder;
+  - `tooFar` - an item, or a folder an ungroup lifts, would stand past
+    the format's 10 km bound in its folder;
   - `staysInStation` - an item in a folder stays in its station (the
     tree's drag across stations and "Move to a new station" both refuse
     it, with this one line);

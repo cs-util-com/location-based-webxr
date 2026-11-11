@@ -440,7 +440,7 @@ geo?, what })` - a copy inserted after the original (any station the
     refuses.
   - `folderUngrouped({ stationId, folderId, what })` - the folder taken
     apart: its items and its own folders go to its holder, each where it
-    stood (`withoutFolder` with lift).
+    stood (`withoutFolder` with lift). Refused: `ungroupRefusal`.
   - `objectsFoldered({ ids, folderId, what })` - items into the folder
     `folderId` of their station, or (null) out to the station's top,
     each keeping its world pose. Refused: `objectsFolderRefusal` (an
@@ -615,6 +615,12 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
   `tooFar` for a pose in the folder past the bound; null when they can
   (an item already there is none). The reducer and the page's command
   share it, so the page says the reducer's real reason.
+- `ungroupRefusal(state, stationId, folderId)` - why the folder cannot
+  be taken apart: `gone` for a folder the station lacks, `tooFar` when a
+  folder or an item it lifts into its holder would stand past the bound
+  there (two poses within the bound can sum past it, with nested folders
+  a file may carry); null when it can. Shared by the reducer and the
+  page's command.
 - `folderDropRefusal(state, dragged, onto)` - why the tree's drag may not
   drop `dragged` (an item, a folder or a story) onto `onto` (a folder, a
   story or a station): a story into a folder, a folder into a story,

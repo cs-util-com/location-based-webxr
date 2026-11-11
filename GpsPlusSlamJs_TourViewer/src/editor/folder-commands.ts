@@ -28,6 +28,7 @@ import {
   manifestToWrite,
   objectsFolderRefusal,
   tourDocumentActions,
+  ungroupRefusal,
   type TourDocumentState,
 } from "../tour-document.js";
 import {
@@ -238,6 +239,8 @@ export function createFolderCommands(deps: FolderCommandDeps): FolderCommands {
     ungroup(folderId) {
       const place = plainFolderOf(deps.getState(), folderId);
       if (place === null) return refused("gone");
+      const why = ungroupRefusal(deps.getState(), place.stationId, folderId);
+      if (why !== null) return refused(why);
       const took = edit(
         tourDocumentActions.folderUngrouped({
           stationId: place.stationId,
@@ -245,7 +248,7 @@ export function createFolderCommands(deps: FolderCommandDeps): FolderCommands {
           what: `the ungroup of "${folderName(place.folder)}"`,
         }),
       );
-      // The reducer refuses only a folder it lacks.
+      // Past both refusals, the reducer refuses only a folder it lacks.
       if (!took) return refused("gone");
       const n = place.itemIds.length;
       deps.say(

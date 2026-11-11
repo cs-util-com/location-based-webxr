@@ -32,7 +32,8 @@ reorder }`:
   - `group(picked)` - the new folder's id, or null when refused (nothing
     picked says `NOTHING_TO_GROUP`);
   - `ungroup(folderId)` - the ids of the items it held, or null (a
-    folder gone from the tour says `gone`);
+    folder gone from the tour says `gone`, one that would lift a folder
+    or an item past the 10 km bound `tooFar`, as `ungroupRefusal` says);
   - `moveInto(itemId, folderId | null)` - whether the item moved (null:
     out of its folders); refused with the store's own reason
     (`folderDropRefusal`, then `objectsFolderRefusal`: `notHere`,
@@ -78,6 +79,6 @@ const id = folders.group(["p", "q"]); // "Folder 2" when "Folder 1" exists
 
 `folder-commands.test.ts`: grouping as one step and its name, the
 refusals (a foldered item, a folder, two stations, an unknown id), none
-picked, ungroup counts and a gone folder, moves in and out, another
+picked, ungroup counts, a gone folder and one lifted past the bound, moves in and out, another
 station's folder, the 10 km bound, a move into the folder an item is in,
 rename and its cap, the reorder as one step.

@@ -28,7 +28,8 @@ export type FolderRefusal =
   | "oneLevel"
   /** Items of several stations, or something that is no item. */
   | "notHere"
-  /** An item would stand past the format's 10 km bound in its folder. */
+  /** An item, or a folder an ungroup lifts, would stand past the
+   *  format's 10 km bound in its folder. */
   | "tooFar"
   /** A folder's item stays in its station (a folder belongs to one). */
   | "staysInStation"
@@ -45,7 +46,7 @@ const REASONS: Readonly<Record<FolderRefusal, string>> = {
   oneLevel:
     "folders hold items, not other folders. Take the items out of their folder first.",
   notHere: "a folder holds items of one station.",
-  tooFar: "an item would stand more than 10 km from its folder.",
+  tooFar: "an item or folder would stand more than 10 km from its folder.",
   staysInStation:
     "an item in a folder stays in its station. Take it out of its folder first.",
   gone: "that folder is no longer in the tour.",

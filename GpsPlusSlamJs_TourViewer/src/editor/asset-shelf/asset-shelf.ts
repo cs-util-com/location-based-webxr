@@ -294,10 +294,12 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
     stop: AbortController,
   ): Promise<void> {
     // The caps a save checks (bytes per entry, a picture's pixels): a file
-    // over either blocks every save, so the shelf must never land one.
+    // over either blocks every save, so the shelf must never land one. One
+    // known side counts as a square of it (the other is unknown, not
+    // none); a file with neither side is no picture and has no pixel cap.
     const fits = (bytes: number, width?: number, height?: number) =>
       bytes <= maxBytes &&
-      (width ?? 0) * (height ?? 0) <= TOUR_MAX_IMAGE_PIXELS;
+      (width ?? height ?? 0) * (height ?? width ?? 0) <= TOUR_MAX_IMAGE_PIXELS;
     const overCap = !fits(source.size, before.width, before.height);
     if (outcome.kind === "kept") {
       if (overCap) {

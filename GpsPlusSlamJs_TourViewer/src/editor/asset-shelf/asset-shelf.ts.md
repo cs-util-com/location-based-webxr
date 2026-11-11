@@ -14,7 +14,7 @@
 
 - First in, first out by arrival (`seq`), at most `slots` jobs at once; each end starts the next.
 - A result is judged here, not by the optimizer:
-  - "over the cap" means over the entry cap in bytes OR over `TOUR_MAX_IMAGE_PIXELS` (width x height; a result that declares no size keeps the original's): the two caps a save refuses, so a file over either would block every save;
+  - "over the cap" means over the entry cap in bytes OR over `TOUR_MAX_IMAGE_PIXELS` (width x height, one known side counted as a square of it, neither side meaning no picture; a result that declares no size keeps the original's): the two caps a save refuses, so a file over either would block every save;
   - a result over the cap, or a "kept", for an original over the cap: failed, NOT retryable, with words telling the author to use a smaller file or remove it;
   - a result over the cap for an original that fits: kept with `RESULT_TOO_LARGE` - the original stays, nothing failed, and the words name the real reason (the result was too large, not too little smaller);
   - not at least 10 % smaller (`settings.keepAbove`): kept with `NOT_SMALLER` (an over-cap original is exempt, any fitting result is taken);
@@ -45,6 +45,6 @@
 
 ## Tests
 
-`asset-shelf.test.ts` with `test-support/fake-optimizer.ts`: order and slots, progress, the swap, the 10 % rule, refused swaps and retry, crash retry, over-cap failures, no optimizer, use the original, optimize this tour, remove with undo, close, unreadable bytes; the keep
+`asset-shelf.test.ts` with `test-support/fake-optimizer.ts`: order and slots, progress, the swap, the 10 % rule, refused swaps and retry, crash retry, over-cap failures (a half-known picture size too), no optimizer, use the original, optimize this tour, remove with undo, close, unreadable bytes; the keep
 rule at add, before a run and before a swap (a fake optimizer); a card
 put back when the document names its file again; a file kept as made.

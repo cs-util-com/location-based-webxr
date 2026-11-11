@@ -4311,6 +4311,48 @@ export function objectsFolderRefusal(
 }
 
 /**
+ * Why the plain folder `folderId` of the station `stationId` cannot be
+ * taken apart (`folderUngrouped`), or null when it can: a folder the
+ * station lacks is `gone`; a folder or an item it lifts into its holder
+ * past the format's bound there is `tooFar` (each pose within the bound
+ * in the removed folder can sum past it in the holder, with nested
+ * folders a file may carry).
+ */
+export function ungroupRefusal(
+  state: TourDocumentState,
+  stationId: string,
+  folderId: string,
+): FolderRefusal | null {
+  const frame = frameOf(state, stationId);
+  if (frame === undefined || !folderChains(frame).has(folderId)) {
+    return "gone";
+  }
+  const lifted = withoutFolder(frame.children, folderId, true);
+  const chains = folderChains({ children: lifted });
+  for (const chain of chains.values()) {
+    const pose = chain.at(-1)?.pose;
+    if (pose !== undefined && !withinFolderBound(pose.position)) {
+      return "tooFar";
+    }
+  }
+  for (const { object } of documentObjects(state)) {
+    if (object.station !== frame.id || !object.folder?.includes(folderId)) {
+      continue;
+    }
+    const kept = inFolders(
+      object,
+      object.folder.filter((id) => id !== folderId),
+    );
+    const local = decomposeTourFolderPath(
+      folderChainOf(kept, chains),
+      localPoseOf(object.geo, frame.geo),
+    );
+    if (!withinFolderBound(local.position)) return "tooFar";
+  }
+  return null;
+}
+
+/**
  * Why dropping `dragged` onto `onto` (the tree's drag) is not possible, or
  * null when the folder actions take it: a story never goes into a folder,
  * a folder never into a story, into itself or a folder inside it, nor
@@ -4409,7 +4451,8 @@ function folderGroup(
  * A plain folder taken apart (`folderUngrouped`), as one step: its items
  * and its own folders go to its holder (the station, or the folder around
  * it), each kept where it stands in the world. An unknown station or
- * folder: the same state.
+ * folder, or one `ungroupRefusal` refuses (a pose lifted past the
+ * format's bound): the same state.
  */
 function folderUngroup(
   before: TourDocumentState,
@@ -4417,7 +4460,10 @@ function folderUngroup(
 ): TourDocumentState {
   if (before.written === null) return before;
   const frame = frameOf(before, payload.stationId);
-  if (frame === undefined || !folderChains(frame).has(payload.folderId)) {
+  if (
+    frame === undefined ||
+    ungroupRefusal(before, payload.stationId, payload.folderId) !== null
+  ) {
     return before;
   }
   let placed = before.placed;
