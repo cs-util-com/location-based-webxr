@@ -116,3 +116,10 @@ tint. Omitted sends none (the worker builds the tint). Tested in
 city build's choices (`failedBuildOf(error)`) BEFORE `fetchFailed` is
 dispatched, so the switch can revert its own failed build before the store's
 error ends its wait.
+
+## Invented roofs
+
+`inventedRoofs?: () => boolean` is read at post time, like the scheme, and sent
+as `inventedRoofs`; omitted, the request leaves the field out and the worker
+builds them. `main.ts` answers from the store (AR included). Tested by "sends
+whether invented roofs are wanted, read at POST time".

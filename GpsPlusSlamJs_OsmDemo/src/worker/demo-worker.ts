@@ -312,6 +312,8 @@ function buildMesh(
   scheme: ColourSchemeName = DEFAULT_COLOUR_SCHEME,
   /** Whether to rasterise the land-use ground tint (AR draws no ground). */
   groundTint = true,
+  /** Whether to invent roofs for the buildings the map says nothing about. */
+  inventedRoofs = true,
 ): Omit<TransferableMesh, "buildKey"> {
   const options = meshOptions(frameOrigin);
   const all = [...features];
@@ -358,6 +360,10 @@ function buildMesh(
     // identity test holds that the explicit default builds byte-identical
     // buffers to none at all.
     colours: colourSchemeOf(scheme).city,
+    // THE LAYER LIST'S SWITCH, the library default (on) when never touched.
+    // The obstacle index follows it (`planRoute`), so agents walk the drawn
+    // city.
+    inventedRoofs,
   });
   const { volumes, barriers, trees } = city;
   // Per-vertex terrain again: a region can be hundreds of metres across.
@@ -466,6 +472,7 @@ function buildMesh(
     roads: city.roads,
     roadCount: city.roadCount,
     colourScheme: scheme,
+    inventedRoofs,
     // COPIED, not transferred: at the 2 m texel and the largest window it is
     // about 2 MB, and the `colors` lesson in `transferablesOf` (a moved
     // buffer something re-read) is not worth relearning for a copy that cheap.
@@ -498,7 +505,9 @@ function buildMesh(
  * never use. It appears on the first route request instead and survives until
  * the feature set moves.
  */
-const obstacleIndex = createObstacleIndexCache(buildObstacleIndex);
+const obstacleIndex = createObstacleIndexCache((features, inventedRoofs) =>
+  buildObstacleIndex(features, undefined, { inventedRoofs }),
+);
 
 /** Bumped whenever the held terrain is replaced; an input to the planner. */
 let terrainStamp = 0;
@@ -569,10 +578,16 @@ function meshUpdateFor(
   drawnBuildKey: string | undefined,
   /** Whether the full build includes the ground tint. */
   groundTint: boolean,
+  /** Whether the full build invents roofs. */
+  inventedRoofs: boolean,
 ): WorkerCalls["update"]["result"]["mesh"] {
   // FULL BUILD VERSUS REGIONS ONLY (W6), decided in `mesh-planner.ts` against
   // the mesh the PAGE draws, so a reply dropped on the way is rebuilt.
-  const choices = meshBuildChoices({ colourScheme: scheme, groundTint });
+  const choices = meshBuildChoices({
+    colourScheme: scheme,
+    groundTint,
+    inventedRoofs,
+  });
   const inputs = {
     position: snapshot.position,
     loadedTileCount: pipeline.loadedTileCount(),
@@ -604,6 +619,7 @@ function meshUpdateFor(
           snapshot.loadedTiles,
           scheme,
           choices.groundTint,
+          choices.inventedRoofs,
         ),
       },
     };
@@ -725,6 +741,7 @@ async function handle<K extends WorkerCallKind>(
         colourScheme,
         drawnBuildKey,
         groundTint,
+        inventedRoofs,
       } = payload as WorkerCalls["update"]["request"];
       const { pipeline, prefetch } = requireState();
       // THE SCHEME IS A NAME, looked up in the table the page reads; one this
@@ -842,6 +859,7 @@ async function handle<K extends WorkerCallKind>(
         scheme,
         drawnBuildKey,
         groundTint ?? true,
+        inventedRoofs ?? true,
       );
       const meshMs = Math.max(0, nowMs() - meshStart);
       // WHAT THIS MESH IS STANDING ON (F1d). Recorded unconditionally, INCLUDING
@@ -1027,15 +1045,19 @@ async function handle<K extends WorkerCallKind>(
     }
 
     case "planRoute": {
-      const { from, to, frameOrigin } =
+      const { from, to, frameOrigin, inventedRoofs } =
         payload as WorkerCalls["planRoute"]["request"];
       const { pipeline } = requireState();
       // KEYED ON THE FEATURE SET, not on the mesh build. `loadedTileCount`
       // documents itself as a faithful signature of the features — tiles are
       // only ever added — whereas `needsFullBuild`'s key also carries
       // `terrainStamp`, and terrain does not change what blocks an agent.
-      const index = obstacleIndex.get(pipeline.loadedTileCount(), () =>
-        pipeline.features().values(),
+      // The invented-roofs switch changes the heights, so the cache keys on
+      // it too. The frame does not: the invented roofs do not depend on it.
+      const index = obstacleIndex.get(
+        pipeline.loadedTileCount(),
+        () => pipeline.features().values(),
+        inventedRoofs ?? true,
       );
       // THE SAME SAMPLER EVERY BUILDER READS, through the same cache, so the
       // ground the agent walks on and the ground the buildings stand on cannot

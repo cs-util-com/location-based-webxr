@@ -105,3 +105,9 @@ same bearing and the agent walks as far as it can.
 - **"No route" survives.** Clamping makes that refusal rare, not impossible: a
   detour is longer than the crow flies and the cap counts the detour. The two
   messages are distinct and both are tested.
+
+## Invented roofs
+
+`AgentCycleOptions.inventedRoofs?: () => boolean` is read at dispatch and sent
+on the `planRoute` request when defined, so a route plans over the roofs the
+page draws. Omitted, the request leaves the field out (the worker's default).

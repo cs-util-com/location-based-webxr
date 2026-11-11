@@ -1265,6 +1265,37 @@ describe("the colour scheme (colour schemes plan 2026-11-10-0841)", () => {
     expect(new Set(sent.slice(before))).toEqual(new Set([true]));
   });
 
+  it("sends whether invented roofs are wanted, read at POST time", async () => {
+    // Why this test matters: the switch flips between passes, and a value
+    // captured when the cycle was made would keep building the old choice.
+    const sent: (boolean | undefined)[] = [];
+    const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+    const page = { roofs: false };
+    const refresh = createRefreshCycle({
+      store: demo.store,
+      actions: demo.actions,
+      anchors: createAnchorHolder(COLOGNE),
+      worker: {
+        call: (_kind, payload) => {
+          sent.push(payload.inventedRoofs);
+          return Promise.resolve({
+            snapshot: { ...snapshot(payload.category), radius: payload.radius },
+            mesh: { kind: "regions" as const, regions: [], underground: [] },
+            workerTimings: ZERO_WORKER_TIMINGS,
+          });
+        },
+      },
+      onMesh: () => {},
+      inventedRoofs: () => page.roofs,
+    });
+    await refresh();
+    page.roofs = true;
+    const before = sent.length;
+    await refresh();
+    expect(new Set(sent.slice(0, before))).toEqual(new Set([false]));
+    expect(new Set(sent.slice(before))).toEqual(new Set([true]));
+  });
+
   it("reports a failed city build's choices BEFORE the error is dispatched", async () => {
     // Why this test matters: the dropdown reverts only for its own scheme's
     // failed build, and every failure also ends its wait through the store's

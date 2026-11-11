@@ -204,6 +204,16 @@ None. Entry point only, loaded by `index.html`.
     query, which is why `cameraQuery` updates its keys in place rather than
     deleting and re-appending them.
 
+- **The invented roofs:**
+  - **`?roofs=off`** boots with them off. A read-only boot override: nothing
+    writes it back (see `url-state.ts`).
+  - **The switch** is `attachInventedRoofsSwitch` on `#invented-roofs`: a
+    toggle dispatches `inventedRoofsChanged`; a store subscription shows it and
+    refreshes, which rebuilds because the flag is a build choice in the
+    worker's key. The refresh cycle and the agent cycle read it at post time,
+    AR included; `onMesh` ends the switch on the echo, `onBuildFailed` reverts
+    its own failed build.
+
 - **The colour scheme** (colour schemes plan 2026-11-10-0841):
   - **`?scheme=<name>`** boots in that scheme through `resolveColourScheme`
     (an unknown name opens the default with one console warning). The link

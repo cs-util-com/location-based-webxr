@@ -19,7 +19,9 @@ import { describe, it, expect, vi } from "vitest";
 import {
   colourSchemeChanged,
   createDemoStore,
+  inventedRoofsChanged,
   selectColourScheme,
+  selectInventedRoofs,
   selectOsmView,
   summariseSnapshot,
 } from "./osm-store.js";
@@ -303,5 +305,29 @@ describe("the colour scheme (colour schemes plan 2026-11-10-0841)", () => {
     expect(selectColourScheme(plain.store.getState())).toBe("today");
     // The framework's slice is untouched by it.
     expect(selectOsmView(plain.store.getState()).category).toBe("x");
+  });
+});
+
+describe("the invented roofs switch", () => {
+  it("starts on, or off from the link, and takes only booleans", () => {
+    // Why this test matters: the flag is part of the worker's build key, so
+    // a non-boolean must never reach it, and the link's choice must be the
+    // boot state rather than a change after boot (which would build twice).
+    const plain = createDemoStore({
+      start: { lat: 50, lng: 7 },
+      category: "x",
+    });
+    expect(selectInventedRoofs(plain.store.getState())).toBe(true);
+    const linked = createDemoStore({
+      start: { lat: 50, lng: 7 },
+      category: "x",
+      inventedRoofs: false,
+    });
+    expect(selectInventedRoofs(linked.store.getState())).toBe(false);
+    plain.store.dispatch({ type: "inventedRoofs/changed", payload: "off" });
+    expect(selectInventedRoofs(plain.store.getState())).toBe(true);
+    plain.store.dispatch(inventedRoofsChanged(false));
+    expect(selectInventedRoofs(plain.store.getState())).toBe(false);
+    expect(selectColourScheme(plain.store.getState())).toBe("today");
   });
 });

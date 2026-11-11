@@ -34,6 +34,11 @@
  * table, absent while the scheme is the default, and an unknown name in an
  * old link opens the default with one warning (`resolveColourScheme`).
  *
+ * READ-ONLY BOOT OVERRIDES are not exceptions: they seed a control when the
+ * page loads, so a preview link can name a state, and nothing writes them
+ * back, so DEC-R12-5 holds and the writers below do not grow. `roofs=off`
+ * boots with the invented roofs switched off (read in `main.ts`).
+ *
  * FOUR WRITERS, EIGHT KEYS, AND NONE TOUCHES ANOTHER'S. `placeQuery` owns
  * `lat`/`lng`/`site`; `cameraQuery` owns `clat`/`clng`/`cdist`; `lightQuery`
  * owns `light`; `schemeQuery` owns `scheme`. Anything else in the query survives all four, so a debug flag lives through a walk and a future

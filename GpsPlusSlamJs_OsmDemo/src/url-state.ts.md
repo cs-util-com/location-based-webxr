@@ -139,3 +139,8 @@ own `scheme` only; `null` (the default scheme) removes the key, so
 `colour-schemes.ts`. Presentation state, the second documented exception to
 DEC-R12-5 after the light. Tested in `url-state.test.ts` (own key only,
 default removes, a property over arbitrary queries, no write when unchanged).
+
+## Read-only boot overrides
+
+`roofs=off` (invented roofs off) is read once by `main.ts` at boot and never
+written, so it adds no writer here and DEC-R12-5 holds.

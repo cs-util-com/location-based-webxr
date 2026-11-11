@@ -190,12 +190,31 @@ describe("needsFullBuild", () => {
     // the city WITH it, and a page that never sends the field must keep
     // getting the tinted build it always had.
     const omitted = meshBuildChoices({ colourScheme: "today" });
-    expect(omitted).toEqual({ colourScheme: "today", groundTint: true });
+    expect(omitted).toEqual({
+      colourScheme: "today",
+      groundTint: true,
+      inventedRoofs: true,
+    });
     const skipped = meshBuildChoices({
       colourScheme: "today",
       groundTint: false,
     });
     expect(meshBuildKey({ ...AT, choices: skipped })).not.toBe(
+      meshBuildKey({ ...AT, choices: omitted }),
+    );
+  });
+
+  it("keys the invented roofs, which an omitted request field builds", () => {
+    // Why this test matters: switching invented roofs off must rebuild the
+    // city without them (the roofs are baked into the building buffers), and
+    // a page that never sends the field gets the library default, roofs on.
+    const omitted = meshBuildChoices({ colourScheme: "today" });
+    const off = meshBuildChoices({
+      colourScheme: "today",
+      inventedRoofs: false,
+    });
+    expect(off.inventedRoofs).toBe(false);
+    expect(meshBuildKey({ ...AT, choices: off })).not.toBe(
       meshBuildKey({ ...AT, choices: omitted }),
     );
   });

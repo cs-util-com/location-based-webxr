@@ -180,3 +180,10 @@ the tint layer switch says, because that switch is a uniform and skipping the
 tint while it is off would make switching it on cost a full rebuild. The flag
 is one of the build choices (`meshBuildChoices`), so leaving AR rebuilds the
 city with the tint.
+
+## Invented roofs
+
+The `update` handler passes `inventedRoofs ?? true` to the planner's choices
+and to `buildCity`, and echoes it on the mesh. `planRoute` asks the obstacle
+cache with the same flag, so routes climb over the roofs the city draws and,
+switched off, over the flat lids; the cache rebuilds when the flag flips.

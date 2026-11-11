@@ -39,7 +39,11 @@ export interface ObstacleIndexCache {
    * `features` is a THUNK so a cache hit does not have to materialise them. It
    * is called at most once per call, and only on a miss.
    */
-  get(key: number, features: () => Iterable<OsmFeature>): ObstacleIndex;
+  get(
+    key: number,
+    features: () => Iterable<OsmFeature>,
+    inventedRoofs?: boolean,
+  ): ObstacleIndex;
   /**
    * How many times the index has actually been built.
    *
@@ -69,20 +73,30 @@ export interface ObstacleIndexCache {
  * own tests slow.
  */
 export function createObstacleIndexCache(
-  build: (features: Iterable<OsmFeature>) => ObstacleIndex,
+  build: (
+    features: Iterable<OsmFeature>,
+    inventedRoofs: boolean,
+  ) => ObstacleIndex,
 ): ObstacleIndexCache {
-  let held: { key: number; index: ObstacleIndex } | undefined;
+  let held:
+    { key: number; inventedRoofs: boolean; index: ObstacleIndex } | undefined;
   let builds = 0;
   let lastMs: number | undefined;
 
   return {
-    get(key, features) {
-      if (held !== undefined && held.key === key) return held.index;
+    get(key, features, inventedRoofs = true) {
+      if (
+        held !== undefined &&
+        held.key === key &&
+        held.inventedRoofs === inventedRoofs
+      ) {
+        return held.index;
+      }
       const started = performance.now();
-      const index = build(features());
+      const index = build(features(), inventedRoofs);
       lastMs = performance.now() - started;
       builds += 1;
-      held = { key, index };
+      held = { key, inventedRoofs, index };
       return index;
     },
     buildCount: () => builds,

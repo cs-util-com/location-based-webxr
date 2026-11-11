@@ -440,6 +440,50 @@ describe("the fetch set follows the ring being scored (W4, finding N1)", () => {
       });
   });
 
+  it("keeps the first pass's features when the ring widens, so a rebuild plans on all of them", async () => {
+    // Why this matters: invented roofs read their neighbours, and the worker
+    // rebuilds the city from `features()` after each pass. Because the held
+    // tiles only grow, a roof that changes when the outer tiles arrive changes
+    // once, while loading, and ends as the plan over everything loaded. A
+    // pass that dropped the earlier tiles would leave roofs that differ across
+    // tile borders for good.
+    let nextId = 1;
+    const house = (tile: string) => {
+      const [lat, lng] = cellToLatLng(tile);
+      const d = 0.00005;
+      return {
+        type: "way" as const,
+        id: nextId++,
+        tags: { building: "house" },
+        geometry: [
+          { lat, lng },
+          { lat, lng: lng + d },
+          { lat: lat + d, lng: lng + d },
+          { lat, lng },
+        ],
+      };
+    };
+    const source: OsmDataSource = {
+      attribution: "test",
+      sourceId: "fixture:one-house-per-tile",
+      fetchTile: (tile) =>
+        Promise.resolve({
+          tile,
+          features: [house(tile)],
+          fetchedAt: 0,
+          sourceId: "fixture:one-house-per-tile",
+          schemaVersion: 1,
+          skipped: [],
+        }),
+    };
+    const pipeline = new DemoPipeline({ source, table: TABLE });
+    const at = NEAR_A_BOUNDARY.position;
+    await pipeline.update(at, "walkable", undefined, SCORE_DISK_RADIUS);
+    expect(pipeline.features().size).toBe(NEAR_A_BOUNDARY.narrow.length);
+    await pipeline.update(at, "walkable", undefined, SCORE_DISK_MAX_RADIUS);
+    expect(pipeline.features().size).toBe(NEAR_A_BOUNDARY.wide.length);
+  });
+
   /**
    * The snapshot has to say which ring it describes (F42).
    *

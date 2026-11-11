@@ -181,7 +181,9 @@ import { meshLayerSelection, wantsAnyMeshLayer } from "./mesh-layers.js";
 import {
   colourSchemeChanged,
   createDemoStore,
+  inventedRoofsChanged,
   selectColourScheme,
+  selectInventedRoofs,
   selectLayers,
   selectOsmView,
 } from "./osm-store.js";
@@ -192,6 +194,7 @@ import {
   schemeLinkValue,
 } from "./colour-schemes.js";
 import { attachColourSchemeSwitch } from "./colour-scheme-switch.js";
+import { attachInventedRoofsSwitch } from "./invented-roofs-switch.js";
 import {
   createRefreshCycle,
   isFinalRing,
@@ -373,6 +376,10 @@ async function main(): Promise<void> {
     colourScheme: resolveColourScheme(
       new URLSearchParams(window.location.search).get("scheme"),
     ),
+    // THE LINK CAN SWITCH THE INVENTED ROOFS OFF for a comparison (?roofs=off).
+    // A read-only boot override: the box changes the choice, never the link.
+    inventedRoofs:
+      new URLSearchParams(window.location.search).get("roofs") !== "off",
   });
   reportFatal = (message) => {
     store.dispatch(actions.fetchFailed(`the worker failed: ${message}`));
@@ -494,6 +501,14 @@ async function main(): Promise<void> {
     status: el("colour-scheme-status"),
     initial: selectColourScheme(store.getState()),
     choose: (name) => store.dispatch(colourSchemeChanged(name)),
+  });
+  // THE INVENTED ROOFS, the same pattern: the box records the choice, the
+  // subscriber further down rebuilds, and `onMesh` ends the switch.
+  const roofsSwitch = attachInventedRoofsSwitch({
+    box: el<HTMLInputElement>("invented-roofs"),
+    status: el("invented-roofs-status"),
+    initial: selectInventedRoofs(store.getState()),
+    choose: (on) => store.dispatch(inventedRoofsChanged(on)),
   });
 
   // THE PERF PANELS (W14, DEC-R3-18). Its own switch rather than a layer — it
@@ -1098,9 +1113,14 @@ async function main(): Promise<void> {
     // THE GROUND TINT ONLY WHERE A GROUND IS DRAWN: AR shows no ground plane,
     // so its passes skip the tint's rasterise, transfer and texture.
     groundTint: () => arSession === undefined,
+    // THE INVENTED ROOFS, read at post time; AR draws the same buildings.
+    inventedRoofs: () => selectInventedRoofs(store.getState()),
     // A FAILED CITY BUILD names its choices; reported before the error
     // reaches the store, so the switch reverts only its own failed build.
-    onBuildFailed: (failed) => schemeSwitch.failed(failed.colourScheme),
+    onBuildFailed: (failed) => {
+      schemeSwitch.failed(failed.colourScheme);
+      roofsSwitch.failed(failed.inventedRoofs ?? true);
+    },
     // WHAT DRIVES BOTH LOADING INDICATORS. Not the store's `loading.phase`:
     // this cycle dispatches `fetchStarted` once, above the ring loop, and every
     // ring's `snapshotReady` sets the phase back to idle — so the phase is idle
@@ -1146,6 +1166,7 @@ async function main(): Promise<void> {
         buildingView.setGroundColours(look.city.ground, look.ground.slope);
         buildingView.setBrightnessTrim(look.brightnessTrim);
         schemeSwitch.meshDrawn(built.mesh.colourScheme);
+        roofsSwitch.meshDrawn(built.mesh.inventedRoofs);
         return;
       }
       if (latestMesh === undefined) return;
@@ -1339,6 +1360,8 @@ async function main(): Promise<void> {
       });
     },
     frameOrigin: () => anchors.origin,
+    // Routes go over the roofs the city draws.
+    inventedRoofs: () => selectInventedRoofs(store.getState()),
     setBusy: (busy) => {
       // ON THE CANVAS, because the canvas is what was clicked — there is no
       // button to relabel. `index.html` turns this into `cursor: progress`, and
@@ -3126,6 +3149,7 @@ async function main(): Promise<void> {
         // Any failure ends a switch in progress; its echo will not come. A
         // switch whose own build failed was reverted by `onBuildFailed`.
         schemeSwitch.failed();
+        roofsSwitch.failed();
       }
     },
   );
@@ -3234,6 +3258,14 @@ async function main(): Promise<void> {
     shownScheme = scheme;
     schemeSwitch.show(scheme);
     writeScheme(schemeUrl, schemeLinkValue(scheme));
+    void refresh();
+  });
+  let shownRoofs = selectInventedRoofs(store.getState());
+  store.subscribe(() => {
+    const on = selectInventedRoofs(store.getState());
+    if (on === shownRoofs) return;
+    shownRoofs = on;
+    roofsSwitch.show(on);
     void refresh();
   });
 

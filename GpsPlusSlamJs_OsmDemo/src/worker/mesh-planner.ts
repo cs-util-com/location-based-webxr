@@ -80,15 +80,22 @@ function bucket(value: number): number {
 /**
  * The build choices of one update request, with every omitted field filled
  * with what the page drew before the field existed: an omitted `groundTint`
- * builds the land-use tint. AR sends `false` because it draws no ground.
+ * builds the land-use tint (AR sends `false` because it draws no ground),
+ * and an omitted `inventedRoofs` builds them, as the library does.
  */
 export function meshBuildChoices(request: {
   readonly colourScheme: string;
   readonly groundTint?: boolean;
-}): { readonly colourScheme: string; readonly groundTint: boolean } {
+  readonly inventedRoofs?: boolean;
+}): {
+  readonly colourScheme: string;
+  readonly groundTint: boolean;
+  readonly inventedRoofs: boolean;
+} {
   return {
     colourScheme: request.colourScheme,
     groundTint: request.groundTint ?? true,
+    inventedRoofs: request.inventedRoofs ?? true,
   };
 }
 

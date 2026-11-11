@@ -67,3 +67,11 @@ The framework slice's own behaviour (the `fetchFailed` / `nonFatalError` split, 
   ignored, so nothing but a table name reaches the worker's build key.
 - `selectColourScheme(state)`.
 - Tested in `osm-store.test.ts`.
+
+## Invented roofs
+
+- `DemoRootState.inventedRoofs` - whether buildings without a mapped roof shape
+  get a planned roof. Starts at `CreateDemoStoreOptions.inventedRoofs` (default
+  `true`; `main.ts` passes `false` for `?roofs=off`).
+- `inventedRoofsChanged(on)` - its one action; a non-boolean payload is ignored.
+- `selectInventedRoofs(state)`.

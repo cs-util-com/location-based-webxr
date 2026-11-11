@@ -31,8 +31,8 @@ union, and two runtime guards. No behaviour.
 target }`.
 - `WorkerReply` - `{ id, ok: true, value } | { id, ok: false, message, failedBuild? }`;
   `failedBuild` (`MeshBuildChoices`) is set only for a failed city build.
-- `MeshBuildChoices` - what the user chose to build (`colourScheme`; each
-  later build switch adds its field). `isMeshBuildChoices(value)` guards it.
+- `MeshBuildChoices` - what the user chose to build (`colourScheme`,
+  `inventedRoofs?`; each later build switch adds its field). `isMeshBuildChoices(value)` guards it.
 - `MeshBuildError` - the error class that carries `failedBuild` in the worker
   and out of the RPC client; `failedBuildOf(error)` reads it back.
 - `isWorkerReply(value)`, `isWorkerEnvelope(value)` — guards for the two
@@ -132,3 +132,12 @@ transferred (about 2 MB at most), see `demo-worker.ts`.
   land-use ground tint; omitted means `true`. The page sends `false` while AR
   runs (AR draws no ground plane). It is a build choice, so it is in the build
   key and a change rebuilds.
+
+## `inventedRoofs`
+
+- Request: `update.request.inventedRoofs?` and `planRoute.request.inventedRoofs?`
+  - whether buildings without a mapped roof shape get a planned roof; omitted
+    means `true`.
+- Reply: `TransferableMesh.inventedRoofs?` echoes the choice the mesh was built
+  with (absent means `true`), so the page's switch ends on the durable build.
+- `MeshBuildChoices.inventedRoofs?` names it in a failed build.

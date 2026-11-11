@@ -89,6 +89,8 @@ interface RefreshWorker {
       drawnBuildKey?: string;
       /** Whether to build the land-use ground tint; see `protocol.ts`. */
       groundTint?: boolean;
+      /** Whether to invent roofs; see `protocol.ts`. */
+      inventedRoofs?: boolean;
     },
     options: { signal: AbortSignal },
   ): Promise<UpdateResult>;
@@ -184,6 +186,12 @@ export interface RefreshCycleOptions extends StoreAccess {
    */
   readonly groundTint?: () => boolean;
   /**
+   * Whether the build invents roofs for the buildings the map says nothing
+   * about (the layer list's switch), read at post time. Omitted sends none,
+   * which the worker reads as `true`.
+   */
+  readonly inventedRoofs?: () => boolean;
+  /**
    * A city build failed in the worker: the choices it was built with. Called
    * BEFORE the error reaches the store, so a switch can tell its own failed
    * build from any other failure before the error ends its wait.
@@ -253,16 +261,19 @@ function postTimeReads(options: RefreshCycleOptions): {
   colourScheme?: string;
   drawnBuildKey?: string;
   groundTint?: boolean;
+  inventedRoofs?: boolean;
 } {
   const datum = options.geoidUndulationM?.();
   const colourScheme = options.colourScheme?.();
   const drawnBuildKey = options.drawnBuildKey?.();
   const groundTint = options.groundTint?.();
+  const inventedRoofs = options.inventedRoofs?.();
   return {
     ...(datum === undefined ? {} : { geoidUndulationM: datum }),
     ...(colourScheme === undefined ? {} : { colourScheme }),
     ...(drawnBuildKey === undefined ? {} : { drawnBuildKey }),
     ...(groundTint === undefined ? {} : { groundTint }),
+    ...(inventedRoofs === undefined ? {} : { inventedRoofs }),
   };
 }
 

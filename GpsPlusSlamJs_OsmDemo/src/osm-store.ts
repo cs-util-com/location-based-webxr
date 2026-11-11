@@ -67,6 +67,12 @@ export interface DemoRootState {
    * dependant into this change.
    */
   readonly colourScheme: ColourSchemeName;
+  /**
+   * Whether the city invents roofs for the buildings the map says nothing
+   * about (the layer list's switch). A demo field beside `colourScheme`, for
+   * the same reason: it is a build choice of this demo, not a layer.
+   */
+  readonly inventedRoofs: boolean;
 }
 
 export interface CreateDemoStoreOptions {
@@ -74,6 +80,8 @@ export interface CreateDemoStoreOptions {
   readonly category: string;
   /** The scheme at boot, from the link (`?scheme=`); the default when absent. */
   readonly colourScheme?: ColourSchemeName;
+  /** The switch at boot, from the link (`?roofs=off`); on when absent. */
+  readonly inventedRoofs?: boolean;
 }
 
 const COLOUR_SCHEME_CHANGED = "colourScheme/changed";
@@ -109,6 +117,32 @@ function colourSchemeReducer(initial: ColourSchemeName) {
 /** The chosen colour scheme. */
 export function selectColourScheme(state: DemoRootState): ColourSchemeName {
   return state.colourScheme;
+}
+
+const INVENTED_ROOFS_CHANGED = "inventedRoofs/changed";
+
+/** The invented-roofs switch's choice (or a revert of it). */
+export function inventedRoofsChanged(on: boolean): {
+  readonly type: typeof INVENTED_ROOFS_CHANGED;
+  readonly payload: boolean;
+} {
+  return { type: INVENTED_ROOFS_CHANGED, payload: on };
+}
+
+/** The invented-roofs reducer; a payload that is not a boolean is ignored. */
+function inventedRoofsReducer(initial: boolean) {
+  return (
+    state: boolean = initial,
+    action: { readonly type: string; readonly payload?: unknown },
+  ): boolean => {
+    if (action.type !== INVENTED_ROOFS_CHANGED) return state;
+    return typeof action.payload === "boolean" ? action.payload : state;
+  };
+}
+
+/** Whether the city invents roofs. */
+export function selectInventedRoofs(state: DemoRootState): boolean {
+  return state.inventedRoofs;
 }
 
 /**
@@ -216,6 +250,7 @@ export function createDemoStore(options: CreateDemoStoreOptions) {
       colourScheme: colourSchemeReducer(
         options.colourScheme ?? DEFAULT_COLOUR_SCHEME,
       ),
+      inventedRoofs: inventedRoofsReducer(options.inventedRoofs ?? true),
     },
     // RESTORED AFTER THE MIGRATION DROPPED IT. The old bare store passed this
     // as ; the factory hardcoded its own and had no

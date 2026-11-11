@@ -54,6 +54,23 @@ describe("the worker's obstacle index cache", () => {
     expect(third).toBe(first);
   });
 
+  it("builds AGAIN when the invented-roofs switch flips, and passes it on", () => {
+    // Why this test matters: the switch changes building heights, so an
+    // index kept across it would let agents walk the other city than the one
+    // drawn. Same feature set, so only the flag can tell the two apart.
+    const flags: boolean[] = [];
+    const cache = createObstacleIndexCache((_features, inventedRoofs) => {
+      flags.push(inventedRoofs);
+      return stubIndex(`index-${flags.length}`);
+    });
+    const on = cache.get(7, () => []);
+    const off = cache.get(7, () => [], false);
+    const offAgain = cache.get(7, () => [], false);
+    expect(flags).toEqual([true, false]);
+    expect(off).not.toBe(on);
+    expect(offAgain).toBe(off);
+  });
+
   it("builds AGAIN when the feature set moves", () => {
     // THE MIRROR, and the one that makes the test above worth having. Without
     // it, "never invalidates" scores full marks — and a stale index is not a

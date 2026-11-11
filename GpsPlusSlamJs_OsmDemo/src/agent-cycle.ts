@@ -41,6 +41,7 @@ interface RouteWorker {
       from: LatLng;
       to: LatLng;
       frameOrigin: LatLng;
+      inventedRoofs?: boolean;
     },
   ): Promise<readonly RoutePoint[] | undefined>;
 }
@@ -69,6 +70,12 @@ export interface AgentCycleOptions {
   readonly showRoute: (route: readonly RoutePoint[]) => void;
   /** The user-visible error channel, for a refusal or a failure. */
   readonly report: (message: string) => void;
+  /**
+   * Whether the drawn city has invented roofs, read at click time, so the
+   * route's obstacle index takes the same heights. Omitted sends none, which
+   * the worker reads as `true`.
+   */
+  readonly inventedRoofs?: () => boolean;
 }
 
 /** `Error` messages when we have one, the value's text when we do not. */
@@ -118,6 +125,7 @@ export function createAgentCycle(
     // heights mean, and reading it again on arrival would describe the route in
     // whatever frame the scene had been re-anchored to while the search ran.
     const origin = frameOrigin();
+    const roofs = options.inventedRoofs?.();
     const mine = ++generation;
     /** True while this dispatch is still the one the user is waiting for. */
     const current = (): boolean => mine === generation;
@@ -125,7 +133,12 @@ export function createAgentCycle(
     setBusy(true);
     let route: readonly RoutePoint[] | undefined;
     try {
-      route = await worker.call("planRoute", { from, to, frameOrigin: origin });
+      route = await worker.call("planRoute", {
+        from,
+        to,
+        frameOrigin: origin,
+        ...(roofs === undefined ? {} : { inventedRoofs: roofs }),
+      });
     } catch (error) {
       // A SUPERSEDED FAILURE IS SILENT. Its replacement is already running, and
       // an error toast for a click the user has overridden reads as the current

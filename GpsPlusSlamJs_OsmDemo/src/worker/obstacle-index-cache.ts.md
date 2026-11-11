@@ -72,3 +72,9 @@ together**:
 
 The real builder's cost against the checked-in corpus is measured in
 `GpsPlusSlamJs_Osm/src/testdata/sites/site-obstacle-index-cost.test.ts`.
+
+## Invented roofs
+
+`get(key, features, inventedRoofs?)` hits only when the key AND the flag match
+what is held, and passes the flag to the builder; a flip rebuilds the index.
+Tested by "builds AGAIN when the invented-roofs switch flips, and passes it on".

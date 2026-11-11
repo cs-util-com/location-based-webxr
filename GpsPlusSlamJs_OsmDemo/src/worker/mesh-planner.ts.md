@@ -12,9 +12,9 @@ city, or may it send only the region slabs?** (W6, finding R3-3.)
 - `needsFullBuild(inputs, drawnKey: string | undefined): boolean` - pure:
   `true` whenever the page does not already draw a mesh with this key
   (`drawnKey` is the key the page sent back, `undefined` when it draws none).
-- `meshBuildChoices({ colourScheme, groundTint? })` - one request's build
-  choices with omitted fields filled as before they existed (`groundTint`
-  defaults to `true`).
+- `meshBuildChoices({ colourScheme, groundTint?, inventedRoofs? })` - one
+  request's build choices with omitted fields filled as before they existed
+  (`groundTint` and `inventedRoofs` default to `true`).
 - `MeshInputs` - `position`, `loadedTileCount`, `terrainStamp`, `choices`
   (the named build switches: `colourScheme`, and each later switch).
 
@@ -111,3 +111,10 @@ regions-only pass merges into the held mesh rather than blanking the buildings.
 `MeshInputs.colourScheme` is part of the key: the city's colours are baked into
 its buffers, so a switch is a full rebuild and the passes after it are not.
 Tested in `mesh-planner.test.ts`.
+
+## Invented roofs
+
+`inventedRoofs` is a build choice and so part of the key: switching it rebuilds
+the city, and an omitted request field keys the same as `true` (the library's
+default). Tested by "keys the invented roofs, which an omitted request field
+builds" in `mesh-planner.test.ts`.

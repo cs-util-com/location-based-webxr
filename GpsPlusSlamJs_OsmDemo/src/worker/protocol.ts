@@ -114,6 +114,11 @@ export interface TransferableMesh {
    */
   readonly colourScheme?: string;
   /**
+   * Whether this mesh was built with invented roofs; the layer list's
+   * switch ends on it. Absent means `true`, the library default.
+   */
+  readonly inventedRoofs?: boolean;
+  /**
    * The identity of this build (`meshBuildKey` in `mesh-planner.ts`). The page
    * sends it back as `drawnBuildKey` on its next `update`, so the worker
    * rebuilds whenever the page does not draw this pass's build, including after
@@ -396,6 +401,12 @@ export interface WorkerCalls {
        */
       readonly groundTint?: boolean;
       /**
+       * Whether the full build invents roofs for the buildings the map says
+       * nothing about. Omitted means `true`. Part of the build key, so the
+       * switch rebuilds the city.
+       */
+      readonly inventedRoofs?: boolean;
+      /**
        * Rings of chunks to score (W16). Omitted means the first pass's radius.
        *
        * The progressive path is repeated `update` calls with a growing radius
@@ -571,6 +582,11 @@ export interface WorkerCalls {
        * polyline somewhere the agent is not.
        */
       readonly frameOrigin: LatLng;
+      /**
+       * Whether the obstacle index takes the invented heights, as the drawn
+       * city does. Omitted means `true`, as the build.
+       */
+      readonly inventedRoofs?: boolean;
     };
     /**
      * The route, or `undefined` when there is none.
@@ -708,6 +724,7 @@ export type WorkerReply =
  */
 export interface MeshBuildChoices {
   readonly colourScheme: string;
+  readonly inventedRoofs?: boolean;
 }
 
 /**
