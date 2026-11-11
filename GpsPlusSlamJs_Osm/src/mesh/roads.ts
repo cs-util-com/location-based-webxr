@@ -310,6 +310,28 @@ const ROAD_RANK: ReadonlyMap<string, number> = new Map([
 /** The rank of every class the table does not name. */
 const TOP_ROAD_RANK = 3;
 
+/** Paint's clearance over the highest road a rank step could lift, metres. */
+const MARKING_CLEARANCE_M = 0.005;
+
+/**
+ * The height of road markings over the ground: one whole step above the top
+ * rank (whose ways lift at most 3.4 steps) plus 5 mm, 2.5 cm at the default
+ * step. Over 3 mm above every road (a smaller gap fought in the depth buffer
+ * at 226 m, `roads.ts.md`) and under OsmDemo's next ground rung (4 cm).
+ */
+export function roadMarkingLiftM(rankStepM = ROAD_RANK_STEP_M): number {
+  return rankStepM * (TOP_ROAD_RANK + 1) + MARKING_CLEARANCE_M;
+}
+
+/**
+ * The height of a pedestrian area over the ground: one step BELOW rank 0,
+ * whose paths start at lift 0 plus a tie fraction, so a path across a square
+ * stays on top of it. 0 with the ranks off (everything on the ground).
+ */
+export function pedestrianAreaLiftM(rankStepM = ROAD_RANK_STEP_M): number {
+  return rankStepM === 0 ? 0 : -rankStepM;
+}
+
 /** A way's class rank, 0 (paths) to 3 (every main road). */
 export function roadRank(tags: OsmTags): number {
   const highway = (tags as Record<string, string>)["highway"];

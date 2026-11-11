@@ -28,6 +28,7 @@ const scheme: fc.Arbitrary<CityColourScheme> = fc
     ground: rgb,
     sidewalk: rgb,
     defaultRoad: rgb,
+    markings: rgb,
     walls: fc.array(rgb, { minLength: 1, maxLength: 8 }),
     pitchedRoofs: fc.array(rgb, { minLength: 1, maxLength: 8 }),
     flatRoofs: fc.array(rgb, { minLength: 1, maxLength: 8 }),

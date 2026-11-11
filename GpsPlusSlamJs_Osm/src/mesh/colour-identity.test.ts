@@ -242,7 +242,9 @@ describe("city colours without a scheme are byte-identical to before schemes", (
       it(`${id}, ${palette} palette`, () => {
         const city = buildCity(features, ground, {
           window: site.bbox,
-          roads: true,
+          // Off reproduces the roads before zebras and pedestrian areas:
+          // what this identity guards changed deliberately with them.
+          roads: { markings: false },
           cosmeticTrees: true,
           inventedRoofs: false,
           palette,
@@ -253,7 +255,9 @@ describe("city colours without a scheme are byte-identical to before schemes", (
       it(`${id}, ${palette} palette, the default scheme passed explicitly`, () => {
         const city = buildCity(features, ground, {
           window: site.bbox,
-          roads: true,
+          // Off reproduces the roads before zebras and pedestrian areas:
+          // what this identity guards changed deliberately with them.
+          roads: { markings: false },
           cosmeticTrees: true,
           inventedRoofs: false,
           palette,

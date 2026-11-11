@@ -14,6 +14,7 @@ import {
   seededBuildingColours,
 } from "./building-palette.js";
 import {
+  DEFAULT_ROAD_COLOURS,
   buildingColour,
   parseOsmColour,
   roadColour,
@@ -436,6 +437,63 @@ describe("buildCity with roads", () => {
       );
     expect(triangles({ mitreLimit: 1.2 })).toBe(triangles(true) + 1);
     expect(triangles({})).toBe(triangles(true));
+  });
+
+  // WHY: zebras and squares are a look decision the owner can switch, and
+  // buildCity is the one way every app builds roads. On by default with the
+  // roads, they land in the road chunks in the scheme colour (one draw);
+  // markings: false must give exactly the roads without them.
+  it("draws zebras and pedestrian areas with the roads, switchable off", () => {
+    const enu = (x: number, y: number) => frame.toLatLng({ x, y });
+    const zebra: OsmFeature = {
+      type: "way",
+      id: 31,
+      tags: { highway: "footway", footway: "crossing", crossing: "zebra" },
+      geometry: [enu(0, -4), enu(0, 4)],
+    };
+    const square: OsmFeature = {
+      type: "way",
+      id: 32,
+      tags: { highway: "pedestrian", area: "yes" },
+      geometry: [enu(20, 0), enu(40, 0), enu(40, 20), enu(20, 20), enu(20, 0)],
+    } as unknown as OsmFeature;
+    const features = [ROAD, zebra, square];
+    const on = buildCity(features, { frame }, { window: W, roads: true });
+    expect(on.zebraStripeCount).toBe(8);
+    expect(on.pedestrianAreaCount).toBe(1);
+    const colourKeys = (city: ReturnType<typeof buildCity>) => {
+      const keys = new Set<string>();
+      for (const chunk of city.roads) {
+        const c = chunk.colors ?? new Float32Array(0);
+        for (let i = 0; i < c.length; i += 3) {
+          keys.add(`${c[i]},${c[i + 1]},${c[i + 2]}`);
+        }
+      }
+      return keys;
+    };
+    expect(
+      colourKeys(on).has(unpacked(DEFAULT_ROAD_COLOURS.markings).join(",")),
+    ).toBe(true);
+    const off = buildCity(
+      features,
+      { frame },
+      { window: W, roads: { markings: false } },
+    );
+    expect(off.zebraStripeCount).toBe(0);
+    expect(off.pedestrianAreaCount).toBe(0);
+    // Off adds nothing; on adds two triangles a stripe plus the square.
+    const triangles = (city: ReturnType<typeof buildCity>) =>
+      city.roads.reduce((n, c) => n + c.mesh.indices.length / 3, 0);
+    expect(triangles(off)).toBe(
+      triangles(
+        buildCity(
+          [ROAD, zebra],
+          { frame },
+          { window: W, roads: { markings: false } },
+        ),
+      ),
+    );
+    expect(triangles(on)).toBeGreaterThanOrEqual(triangles(off) + 2 * 8 + 2);
   });
 
   // WHY (r1164 delta review NIT 4): `roads` comes from a consumer's options

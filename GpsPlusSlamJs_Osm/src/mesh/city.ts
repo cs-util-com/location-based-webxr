@@ -46,7 +46,16 @@ import {
 import type { EnuFrame, EnuPoint } from "./enu.js";
 import { buildingColour, roadColour, roofColour } from "./feature-colours.js";
 import { buildGroundTint, type GroundTint } from "./ground-tint.js";
-import { buildRoads, type BuildRoadsOptions } from "./roads.js";
+import { buildPedestrianAreas } from "./pedestrian-areas.js";
+import { buildRoadMarkings } from "./road-markings.js";
+import {
+  ROAD_RANK_STEP_M,
+  buildRoads,
+  pedestrianAreaLiftM,
+  roadMarkingLiftM,
+  type BuildRoadsOptions,
+} from "./roads.js";
+import type { MeshData } from "./mesh-data.js";
 import { shellRandFor } from "./shell-rand.js";
 import {
   buildStreetFurniture,
@@ -90,7 +99,9 @@ export interface CityOptions {
    * consumer that draws none builds none. An object builds them with
    * `buildRoads`'s look options (`CityRoadOptions`), so an audit or a
    * before/after page can switch the class lift or the mitre off; `true`
-   * and `{}` take the builder's defaults.
+   * and `{}` take the builder's defaults. With roads, the mapped zebra
+   * crossings and pedestrian areas go into the same chunks unless
+   * `markings: false`.
    */
   readonly roads?: boolean | CityRoadOptions;
   /**
@@ -140,11 +151,15 @@ export interface CityOptions {
  * lift between two road classes (0 puts every road on the ground, as before
  * M4a), `mitreLimit` the longest mitre before a join is bevelled (1
  * bevels every turn). Invalid values throw `RangeError` from the builder.
+ * `markings` (default true): also the zebra crossings
+ * (`buildRoadMarkings`, in the scheme's `markings` colour, over every road
+ * class) and the pedestrian areas (`buildPedestrianAreas`, in their class
+ * colour, under every path); false draws the ribbons alone, as before them.
  */
 export type CityRoadOptions = Pick<
   BuildRoadsOptions,
   "mitreLimit" | "rankStepM"
->;
+> & { readonly markings?: boolean };
 
 /** What `buildCity` returns. */
 export interface City {
@@ -172,6 +187,12 @@ export interface City {
   readonly roads: readonly MeshChunk[];
   /** Road and path ways built (0 unless asked for). */
   readonly roadCount: number;
+  /**
+   * Zebra stripes and pedestrian areas merged into `roads` (0 unless roads
+   * with markings were asked for).
+   */
+  readonly zebraStripeCount: number;
+  readonly pedestrianAreaCount: number;
   /**
    * The street furniture of the kinds asked for (`CityOptions.furniture`),
    * in input order, within `withinM`. Never obstacles: the navigation index
@@ -307,10 +328,16 @@ export function buildCity(
     ),
   );
   const roadOptions = roadBuildOptions(options.roads, ground);
-  const { roads, roadCount } =
+  const { roads, roadCount, zebraStripeCount, pedestrianAreaCount } =
     roadOptions === undefined
-      ? { roads: [], roadCount: 0 }
-      : cityRoads(all, roadOptions, inside, tagsByKey, colours);
+      ? NO_ROADS
+      : cityRoads(all, roadOptions, {
+          inside,
+          tagsByKey,
+          colours,
+          window: options.window,
+          markings: roadMarkingsOn(options.roads),
+        });
   // Every built footprint excludes, not only the kept ones: a house just
   // outside `withinM` still has no tree growing through it.
   const cosmeticTrees =
@@ -332,6 +359,8 @@ export function buildCity(
     furniture,
     roads,
     roadCount,
+    zebraStripeCount,
+    pedestrianAreaCount,
   };
   return { ...city, ...cityGroundTint(all, ground, options, colours) };
 }
@@ -405,30 +434,90 @@ function roadBuildOptions(
   };
 }
 
+/** Whether the road options ask for zebras and pedestrian areas (default). */
+function roadMarkingsOn(roads: CityOptions["roads"]): boolean {
+  return !(typeof roads === "object" && roads?.markings === false);
+}
+
+interface CityRoads {
+  readonly roads: MeshChunk[];
+  readonly roadCount: number;
+  readonly zebraStripeCount: number;
+  readonly pedestrianAreaCount: number;
+}
+
+const NO_ROADS: CityRoads = {
+  roads: [],
+  roadCount: 0,
+  zebraStripeCount: 0,
+  pedestrianAreaCount: 0,
+};
+
 /**
  * The roads of a city, within its window, merged per chunk with a colour
- * per vertex (class and surface, `roadColour`). OsmDemo's worker did this
+ * per vertex (class and surface, `roadColour`), and with `markings` the
+ * pedestrian areas (their class colour) and zebra stripes (the scheme's
+ * `markings`) in the same chunks: one draw. OsmDemo's worker did this
  * inline until the globe needed the same (round-4 plan 2026-10-11-0122).
  */
 function cityRoads(
   all: readonly OsmFeature[],
   ground: BuildRoadsOptions,
-  inside: (p: EnuPoint) => boolean,
-  tagsByKey: ReadonlyMap<string, OsmFeature["tags"]>,
-  colours: CityColourScheme,
-): { roads: MeshChunk[]; roadCount: number } {
-  const ribbons = buildRoads(all, ground).filter((road) =>
-    inside(meshCentroidEnu(road.mesh)),
-  );
+  context: {
+    readonly inside: (p: EnuPoint) => boolean;
+    readonly tagsByKey: ReadonlyMap<string, OsmFeature["tags"]>;
+    readonly colours: CityColourScheme;
+    readonly window: Bbox;
+    readonly markings: boolean;
+  },
+): CityRoads {
+  const { inside, tagsByKey, colours } = context;
+  const kept = <T extends { readonly mesh: MeshData }>(items: T[]): T[] =>
+    items.filter((item) => inside(meshCentroidEnu(item.mesh)));
+  const ribbons = kept(buildRoads(all, ground));
+  const rankStepM = ground.rankStepM ?? ROAD_RANK_STEP_M;
+  const areas = context.markings
+    ? kept(
+        buildPedestrianAreas(all, {
+          frame: ground.frame,
+          ...(ground.groundHeightM === undefined
+            ? {}
+            : { groundHeightM: ground.groundHeightM }),
+          window: context.window,
+          liftM: pedestrianAreaLiftM(rankStepM),
+        }),
+      )
+    : [];
+  const zebras = context.markings
+    ? kept(
+        buildRoadMarkings(all, {
+          ...ground,
+          liftM: roadMarkingLiftM(rankStepM),
+        }),
+      )
+    : [];
+  const painted = [
+    ...ribbons.map((road) => ({
+      mesh: road.mesh,
+      colour: roadColour(tagsByKey.get(road.feature) ?? {}, colours),
+    })),
+    ...areas.map((area) => ({
+      mesh: area.mesh,
+      colour: roadColour(tagsByKey.get(area.feature) ?? {}, colours),
+    })),
+    ...zebras.map((zebra) => ({ mesh: zebra.mesh, colour: colours.markings })),
+  ];
   return {
     roads: chunkMeshes(
-      ribbons,
-      (road) => road.mesh,
-      (road) => meshCentroidEnu(road.mesh),
+      painted,
+      (item) => item.mesh,
+      (item) => meshCentroidEnu(item.mesh),
       undefined,
-      (road) => roadColour(tagsByKey.get(road.feature) ?? {}, colours),
+      (item) => item.colour,
     ),
     roadCount: ribbons.length,
+    zebraStripeCount: zebras.reduce((sum, z) => sum + z.stripeCount, 0),
+    pedestrianAreaCount: areas.length,
   };
 }
 

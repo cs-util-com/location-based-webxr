@@ -236,11 +236,15 @@ const HARD_SURFACES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * A pedestrian area, `highway=pedestrian` + `area=yes`: a surface, never a
- * street (`roads.ts` `isRoad` leaves exactly these to the area builders).
+ * A pedestrian area, any `highway=*` with `area=yes` (a square, a paved
+ * plaza mapped as a footway area): a surface, never a street (`roads.ts`
+ * `isRoad` leaves exactly these to the area builders). ONE predicate for the
+ * tint and the area mesh (`pedestrian-areas.ts`), so a square is never
+ * classified two ways. The set the chosen O3 prototype drew; it was
+ * `highway=pedestrian` alone before the area mesh.
  */
-function isPedestrianArea(tags: OsmTags): boolean {
-  return tags["highway"] === "pedestrian" && tags["area"] === "yes";
+export function isPedestrianArea(tags: OsmTags): boolean {
+  return tags["highway"] !== undefined && tags["area"] === "yes";
 }
 
 /**

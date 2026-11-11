@@ -92,7 +92,12 @@ export const DEFAULT_CITY_COLOUR_SCHEME: CityColourScheme = Object.freeze({
 });
 
 const BOOLEAN_FIELDS = ["honourColourTags", "roadsBySurface"] as const;
-const COLOUR_FIELDS = ["ground", "sidewalk", "defaultRoad"] as const;
+const COLOUR_FIELDS = [
+  "ground",
+  "sidewalk",
+  "defaultRoad",
+  "markings",
+] as const;
 const LIST_FIELDS = ["walls", "pitchedRoofs", "flatRoofs"] as const;
 const MAP_FIELDS = [
   "roads",

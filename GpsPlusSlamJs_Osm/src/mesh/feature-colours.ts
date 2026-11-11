@@ -399,6 +399,11 @@ export interface RoadColours {
   readonly roadSurfaces: ReadonlyMap<string, Rgb>;
   readonly sidewalk: Rgb;
   readonly defaultRoad: Rgb;
+  /**
+   * Paint on the road: zebra stripes (`road-markings.ts`). Required in every
+   * scheme, because no one fixed white reads on every scheme's streets.
+   */
+  readonly markings: Rgb;
 }
 
 /**
@@ -410,6 +415,14 @@ export interface RoadColours {
  */
 const SIDEWALK_RGB: Rgb = 0xc6b49c;
 
+/**
+ * Zebra paint: a worn off-white, not pure white, so it sits in the muted
+ * city rather than glowing. Lighter than the O3 lab's 0xd6d3ca, which lay on
+ * O3's dark asphalt: today's light motorway and trunk greys put that tone
+ * 5.5 L* from the street, and OsmDemo's scheme test holds 15.
+ */
+const MARKINGS_RGB: Rgb = 0xf4f2ec;
+
 /** Today's road colours, the default scheme's (built from the tables above). */
 export const DEFAULT_ROAD_COLOURS: RoadColours = {
   roadsBySurface: true,
@@ -417,6 +430,7 @@ export const DEFAULT_ROAD_COLOURS: RoadColours = {
   roadSurfaces: SURFACE_RGB,
   sidewalk: SIDEWALK_RGB,
   defaultRoad: DEFAULT_ROAD_RGB,
+  markings: MARKINGS_RGB,
 };
 
 /** Every colour a road can take, for the contrast check. */

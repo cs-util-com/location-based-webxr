@@ -18,7 +18,7 @@ without one and gets `DEFAULT_CITY_COLOUR_SCHEME`.
     target, and the ground material with the tint off).
   - `walls`, `pitchedRoofs`, `flatRoofs` - the seeded tone lists.
   - `roads` (per `highway`), `roadSurfaces` (per `surface`), `sidewalk`,
-    `defaultRoad`.
+    `defaultRoad`, `markings` (zebra paint, raw like the roads).
   - `barriers` (per `BarrierKind`), `barrierMaterials`.
   - `trees` (per `TreeKey`), `landUse` (per `GroundClass`).
   - It is the union of `PaletteColours`, `RoadColours` and `BarrierColours`,

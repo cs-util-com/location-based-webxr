@@ -23,7 +23,10 @@ section 4.3). `three/ground-tint.ts` draws it.
   A building (other than `building=no`) paints nothing; any `water=*` is
   water; keys are read in the order water, waterway, natural, leisure,
   amenity, landuse, man_made, place; a pitch with a hard `surface` is a
-  court; `highway=pedestrian` + `area=yes` is a square. Value tables are
+  court; any `highway=*` + `area=yes` is a square (`isPedestrianArea`,
+  exported: the pedestrian-area mesh reads the same predicate, so tint and
+  mesh never disagree; widened from `highway=pedestrian` alone in M4b to the
+  set the chosen O3 lab drew, a deliberate change of tint). Value tables are
   `Map`s, so `landuse=constructor` finds nothing inherited.
 - `paintOrder(entries)` - tier ascending, then area descending, then
   feature key: the last painted wins.

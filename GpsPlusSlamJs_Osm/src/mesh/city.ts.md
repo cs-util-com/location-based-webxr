@@ -68,8 +68,16 @@ mitreLimit? }` (city objects plan 2026-11-07-2315 M4a, review MINOR 4):
   roads are built, with `buildRoads`'s look options passed through, so an
   audit or a before/after page can switch the class lift off (`rankStepM:
 0`) or bevel every turn (`mitreLimit: 1`). `{}` and `true` take the
-  builder's defaults; only those two keys are passed on, and an invalid value
-  throws the builder's `RangeError`. The defaults themselves are not on the
+  builder's defaults; only those keys are passed on, and an invalid value
+  throws the builder's `RangeError`.
+- With roads on, the zebra crossings (`road-markings.ts`) and the mapped
+  pedestrian areas (`pedestrian-areas.ts`) are built too, filtered by the
+  same window, and merged into the road chunks (areas in `roadColour`,
+  stripes in the scheme's `markings`); `zebraStripeCount` and
+  `pedestrianAreaCount` count them. `roads: { markings: false }` switches
+  both off and reproduces the roads before them byte for byte (the colour
+  identity test pins that path). Lifts follow `rankStepM`: paint above the
+  top rank, areas one step under the paths. The defaults themselves are not on the
   package entry: `roads.ts.md`.
 - `buildCity(features, ground, { palette })` picks the colours of a
   building without colour tags (city objects plan 2026-11-07-2315 M7):
@@ -137,7 +145,9 @@ metres; `withinM` dropping what lies outside, keeping all without it, keeping a
 building's parts together (`s3db-parts.test.ts`), and
 refusing a non-positive window; the cosmetic trees on by default, in their
 own field, none when switched off, none inside a built house, within
-`withinM`, and the build refused without a window; roads only when asked (`null` as `false`), the roads and paths
+`withinM`, and the build refused without a window; roads only when asked (`null` as `false`), zebras and pedestrian areas on
+with the roads and off with `markings: false` (and the O3 scene counts in
+`site-roads.test.ts`), the roads and paths
 coloured by class and surface and never a tunnel, draped on the ground, kept
 within the window; the seeded palette by default (walls and flat or pitched
 roofs from the key, a pitched tag drawn as a prism in a flat grey, a part

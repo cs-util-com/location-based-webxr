@@ -37,6 +37,8 @@ function flatScheme(c: {
     roadSurfaces: fill(d.roadSurfaces, c.road),
     sidewalk: c.road,
     defaultRoad: c.road,
+    // Zebra paint lands in the road chunks too, by the same raw rule.
+    markings: c.road,
     barriers: fill(d.barriers, c.wall),
     barrierMaterials: fill(d.barrierMaterials, c.wall),
   };
