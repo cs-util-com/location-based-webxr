@@ -2,7 +2,7 @@
  * One tile fill, as the serial queue consumer runs it: re-check the store,
  * the failure record and the daily cap; fetch the client's exact query from
  * the operators in turn; keep the bytes as sent; refuse a partial answer;
- * never replace a newer tile with an older one; gzip; store; list it.
+ * never replace a newer tile with an older one; gzip; store.
  *
  * @see fill-tile.ts.md
  */
@@ -15,12 +15,12 @@ import {
 import type { FillMessage, TileBucket } from "./bindings";
 import { checkOverpassBody } from "./overpass-body-check";
 import {
-  addToManifest,
   clearFailure,
   readDaily,
   readFailure,
   recordFailure,
   writeDaily,
+  writeFailure,
   type DailyState,
 } from "./fill-state";
 import { tileObjectKey } from "./tile-cell";
@@ -31,8 +31,12 @@ const QUERY_TIMEOUT_SECONDS = 180;
 /** Per-attempt transport deadline: the query's own limit plus the transfer. */
 const DEFAULT_ATTEMPT_TIMEOUT_MS = 200_000;
 
-/** Stop starting attempts after this much wall time (a consumer has 15 min). */
-const DEFAULT_WALL_BUDGET_MS = 12 * 60_000;
+/**
+ * No attempt may run past this much wall time from the fill's start: an
+ * attempt is started only when its whole timeout still fits. A consumer
+ * invocation has 15 minutes; one minute is left for storing the tile.
+ */
+const DEFAULT_WALL_LIMIT_MS = 14 * 60_000;
 
 /** A stored tile older than this (by its data age) is refreshed on request. */
 export const REFRESH_AGE_MS = 30 * 86_400_000;
@@ -48,7 +52,7 @@ export interface FillDeps {
   readonly endpoints: readonly string[];
   readonly dailyUpstreamCap: number;
   readonly attemptTimeoutMs?: number;
-  readonly wallBudgetMs?: number;
+  readonly wallLimitMs?: number;
   /** Store gzip (default) or the bytes as sent. */
   readonly gzip?: boolean;
 }
@@ -62,6 +66,7 @@ interface FillAttempt {
     | "error"
     | "not-json"
     | "no-timestamp"
+    | "future-timestamp"
     | "remark"
     | "incomplete";
   readonly ms: number;
@@ -166,7 +171,7 @@ async function attemptOnce(
     }
     // The bytes as sent: no JSON.parse (CPU), only the head and tail check.
     const bytes = new Uint8Array(await response.arrayBuffer());
-    const check = checkOverpassBody(bytes);
+    const check = checkOverpassBody(bytes, deps.now());
     const base = { endpoint, status: 200, ms: elapsed(), bytes: bytes.length };
     if (!check.ok) return { attempt: { ...base, result: check.reason } };
     return {
@@ -195,11 +200,12 @@ async function fetchFromOperators(
   );
   const attempts: FillAttempt[] = [];
   const refused = new Set<string>();
-  const budget = deps.wallBudgetMs ?? DEFAULT_WALL_BUDGET_MS;
+  const limit = deps.wallLimitMs ?? DEFAULT_WALL_LIMIT_MS;
+  const attemptMs = deps.attemptTimeoutMs ?? DEFAULT_ATTEMPT_TIMEOUT_MS;
   for (const endpoint of deps.endpoints) {
     if (refused.has(operatorOf(endpoint))) continue;
     const now = deps.now();
-    if (now - started > budget) break;
+    if (now - started + attemptMs > limit) break;
     const daily = await readDaily(deps.bucket, now);
     if (daily.upstreamRequests >= deps.dailyUpstreamCap) break;
     await writeDaily(deps.bucket, now, {
@@ -242,7 +248,6 @@ async function store(
       rawBytes: String(fetched.bytes.length),
     },
   });
-  await addToManifest(deps.bucket, cell, fetched.osmBase, stored.length);
   return stored.length;
 }
 
@@ -266,6 +271,16 @@ export async function fillTile(
   const pre = await precheck(message, deps, started);
   if (pre.outcome !== undefined) return done(pre.outcome);
 
+  // The failure is recorded BEFORE the first attempt and cleared on success:
+  // the runtime can kill a fill mid-way (CPU or wall limit), the queue does
+  // not retry it, and only a record written up front turns that kill into
+  // backoff instead of a fresh download on the next request.
+  const pending = await recordFailure(
+    deps.bucket,
+    message.cell,
+    started,
+    "unfinished",
+  );
   const { attempts, fetched } = await fetchFromOperators(
     message.cell,
     deps,
@@ -273,7 +288,7 @@ export async function fillTile(
   );
   if (fetched === undefined) {
     const reason = attempts.at(-1)?.result ?? "cap";
-    await recordFailure(deps.bucket, message.cell, deps.now(), reason);
+    await writeFailure(deps.bucket, message.cell, { ...pending, reason });
     await bumpDaily(deps, (d) => ({ ...d, failures: d.failures + 1 }));
     return done("failed", { attempts });
   }
@@ -285,6 +300,7 @@ export async function fillTile(
   };
   // ISO-8601 UTC strings of one format compare correctly as text.
   if (pre.existingBase !== undefined && fetched.osmBase <= pre.existingBase) {
+    await clearFailure(deps.bucket, message.cell);
     return done("kept-newer", facts);
   }
   const storedBytes = await store(message.cell, fetched, deps);

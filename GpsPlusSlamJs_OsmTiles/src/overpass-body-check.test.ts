@@ -57,7 +57,7 @@ describe("checkOverpassBody", () => {
   });
 
   it("refuses an answer without the data timestamp (newer-not-older needs it)", () => {
-    const noBase = encoder.encode(`{"version":0.6,"elements":[\n]\n}\n`);
+    const noBase = encoder.encode(`{"version":0.6,"elements":[\n\n  ]\n}\n`);
     expect(checkOverpassBody(noBase)).toEqual({
       ok: false,
       reason: "no-timestamp",
@@ -83,7 +83,60 @@ describe("checkOverpassBody", () => {
     );
   });
 
-  it("finds the timestamp within the head window", () => {
-    expect(BODY_HEAD_BYTES).toBeGreaterThanOrEqual(1024);
+  it("reads the timestamp only inside the head window", () => {
+    // Overpass writes `osm3s` first; the window is what keeps the check's
+    // cost flat. A timestamp pushed past it is not searched for.
+    const pad = " ".repeat(BODY_HEAD_BYTES);
+    const late = encoder.encode(
+      `{${pad}"osm3s": {"timestamp_osm_base": "2026-11-11T09:12:34Z"},\n  "elements": [\n\n\n  ]\n}\n`,
+    );
+    expect(checkOverpassBody(late)).toEqual({
+      ok: false,
+      reason: "no-timestamp",
+    });
+  });
+
+  // The end of a real answer, as the deployed Worker stored it: the last
+  // element closes at column 0, a blank line follows, then the array and the
+  // object close. An element's own arrays (`nodes`, `geometry`, `members`)
+  // close with `]` and `}` too, but never after a blank line, so a body cut
+  // right after such an element must not pass for complete.
+  const UNTAGGED_WAY = `{\n  "type": "way",\n  "id": 3,\n  "nodes": [\n    1,\n    2\n  ],\n  "geometry": [\n    { "lat": 1, "lon": 2 },\n    { "lat": 1.1, "lon": 2.1 }\n  ]\n}`;
+  const RELATION = `{\n  "type": "relation",\n  "id": 4,\n  "members": [\n    {\n      "type": "way",\n      "ref": 3,\n      "role": "outer",\n      "geometry": [\n         { "lat": 1, "lon": 2 }\n      ]\n    }\n  ]\n}`;
+
+  function cutAfter(whole: Uint8Array, marker: string): Uint8Array {
+    const text = new TextDecoder().decode(whole);
+    return encoder.encode(text.slice(0, text.indexOf(marker) + marker.length));
+  }
+
+  it("refuses a body cut right after an untagged way (its geometry closes in ] })", () => {
+    const whole = body(`${ELEMENT},\n${UNTAGGED_WAY},\n${ELEMENT}`);
+    expect(checkOverpassBody(cutAfter(whole, UNTAGGED_WAY))).toEqual({
+      ok: false,
+      reason: "incomplete",
+    });
+  });
+
+  it("refuses a body cut inside a relation, right after its members array", () => {
+    const whole = body(`${RELATION},\n${ELEMENT}`);
+    expect(checkOverpassBody(cutAfter(whole, RELATION)).ok).toBe(false);
+  });
+
+  it("accepts a complete answer whose last element is an untagged way", () => {
+    expect(checkOverpassBody(body(UNTAGGED_WAY)).ok).toBe(true);
+  });
+
+  it("accepts the empty answer exactly as Overpass writes it", () => {
+    expect(checkOverpassBody(body("", "\n\n\n  ]\n}\n")).ok).toBe(true);
+  });
+
+  it("refuses a data timestamp more than an hour in the future", () => {
+    const now = Date.parse("2026-11-11T08:00:00Z");
+    expect(checkOverpassBody(body(ELEMENT), now)).toEqual({
+      ok: false,
+      reason: "future-timestamp",
+    });
+    const close = Date.parse("2026-11-11T08:13:00Z");
+    expect(checkOverpassBody(body(ELEMENT), close).ok).toBe(true);
   });
 });

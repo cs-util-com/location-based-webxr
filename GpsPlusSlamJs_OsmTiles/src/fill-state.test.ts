@@ -5,10 +5,15 @@ import {
   msUntilNextUtcDay,
   readDaily,
   readFailure,
+  clearPending,
+  listPending,
+  markPending,
+  PENDING_STALE_MS,
   recordFailure,
-  upsertManifestLine,
+  sweepPending,
   utcDay,
   writeDaily,
+  writeFailure,
 } from "./fill-state";
 import { FakeBucket } from "./testing/fake-bindings";
 
@@ -88,14 +93,86 @@ describe("the failure record", () => {
   });
 });
 
-describe("upsertManifestLine", () => {
-  it("appends a new cell and replaces an existing cell's line", () => {
-    const one = upsertManifestLine("", "a", "2026-11-11T00:00:00Z", 5);
-    expect(one).toBe("a\t2026-11-11T00:00:00Z\t5\n");
-    const two = upsertManifestLine(one, "b", "2026-11-11T00:00:00Z", 6);
-    const three = upsertManifestLine(two, "a", "2026-12-11T00:00:00Z", 7);
-    expect(three).toBe(
-      "a\t2026-12-11T00:00:00Z\t7\nb\t2026-11-11T00:00:00Z\t6\n",
+describe("writeFailure", () => {
+  it("replaces the reason without counting another failure", async () => {
+    // The fill writes its record BEFORE the first attempt (a runtime kill
+    // must still leave backoff behind) and only names the reason at the end;
+    // naming it must not double the backoff.
+    const bucket = new FakeBucket();
+    const started = await recordFailure(bucket, "871fa", 0, "unfinished");
+    await writeFailure(bucket, "871fa", { ...started, reason: "remark" });
+    expect(await readFailure(bucket, "871fa")).toEqual({
+      count: 1,
+      retryAt: 3_600_000,
+      reason: "remark",
+    });
+  });
+});
+
+describe("the pending-fill markers", () => {
+  // Why these tests matter: the markers are the backlog the fill endpoint
+  // reads to answer "busy" at once instead of letting a viewer wait behind
+  // other fills, and to never queue one cell twice. A marker that outlived
+  // its fill (the runtime killed the consumer) must stop counting, or the
+  // endpoint would refuse every fill for good.
+  const NOW = Date.parse("2026-11-11T10:00:00Z");
+
+  it("lists fresh markers with their state, oldest first", async () => {
+    const bucket = new FakeBucket();
+    await markPending(bucket, "b", NOW - 1000);
+    await markPending(bucket, "a", NOW - 2000, true);
+    expect(await listPending(bucket, NOW)).toEqual([
+      { cell: "a", queuedAt: NOW - 2000, running: true },
+      { cell: "b", queuedAt: NOW - 1000, running: false },
+    ]);
+    await clearPending(bucket, "a");
+    expect((await listPending(bucket, NOW)).map((p) => p.cell)).toEqual(["b"]);
+  });
+
+  it("ignores a marker older than the stale age", async () => {
+    const bucket = new FakeBucket();
+    await markPending(bucket, "old", NOW - PENDING_STALE_MS - 1);
+    await markPending(bucket, "new", NOW - PENDING_STALE_MS + 1);
+    expect((await listPending(bucket, NOW)).map((p) => p.cell)).toEqual([
+      "new",
+    ]);
+  });
+
+  it("sweep: removes running markers (their consumer is gone) and stale ones, keeps queued ones", async () => {
+    // The consumer is serial, so when a message starts, any marker still
+    // flagged running belongs to a run the runtime killed.
+    const bucket = new FakeBucket();
+    await markPending(bucket, "dead", NOW - 60_000, true);
+    await markPending(bucket, "stale", NOW - PENDING_STALE_MS - 1);
+    await markPending(bucket, "queued", NOW - 30_000);
+    await sweepPending(bucket, NOW);
+    expect((await listPending(bucket, NOW)).map((p) => p.cell)).toEqual([
+      "queued",
+    ]);
+    expect(bucket.objects.has("state/pending/stale")).toBe(false);
+  });
+
+  it("property: a listing holds exactly the fresh markers, each once", async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.uniqueArray(
+          fc.record({
+            cell: fc.stringMatching(/^[0-9a-f]{15}$/),
+            age: fc.integer({ min: 0, max: 2 * PENDING_STALE_MS }),
+          }),
+          { selector: (m) => m.cell, maxLength: 20 },
+        ),
+        async (markers) => {
+          const bucket = new FakeBucket();
+          for (const m of markers)
+            await markPending(bucket, m.cell, NOW - m.age);
+          const listed = (await listPending(bucket, NOW)).map((p) => p.cell);
+          const fresh = markers
+            .filter((m) => m.age < PENDING_STALE_MS)
+            .map((m) => m.cell);
+          expect([...listed].sort()).toEqual([...fresh].sort());
+        },
+      ),
     );
   });
 });

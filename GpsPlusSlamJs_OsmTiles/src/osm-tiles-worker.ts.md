@@ -8,11 +8,15 @@ into the HTTP routes and runs the serial queue consumer that fills tiles.
 ## Public API
 
 - default export `{ fetch, queue }`:
-  - `fetch(request, env)` - `handleRequest` with the clock.
-  - `queue(batch, env)` - for each message: validate the cell and kind,
-    `fillTile` with the OSM package's `DEFAULT_OVERPASS_ENDPOINTS`, the
-    global `fetch`, the `USER_AGENT` var and the daily cap; log one JSON line
-    with the outcome (what `wrangler tail` and the dashboard show); ack.
+  - `fetch(request, env)` - `handleRequest` with the clock and
+    `caches.default` (the manifest's edge cache) where the runtime has it.
+  - `queue(batch, env)` - for each message: validate the cell and kind;
+    sweep the pending markers (stale ones and any still flagged running,
+    which belong to a killed run) and mark this cell running; `fillTile`
+    with the OSM package's `DEFAULT_OVERPASS_ENDPOINTS`, the global
+    `fetch`, the `USER_AGENT` var and the daily cap; log one JSON line with
+    the outcome (what `wrangler tail` and the dashboard show); clear this
+    cell's marker, also when the fill threw; ack.
 - `QueueBatch` - the minimal batch shape.
 
 ## Invariants & assumptions
@@ -27,4 +31,5 @@ into the HTTP routes and runs the serial queue consumer that fills tiles.
 ## Tests
 
 `osm-tiles-worker.test.ts`: the fetch path, an invalid message dropped and
-acked, a throwing fill logged and acked.
+acked, a throwing fill logged and acked, the marker cleared after a fill
+that threw, and the running mark plus the sweep of a killed run's marker.

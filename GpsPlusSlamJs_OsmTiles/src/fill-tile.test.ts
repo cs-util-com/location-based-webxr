@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { latLngToCell } from "h3-js";
 import {
   buildTileQuery,
@@ -77,7 +77,7 @@ const fill = { cell: CELL, kind: "fill", at: NOW } as const;
 const refresh = { cell: CELL, kind: "refresh", at: NOW } as const;
 
 describe("fillTile", () => {
-  it("fetches the client's exact query once, stores it gzip with its metadata, and lists it in the manifest", async () => {
+  it("fetches the client's exact query once and stores it gzip with its metadata", async () => {
     const bucket = new FakeBucket();
     const raw = overpassBody("2026-11-11T09:00:00Z");
     const { deps: d, calls } = deps(bucket, () => new Response(raw));
@@ -103,9 +103,10 @@ describe("fillTile", () => {
       endpoint: "lz4.overpass-api.de",
       rawBytes: String(raw.length),
     });
-    expect(bucket.textOf("osm/v3/manifest.tsv")).toContain(
-      `${CELL}\t2026-11-11T09:00:00Z\t`,
-    );
+    // The manifest is read from the stored tiles; a fill writes no list, and
+    // a success leaves no failure record (one is written before the attempt).
+    expect(bucket.objects.has("osm/v3/manifest.tsv")).toBe(false);
+    expect(await readFailure(bucket, CELL)).toBeUndefined();
     const daily = await readDaily(bucket, NOW);
     expect(daily).toMatchObject({ upstreamRequests: 1, fills: 1 });
   });
@@ -267,5 +268,77 @@ describe("fillTile", () => {
     const stored = bucket.objects.get(KEY)!;
     expect(new TextDecoder().decode(stored.bytes)).toBe(raw);
     expect(stored.options.httpMetadata?.contentEncoding).toBeUndefined();
+  });
+
+  it("writes the failure record BEFORE the first attempt, so a fill the runtime kills still backs off", async () => {
+    // Measured on the Free plan: one fill was killed for CPU mid-way. With
+    // `max_retries = 0` and the record written only after the attempts,
+    // such a kill left nothing behind, and every later POST queued the
+    // same multi-megabyte download again.
+    const bucket = new FakeBucket();
+    const { deps: d, calls } = deps(bucket, () => new Response("unused"), {
+      fetchImpl: (input) => {
+        calls.push({ url: String(input), body: "", userAgent: null });
+        return new Promise<Response>(() => undefined); // killed mid-download
+      },
+    });
+    void fillTile(fill, d);
+    await vi.waitFor(() => {
+      expect(calls).toHaveLength(1);
+    });
+    expect(await readFailure(bucket, CELL)).toMatchObject({
+      count: 1,
+      retryAt: NOW + 3_600_000,
+    });
+    const next = deps(bucket, () => new Response("never"));
+    expect((await fillTile(fill, next.deps)).outcome).toBe("backoff");
+    expect(next.calls).toHaveLength(0);
+  });
+
+  it("names the failure's reason without counting it twice", async () => {
+    const bucket = new FakeBucket();
+    const { deps: d } = deps(bucket, () => new Response("x", { status: 504 }));
+    await fillTile(fill, d);
+    expect(await readFailure(bucket, CELL)).toEqual({
+      count: 1,
+      retryAt: NOW + 3_600_000,
+      reason: "status",
+    });
+  });
+
+  it("starts no attempt that could run past the consumer's 15-minute limit", async () => {
+    // A consumer invocation has 15 minutes of wall time. An attempt may take
+    // its whole 200 s timeout, so one started at 11 minutes would end past
+    // 14: the runtime would cut it off with nothing recorded but the count.
+    const bucket = new FakeBucket();
+    let clock = NOW;
+    const { deps: d, calls } = deps(
+      bucket,
+      () => {
+        clock += 11 * 60_000;
+        return new Response("x", { status: 504 });
+      },
+      { now: () => clock, attemptTimeoutMs: 200_000 },
+    );
+    const outcome = await fillTile(fill, d);
+    expect(calls).toHaveLength(1);
+    expect(outcome.outcome).toBe("failed");
+  });
+
+  it("refuses an answer whose data timestamp lies in the future, and asks the next operator", async () => {
+    // A future `timestamp_osm_base` (a wrong operator clock) would win every
+    // newer-not-older comparison and block refreshes of the tile for good.
+    const bucket = new FakeBucket();
+    const { deps: d } = deps(bucket, (_url, i) =>
+      i === 0
+        ? new Response(overpassBody("2026-11-11T12:00:00Z"))
+        : new Response(overpassBody("2026-11-11T09:00:00Z")),
+    );
+    const outcome = await fillTile(fill, d);
+    expect(outcome.attempts.map((a) => a.result)).toEqual([
+      "future-timestamp",
+      "ok",
+    ]);
+    expect(outcome.osmBase).toBe("2026-11-11T09:00:00Z");
   });
 });

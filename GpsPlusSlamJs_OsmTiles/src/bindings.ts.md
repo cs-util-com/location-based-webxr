@@ -9,17 +9,24 @@ methods, so the unit tests can pass small fakes.
 
 ## Public API
 
-- `TileBucket` - `head`, `get`, `put`, `delete` with `TileObjectHead` /
-  `TileObjectBody` results; a subset of `R2Bucket`.
+- `TileBucket` - `head`, `get`, `put`, `delete`, `list` with
+  `TileObjectHead` / `TileObjectBody` / `BucketListing` results
+  (`BucketListOptions`: `prefix`, `limit`, `cursor`, `include`); a subset
+  of `R2Bucket`.
 - `FillMessage` - `{ cell, kind: "fill" | "refresh", at }`, the queue body.
-- `FillQueue`, `RateLimiter`, `TileCache` - one or two methods each.
+- `FillQueue`, `RateLimiter`, `ResponseCache` (`caches.default`: `match`,
+  `put`) - one or two methods each.
 - `OsmTilesEnv` - `TILES`, `FILL_QUEUE`, optional `FILL_LIMITER`, and the
-  string vars `DAILY_UPSTREAM_CAP`, `USER_AGENT`, `STORE_GZIP`.
+  string vars `DAILY_UPSTREAM_CAP`, `MAX_PENDING_FILLS`, `USER_AGENT`,
+  `STORE_GZIP`.
 
 ## Invariants & assumptions
 
 - Every var is optional and parsed defensively where it is read
-  (`dailyUpstreamCap` falls back to 300 on a missing or invalid value).
+  (`DAILY_UPSTREAM_CAP` falls back to 300 and `MAX_PENDING_FILLS` to 4 on
+  a missing or invalid value).
+- `list` returns custom metadata only when `include` names it, as R2
+  does; the test fake copies that.
 - `FILL_LIMITER` is optional: without the binding the fill endpoint relies
   on the daily cap alone.
 

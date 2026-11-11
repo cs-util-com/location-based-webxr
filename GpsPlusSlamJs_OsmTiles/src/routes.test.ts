@@ -1,9 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import fc from "fast-check";
 import { latLngToCell } from "h3-js";
 import { handleRequest, isAllowedFillOrigin, type RouteDeps } from "./routes";
 import { tileObjectKey } from "./tile-cell";
-import { recordFailure, writeDaily } from "./fill-state";
+import {
+  listPending,
+  markPending,
+  PENDING_STALE_MS,
+  recordFailure,
+  writeDaily,
+} from "./fill-state";
+import type { ResponseCache } from "./bindings";
 import { FakeBucket, FakeLimiter, FakeQueue } from "./testing/fake-bindings";
 
 // Why these tests matter: these are the Worker's whole public surface. The
@@ -99,6 +106,30 @@ describe("GET a tile", () => {
     expect(reads).toBe(2);
   });
 
+  it("hands the runtime the stored gzip with encodeBody manual (no second compression)", async () => {
+    // Node's Response ignores `encodeBody`, so the bytes test above passes
+    // with or without it; on workerd its absence gzips the stored gzip again
+    // under the same header and a browser decoding once gets binary, not
+    // JSON. So the init the route builds is checked directly.
+    const { bucket, deps } = setup();
+    await storeTile(bucket, "2026-11-11T09:00:00Z");
+    const inits: (ResponseInit | undefined)[] = [];
+    const Real = Response;
+    vi.stubGlobal(
+      "Response",
+      class extends Real {
+        constructor(body?: BodyInit | null, init?: ResponseInit) {
+          super(body, init);
+          inits.push(init);
+        }
+      },
+    );
+    await handleRequest(get(`/${KEY}`), deps);
+    vi.unstubAllGlobals();
+    expect(inits).toHaveLength(1);
+    expect((inits[0] as { encodeBody?: string }).encodeBody).toBe("manual");
+  });
+
   it("answers a missing tile 404 that nobody may cache", async () => {
     const { deps } = setup();
     const response = await handleRequest(get(`/${KEY}`), deps);
@@ -128,13 +159,36 @@ describe("GET a tile", () => {
     expect(response.body).toBeNull();
   });
 
-  it("serves the manifest of filled cells, open to everyone", async () => {
+  it("serves the manifest read from the stored tiles, open to everyone", async () => {
     const { bucket, deps } = setup();
-    await bucket.put("osm/v3/manifest.tsv", "a\tb\t1\n");
+    await storeTile(bucket, "2026-11-11T09:00:00Z");
     const response = await handleRequest(get("/osm/v3/manifest.tsv"), deps);
     expect(response.status).toBe(200);
     expect(response.headers.get("access-control-allow-origin")).toBe("*");
-    expect(await response.text()).toBe("a\tb\t1\n");
+    expect(response.headers.get("cache-control")).toBe("public, max-age=300");
+    expect(await response.text()).toContain(
+      `${CELL}\t2026-11-11T09:00:00Z\t7\n`,
+    );
+  });
+
+  it("answers repeated manifest requests from the edge cache, listing R2 once", async () => {
+    // A listing costs one R2 operation per thousand tiles and the route is
+    // open to anyone, so its cost must not scale with the request rate.
+    const { bucket, deps } = setup();
+    await storeTile(bucket, "2026-11-11T09:00:00Z");
+    const cached = new Map<string, Response>();
+    const cache: ResponseCache = {
+      match: (request) => Promise.resolve(cached.get(request.url)?.clone()),
+      put: (request, response) => {
+        cached.set(request.url, response);
+        return Promise.resolve();
+      },
+    };
+    const withCache = { ...deps, cache };
+    const first = await handleRequest(get("/osm/v3/manifest.tsv"), withCache);
+    const second = await handleRequest(get("/osm/v3/manifest.tsv"), withCache);
+    expect(await second.text()).toBe(await first.text());
+    expect(bucket.listCalls).toHaveLength(1);
   });
 
   it("says what the service is and names the licence at the root", async () => {
@@ -244,6 +298,94 @@ describe("POST /fill", () => {
     expect(queue.sent).toEqual([]);
   });
 
+  it("leaves a pending marker for the queued cell, and says how many fills are ahead", async () => {
+    const { bucket, deps } = setup();
+    const other = latLngToCell(47.0468, 8.3745, 7);
+    await markPending(bucket, other, NOW - 10_000, true);
+    const response = await handleRequest(post(CELL), deps);
+    expect(response.status).toBe(202);
+    expect(await response.json()).toMatchObject({ status: "queued", ahead: 1 });
+    expect((await listPending(bucket, NOW)).map((p) => p.cell)).toContain(CELL);
+  });
+
+  it("does not queue a cell twice: a second POST while it waits is told it is queued", async () => {
+    const { deps, queue } = setup();
+    await handleRequest(post(CELL), deps);
+    const again = await handleRequest(post(CELL), deps);
+    expect(again.status).toBe(202);
+    expect(await again.json()).toMatchObject({ status: "queued", ahead: 0 });
+    expect(queue.sent).toHaveLength(1);
+  });
+
+  it("answers 503 busy at once when the backlog is full, enqueuing nothing", async () => {
+    // A viewer must never wait behind a long line of other fills: refused at
+    // once, the client goes to its own race.
+    const { bucket, deps, queue } = setup();
+    for (const [i, lat] of [47.0, 48.0, 49.0, 52.0].entries()) {
+      await markPending(bucket, latLngToCell(lat, 8, 7), NOW - i * 1000);
+    }
+    const response = await handleRequest(post(CELL), deps);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ status: "busy", ahead: 4 });
+    expect(response.headers.get("access-control-allow-origin")).toBe(PROD);
+    expect(queue.sent).toEqual([]);
+  });
+
+  it("does not count a marker older than the stale age as backlog (a killed fill's leftover)", async () => {
+    const { bucket, deps, queue } = setup();
+    for (const lat of [47.0, 48.0, 49.0, 52.0]) {
+      await markPending(
+        bucket,
+        latLngToCell(lat, 8, 7),
+        NOW - PENDING_STALE_MS,
+      );
+    }
+    const response = await handleRequest(post(CELL), deps);
+    expect(response.status).toBe(202);
+    expect(queue.sent).toHaveLength(1);
+  });
+
+  it("reads MAX_PENDING_FILLS from the environment", async () => {
+    const { bucket, deps } = setup();
+    await markPending(bucket, latLngToCell(47, 8, 7), NOW);
+    const strict = { ...deps, env: { ...deps.env, MAX_PENDING_FILLS: "1" } };
+    expect((await handleRequest(post(CELL), strict)).status).toBe(503);
+  });
+
+  it("answers 503 with CORS when the queue refuses the message, and leaves no marker", async () => {
+    const { bucket, deps, queue } = setup();
+    queue.failWith = new Error("queue unavailable");
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const response = await handleRequest(post(CELL), deps);
+    log.mockRestore();
+    expect(response.status).toBe(503);
+    expect(response.headers.get("access-control-allow-origin")).toBe(PROD);
+    expect(await response.json()).toMatchObject({ status: "unavailable" });
+    expect(await listPending(bucket, NOW)).toEqual([]);
+  });
+
+  it("queues one refresh per old tile, however many viewers ask", async () => {
+    const { bucket, deps, queue } = setup();
+    await storeTile(bucket, "2026-09-01T00:00:00Z");
+    await handleRequest(post(CELL), deps);
+    const again = await handleRequest(post(CELL), deps);
+    expect(await again.json()).toMatchObject({ status: "refreshing" });
+    expect(queue.sent).toHaveLength(1);
+  });
+
+  it("answers 503 backoff for a cell whose fill was killed, even with its marker left behind", async () => {
+    // The consumer writes the failure record before its first attempt and
+    // marks itself running. A kill leaves both; the record must win, so a
+    // viewer is refused at once instead of waiting a minute for nothing.
+    const { bucket, deps, queue } = setup();
+    await markPending(bucket, CELL, NOW - 30_000, true);
+    await recordFailure(bucket, CELL, NOW - 30_000, "unfinished");
+    const response = await handleRequest(post(CELL), deps);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ status: "backoff" });
+    expect(queue.sent).toEqual([]);
+  });
+
   it("answers the CORS preflight for an allowed origin only", async () => {
     const { deps } = setup();
     const ok = await handleRequest(
@@ -264,6 +406,10 @@ describe("POST /fill", () => {
     );
     expect(refused.status).toBe(403);
   });
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("everything else", () => {

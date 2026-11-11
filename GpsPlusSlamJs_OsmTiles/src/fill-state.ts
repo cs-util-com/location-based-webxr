@@ -1,14 +1,14 @@
 /**
  * The fill's small bookkeeping objects in R2: the daily counter (the global
- * cap), the per-tile failure record (backoff) and the manifest of filled
- * cells. Only the serial queue consumer writes them, so a read-modify-write
- * needs no lock; the fill endpoint only reads.
+ * cap), the per-tile failure record (backoff) and one pending marker per
+ * queued or running fill (the backlog). Only the serial queue consumer
+ * writes the counter and the records, so a read-modify-write needs no lock;
+ * the fill endpoint writes only its own cell's marker.
  *
  * @see fill-state.ts.md
  */
 
 import type { TileBucket } from "./bindings";
-import { TILE_PREFIX } from "./tile-cell";
 
 export interface DailyState {
   /** Requests sent to Overpass operators today, all of them together. */
@@ -40,8 +40,22 @@ const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
 const MAX_BACKOFF_MS = 7 * DAY_MS;
 
-/** The manifest of filled cells: one `cell<TAB>osmBase<TAB>storedBytes` line each. */
-export const MANIFEST_KEY = `${TILE_PREFIX}manifest.tsv`;
+const PENDING_PREFIX = "state/pending/";
+
+/**
+ * A marker older than this no longer counts: a consumer invocation has 15
+ * minutes of wall time, so a fill still marked after that was killed.
+ */
+export const PENDING_STALE_MS = 15 * 60_000;
+
+/** One queued or running fill, as the backlog lists it. */
+export interface PendingFill {
+  readonly cell: string;
+  /** Epoch ms the fill was queued, or the consumer started it. */
+  readonly queuedAt: number;
+  /** The consumer has started it (not merely queued). */
+  readonly running: boolean;
+}
 
 /** `YYYY-MM-DD` of the UTC day containing `now`. */
 export function utcDay(now: number): string {
@@ -127,6 +141,18 @@ export async function readFailure(
   };
 }
 
+/** Stores `record` as is: the fill names a failure's reason this way. */
+export async function writeFailure(
+  bucket: TileBucket,
+  cell: string,
+  record: FailureRecord,
+): Promise<void> {
+  await bucket.put(failureKey(cell), JSON.stringify(record), {
+    httpMetadata: { contentType: "application/json" },
+  });
+}
+
+/** One more failure: count + 1 and the next allowed time from the backoff. */
 export async function recordFailure(
   bucket: TileBucket,
   cell: string,
@@ -140,9 +166,7 @@ export async function recordFailure(
     retryAt: now + failureBackoffMs(failures),
     reason,
   };
-  await bucket.put(failureKey(cell), JSON.stringify(record), {
-    httpMetadata: { contentType: "application/json" },
-  });
+  await writeFailure(bucket, cell, record);
   return record;
 }
 
@@ -153,34 +177,74 @@ export async function clearFailure(
   await bucket.delete(failureKey(cell));
 }
 
-/** The manifest text with `cell`'s line replaced, or appended when new. */
-export function upsertManifestLine(
-  manifest: string,
-  cell: string,
-  osmBase: string,
-  storedBytes: number,
-): string {
-  const line = `${cell}\t${osmBase}\t${storedBytes}`;
-  const lines = manifest.split("\n").filter((l) => l !== "");
-  const index = lines.findIndex((l) => l.startsWith(`${cell}\t`));
-  if (index === -1) lines.push(line);
-  else lines[index] = line;
-  return `${lines.join("\n")}\n`;
-}
-
-export async function addToManifest(
+/** Marks `cell` queued (the endpoint) or running (the consumer). */
+export async function markPending(
   bucket: TileBucket,
   cell: string,
-  osmBase: string,
-  storedBytes: number,
+  now: number,
+  running = false,
 ): Promise<void> {
-  const current = await bucket.get(MANIFEST_KEY);
-  const text = current === null ? "" : await current.text();
-  await bucket.put(
-    MANIFEST_KEY,
-    upsertManifestLine(text, cell, osmBase, storedBytes),
-    {
-      httpMetadata: { contentType: "text/tab-separated-values; charset=utf-8" },
+  await bucket.put(`${PENDING_PREFIX}${cell}`, "", {
+    customMetadata: {
+      queuedAt: String(now),
+      ...(running ? { running: "1" } : {}),
     },
-  );
+  });
+}
+
+export async function clearPending(
+  bucket: TileBucket,
+  cell: string,
+): Promise<void> {
+  await bucket.delete(`${PENDING_PREFIX}${cell}`);
+}
+
+/** Every marker, stale ones included; one page holds them (the backlog is bounded). */
+async function allPending(bucket: TileBucket): Promise<PendingFill[]> {
+  const listing = await bucket.list({
+    prefix: PENDING_PREFIX,
+    include: ["customMetadata"],
+  });
+  return listing.objects.map((object) => {
+    const meta = object.customMetadata ?? {};
+    const queuedAt = Number(meta["queuedAt"]);
+    return {
+      cell: object.key.slice(PENDING_PREFIX.length),
+      queuedAt: Number.isFinite(queuedAt)
+        ? queuedAt
+        : object.uploaded.getTime(),
+      running: meta["running"] === "1",
+    };
+  });
+}
+
+function isFresh(pending: PendingFill, now: number): boolean {
+  return now - pending.queuedAt < PENDING_STALE_MS;
+}
+
+/** The fresh markers, oldest first: the backlog the fill endpoint reads. */
+export async function listPending(
+  bucket: TileBucket,
+  now: number,
+): Promise<PendingFill[]> {
+  const pending = await allPending(bucket);
+  return pending
+    .filter((p) => isFresh(p, now))
+    .sort((a, b) => a.queuedAt - b.queuedAt);
+}
+
+/**
+ * Removes stale markers and every marker still flagged running. The consumer
+ * calls it as each message starts: it is serial, so a running marker at that
+ * moment belongs to a run the runtime killed.
+ */
+export async function sweepPending(
+  bucket: TileBucket,
+  now: number,
+): Promise<void> {
+  for (const pending of await allPending(bucket)) {
+    if (pending.running || !isFresh(pending, now)) {
+      await clearPending(bucket, pending.cell);
+    }
+  }
 }

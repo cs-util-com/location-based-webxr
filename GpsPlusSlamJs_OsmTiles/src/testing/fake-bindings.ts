@@ -1,5 +1,7 @@
 // In-memory stand-ins for the R2 bucket, the queue, the rate limiter, with only the behaviour the Worker relies on. Test-only.
 import type {
+  BucketListing,
+  BucketListOptions,
   FillMessage,
   FillQueue,
   RateLimiter,
@@ -59,6 +61,32 @@ export class FakeBucket implements TileBucket {
     return Promise.resolve();
   }
 
+  /** Lexicographic like R2; `pageSize` lets a test force several pages. */
+  pageSize = 1000;
+  readonly listCalls: BucketListOptions[] = [];
+  list(options: BucketListOptions): Promise<BucketListing> {
+    this.listCalls.push(options);
+    const keys = [...this.objects.keys()]
+      .filter((key) => key.startsWith(options.prefix))
+      .sort();
+    const start = options.cursor === undefined ? 0 : Number(options.cursor);
+    const size = Math.min(options.limit ?? 1000, this.pageSize);
+    const page = keys.slice(start, start + size);
+    const objects = page.map((key) => {
+      const meta = this.meta(key, this.objects.get(key) as Stored);
+      // R2 returns custom metadata in a listing only when asked to.
+      if (options.include?.includes("customMetadata") === true) return meta;
+      const { customMetadata: _omitted, ...rest } = meta;
+      return rest;
+    });
+    const next = start + size;
+    return Promise.resolve(
+      next < keys.length
+        ? { objects, truncated: true, cursor: String(next) }
+        : { objects, truncated: false },
+    );
+  }
+
   /** Test helper: the stored text of an object (undefined when absent). */
   textOf(key: string): string | undefined {
     const stored = this.objects.get(key);
@@ -89,7 +117,10 @@ export class FakeBucket implements TileBucket {
 
 export class FakeQueue implements FillQueue {
   readonly sent: FillMessage[] = [];
+  /** Set to make `send` reject, as a queue outage would. */
+  failWith: Error | undefined;
   send(message: FillMessage): Promise<void> {
+    if (this.failWith !== undefined) return Promise.reject(this.failWith);
     this.sent.push(message);
     return Promise.resolve();
   }

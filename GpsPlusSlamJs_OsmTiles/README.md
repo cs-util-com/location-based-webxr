@@ -6,11 +6,13 @@ a cell and then served to everyone from R2.
 
 - `GET /osm/v3/<cell>.json.gz` - the cell's Overpass `out geom` JSON, gzip,
   open to every origin (`Access-Control-Allow-Origin: *`).
-- `GET /osm/v3/manifest.tsv` - every stored cell with its data age.
+- `GET /osm/v3/manifest.tsv` - every stored cell with its data age, read
+  from the stored tiles.
 - `POST /fill/v3/<cell>` - ask for a missing cell (app origins only; per-IP
-  limit; global daily cap). A serial queue consumer fetches the exact query
-  the browser would have sent, from the public Overpass instances one after
-  another, and stores the bytes as sent.
+  limit; global daily cap; a short backlog, beyond which it answers busy at
+  once). A serial queue consumer fetches the exact query the browser would
+  have sent, from the public Overpass instances one after another, and
+  stores the bytes as sent.
 
 The client side is the `StaticTileSource` of `GpsPlusSlamJs_Osm`, an opt-in
 of `createCityTileSource`; on any refusal or delay it falls back to the
@@ -24,8 +26,8 @@ copy of the Overpass answer; the manifest lists what is stored.
 - `src/osm-tiles-worker.ts` - the entry (routes + queue consumer).
 - `src/routes.ts` - the HTTP surface and the fill endpoint's guards.
 - `src/fill-tile.ts` - one fill; `src/fill-state.ts` - daily cap, failure
-  backoff, manifest; `src/overpass-body-check.ts` - completeness without
-  parsing; `src/tile-cell.ts` - cell validation and keys;
+  backoff, pending markers; `src/manifest.ts` - the manifest from an R2
+  listing; `src/overpass-body-check.ts` - completeness without parsing; `src/tile-cell.ts` - cell validation and keys;
   `src/bindings.ts` - binding shapes.
 
 ## Develop, test, deploy
@@ -38,7 +40,8 @@ pnpm run deploy     # wrangler deploy of THIS Worker only
 
 `wrangler.toml` here is the Worker's whole configuration: the R2 bucket
 `osm-tiles`, the queue `osm-tiles-fill` (producer and serial consumer), the
-per-IP rate limiter and the vars (`DAILY_UPSTREAM_CAP`, `USER_AGENT`). The
+per-IP rate limiter and the vars (`DAILY_UPSTREAM_CAP`,
+`MAX_PENDING_FILLS`, `USER_AGENT`). The
 site Worker and the root `wrangler.toml` are unrelated.
 
 `.github/workflows/deploy-osm-tiles.yml` deploys this Worker on a push to

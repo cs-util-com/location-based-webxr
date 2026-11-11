@@ -5,19 +5,30 @@
  * @see routes.ts.md
  */
 
-import type { OsmTilesEnv, TileObjectHead } from "./bindings";
+import type {
+  FillMessage,
+  OsmTilesEnv,
+  ResponseCache,
+  TileObjectHead,
+} from "./bindings";
 import {
-  MANIFEST_KEY,
+  clearPending,
+  listPending,
+  markPending,
   msUntilNextUtcDay,
   readDaily,
   readFailure,
+  type PendingFill,
 } from "./fill-state";
 import { REFRESH_AGE_MS } from "./fill-tile";
+import { MANIFEST_PATH, manifestText } from "./manifest";
 import { parseTileCell, TILE_PREFIX, tileObjectKey } from "./tile-cell";
 
 export interface RouteDeps {
   readonly env: OsmTilesEnv;
   readonly now: () => number;
+  /** The edge cache for the manifest (`caches.default` in the Worker). */
+  readonly cache?: ResponseCache;
 }
 
 /** Upstream requests a UTC day may spend when the var is unset or invalid. */
@@ -28,6 +39,17 @@ const FILL_RETRY_AFTER_S = 15;
 
 /** Seconds a client should wait after the per-IP limit said no. */
 const LIMIT_RETRY_AFTER_S = 60;
+
+/**
+ * Queued or running fills at which the endpoint answers busy, when the var
+ * is unset or invalid. A fill takes 30-75 s (measured), so four ahead is
+ * several minutes: past any viewer's wait, and enough to keep the store
+ * filling in the background without a long queue.
+ */
+const DEFAULT_MAX_PENDING_FILLS = 4;
+
+/** Seconds a client should wait after a busy answer. */
+const BUSY_RETRY_AFTER_S = 60;
 
 const TILE_PATH = new RegExp(`^/${TILE_PREFIX}([^/]+)\\.json\\.gz$`);
 const FILL_PATH = /^\/fill\/v3\/([^/]+)$/;
@@ -60,11 +82,22 @@ export function isAllowedFillOrigin(origin: string): boolean {
   );
 }
 
-export function dailyUpstreamCap(env: OsmTilesEnv): number {
-  const parsed = Number(env.DAILY_UPSTREAM_CAP);
-  return Number.isInteger(parsed) && parsed >= 0
+function nonNegativeInt(raw: string | undefined, fallback: number): number {
+  const parsed = Number(raw);
+  return raw !== undefined &&
+    raw !== "" &&
+    Number.isInteger(parsed) &&
+    parsed >= 0
     ? parsed
-    : DEFAULT_DAILY_UPSTREAM_CAP;
+    : fallback;
+}
+
+export function dailyUpstreamCap(env: OsmTilesEnv): number {
+  return nonNegativeInt(env.DAILY_UPSTREAM_CAP, DEFAULT_DAILY_UPSTREAM_CAP);
+}
+
+function maxPendingFills(env: OsmTilesEnv): number {
+  return nonNegativeInt(env.MAX_PENDING_FILLS, DEFAULT_MAX_PENDING_FILLS);
 }
 
 function openHeaders(): Headers {
@@ -137,15 +170,27 @@ async function serveTile(
   return passThrough(object.body, 200, tileHeaders(object));
 }
 
-async function serveManifest(deps: RouteDeps): Promise<Response> {
-  const object = await deps.env.TILES.get(MANIFEST_KEY);
+/**
+ * The manifest, listed from R2 and kept five minutes in the edge cache: the
+ * route is open to anyone and a listing costs one R2 operation per thousand
+ * tiles, so the cost must not follow the request rate. Plain text, so the
+ * double-gzip of stored gzip bodies (see `passThrough`) does not apply.
+ */
+async function serveManifest(
+  request: Request,
+  deps: RouteDeps,
+): Promise<Response> {
+  const key = new Request(new URL(request.url).toString());
+  const hit = await deps.cache?.match(key);
+  if (hit !== undefined) return hit;
   const headers = openHeaders();
   headers.set("content-type", "text/tab-separated-values; charset=utf-8");
   headers.set("cache-control", "public, max-age=300");
-  return new Response(object === null ? "" : object.body, {
-    status: 200,
-    headers,
-  });
+  const body = await manifestText(deps.env.TILES);
+  if (deps.cache !== undefined) {
+    await deps.cache.put(key, new Response(body, { status: 200, headers }));
+  }
+  return new Response(body, { status: 200, headers });
 }
 
 function fillCors(origin: string): Headers {
@@ -173,6 +218,104 @@ function isOld(object: TileObjectHead, now: number): boolean {
   return Number.isFinite(base) && now - base >= REFRESH_AGE_MS;
 }
 
+/**
+ * Marks the cell pending and sends the message; false when either failed,
+ * with the marker removed again so it does not count as backlog.
+ */
+async function enqueue(
+  message: FillMessage,
+  deps: RouteDeps,
+): Promise<boolean> {
+  try {
+    await markPending(deps.env.TILES, message.cell, message.at);
+    await deps.env.FILL_QUEUE.send(message);
+    return true;
+  } catch (error) {
+    console.log(
+      JSON.stringify({
+        enqueue: "failed",
+        cell: message.cell,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
+    await clearPending(deps.env.TILES, message.cell).catch(() => undefined);
+    return false;
+  }
+}
+
+interface FillContext {
+  readonly cell: string;
+  readonly origin: string;
+  readonly url: string;
+  readonly now: number;
+}
+
+function unavailable(origin: string): Response {
+  return fillAnswer(503, { status: "unavailable" }, origin, BUSY_RETRY_AFTER_S);
+}
+
+/** A stored tile: its URL, and one refresh queued when its data is old. */
+async function answerStored(
+  existing: TileObjectHead,
+  ctx: FillContext,
+  deps: RouteDeps,
+): Promise<Response> {
+  const present = fillAnswer(
+    200,
+    { status: "present", url: ctx.url },
+    ctx.origin,
+  );
+  if (!isOld(existing, ctx.now)) return present;
+  const pending = await listPending(deps.env.TILES, ctx.now);
+  const refreshing = fillAnswer(
+    200,
+    { status: "refreshing", url: ctx.url },
+    ctx.origin,
+  );
+  if (pending.some((p) => p.cell === ctx.cell)) return refreshing;
+  // A refresh is never worth a busy queue: the old file still serves.
+  if (pending.length >= maxPendingFills(deps.env)) return present;
+  const message = { cell: ctx.cell, kind: "refresh", at: ctx.now } as const;
+  return (await enqueue(message, deps)) ? refreshing : unavailable(ctx.origin);
+}
+
+/** A missing tile: queued unless backoff, the cap or the backlog says no. */
+async function answerMissing(
+  ctx: FillContext,
+  deps: RouteDeps,
+): Promise<Response> {
+  const { cell, origin, now } = ctx;
+  // The failure record comes first: a running fill writes one before its
+  // first attempt, and a killed fill leaves it behind with its marker.
+  const failure = await readFailure(deps.env.TILES, cell);
+  if (failure !== undefined && failure.retryAt > now) {
+    const wait = Math.ceil((failure.retryAt - now) / 1000);
+    return fillAnswer(503, { status: "backoff" }, origin, wait);
+  }
+  const pending: PendingFill[] = await listPending(deps.env.TILES, now);
+  const ahead = pending.filter((p) => p.cell !== cell).length;
+  const queued = { status: "queued", url: ctx.url, ahead };
+  if (ahead < pending.length) {
+    return fillAnswer(202, queued, origin, FILL_RETRY_AFTER_S);
+  }
+  const daily = await readDaily(deps.env.TILES, now);
+  if (daily.upstreamRequests >= dailyUpstreamCap(deps.env)) {
+    const wait = Math.ceil(msUntilNextUtcDay(now) / 1000);
+    return fillAnswer(503, { status: "cap" }, origin, wait);
+  }
+  if (ahead >= maxPendingFills(deps.env)) {
+    return fillAnswer(
+      503,
+      { status: "busy", ahead },
+      origin,
+      BUSY_RETRY_AFTER_S,
+    );
+  }
+  const message = { cell, kind: "fill", at: now } as const;
+  if (!(await enqueue(message, deps))) return unavailable(origin);
+  return fillAnswer(202, queued, origin, FILL_RETRY_AFTER_S);
+}
+
 async function handleFill(
   request: Request,
   rawCell: string,
@@ -197,27 +340,16 @@ async function handleFill(
   if (limited !== undefined && !limited.success) {
     return fillAnswer(429, { status: "limited" }, origin, LIMIT_RETRY_AFTER_S);
   }
-  const now = deps.now();
-  const url = `${new URL(request.url).origin}/${tileObjectKey(cell)}`;
+  const ctx: FillContext = {
+    cell,
+    origin,
+    url: `${new URL(request.url).origin}/${tileObjectKey(cell)}`,
+    now: deps.now(),
+  };
   const existing = await deps.env.TILES.head(tileObjectKey(cell));
-  if (existing !== null) {
-    if (!isOld(existing, now))
-      return fillAnswer(200, { status: "present", url }, origin);
-    await deps.env.FILL_QUEUE.send({ cell, kind: "refresh", at: now });
-    return fillAnswer(200, { status: "refreshing", url }, origin);
-  }
-  const failure = await readFailure(deps.env.TILES, cell);
-  if (failure !== undefined && failure.retryAt > now) {
-    const wait = Math.ceil((failure.retryAt - now) / 1000);
-    return fillAnswer(503, { status: "backoff" }, origin, wait);
-  }
-  const daily = await readDaily(deps.env.TILES, now);
-  if (daily.upstreamRequests >= dailyUpstreamCap(deps.env)) {
-    const wait = Math.ceil(msUntilNextUtcDay(now) / 1000);
-    return fillAnswer(503, { status: "cap" }, origin, wait);
-  }
-  await deps.env.FILL_QUEUE.send({ cell, kind: "fill", at: now });
-  return fillAnswer(202, { status: "queued", url }, origin, FILL_RETRY_AFTER_S);
+  return existing === null
+    ? answerMissing(ctx, deps)
+    : answerStored(existing, ctx, deps);
 }
 
 export async function handleRequest(
@@ -233,8 +365,10 @@ export async function handleRequest(
     return handleFill(request, fill[1] as string, deps);
   }
   const readable = request.method === "GET" || request.method === "HEAD";
-  if (path === `/${MANIFEST_KEY}`) {
-    return readable ? serveManifest(deps) : new Response(null, { status: 405 });
+  if (path === MANIFEST_PATH) {
+    return readable
+      ? serveManifest(request, deps)
+      : new Response(null, { status: 405 });
   }
   const tile = TILE_PATH.exec(path);
   if (tile !== null) {

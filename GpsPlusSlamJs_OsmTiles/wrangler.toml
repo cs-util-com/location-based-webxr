@@ -35,6 +35,8 @@ simple = { limit = 20, period = 60 }
 [vars]
 # Upstream Overpass requests one UTC day may spend, all fills together.
 DAILY_UPSTREAM_CAP = "300"
+# Queued or running fills at which the fill endpoint answers busy at once.
+MAX_PENDING_FILLS = "4"
 USER_AGENT = "gps-plus-slam osm-tiles (+https://github.com/cs-util-com/location-based-webxr)"
 
 [observability.logs]

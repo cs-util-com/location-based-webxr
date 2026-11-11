@@ -6,7 +6,8 @@
  */
 
 import { DEFAULT_OVERPASS_ENDPOINTS } from "gps-plus-slam-osm/source/overpass-source";
-import type { FillMessage, OsmTilesEnv } from "./bindings";
+import type { FillMessage, OsmTilesEnv, ResponseCache } from "./bindings";
+import { clearPending, markPending, sweepPending } from "./fill-state";
 import { fillTile } from "./fill-tile";
 import { dailyUpstreamCap, handleRequest } from "./routes";
 import { parseTileCell } from "./tile-cell";
@@ -33,6 +34,9 @@ async function consumeOne(body: FillMessage, env: OsmTilesEnv): Promise<void> {
     return;
   }
   try {
+    // Serial consumer: markers still flagged running belong to killed runs.
+    await sweepPending(env.TILES, Date.now());
+    await markPending(env.TILES, cell, Date.now(), true);
     const outcome = await fillTile(
       { cell, kind: body.kind, at: body.at },
       {
@@ -51,12 +55,26 @@ async function consumeOne(body: FillMessage, env: OsmTilesEnv): Promise<void> {
     console.log(
       JSON.stringify({ fill: "error", cell, error: describeError(error) }),
     );
+  } finally {
+    await clearPending(env.TILES, cell).catch(() => undefined);
   }
+}
+
+/** `caches.default` where the runtime has it (workerd), else none. */
+function edgeCache(): ResponseCache | undefined {
+  const storage = (globalThis as { caches?: { default?: ResponseCache } })
+    .caches;
+  return storage?.default;
 }
 
 export default {
   fetch(request: Request, env: OsmTilesEnv): Promise<Response> {
-    return handleRequest(request, { env, now: () => Date.now() });
+    const cache = edgeCache();
+    return handleRequest(request, {
+      env,
+      now: () => Date.now(),
+      ...(cache === undefined ? {} : { cache }),
+    });
   },
 
   /**
