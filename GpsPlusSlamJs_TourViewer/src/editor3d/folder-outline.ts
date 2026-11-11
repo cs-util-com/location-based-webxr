@@ -80,16 +80,16 @@ export function createFolderOutline(deps: {
       ensure(ids.length);
       shown = 0;
       for (const id of ids) {
-        const box = new THREE.Box3();
+        // Straight into the next helper's own box: no box per item a frame.
+        const helper = helpers[shown];
+        if (helper === undefined) continue;
+        helper.box.makeEmpty();
         for (const o of deps.itemObjects(id)) {
           o.updateWorldMatrix(true, true);
           part.setFromObject(o);
-          if (!part.isEmpty()) box.union(part);
+          if (!part.isEmpty()) helper.box.union(part);
         }
-        if (box.isEmpty()) continue;
-        const helper = helpers[shown];
-        if (helper === undefined) continue;
-        helper.box.copy(box);
+        if (helper.box.isEmpty()) continue;
         helper.visible = true;
         shown += 1;
       }
