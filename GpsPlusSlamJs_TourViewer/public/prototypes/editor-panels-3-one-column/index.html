@@ -1,0 +1,3911 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>Editor panels 3: one right column</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js"
+        }
+      }
+    </script>
+    <style>
+      :root {
+        --bg0: #18191c;
+        --bg1: #1f2023;
+        --bg2: #26282c;
+        --bg3: #2f3136;
+        --bg4: #383a40;
+        --line: #313338;
+        --line2: #3c3f46;
+        --text: #d9dbe0;
+        --muted: #8a8f99;
+        --dim: #646973;
+        --acc: #e9a23b;
+        --acc-bg: rgb(233 162 59 / 14%);
+        --acc-line: rgb(233 162 59 / 55%);
+        --acc-text: #f3c47e;
+        --danger: #d97d79;
+        --ok: #7fb77a;
+        --warn: #e9b86b;
+        --focus: #5b9cf0;
+        --station: #4f8fe8;
+        --sans:
+          "Segoe UI", system-ui, -apple-system, "Helvetica Neue", arial,
+          sans-serif;
+        --mono:
+          "Cascadia Mono", consolas, "SF Mono", ui-monospace, menlo, monospace;
+        --tree-w: 248px;
+        --col-w: 300px;
+        --rail-w: 38px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      [hidden] {
+        display: none !important;
+      }
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #0d0e10;
+        color: var(--text);
+        font: 12px/1.4 var(--sans);
+        color-scheme: dark;
+      }
+
+      button,
+      input,
+      select,
+      textarea {
+        font: inherit;
+        color: inherit;
+      }
+
+      button {
+        cursor: pointer;
+      }
+
+      svg.i {
+        flex: none;
+        width: 16px;
+        height: 16px;
+        fill: none;
+        stroke: currentcolor;
+        stroke-width: 1.35;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      /* --- the frame: the real window, or a previewed size ------------- */
+      #frame {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        transform-origin: 0 0;
+      }
+
+      body.preview #frame {
+        overflow: hidden;
+        border-radius: 4px;
+        box-shadow:
+          0 0 0 1px #3c3f46,
+          0 18px 50px rgb(0 0 0 / 60%);
+      }
+
+      #frameLabel {
+        position: fixed;
+        display: none;
+        color: var(--muted);
+        font-size: 11px;
+        white-space: nowrap;
+      }
+
+      body.preview #frameLabel {
+        display: block;
+      }
+
+      #app {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        background: #1a1b1e;
+      }
+
+      #app[data-mode="desk"].narrow {
+        --tree-w: 210px;
+      }
+
+      #app[data-mode="desk"] .ph,
+      #app:not([data-mode="desk"]) .dk {
+        display: none !important;
+      }
+
+      /* --- the top bar ------------------------------------------------- */
+      #top {
+        position: absolute;
+        inset: 0 0 auto;
+        z-index: 20;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        height: 40px;
+        padding: 0 8px;
+        border-bottom: 1px solid var(--line);
+        background: var(--bg1);
+      }
+
+      body:not(.preview) #top {
+        padding-right: 44px;
+      }
+
+      .brand {
+        display: flex;
+        flex: 0 1 auto;
+        align-items: center;
+        gap: 7px;
+        min-width: 0;
+        height: 24px;
+        margin-right: 2px;
+        padding-right: 10px;
+        border-right: 1px solid var(--line);
+      }
+
+      .brand .logo {
+        display: grid;
+        flex: none;
+        place-items: center;
+        width: 20px;
+        height: 20px;
+        border-radius: 5px;
+        background: var(--acc);
+        color: #1c1c1c;
+      }
+
+      .brand .logo svg.i {
+        width: 13px;
+        height: 13px;
+        stroke-width: 1.8;
+      }
+
+      .brand .tname {
+        overflow: hidden;
+        color: var(--muted);
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .tbtn {
+        display: inline-flex;
+        flex: none;
+        align-items: center;
+        gap: 6px;
+        height: 26px;
+        padding: 0 8px;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        background: transparent;
+        white-space: nowrap;
+      }
+
+      .tbtn:hover {
+        background: var(--bg3);
+      }
+
+      .sp {
+        flex: 1;
+      }
+
+      /* The phone's compact switch: the list, or the right column on one
+       * of its two tabs, or none (the whole screen is the 3D view). */
+      #pswitch {
+        display: flex;
+        flex: none;
+        gap: 2px;
+        padding: 2px;
+        border: 1px solid var(--line2);
+        border-radius: 8px;
+        background: var(--bg0);
+      }
+
+      #pswitch button {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 30px;
+        padding: 0 9px;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+
+      #pswitch button[aria-pressed="true"] {
+        background: var(--acc-bg);
+        box-shadow: inset 0 0 0 1px var(--acc-line);
+        color: var(--acc-text);
+      }
+
+      #app[data-mode="port"] #pswitch button {
+        padding: 0 7px;
+      }
+
+      /* --- the stage: the 3D view and what stands on it ----------------- */
+      #stage {
+        position: absolute;
+        top: 40px;
+        right: 0;
+        bottom: 24px;
+        left: 0;
+        overflow: hidden;
+      }
+
+      #app:not([data-mode="desk"]) #stage {
+        bottom: 0;
+      }
+
+      #gl {
+        position: absolute;
+        inset: 0;
+        display: block;
+        width: 100%;
+        height: 100%;
+        cursor: grab;
+        touch-action: none;
+      }
+
+      .loadline {
+        position: absolute;
+        inset: 0 0 auto;
+        z-index: 9;
+        height: 3px;
+        background: var(--acc);
+        pointer-events: none;
+      }
+
+      /* The visible part, outlined for a moment after each framing. */
+      #guide {
+        position: absolute;
+        z-index: 3;
+        border: 1px dashed rgb(233 162 59 / 75%);
+        border-radius: 8px;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.6s;
+      }
+
+      #guide.show {
+        opacity: 1;
+        transition: opacity 0.15s;
+      }
+
+      #guide::after {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 14px;
+        height: 14px;
+        margin: -7px 0 0 -7px;
+        border: 1px solid rgb(233 162 59 / 75%);
+        border-radius: 50%;
+        content: "";
+      }
+
+      /* --- handles over the view (under every panel) --------------------- */
+      #handles {
+        position: absolute;
+        inset: 0;
+        z-index: 4;
+        pointer-events: none;
+      }
+
+      .hd {
+        position: absolute;
+        top: 0;
+        left: 0;
+        pointer-events: auto;
+        touch-action: none;
+      }
+
+      .hd::before {
+        position: absolute;
+        inset: -10px;
+        content: "";
+      }
+
+      .h-knob {
+        display: grid;
+        place-items: center;
+        width: 26px;
+        height: 26px;
+        margin: -13px 0 0 -13px;
+        border: 2px solid #fff;
+        border-radius: 50%;
+        background: var(--acc);
+        box-shadow: 0 1px 4px rgb(0 0 0 / 45%);
+        color: #1c1c1c;
+        cursor: grab;
+      }
+
+      .h-knob svg.i {
+        width: 13px;
+        height: 13px;
+        stroke-width: 2;
+      }
+
+      .h-size {
+        width: 12px;
+        height: 12px;
+        margin: -6px 0 0 -6px;
+        border: 2px solid var(--acc);
+        border-radius: 2px;
+        background: #fff;
+        cursor: nesw-resize;
+      }
+
+      .h-radius {
+        width: 18px;
+        height: 18px;
+        margin: -9px 0 0 -9px;
+        border: 2px solid #fff;
+        border-radius: 50%;
+        background: var(--station);
+        box-shadow: 0 1px 4px rgb(0 0 0 / 45%);
+        cursor: ew-resize;
+      }
+
+      #app:not([data-mode="desk"]) .h-knob {
+        width: 34px;
+        height: 34px;
+        margin: -17px 0 0 -17px;
+      }
+
+      #app:not([data-mode="desk"]) .h-size {
+        width: 16px;
+        height: 16px;
+        margin: -8px 0 0 -8px;
+      }
+
+      #app:not([data-mode="desk"]) .h-radius {
+        width: 24px;
+        height: 24px;
+        margin: -12px 0 0 -12px;
+      }
+
+      /* --- panels ------------------------------------------------------ */
+      .panel {
+        position: absolute;
+        z-index: 8;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        border: 1px solid var(--line);
+        background: rgb(31 32 35 / 97%);
+        box-shadow: 0 8px 22px rgb(0 0 0 / 35%);
+      }
+
+      #app[data-mode="desk"] #list {
+        top: 3px;
+        bottom: 0;
+        left: 0;
+        width: var(--tree-w);
+        border-bottom: 0;
+        border-left: 0;
+      }
+
+      #app[data-mode="desk"].lfold #list {
+        width: var(--rail-w);
+      }
+
+      #app[data-mode="desk"] #col {
+        top: 3px;
+        right: 0;
+        bottom: 0;
+        width: var(--col-w);
+        border-right: 0;
+        border-bottom: 0;
+      }
+
+      #rail {
+        top: 3px;
+        right: 0;
+        bottom: 0;
+        align-items: center;
+        gap: 4px;
+        width: var(--rail-w);
+        padding-top: 4px;
+        border-right: 0;
+        border-bottom: 0;
+      }
+
+      #app[data-mode="land"] #list {
+        top: 3px;
+        bottom: 0;
+        left: 0;
+        width: min(264px, 38%);
+        border-bottom: 0;
+        border-left: 0;
+      }
+
+      #app[data-mode="land"] #col {
+        top: 3px;
+        right: 0;
+        bottom: 0;
+        width: min(300px, 40%);
+        border-right: 0;
+        border-bottom: 0;
+      }
+
+      #app[data-mode="port"] :is(#list, #col) {
+        right: 0;
+        bottom: 0;
+        left: 0;
+        height: min(46%, 420px);
+        border-bottom: 0;
+        border-radius: 12px 12px 0 0;
+      }
+
+      #app[data-mode="port"] .grip {
+        display: block;
+        width: 36px;
+        height: 4px;
+        margin: 6px auto 0;
+        border-radius: 2px;
+        background: var(--line2);
+      }
+
+      .grip {
+        display: none;
+      }
+
+      .phead {
+        display: flex;
+        flex: none;
+        align-items: stretch;
+        gap: 2px;
+        height: 36px;
+        padding: 0 4px 0 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .ptitle {
+        display: flex;
+        flex: 1;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        padding-left: 12px;
+        color: var(--muted);
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+      }
+
+      .ptitle .cnt {
+        color: var(--dim);
+        font: 10px var(--mono);
+        letter-spacing: 0;
+      }
+
+      .ib {
+        display: inline-flex;
+        flex: none;
+        align-self: center;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        color: var(--muted);
+      }
+
+      .ib:hover {
+        background: var(--bg3);
+        color: var(--text);
+      }
+
+      #app:not([data-mode="desk"]) .ib {
+        width: 36px;
+        height: 34px;
+      }
+
+      .tabs {
+        display: flex;
+        flex: 1;
+        align-items: stretch;
+        min-width: 0;
+      }
+
+      .tab {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 12px;
+        border: 0;
+        background: transparent;
+        color: var(--muted);
+        font-size: 11px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+
+      .tab:hover,
+      .tab[aria-selected="true"] {
+        color: var(--text);
+      }
+
+      .tab[aria-selected="true"]::after {
+        position: absolute;
+        right: 8px;
+        bottom: -1px;
+        left: 8px;
+        height: 2px;
+        background: var(--acc);
+        content: "";
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 16px;
+        height: 16px;
+        padding: 0 5px;
+        border-radius: 8px;
+        background: var(--bg4);
+        color: var(--text);
+        font: 10px/1 var(--mono);
+        letter-spacing: 0;
+        text-transform: none;
+      }
+
+      .badge:empty {
+        display: none;
+      }
+
+      .badge.busy {
+        background: var(--acc-bg);
+        color: var(--acc-text);
+      }
+
+      .badge.warn {
+        background: rgb(233 184 107 / 20%);
+        color: #f1cf96;
+      }
+
+      .badge.pop {
+        animation: pop 0.6s ease 2;
+      }
+
+      @keyframes pop {
+        50% {
+          transform: scale(1.35);
+          box-shadow: 0 0 0 3px var(--acc-line);
+        }
+      }
+
+      .spin {
+        display: inline-block;
+        width: 9px;
+        height: 9px;
+        margin-right: 4px;
+        border: 1.5px solid var(--dim);
+        border-top-color: var(--acc);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .pbody {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        overscroll-behavior: contain;
+      }
+
+      /* The folded list on a desktop: one button. */
+      .lrail {
+        display: none;
+      }
+
+      #app[data-mode="desk"].lfold #list > :not(.lrail) {
+        display: none;
+      }
+
+      #app[data-mode="desk"].lfold .lrail {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding-top: 4px;
+      }
+
+      #rail .ib {
+        position: relative;
+      }
+
+      #rail .ib.on {
+        color: var(--acc-text);
+      }
+
+      #rail .badge {
+        position: absolute;
+        top: -2px;
+        right: -6px;
+        min-width: 14px;
+        height: 14px;
+        padding: 0 3px;
+      }
+
+      #rail .badge .spin {
+        margin: 0;
+      }
+
+      .rlabel {
+        margin-top: 6px;
+        color: var(--dim);
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        writing-mode: vertical-rl;
+      }
+
+      /* --- the list (tree) --------------------------------------------- */
+      .tsearch {
+        flex: none;
+        padding: 6px 8px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .tsearch input {
+        width: 100%;
+        height: 26px;
+        padding: 0 8px;
+        border: 1px solid var(--line2);
+        border-radius: 4px;
+        background: var(--bg0);
+      }
+
+      .cards {
+        padding: 4px 0;
+      }
+
+      .head,
+      .kid,
+      .folder {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        min-height: 28px;
+        padding: 0 6px 0 4px;
+        cursor: pointer;
+        user-select: none;
+      }
+
+      .kid {
+        min-height: 26px;
+        padding-left: 44px;
+      }
+
+      .kid.deep {
+        padding-left: 62px;
+      }
+
+      .folder {
+        min-height: 26px;
+        padding-left: 26px;
+      }
+
+      #app:not([data-mode="desk"]) :is(.head, .kid, .folder) {
+        min-height: 38px;
+      }
+
+      :is(.head, .kid, .folder):hover {
+        background: rgb(255 255 255 / 3.5%);
+      }
+
+      :is(.head, .kid, .folder).sel {
+        background: var(--acc-bg);
+        box-shadow: inset 2px 0 0 var(--acc);
+      }
+
+      :is(.head, .kid, .folder).dropok {
+        background: rgb(79 143 232 / 22%);
+        box-shadow: inset 0 0 0 1px var(--station);
+      }
+
+      .tw {
+        display: inline-flex;
+        flex: none;
+        align-items: center;
+        justify-content: center;
+        width: 18px;
+        height: 22px;
+        padding: 0;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        color: var(--muted);
+      }
+
+      .tw svg.i {
+        width: 12px;
+        height: 12px;
+      }
+
+      .n {
+        flex: none;
+        min-width: 18px;
+        height: 16px;
+        padding: 0 3px;
+        border-radius: 3px;
+        background: #3d5a78;
+        color: #e6f0fa;
+        font: 600 10px/16px var(--mono);
+        text-align: center;
+      }
+
+      .head.sel .n {
+        background: var(--acc);
+        color: #1c1c1c;
+      }
+
+      .nm {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .head .nm {
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .sel .nm {
+        color: #fff;
+      }
+
+      .meta {
+        flex: none;
+        color: var(--dim);
+        font: 10px var(--mono);
+      }
+
+      .ic {
+        display: inline-flex;
+        flex: none;
+      }
+
+      /* --- the details tab --------------------------------------------- */
+      .dh {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 8px 10px 0 8px;
+      }
+
+      .hic {
+        display: inline-flex;
+        flex: none;
+        justify-content: center;
+        width: 24px;
+      }
+
+      .ttlin {
+        flex: 1;
+        min-width: 0;
+        height: 28px;
+        padding: 0 6px;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        outline: none;
+        background: transparent;
+        color: #f0f1f3;
+        font-size: 13.5px;
+        font-weight: 600;
+        text-decoration: underline dotted var(--muted);
+        text-underline-offset: 3px;
+      }
+
+      .ttlin:hover {
+        border-color: var(--line2);
+      }
+
+      .ttlin:focus {
+        border-color: var(--focus);
+        background: var(--bg2);
+        text-decoration: none;
+      }
+
+      .sub {
+        padding: 2px 12px 6px 40px;
+        color: var(--dim);
+        font-size: 11px;
+      }
+
+      .lnk {
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: var(--acc-text);
+        text-decoration: underline dotted;
+      }
+
+      .isec {
+        padding: 8px 12px 10px;
+        border-top: 1px solid var(--line);
+      }
+
+      .isec h4 {
+        margin: 0 0 4px;
+        color: var(--muted);
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .f {
+        display: grid;
+        grid-template-columns: 74px minmax(0, 1fr);
+        align-items: center;
+        gap: 6px;
+        min-height: 28px;
+        margin: 3px 0;
+      }
+
+      .flabel {
+        overflow: hidden;
+        color: var(--muted);
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .num {
+        display: flex;
+        align-items: center;
+        min-width: 0;
+        height: 26px;
+        border: 1px solid var(--line2);
+        border-radius: 3px;
+        background: var(--bg2);
+      }
+
+      .num.ro {
+        border-color: var(--line);
+        background: transparent;
+      }
+
+      .num .val {
+        flex: 1;
+        min-width: 0;
+        height: 100%;
+        padding: 0 5px;
+        border: 0;
+        outline: none;
+        background: transparent;
+        font: 11px var(--mono);
+      }
+
+      .num span.val {
+        height: auto;
+      }
+
+      .num .unit {
+        padding-right: 6px;
+        color: var(--dim);
+        font: 10.5px var(--mono);
+      }
+
+      .num:focus-within {
+        border-color: var(--focus);
+      }
+
+      .range {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .range input[type="range"] {
+        flex: 1;
+        min-width: 0;
+        margin: 0;
+        accent-color: var(--acc);
+      }
+
+      .range .num {
+        flex: none;
+        width: 70px;
+      }
+
+      .note {
+        margin: 4px 0 0;
+        color: var(--dim);
+        font-size: 11px;
+        line-height: 1.45;
+      }
+
+      .tfield {
+        width: 100%;
+        min-width: 0;
+        height: 28px;
+        padding: 0 7px;
+        border: 1px solid var(--line2);
+        border-radius: 3px;
+        outline: none;
+        background: var(--bg2);
+      }
+
+      textarea.tfield {
+        height: 64px;
+        padding: 5px 7px;
+        line-height: 1.4;
+        resize: vertical;
+      }
+
+      .tfield:focus {
+        border-color: var(--focus);
+      }
+
+      .fileuse {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 40px;
+        margin-bottom: 2px;
+        padding: 6px 8px;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+      }
+
+      .fileuse .fu-name {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .fileuse .fu-none {
+        color: var(--warn);
+      }
+
+      .fileuse .fu-state {
+        color: var(--acc-text);
+        font: 10.5px var(--mono);
+      }
+
+      .swatches {
+        display: flex;
+        gap: 6px;
+      }
+
+      .swatches button {
+        width: 26px;
+        height: 26px;
+        border: 2px solid transparent;
+        border-radius: 50%;
+      }
+
+      .swatches button[aria-pressed="true"] {
+        border-color: #fff;
+        box-shadow: 0 0 0 1px var(--acc);
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 28px;
+        padding: 0 10px;
+        border: 1px solid var(--line2);
+        border-radius: 4px;
+        background: var(--bg2);
+        white-space: nowrap;
+      }
+
+      .btn:hover {
+        background: var(--bg3);
+      }
+
+      .btn.danger {
+        color: var(--danger);
+      }
+
+      .clist {
+        border: 1px solid var(--line);
+        border-radius: 4px;
+      }
+
+      .clist .kid {
+        padding-left: 8px;
+      }
+
+      .empty {
+        padding: 18px 14px;
+        color: var(--muted);
+      }
+
+      /* --- the files tab (the asset shelf) ----------------------------- */
+      .fsum {
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .fsum b {
+        color: var(--text);
+        font-weight: 600;
+      }
+
+      .bar {
+        position: relative;
+        display: block;
+        height: 3px;
+        overflow: hidden;
+        border-radius: 2px;
+        background: var(--bg4);
+      }
+
+      .bar i {
+        position: absolute;
+        inset: 0 auto 0 0;
+        background: var(--acc);
+        transition: width 0.15s linear;
+      }
+
+      .fsum .bar {
+        margin-top: 6px;
+      }
+
+      .frow {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 8px 10px 8px 8px;
+        border-bottom: 1px solid var(--line);
+        cursor: grab;
+      }
+
+      .frow:hover {
+        background: rgb(255 255 255 / 3%);
+      }
+
+      .frow.fresh {
+        animation: fresh 1.6s ease;
+      }
+
+      @keyframes fresh {
+        from {
+          background: var(--acc-bg);
+        }
+      }
+
+      .frow .tw {
+        margin-top: 8px;
+      }
+
+      .fthumb {
+        position: relative;
+        display: grid;
+        flex: none;
+        place-items: center;
+        width: 34px;
+        height: 34px;
+        border: 1px solid var(--line2);
+        border-radius: 5px;
+        background: var(--bg2);
+      }
+
+      .fthumb .rg {
+        position: absolute;
+        inset: -1px;
+        width: 34px;
+        height: 34px;
+        transform: rotate(-90deg);
+      }
+
+      .rg circle {
+        fill: none;
+        stroke-width: 2.5;
+      }
+
+      .rg .fg {
+        stroke: var(--acc);
+        transition: stroke-dashoffset 0.15s linear;
+      }
+
+      .rg .bgc {
+        stroke: var(--bg4);
+      }
+
+      .fmain {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+      }
+
+      .ftop {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+
+      .fname {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .uses {
+        flex: none;
+        color: var(--dim);
+        font-size: 10.5px;
+      }
+
+      .fmeta {
+        color: var(--dim);
+        font-size: 10.5px;
+      }
+
+      .fstate {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--muted);
+        font-size: 10.5px;
+      }
+
+      .fstate .bar {
+        flex: 1;
+      }
+
+      .fstate.ready {
+        color: var(--ok);
+      }
+
+      .fstate.ready svg.i {
+        width: 12px;
+        height: 12px;
+      }
+
+      .fstate .gain {
+        color: var(--ok);
+        font-family: var(--mono);
+      }
+
+      .fstate .pc {
+        min-width: 32px;
+        color: var(--acc-text);
+        font-family: var(--mono);
+      }
+
+      .fparts {
+        border-bottom: 1px solid var(--line);
+        background: rgb(0 0 0 / 12%);
+      }
+
+      .fpart {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 28px;
+        padding: 0 10px 0 68px;
+        color: var(--muted);
+      }
+
+      .fadd {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        padding: 12px;
+        color: var(--dim);
+        font-size: 11px;
+      }
+
+      /* --- the bottom panel (desktop) ---------------------------------- */
+      #bpanel {
+        bottom: 0;
+        z-index: 7;
+        height: 168px;
+        border-bottom: 0;
+      }
+
+      .prow {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 28px;
+        padding: 0 12px;
+      }
+
+      .prow .what {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .sev {
+        color: var(--warn);
+      }
+
+      /* --- the map controls -------------------------------------------- */
+      #ctl {
+        position: absolute;
+        z-index: 6;
+        display: flex;
+        align-items: flex-end;
+        gap: 8px;
+      }
+
+      #app:not([data-mode="desk"]) #ctl {
+        flex-direction: column;
+        align-items: flex-end;
+      }
+
+      .pill {
+        display: flex;
+        overflow: hidden;
+        border-radius: 8px;
+        background: #fff;
+        box-shadow:
+          0 1px 2px rgb(60 64 67 / 25%),
+          0 2px 8px rgb(60 64 67 / 15%);
+      }
+
+      .pill button {
+        display: grid;
+        place-items: center;
+        width: 38px;
+        height: 38px;
+        padding: 0;
+        border: 0;
+        background: #fff;
+        color: #5f6670;
+      }
+
+      .pill button:hover {
+        background: #f1f3f4;
+        color: #1f2328;
+      }
+
+      .pill button + button {
+        border-left: 1px solid #e4e7eb;
+      }
+
+      #app:not([data-mode="desk"]) .pill.zoom {
+        flex-direction: column;
+      }
+
+      #app:not([data-mode="desk"]) .pill.zoom button + button {
+        border-top: 1px solid #e4e7eb;
+        border-left: 0;
+      }
+
+      .pill button.on {
+        color: var(--acc);
+      }
+
+      #needle {
+        display: inline-flex;
+      }
+
+      /* --- the bottom bar (desktop) ------------------------------------ */
+      #bar {
+        position: absolute;
+        inset: auto 0 0;
+        z-index: 20;
+        display: flex;
+        align-items: stretch;
+        height: 24px;
+        border-top: 1px solid var(--line);
+        background: var(--bg1);
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      #app:not([data-mode="desk"]) #bar {
+        display: none;
+      }
+
+      #bar > span {
+        display: flex;
+        align-items: center;
+        padding: 0 10px;
+        border-right: 1px solid var(--line);
+        white-space: nowrap;
+      }
+
+      #bar > .sp {
+        border-right: 0;
+      }
+
+      .tog {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 10px;
+        border: 0;
+        border-left: 1px solid var(--line);
+        background: transparent;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+
+      .tog[aria-pressed="true"] {
+        background: var(--bg2);
+        color: var(--acc-text);
+      }
+
+      .tog svg.i {
+        width: 14px;
+        height: 14px;
+      }
+
+      /* --- toast, drop overlay ----------------------------------------- */
+      #toast {
+        position: absolute;
+        z-index: 12;
+        max-width: 340px;
+        padding: 8px 12px;
+        border: 1px solid var(--line2);
+        border-radius: 6px;
+        background: rgb(42 45 50 / 97%);
+        box-shadow: 0 8px 22px rgb(0 0 0 / 40%);
+        opacity: 0;
+        pointer-events: none;
+        transform: translateX(-50%);
+        transition: opacity 0.2s;
+      }
+
+      #toast.show {
+        opacity: 1;
+      }
+
+      #drop {
+        position: absolute;
+        inset: 0;
+        z-index: 40;
+        display: grid;
+        place-items: center;
+        border: 2px dashed var(--acc);
+        background: rgb(233 162 59 / 10%);
+        color: var(--acc-text);
+        font-size: 15px;
+      }
+
+      /* --- prototype controls (not part of the design) ----------------- */
+      #protoBtn {
+        position: fixed;
+        top: 5px;
+        right: 6px;
+        z-index: 1000;
+        display: grid;
+        place-items: center;
+        width: 30px;
+        height: 30px;
+        padding: 0;
+        border: 1px dashed var(--acc-line);
+        border-radius: 6px;
+        background: var(--bg2);
+        color: var(--acc-text);
+      }
+
+      body.preview #protoBtn {
+        display: none;
+      }
+
+      #proto {
+        position: fixed;
+        top: 40px;
+        right: 6px;
+        z-index: 1001;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 8px;
+        border: 1px dashed var(--acc-line);
+        border-radius: 8px;
+        background: rgb(24 25 28 / 98%);
+        box-shadow: 0 10px 30px rgb(0 0 0 / 50%);
+      }
+
+      body.preview #proto {
+        top: 6px;
+        right: 6px;
+        left: 6px;
+        flex-flow: row wrap;
+        align-items: center;
+        box-shadow: none;
+      }
+
+      #proto .plbl {
+        color: var(--dim);
+        font-size: 10.5px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      #proto button {
+        height: 28px;
+        padding: 0 10px;
+        border: 1px solid var(--line2);
+        border-radius: 5px;
+        background: var(--bg2);
+        text-align: left;
+        white-space: nowrap;
+      }
+
+      #proto button[aria-pressed="true"] {
+        border-color: var(--acc-line);
+        background: var(--acc-bg);
+        color: var(--acc-text);
+      }
+
+      #notes {
+        position: fixed;
+        top: 44px;
+        right: 8px;
+        z-index: 1002;
+        width: min(470px, calc(100vw - 16px));
+        max-height: calc(100dvh - 56px);
+        overflow: auto;
+        padding: 12px 16px 14px;
+        border: 1px solid var(--line2);
+        border-radius: 8px;
+        background: rgb(31 32 35 / 99%);
+        box-shadow: 0 16px 40px rgb(0 0 0 / 60%);
+        font-size: 12.5px;
+        line-height: 1.5;
+      }
+
+      #notes h2 {
+        margin: 0 0 6px;
+        font-size: 14px;
+      }
+
+      #notes h3 {
+        margin: 12px 0 4px;
+        color: var(--acc-text);
+        font-size: 12px;
+      }
+
+      #notes p,
+      #notes ul {
+        margin: 0 0 6px;
+      }
+
+      #notes ul {
+        padding-left: 18px;
+      }
+
+      #liveCheck {
+        padding: 8px 10px;
+        border: 1px solid var(--line2);
+        border-radius: 6px;
+        background: var(--bg0);
+        font: 11px/1.5 var(--mono);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="frameLabel"></div>
+    <div id="frame">
+      <div id="app" data-mode="desk">
+        <header id="top">
+          <div class="brand">
+            <span class="logo" id="logo"></span>
+            <span class="tname">Old Town Walk</span>
+          </div>
+          <button class="tbtn dk" type="button">File</button>
+          <button class="tbtn dk" type="button">View</button>
+          <button class="tbtn dk" type="button" id="addBtn">Add</button>
+          <span class="sp"></span>
+          <div id="pswitch" class="ph" role="group" aria-label="Show">
+            <button type="button" data-sw="list" aria-pressed="false">
+              <span data-ic="list"></span><span class="lbl">List</span>
+            </button>
+            <button type="button" data-sw="details" aria-pressed="false">
+              <span data-ic="details"></span><span class="lbl">Details</span>
+            </button>
+            <button type="button" data-sw="files" aria-pressed="false">
+              <span data-ic="files"></span><span class="lbl">Files</span
+              ><span class="badge" data-badge="files"></span>
+            </button>
+          </div>
+        </header>
+
+        <div id="stage">
+          <canvas id="gl" aria-label="3D view of the tour"></canvas>
+          <div class="loadline"></div>
+          <div id="guide"></div>
+          <div id="handles">
+            <div
+              class="hd h-knob"
+              data-h="knob"
+              title="Turn"
+              hidden
+              data-ic="rotate"
+            ></div>
+            <div class="hd h-size" data-h="size" title="Size" hidden></div>
+            <div class="hd h-size" data-h="size2" title="Size" hidden></div>
+            <div
+              class="hd h-radius"
+              data-h="radius"
+              title="Radius"
+              hidden
+            ></div>
+          </div>
+
+          <aside id="list" class="panel" aria-label="Tour list">
+            <span class="grip"></span>
+            <div class="phead">
+              <span class="ptitle"
+                >Tour <span class="cnt" id="stCount"></span
+              ></span>
+              <button
+                class="ib dk"
+                type="button"
+                data-act="lfold"
+                title="Fold the list"
+                data-ic="chevL"
+              ></button>
+              <button
+                class="ib ph"
+                type="button"
+                data-act="pclose"
+                title="Show only the 3D view"
+                data-ic="close"
+              ></button>
+            </div>
+            <div class="tsearch">
+              <input type="search" placeholder="Find in the tour" />
+            </div>
+            <div class="pbody cards" id="tree"></div>
+            <div class="lrail">
+              <button
+                class="ib"
+                type="button"
+                data-act="lfold"
+                title="Open the list"
+                data-ic="list"
+              ></button>
+            </div>
+          </aside>
+
+          <aside id="col" class="panel" aria-label="Details and files">
+            <span class="grip"></span>
+            <div class="phead">
+              <div class="tabs dk" role="tablist">
+                <button class="tab" type="button" role="tab" data-tab="details">
+                  <span data-ic="details"></span>Details
+                </button>
+                <button class="tab" type="button" role="tab" data-tab="files">
+                  <span data-ic="files"></span>Files<span
+                    class="badge"
+                    data-badge="files"
+                  ></span>
+                </button>
+              </div>
+              <span class="ptitle ph" id="ctitle"></span>
+              <button
+                class="ib dk"
+                type="button"
+                data-act="fold"
+                title="Fold to a rail"
+                data-ic="chev"
+              ></button>
+              <button
+                class="ib ph"
+                type="button"
+                data-act="pclose"
+                title="Show only the 3D view"
+                data-ic="close"
+              ></button>
+            </div>
+            <div class="pbody" id="details" role="tabpanel"></div>
+            <div class="pbody" id="filesPane" role="tabpanel" hidden></div>
+          </aside>
+
+          <aside id="rail" class="panel" aria-label="Details and files, folded">
+            <button
+              class="ib"
+              type="button"
+              data-rail="unfold"
+              title="Unfold"
+              data-ic="chevL"
+            ></button>
+            <button
+              class="ib"
+              type="button"
+              data-rail="details"
+              title="Details"
+            >
+              <span data-ic="details"></span>
+            </button>
+            <button class="ib" type="button" data-rail="files" title="Files">
+              <span data-ic="files"></span
+              ><span class="badge" data-badge="files"></span>
+            </button>
+            <span class="rlabel">Details · Files</span>
+          </aside>
+
+          <section id="bpanel" class="panel" aria-label="Problems" hidden>
+            <div class="phead">
+              <span class="ptitle"
+                >Problems <span class="badge warn">1</span></span
+              >
+              <button
+                class="ib"
+                type="button"
+                data-act="bclose"
+                title="Close"
+                data-ic="close"
+              ></button>
+            </div>
+            <div class="pbody">
+              <div class="prow">
+                <span class="sev" data-ic="alert"></span>
+                <span class="what"
+                  >2 Old Town Hall: the picture "Hall facade 1920" has no
+                  file.</span
+                >
+                <button class="lnk" type="button" data-sel="i6">Show</button>
+              </div>
+              <div class="prow">
+                <span
+                  class="sev"
+                  style="color: var(--muted)"
+                  data-ic="clock"
+                ></span>
+                <span class="what"
+                  >Files are being made smaller; the tour can be saved
+                  meanwhile.</span
+                >
+              </div>
+            </div>
+          </section>
+
+          <div id="ctl"></div>
+          <div id="toast" role="status"></div>
+          <div id="drop" hidden>Drop to add to Files</div>
+        </div>
+
+        <footer id="bar">
+          <span>© OpenStreetMap contributors</span>
+          <span class="sp"></span>
+          <span>All changes saved</span>
+          <button class="tog" type="button" id="probTog" aria-pressed="false">
+            <span data-ic="alert"></span>Problems<span class="badge warn"
+              >1</span
+            >
+          </button>
+        </footer>
+      </div>
+    </div>
+
+    <button
+      id="protoBtn"
+      type="button"
+      aria-expanded="false"
+      title="Prototype: preview sizes and notes"
+      data-ic="frame"
+    ></button>
+    <div id="proto" hidden>
+      <span class="plbl">Preview</span>
+      <button type="button" data-pv="window">This window</button>
+      <button type="button" data-pv="desk">Desktop 1280 x 800</button>
+      <button type="button" data-pv="land">Phone sideways 844 x 390</button>
+      <button type="button" data-pv="port">Phone upright 390 x 844</button>
+      <span class="plbl">Try</span>
+      <button type="button" data-act="simdrop">Drop a file</button>
+      <button type="button" data-act="notes" aria-expanded="false">
+        Notes
+      </button>
+    </div>
+
+    <aside id="notes" hidden aria-label="Notes">
+      <h2>One right column: details and files share it</h2>
+      <p>
+        Never more than one panel stands on the right: the details and the files
+        share one column with two tabs. Selecting something shows its details,
+        dropping a file shows the files, and while files are still being made
+        smaller a badge on the Files tab says how many.
+      </p>
+      <h3>Handles under the panels (desktop)</h3>
+      <p>
+        The camera frames the selection in the visible part, not in the window:
+        the picture's centre is moved to the middle of the space between the
+        list, the right column, the bottom panel and the map controls, and the
+        distance is chosen so that the move disc, the turn knob, the size dots
+        and a station's radius dot all fit inside it. Opening or closing a panel
+        re-centres the selection in what is left. With one 300 px column on the
+        right, a 1280 px window keeps 732 px of 3D view instead of about 440 px
+        with the details and the shelf side by side.
+      </p>
+      <h3>A phone held sideways runs out of room</h3>
+      <p>
+        On a phone the screen is the 3D view plus at most one column: the list
+        or the right column, switched with List / Details / Files in the top bar
+        (tap the open one again for the 3D view alone). Sideways, the 3D view
+        keeps 544 x 347 px whichever column is open, and the map controls stand
+        in the 3D view's own corner. Upright, the column becomes a sheet under
+        the view, which keeps the top 54 %. A tap on a list row keeps the list
+        and frames the thing beside it; a tap in the 3D view opens its details.
+      </p>
+      <h3>What it costs</h3>
+      <ul>
+        <li>
+          The details and the files are never side by side. A file goes into an
+          item with "Use a file" in its details, or by dragging the file from
+          Files onto the item in the 3D view or onto its row in the list, never
+          into the details' own field.
+        </li>
+        <li>
+          The column changes its tab on its own. A selection takes you from
+          Files to Details; a drop takes you from Details to Files, except while
+          you are typing in the details, when only the badge and a short message
+          say so. Both can surprise.
+        </li>
+        <li>
+          On a phone the list and the details never show together, so going
+          through several items means switching, or selecting them in the 3D
+          view.
+        </li>
+        <li>
+          Upright, the "column" is a sheet over the lower half, not a column.
+        </li>
+        <li>
+          The bottom panel (problems, history) is shown on a desktop only; on a
+          phone it would be one more thing the single column shows in turn.
+        </li>
+        <li>
+          The camera moves whenever a panel opens or closes. It keeps the
+          direction you look in and only re-centres, but it can feel busy.
+        </li>
+        <li>
+          A very large station on a sideways phone cannot show its whole circle
+          and a move disc big enough to grab; the disc wins, and the radius dot
+          moves to the visible part of the circle.
+        </li>
+      </ul>
+      <h3>Live check of this view</h3>
+      <div id="liveCheck">-</div>
+    </aside>
+
+    <script type="module">
+      import * as THREE from "three";
+
+      /* ---------- helpers ---------- */
+      const $ = (s, r = document) => r.querySelector(s);
+      const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+      const ESC = {
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      };
+      const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ESC[c]);
+      const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+      const DEG = Math.PI / 180;
+      const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const fmt = (b) => `${(b / 1e6).toFixed(b < 1e7 ? 1 : 0)} MB`;
+
+      const P = {
+        pin: '<path d="M8 14s4.5-4.2 4.5-7.5a4.5 4.5 0 0 0-9 0C3.5 9.8 8 14 8 14z"/><circle cx="8" cy="6.5" r="1.6"/>',
+        photo:
+          '<rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="6" cy="6.5" r="1.2"/><path d="M2.5 12l3.5-3.5 2.5 2.5 2-2 3 3"/>',
+        stand:
+          '<path d="M3 5.5l10-1.5v3L3 8.5z"/><path d="M8 7.8V14M5.5 14h5"/>',
+        character:
+          '<circle cx="8" cy="4.5" r="2.2"/><path d="M3.5 14c0-3 2-5 4.5-5s4.5 2 4.5 5"/>',
+        station:
+          '<circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.8"/>',
+        folder: '<path d="M2 4.5h4l1.5 1.5H14v6.5H2z"/>',
+        sound:
+          '<path d="M3 6.5h2.5L9 3.5v9L5.5 9.5H3z"/><path d="M11 6a3 3 0 0 1 0 4"/>',
+        model:
+          '<path d="M8 2l5.5 3v6L8 14l-5.5-3V5z"/><path d="M2.5 5L8 8l5.5-3M8 8v6"/>',
+        video:
+          '<rect x="2" y="4" width="9" height="8" rx="1.2"/><path d="M11 7l3-2v6l-3-2"/>',
+        list: '<path d="M5.5 4h8M5.5 8h8M5.5 12h8"/><path d="M2.5 4h.6M2.5 8h.6M2.5 12h.6"/>',
+        details:
+          '<path d="M3 4h10M3 8h10M3 12h10"/><circle cx="6" cy="4" r="1.3"/><circle cx="10.5" cy="8" r="1.3"/><circle cx="5" cy="12" r="1.3"/>',
+        files:
+          '<path d="M2 6h12v7.5H2z"/><path d="M3.5 6V3.5h9V6"/><path d="M6.5 9h3"/>',
+        chev: '<path d="M6 4l4 4-4 4"/>',
+        chevL: '<path d="M10 4L6 8l4 4"/>',
+        chevD: '<path d="M4 6l4 4 4-4"/>',
+        close: '<path d="M4 4l8 8M12 4l-8 8"/>',
+        plus: '<path d="M8 3v10M3 8h10"/>',
+        minus: '<path d="M3 8h10"/>',
+        compass:
+          '<path d="M8 2l2.4 6H5.6z" fill="#e0575b" stroke="#e0575b"/><path d="M5.6 8h4.8L8 14z"/>',
+        frame:
+          '<path d="M2.5 5.5v-3h3M10.5 2.5h3v3M13.5 10.5v3h-3M5.5 13.5h-3v-3"/><circle cx="8" cy="8" r="1.6"/>',
+        tilt: '<path d="M2 11l6 3 6-3-6-3z"/><path d="M8 8V2M6 4l2-2 2 2"/>',
+        trash: '<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 9h5.8l.6-9"/>',
+        upload: '<path d="M8 11V3M5 6l3-3 3 3M3 11v2.5h10V11"/>',
+        check: '<path d="M3 8.5l3.2 3.2L13 4.8"/>',
+        alert: '<path d="M8 2.5l6 10.5H2z"/><path d="M8 7v2.5M8 11.3v.2"/>',
+        clock: '<circle cx="8" cy="8" r="5.5"/><path d="M8 5v3.2l2 1.3"/>',
+        rotate:
+          '<path d="M12.5 8a4.5 4.5 0 1 1-1.3-3.2"/><path d="M12.5 2.5v2.8H9.7"/>',
+      };
+      const ic = (n) =>
+        `<svg class="i" viewBox="0 0 16 16" aria-hidden="true">${P[n]}</svg>`;
+      for (const el of $$("[data-ic]")) {
+        el.insertAdjacentHTML("afterbegin", ic(el.dataset.ic));
+      }
+      $("#logo").innerHTML = ic("pin");
+
+      /* ---------- the tour (fake) ---------- */
+      const KIND = {
+        pin: {
+          label: "Pin",
+          icon: "pin",
+          turns: false,
+          R: 1.6,
+          H: 3.2,
+          W: 0.9,
+          col: "#e07a6e",
+        },
+        picture: {
+          label: "Picture",
+          icon: "photo",
+          turns: true,
+          R: 2.1,
+          H: 3.0,
+          W: 2.4,
+          col: "#c9a66b",
+        },
+        stand: {
+          label: "Reading stand",
+          icon: "stand",
+          turns: true,
+          R: 1.5,
+          H: 1.3,
+          W: 1.0,
+          col: "#b7a7d6",
+        },
+        character: {
+          label: "Character",
+          icon: "character",
+          turns: true,
+          R: 1.3,
+          H: 1.85,
+          W: 0.7,
+          col: "#d6a8d0",
+        },
+      };
+      const STATION_R = 3;
+      const STATIONS = [
+        {
+          id: "s1",
+          n: 1,
+          name: "Market Fountain",
+          x: 0,
+          z: 0,
+          radius: 12,
+          open: true,
+          narr: "a1",
+          kids: ["i1", "i2", "i3"],
+        },
+        {
+          id: "s2",
+          n: 2,
+          name: "Old Town Hall",
+          x: 62,
+          z: -40,
+          radius: 15,
+          open: true,
+          kids: ["f1", "i6"],
+        },
+        {
+          id: "s3",
+          n: 3,
+          name: "River Steps",
+          x: -58,
+          z: 50,
+          radius: 10,
+          open: false,
+          kids: ["i7", "i8"],
+        },
+      ];
+      const stById = Object.fromEntries(STATIONS.map((s) => [s.id, s]));
+      const FOLDERS = {
+        f1: {
+          id: "f1",
+          name: "The bell story",
+          open: true,
+          kids: ["i4", "i5"],
+        },
+      };
+      const ITEMS = {
+        i1: {
+          kind: "pin",
+          name: "Meeting point",
+          st: "s1",
+          x: -5,
+          z: 5,
+          h: 0,
+          size: 1,
+          col: "#e07a6e",
+        },
+        i2: {
+          kind: "picture",
+          name: "The fountain in 1890",
+          st: "s1",
+          x: 5,
+          z: 2,
+          h: -30,
+          size: 1,
+          file: "a2",
+        },
+        i3: {
+          kind: "character",
+          name: "Guide Anna",
+          st: "s1",
+          x: 1,
+          z: -6,
+          h: 20,
+          size: 1,
+          file: "c1",
+        },
+        i4: {
+          kind: "stand",
+          name: "The bell's inscription",
+          st: "s2",
+          x: -5,
+          z: 4,
+          h: 15,
+          size: 1,
+          text: "Cast in 1612, recast after the fire of 1842.",
+        },
+        i5: {
+          kind: "pin",
+          name: "Bell tower view",
+          st: "s2",
+          x: 6,
+          z: -4,
+          h: 0,
+          size: 1,
+          col: "#e9a23b",
+        },
+        i6: {
+          kind: "picture",
+          name: "Hall facade 1920",
+          st: "s2",
+          x: 4,
+          z: 8,
+          h: 200,
+          size: 1,
+          file: null,
+        },
+        i7: {
+          kind: "stand",
+          name: "Flood marks",
+          st: "s3",
+          x: 3,
+          z: -3,
+          h: -60,
+          size: 1,
+          text: "The highest mark is from 1784.",
+        },
+        i8: {
+          kind: "pin",
+          name: "The steps",
+          st: "s3",
+          x: -3,
+          z: 2,
+          h: 0,
+          size: 1,
+          col: "#4f8fe8",
+        },
+      };
+      const isStation = (id) => id in stById;
+      const worldOf = (id) => {
+        if (isStation(id)) {
+          const s = stById[id];
+          return new THREE.Vector3(s.x, 0, s.z);
+        }
+        const it = ITEMS[id];
+        const s = stById[it.st];
+        return new THREE.Vector3(s.x + it.x, 0, s.z + it.z);
+      };
+      const itemsOf = (st) =>
+        st.kids.flatMap((k) => (FOLDERS[k] ? FOLDERS[k].kids : [k]));
+
+      /* ---------- the files (fake asset shelf) ---------- */
+      const FKIND = {
+        picture: { label: "Picture", icon: "photo", col: "#c9a66b" },
+        sound: { label: "Sound", icon: "sound", col: "#8fb3d9" },
+        model: { label: "3D model", icon: "model", col: "#a3b1c2" },
+        video: { label: "Video", icon: "video", col: "#8fb3d9" },
+        character: { label: "Character", icon: "character", col: "#d6a8d0" },
+      };
+      const EXT = {
+        jpg: "picture",
+        jpeg: "picture",
+        png: "picture",
+        webp: "picture",
+        mp3: "sound",
+        wav: "sound",
+        ogg: "sound",
+        m4a: "sound",
+        glb: "model",
+        gltf: "model",
+        mp4: "video",
+        webm: "video",
+        mov: "video",
+      };
+      const files = [
+        {
+          id: "a3",
+          kind: "picture",
+          name: "town-hall-1920.png",
+          ext: "PNG",
+          before: 9.4e6,
+          after: 1.3e6,
+          state: "processing",
+          progress: 0.36,
+        },
+        {
+          id: "a4",
+          kind: "model",
+          name: "bell.glb",
+          ext: "GLB",
+          before: 22e6,
+          after: 4.1e6,
+          state: "queued",
+          progress: 0,
+        },
+        {
+          id: "a2",
+          kind: "picture",
+          name: "fountain-1890.jpg",
+          ext: "JPG",
+          before: 6.2e6,
+          after: 0.9e6,
+          state: "ready",
+          progress: 1,
+        },
+        {
+          id: "a1",
+          kind: "sound",
+          name: "fountain-intro.mp3",
+          ext: "MP3",
+          before: 4.8e6,
+          after: 1.1e6,
+          state: "ready",
+          progress: 1,
+        },
+        {
+          id: "c1",
+          kind: "character",
+          name: "Guide Anna",
+          ext: "",
+          before: 31e6,
+          after: 6.2e6,
+          state: "ready",
+          progress: 1,
+          open: false,
+          parts: [
+            { kind: "model", name: "anna.glb", after: 3.4e6 },
+            { kind: "model", name: "anna-walk.glb", after: 1.9e6 },
+            { kind: "sound", name: "anna-voice.mp3", after: 0.9e6 },
+          ],
+        },
+      ];
+      const SAMPLE_DROPS = [
+        "harbour-crane.jpg",
+        "bell-chime.mp3",
+        "old-map.png",
+        "statue.glb",
+        "market-day.mp4",
+      ];
+      let dropN = 0;
+      let nextId = 10;
+      const usesOf = (fid) =>
+        Object.values(ITEMS).filter((it) => it.file === fid).length +
+        STATIONS.filter((s) => s.narr === fid).length;
+      const busyFiles = () =>
+        files.filter((f) => f.state === "processing" || f.state === "queued");
+
+      /* ---------- the UI state ---------- */
+      const params = new URLSearchParams(location.search);
+      const ui = {
+        sel: "i2",
+        tab: "details",
+        folded: false,
+        listFolded: false,
+        bottom: false,
+        pcol: "right",
+        mode: "desk",
+        preview: ["desk", "land", "port"].includes(params.get("preview"))
+          ? params.get("preview")
+          : "window",
+        protoOpen: false,
+      };
+      const app = $("#app");
+      const stage = $("#stage");
+      const listEl = $("#list");
+      const colEl = $("#col");
+      const railEl = $("#rail");
+      const bpanel = $("#bpanel");
+      const ctl = $("#ctl");
+      const isDesk = () => ui.mode === "desk";
+
+      /* ---------- three.js scene ---------- */
+      const canvas = $("#gl");
+      const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      const scene = new THREE.Scene();
+      const SKY = 0xc6d0d9;
+      scene.background = new THREE.Color(SKY);
+      scene.fog = new THREE.Fog(SKY, 160, 460);
+      const camera = new THREE.PerspectiveCamera(45, 1, 0.3, 1500);
+      scene.add(new THREE.HemisphereLight(0xf6f2ea, 0x7d8470, 1.8));
+      const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+      sun.position.set(60, 120, 40);
+      scene.add(sun);
+
+      function groundTexture() {
+        const N = 2048;
+        const c = document.createElement("canvas");
+        c.width = N;
+        c.height = N;
+        const g = c.getContext("2d");
+        const S = N / 440;
+        const X = (x) => (x + 220) * S;
+        g.fillStyle = "#e6e0d2";
+        g.fillRect(0, 0, N, N);
+        g.fillStyle = "#cbd8b4";
+        g.fillRect(X(-170), X(90), 120 * S, 110 * S);
+        g.fillRect(X(110), X(-200), 90 * S, 70 * S);
+        g.strokeStyle = "#a9c4d6";
+        g.lineWidth = 20 * S;
+        g.beginPath();
+        g.moveTo(X(-220), X(80));
+        g.bezierCurveTo(X(-90), X(55), X(40), X(130), X(220), X(100));
+        g.stroke();
+        g.strokeStyle = "#f8f5ee";
+        g.lineCap = "round";
+        const streets = [
+          [-220, -14, 220, -14, 9],
+          [-26, -220, -26, 220, 8],
+          [34, -220, 34, 50, 7],
+          [-220, -78, 220, -78, 7],
+          [96, -220, 96, 220, 7],
+          [-120, -220, -120, 60, 6],
+          [-220, 28, -26, 28, 6],
+        ];
+        for (const [x1, z1, x2, z2, w] of streets) {
+          g.lineWidth = w * S;
+          g.beginPath();
+          g.moveTo(X(x1), X(z1));
+          g.lineTo(X(x2), X(z2));
+          g.stroke();
+        }
+        g.fillStyle = "#efe9dc";
+        for (const s of STATIONS) {
+          g.beginPath();
+          g.arc(X(s.x), X(s.z), 22 * S, 0, Math.PI * 2);
+          g.fill();
+        }
+        const t = new THREE.CanvasTexture(c);
+        t.colorSpace = THREE.SRGBColorSpace;
+        t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+        return t;
+      }
+      const ground = new THREE.Mesh(
+        new THREE.PlaneGeometry(440, 440),
+        new THREE.MeshStandardMaterial({ map: groundTexture(), roughness: 1 }),
+      );
+      ground.rotation.x = -Math.PI / 2;
+      scene.add(ground);
+
+      let seed = 11;
+      const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+      const bgeo = new THREE.BoxGeometry(1, 1, 1);
+      const onStreet = (x, z) =>
+        Math.abs(z + 14) < 12 ||
+        Math.abs(x + 26) < 12 ||
+        Math.abs(z + 78) < 11 ||
+        Math.abs(x - 96) < 11 ||
+        Math.abs(x + 120) < 10;
+      for (let i = 0; i < 220; i++) {
+        const x = (rnd() - 0.5) * 400;
+        const z = (rnd() - 0.5) * 400;
+        const w = 8 + rnd() * 12;
+        const d = 8 + rnd() * 12;
+        const h = 4 + rnd() * 10;
+        if (
+          STATIONS.some((s) => Math.hypot(s.x - x, s.z - z) < 36) ||
+          onStreet(x, z) ||
+          (z > 45 && z < 120 && x < 60)
+        ) {
+          continue;
+        }
+        const shade = 0.82 + rnd() * 0.1;
+        const m = new THREE.Mesh(
+          bgeo,
+          new THREE.MeshStandardMaterial({
+            color: new THREE.Color(shade, shade * 0.97, shade * 0.92),
+            roughness: 0.95,
+          }),
+        );
+        m.scale.set(w, h, d);
+        m.position.set(x, h / 2, z);
+        scene.add(m);
+      }
+
+      /* Trees round the squares, for a sense of scale near the stations. */
+      const trunkGeo = new THREE.CylinderGeometry(0.14, 0.2, 2.2, 6);
+      const crownGeo = new THREE.SphereGeometry(1.6, 10, 8);
+      const trunkMat = new THREE.MeshStandardMaterial({
+        color: 0x7a6650,
+        roughness: 1,
+      });
+      const crownMat = new THREE.MeshStandardMaterial({
+        color: 0x8fa977,
+        roughness: 1,
+      });
+      const itemSpots = Object.values(ITEMS).map((it) => [
+        stById[it.st].x + it.x,
+        stById[it.st].z + it.z,
+      ]);
+      for (let i = 0; i < 240; i++) {
+        const s = STATIONS[i % STATIONS.length];
+        const a = rnd() * Math.PI * 2;
+        const r = 9 + rnd() * 30;
+        const x = s.x + Math.cos(a) * r;
+        const z = s.z + Math.sin(a) * r;
+        if (
+          itemSpots.some(([ix, iz]) => Math.hypot(ix - x, iz - z) < 5) ||
+          Math.hypot(s.x - x, s.z - z) < 8
+        ) {
+          continue;
+        }
+        const k = 0.7 + rnd() * 0.6;
+        const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+        trunk.position.set(x, 1.1 * k, z);
+        trunk.scale.setScalar(k);
+        const crown = new THREE.Mesh(crownGeo, crownMat);
+        crown.position.set(x, 3.2 * k, z);
+        crown.scale.set(k, k * 1.15, k);
+        scene.add(trunk, crown);
+        if (i > 60) {
+          break;
+        }
+      }
+
+      const mat = (color) =>
+        new THREE.MeshStandardMaterial({ color, roughness: 0.7 });
+      function pictureTexture(withFile) {
+        const c = document.createElement("canvas");
+        c.width = 256;
+        c.height = 170;
+        const g = c.getContext("2d");
+        if (!withFile) {
+          g.fillStyle = "#5d6168";
+          g.fillRect(0, 0, 256, 170);
+          g.fillStyle = "#d9dbe0";
+          g.font = "600 22px sans-serif";
+          g.textAlign = "center";
+          g.fillText("No picture yet", 128, 92);
+        } else {
+          const gr = g.createLinearGradient(0, 0, 0, 170);
+          gr.addColorStop(0, "#d8c49a");
+          gr.addColorStop(1, "#8f7650");
+          g.fillStyle = gr;
+          g.fillRect(0, 0, 256, 170);
+          g.fillStyle = "#5e4a30";
+          g.fillRect(40, 70, 70, 80);
+          g.fillRect(150, 50, 70, 100);
+          g.beginPath();
+          g.ellipse(128, 140, 46, 14, 0, 0, Math.PI * 2);
+          g.fill();
+          g.fillRect(122, 96, 12, 44);
+        }
+        const t = new THREE.CanvasTexture(c);
+        t.colorSpace = THREE.SRGBColorSpace;
+        return t;
+      }
+      const MAKERS = {
+        pin(it) {
+          const g = new THREE.Group();
+          const stick = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.05, 0.05, 2.4, 8),
+            mat(0x8a8f99),
+          );
+          stick.position.y = 1.2;
+          const head = new THREE.Mesh(
+            new THREE.SphereGeometry(0.42, 20, 14),
+            mat(new THREE.Color(it.col)),
+          );
+          head.position.y = 2.75;
+          head.userData.tint = true;
+          g.add(stick, head);
+          return g;
+        },
+        picture(it) {
+          const g = new THREE.Group();
+          for (const sx of [-1.05, 1.05]) {
+            const post = new THREE.Mesh(
+              new THREE.CylinderGeometry(0.05, 0.05, 2.9, 8),
+              mat(0x5b5f66),
+            );
+            post.position.set(sx, 1.45, -0.05);
+            g.add(post);
+          }
+          const face = new THREE.MeshStandardMaterial({
+            map: pictureTexture(Boolean(it.file)),
+            roughness: 0.8,
+          });
+          const side = mat(0x3a3d42);
+          const board = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.6, 0.06), [
+            side,
+            side,
+            side,
+            side,
+            face,
+            side,
+          ]);
+          board.position.y = 2.2;
+          g.userData.face = face;
+          g.add(board);
+          return g;
+        },
+        stand() {
+          const g = new THREE.Group();
+          const post = new THREE.Mesh(
+            new THREE.BoxGeometry(0.12, 1.0, 0.12),
+            mat(0x6b5a48),
+          );
+          post.position.y = 0.5;
+          const top = new THREE.Mesh(
+            new THREE.BoxGeometry(0.95, 0.06, 0.62),
+            mat(0x8a7356),
+          );
+          top.position.y = 1.1;
+          top.rotation.x = 0.45;
+          top.userData.tint = true;
+          const base = new THREE.Mesh(
+            new THREE.BoxGeometry(0.5, 0.05, 0.4),
+            mat(0x5b4b3c),
+          );
+          base.position.y = 0.03;
+          g.add(post, top, base);
+          return g;
+        },
+        character() {
+          const g = new THREE.Group();
+          const body = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.22, 0.3, 1.15, 16),
+            mat(0x9b6b95),
+          );
+          body.position.y = 0.72;
+          body.userData.tint = true;
+          const head = new THREE.Mesh(
+            new THREE.SphereGeometry(0.2, 16, 12),
+            mat(0xe2c2a4),
+          );
+          head.position.y = 1.55;
+          const nose = new THREE.Mesh(
+            new THREE.ConeGeometry(0.06, 0.18, 8),
+            mat(0xe2c2a4),
+          );
+          nose.rotation.x = Math.PI / 2;
+          nose.position.set(0, 1.55, 0.24);
+          g.add(body, head, nose);
+          return g;
+        },
+      };
+
+      const circle = new THREE.BufferGeometry().setFromPoints(
+        Array.from(
+          { length: 96 },
+          (_, i) =>
+            new THREE.Vector3(
+              Math.cos((i / 96) * Math.PI * 2),
+              0,
+              Math.sin((i / 96) * Math.PI * 2),
+            ),
+        ),
+      );
+      const groups = {};
+      const pickables = [];
+      for (const s of STATIONS) {
+        const g = new THREE.Group();
+        const base = new THREE.Mesh(
+          new THREE.CylinderGeometry(1.0, 1.3, 0.3, 24),
+          mat(0x4f7fb8),
+        );
+        base.position.y = 0.15;
+        base.userData.tint = true;
+        const beam = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.1, 0.1, 6, 8),
+          new THREE.MeshBasicMaterial({
+            color: 0x6fa0e0,
+            transparent: true,
+            opacity: 0.55,
+          }),
+        );
+        beam.position.y = 3.3;
+        const top = new THREE.Mesh(
+          new THREE.SphereGeometry(0.35, 16, 12),
+          mat(0x4f8fe8),
+        );
+        top.position.y = 6.4;
+        const ring = new THREE.LineLoop(
+          circle,
+          new THREE.LineBasicMaterial({
+            color: 0x4f8fe8,
+            transparent: true,
+            opacity: 0.55,
+          }),
+        );
+        ring.position.y = 0.06;
+        g.add(base, beam, top, ring);
+        g.userData = { id: s.id, ring };
+        groups[s.id] = g;
+        pickables.push(g);
+        scene.add(g);
+      }
+      for (const [id, it] of Object.entries(ITEMS)) {
+        const g = MAKERS[it.kind](it);
+        g.userData.id = id;
+        groups[id] = g;
+        pickables.push(g);
+        scene.add(g);
+      }
+      function place(id) {
+        const g = groups[id];
+        g.position.copy(worldOf(id));
+        if (isStation(id)) {
+          g.userData.ring.scale.setScalar(stById[id].radius);
+          for (const k of itemsOf(stById[id])) {
+            place(k);
+          }
+          return;
+        }
+        const it = ITEMS[id];
+        g.rotation.y = it.h * DEG;
+        g.scale.setScalar(it.size);
+      }
+      for (const s of STATIONS) {
+        place(s.id);
+      }
+
+      const discGroup = new THREE.Group();
+      const discFill = new THREE.Mesh(
+        new THREE.CircleGeometry(1, 48),
+        new THREE.MeshBasicMaterial({
+          color: 0xe9a23b,
+          transparent: true,
+          opacity: 0.18,
+          depthWrite: false,
+        }),
+      );
+      const discRing = new THREE.Mesh(
+        new THREE.RingGeometry(0.9, 1, 64),
+        new THREE.MeshBasicMaterial({
+          color: 0xe9a23b,
+          transparent: true,
+          opacity: 0.95,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+        }),
+      );
+      for (const m of [discFill, discRing]) {
+        m.rotation.x = -Math.PI / 2;
+        m.renderOrder = 2;
+        discGroup.add(m);
+      }
+      discGroup.position.y = 0.05;
+      scene.add(discGroup);
+
+      function discR(id) {
+        if (isStation(id)) {
+          return STATION_R;
+        }
+        const it = ITEMS[id];
+        return KIND[it.kind].R * it.size;
+      }
+      function updateSelVisual() {
+        for (const [id, g] of Object.entries(groups)) {
+          const on = id === ui.sel;
+          g.traverse((o) => {
+            if (o.userData.tint && o.material) {
+              o.material.emissive.setHex(on ? 0x5a3a08 : 0x000000);
+            }
+          });
+          if (isStation(id)) {
+            g.userData.ring.material.color.setHex(on ? 0xe9a23b : 0x4f8fe8);
+            g.userData.ring.material.opacity = on ? 0.95 : 0.55;
+          }
+        }
+        discGroup.visible = Boolean(ui.sel);
+        if (ui.sel) {
+          const p = worldOf(ui.sel);
+          discGroup.position.set(p.x, 0.05, p.z);
+          discGroup.scale.setScalar(discR(ui.sel));
+        }
+        dirty = true;
+      }
+
+      /* ---------- the camera: an off-axis frame of the visible part ---------- */
+      const cam = {
+        tx: 0,
+        ty: 0,
+        tz: 0,
+        d: 40,
+        az: 0.55,
+        el: 0.7,
+        ox: 0,
+        oy: 0,
+      };
+      let tween = null;
+      let dirty = true;
+      const sw = () => stage.clientWidth;
+      const sh = () => stage.clientHeight;
+      function applyCam() {
+        const W = sw();
+        const H = sh();
+        const t = new THREE.Vector3(cam.tx, cam.ty, cam.tz);
+        const ce = Math.cos(cam.el);
+        camera.position.set(
+          t.x + cam.d * ce * Math.sin(cam.az),
+          t.y + cam.d * Math.sin(cam.el),
+          t.z + cam.d * ce * Math.cos(cam.az),
+        );
+        camera.lookAt(t);
+        camera.aspect = W / H;
+        // The principal point moves to (ox, oy): the target is drawn there.
+        camera.setViewOffset(W, H, W / 2 - cam.ox, H / 2 - cam.oy, W, H);
+        camera.updateProjectionMatrix();
+        camera.updateMatrixWorld();
+      }
+      /** A world point in stage pixels; `z` is 2 for a point behind the
+       * camera, whose projection would otherwise land anywhere. */
+      function project(w) {
+        const inView = w.clone().applyMatrix4(camera.matrixWorldInverse);
+        if (inView.z > -camera.near) {
+          return { x: -1e4, y: -1e4, z: 2 };
+        }
+        const v = w.clone().project(camera);
+        return { x: ((v.x + 1) / 2) * sw(), y: ((1 - v.y) / 2) * sh(), z: v.z };
+      }
+      const camRight = () =>
+        new THREE.Vector3(Math.cos(cam.az), 0, -Math.sin(cam.az));
+
+      function rectOf(el) {
+        return {
+          l: el.offsetLeft,
+          t: el.offsetTop,
+          r: el.offsetLeft + el.offsetWidth,
+          b: el.offsetTop + el.offsetHeight,
+        };
+      }
+      const visible = (el) => !el.hidden && el.offsetWidth > 0;
+      function sideOf(el) {
+        if (el === bpanel || ui.mode === "port") {
+          return "bottom";
+        }
+        return el === listEl ? "left" : "right";
+      }
+      /** The 3D view's open part: the stage minus every panel (and, with
+       * `withCtl`, minus the map controls' strip). */
+      function freeRect(withCtl) {
+        const f = { l: 0, t: 3, r: sw(), b: sh() };
+        for (const el of [listEl, colEl, railEl, bpanel]) {
+          if (!visible(el)) {
+            continue;
+          }
+          const r = rectOf(el);
+          const side = sideOf(el);
+          if (side === "left") {
+            f.l = Math.max(f.l, r.r);
+          } else if (side === "right") {
+            f.r = Math.min(f.r, r.l);
+          } else {
+            f.b = Math.min(f.b, r.t);
+          }
+        }
+        if (withCtl) {
+          const c = rectOf(ctl);
+          if (isDesk()) {
+            f.b = Math.min(f.b, c.t);
+          } else {
+            f.r = Math.min(f.r, c.l);
+          }
+        }
+        return f;
+      }
+      function frameRect() {
+        const f = freeRect(true);
+        const m = isDesk() ? 18 : 12;
+        return { l: f.l + m, t: f.t + m, r: f.r - m, b: f.b - m };
+      }
+      const inRect = (p, r, pad) =>
+        p.z < 1 &&
+        p.x >= r.l + pad &&
+        p.x <= r.r - pad &&
+        p.y >= r.t + pad &&
+        p.y <= r.b - pad;
+
+      function fitPoints(id) {
+        const p = worldOf(id);
+        const pts = [];
+        if (isStation(id)) {
+          const r = stById[id].radius;
+          for (let i = 0; i < 24; i++) {
+            const a = (i / 24) * Math.PI * 2;
+            pts.push(
+              p
+                .clone()
+                .add(new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r)),
+            );
+          }
+          return { pts, centre: p.clone(), R: STATION_R };
+        }
+        const it = ITEMS[id];
+        const k = KIND[it.kind];
+        const R = k.R * it.size;
+        for (let i = 0; i < 16; i++) {
+          const a = (i / 16) * Math.PI * 2;
+          pts.push(
+            p
+              .clone()
+              .add(new THREE.Vector3(Math.cos(a) * R, 0, Math.sin(a) * R)),
+          );
+        }
+        const right = camRight();
+        const half = (k.W * it.size) / 2 + 0.15;
+        const top = k.H * it.size;
+        pts.push(
+          p.clone().addScaledVector(right, half).setY(top),
+          p.clone().addScaledVector(right, -half).setY(top),
+        );
+        return { pts, centre: p.clone().setY(top * 0.35), R };
+      }
+      /** Where the camera must be for the selection's handles to fit the
+       * visible part: centred on it, at the nearest distance (found by
+       * bisection) that still keeps every handle inside, but never so far
+       * that the move disc gets smaller than about 60 px across. */
+      function fitCam(id) {
+        const fr = frameRect();
+        const { pts, centre, R } = fitPoints(id);
+        const saved = { ...cam };
+        const base = {
+          tx: centre.x,
+          ty: centre.y,
+          tz: centre.z,
+          az: cam.az,
+          el: cam.el,
+          ox: (fr.l + fr.r) / 2,
+          oy: (fr.t + fr.b) / 2,
+        };
+        const fits = (d) => {
+          Object.assign(cam, base, { d });
+          applyCam();
+          return pts.every((w) => inRect(project(w), fr, 14));
+        };
+        let lo = 1.5;
+        let hi = 900;
+        for (let i = 0; i < 26; i++) {
+          const mid = Math.sqrt(lo * hi);
+          if (fits(mid)) {
+            hi = mid;
+          } else {
+            lo = mid;
+          }
+        }
+        const tanH = Math.tan((camera.fov * DEG) / 2);
+        const minSide = Math.max(60, Math.min(fr.r - fr.l, fr.b - fr.t));
+        const dComfort = isStation(id)
+          ? 0
+          : (R * sh()) / (tanH * 0.27 * minSide);
+        const d60 = (R * sh()) / (tanH * 60);
+        const d = Math.min(Math.max(hi, dComfort), d60);
+        Object.assign(cam, saved);
+        applyCam();
+        return { ...base, d };
+      }
+      const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
+      function goTo(to, ms) {
+        if (!ms || reduced) {
+          Object.assign(cam, to);
+          tween = null;
+          dirty = true;
+          afterFrame();
+          return;
+        }
+        tween = { from: { ...cam }, to, t0: performance.now(), ms };
+      }
+      let guideTimer = 0;
+      function flashGuide() {
+        const g = $("#guide");
+        const fr = frameRect();
+        Object.assign(g.style, {
+          left: `${fr.l}px`,
+          top: `${fr.t}px`,
+          width: `${fr.r - fr.l}px`,
+          height: `${fr.b - fr.t}px`,
+        });
+        g.classList.add("show");
+        clearTimeout(guideTimer);
+        guideTimer = setTimeout(() => g.classList.remove("show"), 900);
+      }
+      function frameSel(animate) {
+        if (!ui.sel || sw() < 10) {
+          return;
+        }
+        goTo(fitCam(ui.sel), animate ? 650 : 0);
+        if (animate) {
+          flashGuide();
+        }
+      }
+
+      /* ---------- handles over the view ---------- */
+      const hEls = Object.fromEntries(
+        $$("[data-h]").map((el) => [el.dataset.h, el]),
+      );
+      function radiusDot(st) {
+        const p = worldOf(st.id);
+        const right = camRight();
+        const want = p.clone().addScaledVector(right, st.radius);
+        const fr = freeRect(true);
+        if (inRect(project(want), fr, 12)) {
+          return want;
+        }
+        // The circle runs past the visible part: the dot goes to the
+        // visible point of the circle that is most to the right.
+        let best = null;
+        let bestScore = -Infinity;
+        for (let i = 0; i < 48; i++) {
+          const a = (i / 48) * Math.PI * 2;
+          const w = p
+            .clone()
+            .add(
+              new THREE.Vector3(
+                Math.cos(a) * st.radius,
+                0,
+                Math.sin(a) * st.radius,
+              ),
+            );
+          const s = w.clone().sub(p).dot(right);
+          if (s > bestScore && inRect(project(w), fr, 12)) {
+            best = w;
+            bestScore = s;
+          }
+        }
+        return best || want;
+      }
+      function handleWorlds() {
+        const id = ui.sel;
+        if (!id) {
+          return {};
+        }
+        const p = worldOf(id);
+        if (isStation(id)) {
+          return { radius: radiusDot(stById[id]) };
+        }
+        const it = ITEMS[id];
+        const k = KIND[it.kind];
+        const R = k.R * it.size;
+        const out = {};
+        if (k.turns) {
+          out.knob = p
+            .clone()
+            .add(
+              new THREE.Vector3(
+                Math.sin(it.h * DEG) * R,
+                0,
+                Math.cos(it.h * DEG) * R,
+              ),
+            );
+        }
+        const right = camRight();
+        const half = (k.W * it.size) / 2 + 0.15;
+        out.size = p
+          .clone()
+          .addScaledVector(right, half)
+          .setY(k.H * it.size);
+        out.size2 = p
+          .clone()
+          .addScaledVector(right, -half)
+          .setY(k.H * it.size);
+        return out;
+      }
+      let handlePx = {};
+      function updateHandles() {
+        const w = handleWorlds();
+        handlePx = {};
+        for (const [k, el] of Object.entries(hEls)) {
+          if (!w[k]) {
+            el.hidden = true;
+            continue;
+          }
+          const p = project(w[k]);
+          handlePx[k] = p;
+          el.hidden = p.z > 1;
+          el.style.transform = `translate(${p.x}px, ${p.y}px)`;
+        }
+        $("#needle").style.transform =
+          `rotate(${(cam.az / DEG).toFixed(1)}deg)`;
+      }
+
+      /* ---------- the live check ---------- */
+      function check() {
+        const panels = [listEl, colEl, railEl, bpanel]
+          .filter(visible)
+          .map(rectOf);
+        const c = rectOf(ctl);
+        const blockers = [...panels, c];
+        const W = sw();
+        const H = sh();
+        const pts = { ...handlePx };
+        if (ui.sel) {
+          const p = worldOf(ui.sel);
+          const R = discR(ui.sel);
+          for (let i = 0; i < 8; i++) {
+            const a = (i / 8) * Math.PI * 2;
+            pts[`disc${i}`] = project(
+              p
+                .clone()
+                .add(new THREE.Vector3(Math.cos(a) * R, 0, Math.sin(a) * R)),
+            );
+          }
+          const a = project(p.clone().addScaledVector(camRight(), R));
+          const b = project(p.clone().addScaledVector(camRight(), -R));
+          pts.discAcross = Math.round(Math.hypot(a.x - b.x, a.y - b.y));
+        }
+        const discAcross = pts.discAcross;
+        delete pts.discAcross;
+        const under = Object.entries(pts)
+          .filter(
+            ([, p]) =>
+              p.z > 1 ||
+              p.x < 0 ||
+              p.y < 0 ||
+              p.x > W ||
+              p.y > H ||
+              blockers.some(
+                (r) => p.x > r.l && p.x < r.r && p.y > r.t && p.y < r.b,
+              ),
+          )
+          .map(([k]) => k);
+        const f = freeRect(false);
+        const overlap = (a, b) =>
+          a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
+        return {
+          mode: ui.mode,
+          window: [app.clientWidth, app.clientHeight],
+          view3d: [Math.round(f.r - f.l), Math.round(f.b - f.t)],
+          handles: Object.keys(pts).length,
+          under,
+          discAcross,
+          controlsOverlap:
+            panels.some((r) => overlap(r, c)) || c.t < 0 || c.l < 0,
+        };
+      }
+      window.protoCheck = check;
+      window.protoSelect = (id, from) => select(id, from || "view");
+      function renderCheck() {
+        if ($("#notes").hidden) {
+          return;
+        }
+        const r = check();
+        const names = {
+          desk: "desktop",
+          land: "phone sideways",
+          port: "phone upright",
+        };
+        $("#liveCheck").innerHTML =
+          `${names[r.mode]}, ${r.window[0]} x ${r.window[1]}<br>3D view open: ${r.view3d[0]} x ${r.view3d[1]} px<br>handles and disc edge: ${r.handles} points, ${r.under.length ? `UNDER A PANEL: ${esc(r.under.join(", "))}` : "none under a panel"}<br>move disc: ${r.discAcross || "-"} px across<br>map controls: ${r.controlsOverlap ? "OVERLAP a panel" : "overlap nothing"}`;
+      }
+      function afterFrame() {
+        renderCheck();
+      }
+
+      /* ---------- the render loop ---------- */
+      function loop(now) {
+        if (tween) {
+          const k = Math.min(1, (now - tween.t0) / tween.ms);
+          const e = ease(k);
+          for (const key of Object.keys(tween.to)) {
+            cam[key] = tween.from[key] + (tween.to[key] - tween.from[key]) * e;
+          }
+          dirty = true;
+          if (k >= 1) {
+            tween = null;
+            setTimeout(afterFrame, 0);
+          }
+        }
+        if (dirty) {
+          applyCam();
+          renderer.render(scene, camera);
+          updateHandles();
+          dirty = false;
+        }
+        requestAnimationFrame(loop);
+      }
+
+      /* ---------- rendering the panels ---------- */
+      function rowIcon(it) {
+        const k = KIND[it.kind];
+        return `<span class="ic" style="color:${k.col}">${ic(k.icon)}</span>`;
+      }
+      function kidHtml(id, deep) {
+        const it = ITEMS[id];
+        return `<div class="kid${deep ? " deep" : ""}${ui.sel === id ? " sel" : ""}" data-sel="${id}" data-drop="${id}">${rowIcon(it)}<span class="nm">${esc(it.name)}</span></div>`;
+      }
+      function treeHtml() {
+        return STATIONS.map((st) => {
+          const n = itemsOf(st).length;
+          const kids = st.open
+            ? st.kids
+                .map((k) => {
+                  const f = FOLDERS[k];
+                  if (!f) {
+                    return kidHtml(k, false);
+                  }
+                  return `<div class="folder" data-ftw="${f.id}"><button class="tw" type="button" tabindex="-1">${ic(f.open ? "chevD" : "chev")}</button><span class="ic" style="color:var(--acc-text)">${ic("folder")}</span><span class="nm">${esc(f.name)}</span><span class="meta">${f.kids.length}</span></div>${f.open ? f.kids.map((x) => kidHtml(x, true)).join("") : ""}`;
+                })
+                .join("")
+            : "";
+          return `<div class="card"><div class="head${ui.sel === st.id ? " sel" : ""}" data-sel="${st.id}"><button class="tw" type="button" data-tw="${st.id}" aria-label="${st.open ? "Fold" : "Unfold"}">${ic(st.open ? "chevD" : "chev")}</button><span class="n">${st.n}</span><span class="nm">${esc(st.name)}</span>${st.open ? "" : `<span class="meta">${n}</span>`}</div>${kids}</div>`;
+        }).join("");
+      }
+      function renderList() {
+        $("#tree").innerHTML = treeHtml();
+        $("#stCount").textContent = String(STATIONS.length);
+      }
+
+      const field = (label, html) =>
+        `<div class="f"><span class="flabel">${label}</span>${html}</div>`;
+      const roNum = (v, unit) =>
+        `<span class="num ro"><span class="val">${v}</span><span class="unit">${unit}</span></span>`;
+      const rangeHtml = (f, v, min, max, step, unit, label) =>
+        `<div class="range"><input type="range" data-f="${f}" min="${min}" max="${max}" step="${step}" value="${v}" aria-label="${label}"><span class="num"><input class="val" data-f="${f}" value="${v}" inputmode="decimal" aria-label="${label}"><span class="unit">${unit}</span></span></div>`;
+      function fileUseHtml(it, kinds) {
+        const f = files.find((x) => x.id === it.file);
+        const opts = files
+          .filter((x) => kinds.includes(x.kind))
+          .map(
+            (x) =>
+              `<option value="${x.id}"${x.id === it.file ? " selected" : ""}>${esc(x.name)}${x.state === "ready" ? "" : " (being made smaller, usable now)"}</option>`,
+          )
+          .join("");
+        const now = f
+          ? `<span class="ic" style="color:${FKIND[f.kind].col}">${ic(FKIND[f.kind].icon)}</span><span class="fu-name">${esc(f.name)}</span>${f.state === "ready" ? "" : `<span class="fu-state">${Math.round(f.progress * 100)} %</span>`}`
+          : `<span class="fu-none">No file yet</span>`;
+        return `<div class="fileuse">${now}</div>${field("Use a file", `<select class="tfield" data-f="file"><option value="">None</option>${opts}</select>`)}
+          <p class="note">Or drag a file from Files onto the item in the view or onto its row in the list.</p>`;
+      }
+      function lookHtml(it) {
+        if (it.kind === "picture") {
+          return fileUseHtml(it, ["picture"]);
+        }
+        if (it.kind === "character") {
+          return fileUseHtml(it, ["character"]);
+        }
+        if (it.kind === "stand") {
+          return `<textarea class="tfield" data-f="text" aria-label="Text on the stand">${esc(it.text)}</textarea><p class="note">Read on the stand's top.</p>`;
+        }
+        const cols = ["#e07a6e", "#e9a23b", "#7fb77a", "#4f8fe8", "#b7a7d6"];
+        return field(
+          "Colour",
+          `<div class="swatches">${cols.map((c) => `<button type="button" data-col="${c}" style="background:${c}" aria-label="Colour ${c}" aria-pressed="${it.col === c}"></button>`).join("")}</div>`,
+        );
+      }
+      function placeHtml(p) {
+        return `<section class="isec"><h4>Place</h4>${field("East", roNum(p.x.toFixed(1), "m"))}${field("North", roNum((-p.z).toFixed(1), "m"))}<p class="note">Drag the disc in the view to move it.</p></section>`;
+      }
+      function itemDetails(id) {
+        const it = ITEMS[id];
+        const k = KIND[it.kind];
+        const st = stById[it.st];
+        const heading = k.turns
+          ? field(
+              "Heading",
+              rangeHtml("h", Math.round(it.h), -180, 180, 1, "°", "Heading"),
+            )
+          : `<p class="note">A pin always faces the visitor, so it has no heading and no turn knob.</p>`;
+        return `<div class="dh"><span class="hic" style="color:${k.col}">${ic(k.icon)}</span><input class="ttlin" data-f="name" value="${esc(it.name)}" aria-label="Name"></div>
+          <div class="sub">${k.label} in <button class="lnk" type="button" data-sel="${st.id}">${st.n} ${esc(st.name)}</button></div>
+          ${placeHtml(worldOf(id))}
+          <section class="isec"><h4>Size and heading</h4>${field("Size", rangeHtml("size", it.size.toFixed(2), 0.4, 3, 0.05, "x", "Size"))}${heading}</section>
+          <section class="isec"><h4>Look</h4>${lookHtml(it)}</section>
+          <section class="isec"><button class="btn danger" type="button" data-act="del">${ic("trash")}Delete</button></section>`;
+      }
+      function stationDetails(st) {
+        const rows = itemsOf(st)
+          .map(
+            (k) =>
+              `<div class="kid" data-sel="${k}">${rowIcon(ITEMS[k])}<span class="nm">${esc(ITEMS[k].name)}</span></div>`,
+          )
+          .join("");
+        return `<div class="dh"><span class="hic"><span class="n">${st.n}</span></span><input class="ttlin" data-f="name" value="${esc(st.name)}" aria-label="Name"></div>
+          <div class="sub">Station ${st.n} of ${STATIONS.length}</div>
+          ${placeHtml(worldOf(st.id))}
+          <section class="isec"><h4>Arrival</h4>${field("Radius", rangeHtml("radius", st.radius, 3, 40, 1, "m", "Radius"))}<p class="note">A visitor inside this circle has arrived. Drag the blue dot in the view.</p></section>
+          <section class="isec"><h4>Contents</h4><div class="clist">${rows}</div></section>
+          <section class="isec"><button class="btn danger" type="button" data-act="del">${ic("trash")}Delete station</button></section>`;
+      }
+      function renderDetails() {
+        const id = ui.sel;
+        $("#details").innerHTML = !id
+          ? `<div class="empty">Select a station or an item, in the list or in the view.</div>`
+          : isStation(id)
+            ? stationDetails(stById[id])
+            : itemDetails(id);
+      }
+
+      const RING_C = 2 * Math.PI * 15;
+      function ringSvg(f) {
+        if (f.state !== "processing" && f.state !== "queued") {
+          return "";
+        }
+        return `<svg class="rg" viewBox="0 0 34 34" aria-hidden="true"><circle class="bgc" cx="17" cy="17" r="15"/><circle class="fg" cx="17" cy="17" r="15" stroke-dasharray="${RING_C}" stroke-dashoffset="${RING_C * (1 - f.progress)}"/></svg>`;
+      }
+      function stateLine(f) {
+        if (f.state === "processing") {
+          const pc = Math.round(f.progress * 100);
+          return `<span class="fstate"><span class="pc">${pc} %</span><span class="bar"><i style="width:${pc}%"></i></span><span>usable now</span></span>`;
+        }
+        if (f.state === "queued") {
+          return `<span class="fstate">${ic("clock")}<span>Waiting, usable now</span></span>`;
+        }
+        const gain = Math.round((1 - f.after / f.before) * 100);
+        return `<span class="fstate ready">${ic("check")}<span>${fmt(f.before)} → ${fmt(f.after)}</span><span class="gain">-${gain} %</span></span>`;
+      }
+      function fileRowHtml(f) {
+        const k = FKIND[f.kind];
+        const n = usesOf(f.id);
+        const uses = `<span class="uses">${n ? `Used in ${n}` : "Not used"}</span>`;
+        const thumb = `<span class="fthumb" style="color:${k.col}">${ringSvg(f)}${ic(k.icon)}</span>`;
+        if (f.parts) {
+          const parts = f.open
+            ? `<div class="fparts">${f.parts.map((p) => `<div class="fpart"><span class="ic" style="color:${FKIND[p.kind].col}">${ic(FKIND[p.kind].icon)}</span><span class="fname">${esc(p.name)}</span><span class="fmeta">${fmt(p.after)}</span></div>`).join("")}</div>`
+            : "";
+          return `<div class="frow ready" role="listitem" draggable="true" data-fid="${f.id}"><button class="tw" type="button" data-ftog="${f.id}" aria-expanded="${Boolean(f.open)}" aria-label="Its files">${ic(f.open ? "chevD" : "chev")}</button>${thumb}<span class="fmain"><span class="ftop"><span class="fname">${esc(f.name)}</span>${uses}</span><span class="fmeta">${k.label} · ${f.parts.length} files</span>${stateLine(f)}</span></div>${parts}`;
+        }
+        return `<div class="frow ${f.state}${f.fresh ? " fresh" : ""}" role="listitem" draggable="true" data-fid="${f.id}">${thumb}<span class="fmain"><span class="ftop"><span class="fname">${esc(f.name)}</span>${uses}</span><span class="fmeta">${k.label} · ${f.ext} · ${fmt(f.before)}</span>${stateLine(f)}</span></div>`;
+      }
+      function filesHtml() {
+        const busy = busyFiles();
+        const before = files.reduce((s, f) => s + f.before, 0);
+        const after = files.reduce(
+          (s, f) => s + (f.state === "ready" ? f.after : f.before),
+          0,
+        );
+        const tot = busy.length
+          ? busy.reduce((s, f) => s + f.progress, 0) / busy.length
+          : 1;
+        const sum = busy.length
+          ? `<b>Making ${busy.length} of ${files.length} smaller</b>, every file is usable now.<span class="bar" id="sumBar"><i style="width:${Math.round(tot * 100)}%"></i></span>`
+          : `<b>${files.length} files ready.</b> A phone downloads ${fmt(after)} instead of ${fmt(before)}.`;
+        const html = `<div class="fsum">${sum}</div><div role="list">${files.map(fileRowHtml).join("")}</div>
+          <div class="fadd"><button class="btn" type="button" data-act="simdrop">${ic("upload")}Add files...</button><span>or drop them anywhere on the page</span></div>`;
+        for (const f of files) {
+          f.fresh = false;
+        }
+        return html;
+      }
+      function renderFiles() {
+        const pane = $("#filesPane");
+        const top = pane.scrollTop;
+        pane.innerHTML = filesHtml();
+        pane.scrollTop = top;
+      }
+      function renderBadges() {
+        const busy = busyFiles().length;
+        for (const b of $$('[data-badge="files"]')) {
+          b.className = `badge${busy ? " busy" : ""}`;
+          b.innerHTML = busy ? `<i class="spin"></i>${busy}` : "";
+          b.title = busy ? `${busy} files being made smaller` : "";
+        }
+      }
+      function popBadges() {
+        for (const b of $$('[data-badge="files"]')) {
+          b.classList.remove("pop");
+          void b.offsetWidth;
+          b.classList.add("pop");
+        }
+      }
+      function renderCol() {
+        for (const t of $$(".tab")) {
+          t.setAttribute("aria-selected", String(t.dataset.tab === ui.tab));
+        }
+        $("#details").hidden = ui.tab !== "details";
+        $("#filesPane").hidden = ui.tab !== "files";
+        $("#ctitle").innerHTML =
+          ui.tab === "details"
+            ? "Details"
+            : `Files <span class="badge" data-badge="files"></span>`;
+        for (const b of $$("[data-rail]")) {
+          b.classList.toggle("on", b.dataset.rail === ui.tab);
+        }
+        renderDetails();
+        renderFiles();
+      }
+      function renderSwitch() {
+        for (const b of $$("[data-sw]")) {
+          const on =
+            b.dataset.sw === "list"
+              ? ui.pcol === "list"
+              : ui.pcol === "right" && ui.tab === b.dataset.sw;
+          b.setAttribute("aria-pressed", String(on));
+        }
+        $("#probTog").setAttribute("aria-pressed", String(ui.bottom));
+      }
+      function renderAll() {
+        renderList();
+        renderCol();
+        renderSwitch();
+        renderBadges();
+        updateSelVisual();
+      }
+
+      /* ---------- layout ---------- */
+      function layout() {
+        const W = app.clientWidth;
+        const H = app.clientHeight;
+        ui.mode = W <= 700 || H <= 500 ? (W > H ? "land" : "port") : "desk";
+        app.dataset.mode = ui.mode;
+        app.classList.toggle("narrow", W <= 1100);
+        app.classList.toggle("lfold", isDesk() && ui.listFolded);
+        listEl.hidden = isDesk() ? false : ui.pcol !== "list";
+        colEl.hidden = isDesk() ? ui.folded : ui.pcol !== "right";
+        railEl.hidden = !isDesk() || !ui.folded;
+        bpanel.hidden = !isDesk() || !ui.bottom;
+        placeControls();
+        renderSwitch();
+        renderer.setSize(sw(), sh(), false);
+        dirty = true;
+      }
+      /** The bottom panel between the docks, then the map controls in the
+       * corner of what is left of the 3D view. */
+      function placeControls() {
+        if (!bpanel.hidden) {
+          const right = colEl.hidden ? railEl.offsetWidth : colEl.offsetWidth;
+          bpanel.style.left = `${listEl.offsetWidth}px`;
+          bpanel.style.right = `${right}px`;
+        }
+        ctl.style.right = "auto";
+        ctl.style.bottom = "auto";
+        const f = freeRect(false);
+        ctl.style.right = `${sw() - f.r + 12}px`;
+        ctl.style.bottom = `${sh() - f.b + 12}px`;
+      }
+      function relayout(animate) {
+        layout();
+        frameSel(animate);
+        renderCheck();
+      }
+
+      /* ---------- selecting ---------- */
+      function select(id, from) {
+        ui.sel = id;
+        if (isDesk()) {
+          ui.tab = "details";
+        } else if (from !== "list") {
+          ui.pcol = "right";
+          ui.tab = "details";
+        }
+        if (!isStation(id)) {
+          stById[ITEMS[id].st].open = true;
+        }
+        renderAll();
+        relayout(true);
+      }
+
+      /* ---------- files arriving ---------- */
+      function addFile(name, size) {
+        const ext = (name.split(".").pop() || "").toLowerCase();
+        const kind = EXT[ext] || "picture";
+        const before = size || (2 + ((dropN * 7) % 18)) * 1e6;
+        files.unshift({
+          id: `n${nextId++}`,
+          kind,
+          name,
+          ext: ext.toUpperCase(),
+          before,
+          after: before * 0.21,
+          state: "queued",
+          progress: 0,
+          fresh: true,
+        });
+      }
+      function announceDrop(names) {
+        const ae = document.activeElement;
+        const typing =
+          ae &&
+          $("#details").contains(ae) &&
+          ae.matches("input:not([type=range]), textarea, select") &&
+          visible(colEl);
+        renderBadges();
+        if (typing) {
+          renderFiles();
+          popBadges();
+          toast(
+            `${names} went to Files. Your details stay open while you type.`,
+          );
+          return;
+        }
+        ui.tab = "files";
+        if (!isDesk()) {
+          ui.pcol = "right";
+        }
+        renderCol();
+        renderBadges();
+        popBadges();
+        if (isDesk() && ui.folded) {
+          toast(`${names} went to Files; the rail shows its progress.`);
+        }
+        relayout(true);
+      }
+      function simDrop() {
+        const name = SAMPLE_DROPS[dropN % SAMPLE_DROPS.length];
+        dropN++;
+        addFile(name, 0);
+        announceDrop(name);
+      }
+      function updateProgress(f) {
+        const pc = Math.round(f.progress * 100);
+        const row = $(`#filesPane [data-fid="${f.id}"]`);
+        if (row) {
+          const bar = $(".bar i", row);
+          if (bar) {
+            bar.style.width = `${pc}%`;
+          }
+          const t = $(".pc", row);
+          if (t) {
+            t.textContent = `${pc} %`;
+          }
+          const fg = $(".rg .fg", row);
+          if (fg) {
+            fg.setAttribute(
+              "stroke-dashoffset",
+              String(RING_C * (1 - f.progress)),
+            );
+          }
+        }
+        const busy = busyFiles();
+        const sum = $("#sumBar i");
+        if (sum && busy.length) {
+          sum.style.width = `${Math.round((busy.reduce((s, x) => s + x.progress, 0) / busy.length) * 100)}%`;
+        }
+      }
+      function tick() {
+        const cur = files.find((f) => f.state === "processing");
+        if (!cur) {
+          const next = files.findLast((f) => f.state === "queued");
+          if (next) {
+            next.state = "processing";
+            renderFiles();
+          }
+          return;
+        }
+        cur.progress = Math.min(1, cur.progress + 0.009);
+        if (cur.progress >= 1) {
+          cur.state = "ready";
+          renderFiles();
+          renderBadges();
+        } else {
+          updateProgress(cur);
+        }
+      }
+      setInterval(tick, 110);
+
+      /* ---------- toast ---------- */
+      let toastTimer = 0;
+      function toast(text) {
+        const t = $("#toast");
+        const f = freeRect(false);
+        t.textContent = text;
+        t.style.left = `${(f.l + f.r) / 2}px`;
+        t.style.top = `${f.t + 12}px`;
+        t.style.maxWidth = `${Math.max(180, f.r - f.l - 24)}px`;
+        t.classList.add("show");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => t.classList.remove("show"), 3200);
+      }
+
+      /* ---------- pointer: pick, orbit, drag handles ---------- */
+      const raycaster = new THREE.Raycaster();
+      raycaster.params.Line.threshold = 0.3;
+      const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+      function rayAt(x, y) {
+        const r = canvas.getBoundingClientRect();
+        raycaster.setFromCamera(
+          new THREE.Vector2(
+            ((x - r.left) / r.width) * 2 - 1,
+            -((y - r.top) / r.height) * 2 + 1,
+          ),
+          camera,
+        );
+      }
+      function idOf(o) {
+        let n = o;
+        while (n && !n.userData.id) {
+          n = n.parent;
+        }
+        return n ? n.userData.id : null;
+      }
+      function pickAt(x, y) {
+        rayAt(x, y);
+        const hits = raycaster.intersectObjects(
+          discGroup.visible ? [discFill, ...pickables] : pickables,
+          true,
+        );
+        for (const h of hits) {
+          if (h.object === discFill) {
+            return { disc: true };
+          }
+          const id = idOf(h.object);
+          if (id) {
+            return { id };
+          }
+        }
+        return null;
+      }
+      function groundAt(x, y) {
+        rayAt(x, y);
+        return raycaster.ray.intersectPlane(groundPlane, new THREE.Vector3());
+      }
+      let drag = null;
+      function startHandleDrag(kind, e) {
+        const p = worldOf(ui.sel);
+        const g = groundAt(e.clientX, e.clientY);
+        drag = {
+          kind,
+          x0: e.clientX,
+          y0: e.clientY,
+          off: g ? p.clone().sub(g) : new THREE.Vector3(),
+          size0: isStation(ui.sel) ? 1 : ITEMS[ui.sel].size,
+        };
+      }
+      canvas.addEventListener("pointerdown", (e) => {
+        canvas.setPointerCapture(e.pointerId);
+        const hit = pickAt(e.clientX, e.clientY);
+        if (hit && hit.disc) {
+          startHandleDrag("move", e);
+          return;
+        }
+        drag = {
+          kind: "orbit",
+          x0: e.clientX,
+          y0: e.clientY,
+          az0: cam.az,
+          el0: cam.el,
+          moved: false,
+          hit,
+        };
+      });
+      for (const [k, el] of Object.entries(hEls)) {
+        el.addEventListener("pointerdown", (e) => {
+          e.stopPropagation();
+          el.setPointerCapture(e.pointerId);
+          startHandleDrag(k === "size2" ? "size" : k, e);
+        });
+      }
+      function moveSel(g) {
+        if (isStation(ui.sel)) {
+          const st = stById[ui.sel];
+          st.x = g.x;
+          st.z = g.z;
+        } else {
+          const it = ITEMS[ui.sel];
+          const st = stById[it.st];
+          it.x = g.x - st.x;
+          it.z = g.z - st.z;
+        }
+      }
+      const DRAGS = {
+        orbit(e) {
+          const dx = e.clientX - drag.x0;
+          const dy = e.clientY - drag.y0;
+          if (Math.hypot(dx, dy) > 5) {
+            drag.moved = true;
+          }
+          if (drag.moved) {
+            tween = null;
+            cam.az = drag.az0 - dx * 0.008;
+            cam.el = clamp(drag.el0 + dy * 0.006, 0.3, 1.45);
+          }
+        },
+        move(e) {
+          const g = groundAt(e.clientX, e.clientY);
+          if (g) {
+            moveSel(g.add(drag.off));
+          }
+        },
+        knob(e) {
+          const g = groundAt(e.clientX, e.clientY);
+          if (g) {
+            const p = worldOf(ui.sel);
+            ITEMS[ui.sel].h = Math.round(
+              Math.atan2(g.x - p.x, g.z - p.z) / DEG,
+            );
+          }
+        },
+        radius(e) {
+          const g = groundAt(e.clientX, e.clientY);
+          if (g) {
+            const st = stById[ui.sel];
+            st.radius = clamp(
+              Math.round(Math.hypot(g.x - st.x, g.z - st.z)),
+              3,
+              40,
+            );
+          }
+        },
+        size(e) {
+          ITEMS[ui.sel].size = clamp(
+            drag.size0 * Math.exp(-(e.clientY - drag.y0) / 140),
+            0.4,
+            3,
+          );
+        },
+      };
+      window.addEventListener("pointermove", (e) => {
+        if (!drag) {
+          return;
+        }
+        DRAGS[drag.kind](e);
+        if (drag.kind !== "orbit") {
+          tween = null;
+          const id = ui.sel;
+          place(isStation(id) ? id : ITEMS[id].st);
+          updateSelVisual();
+          syncDetails();
+        }
+        dirty = true;
+      });
+      window.addEventListener("pointerup", () => {
+        if (!drag) {
+          return;
+        }
+        const d = drag;
+        drag = null;
+        if (d.kind === "orbit" && !d.moved && d.hit && d.hit.id) {
+          select(d.hit.id, "view");
+        } else if (d.kind !== "orbit") {
+          renderDetails();
+          renderCheck();
+        }
+      });
+      canvas.addEventListener(
+        "wheel",
+        (e) => {
+          e.preventDefault();
+          tween = null;
+          cam.d = clamp(cam.d * Math.exp(e.deltaY * 0.0012), 2, 600);
+          dirty = true;
+        },
+        { passive: false },
+      );
+
+      /* ---------- details edits ---------- */
+      function valueOf(f) {
+        const id = ui.sel;
+        const m = isStation(id) ? stById[id] : ITEMS[id];
+        if (f === "size") {
+          return m.size.toFixed(2);
+        }
+        if (f === "h") {
+          return String(Math.round(m.h));
+        }
+        return String(m[f]);
+      }
+      function syncDetails() {
+        for (const el of $$("#details [data-f]")) {
+          if (
+            el !== document.activeElement &&
+            ["h", "size", "radius"].includes(el.dataset.f)
+          ) {
+            el.value = valueOf(el.dataset.f);
+          }
+        }
+      }
+      const LIMITS = { h: [-180, 180], size: [0.4, 3], radius: [3, 40] };
+      $("#details").addEventListener("input", (e) => {
+        const t = e.target;
+        const f = t.dataset.f;
+        const id = ui.sel;
+        const m = isStation(id) ? stById[id] : ITEMS[id];
+        if (f === "name" || f === "text") {
+          m[f] = t.value;
+          if (f === "name") {
+            renderList();
+          }
+          return;
+        }
+        if (!LIMITS[f]) {
+          return;
+        }
+        const v = parseFloat(t.value);
+        if (!Number.isFinite(v)) {
+          return;
+        }
+        m[f] = clamp(v, LIMITS[f][0], LIMITS[f][1]);
+        place(isStation(id) ? id : m.st);
+        updateSelVisual();
+        syncDetails();
+      });
+      function assignFile(id, fid) {
+        const it = ITEMS[id];
+        const f = files.find((x) => x.id === fid);
+        if (!it || !f) {
+          return false;
+        }
+        const fits =
+          (it.kind === "picture" && f.kind === "picture") ||
+          (it.kind === "character" && f.kind === "character");
+        if (!fits) {
+          toast(
+            `${f.name} cannot go into ${it.name}: ${it.kind === "picture" ? "a picture takes a picture file" : "only pictures and characters take a file here"}.`,
+          );
+          return false;
+        }
+        it.file = fid;
+        if (groups[id].userData.face) {
+          groups[id].userData.face.map = pictureTexture(true);
+          groups[id].userData.face.needsUpdate = true;
+        }
+        dirty = true;
+        toast(
+          `${f.name} is now in "${it.name}"${f.state === "ready" ? "" : "; the smaller copy replaces it when it is ready"}.`,
+        );
+        return true;
+      }
+      $("#details").addEventListener("change", (e) => {
+        if (e.target.dataset.f !== "file") {
+          return;
+        }
+        const it = ITEMS[ui.sel];
+        if (e.target.value) {
+          assignFile(ui.sel, e.target.value);
+        } else {
+          it.file = null;
+        }
+        renderDetails();
+        renderFiles();
+      });
+      $("#details").addEventListener("click", (e) => {
+        const sel = e.target.closest("[data-sel]");
+        if (sel) {
+          select(sel.dataset.sel, "details");
+          return;
+        }
+        const col = e.target.closest("[data-col]");
+        if (col) {
+          ITEMS[ui.sel].col = col.dataset.col;
+          groups[ui.sel].children[1].material.color.set(col.dataset.col);
+          dirty = true;
+          renderDetails();
+          return;
+        }
+        if (e.target.closest('[data-act="del"]')) {
+          toast("Deleting is not part of this prototype.");
+        }
+      });
+
+      /* ---------- list, column, rail, switch ---------- */
+      $("#tree").addEventListener("click", (e) => {
+        const tw = e.target.closest("[data-tw]");
+        if (tw) {
+          const st = stById[tw.dataset.tw];
+          st.open = !st.open;
+          renderList();
+          return;
+        }
+        const ftw = e.target.closest("[data-ftw]");
+        if (ftw) {
+          const f = FOLDERS[ftw.dataset.ftw];
+          f.open = !f.open;
+          renderList();
+          return;
+        }
+        const row = e.target.closest("[data-sel]");
+        if (row) {
+          select(row.dataset.sel, "list");
+        }
+      });
+      $("#filesPane").addEventListener("click", (e) => {
+        const tog = e.target.closest("[data-ftog]");
+        if (tog) {
+          const f = files.find((x) => x.id === tog.dataset.ftog);
+          f.open = !f.open;
+          renderFiles();
+          return;
+        }
+        if (e.target.closest('[data-act="simdrop"]')) {
+          simDrop();
+        }
+      });
+      for (const t of $$(".tab")) {
+        t.addEventListener("click", () => {
+          ui.tab = t.dataset.tab;
+          renderCol();
+          renderBadges();
+          renderSwitch();
+        });
+      }
+      for (const b of $$("[data-sw]")) {
+        b.addEventListener("click", () => {
+          const sw = b.dataset.sw;
+          if (sw === "list") {
+            ui.pcol = ui.pcol === "list" ? null : "list";
+          } else if (ui.pcol === "right" && ui.tab === sw) {
+            ui.pcol = null;
+          } else {
+            ui.pcol = "right";
+            ui.tab = sw;
+          }
+          renderCol();
+          renderBadges();
+          relayout(true);
+        });
+      }
+      for (const b of $$("[data-rail]")) {
+        b.addEventListener("click", () => {
+          ui.folded = false;
+          if (b.dataset.rail !== "unfold") {
+            ui.tab = b.dataset.rail;
+          }
+          renderCol();
+          renderBadges();
+          relayout(true);
+        });
+      }
+      app.addEventListener("click", (e) => {
+        const a = e.target.closest("[data-act]");
+        if (!a) {
+          return;
+        }
+        const act = a.dataset.act;
+        if (act === "fold") {
+          ui.folded = true;
+        } else if (act === "lfold") {
+          ui.listFolded = !ui.listFolded;
+        } else if (act === "pclose") {
+          ui.pcol = null;
+        } else if (act === "bclose") {
+          ui.bottom = false;
+        } else {
+          return;
+        }
+        relayout(true);
+      });
+      $("#bpanel").addEventListener("click", (e) => {
+        const s = e.target.closest("[data-sel]");
+        if (s) {
+          select(s.dataset.sel, "view");
+        }
+      });
+      $("#probTog").addEventListener("click", () => {
+        ui.bottom = !ui.bottom;
+        relayout(true);
+      });
+      $("#addBtn").addEventListener("click", simDrop);
+
+      /* ---------- map controls ---------- */
+      ctl.innerHTML = `<div class="pill dk"><button type="button" data-cam="tilt" title="Look down / tilt" aria-label="Look down or tilt">${ic("tilt")}</button></div>
+        <div class="pill"><button type="button" data-cam="north" title="Face north" aria-label="Face north"><span id="needle">${ic("compass")}</span></button></div>
+        <div class="pill dk"><button type="button" data-cam="frame" title="Frame the selection" aria-label="Frame the selection">${ic("frame")}</button></div>
+        <div class="pill zoom"><button type="button" data-cam="in" aria-label="Zoom in">${ic("plus")}</button><button type="button" data-cam="out" aria-label="Zoom out">${ic("minus")}</button></div>`;
+      ctl.addEventListener("click", (e) => {
+        const b = e.target.closest("[data-cam]");
+        if (!b) {
+          return;
+        }
+        const c = b.dataset.cam;
+        if (c === "frame") {
+          frameSel(true);
+          return;
+        }
+        const to = { ...cam };
+        if (c === "in" || c === "out") {
+          to.d = clamp(cam.d * (c === "in" ? 0.7 : 1.4), 2, 600);
+        } else if (c === "north") {
+          to.az = Math.round(cam.az / (Math.PI * 2)) * Math.PI * 2;
+        } else if (c === "tilt") {
+          to.el = cam.el > 1.2 ? 0.7 : 1.42;
+        }
+        goTo(to, 450);
+      });
+
+      /* ---------- drag and drop ---------- */
+      const hasFiles = (e) =>
+        [...(e.dataTransfer?.types || [])].includes("Files");
+      const isShelf = (e) =>
+        [...(e.dataTransfer?.types || [])].includes("text/x-shelf");
+      let dragDepth = 0;
+      window.addEventListener("dragenter", (e) => {
+        if (hasFiles(e)) {
+          dragDepth++;
+          $("#drop").hidden = false;
+        }
+      });
+      window.addEventListener("dragleave", (e) => {
+        if (hasFiles(e) && --dragDepth <= 0) {
+          dragDepth = 0;
+          $("#drop").hidden = true;
+        }
+      });
+      window.addEventListener("dragover", (e) => {
+        if (hasFiles(e) || isShelf(e)) {
+          e.preventDefault();
+        }
+      });
+      window.addEventListener("drop", (e) => {
+        if (!hasFiles(e)) {
+          return;
+        }
+        e.preventDefault();
+        dragDepth = 0;
+        $("#drop").hidden = true;
+        const list = [...e.dataTransfer.files];
+        for (const f of list) {
+          addFile(f.name, f.size);
+        }
+        if (list.length) {
+          announceDrop(
+            list.length === 1 ? list[0].name : `${list.length} files`,
+          );
+        }
+      });
+      $("#filesPane").addEventListener("dragstart", (e) => {
+        const row = e.target.closest("[data-fid]");
+        if (row) {
+          e.dataTransfer.setData("text/x-shelf", row.dataset.fid);
+          e.dataTransfer.effectAllowed = "copy";
+        }
+      });
+      canvas.addEventListener("drop", (e) => {
+        if (!isShelf(e)) {
+          return;
+        }
+        e.preventDefault();
+        const hit = pickAt(e.clientX, e.clientY);
+        if (hit && hit.id && !isStation(hit.id)) {
+          assignFile(hit.id, e.dataTransfer.getData("text/x-shelf"));
+          renderFiles();
+        }
+      });
+      $("#tree").addEventListener("dragover", (e) => {
+        const row = e.target.closest("[data-drop]");
+        for (const r of $$("#tree .dropok")) {
+          r.classList.remove("dropok");
+        }
+        if (row && isShelf(e)) {
+          row.classList.add("dropok");
+        }
+      });
+      $("#tree").addEventListener("drop", (e) => {
+        const row = e.target.closest("[data-drop]");
+        if (!row || !isShelf(e)) {
+          return;
+        }
+        e.preventDefault();
+        row.classList.remove("dropok");
+        assignFile(row.dataset.drop, e.dataTransfer.getData("text/x-shelf"));
+        renderFiles();
+      });
+
+      /* ---------- prototype controls ---------- */
+      const SIZES = {
+        desk: [1280, 800, "Desktop"],
+        land: [844, 390, "Phone sideways"],
+        port: [390, 844, "Phone upright"],
+      };
+      const proto = $("#proto");
+      function applyPreview() {
+        const s = SIZES[ui.preview];
+        document.body.classList.toggle("preview", Boolean(s));
+        proto.hidden = !(s || ui.protoOpen);
+        const fr = $("#frame");
+        const lab = $("#frameLabel");
+        if (!s) {
+          fr.removeAttribute("style");
+        } else {
+          const top = proto.offsetHeight + 12 + 18;
+          const k = Math.min(
+            1,
+            (innerWidth - 20) / s[0],
+            (innerHeight - top - 10) / s[1],
+          );
+          const left = Math.round((innerWidth - s[0] * k) / 2);
+          Object.assign(fr.style, {
+            width: `${s[0]}px`,
+            height: `${s[1]}px`,
+            transform: `scale(${k})`,
+            left: `${left}px`,
+            top: `${top}px`,
+          });
+          lab.textContent = `${s[2]}, ${s[0]} x ${s[1]}${k < 1 ? `, shown at ${Math.round(k * 100)} %` : ""}`;
+          Object.assign(lab.style, { left: `${left}px`, top: `${top - 16}px` });
+        }
+        for (const b of $$("[data-pv]")) {
+          b.setAttribute("aria-pressed", String(b.dataset.pv === ui.preview));
+        }
+        relayout(false);
+      }
+      $("#protoBtn").addEventListener("click", () => {
+        ui.protoOpen = !ui.protoOpen;
+        $("#protoBtn").setAttribute("aria-expanded", String(ui.protoOpen));
+        proto.hidden = !ui.protoOpen;
+      });
+      proto.addEventListener("click", (e) => {
+        const pv = e.target.closest("[data-pv]");
+        if (pv) {
+          ui.preview = pv.dataset.pv;
+          applyPreview();
+          return;
+        }
+        const a = e.target.closest("[data-act]");
+        if (a && a.dataset.act === "simdrop") {
+          simDrop();
+        } else if (a && a.dataset.act === "notes") {
+          const n = $("#notes");
+          n.hidden = !n.hidden;
+          a.setAttribute("aria-expanded", String(!n.hidden));
+          renderCheck();
+        }
+      });
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          $("#notes").hidden = true;
+        }
+      });
+      window.addEventListener("resize", applyPreview);
+
+      renderAll();
+      applyPreview();
+      requestAnimationFrame(loop);
+    </script>
+  </body>
+</html>
