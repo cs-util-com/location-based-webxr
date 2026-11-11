@@ -458,3 +458,41 @@ describe("a plain folder moved with its items", () => {
     expect(saved(back)).toEqual(saved(state));
   });
 });
+
+// Why: a pose in a folder is stored relative to that folder, and the
+// format bounds it there (10 km per axis) as it bounds an item in its
+// station. A move checked only against the station could store a pose
+// past the bound in a far folder, and every later save would then throw
+// with the parser's words. Swept over the folder's turn (0, 30 and 179
+// degrees): whatever a move keeps must save.
+describe("an item moved inside a far folder", () => {
+  /** `object` `northM` metres north of the station, on its meridian. */
+  const northOf = (object: TourObject, northM: number): TourObject => ({
+    ...object,
+    geo: { ...object.geo, lat: AT.lat + northM / 111_320, lon: AT.lon },
+  });
+
+  it("refuses a spot within the station's bound but past the folder's, and keeps only spots that save", () => {
+    for (const yawDeg of [0, 30, 179]) {
+      // The folder 6 km north of its station; 5 km to either side of the
+      // station is within the station's bound.
+      const start = opened(tourWithFolders(yawDeg, 6000));
+      const a = objectOf(start, "a");
+      const refused: number[] = [];
+      const kept: TourDocumentState[] = [];
+      for (const northM of [-5000, 5000]) {
+        const after = reduce(
+          start,
+          act.moved({ object: northOf(a, northM), what: "move" }),
+        );
+        if (after === start) refused.push(northM);
+        else kept.push(after);
+      }
+      for (const after of kept) expect(() => saved(after)).not.toThrow();
+      // South of the station is 11 km from the folder; north, 1 km. At
+      // 30 degrees 11 km splits into 9.5 km and 5.5 km along the folder's
+      // axes, within its bound.
+      expect(refused).toEqual(yawDeg === 30 ? [] : [-5000]);
+    }
+  });
+});

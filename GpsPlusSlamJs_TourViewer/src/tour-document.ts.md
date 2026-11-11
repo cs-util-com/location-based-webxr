@@ -672,7 +672,8 @@ placed, deleted, deletedStations, keptBare)`, `bareEmptyStations`,
 - The rules the reducers keep, exported so a page asks first and says why
   in its own words (`editor-session.ts`'s refusals): `objectFits(state,
 object)` (within the format's `TOUR_ITEM_MAX_OFFSET_M` per axis of its
-  own station, or of the one its id stands in; FALSE for a station the
+  own station, or of the one its id stands in, and of the innermost
+  folder it names there, where its pose is stored; FALSE for a station the
   document does not carry, a dangling id; true for an object no station
   holds yet, which the rule seats), `canPlace(state, object)` (an id the
   tour neither carries nor deleted, fitting; `placeRefusal(state, object)`
@@ -806,6 +807,10 @@ store.dispatch(tourDocumentActions.undone());
   bound too), the draft reload, the visitor's view, an item leaving its
   folder when it changes station, and a station's copy with nested
   folders.
+- `tour-document-plain-folders.test.ts` - a tour's nested posed folders
+  kept through open, edit, save and reload, and an item moved inside a
+  far folder refused past the folder's bound though within its
+  station's (swept over the folder's turn).
 - `tour-document-codes.test.ts` - the hosted levels in both arrival
   orders with `opened`, an older open's late levels dropped and a newer
   one's replacing them, a failed read counting every saved code as new,
