@@ -305,6 +305,11 @@ export async function stubNetwork(page, options = {}) {
     overpassQuery: 0,
     /** Requests to the static tile host, every one aborted. */
     staticTiles: 0,
+    /**
+     * The tile sources in the order the page asked them: `"static"` for the
+     * tile host, `"overpass"` for an Overpass query (status probes left out).
+     */
+    tileSourceOrder: /** @type {string[]} */ ([]),
     basemap: 0,
     terrain: 0,
     ruleSheet: 0,
@@ -368,6 +373,7 @@ export async function stubNetwork(page, options = {}) {
     }
 
     counts.overpassQuery++;
+    counts.tileSourceOrder.push("overpass");
 
     // Counted BEFORE the hold, so a test can see the request was issued while
     // still deciding when it may answer.
@@ -393,6 +399,7 @@ export async function stubNetwork(page, options = {}) {
 
   await page.route(isStaticTiles, (route) => {
     counts.staticTiles++;
+    counts.tileSourceOrder.push("static");
     return route.abort();
   });
 

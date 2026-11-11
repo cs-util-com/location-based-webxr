@@ -3,10 +3,11 @@
  *
  * The host stores each fetch tile's Overpass answer as a file, filled the
  * first time anyone asks. This source reads that file; when it is missing it
- * asks the host to fill it and waits a bounded time; on any refusal, error or
- * timeout it hands the tile to the `fallback` source (the race) at once and
- * leaves the host alone for a while. The two never run for one tile at the
- * same time.
+ * asks the host to fill it and waits a bounded time, but only for a tile
+ * someone waits on and only when no other fill is ahead of it. On any
+ * refusal, error or timeout it hands the tile to the `fallback` source (the
+ * race) at once and stops asking for fills for a while; stored files are
+ * still read. The two never run for one tile at the same time.
  *
  * @see static-tile-source.ts.md
  */
@@ -44,17 +45,46 @@ export interface StaticTileSourceOptions {
    * (a cold tile took 36-56 s to fill when measured).
    */
   readonly maxWaitMs?: number;
-  /** How long the host is left alone after it said no. Default 10 min. */
+  /** How long no fill is asked for after the host said no. Default 10 min. */
   readonly refusalMemoryMs?: number;
+  /**
+   * A stored tile whose data is older than this is served and the host is
+   * asked, once per tile, to refresh it. Default 30 days.
+   */
+  readonly refreshAfterMs?: number;
 }
 
 const DEFAULT_POLL_INTERVAL_MS = 4_000;
 const DEFAULT_MAX_WAIT_MS = 60_000;
 const DEFAULT_REFUSAL_MEMORY_MS = 10 * 60_000;
+const DEFAULT_REFRESH_AFTER_MS = 30 * 86_400_000;
 
 /** The host could not serve this tile; the reason is for the log only. */
 class HostDeclined extends Error {
   override readonly name = "HostDeclined";
+}
+
+/**
+ * The host is fine but this tile is not worth waiting for here (not stored
+ * on a read-only look, or other fills queued ahead): the race, with no
+ * refusal remembered.
+ */
+class HostSkipped extends Error {
+  override readonly name = "HostSkipped";
+}
+
+/** How many fills the host says are ahead of a queued one; 0 when unsaid. */
+async function fillsAhead(response: Response): Promise<number> {
+  try {
+    const body: unknown = await response.json();
+    const ahead =
+      typeof body === "object" && body !== null
+        ? (body as { ahead?: unknown }).ahead
+        : undefined;
+    return typeof ahead === "number" && Number.isFinite(ahead) ? ahead : 0;
+  } catch {
+    return 0;
+  }
 }
 
 function isAbort(error: unknown): boolean {
@@ -102,8 +132,11 @@ export class StaticTileSource implements OsmDataSource {
   private readonly pollIntervalMs: number;
   private readonly maxWaitMs: number;
   private readonly refusalMemoryMs: number;
-  /** Until when the host is not asked (epoch ms); 0 while it is trusted. */
+  private readonly refreshAfterMs: number;
+  /** Until when no fill is asked for (epoch ms); 0 while the host is trusted. */
   private refusedUntil = 0;
+  /** Tiles whose refresh was already asked for in this session. */
+  private readonly refreshAsked = new Set<string>();
 
   constructor(options: StaticTileSourceOptions) {
     this.origin = requireBaseUrl(options.baseUrl);
@@ -125,6 +158,10 @@ export class StaticTileSource implements OsmDataSource {
       "refusalMemoryMs",
       options.refusalMemoryMs ?? DEFAULT_REFUSAL_MEMORY_MS,
     );
+    this.refreshAfterMs = requireMs(
+      "refreshAfterMs",
+      options.refreshAfterMs ?? DEFAULT_REFRESH_AFTER_MS,
+    );
   }
 
   async fetchTile(
@@ -132,24 +169,28 @@ export class StaticTileSource implements OsmDataSource {
     options?: FetchTileOptions,
   ): Promise<OsmTileResult> {
     if (options?.signal?.aborted === true) throw abortError();
-    if (this.now() < this.refusedUntil) {
-      return this.fallback.fetchTile(tile, options);
-    }
+    // A speculative fetch (a ring warm) has nobody waiting on it, and a
+    // refused host is not asked for fills; both still read stored files,
+    // which cost the host nothing to serve.
+    const readOnly =
+      options?.speculative === true || this.now() < this.refusedUntil;
     try {
-      return await this.fromHost(tile, options?.signal);
+      return await this.fromHost(tile, options?.signal, readOnly);
     } catch (error) {
       return this.afterHostFailed(error, tile, options);
     }
   }
 
-  /** An abort rethrown; any other failure: the race, at once, host left alone. */
+  /** An abort rethrown; any other failure: the race, at once. */
   private afterHostFailed(
     error: unknown,
     tile: string,
     options: FetchTileOptions | undefined,
   ): Promise<OsmTileResult> {
     if (isAbort(error) || options?.signal?.aborted === true) throw error;
-    this.refusedUntil = this.now() + this.refusalMemoryMs;
+    if (!(error instanceof HostSkipped)) {
+      this.refusedUntil = this.now() + this.refusalMemoryMs;
+    }
     return this.fallback.fetchTile(tile, options);
   }
 
@@ -157,18 +198,31 @@ export class StaticTileSource implements OsmDataSource {
     return `${this.origin}/osm/v${OVERPASS_SCHEMA_VERSION}/${tile}.json.gz`;
   }
 
+  private fillUrl(tile: string): string {
+    return `${this.origin}/fill/v${OVERPASS_SCHEMA_VERSION}/${tile}`;
+  }
+
   private async fromHost(
     tile: string,
     signal: AbortSignal | undefined,
+    readOnly: boolean,
   ): Promise<OsmTileResult> {
     const started = this.now();
     const first = await this.read(tile, signal, started);
     if (first !== undefined) return first;
-    const fill = await this.fetchImpl(
-      `${this.origin}/fill/v${OVERPASS_SCHEMA_VERSION}/${tile}`,
-      { method: "POST", ...(signal === undefined ? {} : { signal }) },
-    );
-    await fill.body?.cancel();
+    if (readOnly) throw new HostSkipped(`tile ${tile} not stored`);
+    const fill = await this.fetchImpl(this.fillUrl(tile), {
+      method: "POST",
+      ...(signal === undefined ? {} : { signal }),
+    });
+    if (fill.status === 202) {
+      const ahead = await fillsAhead(fill);
+      // Each fill ahead takes 30-75 s, so the bounded wait would run out:
+      // the race now, and the host fills the tile for whoever comes later.
+      if (ahead > 0) throw new HostSkipped(`${ahead} fills ahead of ${tile}`);
+    } else {
+      await fill.body?.cancel();
+    }
     if (fill.status === 200) {
       const ready = await this.read(tile, signal, started);
       if (ready !== undefined) return ready;
@@ -214,6 +268,7 @@ export class StaticTileSource implements OsmDataSource {
     const decodeMs = elapsedMs(decodeStart, this.now());
     const parseStart = this.now();
     const parsed = parseOverpassJson(payload);
+    this.refreshIfOld(tile, parsed.osmBaseTimestamp);
     return {
       tile,
       features: parsed.features,
@@ -233,5 +288,22 @@ export class StaticTileSource implements OsmDataSource {
         attempts: 1,
       },
     };
+  }
+
+  /**
+   * Asks the host, once per tile and without waiting, to refetch a stored
+   * tile whose data is old; the old file is served meanwhile. Skipped while
+   * the host refuses fills; a failed ask is ignored.
+   */
+  private refreshIfOld(tile: string, osmBase: string | undefined): void {
+    const base = Date.parse(osmBase ?? "");
+    if (!Number.isFinite(base)) return;
+    if (this.now() - base <= this.refreshAfterMs) return;
+    if (this.now() < this.refusedUntil || this.refreshAsked.has(tile)) return;
+    this.refreshAsked.add(tile);
+    this.fetchImpl(this.fillUrl(tile), { method: "POST" }).then(
+      (response) => response.body?.cancel(),
+      () => undefined,
+    );
   }
 }

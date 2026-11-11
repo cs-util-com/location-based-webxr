@@ -172,21 +172,148 @@ describe("StaticTileSource", () => {
 
   for (const status of [429, 503, 403, 500]) {
     it(`falls back to the race at once when the fill answers ${status}, and remembers it`, async () => {
+      const controller = new AbortController();
       const { source, fallback, calls } = setup({
-        [`GET ${TILE_URL}`]: [new Response("not found", { status: 404 })],
+        [`GET ${TILE_URL}`]: [
+          new Response("not found", { status: 404 }),
+          new Response("not found", { status: 404 }),
+        ],
         [`POST ${FILL_URL}`]: [json(status, { status: "no" })],
       });
-      const result = await source.fetchTile(TILE, { speculative: true });
+      const result = await source.fetchTile(TILE, {
+        signal: controller.signal,
+      });
       expect(result.sourceId).toBe("overpass:test");
       expect(fallback.calls).toEqual([
-        { tile: TILE, options: { speculative: true } },
+        { tile: TILE, options: { signal: controller.signal } },
       ]);
-      // Remembered: the next tile goes straight to the race.
+      // Remembered: the next tile is still looked up, but not filled.
       await source.fetchTile(TILE);
-      expect(calls).toHaveLength(2);
+      expect(calls.map((c) => c.method)).toEqual(["GET", "POST", "GET"]);
       expect(fallback.calls).toHaveLength(2);
     });
   }
+
+  it("still serves stored tiles while the host's fill refusal is remembered", async () => {
+    // A refused fill (the daily cap, the per-IP limit) says nothing about
+    // the files already stored, which cost the host nothing to serve.
+    const { source, fallback, calls } = setup({
+      [`GET ${TILE_URL}`]: [
+        new Response("nf", { status: 404 }),
+        new Response(PAYLOAD, { status: 200 }),
+      ],
+      [`POST ${FILL_URL}`]: [json(503, { status: "cap" })],
+    });
+    await source.fetchTile(TILE);
+    const second = await source.fetchTile(TILE);
+    expect(second.sourceId).toBe("static:tiles.example.dev");
+    expect(fallback.calls).toHaveLength(1);
+    expect(calls.map((c) => c.method)).toEqual(["GET", "POST", "GET"]);
+  });
+
+  it("a speculative fetch only reads: a missing tile goes to the race without a fill request", async () => {
+    // Nobody waits on a ring warm, so it must neither wait a minute for a
+    // fill nor spend the host's fill budget on a tile nobody asked for.
+    const { source, fallback, calls, slept } = setup({
+      [`GET ${TILE_URL}`]: [new Response("nf", { status: 404 })],
+    });
+    const result = await source.fetchTile(TILE, { speculative: true });
+    expect(result.sourceId).toBe("overpass:test");
+    expect(fallback.calls).toEqual([
+      { tile: TILE, options: { speculative: true } },
+    ]);
+    expect(calls.map((c) => c.method)).toEqual(["GET"]);
+    expect(slept).toEqual([]);
+  });
+
+  it("a speculative fetch serves a stored tile from the host", async () => {
+    const { source, fallback } = setup({
+      [`GET ${TILE_URL}`]: [new Response(PAYLOAD, { status: 200 })],
+    });
+    const result = await source.fetchTile(TILE, { speculative: true });
+    expect(result.sourceId).toBe("static:tiles.example.dev");
+    expect(fallback.calls).toEqual([]);
+  });
+
+  it("a speculative miss is not a refusal: the next waited-for tile still asks for a fill", async () => {
+    const { source, calls } = setup({
+      [`GET ${TILE_URL}`]: [
+        new Response("nf", { status: 404 }),
+        new Response("nf", { status: 404 }),
+        new Response(PAYLOAD, { status: 200 }),
+      ],
+      [`POST ${FILL_URL}`]: [json(202, { status: "queued", ahead: 0 })],
+    });
+    await source.fetchTile(TILE, { speculative: true });
+    const result = await source.fetchTile(TILE);
+    expect(result.sourceId).toBe("static:tiles.example.dev");
+    expect(calls.map((c) => c.method)).toEqual(["GET", "GET", "POST", "GET"]);
+  });
+
+  it("does not wait behind other fills: a queued answer with fills ahead goes to the race at once", async () => {
+    // A fill takes 30-75 s; behind another one the viewer would wait past
+    // the bounded wait for nothing. The host still fills the tile for later.
+    const { source, fallback, calls, slept } = setup({
+      [`GET ${TILE_URL}`]: [
+        new Response("nf", { status: 404 }),
+        new Response("nf", { status: 404 }),
+      ],
+      [`POST ${FILL_URL}`]: [
+        json(202, { status: "queued", ahead: 2 }),
+        json(202, { status: "queued", ahead: 0 }),
+      ],
+    });
+    const result = await source.fetchTile(TILE);
+    expect(result.sourceId).toBe("overpass:test");
+    expect(slept).toEqual([]);
+    expect(fallback.calls).toHaveLength(1);
+    // Not a refusal: the next tile asks for a fill again.
+    await source.fetchTile(TILE).catch(() => undefined);
+    expect(calls.map((c) => c.method).slice(0, 4)).toEqual([
+      "GET",
+      "POST",
+      "GET",
+      "POST",
+    ]);
+  });
+
+  it("asks the host to refresh a tile whose data is older than 30 days, once, and serves the old file meanwhile", async () => {
+    const old = PAYLOAD.replace("2026-11-11T09:00:00Z", "1970-01-01T00:00:00Z");
+    const { source, calls, advance } = setup({
+      [`GET ${TILE_URL}`]: [
+        new Response(old, { status: 200 }),
+        new Response(old, { status: 200 }),
+      ],
+      [`POST ${FILL_URL}`]: [json(200, { status: "refreshing" })],
+    });
+    advance(31 * 86_400_000);
+    const result = await source.fetchTile(TILE);
+    expect(result.sourceId).toBe("static:tiles.example.dev");
+    await source.fetchTile(TILE);
+    expect(calls.map((c) => c.method)).toEqual(["GET", "POST", "GET"]);
+  });
+
+  it("sends no refresh for a young tile, and a failed refresh changes nothing", async () => {
+    const old = PAYLOAD.replace("2026-11-11T09:00:00Z", "1970-01-01T00:00:00Z");
+    const young = setup({
+      [`GET ${TILE_URL}`]: [new Response(old, { status: 200 })],
+    });
+    await young.source.fetchTile(TILE);
+    expect(young.calls.map((c) => c.method)).toEqual(["GET"]);
+
+    const failing = setup({
+      [`GET ${TILE_URL}`]: [
+        new Response(old, { status: 200 }),
+        new Response(PAYLOAD, { status: 200 }),
+      ],
+      [`POST ${FILL_URL}`]: [new TypeError("offline")],
+    });
+    failing.advance(31 * 86_400_000);
+    await failing.source.fetchTile(TILE);
+    const next = await failing.source.fetchTile(TILE);
+    expect(next.sourceId).toBe("static:tiles.example.dev");
+    expect(failing.fallback.calls).toEqual([]);
+  });
 
   it("falls back when the host cannot be reached at all", async () => {
     const { source, fallback } = setup({

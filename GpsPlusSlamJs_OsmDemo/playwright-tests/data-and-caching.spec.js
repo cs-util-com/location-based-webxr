@@ -90,6 +90,9 @@ test.describe("caching and failure", () => {
     await waitForRefresh(page);
     expect(counts.staticTiles).toBeGreaterThan(0);
     expect(counts.overpassQuery).toBeGreaterThan(0);
+    // First: the very first tile request goes to the host, and the race
+    // starts only after it.
+    expect(counts.tileSourceOrder[0]).toBe("static");
   });
 
   test("tiles=off never asks the static tile host", async ({ page }) => {
