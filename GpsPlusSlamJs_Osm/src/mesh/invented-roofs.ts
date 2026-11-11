@@ -71,7 +71,7 @@ export interface InventedFootprint {
 }
 
 /** A building refused a roof, or one no sound roof fits: a flat lid. */
-export interface InventedLid {
+interface InventedLid {
   readonly kind: "lid";
   /** Why: a refusal of `inventedRoofRefusal`, or "no sound roof". */
   readonly why: string;
