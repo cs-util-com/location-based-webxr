@@ -1,0 +1,3630 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Editor Panels: Clear Area</title>
+    <!--
+  Throwaway prototype: the tour editor's panels around the 3D view, the
+  "clear area" direction. The docked panels stay where they are (the list on
+  the left, the details panel and the asset shelf on the right); the camera
+  knows about them. Every selection is framed in the uncovered rectangle of
+  the 3D view with a view offset (the centre of projection is moved into that
+  rectangle), and the distance is fitted so every handle lands inside it.
+  On narrow windows the panels give way by two ordered rules: the shelf folds
+  to its icon rail while the details panel is open, then the list shrinks to
+  a narrow column; at 700 px wide or less they become one bottom sheet.
+  Original code, in the look of the editor prototypes in this gallery.
+  Rendering: three.js r185 (MIT licence) with OrbitControls, loaded from
+  unpkg by an import map. All icons are simple original SVG paths. Nothing is
+  saved; all data is made up. Hooks for headless checks: window.__clearArea.
+-->
+    <style>
+      :root {
+        --bg0: #18191c;
+        --bg1: #1f2023;
+        --bg2: #26282c;
+        --bg3: #2f3136;
+        --bg4: #383a40;
+        --line: #313338;
+        --line2: #3c3f46;
+        --text: #d9dbe0;
+        --muted: #8a8f99;
+        --dim: #646973;
+        --accent: #e9a23b;
+        --accent-bg: rgb(233 162 59 / 14%);
+        --accent-line: rgb(233 162 59 / 55%);
+        --accent-text: #f3c47e;
+        --ok: #7fb77a;
+        --danger: #d97d79;
+        --teal: #57c4b8;
+        --focus: #5b9cf0;
+        --mono:
+          "Cascadia Mono", "Cascadia Code", consolas, "SF Mono", ui-monospace,
+          menlo, monospace;
+        --sans:
+          "Segoe UI", system-ui, -apple-system, "Helvetica Neue", arial,
+          sans-serif;
+        --t: 0.22s;
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: var(--bg0);
+        color: var(--text);
+        font: 12px/1.4 var(--sans);
+      }
+      button,
+      input,
+      select {
+        font: inherit;
+        color: inherit;
+      }
+      button {
+        cursor: pointer;
+      }
+      :focus-visible {
+        outline: 2px solid var(--focus);
+        outline-offset: 1px;
+      }
+      svg.i {
+        width: 16px;
+        height: 16px;
+        flex: none;
+        fill: none;
+        stroke: currentcolor;
+        stroke-width: 1.4;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      /* --- top bar ---------------------------------------------------- */
+      #tb {
+        position: fixed;
+        inset: 0 0 auto;
+        z-index: 30;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        height: 40px;
+        padding: 0 8px;
+        overflow: hidden;
+        border-bottom: 1px solid var(--line);
+        background: var(--bg1);
+        white-space: nowrap;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        height: 24px;
+        padding-right: 10px;
+        margin-right: 2px;
+        border-right: 1px solid var(--line);
+      }
+      .brand b {
+        font-weight: 600;
+      }
+      .brand .doc {
+        overflow: hidden;
+        color: var(--muted);
+        text-overflow: ellipsis;
+      }
+      .mbtn,
+      .tbtn {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 28px;
+        padding: 0 9px;
+        border: 1px solid transparent;
+        border-radius: 5px;
+        background: none;
+        color: var(--muted);
+      }
+      .mbtn:hover,
+      .tbtn:hover {
+        background: var(--bg3);
+        color: var(--text);
+      }
+      .tbtn {
+        border-color: var(--line2);
+        color: var(--text);
+      }
+      .tbtn[aria-pressed="true"] {
+        border-color: var(--accent-line);
+        background: var(--accent-bg);
+        color: var(--accent-text);
+      }
+      .sp {
+        flex: 1;
+      }
+      .sizesel {
+        height: 28px;
+        max-width: 150px;
+        padding: 0 4px;
+        border: 1px solid var(--line2);
+        border-radius: 5px;
+        background: var(--bg2);
+      }
+      body.embed .no-embed {
+        display: none !important;
+      }
+      @media (width <= 620px) {
+        .hide-s {
+          display: none !important;
+        }
+        .sizesel {
+          max-width: 96px;
+        }
+      }
+
+      /* --- 3D view ------------------------------------------------------ */
+      #cv {
+        position: absolute;
+        top: 40px;
+        left: 0;
+        display: block;
+        touch-action: none;
+        outline: none;
+      }
+      #loadmsg {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        color: var(--muted);
+        transform: translate(-50%, -50%);
+      }
+      #fr {
+        position: absolute;
+        z-index: 3;
+        border: 1px dashed rgb(233 162 59 / 55%);
+        border-radius: 6px;
+        pointer-events: none;
+        transition:
+          left var(--t),
+          top var(--t),
+          width var(--t),
+          height var(--t);
+      }
+      #fr::before,
+      #fr::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        background: rgb(233 162 59 / 70%);
+      }
+      #fr::before {
+        width: 14px;
+        height: 1px;
+        margin-left: -7px;
+      }
+      #fr::after {
+        width: 1px;
+        height: 14px;
+        margin-top: -7px;
+      }
+      #fr span {
+        position: absolute;
+        right: 6px;
+        bottom: 4px;
+        color: rgb(243 196 126 / 80%);
+        font: 10px var(--mono);
+        text-shadow: 0 1px 2px rgb(0 0 0 / 60%);
+      }
+
+      /* --- docks -------------------------------------------------------- */
+      .dock {
+        position: absolute;
+        z-index: 5;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-top: 0;
+        background: rgb(31 32 35 / 97%);
+        box-shadow: 0 8px 22px rgb(0 0 0 / 35%);
+        transition:
+          left var(--t),
+          width var(--t),
+          top var(--t),
+          height var(--t);
+      }
+      #list {
+        border-left: 0;
+      }
+      #insp,
+      #shelf {
+        border-right: 0;
+      }
+      .dhead {
+        display: flex;
+        flex: none;
+        align-items: center;
+        gap: 6px;
+        height: 38px;
+        padding: 0 4px 0 10px;
+        border-bottom: 1px solid var(--line);
+        white-space: nowrap;
+      }
+      .dtitle {
+        overflow: hidden;
+        color: var(--muted);
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.09em;
+        text-overflow: ellipsis;
+        text-transform: uppercase;
+      }
+      .meta {
+        color: var(--dim);
+        font: 10px var(--mono);
+      }
+      .dbody {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+      }
+      .ib {
+        display: grid;
+        flex: none;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        border: 0;
+        border-radius: 5px;
+        background: none;
+        color: var(--muted);
+      }
+      .ib:hover {
+        background: var(--bg3);
+        color: var(--text);
+      }
+      .rb {
+        flex: none;
+        padding: 0 6px;
+        border: 1px solid var(--accent-line);
+        border-radius: 9px;
+        background: var(--accent-bg);
+        color: var(--accent-text);
+        font-size: 10px;
+        line-height: 16px;
+      }
+
+      /* the list (a tree, tree first) */
+      #list {
+        --ind: 14px;
+      }
+      #list.narrow {
+        --ind: 7px;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 30px;
+        padding: 0 6px 0 calc(4px + var(--lvl) * var(--ind));
+        border-left: 2px solid transparent;
+        white-space: nowrap;
+        cursor: pointer;
+        user-select: none;
+      }
+      .row:hover {
+        background: var(--bg2);
+      }
+      .row.sel {
+        border-left-color: var(--accent);
+        background: var(--accent-bg);
+      }
+      .row .nm {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .row .kd {
+        color: var(--dim);
+        font-size: 10.5px;
+      }
+      .row .num {
+        display: grid;
+        flex: none;
+        place-items: center;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: var(--bg4);
+        font: 600 10px var(--mono);
+      }
+      .row.sel .num {
+        background: var(--accent);
+        color: #1b1b1b;
+      }
+      .tw {
+        display: grid;
+        flex: none;
+        place-items: center;
+        width: 16px;
+        height: 16px;
+        padding: 0;
+        border: 0;
+        background: none;
+        color: var(--dim);
+      }
+      .tw svg {
+        width: 12px;
+        height: 12px;
+        transition: transform 0.12s;
+      }
+      .tw.open svg {
+        transform: rotate(90deg);
+      }
+      .row .det {
+        display: none;
+        align-items: center;
+        gap: 2px;
+        height: 24px;
+        padding: 0 4px 0 8px;
+        border: 1px solid var(--accent-line);
+        border-radius: 12px;
+        background: none;
+        color: var(--accent-text);
+        font-size: 11px;
+      }
+      .row .det svg {
+        width: 12px;
+        height: 12px;
+      }
+      body.sheets .row.sel .det {
+        display: inline-flex;
+      }
+      #list.narrow .kd,
+      #list.narrow .lhint,
+      #list.narrow .dhead .meta {
+        display: none;
+      }
+      #list.narrow .row {
+        gap: 4px;
+      }
+      #list.narrow .row .nm {
+        font-size: 11.5px;
+      }
+      .lhint {
+        padding: 8px 10px;
+        color: var(--dim);
+        font-size: 11px;
+      }
+
+      /* the details panel */
+      .fld {
+        padding: 9px 12px;
+        border-bottom: 1px solid var(--line);
+      }
+      .fld > label,
+      .fld > .lab {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 5px;
+        color: var(--muted);
+        font-size: 10.5px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .fld .v {
+        color: var(--text);
+        font: 11px var(--mono);
+        letter-spacing: 0;
+        text-transform: none;
+      }
+      .fld input[type="text"],
+      .fld select {
+        width: 100%;
+        height: 28px;
+        padding: 0 8px;
+        border: 1px solid var(--line2);
+        border-radius: 5px;
+        background: var(--bg2);
+      }
+      .fld input[type="range"] {
+        width: 100%;
+        margin: 2px 0;
+        accent-color: var(--accent);
+      }
+      .fld input:disabled {
+        opacity: 0.4;
+      }
+      .hint {
+        margin-top: 3px;
+        color: var(--dim);
+        font-size: 11px;
+      }
+      .place {
+        font: 11px var(--mono);
+      }
+      .danger {
+        height: 28px;
+        padding: 0 10px;
+        border: 1px solid rgb(217 125 121 / 45%);
+        border-radius: 5px;
+        background: none;
+        color: var(--danger);
+      }
+      .ihead-ic {
+        display: grid;
+        flex: none;
+        place-items: center;
+        width: 22px;
+        height: 22px;
+        border-radius: 5px;
+        background: var(--accent-bg);
+        color: var(--accent-text);
+      }
+      .ihead-nm {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        font-weight: 600;
+        text-overflow: ellipsis;
+      }
+      .ihead-kd {
+        color: var(--dim);
+        font-size: 10.5px;
+      }
+
+      /* the asset shelf */
+      #shelf.rail .as-full,
+      #shelf:not(.rail) .as-rail {
+        display: none !important;
+      }
+      .as-sum {
+        flex: none;
+        padding: 6px 12px 7px;
+        border-bottom: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .as-sum b {
+        color: var(--text);
+        font-weight: 600;
+      }
+      .as-list {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        padding: 7px;
+      }
+      .as-card {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--bg2);
+      }
+      .as-card .tx {
+        flex: 1;
+        min-width: 0;
+      }
+      .as-card .nm {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .as-card .sub {
+        overflow: hidden;
+        color: var(--muted);
+        font: 10.5px var(--mono);
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .as-card .sub.busy {
+        color: var(--accent-text);
+      }
+      .thumb {
+        display: grid;
+        flex: none;
+        place-items: center;
+        width: 34px;
+        height: 34px;
+        border-radius: 5px;
+        background: linear-gradient(135deg, #3a3d44, #2a2c31);
+        color: var(--muted);
+      }
+      .thumb.img {
+        background: linear-gradient(160deg, #b9a27c, #6e5a3d);
+        color: #f6ecd9;
+      }
+      .thumb.chr {
+        background: linear-gradient(160deg, #5b7fa8, #34495f);
+        color: #eaf2fb;
+      }
+      .ring .rt {
+        fill: none;
+        stroke: var(--bg4);
+        stroke-width: 2.4;
+      }
+      .ring .rp {
+        fill: none;
+        stroke: var(--accent);
+        stroke-width: 2.4;
+        stroke-linecap: round;
+      }
+      .ring.done .rp {
+        stroke: var(--ok);
+      }
+      .ring .ck {
+        fill: none;
+        stroke: var(--ok);
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .as-files {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        margin: -2px 0 2px 22px;
+        padding-left: 10px;
+        border-left: 1px solid var(--line2);
+      }
+      .as-files div {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--muted);
+        font: 10.5px var(--mono);
+      }
+      .as-foot {
+        padding: 6px 12px 10px;
+        color: var(--dim);
+        font-size: 11px;
+      }
+      .as-rail {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 0;
+      }
+      .as-rail .rh {
+        display: grid;
+        place-items: center;
+        width: 30px;
+        height: 30px;
+        border-radius: 6px;
+        color: var(--muted);
+      }
+      .rail-rule {
+        writing-mode: vertical-rl;
+        transform: rotate(180deg);
+        padding: 6px 0;
+        border: 1px solid var(--accent-line);
+        border-radius: 9px;
+        background: var(--accent-bg);
+        color: var(--accent-text);
+        font-size: 10px;
+        white-space: nowrap;
+      }
+
+      /* the bottom panel */
+      #bpanel {
+        border-top: 1px solid var(--line2);
+        border-right: 1px solid var(--line);
+      }
+      .prob {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        border-bottom: 1px solid var(--line);
+      }
+      .prob .sv {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #e9b86b;
+      }
+      .prob .sv.info {
+        background: #8fa6c0;
+      }
+
+      /* the sheet (700 px wide or less) */
+      #tabs {
+        position: absolute;
+        z-index: 6;
+        display: flex;
+        flex-direction: column;
+        border-top: 1px solid var(--line2);
+        border-radius: 10px 10px 0 0;
+        background: var(--bg1);
+        box-shadow: 0 -10px 26px rgb(0 0 0 / 45%);
+      }
+      .grip {
+        position: relative;
+        flex: none;
+        height: 14px;
+        cursor: ns-resize;
+        touch-action: none;
+      }
+      .grip::before {
+        content: "";
+        position: absolute;
+        top: 5px;
+        left: 50%;
+        width: 34px;
+        height: 3px;
+        border-radius: 2px;
+        background: #4a4f57;
+        transform: translateX(-50%);
+      }
+      .grip::after {
+        content: "";
+        position: absolute;
+        inset: -12px 0 -4px;
+      }
+      .tabrow {
+        display: flex;
+        gap: 4px;
+        padding: 0 8px;
+      }
+      .tabrow button {
+        flex: 1;
+        height: 28px;
+        border: 1px solid var(--line2);
+        border-radius: 6px;
+        background: var(--bg2);
+        color: var(--muted);
+      }
+      .tabrow button[aria-selected="true"] {
+        border-color: var(--accent-line);
+        background: var(--accent-bg);
+        color: var(--accent-text);
+      }
+      .tabrow button:disabled {
+        opacity: 0.4;
+      }
+      body.sheets .dock {
+        border: 0;
+        box-shadow: none;
+        transition: none;
+      }
+      body.sheets #list .dhead,
+      body.sheets #shelf .dhead {
+        display: none;
+      }
+      #pill {
+        position: absolute;
+        z-index: 6;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 30px;
+        padding: 0 10px 0 6px;
+        border: 1px solid var(--line2);
+        border-radius: 15px;
+        background: rgb(31 32 35 / 92%);
+        white-space: nowrap;
+      }
+
+      /* --- map controls --------------------------------------------------- */
+      #mapctl {
+        position: absolute;
+        z-index: 6;
+        display: flex;
+        overflow: hidden;
+        border-radius: 8px;
+        background: #fff;
+        box-shadow:
+          0 1px 2px rgb(60 64 67 / 25%),
+          0 2px 8px rgb(60 64 67 / 15%);
+        transition:
+          left var(--t),
+          top var(--t);
+      }
+      #mapctl.col {
+        flex-direction: column;
+      }
+      #mapctl button {
+        display: grid;
+        place-items: center;
+        width: 38px;
+        height: 38px;
+        padding: 0;
+        border: 0;
+        background: #fff;
+        color: #5f6670;
+      }
+      #mapctl button:hover {
+        background: #f1f3f4;
+        color: #1f2328;
+      }
+      #mapctl.col button {
+        width: 34px;
+        height: 34px;
+      }
+      #mapctl button + button {
+        box-shadow: inset 1px 0 #e4e7eb;
+      }
+      #mapctl.col button + button {
+        box-shadow: inset 0 1px #e4e7eb;
+      }
+      #mapctl button[aria-pressed="true"] {
+        color: #c27a12;
+      }
+
+      /* --- the rule chip -------------------------------------------------- */
+      #chip {
+        position: absolute;
+        z-index: 7;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 24px;
+        padding: 0 9px 0 7px;
+        overflow: hidden;
+        border: 1px solid var(--line2);
+        border-radius: 12px;
+        background: rgb(24 25 28 / 86%);
+        font: 11px var(--mono);
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        transition:
+          left var(--t),
+          top var(--t);
+      }
+      #chip .dot {
+        flex: none;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--ok);
+      }
+      #chip.bad .dot {
+        background: var(--danger);
+      }
+      #chip.today {
+        border-color: rgb(217 125 121 / 60%);
+      }
+      #chip .ct {
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      #chippop {
+        position: absolute;
+        z-index: 25;
+        width: min(340px, calc(100vw - 16px));
+        max-height: calc(100vh - 90px);
+        padding: 10px 12px;
+        overflow: auto;
+        border: 1px solid var(--line2);
+        border-radius: 8px;
+        background: var(--bg1);
+        box-shadow: 0 10px 30px rgb(0 0 0 / 50%);
+      }
+      #chippop h4 {
+        margin: 0 0 6px;
+        font-size: 11px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .rl {
+        display: grid;
+        grid-template-columns: 22px 1fr;
+        gap: 2px 6px;
+        margin-bottom: 8px;
+      }
+      .rl .n {
+        display: grid;
+        place-items: center;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: var(--bg4);
+        color: var(--muted);
+        font: 600 10.5px var(--mono);
+      }
+      .rl.on .n {
+        background: var(--accent);
+        color: #1b1b1b;
+      }
+      .rl .w {
+        grid-column: 2;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .ctl-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 8px;
+      }
+      .ctl-row input[type="range"] {
+        flex: 1;
+        accent-color: var(--accent);
+      }
+
+      /* --- bottom bar ----------------------------------------------------- */
+      #bar {
+        position: fixed;
+        inset: auto 0 0;
+        z-index: 30;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 24px;
+        padding: 0 8px;
+        overflow: hidden;
+        border-top: 1px solid var(--line);
+        background: var(--bg1);
+        color: var(--muted);
+        font-size: 11px;
+        white-space: nowrap;
+      }
+      #bar button {
+        height: 20px;
+        padding: 0 7px;
+        border: 0;
+        border-radius: 4px;
+        background: none;
+        color: var(--muted);
+      }
+      #bar button:hover {
+        background: var(--bg3);
+        color: var(--text);
+      }
+      #bar button[aria-pressed="true"] {
+        background: var(--accent-bg);
+        color: var(--accent-text);
+      }
+      #bar-sel {
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      /* --- notes, toast, stage ------------------------------------------- */
+      #notes {
+        position: fixed;
+        top: 40px;
+        right: 0;
+        bottom: 24px;
+        z-index: 40;
+        width: min(460px, 100vw);
+        padding: 14px 18px 24px;
+        overflow: auto;
+        border-left: 1px solid var(--line2);
+        background: var(--bg1);
+        box-shadow: -10px 0 30px rgb(0 0 0 / 45%);
+        font-size: 12.5px;
+        line-height: 1.5;
+      }
+      #notes h2 {
+        margin: 0 0 8px;
+        font-size: 15px;
+      }
+      #notes h3 {
+        margin: 16px 0 6px;
+        color: var(--accent-text);
+        font-size: 12px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+      #notes p,
+      #notes ul {
+        margin: 0 0 8px;
+      }
+      #notes ul {
+        padding-left: 18px;
+      }
+      #notes li {
+        margin-bottom: 4px;
+      }
+      #notes code,
+      #notes .m {
+        font: 11.5px var(--mono);
+      }
+      #notes .x {
+        float: right;
+      }
+      #toast {
+        position: fixed;
+        bottom: 36px;
+        left: 50%;
+        z-index: 45;
+        max-width: calc(100vw - 24px);
+        padding: 7px 12px;
+        border: 1px solid var(--line2);
+        border-radius: 6px;
+        background: var(--bg2);
+        opacity: 0;
+        pointer-events: none;
+        transform: translateX(-50%);
+        transition: opacity 0.2s;
+      }
+      #toast.on {
+        opacity: 1;
+      }
+      #stage {
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        display: flex;
+        flex-direction: column;
+        background: #0e0f11;
+      }
+      #stagebar {
+        display: flex;
+        flex: none;
+        align-items: center;
+        gap: 6px;
+        height: 44px;
+        padding: 0 10px;
+        overflow-x: auto;
+        border-bottom: 1px solid var(--line);
+        background: var(--bg1);
+        white-space: nowrap;
+      }
+      #stagebody {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        padding: 12px;
+      }
+      #stagebody .wrap {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        align-items: flex-start;
+        justify-content: center;
+      }
+      .pf {
+        margin: 0;
+      }
+      .pf figcaption {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 2px 10px;
+        align-items: baseline;
+        margin-bottom: 5px;
+        color: var(--muted);
+        font-size: 11.5px;
+      }
+      .pf figcaption b {
+        color: var(--text);
+      }
+      .pf .st {
+        font: 11px var(--mono);
+      }
+      .pf .st.bad {
+        color: var(--danger);
+      }
+      .pf .st.good {
+        color: var(--ok);
+      }
+      .pv {
+        position: relative;
+        overflow: hidden;
+        border: 1px solid var(--line2);
+        border-radius: 6px;
+        background: #000;
+      }
+      .pv iframe {
+        position: absolute;
+        top: 0;
+        left: 0;
+        border: 0;
+        transform-origin: 0 0;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .dock,
+        #mapctl,
+        #chip,
+        #fr,
+        .tw svg {
+          transition: none !important;
+        }
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.185.1/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <header id="tb">
+      <div class="brand">
+        <b class="hide-s">Tour editor</b><span class="doc">Old Town Walk</span>
+      </div>
+      <button class="mbtn hide-s" type="button" data-inert>File</button>
+      <button class="mbtn hide-s" type="button" data-inert>Edit</button>
+      <button class="mbtn hide-s" type="button" data-inert>View</button>
+      <span class="sp"></span>
+      <button
+        class="tbtn no-embed"
+        type="button"
+        id="b-today"
+        aria-pressed="false"
+        title="Show today's build: panels at full width, the selection centred on the whole window"
+      >
+        Today
+      </button>
+      <button
+        class="tbtn no-embed"
+        type="button"
+        id="b-notes"
+        aria-expanded="false"
+        title="What this page shows, how it solves the two defects, and what it costs"
+      >
+        Notes
+      </button>
+      <select
+        class="sizesel no-embed"
+        id="sizesel"
+        aria-label="Preview a window size"
+        title="Preview a window size"
+      >
+        <option value="win">This window</option>
+        <option value="desk">Desktop 1280x800</option>
+        <option value="side">Phone sideways 844x390</option>
+        <option value="up">Phone upright 390x844</option>
+        <option value="all">All three</option>
+      </select>
+    </header>
+
+    <main id="app">
+      <canvas id="cv" aria-label="3D view of the tour" tabindex="0"></canvas>
+      <div id="loadmsg">Loading the 3D view...</div>
+      <div id="fr" aria-hidden="true"><span>framed here</span></div>
+
+      <aside id="list" class="dock" aria-label="Stations and items">
+        <div class="dhead">
+          <span class="dtitle">Stations</span><span class="meta">3</span>
+          <span class="sp"></span>
+          <span class="rb" id="list-rule" hidden title="">rule 2</span>
+          <button
+            class="ib"
+            type="button"
+            id="list-wide"
+            hidden
+            title="Widen the list (the 3D view gets narrower)"
+          ></button>
+        </div>
+        <div class="dbody" id="tree" role="tree"></div>
+        <div class="lhint">
+          A tap on a row selects it in 3D; the list stays where it is.
+        </div>
+      </aside>
+
+      <aside id="insp" class="dock" aria-label="Details">
+        <div class="dhead" id="insp-head"></div>
+        <div class="dbody" id="insp-body"></div>
+      </aside>
+
+      <aside id="shelf" class="dock" aria-label="Asset shelf">
+        <div class="as-full dhead">
+          <span class="dtitle">Assets</span
+          ><span class="meta" id="as-count"></span>
+          <span class="sp"></span>
+          <button
+            class="ib"
+            type="button"
+            data-act="fold"
+            title="Fold the shelf to its rail"
+          ></button>
+        </div>
+        <div class="as-full as-sum" id="as-sum"></div>
+        <div class="as-full dbody">
+          <div class="as-list" id="as-list"></div>
+          <div class="as-foot">
+            Drop files anywhere in the editor: they land here and are made small
+            for phones. They can be used while that runs.
+          </div>
+        </div>
+        <div class="as-rail" id="as-rail"></div>
+      </aside>
+
+      <section id="bpanel" class="dock" aria-label="Problems" hidden>
+        <div class="dhead">
+          <span class="dtitle">Problems</span><span class="meta">2</span>
+          <span class="sp"></span>
+          <button
+            class="ib"
+            type="button"
+            id="bp-close"
+            title="Close the problems panel"
+          ></button>
+        </div>
+        <div class="dbody">
+          <div class="prob">
+            <span class="sv"></span>Mill gate: no narration yet
+          </div>
+          <div class="prob">
+            <span class="sv info"></span>bells.m4a is still being made small
+            (usable now)
+          </div>
+        </div>
+      </section>
+
+      <div id="tabs" hidden>
+        <div class="grip" id="grip" title="Drag to resize"></div>
+        <div class="tabrow" role="tablist">
+          <button type="button" role="tab" data-tab="list">List</button>
+          <button type="button" role="tab" data-tab="insp">Details</button>
+          <button type="button" role="tab" data-tab="shelf">Assets</button>
+        </div>
+      </div>
+      <button
+        id="pill"
+        type="button"
+        hidden
+        title="Open the asset shelf"
+      ></button>
+
+      <div id="mapctl" aria-label="Map controls">
+        <button type="button" data-map="in" title="Zoom in"></button>
+        <button type="button" data-map="out" title="Zoom out"></button>
+        <button type="button" data-map="north" title="Face north"></button>
+        <button
+          type="button"
+          data-map="top"
+          aria-pressed="false"
+          title="View from above / tilted"
+        ></button>
+      </div>
+
+      <button
+        id="chip"
+        type="button"
+        aria-expanded="false"
+        title="Which panel rules fire, and whether the handles are clear"
+      >
+        <span class="dot"></span><span class="ct">...</span>
+      </button>
+      <div id="chippop" hidden></div>
+    </main>
+
+    <footer id="bar">
+      <span id="bar-sel">Nothing selected</span><span class="sp"></span>
+      <button type="button" id="bb-details" hidden>Details</button>
+      <button type="button" id="bb-problems" aria-pressed="false">
+        Problems 2
+      </button>
+      <button type="button" id="bb-assets" aria-pressed="true">Assets</button>
+    </footer>
+
+    <section id="notes" hidden aria-label="Notes">
+      <button class="tbtn x" type="button" id="notes-close">Close</button>
+      <h2>Clear area: the camera knows the panels</h2>
+      <p>
+        The panels stay docked where they are today, and the camera knows about
+        them: every selection is framed in the uncovered rectangle of the 3D
+        view (a view offset moves the picture's centre there), with a distance
+        chosen so every handle fits in it. On narrow windows the panels give way
+        by fixed, visible rules instead of covering the 3D view.
+      </p>
+
+      <h3>Defect 1: framing ignored the panels</h3>
+      <p>
+        The camera's centre of projection is moved to the middle of the clear
+        rectangle (the dashed box) and the distance is fitted to the move disc,
+        the turn knob, the size dots and a station's radius dot, not only to the
+        item. The map controls and the rule chip are kept out of that box too.
+        On 1280x800 no panel changes at all; on 1440x900 and 1920x1080 the box
+        is simply wider. Press <b>Today</b> to see the handles land under the
+        details panel instead.
+      </p>
+
+      <h3>Defect 2: the phone held sideways ran out of room</h3>
+      <p>
+        Two rules, in order: (1) while the details panel is open, the shelf
+        folds to its icon rail (its progress rings stay visible); (2) if the 3D
+        view is still narrower than the target (400 px), the list shrinks to a
+        narrow column. Closing the details panel opens the shelf again; on
+        844x390 the list stays narrow even then, because the open shelf alone
+        would leave 372 px. On 844x390 the 104 px strip becomes 410 x 326 px
+        with the details panel open. At 700 px wide or less the panels are one
+        bottom sheet, as today, and selections are framed in the part above it.
+        The map controls always sit inside the clear rectangle, so they cannot
+        overlap a panel.
+      </p>
+
+      <h3>Which rule fires at each size</h3>
+      <p class="hint">
+        With an item selected and its details panel open, at the current target
+        (computed by the same function that lays out the page):
+      </p>
+      <ul id="rule-table"></ul>
+
+      <h3>What it costs (honest weaknesses)</h3>
+      <ul>
+        <li>
+          The 3D view is only the gap between the panels. On 1280x800 that gap
+          is about 440 px wide, so a selection is shown smaller than it would be
+          with panels floating over a full-width map, and the 3D drawn under the
+          panels is wasted.
+        </li>
+        <li>
+          On a narrow window the layout moves when you select something: the
+          shelf folds and the list narrows. The row you clicked keeps its place,
+          but its name gets cut short. Moving things under the pointer is the
+          price of the rules.
+        </li>
+        <li>
+          In the narrow column, names are cut after about ten characters and
+          nesting is shallower, so finding an item by name is harder (two items
+          called "Guide Hanna" look the same).
+        </li>
+        <li>
+          The picture's centre is not the window's centre. Orbiting turns around
+          a point left or right of the middle, which can feel unfamiliar at
+          first.
+        </li>
+        <li>
+          The phone held sideways still has only about 326 px of height. With
+          the bottom panel open it falls to about 216 px, under the 250 px goal:
+          no rule here handles height.
+        </li>
+        <li>
+          While folded, a shelf file's name shows only on hover or after a tap
+          on the rail; the shelf's details are one tap away while you edit.
+        </li>
+        <li>
+          The target width is a choice. At 460 px rule 1 already fires on
+          1280x800; above 410 px rule 2 is not enough on 844x390 and the chip
+          turns red. Try it with the slider in the chip.
+        </li>
+      </ul>
+
+      <h3>Try this</h3>
+      <ul>
+        <li>
+          Click items in 3D or rows in the list: the camera frames each in the
+          dashed box.
+        </li>
+        <li>
+          Use the size switch (top right) to compare desktop, phone sideways and
+          phone upright, or all three; a selection in one is mirrored in the
+          others.
+        </li>
+        <li>
+          On a narrow window close the details panel (the cross): the shelf and
+          the list come back, and the camera reframes.
+        </li>
+        <li>
+          Drag the move disc, the turn knob, a size dot or a station's radius
+          dot (teal).
+        </li>
+        <li>
+          Open the chip at the top of the 3D view to see why each rule fires.
+        </li>
+      </ul>
+
+      <h3>Live check</h3>
+      <p id="live-check" class="m"></p>
+    </section>
+
+    <div id="toast" role="status"></div>
+
+    <div id="stage" hidden>
+      <div id="stagebar">
+        <b>Preview</b>
+        <select
+          class="sizesel"
+          id="stagesel"
+          aria-label="Preview a window size"
+        >
+          <option value="win">This window</option>
+          <option value="desk">Desktop 1280x800</option>
+          <option value="side">Phone sideways 844x390</option>
+          <option value="up">Phone upright 390x844</option>
+          <option value="all">All three</option>
+        </select>
+        <button class="tbtn" type="button" id="st-today" aria-pressed="false">
+          Today
+        </button>
+        <button class="tbtn" type="button" id="st-notes">Notes</button>
+        <span class="sp"></span>
+        <button class="tbtn" type="button" id="st-close">Close</button>
+      </div>
+      <div id="stagebody"><div class="wrap" id="stagewrap"></div></div>
+    </div>
+
+    <script type="module">
+      import * as THREE from "three";
+      import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+      // ---------------------------------------------------------------
+      // Constants and sample data
+      // ---------------------------------------------------------------
+      const params = new URLSearchParams(location.search);
+      const EMBED = params.has("embed");
+      const FRAME_KEY = params.get("frame") || "";
+      const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (EMBED) document.body.classList.add("embed");
+
+      const TOP = 40;
+      const BAR = 24;
+      const RAIL = 38;
+      const NARROW = 128;
+      const SHEETS_AT = 700;
+      const $ = (s) => document.querySelector(s);
+      const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+      const esc = (s) =>
+        String(s).replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[c],
+        );
+
+      const ICON = {
+        station: '<path d="M4 14.5V2.5M4 3h7.5L9.8 5.6 11.5 8.2H4"/>',
+        folder: '<path d="M1.8 4.2h4.4l1.4 1.6h6.6v7H1.8z"/>',
+        pin: '<path d="M8 14.5s-4.6-4.4-4.6-8a4.6 4.6 0 0 1 9.2 0c0 3.6-4.6 8-4.6 8z"/><circle cx="8" cy="6.4" r="1.6"/>',
+        picture:
+          '<rect x="2" y="3" width="12" height="9.5" rx="1"/><path d="M2.6 11.6l3.4-3.4 2.8 2.8 1.9-1.9 2.7 2.7"/>',
+        stand:
+          '<path d="M2.8 5.8l10.4-2.3v3.8L2.8 9.6zM8 8.4v6.1M5.4 14.5h5.2"/>',
+        character:
+          '<circle cx="8" cy="4.2" r="2.3"/><path d="M3.8 14.5c0-3.7 1.9-5.7 4.2-5.7s4.2 2 4.2 5.7"/>',
+        image:
+          '<rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><circle cx="6" cy="6" r="1.2"/><path d="M3 12l3.5-3.5 2.5 2.5 1.5-1.5L13 12"/>',
+        audio:
+          '<path d="M2.8 6.2v3.6h2.6L8.8 13V3L5.4 6.2z"/><path d="M11 5.6a3.4 3.4 0 0 1 0 4.8M12.8 3.9a5.8 5.8 0 0 1 0 8.2"/>',
+        text: '<path d="M3 3.5h10M3 6.5h10M3 9.5h7M3 12.5h5"/>',
+        close: '<path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/>',
+        back: '<path d="M10 3.5L5.5 8l4.5 4.5"/>',
+        chev: '<path d="M6 3.5L10.5 8 6 12.5"/>',
+        foldR: '<path d="M4 3.5L8.5 8 4 12.5M8.5 3.5L13 8l-4.5 4.5"/>',
+        foldL: '<path d="M12 3.5L7.5 8l4.5 4.5M7.5 3.5L3 8l4.5 4.5"/>',
+        plus: '<path d="M8 3v10M3 8h10"/>',
+        minus: '<path d="M3 8h10"/>',
+        north: '<path d="M8 1.8l3 11.4-3-2.2-3 2.2z"/>',
+        top: '<path d="M8 1.8l5.6 3.1v6.2L8 14.2l-5.6-3.1V4.9zM8 8v6.2M2.4 4.9L8 8l5.6-3.1"/>',
+        trash: '<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 9h5.8l.6-9"/>',
+      };
+      const icon = (k) =>
+        `<svg class="i" viewBox="0 0 16 16" aria-hidden="true">${ICON[k]}</svg>`;
+
+      const KIND = {
+        station: "Station",
+        folder: "Folder",
+        pin: "Pin",
+        picture: "Picture",
+        stand: "Reading stand",
+        character: "Character",
+      };
+      // Items that visibly turn get a turn knob; a pin always faces the
+      // viewer and has none.
+      const TURNS = { pin: false, picture: true, stand: true, character: true };
+      // Width and height of each kind at size 1, in metres.
+      const DIM = {
+        pin: [1.4, 2.0],
+        picture: [2.4, 2.6],
+        stand: [0.9, 1.3],
+        character: [1.0, 1.9],
+      };
+      const LOOKS = {
+        pin: ["Amber", "Teal", "White"],
+        picture: ["In a frame", "Plain board"],
+        stand: ["Oak", "Dark metal"],
+        character: ["Guide Hanna (from the shelf)"],
+      };
+
+      const stations = [
+        { id: "s1", n: 1, name: "Market cross", x: 0, z: 0, r: 14 },
+        { id: "s2", n: 2, name: "Mill gate", x: -40, z: -26, r: 12 },
+        { id: "s3", n: 3, name: "Church yard", x: 38, z: -30, r: 16 },
+      ];
+      const folders = [{ id: "f1", name: "Welcome", st: "s1" }];
+      const items = [
+        {
+          id: "i1",
+          kind: "pin",
+          name: "Start here",
+          st: "s1",
+          folder: "f1",
+          x: -5,
+          z: 4,
+          h: 0,
+          s: 1,
+          look: 0,
+        },
+        {
+          id: "i4",
+          kind: "character",
+          name: "Guide Hanna",
+          st: "s1",
+          folder: "f1",
+          x: -7,
+          z: -3,
+          h: 40,
+          s: 1,
+          look: 0,
+        },
+        {
+          id: "i2",
+          kind: "picture",
+          name: "Market in 1890",
+          st: "s1",
+          x: 6,
+          z: -3,
+          h: -25,
+          s: 1,
+          look: 0,
+        },
+        {
+          id: "i3",
+          kind: "stand",
+          name: "The old cross",
+          st: "s1",
+          x: 2,
+          z: 6,
+          h: 15,
+          s: 1,
+          look: 0,
+        },
+        {
+          id: "i5",
+          kind: "pin",
+          name: "Water wheel",
+          st: "s2",
+          x: -36,
+          z: -29,
+          h: 0,
+          s: 1,
+          look: 0,
+        },
+        {
+          id: "i6",
+          kind: "picture",
+          name: "The mill in 1702",
+          st: "s2",
+          x: -44,
+          z: -21,
+          h: 70,
+          s: 1,
+          look: 0,
+        },
+        {
+          id: "i7",
+          kind: "stand",
+          name: "Old graves",
+          st: "s3",
+          x: 33,
+          z: -25,
+          h: 200,
+          s: 1,
+          look: 0,
+        },
+        {
+          id: "i8",
+          kind: "character",
+          name: "Guide Hanna",
+          st: "s3",
+          x: 43,
+          z: -34,
+          h: -30,
+          s: 1,
+          look: 0,
+        },
+      ];
+      const files = [
+        {
+          id: "a1",
+          kind: "image",
+          name: "market-1890.jpg",
+          from: "3.1 MB",
+          to: "320 KB",
+          p: 1,
+        },
+        {
+          id: "a2",
+          kind: "image",
+          name: "mill-1702.jpg",
+          from: "4.2 MB",
+          to: "410 KB",
+          p: 1,
+        },
+        {
+          id: "a3",
+          kind: "audio",
+          name: "bells.m4a",
+          from: "6.8 MB",
+          to: "",
+          p: 0.35,
+        },
+        {
+          id: "a4",
+          kind: "text",
+          name: "the-old-cross.md",
+          from: "2 KB",
+          to: "2 KB",
+          p: 1,
+        },
+      ];
+      const character = {
+        name: "Guide Hanna",
+        files: [
+          "sheet.png",
+          "pose-front.png",
+          "pose-side.png",
+          "pose-wave.png",
+          "voice.m4a",
+        ],
+      };
+
+      const byId = (id) =>
+        stations.find((s) => s.id === id) ||
+        folders.find((f) => f.id === id) ||
+        items.find((i) => i.id === id) ||
+        null;
+      const kindOf = (id) =>
+        id[0] === "s" ? "station" : id[0] === "f" ? "folder" : byId(id).kind;
+
+      // ---------------------------------------------------------------
+      // State
+      // ---------------------------------------------------------------
+      const st = {
+        sel: null,
+        inspOpen: false,
+        shelfUser: "auto", // "auto" | "open" (holds rule 1 back) | "folded"
+        listUser: "auto", // "auto" | "wide" (holds rule 2 back)
+        bottom: false,
+        today: params.has("today"),
+        min: 400, // the 3D view's target width while docked, px
+        share: 0.42, // the sheet's share of the height (700 px or less)
+        tab: "list",
+        outline: true,
+        topView: false,
+        open: { s1: true, s2: true, s3: true, f1: true },
+        charOpen: true,
+      };
+      let L = null;
+
+      // ---------------------------------------------------------------
+      // The layout rules: one pure function, used for the page, the chip,
+      // the notes' table and the headless checks.
+      // ---------------------------------------------------------------
+      function bucket(W) {
+        if (W > 1100) return { list: 248, insp: 290, shelf: 300 };
+        if (W > 900) return { list: 210, insp: 290, shelf: 262 };
+        return { list: 226, insp: 268, shelf: 246 };
+      }
+
+      function computeLayout(W, H, s) {
+        const viewH = H - TOP - BAR;
+        const rules = [
+          {
+            id: 1,
+            name: "The shelf folds to its icon rail while the details panel is open",
+            on: false,
+            why: "",
+          },
+          {
+            id: 2,
+            name: "The list shrinks to a narrow column",
+            on: false,
+            why: "",
+          },
+          {
+            id: 3,
+            name: "The panels become one bottom sheet",
+            on: false,
+            why: "",
+          },
+        ];
+        const out = {
+          W,
+          H,
+          viewH,
+          rules,
+          mode: "docks",
+          rail: false,
+          narrow: false,
+        };
+        if (W <= SHEETS_AT) {
+          out.mode = "sheets";
+          rules[2].on = true;
+          rules[2].why = `the window is ${W} px wide (${SHEETS_AT} or less): side panels would leave no usable 3D view`;
+          rules[0].why =
+            "not needed: on a sheet the shelf is a pill over the 3D view";
+          rules[1].why = "not needed: the list fills the sheet's width";
+          const sheetH = Math.round(viewH * s.share);
+          const sy = TOP + viewH - sheetH;
+          out.tabs = { x: 0, y: sy, w: W, h: 48 };
+          out.sheetBody = { x: 0, y: sy + 48, w: W, h: sheetH - 48 };
+          out.clear = { x: 0, y: TOP, w: W, h: viewH - sheetH };
+        } else {
+          rules[2].why = `off: the window is wider than ${SHEETS_AT} px`;
+          const b = bucket(W);
+          const insp = s.sel && s.inspOpen ? b.insp : 0;
+          let shelf = s.shelfUser === "folded" ? RAIL : b.shelf;
+          let list = b.list;
+          const free = () => W - list - insp - shelf;
+          if (s.today) {
+            rules[0].why = "off: today's build has no such rule";
+            rules[1].why = "off: today's build has no such rule";
+          } else {
+            const f0 = free();
+            if (!insp) rules[0].why = "off: no details panel is open";
+            else if (shelf === RAIL)
+              rules[0].why = "off: the shelf is already folded";
+            else if (f0 >= s.min)
+              rules[0].why = `off: the 3D view is ${f0} px wide (target ${s.min})`;
+            else if (s.shelfUser === "open")
+              rules[0].why = `held back: you opened the shelf (the 3D view is ${f0} px wide)`;
+            else {
+              shelf = RAIL;
+              rules[0].on = true;
+              rules[0].why = `the 3D view would be ${f0} px wide, under ${s.min}; with the rail it is ${free()} px`;
+            }
+            const f1 = free();
+            if (f1 >= s.min)
+              rules[1].why = `off: the 3D view is ${f1} px wide (target ${s.min})`;
+            else if (s.listUser === "wide")
+              rules[1].why = `held back: you widened the list (the 3D view is ${f1} px wide)`;
+            else {
+              list = NARROW;
+              rules[1].on = true;
+              rules[1].why = `the 3D view would be ${f1} px wide, under ${s.min}; with the narrow list it is ${free()} px`;
+            }
+          }
+          out.rail = shelf === RAIL;
+          out.narrow = list === NARROW;
+          out.list = { x: 0, y: TOP, w: list, h: viewH };
+          out.shelf = { x: W - shelf, y: TOP, w: shelf, h: viewH };
+          if (insp)
+            out.insp = { x: W - shelf - insp, y: TOP, w: insp, h: viewH };
+          const cw = free();
+          const bp = s.bottom ? (H < 560 ? 110 : 150) : 0;
+          if (bp) out.bpanel = { x: list, y: TOP + viewH - bp, w: cw, h: bp };
+          out.clear = { x: list, y: TOP, w: cw, h: viewH - bp };
+        }
+        const c = out.clear;
+        // The map controls: a row at the foot on a tall window, a column
+        // (about 136 px) on a phone or a short window; always inside the
+        // clear rectangle. Today's build keeps its row.
+        out.col = out.mode === "sheets" || (H < 560 && !s.today);
+        const ctlW = out.col ? 34 : 152;
+        const ctlH = out.col ? 136 : 38;
+        out.ctl = {
+          x: c.x + c.w - 12 - ctlW,
+          y: out.mode === "sheets" ? c.y + 10 : c.y + c.h - 12 - ctlH,
+          w: ctlW,
+          h: ctlH,
+        };
+        if (s.today) {
+          out.frame =
+            out.mode === "sheets" ? { ...c } : { x: 0, y: TOP, w: W, h: viewH };
+        } else {
+          const left = c.x + 14;
+          const top = c.y + 44; // the chip's (and the pill's) band
+          const right = out.col ? out.ctl.x - 10 : c.x + c.w - 14;
+          const bottom = out.col ? c.y + c.h - 14 : out.ctl.y - 10;
+          out.frame = {
+            x: left,
+            y: top,
+            w: Math.max(40, right - left),
+            h: Math.max(40, bottom - top),
+          };
+        }
+        out.ok = out.mode === "sheets" || s.today ? c.w >= 300 : c.w >= s.min;
+        return out;
+      }
+
+      // ---------------------------------------------------------------
+      // DOM: panels
+      // ---------------------------------------------------------------
+      const els = {
+        list: $("#list"),
+        insp: $("#insp"),
+        shelf: $("#shelf"),
+        tabs: $("#tabs"),
+        pill: $("#pill"),
+        bpanel: $("#bpanel"),
+        ctl: $("#mapctl"),
+        chip: $("#chip"),
+        fr: $("#fr"),
+      };
+      function place(el, r) {
+        if (!r) {
+          el.hidden = true;
+          return;
+        }
+        el.hidden = false;
+        el.style.left = r.x + "px";
+        el.style.top = r.y + "px";
+        el.style.width = r.w + "px";
+        el.style.height = r.h + "px";
+      }
+
+      // Static icons in buttons.
+      document.querySelector('[data-map="in"]').innerHTML = icon("plus");
+      document.querySelector('[data-map="out"]').innerHTML = icon("minus");
+      document.querySelector('[data-map="north"]').innerHTML = icon("north");
+      document.querySelector('[data-map="top"]').innerHTML = icon("top");
+      document.querySelector('#shelf [data-act="fold"]').innerHTML =
+        icon("foldR");
+      $("#bp-close").innerHTML = icon("close");
+
+      function treeRows() {
+        const rows = [];
+        for (const s of stations) {
+          rows.push({
+            id: s.id,
+            lvl: 0,
+            kind: "station",
+            name: s.name,
+            num: s.n,
+            tw: true,
+          });
+          if (!st.open[s.id]) continue;
+          for (const f of folders.filter((x) => x.st === s.id)) {
+            rows.push({
+              id: f.id,
+              lvl: 1,
+              kind: "folder",
+              name: f.name,
+              tw: true,
+            });
+            if (st.open[f.id])
+              for (const it of items.filter((x) => x.folder === f.id))
+                rows.push({ id: it.id, lvl: 2, kind: it.kind, name: it.name });
+          }
+          for (const it of items.filter((x) => x.st === s.id && !x.folder))
+            rows.push({ id: it.id, lvl: 1, kind: it.kind, name: it.name });
+        }
+        return rows;
+      }
+      function renderTree() {
+        $("#tree").innerHTML = treeRows()
+          .map((r) => {
+            const sel = st.sel === r.id;
+            const tw = r.tw
+              ? `<button type="button" class="tw${st.open[r.id] ? " open" : ""}" data-tw="${r.id}" aria-label="Open or close">${icon("chev")}</button>`
+              : '<span class="tw"></span>';
+            const ic = r.num
+              ? `<span class="num">${r.num}</span>`
+              : icon(r.kind);
+            return `<div class="row${sel ? " sel" : ""}" role="treeitem" aria-selected="${sel}" data-id="${r.id}" style="--lvl:${r.lvl}">${tw}${ic}<span class="nm" title="${esc(r.name)}">${esc(r.name)}</span><span class="kd">${KIND[r.kind]}</span><button type="button" class="det" data-det="${r.id}">Details${icon("chev")}</button></div>`;
+          })
+          .join("");
+      }
+      $("#tree").addEventListener("click", (e) => {
+        const tw = e.target.closest("[data-tw]");
+        if (tw) {
+          const id = tw.dataset.tw;
+          st.open[id] = !st.open[id];
+          renderTree();
+          return;
+        }
+        const det = e.target.closest("[data-det]");
+        if (det) {
+          st.tab = "insp";
+          relayout(false);
+          return;
+        }
+        const row = e.target.closest(".row");
+        if (!row) return;
+        const id = row.dataset.id;
+        if (id === st.sel && L.mode === "docks" && !st.inspOpen) {
+          openDetails();
+          return;
+        }
+        select(id);
+      });
+
+      function placeText(o) {
+        if (o.id[0] === "s")
+          return `lat ${(52.52 - o.z * 0.000009).toFixed(6)}, lon ${(13.405 + o.x * 0.0000148).toFixed(6)}`;
+        if (o.id[0] === "f") {
+          const p = pivotOf(o.id);
+          const s = byId(o.st);
+          return `${(p.x - s.x).toFixed(1)} m E, ${(s.z - p.z).toFixed(1)} m N of station ${s.n}`;
+        }
+        const s = byId(o.st);
+        return `${(o.x - s.x).toFixed(1)} m E, ${(s.z - o.z).toFixed(1)} m N of station ${s.n}`;
+      }
+      function renderInsp() {
+        const id = st.sel;
+        if (!id) {
+          $("#insp-head").innerHTML = "";
+          $("#insp-body").innerHTML = "";
+          return;
+        }
+        const o = byId(id);
+        const k = kindOf(id);
+        const sheets = L && L.mode === "sheets";
+        $("#insp-head").innerHTML =
+          (sheets
+            ? `<button type="button" class="ib" data-ia="back" title="Back to the list">${icon("back")}</button>`
+            : "") +
+          `<span class="ihead-ic">${icon(k)}</span><span class="ihead-nm">${esc(o.name)}</span><span class="ihead-kd">${KIND[k]}</span>` +
+          (sheets
+            ? ""
+            : `<button type="button" class="ib" data-ia="close" title="Close the details panel (the selection stays)">${icon("close")}</button>`);
+        let h = `<div class="fld"><label for="f-name">Name</label><input type="text" id="f-name" value="${esc(o.name)}" /></div>`;
+        h += `<div class="fld"><div class="lab">Place</div><div class="place" id="f-place">${placeText(o)}</div><div class="hint">Drag the move disc in 3D, or type a place.</div></div>`;
+        if (k === "station") {
+          h += `<div class="fld"><label for="f-r">Radius <span class="v" id="v-r">${o.r.toFixed(1)} m</span></label><input type="range" id="f-r" min="3" max="40" step="0.5" value="${o.r}" /><div class="hint">Or drag the teal radius dot.</div></div>`;
+          h += `<div class="fld"><div class="lab">Items</div>${items.filter((i) => i.st === id).length} items, ${folders.filter((f) => f.st === id).length} folder</div>`;
+        } else if (k === "folder") {
+          const its = items.filter((i) => i.folder === id);
+          h += `<div class="fld"><div class="lab">Items</div>${its.map((i) => esc(i.name)).join(", ")}<div class="hint">The knob turns the folder's items around its centre.</div></div>`;
+        } else {
+          h += `<div class="fld"><label for="f-s">Size <span class="v" id="v-s">${Math.round(o.s * 100)} %</span></label><input type="range" id="f-s" min="40" max="300" step="5" value="${Math.round(o.s * 100)}" /></div>`;
+          const turns = TURNS[k];
+          h += `<div class="fld"><label for="f-h">Heading <span class="v" id="v-h">${turns ? Math.round(o.h) + "°" : "-"}</span></label><input type="range" id="f-h" min="-180" max="180" step="1" value="${Math.round(o.h)}" ${turns ? "" : "disabled"} />${turns ? "" : '<div class="hint">A pin always faces the viewer: it has no heading.</div>'}</div>`;
+          h += `<div class="fld"><label for="f-look">Look</label><select id="f-look">${LOOKS[k].map((l, i) => `<option value="${i}"${i === o.look ? " selected" : ""}>${l}</option>`).join("")}</select></div>`;
+        }
+        h += `<div class="fld"><button type="button" class="danger" data-ia="del">${k === "folder" ? "Ungroup" : "Delete"}</button></div>`;
+        $("#insp-body").innerHTML = h;
+      }
+      function refreshInspValues() {
+        const o = st.sel && byId(st.sel);
+        if (!o) return;
+        const pl = $("#f-place");
+        if (pl) pl.textContent = placeText(o);
+        const set = (sel, v) => {
+          const el = $(sel);
+          if (el) el.textContent = v;
+        };
+        if (o.r !== undefined) {
+          set("#v-r", o.r.toFixed(1) + " m");
+          if ($("#f-r")) $("#f-r").value = o.r;
+        }
+        if (o.s !== undefined) {
+          set("#v-s", Math.round(o.s * 100) + " %");
+          if ($("#f-s")) $("#f-s").value = Math.round(o.s * 100);
+          if (TURNS[o.kind]) {
+            set("#v-h", Math.round(o.h) + "°");
+            if ($("#f-h")) $("#f-h").value = Math.round(o.h);
+          }
+        }
+      }
+      $("#insp").addEventListener("click", (e) => {
+        const b = e.target.closest("[data-ia]");
+        if (!b) return;
+        if (b.dataset.ia === "close") closeDetails();
+        else if (b.dataset.ia === "back") {
+          st.tab = "list";
+          relayout(false);
+        } else if (b.dataset.ia === "del")
+          toast("A prototype: nothing is deleted.");
+      });
+      $("#insp").addEventListener("input", (e) => {
+        const o = byId(st.sel);
+        if (!o) return;
+        const t = e.target;
+        if (t.id === "f-name") {
+          o.name = t.value;
+          renderTree();
+          updateBar();
+        } else if (t.id === "f-r") o.r = Number(t.value);
+        else if (t.id === "f-s") o.s = Number(t.value) / 100;
+        else if (t.id === "f-h") o.h = Number(t.value);
+        else if (t.id === "f-look") o.look = Number(t.value);
+        syncScene();
+        refreshInspValues();
+        requestRender();
+      });
+
+      // The shelf.
+      function ring(p, id) {
+        const C = 50.27;
+        const done = p >= 1;
+        return `<svg class="ring${done ? " done" : ""}" viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><circle class="rt" cx="10" cy="10" r="8"/><circle class="rp" cx="10" cy="10" r="8" data-ring="${id}" stroke-dasharray="${C}" stroke-dashoffset="${(C * (1 - p)).toFixed(2)}" transform="rotate(-90 10 10)"/>${done ? '<path class="ck" d="M6.5 10.2l2.4 2.3 4.6-5"/>' : ""}</svg>`;
+      }
+      function fileSub(f) {
+        return f.p >= 1
+          ? `${f.from} → ${f.to}`
+          : `making small · ${Math.round(f.p * 100)} % · usable now`;
+      }
+      function renderShelf() {
+        $("#as-count").textContent = String(files.length + 1);
+        const busy = files.filter((f) => f.p < 1).length;
+        $("#as-sum").innerHTML =
+          `<b>${files.length + 1}</b> on the shelf · <b data-busy>${busy}</b> being made small · saved 13.2 MB`;
+        let h = files
+          .map(
+            (f) =>
+              `<div class="as-card"><span class="thumb${f.kind === "image" ? " img" : ""}">${icon(f.kind)}</span><span class="tx"><div class="nm">${f.name}</div><div class="sub${f.p < 1 ? " busy" : ""}" data-sub="${f.id}">${fileSub(f)}</div></span><span data-rw="${f.id}">${ring(f.p, f.id)}</span></div>`,
+          )
+          .join("");
+        h += `<div class="as-card" data-char="1" style="cursor:pointer"><span class="thumb chr">${icon("character")}</span><span class="tx"><div class="nm">${character.name}</div><div class="sub">character · ${character.files.length} files · used twice</div></span>${ring(1, "c1")}</div>`;
+        if (st.charOpen)
+          h += `<div class="as-files">${character.files.map((n) => `<div>${icon(n.endsWith(".m4a") ? "audio" : "image")}${n}</div>`).join("")}</div>`;
+        $("#as-list").innerHTML = h;
+        const ruleBadge =
+          L && L.rail && L.rules[0].on
+            ? '<span class="rail-rule" title="Folded by rule 1 while the details panel is open">rule 1</span>'
+            : "";
+        $("#as-rail").innerHTML =
+          `<button type="button" class="ib" data-act="unfold" title="Open the shelf">${icon("foldL")}</button>` +
+          ruleBadge +
+          files
+            .map(
+              (f) =>
+                `<span class="rh" title="${f.name}: ${fileSub(f)}" data-rw="${f.id}">${ring(f.p, f.id)}</span>`,
+            )
+            .join("") +
+          `<span class="rh" title="${character.name}: character, ${character.files.length} files">${icon("character")}</span>`;
+        $("#pill").innerHTML =
+          `${ring(busy ? files.find((f) => f.p < 1).p : 1, "pill")}Assets ${files.length + 1}`;
+      }
+      function tickShelf() {
+        const f = files[2];
+        if (f.p >= 1) {
+          f.hold = (f.hold || 0) + 1;
+          if (f.hold < 20) return;
+          f.hold = 0;
+          f.p = 0.04;
+        } else {
+          f.p = Math.min(1, f.p + 0.012);
+          if (f.p >= 1) f.to = "1.9 MB";
+        }
+        // Update in place: a full re-render would swallow clicks.
+        document.querySelectorAll(`[data-rw="${f.id}"]`).forEach((w) => {
+          w.innerHTML = ring(f.p, f.id);
+          if (w.title) w.title = `${f.name}: ${fileSub(f)}`;
+        });
+        const sub = document.querySelector(`[data-sub="${f.id}"]`);
+        if (sub) {
+          sub.textContent = fileSub(f);
+          sub.classList.toggle("busy", f.p < 1);
+        }
+        const b = document.querySelector("[data-busy]");
+        if (b) b.textContent = String(files.filter((x) => x.p < 1).length);
+        $("#pill").innerHTML = `${ring(f.p, "pill")}Assets ${files.length + 1}`;
+      }
+      setInterval(tickShelf, 220);
+      $("#shelf").addEventListener("click", (e) => {
+        const a = e.target.closest("[data-act]");
+        if (a && a.dataset.act === "fold") setShelf("folded");
+        else if (a && a.dataset.act === "unfold") setShelf("open");
+        else if (e.target.closest("[data-char]")) {
+          st.charOpen = !st.charOpen;
+          renderShelf();
+        }
+      });
+      function setShelf(mode) {
+        if (L.mode === "sheets") {
+          st.tab = st.tab === "shelf" ? "list" : "shelf";
+        } else st.shelfUser = mode;
+        relayout(false);
+      }
+      $("#pill").addEventListener("click", () => {
+        st.tab = "shelf";
+        relayout(false);
+      });
+
+      // The list's widen button (holds rule 2 back).
+      $("#list-wide").addEventListener("click", () => {
+        st.listUser = st.listUser === "wide" ? "auto" : "wide";
+        relayout(false);
+      });
+
+      // The sheet's tabs and grip.
+      $("#tabs").addEventListener("click", (e) => {
+        const b = e.target.closest("[data-tab]");
+        if (!b || b.disabled) return;
+        st.tab = b.dataset.tab;
+        relayout(false);
+      });
+      {
+        const grip = $("#grip");
+        let g = null;
+        grip.addEventListener("pointerdown", (e) => {
+          g = { id: e.pointerId };
+          grip.setPointerCapture(e.pointerId);
+        });
+        grip.addEventListener("pointermove", (e) => {
+          if (!g) return;
+          const viewH = innerHeight - TOP - BAR;
+          st.share = clamp((TOP + viewH - e.clientY) / viewH, 0.18, 0.75);
+          applyLayout();
+          snapOffset();
+        });
+        const end = () => {
+          if (!g) return;
+          g = null;
+          reframe(false);
+        };
+        grip.addEventListener("pointerup", end);
+        grip.addEventListener("pointercancel", end);
+      }
+
+      // Bottom bar.
+      $("#bb-problems").addEventListener("click", () => {
+        st.bottom = !st.bottom;
+        relayout(false);
+      });
+      $("#bp-close").addEventListener("click", () => {
+        st.bottom = false;
+        relayout(false);
+      });
+      $("#bb-assets").addEventListener("click", () => {
+        if (L.mode === "sheets") setShelf();
+        else setShelf(L.rail ? "open" : "folded");
+      });
+      $("#bb-details").addEventListener("click", () => openDetails());
+      function updateBar() {
+        const o = st.sel && byId(st.sel);
+        $("#bar-sel").textContent = o
+          ? `${KIND[kindOf(st.sel)]}: ${o.name}`
+          : "Nothing selected";
+        $("#bb-details").hidden = !(o && L.mode === "docks" && !st.inspOpen);
+        $("#bb-problems").hidden = L.mode === "sheets";
+        $("#bb-problems").setAttribute("aria-pressed", String(st.bottom));
+        $("#bb-assets").setAttribute(
+          "aria-pressed",
+          String(L.mode === "sheets" ? st.tab === "shelf" : !L.rail),
+        );
+      }
+
+      // ---------------------------------------------------------------
+      // Apply the layout
+      // ---------------------------------------------------------------
+      function applyLayout() {
+        L = computeLayout(innerWidth, innerHeight, st);
+        const sheets = L.mode === "sheets";
+        const wasSheets = document.body.classList.contains("sheets");
+        document.body.classList.toggle("sheets", sheets);
+        if (sheets !== wasSheets) renderInsp();
+        if (sheets) {
+          if (st.tab === "insp" && !st.sel) st.tab = "list";
+          place(els.tabs, L.tabs);
+          place(els.list, st.tab === "list" ? L.sheetBody : null);
+          place(els.insp, st.tab === "insp" ? L.sheetBody : null);
+          place(els.shelf, st.tab === "shelf" ? L.sheetBody : null);
+          els.list.classList.remove("narrow");
+          els.shelf.classList.remove("rail");
+          els.pill.hidden = false;
+          els.pill.style.left = L.clear.x + 10 + "px";
+          els.pill.style.top = L.clear.y + 8 + "px";
+          els.tabs.querySelectorAll("[data-tab]").forEach((b) => {
+            b.setAttribute("aria-selected", String(b.dataset.tab === st.tab));
+            if (b.dataset.tab === "insp") b.disabled = !st.sel;
+          });
+        } else {
+          place(els.tabs, null);
+          els.pill.hidden = true;
+          place(els.list, L.list);
+          place(els.insp, L.insp || null);
+          place(els.shelf, L.shelf);
+          els.list.classList.toggle("narrow", L.narrow);
+          els.shelf.classList.toggle("rail", L.rail);
+        }
+        place(els.bpanel, L.bpanel || null);
+        els.ctl.classList.toggle("col", L.col);
+        place(els.ctl, L.ctl);
+        els.ctl.style.width = "";
+        els.ctl.style.height = "";
+
+        // The list's rule badge and widen button.
+        const r2 = L.rules[1];
+        const lr = $("#list-rule");
+        lr.hidden = !r2.on;
+        lr.title = r2.why;
+        const lw = $("#list-wide");
+        const showWide = !sheets && (r2.on || st.listUser === "wide");
+        lw.hidden = !showWide;
+        lw.innerHTML = icon(st.listUser === "wide" ? "foldL" : "foldR");
+        lw.title =
+          st.listUser === "wide"
+            ? "Let the list shrink again (rule 2)"
+            : "Widen the list (the 3D view gets narrower)";
+        renderShelf();
+        updateBar();
+
+        // The chip sits in the clear area's top band, after the pill.
+        let cx = L.clear.x + 10;
+        if (sheets) cx = L.clear.x + 10 + els.pill.offsetWidth + 8;
+        const right =
+          L.col && sheets ? L.ctl.x - 8 : L.clear.x + L.clear.w - 10;
+        els.chip.style.left = cx + "px";
+        els.chip.style.top = L.clear.y + 10 + "px";
+        els.chip.style.maxWidth = Math.max(40, right - cx) + "px";
+
+        place(els.fr, st.outline ? L.frame : null);
+        resizeRenderer();
+        renderNotesTable();
+      }
+
+      // ---------------------------------------------------------------
+      // 3D
+      // ---------------------------------------------------------------
+      const canvas = $("#cv");
+      const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+      const scene = new THREE.Scene();
+      const SKY = 0xbfd4e6;
+      scene.background = new THREE.Color(SKY);
+      scene.fog = new THREE.Fog(SKY, 160, 460);
+      const camera = new THREE.PerspectiveCamera(42, 1, 0.5, 4000);
+      scene.add(new THREE.HemisphereLight(0xeef4ff, 0x5d6b4b, 1.7));
+      const sun = new THREE.DirectionalLight(0xffffff, 1.9);
+      sun.position.set(50, 90, 35);
+      scene.add(sun);
+      let cvW = 1;
+      let cvH = 1;
+      const view = { fx: 0, fy: 0 };
+
+      function tex(w, h, draw) {
+        const c = document.createElement("canvas");
+        c.width = w;
+        c.height = h;
+        draw(c.getContext("2d"), w, h);
+        const t = new THREE.CanvasTexture(c);
+        t.colorSpace = THREE.SRGBColorSpace;
+        t.anisotropy = 4;
+        return t;
+      }
+      let seed = 7;
+      const rnd = () => {
+        seed = (seed * 16807) % 2147483647;
+        return (seed - 1) / 2147483646;
+      };
+
+      // Ground: 400 m square, drawn once.
+      const GW = 400;
+      const toPx = (m, n) => ((m + GW / 2) / GW) * n;
+      const groundTex = tex(2048, 2048, (g, n) => {
+        const k = n / GW;
+        g.fillStyle = "#8fae6b";
+        g.fillRect(0, 0, n, n);
+        for (let i = 0; i < 4000; i++) {
+          g.fillStyle =
+            rnd() < 0.5 ? "rgba(70,100,50,0.18)" : "rgba(190,210,140,0.15)";
+          g.fillRect(rnd() * n, rnd() * n, 3 + rnd() * 6, 3 + rnd() * 6);
+        }
+        const fields = [
+          [-150, 40, 60, 50, "#a3b86f"],
+          [60, 50, 70, 60, "#9cb878"],
+          [-140, -150, 70, 60, "#a9b979"],
+          [80, -150, 80, 50, "#98b56f"],
+        ];
+        for (const [x, z, w, d, c] of fields) {
+          g.fillStyle = c;
+          g.fillRect(toPx(x, n), toPx(z, n), w * k, d * k);
+        }
+        // River.
+        g.strokeStyle = "#6f9fc2";
+        g.lineWidth = 12 * k;
+        g.lineCap = "round";
+        g.beginPath();
+        g.moveTo(toPx(-70, n), toPx(-200, n));
+        g.bezierCurveTo(
+          toPx(-50, n),
+          toPx(-80, n),
+          toPx(-75, n),
+          toPx(20, n),
+          toPx(-60, n),
+          toPx(200, n),
+        );
+        g.stroke();
+        // Paths.
+        g.strokeStyle = "#d8ceb6";
+        g.lineWidth = 4 * k;
+        const path = (pts) => {
+          g.beginPath();
+          g.moveTo(toPx(pts[0][0], n), toPx(pts[0][1], n));
+          for (const p of pts.slice(1)) g.lineTo(toPx(p[0], n), toPx(p[1], n));
+          g.stroke();
+        };
+        path([
+          [0, 0],
+          [-40, -26],
+          [-120, -48],
+          [-200, -60],
+        ]);
+        path([
+          [0, 0],
+          [38, -30],
+          [110, -70],
+          [200, -90],
+        ]);
+        path([
+          [0, 0],
+          [6, 90],
+          [0, 200],
+        ]);
+        path([
+          [0, 0],
+          [100, 14],
+          [200, 20],
+        ]);
+        // The market square, paved.
+        g.fillStyle = "#cfc6b2";
+        g.beginPath();
+        g.arc(toPx(0, n), toPx(0, n), 22 * k, 0, Math.PI * 2);
+        g.fill();
+        g.strokeStyle = "rgba(120,110,95,0.25)";
+        g.lineWidth = 1;
+        for (let i = -22; i <= 22; i += 1.5) {
+          g.beginPath();
+          g.moveTo(toPx(-22, n), toPx(i, n));
+          g.lineTo(toPx(22, n), toPx(i, n));
+          g.stroke();
+        }
+        // The church yard.
+        g.fillStyle = "#9db77c";
+        g.fillRect(toPx(22, n), toPx(-52, n), 44 * k, 40 * k);
+        g.fillStyle = "#c9c6bd";
+        for (let i = 0; i < 26; i++)
+          g.fillRect(
+            toPx(25 + (i % 7) * 5, n),
+            toPx(-49 + Math.floor(i / 7) * 5, n),
+            1.2 * k,
+            0.6 * k,
+          );
+      });
+      const ground = new THREE.Mesh(
+        new THREE.PlaneGeometry(GW, GW),
+        new THREE.MeshLambertMaterial({ map: groundTex }),
+      );
+      ground.rotation.x = -Math.PI / 2;
+      scene.add(ground);
+      const far = new THREE.Mesh(
+        new THREE.PlaneGeometry(3000, 3000),
+        new THREE.MeshLambertMaterial({ color: 0x8aa868 }),
+      );
+      far.rotation.x = -Math.PI / 2;
+      far.position.y = -0.05;
+      scene.add(far);
+
+      // Houses, the mill, the church, trees.
+      const houseCols = [0xe8dcc6, 0xd9c2a3, 0xefe6d6, 0xcdb8a0, 0xe2d2bf];
+      const roofMat = new THREE.MeshLambertMaterial({ color: 0x9a5a45 });
+      const unitBox = new THREE.BoxGeometry(1, 1, 1);
+      const roofGeo = new THREE.ConeGeometry(Math.SQRT1_2, 1, 4);
+      roofGeo.rotateY(Math.PI / 4);
+      function house(x, z, w, d, h, rot, col, roofH = 4) {
+        const g = new THREE.Group();
+        const b = new THREE.Mesh(
+          unitBox,
+          new THREE.MeshLambertMaterial({ color: col }),
+        );
+        b.scale.set(w, h, d);
+        b.position.y = h / 2;
+        const r = new THREE.Mesh(roofGeo, roofMat);
+        r.scale.set(w, roofH, d);
+        r.position.y = h + roofH / 2;
+        g.add(b, r);
+        g.position.set(x, 0, z);
+        g.rotation.y = rot;
+        scene.add(g);
+        return g;
+      }
+      const houses = [
+        [-30, 12, 10, 8, 7],
+        [-13, 30, 12, 8, 9],
+        [9, 31, 10, 9, 8],
+        [27, 18, 9, 12, 10],
+        [31, 0, 8, 10, 7],
+        [-28, -10, 8, 9, 8],
+        [14, -24, 9, 8, 6],
+        [-14, -27, 8, 8, 7],
+        [-22, 52, 10, 9, 7],
+        [30, 48, 11, 8, 8],
+        [70, 10, 10, 10, 9],
+        [-80, 30, 12, 9, 7],
+      ];
+      houses.forEach(([x, z, w, d, h], i) =>
+        house(x, z, w, d, h, Math.atan2(x, z), houseCols[i % houseCols.length]),
+      );
+      house(-54, -33, 11, 9, 8, 0.15, 0xd8c8ad, 5); // the mill
+      const wheel = new THREE.Mesh(
+        new THREE.TorusGeometry(2.6, 0.35, 8, 24),
+        new THREE.MeshLambertMaterial({ color: 0x5b4632 }),
+      );
+      wheel.position.set(-60.5, 2.6, -31);
+      wheel.rotation.y = Math.PI / 2 + 0.15;
+      scene.add(wheel);
+      house(52, -44, 9, 20, 10, 0, 0xe4ddd0, 6); // the church's nave
+      const tower = new THREE.Mesh(
+        unitBox,
+        new THREE.MeshLambertMaterial({ color: 0xd9d1c3 }),
+      );
+      tower.scale.set(6, 20, 6);
+      tower.position.set(52, 10, -57);
+      scene.add(tower);
+      const spire = new THREE.Mesh(
+        roofGeo,
+        new THREE.MeshLambertMaterial({ color: 0x5f6f73 }),
+      );
+      spire.scale.set(6, 10, 6);
+      spire.position.set(52, 25, -57);
+      scene.add(spire);
+      {
+        const trunk = new THREE.CylinderGeometry(0.25, 0.35, 2.4, 6);
+        const crown = new THREE.ConeGeometry(2.2, 5.5, 7);
+        const tm = new THREE.MeshLambertMaterial({ color: 0x6b5139 });
+        const cm = [0x4f7a3f, 0x5d8a46, 0x46703a].map(
+          (c) => new THREE.MeshLambertMaterial({ color: c }),
+        );
+        let n = 0;
+        while (n < 70) {
+          const x = (rnd() - 0.5) * 300;
+          const z = (rnd() - 0.5) * 300;
+          if (Math.hypot(x, z) < 38) continue;
+          if (stations.some((s) => Math.hypot(x - s.x, z - s.z) < s.r + 8))
+            continue;
+          if (houses.some((hh) => Math.hypot(x - hh[0], z - hh[1]) < 11))
+            continue;
+          if (
+            Math.hypot(x - 52, z + 50) < 18 ||
+            Math.hypot(x + 54, z + 33) < 12
+          )
+            continue;
+          const s = 0.8 + rnd() * 0.7;
+          const t = new THREE.Mesh(trunk, tm);
+          t.position.set(x, 1.2 * s, z);
+          t.scale.setScalar(s);
+          const c = new THREE.Mesh(crown, cm[n % 3]);
+          c.position.set(x, (2.4 + 2.6) * s, z);
+          c.scale.setScalar(s);
+          scene.add(t, c);
+          n++;
+        }
+      }
+
+      // Textures for the items.
+      const pinTex = (col) =>
+        tex(128, 192, (g) => {
+          g.fillStyle = "rgba(0,0,0,0.25)";
+          g.beginPath();
+          g.ellipse(64, 186, 18, 5, 0, 0, Math.PI * 2);
+          g.fill();
+          g.fillStyle = col;
+          g.beginPath();
+          g.moveTo(64, 184);
+          g.bezierCurveTo(30, 130, 14, 100, 14, 64);
+          g.arc(64, 64, 50, Math.PI, 0);
+          g.bezierCurveTo(114, 100, 98, 130, 64, 184);
+          g.fill();
+          g.strokeStyle = "rgba(0,0,0,0.3)";
+          g.lineWidth = 3;
+          g.stroke();
+          g.fillStyle = "#fff";
+          g.beginPath();
+          g.arc(64, 64, 18, 0, Math.PI * 2);
+          g.fill();
+        });
+      const PIN_TEX = ["#e9a23b", "#3fae9f", "#f4f4f4"].map(pinTex);
+      const numTex = (n) =>
+        tex(128, 128, (g) => {
+          g.fillStyle = "#1f2023";
+          g.beginPath();
+          g.arc(64, 64, 56, 0, Math.PI * 2);
+          g.fill();
+          g.strokeStyle = "#fff";
+          g.lineWidth = 6;
+          g.stroke();
+          g.fillStyle = "#fff";
+          g.font = "bold 64px Segoe UI, sans-serif";
+          g.textAlign = "center";
+          g.textBaseline = "middle";
+          g.fillText(String(n), 64, 68);
+        });
+      const pictureTex = (title) =>
+        tex(384, 256, (g, w, h) => {
+          const gr = g.createLinearGradient(0, 0, 0, h);
+          gr.addColorStop(0, "#e9dcc0");
+          gr.addColorStop(1, "#b79b70");
+          g.fillStyle = gr;
+          g.fillRect(0, 0, w, h);
+          g.fillStyle = "#6e5638";
+          for (let i = 0; i < 6; i++) {
+            const x = 20 + i * 60;
+            const hh = 70 + ((i * 37) % 50);
+            g.fillRect(x, h - 40 - hh, 46, hh);
+            g.beginPath();
+            g.moveTo(x - 4, h - 40 - hh);
+            g.lineTo(x + 23, h - 70 - hh);
+            g.lineTo(x + 50, h - 40 - hh);
+            g.fill();
+          }
+          g.fillStyle = "#4b3a26";
+          g.fillRect(0, h - 40, w, 40);
+          g.fillStyle = "#f3ead8";
+          g.font = "italic 22px Georgia, serif";
+          g.fillText(title, 14, h - 13);
+        });
+      const standTex = (title) =>
+        tex(256, 180, (g, w, h) => {
+          g.fillStyle = "#efe6cf";
+          g.fillRect(0, 0, w, h);
+          g.fillStyle = "#3b3326";
+          g.font = "bold 24px Georgia, serif";
+          g.fillText(title, 14, 36);
+          g.fillStyle = "#8c8068";
+          for (let i = 0; i < 6; i++)
+            g.fillRect(14, 56 + i * 18, 200 - (i % 3) * 40, 6);
+        });
+      const charTex = tex(256, 512, (g) => {
+        g.fillStyle = "#2f4e73";
+        g.beginPath();
+        g.moveTo(70, 500);
+        g.lineTo(84, 250);
+        g.quadraticCurveTo(128, 200, 172, 250);
+        g.lineTo(186, 500);
+        g.fill();
+        g.fillStyle = "#3c3a37";
+        g.fillRect(92, 420, 28, 88);
+        g.fillRect(136, 420, 28, 88);
+        g.strokeStyle = "#2f4e73";
+        g.lineWidth = 26;
+        g.lineCap = "round";
+        g.beginPath();
+        g.moveTo(170, 270);
+        g.lineTo(215, 190);
+        g.stroke();
+        g.beginPath();
+        g.moveTo(86, 270);
+        g.lineTo(66, 380);
+        g.stroke();
+        g.fillStyle = "#e8bf9a";
+        g.beginPath();
+        g.arc(218, 178, 15, 0, Math.PI * 2);
+        g.fill();
+        g.beginPath();
+        g.arc(128, 170, 44, 0, Math.PI * 2);
+        g.fill();
+        g.fillStyle = "#7a4a2a";
+        g.beginPath();
+        g.arc(128, 156, 46, Math.PI, 0);
+        g.fill();
+        g.fillStyle = "#e9a23b";
+        g.fillRect(100, 260, 56, 14);
+      });
+
+      // Items and stations in 3D.
+      const pickables = [];
+      const objs = new Map();
+      const woodMat = new THREE.MeshLambertMaterial({ color: 0x6d5236 });
+      const darkMat = new THREE.MeshLambertMaterial({ color: 0x3d4247 });
+      function tagPick(g, id) {
+        g.traverse((m) => {
+          if (m.isMesh || m.isSprite) {
+            m.userData.pick = id;
+            pickables.push(m);
+          }
+        });
+      }
+      function makeItem(it) {
+        const g = new THREE.Group();
+        if (it.kind === "pin") {
+          const sp = new THREE.Sprite(
+            new THREE.SpriteMaterial({ map: PIN_TEX[it.look] }),
+          );
+          sp.center.set(0.5, 0);
+          sp.scale.set(1.4, 2.1, 1);
+          g.add(sp);
+          g.userData.sprite = sp;
+        } else if (it.kind === "picture") {
+          for (const sx of [-1, 1]) {
+            const p = new THREE.Mesh(unitBox, woodMat);
+            p.scale.set(0.09, 1.1, 0.09);
+            p.position.set(sx * 1.0, 0.55, 0);
+            g.add(p);
+          }
+          const board = new THREE.Mesh(unitBox, woodMat);
+          board.scale.set(2.5, 1.7, 0.08);
+          board.position.y = 1.85;
+          const face = new THREE.Mesh(
+            new THREE.PlaneGeometry(2.36, 1.56),
+            new THREE.MeshLambertMaterial({ map: pictureTex(it.name) }),
+          );
+          face.position.set(0, 1.85, 0.045);
+          g.add(board, face);
+        } else if (it.kind === "stand") {
+          const post = new THREE.Mesh(unitBox, woodMat);
+          post.scale.set(0.12, 1.0, 0.12);
+          post.position.y = 0.5;
+          const top = new THREE.Group();
+          const plate = new THREE.Mesh(unitBox, woodMat);
+          plate.scale.set(0.95, 0.06, 0.65);
+          const face = new THREE.Mesh(
+            new THREE.PlaneGeometry(0.88, 0.58),
+            new THREE.MeshLambertMaterial({ map: standTex(it.name) }),
+          );
+          face.rotation.x = -Math.PI / 2;
+          face.position.y = 0.032;
+          top.add(plate, face);
+          top.position.y = 1.08;
+          top.rotation.x = 0.55;
+          g.add(post, top);
+          g.userData.top = top;
+        } else {
+          const body = new THREE.Mesh(
+            new THREE.PlaneGeometry(1.0, 2.0),
+            new THREE.MeshLambertMaterial({
+              map: charTex,
+              alphaTest: 0.5,
+              side: THREE.DoubleSide,
+            }),
+          );
+          body.position.y = 1.0;
+          const sh = new THREE.Mesh(
+            new THREE.CircleGeometry(0.45, 20),
+            new THREE.MeshBasicMaterial({
+              color: 0x000000,
+              transparent: true,
+              opacity: 0.22,
+              depthWrite: false,
+            }),
+          );
+          sh.rotation.x = -Math.PI / 2;
+          sh.position.y = 0.02;
+          sh.scale.set(1, 0.6, 1);
+          g.add(body, sh);
+        }
+        tagPick(g, it.id);
+        scene.add(g);
+        objs.set(it.id, g);
+      }
+      function makeStation(s) {
+        const g = new THREE.Group();
+        const ringM = new THREE.Mesh(
+          new THREE.RingGeometry(0.985, 1, 160),
+          new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.8,
+            depthWrite: false,
+          }),
+        );
+        ringM.rotation.x = -Math.PI / 2;
+        ringM.position.y = 0.04;
+        const fill = new THREE.Mesh(
+          new THREE.CircleGeometry(1, 96),
+          new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.07,
+            depthWrite: false,
+          }),
+        );
+        fill.rotation.x = -Math.PI / 2;
+        fill.position.y = 0.03;
+        const pole = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.06, 0.06, 4.4, 6),
+          darkMat,
+        );
+        pole.position.y = 2.2;
+        const flag = new THREE.Sprite(
+          new THREE.SpriteMaterial({ map: numTex(s.n) }),
+        );
+        flag.scale.set(1.7, 1.7, 1);
+        flag.position.y = 5.0;
+        g.add(pole, flag);
+        tagPick(g, s.id);
+        g.add(ringM, fill);
+        g.userData.ring = ringM;
+        g.userData.fill = fill;
+        scene.add(g);
+        objs.set(s.id, g);
+      }
+      stations.forEach(makeStation);
+      items.forEach(makeItem);
+      function syncScene() {
+        for (const s of stations) {
+          const g = objs.get(s.id);
+          g.position.set(s.x, 0, s.z);
+          g.userData.ring.scale.setScalar(s.r);
+          g.userData.fill.scale.setScalar(s.r);
+        }
+        for (const it of items) {
+          const g = objs.get(it.id);
+          g.position.set(it.x, 0, it.z);
+          g.rotation.y = THREE.MathUtils.degToRad(it.h);
+          g.scale.setScalar(it.s);
+          if (g.userData.sprite)
+            g.userData.sprite.material.map = PIN_TEX[it.look] || PIN_TEX[0];
+        }
+      }
+      syncScene();
+
+      // ---------------------------------------------------------------
+      // Handles: a move disc, a turn knob, size dots, a radius dot
+      // ---------------------------------------------------------------
+      const HG = new THREE.Group();
+      HG.visible = false;
+      scene.add(HG);
+      const onTop = (color, opacity = 1) =>
+        new THREE.MeshBasicMaterial({
+          color,
+          transparent: true,
+          opacity,
+          depthTest: false,
+          depthWrite: false,
+        });
+      const disc = new THREE.Group();
+      const discRing = new THREE.Mesh(
+        new THREE.RingGeometry(0.8, 1, 64),
+        onTop(0xe9a23b, 0.95),
+      );
+      const discFill = new THREE.Mesh(
+        new THREE.CircleGeometry(0.8, 48),
+        onTop(0xe9a23b, 0.16),
+      );
+      for (const m of [discRing, discFill]) {
+        m.rotation.x = -Math.PI / 2;
+        m.renderOrder = 10;
+        m.userData.handle = "disc";
+      }
+      disc.add(discFill, discRing);
+      const sphere = new THREE.SphereGeometry(1, 18, 12);
+      const knob = new THREE.Mesh(sphere, onTop(0xffffff));
+      knob.userData.handle = "knob";
+      const knobRing = new THREE.Mesh(
+        new THREE.RingGeometry(1.15, 1.55, 28),
+        onTop(0xe9a23b),
+      );
+      knobRing.userData.handle = "knob";
+      const dots = [0, 1].map(() => {
+        const d = new THREE.Mesh(sphere, onTop(0xffffff));
+        d.userData.handle = "size";
+        return d;
+      });
+      const rdot = new THREE.Mesh(sphere, onTop(0x57c4b8));
+      rdot.userData.handle = "radius";
+      for (const m of [knob, knobRing, ...dots, rdot]) m.renderOrder = 11;
+      HG.add(disc, knob, knobRing, ...dots, rdot);
+      const handleMeshes = [discRing, discFill, knob, knobRing, ...dots, rdot];
+
+      const V = (x, y, z) => new THREE.Vector3(x, y, z);
+      function pivotOf(id) {
+        const o = byId(id);
+        if (id[0] === "f") {
+          const its = items.filter((i) => i.folder === id);
+          const p = V(0, 0, 0);
+          its.forEach((i) => p.add(V(i.x, 0, i.z)));
+          return p.multiplyScalar(1 / its.length);
+        }
+        return V(o.x, 0, o.z);
+      }
+      const PX = { disc: 28, knob: 9, dot: 6.5, radius: 9 };
+      // Every handle's screen points, in world space, for metres-per-pixel
+      // `wpp` at the pivot. Used to draw, to frame and to check.
+      function handleGeom(id, wpp) {
+        const k = kindOf(id);
+        const o = byId(id);
+        const p = pivotOf(id);
+        let base = 1.2;
+        if (k === "station") base = 2.0;
+        else if (k === "folder")
+          base =
+            Math.max(
+              ...items
+                .filter((i) => i.folder === id)
+                .map((i) => Math.hypot(i.x - p.x, i.z - p.z)),
+            ) + 1;
+        else base = Math.max(1.0, DIM[k][0] * 0.75 * o.s);
+        const discR = Math.max(base, PX.disc * wpp);
+        const rim = [];
+        for (let a = 0; a < 8; a++) {
+          const t = (a / 8) * Math.PI * 2;
+          rim.push(V(p.x + Math.cos(t) * discR, 0, p.z + Math.sin(t) * discR));
+        }
+        const hs = [
+          { name: "move disc", pts: rim, r: 0, center: p.clone(), discR },
+        ];
+        const extra = [];
+        const turns = k === "folder" || (k !== "station" && TURNS[k]);
+        if (turns) {
+          const hdg =
+            k === "folder" ? folderAngle(id) : THREE.MathUtils.degToRad(o.h);
+          hs.push({
+            name: "turn knob",
+            pts: [
+              V(p.x + Math.sin(hdg) * discR, 0, p.z + Math.cos(hdg) * discR),
+            ],
+            r: PX.knob,
+          });
+        }
+        if (k !== "station" && k !== "folder") {
+          const [w, h] = DIM[k];
+          const hdg = THREE.MathUtils.degToRad(o.h);
+          const ux = Math.cos(hdg);
+          const uz = -Math.sin(hdg);
+          const pts =
+            k === "pin"
+              ? [V(p.x, h * o.s, p.z)]
+              : [-1, 1].map((sx) =>
+                  V(
+                    p.x + ux * sx * (w / 2) * o.s,
+                    h * o.s,
+                    p.z + uz * sx * (w / 2) * o.s,
+                  ),
+                );
+          hs.push({ name: "size dot", pts, r: PX.dot });
+          // Context: about 3.5 m around, so a small item is not framed alone.
+          for (let a = 0; a < 8; a++) {
+            const t = (a / 8) * Math.PI * 2;
+            extra.push(V(p.x + Math.cos(t) * 3.5, 0, p.z + Math.sin(t) * 3.5));
+          }
+        }
+        if (k === "station") {
+          hs.push({
+            name: "radius dot",
+            pts: [V(p.x + o.r, 0, p.z)],
+            r: PX.radius,
+          });
+          for (let a = 0; a < 16; a++) {
+            const t = (a / 16) * Math.PI * 2;
+            extra.push(V(p.x + Math.cos(t) * o.r, 0, p.z + Math.sin(t) * o.r));
+          }
+          extra.push(V(p.x, 5.9, p.z));
+        }
+        if (k === "folder")
+          items
+            .filter((i) => i.folder === id)
+            .forEach((i) =>
+              extra.push(V(i.x, 0, i.z), V(i.x, DIM[i.kind][1] * i.s, i.z)),
+            );
+        return { pivot: p, discR, handles: hs, extra };
+      }
+      // A folder's "heading": the direction of its first item from its pivot.
+      const folderAngles = {};
+      function folderAngle(id) {
+        return folderAngles[id] || 0;
+      }
+      const tanHalf = () => Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+      const wppAt = (d) => (2 * d * tanHalf()) / cvH;
+      function updateHandles() {
+        if (!st.sel) {
+          HG.visible = false;
+          return;
+        }
+        HG.visible = true;
+        const p0 = pivotOf(st.sel);
+        const wpp = wppAt(camera.position.distanceTo(p0));
+        const g = handleGeom(st.sel, wpp);
+        disc.position.set(g.pivot.x, 0.06, g.pivot.z);
+        disc.scale.setScalar(g.discR);
+        const find = (n) => g.handles.find((h) => h.name === n);
+        const kn = find("turn knob");
+        knob.visible = knobRing.visible = !!kn;
+        if (kn) {
+          knob.position.copy(kn.pts[0]).setY(0.1);
+          knob.scale.setScalar(PX.knob * wpp * 0.75);
+          knobRing.position.copy(knob.position);
+          knobRing.scale.setScalar(PX.knob * wpp * 0.75);
+          knobRing.quaternion.copy(camera.quaternion);
+        }
+        const sd = find("size dot");
+        dots.forEach((d, i) => {
+          d.visible = !!(sd && sd.pts[i]);
+          if (d.visible) {
+            d.position.copy(sd.pts[i]);
+            d.scale.setScalar(PX.dot * wpp);
+          }
+        });
+        const rd = find("radius dot");
+        rdot.visible = !!rd;
+        if (rd) {
+          rdot.position.copy(rd.pts[0]).setY(0.1);
+          rdot.scale.setScalar(PX.radius * wpp);
+        }
+      }
+
+      // ---------------------------------------------------------------
+      // Camera: the view offset and the framing
+      // ---------------------------------------------------------------
+      // The view offset: the picture's centre (where the camera looks) is
+      // drawn at (view.fx, view.fy) of the canvas instead of its middle.
+      function setOffset() {
+        camera.aspect = cvW / cvH;
+        camera.setViewOffset(
+          cvW,
+          cvH,
+          cvW / 2 - view.fx,
+          cvH / 2 - view.fy,
+          cvW,
+          cvH,
+        );
+      }
+      function frameCentre() {
+        return {
+          fx: L.frame.x + L.frame.w / 2,
+          fy: L.frame.y + L.frame.h / 2 - TOP,
+        };
+      }
+      function snapOffset() {
+        const fc = frameCentre();
+        view.fx = fc.fx;
+        view.fy = fc.fy;
+        setOffset();
+        requestRender();
+      }
+      function resizeRenderer() {
+        const w = innerWidth;
+        const h = Math.max(1, innerHeight - TOP - BAR);
+        if (w !== cvW || h !== cvH) {
+          cvW = w;
+          cvH = h;
+          renderer.setSize(cvW, cvH);
+          setOffset();
+          requestRender();
+        }
+      }
+      const tmpCam = new THREE.PerspectiveCamera();
+      // The distance at which every handle (and the item's context) fits in
+      // the framing rectangle, with the picture's centre on that
+      // rectangle's centre.
+      function fit(id, dir) {
+        const fc = frameCentre();
+        tmpCam.fov = camera.fov;
+        tmpCam.near = camera.near;
+        tmpCam.far = camera.far;
+        tmpCam.aspect = cvW / cvH;
+        tmpCam.setViewOffset(
+          cvW,
+          cvH,
+          cvW / 2 - fc.fx,
+          cvH / 2 - fc.fy,
+          cvW,
+          cvH,
+        );
+        const target = pivotOf(id);
+        const hw = L.frame.w / 2;
+        const hh = L.frame.h / 2;
+        const v = new THREE.Vector3();
+        let d = 40;
+        for (let i = 0; i < 12; i++) {
+          tmpCam.position.copy(target).addScaledVector(dir, d);
+          tmpCam.lookAt(target);
+          tmpCam.updateMatrixWorld();
+          const g = handleGeom(id, wppAt(d));
+          const pts = g.handles.flatMap((h) => h.pts).concat(g.extra);
+          let r = 0;
+          for (const p of pts) {
+            v.copy(p).project(tmpCam);
+            if (v.z > 1) {
+              r = Infinity;
+              break;
+            }
+            const px = ((v.x + 1) / 2) * cvW;
+            const py = ((1 - v.y) / 2) * cvH;
+            r = Math.max(
+              r,
+              Math.abs(px - fc.fx) / hw,
+              Math.abs(py - fc.fy) / hh,
+            );
+          }
+          if (!Number.isFinite(r)) {
+            d *= 2;
+            continue;
+          }
+          const nd = clamp((d * r) / 0.86, 6, 700);
+          if (Math.abs(nd - d) < 0.005 * d) {
+            d = nd;
+            break;
+          }
+          d = nd;
+        }
+        return { target, dist: d };
+      }
+      function camDir() {
+        const sph = new THREE.Spherical().setFromVector3(
+          camera.position.clone().sub(orbit.target),
+        );
+        sph.phi = st.topView ? 0.03 : clamp(sph.phi, 0.55, 1.15);
+        sph.radius = 1;
+        return new THREE.Vector3().setFromSpherical(sph);
+      }
+      let anim = null;
+      function reframe(instant, dirOverride) {
+        if (!L) return;
+        const dir = dirOverride || camDir();
+        const fc = frameCentre();
+        const goal = st.sel
+          ? fit(st.sel, dir)
+          : {
+              target: orbit.target.clone(),
+              dist: camera.position.distanceTo(orbit.target),
+            };
+        anim = {
+          from: {
+            target: orbit.target.clone(),
+            dist: camera.position.distanceTo(orbit.target),
+            fx: view.fx,
+            fy: view.fy,
+            dir: camera.position.clone().sub(orbit.target).normalize(),
+          },
+          goal,
+          fc,
+          dir,
+          t0: performance.now(),
+          dur: instant || REDUCED ? 0 : 650,
+        };
+        orbit.enabled = false;
+        requestRender();
+      }
+      function stepAnim(now) {
+        const a = anim;
+        const k = a.dur ? Math.min(1, (now - a.t0) / a.dur) : 1;
+        const e = 1 - Math.pow(1 - k, 3);
+        orbit.target.lerpVectors(a.from.target, a.goal.target, e);
+        const d = Math.exp(
+          Math.log(a.from.dist) +
+            (Math.log(a.goal.dist) - Math.log(a.from.dist)) * e,
+        );
+        view.fx = a.from.fx + (a.fc.fx - a.from.fx) * e;
+        view.fy = a.from.fy + (a.fc.fy - a.from.fy) * e;
+        setOffset();
+        const dir = a.from.dir.clone().lerp(a.dir, e).normalize();
+        camera.position.copy(orbit.target).addScaledVector(dir, d);
+        camera.lookAt(orbit.target);
+        if (k >= 1) {
+          anim = null;
+          orbit.enabled = !drag;
+          orbit.update();
+          scheduleCheck(0);
+        }
+      }
+
+      // ---------------------------------------------------------------
+      // Pointer: pick, drag handles (registered before the orbit)
+      // ---------------------------------------------------------------
+      const ray = new THREE.Raycaster();
+      const ndc = new THREE.Vector2();
+      const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+      function setRay(e) {
+        const r = canvas.getBoundingClientRect();
+        ndc.set(
+          ((e.clientX - r.left) / r.width) * 2 - 1,
+          -((e.clientY - r.top) / r.height) * 2 + 1,
+        );
+        ray.setFromCamera(ndc, camera);
+      }
+      function groundHit(e) {
+        setRay(e);
+        const out = new THREE.Vector3();
+        return ray.ray.intersectPlane(groundPlane, out) ? out : null;
+      }
+      function pickHandle(e) {
+        if (!HG.visible) return null;
+        setRay(e);
+        const hit = ray.intersectObjects(
+          handleMeshes.filter((m) => m.visible),
+          false,
+        )[0];
+        return hit ? hit.object.userData.handle : null;
+      }
+      function pickObject(e) {
+        setRay(e);
+        const hit = ray.intersectObjects(pickables, false)[0];
+        return hit ? hit.object.userData.pick : null;
+      }
+      let down = null;
+      let drag = null;
+      canvas.addEventListener("pointerdown", (e) => {
+        if (!e.isPrimary || e.button !== 0 || anim) return;
+        let h = pickHandle(e);
+        if (!h && st.sel && pickObject(e) === st.sel) h = "disc";
+        down = { x: e.clientX, y: e.clientY, moved: false };
+        if (h) {
+          const g = groundHit(e);
+          if (!g) return;
+          const id = st.sel;
+          const p = pivotOf(id);
+          const o = byId(id);
+          drag = {
+            h,
+            id,
+            off: p.clone().sub(g),
+            last: p.clone(),
+            s0: o.s,
+            y0: e.clientY,
+            a0: Math.atan2(g.x - p.x, g.z - p.z),
+          };
+          orbit.enabled = false;
+          canvas.setPointerCapture(e.pointerId);
+        }
+      });
+      canvas.addEventListener("pointermove", (e) => {
+        if (!down) return;
+        if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5)
+          down.moved = true;
+        if (!drag || !down.moved) return;
+        const g = groundHit(e);
+        if (!g) return;
+        const o = byId(drag.id);
+        const k = kindOf(drag.id);
+        if (drag.h === "disc") {
+          const np = g.clone().add(drag.off);
+          const dx = np.x - drag.last.x;
+          const dz = np.z - drag.last.z;
+          drag.last.copy(np);
+          const move = (x) => {
+            x.x += dx;
+            x.z += dz;
+          };
+          if (k === "station") {
+            move(o);
+            items.filter((i) => i.st === o.id).forEach(move);
+          } else if (k === "folder")
+            items.filter((i) => i.folder === o.id).forEach(move);
+          else move(o);
+        } else if (drag.h === "knob") {
+          const p = pivotOf(drag.id);
+          const a = Math.atan2(g.x - p.x, g.z - p.z);
+          if (k === "folder") {
+            const da = a - drag.a0;
+            drag.a0 = a;
+            folderAngles[o.id] = folderAngle(o.id) + da;
+            for (const i of items.filter((x) => x.folder === o.id)) {
+              const rx = i.x - p.x;
+              const rz = i.z - p.z;
+              const c = Math.cos(da);
+              const s = Math.sin(da);
+              i.x = p.x + rx * c + rz * s;
+              i.z = p.z - rx * s + rz * c;
+              if (TURNS[i.kind]) i.h += THREE.MathUtils.radToDeg(da);
+            }
+          } else o.h = ((THREE.MathUtils.radToDeg(a) + 540) % 360) - 180;
+        } else if (drag.h === "size") {
+          o.s = clamp(drag.s0 * (1 + (drag.y0 - e.clientY) / 160), 0.4, 3);
+        } else if (drag.h === "radius") {
+          o.r = clamp(Math.hypot(g.x - o.x, g.z - o.z), 3, 40);
+        }
+        syncScene();
+        refreshInspValues();
+        requestRender();
+      });
+      function endPointer(e) {
+        if (!down) return;
+        const wasDrag = drag && down.moved;
+        const click = !down.moved;
+        down = null;
+        if (drag) {
+          drag = null;
+          orbit.enabled = !anim;
+          if (canvas.hasPointerCapture(e.pointerId))
+            canvas.releasePointerCapture(e.pointerId);
+        }
+        if (wasDrag) {
+          scheduleCheck(0);
+          return;
+        }
+        if (click && e.type === "pointerup") {
+          const id = pickObject(e);
+          if (id && id !== st.sel) select(id);
+          else if (!id && st.sel && !pickHandle(e)) select(null);
+        }
+      }
+      canvas.addEventListener("pointerup", endPointer);
+      canvas.addEventListener("pointercancel", endPointer);
+
+      const orbit = new OrbitControls(camera, canvas);
+      orbit.enableDamping = false;
+      orbit.screenSpacePanning = false;
+      orbit.maxPolarAngle = 1.42;
+      orbit.minDistance = 4;
+      orbit.maxDistance = 900;
+      orbit.addEventListener("change", () => {
+        requestRender();
+        scheduleCheck(150);
+      });
+      orbit.target.set(0, 0, 0);
+      camera.position.copy(
+        V(0, 0, 0).addScaledVector(V(0.42, 0.62, 0.66).normalize(), 70),
+      );
+      camera.lookAt(orbit.target);
+
+      // Map controls.
+      els.ctl.addEventListener("click", (e) => {
+        const b = e.target.closest("[data-map]");
+        if (!b) return;
+        const m = b.dataset.map;
+        if (m === "in" || m === "out") {
+          const f = m === "in" ? 0.75 : 1.33;
+          const dir = camera.position.clone().sub(orbit.target);
+          camera.position.copy(orbit.target).addScaledVector(dir, f);
+          orbit.update();
+          requestRender();
+          scheduleCheck(0);
+        } else if (m === "north") {
+          const sph = new THREE.Spherical().setFromVector3(
+            camera.position.clone().sub(orbit.target),
+          );
+          sph.theta = 0;
+          sph.radius = 1;
+          reframe(false, new THREE.Vector3().setFromSpherical(sph));
+        } else if (m === "top") {
+          st.topView = !st.topView;
+          b.setAttribute("aria-pressed", String(st.topView));
+          reframe(false);
+        }
+      });
+
+      // ---------------------------------------------------------------
+      // Render loop (on demand)
+      // ---------------------------------------------------------------
+      let dirty = true;
+      let paused = false;
+      function requestRender() {
+        dirty = true;
+      }
+      function loop(now) {
+        requestAnimationFrame(loop);
+        if (paused) return;
+        if (anim) {
+          stepAnim(now);
+          dirty = true;
+        }
+        if (!dirty) return;
+        dirty = false;
+        updateHandles();
+        renderer.render(scene, camera);
+      }
+
+      // ---------------------------------------------------------------
+      // Selection
+      // ---------------------------------------------------------------
+      function select(id, opts = {}) {
+        if (id && !byId(id)) return;
+        st.sel = id;
+        if (id) st.inspOpen = true;
+        else resetOverrides();
+        if (!id && st.tab === "insp") st.tab = "list";
+        renderTree();
+        renderInsp();
+        relayout(!!opts.instant);
+        if (id) {
+          const row = document.querySelector(`.row[data-id="${id}"]`);
+          // Scroll the tree only: scrollIntoView would also scroll the
+          // page that holds this one in a preview frame.
+          const tree = $("#tree");
+          if (row) {
+            const y = row.offsetTop - tree.offsetTop;
+            if (y < tree.scrollTop) tree.scrollTop = y;
+            else if (y + row.offsetHeight > tree.scrollTop + tree.clientHeight)
+              tree.scrollTop = y + row.offsetHeight - tree.clientHeight;
+          }
+        }
+        if (EMBED && !opts.remote)
+          parent.postMessage({ type: "cap-select", id, frame: FRAME_KEY }, "*");
+      }
+      function resetOverrides() {
+        st.inspOpen = false;
+        if (st.shelfUser === "open") st.shelfUser = "auto";
+        st.listUser = "auto";
+      }
+      function closeDetails() {
+        resetOverrides();
+        relayout(false);
+      }
+      function openDetails() {
+        if (!st.sel) return;
+        st.inspOpen = true;
+        relayout(false);
+      }
+      function relayout(instant) {
+        applyLayout();
+        renderInsp();
+        reframe(instant);
+      }
+      addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && !e.target.closest("input, select")) {
+          if (!$("#chippop").hidden) toggleChipPop(false);
+          else if (st.sel) select(null);
+        }
+      });
+      addEventListener("resize", () => {
+        applyLayout();
+        reframe(true);
+        if (!$("#stage").hidden) layoutStage();
+      });
+
+      // ---------------------------------------------------------------
+      // The self-check: are the handles clear, do the map controls
+      // overlap anything?
+      // ---------------------------------------------------------------
+      function visibleRect(el) {
+        if (!el || el.hidden || el.offsetParent === null) return null;
+        const r = el.getBoundingClientRect();
+        return r.width && r.height ? r : null;
+      }
+      function obstructions() {
+        const list = [
+          ["top bar", $("#tb")],
+          ["bottom bar", $("#bar")],
+          ["list", els.list],
+          ["details panel", els.insp],
+          ["shelf", els.shelf],
+          ["sheet", els.tabs],
+          ["bottom panel", els.bpanel],
+          ["map controls", els.ctl],
+          ["rule chip", els.chip],
+          ["assets pill", els.pill],
+        ];
+        return list
+          .map(([name, el]) => ({ name, r: visibleRect(el) }))
+          .filter((o) => o.r);
+      }
+      const inRect = (x, y, r, m) =>
+        x > r.left - m && x < r.right + m && y > r.top - m && y < r.bottom + m;
+      const overlap = (a, b) =>
+        a.left < b.right &&
+        a.right > b.left &&
+        a.top < b.bottom &&
+        a.bottom > b.top;
+      function toScreen(p) {
+        const v = p.clone().project(camera);
+        if (v.z > 1) return null;
+        return { x: ((v.x + 1) / 2) * cvW, y: ((1 - v.y) / 2) * cvH + TOP };
+      }
+      function check() {
+        const obs = obstructions();
+        const out = {
+          size: [innerWidth, innerHeight],
+          mode: L.mode,
+          today: st.today,
+          rules: L.rules.filter((r) => r.on).map((r) => r.id),
+          clear: { ...L.clear },
+          frame: { ...L.frame },
+          sel: st.sel,
+          handles: [],
+          ctlOverlaps: [],
+          discPx: 0,
+        };
+        if (st.sel) {
+          const g = handleGeom(
+            st.sel,
+            wppAt(camera.position.distanceTo(pivotOf(st.sel))),
+          );
+          for (const h of g.handles) {
+            const under = new Set();
+            let off = false;
+            for (const p of h.pts) {
+              const s = toScreen(p);
+              if (!s || s.x < 0 || s.x > cvW || s.y < TOP || s.y > TOP + cvH) {
+                off = true;
+                continue;
+              }
+              for (const o of obs)
+                if (inRect(s.x, s.y, o.r, h.r * 0.5)) under.add(o.name);
+            }
+            out.handles.push({
+              handle: h.name,
+              clear: !off && under.size === 0,
+              under: [...under],
+              off,
+              at: toScreen(h.pts[0]),
+            });
+          }
+          // The disc's width on screen: its longest diameter (a tilted
+          // view squashes the other one).
+          const rim = g.handles[0].pts.map(toScreen);
+          for (let i = 0; i < 4; i++) {
+            const a = rim[i];
+            const b = rim[i + 4];
+            if (a && b)
+              out.discPx = Math.max(
+                out.discPx,
+                Math.round(Math.hypot(a.x - b.x, a.y - b.y)),
+              );
+          }
+        }
+        const cr = visibleRect(els.ctl);
+        if (cr)
+          for (const o of obs)
+            if (o.name !== "map controls" && overlap(cr, o.r))
+              out.ctlOverlaps.push(o.name);
+        return out;
+      }
+      let checkTimer = 0;
+      function scheduleCheck(ms) {
+        clearTimeout(checkTimer);
+        checkTimer = setTimeout(
+          () => {
+            if (anim) return scheduleCheck(120);
+            updateChip(check());
+          },
+          ms + (REDUCED ? 30 : 260),
+        );
+      }
+      function updateChip(c) {
+        const on = c.rules.length ? "rule " + c.rules.join("+") : "no rule";
+        const nOk = c.handles.filter((h) => h.clear).length;
+        const all = c.handles.length;
+        const bad = (all && nOk < all) || c.ctlOverlaps.length > 0 || !L.ok;
+        const hText = all ? `${nOk}/${all} handles clear` : "nothing selected";
+        const txt = `${st.today ? "TODAY · " : ""}${c.clear.w}×${c.clear.h} · ${on} · ${hText}`;
+        $("#chip .ct").textContent = txt;
+        els.chip.classList.toggle("bad", bad);
+        els.chip.classList.toggle("today", st.today);
+        const under = c.handles.filter((h) => !h.clear);
+        $("#live-check").textContent =
+          `${txt}.` +
+          (under.length
+            ? ` Not clear: ${under.map((h) => `${h.handle} (${h.off ? "off screen" : "under the " + h.under.join(", ")})`).join("; ")}.`
+            : "") +
+          (c.ctlOverlaps.length
+            ? ` Map controls overlap: ${c.ctlOverlaps.join(", ")}.`
+            : " Map controls overlap nothing.") +
+          (c.discPx ? ` Move disc ${c.discPx} px across.` : "");
+        if (!$("#chippop").hidden) renderChipPop();
+        if (EMBED)
+          parent.postMessage(
+            {
+              type: "cap-state",
+              frame: FRAME_KEY,
+              text: txt,
+              bad,
+              today: st.today,
+            },
+            "*",
+          );
+      }
+
+      // The chip's popover: every rule with its reason, the target, the box.
+      function renderChipPop() {
+        const p = $("#chippop");
+        p.innerHTML =
+          `<h4>Panel rules, in order</h4>` +
+          L.rules
+            .map(
+              (r) =>
+                `<div class="rl${r.on ? " on" : ""}"><span class="n">${r.id}</span><span>${r.name}${r.on ? " <b>(fires)</b>" : ""}</span><span class="w">${esc(r.why)}</span></div>`,
+            )
+            .join("") +
+          `<div class="ctl-row"><label for="minw">Keep the 3D view at least</label><input type="range" id="minw" min="300" max="640" step="10" value="${st.min}"/><span class="m" id="minv">${st.min} px</span></div>` +
+          `<div class="ctl-row"><label><input type="checkbox" id="outl"${st.outline ? " checked" : ""}/> Show where selections are framed (dashed box)</label></div>` +
+          `<p class="hint">The 3D view is the rectangle no panel covers. Selections are framed in the dashed box inside it, which also keeps clear of the map controls and this chip.</p>`;
+        const cr = els.chip.getBoundingClientRect();
+        const w = Math.min(340, innerWidth - 16);
+        p.style.left = clamp(cr.left, 8, innerWidth - w - 8) + "px";
+        p.style.top = cr.bottom + 6 + "px";
+      }
+      function toggleChipPop(force) {
+        const p = $("#chippop");
+        const show = force === undefined ? p.hidden : force;
+        p.hidden = !show;
+        els.chip.setAttribute("aria-expanded", String(show));
+        if (show) renderChipPop();
+      }
+      els.chip.addEventListener("click", () => toggleChipPop());
+      $("#chippop").addEventListener("input", (e) => {
+        if (e.target.id === "minw") {
+          st.min = Number(e.target.value);
+          $("#minv").textContent = st.min + " px";
+          applyLayout();
+          renderInsp();
+          reframe(false);
+        } else if (e.target.id === "outl") {
+          st.outline = e.target.checked;
+          place(els.fr, st.outline ? L.frame : null);
+        }
+      });
+
+      function renderNotesTable() {
+        const sizes = [
+          [1280, 800, "Desktop 1280x800"],
+          [1440, 900, "Desktop 1440x900"],
+          [1920, 1080, "Desktop 1920x1080"],
+          [844, 390, "Phone sideways 844x390"],
+          [390, 844, "Phone upright 390x844"],
+        ];
+        const s = {
+          ...st,
+          sel: "i3",
+          inspOpen: true,
+          shelfUser: "auto",
+          listUser: "auto",
+          bottom: false,
+          today: false,
+        };
+        $("#rule-table").innerHTML = sizes
+          .map(([w, h, name]) => {
+            const l = computeLayout(w, h, s);
+            const on = l.rules.filter((r) => r.on);
+            return `<li><b>${name}</b>: ${on.length ? on.map((r) => `rule ${r.id} (${r.name.toLowerCase()})`).join(", then ") : "no rule fires"}. 3D view ${l.clear.w}×${l.clear.h} px; framed in ${Math.round(l.frame.w)}×${Math.round(l.frame.h)} px.</li>`;
+          })
+          .join("");
+      }
+
+      // ---------------------------------------------------------------
+      // Today, notes, toast
+      // ---------------------------------------------------------------
+      function setToday(on) {
+        st.today = on;
+        $("#b-today").setAttribute("aria-pressed", String(on));
+        relayout(false);
+      }
+      $("#b-today").addEventListener("click", () => setToday(!st.today));
+      function toggleNotes(force) {
+        const n = $("#notes");
+        const show = force === undefined ? n.hidden : force;
+        n.hidden = !show;
+        $("#b-notes").setAttribute("aria-expanded", String(show));
+        if (show) {
+          renderNotesTable();
+          if (L) updateChip(check());
+        }
+      }
+      $("#b-notes").addEventListener("click", () => toggleNotes());
+      $("#notes-close").addEventListener("click", () => toggleNotes(false));
+      let toastT = 0;
+      function toast(t) {
+        const el = $("#toast");
+        el.textContent = t;
+        el.classList.add("on");
+        clearTimeout(toastT);
+        toastT = setTimeout(() => el.classList.remove("on"), 2200);
+      }
+      document
+        .querySelectorAll("[data-inert]")
+        .forEach((b) =>
+          b.addEventListener("click", () =>
+            toast("Menus are not part of this prototype."),
+          ),
+        );
+
+      // ---------------------------------------------------------------
+      // The size preview: the page itself in frames of fixed size
+      // ---------------------------------------------------------------
+      const SIZES = {
+        desk: [1280, 800, "Desktop 1280 × 800"],
+        side: [844, 390, "Phone sideways 844 × 390"],
+        up: [390, 844, "Phone upright 390 × 844"],
+      };
+      let stageKeys = [];
+      let stageToday = false;
+      function openStage(which) {
+        $("#sizesel").value = which;
+        $("#stagesel").value = which;
+        if (which === "win") {
+          $("#stage").hidden = true;
+          $("#stagewrap").innerHTML = "";
+          paused = false;
+          requestRender();
+          return;
+        }
+        paused = true;
+        $("#stage").hidden = false;
+        stageKeys = which === "all" ? ["desk", "side", "up"] : [which];
+        const base = location.pathname;
+        $("#stagewrap").innerHTML = stageKeys
+          .map(
+            (k) =>
+              `<figure class="pf" data-pf="${k}"><figcaption><b>${SIZES[k][2]}</b><span class="st" data-st="${k}">loading...</span></figcaption><div class="pv"><iframe title="${SIZES[k][2]}" src="${base}?embed=1&frame=${k}${stageToday ? "&today=1" : ""}&sel=${st.sel || ""}" width="${SIZES[k][0]}" height="${SIZES[k][1]}"></iframe></div></figure>`,
+          )
+          .join("");
+        layoutStage();
+      }
+      function layoutStage() {
+        // Gaps (16 px) and borders (2 px) are not scaled; keep a few px
+        // spare for a scroll bar.
+        const n = stageKeys.length;
+        const W = innerWidth - 24 - 20;
+        const H = innerHeight - 44 - 24 - 34;
+        const sum = stageKeys.reduce((a, k) => a + SIZES[k][0], 0);
+        const maxH = Math.max(...stageKeys.map((k) => SIZES[k][1]));
+        const row = n === 1 || W >= 900;
+        const sRow = Math.min(1, (W - 16 * (n - 1) - 2 * n) / sum, H / maxH);
+        for (const k of stageKeys) {
+          const [fw, fh] = SIZES[k];
+          const s = row ? sRow : Math.min(1, W / fw);
+          const f = document.querySelector(`[data-pf="${k}"]`);
+          const pv = f.querySelector(".pv");
+          pv.style.width = Math.round(fw * s) + 2 + "px";
+          pv.style.height = Math.round(fh * s) + 2 + "px";
+          f.querySelector("iframe").style.transform = `scale(${s})`;
+          f.querySelector("figcaption").style.maxWidth =
+            Math.round(fw * s) + "px";
+        }
+      }
+      $("#sizesel").addEventListener("change", (e) =>
+        openStage(e.target.value),
+      );
+      $("#stagesel").addEventListener("change", (e) =>
+        openStage(e.target.value),
+      );
+      $("#st-close").addEventListener("click", () => openStage("win"));
+      $("#st-notes").addEventListener("click", () => {
+        openStage("win");
+        toggleNotes(true);
+      });
+      $("#st-today").addEventListener("click", () => {
+        stageToday = !stageToday;
+        $("#st-today").setAttribute("aria-pressed", String(stageToday));
+        for (const f of document.querySelectorAll("#stagewrap iframe"))
+          f.contentWindow.postMessage(
+            { type: "cap-today", on: stageToday },
+            "*",
+          );
+      });
+      addEventListener("message", (e) => {
+        const m = e.data;
+        if (!m || typeof m !== "object") return;
+        if (EMBED) {
+          if (e.source !== parent) return;
+          if (m.type === "cap-select") select(m.id, { remote: true });
+          else if (m.type === "cap-today") setToday(!!m.on);
+          return;
+        }
+        if (m.type === "cap-state") {
+          const s = document.querySelector(`[data-st="${m.frame}"]`);
+          if (s) {
+            s.textContent = m.text;
+            s.className = "st " + (m.bad ? "bad" : "good");
+          }
+        } else if (m.type === "cap-select") {
+          st.sel = m.id;
+          for (const f of document.querySelectorAll("#stagewrap iframe"))
+            if (f.contentWindow !== e.source)
+              f.contentWindow.postMessage(
+                { type: "cap-select", id: m.id },
+                "*",
+              );
+        }
+      });
+
+      // ---------------------------------------------------------------
+      // Start
+      // ---------------------------------------------------------------
+      $("#loadmsg").remove();
+      renderTree();
+      applyLayout();
+      const first = params.has("sel") ? params.get("sel") || null : "i3";
+      select(first && byId(first) ? first : null, {
+        instant: true,
+        remote: true,
+      });
+      if (st.today) $("#b-today").setAttribute("aria-pressed", "true");
+      requestAnimationFrame(loop);
+      scheduleCheck(0);
+
+      window.__clearArea = {
+        ready: true,
+        check,
+        layout: () => L,
+        computeLayout: (w, h, over = {}) =>
+          computeLayout(w, h, { ...st, ...over }),
+        select: (id) => select(id, { instant: true, remote: true }),
+        setToday: (on) => setToday(!!on),
+        setBottom: (on) => {
+          st.bottom = !!on;
+          relayout(true);
+        },
+        closeDetails: () => {
+          resetOverrides();
+          relayout(true);
+        },
+        ids: () => [
+          ...stations.map((s) => s.id),
+          ...folders.map((f) => f.id),
+          ...items.map((i) => i.id),
+        ],
+      };
+    </script>
+  </body>
+</html>

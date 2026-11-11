@@ -164,6 +164,14 @@ wired into its logic: every interaction is faked.
   two directions for the editor's bottom bar and a collapsible panel for
   problems, history, map loading and performance (one tabbed panel, or a
   drawer per status item); made 2026-11-03.
+- `editor-panels-1-clear-area/`, `editor-panels-2-floating/`,
+  `editor-panels-3-one-column/` - three directions for the editor's panels
+  around the 3D view once the asset shelf docks on the right: framing a
+  selection where no panel covers it, and keeping a usable 3D view on a phone
+  held sideways (docked panels with give-way rules; floating cards over a
+  full-window view; one right column with Details and Files tabs). Each has a
+  size switch for desktop and both phone orientations and a notes panel with
+  its own check; made 2026-11-11.
 - `globe-look-1-glitter-haze/` ... `globe-look-4-relief-deck/` - four
   directions for the globe seen over open sea with the sun low (sun glitter,
   haze, cumulus clouds): the sea and the air alone, raymarched clouds, lit
