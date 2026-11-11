@@ -28,6 +28,8 @@ city objects plan 2026-11-07-2315 M5.
 - `buildStreetFurniture(features, { frame, groundHeightM?, window, kinds? })`
   → `FurniturePlacement[]` in input order. RangeError for a missing window
   or an unknown kind; `kinds: []` builds none.
+  A ground that is missing or answers a non-number reads as 0, as for
+  the markings and pedestrian areas.
 - `FurniturePlacement` - `{ key, kind, model, position (ENU), groundHeightM,
 yawRad, heightM? (lamps and bollards only), guessed: ("height" | "yaw")[] }`.
 - `furnitureWithinCut(items, eye, cutM)` → indices within `cutM` metres in

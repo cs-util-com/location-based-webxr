@@ -175,7 +175,7 @@ function placementOf(
     kind,
     model,
     position: options.frame.toEnu(feature.position),
-    groundHeightM: options.groundHeightM?.(feature.position) ?? 0,
+    groundHeightM: finiteOrZero(options.groundHeightM?.(feature.position)),
     // The shared seeded yaw, so a bench drawn as a POI marker and as
     // furniture faces the same way.
     yawRad: mappedYaw ?? stableRotationY(key),
@@ -246,4 +246,9 @@ export function furnitureWithinCut(
     if (d <= cutM) out.push(i);
   });
   return out;
+}
+
+/** A ground that is missing or not a number reads as 0, as for the markings. */
+function finiteOrZero(height: number | undefined): number {
+  return height !== undefined && Number.isFinite(height) ? height : 0;
 }

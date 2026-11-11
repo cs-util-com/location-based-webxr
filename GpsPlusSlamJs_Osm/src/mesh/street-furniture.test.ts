@@ -195,6 +195,18 @@ describe("buildStreetFurniture", () => {
     expect(build([node({ barrier: "bollard" })])[0]?.groundHeightM).toBe(0);
   });
 
+  // A ground sampler that answers NaN or Infinity (no elevation tile yet, a
+  // hole in the data) must not send a lamp to NaN height, where it vanishes:
+  // it stands on 0, as the markings and pedestrian areas do.
+  it("stands an item on 0 when the ground answers a non-number", () => {
+    for (const bad of [NaN, Infinity, -Infinity]) {
+      const [item] = build([node({ barrier: "bollard" })], {
+        groundHeightM: () => bad,
+      });
+      expect(item?.groundHeightM).toBe(0);
+    }
+  });
+
   it("builds only the kinds asked for, in input order", () => {
     const features = [
       node({ amenity: "bench" }),
