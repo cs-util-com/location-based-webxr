@@ -104,7 +104,11 @@ describe("the card", () => {
     ];
     expect(
       cardKindLine(
-        row({ kind: "image", character: { id: "sir", files }, originalBytes: 9 * 1024 * 1024 }),
+        row({
+          kind: "image",
+          character: { id: "sir", files },
+          originalBytes: 9 * 1024 * 1024,
+        }),
       ),
     ).toBe("Character · 2 files · 9.0 MB");
     expect(

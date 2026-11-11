@@ -460,8 +460,7 @@ function characterRow(
   const first = files[0];
   if (first === undefined) throw new Error("A character row needs a file.");
   const job =
-    files.find((f) => f.status === "queued" || f.status === "running") ??
-    first;
+    files.find((f) => f.status === "queued" || f.status === "running") ?? first;
   const sum = (bytes: (f: ShelfRow) => number) =>
     files.reduce((total, f) => total + bytes(f), 0);
   return {

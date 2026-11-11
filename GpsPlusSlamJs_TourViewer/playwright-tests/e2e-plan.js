@@ -50,7 +50,7 @@ export const SPECS = {
   "editor3d-character.spec.js": { project: "webgl", area: "editor", lane: 4 },
   "editor3d-characters.spec.js": {
     project: "webgl",
-    area: "editor",
+    area: "both",
     lane: 2,
   },
   "editor3d-child-moves.spec.js": {

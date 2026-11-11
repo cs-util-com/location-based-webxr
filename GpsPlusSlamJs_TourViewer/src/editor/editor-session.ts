@@ -2126,11 +2126,11 @@ export function createEditorSession(input: {
         : { kind: "plan", words: fileDeleteWords(planned.uses) };
     },
     deleteFileAndUses(assetId) {
-      const now = mine();
+      const held = mine();
       const character =
-        now === null ? undefined : characterOfFile(now, assetId);
-      if (now !== null && character !== undefined) {
-        const reason = characterRemoveRefusal(now, character.id);
+        held === null ? undefined : characterOfFile(held, assetId);
+      if (held !== null && character !== undefined) {
+        const reason = characterRemoveRefusal(held, character.id);
         if (reason !== null) return { kind: "refused", reason };
         const what = `the delete of ${character.name}`;
         return takeCharacterOut(character, what)
