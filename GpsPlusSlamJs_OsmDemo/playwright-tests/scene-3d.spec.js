@@ -1710,6 +1710,39 @@ test.describe("the colour schemes (colour schemes plan 2026-11-10-0841)", () => 
   });
 });
 
+test.describe("the read-only boot overrides (roofs)", () => {
+  // WHY THIS TEST MATTERS: `?roofs=off` is a read-only boot override for a
+  // side-by-side comparison. It must seed the switch, and the switch must
+  // never write the link: a link that changed under a switch would carry a
+  // comparison state the sender did not choose.
+  test("roofs=off seeds the switch, and a switch never writes the link", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    const base = `/?lat=${50.9231}&lng=${6.9445}`;
+    const box = page.locator("#invented-roofs");
+    const status = page.locator("#invented-roofs-status");
+
+    await page.goto(`${base}&roofs=off`);
+    await waitForRefresh(page);
+    await expect(box).not.toBeChecked();
+    await box.check();
+    await expect(status).toHaveText("");
+    await expect(box).toBeEnabled();
+    await expect(box).toBeChecked();
+    await expect(page).toHaveURL(/[?&]roofs=off(&|$)/);
+
+    await page.goto(base);
+    await waitForRefresh(page);
+    await expect(box).toBeChecked();
+    await box.uncheck();
+    await expect(status).toHaveText("");
+    await expect(box).toBeEnabled();
+    await expect(box).not.toBeChecked();
+    await expect(page).not.toHaveURL(/[?&]roofs=/);
+  });
+});
+
 /**
  * The least mean luma (Rec. 709, 0-255) of the BUILDINGS at the night point,
  * −30.1° over the Cologne fixture: what the night floor (`NIGHT_FLOOR` in

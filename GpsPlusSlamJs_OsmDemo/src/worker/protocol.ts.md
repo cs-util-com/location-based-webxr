@@ -32,7 +32,7 @@ target }`.
 - `WorkerReply` - `{ id, ok: true, value } | { id, ok: false, message, failedBuild? }`;
   `failedBuild` (`MeshBuildChoices`) is set only for a failed city build.
 - `MeshBuildChoices` - what the user chose to build (`colourScheme`,
-  `inventedRoofs?`; each later build switch adds its field). `isMeshBuildChoices(value)` guards it.
+  `inventedRoofs`, both required; each later build switch adds its field). `isMeshBuildChoices(value)` guards it and refuses a reply missing either.
 - `MeshBuildError` - the error class that carries `failedBuild` in the worker
   and out of the RPC client; `failedBuildOf(error)` reads it back.
 - `isWorkerReply(value)`, `isWorkerEnvelope(value)` — guards for the two
@@ -140,6 +140,6 @@ transferred (about 2 MB at most), see `demo-worker.ts`.
     means `true`.
 - Reply: `TransferableMesh.inventedRoofs?` echoes the choice the mesh was built
   with (absent means `true`), so the page's switch ends on the durable build.
-- `MeshBuildChoices.inventedRoofs?` names it in a failed build.
+- `MeshBuildChoices.inventedRoofs` names it in every failed build, the unknown-scheme refusal included (resolved there as the build would: absent is on).
 - `TransferableMesh.inventedRoofCount` - how many volumes carry an invented
   pitched roof (`roofIsInvented`), for the status line.

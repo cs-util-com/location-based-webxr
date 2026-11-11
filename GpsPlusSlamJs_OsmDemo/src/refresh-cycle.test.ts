@@ -1320,6 +1320,7 @@ describe("the colour scheme (colour schemes plan 2026-11-10-0841)", () => {
     await failing(
       new MeshBuildError("building the city failed: boom", {
         colourScheme: "night",
+        inventedRoofs: true,
       }),
     )();
     expect(order).toEqual(["build:night", "error"]);

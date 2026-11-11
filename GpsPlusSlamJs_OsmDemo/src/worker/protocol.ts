@@ -726,7 +726,7 @@ export type WorkerReply =
  */
 export interface MeshBuildChoices {
   readonly colourScheme: string;
-  readonly inventedRoofs?: boolean;
+  readonly inventedRoofs: boolean;
 }
 
 /**
@@ -745,7 +745,11 @@ export class MeshBuildError extends Error {
 /** True for a value shaped like {@link MeshBuildChoices}; guards the reply. */
 export function isMeshBuildChoices(value: unknown): value is MeshBuildChoices {
   if (typeof value !== "object" || value === null) return false;
-  return typeof (value as { colourScheme?: unknown }).colourScheme === "string";
+  const choices = value as { colourScheme?: unknown; inventedRoofs?: unknown };
+  return (
+    typeof choices.colourScheme === "string" &&
+    typeof choices.inventedRoofs === "boolean"
+  );
 }
 
 /** The failed build's choices, when `error` is a city build's failure. */

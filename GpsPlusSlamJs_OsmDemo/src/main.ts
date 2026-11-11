@@ -1119,7 +1119,7 @@ async function main(): Promise<void> {
     // reaches the store, so the switch reverts only its own failed build.
     onBuildFailed: (failed) => {
       schemeSwitch.failed(failed.colourScheme);
-      roofsSwitch.failed(failed.inventedRoofs ?? true);
+      roofsSwitch.failed(failed.inventedRoofs);
     },
     // WHAT DRIVES BOTH LOADING INDICATORS. Not the store's `loading.phase`:
     // this cycle dispatches `fetchStarted` once, above the ring loop, and every

@@ -122,11 +122,14 @@ describe("createRpcClient", () => {
       id: fake.posted[0]?.id,
       ok: false,
       message: "out of memory",
-      failedBuild: { colourScheme: "night" },
+      failedBuild: { colourScheme: "night", inventedRoofs: false },
     });
     const error = await built.catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(Error);
-    expect(failedBuildOf(error)).toEqual({ colourScheme: "night" });
+    expect(failedBuildOf(error)).toEqual({
+      colourScheme: "night",
+      inventedRoofs: false,
+    });
 
     const fetched = client.call("update", update);
     fake.reply({ id: fake.posted[1]?.id, ok: false, message: "Overpass 429" });
@@ -145,6 +148,20 @@ describe("createRpcClient", () => {
     expect(failedBuildOf(await odd.catch((caught: unknown) => caught))).toBe(
       undefined,
     );
+
+    // Both choices are carried, so the page reverts exactly the switch
+    // whose build failed; a reply missing the roofs choice is malformed
+    // too, rather than read as "roofs on".
+    const partial = client.call("update", update);
+    fake.reply({
+      id: fake.posted[3]?.id,
+      ok: false,
+      message: "partial",
+      failedBuild: { colourScheme: "night" },
+    });
+    expect(
+      failedBuildOf(await partial.catch((caught: unknown) => caught)),
+    ).toBe(undefined);
   });
 
   it("ignores foreign messages instead of crashing on them", async () => {

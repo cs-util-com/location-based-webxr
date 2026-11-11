@@ -752,6 +752,7 @@ async function handle<K extends WorkerCallKind>(
       if (!isColourSchemeName(scheme)) {
         throw new MeshBuildError(`no such colour scheme: "${scheme}"`, {
           colourScheme: scheme,
+          inventedRoofs: inventedRoofs ?? true,
         });
       }
       // THE QUEUE WAIT — post to dispatch, the one measurement here that has
