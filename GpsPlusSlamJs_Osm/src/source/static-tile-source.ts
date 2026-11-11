@@ -211,6 +211,19 @@ export class StaticTileSource implements OsmDataSource {
     const first = await this.read(tile, signal, started);
     if (first !== undefined) return first;
     if (readOnly) throw new HostSkipped(`tile ${tile} not stored`);
+    if ((await this.askForFill(tile, signal)) === "present") {
+      const ready = await this.read(tile, signal, started);
+      if (ready !== undefined) return ready;
+      throw new HostDeclined(`tile ${tile} announced but missing`);
+    }
+    return this.waitForFill(tile, signal, started);
+  }
+
+  /** `present` (200), `queued` (202, nothing ahead); a throw otherwise. */
+  private async askForFill(
+    tile: string,
+    signal: AbortSignal | undefined,
+  ): Promise<"present" | "queued"> {
     const fill = await this.fetchImpl(this.fillUrl(tile), {
       method: "POST",
       ...(signal === undefined ? {} : { signal }),
@@ -220,18 +233,19 @@ export class StaticTileSource implements OsmDataSource {
       // Each fill ahead takes 30-75 s, so the bounded wait would run out:
       // the race now, and the host fills the tile for whoever comes later.
       if (ahead > 0) throw new HostSkipped(`${ahead} fills ahead of ${tile}`);
-    } else {
-      await fill.body?.cancel();
+      return "queued";
     }
-    if (fill.status === 200) {
-      const ready = await this.read(tile, signal, started);
-      if (ready !== undefined) return ready;
-      throw new HostDeclined(`tile ${tile} announced but missing`);
-    }
-    if (fill.status !== 202) {
-      throw new HostDeclined(`fill answered ${fill.status}`);
-    }
-    // Queued: look again until the bounded wait is spent.
+    await fill.body?.cancel();
+    if (fill.status === 200) return "present";
+    throw new HostDeclined(`fill answered ${fill.status}`);
+  }
+
+  /** Looks again for a queued tile until the bounded wait is spent. */
+  private async waitForFill(
+    tile: string,
+    signal: AbortSignal | undefined,
+    started: number,
+  ): Promise<OsmTileResult> {
     while (this.now() - started + this.pollIntervalMs <= this.maxWaitMs) {
       await this.sleepImpl(this.pollIntervalMs, signal);
       const polled = await this.read(tile, signal, started);
