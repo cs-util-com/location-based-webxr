@@ -55,6 +55,14 @@ export interface LightDialogDeps {
   readonly showError: (message: string) => void;
   /** Runs `callback` once the in-progress state has painted. */
   readonly nextFrame?: (callback: () => void) => void;
+  /**
+   * The ambient occlusion switch, when the page offers one. Not a light
+   * setting: Copy, Reset and the light link never carry it.
+   */
+  readonly ambientOcclusion?: {
+    readonly initial: boolean;
+    readonly onChange: (on: boolean) => void;
+  };
 }
 
 export interface LightDialog {
@@ -117,6 +125,20 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
     values.set(field, value);
   }
 
+  let aoBox: HTMLInputElement | undefined;
+  if (deps.ambientOcclusion !== undefined) {
+    const label = document.createElement("label");
+    label.className = "light-row";
+    aoBox = document.createElement("input");
+    aoBox.type = "checkbox";
+    aoBox.id = "light-ao";
+    aoBox.checked = deps.ambientOcclusion.initial;
+    const text = document.createElement("span");
+    text.textContent = "Ambient occlusion";
+    label.append(aoBox, text);
+    panel.append(label);
+  }
+
   const readout = document.createElement("p");
   readout.id = "light-readout";
   readout.setAttribute("aria-live", "polite");
@@ -177,6 +199,13 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
     // full-frame readback (plan §7 item 4).
     input.addEventListener("change", brightness);
   }
+
+  // Applied at once (the view redraws one frame); the brightness it now
+  // gives is read back while the panel is open.
+  aoBox?.addEventListener("change", () => {
+    deps.ambientOcclusion?.onChange(aoBox.checked);
+    if (!panel.hidden) brightness();
+  });
 
   reset.addEventListener("click", () => {
     apply(DEFAULT_LIGHT_SETTINGS);

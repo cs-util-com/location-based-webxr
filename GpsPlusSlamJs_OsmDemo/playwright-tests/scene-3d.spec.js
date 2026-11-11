@@ -1722,7 +1722,7 @@ test.describe("the colour schemes (colour schemes plan 2026-11-10-0841)", () => 
   });
 });
 
-test.describe("the read-only boot overrides (roofs, furniture)", () => {
+test.describe("the read-only boot overrides (roofs, furniture, ao)", () => {
   // WHY THIS TEST MATTERS: `?roofs=off` is a read-only boot override for a
   // side-by-side comparison. It must seed the switch, and the switch must
   // never write the link: a link that changed under a switch would carry a
@@ -1771,6 +1771,25 @@ test.describe("the read-only boot overrides (roofs, furniture)", () => {
     await box.check();
     await expect(status).toContainText(/[1-9]\d* furniture/);
     await expect(page).toHaveURL(/[?&]furniture=off(&|$)/);
+  });
+
+  // WHY THIS TEST MATTERS: `?ao=off` is the same kind of read-only boot
+  // override, for the ambient occlusion: it must seed the light dialog's box
+  // and the view, and the box must never rewrite the link.
+  test("ao=off boots the ambient occlusion off, and the box never writes the link", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    await page.goto(`/?lat=${50.9231}&lng=${6.9445}&ao=off`);
+    await waitForRefresh(page);
+    const view = page.locator("[data-ao]");
+    await expect(view).toHaveAttribute("data-ao", "off");
+    await page.locator("#light-open").click();
+    const box = page.locator("#light-ao");
+    await expect(box).not.toBeChecked();
+    await box.check();
+    await expect(view).toHaveAttribute("data-ao", "on");
+    await expect(page).toHaveURL(/[?&]ao=off(&|$)/);
   });
 });
 
@@ -1969,7 +1988,7 @@ test.describe("the time of day", () => {
     }) => {
       await stubNetwork(page);
       await page.goto(
-        `/?lat=${50.9231}&lng=${6.9445}&date=${date}&time=${time}`,
+        `/?lat=${50.9231}&lng=${6.9445}&date=${date}&time=${time}&ao=off`,
       );
       await waitForRefresh(page);
       await expectHeatRampLoudest(
@@ -2542,7 +2561,9 @@ test.describe("with shadow maps on (?shadowCheck=1)", () => {
  * same frame.
  */
 test.describe("the light dialog", () => {
-  const JUNE_NOON = `/?lat=${50.9231}&lng=${6.9445}&date=2026-06-21&time=12:00`;
+  // `ao=off`: the light gates' approved lumas were set on the frame without
+  // the ambient occlusion; its own darkening is bounded in its own test.
+  const JUNE_NOON = `/?lat=${50.9231}&lng=${6.9445}&date=2026-06-21&time=12:00&ao=off`;
   const readoutLuma = async (page) => {
     const text = (await page.locator("#light-readout").textContent()) ?? "";
     return Number(/Lit surfaces (\d+(?:\.\d+)?)/.exec(text)?.[1] ?? Number.NaN);
@@ -2666,5 +2687,177 @@ test.describe("the light dialog", () => {
       expect(tuned).toBeGreaterThan(base + 10);
       await expect(page.locator("#light-exposureEv")).toHaveValue("-2.25");
     });
+  });
+});
+
+/*
+ * The ambient occlusion's bounds at the June-noon boot view (measured
+ * 2026-11-11, SwiftShader, 639 x 453, the same in two runs): 10.4 % of the
+ * pixels darkened by 3 or more (largest drop 67 levels), the frame's mean
+ * luma 35.13 against 35.90 without it (0.979), the lit surfaces 24.0 against
+ * 24.7 (0.972).
+ *
+ * AO_DARKENED_SHARE_MIN says it does something: a fifth of the measured share,
+ * so only an AO that stopped drawing (or lost most of its radius) fails it.
+ * The two ratios say it does not darken too much: 0.9 leaves the measured
+ * values a margin of about 0.07, so an AO about four times as strong fails,
+ * and any bound above 0.97 would fail the shipped look itself.
+ */
+const AO_DARKENED_SHARE_MIN = 0.02;
+const AO_FRAME_LUMA_RATIO_MIN = 0.9;
+const AO_LIT_LUMA_RATIO_MIN = 0.9;
+
+test.describe("the ambient occlusion", () => {
+  const JUNE_NOON = `/?lat=${50.9231}&lng=${6.9445}&date=2026-06-21&time=12:00`;
+  const readoutLuma = async (page) => {
+    const text = (await page.locator("#light-readout").textContent()) ?? "";
+    return Number(/Lit surfaces (\d+(?:\.\d+)?)/.exec(text)?.[1] ?? Number.NaN);
+  };
+  /**
+   * Stores the settled frame under `key`: three reads 250 ms apart that agree
+   * exactly, so a repaint still in flight is never taken for the result.
+   */
+  const settledFrame = async (page, key) => {
+    let stable = 0;
+    await expect
+      .poll(
+        async () => {
+          const same = await page.evaluate((k) => {
+            const el = document.querySelector("#scene canvas");
+            if (!(el instanceof HTMLCanvasElement)) return false;
+            const probe = document.createElement("canvas");
+            probe.width = el.width;
+            probe.height = el.height;
+            const ctx = probe.getContext("2d");
+            if (ctx === null) return false;
+            ctx.drawImage(el, 0, 0);
+            const now = ctx.getImageData(0, 0, probe.width, probe.height);
+            const before = window[k];
+            window[k] = now;
+            if (
+              before === undefined ||
+              before.data.length !== now.data.length
+            ) {
+              return false;
+            }
+            for (let i = 0; i < now.data.length; i += 1) {
+              if (now.data[i] !== before.data[i]) return false;
+            }
+            return true;
+          }, key);
+          stable = same ? stable + 1 : 0;
+          return stable;
+        },
+        { timeout: 45_000, intervals: [250] },
+      )
+      .toBeGreaterThanOrEqual(3);
+  };
+  /** How frame `onKey` differs from frame `offKey`, per pixel. */
+  const compare = (page, onKey, offKey) =>
+    page.evaluate(
+      ([a, b]) => {
+        const on = window[a];
+        const off = window[b];
+        if (on.data.length !== off.data.length) {
+          throw new Error("the frames differ in size");
+        }
+        const n = on.width * on.height;
+        const luma = (d, i) =>
+          0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+        let brightened = 0;
+        let darkened = 0;
+        let identical = true;
+        let sumOn = 0;
+        let sumOff = 0;
+        let maxDrop = 0;
+        for (let i = 0; i < on.data.length; i += 4) {
+          let up = false;
+          let down = 0;
+          for (let c = 0; c < 3; c += 1) {
+            const d = on.data[i + c] - off.data[i + c];
+            if (d !== 0) identical = false;
+            if (d > 0) up = true;
+            if (-d > down) down = -d;
+          }
+          if (up) brightened += 1;
+          if (down >= 3) darkened += 1;
+          if (down > maxDrop) maxDrop = down;
+          sumOn += luma(on.data, i);
+          sumOff += luma(off.data, i);
+        }
+        return {
+          n,
+          identical,
+          brightened,
+          darkened,
+          maxDrop,
+          meanOn: sumOn / n,
+          meanOff: sumOff / n,
+        };
+      },
+      [onKey, offKey],
+    );
+
+  // WHY THIS TEST MATTERS: the AO is on by default, so it changes the picture
+  // every user sees. It may only DARKEN (a multiply that never exceeds 1), its
+  // darkening must stay bounded so the light the owner approved survives it,
+  // and switching it off must give back the frame without it exactly.
+  //
+  // NOT THE SKY: a view raised to show sky never stands still (the frame
+  // changes every 300 ms with the AO on and off alike), so no pair of frames
+  // can isolate the AO there. That it leaves the sky and the fogged distance
+  // alone rests on its factor being exactly 1 past the fade end (the unit and
+  // property tests of the framework module, and the fade-before-fog guard in
+  // building-view-ambient-occlusion.test.ts).
+  test("on by default at the June noon: only darkens, is bounded, and switches off exactly", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    await page.goto(JUNE_NOON);
+    await waitForRefresh(page);
+    const view = page.locator("[data-ao]");
+    await expect(view).toHaveAttribute("data-ao", "on");
+
+    const dialog = page.locator("#light-dialog");
+    const box = page.locator("#light-ao");
+    /** Sets the box with the dialog open, closes it, and stores the frame. */
+    // NO POINTER EVENTS: a click on a control over the canvas also reaches
+    // the scene and sends the NPC agent walking, and its route would then
+    // differ between the frames compared. The l key opens the dialog, Escape
+    // closes it, and the box is changed as its change event.
+    const frameWith = async (on, key) => {
+      if (await dialog.isHidden()) await page.locator("body").press("l");
+      await expect(dialog).toBeVisible();
+      await box.evaluate((el, checked) => {
+        if (el.checked === checked) return;
+        el.checked = checked;
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      }, on);
+      await expect(view).toHaveAttribute("data-ao", on ? "on" : "off");
+      const lit = await readoutLuma(page);
+      await page.locator("body").press("Escape");
+      await expect(dialog).toBeHidden();
+      await settledFrame(page, key);
+      return lit;
+    };
+    // On, off, on, off: the two pairs must agree exactly, which is what says
+    // the scene stood still and every difference is the AO's.
+    const litOn = await frameWith(true, "__aoOn");
+    const litOff = await frameWith(false, "__aoOff");
+    await frameWith(true, "__aoOnAgain");
+    await frameWith(false, "__aoOffAgain");
+    expect((await compare(page, "__aoOnAgain", "__aoOn")).identical).toBe(true);
+    expect((await compare(page, "__aoOffAgain", "__aoOff")).identical).toBe(
+      true,
+    );
+
+    const r = await compare(page, "__aoOn", "__aoOff");
+    console.log(
+      `ambient occlusion at the June noon: ${r.darkened} of ${r.n} pixels darkened by 3 or more, largest drop ${r.maxDrop}, ${r.brightened} brightened; mean luma ${r.meanOn.toFixed(2)} on, ${r.meanOff.toFixed(2)} off; lit surfaces ${litOn} on, ${litOff} off`,
+    );
+    expect(r.brightened, "pixels the AO brightened").toBe(0);
+    expect(r.darkened / r.n).toBeGreaterThan(AO_DARKENED_SHARE_MIN);
+    expect(r.meanOn / r.meanOff).toBeGreaterThan(AO_FRAME_LUMA_RATIO_MIN);
+    expect(litOn / litOff).toBeGreaterThan(AO_LIT_LUMA_RATIO_MIN);
   });
 });

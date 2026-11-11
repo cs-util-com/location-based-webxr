@@ -485,6 +485,30 @@ AR exits already pass through — including the Android back gesture, where
 nothing calls `ArMode.dispose()`. `ar-walk-wiring.test.ts` pins that pairing by
 location; `building-view-content.test.ts` pins the four invariants above.
 
+## `setAmbientOcclusion()`: the ambient occlusion
+
+- `setAmbientOcclusion(on: boolean): void` switches the framework's
+  `createAmbientOcclusion` (deep import
+  `gps-plus-slam-app-framework/visualization/ambient-occlusion`) and
+  schedules one frame. Nothing is rebuilt. The view starts with it off
+  (`data-ao="off"`); `main.ts` switches it from the store at boot.
+- **Every render path multiplies it on**: the frame (`requestFrame`) and
+  `measureLight`'s reads, so the brightness readout measures the view as
+  seen. In the frame it runs AFTER `lastDrawCost` is captured, because
+  its own renders reset `renderer.info`, and the cost reported is the
+  scene's. `clearScene` draws the empty scene without it.
+- **Off is today's frame exactly**: no pass runs and nothing is built; the
+  pass is built on the first enabled frame. On, the factor is exactly 1
+  past the fade window (`AO_FADE`, 700-1400 m of view depth), which ends
+  before the nearest the fog ever starts (`FOG_NEAR_M`, 1584 m at the
+  shortest render distance), so the fogged distance and the sky keep
+  their colour bit for bit.
+- `data-ao` ("on" / "off") on the container says which is drawn.
+- `dispose()` frees the pass with the renderer.
+- Tests: `building-view-ambient-occlusion.test.ts` (source-level: the
+  fade ends before the fog, the draw order, the only importer); the frame
+  itself in `playwright-tests/scene-3d.spec.js` ("ambient occlusion").
+
 ## `setFarPlane()` — the render-distance dial (r541 Q9/Q10)
 
 A **debug instrument, not a new default.** `FAR_PLANE_M` is unchanged and

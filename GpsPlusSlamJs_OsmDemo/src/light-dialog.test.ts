@@ -306,4 +306,37 @@ describe("createLightDialog", () => {
     ok.slide("gainMax", 2);
     expect(copyOk.textContent).toBe("Copy");
   });
+
+  // Why this test matters: the ambient occlusion switch is the one control
+  // here that is not a light setting. It must reach the view at once, show
+  // the brightness it now gives (the AO darkens the lit surfaces the readout
+  // measures), and stay out of the light settings, so Copy, Reset and the
+  // link never carry it.
+  it("switches the ambient occlusion at once and re-reads the brightness", () => {
+    const onAo = vi.fn<(on: boolean) => void>();
+    const { dialog, onChange, measure, $ } = setup({
+      ambientOcclusion: { initial: true, onChange: onAo },
+    });
+    const box = $<HTMLInputElement>("light-ao");
+    expect(box.type).toBe("checkbox");
+    expect(box.checked).toBe(true);
+    expect(box.closest("label")?.textContent).toContain("Ambient occlusion");
+    dialog.toggle();
+    measure.mockClear();
+    box.click();
+    expect(onAo).toHaveBeenCalledWith(false);
+    expect(box.checked).toBe(false);
+    expect(measure).toHaveBeenCalledWith(false);
+    $<HTMLButtonElement>("light-reset").click();
+    expect(box.checked).toBe(false);
+    expect(onAo).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.calls.every(([s]) => !("ambientOcclusion" in s))).toBe(
+      true,
+    );
+  });
+
+  it("has no ambient occlusion switch when the page offers none", () => {
+    const { $ } = setup();
+    expect($("light-ao")).toBeNull();
+  });
 });

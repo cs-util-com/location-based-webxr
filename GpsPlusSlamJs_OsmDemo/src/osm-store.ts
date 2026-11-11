@@ -60,6 +60,12 @@ import { DEFAULT_LAYERS, type LayerSet } from "./layers.js";
 export interface DemoRootState {
   readonly osmView: OsmViewState<DemoSnapshot, GeoEvent>;
   /**
+   * Whether the 3D view draws ambient occlusion (the light dialog's switch).
+   * A view setting, not part of the light link and not a build input:
+   * switching it redraws the frame and rebuilds nothing.
+   */
+  readonly ambientOcclusion: boolean;
+  /**
    * The chosen colour scheme (colour schemes plan 2026-11-10-0841 section
    * 4.4). The demo's own reducer rather than a field of the framework's
    * `osmView` slice: the framework is published and has no business naming
@@ -78,6 +84,8 @@ export interface DemoRootState {
 export interface CreateDemoStoreOptions {
   readonly start: LatLng;
   readonly category: string;
+  /** The AO switch at boot, from the link (`?ao=off`); on when absent. */
+  readonly ambientOcclusion?: boolean;
   /** The scheme at boot, from the link (`?scheme=`); the default when absent. */
   readonly colourScheme?: ColourSchemeName;
   /** The switch at boot, from the link (`?roofs=off`); on when absent. */
@@ -87,6 +95,32 @@ export interface CreateDemoStoreOptions {
    * `DEFAULT_LAYERS` when absent.
    */
   readonly initialLayers?: LayerSet;
+}
+
+const AMBIENT_OCCLUSION_CHANGED = "ambientOcclusion/changed";
+
+/** The light dialog's AO switch. */
+export function ambientOcclusionChanged(on: boolean): {
+  readonly type: typeof AMBIENT_OCCLUSION_CHANGED;
+  readonly payload: boolean;
+} {
+  return { type: AMBIENT_OCCLUSION_CHANGED, payload: on };
+}
+
+/** The AO reducer; a payload that is not a boolean is ignored. */
+function ambientOcclusionReducer(initial: boolean) {
+  return (
+    state: boolean = initial,
+    action: { readonly type: string; readonly payload?: unknown },
+  ): boolean => {
+    if (action.type !== AMBIENT_OCCLUSION_CHANGED) return state;
+    return typeof action.payload === "boolean" ? action.payload : state;
+  };
+}
+
+/** Whether the 3D view draws ambient occlusion. */
+export function selectAmbientOcclusion(state: DemoRootState): boolean {
+  return state.ambientOcclusion;
 }
 
 const COLOUR_SCHEME_CHANGED = "colourScheme/changed";
@@ -252,6 +286,9 @@ export function createDemoStore(options: CreateDemoStoreOptions) {
     storageBackend: new NullStorageBackend(),
     extraReducers: {
       osmView: slice.reducer,
+      ambientOcclusion: ambientOcclusionReducer(
+        options.ambientOcclusion ?? true,
+      ),
       colourScheme: colourSchemeReducer(
         options.colourScheme ?? DEFAULT_COLOUR_SCHEME,
       ),
