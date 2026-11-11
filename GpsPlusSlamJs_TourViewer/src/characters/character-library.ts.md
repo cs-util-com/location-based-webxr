@@ -1,6 +1,6 @@
 # character-library.ts
 
-**Purpose:** the on-device library of characters: one folder per character holding `frames.png` (the four-pose sheet), `image.png` (the first pose) and `character.json`, written last, so a folder without it is a save under way or an interrupted one. Only one older than `UNFINISHED_AGE_MS` (10 minutes, by the time in its id; an id with no time counts as old) is taken as interrupted; a younger one may be another tab's save in flight and is left alone. Ten minutes covers a save (under a second even on a slow phone) and a background tab the browser froze mid-save, with room; the cost is only that a real leftover waits that long.
+**Purpose:** the on-device library of characters: one folder per character holding `frames.png` (the four-pose sheet), `image.png` (the first pose) and `character.json`, written last, so a folder without it is a save under way or an interrupted one. Only one older than `UNFINISHED_AGE_MS` (10 minutes, by the time in its id; an id with no time counts as old, one dated ahead of the clock counts as young) is taken as interrupted; a younger one may be another tab's save in flight and is left alone. Ten minutes covers a save (under a second even on a slow phone) and a background tab the browser froze mid-save, with room; the cost is only that a real leftover waits that long.
 
 ## Public API
 
@@ -19,4 +19,4 @@
 
 ## Tests
 
-`character-library.test.ts` (write order, automatic names, listing order, interrupted saves and their tidying, a folder's age swept from a moment to an hour around the cap, another tab's save in flight surviving a save here, an id with no time, rename and remove, a failed write leaving no listed entry).
+`character-library.test.ts` (write order, automatic names, listing order, interrupted saves and their tidying, a folder's age swept from an hour in the future to an hour past the cap, another tab's save in flight surviving a save here, an id with no time, rename and remove, a failed write leaving no listed entry).
