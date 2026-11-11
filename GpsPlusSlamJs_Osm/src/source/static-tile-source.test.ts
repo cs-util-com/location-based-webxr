@@ -40,15 +40,17 @@ type Reply = Response | Error;
 /** A fetch that answers from a script and records every call. */
 function scriptedFetch(script: Record<string, Reply[]>) {
   const calls: { method: string; url: string }[] = [];
-  const impl = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input);
+  const impl = ((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = input instanceof Request ? input.url : input.toString();
     const method = init?.method ?? "GET";
     calls.push({ method, url });
     const queue = script[`${method} ${url}`];
     const next = queue?.shift();
-    if (next === undefined) throw new Error(`unscripted ${method} ${url}`);
-    if (next instanceof Error) throw next;
-    return next;
+    if (next === undefined) {
+      return Promise.reject(new Error(`unscripted ${method} ${url}`));
+    }
+    if (next instanceof Error) return Promise.reject(next);
+    return Promise.resolve(next);
   }) as typeof fetch;
   return { impl, calls };
 }
@@ -293,9 +295,12 @@ describe("StaticTileSource", () => {
         const result = await source.fetchTile(TILE);
         expect(result.tile).toBe(TILE);
         expect(fallback.calls.length).toBeLessThanOrEqual(1);
-        if (fallback.calls.length === 0) {
-          expect(result.sourceId).toBe("static:tiles.example.dev");
-        }
+        // Served by the host unless the race ran.
+        const expectedSource =
+          fallback.calls.length === 0
+            ? "static:tiles.example.dev"
+            : "overpass:test";
+        expect(result.sourceId).toBe(expectedSource);
       }),
     );
   });

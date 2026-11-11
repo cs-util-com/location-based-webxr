@@ -803,7 +803,7 @@ describe("createCityTileSource", () => {
       userAgent: "test-app (example.org)",
       staticTiles: { baseUrl: "https://tiles.example.dev" },
       fetchImpl: (input: RequestInfo | URL) => {
-        urls.push(String(input));
+        urls.push(input instanceof Request ? input.url : input.toString());
         return Promise.resolve(
           new Response(JSON.stringify({ version: 0.6, elements: [] }), {
             status: 200,

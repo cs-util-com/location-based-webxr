@@ -138,11 +138,19 @@ export class StaticTileSource implements OsmDataSource {
     try {
       return await this.fromHost(tile, options?.signal);
     } catch (error) {
-      if (isAbort(error) || options?.signal?.aborted === true) throw error;
-      // Any other failure: the race, at once, and the host left alone.
-      this.refusedUntil = this.now() + this.refusalMemoryMs;
-      return this.fallback.fetchTile(tile, options);
+      return this.afterHostFailed(error, tile, options);
     }
+  }
+
+  /** An abort rethrown; any other failure: the race, at once, host left alone. */
+  private afterHostFailed(
+    error: unknown,
+    tile: string,
+    options: FetchTileOptions | undefined,
+  ): Promise<OsmTileResult> {
+    if (isAbort(error) || options?.signal?.aborted === true) throw error;
+    this.refusedUntil = this.now() + this.refusalMemoryMs;
+    return this.fallback.fetchTile(tile, options);
   }
 
   private tileUrl(tile: string): string {
