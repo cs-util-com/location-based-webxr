@@ -27,7 +27,11 @@ editor's own namespace, one tab at a time. Design:
     deletion (whose tombstone stays until "Delete it") is offered as the
     edit at the next open, never as deleted again. A key move's carried
     records go through it too: the new key's namespace may hold an older
-    session's tombstone for an id it carries.
+    session's tombstone for an id it carries. When the remembered base of
+    its id carries `written` versions, it writes that base again: a
+    forget (an undo back to what a running save writes) took the stored
+    base with it, and without the built versions a reload after that save
+    lands would not offer the record written again.
   - `saveSettings(settings)` (QR-first M1b-2) - the tour's settings
     (`EditorTourSettings`: `{ needsNoGps, details?, stations? }`, the
     details since W2 of the tour editor plan, the station poses since the
@@ -156,7 +160,8 @@ editor's own namespace, one tab at a time. Design:
   write adds the file's version as it is on disk now - the opened file,
   then each in-place write that landed) and `written` (each build's
   version). A record is offered back only when the file's version is in
-  one of them; otherwise it gave way to a newer edit elsewhere and goes,
+  one of them (a record written again after a forget restores both,
+  `saveObject`); otherwise it gave way to a newer edit elsewhere and goes,
   said once. A file object put into a station this page created
   ("Move to a new station", where it stands) is offered too, though its
   content matches the file's: to the phone's writer a station the file

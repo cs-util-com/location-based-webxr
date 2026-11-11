@@ -30,7 +30,7 @@ layout, `editor3d-input.ts` feeds the pointer and the keys.
   is the tour's own), the move disc, the four dots (a station or a model,
   at heading + 45 + i x 90 degrees), the knob along the heading, the
   stalk. RangeError for a scale that is not finite and > 0.
-- `handleAt({ pointer, knob, dots, onDisc, underPointer })` -> `"move"`,
+- `handleAt({ pointer, knob, dots, onDisc, underPointer, posable })` -> `"move"`,
   `"turn"`, `"dot"` or null (the camera's): the knob and the dots first
   (the nearest within half its drawn size), then another object under
   the pointer (no handle, so a click selects it, even over the disc), then
