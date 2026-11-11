@@ -48,12 +48,14 @@ import { buildingColour, roadColour, roofColour } from "./feature-colours.js";
 import { buildGroundTint, type GroundTint } from "./ground-tint.js";
 import { buildPedestrianAreas } from "./pedestrian-areas.js";
 import { buildRoadMarkings } from "./road-markings.js";
+import { roadGroundIndex } from "./road-surface.js";
 import {
   ROAD_RANK_STEP_M,
   buildRoads,
   pedestrianAreaLiftM,
   roadMarkingLiftM,
   type BuildRoadsOptions,
+  type RoadRibbon,
 } from "./roads.js";
 import type { MeshData } from "./mesh-data.js";
 import { shellRandFor } from "./shell-rand.js";
@@ -474,15 +476,17 @@ function cityRoads(
   const { inside, tagsByKey, colours } = context;
   const kept = <T extends { readonly mesh: MeshData }>(items: T[]): T[] =>
     items.filter((item) => inside(meshCentroidEnu(item.mesh)));
-  const ribbons = kept(buildRoads(all, ground));
+  const allRibbons = buildRoads(all, ground);
+  const ribbons = kept(allRibbons);
   const rankStepM = ground.rankStepM ?? ROAD_RANK_STEP_M;
+  const onRoads = context.markings
+    ? roadsGround(allRibbons, ground)
+    : undefined;
   const areas = context.markings
     ? kept(
         buildPedestrianAreas(all, {
           frame: ground.frame,
-          ...(ground.groundHeightM === undefined
-            ? {}
-            : { groundHeightM: ground.groundHeightM }),
+          ...(onRoads === undefined ? {} : { groundHeightM: onRoads.under }),
           window: context.window,
           liftM: pedestrianAreaLiftM(rankStepM),
         }),
@@ -492,6 +496,7 @@ function cityRoads(
     ? kept(
         buildRoadMarkings(all, {
           ...ground,
+          ...(onRoads === undefined ? {} : { groundHeightM: onRoads.over }),
           liftM: roadMarkingLiftM(rankStepM),
         }),
       )
@@ -518,6 +523,36 @@ function cityRoads(
     roadCount: ribbons.length,
     zebraStripeCount: zebras.reduce((sum, z) => sum + z.stripeCount, 0),
     pedestrianAreaCount: areas.length,
+  };
+}
+
+/**
+ * The ground for what lies on the roads (`over`, the paint) and under them
+ * (`under`, the squares): the road's own chord where a ribbon covers the
+ * point, the ground elsewhere. Undefined on flat ground, where the two agree.
+ * A square takes the lower of the road and the ground, so it neither buries
+ * a road nor floats over the ground beside it.
+ */
+function roadsGround(
+  ribbons: readonly RoadRibbon[],
+  ground: BuildRoadsOptions,
+):
+  | {
+      readonly over: (position: LatLng) => number;
+      readonly under: (position: LatLng) => number;
+    }
+  | undefined {
+  const sample = ground.groundHeightM;
+  if (sample === undefined) return undefined;
+  const index = roadGroundIndex(ribbons);
+  return {
+    over: (position) =>
+      index.highestAt(ground.frame.toEnu(position)) ?? sample(position),
+    under: (position) => {
+      const here = sample(position);
+      const road = index.lowestAt(ground.frame.toEnu(position));
+      return road !== undefined && !(here <= road) ? road : here;
+    },
   };
 }
 

@@ -79,6 +79,13 @@ mitreLimit? }` (city objects plan 2026-11-07-2315 M4a, review MINOR 4):
   identity test pins that path). Lifts follow `rankStepM`: paint above the
   top rank, areas one step under the paths. The defaults themselves are not on the
   package entry: `roads.ts.md`.
+- On a sampled ground, paint and areas take their height from the roads
+  (`road-surface.ts`), not from the ground under their own vertices: the
+  paint the highest road ground under it, an area the lower of the ground
+  and the lowest road ground. A ribbon is a chord between its own vertices,
+  so on curved ground the raw ground parted from it by metres (the paint
+  under the road, a square over a road crossing it). Off every road both
+  take the ground. Flat ground skips the index: the two agree there.
 - `buildCity(features, ground, { palette })` picks the colours of a
   building without colour tags (city objects plan 2026-11-07-2315 M7):
   `"seeded"` (default) the warm palette of `building-palette.ts`, picked from
@@ -147,7 +154,8 @@ refusing a non-positive window; the cosmetic trees on by default, in their
 own field, none when switched off, none inside a built house, within
 `withinM`, and the build refused without a window; roads only when asked (`null` as `false`), zebras and pedestrian areas on
 with the roads and off with `markings: false` (and the O3 scene counts in
-`site-roads.test.ts`), the roads and paths
+`site-roads.test.ts`), paint over and a square under the road on a curved
+ground stub, the roads and paths
 coloured by class and surface and never a tunnel, draped on the ground, kept
 within the window; the seeded palette by default (walls and flat or pitched
 roofs from the key, a pitched tag drawn as a prism in a flat grey, a part

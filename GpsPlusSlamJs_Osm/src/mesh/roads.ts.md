@@ -33,7 +33,7 @@ footway crossing it.
 - `pedestrianAreaLiftM(rankStepM?)` - minus one step (0 for a zero step):
   a pedestrian area sits under the paths that cross it. Both used by
   `buildCity` with its own `rankStepM`, so a zero step still layers right.
-- `RoadRibbon` — `{ feature, widthM, mesh }`.
+- `RoadRibbon` — `{ feature, widthM, liftM, mesh }`; `liftM` is the way's rank lift, which `road-surface.ts` subtracts to find the ground a ribbon draws on.
 - `buildRoads(features, options) → RoadRibbon[]` - in input order. Throws only
   on invalid options (above); a degenerate way yields an empty mesh rather than
   `NaN` geometry.

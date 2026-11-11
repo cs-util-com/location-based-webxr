@@ -20,6 +20,7 @@ import {
   roadColour,
   roofColour,
 } from "./feature-colours.js";
+import { roadWidthM } from "./roads.js";
 import { srgbToLinear } from "./srgb.js";
 
 /**
@@ -494,6 +495,104 @@ describe("buildCity with roads", () => {
       ),
     );
     expect(triangles(on)).toBeGreaterThanOrEqual(triangles(off) + 2 * 8 + 2);
+  });
+
+  // WHY THESE TWO MATTER: a road ribbon samples the ground only at its own
+  // vertices and is a straight chord between them, while a stripe or a
+  // square's vertex sampled the ground under itself. On curved ground the two
+  // part by metres (measured on the corpus: paint up to 0.77 m under the road,
+  // squares up to 1.8 m over a road crossing them), far past the 5-8 mm
+  // clearances. Here the road has vertices only at its two ends, 50 m out,
+  // and the ground is a parabola, so its chord and the ground under the
+  // crossing part by 25 m.
+  describe("markings and squares on curved ground follow the road surface", () => {
+    const enu = (x: number, y: number) => frame.toLatLng({ x, y });
+    const road: OsmFeature = {
+      type: "way",
+      id: 41,
+      tags: { highway: "residential" },
+      geometry: [enu(-50, 0), enu(50, 0)],
+    };
+    const parabola =
+      (sign: number) =>
+      (p: { lat: number; lng: number }): number =>
+        sign * (frame.toEnu(p).x / 10) ** 2;
+    /**
+     * The road-chunk vertices within 10 m east or west of the crossing, of
+     * one colour when `colour` is given (the road itself has none there).
+     */
+    const nearCrossing = (
+      city: ReturnType<typeof buildCity>,
+      colour?: readonly number[],
+    ) => {
+      const out: { x: number; up: number; north: number }[] = [];
+      for (const chunk of city.roads) {
+        const p = chunk.mesh.positions;
+        const c = chunk.colors ?? new Float32Array(0);
+        for (let i = 0; i < p.length; i += 3) {
+          const ofColour =
+            colour === undefined ||
+            [c[i], c[i + 1], c[i + 2]].join(",") === colour.join(",");
+          if (Math.abs(p[i]!) <= 10 && ofColour) {
+            out.push({ x: p[i]!, up: p[i + 1]!, north: -p[i + 2]! });
+          }
+        }
+      }
+      return out;
+    };
+
+    it("paints a zebra over the road surface, not under it", () => {
+      const zebra: OsmFeature = {
+        type: "way",
+        id: 42,
+        tags: { highway: "footway", footway: "crossing", crossing: "zebra" },
+        geometry: [enu(0, -4), enu(0, 4)],
+      };
+      const city = buildCity(
+        [road, zebra],
+        { frame, groundHeightM: parabola(1) },
+        { window: W, roads: true },
+      );
+      expect(city.zebraStripeCount).toBeGreaterThan(0);
+      const paint = nearCrossing(city, unpacked(DEFAULT_ROAD_COLOURS.markings));
+      expect(paint.length).toBe(4 * city.zebraStripeCount);
+      // The stripes run past the kerb (the crossing is 8 m, the road 6 m);
+      // there they lie on the ground, as the pavement does.
+      const half = roadWidthM(road.tags) / 2;
+      const onRoad = paint.filter((v) => Math.abs(v.north) < half);
+      expect(onRoad.length).toBeGreaterThan(0);
+      // The road's surface here is its chord: the ground at its ends (25 m)
+      // plus its lift (at most 3.4 steps); the paint is above all of it.
+      for (const v of onRoad) expect(v.up).toBeGreaterThan(25 + 3.4 * 0.005);
+    });
+
+    it("keeps a square under a road that crosses it", () => {
+      const square: OsmFeature = {
+        type: "way",
+        id: 43,
+        tags: { highway: "pedestrian", area: "yes" },
+        geometry: [
+          enu(-10, -10),
+          enu(10, -10),
+          enu(10, 10),
+          enu(-10, 10),
+          enu(-10, -10),
+        ],
+      } as unknown as OsmFeature;
+      const city = buildCity(
+        [road, square],
+        { frame, groundHeightM: parabola(-1) },
+        { window: W, roads: true },
+      );
+      expect(city.pedestrianAreaCount).toBe(1);
+      const half = roadWidthM(road.tags) / 2;
+      const underRoad = nearCrossing(city).filter(
+        (v) => Math.abs(v.north) < half,
+      );
+      expect(underRoad.length).toBeGreaterThan(0);
+      // The road lies at -25 m plus its lift (at least 2 steps, rank 2).
+      for (const v of underRoad) expect(v.up).toBeLessThan(-25 + 2 * 0.005);
+    });
   });
 
   // WHY (r1164 delta review NIT 4): `roads` comes from a consumer's options
