@@ -1908,6 +1908,12 @@ body[data-view="3d"] #view3d .view3d-canvas {
   display: none;
 }
 
+/* Spanned, it runs under every dock, the asset shelf's too (each ends at
+ * its top), so no strip of the view is left below the shelf. */
+#shell-panel.span {
+  right: 0;
+}
+
 #shell-tree:not([hidden], .collapsed) ~ #shell-panel:not(.span) {
   left: var(--s-tree-w);
 }

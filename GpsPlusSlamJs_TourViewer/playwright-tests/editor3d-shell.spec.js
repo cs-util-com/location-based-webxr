@@ -133,6 +133,7 @@ const FRAME_PARTS = [
   "#tree-body",
   "#shell-inspector",
   "#inspector-body",
+  "#shell-shelf",
   "#compass",
   "#zoom-in",
   "#zoom-out",
@@ -150,6 +151,7 @@ const FRAME_PARTS = [
  * @param {import("@playwright/test").Page} page
  */
 async function frameOf(page) {
+  await shelfSettled(page);
   const layout = await layoutOf(page, FRAME_PARTS, ["background-color"]);
   const rest = await page.evaluate(() => {
     // A toast (a long one, as wide as a toast gets), put in the toasts' box
@@ -197,6 +199,20 @@ async function frameOf(page) {
     return { toast, creditsUncovered, controls };
   });
   return { layout, ...rest };
+}
+
+/**
+ * Waits out the asset shelf's width transition after a resize: the docks
+ * beside it take its new width at once, the shelf's own box only once the
+ * transition ends.
+ * @param {import("@playwright/test").Page} page
+ */
+async function shelfSettled(page) {
+  await page.waitForFunction(
+    () =>
+      (document.getElementById("shell-shelf")?.getAnimations().length ?? 0) ===
+      0,
+  );
 }
 
 /**
@@ -274,7 +290,9 @@ async function expectFrame(page, size) {
   // The map controls: one row 14 px over the bottom bar (on a phone 12 px
   // under the top bar, clear of the sheet), the compass left of + and -, 38 px
   // buttons, the zoom pill 8 px right of the compass, its right edge 12 px
-  // left of an open inspector, else 12 px from the window's right.
+  // left of an open inspector, else of the asset shelf, else 12 px from the
+  // window's right. The shelf stands at the window's right, an open
+  // inspector against it (a phone's shelf is a sheet of its own).
   const compass = must("#compass");
   const zoomIn = must("#zoom-in");
   const zoomOut = must("#zoom-out");
@@ -285,13 +303,26 @@ async function expectFrame(page, size) {
   expect(zoomOut.x, at).toBe(zoomIn.x + 38);
   if (phone) expect(compass.y, at).toBe(VIEW_TOP_PX + 12);
   else expect(size.height - 24 - (compass.y + compass.height), at).toBe(14);
+  const shelf =
+    !phone && shownNow("#shell-shelf") ? must("#shell-shelf") : null;
+  if (shelf !== null) {
+    expect(shelf.x + shelf.width, `the shelf ${at}`).toBeCloseTo(size.width, 0);
+  }
+  const shelfX = shelf?.x ?? size.width;
+  if (shownNow("#shell-inspector") && !phone) {
+    const inspector = must("#shell-inspector");
+    expect(inspector.x + inspector.width, `#shell-inspector ${at}`).toBeCloseTo(
+      shelfX,
+      0,
+    );
+  }
   const rightEdge =
     shownNow("#inspector-body") && !phone
       ? must("#shell-inspector").x - 12
-      : size.width - 12;
+      : shelfX - 12;
   expect(zoomOut.x + zoomOut.width, at).toBeCloseTo(rightEdge, 0);
   const controls = must("#map-controls");
-  for (const id of ["#shell-tree", "#shell-inspector"]) {
+  for (const id of ["#shell-tree", "#shell-inspector", "#shell-shelf"]) {
     if (!shownNow(id)) continue;
     expect(
       overlaps(controls, must(id)),
@@ -401,7 +432,10 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   await expectTree(page, 226, true);
   const turned = await box(page.locator("#shell-inspector"));
   expect(turned.width).toBeCloseTo(268, 0);
-  expect(turned.x + turned.width).toBeCloseTo(844, 0);
+  expect(turned.x + turned.width).toBeCloseTo(
+    (await box(page.locator("#shell-shelf"))).x,
+    0,
+  );
   await capture(page, test.info().outputPath("shell-844x390.png"));
   await page.locator('#inspector-head [data-act="fold"]').click();
   await expect(page.locator("#inspector-body")).toBeHidden();
@@ -418,15 +452,19 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   expect(tabletInspector.width).toBeCloseTo(268, 0);
   await expect(page.locator("#inspector-body")).toBeVisible();
 
-  // A desktop: both docks open side by side, 248 and 290 px, the labels
-  // shown, the scene between them 902 px wide.
+  // A desktop: both docks open side by side, 248 and 290 px, the
+  // inspector against the 300 px asset shelf at the window's right, the
+  // labels shown, the scene between them 602 px wide.
   const desktop = { width: 1440, height: 900 };
   await page.setViewportSize(desktop);
   await expectFrame(page, desktop);
   await expectTree(page, 248, true);
   const inspector = await box(page.locator("#shell-inspector"));
+  const shelf = await box(page.locator("#shell-shelf"));
+  expect(shelf.x + shelf.width).toBe(1440);
+  expect(shelf.width).toBe(300);
   expect(inspector).toMatchObject({
-    x: 1440 - 290,
+    x: shelf.x - 290,
     y: DOCK_TOP_PX,
     width: 290,
     height: 900 - 24 - DOCK_TOP_PX,
@@ -452,14 +490,16 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
 
 /**
  * The bottom bar's toggles and the bottom panel they open, at one size:
- * the four named toggles flush at the bar's right edge, side by side; the
- * panel on the bar, between the open docks (or under both, spanned), its
+ * the four named toggles side by side, flush with the asset shelf's toggle
+ * at the bar's right edge; the panel on the bar, between the open docks
+ * (or under both, spanned), left of the asset shelf, its
  * 30 px head with the tabs at its left, the map controls 14 px over it.
  * @param {import("@playwright/test").Page} page
  * @param {{ width: number, height: number }} size
  * @param {number} heightPx the panel's height at this size
  */
 async function expectPanel(page, size, heightPx) {
+  await shelfSettled(page);
   const at = `at ${String(size.width)} x ${String(size.height)}`;
   const bar = await box(page.locator("#shell-bar"));
   const toggles = page.locator("#shell-toggles .tog");
@@ -474,7 +514,10 @@ async function expectPanel(page, size, heightPx) {
     }
   }
   const last = boxes[boxes.length - 1];
-  expect(last.x + last.width, at).toBeCloseTo(size.width, 0);
+  const assets = await box(page.locator("#shelf-toggle"));
+  expect(assets.y, at).toBe(bar.y + 1);
+  expect(last.x + last.width, at).toBeCloseTo(assets.x, 0);
+  expect(assets.x + assets.width, at).toBeCloseTo(size.width, 0);
   // The credits and the selection's actions keep left of the toggles.
   for (const id of ["#view3d-credits", "#shell-acts"]) {
     const part = page.locator(id);
@@ -518,8 +561,24 @@ async function expectPanel(page, size, heightPx) {
   const spanned = await page
     .locator("#shell-panel")
     .evaluate((el) => el.classList.contains("span"));
+  // The asset shelf at the window's right runs down to the bottom bar
+  // beside the panel; spanned, the panel runs under it too (a phone's
+  // shelf is a sheet of its own, closed here).
+  const shelf = page.locator("#shell-shelf");
+  const shelfShown = size.width > 700 && (await shelf.isVisible());
   let left = 0;
   let right = size.width;
+  if (shelfShown) {
+    const s = await box(shelf);
+    expect(s.x + s.width, `the shelf ${at}`).toBeCloseTo(size.width, 0);
+    if (!spanned) {
+      expect(s.y + s.height, `the shelf ${at}`).toBeCloseTo(
+        size.height - 24,
+        0,
+      );
+      right = s.x;
+    }
+  }
   if (size.width > 700 && !spanned) {
     if (await open(tree)) {
       const t = await box(tree);
@@ -530,7 +589,7 @@ async function expectPanel(page, size, heightPx) {
   expect(panel.x, at).toBeCloseTo(left, 0);
   expect(panel.x + panel.width, at).toBeCloseTo(right, 0);
   // A dock the panel lies under ends at its top.
-  for (const dock of [tree, inspector]) {
+  for (const dock of [tree, inspector, ...(shelfShown ? [shelf] : [])]) {
     if (!(await open(dock))) continue;
     const d = await box(dock);
     const under = d.x < panel.x + panel.width && d.x + d.width > panel.x;
@@ -562,7 +621,7 @@ test("the bottom bar's toggles open the bottom panel between the docks, at a pho
   await expect(page.locator("#shell-panel")).toBeVisible();
   await expectPanel(page, desktop, 220);
   await page.screenshot({ path: test.info().outputPath("panel-1440x900.png") });
-  // Spanned, it runs under both docks, which end at its top.
+  // Spanned, it runs under every dock, which end at its top.
   await page.locator("#shell-panel .bp-span").click();
   await expectPanel(page, desktop, 220);
   await page.locator("#shell-panel .bp-span").click();

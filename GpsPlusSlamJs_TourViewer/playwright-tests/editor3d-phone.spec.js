@@ -201,7 +201,8 @@ test("on a phone's side both panels stay, the map between, and the close button 
 
   await station(page, "The old gate").click();
   const sheet = await box(details(page));
-  expect(sheet.x).toBe(844 - 268);
+  // Against the asset shelf at the window's right.
+  expect(sheet.x).toBe((await box(page.locator("#shell-shelf"))).x - 268);
   expect(sheet.width).toBe(268);
   expect(sheet.y + sheet.height).toBeCloseTo(foot, 0);
   // The list stays, unfolded, and the map keeps the room between them.

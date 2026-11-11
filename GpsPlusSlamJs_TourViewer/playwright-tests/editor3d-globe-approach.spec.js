@@ -231,9 +231,20 @@ async function expectDocksAt(page, sizes) {
     // the software-drawn globe.
     const l = await layoutOf(
       page,
-      docks.flatMap((dock) => [dock.id, dock.body]),
+      [...docks.flatMap((dock) => [dock.id, dock.body]), "#shell-shelf"],
       ["border-top-left-radius", "border-top-right-radius"],
     );
+    // The asset shelf stands at the window's right,
+    // the inspector against the shelf (a phone's shelf is a sheet of its own).
+    let right = width;
+    if (!sheet && shownIn(l, "#shell-shelf")) {
+      const shelf = boxIn(l, "#shell-shelf");
+      expect(
+        shelf.x + shelf.width,
+        `the shelf at ${String(width)}`,
+      ).toBeCloseTo(width, 0);
+      right = shelf.x;
+    }
     let shown = 0;
     for (const dock of docks) {
       if (!shownIn(l, dock.body)) continue;
@@ -241,7 +252,7 @@ async function expectDocksAt(page, sizes) {
       const at = `${dock.id} at ${String(width)}x${String(height)}`;
       const d = boxIn(l, dock.id);
       if (dock.left) expect(d.x, at).toBe(0);
-      else expect(d.x + d.width, at).toBeCloseTo(width, 0);
+      else expect(d.x + d.width, at).toBeCloseTo(right, 0);
       expect(d.y + d.height, at).toBeCloseTo(height - BOTTOM_PX, 0);
       expect(d.width, at).toBeCloseTo(dock.widthPx, 0);
       expect(overlaps(d, bar), at).toBe(false);
