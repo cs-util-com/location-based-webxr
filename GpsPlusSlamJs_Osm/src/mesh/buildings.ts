@@ -65,6 +65,7 @@ import {
   planInventedRoofs,
 } from "./invented-roofs.js";
 import type { InventedFootprint, InventedPlan } from "./invented-roofs.js";
+import type { RoofscapeParams } from "./roofscape-rules.js";
 
 /** One extruded volume, with the provenance to trace it back to OSM. */
 export interface BuildingVolume {
@@ -1165,15 +1166,30 @@ export function inventedRoofTotals(
   features: Iterable<OsmFeature>,
   frame: EnuFrame,
 ): Map<OsmFeatureKey, number> {
+  const totals = new Map<OsmFeatureKey, number>();
+  for (const [key, plan] of inventedRoofPlans(features, frame)) {
+    totals.set(key, inventedTotalM(plan));
+  }
+  return totals;
+}
+
+/**
+ * The invented-roof plan (a roof or a lid) of every building the planner
+ * takes in `features`, as `buildBuildings` with `inventedRoofs: true`
+ * plans them; `params` (default `ROOFSCAPE_DEFAULTS`) lets a sweep move
+ * one rule. In any frame near the buildings, as `inventedRoofTotals`.
+ */
+export function inventedRoofPlans(
+  features: Iterable<OsmFeature>,
+  frame: EnuFrame,
+  params?: RoofscapeParams,
+): Map<OsmFeatureKey, InventedPlan> {
   const { outlines, parts } = collectFootprints(features, frame);
   const { claimed, partsByOutline } = assignPartsToOutlines(outlines, parts);
-  const plans = planInventedRoofs(
+  return planInventedRoofs(
     inventedFootprints(outlines, parts, partsByOutline, claimed),
-    { frame },
+    { frame, ...(params === undefined ? {} : { params }) },
   );
-  const totals = new Map<OsmFeatureKey, number>();
-  for (const [key, plan] of plans) totals.set(key, inventedTotalM(plan));
-  return totals;
 }
 
 /** One polygon extruded on the building's ground. */

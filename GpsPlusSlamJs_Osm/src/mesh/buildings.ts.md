@@ -19,6 +19,10 @@ OSM features to building volumes, honouring `building:part`.
   or lid, from the same planner and the same input as `buildBuildings`, for
   the obstacle index. The planner gives the same roofs in any frame
   (`invented-roofs.ts.md`), so `frame` only needs to be near the buildings.
+- `inventedRoofPlans(features, frame, params?): Map<OsmFeatureKey, InventedPlan>`
+  - every building's invented plan (roof or lid) from the same planner and
+    input as `buildBuildings`, with optional planner parameters; what
+    `inventedRoofTotals` reads, and what the parameter sweep test varies.
 - `solidBuildingFootprints(features): SolidFootprint[]` — the same
   parts-else-outline selection, **in lat/lng and with no frame**, for
   [`nav/obstacles.ts`](../nav/obstacles.ts.md). Returns `{ feature,

@@ -77,8 +77,14 @@ the invented roofscape) and the toggles plan
     differs in the last bits between frames, which is enough to flip an
     event. A corner sitting exactly on a 0.1 mm boundary can still round two
     ways; no captured site has one.
+- **The neighbourhood prior reads every footprint handed in**, not only
+  those inside a consumer's window (`buildCity`'s `withinM`): a building at
+  the window's edge is judged by its real neighbours, so the edge does not
+  change its roof. Deliberate; bounding it would make a roof depend on where
+  the window was cut.
 - Defensive: a ring the skeleton refuses (`SkeletonFailure`) gives a lid,
-  never a throw; slivers of soffit under 1e-6 m2 are skipped.
+  never a throw; any other error is a defect and propagates. Slivers of
+  soffit under 1e-6 m2 are skipped.
 
 ## Examples
 
@@ -90,12 +96,35 @@ if (plan?.kind === "roof") {
 }
 ```
 
+## Cost on the globe's warm delivery
+
+`globe-invented-roofs.bench.ts` times reading the staged tiles and
+`buildCity` with the globe worker's options, roofs off and on, 15
+iterations after 3 warm-ups. Means, 2026-11-11 (off to on):
+
+- Heidelberg, central half: 49 ms to 93 ms (x1.9).
+- Heidelberg, whole box: 78 ms to 308 ms (x3.9).
+- Meggen, central half: 14 ms to 47 ms (x3.3).
+- Meggen, whole box: 54 ms to 243 ms (x4.5).
+
+The warm delivery more than doubles, so the globe builds with
+`inventedRoofs: false` (`globe-city-worker-core.ts`, pinned in its test).
+
 ## Tests
 
 - `invented-roofs.test.ts`: who gets a roof (a lone house, every keep case,
   shop, hall, flat neighbourhood, order), the shape (shared wall vertical,
   overhang on free walls, cut at the rise limit, a stated height, gable
   share), the mesh (top, roof range, soffit winding).
+- `invented-roofs.errors.test.ts`: a `SkeletonFailure` leaves the building
+  flat, any other error from the skeleton propagates.
+- `testdata/sites/site-invented-roof-sweep.test.ts`: the invented-roof
+  counts at Park Slope, Midtown and Meggen with each planner parameter
+  varied over a plausible range, the reversals pinned.
+- `testdata/sites/site-invented-roof-staging.test.ts`: the flips of a
+  staged delivery against the full one (shape, height over 1 cm and 50 cm)
+  at three staged box sizes on all 12 sites, and that none survives the
+  full delivery.
 - `invented-roofs.property.test.ts`: drawn top equals planned top within the
   rise limit, order invariance, and the same plans under any translation of
   the input, over random rotated rectangles and Ls.

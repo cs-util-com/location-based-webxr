@@ -44,6 +44,12 @@ buildings, trees, cosmeticTrees, roads, roadCount }`. `window` (a lat/lng
   building outside would stand on made-up ground (globe city plan
   2026-10-05-0040 §12.4 R12). RangeError for a `withinM` that is not a
   positive number.
+  - **Buildings outside `withinM` are still planned**, then dropped. This is
+    deliberate: their walls are the shared walls and the neighbourhood of
+    the buildings just inside, so planning only the kept ones would change
+    the roofs at the window's edge. The cost is the planning of buildings
+    that are never drawn (most of it the invented roofs), which a
+    consumer avoids with a smaller fetch, not a smaller `withinM`.
 - `buildCity(features, ground, { roads: true })` also returns `roads`: the
   `buildRoads` ribbons (draped per vertex on the ground; tunnels, covered
   ways and highway areas left out; paths included) within the window, merged

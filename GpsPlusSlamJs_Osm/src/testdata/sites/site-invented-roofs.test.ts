@@ -74,12 +74,14 @@ describe.each(SITES)("invented roofs at %s", (id) => {
   const { features, frame, off, on } = build(id);
 
   it("draws every other building exactly as with the option off", () => {
+    // Only the buildings the planner took (a roof or a lid) may differ; any
+    // other building, whatever its height, is drawn byte for byte as before.
+    const planned = inventedRoofTotals(features, frame);
     expect(on.map((v) => v.feature)).toEqual(off.map((v) => v.feature));
     on.forEach((volume, i) => {
       const before = off[i] as BuildingVolume;
       expect(before.roofIsInvented).toBe(false);
-      if (volume.roofIsInvented) return;
-      if (volume.heights.totalHeightM !== before.heights.totalHeightM) return;
+      if (planned.has(volume.feature)) return;
       expect(volume.mesh.positions).toEqual(before.mesh.positions);
       expect(volume.mesh.indices).toEqual(before.mesh.indices);
     });

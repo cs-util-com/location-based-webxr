@@ -19,7 +19,7 @@ import { enuFrameAt } from "./enu.js";
  * a digest; that is a visible change to every app and needs the owner's look,
  * never a re-pin to make this green.
  *
- * INVENTED ROOFS ARE OFF HERE, deliberately (the toggles plan, M8): an
+ * INVENTED ROOFS ARE OFF HERE, deliberately: an
  * invented roof is new geometry, not a colour change, so it moves the
  * buildings digest by construction. Off, the city draws the buildings it
  * drew when the digests were recorded, which is what this test guards; the

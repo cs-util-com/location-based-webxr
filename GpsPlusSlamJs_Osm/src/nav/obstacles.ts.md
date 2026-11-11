@@ -92,6 +92,11 @@ when the user does.
   draws with), so an agent's walls are the drawn ones. False gives the
   library heights (`resolveHeights`), for a consumer drawing with the option
   off.
+  - **The index plans the roofs again**, apart from the mesh build that
+    planned them already. Deliberate for now: OsmDemo's worker builds its
+    index from the features in its own cache, separate from the city build,
+    so handing the planned heights across would couple the two caches. The
+    cost is a second planning pass when the index is rebuilt.
   - **Any frame gives the drawn heights.** The planner works in each
     building's own coordinates (`invented-roofs.ts.md`), so the index plans in
     a frame at the centre of the buildings' bounding box and still matches

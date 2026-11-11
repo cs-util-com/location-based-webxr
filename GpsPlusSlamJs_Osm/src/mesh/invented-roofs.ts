@@ -38,7 +38,7 @@ import { isCounterClockwise, signedArea2 } from "./enu.js";
 import type { ExtrudedBuilding } from "./extrude.js";
 import { MeshBuilder } from "./mesh-data.js";
 import type { SkeletonRoof } from "./roof-skeleton.js";
-import { skeletonRoof, wingEnds } from "./roof-skeleton.js";
+import { SkeletonFailure, skeletonRoof, wingEnds } from "./roof-skeleton.js";
 import {
   chooseGableEnds,
   inventedEaveHeightM,
@@ -356,7 +356,8 @@ interface VerticalWalls {
 
 /**
  * One skeleton run with the outer walls in `zero` vertical, or undefined:
- * any failure means "not this run", and the next one, or a lid, follows.
+ * a refused ring (`SkeletonFailure`) means "not this run", and the next
+ * one, or a lid, follows. Any other error is a defect and propagates.
  */
 function runSkeleton(
   over: Rings,
@@ -371,8 +372,9 @@ function runSkeleton(
       ...(maxT === undefined ? {} : { maxT }),
     });
     return roof.ridgeT > 0 ? roof : undefined;
-  } catch {
-    return undefined;
+  } catch (error) {
+    if (error instanceof SkeletonFailure) return undefined;
+    throw error;
   }
 }
 
