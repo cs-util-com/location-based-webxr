@@ -1,0 +1,64 @@
+name: Deploy osm-tiles Worker
+
+# Deploys the `osm-tiles` Cloudflare Worker (GpsPlusSlamJs_OsmTiles) when its
+# code, or the Overpass query it fills tiles with, changes on main. Only this
+# Worker: never the site, another Worker or a zone setting.
+#
+# Needs the repository secret CLOUDFLARE_API_TOKEN (an API token with the
+# "Edit Cloudflare Workers" template, scoped to the account in wrangler.toml).
+# Without it the job says so and does nothing, so the workflow is safe to
+# land before the secret exists.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "GpsPlusSlamJs_OsmTiles/**"
+      - "GpsPlusSlamJs_Osm/src/source/overpass-*.ts"
+      - ".github/workflows/deploy-osm-tiles.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-osm-tiles
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Skip without the API token
+        if: env.CLOUDFLARE_API_TOKEN == ''
+        run: echo "CLOUDFLARE_API_TOKEN is not set; nothing deployed."
+
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        if: env.CLOUDFLARE_API_TOKEN != ''
+
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
+        if: env.CLOUDFLARE_API_TOKEN != ''
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        with:
+          node-version: "26"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the Osm library the Worker imports
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        run: pnpm --dir GpsPlusSlamJs_OsmTiles run build:osm
+
+      - name: Unit tests
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        run: pnpm --dir GpsPlusSlamJs_OsmTiles run test:unit
+
+      - name: Deploy
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        run: pnpm --dir GpsPlusSlamJs_OsmTiles exec wrangler deploy
