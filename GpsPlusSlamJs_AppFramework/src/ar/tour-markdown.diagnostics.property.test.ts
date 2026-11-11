@@ -42,12 +42,24 @@ const SHAPE: Record<TourMdDiagnosticKind, RegExp> = {
   link: /^\[/,
 };
 
-/** An earlier line that opens a code box: a fence after any indentation
- *  and quote or list marks. A box's later parts need one before them; its
- *  own fence part may be hidden under a part that starts earlier (a link
- *  over two lines), so the last kept part is not enough to tell. */
-const FENCE_LINE_BEFORE =
-  /(?:^|[\r\n])(?:[ \t]|>|[-*+](?=[ \t])|\d{1,9}[.)](?=[ \t]))*(?:`{3,}|~{3,})/;
+/** A fence line inside a part (so after a line break in it): a fence
+ *  after any indentation and quote or list marks; group 1 is its mark. */
+const FENCE_LINE_INSIDE =
+  /[\r\n](?:[ \t]|>|[-*+](?=[ \t])|\d{1,9}[.)](?=[ \t]))*(`{3,}|~{3,})/g;
+
+/** The mark of a code box still open after the fence lines inside `text`,
+ *  starting from `open`: a fence opens a box when none is open, and closes
+ *  it when it has the same sign and is at least as long, as the reader
+ *  decides. */
+function fenceStateAfter(text: string, open: string | null): string | null {
+  let mark = open;
+  for (const fence of text.matchAll(FENCE_LINE_INSIDE)) {
+    const found = fence[1] ?? '';
+    if (mark === null) mark = found;
+    else if (found.startsWith(mark)) mark = null;
+  }
+  return mark;
+}
 
 /** Bodies rich in the marks the diagnostics look at. */
 const markdownish = fc
@@ -102,6 +114,30 @@ function lineOf(body: string, at: number): number {
     .split(/[\r\n]/).length;
 }
 
+/**
+ * Asserts that each of `body`'s parts lies over text of its kind's shape.
+ * It follows the mark of the code box still open after the parts so far,
+ * by the fence lines they cover: a part that does not start with a fence
+ * is code only as a later part of an open box (after a blank line inside
+ * it). The box's fence line may lie under a part of another kind that
+ * starts first (a link over two lines), which hides the fence's own part;
+ * that part's fence lines count too.
+ */
+function expectPartsOfTheirShape(body: string): void {
+  let openMark: string | null = null;
+  for (const d of diagnoseTourMarkdown(body, { assetExists: () => false })) {
+    const own = body.slice(d.from, d.to);
+    const text = own.trimStart();
+    const continues =
+      d.kind === 'code' && openMark !== null && !SHAPE.code.test(text);
+    if (!continues) {
+      expect(text, `${d.kind} ${JSON.stringify(text)}`).toMatch(SHAPE[d.kind]);
+    }
+    // A code part's first line is a fence line too.
+    openMark = fenceStateAfter(d.kind === 'code' ? `\n${own}` : own, openMark);
+  }
+}
+
 describe('diagnoseTourMarkdown properties', () => {
   it('reports in-bounds, ordered, non-overlapping ranges with their lines', () => {
     fc.assert(
@@ -123,31 +159,30 @@ describe('diagnoseTourMarkdown properties', () => {
   });
 
   it('reports each kind over text of its own shape', () => {
-    // A failing run's seed and path, kept as a fixed example in the unit
-    // tests: "a code box open when its fence line lies under a link part".
-    fc.assert(
-      fc.property(markdownish, (body) => {
-        let codeOpen = false;
-        for (const d of diagnoseTourMarkdown(body, {
-          assetExists: () => false,
-        })) {
-          const text = body.slice(d.from, d.to).trimStart();
-          // A code box's continuation after a blank line inside it.
-          if (
-            d.kind === 'code' &&
-            !SHAPE.code.test(text) &&
-            (codeOpen || FENCE_LINE_BEFORE.test(body.slice(0, d.from)))
-          ) {
-            continue;
-          }
-          expect(text, `${d.kind} ${JSON.stringify(text)}`).toMatch(
-            SHAPE[d.kind]
-          );
-          codeOpen = d.kind === 'code';
-        }
-      }),
-      { numRuns: 2000 }
-    );
+    // A failing run's seed and path, kept as a fixed example below and in
+    // the unit tests: "a code box open when its fence line lies under a
+    // link part".
+    expect.hasAssertions();
+    fc.assert(fc.property(markdownish, expectPartsOfTheirShape), {
+      numRuns: 2000,
+    });
+  });
+
+  it('holds the shape check on code boxes the generator rarely builds', () => {
+    expect.hasAssertions();
+    // Why: two boxes at line starts, the second after the first closed,
+    // are rare in the generated bodies (50 000 runs held none), yet a
+    // second box's first part drifting off its fence must be caught; and
+    // a box whose fence a link covers must not be. Each body pins one.
+    for (const body of [
+      '```\na\n```\n\n```\nb\n```',
+      '```\na\n```\nx\n```\nb\n```',
+      'x\n```\na\n```\n\ny\n```\nb',
+      '```\n\na\n```\n\n```\nb',
+      '[\r\n```](asset:p)\n\na',
+    ]) {
+      expectPartsOfTheirShape(body);
+    }
   });
 
   it('never changes the parse', () => {
