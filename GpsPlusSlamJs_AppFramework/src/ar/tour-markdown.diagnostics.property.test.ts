@@ -47,7 +47,9 @@ const SHAPE: Record<TourMdDiagnosticKind, RegExp> = {
  *  Only the list marks the reader takes as items (`-`, `*`, `1.`): after
  *  a `+` or a `1)` the line stays a paragraph line, and its fence is
  *  text. Still counted here, though the reader shows them as typed: a
- *  fence after four columns of indentation or after a third list level. */
+ *  fence after four columns of indentation or after a third list level,
+ *  and one right under a box line after a number other than 1 (only an
+ *  item numbered 1 interrupts a paragraph line). */
 const FENCE_LINE_INSIDE =
   /[\r\n](?:[ \t]|>|[-*](?=[ \t])|\d{1,9}\.(?=[ \t]))*(`{3,}|~{3,})/g;
 
@@ -63,6 +65,54 @@ function fenceStateAfter(text: string, open: string | null): string | null {
     else if (found.startsWith(mark)) mark = null;
   }
   return mark;
+}
+
+/** What lies on a part's line before it: for a part inside a quote or a
+ *  list item, that container's marks. */
+function marksBefore(body: string, at: number): string {
+  if (at === 0) return '';
+  const lineStart =
+    Math.max(body.lastIndexOf('\n', at - 1), body.lastIndexOf('\r', at - 1)) +
+    1;
+  return body.slice(lineStart, at);
+}
+
+/** Marks that put a part inside a quote or a list item. */
+const CONTAINER_MARKS = /^(?:[ \t]|>|(?:[-*]|\d{1,9}\.)[ \t])*$/;
+
+/** The column widths of `marks` split at each quote mark, tabs to the next
+ *  multiple of four. */
+function segmentWidths(marks: string): number[] {
+  const widths: number[] = [];
+  let col = 0;
+  let start = 0;
+  for (const ch of marks) {
+    if (ch === '>') {
+      widths.push(col - start);
+      start = col + 1;
+    }
+    col = ch === '\t' ? col + 4 - (col % 4) : col + 1;
+  }
+  widths.push(col - start);
+  return widths;
+}
+
+/** Whether a later part with `marks` before it is still inside the
+ *  container a box opened in after `opener`: as many quote marks, and
+ *  under each list mark of the opener only indentation at least as wide
+ *  as that mark's (a new item, or a line indented less, ends it). */
+function sameContainer(marks: string, opener: string): boolean {
+  const segments = marks.split('>');
+  const openerSegments = opener.split('>');
+  if (segments.length !== openerSegments.length) return false;
+  const widths = segmentWidths(marks);
+  const openerWidths = segmentWidths(opener);
+  return segments.every(
+    (segment, i) =>
+      /^[ \t]*$/.test(segment) &&
+      (/^[ \t]*$/.test(openerSegments[i] ?? '') ||
+        (widths[i] ?? 0) >= (openerWidths[i] ?? 0))
+  );
 }
 
 /** Bodies rich in the marks the diagnostics look at. */
@@ -125,11 +175,17 @@ function lineOf(body: string, at: number): number {
  * is code only as a later part of an open box (after a blank line inside
  * it). The box's fence line may lie under a part of another kind that
  * starts first (a link over two lines), which hides the fence's own part;
- * that part's fence lines count too.
+ * that part's fence lines count too. A box opened inside a quote or a list
+ * item ends with it, as the reader decides: the marks before a later part
+ * on its line show whether that part is still inside.
  */
 function expectPartsOfTheirShape(body: string): void {
   let openMark: string | null = null;
+  let opener: string | null = null;
   for (const d of diagnoseTourMarkdown(body, { assetExists: () => false })) {
+    const marks = marksBefore(body, d.from);
+    if (opener !== null && !sameContainer(marks, opener)) openMark = null;
+    const wasOpen = openMark !== null;
     const own = body.slice(d.from, d.to);
     const text = own.trimStart();
     const continues =
@@ -139,7 +195,17 @@ function expectPartsOfTheirShape(body: string): void {
     }
     // A code part's first line is a fence line too.
     openMark = fenceStateAfter(d.kind === 'code' ? `\n${own}` : own, openMark);
+    if (openMark === null) opener = null;
+    else if (!wasOpen) opener = boxOpener(d.kind, marks);
   }
+}
+
+/** The container marks a box opened by a part of `kind` lies after, or
+ *  null for a box outside any container (or opened under another part). */
+function boxOpener(kind: TourMdDiagnosticKind, marks: string): string | null {
+  return kind === 'code' && CONTAINER_MARKS.test(marks) && /\S/.test(marks)
+    ? marks
+    : null;
 }
 
 describe('diagnoseTourMarkdown properties', () => {
@@ -178,10 +244,16 @@ describe('diagnoseTourMarkdown properties', () => {
     // are rare in the generated bodies (50 000 runs held none), yet a
     // second box's first part drifting off its fence must be caught; and
     // a box whose fence a link covers must not be; nor may a fence after a
-    // `+` bullet, which the reader does not take as an item, close a box.
-    // Each body pins one.
+    // `+` bullet, which the reader does not take as an item, close a box;
+    // and a box opened inside a quote or a list item ends with it, while
+    // it stays open over a blank line the container keeps. Each body pins
+    // one.
     for (const body of [
       '```\n+ ```\n\na',
+      '>```\n\n```\n\na',
+      '- ```\n\n```\n\na',
+      '> ```\n>\n> a',
+      '- ```\n\n  a',
       '```\na\n```\n\n```\nb\n```',
       '```\na\n```\nx\n```\nb\n```',
       'x\n```\na\n```\n\ny\n```\nb',
