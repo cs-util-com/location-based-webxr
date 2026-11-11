@@ -558,6 +558,9 @@ field ask that raised the default was literally about zooming further out.
   T2): `showFurniture(this.group, material === undefined)`, under its own
   `cityLayer` flag because the items are mapped. Hidden, its instanced meshes
   are not rendered, so their 80 m cut does not repack in AR.
+  `building-view-ar-hold.test.ts` runs the real `setArShellMaterial` on a
+  minimal view: a rebuild's new furniture is hidden once the hold is
+  re-applied, and shown again on leaving AR.
 
 ## Land-use tint and scheme ground colours (colour schemes plan 2026-11-10-0841 S3)
 
