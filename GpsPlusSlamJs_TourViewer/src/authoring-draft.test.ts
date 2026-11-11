@@ -38,6 +38,7 @@ import {
   draftObjectsNotYetHosted,
   draftObjectsPublished,
   draftObjectsSuperseded,
+  hostedObjects,
   manifestAsRead,
   objectContentKey,
   restoredText,
@@ -162,7 +163,7 @@ describe("draftObjectsNotYetHosted", () => {
     expect(draftObjectsNotYetHosted(draft, manifestOf([]))).toHaveLength(2);
   });
 
-  // Why (M5a review L2): the hosted comparison re-expresses a draft object
+  // Why: the hosted comparison re-expresses a draft object
   // in its HOSTED station's frame to absorb the round trip's micrometres,
   // and that step overwrote the object's own `station` - so an object moved
   // into another station at the same spot read as already saved, was never
@@ -683,5 +684,68 @@ describe("the editor's uses of the shared rules (M6 E2c)", () => {
     // A manifest the serializer refuses is returned as it is.
     const twice = tourOf([pin("a"), pin("a")]);
     expect(manifestAsRead(twice)).toBe(twice);
+  });
+});
+
+describe("hostedObjects: which folder holds an object", () => {
+  // Why: a creator who groups free items into a new folder changes no
+  // pose, only the folder that holds them. The file does not hold that
+  // folder, so it does not hold the grouped item as it now is: read as
+  // held, the draft took the grouped item for one the file already has,
+  // and a reload brought back the new folder empty, its items free.
+  const block = (id: string) => ({
+    id,
+    kind: "shortText",
+    view: "pin",
+    caption: id,
+    createdAtIso: "2026-09-09T00:00:00.000Z",
+    pose: { position: [1, 1.5, 0], rotation: [0, 0, 0, 1] },
+  });
+  const manifest = parseTourManifest(
+    JSON.parse(
+      serializeTourManifest(
+        tourOf([], {
+          stations: [
+            {
+              id: "a",
+              title: "Station A",
+              geo: { lat: 48.52, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
+              activateRadiusM: 50,
+              foundRadiusM: 25,
+              hint: "arrow",
+              children: [
+                {
+                  id: "yard",
+                  kind: "folder",
+                  title: "Yard",
+                  pose: { position: [0, 0, 4], rotation: [0, 0, 0, 1] },
+                  children: [block("y")],
+                },
+                block("p"),
+              ],
+            },
+          ],
+        } as unknown as Partial<TourManifest>),
+      ),
+    ),
+  );
+  const hosted = hostedObjects(manifest);
+  const objectOf = (id: string): TourObject => {
+    const found = tourObjects(manifest).find((o) => o.id === id);
+    if (found === undefined) throw new Error(id);
+    return found;
+  };
+
+  it("holds an object in the folder the file has it in", () => {
+    expect(objectOf("y").folder).toEqual(["yard"]);
+    expect(hosted.holds(objectOf("y"))).toBe(true);
+    expect(hosted.holds(objectOf("p"))).toBe(true);
+  });
+
+  it("does not hold a free item put in a folder the file lacks, nor an item taken out of its folder, though neither moved", () => {
+    expect(hosted.holds({ ...objectOf("p"), folder: ["benches"] })).toBe(false);
+    expect(hosted.holds({ ...objectOf("p"), folder: ["yard"] })).toBe(false);
+    const { folder: _yard, ...free } = objectOf("y");
+    expect(hosted.holds(free)).toBe(false);
   });
 });

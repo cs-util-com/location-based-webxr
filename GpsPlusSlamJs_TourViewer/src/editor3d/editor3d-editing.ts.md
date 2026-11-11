@@ -36,8 +36,13 @@ pure gesture maths reads (`GestureWorld`).
   - `groundAt(place)` - the ground's ellipsoidal height at a place
     (`world.groundAt`), null where none has loaded.
   - `screenOf(selection)`, `handleScreen("middle" | "knob" | "dot")`,
+    `underAt(pointer)` (what a press there picks, and whether it meets
+    the move disc),
     `handleSizes()` - for the page's checks: CSS px on the canvas.
-  - `dispose()`.
+  - `folderOutlines()` - how many teal boxes the folder outline
+    (`folder-outline.ts`) draws now: around each item of a selected
+    plain folder, refreshed in `update()`; for the page's checks.
+  - `dispose()` (the outline's too).
 - Types `GizmoPart`, `EditingCamera` (`lock(on)`, the optional
   `takesTwoFingers`, `twoFingerStart()`, `twoFinger(mode, last, now, world)`, `lookAt()`); `takesTwoFingers` reaches the input as
   `cameraTakesTwoFingers`.
@@ -61,6 +66,8 @@ pure gesture maths reads (`GestureWorld`).
   changed, said missed after `HELD_CLICK_MS`. A model without a size is
   never drawn here, so a click on one is said missed at once.
 - `modelParts()` and `modelScreenOf(id, at)` - for the page's checks.
+- `showSoundIcons(on)` - shows or hides every sound's speaker icon in the
+  scene, for the page's checks.
 - `previewRadius(stationId, radiusM)` - the station's ring and its rim at
   `radiusM`, unwritten; null goes back to what the tour has.
 

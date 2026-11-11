@@ -95,16 +95,16 @@ import {
   type EditorItem,
   type EditorModel,
 } from "./editor-model.js";
+import { createFolderCommands } from "./folder-commands.js";
 import { applySceneEdit } from "./scene-edits.js";
 import { storyRows } from "./editor-shell/tree-model.js";
 import type { GestureEdit } from "../editor3d/gesture.js";
 import { askMove, moveNote } from "../move-question.js";
 import { confirmPausingFrames } from "./browser-question.js";
 import {
-  droppedBlockFieldsLine,
-  droppedDetailsLine,
-  droppedStationFieldsLine,
+  openedNoticeLines,
   openTourForEditing,
+  showOpenedNotices,
 } from "./editor-open.js";
 import {
   holdPageInert,
@@ -665,20 +665,27 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
         view3d: () => Editor3dStats | null;
         view3dTilt: (deg: number) => void;
         view3dDistance: (m: number) => void;
+        view3dHeading: (deg: number) => void;
         view3dBuildings: (on: boolean) => void;
         view3dPointOf: (
           selection: string,
         ) => readonly [number, number, number] | null;
         view3dScreenOf: (selection: string) => readonly [number, number] | null;
+        view3dUnder: (
+          x: number,
+          y: number,
+        ) => { readonly pick: string | null; readonly onDisc: boolean } | null;
         view3dHandle: (
           part: "middle" | "knob" | "dot",
         ) => readonly [number, number] | null;
         view3dGizmoSizes: () => ReturnType<Editor3dView["gizmoSizes"]>;
         view3dModelParts: () => ReturnType<Editor3dView["modelParts"]> | null;
+        view3dFolderOutlines: () => number | null;
         view3dModelScreen: (
           id: string,
           at: readonly [number, number, number],
         ) => readonly [number, number] | null;
+        view3dSoundIcons: (on: boolean) => void;
         manifest: () => ReturnType<typeof manifestToWrite>;
         selected: () => string | null;
         dropTour: (reason: string) => void;
@@ -697,15 +704,23 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
     view3dDistance: (m) => {
       shown3d?.setDistance(m);
     },
+    view3dHeading: (deg) => {
+      shown3d?.setHeading?.(deg);
+    },
     view3dBuildings: (on) => {
       shown3d?.setBuildings?.(on);
     },
     view3dPointOf: (selection) => shown3d?.pointOf(selection) ?? null,
     view3dScreenOf: (selection) => shown3d?.screenOf(selection) ?? null,
+    view3dUnder: (x, y) => shown3d?.underAt(x, y) ?? null,
     view3dHandle: (part) => shown3d?.handleScreen(part) ?? null,
     view3dGizmoSizes: () => shown3d?.gizmoSizes() ?? null,
     view3dModelParts: () => shown3d?.modelParts() ?? null,
+    view3dFolderOutlines: () => shown3d?.folderOutlines() ?? null,
     view3dModelScreen: (id, at) => shown3d?.modelScreenOf(id, at) ?? null,
+    view3dSoundIcons: (on) => {
+      shown3d?.showSoundIcons(on);
+    },
     manifest: () => manifestToWrite(store.getState().tourDocument),
     selected: () => ui().selected,
     // What a late integrity failure does to the open tour (`openFile`'s
@@ -1456,13 +1471,18 @@ function deleteStoryEntry(id: string, story: TourStory): void {
 }
 
 /**
- * Copy a note, or a station with its notes, beside itself (the 3D view's
+ * Copy a note, a story (`story:<id>`, right after itself), or a station
+ * with its notes, beside itself (the bar's Duplicate, the 3D view's
  * Ctrl+D): one step; the copy is selected and a toast names it. A photo's
  * picture is read first; a tour switched meanwhile drops the result.
  */
 async function duplicateSelection(id: string): Promise<void> {
   const mine = editor;
   if (mine === null) return;
+  if (id.startsWith(STORY_PREFIX)) {
+    duplicateStorySelection(id.slice(STORY_PREFIX.length));
+    return;
+  }
   const called = itemCalled(id);
   endUndo();
   const outcome = id.startsWith(STATION_PREFIX)
@@ -1485,6 +1505,26 @@ async function duplicateSelection(id: string): Promise<void> {
   if (home !== undefined) showRowsOf(home.id);
   select(outcome.id);
   toast(said);
+  tourChanged();
+}
+
+/** The story `storyId` copied right after itself: the copy selected
+ *  with its folder open, said once it was made; one step. */
+function duplicateStorySelection(storyId: string): void {
+  if (editor === null) return;
+  endUndo();
+  const outcome = editor.duplicateStory(storyId);
+  refresh();
+  if (outcome.kind === "refused") {
+    toast(outcome.reason);
+    return;
+  }
+  const copy = manifestToWrite(store.getState().tourDocument)
+    ?.stations.flatMap((s) => tourStories(s))
+    .find((s) => s.id === outcome.id);
+  store.dispatch(editorViewActions.storyFolded({ id: outcome.id, open: true }));
+  select(`${STORY_PREFIX}${outcome.id}`);
+  toast(`Duplicated ${copy === undefined ? "the story" : `"${copy.title}"`}`);
   tourChanged();
 }
 
@@ -2531,19 +2571,15 @@ async function openFile(
   sayNoBackup();
   sayUnreadDraft();
   keepStorage();
-  // Details, station descriptions, card images and block texts the reader
-  // dropped are said, never lost silently by the next save;
-  // kept until closed, as an instruction.
-  for (const line of [
-    droppedDetailsLine(outcome.dropped),
-    droppedStationFieldsLine(outcome.dropped, outcome.manifest),
-    droppedBlockFieldsLine(outcome.dropped, outcome.manifest),
-  ]) {
-    if (line !== null) fileToasts.push(toast(line, undefined, null));
-  }
-  if (drafted.superseded !== null) {
-    fileToasts.push(toast(drafted.superseded, undefined, null));
-  }
+  // What the reader dropped is said, never lost silently by the next
+  // save; kept until closed, as an instruction.
+  fileToasts.push(
+    ...showOpenedNotices(
+      openedNoticeLines(outcome.dropped, outcome.manifest),
+      drafted.superseded,
+      toast,
+    ),
+  );
   // A tour opened afresh into the 3D view flies in; a draft to restore
   // goes straight to it, as does a later switch from the map.
   approachNext = drafted.offer === null && opensIn3d();
@@ -4191,6 +4227,20 @@ const shell = createEditorShell({
     editNarration: writeNarrationEdit,
     voiceMaxBytes: autosaveMaxBytes,
   },
+  // The tree's Group, Ungroup, moves into and out of a folder and its
+  // rename: each one step, its outcome said in a toast.
+  folders: createFolderCommands({
+    getState: () => store.getState().tourDocument,
+    dispatch: (action) => store.dispatch(action),
+    before: endUndo,
+    changed: () => {
+      refresh();
+      tourChanged();
+    },
+    say: (text) => {
+      toast(text);
+    },
+  }),
   say: (text) => {
     toast(text);
   },

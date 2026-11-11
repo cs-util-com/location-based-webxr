@@ -95,15 +95,24 @@ export function facingRotation(
  * the camera's direction, by at most {@link MAX_TURN_DEG}; a view that does
  * not turn (the pop-up) stays at rest. A non-finite rest reads as 0, a
  * non-finite camera direction as no turn.
+ *
+ * With `backToCamera` (the editor's look) a camera more than 90 degrees
+ * round from his rest sees his back turned toward it, by the same 60
+ * degree limit, so he is never edge-on (at least cos 30 square on);
+ * without it (the visitor's look) he stands edge-on 150 degrees round.
  */
 export function facingYaw(
   restYaw: number,
   toCamera: number,
   turns: boolean,
+  backToCamera = false,
 ): number {
   const rest = Number.isFinite(restYaw) ? restYaw : 0;
   if (!turns || !Number.isFinite(toCamera)) return rest;
-  const rel = wrapAngle(toCamera - rest);
+  let rel = wrapAngle(toCamera - rest);
+  if (backToCamera && Math.abs(rel) > Math.PI / 2) {
+    rel -= Math.PI * Math.sign(rel);
+  }
   return rest + Math.min(MAX_TURN_RAD, Math.max(-MAX_TURN_RAD, rel));
 }
 

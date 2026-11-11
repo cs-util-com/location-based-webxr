@@ -15,11 +15,11 @@ import { describe, expect, it } from 'vitest';
 import { parseTourAssets, type TourAsset } from './tour-assets';
 import { parseTourStations } from './tour-stations';
 import {
-  tourChildrenFreeBlocks,
   tourStationBlocks,
   tourStories,
   type TourStationChild,
 } from './tour-story';
+import { tourFreeBlocks } from './tour-station-pose';
 
 class Invalid extends Error {}
 const fail = (message: string): never => {
@@ -53,7 +53,8 @@ const welcome = (id = 'welcome') => ({
 
 const story = (id: string, children: unknown[]) => ({
   id,
-  kind: 'story',
+  kind: 'folder',
+  role: 'story',
   title: 'A story',
   children,
 });
@@ -573,9 +574,7 @@ describe('stations as the parent of what was placed around them', () => {
       ],
       { assets: newer, fail, lenient: true }
     );
-    expect(tourChildrenFreeBlocks(parsed!.children).map((b) => b.id)).toEqual([
-      'm3',
-    ]);
+    expect(tourFreeBlocks(parsed!).map((b) => b.id)).toEqual(['m3']);
   });
 
   it('ignores a code an earlier station named: no station is found by a code any more', () => {

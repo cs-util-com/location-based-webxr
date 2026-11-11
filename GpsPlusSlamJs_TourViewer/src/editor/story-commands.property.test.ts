@@ -20,6 +20,7 @@ import {
   type TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
+  isStory,
   tourStories,
   type TourStory,
 } from "gps-plus-slam-app-framework/ar/tour-story";
@@ -27,6 +28,7 @@ import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
 
 import {
   documentObjects,
+  historyAssetIds,
   manifestToWrite,
   tourDocumentActions,
 } from "../tour-document.js";
@@ -201,6 +203,7 @@ type Command =
   | { kind: "add"; at: number }
   | { kind: "rename"; at: number; title: string }
   | { kind: "delete"; at: number }
+  | { kind: "duplicate"; at: number }
   | { kind: "addChild"; at: number; make: "shortText" | "longText" }
   | { kind: "deleteChild"; at: number }
   | { kind: "move"; at: number; to: number }
@@ -217,6 +220,7 @@ const command: fc.Arbitrary<Command> = fc.oneof(
     title: fc.constantFrom("Renamed", "  spaced ", "", "x".repeat(81)),
   }),
   fc.record({ kind: fc.constant("delete" as const), at }),
+  fc.record({ kind: fc.constant("duplicate" as const), at }),
   fc.record({
     kind: fc.constant("addChild" as const),
     at,
@@ -350,6 +354,15 @@ function commandsKeepTheTour(
           if (story !== undefined) editor.deleteStory(story.id);
           break;
         }
+        case "duplicate": {
+          // A copy of any story, even one copied before: always a step.
+          const story = round(stories, c.at);
+          if (story !== undefined) {
+            mustStep = true;
+            editor.duplicateStory(story.id);
+          }
+          break;
+        }
         case "addChild": {
           const story = round(stories, c.at);
           if (story !== undefined) {
@@ -372,7 +385,7 @@ function commandsKeepTheTour(
           // it takes is one step.
           const items = (tour()?.stations ?? []).flatMap((st) =>
             st.children.flatMap((ch) =>
-              ch.kind === "story"
+              isStory(ch)
                 ? [
                     { st, id: ch.id },
                     ...ch.children.map((e) => ({ st, id: e.id })),
@@ -510,18 +523,21 @@ function commandsKeepTheTour(
     const opened = new Set(manifest.assets.map((a) => a.id));
     expect(afterTour).toEqual(withReferencedAssets(afterTour, opened));
     // The first save keeps the opened tour's files as they were, in their
-    // order; beside them only the voices this run brought in (an undo step
-    // may still name one whose text is gone, so that save keeps it).
-    const brought = new Set(
-      store.getState().tourDocument.addedAssets.map((a) => a.id),
+    // order; beside them only what its tour or a step of the undo history
+    // names (`historyAssetIds`: an undo step may still name a voice whose
+    // text is gone, so that save keeps it) - the bound production writes.
+    const beforeTour = parseTourManifest(before);
+    const named = new Set(
+      withReferencedAssets(beforeTour).assets.map((a) => a.id),
     );
-    const beforeAssets = parseTourManifest(before).assets;
-    expect(beforeAssets.filter((a) => opened.has(a.id))).toEqual(
+    const history = historyAssetIds(store.getState().tourDocument);
+    expect(beforeTour.assets.filter((a) => opened.has(a.id))).toEqual(
       manifest.assets,
     );
-    for (const asset of beforeAssets) {
-      if (opened.has(asset.id)) continue;
-      expect(brought.has(asset.id), asset.path).toBe(true);
+    for (const asset of beforeTour.assets) {
+      if (opened.has(asset.id) || named.has(asset.id)) continue;
+      expect(history.has(asset.id), asset.path).toBe(true);
+      // The only files this run brings in are voices.
       expect(asset.kind).toBe("audio");
     }
   };
@@ -541,9 +557,9 @@ function freeByName(json: Record<string, unknown>): TourManifest {
     stations: tour.stations.map((station) => ({
       ...station,
       children: [
-        ...station.children.filter((c) => c.kind === "story"),
+        ...station.children.filter((c) => isStory(c)),
         ...station.children
-          .filter((c) => c.kind !== "story")
+          .filter((c) => !isStory(c))
           .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
       ],
     })),

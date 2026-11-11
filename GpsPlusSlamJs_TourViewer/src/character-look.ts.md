@@ -7,10 +7,10 @@ The three.js look of a recurring character standing at a station: a die-cut card
 ## Public API
 
 - `paintPoses(source, sheet, painters?)` - his die-cut poses from the decoded image: four from a frames sheet that slices, else one.
-- `createCharacterLook({view, name, line, figure | poses, sheet?, noCard?, heightM?, restYaw?, voiced?, painters?})` returns a `CharacterLook`:
+- `createCharacterLook({view, name, line, figure | poses, sheet?, noCard?, heightM?, restYaw?, backToCamera?, voiced?, painters?})` returns a `CharacterLook`:
   - `poses`: painted before (`figure-memo.ts`) in place of `figure`, shared and left unchanged; `noCard`: as `characterViewLook`. The paper stage (top and backdrop) is painted only for the `popup` view, the only one that shows it;
   - `sheet`: `figure` is a frames sheet (idle, talk-a, talk-b, beckon in four equal cells, `painters.frames`); one that does not slice into four is drawn whole as one pose. Default false;
-  - `restYaw`: the creator's facing (rad about Up, 0 facing +Z; the block pose's yaw, `restYawOf`), default 0; `voiced`: his line has a voice, which a tap plays (the footers say so), default false;
+  - `restYaw`: the creator's facing (rad about Up, 0 facing +Z; the block pose's yaw, `restYawOf`), default 0; `backToCamera`: from more than 90 degrees round he turns his back to the camera rather than stand edge-on (the editor), default false; `voiced`: his line has a voice, which a tap plays (the footers say so), default false;
   - `root`: the group to add at the station's position. It is not rotated by the caller; the look turns its own inner group.
   - `parts`: `figure`, `bubble`, `pip`, `scroll` and `popup`, for tests and checks.
   - `update({nowMs, camera, snap?})`: once per frame. `snap` jumps every ease to its target (first frame, tests).
@@ -30,7 +30,7 @@ The three.js look of a recurring character standing at a station: a die-cut card
 
 - Distances are horizontal, from the camera to the root.
 - Facing:
-  - He rests at the creator's facing and turns toward the camera by at most 60 degrees (`facingYaw`, eased at 4 per second; the first frame snaps).
+  - He rests at the creator's facing and turns toward the camera by at most 60 degrees (`facingYaw`, eased at 4 per second; the first frame snaps). With `backToCamera` (the editor only) a camera more than 90 degrees round sees his back turned toward it, so the target swings from one 60 degree limit to the other as the camera crosses his side, eased the same way.
   - The beckon does not turn him: a flat cut-out turned away from the visitor reads as a squashed card.
   - The pop-up rests at the creator's facing.
 - The beckon needs all of these:

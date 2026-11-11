@@ -99,7 +99,8 @@ const WITH_CHARACTER = {
   children: [
     {
       id: "tale",
-      kind: "story",
+      kind: "folder",
+      role: "story",
       title: "The tale",
       children: [
         {
@@ -480,7 +481,8 @@ const story = (id: string): fc.Arbitrary<TourStory> =>
       const childIds = [...blockIds, ...rest];
       return everyField<TourStory>({
         id: fc.constant(id),
-        kind: fc.constant("story"),
+        kind: fc.constant("folder"),
+        role: fc.constant("story"),
         title: words,
         children: fc
           .tuple(

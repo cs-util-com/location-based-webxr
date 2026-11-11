@@ -52,7 +52,14 @@ chrome reads, one copy for every view of the page.
     - `foldedDocks` - `ShellDock` (`tree`, `inspector`) to folded, none
       at start;
     - `hiddenLayers` - the `ShellLayer`s turned off (`codes`, `names`,
-      `walk`, `depth`, `buildings`), none at start.
+      `walk`, `depth`, `buildings`), none at start;
+    - `picked` - the tree's picked rows (item ids and `folder:<id>`), for
+      Group and Ungroup; `selected` is always the last of them, and a
+      plain `selected` empties it;
+    - `selectMode` - the tree's Select mode (a tap ticks a row; the phone's
+      way to pick several);
+    - `foldedFolders` - the plain folders folded in the tree (open by
+      default); these three are emptied on an open or a close.
 - `editorViewActions`:
   - `selected({ id })`;
   - `busyChanged({ busy })`, `doneBusyChanged({ busy })`,
@@ -68,7 +75,10 @@ chrome reads, one copy for every view of the page.
   - the shell's: `storyFolded({ id, open })` keeps `openStories`, the story
     folders unfolded in the tree (folded by default); `stationFolded({ id, open })` (an empty id ignored, no
     id twice), `sectionFolded({ section, open })`,
-    `dockFolded({ dock, folded })`, `layerShown({ layer, shown })` (each
+    `dockFolded({ dock, folded })`, `layerShown({ layer, shown })`,
+    `picked({ ids })` (strings only, no empty id, no id twice; the last
+    becomes `selected`, an empty list keeps it), `selectModeSet({ on })`,
+    `folderFolded({ id, folded })` (each
     ignoring a key it does not know); each of
     them ignores a flag that is not a boolean (`open`, `folded`,
     `shown`), as the drag guard ignores a spot nobody can draw;

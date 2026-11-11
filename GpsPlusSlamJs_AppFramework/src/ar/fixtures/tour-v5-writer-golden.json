@@ -1,5 +1,5 @@
 {
-  "recordedWith": "the version 5 writer as the format switched to version 5; re-recorded only for a change meant to change the written bytes",
+  "recordedWith": "the version 5 writer as the format switched to version 5; re-recorded only for a change meant to change the written bytes; re-recorded when every container became a folder (a story written as kind \"folder\", role \"story\"), the bytes otherwise unchanged",
   "cases": [
     {
       "input": {
@@ -50,7 +50,8 @@
             "children": [
               {
                 "id": "s0story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -93,8 +94,8 @@
         "cover": "gate",
         "contact": "guide@example.org"
       },
-      "sha256": "b96939e517b9788a4fa683072123d1a79ecf9cca00a98201aa803a169258bed7",
-      "bytes": 2612
+      "sha256": "043932056fc4771e7f690bea779899ece60d49b0c67b3a60dba014511d48a88a",
+      "bytes": 2640
     },
     {
       "input": {
@@ -143,7 +144,8 @@
             "children": [
               {
                 "id": "s0story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -185,8 +187,8 @@
         ],
         "tourId": "tour-1"
       },
-      "sha256": "01cc69aab562163038dce1853ce24b8af6288560a3059884148ee852b4360e28",
-      "bytes": 2583
+      "sha256": "90b03fa009e543168b9590483323b732ce10874b8060e14ad60cb9cae9d7c6c4",
+      "bytes": 2611
     },
     {
       "input": {
@@ -266,7 +268,8 @@
             "children": [
               {
                 "id": "s1story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -312,8 +315,8 @@
         ],
         "needsNoGps": true
       },
-      "sha256": "fb17d69cf4b12bfa71ccdefdf063372ff574c2c85a4de50429e6439a5e856949",
-      "bytes": 4666
+      "sha256": "13882abec3a6cc39b74bf0ea62ef65ffd0797040dca749a5cc6e4116b61d024f",
+      "bytes": 4694
     },
     {
       "input": {
@@ -362,7 +365,8 @@
             "children": [
               {
                 "id": "s0story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -441,7 +445,8 @@
             "children": [
               {
                 "id": "s1story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -525,7 +530,8 @@
             "children": [
               {
                 "id": "s2story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -564,7 +570,8 @@
             "children": [
               {
                 "id": "s3story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -600,8 +607,8 @@
         "cover": "gate",
         "contact": "guide@example.org"
       },
-      "sha256": "1bbd046937a6debdee35fb9af673cf73c674a0a78f5a1559c04991bb204daa6f",
-      "bytes": 9162
+      "sha256": "c5be0128b20c4b5021cb42593a495f79d10706c7bb21b194e6a9fba75e7e169d",
+      "bytes": 9274
     },
     {
       "input": {
@@ -744,7 +751,8 @@
             "children": [
               {
                 "id": "s0story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -799,7 +807,8 @@
             "children": [
               {
                 "id": "s1story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -870,7 +879,8 @@
             "children": [
               {
                 "id": "s2story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -913,7 +923,8 @@
             "children": [
               {
                 "id": "s3story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -941,8 +952,8 @@
         ],
         "tourId": "tour-5"
       },
-      "sha256": "5c235c85f9fc824bd8e3d6b838e437c7d092d18ebf46ddb13edf86ac7c6fe1e9",
-      "bytes": 9568
+      "sha256": "29b796538b010ede0916806d57de9675ce274def62b349d68a8a192fad565eb6",
+      "bytes": 9680
     },
     {
       "input": {
@@ -993,7 +1004,8 @@
             "children": [
               {
                 "id": "s0story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -1044,7 +1056,8 @@
             "children": [
               {
                 "id": "s1story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -1146,7 +1159,8 @@
             "children": [
               {
                 "id": "s3story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -1178,8 +1192,8 @@
         "cover": "gate",
         "contact": "guide@example.org"
       },
-      "sha256": "6b5a7f940f1f99bef5975c94c2ae720c26f28057fe717d5c3ca494668c99b278",
-      "bytes": 8304
+      "sha256": "fa2952610159d2f057362f8060b8977ae187bb1457a58171b6888bcd5182b54e",
+      "bytes": 8388
     },
     {
       "input": {
@@ -1286,7 +1300,8 @@
             "children": [
               {
                 "id": "s1story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -1344,7 +1359,8 @@
             "children": [
               {
                 "id": "s2story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -1417,7 +1433,8 @@
             "children": [
               {
                 "id": "s3story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -1459,8 +1476,8 @@
         ],
         "needsNoGps": true
       },
-      "sha256": "1b10cb86137f0d52797cba26ff5a991a28f32e5c2ebd93be6f202e85dec24a25",
-      "bytes": 9294
+      "sha256": "ff5e4ea08cda87a13cded39a8645bd9eab238f6b14ff015e241ee71c7704759b",
+      "bytes": 9378
     },
     {
       "input": {
@@ -1511,7 +1528,8 @@
             "children": [
               {
                 "id": "s0story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -1596,7 +1614,8 @@
             "children": [
               {
                 "id": "s1story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -1630,7 +1649,8 @@
             "children": [
               {
                 "id": "s2story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -1683,8 +1703,8 @@
           }
         ]
       },
-      "sha256": "b9c2f5a53de377bb01385509ec9de456719e4b6ee060b5ccdd4a6756c6ef6071",
-      "bytes": 6039
+      "sha256": "3debc57d6b23a1da00338e3817968e6a4f8c91cfc676f91b0c077fc9a4527620",
+      "bytes": 6123
     },
     {
       "input": {
@@ -1732,7 +1752,8 @@
             "children": [
               {
                 "id": "s0story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -1827,7 +1848,8 @@
             "children": [
               {
                 "id": "s1story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -1883,8 +1905,8 @@
         "contact": "guide@example.org",
         "tourId": "tour-9"
       },
-      "sha256": "5f00cb102cae5219937a347d1c6f63d7ff3390ee9da5f7b0c489f2572fc749e0",
-      "bytes": 7120
+      "sha256": "292d7d5f8e06640a5038dad3e37e70e59f891763f466c1a29a50f8c4f4bc86c0",
+      "bytes": 7176
     },
     {
       "input": {
@@ -1935,7 +1957,8 @@
             "children": [
               {
                 "id": "s0story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -2004,7 +2027,8 @@
             "children": [
               {
                 "id": "s1story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -2078,7 +2102,8 @@
             "children": [
               {
                 "id": "s2story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -2124,7 +2149,8 @@
             "children": [
               {
                 "id": "s3story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -2151,8 +2177,8 @@
           }
         ]
       },
-      "sha256": "c8c495468606951d08279314740c9bfb2b75db740f5dc1530efa61269bdf5b9b",
-      "bytes": 9201
+      "sha256": "5b214fd3b1658c79b8f2528c34f4711d7affd70dcac7cae4ed38d8c64d4c1910",
+      "bytes": 9313
     },
     {
       "input": {
@@ -2215,7 +2241,8 @@
             "children": [
               {
                 "id": "s1story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -2294,8 +2321,8 @@
           }
         ]
       },
-      "sha256": "f7a8b8ce4695ff47cee6513c64e559a6e78c8d31636d2ffdfca6c220d4afc535",
-      "bytes": 4654
+      "sha256": "9b4623676a5ba20a64add55b8a3e7545e57b65011e89131e99fcaccdff068633",
+      "bytes": 4682
     },
     {
       "input": {
@@ -2346,7 +2373,8 @@
             "children": [
               {
                 "id": "s0story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -2443,8 +2471,8 @@
         "contact": "guide@example.org",
         "needsNoGps": true
       },
-      "sha256": "432fc8b2b7ad9fa57bd3ba28761a9cce34a8dbe657d0b645975c8562354f91f4",
-      "bytes": 5084
+      "sha256": "cd3394978512daac20e83c5783c10930931b01924ed47139782907dbaa8a1a21",
+      "bytes": 5112
     },
     {
       "input": {
@@ -2492,7 +2520,8 @@
             "children": [
               {
                 "id": "s0story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -2598,7 +2627,8 @@
             "children": [
               {
                 "id": "s1story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -2640,7 +2670,8 @@
             "children": [
               {
                 "id": "s2story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -2724,7 +2755,8 @@
             "children": [
               {
                 "id": "s3story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -2752,8 +2784,8 @@
         ],
         "tourId": "tour-13"
       },
-      "sha256": "0be441abcbbdcba7c297efabe113ed04132b0c8edd33ef39c0114dfa92587385",
-      "bytes": 11685
+      "sha256": "c8d490a248e284b279199590892773be6a20fe3eae7bbe66ce0450f68e263619",
+      "bytes": 11797
     },
     {
       "input": {
@@ -2855,7 +2887,8 @@
             "children": [
               {
                 "id": "s0story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -2925,8 +2958,8 @@
         "cover": "gate",
         "contact": "guide@example.org"
       },
-      "sha256": "a7636538ca330e913530b72e5ff78c82499d645d025751a03efcdff722fa723e",
-      "bytes": 3208
+      "sha256": "2e49bfd881d8e05a643f48c9dd08df5baff811bfd859a88bc5976c044a77f7e2",
+      "bytes": 3236
     },
     {
       "input": {
@@ -2976,7 +3009,8 @@
             "children": [
               {
                 "id": "s0story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -3018,8 +3052,8 @@
           }
         ]
       },
-      "sha256": "4e687bba54963a22f71bb93d64a9401bbe1eea6852f1ba4a2d0ba15af94aeb65",
-      "bytes": 2064
+      "sha256": "e6d6b5b1e296823517e5541e0ec5cdbdb4a297870d8922a09f03c5c9f17fa932",
+      "bytes": 2092
     },
     {
       "input": {
@@ -3067,7 +3101,8 @@
             "children": [
               {
                 "id": "s0story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -3152,7 +3187,8 @@
             "children": [
               {
                 "id": "s1story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -3227,7 +3263,8 @@
             "children": [
               {
                 "id": "s2story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -3328,8 +3365,8 @@
         "tourId": "tour-17",
         "needsNoGps": true
       },
-      "sha256": "cdf7ad9719d2f6b3f399c9bc6c47ffa57b6246b18574f3cc55522c60dd8b7e52",
-      "bytes": 12389
+      "sha256": "a646e19793e6befb87a5720629788826e9c55c03aefd97e96c0a3ea26dcd3083",
+      "bytes": 12473
     },
     {
       "input": {
@@ -3434,7 +3471,8 @@
             "children": [
               {
                 "id": "s0story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -3529,7 +3567,8 @@
             "children": [
               {
                 "id": "s1story",
-                "kind": "story",
+                "kind": "folder",
+                "role": "story",
                 "title": "A story",
                 "children": [
                   {
@@ -3559,8 +3598,8 @@
           }
         ]
       },
-      "sha256": "3cfde109982722ed00ea728dded653ad88bb8aa1e4e9735e4b14a5e5ae705abc",
-      "bytes": 6498
+      "sha256": "08bd4602074db7a9cacac65871859f6052e31b08cec33caf503e0fd3a1ff9948",
+      "bytes": 6554
     }
   ]
 }

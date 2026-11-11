@@ -66,11 +66,18 @@ async function storiesTour() {
         children: [
           {
             id: "s1",
-            kind: "story",
+            kind: "folder",
+            role: "story",
             title: "First",
             children: [entry("e1"), entry("e2")],
           },
-          { id: "s2", kind: "story", title: "Second", children: [entry("e3")] },
+          {
+            id: "s2",
+            kind: "folder",
+            role: "story",
+            title: "Second",
+            children: [entry("e3")],
+          },
           {
             id: "pin",
             kind: "shortText",
@@ -126,7 +133,7 @@ function lists(page) {
     /** @type {Record<string, string[]>} */
     const out = { free: [] };
     for (const child of tour.stations[0].children) {
-      if (child.kind === "story") {
+      if (child.role === "story") {
         out[child.id] = child.children.map((/** @type {any} */ c) => c.id);
       } else out["free"]?.push(child.id);
     }
@@ -144,7 +151,7 @@ function stationB(page) {
     const tour = /** @type {any} */ (window).__tourEditor.manifest();
     return (
       tour.stations[1].children
-        .filter((/** @type {any} */ c) => c.kind !== "story")
+        .filter((/** @type {any} */ c) => c.role !== "story")
         .map((/** @type {any} */ c) => ({
           id: c.id,
           position: c.pose.position,

@@ -40,7 +40,8 @@ function tour(
   const isShown = (b: unknown) => shown.includes((b as { id: string }).id);
   const story = {
     id: 'story',
-    kind: 'story',
+    kind: 'folder',
+    role: 'story',
     title: 'A story',
     children: blocks.filter(isShown),
   };

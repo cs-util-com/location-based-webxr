@@ -20,9 +20,11 @@ import {
   type TourBlock,
 } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import {
-  isTourStory,
+  isStory,
+  isTourFolder,
   isTourStoryBlock,
   tourChildrenPlace,
+  type TourChildrenPlace,
   type TourStationChild,
   type TourStory,
   type TourStoryBlock,
@@ -30,7 +32,7 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-story";
 
 import { NARRATION_DEFAULT_RADIUS_M } from "./kinds/audio/sound-reach.js";
-import { withoutStoryChild } from "./tour-story-edit.js";
+import { withoutStoryChild, withStory } from "./tour-story-edit.js";
 
 interface Holder {
   readonly children: readonly TourStationChild[];
@@ -83,6 +85,16 @@ function reorderedIds(ids: readonly string[], from: number, slot: number) {
 
 const refused = (reason: ChildMoveRefusal) => ({ refused: reason }) as const;
 
+/** Whether `place` lies inside a plain folder. This module moves the
+ *  children of a station's top and of its stories only; moves into, out
+ *  of and within a plain folder are the folder actions'
+ *  (`tour-document.ts`), which keep each item's world pose. A move that
+ *  went on here would put a folder's child at its folder's index in the
+ *  station's list - the wrong item - so such a place is refused as
+ *  `missing`: not in a list this module moves. */
+const inPlainFolder = (place: TourChildrenPlace): boolean =>
+  place.path.length > 0 && place.story === undefined;
+
 /** `block` given the fields its floor view requires that a story view
  *  does not: a sound in the card view has no radius, and a narration
  *  circle cannot be written without one. A radius it already carries is
@@ -125,7 +137,7 @@ function withStoryChildren<H extends Holder>(
   return {
     ...holder,
     children: holder.children.map((c) =>
-      isTourStory(c) && c.id === id ? { ...c, children } : c,
+      isStory(c) && c.id === id ? { ...c, children } : c,
     ),
   };
 }
@@ -139,7 +151,7 @@ function intoStory<H extends Holder>(
   child: TourStoryChild,
 ): H | null {
   const target = holder.children.find(
-    (c): c is TourStory => isTourStory(c) && c.id === story,
+    (c): c is TourStory => isStory(c) && c.id === story,
   );
   if (
     target === undefined ||
@@ -154,13 +166,14 @@ function intoStory<H extends Holder>(
   return withStoryChildren(holder, story, children);
 }
 
-/** The station's stories in a new order, the free items after them. */
+/** The station's stories in a new order, each in a slot a story held:
+ *  every other child (a free item, a plain folder) keeps its own slot. */
 function movedStory<H extends Holder>(
   holder: H,
   id: string,
   index: number,
 ): ChildMove<H> {
-  const stories = holder.children.filter(isTourStory);
+  const stories = holder.children.filter(isStory);
   const from = stories.findIndex((s) => s.id === id);
   if (!Number.isInteger(index) || index < 0 || index > stories.length) {
     return refused("missing");
@@ -172,13 +185,13 @@ function movedStory<H extends Holder>(
   );
   if (order === null) return refused("unchanged");
   const byId = new Map(stories.map((s) => [s.id, s]));
+  let next = 0;
   return {
     station: {
       ...holder,
-      children: [
-        ...order.map((sid) => byId.get(sid) as TourStory),
-        ...holder.children.filter((c) => !isTourStory(c)),
-      ],
+      children: holder.children.map((c) =>
+        isStory(c) ? (byId.get(order[next++] as string) as TourStory) : c,
+      ),
     },
     answers: 0,
     floored: false,
@@ -221,15 +234,18 @@ export function movedChild<H extends Holder>(
   to: ChildMoveTo,
 ): ChildMove<H> {
   const place = tourChildrenPlace(holder.children, id);
-  if (place === null || to.place === "station") return refused("missing");
+  if (place === null || to.place === "station" || inPlainFolder(place)) {
+    return refused("missing");
+  }
   const { story } = place;
   if (story === undefined) {
     const child = holder.children[place.index] as TourStationChild;
-    if (isTourStory(child)) {
+    if (isStory(child)) {
       return to.place === "stories"
         ? movedStory(holder, id, to.index)
         : refused("noNesting");
     }
+    if (isTourFolder(child)) return refused("missing");
     if (to.place === "stories") return refused("noNesting");
     if (to.place === "free") return refused("unchanged");
     const rest = {
@@ -286,17 +302,6 @@ function centred(block: TourBlock): TourBlock {
   return { ...block, pose: { ...block.pose, position: [0, 0, 0] } };
 }
 
-/** `holder` with `story` after its last story, ahead of its free items. */
-function withStory<H extends Holder>(holder: H, story: TourStory): H {
-  const children = [...holder.children];
-  let at = 0;
-  children.forEach((c, index) => {
-    if (isTourStory(c)) at = index + 1;
-  });
-  children.splice(at, 0, story);
-  return { ...holder, children };
-}
-
 /**
  * `from`'s item `id` moved onto the station `to`, or why not. A free item
  * goes among `to`'s free items, and a story's entry out of its story
@@ -314,18 +319,19 @@ export function movedToStation<H extends Holder & { readonly id: string }>(
   id: string,
 ): StationMove<H> {
   const place = tourChildrenPlace(from.children, id);
-  if (place === null) return refused("missing");
+  if (place === null || inPlainFolder(place)) return refused("missing");
   const { story } = place;
   if (story === undefined) {
     if (to.id === from.id) return refused("unchanged");
     const child = from.children[place.index] as TourStationChild;
+    if (isTourFolder(child)) return refused("missing");
     const rest = {
       ...from,
       children: from.children.filter((c) => c.id !== id),
     };
     return {
       from: rest,
-      to: isTourStory(child)
+      to: isStory(child)
         ? withStory(to, child)
         : { ...to, children: [...to.children, centred(child)] },
       answers: 0,
@@ -363,9 +369,7 @@ export function storyList(id: string): string {
 function storyOfList(holder: Holder, list: string): TourStory | undefined {
   if (!list.startsWith(STORY_LIST)) return undefined;
   const id = list.slice(STORY_LIST.length);
-  return holder.children.find(
-    (c): c is TourStory => isTourStory(c) && c.id === id,
-  );
+  return holder.children.find((c): c is TourStory => isStory(c) && c.id === id);
 }
 
 /**
@@ -415,13 +419,13 @@ export function childStepTo(
   way: "earlier" | "later",
 ): ChildMoveTo | null {
   const place = tourChildrenPlace(holder.children, id);
-  if (place === null) return null;
+  if (place === null || inPlainFolder(place)) return null;
   const { story } = place;
   const ids =
     story !== undefined
       ? story.children.map((c) => c.id)
-      : isTourStory(holder.children[place.index] as TourStationChild)
-        ? holder.children.filter(isTourStory).map((s) => s.id)
+      : isStory(holder.children[place.index] as TourStationChild)
+        ? holder.children.filter(isStory).map((s) => s.id)
         : null;
   if (ids === null) return null;
   const from = ids.indexOf(id);

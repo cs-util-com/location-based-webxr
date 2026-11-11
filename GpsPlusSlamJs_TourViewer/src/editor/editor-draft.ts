@@ -1554,8 +1554,16 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
           const blob = await bytesAt(`${ASSET_PREFIX}${asset.id}`);
           if (mine !== generation) return none;
           if (blob !== undefined && ownAtPath(blob)) continue;
-          if (blob === undefined) lost = true;
-          else {
+          if (blob === undefined) {
+            // Bytes gone while the file on disk holds an entry at the
+            // record's path: an open's tidy removed them as the file's own
+            // before it rewrote the list, and a reload came between. The
+            // file carries it, so nothing of the draft's is lost.
+            const onDisk =
+              pathInFile.get(asset.id) === asset.path &&
+              sizeInFile?.(asset.path) !== undefined;
+            if (!onDisk) lost = true;
+          } else {
             files.set(asset.id, {
               asset,
               blob,
@@ -2030,9 +2038,18 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       }
       // A live record takes its id's stale tombstone away (an offered
       // deletion edited meanwhile), once the record landed.
-      return write(id, (store) =>
-        writeDraftLiveRecord(store, object, blob, seen),
-      );
+      const base = bases.get(id);
+      return write(id, async (store) => {
+        const wrote = await writeDraftLiveRecord(store, object, blob, seen);
+        // A record forgotten (an undo back to what a running save writes)
+        // took its stored base with it; written again (the redo), it must
+        // still name the versions this browser wrote, or a reload after
+        // that save lands does not offer it.
+        if (wrote && base !== undefined && base.written.length > 0) {
+          await writeDraftBase(store, id, base);
+        }
+        return wrote;
+      });
     },
     saveDeletion(id) {
       pending.set(id, null);

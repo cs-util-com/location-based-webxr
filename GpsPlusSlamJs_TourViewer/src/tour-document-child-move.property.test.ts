@@ -14,7 +14,10 @@ import {
   serializeTourManifest,
   type TourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { tourStationChildIds } from "gps-plus-slam-app-framework/ar/tour-story";
+import {
+  isStory,
+  tourStationChildIds,
+} from "gps-plus-slam-app-framework/ar/tour-story";
 import { describe, expect, it } from "vitest";
 
 import { stationContent, storyOf } from "./test-support/station-content.js";
@@ -137,7 +140,7 @@ describe("station item moves, property", () => {
           for (const m of moves) {
             const station = written(state).stations[0]!;
             const all = tourStationChildIds(station);
-            const stories = station.children.filter((c) => c.kind === "story");
+            const stories = station.children.filter((c) => isStory(c));
             const id = all[m.item % Math.max(1, all.length)];
             const story = stories[m.story % Math.max(1, stories.length)];
             if (id === undefined) continue;

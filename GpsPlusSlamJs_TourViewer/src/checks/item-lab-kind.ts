@@ -274,7 +274,8 @@ export function storyStation(kind: ItemKind): TourStation {
   return stationOf([
     {
       id: "lab-story",
-      kind: "story",
+      kind: "folder",
+      role: "story",
       title: `The story around ${kind.name}`,
       children: [
         { ...storyCarrier(kind), advance: { mode: "tap" } },

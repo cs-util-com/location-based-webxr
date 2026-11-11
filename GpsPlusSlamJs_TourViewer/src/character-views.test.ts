@@ -241,6 +241,46 @@ describe("restYawOf and facingYaw: the creator's facing and the 60 degree turn",
     expect(facingYaw(Number.NaN, 0.3, true)).toBeCloseTo(0.3, 12);
     expect(facingYaw(0.4, Number.NaN, true)).toBe(0.4);
   });
+
+  // Why this test matters: the editor draws a character to be found and
+  // picked, so he must never stand edge-on; the visitor's 60 degree turn
+  // leaves him edge-on 150 degrees round. With `backToCamera` a camera
+  // more than 90 degrees round sees his back turned to it instead.
+  // Swept over three rests and every 5 degrees round him.
+  it("with backToCamera, never stands edge-on: from behind his back turns to the camera", () => {
+    const cap = (MAX_TURN_DEG * Math.PI) / 180;
+    for (const restDeg of [0, 70, -160]) {
+      const rest = (restDeg * Math.PI) / 180;
+      for (let relDeg = -180; relDeg <= 180; relDeg += 5) {
+        const toCam = rest + (relDeg * Math.PI) / 180;
+        const yaw = facingYaw(rest, toCam, true, true);
+        const square = Math.abs(Math.cos(toCam - yaw));
+        expect(square, `rest ${restDeg}, ${relDeg} deg`).toBeGreaterThanOrEqual(
+          0.85,
+        );
+        // Still never more than 60 degrees from his rest facing.
+        expect(
+          Math.abs(Math.atan2(Math.sin(yaw - rest), Math.cos(yaw - rest))),
+        ).toBeLessThanOrEqual(cap + 1e-9);
+        // Within 90 degrees he is the visitor's look exactly (at 90 either
+        // side is as square on, and rounding picks one).
+        const visitor = facingYaw(rest, toCam, true);
+        const sameAsVisitor = Math.abs(yaw - visitor) < 1e-12;
+        expect(sameAsVisitor || Math.abs(relDeg) >= 90, `${relDeg} deg`).toBe(
+          true,
+        );
+      }
+    }
+    // Straight behind: his back square on, at rest.
+    expect(facingYaw(0, Math.PI, true, true)).toBeCloseTo(0, 12);
+    // 150 degrees round: his back turns 30 degrees the other way.
+    expect(facingYaw(0, (150 * Math.PI) / 180, true, true)).toBeCloseTo(
+      (-30 * Math.PI) / 180,
+      12,
+    );
+    // The pop-up still rests.
+    expect(facingYaw(1, 2.9, false, true)).toBe(1);
+  });
 });
 
 // Why these tests matter: while his voice plays the bubble reads along

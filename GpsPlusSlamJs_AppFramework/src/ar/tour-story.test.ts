@@ -12,13 +12,14 @@ import { describe, expect, it } from 'vitest';
 
 import { TOUR_BLOCK_VIEWS, tourTextCount } from './tour-blocks';
 import { parseTourAssets } from './tour-assets';
+import { tourFreeBlocks } from './tour-station-pose';
 import {
   checkTourChildIdsUnique,
+  isStory,
   parseTourStationChildren,
   TOUR_CHILD_KINDS,
   tourChildPlace,
   tourChildrenBlocks,
-  tourChildrenFreeBlocks,
   tourChildrenPlace,
   tourChildrenStories,
   tourStationBlocks,
@@ -112,7 +113,8 @@ function children(
 
 const storyOf = (id: string, kids: unknown[], title = 'The old gate') => ({
   id,
-  kind: 'story',
+  kind: 'folder',
+  role: 'story',
   title,
   children: kids,
 });
@@ -142,7 +144,8 @@ describe('children: what a valid file says is what is read', () => {
     expect(freeFirst.map((c) => c.id)).toEqual(['sign', 'welcome']);
     expect(storiesFirst[0]).toEqual({
       id: 'welcome',
-      kind: 'story',
+      kind: 'folder',
+      role: 'story',
       title: 'The old gate',
       children: [{ ...text, advance: tap }],
     });
@@ -172,7 +175,8 @@ describe('children: what a valid file says is what is read', () => {
       ]),
     ]);
     expect(
-      story?.kind === 'story' &&
+      story !== undefined &&
+        isStory(story) &&
         story.children.map((c) => ('advance' in c ? c.advance : null))
     ).toEqual([tap, { mode: 'auto', afterS: 4 }, { mode: 'lineEnd' }]);
   });
@@ -192,7 +196,9 @@ describe('children: what a valid file says is what is read', () => {
     expect('advance' in (read[0] ?? {})).toBe(false);
     const story = read[1];
     expect(
-      story?.kind === 'story' && story.children.map((c) => 'advance' in c)
+      story !== undefined &&
+        isStory(story) &&
+        story.children.map((c) => 'advance' in c)
     ).toEqual([false, false]);
   });
 
@@ -223,9 +229,9 @@ describe('children: what a valid file says is what is read', () => {
 
   it('the kinds a child may have besides the block kinds are disjoint from them', () => {
     // Why: `kind` is the one discriminant of every child; a block kind named
-    // "story", "choice" or "quiz" would make a file mean two things.
+    // "folder", "choice" or "quiz" would make a file mean two things.
     const childKinds: readonly string[] = TOUR_CHILD_KINDS;
-    expect(childKinds).toEqual(['story', 'choice', 'quiz']);
+    expect(childKinds).toEqual(['folder', 'choice', 'quiz']);
     expect(
       Object.keys(TOUR_BLOCK_VIEWS).filter((k) => childKinds.includes(k))
     ).toEqual([]);
@@ -312,7 +318,9 @@ describe('children: what fails the file (strict)', () => {
   it('a story title is required: missing, blank or not text fails', () => {
     for (const title of [undefined, '', '  \n ', 7]) {
       expect(() =>
-        children([{ id: 's', kind: 'story', title, children: [] }])
+        children([
+          { id: 's', kind: 'folder', role: 'story', title, children: [] },
+        ])
       ).toThrow(/"stations\[0\]\.children\[0\]\.title"/);
     }
   });
@@ -342,9 +350,9 @@ describe('children: what fails the file (strict)', () => {
   });
 
   it('a story without a children list, or a station children value that is no list, fails', () => {
-    expect(() => children([{ id: 's', kind: 'story', title: 'T' }])).toThrow(
-      /children\[0\]\.children" must be an array/
-    );
+    expect(() =>
+      children([{ id: 's', kind: 'folder', role: 'story', title: 'T' }])
+    ).toThrow(/children\[0\]\.children" must be an array/);
     expect(() => children({ blocks: [] })).toThrow(
       /"stations\[0\]\.children" must be an array/
     );
@@ -522,11 +530,11 @@ describe('children: a file of a newer minor (lenient)', () => {
       { lenient: true, drops }
     );
     expect(read).toEqual([storyOf('a', [{ ...text, advance: tap }])]);
-    expect(drops.map((d) => ('child' in d ? d.child : d.block))).toEqual([
-      'gone',
-      'c1',
-      'c0',
-    ]);
+    expect(
+      drops.map((d) =>
+        'child' in d ? d.child : 'block' in d ? d.block : d.folder
+      )
+    ).toEqual(['gone', 'c1', 'c0']);
   });
 
   it('a quiz of an unknown answer type is skipped and reported', () => {
@@ -593,12 +601,16 @@ describe('children: a file of a newer minor (lenient)', () => {
       lenient([storyOf('a', [choiceOf('c', ['nowhere', undefined])])])
     ).toThrow(/must name a child of this story/);
     expect(
-      lenient([{ id: 's', kind: 'story', title: ' ', children: [] }])
+      lenient([
+        { id: 's', kind: 'folder', role: 'story', title: ' ', children: [] },
+      ])
     ).toThrow(/title/);
     // A missing or non-text title is not a newer minor's longer one.
     for (const title of [undefined, 7]) {
       expect(
-        lenient([{ id: 's', kind: 'story', title, children: [] }])
+        lenient([
+          { id: 's', kind: 'folder', role: 'story', title, children: [] },
+        ])
       ).toThrow(/title/);
     }
     // A title over the cap leaves the story out, but its children are
@@ -608,9 +620,9 @@ describe('children: a file of a newer minor (lenient)', () => {
         storyOf('a', [choiceOf('c', ['nowhere', undefined])], 't'.repeat(81)),
       ])
     ).toThrow(/must name a child of this story/);
-    expect(lenient([{ id: 's', kind: 'story', title: 'T' }])).toThrow(
-      /must be an array/
-    );
+    expect(
+      lenient([{ id: 's', kind: 'folder', role: 'story', title: 'T' }])
+    ).toThrow(/must be an array/);
     expect(lenient(undefined)).toThrow(/must be an array/);
     expect(lenient([{ kind: 'scene' }])).toThrow(/\.id"/);
   });
@@ -626,7 +638,7 @@ describe('children: functions over a children list', () => {
 
   it("the stories, the free blocks, every block, and a story's blocks, each in document order", () => {
     expect(tourChildrenStories(list).map((s) => s.id)).toEqual(['a', 'b']);
-    expect(tourChildrenFreeBlocks(list).map((b) => b.id)).toEqual([
+    expect(tourFreeBlocks({ children: list }).map((b) => b.id)).toEqual([
       'sign',
       'sign2',
     ]);
@@ -643,13 +655,18 @@ describe('children: functions over a children list', () => {
   });
 
   it("a child's place: its index in the station, or its story and its index there; null for none", () => {
-    expect(tourChildrenPlace(list, 'sign')).toEqual({ index: 1 });
-    expect(tourChildrenPlace(list, 'b')).toEqual({ index: 2 });
+    expect(tourChildrenPlace(list, 'sign')).toEqual({ index: 1, path: [] });
+    expect(tourChildrenPlace(list, 'b')).toEqual({ index: 2, path: [] });
     expect(tourChildrenPlace(list, 'film')).toEqual({
       index: 2,
+      path: [list[0]],
       story: list[0],
     });
-    expect(tourChildrenPlace(list, 'q')).toEqual({ index: 0, story: list[2] });
+    expect(tourChildrenPlace(list, 'q')).toEqual({
+      index: 0,
+      path: [list[2]],
+      story: list[2],
+    });
     expect(tourChildrenPlace(list, 'nowhere')).toBeNull();
   });
 });
@@ -701,7 +718,11 @@ describe('reading a station through its children', () => {
   it('finds a child across a tour, with its station and its story', () => {
     const other = { children: children([{ ...pin, id: 'far' }]) };
     const tour = { stations: [other, holder] };
-    expect(tourChildPlace(tour, 'far')).toEqual({ index: 0, station: other });
+    expect(tourChildPlace(tour, 'far')).toEqual({
+      index: 0,
+      path: [],
+      station: other,
+    });
     const place = tourChildPlace(tour, 'q1');
     expect(place?.station).toBe(holder);
     expect(place?.story?.id).toBe('s2');

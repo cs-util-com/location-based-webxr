@@ -336,6 +336,17 @@
             title="Fold or unfold the stations"
           ></button>
           <span class="sp"></span>
+          <!-- The Select mode: a tap ticks a row (a finger picks several;
+               Ctrl+click and Shift+click are the mouse's way). -->
+          <button
+            class="smallbtn"
+            id="tree-select"
+            type="button"
+            aria-pressed="false"
+            title="Pick several rows with checkboxes"
+          >
+            <i data-icon="check"></i>Select
+          </button>
           <button
             class="ib"
             id="tree-collapse"
@@ -367,10 +378,13 @@
           />
         </div>
         <div class="dbody" id="tree-body"></div>
+        <!-- The picked rows' bar: Group, Ungroup, Done (shell-tree.ts). -->
+        <div class="selbar" id="tree-selbar" hidden></div>
         <div class="treefoot" id="tree-foot">
           <span><kbd>Ctrl+K</kbd> add</span>
           <span><kbd>+</kbd> add here</span>
           <span><kbd>Esc</kbd> deselect</span>
+          <span><kbd>Ctrl+G</kbd> group</span>
           <span>Drag to reorder</span>
         </div>
       </aside>

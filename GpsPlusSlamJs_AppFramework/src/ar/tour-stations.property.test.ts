@@ -20,12 +20,8 @@ import {
 import { parseTourAssets } from './tour-assets';
 import { TOUR_FREE_BLOCK_VIEWS } from './tour-blocks';
 import { parseTourStations } from './tour-stations';
-import {
-  isTourStoryBlock,
-  tourChildrenFreeBlocks,
-  tourStationBlocks,
-  tourStories,
-} from './tour-story';
+import { isTourStoryBlock, tourStationBlocks, tourStories } from './tour-story';
+import { tourFreeBlocks } from './tour-station-pose';
 
 class Invalid extends Error {}
 const fail = (message: string): never => {
@@ -50,14 +46,14 @@ function parseAll(data: unknown) {
 }
 
 const storiesOf = (station: StationJson): Json[] =>
-  station.children.filter((c) => c.kind === 'story');
+  station.children.filter((c) => c.role === 'story');
 const kidsOf = (story: Json): Json[] => story.children as Json[];
 const isBlockRecord = (c: Json): boolean =>
-  !['choice', 'quiz', 'story'].includes(c.kind as string);
+  !['choice', 'quiz', 'folder'].includes(c.kind as string);
 /** Every block record of a station, free and in stories. */
 const blocksOf = (station: StationJson): Json[] =>
   station.children.flatMap((c) =>
-    c.kind === 'story' ? kidsOf(c).filter(isBlockRecord) : [c]
+    c.role === 'story' ? kidsOf(c).filter(isBlockRecord) : [c]
   );
 
 /** The fields of a block that name an asset. */
@@ -166,7 +162,7 @@ describe('tour stations (properties)', () => {
             }
             // A free block stands in a view its kind may stand in free.
             expect(
-              tourChildrenFreeBlocks(station.children).every((b) =>
+              tourFreeBlocks(station).every((b) =>
                 (TOUR_FREE_BLOCK_VIEWS[b.kind] as readonly string[]).includes(
                   b.view
                 )

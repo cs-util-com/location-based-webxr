@@ -27,9 +27,11 @@ export const SQUARE_GROUND_M = 515.5;
  * Overpass with `overpass` (an Overpass JSON
  * object, every tile the same; no buildings by default), the heights
  * with the same flat ground. `groundM` stands that ground at another
- * height (m). Nothing leaves the machine.
+ * height (m); `groundAt(col, row)` gives each tile pixel its own height
+ * instead (m; every tile the same), for uneven ground. Nothing leaves
+ * the machine.
  * @param {import("@playwright/test").Page} page
- * @param {{ globeAssets?: "refuse" | "serve", overpass?: object, groundM?: number }} [options]
+ * @param {{ globeAssets?: "refuse" | "serve", overpass?: object, groundM?: number, groundAt?: (col: number, row: number) => number }} [options]
  */
 export async function answerHosts(
   page,
@@ -37,9 +39,10 @@ export async function answerHosts(
     globeAssets = "refuse",
     overpass = NO_BUILDINGS,
     groundM = SQUARE_GROUND_M,
+    groundAt = () => groundM,
   } = {},
 ) {
-  const flat = terrariumPng(512, 512, () => groundM);
+  const flat = terrariumPng(512, 512, groundAt);
   await answerCityData(page, flat, overpass);
   await page.route("https://tiles.mapterhorn.com/**", (route) => {
     if (!/\/\d+\/\d+\/\d+\.webp/.test(route.request().url())) {

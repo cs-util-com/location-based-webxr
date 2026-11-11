@@ -30,7 +30,9 @@ ray (`pick`).
   `stationSelected` (the selection is that station itself), `standing`
   (`morphStanding`), `camera` (the camera's position in the world),
   `viewportPx` and `fovDeg` (the view's height in CSS px and the camera's
-  vertical lens: what a code's size on screen is worked out from).
+  vertical lens: what a code's size on screen is worked out from), and
+  the optional `eye` (the camera itself: given, each drawn part with an
+  `update` is ticked, see below).
 - `LayerPreview` - `{ kind: "station", id, geo, foundRadiusM }` or
   `{ kind: "item", id, geo, sizeM }` (ellipsoidal geo poses, as the file).
 - `DEFAULT_CODE_SIZE_M` - 0.2; `BILLBOARD_LIFT_M` - 4.6 (how much higher a
@@ -62,6 +64,12 @@ standing`). A distance, size or focal length that is not a positive
     updated); a change of its `view` draws it anew, as the visitor sees
     it;
   - `update(view)` - each frame: near-K (`nearStations`), the morph;
+    with `view.eye`, each part of a shown station that has an `update`
+    is handed a `WorldFrame`: the page clock, the camera's position in
+    the part's parent frame (as the visitor's `tickWorldParts` gives it),
+    the camera and `metresPerPxAtOneM` (1 / `focalPxOf`), so a part can
+    keep a size on the screen or face the camera (the speaker icon,
+    `kinds/audio/sound-icon.ts`) without importing the editor;
   - `stats()` - `{ stations, codes, codeScales, shown, renders }`
     (`codeScales`: each code's drawn size over its printed one);
   - `codeCorners()` - each code's drawn square as its four corners in
@@ -85,7 +93,13 @@ standing`). A distance, size or focal length that is not a positive
     its size); the tour as drawn is untouched and comes back on null;
   - `pick(raycaster)` - the nearest visible thing under the ray: a
     station's billboard (`station:<id>`), an item's label, plane or model
-    (its object id) or a code's square (its level id); null for none;
+    (its object id) or a code's square (its level id); null for none.
+    What is drawn over everything (`isInterfacePart`: a billboard, a
+    sound's icon) comes before a nearer part with a depth test, since it
+    shows in front of it: a click selects what is seen. Between such
+    parts the highest render order wins (it is drawn last, so seen), and
+    between equal orders the nearer. A billboard takes a ray only on its
+    drawn pill (`pickOnlyOnPill` in `editor3d-marks.ts`);
   - `setShown({ names, codes })` - the billboards and poles, and the code
     squares, off or on (the layer chips); `codesVisible()`;
   - `setHidden(stationIds, levelIds)` - the globe view's visibility rule
@@ -115,6 +129,9 @@ standing`). A distance, size or focal length that is not a positive
 - `modelObject(id)` - an item's drawn model (the glb in its world part,
   at its tour scale under the part's pose), or null while its station does
   not draw it; `models(id)` - the models a station draws now.
+- `itemObjects(id)` - every object a free item draws now (its label, its
+  plane, its model); none while its station does not draw it. The folder
+  outline (`folder-outline.ts`) measures its boxes around these.
 
 ## Invariants & assumptions
 
@@ -244,8 +261,9 @@ printed size, focalPxOf(view))` times its printed size: `CODE_SCREEN_PX`
   with an object.
 - **Writes nothing** to the tour or the store; a preview moves only the
   drawn objects, and is re-applied after a station's items render.
-- `pick` is by distance along the ray (the nearest hit wins), not
-  billboards first.
+- `pick` takes what is seen: a part drawn over everything first (the
+  highest render order, then the nearest), else the nearest depth-tested
+  hit along the ray.
 - **Not yet:** billboards are not decluttered, and photos are drawn at
   their own size, not scaled up to a readable size from far away.
 
@@ -271,7 +289,11 @@ renderer.setAnimationLoop(() => {
 store): each station at its drawn height where it stands; only the near
 and selected stations rendered, and what leaves freed; a model kept
 drawn through an edit of its notes or sections, drawn anew when its view
-changes or it moves; a billboard per
+changes or it moves; the pick preferring a part drawn over everything
+to a nearer depth-tested one, and between two such parts the higher
+render order, then the nearer; a billboard picked on its drawn pill
+only, a model seen through its transparent margin picked instead; a
+billboard per
 station rising with the morph; photos flat looking down and upright
 tilted; a model at its size and pose; a model that cannot be read left
 out; no free model in the card or stage view, its file not read; every code as a square of its printed size, laid flat face up in front
@@ -288,7 +310,9 @@ item's station lighter; a part from the world door built in the
 editor's mode from the block the visitor's page builds it from, both at
 the block's own pose over six turns (none to upside down), kept through
 the morph, picked and located but no gesture's target, moved and turned
-by a preview and freed with the layer; a part whose dispose throws
+by a preview and freed with the layer; each part ticked with the
+camera, its lens and the viewer in its parent's frame only when a
+camera is given; a part whose dispose throws
 leaving its station freed and drawn again later, every station freed
 on dispose, a model whose free throws still freeing the station's
 parts, and a mesh whose geometry free throws still freeing the model's

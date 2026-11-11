@@ -43,7 +43,10 @@ const BUTTONS: Readonly<Record<BarAction, BarButton>> = {
 /** The bar's actions for the selection's inspector (none without one). */
 export function barActions(model: InspectorModel | null): readonly BarButton[] {
   if (model === null) return [];
-  // A story and what stands nowhere in the world: nothing to copy or turn.
+  // A story stands nowhere in the world: nothing to copy or turn, but it
+  // can be copied whole.
+  if (model.kind === "story") return [BUTTONS.duplicate];
+  // What else stands nowhere in the world: nothing at all.
   if (!["station", "item", "code"].includes(model.kind)) return [];
   const copy = positionText(model) === null ? [] : [BUTTONS.copy];
   if (model.kind === "code") return copy;

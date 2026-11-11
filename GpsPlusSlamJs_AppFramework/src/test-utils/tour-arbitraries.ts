@@ -507,6 +507,10 @@ export interface TourStationChildrenSize {
   readonly maxStories?: number;
   readonly maxFreeBlocks?: number;
   readonly maxStoryChildren?: number;
+  /** Plain folders (none unless asked), each at the station's top or
+   *  inside an earlier one, so they nest to any depth the count allows;
+   *  the free blocks are spread among the station and the folders. */
+  readonly maxFolders?: number;
 }
 
 type StoryChildKind = 'block' | 'choice' | 'quiz';
@@ -515,9 +519,14 @@ interface ChildrenPlan {
   /** Each story's children kinds, in order. */
   readonly stories: readonly (readonly StoryChildKind[])[];
   readonly freeBlocks: number;
-  /** Indices into stories-then-free-blocks: the station's order. */
+  readonly folders: number;
+  /** The holder of each free block, then of each folder: -1 the station,
+   *  else a folder's index (a folder's holder always an earlier folder). */
+  readonly holders: readonly number[];
+  /** Indices into stories, then free blocks, then folders: the order in
+   *  which each holder lists its own. */
   readonly order: readonly number[];
-  /** One id per story, free block and story child, all unique. */
+  /** One id per story, free block, folder and story child, all unique. */
   readonly ids: readonly string[];
 }
 
@@ -533,22 +542,39 @@ function childrenPlan(
         { maxLength: size.maxStories ?? 4 }
       ),
       freeBlocks: fc.integer({ min: 0, max: size.maxFreeBlocks ?? 4 }),
+      folders: fc.integer({ min: 0, max: size.maxFolders ?? 0 }),
     })
-    .chain(({ stories, freeBlocks }) => {
-      const top = stories.length + freeBlocks;
-      const count = top + stories.reduce((n, s) => n + s.length, 0);
+    .chain(({ stories, freeBlocks, folders }) => {
+      const all = stories.length + freeBlocks + folders;
+      const count = all + stories.reduce((n, s) => n + s.length, 0);
+      const holders = [
+        ...Array.from({ length: freeBlocks }, () =>
+          fc.integer({ min: -1, max: folders - 1 })
+        ),
+        ...Array.from({ length: folders }, (_, f) =>
+          fc.integer({ min: -1, max: f - 1 })
+        ),
+      ];
       return fc
         .record({
+          holders: fc.tuple(...holders),
           order: fc.shuffledSubarray(
-            Array.from({ length: top }, (_, i) => i),
-            { minLength: top, maxLength: top }
+            Array.from({ length: all }, (_, i) => i),
+            { minLength: all, maxLength: all }
           ),
           ids: fc.uniqueArray(tourIdArbitrary, {
             minLength: count,
             maxLength: count,
           }),
         })
-        .map(({ order, ids }) => ({ stories, freeBlocks, order, ids }));
+        .map(({ holders: held, order, ids }) => ({
+          stories,
+          freeBlocks,
+          folders,
+          holders: held,
+          order,
+          ids,
+        }));
     });
 }
 
@@ -568,23 +594,64 @@ function storyChildArbitrary(
     .map(([block, advance]) => ({ ...block, advance }));
 }
 
+/** Where the generator put every id of a children list: its own record,
+ *  which a property checks the walkers against. */
+export interface TourChildrenPlacement {
+  /** The stories (top level). */
+  readonly stories: readonly string[];
+  /** The blocks inside stories. */
+  readonly storyBlocks: readonly string[];
+  /** The free blocks standing in the station's own list. */
+  readonly topBlocks: readonly string[];
+  /** The free blocks inside plain folders, at any depth. */
+  readonly folderBlocks: readonly string[];
+  /** The plain folders. */
+  readonly folders: readonly string[];
+  /** Every id the list holds, choices and quizzes included. */
+  readonly all: readonly string[];
+}
+
+/** A plain folder's optional pose and scale (the reader takes only 1,
+ *  until a renderer scales a whole group). Poses within
+ *  `tourLocalPoseArbitrary`'s reach and turned about Up only, so even the
+ *  deepest nest the sizes ask for (8 folders) keeps every composed block
+ *  within the format's 10 km of its station. */
+const folderFrameArbitrary = fc.record(
+  {
+    pose: tourLocalPoseArbitrary,
+    scale: fc.constant(1),
+  },
+  { requiredKeys: [] }
+);
+
 /**
- * A valid children list as JSON records: stories (titled, each
- * with its own blocks in any view, choices whose options jump to a child
- * of the same story, back or forward, or continue, and quizzes; possibly
- * empty) and free blocks in a world view, in a shuffled order, so free
- * blocks may come before, between or after the stories. Every id in the
- * list is unique.
+ * A valid children list as JSON records, with the generator's own record
+ * of where it put each id: stories (titled, each with its own blocks in any
+ * view, choices whose options jump to a child of the same story, back or
+ * forward, or continue, and quizzes; possibly empty), free blocks in a
+ * world view, and - when `size.maxFolders` asks - plain folders nested at
+ * random, with or without a pose and a scale, holding free blocks and each
+ * other. Every holder lists its own in a shuffled order, so free blocks may
+ * come before, between or after the stories. Every id is unique.
  */
-export function tourStationChildrenArbitrary(
+export function tourStationChildrenPlacedArbitrary(
   size: TourStationChildrenSize = {}
-): fc.Arbitrary<Record<string, unknown>[]> {
+): fc.Arbitrary<{
+  readonly children: Record<string, unknown>[];
+  readonly placed: TourChildrenPlacement;
+}> {
   return childrenPlan(size).chain((plan) => {
     let next = 0;
     const take = (): string => plan.ids[next++]!;
+    const storyIds: string[] = [];
+    const storyBlocks: string[] = [];
     const stories = plan.stories.map((kinds) => {
       const id = take();
+      storyIds.push(id);
       const childIds = kinds.map(take);
+      kinds.forEach((kind, i) => {
+        if (kind === 'block') storyBlocks.push(childIds[i]!);
+      });
       return fc
         .record({
           title: tourTextArbitrary(TOUR_STORY_TITLE_RULE),
@@ -596,18 +663,54 @@ export function tourStationChildrenArbitrary(
         })
         .map(({ title, children }) => ({
           id,
-          kind: 'story',
+          kind: 'folder',
+          role: 'story',
           title,
           children: [...children],
         }));
     });
-    const free = Array.from({ length: plan.freeBlocks }, () =>
-      tourBlockArbitrary(take(), 'free')
-    );
+    const freeIds = Array.from({ length: plan.freeBlocks }, take);
+    const folderIds = Array.from({ length: plan.folders }, take);
+    const free = freeIds.map((id) => tourBlockArbitrary(id, 'free'));
+    const frames = folderIds.map(() => folderFrameArbitrary);
+    const nStories = stories.length;
+    const holderOf = (i: number): number =>
+      i < nStories ? -1 : plan.holders[i - nStories]!;
+    const placed: TourChildrenPlacement = {
+      stories: storyIds,
+      storyBlocks,
+      topBlocks: freeIds.filter((_, b) => plan.holders[b] === -1),
+      folderBlocks: freeIds.filter((_, b) => plan.holders[b] !== -1),
+      folders: folderIds,
+      all: plan.ids,
+    };
     return fc
-      .tuple(...stories, ...free)
-      .map((top) => plan.order.map((i) => top[i]!));
+      .tuple(fc.tuple(...stories, ...free), fc.tuple(...frames))
+      .map(([records, folderFrames]) => {
+        const firstFolder = nStories + plan.freeBlocks;
+        const listOf = (holder: number): Record<string, unknown>[] =>
+          plan.order
+            .filter((i) => holderOf(i) === holder)
+            .map((i) => {
+              if (i < firstFolder) return records[i]!;
+              const f = i - firstFolder;
+              return {
+                id: folderIds[f]!,
+                kind: 'folder',
+                ...folderFrames[f]!,
+                children: listOf(f),
+              };
+            });
+        return { children: listOf(-1), placed };
+      });
   });
+}
+
+/** {@link tourStationChildrenPlacedArbitrary}'s children alone. */
+export function tourStationChildrenArbitrary(
+  size: TourStationChildrenSize = {}
+): fc.Arbitrary<Record<string, unknown>[]> {
+  return tourStationChildrenPlacedArbitrary(size).map((x) => x.children);
 }
 
 // --- manifests ----------------------------------------------------------
@@ -627,11 +730,13 @@ function withTourUniqueChildIds(
   station: number,
   used: Set<string>
 ): Record<string, unknown>[] {
-  const kidsOf = (child: Record<string, unknown>) =>
-    child.kind === 'story' ? (child.children as Record<string, unknown>[]) : [];
-  const own = new Set(
-    children.flatMap((c) => [c, ...kidsOf(c)]).map((c) => c.id as string)
-  );
+  type Child = Record<string, unknown>;
+  // Every child at any depth: a folder's (a story's included) are inside it.
+  const everyChild = (list: readonly Child[]): Child[] =>
+    list.flatMap((c) =>
+      c.kind === 'folder' ? [c, ...everyChild(c.children as Child[])] : [c]
+    );
+  const own = new Set(everyChild(children).map((c) => c.id as string));
   let n = 0;
   const fresh = (id: string): string => {
     if (!used.has(id)) return id;
@@ -640,34 +745,28 @@ function withTourUniqueChildIds(
     own.add(next);
     return next;
   };
-  const unique = children.map((child) => {
-    if (child.kind !== 'story') {
-      return { ...child, id: fresh(child.id as string) };
-    }
-    const kids = kidsOf(child);
-    const renamed = new Map(
-      kids.map((k) => [k.id as string, fresh(k.id as string)])
-    );
-    return {
-      ...child,
-      id: fresh(child.id as string),
-      children: kids.map((kid) => {
-        const id = renamed.get(kid.id as string);
-        if (kid.kind !== 'choice') return { ...kid, id };
-        const options = kid.options as { goto?: string }[];
-        return {
-          ...kid,
-          id,
-          options: options.map((o) =>
-            o.goto === undefined ? o : { ...o, goto: renamed.get(o.goto) }
-          ),
-        };
-      }),
-    };
-  });
-  for (const child of unique) {
-    for (const c of [child, ...kidsOf(child)]) used.add(c.id as string);
-  }
+  // Ids are unique in the station already, so one map serves every goto.
+  const renamed = new Map(
+    everyChild(children).map((c) => [c.id as string, fresh(c.id as string)])
+  );
+  const rename = (list: readonly Child[]): Child[] =>
+    list.map((child) => {
+      const id = renamed.get(child.id as string);
+      if (child.kind === 'folder') {
+        return { ...child, id, children: rename(child.children as Child[]) };
+      }
+      if (child.kind !== 'choice') return { ...child, id };
+      const options = child.options as { goto?: string }[];
+      return {
+        ...child,
+        id,
+        options: options.map((o) =>
+          o.goto === undefined ? o : { ...o, goto: renamed.get(o.goto) }
+        ),
+      };
+    });
+  const unique = rename(children);
+  for (const c of everyChild(unique)) used.add(c.id as string);
   return unique;
 }
 

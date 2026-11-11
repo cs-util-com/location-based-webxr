@@ -288,7 +288,8 @@ describe('the world view', () => {
         pin,
         {
           id: 's',
-          kind: 'story' as const,
+          kind: 'folder' as const,
+          role: 'story' as const,
           title: 'A story',
           children: [{ ...card, advance: { mode: 'tap' as const } }],
         },

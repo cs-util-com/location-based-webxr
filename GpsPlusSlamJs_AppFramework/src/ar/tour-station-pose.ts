@@ -17,9 +17,10 @@
  * never changes unless an editor sets a new one (a station moves rigidly,
  * its blocks' local poses stay bit-identical).
  *
- * Double precision throughout: `qr-pose.ts`'s `composePose` goes through
- * gl-matrix's float32 arrays, which would cost centimetres at an absolute
- * altitude of 500 m.
+ * Double precision throughout (`tour-folder-pose.ts`'s quaternion
+ * arithmetic): `qr-pose.ts`'s `composePose` goes through gl-matrix's
+ * float32 arrays, which would cost centimetres at an absolute altitude of
+ * 500 m.
  *
  * @see tour-station-pose.ts.md
  */
@@ -28,44 +29,25 @@ import type { Quaternion } from 'gps-plus-slam-js';
 
 import { calcRelativeCoordsInMeters } from '../core/index.js';
 import type { QrGeoPose } from './qr/qr-gps-vote.js';
-import {
-  mintQrGeoPose,
-  renormalizeUnitQuaternion,
-} from './qr/qr-geo-pose-minting.js';
+import { mintQrGeoPose } from './qr/qr-geo-pose-minting.js';
 import { rotateVectorByQuaternion } from './qr/qr-pose.js';
 import type { TourAsset } from './tour-assets.js';
 import type { TourBlock } from './tour-blocks.js';
+import {
+  composeTourFolderPose,
+  IDENTITY_QUATERNION as IDENTITY,
+  quaternionInverse as conjugate,
+  quaternionProduct as multiply,
+  unitQuaternion as unit,
+} from './tour-folder-pose.js';
 import type { TourLocalPose } from './tour-items.js';
 import type { TourManifest, TourObject } from './tour-manifest.js';
 import {
-  tourChildrenFreeBlocks,
+  isTourBlockChild,
+  isTourFolder,
+  type TourStationChild,
   type TourStationHolder,
 } from './tour-story.js';
-
-const IDENTITY: Quaternion = [0, 0, 0, 1];
-
-/** The product `a * b` of two quaternions `[x, y, z, w]`. */
-function multiply(a: Quaternion, b: Quaternion): Quaternion {
-  const [ax, ay, az, aw] = a;
-  const [bx, by, bz, bw] = b;
-  return [
-    aw * bx + ax * bw + ay * bz - az * by,
-    aw * by - ax * bz + ay * bw + az * bx,
-    aw * bz + ax * by - ay * bx + az * bw,
-    aw * bw - ax * bx - ay * by - az * bz,
-  ];
-}
-
-/** The inverse of a unit quaternion. */
-function conjugate(q: Quaternion): Quaternion {
-  return [-q[0], -q[1], -q[2], q[3]];
-}
-
-/** A unit quaternion back to unit length after arithmetic (never fails
- *  for a product of unit quaternions). */
-function unit(q: Quaternion): Quaternion {
-  return renormalizeUnitQuaternion(q) ?? IDENTITY;
-}
 
 /**
  * A geo pose's rotation against north: its quaternion, else the rotation
@@ -122,12 +104,14 @@ export function itemGeoPose(
 }
 
 /** A free block in the world: its fields, its geo pose and its station,
- *  and a picture's image asset (`assets`, which the reader resolved). */
+ *  the plain folders holding it (none: absent), and a picture's image
+ *  asset (`assets`, which the reader resolved). */
 function placed(
-  block: TourBlock,
+  entry: TourFreeEntry,
   station: { readonly id: string; readonly geo: QrGeoPose },
   assets: ReadonlyMap<string, TourAsset>
 ): TourObject {
+  const { block, folder } = entry;
   const { pose, ...fields } = block;
   const imageAsset =
     block.kind === 'picture' ? assets.get(block.image) : undefined;
@@ -135,35 +119,75 @@ function placed(
     ...fields,
     geo: itemGeoPose(pose, station.geo),
     station: station.id,
+    ...(folder.length === 0 ? {} : { folder }),
     ...(imageAsset === undefined ? {} : { imageAsset }),
   } as TourObject;
 }
 
-/** A station's FREE blocks: the block children of the station itself, which
- *  stand in the world while it is shown. */
-export function tourFreeBlocks(station: TourStationHolder): TourBlock[] {
-  return tourChildrenFreeBlocks(station.children);
+/** A free block of a station, its pose in the station's frame, and the
+ *  ids of the plain folders holding it, outermost first (none: it stands
+ *  at the station's top). */
+export interface TourFreeEntry {
+  readonly block: TourBlock;
+  readonly folder: readonly string[];
 }
 
-/** The tour's free blocks in the world, each naming its station, in
- *  station order (a reader settled each one's world view). */
+/** The free blocks of a children list with every plain folder flattened
+ *  away, at any depth, each block's pose composed through its folders
+ *  (`composeTourFolderPose`, innermost first) and the folders named.
+ *  Stories are not free blocks and are left out. In document order. */
+function freeEntries(
+  children: readonly TourStationChild[],
+  path: readonly string[]
+): TourFreeEntry[] {
+  return children.flatMap((child): TourFreeEntry[] => {
+    if (isTourBlockChild(child)) return [{ block: child, folder: path }];
+    if (!isTourFolder(child)) return [];
+    return freeEntries(child.children, [...path, child.id]).map((entry) => ({
+      block: {
+        ...entry.block,
+        pose: composeTourFolderPose(child, entry.block.pose),
+      },
+      folder: entry.folder,
+    }));
+  });
+}
+
+/** A station's free blocks as {@link tourFreeBlocks} gives them, each with
+ *  the plain folders holding it ({@link TourFreeEntry}). */
+export function tourFreeEntries(station: TourStationHolder): TourFreeEntry[] {
+  return freeEntries(station.children, []);
+}
+
+/** A station's FREE blocks, which stand in the world while it is shown: the
+ *  block children of the station and of its plain folders at any depth,
+ *  each with its pose in the station's frame (its folders' poses composed
+ *  in; a folder is a rigid frame, since its scale is always 1). The ONE
+ *  place plain folders are flattened. */
+export function tourFreeBlocks(station: TourStationHolder): TourBlock[] {
+  return freeEntries(station.children, []).map((entry) => entry.block);
+}
+
+/** The tour's free blocks in the world, each naming its station and the
+ *  plain folders holding it (`folder`), in station order (a reader
+ *  settled each one's world view). */
 export function tourObjects(
   manifest: Pick<TourManifest, 'stations' | 'assets'>
 ): TourObject[] {
   const assets = new Map(manifest.assets.map((a) => [a.id, a]));
   return manifest.stations.flatMap((station) =>
-    tourFreeBlocks(station).map((block) => placed(block, station, assets))
+    tourFreeEntries(station).map((entry) => placed(entry, station, assets))
   );
 }
 
-/** The free block an object is, at `pose` in its station: the object
- *  without its geo pose, its station and a picture's inline asset (the
- *  tour lists the asset). */
+/** The free block an object is, at `pose` in its holder (its station, or
+ *  the folder holding it): the object without its geo pose, its station,
+ *  its folders and a picture's inline asset (the tour lists the asset). */
 export function tourObjectBlock(
   object: TourObject,
   pose: TourLocalPose
 ): TourBlock {
-  const { geo: _geo, station: _station, ...rest } = object;
+  const { geo: _geo, station: _station, folder: _folder, ...rest } = object;
   const { imageAsset: _asset, ...fields } = rest as typeof rest & {
     imageAsset?: TourAsset;
   };

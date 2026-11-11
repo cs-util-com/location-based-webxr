@@ -11,12 +11,24 @@
  *   no station. It writes the stations as they are, in their order, each
  *   object in the one it names (or, naming none, the one the tour holds
  *   it in), and refuses an object in no station of the tour.
- * - A station's children are written stories first (in the station's
- *   order), then its free blocks (the objects, in their order).
- * - An object nobody moved keeps its local pose VERBATIM (its world pose
- *   reads back as the very numbers it has): a save never nudges a block,
- *   which D17's rigid station moves rely on.
- * - A moved object is re-expressed in its station (`localPoseOf`).
+ * - PLAIN FOLDERS are kept: an object names the folders holding it
+ *   (`folder`, the framework's `tourObjects`), and is written into the
+ *   innermost of them that its station still has, at a pose in that
+ *   folder's frame; one whose folder is gone stands at the station's top.
+ *   A folder's own pose and title are the station's (its frame's), and a
+ *   folder stays when its last item leaves (a folder may be empty).
+ * - At every level groups come first, then items: a station's children
+ *   are its stories and plain folders (in the station's order), then its
+ *   free blocks at the top (the objects, in their order); a folder's are
+ *   its folders, then its blocks.
+ * - An object nobody moved keeps its pose VERBATIM (its world pose reads
+ *   back as the very numbers it has): a save never nudges a block, which
+ *   the rigid moves of a station and of a folder rely on. Nobody moved it
+ *   when it stands in the same station and folder, where its stored pose
+ *   puts it.
+ * - A moved object is re-expressed in its station (`localPoseOf`), then
+ *   in its folders (`decomposeTourFolderPath`). So an item moved on its
+ *   own changes only its own pose in its folder, never the folder's.
  * - A CAPTURED PHOTO is a picture whose image asset has the picture's own
  *   id (`ownedAssetIds`): the asset is the picture's, listed exactly while
  *   the picture is, so a deleted photo takes its file with it and a cover
@@ -50,15 +62,25 @@ import type {
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
+  composeTourFolderPath,
+  decomposeTourFolderPath,
+} from "gps-plus-slam-app-framework/ar/tour-folder-pose";
+import type { TourLocalPose } from "gps-plus-slam-app-framework/ar/tour-items";
+import {
   itemGeoPose,
   localPoseOf,
   tourFreeBlocks,
   tourObjectBlock,
 } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import {
+  isTourBlockChild,
+  isTourFolder,
   tourStationBlocks,
   tourStationStoryBlocks,
   tourStories,
+  type TourFolder,
+  type TourFolderChild,
+  type TourStationChild,
 } from "gps-plus-slam-app-framework/ar/tour-story";
 
 import { isWorldKind, type WorldKind } from "./kinds/edit-kinds.js";
@@ -88,20 +110,161 @@ function sameGeoPose(a: QrGeoPose, b: QrGeoPose): boolean {
 
 /**
  * The object as `station` stores it and the world view reads it back:
- * its geo pose through the station's frame and back. A saved object and
- * the one placed differ by the micrometres of that round trip, so a page
- * comparing a placement with the saved file compares this (the authoring
- * draft's `hostedObjects`).
+ * its geo pose through the station's frame and the folders holding it
+ * there (`withTourContent`'s rule) and back, naming those folders. A
+ * saved object and the one placed differ by the micrometres of that round
+ * trip, so a page comparing a placement with the saved file compares this
+ * (the authoring draft's `hostedObjects`).
  */
 export function asStored(
   object: TourObject,
-  station: Pick<TourStation, "id" | "geo">,
+  station: Pick<TourStation, "id" | "geo" | "children">,
 ): TourObject {
+  const chain = folderChainOf(object, folderChains(station));
+  const local = composeTourFolderPath(
+    chain,
+    decomposeTourFolderPath(chain, localPoseOf(object.geo, station.geo)),
+  );
+  const { folder: _folder, ...rest } = object;
   return {
-    ...object,
+    ...rest,
     station: station.id,
-    geo: itemGeoPose(localPoseOf(object.geo, station.geo), station.geo),
+    ...(chain.length === 0 ? {} : { folder: chain.map((f) => f.id) }),
+    geo: itemGeoPose(local, station.geo),
   };
+}
+
+/** Every plain folder of a station (or a frame) by id, as the chain of
+ *  folders down to it: its holders, outermost first, then itself. */
+export function folderChains(
+  station: Pick<TourStation, "children">,
+): Map<string, readonly TourFolder[]> {
+  const chains = new Map<string, readonly TourFolder[]>();
+  const walk = (
+    children: readonly TourStationChild[],
+    above: readonly TourFolder[],
+  ): void => {
+    for (const child of children) {
+      if (!isTourFolder(child)) continue;
+      const chain = [...above, child];
+      chains.set(child.id, chain);
+      walk(child.children, chain);
+    }
+  };
+  walk(station.children, []);
+  return chains;
+}
+
+/** The folders an object is written into: the chain down to the
+ *  innermost folder it names, when `chains` (its station's) has it; none
+ *  otherwise - a folder gone, or another station's - so it stands at the
+ *  top. */
+export function folderChainOf(
+  object: TourObject,
+  chains: ReadonlyMap<string, readonly TourFolder[]>,
+): readonly TourFolder[] {
+  const innermost = object.folder?.at(-1);
+  return innermost === undefined ? [] : (chains.get(innermost) ?? []);
+}
+
+/** A plain folder as a frame holds it: its own fields and its plain
+ *  folders, none of its blocks (they are objects, `tourObjects`). */
+function folderSkeleton(folder: TourFolder): TourFolder {
+  return {
+    ...folder,
+    children: folder.children.filter(isTourFolder).map(folderSkeleton),
+  };
+}
+
+/** A station's stories and plain folders as its frame holds them
+ *  (`folderSkeleton`), in its order: what is not an object. */
+export function frameChildren(
+  station: Pick<TourStation, "children">,
+): TourStationChild[] {
+  return station.children.flatMap((c): TourStationChild[] => {
+    if (isTourBlockChild(c)) return [];
+    return [isTourFolder(c) ? folderSkeleton(c) : c];
+  });
+}
+
+/** A free block where its holder stores it: its own pose (in its
+ *  innermost folder, or the station), that pose in the station, and its
+ *  innermost folder (none at the top). */
+interface HeldBlock {
+  readonly block: TourBlock;
+  readonly inStation: TourLocalPose;
+  readonly folder: string | undefined;
+}
+
+function heldBlocks(
+  children: readonly TourStationChild[],
+  folders: readonly TourFolder[] = [],
+): HeldBlock[] {
+  return children.flatMap((child): HeldBlock[] => {
+    if (isTourBlockChild(child)) {
+      return [
+        {
+          block: child,
+          inStation: composeTourFolderPath(folders, child.pose),
+          folder: folders.at(-1)?.id,
+        },
+      ];
+    }
+    return isTourFolder(child)
+      ? heldBlocks(child.children, [...folders, child])
+      : [];
+  });
+}
+
+/**
+ * `skeleton`'s stories and plain folders (any blocks they hold left out)
+ * with blocks put in: `top` after them, and each folder's `inFolder`
+ * blocks after its own folders - groups first, then items, at every
+ * level.
+ */
+function withBlocks(
+  skeleton: readonly TourStationChild[],
+  top: readonly TourBlock[],
+  inFolder: ReadonlyMap<string, readonly TourBlock[]>,
+): TourStationChild[] {
+  const folderOf = (folder: TourFolder): TourFolder => ({
+    ...folder,
+    children: [
+      ...folder.children.filter(isTourFolder).map(folderOf),
+      ...(inFolder.get(folder.id) ?? []),
+    ] as TourFolderChild[],
+  });
+  return [
+    ...skeleton.flatMap((c): TourStationChild[] => {
+      if (isTourBlockChild(c)) return [];
+      return [isTourFolder(c) ? folderOf(c) : c];
+    }),
+    ...top,
+  ];
+}
+
+/**
+ * A frame's children with the free blocks `written` (the station as the
+ * file holds it) carries: each block into the frame's folder that held it
+ * in the file, at its pose there, so it follows that folder wherever the
+ * frame puts it; one whose folder the frame no longer has stands at the
+ * frame's top, where its folders put it in the file.
+ */
+export function withWrittenBlocks(
+  frame: Pick<TourStation, "children">,
+  written: Pick<TourStation, "children">,
+): TourStationChild[] {
+  const chains = folderChains(frame);
+  const top: TourBlock[] = [];
+  const inFolder = new Map<string, TourBlock[]>();
+  for (const { block, inStation, folder } of heldBlocks(written.children)) {
+    if (folder !== undefined && chains.has(folder)) {
+      inFolder.set(folder, [...(inFolder.get(folder) ?? []), block]);
+    } else {
+      top.push({ ...block, pose: inStation });
+    }
+  }
+  return withBlocks(frame.children, top, inFolder);
 }
 
 /**
@@ -184,16 +347,20 @@ export function withTourContent(
 ): TourManifest {
   const stationById = new Map(manifest.stations.map((s) => [s.id, s]));
   const stationOfBlock = new Map<string, string>();
-  const blockById = new Map<string, TourBlock>();
+  const heldById = new Map<string, HeldBlock>();
+  const chainsOf = new Map<string, Map<string, readonly TourFolder[]>>();
   for (const station of manifest.stations) {
-    for (const block of tourFreeBlocks(station)) {
-      stationOfBlock.set(block.id, station.id);
-      blockById.set(block.id, block);
+    chainsOf.set(station.id, folderChains(station));
+    for (const held of heldBlocks(station.children)) {
+      stationOfBlock.set(held.block.id, station.id);
+      heldById.set(held.block.id, held);
     }
   }
   const free = new Map<string, TourBlock[]>(
     manifest.stations.map((s) => [s.id, []]),
   );
+  // Folder ids are unique across the tour, so one map serves every station.
+  const inFolder = new Map<string, TourBlock[]>();
   for (const object of content.objects) {
     const stationId = object.station ?? stationOfBlock.get(object.id);
     const station =
@@ -205,23 +372,30 @@ export function withTourContent(
         }.`,
       );
     }
-    const old = blockById.get(object.id);
+    const chain = folderChainOf(object, chainsOf.get(station.id) ?? new Map());
+    const folder = chain.at(-1)?.id;
+    const old = heldById.get(object.id);
     const unmoved =
       old !== undefined &&
       stationOfBlock.get(object.id) === station.id &&
-      sameGeoPose(object.geo, itemGeoPose(old.pose, station.geo));
-    free
-      .get(station.id)
-      ?.push(
-        tourObjectBlock(
-          object,
-          unmoved ? old.pose : localPoseOf(object.geo, station.geo),
-        ),
-      );
+      old.folder === folder &&
+      sameGeoPose(object.geo, itemGeoPose(old.inStation, station.geo));
+    const block = tourObjectBlock(
+      object,
+      unmoved
+        ? old.block.pose
+        : decomposeTourFolderPath(chain, localPoseOf(object.geo, station.geo)),
+    );
+    if (folder === undefined) free.get(station.id)?.push(block);
+    else inFolder.set(folder, [...(inFolder.get(folder) ?? []), block]);
   }
   const filled = manifest.stations.map((station) => ({
     ...station,
-    children: [...tourStories(station), ...(free.get(station.id) ?? [])],
+    children: withBlocks(
+      station.children,
+      free.get(station.id) ?? [],
+      inFolder,
+    ),
   }));
   const imageAssets = imageAssetIds(manifest);
   return {
