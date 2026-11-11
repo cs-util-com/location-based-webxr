@@ -213,6 +213,34 @@ describe("the shelf's runner", () => {
     expect(row(B)?.status).toBe("optimized");
   });
 
+  // Why: a size with one side known says nothing of the other; read as
+  // no pixels at all, a picture of any width passed the cap and then
+  // blocked every save. One known side counts (as a square of it); a file
+  // with neither side (no picture) still passes. Probed on both sides of
+  // the cap's side.
+  it("counts one known side of a picture against the pixel cap", async () => {
+    const side = Math.sqrt(TOUR_MAX_IMAGE_PIXELS);
+    const halfKnown =
+      (width: number) =>
+      (id: string): TourAsset => {
+        const { height: _height, ...rest } = image(id);
+        return { ...rest, width };
+      };
+    const wide = setup({ recordOf: halfKnown(side + 1) });
+    wide.shelf.add(halfKnown(side + 1)(A), "a.png", 1000, "added");
+    await wide.settle();
+    wide.fake.finish(small, "webp");
+    await wide.settle();
+    expect(wide.swap).not.toHaveBeenCalled();
+    expect(wide.row(A)?.status).not.toBe("optimized");
+    const narrow = setup({ recordOf: halfKnown(side) });
+    narrow.shelf.add(halfKnown(side)(B), "b.png", 1000, "added");
+    await narrow.settle();
+    narrow.fake.finish(small, "webp");
+    await narrow.settle();
+    expect(narrow.row(B)?.status).toBe("optimized");
+  });
+
   // Why: an original over the pixel cap can stay only once made smaller.
   // A result that is still over it fails for good; one under it is taken
   // even when it saves little in bytes (it is what lets the tour save).
