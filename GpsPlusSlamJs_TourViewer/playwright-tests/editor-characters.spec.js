@@ -141,6 +141,44 @@ test("the list takes a character from this device into the tour, removes him wit
   expect(errors).toEqual([]);
 });
 
+// Why: a font wider than the one the layout was checked with (another
+// system's sans) must wrap the list's words, never widen its column past
+// the window and push the buttons and the time of the last look off the
+// screen. Spaced-out letters stand in for the wider font on every system.
+test("the list's column keeps inside a phone's window in a wider font", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openList(page);
+  await page.addStyleTag({
+    content: "#characters-panel * { letter-spacing: 0.12em !important; }",
+  });
+  const out = await page.evaluate(() => {
+    const panel = /** @type {HTMLElement} */ (
+      document.querySelector("#characters-panel")
+    );
+    const style = getComputedStyle(panel);
+    const left = parseFloat(style.paddingLeft);
+    const right = panel.clientWidth - parseFloat(style.paddingRight);
+    return [...panel.children]
+      .filter((child) => child.getBoundingClientRect().width > 0)
+      .map((child) => {
+        const b = child.getBoundingClientRect();
+        return {
+          what: `${child.tagName}#${child.id}.${String(child.className)}`,
+          x: b.x,
+          end: b.x + b.width,
+        };
+      })
+      .filter((b) => b.x < left - 0.5 || b.end > right + 0.5)
+      .map(
+        (b) =>
+          `${b.what} ${String(Math.round(b.x))}-${String(Math.round(b.end))} outside ${String(left)}-${String(right)}`,
+      );
+  });
+  expect(out).toEqual([]);
+});
+
 for (const vp of VIEWPORTS) {
   test(`the list keeps the prototype's arrangement on a ${vp.name}`, async ({
     page,

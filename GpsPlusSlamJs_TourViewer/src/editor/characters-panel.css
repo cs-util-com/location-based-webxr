@@ -53,6 +53,9 @@ dialog.charpanel {
 }
 dialog.charpanel[open] {
   display: grid;
+  /* One column no wider than the dialog: a wider font wraps the words
+   * rather than widening the column past the window. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
   align-content: start;
 }

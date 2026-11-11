@@ -11,7 +11,10 @@ file. The add menu's "Character" goes through `makeForTour`.
 
 The page look follows the chosen prototype
 `public/prototypes/character-library-1/index.html`. Its stylesheet is
-`characters-panel.css`, scoped to the two dialogs.
+`characters-panel.css`, scoped to the two dialogs. The panel is one
+grid column no wider than the dialog, so a wider font wraps the words
+rather than pushing the list past a phone's window
+(`editor-characters.spec.js`).
 
 ## Public API
 
