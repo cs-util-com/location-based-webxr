@@ -263,18 +263,31 @@ function postTimeReads(options: RefreshCycleOptions): {
   groundTint?: boolean;
   inventedRoofs?: boolean;
 } {
-  const datum = options.geoidUndulationM?.();
-  const colourScheme = options.colourScheme?.();
-  const drawnBuildKey = options.drawnBuildKey?.();
-  const groundTint = options.groundTint?.();
-  const inventedRoofs = options.inventedRoofs?.();
-  return {
-    ...(datum === undefined ? {} : { geoidUndulationM: datum }),
-    ...(colourScheme === undefined ? {} : { colourScheme }),
-    ...(drawnBuildKey === undefined ? {} : { drawnBuildKey }),
-    ...(groundTint === undefined ? {} : { groundTint }),
-    ...(inventedRoofs === undefined ? {} : { inventedRoofs }),
-  };
+  return definedOnly({
+    geoidUndulationM: options.geoidUndulationM?.(),
+    colourScheme: options.colourScheme?.(),
+    drawnBuildKey: options.drawnBuildKey?.(),
+    groundTint: options.groundTint?.(),
+    inventedRoofs: options.inventedRoofs?.(),
+  });
+}
+
+/** Hands a failed city build's choices to `onBuildFailed`; other errors pass. */
+function reportFailedBuild(
+  error: unknown,
+  onBuildFailed: ((failed: MeshBuildChoices) => void) | undefined,
+): void {
+  const failedBuild = failedBuildOf(error);
+  if (failedBuild !== undefined) onBuildFailed?.(failedBuild);
+}
+
+/** The fields whose value is not `undefined`, so absent stays absent. */
+function definedOnly<T extends object>(
+  fields: T,
+): { [K in keyof T]?: Exclude<T[K], undefined> } {
+  return Object.fromEntries(
+    Object.entries(fields).filter(([, value]) => value !== undefined),
+  ) as { [K in keyof T]?: Exclude<T[K], undefined> };
 }
 
 /**
@@ -477,8 +490,7 @@ export function createRefreshCycle(
         // The two guards further up do NOT cover this: they check the signal after
         // an await RESOLVES, and an aborted call rejects instead.
         if (signal.aborted) return;
-        const failedBuild = failedBuildOf(error);
-        if (failedBuild !== undefined) options.onBuildFailed?.(failedBuild);
+        reportFailedBuild(error, options.onBuildFailed);
         store.dispatch(actions.fetchFailed(messageOf(error)));
       }
     },

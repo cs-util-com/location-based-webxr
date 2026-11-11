@@ -92,7 +92,7 @@ interface InventedLid {
  * Where a plan's own coordinates lie in the caller's frame: its point `p` is
  * `(p.x * xScale + x, p.y + y)` there.
  */
-export interface PlanPlace {
+interface PlanPlace {
   readonly x: number;
   readonly y: number;
   readonly xScale: number;
