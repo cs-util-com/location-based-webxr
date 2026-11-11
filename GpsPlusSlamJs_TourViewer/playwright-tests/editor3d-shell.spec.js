@@ -618,6 +618,43 @@ async function expectPanel(page, size, heightPx) {
   }
 }
 
+// Why: the details take their new place at once when the shelf folds to
+// its rail (by the creator, or squeezed when a phone turns sideways), so a
+// shelf narrowing in an animation would lie over their right part for its
+// length and swallow a tap there. Every frame after a fold and an unfold
+// is read, the animation's included.
+test("the details are never under the shelf while it folds or unfolds", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open3d(page);
+  await card(page, "The old gate").locator(".pick").click();
+  await expect(page.locator("#inspector-body")).toBeVisible();
+  for (const act of ["fold", "unfold"]) {
+    const gaps = await page.evaluate(async (act) => {
+      const shelf = /** @type {HTMLElement} */ (
+        document.getElementById("shell-shelf")
+      );
+      const details = /** @type {HTMLElement} */ (
+        document.getElementById("shell-inspector")
+      );
+      /** @type {HTMLElement} */ (
+        shelf.querySelector(`[data-act="${act}"]`)
+      ).click();
+      const out = [];
+      for (let i = 0; i < 12; i += 1) {
+        await new Promise((done) => requestAnimationFrame(done));
+        out.push(
+          shelf.getBoundingClientRect().left -
+            details.getBoundingClientRect().right,
+        );
+      }
+      return out;
+    }, act);
+    for (const gap of gaps) expect(gap, act).toBeGreaterThan(-0.5);
+  }
+});
+
 test("the bottom bar's toggles open the bottom panel between the docks, at a phone, a phone in landscape, two laptop widths and a desktop", async ({
   page,
 }) => {

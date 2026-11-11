@@ -104,7 +104,10 @@ shelf runner (`asset-shelf.ts`); every word comes from
   closes it.
 - Folded (desktop): `body.shelf-folded`, the rail shows up to
   `RAIL_RINGS` rings of running and queued files, a ring's click reveals
-  its card. The fold is kept in storage.
+  its card. The fold is kept in storage. The shelf widens in a short
+  animation but narrows at once (`shelf-panel.css`): the details move
+  at once, and a shelf still narrowing would lie over them
+  (`editor3d-shell.spec.js` reads every frame of a fold and an unfold).
 - Phone: `body.shelf-sheet` while the sheet is open; the pill shows only
   with the sheet closed and something to say (busy or failed).
 - The toggle's `aria-pressed` says whether the shelf is open; its badge

@@ -21,6 +21,14 @@ body.shelf-folded #view3d {
   border-right: 0;
   color: var(--s-text);
   font: 12px/1.4 var(--s-sans);
+}
+
+/* It widens in a short animation and narrows (folded by the creator, or
+ * squeezed when a phone turns sideways) at once: the details (the
+ * inspector, editor-shell.css) take their new place at once, so a shelf
+ * still narrowing would lie over their right part for the animation's
+ * length and take a tap meant for them. */
+body:not(.shelf-folded) #shell-shelf {
   transition: width 0.16s ease;
 }
 
@@ -847,6 +855,7 @@ body.shelf-folded #view3d {
 
 @media (prefers-reduced-motion: reduce) {
   #shell-shelf,
+  body:not(.shelf-folded) #shell-shelf,
   .as-card.flash,
   .as-bar i,
   .as-ring .rg .fg {
