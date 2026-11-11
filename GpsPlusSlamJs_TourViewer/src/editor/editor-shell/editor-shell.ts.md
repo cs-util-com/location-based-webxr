@@ -116,8 +116,9 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
     Ungroup, the drag into or out of a plain folder and its rename, each
     one undo step that says its outcome or its refusal.
 - `EditorShell.groundMenu(point, place)` - the 3D view's input asks for
-  the ground menu (a right click, a long press): opened at `point` (px in
-  the view) for `place` (null: no ground loaded there); nothing while the
+  the ground menu (a right click, a long press): opened at `point` (px on
+  the 3D canvas, placed in the view's box: the canvas covers only the
+  view between the docks) for `place` (null: no ground loaded there); nothing while the
   view is hidden.
 - `EditorShell.show(view, { approach })` - the 3D view shows: the shell
   draws from the store, applies the dock rule's `opened`, follows the

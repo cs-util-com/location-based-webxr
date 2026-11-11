@@ -325,7 +325,7 @@ export interface EditorShell {
    *  typed in, a long text's writer before its pause): the page calls it
    *  before a save, which writes the tour as the store holds it. */
   flush(): void;
-  /** The scene's ground menu at `point` (px in the view), for the
+  /** The scene's ground menu at `point` (px on the 3D canvas), for the
    *  ground's `place` there (null: none has loaded). */
   groundMenu(point: { x: number; y: number }, place: GroundPlace | null): void;
   /** Empties the tree's search: something the page just made is shown,
@@ -2311,7 +2311,19 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     },
     groundMenu(point, place) {
       if (view === null) return;
-      ground.openAt(point, place);
+      // The point is the canvas's, and the canvas covers only the view
+      // between the docks: the menu is placed in the view's box.
+      const canvas = viewBox.querySelector(".view3d-canvas");
+      if (canvas === null) {
+        ground.openAt(point, place);
+        return;
+      }
+      const c = canvas.getBoundingClientRect();
+      const b = viewBox.getBoundingClientRect();
+      ground.openAt(
+        { x: point.x + c.left - b.left, y: point.y + c.top - b.top },
+        place,
+      );
     },
     approachEnded(how) {
       if (!approachHold || view === null) return;
