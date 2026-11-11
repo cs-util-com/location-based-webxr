@@ -36,7 +36,7 @@ layout, `editor3d-input.ts` feeds the pointer and the keys.
   along the heading and its stalk (both null for what does not turn: a
   pin's label, a sound). RangeError for a scale that is not finite and
   > 0.
-- `handleAt({ pointer, knob, dots, onDisc, underPointer })` -> `"move"`,
+- `handleAt({ pointer, knob, dots, onDisc, underPointer, posable })` -> `"move"`,
   `"turn"`, `"dot"` or null (the camera's): the knob and the dots first
   (the nearest within half its drawn size), then another object under
   the pointer (no handle, so a click selects it, even over the disc), then

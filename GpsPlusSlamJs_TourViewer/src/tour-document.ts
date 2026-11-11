@@ -1347,7 +1347,9 @@ function fitsStation(
 /** Whether `object` fits its station's frame - its own, or, without one,
  *  the station the document's object of that id stands in. An object no
  *  station holds yet (a new one naming none) fits: the station rule seats
- *  it (`placed`). One naming a station the document lacks does not. */
+ *  it (`placed`). One naming a station the document lacks does not. In
+ *  a folder of its station its pose is stored relative to that folder,
+ *  so it must fit the same bound there too. */
 export function objectFits(
   state: TourDocumentState,
   object: TourObject,
@@ -1357,7 +1359,14 @@ export function objectFits(
     documentObjects(state).find((o) => o.object.id === object.id)?.object
       .station;
   if (home === undefined) return true;
-  return fitsStation(object.geo, home, state.stations);
+  if (!fitsStation(object.geo, home, state.stations)) return false;
+  const frame = frameOf(state, home);
+  const chain =
+    frame === undefined ? [] : folderChainOf(object, folderChains(frame));
+  if (frame === undefined || chain.length === 0) return true;
+  return withinFolderBound(
+    decomposeTourFolderPath(chain, localPoseOf(object.geo, frame.geo)).position,
+  );
 }
 
 /** What a placement hands the station rule, or a move its explicit way
