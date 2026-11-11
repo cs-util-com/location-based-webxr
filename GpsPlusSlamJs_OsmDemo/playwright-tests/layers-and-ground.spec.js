@@ -56,10 +56,11 @@ test.describe("the layer toggles", () => {
       // The attribute is what "is a layer switch" actually means.
       await expect(
         page.locator("#layers input[type=checkbox][data-layer]"),
-      ).toHaveCount(10);
+      ).toHaveCount(11);
 
-      // SEVEN OF TEN START ON (DEC-R7b-5, DEC-R7b-6; `woods` joined, on, in
-      // objects M2a; `furniture` joined, on, with the street furniture). Round 4 turned every
+      // EIGHT OF ELEVEN START ON (DEC-R7b-5, DEC-R7b-6; `woods` joined, on, in
+      // objects M2a; the land-use `tint`, on, with the colour schemes; `furniture`,
+      // on, with the street furniture). Round 4 turned every
       // layer on; round 8 took plates and cells back off after a session saw the
       // demo with the terrain relief carrying the ground; the underground
       // diagnostic joined them off by default. Both halves are asserted, because
@@ -76,6 +77,7 @@ test.describe("the layer toggles", () => {
       await expect(page.locator("#layer-trees")).toBeChecked();
       await expect(page.locator("#layer-woods")).toBeChecked();
       await expect(page.locator("#layer-furniture")).toBeChecked();
+      await expect(page.locator("#layer-tint")).toBeChecked();
       await expect(page.locator("#layer-areas")).toBeChecked();
       await expect(page.locator("#layer-poi")).toBeChecked();
       // W9 turned every layer on by default, so a test about switching a layer ON
