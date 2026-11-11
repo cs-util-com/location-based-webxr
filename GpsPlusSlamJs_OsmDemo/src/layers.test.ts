@@ -40,6 +40,8 @@ describe("the layer set", () => {
       // The invented trees of mapped woods, orchards and rows (city objects
       // plan 2026-11-07-2315 M2a): their own switch, on by default (the owner).
       "woods",
+      // Mapped street lamps and bollards: on by default, not in AR.
+      "furniture",
       "plates",
       // The land-use tint in the ground (city objects plan 2026-11-07-2315
       // M3, owner Q6): a switch in this list by the owner's choice, although
@@ -101,7 +103,16 @@ describe("the layer set", () => {
     );
     expect([...off].sort()).toEqual(["cells", "plates", "underground"]);
     expect([...on].sort()).toEqual(
-      ["areas", "buildings", "poi", "roads", "tint", "trees", "woods"].sort(),
+      [
+        "areas",
+        "buildings",
+        "furniture",
+        "poi",
+        "roads",
+        "tint",
+        "trees",
+        "woods",
+      ].sort(),
     );
   });
 

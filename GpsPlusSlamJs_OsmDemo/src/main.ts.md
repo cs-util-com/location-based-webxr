@@ -204,6 +204,9 @@ None. Entry point only, loaded by `index.html`.
     query, which is why `cameraQuery` updates its keys in place rather than
     deleting and re-appending them.
 
+- **`?furniture=off`** boots the street furniture layer off
+  (`initialLayers`); a read-only boot override like `?roofs=off`. The status
+  line counts the built lamps and bollards as `N furniture`.
 - **The invented roofs:**
   - **`?roofs=off`** boots with them off. A read-only boot override: nothing
     writes it back (see `url-state.ts`).

@@ -47,6 +47,7 @@ const GROUP_OF: Readonly<Record<LayerKind, LayerGroup>> = {
   buildings: "world",
   trees: "world",
   woods: "world",
+  furniture: "world",
   plates: "world",
   tint: "world",
   roads: "world",
@@ -160,6 +161,9 @@ const LABELS: Readonly<Record<LayerKind, string>> = {
   // The invented trees of mapped woods, orchards and tree rows (city
   // objects plan 2026-11-07-2315 M2a), apart from the mapped "trees".
   woods: "woods",
+  // Mapped street lamps and bollards;
+  // benches and bins stay with "poi", so nothing is drawn twice.
+  furniture: "furniture",
   // "landuse", NOT "ground" and NOT "OSM areas", and both rejections are the
   // point. It said "ground" until the ground-mode picker landed beside it
   // (W11), and two controls labelled "ground" meaning different things - one

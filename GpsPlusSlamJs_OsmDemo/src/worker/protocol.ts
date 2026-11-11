@@ -36,6 +36,7 @@ import type {
   MeshData,
   PoiMarker,
   TreePlacement,
+  FurniturePlacement,
 } from "gps-plus-slam-osm";
 
 import type { RoutePoint } from "../agent-route.js";
@@ -70,6 +71,12 @@ export interface TransferableMesh {
    * rank order), drawn by the `woods` layer; never among `trees`.
    */
   readonly cosmeticTrees: readonly TreePlacement[];
+  /**
+   * Mapped street lamps and bollards (`City.furniture`, input order), drawn
+   * by the `furniture` layer. Benches and bins are not here: the POI layer
+   * draws them.
+   */
+  readonly furniture: readonly FurniturePlacement[];
   /**
    * Ground areas, CHUNKED like the buildings and for the same reason (W20).
    *

@@ -554,6 +554,10 @@ field ask that raised the default was literally about zooming further out.
   refetch during AR cannot bring them back, and leaving AR shows them again.
 - Pinned by `building-view-content.test.ts` (a source-text test, as the view
   cannot be built in vitest) and `mesh-layers.test.ts` ("showCosmetic").
+- The street furniture is held the same way (toggles plan 2026-11-10-1902
+  T2): `showFurniture(this.group, material === undefined)`, under its own
+  `cityLayer` flag because the items are mapped. Hidden, its instanced meshes
+  are not rendered, so their 80 m cut does not repack in AR.
 
 ## Land-use tint and scheme ground colours (colour schemes plan 2026-11-10-0841 S3)
 

@@ -347,6 +347,10 @@ function buildMesh(
   const city = buildCity(all, options, {
     window: window ?? plateClip,
     cosmeticTrees: window !== undefined,
+    // LAMPS AND BOLLARDS ONLY: the POI
+    // layer already draws benches and bins. Built whatever the layer switch
+    // says: the switch filters at draw time, like every other layer.
+    furniture: ["lamp", "bollard"],
     roads: true,
     // THE LAND-USE TINT (city objects plan 2026-11-07-2315 M3): rasterised
     // over the same window, so it ends where the city's data ends. Built on
@@ -462,6 +466,7 @@ function buildMesh(
     buildings,
     trees,
     cosmeticTrees: city.cosmeticTrees,
+    furniture: city.furniture,
     plates: chunkMeshes(
       plates,
       (plate) => plate.mesh,

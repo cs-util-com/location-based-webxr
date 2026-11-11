@@ -99,6 +99,7 @@ const NO_MESH: TransferableMesh = {
   buildings: [],
   trees: [],
   cosmeticTrees: [],
+  furniture: [],
   plates: [],
   plateCount: 0,
   poi: [],

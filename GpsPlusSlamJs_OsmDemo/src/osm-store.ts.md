@@ -73,5 +73,9 @@ The framework slice's own behaviour (the `fetchFailed` / `nonFatalError` split, 
 - `DemoRootState.inventedRoofs` - whether buildings without a mapped roof shape
   get a planned roof. Starts at `CreateDemoStoreOptions.inventedRoofs` (default
   `true`; `main.ts` passes `false` for `?roofs=off`).
+- `CreateDemoStoreOptions.initialLayers` - the layer switches at boot;
+  `DEFAULT_LAYERS` when absent. `main.ts` passes the defaults with
+  `furniture` off for `?furniture=off`, so the link sets the boot state rather
+  than a toggle after boot.
 - `inventedRoofsChanged(on)` - its one action; a non-boolean payload is ignored.
 - `selectInventedRoofs(state)`.

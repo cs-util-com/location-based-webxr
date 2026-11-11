@@ -14,7 +14,8 @@ union, and two runtime guards. No behaviour.
   points at.
 - `TransferableMesh` — built geometry plus the status-line counters. Since
   objects M2a it carries `cosmeticTrees` (the woods layer's invented trees,
-  plain placements, structured-cloned like `trees`).
+  plain placements, structured-cloned like `trees`); since objects M5
+  `furniture` (`City.furniture`, mapped lamps and bollards, plain placements).
 - `UpdateResult`, `TerrainResult` — the two compound results.
   - `TerrainResult.demSourceId` — the worker provider's own `sourceId`
     (`mapterhorn+terrarium`), reported **on the result rather than shared as a

@@ -26,6 +26,7 @@ import {
   summariseSnapshot,
 } from "./osm-store.js";
 import type { DemoSnapshot } from "./demo-pipeline.js";
+import { DEFAULT_LAYERS, toggleLayer } from "./layers.js";
 
 import { SCORE_DISK_MAX_RADIUS } from "gps-plus-slam-osm";
 
@@ -329,5 +330,28 @@ describe("the invented roofs switch", () => {
     plain.store.dispatch(inventedRoofsChanged(false));
     expect(selectInventedRoofs(plain.store.getState())).toBe(false);
     expect(selectColourScheme(plain.store.getState())).toBe("today");
+  });
+});
+
+describe("the layers at boot", () => {
+  it("are the defaults, or the link's set when one is given", () => {
+    // Why this test matters: `?furniture=off` must be the BOOT state of the
+    // layer switch, not a toggle dispatched after boot (which would draw the
+    // lamps once and then remove them), and without it the defaults hold.
+    const plain = createDemoStore({
+      start: { lat: 50, lng: 7 },
+      category: "x",
+    });
+    expect(selectOsmView(plain.store.getState()).layers).toEqual(
+      DEFAULT_LAYERS,
+    );
+    const linked = createDemoStore({
+      start: { lat: 50, lng: 7 },
+      category: "x",
+      initialLayers: toggleLayer(DEFAULT_LAYERS, "furniture", false),
+    });
+    const layers = selectOsmView(linked.store.getState()).layers;
+    expect(layers.furniture).toBe(false);
+    expect(layers.buildings).toBe(true);
   });
 });

@@ -151,6 +151,11 @@ is set and nothing happens.
 - Label "woods", beside "trees": invented trees in mapped woods, orchards and
   tree rows. The switch is the owner's on/off for them (default on).
 
+## `furniture` joins `world` (objects M5, 2026-11-11)
+
+- Label "furniture", after "woods": mapped street lamps and bollards
+  (benches and bins stay with "poi"). Default on.
+
 ## Since S3 (colour schemes plan 2026-11-10-0841)
 
 `groupOf` and `labelFor` read `Record<LayerKind, ...>` tables (exhaustive at

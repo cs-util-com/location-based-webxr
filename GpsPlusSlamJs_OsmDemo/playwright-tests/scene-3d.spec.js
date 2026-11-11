@@ -1179,7 +1179,16 @@ async function underTheWorldSteps(page) {
     // and are not what this step asks about; with them on, the rotation's
     // settle poll never saw two equal frames and the step timed out, while
     // the same test passed on the commit before the woods layer existed.
-    for (const layer of ["cells", "plates", "roads", "areas", "poi", "woods"]) {
+    // The street furniture stands on the ground the same way.
+    for (const layer of [
+      "cells",
+      "plates",
+      "roads",
+      "areas",
+      "poi",
+      "woods",
+      "furniture",
+    ]) {
       const box = page.locator(`#layer-${layer}`);
       if (await box.isChecked()) await box.uncheck();
     }
@@ -1259,6 +1268,8 @@ async function underTheWorldSteps(page) {
     await page.locator("#layer-trees").uncheck();
     // The cosmetic woods (objects M2a) are trees too, and the fixture maps a wood.
     await page.locator("#layer-woods").uncheck();
+    // The street furniture stands up from the ground too.
+    await page.locator("#layer-furniture").uncheck();
     const geometryEdges = (count) => count - skyOnly.count;
     await expect
       .poll(async () => {
@@ -1293,6 +1304,7 @@ async function skyOnlyFrameAfter(page, steps) {
       "buildings",
       "trees",
       "woods",
+      "furniture",
     ]) {
       const box = sky.locator(`#layer-${layer}`);
       if (await box.isChecked()) await box.uncheck();
@@ -1710,7 +1722,7 @@ test.describe("the colour schemes (colour schemes plan 2026-11-10-0841)", () => 
   });
 });
 
-test.describe("the read-only boot overrides (roofs)", () => {
+test.describe("the read-only boot overrides (roofs, furniture)", () => {
   // WHY THIS TEST MATTERS: `?roofs=off` is a read-only boot override for a
   // side-by-side comparison. It must seed the switch, and the switch must
   // never write the link: a link that changed under a switch would carry a
@@ -1740,6 +1752,25 @@ test.describe("the read-only boot overrides (roofs)", () => {
     await expect(box).toBeEnabled();
     await expect(box).not.toBeChecked();
     await expect(page).not.toHaveURL(/[?&]roofs=/);
+  });
+
+  // WHY THIS TEST MATTERS: `?furniture=off` is the same kind of read-only
+  // boot override, for the street furniture layer: it must seed the layer
+  // switch (no lamps counted), and switching the layer on must not rewrite
+  // the link.
+  test("furniture=off boots the furniture layer off, and the switch never writes the link", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    await page.goto(`/?lat=${50.9231}&lng=${6.9445}&furniture=off`);
+    await waitForRefresh(page);
+    const box = page.locator("#layer-furniture");
+    const status = page.locator("#status");
+    await expect(box).not.toBeChecked();
+    await expect(status).not.toContainText(/\d+ furniture/);
+    await box.check();
+    await expect(status).toContainText(/[1-9]\d* furniture/);
+    await expect(page).toHaveURL(/[?&]furniture=off(&|$)/);
   });
 });
 

@@ -158,6 +158,7 @@ function sizedMesh(
     buildings: list,
     trees: [],
     cosmeticTrees: [],
+    furniture: [],
     plates: list,
     plateCount: chunks,
     poi: [],

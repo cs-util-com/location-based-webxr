@@ -82,6 +82,11 @@ export interface CreateDemoStoreOptions {
   readonly colourScheme?: ColourSchemeName;
   /** The switch at boot, from the link (`?roofs=off`); on when absent. */
   readonly inventedRoofs?: boolean;
+  /**
+   * The layer switches at boot, from the link (`?furniture=off`);
+   * `DEFAULT_LAYERS` when absent.
+   */
+  readonly initialLayers?: LayerSet;
 }
 
 const COLOUR_SCHEME_CHANGED = "colourScheme/changed";
@@ -217,7 +222,7 @@ export function createDemoStore(options: CreateDemoStoreOptions) {
   const slice = createOsmViewSlice<DemoSnapshot, GeoEvent>({
     initialPosition: options.start,
     initialCategory: options.category,
-    initialLayers: DEFAULT_LAYERS,
+    initialLayers: options.initialLayers ?? DEFAULT_LAYERS,
     // The picker names its own modes; the slice only stores the string (W11).
     initialGroundMode: DEFAULT_GROUND_MODE,
   });

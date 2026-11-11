@@ -67,6 +67,7 @@ const LIFT_STEPS: Readonly<Record<LayerKind, number>> = {
   buildings: 0,
   trees: 0,
   woods: 0,
+  furniture: 0,
   poi: 0,
   // The land-use tint is drawn INSIDE the ground's own shader (the owner put
   // its switch in the layer list, city objects plan Q6), so there is no second

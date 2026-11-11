@@ -42,6 +42,7 @@ describe("groundLift", () => {
     expect(groundLift("buildings")).toBe(0);
     expect(groundLift("trees")).toBe(0);
     expect(groundLift("woods")).toBe(0);
+    expect(groundLift("furniture")).toBe(0);
     expect(groundLift("poi")).toBe(0);
   });
 

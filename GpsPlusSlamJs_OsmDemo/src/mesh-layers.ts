@@ -49,6 +49,7 @@ import {
   geometryFrom,
   roadObjects,
   cosmeticTreeObjects,
+  streetFurnitureObjects,
   treeObjects,
 } from "gps-plus-slam-osm/three";
 
@@ -72,6 +73,7 @@ export const DRAWN_BY_MESH = [
   "buildings",
   "trees",
   "woods",
+  "furniture",
   "plates",
   "poi",
   "roads",
@@ -113,6 +115,9 @@ export interface BuildingStats {
   readonly trees: number;
   /** Invented trees drawn (woods, orchards, tree rows; the `woods` layer). */
   readonly woods: number;
+  /** Street lamps and bollards built (the `furniture` layer); the cut
+   * decides how many of them are drawn in a given frame. */
+  readonly furniture: number;
   /** Ground areas drawn. Reported because a silent 0 is the failure mode. */
   readonly plates: number;
   /** Their merged triangle count — a non-zero plate count with zero triangles
@@ -147,6 +152,7 @@ const NO_STATS: BuildingStats = {
   barriers: 0,
   trees: 0,
   woods: 0,
+  furniture: 0,
   plates: 0,
   plateTriangles: 0,
   poi: 0,
@@ -419,6 +425,14 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
     // the build's rank order.
     build: (mesh) => cosmeticTreeObjects(mesh.cosmeticTrees),
     counters: (mesh) => ({ woods: mesh.cosmeticTrees.length }),
+  },
+  {
+    layer: "furniture",
+    // The library's `streetFurnitureObjects`: mapped lamps and bollards, one instanced mesh per model on shared
+    // resources, each tagged `cityLayer: "furniture"` (hidden in AR by
+    // `showFurniture`), drawing only the items within 80 m of the camera.
+    build: (mesh) => streetFurnitureObjects(mesh.furniture),
+    counters: (mesh) => ({ furniture: mesh.furniture.length }),
   },
   {
     layer: "areas",
@@ -776,5 +790,18 @@ export function applySurfaceGain(root: THREE.Object3D, gain: number): void {
 export function showCosmetic(root: THREE.Object3D, visible: boolean): void {
   root.traverse((object) => {
     if (object.userData["cosmetic"] === true) object.visible = visible;
+  });
+}
+
+/**
+ * Shows or hides the STREET FURNITURE under `root` (objects tagged
+ * `cityLayer: "furniture"`). Owner decision: lamps and bollards are not drawn in AR. Its own flag rather than
+ * `cosmetic`: the furniture is mapped, not invented. A hidden instanced mesh
+ * is never rendered, so it never repacks its cut either. Absolute, so
+ * re-applying after a rebuild is idempotent.
+ */
+export function showFurniture(root: THREE.Object3D, visible: boolean): void {
+  root.traverse((object) => {
+    if (object.userData["cityLayer"] === "furniture") object.visible = visible;
   });
 }

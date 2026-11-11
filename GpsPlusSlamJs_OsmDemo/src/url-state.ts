@@ -37,7 +37,8 @@
  * READ-ONLY BOOT OVERRIDES are not exceptions: they seed a control when the
  * page loads, so a preview link can name a state, and nothing writes them
  * back, so DEC-R12-5 holds and the writers below do not grow. `roofs=off`
- * boots with the invented roofs switched off (read in `main.ts`).
+ * boots with the invented roofs switched off, `furniture=off` with the
+ * street furniture layer off (both read in `main.ts`).
  *
  * FOUR WRITERS, EIGHT KEYS, AND NONE TOUCHES ANOTHER'S. `placeQuery` owns
  * `lat`/`lng`/`site`; `cameraQuery` owns `clat`/`clng`/`cdist`; `lightQuery`

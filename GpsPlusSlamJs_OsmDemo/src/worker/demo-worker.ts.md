@@ -149,6 +149,12 @@ plateClip)`, the loaded tiles' boxes cut to the drawn ground. With no
 - The mesh carries `cosmeticTrees` (`City.cosmeticTrees`) to the page, for the
   `woods` layer.
 
+## Street furniture (objects M5, 2026-11-11)
+
+- `buildCity` gets `furniture: ["lamp", "bollard"]`: the POI layer already
+  draws benches and bins. Built whatever the layer switch says (the switch
+  filters at draw time); the mesh carries `furniture` (`City.furniture`).
+
 ## The land-use tint (colour schemes plan 2026-11-10-0841 S3)
 
 `buildCity` is asked for `groundTint: true` on every full pass, over the same

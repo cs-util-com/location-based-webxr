@@ -39,6 +39,7 @@ export const ALL_LAYERS = [
   "buildings",
   "trees",
   "woods",
+  "furniture",
   "plates",
   "tint",
   "roads",

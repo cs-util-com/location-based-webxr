@@ -164,6 +164,13 @@ staleness is invisible and self-consistent.
   listed after `trees` and so ON by default (owner decision). Off in AR, which
   `BuildingView` enforces rather than this registry.
 
+## `furniture` (objects M5, 2026-11-11)
+
+- Mapped street lamps and bollards, listed after `woods` and so ON by default
+  (toggles plan 2026-11-10-1902 T2). Off in AR, which `BuildingView` enforces.
+  `?furniture=off` boots it off (`main.ts`, through
+  `CreateDemoStoreOptions.initialLayers`).
+
 ## `tint` (land-use colours, colour schemes plan 2026-11-10-0841 S3)
 
 The land-use tint in the ground (city objects plan 2026-11-07-2315 M3), on by

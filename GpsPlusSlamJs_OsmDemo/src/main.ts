@@ -176,7 +176,13 @@ import {
 } from "./ground-mode.js";
 import { attachLayerToggles, withLayerBusy } from "./layer-toggles.js";
 import { attachSitePicker } from "./site-picker.js";
-import { isLayerEnabled, layersNeedingData, type LayerSet } from "./layers.js";
+import {
+  DEFAULT_LAYERS,
+  isLayerEnabled,
+  layersNeedingData,
+  toggleLayer,
+  type LayerSet,
+} from "./layers.js";
 import { meshLayerSelection, wantsAnyMeshLayer } from "./mesh-layers.js";
 import {
   colourSchemeChanged,
@@ -380,6 +386,13 @@ async function main(): Promise<void> {
     // A read-only boot override: the box changes the choice, never the link.
     inventedRoofs:
       new URLSearchParams(window.location.search).get("roofs") !== "off",
+    // THE LINK CAN SWITCH THE STREET FURNITURE OFF (?furniture=off), read-only
+    // like the roofs: the layer box changes it, never the link.
+    initialLayers: toggleLayer(
+      DEFAULT_LAYERS,
+      "furniture",
+      new URLSearchParams(window.location.search).get("furniture") !== "off",
+    ),
   });
   reportFatal = (message) => {
     store.dispatch(actions.fetchFailed(`the worker failed: ${message}`));
@@ -3034,6 +3047,11 @@ async function main(): Promise<void> {
       // The woods layer's invented trees (objects M2a), reported like the POI:
       // a count is how a user tells "switched off" from "no woods here".
       mesh === undefined || mesh.woods === 0 ? "" : `${mesh.woods} woods`,
+      // The furniture layer's lamps and bollards, the same way;
+      // the count is what was built, the 80 m cut decides what a frame draws.
+      mesh === undefined || mesh.furniture === 0
+        ? ""
+        : `${mesh.furniture} furniture`,
       mesh === undefined || mesh.roads === 0
         ? ""
         : `${mesh.roads} roads (${mesh.roadTriangles} tri)`,

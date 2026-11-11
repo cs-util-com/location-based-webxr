@@ -56,10 +56,10 @@ test.describe("the layer toggles", () => {
       // The attribute is what "is a layer switch" actually means.
       await expect(
         page.locator("#layers input[type=checkbox][data-layer]"),
-      ).toHaveCount(9);
+      ).toHaveCount(10);
 
-      // SIX OF NINE START ON (DEC-R7b-5, DEC-R7b-6; `woods` joined, on, in objects
-      // M2a). Round 4 turned every
+      // SEVEN OF TEN START ON (DEC-R7b-5, DEC-R7b-6; `woods` joined, on, in
+      // objects M2a; `furniture` joined, on, with the street furniture). Round 4 turned every
       // layer on; round 8 took plates and cells back off after a session saw the
       // demo with the terrain relief carrying the ground; the underground
       // diagnostic joined them off by default. Both halves are asserted, because
@@ -75,6 +75,7 @@ test.describe("the layer toggles", () => {
       await expect(page.locator("#layer-buildings")).toBeChecked();
       await expect(page.locator("#layer-trees")).toBeChecked();
       await expect(page.locator("#layer-woods")).toBeChecked();
+      await expect(page.locator("#layer-furniture")).toBeChecked();
       await expect(page.locator("#layer-areas")).toBeChecked();
       await expect(page.locator("#layer-poi")).toBeChecked();
       // W9 turned every layer on by default, so a test about switching a layer ON
@@ -121,6 +122,23 @@ test.describe("the layer toggles", () => {
       // Roads back on, so the next step starts from the boot state this one did.
       await page.locator("#layer-roads").check();
       await expect(page.locator("#layer-roads")).toBeChecked();
+    });
+
+    await test.step("draws the street furniture by default and removes it when switched off", async () => {
+      // WHY THIS TEST MATTERS: the street furniture is on by default, behind a
+      // switch. The park fixture
+      // maps two street lamps, so the default build places them and the
+      // status line counts them; the switch filters at draw time, so off
+      // drops the count without a refetch, and on brings it back.
+      const status = page.locator("#status");
+      await expect(status).toContainText(/[1-9]\d* furniture/);
+      const before = counts.overpassQuery;
+      await page.locator("#layer-furniture").uncheck();
+      await expect(status).not.toContainText(/\d+ furniture/);
+      await expect(status).toContainText(/[1-9]\d* volumes/);
+      await page.locator("#layer-furniture").check();
+      await expect(status).toContainText(/[1-9]\d* furniture/);
+      expect(counts.overpassQuery).toBe(before);
     });
 
     await test.step("draws the cosmetic woods by default and removes them when switched off", async () => {
@@ -385,6 +403,8 @@ test.describe("the layer toggles", () => {
       "trees",
       // The cosmetic woods (objects M2a) are a layer too, on by default.
       "woods",
+      // The street furniture, on by default.
+      "furniture",
       "plates",
       "roads",
       "poi",

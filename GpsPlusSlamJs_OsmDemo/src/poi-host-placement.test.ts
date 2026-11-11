@@ -39,6 +39,7 @@ function meshWith(poi: TransferableMesh["poi"]): TransferableMesh {
     buildings: [],
     trees: [],
     cosmeticTrees: [],
+    furniture: [],
     plates: [],
     plateCount: 0,
     roads: [],
