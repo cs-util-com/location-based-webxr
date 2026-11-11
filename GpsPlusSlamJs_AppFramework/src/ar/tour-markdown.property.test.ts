@@ -862,20 +862,44 @@ function normalisedPlainText(t: string): string {
   return paragraphs.join('\n\n');
 }
 
+const SPACE_AT_EDGE = /^[ \t\n]|[ \t\n]$/;
+
+/** What is wrong with one leaf of P, or null. Leaves tile P: each starts
+ *  where the previous one's separator ends. */
+function brokenLeaf(
+  text: string,
+  leaf: { readonly from: number; readonly to: number },
+  expectedFrom: number,
+  followed: boolean
+): string | null {
+  if (leaf.from !== expectedFrom) return 'starts off its place';
+  if (leaf.to <= leaf.from) return 'is empty';
+  if (SPACE_AT_EDGE.test(text.slice(leaf.from, leaf.to))) {
+    return 'has space at an edge';
+  }
+  if (followed && text.slice(leaf.to, leaf.to + 2) !== '\n\n') {
+    return 'is not followed by a blank line';
+  }
+  return null;
+}
+
+/** Asserts P's invariants. The leaves are checked in a plain loop that
+ *  stops at the first broken one, with one assertion at the end: a body
+ *  of a megabyte holds hundreds of thousands of leaves, and an assertion
+ *  per leaf made the check, not the parse, take minutes. */
 function assertPlainTextInvariants(doc: TourMarkdown): void {
   const { text, leaves } = plainTextOf(doc);
-  expect(text).not.toMatch(/^[ \t\n]|[ \t\n]$/);
+  expect(text).not.toMatch(SPACE_AT_EDGE);
+  let broken: string | null = null;
   let expectedFrom = 0;
-  leaves.forEach((leaf, i) => {
-    // Leaves tile P: each starts where the previous one's separator ends.
-    expect(leaf.from).toBe(expectedFrom);
-    expect(leaf.to).toBeGreaterThan(leaf.from);
-    const own = text.slice(leaf.from, leaf.to);
-    expect(own).not.toMatch(/^[ \t\n]|[ \t\n]$/);
-    if (i < leaves.length - 1)
-      expect(text.slice(leaf.to, leaf.to + 2)).toBe('\n\n');
+  for (let i = 0; i < leaves.length && broken === null; i++) {
+    const leaf = leaves[i];
+    if (leaf === undefined) break;
+    const why = brokenLeaf(text, leaf, expectedFrom, i < leaves.length - 1);
+    if (why !== null) broken = `leaf ${i} [${leaf.from}, ${leaf.to}) ${why}`;
     expectedFrom = leaf.to + 2;
-  });
+  }
+  expect(broken).toBeNull();
   // The last leaf ends P; no leaf, no P.
   expect(text.length).toBe(leaves[leaves.length - 1]?.to ?? 0);
 }
