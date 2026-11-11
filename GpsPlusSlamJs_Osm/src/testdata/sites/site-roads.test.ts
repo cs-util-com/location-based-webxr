@@ -48,8 +48,9 @@ describe("road triangles on the O3 scenes (M4a)", () => {
  * WHY THESE TESTS MATTER. Zebras and pedestrian areas (city objects M4b) are
  * drawn from the map alone, so their counts on the O3 scenes are what the
  * port is held to: Park Slope's 1,089 stripes are O3's number exactly;
- * Meggen's 111 are O3's 109 plus two lone island nodes (`crossing:island`)
- * the lab placed elsewhere, not investigated further; Heidelberg's four
+ * Meggen's 111 against O3's 109 is UNEXPLAINED: the two lone island nodes
+ * (`crossing:island`) draw 6 stripes each here, and taking O3's rank-first
+ * choice of the carrying road (tried 2026-11-11) still gives 111; Heidelberg's four
  * squares are the ones the O3 street camera stands on. Swept (2026-11-11): pitch
  * 0.8 / 1 / 1.2 m gives Park Slope 1,375 / 1,089 / 904 stripes, Meggen 139 /
  * 111 / 91; cutting at 12 / 24 / 48 m or not at all gives Heidelberg's areas

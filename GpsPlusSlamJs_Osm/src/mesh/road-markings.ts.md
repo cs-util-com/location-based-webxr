@@ -66,8 +66,10 @@ const stripes = marks.reduce((n, m) => n + m.stripeCount, 0);
   1,375 / 1,089 / 904.
 - Meggen: 111 stripes (139 / 111 / 91 by pitch) against O3's 109. The two
   extra crossings are lone island nodes (`crossing:island=yes`,
-  node/1191425770 and node/1614907627) that draw 6 stripes each here and sit
-  elsewhere in O3; the cause was not found.
+  node/1191425770 and node/1614907627) that draw 6 stripes each here; the
+  difference is unexplained. O3 picks the carrying road lowest rank first,
+  this module in input order: tried 2026-11-11, the rank order still gives
+  111, so the input order stayed.
 - Heidelberg: one crossing, a node, 6 stripes (7 / 6 / 5 by pitch).
 
 ## Tests
