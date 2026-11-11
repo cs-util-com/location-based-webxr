@@ -33,6 +33,7 @@ import {
   MAX_DISTANCE_M,
   parseCameraTarget,
   placeQuery,
+  staticTilesEnabled,
   sunPinnedHref,
   writeCamera,
   writePlace,
@@ -491,5 +492,32 @@ describe("the sun pinned into a copied link (light dialog, plan 2026-09-24-2140)
     expect(url.searchParams.get("light")).toBe("v1:gain=2");
     expect(url.pathname).toBe("/osm/");
     expect(url.hash).toBe("#h");
+  });
+});
+
+// Why this test matters: the static tile host is on in OsmDemo, and `tiles=off`
+// is the one way to compare it against the direct Overpass race from a link.
+// The knob is read-only: no writer may set or clear it, so a walk keeps it.
+describe("the static tiles knob (read-only, tiles=off)", () => {
+  it("is on unless the query says tiles=off", () => {
+    expect(staticTilesEnabled("")).toBe(true);
+    expect(staticTilesEnabled("?lat=1&lng=2")).toBe(true);
+    expect(staticTilesEnabled("?tiles=on")).toBe(true);
+    expect(staticTilesEnabled("?tiles=off")).toBe(false);
+    expect(staticTilesEnabled("?lat=1&tiles=off&lng=2")).toBe(false);
+  });
+
+  it("survives every writer untouched", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: -80, max: 80, noNaN: true }),
+        fc.double({ min: -179, max: 179, noNaN: true }),
+        (lat, lng) => {
+          const written = placeQuery("?tiles=off", { position: { lat, lng } });
+          expect(staticTilesEnabled(written)).toBe(false);
+          expect(staticTilesEnabled(lightQuery(written, null))).toBe(false);
+        },
+      ),
+    );
   });
 });

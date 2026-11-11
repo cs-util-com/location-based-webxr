@@ -29,6 +29,9 @@
   with `?date=` and `?time=` set and every other key kept: the light dialog's
   Copy link, so a pick is reproduced at the sun it was made at. It is never
   written to the address bar, so the sun pins stay read-only.
+- `staticTilesEnabled(search: string): boolean` - false only for `tiles=off`:
+  a read-only boot knob that switches the static tile host off (the tiles
+  then come straight from the Overpass race). No writer sets or clears it.
 
 ## The camera target (DEC-R13-7), and why it is a safe partial reversal
 

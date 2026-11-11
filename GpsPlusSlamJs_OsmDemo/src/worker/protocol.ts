@@ -314,7 +314,13 @@ export interface TerrainResult {
 /** Payload shape per request kind, and the result each one produces. */
 export interface WorkerCalls {
   readonly init: {
-    readonly request: Record<string, never>;
+    readonly request: {
+      /**
+       * Ask the static tile host before the Overpass race (`tiles=off` in
+       * the URL makes it false; absent counts as off).
+       */
+      readonly staticTiles?: boolean;
+    };
     readonly result: InitResult;
   };
   readonly update: {

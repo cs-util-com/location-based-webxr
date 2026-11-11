@@ -23,7 +23,10 @@ import { expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_OVERPASS_ENDPOINTS } from "gps-plus-slam-osm";
+import {
+  DEFAULT_OVERPASS_ENDPOINTS,
+  OSM_TILES_BASE_URL,
+} from "gps-plus-slam-osm";
 import { terrariumPng } from "../../scripts/e2e/terrarium-png.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -243,6 +246,16 @@ const isOverpass = (url) =>
   /(^|\.)overpass[^.]*\.de$|(^|\.)kumi\.systems$|(^|\.)openstreetmap\.fr$/i.test(
     url.hostname,
   );
+/**
+ * The project's static tile host, which the demo asks before the race. Taken
+ * from the package like the Overpass pool, so a moved host stays intercepted.
+ * ABORTED, never answered: the client then falls back to the race at once and
+ * leaves the host alone, so every Overpass fixture and count below keeps
+ * meaning what it meant before the host existed, and Chrome logs the
+ * `net::ERR_FAILED` the console test already tolerates.
+ */
+const STATIC_TILES_HOSTNAME = new URL(OSM_TILES_BASE_URL).hostname;
+const isStaticTiles = (url) => url.hostname === STATIC_TILES_HOSTNAME;
 const isRuleSheet = (url) => /(^|\.)docs\.google\.com$/i.test(url.hostname);
 const isTerrarium = (url) =>
   /(^|\.)s3\.amazonaws\.com$/i.test(url.hostname) &&
@@ -290,6 +303,8 @@ export async function stubNetwork(page, options = {}) {
   const counts = {
     overpassStatus: 0,
     overpassQuery: 0,
+    /** Requests to the static tile host, every one aborted. */
+    staticTiles: 0,
     basemap: 0,
     terrain: 0,
     ruleSheet: 0,
@@ -374,6 +389,11 @@ export async function stubNetwork(page, options = {}) {
       contentType: "application/json",
       body: payload,
     });
+  });
+
+  await page.route(isStaticTiles, (route) => {
+    counts.staticTiles++;
+    return route.abort();
   });
 
   // The rule table's three-tier loader degrades live -> cache -> snapshot. An

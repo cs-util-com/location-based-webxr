@@ -75,6 +75,30 @@ test.describe("caching and failure", () => {
     // fresh query with no probe — the precise failure this test exists to catch.
     expect(counts.overpassQuery).toBe(queriesAfterFirst);
   });
+
+  // Why this test matters: the demo asks the static tile host before the
+  // Overpass race, and a refused host must cost no tile: the fixture aborts
+  // every host request, so the scene still loads from the race. With the
+  // read-only `tiles=off` knob the host is never asked at all.
+  // Two tests rather than two pages: each test has a fresh context, so its
+  // OPFS cache is empty and every tile really goes to a source.
+  test("asks the static tile host first and falls back to the race on its refusal", async ({
+    page,
+  }) => {
+    const counts = await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+    expect(counts.staticTiles).toBeGreaterThan(0);
+    expect(counts.overpassQuery).toBeGreaterThan(0);
+  });
+
+  test("tiles=off never asks the static tile host", async ({ page }) => {
+    const counts = await stubNetwork(page);
+    await page.goto(`${AT_FIXTURE}&tiles=off`);
+    await waitForRefresh(page);
+    expect(counts.staticTiles).toBe(0);
+    expect(counts.overpassQuery).toBeGreaterThan(0);
+  });
 });
 
 /**

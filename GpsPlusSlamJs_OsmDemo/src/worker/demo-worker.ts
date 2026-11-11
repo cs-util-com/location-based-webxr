@@ -601,7 +601,11 @@ async function handle<K extends WorkerCallKind>(
       // importing the logger itself.
       const store = await openOsmStore({ warn: osmStoreWarn });
       const loaded = await loadRuleTable({ store });
-      const source = createOsmTileSource(store);
+      // The static tile host only on an explicit true (main reads `tiles=off`).
+      const { staticTiles } = payload as WorkerCalls["init"]["request"];
+      const source = createOsmTileSource(store, {
+        staticTiles: staticTiles === true,
+      });
       const pipeline = new DemoPipeline({ source, table: loaded.table });
       // THE SAME STORE AGAIN, third tenant: DEM tiles are keyed by their full
       // request URL, so they coexist with `osm/v{n}/…` and `rules/v1/…` the

@@ -11,7 +11,11 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import { MemoryBlobStore, OVERPASS_SCHEMA_VERSION } from "gps-plus-slam-osm";
+import {
+  MemoryBlobStore,
+  OSM_TILES_BASE_URL,
+  OVERPASS_SCHEMA_VERSION,
+} from "gps-plus-slam-osm";
 import { OpfsOsmBlobStore } from "gps-plus-slam-app-framework/osm-bridge";
 
 import {
@@ -67,6 +71,45 @@ describe("createOsmTileSource", () => {
     const init = fetchImpl.mock.calls[0]?.at(1) as RequestInit | undefined;
     expect(new Headers(init?.headers).get("User-Agent")).toBe(
       OSM_DEMO_USER_AGENT,
+    );
+  });
+});
+
+// Why this test matters: OsmDemo turns the static tile host on, so a tile it
+// holds must be read from there and never cost an Overpass request; off, the
+// demo must go straight to the race as before.
+describe("createOsmTileSource with the static tile host", () => {
+  const tile = "871fa199affffff";
+  const answer = () =>
+    Promise.resolve(
+      new Response(JSON.stringify({ version: 0.6, elements: [] }), {
+        status: 200,
+      }),
+    );
+
+  it("asks the project's tile host first when on", async () => {
+    const fetchImpl = vi.fn(answer);
+    const source = createOsmTileSource(new MemoryBlobStore(), {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      staticTiles: true,
+    });
+    const result = await source.fetchTile(tile);
+    expect(String(fetchImpl.mock.calls[0]?.at(0))).toBe(
+      `${OSM_TILES_BASE_URL}/osm/v${OVERPASS_SCHEMA_VERSION}/${tile}.json.gz`,
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(result.sourceId).toBe(`static:${new URL(OSM_TILES_BASE_URL).host}`);
+  });
+
+  it("never reaches the tile host when off", async () => {
+    const fetchImpl = vi.fn(answer);
+    const source = createOsmTileSource(new MemoryBlobStore(), {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      staticTiles: false,
+    });
+    await source.fetchTile(tile);
+    expect(String(fetchImpl.mock.calls[0]?.at(0))).not.toContain(
+      new URL(OSM_TILES_BASE_URL).host,
     );
   });
 });

@@ -42,6 +42,7 @@ import { parseStartPosition } from "./start-position.js";
 import {
   browserPlaceUrl,
   parseCameraTarget,
+  staticTilesEnabled,
   sunPinnedHref,
   writeCamera,
   writeLight,
@@ -318,7 +319,9 @@ async function main(): Promise<void> {
   // the UI needs: the category list for the picker and the provenance tier. The
   // table itself stays over there, next to the scorer and `explainCell`, which
   // are the only things that read it.
-  const loaded = await worker.call("init", {});
+  const loaded = await worker.call("init", {
+    staticTiles: staticTilesEnabled(window.location.search),
+  });
   // Which TIER the table came from is worth showing: a demo silently running on
   // the checked-in snapshot looks identical to one running on the live sheet,
   // and they are different claims about what is being judged.
