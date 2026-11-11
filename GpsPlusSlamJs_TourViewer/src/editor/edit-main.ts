@@ -162,6 +162,7 @@ import {
   createShelfPanel,
   type ShelfPanel,
 } from "./asset-shelf/shelf-panel.js";
+import { shelfSqueezed } from "./asset-shelf/shelf-panel-model.js";
 import {
   TOUR_HOSTS,
   hostOfLink,
@@ -1927,6 +1928,31 @@ phoneLayout.addEventListener("change", () => {
   shelfPanel?.refresh();
 });
 
+/** The details (the inspector dock) open: shown and not folded. */
+function detailsOpen(): boolean {
+  const details = document.getElementById("shell-inspector");
+  return (
+    details !== null &&
+    !details.hidden &&
+    !details.classList.contains("collapsed")
+  );
+}
+
+// The shelf's squeeze follows the details and the window's width: a
+// redraw whenever either changes (the shell draws the details).
+const detailsSeen = document.getElementById("shell-inspector");
+if (detailsSeen !== null) {
+  new MutationObserver(() => {
+    shelfPanel?.refresh();
+  }).observe(detailsSeen, {
+    attributes: true,
+    attributeFilter: ["hidden", "class"],
+  });
+}
+window.addEventListener("resize", () => {
+  shelfPanel?.refresh();
+});
+
 /** A toast of the shelf's, its button (an Undo) pressed once. */
 function shelfToast(
   text: string,
@@ -2028,6 +2054,14 @@ function openShelfPanel(open: EditorSession): void {
     toast: shelfToast,
     storage: browserStorage(),
     phone: () => phoneLayout.matches,
+    // Sideways on a phone the open shelf leaves the map no room beside
+    // the details: its rail then, and opening it folds the details.
+    squeezed: () => shelfSqueezed(window.innerWidth, detailsOpen()),
+    makeRoom: () => {
+      store.dispatch(
+        editorViewActions.dockFolded({ dock: "inspector", folded: true }),
+      );
+    },
   });
 }
 

@@ -554,6 +554,32 @@ describe("folding and the phone", () => {
     expect($("#tog .as-badge.error")?.textContent).toBe("1");
   });
 
+  // Why: beside open details on a phone turned sideways the open shelf
+  // leaves the map no room, so it shows as its rail; opening it there asks
+  // for the room (the details fold) rather than doing nothing.
+  it("shows as its rail while squeezed, and asks for the room when opened", () => {
+    let squeezed = true;
+    const makeRoom = vi.fn(() => {
+      squeezed = false;
+    });
+    const { panel: made } = panel({ squeezed: () => squeezed, makeRoom });
+    expect($("#shelf")?.classList.contains("folded")).toBe(true);
+    expect(document.body.classList.contains("shelf-folded")).toBe(true);
+    expect($("#tog")?.getAttribute("aria-pressed")).toBe("false");
+    // The squeeze is not the creator's fold: nothing is kept.
+    expect(stored.get(SHELF_FOLD_KEY)).toBeUndefined();
+    $<HTMLButtonElement>("#tog")?.click();
+    expect(makeRoom).toHaveBeenCalledTimes(1);
+    expect($("#shelf")?.classList.contains("folded")).toBe(false);
+    expect($("#tog")?.getAttribute("aria-pressed")).toBe("true");
+    // Squeezed again (the details opened): a redraw shows the rail.
+    squeezed = true;
+    made.refresh();
+    expect($("#shelf")?.classList.contains("folded")).toBe(true);
+    $<HTMLButtonElement>('.as-rail [data-act="unfold"]')?.click();
+    expect(makeRoom).toHaveBeenCalledTimes(2);
+  });
+
   it("toggles from the bottom bar", () => {
     panel();
     $<HTMLButtonElement>("#tog")?.click();

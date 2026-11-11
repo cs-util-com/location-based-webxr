@@ -418,3 +418,25 @@ export function shapeKey(rows: readonly ShelfRow[]): string {
     )
     .join("\u0002");
 }
+
+/** Up to this window width (px) the open shelf has no room beside the
+ *  open details: the list (226 px), the details (268 px) and the shelf
+ *  (246 px) leave a phone turned sideways (844 px) about 100 px of map,
+ *  too narrow for the map's own controls. */
+const SHELF_BESIDE_DETAILS_PX = 900;
+
+/** Narrower than this (px) the shelf is a sheet of its own (a phone), as
+ *  `shelf-panel.css` and the shell's sheets draw it. */
+const SHELF_SHEET_PX = 700;
+
+/** True where the shelf shows as its rail because the details are open
+ *  on a window over a phone's width and up to `SHELF_BESIDE_DETAILS_PX`.
+ *  A width that is not finite and non-negative never squeezes. */
+export function shelfSqueezed(widthPx: number, detailsOpen: boolean): boolean {
+  if (!Number.isFinite(widthPx) || widthPx < 0) return false;
+  return (
+    detailsOpen &&
+    widthPx > SHELF_SHEET_PX &&
+    widthPx <= SHELF_BESIDE_DETAILS_PX
+  );
+}

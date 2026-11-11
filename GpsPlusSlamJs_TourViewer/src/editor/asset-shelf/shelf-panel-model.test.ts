@@ -29,6 +29,7 @@ import {
   shelfSummary,
   stateLine,
   usesLabel,
+  shelfSqueezed,
 } from "./shelf-panel-model.js";
 
 const MB = 1024 * 1024;
@@ -462,6 +463,39 @@ describe("cardWarning", () => {
     );
     expect(shapeKey([row({ kind: "video", swaps: 1 })])).not.toBe(
       shapeKey([base]),
+    );
+  });
+});
+
+// Why: on a phone turned sideways the list, the details and the open shelf
+// would leave the map about 100 px, too narrow for its own controls; the
+// shelf then shows as its rail while the details are open. Above 900 px
+// the three fit, and a phone's shelf (700 px and under) is a sheet.
+describe("shelfSqueezed", () => {
+  it("squeezes the shelf to its rail only beside open details, from 701 to 900 px", () => {
+    expect(shelfSqueezed(844, true)).toBe(true);
+    expect(shelfSqueezed(701, true)).toBe(true);
+    expect(shelfSqueezed(900, true)).toBe(true);
+    expect(shelfSqueezed(901, true)).toBe(false);
+    expect(shelfSqueezed(700, true)).toBe(false);
+    expect(shelfSqueezed(844, false)).toBe(false);
+  });
+
+  it("never squeezes for a width that is not a width", () => {
+    for (const w of [Number.NaN, -1, Number.POSITIVE_INFINITY]) {
+      expect(shelfSqueezed(w, true)).toBe(false);
+    }
+  });
+
+  it("squeezes exactly in the band, for any width (property)", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: 0, max: 4000, noNaN: true }),
+        fc.boolean(),
+        (w, open) => {
+          expect(shelfSqueezed(w, open)).toBe(open && w > 700 && w <= 900);
+        },
+      ),
     );
   });
 });

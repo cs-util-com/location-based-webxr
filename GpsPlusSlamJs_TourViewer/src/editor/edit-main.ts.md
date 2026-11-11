@@ -894,6 +894,11 @@ longer lead to it. Every delete shares `deleted`, the toast and its Undo.
 
 ### The asset shelf's panel
 
+The shelf is squeezed to its rail while the details panel is open on a
+window up to 900 px wide (`shelfSqueezed`); a MutationObserver on
+`#shell-inspector` and the window's resize redraw the panel, and opening
+the shelf while squeezed folds the details panel (`dockFolded`).
+
 Once a tour is open, `openShelfPanel` builds the shelf's panel
 (`asset-shelf/shelf-panel.ts`) in `#shell-shelf`, with the bar's
 `#shelf-toggle` and the phone's `#shelf-pill`, on that session's shelf; it

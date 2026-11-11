@@ -50,6 +50,10 @@ shelf runner (`asset-shelf.ts`); every word comes from
   - `deps.storage`: keeps the fold (`SHELF_FOLD_KEY`, `"1"` folded); null
     keeps nothing, and a throwing storage is read as not folded.
   - `deps.phone()`: a phone's layout (a sheet, never folded).
+  - `deps.squeezed()` (optional): the window is too narrow for the shelf
+    beside the open details panel, so the shelf shows as its rail without
+    changing the stored fold; `deps.makeRoom()` (optional) is asked to
+    fold the details panel when the shelf is opened while squeezed.
 - `ShelfPanel`: `refresh()` redraws from the rows, `reveal(id)` unfolds
   (or opens the sheet), shows the file's card opened and flashes it,
   `open()` unfolds or opens the sheet, `destroy()` stops listening and

@@ -43,6 +43,11 @@ and the phone's progress pill. Pure functions over the shelf's rows
   kinds or no known length.
 - `shapeKey(rows)`: everything a full draw depends on (the swaps, a
   video's poster and length, a character's files too) except the progress, so the panel moves bars alone between real changes.
+- `shelfSqueezed(widthPx, detailsOpen)`: true when the details panel is
+  open and the window is wider than a phone (700 px) but at most
+  `SHELF_BESIDE_DETAILS_PX` (900 px): the shelf then shows as its rail so
+  the view between the docks keeps room. A non-finite or negative width
+  reads as not squeezed.
 
 ## Invariants & assumptions
 
@@ -66,5 +71,5 @@ const summary = shelfSummary(rows); // { kind: "busy", lead: "Optimizing 2 of 5"
 `shelf-panel-model.test.ts`: every state line, the summary's sums, the
 chips' fallback, the rail's cap and rest, the badge and pill ending with
 the work, a video's warning (and none for other kinds or no length),
-a character's kind line, the redraw on a new poster, length or swap, and properties for the
-gain's and the rings' ranges.
+a character's kind line, the redraw on a new poster, length or swap, `shelfSqueezed`'s band
+edges and non-widths, and properties for the gain's and the rings' ranges and the squeeze band.
