@@ -373,22 +373,33 @@ test("a tap on another item inside the selected station's move disc selects it",
   await expect(lock).toHaveAttribute("aria-pressed", "false");
   await handle(page, "middle");
   const steps = await changes(page);
-  // A point where the press meets both the pin and the station's disc.
+  // A point where the press meets both the pin and the station's disc,
+  // in the view's uncovered part: the docks (the inspector, the asset
+  // shelf) lie over the canvas's sides, and a press there is theirs.
   const at = await page.evaluate((id) => {
     const hook = /** @type {any} */ (window).__tourEditor;
     const centre = hook.view3dScreenOf(id);
-    if (centre === null) return null;
+    const canvas = document.querySelector("#view3d canvas");
+    if (centre === null || canvas === null) return null;
+    const box = canvas.getBoundingClientRect();
+    const uncovered = (/** @type {number} */ x, /** @type {number} */ y) =>
+      document.elementFromPoint(box.x + x, box.y + y) === canvas;
     for (let r = 0; r <= 120; r += 2) {
       for (let a = 0; a < 360; a += 10) {
         const x = centre[0] + r * Math.cos((a * Math.PI) / 180);
         const y = centre[1] + r * Math.sin((a * Math.PI) / 180);
         const under = hook.view3dUnder(x, y);
-        if (under?.pick === id && under.onDisc === true) return [x, y];
+        if (under?.pick === id && under.onDisc === true && uncovered(x, y)) {
+          return [x, y];
+        }
       }
     }
     return null;
   }, PIN);
-  expect(at, "no point meets both the pin and the disc").not.toBeNull();
+  expect(
+    at,
+    "no uncovered point meets both the pin and the disc",
+  ).not.toBeNull();
   const tap = await onPage(page, at);
   await page.mouse.click(tap.x, tap.y);
   await expect.poll(() => selected(page)).toBe(PIN);
