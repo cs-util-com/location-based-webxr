@@ -51,8 +51,8 @@ export function placeCapturedImagePlanes(options: {
   const meshes: Mesh[] = [];
   // ONE geometry, scaled per mesh — this path places EVERY capture (D4),
   // and a geometry per plane is the unbounded allocation the recorder's
-  // frame-tile visualizer already avoids the same way (milestone review,
-  // finding 4). Width and aspect ride mesh.scale; dispose frees it once.
+  // frame-tile visualizer already avoids the same way. Width and aspect
+  // ride mesh.scale; dispose frees it once.
   const sharedGeometry = new PlaneGeometry(1, 1);
   const count = Math.min(poses.length, textures.length);
   for (let i = 0; i < count; i += 1) {

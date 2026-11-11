@@ -113,7 +113,7 @@ status line and what an end means.
   picture/figure/sound…" in `status`, cleared when it shows;
   while the stage holds a loaded figure back for the visitor's
   position (no GPS zero, or no heading yet: the guide's `figurePoseOf`)
-  it says "Waiting for your position to place the figure…" until it stands (r881 re-review M-B); a read
+  it says "Waiting for your position to place the figure…" until it stands; a read
   failure says it "could not be loaded - the words are below"; a sound the
   browser refuses says it "did not play here". The words never wait for
   the media.
