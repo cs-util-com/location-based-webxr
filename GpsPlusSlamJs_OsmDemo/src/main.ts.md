@@ -209,8 +209,8 @@ None. Entry point only, loaded by `index.html`.
   line counts the built lamps and bollards as `N furniture`.
 - **The zebras and pedestrian areas:** `?markings=off` boots them off
   (read-only, like the roofs); the switch is `attachBuildChoiceSwitch` on
-  `#markings`, dispatching `markingsChanged`, read at post time by the
-  refresh cycle, ended by `meshDrawn(mesh.markings)` and reverted by
+  `#markings`, dispatching `markingsChanged`; a store subscription shows it
+  and refreshes, the refresh cycle reads it at post time; the switch is ended by `meshDrawn(mesh.markings)` and reverted by
   `failed(failedBuild.markings)`. Not read by the agent cycle: paint is no
   obstacle.
 - **The invented roofs:**

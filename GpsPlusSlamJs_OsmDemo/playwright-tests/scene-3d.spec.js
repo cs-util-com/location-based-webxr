@@ -509,11 +509,13 @@ test.describe("the 3D view", () => {
       await expect(outlines).not.toHaveCount(0);
       // Filled by default since W9, so the "unfilled" half of the claim has to be
       // reached by switching the layer off first.
-      await page.getByRole("checkbox", { name: "areas" }).uncheck();
+      await page
+        .getByRole("checkbox", { name: "areas", exact: true })
+        .uncheck();
       await expect(fills).toHaveCount(0);
       await expect(outlines).not.toHaveCount(0);
 
-      await page.getByRole("checkbox", { name: "areas" }).check();
+      await page.getByRole("checkbox", { name: "areas", exact: true }).check();
       await expect(fills).not.toHaveCount(0);
       // Still outlined as well as filled.
       await expect(outlines).not.toHaveCount(0);
@@ -526,7 +528,9 @@ test.describe("the 3D view", () => {
         .evaluate((node) => node.getAttribute("fill"));
       expect(fill).toMatch(/^#[0-9a-f]{6}$/i);
 
-      await page.getByRole("checkbox", { name: "areas" }).uncheck();
+      await page
+        .getByRole("checkbox", { name: "areas", exact: true })
+        .uncheck();
       await expect(fills).toHaveCount(0);
     });
 
@@ -572,20 +576,24 @@ test.describe("the 3D view", () => {
 
       // Off first: W9 draws the slabs by default, so the stashed frame has to be
       // one without them or the difference this measures is zero.
-      await page.getByRole("checkbox", { name: "areas" }).uncheck();
+      await page
+        .getByRole("checkbox", { name: "areas", exact: true })
+        .uncheck();
       await expect(page.locator("#status")).not.toContainText(/\d+ area slabs/);
       await stashStableFrame(page);
 
       const changed = async () => (await diffFromStash(page, 24)).differing;
 
-      await page.getByRole("checkbox", { name: "areas" }).check();
+      await page.getByRole("checkbox", { name: "areas", exact: true }).check();
       await expect(page.locator("#status")).toContainText(/\d+ area slabs/);
       // ~178 000 pixels of slab were measured when this counted a colour band, and
       // a difference count sees at least as many. 20 000 is a floor with a wide
       // margin, and what it guards against produces ZERO.
       await expect.poll(changed, REPAINT).toBeGreaterThan(20_000);
 
-      await page.getByRole("checkbox", { name: "areas" }).uncheck();
+      await page
+        .getByRole("checkbox", { name: "areas", exact: true })
+        .uncheck();
       await expect.poll(changed, REPAINT).toBeLessThan(20_000);
     });
 

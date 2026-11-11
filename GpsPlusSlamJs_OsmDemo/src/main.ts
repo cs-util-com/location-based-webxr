@@ -3190,6 +3190,7 @@ async function main(): Promise<void> {
         // switch whose own build failed was reverted by `onBuildFailed`.
         schemeSwitch.failed();
         roofsSwitch.failed();
+        markingsSwitch.failed();
       }
     },
   );
@@ -3306,6 +3307,14 @@ async function main(): Promise<void> {
     if (on === shownRoofs) return;
     shownRoofs = on;
     roofsSwitch.show(on);
+    void refresh();
+  });
+  let shownMarkings = selectMarkings(store.getState());
+  store.subscribe(() => {
+    const on = selectMarkings(store.getState());
+    if (on === shownMarkings) return;
+    shownMarkings = on;
+    markingsSwitch.show(on);
     void refresh();
   });
 

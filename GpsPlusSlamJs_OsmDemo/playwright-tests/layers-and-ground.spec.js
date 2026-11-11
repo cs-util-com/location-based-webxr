@@ -238,7 +238,9 @@ test.describe("the layer toggles", () => {
       // is the feature working, not the grid failing to clear, and leaving the
       // assertion as it stood would have made a working feature look like a
       // regression in an unrelated test.
-      await page.getByRole("checkbox", { name: "areas" }).uncheck();
+      await page
+        .getByRole("checkbox", { name: "areas", exact: true })
+        .uncheck();
       const canvas = page.locator("#scene canvas");
       const box = await canvas.boundingBox();
       if (box === null) throw new Error("no canvas box");
@@ -246,7 +248,7 @@ test.describe("the layer toggles", () => {
       await expect(page.locator("#details")).toBeHidden();
 
       // Back to the boot state, so the steps below start from what a user has.
-      await page.getByRole("checkbox", { name: "areas" }).check();
+      await page.getByRole("checkbox", { name: "areas", exact: true }).check();
       await page.locator("#layer-plates").uncheck();
     });
 
