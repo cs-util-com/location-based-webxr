@@ -67,6 +67,7 @@ import type {
   OsmTileResult,
 } from "../source/osm-data-source.js";
 import { OverpassSource } from "../source/overpass-source.js";
+import { StaticTileSource } from "../source/static-tile-source.js";
 import type { Bbox } from "../spatial/clip.js";
 import { mergeTiles } from "../spatial/merge-tiles.js";
 import {
@@ -266,21 +267,30 @@ export function cityDataPlan(
  * The cached Overpass source a city loads through: the race of the
  * library's endpoints (`OverpassSource`) behind the persistent store. ONE
  * construction for every consumer; `userAgent` is each app's own (the OSM
- * convention), `fetchImpl` the network seam.
+ * convention), `fetchImpl` the network seam. `staticTiles` puts a static
+ * tile host (`StaticTileSource`) in front of the race; it is off unless given,
+ * and any refusal of the host sends the tile to the race at once.
  */
 export function createCityTileSource(
   store: OsmBlobStore,
-  options: { readonly userAgent: string; readonly fetchImpl?: typeof fetch },
+  options: {
+    readonly userAgent: string;
+    readonly fetchImpl?: typeof fetch;
+    readonly staticTiles?: { readonly baseUrl: string };
+  },
 ): CachingSource {
-  return new CachingSource(
-    new OverpassSource({
-      userAgent: options.userAgent,
-      ...(options.fetchImpl === undefined
-        ? {}
-        : { fetchImpl: options.fetchImpl }),
-    }),
-    store,
-  );
+  const seam =
+    options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl };
+  const race = new OverpassSource({ userAgent: options.userAgent, ...seam });
+  const inner =
+    options.staticTiles === undefined
+      ? race
+      : new StaticTileSource({
+          baseUrl: options.staticTiles.baseUrl,
+          fallback: race,
+          ...seam,
+        });
+  return new CachingSource(inner, store);
 }
 
 // --- loading ----------------------------------------------------------------
