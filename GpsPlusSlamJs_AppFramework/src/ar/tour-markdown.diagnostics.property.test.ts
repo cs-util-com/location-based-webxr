@@ -43,9 +43,13 @@ const SHAPE: Record<TourMdDiagnosticKind, RegExp> = {
 };
 
 /** A fence line inside a part (so after a line break in it): a fence
- *  after any indentation and quote or list marks; group 1 is its mark. */
+ *  after any indentation and quote or list marks; group 1 is its mark.
+ *  Only the list marks the reader takes as items (`-`, `*`, `1.`): after
+ *  a `+` or a `1)` the line stays a paragraph line, and its fence is
+ *  text. Still counted here, though the reader shows them as typed: a
+ *  fence after four columns of indentation or after a third list level. */
 const FENCE_LINE_INSIDE =
-  /[\r\n](?:[ \t]|>|[-*+](?=[ \t])|\d{1,9}[.)](?=[ \t]))*(`{3,}|~{3,})/g;
+  /[\r\n](?:[ \t]|>|[-*](?=[ \t])|\d{1,9}\.(?=[ \t]))*(`{3,}|~{3,})/g;
 
 /** The mark of a code box still open after the fence lines inside `text`,
  *  starting from `open`: a fence opens a box when none is open, and closes
@@ -159,9 +163,9 @@ describe('diagnoseTourMarkdown properties', () => {
   });
 
   it('reports each kind over text of its own shape', () => {
-    // A failing run's seed and path, kept as a fixed example below and in
-    // the unit tests: "a code box open when its fence line lies under a
-    // link part".
+    // A failing run's body is kept as a fixed example below and in the
+    // unit tests: "a code box open when its fence line lies under a link
+    // part".
     expect.hasAssertions();
     fc.assert(fc.property(markdownish, expectPartsOfTheirShape), {
       numRuns: 2000,
@@ -173,8 +177,11 @@ describe('diagnoseTourMarkdown properties', () => {
     // Why: two boxes at line starts, the second after the first closed,
     // are rare in the generated bodies (50 000 runs held none), yet a
     // second box's first part drifting off its fence must be caught; and
-    // a box whose fence a link covers must not be. Each body pins one.
+    // a box whose fence a link covers must not be; nor may a fence after a
+    // `+` bullet, which the reader does not take as an item, close a box.
+    // Each body pins one.
     for (const body of [
+      '```\n+ ```\n\na',
       '```\na\n```\n\n```\nb\n```',
       '```\na\n```\nx\n```\nb\n```',
       'x\n```\na\n```\n\ny\n```\nb',

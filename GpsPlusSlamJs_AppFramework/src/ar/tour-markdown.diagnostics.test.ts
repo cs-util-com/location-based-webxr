@@ -131,7 +131,7 @@ describe('diagnoseTourMarkdown', () => {
 
   it('keeps a code box open when its fence line lies under a link part', () => {
     // Why: a property run found this body. "```](asset:p)" is a fence line
-    // (its info string holds no backtick), so the box it opens is never
+    // (three backticks at a line start), so the box it opens is never
     // closed and runs to the end: "a" is code. The reader also reads
     // "[\n```](asset:p)" as a link it refuses, which starts first and
     // covers the fence's own part, so "a" is the only code part shown.
