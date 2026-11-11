@@ -6,6 +6,7 @@
 
 - `body[data-view]` is `home` or `steps`; `.home-only` and `.steps-only` follow it, and every step panel is hidden in the library view.
 - The step panels are `section[data-panel="0"]` to `"5"`, each with a `[data-greet]` slot; `#rail`, `#where`, `#body` and `.actions` are the stepper, the step line, the scrolling body and the Back / Next bar.
+- `#makeBtn` and `#importBtn` share a `.row.one-line`: one line whatever the font.
 - `#toasts` holds the toasts and `#undoBox` the Undo offers; `#picFile` and `#impFile` are the hidden file inputs.
 
 ## Built from

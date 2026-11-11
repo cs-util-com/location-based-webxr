@@ -285,4 +285,29 @@ test.describe("character maker", () => {
       expect(Math.abs(row.x - lead.x)).toBeLessThan(2);
     });
   }
+
+  // Why: the library's two buttons are one line in the prototype, and a
+  // wider system font (Linux's, measured in CI) put "Import character..."
+  // under "Make a character". Widened letters stand in for any wider font:
+  // the row stays one line, the buttons one height, inside the column.
+  test("keeps the library's two buttons on one line with a wider font", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/characters.html");
+    await expect(page.locator("#makeBtn")).toBeVisible();
+    await page.addStyleTag({
+      content: "#makeBtn, #importBtn { letter-spacing: 6px; }",
+    });
+    const make = await page.locator("#makeBtn").boundingBox();
+    const imp = await page.locator("#importBtn").boundingBox();
+    const lead = await page.locator("#homeLead").boundingBox();
+    if (make === null || imp === null || lead === null) {
+      throw new Error("not laid out");
+    }
+    expect(Math.abs(make.y - imp.y)).toBeLessThan(2);
+    expect(Math.abs(make.height - imp.height)).toBeLessThan(2);
+    expect(Math.round(imp.x - (make.x + make.width))).toBe(10);
+    expect(imp.x + imp.width).toBeLessThan(lead.x + lead.width + 1);
+  });
 });

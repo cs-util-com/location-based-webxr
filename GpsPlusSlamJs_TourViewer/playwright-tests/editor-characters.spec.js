@@ -206,3 +206,30 @@ for (const vp of VIEWPORTS) {
     expect(fonts?.[0]).toBe(fonts?.[1]);
   });
 }
+
+// Why: the list's two buttons are one line in the prototype, and a wider
+// system font (Linux's, measured in CI) put "Import character..." under
+// "Make a character", on a phone and in the desktop's sheet alike.
+// Widened letters stand in for any wider font.
+for (const vp of [VIEWPORTS[0], VIEWPORTS[2]]) {
+  if (vp === undefined) throw new Error("no viewport");
+  test(`the list keeps its two buttons on one line with a wider font on a ${vp.name}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: vp.width, height: vp.height });
+    await openList(page);
+    await page.addStyleTag({
+      content: "#characters-make, #characters-import { letter-spacing: 6px; }",
+    });
+    const make = await page.locator("#characters-make").boundingBox();
+    const imp = await page.locator("#characters-import").boundingBox();
+    const title = await page.locator("#characters-title").boundingBox();
+    if (make === null || imp === null || title === null) {
+      throw new Error("not laid out");
+    }
+    expect(Math.abs(make.y - imp.y)).toBeLessThan(2);
+    expect(Math.abs(make.height - imp.height)).toBeLessThan(2);
+    expect(Math.round(imp.x - (make.x + make.width))).toBe(10);
+    expect(imp.x + imp.width).toBeLessThan(title.x + title.width + 1);
+  });
+}

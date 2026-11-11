@@ -143,6 +143,16 @@ p {
   gap: 10px;
   align-items: center;
 }
+/* A row that stays one line whatever the font: its buttons shrink and
+   wrap their words instead, and stretch to one height. */
+.row.one-line {
+  flex-wrap: nowrap;
+  align-items: stretch;
+}
+.row.one-line > .btn {
+  flex: 0 1 auto;
+  min-width: 0;
+}
 .chips {
   display: flex;
   flex-wrap: wrap;

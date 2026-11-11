@@ -233,6 +233,17 @@ dialog.charpanel::backdrop {
   background: none;
 }
 
+/* "Make a character" and "Import character...": one line whatever the
+   font; the buttons shrink and wrap their words, at one height */
+.charpanel .row.one-line {
+  flex-wrap: nowrap;
+  align-items: stretch;
+}
+.charpanel .row.one-line > .btn {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
 /* "Import character...": the name field, the refusal and the question */
 .charpanel input[type="text"] {
   width: 100%;

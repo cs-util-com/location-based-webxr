@@ -193,7 +193,9 @@ unsaved mark, its tree clicks). The specs reach the menus through
 - `#characters-panel` (`dialog.charpanel`) is the Characters list. It holds:
   - "In this tour" and the pick-up banner;
   - "On this device", "Make a character" and "Import character..."
-    (`#characters-import-file`), with the refusal and name cards;
+    (`#characters-import-file`), with the refusal and name cards; the two
+    buttons share a `.row.one-line` (`characters-panel.css`), one line
+    whatever the font;
   - "Rename or delete characters on this device", the link that opens the
     maker on its own;
   - the list's own toasts and Undo.
