@@ -110,6 +110,7 @@ const NO_MESH: TransferableMesh = {
   parts: 0,
   guessedHeights: 0,
   approximateRoofs: 0,
+  inventedRoofCount: 0,
   barriers: 0,
 };
 

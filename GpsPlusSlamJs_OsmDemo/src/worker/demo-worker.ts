@@ -489,6 +489,7 @@ function buildMesh(
     // THE REAL FLAG, not a proxy: a gabled roof on an actual rectangle is EXACT,
     // and that is the common case the approximation trade rests on.
     approximateRoofs: volumes.filter((v) => v.roofIsApproximate).length,
+    inventedRoofCount: volumes.filter((v) => v.roofIsInvented).length,
     barriers: barriers.length,
   };
 }

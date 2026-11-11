@@ -174,3 +174,9 @@ the two tagged materials scale, idempotent, bad gains refused):
 `MeshLayerContext.plateColour?` colours the plates; absent is `PLATE_COLOUR`.
 `main.ts` passes the colour of the scheme the drawn mesh was built in.
 Tested in `mesh-layers.test.ts`.
+
+## Invented roof count
+
+`BuildingStats.inventedRoofCount` carries the mesh's count of volumes with an
+invented pitched roof, zero while the buildings layer is off like every other
+buildings counter; the status line shows it beside the guessed heights.

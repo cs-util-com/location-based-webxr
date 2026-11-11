@@ -3016,7 +3016,7 @@ async function main(): Promise<void> {
       `${snapshot.stats.chunksScored} chunks scored / ${snapshot.stats.chunksReused} reused`,
       mesh === undefined
         ? ""
-        : `${mesh.volumes} volumes (${mesh.parts} parts, ${mesh.guessedHeights} guessed building heights)`,
+        : `${mesh.volumes} volumes (${mesh.parts} parts, ${mesh.guessedHeights} guessed building heights, ${mesh.inventedRoofCount} invented roofs)`,
       // Reported only when there are some, like the plate and POI counts: a
       // zero would be noise at every site with no mapped walls, and the
       // interesting reading is "this walled site drew none".

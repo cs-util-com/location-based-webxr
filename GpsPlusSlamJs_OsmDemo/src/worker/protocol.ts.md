@@ -141,3 +141,5 @@ transferred (about 2 MB at most), see `demo-worker.ts`.
 - Reply: `TransferableMesh.inventedRoofs?` echoes the choice the mesh was built
   with (absent means `true`), so the page's switch ends on the durable build.
 - `MeshBuildChoices.inventedRoofs?` names it in a failed build.
+- `TransferableMesh.inventedRoofCount` - how many volumes carry an invented
+  pitched roof (`roofIsInvented`), for the status line.

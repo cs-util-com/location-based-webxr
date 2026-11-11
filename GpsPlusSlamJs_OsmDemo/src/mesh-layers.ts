@@ -99,6 +99,8 @@ export interface BuildingStats {
   readonly guessedHeights: number;
   /** Roofs generated from the bounding rectangle rather than exactly. */
   readonly approximateRoofs: number;
+  /** Roofs the library invented for buildings mapped without a roof shape. */
+  readonly inventedRoofCount: number;
   /**
    * Solid barriers drawn (DEC-R11-2).
    *
@@ -141,6 +143,7 @@ const NO_STATS: BuildingStats = {
   triangles: 0,
   guessedHeights: 0,
   approximateRoofs: 0,
+  inventedRoofCount: 0,
   barriers: 0,
   trees: 0,
   woods: 0,
@@ -363,6 +366,7 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
       triangles: totalTriangles(mesh.buildings),
       guessedHeights: mesh.guessedHeights,
       approximateRoofs: mesh.approximateRoofs,
+      inventedRoofCount: mesh.inventedRoofCount,
       barriers: mesh.barriers,
     }),
   },

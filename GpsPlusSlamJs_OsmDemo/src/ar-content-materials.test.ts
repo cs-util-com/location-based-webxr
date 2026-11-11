@@ -105,6 +105,7 @@ function everyLayer(): TransferableMesh {
     parts: 25,
     guessedHeights: 7,
     approximateRoofs: 2,
+    inventedRoofCount: 5,
     barriers: 4,
   } as unknown as TransferableMesh;
 }

@@ -155,6 +155,8 @@ export interface TransferableMesh {
   readonly parts: number;
   readonly guessedHeights: number;
   readonly approximateRoofs: number;
+  /** Volumes whose pitched roof was invented (`roofIsInvented`). */
+  readonly inventedRoofCount: number;
   /**
    * Solid barriers drawn (DEC-R11-2).
    *
