@@ -29,6 +29,12 @@ all (street furniture, scattered trees, a land-use layer). `omitToday` (optional
 today's layers the variant's side leaves out, any of `"ground"`, `"roads"`, `"trees"`, so a
 variant can draw its own instead of restyling today's.
 
+Today's street furniture (the library's lamps, bollards, benches and bins, all four kinds by
+`buildCity`'s default) is its own layer: V0 and the left side of a variant page draw it, each
+mesh repacking itself from the harness camera within the library's 80 m cut, so the side by
+side sees the cut. A variant's side never gets it: a clone would not repack, and a variant
+that shows furniture draws its own (O3).
+
 `ctx`: `THREE`, `fixture` (`name`, `label`, `centre`, `bbox`), `features`, `featureByKey`
 (a `Map` on `featureKey`), `frame` (`toEnu`), `ground`, `city` (the `buildCity` result with
 roads, built on the library's defaults with `fixture.bbox` as its build window, so
