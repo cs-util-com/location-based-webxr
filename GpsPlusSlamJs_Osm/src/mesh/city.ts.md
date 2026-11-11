@@ -19,7 +19,7 @@ the same ground.
   the field's `heightAt` at a position's ENU metres, or flat (no sampler)
   without a field. One derivation, so every layer stands on one surface.
 - `buildCity(features, ground, { window }) → City` - `{ volumes, barriers,
-buildings, trees, cosmeticTrees, roads, roadCount }`. `window` (a lat/lng
+buildings, trees, cosmeticTrees, furniture, roads, roadCount }`. `window` (a lat/lng
   `Bbox`) is REQUIRED (city objects plan 2026-11-07-2315 section 4): the
   bounding box of the data the caller fetched; everything invented from a
   relation (the cosmetic trees today) stays inside it. RangeError without it.
@@ -28,6 +28,11 @@ buildings, trees, cosmeticTrees, roads, roadCount }`. `window` (a lat/lng
   ring of every built building (each part of a multipolygon, `outerRings`;
   also those outside `withinM`) and from road half
   widths, kept within `withinM`; never in `trees`.
+- `furniture` are the placements of `buildStreetFurniture` (lamps, bollards,
+  benches, bins from mapped nodes; input order), of the kinds in
+  `options.furniture` (default all four; `[]` builds none, which the globe
+  passes), kept within the window and `withinM`. Never obstacles, and they
+  change nothing else the city builds (pinned).
 - `buildCity(features, ground, { window, cosmeticTrees: false })` builds no
   cosmetic trees (default true, the owner's choice). `volumes` and `barriers` are the builders' own results (a caller
   that needs them, OsmDemo for its POI hosts and counters, does not build
@@ -119,7 +124,9 @@ for (const chunk of city.buildings) draw(chunk);
 
 ## Tests
 
-`city.test.ts` - volumes, barriers and trees built; an untagged part coloured
+`city.test.ts` - volumes, barriers and trees built; street furniture of
+every kind by default, only the kinds asked for, none for `[]`, within
+`withinM`, and the rest of the city unchanged by it; an untagged part coloured
 exactly as its parent (and differently under another parent), in linear light;
 a barrier coloured by its kind; a mid-grey `roof:colour` reaching the roof
 vertices in linear light; a part's own colour and the roof colours in

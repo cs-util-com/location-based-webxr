@@ -44,7 +44,7 @@ message }` when no city was delivered (heights still missing, no tile).
   after 10, 30 and 60 s); `buildCity` within the terrain window (R12) with
   the roads, on each delivery, with the delivery's `window` (the loaded
   tiles' box) as its build window, the cosmetic woods off until objects
-  M2b, no invented roofs (as the Globe package's
+  M2b, no street furniture and no invented roofs (as the Globe package's
   worker core, whose sidecar has the warm-delivery measurement).
 - Invariants & assumptions:
   - The warm-up and the build are one load, so they read the same tiles and

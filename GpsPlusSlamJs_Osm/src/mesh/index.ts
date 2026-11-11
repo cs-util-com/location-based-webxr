@@ -257,3 +257,19 @@ export {
 export type { City, CityGround, CityOptions, CityRoadOptions } from "./city.js";
 export { buildCity, cityGround } from "./city.js";
 export { shellRandFor } from "./shell-rand.js";
+export type {
+  BuildStreetFurnitureOptions,
+  FurnitureGuess,
+  FurnitureKind,
+  FurnitureModel,
+  FurniturePlacement,
+} from "./street-furniture.js";
+export {
+  FURNITURE_DEFAULT_HEIGHT_M,
+  FURNITURE_KINDS,
+  MAX_FURNITURE_HEIGHT_M,
+  buildStreetFurniture,
+  compassYawRad,
+  furnitureModelOf,
+  furnitureWithinCut,
+} from "./street-furniture.js";

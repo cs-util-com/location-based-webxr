@@ -154,6 +154,7 @@ function deliver(c: Case, inventedRoofs: boolean): void {
       roads: true,
       window: c.window,
       cosmeticTrees: false,
+      furniture: [],
       inventedRoofs,
     },
   );

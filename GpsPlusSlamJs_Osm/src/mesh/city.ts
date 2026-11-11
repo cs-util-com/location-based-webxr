@@ -48,6 +48,11 @@ import { buildingColour, roadColour, roofColour } from "./feature-colours.js";
 import { buildGroundTint, type GroundTint } from "./ground-tint.js";
 import { buildRoads, type BuildRoadsOptions } from "./roads.js";
 import { shellRandFor } from "./shell-rand.js";
+import {
+  buildStreetFurniture,
+  type FurnitureKind,
+  type FurniturePlacement,
+} from "./street-furniture.js";
 import { buildTrees, type TreePlacement } from "./trees.js";
 
 /** Where the city is built: its frame and the ground under it. */
@@ -120,6 +125,14 @@ export interface CityOptions {
    * this off switches it off there too.
    */
   readonly inventedRoofs?: boolean;
+  /**
+   * The street furniture kinds to build from mapped nodes
+   * (`buildStreetFurniture`): lamps, bollards, benches, bins. Default every
+   * kind; an empty list builds none (a consumer that draws none, such as the
+   * globe, passes `[]`). OsmDemo passes lamps and bollards: its POI layer
+   * already draws benches and bins. RangeError for an unknown kind.
+   */
+  readonly furniture?: readonly FurnitureKind[];
 }
 
 /**
@@ -159,6 +172,12 @@ export interface City {
   readonly roads: readonly MeshChunk[];
   /** Road and path ways built (0 unless asked for). */
   readonly roadCount: number;
+  /**
+   * The street furniture of the kinds asked for (`CityOptions.furniture`),
+   * in input order, within `withinM`. Never obstacles: the navigation index
+   * reads ways and areas, not these nodes.
+   */
+  readonly furniture: readonly FurniturePlacement[];
   /** The painted land use over `window`, only with `groundTint: true`. */
   readonly groundTint?: GroundTint;
 }
@@ -303,12 +322,14 @@ export function buildCity(
           excludeRings: built.flatMap((v) => v.outerRings),
           treePalette: colours.trees,
         }).filter((t) => inside(t.position));
+  const furniture = cityFurniture(all, ground, options, inside);
   const city = {
     volumes,
     barriers,
     buildings,
     trees,
     cosmeticTrees,
+    furniture,
     roads,
     roadCount,
   };
@@ -333,6 +354,23 @@ function cityGroundTint(
     landUse: colours.landUse,
   });
   return { groundTint };
+}
+
+/**
+ * The street furniture of the kinds asked for, within the window and
+ * `withinM` (`buildStreetFurniture`).
+ */
+function cityFurniture(
+  all: readonly OsmFeature[],
+  ground: CityGround,
+  options: CityOptions,
+  inside: (p: EnuPoint) => boolean,
+): FurniturePlacement[] {
+  return buildStreetFurniture(all, {
+    ...ground,
+    window: options.window,
+    ...(options.furniture === undefined ? {} : { kinds: options.furniture }),
+  }).filter((f) => inside(f.position));
 }
 
 /**

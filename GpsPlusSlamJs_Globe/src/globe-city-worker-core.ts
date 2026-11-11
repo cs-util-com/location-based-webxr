@@ -86,6 +86,7 @@ export interface CityWorkerOsm {
       roads: boolean;
       window: never;
       cosmeticTrees: boolean;
+      furniture: readonly never[];
       inventedRoofs: boolean;
     },
   ): {
@@ -273,6 +274,9 @@ export function createCityWorkerCore(deps: CityWorkerDeps): CityWorkerCore {
             // wires the globe, so nothing is built that is not drawn.
             window: data.window as never,
             cosmeticTrees: false,
+            // No street furniture: the globe draws none yet, and the
+            // library default builds all four kinds.
+            furniture: [],
             // Flat tops where the map has no roof shape: invented roofs
             // more than double a warm delivery (cached tiles, so the build
             // is the delivery), measured by the library bench

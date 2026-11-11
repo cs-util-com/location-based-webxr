@@ -988,3 +988,89 @@ describe("buildCity, cosmetic trees", () => {
     expect(() => buildCity([forest], { frame }, undefined as never)).toThrow();
   });
 });
+
+describe("buildCity, street furniture", () => {
+  // WHY THIS MATTERS. The city builds the furniture its consumers draw: all
+  // four kinds by default (the globe and the harness have no POI layer), only
+  // the kinds asked for (OsmDemo's POI layer already draws benches and bins),
+  // none for an empty list (the globe, which draws none), and within withinM
+  // like every other object.
+  const lamp: OsmFeature = {
+    type: "node",
+    id: 40,
+    tags: { highway: "street_lamp" },
+    position: { lat: 50.9414, lng: 6.9584 },
+  };
+  const bench: OsmFeature = {
+    type: "node",
+    id: 41,
+    tags: { amenity: "bench" },
+    position: { lat: 50.9415, lng: 6.9585 },
+  };
+  const far: OsmFeature = {
+    type: "node",
+    id: 42,
+    tags: { barrier: "bollard" },
+    position: { lat: 50.98, lng: 6.9583 },
+  };
+
+  it("builds every kind by default", () => {
+    const city = buildCity([lamp, bench, far, TREE], { frame }, { window: W });
+    expect(city.furniture.map((f) => f.kind)).toEqual([
+      "lamp",
+      "bench",
+      "bollard",
+    ]);
+  });
+
+  it("builds only the kinds asked for, and none for an empty list", () => {
+    const some = buildCity(
+      [lamp, bench],
+      { frame },
+      {
+        window: W,
+        furniture: ["lamp", "bollard"],
+      },
+    );
+    expect(some.furniture.map((f) => f.key)).toEqual(["node/40"]);
+    const none = buildCity(
+      [lamp, bench],
+      { frame },
+      {
+        window: W,
+        furniture: [],
+      },
+    );
+    expect(none.furniture).toEqual([]);
+  });
+
+  it("keeps it within withinM", () => {
+    const city = buildCity(
+      [lamp, far],
+      { frame },
+      {
+        window: W,
+        withinM: 500,
+      },
+    );
+    expect(city.furniture.map((f) => f.key)).toEqual(["node/40"]);
+  });
+
+  it("leaves the buildings, trees and roads unchanged", () => {
+    const features = [...[lamp, bench, far], TREE, WALL, tower()];
+    const withIt = buildCity(features, { frame }, { window: W, roads: true });
+    const without = buildCity(
+      features,
+      { frame },
+      {
+        window: W,
+        roads: true,
+        furniture: [],
+      },
+    );
+    expect(withIt.buildings).toEqual(without.buildings);
+    expect(withIt.trees).toEqual(without.trees);
+    expect(withIt.roads).toEqual(without.roads);
+    expect(withIt.barriers).toEqual(without.barriers);
+  });
+});

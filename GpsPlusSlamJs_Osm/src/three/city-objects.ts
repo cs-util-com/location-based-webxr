@@ -16,12 +16,14 @@
 import * as THREE from "three";
 
 import type { MeshChunk } from "../mesh/chunk-meshes.js";
+import type { FurniturePlacement } from "../mesh/street-furniture.js";
 import type { MeshData } from "../mesh/mesh-data.js";
 import {
   packInstances,
   type TreePlacement,
   type TreeVariant,
 } from "../mesh/trees.js";
+import { streetFurnitureObjects } from "./street-furniture.js";
 
 /**
  * Wraps a builder's buffers in a geometry. The buffers are already validated.
@@ -386,20 +388,32 @@ export function cosmeticTreeObjects(
 }
 
 /**
- * The buildings, trees, invented trees (when the city has them) and roads
- * (when built) of a city (`buildCity`), as three.js objects.
+ * The buildings, trees, invented trees (when the city has them), roads (when
+ * built) and street furniture (when the city has it) of a city
+ * (`buildCity`), as three.js objects. `furnitureCutM`: how far from the eye
+ * furniture is drawn (`streetFurnitureObjects`, default 80 m).
  */
-export function cityObjects(city: {
-  readonly buildings: readonly MeshChunk[];
-  readonly trees: readonly TreePlacement[];
-  readonly cosmeticTrees?: readonly TreePlacement[];
-  readonly roads?: readonly MeshChunk[];
-}): THREE.Object3D[] {
+export function cityObjects(
+  city: {
+    readonly buildings: readonly MeshChunk[];
+    readonly trees: readonly TreePlacement[];
+    readonly cosmeticTrees?: readonly TreePlacement[];
+    readonly roads?: readonly MeshChunk[];
+    readonly furniture?: readonly FurniturePlacement[];
+  },
+  options: { readonly furnitureCutM?: number } = {},
+): THREE.Object3D[] {
   return [
     ...buildingObjects(city.buildings),
     ...treeObjects(city.trees),
     ...cosmeticTreeObjects(city.cosmeticTrees ?? []),
     ...roadObjects(city.roads ?? []),
+    ...streetFurnitureObjects(
+      city.furniture ?? [],
+      options.furnitureCutM === undefined
+        ? {}
+        : { cutM: options.furnitureCutM },
+    ),
   ];
 }
 

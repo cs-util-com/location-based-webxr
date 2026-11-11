@@ -38,9 +38,11 @@ three-free; three.js is an optional peer, loaded only by this entry.
   within each form (`packInstances` preserves order), so drawing the first n
   thins a wood evenly (city objects plan 2026-11-07-2315 M2a; the phone
   governor of M2b).
-- `cityObjects(city)` → buildings, then trees, then the cosmetic trees (when
-  the city has them), then roads (when the city has them), for a
-  `buildCity` result.
+- `cityObjects(city, { furnitureCutM? })` → buildings, then trees, then the
+  cosmetic trees (when the city has them), then roads (when the city has
+  them), then the street furniture (when the city has it;
+  `streetFurnitureObjects` in `street-furniture.ts`, drawn within
+  `furnitureCutM` of the eye, default 80 m), for a `buildCity` result.
 - `disposeCityObjects(objects)` → disposes each mesh's geometry and
   materials, skipping any object flagged `sharedResources`.
 
@@ -112,5 +114,6 @@ three forms (triangle counts, vertex shade, unit bounds, the material); disposal
 material and never the trees' shared geometry; the road row's material,
 layer flag and zero lift, and roads in `cityObjects` only when built; the
 cosmetic meshes flagged, one per form, in rank order, and drawn by
-`cityObjects` only when the city has them. OsmDemo's
+`cityObjects` only when the city has them. `street-furniture.test.ts` covers
+the furniture in `cityObjects` (its cut, and never freed). OsmDemo's
 `mesh-layers.test.ts` covers the rows that delegate here.

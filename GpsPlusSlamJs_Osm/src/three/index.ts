@@ -12,6 +12,13 @@ export {
   roadObjects,
   treeObjects,
 } from "./city-objects.js";
+export type { StreetFurnitureOptions } from "./street-furniture.js";
+export {
+  FURNITURE_CUT_M,
+  FURNITURE_REPACK_M,
+  repackFurniture,
+  streetFurnitureObjects,
+} from "./street-furniture.js";
 export type {
   AppliedGroundTint,
   ApplyGroundTintOptions,

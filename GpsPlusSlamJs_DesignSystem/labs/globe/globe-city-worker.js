@@ -101,7 +101,9 @@ async function start(id, target, heights, firstRings) {
         // 4); the cosmetic woods stay off on the globe until objects M2b.
         window: data.window,
         cosmeticTrees: false,
-        // As the Globe package's worker core: invented roofs more than double a warm delivery.
+        // As the Globe package's worker core: no furniture is drawn, and
+        // invented roofs more than double a warm delivery.
+        furniture: [],
         inventedRoofs: false,
       });
       built = true;
