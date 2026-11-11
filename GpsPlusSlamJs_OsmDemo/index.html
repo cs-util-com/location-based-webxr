@@ -1032,6 +1032,8 @@
       header[data-collapsed="true"] #colour-scheme-status,
       header[data-collapsed="true"] #invented-roofs-label,
       header[data-collapsed="true"] #invented-roofs-status,
+      header[data-collapsed="true"] #markings-label,
+      header[data-collapsed="true"] #markings-status,
       header[data-collapsed="true"] #layer-group-world,
       header[data-collapsed="true"] #layer-group-diagnostics,
       header[data-collapsed="true"] #sun-group {
@@ -1646,6 +1648,13 @@
         invented roofs
       </label>
       <span id="invented-roofs-status" role="status" aria-live="polite"></span>
+      <!-- ZEBRAS AND PEDESTRIAN AREAS: the crossings the map calls zebras and
+           the mapped squares, in the road buffers; a switch is a rebuild. -->
+      <label class="layer-toggle" id="markings-label">
+        <input type="checkbox" id="markings" checked />
+        zebras and pedestrian areas
+      </label>
+      <span id="markings-status" role="status" aria-live="polite"></span>
       <!-- A DIAGNOSTIC, outside the layer registry because it draws nothing in
            the scene. Off by default (DEC-R3-18) so the demo's default picture is
            unchanged. Since W6 it is the only member of the debug group — the

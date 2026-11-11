@@ -73,6 +73,11 @@ export interface DemoRootState {
    * the same reason: it is a build choice of this demo, not a layer.
    */
   readonly inventedRoofs: boolean;
+  /**
+   * Whether the city paints zebra crossings and draws the mapped pedestrian
+   * areas (the layer list's switch), a build choice like the roofs.
+   */
+  readonly markings: boolean;
 }
 
 export interface CreateDemoStoreOptions {
@@ -82,6 +87,8 @@ export interface CreateDemoStoreOptions {
   readonly colourScheme?: ColourSchemeName;
   /** The switch at boot, from the link (`?roofs=off`); on when absent. */
   readonly inventedRoofs?: boolean;
+  /** The switch at boot, from the link (`?markings=off`); on when absent. */
+  readonly markings?: boolean;
   /**
    * The layer switches at boot, from the link (`?furniture=off`);
    * `DEFAULT_LAYERS` when absent.
@@ -134,13 +141,16 @@ export function inventedRoofsChanged(on: boolean): {
   return { type: INVENTED_ROOFS_CHANGED, payload: on };
 }
 
-/** The invented-roofs reducer; a payload that is not a boolean is ignored. */
-function inventedRoofsReducer(initial: boolean) {
+/**
+ * A build-choice switch's reducer (the roofs, the markings); a payload that
+ * is not a boolean is ignored.
+ */
+function booleanChoiceReducer(type: string, initial: boolean) {
   return (
     state: boolean = initial,
     action: { readonly type: string; readonly payload?: unknown },
   ): boolean => {
-    if (action.type !== INVENTED_ROOFS_CHANGED) return state;
+    if (action.type !== type) return state;
     return typeof action.payload === "boolean" ? action.payload : state;
   };
 }
@@ -148,6 +158,21 @@ function inventedRoofsReducer(initial: boolean) {
 /** Whether the city invents roofs. */
 export function selectInventedRoofs(state: DemoRootState): boolean {
   return state.inventedRoofs;
+}
+
+const MARKINGS_CHANGED = "markings/changed";
+
+/** The zebras-and-pedestrian-areas switch's choice (or a revert of it). */
+export function markingsChanged(on: boolean): {
+  readonly type: typeof MARKINGS_CHANGED;
+  readonly payload: boolean;
+} {
+  return { type: MARKINGS_CHANGED, payload: on };
+}
+
+/** Whether the city paints zebras and draws the pedestrian areas. */
+export function selectMarkings(state: DemoRootState): boolean {
+  return state.markings;
 }
 
 /**
@@ -255,7 +280,14 @@ export function createDemoStore(options: CreateDemoStoreOptions) {
       colourScheme: colourSchemeReducer(
         options.colourScheme ?? DEFAULT_COLOUR_SCHEME,
       ),
-      inventedRoofs: inventedRoofsReducer(options.inventedRoofs ?? true),
+      inventedRoofs: booleanChoiceReducer(
+        INVENTED_ROOFS_CHANGED,
+        options.inventedRoofs ?? true,
+      ),
+      markings: booleanChoiceReducer(
+        MARKINGS_CHANGED,
+        options.markings ?? true,
+      ),
     },
     // RESTORED AFTER THE MIGRATION DROPPED IT. The old bare store passed this
     // as ; the factory hardcoded its own and had no

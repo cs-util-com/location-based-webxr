@@ -1722,7 +1722,7 @@ test.describe("the colour schemes (colour schemes plan 2026-11-10-0841)", () => 
   });
 });
 
-test.describe("the read-only boot overrides (roofs, furniture)", () => {
+test.describe("the read-only boot overrides (roofs, markings, furniture)", () => {
   // WHY THIS TEST MATTERS: `?roofs=off` is a read-only boot override for a
   // side-by-side comparison. It must seed the switch, and the switch must
   // never write the link: a link that changed under a switch would carry a
@@ -1752,6 +1752,36 @@ test.describe("the read-only boot overrides (roofs, furniture)", () => {
     await expect(box).toBeEnabled();
     await expect(box).not.toBeChecked();
     await expect(page).not.toHaveURL(/[?&]roofs=/);
+  });
+
+  // WHY THIS TEST MATTERS: `?markings=off` is the same read-only boot
+  // override for the zebras and pedestrian areas: it seeds the switch, a
+  // switch rebuilds and ends on its echo, and never writes the link.
+  test("markings=off seeds the switch, and a switch never writes the link", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    const base = `/?lat=${50.9231}&lng=${6.9445}`;
+    const box = page.locator("#markings");
+    const status = page.locator("#markings-status");
+
+    await page.goto(`${base}&markings=off`);
+    await waitForRefresh(page);
+    await expect(box).not.toBeChecked();
+    await box.check();
+    await expect(status).toHaveText("");
+    await expect(box).toBeEnabled();
+    await expect(box).toBeChecked();
+    await expect(page).toHaveURL(/[?&]markings=off(&|$)/);
+
+    await page.goto(base);
+    await waitForRefresh(page);
+    await expect(box).toBeChecked();
+    await box.uncheck();
+    await expect(status).toHaveText("");
+    await expect(box).toBeEnabled();
+    await expect(box).not.toBeChecked();
+    await expect(page).not.toHaveURL(/[?&]markings=/);
   });
 
   // WHY THIS TEST MATTERS: `?furniture=off` is the same kind of read-only

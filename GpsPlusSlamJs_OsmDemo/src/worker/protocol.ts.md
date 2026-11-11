@@ -33,7 +33,7 @@ target }`.
 - `WorkerReply` - `{ id, ok: true, value } | { id, ok: false, message, failedBuild? }`;
   `failedBuild` (`MeshBuildChoices`) is set only for a failed city build.
 - `MeshBuildChoices` - what the user chose to build (`colourScheme`,
-  `inventedRoofs`, both required; each later build switch adds its field). `isMeshBuildChoices(value)` guards it and refuses a reply missing either.
+  `inventedRoofs`, `markings`, all required; each later build switch adds its field). `isMeshBuildChoices(value)` guards it and refuses a reply missing any.
 - `MeshBuildError` - the error class that carries `failedBuild` in the worker
   and out of the RPC client; `failedBuildOf(error)` reads it back.
 - `isWorkerReply(value)`, `isWorkerEnvelope(value)` — guards for the two
@@ -133,6 +133,14 @@ transferred (about 2 MB at most), see `demo-worker.ts`.
   land-use ground tint; omitted means `true`. The page sends `false` while AR
   runs (AR draws no ground plane). It is a build choice, so it is in the build
   key and a change rebuilds.
+
+## `markings`
+
+- Request: `update.request.markings?` - whether the full build paints zebra
+  crossings and draws the mapped pedestrian areas; omitted means `true`; part
+  of the build key.
+- Reply: `TransferableMesh.markings?` echoes it (absent means `true`).
+- `MeshBuildChoices.markings` names it in every failed build.
 
 ## `inventedRoofs`
 

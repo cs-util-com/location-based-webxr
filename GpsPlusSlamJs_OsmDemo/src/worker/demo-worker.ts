@@ -314,6 +314,8 @@ function buildMesh(
   groundTint = true,
   /** Whether to invent roofs for the buildings the map says nothing about. */
   inventedRoofs = true,
+  /** Whether to paint zebras and draw the mapped pedestrian areas. */
+  markings = true,
 ): Omit<TransferableMesh, "buildKey"> {
   const options = meshOptions(frameOrigin);
   const all = [...features];
@@ -351,7 +353,9 @@ function buildMesh(
     // layer already draws benches and bins. Built whatever the layer switch
     // says: the switch filters at draw time, like every other layer.
     furniture: ["lamp", "bollard"],
-    roads: true,
+    // ZEBRAS AND PEDESTRIAN AREAS ride in the road chunks: the layer
+    // list's switch is a build choice, like the roofs.
+    roads: { markings },
     // THE LAND-USE TINT (city objects plan 2026-11-07-2315 M3): rasterised
     // over the same window, so it ends where the city's data ends. Built on
     // every desktop full pass whatever the layer switch says: the switch is a
@@ -478,6 +482,7 @@ function buildMesh(
     roadCount: city.roadCount,
     colourScheme: scheme,
     inventedRoofs,
+    markings,
     // COPIED, not transferred: at the 2 m texel and the largest window it is
     // about 2 MB, and the `colors` lesson in `transferablesOf` (a moved
     // buffer something re-read) is not worth relearning for a copy that cheap.
@@ -586,6 +591,8 @@ function meshUpdateFor(
   groundTint: boolean,
   /** Whether the full build invents roofs. */
   inventedRoofs: boolean,
+  /** Whether the full build paints zebras and draws pedestrian areas. */
+  markings: boolean,
 ): WorkerCalls["update"]["result"]["mesh"] {
   // FULL BUILD VERSUS REGIONS ONLY (W6), decided in `mesh-planner.ts` against
   // the mesh the PAGE draws, so a reply dropped on the way is rebuilt.
@@ -593,6 +600,7 @@ function meshUpdateFor(
     colourScheme: scheme,
     groundTint,
     inventedRoofs,
+    markings,
   });
   const inputs = {
     position: snapshot.position,
@@ -626,6 +634,7 @@ function meshUpdateFor(
           scheme,
           choices.groundTint,
           choices.inventedRoofs,
+          choices.markings,
         ),
       },
     };
@@ -748,6 +757,7 @@ async function handle<K extends WorkerCallKind>(
         drawnBuildKey,
         groundTint,
         inventedRoofs,
+        markings,
       } = payload as WorkerCalls["update"]["request"];
       const { pipeline, prefetch } = requireState();
       // THE SCHEME IS A NAME, looked up in the table the page reads; one this
@@ -758,6 +768,7 @@ async function handle<K extends WorkerCallKind>(
         throw new MeshBuildError(`no such colour scheme: "${scheme}"`, {
           colourScheme: scheme,
           inventedRoofs: inventedRoofs ?? true,
+          markings: markings ?? true,
         });
       }
       // THE QUEUE WAIT — post to dispatch, the one measurement here that has
@@ -867,6 +878,7 @@ async function handle<K extends WorkerCallKind>(
         drawnBuildKey,
         groundTint ?? true,
         inventedRoofs ?? true,
+        markings ?? true,
       );
       const meshMs = Math.max(0, nowMs() - meshStart);
       // WHAT THIS MESH IS STANDING ON (F1d). Recorded unconditionally, INCLUDING

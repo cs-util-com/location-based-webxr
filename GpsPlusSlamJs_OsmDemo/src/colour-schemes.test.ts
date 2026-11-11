@@ -188,6 +188,29 @@ function leastDistance(scheme: ColourScheme): number {
  */
 const MIN_LIGHTNESS_DISTANCE = 8;
 
+/** The car-road colours a scheme can draw, by the same rule as above. */
+function streetColours(scheme: ColourScheme): number[] {
+  return [
+    ...[...scheme.city.roads].filter(([key]) => !PATH_CLASSES.has(key)),
+    ...(scheme.city.roadsBySurface ? scheme.city.roadSurfaces : []),
+  ].map(([, rgb]) => rgb);
+}
+
+/** The smallest L* distance between the zebra paint and any street. */
+function markingsDistance(scheme: ColourScheme): number {
+  const paint = lightness(scheme.city.markings);
+  return Math.min(
+    ...streetColours(scheme).map((rgb) => Math.abs(lightness(rgb) - paint)),
+  );
+}
+
+/**
+ * The floor on {@link markingsDistance}, L* units. A HEX PROXY like the
+ * groups above (paint and roads both render raw). Swept over 10 / 15 / 20 /
+ * 25 on 2026-11-11: see colour-scheme-looks.ts.md for where each scheme falls.
+ */
+const MIN_MARKINGS_DISTANCE = 15;
+
 describe("the ten schemes", () => {
   it("are the plan's ten, in its order", () => {
     // Why this test matters: the dropdown order and the link names are the
@@ -217,6 +240,20 @@ describe("the ten schemes", () => {
         leastDistance(scheme),
         `${name}: ${JSON.stringify(groupLightness(scheme))}`,
       ).toBeGreaterThanOrEqual(MIN_LIGHTNESS_DISTANCE);
+    }
+  });
+
+  it("keep the zebra paint apart from every street it lies on", () => {
+    // Why this test matters: paint is drawn raw on a car road; a stripe as
+    // light or as dark as its street is no crossing at all. Every car-road
+    // colour a scheme can draw (class, and surface when it ranks surface
+    // first) is held MIN_MARKINGS_DISTANCE L* away from the paint.
+    for (const name of COLOUR_SCHEME_NAMES) {
+      const scheme = COLOUR_SCHEMES[name];
+      expect(
+        markingsDistance(scheme),
+        `${name}: paint L* ${lightness(scheme.city.markings).toFixed(1)}`,
+      ).toBeGreaterThanOrEqual(MIN_MARKINGS_DISTANCE);
     }
   });
 

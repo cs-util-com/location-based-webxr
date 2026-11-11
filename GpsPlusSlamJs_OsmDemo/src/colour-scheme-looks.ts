@@ -69,6 +69,8 @@ interface RoadTones {
   readonly minor: number;
   readonly paths: number;
   readonly sidewalk: number;
+  /** The zebra paint, drawn raw on the car roads. */
+  readonly markings: number;
   /** Surface colours read only when `roadsBySurface` is true; absent keeps today's. */
   readonly surfaces?: number;
 }
@@ -77,7 +79,7 @@ function roadsOf(
   tones: RoadTones,
 ): Pick<
   CityColourScheme,
-  "roads" | "roadSurfaces" | "sidewalk" | "defaultRoad"
+  "roads" | "roadSurfaces" | "sidewalk" | "defaultRoad" | "markings"
 > {
   const roleOf = (key: string): number => {
     if (tones.primary !== undefined && key.startsWith("primary")) {
@@ -97,6 +99,7 @@ function roadsOf(
         : recolour(D.roadSurfaces, () => surfaces),
     sidewalk: tones.sidewalk,
     defaultRoad: tones.minor,
+    markings: tones.markings,
   };
 }
 
@@ -172,6 +175,7 @@ export const ARCHITECT: ColourScheme = {
       minor: 0xccc7bd,
       paths: 0xc2baa9,
       sidewalk: 0xd2cdc3,
+      markings: 0xfdfcf8,
       surfaces: 0xccc7bd,
     }),
     ...barriersOf(0xd8d4cc, 0xb4bfa8),
@@ -206,6 +210,7 @@ export const BLUEPRINT: ColourScheme = {
       minor: 0xd2e2f2,
       paths: 0x7f9cc0,
       sidewalk: 0xc4d6ea,
+      markings: 0x2c4a72,
       surfaces: 0xd2e2f2,
     }),
     ...barriersOf(0x8fadcf, 0x4e6276),
@@ -238,6 +243,7 @@ export const MEDITERRANEAN: ColourScheme = {
       minor: 0xbba98f,
       paths: 0xd0b98f,
       sidewalk: 0xd2c3a8,
+      markings: 0xf6efe2,
     }),
     trees: treesOf(0x6f7a45, 0x5d6a3c),
     landUse: landUseOf({
@@ -268,6 +274,7 @@ export const NORDIC: ColourScheme = {
       minor: 0x7c8794,
       paths: 0x8f8a7e,
       sidewalk: 0x969ca4,
+      markings: 0xe6eaee,
     }),
     trees: treesOf(0x2f4a36, 0x264030),
     landUse: landUseOf({
@@ -300,6 +307,7 @@ export const PASTEL: ColourScheme = {
       minor: 0xc2c0cc,
       paths: 0xd6c3b0,
       sidewalk: 0xd2d0da,
+      markings: 0x8e88a8,
       surfaces: 0xc2c0cc,
     }),
     ...barriersOf(0xe6dcd6, 0x9cc7a0),
@@ -335,6 +343,7 @@ export const MAP: ColourScheme = {
       minor: 0xffffff,
       paths: 0xa9744b,
       sidewalk: 0xeeeeee,
+      markings: 0x555555,
       surfaces: 0xffffff,
     }),
     ...barriersOf(0x8c8278, 0x88b878),
@@ -369,6 +378,7 @@ export const NIGHT: ColourScheme = {
       minor: 0xa4a8ae,
       paths: 0x7a7e84,
       sidewalk: 0x6a6e74,
+      markings: 0xeef0f4,
       surfaces: 0xa4a8ae,
     }),
     ...barriersOf(0x3a3c40, 0x1e3524),
@@ -403,6 +413,7 @@ export const MONO: ColourScheme = {
       minor: 0xa0a0a0,
       paths: 0x909090,
       sidewalk: 0xb8b8b8,
+      markings: 0xf0f0f0,
       surfaces: 0xa0a0a0,
     }),
     ...barriersOf(0xa8a8a8, 0x5a5a5a),
@@ -441,6 +452,7 @@ export const CONTRAST: ColourScheme = {
       minor: 0x3a3a3a,
       paths: 0xe6a23c,
       sidewalk: 0x5a5a5a,
+      markings: 0xffffff,
       surfaces: 0x3a3a3a,
     }),
     ...barriersOf(0xd8d8d8, 0x1d5c3c),

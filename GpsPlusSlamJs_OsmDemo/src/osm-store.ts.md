@@ -78,4 +78,9 @@ The framework slice's own behaviour (the `fetchFailed` / `nonFatalError` split, 
   `furniture` off for `?furniture=off`, so the link sets the boot state rather
   than a toggle after boot.
 - `inventedRoofsChanged(on)` - its one action; a non-boolean payload is ignored.
+- `DemoRootState.markings` - whether the city paints zebra crossings and draws
+  the mapped pedestrian areas. Starts at `CreateDemoStoreOptions.markings`
+  (default `true`; `false` for `?markings=off`). `markingsChanged(on)` is its
+  action (a non-boolean payload is ignored), `selectMarkings` its selector;
+  both choices share one reducer factory.
 - `selectInventedRoofs(state)`.

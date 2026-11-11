@@ -79,3 +79,18 @@ COLOUR_SCHEMES.map.city.roads.get("primary"); // 0xf2a65a
   itself; every scheme has every road and land-use class.
 - `playwright-tests/scene-3d.spec.js` ("the colour schemes"): the switch
   repaints, says Applying until the echo, writes and boots the link.
+
+## Zebra paint (`markings`, city objects M4b, 2026-11-11)
+
+Every scheme names its zebra paint in `roadsOf` (`RoadTones.markings`): a
+near-white on light and dark streets, a dark ink in blueprint, map and
+pastel, where the streets are light. `colour-schemes.test.ts` holds the paint
+at least 15 L* from every car-road colour the scheme can draw (class, and
+surface where `roadsBySurface`). Measured distances: today 16.4 (its paint is lighter than O3's 0xd6d3ca,
+which sat 5.5 from the light motorway grey), architect
+18.6, blueprint 58.2, mediterranean 19.4, nordic 18.8, pastel 20.0, map 25.5,
+night 18.6, mono 23.0, contrast 75.6. Swept: a floor of 10 or 15 passes all
+ten; 20 fails today, architect, mediterranean, nordic and night (pastel sits
+on it);
+25 fails mono and pastel as well. A hex proxy: paint and roads both render
+raw, but fog and the light are not in it.

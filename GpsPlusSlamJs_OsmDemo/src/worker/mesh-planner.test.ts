@@ -194,6 +194,7 @@ describe("needsFullBuild", () => {
       colourScheme: "today",
       groundTint: true,
       inventedRoofs: true,
+      markings: true,
     });
     const skipped = meshBuildChoices({
       colourScheme: "today",
@@ -214,6 +215,19 @@ describe("needsFullBuild", () => {
       inventedRoofs: false,
     });
     expect(off.inventedRoofs).toBe(false);
+    expect(meshBuildKey({ ...AT, choices: off })).not.toBe(
+      meshBuildKey({ ...AT, choices: omitted }),
+    );
+  });
+
+  it("keys the zebras and pedestrian areas, which an omitted request field builds", () => {
+    // Why this test matters: they are merged into the road buffers, so the
+    // switch must rebuild the city, and a page that never sends the field
+    // gets the library default, on.
+    const omitted = meshBuildChoices({ colourScheme: "today" });
+    const off = meshBuildChoices({ colourScheme: "today", markings: false });
+    expect(omitted.markings).toBe(true);
+    expect(off.markings).toBe(false);
     expect(meshBuildKey({ ...AT, choices: off })).not.toBe(
       meshBuildKey({ ...AT, choices: omitted }),
     );

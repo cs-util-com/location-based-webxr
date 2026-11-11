@@ -3,6 +3,9 @@
  * buildings OpenStreetMap gives no roof shape on or off, shows the switch in
  * progress, and reverts a switch whose build failed.
  *
+ * The behaviour (the echo, the revert) is the shared build-choice switch
+ * (`build-choice-switch.ts`); this names it and words its status.
+ *
  * It follows the colour-scheme dropdown (`colour-scheme-switch.ts`) on
  * purpose, so both header controls behave alike:
  *
@@ -20,86 +23,26 @@
  * @see invented-roofs-switch.ts.md
  */
 
-export interface InventedRoofsSwitchOptions {
-  readonly box: HTMLInputElement;
-  /** A polite live region beside the box: "Applying ... roofs...". */
-  readonly status: HTMLElement;
-  /** The choice the page boots with (the store's, from the link). */
-  readonly initial: boolean;
-  /** Records the choice (the store dispatch); the rebuild follows from it. */
-  readonly choose: (on: boolean) => void;
-}
+import {
+  attachBuildChoiceSwitch,
+  type BuildChoiceSwitch,
+  type BuildChoiceSwitchOptions,
+} from "./build-choice-switch.js";
 
-export interface InventedRoofsSwitch {
-  /** The store's choice changed (a toggle, a revert): the box follows it. */
-  show(on: boolean): void;
-  /** A full mesh was drawn, built with `on` (absent means on). */
-  meshDrawn(on: boolean | undefined): void;
-  /**
-   * A refresh failed. `failedOn` is the choice the failed city build used,
-   * absent for any other failure.
-   */
-  failed(failedOn?: boolean): void;
-  /** The choice being applied, or `undefined` when none is. */
-  pending(): boolean | undefined;
-}
+export type InventedRoofsSwitchOptions = Omit<
+  BuildChoiceSwitchOptions,
+  "name" | "applying"
+>;
+
+export type InventedRoofsSwitch = BuildChoiceSwitch;
 
 /** Wires the checkbox; the caller keeps it in the page. */
 export function attachInventedRoofsSwitch(
   options: InventedRoofsSwitchOptions,
 ): InventedRoofsSwitch {
-  const { box, status, choose } = options;
-  if (typeof options.initial !== "boolean") {
-    throw new TypeError("invented roofs: initial must be a boolean");
-  }
-  box.checked = options.initial;
-
-  let chosen = options.initial;
-  /** The choice the drawn city was built with: what a failed switch reverts to. */
-  let drawn = options.initial;
-  let waitingFor: boolean | undefined;
-
-  const paint = (): void => {
-    box.disabled = waitingFor !== undefined;
-    status.textContent =
-      waitingFor === undefined
-        ? ""
-        : `Applying ${waitingFor ? "invented" : "flat"} roofs...`;
-  };
-
-  box.addEventListener("change", () => {
-    const on = box.checked;
-    if (on === chosen) return;
-    waitingFor = on;
-    paint();
-    choose(on);
+  return attachBuildChoiceSwitch({
+    ...options,
+    name: "invented roofs",
+    applying: (on) => `Applying ${on ? "invented" : "flat"} roofs...`,
   });
-
-  paint();
-  return {
-    show(on) {
-      chosen = on;
-      box.checked = on;
-    },
-    meshDrawn(on) {
-      if (on !== undefined && typeof on !== "boolean") return;
-      drawn = on ?? true;
-      if (waitingFor !== undefined && drawn === waitingFor) {
-        waitingFor = undefined;
-        paint();
-      }
-    },
-    failed(failedOn) {
-      if (waitingFor === undefined) return;
-      const ownBuild = failedOn === waitingFor;
-      waitingFor = undefined;
-      paint();
-      if (!ownBuild) return;
-      box.checked = drawn;
-      choose(drawn);
-    },
-    pending() {
-      return waitingFor;
-    },
-  };
 }

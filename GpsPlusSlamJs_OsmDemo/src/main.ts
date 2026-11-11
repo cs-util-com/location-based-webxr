@@ -188,8 +188,10 @@ import {
   colourSchemeChanged,
   createDemoStore,
   inventedRoofsChanged,
+  markingsChanged,
   selectColourScheme,
   selectInventedRoofs,
+  selectMarkings,
   selectLayers,
   selectOsmView,
 } from "./osm-store.js";
@@ -200,6 +202,7 @@ import {
   schemeLinkValue,
 } from "./colour-schemes.js";
 import { attachColourSchemeSwitch } from "./colour-scheme-switch.js";
+import { attachBuildChoiceSwitch } from "./build-choice-switch.js";
 import { attachInventedRoofsSwitch } from "./invented-roofs-switch.js";
 import {
   createRefreshCycle,
@@ -386,6 +389,9 @@ async function main(): Promise<void> {
     // A read-only boot override: the box changes the choice, never the link.
     inventedRoofs:
       new URLSearchParams(window.location.search).get("roofs") !== "off",
+    // THE ZEBRAS AND PEDESTRIAN AREAS too (?markings=off), read-only alike.
+    markings:
+      new URLSearchParams(window.location.search).get("markings") !== "off",
     // THE LINK CAN SWITCH THE STREET FURNITURE OFF (?furniture=off), read-only
     // like the roofs: the layer box changes it, never the link.
     initialLayers: toggleLayer(
@@ -522,6 +528,19 @@ async function main(): Promise<void> {
     status: el("invented-roofs-status"),
     initial: selectInventedRoofs(store.getState()),
     choose: (on) => store.dispatch(inventedRoofsChanged(on)),
+  });
+  // THE ZEBRAS AND PEDESTRIAN AREAS, the same build-choice switch: they ride
+  // in the road buffers, so a switch is a rebuild.
+  const markingsSwitch = attachBuildChoiceSwitch({
+    name: "zebras and pedestrian areas",
+    box: el<HTMLInputElement>("markings"),
+    status: el("markings-status"),
+    initial: selectMarkings(store.getState()),
+    choose: (on) => store.dispatch(markingsChanged(on)),
+    applying: (on) =>
+      on
+        ? "Applying zebras and pedestrian areas..."
+        : "Removing zebras and pedestrian areas...",
   });
 
   // THE PERF PANELS (W14, DEC-R3-18). Its own switch rather than a layer — it
@@ -1128,11 +1147,13 @@ async function main(): Promise<void> {
     groundTint: () => arSession === undefined,
     // THE INVENTED ROOFS, read at post time; AR draws the same buildings.
     inventedRoofs: () => selectInventedRoofs(store.getState()),
+    markings: () => selectMarkings(store.getState()),
     // A FAILED CITY BUILD names its choices; reported before the error
     // reaches the store, so the switch reverts only its own failed build.
     onBuildFailed: (failed) => {
       schemeSwitch.failed(failed.colourScheme);
       roofsSwitch.failed(failed.inventedRoofs);
+      markingsSwitch.failed(failed.markings);
     },
     // WHAT DRIVES BOTH LOADING INDICATORS. Not the store's `loading.phase`:
     // this cycle dispatches `fetchStarted` once, above the ring loop, and every
@@ -1180,6 +1201,7 @@ async function main(): Promise<void> {
         buildingView.setBrightnessTrim(look.brightnessTrim);
         schemeSwitch.meshDrawn(built.mesh.colourScheme);
         roofsSwitch.meshDrawn(built.mesh.inventedRoofs);
+        markingsSwitch.meshDrawn(built.mesh.markings);
         return;
       }
       if (latestMesh === undefined) return;

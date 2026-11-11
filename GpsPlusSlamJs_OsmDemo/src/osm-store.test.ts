@@ -20,8 +20,10 @@ import {
   colourSchemeChanged,
   createDemoStore,
   inventedRoofsChanged,
+  markingsChanged,
   selectColourScheme,
   selectInventedRoofs,
+  selectMarkings,
   selectOsmView,
   summariseSnapshot,
 } from "./osm-store.js";
@@ -330,6 +332,29 @@ describe("the invented roofs switch", () => {
     plain.store.dispatch(inventedRoofsChanged(false));
     expect(selectInventedRoofs(plain.store.getState())).toBe(false);
     expect(selectColourScheme(plain.store.getState())).toBe("today");
+  });
+});
+
+describe("the zebras and pedestrian areas switch", () => {
+  it("starts on, or off from the link, and takes only booleans", () => {
+    // Why this test matters: like the roofs, the flag is part of the
+    // worker's build key, and the link's choice is the boot state.
+    const plain = createDemoStore({
+      start: { lat: 50, lng: 7 },
+      category: "x",
+    });
+    expect(selectMarkings(plain.store.getState())).toBe(true);
+    const linked = createDemoStore({
+      start: { lat: 50, lng: 7 },
+      category: "x",
+      markings: false,
+    });
+    expect(selectMarkings(linked.store.getState())).toBe(false);
+    plain.store.dispatch({ type: "markings/changed", payload: "off" });
+    expect(selectMarkings(plain.store.getState())).toBe(true);
+    plain.store.dispatch(markingsChanged(false));
+    expect(selectMarkings(plain.store.getState())).toBe(false);
+    expect(selectInventedRoofs(plain.store.getState())).toBe(true);
   });
 });
 

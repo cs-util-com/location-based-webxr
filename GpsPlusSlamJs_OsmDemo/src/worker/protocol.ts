@@ -126,6 +126,11 @@ export interface TransferableMesh {
    */
   readonly inventedRoofs?: boolean;
   /**
+   * Whether this mesh was built with zebras and pedestrian areas; the layer
+   * list's switch ends on it. Absent means `true`, the library default.
+   */
+  readonly markings?: boolean;
+  /**
    * The identity of this build (`meshBuildKey` in `mesh-planner.ts`). The page
    * sends it back as `drawnBuildKey` on its next `update`, so the worker
    * rebuilds whenever the page does not draw this pass's build, including after
@@ -415,6 +420,12 @@ export interface WorkerCalls {
        * switch rebuilds the city.
        */
       readonly inventedRoofs?: boolean;
+      /**
+       * Whether the full build paints zebra crossings and draws the mapped
+       * pedestrian areas (merged into the road buffers). Omitted means
+       * `true`. Part of the build key, so the switch rebuilds the city.
+       */
+      readonly markings?: boolean;
       /**
        * Rings of chunks to score (W16). Omitted means the first pass's radius.
        *
@@ -734,6 +745,7 @@ export type WorkerReply =
 export interface MeshBuildChoices {
   readonly colourScheme: string;
   readonly inventedRoofs: boolean;
+  readonly markings: boolean;
 }
 
 /**
@@ -752,10 +764,15 @@ export class MeshBuildError extends Error {
 /** True for a value shaped like {@link MeshBuildChoices}; guards the reply. */
 export function isMeshBuildChoices(value: unknown): value is MeshBuildChoices {
   if (typeof value !== "object" || value === null) return false;
-  const choices = value as { colourScheme?: unknown; inventedRoofs?: unknown };
+  const choices = value as {
+    colourScheme?: unknown;
+    inventedRoofs?: unknown;
+    markings?: unknown;
+  };
   return (
     typeof choices.colourScheme === "string" &&
-    typeof choices.inventedRoofs === "boolean"
+    typeof choices.inventedRoofs === "boolean" &&
+    typeof choices.markings === "boolean"
   );
 }
 

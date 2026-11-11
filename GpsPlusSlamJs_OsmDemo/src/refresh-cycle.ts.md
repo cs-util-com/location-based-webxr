@@ -123,3 +123,7 @@ error ends its wait.
 as `inventedRoofs`; omitted, the request leaves the field out and the worker
 builds them. `main.ts` answers from the store (AR included). Tested by "sends
 whether invented roofs are wanted, read at POST time".
+
+`markings?: () => boolean` (zebras and pedestrian areas) is read and sent the
+same way; tested by "sends whether zebras and pedestrian areas are wanted,
+read at POST time".

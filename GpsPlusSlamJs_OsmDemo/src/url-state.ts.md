@@ -142,5 +142,6 @@ default removes, a property over arbitrary queries, no write when unchanged).
 
 ## Read-only boot overrides
 
-`roofs=off` (invented roofs off) and `furniture=off` (the street furniture
+`roofs=off` (invented roofs off), `markings=off` (no zebras or pedestrian
+areas) and `furniture=off` (the street furniture
 layer off) are read once by `main.ts` at boot and never written, so they add no writer here and DEC-R12-5 holds.

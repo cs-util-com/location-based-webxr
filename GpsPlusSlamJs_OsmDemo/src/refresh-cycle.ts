@@ -91,6 +91,8 @@ interface RefreshWorker {
       groundTint?: boolean;
       /** Whether to invent roofs; see `protocol.ts`. */
       inventedRoofs?: boolean;
+      /** Whether to paint zebras and draw pedestrian areas; see `protocol.ts`. */
+      markings?: boolean;
     },
     options: { signal: AbortSignal },
   ): Promise<UpdateResult>;
@@ -192,6 +194,11 @@ export interface RefreshCycleOptions extends StoreAccess {
    */
   readonly inventedRoofs?: () => boolean;
   /**
+   * Whether the build paints zebras and draws the pedestrian areas (the layer
+   * list's switch), read at post time. Omitted sends none, read as `true`.
+   */
+  readonly markings?: () => boolean;
+  /**
    * A city build failed in the worker: the choices it was built with. Called
    * BEFORE the error reaches the store, so a switch can tell its own failed
    * build from any other failure before the error ends its wait.
@@ -262,6 +269,7 @@ function postTimeReads(options: RefreshCycleOptions): {
   drawnBuildKey?: string;
   groundTint?: boolean;
   inventedRoofs?: boolean;
+  markings?: boolean;
 } {
   return definedOnly({
     geoidUndulationM: options.geoidUndulationM?.(),
@@ -269,6 +277,7 @@ function postTimeReads(options: RefreshCycleOptions): {
     drawnBuildKey: options.drawnBuildKey?.(),
     groundTint: options.groundTint?.(),
     inventedRoofs: options.inventedRoofs?.(),
+    markings: options.markings?.(),
   });
 }
 

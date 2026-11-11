@@ -122,13 +122,18 @@ describe("createRpcClient", () => {
       id: fake.posted[0]?.id,
       ok: false,
       message: "out of memory",
-      failedBuild: { colourScheme: "night", inventedRoofs: false },
+      failedBuild: {
+        colourScheme: "night",
+        inventedRoofs: false,
+        markings: true,
+      },
     });
     const error = await built.catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(Error);
     expect(failedBuildOf(error)).toEqual({
       colourScheme: "night",
       inventedRoofs: false,
+      markings: true,
     });
 
     const fetched = client.call("update", update);
@@ -161,6 +166,17 @@ describe("createRpcClient", () => {
     });
     expect(
       failedBuildOf(await partial.catch((caught: unknown) => caught)),
+    ).toBe(undefined);
+    // So is one missing the markings choice.
+    const noMarkings = client.call("update", update);
+    fake.reply({
+      id: fake.posted[4]?.id,
+      ok: false,
+      message: "partial",
+      failedBuild: { colourScheme: "night", inventedRoofs: true },
+    });
+    expect(
+      failedBuildOf(await noMarkings.catch((caught: unknown) => caught)),
     ).toBe(undefined);
   });
 

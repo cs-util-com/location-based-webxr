@@ -187,6 +187,12 @@ tint while it is off would make switching it on cost a full rebuild. The flag
 is one of the build choices (`meshBuildChoices`), so leaving AR rebuilds the
 city with the tint.
 
+## Zebras and pedestrian areas
+
+The `update` handler passes `markings ?? true` to the planner's choices and
+to `buildCity` as `roads: { markings }`, and echoes it on the mesh. The
+obstacle index ignores it: paint and squares are no obstacle.
+
 ## Invented roofs
 
 The `update` handler passes `inventedRoofs ?? true` to the planner's choices

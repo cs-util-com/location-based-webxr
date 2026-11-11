@@ -5,27 +5,22 @@
 The header checkbox "invented roofs": switches the roofs the city plans for
 buildings OpenStreetMap gives no roof shape on or off, shows the switch in
 progress, and reverts a switch whose own build failed. Modelled on
-`colour-scheme-switch.ts` so both header controls behave alike.
+`colour-scheme-switch.ts` so both header controls behave alike. Since M4b
+the behaviour lives in `build-choice-switch.ts` (shared with the zebras and
+pedestrian areas switch); this module names it and words its status.
 
 ## Public API
 
 - `attachInventedRoofsSwitch({ box, status, initial, choose })` - wires the
   checkbox; throws `TypeError` when `initial` is not a boolean.
-- `InventedRoofsSwitch`
-  - `show(on)` - the store changed; the box follows.
-  - `meshDrawn(on | undefined)` - a full mesh was drawn with that choice
-    (absent means on); ends a pending switch that asked for it.
-  - `failed(failedOn?)` - any failure ends a pending switch; only a failed city
-    build WITH the pending choice reverts the box and calls `choose(drawn)`.
-  - `pending()` - the choice being applied, or `undefined`.
+- `InventedRoofsSwitch` - the shared `BuildChoiceSwitch` (`show`, `meshDrawn`,
+  `failed`, `pending`; see `build-choice-switch.ts.md`).
 
 ## Invariants & assumptions
 
 - While a switch is pending the box is disabled and the status reads
   "Applying invented roofs..." or "Applying flat roofs...".
-- The in-progress state ends on the echoed mesh (the durable end state), never
-  on the dispatch; a mesh from a pass in flight with the old choice does not
-  end it.
+- The echo and revert rules are the shared switch's.
 - The box stays usable in AR: AR draws the same buildings as the map.
 
 ## Examples

@@ -207,6 +207,12 @@ None. Entry point only, loaded by `index.html`.
 - **`?furniture=off`** boots the street furniture layer off
   (`initialLayers`); a read-only boot override like `?roofs=off`. The status
   line counts the built lamps and bollards as `N furniture`.
+- **The zebras and pedestrian areas:** `?markings=off` boots them off
+  (read-only, like the roofs); the switch is `attachBuildChoiceSwitch` on
+  `#markings`, dispatching `markingsChanged`, read at post time by the
+  refresh cycle, ended by `meshDrawn(mesh.markings)` and reverted by
+  `failed(failedBuild.markings)`. Not read by the agent cycle: paint is no
+  obstacle.
 - **The invented roofs:**
   - **`?roofs=off`** boots with them off. A read-only boot override: nothing
     writes it back (see `url-state.ts`).
