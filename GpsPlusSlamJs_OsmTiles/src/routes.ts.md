@@ -28,7 +28,9 @@ guarded.
        `200 {status:"refreshing", url}`;
     5. failure backoff: `503 {status:"backoff"}` with `Retry-After` until
        the record allows. Checked before the backlog: a running fill and a
-       killed one both have a record;
+       killed one both have a record and cannot be told apart, so a POST
+       during a live fill also answers backoff (that viewer races, as
+       without the host); clients read backoff as about this cell only;
     6. the cell already pending: `202 {status:"queued", url, ahead}` without
        a second message;
     7. daily cap spent: `503 {status:"cap"}` until the UTC day ends;

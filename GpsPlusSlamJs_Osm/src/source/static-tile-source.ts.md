@@ -44,8 +44,11 @@ the library default is off.
      remembered (each fill takes 30-75 s, so the wait would run out). At 0
      (or unsaid) read again every `pollIntervalMs` while the next look still
      fits inside `maxWaitMs` from the start.
+   - 503 `{status:"backoff"}`: this cell's fill failed, was killed or is
+     running; the tile goes to `fallback` with no refusal remembered, since
+     it says nothing about other cells.
    - anything else (403 origin not allowed, 429 per-IP limit, 503 daily cap,
-     backlog full, an earlier fill failed, queue down): refusal.
+     backlog full, queue down): refusal.
 3. Refusal, network error, malformed JSON or the wait spent: the tile goes to
    `fallback` with the caller's options, at once, and no fill is asked for
    during `refusalMemoryMs`. Stored files are still read in that time: a
@@ -92,7 +95,8 @@ const source = new CachingSource(
 - `static-tile-source.test.ts`: the stored tile, fill-and-poll, the fill
   answering 200, fallback on 429 / 503 / 403 / 500 with the refusal remembered,
   stored tiles still read while refused, speculative fetches read-only, a
-  queued fill with others ahead skipped, the refresh ask for old data (once,
+  queued fill with others ahead skipped, a cell in backoff not refusing
+  other tiles, the refresh ask for old data (once,
   and never for young data, a failed ask harmless),
   an unreachable host, a malformed file, the bounded wait, the memory expiring,
   abort, the base URL check, and the property test.

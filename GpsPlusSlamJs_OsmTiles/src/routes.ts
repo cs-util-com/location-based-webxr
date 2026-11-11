@@ -286,7 +286,11 @@ async function answerMissing(
 ): Promise<Response> {
   const { cell, origin, now } = ctx;
   // The failure record comes first: a running fill writes one before its
-  // first attempt, and a killed fill leaves it behind with its marker.
+  // first attempt, and a killed fill leaves it behind with its marker. The
+  // two cannot be told apart here, so a POST during a live fill answers
+  // backoff too: that viewer races, as without the host, which is never
+  // slower than waiting a minute on a fill that was killed. Clients treat
+  // backoff as a fact about this cell only.
   const failure = await readFailure(deps.env.TILES, cell);
   if (failure !== undefined && failure.retryAt > now) {
     const wait = Math.ceil((failure.retryAt - now) / 1000);

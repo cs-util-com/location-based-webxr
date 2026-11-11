@@ -250,6 +250,25 @@ describe("StaticTileSource", () => {
     expect(calls.map((c) => c.method)).toEqual(["GET", "GET", "POST", "GET"]);
   });
 
+  it("a tile in fill backoff goes to the race without the host refusing other tiles", async () => {
+    // The host answers 503 backoff for one cell whose fill failed, was
+    // killed, or is running right now: a fact about that cell, not the host.
+    const { source, fallback, calls } = setup({
+      [`GET ${TILE_URL}`]: [
+        new Response("nf", { status: 404 }),
+        new Response("nf", { status: 404 }),
+      ],
+      [`POST ${FILL_URL}`]: [
+        json(503, { status: "backoff" }),
+        json(202, { status: "queued", ahead: 2 }),
+      ],
+    });
+    await source.fetchTile(TILE);
+    await source.fetchTile(TILE);
+    expect(fallback.calls).toHaveLength(2);
+    expect(calls.map((c) => c.method)).toEqual(["GET", "POST", "GET", "POST"]);
+  });
+
   it("does not wait behind other fills: a queued answer with fills ahead goes to the race at once", async () => {
     // A fill takes 30-75 s; behind another one the viewer would wait past
     // the bounded wait for nothing. The host still fills the tile for later.

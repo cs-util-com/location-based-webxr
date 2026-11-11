@@ -66,24 +66,22 @@ class HostDeclined extends Error {
 
 /**
  * The host is fine but this tile is not worth waiting for here (not stored
- * on a read-only look, or other fills queued ahead): the race, with no
- * refusal remembered.
+ * on a read-only look, other fills queued ahead, or the cell in fill
+ * backoff): the race, with no refusal remembered.
  */
 class HostSkipped extends Error {
   override readonly name = "HostSkipped";
 }
 
-/** How many fills the host says are ahead of a queued one; 0 when unsaid. */
-async function fillsAhead(response: Response): Promise<number> {
+/** The fill answer's JSON fields; empty when the body is not a JSON object. */
+async function fillBody(
+  response: Response,
+): Promise<{ status?: unknown; ahead?: unknown }> {
   try {
     const body: unknown = await response.json();
-    const ahead =
-      typeof body === "object" && body !== null
-        ? (body as { ahead?: unknown }).ahead
-        : undefined;
-    return typeof ahead === "number" && Number.isFinite(ahead) ? ahead : 0;
+    return typeof body === "object" && body !== null ? body : {};
   } catch {
-    return 0;
+    return {};
   }
 }
 
@@ -228,15 +226,24 @@ export class StaticTileSource implements OsmDataSource {
       method: "POST",
       ...(signal === undefined ? {} : { signal }),
     });
+    if (fill.status === 200) {
+      await fill.body?.cancel();
+      return "present";
+    }
+    const { status, ahead } = await fillBody(fill);
     if (fill.status === 202) {
-      const ahead = await fillsAhead(fill);
       // Each fill ahead takes 30-75 s, so the bounded wait would run out:
       // the race now, and the host fills the tile for whoever comes later.
-      if (ahead > 0) throw new HostSkipped(`${ahead} fills ahead of ${tile}`);
+      if (typeof ahead === "number" && ahead > 0) {
+        throw new HostSkipped(`${ahead} fills ahead of ${tile}`);
+      }
       return "queued";
     }
-    await fill.body?.cancel();
-    if (fill.status === 200) return "present";
+    // Backoff concerns this one cell (its fill failed, was killed or is
+    // running), so other tiles may still be filled.
+    if (fill.status === 503 && status === "backoff") {
+      throw new HostSkipped(`tile ${tile} in fill backoff`);
+    }
     throw new HostDeclined(`fill answered ${fill.status}`);
   }
 
