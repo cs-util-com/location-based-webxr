@@ -164,6 +164,11 @@ wired into its logic: every interaction is faked.
   two directions for the editor's bottom bar and a collapsible panel for
   problems, history, map loading and performance (one tabbed panel, or a
   drawer per status item); made 2026-11-03.
+- `editor-docking-1-dockview/` - a VS Code-style docking panel system for the
+  editor built on the dockview library (loaded from a CDN by an import map):
+  presets for the earlier panel prototypes, drag to dock, float, fold, saved
+  layouts per form factor, and a phone exploration with touch; its notes list
+  what works with a finger and the library's limits; made 2026-11-11.
 - `globe-look-1-glitter-haze/` ... `globe-look-4-relief-deck/` - four
   directions for the globe seen over open sea with the sun low (sun glitter,
   haze, cumulus clouds): the sea and the air alone, raymarched clouds, lit
