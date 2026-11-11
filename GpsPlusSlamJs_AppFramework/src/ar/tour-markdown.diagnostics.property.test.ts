@@ -80,39 +80,47 @@ function marksBefore(body: string, at: number): string {
 /** Marks that put a part inside a quote or a list item. */
 const CONTAINER_MARKS = /^(?:[ \t]|>|(?:[-*]|\d{1,9}\.)[ \t])*$/;
 
-/** The column widths of `marks` split at each quote mark, tabs to the next
- *  multiple of four. */
-function segmentWidths(marks: string): number[] {
-  const widths: number[] = [];
+/** For each segment of `marks` split at its quote marks: its column width
+ *  and the width of the indentation it starts with (tabs to the next
+ *  multiple of four). */
+function segmentColumns(marks: string): { width: number; lead: number }[] {
+  const segments: { width: number; lead: number }[] = [];
   let col = 0;
   let start = 0;
+  let lead: number | null = null;
   for (const ch of marks) {
     if (ch === '>') {
-      widths.push(col - start);
+      segments.push({ width: col - start, lead: lead ?? col - start });
       start = col + 1;
+      lead = null;
+    } else if (lead === null && ch !== ' ' && ch !== '\t') {
+      lead = col - start;
     }
     col = ch === '\t' ? col + 4 - (col % 4) : col + 1;
   }
-  widths.push(col - start);
-  return widths;
+  segments.push({ width: col - start, lead: lead ?? col - start });
+  return segments;
 }
 
 /** Whether a later part with `marks` before it is still inside the
- *  container a box opened in after `opener`: as many quote marks, and
- *  under each list mark of the opener only indentation at least as wide
- *  as that mark's (a new item, or a line indented less, ends it). */
-function sameContainer(marks: string, opener: string): boolean {
-  const segments = marks.split('>');
-  const openerSegments = opener.split('>');
-  if (segments.length !== openerSegments.length) return false;
-  const widths = segmentWidths(marks);
-  const openerWidths = segmentWidths(opener);
-  return segments.every(
-    (segment, i) =>
-      /^[ \t]*$/.test(segment) &&
-      (/^[ \t]*$/.test(openerSegments[i] ?? '') ||
-        (widths[i] ?? 0) >= (openerWidths[i] ?? 0))
-  );
+ *  container a box opened in after `opener`, as deep or deeper: the
+ *  opener's own levels hold (its quote marks, each with only indentation
+ *  before it, and under each of its list marks indentation at least as
+ *  wide as that mark's), and any marks beyond them are a container nested
+ *  inside, which keeps the box open. A new item, or a line indented less,
+ *  ends it. */
+function insideContainer(marks: string, opener: string): boolean {
+  if (!CONTAINER_MARKS.test(marks)) return false;
+  const own = segmentColumns(marks);
+  const open = segmentColumns(opener);
+  const openSegments = opener.split('>');
+  if (own.length < open.length) return false;
+  return open.every((level, i) => {
+    const at = own[i] ?? { width: 0, lead: 0 };
+    const nestedBeforeOwnQuote = i < open.length - 1 && at.lead !== at.width;
+    const listed = /\S/.test(openSegments[i] ?? '');
+    return !nestedBeforeOwnQuote && (!listed || at.lead >= level.width);
+  });
 }
 
 /** Bodies rich in the marks the diagnostics look at. */
@@ -177,14 +185,24 @@ function lineOf(body: string, at: number): number {
  * starts first (a link over two lines), which hides the fence's own part;
  * that part's fence lines count too. A box opened inside a quote or a list
  * item ends with it, as the reader decides: the marks before a later part
- * on its line show whether that part is still inside.
+ * on its line show whether that part is still inside. Returns how many
+ * parts it checked (a box's later parts are not).
+ *
+ * Approximations it still makes, each rare in generated bodies: a list
+ * mark followed by five or more spaces counts all of them as the item's
+ * indentation (the reader takes one); after a box opened under "- >", an
+ * unindented ">" line counts as inside (the reader ends the item); and a
+ * fence on a lazy continuation line of a quote or list paragraph (one
+ * without the marks) gets no opener, so its box never ends with the
+ * container.
  */
-function expectPartsOfTheirShape(body: string): void {
+function expectPartsOfTheirShape(body: string): number {
   let openMark: string | null = null;
   let opener: string | null = null;
+  let checked = 0;
   for (const d of diagnoseTourMarkdown(body, { assetExists: () => false })) {
     const marks = marksBefore(body, d.from);
-    if (opener !== null && !sameContainer(marks, opener)) openMark = null;
+    if (opener !== null && !insideContainer(marks, opener)) openMark = null;
     const wasOpen = openMark !== null;
     const own = body.slice(d.from, d.to);
     const text = own.trimStart();
@@ -192,12 +210,14 @@ function expectPartsOfTheirShape(body: string): void {
       d.kind === 'code' && openMark !== null && !SHAPE.code.test(text);
     if (!continues) {
       expect(text, `${d.kind} ${JSON.stringify(text)}`).toMatch(SHAPE[d.kind]);
+      checked += 1;
     }
     // A code part's first line is a fence line too.
     openMark = fenceStateAfter(d.kind === 'code' ? `\n${own}` : own, openMark);
     if (openMark === null) opener = null;
     else if (!wasOpen) opener = boxOpener(d.kind, marks);
   }
+  return checked;
 }
 
 /** The container marks a box opened by a part of `kind` lies after, or
@@ -233,9 +253,12 @@ describe('diagnoseTourMarkdown properties', () => {
     // unit tests: "a code box open when its fence line lies under a link
     // part".
     expect.hasAssertions();
-    fc.assert(fc.property(markdownish, expectPartsOfTheirShape), {
-      numRuns: 2000,
-    });
+    fc.assert(
+      fc.property(markdownish, (body) => {
+        expectPartsOfTheirShape(body);
+      }),
+      { numRuns: 2000 }
+    );
   });
 
   it('holds the shape check on code boxes the generator rarely builds', () => {
@@ -246,21 +269,24 @@ describe('diagnoseTourMarkdown properties', () => {
     // a box whose fence a link covers must not be; nor may a fence after a
     // `+` bullet, which the reader does not take as an item, close a box;
     // and a box opened inside a quote or a list item ends with it, while
-    // it stays open over a blank line the container keeps. Each body pins
-    // one.
+    // it stays open over a blank line the container keeps, and over a
+    // quote or list nested inside that container. Each body pins one, and
+    // each must have a part checked, or it would pass without a check.
     for (const body of [
       '```\n+ ```\n\na',
       '>```\n\n```\n\na',
       '- ```\n\n```\n\na',
       '> ```\n>\n> a',
       '- ```\n\n  a',
+      '> ```\n>\n> > a',
+      '- ```\n\n  - a',
       '```\na\n```\n\n```\nb\n```',
       '```\na\n```\nx\n```\nb\n```',
       'x\n```\na\n```\n\ny\n```\nb',
       '```\n\na\n```\n\n```\nb',
       '[\r\n```](asset:p)\n\na',
     ]) {
-      expectPartsOfTheirShape(body);
+      expect(expectPartsOfTheirShape(body), body).toBeGreaterThan(0);
     }
   });
 
