@@ -176,6 +176,7 @@ function outlineVolumes(
     options.inventedRoofs === true
       ? planInventedRoofs(
           inventedFootprints(outlines, parts, partsByOutline, claimed),
+          { frame: options.frame },
         )
       : undefined;
   for (const outline of outlines) {
@@ -1155,10 +1156,10 @@ function inventedFootprints(
 
 /**
  * The invented height (base to top, metres) of every building that takes an
- * invented roof or lid in `features`, planned in `frame`: the numbers
- * `buildBuildings` with `inventedRoofs: true` draws in the same frame, for
- * the obstacle index (`nav/obstacles.ts`). One planner, so an agent's
- * walls are the drawn ones.
+ * invented roof or lid in `features`: the numbers `buildBuildings` with
+ * `inventedRoofs: true` draws, in any frame (the planner does not depend on
+ * it; `frame` only needs to be near the buildings), for the obstacle index
+ * (`nav/obstacles.ts`). One planner, so an agent's walls are the drawn ones.
  */
 export function inventedRoofTotals(
   features: Iterable<OsmFeature>,
@@ -1168,6 +1169,7 @@ export function inventedRoofTotals(
   const { claimed, partsByOutline } = assignPartsToOutlines(outlines, parts);
   const plans = planInventedRoofs(
     inventedFootprints(outlines, parts, partsByOutline, claimed),
+    { frame },
   );
   const totals = new Map<OsmFeatureKey, number>();
   for (const [key, plan] of plans) totals.set(key, inventedTotalM(plan));

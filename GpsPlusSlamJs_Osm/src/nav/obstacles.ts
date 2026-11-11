@@ -162,14 +162,6 @@ export interface BuildObstacleIndexOptions {
    * too and gets the library heights.
    */
   readonly inventedRoofs?: boolean;
-  /**
-   * The ENU frame the screen plans its invented roofs in. The planner works
-   * in metres, so another frame moves corners by millimetres and can flip a
-   * roof that sits on a decision; pass the drawing frame for heights that
-   * match the screen exactly. Absent: a frame at the centre of the buildings'
-   * bounding box, which does not depend on the order of `features`.
-   */
-  readonly roofFrame?: EnuFrame;
 }
 
 /**
@@ -298,10 +290,9 @@ function buildingHeights(
   const tagged = (feature: OsmFeature) =>
     resolveHeights(feature.tags).totalHeightM;
   if (options.inventedRoofs === false || solids.length === 0) return tagged;
-  const totals = inventedRoofTotals(
-    features,
-    options.roofFrame ?? frameOverBuildings(solids),
-  );
+  // The planner gives the same roofs in any frame; this one is near the
+  // buildings, so its metres are close to true ones.
+  const totals = inventedRoofTotals(features, frameOverBuildings(solids));
   return (feature) => totals.get(featureKey(feature)) ?? tagged(feature);
 }
 

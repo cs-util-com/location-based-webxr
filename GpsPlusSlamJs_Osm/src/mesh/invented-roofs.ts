@@ -14,6 +14,15 @@
  *   size or neighbourhood) or one no sound skeleton fits; its height is the
  *   rules' refused height.
  *
+ * THE SAME ROOF IN EVERY FRAME. Each building is planned in its own
+ * coordinates: metres from its first corner, east-west measured at its own
+ * latitude (given the caller's frame), rounded to a tenth of a millimetre.
+ * Those numbers depend on the ground alone, so a frame anchored anywhere
+ * gives the same decisions, heights and mesh; the plan's `place` puts it back
+ * into the caller's frame. Planned in frame coordinates, a roof hinged on
+ * rounding: a skeleton event or an eave's soundness flipped when the origin
+ * moved by a centimetre, ten of Meggen's buildings among them.
+ *
  * ONE PLANNER FOR DRAWING AND NAVIGATION. `buildBuildings` draws these plans
  * and the obstacle index takes its heights from the same plans
  * (`inventedRoofTotals`), so an agent never walks through a roof the screen
@@ -24,7 +33,7 @@
 
 import type { OsmFeatureKey, OsmTags } from "../model/osm-feature.js";
 import { parseLengthMetres } from "./building-heights.js";
-import type { EnuPoint } from "./enu.js";
+import type { EnuFrame, EnuPoint } from "./enu.js";
 import { isCounterClockwise, signedArea2 } from "./enu.js";
 import type { ExtrudedBuilding } from "./extrude.js";
 import { MeshBuilder } from "./mesh-data.js";
@@ -79,9 +88,23 @@ interface InventedLid {
   readonly heightM: number;
 }
 
-/** A building with an invented roof. */
+/**
+ * Where a plan's own coordinates lie in the caller's frame: its point `p` is
+ * `(p.x * xScale + x, p.y + y)` there.
+ */
+export interface PlanPlace {
+  readonly x: number;
+  readonly y: number;
+  readonly xScale: number;
+}
+
+/**
+ * A building with an invented roof. Its rings and roof are in the building's
+ * own coordinates (see the file header); `place` maps them into the frame.
+ */
 export interface InventedRoof {
   readonly kind: "roof";
+  readonly place: PlanPlace;
   /** "gable", "shared" (vertical on shared walls only), "hip" or "cut". */
   readonly style: "gable" | "shared" | "hip" | "cut";
   /** The walls: simplified, outer counter-clockwise, holes clockwise. */
@@ -114,34 +137,108 @@ export function inventedTotalM(plan: InventedPlan): number {
  */
 export function planInventedRoofs(
   footprints: readonly InventedFootprint[],
-  params: RoofscapeParams = ROOFSCAPE_DEFAULTS,
+  options: PlanOptions = {},
 ): Map<OsmFeatureKey, InventedPlan> {
-  const entries: PriorEntry[] = footprints.map((f) => ({
+  const params = options.params ?? ROOFSCAPE_DEFAULTS;
+  const locals = footprints.map((f) => localOf(f, options.frame));
+  const entries: PriorEntry[] = footprints.map((f, i) => ({
     key: f.key,
     tags: f.tags,
     at: f.at,
+    xScale: locals[i]?.k ?? 1,
     ...(f.outlineKey === undefined ? {} : { outlineKey: f.outlineKey }),
   }));
   const priors = neighbourhoodPriors(entries, params);
   const walls = new SegmentGrid(footprints);
   const plans = new Map<OsmFeatureKey, InventedPlan>();
-  for (const footprint of footprints) {
-    const plan = planOne(footprint, priors, walls, params);
+  footprints.forEach((footprint, i) => {
+    const local = locals[i] ?? IDENTITY;
+    const plan = planOne(footprint, local, priors, walls, params);
     if (plan !== undefined) plans.set(footprint.key, plan);
-  }
+  });
   return plans;
+}
+
+/** How `planInventedRoofs` runs. */
+export interface PlanOptions {
+  /**
+   * The frame the footprints are in. With it, east-west lengths are measured
+   * at each building's own latitude, so the plans do not depend on where the
+   * frame is anchored. Without it, they still do not depend on a translation
+   * of the input (right for coordinates already in true metres).
+   */
+  readonly frame?: EnuFrame;
+  readonly params?: RoofscapeParams;
+}
+
+/** A tenth of a millimetre: a building's own coordinates are rounded to it. */
+const LOCAL_QUANTUM_M = 1e-4;
+/** A latitude is rounded to this before its cosine scales a building. */
+const LAT_QUANTUM_DEG = 1e-6;
+
+/**
+ * A building's own coordinates: `own = ((p.x - ox) * k, p.y - oy)`, rounded,
+ * with `(ox, oy)` its first corner and `k` true metres per frame metre east
+ * at its latitude.
+ */
+interface Local {
+  readonly ox: number;
+  readonly oy: number;
+  readonly k: number;
+}
+
+const IDENTITY: Local = { ox: 0, oy: 0, k: 1 };
+
+function localOf(footprint: InventedFootprint, frame?: EnuFrame): Local {
+  const o = footprint.polygons[0]?.[0]?.[0];
+  if (o === undefined || !Number.isFinite(o.x) || !Number.isFinite(o.y)) {
+    return IDENTITY;
+  }
+  if (frame === undefined) return { ox: o.x, oy: o.y, k: 1 };
+  const lat =
+    Math.round(frame.toLatLng(o).lat / LAT_QUANTUM_DEG) * LAT_QUANTUM_DEG;
+  const k =
+    Math.cos((lat * Math.PI) / 180) /
+    Math.cos((frame.origin.lat * Math.PI) / 180);
+  return { ox: o.x, oy: o.y, k: Number.isFinite(k) && k > 0 ? k : 1 };
+}
+
+const quantised = (v: number): number =>
+  Math.round(v / LOCAL_QUANTUM_M) * LOCAL_QUANTUM_M;
+
+function toLocal(p: EnuPoint, local: Local): EnuPoint {
+  return {
+    x: quantised((p.x - local.ox) * local.k),
+    y: quantised(p.y - local.oy),
+  };
+}
+
+function placeOf(local: Local): PlanPlace {
+  return { x: local.ox, y: local.oy, xScale: 1 / local.k };
+}
+
+/** A ring of a plan, in the caller's frame. */
+function placedRing(ring: readonly EnuPoint[], place: PlanPlace): EnuPoint[] {
+  return ring.map((p) => ({
+    x: p.x * place.xScale + place.x,
+    y: p.y + place.y,
+  }));
 }
 
 function planOne(
   footprint: InventedFootprint,
+  local: Local,
   priors: ReturnType<typeof neighbourhoodPriors>,
   walls: SegmentGrid,
   params: RoofscapeParams,
 ): InventedPlan | undefined {
-  const { key, tags, polygons } = footprint;
-  if (footprint.outlineKey !== undefined || polygons.length !== 1) {
+  const { key, tags } = footprint;
+  if (footprint.outlineKey !== undefined || footprint.polygons.length !== 1) {
     return undefined;
   }
+  const polygons = footprint.polygons.map((rings) =>
+    rings.map((ring) => ring.map((p) => toLocal(p, local))),
+  );
   const reason = keepReason(tags, {
     hasParts: footprint.hasParts,
     belowSurface: false,
@@ -160,12 +257,17 @@ function planOne(
       heightM: refusedHeightM(tags, area, key, prior, params),
     };
   }
-  return roofFor(footprint, area, walls, params);
+  return roofFor({ ...footprint, polygons }, local, area, walls, params);
 }
 
-/** The roof of a building granted one, or a lid when no sound roof fits. */
+/**
+ * The roof of a building granted one, or a lid when no sound roof fits.
+ * `footprint` is in the building's own coordinates; the neighbours' walls are
+ * found in the frame and brought into them.
+ */
 function roofFor(
   footprint: InventedFootprint,
+  local: Local,
   area: number,
   walls: SegmentGrid,
   params: RoofscapeParams,
@@ -177,7 +279,11 @@ function roofFor(
   );
   if (rings === undefined) return undefined;
   const outer = rings[0] as EnuPoint[];
-  const shared = sharedWalls(outer, key, walls.near(outer), params);
+  const place = placeOf(local);
+  const near = walls
+    .near(placedRing(outer, place))
+    .map((s) => ({ ...s, a: toLocal(s.a, local), b: toLocal(s.b, local) }));
+  const shared = sharedWalls(outer, key, near, params);
   const best = bestRoof(rings, shared, houseOf(tags, key, params), params);
   const eave = inventedEaveHeightM(tags, area, key);
   if (best === undefined) {
@@ -188,7 +294,14 @@ function roofFor(
   const stated = parseLengthMetres(tags["height"]);
   const eaveM =
     stated !== undefined && stated > 0 ? Math.max(2, stated - rise) : eave;
-  return { kind: "roof", rings, ...best, eaveM, totalM: eaveM + rise };
+  return {
+    kind: "roof",
+    place,
+    rings,
+    ...best,
+    eaveM,
+    totalM: eaveM + rise,
+  };
 }
 
 /** The seeded slope and gable wish of one house; a sacred building's are fixed. */
@@ -384,12 +497,41 @@ export function inventedRoofMesh(
   const roofStart = builder.vertexCount;
   builder.append(roof.mesh);
   addSoffits(builder, plan, eave);
+  const built = builder.build(roof.mesh.forcedEars);
   return {
-    ...builder.build(roof.mesh.forcedEars),
+    ...built,
+    ...placedMesh(built, plan.place),
     roofIsApproximate: false,
     roofVertices: { start: roofStart, end: roofStart + roof.surfaceVertices },
     roofMethod: "skeleton",
   };
+}
+
+/**
+ * A mesh built in a plan's own coordinates, moved into the frame. The buffers
+ * are in the render frame (x east, y up, z south): east takes the scale and
+ * the offset, north the offset only, and a normal leans by the inverse scale
+ * and is made unit again.
+ */
+function placedMesh(
+  mesh: { readonly positions: Float32Array; readonly normals: Float32Array },
+  place: PlanPlace,
+): { positions: Float32Array; normals: Float32Array } {
+  const positions = new Float32Array(mesh.positions.length);
+  const normals = new Float32Array(mesh.normals.length);
+  for (let i = 0; i + 2 < positions.length; i += 3) {
+    positions[i] = (mesh.positions[i] as number) * place.xScale + place.x;
+    positions[i + 1] = mesh.positions[i + 1] as number;
+    positions[i + 2] = (mesh.positions[i + 2] as number) - place.y;
+    const nx = (mesh.normals[i] as number) / place.xScale;
+    const ny = mesh.normals[i + 1] as number;
+    const nz = mesh.normals[i + 2] as number;
+    const length = Math.hypot(nx, ny, nz) || 1;
+    normals[i] = nx / length;
+    normals[i + 1] = ny / length;
+    normals[i + 2] = nz / length;
+  }
+  return { positions, normals };
 }
 
 /** Below this, in square metres, a soffit triangle is a sliver: skipped. */

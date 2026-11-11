@@ -92,18 +92,13 @@ when the user does.
   draws with), so an agent's walls are the drawn ones. False gives the
   library heights (`resolveHeights`), for a consumer drawing with the option
   off.
-- `options.roofFrame?: EnuFrame`: the frame the screen plans its roofs in.
-  The planner works in ENU metres, so another frame moves corners by
-  millimetres and can flip a roof sitting on a decision. Absent: a frame at
-  the centre of the buildings' bounding box (order-independent).
-  - **Measured 2026-11-11, default frame against the drawing frame**: heights
-    differing by more than 1 cm on Meggen 11 of 248, Hinterzarten 6 of 201,
-    Reuss 3 of 505, Heidelberg 1 of 439, Tokyo 1 of 176, Tower Bridge,
-    Westminster and Sylt 0 (every difference above 1 cm was also above
-    10 cm: these are decisions flipping, a gable or a cut, not drift). A
-    frame 300 m north of the site centre gives similar counts (Meggen 11,
-    Hinterzarten 7). So a consumer that navigates against drawn roofs passes
-    its drawing frame; the demo does.
+  - **Any frame gives the drawn heights.** The planner works in each
+    building's own coordinates (`invented-roofs.ts.md`), so the index plans in
+    a frame at the centre of the buildings' bounding box and still matches
+    the screen's frame to within float noise
+    (`site-invented-roof-obstacles.test.ts`, 5 mm). Before that, a frame
+    300 m away changed the height of 11 of Meggen's 248 buildings, and an
+    option let the consumer pass its drawing frame; it is gone.
   - **Cost** (index build, best of three, the drawing frame; off then on):
     Heidelberg 162 / 288 ms, Park Slope 378 / 684, Hinterzarten 61 / 134,
     Westminster 1358 / 1691, Reuss 4098 / 4230, Meggen 3874 / 3626, the other

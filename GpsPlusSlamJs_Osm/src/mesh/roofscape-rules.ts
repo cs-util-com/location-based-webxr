@@ -159,7 +159,18 @@ export interface PriorEntry {
   readonly at: EnuPoint;
   /** For a part: the outline it stands in, which votes for it. */
   readonly outlineKey?: string;
+  /**
+   * True metres per frame metre east at this building (default 1). A frame
+   * stretches east-west distances by its own latitude; with this the prior
+   * measures its radius on the ground, so a neighbour at the edge of it does
+   * not vote in one frame and not in another.
+   */
+  readonly xScale?: number;
 }
+
+/** A positive, finite scale, or 1. */
+const validScale = (k: number | undefined): number =>
+  k !== undefined && Number.isFinite(k) && k > 0 ? k : 1;
 
 /** A wall of some building, for `sharedWalls`. */
 export interface OwnedSegment {
@@ -311,6 +322,7 @@ export function inventedRoofRefusal(
 interface PriorPoint {
   readonly key: string;
   readonly at: EnuPoint;
+  readonly xScale: number;
   roof: string | undefined;
   readonly outline: boolean;
   readonly height: number | undefined;
@@ -365,6 +377,7 @@ export function neighbourhoodPriors(
     return {
       key: entry.key,
       at: entry.at,
+      xScale: validScale(entry.xScale),
       roof: entry.tags["roof:shape"],
       outline: entry.tags["building"] !== undefined && !part,
       height: part ? undefined : taggedHeightM(entry.tags),
@@ -373,7 +386,11 @@ export function neighbourhoodPriors(
   collapsePartVotes(points, entries);
 
   const radius = params.priorRadiusM;
-  const cellOf = (v: number) => Math.floor(v / radius);
+  // Cells wide enough that the 3 x 3 block around a point holds every point
+  // within the radius ON THE GROUND, however a frame stretches east-west.
+  let stretch = 1;
+  for (const p of points) stretch = Math.max(stretch, 1 / p.xScale);
+  const cellOf = (v: number) => Math.floor(v / (radius * stretch));
   const grid = new Map<string, PriorPoint[]>();
   for (const p of points) {
     if (!Number.isFinite(p.at.x) || !Number.isFinite(p.at.y)) continue;
@@ -404,7 +421,7 @@ export function neighbourhoodPriors(
       heights: [],
     };
     for (const other of candidates(self.at)) {
-      const dx = other.at.x - self.at.x;
+      const dx = (other.at.x - self.at.x) * self.xScale;
       const dy = other.at.y - self.at.y;
       if (dx * dx + dy * dy <= radius * radius) {
         countNeighbour(tally, other, params);

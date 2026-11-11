@@ -29,6 +29,17 @@ const entryArb = fc.record({
   height: fc.constantFrom(undefined, "4", "13", "25"),
 });
 
+/**
+ * Houses packed into a few prior radii, so neighbourhoods overlap. Integers:
+ * `fc.double` favours zero and the bounds, which never sit near the radius.
+ */
+const denseArb = fc.record({
+  x: fc.integer({ min: -500, max: 500 }),
+  y: fc.integer({ min: -150, max: 150 }),
+  roof: fc.constantFrom(undefined, "flat", "gabled"),
+  height: fc.constantFrom(undefined, "4", "13", "25"),
+});
+
 const toEntries = (
   rows: readonly {
     x: number;
@@ -103,6 +114,33 @@ describe("neighbourhoodPriors, as properties", () => {
             expect(actual).toBe(expected);
             const claimsVotes = /roofs nearby/.test(prior?.why ?? "");
             expect(claimsVotes && !enough).toBe(false);
+          }
+        },
+      ),
+    );
+  });
+
+  // Why this matters: the invented-roof planner measures east-west in frame
+  // metres, which are longer or shorter than true ones away from the frame's
+  // latitude. `xScale` is what keeps the neighbourhood a ground distance, so
+  // the prior (and the roof it decides) does not move with the frame.
+  it("finds the same neighbours when east-west is stretched and xScale undoes it", () => {
+    fc.assert(
+      fc.property(
+        // Dense enough that most houses have votes near the radius.
+        fc.array(denseArb, { minLength: 1, maxLength: 60 }),
+        fc.double({ min: 0.6, max: 1.6, noNaN: true }),
+        (rows, stretch) => {
+          const entries = toEntries(rows);
+          const stretched = entries.map((e) => ({
+            ...e,
+            at: { x: e.at.x * stretch, y: e.at.y },
+            xScale: 1 / stretch,
+          }));
+          const one = neighbourhoodPriors(entries, P);
+          const two = neighbourhoodPriors(stretched, P);
+          for (const entry of entries) {
+            expect(two.get(entry.key)).toEqual(one.get(entry.key));
           }
         },
       ),

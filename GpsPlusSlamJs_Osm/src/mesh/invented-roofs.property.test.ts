@@ -6,6 +6,7 @@ import {
   inventedRoofMesh,
   planInventedRoofs,
   type InventedFootprint,
+  type InventedPlan,
 } from "./invented-roofs.js";
 import { ROOFSCAPE_DEFAULTS } from "./roofscape-rules.js";
 
@@ -123,4 +124,52 @@ describe("invented roofs, as properties", () => {
       { numRuns: 40 },
     );
   });
+  // Why: a frame is a translation (and a tiny stretch) of the same ground,
+  // and the demo re-anchors its frame while the user walks. A roof that
+  // changed with the translation would flip on every re-anchor; before the
+  // planner worked in each building's own quantised coordinates, a shift of
+  // one centimetre changed ten roofs at Meggen.
+  it("plans the same decisions and heights wherever the frame's origin lies", () => {
+    fc.assert(
+      fc.property(
+        fc.array(houseArb, { minLength: 1, maxLength: 5 }),
+        fc.double({ min: -2000, max: 2000, noNaN: true }),
+        fc.double({ min: -2000, max: 2000, noNaN: true }),
+        (houses, dx, dy) => {
+          const fs = footprints(houses);
+          const moved = fs.map((f) => ({
+            ...f,
+            at: { x: f.at.x + dx, y: f.at.y + dy },
+            polygons: f.polygons.map((rings) =>
+              rings.map((ring) =>
+                ring.map((p) => ({ x: p.x + dx, y: p.y + dy })),
+              ),
+            ),
+          }));
+          const one = planInventedRoofs(fs);
+          const two = planInventedRoofs(moved);
+          expect([...two.keys()].sort()).toEqual([...one.keys()].sort());
+          for (const [key, plan] of one) {
+            const other = two.get(key);
+            expect(other?.kind, key).toBe(plan.kind);
+            expect(summary(other), key).toEqual(summary(plan));
+          }
+        },
+      ),
+      { numRuns: 60 },
+    );
+  });
 });
+
+/** What a plan decided, without its coordinates. */
+function summary(plan: InventedPlan | undefined): unknown {
+  if (plan === undefined) return undefined;
+  if (plan.kind === "lid") return { why: plan.why, h: plan.heightM };
+  return {
+    style: plan.style,
+    totalM: plan.totalM,
+    eaveM: plan.eaveM,
+    faces: plan.roof.faces.length,
+    caps: plan.roof.caps.length,
+  };
+}

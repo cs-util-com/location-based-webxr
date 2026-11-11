@@ -14,8 +14,8 @@ import { buildObstacleIndex, type ObstacleIndex } from "../../nav/obstacles.js";
  * building the map says nothing about is drawn at an invented height, and an
  * index still at the library's 6 m would let agents step over roofs the
  * screen shows, or stop at ones it does not. One planner feeds both; these
- * checks hold the two together on every captured site, in the frame the
- * screen draws in.
+ * checks hold the two together on every captured site. The index plans in a
+ * frame of its own, so they also hold that a roof does not depend on it.
  */
 
 const SITES = [
@@ -52,11 +52,9 @@ describe.each(SITES)("invented heights in the obstacle index at %s", (id) => {
   const features = parseOverpassJson(site.payload).features;
   const frame = enuFrameAt(site.centre);
 
-  it("indexes every building at the height it is drawn, in the drawing frame", () => {
+  it("indexes every building at the height it is drawn", () => {
     const drawn = buildBuildings(features, { frame, inventedRoofs: true });
-    const indexed = heightsOf(
-      buildObstacleIndex(features, undefined, { roofFrame: frame }),
-    );
+    const indexed = heightsOf(buildObstacleIndex(features));
     let compared = 0;
     for (const volume of drawn) {
       const height = indexed.get(volume.feature);
@@ -64,7 +62,10 @@ describe.each(SITES)("invented heights in the obstacle index at %s", (id) => {
       // the first are not indexed, the second never invented.
       if (height === undefined || volume.parentFeature !== undefined) continue;
       if (volume.heights.minHeightM > 0) continue;
-      expect(height, volume.feature).toBe(volume.heights.totalHeightM);
+      expect(height, volume.feature).toBeCloseTo(
+        volume.heights.totalHeightM,
+        2,
+      );
       compared += 1;
     }
     expect(compared).toBeGreaterThan(0);

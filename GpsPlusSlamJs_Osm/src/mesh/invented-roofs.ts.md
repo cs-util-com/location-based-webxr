@@ -13,7 +13,10 @@ the invented roofscape) and the toggles plan
 
 ## Public API
 
-- `planInventedRoofs(footprints, params = ROOFSCAPE_DEFAULTS): Map<OsmFeatureKey, InventedPlan>`
+- `planInventedRoofs(footprints, { frame?, params? } = {}): Map<OsmFeatureKey, InventedPlan>`
+  - `frame`: the `EnuFrame` the footprints are in; east-west lengths are then
+    measured at each building's own latitude. `params` defaults to
+    `ROOFSCAPE_DEFAULTS`.
   - One entry per planned building; a building the map describes has none
     and keeps the library volume.
   - `InventedFootprint`: `key`, `tags`, `at` (a point inside), `polygons`,
@@ -22,6 +25,10 @@ the invented roofscape) and the toggles plan
   - Never planned: parts, outlines with parts, multi-polygon outlines (the
     library volume stays), and every `keepReason` of the rules.
 - `InventedPlan = InventedLid | InventedRoof`
+  - A roof's `rings`, `roofRings` and `roof` are in the building's own
+    coordinates; `place: PlanPlace` (`x`, `y`, `xScale`) maps a point `p` to
+    `(p.x * xScale + x, p.y + y)` in the frame. `inventedRoofMesh` returns
+    the mesh already placed.
   - `InventedLid { kind: "lid", why, heightM }`: refused by class, by size or
     by flat neighbours, or no sound roof fits ("no sound roof", at the
     invented eave).
@@ -54,9 +61,22 @@ the invented roofscape) and the toggles plan
 - **A T-junction is accepted** where a gable wall's top meets the gable's
   bottom edge: the two edges are collinear, so there is no gap, only a vertex
   of one surface lying on the edge of the other.
-- **Frame dependence**: planned in ENU metres, so a different frame moves
-  corners by millimetres and can flip a roof sitting on a decision. Drawing
-  and `inventedRoofTotals` must use the same frame.
+- **Frame independence**: each building is planned in its own coordinates:
+  metres from its first corner, east-west scaled by `cos(lat) / cos(lat0)`
+  (its latitude rounded to 1e-6 degrees), rounded to 0.1 mm; neighbour walls
+  are brought into them, and the prior measures east-west distances the same
+  way (`xScale` on the entries). So any frame gives the same decisions and
+  heights, and the mesh differs only by where it is placed.
+  - **Why it was needed**: planned in frame metres, a skeleton event or an
+    eave's soundness sat on rounding: moving the origin by 1e-7 degrees
+    (about a centimetre) changed 10 of Meggen's invented roofs and 7 of
+    Hinterzarten's, and a frame 300 m away about as many. The demo
+    re-anchors its frame while the user walks, so roofs would have flipped
+    on every re-anchor.
+  - The rounding is what removes float noise: without it the same corner
+    differs in the last bits between frames, which is enough to flip an
+    event. A corner sitting exactly on a 0.1 mm boundary can still round two
+    ways; no captured site has one.
 - Defensive: a ring the skeleton refuses (`SkeletonFailure`) gives a lid,
   never a throw; slivers of soffit under 1e-6 m2 are skipped.
 
@@ -77,6 +97,10 @@ if (plan?.kind === "roof") {
   overhang on free walls, cut at the rise limit, a stated height, gable
   share), the mesh (top, roof range, soffit winding).
 - `invented-roofs.property.test.ts`: drawn top equals planned top within the
-  rise limit, and order invariance, over random rotated rectangles and Ls.
+  rise limit, order invariance, and the same plans under any translation of
+  the input, over random rotated rectangles and Ls.
+- `testdata/sites/site-invented-roof-frames.test.ts`: the same decisions
+  and heights (within 1 cm) with the frame moved east, north, both, and by
+  1e-7 degrees, at Meggen, Hinterzarten, Reuss, Heidelberg and Tokyo.
 - `../testdata/sites/site-invented-roofs.test.ts`: the fixture counts and the
   cross-checks with `buildBuildings` and `inventedRoofTotals`.

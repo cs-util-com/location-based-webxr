@@ -17,9 +17,8 @@ OSM features to building volumes, honouring `building:part`.
 - `inventedRoofTotals(features, frame): Map<OsmFeatureKey, number>` - the
   invented height (base to top) of every building that takes an invented roof
   or lid, from the same planner and the same input as `buildBuildings`, for
-  the obstacle index. Planned in ENU, so the caller passes the frame it draws
-  in; another frame moves the corners by millimetres and can flip a roof that
-  sits on a decision.
+  the obstacle index. The planner gives the same roofs in any frame
+  (`invented-roofs.ts.md`), so `frame` only needs to be near the buildings.
 - `solidBuildingFootprints(features): SolidFootprint[]` — the same
   parts-else-outline selection, **in lat/lng and with no frame**, for
   [`nav/obstacles.ts`](../nav/obstacles.ts.md). Returns `{ feature,

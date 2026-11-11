@@ -33,6 +33,9 @@ the answers into geometry.
   tags alone. Tagged roofs nearby decide first (one vote per building: an
   outline's tagged parts vote through it); else a neighbourhood whose outlines
   mostly state three storeys or more reads as flat; else nothing is known.
+  An entry's optional `xScale` (true metres per frame metre east, default 1)
+  makes the radius a ground distance, so a caller planning in an
+  equirectangular frame gets the same neighbours wherever the frame lies.
 - `simplifyRing(ring, toleranceM)`: drops near-collinear corners, never below a
   triangle.
 - `sharedWalls(ring, owner, segments, params)`: per wall, whether another
