@@ -53,10 +53,13 @@ const N_M = 45.68;
 
 /**
  * The editor with the sample tour, a pin 2 m east of its first station's
- * point, 1.5 m over the ground, and the 3D view shown.
+ * point, 1.5 m over the ground, and the 3D view shown. `turning` places a
+ * long text on its reading stand there instead, under the same id: a pin
+ * faces the viewer however it is turned, so it has no turn to edit.
  * @param {import("@playwright/test").Page} page
+ * @param {{ turning?: boolean }} [options]
  */
-async function openWithPin(page) {
+async function openWithPin(page, { turning = false } = {}) {
   await page.addInitScript(() => {
     // @ts-expect-error - the save goes to a download the test reads.
     delete window.showSaveFilePicker;
@@ -64,14 +67,20 @@ async function openWithPin(page) {
   await answerHosts(page);
   await openSample(page);
   const placed = await page.evaluate(
-    ({ id, alt }) => {
+    ({ id, alt, turning }) => {
       const hook = /** @type {any} */ (window).__tourEditor;
       const first = hook.manifest().stations[0];
+      const look = turning
+        ? {
+            kind: "longText",
+            view: "lectern",
+            title: "Turn me",
+            body: "A page.",
+          }
+        : { kind: "shortText", view: "pin", caption: "Drag me" };
       const out = hook.editor().place({
         id,
-        kind: "shortText",
-        view: "pin",
-        caption: "Drag me",
+        ...look,
         createdAtIso: "2026-10-22T08:00:00.000Z",
         station: first.id,
         geo: {
@@ -86,7 +95,7 @@ async function openWithPin(page) {
       hook.edited();
       return { kind: out.kind, station: first.id };
     },
-    { id: PIN, alt: SQUARE_GROUND_M + N_M + 1.5 },
+    { id: PIN, alt: SQUARE_GROUND_M + N_M + 1.5, turning },
   );
   expect(placed.kind).toBe("placed");
   await viewCommand(page, "switch");
@@ -491,7 +500,7 @@ test("answers every key: nudges, turns, height, delete, duplicate, Esc, and leav
   // About 15 s alone, and past the default 30 s on a loaded machine: a
   // dozen edits, each waited for in a software-drawn view.
   test.slow();
-  const station = await openWithPin(page);
+  const station = await openWithPin(page, { turning: true });
   await selectPin(page, station);
   const pose = async () => pinOf(await manifest(page))?.item;
   const start = await pose();
@@ -653,17 +662,18 @@ test("keys pressed in a menu stay in the menu: no nudge, no camera move, no top 
 
 // Why: the bottom bar's and the inspector's item actions are one step
 // each, and only the page shows that the bar's buttons, the 3D view's turn
-// and the clipboard work together: Align must leave the pin facing its
-// station's way exactly (and say so, writing nothing, the second time),
-// the copied text must be the inspector's numbers, and "Move to a new
-// station" must give the pin a station of its own without moving it.
+// and the clipboard work together: Align must leave the item (a reading
+// stand, which turns) facing its station's way exactly (and say so,
+// writing nothing, the second time), the copied text must be the
+// inspector's numbers, and "Move to a new station" must give the item a
+// station of its own without moving it.
 test("an item's actions: turned to its station's way, its position copied, moved into a station of its own", async ({
   page,
   context,
 }) => {
   test.slow();
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  const station = await openWithPin(page);
+  const station = await openWithPin(page, { turning: true });
   await selectPin(page, station);
   const pose = async () => pinOf(await manifest(page))?.item;
   const straight = { pose: { rotation: [0, 0, 0, 1] } };
@@ -719,7 +729,7 @@ test("an item's actions: turned to its station's way, its position copied, moved
   );
   for (const axis of [0, 1, 2]) expect(now[axis]).toBeCloseTo(at[axis], 2);
   await expect(
-    page.locator(".toast", { hasText: "with the pin in it" }),
+    page.locator(".toast", { hasText: "with the long text in it" }),
   ).toBeVisible();
   await page.keyboard.press("Control+z");
   await expect
@@ -770,7 +780,7 @@ test("draws the gizmo's handles at their size on the screen, at a phone, a table
 }) => {
   await useWideFont(page);
   await page.setViewportSize({ width: 1440, height: 900 });
-  const station = await openWithPin(page);
+  const station = await openWithPin(page, { turning: true });
   // A station: four dots of 30 px (picked from the tree, which a phone's
   // window folds away).
   await page.locator(`#tree-body [data-select="station:${station}"]`).click();
@@ -808,7 +818,7 @@ test("draws the gizmo's handles at their size on the screen, at a phone, a table
     const sizes = await page.evaluate(() =>
       /** @type {any} */ (window).__tourEditor.view3dGizmoSizes(),
     );
-    // A pin: no dots; its ring at least 32 px.
+    // A reading stand: no dots; its ring at least 32 px.
     expect(sizes.dotPx, at).toBe(0);
     expect(sizes.ringPx, at).toBeGreaterThanOrEqual(32 - 0.5);
     // The knob stands its 30 px stalk beyond the ring, on the screen.
