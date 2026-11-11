@@ -522,12 +522,17 @@ async function main(): Promise<void> {
     choose: (name) => store.dispatch(colourSchemeChanged(name)),
   });
   // THE INVENTED ROOFS, the same pattern: the box records the choice, the
-  // subscriber further down rebuilds, and `onMesh` ends the switch.
+  // switch rebuilds on every change of it (`refresh` is defined further
+  // down; no store change reaches it before then), and `onMesh` ends it.
   const roofsSwitch = attachInventedRoofsSwitch({
     box: el<HTMLInputElement>("invented-roofs"),
     status: el("invented-roofs-status"),
-    initial: selectInventedRoofs(store.getState()),
+    store: {
+      selected: () => selectInventedRoofs(store.getState()),
+      subscribe: (listener) => store.subscribe(listener),
+    },
     choose: (on) => store.dispatch(inventedRoofsChanged(on)),
+    rebuild: () => void refresh(),
   });
   // THE ZEBRAS AND PEDESTRIAN AREAS, the same build-choice switch: they ride
   // in the road buffers, so a switch is a rebuild.
@@ -535,8 +540,12 @@ async function main(): Promise<void> {
     name: "zebras and pedestrian areas",
     box: el<HTMLInputElement>("markings"),
     status: el("markings-status"),
-    initial: selectMarkings(store.getState()),
+    store: {
+      selected: () => selectMarkings(store.getState()),
+      subscribe: (listener) => store.subscribe(listener),
+    },
     choose: (on) => store.dispatch(markingsChanged(on)),
+    rebuild: () => void refresh(),
     applying: (on) =>
       on
         ? "Applying zebras and pedestrian areas..."
@@ -3299,22 +3308,6 @@ async function main(): Promise<void> {
     shownScheme = scheme;
     schemeSwitch.show(scheme);
     writeScheme(schemeUrl, schemeLinkValue(scheme));
-    void refresh();
-  });
-  let shownRoofs = selectInventedRoofs(store.getState());
-  store.subscribe(() => {
-    const on = selectInventedRoofs(store.getState());
-    if (on === shownRoofs) return;
-    shownRoofs = on;
-    roofsSwitch.show(on);
-    void refresh();
-  });
-  let shownMarkings = selectMarkings(store.getState());
-  store.subscribe(() => {
-    const on = selectMarkings(store.getState());
-    if (on === shownMarkings) return;
-    shownMarkings = on;
-    markingsSwitch.show(on);
     void refresh();
   });
 

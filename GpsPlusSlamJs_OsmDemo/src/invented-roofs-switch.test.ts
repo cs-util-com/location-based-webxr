@@ -13,14 +13,33 @@ function setup(initial = true): {
   status: HTMLElement;
   choose: ReturnType<typeof vi.fn>;
   control: InventedRoofsSwitch;
+  storeChanges: (on: boolean) => void;
 } {
   document.body.innerHTML =
     '<input type="checkbox" id="b"><span id="t" role="status"></span>';
   const box = document.getElementById("b") as HTMLInputElement;
   const status = document.getElementById("t") as HTMLElement;
-  const choose = vi.fn();
-  const control = attachInventedRoofsSwitch({ box, status, initial, choose });
-  return { box, status, choose, control };
+  let value = initial;
+  const listeners: Array<() => void> = [];
+  const choose = vi.fn((on: boolean) => {
+    value = on;
+    for (const listener of listeners) listener();
+  });
+  const control = attachInventedRoofsSwitch({
+    box,
+    status,
+    store: {
+      selected: () => value,
+      subscribe: (listener) => listeners.push(listener),
+    },
+    choose,
+    rebuild: () => undefined,
+  });
+  const storeChanges = (on: boolean): void => {
+    value = on;
+    for (const listener of listeners) listener();
+  };
+  return { box, status, choose, control, storeChanges };
 }
 
 function toggle(box: HTMLInputElement): void {
@@ -93,8 +112,8 @@ describe("attachInventedRoofsSwitch", () => {
   it("follows the store when it changes elsewhere", () => {
     // Why this test matters: a revert or another control changes the store;
     // the box must show the store's value.
-    const { box, control } = setup(true);
-    control.show(false);
+    const { box, storeChanges } = setup(true);
+    storeChanges(false);
     expect(box.checked).toBe(false);
   });
 

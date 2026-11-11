@@ -11,9 +11,9 @@ pedestrian areas switch); this module names it and words its status.
 
 ## Public API
 
-- `attachInventedRoofsSwitch({ box, status, initial, choose })` - wires the
-  checkbox; throws `TypeError` when `initial` is not a boolean.
-- `InventedRoofsSwitch` - the shared `BuildChoiceSwitch` (`show`, `meshDrawn`,
+- `attachInventedRoofsSwitch({ box, status, store, choose, rebuild })` - the
+  shared switch's options without `name` and `applying`.
+- `InventedRoofsSwitch` - the shared `BuildChoiceSwitch` (`meshDrawn`,
   `failed`, `pending`; see `build-choice-switch.ts.md`).
 
 ## Invariants & assumptions
@@ -29,8 +29,9 @@ pedestrian areas switch); this module names it and words its status.
 const roofs = attachInventedRoofsSwitch({
   box: el<HTMLInputElement>("invented-roofs"),
   status: el("invented-roofs-status"),
-  initial: selectInventedRoofs(store.getState()),
+  store: { selected: () => selectInventedRoofs(store.getState()), subscribe },
   choose: (on) => store.dispatch(inventedRoofsChanged(on)),
+  rebuild: () => void refresh(),
 });
 roofs.meshDrawn(mesh.inventedRoofs);
 ```

@@ -3,19 +3,10 @@
  * buildings OpenStreetMap gives no roof shape on or off, shows the switch in
  * progress, and reverts a switch whose build failed.
  *
- * The behaviour (the echo, the revert) is the shared build-choice switch
- * (`build-choice-switch.ts`); this names it and words its status.
- *
- * It follows the colour-scheme dropdown (`colour-scheme-switch.ts`) on
- * purpose, so both header controls behave alike:
- *
- * - "Done" is the ECHO, not the dispatch: the switch is a full rebuild in the
- *   worker, and a pass already in flight with the old choice also ends in a
- *   full mesh, so the in-progress state clears only on a drawn mesh built with
- *   the chosen value (`TransferableMesh.inventedRoofs`, absent meaning on).
- * - Every failure ends the switch; only a failed city build WITH the chosen
- *   value (`failedBuild.inventedRoofs`) reverts it to what is drawn. The error
- *   itself goes to the page's existing error channel.
+ * The behaviour (the rebuild, the echo on `TransferableMesh.inventedRoofs`,
+ * the revert on `failedBuild.inventedRoofs`) is the shared build-choice
+ * switch, described in `build-choice-switch.ts`; this names it and words its
+ * status.
  *
  * AR draws the same buildings as the map, so unlike the colour schemes the
  * box stays usable in AR.

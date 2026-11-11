@@ -23,17 +23,26 @@ export interface BuildChoiceSwitchOptions {
   readonly box: HTMLInputElement;
   /** A polite live region beside the box. */
   readonly status: HTMLElement;
-  /** The choice the page boots with (the store's, from the link). */
-  readonly initial: boolean;
-  /** Records the choice (the store dispatch); the rebuild follows from it. */
+  /**
+   * Where the choice lives: `selected` reads it (at boot, from the link) and
+   * `subscribe` calls back on every store change.
+   */
+  readonly store: {
+    readonly selected: () => boolean;
+    readonly subscribe: (listener: () => void) => unknown;
+  };
+  /** Records the choice (the store dispatch). */
   readonly choose: (on: boolean) => void;
+  /**
+   * Starts the rebuild. The switch calls it on every change of the store's
+   * choice, so no switch can be wired without its rebuild.
+   */
+  readonly rebuild: () => void;
   /** The status while a choice is applied, e.g. "Applying flat roofs...". */
   readonly applying: (on: boolean) => string;
 }
 
 export interface BuildChoiceSwitch {
-  /** The store's choice changed (a toggle, a revert): the box follows it. */
-  show(on: boolean): void;
   /** A full mesh was drawn, built with `on` (absent means on). */
   meshDrawn(on: boolean | undefined): void;
   /**
@@ -49,15 +58,18 @@ export interface BuildChoiceSwitch {
 export function attachBuildChoiceSwitch(
   options: BuildChoiceSwitchOptions,
 ): BuildChoiceSwitch {
-  const { box, status, choose, applying } = options;
-  if (typeof options.initial !== "boolean") {
-    throw new TypeError(`${options.name}: initial must be a boolean`);
+  const { box, status, store, choose, rebuild, applying } = options;
+  const initial = store.selected();
+  if (typeof initial !== "boolean") {
+    throw new TypeError(
+      `${options.name}: the store's choice must be a boolean`,
+    );
   }
-  box.checked = options.initial;
+  box.checked = initial;
 
-  let chosen = options.initial;
+  let chosen = initial;
   /** The choice the drawn city was built with: what a failed switch reverts to. */
-  let drawn = options.initial;
+  let drawn = initial;
   let waitingFor: boolean | undefined;
 
   const paint = (): void => {
@@ -73,12 +85,21 @@ export function attachBuildChoiceSwitch(
     choose(on);
   });
 
+  const show = (on: boolean): void => {
+    chosen = on;
+    box.checked = on;
+  };
+  // The store's choice changed (this box, a revert, anything else): the box
+  // follows it and the city is rebuilt with it.
+  store.subscribe(() => {
+    const on = store.selected();
+    if (on === chosen) return;
+    show(on);
+    rebuild();
+  });
+
   paint();
   return {
-    show(on) {
-      chosen = on;
-      box.checked = on;
-    },
     meshDrawn(on) {
       if (on !== undefined && typeof on !== "boolean") return;
       drawn = on ?? true;

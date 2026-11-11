@@ -209,16 +209,17 @@ None. Entry point only, loaded by `index.html`.
   line counts the built lamps and bollards as `N furniture`.
 - **The zebras and pedestrian areas:** `?markings=off` boots them off
   (read-only, like the roofs); the switch is `attachBuildChoiceSwitch` on
-  `#markings`, dispatching `markingsChanged`; a store subscription shows it
-  and refreshes, the refresh cycle reads it at post time; the switch is ended by `meshDrawn(mesh.markings)` and reverted by
+  `#markings`, dispatching `markingsChanged`; the switch itself rebuilds on
+  every change of the store's choice, the refresh cycle reads it at post
+  time; the switch is ended by `meshDrawn(mesh.markings)` and reverted by
   `failed(failedBuild.markings)`. Not read by the agent cycle: paint is no
   obstacle.
 - **The invented roofs:**
   - **`?roofs=off`** boots with them off. A read-only boot override: nothing
     writes it back (see `url-state.ts`).
   - **The switch** is `attachInventedRoofsSwitch` on `#invented-roofs`: a
-    toggle dispatches `inventedRoofsChanged`; a store subscription shows it and
-    refreshes, which rebuilds because the flag is a build choice in the
+    toggle dispatches `inventedRoofsChanged`; the switch's own store
+    subscription shows it and refreshes, which rebuilds because the flag is a build choice in the
     worker's key. The refresh cycle and the agent cycle read it at post time,
     AR included; `onMesh` ends the switch on the echo, `onBuildFailed` reverts
     its own failed build.
