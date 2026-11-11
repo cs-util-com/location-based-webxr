@@ -201,6 +201,41 @@ describe("createFolderCommands - ungroup, move, rename", () => {
     expect(t.said).toEqual([folderRefusalLine("gone")]);
   });
 
+  // Why: an ungroup can lift a nested folder past the format's 10 km
+  // bound in its holder (two poses within it summing past it); the store
+  // refuses it, and the page must say that reason, not "gone".
+  it("refuses to ungroup a folder that would lift another past the 10 km bound, saying so", () => {
+    const folder = (id: string, northM: number, children: unknown[]) => ({
+      id,
+      kind: "folder",
+      title: id,
+      pose: { position: [northM, 0, 0], rotation: [0, 0, 0, 1] },
+      children,
+    });
+    const wire = tourOf([], {
+      stations: [
+        {
+          id: "wide",
+          title: "The wide field",
+          geo: { ...AT, rotation: [0, 0, 0, 1] },
+          activateRadiusM: 50,
+          foundRadiusM: 25,
+          hint: "arrow",
+          ...stationContent([
+            folder("outer", 8000, [
+              folder("inner", 8000, [pin("e", [-8000, 0, 0])]),
+            ]),
+          ] as never),
+        },
+      ],
+    });
+    const t = setup(parseTourManifest(JSON.parse(serializeTourManifest(wire))));
+    const before = t.state();
+    expect(t.commands.ungroup("outer")).toBeNull();
+    expect(t.state()).toBe(before);
+    expect(t.said).toEqual([folderRefusalLine("tooFar")]);
+  });
+
   it("moves an item into a folder and out again, each said", () => {
     const t = setup();
     expect(t.commands.moveInto("p", "yard")).toBe(true);

@@ -46,6 +46,7 @@ import {
   manifestToWrite,
   objectsFolderRefusal,
   tourDocumentActions as act,
+  ungroupRefusal,
   tourDocumentReducer as reduce,
   type TourDocumentState,
 } from "./tour-document.js";
@@ -813,6 +814,42 @@ function farTour(): TourManifest {
   return parseTourManifest(JSON.parse(serializeTourManifest(wire)));
 }
 
+/** Station "deep": nested folders read from a file, every pose within the
+ *  10 km bound in its holder and every item within it of the station.
+ *  "lift" (`liftM` north) holds "far" (`farM` north) holding item "x"
+ *  (`itemM` north); "hold" (`holdM`) holds "mid" (`midM`) holding item
+ *  "y" (`itemM`). */
+function nestedTour(liftM: number, farM: number, itemM: number): TourManifest {
+  const folder = (id: string, northM: number, children: unknown[]) => ({
+    id,
+    kind: "folder",
+    title: id,
+    pose: { position: [northM, 0, 0], rotation: [0, 0, 0, 1] },
+    children,
+  });
+  const wire = tourOf([], {
+    stations: [
+      {
+        id: "deep",
+        title: "Deep",
+        geo: { ...AT, rotation: [0, 0, 0, 1] },
+        activateRadiusM: 50,
+        foundRadiusM: 25,
+        hint: "arrow",
+        ...stationContent([
+          folder("lift", liftM, [
+            folder("far", farM, [pin("x", [itemM, 0, 0])]),
+          ]),
+          folder("hold", -liftM, [
+            folder("mid", farM, [pin("y", [farM, 0, 0])]),
+          ]),
+        ] as never),
+      },
+    ],
+  });
+  return parseTourManifest(JSON.parse(serializeTourManifest(wire)));
+}
+
 describe("the format's 10 km bound in a folder", () => {
   // Why: an item's pose in its folder is bounded like one in its station
   // (10 km per axis). A new folder stands at its items' centroid, so items
@@ -849,6 +886,34 @@ describe("the format's 10 km bound in a folder", () => {
     expect(objectsFolderRefusal(start, ["e"], "nothing")).toBe("notHere");
     expect(objectsFolderRefusal(start, ["nope"], "grp")).toBe("notHere");
     expect(objectsFolderRefusal(start, ["w1"], null)).toBeNull();
+  });
+
+  // Why: an ungroup lifts the folder's own folders and items into its
+  // holder, each at its pose composed with the removed folder's. Two
+  // poses within the bound can sum past it (nested folders a file may
+  // carry), and every later save would then throw. Swept over the folder
+  // offsets 2-8 km; at and below 5 km every sum stays within 10 km.
+  it("refuses an ungroup that would lift a folder or an item past the bound, and takes one within it", () => {
+    for (const offsetM of [2000, 5000, 8000]) {
+      const start = opened(nestedTour(offsetM, offsetM, -offsetM));
+      const past = 2 * offsetM > 10_000;
+      for (const folderId of ["lift", "mid"]) {
+        // "lift" lifts "far" to 2x north; "mid" lifts "y" to 2x north
+        // of "hold".
+        expect(ungroupRefusal(start, "deep", folderId)).toBe(
+          past ? "tooFar" : null,
+        );
+        const after = reduce(
+          start,
+          act.folderUngrouped({ stationId: "deep", folderId, what: "u" }),
+        );
+        expect(after === start).toBe(past);
+        expect(() => saved(after)).not.toThrow();
+      }
+    }
+    expect(ungroupRefusal(opened(nestedTour(1, 1, 1)), "deep", "no")).toBe(
+      "gone",
+    );
   });
 });
 
