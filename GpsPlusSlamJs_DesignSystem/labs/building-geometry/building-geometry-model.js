@@ -204,7 +204,8 @@ export const PALETTES = ["seeded", "class"];
 /**
  * The page's state from its query string: `building` and `view`, each
  * falling back to the first one when missing or unknown, so a stale link
- * still opens a picture; `palette` falls back to "seeded".
+ * still opens a picture; `palette` falls back to "seeded"; `roofs` is the
+ * library's invented roofs, on unless the link says `roofs=off`.
  */
 export function parseParams(search) {
   const params = new URLSearchParams(search);
@@ -216,15 +217,23 @@ export function parseParams(search) {
   const views = Object.keys(building.views);
   const asked = params.get("view");
   const view = views.includes(asked) ? asked : views[0];
-  return { building, view, palette };
+  const roofs = params.get("roofs") !== "off";
+  return { building, view, palette, roofs };
 }
 
 /**
  * The query string of a state; the inverse of `parseParams`. The default
- * palette stays out of the link, so links from before the toggle still match.
+ * palette and the default roofs (invented) stay out of the link, so links
+ * from before the toggles still match.
  */
-export function searchFor(buildingId, view, palette = PALETTES[0]) {
+export function searchFor(
+  buildingId,
+  view,
+  palette = PALETTES[0],
+  roofs = true,
+) {
   const params = new URLSearchParams({ building: buildingId, view });
   if (palette !== PALETTES[0]) params.set("palette", palette);
+  if (!roofs) params.set("roofs", "off");
   return `?${params}`;
 }

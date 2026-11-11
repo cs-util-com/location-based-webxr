@@ -150,6 +150,8 @@ export function buildModelCity(features, ctx, { material, tolerance }) {
   const city = ctx.buildCity(adjusted, ctx.ground, {
     window: ctx.fixture.bbox,
     cosmeticTrees: false,
+    // The variant shapes its own roofs; the library's would stack on them.
+    inventedRoofs: false,
   });
   const chunks = chunksOf(city.volumes, city.barriers, ctx.featureByKey, plans);
   return [...chunks.values()].map((pieces) =>

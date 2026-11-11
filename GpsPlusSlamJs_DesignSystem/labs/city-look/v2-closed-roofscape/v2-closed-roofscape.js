@@ -155,6 +155,8 @@ function buildingsFor(features, ctx) {
     roads: false,
     window: ctx.fixture.bbox,
     cosmeticTrees: false,
+    // The variant invents its own roofs; the library's would stack on them.
+    inventedRoofs: false,
   });
   const objects = ctx.buildingObjects(buildings);
   const list = Array.isArray(objects) ? objects : [objects];

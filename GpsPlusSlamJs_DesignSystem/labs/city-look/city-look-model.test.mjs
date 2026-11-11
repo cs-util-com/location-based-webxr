@@ -50,6 +50,7 @@ describe("parseCityLookParams", () => {
         view: "street",
         split: 0.25,
         heat: true,
+        roofs: false,
         cam: null,
       },
     );
@@ -65,10 +66,31 @@ describe("parseCityLookParams", () => {
         view: "landing",
         split: 0.5,
         heat: false,
+        roofs: false,
         cam: null,
       },
     );
     assert.equal(parseCityLookParams("", { defaultSplit: null }).split, null);
+  });
+
+  it("draws today's side with the library's invented roofs only when the link asks", () => {
+    // Why this test matters: today's side is the baseline the variants were
+    // drawn against, so it keeps flat tops by default; `roofs=library` puts
+    // the library's invented roofs on it, so a variant and the library can be
+    // compared at one pose and in one light. Anything else reads as off.
+    assert.equal(parseCityLookParams("?roofs=library", {}).roofs, true);
+    for (const other of ["", "?roofs=on", "?roofs=1", "?roofs=LIBRARY"]) {
+      assert.equal(parseCityLookParams(other, {}).roofs, false, other);
+    }
+    assert.doesNotMatch(
+      cityLookSearch({
+        scene: "lucerne",
+        view: "street",
+        split: null,
+        heat: false,
+      }),
+      /roofs=/,
+    );
   });
 
   it("takes split=off as the full view and clamps a number", () => {
@@ -85,6 +107,7 @@ describe("parseCityLookParams", () => {
       view: "bird",
       split: null,
       heat: true,
+      roofs: true,
       cam: null,
     };
     assert.deepEqual(
@@ -142,6 +165,7 @@ describe("the camera override in the link", () => {
       view: "street",
       split: 0.5,
       heat: false,
+      roofs: false,
       cam: { position: [10.4, 1.7, -20], target: [30, 3.5, -61.2] },
     };
     const search = cityLookSearch(state);

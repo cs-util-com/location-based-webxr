@@ -71,3 +71,22 @@ test("the colour toggle round-trips, defaults to the seeded palette", () => {
     searchFor("cologne", "plate"),
   );
 });
+
+// Why this test matters: the roofs toggle is the before-and-after of the
+// library's invented roofs on one building at one camera. Invented roofs
+// are the library's default, so "on" stays out of the link; only roofs=off
+// turns them off, and the toggle must survive every other link on the page.
+test("the roofs toggle round-trips, defaults to invented roofs", () => {
+  assert.equal(parseParams("").roofs, true);
+  assert.equal(parseParams("?roofs=off").roofs, false);
+  assert.equal(parseParams("?roofs=no").roofs, true);
+  assert.doesNotMatch(searchFor("heidelberg", "spire"), /roofs=/);
+  for (const roofs of [true, false]) {
+    for (const palette of PALETTES) {
+      const state = parseParams(searchFor("ulm", "street", palette, roofs));
+      assert.equal(state.roofs, roofs);
+      assert.equal(state.palette, palette);
+      assert.equal(state.view, "street");
+    }
+  }
+});

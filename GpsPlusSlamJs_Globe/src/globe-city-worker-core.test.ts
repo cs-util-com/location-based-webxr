@@ -187,6 +187,10 @@ describe("createCityWorkerCore", () => {
         roads: true,
         window: { south: 48.1, west: 11.5, north: 48.2, east: 11.6 },
         cosmeticTrees: false,
+        // Invented roofs more than double a warm delivery (the tiles
+        // cached, so the build is the delivery; measured in the library's
+        // globe-invented-roofs bench), so the globe builds flat tops.
+        inventedRoofs: false,
       },
     ]);
     // The Tour Editor builds through this core and has no land-use tint and

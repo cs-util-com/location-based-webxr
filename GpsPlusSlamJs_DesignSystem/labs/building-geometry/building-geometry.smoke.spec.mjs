@@ -90,3 +90,44 @@ test("building geometry draws the class colours behind the Klassen link", async 
   );
   expect(problems).toEqual([]);
 });
+
+// Why this test matters: the "flach" link is the before of the library's
+// invented roofs on the same building and camera. It must reach `buildCity`
+// as `inventedRoofs: false` and draw fewer triangles than the roofs do (a
+// flat lid is two triangles, an invented roof many), not quietly draw the
+// roofs again.
+test("building geometry draws flat tops behind the flach link", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  const problems = await watch(page);
+  const ready = () =>
+    page.waitForFunction(
+      () =>
+        window.__buildingGeometry?.ready || window.__buildingGeometry?.error,
+      null,
+      { timeout: 100_000 },
+    );
+  const read = () =>
+    page.evaluate(() => {
+      const { error, roofs, triangles } = window.__buildingGeometry;
+      return { error, roofs, triangles };
+    });
+  await page.goto("/labs/building-geometry/index.html?building=heidelberg");
+  await ready();
+  const invented = await read();
+  expect(invented).toEqual(
+    expect.objectContaining({ error: null, roofs: true }),
+  );
+  await page.getByRole("link", { name: "flach" }).click();
+  await ready();
+  const flat = await read();
+  expect(flat).toEqual(expect.objectContaining({ error: null, roofs: false }));
+  expect(flat.triangles).toBeLessThan(invented.triangles);
+  await expect(page).toHaveURL(/[?&]roofs=off(&|$)/);
+  await expect(page.getByRole("link", { name: "flach" })).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+  expect(problems).toEqual([]);
+});

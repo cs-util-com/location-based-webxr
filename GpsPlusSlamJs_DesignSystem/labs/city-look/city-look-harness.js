@@ -343,7 +343,16 @@ function buildChrome(variant, state, fixture, actions) {
   const stats = el("p", "cl-stats", "building the scene");
   const attribution = el("p", "cl-attribution");
   attribution.innerHTML = `${ATTRIBUTION_HTML}. ${fixture.label}`;
-  const rows = [sceneRow.row, viewRow.row, heatRow.row];
+  const roofsRow = segmented(
+    "Today's roofs",
+    [
+      { value: false, text: "flat" },
+      { value: true, text: "library" },
+    ],
+    state.roofs,
+    actions.roofs,
+  );
+  const rows = [sceneRow.row, viewRow.row, heatRow.row, roofsRow.row];
 
   const chrome = {
     stage,
@@ -441,6 +450,9 @@ async function run(variant, api) {
   const city = buildCity(features, ground, {
     roads: true,
     window: fixture.bbox,
+    // Today's side keeps the flat tops the variants were drawn against;
+    // `roofs=library` shows the library's invented roofs there instead.
+    inventedRoofs: state.roofs,
   });
   const street = streetCamera(features, frame);
 
@@ -459,6 +471,11 @@ async function run(variant, api) {
       applyView();
       chrome.markView(name);
       writeLink();
+    },
+    roofs(on) {
+      if (on === state.roofs) return;
+      // The city is built once per page, so a different roof choice reloads.
+      location.search = cityLookSearch({ ...state, roofs: on });
     },
     heat(on) {
       state.heat = on;
