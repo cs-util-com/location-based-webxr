@@ -42,6 +42,13 @@ const SHAPE: Record<TourMdDiagnosticKind, RegExp> = {
   link: /^\[/,
 };
 
+/** An earlier line that opens a code box: a fence after any indentation
+ *  and quote or list marks. A box's later parts need one before them; its
+ *  own fence part may be hidden under a part that starts earlier (a link
+ *  over two lines), so the last kept part is not enough to tell. */
+const FENCE_LINE_BEFORE =
+  /(?:^|[\r\n])(?:[ \t]|>|[-*+](?=[ \t])|\d{1,9}[.)](?=[ \t]))*(?:`{3,}|~{3,})/;
+
 /** Bodies rich in the marks the diagnostics look at. */
 const markdownish = fc
   .array(
@@ -116,6 +123,8 @@ describe('diagnoseTourMarkdown properties', () => {
   });
 
   it('reports each kind over text of its own shape', () => {
+    // A failing run's seed and path, kept as a fixed example in the unit
+    // tests: "a code box open when its fence line lies under a link part".
     fc.assert(
       fc.property(markdownish, (body) => {
         let codeOpen = false;
@@ -124,7 +133,11 @@ describe('diagnoseTourMarkdown properties', () => {
         })) {
           const text = body.slice(d.from, d.to).trimStart();
           // A code box's continuation after a blank line inside it.
-          if (d.kind === 'code' && codeOpen && !SHAPE.code.test(text)) {
+          if (
+            d.kind === 'code' &&
+            !SHAPE.code.test(text) &&
+            (codeOpen || FENCE_LINE_BEFORE.test(body.slice(0, d.from)))
+          ) {
             continue;
           }
           expect(text, `${d.kind} ${JSON.stringify(text)}`).toMatch(
