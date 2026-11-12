@@ -1173,6 +1173,7 @@ export async function openGlobeEditor(
         centre: cameraTour,
         selectedStation,
         stationSelected: ui.selected?.startsWith(STATION) ?? false,
+        selected: ui.selected,
         standing,
         camera: cameraTour,
         eye: camera,

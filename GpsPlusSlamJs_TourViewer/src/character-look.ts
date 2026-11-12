@@ -14,9 +14,11 @@
  *
  * `root` stands with his feet at its origin, in a parent that is not
  * rotated against the scene (`scene-stage.ts`'s holder): the look turns
- * him itself, every `update`, from the creator's facing (`restYaw`)
- * toward the camera by at most 60 degrees - so it needs no visitor
- * position of its own. The bubble and the tag face the camera and
+ * him itself, every `update`, to face the camera fully (the pop-up stage
+ * rests at the creator's facing, `restYaw`) - so it needs no visitor
+ * position of its own. His bubble opens near the camera (the visitor's
+ * rule) or, under the editor's `bubbleRule`, while he is selected or
+ * speaking. The bubble and the tag face the camera and
  * are drawn over everything (no depth test), at a size that never reads
  * smaller than at 2.4 m.
  *
@@ -61,8 +63,9 @@ import {
 import {
   BECKON_AFTER_MS,
   BECKON_WITHIN_M,
-  bubbleOpens,
   bubbleSide,
+  bubbleWanted,
+  type BubbleRule,
   SCREEN_EDGE,
   characterViewLook,
   activeWordAt,
@@ -155,10 +158,9 @@ interface CharacterLookParts {
   /** The creator's facing (rad about Up, 0 facing +Z east; the block
    *  pose's yaw, `restYawOf`); default 0. */
   readonly restYaw?: number;
-  /** From more than 90 degrees round he turns his back to the camera
-   *  rather than stand edge-on (`facingYaw`'s `backToCamera`): the
-   *  editor's look. Default false, the visitor's. */
-  readonly backToCamera?: boolean;
+  /** What opens his bubble (`bubbleWanted`): `distance`, the visitor's
+   *  (the default), or `selection`, the editor's (`setSelected`). */
+  readonly bubbleRule?: BubbleRule;
   /** His line has a voice, which a tap plays: the bubble or the scroll
    *  says so. Default false. */
   readonly voiced?: boolean;
@@ -225,6 +227,9 @@ export interface CharacterLook {
   /** The creator's facing, once known (rad about Up, 0 facing +Z); a
    *  non-finite one is ignored. */
   setRestYaw(yaw: number): void;
+  /** He is the editor's selection: under the `selection` bubble rule his
+   *  bubble opens; under `distance` it changes nothing. */
+  setSelected(selected: boolean): void;
   /** The station's presence fade (0..1), on top of the look's own. */
   setPresence(alpha: number): void;
   state(): CharacterLookState;
@@ -299,7 +304,7 @@ export function createCharacterLook(
       : CHARACTER_DEFAULT_HEIGHT_M;
   const name = options.name;
   const line = options.line;
-  const backToCamera = options.backToCamera === true;
+  const bubbleRule: BubbleRule = options.bubbleRule ?? "distance";
   let restYaw =
     options.restYaw !== undefined && Number.isFinite(options.restYaw)
       ? options.restYaw
@@ -313,7 +318,9 @@ export function createCharacterLook(
   const body = new Group();
   turn.add(body);
 
-  // The die-cut figure: front and back, each seen from its own side.
+  // The die-cut figure: front and back, each seen from its own side. He
+  // faces the camera, so his back shows only while his eased turn catches
+  // up with a camera that jumped round him.
   // A frames sheet gives a pose per frame (the same size each).
   const poses =
     options.poses !== undefined
@@ -460,6 +467,7 @@ export function createCharacterLook(
 
   /** Each material's own opacity, the presence fade multiplies it. */
   let presence = 1;
+  let selected = false;
   let voice: CharacterVoice = "idle";
   /** He has been heard once (the prototype's `spoken`): it stays when
    *  the story's next step sets the voice back to idle. */
@@ -563,10 +571,14 @@ export function createCharacterLook(
       (heard || openForMs >= BECKON_AFTER_MS || frame.snap === true) &&
       distanceM < BECKON_WITHIN_M;
 
-    // Facing: from the creator's facing toward the camera, by at most 60
-    // degrees (the beckon is his frame and the footer, not a turn); the
-    // pop-up rests at the creator's facing.
-    const target = facingYaw(restYaw, toCam, look.turns, backToCamera);
+    // Facing: square on to the camera (the beckon is his frame and the
+    // footer, not a turn); the pop-up rests at the creator's facing. With
+    // the camera straight above him its direction is undefined: he keeps
+    // his turn.
+    const target =
+      look.turns && distanceM < 1e-6
+        ? turnYaw
+        : facingYaw(restYaw, toCam, look.turns);
     if (snap || !turned) turnYaw = target;
     else {
       const k = 1 - Math.exp(-dt * TURN_EASE);
@@ -641,7 +653,14 @@ export function createCharacterLook(
     dtMs: number,
   ): void {
     const wantOpen =
-      look.bubble && !bubbleShut && presence > 0.001 && bubbleOpens(distanceM);
+      look.bubble &&
+      !bubbleShut &&
+      presence > 0.001 &&
+      bubbleWanted(bubbleRule, {
+        distanceM,
+        selected,
+        speaking: voice === "speaking",
+      });
     open = step(open, wantOpen ? 1 : 0, OPEN_RATE);
     openForMs = wantOpen ? openForMs + dtMs : 0;
     const wantPip = look.pip && presence > 0.001 && !wantOpen;
@@ -848,6 +867,9 @@ export function createCharacterLook(
     },
     setRestYaw(yaw) {
       if (Number.isFinite(yaw)) restYaw = yaw;
+    },
+    setSelected(next) {
+      selected = next === true;
     },
     toggleBubble() {
       if (view === "bubble") bubbleShut = !bubbleShut;

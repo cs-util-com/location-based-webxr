@@ -2,21 +2,22 @@
 
 ## Purpose
 
-The three.js look of a recurring character standing at a station: a die-cut card figure that turns toward the visitor, a speech bubble near him, a name tag far away, a pulsing ring (portrait view), with a frames sheet his mouth moving while the voice plays and the bubble reading along word by word, the beckon toward the next station (two-stations view), and the folding pop-up stage with a scroll (popup view). Which parts show is decided by `character-views.ts`; the painting is done by `character-canvas.ts`, injected as `CharacterPainters` so node tests run without a canvas.
+The three.js look of a recurring character standing at a station: a die-cut card figure that faces the visitor, a speech bubble near him, a name tag far away, a pulsing ring (portrait view), with a frames sheet his mouth moving while the voice plays and the bubble reading along word by word, the beckon toward the next station (two-stations view), and the folding pop-up stage with a scroll (popup view). Which parts show is decided by `character-views.ts`; the painting is done by `character-canvas.ts`, injected as `CharacterPainters` so node tests run without a canvas.
 
 ## Public API
 
 - `paintPoses(source, sheet, painters?)` - his die-cut poses from the decoded image: four from a frames sheet that slices, else one.
-- `createCharacterLook({view, name, line, figure | poses, sheet?, noCard?, heightM?, restYaw?, backToCamera?, voiced?, painters?})` returns a `CharacterLook`:
+- `createCharacterLook({view, name, line, figure | poses, sheet?, noCard?, heightM?, restYaw?, bubbleRule?, voiced?, painters?})` returns a `CharacterLook`:
   - `poses`: painted before (`figure-memo.ts`) in place of `figure`, shared and left unchanged; `noCard`: as `characterViewLook`. The paper stage (top and backdrop) is painted only for the `popup` view, the only one that shows it;
   - `sheet`: `figure` is a frames sheet (idle, talk-a, talk-b, beckon in four equal cells, `painters.frames`); one that does not slice into four is drawn whole as one pose. Default false;
-  - `restYaw`: the creator's facing (rad about Up, 0 facing +Z; the block pose's yaw, `restYawOf`), default 0; `backToCamera`: from more than 90 degrees round he turns his back to the camera rather than stand edge-on (the editor), default false; `voiced`: his line has a voice, which a tap plays (the footers say so), default false;
+  - `restYaw`: the creator's facing (rad about Up, 0 facing +Z; the block pose's yaw, `restYawOf`), default 0, kept only by the pop-up; `bubbleRule`: `"distance"` (default, the visitor: the bubble opens within 9 m) or `"selection"` (the editor: the full bubble opens only while selected or speaking, at any distance; the name tag shows otherwise); `voiced`: his line has a voice, which a tap plays (the footers say so), default false;
   - `root`: the group to add at the station's position. It is not rotated by the caller; the look turns its own inner group.
   - `parts`: `figure`, `bubble`, `pip`, `scroll` and `popup`, for tests and checks.
   - `update({nowMs, camera, snap?})`: once per frame. `snap` jumps every ease to its target (first frame, tests).
   - `setBeckon({dx, dz, title} | null)`: the offset to the next station (in root-local NUE metres) and its title.
   - `setVoice("idle" | "speaking" | "spoken", durationMs?)`. `"spoken"` also marks him heard, which stays when the voice goes back to idle (the prototype's `spoken`). With `"speaking"` and a clip length, the read-along's word times are scaled to it (`scaleWordTimes`); without one they are the estimate.
   - `tapTargets()`: the parts that show, for a tap - the figure (front and back, the mesh named `character-back` included) while it shows, the bubble while it shows, the name tag while it shows, the pop-up's stage only once more than half unfolded - its backdrop (`character-backdrop`), his figure on it (`character-popfigure`) and the scroll while it shows, never the whole group, whose ground shadow (3.3 m by 1.9 m), base and tab would take taps on the ground around him. three's raycaster ignores `visible`, so a hidden part must not be offered at all.
+  - `setSelected(selected)`: whether the editor has him selected; read only under the `"selection"` bubble rule.
   - `setRestYaw(yaw)`: the creator's facing, once the stage knows the station's rotation (a non-finite yaw is ignored).
   - `toggleBubble()`: a tap in the bubble view shuts its bubble, or opens it again; no effect in any other view. A voiceless bubble's tap only: a voiced bubble opens when `setVoice("speaking")` comes and shuts when the voice leaves speaking (ended or stopped), so the bubble shows what he says while he says it; a voice that never spoke shuts nothing.
   - `setPresence(alpha)`: the fade. Use it instead of `setSubtreeOpacity`, which caches material opacities that the look changes every frame.
@@ -30,7 +31,7 @@ The three.js look of a recurring character standing at a station: a die-cut card
 
 - Distances are horizontal, from the camera to the root.
 - Facing:
-  - He rests at the creator's facing and turns toward the camera by at most 60 degrees (`facingYaw`, eased at 4 per second; the first frame snaps). With `backToCamera` (the editor only) a camera more than 90 degrees round sees his back turned toward it, so the target swings from one 60 degree limit to the other as the camera crosses his side, eased the same way.
+  - In a turning view he faces the camera fully from every heading (`facingYaw`, eased at 4 per second; the first frame snaps). A camera straight above him keeps the last turn. The back face shows only while the eased turn catches up after the camera jumps round him.
   - The beckon does not turn him: a flat cut-out turned away from the visitor reads as a squashed card.
   - The pop-up rests at the creator's facing.
 - The beckon needs all of these:
@@ -63,5 +64,5 @@ The three.js look of a recurring character standing at a station: a die-cut card
 
 ## Tests
 
-- `character-look.test.ts` (node, fake painters): near and far, the open rate, the bubble placement and facing, its growth with distance, presence, facing the camera, the beckon rules with no arrow drawn, the beckon staying once heard, the 60 degree turn from the creator's facing, the footers and the bubble's tap, the voiced bubble opening and shutting with the voice, the bubble staying on a narrow phone's screen, the 6 s beckon, no beckon in other views, the portrait ring, the pop-up hysteresis and facing, dispose, and the frames sheet (four poses sliced, the mouth and the read-along while speaking, the beckon frame and its mirror, one pose without a sheet, the bubble view's still mouth, the pop-up figure's mouth, the read-along scaled to a clip's length), and the tap targets (only the visible parts, the pop-up only unfolded).
+- `character-look.test.ts` (node, fake painters): near and far, the open rate, the bubble placement and facing, its growth with distance, presence, facing the camera, the beckon rules with no arrow drawn, the beckon staying once heard, full facing from every heading over several rests and distances, the eased turn after a jump, the turn kept with the camera straight above, the pop-up keeping the creator's facing, the editor's selection bubble rule (open only while selected or speaking, at any distance) and the visitor's distance rule ignoring the selection, the footers and the bubble's tap, the voiced bubble opening and shutting with the voice, the bubble staying on a narrow phone's screen, the 6 s beckon, no beckon in other views, the portrait ring, the pop-up hysteresis and facing, dispose, and the frames sheet (four poses sliced, the mouth and the read-along while speaking, the beckon frame and its mirror, one pose without a sheet, the bubble view's still mouth, the pop-up figure's mouth, the read-along scaled to a clip's length), and the tap targets (only the visible parts, the pop-up only unfolded).
 - `playwright-tests/character-views.spec.js`: the look in a browser, at three viewports.

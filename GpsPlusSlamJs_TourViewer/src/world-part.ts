@@ -58,6 +58,11 @@ interface WorldFrame {
    *  the view's height): a size on the screen at a distance `d` is
    *  `px * d * metresPerPxAtOneM` metres. Absent without `camera`. */
   readonly metresPerPxAtOneM?: number;
+  /** The editor's selection (an item's id, `station:<id>` for a
+   *  station), for a part that shows more of itself while selected (a
+   *  character's bubble); absent where nothing is selected or the page
+   *  has no selection (the visitor's). */
+  readonly selected?: string | null;
 }
 
 /** The page's screen beside the world, where a part may open one panel

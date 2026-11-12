@@ -3,15 +3,15 @@
 ## Purpose
 
 Draws a station's free character in the editor's 3D view as the visitor
-sees a character: the die-cut figure of `character-look.ts`, turning
-toward the camera by at most 60 degrees from his facing. Unlike the
-visitor's look, which stands edge-on about 150 degrees round, a camera
-more than 90 degrees round sees his back turned toward it (the look's
-`backToCamera`), so he is never edge-on in the editor: at least cos 30
-(0.87) square on from every heading, the swing eased as the camera
-crosses his side. That holds where he settles: during the eased turn of
-about 0.3 s as the camera crosses his side he passes edge-on. The pop-up view does not turn at all (as for the
-visitor), so it can still stand edge-on from its side. It is the character row's world part (`character-card.ts`
+sees a character: the die-cut figure of `character-look.ts`, which
+faces the camera fully from every heading (a flat cut-out has no side
+worth showing), the turn eased when the camera jumps. The pop-up view
+does not turn at all (as for the visitor), so it can still stand
+edge-on from its side. In the editor he shows his name tag; the full
+bubble opens only while he is the editor's selection (`frame.selected`
+is his block id) or while his line plays (the look's `bubbleRule`
+"selection"), so a close camera over a station is not covered in
+bubbles. It is the character row's world part (`character-card.ts`
 `CHARACTER_PLAY.world`), reached through the one world door
 (`world-part.ts`), so the editor's stations layer draws it like any
 other part. The visitor's page is unchanged: in play the row gives no
@@ -37,18 +37,20 @@ part, and the free host (`free-items.ts`) stands free characters.
   at the block's pose; his image (`block.image`) is read through
   `env.loadAsset`, decoded and painted, and the look lands in the group.
   `update(frame)` turns and animates the look toward `frame.camera`
-  (none: nothing). `ready` rejects when the image cannot be read or
+  (none: nothing), and tells the look whether `frame.selected` is
+  his block id. `ready` rejects when the image cannot be read or
   decoded, so the renderer takes the part out.
 
 ## Invariants & assumptions
 
 - His facing is the block pose's turn: the look's `restYaw` is 0 inside
-  the placed group, and the look reads the camera in its own frame, so
-  the 60 degree limit is measured from the pose.
+  the placed group, and the look reads the camera in its own frame. The
+  turning views ignore it (he faces the camera); the pop-up keeps it.
 - One pose, from `block.image`: the world door has no tour characters
   map, so a declared character's frames sheet is not read here (the
   editor draws him still).
-- `backToCamera` is passed only here: the visitor's look is unchanged.
+- `bubbleRule: "selection"` is passed only here: the visitor's look
+  keeps the 9 m distance rule.
 - No card holds his line (`noCard`), as the free host stands him; he is
   silent (`voiced` false).
 - The decoded picture is closed once painted; a dispose before the image
@@ -66,9 +68,9 @@ part?.update?.({ seconds: 1, viewer: [0, 1.6, 5], camera });
 `world.test.ts`: null in play and in the card view, picked by his
 figure alone (speak and pop-up), a view the looks do not know drawn in
 the default look and a story view in its own (no card), his
-figure at least half square on from four headings round him (in front,
-both sides, behind) over two poses and two distances, at least 0.85
-square on every 5 degrees all the way round over two poses, the swing
-across his side eased over several frames,
+figure showing his front square on every 5 degrees all the way round
+over three poses and two distances, the turn eased when the camera jumps
+round him, the full bubble open only while he is the selection (at four
+distances, with no selection, another selection and his),
 a load that fails rejecting `ready`, and dispose before and after the
 image arrives.

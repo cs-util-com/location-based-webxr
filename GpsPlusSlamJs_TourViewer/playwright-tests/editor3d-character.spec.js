@@ -28,7 +28,8 @@ import { stationBlocks, storyOf, told } from "./tour-fixture.mjs";
 /**
  * Why these tests matter: a character of a station's story is set in the
  * 3D editor's inspector of his entry - his view, how the step showing him
- * moves on, the heading he faces. Only the page shows the chips, the
+ * moves on, the heading he faces (shown in the pop-up view alone: a flat
+ * figure faces the visitor fully, the facing turns only that stage). Only the page shows the chips, the
  * shell, the session and the save working together: each change must be
  * one undo step, be saved as the format reads it, and come back pressed
  * on the next open. The character is declared by the fixture tour (the
@@ -210,22 +211,25 @@ test("a story character's view, advance and facing set in his entry's inspector 
     "true",
   );
   const facing = wendel(page).locator('[data-field="character-facing:w1"]');
-  await expect(facing).toHaveValue("90");
+  // In the speak view a turn shows nothing: no facing to set.
+  await expect(facing).toHaveCount(0);
   const start = await revision(page);
 
   // The view: one step, the chip pressed after the inspector's draw.
-  await chip(page, "character-view:w1:two-stations").click();
+  await chip(page, "character-view:w1:popup").click();
   await expect
     .poll(async () => stationBlocks(await gateNow(page))[0].view)
-    .toBe("two-stations");
+    .toBe("popup");
   expect(await revision(page)).toBe(start + 1);
-  await expect(chip(page, "character-view:w1:two-stations")).toHaveAttribute(
+  await expect(chip(page, "character-view:w1:popup")).toHaveAttribute(
     "aria-pressed",
     "true",
   );
   // The chip already pressed writes nothing.
-  await chip(page, "character-view:w1:two-stations").click();
+  await chip(page, "character-view:w1:popup").click();
   expect(await revision(page)).toBe(start + 1);
+  // The pop-up stage keeps his facing: its field shows.
+  await expect(facing).toHaveValue("90");
 
   // How his step moves on.
   await chip(page, "character-advance:w1:lineEnd").click();
@@ -264,7 +268,7 @@ test("a story character's view, advance and facing set in his entry's inspector 
   const gate = (await savedTour(zip)).stations[0];
   expect(stationBlocks(gate)[0]).toMatchObject({
     id: "w1",
-    view: "two-stations",
+    view: "popup",
     character: "wendel",
     pose: { position: [3, 0, 0] },
   });
@@ -281,7 +285,7 @@ test("a story character's view, advance and facing set in his entry's inspector 
 
   const next = await context.newPage();
   await openAndSelect(next, zip);
-  await expect(chip(next, "character-view:w1:two-stations")).toHaveAttribute(
+  await expect(chip(next, "character-view:w1:popup")).toHaveAttribute(
     "aria-pressed",
     "true",
   );

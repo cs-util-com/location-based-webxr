@@ -1,10 +1,10 @@
 /**
  * A free character in the editor's world: the visitor's character look
- * (`character-look.ts`, the die-cut figure that turns toward the camera
- * by at most 60 degrees from his facing), here with his back turned to a
- * camera more than 90 degrees round, so he is never edge-on, behind the
- * one world door
- * (`world-part.ts`), in the look of his chosen view. A view this viewer
+ * (`character-look.ts`, the die-cut figure that faces the camera fully),
+ * behind the one world door (`world-part.ts`), in the look of his chosen
+ * view. His name tag shows, and his full bubble only while he is the
+ * editor's selection (the look's `selection` bubble rule): a close
+ * editing camera would open every bubble at once. A view this viewer
  * does not know stands in the default look (`EDITOR_CHARACTER_VIEW`, the
  * view a new character gets); the `card` view stands nothing, as the
  * visitor sees nothing of him in the world. In play the row gives no part:
@@ -66,7 +66,8 @@ const decodeBitmap = (blob: Blob): Promise<FigureSource> =>
 /**
  * `block`'s part: in `edit`, a group the renderer places at the block's
  * pose, his look landing in it once his image is read (his facing is the
- * pose's; the look turns from it toward the frame's camera each frame);
+ * pose's, which turns only the pop-up stage; the figure faces the frame's
+ * camera each frame, and the frame's `selected` opens his bubble);
  * null in `play` and for a view that stands nothing. Its `ready` rejects
  * when the image cannot be read or decoded, and the renderer then takes
  * the part out.
@@ -98,9 +99,8 @@ export function characterWorld(
         poses,
         // Outside a story: no card holds his line.
         noCard: true,
-        // Never edge-on in the editor: from behind his back turns to the
-        // camera.
-        backToCamera: true,
+        // His bubble opens while he is selected, not near the camera.
+        bubbleRule: "selection",
         ...(deps.painters === undefined ? {} : { painters: deps.painters }),
       });
       made.root.name = "editor-character";
@@ -117,6 +117,7 @@ export function characterWorld(
     ready,
     update(frame) {
       if (look === null || frame.camera === undefined) return;
+      look.setSelected(frame.selected === block.id);
       look.update({ nowMs: frame.seconds * 1000, camera: frame.camera });
     },
     dispose() {

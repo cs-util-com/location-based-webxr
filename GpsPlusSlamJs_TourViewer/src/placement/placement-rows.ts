@@ -122,13 +122,13 @@ export const BLOCK_PLACEMENT = {
     toy: MODEL,
     card: POSELESS,
   },
-  // He turns toward the camera by at most 60 degrees from his facing, so
-  // his facing shows.
+  // His flat figure faces the camera fully, so a turn shows nothing; the
+  // pop-up is a stage set that keeps his facing.
   character: {
-    bubble: TURNING,
-    speak: TURNING,
-    "two-stations": TURNING,
-    portrait: TURNING,
+    bubble: FACING,
+    speak: FACING,
+    "two-stations": FACING,
+    portrait: FACING,
     popup: TURNING,
     card: POSELESS,
   },

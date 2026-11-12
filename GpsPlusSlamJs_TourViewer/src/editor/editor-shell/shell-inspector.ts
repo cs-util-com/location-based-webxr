@@ -532,7 +532,8 @@ function storyBlockParts(block: StoryEntryModel["block"]): HTMLElement {
 
 /** A story character's view, how his step moves on and his facing, as a
  *  model's view is set: chips, the one in use pressed, and a number; his
- *  texts under them. */
+ *  texts under them. The facing shows in the pop-up alone: it turns only
+ *  that stage, a flat figure faces the visitor fully. */
 function characterParts(
   id: string,
   name: string,
@@ -560,15 +561,17 @@ function characterParts(
   );
   if (c.advance === "auto")
     box.append(el("div", "note", CHARACTER_AUTO_ADVANCE));
-  box.append(
-    numberField(
-      "Facing",
-      `character-facing:${id}`,
-      String(Math.round(c.facingDeg) % 360),
-      "deg",
-    ),
-    ...storyTextFields(id, fields),
-  );
+  if (c.view === "popup") {
+    box.append(
+      numberField(
+        "Facing",
+        `character-facing:${id}`,
+        String(Math.round(c.facingDeg) % 360),
+        "deg",
+      ),
+    );
+  }
+  box.append(...storyTextFields(id, fields));
   return box;
 }
 

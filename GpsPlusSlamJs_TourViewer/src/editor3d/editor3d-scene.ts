@@ -747,6 +747,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
         centre: controls.target,
         selectedStation: selectedStationOf(ui.selected, tourNow),
         stationSelected: ui.selected?.startsWith(STATION) ?? false,
+        selected: ui.selected,
         standing,
         camera: camera.position,
         eye: camera,

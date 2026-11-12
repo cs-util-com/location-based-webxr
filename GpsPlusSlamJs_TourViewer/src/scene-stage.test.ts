@@ -527,10 +527,10 @@ describe("a character in a story view stands as a character look", () => {
 
   // Why this test matters: the creator places him with the block's pose
   // in the station's frame - where he stands and which way he faces - and
-  // the prototype turns him from that facing toward the visitor by at most
-  // 60 degrees. A figure standing on the station's centre facing the
-  // visitor whatever the creator chose would ignore both.
-  it("stands at the block's pose in the station's frame and rests at its facing", async () => {
+  // the pop-up stage keeps that facing, while a flat figure faces the
+  // visitor fully. A figure standing on the station's centre, or a pop-up
+  // ignoring the creator's facing, would ignore the pose.
+  it("stands at the block's pose in the station's frame; the figure faces the visitor, the pop-up rests at its facing", async () => {
     const h = looking([2, 401.6, -30]);
     const s45 = Math.SQRT1_2;
     const turned = createSceneStage({
@@ -555,12 +555,23 @@ describe("a character in a story view stands as a character look", () => {
     expect(holder.position.y).toBeCloseTo(400, 9);
     expect(holder.position.z).toBeCloseTo(0, 9);
     expect(holder.quaternion.toArray()).toEqual([0, 0, 0, 1]);
-    // He rests facing north (pi/2); the camera due west of him (-z, a
-    // turn of pi) is 90 degrees off, so he turns 60 toward it.
+    // He rests facing north (pi/2); the camera is due west of him (-z, a
+    // turn of pi), and a flat figure faces it fully.
     const look = h.scene.getObjectByName("station-character") ?? null;
     expect(look).not.toBeNull();
     const turn = look!.children[0]!;
-    expect(turn.rotation.y).toBeCloseTo(Math.PI / 2 + Math.PI / 3, 5);
+    expect(Math.cos(turn.rotation.y - Math.PI)).toBeCloseTo(1, 9);
+    // The pop-up stage keeps the creator's facing, north.
+    await turned.showCharacter("gate-popup", new Blob(["png"]), undefined, {
+      ...h.look,
+      view: "popup",
+      pose: { position: [0, 0, 2], rotation: [0, 0, 0, 1] },
+    });
+    const popupLooks = h.scene.children
+      .map((c) => c.getObjectByName("station-character"))
+      .filter((o) => o !== undefined);
+    const popupTurn = popupLooks[popupLooks.length - 1]!.children[0]!;
+    expect(popupTurn.rotation.y).toBeCloseTo(Math.PI / 2, 9);
   });
 
   // Why this test matters: after his step he stays in the world (the plan:
