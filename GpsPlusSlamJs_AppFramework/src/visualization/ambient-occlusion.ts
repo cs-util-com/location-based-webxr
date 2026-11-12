@@ -15,6 +15,7 @@ import * as THREE from 'three';
 import { SimplexNoise } from 'three/addons/math/SimplexNoise.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
+import { smoothstep } from '../utils/smoothstep.js';
 
 /** The AO parameters, in view-space metres where they are lengths. */
 export interface AoParams {
@@ -163,11 +164,6 @@ export function hiddenFromAoNormals(object: THREE.Object3D): boolean {
   return !materials.some(
     (m) => m !== undefined && m.visible && !m.transparent && m.depthWrite
   );
-}
-
-function smoothstep(edge0: number, edge1: number, x: number): number {
-  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
-  return t * t * (3 - 2 * t);
 }
 
 /**

@@ -46,7 +46,8 @@ sky stay exactly where three puts them.
   never left out.
 - `aoBlendFactor(ao, intensity, viewDepthM, fadeStartM, fadeEndM)`: the
   linear factor the blend applies, `1 + (ao - 1) * intensity * keep` with
-  `keep = 1 - smoothstep(fadeStart, fadeEnd, viewDepth)`. The shader computes
+  `keep = 1 - smoothstep(fadeStart, fadeEnd, viewDepth)` (the package's shared
+  `utils/smoothstep.ts`, GLSL's curve). The shader computes
   the same expression; the property tests pin its shape.
 - The blend raises the linear factor to the power 1 / 2.2 (the module-private
   `AO_DISPLAY_EXPONENT`) before multiplying, because the canvas it multiplies is already
