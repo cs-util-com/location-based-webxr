@@ -5,6 +5,11 @@ import {
   encodeRgbPng,
   terrariumPng,
 } from "../../scripts/e2e/terrarium-png.mjs";
+import {
+  bottomStartPx,
+  DOCK_MIN_PX as DOCK_MIN,
+  dockWidths,
+} from "../src/editor/editor-shell/dock-layout.ts";
 import { startOnMap } from "./editor-menus.js";
 
 /** A 1x1 grey PNG: a map tile the page can decode. Encoded here, not
@@ -464,7 +469,7 @@ export function styleIn(layout, selector, property, index = 0) {
 
 /** From this window width the editor's panels dock around the 3D view
  *  (`dock-layout.ts`); below it the phone's sheets show them. */
-export const DOCK_MIN_PX = 701;
+export const DOCK_MIN_PX = DOCK_MIN;
 
 /** The docking's tab strip over a group (`editor-shell.css`'s theme). */
 export const DOCK_TABS_PX = 30;
@@ -475,21 +480,17 @@ export const DOCK_TABS_PX = 30;
  * @param {number} width
  */
 export function dockWidthsAt(width) {
-  return {
-    list: width <= 1100 ? 210 : 248,
-    column: width <= 900 ? 268 : 300,
-  };
+  return dockWidths(width);
 }
 
 /**
  * The bottom group's first height (`dock-layout.ts`'s `bottomStartPx`):
- * a third of the layout's height below the top bar, its line and above
- * the bottom bar, 90 to 220 px.
+ * from the layout's height below the top bar, its line and above the bottom
+ * bar (`editor-shell.css`: 40, 3 and 24 px, not in `dock-layout.ts`).
  * @param {number} height the window's
  */
 export function dockBottomPx(height) {
-  const layout = height - 40 - 3 - 24;
-  return Math.max(90, Math.min(220, Math.floor(layout / 3)));
+  return bottomStartPx(height - 40 - 3 - 24);
 }
 
 /**

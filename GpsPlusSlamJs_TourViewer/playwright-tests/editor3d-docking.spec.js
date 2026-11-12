@@ -2,10 +2,12 @@
 import { expect, test } from "@playwright/test";
 
 import {
+  afterFrames,
   answerHosts,
   capture,
   DOCK_TABS_PX as TABS_PX,
   dockBottomPx as bottomPx,
+  dockSettled,
   dockWidthsAt as widths,
   openSampleIn3d,
 } from "./editor3d-fixture.js";
@@ -544,4 +546,291 @@ test("the list made a tab beside Files keeps its folds and its scroll across a t
   await expect(page.locator("#tree-body")).toBeVisible();
   await expect(gateKids).toBeVisible();
   await expect.poll(() => probeScroll(page)).toBe(at);
+});
+
+// Why: a station drawn into the Details while Files shows is drawn out of
+// the page; its card pictures must still load once Details shows again,
+// not stay blank until the selection changes.
+test("pictures drawn into the details behind the Files tab show when Details shows", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await answerHosts(page);
+  await openSampleIn3d(page);
+  const host = tabs(page);
+  const picks = page.locator("#tree-body .card .pick");
+  await picks.nth(0).click();
+  await expect(page.locator("#inspector-body")).toBeVisible();
+  await host.getByRole("tab", { name: "Files", exact: true }).click();
+  await expect(page.locator("#shell-inspector")).toHaveCount(0);
+  await picks.nth(1).click();
+  await picks.nth(2).click();
+  await host.getByRole("tab", { name: "Details", exact: true }).click();
+  const thumbs = page.locator("#inspector-body button.thumb");
+  expect(
+    await thumbs.count(),
+    "the station offers card pictures",
+  ).toBeGreaterThan(0);
+  await expect
+    .poll(() =>
+      thumbs.evaluateAll(
+        (all) =>
+          all.filter((b) => getComputedStyle(b).backgroundImage === "none")
+            .length,
+      ),
+    )
+    .toBe(0);
+});
+
+/**
+ * Each docked pane's box (null while out of the page or hidden), the shown
+ * tab strips' count, the selected tabs and whether the layout is
+ * maximized.
+ * @param {import("@playwright/test").Page} page
+ */
+function dockState(page) {
+  return page.evaluate(() => {
+    /** @type {Record<string, number[] | null>} */
+    const boxes = {};
+    for (const id of ["view", "list", "details", "problems"]) {
+      const pane = document.querySelector(`.dock-pane-${id}`);
+      const r = pane?.getBoundingClientRect();
+      boxes[id] =
+        pane === null || r === undefined || r.width === 0 || r.height === 0
+          ? null
+          : [r.x, r.y, r.width, r.height].map(Math.round);
+    }
+    // Shown: with an area (a hidden group's strip keeps its boxes at 0).
+    const shown = (/** @type {Element} */ e) => {
+      const r = e.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    };
+    // Each shown strip by its tabs' names (their count badges left out, a
+    // count may come or go meanwhile), so a failure says which.
+    const strips = [
+      ...document.querySelectorAll(".dock-host .dv-tabs-and-actions-container"),
+    ]
+      .filter(shown)
+      .map((s) => (s.textContent ?? "").replace(/\d+/g, "").trim())
+      .sort();
+    const selected = [
+      ...document.querySelectorAll(
+        '.dock-host [role="tab"][aria-selected="true"]',
+      ),
+    ]
+      .filter(shown)
+      .map((t) => (t.textContent ?? "").replace(/\d+/g, "").trim())
+      .sort();
+    const max =
+      document
+        .querySelector(".dock-host")
+        ?.classList.contains("keyboard-max") ?? false;
+    return { boxes, strips, selected, max };
+  });
+}
+
+/**
+ * An on-screen keyboard of `px` (0: none), by the page's real path: the
+ * visual viewport shrinks and the page answers; three frames for the
+ * docked layout to follow.
+ * @param {import("@playwright/test").Page} page
+ * @param {number} px
+ */
+async function keyboardOf(page, px) {
+  await page.evaluate((kb) => {
+    const viewport = /** @type {VisualViewport} */ (window.visualViewport);
+    if (kb === 0) {
+      // @ts-expect-error - the stub, back to the browser's own.
+      delete viewport.height;
+    } else {
+      Object.defineProperty(viewport, "height", {
+        value: innerHeight - kb,
+        configurable: true,
+      });
+    }
+    viewport.dispatchEvent(new Event("resize"));
+  }, px);
+  await afterFrames(page, 3);
+}
+
+// Why: a keyboard over a short window maximizes the group in use; when it
+// goes, the layout must come back as it was (sizes, shown tabs, tab
+// strips), or a creator who typed one word is left with a rearranged
+// editor. The maximized panel's head (its back and fold buttons) stays in
+// reach under the largest keyboard, and a field of another group takes
+// the maximized place.
+test("a keyboard maximizes the docked group in use, its head in reach, and gives the layout back when it goes", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  const size = { width: 844, height: 390 };
+  await page.setViewportSize(size);
+  await answerHosts(page);
+  await openSampleIn3d(page);
+  await dockSettled(page, size.width);
+  await page.addStyleTag({ content: ".toast { display: none; }" });
+  await page
+    .locator("#tree-body .card", { hasText: "The old gate" })
+    .locator(".pick")
+    .click();
+  await page.locator('#shell-toggles [data-tab="problems"]').click();
+  await expect(page.locator("#shell-pane-problems")).toBeVisible();
+  await afterFrames(page, 3);
+  const before = await dockState(page);
+  expect(before.max).toBe(false);
+  expect(before.boxes["problems"]).not.toBeNull();
+
+  // The largest keyboard the keyboard e2e uses here: the bar and one
+  // field's row left.
+  const kb = size.height - 116;
+  await page.locator('#inspector-body [data-field="title"]').focus();
+  await keyboardOf(page, kb);
+  const up = await dockState(page);
+  expect(up.max).toBe(true);
+  expect(up.strips).toEqual([]);
+  expect(up.boxes["details"]).not.toBeNull();
+  for (const id of ["list", "problems"]) expect(up.boxes[id], id).toBeNull();
+  // The head's fold button in sight: below the top bar, above the
+  // keyboard, nothing over it.
+  const reach = await page.evaluate((px) => {
+    const b = document.querySelector('#inspector-head [data-act="fold"]');
+    if (b === null) return "no fold button";
+    const r = b.getBoundingClientRect();
+    const x = r.x + r.width / 2;
+    const y = r.y + r.height / 2;
+    if (y < 43 || y > innerHeight - px) return `at ${String(Math.round(y))}`;
+    const hit = document.elementFromPoint(x, y);
+    return hit !== null && b.contains(hit)
+      ? "ok"
+      : `under ${String(hit?.className)}`;
+  }, kb);
+  expect(reach).toBe("ok");
+
+  // The list's search focused: the list takes the maximized place.
+  const moved = await page.evaluate(() => {
+    const search = /** @type {HTMLElement | null} */ (
+      document.querySelector("#shell-tree .tsearch input")
+    );
+    search?.focus();
+    return document.activeElement === search;
+  });
+  if (moved) {
+    await afterFrames(page, 3);
+    const other = await dockState(page);
+    expect(other.max).toBe(true);
+    expect(other.boxes["list"]).not.toBeNull();
+    expect(other.boxes["details"]).toBeNull();
+  }
+  test.info().annotations.push({
+    type: "focus to another group while maximized",
+    description: moved ? "taken" : "not focusable (its group is hidden)",
+  });
+
+  await keyboardOf(page, 0);
+  await expect.poll(async () => (await dockState(page)).max).toBe(false);
+  await afterFrames(page, 3);
+  const after = await dockState(page);
+  expect(after.strips).toEqual(before.strips);
+  expect(after.selected).toEqual(before.selected);
+  for (const id of ["view", "list", "details", "problems"]) {
+    const was = before.boxes[id];
+    const now = after.boxes[id];
+    expect(now === null, id).toBe(was === null);
+    if (was === null || now === null) continue;
+    for (const [i, v] of was.entries()) {
+      expect(
+        Math.abs((now[i] ?? 0) - v),
+        `${id} [${String(i)}]`,
+      ).toBeLessThanOrEqual(1);
+    }
+  }
+});
+
+// Why: a docking module that fails to load is said once; every resize
+// asks for the layout again, and a toast each time would bury the page.
+test("a docking that fails to load is said once, not on every resize", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await answerHosts(page);
+  await page.route("**/editor-shell/dock-host.ts*", (route) => route.abort());
+  await page.addInitScript(() => {
+    const said = { n: 0 };
+    /** @type {any} */ (window).__dockFailedSaid = said;
+    new MutationObserver((records) => {
+      for (const r of records) {
+        for (const node of r.addedNodes) {
+          if (
+            node instanceof HTMLElement &&
+            node.textContent?.includes("The panels could not be docked") ===
+              true
+          ) {
+            said.n += 1;
+          }
+        }
+      }
+    }).observe(document, { childList: true, subtree: true });
+  });
+  await openSampleIn3d(page);
+  const said = () =>
+    page.evaluate(() => /** @type {any} */ (window).__dockFailedSaid.n);
+  await expect.poll(said).toBe(1);
+  for (const width of [1200, 600, 1300]) {
+    await page.setViewportSize({ width, height: 900 });
+    await afterFrames(page, 3);
+  }
+  await expect(page.locator(".dock-host")).toHaveCount(0);
+  expect(await said()).toBe(1);
+});
+
+// Why: the list's head is a row of buttons; at a narrow list one past the
+// list's edge is clipped under the 3D view and cannot be pressed. Measured
+// at the list's first width at 1024 px (210 px) and at the least width a
+// splitter allows (140 px).
+test("the docked list's head buttons stay inside the list at 210 and at 140 px", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await answerHosts(page);
+  await openSampleIn3d(page);
+  await dockSettled(page, 1024);
+  const overflow = () =>
+    page.evaluate(() => {
+      const pane = document.querySelector(".dock-pane-list");
+      if (pane === null) return ["no list"];
+      const edge = pane.getBoundingClientRect().right;
+      const out = [
+        `width ${String(Math.round(pane.getBoundingClientRect().width))}`,
+      ];
+      for (const id of [
+        "tree-stations",
+        "tree-select",
+        "tree-collapse",
+        "tree-add",
+        "tree-fold",
+      ]) {
+        const b = document.getElementById(id);
+        if (b === null || b.getClientRects().length === 0) continue;
+        const r = b.getBoundingClientRect();
+        if (r.right > edge + 0.5) {
+          out.push(`${id} ends ${String(Math.round(r.right - edge))} px past`);
+        }
+      }
+      return out;
+    });
+  expect(await overflow()).toEqual(["width 210"]);
+  // The list's splitter dragged as far left as it goes.
+  const list = await box(page.locator(".dock-pane-list"));
+  const x = list.x + list.width + 1;
+  const y = list.y + list.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x - 40, y);
+  await page.mouse.move(x - 200, y);
+  await page.mouse.up();
+  await afterFrames(page, 3);
+  expect(await overflow()).toEqual(["width 140"]);
 });
