@@ -4075,6 +4075,14 @@ body[data-view="3d"] #toasts {
   position: absolute;
   inset: var(--s-dock-top) 0 var(--s-keyboard-foot);
 }
+/* The layout never scrolls as a whole: a focus or a scroll into view in a
+ * panel would otherwise shift the view box and every group in it, the tab
+ * strips out of sight. Only a panel's own content scrolls. */
+#view3d.docked,
+#view3d.docked .dock-host,
+#view3d.docked .dock-host :is(.dv-view, .dv-groupview, .dv-content-container) {
+  overflow: clip;
+}
 /* A hidden group is only sized to nothing by the docking library: its tab
    strip would still be drawn past its edge and take keyboard focus. */
 #view3d.docked .dock-host .dv-view:not(.visible) {
