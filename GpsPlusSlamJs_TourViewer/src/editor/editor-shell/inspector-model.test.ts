@@ -212,6 +212,7 @@ describe("buildInspector", () => {
               options: [
                 { id: "o1", label: "Back", goto: "intro" },
                 { id: "o2", label: "On" },
+                { id: "o3", label: "Stop", end: true },
               ],
             },
             {
@@ -319,6 +320,8 @@ describe("buildInspector", () => {
       ]);
     });
 
+    // Why: an answer that ends the story names no step, and must not read
+    // as one that plays on - those two lead to different places.
     it("sums up a choice: each answer and where it leads", () => {
       expect(inStory("way")).toMatchObject({
         kind: "storyStep",
@@ -327,7 +330,11 @@ describe("buildInspector", () => {
         stationId: "b",
         title: "Which way?",
         sub: "2 The gate / The legend / Choice, entry 3",
-        lines: ["Back - goes to The siege", "On - plays on"],
+        lines: [
+          "Back - goes to The siege",
+          "On - plays on",
+          "Stop - ends the story",
+        ],
       });
     });
 

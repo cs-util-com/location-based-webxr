@@ -238,6 +238,81 @@ describe('children: what a valid file says is what is read', () => {
   });
 });
 
+describe('children: an answer that ends the story', () => {
+  // Why this test matters: without an "end the story" target two branches
+  // that never meet again cannot be written - the branch placed first falls
+  // through into the other. `end: true` is that target; it excludes a
+  // `goto`, and anything but `true` is a fault of the file at every minor
+  // (a writer never writes `end: false`).
+  const ending = (option: Record<string, unknown>) =>
+    storyOf('a', [
+      text,
+      {
+        id: 'c',
+        kind: 'choice',
+        prompt: 'Go on?',
+        options: [
+          { id: 'yes', label: 'Yes' },
+          { id: 'no', label: 'No', ...option },
+        ],
+      },
+    ]);
+  const optionsOf = (read: TourStationChild[], index: number) =>
+    (read[0] as { children: { options?: { id: string }[] }[] }).children[
+      index
+    ]!.options;
+
+  it('reads `end: true` as written, and it survives a write and a read', () => {
+    const read = children([ending({ end: true })]);
+    expect(optionsOf(read, 1)).toEqual([
+      { id: 'yes', label: 'Yes' },
+      { id: 'no', label: 'No', end: true },
+    ]);
+    expect(children(JSON.parse(JSON.stringify(read)))).toEqual(read);
+  });
+
+  for (const lenient of [false, true]) {
+    it(`refuses an end together with a goto, and an end other than true (${lenient ? 'lenient' : 'strict'})`, () => {
+      for (const bad of [
+        { end: true, goto: 'intro' },
+        { end: false },
+        { end: 'yes' },
+        { end: 1 },
+        { end: null },
+      ]) {
+        expect(
+          () => children([ending(bad)], { lenient }),
+          JSON.stringify(bad)
+        ).toThrow(/options\[1\]\.end/);
+      }
+    });
+  }
+
+  it('a lenient read never prunes an ending answer: it names no child', () => {
+    const drops: TourChildDrop[] = [];
+    const read = children(
+      [
+        storyOf('a', [
+          {
+            id: 'c',
+            kind: 'choice',
+            prompt: 'Where?',
+            options: [
+              { id: 'x', label: 'X', goto: 'later' },
+              { id: 'y', label: 'Y', end: true },
+              { id: 'z', label: 'Z' },
+            ],
+          },
+          { id: 'later', kind: 'scene' },
+        ]),
+      ],
+      { lenient: true, drops }
+    );
+    expect(optionsOf(read, 0)?.map((o) => o.id)).toEqual(['y', 'z']);
+    expect(drops.filter((d) => d.kind === 'option')).toHaveLength(1);
+  });
+});
+
 describe('children: what fails the file (strict)', () => {
   it("a goto naming another story's child, a free block, its own story or nothing fails, named by its index in the file", () => {
     // Why: a choice jumps within its own story only; anything else would

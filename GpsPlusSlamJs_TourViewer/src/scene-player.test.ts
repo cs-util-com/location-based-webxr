@@ -29,6 +29,8 @@ const text = (id: string, auto?: number): TourStoryChild => ({
   advance:
     auto === undefined ? { mode: "tap" } : { mode: "auto", afterS: auto },
 });
+/** A choice; an option's target `END` ends the story. */
+const END = "\u0000end";
 const choice = (
   id: string,
   options: [string, string | undefined][],
@@ -39,7 +41,9 @@ const choice = (
   options: options.map(([oid, go]) =>
     go === undefined
       ? { id: oid, label: oid }
-      : { id: oid, label: oid, goto: go },
+      : go === END
+        ? { id: oid, label: oid, end: true }
+        : { id: oid, label: oid, goto: go },
   ),
 });
 const quiz: TourQuizEntry = {
@@ -87,6 +91,22 @@ describe("createScenePlayer", () => {
     ]);
     expect(p.choose("on")?.id).toBe("n");
     expect(p.next()?.id).toBe("m");
+  });
+
+  it("an answer that ends the story ends the scene at once, with steps still after it", () => {
+    // Why: two branches that never meet again end each on its own; the
+    // first must not fall through into the second.
+    const p = createScenePlayer([
+      choice("c", [
+        ["stop", END],
+        ["on", undefined],
+      ]),
+      text("n"),
+    ]);
+    expect(p.choose("stop")).toBeNull();
+    expect(p.ended()).toBe(true);
+    expect(p.next()).toBeNull();
+    expect(p.choose("on")).toBeNull();
   });
 
   it("a choice on a step that is not current changes nothing", () => {
@@ -156,6 +176,12 @@ describe("createScenePlayer along any choice path (property)", () => {
   // over the story's children (the oracle below)
   // must agree with the player for every scene and every answer sequence.
   type Kind = "block" | "quiz" | "choice";
+  /** An answer's way on: the next step, a step by index, or the end. */
+  const wayOn = fc.oneof(
+    fc.constant<number | "end" | undefined>(undefined),
+    fc.constant<number | "end" | undefined>("end"),
+    fc.nat({ max: 7 }),
+  );
   const sceneArb = fc
     .array(fc.constantFrom<Kind>("block", "quiz", "choice"), {
       minLength: 1,
@@ -164,10 +190,7 @@ describe("createScenePlayer along any choice path (property)", () => {
     .chain((kinds) =>
       fc
         .array(
-          fc.tuple(
-            fc.option(fc.nat({ max: kinds.length - 1 }), { nil: undefined }),
-            fc.option(fc.nat({ max: kinds.length - 1 }), { nil: undefined }),
-          ),
+          fc.tuple(wayOn, wayOn),
           { minLength: kinds.length, maxLength: kinds.length },
         )
         .map((gotos) =>
@@ -175,10 +198,16 @@ describe("createScenePlayer along any choice path (property)", () => {
             const id = "s" + String(i);
             if (kind === "block") return text(id);
             if (kind === "quiz") return { ...quiz, id };
+            const target = (g: number | "end" | undefined) =>
+              g === undefined
+                ? undefined
+                : g === "end"
+                  ? END
+                  : "s" + String(g % kinds.length);
             const [a, b] = gotos[i]!;
             return choice(id, [
-              ["x", a === undefined ? undefined : "s" + String(a)],
-              ["y", b === undefined ? undefined : "s" + String(b)],
+              ["x", target(a)],
+              ["y", target(b)],
             ]);
           }),
         ),
@@ -206,11 +235,14 @@ describe("createScenePlayer along any choice path (property)", () => {
         continue;
       }
       const option = step.options[picks[move % picks.length]! ? 1 : 0]!;
-      i = playableAt(
-        option.goto === undefined
-          ? i + 1
-          : steps.findIndex((s) => s.id === option.goto),
-      );
+      i =
+        option.end === true
+          ? steps.length
+          : playableAt(
+              option.goto === undefined
+                ? i + 1
+                : steps.findIndex((s) => s.id === option.goto),
+            );
     }
     return seen;
   }

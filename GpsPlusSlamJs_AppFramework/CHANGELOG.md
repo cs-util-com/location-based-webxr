@@ -4,6 +4,10 @@
 
 ### Added
 
+- **An answer can end the story** (`ar/tour-story`): a choice option may
+  carry `end: true` instead of a `goto`, so two branches that never meet
+  again each end on their own. `end` is `true` or absent and never beside a
+  `goto`; anything else fails the file at every minor.
 - **One list of block kinds** (`ar/tour-kinds`): `TOUR_KINDS` holds what the
   format knows about each kind, and `TOUR_BLOCK_VIEWS`,
   `TOUR_FREE_BLOCK_VIEWS`, `TOUR_BLOCK_TEXT_RULES` and `TOUR_WORLD_VIEWS` are

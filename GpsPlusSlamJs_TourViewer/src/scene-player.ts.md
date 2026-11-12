@@ -5,7 +5,8 @@
 A station's scene, step by step (tour kit plan K4, §4.2): a story's
 children in order (a block the view shows, a scene choice, a quiz), a
 scene choice that jumps to its option's child - or, for an option that
-names none, goes on to the next child - and the end. Pure: it says which
+names none, goes on to the next child, and for an option with `end`, ends
+the scene - and the end. Pure: it says which
 child shows; `scene-view.ts` renders it and owns the tap and the timer of
 an auto block. Plan:
 `GpsPlusSlamJs_Docs/docs/2026-10-03-2219-tour-kit-stations-scenes-quiz-and-signed-tours-plan.md`.
@@ -17,8 +18,10 @@ an auto block. Plan:
   - `next()` - continue (a tap or the timer); a choice is not continued,
     it waits for an answer;
   - `choose(optionId)` - answer the current choice: jump to its option's
-    child, or to the next child for an option with no `goto`; an unknown
-    option, or no choice showing, changes nothing;
+    child, to the next child for an option with no `goto`, or end the
+    scene at once for an option with `end` (children after it stay
+    unplayed, so two branches that never meet each end on their own); an
+    unknown option, or no choice showing, changes nothing;
   - `ended()`.
 - `isPlayableInK4(child)` - false for a quiz.
 

@@ -694,6 +694,7 @@ function quizLines(quiz: TourQuizEntry): string[] {
 function choiceLines(choice: TourChoice, story: TourStory): string[] {
   const rows = storyRows(story);
   return choice.options.map((option) => {
+    if (option.end === true) return `${option.label} - ends the story`;
     if (option.goto === undefined) return `${option.label} - plays on`;
     const to = rows.find((r) => r.id === option.goto);
     return `${option.label} - goes to ${to?.title ?? "another entry"}`;
