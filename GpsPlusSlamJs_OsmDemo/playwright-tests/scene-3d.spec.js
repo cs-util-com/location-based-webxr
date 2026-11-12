@@ -36,8 +36,12 @@ test.describe("the 3D view", () => {
     // its pixels with a `min > 110 && max - min < 40` predicate whose counts were
     // measured at the boot size, and handing it a 1000x700 canvas would change
     // what it is counting for a reason that has nothing to do with buildings.
+    //
+    // `ao=off`: the GPU step compares the CPU ground against the GPU ground,
+    // and the AO is drawn only on the first (it is off while the ground is
+    // displaced on the GPU), so with it on the A/B would count the AO.
     await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
+    await page.goto(`${AT_FIXTURE}&ao=off`);
     await waitForRefresh(page);
 
     await test.step("actually draws pixels, not just a canvas element", async () => {
@@ -2894,5 +2898,26 @@ test.describe("the ambient occlusion", () => {
     console.log(
       `ambient occlusion and the heat grid: margin ${marginOn.toFixed(2)} with the AO on, ${marginOff.toFixed(2)} off`,
     );
+  });
+
+  // Why this test matters: the AO's normal/depth pass does not run the GPU
+  // ground's displacement shader, so in that mode it would shade a flat
+  // ground under raised terrain. The switch keeps the wish and the ground
+  // mode decides what is drawn; this proves it in the running app.
+  test("stays off while the ground is displaced on the GPU, and comes back after", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    await page.goto(JUNE_NOON);
+    await waitForRefresh(page);
+    const view = page.locator("[data-ao]");
+    const ground = page.locator("#ground-mode");
+    await expect(view).toHaveAttribute("data-ao", "on");
+    await ground.selectOption("gpu");
+    await expect(page.locator("#status")).toContainText(/ground gpu \d/);
+    await expect(view).toHaveAttribute("data-ao", "off");
+    await ground.selectOption("cpu");
+    await expect(page.locator("#status")).toContainText(/ground cpu \d/);
+    await expect(view).toHaveAttribute("data-ao", "on");
   });
 });

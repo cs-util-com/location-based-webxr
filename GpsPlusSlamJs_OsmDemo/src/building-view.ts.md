@@ -518,7 +518,12 @@ location; `building-view-content.test.ts` pins the four invariants above.
   fade ends before the fog, the draw order, the GPU-ground condition in both
   setters, the only importer); the frame itself in
   `playwright-tests/scene-3d.spec.js` ("ambient occlusion", which also
-  logs the heat grid's margin with the AO on and off as a reported number).
+  logs the heat grid's margin with the AO on and off as a reported number,
+  and proves `data-ao` goes off in the `gpu` ground mode and back on after).
+  The tests that ask about geometry rather than the look boot with `ao=off`:
+  the light gates, the CPU/GPU ground A/B (the AO would be drawn on one side
+  only) and the buildings-from-beneath test with its sky-only page (the
+  AO's second pass slows each software frame past the damping settle wait).
 
 ### Measuring the AO's cost on a phone
 
