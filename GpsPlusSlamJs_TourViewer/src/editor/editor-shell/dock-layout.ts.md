@@ -47,9 +47,11 @@ group }`, the 3D view first. `element` is the adopted page element's id
 - Every panel appears exactly once in the default layout, the 3D view
   first and without an `against`; every other step is placed against a
   panel added before it.
-- The side panels leave the 3D view at least 220 px at any docked width,
-  and the bottom group starts at most a third of the height (90 px at
-  least).
+- The side panels' first widths leave the 3D view at least 220 px at any
+  docked width, and the bottom group starts at most a third of the height
+  (90 px at least). The long text's writer widens the details past their
+  column width (`writerWidthPx`), and the wide writer at the narrowest
+  docked windows leaves the 3D view less than 220 px while it is open.
 - The keyboard threshold was swept with the keyboard e2e (sizes 844 x 390,
   915 x 412 and 1024 x 600, keyboards from 100 px to all but 116 px): every
   field stays in sight from 300 px up to 800 px; at 200 px the writer is

@@ -9,7 +9,7 @@ styles, and the field in use brought into sight.
 
 - `keyboardPx(innerHeight, { height, offsetTop, scale })` - the keyboard's
   height from the visual viewport; 0 for none.
-- `watchKeyboard(win, host)` -> stop: writes `--s-keyboard-h` and
+- `watchKeyboard(win, host, relayout?)` -> stop: writes `--s-keyboard-h` and
   `data-keyboard="up"` on the body while a keyboard is up, and scrolls the focused field inside `host` into
   sight when the keyboard comes, when it grows while up, and when the
   focus moves under it. `relayout(px)` (optional) gets the height each time the
