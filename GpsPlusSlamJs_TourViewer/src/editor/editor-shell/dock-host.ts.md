@@ -29,6 +29,9 @@ are not part of the page's first load.
     draws its folded head; unfolded, it comes back into its panel.
   - `content(id)` - the element a panel's content sits in
     (`.dock-pane.dock-pane-<id>.dock-group-<group>`).
+  - `layout()` - lays the groups out for the box now rather than on the
+    next frame (the phone keyboard calls it before scrolling a field into
+    sight).
   - `dispose()` - every adopted element still in the layout back at its
     old place (parent and next sibling), the layout removed, `docked`
     taken off. A part removed meanwhile by the code that made it (the 3D view's canvas,
@@ -41,8 +44,10 @@ are not part of the page's first load.
 - The default layout is `defaultDockLayout` (`dock-layout.ts`). Panels
   are added with `renderer: "always"`, so an inactive tab keeps its
   element (the 3D view its canvas and drawing context).
-- The centre group is locked (nothing is dropped onto it as a tab) and
-  its tab strip is hidden. The tab menu offers no popout; the 3D view
+- The centre group is locked (nothing is dropped onto it as a tab). A
+  group's tab strip hides while it holds only the 3D view or only the
+  list (`stripHidden`), which carry their own head, and shows again as
+  soon as a tab joins it. The tab menu offers no popout; the 3D view
   offers only maximise. A docked panel's tab has no close button
   (`editor-shell.css`): its element is the page's.
 - First sizes are pinned (minimum = maximum) and released after the next
@@ -52,6 +57,15 @@ are not part of the page's first load.
 - The canvas, the model's notes and the map controls move into the 3D
   view's panel; a mutation observer moves those the view adds later (a
   new canvas). Moving a canvas keeps its WebGL context.
+- While the details hold the long text's writer (their `lw` class, `lw-wide`
+  when wider) their group takes `writerWidthPx`, and gets back the width it
+  had once the writer goes.
+- A window resize scales every group (the docking library's proportional
+  layout); the side groups then take `dockWidths` of the new window (the
+  writer's width while it shows), the 3D view the rest. A side group hidden
+  meanwhile, or hidden before its first width was laid out, takes it when
+  it next shows. A width dragged by hand therefore lasts until the next
+  window resize.
 - During a splitter drag the canvas is held at its size in px and fitted
   once on release (each resize reallocates the drawing buffers).
 - Defensive: an unknown panel id throws; a fold of a side already in that

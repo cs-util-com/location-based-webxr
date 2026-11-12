@@ -23,8 +23,14 @@ group }`, the 3D view first. `element` is the adopted page element's id
   starts: `centre`, `left`, `right` or `bottom`.
 - `dockPanel(id)` - a spec by id; throws on an unknown id.
   `isDockPanelId(x)` - for ids read back from the library's events.
+- `stripHidden(panelIds)` - whether a group holding those panels hides
+  its tab strip: true only for the 3D view or the list alone, which carry
+  their own head; false for any other panel, for two or more, for none.
 - `dockWidths(widthPx)` - `{ list, column }`: 248 and 300 px, the list 210
   from 1100 px down, the right column 268 from 900 px down.
+- `writerWidthPx(widthPx, wide)` - the details' width while they hold the
+  long text's writer: 360 px, 340 px from 1100 px down; wider, up to 540
+  px and at most 52 % of the window (`long-text-editor.css`'s widths).
 - `bottomStartPx(heightPx)` - the bottom group's first height: a third of
   the height below the top bar, between 90 and 220 px.
 - `defaultDockLayout(widthPx, heightPx)` - `DockStep[]`: the 3D view; the

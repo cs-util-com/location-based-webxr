@@ -29,8 +29,14 @@ export function keyboardPx(
 }
 
 /** Watches the keyboard for the fields inside `host`; the call it returns
- *  stops that. */
-export function watchKeyboard(win: Window, host: HTMLElement): () => void {
+ *  stops that. `relayout` runs each time the keyboard's height changed,
+ *  before a field is brought into sight: panels laid out by script (the
+ *  docked ones) take their new size first. */
+export function watchKeyboard(
+  win: Window,
+  host: HTMLElement,
+  relayout: () => void = () => undefined,
+): () => void {
   const viewport = win.visualViewport;
   if (viewport === null || viewport === undefined) return () => undefined;
   let up = false;
@@ -38,11 +44,26 @@ export function watchKeyboard(win: Window, host: HTMLElement): () => void {
    *  height alone: a pan moves its offset, not the keyboard, and must not
    *  count as a keyboard that grew. */
   let shownCover = 0;
-  const inSight = () => {
+  let shownPx = 0;
+  const scrollNow = () => {
     const field = host.ownerDocument.activeElement;
     if (up && field instanceof HTMLElement && host.contains(field)) {
       field.scrollIntoView({ block: "nearest" });
     }
+  };
+  /** Now, and again two frames later: the docked panels' contents are
+   *  placed a frame after their groups are laid out. */
+  let laterPending = false;
+  const inSight = () => {
+    scrollNow();
+    if (laterPending || typeof win.requestAnimationFrame !== "function") return;
+    laterPending = true;
+    win.requestAnimationFrame(() => {
+      win.requestAnimationFrame(() => {
+        laterPending = false;
+        scrollNow();
+      });
+    });
   };
   const update = () => {
     const px = keyboardPx(win.innerHeight, viewport);
@@ -57,6 +78,10 @@ export function watchKeyboard(win: Window, host: HTMLElement): () => void {
     } else {
       body.style.removeProperty(KEYBOARD_VAR);
       delete body.dataset["keyboard"];
+    }
+    if (px !== shownPx) {
+      shownPx = px;
+      relayout();
     }
     // Come, or grown over the field (its suggestions, a phone turned).
     if (up && grew) inSight();

@@ -9,6 +9,7 @@ import {
   answerHosts,
   boxIn,
   capture,
+  dockSettled,
   layoutOf,
   noApproach,
   noClouds,
@@ -119,6 +120,7 @@ test("the writer and the preview sit in place at 1440x900, 1280x720 and 1024x768
   // are not about.
   for (const size of SIZES) {
     await page.setViewportSize(size);
+    await dockSettled(page, size.width);
     await expectSettled(page, size);
     await expectWriterLayout(page, size);
   }
@@ -318,7 +320,8 @@ async function expectWriterLayout(page, size) {
   // section keeps its least height (280 px) and the body scrolls to the
   // rest. The docks hang from the line (`--s-dock-top` in
   // `editor-shell.css`), which comes off the height, so it is read from
-  // the page rather than assumed.
+  // the page rather than assumed; docked, the inspector fills its docked
+  // panel, which already starts under the line.
   const { allowed, fit } = await page.evaluate(() => {
     const e = /** @type {HTMLElement} */ (
       document.querySelector("#shell-inspector")
@@ -331,7 +334,9 @@ async function expectWriterLayout(page, size) {
     return {
       allowed:
         (e.parentElement?.clientHeight ?? 0) -
-        (Number.parseFloat(getComputedStyle(e).top) || 0),
+        (e.closest(".dock-host") === null
+          ? Number.parseFloat(getComputedStyle(e).top) || 0
+          : 0),
       fit: {
         overflow: b.scrollHeight - b.clientHeight,
         slack:
@@ -395,6 +400,7 @@ test("on a phone the writer stands in the sheet, under the map, a wider one left
     { width: 667, height: 375 },
   ]) {
     await page.setViewportSize(size);
+    await dockSettled(page, size.width);
     const foot = size.height - 24;
     await expect.poll(async () => (await rectOf(dock)).width).toBe(size.width);
     const sheet = await rectOf(dock);

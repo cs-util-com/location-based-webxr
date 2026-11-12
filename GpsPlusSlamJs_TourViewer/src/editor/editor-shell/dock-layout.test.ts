@@ -12,6 +12,8 @@ import {
   dockWidths,
   isBottomPanelId,
   isDockPanelId,
+  stripHidden,
+  writerWidthPx,
 } from "./dock-layout.js";
 
 describe("where the panels dock", () => {
@@ -122,5 +124,47 @@ describe("the default layout", () => {
     expect(bottomStartPx(326)).toBe(108);
     expect(bottomStartPx(100)).toBe(90);
     expect(bottomStartPx(-5)).toBe(90);
+  });
+});
+
+// Why: the list brings its own head (title, search, fold), so a tab strip
+// over it alone says "List" twice; a strip still shows wherever a tab can
+// be chosen, or a panel could not be found again once something joins it.
+describe("a group's tab strip", () => {
+  it("hides over the 3D view or the list alone, which carry their own head", () => {
+    expect(stripHidden(["view"])).toBe(true);
+    expect(stripHidden(["list"])).toBe(true);
+  });
+
+  it("shows over any other panel, alone or with others", () => {
+    expect(stripHidden(["details"])).toBe(false);
+    expect(stripHidden(["files"])).toBe(false);
+    expect(stripHidden(["problems"])).toBe(false);
+    expect(stripHidden(["list", "files"])).toBe(false);
+    expect(stripHidden(["details", "files"])).toBe(false);
+  });
+
+  it("shows over an empty group or unknown panels, which need a way back", () => {
+    expect(stripHidden([])).toBe(false);
+    expect(stripHidden(["nope"])).toBe(false);
+  });
+});
+
+// Why: the long text's writer widens the details while it is shown (the
+// writer's prototype); docked, the details' group takes that width, so it
+// must be the undocked writer's: 360 px, 340 px from 1100 px down, and
+// "Wider" up to 540 px and about half the window.
+describe("the details' width while they hold a writer", () => {
+  it("is 360 px on a desktop and 340 px from 1100 px down", () => {
+    expect(writerWidthPx(1440, false)).toBe(360);
+    expect(writerWidthPx(1101, false)).toBe(360);
+    expect(writerWidthPx(1100, false)).toBe(340);
+    expect(writerWidthPx(844, false)).toBe(340);
+  });
+
+  it("is up to 540 px when wider, at most 52 % of the window", () => {
+    expect(writerWidthPx(1440, true)).toBe(540);
+    expect(writerWidthPx(1024, true)).toBe(532);
+    expect(writerWidthPx(844, true)).toBe(438);
   });
 });

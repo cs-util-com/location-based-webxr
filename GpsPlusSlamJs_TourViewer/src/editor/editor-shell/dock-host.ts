@@ -24,9 +24,12 @@ import {
   defaultDockLayout,
   DOCK_PANELS,
   dockPanel,
+  dockWidths,
   isDockPanelId,
+  stripHidden,
   type DockPanelId,
   type DockStep,
+  writerWidthPx,
 } from "./dock-layout.js";
 
 /** The parts of the view box that move with the 3D view into its panel:
@@ -40,6 +43,7 @@ const MIN_HEIGHT_PX = 90;
 
 /** The two side panels that fold. */
 export type FoldingPanel = "list" | "details";
+const SIDES: readonly FoldingPanel[] = ["list", "details"];
 
 export interface DockHostDeps {
   /** The 3D view's box (`#view3d`): the layout fills it below the
@@ -66,6 +70,9 @@ export interface DockHost {
   fold(id: FoldingPanel, folded: boolean): void;
   /** The element a panel's content sits in. */
   content(id: DockPanelId): HTMLElement;
+  /** Lays the groups out for the layout's box now, not on the next
+   *  frame (the box changed under a keyboard). */
+  layout(): void;
   /** Puts every adopted element back where it was and removes the
    *  layout. */
   dispose(): void;
@@ -104,6 +111,10 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
   /** Groups whose first size is still to be given when they first show
    *  (the bottom group starts hidden). */
   const unsized = new Map<DockPanelId, DockStep>();
+  /** Side panels whose group was hidden while its width was to change
+   *  (before its first layout, or over a window resize): it takes its
+   *  width when it next shows. */
+  const stale = new Set<FoldingPanel>();
   let disposed = false;
 
   const adopt = (node: Element, into: HTMLElement, first = false) => {
@@ -186,6 +197,9 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
     }
     afterLayout(() => {
       if (disposed) return;
+      if (axis === "width" && !group.api.isVisible) {
+        for (const side of SIDES) if (groupOf(side) === group) stale.add(side);
+      }
       group.api.setConstraints(
         axis === "width"
           ? {
@@ -237,11 +251,16 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
   adoptViewParts();
   watcher.observe(box, { childList: true });
 
-  const centre = groupOf("view");
-  // Nothing is dropped onto the 3D view as a tab, and its one tab needs
-  // no strip.
-  centre.api.locked = true;
-  centre.header.hidden = true;
+  // Nothing is dropped onto the 3D view as a tab.
+  groupOf("view").api.locked = true;
+  /** A group over one panel with its own head shows no tab strip; one a
+   *  tab joins gets its strip back. */
+  const fitStrips = () => {
+    for (const group of dock.groups) {
+      group.header.hidden = stripHidden(group.panels.map((p) => p.id));
+    }
+  };
+  fitStrips();
   dock.layout(root.clientWidth, root.clientHeight);
   for (const step of steps) {
     if (step.against === undefined) continue;
@@ -278,17 +297,97 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
   window.addEventListener("pointerup", onSashUp);
   window.addEventListener("pointercancel", onSashUp);
 
+  // The long text's writer widens the details while they hold it (the
+  // classes `long-text-dock.ts` sets on them); docked, their group takes
+  // that width and gets back the one it had once the writer goes.
+  const detailsNode = document.getElementById(
+    dockPanel("details").element ?? "",
+  );
+  let beforeWriter: number | null = null;
+  let writerPx: number | null = null;
+  const fitWriter = () => {
+    if (detailsNode === null || disposed) return;
+    const group = groupOf("details");
+    const holds = detailsNode.classList.contains("lw");
+    const want = holds
+      ? writerWidthPx(
+          window.innerWidth,
+          detailsNode.classList.contains("lw-wide"),
+        )
+      : null;
+    if (want === writerPx) return;
+    if (writerPx === null) beforeWriter = group.api.width;
+    writerPx = want;
+    const px = want ?? beforeWriter;
+    if (want === null) beforeWriter = null;
+    if (px !== null) group.api.setSize({ width: px });
+  };
+  const writerWatch = new MutationObserver(fitWriter);
+
+  /** A side group's width for the window: the list's or the column's,
+   *  the writer's while the details hold it. */
+  const sideWidth = (side: FoldingPanel): number => {
+    const widths = dockWidths(window.innerWidth);
+    if (side === "list") return widths.list;
+    return writerPx ?? widths.column;
+  };
+  // A window resize scales every group with it (the docking's own
+  // proportional layout); the side groups then take the widths of the new
+  // window, the 3D view the rest. A hidden one takes it when it shows.
+  let windowPx = root.clientWidth;
+  const onResize = () => {
+    if (disposed || root.clientWidth === windowPx) return;
+    windowPx = root.clientWidth;
+    if (writerPx !== null && detailsNode !== null) {
+      writerPx = writerWidthPx(
+        window.innerWidth,
+        detailsNode.classList.contains("lw-wide"),
+      );
+    }
+    afterLayout(() => {
+      if (disposed) return;
+      for (const side of SIDES) {
+        const group = groupOf(side);
+        if (group.api.isVisible) group.api.setSize({ width: sideWidth(side) });
+        else stale.add(side);
+      }
+    });
+  };
+  const resizeWatch = new ResizeObserver(onResize);
+  resizeWatch.observe(root);
+  if (detailsNode !== null) {
+    writerWatch.observe(detailsNode, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+    fitWriter();
+  }
+
   const changed = dock.onDidActivePanelChange(() => {
     deps.onChange();
   });
   const laidOut = dock.onDidLayoutChange(() => {
+    fitStrips();
     deps.onChange();
   });
 
   const showGroup = (id: DockPanelId) => {
     const group = groupOf(id);
     if (group.api.isVisible) return;
+    // A group coming back takes its room from its neighbours, the other
+    // side group too (down to its least width); that one keeps its width.
+    const others = SIDES.flatMap((side) => {
+      const other = groupOf(side);
+      return other !== group && other.api.isVisible
+        ? [{ other, width: other.api.width }]
+        : [];
+    });
     group.api.setVisible(true);
+    for (const side of SIDES) {
+      if (groupOf(side) !== group || !stale.delete(side)) continue;
+      group.api.setSize({ width: sideWidth(side) });
+    }
+    for (const { other, width } of others) other.api.setSize({ width });
     const first = [...unsized.entries()].find(
       ([panel]) => groupOf(panel) === group,
     );
@@ -338,10 +437,15 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
     },
     fold,
     content: contentOf,
+    layout() {
+      if (!disposed) dock.layout(root.clientWidth, root.clientHeight);
+    },
     dispose() {
       if (disposed) return;
       disposed = true;
       watcher.disconnect();
+      writerWatch.disconnect();
+      resizeWatch.disconnect();
       changed.dispose();
       laidOut.dispose();
       document.removeEventListener("pointerdown", onSashDown, true);
@@ -349,8 +453,8 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
       window.removeEventListener("pointercancel", onSashUp);
       onSashUp();
       // The canvas first, back under the docks. Only what is still in the
-      // layout goes back: a part removed meanwhile by the code that made it (the 3D view's
-      // canvas when the view closed) stays removed.
+      // layout goes back: a part removed meanwhile by the code that made
+      // it (the 3D view's canvas when the view closed) stays removed.
       for (const home of [...homes].reverse()) {
         if (root.contains(home.node)) sendHome(home.node);
       }

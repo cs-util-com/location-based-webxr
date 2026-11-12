@@ -1,7 +1,14 @@
 // @ts-check
 import { expect, test } from "@playwright/test";
 
-import { answerHosts, capture, openSampleIn3d } from "./editor3d-fixture.js";
+import {
+  answerHosts,
+  capture,
+  DOCK_TABS_PX as TABS_PX,
+  dockBottomPx as bottomPx,
+  dockWidthsAt as widths,
+  openSampleIn3d,
+} from "./editor3d-fixture.js";
 
 /**
  * The editor's panels docked around the 3D view, from 701 px wide: the
@@ -17,22 +24,8 @@ test.describe.configure({ mode: "default" });
 const TOP_PX = 40;
 const BAR_PX = 24;
 const LINE_PX = 3;
-/** The docking's tab strip (editor-shell.css's theme). */
-const TABS_PX = 30;
 /** At most this far apart: two panels beside a splitter. */
 const SASH_PX = 2;
-
-/** The list's and the right column's first widths (dock-layout.ts). */
-function widths(/** @type {number} */ w) {
-  return { list: w <= 1100 ? 210 : 248, column: w <= 900 ? 268 : 300 };
-}
-
-/** The bottom group's first height (dock-layout.ts): a third of the
- *  layout's height, 90 to 220 px. */
-function bottomPx(/** @type {number} */ h) {
-  const layout = h - TOP_PX - BAR_PX - LINE_PX;
-  return Math.max(90, Math.min(220, Math.floor(layout / 3)));
-}
 
 /** @param {import("@playwright/test").Locator} locator */
 async function box(locator) {
@@ -115,12 +108,12 @@ for (const size of SIZES) {
       height: size.height - TOP_PX - BAR_PX - LINE_PX,
     });
 
-    // The tabs: the list's, Details shown with Files beside it; the
-    // bottom panel's hidden until asked for; the 3D view has none.
-    const list = host.getByRole("tab", { name: "List", exact: true });
+    // The tabs: Details shown with Files beside it; the bottom panel's
+    // hidden until asked for; the 3D view and the list alone have none
+    // (each carries its own head, so nothing is named twice).
     const details = host.getByRole("tab", { name: "Details", exact: true });
     const files = host.getByRole("tab", { name: "Files", exact: true });
-    await expect(list).toBeVisible();
+    await expect(host.getByRole("tab", { name: "List" })).toHaveCount(0);
     await expect(details).toBeVisible();
     await expect(files).toBeVisible();
     await expect(details).toHaveAttribute("aria-selected", "true");
@@ -139,13 +132,14 @@ for (const size of SIZES) {
       ),
     ).toBeVisible();
 
-    // The side panels at their first widths, under their tab strips; the
+    // The side panels at their first widths, the list from the accent line,
+    // the column under its tab strip; the
     // 3D view between them, at most a splitter apart, from the accent line
     // to the bottom bar, its canvas filling it.
     const want = widths(size.width);
     const tree = await box(page.locator("#shell-tree"));
     expect(tree.x, at).toBeCloseTo(0, 0);
-    expect(tree.y, at).toBeCloseTo(TOP_PX + LINE_PX + TABS_PX, 0);
+    expect(tree.y, at).toBeCloseTo(TOP_PX + LINE_PX, 0);
     expect(Math.abs(tree.width - want.list), at).toBeLessThanOrEqual(1);
     const column = await box(page.locator(".dock-pane-details"));
     expect(column.x + column.width, at).toBeCloseTo(size.width, 0);

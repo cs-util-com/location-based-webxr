@@ -1926,6 +1926,12 @@ let shelfPanel: ShelfPanel | null = null;
  *  shelf is its Files panel then. */
 let panelsDocked = false;
 
+/** A file just put on the shelf, docked: the Files tab shows, so its
+ *  processing is in sight (the shelf's own reveal does the same). */
+function showShelfDocked(): void {
+  if (panelsDocked) shell.reveal("files");
+}
+
 /** A phone's layout: the shelf is a sheet (shelf-panel.css's width). */
 const phoneLayout = window.matchMedia("(width <= 700px)");
 phoneLayout.addEventListener("change", () => {
@@ -2067,9 +2073,7 @@ function openShelfPanel(open: EditorSession): void {
       );
     },
     docked: () => panelsDocked,
-    revealDocked: () => {
-      shell.reveal("files");
-    },
+    revealDocked: showShelfDocked,
   });
 }
 
@@ -2110,6 +2114,7 @@ async function addFromFile(
     return;
   }
   select(outcome.id);
+  showShelfDocked();
   sayAdded(kind, at, outcome.fileName);
   if (!outcome.backedUp) toast(FILE_NOT_KEPT);
   tourChanged();
@@ -2224,6 +2229,7 @@ async function useAsItemFile(id: string, file: File): Promise<void> {
     toast(outcome.reason);
     return;
   }
+  showShelfDocked();
   toast(`The item now shows "${file.name}"`);
   if (!outcome.backedUp) toast(FILE_NOT_KEPT);
   if (outcome.kind === "edited") tourChanged();

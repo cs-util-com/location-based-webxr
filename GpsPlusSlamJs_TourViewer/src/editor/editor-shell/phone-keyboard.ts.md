@@ -12,7 +12,12 @@ styles, and the field in use brought into sight.
 - `watchKeyboard(win, host)` -> stop: writes `--s-keyboard-h` and
   `data-keyboard="up"` on the body while a keyboard is up, and scrolls the focused field inside `host` into
   sight when the keyboard comes, when it grows while up, and when the
-  focus moves under it. Whether it grew is read off the viewport's height
+  focus moves under it. `relayout` (optional) runs each time the
+  keyboard's height changes, before the field is scrolled: the docked
+  panels are laid out by script a frame after their box changed, and
+  a field scrolled into the old layout would be covered again. For the
+  same reason the field is scrolled into sight again two frames later
+  (the docked panels' contents are placed a frame after their groups). Whether it grew is read off the viewport's height
   alone, so a pan of the visual viewport (its `offsetTop`, also a
   `scroll` event) never pulls the field back. Stopping takes the value
   away.

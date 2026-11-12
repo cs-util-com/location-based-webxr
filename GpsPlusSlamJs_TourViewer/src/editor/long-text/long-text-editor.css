@@ -11,7 +11,9 @@
 }
 
 /* The inspector, wider while it holds a writer, wider again on "Wider".
- * A phone's sheet is the window's width already (editor-shell.css). */
+ * A phone's sheet is the window's width already (editor-shell.css);
+ * docked, the details' group takes these widths (dock-layout.ts's
+ * writerWidthPx), the dock filling it. */
 @media (width > 700px) {
   #shell-inspector.lw {
     width: 360px;

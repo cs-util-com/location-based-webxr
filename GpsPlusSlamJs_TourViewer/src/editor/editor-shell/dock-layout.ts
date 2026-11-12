@@ -95,6 +95,17 @@ export function isDockPanelId(id: unknown): id is DockPanelId {
   return DOCK_PANELS.some((p) => p.id === id);
 }
 
+/** The panels that carry their own head: the 3D view (none needed) and
+ *  the list (its title, search and fold). */
+const OWN_HEAD: readonly string[] = ["view", "list"];
+
+/** Whether a group holding `panelIds` hides its tab strip: only over one
+ *  panel that carries its own head, so nothing is named twice; a group
+ *  with a tab to choose, or with nothing known in it, keeps its strip. */
+export function stripHidden(panelIds: readonly string[]): boolean {
+  return panelIds.length === 1 && OWN_HEAD.includes(panelIds[0] ?? "");
+}
+
 /** One panel added to the layout: beside, below or inside a panel added
  *  before it, at a size along that direction's axis. */
 export interface DockStep {
@@ -122,6 +133,15 @@ export function dockWidths(widthPx: number): {
     list: widthPx <= 1100 ? 210 : 248,
     column: widthPx <= 900 ? 268 : 300,
   };
+}
+
+/** The details' width while they hold the long text's writer, as the
+ *  writer's styles give it undocked (`long-text-editor.css`): 360 px,
+ *  340 px from 1100 px down; "Wider", up to 540 px and at most 52 % of
+ *  the window. */
+export function writerWidthPx(widthPx: number, wide: boolean): number {
+  if (wide) return Math.min(540, Math.floor(widthPx * 0.52));
+  return widthPx <= 1100 ? 340 : 360;
 }
 
 /** The bottom group's height when first shown: 220 px, at most about a

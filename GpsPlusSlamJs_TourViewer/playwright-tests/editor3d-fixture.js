@@ -461,3 +461,56 @@ export function shownIn(layout, selector, index = 0) {
 export function styleIn(layout, selector, property, index = 0) {
   return layout[selector]?.[index]?.styles[property] ?? "";
 }
+
+/** From this window width the editor's panels dock around the 3D view
+ *  (`dock-layout.ts`); below it the phone's sheets show them. */
+export const DOCK_MIN_PX = 701;
+
+/** The docking's tab strip over a group (`editor-shell.css`'s theme). */
+export const DOCK_TABS_PX = 30;
+
+/**
+ * The docked list's and right column's first widths at a window width
+ * (`dock-layout.ts`'s `dockWidths`).
+ * @param {number} width
+ */
+export function dockWidthsAt(width) {
+  return {
+    list: width <= 1100 ? 210 : 248,
+    column: width <= 900 ? 268 : 300,
+  };
+}
+
+/**
+ * The bottom group's first height (`dock-layout.ts`'s `bottomStartPx`):
+ * a third of the layout's height below the top bar, its line and above
+ * the bottom bar, 90 to 220 px.
+ * @param {number} height the window's
+ */
+export function dockBottomPx(height) {
+  const layout = height - 40 - 3 - 24;
+  return Math.max(90, Math.min(220, Math.floor(layout / 3)));
+}
+
+/**
+ * Waits after a window resize until the docked layout fills the new
+ * window (the docking lays its groups out a frame later, and its side
+ * groups take their widths a frame after that); nothing to wait for
+ * below `DOCK_MIN_PX`.
+ * @param {import("@playwright/test").Page} page
+ * @param {number} width the window's
+ */
+export async function dockSettled(page, width) {
+  if (width < DOCK_MIN_PX) return;
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        Math.round(
+          document.querySelector(".dock-host")?.getBoundingClientRect().right ??
+            0,
+        ),
+      ),
+    )
+    .toBe(width);
+  await afterFrames(page, 3);
+}

@@ -2380,7 +2380,10 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       window.addEventListener("resize", onResize);
       const box = tree.root.parentElement;
       stopKeyboard?.();
-      stopKeyboard = box === null ? null : watchKeyboard(window, box);
+      stopKeyboard =
+        box === null
+          ? null
+          : watchKeyboard(window, box, () => dockHost?.layout());
       syncDock();
     },
     flush() {

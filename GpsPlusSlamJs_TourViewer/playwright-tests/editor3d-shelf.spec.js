@@ -12,6 +12,8 @@ import {
   answerHosts,
   boxIn,
   capture,
+  DOCK_TABS_PX,
+  dockSettled,
   layoutOf,
   openSampleIn3d,
   shownIn,
@@ -185,6 +187,11 @@ test("a 3D model and a sound added from the tree's menu stand in the tree, in 3D
       .sort();
   expect(await kinds()).toEqual(["audio", "model"]);
   expect((await blocksOf(page, "gate")).length).toBe(before + 2);
+  // Docked, a file just added shows the Files tab, the shelf's processing
+  // in sight, without a step of the creator's.
+  await expect(
+    page.locator(".dock-host").getByRole("tab", { name: "Files" }),
+  ).toHaveAttribute("aria-selected", "true");
 
   // In the tree, in 3D, and on the panel.
   for (const id of [model, sound]) {
@@ -405,17 +412,22 @@ async function shelfSettled(page) {
 
 // The positions and gaps are the chosen prototype's
 // (public/prototypes/asset-shelf-2), read from it at the same three sizes:
-// a 300 px dock at the right edge on a desktop (246 px in a phone's
-// landscape window), cards 8 px in from the panel and 6 px apart (4 px in
-// landscape), the foot only where the window is tall, and on a phone a
-// sheet across the whole width that ends on the bottom bar.
+// a 300 px dock at the right edge on a desktop, cards 8 px in from the
+// panel and 6 px apart (4 px in landscape), the foot only where the window
+// is tall, and on a phone a sheet across the whole width that ends on the
+// bottom bar. Docked (above 700 px) the shelf is the right column's Files
+// tab, so a phone in landscape takes that column's 268 px.
 test("the Assets panel sits where the chosen prototype puts it, on a desktop, a phone in landscape and a phone", async ({
   page,
 }) => {
   test.setTimeout(240_000);
   await openSampleIn3d(page);
-  // A desktop opens with the shelf open, as the prototype does.
-  await expect(page.locator("#shell-shelf")).not.toHaveClass(/folded/);
+  // Docked, the shelf is the Files tab beside Details, which shows first;
+  // the dropped files reveal it.
+  const filesTab = page.locator(".dock-host").getByRole("tab", {
+    name: "Files",
+  });
+  await expect(filesTab).toHaveAttribute("aria-selected", "false");
   const before = await page.locator("#shell-shelf .as-card").count();
   await dropOnPage(page, [
     {
@@ -426,18 +438,21 @@ test("the Assets panel sits where the chosen prototype puts it, on a desktop, a 
     { name: "bell.wav", type: "audio/wav", bytes: [...silenceWav()] },
   ]);
   await expect(page.locator("#shell-shelf .as-card")).toHaveCount(before + 2);
+  await expect(filesTab).toHaveAttribute("aria-selected", "true");
 
-  // A desktop.
+  // A desktop: the right column, under its tab strip, down to the list's
+  // foot.
   let layout = await layoutOf(page, SHELF_PARTS);
   let shelf = boxIn(layout, "#shell-shelf");
   let tree = boxIn(layout, "#shell-tree");
   expect(shelf.width).toBe(300);
   expect(shelf.x + shelf.width).toBe(1440);
-  expect(shelf.y).toBe(tree.y);
+  expect(shelf.y).toBe(tree.y + DOCK_TABS_PX);
   expect(shelf.y + shelf.height).toBe(tree.y + tree.height);
   expect(boxIn(layout, "#shell-shelf .as-head").height).toBe(36);
   let card = boxIn(layout, "#shell-shelf .as-card", 0);
-  expect(card.x - shelf.x).toBe(9); // its 1 px border and 8 px in
+  // 8 px in (docked, the line beside it is the docking's splitter).
+  expect(card.x - shelf.x).toBe(8);
   expect(shelf.x + shelf.width - (card.x + card.width)).toBe(8);
   for (const gap of cardGaps(layout)) expect(gap).toBeCloseTo(6, 0);
   expect(shownIn(layout, "#shell-shelf .as-foot")).toBe(true);
@@ -445,17 +460,18 @@ test("the Assets panel sits where the chosen prototype puts it, on a desktop, a 
   expect(foot.y + foot.height).toBeCloseTo(shelf.y + shelf.height, 0);
   await capture(page, "test-results/shelf-layout-desktop.png");
 
-  // A phone in landscape: narrower, denser, no foot.
+  // A phone in landscape: the docked column's 268 px, denser, no foot.
   await page.setViewportSize({ width: 844, height: 390 });
+  await dockSettled(page, 844);
   await shelfSettled(page);
   layout = await layoutOf(page, SHELF_PARTS);
   shelf = boxIn(layout, "#shell-shelf");
   tree = boxIn(layout, "#shell-tree");
-  expect(shelf.width).toBe(246);
+  expect(shelf.width).toBe(268);
   expect(shelf.x + shelf.width).toBe(844);
-  expect(shelf.y).toBe(tree.y);
+  expect(shelf.y).toBe(tree.y + DOCK_TABS_PX);
   card = boxIn(layout, "#shell-shelf .as-card", 0);
-  expect(card.x - shelf.x).toBe(7); // its 1 px border and 6 px in
+  expect(card.x - shelf.x).toBe(6); // 6 px in
   for (const gap of cardGaps(layout)) expect(gap).toBeCloseTo(4, 0);
   expect(shownIn(layout, "#shell-shelf .as-foot")).toBe(false);
   await capture(page, "test-results/shelf-layout-landscape.png");
