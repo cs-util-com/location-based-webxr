@@ -2346,3 +2346,45 @@ describe("the add menu's Character", () => {
     expect(store.getState().editorView.openStations).toContain("b");
   });
 });
+
+describe("a phone's keyboard over the panels", () => {
+  // Why: docked, the list sits in a pane of its own; a keyboard watcher
+  // hosted by the list's parent would not see the details' fields, and a
+  // field typed into would stay under the keyboard. The watcher is hosted
+  // by the 3D view, which holds every panel wherever it sits.
+  it("brings a details field into sight while the list sits in a pane of its own", () => {
+    const { shell, view, select } = setUp();
+    shell.hide();
+    const pane = document.createElement("div");
+    document.getElementById("view3d")?.append(pane);
+    const tree = document.getElementById("shell-tree");
+    if (tree === null) throw new Error("no tree");
+    pane.append(tree);
+    const viewport = Object.assign(new EventTarget(), {
+      height: window.innerHeight,
+      offsetTop: 0,
+      scale: 1,
+    });
+    Object.defineProperty(window, "visualViewport", {
+      value: viewport,
+      configurable: true,
+    });
+    const scrolled = vi.fn();
+    const scroll = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrolled;
+    try {
+      shell.show(view);
+      select("station:a");
+      const title = field("title");
+      title.focus();
+      viewport.height = window.innerHeight - 300;
+      viewport.dispatchEvent(new Event("resize"));
+      expect(document.body.dataset["keyboard"]).toBe("up");
+      expect(scrolled.mock.contexts).toContain(title);
+    } finally {
+      Element.prototype.scrollIntoView = scroll;
+      Reflect.deleteProperty(window, "visualViewport");
+      shell.hide();
+    }
+  });
+});

@@ -2416,15 +2416,13 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       window.addEventListener("keydown", onKey, true);
       document.addEventListener("pointerdown", onOutside);
       window.addEventListener("resize", onResize);
-      const box = tree.root.parentElement;
+      // The view holds every panel, docked or not (a docked one sits in a
+      // pane of its own).
       stopKeyboard?.();
-      stopKeyboard =
-        box === null
-          ? null
-          : watchKeyboard(window, box, (px) => {
-              keyboardPx = px;
-              dockHost?.keyboard(px);
-            });
+      stopKeyboard = watchKeyboard(window, viewBox, (px) => {
+        keyboardPx = px;
+        dockHost?.keyboard(px);
+      });
       syncDock();
     },
     flush() {

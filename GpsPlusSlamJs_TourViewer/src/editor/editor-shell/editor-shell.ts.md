@@ -64,6 +64,8 @@ phone wider than 700 px keeps the two docks, and turning one with
 something selected unfolds the list the details covered. The on-screen keyboard
 (`phone-keyboard.ts`) is `--s-keyboard-h` on the page; at every width a
 panel stands on the keyboard, so a focused field can scroll above it.
+The watcher is hosted by the 3D view, which holds every panel wherever
+it sits (docked, each in a pane of its own).
 Docked, the layout is told the keyboard's height on every change and,
 when it is docked while a keyboard is up, at once.
 
