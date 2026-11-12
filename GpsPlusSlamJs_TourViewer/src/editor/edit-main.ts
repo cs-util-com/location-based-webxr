@@ -488,6 +488,12 @@ const tourNameText = element("tour-name-text");
 const coverList = element("details-covers");
 const coversNone = element("details-covers-none");
 const toasts = element("toasts");
+/** The docked panels' elements, held from the start: docked, a panel
+ *  behind another tab is out of the page, where a lookup by id finds
+ *  nothing. */
+const shellTree = element("shell-tree");
+const shellShelf = element("shell-shelf");
+const shellInspector = element("shell-inspector");
 /** The File menu's Save (`edit.html`; the menu: `menu-button.ts`). */
 const saveButton = element<HTMLButtonElement>("file-save");
 /** "Save a copy…": the tour as it stands into a file of its own. */
@@ -1943,25 +1949,19 @@ phoneLayout.addEventListener("change", () => {
 
 /** The details (the inspector dock) open: shown and not folded. */
 function detailsOpen(): boolean {
-  const details = document.getElementById("shell-inspector");
   return (
-    details !== null &&
-    !details.hidden &&
-    !details.classList.contains("collapsed")
+    !shellInspector.hidden && !shellInspector.classList.contains("collapsed")
   );
 }
 
 // The shelf's squeeze follows the details and the window's width: a
 // redraw whenever either changes (the shell draws the details).
-const detailsSeen = document.getElementById("shell-inspector");
-if (detailsSeen !== null) {
-  new MutationObserver(() => {
-    shelfPanel?.refresh();
-  }).observe(detailsSeen, {
-    attributes: true,
-    attributeFilter: ["hidden", "class"],
-  });
-}
+new MutationObserver(() => {
+  shelfPanel?.refresh();
+}).observe(shellInspector, {
+  attributes: true,
+  attributeFilter: ["hidden", "class"],
+});
 window.addEventListener("resize", () => {
   shelfPanel?.refresh();
 });
@@ -2011,7 +2011,7 @@ const shelfActions = createShelfPageActions({
 function openShelfPanel(open: EditorSession): void {
   shelfPanel?.destroy();
   shelfPanel = createShelfPanel({
-    root: element("shell-shelf"),
+    root: shellShelf,
     toggle: element<HTMLButtonElement>("shelf-toggle"),
     pill: element<HTMLButtonElement>("shelf-pill"),
     host: document.body,
@@ -2269,7 +2269,7 @@ async function dropFiles(
   at: Element | null,
 ): Promise<void> {
   if (editor === null) return;
-  const dropTarget = fileDropTarget(at, element("shell-tree"));
+  const dropTarget = fileDropTarget(at, shellTree);
   const loose: File[] = [];
   for (const file of files) {
     const kind = fileAddKindOf(file.name);
@@ -4229,7 +4229,7 @@ document.addEventListener("dragover", (event) => {
   if (at === undefined) return;
   document.body.classList.add("file-drag");
   markFileDrop(
-    fileDropTarget(at, element("shell-tree")) === null
+    fileDropTarget(at, shellTree) === null
       ? null
       : (at?.closest(`[${FILE_FIELD_ATTR}], [data-select]`) ?? null),
   );

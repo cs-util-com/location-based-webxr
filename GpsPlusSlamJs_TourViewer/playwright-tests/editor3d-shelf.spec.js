@@ -289,6 +289,12 @@ test("a picture dropped onto a story's row becomes the story's last entry and a 
   await expect(
     page.locator(".toast", { hasText: 'Added the picture "market view"' }),
   ).toBeVisible();
+  // Docked, a drop that makes an item keeps its Details in sight.
+  await expect(
+    page
+      .locator(".dock-host")
+      .getByRole("tab", { name: "Details", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
   const tour = await tourNow(page);
   const told = tour.stations
     .find((/** @type {any} */ s) => s.id === "gate")
@@ -554,4 +560,81 @@ test("a file added while the docked Files tab is hidden is listed and done when 
     .filter({ has: page.locator(".as-cname", { hasText: "little-arch.glb" }) });
   await expect(card).toHaveCount(1);
   await expect(card.locator(".as-cstate")).toHaveClass(/\b(ready|kept|idle)\b/);
+});
+
+// Why: a file dropped on an item's file field gives the item that file;
+// docked, its Details stay the shown tab (the next step is there), not the
+// Files tab a loose drop shows.
+test("a file dropped on an item's file field keeps the docked Details shown", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await openSampleIn3d(page);
+  await dockSettled(page, 1440);
+  await addFromMenu(page, "gate", "model", {
+    name: "little-arch.glb",
+    mimeType: "model/gltf-binary",
+    buffer: triangleGlb(),
+  });
+  const field = page.locator("#shell-inspector [data-filefield]").first();
+  await expect(field).toBeVisible();
+  await field.evaluate((target, bytes) => {
+    const data = new DataTransfer();
+    data.items.add(
+      new File([new Uint8Array(bytes)], "big-arch.glb", {
+        type: "model/gltf-binary",
+      }),
+    );
+    for (const type of ["dragover", "drop"]) {
+      target.dispatchEvent(
+        new DragEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: data,
+        }),
+      );
+    }
+  }, Array.from(triangleGlb()));
+  await expect(
+    page.locator(".toast", { hasText: 'The item now shows "big-arch.glb"' }),
+  ).toBeVisible();
+  const host = page.locator(".dock-host");
+  await expect(
+    host.getByRole("tab", { name: "Details", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(
+    host.getByRole("tab", { name: "Files", exact: true }),
+  ).toHaveAttribute("aria-selected", "false");
+});
+
+// Why: docked, the list behind another tab is out of the page. A file
+// dropped then must still be read against the list and reach the shelf,
+// not throw on a lookup that finds no list and lose the file unsaid.
+test("a file dropped while the list is behind the Files tab reaches the shelf", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await openSampleIn3d(page);
+  await dockSettled(page, 1440);
+  const host = page.locator(".dock-host");
+  const files = host.getByRole("tab", { name: "Files", exact: true });
+  await files.dragTo(page.locator(".dock-pane-list"));
+  await expect(
+    host.getByRole("tab", { name: "List", exact: true }),
+  ).toBeVisible();
+  await files.click();
+  await expect(page.locator("#shell-shelf")).toBeVisible();
+  await expect(page.locator("#shell-tree")).toHaveCount(0);
+  const errors = /** @type {string[]} */ ([]);
+  page.on("pageerror", (error) => errors.push(error.message));
+  const before = await page.locator("#shell-shelf .as-card").count();
+  await dropOnPage(page, [
+    {
+      name: "market-view.png",
+      type: "image/png",
+      bytes: [...encodeRgbPng(4, 3, new Array(36).fill(200))],
+    },
+  ]);
+  await expect(page.locator("#shell-shelf .as-card")).toHaveCount(before + 1);
+  expect(errors).toEqual([]);
 });
