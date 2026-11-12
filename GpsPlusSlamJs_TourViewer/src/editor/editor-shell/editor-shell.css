@@ -1206,6 +1206,19 @@ body {
   color: var(--s-text);
 }
 
+/* The list's head holds its header and four buttons in the list's 248 px:
+ * the header gives way, its name cut short, so the panel's fold button
+ * stays inside the list (past its edge it lay under the 3D view). */
+#tree-stations {
+  min-width: 0;
+}
+
+#tree-stations > span:not(.count) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sech svg {
   width: 13px;
   height: 13px;
