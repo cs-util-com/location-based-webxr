@@ -232,8 +232,7 @@ describe("withStoryStep", () => {
     ]);
   const choiceOf = (out: Pick<TourStation, "children"> | null) =>
     (out === null ? undefined : tourStories(out)[0])?.children[1] as
-      | TourChoice
-      | undefined;
+      TourChoice | undefined;
 
   // Why: the choice inspector writes a whole step back at once; what it
   // writes is checked by the format's own reader, so an answer that ends

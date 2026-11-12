@@ -259,8 +259,7 @@ describe('children: an answer that ends the story', () => {
     ]);
   const optionsOf = (read: TourStationChild[], index: number) =>
     (read[0] as unknown as { children: { options?: { id: string }[] }[] })
-      .children[index]!
-      .options;
+      .children[index]!.options;
 
   it('reads `end: true` as written, and it survives a write and a read', () => {
     const read = children([ending({ end: true })]);

@@ -187,19 +187,17 @@ function readStep(
   story: TourStory,
   step: TourChoice | TourQuizEntry,
 ): TourStoryChild | null {
-  const children = story.children.map((c) => (c.id === step.id ? step : standIn(c.id)));
+  const children = story.children.map((c) =>
+    c.id === step.id ? step : standIn(c.id),
+  );
   try {
-    const read = parseTourStationChildren(
-      [{ ...story, children }],
-      "story",
-      {
-        assets: [],
-        lenient: false,
-        fail: (message: string): never => {
-          throw new Error(message);
-        },
+    const read = parseTourStationChildren([{ ...story, children }], "story", {
+      assets: [],
+      lenient: false,
+      fail: (message: string): never => {
+        throw new Error(message);
       },
-    ).children[0];
+    }).children[0];
     const kept =
       read !== undefined && isStory(read)
         ? read.children.find((c) => c.id === step.id)

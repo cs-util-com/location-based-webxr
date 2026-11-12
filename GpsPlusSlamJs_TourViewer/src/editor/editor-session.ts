@@ -2749,15 +2749,15 @@ export function createEditorSession(input: {
         ? { kind: "edited" }
         : notApplied;
     },
-    setStoryStep(step) {
+    setStoryStep(next) {
       const state = mine();
       const manifest = state === null ? null : manifestNow(state);
       if (state === null || manifest === null) return notInTour;
-      const place = tourChildPlace(manifest, step.id);
+      const place = tourChildPlace(manifest, next.id);
       if (place?.story === undefined) {
         return { kind: "refused", reason: NO_SUCH_STORY };
       }
-      const edit: StationEdit = { storyStep: step };
+      const edit: StationEdit = { storyStep: next };
       const change = stationEditChange(state, place.station.id, edit);
       if (change.kind === "refused") {
         return { kind: "refused", reason: STATION_REFUSALS[change.reason] };
@@ -2768,7 +2768,7 @@ export function createEditorSession(input: {
           tourDocumentActions.stationEdited({
             stationId: place.station.id,
             edit,
-            what: `the edit of "${storyChildName(step)}"`,
+            what: `the edit of "${storyChildName(next)}"`,
           }),
         ),
       )

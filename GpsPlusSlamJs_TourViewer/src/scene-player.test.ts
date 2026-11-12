@@ -189,10 +189,10 @@ describe("createScenePlayer along any choice path (property)", () => {
     })
     .chain((kinds) =>
       fc
-        .array(
-          fc.tuple(wayOn, wayOn),
-          { minLength: kinds.length, maxLength: kinds.length },
-        )
+        .array(fc.tuple(wayOn, wayOn), {
+          minLength: kinds.length,
+          maxLength: kinds.length,
+        })
         .map((gotos) =>
           kinds.map((kind, i): TourStoryChild => {
             const id = "s" + String(i);
