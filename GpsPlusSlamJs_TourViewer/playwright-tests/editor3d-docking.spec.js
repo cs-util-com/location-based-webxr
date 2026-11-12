@@ -577,6 +577,8 @@ test("pictures drawn into the details behind the Files tab show when Details sho
   await expect(page.locator("#shell-inspector")).toHaveCount(0);
   await picks.nth(1).click();
   await picks.nth(2).click();
+  // Still out of the page: the picks drew into the detached details.
+  await expect(page.locator("#shell-inspector")).toHaveCount(0);
   await host.getByRole("tab", { name: "Details", exact: true }).click();
   const thumbs = page.locator("#inspector-body button.thumb");
   expect(
