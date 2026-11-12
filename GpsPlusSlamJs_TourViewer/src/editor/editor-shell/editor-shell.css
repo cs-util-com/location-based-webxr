@@ -1220,19 +1220,24 @@ body {
 }
 
 /* Docked, the list can be narrower than that (210 px at a 1024 px window,
- * 140 px at its splitter's least): the head closes up, Select keeps only
- * its icon (its word stays its name) and, narrowest, the buttons shrink. */
+ * 140 px at its splitter's least): the header takes the spacer's room,
+ * Select keeps only its icon (its word stays its name) and the buttons
+ * keep their 6 px apart; narrowest, the head closes up and they shrink. */
 #view3d.docked #shell-tree {
   container: tree-list / inline-size;
 }
 
 @container tree-list (width < 248px) {
   #shell-tree .dhead {
-    gap: 2px;
     padding-left: 6px;
   }
 
+  #shell-tree .dhead .sp {
+    display: none;
+  }
+
   #tree-stations {
+    flex: 1 1 auto;
     overflow: hidden;
   }
 
