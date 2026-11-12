@@ -20,6 +20,7 @@ import {
   draggedRadiusM,
   draggedSizeM,
   gizmoLayout,
+  groupHull,
   groupSpanM,
   handleAt,
   sceneKey,
@@ -260,6 +261,99 @@ describe("a group's gizmo (a folder at its pivot)", () => {
         { minX: Number.NaN, maxX: 1, minZ: 0, maxZ: 1 },
       ]),
     ).toBe(0);
+  });
+});
+
+describe("the dashed outline round a group", () => {
+  // Why: the outline is how the creator sees what a folder holds and
+  // where its name stands; it must hold every member's footprint, sit
+  // square to the folder's heading (it turns with the folder), and keep
+  // its margin, or a member would poke out of the drawn group.
+  it("rings its members' footprints square to the heading, padded, its tag at the front left", () => {
+    const hull = groupHull(
+      { x: 10, z: -4 },
+      0,
+      [
+        { minX: 11, maxX: 12, minZ: -4, maxZ: -4 },
+        { minX: 7, maxX: 8, minZ: -8, maxZ: -6 },
+      ],
+      0.5,
+    );
+    // Heading 0 faces north (-z): front is the north edge, left the west.
+    const near = (
+      p: { x: number; z: number } | undefined,
+      x: number,
+      z: number,
+    ) => {
+      expect(p?.x).toBeCloseTo(x, 9);
+      expect(p?.z).toBeCloseTo(z, 9);
+    };
+    near(hull?.corners[0], 6.5, -8.5);
+    near(hull?.corners[1], 12.5, -8.5);
+    near(hull?.corners[2], 12.5, -3.5);
+    near(hull?.corners[3], 6.5, -3.5);
+    near(hull?.tag, 6.5, -8.5);
+  });
+
+  it("holds every footprint corner, each edge one margin from the nearest, at any heading", () => {
+    const box = fc
+      .tuple(
+        fc.double({ min: -20, max: 20, noNaN: true }),
+        fc.double({ min: -20, max: 20, noNaN: true }),
+        fc.double({ min: 0, max: 5, noNaN: true }),
+        fc.double({ min: 0, max: 5, noNaN: true }),
+      )
+      .map(([x, z, w, d]) => ({ minX: x, maxX: x + w, minZ: z, maxZ: z + d }));
+    fc.assert(
+      fc.property(
+        fc.double({ min: -360, max: 720, noNaN: true }),
+        fc.array(box, { minLength: 1, maxLength: 5 }),
+        (headingDeg, boxes) => {
+          const centre = { x: 1, z: 2 };
+          const pad = 0.3;
+          const hull = groupHull(centre, headingDeg, boxes, pad);
+          expect(hull).not.toBeNull();
+          const c = hull?.corners ?? [];
+          expect(c).toHaveLength(4);
+          // Each edge as the line through two corners; a point's signed
+          // distance inside it.
+          const inside = (p: { x: number; z: number }, a: number) => {
+            const p0 = c[a];
+            const p1 = c[(a + 1) % 4];
+            const p3 = c[(a + 3) % 4];
+            if (p0 === undefined || p1 === undefined || p3 === undefined)
+              throw new Error("corner");
+            const len = Math.hypot(p3.x - p0.x, p3.z - p0.z);
+            return (
+              ((p.x - p0.x) * (p3.x - p0.x) + (p.z - p0.z) * (p3.z - p0.z)) /
+              len
+            );
+          };
+          const corners = boxes.flatMap((b) => [
+            { x: b.minX, z: b.minZ },
+            { x: b.maxX, z: b.minZ },
+            { x: b.maxX, z: b.maxZ },
+            { x: b.minX, z: b.maxZ },
+          ]);
+          for (let edge = 0; edge < 4; edge += 1) {
+            const depths = corners.map((p) => inside(p, edge));
+            expect(Math.min(...depths)).toBeCloseTo(pad, 6);
+          }
+        },
+      ),
+    );
+  });
+
+  it("is none without a drawn member", () => {
+    expect(groupHull({ x: 0, z: 0 }, 0, [], 0.3)).toBeNull();
+    expect(
+      groupHull(
+        { x: 0, z: 0 },
+        0,
+        [{ minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity }],
+        0.3,
+      ),
+    ).toBeNull();
   });
 });
 

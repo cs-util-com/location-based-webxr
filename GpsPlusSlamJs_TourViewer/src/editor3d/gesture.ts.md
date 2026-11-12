@@ -28,7 +28,9 @@ dots, and the dots' bounds, are its placement row's
     the level plane, whole degrees (15 with Shift).
   - `dot`: a reach (a station's found radius, `draggedRadiusM`) or a size
     or a factor (`draggedSizeM`), within the bounds of the target's
-    extent.
+    extent; a group's (a folder's) factor within `groupScaleBounds`
+    (0.2-5 by a drag, a factor beyond them kept as it was; the format
+    itself accepts 0.1-10).
   - Methods `move(pointer, fine)`, `retry()`, `waiting()`, `preview()`,
     `edit()` (null when nothing changed: no empty undo step).
 - `startKeyGesture(target, world)` -> `KeyGesture`: `press(key)` applies a
@@ -85,7 +87,8 @@ and a model's size dragged alike end at their own bounds); a press that
 moved nothing writes nothing; a key hold adds its presses up into one
 edit, leaves a station's height and a pin's heading alone, and writes
 nothing for presses that cancel out; a locked station: no move, no turn,
-and its radius drag. The property tests live with `place-edits.ts`.
+and its radius drag; a folder's scale drag held between 0.2 and 5 and
+a factor beyond them kept. The property tests live with `place-edits.ts`.
 `gizmo-equivalence.test.ts`: every row's gizmo, through
 `gestureTargetOf`, `gizmoSubjectOf` and `gizmoLayout`, equals the
 layout the editor drew before the placement rows (a frozen copy of it)

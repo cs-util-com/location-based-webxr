@@ -40,6 +40,7 @@ import {
   compassDeg,
   draggedRadiusM,
   draggedSizeM,
+  groupScaleBounds,
   turnedHeadingDeg,
   type GizmoHandle,
   type GizmoSubject,
@@ -266,7 +267,15 @@ export function startGesture(
       value:
         extent.kind === "reach"
           ? draggedRadiusM(d, fine, extent)
-          : draggedSizeM(extent.value, dotStart, d, extent),
+          : draggedSizeM(
+              extent.value,
+              dotStart,
+              d,
+              // A group's scale drag keeps to the gizmo's narrower range.
+              target.members !== undefined
+                ? groupScaleBounds(extent.value, extent)
+                : extent,
+            ),
     };
     return true;
   };

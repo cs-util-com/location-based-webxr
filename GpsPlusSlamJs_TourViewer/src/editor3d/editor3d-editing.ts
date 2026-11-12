@@ -573,8 +573,19 @@ export function createSceneEditing(deps: SceneEditingDeps) {
         else if (next === "missed") deps.page.say(MISSED_MODEL);
       }
       parts.update();
-      outline.update(deps.tour(), deps.models.view().selected);
       layout = layoutNow();
+      // A group's gizmo (a folder's) rings its dashed outline and its tag.
+      outline.update(
+        deps.tour(),
+        deps.models.view().selected,
+        layout?.bodyGrips === true
+          ? {
+              centre: layout.centre,
+              headingDeg: layout.headingDeg,
+              spritePerPx: spritePerPx(),
+            }
+          : null,
+      );
       if (layout === null) {
         gizmo.update(null);
         return;

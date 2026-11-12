@@ -67,13 +67,25 @@ layout, `editor3d-input.ts` feeds the pointer and the keys.
   three significant digits, within the row's bounds (a model's
   0.05-500 m). The bounds are the placement row's, never this file's:
   `../placement/placement-rows.ts` holds them once.
+- `groupScaleBounds(value, format)` - the bounds a folder's scale is
+  dragged within: `GIZMO.groupScaleMin` 0.2 to `GIZMO.groupScaleMax` 5
+  (the drag the chosen design offers), inside the format's own bounds
+  (`format`, 0.1-10, which a file and the typed field still reach), and
+  widened to `value` when the scale stands beyond them, so a press never
+  jumps a folder typed to 8 back to 5.
+- `groupHull(centre, headingDeg, footprints, padM)` -> `GroupHull | null`:
+  the dashed outline round a group, a rectangle square to its heading
+  that holds every footprint with `padM` to spare on each side; its
+  `corners` go round from the front left (front left, front right, back
+  right, back left) and `tag` is the front-left corner. Null when no
+  footprint is finite.
 - `sceneKey(press)` -> `SceneKey | null`: arrows nudge, Alt+Left/Right and
   Q / E turn, PageUp / PageDown lift, Delete / Backspace delete, Ctrl+D
   (Cmd+D) duplicates; null for every key the shell or the page answers (T,
   F, Home, Esc, Ctrl+Z, Ctrl+Y) and any other Ctrl/Cmd chord. Read by
   `code`, so the keyboard layout's letter does not matter.
 - Types `WorldPoint`, `GroundSpot`, `ScreenPoint`, `GizmoSubject`,
-  `GizmoLayout`, `GizmoHandle`, `Footprint`, `DotBounds`, `SceneKey`, `KeyPress`.
+  `GizmoLayout`, `GizmoHandle`, `Footprint`, `DotBounds`, `GroupHull`, `SceneKey`, `KeyPress`.
 
 ## Invariants & assumptions
 
@@ -115,4 +127,6 @@ their bounds; every key of the design and the keys left to others; and a
 property: the knob's distance and bearing from the centre and the parts'
 bounds over random subjects and scales.
 
-`gizmo-maths.test.ts` also pins a locked station's layout (dots kept, not posable) and its handles (a dot only).
+`gizmo-maths.test.ts` also pins the dashed outline round a group (an exact
+case; a property that every footprint keeps exactly the pad to the nearest
+edge it touches; null for no finite footprint), and a locked station's layout (dots kept, not posable) and its handles (a dot only).

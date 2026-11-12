@@ -52,6 +52,10 @@ export const GIZMO = Object.freeze({
   /** A group's move disc at its pivot (px): small, so its members stay
    *  in view and grabbable round it. */
   groupMovePx: 26,
+  /** A group's scale drag stays within these factors (the format reads
+   *  0.1 to 10 from a file; the drag keeps to what is useful to aim). */
+  groupScaleMin: 0.2,
+  groupScaleMax: 5,
   /** The knob's stalk beyond the ring (px). */
   knobGapPx: 30,
   /** The knob's drawn size (px); half of it is its grip. */
@@ -157,6 +161,65 @@ export function groupSpanM(
     span = Math.max(span, Math.hypot(dx, dz));
   }
   return span;
+}
+
+/** The dashed outline round a group: four corners on the ground, in
+ *  order round it from its front left, and where its name tag stands. */
+export interface GroupHull {
+  readonly corners: readonly GroundSpot[];
+  readonly tag: GroundSpot;
+}
+
+/**
+ * The rectangle square to `headingDeg` (its front faces the heading)
+ * round every corner of `footprints`, `padM` beyond the outermost on
+ * each side; its tag at the front left corner. Null when no footprint is
+ * a finite box (nothing drawn yet).
+ */
+export function groupHull(
+  centre: GroundSpot,
+  headingDeg: number,
+  footprints: readonly Footprint[],
+  padM: number,
+): GroupHull | null {
+  // The heading's own axes on the ground: forward, and right of it.
+  const fx = Math.sin(headingDeg * RAD);
+  const fz = -Math.cos(headingDeg * RAD);
+  const rx = -fz;
+  const rz = fx;
+  let minR = Infinity;
+  let maxR = -Infinity;
+  let minF = Infinity;
+  let maxF = -Infinity;
+  for (const b of footprints) {
+    if (![b.minX, b.maxX, b.minZ, b.maxZ].every(Number.isFinite)) continue;
+    for (const x of [b.minX, b.maxX]) {
+      for (const z of [b.minZ, b.maxZ]) {
+        const dx = x - centre.x;
+        const dz = z - centre.z;
+        const r = dx * rx + dz * rz;
+        const f = dx * fx + dz * fz;
+        minR = Math.min(minR, r);
+        maxR = Math.max(maxR, r);
+        minF = Math.min(minF, f);
+        maxF = Math.max(maxF, f);
+      }
+    }
+  }
+  if (minR > maxR) return null;
+  const at = (r: number, f: number): GroundSpot => ({
+    x: centre.x + r * rx + f * fx,
+    z: centre.z + r * rz + f * fz,
+  });
+  const left = minR - padM;
+  const right = maxR + padM;
+  const front = maxF + padM;
+  const back = minF - padM;
+  const tag = at(left, front);
+  return {
+    corners: [tag, at(right, front), at(right, back), at(left, back)],
+    tag,
+  };
 }
 
 /** Where the gizmo's parts lie (m, in the world). */
@@ -367,6 +430,16 @@ export function draggedRadiusM(
 function threeDigits(m: number): number {
   const p = Math.pow(10, Math.floor(Math.log10(Math.max(1e-6, m))) - 2);
   return Number((Math.round(m / p) * p).toPrecision(3));
+}
+
+/** The bounds a group's scale drag keeps to: `GIZMO`'s range within
+ *  `format`'s, widened to `value` when the group is written beyond it
+ *  (it keeps its factor until the drag takes it inward). */
+export function groupScaleBounds(value: number, format: DotBounds): DotBounds {
+  return {
+    min: Math.max(format.min, Math.min(GIZMO.groupScaleMin, value)),
+    max: Math.min(format.max, Math.max(GIZMO.groupScaleMax, value)),
+  };
 }
 
 /**
