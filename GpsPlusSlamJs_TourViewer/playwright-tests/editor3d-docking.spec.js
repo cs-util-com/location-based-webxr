@@ -336,6 +336,46 @@ test("a docked side folded and unfolded by the keyboard keeps the focus on its f
   expect(await focusOn(page, fold), "unfolded").toBe(true);
 });
 
+// Why: the long text writer widens the details while it is open; closed
+// while the details are folded, their group must come back at the
+// column width, not keep the writer's (a width set on a hidden group is
+// a case the docking could drop).
+test("the details closed out of their writer while folded unfold at the column width", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await answerHosts(page);
+  await openSampleIn3d(page);
+  await dockSettled(page, 1440);
+  await page
+    .locator("#tree-body .card", { hasText: "The old gate" })
+    .locator(".pick")
+    .click();
+  await expect(page.locator("#inspector-body")).toBeVisible();
+  const width = async () => (await dockState(page)).boxes["details"]?.[2];
+  const column = await width();
+  expect(column).toBeDefined();
+  // The writer's classes, as the long text dock sets them.
+  const writer = (/** @type {boolean} */ on) =>
+    page.evaluate((open) => {
+      document.getElementById("shell-inspector")?.classList.toggle("lw", open);
+    }, on);
+  await writer(true);
+  await expect.poll(width).toBeGreaterThan((column ?? 0) + 20);
+  const fold = page.locator('#inspector-head [data-act="fold"]');
+  await fold.click();
+  // Folded: their group out of the layout, or a rail.
+  await expect.poll(async () => (await width()) ?? 0).toBeLessThan(50);
+  await writer(false);
+  await afterFrames(page, 3);
+  await fold.click();
+  await expect(page.locator("#inspector-body")).toBeVisible();
+  await expect
+    .poll(async () => Math.abs(((await width()) ?? 0) - (column ?? 0)))
+    .toBeLessThanOrEqual(1);
+});
+
 // Why: a phone turned between upright and sideways docks or undocks its
 // panels, which moves the field in use; its focus (and with it the
 // keyboard) must stay on it.
@@ -888,10 +928,14 @@ test("the docked list's head buttons stay inside the list at 210 and at 140 px",
       const select = document.getElementById("tree-select");
       const stations = document.getElementById("tree-stations");
       if (select !== null && select.getBoundingClientRect().width > 26) {
-        out.push(`select ${String(Math.round(select.getBoundingClientRect().width))} px`);
+        out.push(
+          `select ${String(Math.round(select.getBoundingClientRect().width))} px`,
+        );
       }
       if (stations !== null && stations.getBoundingClientRect().width < 24) {
-        out.push(`stations ${String(Math.round(stations.getBoundingClientRect().width))} px`);
+        out.push(
+          `stations ${String(Math.round(stations.getBoundingClientRect().width))} px`,
+        );
       }
       return out;
     });
