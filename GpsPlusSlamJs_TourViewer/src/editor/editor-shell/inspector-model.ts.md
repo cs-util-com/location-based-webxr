@@ -47,8 +47,9 @@ origin?, groundAt? })` ->
     in its station's frame, its holders composed in), `groundOffM`,
     `phoneDetails: false` (a phone shows no details sheet for it: a tap
     keeps the list and the folder's band, and the 3D handles move, turn
-    and scale it; its typed fields are for a wider window); read
-    through `placeableOf`, so it shows what the gizmo moves;
+    and scale it; its typed fields are for a wider window), `items`
+    (its items at any depth as `StationContent` rows, in the station's
+    order); read through `placeableOf`, so it shows what the gizmo moves;
   - `StoryInspector` - `kind: "story"` (selection `story:<id>`), `storyId`,
     `stationId`, `title`, `sub` ("2 The gate / Story") and `entries`
     (`storyRows` of `tree-model.ts`: `{ id, kind, title, place }`);
@@ -105,6 +106,10 @@ view, advance, facingDeg }`) and `advance { mode, afterS }`;
 - `detailsOnPhone(model)` - whether a phone shows `model` as its details
   sheet: true unless the model says `phoneDetails: false` (a folder). The
   shell asks this, never the selection's kind.
+- `sceneHint(model | null)` - the line over the 3D view for a selected
+  folder: `<name> - N items move, turn and scale together. Click one to
+move it alone.` (one item: "1 item moves, turns and scales with it.
+  Click it to move it alone."); null for any other selection.
 - `inspectorHint(model | null)` - the bottom bar's hint: the handles the
   selection's gizmo has in the 3D view (a station: move, radius dot,
   turn; an item: move and turn, a size dot where it has an `extent` (a

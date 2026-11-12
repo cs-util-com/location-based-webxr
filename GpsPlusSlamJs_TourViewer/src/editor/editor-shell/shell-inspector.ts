@@ -886,42 +886,52 @@ function itemParts(
 /** A plain folder's parts: its scale to type, and its Place (its
  *  origin's offset, height and heading in its station's frame) folded
  *  away as an item's position is. Its items follow either. */
-function folderParts(model: FolderModel, state: InspectorState): HTMLElement[] {
+/** A folder's pivot, open under its own heading: where it stands, its
+ *  heading and its scale to type, and Pivot to centre; then its items,
+ *  each a row that selects it alone, and Select its items. */
+function folderParts(model: FolderModel): HTMLElement[] {
   const o = model.offset;
   const { scale } = model;
-  const section = el("div", "isec");
-  section.append(
+  const pivot = el("div", "isec");
+  pivot.append(
+    el("div", "isec-h", "Pivot (from the station centre)"),
+    vectorField(
+      "Position",
+      [
+        ["E", "east", "east", fixed(o.eastM, 2)],
+        ["N", "north", "north", fixed(o.northM, 2)],
+      ],
+      "m",
+    ),
+    numberField("Height", "height", fixed(o.upM, 2), "m"),
+    numberField("Heading", "heading", headingText(model.headingDeg), "deg"),
     numberField(scale.label, "scale", fixed(scale.value, 2), "x"),
     el(
       "div",
       "note",
-      `${scale.meaning}, from ${String(scale.min)} to ${String(scale.max)} times. Drag a white dot to scale.`,
+      `Metres east / north of the station's anchor, in the station's frame; the height up from it; the heading relative to the station. ${scale.meaning}: typed from ${String(scale.min)} to ${String(scale.max)} times, dragged by a white dot from 0.2 to 5.`,
     ),
+    actions([action("pivot-centre", "align", "Pivot to centre")]),
   );
-  const heading = model.headingDeg === null ? "-" : fixed(model.headingDeg, 0);
+  const items = el("div", "isec");
+  items.append(
+    el("div", "isec-h", "Items (each movable alone)"),
+    model.items.length === 0
+      ? el("div", "note", "No items in it yet.")
+      : entriesList(model.items),
+  );
   return [
-    section,
-    ...disclosure(
-      state.positionOpen,
-      `${fixed(o.upM, 1)} m up  ${heading} deg`,
-      () => [
-        vectorField(
-          "Offset",
-          [
-            ["E", "east", "east", fixed(o.eastM, 2)],
-            ["N", "north", "north", fixed(o.northM, 2)],
-          ],
-          "m",
-        ),
-        numberField("Height", "height", fixed(o.upM, 2), "m"),
-        numberField("Heading", "heading", headingText(model.headingDeg), "deg"),
-        el(
-          "div",
-          "note",
-          "Where the folder's origin stands: metres east / north of its station's anchor, in the station's frame; the height up from the anchor; the heading relative to the station. Its items move with it.",
-        ),
-      ],
-      { label: "Place", title: "Position and heading of the folder" },
+    pivot,
+    items,
+    actions([
+      action("select-items", "ul", "Select its items", {
+        disabled: model.items.length === 0,
+      }),
+    ]),
+    el(
+      "div",
+      "note pad",
+      "A folder is a group in the scene: its items keep their place relative to the pivot, so moving, turning or scaling the folder carries them along. It has no order and plays nothing - that is what stories are for.",
     ),
   ];
 }
@@ -1287,7 +1297,7 @@ function partsOf(
     case "item":
       return itemParts(model, state, panel);
     case "folder":
-      return folderParts(model, state);
+      return folderParts(model);
     case "story":
       return storyParts(model, state);
     case "storyEntry":

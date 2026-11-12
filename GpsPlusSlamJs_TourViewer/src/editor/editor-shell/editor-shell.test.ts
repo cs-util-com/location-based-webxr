@@ -2173,6 +2173,46 @@ describe("the tree's plain folders", () => {
     }
   });
 
+  // Why: a selected folder names itself above the view and says what its
+  // gizmo does; its inspector reaches the pivot's centring and picks its
+  // items in one press.
+  it("hints a selected folder, reaches its pivot's centring and selects its items", () => {
+    const { store, shell, deps } = setUpFolders();
+    const hint = document.getElementById("shell-scene-hint") as HTMLElement;
+    expect(hint.hidden).toBe(true);
+    click(row("p"));
+    click(row("r"), { ctrlKey: true });
+    bar().querySelector<HTMLElement>('[data-selbar="group"]')?.click();
+    document
+      .querySelector<HTMLInputElement>("#tree-body input.renin")
+      ?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+    const folder = store.getState().editorView.selected ?? "";
+    expect(folder.startsWith("folder:")).toBe(true);
+    expect(hint.hidden).toBe(false);
+    expect(hint.textContent).toContain("2 items move, turn and scale together");
+    const act = (name: string) => {
+      const found = document.querySelector<HTMLButtonElement>(
+        `#shell-inspector [data-act="${name}"]`,
+      );
+      if (found === null) throw new Error(`no act ${name}`);
+      return found;
+    };
+    // Grouping stood the pivot at the items' centre already: the press
+    // reaches the folder commands, which say so (the move itself is
+    // tested there).
+    act("pivot-centre").click();
+    expect(deps.say).toHaveBeenLastCalledWith(
+      'The pivot of "Folder 1" already stands at its items\' centre',
+    );
+    act("select-items").click();
+    expect(store.getState().editorView.picked).toEqual(["p", "r"]);
+    store.dispatch(editorViewActions.selected({ id: "q" }));
+    expect(hint.hidden).toBe(true);
+    shell.hide();
+  });
+
   // Why: Shift+click picks the rows between, as a file explorer does, and
   // Ungroup takes a folder apart with its items left picked.
   it("picks a range with Shift+click, and ungroups from the bar", () => {

@@ -10,7 +10,9 @@ zoom buttons at the bottom right, the bottom bar's toggles and the
 bottom panel they open (`bottom-panel.ts`: the tour's problems from
 `tour-problems.ts` on each draw, the edit history, and on the readout's
 tick the street map's loading and the view's frame times), and in the help
-a line naming the selection's handles (`inspectorHint`). The panel takes
+a line naming the selection's handles (`inspectorHint`); for a selected
+folder a line over the 3D view (`#shell-scene-hint`, `sceneHint`) names
+it and says its items move, turn and scale together. The panel takes
 its keys from the shell's key handler (Ctrl+J, Ctrl+Shift+M, Escape inside
 it), its Escape going no further. The page's own controls (the File menu, the
 view switch, Show debug data, the save status and the unsaved mark) stay
@@ -201,7 +203,9 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
 - The inspector's station extras: `contents` folds Contents (kept across
   selections), `add-content` opens the tree's type menu for the station,
   `goto:<id>` selects and flies as a tree row does, an item's
-  `select:<selection>` ("Select the folder") selects without flying, and the radius slider
+  `select:<selection>` ("Select the folder") selects without flying, a
+  folder's `pivot-centre` asks the folder commands' `pivotToCentre` and
+  its `select-items` picks its items as the tree's rows would, and the radius slider
   (`radius-slider.ts`) previews through `view.previewRadius` and is
   cancelled when the selection goes or the shell hides.
 
@@ -474,7 +478,9 @@ else shell.hide();
   click swallowed; a tap on a station's row ending the Select mode;
   Ctrl+G with nothing picked; the name field's cap, and a redraw while
   typing (its focus loss reported, as Chromium does) keeping the typed
-  name, the focus and the caret, nothing written until Enter. In a
+  name, the focus and the caret, nothing written until Enter; a selected
+  folder's line over the view, its "Pivot to centre" reaching the folder
+  commands and "Select its items" picking its items. In a
   browser: `playwright-tests/editor3d-folders.spec.js` (a folder's drag
   among its station's folders too).
 
