@@ -14,7 +14,10 @@ in the current text colour, as SVG elements.
   `station`, `pencil`, `check`, `lock`, `unlock`, `walk`, `eye`, `folder`,
   and for the tree's editing `plus`, `earlier`, `later`, `trash`, `split`,
   `dup`, `align`, `copy` (the prototype's) and `grip` (a card's six dots), `ban` (a circle struck through: a drag cannot land here), `foldall` (two chevrons: fold every station),
-  and for the inspector's Put on the ground `ground` (the prototype's)).
+  and for the inspector's Put on the ground `ground` (the prototype's),
+  `left` (the fourth chevron), and for the docked panels' tabs and
+  rails `details`, `problems`, `history`, `tiles` (the map loading
+  pane) and `perf`).
 - `shellIcon(name)` - a new `svg.i` element, `aria-hidden` (the control it
   sits in carries the words).
 - `placeShellIcons(root)` - every `<i data-icon="name">` under `root`

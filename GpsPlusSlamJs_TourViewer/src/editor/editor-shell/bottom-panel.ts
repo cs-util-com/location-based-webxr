@@ -16,6 +16,7 @@
  *
  * @see bottom-panel.ts.md
  */
+import { shellIcon } from "gps-plus-slam-editor-kit/chrome";
 import type {
   OsmMapTile,
   OsmRetryAsk,
@@ -44,6 +45,7 @@ import {
   type PanelState,
   type PanelTab,
 } from "./bottom-panel-model.js";
+import { dockPanel } from "./dock-layout.js";
 import {
   problemCounts,
   type ProblemFix,
@@ -58,11 +60,6 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 
 /** The panel's icons (16 px, stroked as the shell's). */
 const ICON = {
-  problems: '<path d="M8 2.2 14.2 13H1.8z"/><path d="M8 6.4v3.2M8 11.4v.1"/>',
-  history: '<circle cx="8" cy="8" r="5.8"/><path d="M8 4.6V8l2.3 1.5"/>',
-  tiles:
-    '<path d="M1.8 4.2 5.8 2.6l4.4 1.6 4-1.6v9.2l-4 1.6-4.4-1.6-4 1.6z"/><path d="M5.8 2.6v9.2M10.2 4.2v9.2"/>',
-  perf: '<path d="M1.5 8.6h2.8l1.6-4.2 2.5 8 1.8-5.4 1.1 1.6h3.2"/>',
   chev: '<path d="M6 3.8 10.2 8 6 12.2"/>',
   error:
     '<circle cx="8" cy="8" r="6"/><path d="m5.8 5.8 4.4 4.4M10.2 5.8l-4.4 4.4"/>',
@@ -338,7 +335,11 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     tabButton.setAttribute("role", "tab");
     tabButton.setAttribute("aria-controls", pane.id);
     tabButton.title = tab.label;
-    tabButton.append(icon(tab.id), el("span", "tl", tab.label), badge());
+    tabButton.append(
+      shellIcon(dockPanel(tab.id).icon),
+      el("span", "tl", tab.label),
+      badge(),
+    );
     tabButtons.set(tab.id, tabButton);
     tabs.append(tabButton);
     const toggle = el("button", "tog");
@@ -346,7 +347,11 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     toggle.dataset["tab"] = tab.id;
     toggle.setAttribute("aria-controls", panel.id);
     toggle.setAttribute("aria-label", tab.label);
-    toggle.append(icon(tab.id), el("span", "tl", tab.label), badge());
+    toggle.append(
+      shellIcon(dockPanel(tab.id).icon),
+      el("span", "tl", tab.label),
+      badge(),
+    );
     toggleButtons.set(tab.id, toggle);
   }
   toggles.replaceChildren(...toggleButtons.values());
