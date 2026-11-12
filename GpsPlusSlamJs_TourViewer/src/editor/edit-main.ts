@@ -1901,8 +1901,6 @@ function addStoryTo(stationId: string): void {
   tourChanged();
 }
 
-/** The tree's add into the story `storyId`: a new entry of `kind`,
- *  selected, said once it was made; one step. */
 /** The story menu's Choice or Quiz: a new step at the story's end,
  *  selected, its inspector open on its fields. */
 function addStepToStoryEntry(storyId: string, kind: StepKind): void {
@@ -1919,6 +1917,8 @@ function addStepToStoryEntry(storyId: string, kind: StepKind): void {
   tourChanged();
 }
 
+/** The tree's add into the story `storyId`: a new entry of `kind`,
+ *  selected, said once it was made; one step. */
 function addToStoryEntry(storyId: string, kind: AddKind): void {
   if (editor === null) return;
   if (isFileAddKind(kind)) {
