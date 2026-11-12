@@ -33,6 +33,19 @@ const sourceFiles = (dir: string): string[] =>
   });
 
 describe("BuildingView's ambient occlusion", () => {
+  // Why this test matters: the `ao=strong` link reaches the pass only through
+  // this option; absent, the framework's own 1 / 2.2 applies, so the default
+  // look cannot change without the knob.
+  it("hands the link's display exponent to the pass, and nothing else", () => {
+    expect(source).toMatch(
+      /createAmbientOcclusion\(\{[^}]*displayExponent: options\.aoDisplayExponent,/,
+    );
+    const main = readFileSync(path.join(here, "main.ts"), "utf8");
+    expect(main).toMatch(
+      /aoDisplayExponent: aoDisplayExponent\(window\.location\.search\)/,
+    );
+  });
+
   // Why this test matters: the AO factor is exactly 1 past its fade end, which
   // is what keeps the fogged distance and the sky bit-identical with AO on. A
   // fade end moved past where the fog starts at the SHORTEST render distance

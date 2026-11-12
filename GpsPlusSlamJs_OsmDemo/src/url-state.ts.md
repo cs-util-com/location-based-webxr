@@ -144,6 +144,8 @@ default removes, a property over arbitrary queries, no write when unchanged).
 
 `roofs=off` (invented roofs off), `markings=off` (no zebras or pedestrian
 areas), `furniture=off` (the street furniture layer off), `ao=off` (the
-ambient occlusion off), `woodsauto=off` (the woods governor never thins the
+ambient occlusion off), `ao=strong` (the ambient occlusion with display
+exponent 1 instead of the shipped 1 / 2.2, the stronger look, through
+`aoDisplayExponent(search)`, which returns 1 for it and undefined otherwise), `woodsauto=off` (the woods governor never thins the
 woods), `treeform=trunk` (every tree drawn with a trunk) and `perf=1` (the
 frame readout over the 3D pane, `woods-readout.ts`) are read once by `main.ts` at boot and never written, so they add no writer here and DEC-R12-5 holds.

@@ -41,7 +41,9 @@
  * zebras and pedestrian areas, `furniture=off` with the street furniture
  * layer off (all read in `main.ts`). `ao=off` boots with the ambient
  * occlusion off (read in `main.ts`; the light dialog's box changes it,
- * never the link). `woodsauto=off` keeps the woods governor from thinning
+ * never the link); `ao=strong` draws it with display exponent 1 instead of
+ * the shipped 1 / 2.2, the stronger look, so the two can be compared by
+ * link (`aoDisplayExponent`, read in `main.ts`). `woodsauto=off` keeps the woods governor from thinning
  * the invented woods on a phone, `treeform=trunk` draws every tree with a
  * trunk, `perf=1` shows the frame readout over the 3D pane (all three read
  * in `main.ts` through `woods-readout.ts`; no app control changes them).
@@ -419,4 +421,14 @@ export function sunPinnedHref(
   url.searchParams.set("date", date);
   url.searchParams.set("time", time);
   return url.href;
+}
+
+/**
+ * The ambient occlusion's display exponent the link asks for: 1 for
+ * `ao=strong` (the linear factor multiplied straight onto the encoded
+ * canvas, darker creases), otherwise undefined, which keeps the pass's own
+ * 1 / 2.2. A read-only boot override: nothing writes it back.
+ */
+export function aoDisplayExponent(search: string): number | undefined {
+  return new URLSearchParams(search).get("ao") === "strong" ? 1 : undefined;
 }

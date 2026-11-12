@@ -354,6 +354,12 @@ export interface BuildingViewOptions {
   readonly woodsAuto?: boolean;
   /** Shows the `?perf=1` frame readout over the pane. Absent means hidden. */
   readonly perfReadout?: boolean;
+  /**
+   * The ambient occlusion's display exponent (`url-state.ts`
+   * `aoDisplayExponent`: 1 for `ao=strong`). Absent keeps the pass's own
+   * 1 / 2.2.
+   */
+  readonly aoDisplayExponent?: number | undefined;
 }
 
 /** Where the camera is aimed, in scene coordinates, and from how far. */
@@ -863,6 +869,7 @@ export class BuildingView {
       camera: this.camera,
       params: AO_FADE,
       enabled: false,
+      displayExponent: options.aoDisplayExponent,
     });
     this.container.dataset["ao"] = "off";
 

@@ -51,9 +51,12 @@ sky stay exactly where three puts them.
   the same expression; the property tests pin its shape.
 - The blend raises the linear factor to the power 1 / 2.2 (the module-private
   `AO_DISPLAY_EXPONENT`) before multiplying, because the canvas it multiplies is already
-  tone-mapped and sRGB-encoded (see below).
+  tone-mapped and sRGB-encoded (see below). The `displayExponent` option
+  replaces it (finite and above 0, else `RangeError`); `1` multiplies the
+  linear factor straight onto the encoded canvas, a stronger look that
+  OsmDemo's `ao=strong` link offers for comparison.
 - `createAmbientOcclusion({ renderer, scene, camera, params?, denoise?,
-resolutionScale?, noiseSeed?, enabled? })` returns `AmbientOcclusion`:
+resolutionScale?, noiseSeed?, enabled?, displayExponent? })` returns `AmbientOcclusion`:
   - `enabled` (get/set): whether `render` draws. Switching costs nothing and
     needs no rebuild.
   - `render()`: multiplies the AO onto the frame just drawn to the

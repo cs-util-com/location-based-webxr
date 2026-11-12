@@ -401,6 +401,22 @@ describe('createAmbientOcclusion', () => {
     );
   });
 
+  it('takes a display exponent of 1 for the stronger, linear-strength AO', () => {
+    // Why: OsmDemo's `ao=strong` link lets the owner compare the shipped
+    // display-space AO with the linear factor multiplied straight onto the
+    // encoded canvas (darker creases). The option must reach the blend, and
+    // leaving it out must keep the shipped 1 / 2.2 (pinned above).
+    const fake = recordingRenderer();
+    createAmbientOcclusion({
+      renderer: asRenderer(fake),
+      scene: appLikeScene(),
+      camera: camera(),
+      displayExponent: 1,
+    }).render();
+    const m = fake.draws.at(-1)!.material as THREE.ShaderMaterial;
+    expect(m.uniforms['displayExponent']!.value).toBe(1);
+  });
+
   it('blends with the same expression aoBlendFactor computes', () => {
     // Why: the property tests pin aoBlendFactor's shape, but the GPU runs the
     // shader. This holds the shader's factor and fade to the TS twin, so a
@@ -517,6 +533,11 @@ describe('createAmbientOcclusion', () => {
     expect(() =>
       createAmbientOcclusion({ ...base, resolutionScale: 1.5 })
     ).toThrow(RangeError);
+    for (const displayExponent of [0, -1, Number.NaN, Infinity]) {
+      expect(() =>
+        createAmbientOcclusion({ ...base, displayExponent })
+      ).toThrow(RangeError);
+    }
     expect(() => createAmbientOcclusion({ ...base, noiseSeed: 1.5 })).toThrow(
       RangeError
     );

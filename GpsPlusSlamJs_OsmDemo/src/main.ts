@@ -47,6 +47,7 @@ import {
   writeLight,
   writeScheme,
   writePlace,
+  aoDisplayExponent,
 } from "./url-state.js";
 import { createLightDialog } from "./light-dialog.js";
 import {
@@ -473,6 +474,9 @@ async function main(): Promise<void> {
     initialSun: sunAnglesAt(sunInstant, sunPlace),
     woodsAuto: woodsKnobs.auto,
     perfReadout: woodsKnobs.perf,
+    // ?ao=strong: the stronger AO look for a side-by-side comparison, read
+    // once like the other boot overrides.
+    aoDisplayExponent: aoDisplayExponent(window.location.search),
     onCameraMove: (view) => reportCameraView(view),
     // A cell selection dispatches the SAME action a 2D cell click does: the panel
     // does not know, and must not know, which view the selection came from. A POI

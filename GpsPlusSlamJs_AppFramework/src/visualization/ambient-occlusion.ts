@@ -85,7 +85,9 @@ export const AO_NOISE_SEED = 1;
  * frame is already tone-mapped and encoded when the AO is applied, so the
  * linear factor would darken too much; `1` stays `1` exactly. Measured, the
  * result is lighter than the look-dev page's linear multiply before tone
- * mapping; the sidecar carries the numbers.
+ * mapping; the sidecar carries the numbers. A consumer may pass another
+ * (`displayExponent`; `1` multiplies the linear factor straight onto the
+ * encoded canvas, a stronger look) to compare the two.
  */
 const AO_DISPLAY_EXPONENT = 1 / 2.2;
 
@@ -211,7 +213,7 @@ void main() {
 }`;
 
 /** A material that multiplies the framebuffer by its output, alpha kept. */
-function createBlendMaterial(): THREE.ShaderMaterial {
+function createBlendMaterial(displayExponent: number): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
       tAo: { value: null },
@@ -221,7 +223,7 @@ function createBlendMaterial(): THREE.ShaderMaterial {
       intensity: { value: 1 },
       fadeStart: { value: AO_PARAMS.fadeStartM },
       fadeEnd: { value: AO_PARAMS.fadeEndM },
-      displayExponent: { value: AO_DISPLAY_EXPONENT },
+      displayExponent: { value: displayExponent },
     },
     vertexShader: BLEND_VERTEX,
     fragmentShader: BLEND_FRAGMENT,
@@ -252,6 +254,11 @@ export interface AmbientOcclusionOptions {
   readonly noiseSeed?: number;
   /** Whether `render` draws (default true). */
   readonly enabled?: boolean;
+  /**
+   * The exponent carrying the linear factor into display space, finite and
+   * above 0 (default 1 / 2.2; `1` is the stronger, linear-strength look).
+   */
+  readonly displayExponent?: number | undefined;
 }
 
 export interface AmbientOcclusion {
@@ -287,6 +294,17 @@ function checkParams(p: AoParams): void {
   }
 }
 
+/** The blend's display exponent, the default when absent. */
+function resolveDisplayExponent(value: number | undefined): number {
+  const exponent = value ?? AO_DISPLAY_EXPONENT;
+  if (!(Number.isFinite(exponent) && exponent > 0)) {
+    throw new RangeError(
+      `AO display exponent must be finite and above 0, got ${exponent}`
+    );
+  }
+  return exponent;
+}
+
 export function createAmbientOcclusion(
   options: AmbientOcclusionOptions
 ): AmbientOcclusion {
@@ -304,6 +322,7 @@ export function createAmbientOcclusion(
   if (!(scale > 0 && scale <= 1)) {
     throw new RangeError(`AO resolution scale must be in (0, 1], got ${scale}`);
   }
+  const displayExponent = resolveDisplayExponent(options.displayExponent);
   const seed = options.noiseSeed ?? AO_NOISE_SEED;
   aoNoiseRandom(seed); // validates the seed before anything is built
 
@@ -332,7 +351,7 @@ export function createAmbientOcclusion(
     built.pdNoiseTexture = aoNoiseTexture(seed);
     built.pdMaterial.uniforms['tNoise']!.value = built.pdNoiseTexture;
     unseeded.dispose();
-    blend = createBlendMaterial();
+    blend = createBlendMaterial(displayExponent);
     quad = new FullScreenQuad(blend);
     return built;
   };
