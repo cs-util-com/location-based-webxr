@@ -243,7 +243,7 @@ interface StoryEntryInspector {
 }
 
 /** One answer of a step, as its inspector edits it. */
-export interface InspectorAnswer {
+interface InspectorAnswer {
   readonly id: string;
   /** Text, never markup: it comes from a file anyone can write. */
   readonly label: string;
@@ -258,7 +258,7 @@ export interface InspectorAnswer {
 }
 
 /** A choice or a single quiz as its inspector edits it. */
-export interface InspectorStepForm {
+interface InspectorStepForm {
   /** The step as the tour holds it: each control writes it whole
    *  (`story-step-edits.ts`). */
   readonly step: StoryStep;
