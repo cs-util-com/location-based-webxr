@@ -44,6 +44,8 @@ ground glow whose fade is the loudness curve.
   and `metresPerPxAtOneM` (the editor's stations layer hands them); a
   frame without them leaves both at their world sizes.
 - The visitor's look is unchanged: no icon and no ring in play.
+- The glow and the ring draw in the sounds' warm palette (`warm-glow.ts`),
+  the one the narration plume uses.
 
 ## Examples
 

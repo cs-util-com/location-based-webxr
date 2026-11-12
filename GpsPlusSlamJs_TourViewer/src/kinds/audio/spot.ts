@@ -15,12 +15,17 @@
  */
 
 import type { TourAudioBlock } from "gps-plus-slam-app-framework/ar/tour-kinds";
+import { Matrix4, Vector3 } from "three";
 
 import { inheritedScaleOf } from "../../placement/place-scale.js";
 import type { WorldEnv, WorldPart } from "../../world-part.js";
 import type { SoundHandle } from "../../world-sound.js";
 import { narrationCard, type NarrationCard } from "./narration-card.js";
-import { narrationLook } from "./narration-look.js";
+import {
+  narrationLook,
+  type NarrationLookOptions,
+  type NarrationState,
+} from "./narration-look.js";
 import { soundIcon, type SoundIcon } from "./sound-icon.js";
 import {
   circleInside,
@@ -35,11 +40,28 @@ export interface SpotPart extends WorldPart {
   onInside(listener: (inside: boolean) => void): () => void;
 }
 
+/** The plate's canvas and texture, on a page that has a document. */
+function plateOf(env: WorldEnv): NarrationLookOptions["plate"] {
+  if (typeof document === "undefined") return undefined;
+  const canvas = document.createElement("canvas");
+  return { canvas, texture: env.canvasTexture(canvas) };
+}
+
+/** The viewer in the look's own frame, and the inverse that takes it
+ *  there: made once, so a frame allocates nothing. */
+const seen = new Vector3();
+const toLocal = new Matrix4();
+
 export function spotPart(block: TourAudioBlock, env: WorldEnv): SpotPart {
   const radiusM = block.radiusM ?? NARRATION_DEFAULT_RADIUS_M;
-  const look = narrationLook(radiusM);
-  const listeners = new Set<(inside: boolean) => void>();
   const play = env.mode === "play";
+  const plate = plateOf(env);
+  const look = narrationLook(radiusM, {
+    mode: play ? "play" : "edit",
+    title: block.title ?? "Narration",
+    ...(plate === undefined ? {} : { plate }),
+  });
+  const listeners = new Set<(inside: boolean) => void>();
   /** The editor's mark; the visitor sees none. */
   const icon: SoundIcon | null = play ? null : soundIcon();
   if (icon !== null) {
@@ -64,6 +86,16 @@ export function spotPart(block: TourAudioBlock, env: WorldEnv): SpotPart {
     const duration = v.durationMs();
     if (duration > 0 && v.timeMs() >= duration) v.seek(0);
     v.play();
+  };
+  /** What the voice does now, for the look. */
+  const stateNow = (): NarrationState => {
+    if (voice === null) return "idle";
+    if (voice.playing()) return "playing";
+    const duration = voice.durationMs();
+    const time = voice.timeMs();
+    if (duration > 0 && time >= duration) return "heard";
+    if (time <= 0) return "idle";
+    return voice.wanted() ? "away" : "paused";
   };
   let card: NarrationCard | null = null;
   let closeCard: (() => void) | null = null;
@@ -99,7 +131,14 @@ export function spotPart(block: TourAudioBlock, env: WorldEnv): SpotPart {
       ? {
           update(frame) {
             look.tick(frame.seconds);
-            const [x, , z] = frame.viewer;
+            const [x, y, z] = frame.viewer;
+            const { object } = look;
+            object.updateMatrix();
+            seen
+              .set(x, y, z)
+              .applyMatrix4(toLocal.copy(object.matrix).invert());
+            look.face(seen.x, seen.z);
+            look.show(stateNow(), inside);
             const { position } = look.object;
             // In its own metres: a folder that draws it larger widens
             // its circle with it.
@@ -114,7 +153,7 @@ export function spotPart(block: TourAudioBlock, env: WorldEnv): SpotPart {
             inside = now;
             if (inside) openCard();
             else shutCard();
-            look.inside(inside);
+            look.show(stateNow(), inside);
             if (voice !== null) {
               if (inside) voice.carryOn();
               else voice.hold();
@@ -125,6 +164,10 @@ export function spotPart(block: TourAudioBlock, env: WorldEnv): SpotPart {
       : {
           update(frame) {
             icon?.update(frame);
+            if (frame.camera === undefined) return;
+            frame.camera.getWorldPosition(seen);
+            look.object.worldToLocal(seen);
+            look.face(seen.x, seen.z);
           },
         }),
     tap() {
