@@ -13,7 +13,10 @@
  * instanced mesh for its crowns and for its trunks; the trees are written
  * into the level their distance gives them, and that sort runs only when the
  * eye has moved `TREE_LOD_REPACK_M` since the last one: work over the
- * instance matrices, never over geometry, and none for a still camera.
+ * instance matrices, never over geometry, and none for a still camera. One
+ * distance pass writes all four of a form's meshes, copying floats without
+ * allocating, and only the written prefix of each buffer is uploaded: while
+ * the camera pans this runs about every frame.
  *
  * THE SAME MECHANICS AS THE STREET FURNITURE (`street-furniture.ts`): the
  * sort runs in `onBeforeRender` with the camera taken in the mesh's own
@@ -146,22 +149,24 @@ function shared(): NonNullable<typeof resources> {
   return resources;
 }
 
-/** Per mesh: its trees' matrices and centres, its level and the last sort. */
-interface LodState {
-  readonly level: Level;
-  readonly part: "crown" | "trunk";
-  readonly total: number;
-  /** 16 per tree, shared by the near and far mesh of one part. */
-  readonly matrices: Float32Array;
-  /** Linear RGB per tree, crowns only. */
-  readonly colours: Float32Array | undefined;
-  /** x, y, z of each tree's middle, for the distance. */
-  readonly centres: Float32Array;
+type Part = "crown" | "trunk";
+
+/** Per form: its trees, its four meshes, the share and the last sort. */
+interface FormLod {
+  readonly layout: FormLayout;
+  readonly meshes: Record<Part, Record<Level, THREE.InstancedMesh>>;
   share: number;
-  sortedAt: { x: number; y: number; z: number } | undefined;
+  /** False until the first sort and after a share change. */
+  sorted: boolean;
+  /** The eye of the last sort, reused rather than replaced. */
+  readonly sortedAt: { x: number; y: number; z: number };
 }
 
-const lodStates = new WeakMap<THREE.InstancedMesh, LodState>();
+/** Each mesh's form and place in it. */
+const lodStates = new WeakMap<
+  THREE.InstancedMesh,
+  { readonly form: FormLod; readonly part: Part; readonly level: Level }
+>();
 
 const matrix = new THREE.Matrix4();
 const position = new THREE.Vector3();
@@ -227,11 +232,11 @@ function layOut(
   return layout;
 }
 
-/** One of a form's four meshes, registered for its sorts. */
+/** One of a form's four meshes; crowns carry an instance colour. */
 function lodMesh(
   variant: TreeVariant,
-  layout: FormLayout,
-  part: "crown" | "trunk",
+  total: number,
+  part: Part,
   level: Level,
 ): THREE.InstancedMesh {
   const { crowns, trunks, crownMaterial, trunkMaterial } = shared();
@@ -239,26 +244,22 @@ function lodMesh(
   const mesh = new THREE.InstancedMesh(
     crown ? crowns[variant][level] : trunks[level],
     crown ? crownMaterial : trunkMaterial,
-    layout.total,
+    total,
   );
   mesh.count = 0;
   mesh.frustumCulled = false;
+  if (crown) {
+    mesh.instanceColor = new THREE.InstancedBufferAttribute(
+      new Float32Array(total * 3),
+      3,
+    );
+  }
   mesh.userData = {
     sharedResources: true,
     treeForm: "trunk",
     treePart: part,
     treeLevel: level,
   };
-  lodStates.set(mesh, {
-    level,
-    part,
-    total: layout.total,
-    matrices: crown ? layout.crownMatrices : layout.trunkMatrices,
-    colours: crown ? layout.colours : undefined,
-    centres: layout.centres,
-    share: 1,
-    sortedAt: undefined,
-  });
   mesh.onBeforeRender = (_renderer, _scene, camera) => {
     camera.getWorldPosition(cameraWorld);
     repackTreeLod(mesh, mesh.worldToLocal(cameraWorld));
@@ -279,64 +280,111 @@ export function trunkTreeObjects(
   for (const [variant, packed] of packInstances(placements)) {
     if (packed.rotations.length === 0) continue;
     const layout = layOut(variant, packed);
+    const meshesOf = (part: Part): Record<Level, THREE.InstancedMesh> => ({
+      near: lodMesh(variant, layout.total, part, "near"),
+      far: lodMesh(variant, layout.total, part, "far"),
+    });
+    const form: FormLod = {
+      layout,
+      meshes: { crown: meshesOf("crown"), trunk: meshesOf("trunk") },
+      share: 1,
+      sorted: false,
+      sortedAt: { x: 0, y: 0, z: 0 },
+    };
     for (const part of ["crown", "trunk"] as const) {
       for (const level of ["near", "far"] as const) {
-        objects.push(lodMesh(variant, layout, part, level));
+        const mesh = form.meshes[part][level];
+        lodStates.set(mesh, { form, part, level });
+        objects.push(mesh);
       }
     }
   }
   return objects;
 }
 
-/** Whether `eye` is within the re-sort distance of the last sort. */
-function stillNear(
-  last: { x: number; y: number; z: number } | undefined,
+/** Copies `n` floats of item `from` into item `to` (no view, no garbage). */
+function copyItem(
+  source: Float32Array,
+  from: number,
+  target: THREE.TypedArray,
+  to: number,
+  n: number,
+): void {
+  for (let k = 0; k < n; k++) target[to * n + k] = source[from * n + k] ?? 0;
+}
+
+/** Marks the first `count` items of `attribute` for upload, or none. */
+function uploadPrefix(
+  attribute: THREE.BufferAttribute | null,
+  count: number,
+): void {
+  if (attribute === null || count === 0) return;
+  attribute.clearUpdateRanges();
+  attribute.addUpdateRange(0, count * attribute.itemSize);
+  attribute.needsUpdate = true;
+}
+
+/** One distance pass writing the trees into all four of a form's meshes. */
+function sortForm(
+  form: FormLod,
   eye: { readonly x: number; readonly y: number; readonly z: number },
-): boolean {
-  return (
-    last !== undefined &&
-    Math.hypot(eye.x - last.x, eye.y - last.y, eye.z - last.z) <
-      TREE_LOD_REPACK_M
-  );
+): void {
+  const { centres, crownMatrices, trunkMatrices, colours, total } = form.layout;
+  const { crown, trunk } = form.meshes;
+  const nearSquared = TREE_LOD_NEAR_M * TREE_LOD_NEAR_M;
+  const taking = Math.ceil(total * form.share);
+  let near = 0;
+  let far = 0;
+  for (let i = 0; i < taking; i++) {
+    const dx = (centres[i * 3] ?? 0) - eye.x;
+    const dy = (centres[i * 3 + 1] ?? 0) - eye.y;
+    const dz = (centres[i * 3 + 2] ?? 0) - eye.z;
+    const isNear = dx * dx + dy * dy + dz * dz < nearSquared;
+    const level: Level = isNear ? "near" : "far";
+    const slot = isNear ? near++ : far++;
+    copyItem(crownMatrices, i, crown[level].instanceMatrix.array, slot, 16);
+    copyItem(trunkMatrices, i, trunk[level].instanceMatrix.array, slot, 16);
+    const tint = crown[level].instanceColor;
+    if (tint !== null) copyItem(colours, i, tint.array, slot, 3);
+  }
+  for (const [level, count] of [
+    ["near", near],
+    ["far", far],
+  ] as const) {
+    for (const mesh of [crown[level], trunk[level]]) {
+      mesh.count = count;
+      uploadPrefix(mesh.instanceMatrix, count);
+      uploadPrefix(mesh.instanceColor, count);
+    }
+  }
 }
 
 /**
- * Writes the trees whose level is this mesh's into it, unless the eye (the
- * mesh's own frame, metres) is within `TREE_LOD_REPACK_M` of the last sort.
- * True when it sorted; false for a mesh this module did not make.
+ * Sorts this mesh's form (all four of its meshes, in one pass) into the
+ * levels the eye (the mesh's own frame, metres) gives its trees, unless the
+ * eye is within `TREE_LOD_REPACK_M` of the form's last sort. True when it
+ * sorted; false for a mesh this module did not make. The four meshes of a
+ * form are made together for one parent, so the eye in one is the eye in all.
  */
 export function repackTreeLod(
   mesh: THREE.InstancedMesh,
   eye: { readonly x: number; readonly y: number; readonly z: number },
 ): boolean {
-  const state = lodStates.get(mesh);
-  if (state === undefined) return false;
-  if (stillNear(state.sortedAt, eye)) return false;
-  state.sortedAt = { x: eye.x, y: eye.y, z: eye.z };
-  const { centres, matrices, colours } = state;
-  const wantNear = state.level === "near";
-  const taking = Math.ceil(state.total * state.share);
-  let slot = 0;
-  for (let i = 0; i < taking; i++) {
-    const distance = Math.hypot(
-      (centres[i * 3] ?? 0) - eye.x,
-      (centres[i * 3 + 1] ?? 0) - eye.y,
-      (centres[i * 3 + 2] ?? 0) - eye.z,
-    );
-    if (distance < TREE_LOD_NEAR_M !== wantNear) continue;
-    mesh.instanceMatrix.array.set(
-      matrices.subarray(i * 16, i * 16 + 16),
-      slot * 16,
-    );
-    if (colours !== undefined) {
-      colour.fromArray(colours, i * 3);
-      mesh.setColorAt(slot, colour);
-    }
-    slot += 1;
+  const form = lodStates.get(mesh)?.form;
+  if (form === undefined) return false;
+  const last = form.sortedAt;
+  if (
+    form.sorted &&
+    Math.hypot(eye.x - last.x, eye.y - last.y, eye.z - last.z) <
+      TREE_LOD_REPACK_M
+  ) {
+    return false;
   }
-  mesh.count = slot;
-  mesh.instanceMatrix.needsUpdate = true;
-  if (mesh.instanceColor !== null) mesh.instanceColor.needsUpdate = true;
+  form.sorted = true;
+  last.x = eye.x;
+  last.y = eye.y;
+  last.z = eye.z;
+  sortForm(form, eye);
   return true;
 }
 
@@ -351,11 +399,11 @@ export function setTreeLodShare(
   mesh: THREE.InstancedMesh,
   share: number,
 ): number | undefined {
-  const state = lodStates.get(mesh);
-  if (state === undefined) return undefined;
-  state.share = share;
-  state.sortedAt = undefined;
-  return state.part === "crown" && state.level === "near"
-    ? Math.ceil(state.total * share)
+  const entry = lodStates.get(mesh);
+  if (entry === undefined) return undefined;
+  entry.form.share = share;
+  entry.form.sorted = false;
+  return entry.part === "crown" && entry.level === "near"
+    ? Math.ceil(entry.form.layout.total * share)
     : 0;
 }

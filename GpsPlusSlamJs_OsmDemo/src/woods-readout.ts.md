@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The woods governor's link knobs and its `?perf=1` frame readout for OsmDemo (city objects plan 2026-11-07-2315, M2b; toggles plan 2026-11-10-1902, T5). Pure apart from the governor it wraps: the view supplies the times and counts, the sentence is built here, so it is pinned without a GPU.
+The woods governor's link knobs and its `?perf=1` frame readout for OsmDemo: the knobs that switch the phone's automatic woods thinning off and pick the tree form, and a line showing the frame time and what the governor did. Pure apart from the governor it wraps: the view supplies the times and counts, the sentence is built here, so it is pinned without a GPU.
 
 ## Public API
 

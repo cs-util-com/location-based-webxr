@@ -150,6 +150,61 @@ describe("createWoodsGovernor", () => {
     expect(governor.state().share).toBe(0.5);
   });
 
+  // A step that once bought its time is not judged against the full woods
+  // forever. Full at 60 ms steps to half; at half the phone runs at 45 ms
+  // (between the lines: it stays); minutes later a denser district makes it
+  // 55 ms at half. That is a phone still too slow, so it steps down a rung,
+  // never back to the full woods with a five-minute rest.
+  it("steps down a rung when a thinned share that had bought its time gets slow later", () => {
+    const governor = createWoodsGovernor();
+    let at = burst(governor, 0, 3_000, 60);
+    expect(governor.state().share).toBe(0.5);
+    at = burst(governor, at, 60_000, 45);
+    expect(governor.state()).toMatchObject({ share: 0.5, mode: "thinned" });
+    // Minutes later (idle wall time), a slow burst at half.
+    burst(governor, at + 180_000, 4_000, 55);
+    expect(governor.state()).toMatchObject({ share: 0.25, mode: "thinned" });
+  });
+
+  // At the fewest woods there is no rung left to buy time with: a quarter
+  // that had bought its time and gets slow later stays a quarter (the
+  // thinning still pays against the full woods), rather than re-taking the
+  // baseline and judging its own next verdict worthless.
+  it("stays at a quarter when a quarter that had bought its time gets slow later", () => {
+    const governor = createWoodsGovernor();
+    let at = burst(governor, 0, 8_000, (share) => (share === 1 ? 80 : 60));
+    expect(governor.state().share).toBe(0.25);
+    at = burst(governor, at, 30_000, 45);
+    burst(governor, at + 180_000, 20_000, 55);
+    expect(governor.state()).toMatchObject({ share: 0.25, mode: "thinned" });
+  });
+
+  // A pair of long frames says the device is slow, but only by the gap's
+  // worth each: the second of two hitches, 1.9 s long, must not by itself
+  // fill the two slow seconds on an otherwise fast device.
+  it("counts at most gapMs of a long frame toward the verdict and the average", () => {
+    const governor = createWoodsGovernor();
+    let at = burst(governor, 0, 5_000, 16.7);
+    at += 300;
+    governor.frame(at, true);
+    at += 1_900;
+    governor.frame(at, true);
+    expect(governor.state().averageMs ?? 0).toBeLessThan(WOODS_GOVERNOR.slowMs);
+    burst(governor, at, 10_000, 16.7);
+    expect(governor.state()).toMatchObject({ share: 1, mode: "full" });
+  });
+
+  // A phone capped at 30 Hz delivers 33.3 ms frames: fast enough to get the
+  // woods back once the rest is over, though never under 33 ms.
+  it("gives the woods back to a 30 Hz phone (33.3 ms) after the rest", () => {
+    const governor = createWoodsGovernor();
+    let at = burst(governor, 0, 3_000, 60);
+    expect(governor.state().share).toBe(0.5);
+    at += WOODS_GOVERNOR.restS * 1000;
+    burst(governor, at, 20_000, 1000 / 30);
+    expect(governor.state()).toMatchObject({ share: 1, mode: "full" });
+  });
+
   // Desktop and `woodsauto=off`: the measurement link must be able to switch
   // the governor off, and then nothing moves the share.
   it("never steps with auto off", () => {
@@ -199,11 +254,46 @@ describe("the step-down across steady frame times", () => {
     });
   }
   for (const ms of [51, 55, 60, 80, 120, 200, 249, 300]) {
-    it(`steps down at ${ms} ms within two seconds plus the smoothing`, () => {
+    it(`steps down at ${ms} ms within about three seconds`, () => {
       const at = firstStepAt(createWoodsGovernor(), 60_000, ms);
       expect(at).toBeDefined();
-      // 51 ms needs the longest: the average creeps up to the threshold.
-      expect(at).toBeLessThan(ms <= 55 ? 30_000 : 6_000);
+      // The average starts at the first interval, so a steady frame above
+      // the line is slow from the start: two counted seconds, plus one
+      // ignored first frame when it is longer than `gapMs`.
+      expect(at).toBeGreaterThanOrEqual(WOODS_GOVERNOR.slowS * 1000);
+      expect(at).toBeLessThan(3_000);
+    });
+  }
+});
+
+/**
+ * The step-up across steady frame times, after a thinning and its rest:
+ * under `fastMs` (36 ms) the woods come back, a 30 Hz cap (33.3 ms)
+ * included; between that and the 50 ms line the thinned share holds.
+ */
+describe("the step-up across steady frame times", () => {
+  const thinnedAndRested = (): { governor: WoodsGovernor; at: number } => {
+    const governor = createWoodsGovernor();
+    // 60 ms at full, 20 ms at half: one step, and no slow time left over to
+    // add a second verdict while the average decays to the swept value.
+    const at =
+      burst(governor, 0, 3_000, (share) => (share === 1 ? 60 : 20)) +
+      WOODS_GOVERNOR.restS * 1000;
+    expect(governor.state().share).toBe(0.5);
+    return { governor, at };
+  };
+  for (const ms of [16.7, 25, 1000 / 30, 35]) {
+    it(`gives the woods back at ${ms.toFixed(1)} ms`, () => {
+      const { governor, at } = thinnedAndRested();
+      burst(governor, at, 30_000, ms);
+      expect(governor.state().share).toBe(1);
+    });
+  }
+  for (const ms of [37, 40, 45, 49]) {
+    it(`keeps the thinned share at ${ms} ms`, () => {
+      const { governor, at } = thinnedAndRested();
+      burst(governor, at, 60_000, ms);
+      expect(governor.state().share).toBe(0.5);
     });
   }
 });

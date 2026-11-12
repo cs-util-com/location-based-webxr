@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { TreePlacement, TreeVariant } from "../mesh/trees.js";
 import {
@@ -147,6 +147,50 @@ describe("trunkTreeObjects", () => {
       1,
     );
     expect(repackTreeLod(foreign, { x: 0, y: 0, z: 0 })).toBe(false);
+  });
+
+  // While the camera pans, the form re-sorts often; one distance pass writes
+  // all four of its meshes (crown and trunk, near and far), so the three
+  // meshes rendered after the first find their form already sorted.
+  it("sorts a form's four meshes in one pass", () => {
+    const list = [0, 50, 130, 400].map((x) => placement(x, 0, "broadleaved"));
+    const objects = trunkTreeObjects(list);
+    const eye = { x: 0, y: 7, z: 0 };
+    const nearCrown = find(objects, "crown", "near")[0]!;
+    expect(repackTreeLod(nearCrown, eye)).toBe(true);
+    expect(nearCrown.count).toBe(2);
+    expect(find(objects, "crown", "far")[0]!.count).toBe(2);
+    expect(find(objects, "trunk", "near")[0]!.count).toBe(2);
+    expect(find(objects, "trunk", "far")[0]!.count).toBe(2);
+    for (const mesh of objects) expect(repackTreeLod(mesh, eye)).toBe(false);
+  });
+
+  // The sort runs per frame while panning: it copies each tree's 16 floats
+  // rather than making a typed-array view per tree (garbage on a phone), and
+  // uploads only the written prefix of the instance buffers. Spying on
+  // `subarray` pins the absence of per-tree views, not every allocation.
+  it("copies without per-tree views and uploads only the written prefix", () => {
+    const list = [0, 50, 130, 400].map((x) => placement(x, 0, "broadleaved"));
+    const objects = trunkTreeObjects(list);
+    const views = vi.spyOn(Float32Array.prototype, "subarray");
+    try {
+      repackTreeLod(objects[0]!, { x: 0, y: 7, z: 0 });
+      expect(views).not.toHaveBeenCalled();
+    } finally {
+      views.mockRestore();
+    }
+    const nearCrown = find(objects, "crown", "near")[0]!;
+    expect(nearCrown.instanceMatrix.updateRanges).toEqual([
+      { start: 0, count: 2 * 16 },
+    ]);
+    expect(nearCrown.instanceColor?.updateRanges).toEqual([
+      { start: 0, count: 2 * 3 },
+    ]);
+    // The copy is the tree's matrix: the far crown's first tree is at 130 m.
+    const m = new THREE.Matrix4();
+    const p = new THREE.Vector3();
+    find(objects, "crown", "far")[0]!.getMatrixAt(0, m);
+    expect(p.setFromMatrixPosition(m).x).toBeCloseTo(130, 5);
   });
 
   // The eye is taken in the mesh's own frame: a consumer may move the city

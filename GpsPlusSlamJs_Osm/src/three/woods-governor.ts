@@ -25,7 +25,9 @@
  *   coming back); two in a row do;
  * - the worthwhile test: when thinning bought less than `worthwhile` of the
  *   frame time the woods were not the cost, so they come back in full and
- *   the step-down rests for `restS`;
+ *   the step-down rests for `restS`. A step that brought the average under
+ *   `slowMs` has bought something, so a later slow verdict is a new one: it
+ *   re-takes the baseline and steps down a rung;
  * - a share left for being too slow is not returned to within `restS` of
  *   leaving it, so the governor does not pop between 1 and 0.5.
  * Rests run on the clock passed in (wall time), so idle time counts toward
@@ -37,8 +39,11 @@
 export const WOODS_GOVERNOR = Object.freeze({
   /** Slower than this for `slowS` steps down (ms; the owner's 50 ms). */
   slowMs: 50,
-  /** Faster than this for `fastS` gives back a step (ms; 30 fps). */
-  fastMs: 33,
+  /**
+   * Faster than this for `fastS` gives back a step (ms). Above a 30 Hz
+   * cap's 33.3 ms, so a capped phone gets its woods back; far below 50.
+   */
+  fastMs: 36,
   /** How long a verdict must hold, in counted frames (s). */
   slowS: 2,
   fastS: 12,
@@ -48,7 +53,10 @@ export const WOODS_GOVERNOR = Object.freeze({
   restS: 300,
   /** How much of a frame reaches the average. */
   smoothing: 0.1,
-  /** One frame this long says nothing of the device (ms). */
+  /**
+   * One frame this long says nothing of the device (ms); of two in a row,
+   * each counts as this long.
+   */
   gapMs: 250,
   /** The ladder, from full to the fewest; never 0. */
   shares: Object.freeze([1, 0.5, 0.25] as const),
@@ -95,6 +103,8 @@ export function createWoodsGovernor({
   let fastFor = 0;
   /** The average when the thinning began, for the worthwhile test. */
   let slowAt = 0;
+  /** The average went under `slowMs` since the last step: it bought time. */
+  let bought = false;
   let gapBefore = false;
   /** No step-down before this time (the worthwhile test's rest). */
   let restUntil = Number.NEGATIVE_INFINITY;
@@ -103,13 +113,15 @@ export function createWoodsGovernor({
 
   const stepDown = (at: number, now: number): void => {
     if (at < restUntil) return;
-    if (steps === 0) {
+    if (steps === 0 || (bought && steps < lowest)) {
       slowAt = now;
     } else if (now > slowAt * (1 - G.worthwhile)) {
       steps = 0;
+      bought = false;
       restUntil = at + restMs;
       return;
     }
+    bought = false;
     if (steps < lowest) {
       leftAt[steps] = at;
       steps += 1;
@@ -141,6 +153,7 @@ export function createWoodsGovernor({
     const now =
       average === undefined ? ms : average + (ms - average) * G.smoothing;
     average = now;
+    if (steps > 0 && now < G.slowMs) bought = true;
     const seconds = ms / 1000;
     slowFor = now > G.slowMs ? slowFor + seconds : 0;
     fastFor = now < G.fastMs ? fastFor + seconds : 0;
@@ -158,7 +171,7 @@ export function createWoodsGovernor({
   return {
     frame(atMs, chained) {
       const ms = measured(atMs, chained);
-      if (ms !== undefined) count(atMs, ms);
+      if (ms !== undefined) count(atMs, Math.min(ms, G.gapMs));
     },
     state() {
       const share = G.shares[steps] ?? 1;
