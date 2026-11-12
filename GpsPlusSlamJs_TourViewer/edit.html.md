@@ -186,3 +186,21 @@ an empty tour, `#view3d-failed` and its File actions, `#details-no-gps`),
 four viewports and every fold step, the menus by keyboard and touch, the
 unsaved mark, its tree clicks). The specs reach the menus through
 `playwright-tests/editor-menus.js`.
+
+## Characters
+
+- File menu: "Characters…" (`#file-characters`), after "Tour details…".
+- `#characters-panel` (`dialog.charpanel`) is the Characters list. It holds:
+  - "In this tour" and the pick-up banner;
+  - "On this device", "Make a character" and "Import character..."
+    (`#characters-import-file`), with the refusal and name cards; the two
+    buttons share a `.row.one-line` (`characters-panel.css`), one line
+    whatever the font;
+  - "Rename or delete characters on this device", the link that opens the
+    maker on its own;
+  - the list's own toasts and Undo.
+- `#characters-maker` (`dialog.charmaker`) is the maker over the editor: a
+  dark bar ("‹ Back to the tour" and the tour's name) above a same-origin
+  frame of `characters.html`.
+- Styles are in `src/editor/characters-panel.css`; behaviour is in
+  `src/editor/characters-panel.ts`.

@@ -24,7 +24,9 @@ into the build, so a branch preview serves it at
   volume 0.5). `?relocate=here` moves the stations only, so these stay
   at Marienplatz there. Written as `tour.json` version 5: each
   station has its own geo pose, its story's blocks (the knight a
-  `character` and the arch a `model` on the stage, a story line a
+  `character` in the `speak` view, standing 1 m off each spot toward
+  the way the visitor arrives and facing him, his voice playing with his
+  step; the arch a `model` placed at its own size, `sizeM: 3`; a story line a
   `longText` card titled with its station's title) and the steps that
   show them. It goes through the
   framework's `parseTourManifest` and `serializeTourManifest`, so a tour

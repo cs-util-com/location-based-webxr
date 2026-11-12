@@ -860,14 +860,14 @@ describe("itemsGrounded", () => {
   });
 });
 
-describe("modelResized", () => {
-  it("takes a size from 0.05 m to 500 m and refuses just outside, a non-model and an unknown id", () => {
+describe("blockNumberSet", () => {
+  const set = (id: string, field: string, value: number) =>
+    act.blockNumberSet({ id, field, value, what: "resize" });
+
+  it("takes a model's size from 0.05 m to 500 m and refuses just outside, a non-model and an unknown id", () => {
     const state = open();
     for (const size of [0.05, 500, 3.5]) {
-      const after = reduce(
-        state,
-        act.modelResized({ id: "m", sizeM: size, what: "resize" }),
-      );
+      const after = reduce(state, set("m", "sizeM", size));
       const resized = objectOf(after, "m");
       expect(resized.kind === "model" ? resized.sizeM : null).toBe(size);
       expect(changeCount(after)).toBe(1);
@@ -880,9 +880,30 @@ describe("modelResized", () => {
       ["a", 3],
       ["nope", 3],
     ] as const) {
-      expect(
-        reduce(state, act.modelResized({ id, sizeM: size, what: "resize" })),
-      ).toBe(state);
+      expect(reduce(state, set(id, "sizeM", size))).toBe(state);
+    }
+  });
+
+  // Why: a picture's width is set by the same action, bounded by its own
+  // row; a field the block's row does not name is never written, so the
+  // action cannot become a back door for any number of any block.
+  it("takes a picture's width within its row's bounds, and no field its row does not name", () => {
+    const state = open();
+    for (const width of [0.05, 50, 2.5]) {
+      const after = reduce(state, set("f", "widthM", width));
+      const wide = objectOf(after, "f");
+      expect(wide.kind === "picture" ? wide.widthM : null).toBe(width);
+      readBack(after);
+    }
+    for (const [id, field, value] of [
+      ["f", "widthM", 50.01],
+      ["f", "widthM", 0.0499],
+      ["f", "sizeM", 2],
+      ["m", "widthM", 2],
+      ["m", "createdAtIso", 2],
+      ["a", "widthM", 2],
+    ] as const) {
+      expect(reduce(state, set(id, field, value))).toBe(state);
     }
   });
 });

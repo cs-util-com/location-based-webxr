@@ -241,7 +241,6 @@ export function wireVisitorStations(deps: {
     | "getScene"
     | "getArPose"
     | "createWayfindingHud"
-    | "loadGlbModel"
     | "createAudioElement"
     | "xrProjection0"
     | "getViewerCamera"
@@ -353,7 +352,6 @@ export function wireVisitorStations(deps: {
             }),
           ),
         ),
-      loadModel: (blob) => seams.loadGlbModel(blob),
       figures,
       // The figure fades with its station's content (`follow` below).
       now: deps.now,

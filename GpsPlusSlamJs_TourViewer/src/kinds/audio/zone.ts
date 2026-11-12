@@ -23,6 +23,7 @@ import {
   type Object3D,
 } from "three";
 
+import { inheritedScaleOf } from "../../placement/place-scale.js";
 import type { WorldEnv, WorldPart } from "../../world-part.js";
 import type { SoundHandle } from "../../world-sound.js";
 import { soundIcon } from "./sound-icon.js";
@@ -207,7 +208,11 @@ export function zonePart(block: TourAudioBlock, env: WorldEnv): WorldPart {
       object,
       update(frame) {
         const [x, , z] = frame.viewer;
-        const d = Math.hypot(x - object.position.x, z - object.position.z);
+        // In its own metres: a folder that draws it larger widens its
+        // range with it.
+        const d =
+          Math.hypot(x - object.position.x, z - object.position.z) /
+          inheritedScaleOf(object);
         sound ??= env.sound(block.audio, "background");
         sound.level(zoneGain(d, reach), frame.seconds);
       },

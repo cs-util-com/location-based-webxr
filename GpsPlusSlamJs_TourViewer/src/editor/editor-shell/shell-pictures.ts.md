@@ -9,14 +9,18 @@ picture until the shell lets them all go.
 
 ## Public API
 
-- `createShellPictures({ load })` -> `ShellPictures`:
+- `createShellPictures({ load, owns? })` -> `ShellPictures`:
+  - `owns(el)` says whether a panel still holds `el` (default: `el` is
+    in the page). The shell passes "inside the list or the details", so a
+    card drawn into a docked panel behind another tab (out of the page)
+    keeps waiting for its picture, which comes once the panel shows;
   - `show(el, path)` - `el`'s background becomes the picture at `path`
     once `el` is within 120 px of the window (an `IntersectionObserver`;
     a card scrolled out of its dock is clipped by the dock, so it is out
     of view too); a picture that cannot be read or is too large to decode
     (`pictureProblem`) leaves `el` as it is;
   - a read that FAILS (the load rejects) is not remembered: it is tried
-    again after 1.5 s while `el` is still on the page and still wants
+    again after 1.5 s while a panel still holds `el` and it still wants
     that path, three tries in all per path; a card seen later reads it
     again while tries are left. After the third failure the path counts
     as unshowable until `clear`. A picture with a problem is final at
@@ -24,7 +28,7 @@ picture until the shell lets them all go.
   - a picture read before is set at once on a new element (a redrawn
     card), with no second read and no wait for the observer, so a redraw
     does not flicker;
-  - `sweep()` - stops watching every element that left the page (the
+  - `sweep()` - stops watching every element no panel holds (the
     shell calls it on each draw, so the cards a redraw replaced are not
     kept alive by the observer);
   - `clear()` - stops watching and revokes every URL; a read that ends

@@ -36,13 +36,13 @@ import { isTourId } from './tour-fields.js';
 import type { TourLocalPose } from './tour-items.js';
 import { tourTimingEntryName } from './tour-timing.js';
 
-/** The views a character speaks in in a story, besides
- *  `stage` and `card`: a speech bubble over his head (`bubble`);
- *  the bubble with his voice on a tap (`speak`); the bubble, and once his
- *  line has ended he beckons along the tour (`two-stations`); a portrait
- *  card at the foot of the screen (`portrait`); a paper stage that unfolds
- *  at the station (`popup`). He takes them as a step and standing free
- *  in a station (`TOUR_FREE_BLOCK_VIEWS`). */
+/** The views a character stands in, besides `card`: a speech bubble over
+ *  his head (`bubble`); the bubble with his voice, which a tap plays
+ *  (`speak`); the bubble, and once his line has ended he beckons along
+ *  the tour (`two-stations`); a portrait card at the foot of the screen
+ *  (`portrait`); a paper stage that unfolds at the station (`popup`). He
+ *  takes them as a step and standing free in a station
+ *  (`TOUR_FREE_BLOCK_VIEWS`). */
 export const TOUR_CHARACTER_VIEWS = [
   'bubble',
   'speak',
@@ -84,8 +84,8 @@ const VIDEO_VIEWS = ['card'] as const;
  * a tap inside it) or an ambient zone (`zone`: it plays by itself within
  * its reach, louder toward the centre). */
 const AUDIO_VIEWS = ['spot', 'zone', 'card'] as const;
-const MODEL_VIEWS = [...TOUR_MODEL_WORLD_VIEWS, 'stage', 'card'] as const;
-const CHARACTER_VIEWS = ['stage', ...TOUR_CHARACTER_VIEWS, 'card'] as const;
+const MODEL_VIEWS = [...TOUR_MODEL_WORLD_VIEWS, 'card'] as const;
+const CHARACTER_VIEWS = [...TOUR_CHARACTER_VIEWS, 'card'] as const;
 
 /* Each kind's capped texts. */
 const SHORT_TEXT_RULES = { caption: required(40), description: optional(160) };
@@ -176,7 +176,7 @@ interface TourBlockEnvelope<K extends string, V extends string> {
   readonly kind: K;
   readonly view: V;
   /** Where it stands in its station's frame; views that do not use it
-   *  (`card`, `stage`) ignore it. */
+   *  (`card`) ignore it. */
   readonly pose: TourLocalPose;
   /** When it was made, for the editor's ordering. */
   readonly createdAtIso?: string;
@@ -306,7 +306,7 @@ export interface TourModelBlock extends TourBlockEnvelope<
   /** A model asset. */
   readonly asset: string;
   /** The scaled model's largest side in metres: required in every world
-   *  view, refused on the stage (mounted at its file's own size). */
+   *  view. */
   readonly sizeM?: number;
   readonly title?: string;
   /** Its clip. */
@@ -338,8 +338,8 @@ export interface TourCharacterBlock extends TourBlockEnvelope<
   readonly voice?: string;
 }
 
-/** A model's size by its view: required in every world view, refused on
- *  the stage, optional in a card or a view this reader does not know. */
+/** A model's size by its view: required in every world view, optional in
+ *  a card or a view this reader does not know. */
 function modelSize(
   v: TourBlockFields,
   view: string | null,
@@ -350,12 +350,6 @@ function modelSize(
     return problem(
       ctx,
       `"${ctx.at}.sizeM" is required for a model in the world (${view})`
-    );
-  }
-  if (view === 'stage') {
-    return problem(
-      ctx,
-      `"${ctx.at}.sizeM" is only for a placed model: a staged one is shown at its file's own size`
     );
   }
   const bounds = [TOUR_MODEL_MIN_SIZE_M, TOUR_MODEL_MAX_SIZE_M] as const;
@@ -678,12 +672,33 @@ export interface TourAssetRef {
   readonly id: string;
   readonly kind: TourAssetKind;
   readonly required: boolean;
+  /** The block's own field that names it: the field holding the id (a
+   *  picture's `image`, a video's `poster`), the record holding it (a long
+   *  text's `narration`), or the text naming it (a long text's `body`). */
+  readonly field: string;
+  /** The block stands without that field (a long text's narration, a
+   *  video's poster, a character's voice): dropping the field drops the
+   *  reference. A required reference that is not optional is the block's
+   *  own file: the block is made of it. */
+  readonly optional?: true;
 }
 
-/** The reference `id` makes, when it is an id at all: `refs` also runs over
- *  a draft's raw record, before its fields were checked. */
-function refTo(id: unknown, kind: TourAssetKind): TourAssetRef[] {
-  return isTourId(id) ? [{ id, kind, required: true }] : [];
+/** The reference `id` makes in the field `field`, when it is an id at
+ *  all: `refs` also runs over a draft's raw record, before its fields were
+ *  checked. `standsWithout`: the block stands without the field
+ *  ({@link TourAssetRef.optional}). */
+function refTo(
+  id: unknown,
+  kind: TourAssetKind,
+  field: string,
+  standsWithout?: 'optional'
+): TourAssetRef[] {
+  if (!isTourId(id)) return [];
+  return [
+    standsWithout === undefined
+      ? { id, kind, required: true, field }
+      : { id, kind, required: true, field, optional: true },
+  ];
 }
 
 /** One line per kind: what the list's rows are checked against. */
@@ -713,9 +728,8 @@ export interface TourKindRow<B extends { readonly view: string }> {
   /** The views this reader draws. */
   readonly views: readonly B['view'][];
   /** The views a FREE block may hold. Every kind works directly in a
-   *  station; a view may belong to a story alone (`stage` always, `card`
-   *  for a kind with a look of its own in the world, which nothing would
-   *  reach). */
+   *  station; a view may belong to a story alone (`card` for a
+   *  kind with a look of its own in the world, which nothing would reach). */
   readonly freeViews: readonly B['view'][];
   /** The views drawn in the world for as long as their block is present
    *  (`TOUR_WORLD_VIEWS`). */
@@ -771,8 +785,16 @@ export const TOUR_KINDS = {
           : [];
       const narration: unknown = b.narration;
       return [
-        ...body.map((id) => ({ id, kind: 'image', required: false }) as const),
-        ...refTo(isRecord(narration) ? narration.audio : undefined, 'audio'),
+        ...body.map(
+          (id) =>
+            ({ id, kind: 'image', required: false, field: 'body' }) as const
+        ),
+        ...refTo(
+          isRecord(narration) ? narration.audio : undefined,
+          'audio',
+          'narration',
+          'optional'
+        ),
       ];
     },
   },
@@ -795,7 +817,7 @@ export const TOUR_KINDS = {
         ctx
       ),
     }),
-    refs: (b) => refTo(b.image, 'image'),
+    refs: (b) => refTo(b.image, 'image', 'image'),
   },
   video: {
     sinceMinor: 0,
@@ -812,7 +834,10 @@ export const TOUR_KINDS = {
       ...optionalText(v, 'title', VIDEO_RULES.title, ctx),
       ...optionalAssetRef(v, 'poster', 'image', ctx),
     }),
-    refs: (b) => [...refTo(b.video, 'video'), ...refTo(b.poster, 'image')],
+    refs: (b) => [
+      ...refTo(b.video, 'video', 'video'),
+      ...refTo(b.poster, 'image', 'poster', 'optional'),
+    ],
   },
   audio: {
     sinceMinor: 0,
@@ -828,7 +853,7 @@ export const TOUR_KINDS = {
       ...optionalText(v, 'title', AUDIO_RULES.title, ctx),
       ...audioWorld(v, view, ctx),
     }),
-    refs: (b) => refTo(b.audio, 'audio'),
+    refs: (b) => refTo(b.audio, 'audio', 'audio'),
   },
   model: {
     sinceMinor: 0,
@@ -845,7 +870,7 @@ export const TOUR_KINDS = {
       ...modelNotes(v, ctx),
       ...modelSections(v, ctx),
     }),
-    refs: (b) => refTo(b.asset, 'model'),
+    refs: (b) => refTo(b.asset, 'model', 'asset'),
   },
   character: {
     sinceMinor: 0,
@@ -860,7 +885,10 @@ export const TOUR_KINDS = {
       ...optionalText(v, 'caption', CHARACTER_RULES.caption, ctx),
       ...optionalAssetRef(v, 'voice', 'audio', ctx),
     }),
-    refs: (b) => [...refTo(b.image, 'image'), ...refTo(b.voice, 'audio')],
+    refs: (b) => [
+      ...refTo(b.image, 'image', 'image'),
+      ...refTo(b.voice, 'audio', 'voice', 'optional'),
+    ],
   },
 } as const satisfies {
   readonly [K in TourBlockKind]: TourKindRow<TourBlockOfKind[K]>;

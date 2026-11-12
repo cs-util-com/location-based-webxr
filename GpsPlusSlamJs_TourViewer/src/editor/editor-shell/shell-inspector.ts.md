@@ -75,6 +75,10 @@ content` (Chromium, the editor's browser; elsewhere it stays three
     position cannot be read has its Radius and that line in its fields,
     and says so. The radius sits with the position because both say where
     the station is felt; an item's disclosure stays "Position".
+  - A plain folder: the folder icon, its name and "Folder in <station>,
+    <n> items"; its Scale to type (`scale`, "x") with its meaning and
+    bounds; under "Place", its offset east and north, height and heading
+    in its station's frame. Its items follow every one.
   - A story: its name to type in the head (`data-field="story-title"`, its
     count under it), its "Entries" fold ("<n>, played in order"), a numbered
     `.kids` row each, `goto:<id>`), "Add entry..." (`add-entry`) and
@@ -103,11 +107,18 @@ content` (Chromium, the editor's browser; elsewhere it stays three
     owner's prototype round on the editor's character UI.
   - A story's choice or quiz: its summary (`ul.steplines`), read here and
     not edited, and "Delete choice" / "Delete quiz".
-  - A free video, audio or character: its texts and its Delete.
-  - An item: what it is and its station (a pin's text to type in the
-    head, "Pin text"), its commands, a model's Size to type, and under
-    "Position" its Offset east and north, Height (up from the anchor)
-    and Heading to type, in its station's frame.
+  - An item with no place in the world (a video, its `offset` null): its
+    texts, its kind panel's parts and its Delete; no split, no ground, no
+    Position.
+  - An item standing in the world (a pin, a picture, a model, a long
+    text, a sound, a free character): what it is and its station (a
+    pin's text to type in the head, "Pin text"), its commands, the size
+    its white dots change to type (a model's Size, a picture's Width,
+    `data-field` `size`, with what it means and its bounds), and under
+    "Position" its Offset east and north, Height
+    (up from the anchor) and, only where its placement row `turns`, Heading
+    to type, in its station's frame (its folders composed in). A thing
+    that faces the visitor (a pin, a reading sign, a sound) has no Heading.
   - Typed fields carry `data-field` (`title`, `description`,
     `radius`, `east`, `north`, `height`, `heading`, `size`) and the
     tour's value as `defaultValue`: the shell commits a field whose text
@@ -166,7 +177,7 @@ content` (Chromium, the editor's browser; elsewhere it stays three
   never rebuilds it; it stays in the page across draws), and its
   `parts()` after the item's fields, before Position; with `ownsFields`
   the item's fields are not drawn. Its `key` is part of what a draw is
-  compared by. A model's size, view, clip, notes and sections are its
+  compared by. A model's view, clip, notes and sections are its
   panel's (`model-panel.ts.md`), a long text's title, Preview and Wider
   its (`long-text-panel.ts.md`); without its panel an item shows none of
   them.
@@ -204,10 +215,12 @@ frame, a code without a position, and the folded head. The page by
 `playwright-tests/editor3d-inspector.spec.js` (the edits, saved and
 opened again, and the fields' layout at four window sizes).
 
-`shell-inspector.test.ts` also covers the ground changing under a drawn station (only its ground button updated, the typed field and its focus kept), the lock button's place, state and words, and its absence for a station without a position; Earlier and Later beside a station's place, off at the ends; and the commands in words per kind (a station's Delete with its key, an item's two, none for a code).
+`shell-inspector.test.ts` also covers a plain folder's Scale and Place
+fields, the ground changing under a drawn station (only its ground button updated, the typed field and its focus kept), the lock button's place, state and words, and its absence for a station without a position; Earlier and Later beside a station's place, off at the ends; and the commands in words per kind (a station's Delete with its key, an item's two, none for a code).
 
 It also covers a story (its name, its numbered Entries, its Add entry and
-its Delete, an empty one), a choice's and a quiz's summary, a free block, a
+its Delete, an empty one), a choice's and a quiz's summary, an item with
+no place in the world (its texts and Delete only), a
 story block's moves-on chips and seconds, a story
 character's view and advance chips (the one in use pressed, each group
 named) and his facing, none for a long text, a story block's texts
@@ -226,3 +239,9 @@ is drawn again; a draw asked for inside a draw is not run, and
 shows on one line, read-only, its reason a line in the dock; a station's
 name and description of several lines stay editable, the description a
 text area holding its lines.
+
+## The file row
+
+After the moves, a model with `file` draws its "File" row
+(`inspector-file.ts` `fileFieldPart`): the name and "Replace...", the row
+a drop target for the item's file (`data-filefield`).

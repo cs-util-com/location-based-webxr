@@ -21,9 +21,12 @@ import {
   answerHosts,
   boxIn,
   capture,
+  dockSettled,
+  dockWidthsAt,
   layoutOf,
   openSampleIn3d,
   openZip,
+  shownIn,
   view3d,
 } from "./editor3d-fixture.js";
 import { save } from "./editor-menus.js";
@@ -292,7 +295,8 @@ test("a row's + adds a short or a long text in place, from the mouse and from th
   await expect(menu).toBeVisible();
   await expect(plus).toHaveAttribute("aria-expanded", "true");
   await expect(menu.locator('[data-kind="shortText"]')).toBeFocused();
-  await expect(menu.locator('[data-kind="picture"]')).toHaveAttribute(
+  // A video plays only in a story: off on a station's menu.
+  await expect(menu.locator('[data-kind="video"]')).toHaveAttribute(
     "aria-disabled",
     "true",
   );
@@ -580,6 +584,10 @@ test("New station here: a right click on the ground starts a station where it wa
   await page.mouse.click(at.x, at.y, { button: "right" });
   await expect(menu).toBeVisible();
   await expect(item).toBeFocused();
+  // It opens where the pointer was: the canvas starts right of the tree.
+  const opened = await box(menu);
+  expect(Math.abs(opened.x - at.x)).toBeLessThan(2);
+  expect(Math.abs(opened.y - at.y)).toBeLessThan(2);
   await page.keyboard.press("Escape");
   await expect(menu).toBeHidden();
   expect((await order(page)).length).toBe(3);
@@ -610,8 +618,17 @@ test("New station here: a right click on the ground starts a station where it wa
     (id) => /** @type {any} */ (window).__tourEditor.view3dScreenOf(id),
     `station:${added}`,
   );
-  expect(Math.abs(screen[0] - (at.x - canvas.x))).toBeLessThan(4);
-  expect(Math.abs(screen[1] - (at.y - canvas.y))).toBeLessThan(4);
+  // The new station's details opened beside the view, and the canvas
+  // covers only the view between the docks: narrower, at the same height.
+  // A point keeps its offset from the canvas's middle (the field of view
+  // is vertical), so the pressed pixel is found from the middle.
+  const now = await box(page.locator("#view3d canvas"));
+  const pressed = [
+    now.width / 2 + (at.x - (canvas.x + canvas.width / 2)),
+    now.height / 2 + (at.y - (canvas.y + canvas.height / 2)),
+  ];
+  expect(Math.abs(screen[0] - pressed[0])).toBeLessThan(4);
+  expect(Math.abs(screen[1] - pressed[1])).toBeLessThan(4);
   // On the ground: its height is the drawn ground's.
   const tour = await tourNow(page);
   expect(tour.stations[3].geo.alt).toBeCloseTo(SQUARE_GROUND_M + N_M, 0);
@@ -892,25 +909,17 @@ async function expectTreeControls(page, size) {
   expect(grip.y, at).toBe(tw.y);
   expect(grip.height, at).toBe(tw.height);
   expect(grip.y + grip.height, at).toBeLessThanOrEqual(row.y + row.height);
-  // The tree: 248 px wide on a desktop, 210 px at 1100 px or less, as the
-  // explorer's, 226 px at 900 px or less and the width on a phone; its
-  // search 8 px in, to the dock's line (a phone's sheet has none).
+  // The tree: 248 px wide on a desktop, 210 px at 1100 px or less down
+  // to the docking's 701 px (`dock-layout.ts`), as the explorer's, and the
+  // width on a phone; its search 8 px in from both of its edges (a phone's
+  // sheet has no line at its side; docked, the line beside it is the
+  // docking's splitter).
   const tree = await box(page.locator("#shell-tree"));
-  const phone = size.width <= 700;
-  const treePx =
-    size.width > 1100
-      ? 248
-      : size.width > 900
-        ? 210
-        : size.width > 700
-          ? 226
-          : size.width;
+  const treePx = size.width > 700 ? dockWidthsAt(size.width).list : size.width;
   expect(tree.width, at).toBe(treePx);
   const search = await box(page.locator("#tree-search"));
   expect(search.x - tree.x, at).toBe(8);
-  expect(tree.x + tree.width - (search.x + search.width), at).toBe(
-    phone ? 8 : 9,
-  );
+  expect(tree.x + tree.width - (search.x + search.width), at).toBe(8);
   // A row's "+": 22 px, 4 px from the row's right end, in its middle.
   const plus = await box(page.locator("#tree-body .card > .head .add").first());
   expect([plus.width, plus.height], at).toEqual([22, 22]);
@@ -1099,6 +1108,7 @@ test("a station's picture is a strip under its row, and a tap on it selects the 
     { width: 390, height: 844 },
   ]) {
     await page.setViewportSize(size);
+    await dockSettled(page, size.width);
     const at = atSize(size);
     const fountain = card(page, "fountain");
     await expect(fountain).toBeVisible();
@@ -1156,6 +1166,7 @@ test("the tree's add, its grips and the bar's actions sit in place at a phone, a
     { width: 390, height: 844 },
   ]) {
     await page.setViewportSize(size);
+    await dockSettled(page, size.width);
     if (
       await page
         .locator("#shell-tree")
@@ -1176,15 +1187,18 @@ test("the tree's add, its grips and the bar's actions sit in place at a phone, a
       "#shell-toggles",
       "#shell-tree",
       "#shell-inspector",
+      "#shell-shelf",
       "#shell-acts .sact",
       "#shell-acts .sact .lbl",
     ]);
     // A station selected on a desktop: the tree keeps its width beside
-    // the inspector, which stands at the window's right edge.
+    // the inspector, which stands at the window's right edge (docked, the
+    // Assets panel is its group's other tab, not shown beside it).
     if (size.width > 1100) {
       const tree = boxIn(l, "#shell-tree");
       const inspector = boxIn(l, "#shell-inspector");
       expect(tree.width).toBe(248);
+      expect(shownIn(l, "#shell-shelf")).toBe(false);
       expect(inspector.x + inspector.width).toBe(size.width);
       expect(inspector.x).toBeGreaterThanOrEqual(tree.x + tree.width);
     }
@@ -1288,6 +1302,7 @@ test("a folded station is one line, its number and name side by side; unfolded i
     const at = `at ${String(size.width)}x${String(size.height)}`;
     const name = `${String(size.width)}x${String(size.height)}`;
     await page.setViewportSize(size);
+    await dockSettled(page, size.width);
     if (
       await page
         .locator("#shell-tree")

@@ -1,10 +1,13 @@
 /**
  * The character's row of the visitor's kinds (`play-kinds.ts`): his card and
- * the files it reads. A story view stands him as a character look (from his
- * declared frames sheet when he has one), `stage` as the plain cut-out,
- * `card` only in the card; his voice plays on a tap on a story view, with
- * the step otherwise. In the editor's world a free character stands
- * through `kinds/character/world.ts`; in play the free host stands him.
+ * the files it reads. Every view but `card` stands him as a character look
+ * at his own place (from his declared frames sheet when he has one);
+ * `card` shows him only in the card. His look hands the host what a tap on
+ * him reaches (his voice, or the bubble view's bubble); a card view hands
+ * the host his voice to play. When the voice plays is the host's rule: a
+ * story plays it with the step, a free host on a tap only. In the
+ * editor's world a free character stands through
+ * `kinds/character/world.ts`; in play the free host stands him.
  *
  * @see character-card.ts.md
  */
@@ -36,18 +39,15 @@ async function showPortrait(
   portrait.hidden = false;
 }
 
-/** Stand him from `blob`; with no `look`, the plain cut-out (called without
- *  one, as a stage that tells the two apart expects). */
+/** Stand him from `blob` in `look`. */
 function standFigure(
   host: ItemCardHost,
   blob: Blob,
-  look: StageCharacterLook | undefined,
+  look: StageCharacterLook,
 ): Promise<void> {
   return (
     host.stage?.stand(FIGURE, (world, { stationId, onWaiting }) =>
-      look === undefined
-        ? world.showCharacter(stationId, blob, onWaiting)
-        : world.showCharacter(stationId, blob, onWaiting, look),
+      world.showCharacter(stationId, blob, onWaiting, look),
     ) ?? Promise.resolve()
   );
 }
@@ -57,8 +57,7 @@ function card(block: TourCharacterBlock, host: ItemCardHost): void {
   slots.text.textContent = block.caption ?? "";
   slots.speaker.textContent = block.name;
   slots.speaker.hidden = false;
-  // A story view stands as a character look; `stage`
-  // as the plain cut-out; `card` only in the card.
+  // Every view but `card` stands as a character look.
   const view = block.view;
   const look = isStageCharacterView(view)
     ? {
@@ -100,24 +99,21 @@ function card(block: TourCharacterBlock, host: ItemCardHost): void {
         );
       },
     );
-  } else if (stage !== undefined && (view === "stage" || look !== undefined)) {
+  } else if (stage !== undefined && look !== undefined) {
     host.asset(block.image, FIGURE, async (blob) => {
       if (view === "portrait") void showPortrait(blob, block.name, host);
       await standFigure(host, blob, look);
     });
   }
-  // A story view's voice plays on a tap on him (the prototype's
-  // rule), the bubble view's never; the stage and card views play it
-  // with the step.
+  // A look hands the host his voice as what a tap on him reaches (a
+  // voiceless bubble view's tap opens or shuts the bubble); the host decides
+  // whether it also plays with the step. A card view's voice is not
+  // the voice of a figure the visitor taps: his look (if one stands) is
+  // left alone.
   if (look !== undefined) {
     stage?.tapTarget({ bubble: look.view === "bubble", voice: block.voice });
-  } else {
-    // A plain figure takes the stage from him; a card view leaves
-    // the stage as it was.
-    if (view === "stage") stage?.tapTarget(null);
-    // Not the voice of a figure the visitor taps: his look (if one
-    // stands) is left alone.
-    if (block.voice !== undefined) host.sound(block.voice);
+  } else if (block.voice !== undefined) {
+    host.sound(block.voice);
   }
 }
 

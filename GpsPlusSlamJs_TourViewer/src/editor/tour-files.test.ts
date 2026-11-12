@@ -343,7 +343,7 @@ describe("readTourFile", () => {
     const read = await readTourFile(blobOf("film"), "f.mp4", {
       tourBytes: 0,
       known: none,
-      posterOf: () => Promise.resolve(poster),
+      videoLookOf: () => Promise.resolve({ poster, seconds: 42 }),
     });
     if (read.kind !== "read") throw new Error(read.reason);
     const sha = await sha256Hex(new Uint8Array(await poster.arrayBuffer()));
@@ -354,12 +354,14 @@ describe("readTourFile", () => {
       width: 16,
       height: 9,
     });
+    expect(read.seconds).toBe(42);
     const without = await readTourFile(blobOf("film2"), "f.mp4", {
       tourBytes: 0,
       known: none,
-      posterOf: () => Promise.reject(new Error("no decoder")),
+      videoLookOf: () => Promise.reject(new Error("no decoder")),
     });
     expect(without).toMatchObject({ kind: "read", asset: { kind: "video" } });
     expect("poster" in without && without.poster).toBeFalsy();
+    expect("seconds" in without).toBe(false);
   });
 });

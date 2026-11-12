@@ -264,12 +264,9 @@ const KIND_FIELDS: Record<
   model: (view) =>
     fc.record({
       asset: fc.constant('arch'),
-      sizeM:
-        view === 'stage'
-          ? fc.constant(undefined)
-          : (TOUR_MODEL_WORLD_VIEWS as readonly string[]).includes(view)
-            ? modelSize
-            : fc.option(modelSize, { nil: undefined }),
+      sizeM: (TOUR_MODEL_WORLD_VIEWS as readonly string[]).includes(view)
+        ? modelSize
+        : fc.option(modelSize, { nil: undefined }),
       title: optionalText(r.model.title),
       animation: fc.option(tourModelAnimationArbitrary, { nil: undefined }),
       annotations: fc.option(

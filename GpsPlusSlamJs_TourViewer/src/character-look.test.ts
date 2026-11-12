@@ -450,6 +450,38 @@ describe("createCharacterLook: the footer and the tap", () => {
     tick(0, true);
     expect(look.state().bubble).toBe(1);
   });
+
+  // Why this test matters: with a voice, the bubble shows what he says
+  // while he says it: it opens when he speaks (a tap that replays him
+  // shows it again) and shuts when the voice ends or is stopped, so a
+  // shut bubble never stays open over a silent figure.
+  it("opens the bubble while he speaks and shuts it when the voice ends", () => {
+    const { look, standAt, tick } = setup("bubble", { voiced: true });
+    standAt(0, 5);
+    tick(0, true);
+    look.setVoice("speaking");
+    tick(0, true);
+    expect(look.state().bubble).toBe(1);
+    look.setVoice("spoken");
+    tick(0, true);
+    expect(look.state().bubble).toBe(0);
+    look.setVoice("speaking");
+    tick(0, true);
+    expect(look.state().bubble).toBe(1);
+    look.setVoice("idle");
+    tick(0, true);
+    expect(look.state().bubble).toBe(0);
+  });
+
+  // Why this test matters: a voice that never spoke shuts nothing: a
+  // step's start says "idle", which must not hide a voiceless bubble.
+  it("keeps a voiceless bubble open when told idle", () => {
+    const { look, standAt, tick } = setup("bubble");
+    standAt(0, 5);
+    look.setVoice("idle");
+    tick(0, true);
+    expect(look.state().bubble).toBe(1);
+  });
 });
 
 /** The texture image a mesh shows now, and whether it is mirrored. */

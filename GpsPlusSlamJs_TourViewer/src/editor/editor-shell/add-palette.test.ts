@@ -77,6 +77,9 @@ describe("createAddPalette", () => {
     expect(options().map((o) => o.textContent)).toEqual([
       "Short textin 2 The old gate",
       "Long textin 2 The old gate",
+      "Picturein 2 The old gate",
+      "Soundin 2 The old gate",
+      "3D modelin 2 The old gate",
       "New stationat the centre of the view",
     ]);
     expect(field.getAttribute("aria-activedescendant")).toBe(options()[0]?.id);
@@ -97,7 +100,7 @@ describe("createAddPalette", () => {
   it("moves the row Enter adds with the arrows, round at either end", () => {
     const { field, options } = opened();
     key(field, "ArrowUp");
-    expect(field.getAttribute("aria-activedescendant")).toBe(options()[2]?.id);
+    expect(field.getAttribute("aria-activedescendant")).toBe(options()[5]?.id);
     key(field, "ArrowDown");
     key(field, "ArrowDown");
     expect(options()[1]?.getAttribute("aria-selected")).toBe("true");
@@ -107,7 +110,7 @@ describe("createAddPalette", () => {
 
   it("adds a row clicked", () => {
     const { options, box } = opened();
-    options()[2]?.click();
+    options()[5]?.click();
     expect(add).toHaveBeenCalledWith({ kind: "station" });
     expect(box.hidden).toBe(true);
   });
@@ -191,6 +194,14 @@ describe("isPaletteKey", () => {
 describe("the palette's kind chips and marks", () => {
   const texts = (rows: readonly HTMLElement[]) =>
     rows.map((r) => r.querySelector(".pl")?.textContent);
+  const ALL_ROWS = [
+    "Short text",
+    "Long text",
+    "Picture",
+    "Sound",
+    "3D model",
+    "New station",
+  ];
 
   // Why: the chips narrow by kind on a touch screen, where typing costs the
   // most; a press must not take the focus from the field (the keyboard
@@ -205,6 +216,9 @@ describe("the palette's kind chips and marks", () => {
     expect(chips.map((c) => c.textContent)).toEqual([
       "Short text",
       "Long text",
+      "Picture",
+      "Sound",
+      "3D model",
       "Station",
     ]);
     const long = chips[1] as HTMLButtonElement;
@@ -217,11 +231,7 @@ describe("the palette's kind chips and marks", () => {
     expect(document.activeElement).toBe(field);
     long.click();
     expect(long.getAttribute("aria-pressed")).toBe("false");
-    expect(texts(options())).toEqual([
-      "Short text",
-      "Long text",
-      "New station",
-    ]);
+    expect(texts(options())).toEqual(ALL_ROWS);
   });
 
   it("starts each open with no chip on", () => {
@@ -233,11 +243,7 @@ describe("the palette's kind chips and marks", () => {
       ?.click();
     palette.close(false);
     palette.open();
-    expect(texts(options())).toEqual([
-      "Short text",
-      "Long text",
-      "New station",
-    ]);
+    expect(texts(options())).toEqual(ALL_ROWS);
     expect(
       document.querySelectorAll('#add-palette .chip[aria-pressed="true"]'),
     ).toHaveLength(0);

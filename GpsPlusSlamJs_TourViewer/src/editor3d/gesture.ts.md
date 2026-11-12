@@ -6,14 +6,18 @@ One drag of the gizmo, or one hold of the keys, from its start to its
 end: what it shows meanwhile (`preview`) and the one edit it writes
 (`edit`). Pure: the scene hands it the world it reads (`GestureWorld`) and
 draws the preview; nothing here dispatches, so a drag's frames write
-nothing to the store.
+nothing to the store. It reads a PLACEABLE (`../placement/placeables.ts`)
+and never asks what kind of thing it is: whether it turns, lifts or has
+dots, and the dots' bounds, are its placement row's
+(`../placement/placement-rows.ts`).
 
 ## Public API
 
 - `startGesture(handle, target, pressedAt, world)` -> `Gesture | null`;
   null when there is nothing to grab (no ground and no level plane under
-  the pointer) or the handle is not the target's (a dot on a pin or a
-  photo).
+  the pointer) or the handle is not the target's: a dot on a placeable
+  without dots (a pin, a sound), the knob on one that does not turn (a
+  pin's label, a sound), the middle or the knob of a locked one.
   - `move`: the target follows the SAMPLED ground under the pointer
     (`world.groundUnder`), offset by where it was grabbed, keeping its
     height above the ground (`placedGeo`); Shift snaps to half metres. A
@@ -22,47 +26,64 @@ nothing to the store.
     last spot stays.
   - `turn`: the heading follows the pointer's bearing round the centre on
     the level plane, whole degrees (15 with Shift).
-  - `dot`: a station's found radius (`draggedRadiusM`) or a model's size
-    (`draggedSizeM`).
+  - `dot`: a reach (a station's found radius, `draggedRadiusM`) or a size
+    or a factor (`draggedSizeM`), within the bounds of the target's
+    extent.
   - Methods `move(pointer, fine)`, `retry()`, `waiting()`, `preview()`,
     `edit()` (null when nothing changed: no empty undo step).
 - `startKeyGesture(target, world)` -> `KeyGesture`: `press(key)` applies a
-  nudge (`nudgedGeo`), a turn (`turnedGeo`) or a lift (`liftedGeo`; items
-  only - a station stands on the ground) to the pose reached so far;
-  `preview()`, `edit()` (null when the presses cancel out).
+  nudge (`nudgedGeo`), a turn (`turnedGeo`, only on what turns) or a lift
+  (`liftedGeo`, only on what lifts - a station stands on the ground) to
+  the pose reached so far; `preview()`, `edit()` (null when the presses
+  cancel out, or changed nothing).
+- `poseLocked(target)`: the target's `locked`.
+- `gestureTargetOf(placeable, centre)` -> `GestureTarget`: a placeable
+  as a gesture reads it, with every dot its row gives (a station's reach,
+  a model's size, a picture's width).
+- `gizmoSubjectOf(target, now, centre)` -> `GizmoSubject`: what the
+  gizmo is drawn for, the target as a preview (or its rest) shows it.
 - Types `GroundUnder` (a point, or a miss: `not-loaded`, `below-start`,
-  `out-of-reach`, `above`), `GestureWorld` (`groundUnder`,
-  `planeUnder`, `placeOf(at: WorldPoint)`, `groundAt(place)` in ellipsoidal
-  metres), `GestureTarget`, `GestureEdit` (`item-pose`, `station-pose`,
-  `radius`, `size`), `GesturePreview`, `Gesture`, `KeyGesture` (its `press` takes a nudge, turn
-  or lift of `gizmo-maths.ts`).
+  `out-of-reach`, `above`), `GestureWorld` (`groundUnder`, `planeUnder`,
+  `placeOf(at: WorldPoint)`, `groundAt(place)` in ellipsoidal metres),
+  `GestureTarget` (a placeable's `ref`, `geo`, `turns`, `lifts`,
+  `extent`, `locked`, and the gizmo's `centre`), `GesturePreview`
+  (`geo`, and the dots' `value` or null), `Gesture`, `KeyGesture` (its
+  `press` takes a nudge, turn or lift of `gizmo-maths.ts`).
+- The edit is a `PlaceEdit` (`../placement/place-edits.ts`): `{ kind:
+"pose", ref, geo }` or `{ kind: "extent", ref, value }`.
 
 ## Invariants & assumptions
 
 - One gesture, at most one edit, which the page writes as one undo step
-  (`../editor/scene-edits.ts`).
+  (`applyPlaceEdit`).
 - The ground under the target at the start is read lazily: it may load
   after the press.
 - Over random hills with patchy unloaded ground a dragged item keeps its
-  height above the ground (`scene-edits.property.test.ts`).
-- `poseLocked(target)`: a station target with `locked: true`. `startGesture` starts no move and no turn on it (null); its dots still start a radius drag.
+  height above the ground (`../placement/place-edits.property.test.ts`).
+- A locked target starts no move and no turn (null); its dots still
+  start a drag.
 
 ## Examples
 
 ```ts
 const g = startGesture("move", target, pointer, world);
 g?.move(next, false);
-g?.edit(); // { kind: "item-pose", id, geo } or null
+g?.edit(); // { kind: "pose", ref: { kind: "block", id }, geo } or null
 ```
 
 ## Tests
 
 `gesture.test.ts`: a move follows the ground from the grab, snaps with
 Shift, waits on `not-loaded` and retries until it loads, drops the other
-misses; a turn by the knob; a station's radius and a model's size by a
-dot; a press that moved nothing writes nothing; a key hold adds its
-presses up into one edit, leaves a station's height alone, and writes
-nothing for presses that cancel out. The property tests live with
-`scene-edits.ts`.
-
-`gesture.test.ts` also covers a locked station: no move, no turn, and its radius drag.
+misses; a turn by the knob, and none on a pin; a station's radius and a
+model's size by a dot, each held to its row's bounds (a picture's width
+and a model's size dragged alike end at their own bounds); a press that
+moved nothing writes nothing; a key hold adds its presses up into one
+edit, leaves a station's height and a pin's heading alone, and writes
+nothing for presses that cancel out; a locked station: no move, no turn,
+and its radius drag. The property tests live with `place-edits.ts`.
+`gizmo-equivalence.test.ts`: every row's gizmo, through
+`gestureTargetOf`, `gizmoSubjectOf` and `gizmoLayout`, equals the
+layout the editor drew before the placement rows (a frozen copy of it)
+at camera distances of 5, 50 and 300 m, except the knob and stalk of
+what does not turn; the dragged radius and size equal the frozen rules.

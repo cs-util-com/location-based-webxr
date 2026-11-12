@@ -14,14 +14,18 @@
  * - A text of a free block that stands nowhere in the world: its edit.
  * - A station's east and north: its anchor at the place those metres name
  *   from the 3D view's origin (`placeAtEastNorth`), height and turn kept.
- * - An item's east and north: its offset in its station's frame, the
- *   other two and its turn kept.
+ * - An item's east and north: its offset in its station's frame (its
+ *   folders composed in), the other two and its turn kept.
  * - An item's height: its altitude alone (`height`), its place and turn
  *   exactly as they are; a pose through the station's frame and back
  *   would move it sideways by its rounding.
  * - A heading, of a station or an item: the turn from the heading it has
  *   now, the short way round.
  * - A model's size.
+ * - A plain folder's scale (`scale`), east, north, height and heading:
+ *   its origin's offset in its station's frame (its holders composed in)
+ *   and its turn there, written as the folder's pose or scale, its items
+ *   following.
  * - A model's note title or text (`note-title:<i>`, `note-text:<i>`), a
  *   section's name (`section-name:<i>`) and its clip's name
  *   (`anim-name`, its autoplay kept, on for a first clip): a model edit
@@ -43,14 +47,22 @@ import {
   itemGeoPose,
   tourFreeBlocks,
 } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
 
-import type { GestureEdit } from "../../editor3d/gesture.js";
+import type { PlaceEdit } from "../../placement/place-edits.js";
 import {
-  worldBlocks,
-  type StationEdit,
-  type WorldBlock,
-} from "../../tour-document.js";
-import { STATION_PREFIX, STORY_PREFIX } from "../editor-model.js";
+  placeableOf,
+  posedEntries,
+  posedEntryOf,
+  type Placeable,
+  type PosedBlock,
+} from "../../placement/placeables.js";
+import type { StationEdit } from "../../tour-document.js";
+import {
+  FOLDER_PREFIX,
+  STATION_PREFIX,
+  STORY_PREFIX,
+} from "../editor-model.js";
 import { eastNorthOf, placeAtEastNorth } from "../tour-origin.js";
 import { blockFields, storyBlockFields, typedNumber } from "../block-fields.js";
 import type { ModelEdit } from "../model-edits.js";
@@ -94,7 +106,7 @@ export type InspectorEdit =
   /** One of a model's own edits (`model-edits.ts`). */
   | { readonly kind: "model"; readonly id: string; readonly edit: ModelEdit }
   /** A pose or a size, written as the 3D view's gestures write them. */
-  | { readonly kind: "scene"; readonly edit: GestureEdit }
+  | { readonly kind: "scene"; readonly edit: PlaceEdit }
   /** A turn about up of `deg` clockwise. */
   | { readonly kind: "turn"; readonly selection: string; readonly deg: number }
   /** An item's altitude (ellipsoidal m), its place and turn kept. */
@@ -223,8 +235,8 @@ function stationEdit(
   return {
     kind: "scene",
     edit: {
-      kind: "station-pose",
-      id: stationId,
+      kind: "pose",
+      ref: { kind: "station", id: stationId },
       geo: { ...station.geo, lat: place.lat, lon: place.lon },
     },
   };
@@ -273,7 +285,7 @@ const AXIS: Readonly<Record<string, 0 | 1 | 2>> = {
 /** A model's own field (`note-title:2`) as its edit, or null for a
  *  field that is none of them. */
 function modelFieldEdit(
-  item: Extract<WorldBlock, { kind: "model" }>,
+  item: Extract<TourBlock, { kind: "model" }>,
   field: string,
   value: string,
 ): InspectorEdit | null {
@@ -303,12 +315,16 @@ function modelFieldEdit(
   return { kind: "model", id: item.id, edit };
 }
 
+/** A field typed for the posed block `entry` of `station`: its texts,
+ *  its size, and its offset and heading in its station's frame. */
 function itemEdit(
-  item: WorldBlock,
+  entry: PosedBlock,
   station: TourStation,
   field: string,
   value: string,
 ): InspectorEdit {
+  const item = entry.block;
+  const pose = entry.place.inStation ?? item.pose;
   if (item.kind === "model") {
     const edit = modelFieldEdit(item, field, value);
     if (edit !== null) return edit;
@@ -320,50 +336,92 @@ function itemEdit(
     return { kind: "block", id: item.id, field, value };
   }
   const axis = AXIS[field];
-  const known =
-    axis !== undefined ||
-    field === "heading" ||
-    (field === "size" && item.kind === "model");
+  const extent = field === "size" ? entry.place.extent : null;
+  const sized = extent !== null && extent.kind === "size";
+  // A heading only where turning it shows (its placement row's `turns`).
+  const turned = field === "heading" && entry.place.turns;
+  const known = axis !== undefined || turned || sized;
   if (!known) return NONE;
   const typed = typedNumber(value);
   if (typed === null) return { kind: "invalid", reason: NOT_A_NUMBER };
-  if (field === "size" && item.kind === "model") {
-    return Math.abs(typed - (item.sizeM ?? Number.NaN)) < SAME
+  if (sized) {
+    const now: unknown = (item as unknown as Record<string, unknown>)[
+      extent.field
+    ];
+    return typeof now === "number" && Math.abs(typed - now) < SAME
       ? NONE
-      : { kind: "scene", edit: { kind: "size", id: item.id, sizeM: typed } };
+      : {
+          kind: "scene",
+          edit: {
+            kind: "extent",
+            ref: { kind: "block", id: item.id },
+            value: typed,
+          },
+        };
   }
-  if (field === "heading") {
-    return turnTo(item.id, headingOfRotation(item.pose.rotation), typed);
+  if (turned) {
+    return turnTo(item.id, headingOfRotation(pose.rotation), typed);
   }
   if (axis === undefined) return NONE;
-  if (Math.abs(item.pose.position[axis] - typed) < SAME) return NONE;
-  const position: [number, number, number] = [...item.pose.position];
+  if (Math.abs(pose.position[axis] - typed) < SAME) return NONE;
+  const position: [number, number, number] = [...pose.position];
   position[axis] = typed;
-  if (field === "height") {
-    return {
-      kind: "height",
-      id: item.id,
-      alt: itemGeoPose({ ...item.pose, position }, station.geo).alt,
-    };
+  const geo = itemGeoPose({ ...pose, position }, station.geo);
+  if (field === "height") return { kind: "height", id: item.id, alt: geo.alt };
+  return {
+    kind: "scene",
+    edit: { kind: "pose", ref: entry.place.ref, geo },
+  };
+}
+
+/** A field typed for the plain folder `place` of `station`: its scale,
+ *  and its origin's offset (height too) and heading in its station's
+ *  frame, each written as the folder's own pose or scale. */
+function folderEdit(
+  place: Placeable,
+  station: TourStation,
+  field: string,
+  value: string,
+): InspectorEdit {
+  const axis = AXIS[field];
+  const known = axis !== undefined || field === "heading" || field === "scale";
+  const pose = place.inStation;
+  if (!known || pose === null) return NONE;
+  const typed = typedNumber(value);
+  if (typed === null) return { kind: "invalid", reason: NOT_A_NUMBER };
+  if (field === "scale") {
+    return place.extent !== null && Math.abs(typed - place.extent.value) < SAME
+      ? NONE
+      : {
+          kind: "scene",
+          edit: { kind: "extent", ref: place.ref, value: typed },
+        };
   }
+  if (field === "heading") {
+    return turnTo(place.selection, headingOfRotation(pose.rotation), typed);
+  }
+  if (axis === undefined) return NONE;
+  if (Math.abs(pose.position[axis] - typed) < SAME) return NONE;
+  const position: [number, number, number] = [...pose.position];
+  position[axis] = typed;
   return {
     kind: "scene",
     edit: {
-      kind: "item-pose",
-      id: item.id,
-      geo: itemGeoPose({ ...item.pose, position }, station.geo),
+      kind: "pose",
+      ref: place.ref,
+      geo: itemGeoPose({ ...pose, position }, station.geo),
     },
   };
 }
 
 /**
  * The edit `value` typed into `field` writes for `selected` (the page's
- * selection: `station:<id>`, `story:<id>` or an item's id), its metres
+ * selection: `station:<id>`, `folder:<id>`, `story:<id>` or an item's id), its metres
  * measured from
  * `origin` (the 3D view's; null: a station's place is not typed). Fields:
  * `title`, `description`, `radius`, `east`, `north`, `height`, `heading`,
- * `size`. A selection the tour lacks, a code, and a field the selection
- * has not write nothing.
+ * `size`, `scale`. A selection the tour lacks, a code, and a field the
+ * selection has not write nothing.
  */
 export function inspectorEdit(input: {
   readonly selected: string;
@@ -383,6 +441,13 @@ export function inspectorEdit(input: {
       ? NONE
       : stationEdit(station, field, value, input.origin);
   }
+  if (selected.startsWith(FOLDER_PREFIX)) {
+    const place = placeableOf({ stations }, selected);
+    const station = stations.find((s) => s.id === place?.stationId);
+    return place === null || station === undefined
+      ? NONE
+      : folderEdit(place, station, field, value);
+  }
   if (selected.startsWith(STORY_PREFIX)) {
     const id = selected.slice(STORY_PREFIX.length);
     const known = stations.some((s) =>
@@ -397,8 +462,8 @@ export function inspectorEdit(input: {
     return storyEntryEdit(place.station, selected, field, value, input.origin);
   }
   for (const station of stations) {
-    const item = worldBlocks(station).find((i) => i.id === selected);
-    if (item !== undefined) return itemEdit(item, station, field, value);
+    const item = posedEntryOf(station, selected);
+    if (item !== null) return itemEdit(item, station, field, value);
     const free = tourFreeBlocks(station).find((b) => b.id === selected);
     if (free !== undefined) {
       return blockFields(free).some((f) => f.name === field)
@@ -417,7 +482,7 @@ export type GroundEdit =
       readonly kind: "ground-items";
       readonly items: readonly { readonly id: string; readonly alt: number }[];
     }
-  | { readonly kind: "scene"; readonly edit: GestureEdit };
+  | { readonly kind: "scene"; readonly edit: PlaceEdit };
 
 const NO_GROUND: GroundEdit = { kind: "none" };
 
@@ -427,19 +492,19 @@ type GroundAt = (place: {
   readonly lon: number;
 }) => number | null;
 
-/** The items of `station` among `ids` with the ground under each; null
- *  while the ground under any of them has not loaded. */
+/** `items` with the ground under each, where each stands in the world
+ *  (through its folders); null while the ground under any of them has
+ *  not loaded. */
 function groundedItems(
-  station: TourStation,
-  items: readonly WorldBlock[],
+  items: readonly PosedBlock[],
   groundAt: GroundAt,
 ): { id: string; alt: number; off: number }[] | null {
   const out: { id: string; alt: number; off: number }[] = [];
-  for (const item of items) {
-    const geo = itemGeoPose(item.pose, station.geo);
+  for (const { block, place } of items) {
+    const { geo } = place;
     const ground = groundAt({ lat: geo.lat, lon: geo.lon });
     if (ground === null || !Number.isFinite(ground)) return null;
-    out.push({ id: item.id, alt: ground, off: geo.alt - ground });
+    out.push({ id: block.id, alt: ground, off: geo.alt - ground });
   }
   return out;
 }
@@ -465,7 +530,7 @@ export function groundEdit(input: {
     const station = stations.find((s) => s.id === id);
     if (station === undefined) return NO_GROUND;
     if (which === "ground-items") {
-      const items = groundedItems(station, worldBlocks(station), groundAt);
+      const items = groundedItems(posedEntries(station), groundAt);
       if (items === null) return null;
       const off = items.filter((i) => Math.abs(i.off) > ON_GROUND_M);
       return off.length === 0
@@ -480,18 +545,25 @@ export function groundEdit(input: {
     if (Math.abs(station.geo.alt - ground) <= ON_GROUND_M) return NO_GROUND;
     return {
       kind: "scene",
-      edit: { kind: "station-pose", id, geo: { ...station.geo, alt: ground } },
+      edit: {
+        kind: "pose",
+        ref: { kind: "station", id },
+        geo: { ...station.geo, alt: ground },
+      },
     };
   }
   if (which !== "ground") return NO_GROUND;
   for (const station of stations) {
-    const item = worldBlocks(station).find((i) => i.id === selected);
-    if (item === undefined) continue;
-    const [grounded] = groundedItems(station, [item], groundAt) ?? [];
+    const item = posedEntryOf(station, selected);
+    if (item === null) continue;
+    const [grounded] = groundedItems([item], groundAt) ?? [];
     if (grounded === undefined) return null;
     return Math.abs(grounded.off) <= ON_GROUND_M
       ? NO_GROUND
-      : { kind: "ground-items", items: [{ id: item.id, alt: grounded.alt }] };
+      : {
+          kind: "ground-items",
+          items: [{ id: item.block.id, alt: grounded.alt }],
+        };
   }
   return NO_GROUND;
 }

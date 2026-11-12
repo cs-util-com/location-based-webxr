@@ -9,7 +9,7 @@ The free items' host: what a station shows that no story brings. It is the secon
 - `createFreeItems(deps): FreeItems`
   - `follow(isShown)` - every tick: the figures of stations no longer shown go first, then one figure of a shown station stands, then the voices left carry on.
   - `faceVisitor(nue)` - turns the standing figures.
-  - `tapped(tap)` - true when the tap hit a free figure. A voice plays, or stops for good when it is playing; the bubble view's tap shuts or opens the bubble.
+  - `tapped(tap)` - true when the tap hit a free figure. A voice plays, or stops for good when it is playing; a voiceless bubble view's tap shuts or opens the bubble (a voiced one plays like any look, its bubble showing while he speaks).
   - `stop()` - nothing stands, no voice is kept. The next `follow` starts afresh.
 - `deps`: `tour`, `characters`, `assets`, `loadAsset`, `makeStage`, `focus`, `checkPicture`, `pick`, `sayFailure`, `makePlayer` as a seam for tests, and `showItem?(block, host)` (the item lab swaps a kind in; `showItemCard` otherwise; the app passes none).
 
@@ -27,7 +27,7 @@ The free items' host: what a station shows that no story brings. It is the secon
 - His look follows his voice: `speaking` with what is left of it, `spoken` once it ran out, `idle` when held, paused or never heard.
 - A free video has no look yet: it draws nothing and has no tap target here, and a move refuses to take one out of its story (`station-children-moves.ts`). `content-placement.ts` holds the seam for those looks, and the editor does not offer them.
 - A free figure's words are in his look, so the card's places are written and read by nobody, and no `surface` is offered.
-- Its stage gives an item only a figure's door (`ItemWorld.showCharacter`, his look marked `noCard`); no model door exists here, so a row that needs one stands nothing. Nothing waits for the visitor's position with a line, so `stand` passes no `onWaiting`.
+- Its stage gives an item only a figure's door (`ItemWorld.showCharacter`, his look marked `noCard` and given his folders' `scale` from `tourFreeEntries`, so a character in a scaled folder stands as large as the editor draws him); no model door exists here, so a row that needs one stands nothing. Nothing waits for the visitor's position with a line, so `stand` passes no `onWaiting`.
 
 ## Not a world part yet: who owns a free figure's object
 

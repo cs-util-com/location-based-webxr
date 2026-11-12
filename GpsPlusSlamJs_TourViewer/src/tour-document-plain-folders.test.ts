@@ -25,7 +25,10 @@ import {
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { TourLocalPose } from "gps-plus-slam-app-framework/ar/tour-items";
-import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import {
+  tourFreeEntries,
+  tourObjects,
+} from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import {
   isTourFolder,
   type TourFolder,
@@ -456,6 +459,176 @@ describe("a plain folder moved with its items", () => {
     const back = reloaded(state, tour);
     expect(documentFrames(back)).toEqual(documentFrames(state));
     expect(saved(back)).toEqual(saved(state));
+  });
+});
+
+describe("a plain folder scaled with its items", () => {
+  /** Where `id` stands in the station's frame, and how much larger it is
+   *  drawn, as the world reads the saved file. */
+  function entryOf(manifest: TourManifest, id: string) {
+    const station = manifest.stations[0];
+    if (station === undefined) throw new Error("no station");
+    const found = tourFreeEntries(station).find((e) => e.block.id === id);
+    if (found === undefined) throw new Error(`no entry ${id}`);
+    return found;
+  }
+
+  // Why: "everything grows" - a folder's scale must make the whole group
+  // larger about its origin, so each item keeps its pose in the folder and
+  // stands that much further out; written only as the folder's scale, as
+  // one undo step, swept over turns, offsets and both bounds.
+  it("writes the scale alone: its items keep their poses in it and stand that much further out, as one step", () => {
+    for (const yawDeg of SWEEP_YAWS) {
+      for (const offsetM of SWEEP_OFFSETS) {
+        for (const scale of [0.1, 0.5, 2, 10]) {
+          const tour = tourWithFolders(yawDeg, offsetM);
+          const start = opened(tour);
+          const scaled = reduce(
+            start,
+            act.folderScaled({
+              stationId: "well",
+              folderId: "outer",
+              scale,
+              what: "scale folder",
+            }),
+          );
+          expect(scaled.past).toHaveLength(start.past.length + 1);
+          const out = saved(scaled);
+          expect(folderIn(out, "outer").scale).toBe(scale);
+          expect(folderIn(out, "outer").pose).toEqual(
+            folderIn(tour, "outer").pose,
+          );
+          for (const id of ["a", "b", "c", "free"]) {
+            expect(poseIn(out, id)).toEqual(poseIn(tour, id));
+          }
+          const origin = folderIn(tour, "outer").pose?.position ?? [0, 0, 0];
+          for (const id of ["a", "b", "c"]) {
+            const was = entryOf(tour, id).block.pose.position;
+            const now = entryOf(out, id);
+            expect(now.scale).toBe(scale);
+            for (const axis of [0, 1, 2] as const) {
+              expect(now.block.pose.position[axis] - origin[axis]).toBeCloseTo(
+                scale * (was[axis] - origin[axis]),
+                6,
+              );
+            }
+          }
+          expect(entryOf(out, "free")).toEqual(entryOf(tour, "free"));
+          expect(saved(reduce(scaled, act.undone()))).toEqual(saved(start));
+        }
+      }
+    }
+  });
+
+  // Why: an item the page moved before is held as an entry, not as the
+  // file's pose; it must grow with its folder like the written ones.
+  it("carries an item this page moved before: it keeps its pose in its folder", () => {
+    const tour = tourWithFolders(30, 10);
+    const nudgedB = reduce(
+      opened(tour),
+      act.moved({ object: nudged(objectOf(opened(tour), "b"), 2), what: "m" }),
+    );
+    const inFolder = poseIn(saved(nudgedB), "b");
+    const out = saved(
+      reduce(
+        nudgedB,
+        act.folderScaled({
+          stationId: "well",
+          folderId: "inner",
+          scale: 3,
+          what: "scale folder",
+        }),
+      ),
+    );
+    expectSamePose(poseIn(out, "b"), inFolder);
+    expect(folderIn(out, "inner").scale).toBe(3);
+  });
+
+  // Why: a scale of 1 is the format's default; writing it back as none
+  // keeps a folder scaled and scaled back the same file as before.
+  it("writes a scale of 1 as none", () => {
+    const tour = tourWithFolders(30, 10);
+    const twice = reduce(
+      reduce(
+        opened(tour),
+        act.folderScaled({
+          stationId: "well",
+          folderId: "inner",
+          scale: 2,
+          what: "s",
+        }),
+      ),
+      act.folderScaled({
+        stationId: "well",
+        folderId: "inner",
+        scale: 1,
+        what: "s",
+      }),
+    );
+    expect("scale" in folderIn(saved(twice), "inner")).toBe(false);
+    expect(poseIn(saved(twice), "b")).toEqual(poseIn(tour, "b"));
+  });
+
+  it("refuses an unknown station or folder, a scale out of the bounds, an unchanged scale, and one that takes an item past its station's bound", () => {
+    const start = opened(tourWithFolders(30, 1000));
+    const tries = [
+      { stationId: "nowhere", folderId: "outer", scale: 2 },
+      { stationId: "well", folderId: "nothing", scale: 2 },
+      { stationId: "well", folderId: "miller", scale: 2 },
+      { stationId: "well", folderId: "outer", scale: 0.0999 },
+      { stationId: "well", folderId: "outer", scale: 10.0001 },
+      { stationId: "well", folderId: "outer", scale: 0 },
+      { stationId: "well", folderId: "outer", scale: -2 },
+      { stationId: "well", folderId: "outer", scale: Number.NaN },
+      // The fixture's outer folder is written with a scale of 1.
+      { stationId: "well", folderId: "outer", scale: 1 },
+      // The empty folder has no scale: 1 is unchanged too.
+      { stationId: "well", folderId: "empty", scale: 1 },
+    ] as const;
+    for (const t of tries) {
+      expect(reduce(start, act.folderScaled({ ...t, what: "x" }))).toBe(start);
+    }
+    // A folder 9 km out holding an item 600 m further: scaled by 2 the
+    // item would stand 10.2 km from its station.
+    const far = opened(
+      parseTourManifest(
+        JSON.parse(
+          serializeTourManifest(
+            tourOf([], {
+              stations: [
+                {
+                  id: "well",
+                  title: "The well",
+                  geo: { ...AT, rotation: [0, 0, 0, 1] },
+                  activateRadiusM: 50,
+                  foundRadiusM: 25,
+                  hint: "arrow",
+                  ...stationContent([
+                    {
+                      id: "outer",
+                      kind: "folder",
+                      pose: { position: [9000, 0, 0], rotation: [0, 0, 0, 1] },
+                      children: [pin("a", [600, 0, 0])],
+                    },
+                  ]),
+                },
+              ],
+            }),
+          ),
+        ),
+      ),
+    );
+    expect(
+      reduce(
+        far,
+        act.folderScaled({
+          stationId: "well",
+          folderId: "outer",
+          scale: 2,
+          what: "x",
+        }),
+      ),
+    ).toBe(far);
   });
 });
 

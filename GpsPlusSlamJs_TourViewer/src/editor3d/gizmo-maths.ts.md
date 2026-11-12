@@ -25,11 +25,17 @@ layout, `editor3d-input.ts` feeds the pointer and the keys.
 - `norm360(deg)`, `angleDiffDeg(a, b)` (signed, in (-180, 180]),
   `compassDeg(from, to)` (a bearing in degrees clockwise from north; world
   x east, z south).
-- `gizmoLayout(subject, metresPerPx)` -> `GizmoLayout`: the centre, the
-  heading, the ring's radius (null for a station: its found-radius circle
-  is the tour's own), the move disc, the four dots (a station or a model,
-  at heading + 45 + i x 90 degrees), the knob along the heading, the
-  stalk. RangeError for a scale that is not finite and > 0.
+- `gizmoLayout(subject, metresPerPx)` -> `GizmoLayout`. The subject is a
+  placeable as the gizmo reads it (`../placement/placeables.ts`): its
+  centre, heading, whether it `turns`, its `extent` (a reach, a size or
+  a factor, with its value; null: no dots) and whether it is `locked`.
+  The layout: the centre, the heading, the ring's radius (null for a
+  reach: a station's found-radius circle is the tour's own), the move
+  disc (a reach's own disc, else the ring), the four dots (whenever there
+  is an extent, at heading + 45 + i x 90 degrees, on the ring), the knob
+  along the heading and its stalk (both null for what does not turn: a
+  pin's label, a sound). RangeError for a scale that is not finite and
+  > 0.
 - `handleAt({ pointer, knob, dots, onDisc, underPointer, posable })` -> `"move"`,
   `"turn"`, `"dot"` or null (the camera's): the knob and the dots first
   (the nearest within half its drawn size), then another object under
@@ -42,17 +48,19 @@ layout, `editor3d-input.ts` feeds the pointer and the keys.
   that body covers it.
 - `turnedHeadingDeg(heading, fromDeg, toDeg, snap)`: whole degrees, 15
   with `snap`; in [0, 360).
-- `draggedRadiusM(distanceM, fine)`: half metres (tenths with `fine`),
-  2-300 m.
-- `draggedSizeM(sizeM, startM, distanceM)`: scaled by the ratio, three
-  significant digits, 0.05-500 m.
+- `draggedRadiusM(distanceM, fine, bounds)`: half metres (tenths with
+  `fine`), within the row's bounds (a station's 2-300 m).
+- `draggedSizeM(sizeM, startM, distanceM, bounds)`: scaled by the ratio,
+  three significant digits, within the row's bounds (a model's
+  0.05-500 m). The bounds are the placement row's, never this file's:
+  `../placement/placement-rows.ts` holds them once.
 - `sceneKey(press)` -> `SceneKey | null`: arrows nudge, Alt+Left/Right and
   Q / E turn, PageUp / PageDown lift, Delete / Backspace delete, Ctrl+D
   (Cmd+D) duplicates; null for every key the shell or the page answers (T,
   F, Home, Esc, Ctrl+Z, Ctrl+Y) and any other Ctrl/Cmd chord. Read by
   `code`, so the keyboard layout's letter does not matter.
 - Types `WorldPoint`, `GroundSpot`, `ScreenPoint`, `GizmoSubject`,
-  `GizmoLayout`, `GizmoHandle`, `SceneKey`, `KeyPress`.
+  `GizmoLayout`, `GizmoHandle`, `DotBounds`, `SceneKey`, `KeyPress`.
 
 ## Invariants & assumptions
 
@@ -62,13 +70,14 @@ layout, `editor3d-input.ts` feeds the pointer and the keys.
 - The knob lies the ring's radius plus 30 px along the heading, the dots
   on the ring (the property test sweeps scales over 1e-4..10 m a pixel).
 - A grip is half the drawn size: the pictures carry a transparent margin.
-- A locked station (`GizmoSubject.locked`): `gizmoLayout` reports `posable: false` and `handleAt({ posable: false })` answers only a dot - the knob, the selection and the disc take no handle. `locked` means nothing on an item.
+- A locked placeable (`GizmoSubject.locked`; today only a station can be locked): `gizmoLayout` reports `posable: false` and `handleAt({ posable: false })` answers only a dot - the knob, the selection and the disc take no handle.
+- No knob without `turns`: what always faces the camera or the viewer shows no knob and no stalk, so the gizmo never offers a turn that would not show.
 
 ## Examples
 
 ```ts
 const layout = gizmoLayout(
-  { kind: "item", centre, headingDeg: 90, radiusM: null, sizeM: null },
+  { centre, headingDeg: 90, turns: true, extent: null, locked: false },
   0.05,
 );
 sceneKey({
@@ -84,7 +93,7 @@ sceneKey({
 
 ## Tests
 
-`gizmo-maths.test.ts`: `viewHeightAtOneM` at 50, 60 and 90 degrees; the layout for a station, a pin and a model; the
+`gizmo-maths.test.ts`: `viewHeightAtOneM` at 50, 60 and 90 degrees; the layout for a station, a turning item, a model and a facing pin (no knob, no stalk); the
 minimum sizes, and the move disc's touch size swept over camera
 distances of 5-300 m; the hit order, one case per thing under a press
 (the body, the disc, the disc under the body, the knob, a dot, another

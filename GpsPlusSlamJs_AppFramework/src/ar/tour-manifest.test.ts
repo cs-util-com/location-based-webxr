@@ -350,7 +350,7 @@ describe('the version policy', () => {
                 {
                   id: 'kurt',
                   kind: 'character',
-                  view: 'stage',
+                  view: 'speak',
                   name: 'Kurt',
                   image: 'knight',
                   caption: 'Hi',

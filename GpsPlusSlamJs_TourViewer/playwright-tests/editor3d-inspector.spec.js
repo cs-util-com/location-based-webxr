@@ -16,6 +16,7 @@ import {
 import {
   SQUARE_GROUND_M,
   answerHosts,
+  dockSettled,
   openSampleIn3d,
   openZip,
 } from "./editor3d-fixture.js";
@@ -740,13 +741,15 @@ async function expectInspectorLayout(page, size) {
   // The head: the station's name as text, 6 px after the kind's icon
   // (AU-2: the name is typed in its labelled field below).
   expect(l.title.x - (l.icon.x + l.icon.width), at).toBe(6);
-  // The commands: 28 px rows, 6 px in from the dock's 1 px border, one
-  // under another - Delete last, after a 1 px separator 4 px from each.
+  // The commands: 28 px rows, 6 px in from the dock's edge (a phone's
+  // sheet has no border at its side; docked, the line beside it is the
+  // docking's splitter), one under another - Delete last, after a 1 px
+  // separator 4 px from each.
   expect(l.acts.length, at).toBe(2);
   let last = null;
   for (const b of l.acts) {
     expect(b.height, at).toBe(28);
-    expect(b.x - dock.x, at).toBe(size.width <= 700 ? 6 : 7);
+    expect(b.x - dock.x, at).toBe(6);
     if (last !== null)
       expect(b.y - (last.y + last.height), at).toBeCloseTo(9, 0);
     last = b;
@@ -775,8 +778,9 @@ async function expectInspectorLayout(page, size) {
     expect(shown.height, `${name} ${at}`).toBe(
       name === "description" ? 52 : 24,
     );
-    // A phone's sheet has no border at its side.
-    expect(r.x - dock.x, `${name} ${at}`).toBe(size.width <= 700 ? 12 : 13);
+    // Its 12 px padding from the dock's edge (no border at its side, as
+    // above).
+    expect(r.x - dock.x, `${name} ${at}`).toBe(12);
     expect(shown.x + shown.width, `${name} ${at}`).toBeLessThanOrEqual(
       dock.x + dock.width - 12 + 0.5,
     );
@@ -893,6 +897,7 @@ test("the inspector's fields sit in place at a phone, a phone in landscape, a ta
     { width: 390, height: 844 },
   ]) {
     await page.setViewportSize(size);
+    await dockSettled(page, size.width);
     await expect(field(page, "title")).toBeVisible();
     // A folded dock (the dock rule at a narrow window) shows its head
     // only: unfold it to measure.

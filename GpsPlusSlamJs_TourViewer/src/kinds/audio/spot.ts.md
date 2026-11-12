@@ -21,7 +21,10 @@ inside, its player card (`narration-card.ts`) is open on the page's screen
 ## Invariants & assumptions
 
 - Inside is `circleInside` of the horizontal distance from the object's
-  position, with `NARRATION_MARGIN_M` (`sound-reach.ts`); it starts outside,
+  position, divided by the scale its folders draw it at
+  (`inheritedScaleOf`, `../../placement/place-scale.ts`), so a narration
+  in a folder scaled by 2 is heard from twice as far; with
+  `NARRATION_MARGIN_M` (`sound-reach.ts`); it starts outside,
   so a tap before the first frame does nothing.
 - A tap (or the card's button): outside or in the editor, nothing; inside,
   pause when playing, else play - from the start when it was heard to the

@@ -33,8 +33,10 @@ ray (`pick`).
   vertical lens: what a code's size on screen is worked out from), and
   the optional `eye` (the camera itself: given, each drawn part with an
   `update` is ticked, see below).
-- `LayerPreview` - `{ kind: "station", id, geo, foundRadiusM }` or
-  `{ kind: "item", id, geo, sizeM }` (ellipsoidal geo poses, as the file).
+- `LayerPreview` - `{ ref, geo, value }`: the placeable
+  (`../placement/placeables.ts` `PlaceRef`, a station or a block), its
+  dragged pose (an ellipsoidal geo pose, as the file) and its dots' value
+  (a station's found radius, a model's size; null: as the tour has it).
 - `DEFAULT_CODE_SIZE_M` - 0.2; `BILLBOARD_LIFT_M` - 4.6 (how much higher a
   billboard stands upright than flat; flat it is 0.6 m over its station);
   `CODE_FLAT_GAP_M` - 0.07 (the gap between a code's anchor and the near
@@ -87,7 +89,9 @@ standing`). A distance, size or focal length that is not a positive
     the layer's frame (`deps.parent`'s), see the invariant below;
   - `setPreview(preview | null)` - a `LayerPreview` shown in place of the
     tour's pose until null: a station's place (its billboard, ring, items
-    and models follow) and found radius, or an item's place (a reading
+    and models follow) and found radius, a plain folder's origin and
+    scale (its items drawn through it, further out and larger, by
+    `drawInherited`), or an item's place (a reading
     stand turned by `uprightTurn` only, as the renderer turns it, on
     the drag and when cleared; a model also
     its size); the tour as drawn is untouched and comes back on null;
@@ -233,12 +237,13 @@ printed size, focalPxOf(view))` times its printed size: `CODE_SCREEN_PX`
   placed model is the model row's part (`kinds/model/world.ts`) built in
   `edit` (the plain model, no view mounted: the layer drives no view's
   frame and no clipping), its file parsed by `loadGlbModel` and scaled to
-  its size by `modelScale`; a preview of another size
-  scales the model in the part from its `tourScale`. A model whose file
+  its size by `modelScale`; a preview of another size scales the model
+  in the part, and a preview of another width a picture's plane, from
+  the scale each was drawn at (`../placement/place-scale.ts`
+  `drawAtExtent`). A model whose file
   cannot be read, or one without a size, is left out. A free model in the
-  `card` or `stage` view is drawn here no more than the visitor's station
-  draws it (the card is a panel, the stage the story's), and its file is
-  not read. The page must give
+  `card` view is drawn here no more than the visitor's station draws it
+  (the card is a panel), and its file is not read. The page must give
   `worldPart` (`editor3d-drawings.ts` does): without it no model is
   drawn.
 - **Names the globe's interface pass reads** (`globe-interface-pass.ts`):
@@ -296,14 +301,16 @@ only, a model seen through its transparent margin picked instead; a
 billboard per
 station rising with the morph; photos flat looking down and upright
 tilted; a model at its size and pose; a model that cannot be read left
-out; no free model in the card or stage view, its file not read; every code as a square of its printed size, laid flat face up in front
+out; no free model in the card view, its file not read; every code as a square of its printed size, laid flat face up in front
 of its anchor looking down and upright tilted, and one lying face up
 left as it lies; a code laid flat drawn its size on screen from high
 above with no cap (its gap with it, picked at its grown size, its corners
 for the page's measure, its printed size near or tilted up) and for the
 view's own height; where an item and a
 code stand, drawn or not; a station's and an item's (a model's) preview
-shown and taken back; a moved station, its items and the codes kept in
+shown and taken back; a scaled folder's picture drawn further out and
+larger, following a drag of the folder's origin and scale and back when
+cleared; a moved station, its items and the codes kept in
 the layer's frame after the world frame moved (the globe's nesting), also
 once deselected; the selected station's circle amber and a selected
 item's station lighter; a part from the world door built in the

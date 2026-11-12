@@ -6,13 +6,18 @@ Mints a video's poster when the video is brought into the tour: the frame
 just after the start (0.1 s, or half a very short video; the first frame,
 once loaded, of a video whose length is 0 or NaN), as a JPEG, so a
 phone can show the item before any of the video loads. The editor page
-hands it to the session as `fileReaders.posterOf` (`edit-main.ts`), and
-`readTourFile` turns the picture into an image asset of its own.
+hands it to the session as `fileReaders.videoLookOf` (`edit-main.ts`), and
+`readTourFile` turns the picture into an image asset of its own. The same
+element gives the video's length, which the shelf's size warning reads
+(`asset-shelf/video-size.ts`).
 
 ## Public API
 
-- `videoPosterOf(blob, options?): Promise<Blob | null>` - never rejects.
-  Null for a video the browser refuses (`error`), one that does not load
+- `videoLookOf(blob, options?): Promise<VideoLook>` - never rejects.
+  `VideoLook` is `{ poster, seconds }`. `seconds` is the length the
+  element read (a recorded clip's once resolved), null when it is not a
+  positive finite number; it is given even when no poster could be drawn.
+  The poster is null for a video the browser refuses (`error`), one that does not load
   and seek within `timeoutMs` (default 10 s), one with no picture
   (`videoWidth` 0), or a canvas that gives nothing.
 - `VideoPosterOptions` (for tests): `createVideo`, `draw(video, w, h)`,
@@ -47,7 +52,7 @@ hands it to the session as `fileReaders.posterOf` (`edit-main.ts`), and
 ## Examples
 
 ```ts
-const poster = await videoPosterOf(file); // Blob (image/jpeg) or null
+const { poster, seconds } = await videoLookOf(file); // Blob (image/jpeg) or null, seconds or null
 ```
 
 ## Tests
@@ -59,4 +64,6 @@ time), the first frame of a video of length 0 or NaN without a seek, a
 recorded clip's (Infinity) length read first and its frame at 0.1 s taken
 (seen red: the first frame), its first frame when the length never comes
 (over three waits), a frame even when no seek ever answers (over three
-waits, seen red: no poster), and a 4K frame scaled to 1920 x 1080.
+waits, seen red: no poster), a 4K frame scaled to 1920 x 1080, and the length: a known one, a
+recorded clip's resolved one, none for 0, NaN or a length that never
+comes, and a known one kept without a poster.

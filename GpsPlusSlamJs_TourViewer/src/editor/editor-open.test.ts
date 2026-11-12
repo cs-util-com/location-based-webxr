@@ -317,8 +317,8 @@ describe("openTourForEditing", () => {
   });
 
   it("says which folders' sizes and how many items a newer editor's tour lost, and that the next save writes it without them", async () => {
-    // Why: a tour from a newer editor may carry a folder's size this
-    // editor cannot show and items it cannot read. The reader leaves both
+    // Why: a tour from a newer editor may carry a folder's size outside this
+    // editor's 0.1 to 10 times and items it cannot read. The reader leaves both
     // out rather than refusing the tour, so the next save writes the tour
     // without them; unsaid, that is a silent loss. The folders are named
     // as the tree names them (their names, never the random id).
@@ -350,14 +350,14 @@ describe("openTourForEditing", () => {
               kind: "folder",
               title: "Benches",
               pose: POSE,
-              scale: 2,
+              scale: 20,
               children: [
                 pin("a"),
                 {
                   id: "f2",
                   kind: "folder",
                   pose: POSE,
-                  scale: 0.5,
+                  scale: 0.05,
                   children: [pin("b")],
                 },
               ],

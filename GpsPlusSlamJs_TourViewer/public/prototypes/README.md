@@ -164,6 +164,19 @@ wired into its logic: every interaction is faked.
   two directions for the editor's bottom bar and a collapsible panel for
   problems, history, map loading and performance (one tabbed panel, or a
   drawer per status item); made 2026-11-03.
+- `editor-panels-1-clear-area/`, `editor-panels-2-floating/`,
+  `editor-panels-3-one-column/` - three directions for the editor's panels
+  around the 3D view once the asset shelf docks on the right: framing a
+  selection where no panel covers it, and keeping a usable 3D view on a phone
+  held sideways (docked panels with give-way rules; floating cards over a
+  full-window view; one right column with Details and Files tabs). Each has a
+  size switch for desktop and both phone orientations and a notes panel with
+  its own check; made 2026-11-11.
+- `editor-docking-1-dockview/` - a VS Code-style docking panel system for the
+  editor built on the dockview library (loaded from a CDN by an import map):
+  presets for the earlier panel prototypes, drag to dock, float, fold, saved
+  layouts per form factor, and a phone exploration with touch; its notes list
+  what works with a finger and the library's limits; made 2026-11-11.
 - `globe-look-1-glitter-haze/` ... `globe-look-4-relief-deck/` - four
   directions for the globe seen over open sea with the sun low (sun glitter,
   haze, cumulus clouds): the sea and the air alone, raymarched clouds, lit
@@ -247,6 +260,12 @@ wired into its logic: every interaction is faked.
   a quality slider for the triangle count an author keeps, a distance
   slider for the level a viewer would see, and a wireframe view; made
   2026-11-08.
+- `asset-shelf-1/` ... `asset-shelf-3/` - three places for an asset shelf
+  on the editor's right side (a tab of the right panel, its own docked
+  panel, a rail of chips). Every file dropped anywhere lands on the shelf
+  and is optimized in the background; it can be used while it is, and the
+  original stands in until the optimized version is ready. Processing,
+  sizes and the failing file are simulated; made 2026-11-08.
 - `story-editor-1-step-cards/` ... `story-editor-3-inline-script/` - three
   directions for the story editor (step cards, a flow graph, an inline
   script), each with the same sample station, every edit on an in-memory

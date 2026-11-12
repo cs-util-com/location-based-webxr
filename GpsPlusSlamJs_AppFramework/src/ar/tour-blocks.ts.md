@@ -25,10 +25,10 @@ model | character`.
     square), `reading` (a short sign that opens the whole text on a tap),
     `card`;
   - `picture`: `plane`, `card`; `video`, `audio`: `card`;
-  - `model`: `placed`, `ghost`, `hotspots`, `cutaway`, `toy`, `stage`,
-    `card`; `character`: `stage`, `bubble`, `speak`, `two-stations`,
-    `portrait`, `popup`, `card` (the five between are
-    `TOUR_CHARACTER_VIEWS`, story views only).
+  - `model`: `placed`, `ghost`, `hotspots`, `cutaway`, `toy`, `card`;
+    `character`: `bubble`, `speak`, `two-stations`, `portrait`, `popup`,
+    `card` (the five before `card` are `TOUR_CHARACTER_VIEWS`, in a story
+    and standing free).
   - The WORLD views (a free block's) are `pin`, `lectern`, `reading`, `plane` and the model's
     world views, `TOUR_WORLD_VIEWS`; renderers ask that set rather than
     keep a copy.
@@ -120,8 +120,7 @@ durationMs? }`: `audio` names an audio asset; `timing` must be the
   `poster` (an image asset).
 - `audio`: `audio` (an audio asset), `transcript`, optional `title`.
 - `model`: `asset` (a model asset), `sizeM` by view - required in every
-  world view, refused for `stage` (shown at the file's own size), optional
-  for `card` - and optional `title`. In any view:
+  world view, optional for `card` - and optional `title`. In any view:
   - `animation` `{ name, autoplay }` - a clip of the file by name (a name
     the file lacks plays nothing); `autoplay` must be a boolean.
   - `annotations` - 1 to 32 notes `{ position, normal, title, text? }` in

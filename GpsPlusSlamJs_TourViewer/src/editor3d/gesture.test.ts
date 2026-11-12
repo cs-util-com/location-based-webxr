@@ -6,11 +6,18 @@
  * sky must not be retried every frame forever. A click on a handle that
  * moved nothing must write nothing (an empty undo step), and each handle
  * must write the one edit it stands for - a move, a turn, a radius, a
- * size - with the height rule applied.
+ * size - with the height rule applied. What a placeable's row says it
+ * cannot do (turn, lift, have dots) no handle and no key may do.
  */
 import { beforeAll, describe, expect, it } from "vitest";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 
+import {
+  STATION_PLACEMENT,
+  blockPlacement,
+  type ExtentSpec,
+} from "../placement/placement-rows.js";
+import type { PlaceRef } from "../placement/placeables.js";
 import { createTourViewerStore } from "../tour-viewer-session.js";
 import type { ScreenPoint } from "./gizmo-maths.js";
 import {
@@ -50,13 +57,54 @@ function flatWorld(
   return { world, calls };
 }
 
+const block = (id: string): PlaceRef => ({ kind: "block", id });
+const STATION_REF: PlaceRef = { kind: "station", id: "st" };
+
+/** The dots a row gives, at `value`. */
+function dots(spec: ExtentSpec | undefined, value: number) {
+  if (spec === undefined) throw new Error("the row has no dots");
+  return { ...spec, value };
+}
+
+/** A pin, as its row has it: it lifts, it does not turn, no dots. */
 const PIN: GestureTarget = {
-  kind: "item",
-  id: "pin",
+  ref: block("pin"),
   geo: { lat: 0, lon: 0, alt: 101.5, headingDeg: 0 },
-  sizeM: null,
+  turns: false,
+  lifts: true,
+  extent: null,
+  locked: false,
   centre: { x: 0, y: 0, z: 0 },
 };
+
+/** A reading stand, as its row has it: it turns and lifts, no dots. */
+const LECTERN: GestureTarget = { ...PIN, ref: block("lectern"), turns: true };
+
+/** A placed model of `sizeM`, as its row has it. */
+function model(sizeM: number): GestureTarget {
+  return {
+    ...LECTERN,
+    ref: block("m"),
+    extent: dots(blockPlacement("model", "placed")?.extent, sizeM),
+  };
+}
+
+/** A station at `geo` with its found radius, as its row has it. */
+function station(
+  geo: QrGeoPose,
+  foundRadiusM: number,
+  locked = false,
+): GestureTarget {
+  return {
+    ref: STATION_REF,
+    geo,
+    turns: STATION_PLACEMENT.turns,
+    lifts: STATION_PLACEMENT.lifts,
+    extent: dots(STATION_PLACEMENT.extent, foundRadiusM),
+    locked,
+    centre: { x: 0, y: 0, z: 0 },
+  };
+}
 
 function at(x: number, y: number): ScreenPoint {
   return { x, y };
@@ -74,7 +122,7 @@ describe("a move", () => {
     expect(geo.lon).toBeCloseTo(10, 9);
     expect(geo.lat).toBeCloseTo(5, 9);
     expect(geo.alt - heights(geo)).toBeCloseTo(1.5, 9);
-    expect(g?.edit()).toEqual({ kind: "item-pose", id: "pin", geo });
+    expect(g?.edit()).toEqual({ kind: "pose", ref: block("pin"), geo });
   });
 
   it("snaps to half metres with Shift", () => {
@@ -158,18 +206,16 @@ describe("a move", () => {
 
   it("moves a station's anchor, keeping its height above the ground", () => {
     const { world } = flatWorld((p) => 50 + p.lat);
-    const station: GestureTarget = {
-      kind: "station",
-      id: "st",
-      geo: { lat: 0, lon: 0, alt: 50, headingDeg: 20 },
-      foundRadiusM: 12,
-      centre: { x: 0, y: 0, z: 0 },
-    };
-    const g = startGesture("move", station, at(0, 0), world);
+    const g = startGesture(
+      "move",
+      station({ lat: 0, lon: 0, alt: 50, headingDeg: 20 }, 12),
+      at(0, 0),
+      world,
+    );
     g?.move(at(0, -7), false);
     expect(g?.edit()).toEqual({
-      kind: "station-pose",
-      id: "st",
+      kind: "pose",
+      ref: STATION_REF,
       geo: { lat: 7, lon: 0, alt: 57, headingDeg: 20 },
     });
   });
@@ -178,36 +224,62 @@ describe("a move", () => {
 describe("a turn", () => {
   it("turns by the knob's sweep round the centre, in whole degrees", () => {
     const { world } = flatWorld();
-    // The knob north of the pin; swept to the east.
-    const g = startGesture("turn", PIN, at(0, -10), world);
+    // The knob north of the stand; swept to the east.
+    const g = startGesture("turn", LECTERN, at(0, -10), world);
     g?.move(at(10, 0), false);
     const edit = g?.edit();
-    expect(edit?.kind).toBe("item-pose");
-    expect(edit?.kind === "item-pose" ? edit.geo.headingDeg : null).toBe(90);
+    expect(edit?.kind).toBe("pose");
+    expect(edit?.kind === "pose" ? edit.geo.headingDeg : null).toBe(90);
+  });
+
+  // Why: a pin's drawing does not follow its heading (it faces the
+  // viewer), so a knob on it would turn a value nobody can see.
+  it("is no handle of what does not turn", () => {
+    const { world } = flatWorld();
+    expect(startGesture("turn", PIN, at(0, -10), world)).toBeNull();
   });
 });
 
 describe("a dot", () => {
   it("sets a station's radius from the dot's distance", () => {
     const { world } = flatWorld();
-    const station: GestureTarget = {
-      kind: "station",
-      id: "st",
-      geo: { lat: 0, lon: 0, alt: 100, headingDeg: 0 },
-      foundRadiusM: 12,
-      centre: { x: 0, y: 0, z: 0 },
-    };
-    const g = startGesture("dot", station, at(12, 0), world);
+    const g = startGesture(
+      "dot",
+      station({ lat: 0, lon: 0, alt: 100, headingDeg: 0 }, 12),
+      at(12, 0),
+      world,
+    );
     g?.move(at(20.3, 0), false);
-    expect(g?.edit()).toEqual({ kind: "radius", id: "st", foundRadiusM: 20.5 });
+    expect(g?.edit()).toEqual({
+      kind: "extent",
+      ref: STATION_REF,
+      value: 20.5,
+    });
   });
 
   it("sets a model's size by the dot's distance against where it was grabbed", () => {
     const { world } = flatWorld();
-    const model: GestureTarget = { ...PIN, id: "m", sizeM: 2 };
-    const g = startGesture("dot", model, at(0, 4), world);
+    const g = startGesture("dot", model(2), at(0, 4), world);
     g?.move(at(0, 8), false);
-    expect(g?.edit()).toEqual({ kind: "size", id: "m", sizeM: 4 });
+    expect(g?.edit()).toEqual({ kind: "extent", ref: block("m"), value: 4 });
+  });
+
+  // Why: the bounds are the row's, so one placeable's dots can never
+  // write a value its format refuses (a picture's width tops out at 50 m,
+  // a model's size at 500 m).
+  it("keeps the value within the bounds its row gives", () => {
+    const { world } = flatWorld();
+    const picture: GestureTarget = {
+      ...LECTERN,
+      ref: block("pic"),
+      extent: dots(blockPlacement("picture", "plane")?.extent, 40),
+    };
+    const g = startGesture("dot", picture, at(0, 4), world);
+    g?.move(at(0, 8), false);
+    expect(g?.preview().value).toBe(50);
+    const big = startGesture("dot", model(40), at(0, 4), world);
+    big?.move(at(0, 8), false);
+    expect(big?.preview().value).toBe(80);
   });
 
   it("is no handle of a pin or a photo", () => {
@@ -217,13 +289,7 @@ describe("a dot", () => {
 });
 
 describe("a key gesture", () => {
-  const STATION: GestureTarget = {
-    kind: "station",
-    id: "st",
-    geo: { lat: 48, lon: 11, alt: 560, headingDeg: 0 },
-    foundRadiusM: 25,
-    centre: { x: 0, y: 0, z: 0 },
-  };
+  const STATION = station({ lat: 48, lon: 11, alt: 560, headingDeg: 0 }, 25);
 
   // Why: a held key repeats; each repeat moves the drawing, and the hold
   // writes ONE edit (one undo step) when the keys are let go - every
@@ -231,24 +297,28 @@ describe("a key gesture", () => {
   it("adds the presses of one hold up into one edit", () => {
     const ground = (p: { lat: number; lon: number }) => 100 + p.lon;
     const { world } = flatWorld(ground);
-    const pin: GestureTarget = {
-      ...PIN,
-      geo: { ...PIN.geo, lat: 48, lon: 11 },
+    const lectern: GestureTarget = {
+      ...LECTERN,
+      geo: { ...LECTERN.geo, lat: 48, lon: 11 },
     };
-    const g = startKeyGesture(pin, world);
+    const g = startKeyGesture(lectern, world);
     g.press({ kind: "nudge", eastM: 0.1, northM: 0 });
     g.press({ kind: "nudge", eastM: 0.1, northM: 0 });
     g.press({ kind: "turn", deg: 5 });
     g.press({ kind: "lift", m: 1 });
     const want = liftedGeo(
       turnedGeo(
-        nudgedGeo(nudgedGeo(pin.geo, 0.1, 0, ground), 0.1, 0, ground),
+        nudgedGeo(nudgedGeo(lectern.geo, 0.1, 0, ground), 0.1, 0, ground),
         5,
       ),
       1,
     );
     expect(g.preview().geo).toEqual(want);
-    expect(g.edit()).toEqual({ kind: "item-pose", id: "pin", geo: want });
+    expect(g.edit()).toEqual({
+      kind: "pose",
+      ref: block("lectern"),
+      geo: want,
+    });
   });
 
   // Why: a station stands on the ground (the design leaves PageUp and
@@ -260,9 +330,24 @@ describe("a key gesture", () => {
     expect(g.edit()).toBeNull();
     g.press({ kind: "turn", deg: -15 });
     expect(g.edit()).toEqual({
-      kind: "station-pose",
-      id: "st",
+      kind: "pose",
+      ref: STATION_REF,
       geo: { ...STATION.geo, headingDeg: 345 },
+    });
+  });
+
+  // Why: the keys answer the row as the knob does: what does not turn
+  // takes no turn key, while its nudges and lifts still apply.
+  it("leaves the heading of what does not turn alone", () => {
+    const { world } = flatWorld();
+    const g = startKeyGesture(PIN, world);
+    g.press({ kind: "turn", deg: 15 });
+    expect(g.edit()).toBeNull();
+    g.press({ kind: "lift", m: 1 });
+    expect(g.edit()).toEqual({
+      kind: "pose",
+      ref: block("pin"),
+      geo: liftedGeo(PIN.geo, 1),
     });
   });
 
@@ -270,7 +355,7 @@ describe("a key gesture", () => {
   // press yet, or presses that cancel out exactly) writes nothing.
   it("writes nothing for a hold that changed nothing", () => {
     const { world } = flatWorld();
-    const g = startKeyGesture(PIN, world);
+    const g = startKeyGesture(LECTERN, world);
     expect(g.edit()).toBeNull();
     g.press({ kind: "turn", deg: 5 });
     g.press({ kind: "turn", deg: -5 });
@@ -282,14 +367,7 @@ describe("a key gesture", () => {
 // grabbed - its middle and its knob take no gesture - while its radius
 // stays a drag of its dots.
 describe("a locked station", () => {
-  const LOCKED: GestureTarget = {
-    kind: "station",
-    id: "st",
-    geo: { lat: 0, lon: 0, alt: 100, headingDeg: 0 },
-    foundRadiusM: 12,
-    centre: { x: 0, y: 0, z: 0 },
-    locked: true,
-  };
+  const LOCKED = station({ lat: 0, lon: 0, alt: 100, headingDeg: 0 }, 12, true);
 
   it("takes no move and no turn, and still its radius", () => {
     const { world } = flatWorld();
@@ -300,6 +378,10 @@ describe("a locked station", () => {
     expect(startGesture("turn", LOCKED, at(0, -10), world)).toBeNull();
     const g = startGesture("dot", LOCKED, at(12, 0), world);
     g?.move(at(20.3, 0), false);
-    expect(g?.edit()).toEqual({ kind: "radius", id: "st", foundRadiusM: 20.5 });
+    expect(g?.edit()).toEqual({
+      kind: "extent",
+      ref: STATION_REF,
+      value: 20.5,
+    });
   });
 });

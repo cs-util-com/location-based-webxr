@@ -54,15 +54,6 @@ camera captures are debug data, never in a station (an earlier file's
   its pose in the station.
 - `automaticStationFrame(id, at)`: a new automatic station's frame
   (below), the one the tour document's station rule starts.
-- `WorldBlock`, `worldBlocks(station)`: a station's free blocks
-  (`tourFreeBlocks`, the ones outside its stories) as the short texts,
-  pictures, long texts (on their reading stands), models and sounds (a
-  narration circle or a zone)
-  the creator pages draw and edit: the kinds whose row in the editor's
-  list says `inWorld` (`kinds/edit-kinds.ts` `isWorldKind`). A free
-  video or character is not among them yet: those pages have no
-  drawing for one, and
-  `withTourContent` keeps it, stored files included.
 - `isCapturedPhoto(object)`: a picture whose image asset carries its own
   id (`content/<id>.jpg`, minted with it) - what a creator page takes with
   the camera; a picture naming another of the tour's images is not one.

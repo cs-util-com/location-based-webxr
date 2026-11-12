@@ -30,6 +30,24 @@ import { stationContent } from "../../test-support/station-content.js";
 
 const AT = "2026-10-22T10:00:00Z";
 
+/** A free video's inspector: an item with no place in the world. */
+const NO_PLACE = {
+  kind: "item",
+  itemKind: "video",
+  title: "A clip",
+  sub: "Video in The old gate",
+  stationId: "gate",
+  text: null,
+  extent: null,
+  model: null,
+  longText: null,
+  offset: null,
+  headingDeg: null,
+  turns: false,
+
+  groundOffM: null,
+} as const;
+
 const STATIONS = [
   {
     id: "gate",
@@ -348,16 +366,13 @@ describe("drawInspector", () => {
     ).toContain("Delete choice");
   });
 
+  // Why: a video has no place in the world, so its inspector has nothing
+  // to move, ground or split off: its texts and its Delete only.
   it("draws a free video's texts and its Delete", () => {
     drawInspector(
       dock,
       {
-        kind: "freeBlock",
-        itemKind: "video",
-        id: "clip",
-        stationId: "gate",
-        title: "A clip",
-        sub: "Video in The old gate",
+        ...NO_PLACE,
         fields: [
           {
             name: "title",
@@ -380,6 +395,12 @@ describe("drawInspector", () => {
     expect(
       dock.body.querySelector('[data-act="delete"]')?.textContent,
     ).toContain("Delete video");
+    expect(
+      [...dock.body.querySelectorAll("[data-act]")].map(
+        (b) => (b as HTMLElement).dataset["act"],
+      ),
+    ).toEqual(["delete"]);
+    expect(dock.body.querySelector('[data-field="east"]')).toBeNull();
   });
 
   // Why: a sound's radius, reach and volume are numbers (block-fields.ts
@@ -389,12 +410,7 @@ describe("drawInspector", () => {
     drawInspector(
       dock,
       {
-        kind: "freeBlock",
-        itemKind: "video",
-        id: "clip",
-        stationId: "gate",
-        title: "A clip",
-        sub: "Video in The old gate",
+        ...NO_PLACE,
         fields: [
           {
             name: "radiusM",
@@ -694,6 +710,51 @@ describe("drawInspector", () => {
     ).toBe(dock.body.querySelector(".pos .f > .flabel")?.id);
   });
 
+  // Why: a folder's Scale and Place are what the creator types to move,
+  // turn or scale its whole group; each field must carry the folder's
+  // value and its name, or the edit would land on nothing.
+  it("shows a folder's scale and, under Place, its origin and heading to type", () => {
+    const folderStation = {
+      ...STATIONS[0]!,
+      children: [
+        {
+          id: "f",
+          kind: "folder",
+          title: "Benches",
+          pose: { position: [4, 1, -2], rotation: [0, 0, 0, 1] },
+          scale: 2,
+          children: [],
+        },
+      ],
+    } as unknown as TourStation;
+    const model = buildInspector({
+      selected: "folder:f",
+      stations: [folderStation],
+      assets: [],
+      codes: CODES,
+    });
+    drawInspector(
+      dock,
+      model,
+      { folded: false, positionOpen: true, busy: null },
+      pictures,
+    );
+    expect(dock.head.querySelector(".ttl")?.textContent).toBe("Benches");
+    expect(dock.body.querySelector(".sub")?.textContent).toBe(
+      "Folder in The old gate, 0 items",
+    );
+    expect(fields()).toEqual([
+      [expect.any(String), "2.00 x"],
+      ["Offset east", "-2.00 m"],
+      ["Offset north", "4.00 m"],
+      ["Height", "1.00 m"],
+      ["Heading", "0.0 deg"],
+    ]);
+    for (const name of ["scale", "east", "north", "height", "heading"]) {
+      expect(input(name)).not.toBeNull();
+    }
+  });
+
   it("shows an item's offset in its station's frame, its height and heading to type", () => {
     draw("photo-1", true);
     // A picture's text fields first; its kind in the creator's word.
@@ -704,6 +765,8 @@ describe("drawInspector", () => {
       ["Title", ""],
       ["Caption", ""],
       ["Alt text", ""],
+      // Its width, the size its white dots change.
+      ["Width", "1.00 m"],
       ["Offset east", "-2.00 m"],
       ["Offset north", "4.00 m"],
       ["Height", "1.50 m"],

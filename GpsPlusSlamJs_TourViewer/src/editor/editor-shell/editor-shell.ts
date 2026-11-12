@@ -44,7 +44,7 @@ import {
 import type { UnknownAction } from "@reduxjs/toolkit";
 
 import type { Editor3dView } from "../../editor3d/editor3d-scene.js";
-import type { GestureEdit } from "../../editor3d/gesture.js";
+import type { PlaceEdit } from "../../placement/place-edits.js";
 import { createLongPress, LONG_PRESS } from "../long-press.js";
 import {
   folderDropRefusal,
@@ -113,10 +113,12 @@ import {
 } from "./inspector-edits.js";
 import {
   buildInspector,
+  detailsOnPhone,
   inspectorHint,
   type InspectorCode,
   type InspectorModel,
 } from "./inspector-model.js";
+import { inspectorFileOf, REPLACE_FILE_ACT } from "./inspector-file.js";
 import {
   controlName,
   drawInspector,
@@ -124,6 +126,13 @@ import {
   inspectorDrawing,
 } from "./shell-inspector.js";
 import { createBottomPanel } from "./bottom-panel.js";
+import type { DockHost, mountDockHost } from "./dock-host.js";
+import {
+  dockPanel,
+  docksAt,
+  isBottomPanelId,
+  type DockPanelId,
+} from "./dock-layout.js";
 import { watchKeyboard } from "./phone-keyboard.js";
 import {
   SHELL_DOCK_LAYOUT,
@@ -230,7 +239,7 @@ export interface ShellEditCommands {
   model(itemId: string, edit: ModelEdit): TypedEditOutcome;
   /** A pose or a size, as the 3D view's gestures write them: whether it
    *  was written (false: refused, and the page said why). */
-  scene(edit: GestureEdit): boolean;
+  scene(edit: PlaceEdit): boolean;
   /** Items' heights (the ground under each, or a typed height), as one
    *  step; their places and turns kept. */
   groundItems(
@@ -243,6 +252,13 @@ export interface ShellEditCommands {
   addStory(stationId: string): void;
   /** A new entry of `kind` in the story, selected, one undo step. */
   addToStory(storyId: string, kind: AddKind): void;
+  /** The add menu's Character: the character maker opens on a new
+   *  character, which is then added to the station (standing free) or to
+   *  the end of the story. */
+  addCharacter(to: {
+    readonly kind: "station" | "story";
+    readonly id: string;
+  }): void;
   /** A story's title, typed in its inspector. */
   storyTitle(storyId: string, title: string): TypedEditOutcome;
   /** How a story's block moves on. */
@@ -258,6 +274,10 @@ export interface ShellEditCommands {
     itemId: string,
     change: NarrationChange,
   ): Promise<TypedEditOutcome>;
+  /** Another file for the item `itemId` (its inspector's "Replace..."):
+   *  picked and given by the page, one undo step; none: no such row's
+   *  button does anything. */
+  replaceFile?(itemId: string): void;
   /** The largest voice file a long text takes (the page's autosave cap;
    *  none: the default cap). */
   readonly voiceMaxBytes?: number;
@@ -281,6 +301,9 @@ export interface EditorShellDeps {
   readonly step: (which: "undo" | "redo") => void;
   /** The open tour's codes, in the phone's numbering. */
   readonly codes: () => readonly InspectorCode[];
+  /** The name a file was brought in under, by its asset id (the shelf's);
+   *  none: the inspector names a file by its entry. */
+  readonly fileNameOf?: (assetId: string) => string | undefined;
   /** A picture's bytes from the open tour (its content path). */
   readonly loadPicture: (path: string) => Promise<Blob>;
   /** A dialog of the page shows: the shell's keys stay out of it. */
@@ -292,6 +315,16 @@ export interface EditorShellDeps {
   readonly folders: FolderCommands;
   /** A passing line (the page's toast). */
   readonly say: (text: string) => void;
+  /** Loads the docked layout (a dynamic import, so the docking library
+   *  comes with the 3D view); absent, the panels never dock. */
+  readonly dock?: () => Promise<{
+    readonly mountDockHost: typeof mountDockHost;
+  }>;
+  /** The panels docked or undocked (the asset shelf redraws for it). */
+  readonly onDocked?: (docked: boolean) => void;
+  /** Docked, the Files panel came into sight or went out of it (the
+   *  asset shelf's toggle says which). */
+  readonly onFilesShown?: (shown: boolean) => void;
 }
 
 export interface EditorShell {
@@ -309,12 +342,20 @@ export interface EditorShell {
    *  typed in, a long text's writer before its pause): the page calls it
    *  before a save, which writes the tour as the store holds it. */
   flush(): void;
-  /** The scene's ground menu at `point` (px in the view), for the
+  /** The scene's ground menu at `point` (px on the 3D canvas), for the
    *  ground's `place` there (null: none has loaded). */
   groundMenu(point: { x: number; y: number }, place: GroundPlace | null): void;
   /** Empties the tree's search: something the page just made is shown,
    *  and its name would match none of the words typed. */
   clearSearch(): void;
+  /** Whether the panels are docked around the 3D view now. */
+  docked(): boolean;
+  /** Docked, shows a panel (its side unfolded, it the shown tab); else
+   *  nothing. */
+  reveal(id: DockPanelId): void;
+  /** Docked, whether the Files panel shows: its group shown and it the
+   *  group's shown tab. Undocked: false. */
+  filesShown(): boolean;
 }
 
 const BAR_ICON: Readonly<Record<BarAction, ShellIcon>> = {
@@ -449,6 +490,12 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         addStoryIn(id);
         return;
       }
+      if (kind === "character") {
+        clearSearch();
+        store.dispatch(editorViewActions.stationFolded({ id, open: true }));
+        deps.edits.addCharacter({ kind: "station", id });
+        return;
+      }
       addInPlace(id, kind);
       // Added from the details on a phone: the draw took the button away.
       if (document.activeElement === document.body) {
@@ -456,6 +503,12 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       }
     },
     chooseForStory: (id, kind) => {
+      if (kind === "character") {
+        clearSearch();
+        revealStory(id);
+        deps.edits.addCharacter({ kind: "story", id });
+        return;
+      }
       addInStory(id, kind);
       if (document.activeElement === document.body) {
         focusControl(inspector.root, '[data-act="close"]');
@@ -570,6 +623,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
 
   const pictures = createShellPictures({
     load: (path) => deps.loadPicture(path),
+    // The list's and the details' cards, in the page or behind another
+    // docked tab.
+    owns: (el) => tree.root.contains(el) || inspector.root.contains(el),
   });
   const viewBox = byId("view3d");
   /** The kinds' own parts of the inspector (`kind-panels.ts`): a long
@@ -609,6 +665,11 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   });
 
   let view: ShellView | null = null;
+  /** The docked layout while the panels dock (below). */
+  let dockHost: DockHost | null = null;
+  /** The on-screen keyboard's height as last read: a layout docked while
+   *  it is up is told at once, not only at its next change. */
+  let keyboardPx = 0;
   // When each history step was made: stamped on first sight by a
   // subscription as long-lived as the page, so the steps made while the 2D
   // map shows are timed too (the base the history opens from is not).
@@ -699,7 +760,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     // second).
     if (ui.selected === null) return null;
     const tour = manifest();
-    return buildInspector({
+    const built = buildInspector({
       selected: ui.selected,
       stations: tour?.stations ?? [],
       assets: tour?.assets ?? [],
@@ -712,7 +773,22 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       timingsStamp: timingsStampOf(state().tourDocument.timings),
       selectedFileUnsaved: freeItemUnsaved(state().tourDocument, ui.selected),
     });
+    const file = inspectorFileOf(
+      ui.selected,
+      tour?.stations ?? [],
+      tour?.assets ?? [],
+      deps.fileNameOf,
+    );
+    return built === null || file === null ? built : { ...built, file };
   };
+
+  /** `model` as the docks and a phone's sheets see it: none on a phone
+   *  for a selection with no details there (`detailsOnPhone`), whose tap
+   *  keeps the list. */
+  const sheetModel = (model: InspectorModel | null): InspectorModel | null =>
+    model !== null && phoneSheets(window.innerWidth) && !detailsOnPhone(model)
+      ? null
+      : model;
 
   /** The inspector drawn from the store and the ground now (a draw that
    *  changes nothing is skipped): also each readout tick, so the ground
@@ -731,7 +807,18 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       panels.sync(model),
     );
     // A phone ticking rows in the Select mode keeps its sheet the list.
-    inspector.root.hidden = model === null || shownSheet(model) === "tree";
+    const wasHidden = inspector.root.hidden;
+    inspector.root.hidden =
+      sheetModel(model) === null || shownSheet(model) === "tree";
+    // Docked, a selection shows its details over the files beside them.
+    if (
+      dockHost !== null &&
+      wasHidden &&
+      !inspector.root.hidden &&
+      !state().editorView.foldedDocks.inspector
+    ) {
+      dockHost.reveal("details");
+    }
   };
 
   /** The tree is folded for the approach, not by the creator. */
@@ -759,7 +846,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     model: InspectorModel | null = inspectorModel(state().editorView),
   ) => {
     const ui = state().editorView;
-    const inspectorShows = model !== null;
+    const inspectorShows = sheetModel(model) !== null;
     const phone = phoneSheets(window.innerWidth);
     // Turned sideways, the list the details covered stands beside them.
     const turnedWide = change === "resized" && onPhone && !phone;
@@ -792,7 +879,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     const ui = state().editorView;
     if (!phoneSheets(window.innerWidth)) return null;
     if (ui.selectMode) return "tree";
-    if (model !== null) return "details";
+    if (sheetModel(model) !== null) return "details";
     return ui.foldedDocks.tree ? null : "tree";
   };
   /** The selection let go and the list shown: on a phone, the way back
@@ -1947,6 +2034,11 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     if (act?.startsWith("move-to:") === true) {
       moveSelectedTo(selected, act.slice("move-to:".length));
     }
+    if (act === REPLACE_FILE_ACT) {
+      const model = inspectorModel(state().editorView);
+      if (model?.file !== undefined)
+        deps.edits.replaceFile?.(model.file.blockId);
+    }
     if (act === "delete") deleteSelected(selected);
     if (act === "split") deps.stations.split(selected);
     if (act === "ground" || act === "ground-items") void runGround(act);
@@ -2175,10 +2267,123 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     const model = inspectorModel(state().editorView);
     applyDocks("resized", model);
     sheets.sync(shownSheet(model));
+    syncDock();
+  };
+
+  // --- the docked layout ---------------------------------------------------
+  // From `DOCK_MIN_PX` wide the panels dock around the 3D view (the
+  // docking library loaded with it, `dock-host.ts`); narrower, they are
+  // today's docks and a phone's sheets. The folds stay the store's: a
+  // folded side hides its group, its folded head back over the view.
+  let dockLoading = false;
+  /** The docking failed to load: said once, not tried again on every
+   *  resize (a module that failed to load fails again at once). */
+  let dockFailed = false;
+  let filesWereShown = false;
+  const filesShown = () =>
+    dockHost !== null &&
+    dockHost.groupShown("files") &&
+    dockHost.activeIn("files") === "files";
+  const syncFilesShown = () => {
+    const shown = filesShown();
+    if (shown === filesWereShown) return;
+    filesWereShown = shown;
+    deps.onFilesShown?.(shown);
+  };
+  let stopDockFolds: (() => void) | null = null;
+  const dockEmpty = document.createElement("p");
+  dockEmpty.className = "dock-empty";
+  dockEmpty.textContent =
+    "Select a station or an item, in the list or in the view.";
+  /** The bottom panel learns what the docking's own controls did. */
+  const syncFromDock = () => {
+    syncFilesShown();
+    if (dockHost === null) return;
+    const tab = dockHost.activeIn("problems");
+    if (!dockHost.groupShown("problems")) {
+      panel.docked({ open: false, tab: "problems" });
+    } else if (tab !== null && isBottomPanelId(tab)) {
+      panel.docked({ open: true, tab });
+    }
+  };
+  const foldDocked = () => {
+    const folded = state().editorView.foldedDocks;
+    dockHost?.fold("list", folded.tree);
+    dockHost?.fold("details", folded.inspector);
+  };
+  const mountDock = (mount: typeof mountDockHost) => {
+    if (dockHost !== null || view === null || !docksAt(window.innerWidth)) {
+      return;
+    }
+    const host = mount({ box: viewBox, onChange: syncFromDock });
+    dockHost = host;
+    host.content("details").append(dockEmpty);
+    foldDocked();
+    stopDockFolds = store.subscribe(foldDocked);
+    panel.dock({
+      show: (tab) => {
+        host.reveal(tab);
+      },
+      hide: () => {
+        host.hideGroupOf("problems");
+      },
+    });
+    if (keyboardPx > 0) host.keyboard(keyboardPx);
+    deps.onDocked?.(true);
+  };
+  const syncDock = () => {
+    const load = deps.dock;
+    if (view !== null && load !== undefined && docksAt(window.innerWidth)) {
+      if (dockHost !== null || dockLoading || dockFailed) return;
+      dockLoading = true;
+      load().then(
+        ({ mountDockHost: mount }) => {
+          dockLoading = false;
+          // The view may have closed, or the window narrowed, meanwhile.
+          mountDock(mount);
+        },
+        (error: unknown) => {
+          dockLoading = false;
+          dockFailed = true;
+          deps.say(
+            `The panels could not be docked: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        },
+      );
+      return;
+    }
+    if (dockHost === null) return;
+    stopDockFolds?.();
+    stopDockFolds = null;
+    panel.dock(null);
+    dockEmpty.remove();
+    dockHost.dispose();
+    dockHost = null;
+    syncFilesShown();
+    deps.onDocked?.(false);
   };
 
   return {
     clearSearch,
+    docked: () => dockHost !== null,
+    filesShown,
+    reveal(id) {
+      if (dockHost === null) return;
+      const side = dockPanel(id).group;
+      const folded = state().editorView.foldedDocks;
+      if (side === "left" && folded.tree) {
+        creatorTouchesTree();
+        store.dispatch(
+          editorViewActions.dockFolded({ dock: "tree", folded: false }),
+        );
+      }
+      if (side === "right" && folded.inspector) {
+        store.dispatch(
+          editorViewActions.dockFolded({ dock: "inspector", folded: false }),
+        );
+      }
+      dockHost.reveal(id);
+    },
     show(next, options) {
       view = next;
       drawn = null;
@@ -2206,7 +2411,14 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       window.addEventListener("resize", onResize);
       const box = tree.root.parentElement;
       stopKeyboard?.();
-      stopKeyboard = box === null ? null : watchKeyboard(window, box);
+      stopKeyboard =
+        box === null
+          ? null
+          : watchKeyboard(window, box, (px) => {
+              keyboardPx = px;
+              dockHost?.keyboard(px);
+            });
+      syncDock();
     },
     flush() {
       const pending = typedField();
@@ -2234,6 +2446,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       busy?.stop.abort();
       busy = null;
       view = null;
+      syncDock();
       unsubscribe?.();
       unsubscribe = null;
       if (timer !== null) window.clearInterval(timer);
@@ -2243,6 +2456,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       window.removeEventListener("resize", onResize);
       stopKeyboard?.();
       stopKeyboard = null;
+      keyboardPx = 0;
       sheets.sync(null);
       showHelp(false);
       addMenu.close(false);
@@ -2262,7 +2476,19 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     },
     groundMenu(point, place) {
       if (view === null) return;
-      ground.openAt(point, place);
+      // The point is the canvas's, and the canvas covers only the view
+      // between the docks: the menu is placed in the view's box.
+      const canvas = viewBox.querySelector(".view3d-canvas");
+      if (canvas === null) {
+        ground.openAt(point, place);
+        return;
+      }
+      const c = canvas.getBoundingClientRect();
+      const b = viewBox.getBoundingClientRect();
+      ground.openAt(
+        { x: point.x + c.left - b.left, y: point.y + c.top - b.top },
+        place,
+      );
     },
     approachEnded(how) {
       if (!approachHold || view === null) return;
@@ -2279,7 +2505,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         {
           widthPx: window.innerWidth,
           folded: { tree: false, inspector: ui.foldedDocks.inspector },
-          inspectorShows: inspectorModel(ui) !== null,
+          inspectorShows: sheetModel(inspectorModel(ui)) !== null,
         },
         SHELL_DOCK_LAYOUT,
       );

@@ -12,8 +12,12 @@
 import fc from "fast-check";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ADD_CHOICES, type AddKind } from "../../kinds/edit-kinds.js";
-import { addMenuSpot, createTreeAddMenu } from "./tree-add-menu.js";
+import { ADD_CHOICES } from "../../kinds/edit-kinds.js";
+import {
+  addMenuSpot,
+  createTreeAddMenu,
+  type TreeAddChoice,
+} from "./tree-add-menu.js";
 
 /** A tree body with one station's "+". */
 function plusFor(body: HTMLElement, id: string): HTMLButtonElement {
@@ -25,14 +29,12 @@ function plusFor(body: HTMLElement, id: string): HTMLButtonElement {
 }
 
 let body: HTMLElement;
-let choose: ReturnType<
-  typeof vi.fn<(id: string, kind: AddKind | "story") => void>
->;
+let choose: ReturnType<typeof vi.fn<(id: string, kind: TreeAddChoice) => void>>;
 
 beforeEach(() => {
   body = document.createElement("div");
   document.body.replaceChildren(body);
-  choose = vi.fn<(id: string, kind: AddKind | "story") => void>();
+  choose = vi.fn<(id: string, kind: TreeAddChoice) => void>();
 });
 
 afterEach(() => {
@@ -72,7 +74,8 @@ function key(target: Element, k: string): KeyboardEvent {
 // menu must not offer one there.
 describe("the menu for a story", () => {
   function forStory() {
-    const chooseForStory = vi.fn<(id: string, kind: AddKind) => void>();
+    const chooseForStory =
+      vi.fn<(id: string, kind: Exclude<TreeAddChoice, "story">) => void>();
     const menu = createTreeAddMenu({
       body,
       host: document.body,
@@ -109,12 +112,33 @@ describe("the menu for a story", () => {
     const { root } = forStory();
     key(root, "End");
     expect((document.activeElement as HTMLElement).dataset["kind"]).toBe(
-      "picture",
+      "character",
     );
     key(root, "ArrowDown");
     expect((document.activeElement as HTMLElement).dataset["kind"]).toBe(
       "shortText",
     );
+  });
+
+  // Why: a video plays only in a story, so a story's menu is where it is
+  // added; it must be on there, saying what it is.
+  it("offers a video in a story", () => {
+    const { root, chooseForStory } = forStory();
+    const video = root.querySelector<HTMLElement>('[data-kind="video"]');
+    expect(video?.getAttribute("aria-disabled")).toBeNull();
+    expect(video?.textContent).toContain("A video file, played in a story");
+    video?.click();
+    expect(chooseForStory).toHaveBeenCalledWith("legend", "video");
+  });
+
+  // Why: a character is made in the maker before it is added, so it has an
+  // item of its own; it must reach the story it was asked for, not its
+  // station.
+  it("offers a character, added into the story", () => {
+    const { root, chooseForStory } = forStory();
+    root.querySelector<HTMLElement>('[data-kind="character"]')?.click();
+    expect(chooseForStory).toHaveBeenCalledWith("legend", "character");
+    expect(choose).not.toHaveBeenCalled();
   });
 
   it("offers a story again on a station's +", () => {
@@ -130,7 +154,7 @@ describe("the menu for a story", () => {
 });
 
 describe("createTreeAddMenu", () => {
-  it("opens as a menu titled by its station, the focus on its first item, the picture off with its reason", () => {
+  it("opens as a menu titled by its station, the focus on its first item, the video and the character off with their reasons", () => {
     const { root, item } = opened();
     expect(root.hidden).toBe(false);
     expect(root.getAttribute("role")).toBe("menu");
@@ -148,31 +172,43 @@ describe("createTreeAddMenu", () => {
       [...root.querySelectorAll<HTMLElement>('[role="menuitem"]')].map(
         (i) => i.dataset["kind"],
       ),
-    ).toEqual([...ADD_CHOICES.map((c) => c.kind), "story"]);
-    const picture = item("picture");
-    expect(picture?.getAttribute("aria-disabled")).toBe("true");
-    expect(picture?.textContent).toContain("Taken on site with the phone");
-    expect(item("longText")?.getAttribute("aria-disabled")).toBeNull();
+    ).toEqual([...ADD_CHOICES.map((c) => c.kind), "character", "story"]);
+    const character = item("character");
+    expect(character?.getAttribute("aria-disabled")).toBeNull();
+    expect(character?.textContent).toContain("character maker");
+    const video = item("video");
+    expect(video?.getAttribute("aria-disabled")).toBe("true");
+    expect(video?.textContent).toContain(
+      "A video plays in a story: add it to one",
+    );
+    for (const kind of ["longText", "picture", "audio", "model"]) {
+      expect(item(kind)?.getAttribute("aria-disabled")).toBeNull();
+    }
   });
 
-  it("moves with the arrows, Home, End and a letter, through the item that is off too", () => {
+  it("moves with the arrows, Home, End and a letter, through the items that are off too", () => {
     const { root, item } = opened();
     key(root, "ArrowDown");
     expect(document.activeElement).toBe(item("longText"));
     key(root, "ArrowDown");
     expect(document.activeElement).toBe(item("picture"));
     key(root, "ArrowDown");
+    expect(document.activeElement).toBe(item("video"));
+    key(root, "End");
     expect(document.activeElement).toBe(item("story"));
+    key(root, "ArrowUp");
+    expect(document.activeElement).toBe(item("character"));
+    key(root, "ArrowDown");
     key(root, "ArrowDown");
     expect(document.activeElement).toBe(item("shortText"));
     key(root, "ArrowUp");
     expect(document.activeElement).toBe(item("story"));
     key(root, "Home");
     expect(document.activeElement).toBe(item("shortText"));
-    key(root, "End");
-    expect(document.activeElement).toBe(item("story"));
     key(root, "l");
     expect(document.activeElement).toBe(item("longText"));
+    key(root, "s");
+    expect(document.activeElement).toBe(item("audio"));
     key(root, "s");
     expect(document.activeElement).toBe(item("story"));
     key(root, "s");
@@ -201,9 +237,10 @@ describe("createTreeAddMenu", () => {
     expect(document.activeElement).toBe(details);
   });
 
-  it("adds nothing for the item that is off, and stays open", () => {
+  it("adds nothing for an item that is off, and stays open", () => {
     const { root, item } = opened();
-    item("picture")?.click();
+    // A station's video is off: it plays in a story only.
+    item("video")?.click();
     expect(choose).not.toHaveBeenCalled();
     expect(root.hidden).toBe(false);
   });

@@ -4,9 +4,9 @@
  * by at most 60 degrees from his facing), here with his back turned to a
  * camera more than 90 degrees round, so he is never edge-on, behind the
  * one world door
- * (`world-part.ts`), in the look of his chosen view. A view with no world
- * look of its own (`stage`) stands in the default story look
- * (`EDITOR_CHARACTER_VIEW`); the `card` view stands nothing, as the
+ * (`world-part.ts`), in the look of his chosen view. A view this viewer
+ * does not know stands in the default look (`EDITOR_CHARACTER_VIEW`, the
+ * view a new character gets); the `card` view stands nothing, as the
  * visitor sees nothing of him in the world. In play the row gives no part:
  * the visitor's free host (`free-items.ts`) stands free characters.
  *
@@ -29,12 +29,13 @@ import {
 } from "../../character-views.js";
 import type { WorldEnv, WorldPart } from "../../world-part.js";
 
-/** The story look a character without one stands in, in the editor. */
+/** The look a character of a view the looks do not know stands in, in the
+ *  editor: the format's floor for a character, `speak`. */
 export const EDITOR_CHARACTER_VIEW: StageCharacterView = "speak";
 
-/** The look the editor draws `view` in: a story view as itself, `stage`
- *  (or any view the looks do not know) as `EDITOR_CHARACTER_VIEW`; null
- *  for `card`, which stands nothing in the world. */
+/** The look the editor draws `view` in: a look's view as itself, a view
+ *  the looks do not know as `EDITOR_CHARACTER_VIEW`; null for `card`,
+ *  which stands nothing in the world. */
 export function editorCharacterView(view: string): StageCharacterView | null {
   if (view === "card") return null;
   return isStageCharacterView(view) ? view : EDITOR_CHARACTER_VIEW;

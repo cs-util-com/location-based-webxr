@@ -48,7 +48,9 @@ nor while the dock is folded.
 
 **On a phone** (700 px wide or less, `phone-sheet.ts`) the docks are sheets
 over the foot of the page with the map above them: the list when nothing
-is selected, the details over it when something is, each with a grip
+is selected, the details over it when something is (unless
+its inspector model has no phone details, `detailsOnPhone`: a folder tap
+keeps the list, its band and the 3D handles), each with a grip
 (drag to resize, down past the floor to dismiss). The share of the page
 is one CSS number on the body (`--s-sheet-share`), which the canvas reads
 too, so the map ends where the sheet begins and is told of its new size
@@ -62,6 +64,8 @@ phone wider than 700 px keeps the two docks, and turning one with
 something selected unfolds the list the details covered. The on-screen keyboard
 (`phone-keyboard.ts`) is `--s-keyboard-h` on the page; at every width a
 panel stands on the keyboard, so a focused field can scroll above it.
+Docked, the layout is told the keyboard's height on every change and,
+when it is docked while a keyboard is up, at once.
 
 The tree's editing (G2 M3b) goes through it: "+" in the tree's head adds a
 station at the centre of the view (where the view has none, `centre()`
@@ -99,6 +103,20 @@ to a station, a story's name in the head takes the focus, selected.
   - `deps.codes()` - the open tour's codes (`InspectorCode[]`);
   - `deps.loadPicture(path)` - a picture's bytes from the open tour;
   - `deps.dialogOpen()` - a page dialog shows (the keys stay out of it);
+  - `deps.dock?()` - loads `dock-host.ts` (a dynamic import); absent, the
+    panels never dock. From `DOCK_MIN_PX` (701 px) wide, while the view
+    shows, the panels dock around it; narrower, or on `hide()`, they
+    undock. The folds stay the store's (`foldedDocks`): a folded side
+    hides its group and shows its folded head over the view, so the dock
+    rule and the approach fold keep working. Docked, a selection that
+    appears shows Details over Files, and the Details panel says "Select
+    a station or an item, in the list or in the view." while nothing is
+    selected;
+  - `deps.onDocked?(docked)` - the panels docked or undocked;
+  - `deps.onFilesShown?(shown)` - docked, the Files panel came into sight
+    or went (the asset shelf's toggle redraws);
+  - a docking that failed to load is said once and not tried again until
+    a reload;
   - `deps.stations` (`ShellStationCommands`) - the page's commands:
     `add(place, "centre" | "here")`, `reorder(order)`, `split(itemId)`,
     `duplicate(selection)`, `remove(selection)`;
@@ -114,8 +132,9 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
     Ungroup, the drag into or out of a plain folder and its rename, each
     one undo step that says its outcome or its refusal.
 - `EditorShell.groundMenu(point, place)` - the 3D view's input asks for
-  the ground menu (a right click, a long press): opened at `point` (px in
-  the view) for `place` (null: no ground loaded there); nothing while the
+  the ground menu (a right click, a long press): opened at `point` (px on
+  the 3D canvas, placed in the view's box: the canvas covers only the
+  view between the docks) for `place` (null: no ground loaded there); nothing while the
   view is hidden.
 - `EditorShell.show(view, { approach })` - the 3D view shows: the shell
   draws from the store, applies the dock rule's `opened`, follows the
@@ -143,6 +162,12 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   open keeps that fold and does not restore the one from before the
   approach. Deliberately no flag for it: "stays as you left it" is the
   rule, and after a takeover the folded tree is what they left.
+- `EditorShell.docked()` - whether the panels are docked now;
+  `EditorShell.reveal(id)` - docked, shows a panel (`dock-layout.ts`'s ids),
+  unfolding its side in the store first; undocked, nothing (the asset
+  shelf's toggle reveals the Files panel through it).
+  `EditorShell.filesShown()` - docked, whether the Files panel shows (its
+  group shown, it the shown tab); undocked, false.
 - `EditorShell.clearSearch()` - empties the tree's search, and draws the tree
   without it where it shows: the page calls it for every station it makes and
   for an item it copies (the search would hide the new one, its name matching
@@ -535,3 +560,18 @@ position, Move to a new station). Its parts' own tests:
 ## Narration
 
 `ShellEditCommands.narration` and `.editNarration` reach the session; the dock passes them, with `.voiceMaxBytes` (the page's autosave cap), to the writer's Narration section. A stamp per state of the tour's `timings` (`timingsStampOf`) goes into `buildInspector`, so the section re-reads when a timing changes without the narration record changing.
+
+## An item's file
+
+The inspector's model gets `file` (`inspector-file.ts`) for a block made
+from a file, named through `deps.fileNameOf`; its "Replace..."
+(`REPLACE_FILE_ACT`) calls `deps.edits.replaceFile(blockId)`, which the
+page answers with a picker and the session's `setItemFile`.
+
+## The add menu's Character
+
+`ShellEditCommands.addCharacter({ kind: "station" | "story", id })`: the
+shell unfolds the station (or reveals the story), clears the search and
+hands the place over. The page then opens the character maker and adds the
+character that was made (`edit-main.ts`, `addCharacterTo`). Tested in
+`editor-shell.test.ts` ("the add menu's Character").

@@ -90,7 +90,7 @@ describe('parseTourStations', () => {
             {
               id: 'kurt',
               kind: 'character',
-              view: 'stage',
+              view: 'speak',
               name: 'Sir Kurt',
               image: 'knight',
               voice: 'voice',
@@ -109,8 +109,9 @@ describe('parseTourStations', () => {
             {
               id: 'arch-model',
               kind: 'model',
-              view: 'stage',
+              view: 'placed',
               asset: 'arch',
+              sizeM: 3,
               pose: POSE,
               advance: { mode: 'auto', afterS: 4 },
             },
@@ -138,8 +139,8 @@ describe('parseTourStations', () => {
     expect(
       tourStationBlocks(parsed!).map((b) => [b.id, b.kind, b.view])
     ).toEqual([
-      ['kurt', 'character', 'stage'],
-      ['arch-model', 'model', 'stage'],
+      ['kurt', 'character', 'speak'],
+      ['arch-model', 'model', 'placed'],
     ]);
     // Defaults are written out, so a renderer never guesses.
     expect(kids[0]).toMatchObject({ advance: { mode: 'tap' } });
@@ -362,7 +363,7 @@ describe('parseTourStations', () => {
       [
         withBlock({
           kind: 'character',
-          view: 'stage',
+          view: 'speak',
           name: 'K',
           image: 'knight',
           caption: 'Hi',
@@ -496,7 +497,7 @@ describe('parseTourStations', () => {
   it.each([
     [
       'a character without a caption',
-      { kind: 'character', view: 'stage', name: 'K', image: 'knight' },
+      { kind: 'character', view: 'speak', name: 'K', image: 'knight' },
     ],
     ['audio without a transcript', { kind: 'audio', audio: 'voice' }],
     ['video without a transcript', { kind: 'video', video: 'clip' }],

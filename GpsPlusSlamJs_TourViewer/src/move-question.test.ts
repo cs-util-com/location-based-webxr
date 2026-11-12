@@ -135,10 +135,10 @@ describe("moveNote", () => {
   // their kind when they have none.
   it.each([
     [
-      { kind: "character", view: "stage", name: "The watchman" },
+      { kind: "character", view: "speak", name: "The watchman" },
       '"The watchman"',
     ],
-    [{ kind: "character", view: "stage", name: "" }, "The character"],
+    [{ kind: "character", view: "speak", name: "" }, "The character"],
     [
       { kind: "video", view: "card", video: "v", title: "Harbour" },
       '"Harbour"',

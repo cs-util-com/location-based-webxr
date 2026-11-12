@@ -16,10 +16,10 @@ the rest of the visit, kept with the walk (`visitor-walk-slice.ts`
   `TOUR_WORLD_VIEWS` (`pin`, a long text's `lectern` and `reading`,
   `plane` and the model's world views).
 - `worldBlockReachedBy(child)` - the world block a story's child is, or
-  null (a card, a stage block, a choice, a quiz).
+  null (a card, a choice, a quiz).
 - `reachedWorldBlocks(station, reached)` - the station's story world
   blocks among the reached ids, in the order reached, each once; a free
-  block, a card or stage block and an unknown id are left out.
+  block, a card and an unknown id are left out.
 - `presentWorldBlocks(station, reached)` - the free world blocks, then
   `reachedWorldBlocks`.
 - `hasStoryWorldBlocks(station)` - whether any story block has a world
@@ -28,7 +28,7 @@ the rest of the visit, kept with the walk (`visitor-walk-slice.ts`
 ## Invariants & assumptions
 
 - Never a `card` (the story panel's, closed on the next step) nor a
-  `stage` figure or model (the stage's one figure, `scene-stage.ts`).
+  character (his look is stood by `scene-stage.ts`, not drawn here).
 - A free block is never also counted as reached: it is drawn as the
   station's `items` part already.
 - A reached id that names no block of the station (a walk kept across an
@@ -51,4 +51,4 @@ const present = presentWorldBlocks(
   (`createSceneView`) driven through any sequence of taps, choices, ends,
   stops and offers: the reported blocks are exactly the world blocks of
   the children the panel showed, none leaves, and the present set is the free
-  world blocks plus those, never a card or a stage block.
+  world blocks plus those, never a card.

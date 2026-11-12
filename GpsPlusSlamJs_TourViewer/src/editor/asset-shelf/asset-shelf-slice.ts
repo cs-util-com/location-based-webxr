@@ -4,7 +4,9 @@
  * (`asset-jobs.ts`) - and the selector the shelf's panel reads
  * (`selectShelfRows`), which adds what the tour document knows: the places
  * that use the file, its queue position, how often a preview must reload
- * it (`assetSwaps`) and whether "use the original" can be offered. Blobs
+ * it (`assetSwaps`) and whether "use the original" can be offered - and
+ * folds the files of each declared character into one row named after
+ * him, his files inside (`ShelfRow.character`). Blobs
  * are never state: the runner (`asset-shelf.ts`) keeps them, and its
  * commands (retry, use the original, remove with undo, optimize this
  * tour) live there, outside the selector.
@@ -17,11 +19,15 @@ import {
   createSlice,
   type PayloadAction,
 } from "@reduxjs/toolkit";
+import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characters";
 import type { TourAssetKind } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import {
   assetBytesPending,
-  assetUsesOf,
+  characterFileUses,
+  fileUseCount,
+  fileUsesAll,
+  type FileUses,
   type TourDocumentState,
 } from "../../tour-document.js";
 import {
@@ -54,6 +60,15 @@ export interface ShelfEntry extends ShelfJob {
   readonly originalHeld: boolean;
   /** Arrival order: the queue is first in, first out. */
   readonly seq: number;
+  /** A video's: the poster minted with it, and its length in seconds. */
+  readonly posterId?: string;
+  readonly seconds?: number;
+}
+
+/** What a video brought in carries beyond its asset (`AssetShelf.add`). */
+export interface ShelfVideoLook {
+  readonly posterId?: string;
+  readonly seconds?: number;
 }
 
 export interface AssetShelfState {
@@ -78,6 +93,15 @@ interface EntryAddedPayload {
   /** A kept file the author may ask to make smaller again (one whose
    *  original they chose, `originalUsed`). */
   readonly keptRetryable?: boolean;
+  readonly look?: ShelfVideoLook;
+}
+
+/** The look's fields that are set, for an entry. */
+function lookOf(look: ShelfVideoLook | undefined): ShelfVideoLook {
+  return {
+    ...(look?.posterId === undefined ? {} : { posterId: look.posterId }),
+    ...(look?.seconds === undefined ? {} : { seconds: look.seconds }),
+  };
 }
 
 /** `state` with entry `id` replaced by `next(entry)`; unchanged when it
@@ -125,6 +149,7 @@ const assetShelfSlice = createSlice({
         originalBytes: p.originalBytes,
         originalHeld: false,
         seq: state.nextSeq,
+        ...lookOf(p.look),
         ...job,
       };
       return {
@@ -259,6 +284,20 @@ const assetShelfSlice = createSlice({
 export const assetShelfReducer = assetShelfSlice.reducer;
 export const assetShelfActions = assetShelfSlice.actions;
 
+/** One file a character's row holds. */
+interface ShelfCharacterFile {
+  readonly id: string;
+  readonly name: string;
+  readonly bytes: number;
+}
+
+/** The character a row stands for, and the files it holds (his figure
+ *  first, then his pose sheet). */
+interface ShelfCharacter {
+  readonly id: string;
+  readonly files: readonly ShelfCharacterFile[];
+}
+
 /** One row of the shelf's panel. */
 export interface ShelfRow {
   readonly id: string;
@@ -276,7 +315,8 @@ export interface ShelfRow {
   readonly estimatedBytes: number;
   /** 0-based among the queued, null when not queued. */
   readonly queuePosition: number | null;
-  /** Blocks (and station cards) that use the file. */
+  /** The places that use the file (`fileUseCount`): blocks, station
+   *  cards, characters and the cover. */
   readonly placesInUse: number;
   /** How often a smaller file replaced the asset's: a preview built from
    *  the old bytes reloads when this changes. */
@@ -284,11 +324,57 @@ export interface ShelfRow {
   /** The original's bytes are kept and no save wrote the smaller file's
    *  bytes yet (`assetBytesPending`, the draft's own rule). */
   readonly canUseOriginal: boolean;
+  /** A video's poster (an image asset id) and length, when known. */
+  readonly posterId?: string;
+  readonly seconds?: number;
+  /** A character's row: named after him, its id his first file's, its
+   *  sizes his files' together; its places are where his files are used
+   *  (`characterFileUses`), never his own declaration. */
+  readonly character?: ShelfCharacter;
 }
 
 interface ShelfRoot {
   readonly assetShelf: AssetShelfState;
   readonly tourDocument: TourDocumentState;
+}
+
+/** Each declared character holding a file on the shelf, by that file's
+ *  id: the first character to name a file holds it. */
+function charactersByFile(
+  shelf: AssetShelfState,
+  doc: TourDocumentState,
+): ReadonlyMap<string, TourCharacter> {
+  const held = new Map<string, TourCharacter>();
+  for (const character of doc.characters) {
+    for (const id of [character.image, character.frames]) {
+      if (id === undefined || held.has(id)) continue;
+      if (shelf.entries[id] !== undefined) held.set(id, character);
+    }
+  }
+  return held;
+}
+
+/** A file nothing uses. */
+const UNUSED: FileUses = {
+  own: [],
+  mentions: [],
+  inline: [],
+  cards: [],
+  characters: [],
+  cover: false,
+};
+
+/** Where the shelf's row `id` is used: a character's row, where his
+ *  files are (`characterFileUses`); any other, where its file is. The
+ *  "Used in" list and the delete's confirm read it. */
+export function shelfRowUses(root: ShelfRoot, id: string): FileUses {
+  const all = fileUsesAll(root.tourDocument);
+  const character = charactersByFile(root.assetShelf, root.tourDocument).get(
+    id,
+  );
+  return character === undefined
+    ? (all.get(id) ?? UNUSED)
+    : characterFileUses(all, character);
 }
 
 export const selectShelfRows = createSelector(
@@ -299,8 +385,12 @@ export const selectShelfRows = createSelector(
   (shelf, doc): ShelfRow[] => {
     const entries = Object.values(shelf.entries).sort((a, b) => a.seq - b.seq);
     const queued = entries.filter((e) => e.phase === "queued").map((e) => e.id);
-    const uses = assetUsesOf(doc);
-    return entries.map((e) => {
+    const uses = fileUsesAll(doc);
+    const usedIn = (id: string): number => {
+      const used = uses.get(id);
+      return used === undefined ? 0 : fileUseCount(used);
+    };
+    const fileRow = (e: ShelfEntry): ShelfRow => {
       const position = queued.indexOf(e.id);
       return {
         id: e.id,
@@ -317,13 +407,84 @@ export const selectShelfRows = createSelector(
           : { optimizedBytes: e.optimizedBytes }),
         estimatedBytes: e.optimizedBytes ?? e.originalBytes,
         queuePosition: position < 0 ? null : position,
-        placesInUse: uses.get(e.id) ?? 0,
+        placesInUse: usedIn(e.id),
         swaps: doc.assetSwaps[e.id] ?? 0,
         canUseOriginal:
           e.phase === "optimized" &&
           e.originalHeld &&
           assetBytesPending(doc, e.id),
+        ...lookOf(e),
       };
-    });
+    };
+    const held = charactersByFile(shelf, doc);
+    const shown = new Set<string>();
+    const rows: ShelfRow[] = [];
+    for (const entry of entries) {
+      const character = held.get(entry.id);
+      if (character === undefined) {
+        rows.push(fileRow(entry));
+        continue;
+      }
+      // His row stands where his first file arrived.
+      if (shown.has(character.id)) continue;
+      shown.add(character.id);
+      const files = [character.image, character.frames].flatMap((id) => {
+        const mine = id === undefined ? undefined : shelf.entries[id];
+        return mine !== undefined && held.get(mine.id) === character
+          ? [mine]
+          : [];
+      });
+      rows.push(
+        characterRow(
+          character,
+          files,
+          files.map(fileRow),
+          fileUseCount(characterFileUses(uses, character)),
+        ),
+      );
+    }
+    return rows;
   },
 );
+
+/** The one row of `character`, from his files' entries and their rows
+ *  (at least one): his sizes together, its job the one still in the
+ *  works, else his figure's (a file he took on while its job ran ends
+ *  kept), its places `placesInUse`. */
+function characterRow(
+  character: TourCharacter,
+  entries: readonly ShelfEntry[],
+  files: readonly ShelfRow[],
+  placesInUse: number,
+): ShelfRow {
+  const first = files[0];
+  if (first === undefined) throw new Error("A character row needs a file.");
+  const job =
+    files.find((f) => f.status === "queued" || f.status === "running") ?? first;
+  const sum = (bytes: (f: ShelfRow) => number) =>
+    files.reduce((total, f) => total + bytes(f), 0);
+  return {
+    id: first.id,
+    kind: first.kind,
+    name: character.name,
+    origin: first.origin,
+    status: job.status,
+    progress: job.progress,
+    ...(job.reason === undefined ? {} : { reason: job.reason }),
+    retryable: job.retryable,
+    originalBytes: sum((f) => f.originalBytes),
+    estimatedBytes: sum((f) => f.estimatedBytes),
+    queuePosition: job.queuePosition,
+    placesInUse,
+    swaps: sum((f) => f.swaps),
+    canUseOriginal: false,
+    character: {
+      id: character.id,
+      files: entries.map((e) => ({
+        id: e.id,
+        name: e.name,
+        bytes: e.optimizedBytes ?? e.originalBytes,
+      })),
+    },
+  };
+}

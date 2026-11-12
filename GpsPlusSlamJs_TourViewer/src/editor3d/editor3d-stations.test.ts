@@ -44,7 +44,7 @@ import { pickOnlyOnPill } from "./editor3d-marks.js";
 import { buildLecternStand } from "../lectern-view.js";
 import { buildReadingSign } from "../reading-sign.js";
 import { renderTourStation } from "../content-placement.js";
-import { worldBlocks } from "../tour-document.js";
+import { posedBlocks } from "../placement/placeables.js";
 import {
   mountedWorldParts,
   worldEnv,
@@ -407,11 +407,10 @@ describe("createStationsLayer", () => {
     expect(layer.photoPlanes("a")).toHaveLength(1);
   });
 
-  // Why: a free model in the card or stage view stands nothing in the
-  // station's world for a visitor (the card is a panel, the stage is the
-  // story's), and the editor's 3D view draws what the visitor sees, so
+  // Why: a free model in the card view stands nothing in the station's
+  // world for a visitor (the card is a panel), and the editor's 3D view draws what the visitor sees, so
   // it draws none either - and does not read its file.
-  it("draws no free model in the card or stage view, and reads no file for it", async () => {
+  it("draws no free model in the card view, and reads no file for it", async () => {
     let parsed = 0;
     const { d } = deps({
       loadGlbModel: () => {
@@ -421,10 +420,9 @@ describe("createStationsLayer", () => {
     });
     const layer = createStationsLayer(d);
     const card = { ...model("c", "horse", 8), view: "card" } as TourBlock;
-    const stage = { ...model("s", "horse", 8), view: "stage" } as TourBlock;
     layer.setTour(
       manifest(
-        [station("a", 0, 0, [card, stage, photo("p")])],
+        [station("a", 0, 0, [card, photo("p")])],
         [{ id: "horse", path: "content/horse.glb", kind: "model" }],
       ),
       new Map(),
@@ -433,7 +431,6 @@ describe("createStationsLayer", () => {
     await settle();
     expect(layer.models("a")).toHaveLength(0);
     expect(layer.modelObject("c")).toBeNull();
-    expect(layer.modelObject("s")).toBeNull();
     expect(parsed).toBe(0);
     expect(layer.photoPlanes("a")).toHaveLength(1);
     layer.dispose();
@@ -1189,10 +1186,9 @@ describe("createStationsLayer", () => {
     const before = worldOf(plane);
     const billboardBefore = layer.billboardOf("a")!.position.clone();
     layer.setPreview({
-      kind: "station",
-      id: "a",
+      ref: { kind: "station", id: "a" },
       geo: { ...a.geo, lat: a.geo.lat + 10 / M_PER_DEG_LAT },
-      foundRadiusM: 16,
+      value: 16,
     });
     layer.update(view(0, 0, "a"));
     const moved = worldOf(plane);
@@ -1255,7 +1251,11 @@ describe("createStationsLayer", () => {
     // Dragged 10 m east and let go: the tour carries the move, then the
     // preview is dropped (the input's order).
     const moved = { ...a.geo, lon: a.geo.lon + 10 / M_PER_DEG_LON };
-    layer.setPreview({ kind: "station", id: "a", geo: moved, foundRadiusM: 8 });
+    layer.setPreview({
+      ref: { kind: "station", id: "a" },
+      geo: moved,
+      value: 8,
+    });
     layer.update(view(0, 0, "a", 1, true));
     layer.setTour(manifest([{ ...a, geo: moved }, b]), code);
     layer.setPreview(null);
@@ -1303,10 +1303,9 @@ describe("createStationsLayer", () => {
     };
     const normal = ring().color.getHex();
     const at = (position: [number, number, number]) => ({
-      kind: "item" as const,
-      id: "p",
+      ref: { kind: "block" as const, id: "p" },
       geo: itemGeoPose({ position, rotation: [0, 0, 0, 1] }, a.geo),
-      sizeM: null,
+      value: null,
     });
     layer.setPreview(at([0, 1.5, a.foundRadiusM - 1]));
     layer.update(view(0, 0, "a", 1));
@@ -1352,20 +1351,18 @@ describe("createStationsLayer", () => {
         a.geo,
       );
     layer.setPreview({
-      kind: "item",
-      id: "p",
+      ref: { kind: "block", id: "p" },
       geo: turnedAway([1, 1.5, 3]),
-      sizeM: null,
+      value: null,
     });
     layer.update(view(0, 0, "a", 1));
     expect(plane.position.x).toBeCloseTo(1, 3);
     expect(plane.position.z).toBeCloseTo(3, 3);
     expect(plane.quaternion.angleTo(quarter)).toBeLessThan(1e-6);
     layer.setPreview({
-      kind: "item",
-      id: "m",
+      ref: { kind: "block", id: "m" },
       geo: turnedAway([0, 0, 5]),
-      sizeM: 16,
+      value: 16,
     });
     layer.update(view(0, 0, "a", 1));
     // The photo is back where the tour has it.
@@ -1377,6 +1374,87 @@ describe("createStationsLayer", () => {
     layer.update(view(0, 0, "a", 1));
     expect(horse.parent?.position.toArray()).toEqual([0, 0, 2]);
     expect(horse.scale.x).toBeCloseTo(2, 9);
+    layer.dispose();
+  });
+
+  // Why: a folder's scale makes its whole group larger, so the editor
+  // must draw its items further out and larger, and a drag of the folder
+  // (its origin, its scale) must carry them the same way and put them
+  // back when cleared. A folder 10 m north, scale 2, holding a picture
+  // 1 m north and 1.5 m up of width 1: drawn at [12, 3, 0], twice as wide.
+  it("draws a scaled folder's items larger, and follows a drag of the folder", async () => {
+    const { d } = deps();
+    const layer = createStationsLayer(d);
+    const a = {
+      ...station("a", 0, 0),
+      ...stationContent([
+        {
+          id: "f",
+          kind: "folder",
+          pose: { position: [10, 0, 0], rotation: [0, 0, 0, 1] },
+          scale: 2,
+          children: [photo("p")],
+        },
+      ]),
+    };
+    layer.setTour(manifest([a], []), new Map());
+    layer.update(view(0, 0, "a"));
+    await settle();
+    const plane = layer.photoPlanes("a")[0]!;
+    layer.update(view(0, 0, "a", 1));
+    const at = (x: number, y: number, z: number) => {
+      expect(plane.position.x).toBeCloseTo(x, 3);
+      expect(plane.position.y).toBeCloseTo(y, 3);
+      expect(plane.position.z).toBeCloseTo(z, 3);
+    };
+    at(12, 3, 0);
+    const drawn = plane.scale.toArray();
+    expect(drawn[0]).toBeCloseTo(2, 9);
+    layer.setPreview({
+      ref: { kind: "folder", id: "f" },
+      geo: itemGeoPose({ position: [20, 0, 0], rotation: [0, 0, 0, 1] }, a.geo),
+      value: 3,
+    });
+    layer.update(view(0, 0, "a", 1));
+    at(23, 4.5, 0);
+    expect(plane.scale.x).toBeCloseTo(3, 9);
+    expect(plane.scale.y / plane.scale.x).toBeCloseTo(drawn[1] / drawn[0], 9);
+    layer.setPreview(null);
+    layer.update(view(0, 0, "a", 1));
+    at(12, 3, 0);
+    for (const [i, v] of drawn.entries()) {
+      expect(plane.scale.getComponent(i)).toBeCloseTo(v, 9);
+    }
+    layer.dispose();
+  });
+
+  // Why: a picture's width dots preview like a model's size - the plane
+  // drawn at the dragged width, its aspect kept - and the plane comes
+  // back to the tour's width when the drag is cleared.
+  it("draws a picture at a dragged width, and back when cleared", async () => {
+    const { d } = deps();
+    const layer = createStationsLayer(d);
+    const a = station("a", 0, 0, [photo("p")]);
+    layer.setTour(manifest([a], []), new Map());
+    layer.update(view(0, 0, "a"));
+    await settle();
+    const plane = layer.photoPlanes("a")[0]!;
+    const drawn = plane.scale.toArray();
+    expect(drawn[0]).toBeCloseTo(1, 9);
+    layer.setPreview({
+      ref: { kind: "block", id: "p" },
+      geo: itemGeoPose(
+        { position: [1, 1.5, 0], rotation: [0, 0, 0, 1] },
+        a.geo,
+      ),
+      value: 3,
+    });
+    layer.update(view(0, 0, "a", 1));
+    expect(plane.scale.x).toBeCloseTo(3, 9);
+    expect(plane.scale.y / plane.scale.x).toBeCloseTo(drawn[1] / drawn[0], 9);
+    layer.setPreview(null);
+    layer.update(view(0, 0, "a", 1));
+    expect(plane.scale.toArray()).toEqual(drawn);
     layer.dispose();
   });
 
@@ -1433,8 +1511,7 @@ describe("createStationsLayer", () => {
       -Math.PI / 2,
     );
     layer.setPreview({
-      kind: "item",
-      id: "l",
+      ref: { kind: "block", id: "l" },
       geo: itemGeoPose(
         {
           position: [3, 0, 4],
@@ -1442,7 +1519,7 @@ describe("createStationsLayer", () => {
         },
         a.geo,
       ),
-      sizeM: null,
+      value: null,
     });
     layer.update(view(0, 0, "a", 1));
     expect(root.position.z).toBeCloseTo(4, 3);
@@ -1542,8 +1619,7 @@ describe("createStationsLayer", () => {
     expect(root.quaternion.angleTo(turn(40, 0))).toBeLessThan(1e-6);
     const dragged = turn(-70, -35);
     layer.setPreview({
-      kind: "item",
-      id: "lamp",
+      ref: { kind: "block", id: "lamp" },
       geo: itemGeoPose(
         {
           position: [3, 0, 4],
@@ -1551,7 +1627,7 @@ describe("createStationsLayer", () => {
         },
         a.geo,
       ),
-      sizeM: null,
+      value: null,
     });
     layer.update(view(0, 0, "a", 1));
     expect(root.quaternion.angleTo(turn(-70, 0))).toBeLessThan(1e-6);
@@ -1769,20 +1845,19 @@ describe("createStationsLayer", () => {
       ray.setFromCamera(new THREE.Vector2(0, 0), camera);
       expect(layer.pick(ray)).toBe("song");
       // Located where it stands (the view flies to it), and a gesture's
-      // target: the gizmo moves the world blocks (the rows that say
-      // `inWorld`, `editor3d-editing.ts` `targetOf`), and a free sound is
-      // one, so its circle or zone is moved and turned like a pin.
+      // target: the gizmo moves the posed blocks (`placement/placeables.ts`,
+      // `editor3d-editing.ts` `targetOf`), and a free sound is one, so its
+      // circle or zone is moved like a pin.
       const located = layer.itemPointOf("song");
       expect(located?.distanceTo(at)).toBeLessThan(1e-6);
-      expect(worldBlocks(a).map((b) => b.id)).toEqual(["p", "song"]);
+      expect(posedBlocks(a).map((b) => b.ref.id)).toEqual(["p", "song"]);
       // A drag's preview moves it and turns it as the pose says, tilt
       // included; cleared, it is back.
       const dragged = new THREE.Quaternion().setFromEuler(
         new THREE.Euler(-0.4, -1.1, 0.1, "YXZ"),
       );
       layer.setPreview({
-        kind: "item",
-        id: "song",
+        ref: { kind: "block", id: "song" },
         geo: itemGeoPose(
           {
             position: [3, 0.5, 4],
@@ -1790,7 +1865,7 @@ describe("createStationsLayer", () => {
           },
           a.geo,
         ),
-        sizeM: null,
+        value: null,
       });
       layer.update(view(0, 0, "a", 1));
       expect(part.object.position.z).toBeCloseTo(4, 3);

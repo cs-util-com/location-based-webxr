@@ -41,6 +41,7 @@ function fakeStage() {
   return {
     shown: [] as { stationId: string; view: string | undefined }[],
     noCard: [] as (boolean | undefined)[],
+    scales: [] as (number | undefined)[],
     voices: [] as (readonly [CharacterVoice, number | undefined])[],
     released: 0,
     cleared: 0,
@@ -52,10 +53,11 @@ function fakeStage() {
       stationId: string,
       _image: Blob,
       _onWaiting?: () => void,
-      look?: { view: string; noCard?: boolean },
+      look?: { view: string; noCard?: boolean; scale?: number },
     ) {
       this.shown.push({ stationId, view: look?.view });
       this.noCard.push(look?.noCard);
+      this.scales.push(look?.scale);
       this.standing = true;
       return Promise.resolve();
     },
@@ -284,6 +286,22 @@ describe("createFreeItems", () => {
     expect(stages[0]!.shown).toEqual([]);
   });
 
+  // Why: inside a story his voice plays with his step, but a character
+  // standing free outside a story has no step - he speaks only when
+  // tapped, so walking past him is quiet.
+  it("plays nothing of a free character's voice until he is tapped", async () => {
+    const t = make();
+    t.free.follow(t.here);
+    await settle();
+    t.free.follow(t.here);
+    await settle();
+    const stage = t.stages[0]!;
+    expect(stage.shown).not.toEqual([]);
+    expect(t.players.some((p) => p.playing())).toBe(false);
+    expect(stage.voices.map(([v]) => v)).not.toContain("speaking");
+    expect(t.focus.running()).toBeNull();
+  });
+
   // Why: a tap plays him, a tap while he speaks stops him and leaves him off
   // until tapped, and he tells his look so its ring follows.
   it("a tap plays his voice, and a tap while he speaks stops it for good", async () => {
@@ -389,18 +407,28 @@ describe("createFreeItems", () => {
     expect(player.nowMs()).toBe(400);
   });
 
-  it("the bubble view shuts its bubble and plays nothing; no voice plays nothing", async () => {
+  // Why: a voiced bubble's tap plays his voice like any look's (the
+  // bubble shows while he speaks, the look's rule); a voiceless one has
+  // nothing to play, so its tap shuts or opens the bubble.
+  it("the voiced bubble view plays its voice, the voiceless one shuts its bubble; no voice plays nothing", async () => {
     const t = make([
       character("ann", { view: "bubble" }),
       { ...character("bob"), voice: undefined } as never,
+      { ...character("cy", { view: "bubble" }), voice: undefined } as never,
     ]);
+    // One figure stands a tick.
+    t.free.follow(t.here);
     t.free.follow(t.here);
     t.free.follow(t.here);
     await settle();
     expect(t.tap(t.stages[0]!)).toBe(true);
-    expect(t.stages[0]!.bubbles).toBe(1);
+    expect(t.stages[0]!.bubbles).toBe(0);
+    expect(t.players).toHaveLength(1);
+    expect(t.players[0]!.playing()).toBe(true);
     expect(t.tap(t.stages[1]!)).toBe(true);
-    expect(t.players).toEqual([]);
+    expect(t.tap(t.stages[2]!)).toBe(true);
+    expect(t.stages[2]!.bubbles).toBe(1);
+    expect(t.players).toHaveLength(1);
   });
 
   it("takes no tap that hits none of them, and casts nothing while none stands", async () => {
@@ -540,6 +568,30 @@ describe("a free portrait", () => {
       { stationId: "gate", view: "portrait" },
     ]);
     expect(t.stages[0]!.noCard).toEqual([true]);
+  });
+});
+
+describe("a free character in scaled folders", () => {
+  // Why: a folder's scale grows everything in it, and the editor draws a
+  // character in a scaled folder that much larger. The visitor must stand
+  // him at the same size, or the tour looks different from what was
+  // authored: his place moves with the folders' scale, so his size must.
+  it("stands him as much larger as his folders' scales multiplied", async () => {
+    const ann = character("ann");
+    const inner = { id: "inner", kind: "folder", scale: 1.5, children: [ann] };
+    const outer = { id: "outer", kind: "folder", scale: 2, children: [inner] };
+    const station = { id: "gate", title: "Gate", children: [outer] };
+    const t = make([ann], { tour: () => withTour(station as never) });
+    t.free.follow(t.here);
+    await settle();
+    expect(t.stages[0]!.scales).toEqual([3]);
+  });
+
+  it("stands a free character outside any folder at his own size", async () => {
+    const t = make();
+    t.free.follow(t.here);
+    await settle();
+    expect(t.stages[0]!.scales).toEqual([1]);
   });
 });
 

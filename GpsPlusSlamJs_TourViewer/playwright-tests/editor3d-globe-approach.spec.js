@@ -3,9 +3,12 @@ import { expect, test } from "@playwright/test";
 
 import {
   afterFrames,
+  dockSettled,
   answerHosts,
   boxIn,
   capture,
+  DOCK_TABS_PX,
+  dockWidthsAt,
   keepRejections,
   layoutOf,
   noApproach,
@@ -188,11 +191,12 @@ async function expectLineAt(page, sizes) {
 /**
  * The docks at each size: open the tree, then pick the first station (the
  * inspector shows). Nothing may be selected yet: a pick of the selected
- * station deselects it and folds, so a test calls this once. Each shown dock flush with its side, hanging from the
- * line with no gap and running down to the bottom bar. Below 820 px a dock
- * takes at most about half the width (`editor-shell.css`, narrow
- * windows); below 900 px one dock shows at a time (`dock-rule.ts`), so
- * only the shown dock is checked.
+ * station deselects it and folds, so a test calls this once. Each shown
+ * dock flush with its side, hanging from the line with no gap and running
+ * down to the bottom bar. Above 700 px the panels dock: the list hangs from
+ * the line itself (its group shows no tab strip), the details from their
+ * group's tab strip, which hangs from the line; both at their docked
+ * widths (`dock-layout.ts`). A phone shows one sheet.
  * @param {import("@playwright/test").Page} page
  * @param {{ width: number, height: number }[]} sizes
  */
@@ -209,31 +213,43 @@ async function expectDocksAt(page, sizes) {
   await expect(page.locator("#inspector-body")).toBeVisible();
   for (const { width, height } of sizes) {
     await page.setViewportSize({ width, height });
+    await dockSettled(page, width);
     await afterFrames(page, 2);
     const bar = { x: 0, y: TOP_PX, width, height: LINE_PX };
     // A phone's sheets take the width; both docks stand above 700 px.
     const sheet = width <= 700;
+    const docked = dockWidthsAt(width);
     const docks = [
       {
         id: "#shell-tree",
         body: "#tree-body",
         left: true,
-        widthPx: sheet ? width : width <= 900 ? 226 : width <= 1100 ? 210 : 248,
+        widthPx: sheet ? width : docked.list,
+        tabsPx: 0,
       },
       {
         id: "#shell-inspector",
         body: "#inspector-body",
         left: false,
-        widthPx: sheet ? width : width <= 900 ? 268 : 290,
+        widthPx: sheet ? width : docked.column,
+        tabsPx: DOCK_TABS_PX,
       },
     ];
     // Read in one go (`layoutOf`): each read through Playwright waits on
     // the software-drawn globe.
     const l = await layoutOf(
       page,
-      docks.flatMap((dock) => [dock.id, dock.body]),
+      [...docks.flatMap((dock) => [dock.id, dock.body]), "#shell-shelf"],
       ["border-top-left-radius", "border-top-right-radius"],
     );
+    // Docked, the asset shelf is the details' other tab: never shown
+    // beside them (a phone's shelf is a sheet of its own).
+    const right = width;
+    if (!sheet) {
+      expect(shownIn(l, "#shell-shelf"), `the shelf at ${String(width)}`).toBe(
+        false,
+      );
+    }
     let shown = 0;
     for (const dock of docks) {
       if (!shownIn(l, dock.body)) continue;
@@ -241,14 +257,15 @@ async function expectDocksAt(page, sizes) {
       const at = `${dock.id} at ${String(width)}x${String(height)}`;
       const d = boxIn(l, dock.id);
       if (dock.left) expect(d.x, at).toBe(0);
-      else expect(d.x + d.width, at).toBeCloseTo(width, 0);
+      else expect(d.x + d.width, at).toBeCloseTo(right, 0);
       expect(d.y + d.height, at).toBeCloseTo(height - BOTTOM_PX, 0);
       expect(d.width, at).toBeCloseTo(dock.widthPx, 0);
       expect(overlaps(d, bar), at).toBe(false);
       // A sheet stands on the bottom bar with the map above it.
       if (sheet) continue;
-      // No gap: the dock's top is the line's bottom.
-      expect(d.y, at).toBe(bar.y + bar.height);
+      // No gap: the dock's top (or its group's tab strip's) is the
+      // line's bottom.
+      expect(d.y, at).toBe(bar.y + bar.height + dock.tabsPx);
       // Square corners where it meets the line.
       expect(
         [

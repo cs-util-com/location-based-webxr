@@ -22,7 +22,7 @@ The visitor's kinds: one row per kind of the format (`TOUR_KINDS` in the framewo
   - The same probe also fails outside the card, in sites this list does not own: `editor/block-fields.ts(65,7)`, `(85,17)`, `object-describe.ts(51,14)`, `tour-document.ts(2239,17)`.
 - **A row may be inline or in its kind's module.** The character's (about 70 lines) lives in `character-card.ts`; the rest are small and inline. A kind that is next worked on may move to a module of its own; the list keeps one line for it.
 - **No default arm.** A kind without a row does not compile; at runtime a block of a kind with no row (a newer tour's, a lab's) is refused by `showItemCard` with a status line, not shown blank.
-- **Rows go through the host only.** A row never touches the DOM outside `host.slots` and `host.surface`, nor the stage outside `host.stage.stand`. What a row draws in the world goes through `ItemWorld` (the AR stage's doors); a door a host lacks (the free host has no model door) is absent, and the row stands nothing there.
+- **Rows go through the host only.** A row never touches the DOM outside `host.slots` and `host.surface`, nor the stage outside `host.stage.stand`. What a row draws in the world goes through `ItemWorld` (the AR stage's doors). A model stands through its world row only.
 - **Words first:** every row sets its text synchronously, before any read.
 
 ## Examples

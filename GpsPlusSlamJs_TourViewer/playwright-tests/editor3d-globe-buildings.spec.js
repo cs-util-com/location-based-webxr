@@ -202,8 +202,19 @@ test("the buildings load in their worker on the relief's ground, the relief take
     .toBe(true);
 
   // A new station inside the first building's footprint, beside the
-  // station's marker: on the ground, not on the roof.
-  const here = { x: canvas.x + at[0] + 40, y: canvas.y + at[1] + 25 };
+  // station's marker: on the ground, not on the roof. The selection opened
+  // its details, and the canvas covers only the view between the docks, so
+  // the marker is found again on the narrower canvas.
+  await afterFrames(page, 3);
+  const now = await page.locator("#view3d canvas").boundingBox();
+  if (now === null) throw new Error("no canvas");
+  const marker = await page.evaluate(
+    (selection) =>
+      /** @type {any} */ (window).__tourEditor.view3dScreenOf(selection),
+    `station:${id}`,
+  );
+  expect(marker).not.toBeNull();
+  const here = { x: now.x + marker[0] + 40, y: now.y + marker[1] + 25 };
   await page.mouse.click(here.x, here.y, { button: "right" });
   const item = page.locator("#scene-new-station");
   await expect(item).not.toHaveAttribute("aria-disabled", "true");

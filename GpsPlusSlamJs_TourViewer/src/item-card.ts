@@ -60,13 +60,8 @@ export interface ItemWorld {
   showCharacter(
     stationId: string,
     image: Blob,
-    onWaiting?: () => void,
-    look?: StageCharacterLook,
-  ): Promise<void>;
-  showModel?(
-    stationId: string,
-    model: Blob,
-    onWaiting?: () => void,
+    onWaiting: (() => void) | undefined,
+    look: StageCharacterLook,
   ): Promise<void>;
 }
 

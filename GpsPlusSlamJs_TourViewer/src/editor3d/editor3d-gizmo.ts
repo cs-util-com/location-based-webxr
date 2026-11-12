@@ -1,8 +1,10 @@
 /**
  * The gizmo's drawing in the 3D view (the design's): a ring round an item
  * (a station's own circle is the tour's), four white dots on it for a
- * station's found radius or a model's size, a turn knob on a stalk along
- * the heading, and a move arrow lying on the ground in the middle. One set
+ * station's found radius, a model's size or a picture's width, a turn
+ * knob on a stalk along
+ * the heading (only on what turns), and a move arrow lying on the ground
+ * in the middle. One set
  * for the scene, placed on the selection each frame from its layout
  * (`gizmo-maths.ts`); the knob and the dots keep their on-screen size at
  * any zoom (sprites without size attenuation), and the handle under the
@@ -230,6 +232,8 @@ export function createGizmo(parent: THREE.Object3D, pictures: GizmoPictures) {
       disc.position.set(x, y + DISC_LIFT_M, z);
       disc.scale.set(layout.moveM, 1, layout.moveM);
       moveMaterial.opacity = hovered === "move" ? 1 : 0.85;
+      // What does not turn: no knob and no stalk.
+      if (layout.knob === null || layout.bar === null) return;
       knob.visible = true;
       knob.position.set(
         layout.knob.x,

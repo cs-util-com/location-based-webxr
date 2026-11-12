@@ -217,7 +217,7 @@ function childDropsOf<K extends TourChildDrop["kind"]>(
 
 /**
  * Said once a tour opened with plain folders whose size its reader left
- * out (a newer editor's scale, which this one cannot show yet): which
+ * out (a newer editor's scale, outside this one's 0.1 to 10): which
  * folders, by name ("a folder without a name" for one that has none),
  * that their items show at their own size, and that the next save writes
  * the folders without it. Null when none was dropped.

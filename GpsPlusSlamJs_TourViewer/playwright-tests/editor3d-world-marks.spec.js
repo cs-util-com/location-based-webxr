@@ -137,6 +137,16 @@ for (const [name, link] of [
       })
       .toBe(true);
 
+    // The station's camera frames its view in the middle of the canvas,
+    // which covers only the view between the docks; the sound stands at
+    // the frame's left edge, so the details are folded to give the view
+    // its width (the picking, not the docks, is what this test is about).
+    const fold = page.locator('#inspector-head [data-act="fold"]');
+    if ((await fold.getAttribute("aria-label")) !== "Show the details") {
+      await fold.click();
+    }
+    await expect(fold).toHaveAttribute("aria-label", "Show the details");
+    await afterFrames(page, 3);
     const at = await iconPoint(page);
     expect(at, "no point of the canvas reaches the sound").not.toBeNull();
     const canvas = await page.locator("#view3d canvas").boundingBox();

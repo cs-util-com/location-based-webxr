@@ -149,22 +149,11 @@ export const PLAY_KINDS = {
   },
   audio: AUDIO_PLAY,
   model: {
+    // Its title in the card; it stands in the world through its row.
     card(block, host) {
       host.slots.text.textContent = block.title ?? "";
-      const { stage } = host;
-      if (block.view !== "stage" || stage === undefined) return;
-      // The model takes the stage from him.
-      stage.tapTarget(null);
-      host.asset(block.asset, "3D model", (blob) =>
-        stage.stand("3D model", (world, { stationId, onWaiting }) =>
-          // A host whose world has no model door stands nothing.
-          world.showModel === undefined
-            ? Promise.resolve()
-            : world.showModel(stationId, blob, onWaiting),
-        ),
-      );
     },
-    // On the stage, or placed in the world once reached.
+    // Placed in the world once reached.
     assets: (block) => (block.view === "card" ? [] : [block.asset]),
     // Placed in the station in its world view, through the adapter.
     world: modelWorld,

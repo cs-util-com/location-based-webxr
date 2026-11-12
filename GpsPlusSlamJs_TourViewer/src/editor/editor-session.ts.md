@@ -106,6 +106,9 @@ never state). Design:
     images as they stand (its placed photos and image assets,
     `tourImageIds`) with their zip entry (`tourCoverEntry`); a recorded
     walk photo has no id and is no choice.
+  - `coverChoices()` reads the assets as they stand (`manifestNow`, files
+    brought in this session too), the same ones `coverImageIds` admits, so
+    the picker always lists, and checks, the cover `details()` shows.
   - `noGpsCheck()` - `no-gps-check.ts`'s `checkNoGps` over the open
     tour's stations and codes: what the setting's warnings are about (the
     stations farther than 40 m from every code that can place the tour,
@@ -206,7 +209,10 @@ never state). Design:
       `editor-session-files.test.ts` pins it), `deleteStory(id)` (says how
       many children went and `stationGone` when its untitled automatic
       station, kept by nothing else, went with it),
-      `addToStory(storyId, kind)`, `deleteStoryChild(id)` (says how many
+      `addToStory(storyId, kind)` (a kind made from words), `addEntryToStory(storyId,
+child)` (an entry made elsewhere - a file's, `new-file-item.ts` -
+      added at the story's end, refused for a story that is gone or an id
+      the tour holds), `deleteStoryChild(id)` (says how many
       answers no longer lead anywhere), `setStoryAdvance(id, advance)` - the
       tree's and the inspector's story edits, each one step, a refusal said
       in the creator's words.
@@ -224,8 +230,24 @@ never state). Design:
     - `groundItems([{ id, alt }])` - "Put on the ground": the altitudes the
       page measured, ONE step for all; refused whole for an unknown id or
       a height beyond an item's reach of its station (`HEIGHT_REFUSED`).
-    - `resizeModel(id, sizeM)` - a placed model's size, 0.05 m to 500 m
-      (`MODEL_SIZE`; `NOT_A_MODEL` for anything else).
+    - `setExtent(id, value)` - a block's size, the field its placement
+      row's `size` extent names (`../placement/placement-rows.ts`): a
+      placed model's `sizeM`, 0.05 m to 500 m, a picture's `widthM`,
+      0.05 m to 50 m; refused out of the row's bounds ("Its size must be
+      from ..."), and for a block whose row has no size (`NO_EXTENT`).
+    - `moveFolder(folderId, geo)` - a plain folder's origin at a whole
+      pose (the gizmo's drag of a folder chosen in the tree, its typed
+      place): written as its pose in its holder (`folderMoved`), its
+      items following rigidly; "unchanged" for the pose it has; refused
+      for a folder the tour lacks (`NO_SUCH_FOLDER`), a spot on no map,
+      and a move the document refuses (an item beyond its station's
+      reach, `FOLDER_TOO_FAR`).
+    - `scaleFolder(folderId, value)` - a plain folder's scale, 0.1 to 10
+      times (`folderScaled`): its whole group grows about its origin;
+      "unchanged" for the scale it has (none counts as 1); refused out of
+      the bounds ("Its scale must be from 0.1 to 10 times."), for a
+      folder the tour lacks, and like `moveFolder` for an item taken too
+      far.
     - `pose(id, geo, { newStation?, joinStation? })` - an item at a whole
       pose (position, height, turn), keeping its station or changing to
       `joinStation`, refused like `move`; `newStation` ("Move to a new
@@ -384,6 +406,56 @@ changes`; a label is cut at 40 characters (`truncated`, split-safe), a label-les
   pressed included - takes the model out of the rule for good; an undo
   does not put it back.
 
+- `setItemFile(id, file, fileName)` - the item `id` (free, or a block a
+  station's story shows) made from `file` from now on: brought in as
+  `addFile` does for the block's file kind (`../block-file.ts`), then one
+  step - a free block through `edited` (a free picture's inline
+  `imageAsset` follows), a story block through the station edit
+  `storyFile` (a video takes the new minted poster, or none). Refused for a
+  gone id, a block made of words, and what `addFile` refuses.
+- `setItemAsset(id, assetId)` - the same for a file the tour lists
+  already (the shelf's "Use in..."): one step, no read; a video in a story
+  takes the poster minted with the file (`posterOf`), or none. Refused for a gone id or file, a block made of
+  words, and a file not of the block's kind ("That file is not of the kind
+  this item is made from.").
+- `posterOf(assetId)` - the poster minted with a video this session
+  brought in (the shelf's entry keeps its id); undefined for none.
+- `addedFileOf(id)` - the bytes of a file this session brought in (the
+  shelf's thumbnails); undefined for an opened tour's file.
+- `deletePlan(assetId)` - what deleting the shelf's file would do, in
+  plain words (`fileDeleteWords`: "Deletes 2 items, removes it from 1
+  other."), or why it cannot be deleted (`fileUseRefusal`): a long text
+  shows the picture inside its words (named, "Take it out of the text
+  first."), a character of the tour is drawn with it, the shelf no
+  longer holds it.
+- `deleteFileAndUses(assetId)` - the shelf's delete of a file in use, as
+  `deletePlan` says: the items made of it deleted, the ones mentioning it
+  (a narration, a poster, a voice, read from the format's references,
+  `file-uses.ts`) and a station's card image without it, in one step
+  (`fileUsesDeleted`) - an undo like any other, which brings the card
+  back with the items (the shelf puts back a card whose file the tour
+  names again) - then the shelf entry. A captured photo made of the file
+  keeps its picture for an undo after a save. Returns `{ kind:
+"deleted", what, words }` or the plan's refusal; where nothing used
+  the file any more (a confirm gone stale) no step is made, only the
+  card goes, and the outcome carries `undo`, the card's own put-back,
+  which the page offers on its toast; after a step the page offers the
+  edit stack's Undo.
+- `replaceCount(assetId)` - how many items and station cards use the
+  file: what "Replace everywhere" switches.
+- `replaceFile(assetId, file, fileName)` - "Replace everywhere": `file`
+  brought in as `addFile` does for the old file's kind (onto the shelf),
+  then every use switched to it in one step (`fileReplaced`). Refused in
+  words for a file the shelf no longer holds, one a character of the
+  tour is drawn with (a character's pictures stay exactly as drawn), a
+  file of another kind, and the same file.
+- `addFile` always hands the file to the shelf: a file the tour holds
+  already gets its card back when it had left the shelf.
+- `addFile` hands the shelf a video's minted poster id and length
+  (`ShelfVideoLook`), so its card shows the poster and can warn.
+- `assetOf(id)` - a listed file by its id (brought in here, or in the
+  written tour); undefined for none.
+
 ## Invariants & assumptions
 
 - `find()` never throws (E2c plan review #11, decided): an id the tour no
@@ -475,7 +547,9 @@ undo step, and each refusal in words changing nothing; an edit the document
 drops (the radius of a station a delete emptied) "unchanged"; the last station
 refused, another deleted as one step; a copied photo station saving the
 copy's picture under its own content file; an item moved into a station
-of its own and items put on the ground as one step; renamed, added,
+of its own and items put on the ground as one step; a folder moved and
+scaled with its items, each one step, and its refusals in words changing
+nothing; renamed, added,
 copied, deleted and reordered stations coming back from the real draft
 after a reload as the save had them.
 The tour document (D29-D31): a later open on the same store disowning the
@@ -507,7 +581,7 @@ examples).
 
 - One files table (`files`, asset id to Blob) for every file's bytes the session holds; no other map of bytes.
 - `addFile(file, fileName, kinds?)`: reads the file at once (`readTourFile`, `tour-files.ts`) - a dropped `File` moved or deleted later does not matter - checked against the caps on `tourBytes()`, named by its sha256. Bytes the tour holds already (an asset of that id, or a signed tour's entry of that hash) are that asset, nothing added. Each new file (and a video's minted poster) goes into the table and the draft (`saveAsset`, before the asset is listed, so before any record naming it), then `assetsAdded`. Answers `{ kind: "added", asset, poster?, backedUp }` or a refusal in words; `backedUp` false when the draft did not keep it.
-- `fileReaders` (input): `measureModel` (a model's largest side; 0 refuses it as showing nothing) and `posterOf` (a video's first frame), the page's browser readers; absent in a test, a model is taken unmeasured and a video without a poster.
+- `fileReaders` (input): `measureModel` (a model's largest side; 0 refuses it as showing nothing) and `videoLookOf` (a video's poster and length, one element), the page's browser readers; absent in a test, a model is taken unmeasured and a video without a poster.
 - `addedBytes()`: what the next save adds to the written file (`saves.addedBytes`, the snapshot's rule): the files brought in, the timing texts and the copied or restored photos' pictures it lacks, less the old entries a smaller file replaces (so below zero when a swap saves more than the rest adds). `tourBytes()`: the newest written file's size (the opened entries' before a save) plus `addedBytes()` - what the caps are judged on. `nextSaveBytes()`: the same, but only the added bytes the write keeps (`saves.addedBytes(state, true)`: a file nothing names any more, after an undo whose redo a later edit dropped, is left out) - what the autosave's cap is judged on, both ways: after every edit (`judgeAutosave`) and when a save target comes (`attachTarget`; the tour's size, not the attached file's, which differs once a copy was saved before the target came).
 - `contentOf(path)`: a file brought in, by the id its entry names (`content/<id>.<ext>`), for a preview before a save writes it. By id, because a placed picture's inline `imageAsset` keeps the path it had before a swap: that path reads the smaller file.
 - `swapAsset(id, { blob, path, width?, height? })`: a smaller file in place of an asset's under the same id. Judged first by the document's own rule (`assetOptimized` run on the current state), so a refused file never reaches the table; then the table holds the new bytes and the record is listed at the new path. The next save writes the new entry and removes the old one; a save already running writes the original. Answers `{ kind: "swapped" }` or a refusal in words. Not yet followed by the draft. A re-drop of the original bytes finds the swapped record (`knownFile` prefers `addedAssets`).
@@ -529,6 +603,50 @@ examples).
 
 - `shelf: AssetShelf` (`asset-shelf/asset-shelf.ts`), created per session on the session's store. Input `optimizers?` (default `ASSET_OPTIMIZERS`) and `optimizerHost?` (default a lazy Worker host, `createOptimizerHost(spawnOptimizerWorker)`, which spawns nothing until a row runs).
 - Creating the session clears the shelf and adds every asset of the written tour as `opened`, idle, sized from its archive entry: an opened tour's files are made smaller only on `shelf.optimizeTour()`.
-- `addFile` puts a NEW file on the shelf as `added` (a file already in the tour is not added twice).
+- `addFile` puts a NEW file on the shelf as `added` (a file already in the tour is not added twice), unless it is kept as made (`asMade`).
+- A declared character's pictures go on the shelf kept, never queued (`shelf.addAsMade`): when declared, from an opened tour, from a restored draft (`keptAsMade`). The shelf shows them as ONE entry named after him (`selectShelfRows`). Its Delete (`deletePlan` / `deleteFileAndUses` on either of his files) takes him out with his files as one step, "Deletes the character and its 2 pictures.", refused in `characterRemoveRefusal`'s words while an item names him; it offers no Replace.
 - The shelf reads bytes from the files table, else the opened archive's entry; it swaps through `swapAsset`; its cap is the entry cap less margin, as the save's.
 - Tests: `asset-shelf/asset-shelf.test.ts` (the runner), `editor-session-shelf.test.ts` (the wiring), `editor-session-shelf.property.test.ts` (a real draft; any order of a voice brought in, an opened picture made smaller at its own path, job ends, use the original, retry, saves awaited or still running, undo, redo, a reload and a crash: every save writes each listed asset at its path with bytes of its type and, for a picture, of its listed size, nothing unlisted; a reload brings back the same named assets and bytes; every file brought in is on the shelf).
+
+## Characters
+
+- `characters()`: the declared characters of the open tour.
+- `declareCharacter({ name, image, frames })`: mints the character's id
+  (`newObjectId`; an id from elsewhere, such as the device library's, never
+  enters the tour), brings his four poses and then his picture in as image
+  files kept as made (`addFile`'s `asMade`: hashed, kept in the files table
+  and the draft, on the asset shelf only kept, so no optimizer re-encodes the
+  sheet his poses are cut from) and declares him as one step. Refuses
+  (`{ kind: "refused", reason }`) before bringing anything in when the
+  name or the cap refuse it, before the picture when the same four poses
+  are declared already, and when a file is not a readable image; on
+  success `{ kind: "declared", character, backedUp }`.
+- `removeCharacter(id)`: one undo step, refused while an item names the
+  character; his shelf entry goes with him and comes back with the undo
+  or `restoreCharacter` (the shelf puts back a card the tour names again).
+- `characterImage(id)`: the blob of a declared character's picture, from
+  the files table or the tour's own content.
+- A restore brings the recorded characters back with the other settings.
+- Tests: `tour-document-parity.test.ts` (declare, reload, restore, save)
+  and `declared-characters.test.ts` for the document rules.
+
+## Characters list and story cards
+
+- `restoreCharacter(character)` declares again a character that was just
+  removed (the Characters list's Undo). It is refused in the same cases as
+  `characterRefusal`.
+- `addCharacterToStory(storyId, characterId, groundAt?)` adds the declared
+  character at the end of the story (`newCharacterEntry`: a 3D character,
+  view `speak`, at the free spot of the story's station, `freeStorySpot`:
+  clear of its free items, those placed since the last save included, and
+  of its stories' entries, on the ground there by `groundAt`, the anchor's
+  height where none has loaded or none is given), as one undo step. It is refused, with the reason, when the story or the
+  character has gone in the meantime.
+- Tests: `editor-session-characters.test.ts` (minted ids, the same
+  character twice, the remove refusal while an entry names him, the
+  story entry's view and spot, two characters of one story apart, a
+  story's character clear of a free one and on the ground, the pictures
+  as one kept shelf entry with an image optimizer set, also after a
+  draft's restore and from an opened tour; the entry's delete with its
+  undo, its refusal while he speaks, Remove and restore taking it off
+  and back).

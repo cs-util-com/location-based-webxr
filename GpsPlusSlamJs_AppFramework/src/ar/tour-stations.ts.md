@@ -88,8 +88,8 @@ parseTourStations(json.stations, {
 
 ## Tests
 
-- `tour-stations.test.ts` - a castle station (a character and a model on
-  the stage, a choice, a quiz), every quiz answer type, a station `next`
+- `tour-stations.test.ts` - a castle station (a character and a placed
+  model in a story, a choice, a quiz), every quiz answer type, a station `next`
   and a quiz `route` ignored, the defaults, one rejection per rule (the
   station's own fields, block poses, block ids twice in a station and
   across stations, each block

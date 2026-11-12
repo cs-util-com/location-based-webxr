@@ -107,7 +107,7 @@ const VALID: Record<TourBlock['kind'], Record<string, unknown>> = {
   character: {
     id: 'b7',
     kind: 'character',
-    view: 'stage',
+    view: 'speak',
     pose,
     name: 'Knight',
     image: 'gate',
@@ -357,14 +357,12 @@ describe('media references and sizes', () => {
     }
   });
 
-  it('sizeM is required for a placed model, refused for a staged one and optional in a card', () => {
-    // Why: a placed model is drawn at its size in metres; a staged one at
-    // its file's own size, so a size there would be a number nobody reads.
+  it('sizeM is required for a placed model and optional in a card; the retired stage is no view', () => {
+    // Why: a placed model is drawn at its size in metres. The stage (a
+    // model at its file's own size on the station's spot) is gone: a
+    // model in a story is placed like any other, so `stage` is no view.
     expect(() => one('model', { sizeM: undefined })).toThrow(/sizeM/);
-    expect(() => one('model', { view: 'stage' })).toThrow(/sizeM/);
-    expect(one('model', { view: 'stage', sizeM: undefined })).toMatchObject({
-      view: 'stage',
-    });
+    expect(() => one('model', { view: 'stage' })).toThrow(/view/);
     const card = one('model', { view: 'card', sizeM: undefined });
     expect(card !== undefined && 'sizeM' in card).toBe(false);
     expect(one('model', { view: 'card' })).toMatchObject({ sizeM: 3 });
@@ -421,9 +419,8 @@ describe('views', () => {
       picture: ['plane', 'card'],
       video: ['card'],
       audio: ['spot', 'zone', 'card'],
-      model: ['placed', 'ghost', 'hotspots', 'cutaway', 'toy', 'stage', 'card'],
+      model: ['placed', 'ghost', 'hotspots', 'cutaway', 'toy', 'card'],
       character: [
-        'stage',
         'bubble',
         'speak',
         'two-stations',
@@ -447,8 +444,8 @@ describe('views', () => {
 
   it('a free block stands in a view its kind has for standing free', () => {
     // Why: a text, a picture or a model has a look in the world, so a card
-    // would be a block nobody can reach, and a staged figure lives only
-    // while a story runs. A video stands free in `card` until its world
+    // would be a block nobody can reach, and a character in his card
+    // view shows only while a story runs. A video stands free in `card` until its world
     // views join the format; a sound stands as a circle or a zone.
     for (const kind of ['shortText', 'picture', 'model'] as const) {
       expect(parse([VALID[kind]], { shown: [] })).toHaveLength(1);
@@ -464,11 +461,9 @@ describe('views', () => {
     expect(() => parse([VALID.longText], { shown: [] })).toThrow(
       /stands free in its station/
     );
-    for (const view of ['stage', 'card']) {
-      expect(() =>
-        parse([{ ...VALID.character, view }], { shown: [] })
-      ).toThrow(/stands free in its station/);
-    }
+    expect(() =>
+      parse([{ ...VALID.character, view: 'card' }], { shown: [] })
+    ).toThrow(/stands free in its station/);
     expect(() =>
       parse([{ ...VALID.shortText, view: 'card' }], { shown: [] })
     ).toThrow(/stands free in its station/);

@@ -1,0 +1,3695 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>Editor docking 1: dockview</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/dockview@8.7.1/dist/styles/dockview.css"
+    />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js",
+          "dockview": "https://cdn.jsdelivr.net/npm/dockview@8.7.1/dist/package/main.esm.mjs",
+          "dockview-core": "https://cdn.jsdelivr.net/npm/dockview-core@8.7.1/dist/package/main.esm.mjs"
+        }
+      }
+    </script>
+    <style>
+      :root {
+        --bg0: #18191c;
+        --bg1: #1f2023;
+        --bg2: #26282c;
+        --bg3: #2f3136;
+        --bg4: #383a40;
+        --line: #313338;
+        --line2: #3c3f46;
+        --text: #d9dbe0;
+        --muted: #8a8f99;
+        --dim: #646973;
+        --acc: #e9a23b;
+        --acc-bg: rgb(233 162 59 / 14%);
+        --acc-line: rgb(233 162 59 / 55%);
+        --acc-text: #f3c47e;
+        --danger: #d97d79;
+        --ok: #7fb77a;
+        --warn: #e9b86b;
+        --focus: #5b9cf0;
+        --sans:
+          "Segoe UI", system-ui, -apple-system, "Helvetica Neue", arial,
+          sans-serif;
+        --mono:
+          "Cascadia Mono", consolas, "SF Mono", ui-monospace, menlo, monospace;
+        --top-h: 40px;
+        --hit: 28px;
+      }
+
+      body.phone {
+        --top-h: 44px;
+        --hit: 40px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      [hidden] {
+        display: none !important;
+      }
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #0d0e10;
+        color: var(--text);
+        font: 12px/1.4 var(--sans);
+        color-scheme: dark;
+      }
+
+      button,
+      input,
+      select,
+      textarea {
+        font: inherit;
+        color: inherit;
+      }
+
+      button {
+        cursor: pointer;
+      }
+
+      svg.i {
+        flex: none;
+        width: 16px;
+        height: 16px;
+        fill: none;
+        stroke: currentcolor;
+        stroke-width: 1.35;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      /* --- the docking theme: dockview's variables, set to the editor's look */
+      .dockview-theme-tour {
+        color-scheme: dark;
+        --dv-paneview-active-outline-color: var(--focus);
+        --dv-tabs-and-actions-container-font-size: 11px;
+        --dv-tabs-and-actions-container-height: 34px;
+        --dv-drag-over-background-color: rgb(233 162 59 / 16%);
+        --dv-drag-over-border-color: var(--acc-line);
+        --dv-drag-over-border: 2px solid var(--acc-line);
+        --dv-edge-dock-indicator-color: var(--acc);
+        --dv-tabs-container-scrollbar-color: var(--bg4);
+        --dv-icon-hover-background-color: var(--bg3);
+        --dv-floating-box-shadow: 0 12px 34px rgb(0 0 0 / 55%);
+        --dv-floating-border: 1px solid var(--line2);
+        --dv-floating-group-border: 1px solid var(--line2);
+        --dv-overlay-z-index: 999;
+        --dv-tab-font-size: inherit;
+        --dv-border-radius: 0;
+        --dv-tab-margin: 0;
+        --dv-sash-color: transparent;
+        --dv-active-sash-color: var(--acc-line);
+        --dv-active-sash-transition-duration: 0.1s;
+        --dv-active-sash-transition-delay: 0.15s;
+        --dv-spacing-padding: 0;
+        --dv-tab-border-radius: 0;
+        --dv-sash-border-radius: 0;
+        --dv-dropdown-border-radius: 4px;
+        --dv-tab-close-icon-size: inherit;
+        --dv-floating-group-dragging-opacity: 0.6;
+        --dv-floating-titlebar-height: 14px;
+        --dv-floating-titlebar-background-color: var(--bg3);
+        --dv-floating-titlebar-border-bottom: 1px solid var(--line);
+        --dv-group-view-background-color: var(--bg1);
+        --dv-tabs-and-actions-container-background-color: var(--bg0);
+        --dv-activegroup-visiblepanel-tab-background-color: var(--bg1);
+        --dv-activegroup-hiddenpanel-tab-background-color: var(--bg0);
+        --dv-inactivegroup-visiblepanel-tab-background-color: var(--bg1);
+        --dv-inactivegroup-hiddenpanel-tab-background-color: var(--bg0);
+        --dv-tab-divider-color: var(--line);
+        --dv-activegroup-visiblepanel-tab-color: var(--text);
+        --dv-activegroup-hiddenpanel-tab-color: var(--muted);
+        --dv-inactivegroup-visiblepanel-tab-color: #b9bcc3;
+        --dv-inactivegroup-hiddenpanel-tab-color: var(--dim);
+        --dv-separator-border: var(--line);
+        --dv-paneview-header-border-color: var(--line);
+        --dv-context-menu-background-color: var(--bg2);
+        --dv-context-menu-color: var(--text);
+        --dv-scrollbar-background-color: var(--bg4);
+      }
+
+      /* Phone: everything a finger touches gets bigger. */
+      body.phone .dockview-theme-tour {
+        --dv-tabs-and-actions-container-height: 44px;
+        --dv-tabs-and-actions-container-font-size: 12.5px;
+        --dv-floating-titlebar-height: 26px;
+      }
+
+      body.phone .dv-tab {
+        padding: 0 12px;
+      }
+
+      /* The library's menu items are 25 px tall: too small for a finger. */
+      body.phone .dv-context-menu-item {
+        display: flex;
+        align-items: center;
+        min-height: 44px;
+        padding: 0 18px;
+        font-size: 14px;
+      }
+
+      /* Phone: a tab that is not showing keeps only its icon and badge, so
+       * four panels fit one group's header with its buttons. */
+      body.phone .dv-tabs-container:not(.dv-tabs-container-vertical)
+        .dv-tab:not(.dv-active-tab)
+        .tb
+        .lbl {
+        display: none;
+      }
+
+      /* The splitter's own hit strip is 4 px plus 10 px each side (24 px).
+       * On a phone it grows to 40 px, centred on the line. */
+      body.phone
+        .dv-split-view-container.dv-horizontal
+        > .dv-sash-container
+        > .dv-sash:not(.dv-disabled)::before {
+        right: -18px;
+        left: -18px;
+      }
+
+      body.phone
+        .dv-split-view-container.dv-vertical
+        > .dv-sash-container
+        > .dv-sash:not(.dv-disabled)::before {
+        top: -18px;
+        bottom: -18px;
+      }
+
+      /* A visible grip on each splitter, so a finger knows where to go. */
+      body.phone
+        .dv-split-view-container
+        > .dv-sash-container
+        > .dv-sash::after {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 4px;
+        height: 28px;
+        margin: -14px 0 0 -2px;
+        border-radius: 2px;
+        background: var(--line2);
+        content: "";
+        pointer-events: none;
+      }
+
+      body.phone
+        .dv-split-view-container.dv-vertical
+        > .dv-sash-container
+        > .dv-sash::after {
+        width: 28px;
+        height: 4px;
+        margin: -2px 0 0 -14px;
+      }
+
+      .dv-tab.dv-active-tab {
+        box-shadow: inset 0 -2px 0 var(--acc);
+      }
+
+      .dv-groupview:not(.dv-active-group) .dv-tab.dv-active-tab {
+        box-shadow: inset 0 -2px 0 var(--bg4);
+      }
+
+      .dv-tabs-container-vertical .dv-tab.dv-active-tab,
+      .dv-groupview:not(.dv-active-group)
+        .dv-tabs-container-vertical
+        .dv-tab.dv-active-tab {
+        box-shadow: inset -2px 0 0 var(--acc);
+      }
+
+      /* --- the top bar ------------------------------------------------- */
+      #top {
+        position: fixed;
+        inset: 0 0 auto;
+        z-index: 20;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        height: var(--top-h);
+        padding: 0 8px;
+        border-bottom: 1px solid var(--line);
+        background: var(--bg1);
+      }
+
+      .brand {
+        display: flex;
+        flex: 0 1 auto;
+        align-items: center;
+        gap: 7px;
+        min-width: 0;
+        height: 24px;
+        margin-right: 2px;
+        padding-right: 10px;
+        border-right: 1px solid var(--line);
+      }
+
+      .brand .logo {
+        display: grid;
+        flex: none;
+        place-items: center;
+        width: 20px;
+        height: 20px;
+        border-radius: 5px;
+        background: var(--acc);
+        color: #1c1c1c;
+      }
+
+      .brand .logo svg.i {
+        width: 13px;
+        height: 13px;
+        stroke-width: 1.8;
+      }
+
+      .brand .tname {
+        overflow: hidden;
+        color: var(--muted);
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      body.narrow .brand .tname {
+        display: none;
+      }
+
+      .tbtn {
+        display: inline-flex;
+        flex: none;
+        align-items: center;
+        gap: 6px;
+        height: var(--hit);
+        padding: 0 9px;
+        border: 1px solid transparent;
+        border-radius: 5px;
+        background: transparent;
+        white-space: nowrap;
+      }
+
+      .tbtn:hover,
+      .tbtn[aria-expanded="true"] {
+        background: var(--bg3);
+      }
+
+      .sp {
+        flex: 1;
+      }
+
+      #layoutMenu {
+        position: fixed;
+        top: calc(var(--top-h) + 4px);
+        left: 8px;
+        z-index: 1001;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 240px;
+        padding: 6px;
+        border: 1px solid var(--line2);
+        border-radius: 8px;
+        background: var(--bg2);
+        box-shadow: 0 12px 34px rgb(0 0 0 / 55%);
+      }
+
+      #layoutMenu .mlbl {
+        padding: 4px 8px 2px;
+        color: var(--dim);
+        font-size: 10.5px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      #layoutMenu button {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: var(--hit);
+        padding: 0 10px;
+        border: 0;
+        border-radius: 5px;
+        background: transparent;
+        text-align: left;
+        white-space: nowrap;
+      }
+
+      #layoutMenu button:hover {
+        background: var(--bg3);
+      }
+
+      #layoutMenu button[aria-pressed="true"],
+      #layoutMenu button[aria-checked="true"] {
+        background: var(--acc-bg);
+        color: var(--acc-text);
+      }
+
+      #layoutMenu .hint {
+        padding: 4px 10px 2px;
+        color: var(--dim);
+        font-size: 11px;
+        white-space: normal;
+      }
+
+      /* --- the dock ---------------------------------------------------- */
+      #dock {
+        position: fixed;
+        top: var(--top-h);
+        right: 0;
+        bottom: 0;
+        left: 0;
+      }
+
+      .pane {
+        height: 100%;
+        overflow: auto;
+        overscroll-behavior: contain;
+        background: var(--bg1);
+      }
+
+      /* the tab renderer */
+      .tb {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 100%;
+        padding: 0 4px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+
+      .tb svg.i {
+        width: 14px;
+        height: 14px;
+      }
+
+      .dv-tabs-container-vertical .tb svg.i {
+        transform: rotate(90deg);
+      }
+
+      /* the group's right-hand actions */
+      .gact {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        height: 100%;
+        padding: 0 4px;
+      }
+
+      .dv-groupview-header-vertical .gact {
+        flex-direction: column;
+        height: auto;
+        padding: 4px 0;
+      }
+
+      .gact button {
+        display: grid;
+        place-items: center;
+        width: var(--hit);
+        height: var(--hit);
+        padding: 0;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        color: var(--muted);
+      }
+
+      .gact button:hover {
+        background: var(--bg3);
+        color: var(--text);
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 16px;
+        height: 16px;
+        padding: 0 5px;
+        border-radius: 8px;
+        background: var(--bg4);
+        color: var(--text);
+        font: 10px/1 var(--mono);
+        letter-spacing: 0;
+        text-transform: none;
+      }
+
+      .badge:empty {
+        display: none;
+      }
+
+      .badge.busy {
+        background: var(--acc-bg);
+        color: var(--acc-text);
+      }
+
+      .badge.warn {
+        background: rgb(233 184 107 / 20%);
+        color: #f1cf96;
+      }
+
+      .badge.pop {
+        animation: pop 0.6s ease 2;
+      }
+
+      @keyframes pop {
+        50% {
+          transform: scale(1.35);
+          box-shadow: 0 0 0 3px var(--acc-line);
+        }
+      }
+
+      .spin {
+        display: inline-block;
+        width: 9px;
+        height: 9px;
+        margin-right: 4px;
+        border: 1.5px solid var(--dim);
+        border-top-color: var(--acc);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      /* --- the 3D view panel ------------------------------------------- */
+      .v3 {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #c6d0d9;
+      }
+
+      .v3 canvas {
+        position: absolute;
+        inset: 0;
+        display: block;
+        width: 100%;
+        height: 100%;
+        cursor: grab;
+        touch-action: none;
+      }
+
+      .guide {
+        position: absolute;
+        z-index: 3;
+        border: 1px dashed rgb(233 162 59 / 80%);
+        border-radius: 8px;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.6s;
+      }
+
+      .guide.show {
+        opacity: 1;
+        transition: opacity 0.15s;
+      }
+
+      .vsize {
+        position: absolute;
+        top: 8px;
+        left: 8px;
+        z-index: 4;
+        padding: 2px 7px;
+        border-radius: 4px;
+        background: rgb(24 25 28 / 70%);
+        color: #e6e8ec;
+        font: 10.5px var(--mono);
+        pointer-events: none;
+      }
+
+      .ctl {
+        position: absolute;
+        right: 10px;
+        bottom: 10px;
+        z-index: 4;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .pill {
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        border-radius: 8px;
+        background: #fff;
+        box-shadow:
+          0 1px 2px rgb(60 64 67 / 25%),
+          0 2px 8px rgb(60 64 67 / 15%);
+      }
+
+      .pill button {
+        display: grid;
+        place-items: center;
+        width: 36px;
+        height: 36px;
+        padding: 0;
+        border: 0;
+        background: #fff;
+        color: #5f6670;
+      }
+
+      body.phone .pill button {
+        width: 40px;
+        height: 40px;
+      }
+
+      .pill button + button {
+        border-top: 1px solid #e4e7eb;
+      }
+
+      .toast {
+        position: absolute;
+        top: 12px;
+        left: 50%;
+        z-index: 6;
+        max-width: calc(100% - 24px);
+        padding: 8px 12px;
+        border: 1px solid var(--line2);
+        border-radius: 6px;
+        background: rgb(42 45 50 / 97%);
+        box-shadow: 0 8px 22px rgb(0 0 0 / 40%);
+        opacity: 0;
+        pointer-events: none;
+        transform: translateX(-50%);
+        transition: opacity 0.2s;
+      }
+
+      .toast.show {
+        opacity: 1;
+      }
+
+      /* --- the list ---------------------------------------------------- */
+      .tsearch {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        padding: 6px 8px;
+        border-bottom: 1px solid var(--line);
+        background: var(--bg1);
+      }
+
+      .tsearch input {
+        width: 100%;
+        height: 26px;
+        padding: 0 8px;
+        border: 1px solid var(--line2);
+        border-radius: 4px;
+        background: var(--bg0);
+      }
+
+      .cards {
+        padding: 4px 0;
+      }
+
+      .head,
+      .kid,
+      .folder {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        min-height: 28px;
+        padding: 0 6px 0 4px;
+        cursor: pointer;
+        user-select: none;
+      }
+
+      .kid {
+        min-height: 26px;
+        padding-left: 44px;
+      }
+
+      .kid.deep {
+        padding-left: 62px;
+      }
+
+      .folder {
+        min-height: 26px;
+        padding-left: 26px;
+      }
+
+      body.phone :is(.head, .kid, .folder) {
+        min-height: 40px;
+      }
+
+      :is(.head, .kid, .folder):hover {
+        background: rgb(255 255 255 / 3.5%);
+      }
+
+      :is(.head, .kid, .folder).sel {
+        background: var(--acc-bg);
+        box-shadow: inset 2px 0 0 var(--acc);
+      }
+
+      .tw {
+        display: inline-flex;
+        flex: none;
+        align-items: center;
+        justify-content: center;
+        width: 18px;
+        height: 22px;
+        padding: 0;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        color: var(--muted);
+      }
+
+      body.phone .tw {
+        width: 30px;
+        height: 36px;
+      }
+
+      .tw svg.i {
+        width: 12px;
+        height: 12px;
+      }
+
+      .n {
+        flex: none;
+        min-width: 18px;
+        height: 16px;
+        padding: 0 3px;
+        border-radius: 3px;
+        background: #3d5a78;
+        color: #e6f0fa;
+        font: 600 10px/16px var(--mono);
+        text-align: center;
+      }
+
+      .head.sel .n {
+        background: var(--acc);
+        color: #1c1c1c;
+      }
+
+      .nm {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .head .nm {
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .sel .nm {
+        color: #fff;
+      }
+
+      .meta {
+        flex: none;
+        color: var(--dim);
+        font: 10px var(--mono);
+      }
+
+      .ic {
+        display: inline-flex;
+        flex: none;
+      }
+
+      /* --- the details ------------------------------------------------- */
+      .dh {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 8px 10px 0 8px;
+      }
+
+      .hic {
+        display: inline-flex;
+        flex: none;
+        justify-content: center;
+        width: 24px;
+      }
+
+      .ttlin {
+        flex: 1;
+        min-width: 0;
+        height: 28px;
+        padding: 0 6px;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        outline: none;
+        background: transparent;
+        color: #f0f1f3;
+        font-size: 13.5px;
+        font-weight: 600;
+      }
+
+      .ttlin:hover {
+        border-color: var(--line2);
+      }
+
+      .ttlin:focus {
+        border-color: var(--focus);
+        background: var(--bg2);
+      }
+
+      .sub {
+        padding: 2px 12px 6px 40px;
+        color: var(--dim);
+        font-size: 11px;
+      }
+
+      .lnk {
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: var(--acc-text);
+        text-decoration: underline dotted;
+      }
+
+      .isec {
+        padding: 8px 12px 10px;
+        border-top: 1px solid var(--line);
+      }
+
+      .isec h4 {
+        margin: 0 0 4px;
+        color: var(--muted);
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .f {
+        display: grid;
+        grid-template-columns: 74px minmax(0, 1fr);
+        align-items: center;
+        gap: 6px;
+        min-height: 28px;
+        margin: 3px 0;
+      }
+
+      .flabel {
+        overflow: hidden;
+        color: var(--muted);
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .num {
+        display: flex;
+        align-items: center;
+        min-width: 0;
+        height: 26px;
+        border: 1px solid var(--line2);
+        border-radius: 3px;
+        background: var(--bg2);
+      }
+
+      .num.ro {
+        border-color: var(--line);
+        background: transparent;
+      }
+
+      .num .val {
+        flex: 1;
+        min-width: 0;
+        padding: 0 5px;
+        border: 0;
+        outline: none;
+        background: transparent;
+        font: 11px var(--mono);
+      }
+
+      .num .unit {
+        padding-right: 6px;
+        color: var(--dim);
+        font: 10.5px var(--mono);
+      }
+
+      .range {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .range input[type="range"] {
+        flex: 1;
+        min-width: 0;
+        margin: 0;
+        accent-color: var(--acc);
+      }
+
+      .range .num {
+        flex: none;
+        width: 70px;
+      }
+
+      .note {
+        margin: 4px 0 0;
+        color: var(--dim);
+        font-size: 11px;
+        line-height: 1.45;
+      }
+
+      .tfield {
+        width: 100%;
+        min-width: 0;
+        height: 28px;
+        padding: 0 7px;
+        border: 1px solid var(--line2);
+        border-radius: 3px;
+        outline: none;
+        background: var(--bg2);
+      }
+
+      textarea.tfield {
+        height: 64px;
+        padding: 5px 7px;
+        line-height: 1.4;
+        resize: vertical;
+      }
+
+      .tfield:focus {
+        border-color: var(--focus);
+      }
+
+      .fileuse {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 40px;
+        margin-bottom: 2px;
+        padding: 6px 8px;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+      }
+
+      .fileuse .fu-name {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .fileuse .fu-none {
+        color: var(--warn);
+      }
+
+      .swatches {
+        display: flex;
+        gap: 6px;
+      }
+
+      .swatches button {
+        width: 26px;
+        height: 26px;
+        border: 2px solid transparent;
+        border-radius: 50%;
+      }
+
+      .swatches button[aria-pressed="true"] {
+        border-color: #fff;
+        box-shadow: 0 0 0 1px var(--acc);
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: var(--hit);
+        padding: 0 10px;
+        border: 1px solid var(--line2);
+        border-radius: 4px;
+        background: var(--bg2);
+        white-space: nowrap;
+      }
+
+      .btn:hover {
+        background: var(--bg3);
+      }
+
+      .clist {
+        border: 1px solid var(--line);
+        border-radius: 4px;
+      }
+
+      .clist .kid {
+        padding-left: 8px;
+      }
+
+      .empty {
+        padding: 18px 14px;
+        color: var(--muted);
+      }
+
+      /* --- the files --------------------------------------------------- */
+      .fsum {
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .fsum b {
+        color: var(--text);
+        font-weight: 600;
+      }
+
+      .bar {
+        position: relative;
+        display: block;
+        height: 3px;
+        margin-top: 6px;
+        overflow: hidden;
+        border-radius: 2px;
+        background: var(--bg4);
+      }
+
+      .bar i {
+        position: absolute;
+        inset: 0 auto 0 0;
+        background: var(--acc);
+      }
+
+      .frow {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 8px 10px 8px 8px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .frow.fresh {
+        animation: fresh 1.6s ease;
+      }
+
+      @keyframes fresh {
+        from {
+          background: var(--acc-bg);
+        }
+      }
+
+      .fthumb {
+        display: grid;
+        flex: none;
+        place-items: center;
+        width: 34px;
+        height: 34px;
+        border: 1px solid var(--line2);
+        border-radius: 5px;
+        background: var(--bg2);
+      }
+
+      .fmain {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+      }
+
+      .ftop {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+
+      .fname {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .uses,
+      .fmeta {
+        flex: none;
+        color: var(--dim);
+        font-size: 10.5px;
+      }
+
+      .fstate {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--muted);
+        font-size: 10.5px;
+      }
+
+      .fstate .bar {
+        flex: 1;
+        margin: 0;
+      }
+
+      .fstate.ready {
+        color: var(--ok);
+      }
+
+      .fstate .pc {
+        min-width: 32px;
+        color: var(--acc-text);
+        font-family: var(--mono);
+      }
+
+      .fadd {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        padding: 12px;
+        color: var(--dim);
+        font-size: 11px;
+      }
+
+      /* --- the problems ------------------------------------------------ */
+      .prow {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 30px;
+        padding: 0 12px;
+      }
+
+      .prow .what {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .sev {
+        display: inline-flex;
+        color: var(--warn);
+      }
+
+      /* --- notes ------------------------------------------------------- */
+      #notes {
+        position: fixed;
+        top: calc(var(--top-h) + 4px);
+        right: 8px;
+        z-index: 1002;
+        width: min(540px, calc(100vw - 16px));
+        max-height: calc(100dvh - var(--top-h) - 12px);
+        overflow: auto;
+        padding: 12px 16px 14px;
+        border: 1px solid var(--line2);
+        border-radius: 8px;
+        background: rgb(31 32 35 / 99%);
+        box-shadow: 0 16px 40px rgb(0 0 0 / 60%);
+        font-size: 12.5px;
+        line-height: 1.5;
+      }
+
+      #notes h2 {
+        margin: 0 0 6px;
+        font-size: 14px;
+      }
+
+      #notes h3 {
+        margin: 14px 0 4px;
+        color: var(--acc-text);
+        font-size: 12px;
+      }
+
+      #notes p,
+      #notes ul {
+        margin: 0 0 6px;
+      }
+
+      #notes ul {
+        padding-left: 18px;
+      }
+
+      #notes li {
+        margin-bottom: 4px;
+      }
+
+      #notes .ok {
+        color: var(--ok);
+        font-weight: 600;
+      }
+
+      #notes .ad {
+        color: var(--warn);
+        font-weight: 600;
+      }
+
+      #notes .no {
+        color: var(--danger);
+        font-weight: 600;
+      }
+
+      #notes .how {
+        color: var(--muted);
+      }
+
+      #liveCheck {
+        padding: 8px 10px;
+        border: 1px solid var(--line2);
+        border-radius: 6px;
+        background: var(--bg0);
+        font: 11px/1.5 var(--mono);
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <header id="top">
+      <div class="brand">
+        <span class="logo" data-ic="pin"></span>
+        <span class="tname">Old Town Walk</span>
+      </div>
+      <button
+        class="tbtn"
+        type="button"
+        id="layoutBtn"
+        aria-haspopup="true"
+        aria-expanded="false"
+      >
+        <span data-ic="grid"></span>Layout
+      </button>
+      <button class="tbtn" type="button" data-act="simdrop">
+        <span data-ic="upload"></span><span class="lbl">Add a file</span>
+      </button>
+      <span class="sp"></span>
+      <button
+        class="tbtn"
+        type="button"
+        id="notesBtn"
+        aria-expanded="false"
+        title="What works on a phone"
+      >
+        <span data-ic="info"></span>Notes
+      </button>
+    </header>
+
+    <div id="layoutMenu" hidden role="menu">
+      <span class="mlbl">Arrangements</span>
+      <button type="button" data-preset="right" role="menuitem">
+        <span data-ic="tabsRight"></span>Tabs on the right
+      </button>
+      <button type="button" data-preset="beside" role="menuitem">
+        <span data-ic="beside"></span>Files beside Details
+      </button>
+      <button type="button" data-preset="below" role="menuitem">
+        <span data-ic="below"></span>Files below Details
+      </button>
+      <button type="button" data-preset="sidebars" role="menuitem">
+        <span data-ic="sidebars"></span>Sidebars that fold (the library's own)
+      </button>
+      <button type="button" data-preset="phone" role="menuitem">
+        <span data-ic="phone"></span>Phone: one panel group
+      </button>
+      <span class="mlbl">This layout</span>
+      <button type="button" data-act="reset" role="menuitem">
+        <span data-ic="rotate"></span>Reset layout
+      </button>
+      <span class="mlbl">3D view</span>
+      <button
+        type="button"
+        data-act="hold"
+        role="menuitemcheckbox"
+        aria-checked="false"
+      >
+        <span data-ic="frame"></span>Hold its size while a splitter is dragged
+      </button>
+      <span class="hint" id="resizeHint"></span>
+      <span class="hint" id="saveHint"></span>
+    </div>
+
+    <div id="dock" class="dockview-theme-tour"></div>
+
+    <aside id="notes" hidden aria-label="Notes">
+      <h2>One docking system, several arrangements</h2>
+      <p>
+        Every panel is a tab that can share a group, sit beside or below another
+        group, float over the 3D view, or fold to a rail. The 3D view is a panel
+        too: its canvas is exactly its panel, so a selection is framed in the
+        canvas and never under a docked panel. A floating group over the view is
+        avoided as well.
+      </p>
+      <p>
+        Try it: drag a tab onto the middle of another group to join it, onto an
+        edge of a group to split, onto a tab strip to reorder. The
+        <b>Float</b> button in a group's header lifts it out; <b>Dock</b> puts
+        it back. <b>Fold</b> turns a side group into a rail of upright tabs; tap
+        a tab on the rail to unfold. The layout is saved as you change it and
+        comes back after a reload, separately for desktop, phone sideways and
+        phone upright. <b>Layout</b> holds the arrangements of the three earlier
+        panel prototypes and <b>Reset layout</b>.
+      </p>
+
+      <h3>On a phone: measured with touch in a headless Chromium</h3>
+      <p class="how">
+        844 x 390 and 390 x 844, touch emulation on, real touch events (press,
+        hold, move, lift) sent to the browser, and the layout read back from the
+        library after each gesture. A phone in the hand may differ in feel; the
+        numbers are what the library did.
+      </p>
+      <ul id="phoneFindings">
+        <li>
+          <span class="ok">Works:</span> tap a tab.
+          <span class="how">Tapped an inactive tab; it became the shown one.</span>
+        </li>
+        <li>
+          <span class="ad">Works with an adaptation:</span> four panels in one
+          group. Named tabs overflowed into a "2 more" list at 320 px; on a
+          phone a tab that is not shown keeps only its icon (46 x 44 px) and
+          the shown one its name.
+        </li>
+        <li>
+          <span class="ok">Works:</span> drag a tab beside or below the 3D view,
+          or onto another group's tab strip.
+          <span class="how">Dropped at the 3D view's edge: the layout split;
+            dropped on a tab strip: the panel joined that group. Both a quick
+            drag and a 300 ms hold before moving start the drag (the library
+            arms a touch drag after 250 ms, or at once when the finger moves).
+            The drop zones are as small as on a desktop, so aiming is the hard
+            part.</span>
+        </li>
+        <li>
+          <span class="ok">Works:</span> a drop on the middle of the 3D view is
+          refused, on purpose: the 3D view's group takes no tabs.
+        </li>
+        <li>
+          <span class="ad">Works with an adaptation:</span> drag a splitter. The
+          library's grab strip is 24 px wide; on a phone it is 40 px with a
+          visible grip.
+          <span class="how">A drag starting 15 px beside the line moved it the
+            full 100 px the finger moved, sideways and upright.</span>
+        </li>
+        <li>
+          <span class="ad">Works with an adaptation:</span> hold a tab for its
+          menu (Float, Maximize).
+          <span class="how">Opens after about half a second (650 ms opened it,
+            350 ms did not). Its items were 25 px tall; on a phone they are
+            44 px.</span>
+        </li>
+        <li>
+          <span class="ad">Works with an adaptation:</span> float a group. The
+          library floats with Shift and a drag, which a phone does not have, or
+          from the menu above; here every group has a Float button (40 px) and
+          a floating one a Dock button.
+          <span class="how">The float's title bar (26 px on a phone) moves it
+            with a quick drag or after a hold. Dragging a tab out of a float
+            back into the layout worked in 5 of 6 tries; holding 550 ms opens
+            the menu instead. A float covers much of a phone's 3D view (298 x
+            214 of 844 x 346), and the selection is framed beside it.</span>
+        </li>
+        <li>
+          <span class="ad">Works with an adaptation:</span> fold. The library
+          folds only its fixed side bars (see below); folding any group is this
+          page's own: a rail of upright tabs 44 px wide, or a 44 px strip below
+          the 3D view. A tap on a rail tab unfolds it.
+        </li>
+        <li>
+          <span class="ok">Works:</span> the library's own side bars (Layout,
+          "Sidebars that fold"). A tap on the shown tab folds the bar to a 44
+          px strip and back; a tab dragged out of a bar lands in the layout.
+          Upright, two side bars left the 3D view 100 px wide, so there it is
+          one bar at the bottom.
+        </li>
+        <li>
+          <span class="ok">Works:</span> one finger in the 3D view turns the
+          camera (55 degrees for 120 px); the panels do not take the gesture.
+          Two-finger zoom is not part of this page.
+        </li>
+        <li>
+          <span class="ok">Works:</span> the layout is restored after a reload,
+          sideways and upright, kept apart from the desktop's.
+        </li>
+        <li>
+          <span class="ad">Phone default:</span> the 3D view plus one group
+          holding all four panels as tabs, and no tab strip over the 3D view
+          (44 px more of it). Sideways the 3D view keeps 524 x 346 px, upright
+          390 x 432.
+        </li>
+      </ul>
+
+      <h3>What a splitter drag costs the 3D view</h3>
+      <p>
+        While a splitter moves, the 3D view's canvas is resized once for every pointer move, which means up to once a frame: 88 of 90 frames when the pointer moved every frame (about 60 times a second on a 60 Hz screen), 30 of 101 frames for a finger on a phone. Here one resize, with the new framing and a frame drawn, took
+        3 to 4 ms at desktop size and 4 to 14 ms at a phone's size, but the
+        whole drag ran at 47 to 69 ms a frame against 16 ms with the size
+        held. That was measured with software rendering in a headless browser
+        and this light scene; a real globe re-creates its render targets on
+        every resize. <b>Layout, Hold its size while a splitter is dragged</b>
+        keeps the canvas as it is during the drag (it is cut off or shows a
+        margin) and fits it once on release: 0 resizes during the drag.
+      </p>
+
+      <h3>What the library cannot do, or only with a paid licence</h3>
+      <ul id="limits">
+        <li>
+          <span class="no">Paid licence only:</span> side bars that hide and
+          slide in when touched (auto-hide), creating a side bar by dragging a
+          panel to the screen's edge, docking and moving between groups with
+          the keyboard, undo and redo of layout changes, pinned tabs, tabs on
+          several rows, searching the tab list, the drop compass and snapping
+          guides for floats. None of them is used here.
+        </li>
+        <li>
+          <span class="no">Folding:</span> only the library's side bars fold
+          (one per edge, set up in advance; they cannot float). Any other group
+          has no fold; the rail here is made from size limits.
+        </li>
+        <li>
+          <span class="no">Floating with a finger:</span> only through the hold
+          menu; the library's own gesture needs Shift.
+        </li>
+        <li>
+          <span class="no">Touch timings are fixed:</span> a drag arms after
+          250 ms (500 ms in a float) and the menu opens at 500 ms; no option
+          changes them.
+        </li>
+        <li>
+          <span class="no">Sizes:</span> a group's new size is taken from its
+          neighbour, and a size set while the layout is still changing is lost.
+          Exact sizes here are pinned for a moment (smallest = largest), so the
+          3D view gives or takes the space. A saved layout loads a folded rail
+          at the library's 100 px minimum, so the sizes are saved alongside.
+        </li>
+        <li>
+          <span class="no">Package:</span> the plain JavaScript package is
+          <code>dockview</code>, which re-exports <code>dockview-core</code> and
+          alone carries the stylesheet; both need mapping when loaded without a
+          build. Core is 394 KB minified (91 KB gzipped) before tree shaking,
+          the stylesheet 160 KB (13 KB gzipped).
+        </li>
+      </ul>
+
+      <h3>Library features this page uses</h3>
+      <ul>
+        <li>
+          <code>dockview</code> 8.7.1, its stylesheet, and its dark theme's
+          variables set to the editor's colours on an own theme class.
+        </li>
+        <li>
+          The 3D view is a panel rendered always (<code>renderer: "always"</code>),
+          so its canvas survives moves; its group is locked against tabs and
+          has no tab strip on a phone.
+        </li>
+        <li>
+          Own tab and header-button renderers (icons, badges, Fold, Float,
+          Dock); the hold menu offers Float and Maximize only, so no popout
+          windows.
+        </li>
+        <li>
+          Floats are kept inside the window; the library's free side bars in
+          the "Sidebars that fold" arrangement; <code>toJSON</code> and
+          <code>fromJSON</code> for saving, in this browser only.
+        </li>
+      </ul>
+
+      <h3>Live check of this view</h3>
+      <div id="liveCheck">-</div>
+    </aside>
+
+    <script type="module">
+      import * as THREE from "three";
+      import { createDockview } from "dockview";
+
+      /* ---------- helpers ---------- */
+      const $ = (s, r = document) => r.querySelector(s);
+      const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+      const ESC = {
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      };
+      const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ESC[c]);
+      const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+      const DEG = Math.PI / 180;
+      const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const fmt = (b) => `${(b / 1e6).toFixed(b < 1e7 ? 1 : 0)} MB`;
+
+      const P = {
+        pin: '<path d="M8 14s4.5-4.2 4.5-7.5a4.5 4.5 0 0 0-9 0C3.5 9.8 8 14 8 14z"/><circle cx="8" cy="6.5" r="1.6"/>',
+        photo:
+          '<rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="6" cy="6.5" r="1.2"/><path d="M2.5 12l3.5-3.5 2.5 2.5 2-2 3 3"/>',
+        stand:
+          '<path d="M3 5.5l10-1.5v3L3 8.5z"/><path d="M8 7.8V14M5.5 14h5"/>',
+        character:
+          '<circle cx="8" cy="4.5" r="2.2"/><path d="M3.5 14c0-3 2-5 4.5-5s4.5 2 4.5 5"/>',
+        folder: '<path d="M2 4.5h4l1.5 1.5H14v6.5H2z"/>',
+        sound:
+          '<path d="M3 6.5h2.5L9 3.5v9L5.5 9.5H3z"/><path d="M11 6a3 3 0 0 1 0 4"/>',
+        model:
+          '<path d="M8 2l5.5 3v6L8 14l-5.5-3V5z"/><path d="M2.5 5L8 8l5.5-3M8 8v6"/>',
+        video:
+          '<rect x="2" y="4" width="9" height="8" rx="1.2"/><path d="M11 7l3-2v6l-3-2"/>',
+        list: '<path d="M5.5 4h8M5.5 8h8M5.5 12h8"/><path d="M2.5 4h.6M2.5 8h.6M2.5 12h.6"/>',
+        details:
+          '<path d="M3 4h10M3 8h10M3 12h10"/><circle cx="6" cy="4" r="1.3"/><circle cx="10.5" cy="8" r="1.3"/><circle cx="5" cy="12" r="1.3"/>',
+        files:
+          '<path d="M2 6h12v7.5H2z"/><path d="M3.5 6V3.5h9V6"/><path d="M6.5 9h3"/>',
+        view: '<path d="M2 11l6 3 6-3-6-3z"/><path d="M2 7.5l6 3 6-3"/><path d="M8 2l6 3-6 3-6-3z"/>',
+        chev: '<path d="M6 4l4 4-4 4"/>',
+        chevD: '<path d="M4 6l4 4 4-4"/>',
+        plus: '<path d="M8 3v10M3 8h10"/>',
+        minus: '<path d="M3 8h10"/>',
+        compass:
+          '<path d="M8 2l2.4 6H5.6z" fill="#e0575b" stroke="#e0575b"/><path d="M5.6 8h4.8L8 14z"/>',
+        frame:
+          '<path d="M2.5 5.5v-3h3M10.5 2.5h3v3M13.5 10.5v3h-3M5.5 13.5h-3v-3"/><circle cx="8" cy="8" r="1.6"/>',
+        trash: '<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 9h5.8l.6-9"/>',
+        upload: '<path d="M8 11V3M5 6l3-3 3 3M3 11v2.5h10V11"/>',
+        check: '<path d="M3 8.5l3.2 3.2L13 4.8"/>',
+        alert: '<path d="M8 2.5l6 10.5H2z"/><path d="M8 7v2.5M8 11.3v.2"/>',
+        clock: '<circle cx="8" cy="8" r="5.5"/><path d="M8 5v3.2l2 1.3"/>',
+        rotate:
+          '<path d="M12.5 8a4.5 4.5 0 1 1-1.3-3.2"/><path d="M12.5 2.5v2.8H9.7"/>',
+        grid: '<rect x="2" y="2.5" width="12" height="11" rx="1"/><path d="M6 2.5v11M6 9h8"/>',
+        info: '<circle cx="8" cy="8" r="5.8"/><path d="M8 7.2v4M8 4.9v.2"/>',
+        fold: '<rect x="2.5" y="2.5" width="11" height="11" rx="1"/><path d="M10 2.5v11"/><path d="M7.5 6L5.5 8l2 2"/>',
+        unfold:
+          '<rect x="2.5" y="2.5" width="11" height="11" rx="1"/><path d="M10 2.5v11"/><path d="M5.5 6l2 2-2 2"/>',
+        foldV:
+          '<rect x="2.5" y="2.5" width="11" height="11" rx="1"/><path d="M2.5 6h11"/><path d="M6 10l2-2 2 2"/>',
+        float:
+          '<rect x="2" y="5" width="9" height="8.5" rx="1"/><path d="M5 5V2.5h8.5V11H11"/>',
+        dock: '<rect x="2" y="2.5" width="12" height="11" rx="1"/><path d="M9 2.5v11"/><path d="M5 8h2.5M6.3 6.7L7.5 8 6.3 9.3"/>',
+        tabsRight:
+          '<rect x="2" y="2.5" width="12" height="11" rx="1"/><path d="M5 2.5v11M10.5 2.5v11M10.5 5h3.5M5 10.5h5.5"/>',
+        beside:
+          '<rect x="2" y="2.5" width="12" height="11" rx="1"/><path d="M5 2.5v11M9 2.5v11M11.5 2.5v11"/>',
+        below:
+          '<rect x="2" y="2.5" width="12" height="11" rx="1"/><path d="M5 2.5v11M10.5 2.5v11M10.5 8h3.5"/>',
+        sidebars:
+          '<rect x="2" y="2.5" width="12" height="11" rx="1"/><path d="M4 2.5v11M12 2.5v11M4 11h8"/>',
+        phone:
+          '<rect x="4.5" y="1.5" width="7" height="13" rx="1.5"/><path d="M4.5 8h7"/>',
+      };
+      const ic = (n) =>
+        `<svg class="i" viewBox="0 0 16 16" aria-hidden="true">${P[n]}</svg>`;
+      for (const el of $$("[data-ic]")) {
+        el.insertAdjacentHTML("afterbegin", ic(el.dataset.ic));
+      }
+
+      /* ---------- the tour (fake) ---------- */
+      const KIND = {
+        pin: {
+          label: "Pin",
+          icon: "pin",
+          R: 1.6,
+          H: 3.2,
+          W: 0.9,
+          col: "#e07a6e",
+        },
+        picture: {
+          label: "Picture",
+          icon: "photo",
+          R: 2.1,
+          H: 3.0,
+          W: 2.4,
+          col: "#c9a66b",
+        },
+        stand: {
+          label: "Reading stand",
+          icon: "stand",
+          R: 1.5,
+          H: 1.3,
+          W: 1.0,
+          col: "#b7a7d6",
+        },
+        character: {
+          label: "Character",
+          icon: "character",
+          R: 1.3,
+          H: 1.85,
+          W: 0.7,
+          col: "#d6a8d0",
+        },
+      };
+      const STATION_R = 3;
+      const STATIONS = [
+        {
+          id: "s1",
+          n: 1,
+          name: "Market Fountain",
+          x: 0,
+          z: 0,
+          radius: 12,
+          open: true,
+          kids: ["i1", "i2", "i3"],
+        },
+        {
+          id: "s2",
+          n: 2,
+          name: "Old Town Hall",
+          x: 62,
+          z: -40,
+          radius: 15,
+          open: true,
+          kids: ["f1", "i6"],
+        },
+        {
+          id: "s3",
+          n: 3,
+          name: "River Steps",
+          x: -58,
+          z: 50,
+          radius: 10,
+          open: false,
+          kids: ["i7", "i8"],
+        },
+      ];
+      const stById = Object.fromEntries(STATIONS.map((s) => [s.id, s]));
+      const FOLDERS = {
+        f1: {
+          id: "f1",
+          name: "The bell story",
+          open: true,
+          kids: ["i4", "i5"],
+        },
+      };
+      const ITEMS = {
+        i1: {
+          kind: "pin",
+          name: "Meeting point",
+          st: "s1",
+          x: -5,
+          z: 5,
+          h: 0,
+          size: 1,
+          col: "#e07a6e",
+        },
+        i2: {
+          kind: "picture",
+          name: "The fountain in 1890",
+          st: "s1",
+          x: 5,
+          z: 2,
+          h: -30,
+          size: 1,
+          file: "a2",
+        },
+        i3: {
+          kind: "character",
+          name: "Guide Anna",
+          st: "s1",
+          x: 1,
+          z: -6,
+          h: 20,
+          size: 1,
+          file: "c1",
+        },
+        i4: {
+          kind: "stand",
+          name: "The bell's inscription",
+          st: "s2",
+          x: -5,
+          z: 4,
+          h: 15,
+          size: 1,
+          text: "Cast in 1612, recast after the fire of 1842.",
+        },
+        i5: {
+          kind: "pin",
+          name: "Bell tower view",
+          st: "s2",
+          x: 6,
+          z: -4,
+          h: 0,
+          size: 1,
+          col: "#e9a23b",
+        },
+        i6: {
+          kind: "picture",
+          name: "Hall facade 1920",
+          st: "s2",
+          x: 4,
+          z: 8,
+          h: 200,
+          size: 1,
+          file: null,
+        },
+        i7: {
+          kind: "stand",
+          name: "Flood marks",
+          st: "s3",
+          x: 3,
+          z: -3,
+          h: -60,
+          size: 1,
+          text: "The highest mark is from 1784.",
+        },
+        i8: {
+          kind: "pin",
+          name: "The steps",
+          st: "s3",
+          x: -3,
+          z: 2,
+          h: 0,
+          size: 1,
+          col: "#4f8fe8",
+        },
+      };
+      const isStation = (id) => id in stById;
+      const worldOf = (id) => {
+        if (isStation(id)) {
+          const s = stById[id];
+          return new THREE.Vector3(s.x, 0, s.z);
+        }
+        const it = ITEMS[id];
+        const s = stById[it.st];
+        return new THREE.Vector3(s.x + it.x, 0, s.z + it.z);
+      };
+      const itemsOf = (st) =>
+        st.kids.flatMap((k) => (FOLDERS[k] ? FOLDERS[k].kids : [k]));
+
+      /* ---------- the files (fake asset shelf) ---------- */
+      const FKIND = {
+        picture: { label: "Picture", icon: "photo", col: "#c9a66b" },
+        sound: { label: "Sound", icon: "sound", col: "#8fb3d9" },
+        model: { label: "3D model", icon: "model", col: "#a3b1c2" },
+        video: { label: "Video", icon: "video", col: "#8fb3d9" },
+        character: { label: "Character", icon: "character", col: "#d6a8d0" },
+      };
+      const EXT = {
+        jpg: "picture",
+        png: "picture",
+        mp3: "sound",
+        glb: "model",
+        mp4: "video",
+      };
+      const files = [
+        {
+          id: "a3",
+          kind: "picture",
+          name: "town-hall-1920.png",
+          ext: "PNG",
+          before: 9.4e6,
+          after: 1.3e6,
+          state: "processing",
+          progress: 0.36,
+        },
+        {
+          id: "a4",
+          kind: "model",
+          name: "bell.glb",
+          ext: "GLB",
+          before: 22e6,
+          after: 4.1e6,
+          state: "queued",
+          progress: 0,
+        },
+        {
+          id: "a2",
+          kind: "picture",
+          name: "fountain-1890.jpg",
+          ext: "JPG",
+          before: 6.2e6,
+          after: 0.9e6,
+          state: "ready",
+          progress: 1,
+        },
+        {
+          id: "a1",
+          kind: "sound",
+          name: "fountain-intro.mp3",
+          ext: "MP3",
+          before: 4.8e6,
+          after: 1.1e6,
+          state: "ready",
+          progress: 1,
+        },
+        {
+          id: "c1",
+          kind: "character",
+          name: "Guide Anna",
+          ext: "",
+          before: 31e6,
+          after: 6.2e6,
+          state: "ready",
+          progress: 1,
+        },
+      ];
+      const SAMPLE_DROPS = [
+        "harbour-crane.jpg",
+        "bell-chime.mp3",
+        "old-map.png",
+        "statue.glb",
+        "market-day.mp4",
+      ];
+      let dropN = 0;
+      let nextId = 10;
+      const usesOf = (fid) =>
+        Object.values(ITEMS).filter((it) => it.file === fid).length;
+      const busyFiles = () =>
+        files.filter((f) => f.state === "processing" || f.state === "queued");
+      const PROBLEMS = [
+        {
+          sel: "i6",
+          text: '2 Old Town Hall: the picture "Hall facade 1920" has no file.',
+        },
+      ];
+
+      const ui = { sel: "i2", mode: "desk", preset: "right" };
+
+      /* ---------- three.js scene ---------- */
+      const canvas = document.createElement("canvas");
+      canvas.setAttribute("aria-label", "3D view of the tour");
+      const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      const scene = new THREE.Scene();
+      const SKY = 0xc6d0d9;
+      scene.background = new THREE.Color(SKY);
+      scene.fog = new THREE.Fog(SKY, 160, 460);
+      const camera = new THREE.PerspectiveCamera(45, 1, 0.3, 1500);
+      scene.add(new THREE.HemisphereLight(0xf6f2ea, 0x7d8470, 1.8));
+      const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+      sun.position.set(60, 120, 40);
+      scene.add(sun);
+
+      function groundTexture() {
+        const N = 2048;
+        const c = document.createElement("canvas");
+        c.width = N;
+        c.height = N;
+        const g = c.getContext("2d");
+        const S = N / 440;
+        const X = (x) => (x + 220) * S;
+        g.fillStyle = "#e6e0d2";
+        g.fillRect(0, 0, N, N);
+        g.fillStyle = "#cbd8b4";
+        g.fillRect(X(-170), X(90), 120 * S, 110 * S);
+        g.fillRect(X(110), X(-200), 90 * S, 70 * S);
+        g.strokeStyle = "#a9c4d6";
+        g.lineWidth = 20 * S;
+        g.beginPath();
+        g.moveTo(X(-220), X(80));
+        g.bezierCurveTo(X(-90), X(55), X(40), X(130), X(220), X(100));
+        g.stroke();
+        g.strokeStyle = "#f8f5ee";
+        g.lineCap = "round";
+        const streets = [
+          [-220, -14, 220, -14, 9],
+          [-26, -220, -26, 220, 8],
+          [34, -220, 34, 50, 7],
+          [-220, -78, 220, -78, 7],
+          [96, -220, 96, 220, 7],
+          [-120, -220, -120, 60, 6],
+          [-220, 28, -26, 28, 6],
+        ];
+        for (const [x1, z1, x2, z2, w] of streets) {
+          g.lineWidth = w * S;
+          g.beginPath();
+          g.moveTo(X(x1), X(z1));
+          g.lineTo(X(x2), X(z2));
+          g.stroke();
+        }
+        g.fillStyle = "#efe9dc";
+        for (const s of STATIONS) {
+          g.beginPath();
+          g.arc(X(s.x), X(s.z), 22 * S, 0, Math.PI * 2);
+          g.fill();
+        }
+        const t = new THREE.CanvasTexture(c);
+        t.colorSpace = THREE.SRGBColorSpace;
+        t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+        return t;
+      }
+      const ground = new THREE.Mesh(
+        new THREE.PlaneGeometry(440, 440),
+        new THREE.MeshStandardMaterial({ map: groundTexture(), roughness: 1 }),
+      );
+      ground.rotation.x = -Math.PI / 2;
+      scene.add(ground);
+
+      let seed = 11;
+      const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+      const bgeo = new THREE.BoxGeometry(1, 1, 1);
+      const onStreet = (x, z) =>
+        Math.abs(z + 14) < 12 ||
+        Math.abs(x + 26) < 12 ||
+        Math.abs(z + 78) < 11 ||
+        Math.abs(x - 96) < 11 ||
+        Math.abs(x + 120) < 10;
+      for (let i = 0; i < 220; i++) {
+        const x = (rnd() - 0.5) * 400;
+        const z = (rnd() - 0.5) * 400;
+        const w = 8 + rnd() * 12;
+        const d = 8 + rnd() * 12;
+        const h = 4 + rnd() * 10;
+        if (
+          STATIONS.some((s) => Math.hypot(s.x - x, s.z - z) < 36) ||
+          onStreet(x, z) ||
+          (z > 45 && z < 120 && x < 60)
+        ) {
+          continue;
+        }
+        const shade = 0.82 + rnd() * 0.1;
+        const m = new THREE.Mesh(
+          bgeo,
+          new THREE.MeshStandardMaterial({
+            color: new THREE.Color(shade, shade * 0.97, shade * 0.92),
+            roughness: 0.95,
+          }),
+        );
+        m.scale.set(w, h, d);
+        m.position.set(x, h / 2, z);
+        scene.add(m);
+      }
+      const trunkGeo = new THREE.CylinderGeometry(0.14, 0.2, 2.2, 6);
+      const crownGeo = new THREE.SphereGeometry(1.6, 10, 8);
+      const trunkMat = new THREE.MeshStandardMaterial({
+        color: 0x7a6650,
+        roughness: 1,
+      });
+      const crownMat = new THREE.MeshStandardMaterial({
+        color: 0x8fa977,
+        roughness: 1,
+      });
+      const itemSpots = Object.values(ITEMS).map((it) => [
+        stById[it.st].x + it.x,
+        stById[it.st].z + it.z,
+      ]);
+      for (let i = 0; i < 62; i++) {
+        const s = STATIONS[i % STATIONS.length];
+        const a = rnd() * Math.PI * 2;
+        const r = 9 + rnd() * 30;
+        const x = s.x + Math.cos(a) * r;
+        const z = s.z + Math.sin(a) * r;
+        if (
+          itemSpots.some(([ix, iz]) => Math.hypot(ix - x, iz - z) < 5) ||
+          Math.hypot(s.x - x, s.z - z) < 8
+        ) {
+          continue;
+        }
+        const k = 0.7 + rnd() * 0.6;
+        const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+        trunk.position.set(x, 1.1 * k, z);
+        trunk.scale.setScalar(k);
+        const crown = new THREE.Mesh(crownGeo, crownMat);
+        crown.position.set(x, 3.2 * k, z);
+        crown.scale.set(k, k * 1.15, k);
+        scene.add(trunk, crown);
+      }
+
+      const mat = (color) =>
+        new THREE.MeshStandardMaterial({ color, roughness: 0.7 });
+      function pictureTexture(withFile) {
+        const c = document.createElement("canvas");
+        c.width = 256;
+        c.height = 170;
+        const g = c.getContext("2d");
+        if (!withFile) {
+          g.fillStyle = "#5d6168";
+          g.fillRect(0, 0, 256, 170);
+          g.fillStyle = "#d9dbe0";
+          g.font = "600 22px sans-serif";
+          g.textAlign = "center";
+          g.fillText("No picture yet", 128, 92);
+        } else {
+          const gr = g.createLinearGradient(0, 0, 0, 170);
+          gr.addColorStop(0, "#d8c49a");
+          gr.addColorStop(1, "#8f7650");
+          g.fillStyle = gr;
+          g.fillRect(0, 0, 256, 170);
+          g.fillStyle = "#5e4a30";
+          g.fillRect(40, 70, 70, 80);
+          g.fillRect(150, 50, 70, 100);
+        }
+        const t = new THREE.CanvasTexture(c);
+        t.colorSpace = THREE.SRGBColorSpace;
+        return t;
+      }
+      const MAKERS = {
+        pin(it) {
+          const g = new THREE.Group();
+          const stick = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.05, 0.05, 2.4, 8),
+            mat(0x8a8f99),
+          );
+          stick.position.y = 1.2;
+          const head = new THREE.Mesh(
+            new THREE.SphereGeometry(0.42, 20, 14),
+            mat(new THREE.Color(it.col)),
+          );
+          head.position.y = 2.75;
+          head.userData.tint = true;
+          g.add(stick, head);
+          return g;
+        },
+        picture(it) {
+          const g = new THREE.Group();
+          for (const sx of [-1.05, 1.05]) {
+            const post = new THREE.Mesh(
+              new THREE.CylinderGeometry(0.05, 0.05, 2.9, 8),
+              mat(0x5b5f66),
+            );
+            post.position.set(sx, 1.45, -0.05);
+            g.add(post);
+          }
+          const face = new THREE.MeshStandardMaterial({
+            map: pictureTexture(Boolean(it.file)),
+            roughness: 0.8,
+          });
+          const side = mat(0x3a3d42);
+          const board = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.6, 0.06), [
+            side,
+            side,
+            side,
+            side,
+            face,
+            side,
+          ]);
+          board.position.y = 2.2;
+          g.add(board);
+          return g;
+        },
+        stand() {
+          const g = new THREE.Group();
+          const post = new THREE.Mesh(
+            new THREE.BoxGeometry(0.12, 1.0, 0.12),
+            mat(0x6b5a48),
+          );
+          post.position.y = 0.5;
+          const top = new THREE.Mesh(
+            new THREE.BoxGeometry(0.95, 0.06, 0.62),
+            mat(0x8a7356),
+          );
+          top.position.y = 1.1;
+          top.rotation.x = 0.45;
+          top.userData.tint = true;
+          g.add(post, top);
+          return g;
+        },
+        character() {
+          const g = new THREE.Group();
+          const body = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.22, 0.3, 1.15, 16),
+            mat(0x9b6b95),
+          );
+          body.position.y = 0.72;
+          body.userData.tint = true;
+          const head = new THREE.Mesh(
+            new THREE.SphereGeometry(0.2, 16, 12),
+            mat(0xe2c2a4),
+          );
+          head.position.y = 1.55;
+          g.add(body, head);
+          return g;
+        },
+      };
+      const circle = new THREE.BufferGeometry().setFromPoints(
+        Array.from(
+          { length: 96 },
+          (_, i) =>
+            new THREE.Vector3(
+              Math.cos((i / 96) * Math.PI * 2),
+              0,
+              Math.sin((i / 96) * Math.PI * 2),
+            ),
+        ),
+      );
+      const groups3d = {};
+      const pickables = [];
+      for (const s of STATIONS) {
+        const g = new THREE.Group();
+        const base = new THREE.Mesh(
+          new THREE.CylinderGeometry(1.0, 1.3, 0.3, 24),
+          mat(0x4f7fb8),
+        );
+        base.position.y = 0.15;
+        base.userData.tint = true;
+        const beam = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.1, 0.1, 6, 8),
+          new THREE.MeshBasicMaterial({
+            color: 0x6fa0e0,
+            transparent: true,
+            opacity: 0.55,
+          }),
+        );
+        beam.position.y = 3.3;
+        const ring = new THREE.LineLoop(
+          circle,
+          new THREE.LineBasicMaterial({
+            color: 0x4f8fe8,
+            transparent: true,
+            opacity: 0.55,
+          }),
+        );
+        ring.position.y = 0.06;
+        ring.scale.setScalar(s.radius);
+        g.add(base, beam, ring);
+        g.userData = { id: s.id, ring };
+        g.position.copy(worldOf(s.id));
+        groups3d[s.id] = g;
+        pickables.push(g);
+        scene.add(g);
+      }
+      for (const [id, it] of Object.entries(ITEMS)) {
+        const g = MAKERS[it.kind](it);
+        g.userData.id = id;
+        g.position.copy(worldOf(id));
+        g.rotation.y = it.h * DEG;
+        groups3d[id] = g;
+        pickables.push(g);
+        scene.add(g);
+      }
+      const discGroup = new THREE.Group();
+      const discFill = new THREE.Mesh(
+        new THREE.CircleGeometry(1, 48),
+        new THREE.MeshBasicMaterial({
+          color: 0xe9a23b,
+          transparent: true,
+          opacity: 0.18,
+          depthWrite: false,
+        }),
+      );
+      const discRing = new THREE.Mesh(
+        new THREE.RingGeometry(0.9, 1, 64),
+        new THREE.MeshBasicMaterial({
+          color: 0xe9a23b,
+          transparent: true,
+          opacity: 0.95,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+        }),
+      );
+      for (const m of [discFill, discRing]) {
+        m.rotation.x = -Math.PI / 2;
+        m.renderOrder = 2;
+        discGroup.add(m);
+      }
+      scene.add(discGroup);
+      const discR = (id) =>
+        isStation(id) ? STATION_R : KIND[ITEMS[id].kind].R * ITEMS[id].size;
+
+      function updateSelVisual() {
+        for (const [id, g] of Object.entries(groups3d)) {
+          const on = id === ui.sel;
+          g.traverse((o) => {
+            if (o.userData.tint && o.material) {
+              o.material.emissive.setHex(on ? 0x5a3a08 : 0x000000);
+            }
+          });
+          if (isStation(id)) {
+            g.userData.ring.material.color.setHex(on ? 0xe9a23b : 0x4f8fe8);
+            g.userData.ring.material.opacity = on ? 0.95 : 0.55;
+          }
+        }
+        discGroup.visible = Boolean(ui.sel);
+        if (ui.sel) {
+          const p = worldOf(ui.sel);
+          discGroup.position.set(p.x, 0.05, p.z);
+          discGroup.scale.setScalar(discR(ui.sel));
+        }
+        dirty = true;
+      }
+
+      /* ---------- the camera: frame the selection in the canvas ---------- */
+      const cam = {
+        tx: 0,
+        ty: 0,
+        tz: 0,
+        d: 40,
+        az: 0.55,
+        el: 0.7,
+        ox: 0,
+        oy: 0,
+      };
+      let tween = null;
+      let dirty = true;
+      const cw = () => canvas.clientWidth;
+      const ch = () => canvas.clientHeight;
+      function applyCam() {
+        const W = Math.max(1, cw());
+        const H = Math.max(1, ch());
+        const t = new THREE.Vector3(cam.tx, cam.ty, cam.tz);
+        const ce = Math.cos(cam.el);
+        camera.position.set(
+          t.x + cam.d * ce * Math.sin(cam.az),
+          t.y + cam.d * Math.sin(cam.el),
+          t.z + cam.d * ce * Math.cos(cam.az),
+        );
+        camera.lookAt(t);
+        camera.aspect = W / H;
+        camera.setViewOffset(W, H, W / 2 - cam.ox, H / 2 - cam.oy, W, H);
+        camera.updateProjectionMatrix();
+        camera.updateMatrixWorld();
+      }
+      function project(w) {
+        const inView = w.clone().applyMatrix4(camera.matrixWorldInverse);
+        if (inView.z > -camera.near) {
+          return { x: -1e4, y: -1e4, z: 2 };
+        }
+        const v = w.clone().project(camera);
+        return { x: ((v.x + 1) / 2) * cw(), y: ((1 - v.y) / 2) * ch(), z: v.z };
+      }
+      const camRight = () =>
+        new THREE.Vector3(Math.cos(cam.az), 0, -Math.sin(cam.az));
+      const area = (r) => Math.max(0, r.r - r.l) * Math.max(0, r.b - r.t);
+
+      /** The canvas minus any floating group over it (the larger free side
+       * wins) and minus the map controls' column. In canvas pixels. */
+      function freeRect() {
+        const c = canvas.getBoundingClientRect();
+        let f = { l: 0, t: 0, r: c.width, b: c.height };
+        for (const g of dock ? dock.groups : []) {
+          if (g.api.location.type !== "floating") {
+            continue;
+          }
+          const b = g.element.getBoundingClientRect();
+          const o = {
+            l: b.left - c.left,
+            t: b.top - c.top,
+            r: b.right - c.left,
+            b: b.bottom - c.top,
+          };
+          if (o.r <= f.l || o.l >= f.r || o.b <= f.t || o.t >= f.b) {
+            continue;
+          }
+          const options = [
+            { ...f, r: Math.min(f.r, o.l) },
+            { ...f, l: Math.max(f.l, o.r) },
+            { ...f, b: Math.min(f.b, o.t) },
+            { ...f, t: Math.max(f.t, o.b) },
+          ];
+          f = options.reduce((a, x) => (area(x) > area(a) ? x : a));
+        }
+        const ctlW = ui.mode === "desk" ? 48 : 54;
+        if (f.r > c.width - ctlW) {
+          f.r = c.width - ctlW;
+        }
+        return f;
+      }
+      function frameRect() {
+        const f = freeRect();
+        const m = ui.mode === "desk" ? 18 : 10;
+        return { l: f.l + m, t: f.t + m, r: f.r - m, b: f.b - m };
+      }
+      const inRect = (p, r, pad) =>
+        p.z < 1 &&
+        p.x >= r.l + pad &&
+        p.x <= r.r - pad &&
+        p.y >= r.t + pad &&
+        p.y <= r.b - pad;
+      function fitPoints(id) {
+        const p = worldOf(id);
+        const pts = [];
+        if (isStation(id)) {
+          const r = stById[id].radius;
+          for (let i = 0; i < 24; i++) {
+            const a = (i / 24) * Math.PI * 2;
+            pts.push(
+              p
+                .clone()
+                .add(new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r)),
+            );
+          }
+          return { pts, centre: p.clone() };
+        }
+        const it = ITEMS[id];
+        const k = KIND[it.kind];
+        const R = k.R * it.size;
+        for (let i = 0; i < 16; i++) {
+          const a = (i / 16) * Math.PI * 2;
+          pts.push(
+            p
+              .clone()
+              .add(new THREE.Vector3(Math.cos(a) * R, 0, Math.sin(a) * R)),
+          );
+        }
+        const right = camRight();
+        const half = (k.W * it.size) / 2 + 0.15;
+        const top = k.H * it.size;
+        pts.push(
+          p.clone().addScaledVector(right, half).setY(top),
+          p.clone().addScaledVector(right, -half).setY(top),
+        );
+        return { pts, centre: p.clone().setY(top * 0.35) };
+      }
+      /** The nearest camera distance at which every point of the selection
+       * (disc edge, top corners) fits the free part of the canvas. */
+      function fitCam(id) {
+        const fr = frameRect();
+        const { pts, centre } = fitPoints(id);
+        const saved = { ...cam };
+        const base = {
+          tx: centre.x,
+          ty: centre.y,
+          tz: centre.z,
+          az: cam.az,
+          el: cam.el,
+          ox: (fr.l + fr.r) / 2,
+          oy: (fr.t + fr.b) / 2,
+        };
+        const fits = (d) => {
+          Object.assign(cam, base, { d });
+          applyCam();
+          return pts.every((w) => inRect(project(w), fr, 6));
+        };
+        let lo = 1.5;
+        let hi = 900;
+        for (let i = 0; i < 26; i++) {
+          const mid = Math.sqrt(lo * hi);
+          if (fits(mid)) {
+            hi = mid;
+          } else {
+            lo = mid;
+          }
+        }
+        const d = isStation(id) ? hi : Math.max(hi, discR(id) * 4.5);
+        Object.assign(cam, saved);
+        applyCam();
+        return { ...base, d };
+      }
+      const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
+      function goTo(to, ms) {
+        if (!ms || reduced) {
+          Object.assign(cam, to);
+          tween = null;
+          dirty = true;
+          return;
+        }
+        tween = { from: { ...cam }, to, t0: performance.now(), ms };
+      }
+      let guideTimer = 0;
+      function flashGuide() {
+        const g = view3d && $(".guide", view3d);
+        if (!g) {
+          return;
+        }
+        const fr = frameRect();
+        Object.assign(g.style, {
+          left: `${fr.l}px`,
+          top: `${fr.t}px`,
+          width: `${fr.r - fr.l}px`,
+          height: `${fr.b - fr.t}px`,
+        });
+        g.classList.add("show");
+        clearTimeout(guideTimer);
+        guideTimer = setTimeout(() => g.classList.remove("show"), 900);
+      }
+      function frameSel(animate) {
+        if (!ui.sel || cw() < 20 || ch() < 20) {
+          return;
+        }
+        goTo(fitCam(ui.sel), animate ? 650 : 0);
+        if (animate) {
+          flashGuide();
+        }
+      }
+
+      /* ---------- the render loop ---------- */
+      let lastSize = "";
+      /* What a splitter drag costs the 3D view: resizes counted per drag,
+       * each timed from the size change to the rendered frame. */
+      const stats = { holdOnDrag: false, sash: null, last: null };
+      function loop(now) {
+        if (stats.sash) {
+          stats.sash.frames++;
+        }
+        const size = `${cw()}x${ch()}`;
+        if (size !== lastSize && cw() > 0 && ch() > 0) {
+          lastSize = size;
+          const t0 = performance.now();
+          renderer.setSize(cw(), ch(), false);
+          if (!drag) {
+            frameSel(false);
+          }
+          applyCam();
+          renderer.render(scene, camera);
+          if (stats.sash) {
+            stats.sash.resizes++;
+            stats.sash.ms.push(performance.now() - t0);
+          }
+          dirty = false;
+          const label = view3d && $(".vsize", view3d);
+          if (label) {
+            label.textContent = `3D view ${cw()} x ${ch()}`;
+          }
+        }
+        if (tween) {
+          const k = Math.min(1, (now - tween.t0) / tween.ms);
+          const e = ease(k);
+          for (const key of Object.keys(tween.to)) {
+            cam[key] = tween.from[key] + (tween.to[key] - tween.from[key]) * e;
+          }
+          dirty = true;
+          if (k >= 1) {
+            tween = null;
+          }
+        }
+        if (dirty && cw() > 0) {
+          applyCam();
+          renderer.render(scene, camera);
+          dirty = false;
+        }
+        requestAnimationFrame(loop);
+      }
+
+      /* ---------- pointer in the 3D view: pick, orbit, zoom ---------- */
+      const raycaster = new THREE.Raycaster();
+      raycaster.params.Line.threshold = 0.3;
+      function pickAt(x, y) {
+        const r = canvas.getBoundingClientRect();
+        raycaster.setFromCamera(
+          new THREE.Vector2(
+            ((x - r.left) / r.width) * 2 - 1,
+            -((y - r.top) / r.height) * 2 + 1,
+          ),
+          camera,
+        );
+        for (const h of raycaster.intersectObjects(pickables, true)) {
+          let n = h.object;
+          while (n && !n.userData.id) {
+            n = n.parent;
+          }
+          if (n) {
+            return n.userData.id;
+          }
+        }
+        return null;
+      }
+      let drag = null;
+      canvas.addEventListener("pointerdown", (e) => {
+        canvas.setPointerCapture(e.pointerId);
+        drag = {
+          x0: e.clientX,
+          y0: e.clientY,
+          az0: cam.az,
+          el0: cam.el,
+          moved: false,
+          hit: pickAt(e.clientX, e.clientY),
+        };
+      });
+      canvas.addEventListener("pointermove", (e) => {
+        if (!drag) {
+          return;
+        }
+        const dx = e.clientX - drag.x0;
+        const dy = e.clientY - drag.y0;
+        if (Math.hypot(dx, dy) > 6) {
+          drag.moved = true;
+        }
+        if (drag.moved) {
+          tween = null;
+          cam.az = drag.az0 - dx * 0.008;
+          cam.el = clamp(drag.el0 + dy * 0.006, 0.3, 1.45);
+          dirty = true;
+        }
+      });
+      const endDrag = () => {
+        if (!drag) {
+          return;
+        }
+        const d = drag;
+        drag = null;
+        if (!d.moved && d.hit) {
+          select(d.hit, "view");
+        }
+      };
+      canvas.addEventListener("pointerup", endDrag);
+      canvas.addEventListener("pointercancel", () => {
+        drag = null;
+      });
+      canvas.addEventListener(
+        "wheel",
+        (e) => {
+          e.preventDefault();
+          tween = null;
+          cam.d = clamp(cam.d * Math.exp(e.deltaY * 0.0012), 2, 600);
+          dirty = true;
+        },
+        { passive: false },
+      );
+
+      /* ---------- panel contents ---------- */
+      const views = {};
+      let view3d = null;
+      const rowIcon = (it) =>
+        `<span class="ic" style="color:${KIND[it.kind].col}">${ic(KIND[it.kind].icon)}</span>`;
+      const kidHtml = (id, deep) =>
+        `<div class="kid${deep ? " deep" : ""}${ui.sel === id ? " sel" : ""}" data-sel="${id}">${rowIcon(ITEMS[id])}<span class="nm">${esc(ITEMS[id].name)}</span></div>`;
+      function treeHtml() {
+        return STATIONS.map((st) => {
+          const kids = st.open
+            ? st.kids
+                .map((k) => {
+                  const f = FOLDERS[k];
+                  if (!f) {
+                    return kidHtml(k, false);
+                  }
+                  return `<div class="folder" data-ftw="${f.id}"><button class="tw" type="button" tabindex="-1">${ic(f.open ? "chevD" : "chev")}</button><span class="ic" style="color:var(--acc-text)">${ic("folder")}</span><span class="nm">${esc(f.name)}</span><span class="meta">${f.kids.length}</span></div>${f.open ? f.kids.map((x) => kidHtml(x, true)).join("") : ""}`;
+                })
+                .join("")
+            : "";
+          return `<div class="head${ui.sel === st.id ? " sel" : ""}" data-sel="${st.id}"><button class="tw" type="button" data-tw="${st.id}" aria-label="${st.open ? "Fold" : "Unfold"}">${ic(st.open ? "chevD" : "chev")}</button><span class="n">${st.n}</span><span class="nm">${esc(st.name)}</span>${st.open ? "" : `<span class="meta">${itemsOf(st).length}</span>`}</div>${kids}`;
+        }).join("");
+      }
+      const field = (label, html) =>
+        `<div class="f"><span class="flabel">${label}</span>${html}</div>`;
+      const roNum = (v, unit) =>
+        `<span class="num ro"><span class="val">${v}</span><span class="unit">${unit}</span></span>`;
+      const rangeHtml = (f, v, min, max, step, unit, label) =>
+        `<div class="range"><input type="range" data-f="${f}" min="${min}" max="${max}" step="${step}" value="${v}" aria-label="${label}"><span class="num"><input class="val" data-f="${f}" value="${v}" inputmode="decimal" aria-label="${label}"><span class="unit">${unit}</span></span></div>`;
+      function lookHtml(it) {
+        if (it.kind === "picture" || it.kind === "character") {
+          const f = files.find((x) => x.id === it.file);
+          const opts = files
+            .filter((x) => x.kind === it.kind)
+            .map(
+              (x) =>
+                `<option value="${x.id}"${x.id === it.file ? " selected" : ""}>${esc(x.name)}</option>`,
+            )
+            .join("");
+          const now = f
+            ? `<span class="ic" style="color:${FKIND[f.kind].col}">${ic(FKIND[f.kind].icon)}</span><span class="fu-name">${esc(f.name)}</span>`
+            : `<span class="fu-none">No file yet</span>`;
+          return `<div class="fileuse">${now}</div>${field("Use a file", `<select class="tfield" data-f="file"><option value="">None</option>${opts}</select>`)}`;
+        }
+        if (it.kind === "stand") {
+          return `<textarea class="tfield" data-f="text" aria-label="Text on the stand">${esc(it.text)}</textarea>`;
+        }
+        const cols = ["#e07a6e", "#e9a23b", "#7fb77a", "#4f8fe8", "#b7a7d6"];
+        return field(
+          "Colour",
+          `<div class="swatches">${cols.map((c) => `<button type="button" data-col="${c}" style="background:${c}" aria-label="Colour ${c}" aria-pressed="${it.col === c}"></button>`).join("")}</div>`,
+        );
+      }
+      const placeHtml = (p) =>
+        `<section class="isec"><h4>Place</h4>${field("East", roNum(p.x.toFixed(1), "m"))}${field("North", roNum((-p.z).toFixed(1), "m"))}</section>`;
+      function detailsHtml() {
+        const id = ui.sel;
+        if (!id) {
+          return `<div class="empty">Select a station or an item, in the list or in the 3D view.</div>`;
+        }
+        if (isStation(id)) {
+          const st = stById[id];
+          const rows = itemsOf(st)
+            .map(
+              (k) =>
+                `<div class="kid" data-sel="${k}">${rowIcon(ITEMS[k])}<span class="nm">${esc(ITEMS[k].name)}</span></div>`,
+            )
+            .join("");
+          return `<div class="dh"><span class="hic"><span class="n">${st.n}</span></span><input class="ttlin" data-f="name" value="${esc(st.name)}" aria-label="Name"></div>
+            <div class="sub">Station ${st.n} of ${STATIONS.length}</div>
+            ${placeHtml(worldOf(id))}
+            <section class="isec"><h4>Arrival</h4>${field("Radius", rangeHtml("radius", st.radius, 3, 40, 1, "m", "Radius"))}</section>
+            <section class="isec"><h4>Contents</h4><div class="clist">${rows}</div></section>`;
+        }
+        const it = ITEMS[id];
+        const k = KIND[it.kind];
+        const st = stById[it.st];
+        return `<div class="dh"><span class="hic" style="color:${k.col}">${ic(k.icon)}</span><input class="ttlin" data-f="name" value="${esc(it.name)}" aria-label="Name"></div>
+          <div class="sub">${k.label} in <button class="lnk" type="button" data-sel="${st.id}">${st.n} ${esc(st.name)}</button></div>
+          ${placeHtml(worldOf(id))}
+          <section class="isec"><h4>Size and heading</h4>${field("Size", rangeHtml("size", it.size.toFixed(2), 0.4, 3, 0.05, "x", "Size"))}${it.kind === "pin" ? "" : field("Heading", rangeHtml("h", Math.round(it.h), -180, 180, 1, "°", "Heading"))}</section>
+          <section class="isec"><h4>Look</h4>${lookHtml(it)}</section>
+          <section class="isec"><button class="btn" type="button" data-act="nodelete">${ic("trash")}Delete</button></section>`;
+      }
+      function stateLine(f) {
+        if (f.state === "processing") {
+          const pc = Math.round(f.progress * 100);
+          return `<span class="fstate"><span class="pc">${pc} %</span><span class="bar"><i style="width:${pc}%"></i></span><span>usable now</span></span>`;
+        }
+        if (f.state === "queued") {
+          return `<span class="fstate">${ic("clock")}<span>Waiting, usable now</span></span>`;
+        }
+        const gain = Math.round((1 - f.after / f.before) * 100);
+        return `<span class="fstate ready">${ic("check")}<span>${fmt(f.before)} → ${fmt(f.after)}</span><span>-${gain} %</span></span>`;
+      }
+      function filesHtml() {
+        const busy = busyFiles();
+        const rows = files
+          .map((f) => {
+            const k = FKIND[f.kind];
+            const n = usesOf(f.id);
+            const html = `<div class="frow${f.fresh ? " fresh" : ""}" data-fid="${f.id}"><span class="fthumb" style="color:${k.col}">${ic(k.icon)}</span><span class="fmain"><span class="ftop"><span class="fname">${esc(f.name)}</span><span class="uses">${n ? `Used in ${n}` : "Not used"}</span></span><span class="fmeta">${k.label}${f.ext ? ` · ${f.ext}` : ""} · ${fmt(f.before)}</span>${stateLine(f)}</span></div>`;
+            f.fresh = false;
+            return html;
+          })
+          .join("");
+        const sum = busy.length
+          ? `<b>Making ${busy.length} of ${files.length} smaller</b>, every file is usable now.`
+          : `<b>${files.length} files ready.</b>`;
+        return `<div class="fsum">${sum}</div>${rows}<div class="fadd"><button class="btn" type="button" data-act="simdrop">${ic("upload")}Add a file</button><span>or drop files anywhere</span></div>`;
+      }
+      const problemsHtml = () =>
+        PROBLEMS.map(
+          (p) =>
+            `<div class="prow"><span class="sev">${ic("alert")}</span><span class="what">${esc(p.text)}</span><button class="lnk" type="button" data-sel="${p.sel}">Show</button></div>`,
+        ).join("") +
+        `<div class="prow"><span class="sev" style="color:var(--muted)">${ic("clock")}</span><span class="what">Files are being made smaller; the tour can be saved meanwhile.</span></div>`;
+
+      function renderList() {
+        const t = views.list && $(".tree", views.list);
+        if (t) {
+          t.innerHTML = treeHtml();
+        }
+      }
+      function renderDetails() {
+        if (views.details) {
+          views.details.innerHTML = detailsHtml();
+        }
+      }
+      function renderFiles() {
+        if (views.files) {
+          const top = views.files.scrollTop;
+          views.files.innerHTML = filesHtml();
+          views.files.scrollTop = top;
+        }
+      }
+      function renderBadges(pop) {
+        const busy = busyFiles().length;
+        for (const b of $$('[data-badge="files"]')) {
+          b.className = `badge${busy ? " busy" : ""}${pop ? " pop" : ""}`;
+          b.innerHTML = busy ? `<i class="spin"></i>${busy}` : "";
+        }
+        for (const b of $$('[data-badge="problems"]')) {
+          b.className = "badge warn";
+          b.textContent = String(PROBLEMS.length);
+        }
+      }
+      function renderAll() {
+        renderList();
+        renderDetails();
+        renderFiles();
+        renderBadges(false);
+        updateSelVisual();
+      }
+
+      /* ---------- the panels as dockview components ---------- */
+      const TITLES = {
+        view3d: ["3D view", "view"],
+        list: ["Tour", "list"],
+        details: ["Details", "details"],
+        files: ["Files", "files"],
+        problems: ["Problems", "alert"],
+      };
+      function makePanel(name) {
+        const el = document.createElement("div");
+        el.dataset.panel = name;
+        if (name === "view3d") {
+          el.className = "v3";
+          el.innerHTML = `<div class="guide"></div><span class="vsize"></span><div class="ctl"><div class="pill"><button type="button" data-cam="frame" aria-label="Frame the selection">${ic("frame")}</button></div><div class="pill"><button type="button" data-cam="north" aria-label="Face north">${ic("compass")}</button></div><div class="pill"><button type="button" data-cam="in" aria-label="Zoom in">${ic("plus")}</button><button type="button" data-cam="out" aria-label="Zoom out">${ic("minus")}</button></div></div><div class="toast" role="status"></div>`;
+          el.prepend(canvas);
+          view3d = el;
+          lastSize = "";
+        } else {
+          el.className = "pane";
+          if (name === "list") {
+            el.innerHTML = `<div class="tsearch"><input type="search" placeholder="Find in the tour" aria-label="Find in the tour"></div><div class="cards tree"></div>`;
+          }
+          views[name] = el;
+        }
+        return {
+          element: el,
+          init() {
+            if (name === "list") {
+              renderList();
+            } else if (name === "details") {
+              renderDetails();
+            } else if (name === "files") {
+              renderFiles();
+            } else if (name === "problems") {
+              el.innerHTML = problemsHtml();
+            }
+          },
+          dispose() {
+            if (views[name] === el) {
+              delete views[name];
+            }
+          },
+        };
+      }
+      function makeTab() {
+        const el = document.createElement("div");
+        el.className = "tb";
+        return {
+          element: el,
+          init(params) {
+            const id = params.api.id;
+            const [title, icon] = TITLES[id] || [params.title, "details"];
+            el.dataset.tab = id;
+            el.innerHTML = `${ic(icon)}<span class="lbl">${esc(title)}</span>${id === "files" || id === "problems" ? `<span class="badge" data-badge="${id}"></span>` : ""}`;
+            renderBadges(false);
+            // A tap on a tab of a folded group unfolds it (VS Code's rail).
+            el.addEventListener("click", () => {
+              const g = params.api.group;
+              if (g && folded.has(g.id)) {
+                unfold(g);
+              }
+            });
+          },
+        };
+      }
+
+      /* ---------- folding a docked group to a rail ---------- */
+      const RAIL = () => (ui.mode === "desk" ? 34 : 44);
+      const folded = new Map();
+      const hasView = (g) => g.panels.some((p) => p.id === "view3d");
+      function foldAxis(g) {
+        const box = g.element.getBoundingClientRect();
+        const dockBox = $("#dock").getBoundingClientRect();
+        return box.height >= dockBox.height * 0.55 ? "width" : "height";
+      }
+      function fold(g, axis, prev) {
+        if (
+          g.api.location.type !== "grid" ||
+          hasView(g) ||
+          g.api.isCollapsed()
+        ) {
+          return;
+        }
+        const box = g.element.getBoundingClientRect();
+        const ax = axis || foldAxis(g);
+        const size = prev || (ax === "width" ? box.width : box.height);
+        folded.set(g.id, { axis: ax, prev: size });
+        const r = RAIL();
+        keepSizes(g, () => {
+          if (ax === "width") {
+            g.api.setHeaderPosition("left");
+            g.api.setConstraints({ minimumWidth: r, maximumWidth: r });
+            g.api.setSize({ width: r });
+          } else {
+            g.api.setConstraints({ minimumHeight: r, maximumHeight: r });
+            g.api.setSize({ height: r });
+          }
+        });
+      }
+      function unfold(g) {
+        const f = folded.get(g.id);
+        if (!f) {
+          return;
+        }
+        folded.delete(g.id);
+        // The old size is pinned as min = max, so the grid has to honour it,
+        // then released once laid out: a plain setSize here is overruled by
+        // the relayout the constraint change starts.
+        const relax = () =>
+          g.api.setConstraints(
+            f.axis === "width"
+              ? { minimumWidth: 140, maximumWidth: Number.MAX_SAFE_INTEGER }
+              : { minimumHeight: 90, maximumHeight: Number.MAX_SAFE_INTEGER },
+          );
+        keepSizes(
+          g,
+          () => {
+            if (f.axis === "width") {
+              const w = Math.max(200, f.prev);
+              g.api.setHeaderPosition("top");
+              g.api.setConstraints({ minimumWidth: w, maximumWidth: w });
+              g.api.setSize({ width: w });
+            } else {
+              const h = Math.max(120, f.prev);
+              g.api.setConstraints({ minimumHeight: h, maximumHeight: h });
+              g.api.setSize({ height: h });
+            }
+          },
+          () => afterLayout(relax),
+        );
+      }
+
+      /* ---------- the group header buttons: fold, float, dock ---------- */
+      const actionBars = new Set();
+      function viewGroup() {
+        const p = dock.getPanel("view3d");
+        return p ? p.group : null;
+      }
+      const afterLayout = (fn) => setTimeout(fn, 60);
+      /** Give groups an exact size: pinned for a moment as min = max on
+       * their axis, so the grid takes the space from the 3D view, then
+       * released. Entries are [panel id, "width" | "height", px]. */
+      function pinSizes(list) {
+        afterLayout(() => {
+          const pinned = [];
+          for (const [id, axis, px] of list) {
+            const p = dock.getPanel(id);
+            if (!p || p.group.api.location.type !== "grid") {
+              continue;
+            }
+            const g = p.group;
+            if (axis === "width") {
+              g.api.setConstraints({ minimumWidth: px, maximumWidth: px });
+              g.api.setSize({ width: px });
+            } else {
+              g.api.setConstraints({ minimumHeight: px, maximumHeight: px });
+              g.api.setSize({ height: px });
+            }
+            pinned.push([g, axis]);
+          }
+          afterLayout(() => {
+            for (const [g, axis] of pinned) {
+              if (folded.has(g.id)) {
+                continue;
+              }
+              g.api.setConstraints(
+                axis === "width"
+                  ? { minimumWidth: 140, maximumWidth: Number.MAX_SAFE_INTEGER }
+                  : {
+                      minimumHeight: 90,
+                      maximumHeight: Number.MAX_SAFE_INTEGER,
+                    },
+              );
+            }
+          });
+        });
+      }
+      /** Run a layout change, then give every docked side group its old
+       * size back, so the space that is freed or taken comes from the 3D
+       * view and not from whichever group the grid would pick. */
+      function keepSizes(skip, change, after) {
+        const v = viewGroup();
+        const sizes = dock.groups
+          .filter(
+            (x) => x !== v && x !== skip && x.api.location.type === "grid",
+          )
+          .map((x) =>
+            foldAxis(x) === "width"
+              ? [x, { width: x.api.width }]
+              : [x, { height: x.api.height }],
+          );
+        change();
+        // The grid lays out after the change; a size set earlier is lost.
+        afterLayout(() => {
+          // Only along its own axis: a group below the 3D view keeps its
+          // height, a side column its width.
+          for (const [x, size] of sizes) {
+            if (dock.groups.includes(x) && x.api.location.type === "grid") {
+              x.api.setSize(size);
+            }
+          }
+          if (after) {
+            after();
+          }
+          refreshActions();
+        });
+      }
+      function floatGroup(g) {
+        const v = viewGroup();
+        const vb = v ? v.element.getBoundingClientRect() : null;
+        const db = $("#dock").getBoundingClientRect();
+        const w = Math.min(300, db.width * 0.6);
+        const h = Math.min(360, db.height * 0.7);
+        const x = vb ? vb.right - db.left - w - 12 : 40;
+        const y = vb ? vb.top - db.top + 12 : 40;
+        folded.delete(g.id);
+        keepSizes(g, () =>
+          dock.addFloatingGroup(g, {
+            x: Math.max(8, x),
+            y: Math.max(8, y),
+            width: w,
+            height: h,
+          }),
+        );
+      }
+      function dockGroup(g) {
+        const v = viewGroup();
+        if (!v || v === g) {
+          return;
+        }
+        const ids = g.panels.map((p) => p.id);
+        // Upright on a phone a group docks below the 3D view, else beside.
+        const port = ui.mode === "port";
+        const db = $("#dock").getBoundingClientRect();
+        keepSizes(
+          g,
+          () => g.api.moveTo({ group: v, position: port ? "bottom" : "right" }),
+          () =>
+            pinSizes([
+              port
+                ? [ids[0], "height", Math.round(db.height * 0.46)]
+                : [ids[0], "width", ui.mode === "desk" ? 300 : 280],
+            ]),
+        );
+      }
+      function makeActions(group) {
+        const el = document.createElement("div");
+        el.className = "gact";
+        let key = "";
+        const bar = {
+          group,
+          update() {
+            const loc = group.api.location.type;
+            const isFolded = folded.has(group.id);
+            const edge = loc === "edge";
+            const k = `${loc}|${isFolded}|${hasView(group)}|${foldAxis(group)}`;
+            if (k === key) {
+              return;
+            }
+            key = k;
+            let html = "";
+            if (loc === "grid" && !hasView(group)) {
+              html += isFolded
+                ? `<button type="button" data-ga="unfold" title="Unfold" aria-label="Unfold">${ic("unfold")}</button>`
+                : `<button type="button" data-ga="fold" title="Fold" aria-label="Fold">${ic(foldAxis(group) === "width" ? "fold" : "foldV")}</button>`;
+            }
+            if (!edge && !isFolded) {
+              html +=
+                loc === "floating"
+                  ? `<button type="button" data-ga="dock" title="Dock beside the 3D view" aria-label="Dock">${ic("dock")}</button>`
+                  : hasView(group)
+                    ? ""
+                    : `<button type="button" data-ga="float" title="Float over the 3D view" aria-label="Float">${ic("float")}</button>`;
+            }
+            el.innerHTML = html;
+          },
+        };
+        el.addEventListener("click", (e) => {
+          const b = e.target.closest("[data-ga]");
+          if (!b) {
+            return;
+          }
+          const a = b.dataset.ga;
+          if (a === "fold") {
+            fold(group);
+          } else if (a === "unfold") {
+            unfold(group);
+          } else if (a === "float") {
+            floatGroup(group);
+          } else if (a === "dock") {
+            dockGroup(group);
+          }
+        });
+        el.addEventListener("pointerdown", (e) => e.stopPropagation());
+        actionBars.add(bar);
+        return {
+          element: el,
+          init() {
+            bar.update();
+          },
+          dispose() {
+            actionBars.delete(bar);
+          },
+        };
+      }
+      function refreshActions() {
+        for (const b of actionBars) {
+          if (dock.groups.includes(b.group)) {
+            b.update();
+          }
+        }
+        const v = viewGroup();
+        if (v) {
+          // The centre: nothing is dropped onto it as a tab (splitting beside
+          // it still works), and on a phone its own tab strip is hidden.
+          if (v.api.locked !== true) {
+            v.api.locked = true;
+          }
+          const hide =
+            ui.mode !== "desk" &&
+            v.panels.length === 1 &&
+            v.api.location.type === "grid";
+          if (v.header.hidden !== hide) {
+            v.header.hidden = hide;
+          }
+        }
+      }
+
+      /* ---------- a splitter drag: count resizes, optionally hold ---------- */
+      document.addEventListener(
+        "pointerdown",
+        (e) => {
+          if (!e.target.closest(".dv-sash")) {
+            return;
+          }
+          stats.sash = { t0: performance.now(), resizes: 0, frames: 0, ms: [] };
+          if (stats.holdOnDrag) {
+            canvas.style.width = `${cw()}px`;
+            canvas.style.height = `${ch()}px`;
+          }
+        },
+        true,
+      );
+      function endSash() {
+        if (!stats.sash) {
+          return;
+        }
+        const d = stats.sash;
+        stats.sash = null;
+        const held = canvas.style.width !== "";
+        canvas.style.width = "";
+        canvas.style.height = "";
+        const secs = (performance.now() - d.t0) / 1000;
+        const ms = d.ms.slice().sort((a, b) => a - b);
+        stats.last = {
+          held,
+          seconds: Number(secs.toFixed(2)),
+          resizes: d.resizes,
+          frames: d.frames,
+          perSecond: Number((d.resizes / Math.max(secs, 0.001)).toFixed(1)),
+          medianMs: ms.length ? Number(ms[ms.length >> 1].toFixed(2)) : 0,
+          maxMs: ms.length ? Number(ms[ms.length - 1].toFixed(2)) : 0,
+        };
+        $("#resizeHint").textContent = `Last splitter drag: ${stats.last.resizes} resizes of the 3D view in ${stats.last.seconds} s${held ? " (held, one fit on release)" : `, ${stats.last.medianMs} ms each`}.`;
+        if (held) {
+          requestAnimationFrame(() => frameSel(true));
+        }
+      }
+      window.addEventListener("pointerup", endSash);
+      window.addEventListener("pointercancel", endSash);
+
+      /* ---------- the dock ---------- */
+      const THEME = {
+        name: "tour",
+        className: "dockview-theme-tour",
+        colorScheme: "dark",
+        dndTabIndicator: "line",
+        dndOverlayBorder: "2px solid rgb(233 162 59 / 70%)",
+      };
+      const dock = createDockview($("#dock"), {
+        theme: THEME,
+        defaultTabComponent: "tb",
+        createComponent: ({ name }) => makePanel(name),
+        createTabComponent: () => makeTab(),
+        createRightHeaderActionComponent: (group) => makeActions(group),
+        getTabContextMenuItems: ({ panel }) =>
+          panel.id === "view3d" ? ["maximize"] : ["float", "maximize"],
+        floatingGroupBounds: "boundedWithinViewport",
+        noPanelsOverlay: "emptyGroup",
+      });
+
+      const add = (id, position, extra) =>
+        dock.addPanel({
+          id,
+          component: id,
+          title: TITLES[id][0],
+          renderer: id === "view3d" ? "always" : undefined,
+          ...(position ? { position } : {}),
+          ...(extra || {}),
+        });
+      function clearDock() {
+        for (const pos of ["left", "right", "top", "bottom"]) {
+          if (dock.getEdgeGroup(pos)) {
+            dock.removeEdgeGroup(pos);
+          }
+        }
+        dock.clear();
+        folded.clear();
+      }
+      const PRESETS = {
+        /* Panel prototype 3: list, 3D view, one right group, problems below. */
+        right() {
+          add("view3d");
+          add(
+            "list",
+            { referencePanel: "view3d", direction: "left" },
+            { initialWidth: 248 },
+          );
+          add(
+            "details",
+            { referencePanel: "view3d", direction: "right" },
+            { initialWidth: 300 },
+          );
+          add(
+            "files",
+            { referencePanel: "details", direction: "within" },
+            { inactive: true },
+          );
+          add(
+            "problems",
+            { referencePanel: "view3d", direction: "below" },
+            { initialHeight: 150 },
+          );
+        },
+        /* Panel prototype 1/2: details and files side by side. */
+        beside() {
+          add("view3d");
+          add(
+            "list",
+            { referencePanel: "view3d", direction: "left" },
+            { initialWidth: 230 },
+          );
+          add(
+            "details",
+            { referencePanel: "view3d", direction: "right" },
+            { initialWidth: 280 },
+          );
+          add(
+            "files",
+            { referencePanel: "details", direction: "right" },
+            { initialWidth: 260 },
+          );
+          // A split halves the group it splits. Both widths are pinned for a
+          // moment (min = max), which leaves the 3D view the only group the
+          // grid can take the space from, then released.
+          pinSizes([
+            ["details", "width", 280],
+            ["files", "width", 260],
+          ]);
+          add(
+            "problems",
+            { referencePanel: "view3d", direction: "below" },
+            { initialHeight: 140 },
+          );
+        },
+        below() {
+          add("view3d");
+          add(
+            "list",
+            { referencePanel: "view3d", direction: "left" },
+            { initialWidth: 248 },
+          );
+          add(
+            "details",
+            { referencePanel: "view3d", direction: "right" },
+            { initialWidth: 300 },
+          );
+          add(
+            "files",
+            { referencePanel: "details", direction: "below" },
+            { initialHeight: 260 },
+          );
+          add(
+            "problems",
+            { referencePanel: "view3d", direction: "below" },
+            { initialHeight: 140 },
+          );
+        },
+        /* The library's edge groups: fixed sidebars that fold to a strip. */
+        sidebars() {
+          add("view3d");
+          const phone = ui.mode !== "desk";
+          if (ui.mode === "port") {
+            // Upright, two side bars leave no 3D view: one bar at the bottom.
+            const db = $("#dock").getBoundingClientRect();
+            dock.addEdgeGroup("bottom", {
+              id: "edge-bottom",
+              initialSize: Math.round(db.height * 0.45),
+              minimumSize: 120,
+            });
+            add("details", { referenceGroup: "edge-bottom" });
+            for (const id of ["list", "files", "problems"]) {
+              add(id, { referenceGroup: "edge-bottom" }, { inactive: true });
+            }
+            return;
+          }
+          dock.addEdgeGroup("left", {
+            id: "edge-left",
+            initialSize: phone ? 200 : 248,
+            minimumSize: 140,
+          });
+          dock.addEdgeGroup("right", {
+            id: "edge-right",
+            initialSize: phone ? 260 : 300,
+            minimumSize: 180,
+          });
+          add("list", { referenceGroup: "edge-left" });
+          add("details", { referenceGroup: "edge-right" });
+          add("files", { referenceGroup: "edge-right" }, { inactive: true });
+          if (phone) {
+            add(
+              "problems",
+              { referenceGroup: "edge-right" },
+              { inactive: true },
+            );
+          } else {
+            dock.addEdgeGroup("bottom", {
+              id: "edge-bottom",
+              initialSize: 150,
+              minimumSize: 80,
+            });
+            add("problems", { referenceGroup: "edge-bottom" });
+          }
+        },
+        /* A phone: the 3D view plus one group holding every panel as a tab. */
+        phone() {
+          add("view3d");
+          const port = ui.mode === "port";
+          const db = $("#dock").getBoundingClientRect();
+          add(
+            "details",
+            { referencePanel: "view3d", direction: port ? "below" : "right" },
+            port
+              ? { initialHeight: Math.round(db.height * 0.46) }
+              : { initialWidth: Math.round(Math.min(320, db.width * 0.38)) },
+          );
+          add(
+            "list",
+            { referencePanel: "details", direction: "within", index: 0 },
+            { inactive: true },
+          );
+          add(
+            "files",
+            { referencePanel: "details", direction: "within" },
+            { inactive: true },
+          );
+          add(
+            "problems",
+            { referencePanel: "details", direction: "within" },
+            { inactive: true },
+          );
+        },
+      };
+      const defaultPreset = () => (ui.mode === "desk" ? "right" : "phone");
+
+      /* ---------- saving and restoring ---------- */
+      const KEY = "editor-docking-1-dockview.layout.";
+      let restoring = false;
+      function save() {
+        if (restoring) {
+          return;
+        }
+        try {
+          const data = {
+            v: 1,
+            preset: ui.preset,
+            dock: dock.toJSON(),
+            folded: [...folded].map(([id, f]) => ({ id, ...f })),
+            // Docked group sizes: loading clamps a folded rail to the
+            // library's minimum, which would take space from its neighbours.
+            sizes: dock.groups
+              .filter(
+                (g) =>
+                  g.api.location.type === "grid" &&
+                  !hasView(g) &&
+                  !folded.has(g.id),
+              )
+              .map((g) => {
+                const axis = foldAxis(g);
+                return [
+                  g.panels[0].id,
+                  axis,
+                  Math.round(axis === "width" ? g.api.width : g.api.height),
+                ];
+              }),
+          };
+          localStorage.setItem(KEY + ui.mode, JSON.stringify(data));
+        } catch {
+          // Private windows and blocked storage: the layout is not kept.
+        }
+        $("#saveHint").textContent =
+          `Saved for ${MODE_NAME[ui.mode]}; it comes back after a reload.`;
+      }
+      function load() {
+        try {
+          const raw = localStorage.getItem(KEY + ui.mode);
+          return raw ? JSON.parse(raw) : null;
+        } catch {
+          return null;
+        }
+      }
+      function forget() {
+        try {
+          localStorage.removeItem(KEY + ui.mode);
+        } catch {
+          // Nothing to forget when storage is unavailable.
+        }
+      }
+      const NEEDED = ["view3d", "list", "details", "files", "problems"];
+      function applyPreset(name) {
+        restoring = true;
+        clearDock();
+        ui.preset = name;
+        PRESETS[name]();
+        restoring = false;
+        markPreset();
+        renderAll();
+        save();
+        requestAnimationFrame(() => frameSel(true));
+      }
+      /** Restore the saved layout of this form factor; anything unreadable or
+       * missing a panel falls back to the default arrangement. */
+      function restoreOrDefault() {
+        const saved = load();
+        if (saved && saved.v === 1 && saved.dock) {
+          restoring = true;
+          try {
+            clearDock();
+            dock.fromJSON(saved.dock);
+            const ok = NEEDED.every((id) => dock.getPanel(id));
+            if (!ok) {
+              throw new Error("a panel is missing");
+            }
+            ui.preset = saved.preset || "custom";
+            restoring = false;
+            requestAnimationFrame(() => {
+              for (const f of saved.folded || []) {
+                const g = dock.groups.find((x) => x.id === f.id);
+                if (g) {
+                  fold(g, f.axis, f.prev);
+                }
+              }
+              if (Array.isArray(saved.sizes) && saved.folded?.length) {
+                pinSizes(saved.sizes);
+              }
+            });
+            markPreset();
+            renderAll();
+            return "restored";
+          } catch {
+            restoring = false;
+            forget();
+          }
+        }
+        applyPreset(defaultPreset());
+        return "default";
+      }
+      function markPreset() {
+        for (const b of $$("[data-preset]")) {
+          b.setAttribute(
+            "aria-pressed",
+            String(b.dataset.preset === ui.preset),
+          );
+        }
+      }
+      let saveTimer = 0;
+      dock.onDidLayoutChange(() => {
+        refreshActions();
+        if (!restoring) {
+          clearTimeout(saveTimer);
+          saveTimer = setTimeout(save, 250);
+        }
+      });
+      // Any tab that becomes active in a folded group unfolds it.
+      dock.onDidActivePanelChange((e) => {
+        const p = e && (e.panel || e);
+        const g = p && p.group;
+        if (g && folded.has(g.id)) {
+          unfold(g);
+        }
+      });
+      /* A floating group over the 3D view: frame the selection again in
+       * what is left, once the float has settled. */
+      let reframeTimer = 0;
+      function scheduleReframe() {
+        clearTimeout(reframeTimer);
+        reframeTimer = setTimeout(() => {
+          if (!stats.sash) {
+            frameSel(true);
+          }
+        }, 220);
+      }
+      let hadFloat = false;
+      dock.onDidLayoutChange(() => {
+        const hasFloat = dock.groups.some(
+          (g) => g.api.location.type === "floating",
+        );
+        if (hasFloat || hadFloat) {
+          scheduleReframe();
+        }
+        hadFloat = hasFloat;
+      });
+      dock.onDidMovePanel(() => {
+        if (!restoring && ui.preset !== "custom") {
+          ui.preset = "custom";
+          markPreset();
+        }
+      });
+
+      /* ---------- selecting ---------- */
+      function showPanel(id) {
+        const p = dock.getPanel(id);
+        if (p && !p.api.isVisible) {
+          p.api.setActive();
+        }
+      }
+      function select(id, from) {
+        ui.sel = id;
+        if (!isStation(id)) {
+          stById[ITEMS[id].st].open = true;
+        }
+        const d = dock.getPanel("details");
+        const l = dock.getPanel("list");
+        const sameGroup = d && l && d.group === l.group;
+        if (!(sameGroup && from === "list")) {
+          showPanel("details");
+        }
+        renderAll();
+        frameSel(true);
+      }
+
+      /* ---------- events inside the panels ---------- */
+      document.addEventListener("click", (e) => {
+        const t = e.target;
+        const pane = t.closest("[data-panel]");
+        if (t.closest('[data-act="simdrop"]')) {
+          simDrop();
+          return;
+        }
+        if (!pane) {
+          return;
+        }
+        const tw = t.closest("[data-tw]");
+        if (tw) {
+          stById[tw.dataset.tw].open = !stById[tw.dataset.tw].open;
+          renderList();
+          return;
+        }
+        const ftw = t.closest("[data-ftw]");
+        if (ftw) {
+          FOLDERS[ftw.dataset.ftw].open = !FOLDERS[ftw.dataset.ftw].open;
+          renderList();
+          return;
+        }
+        const sel = t.closest("[data-sel]");
+        if (sel) {
+          select(sel.dataset.sel, pane.dataset.panel);
+          return;
+        }
+        const col = t.closest("[data-col]");
+        if (col) {
+          ITEMS[ui.sel].col = col.dataset.col;
+          groups3d[ui.sel].children[1].material.color.set(col.dataset.col);
+          dirty = true;
+          renderDetails();
+          return;
+        }
+        if (t.closest('[data-act="nodelete"]')) {
+          toast("Deleting is not part of this prototype.");
+          return;
+        }
+        const c = t.closest("[data-cam]");
+        if (c) {
+          const to = { ...cam };
+          if (c.dataset.cam === "frame") {
+            frameSel(true);
+            return;
+          }
+          if (c.dataset.cam === "north") {
+            to.az = Math.round(cam.az / (Math.PI * 2)) * Math.PI * 2;
+          } else {
+            to.d = clamp(cam.d * (c.dataset.cam === "in" ? 0.7 : 1.4), 2, 600);
+          }
+          goTo(to, 450);
+        }
+      });
+      const LIMITS = { h: [-180, 180], size: [0.4, 3], radius: [3, 40] };
+      document.addEventListener("input", (e) => {
+        const t = e.target;
+        if (!t.closest('[data-panel="details"]') || !ui.sel) {
+          return;
+        }
+        const f = t.dataset.f;
+        const m = isStation(ui.sel) ? stById[ui.sel] : ITEMS[ui.sel];
+        if (f === "name" || f === "text") {
+          m[f] = t.value;
+          if (f === "name") {
+            renderList();
+          }
+          return;
+        }
+        if (!LIMITS[f]) {
+          return;
+        }
+        const v = parseFloat(t.value);
+        if (!Number.isFinite(v)) {
+          return;
+        }
+        m[f] = clamp(v, LIMITS[f][0], LIMITS[f][1]);
+        const g = groups3d[ui.sel];
+        if (f === "radius") {
+          g.userData.ring.scale.setScalar(m.radius);
+        } else if (f === "size") {
+          g.scale.setScalar(m.size);
+        } else if (f === "h") {
+          g.rotation.y = m.h * DEG;
+        }
+        updateSelVisual();
+        for (const el of $$(`[data-panel="details"] [data-f="${f}"]`)) {
+          if (el !== t) {
+            el.value =
+              f === "size" ? m.size.toFixed(2) : String(Math.round(m[f]));
+          }
+        }
+      });
+      document.addEventListener("change", (e) => {
+        const t = e.target;
+        if (t.dataset.f !== "file" || !ui.sel || isStation(ui.sel)) {
+          return;
+        }
+        ITEMS[ui.sel].file = t.value || null;
+        renderDetails();
+        renderFiles();
+      });
+
+      /* ---------- files arriving ---------- */
+      let toastTimer = 0;
+      function toast(text) {
+        const t = view3d && $(".toast", view3d);
+        if (!t) {
+          return;
+        }
+        t.textContent = text;
+        t.classList.add("show");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => t.classList.remove("show"), 3000);
+      }
+      function addFile(name, size) {
+        const ext = (name.split(".").pop() || "").toLowerCase();
+        const before = size || (2 + ((dropN * 7) % 18)) * 1e6;
+        files.unshift({
+          id: `n${nextId++}`,
+          kind: EXT[ext] || "picture",
+          name,
+          ext: ext.toUpperCase(),
+          before,
+          after: before * 0.21,
+          state: "queued",
+          progress: 0,
+          fresh: true,
+        });
+      }
+      function announce(names) {
+        const ae = document.activeElement;
+        const typing =
+          ae &&
+          ae.closest('[data-panel="details"]') &&
+          ae.matches("input:not([type=range]), textarea, select");
+        renderFiles();
+        renderBadges(true);
+        const p = dock.getPanel("files");
+        if (!typing && p && !p.api.isVisible && !folded.has(p.group.id)) {
+          p.api.setActive();
+        }
+        if (!p || !p.api.isVisible) {
+          toast(`${names} went to Files.`);
+        }
+      }
+      function simDrop() {
+        const name = SAMPLE_DROPS[dropN % SAMPLE_DROPS.length];
+        dropN++;
+        addFile(name, 0);
+        announce(name);
+      }
+      window.addEventListener("dragover", (e) => {
+        if ([...(e.dataTransfer?.types || [])].includes("Files")) {
+          e.preventDefault();
+        }
+      });
+      window.addEventListener("drop", (e) => {
+        const list = [...(e.dataTransfer?.files || [])];
+        if (!list.length) {
+          return;
+        }
+        e.preventDefault();
+        for (const f of list) {
+          addFile(f.name, f.size);
+        }
+        announce(list.length === 1 ? list[0].name : `${list.length} files`);
+      });
+      function tick() {
+        const cur = files.find((f) => f.state === "processing");
+        if (!cur) {
+          const next = files.findLast((f) => f.state === "queued");
+          if (next) {
+            next.state = "processing";
+            renderFiles();
+          }
+          return;
+        }
+        cur.progress = Math.min(1, cur.progress + 0.009);
+        if (cur.progress >= 1) {
+          cur.state = "ready";
+          renderFiles();
+          renderBadges(false);
+          return;
+        }
+        const row = views.files && $(`[data-fid="${cur.id}"]`, views.files);
+        if (row) {
+          const pc = Math.round(cur.progress * 100);
+          const bar = $(".bar i", row);
+          const t = $(".pc", row);
+          if (bar) {
+            bar.style.width = `${pc}%`;
+          }
+          if (t) {
+            t.textContent = `${pc} %`;
+          }
+        }
+      }
+      setInterval(tick, 110);
+
+      /* ---------- top bar ---------- */
+      const MODE_NAME = {
+        desk: "this desktop size",
+        land: "a phone held sideways",
+        port: "a phone held upright",
+      };
+      const menu = $("#layoutMenu");
+      const setMenu = (open) => {
+        menu.hidden = !open;
+        $("#layoutBtn").setAttribute("aria-expanded", String(open));
+      };
+      $("#layoutBtn").addEventListener("click", (e) => {
+        e.stopPropagation();
+        setMenu(menu.hidden);
+      });
+      menu.addEventListener("click", (e) => {
+        const p = e.target.closest("[data-preset]");
+        if (p) {
+          applyPreset(p.dataset.preset);
+          setMenu(false);
+          return;
+        }
+        const hold = e.target.closest('[data-act="hold"]');
+        if (hold) {
+          stats.holdOnDrag = !stats.holdOnDrag;
+          hold.setAttribute("aria-checked", String(stats.holdOnDrag));
+          try {
+            localStorage.setItem(KEY + "hold", stats.holdOnDrag ? "1" : "0");
+          } catch {
+            // The choice is not kept without storage.
+          }
+          return;
+        }
+        if (e.target.closest('[data-act="reset"]')) {
+          forget();
+          applyPreset(defaultPreset());
+          setMenu(false);
+        }
+      });
+      document.addEventListener("pointerdown", (e) => {
+        if (!menu.hidden && !e.target.closest("#layoutMenu, #layoutBtn")) {
+          setMenu(false);
+        }
+      });
+      $("#notesBtn").addEventListener("click", () => {
+        const n = $("#notes");
+        n.hidden = !n.hidden;
+        $("#notesBtn").setAttribute("aria-expanded", String(!n.hidden));
+        renderCheck();
+      });
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          $("#notes").hidden = true;
+          setMenu(false);
+        }
+      });
+
+      /* ---------- form factor ---------- */
+      const modeOf = () => {
+        const W = innerWidth;
+        const H = innerHeight;
+        return W <= 700 || H <= 500 ? (W > H ? "land" : "port") : "desk";
+      };
+      function applyMode() {
+        ui.mode = modeOf();
+        document.body.classList.toggle("phone", ui.mode !== "desk");
+        document.body.classList.toggle("narrow", innerWidth < 520);
+      }
+      window.addEventListener("resize", () => {
+        const before = ui.mode;
+        applyMode();
+        if (ui.mode !== before) {
+          restoreOrDefault();
+        }
+      });
+
+      /* ---------- live check and a hook for measurements ---------- */
+      function check() {
+        const groups = dock.groups.map((g) => {
+          const b = g.element.getBoundingClientRect();
+          return {
+            id: g.id,
+            location: g.api.location.type,
+            panels: g.panels.map((p) => p.id),
+            active: g.activePanel ? g.activePanel.id : null,
+            folded: folded.has(g.id),
+            collapsed: g.api.isCollapsed(),
+            box: [
+              Math.round(b.left),
+              Math.round(b.top),
+              Math.round(b.width),
+              Math.round(b.height),
+            ],
+          };
+        });
+        let framed = null;
+        if (ui.sel) {
+          const fr = freeRect();
+          const { pts } = fitPoints(ui.sel);
+          const out = pts.filter((w) => !inRect(project(w), fr, 0)).length;
+          framed = { points: pts.length, outside: out };
+        }
+        return {
+          mode: ui.mode,
+          preset: ui.preset,
+          window: [innerWidth, innerHeight],
+          view3d: [cw(), ch()],
+          framed,
+          groups,
+        };
+      }
+      function renderCheck() {
+        if ($("#notes").hidden) {
+          return;
+        }
+        const r = check();
+        const lines = [
+          `${MODE_NAME[r.mode]}, ${r.window[0]} x ${r.window[1]}, arrangement: ${r.preset}`,
+          `3D view canvas: ${r.view3d[0]} x ${r.view3d[1]} px`,
+          r.framed
+            ? `selection: ${r.framed.points - r.framed.outside} of ${r.framed.points} points in the free part of the canvas`
+            : "nothing selected",
+          ...r.groups.map(
+            (g) =>
+              `${g.location}${g.folded ? " (folded)" : ""}${g.collapsed ? " (collapsed)" : ""}: ${g.panels.join(", ")} at ${g.box.join(" ")}`,
+          ),
+        ];
+        $("#liveCheck").textContent = lines.join("\n");
+      }
+      dock.onDidLayoutChange(() => requestAnimationFrame(renderCheck));
+      window.protoDock = {
+        api: dock,
+        check,
+        select,
+        applyPreset,
+        fold,
+        unfold,
+        folded,
+        stats,
+        cam,
+      };
+      try {
+        stats.holdOnDrag = localStorage.getItem(KEY + "hold") === "1";
+      } catch {
+        stats.holdOnDrag = false;
+      }
+      $('[data-act="hold"]').setAttribute(
+        "aria-checked",
+        String(stats.holdOnDrag),
+      );
+
+      applyMode();
+      window.protoDock.start = restoreOrDefault();
+      requestAnimationFrame(loop);
+    </script>
+  </body>
+</html>

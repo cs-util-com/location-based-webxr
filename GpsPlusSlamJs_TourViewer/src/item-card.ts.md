@@ -19,7 +19,7 @@ What an item (a block of any kind) shows in a card and which files it reads, beh
   - `clip()` (`ItemClip`: `started`, `ended`, `lost(why?)`): a clip's three moments have three timings for a `lineEnd` step, so they are three calls.
   - `showing()`: false once the item stopped.
   - `notice(what, text | null)`, `debugLine(text)`.
-- `ItemWorld`: the AR stage's doors an item draws with (`showCharacter`, `showModel?`). A door a host lacks is absent.
+- `ItemWorld`: the AR stage's doors an item draws with (`showCharacter`, his look at his own place). A model in a story is drawn by its world row (`kinds/model/world.ts`) once reached, never through the stage.
 - `ItemPlace`: `stationId` and `onWaiting?`.
 - `ItemTapTarget`: `{ bubble, voice }`, what a tap on the standing item does: shut or open its bubble, or play and stop `voice`.
 
@@ -33,7 +33,7 @@ Two hosts show items: `scene-view.ts` for a story's step and `free-items.ts` for
 - **No module state.** Everything lives in the closures of one call and in its host, so nothing here assumes one item at a time.
 - **Words first:** every kind sets its text synchronously, before any read. A lost file leaves the words and a status line.
 - **A landing after the stop does nothing:** the host's `asset` drops it, and a use that awaits (`checkPicture`) asks `showing()` again.
-- **No stage:** the words still show, a figure or model is not read, and a card view's voice still plays. A `portrait` view's portrait needs a stage today, because it loads with the figure. Off the card (`free-items.ts`) there is no place for it: the figure, name tag and bubble stand instead.
+- **No stage:** the words still show, a figure is not read, and a card view's voice still plays. A `portrait` view's portrait needs a stage today, because it loads with the figure. Off the card (`free-items.ts`) there is no place for it: the figure, name tag and bubble stand instead.
 - **Not yet rows:** the world drawing itself (`ItemWorld`'s doors are the AR stage's, `scene-stage.ts`), and a story's clip and voice state in `scene-view.ts`. Those belong to the world step after this one.
 
 ## Examples

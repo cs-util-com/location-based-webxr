@@ -35,6 +35,7 @@ the scene, placed on the selection each frame from its layout
 - The sprites have no size attenuation: their scale is pixels times
   `2 tan(fov / 2) / the view's height`.
 - A layout that is not `posable` (a locked station) draws its ring and radius dots only: the disc, the knob and the bar stay hidden.
+- A layout without a knob (what does not turn: a pin's label, a sound) draws its ring, dots and disc; the knob and the bar stay hidden.
 
 ## Examples
 
@@ -47,7 +48,7 @@ gizmo.update({ layout, spritePerPx, groundY, hovered: "turn" });
 
 `editor3d-gizmo.test.ts` (plain textures, Node has no canvas): a
 station's knob, dots and disc where the layout has them and no ring; a
-pin's ring and no dots, the hovered knob larger; everything hidden
+turning item's ring and no dots, the hovered knob larger; a facing pin's ring and disc with no knob and no stalk; everything hidden
 without a selection and out of the scene once disposed; the move disc
 drawn under a sound's icon and its ring and stalk over it (what another
 item draws over the disc takes the press, `handleAt`). The on-screen

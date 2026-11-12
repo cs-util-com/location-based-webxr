@@ -196,6 +196,15 @@ export interface BottomPanelDeps {
   readonly storage: Pick<Storage, "getItem" | "setItem"> | null;
 }
 
+/** The docked layout's side of a docked panel (`dock-host.ts`): each
+ *  tab's pane is a panel of its own there. */
+interface PanelDock {
+  /** Shows the tab's panel (its group shown, it the shown tab). */
+  show(tab: PanelTab): void;
+  /** Hides the panes' group. */
+  hide(): void;
+}
+
 export interface BottomPanel {
   /** The tour's problems changed (and the selection, marked in them). */
   problems(groups: readonly ProblemGroup[], selected: string | null): void;
@@ -209,6 +218,11 @@ export interface BottomPanel {
   state(): PanelState & { readonly heightPx: number };
   /** The view hides: the panel closes, its toggles go with the bar. */
   hide(): void;
+  /** Docked: the panes are docked panels, shown and hidden through
+   *  `dock`, and the panel itself stays hidden; null: the panel again. */
+  dock(dock: PanelDock | null): void;
+  /** Docked: the docking's own controls showed a tab or hid the group. */
+  docked(state: { readonly open: boolean; readonly tab: PanelTab }): void;
 }
 
 /** The panel; its markup is the page's (`edit.html`), its contents its
@@ -224,6 +238,7 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     }
   })();
   let ui: PanelState = { open: false, tab: saved.tab, max: false };
+  let dock: PanelDock | null = null;
   let span = false;
   let heightPx: number | null = saved.heightPx;
   let started = false;
@@ -308,10 +323,19 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
   const tabButtons = new Map<PanelTab, HTMLButtonElement>();
   const toggleButtons = new Map<PanelTab, HTMLButtonElement>();
   const badge = () => el("span", "badge");
+  /** Inside the panel, its tools or a pane (docked, they stand apart). */
+  const inside = (node: Node | null): boolean =>
+    node !== null &&
+    (panel.contains(node) ||
+      tabTools.contains(node) ||
+      [...panes.values()].some((pane) => pane.contains(node)));
   for (const tab of PANEL_TABS) {
     const pane = el("div", "pane");
     pane.id = `shell-pane-${tab.id}`;
     pane.setAttribute("role", "tabpanel");
+    // Docked, the keys return to the shown pane when a redraw takes the
+    // focused control (its tab is the docking's).
+    pane.tabIndex = -1;
     pane.setAttribute("aria-label", tab.label);
     panes.set(tab.id, pane);
     body.append(pane);
@@ -384,6 +408,13 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
   };
 
   const layout = () => {
+    if (dock !== null) {
+      // Docked, the panes stand in the layout and push nothing.
+      panel.hidden = true;
+      box.classList.remove("panel-span");
+      document.body.style.setProperty("--s-panel-h", "0px");
+      return;
+    }
     panel.hidden = !ui.open;
     panel.classList.toggle("span", span);
     box.classList.toggle("panel-span", ui.open && span);
@@ -894,7 +925,11 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
   };
 
   const drawPane = () => {
-    for (const [tab, pane] of panes) pane.hidden = tab !== ui.tab;
+    for (const [tab, pane] of panes) {
+      pane.hidden = dock === null && tab !== ui.tab;
+    }
+    // Docked, the shown tab's tools stand at the top of its panel.
+    if (dock !== null) panes.get(ui.tab)?.before(tabTools);
     if (!ui.open) return;
     if (ui.tab === "problems") drawProblems();
     else if (ui.tab === "history") drawHistory();
@@ -911,7 +946,7 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
    */
   const keepingFocus = (redraw: () => void) => {
     const active = document.activeElement;
-    if (!(active instanceof HTMLElement) || !panel.contains(active)) {
+    if (!(active instanceof HTMLElement) || !inside(active)) {
       redraw();
       return;
     }
@@ -924,17 +959,20 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     const match =
       key === undefined || value === undefined
         ? null
-        : ([...panel.querySelectorAll<HTMLElement>(`[data-${key}]`)].find(
-            (node) => node.dataset[key] === value,
-          ) ?? null);
+        : ([panel, tabTools, ...panes.values()]
+            .flatMap((part) => [
+              ...part.querySelectorAll<HTMLElement>(`[data-${key}]`),
+            ])
+            .find((node) => node.dataset[key] === value) ?? null);
     if (
       match !== null &&
       !(match instanceof HTMLButtonElement && match.disabled)
     ) {
       match.focus();
     }
-    if (!panel.contains(document.activeElement)) {
-      tabButtons.get(ui.tab)?.focus();
+    if (!inside(document.activeElement)) {
+      if (dock === null) tabButtons.get(ui.tab)?.focus();
+      else panes.get(ui.tab)?.focus();
     }
   };
 
@@ -949,10 +987,14 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
 
   const setState = (next: PanelState) => {
     const wasOpen = ui.open;
-    const hadFocus = panel.contains(document.activeElement);
+    const hadFocus = inside(document.activeElement);
     ui = next;
     remember();
     draw();
+    if (dock !== null) {
+      if (ui.open) dock.show(ui.tab);
+      else dock.hide();
+    }
     // A close from inside the panel gives the focus to its toggle.
     if (wasOpen && !ui.open && hadFocus) {
       toggleButtons.get(ui.tab)?.focus();
@@ -973,11 +1015,20 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     if (known !== undefined) setState({ ...ui, open: true, tab: known.id });
   });
   tabs.addEventListener("keydown", (event) => {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-    event.preventDefault();
+    // A row of tabs: Left and Right step round, Home and End go to the
+    // ends; Up and Down are no tab's (and not the page's either here).
     const at = PANEL_TABS.findIndex((t) => t.id === ui.tab);
-    const by = event.key === "ArrowRight" ? 1 : -1;
-    const next = PANEL_TABS[(at + by + PANEL_TABS.length) % PANEL_TABS.length];
+    const last = PANEL_TABS.length - 1;
+    const to: Partial<Record<string, number>> = {
+      ArrowLeft: at === 0 ? last : at - 1,
+      ArrowRight: at === last ? 0 : at + 1,
+      Home: 0,
+      End: last,
+    };
+    const index = to[event.key];
+    if (index === undefined) return;
+    event.preventDefault();
+    const next = PANEL_TABS[index];
     if (next === undefined) return;
     setState({ ...ui, tab: next.id });
     tabButtons.get(next.id)?.focus();
@@ -1015,7 +1066,9 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     const which = target?.dataset["step"];
     if (which === "undo" || which === "redo") deps.step(which);
   });
-  body.addEventListener("click", (event) => {
+  // The rows' clicks and keys are heard on the panes themselves: docked,
+  // each pane sits in its docked panel, out of the panel's body.
+  const onPaneClick = (event: MouseEvent) => {
     const target = event.target as Element;
     const fold = target.closest<HTMLElement>("[data-fold]")?.dataset["fold"];
     if (fold !== undefined) {
@@ -1046,10 +1099,10 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     if (!Number.isInteger(steps) || steps === 0) return;
     const which = steps < 0 ? "undo" : "redo";
     for (let i = 0; i < Math.abs(steps); i += 1) deps.step(which);
-  });
+  };
   // A problem's row is a focusable row, not a button: Enter or Space on
   // it selects as its click does.
-  body.addEventListener("keydown", (event) => {
+  const onPaneKey = (event: KeyboardEvent) => {
     if (event.key !== "Enter" && event.key !== " ") return;
     const row = event.target as HTMLElement;
     if (!row.classList.contains("prow")) return;
@@ -1057,7 +1110,11 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     if (select === undefined) return;
     event.preventDefault();
     deps.choose(select);
-  });
+  };
+  for (const pane of panes.values()) {
+    pane.addEventListener("click", onPaneClick);
+    pane.addEventListener("keydown", onPaneKey);
+  }
 
   // --- the grip ------------------------------------------------------------
   let drag: { readonly pointer: number } | null = null;
@@ -1181,7 +1238,7 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
       if (
         event.key === "Escape" &&
         ui.open &&
-        panel.contains(event.target as Node | null)
+        inside(event.target as Node | null)
       ) {
         event.preventDefault();
         setState({ ...ui, open: false, max: false });
@@ -1192,7 +1249,12 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     state() {
       return {
         ...ui,
-        heightPx: ui.open ? panel.getBoundingClientRect().height : 0,
+        heightPx: !ui.open
+          ? 0
+          : dock === null
+            ? panel.getBoundingClientRect().height
+            : (panes.get(ui.tab)?.parentElement?.getBoundingClientRect()
+                .height ?? 0),
       };
     },
     hide() {
@@ -1200,6 +1262,25 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
       frames = [];
       seenFrames = 0;
       readout = null;
+    },
+    dock(next) {
+      if (next === dock) return;
+      dock = next;
+      if (dock === null) tools.prepend(tabTools);
+      draw();
+      if (dock !== null && ui.open) dock.show(ui.tab);
+      else dock?.hide();
+    },
+    docked(state) {
+      if (dock === null) return;
+      if (state.open === ui.open && (!state.open || state.tab === ui.tab)) {
+        return;
+      }
+      ui = state.open
+        ? { ...ui, open: true, tab: state.tab }
+        : { ...ui, open: false, max: false };
+      remember();
+      draw();
     },
   };
 }

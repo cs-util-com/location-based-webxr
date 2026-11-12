@@ -253,16 +253,18 @@ describe("the sample tour (public/samples/marienplatz-tour.zip)", () => {
     // when it gained the toll story and its free items (content only), and
     // two characters standing free, and a narration circle and a market
     // zone (content only), and when every story became a folder with the
-    // story role (four stories, one `role` line each: 112 bytes).
+    // story role (four stories, one `role` line each: 112 bytes), and when
+    // the stage view was retired (the knight speaks 1 m off each spot,
+    // facing the visitor's approach; the arch is placed at its own size).
     const files = await entries();
     const json = JSON.parse(
       new TextDecoder().decode(files.get("tour.json")),
     ) as unknown;
     const written = serializeTourManifest(parseTourManifest(json));
     expect(written).toBe(new TextDecoder().decode(files.get("tour.json")));
-    expect(written.length).toBe(10738);
+    expect(written.length).toBe(10902);
     expect(createHash("sha256").update(written).digest("hex")).toBe(
-      "2fcee5dc464e00391931fed59b2e45820ff353b890ec5b73e507bc4a4b69ea58",
+      "17a40e9387b5379e20dd6a97d8a50d20436849b604cd3a1026eb4cada3999007",
     );
   });
 });

@@ -64,7 +64,8 @@ under - what a tap in AR is cast against to name the object
   blocks outside its stories) as children at their LOCAL poses
   (`[north, up, east]` and a rotation relative to the station), added to
   `scene` once every picture decoded; `root` is that group. A `pin` short
-  text is a label, a `plane` picture a photo plane whose file is the
+  text is a label, a `plane` picture a photo plane (as wide as its
+  `widthM`; a 1 m picture is drawn as it always was) whose file is the
   tour's asset of its `image` (from `assets`; a picture whose asset the
   tour lacks is named in `skipped`, as one whose file fails). A placed
   model is a world part like any other kind's (below): its row's

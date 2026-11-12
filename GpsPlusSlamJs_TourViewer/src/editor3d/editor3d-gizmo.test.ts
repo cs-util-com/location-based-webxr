@@ -3,9 +3,10 @@
  * and dots must be drawn where the hit test looks for them (the layout's
  * spots, on the ground there) and at their on-screen size whatever the
  * zoom, a handle under the pointer or held drawn larger, the ring only for
- * an item (a station's own circle is the tour's) and the dots only for a
- * station or a model. A gizmo left showing after the selection is gone
- * would offer handles that edit nothing.
+ * an item (a station's own circle is the tour's), the dots only for a
+ * station or a model and the knob only for what turns. A gizmo left
+ * showing after the selection is gone would offer handles that edit
+ * nothing.
  */
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
@@ -22,20 +23,24 @@ const PICTURES = {
 };
 
 const STATION: GizmoSubject = {
-  kind: "station",
   centre: { x: 10, y: 500, z: -20 },
   headingDeg: 90,
-  radiusM: 25,
-  sizeM: null,
+  turns: true,
+  extent: { kind: "reach", value: 25 },
+  locked: false,
 };
 
-const PIN: GizmoSubject = {
-  kind: "item",
+/** A turning item without dots (a lectern). */
+const LECTERN: GizmoSubject = {
   centre: { x: 0, y: 500, z: 0 },
   headingDeg: 0,
-  radiusM: null,
-  sizeM: null,
+  turns: true,
+  extent: null,
+  locked: false,
 };
+
+/** A pin: its label faces the camera, so it does not turn. */
+const PIN: GizmoSubject = { ...LECTERN, turns: false };
 
 /** 0.05 m a pixel at the selection; a sprite of n px is n * 0.002. */
 const M_PER_PX = 0.05;
@@ -90,11 +95,13 @@ describe("createGizmo", () => {
     gizmo.update(frame(STATION, null));
     const { knob, dots, ring, disc, bar } = gizmo.parts;
     expect(knob.visible).toBe(true);
-    expect(knob.position.x).toBeCloseTo(layout.knob.x, 9);
-    expect(knob.position.z).toBeCloseTo(layout.knob.z, 9);
+    const at = layout.knob;
+    if (at === null) throw new Error("a station turns");
+    expect(knob.position.x).toBeCloseTo(at.x, 9);
+    expect(knob.position.z).toBeCloseTo(at.z, 9);
     // On the ground under it, a little above.
-    expect(knob.position.y).toBeGreaterThan(500 + layout.knob.x / 10);
-    expect(knob.position.y).toBeLessThan(500 + layout.knob.x / 10 + 0.5);
+    expect(knob.position.y).toBeGreaterThan(500 + at.x / 10);
+    expect(knob.position.y).toBeLessThan(500 + at.x / 10 + 0.5);
     expect(knob.scale.x).toBeCloseTo(GIZMO.knobPx * SPRITE_PER_PX, 12);
     expect(dots.filter((d) => d.visible)).toHaveLength(4);
     dots.forEach((d, i) => {
@@ -107,22 +114,34 @@ describe("createGizmo", () => {
     expect(disc.scale.x).toBeCloseTo(layout.moveM, 9);
     // The stalk runs from the ring's radius out along the heading (east).
     expect(bar.visible).toBe(true);
-    expect(bar.scale.z).toBeCloseTo(layout.bar.lengthM, 9);
+    expect(bar.scale.z).toBeCloseTo(layout.bar?.lengthM ?? NaN, 9);
     expect(bar.position.x).toBeCloseTo(10 + 25, 9);
   });
 
-  it("draws a pin's ring and no dots, and the handle under the pointer larger", () => {
+  it("draws a turning item's ring and no dots, and the handle under the pointer larger", () => {
     const parent = new THREE.Scene();
     const gizmo = createGizmo(parent, PICTURES);
-    gizmo.update(frame(PIN, "turn"));
+    gizmo.update(frame(LECTERN, "turn"));
     const { knob, dots, ring } = gizmo.parts;
     expect(ring.visible).toBe(true);
-    expect(ring.scale.x).toBeCloseTo(frame(PIN, null).layout.ringM!, 9);
+    expect(ring.scale.x).toBeCloseTo(frame(LECTERN, null).layout.ringM!, 9);
     expect(dots.some((d) => d.visible)).toBe(false);
     expect(knob.scale.x).toBeCloseTo(
       GIZMO.knobPx * SPRITE_PER_PX * GIZMO.hoverScale,
       12,
     );
+  });
+
+  // Why: a pin's label faces the camera, so a knob would turn a heading
+  // nobody sees; its ring and its move disc stay.
+  it("draws a pin's ring and disc without a knob or a stalk", () => {
+    const gizmo = createGizmo(new THREE.Scene(), PICTURES);
+    gizmo.update(frame(PIN, null));
+    const { knob, ring, disc, bar } = gizmo.parts;
+    expect(ring.visible).toBe(true);
+    expect(disc.visible).toBe(true);
+    expect(knob.visible).toBe(false);
+    expect(bar.visible).toBe(false);
   });
 
   it("hides everything without a selection, and leaves the scene when disposed", () => {

@@ -253,7 +253,11 @@ describe("inspectorEdit", () => {
   // station, measured from the same origin; its height and turn stay.
   it("moves a station to the east and north typed, its height and heading kept", () => {
     const moved = edit("station:a", "east", "-10");
-    if (moved.kind !== "scene" || moved.edit.kind !== "station-pose") {
+    if (
+      moved.kind !== "scene" ||
+      moved.edit.kind !== "pose" ||
+      moved.edit.ref.kind !== "station"
+    ) {
       throw new Error(`not a pose: ${JSON.stringify(moved)}`);
     }
     const before = eastNorthOf(STATIONS[0]!.geo, ORIGIN);
@@ -277,11 +281,13 @@ describe("inspectorEdit", () => {
       selection: "station:a",
       deg: 60,
     });
-    expect(edit("pin-1", "heading", "-90")).toEqual({
+    expect(edit("model-1", "heading", "-90")).toEqual({
       kind: "turn",
-      selection: "pin-1",
+      selection: "model-1",
       deg: -90,
     });
+    // A pin faces the visitor (its row does not turn): no turn to write.
+    expect(edit("pin-1", "heading", "-90")).toEqual({ kind: "none" });
     // The short way round: 350 from 30 is a turn of -40.
     expect(edit("station:a", "heading", "350")).toMatchObject({ deg: -40 });
   });
@@ -295,7 +301,11 @@ describe("inspectorEdit", () => {
       ["north", "-6", [-6, 1.5, -2]],
     ] as const) {
       const moved = edit("pin-1", field, value);
-      if (moved.kind !== "scene" || moved.edit.kind !== "item-pose") {
+      if (
+        moved.kind !== "scene" ||
+        moved.edit.kind !== "pose" ||
+        moved.edit.ref.kind !== "block"
+      ) {
         throw new Error(`not a pose: ${JSON.stringify(moved)}`);
       }
       const local = localPoseOf(moved.edit.geo, STATIONS[0]!.geo);
@@ -327,9 +337,11 @@ describe("inspectorEdit", () => {
   it("writes a model's size, and refuses a size for anything else", () => {
     expect(edit("model-1", "size", "3")).toEqual({
       kind: "scene",
-      edit: { kind: "size", id: "model-1", sizeM: 3 },
+      edit: { kind: "extent", ref: { kind: "block", id: "model-1" }, value: 3 },
     });
     expect(edit("pin-1", "size", "3")).toEqual({ kind: "none" });
+    // The tour's size again is no edit.
+    expect(edit("model-1", "size", "2.4")).toEqual({ kind: "none" });
   });
 
   it("says a value that is no number in words, and does nothing for an unchanged one", () => {
@@ -440,8 +452,8 @@ describe("groundEdit", () => {
     expect(ground("station:a", "ground", flat(518))).toEqual({
       kind: "scene",
       edit: {
-        kind: "station-pose",
-        id: "a",
+        kind: "pose",
+        ref: { kind: "station", id: "a" },
         geo: { lat: 48.1371, lon: 11.5751, alt: 518, headingDeg: 30 },
       },
     });
@@ -539,5 +551,177 @@ describe("inspectorEdit: a story character's facing", () => {
     expect(typed("character-facing:w1", "450")).toEqual({ kind: "none" });
     expect(typed("character-facing:intro", "10")).toEqual({ kind: "none" });
     expect(typed("character-facing:nobody", "10")).toEqual({ kind: "none" });
+  });
+});
+
+// Why: an item in a folder is shown by its pose in that folder, so what is
+// typed there is in the folder's frame and must land where the folder puts
+// it in the world; read in the station's frame, the item would jump by the
+// folder's offset and turn. Its ground is judged where it stands too.
+describe("inspectorEdit: an item in a turned folder", () => {
+  const s = Math.SQRT1_2;
+  // A folder 10 m north and 2 m up, turned a quarter about up (its north
+  // to the station's west), holding a picture 5 m north and 1 m up in it:
+  // 10 m north, 5 m west and 3 m up of the anchor in the station's frame.
+  const station = {
+    ...STATIONS[0]!,
+    children: [
+      {
+        id: "f",
+        kind: "folder",
+        pose: { position: [10, 2, 0], rotation: [0, s, 0, s] },
+        children: [
+          {
+            id: "deep",
+            kind: "picture",
+            view: "plane",
+            image: "deep-photo",
+            widthM: 1,
+            createdAtIso: AT,
+            pose: { position: [5, 1, 0], rotation: [0, 0, 0, 1] },
+          },
+        ],
+      },
+    ],
+  } as unknown as TourStation;
+  const typed = (field: string, value: string) =>
+    inspectorEdit({
+      selected: "deep",
+      stations: [station],
+      origin: ORIGIN,
+      field,
+      value,
+    });
+
+  // Why: the inspector shows an item in a folder where it stands from the
+  // anchor, so a typed offset is read in that same frame and written
+  // where it names in the world; reading it in the folder's frame would
+  // move the item by the folder's pose.
+  it("reads a typed offset in the station's frame, its folder composed in", () => {
+    // East 3: from 5 m west to 3 m east, north and height kept.
+    const moved = typed("east", "3");
+    if (moved.kind !== "scene" || moved.edit.kind !== "pose") {
+      throw new Error(`not a pose: ${JSON.stringify(moved)}`);
+    }
+    expect(moved.edit.ref).toEqual({ kind: "block", id: "deep" });
+    const local = localPoseOf(moved.edit.geo, station.geo);
+    for (const [i, w] of [10, 3, 3].entries()) {
+      expect(local.position[i]).toBeCloseTo(w, 3);
+    }
+    // Its north as it stands, 10: nothing to write.
+    expect(typed("north", "10")).toEqual({ kind: "none" });
+    // A height of 4: 4 m over the anchor.
+    const lifted = typed("height", "4");
+    if (lifted.kind !== "height") throw new Error("not a height");
+    expect(lifted.alt).toBeCloseTo(station.geo.alt + 4, 6);
+    // A heading typed against its heading in the station (the folder's
+    // quarter turn): typing that heading again writes nothing.
+    expect(typed("heading", "-90")).toEqual({ kind: "none" });
+    expect(typed("heading", "0")).toEqual({
+      kind: "turn",
+      selection: "deep",
+      deg: 90,
+    });
+  });
+
+  it("judges its ground where it stands, through the folder", () => {
+    // It stands 3 m over the anchor: on ground 3 m up it is on it already.
+    const flat = (alt: number) => () => alt;
+    const at = (which: "ground" | "ground-items", alt: number) =>
+      groundEdit({
+        selected: which === "ground" ? "deep" : "station:a",
+        stations: [station],
+        which,
+        groundAt: flat(alt),
+      });
+    expect(at("ground", station.geo.alt + 3)).toEqual({ kind: "none" });
+    expect(at("ground-items", station.geo.alt + 3)).toEqual({ kind: "none" });
+    expect(at("ground", station.geo.alt)).toEqual({
+      kind: "ground-items",
+      items: [{ id: "deep", alt: station.geo.alt }],
+    });
+  });
+});
+
+// Why: a folder's inspector shows its origin and heading in its station's
+// frame and the factor its items are drawn at, so what is typed there must
+// move, turn or scale the folder itself, its items following; written as
+// an item's edit, it would move one item out of its group.
+describe("inspectorEdit: a turned folder", () => {
+  const s = Math.SQRT1_2;
+  // A folder 10 m north and 2 m up, turned a quarter about up.
+  const station = {
+    ...STATIONS[0]!,
+    children: [
+      {
+        id: "f",
+        kind: "folder",
+        pose: { position: [10, 2, 0], rotation: [0, s, 0, s] },
+        children: [
+          {
+            id: "deep",
+            kind: "shortText",
+            view: "pin",
+            caption: "Deep",
+            createdAtIso: AT,
+            pose: { position: [5, 1, 0], rotation: [0, 0, 0, 1] },
+          },
+        ],
+      },
+    ],
+  } as unknown as TourStation;
+  const typed = (field: string, value: string, selected = "folder:f") =>
+    inspectorEdit({
+      selected,
+      stations: [station],
+      origin: ORIGIN,
+      field,
+      value,
+    });
+  const poseOf = (field: string, value: string) => {
+    const out = typed(field, value);
+    if (out.kind !== "scene" || out.edit.kind !== "pose") {
+      throw new Error(`not a pose: ${JSON.stringify(out)}`);
+    }
+    expect(out.edit.ref).toEqual({ kind: "folder", id: "f" });
+    return localPoseOf(out.edit.geo, station.geo);
+  };
+
+  it("writes a typed scale as the folder's, and nothing for the one it has", () => {
+    expect(typed("scale", "2")).toEqual({
+      kind: "scene",
+      edit: { kind: "extent", ref: { kind: "folder", id: "f" }, value: 2 },
+    });
+    expect(typed("scale", "1")).toEqual({ kind: "none" });
+    expect(typed("scale", "big")).toEqual({
+      kind: "invalid",
+      reason: "Type a number, like 12.5",
+    });
+  });
+
+  it("moves the folder to a typed offset or height in its station's frame, and turns it to a typed heading", () => {
+    for (const [field, value, want] of [
+      ["east", "3", [10, 2, 3]],
+      ["north", "-4", [-4, 2, 0]],
+      ["height", "4", [10, 4, 0]],
+    ] as const) {
+      const local = poseOf(field, value);
+      for (const [i, w] of want.entries()) {
+        expect(local.position[i]).toBeCloseTo(w, 3);
+      }
+    }
+    expect(typed("north", "10")).toEqual({ kind: "none" });
+    expect(typed("heading", "-90")).toEqual({ kind: "none" });
+    expect(typed("heading", "0")).toEqual({
+      kind: "turn",
+      selection: "folder:f",
+      deg: 90,
+    });
+  });
+
+  it("writes nothing for a field a folder has not, or a folder the tour lacks", () => {
+    expect(typed("title", "Benches")).toEqual({ kind: "none" });
+    expect(typed("size", "2")).toEqual({ kind: "none" });
+    expect(typed("scale", "2", "folder:nope")).toEqual({ kind: "none" });
   });
 });

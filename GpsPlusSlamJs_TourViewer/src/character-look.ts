@@ -219,7 +219,8 @@ export interface CharacterLook {
    *  raycaster does not skip a hidden mesh, so a hidden part is left out
    *  here. */
   tapTargets(): Object3D[];
-  /** A tap in the bubble view: its bubble shuts, or opens again. */
+  /** A tap in the bubble view: its bubble shuts, or opens again (a
+   *  voiced bubble opens and shuts with his voice, `setVoice`). */
   toggleBubble(): void;
   /** The creator's facing, once known (rad about Up, 0 facing +Z); a
    *  non-finite one is ignored. */
@@ -813,6 +814,13 @@ export function createCharacterLook(
           : null;
     },
     setVoice(next, durationMs) {
+      // The bubble view's bubble shows what he says while he says it: it
+      // opens when he speaks and shuts when his voice ends or is stopped.
+      // A voice that never spoke shuts nothing (a voiceless bubble).
+      if (view === "bubble") {
+        if (next === "speaking") bubbleShut = false;
+        else if (voice === "speaking") bubbleShut = true;
+      }
       voice = next;
       if (next !== "speaking") speakStart = null;
       else {

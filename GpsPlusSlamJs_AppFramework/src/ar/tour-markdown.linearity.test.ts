@@ -46,6 +46,9 @@ const PATTERNS: Record<string, string> = {
   'list and quote markers': '- - - 1. > ',
   'nested list lines': '- a\n  - b\n    - c\n',
   'hard breaks': 'a  \n',
+  // Many leaves: P is built and walked once per paragraph or item.
+  'short paragraphs': 'a\n\n',
+  'short list items': '- a\n',
   'emoji next to stars': '\u{1F600}*',
   'picture lines': '![a](asset:a)\n',
   // One long line: the block parser scans a line once per block it tries

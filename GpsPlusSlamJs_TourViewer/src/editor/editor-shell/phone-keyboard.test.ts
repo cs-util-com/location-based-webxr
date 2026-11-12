@@ -120,6 +120,46 @@ describe("watchKeyboard", () => {
     expect(scroll).toHaveBeenCalledTimes(1);
   });
 
+  // Why: docked, the panels are laid out by script, a frame after their
+  // box changed; a field scrolled into sight before that relayout is
+  // under the keyboard again once it comes.
+  it("lays the panels out for the keyboard before the field is brought into sight", () => {
+    const field = document.getElementById("f") as HTMLInputElement;
+    const order: string[] = [];
+    field.scrollIntoView = () => order.push("scroll");
+    watchKeyboard(win(), host(), () => order.push("layout"));
+    field.focus();
+    opened(500);
+    expect(order).toEqual(["layout", "scroll"]);
+    opened(800);
+    expect(order).toEqual(["layout", "scroll", "layout"]);
+  });
+
+  // Why: the docked panels' contents are placed a frame after their
+  // groups are laid out, so the field scrolled into sight at once can end
+  // under the keyboard when they move; it is brought into sight again
+  // once they stand.
+  it("brings the field into sight again two frames later", () => {
+    const field = document.getElementById("f") as HTMLInputElement;
+    const scroll = vi.fn();
+    field.scrollIntoView = scroll;
+    const frames: FrameRequestCallback[] = [];
+    const framed = {
+      innerHeight: 800,
+      visualViewport: viewport,
+      requestAnimationFrame: (then: FrameRequestCallback) => frames.push(then),
+    } as unknown as Window;
+    watchKeyboard(framed, host());
+    field.focus();
+    opened(500);
+    expect(scroll).toHaveBeenCalledTimes(1);
+    frames.shift()?.(0);
+    expect(scroll).toHaveBeenCalledTimes(1);
+    frames.shift()?.(0);
+    expect(scroll).toHaveBeenCalledTimes(2);
+    expect(frames).toEqual([]);
+  });
+
   it("brings a field in sight when the focus moves under the keyboard", () => {
     const field = document.getElementById("f") as HTMLInputElement;
     const scroll = vi.fn();

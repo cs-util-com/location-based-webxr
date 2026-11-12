@@ -70,19 +70,37 @@ const VALID = {
 const EXPECTED_REFS = {
   shortText: [],
   longText: [
-    { id: 'door', kind: 'image', required: false },
-    { id: 'voice', kind: 'audio', required: true },
+    { id: 'door', kind: 'image', required: false, field: 'body' },
+    {
+      id: 'voice',
+      kind: 'audio',
+      required: true,
+      field: 'narration',
+      optional: true,
+    },
   ],
-  picture: [{ id: 'photo', kind: 'image', required: true }],
+  picture: [{ id: 'photo', kind: 'image', required: true, field: 'image' }],
   video: [
-    { id: 'clip', kind: 'video', required: true },
-    { id: 'still', kind: 'image', required: true },
+    { id: 'clip', kind: 'video', required: true, field: 'video' },
+    {
+      id: 'still',
+      kind: 'image',
+      required: true,
+      field: 'poster',
+      optional: true,
+    },
   ],
-  audio: [{ id: 'bell', kind: 'audio', required: true }],
-  model: [{ id: 'arch', kind: 'model', required: true }],
+  audio: [{ id: 'bell', kind: 'audio', required: true, field: 'audio' }],
+  model: [{ id: 'arch', kind: 'model', required: true, field: 'asset' }],
   character: [
-    { id: 'sir', kind: 'image', required: true },
-    { id: 'hail', kind: 'audio', required: true },
+    { id: 'sir', kind: 'image', required: true, field: 'image' },
+    {
+      id: 'hail',
+      kind: 'audio',
+      required: true,
+      field: 'voice',
+      optional: true,
+    },
   ],
 };
 
@@ -165,6 +183,23 @@ describe('the list of kinds', () => {
 
   it.each(tourBlockKinds())('%s: names its assets', (kind) => {
     expect(tourBlockRefs(VALID[kind])).toEqual(EXPECTED_REFS[kind]);
+  });
+
+  it('says which references sit in a field the block stands without', () => {
+    // Why: deleting a file must tell the block MADE of it (it goes) from a
+    // block that only mentions it (the field goes, the block stays) - a
+    // narration, a poster, a voice. Read from here, not from a list of
+    // kinds elsewhere, so a new optional field is classed where it is born.
+    const optional = tourBlockKinds().flatMap((kind) =>
+      tourBlockRefs(VALID[kind]).flatMap((ref) =>
+        ref.optional === true ? [[kind, ref.field]] : []
+      )
+    );
+    expect(optional).toEqual([
+      ['longText', 'narration'],
+      ['video', 'poster'],
+      ['character', 'voice'],
+    ]);
   });
 
   it('asks only for what the format requires, when asked to', () => {

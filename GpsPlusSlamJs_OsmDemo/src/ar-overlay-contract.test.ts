@@ -31,12 +31,15 @@ function styleSources(): string[] {
   // `playwright-report` included: the html reporter writes its own bundled
   // HTML/CSS there on any local failing run, and a deny-list walk that reads
   // it would flip this test on CSS nobody wrote (PR #333 review).
+  // `prototypes` (under public/) holds standalone design drafts, each with its
+  // own page and viewport meta; their CSS never reaches the app's index.html.
   const skip = new Set([
     "node_modules",
     "dist",
     "test-results",
     "coverage",
     "playwright-report",
+    "prototypes",
   ]);
   const walk = (dir: string): void => {
     for (const entry of readdirSync(dir)) {

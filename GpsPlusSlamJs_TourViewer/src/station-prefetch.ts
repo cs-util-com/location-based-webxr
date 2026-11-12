@@ -97,10 +97,9 @@ export async function decodeFigure<T>(
 
 /** The asset ids a station's story reads: the blocks its `show` steps
  *  name, in step order, deduplicated - what the story draws
- *  (`scene-view.ts`): a figure in any view but the card (the stage or
- *  one of the character's story views), a model in its
- *  stage or placed view (a reached placed model stands in the world, B2b), a
- *  character's voice in either. Never a video's file: a
+ *  (`scene-view.ts`): a figure in any view but the card (one of the
+ *  character's looks), a model in its placed view (a reached placed
+ *  model stands in the world, B2b), a character's voice in either. Never a video's file: a
  *  video may be as large as the tour's entry cap allows; its poster, the
  *  picture the item shows before the video loads, is read. Then the
  *  files of the station's free models (each in a world view) (station blocks plan B2b,

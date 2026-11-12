@@ -109,7 +109,7 @@ describe("stationAssetIds", () => {
       {
         id: "a",
         kind: "character",
-        view: "stage",
+        view: "speak",
         name: "K",
         image: "knight",
         caption: "c",
@@ -124,11 +124,18 @@ describe("stationAssetIds", () => {
         body: "t",
         pose: POSE,
       },
-      { id: "c", kind: "model", view: "stage", asset: "arch", pose: POSE },
+      {
+        id: "c",
+        kind: "model",
+        view: "placed",
+        asset: "arch",
+        sizeM: 3,
+        pose: POSE,
+      },
       {
         id: "d",
         kind: "character",
-        view: "stage",
+        view: "speak",
         name: "K",
         image: "knight",
         caption: "c",
@@ -138,10 +145,10 @@ describe("stationAssetIds", () => {
     expect(stationAssetIds(s)).toEqual(["knight", "voice", "arch"]);
   });
 
-  // Why: the story draws a figure or a model only in its stage view
+  // Why: nothing draws a figure or a model in its card view
   // (`scene-view.ts`); reading one shown in the card would spend a phone's
   // data and memory on a file nothing draws. A voice plays in either view.
-  it("reads a figure or a model only for its stage view, and a voice in either", () => {
+  it("reads no figure or model for a card view, and its voice", () => {
     const s = told([
       {
         id: "a",
@@ -160,9 +167,9 @@ describe("stationAssetIds", () => {
 
   // Why: a character in a story view (bubble, speak, two-stations,
   // portrait, popup) stands in the world as a look made from his figure,
-  // so the figure must be read ahead like a stage figure; a station
+  // so the figure must be read ahead; a station
   // reached before it was read would show him late.
-  it("reads a character's figure for his story views as for the stage", () => {
+  it("reads a character's figure for every look", () => {
     for (const view of [
       "bubble",
       "speak",
@@ -188,15 +195,15 @@ describe("stationAssetIds", () => {
   // Why: a declared character with a frames sheet stands his story views
   // from the sheet (`scene-view.ts`), so the sheet is what must be read
   // ahead - his one image only where the card shows it too (the portrait
-  // view's portrait). The stage view and an undeclared or sheetless
-  // character keep his image.
-  it("reads a declared character's frames sheet for his story views, his image for the portrait and the stage", () => {
+  // view's portrait). An undeclared or sheetless character keeps his
+  // image, and a card view reads none.
+  it("reads a declared character's frames sheet for his story views, his image for the portrait, none in a card", () => {
     const characters = new Map([
       ["kay", { id: "kay", name: "K", image: "knight", frames: "big" }],
       ["ada", { id: "ada", name: "A", image: "knight" }],
     ]);
     const of = (
-      view: "speak" | "portrait" | "stage",
+      view: "speak" | "portrait" | "card",
       character: string,
     ): string[] =>
       stationAssetIds(
@@ -217,7 +224,7 @@ describe("stationAssetIds", () => {
       );
     expect(of("speak", "kay")).toEqual(["big", "voice"]);
     expect(of("portrait", "kay")).toEqual(["knight", "big", "voice"]);
-    expect(of("stage", "kay")).toEqual(["knight", "voice"]);
+    expect(of("card", "kay")).toEqual(["voice"]);
     expect(of("speak", "ada")).toEqual(["knight", "voice"]);
     expect(of("speak", "nobody")).toEqual(["knight", "voice"]);
   });
@@ -330,8 +337,8 @@ describe("stationAssetIds and the world (B2b)", () => {
   });
 
   // Why (B2b step 2): a placed model a story step reaches stands in the
-  // world from then on, so its file is read ahead like a staged one's.
-  it("reads a placed story model's file, as a staged one's", () => {
+  // world from then on, so its file is read ahead.
+  it("reads a placed story model's file", () => {
     const POSE = {
       position: [0, 0, 0] as [number, number, number],
       rotation: [0, 0, 0, 1] as [number, number, number, number],

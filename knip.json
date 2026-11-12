@@ -210,6 +210,7 @@
         "src/checks/item-lab.ts",
         "src/checks/lectern-check.ts",
         "src/checks/long-text-check.ts",
+        "src/characters/maker-main.ts",
         "config/stylelint.config.mjs",
         "playwright-tests/**/*.{js,ts}",
         "config/eslint.config.mjs"
@@ -218,6 +219,7 @@
       "ignoreDependencies": [
         "@carlosjeurissen/stylelint-csstree-validator",
         "dependency-cruiser",
+        "dockview-core",
         "dpdm",
         "jscpd",
         "postcss-html",

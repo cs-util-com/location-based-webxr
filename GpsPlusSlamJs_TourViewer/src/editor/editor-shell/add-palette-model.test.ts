@@ -3,8 +3,10 @@
  * what Enter adds is the first row. A query that names a station must
  * put that station's rows first even when another is selected; a query
  * that names only a kind must add it to the selection; a word that
- * matches nothing must list nothing rather than add somewhere else. The
- * picture is never offered: it adds nothing from the editor.
+ * matches nothing must list nothing rather than add somewhere else. Every
+ * kind that adds at a station is offered, the ones made from a file among
+ * them; a video is not (it plays only in a story, and the palette adds at
+ * stations), nor a character (it is still to come).
  */
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
@@ -34,12 +36,15 @@ describe("paletteRows", () => {
     expect(short(paletteRows("", STATIONS, "gate"))).toEqual([
       "shortText@gate",
       "longText@gate",
+      "picture@gate",
+      "audio@gate",
+      "model@gate",
       "station",
     ]);
     const first = paletteRows("", STATIONS, "gate")[0];
     expect(first?.label).toBe("Short text");
     expect(first?.place).toBe("in 2 The old gate");
-    expect(paletteRows("", STATIONS, "gate")[2]?.place).toBe(NEW_STATION_PLACE);
+    expect(paletteRows("", STATIONS, "gate")[5]?.place).toBe(NEW_STATION_PLACE);
   });
 
   it("defaults to the first station with none selected, or one that is gone", () => {
@@ -103,10 +108,23 @@ describe("paletteRows", () => {
     expect(short(paletteRows("sta", STATIONS, "gate"))[0]).toBe("station");
   });
 
-  it("lists nothing for a word that matches nothing, and never a picture", () => {
+  it("lists nothing for a word that matches nothing, nor a video or a character", () => {
     expect(paletteRows("zebra", STATIONS, "gate")).toEqual([]);
-    expect(paletteRows("picture", STATIONS, "gate")).toEqual([]);
-    expect(paletteRows("photo gate", STATIONS, "gate")).toEqual([]);
+    expect(paletteRows("video", STATIONS, "gate")).toEqual([]);
+    expect(paletteRows("film gate", STATIONS, "gate")).toEqual([]);
+    expect(paletteRows("character", STATIONS, "gate")).toEqual([]);
+  });
+
+  // Why: a picture, a sound and a 3D model add from the palette as from
+  // the menu, found by the words a creator would type for them.
+  it("finds the kinds made from a file by their words", () => {
+    expect(short(paletteRows("photo gate", STATIONS, "column"))).toEqual([
+      "picture@gate",
+    ]);
+    expect(short(paletteRows("music", STATIONS, "gate"))[0]).toBe("audio@gate");
+    expect(short(paletteRows("glb steps", STATIONS, "gate"))).toEqual([
+      "model@steps",
+    ]);
   });
 
   it("offers only a new station in a tour without stations", () => {
@@ -187,15 +205,21 @@ describe("paletteRows with a kind chip", () => {
     );
   });
 
-  it("offers a chip per kind that adds, the picture none, a station last", () => {
+  it("offers a chip per kind that adds at a station, a station last", () => {
     expect(PALETTE_KINDS.map((k) => k.kind)).toEqual([
       "shortText",
       "longText",
+      "picture",
+      "audio",
+      "model",
       "station",
     ]);
     expect(PALETTE_KINDS.map((k) => k.label)).toEqual([
       "Short text",
       "Long text",
+      "Picture",
+      "Sound",
+      "3D model",
       "Station",
     ]);
   });

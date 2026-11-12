@@ -154,9 +154,17 @@ async function onPage(page, at) {
  * @param {readonly [number, number, number]} at
  */
 async function clickModel(page, at) {
-  // No wait for the drawing: an edit of the notes, sections or view keeps
-  // the model drawn, and a click while it is drawn anew is held.
-  const p = await onPage(page, await modelScreen(page, at));
+  // An edit of the notes or sections keeps the model drawn, and a click
+  // while it is drawn anew is held; a change of its view loads it again,
+  // so the point is waited for until the model stands (null meanwhile).
+  /** @type {readonly [number, number] | null} */
+  let screen = null;
+  await expect
+    .poll(async () => (screen = await modelScreen(page, at)) !== null, {
+      timeout: 20_000,
+    })
+    .toBe(true);
+  const p = await onPage(page, screen);
   await page.mouse.click(p.x, p.y);
 }
 

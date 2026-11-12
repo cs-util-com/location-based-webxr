@@ -57,7 +57,6 @@ function harness() {
     audio: { play: () => Promise.resolve(), stop: () => undefined },
     stage: {
       showCharacter: () => Promise.resolve(),
-      showModel: () => Promise.resolve(),
       clear: () => undefined,
     },
     checkPicture: () => Promise.resolve(null),
@@ -175,7 +174,6 @@ function channelHarness(step: Record<string, unknown>) {
     videoVoice: storyVideoVoice(dom.video, focus, held),
     stage: {
       showCharacter: () => Promise.resolve(),
-      showModel: () => Promise.resolve(),
       clear: () => undefined,
       setVoice: (...args: unknown[]) => voices.push(args),
     },
@@ -242,7 +240,7 @@ describe("a story's voice held in the channel", () => {
   it("stops an auto step's timer until its voice carries on", async () => {
     const t = channelHarness({
       ...KNIGHT,
-      view: "stage",
+      view: "speak",
       advance: { mode: "auto", afterS: 4 },
     });
     t.view.offer(t.story);
@@ -282,7 +280,7 @@ describe("a story's voice held in the channel", () => {
   it("keeps the timer off until both holds are gone", async () => {
     const t = channelHarness({
       ...KNIGHT,
-      view: "stage",
+      view: "speak",
       advance: { mode: "auto", afterS: 4 },
     });
     t.view.offer(t.story);
@@ -307,8 +305,7 @@ describe("a story's voice held in the channel", () => {
       advance: { mode: "tap" },
     });
     t.view.offer(t.story);
-    await settle();
-    expect(t.view.characterTapped()).toBe(true);
+    // His voice plays with his step.
     await settle();
     t.focus.tapped(t.free);
     t.calls.length = 0;
@@ -329,8 +326,7 @@ describe("a story's voice held in the channel", () => {
       advance: { mode: "tap" },
     });
     t.view.offer(t.story);
-    await settle();
-    t.view.characterTapped();
+    // His voice plays with his step.
     await settle();
     expect(t.voices.at(-1)).toEqual(["speaking", 2000]);
     t.focus.tapped(t.free);
@@ -344,7 +340,7 @@ describe("a story's voice held in the channel", () => {
   it("does not carry the hold into the next step", async () => {
     const t = channelHarness({
       ...KNIGHT,
-      view: "stage",
+      view: "speak",
       advance: { mode: "tap" },
     });
     const next = {
@@ -353,7 +349,7 @@ describe("a story's voice held in the channel", () => {
         storyOf("told", [
           {
             ...KNIGHT,
-            view: "stage",
+            view: "speak",
             advance: { mode: "tap" },
             pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
           } as never,
