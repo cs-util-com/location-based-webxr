@@ -54,8 +54,13 @@ keeps the list, its band and the 3D handles), each with a grip
 (drag to resize, down past the floor to dismiss). The share of the page
 is one CSS number on the body (`--s-sheet-share`), which the canvas reads
 too, so the map ends where the sheet begins and is told of its new size
-on release only. The head of the details has a back arrow to the list
-(`act` "back", `showList`: the selection goes, the list shows) beside
+on release only. The head of the details has a back arrow that goes one
+level up, editor-wide (`act` "back": a story's step to its story, the
+story or a free item to its station, an item in a plain folder to its
+folder, the station to the list - `showList`: the selection goes, the
+list shows); the crumb over the details (`nav:<selection>`) goes to any
+level above at once. Both read `inspectorCrumb`, built only while a
+selection shows (nothing selected builds no tour). The arrow sits beside
 its close button, and `#studio-list` in the top bar brings a dismissed
 list back. An open bottom panel stays at the foot and the sheet stands
 on it, taking its share of what is left, so Problems and History still

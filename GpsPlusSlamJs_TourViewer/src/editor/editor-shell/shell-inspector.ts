@@ -58,6 +58,7 @@ import {
   CHARACTER_VIEW_CHOICES,
   ON_GROUND_M,
   type InspectorCharacter,
+  type InspectorCrumb,
   type InspectorExtent,
   type InspectorModel,
   type InspectorPosition,
@@ -1071,6 +1072,43 @@ export interface InspectorState {
   /** A station's Contents unfolded (none said: it is). */
   readonly contentsOpen?: boolean;
   readonly busy?: string | null;
+  /** Where the selection stands (`inspectorCrumb`): drawn as buttons
+   *  over its details, its last-but-one part naming the Back button's
+   *  way up. None given: no crumb, and Back goes to the list. */
+  readonly crumb?: readonly InspectorCrumb[];
+}
+
+/** The crumb: every part a button that goes to its level
+ *  (`nav:<selection>`, `nav:` for the whole tour), the last one the
+ *  selection itself, marked current. */
+function crumbNav(crumb: readonly InspectorCrumb[]): HTMLElement {
+  const nav = el("nav", "crumbs");
+  nav.setAttribute("aria-label", "Where you are");
+  crumb.forEach((part, k) => {
+    if (k > 0) {
+      const sep = el("span", "csep", "\u203a");
+      sep.setAttribute("aria-hidden", "true");
+      nav.append(sep);
+    }
+    const b = el("button", "cb", part.label);
+    b.type = "button";
+    if (k === crumb.length - 1) {
+      b.setAttribute("aria-current", "page");
+    } else {
+      b.title = `Go to ${part.label}`;
+      b.dataset["act"] = `nav:${part.select ?? ""}`;
+    }
+    nav.append(b);
+  });
+  return nav;
+}
+
+/** The Back button's name: the level it goes up to. */
+function backLabel(crumb: readonly InspectorCrumb[] | undefined): string {
+  const up = crumb?.at(-2);
+  return up === undefined || up.select === null
+    ? "Back to the list"
+    : `Back to ${up.label}`;
 }
 
 /**
@@ -1308,7 +1346,7 @@ function drawDock(
   const head = headTitle(model, panel);
   const count = pinCount(model, head);
   dock.head.replaceChildren(
-    iconButton("right", "Back to the list", "back"),
+    iconButton("right", backLabel(state.crumb), "back"),
     icon,
     head,
     ...(panel?.head() ?? []),
@@ -1326,7 +1364,11 @@ function drawDock(
     ...moveParts(model, sub),
     ...(model.file === undefined ? [] : [fileFieldPart(model.file)]),
   ];
-  const before = [sub, ...(count === null ? [] : [count])];
+  const before = [
+    ...(state.crumb === undefined ? [] : [crumbNav(state.crumb)]),
+    sub,
+    ...(count === null ? [] : [count]),
+  ];
   placeAround(dock.body, before, panel?.kept ?? null, parts);
 }
 

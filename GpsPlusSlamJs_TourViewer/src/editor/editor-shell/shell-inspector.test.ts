@@ -1498,6 +1498,51 @@ describe("the radius slider", () => {
   });
 });
 
+describe("the crumb and the way up", () => {
+  // Why: Back goes one level up, everywhere in the editor: its name says
+  // where to, and the crumb over the details goes to any level above,
+  // the selection itself shown as the current part, not a button.
+  it("draws each level as a button, names Back by the level above", () => {
+    drawInspector(
+      dock,
+      buildInspector({
+        selected: "photo-1",
+        stations:
+          manifestToWrite(storeWith("photo-1").getState().tourDocument)
+            ?.stations ?? [],
+        assets: [],
+        codes: CODES,
+      }),
+      {
+        folded: false,
+        positionOpen: false,
+        crumb: [
+          { label: "Tour", select: null },
+          { label: "1 The old gate", select: "station:gate" },
+          { label: "Photo", select: "photo-1" },
+        ],
+      },
+      pictures,
+    );
+    const parts = [
+      ...dock.body.querySelectorAll<HTMLButtonElement>(
+        'nav.crumbs[aria-label="Where you are"] button',
+      ),
+    ];
+    expect(parts.map((b) => [b.textContent, b.dataset["act"] ?? null])).toEqual(
+      [
+        ["Tour", "nav:"],
+        ["1 The old gate", "nav:station:gate"],
+        ["Photo", null],
+      ],
+    );
+    expect(parts[2]?.getAttribute("aria-current")).toBe("page");
+    expect(
+      dock.head.querySelector('[data-act="back"]')?.getAttribute("aria-label"),
+    ).toBe("Back to 1 The old gate");
+  });
+});
+
 describe("the head's way back", () => {
   // Why: on a phone the details cover the list, so the head must lead back.
   it("starts with the back arrow, every kind of element", () => {

@@ -1271,6 +1271,27 @@ describe("a story's folder in the tree", () => {
     return found;
   };
 
+  // Why: Back goes one level up, editor-wide - from a step to its story,
+  // from the story to its station, from the station to the list - and the
+  // crumb goes to any level above at once.
+  it("goes one level up on Back, and to any level by the crumb", () => {
+    const { store, shell } = withStory();
+    const selected = () => store.getState().editorView.selected;
+    store.dispatch(editorViewActions.selected({ id: "l1" }));
+    inspectorAct("back").click();
+    expect(selected()).toBe("story:legend");
+    inspectorAct("back").click();
+    expect(selected()).toBe("station:c");
+    inspectorAct("back").click();
+    expect(selected()).toBeNull();
+    store.dispatch(editorViewActions.selected({ id: "l1" }));
+    inspectorAct("nav:station:c").click();
+    expect(selected()).toBe("station:c");
+    inspectorAct("nav:").click();
+    expect(selected()).toBeNull();
+    shell.hide();
+  });
+
   it("folds by its arrow, and selects by its name, unfolding only its holders", () => {
     const { store, shell } = withStory();
     tree('[data-select="story:legend"]').click();

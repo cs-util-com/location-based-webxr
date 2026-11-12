@@ -23,6 +23,7 @@ import { TOUR_CHARACTER_VIEWS } from "gps-plus-slam-app-framework/ar/tour-blocks
 import { facingRotation } from "../../character-views.js";
 import {
   buildInspector,
+  inspectorCrumb,
   CHARACTER_VIEW_CHOICES,
   headingOfRotation,
   inspectorHint,
@@ -116,6 +117,63 @@ function positionOf(selected: string) {
   }
   return model.position;
 }
+
+describe("inspectorCrumb", () => {
+  const crumb = (selected: string | null, stations = STATIONS) =>
+    inspectorCrumb({ selected, stations, codes: CODES });
+  const tour = { label: "Tour", select: null };
+
+  // Why: a free item's way up is its station, a code's the tour; nothing
+  // selected, or a selection the tour lacks, is the tour itself.
+  it("leads from a free item to its station and from a code to the tour", () => {
+    expect(crumb("pin-1")).toEqual([
+      tour,
+      { label: "1 Market Square", select: "station:a" },
+      { label: "Fountain, 1612", select: "pin-1" },
+    ]);
+    expect(crumb("level-1")).toEqual([
+      tour,
+      { label: "Code 1", select: "level-1" },
+    ]);
+    expect(crumb(null)).toEqual([tour]);
+    expect(crumb("gone")).toEqual([tour]);
+  });
+
+  // Why: an item in a plain folder goes up to its folder, and the folder
+  // to its station, as the tree nests them.
+  it("leads from an item in a folder to its folder, then its station", () => {
+    const station = {
+      ...STATIONS[0]!,
+      children: [
+        {
+          id: "f",
+          kind: "folder",
+          title: "Benches",
+          pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+          children: [
+            {
+              id: "deep",
+              kind: "shortText",
+              view: "pin",
+              caption: "Deep",
+              createdAtIso: AT,
+              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+            },
+          ],
+        },
+      ],
+    } as unknown as TourStation;
+    const square = { label: "1 Market Square", select: "station:a" };
+    const benches = { label: "Benches", select: "folder:f" };
+    expect(crumb("deep", [station])).toEqual([
+      tour,
+      square,
+      benches,
+      { label: "Deep", select: "deep" },
+    ]);
+    expect(crumb("folder:f", [station])).toEqual([tour, square, benches]);
+  });
+});
 
 describe("buildInspector", () => {
   it("shows nothing without a selection, or for one the tour does not have", () => {
@@ -279,7 +337,7 @@ describe("buildInspector", () => {
           stations: [{ id: "a", label: "Market Square" }],
         },
         title: "The legend",
-        sub: "2 The gate / Story",
+        sub: "Story",
         entries: [
           { id: "intro", kind: "text", title: "The siege", place: 1 },
           { id: "wendel", kind: "character", title: "Wendel", place: 2 },
@@ -296,7 +354,7 @@ describe("buildInspector", () => {
       if (model?.kind !== "storyEntry") return;
       expect(model.stationId).toBe("b");
       expect(model.title).toBe("The siege");
-      expect(model.sub).toBe("2 The gate / The legend / Long text, entry 1");
+      expect(model.sub).toBe("Long text, entry 1");
       expect(model.advance).toEqual({ mode: "auto", afterS: 8 });
       expect(model.block.fields.map((f) => [f.name, f.value])).toEqual([
         ["title", "The siege"],
@@ -329,13 +387,36 @@ describe("buildInspector", () => {
         id: "way",
         stationId: "b",
         title: "Which way?",
-        sub: "2 The gate / The legend / Choice, entry 3",
+        sub: "Choice, entry 3",
         lines: [
           "Back - goes to The siege",
           "On - plays on",
           "Stop - ends the story",
         ],
       });
+    });
+
+    // Why: the crumb is the way back to every level above a step, and Back
+    // takes its last-but-one part: a step's way up is its story, the
+    // story's its station, the station's the whole tour.
+    it("says where a story's step, the story and its station stand", () => {
+      const crumb = (selected: string) =>
+        inspectorCrumb({
+          selected,
+          stations: [STATIONS[0]!, STORY_STATION],
+          codes: CODES,
+        });
+      const tour = { label: "Tour", select: null };
+      const station = { label: "2 The gate", select: "station:b" };
+      const story = { label: "The legend", select: "story:legend" };
+      expect(crumb("way")).toEqual([
+        tour,
+        station,
+        story,
+        { label: "Step 3", select: "way" },
+      ]);
+      expect(crumb("story:legend")).toEqual([tour, station, story]);
+      expect(crumb("station:b")).toEqual([tour, station]);
     });
 
     it("sums up a quiz: its points, and its answers with the right one", () => {

@@ -114,6 +114,7 @@ import {
 import {
   buildInspector,
   detailsOnPhone,
+  inspectorCrumb,
   inspectorHint,
   type InspectorCode,
   type InspectorModel,
@@ -802,6 +803,16 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         positionOpen,
         contentsOpen,
         busy: busy?.act ?? null,
+        // Only for a selection shown: nothing selected builds no tour.
+        ...(model === null
+          ? {}
+          : {
+              crumb: inspectorCrumb({
+                selected: state().editorView.selected,
+                stations: manifest()?.stations ?? [],
+                codes: deps.codes(),
+              }),
+            }),
       },
       pictures,
       panels.sync(model),
@@ -1974,7 +1985,21 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       return;
     }
     if (act === "close") deps.select(null);
-    if (act === "back") showList();
+    if (act === "back" || act?.startsWith("nav:") === true) {
+      // Back goes one level up (the crumb's last-but-one part); a crumb
+      // part goes to its level. The whole tour is the list.
+      const to =
+        act === "back"
+          ? (inspectorCrumb({
+              selected: chosen,
+              stations: manifest()?.stations ?? [],
+              codes: deps.codes(),
+            }).at(-2)?.select ?? null)
+          : act.slice("nav:".length) || null;
+      if (to === null) showList();
+      else deps.select(to);
+      return;
+    }
     if (act === "lock") {
       // The selected station's position locked or unlocked: view state,
       // never an edit; the session refuses its moves while locked.
