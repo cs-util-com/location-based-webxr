@@ -18,6 +18,8 @@ import {
   tourStories,
   TOUR_FOLDER_MAX_SCALE,
   TOUR_FOLDER_MIN_SCALE,
+  type TourChoice,
+  type TourQuizEntry,
   type TourStory,
   type TourStoryBlock,
   type TourStoryChild,
@@ -172,6 +174,7 @@ import {
   type ExtentSpec,
 } from "../placement/placement-rows.js";
 import { freeStorySpot, newCharacterEntry, newStoryEntry } from "./new-pin.js";
+import { newStoryStep, type StepKind } from "./story-step-edits.js";
 
 /** One of the tour's objects as it stands, with this page's entry. */
 type AuthoringObject = ReturnType<typeof documentObjects>[number];
@@ -485,7 +488,8 @@ const STATION_REFUSALS: Readonly<
     | "character"
     | "storyText"
     | "storyAdvance"
-    | "storyFile",
+    | "storyFile"
+    | "storyStep",
     string
   >
 > = {
@@ -502,6 +506,8 @@ const STATION_REFUSALS: Readonly<
     "That text of a block of the station's story is not one the tour can carry.",
   storyAdvance:
     "A block of a story moves on by a tap, or by itself after a number of seconds above 0.",
+  storyStep:
+    "A choice needs a question and at least two answers with words, each leading to a step of its story or to its end; a quiz needs a question, points of 0 or more and a right answer of its own.",
 };
 
 /** Said for a story's title the format refuses. */
@@ -912,7 +918,13 @@ export interface EditorSession {
    *  it carries already. */
   addEntryToStory(
     storyId: string,
-    child: TourStoryBlock,
+    child: TourStoryChild,
+  ): { kind: "added"; id: string } | EditorRefusal;
+  /** A new choice or quiz at the end of a story (`newStoryStep`): one
+   *  step. */
+  addStepToStory(
+    storyId: string,
+    kind: StepKind,
   ): { kind: "added"; id: string } | EditorRefusal;
   /** Delete a story's child: one step; `answers` says how many answers
    *  that led to it now go on to the next child. */
@@ -924,6 +936,12 @@ export interface EditorSession {
   setStoryAdvance(
     id: string,
     advance: StationStoryAdvanceEdit["advance"],
+  ): { kind: "edited" | "unchanged" } | EditorRefusal;
+  /** A story's choice or quiz written whole (`step.id` names it): its
+   *  words, its answers, where each leads. One step; refused in words for
+   *  a step the format refuses. */
+  setStoryStep(
+    step: TourChoice | TourQuizEntry,
   ): { kind: "edited" | "unchanged" } | EditorRefusal;
   /** An item of a station moved `to` another place in its station (a
    *  story's id for a story): one step. `answers` says how many answers
@@ -1583,7 +1601,7 @@ export function createEditorSession(input: {
   /** `child` at the end of the story `storyId`: one step. */
   function addEntryToStory(
     storyId: string,
-    child: TourStoryBlock,
+    child: TourStoryChild,
   ): { kind: "added"; id: string } | EditorRefusal {
     const state = mine();
     if (state === null) return notInTour;
@@ -2677,6 +2695,9 @@ export function createEditorSession(input: {
       );
     },
     addEntryToStory,
+    addStepToStory(storyId, kind) {
+      return addEntryToStory(storyId, newStoryStep(kind, newObjectId()));
+    },
     deleteStoryChild(id) {
       const state = mine();
       const manifest = state === null ? null : manifestNow(state);
@@ -2722,6 +2743,32 @@ export function createEditorSession(input: {
             stationId: place.station.id,
             edit,
             what: "how an entry moves on",
+          }),
+        ),
+      )
+        ? { kind: "edited" }
+        : notApplied;
+    },
+    setStoryStep(step) {
+      const state = mine();
+      const manifest = state === null ? null : manifestNow(state);
+      if (state === null || manifest === null) return notInTour;
+      const place = tourChildPlace(manifest, step.id);
+      if (place?.story === undefined) {
+        return { kind: "refused", reason: NO_SUCH_STORY };
+      }
+      const edit: StationEdit = { storyStep: step };
+      const change = stationEditChange(state, place.station.id, edit);
+      if (change.kind === "refused") {
+        return { kind: "refused", reason: STATION_REFUSALS[change.reason] };
+      }
+      if (change.kind !== "edited") return { kind: "unchanged" };
+      return took(() =>
+        store.dispatch(
+          tourDocumentActions.stationEdited({
+            stationId: place.station.id,
+            edit,
+            what: `the edit of "${storyChildName(step)}"`,
           }),
         ),
       )

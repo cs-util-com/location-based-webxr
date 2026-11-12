@@ -3338,13 +3338,112 @@ body[data-view="3d"] #view3d .view3d-canvas {
   }
 }
 
-/* What a choice or a quiz says: read here, not edited. */
+/* What a quiz of a typed answer says: read here, not edited. */
 .steplines {
   display: grid;
   gap: 4px;
   margin: 4px 0;
   padding: 0;
   list-style: none;
+}
+
+/* A choice's and a quiz's answers: each a row of its words and its
+   Remove (a quiz's with its right-answer radio first), a choice's in a box
+   with where it leads under them. */
+.answers > .flabel {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.optbox {
+  margin: 0 0 6px;
+  padding: 6px;
+  border: 1px solid var(--s-line);
+  border-radius: 7px;
+  background: rgb(0 0 0 / 14%);
+}
+
+.optrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px;
+}
+
+.optbox .optrow {
+  margin: 0;
+}
+
+.optrow.lead {
+  margin-top: 5px;
+}
+
+.optrow .tfield {
+  flex: 1 1 40%;
+  min-width: 0;
+}
+
+.optrow select.tfield {
+  flex: 1 1 45%;
+}
+
+.optrow .rbtn,
+.optrow .radio {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
+
+.optrow .rbtn {
+  border: 1px solid var(--s-line2);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--s-muted);
+  cursor: pointer;
+}
+
+.optrow .rbtn:hover:not(:disabled) {
+  background: var(--s-bg3);
+  color: var(--s-text);
+}
+
+.optrow .rbtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.optrow .radio input {
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  accent-color: var(--s-ok);
+}
+
+.leads {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 0 2px 0 4px;
+  color: var(--s-muted);
+  font-size: 11.5px;
+}
+
+.thenbox {
+  padding: 7px 9px;
+  border: 1px dashed var(--s-line2);
+  border-radius: 6px;
+}
+
+@media (max-width: 700px) {
+  .optrow .rbtn,
+  .optrow .radio {
+    width: 42px;
+    height: 42px;
+  }
 }
 
 /* A model's own parts in the inspector (the station blocks prototype's

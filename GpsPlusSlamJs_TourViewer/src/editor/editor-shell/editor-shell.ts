@@ -112,6 +112,14 @@ import {
   type EntryAdvance,
 } from "./inspector-edits.js";
 import {
+  stepWithAnswer,
+  stepWithGoto,
+  stepWithoutAnswer,
+  stepWithRight,
+  type StepKind,
+  type StoryStep,
+} from "../story-step-edits.js";
+import {
   buildInspector,
   detailsOnPhone,
   inspectorCrumb,
@@ -253,6 +261,9 @@ export interface ShellEditCommands {
   addStory(stationId: string): void;
   /** A new entry of `kind` in the story, selected, one undo step. */
   addToStory(storyId: string, kind: AddKind): void;
+  /** A new choice or quiz at the end of the story, selected, one undo
+   *  step. */
+  addStepToStory(storyId: string, kind: StepKind): void;
   /** The add menu's Character: the character maker opens on a new
    *  character, which is then added to the station (standing free) or to
    *  the end of the story. */
@@ -264,6 +275,9 @@ export interface ShellEditCommands {
   storyTitle(storyId: string, title: string): TypedEditOutcome;
   /** How a story's block moves on. */
   storyAdvance(id: string, advance: EntryAdvance): TypedEditOutcome;
+  /** A story's choice or quiz written whole: its question, its answers,
+   *  where each leads, the right one, its points. */
+  storyStep(step: StoryStep): TypedEditOutcome;
   /** A long text's narration as it stands (`EditorSession.narration`). */
   narration(
     itemId: string,
@@ -422,6 +436,30 @@ function entryAdvanceEdit(
 /** A chip of how a story's block moves on: its block and its mode. */
 const ENTRY_ADVANCE = /^entry-advance:(.+):([^:]+)$/;
 
+/** A step's jump picker: `step-goto:<answer id>`. */
+const STEP_GOTO = "step-goto:";
+
+/** A step's Add, an answer's Remove (`step-remove:<answer id>`) or its
+ *  right-answer radio (`step-right:<answer id>`) as the whole step it
+ *  writes; null for another act, a selection that is no edited step,
+ *  and one that changes nothing (the right one ticked again, Add at four,
+ *  Remove at two). */
+function stepActEdit(
+  model: InspectorModel | null,
+  act: string,
+): StoryStep | null {
+  const step = model?.kind === "storyStep" ? model.form?.step : undefined;
+  if (step === undefined) return null;
+  if (act === "step-add") return stepWithAnswer(step);
+  if (act.startsWith("step-remove:")) {
+    return stepWithoutAnswer(step, act.slice("step-remove:".length));
+  }
+  if (act.startsWith("step-right:") && step.kind === "quiz") {
+    return stepWithRight(step, act.slice("step-right:".length));
+  }
+  return null;
+}
+
 /** A story character's chip (`character-view:<block>:<view>` or
  *  `character-advance:<block>:<mode>`) as his station's edit, or null for
  *  another act and for the chip already pressed (writing it would be an
@@ -510,7 +548,14 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         deps.edits.addCharacter({ kind: "story", id });
         return;
       }
-      addInStory(id, kind);
+      // Added into a story: its station and its folder unfolded first.
+      clearSearch();
+      revealStory(id);
+      if (kind === "choice" || kind === "quiz") {
+        deps.edits.addStepToStory(id, kind);
+      } else {
+        deps.edits.addToStory(id, kind);
+      }
       if (document.activeElement === document.body) {
         focusControl(inspector.root, '[data-act="close"]');
       }
@@ -551,12 +596,6 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     );
     title?.focus();
     title?.select();
-  }
-  /** Add to a story, its station and its folder unfolded first. */
-  function addInStory(storyId: string, kind: AddKind): void {
-    clearSearch();
-    revealStory(storyId);
-    deps.edits.addToStory(storyId, kind);
   }
   /** The folder of the story as last drawn. */
   function drawnFolder(id: string): TreeFolder | undefined {
@@ -1122,6 +1161,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       outcome = deps.edits.storyTitle(edit.id, edit.title);
     else if (edit.kind === "story-advance")
       outcome = deps.edits.storyAdvance(edit.id, edit.advance);
+    else if (edit.kind === "story-step")
+      outcome = deps.edits.storyStep(edit.step);
     else if (edit.kind === "block") {
       outcome = deps.edits.block(edit.id, edit.field, edit.value);
     } else if (edit.kind === "model") {
@@ -2087,6 +2128,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       if (advance !== null) {
         deps.edits.storyAdvance(advance.id, advance.advance);
       }
+      const step = stepActEdit(model, act);
+      if (step !== null) deps.edits.storyStep(step);
     }
     if (act === "fold") {
       const folded = !state().editorView.foldedDocks.inspector;
@@ -2121,6 +2164,21 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       commitField(input, state().editorView.selected);
       focusControl(inspector.root, next, tabbed);
     }
+  });
+  // A step's jump picker (`step-goto:<answer id>`) and its right-answer
+  // radio (`step-right:<answer id>`, answered on its click): each writes
+  // the whole step; the control drawn again keeps the focus.
+  inspector.root.addEventListener("change", (event) => {
+    const pick = event.target;
+    if (!(pick instanceof HTMLSelectElement)) return;
+    const act = pick.dataset["act"];
+    if (act?.startsWith(STEP_GOTO) !== true) return;
+    const model = inspectorModel(state().editorView);
+    const step = model?.kind === "storyStep" ? model.form?.step : undefined;
+    if (step?.kind !== "choice") return;
+    const edited = stepWithGoto(step, act.slice(STEP_GOTO.length), pick.value);
+    if (edited !== null) deps.edits.storyStep(edited);
+    focusControl(inspector.root, `[data-act="${act}"]`);
   });
   // The inspector's Move to station (`data-move-station`): a choice moves
   // the selection there, and the picker, drawn again, keeps the focus.

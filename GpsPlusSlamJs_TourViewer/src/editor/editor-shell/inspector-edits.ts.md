@@ -31,6 +31,10 @@ stationId, edit }` (a `StationEdit` of `tour-document.ts`). A radius
   - A story's `story-title` (`story:<id>` selected): `{ kind: "story-title",
 id, title }`. A story's block selected: its texts and a character's facing
     as below, its `entry-after:<id>` as `{ kind: "story-advance", id, advance }`.
+    A story's choice or quiz selected: its `step:` fields (`step:prompt`,
+    `step:label:<id>`, `step:points`) as `{ kind: "story-step", step }`, the
+    whole step (`stepFieldEdit`, `../story-step-edits.ts`), or `invalid`
+    for points that are no whole number of 0 or more.
     A free block with no place in the world: its texts as `{ kind: "block" }`.
   - A story block's `block:<id>:<field>` on its station: `{ kind:
 "block", id, field, value }` for a block the station's story shows

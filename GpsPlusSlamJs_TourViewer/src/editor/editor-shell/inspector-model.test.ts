@@ -20,6 +20,7 @@ import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import { TOUR_CHARACTER_VIEWS } from "gps-plus-slam-app-framework/ar/tour-blocks";
 
+import { END_TARGET } from "../story-steps.js";
 import { facingRotation } from "../../character-views.js";
 import {
   buildInspector,
@@ -417,6 +418,77 @@ describe("buildInspector", () => {
       ]);
       expect(crumb("story:legend")).toEqual([tour, station, story]);
       expect(crumb("station:b")).toEqual([tour, station]);
+    });
+
+    // Why: the choice inspector edits each answer's words and where it
+    // leads; the picker's value must be the answer's own way, and the chip
+    // must say a backward jump as one, since it is drawn apart.
+    it("lays out a choice's answers to edit, each with its way on", () => {
+      const model = inStory("way");
+      if (model?.kind !== "storyStep") throw new Error("no step");
+      expect(model.form?.prompt).toBe("Which way?");
+      expect(model.form?.answers).toEqual([
+        {
+          id: "o1",
+          label: "Back",
+          way: "intro",
+          jump: "goes back to step 1",
+          back: true,
+          right: false,
+        },
+        {
+          id: "o2",
+          label: "On",
+          way: "",
+          jump: "next: step 4",
+          back: false,
+          right: false,
+        },
+        {
+          id: "o3",
+          label: "Stop",
+          way: END_TARGET,
+          jump: "ends the story",
+          back: false,
+          right: false,
+        },
+      ]);
+      expect(model.form?.ways.map((w) => w.label)).toEqual([
+        "Next step (4: Quiz: How old?)",
+        "Jump to step 5: Quiz: Which year?",
+        "Go back to step 1: The siege",
+        "Go back to step 2: Wendel",
+        "Ask this again (step 3)",
+        "End the story",
+      ]);
+      expect(model.form).toMatchObject({
+        canAdd: true,
+        canRemove: true,
+        points: null,
+        then: null,
+      });
+    });
+
+    // Why: a quiz does not branch, so its inspector says where the story
+    // goes on instead of offering a jump; a quiz of a typed answer is not
+    // edited here and keeps its summary only.
+    it("lays out a single quiz to edit, and says where the story goes on", () => {
+      const model = inStory("age");
+      if (model?.kind !== "storyStep") throw new Error("no step");
+      expect(model.form).toMatchObject({
+        prompt: "How old?",
+        points: 2,
+        ways: [],
+        canAdd: true,
+        canRemove: false,
+        then: "Right or wrong, the visitor sees the result, and the story goes on at step 5: Quiz: Which year?",
+      });
+      expect(model.form?.answers.map((a) => [a.label, a.right])).toEqual([
+        ["Old", true],
+        ["New", false],
+      ]);
+      const year = inStory("year");
+      expect(year?.kind === "storyStep" && year.form).toBeUndefined();
     });
 
     it("sums up a quiz: its points, and its answers with the right one", () => {

@@ -92,6 +92,13 @@ items on the ground, the card's picture, and a story
 character's view and advance chips (`characterChipEdit`: his station's
 `StationEdit.character`; the chip already pressed writes nothing).
 
+A story's choice or quiz is edited in its inspector: each control writes
+the whole step through `deps.edits.storyStep(step)` - a typed field on
+focusout or Enter (`inspector-edits.ts`), the jump picker on `change`
+(`stepWithGoto`), Add, Remove and the right answer on a click
+(`stepActEdit`, `../story-step-edits.ts`) - one undo step each. The story
+menu's Choice and Quiz call `deps.edits.addStepToStory(storyId, kind)`.
+
 A story is a folder of the tree: its arrow folds it (`storyFolded`), its name
 selects it, its "+" and its empty line open the type menu for it, a click
 unfolds what holds a row. The inspector's `goto:` reveals the entry's folder,

@@ -213,7 +213,12 @@ never state). Design:
 child)` (an entry made elsewhere - a file's, `new-file-item.ts` -
       added at the story's end, refused for a story that is gone or an id
       the tour holds), `deleteStoryChild(id)` (says how many
-      answers no longer lead anywhere), `setStoryAdvance(id, advance)` - the
+      answers no longer lead anywhere), `addStepToStory(storyId, kind)` (a
+      new choice or quiz, `newStoryStep`, at the story's end),
+      `setStoryStep(step)` (a choice or quiz rewritten whole by its
+      inspector; refused in words when the format would refuse it - a jump
+      to a gone step, a blank text, points below 0),
+      `setStoryAdvance(id, advance)` - the
       tree's and the inspector's story edits, each one step, a refusal said
       in the creator's words.
     - `moveChild(id, to)` - a station's item or story moved within its

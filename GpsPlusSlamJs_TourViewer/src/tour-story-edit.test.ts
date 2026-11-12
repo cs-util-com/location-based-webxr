@@ -21,6 +21,7 @@ import {
   withoutStoryChild,
   withStory,
   withStoryChild,
+  withStoryStep,
   withStoryTitle,
 } from "./tour-story-edit.js";
 
@@ -221,5 +222,107 @@ describe("withoutStoryChild", () => {
 
   it("refuses a child of no story", () => {
     expect(withoutStoryChild(frame([FREE]), "free-1")).toBeNull();
+  });
+});
+
+describe("withStoryStep", () => {
+  const story = () =>
+    frame([
+      storyOf("one", [line("a"), choice("c", ["a", undefined]), line("b")]),
+    ]);
+  const choiceOf = (out: Pick<TourStation, "children"> | null) =>
+    (out === null ? undefined : tourStories(out)[0])?.children[1] as
+      | TourChoice
+      | undefined;
+
+  // Why: the choice inspector writes a whole step back at once; what it
+  // writes is checked by the format's own reader, so an answer that ends
+  // the story or jumps back is kept as written.
+  it("puts an edited choice in place, ends and backward jumps kept", () => {
+    const edited: TourChoice = {
+      id: "c",
+      kind: "choice",
+      prompt: "  Again?  ",
+      options: [
+        { id: "c-o0", label: "Yes", goto: "c" },
+        { id: "c-o1", label: "No", end: true },
+        { id: "c-o2", label: "Back", goto: "a" },
+      ],
+    };
+    const got = choiceOf(withStoryStep(story(), edited));
+    expect(got?.options).toEqual(edited.options);
+    expect(got?.prompt.trim()).toBe("Again?");
+  });
+
+  // Why: the editor must never hold a step the reader would refuse on the
+  // next load - a blank answer, one answer only, a jump to no step, an
+  // end beside a jump - nor turn a step into another kind.
+  it("refuses a step the format refuses, an unknown one and another kind", () => {
+    const base = choice("c", [undefined, undefined]);
+    const bad: TourChoice[] = [
+      { ...base, prompt: " " },
+      { ...base, options: base.options.slice(0, 1) },
+      {
+        ...base,
+        options: [base.options[0]!, { id: "x", label: "Lost", goto: "gone" }],
+      },
+      {
+        ...base,
+        options: [
+          base.options[0]!,
+          { id: "x", label: "Both", goto: "a", end: true },
+        ],
+      },
+      { ...base, options: [base.options[0]!, { ...base.options[0]! }] },
+    ];
+    for (const step of bad) expect(withStoryStep(story(), step)).toBeNull();
+    expect(withStoryStep(story(), { ...base, id: "nope" })).toBeNull();
+    expect(
+      withStoryStep(story(), {
+        id: "a",
+        kind: "quiz",
+        question: "Which?",
+        points: 1,
+        answer: {
+          type: "single",
+          options: [
+            { id: "p", label: "P" },
+            { id: "q", label: "Q" },
+          ],
+          correct: "p",
+        },
+      }),
+    ).toBeNull();
+  });
+
+  // Why: a quiz is edited the same way, its right answer one of its own.
+  it("puts an edited quiz in place and refuses a right answer it lacks", () => {
+    const quiz = {
+      id: "q",
+      kind: "quiz" as const,
+      question: "How old?",
+      points: 2,
+      answer: {
+        type: "single" as const,
+        options: [
+          { id: "q-a", label: "Old" },
+          { id: "q-b", label: "New" },
+        ],
+        correct: "q-b",
+      },
+    };
+    const holder = frame([storyOf("one", [line("a"), quiz])]);
+    const edited = { ...quiz, points: 5, question: "How new?" };
+    const out = withStoryStep(holder, edited);
+    expect(
+      (out === null ? undefined : tourStories(out)[0])?.children[1],
+    ).toEqual(edited);
+    expect(
+      withStoryStep(holder, {
+        ...quiz,
+        answer: { ...quiz.answer, correct: "zz" },
+      }),
+    ).toBeNull();
+    expect(withStoryStep(holder, { ...quiz, points: -1 })).toBeNull();
   });
 });

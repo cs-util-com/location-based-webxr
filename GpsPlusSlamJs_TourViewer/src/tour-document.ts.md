@@ -294,7 +294,9 @@ largeTour?, cannotSave? })`.
     `stationEdited` with `storyAdvance` sets how a story's block moves on.
     `storyFile` gives a story block another file (an asset the tour lists of
     the block's file kind, `block-file.ts`; a video's poster replaced or
-    removed); refused `storyFile` otherwise.
+    removed); refused `storyFile` otherwise. `storyStep` replaces a story's
+    choice or quiz of that id whole (`withStoryStep`); refused `storyStep`
+    when no such step is held or the format refuses it.
   - `childMoved({ id, to, what })` - an item of a station moved inside it
     (a free item into a story and out, an entry between stories or within
     one, a story among the stories) or onto another station (`{ place:

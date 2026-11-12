@@ -112,8 +112,16 @@ content` (Chromium, the editor's browser; elsewhere it stays three
     `block:<id>:<field>` and drawn as an item's other texts are
     (`blockTextField`, its count under it; a number field, a sound's radius, reach or volume, is a decimal box with its unit and no count). Where these controls sit is this build's choice, made before the
     owner's prototype round on the editor's character UI.
-  - A story's choice or quiz: its summary (`ul.steplines`), read here and
-    not edited, and "Delete choice" / "Delete quiz".
+  - A story's choice or quiz: with a `form`, its Question
+    (`data-field="step:prompt"`) and an "Answers" box: each answer a typed
+    field (`step:label:<id>`, "Answer N"), a remove button
+    (`step-remove:<id>`, off at two), for a choice a "leads to" jump picker
+    (`select[data-act="step-goto:<id>"]`, groups "Jump ahead" and "Go
+    back", "End the story" last), for a quiz a radio
+    (`step-right:<id>`); "Add an answer" (`step-add`, "Four answers is the
+    most" when off); a quiz's Points (`step:points`) and its "Then" line.
+    Without a form (a quiz of another answer type) its summary
+    (`ul.steplines`), read only. Then "Delete choice" / "Delete quiz".
   - An item with no place in the world (a video, its `offset` null): its
     texts, its kind panel's parts and its Delete; no split, no ground, no
     Position.

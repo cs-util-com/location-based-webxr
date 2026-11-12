@@ -332,9 +332,9 @@ describe("drawInspector", () => {
     ).not.toContain("entries");
   });
 
-  // Why: an entry that is no block waits for an answer. It cannot be edited
-  // yet, so what it says and its Delete are all there is: a summary drawn as
-  // text, and no field that would suggest otherwise.
+  // Why: a step the inspector does not edit (a quiz of a typed answer)
+  // shows what it says and its Delete only: a summary drawn as text, and
+  // no field that would suggest otherwise.
   it("draws a choice's or a quiz's summary as text, with its Delete", () => {
     drawInspector(
       dock,
@@ -364,6 +364,174 @@ describe("drawInspector", () => {
     expect(
       dock.body.querySelector('[data-act="delete"]')?.textContent,
     ).toContain("Delete choice");
+  });
+
+  // Why: a choice is edited in place - its question, each answer's words
+  // and where it leads - and every control names the answer it is for, so
+  // a screen reader and the shell tell four answers apart; Remove stops at
+  // two answers and Add at four.
+  it("draws a choice to edit: its question, answers, ways, Add and Remove", () => {
+    const ways = [
+      { group: "next", value: "", label: "Next step (3: B)" },
+      { group: "ahead", value: "d", label: "Jump to step 4: D" },
+      { group: "back", value: "a", label: "Go back to step 1: A" },
+      { group: "back", value: "way", label: "Ask this again (step 2)" },
+      { group: "end", value: ":end", label: "End the story" },
+    ] as const;
+    const answer = (id: string, label: string, way: string) => ({
+      id,
+      label,
+      way,
+      jump: "",
+      back: false,
+      right: false,
+    });
+    drawInspector(
+      dock,
+      {
+        kind: "storyStep",
+        stepKind: "choice",
+        id: "way",
+        stationId: "gate",
+        title: "Which way?",
+        sub: "Choice, entry 2",
+        heading: "Answers",
+        lines: [],
+        form: {
+          step: {
+            id: "way",
+            kind: "choice",
+            prompt: "Which way?",
+            options: [],
+          },
+          prompt: "Which way?",
+          answers: [answer("o1", "Again", "way"), answer("o2", "Stop", ":end")],
+          ways,
+          canAdd: true,
+          canRemove: false,
+          points: null,
+          then: null,
+        },
+      },
+      FOLD,
+      pictures,
+    );
+    const body = dock.body;
+    const question = body.querySelector<HTMLTextAreaElement>(
+      'textarea[data-field="step:prompt"]',
+    );
+    expect(question?.defaultValue).toBe("Which way?");
+    expect(
+      body.querySelector<HTMLInputElement>('[data-field="step:label:o2"]')
+        ?.defaultValue,
+    ).toBe("Stop");
+    expect(
+      body
+        .querySelector('[data-field="step:label:o1"]')
+        ?.getAttribute("aria-label"),
+    ).toBe("Answer 1");
+    const pick = body.querySelector<HTMLSelectElement>(
+      'select[data-act="step-goto:o1"]',
+    );
+    expect(pick?.getAttribute("aria-label")).toBe("Where answer 1 leads");
+    expect(pick?.value).toBe("way");
+    expect(
+      [...(pick?.querySelectorAll("optgroup") ?? [])].map((g) => g.label),
+    ).toEqual(["Jump ahead", "Go back"]);
+    expect([...(pick?.options ?? [])].map((o) => o.text)).toEqual(
+      ways.map((w) => w.label),
+    );
+    expect(
+      body.querySelector<HTMLSelectElement>('select[data-act="step-goto:o2"]')
+        ?.value,
+    ).toBe(":end");
+    const remove = body.querySelector<HTMLButtonElement>(
+      '[data-act="step-remove:o1"]',
+    );
+    expect(remove?.getAttribute("aria-label")).toBe("Remove answer 1");
+    expect(remove?.disabled).toBe(true);
+    const add = body.querySelector<HTMLButtonElement>('[data-act="step-add"]');
+    expect(add?.disabled).toBe(false);
+    expect(add?.textContent).toContain("Add an answer");
+    expect(body.querySelector(".steplines")).toBeNull();
+    expect(body.querySelector('[data-act="delete"]')?.textContent).toContain(
+      "Delete choice",
+    );
+  });
+
+  // Why: a quiz is edited the same way, its right answer a radio of its
+  // own per answer, its points a number, and where the story goes on said
+  // in words, since a quiz does not branch.
+  it("draws a quiz to edit: the right answer, its points, then", () => {
+    const answer = (id: string, label: string, right: boolean) => ({
+      id,
+      label,
+      way: "",
+      jump: "",
+      back: false,
+      right,
+    });
+    drawInspector(
+      dock,
+      {
+        kind: "storyStep",
+        stepKind: "quiz",
+        id: "age",
+        stationId: "gate",
+        title: "How old?",
+        sub: "Quiz, entry 3",
+        heading: "Answers",
+        lines: [],
+        form: {
+          step: {
+            id: "age",
+            kind: "quiz",
+            question: "How old?",
+            points: 2,
+            answer: { type: "single", options: [], correct: "" },
+          },
+          prompt: "How old?",
+          answers: [
+            answer("q1", "Old", false),
+            answer("q2", "New", true),
+            answer("q3", "Both", false),
+            answer("q4", "None", false),
+          ],
+          ways: [],
+          canAdd: false,
+          canRemove: true,
+          points: 2,
+          then: "Right or wrong, the visitor sees the result, and the story ends",
+        },
+      },
+      FOLD,
+      pictures,
+    );
+    const body = dock.body;
+    const radios = [
+      ...body.querySelectorAll<HTMLInputElement>('input[type="radio"]'),
+    ];
+    expect(radios.map((r) => [r.dataset["act"], r.checked])).toEqual([
+      ["step-right:q1", false],
+      ["step-right:q2", true],
+      ["step-right:q3", false],
+      ["step-right:q4", false],
+    ]);
+    expect(radios[0]?.getAttribute("aria-label")).toBe(
+      "Answer 1 is the right one",
+    );
+    expect(new Set(radios.map((r) => r.name)).size).toBe(1);
+    expect(
+      body.querySelector<HTMLInputElement>('[data-field="step:points"]')
+        ?.defaultValue,
+    ).toBe("2");
+    expect(body.querySelector("select")).toBeNull();
+    const add = body.querySelector<HTMLButtonElement>('[data-act="step-add"]');
+    expect(add?.disabled).toBe(true);
+    expect(add?.textContent).toContain("Four answers is the most");
+    expect(body.querySelector(".thenbox")?.textContent).toBe(
+      "Right or wrong, the visitor sees the result, and the story ends.",
+    );
   });
 
   // Why: a video has no place in the world, so its inspector has nothing

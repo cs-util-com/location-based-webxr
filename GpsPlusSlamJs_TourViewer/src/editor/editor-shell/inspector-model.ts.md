@@ -71,7 +71,12 @@ view, advance, facingDeg }`) and `advance { mode, afterS }`;
     `id`, `stationId`, `title`, `sub`, `heading` and `lines`: where each answer
     leads ("plays on", "goes to <entry>" or "ends the story"), or a quiz's
     points and its answers with the right one said (a typed answer's check is
-    not said);
+    not said); `form?: InspectorStepForm` for a choice and a single-answer
+    quiz: `{ step, prompt, answers, ways, canAdd, canRemove, points, then }`,
+    each `InspectorAnswer { id, label, way, jump, back, right }` with its jump
+    picker's value (`gotoValue`), its chip words and whether it goes back;
+    `ways` the picker's `GotoChoice`s (`../story-steps.ts`); a quiz's
+    `then` says where the story goes on, without a closing stop;
   - `ItemInspector` - `kind: "item"`, every free block (a video and a
     free character too), `itemKind`, title, `sub` naming
     its kind in the one word every creator page uses and its station ("Pin in
