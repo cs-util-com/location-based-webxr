@@ -1,0 +1,1027 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>OSM Demo HUD: Tool Rail</title>
+    <!--
+  Throwaway prototype for the OSM demo's HUD, direction "tool rail + popover
+  cards". A rail of six labelled tools sits at the edge of the 3D view, on the
+  seam to the map; each tool opens one card, and cards always open over the
+  map, never over the 3D view. Nothing here is wired to the demo: the 3D view
+  and the map are drawings, every control only changes the drawing or its own
+  label. Original code, no libraries, made-up numbers.
+  Query knobs: ?state=<name> (see the "Proto" panel), ?pin=1.
+-->
+    <link rel="stylesheet" href="rail.css" />
+  </head>
+  <body>
+    <!-- 3D view placeholder: the SVG is drawn by rail.js -->
+    <section id="scene" aria-label="3D view">
+      <svg id="scene-art" aria-hidden="true"></svg>
+      <div id="loading-overlay" class="plate loading" hidden>
+        <p class="loading-text">
+          Fetching and scoring around 50.92310, 6.94450...
+        </p>
+        <div class="bar" aria-hidden="true"><span></span></div>
+      </div>
+    </section>
+
+    <!-- Map placeholder (desktop: left half; phone: bottom sheet; landscape: right side) -->
+    <section id="map" aria-label="Map">
+      <svg id="map-art" aria-hidden="true"></svg>
+      <div
+        id="sheet-handle"
+        role="separator"
+        aria-label="Resize map"
+        tabindex="0"
+      >
+        <span></span>
+      </div>
+      <div class="zoom" aria-label="Zoom">
+        <button type="button" aria-label="Zoom in">+</button>
+        <button type="button" aria-label="Zoom out">-</button>
+      </div>
+      <div class="map-ctrls">
+        <button
+          id="enter-ar"
+          class="map-sq"
+          type="button"
+          aria-label="Enter AR"
+        >
+          AR
+        </button>
+        <button
+          class="map-sq locate-button"
+          type="button"
+          aria-label="Locate me"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 21s-6-5.5-6-11a6 6 0 0 1 12 0c0 5.5-6 11-6 11z" />
+            <circle cx="12" cy="10" r="2.2" />
+          </svg>
+        </button>
+      </div>
+      <div class="map-attribution">
+        <span class="attr-short">OpenStreetMap · Mapterhorn · Mapzen/AWS</span>
+        <span class="attr-long" hidden
+          >© OpenStreetMap contributors (ODbL) · terrain: Mapterhorn ·
+          Mapzen/AWS Terrain Tiles</span
+        >
+        <button
+          type="button"
+          class="attr-more"
+          aria-expanded="false"
+          aria-label="Show full attribution"
+        >
+          ...
+        </button>
+      </div>
+    </section>
+
+    <!-- ===== HUD: the rail and the "now" plate ===== -->
+    <div id="dock">
+      <nav id="rail" class="plate" aria-label="Tools" data-hud>
+        <button
+          class="rail-btn"
+          type="button"
+          data-card="place"
+          aria-expanded="false"
+          aria-controls="card-place"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 21s-6-5.5-6-11a6 6 0 0 1 12 0c0 5.5-6 11-6 11z" />
+            <circle cx="12" cy="10" r="2.2" />
+          </svg>
+          <span class="rail-label">Place</span
+          ><span class="rail-dot" aria-hidden="true"></span>
+        </button>
+        <button
+          class="rail-btn"
+          type="button"
+          data-card="analysis"
+          aria-expanded="false"
+          aria-controls="card-analysis"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M8.5 4l3.46 2v4L8.5 12l-3.46-2V6zM15.43 4l3.46 2v4l-3.46 2-3.46-2V6zM11.96 10l3.46 2v4l-3.46 2-3.46-2v-4z"
+            />
+          </svg>
+          <span class="rail-label">Analysis</span
+          ><span class="rail-dot" aria-hidden="true"></span>
+        </button>
+        <button
+          class="rail-btn"
+          type="button"
+          data-card="world"
+          aria-expanded="false"
+          aria-controls="card-world"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 20V10l5-3v13M9 20V5l7 3v12M16 20v-8l4 2v6M3 20h18" />
+          </svg>
+          <span class="rail-label">World</span
+          ><span class="rail-dot" aria-hidden="true"></span>
+        </button>
+        <button
+          class="rail-btn"
+          type="button"
+          data-card="look"
+          aria-expanded="false"
+          aria-controls="card-look"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M12 3a9 9 0 1 0 0 18c1.2 0 1.8-.8 1.8-1.7 0-1.1-.9-1.4-.9-2.4 0-.9.7-1.5 1.6-1.5H17a4 4 0 0 0 4-4c0-4.7-4-8.4-9-8.4z"
+            />
+            <circle cx="7.5" cy="11.5" r="1.2" />
+            <circle cx="10" cy="7.2" r="1.2" />
+            <circle cx="14.8" cy="7.2" r="1.2" />
+          </svg>
+          <span class="rail-label">Look</span
+          ><span class="rail-dot" aria-hidden="true"></span>
+        </button>
+        <button
+          class="rail-btn"
+          type="button"
+          data-card="sun"
+          aria-expanded="false"
+          aria-controls="card-sun"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="4" />
+            <path
+              d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"
+            />
+          </svg>
+          <span class="rail-label">Sun</span
+          ><span class="rail-dot" aria-hidden="true"></span>
+        </button>
+        <button
+          class="rail-btn"
+          type="button"
+          data-card="debug"
+          aria-expanded="false"
+          aria-controls="card-debug"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1" />
+            <circle cx="15" cy="6" r="2" />
+            <circle cx="9" cy="12" r="2" />
+            <circle cx="17" cy="18" r="2" />
+          </svg>
+          <span class="rail-label">Debug</span
+          ><span class="rail-dot" aria-hidden="true"></span
+          ><span class="rail-warn" aria-hidden="true">!</span>
+        </button>
+      </nav>
+
+      <div id="now" class="plate" data-hud aria-label="Current state">
+        <button type="button" class="now-row" data-open="analysis">
+          <b class="now-cat">battleArea</b>
+          <span class="now-ramp ramp" hidden></span>
+          <span class="now-cells">cells off</span>
+        </button>
+        <button type="button" class="now-row" data-open="sun">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="4" />
+          </svg>
+          <span class="now-sun">15:47</span>
+        </button>
+        <button
+          type="button"
+          class="now-row now-quest"
+          data-open="place"
+          hidden
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 21s-6-5.5-6-11a6 6 0 0 1 12 0c0 5.5-6 11-6 11z" />
+          </svg>
+          <span>340 m SW</span>
+        </button>
+        <p class="now-row now-perf" hidden>16.7 ms · 60 fps</p>
+        <p class="now-row now-busy" role="status" hidden>
+          <span class="spin" aria-hidden="true"></span
+          ><span class="now-busy-text"></span>
+        </p>
+      </div>
+    </div>
+
+    <!-- ===== Cards: one open at a time; over the map, never over the 3D view ===== -->
+    <section
+      id="card-place"
+      class="card plate"
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby="card-place-title"
+      tabindex="-1"
+      data-hud
+      hidden
+    >
+      <header class="card-head">
+        <h2 id="card-place-title">Place</h2>
+        <button
+          type="button"
+          class="icon-btn pin"
+          aria-pressed="false"
+          aria-label="Keep this card open"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M9 3.5h6l-1 5.5 3 3H7l3-3zM12 12v8.5" />
+          </svg>
+        </button>
+        <button type="button" class="icon-btn close" aria-label="Close">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      </header>
+      <div class="card-body">
+        <div class="field">
+          <label class="cap" for="site">Jump to</label>
+          <select id="site" class="select" aria-label="location">
+            <option value="" selected>Pick a city</option>
+            <option>New York</option>
+            <option>Cologne</option>
+            <option>Tokyo</option>
+            <option>London - Tower Bridge</option>
+            <option>London - Westminster</option>
+            <option>Paris</option>
+            <option>San Francisco</option>
+            <option>Sydney</option>
+            <option>Porto</option>
+            <option>Rome</option>
+            <option>Barcelona</option>
+            <option>Venice</option>
+            <option>Hong Kong</option>
+            <option>Rio de Janeiro</option>
+          </select>
+          <p class="hint">Or click the map to move yourself.</p>
+        </div>
+        <div class="field">
+          <p class="cap">Quests</p>
+          <div class="row">
+            <button id="geo-event" type="button" class="btn btn--accent">
+              Show Quests
+            </button>
+            <span id="quest-readout" class="readout" hidden>340 m SW</span>
+            <span class="readout dim quest-none">none yet</span>
+          </div>
+        </div>
+        <fieldset id="geo-event-picker" class="sub" disabled>
+          <legend class="cap">Find an event at</legend>
+          <div class="row two">
+            <input
+              id="geo-event-date"
+              class="input"
+              type="date"
+              value="2026-09-23"
+              aria-label="event date"
+            />
+            <input
+              id="geo-event-time"
+              class="input"
+              type="time"
+              value="15:45"
+              aria-label="event time"
+            />
+          </div>
+          <div class="row two">
+            <button id="geo-event-again" type="button" class="btn">
+              Search again
+            </button>
+            <button id="geo-event-clear" type="button" class="btn">
+              Clear event
+            </button>
+          </div>
+          <p class="hint picker-hint">Available after the first search.</p>
+          <p id="geo-event-error" class="hint err" role="alert"></p>
+        </fieldset>
+      </div>
+    </section>
+
+    <section
+      id="card-analysis"
+      class="card plate"
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby="card-analysis-title"
+      tabindex="-1"
+      data-hud
+      hidden
+    >
+      <header class="card-head">
+        <h2 id="card-analysis-title">Analysis</h2>
+        <button
+          type="button"
+          class="icon-btn pin"
+          aria-pressed="false"
+          aria-label="Keep this card open"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M9 3.5h6l-1 5.5 3 3H7l3-3zM12 12v8.5" />
+          </svg>
+        </button>
+        <button type="button" class="icon-btn close" aria-label="Close">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      </header>
+      <div class="card-body">
+        <div class="field">
+          <label class="cap" for="category">Category</label>
+          <select id="category" class="select" aria-label="category">
+            <option selected>battleArea</option>
+            <option>restingArea</option>
+            <option>spawnPoint</option>
+          </select>
+        </div>
+        <div class="switches">
+          <label class="sw" id="cells-row"
+            ><input id="layer-cells" type="checkbox" /><span class="sw-label"
+              >cells</span
+            ><span class="sw-note" id="cells-note"></span
+          ></label>
+          <label class="sw"
+            ><input id="layer-areas" type="checkbox" checked /><span
+              class="sw-label"
+              >areas</span
+            ></label
+          >
+          <label class="sw" id="show-below-label"
+            ><input id="show-below" type="checkbox" disabled /><span
+              class="sw-label"
+              >below threshold</span
+            ><span class="sw-note">needs cells</span></label
+          >
+        </div>
+        <div id="legend" class="legend">
+          <p class="legend-off hint">Switch cells on to see the score ramp.</p>
+          <div class="legend-on" hidden>
+            <p class="legend-head"><b class="legend-cat">battleArea</b></p>
+            <div class="legend-ramp">
+              <span class="num">1</span><span class="ramp"></span
+              ><span class="num">10 000</span>
+            </div>
+            <p class="hint legend-stats">max here 6400 · 1933 above</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section
+      id="card-world"
+      class="card plate"
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby="card-world-title"
+      tabindex="-1"
+      data-hud
+      hidden
+    >
+      <header class="card-head">
+        <h2 id="card-world-title">World</h2>
+        <button
+          type="button"
+          class="icon-btn pin"
+          aria-pressed="false"
+          aria-label="Keep this card open"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M9 3.5h6l-1 5.5 3 3H7l3-3zM12 12v8.5" />
+          </svg>
+        </button>
+        <button type="button" class="icon-btn close" aria-label="Close">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      </header>
+      <div class="card-body">
+        <p class="hint">What is drawn. These switch instantly.</p>
+        <div class="switches grid2">
+          <label class="sw"
+            ><input id="layer-buildings" type="checkbox" checked /><span
+              class="sw-label"
+              >buildings</span
+            ></label
+          >
+          <label class="sw"
+            ><input id="layer-trees" type="checkbox" checked /><span
+              class="sw-label"
+              >trees</span
+            ></label
+          >
+          <label class="sw"
+            ><input id="layer-woods" type="checkbox" checked /><span
+              class="sw-label"
+              >woods</span
+            ></label
+          >
+          <label class="sw"
+            ><input id="layer-roads" type="checkbox" checked /><span
+              class="sw-label"
+              >roads</span
+            ></label
+          >
+          <label class="sw"
+            ><input id="layer-plates" type="checkbox" /><span class="sw-label"
+              >landuse</span
+            ></label
+          >
+          <label class="sw"
+            ><input id="layer-tint" type="checkbox" checked /><span
+              class="sw-label"
+              >land-use colours</span
+            ></label
+          >
+          <label class="sw"
+            ><input id="layer-poi" type="checkbox" checked /><span
+              class="sw-label"
+              >POI</span
+            ></label
+          >
+        </div>
+        <div class="field" id="ground-mode-label">
+          <label class="cap" for="ground-mode">Ground</label>
+          <select id="ground-mode" class="select" aria-label="ground">
+            <option>CPU ground</option>
+            <option selected>CPU ground + slope</option>
+            <option>CPU ground + height ramp</option>
+            <option>GPU ground</option>
+            <option>GPU ground + slope</option>
+            <option>GPU ground + height ramp</option>
+            <option>No ground</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <section
+      id="card-look"
+      class="card plate"
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby="card-look-title"
+      tabindex="-1"
+      data-hud
+      hidden
+    >
+      <header class="card-head">
+        <h2 id="card-look-title">City look</h2>
+        <button
+          type="button"
+          class="icon-btn pin"
+          aria-pressed="false"
+          aria-label="Keep this card open"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M9 3.5h6l-1 5.5 3 3H7l3-3zM12 12v8.5" />
+          </svg>
+        </button>
+        <button type="button" class="icon-btn close" aria-label="Close">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      </header>
+      <div class="card-body">
+        <fieldset id="colour-scheme" class="sub">
+          <legend class="cap">
+            Colour scheme
+            <span id="colour-scheme-status" class="status" role="status"></span>
+          </legend>
+          <div class="swatches" id="swatches"></div>
+        </fieldset>
+        <div class="field">
+          <p class="cap">Build choices</p>
+          <p class="hint">Each one rebuilds the city; it takes a moment.</p>
+        </div>
+        <div class="switches">
+          <label class="sw"
+            ><input id="invented-roofs" type="checkbox" checked /><span
+              class="sw-label"
+              >invented roofs</span
+            ><span
+              id="invented-roofs-status"
+              class="status"
+              role="status"
+            ></span
+          ></label>
+          <label class="sw"
+            ><input id="markings" type="checkbox" checked /><span
+              class="sw-label"
+              >zebras and pedestrian areas</span
+            ><span id="markings-status" class="status" role="status"></span
+          ></label>
+          <label class="sw"
+            ><input id="layer-furniture" type="checkbox" checked /><span
+              class="sw-label"
+              >street furniture</span
+            ><span
+              id="layer-furniture-status"
+              class="status"
+              role="status"
+            ></span
+          ></label>
+        </div>
+      </div>
+    </section>
+
+    <section
+      id="card-sun"
+      class="card plate"
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby="card-sun-title"
+      tabindex="-1"
+      data-hud
+      hidden
+    >
+      <header class="card-head">
+        <h2 id="card-sun-title">Sun</h2>
+        <button
+          type="button"
+          class="icon-btn pin"
+          aria-pressed="false"
+          aria-label="Keep this card open"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M9 3.5h6l-1 5.5 3 3H7l3-3zM12 12v8.5" />
+          </svg>
+        </button>
+        <button type="button" class="icon-btn close" aria-label="Close">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      </header>
+      <div class="card-body" id="sun-group">
+        <div class="field">
+          <label class="cap" for="sun-time"
+            >Time of day
+            <span id="sun-readout" class="readout"
+              >15:47 solar time</span
+            ></label
+          >
+          <input
+            id="sun-time"
+            class="slider"
+            type="range"
+            min="0"
+            max="1000"
+            value="697"
+            aria-label="sun time"
+          />
+          <div class="slider-ends"><span>dawn</span><span>dusk</span></div>
+        </div>
+        <div class="row two">
+          <button type="button" class="btn" id="sun-back" title="Key T">
+            Earlier <kbd>T</kbd>
+          </button>
+          <button type="button" class="btn" id="sun-fwd" title="Key t">
+            Later <kbd>t</kbd>
+          </button>
+        </div>
+        <div class="field">
+          <label class="cap" for="sun-date">Date</label>
+          <input
+            id="sun-date"
+            class="input"
+            type="date"
+            value="2026-09-23"
+            aria-label="sun date"
+          />
+        </div>
+        <button
+          id="light-open"
+          type="button"
+          class="btn wide"
+          aria-controls="light-dialog"
+          aria-expanded="false"
+        >
+          Light settings... <kbd>l</kbd>
+        </button>
+      </div>
+    </section>
+
+    <section
+      id="light-dialog"
+      class="card plate"
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby="light-title"
+      tabindex="-1"
+      data-hud
+      hidden
+    >
+      <header class="card-head">
+        <button type="button" class="icon-btn back" aria-label="Back to Sun">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M15 5l-7 7 7 7" />
+          </svg>
+        </button>
+        <h2 id="light-title">Light</h2>
+        <button
+          type="button"
+          class="icon-btn pin"
+          aria-pressed="false"
+          aria-label="Keep this card open"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M9 3.5h6l-1 5.5 3 3H7l3-3zM12 12v8.5" />
+          </svg>
+        </button>
+        <button type="button" class="icon-btn close" aria-label="Close">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      </header>
+      <div class="card-body">
+        <div class="lslider">
+          <label for="light-gain"
+            >Sunlit buildings and roads (gain at a high sun)
+            <output class="num">1.60</output></label
+          >
+          <input
+            id="light-gain"
+            class="slider"
+            type="range"
+            min="0"
+            max="3"
+            step="0.05"
+            value="1.6"
+          />
+        </div>
+        <div class="lslider">
+          <label for="light-gain-start"
+            >Gain starts at sun elevation (°)
+            <output class="num">10</output></label
+          >
+          <input
+            id="light-gain-start"
+            class="slider"
+            type="range"
+            min="0"
+            max="45"
+            step="1"
+            value="10"
+          />
+        </div>
+        <div class="lslider">
+          <label for="light-gain-full"
+            >Gain full at sun elevation (°)
+            <output class="num">40</output></label
+          >
+          <input
+            id="light-gain-full"
+            class="slider"
+            type="range"
+            min="0"
+            max="90"
+            step="1"
+            value="40"
+          />
+        </div>
+        <div class="lslider">
+          <label for="light-sky"
+            >Sky light on buildings <output class="num">0.80</output></label
+          >
+          <input
+            id="light-sky"
+            class="slider"
+            type="range"
+            min="0"
+            max="2"
+            step="0.05"
+            value="0.8"
+          />
+        </div>
+        <div class="lslider">
+          <label for="light-ev"
+            >Overall exposure (EV) <output class="num">0.0</output></label
+          >
+          <input
+            id="light-ev"
+            class="slider"
+            type="range"
+            min="-3"
+            max="3"
+            step="0.1"
+            value="0"
+          />
+        </div>
+        <div class="lslider">
+          <label for="light-auto"
+            >Auto-exposure strength (mostly dawn and dusk darkness)
+            <output class="num">0.60</output></label
+          >
+          <input
+            id="light-auto"
+            class="slider"
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            value="0.6"
+          />
+        </div>
+        <div class="switches">
+          <label class="sw"
+            ><input id="light-ao" type="checkbox" checked /><span
+              class="sw-label"
+              >ambient occlusion</span
+            ></label
+          >
+        </div>
+        <p id="light-readout" class="readout" role="status">
+          Lit surfaces 65.0
+        </p>
+        <div class="row two">
+          <button type="button" class="btn" id="light-check">
+            Check heat grid
+          </button>
+          <button type="button" class="btn" id="light-copy">Copy</button>
+        </div>
+        <div class="row two">
+          <button type="button" class="btn" id="light-reset">Reset</button>
+          <button type="button" class="btn" id="light-close">Close</button>
+        </div>
+      </div>
+    </section>
+
+    <section
+      id="card-debug"
+      class="card plate"
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby="card-debug-title"
+      tabindex="-1"
+      data-hud
+      hidden
+    >
+      <header class="card-head">
+        <h2 id="card-debug-title">Debug</h2>
+        <button
+          type="button"
+          class="icon-btn pin"
+          aria-pressed="false"
+          aria-label="Keep this card open"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M9 3.5h6l-1 5.5 3 3H7l3-3zM12 12v8.5" />
+          </svg>
+        </button>
+        <button type="button" class="icon-btn close" aria-label="Close">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      </header>
+      <div class="card-body">
+        <p class="problem" id="problem">
+          Rules: snapshot (live fetch failed and no cache)
+        </p>
+        <div class="field">
+          <label class="cap" for="render-distance"
+            >Render distance
+            <span id="render-distance-value" class="readout"
+              >draw 4800 m · haze 3168 m</span
+            ></label
+          >
+          <input
+            id="render-distance"
+            class="slider"
+            type="range"
+            min="1"
+            max="10"
+            step="1"
+            value="2"
+          />
+        </div>
+        <button type="button" class="btn wide" id="tile-preset">
+          Tile look: <span class="tile-name">Default</span> <kbd>p</kbd>
+        </button>
+        <div class="switches grid2">
+          <label class="sw"
+            ><input id="perf-stats" type="checkbox" /><span class="sw-label"
+              >perf</span
+            ></label
+          >
+          <label class="sw"
+            ><input id="layer-underground" type="checkbox" /><span
+              class="sw-label"
+              >underground</span
+            ></label
+          >
+        </div>
+        <details class="fold" id="status-fold">
+          <summary>Status</summary>
+          <dl class="kv" id="status-rows"></dl>
+          <p class="hint">Full line:</p>
+          <p id="status" class="raw">starting...</p>
+        </details>
+        <details class="fold" id="hotkey-fold">
+          <summary>Keys</summary>
+          <dl class="kv keys" id="hotkey-help">
+            <dt><kbd>t</kbd></dt>
+            <dd>step the sun forward</dd>
+            <dt><kbd>T</kbd></dt>
+            <dd>step the sun back</dd>
+            <dt><kbd>l</kbd></dt>
+            <dd>open or close the light settings</dd>
+            <dt><kbd>p</kbd></dt>
+            <dd>cycle the affordance-tile look preset</dd>
+            <dt><kbd>?</kbd></dt>
+            <dd>show or hide this list</dd>
+            <dt><kbd>Esc</kbd></dt>
+            <dd>close the open card</dd>
+          </dl>
+        </details>
+      </div>
+    </section>
+
+    <!-- Details panel: opened by clicking the 3D view -->
+    <aside
+      id="details"
+      class="plate prose"
+      aria-labelledby="details-title"
+      tabindex="-1"
+      hidden
+    >
+      <header class="card-head">
+        <h2 id="details-title" class="details-title">battleArea = 160</h2>
+        <button type="button" class="icon-btn close" aria-label="Close details">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      </header>
+      <div class="card-body">
+        <p><b>Scored 160, above the 1 bar.</b></p>
+        <p class="hint">above the 1 threshold</p>
+        <ul class="ways">
+          <li><a href="#">way/123456789</a> × 10</li>
+          <li><a href="#">way/362950933</a> × 4</li>
+          <li><a href="#">way/26716557</a> × 2</li>
+          <li><a href="#">way/41550920</a> × 2</li>
+        </ul>
+      </div>
+    </aside>
+
+    <!-- Fixed page layers -->
+    <div id="bottom-stack">
+      <div
+        id="ar-offer"
+        class="plate"
+        role="region"
+        aria-label="AR offer"
+        hidden
+      >
+        <p class="offer-title">Found you.</p>
+        <div class="row">
+          <button type="button" class="btn btn--accent" id="ar-offer-enter">
+            Enter AR now
+          </button>
+          <button
+            type="button"
+            class="icon-btn"
+            id="ar-offer-dismiss"
+            aria-label="Dismiss"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div id="toast-root" aria-live="polite"></div>
+    </div>
+    <a id="legal-link" href="#" onclick="return false;"
+      >Legal notice and privacy</a
+    >
+    <div id="ar-root"></div>
+
+    <!-- Prototype tools (not part of the design) -->
+    <button
+      id="proto-pill"
+      type="button"
+      aria-expanded="false"
+      aria-controls="proto-panel"
+    >
+      Proto
+    </button>
+    <section
+      id="proto-panel"
+      class="plate"
+      aria-label="Prototype states and notes"
+      hidden
+    >
+      <p class="cap">States</p>
+      <div class="proto-states" id="proto-states"></div>
+      <details id="notes">
+        <summary>
+          About this variant <span class="cov" id="cov-now"></span>
+        </summary>
+        <div class="notes-body">
+          <p>
+            <b>Direction.</b> A rail of six labelled tools sits at the edge of
+            the 3D view, on the seam to the map. Each tool opens one card, and
+            cards always open over the map, never over the 3D view, so the view
+            you are judging stays clear while you change it.
+          </p>
+          <p>
+            <b>Visible by default:</b> the rail (Place, Analysis, World, Look,
+            Sun, Debug), a small "now" plate under it (category and score ramp,
+            sun time, the quest distance once found, perf when on, and any work
+            in progress), the map with its zoom, locate, AR and attribution, the
+            legal link.
+          </p>
+          <p>
+            <b>Folded:</b> every card. One card at a time; the same rail button,
+            Escape, the close button or a tap outside closes it. On desktop a
+            pin keeps a card open while you click in the 3D view or the map. The
+            light settings open as a card in the same place, with a back arrow
+            to Sun.
+          </p>
+          <p>
+            <b>Where things go:</b> desktop - rail on the 3D view's left edge,
+            cards over the map's right part, details at the 3D view's top right,
+            toast and AR offer at the 3D view's bottom. Phone portrait - rail on
+            the right edge of the 3D band, cards fill the map sheet (drag the
+            grab bar to give a card more room), details use the same place.
+            Phone landscape - the map moves to a right-side panel and the rail
+            sits on its seam.
+          </p>
+          <p>
+            <b>Work in progress stays visible:</b> the control shows its own
+            "Applying..." and is disabled; the rail button gets a pulsing dot;
+            the now plate shows one line ("Applying colour scheme...", "Loading
+            cells...", "Finding quests..."). All three survive a closed card.
+          </p>
+          <p>
+            <b>Inapplicable controls</b> are shown disabled with a reason
+            ("below threshold - needs cells") instead of hidden, so nothing
+            shifts.
+          </p>
+          <p>
+            <b>Test helpers it would need:</b> one
+            <code>openCard(page, name)</code> for place, analysis, world, look,
+            sun, debug, plus light. Every id and accessible name stays (site,
+            category, layer-*, ground-mode, render-distance, sun-*, light-*,
+            geo-event*, legend, status), except the colour scheme, which becomes
+            a group of radio buttons named by the scheme. Text reads of
+            <code>#status</code> work while its card is shut.
+          </p>
+          <p>
+            <b>3D view covered by the HUD</b> (rail, now plate and any open
+            card, measured against the visible 3D view):
+          </p>
+          <ul class="cov-list" id="cov-list">
+            <li>390x844: resting 14.1 %, any card open 14.1 %, cells on 16.5 %, while applying 18.6 %</li>
+            <li>360x640: resting 20.1 %, any card open 20.1 %, cells on 22.6 %, while applying 25.1 %</li>
+            <li>844x390: resting 13.1 %, any card open 13.1 %, cells on 14.9 %, while applying 17.0 %</li>
+            <li>1280x720: resting 9.1 %, any card open 9.1 %, cells on 9.4 %, while applying 10.0 %</li>
+            <li>1280x800: resting 8.2 %, any card open 8.2 %, cells on 8.4 %, while applying 9.0 %</li>
+            <li>The open card adds nothing: it sits over the map. Only the now plate grows (legend ramp, busy line).</li>
+          </ul>
+          <p><b>Weaknesses, plainly:</b></p>
+          <ul class="weak">
+            <li>
+              Cells, used every session, is two taps away (Analysis, then
+              cells); the now plate only reports it.
+            </li>
+            <li>
+              Icons need their labels; the labels make the desktop rail
+              116 px wide.
+            </li>
+            <li>
+              While a card is open on the phone the map, locate and AR are
+              hidden; one tap on the rail button brings them back.
+            </li>
+            <li>
+              Phone cards are only as tall as the map sheet: on a 360x640 phone
+              the Look and Light cards scroll.
+            </li>
+            <li>
+              Six topics is the limit for the phone rail at 640 px tall; a
+              seventh needs a second column or a merge.
+            </li>
+            <li>
+              Phone landscape moves the map to the right side, which is a layout
+              change beyond the HUD.
+            </li>
+          </ul>
+        </div>
+      </details>
+    </section>
+
+    <script src="rail.js"></script>
+  </body>
+</html>

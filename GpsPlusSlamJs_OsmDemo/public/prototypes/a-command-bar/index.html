@@ -1,0 +1,1067 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>OSM demo HUD - A: command bar and settings drawer</title>
+    <link rel="stylesheet" href="prototype.css" />
+  </head>
+  <body data-panel="none" data-cells="off">
+    <div class="app">
+      <!-- Map pane: desktop left half, phone bottom sheet. -->
+      <section id="map" class="map-pane" aria-label="map">
+        <div
+          id="sheet-handle"
+          class="sheet-handle"
+          role="separator"
+          aria-label="resize map"
+          tabindex="0"
+        >
+          <span class="sheet-handle-bar"></span>
+        </div>
+        <svg
+          class="map-art"
+          viewBox="0 0 600 600"
+          preserveAspectRatio="xMidYMid slice"
+          aria-hidden="true"
+        >
+          <rect width="600" height="600" fill="#b9dca2" />
+          <path
+            d="M0 420 C 120 380 220 460 340 430 S 520 360 600 390 L600 600 L0 600 Z"
+            fill="#a9d295"
+          />
+          <path
+            d="M60 0 L120 600 M0 250 L600 300 M380 0 L300 600"
+            stroke="#f6f4ee"
+            stroke-width="9"
+            fill="none"
+          />
+          <path
+            d="M0 140 C 160 170 260 110 600 160"
+            stroke="#fdf7e3"
+            stroke-width="5"
+            fill="none"
+          />
+          <g id="map-cells"></g>
+          <polygon
+            points="300,110 470,205 470,395 300,490 130,395 130,205"
+            fill="none"
+            stroke="#3f7d4c"
+            stroke-width="3"
+            stroke-dasharray="10 7"
+          />
+          <circle cx="300" cy="300" r="13" fill="#fff" />
+          <circle cx="300" cy="300" r="9" fill="#2a6fe8" />
+        </svg>
+        <div class="leaflet-zoom" aria-label="zoom">
+          <button type="button" aria-label="Zoom in">+</button>
+          <button type="button" aria-label="Zoom out">&#8722;</button>
+        </div>
+        <div class="map-controls">
+          <button
+            id="enter-ar"
+            class="map-btn map-btn-ar"
+            type="button"
+            aria-label="Enter AR"
+          >
+            AR
+          </button>
+          <button
+            class="map-btn locate-button"
+            type="button"
+            aria-label="Locate me"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"
+                fill="currentColor"
+              />
+            </svg>
+          </button>
+        </div>
+        <div class="map-attribution">
+          <a href="#map">OpenStreetMap</a> · Mapterhorn · Mapzen/AWS
+          <button
+            type="button"
+            class="map-attribution-more"
+            aria-label="Show full attribution"
+          >
+            ...
+          </button>
+        </div>
+        <button
+          id="proto-open"
+          class="proto-pill"
+          type="button"
+          aria-expanded="false"
+          aria-controls="proto-panel"
+        >
+          States
+        </button>
+      </section>
+
+      <!-- 3D pane: full height on desktop, full-bleed on the phone. -->
+      <section id="scene-pane" class="scene-pane" aria-label="3D view">
+        <svg
+          id="scene"
+          class="scene-art"
+          viewBox="0 0 1000 700"
+          preserveAspectRatio="xMidYMid slice"
+          role="img"
+          aria-label="3D view placeholder"
+        >
+          <defs>
+            <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#11131a" />
+              <stop offset="0.75" stop-color="#2c3d66" />
+              <stop offset="1" stop-color="#8a6a6a" />
+            </linearGradient>
+            <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#2a3140" />
+              <stop offset="1" stop-color="#151a24" />
+            </linearGradient>
+          </defs>
+          <rect width="1000" height="300" fill="url(#sky)" />
+          <circle id="scene-sun" cx="760" cy="150" r="22" fill="#ffd27a" />
+          <rect
+            id="scene-ground"
+            y="300"
+            width="1000"
+            height="400"
+            fill="url(#ground)"
+          />
+          <g id="scene-landuse"></g>
+          <g id="scene-woods"></g>
+          <g id="scene-roads"></g>
+          <g id="scene-markings"></g>
+          <g id="scene-cells"></g>
+          <g id="scene-furniture"></g>
+          <g id="scene-trees"></g>
+          <g id="scene-buildings"></g>
+          <g id="scene-npc"></g>
+        </svg>
+
+        <!-- The command bar: the only permanent HUD. -->
+        <header id="command-bar" class="bar" data-hud>
+          <div class="bar-group bar-group-where">
+            <span class="field field-place">
+              <svg class="field-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"
+                  fill="currentColor"
+                />
+              </svg>
+              <select id="site" aria-label="location">
+                <option value="" disabled>Jump to City</option>
+                <option>New York</option>
+                <option selected>Cologne</option>
+                <option>Tokyo</option>
+                <option>London - Tower Bridge</option>
+                <option>London - Westminster</option>
+                <option>Paris</option>
+                <option>San Francisco</option>
+                <option>Sydney</option>
+                <option>Porto</option>
+                <option>Rome</option>
+                <option>Barcelona</option>
+                <option>Venice</option>
+                <option>Hong Kong</option>
+                <option>Rio de Janeiro</option>
+              </select>
+            </span>
+            <span class="combo">
+              <span class="field field-category">
+                <select id="category" aria-label="category">
+                  <option selected>battleArea</option>
+                  <option>restingArea</option>
+                  <option>spawnPoint</option>
+                </select>
+              </span>
+              <label class="pill" id="cells-pill">
+                <input id="layer-cells" type="checkbox" class="pill-input" />
+                <span class="pill-lamp" aria-hidden="true"></span>
+                <span class="pill-text">cells</span>
+              </label>
+            </span>
+          </div>
+          <div class="bar-group bar-group-do">
+            <button
+              id="geo-event"
+              class="bar-btn quests"
+              type="button"
+              aria-expanded="false"
+              aria-controls="geo-event-picker"
+            >
+              <span class="quests-label">Show Quests</span>
+              <span id="quest-readout" class="quests-readout" hidden
+                >340 m SW</span
+              >
+            </button>
+            <button
+              id="sun-chip"
+              class="bar-btn chip"
+              type="button"
+              aria-expanded="false"
+              aria-controls="sun-pop"
+              aria-label="Sun 15:47"
+            >
+              <svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="4.5" fill="currentColor" />
+                <path
+                  d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                />
+              </svg>
+              <span id="sun-chip-time" class="num">15:47</span>
+            </button>
+            <button
+              id="info-open"
+              class="bar-btn icon-only"
+              type="button"
+              aria-expanded="false"
+              aria-controls="stats-card"
+              aria-label="Status"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle
+                  cx="12"
+                  cy="12"
+                  r="9.5"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                />
+                <path
+                  d="M12 10.5v6.5"
+                  stroke="currentColor"
+                  stroke-width="2.2"
+                  stroke-linecap="round"
+                />
+                <circle cx="12" cy="7.3" r="1.4" fill="currentColor" />
+              </svg>
+              <span
+                class="status-lamp"
+                id="status-lamp"
+                data-level="warn"
+              ></span>
+            </button>
+            <button
+              id="settings-open"
+              class="bar-btn settings"
+              type="button"
+              aria-expanded="false"
+              aria-controls="drawer"
+            >
+              <svg class="settings-gear" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M19.4 13a7.6 7.6 0 0 0 0-2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-1.7-1L15 3.5h-4l-.4 2.5a7.4 7.4 0 0 0-1.7 1l-2.4-1-2 3.4L6.6 11a7.6 7.6 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a7.4 7.4 0 0 0 1.7 1l.4 2.5h4l.4-2.5a7.4 7.4 0 0 0 1.7-1l2.4 1 2-3.4zM13 15.5A3.5 3.5 0 1 1 13 8.5a3.5 3.5 0 0 1 0 7z"
+                  transform="translate(-1 0)"
+                />
+              </svg>
+              <span class="settings-spinner" aria-hidden="true"></span>
+              <span class="settings-label" id="settings-label">Settings</span>
+            </button>
+          </div>
+        </header>
+
+        <!-- Legend: visible while cells are on, never inside a fold. -->
+        <div id="legend-plate" class="legend-plate" data-hud hidden>
+          <div id="legend" class="legend">
+            <span class="legend-name" id="legend-name">battleArea</span>
+            <span class="legend-ramp-row">
+              <span class="num">1</span>
+              <span class="legend-ramp" aria-hidden="true"></span>
+              <span class="num">10 000</span>
+            </span>
+            <span class="legend-note"
+              >max here <span class="num">6400</span> · 1933 above</span
+            >
+          </div>
+        </div>
+
+        <!-- Popovers dropped from the bar. -->
+        <div
+          id="sun-pop"
+          class="pop"
+          data-hud
+          hidden
+          role="dialog"
+          aria-label="Sun time"
+        >
+          <div class="pop-head">
+            <span class="caption">Sun</span>
+            <span class="pop-value num" id="sun-pop-readout"
+              >15:47 solar time</span
+            >
+          </div>
+          <input
+            id="sun-time-quick"
+            class="slider"
+            type="range"
+            min="0"
+            max="1000"
+            value="709"
+            aria-label="sun time"
+          />
+          <div class="pop-ends"><span>dawn</span><span>dusk</span></div>
+          <div class="pop-actions pop-actions-sun">
+            <button type="button" class="btn btn-small" data-step="-1">
+              <kbd aria-hidden="true">T</kbd> Earlier
+            </button>
+            <button type="button" class="btn btn-small" data-step="1">
+              Later <kbd aria-hidden="true">t</kbd>
+            </button>
+            <button
+              type="button"
+              class="btn btn-small"
+              id="sun-pop-more"
+              aria-label="More sun and light settings"
+            >
+              More...
+            </button>
+          </div>
+        </div>
+
+        <div
+          id="geo-event-picker"
+          class="pop"
+          data-hud
+          hidden
+          role="dialog"
+          aria-labelledby="geo-event-picker-title"
+        >
+          <div class="pop-head">
+            <span class="caption" id="geo-event-picker-title"
+              >Find an event at</span
+            >
+          </div>
+          <div class="pop-row">
+            <input
+              id="geo-event-date"
+              class="input"
+              type="date"
+              value="2026-09-23"
+              aria-label="event date"
+            />
+            <input
+              id="geo-event-time"
+              class="input"
+              type="time"
+              value="15:45"
+              aria-label="event time"
+            />
+          </div>
+          <div class="pop-actions">
+            <button type="button" class="btn btn-small" id="geo-event-search">
+              Search again
+            </button>
+            <button type="button" class="btn btn-small" id="geo-event-clear">
+              Clear event
+            </button>
+          </div>
+          <p class="pop-error" id="geo-event-error" role="status"></p>
+        </div>
+
+        <div
+          id="stats-card"
+          class="pop pop-wide"
+          data-hud
+          hidden
+          role="dialog"
+          aria-label="Status"
+        >
+          <div class="pop-head">
+            <span class="caption">Status</span>
+            <span class="pop-value" id="stats-headline">tiles current</span>
+          </div>
+          <p class="stats-alert" id="stats-alert">
+            <span class="stats-alert-mark" aria-hidden="true">!</span>
+            <span id="stats-alert-text"
+              >Rules: snapshot - live fetch failed and no cache</span
+            >
+          </p>
+          <dl class="kv" id="stats-kv"></dl>
+          <details class="stats-raw">
+            <summary>Full status line</summary>
+            <p id="status" class="stats-status" role="status">starting...</p>
+          </details>
+        </div>
+
+        <!-- The one panel slot on the 3D pane's right edge (desktop) or over
+             the map sheet (phone): settings drawer, details, light. -->
+        <aside
+          id="drawer"
+          class="slot drawer"
+          data-hud
+          hidden
+          aria-labelledby="drawer-title"
+          data-detent="half"
+        >
+          <button
+            type="button"
+            class="slot-grab"
+            id="drawer-grab"
+            aria-label="Expand settings"
+          >
+            <span class="sheet-handle-bar"></span>
+          </button>
+          <div class="slot-head">
+            <h2 class="caption" id="drawer-title">Settings</h2>
+            <button
+              type="button"
+              class="icon-btn"
+              id="drawer-close"
+              aria-label="Close settings"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M6 6l12 12M18 6L6 18"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                />
+              </svg>
+            </button>
+          </div>
+          <div class="slot-body">
+            <section class="sect" data-sect="analysis">
+              <h3 class="sect-h">
+                <button
+                  type="button"
+                  class="sect-head"
+                  aria-expanded="false"
+                  aria-controls="sect-analysis"
+                >
+                  <span class="sect-title">Analysis</span>
+                  <span class="sect-sum" data-sum="analysis"></span>
+                  <span class="sect-chev" aria-hidden="true"></span>
+                </button>
+              </h3>
+              <div class="sect-body" id="sect-analysis" hidden>
+                <div class="row">
+                  <label class="row-label" for="layer-areas">areas</label>
+                  <input
+                    id="layer-areas"
+                    class="switch"
+                    type="checkbox"
+                    checked
+                  />
+                </div>
+                <div class="row" id="show-below-label">
+                  <span class="row-text">
+                    <label class="row-label" for="show-below"
+                      >below threshold</label
+                    >
+                    <span class="row-hint" id="show-below-hint"
+                      >needs cells</span
+                    >
+                  </span>
+                  <input
+                    id="show-below"
+                    class="switch"
+                    type="checkbox"
+                    disabled
+                    aria-describedby="show-below-hint"
+                  />
+                </div>
+                <p class="sect-note">
+                  Category and cells live on the bar; the legend appears over
+                  the 3D view while cells are on.
+                </p>
+              </div>
+            </section>
+
+            <section class="sect" data-sect="world">
+              <h3 class="sect-h">
+                <button
+                  type="button"
+                  class="sect-head"
+                  aria-expanded="false"
+                  aria-controls="sect-world"
+                >
+                  <span class="sect-title">World</span>
+                  <span class="sect-sum" data-sum="world"></span>
+                  <span class="sect-chev" aria-hidden="true"></span>
+                </button>
+              </h3>
+              <div class="sect-body" id="sect-world" hidden>
+                <p class="sect-note">Layers switch instantly.</p>
+                <div class="grid2">
+                  <div class="row row-compact">
+                    <label class="row-label" for="layer-buildings"
+                      >buildings</label
+                    >
+                    <input
+                      id="layer-buildings"
+                      class="switch"
+                      type="checkbox"
+                      checked
+                    />
+                  </div>
+                  <div class="row row-compact">
+                    <label class="row-label" for="layer-trees">trees</label>
+                    <input
+                      id="layer-trees"
+                      class="switch"
+                      type="checkbox"
+                      checked
+                    />
+                  </div>
+                  <div class="row row-compact">
+                    <label class="row-label" for="layer-woods">woods</label>
+                    <input
+                      id="layer-woods"
+                      class="switch"
+                      type="checkbox"
+                      checked
+                    />
+                  </div>
+                  <div class="row row-compact">
+                    <label class="row-label" for="layer-roads">roads</label>
+                    <input
+                      id="layer-roads"
+                      class="switch"
+                      type="checkbox"
+                      checked
+                    />
+                  </div>
+                  <div class="row row-compact">
+                    <label class="row-label" for="layer-plates">landuse</label>
+                    <input id="layer-plates" class="switch" type="checkbox" />
+                  </div>
+                  <div class="row row-compact">
+                    <label class="row-label" for="layer-poi">POI</label>
+                    <input
+                      id="layer-poi"
+                      class="switch"
+                      type="checkbox"
+                      checked
+                    />
+                  </div>
+                  <div class="row row-compact row-span">
+                    <label class="row-label" for="layer-tint"
+                      >land-use colours</label
+                    >
+                    <input
+                      id="layer-tint"
+                      class="switch"
+                      type="checkbox"
+                      checked
+                    />
+                  </div>
+                </div>
+                <div class="stack" id="ground-mode-label">
+                  <label class="row-label" for="ground-mode">ground</label>
+                  <span class="field field-block">
+                    <select id="ground-mode">
+                      <option>CPU ground</option>
+                      <option selected>CPU ground + slope</option>
+                      <option>CPU ground + height ramp</option>
+                      <option>GPU ground</option>
+                      <option>GPU ground + slope</option>
+                      <option>GPU ground + height ramp</option>
+                      <option>No ground</option>
+                    </select>
+                  </span>
+                </div>
+              </div>
+            </section>
+
+            <section class="sect" data-sect="look">
+              <h3 class="sect-h">
+                <button
+                  type="button"
+                  class="sect-head"
+                  aria-expanded="false"
+                  aria-controls="sect-look"
+                >
+                  <span class="sect-title">City look</span>
+                  <span class="sect-sum" data-sum="look"></span>
+                  <span class="sect-chev" aria-hidden="true"></span>
+                </button>
+              </h3>
+              <div class="sect-body" id="sect-look" hidden>
+                <p class="sect-note">
+                  Each change rebuilds the city and takes a few seconds.
+                </p>
+                <div class="stack">
+                  <label class="row-label" for="colour-scheme"
+                    >colour scheme</label
+                  >
+                  <span class="field field-block">
+                    <select id="colour-scheme">
+                      <option selected>Today</option>
+                      <option>Architect's model</option>
+                      <option>Blueprint</option>
+                      <option>Mediterranean</option>
+                      <option>Nordic</option>
+                      <option>Pastel</option>
+                      <option>Road map</option>
+                      <option>Night</option>
+                      <option>Monochrome</option>
+                      <option>High contrast</option>
+                    </select>
+                  </span>
+                  <span
+                    class="row-hint status-line"
+                    id="colour-scheme-status"
+                    data-idle="kept in the link as scheme"
+                    >kept in the link as scheme</span
+                  >
+                </div>
+                <div class="row">
+                  <span class="row-text">
+                    <label class="row-label" for="invented-roofs"
+                      >invented roofs</label
+                    >
+                    <span
+                      class="row-hint status-line"
+                      id="invented-roofs-status"
+                      data-idle="a roof where the map gives no shape"
+                      >a roof where the map gives no shape</span
+                    >
+                  </span>
+                  <input
+                    id="invented-roofs"
+                    class="switch"
+                    type="checkbox"
+                    checked
+                  />
+                </div>
+                <div class="row">
+                  <span class="row-text">
+                    <label class="row-label" for="markings"
+                      >zebras and pedestrian areas</label
+                    >
+                    <span
+                      class="row-hint status-line"
+                      id="markings-status"
+                      data-idle="crossings and paved squares"
+                      >crossings and paved squares</span
+                    >
+                  </span>
+                  <input id="markings" class="switch" type="checkbox" checked />
+                </div>
+                <div class="row">
+                  <span class="row-text">
+                    <label class="row-label" for="layer-furniture"
+                      >furniture</label
+                    >
+                    <span
+                      class="row-hint status-line"
+                      id="furniture-status"
+                      data-idle="benches, bins and street lamps"
+                      >benches, bins and street lamps</span
+                    >
+                  </span>
+                  <input
+                    id="layer-furniture"
+                    class="switch"
+                    type="checkbox"
+                    checked
+                  />
+                </div>
+              </div>
+            </section>
+
+            <section class="sect" data-sect="sun">
+              <h3 class="sect-h">
+                <button
+                  type="button"
+                  class="sect-head"
+                  aria-expanded="false"
+                  aria-controls="sect-sun"
+                >
+                  <span class="sect-title">Sun and light</span>
+                  <span class="sect-sum" data-sum="sun"></span>
+                  <span class="sect-chev" aria-hidden="true"></span>
+                </button>
+              </h3>
+              <div class="sect-body" id="sect-sun" hidden>
+                <div class="row">
+                  <label class="row-label" for="sun-date">date</label>
+                  <input
+                    id="sun-date"
+                    class="input input-date"
+                    type="date"
+                    value="2026-09-23"
+                  />
+                </div>
+                <div class="stack">
+                  <div class="stack-line">
+                    <label class="row-label" for="sun-time">time</label>
+                    <span id="sun-readout" class="num readout"
+                      >15:47 solar time</span
+                    >
+                  </div>
+                  <input
+                    id="sun-time"
+                    class="slider"
+                    type="range"
+                    min="0"
+                    max="1000"
+                    value="709"
+                  />
+                  <div class="pop-ends"><span>dawn</span><span>dusk</span></div>
+                </div>
+                <div class="btn-row">
+                  <button type="button" class="btn btn-small" data-step="-1">
+                    <kbd aria-hidden="true">T</kbd> Earlier
+                  </button>
+                  <button type="button" class="btn btn-small" data-step="1">
+                    Later <kbd aria-hidden="true">t</kbd>
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  class="btn btn-wide"
+                  id="light-open"
+                  aria-expanded="false"
+                  aria-controls="light-dialog"
+                >
+                  Light settings... <kbd>l</kbd>
+                </button>
+              </div>
+            </section>
+
+            <section class="sect" data-sect="view">
+              <h3 class="sect-h">
+                <button
+                  type="button"
+                  class="sect-head"
+                  aria-expanded="false"
+                  aria-controls="sect-view"
+                >
+                  <span class="sect-title">View</span>
+                  <span class="sect-sum" data-sum="view"></span>
+                  <span class="sect-chev" aria-hidden="true"></span>
+                </button>
+              </h3>
+              <div class="sect-body" id="sect-view" hidden>
+                <div class="stack">
+                  <div class="stack-line">
+                    <label class="row-label" for="render-distance"
+                      >render distance</label
+                    >
+                    <span id="render-distance-value" class="num readout"
+                      >draw 4800 m · haze 3168 m</span
+                    >
+                  </div>
+                  <input
+                    id="render-distance"
+                    class="slider"
+                    type="range"
+                    min="1"
+                    max="10"
+                    value="2"
+                  />
+                </div>
+                <div class="row">
+                  <span class="row-text">
+                    <span class="row-label" id="tile-look-label"
+                      >tile look preset</span
+                    >
+                    <span class="row-hint">key <kbd>p</kbd> cycles</span>
+                  </span>
+                  <button
+                    type="button"
+                    class="btn btn-small btn-value"
+                    id="tile-look"
+                    aria-labelledby="tile-look-label tile-look-value"
+                  >
+                    <span id="tile-look-value">Default</span>
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section class="sect" data-sect="debug">
+              <h3 class="sect-h">
+                <button
+                  type="button"
+                  class="sect-head"
+                  aria-expanded="false"
+                  aria-controls="sect-debug"
+                >
+                  <span class="sect-title">Debug</span>
+                  <span class="sect-sum" data-sum="debug"></span>
+                  <span class="sect-chev" aria-hidden="true"></span>
+                </button>
+              </h3>
+              <div class="sect-body" id="sect-debug" hidden>
+                <div class="grid2">
+                  <div class="row row-compact">
+                    <label class="row-label" for="layer-underground"
+                      >underground</label
+                    >
+                    <input
+                      id="layer-underground"
+                      class="switch"
+                      type="checkbox"
+                    />
+                  </div>
+                  <div class="row row-compact">
+                    <label class="row-label" for="perf-stats">perf</label>
+                    <input id="perf-stats" class="switch" type="checkbox" />
+                  </div>
+                </div>
+                <div class="stack" id="hotkey-help">
+                  <span class="row-label">keyboard</span>
+                  <ul class="keys">
+                    <li><kbd>t</kbd><span>step the sun forward</span></li>
+                    <li><kbd>T</kbd><span>step the sun back</span></li>
+                    <li>
+                      <kbd>l</kbd><span>open or close the light settings</span>
+                    </li>
+                    <li>
+                      <kbd>p</kbd
+                      ><span>cycle the affordance-tile look preset</span>
+                    </li>
+                    <li><kbd>?</kbd><span>show or hide this list</span></li>
+                  </ul>
+                </div>
+              </div>
+            </section>
+          </div>
+        </aside>
+
+        <aside
+          id="details"
+          class="slot details"
+          hidden
+          aria-labelledby="details-title"
+        >
+          <div class="slot-head">
+            <h2 class="details-title" id="details-title">battleArea = 160</h2>
+            <button
+              type="button"
+              class="icon-btn"
+              id="details-close"
+              aria-label="Close details"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M6 6l12 12M18 6L6 18"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                />
+              </svg>
+            </button>
+          </div>
+          <div class="slot-body slot-body-prose">
+            <p class="details-lead">Scored 160, above the 1 bar.</p>
+            <p class="details-dim">above the 1 threshold</p>
+            <ul class="details-list">
+              <li><a href="#details">way/123456789</a> <span>× 10</span></li>
+              <li><a href="#details">way/362950933</a> <span>× 4</span></li>
+              <li><a href="#details">way/26716557</a> <span>× 2</span></li>
+              <li><a href="#details">way/41550920</a> <span>× 2</span></li>
+            </ul>
+          </div>
+        </aside>
+
+        <section
+          id="light-dialog"
+          class="slot light"
+          data-hud
+          hidden
+          aria-labelledby="light-title"
+        >
+          <div class="slot-head">
+            <button
+              type="button"
+              class="icon-btn"
+              id="light-back"
+              aria-label="Back to settings"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M15 5l-7 7 7 7"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  fill="none"
+                  stroke-linecap="round"
+                />
+              </svg>
+            </button>
+            <h2 class="caption" id="light-title">Light</h2>
+            <span id="light-readout" class="pop-value num"
+              >Lit surfaces 65.0</span
+            >
+          </div>
+          <div class="slot-body" id="light-sliders"></div>
+          <div class="slot-foot">
+            <button type="button" class="btn btn-small" id="light-check">
+              Check heat grid
+            </button>
+            <button type="button" class="btn btn-small" id="light-copy">
+              Copy
+            </button>
+            <button type="button" class="btn btn-small" id="light-reset">
+              Reset
+            </button>
+            <button type="button" class="btn btn-small" id="light-close">
+              Close
+            </button>
+          </div>
+        </section>
+
+        <div id="loading-overlay" class="loading" hidden>
+          <p class="loading-text">
+            Fetching and scoring around 50.92310, 6.94450...
+          </p>
+          <span class="loading-bar"><span></span></span>
+        </div>
+      </section>
+    </div>
+
+    <!-- Fixed page layers. -->
+    <a id="legal-link" class="legal-link" href="#legal-link"
+      >Legal notice and privacy</a
+    >
+    <div id="toast-root" class="toast-root" aria-live="polite"></div>
+    <div
+      id="ar-offer"
+      class="ar-offer"
+      hidden
+      role="dialog"
+      aria-labelledby="ar-offer-title"
+    >
+      <p class="ar-offer-title" id="ar-offer-title">Found you.</p>
+      <button type="button" class="btn btn-accent" id="ar-offer-go">
+        Enter AR now
+      </button>
+      <button
+        type="button"
+        class="icon-btn"
+        id="ar-offer-dismiss"
+        aria-label="Dismiss"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            d="M6 6l12 12M18 6L6 18"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+          />
+        </svg>
+      </button>
+    </div>
+
+    <!-- Prototype chrome: not part of the design. -->
+    <div
+      id="proto-panel"
+      class="proto-panel"
+      hidden
+      role="dialog"
+      aria-label="Prototype states"
+    >
+      <div class="proto-panel-head">
+        <span>Prototype A - states</span>
+        <button
+          type="button"
+          class="icon-btn"
+          id="proto-close"
+          aria-label="Close states"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M6 6l12 12M18 6L6 18"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+            />
+          </svg>
+        </button>
+      </div>
+      <div class="proto-panel-states" id="proto-states"></div>
+      <details class="proto-notes">
+        <summary>
+          About this variant
+          <span class="proto-notes-cov"
+            >3D covered: <span id="cov-readout" class="num">-</span></span
+          >
+        </summary>
+        <div class="proto-notes-body">
+          <p>
+            <strong>Direction A, command bar and settings drawer.</strong> One
+            slim app bar holds what a session touches every time; one drawer
+            holds everything else in folded sections. The bar and every panel
+            overlay the views, so nothing on the HUD changes the size of the 3D
+            canvas.
+          </p>
+          <p>
+            <strong>Visible by default:</strong> the bar (place, category,
+            cells, Show Quests, sun time, status, Settings), the map with zoom,
+            locate, AR and attribution, the legal link. The legend appears at
+            the bottom of the 3D view while cells are on. On desktop the bar
+            spans the whole window, so long place names fit and there is room
+            for a future control; Leaflet's zoom sits just below it. On a phone
+            in portrait it takes two rows, in landscape one.
+          </p>
+          <p>
+            <strong>Folded:</strong> Analysis, World, City look, Sun and light,
+            View and Debug, all in the Settings drawer, each section showing a
+            one-line summary of its state while folded; the full status line
+            behind the status button; the sun slider and the quest time picker
+            in small popovers under their buttons. The drawer remembers the
+            section used last in this session and nothing across reloads.
+          </p>
+          <p>
+            <strong>Async states stay visible:</strong> a city rebuild shows
+            "Applying..." on its row, on its section header and on the Settings
+            button itself, so closing the drawer never hides it. Cells loading
+            dims the cells pill on the bar. Show Quests reads "Finding..." and
+            then carries its "340 m SW" inside the button, at a fixed width. The
+            status button carries a lamp: green when current, amber while
+            fetching or when the rules fell back to a snapshot, red on a
+            failure. Below threshold is disabled with "needs cells" instead of
+            hidden, so nothing shifts.
+          </p>
+          <p>
+            <strong>One panel slot:</strong> the drawer, the cell details and
+            the light settings share the right edge of the 3D view on desktop,
+            the map sheet on a phone in portrait (a second detent reaches up to
+            the bar) and the right side in landscape. Only one is ever open, and
+            in portrait the 3D view stays in sight while a look setting is
+            changed. The light settings opened from the drawer get a back arrow
+            to it.
+          </p>
+          <p>
+            <strong>e2e helpers it would need:</strong> openSettings(section)
+            for everything in the drawer (it opens the drawer and the named
+            section), openSunPopover for the quick slider, openStatus for the
+            status card. Every input keeps its id and its current lowercase
+            accessible name; the bar controls need no helper.
+          </p>
+          <p>
+            <strong>Measured 3D coverage</strong> (share of the visible 3D view
+            under HUD, resting / settings open): 1280x720 0.072 / 0.536;
+            1280x800 0.065 / 0.533; 390x844 0.216 / 0.216; 360x640 0.284 /
+            0.284; 844x390 0.245 / 0.639. On a phone in portrait the drawer
+            covers the map sheet, not the 3D view.
+          </p>
+          <p>
+            <strong>Weaknesses:</strong> the bar takes two rows on a phone in
+            portrait, a fifth to more than a quarter of the 3D band before
+            anything is opened. The drawer is one long list: a control inside it
+            is two taps away every time (drawer, then section), and the sun time
+            slider exists twice (popover and drawer). While a panel is open on a
+            phone it covers the map with its locate and AR buttons. On desktop
+            the drawer takes half of the 3D view, and in landscape the 3D band
+            is so short that any panel covers most of it.
+          </p>
+        </div>
+      </details>
+    </div>
+
+    <script src="prototype.js"></script>
+  </body>
+</html>

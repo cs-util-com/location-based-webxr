@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OSM demo HUD prototypes</title>
+    <style>
+      :root {
+        --bg: #f6f4ef;
+        --ink: #1f2328;
+        --dim: #5b6168;
+        --card: #ffffff;
+        --line: #e2ddd2;
+        --accent: #2f6fdb;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #15171a;
+          --ink: #eceef0;
+          --dim: #a3a9b0;
+          --card: #1e2125;
+          --line: #2c3036;
+          --accent: #7aa7ff;
+        }
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+      }
+      body {
+        background: var(--bg);
+        color: var(--ink);
+        font:
+          16px/1.5 system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+        padding: 16px;
+      }
+      main {
+        max-width: 48rem;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 1.6rem;
+        margin-bottom: 0.5rem;
+      }
+      .lead {
+        color: var(--dim);
+        margin-bottom: 1.25rem;
+      }
+      ul {
+        list-style: none;
+        padding: 0;
+        display: grid;
+        gap: 12px;
+      }
+      a.card {
+        display: block;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 14px 16px;
+        color: inherit;
+        text-decoration: none;
+      }
+      a.card:hover,
+      a.card:focus-visible {
+        border-color: var(--accent);
+      }
+      .name {
+        font-weight: 600;
+        color: var(--accent);
+        margin-bottom: 4px;
+      }
+      .what {
+        color: var(--dim);
+      }
+      .hint {
+        color: var(--dim);
+        font-size: 0.9rem;
+        margin-top: 1.25rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>OSM demo HUD prototypes</h1>
+      <p class="lead">
+        Three independent, throwaway directions for the controls around the 3D
+        view and the map. None of them is wired to the app; the 3D view and the
+        map are placeholders. Open each on a phone and on a desktop.
+      </p>
+      <ul>
+        <li>
+          <a class="card" href="a-command-bar/index.html">
+            <p class="name">A - Command bar and settings drawer</p>
+            <p class="what">
+              One slim bar for the everyday controls, everything else in one
+              drawer with folded sections.
+            </p>
+          </a>
+        </li>
+        <li>
+          <a class="card" href="b-icon-rail/index.html">
+            <p class="name">B - Tool rail with topic cards</p>
+            <p class="what">
+              A labelled rail of six topics; each opens one short card over the
+              map, so the 3D view stays clear.
+            </p>
+          </a>
+        </li>
+        <li>
+          <a class="card" href="c-sheet-tabs/index.html">
+            <p class="name">C - Tabs on the map sheet</p>
+            <p class="what">
+              No header: settings are tabs that briefly replace the map, and the
+              3D view never changes size.
+            </p>
+          </a>
+        </li>
+      </ul>
+      <p class="hint">
+        Each prototype has a "States" switcher (or ?state=name) and a folded
+        notes panel with what it measures.
+      </p>
+    </main>
+  </body>
+</html>
