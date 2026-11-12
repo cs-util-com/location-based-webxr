@@ -1219,6 +1219,41 @@ body {
   white-space: nowrap;
 }
 
+/* Docked, the list can be narrower than that (210 px at a 1024 px window,
+ * 140 px at its splitter's least): the head closes up, Select keeps only
+ * its icon (its word stays its name) and, narrowest, the buttons shrink. */
+#view3d.docked #shell-tree {
+  container: tree-list / inline-size;
+}
+
+@container tree-list (width < 248px) {
+  #shell-tree .dhead {
+    gap: 2px;
+    padding-left: 6px;
+  }
+
+  #tree-stations {
+    overflow: hidden;
+  }
+
+  #tree-select {
+    gap: 0;
+    padding: 0 5px;
+    font-size: 0;
+  }
+}
+
+@container tree-list (width < 180px) {
+  #shell-tree .dhead {
+    gap: 0;
+    padding-left: 4px;
+  }
+
+  #shell-tree .dhead .ib {
+    width: 22px;
+  }
+}
+
 .sech svg {
   width: 13px;
   height: 13px;
