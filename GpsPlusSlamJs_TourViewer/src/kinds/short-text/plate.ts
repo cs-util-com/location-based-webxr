@@ -311,7 +311,7 @@ export function makeCanvas(
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.ceil(w));
   canvas.height = Math.max(1, Math.ceil(h));
-  let g: CanvasRenderingContext2D | null = null;
+  let g: CanvasRenderingContext2D | null;
   try {
     g = canvas.getContext("2d");
   } catch {

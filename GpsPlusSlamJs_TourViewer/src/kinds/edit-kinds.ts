@@ -178,7 +178,7 @@ export const KIND_EDIT = {
       { name: "description", label: "Description", prose: true },
       {
         name: "readAtM",
-        label: "Readable from",
+        label: "Reads at",
         prose: false,
         number: {
           min: TOUR_SHORT_TEXT_MIN_READ_AT_M,
