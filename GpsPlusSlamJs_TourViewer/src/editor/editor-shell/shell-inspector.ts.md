@@ -93,7 +93,9 @@ content` (Chromium, the editor's browser; elsewhere it stays three
     ends"), each group a `role=group` named by its label and the one in
     use pressed, as a model's view chips are (`chipGroup`, which both
     use); a note when his view or his step's advance is none the chips
-    offer (an older tour's view, `auto`); and "Facing" in degrees
+    offer (an older tour's view, `auto`); and, in the pop-up view only (the
+    one view that keeps the creator's facing; a flat figure faces the
+    visitor fully), "Facing" in degrees
     (`data-field="character-facing:<id>"`, whole degrees, 360 shown as
     0), then his texts. Every other story block with texts to type gets
     a section of its own (`div.isec.story-text`, `data-block` its id)
@@ -223,7 +225,7 @@ its Delete, an empty one), a choice's and a quiz's summary, an item with
 no place in the world (its texts and Delete only), a
 story block's moves-on chips and seconds, a story
 character's view and advance chips (the one in use pressed, each group
-named) and his facing, none for a long text, a story block's texts
+named) and his facing in the pop-up view alone, none for a long text, a story block's texts
 named `block:<id>:<field>` (a character's in his box, none for a
 block without texts), the fields to type
 per kind (each counted in its unit), a locked station's place
