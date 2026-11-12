@@ -56,9 +56,9 @@ layout, `editor3d-input.ts` feeds the pointer and the keys.
   that body covers it.
   With `bodyGrips` (a group's gizmo) the order after the knob and the
   dots is: the small disc (over whatever stands under it, as the chosen
-  design draws it over the scene), then a member's body (`underPointer:
-  "selected"`: the caller counts the members as the selection), and another
-  object takes no handle.
+  design draws it over the scene), then a member's body
+  (`underPointer: "selected"`: the caller counts the members as the
+  selection), and another object takes no handle.
 - `turnedHeadingDeg(heading, fromDeg, toDeg, snap)`: whole degrees, 15
   with `snap`; in [0, 360).
 - `draggedRadiusM(distanceM, fine, bounds)`: half metres (tenths with

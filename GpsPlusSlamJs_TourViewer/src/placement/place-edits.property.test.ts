@@ -328,7 +328,7 @@ function folderTour(): TourManifest {
         ],
       },
     ],
-  } as TourManifest;
+  };
 }
 
 /** Ground distance between two spots, in metres (a local ruler: exact
@@ -439,16 +439,21 @@ describe("a folder's gesture written back", () => {
           );
           const after = tour();
 
-          // One undo per gesture: the scale, then the move.
-          editor.undo();
-          expect(tour()).toEqual(factor === 1 ? before : moved);
-          if (factor !== 1) {
+          // One undo per gesture: the scale, then the move. A gesture that
+          // changes nothing (no turn and no offset, or a factor of 1)
+          // writes no step.
+          const states = [before, moved, after].filter(
+            (state, i, all) =>
+              i === 0 || JSON.stringify(state) !== JSON.stringify(all[i - 1]),
+          );
+          for (const state of states.slice(0, -1).reverse()) {
             editor.undo();
-            expect(tour()).toEqual(before);
+            expect(tour()).toEqual(state);
           }
-          editor.redo();
-          if (factor !== 1) editor.redo();
-          expect(tour()).toEqual(after);
+          for (const state of states.slice(1)) {
+            editor.redo();
+            expect(tour()).toEqual(state);
+          }
           await session.close();
         },
       ),
