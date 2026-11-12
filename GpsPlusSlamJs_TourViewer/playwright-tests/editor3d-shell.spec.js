@@ -315,7 +315,9 @@ async function expectFrame(page, size) {
     } else {
       expect(dock.height, `${id} ${at}`).toBeCloseTo(FOLDED_PX, 0);
     }
-    if (tabbed) {
+    // The details at the window's right edge, folded to their head too
+    // (the asset shelf, a tab, keeps nothing clear of it).
+    if (id === "#shell-inspector") {
       expect(dock.x + dock.width, `${id} ${at}`).toBeCloseTo(size.width, 0);
     }
   }
@@ -671,12 +673,11 @@ async function expectCanvasFoot(page, y, at) {
  * its Problems tab's group under the 3D view and exactly as wide (so
  * between the side docks, which run down to the bottom bar beside it),
  * from the view's foot (a splitter, at most 2 px) to the bottom bar, its
- * height `heightPx` (its tab strip's included; null where a resize has
- * set it), the canvas ending at its top and the map controls 14 px over
+ * height `heightPx` (its tab strip's included), the canvas ending at its top and the map controls 14 px over
  * it. The undocked panel's own frame stays hidden.
  * @param {import("@playwright/test").Page} page
  * @param {{ width: number, height: number }} size
- * @param {number | null} heightPx
+ * @param {number} heightPx
  */
 async function expectDockedPanel(page, size, heightPx) {
   const at = `at ${String(size.width)} x ${String(size.height)}`;
@@ -694,12 +695,10 @@ async function expectDockedPanel(page, size, heightPx) {
   const view = boxIn(l, ".dock-pane-view");
   const foot = size.height - 24;
   expect(pane.y + pane.height, at).toBeCloseTo(foot, 0);
-  if (heightPx !== null) {
-    expect(
-      Math.abs(pane.height + DOCK_TABS_PX - heightPx),
-      at,
-    ).toBeLessThanOrEqual(2);
-  }
+  expect(
+    Math.abs(pane.height + DOCK_TABS_PX - heightPx),
+    at,
+  ).toBeLessThanOrEqual(2);
   expect(pane.x, at).toBeCloseTo(view.x, 0);
   expect(pane.x + pane.width, at).toBeCloseTo(view.x + view.width, 0);
   const gap = pane.y - DOCK_TABS_PX - (view.y + view.height);
@@ -850,14 +849,16 @@ test("the bottom bar's toggles open the bottom panel between the docks, at a pho
 
   // Two laptop widths and a phone in landscape: the group still between
   // both docks and the toggles still clear of the selection's actions.
-  // The group keeps the height a resize gives it, as every docked group.
+  // The group takes its first height for the new window, as the side
+  // groups take their widths.
   for (const docked of [
     { width: 1180, height: 820 },
     { width: 1024, height: 768 },
     { width: 844, height: 390 },
   ]) {
     await page.setViewportSize(docked);
-    await expectDockedPanel(page, docked, null);
+    await dockSettled(page, docked.width);
+    await expectDockedPanel(page, docked, dockBottomPx(docked.height));
   }
   await page.screenshot({ path: test.info().outputPath("panel-844x390.png") });
 
@@ -1380,6 +1381,9 @@ test("the tree can be used from the keyboard alone", async ({ page }) => {
   test.setTimeout(150_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   await open3d(page);
+  // Docked, the panels are moved into the layout a moment after the view
+  // opens, and the tab order is theirs only then.
+  await dockSettled(page, 1440);
   // From the start of the page: a click on the bar's empty corner puts
   // Tab's starting point there.
   await page.mouse.click(2, 2);

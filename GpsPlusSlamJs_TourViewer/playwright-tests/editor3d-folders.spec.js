@@ -10,6 +10,7 @@ import {
   SQUARE_GROUND_M,
   answerHosts,
   boxIn,
+  dockSettled,
   layoutOf,
   openZip,
   styleIn,
@@ -192,7 +193,9 @@ async function openFolders(page, zip) {
  * @param {import("@playwright/test").Page} page
  */
 async function unfold(page) {
-  // A phone shows the tree on its List button's press.
+  // Docked, the tree is moved into the layout a moment after the 3D view
+  // opens; a phone shows it on its List button's press.
+  await dockSettled(page, page.viewportSize()?.width ?? 0);
   if (!(await page.locator("#tree-body").isVisible())) {
     await page.locator("#studio-list").click();
   }
