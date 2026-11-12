@@ -240,6 +240,34 @@ describe("the keys", () => {
     expect(el.hidden).toBe(true);
     expect(document.activeElement).toBe(toggle("history"));
   });
+
+  // Why: inside the tablist the page stands back from the arrows, Home
+  // and End (key-target.ts), so the tablist must answer them itself or
+  // they do nothing at all there.
+  it("move between the panel's tabs by the arrows, Home and End", () => {
+    const { panel, el } = setUp();
+    toggle("history").click();
+    const tab = (id: string) =>
+      el.querySelector<HTMLButtonElement>(`.tab[data-tab='${id}']`);
+    const press = (k: string) => {
+      const event = key({ key: k });
+      (document.activeElement ?? el).dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    tab("history")?.focus();
+    expect(press("End")).toBe(true);
+    expect(panel.state().tab).toBe("perf");
+    expect(document.activeElement).toBe(tab("perf"));
+    expect(press("Home")).toBe(true);
+    expect(panel.state().tab).toBe("problems");
+    expect(document.activeElement).toBe(tab("problems"));
+    expect(press("ArrowLeft")).toBe(true);
+    expect(panel.state().tab).toBe("perf");
+    expect(press("ArrowRight")).toBe(true);
+    expect(panel.state().tab).toBe("problems");
+    expect(press("ArrowDown")).toBe(false);
+    expect(panel.state().tab).toBe("problems");
+  });
 });
 
 describe("the Problems tab", () => {

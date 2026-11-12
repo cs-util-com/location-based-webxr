@@ -22,8 +22,12 @@ a menu answers itself, and leave those alone.
 - `inComposite(target, key)` -> `boolean`: `key` is an arrow, Home or End
   and the target is inside (or is) an element with `role="toolbar"`,
   `role="radiogroup"` (the long-text writer's toolbar and view picker)
-  or `role="tablist"` (the editor's panel tabs), which move their focus
-  by those keys. Any modifier counts the same.
+  or `role="tablist"` (the editor's panel tabs). All six keys are taken
+  from the page there, whichever of them the group itself answers: the
+  bottom panel's tablist (`GpsPlusSlamJs_TourViewer/src/editor/editor-shell/bottom-panel.ts`)
+  answers ArrowLeft, ArrowRight, Home and End, so ArrowUp and ArrowDown
+  on its tabs do nothing at all; the docked panels' tab strips are the
+  docking library's. Any modifier counts the same.
 - All three take any `EventTarget | null` and answer false for anything
   that is not an element (the window, the document, null).
 

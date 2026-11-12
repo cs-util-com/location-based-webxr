@@ -60,8 +60,10 @@ this draws them and takes the clicks, the grip's drag and the keys.
   (`editor-shell.css`), and both views read their size from the canvas;
   the docks keep their height. The map controls (inside the view) and the
   toasts (outside it) stand above it.
-- **The head:** the tab strip (`role="tablist"`, arrow keys move between
-  tabs), the tab's tools (Problems: the Errors, Warnings and Notes
+- **The head:** the tab strip (`role="tablist"`: ArrowLeft and ArrowRight
+  step round the tabs, Home and End go to the first and the last; ArrowUp
+  and ArrowDown do nothing there, the page standing back from them too,
+  `GpsPlusSlamJs_EditorKit/src/chrome/key-target.ts`), the tab's tools (Problems: the Errors, Warnings and Notes
   filters, each with its count; History: Undo and Redo, disabled without
   a step; Map loading: "Retry failed" and its status line), then span,
   maximise and close.

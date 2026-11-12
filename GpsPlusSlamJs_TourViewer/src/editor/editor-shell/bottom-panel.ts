@@ -1015,11 +1015,20 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     if (known !== undefined) setState({ ...ui, open: true, tab: known.id });
   });
   tabs.addEventListener("keydown", (event) => {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-    event.preventDefault();
+    // A row of tabs: Left and Right step round, Home and End go to the
+    // ends; Up and Down are no tab's (and not the page's either here).
     const at = PANEL_TABS.findIndex((t) => t.id === ui.tab);
-    const by = event.key === "ArrowRight" ? 1 : -1;
-    const next = PANEL_TABS[(at + by + PANEL_TABS.length) % PANEL_TABS.length];
+    const last = PANEL_TABS.length - 1;
+    const to: Partial<Record<string, number>> = {
+      ArrowLeft: at === 0 ? last : at - 1,
+      ArrowRight: at === last ? 0 : at + 1,
+      Home: 0,
+      End: last,
+    };
+    const index = to[event.key];
+    if (index === undefined) return;
+    event.preventDefault();
+    const next = PANEL_TABS[index];
     if (next === undefined) return;
     setState({ ...ui, tab: next.id });
     tabButtons.get(next.id)?.focus();
