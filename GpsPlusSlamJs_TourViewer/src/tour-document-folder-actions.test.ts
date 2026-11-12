@@ -24,6 +24,7 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   itemGeoPose,
+  tourFreeEntries,
   tourObjects,
 } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import {
@@ -34,6 +35,7 @@ import {
 import { describe, expect, it } from "vitest";
 
 import { hostedObjects } from "./authoring-draft.js";
+import { placeableOf } from "./placement/placeables.js";
 import { presentWorldBlocks } from "./shown-blocks.js";
 import { stationContent, storyOf } from "./test-support/station-content.js";
 import { tourOf } from "./test-support/tour-of.js";
@@ -640,6 +642,60 @@ describe("the visitor", () => {
         }
       }
       expect(seen).toBe(shown.size);
+    }
+  });
+});
+
+describe("the visitor, in a scaled folder", () => {
+  it("sees every item where the editor showed it and draws it as large, for factors across the allowed range", () => {
+    // Why: a folder's scale grows everything in it about its pivot: the
+    // items' distances and their drawn sizes (and, through the size, how
+    // far they are heard). The visitor composes both from the saved file
+    // (`tourFreeEntries`); the editor from its document. A factor one
+    // side read and the other did not would put a scaled folder's items
+    // elsewhere, or at another size, on the walk. Swept over the folder's
+    // turn and offset, and factors from the smallest allowed to the
+    // largest, with a nested folder inheriting the factor.
+    for (const [yawDeg, offsetM] of SWEEP) {
+      for (const factor of [0.1, 0.5, 3, 10]) {
+        const before = opened(tour(yawDeg, offsetM));
+        const state = reduce(
+          before,
+          act.folderScaled({
+            stationId: "well",
+            folderId: "outer",
+            scale: factor,
+            what: "scale",
+          }),
+        );
+        const shown = new Map(
+          documentObjects(state).map((o) => [o.object.id, o.object.geo]),
+        );
+        // The scale moved the folder's items (it is not a no-op).
+        expect(shown.get("b")).not.toEqual(
+          documentObjects(before).find((o) => o.object.id === "b")?.object.geo,
+        );
+        const file = saved(state);
+        let seen = 0;
+        for (const station of file.stations) {
+          const drawn = new Map(
+            tourFreeEntries(station).map((e) => [e.block.id, e.scale]),
+          );
+          for (const block of presentWorldBlocks(station, [])) {
+            const geo = shown.get(block.id);
+            if (geo === undefined) throw new Error(`unknown block ${block.id}`);
+            expectSameGeo(itemGeoPose(block.pose, station.geo), geo);
+            expect(drawn.get(block.id)).toBe(
+              placeableOf(file, block.id)?.inheritedScale,
+            );
+            seen += 1;
+          }
+          expect(drawn.get("a") ?? 1).toBe(station.id === "well" ? factor : 1);
+          expect(drawn.get("b") ?? 1).toBe(station.id === "well" ? factor : 1);
+          expect(drawn.get("p") ?? 1).toBe(1);
+        }
+        expect(seen).toBe(shown.size);
+      }
     }
   });
 });
