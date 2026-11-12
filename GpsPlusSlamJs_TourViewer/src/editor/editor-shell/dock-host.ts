@@ -348,8 +348,12 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
       window.removeEventListener("pointerup", onSashUp);
       window.removeEventListener("pointercancel", onSashUp);
       onSashUp();
-      // The canvas first, back under the docks.
-      for (const home of [...homes].reverse()) sendHome(home.node);
+      // The canvas first, back under the docks. Only what is still in the
+      // layout goes back: a part its owner removed meanwhile (the 3D view's
+      // canvas when the view closed) stays removed.
+      for (const home of [...homes].reverse()) {
+        if (root.contains(home.node)) sendHome(home.node);
+      }
       dock.dispose();
       root.remove();
       box.classList.remove("docked");

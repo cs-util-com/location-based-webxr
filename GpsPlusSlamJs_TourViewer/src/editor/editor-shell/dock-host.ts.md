@@ -29,8 +29,11 @@ are not part of the page's first load.
     draws its folded head; unfolded, it comes back into its panel.
   - `content(id)` - the element a panel's content sits in
     (`.dock-pane.dock-pane-<id>.dock-group-<group>`).
-  - `dispose()` - every adopted element back at its old place (parent and
-    next sibling), the layout removed, `docked` taken off.
+  - `dispose()` - every adopted element still in the layout back at its
+    old place (parent and next sibling), the layout removed, `docked`
+    taken off. A part its owner removed meanwhile (the 3D view's canvas,
+    when the view closed first) is not put back: seventeen opens would
+    otherwise leave seventeen dead canvases in the page.
 - `FoldingPanel` - `"list" | "details"`.
 
 ## Invariants & assumptions
