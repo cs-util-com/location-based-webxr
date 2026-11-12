@@ -81,6 +81,22 @@ describe("key targets", () => {
     expect(inMenu(window, "ArrowDown")).toBe(false);
   });
 
+  // Why: a tab strip (the editor's docked panels, the bottom panel's
+  // tabs) moves between its tabs by the arrows, Home and End. Home on a
+  // focused tab also framed the whole tour behind it.
+  it("the arrows, Home and End inside a tablist are the tablist's; letters stay the page's", () => {
+    document.body.innerHTML = `
+      <div id="strip" role="tablist"><div id="tab" role="tab" tabindex="0"><span id="label">List</span></div></div>`;
+    for (const id of ["#strip", "#tab", "#label"]) {
+      for (const key of ["ArrowLeft", "ArrowRight", "Home", "End"]) {
+        expect(inComposite(at(id), key), `${id} ${key}`).toBe(true);
+      }
+      for (const key of ["t", "f", "Delete", "Escape"]) {
+        expect(inComposite(at(id), key), `${id} ${key}`).toBe(false);
+      }
+    }
+  });
+
   // Why: a toolbar and a radio group move their focus by the arrows, Home
   // and End. The 3D view nudged the selected sign by the same arrows (an
   // undo step) and the shell framed the tour on Home, behind the widget.
