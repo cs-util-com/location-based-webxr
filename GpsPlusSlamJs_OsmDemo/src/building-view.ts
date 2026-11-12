@@ -549,6 +549,8 @@ export class BuildingView {
    * ground, which is what stops the toggle moving the buildings.
    */
   private displacement: GroundDisplacement = "cpu";
+  /** Whether the AO is asked for; see `applyAmbientOcclusion`. */
+  private aoWanted = false;
   /** The height texture the GPU path samples. Undefined when there is no DEM. */
   private heightTexture: THREE.DataTexture | undefined;
   /** Uniforms shared by every ground material, so one write reaches all of them. */
@@ -923,9 +925,22 @@ export class BuildingView {
 
   /**
    * Switches the ambient occlusion and redraws; nothing is rebuilt. Published
-   * as `data-ao` ("on" / "off") on the container for tests and people.
+   * as `data-ao` ("on" / "off") on the container for tests and people: what is
+   * drawn, which is off in the GPU ground mode whatever is asked here.
    */
   setAmbientOcclusion(on: boolean): void {
+    this.aoWanted = on;
+    this.applyAmbientOcclusion();
+  }
+
+  /**
+   * Draws the AO only when it is asked for and the ground is not displaced on
+   * the GPU: the AO's normal/depth pass uses one override material, which
+   * does not run the ground's displacement shader, so it would see a flat
+   * ground under raised terrain.
+   */
+  private applyAmbientOcclusion(): void {
+    const on = this.aoWanted && this.displacement !== "gpu";
     if (this.ao.enabled === on) return;
     this.ao.enabled = on;
     this.container.dataset["ao"] = on ? "on" : "off";
@@ -1124,6 +1139,7 @@ export class BuildingView {
     // exactly like the blanking bug W2 fixed.
     this.ground.visible = mode !== "none";
     this.setTerrain(this.terrain);
+    this.applyAmbientOcclusion();
   }
 
   /**

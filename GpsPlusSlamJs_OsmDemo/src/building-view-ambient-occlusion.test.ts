@@ -58,6 +58,30 @@ describe("BuildingView's ambient occlusion", () => {
     expect(frameAo - capture).toBeLessThan(400);
   });
 
+  // Why this test matters: the AO's normal/depth pass draws every mesh with
+  // one override material, which does not run the ground's GPU displacement
+  // shader. With the ground displaced on the GPU the AO would see a flat
+  // ground under raised terrain and darken the wrong places, so the pass
+  // stays off in that mode whatever the switch says, and comes back when the
+  // ground leaves it. Both setters must re-decide, or the order in which the
+  // two settings arrive decides the frame.
+  it("stays off while the ground is displaced on the GPU", () => {
+    const body = (signature: string): string => {
+      const start = source.indexOf(`  ${signature}(`);
+      if (start < 0) throw new Error(`not found: ${signature}`);
+      return source.slice(start, source.indexOf("\n  }\n", start));
+    };
+    expect(body("setAmbientOcclusion")).toContain(
+      "this.applyAmbientOcclusion();",
+    );
+    expect(body("setGroundDisplacement")).toContain(
+      "this.applyAmbientOcclusion();",
+    );
+    expect(body("private applyAmbientOcclusion")).toMatch(
+      /const on = this\.aoWanted && this\.displacement !== "gpu";/,
+    );
+  });
+
   // Why this test matters: AR is kept free of the AO by construction (its own
   // renderer; `BuildingView` suspended). This pins the construction: nothing in
   // OsmDemo but `BuildingView`, and nothing in the framework's AR code, reaches
