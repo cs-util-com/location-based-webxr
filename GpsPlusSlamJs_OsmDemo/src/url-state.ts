@@ -39,7 +39,9 @@
  * back, so DEC-R12-5 holds and the writers below do not grow. `roofs=off`
  * boots with the invented roofs switched off, `markings=off` without the
  * zebras and pedestrian areas, `furniture=off` with the street furniture
- * layer off (all read in `main.ts`).
+ * layer off (all read in `main.ts`). `ao=off` boots with the ambient
+ * occlusion off (read in `main.ts`; the light dialog's box changes it,
+ * never the link).
  *
  * FOUR WRITERS, EIGHT KEYS, AND NONE TOUCHES ANOTHER'S. `placeQuery` owns
  * `lat`/`lng`/`site`; `cameraQuery` owns `clat`/`clng`/`cdist`; `lightQuery`

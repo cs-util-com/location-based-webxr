@@ -485,6 +485,73 @@ AR exits already pass through — including the Android back gesture, where
 nothing calls `ArMode.dispose()`. `ar-walk-wiring.test.ts` pins that pairing by
 location; `building-view-content.test.ts` pins the four invariants above.
 
+## `setAmbientOcclusion()`: the ambient occlusion
+
+- `setAmbientOcclusion(on: boolean): void` switches the framework's
+  `createAmbientOcclusion` (deep import
+  `gps-plus-slam-app-framework/visualization/ambient-occlusion`) and
+  schedules one frame. Nothing is rebuilt. The view starts with it off
+  (`data-ao="off"`); `main.ts` switches it from the store at boot.
+- **Every render path multiplies it on**: the frame (`requestFrame`) and
+  `measureLight`'s reads, so the brightness readout measures the view as
+  seen. In the frame it runs AFTER `lastDrawCost` is captured, because
+  its own renders reset `renderer.info`, and the cost reported is the
+  scene's. `clearScene` draws the empty scene without it.
+- **Off is today's frame exactly**: no pass runs and nothing is built; the
+  pass is built on the first enabled frame. On, the factor is exactly 1
+  past the fade window (`AO_FADE`, 700-1400 m of view depth), which ends
+  before the nearest the fog ever starts (`FOG_NEAR_M`, 1584 m at the
+  shortest render distance), so the fogged distance and the sky keep
+  their colour bit for bit.
+- **Off while the ground is displaced on the GPU**, whatever the switch
+  says. The AO's normal/depth pass draws every mesh with one override
+  material, which does not run the ground's displacement shader, so it
+  would see a flat ground under raised terrain and darken the wrong places.
+  `setAmbientOcclusion` records the wish (`aoWanted`), and both it and
+  `setGroundDisplacement` call `applyAmbientOcclusion`, which draws the AO
+  only for `aoWanted && displacement !== "gpu"`. Leaving `gpu` brings it
+  back without a further switch.
+- `data-ao` ("on" / "off") on the container says which is drawn (so it
+  reads "off" in the `gpu` ground mode with the switch on).
+- `dispose()` frees the pass with the renderer.
+- Tests: `building-view-ambient-occlusion.test.ts` (source-level: the
+  fade ends before the fog, the draw order, the GPU-ground condition in both
+  setters, the only importer); the frame itself in
+  `playwright-tests/scene-3d.spec.js` ("ambient occlusion", which also
+  logs the heat grid's margin with the AO on and off as a reported number,
+  and proves `data-ao` goes off in the `gpu` ground mode and back on after).
+  The tests that ask about geometry rather than the look boot with `ao=off`:
+  the light gates, the CPU/GPU ground A/B (the AO would be drawn on one side
+  only) and the buildings-from-beneath test with its sky-only page (the
+  AO's second pass slows each software frame past the damping settle wait).
+
+### Measuring the AO's cost on a phone
+
+The e2e runs in software rendering, where the AO adds about 44 % per
+frame (645 ms to 930 ms at full resolution, 729 ms at half). That says
+nothing about a phone's GPU, so the cost is measured there:
+
+1. Open the branch preview on the Android phone in Chrome and attach the
+   desktop DevTools through `chrome://inspect`.
+2. Boot the same place twice with the same URL, once as it is (AO on) and
+   once with `&ao=off` added. Or switch the "Ambient occlusion" box in the
+   light dialog (the Light button); do not tap into the scene, a tap sends
+   the NPC walking and changes the frame.
+3. **Still view:** record 10 s in the Performance panel without touching
+   the screen. The demo draws on demand, so a still view mostly shows the
+   last few frames; note their GPU time.
+4. **Moving view, the number that matters:** record 10 s while dragging
+   the view with one finger in slow, steady strokes, and once more while
+   the camera eases out after a fling. Every frame redraws then, so the
+   mean frame time and the share of frames over 16.7 ms and 33 ms compare
+   directly between AO on and off. The Rendering tab's "Frame rendering
+   stats" overlay gives a second reading of the frame rate.
+5. Do both at a near view (about 300 m) and a far one (1-2 km, where the
+   fade has removed most of the AO but the pass still runs).
+6. The status line's "N draws / M tri" is captured before the AO pass on
+   purpose, so it reads the same with the AO on and off; the cost shows
+   only in the frame times.
+
 ## `setFarPlane()` — the render-distance dial (r541 Q9/Q10)
 
 A **debug instrument, not a new default.** `FAR_PLANE_M` is unchanged and

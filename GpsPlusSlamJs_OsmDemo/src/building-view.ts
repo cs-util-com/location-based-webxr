@@ -27,6 +27,10 @@ import {
 // above: the `/visualization` barrel would pull the whole AR/scene stack into a
 // module that already costs enough to import.
 import { enableSunShadows } from "gps-plus-slam-app-framework/visualization/sun-shadow";
+import {
+  createAmbientOcclusion,
+  type AmbientOcclusion,
+} from "gps-plus-slam-app-framework/visualization/ambient-occlusion";
 import { disposeObject3D } from "gps-plus-slam-app-framework/visualization/three-dispose";
 
 import type { CellMesh } from "./cell-mesh.js";
@@ -209,6 +213,14 @@ const FOG_NEAR_RATIO = 0.66;
 export const FOG_NEAR_M = FAR_PLANE_M * FOG_NEAR_RATIO;
 
 /**
+ * Where the ambient occlusion fades out, in metres of view depth: the look
+ * chosen on the design system's look-dev page. It ends before the nearest the
+ * fog ever starts (`FOG_NEAR_M`, at the shortest render distance), so the
+ * fogged distance keeps exactly the colour it has without AO.
+ */
+const AO_FADE = { fadeStartM: 700, fadeEndM: 1400 } as const;
+
+/**
  * Upper bound on plane subdivisions per axis.
  *
  * RAISED FROM 128 TO 256 ON 2026-07-30, because the measurement that justified
@@ -342,6 +354,12 @@ export interface CameraView {
 
 export class BuildingView {
   private readonly renderer: THREE.WebGLRenderer;
+  /**
+   * Multiplied onto each frame after it is drawn; off draws the frame alone.
+   * Built on its first enabled frame, so a view that stays off never builds
+   * the pass. The AR session has its own renderer and never draws through it.
+   */
+  private readonly ao: AmbientOcclusion;
   private readonly scene = new THREE.Scene();
   /**
    * The map-derived content, as one subtree with a swappable parent.
@@ -531,6 +549,8 @@ export class BuildingView {
    * ground, which is what stops the toggle moving the buildings.
    */
   private displacement: GroundDisplacement = "cpu";
+  /** Whether the AO is asked for; see `applyAmbientOcclusion`. */
+  private aoWanted = false;
   /** The height texture the GPU path samples. Undefined when there is no DEM. */
   private heightTexture: THREE.DataTexture | undefined;
   /** Uniforms shared by every ground material, so one write reaches all of them. */
@@ -807,6 +827,14 @@ export class BuildingView {
     );
     this.camera.position.set(140, 110, 140);
     this.camera.lookAt(0, 10, 0);
+    this.ao = createAmbientOcclusion({
+      renderer: this.renderer,
+      scene: this.scene,
+      camera: this.camera,
+      params: AO_FADE,
+      enabled: false,
+    });
+    this.container.dataset["ao"] = "off";
 
     // `MapControls` rather than `OrbitControls` (DEC-5): pan-first suits a
     // top-down city view, where dragging should slide the ground rather than
@@ -892,6 +920,30 @@ export class BuildingView {
   setQuestBeacons(placements: readonly QuestBeaconPlacement[]): void {
     this.questBeacons.set(placements);
     this.reapplyArShadowCasting();
+    this.requestFrame();
+  }
+
+  /**
+   * Switches the ambient occlusion and redraws; nothing is rebuilt. Published
+   * as `data-ao` ("on" / "off") on the container for tests and people: what is
+   * drawn, which is off in the GPU ground mode whatever is asked here.
+   */
+  setAmbientOcclusion(on: boolean): void {
+    this.aoWanted = on;
+    this.applyAmbientOcclusion();
+  }
+
+  /**
+   * Draws the AO only when it is asked for and the ground is not displaced on
+   * the GPU: the AO's normal/depth pass uses one override material, which
+   * does not run the ground's displacement shader, so it would see a flat
+   * ground under raised terrain.
+   */
+  private applyAmbientOcclusion(): void {
+    const on = this.aoWanted && this.displacement !== "gpu";
+    if (this.ao.enabled === on) return;
+    this.ao.enabled = on;
+    this.container.dataset["ao"] = on ? "on" : "off";
     this.requestFrame();
   }
 
@@ -1087,6 +1139,7 @@ export class BuildingView {
     // exactly like the blanking bug W2 fixed.
     this.ground.visible = mode !== "none";
     this.setTerrain(this.terrain);
+    this.applyAmbientOcclusion();
   }
 
   /**
@@ -1593,6 +1646,8 @@ export class BuildingView {
     const read = (): Uint8Array => {
       this.prepareFrame();
       this.renderer.render(this.scene, this.camera);
+      // The view as it is seen, AO included.
+      this.ao.render();
       const gl = this.renderer.getContext();
       const pixels = new Uint8Array(
         gl.drawingBufferWidth * gl.drawingBufferHeight * 4,
@@ -1834,6 +1889,9 @@ export class BuildingView {
         calls: this.renderer.info.render.calls,
         triangles: this.renderer.info.render.triangles,
       };
+      // AFTER the cost capture: the AO's own renders reset those counters, and
+      // the cost reported is the scene's.
+      this.ao.render();
       // DRIVEN FROM THE ON-DEMAND FRAME, and that is the accepted trade
       // (DEC-R3-9). This view deliberately has no permanent rAF loop — one was
       // measured to make the e2e suite ~6x slower and would burn a phone's
@@ -2558,6 +2616,7 @@ export class BuildingView {
       this.cellOutlines.material.dispose();
     }
     this.cellOutlines = undefined;
+    this.ao.dispose();
     this.renderer.dispose();
   }
 }

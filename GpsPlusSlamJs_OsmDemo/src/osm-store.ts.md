@@ -57,6 +57,17 @@ store.dispatch(actions.positionChanged({ lat: 50.94, lng: 6.95 }));
 
 The framework slice's own behaviour (the `fetchFailed` / `nonFatalError` split, the JSON round-trip) is tested in `GpsPlusSlamJs_AppFramework/src/state/osm-view-slice.{test,property.test}.ts` and deliberately not re-tested here.
 
+## Ambient occlusion
+
+- `DemoRootState.ambientOcclusion` - whether the 3D view multiplies ambient
+  occlusion onto its frame (the light dialog's checkbox). Starts at
+  `CreateDemoStoreOptions.ambientOcclusion` (default `true`; `main.ts` passes
+  `false` for `?ao=off`). A view setting, not a build input and not part of
+  the light link: switching it redraws one frame and rebuilds nothing.
+- `ambientOcclusionChanged(on)` - its one action; a non-boolean payload is
+  ignored.
+- `selectAmbientOcclusion(state)`.
+
 ## The colour scheme (colour schemes plan 2026-11-10-0841 section 4.4)
 
 - `DemoRootState.colourScheme` - the chosen scheme, a demo-owned reducer beside

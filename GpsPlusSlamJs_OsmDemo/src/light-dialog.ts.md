@@ -28,6 +28,12 @@ WebGL.
   - `deps.nextFrame?`: runs a callback once the in-progress state has
     painted. The default waits for an animation frame and then a task,
     because an animation-frame callback runs before that frame's paint.
+  - `deps.ambientOcclusion?`: `{ initial, onChange(on) }`. When given, the
+    panel shows an "Ambient occlusion" checkbox (`#light-ao`) between the
+    sliders and the readout. A change calls `onChange` at once (the page
+    redraws one frame) and re-reads the brightness while open. It is not a
+    light setting: `onChange(settings)`, Copy, Reset and the light link never
+    carry it; the page keeps it in the store, and `?ao=off` seeds it.
 - `LightDialog`:
   - `open`, `toggle()` and `close()`. Opening refreshes the brightness and
     focuses the first slider.
@@ -43,6 +49,7 @@ WebGL.
   - `#light-dialog`;
   - `#light-<field>`, one range input per `LightSettings` field, with its
     range from `LIGHT_SETTING_RANGES`;
+  - `#light-ao`, the ambient occlusion checkbox (only when offered);
   - `#light-readout`;
   - `#light-check`, `#light-copy`, `#light-reset` and `#light-close`.
 - **The gain ramp always rises.** A start dragged past the end moves the
@@ -111,7 +118,10 @@ dialog.toggle();
     the ground mode, no grid, and a measurement that throws;
   - the default `nextFrame` measuring only after the frame's task;
   - Copy on success, on a rejected write and on a write that throws at
-    once, with the reason sent to `showError`, and a stale "Copied" dropped.
+    once, with the reason sent to `showError`, and a stale "Copied" dropped;
+  - the ambient occlusion checkbox: its initial state, the change reaching
+    `onChange` at once with a brightness re-read, Reset leaving it alone, and
+    no checkbox when the page offers none.
 - `playwright-tests/scene-3d.spec.js`, "the light dialog", covers:
   - the button, the `l` key and Escape;
   - each lever brightening June noon, the URL surviving a reload, and the

@@ -17,10 +17,12 @@ import { ZERO_STAGE_TIMINGS } from "./snapshot-timings-fixture.js";
 import { describe, it, expect, vi } from "vitest";
 
 import {
+  ambientOcclusionChanged,
   colourSchemeChanged,
   createDemoStore,
   inventedRoofsChanged,
   markingsChanged,
+  selectAmbientOcclusion,
   selectColourScheme,
   selectInventedRoofs,
   selectMarkings,
@@ -308,6 +310,31 @@ describe("the colour scheme (colour schemes plan 2026-11-10-0841)", () => {
     expect(selectColourScheme(plain.store.getState())).toBe("today");
     // The framework's slice is untouched by it.
     expect(selectOsmView(plain.store.getState()).category).toBe("x");
+  });
+});
+
+describe("the ambient occlusion switch", () => {
+  it("starts on, or off from the link, and takes only booleans", () => {
+    // Why this test matters: the light dialog toggles the AO through this
+    // field and the 3D view follows it, so a non-boolean must never reach the
+    // view, and the link's `ao=off` must be the boot state, so a view that
+    // starts without AO never builds the pass.
+    const plain = createDemoStore({
+      start: { lat: 50, lng: 7 },
+      category: "x",
+    });
+    expect(selectAmbientOcclusion(plain.store.getState())).toBe(true);
+    const linked = createDemoStore({
+      start: { lat: 50, lng: 7 },
+      category: "x",
+      ambientOcclusion: false,
+    });
+    expect(selectAmbientOcclusion(linked.store.getState())).toBe(false);
+    plain.store.dispatch({ type: "ambientOcclusion/changed", payload: "off" });
+    expect(selectAmbientOcclusion(plain.store.getState())).toBe(true);
+    plain.store.dispatch(ambientOcclusionChanged(false));
+    expect(selectAmbientOcclusion(plain.store.getState())).toBe(false);
+    expect(selectInventedRoofs(plain.store.getState())).toBe(true);
   });
 });
 

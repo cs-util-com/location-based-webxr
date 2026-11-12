@@ -185,10 +185,12 @@ import {
 } from "./layers.js";
 import { meshLayerSelection, wantsAnyMeshLayer } from "./mesh-layers.js";
 import {
+  ambientOcclusionChanged,
   colourSchemeChanged,
   createDemoStore,
   inventedRoofsChanged,
   markingsChanged,
+  selectAmbientOcclusion,
   selectColourScheme,
   selectInventedRoofs,
   selectMarkings,
@@ -380,6 +382,10 @@ async function main(): Promise<void> {
   const { store, actions, subscribe } = createDemoStore({
     start,
     category: categorySelect.value,
+    // THE LINK CAN SWITCH THE AMBIENT OCCLUSION OFF (?ao=off), read-only like
+    // the roofs: the light dialog's box changes it, never the link.
+    ambientOcclusion:
+      new URLSearchParams(window.location.search).get("ao") !== "off",
     // THE LINK'S SCHEME (colour schemes plan 2026-11-10-0841, D6); unknown
     // names open the default with one warning.
     colourScheme: resolveColourScheme(
@@ -643,6 +649,15 @@ async function main(): Promise<void> {
     writeClipboard: (text) => navigator.clipboard.writeText(text),
     // The page's 2D error channel; created further down, before any click.
     showError: (message) => toast.show(message),
+    ambientOcclusion: {
+      initial: selectAmbientOcclusion(store.getState()),
+      onChange: (on) => store.dispatch(ambientOcclusionChanged(on)),
+    },
+  });
+  // The view follows the store's AO switch: one redraw, no rebuild.
+  buildingView.setAmbientOcclusion(selectAmbientOcclusion(store.getState()));
+  store.subscribe(() => {
+    buildingView.setAmbientOcclusion(selectAmbientOcclusion(store.getState()));
   });
   const moveSun = (next: number) => {
     sunInstant = next;

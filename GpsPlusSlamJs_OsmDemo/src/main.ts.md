@@ -103,6 +103,13 @@ None. Entry point only, loaded by `index.html`.
   (`sunPinnedHref`), so the pick is reproduced at the same sun; a failed
   copy goes to the toast. The dialog is created before `moveSun`, which
   refreshes it, so no sun move can reach it undefined.
+- **The ambient occlusion** is on by default. The light dialog's
+  `#light-ao` box dispatches `ambientOcclusionChanged`; a store
+  subscription calls `buildingView.setAmbientOcclusion`, which redraws one
+  frame and rebuilds nothing. **`?ao=off`** seeds the store off at boot: a
+  read-only boot override like `?roofs=off`, never written back, and not
+  part of `?light=`. The AR session never draws through it (its own
+  renderer; `BuildingView` is suspended).
 - **A RE-ANCHOR clears the route; an ordinary publish does not.** Every point on
   the drawn polyline is expressed in the scene's ENU frame, and round 5B's whole
   guarantee is that an ordinary step leaves that frame alone. So the route
