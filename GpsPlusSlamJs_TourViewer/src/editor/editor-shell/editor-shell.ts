@@ -353,6 +353,10 @@ export interface EditorShell {
   /** Docked, shows a panel (its side unfolded, it the shown tab); else
    *  nothing. */
   reveal(id: DockPanelId): void;
+  /** Docked, takes a shown panel out of sight: `instead` shown in its
+   *  place when its group holds it, else the group's next panel, or, alone
+   *  in its group, the group hidden; else nothing. */
+  conceal(id: DockPanelId, instead?: DockPanelId): void;
   /** Docked, whether the Files panel shows: its group shown and it the
    *  group's shown tab. Undocked: false. */
   filesShown(): boolean;
@@ -2367,6 +2371,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     clearSearch,
     docked: () => dockHost !== null,
     filesShown,
+    conceal(id, instead) {
+      dockHost?.conceal(id, instead);
+    },
     reveal(id) {
       if (dockHost === null) return;
       const side = dockPanel(id).group;

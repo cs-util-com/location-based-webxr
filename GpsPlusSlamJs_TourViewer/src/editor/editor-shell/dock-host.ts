@@ -67,6 +67,10 @@ export interface DockHost {
   reveal(id: DockPanelId): void;
   /** Hides the group that holds `id`. */
   hideGroupOf(id: DockPanelId): void;
+  /** Takes `id` out of sight when it shows: `instead` made its group's
+   *  shown tab when the group holds it, else the group's next panel; alone
+   *  in its group, the group hidden. */
+  conceal(id: DockPanelId, instead?: DockPanelId): void;
   /** Whether the group holding `id` shows. */
   groupShown(id: DockPanelId): boolean;
   /** The shown tab of the group holding `id`. */
@@ -704,6 +708,21 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
       const group = groupOf(id);
       if (!group.api.isVisible) return;
       group.api.setVisible(false);
+      deps.onChange();
+    },
+    conceal(id, instead) {
+      const group = groupOf(id);
+      if (!group.api.isVisible || group.activePanel?.id !== id) return;
+      const other =
+        group.panels.find((p) => p.id === instead) ??
+        group.panels.find((p) => p.id !== id);
+      if (other === undefined) {
+        group.api.setVisible(false);
+      } else {
+        const back = holdFocus([...contents.values()]);
+        other.api.setActive();
+        back();
+      }
       deps.onChange();
     },
     groupShown(id) {

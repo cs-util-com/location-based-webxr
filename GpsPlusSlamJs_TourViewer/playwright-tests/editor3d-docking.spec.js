@@ -546,6 +546,17 @@ test("the list made a tab beside Files keeps its folds and its scroll across a t
   await expect(page.locator("#tree-body")).toBeVisible();
   await expect(gateKids).toBeVisible();
   await expect.poll(() => probeScroll(page)).toBe(at);
+
+  // The shelf's toggle with Files apart from Details: pressed, Files shows;
+  // pressed again, Files gives way to the list and the toggle lets go.
+  const toggle = page.locator("#shelf-toggle");
+  await toggle.click();
+  await expect(files).toHaveAttribute("aria-selected", "true");
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await expect(list).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#shell-shelf")).toHaveCount(0);
 });
 
 // Why: a station drawn into the Details while Files shows is drawn out of

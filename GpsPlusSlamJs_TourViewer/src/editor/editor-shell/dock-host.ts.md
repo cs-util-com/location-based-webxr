@@ -23,6 +23,10 @@ are not part of the page's first load.
   - `reveal(id)` - shows a panel: its group visible (a folded side
     unfolded), the panel its group's shown tab.
   - `hideGroupOf(id)` / `groupShown(id)` - the group holding `id`.
+  - `conceal(id, instead?)` - takes a shown panel out of sight: `instead`
+    shown in its place when its group holds it, else the group's next
+    panel; alone in its group, the group hides. The shelf's toggle pressed
+    again uses it with Files and Details, wherever Files was dragged.
   - `activeIn(id)` - the shown tab of the group holding `id`.
   - `fold("list" | "details", folded)` - folded, the group hides and the
     adopted element goes back to the view box, where the undocked CSS

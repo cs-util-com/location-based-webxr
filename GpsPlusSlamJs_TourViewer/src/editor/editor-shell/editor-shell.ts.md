@@ -166,6 +166,8 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   `EditorShell.reveal(id)` - docked, shows a panel (`dock-layout.ts`'s ids),
   unfolding its side in the store first; undocked, nothing (the asset
   shelf's toggle reveals the Files panel through it).
+  `EditorShell.conceal(id, instead?)` - docked, takes a shown panel out of
+  sight (`dock-host.ts`'s `conceal`); the shelf's toggle pressed again.
   `EditorShell.filesShown()` - docked, whether the Files panel shows (its
   group shown, it the shown tab); undocked, false.
 - `EditorShell.clearSearch()` - empties the tree's search, and draws the tree
