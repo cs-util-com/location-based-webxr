@@ -192,10 +192,11 @@ describe("KIND_EDIT", () => {
         '#tree-add-menu [role="menuitem"]',
       ),
     ];
-    // The menu's two entries that are no kind's add row: the story, and
-    // the character, who is made in the character maker first. Named here
-    // so a third one cannot slip past the rows unnoticed.
-    const ownEntries = ["character", "story"];
+    // The menu's entries that are no kind's add row: the character, who
+    // is made in the character maker first, a story's choice and quiz,
+    // which are steps of a story and no block, and the story. Named here
+    // so another one cannot slip past the rows unnoticed.
+    const ownEntries = ["character", "choice", "quiz", "story"];
     expect(
       all()
         .map((item) => item.dataset["kind"] ?? "")
