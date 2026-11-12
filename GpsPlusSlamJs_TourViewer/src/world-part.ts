@@ -2,10 +2,11 @@
  * A kind's part in the world: the one three.js object a station shows for
  * an item, and what the page may ask of it (a tap, a frame, going). Each
  * hook has its driver: `tap` the visitor's tap, `update` the camera frame
- * (`tickWorldParts`). Leaving and coming back are added with a driver of
+ * (`tickWorldParts`; in the editor its stations layer, which hands the
+ * camera too). Leaving and coming back are added with a driver of
  * their own when a kind needs them. The renderer places it (`content-placement.ts`);
  * the part itself never touches the scene, the camera, the renderer or the
- * frame loop.
+ * frame loop (it may read the camera a frame hands it).
  *
  * Every mounted part sits in one set (`mountWorldPart`), so the page finds
  * a tapped part, or one to tick, the same way for every kind. A part may
@@ -22,7 +23,13 @@
  */
 
 import type { TourAsset } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { CanvasTexture, SRGBColorSpace, Vector3, type Object3D } from "three";
+import {
+  CanvasTexture,
+  SRGBColorSpace,
+  Vector3,
+  type Camera,
+  type Object3D,
+} from "three";
 
 import { shownIn } from "./model-visitor.js";
 import {
@@ -43,6 +50,14 @@ interface WorldFrame {
   readonly seconds: number;
   /** The viewer's position in the part's parent frame (metres). */
   readonly viewer: readonly [number, number, number];
+  /** The camera drawing the frame, for a part that turns toward it or
+   *  keeps a size on the screen (the editor's marks, a character's
+   *  card); absent where the page gives none. Read, never moved. */
+  readonly camera?: Camera;
+  /** How many metres one CSS px covers 1 m from `camera` (its lens over
+   *  the view's height): a size on the screen at a distance `d` is
+   *  `px * d * metresPerPxAtOneM` metres. Absent without `camera`. */
+  readonly metresPerPxAtOneM?: number;
 }
 
 /** The page's screen beside the world, where a part may open one panel

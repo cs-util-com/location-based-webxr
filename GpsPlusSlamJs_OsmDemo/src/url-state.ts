@@ -43,10 +43,16 @@
  * occlusion off (read in `main.ts`; the light dialog's box changes it,
  * never the link); `ao=strong` draws it with display exponent 1 instead of
  * the shipped 1 / 2.2, the stronger look, so the two can be compared by
- * link (`aoDisplayExponent`, read in `main.ts`). `woodsauto=off` keeps the woods governor from thinning
- * the invented woods on a phone, `treeform=trunk` draws every tree with a
- * trunk, `perf=1` shows the frame readout over the 3D pane (all three read
- * in `main.ts` through `woods-readout.ts`; no app control changes them).
+ * link (`aoDisplayExponent`, read in `main.ts`). `woodsauto=off` keeps
+ * the woods governor from thinning the invented woods on a phone,
+ * `treeform=trunk` draws every tree with a trunk, `perf=1` shows the frame
+ * readout over the 3D pane (all three read in `main.ts` through
+ * `woods-readout.ts`; no app control changes them). `tiles=off` switches
+ * the static tile host off for the session, so the tiles come straight from
+ * the Overpass race (see {@link staticTilesEnabled}, read in `main.ts`; any
+ * other value, or none, leaves the host on). `date` and `time` pin the sun
+ * (see {@link sunPinnedHref}). No writer sets or clears any of these keys;
+ * each writer keeps them like every key it does not own.
  *
  * FOUR WRITERS, EIGHT KEYS, AND NONE TOUCHES ANOTHER'S. `placeQuery` owns
  * `lat`/`lng`/`site`; `cameraQuery` owns `clat`/`clng`/`cdist`; `lightQuery`
@@ -431,4 +437,13 @@ export function sunPinnedHref(
  */
 export function aoDisplayExponent(search: string): number | undefined {
   return new URLSearchParams(search).get("ao") === "strong" ? 1 : undefined;
+}
+
+/**
+ * Whether the worker asks the static tile host first (`OSM_TILES_BASE_URL`):
+ * true unless the query carries `tiles=off`. A read-only knob (see the
+ * header), for comparing the host with the direct Overpass race.
+ */
+export function staticTilesEnabled(search: string): boolean {
+  return new URLSearchParams(search).get("tiles") !== "off";
 }

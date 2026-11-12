@@ -1,3 +1,4 @@
+import type { Object3D } from "three";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -93,6 +94,59 @@ describe("a narration circle in the world", () => {
     part.tap?.();
     expect(sounds).toHaveLength(0);
     part.dispose();
+  });
+
+  // Why: a narration has the same editor mark as an ambient sound, so a
+  // creator finds both the same way; the visitor never sees it.
+  it("wears the editor's speaker icon in the editor only", () => {
+    const named = (mode: "play" | "edit") => {
+      const part = spotPart(
+        audioBlock("spot", { radiusM: 6 }),
+        recordingEnv(mode).env,
+      );
+      let found = false;
+      part.object.traverse((o) => {
+        if (o.name === "sound-icon") found = true;
+      });
+      part.dispose();
+      return found;
+    };
+    expect(named("edit")).toBe(true);
+    expect(named("play")).toBe(false);
+  });
+
+  // Why: in the editor a press must select the narration by what the
+  // creator sees, its icon. Its invisible tap cylinder (2 m tall) and its
+  // particle column would take presses around and above the icon, and in
+  // front of other items. The visitor's tap still meets the cylinder.
+  it("in the editor is picked by its icon alone; in play its tap cylinder still takes a ray", () => {
+    const rayable = (mode: "play" | "edit") => {
+      const part = spotPart(
+        audioBlock("spot", { radiusM: 6 }),
+        recordingEnv(mode).env,
+      );
+      const names: { icon: boolean; picked: boolean }[] = [];
+      let tapPicked = false;
+      part.object.traverse((o) => {
+        if (!("geometry" in o)) return;
+        let icon = false;
+        for (let p: Object3D | null = o; p !== null; p = p.parent) {
+          if (p.name === "sound-icon") icon = true;
+        }
+        // Its own class's raycast, not a no-op put over it.
+        const own = (Object.getPrototypeOf(o) as Object3D).raycast;
+        const picked = o.raycast === own;
+        names.push({ icon, picked });
+        if (o === part.tapTarget) tapPicked = picked;
+      });
+      part.dispose();
+      return { names, tapPicked };
+    };
+    const edit = rayable("edit");
+    expect(edit.names.some((n) => n.icon)).toBe(true);
+    for (const n of edit.names) expect(n.picked).toBe(n.icon);
+    const play = rayable("play");
+    expect(play.tapPicked).toBe(true);
   });
 
   it("frees its voice and its look", () => {

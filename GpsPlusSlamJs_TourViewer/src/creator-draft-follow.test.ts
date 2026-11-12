@@ -189,7 +189,8 @@ describe("the phone's draft says what it could not read", () => {
     children: [
       {
         id: "tale",
-        kind: "story",
+        kind: "folder",
+        role: "story",
         title: "The tale",
         children: [
           {
@@ -426,7 +427,8 @@ describe("the phone draft's settings record", () => {
       children: [
         {
           id: "tale",
-          kind: "story",
+          kind: "folder",
+          role: "story",
           title: "The tale",
           children: [
             {

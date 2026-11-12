@@ -337,7 +337,8 @@ function station(id: string, steps: Step[], title?: string): TourStation {
         : [
             {
               id: `${id}-story`,
-              kind: "story",
+              kind: "folder",
+              role: "story",
               title: "A story",
               children: steps as unknown as TourStoryChild[],
             },

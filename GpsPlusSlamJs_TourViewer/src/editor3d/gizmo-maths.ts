@@ -209,10 +209,13 @@ export type GizmoHandle = "move" | "turn" | "dot";
 
 /**
  * The handle under the pointer, by the design's order: the knob and the
- * dots first (whichever is nearest, within half its drawn size); then an
- * object under the pointer - the selected one moves, another one takes
- * no handle (a click there selects it); then the move disc. Null: the
- * pointer moves the camera. Not `posable` (a locked station): the dots
+ * dots first (whichever is nearest, within half its drawn size); then
+ * another object under the pointer takes no handle (a click there selects
+ * it); then the move disc, which moves even where the selected object's
+ * own body covers it. The selected object's body off the disc is no
+ * handle - a tap there selects, a drag turns the camera - so a large item
+ * never takes a drag meant for the view. Null: the pointer moves the
+ * camera. Not `posable` (a locked station): the dots
  * alone - the knob, the selection and the disc take no handle.
  */
 export function handleAt(input: {
@@ -244,7 +247,6 @@ export function handleAt(input: {
   const found = best as { handle: GizmoHandle; d: number } | null;
   if (found !== null) return found.handle;
   if (!posable) return null;
-  if (input.underPointer === "selected") return "move";
   if (input.underPointer === "other") return null;
   return input.onDisc ? "move" : null;
 }

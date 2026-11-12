@@ -225,20 +225,111 @@ describe("which handle the pointer is on", () => {
     ).toBe("dot");
   });
 
-  it("moves when the selected object or the disc is under the pointer, never another object", () => {
+  // Why: only the disc moves an item. A large item (an ambient sound's
+  // glow, a model) covers much of the view; when its body moved it, every
+  // drag meant to turn the camera shifted the item instead. One case per
+  // thing that can lie under a press.
+  describe("one case per thing under the press", () => {
     const base = { pointer: { x: 0, y: 0 }, knob, dots };
-    expect(handleAt({ ...base, onDisc: true, underPointer: null })).toBe(
-      "move",
-    );
-    expect(handleAt({ ...base, onDisc: false, underPointer: "selected" })).toBe(
-      "move",
-    );
-    // Another object under the pointer wins over the disc: a click there
-    // selects it.
-    expect(handleAt({ ...base, onDisc: true, underPointer: "other" })).toBe(
-      null,
-    );
-    expect(handleAt({ ...base, onDisc: false, underPointer: null })).toBe(null);
+
+    it("the selected item's body, off the disc: the camera's (a tap selects)", () => {
+      expect(
+        handleAt({ ...base, onDisc: false, underPointer: "selected" }),
+      ).toBeNull();
+    });
+
+    it("the disc: moves", () => {
+      expect(handleAt({ ...base, onDisc: true, underPointer: null })).toBe(
+        "move",
+      );
+    });
+
+    it("the disc under the selected item's own body: moves", () => {
+      // A pin or a model stands on its disc; from most views its body
+      // covers the disc's middle, which must still move it.
+      expect(
+        handleAt({ ...base, onDisc: true, underPointer: "selected" }),
+      ).toBe("move");
+    });
+
+    it("the turn knob: turns, over the body and the disc", () => {
+      expect(
+        handleAt({
+          ...base,
+          pointer: knob,
+          onDisc: true,
+          underPointer: "selected",
+        }),
+      ).toBe("turn");
+    });
+
+    it("a size dot: sizes, over the body and the disc", () => {
+      expect(
+        handleAt({
+          ...base,
+          pointer: { x: 200, y: 100 },
+          onDisc: true,
+          underPointer: "selected",
+        }),
+      ).toBe("dot");
+    });
+
+    it("another item, even over the disc: no handle, so a click selects it", () => {
+      expect(
+        handleAt({ ...base, onDisc: true, underPointer: "other" }),
+      ).toBeNull();
+      expect(
+        handleAt({ ...base, onDisc: false, underPointer: "other" }),
+      ).toBeNull();
+    });
+
+    it("empty ground: the camera's", () => {
+      expect(
+        handleAt({ ...base, onDisc: false, underPointer: null }),
+      ).toBeNull();
+    });
+  });
+
+  // Why: with the body no longer a grip, the disc is the one way to move
+  // an item, so it must stay a fair touch target wherever the camera is.
+  // Swept over camera distances of 5-300 m, a 50 degree lens and the
+  // short side of a phone (390 px) and a desktop view (900 px): the disc
+  // is never under 32 px across its radius for an item, nor 26 px for a
+  // station, and never under its metre floor.
+  it("keeps the move disc at least its touch size from 5 m to 300 m", () => {
+    for (const viewportPx of [390, 900]) {
+      for (const distanceM of [5, 10, 20, 50, 100, 200, 300]) {
+        const mpp = (distanceM * viewHeightAtOneM(50)) / viewportPx;
+        const item = gizmoLayout(
+          {
+            kind: "item",
+            centre: CENTRE,
+            headingDeg: 0,
+            radiusM: null,
+            sizeM: null,
+          },
+          mpp,
+        );
+        const station = gizmoLayout(
+          {
+            kind: "station",
+            centre: CENTRE,
+            headingDeg: 0,
+            radiusM: 25,
+            sizeM: null,
+          },
+          mpp,
+        );
+        expect(item.moveM / mpp).toBeGreaterThanOrEqual(
+          GIZMO.itemRingPx - 1e-9,
+        );
+        expect(item.moveM).toBeGreaterThanOrEqual(GIZMO.itemRingMinM);
+        expect(station.moveM / mpp).toBeGreaterThanOrEqual(
+          GIZMO.stationMovePx - 1e-9,
+        );
+        expect(station.moveM).toBeGreaterThanOrEqual(GIZMO.stationMoveMinM);
+      }
+    }
   });
 
   it("puts the knob and the dots before anything under them", () => {

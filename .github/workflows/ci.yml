@@ -137,7 +137,7 @@ jobs:
         include:
           # About 7 min (CI runs of 2026-11-04).
           - job: libraries
-            scripts: test:repo-config test:framework test:osm test:globe test:editor-kit test:site-worker
+            scripts: test:repo-config test:framework test:osm test:globe test:editor-kit test:site-worker test:osm-tiles
             timeout: 30
           # About 22 min: the design system (about 11.5 min, nearly all of
           # it e2e) and the apps (about 10.5 min) in one job, which keeps the

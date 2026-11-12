@@ -43,15 +43,19 @@ tour id and the tour details.
 order: "fixed", assets: [], stations: [] }`, the starter zip's content.
 - The WORLD VIEW a creator's pages hold: `TourObject = TourPin |
 TourLectern | TourReadingSign | TourPicture | TourModel` - a free block without its local pose, plus
-  `geo` (its geo pose) and `station?` (absent on a draft object no station
-  holds yet). A `TourPicture` carries its image asset inline
+  `geo` (its geo pose), `station?` (absent on a draft object no station
+  holds yet) and `folder?` (the ids of the plain folders holding it,
+  outermost first; absent at the station's top; `geo` is the world pose
+  either way). A `TourPicture` carries its image asset inline
   (`imageAsset`, with `imageAsset.id === image`), because the page that
   captured a photo holds its asset before any tour lists it. `TourModel`
   carries its `sizeM` (required to place it). `TourObjectKind`.
 - `TOUR_OBJECT_RECORD_FORMAT = 5` and `TourObjectRecord` - a world-view
   object as a creator's on-device draft stores it:
-  `{ format: 5, block, asset?, geo, station? }` (`block` without a pose;
-  `asset` a picture's image asset entry `{ id, path, width?, height? }`).
+  `{ format: 5, block, asset?, geo, station?, folder? }` (`block` without a
+  pose or folders; `asset` a picture's image asset entry
+  `{ id, path, width?, height? }`; `folder` a non-empty list of folder ids,
+  anything else refused).
 - `tourObjectRecord(object): TourObjectRecord` and
   `parseTourObject(value, at?): TourObject` - write and read that record.
   The reader checks the block by the block rules, strictly (a record whose

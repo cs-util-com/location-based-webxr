@@ -103,8 +103,14 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   tour without them; station descriptions and card images the reader
   left out (format minor 2: a picture gone, or a value a hand edit broke)
   in a toast of their own, naming each station by its rail name
-  (`droppedStationFieldsLine`); and a block's text over its cap in a
-  third, naming each block (`droppedBlockFieldsLine`).
+  (`droppedStationFieldsLine`); a block's text over its cap in a
+  third, naming each block (`droppedBlockFieldsLine`); plain folders'
+  sizes a newer editor wrote (`droppedFolderScalesLine`) and whole items
+  the reader could not read (`droppedChildrenLine`) in a fourth and a
+  fifth. All come from `openedNoticeLines` and are shown by
+  `showOpenedNotices`, so a test can see them without the page. The
+  plain folders themselves take no toast: the editor keeps them and the
+  next save writes them back.
 - **A failure latched during the open** (`integrityFailure()` right after
   it) refuses the tour (E1 review #6).
 - **A late integrity failure** (`onIntegrityFailure`, the background
@@ -434,7 +440,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     the background, E2b-1 review #9) - the delay and the max wait bound how
     often.
 - **The draft (M6 E2c).** Read inside the open, before the tour shows
-  (`draft.open` over the session's file key). What an earlier visit left is
+  (`draft.open` over the session's file key, with the opened archive's
+  entry sizes by path, so a file the draft holds that the file on disk
+  already carries at its path with its size is let go, and bytes an open's
+  tidy removed for such a file are not said lost). What an earlier visit left is
   offered in a toast that stays until answered (`.draft-offer`): Restore
   (`session.restore`, live edits winning; `editor-draft.ts` `restoredLine`:
   "N earlier changes are back - not saved yet", or why nothing came back in
@@ -756,8 +765,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     the same on the card ("... - not saved yet.");
   - `remove` (`deleteSelection`, the card's Delete too) deletes an item
     with the toast's Undo, or a station (`deleteStation`);
-  - `duplicate` (`duplicateSelection`, Ctrl+D) copies an item or a
-    station beside itself, ends a running search and unfolds the station
+  - `duplicate` (`duplicateSelection`, Ctrl+D) copies a story right after
+    itself (`duplicateStorySelection`: the copy selected, its folder open,
+    "Duplicated "<title> copy""), or an item or a station beside itself,
+    ends a running search and unfolds the station
     the copy is in (`showRowsOf`: the copy's name matches what was typed
     no better), selects the copy and says "Duplicated ...";
   - `groundMenu` hands a right click's (a long press's) ground menu to the
@@ -816,17 +827,20 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   page reads now), and its codes come from `shellCodes` (the model's
   codes with their stored position and print size as opened).
 - **The dev server's test hook** `window.__tourEditor` (`{ editor(),
-edited(), view3d(), view3dTilt(deg), view3dDistance(m), view3dBuildings(on),
-view3dPointOf(selection), view3dScreenOf(selection), view3dHandle(part),
-view3dGizmoSizes(), manifest(), selected(), dropTour(reason) }`): an e2e reaches the editor session's edits no control of
+edited(), view3d(), view3dTilt(deg), view3dDistance(m), view3dHeading(deg), view3dBuildings(on),
+view3dPointOf(selection), view3dScreenOf(selection), view3dHandle(part), view3dUnder(x, y),
+view3dGizmoSizes(), view3dFolderOutlines(), manifest(), selected(), dropTour(reason) }`): an e2e reaches the editor session's edits no control of
   this page offers yet, then `edited()` follows them as an edit made here
   would (refresh, autosave told); `view3d()` is the shown 3D view's
   `stats()` (null on the map), `view3dTilt(deg)` tilts its orbit and
-  `view3dDistance(m)` moves it in or out, `view3dBuildings(on)` shows or
+  `view3dDistance(m)` moves it in or out, `view3dHeading(deg)` turns it
+  round its centre (the older view only), `view3dBuildings(on)` shows or
   hides the globe view's buildings (the view's `setBuildings`; no chip yet), `view3dPointOf(selection)` says
   where a selection stands in its world; `view3dScreenOf`, `view3dHandle`
   and `view3dGizmoSizes` say where a selection and the gizmo's handles are
-  on the canvas and how large; `manifest()` is what a save would write
+  on the canvas and how large, `view3dUnder(x, y)` what a press at a
+  canvas point picks and whether it meets the move disc; `view3dFolderOutlines()` how many teal
+  boxes show around a selected folder's items (null on the map); `manifest()` is what a save would write
   now and `selected()` the selection; `dropTour(reason)` drops the open
   tour as a late integrity failure does, at the moment the e2e chooses.
   Guarded by `import.meta.env.DEV &&
@@ -841,7 +855,9 @@ view3dGizmoSizes(), manifest(), selected(), dropTour(reason) }`): an e2e reaches
 The shell's and the 3D view's `model` edits go through
 `writeInspectorEdit` to the session's `editModel` (a refusal toasted).
 The dev hook adds `view3dModelParts()` and
-`view3dModelScreen(id, at)` for `editor3d-model.spec.js`.
+`view3dModelScreen(id, at)` for `editor3d-model.spec.js`;
+`view3dSoundIcons(on)` for `editor3d-world-marks.spec.js` (the same
+pixels with the sounds' icons and without them).
 
 ### Stories in the tree
 

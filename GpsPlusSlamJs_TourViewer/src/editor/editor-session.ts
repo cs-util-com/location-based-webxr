@@ -9,7 +9,8 @@
  */
 
 import {
-  isTourStory,
+  isStory,
+  isTourBlockChild,
   isTourStoryBlock,
   tourChildPlace,
   tourStationChildIds,
@@ -145,6 +146,7 @@ import {
   spawnOptimizerWorker,
 } from "./asset-shelf/optimizer-client.js";
 import { newStory, withoutStoryChild } from "../tour-story-edit.js";
+import { folderRefusalLine } from "../tour-folder-edit.js";
 import { newStoryEntry } from "./new-pin.js";
 
 /** One of the tour's objects as it stands, with this page's entry. */
@@ -442,9 +444,12 @@ function cannotStandFreeRefusal(manifest: TourManifest, id: string): string {
  *  naming its kind ("an audio", "a 3D model"). */
 function unsavedRefusal(manifest: TourManifest, id: string): string {
   const place = tourChildPlace(manifest, id);
-  const item = place === null ? undefined : place.station.children[place.index];
+  const item =
+    place === null || place.path.length > 0
+      ? undefined
+      : place.station.children[place.index];
   const what =
-    item === undefined || isTourStory(item)
+    item === undefined || !isTourBlockChild(item)
       ? "an item"
       : kindWithArticle(item.kind);
   return `Save the tour first: ${what} added here can go into a story once the tour's file holds it.`;
@@ -460,9 +465,11 @@ export function childCalled(manifest: TourManifest, id: string): string {
     const entry = place.story.children[place.index];
     return entry === undefined ? "the item" : storyChildName(entry);
   }
-  const free = place.station.children[place.index];
+  const free =
+    place.path.length > 0 ? undefined : place.station.children[place.index];
   if (free === undefined) return "the item";
-  return isTourStory(free) ? free.title : objectTitle(free);
+  if (isStory(free)) return free.title;
+  return isTourBlockChild(free) ? objectTitle(free) : "the item";
 }
 
 /** Said for a delete of the tour's last station. */
@@ -723,6 +730,11 @@ export interface EditorSession {
     storyId: string,
   ):
     { kind: "deleted"; children: number; stationGone: boolean } | EditorRefusal;
+  /** Copy a story right after itself, "... copy", with everything it
+   *  holds under new ids: one step. */
+  duplicateStory(
+    storyId: string,
+  ): { kind: "duplicated"; id: string } | EditorRefusal;
   /** A new entry at the end of a story: one step. */
   addToStory(
     storyId: string,
@@ -1852,6 +1864,34 @@ export function createEditorSession(input: {
         ? { kind: "edited" }
         : notApplied;
     },
+    duplicateStory(storyId) {
+      const state = mine();
+      if (state === null) return notInTour;
+      const story = storyNow(state, storyId);
+      if (story === undefined) {
+        return { kind: "refused", reason: NO_SUCH_STORY };
+      }
+      // The story and every child get a new id: child ids are unique
+      // across the tour.
+      const newIds = Object.fromEntries(
+        [story.id, ...story.children.map((c) => c.id)].map((id) => [
+          id,
+          newObjectId(),
+        ]),
+      );
+      const id = newIds[story.id] as string;
+      return took(() =>
+        store.dispatch(
+          tourDocumentActions.storyDuplicated({
+            story: storyId,
+            newIds,
+            what: `the copy of the story "${story.title}"`,
+          }),
+        ),
+      )
+        ? { kind: "duplicated", id }
+        : notApplied;
+    },
     deleteStory(storyId) {
       const state = mine();
       if (state === null) return notInTour;
@@ -2301,6 +2341,13 @@ export function createEditorSession(input: {
     moveToNewStation(id) {
       const found = find(id);
       if (found === undefined) return notInTour;
+      // A folder's item stays in its station, as the tree's drag says.
+      if (found.object.folder !== undefined) {
+        return {
+          kind: "refused",
+          reason: folderRefusalLine("staysInStation"),
+        };
+      }
       // Where it stands and as it is turned: only its station changes.
       store.dispatch(
         tourDocumentActions.moved({

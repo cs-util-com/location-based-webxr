@@ -9,10 +9,11 @@
  */
 import { describe, expect, it } from "vitest";
 import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
-import type {
-  TourStationChild,
-  TourStory,
-  TourStoryChild,
+import {
+  isStory,
+  type TourStationChild,
+  type TourStory,
+  type TourStoryChild,
 } from "gps-plus-slam-app-framework/ar/tour-story";
 
 import {
@@ -22,6 +23,7 @@ import {
   childMayGo,
   childStepTo,
   movedChild,
+  movedToStation,
   storyList,
 } from "./station-children-moves.js";
 
@@ -48,7 +50,8 @@ const line = (id: string, view = "card"): TourStoryChild =>
 
 const story = (id: string, children: TourStoryChild[]): TourStory => ({
   id,
-  kind: "story",
+  kind: "folder",
+  role: "story",
   title: id,
   children,
 });
@@ -74,7 +77,7 @@ function storyOf(
   id: string,
 ) {
   const found = holder.children.find(
-    (c): c is TourStory => c.kind === "story" && c.id === id,
+    (c): c is TourStory => isStory(c) && c.id === id,
   );
   if (found === undefined) throw new Error(`no story ${id}`);
   return found;
@@ -286,6 +289,67 @@ describe("movedChild", () => {
     expect(
       movedChild(holder, "p", { place: "story", story: "a", index: 5 }),
     ).toEqual({ refused: "missing" });
+  });
+});
+
+describe("a plain folder, whose moves are not this module's", () => {
+  // Why: folder moves are the folder actions' (they keep world poses);
+  // but a holder admits folders, and a move that went on here
+  // would take the item at the folder's index in the station's list - the
+  // wrong one. The guard refuses a folder and anything in it as missing,
+  // and changes nothing.
+  const folder: TourStationChild = {
+    id: "f",
+    kind: "folder",
+    children: [
+      pin("inside"),
+      { id: "g", kind: "folder", children: [pin("deeper")] },
+    ],
+  };
+  const holder = station([story("a", [line("a1")]), folder, pin("p")]);
+  const before = JSON.stringify(holder);
+
+  it("refuses a folder and anything in it as missing, moving nothing", () => {
+    for (const id of ["f", "inside", "g", "deeper"]) {
+      expect(movedChild(holder, id, { place: "free" })).toEqual({
+        refused: "missing",
+      });
+      expect(
+        movedChild(holder, id, { place: "story", story: "a", index: 0 }),
+      ).toEqual({ refused: "missing" });
+      expect(movedToStation(holder, { id: "t", children: [] }, id)).toEqual({
+        refused: "missing",
+      });
+      expect(childStepTo(holder, id, "later")).toBeNull();
+    }
+    expect(JSON.stringify(holder)).toBe(before);
+  });
+
+  it("still moves the station's own free item past the folder", () => {
+    const out = movedChild(holder, "p", {
+      place: "story",
+      story: "a",
+      index: 1,
+    });
+    if (!("station" in out)) throw new Error(out.refused);
+    expect(ids(storyOf(out.station, "a").children)).toEqual(["a1", "p"]);
+  });
+
+  it("reorders the stories around a folder between them, every other child keeping its slot", () => {
+    // Why: a story reorder rebuilt the list as the stories then everything
+    // else, which carried a folder standing between two stories (as a
+    // hand-written file may have it) to a new place. A reorder of the
+    // stories changes the stories' order and nothing else.
+    const between = station([
+      story("a", [line("a1")]),
+      folder,
+      story("b", []),
+      pin("p"),
+    ]);
+    const out = movedChild(between, "b", { place: "stories", index: 0 });
+    if (!("station" in out)) throw new Error(out.refused);
+    expect(ids(out.station.children)).toEqual(["b", "f", "a", "p"]);
+    expect(out.station.children[1]).toBe(folder);
   });
 });
 

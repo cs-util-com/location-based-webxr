@@ -162,15 +162,15 @@ describe('tourStationChildrenArbitrary', () => {
               throw new Error(m);
             },
           });
-          const stories = children.filter((c) => c['kind'] === 'story');
+          const stories = children.filter((c) => c['role'] === 'story');
           seen.add(`stories:${String(stories.length)}`);
-          const firstStory = children.findIndex((c) => c['kind'] === 'story');
+          const firstStory = children.findIndex((c) => c['role'] === 'story');
           if (
             firstStory >= 0 &&
             children.length > firstStory + stories.length
           ) {
             // A free block somewhere after the first story.
-            if (children.slice(firstStory).some((c) => c['kind'] !== 'story')) {
+            if (children.slice(firstStory).some((c) => c['role'] !== 'story')) {
               seen.add('free after story');
             }
           }

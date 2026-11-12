@@ -10,6 +10,7 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
+import { soundIcon } from "../kinds/audio/sound-icon.js";
 import { createGizmo } from "./editor3d-gizmo.js";
 import { RING_RENDER_ORDER } from "./editor3d-stations.js";
 import { GIZMO, gizmoLayout, type GizmoSubject } from "./gizmo-maths.js";
@@ -59,6 +60,27 @@ describe("createGizmo", () => {
     for (const part of [ring, disc, bar, knob, ...dots]) {
       expect(part.renderOrder).toBeGreaterThan(RING_RENDER_ORDER);
     }
+  });
+
+  // Why: another item under the pointer refuses the move disc (a tap
+  // there selects it), so what another item draws without a depth test
+  // must be drawn over the disc too: the creator then sees on top what a
+  // press takes. A sound's icon drawn under the disc looked like part of
+  // it, yet took the press.
+  it("draws the move disc under a sound's icon, its ring and stalk over it", () => {
+    const gizmo = createGizmo(new THREE.Scene(), PICTURES);
+    const { ring, disc, bar } = gizmo.parts;
+    const icon = soundIcon();
+    let meshes = 0;
+    icon.object.traverse((o) => {
+      if (!(o instanceof THREE.Mesh)) return;
+      meshes++;
+      expect(o.renderOrder).toBeGreaterThan(disc.renderOrder);
+      expect(o.renderOrder).toBeLessThan(ring.renderOrder);
+      expect(o.renderOrder).toBeLessThan(bar.renderOrder);
+    });
+    expect(meshes).toBeGreaterThan(0);
+    icon.dispose();
   });
 
   it("draws a station's knob, dots and move disc where the layout has them, without a ring", () => {

@@ -10,9 +10,11 @@
  */
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import type {
-  TourStationChild,
-  TourStoryChild,
+import {
+  isStory,
+  isTourBlockChild,
+  type TourStationChild,
+  type TourStoryChild,
 } from "gps-plus-slam-app-framework/ar/tour-story";
 
 import {
@@ -94,7 +96,8 @@ const holder = fc
       const first = `s${String(s)}e0`;
       return {
         id: `s${String(s)}`,
-        kind: "story",
+        kind: "folder",
+        role: "story",
         title: `Story ${String(s)}`,
         children: makes.map((m, e) =>
           entry(`s${String(s)}e${String(e)}`, m, first),
@@ -117,9 +120,9 @@ describe("the drag's lists and the move rule", () => {
   it("offer a list exactly when some drop into it is taken (property)", () => {
     fc.assert(
       fc.property(holder, (station) => {
-        const stories = station.children.filter((c) => c.kind === "story");
+        const stories = station.children.filter((c) => isStory(c));
         const itemIds = station.children.flatMap((c) =>
-          c.kind === "story" ? [c.id, ...c.children.map((e) => e.id)] : [c.id],
+          isStory(c) ? [c.id, ...c.children.map((e) => e.id)] : [c.id],
         );
         const lists = [
           FREE_LIST,
@@ -177,9 +180,7 @@ describe("a move onto another station", () => {
       fc.property(holder, target, (from, to) => {
         const all = (h: { children: readonly TourStationChild[] }) =>
           h.children.flatMap((c) =>
-            c.kind === "story"
-              ? [c.id, ...c.children.map((e) => e.id)]
-              : [c.id],
+            isStory(c) ? [c.id, ...c.children.map((e) => e.id)] : [c.id],
           );
         const before = [...all(from), ...all(to)].sort();
         for (const id of all(from)) {
@@ -201,9 +202,9 @@ describe("a move onto another station", () => {
           // keeps its entries' offsets and has no pose of its own).
           const free = out.to.children.find((c) => c.id === id);
           const centre =
-            free === undefined || free.kind === "story"
-              ? [0, 0, 0]
-              : free.pose.position;
+            free !== undefined && isTourBlockChild(free)
+              ? free.pose.position
+              : [0, 0, 0];
           expect(centre).toEqual([0, 0, 0]);
         }
       }),
@@ -215,7 +216,7 @@ describe("a move onto another station", () => {
 /** `child` with ids of its own (`x` before each), so two stations share
  *  none. */
 function renamed(child: TourStationChild): TourStationChild {
-  if (child.kind !== "story") return { ...child, id: `x${child.id}` };
+  if (!isStory(child)) return { ...child, id: `x${child.id}` };
   const first = `x${child.children[0]?.id ?? ""}`;
   return {
     ...child,

@@ -414,7 +414,8 @@ describe("selectedStationOf", () => {
           children: [
             {
               id: "legend",
-              kind: "story",
+              kind: "folder",
+              role: "story",
               title: "A story",
               children: [
                 {

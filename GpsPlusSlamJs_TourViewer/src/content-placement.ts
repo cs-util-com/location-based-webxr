@@ -318,8 +318,9 @@ export type TourStationRendererDeps = Omit<TourObjectRendererDeps, "poseOf"> & {
    * page passes `worldPartOf` of `play-kinds.ts` with its environment),
    * asked of every block no drawing above has, whatever its kind. Absent,
    * or null for a block: nothing is drawn for it, quietly (a stand-in
-   * would be a marker nobody chose). A free character stands by the
-   * page's free host (`free-items.ts`), so his row gives no part here.
+   * would be a marker nobody chose). In play a free character stands by
+   * the page's free host (`free-items.ts`), so his row gives no part
+   * here; in the editor it gives his look (`kinds/character/world.ts`).
    */
   readonly worldPart?: (block: TourBlock) => WorldPart | null;
 };

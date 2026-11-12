@@ -3,7 +3,8 @@
  * the files it reads. A story view stands him as a character look (from his
  * declared frames sheet when he has one), `stage` as the plain cut-out,
  * `card` only in the card; his voice plays on a tap on a story view, with
- * the step otherwise.
+ * the step otherwise. In the editor's world a free character stands
+ * through `kinds/character/world.ts`; in play the free host stands him.
  *
  * @see character-card.ts.md
  */
@@ -14,6 +15,7 @@ import type { TourCharacterBlock } from "gps-plus-slam-app-framework/ar/tour-man
 import { isStageCharacterView } from "./character-views.js";
 import type { ItemCardHost } from "./item-card.js";
 import type { KindPlay } from "./play-kinds.js";
+import { characterWorld } from "./kinds/character/world.js";
 import type { StageCharacterLook } from "./scene-stage.js";
 
 /** The status line's name for him while he loads and waits. */
@@ -141,4 +143,8 @@ function assets(
   return block.voice === undefined ? figure : [...figure, block.voice];
 }
 
-export const CHARACTER_PLAY: KindPlay<TourCharacterBlock> = { card, assets };
+export const CHARACTER_PLAY: KindPlay<TourCharacterBlock> = {
+  card,
+  assets,
+  world: characterWorld,
+};

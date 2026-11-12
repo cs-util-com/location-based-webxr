@@ -23,7 +23,6 @@ import { describe, expect, it, vi } from "vitest";
 import fc from "fast-check";
 
 import { parseStartPosition } from "./start-position.js";
-import { aoDisplayExponent } from "./url-state.js";
 import { FAR_PLANE_M } from "./building-view.js";
 import { DEFAULT_RENDER_MULTIPLIER } from "./render-distance.js";
 import {
@@ -36,6 +35,8 @@ import {
   MAX_DISTANCE_M,
   parseCameraTarget,
   placeQuery,
+  staticTilesEnabled,
+  aoDisplayExponent,
   sunPinnedHref,
   writeCamera,
   writePlace,
@@ -556,5 +557,32 @@ describe("aoDisplayExponent", () => {
     expect(aoDisplayExponent("")).toBeUndefined();
     expect(aoDisplayExponent("?ao=off")).toBeUndefined();
     expect(aoDisplayExponent("?ao=Strong")).toBeUndefined();
+  });
+});
+
+// Why this test matters: the static tile host is on in OsmDemo, and `tiles=off`
+// is the one way to compare it against the direct Overpass race from a link.
+// The knob is read-only: no writer may set or clear it, so a walk keeps it.
+describe("the static tiles knob (read-only, tiles=off)", () => {
+  it("is on unless the query says tiles=off", () => {
+    expect(staticTilesEnabled("")).toBe(true);
+    expect(staticTilesEnabled("?lat=1&lng=2")).toBe(true);
+    expect(staticTilesEnabled("?tiles=on")).toBe(true);
+    expect(staticTilesEnabled("?tiles=off")).toBe(false);
+    expect(staticTilesEnabled("?lat=1&tiles=off&lng=2")).toBe(false);
+  });
+
+  it("survives every writer untouched", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: -80, max: 80, noNaN: true }),
+        fc.double({ min: -179, max: 179, noNaN: true }),
+        (lat, lng) => {
+          const written = placeQuery("?tiles=off", { position: { lat, lng } });
+          expect(staticTilesEnabled(written)).toBe(false);
+          expect(staticTilesEnabled(lightQuery(written, null))).toBe(false);
+        },
+      ),
+    );
   });
 });

@@ -7,7 +7,9 @@
  * voice at a time (`world-sound.ts`). Its look is `narrationLook`'s; its
  * player card (`narrationCard`) opens on the page's screen while the
  * visitor is inside, at the same change `onInside` reports. In the editor:
- * the same circle, still and silent, and no card.
+ * the same circle, still and silent, and no card, with the editor's
+ * speaker icon at its centre (`soundIcon`, as an ambient sound has), which
+ * is all the editor picks it by.
  *
  * @see spot.ts.md
  */
@@ -18,6 +20,7 @@ import type { WorldEnv, WorldPart } from "../../world-part.js";
 import type { SoundHandle } from "../../world-sound.js";
 import { narrationCard, type NarrationCard } from "./narration-card.js";
 import { narrationLook } from "./narration-look.js";
+import { soundIcon, type SoundIcon } from "./sound-icon.js";
 import {
   circleInside,
   NARRATION_DEFAULT_RADIUS_M,
@@ -36,6 +39,16 @@ export function spotPart(block: TourAudioBlock, env: WorldEnv): SpotPart {
   const look = narrationLook(radiusM);
   const listeners = new Set<(inside: boolean) => void>();
   const play = env.mode === "play";
+  /** The editor's mark; the visitor sees none. */
+  const icon: SoundIcon | null = play ? null : soundIcon();
+  if (icon !== null) {
+    // The editor picks it by its icon alone: the circle, the particles
+    // and the invisible tap cylinder take no ray there.
+    look.object.traverse((o) => {
+      o.raycast = () => undefined;
+    });
+    look.object.add(icon.object);
+  }
   let inside = false;
   let voice: SoundHandle | null = null;
   const sound = (): SoundHandle => (voice ??= env.sound(block.audio, "voice"));
@@ -104,7 +117,11 @@ export function spotPart(block: TourAudioBlock, env: WorldEnv): SpotPart {
             for (const listener of listeners) listener(inside);
           },
         }
-      : {}),
+      : {
+          update(frame) {
+            icon?.update(frame);
+          },
+        }),
     tap() {
       if (!play || !inside) return;
       toggle();
@@ -116,6 +133,7 @@ export function spotPart(block: TourAudioBlock, env: WorldEnv): SpotPart {
       voice?.dispose();
       voice = null;
       look.dispose();
+      icon?.dispose();
     },
   };
 }

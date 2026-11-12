@@ -6,7 +6,7 @@ The character's row of the visitor's kinds (`play-kinds.ts`): what his item show
 
 ## Public API
 
-- `CHARACTER_PLAY: KindPlay<TourCharacterBlock>` with `card(block, host)` and `assets(block, characters)`.
+- `CHARACTER_PLAY: KindPlay<TourCharacterBlock>` with `card(block, host)`, `assets(block, characters)` and `world` (`kinds/character/world.ts` `characterWorld`: his look in the editor's world, nothing in play).
 
 ## Invariants and assumptions
 

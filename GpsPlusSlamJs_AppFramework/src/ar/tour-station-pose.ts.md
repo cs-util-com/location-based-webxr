@@ -18,14 +18,21 @@ its station) - what a viewer places and a creator's drafts hold.
   `pose` in the station, minted by `mintQrGeoPose` (so a near-vertical
   rotation also carries the compat `headingDeg`, as every minted pose).
 - `tourFreeBlocks(station): TourBlock[]` - the station's free blocks: the
-  block children of the station itself, not those of its stories, in the
-  file's order.
+  block children of the station and of its plain folders at any depth, not
+  those of its stories, in the file's order, each with its folders' poses
+  composed in (`composeTourFolderPose`, from `tour-folder-pose.ts`). The
+  ONE place plain folders are flattened.
+- `tourFreeEntries(station): TourFreeEntry[]` - the same blocks, each as
+  `{ block, folder }`: `folder` the ids of the plain folders holding it,
+  outermost first (empty at the station's top).
 - `tourObjects({ stations, assets }): TourObject[]` - every free block in
-  the world, with `station` set, in station order; a picture carries its
+  the world, with `station` set and `folder` set for a block inside plain
+  folders (absent at the top), in station order; a picture carries its
   image asset inline (`imageAsset`, looked up in `assets`).
 - `tourObjectBlock(object, pose): TourBlock` - the free block an object
-  is, at `pose` in its station: the object without its geo pose, its
-  station and a picture's inline asset (the tour lists the asset).
+  is, at `pose` in its holder (its station, or the innermost folder
+  holding it): the object without its geo pose, its station, its folders
+  and a picture's inline asset (the tour lists the asset).
 
 ## Invariants & assumptions
 
@@ -40,8 +47,16 @@ its station) - what a viewer places and a creator's drafts hold.
   height reads back exactly. The round-trip properties bound it at a
   millimetre (geo->local->geo and
   local->geo->local, stations at latitudes -60..60, blocks within 1 km).
-- **Double precision quaternion arithmetic** of its own: `qr-pose.ts`
-  `composePose` uses gl-matrix's float32 arrays.
+- **Double precision quaternion arithmetic**, shared with
+  `tour-folder-pose.ts`: `qr-pose.ts` `composePose` uses gl-matrix's
+  float32 arrays.
+- **A plain folder is a frame.** Its children's poses are given in it;
+  a folder with no pose returns the pose itself, bit for bit. Nested
+  folders compose innermost first. A folder is rigid: its scale is always
+  1 (a scale other than 1 waits for a renderer that scales the whole
+  group). The reader (`tour-story.ts`) bounds a composed offset by
+  `TOUR_ITEM_MAX_OFFSET_M`, so a flattened block's pose is one a writer
+  accepts.
 - **Nothing here writes a local pose back.** A local pose changes only when
   an editor sets a new one; a station's move changes the station's geo
   pose, and every block follows by construction.
@@ -69,3 +84,13 @@ const all = tourObjects(manifest); // [{ id, kind, geo, station, ... }]
   local->geo->local within a millimetre, a station's move keeps the
   distances between its blocks; the world view (free blocks only, in
   station order, a picture with its asset) and `tourObjectBlock` back.
+- `tour-station-pose.folders.property.test.ts` - compose then decompose
+  returns the pose within 1e-6 m and 1e-12 on 1 - |q.q'|, swept over
+  offsets 0.01 m to 10 km; a quarter-turn example; no pose (and an empty
+  folder path) is the identity by reference; nested folders flattened
+  innermost first in document order; two nested folders whose turns do not
+  commute against a position and rotation worked out by hand; a path of
+  one to three folders composed then decomposed (`decomposeTourFolderPath`)
+  within the same tolerances per level, swept over the same reaches; the
+  world view naming each block's folders (`tourFreeEntries`,
+  `tourObjects`) and `tourObjectBlock` writing a block without them.

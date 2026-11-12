@@ -29,6 +29,9 @@
   with `?date=` and `?time=` set and every other key kept: the light dialog's
   Copy link, so a pick is reproduced at the sun it was made at. It is never
   written to the address bar, so the sun pins stay read-only.
+- `staticTilesEnabled(search: string): boolean` - false only for `tiles=off`:
+  a read-only boot knob that switches the static tile host off (the tiles
+  then come straight from the Overpass race). No writer sets or clears it.
 
 ## The camera target (DEC-R13-7), and why it is a safe partial reversal
 
@@ -148,4 +151,5 @@ ambient occlusion off), `ao=strong` (the ambient occlusion with display
 exponent 1 instead of the shipped 1 / 2.2, the stronger look, through
 `aoDisplayExponent(search)`, which returns 1 for it and undefined otherwise), `woodsauto=off` (the woods governor never thins the
 woods), `treeform=trunk` (every tree drawn with a trunk) and `perf=1` (the
-frame readout over the 3D pane, `woods-readout.ts`) are read once by `main.ts` at boot and never written, so they add no writer here and DEC-R12-5 holds.
+frame readout over the 3D pane, `woods-readout.ts`) and `tiles=off` (the static
+tile host off, `staticTilesEnabled` below) are read once by `main.ts` at boot and never written, so they add no writer here and DEC-R12-5 holds.

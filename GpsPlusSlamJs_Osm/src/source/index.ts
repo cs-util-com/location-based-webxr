@@ -68,3 +68,6 @@ export {
 
 export type { OsmFixture, FixtureSourceOptions } from "./fixture-source.js";
 export { FixtureSource } from "./fixture-source.js";
+
+export type { StaticTileSourceOptions } from "./static-tile-source.js";
+export { StaticTileSource, OSM_TILES_BASE_URL } from "./static-tile-source.js";

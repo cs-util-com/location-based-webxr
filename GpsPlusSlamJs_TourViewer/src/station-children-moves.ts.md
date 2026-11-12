@@ -21,7 +21,12 @@ the editor's tree (`editor-shell.ts`, `shell-tree.ts`) and inspector
   `{ refused }`. `answers` counts the choices' options that lost their jump
   (they go on to the next entry); `floored` says the item took its kind's
   world floor for a view.
-- `ChildMoveRefusal`: `missing` (no such item, story or slot), `ownStory`
+- `ChildMoveRefusal`: `missing` (no such item, story or slot; also a
+  plain folder and anything inside one, not in a list this module moves:
+  moves into, out of and within a plain folder are the folder actions'
+  (`tour-document.ts`), which keep each item's world pose; refused here
+  since a `Holder` admits folders and a move that went on would take the
+  wrong item from the station's list), `ownStory`
   (a choice or a quiz leaves only within its story: its answers name that
   story's entries), `noNesting` (a story into a story or among the free
   items, a free item among the stories), `cannotStandFree` (a model without
@@ -84,7 +89,8 @@ the editor's tree (`editor-shell.ts`, `shell-tree.ts`) and inspector
   (`withoutStoryChild`); inside its own story they stay, as they still
   resolve.
 - Stories stay before the free items (the writer's order); a move of a
-  story reorders only the stories.
+  story reorders only the stories: each lands in a slot a story held, and
+  every other child (a free item, a plain folder) keeps its own slot.
 - A move onto another station never keeps an item's world place: a free
   item or an entry stands at the new centre, a story keeps its entries'
   offsets (`movedToStation` above). Never changes its inputs.

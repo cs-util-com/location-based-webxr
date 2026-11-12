@@ -27,11 +27,12 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { tourDocumentActions } from "../../tour-document.js";
+import { documentObjects, tourDocumentActions } from "../../tour-document.js";
 import type * as TourDocument from "../../tour-document.js";
 import { createTourViewerStore } from "../../tour-viewer-session.js";
 import { editorViewActions, editorViewReducer } from "../editor-view.js";
 import { createEditorShell, type EditorShellDeps } from "./editor-shell.js";
+import { createFolderCommands, NOTHING_TO_GROUP } from "../folder-commands.js";
 import {
   stationContent,
   storyOf,
@@ -161,6 +162,7 @@ function setUp() {
     ),
     editNarration: vi.fn(() => Promise.resolve("written" as const)),
   };
+  const say = vi.fn();
   const deps: EditorShellDeps = {
     store,
     select,
@@ -177,7 +179,18 @@ function setUp() {
       remove: vi.fn(),
     },
     edits,
-    say: vi.fn(),
+    // The real folder commands on the real store: the tree's Group and
+    // Ungroup are tested through to the tour.
+    folders: createFolderCommands({
+      getState: () => store.getState().tourDocument,
+      dispatch: (action) => store.dispatch(action),
+      before: () => undefined,
+      changed: () => undefined,
+      say: (text) => {
+        say(text);
+      },
+    }),
+    say,
   };
   const shell = createEditorShell(deps);
   const view = fakeView();
@@ -1840,6 +1853,25 @@ describe("on a phone", () => {
     shell.hide();
   });
 
+  // Why: the Select mode is a phone's way to tick several rows; were the
+  // first tick to bring up its details, the list would be gone before the
+  // second. Done hands the sheet back to the details.
+  it("keeps the list while rows are ticked in the Select mode", () => {
+    const { store, shell } = setUp();
+    store.dispatch(editorViewActions.selectModeSet({ on: true }));
+    store.dispatch(editorViewActions.selected({ id: "station:a" }));
+    const details = () =>
+      document.getElementById("shell-inspector") as HTMLElement;
+    expect(treeDock().classList.contains("collapsed")).toBe(false);
+    expect(details().hidden).toBe(true);
+    expect(sheetShare()).toBe("0.62");
+    store.dispatch(editorViewActions.selectModeSet({ on: false }));
+    expect(treeDock().classList.contains("collapsed")).toBe(true);
+    expect(details().hidden).toBe(false);
+    expect(sheetShare()).toBe("0.66");
+    shell.hide();
+  });
+
   // Why: the tree is out of sight under the details, so the menu's way
   // back is the button that opened it, and the add draws that button away.
   it("keeps the focus in sight when the details open the add menu", () => {
@@ -1966,6 +1998,276 @@ describe("the inspector's Delete, declined", () => {
     expect(deps.stations.remove).toHaveBeenCalledWith("station:a");
     // On Delete after a no only.
     expect(document.activeElement === del).toBe(!yes);
+    shell.hide();
+  });
+});
+
+describe("the tree's plain folders", () => {
+  /** A station "w" with three pins p, q and r, unfolded. */
+  function setUpFolders() {
+    const made = setUp();
+    const pin = (id: string, x: number) =>
+      ({
+        id,
+        kind: "shortText",
+        view: "pin",
+        caption: `Pin ${id}`,
+        createdAtIso: AT,
+        pose: { position: [x, 1.5, 0], rotation: [0, 0, 0, 1] },
+      }) as const;
+    made.store.dispatch(
+      tourDocumentActions.opened({
+        manifest: {
+          ...createEmptyTourManifest(),
+          stations: [
+            {
+              ...station("w", 0),
+              ...stationContent([pin("p", 1), pin("q", 3), pin("r", 5)]),
+            },
+          ],
+        },
+      }),
+    );
+    made.store.dispatch(
+      editorViewActions.stationFolded({ id: "w", open: true }),
+    );
+    return made;
+  }
+  const row = (id: string) => {
+    const found = document.querySelector<HTMLElement>(
+      `#tree-body [data-select="${id}"]`,
+    );
+    if (found === null) throw new Error(`no row ${id}`);
+    return found;
+  };
+  const click = (target: HTMLElement, init: MouseEventInit = {}) => {
+    target.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, detail: 1, ...init }),
+    );
+  };
+  const bar = () => document.getElementById("tree-selbar") as HTMLElement;
+  const folderIds = (store: ReturnType<typeof setUp>["store"]) =>
+    documentObjects(store.getState().tourDocument).flatMap((o) =>
+      (o.object.folder ?? []).slice(0, 1),
+    );
+
+  // Why: Ctrl+click is the mouse's way to pick several rows, Ctrl+G groups
+  // them, and the new folder's name is typed at once; each step must reach
+  // the tour as the creator sees it in the tree.
+  it("picks with Ctrl+click, groups with Ctrl+G and names the folder", () => {
+    const { store, deps, shell } = setUpFolders();
+    click(row("p"));
+    click(row("q"), { ctrlKey: true });
+    expect(store.getState().editorView.picked).toEqual(["p", "q"]);
+    expect(bar().hidden).toBe(false);
+    expect(bar().querySelector(".cnt")?.textContent).toBe("2 selected");
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "g", code: "KeyG", ctrlKey: true }),
+    );
+    expect(deps.say).toHaveBeenCalledWith(
+      "Grouped 2 items into a folder - type its name",
+    );
+    const name = document.querySelector<HTMLInputElement>(
+      "#tree-body input.renin",
+    );
+    expect(name?.value).toBe("Folder 1");
+    expect(document.activeElement).toBe(name);
+    if (name === null) throw new Error("no name field");
+    name.value = "Benches";
+    name.dispatchEvent(new Event("input", { bubbles: true }));
+    name.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+    const folder = document.querySelector<HTMLElement>("#tree-body .gfolder");
+    expect(folder?.querySelector(".nm")?.textContent).toBe("Benches");
+    expect(folder?.querySelector(".meta")?.textContent).toBe("2 items");
+    expect(
+      [
+        ...document.querySelectorAll<HTMLElement>("#tree-body .kid.infolder"),
+      ].map((k) => k.dataset["select"]),
+    ).toEqual(["p", "q"]);
+    expect(new Set(folderIds(store)).size).toBe(1);
+    shell.hide();
+  });
+
+  // Why: a selected folder moves its items along, so the tree marks them
+  // with the folder's band; an item picked on its own is not marked, it
+  // shows its own selection instead.
+  it("marks a selected folder's items as moving with it", () => {
+    const { shell, store } = setUpFolders();
+    click(row("p"));
+    click(row("q"), { ctrlKey: true });
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "g", code: "KeyG", ctrlKey: true }),
+    );
+    document
+      .querySelector<HTMLInputElement>("#tree-body input.renin")
+      ?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+      );
+    const banded = () =>
+      [
+        ...document.querySelectorAll<HTMLElement>(
+          "#tree-body .kid.infolder.ctx",
+        ),
+      ].map((k) => k.dataset["select"]);
+    expect(banded()).toEqual(["p", "q"]);
+    // Picked beside its folder, an item shows its own selection instead.
+    click(row("p"), { ctrlKey: true });
+    expect(store.getState().editorView.picked).toContain("p");
+    expect(banded()).toEqual(["q"]);
+    shell.hide();
+  });
+
+  // Why: Shift+click picks the rows between, as a file explorer does, and
+  // Ungroup takes a folder apart with its items left picked.
+  it("picks a range with Shift+click, and ungroups from the bar", () => {
+    const { store, shell } = setUpFolders();
+    click(row("p"));
+    click(row("r"), { shiftKey: true });
+    expect(store.getState().editorView.picked).toEqual(["p", "q", "r"]);
+    bar().querySelector<HTMLElement>('[data-selbar="group"]')?.click();
+    const folder = store.getState().editorView.selected ?? "";
+    expect(folder.startsWith("folder:")).toBe(true);
+    // The name field left as it was: the folder keeps "Folder 1".
+    document
+      .querySelector<HTMLInputElement>("#tree-body input.renin")
+      ?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+    expect(
+      bar().querySelector<HTMLButtonElement>('[data-selbar="ungroup"]')
+        ?.disabled,
+    ).toBe(false);
+    bar().querySelector<HTMLElement>('[data-selbar="ungroup"]')?.click();
+    expect(folderIds(store)).toEqual([]);
+    expect(store.getState().editorView.picked).toEqual(["p", "q", "r"]);
+    expect(document.querySelector("#tree-body .gfolder")).toBeNull();
+    shell.hide();
+  });
+
+  // Why: a phone has no Ctrl or Shift; the Select mode's taps and a long
+  // press are its way to pick several rows.
+  it("ticks rows in the Select mode and after a long press", () => {
+    const { store, shell } = setUpFolders();
+    document.getElementById("tree-select")?.click();
+    expect(store.getState().editorView.selectMode).toBe(true);
+    expect(
+      document.getElementById("tree-body")?.classList.contains("selmode"),
+    ).toBe(true);
+    click(row("p"));
+    click(row("q"));
+    click(row("p"));
+    expect(store.getState().editorView.picked).toEqual(["q"]);
+    expect(bar().querySelector('[data-selbar="done"]')).not.toBeNull();
+    bar().querySelector<HTMLElement>('[data-selbar="done"]')?.click();
+    expect(store.getState().editorView.selectMode).toBe(false);
+    const target = row("r");
+    target.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        pointerId: 3,
+        pointerType: "touch",
+        clientX: 10,
+        clientY: 10,
+      }),
+    );
+    vi.advanceTimersByTime(600);
+    expect(store.getState().editorView.selectMode).toBe(true);
+    expect(store.getState().editorView.picked).toEqual(["q", "r"]);
+    // The click that ends the press is spent: r stays ticked.
+    target.dispatchEvent(
+      new PointerEvent("pointerup", { bubbles: true, pointerId: 3 }),
+    );
+    click(target);
+    expect(store.getState().editorView.picked).toEqual(["q", "r"]);
+    shell.hide();
+  });
+
+  // Why: in the Select mode only items and folders take a tick. A tap on
+  // a station's row (no tick to give) ends the Select mode and selects
+  // that row alone, as the chosen tree design does - never a selection
+  // hidden behind a mode that still shows ticks.
+  it("ends the Select mode on a tap of a row that takes no tick, selecting it alone", () => {
+    const { store, shell } = setUpFolders();
+    document.getElementById("tree-select")?.click();
+    click(row("p"));
+    click(row("q"));
+    expect(store.getState().editorView.picked).toEqual(["p", "q"]);
+    click(row("station:w"));
+    expect(store.getState().editorView.selectMode).toBe(false);
+    expect(store.getState().editorView.picked).toEqual([]);
+    expect(store.getState().editorView.selected).toBe("station:w");
+    shell.hide();
+  });
+
+  // Why: Ctrl+G with nothing picked is no refusal of a folder rule; the
+  // line says what to do instead of a wrong reason.
+  it("says to pick items first on Ctrl+G with nothing selected", () => {
+    const { deps, store, shell } = setUpFolders();
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "g", code: "KeyG", ctrlKey: true }),
+    );
+    expect(deps.say).toHaveBeenCalledWith(NOTHING_TO_GROUP);
+    expect(folderIds(store)).toEqual([]);
+    shell.hide();
+  });
+
+  // Why: the tree redraws on any store change (an autosave, a selection
+  // elsewhere) while a folder's name is typed. A redraw replaces the name
+  // field; a browser that reports the removed field's focus loss would
+  // write the half-typed name, and a refocus without the caret would put
+  // the next keys at the end. The field must come back as typed, focused,
+  // with its caret where it was, and nothing written until Enter.
+  it("keeps a half-typed folder name, its focus and its caret across a tree redraw", () => {
+    const { store, shell } = setUpFolders();
+    click(row("p"));
+    click(row("q"), { ctrlKey: true });
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "g", code: "KeyG", ctrlKey: true }),
+    );
+    const field = () => {
+      const found = document.querySelector<HTMLInputElement>(
+        "#tree-body input.renin",
+      );
+      if (found === null) throw new Error("no name field");
+      return found;
+    };
+    // The format's cap, so the field cannot take a name the reader drops.
+    expect(field().maxLength).toBe(80);
+    field().value = "Bnches";
+    field().dispatchEvent(new Event("input", { bubbles: true }));
+    field().setSelectionRange(1, 1);
+    // A removed focused element reports its focus loss (as Chrome does).
+    const original = Element.prototype.replaceChildren;
+    const patched: typeof original = function (this: Element, ...nodes) {
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && this.contains(active)) {
+        active.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+      }
+      original.apply(this, nodes);
+    };
+    Element.prototype.replaceChildren = patched;
+    try {
+      store.dispatch(editorViewActions.folderFolded({ id: "x", folded: true }));
+    } finally {
+      Element.prototype.replaceChildren = original;
+    }
+    const titles = () =>
+      [...document.querySelectorAll("#tree-body .gfolder .nm")].map(
+        (n) => n.textContent,
+      );
+    expect(field().value).toBe("Bnches");
+    expect(document.activeElement).toBe(field());
+    expect(field().selectionStart).toBe(1);
+    expect(field().selectionEnd).toBe(1);
+    expect(titles()).toEqual([]);
+    field().setRangeText("e", 1, 1, "end");
+    field().dispatchEvent(new Event("input", { bubbles: true }));
+    field().dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+    expect(titles()).toEqual(["Benches"]);
     shell.hide();
   });
 });

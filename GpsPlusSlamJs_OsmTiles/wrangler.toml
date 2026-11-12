@@ -1,0 +1,44 @@
+# The osm-tiles Worker: static OpenStreetMap tiles in R2, filled on demand
+# through a serial queue. Deployed on its own (`pnpm run deploy` in this
+# package); the site Worker and the root wrangler.toml are separate.
+name = "osm-tiles"
+main = "src/osm-tiles-worker.ts"
+compatibility_date = "2026-04-28"
+account_id = "1ad957e7187b9200f60c49128bfaa57c"
+# Served on workers.dev until a custom domain is attached; moving to one is a
+# `routes` entry here plus the domain in the client option.
+workers_dev = true
+
+[[r2_buckets]]
+binding = "TILES"
+bucket_name = "osm-tiles"
+
+[[queues.producers]]
+binding = "FILL_QUEUE"
+queue = "osm-tiles-fill"
+
+# One fill at a time, never retried by the queue: a failed tile is retried
+# only through its failure record and backoff.
+[[queues.consumers]]
+queue = "osm-tiles-fill"
+max_batch_size = 1
+max_batch_timeout = 1
+max_concurrency = 1
+max_retries = 0
+
+# Approximate per-IP limit on the fill endpoint (per Cloudflare location).
+[[ratelimits]]
+name = "FILL_LIMITER"
+namespace_id = "1188"
+simple = { limit = 20, period = 60 }
+
+[vars]
+# Upstream Overpass requests one UTC day may spend, all fills together.
+DAILY_UPSTREAM_CAP = "300"
+# Queued or running fills at which the fill endpoint answers busy at once.
+MAX_PENDING_FILLS = "4"
+USER_AGENT = "gps-plus-slam osm-tiles (+https://github.com/cs-util-com/location-based-webxr)"
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1

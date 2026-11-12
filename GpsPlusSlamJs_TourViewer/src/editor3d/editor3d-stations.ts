@@ -15,7 +15,9 @@
  * its anchor, on the side its face looks to, never under the wall it hangs
  * on - and the billboards and their poles rise. Models, reading stands
  * and the parts of the world door (`worldPart`, the visitor's, asked in
- * the editor's mode) keep their pose;
+ * the editor's mode) keep their pose, and each frame a part with an
+ * `update` is handed the camera (`StationsLayerView.eye`): a character's
+ * card turns toward it, a sound's icon faces it at its least size;
  * pins (the phone's labels) stand. Laid flat, a code is drawn at least
  * `CODE_SCREEN_PX` on screen (`codeGrowth`): grown with the camera's
  * distance wherever its printed size would look smaller, its printed size
@@ -72,6 +74,7 @@ import { worldEnv, type WorldEnv, type WorldPart } from "../world-part.js";
 import { pointRootMatrix, type GlobeEllipsoid } from "./editor3d-tour-root.js";
 import { NEAR_STATIONS, nearStations } from "./editor3d-visibility.js";
 import { viewHeightAtOneM } from "./gizmo-maths.js";
+import { isInterfacePart } from "./globe-interface-pass.js";
 
 /** What the layer needs from the page (the drawing is the page's: Node,
  *  where the tests run, has no canvas). */
@@ -132,6 +135,9 @@ export interface StationsLayerView {
    *  what a code's size on screen is worked out from (`focalPxOf`). */
   readonly viewportPx: number;
   readonly fovDeg: number;
+  /** The camera drawing the view: handed with its lens to each drawn
+   *  world part that has an `update`. Absent: no part is ticked. */
+  readonly eye?: THREE.Camera;
 }
 
 /** A code's printed side when the tour does not say (m). */
@@ -257,6 +263,8 @@ interface StationContent {
   /** Each photo plane and its upright quaternion (a drag's preview
    *  turns it). */
   readonly photos: { mesh: THREE.Mesh; upright: THREE.Quaternion }[];
+  /** The world parts drawn for it that take a frame (`update`). */
+  readonly parts: WorldPart[];
 }
 
 interface StationEntry {
@@ -317,6 +325,7 @@ const previewFrame = new THREE.Matrix4();
 const tourFrame = new THREE.Matrix4();
 const faceUp = new THREE.Quaternion();
 const normal = new THREE.Vector3();
+const eyeLocal = new THREE.Vector3();
 
 /** A code's square as the morph moves it: its pose where it was measured,
  *  and where its middle goes as it lies flat. */
@@ -631,6 +640,7 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       ring,
       pole,
       photos: [],
+      parts: [],
     };
     entry.content = content;
     renders++;
@@ -652,7 +662,10 @@ export function createStationsLayer(deps: StationsLayerDeps) {
         : {
             worldPart: (block: TourBlock) => {
               const part = deps.worldPart?.(block, env) ?? null;
-              if (part !== null) partObjects.add(part.object);
+              if (part !== null) {
+                partObjects.add(part.object);
+                if (part.update !== undefined) content.parts.push(part);
+              }
               return part;
             },
           }),
@@ -881,6 +894,31 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     poseDrawn(entry, p.id, item.pose, null);
   };
 
+  /** Each drawn part that takes a frame, of a station shown: the page
+   *  clock, the camera's position in the part's parent frame (as the
+   *  visitor's `tickWorldParts` gives it), the camera and its lens. A
+   *  part a failed load took out (no parent) is skipped. */
+  const tickParts = (eye: THREE.Camera, metresPerPxAtOneM: number) => {
+    const seconds = performance.now() / 1000;
+    eye.updateMatrixWorld();
+    for (const entry of stations.values()) {
+      if (entry.content === null || !entry.root.visible) continue;
+      for (const part of entry.content.parts) {
+        const parent = part.object.parent;
+        if (parent === null) continue;
+        parent.updateWorldMatrix(true, false);
+        eye.getWorldPosition(eyeLocal);
+        parent.worldToLocal(eyeLocal);
+        part.update?.({
+          seconds,
+          viewer: [eyeLocal.x, eyeLocal.y, eyeLocal.z],
+          camera: eye,
+          metresPerPxAtOneM,
+        });
+      }
+    }
+  };
+
   return {
     group,
     /** Place every station and code of `manifest` (null: none). */
@@ -983,6 +1021,7 @@ export function createStationsLayer(deps: StationsLayerDeps) {
           .multiplyScalar((1 - view.standing) * grown)
           .add(code.base);
       }
+      if (view.eye !== undefined) tickParts(view.eye, 1 / focal);
     },
     /** Draw a drag's preview (null: none; what the last one showed is
      *  drawn where the tour has it again). */
@@ -992,15 +1031,28 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       if (next !== null) applyPreview(next);
     },
     /** The selection the ray meets first (`station:<id>`, an item's
-     *  id, a code's level id), or null; rings and poles are none. */
+     *  id, a code's level id), or null; rings and poles are none. What
+     *  is drawn over everything (`isInterfacePart`: a billboard, a
+     *  sound's icon) comes before a nearer part with a depth test, as it
+     *  shows in front of it: a click selects what is seen. Between such
+     *  parts the one drawn last (the highest render order) is seen, and
+     *  between equal orders the nearer. */
     pick(raycaster: THREE.Raycaster): string | null {
       group.updateMatrixWorld();
+      let nearest: string | null = null;
+      let top: { pick: string; order: number } | null = null;
+      // Hits come nearest first, so a farther one replaces only on a
+      // strictly higher order.
       for (const hit of raycaster.intersectObject(group, true)) {
         if (!drawnInGroup(hit.object, group)) continue;
         const pick = pickOf(hit.object);
-        if (pick !== null) return pick;
+        if (pick === null) continue;
+        if (isInterfacePart(hit.object)) {
+          const order = hit.object.renderOrder;
+          if (top === null || order > top.order) top = { pick, order };
+        } else nearest ??= pick;
       }
-      return null;
+      return top?.pick ?? nearest;
     },
     /** For the page's checks: the stations and what is drawn. */
     stats() {
@@ -1133,6 +1185,12 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     },
     photoPlanes(id: string): THREE.Mesh[] {
       return (stations.get(id)?.content?.photos ?? []).map((p) => p.mesh);
+    },
+    /** Each drawn object of an item (its label or plane, a model): none
+     *  for one not drawn now (a selected folder's outline boxes them). */
+    itemObjects(id: string): THREE.Object3D[] {
+      const entry = entryOfItem(id);
+      return entry === null ? [] : drawnOf(entry, id);
     },
     /** An item's drawn model (the glb in its part, under its pose and
      *  size), or null for one not drawn now. */

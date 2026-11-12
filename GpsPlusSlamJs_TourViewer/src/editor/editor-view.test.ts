@@ -22,7 +22,8 @@ import { createTourViewerStore } from "../tour-viewer-session.js";
 import { tourDocumentActions, tourDocumentReducer } from "../tour-document.js";
 
 /** The 3D view's shell at the start: every station folded, every section
- *  open, both docks unfolded, every layer shown. */
+ *  open, both docks unfolded, every layer shown, no rows picked, every
+ *  plain folder open. */
 const SHELL_START = {
   gesture: null,
   openStations: [],
@@ -32,6 +33,9 @@ const SHELL_START = {
   unlockedStations: [],
   modelFocus: null,
   modelPick: null,
+  picked: [],
+  selectMode: false,
+  foldedFolders: [],
 };
 
 // Why: the 3D inspector's note or section in focus, and the click on the
@@ -496,5 +500,48 @@ describe("the station lock", () => {
     state = reduce(state, act.stationLocked({ id: "a", locked: false }));
     state = reduce(state, tourDocumentActions.closed());
     expect(isStationLocked(state, "a")).toBe(true);
+  });
+});
+
+// Why: the tree's several-row selection lives beside the one selection the
+// inspector and the 3D view follow. A plain selection (a 3D click, a plain
+// row click) must end the picking, or Group would act on rows the creator
+// no longer sees picked; and a new tour starts with none picked.
+describe("editorView - the tree's picked rows", () => {
+  it("picks rows, the last one selected, dropping repeats and blanks", () => {
+    const state = reduce(
+      initialEditorViewState,
+      act.picked({ ids: ["a", "", "b", "a"] }),
+    );
+    expect(state.picked).toEqual(["a", "b"]);
+    expect(state.selected).toBe("b");
+  });
+
+  it("ends the picking on a plain selection, and keeps the selection on none picked", () => {
+    let state = reduce(initialEditorViewState, act.picked({ ids: ["a", "b"] }));
+    state = reduce(state, act.selected({ id: "c" }));
+    expect(state.picked).toEqual([]);
+    state = reduce(state, act.picked({ ids: [] }));
+    expect(state.selected).toBe("c");
+  });
+
+  it("turns the Select mode on and off, and folds plain folders", () => {
+    let state = reduce(initialEditorViewState, act.selectModeSet({ on: true }));
+    expect(state.selectMode).toBe(true);
+    state = reduce(state, act.folderFolded({ id: "f", folded: true }));
+    state = reduce(state, act.folderFolded({ id: "f", folded: true }));
+    expect(state.foldedFolders).toEqual(["f"]);
+    state = reduce(state, act.folderFolded({ id: "f", folded: false }));
+    expect(state.foldedFolders).toEqual([]);
+  });
+
+  it("forgets the picking, the mode and the folds with another tour", () => {
+    let state = reduce(initialEditorViewState, act.picked({ ids: ["a", "b"] }));
+    state = reduce(state, act.selectModeSet({ on: true }));
+    state = reduce(state, act.folderFolded({ id: "f", folded: true }));
+    state = reduce(state, tourDocumentActions.closed());
+    expect(state.picked).toEqual([]);
+    expect(state.selectMode).toBe(false);
+    expect(state.foldedFolders).toEqual([]);
   });
 });

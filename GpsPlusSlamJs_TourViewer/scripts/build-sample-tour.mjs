@@ -452,7 +452,8 @@ export function buildSampleTour() {
             },
             {
               id: "konrad-welcome",
-              kind: "story",
+              kind: "folder",
+              role: "story",
               title: "Sir Konrad's welcome",
               children: [
                 {
@@ -528,7 +529,8 @@ export function buildSampleTour() {
             },
             {
               id: "old-gate",
-              kind: "story",
+              kind: "folder",
+              role: "story",
               title: "The old gate",
               children: [
                 {
@@ -544,7 +546,8 @@ export function buildSampleTour() {
             },
             {
               id: "gate-toll",
-              kind: "story",
+              kind: "folder",
+              role: "story",
               title: "The toll",
               children: [
                 {
@@ -590,7 +593,8 @@ export function buildSampleTour() {
             },
             {
               id: "farewell",
-              kind: "story",
+              kind: "folder",
+              role: "story",
               title: "Farewell",
               children: [
                 {

@@ -220,7 +220,7 @@ test("the editor opens a tour of every free block, edits its pin, saves it whole
     (/** @type {any} */ s) => s.id === "gate",
   );
   const story = gate.children.find(
-    (/** @type {any} */ c) => c.kind === "story",
+    (/** @type {any} */ c) => c.role === "story",
   );
   expect(story.children.map((/** @type {any} */ c) => c.id)).toEqual([
     "sir-kay",

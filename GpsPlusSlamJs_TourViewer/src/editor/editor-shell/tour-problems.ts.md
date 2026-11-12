@@ -37,7 +37,8 @@ its station's circle" that the inspector's count reads too.
     height over the ground (a move of tens of metres on a slope would
     otherwise leave it floating or buried); where either is missing, its
     height in the station's frame is kept;
-  - note: "Has no content yet" for a station with no free block and no
+  - note: "Has no content yet" for a station with no free block (a
+    plain folder's blocks count, via `tourFreeBlocks`) and no
     story holding a child that plays (a story of just a choice counts as
     content; an empty story does not, nor does one of only quizzes, which
     do not play yet).

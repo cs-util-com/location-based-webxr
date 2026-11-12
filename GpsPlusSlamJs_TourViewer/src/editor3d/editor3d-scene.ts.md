@@ -42,7 +42,9 @@ keys), and writes only through the page's `edits`.
   station's drawn height and the drawn ground under it); `setTilt(deg)`
   (the page's checks: the orbit's tilt, its distance and heading kept);
   `setDistance(m)` (the orbit's distance within its limits, its tilt and
-  heading kept).
+  heading kept); `setHeading(deg)` (optional, this view only: the orbit
+  turned to the heading `readout` reads, its centre, tilt and distance
+  kept; the globe's camera turns where it stands, so it has none).
 - The shell's commands on `Editor3dView` (`editor3d-flight.ts` flies
   each):
   - `flyTo(selection)` - a station framed, an item or a code brought to a
@@ -94,8 +96,12 @@ keys), and writes only through the page's `edits`.
     when it opened (the inspector's east and north).
 - Editing on `Editor3dView`: `cancelGesture()` (a gesture under way ends
   unwritten: the page calls it before an undo or a redo);
-  `screenOf(selection)`, `handleScreen(part)` and `gizmoSizes()` - CSS px
-  on the canvas, for the page's checks.
+  `screenOf(selection)`, `handleScreen(part)`, `underAt(x, y)` (what a
+  press there picks, and whether it meets the move disc) and
+  `gizmoSizes()` - CSS px
+  on the canvas, for the page's checks. `folderOutlines()` - how many teal boxes show
+  around a selected plain folder's items (`folder-outline.ts`), for the
+  same checks; the globe view answers it too.
 - `stats()` also carries the orbit's `target`, `distanceM`, the
   `camera`'s position, whether a flight is `flying`, and `top`.
 - Types `Editor3dDeps`, `Editor3dEdits`, `Editor3dStats` (the store it
@@ -106,6 +112,8 @@ keys), and writes only through the page's `edits`.
 - `modelParts()` and `modelScreenOf(id, at)` - the selected model's
   discs and planes, and a point of a drawn model on the canvas (the page's
   checks).
+- `showSoundIcons(on)` - every sound's speaker icon shown or hidden (the
+  page's checks).
 - `previewRadius(stationId, radiusM)` - forwards to the editing layer, for
   the inspector's radius slider.
 

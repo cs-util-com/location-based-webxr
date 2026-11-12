@@ -60,7 +60,10 @@ export interface CityWorkerOsm {
     target: { lat: number; lng: number },
     options: { heights: CityHeightsSpec },
   ): { readonly heightUrls: readonly string[] };
-  createCityTileSource(store: never, options: { userAgent: string }): unknown;
+  createCityTileSource(
+    store: never,
+    options: { userAgent: string; staticTiles?: { baseUrl: string } },
+  ): unknown;
   createCachingTileFetch(options: { store: never }): unknown;
   browserPngDecoder(): unknown;
   loadCityData(
@@ -107,6 +110,12 @@ export interface CityWorkerDeps {
   readonly osm: CityWorkerOsm;
   /** How the app identifies itself to the Overpass operators. */
   readonly userAgent: string;
+  /**
+   * A static tile host asked before the Overpass race (the Osm library's
+   * `staticTiles` option, e.g. its `OSM_TILES_BASE_URL`). Absent: the race
+   * alone, as before.
+   */
+  readonly staticTilesBaseUrl?: string;
   /** The clock of `buildMs` (default `performance.now`). */
   readonly now?: () => number;
 }
@@ -176,7 +185,11 @@ interface LoadMessage {
 }
 
 export function createCityWorkerCore(deps: CityWorkerDeps): CityWorkerCore {
-  const { osm, userAgent } = deps;
+  const { osm, userAgent, staticTilesBaseUrl } = deps;
+  const tileSourceOptions =
+    staticTilesBaseUrl === undefined
+      ? { userAgent }
+      : { userAgent, staticTiles: { baseUrl: staticTilesBaseUrl } };
   const post: CityWorkerDeps["post"] = (message, transfer) => {
     deps.post(message, transfer);
   };
@@ -252,7 +265,7 @@ export function createCityWorkerCore(deps: CityWorkerDeps): CityWorkerCore {
     const { opened, heightFetch } = planned;
     let built = false;
     const load = osm.loadCityData(planned.plan as never, {
-      source: osm.createCityTileSource(opened, { userAgent }) as never,
+      source: osm.createCityTileSource(opened, tileSourceOptions) as never,
       heightFetch: heightFetch as never,
       decodePng: osm.browserPngDecoder() as never,
       firstRings,

@@ -12,6 +12,9 @@ name on the phone and on the desktop (M6 E1 plan review #1, #3). Design:
 
 ## Public API
 
+- `STATION_PREFIX`, `STORY_PREFIX`, `FOLDER_PREFIX` - the selection's
+  prefixes for a station, a story and a plain folder.
+
 - `buildEditorModel({ manifest, objects, levels, fileName }): EditorModel`
   - `objects`: the pins and photos as they stand, in the world (the
     session's edits applied to `tourObjects(manifest)`: the stations'

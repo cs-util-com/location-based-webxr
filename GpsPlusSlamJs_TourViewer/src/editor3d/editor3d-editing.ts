@@ -40,6 +40,7 @@ import {
   type ModelPick,
 } from "../editor/editor-view.js";
 import type { ModelEdit } from "../editor/model-edits.js";
+import { showSoundIcons } from "../kinds/audio/sound-icon.js";
 import { worldBlocks } from "../tour-document.js";
 import {
   clampedPose,
@@ -48,6 +49,7 @@ import {
   type OrbitPose,
 } from "./editor3d-flight.js";
 import { createGizmo, drawGizmoPictures } from "./editor3d-gizmo.js";
+import { createFolderOutline } from "./folder-outline.js";
 import {
   createModelParts,
   heldClickNext,
@@ -489,6 +491,12 @@ export function createSceneEditing(deps: SceneEditingDeps) {
     ...(deps.clickPx === undefined ? {} : { clickPx: deps.clickPx }),
   });
 
+  // A selected plain folder's items, each in a light teal box.
+  const outline = createFolderOutline({
+    scene: deps.scene,
+    itemObjects: (id) => layer.itemObjects(id),
+  });
+
   return {
     /** The place the view looks at, on the ground: the ground's
      *  ellipsoidal height there, or the point's own height where no
@@ -557,6 +565,7 @@ export function createSceneEditing(deps: SceneEditingDeps) {
         else if (next === "missed") deps.page.say(MISSED_MODEL);
       }
       parts.update();
+      outline.update(deps.tour(), deps.models.view().selected);
       layout = layoutNow();
       if (layout === null) {
         gizmo.update(null);
@@ -587,6 +596,21 @@ export function createSceneEditing(deps: SceneEditingDeps) {
         : (layer.itemPointOf(selection) ?? layer.codePointOf(selection));
       return at === null ? null : screenOf(fromLayer(at));
     },
+    /** What a press at `pointer` (CSS px on the canvas) lies on: the
+     *  object it picks and whether it meets the move disc (the page's
+     *  checks; the same reads as `handleAt`). */
+    underAt(pointer: ScreenPoint): {
+      readonly pick: string | null;
+      readonly onDisc: boolean;
+    } {
+      const ray = rayAt(pointer);
+      return {
+        pick: layer.pick(ray),
+        onDisc:
+          gizmo.parts.disc.visible &&
+          ray.intersectObject(gizmo.parts.disc).length > 0,
+      };
+    },
     handleScreen(part: GizmoPart): ScreenPoint | null {
       const o =
         part === "middle"
@@ -616,6 +640,13 @@ export function createSceneEditing(deps: SceneEditingDeps) {
     /** For the page's checks: the selected model's note discs on the
      *  canvas and its section planes. */
     modelParts: () => parts.stats(),
+    /** Show or hide the sounds' speaker icons (the page's checks). */
+    showSoundIcons(on: boolean): void {
+      showSoundIcons(deps.scene, on);
+    },
+    /** For the page's checks: how many items of a selected folder show
+     *  their outline box. */
+    folderOutlines: () => outline.count(),
     /** Where a point of a drawn model (its own space) is on the screen,
      *  or null (the page's checks click its surface there). */
     modelScreenOf(
@@ -630,6 +661,7 @@ export function createSceneEditing(deps: SceneEditingDeps) {
     dispose() {
       input.dispose();
       parts.dispose();
+      outline.dispose();
       layer.setPreview(null);
       gizmo.dispose();
     },

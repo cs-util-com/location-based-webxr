@@ -198,7 +198,12 @@ never state). Design:
       ids are unique across the tour).
     - `addStory(stationId)` (named "New story", or "New story n" with the
       least n from 2 while that name is taken, so a delete never makes a
-      name repeat), `renameStory(id, title)`, `deleteStory(id)` (says how
+      name repeat), `renameStory(id, title)`, `duplicateStory(id)` (mints a
+      new id for the story and each child; a picture block shares its
+      image file with the original on purpose, as a station's copy does:
+      the bytes are the same, and a save keeps every file any block still
+      names, so deleting either one never takes the other's picture;
+      `editor-session-files.test.ts` pins it), `deleteStory(id)` (says how
       many children went and `stationGone` when its untitled automatic
       station, kept by nothing else, went with it),
       `addToStory(storyId, kind)`, `deleteStoryChild(id)` (says how many
@@ -213,8 +218,9 @@ never state). Design:
       answers that led to it now go on to the next entry, and whether it
       took its kind's world view), `{ kind: "unchanged" }`, or a refusal
       in words (a choice or a quiz leaving its story, a story into a story,
-      a model without a size standing free, a picture made here before the
-      tour holds its file).
+      a model without a size standing free, a video standing free - "A
+      video plays only in a story for now: it cannot stand in the world by
+      itself." - a picture made here before the tour holds its file).
     - `groundItems([{ id, alt }])` - "Put on the ground": the altitudes the
       page measured, ONE step for all; refused whole for an unknown id or
       a height beyond an item's reach of its station (`HEIGHT_REFUSED`).
@@ -227,7 +233,9 @@ never state). Design:
     - `moveToNewStation(id)` - "Move to a new station" where the item
       stands, turned as it is, the new station right after the one it
       left (`afterHome`): one step, `{ kind: "moved", stationId }`
-      naming the station it made; refused for an id the tour lacks.
+      naming the station it made; refused for an id the tour lacks,
+      and for an item in a folder (`folderRefusalLine("staysInStation")`,
+      the tree's rule: a folder's item stays in its station).
   - `undo()` / `redo()` (W2 of the tour editor plan 2026-10-17-1816) - one
     step of the edit stack: `{ kind: "undone" | "redone", what }` (`what`
     names the step: `the text of "<label>"`, `the move of …`, `the delete

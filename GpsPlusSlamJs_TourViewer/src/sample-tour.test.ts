@@ -1,4 +1,7 @@
-import { tourStories } from "gps-plus-slam-app-framework/ar/tour-story";
+import {
+  isTourBlockChild,
+  tourStories,
+} from "gps-plus-slam-app-framework/ar/tour-story";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -106,7 +109,7 @@ describe("the sample tour (public/samples/marienplatz-tour.zip)", () => {
       JSON.parse(new TextDecoder().decode(files.get("tour.json"))) as unknown,
     );
     const free = manifest.stations.map((s) =>
-      s.children.flatMap((c) => (c.kind === "story" ? [] : [c])),
+      s.children.filter(isTourBlockChild),
     );
     expect(free.map((f) => f.map((c) => [c.kind, c.view]))).toEqual([
       [
@@ -249,16 +252,17 @@ describe("the sample tour (public/samples/marienplatz-tour.zip)", () => {
     // through this writer, so the file is the writer's own bytes), and
     // when it gained the toll story and its free items (content only), and
     // two characters standing free, and a narration circle and a market
-    // zone (content only).
+    // zone (content only), and when every story became a folder with the
+    // story role (four stories, one `role` line each: 112 bytes).
     const files = await entries();
     const json = JSON.parse(
       new TextDecoder().decode(files.get("tour.json")),
     ) as unknown;
     const written = serializeTourManifest(parseTourManifest(json));
     expect(written).toBe(new TextDecoder().decode(files.get("tour.json")));
-    expect(written.length).toBe(10626);
+    expect(written.length).toBe(10738);
     expect(createHash("sha256").update(written).digest("hex")).toBe(
-      "a6578c1daa157f72c9ae3018b064a5a928aa748665c597e8fbc7ad465b76883e",
+      "2fcee5dc464e00391931fed59b2e45820ff353b890ec5b73e507bc4a4b69ea58",
     );
   });
 });

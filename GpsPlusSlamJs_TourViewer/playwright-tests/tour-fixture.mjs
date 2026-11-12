@@ -118,7 +118,7 @@ export function told(block, fields = {}) {
  * @param {string} [title]
  */
 export function storyOf(id, children, title = "A story") {
-  return { id, kind: "story", title, children };
+  return { id, kind: "folder", role: "story", title, children };
 }
 
 /**
@@ -129,7 +129,7 @@ export function storyOf(id, children, title = "A story") {
  */
 export function stationBlocks(station) {
   return station.children.flatMap((/** @type {any} */ child) =>
-    child.kind === "story"
+    child.role === "story"
       ? child.children.filter(
           (/** @type {any} */ c) => c.kind !== "choice" && c.kind !== "quiz",
         )
