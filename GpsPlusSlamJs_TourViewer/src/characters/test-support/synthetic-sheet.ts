@@ -176,8 +176,10 @@ export function syntheticSheet(spec: SheetSpec): SyntheticSheet {
   const alpha = spec.transparent === true ? 253 : 255;
   centres.forEach((cx, k) => {
     const p = pose(k, cx, bottom, H, spec.talkJitter ?? 0);
-    const x0 = Math.max(0, Math.floor(cx - 0.3 * H));
-    const x1 = Math.min(w - 1, Math.ceil(cx + 0.3 * H));
+    // The widest part (pose 4's raised arm) reaches 0.3 * H from the centre;
+    // the window adds the outline, or the arm's tip would be left open.
+    const x0 = Math.max(0, Math.floor(cx - 0.3 * H) - outline - 1);
+    const x1 = Math.min(w - 1, Math.ceil(cx + 0.3 * H) + outline + 1);
     for (let y = bottom - H - outline - 1; y <= bottom + outline; y++) {
       for (let x = x0; x <= x1; x++) {
         const i = y * w + x;

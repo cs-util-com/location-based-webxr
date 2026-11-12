@@ -43,5 +43,5 @@ The question was whether a larger tolerance plus the island filter is enough, or
 
 - `sheet-cut.test.ts`: flat and alpha cuts, eye whites kept, edge ramp and its width, the light edge ring under the shadow pass, each refusal, pose finding off the quarters, specks, count words.
 - `sheet-cut-shadow.test.ts`: shadow 190-245 x noise 0-8 at the defaults, outlined grey figures above a shadow, a pale coloured figure without an outline, the island filter on injected specks.
-- `sheet-cut.property.test.ts`: varied size, colour and noise: nothing lost, nothing leaked, four feet.
-- Synthetic sheets come from `test-support/synthetic-sheet.ts`; no real picture is used in the tests.
+- `sheet-cut.property.test.ts`: varied size, colour and noise: nothing lost, nothing leaked, four feet; a seeded light grey sheet whose arm tip a random run once lost; the generator closes every figure with its outline.
+- Synthetic sheets come from `test-support/synthetic-sheet.ts`; no real picture is used in the tests. Every synthetic figure is closed by its outline (pinned by the generator test above): an open edge on a light colourless fill is taken as shadow by design, so a generator gap would read as a cut defect.
