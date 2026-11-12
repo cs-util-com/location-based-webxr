@@ -41,6 +41,10 @@ import {
 import type { ModelEdit } from "../editor/model-edits.js";
 import { showSoundIcons } from "../kinds/audio/sound-icon.js";
 import {
+  CHARACTER_CHECK_KEY,
+  type CharacterCheck,
+} from "../kinds/character/world.js";
+import {
   placeableOf,
   posedEntryOf,
   type PlaceRef,
@@ -622,6 +626,21 @@ export function createSceneEditing(deps: SceneEditingDeps) {
     /** For the page's checks: how many items of a selected folder show
      *  their outline box. */
     folderOutlines: () => outline.count(),
+    /** What a drawn character shows now (`CharacterCheck`), or null for
+     *  an item that is no drawn character (the page's checks). */
+    characterCheck(id: string): CharacterCheck | null {
+      for (const drawn of layer.itemObjects(id)) {
+        let found: CharacterCheck | null = null;
+        drawn.traverse((o) => {
+          const check: unknown = o.userData[CHARACTER_CHECK_KEY];
+          if (found === null && typeof check === "function") {
+            found = (check as () => CharacterCheck | null)();
+          }
+        });
+        if (found !== null) return found;
+      }
+      return null;
+    },
     /** Where a point of a drawn model (its own space) is on the screen,
      *  or null (the page's checks click its surface there). */
     modelScreenOf(

@@ -41,6 +41,11 @@ part, and the free host (`free-items.ts`) stands free characters.
   his block id. `ready` rejects when the image cannot be read or
   decoded, so the renderer takes the part out.
 
+- `CharacterCheck` and `CHARACTER_CHECK_KEY` - the part's object holds,
+  under this `userData` key, a function returning what he shows now
+  (bubble and name tag openness, squareness to the last frame's camera),
+  null before his look is drawn; the editor's page checks read it.
+
 ## Invariants & assumptions
 
 - His facing is the block pose's turn: the look's `restYaw` is 0 inside

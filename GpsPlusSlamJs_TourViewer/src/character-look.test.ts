@@ -219,7 +219,11 @@ describe("createCharacterLook: facing and the beckon", () => {
   // it keeps his facing whatever the camera does.
   it("keeps the creator's facing in the pop-up", () => {
     const { look, standAt, tick } = setup("popup", { restYaw: 1.1 });
-    for (const [n, e] of [[0, 5], [5, 0], [-4, -3]] as const) {
+    for (const [n, e] of [
+      [0, 5],
+      [5, 0],
+      [-4, -3],
+    ] as const) {
       standAt(n, e);
       tick(0, true);
       expect(look.state().turn).toBeCloseTo(1.1, 9);

@@ -208,7 +208,7 @@ describe("the gizmo through the placement rows against the frozen layout", () =>
       }
     }
     // Every turning row was compared (lectern, picture, five model views,
-    // five character views).
+    // the character's pop-up stage).
     expect(compared).toBeGreaterThan(0);
   });
 
@@ -217,6 +217,10 @@ describe("the gizmo through the placement rows against the frozen layout", () =>
     expect(facing.map(({ kind, view }) => `${kind}.${view}`).sort()).toEqual([
       "audio.spot",
       "audio.zone",
+      "character.bubble",
+      "character.portrait",
+      "character.speak",
+      "character.two-stations",
       "longText.reading",
       "shortText.pin",
     ]);

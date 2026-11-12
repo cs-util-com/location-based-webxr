@@ -16,10 +16,12 @@ import { fakeCharacterPainters } from "../../test-support/fake-character-painter
 import type { WorldEnv, WorldMode } from "../../world-part.js";
 import { SILENT_SOUND } from "../../world-sound.js";
 import {
+  CHARACTER_CHECK_KEY,
   EDITOR_CHARACTER_VIEW,
   PICKED_CHARACTER_PARTS,
   characterWorld,
   editorCharacterView,
+  type CharacterCheck,
 } from "./world.js";
 
 /**
@@ -362,6 +364,45 @@ describe("characterWorld", () => {
         );
       }
     }
+    part.dispose();
+  });
+
+  // Why this test matters: the editor's e2e reads his bubble and his
+  // facing through this check; a check that read the wrong frame (his
+  // pose's rather than his look's) would pass a figure that turned away.
+  it("reports his bubble, name tag and squareness to the camera through the page's check", async () => {
+    const { part } = await standing({ view: "speak" });
+    const check = part.object.userData[
+      CHARACTER_CHECK_KEY
+    ] as () => CharacterCheck | null;
+    expect(check()).toBeNull();
+    const camera = new PerspectiveCamera(50, 1, 0.05, 600);
+    // The placed group turned 70 degrees, as the renderer places a pose.
+    part.object.rotation.y = (70 * Math.PI) / 180;
+    part.object.updateMatrixWorld(true);
+    for (let deg = 0; deg < 360; deg += 30) {
+      const a = (deg * Math.PI) / 180;
+      camera.position.set(6 * Math.sin(a), 1.6, 6 * Math.cos(a));
+      camera.lookAt(0, 1.2, 0);
+      camera.updateMatrixWorld(true);
+      for (let i = 0; i < 40; i++) {
+        part.update?.({
+          seconds: deg + i * 0.05,
+          viewer: [0, 1.6, 6],
+          camera,
+          selected: "herald",
+        });
+      }
+      const seen = check();
+      expect(seen?.squareness, String(deg)).toBeGreaterThan(1 - 1e-6);
+      expect(seen?.bubble).toBe(1);
+      expect(seen?.pip).toBe(0);
+    }
+    // Turned away by hand, the check sees it.
+    const look = made.at(-1)?.look;
+    if (look === undefined) throw new Error("no look");
+    look.root.children[0]!.rotation.y += Math.PI;
+    expect(check()?.squareness).toBeLessThan(-1 + 1e-6);
     part.dispose();
   });
 });
