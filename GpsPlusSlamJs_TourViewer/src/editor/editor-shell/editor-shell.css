@@ -1957,8 +1957,7 @@ body[data-view="3d"] #view3d .view3d-canvas {
 }
 
 /* At the view's foot between the open docks (each runs down to the bottom
- * bar beside it), or under both with its span button, the docks then
- * ending at its top. Its height is `--s-panel-h` on the page, which the
+ * bar beside it). Its height is `--s-panel-h` on the page, which the
  * map controls and the toasts keep clear of. It pushes the view up: the
  * view's canvas ends at its top (the view reads its size from the canvas),
  * while the docks keep their height. */
@@ -1987,23 +1986,12 @@ body[data-view="3d"] #view3d .view3d-canvas {
   display: none;
 }
 
-/* Spanned, it runs under every dock, the asset shelf's too (each ends at
- * its top), so no strip of the view is left below the shelf. */
-#shell-panel.span {
-  right: 0;
-}
-
-#shell-tree:not([hidden], .collapsed) ~ #shell-panel:not(.span) {
+#shell-tree:not([hidden], .collapsed) ~ #shell-panel {
   left: var(--s-tree-w);
 }
 
-#shell-inspector:not([hidden], .collapsed) ~ #shell-panel:not(.span) {
+#shell-inspector:not([hidden], .collapsed) ~ #shell-panel {
   right: calc(var(--s-insp-w) + var(--s-shelf-cur, 0px));
-}
-
-#view3d.panel-span .dock:not(.collapsed) {
-  bottom: max(var(--s-panel-h, 0px), var(--s-keyboard-foot));
-  border-bottom: 1px solid var(--s-line);
 }
 
 .bp-grip {
@@ -2715,8 +2703,8 @@ body[data-view="3d"] #view3d .view3d-canvas {
  * inspector ends at its top), the toggles keep their icons and badges. */
 @media (width <= 700px) {
   #shell-panel,
-  #shell-tree:not([hidden], .collapsed) ~ #shell-panel:not(.span),
-  #shell-inspector:not([hidden], .collapsed) ~ #shell-panel:not(.span) {
+  #shell-tree:not([hidden], .collapsed) ~ #shell-panel,
+  #shell-inspector:not([hidden], .collapsed) ~ #shell-panel {
     right: 0;
     left: 0;
   }
@@ -2832,8 +2820,7 @@ body[data-view="3d"] #view3d .view3d-canvas {
 
   .tog .tl,
   .bp-tabs .tab .tl,
-  :is(#shell-panel, .dock-group-bottom) .chip .cl,
-  .bp-tools .bp-span {
+  :is(#shell-panel, .dock-group-bottom) .chip .cl {
     display: none;
   }
 
@@ -2871,8 +2858,7 @@ body[data-view="3d"] #view3d .view3d-canvas {
 }
 
 @container (width <= 540px) {
-  :is(#shell-panel, .dock-group-bottom) .chip .cl,
-  .bp-tools .bp-span {
+  :is(#shell-panel, .dock-group-bottom) .chip .cl {
     display: none;
   }
 }

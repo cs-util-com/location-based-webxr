@@ -362,8 +362,7 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   only (`.said`), the bar's other parts after the credits: the
   selection's actions, then the panel's toggles flush at the right edge.
   The bottom panel sits at the view's foot and pushes the view up (the
-  view's canvas ends at its top), between the open docks (or under both,
-  spanned), its height in `--s-panel-h` on the page, which the map
+  view's canvas ends at its top), between the open docks, its height in `--s-panel-h` on the page, which the map
   controls and the toasts stand above; at 700 px or less it takes
   the width, the inspector ending at its top. Every top-bar
   control keeps its words at every width; the tour's name keeps a floor
@@ -502,8 +501,7 @@ unfolding and flying, a double click not toggling, a later click
 deselecting and folding, the folds and a layer kept across a trip to the
 map, Top view from View and by T, the zoom steps and the Performance
 tab's view and draw calls, the bottom panel's toggles and panel at a
-phone, a phone in landscape and a desktop (positions and gaps, spanned
-too, Ctrl+J),
+phone, a phone in landscape and a desktop (positions and gaps, Ctrl+J),
 and on a phone the folded tree's "Stations" header unfolding the dock
 with its stations shown.
 

@@ -69,7 +69,6 @@ const ICON = {
   warning: '<path d="M8 2.2 14.2 13H1.8z"/><path d="M8 6.4v3.2M8 11.4v.1"/>',
   note: '<circle cx="8" cy="8" r="6"/><path d="M8 7.2v4M8 4.9v.1"/>',
   ok: '<circle cx="8" cy="8" r="6"/><path d="m5.3 8.2 1.9 1.9 3.6-3.8"/>',
-  span: '<rect x="1.8" y="2.5" width="12.4" height="11" rx="1"/><path d="M1.8 9.5h12.4M5 2.5v7M11 2.5v7"/>',
   up: '<path d="M4 10l4-4 4 4"/>',
   down: '<path d="M4 6l4 4 4-4"/>',
   close: '<path d="M4 4l8 8M12 4l-8 8"/>',
@@ -239,7 +238,6 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
   })();
   let ui: PanelState = { open: false, tab: saved.tab, max: false };
   let dock: PanelDock | null = null;
-  let span = false;
   let heightPx: number | null = saved.heightPx;
   let started = false;
   let groups: readonly ProblemGroup[] = [];
@@ -305,18 +303,13 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     button.append(icon(name));
     return button;
   };
-  const spanButton = headButton(
-    "span",
-    "Span under the side panels",
-    "bp-span",
-  );
   const maxButton = headButton("up", "Maximise the panel", "bp-max");
   const closeButton = headButton(
     "close",
     "Close the panel (Escape)",
     "bp-close",
   );
-  tools.append(tabTools, el("span", "sep"), spanButton, maxButton, closeButton);
+  tools.append(tabTools, el("span", "sep"), maxButton, closeButton);
   head.append(tabs, tools);
   const body = el("div", "bp-body");
   const panes = new Map<PanelTab, HTMLElement>();
@@ -411,13 +404,10 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     if (dock !== null) {
       // Docked, the panes stand in the layout and push nothing.
       panel.hidden = true;
-      box.classList.remove("panel-span");
       document.body.style.setProperty("--s-panel-h", "0px");
       return;
     }
     panel.hidden = !ui.open;
-    panel.classList.toggle("span", span);
-    box.classList.toggle("panel-span", ui.open && span);
     if (!ui.open) {
       document.body.style.setProperty("--s-panel-h", "0px");
       return;
@@ -445,12 +435,6 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     maxButton.title = maxTitle;
     maxButton.setAttribute("aria-label", maxTitle);
     maxButton.setAttribute("aria-pressed", String(ui.max));
-    spanButton.setAttribute("aria-pressed", String(span));
-    const spanTitle = span
-      ? "Keep the panel between the side panels"
-      : "Span under the side panels";
-    spanButton.title = spanTitle;
-    spanButton.setAttribute("aria-label", spanTitle);
   };
 
   const drawTools = () => {
@@ -1045,10 +1029,6 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     toggleMax();
   });
   grip.addEventListener("dblclick", toggleMax);
-  spanButton.addEventListener("click", () => {
-    span = !span;
-    draw();
-  });
   tabTools.addEventListener("click", (event) => {
     const target = (event.target as Element).closest<HTMLButtonElement>(
       "button",
