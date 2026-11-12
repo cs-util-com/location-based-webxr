@@ -2082,10 +2082,12 @@ function openShelfPanel(open: EditorSession): void {
         editorViewActions.dockFolded({ dock: "inspector", folded: true }),
       );
     },
-    docked: () => panelsDocked,
-    revealDocked: showShelfDocked,
-    hideDocked: hideShelfDocked,
-    filesShown: () => shell.filesShown(),
+    dock: {
+      active: () => panelsDocked,
+      reveal: showShelfDocked,
+      shown: () => shell.filesShown(),
+      hide: hideShelfDocked,
+    },
   });
 }
 

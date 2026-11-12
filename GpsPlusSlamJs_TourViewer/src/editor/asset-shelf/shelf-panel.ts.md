@@ -16,12 +16,14 @@ shelf runner (`asset-shelf.ts`); every word comes from
 - `createShelfPanel(deps): ShelfPanel`
   - `deps.root`: the dock (`aside#shell-shelf`); its frame is built once.
   - `deps.toggle`, `deps.pill`: the bar's toggle and the phone's pill.
-  - `deps.docked?()`, `deps.revealDocked?()`: while the editor's panels
-    are docked the shelf is the Files panel - never a rail, its fold
-    button hidden - and opening it (the toggle, `open`, `reveal`) shows
-    that panel. `deps.filesShown?()` says whether that panel shows: the
+  - `deps.dock?` (`ShelfDock`), one object because its four calls are
+    right only together (an `active` without its `reveal` would make
+    opening a silent no-op): while `dock.active()` the editor's panels
+    are docked and the shelf is the Files panel - never a rail, its fold
+    button hidden - and opening it (the toggle, `open`, `reveal`) calls
+    `dock.reveal()`. `dock.shown()` says whether that panel shows: the
     toggle is `aria-pressed` only then (the page redraws it when it
-    changes). `deps.hideDocked?()`: the pressed toggle pressed again,
+    changes). `dock.hide()`: the pressed toggle pressed again,
     docked, asks the page to take the Files panel out of sight (Details in
     its place where they share a group, else its group's next panel, or
     its group hidden), so the toggle un-presses as it does over the rail.

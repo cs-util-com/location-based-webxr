@@ -536,9 +536,12 @@ describe("folding and the phone", () => {
       shown = true;
     });
     const { panel: made } = panel({
-      docked: () => true,
-      filesShown: () => shown,
-      revealDocked,
+      dock: {
+        active: () => true,
+        shown: () => shown,
+        reveal: revealDocked,
+        hide: vi.fn(),
+      },
     });
     expect($("#tog")?.getAttribute("aria-pressed")).toBe("false");
     $<HTMLButtonElement>("#tog")?.click();
@@ -559,16 +562,31 @@ describe("folding and the phone", () => {
     });
     const revealDocked = vi.fn();
     panel({
-      docked: () => true,
-      filesShown: () => shown,
-      revealDocked,
-      hideDocked,
+      dock: {
+        active: () => true,
+        shown: () => shown,
+        reveal: revealDocked,
+        hide: hideDocked,
+      },
     });
     expect($("#tog")?.getAttribute("aria-pressed")).toBe("true");
     $<HTMLButtonElement>("#tog")?.click();
     expect(hideDocked).toHaveBeenCalledTimes(1);
     expect(revealDocked).not.toHaveBeenCalled();
     expect($("#tog")?.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  // Why: docked, opening the shelf only asks the page to show the Files
+  // panel; a docked page that gave no way to show it would make the toggle
+  // a silent no-op, so the docked calls come as one object or not at all.
+  it("takes the docked calls only together", () => {
+    const partial: Partial<ShelfPanelDeps> = {
+      // @ts-expect-error - docked without its reveal, shown and hide.
+      dock: { active: () => true },
+    };
+    // @ts-expect-error - the docked calls are not single deps.
+    const loose: Partial<ShelfPanelDeps> = { docked: () => true };
+    expect([partial, loose]).toHaveLength(2);
   });
 
   it("folds to the rail and keeps the fold for the next visit", () => {
