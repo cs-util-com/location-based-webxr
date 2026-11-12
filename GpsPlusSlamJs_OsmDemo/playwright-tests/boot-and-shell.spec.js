@@ -24,6 +24,7 @@ import {
   diffFromStash,
   installFrameProbe,
   stashStableFrame,
+  openCityLook,
 } from "./fixtures.js";
 
 /**
@@ -2158,6 +2159,12 @@ test.describe("the desktop controls", () => {
       // Only what needs a browser. The inventory lives in
       // `layer-toggles.test.ts`; visibility is CSS resolving against real
       // layout, which jsdom does not do.
+      //
+      // The furniture switch sits in the "City look" section, which starts
+      // folded, so the claim is "visible once its section is unfolded"; the
+      // section is folded again afterwards so the steps below see the boot
+      // layout.
+      await openCityLook(page);
       const switches = page.locator("#layers input[type=checkbox][data-layer]");
       const count = await switches.count();
       expect(count).toBeGreaterThan(0);
@@ -2172,6 +2179,11 @@ test.describe("the desktop controls", () => {
       await expect(
         page.locator("#layer-group-diagnostics #perf-stats"),
       ).toBeVisible();
+      await page.locator("#layer-group-look > summary").click();
+      await expect(page.locator("#layer-group-look")).not.toHaveAttribute(
+        "open",
+        "",
+      );
     });
 
     await test.step("the bar collapses to the title, the category picker and the affordance block", async () => {
@@ -2198,6 +2210,7 @@ test.describe("the desktop controls", () => {
       await expect(page.locator("#status")).toBeHidden();
       await expect(page.locator("#layer-group-world")).toBeHidden();
       await expect(page.locator("#layer-group-diagnostics")).toBeHidden();
+      await expect(page.locator("#layer-group-look")).toBeHidden();
       // The ground picker goes too: it changes what is drawn, and still counts
       // as an expert control.
       await expect(page.locator("#ground-mode-label")).toBeHidden();
@@ -2207,6 +2220,7 @@ test.describe("the desktop controls", () => {
       await page.locator("#header-toggle").click();
       await expect(page.locator("#layer-group-world")).toBeVisible();
       await expect(page.locator("#layer-group-diagnostics")).toBeVisible();
+      await expect(page.locator("#layer-group-look")).toBeVisible();
       await expect(page.locator("#ground-mode-label")).toBeVisible();
     });
 
