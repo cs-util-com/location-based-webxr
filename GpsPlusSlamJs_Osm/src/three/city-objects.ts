@@ -23,7 +23,9 @@ import {
   type TreePlacement,
   type TreeVariant,
 } from "../mesh/trees.js";
+import { crownHull } from "./crown-hull.js";
 import { streetFurnitureObjects } from "./street-furniture.js";
+import { setTreeLodShare, trunkTreeObjects } from "./trunk-trees.js";
 
 /**
  * Wraps a builder's buffers in a geometry. The buffers are already validated.
@@ -130,78 +132,10 @@ let treeResources:
   | undefined;
 
 /**
- * A closed crown of revolution about +y, from a pole at y 0 to a pole at
- * y 1, through `rings` of `[y, radius]`, `sides` around: 2 x sides x rings
- * triangles. Odd rings turn half a step, so each band is a strip of
- * alternating triangles. Each vertex carries a grey `color` from 0.86 at the
- * foot to 1.04 at the top, a shade the instance colour is multiplied by, so a
- * crown reads darker underneath at no cost.
- */
-function crownHull(
-  sides: number,
-  rings: readonly (readonly [number, number])[],
-): THREE.BufferGeometry {
-  const positions: number[] = [];
-  const colours: number[] = [];
-  const push = (point: readonly [number, number, number]): void => {
-    positions.push(point[0], point[1], point[2]);
-    const shade = 0.86 + 0.18 * point[1];
-    colours.push(shade, shade, shade);
-  };
-  const tri = (
-    a: readonly [number, number, number],
-    b: readonly [number, number, number],
-    c: readonly [number, number, number],
-  ): void => {
-    push(a);
-    push(b);
-    push(c);
-  };
-  const ringPoints = rings.map(([y, r], k) =>
-    Array.from({ length: sides }, (_, i): [number, number, number] => {
-      const a = ((i + (k % 2) * 0.5) / sides) * Math.PI * 2;
-      return [Math.cos(a) * r, y, Math.sin(a) * r];
-    }),
-  );
-  const first = ringPoints[0];
-  const last = ringPoints[ringPoints.length - 1];
-  if (first === undefined || last === undefined) {
-    throw new RangeError("a crown needs at least one ring");
-  }
-  const at = (ring: readonly [number, number, number][], i: number) =>
-    ring[i % sides] as [number, number, number];
-  for (let i = 0; i < sides; i++) {
-    tri([0, 0, 0], at(first, i), at(first, i + 1));
-    tri([0, 1, 0], at(last, i + 1), at(last, i));
-  }
-  for (let k = 0; k + 1 < ringPoints.length; k++) {
-    const lo = ringPoints[k] as [number, number, number][];
-    const hi = ringPoints[k + 1] as [number, number, number][];
-    for (let i = 0; i < sides; i++) {
-      if (k % 2 === 0) {
-        tri(at(lo, i), at(hi, i), at(lo, i + 1));
-        tri(at(lo, i + 1), at(hi, i), at(hi, i + 1));
-      } else {
-        tri(at(lo, i), at(hi, i + 1), at(lo, i + 1));
-        tri(at(lo, i), at(hi, i), at(hi, i + 1));
-      }
-    }
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute(
-    "position",
-    new THREE.Float32BufferAttribute(positions, 3),
-  );
-  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colours, 3));
-  geometry.computeVertexNormals();
-  return geometry;
-}
-
-/**
  * The crown-only profiles, `[y, radius]` at unit height and a unit DIAMETER
  * (radius at most 0.5), so `crownDiameterM` is the horizontal scale. The
- * crown tapers to the ground: no trunk (the owner's default; a trunk option
- * is a later step).
+ * crown tapers to the ground: no trunk (the owner's default; the trunk form
+ * is the option in `trunk-trees.ts`).
  */
 const CROWN_SIDES = 5;
 const CROWN_PROFILES = {
@@ -302,7 +236,20 @@ function treeColourAt(colours: Float32Array, i: number): THREE.Color {
 }
 
 /**
- * One instanced mesh per tree variant present. `packInstances` groups by
+ * How a tree is drawn: `crown` (the default, the owner's crown-only look)
+ * or `trunk` (the option: a crown lifted onto a trunk, two levels by
+ * distance, `trunk-trees.ts`).
+ */
+export type TreeForm = "crown" | "trunk";
+
+export interface TreeObjectOptions {
+  /** Default `crown`. Anything else is a RangeError. */
+  readonly form?: TreeForm;
+}
+
+/**
+ * One instanced mesh per tree variant present (the crown form), or four per
+ * variant (the trunk form, `trunkTreeObjects`). `packInstances` groups by
  * variant and applies the ENU-to-scene reflection itself. Each carries
  * `userData.sharedResources`: its geometry and material serve every later
  * city, and three.js does not throw for a disposed geometry, it silently draws
@@ -310,7 +257,13 @@ function treeColourAt(colours: Float32Array, i: number): THREE.Color {
  */
 export function treeObjects(
   placements: readonly TreePlacement[],
+  options: TreeObjectOptions = {},
 ): THREE.InstancedMesh[] {
+  const form = options.form ?? "crown";
+  if (form !== "crown" && form !== "trunk") {
+    throw new RangeError(`unknown tree form: ${String(form)}`);
+  }
+  if (form === "trunk") return trunkTreeObjects(placements);
   const objects: THREE.InstancedMesh[] = [];
   if (placements.length === 0) return objects;
   const { geometry, material } = trees();
@@ -375,23 +328,56 @@ export function roadObjects(chunks: readonly MeshChunk[]): THREE.Mesh[] {
  * `userData.cosmetic = true` on each mesh, so an app can hide them (a
  * layer switch, AR) and never confuse them with mapped trees. Each mesh
  * keeps the build's rank order (`packInstances` preserves order within a
- * form), so drawing its first n instances thins a wood evenly.
+ * form), so drawing its first n instances thins a wood evenly
+ * (`applyWoodsShare`).
  */
 export function cosmeticTreeObjects(
   placements: readonly TreePlacement[],
+  options: TreeObjectOptions = {},
 ): THREE.InstancedMesh[] {
-  const objects = treeObjects(placements);
-  for (const object of objects) {
-    object.userData = { sharedResources: true, cosmetic: true };
-  }
+  const objects = treeObjects(placements, options);
+  for (const object of objects) object.userData["cosmetic"] = true;
   return objects;
+}
+
+/**
+ * Draws `share` of the invented trees (`userData.cosmetic`) among
+ * `objects`: a rank prefix of each mesh, `ceil(total x share)` trees, so
+ * the woods thin evenly with no rebuild and `1` brings every tree back
+ * (`woods-governor.ts` picks the share). Mapped trees and everything else
+ * are left alone. Returns the invented trees now drawn. RangeError for a
+ * share outside (0, 1].
+ */
+export function applyWoodsShare(
+  objects: Iterable<THREE.Object3D>,
+  share: number,
+): number {
+  if (!(share > 0 && share <= 1)) {
+    throw new RangeError(`a woods share is in (0, 1], got ${share}`);
+  }
+  let drawn = 0;
+  for (const object of objects) {
+    if (object.userData["cosmetic"] !== true) continue;
+    if (!(object instanceof THREE.InstancedMesh)) continue;
+    const mesh = object as THREE.InstancedMesh;
+    const sorted = setTreeLodShare(mesh, share);
+    if (sorted !== undefined) {
+      drawn += sorted;
+      continue;
+    }
+    // The capacity: every tree the mesh was built with.
+    mesh.count = Math.ceil(mesh.instanceMatrix.count * share);
+    drawn += mesh.count;
+  }
+  return drawn;
 }
 
 /**
  * The buildings, trees, invented trees (when the city has them), roads (when
  * built) and street furniture (when the city has it) of a city
  * (`buildCity`), as three.js objects. `furnitureCutM`: how far from the eye
- * furniture is drawn (`streetFurnitureObjects`, default 80 m).
+ * furniture is drawn (`streetFurnitureObjects`, default 80 m); `treeForm`:
+ * how every tree is drawn (default `crown`).
  */
 export function cityObjects(
   city: {
@@ -401,12 +387,17 @@ export function cityObjects(
     readonly roads?: readonly MeshChunk[];
     readonly furniture?: readonly FurniturePlacement[];
   },
-  options: { readonly furnitureCutM?: number } = {},
+  options: {
+    readonly furnitureCutM?: number;
+    readonly treeForm?: TreeForm;
+  } = {},
 ): THREE.Object3D[] {
+  const form: TreeObjectOptions =
+    options.treeForm === undefined ? {} : { form: options.treeForm };
   return [
     ...buildingObjects(city.buildings),
-    ...treeObjects(city.trees),
-    ...cosmeticTreeObjects(city.cosmeticTrees ?? []),
+    ...treeObjects(city.trees, form),
+    ...cosmeticTreeObjects(city.cosmeticTrees ?? [], form),
     ...roadObjects(city.roads ?? []),
     ...streetFurnitureObjects(
       city.furniture ?? [],

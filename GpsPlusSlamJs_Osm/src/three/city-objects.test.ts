@@ -5,6 +5,7 @@ import { buildCity } from "../mesh/city.js";
 import { enuFrameAt } from "../mesh/enu.js";
 import type { OsmFeature } from "../model/osm-feature.js";
 import {
+  applyWoodsShare,
   buildingObjects,
   cityObjects,
   cosmeticTreeObjects,
@@ -331,5 +332,106 @@ describe("cosmeticTreeObjects", () => {
     const all = cityObjects(wooded);
     expect(all.filter((o) => o.userData["cosmetic"])).toHaveLength(2);
     expect(cosmeticTreeObjects([])).toEqual([]);
+  });
+});
+
+describe("applyWoodsShare", () => {
+  const forest: OsmFeature = {
+    type: "way",
+    id: 31,
+    tags: { landuse: "forest", leaf_type: "mixed" },
+    geometry: [
+      { lat: 50.942, lng: 6.96 },
+      { lat: 50.942, lng: 6.961 },
+      { lat: 50.9425, lng: 6.961 },
+      { lat: 50.9425, lng: 6.96 },
+      { lat: 50.942, lng: 6.96 },
+    ],
+  };
+  const wooded = buildCity(
+    [forest, HOUSE, tree(10, "broadleaved")],
+    { frame },
+    { window: W },
+  );
+
+  // The governor's lever: a rank prefix of each invented-tree mesh, so the
+  // woods thin evenly with no rebuild, and full brings every tree back.
+  // Mapped trees are real objects and are never thinned.
+  it("draws a rank prefix of each invented-tree mesh and leaves the mapped trees", () => {
+    const objects = cityObjects(wooded);
+    const cosmetic = objects.filter(
+      (o): o is THREE.InstancedMesh => o.userData["cosmetic"] === true,
+    );
+    const mapped = objects.filter(
+      (o): o is THREE.InstancedMesh =>
+        o instanceof THREE.InstancedMesh && o.userData["cosmetic"] !== true,
+    );
+    const full = cosmetic.map((m) => m.count);
+    const mappedCounts = mapped.map((m) => m.count);
+    expect(applyWoodsShare(objects, 0.5)).toBe(
+      full.reduce((s, n) => s + Math.ceil(n * 0.5), 0),
+    );
+    expect(cosmetic.map((m) => m.count)).toEqual(
+      full.map((n) => Math.ceil(n * 0.5)),
+    );
+    applyWoodsShare(objects, 0.25);
+    expect(cosmetic.map((m) => m.count)).toEqual(
+      full.map((n) => Math.ceil(n * 0.25)),
+    );
+    expect(applyWoodsShare(objects, 1)).toBe(wooded.cosmeticTrees.length);
+    expect(cosmetic.map((m) => m.count)).toEqual(full);
+    expect(mapped.map((m) => m.count)).toEqual(mappedCounts);
+  });
+
+  // The same lever for the trunk form, whose meshes are sorted by distance:
+  // the share limits which trees take part in the sort.
+  it("thins the trunk form too, counting each invented tree once", () => {
+    const objects = cityObjects(wooded, { treeForm: "trunk" });
+    const n = wooded.cosmeticTrees.length;
+    const drawn = applyWoodsShare(objects, 0.5);
+    for (const object of objects) {
+      if (object instanceof THREE.InstancedMesh) {
+        object.onBeforeRender(
+          {} as THREE.WebGLRenderer,
+          new THREE.Scene(),
+          new THREE.PerspectiveCamera(),
+          object.geometry,
+          object.material as THREE.Material,
+          null as unknown as THREE.Group,
+        );
+      }
+    }
+    const crowns = objects.filter(
+      (o): o is THREE.InstancedMesh =>
+        o.userData["cosmetic"] === true && o.userData["treePart"] === "crown",
+    );
+    const total = crowns.reduce((s, m) => s + m.count, 0);
+    expect(total).toBe(drawn);
+    expect(drawn).toBeLessThan(n);
+    expect(drawn).toBeGreaterThanOrEqual(n / 2);
+  });
+
+  it("refuses a share outside (0, 1]", () => {
+    for (const share of [0, -0.5, 1.5, Number.NaN]) {
+      expect(() => applyWoodsShare([], share)).toThrow(RangeError);
+    }
+  });
+});
+
+describe("tree forms", () => {
+  // Off by default: the crown-only look the owner chose stays what every
+  // consumer draws unless it asks for the trunk form.
+  it("draws the crown-only form unless the trunk form is asked for", () => {
+    const crownOnly = cityObjects(city);
+    expect(crownOnly.some((o) => o.userData["treeForm"] === "trunk")).toBe(
+      false,
+    );
+    const trunked = cityObjects(city, { treeForm: "trunk" });
+    const forms = trunked.filter((o) => o.userData["treeForm"] === "trunk");
+    // Two forms present (broad, needle), four meshes each.
+    expect(forms).toHaveLength(8);
+    expect(() => treeObjects(city.trees, { form: "palm" as "trunk" })).toThrow(
+      RangeError,
+    );
   });
 });
