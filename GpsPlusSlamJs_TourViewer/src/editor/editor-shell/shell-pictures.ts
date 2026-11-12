@@ -22,8 +22,8 @@ export interface ShellPictures {
    *  view; a picture that cannot be read or shown leaves `el` as it is
    *  (its placeholder colour). */
   show(el: HTMLElement, path: string): void;
-  /** Stop watching every card no longer in the page (a redraw replaced
-   *  it): called after each draw. */
+  /** Stop watching every card no panel holds any more (a redraw
+   *  replaced it): called after each draw. */
   sweep(): void;
   /** Stop watching and let every picture go (the shell hidden, or the
    *  tour another). */
@@ -33,7 +33,12 @@ export interface ShellPictures {
 export function createShellPictures(deps: {
   /** The picture's bytes from the open tour. */
   readonly load: (path: string) => Promise<Blob>;
+  /** Whether a panel still holds `el` (default: `el` is in the page). A
+   *  docked panel behind another tab is out of the page, and its cards
+   *  still wait for their pictures. */
+  readonly owns?: (el: Element) => boolean;
 }): ShellPictures {
+  const owns = deps.owns ?? ((el: Element) => el.isConnected);
   /** A path's URL once read; null for one that cannot be shown. A read
    *  that failed and may be tried again leaves no entry here. */
   const urls = new Map<string, Promise<string | null>>();
@@ -93,7 +98,7 @@ export function createShellPictures(deps: {
       }
       if (mine !== generation || resolved.has(path)) return;
       setTimeout(() => {
-        if (mine === generation && el.isConnected && wanted.get(el) === path) {
+        if (mine === generation && owns(el) && wanted.get(el) === path) {
           fetchFor(el, path);
         }
       }, RETRY_MS);
@@ -136,7 +141,7 @@ export function createShellPictures(deps: {
     },
     sweep() {
       for (const el of [...watched]) {
-        if (!el.isConnected) forget(el);
+        if (!owns(el)) forget(el);
       }
     },
     clear() {

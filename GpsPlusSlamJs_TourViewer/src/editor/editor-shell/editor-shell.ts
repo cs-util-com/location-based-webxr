@@ -623,6 +623,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
 
   const pictures = createShellPictures({
     load: (path) => deps.loadPicture(path),
+    // The list's and the details' cards, in the page or behind another
+    // docked tab.
+    owns: (el) => tree.root.contains(el) || inspector.root.contains(el),
   });
   const viewBox = byId("view3d");
   /** The kinds' own parts of the inspector (`kind-panels.ts`): a long
