@@ -432,6 +432,14 @@ geo?, what })` - a copy inserted after the original (any station the
     `TOUR_FOLDER_MAX_SCALE`), an unchanged scale, or one that takes any
     of its items past the station's bound. It and `folderMoved` share
     one reframing of the folder (`folderReframe`).
+  - `folderPivotCentred({ stationId, folderId, what })` - a plain
+    folder's pivot put at its items' centre on the ground (north and
+    east; its height, turn and scale kept), as one step in which nothing
+    in the scene moves: its own folders get the pose that keeps them
+    where they stood, its written items are written relative to the new
+    pivot. No step (the same state): an unknown station or folder, a
+    folder with no items, a pivot there already, or a pose the format
+    would refuse or that takes an item past the station's bound.
   - `folderGrouped({ folderId, title, ids, what })` - items of one
     station grouped in a new plain folder at their centroid, turned like
     the station (yaw 0), titled by the creator (`folderTitle`); every
@@ -458,13 +466,14 @@ geo?, what })` - a copy inserted after the original (any station the
     number from 0 to the last folder, its own place.
   - Each folder action is one undo step (a redo gives back what it did).
     Those that change a frame's folder tree (group, ungroup, move,
-    reorder, rename, delete) set `framesRecorded` so the draft records
+    reorder, rename, delete, the pivot's centring) set `framesRecorded` so the draft records
     the frame; `objectsFoldered` changes only items, which the draft
     carries through their entries (each names its `folder`).
   - Which have a page: group, ungroup, `objectsFoldered`, rename and
     reorder (the tree, `folder-commands.ts`); `folderMoved` and
     `folderScaled` (the gizmo and the folder's inspector, through the
-    session's `moveFolder` and `scaleFolder`). `folderDeleted` (a
+    session's `moveFolder` and `scaleFolder`); `folderPivotCentred` (the
+    inspector's "Pivot to centre", `folder-commands.ts`). `folderDeleted` (a
     folder's delete with its confirmation) has none yet.
   - `blockNumberSet({ id, field, value, what })` - a block's size: the
     field its placement row's `size` extent names

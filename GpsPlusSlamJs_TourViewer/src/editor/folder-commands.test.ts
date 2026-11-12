@@ -305,6 +305,40 @@ describe("createFolderCommands - ungroup, move, rename", () => {
     expect(t.changed()).toBe(0);
   });
 
+  // Why: the inspector's "Pivot to centre" reaches the tour only here: one
+  // undo step that says what it did, a second press no step at all (the
+  // pivot is there already), and a folder gone since the selection said so.
+  it("puts a folder's pivot at its items' centre as one step, said; again it changes nothing", () => {
+    const t = setup();
+    const past = t.state().past.length;
+    expect(t.commands.pivotToCentre("yard")).toBe(true);
+    expect(t.state().past.length).toBe(past + 1);
+    expect(t.changed()).toBe(1);
+    expect(plainFolderOf(t.state(), "yard")?.folder.pose?.position).toEqual([
+      6, 0, 5,
+    ]);
+    expect(t.said).toEqual([
+      'The pivot of "Folder 1" stands at its items\' centre - nothing moved',
+    ]);
+    t.said.length = 0;
+    expect(t.commands.pivotToCentre("yard")).toBe(false);
+    expect(t.state().past.length).toBe(past + 1);
+    expect(t.said).toEqual([
+      'The pivot of "Folder 1" already stands at its items\' centre',
+    ]);
+    t.said.length = 0;
+    expect(t.commands.pivotToCentre("nope")).toBe(false);
+    expect(t.said).toEqual([folderRefusalLine("gone")]);
+    // An empty folder has no centre: said so, not "already there".
+    t.commands.group(["p"]);
+    t.commands.moveInto("p", null);
+    t.said.length = 0;
+    expect(t.commands.pivotToCentre("made")).toBe(false);
+    expect(t.said).toEqual([
+      '"Folder 2" holds no items to centre its pivot on',
+    ]);
+  });
+
   it("renames a folder; a blank or unchanged name changes nothing, quietly", () => {
     const t = setup();
     expect(t.commands.rename("yard", "  ")).toBe(false);
