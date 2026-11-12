@@ -7,7 +7,10 @@ import type {
   OsmTileResult,
   OsmTileTimings,
 } from "../source/osm-data-source.js";
-import { cellToBoundingBox } from "../source/overpass-query.js";
+import {
+  OVERPASS_SCHEMA_VERSION,
+  cellToBoundingBox,
+} from "../source/overpass-query.js";
 import { RateLimitedError } from "../source/overpass-source.js";
 import { MemoryBlobStore } from "../source/memory-blob-store.js";
 import { CachingSource } from "../source/caching-source.js";
@@ -788,6 +791,34 @@ describe("createCityTileSource", () => {
     // A second read is the cache's.
     const again = await source.fetchTile(tile);
     expect(again.timings?.servedBy).toBe("cache");
+  });
+
+  // Why this test matters: the static tile host is opt-in. With the option it
+  // is asked first and the Overpass operators are never reached for a tile it
+  // holds; without it (the library default, the test above) nothing changes.
+  it("reads a tile from the static host first when one is given", async () => {
+    const store = new MemoryBlobStore();
+    const urls: string[] = [];
+    const source = createCityTileSource(store, {
+      userAgent: "test-app (example.org)",
+      staticTiles: { baseUrl: "https://tiles.example.dev" },
+      fetchImpl: (input: RequestInfo | URL) => {
+        urls.push(input instanceof Request ? input.url : input.toString());
+        return Promise.resolve(
+          new Response(JSON.stringify({ version: 0.6, elements: [] }), {
+            status: 200,
+          }),
+        );
+      },
+    });
+    expect(source).toBeInstanceOf(CachingSource);
+    const tile =
+      cityDataPlan(LUCERNE, { heights: RELIEF }).overpassTiles[0] ?? "";
+    const result = await source.fetchTile(tile);
+    expect(result.sourceId).toBe("static:tiles.example.dev");
+    expect(urls).toEqual([
+      `https://tiles.example.dev/osm/v${OVERPASS_SCHEMA_VERSION}/${tile}.json.gz`,
+    ]);
   });
 });
 

@@ -53,6 +53,7 @@ function fakes() {
   }[] = [];
   const plans: { target: unknown; heights: unknown }[] = [];
   const built: unknown[] = [];
+  const sourceOptions: unknown[] = [];
   let stores = 0;
   const store = deferred<unknown>();
   const shared = chunk();
@@ -87,7 +88,10 @@ function fakes() {
         const z = options.heights.zoom;
         return { target, heightUrls: [`h/${z}/0`, `h/${z}/1`, `h/${z}/2`] };
       },
-      createCityTileSource: () => ({ source: true }),
+      createCityTileSource: (_store, options) => {
+        sourceOptions.push(options);
+        return { source: true };
+      },
       createCachingTileFetch: () => heightFetch,
       browserPngDecoder: () => ({ decode: true }),
       buildCity: (_features, _ground, options) => {
@@ -126,6 +130,7 @@ function fakes() {
     loads,
     plans,
     built,
+    sourceOptions,
     store,
     asked,
     net,
@@ -462,5 +467,44 @@ describe("createCityWorkerCore", () => {
     core.handle("load");
     core.handle({ kind: "paint" });
     expect(f.posted).toEqual([]);
+  });
+});
+
+// Why: the static tile host is an opt-in per app. The worker hands the base
+// URL to the library's tile source only when its app passed one, and keeps
+// the plain race otherwise, so an app that says nothing changes nothing.
+describe("the static tile host opt-in", () => {
+  const load = {
+    kind: "load",
+    id: 1,
+    target: MUNICH,
+    zoom: 12,
+    heightsUrl: RELIEF,
+  };
+
+  it("passes the app's static tile host to the tile source", async () => {
+    const f = fakes();
+    const core = createCityWorkerCore({
+      ...f.deps,
+      staticTilesBaseUrl: "https://tiles.example.dev",
+    });
+    core.handle(load);
+    f.store.resolve({ store: true });
+    await settle();
+    expect(f.sourceOptions).toEqual([
+      {
+        userAgent: "test-agent",
+        staticTiles: { baseUrl: "https://tiles.example.dev" },
+      },
+    ]);
+  });
+
+  it("asks for the plain race when the app passed none", async () => {
+    const f = fakes();
+    const core = createCityWorkerCore(f.deps);
+    core.handle(load);
+    f.store.resolve({ store: true });
+    await settle();
+    expect(f.sourceOptions).toEqual([{ userAgent: "test-agent" }]);
   });
 });

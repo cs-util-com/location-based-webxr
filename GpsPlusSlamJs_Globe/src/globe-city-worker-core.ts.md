@@ -24,6 +24,8 @@ filed follow-up.
     `TERRAIN_EXTENT_M` and `TERRARIUM_URL_TEMPLATE` (`CityWorkerOsm`,
     typed structurally: only what the core reads);
   - `userAgent`: how the app names itself to the Overpass operators;
+  - `staticTilesBaseUrl` (optional): a static tile host asked before the
+    race (the Osm library's `staticTiles` option); absent, the race alone;
   - `now` (default `performance.now`): the clock of `buildMs`.
 - `handle(data)` takes the page's messages:
   - `{ kind: "load", id, target, zoom, deepZoom?, heightsUrl?, firstRings? }`:

@@ -28,6 +28,12 @@
  * meaningless after a re-anchor; a target in lat/lng has no anchor in it, so
  * that objection does not reach this encoding.
  *
+ * READ-ONLY KNOBS. Keys no writer sets or clears, read once at boot: `date` and
+ * `time` pin the sun (see {@link sunPinnedHref}), and `tiles=off` switches the
+ * static tile host off for the session, so the tiles come straight from the
+ * Overpass race (see {@link staticTilesEnabled}). Any other value, or none,
+ * leaves the host on. A writer keeps them like every key it does not own.
+ *
  * THREE WRITERS, SEVEN KEYS, AND NONE TOUCHES ANOTHER'S. `placeQuery` owns
  * `lat`/`lng`/`site`; `cameraQuery` owns `clat`/`clng`/`cdist`; `lightQuery`
  * owns `light`. Anything else in the query survives all three, so a debug flag lives through a walk and a future
@@ -381,4 +387,13 @@ export function sunPinnedHref(
   url.searchParams.set("date", date);
   url.searchParams.set("time", time);
   return url.href;
+}
+
+/**
+ * Whether the worker asks the static tile host first (`OSM_TILES_BASE_URL`):
+ * true unless the query carries `tiles=off`. A read-only knob (see the
+ * header), for comparing the host with the direct Overpass race.
+ */
+export function staticTilesEnabled(search: string): boolean {
+  return new URLSearchParams(search).get("tiles") !== "off";
 }

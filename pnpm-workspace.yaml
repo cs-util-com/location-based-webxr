@@ -13,6 +13,7 @@ packages:
   - GpsPlusSlamJs_OsmDemo
   - GpsPlusSlamJs_TourViewer
   - GpsPlusSlamJs_SiteWorker
+  - GpsPlusSlamJs_OsmTiles
   - GpsPlusSlamJs_DesignSystem
 
 # `osmtogeojson@3.0.0-beta.5` (a devDependency of GpsPlusSlamJs_Osm - its

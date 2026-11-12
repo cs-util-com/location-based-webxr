@@ -248,6 +248,9 @@ export const PROJECTS = [
       // workspace dependencies: like osm, a break here is never caused by an
       // app, so it surfaces before the slow app gates run.
       packageGateStage("test:site-worker", "gps-plus-slam-site-worker"),
+      // The `osm-tiles` Worker: server-side like the site worker, and it
+      // depends only on the osm library, so it runs right after it.
+      packageGateStage("test:osm-tiles", "gps-plus-slam-osm-tiles"),
       // Static design playground: format-only gate, seconds-cheap and
       // dependency-free, so it surfaces before the slow app gates run.
       packageGateStage("test:design-system", "gps-plus-slam-design-system"),
@@ -674,6 +677,31 @@ export const PROJECTS = [
           'prettier --log-level warn --write --cache --cache-strategy content --ignore-unknown --no-error-on-unmatched-pattern "src" package.json README.md',
         counts: null,
       },
+      {
+        name: "typecheck",
+        command: "tsc -p tsconfig.json --noEmit",
+        counts: null,
+      },
+      { name: "test:unit", command: "vitest run", counts: "vitest" },
+    ],
+  },
+  {
+    // The `osm-tiles` Worker (its own wrangler.toml, deployed on its own).
+    // Wrangler bundles src/osm-tiles-worker.ts at deploy, so the gate proves
+    // the TypeScript and the handler behaviour, like the site worker's. It
+    // imports the Overpass query from `gps-plus-slam-osm` through its dist,
+    // so `build:osm` runs before `typecheck` (the OsmDemo reason).
+    name: "GpsPlusSlamJs_OsmTiles",
+    dir: "GpsPlusSlamJs_OsmTiles",
+    chainNames: [],
+    stages: [
+      {
+        name: "format",
+        command:
+          'prettier --log-level warn --write --cache --cache-strategy content --ignore-unknown --no-error-on-unmatched-pattern "src" package.json README.md',
+        counts: null,
+      },
+      BUILD_OSM_STAGE,
       {
         name: "typecheck",
         command: "tsc -p tsconfig.json --noEmit",

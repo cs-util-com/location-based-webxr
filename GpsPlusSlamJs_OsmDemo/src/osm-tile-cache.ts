@@ -12,6 +12,7 @@
 
 import {
   MemoryBlobStore,
+  OSM_TILES_BASE_URL,
   createCityTileSource,
   type CachingSource,
   type OsmBlobStore,
@@ -47,12 +48,23 @@ export async function openOsmStore(
  */
 export function createOsmTileSource(
   store: OsmBlobStore,
-  options: { readonly fetchImpl?: typeof fetch } = {},
+  options: {
+    readonly fetchImpl?: typeof fetch;
+    /**
+     * Ask the project's static tile host (`OSM_TILES_BASE_URL`) before the
+     * race; the host's refusals fall back to the race at once. Off unless
+     * true (the worker turns it on unless the URL says `tiles=off`).
+     */
+    readonly staticTiles?: boolean;
+  } = {},
 ): CachingSource {
   return createCityTileSource(store, {
     userAgent: OSM_DEMO_USER_AGENT,
     ...(options.fetchImpl === undefined
       ? {}
       : { fetchImpl: options.fetchImpl }),
+    ...(options.staticTiles === true
+      ? { staticTiles: { baseUrl: OSM_TILES_BASE_URL } }
+      : {}),
   });
 }

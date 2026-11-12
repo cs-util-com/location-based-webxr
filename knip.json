@@ -230,6 +230,9 @@
       "entry": ["src/site-worker.ts"],
       "project": ["src/**/*.ts"]
     },
+    "GpsPlusSlamJs_OsmTiles": {
+      "project": ["src/**/*.ts"]
+    },
     "GpsPlusSlamJs_DesignSystem": {
       "entry": ["config/stylelint.config.mjs", "config/eslint.config.mjs"],
       "project": ["*.mjs", "config/*.mjs"],
