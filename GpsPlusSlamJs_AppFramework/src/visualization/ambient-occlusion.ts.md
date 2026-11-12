@@ -62,8 +62,8 @@ resolutionScale?, noiseSeed?, enabled? })` returns `AmbientOcclusion`:
     constructs it) and re-sizes it when the drawing buffer changes.
   - `built`, `pass` (read-only; `null` before the first enabled `render` and
     after `dispose`), `params` (the merged, frozen parameters).
-  - `dispose()`: frees the pass, its GTAO material (three's own dispose
-    leaves it behind), the blend material and the quad. `render` does
+  - `dispose()`: frees the pass, its GTAO and blend materials (three's own
+    dispose leaves both behind), this module's blend material and the quad. `render` does
     nothing afterwards.
   - Errors: `TypeError` without a `THREE.Scene` or a `PerspectiveCamera`;
     `RangeError` for a non-finite parameter, an intensity outside [0, 1], a
@@ -139,7 +139,9 @@ ao.dispose();
   hidden line stays hidden); no content material patched; the blend drawn
   last onto the target that was current, without a clear, with the multiply
   blend; the shadow map flags off during the pass and restored; the fade's
-  uniforms from the camera of the frame; the targets sized from the drawing
+  uniforms from the camera of the frame; the display exponent (1 / 2.2) and
+  the shader's factor and fade held to `aoBlendFactor`'s expression (source
+  text, so a change to one twin that misses the other fails); the targets sized from the drawing
   buffer and the resolution scale; the seeded noise in the pass; lazy build,
   switch-off, dispose; the `RangeError`s.
 - `ambient-occlusion.property.test.ts`: the blend factor only darkens, never
@@ -148,6 +150,11 @@ ao.dispose();
   generator in [0, 1) and repeatable for any integer seed.
 - `tests/repo-config/ambient-occlusion-copies.test.js`: the parameters, the
   denoise, the seed and the generator equal the look-dev copy, fade excepted.
-- The frame itself (darkening bounded, sky and fogged distance unchanged,
-  switch-off restores the frame exactly) is OsmDemo's e2e:
-  `GpsPlusSlamJs_OsmDemo/playwright-tests/scene-3d.spec.js`.
+- The frame itself is OsmDemo's e2e
+  (`GpsPlusSlamJs_OsmDemo/playwright-tests/scene-3d.spec.js`): the darkening
+  is bounded (nothing brightens, the mean and the lit surfaces keep more than
+  90 %) and switching off restores the frame bit-identically. It does NOT
+  cover the sky or the fogged distance: no fixture pose shows a sky that
+  stands still between frames. Those rest on the identity argument above (a
+  factor of exactly 1 past the fade) and on the spike that measured fog boxes
+  at 1-3 km unchanged.

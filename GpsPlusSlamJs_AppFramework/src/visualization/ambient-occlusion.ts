@@ -391,8 +391,9 @@ export function createAmbientOcclusion(
   const dispose = (): void => {
     disposed = true;
     if (pass !== null) {
-      // three's own dispose leaves the GTAO material behind.
+      // three's own dispose leaves the GTAO and blend materials behind.
       pass.gtaoMaterial.dispose();
+      pass.blendMaterial.dispose();
       pass.dispose();
       pass = null;
     }

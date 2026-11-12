@@ -21,6 +21,7 @@ import {
   AO_DENOISE,
   AO_NOISE_SEED,
   AO_PARAMS,
+  aoBlendFactor,
   aoNoiseRandom,
   aoNoiseTexture,
   createAmbientOcclusion,
@@ -382,6 +383,53 @@ describe('createAmbientOcclusion', () => {
     expect(ao.params.radius).toBe(AO_PARAMS.radius);
   });
 
+  it('carries the linear factor into display space with the 1 / 2.2 exponent', () => {
+    // Why: the canvas the blend multiplies is already tone-mapped and
+    // sRGB-encoded. Without the exponent a crease darkens by the encoded
+    // factor (much darker in the mid-tones); a changed exponent changes the
+    // look the e2e bounds were measured against.
+    const fake = recordingRenderer();
+    createAmbientOcclusion({
+      renderer: asRenderer(fake),
+      scene: appLikeScene(),
+      camera: camera(),
+    }).render();
+    const m = fake.draws.at(-1)!.material as THREE.ShaderMaterial;
+    expect(m.uniforms['displayExponent']!.value).toBeCloseTo(1 / 2.2, 12);
+    expect(m.fragmentShader).toContain(
+      'pow(max(factor, 0.0), displayExponent)'
+    );
+  });
+
+  it('blends with the same expression aoBlendFactor computes', () => {
+    // Why: the property tests pin aoBlendFactor's shape, but the GPU runs the
+    // shader. This holds the shader's factor and fade to the TS twin, so a
+    // change to one that is not made to the other fails here.
+    const fake = recordingRenderer();
+    createAmbientOcclusion({
+      renderer: asRenderer(fake),
+      scene: appLikeScene(),
+      camera: camera(),
+    }).render();
+    const shader = (
+      fake.draws.at(-1)!.material as THREE.ShaderMaterial
+    ).fragmentShader
+      .replace(/texture2D\(tAo, vUv\)\.r/g, 'ao')
+      .replace(/(\d)\.0\b/g, '$1')
+      .replace(/\s+/g, ' ');
+    const twin = aoBlendFactor.toString().replace(/\s+/g, ' ');
+    const factor = '1 + (ao - 1) * intensity * keep';
+    expect(shader).toContain(`factor = ${factor};`);
+    expect(twin).toContain(factor);
+    expect(shader).toContain(
+      'keep = 1 - smoothstep(fadeStart, fadeEnd, viewDepth);'
+    );
+    // The transpiler may rewrite the imported call, e.g. `(0, x.smoothstep)(`.
+    expect(twin).toMatch(
+      /keep = 1 - [\w$.(), ]*smoothstep\)?\(fadeStartM, fadeEndM, viewDepthM\)/
+    );
+  });
+
   it('sizes its targets from the drawing buffer and the resolution scale', () => {
     const fake = recordingRenderer({ x: 400, y: 300 });
     const ao = createAmbientOcclusion({
@@ -438,6 +486,8 @@ describe('createAmbientOcclusion', () => {
       vi.spyOn(pass, 'dispose'),
       vi.spyOn(pass.gtaoMaterial, 'dispose'),
       vi.spyOn(pass.pdNoiseTexture, 'dispose'),
+      // three's own dispose leaves its unused blend material behind too.
+      vi.spyOn(pass.blendMaterial, 'dispose'),
     ];
     const blend = vi.fn();
     ao.enabled = true;
