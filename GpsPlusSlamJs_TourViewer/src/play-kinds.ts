@@ -24,6 +24,7 @@ import { CHARACTER_PLAY } from "./character-card.js";
 import { AUDIO_PLAY } from "./kinds/audio/play.js";
 import type { ItemCardHost } from "./item-card.js";
 import { modelWorld } from "./kinds/model/world.js";
+import { pictureWorld } from "./kinds/picture/world.js";
 import type { WorldEnv, WorldPart } from "./world-part.js";
 
 /** What one kind does for a visitor. */
@@ -89,6 +90,8 @@ export const PLAY_KINDS = {
       });
     },
     assets: (block) => [block.image],
+    // A framed print or a cut-out stands in the station.
+    world: (block, env) => pictureWorld(block, env),
   },
   video: {
     card(block, host) {

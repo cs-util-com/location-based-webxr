@@ -40,10 +40,12 @@ import { worldFromEcefAt } from "gps-plus-slam-globe/editor";
 
 import type { FigureSource } from "../character-canvas.js";
 import { characterWorld } from "../kinds/character/world.js";
+import { pictureWorld } from "../kinds/picture/world.js";
 import { buildLecternStand } from "../lectern-view.js";
 import { worldPartOf } from "../play-kinds.js";
 import { buildReadingSign } from "../reading-sign.js";
 import { fakeCharacterPainters } from "../test-support/fake-character-painters.js";
+import { fakePicturePainters } from "../test-support/fake-picture-painters.js";
 import {
   createStationsLayer,
   type StationsLayerDeps,
@@ -84,6 +86,13 @@ const EXPECTED: readonly (readonly [
   ["longText", "reading", true, false, null],
   ["longText", "card", false, false, null],
   ["picture", "plane", true, true, "widthM"],
+  ["picture", "framed", true, true, "widthM"],
+  ["picture", "cutout", true, true, "widthM"],
+  ["picture", "thenNow", true, true, "widthM"],
+  ["picture", "sharpen", true, true, "widthM"],
+  ["picture", "finder", true, true, "widthM"],
+  ["picture", "window", true, true, "widthM"],
+  ["picture", "viewer", true, true, "widthM"],
   ["picture", "card", false, false, null],
   ["video", "card", false, false, null],
   ["audio", "spot", true, false, null],
@@ -288,7 +297,8 @@ function stationOf(children: TourStationChild[]): TourStation {
  *  is a camera-facing sprite: a drawing that turned it would show here),
  *  the stand and the sign are the page's own builders without a canvas,
  *  a model's file is a 2 x 4 x 1 m box, and a character's image a
- *  100 x 200 px figure painted without a canvas. */
+ *  100 x 200 px figure painted without a canvas, as a picture's image is
+ *  a 100 x 200 px texture. */
 function layerDeps(): StationsLayerDeps {
   const { painters } = fakeCharacterPainters();
   const decode = () =>
@@ -327,7 +337,16 @@ function layerDeps(): StationsLayerDeps {
     worldPart: (block, env) =>
       block.kind === "character"
         ? characterWorld(block, env, { decode, painters })
-        : worldPartOf(block, env),
+        : block.kind === "picture"
+          ? pictureWorld(block, env, {
+              decode: () => {
+                const texture = new THREE.Texture();
+                texture.image = { width: 100, height: 200 };
+                return Promise.resolve(texture);
+              },
+              painters: fakePicturePainters().painters,
+            })
+          : worldPartOf(block, env),
   };
 }
 

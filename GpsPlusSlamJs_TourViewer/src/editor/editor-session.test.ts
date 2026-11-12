@@ -218,6 +218,42 @@ describe("createEditorSession", () => {
     await session.close();
   });
 
+  // Why: a cut-out's tag is switched in the inspector like any other edit:
+  // one undo step, saved; switched back on, the field goes (absent is
+  // shown), so a tour never carries a `showTag: true`; the same state
+  // again is no step; a block that is no picture is refused in words.
+  it("switches a picture's tag as one step, saved and undone", async () => {
+    const { session, manifest } = await opened([pin("a", "Old"), photo("c")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    expect(editor.editPictureTag("c", true)).toEqual({ kind: "unchanged" });
+    expect(editor.editPictureTag("a", false)).toEqual({
+      kind: "refused",
+      reason: "Only a picture has a tag.",
+    });
+    expect(editor.editPictureTag("nope", false)).toMatchObject({
+      kind: "refused",
+    });
+    expect(editor.changeCount()).toBe(0);
+    expect(editor.editPictureTag("c", false)).toEqual({ kind: "edited" });
+    expect(editor.changeCount()).toBe(1);
+    let saved = await editor.save({ keepScan: false });
+    expect(
+      (await carried(saved.blob)).objects.find((o) => o.id === "c"),
+    ).toMatchObject({ showTag: false });
+    expect(editor.editPictureTag("c", true)).toEqual({ kind: "edited" });
+    saved = await editor.save({ keepScan: false });
+    expect(
+      (await carried(saved.blob)).objects.find((o) => o.id === "c"),
+    ).not.toHaveProperty("showTag");
+    const undone = editor.undo();
+    expect(JSON.stringify(undone)).toContain("the tag of");
+    await session.close();
+  });
+
   // Why: a block's other text fields (a short text's description
   // here) are edited through the same tour document as its caption: one
   // undo step each, counted as a change, written by the save; a text

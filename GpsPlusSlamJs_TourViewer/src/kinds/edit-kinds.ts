@@ -179,6 +179,8 @@ export const KIND_EDIT = {
       TITLE,
       { name: "caption", label: "Caption", prose: true },
       { name: "alt", label: "Alt text", prose: true },
+      { name: "credit", label: "Credit", prose: false },
+      { name: "year", label: "Year", prose: false },
     ],
     add: {
       label: "Picture",

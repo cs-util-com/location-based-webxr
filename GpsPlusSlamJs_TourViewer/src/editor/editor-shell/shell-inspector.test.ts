@@ -765,6 +765,8 @@ describe("drawInspector", () => {
       ["Title", ""],
       ["Caption", ""],
       ["Alt text", ""],
+      ["Credit", ""],
+      ["Year", ""],
       // Its width, the size its white dots change.
       ["Width", "1.00 m"],
       ["Offset east", "-2.00 m"],
@@ -780,7 +782,13 @@ describe("drawInspector", () => {
     const counts = [...dock.body.querySelectorAll("output.count")].map(
       (o) => o.textContent,
     );
-    expect(counts).toEqual(["0 / 40", "0 / 1200", "0 / 300"]);
+    expect(counts).toEqual([
+      "0 / 40",
+      "0 / 1200",
+      "0 / 300",
+      "0 / 200",
+      "0 / 24",
+    ]);
     const alt = input("alt") as unknown as HTMLTextAreaElement | null;
     expect(alt?.tagName).toBe("TEXTAREA");
     expect(alt?.getAttribute("aria-describedby")).toBe(

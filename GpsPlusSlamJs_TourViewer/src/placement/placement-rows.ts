@@ -89,6 +89,19 @@ const MODEL: ViewPlacement = {
   },
 };
 
+/** A picture standing at its pose: turned by it, sized by its width. */
+const PICTURE_STANDING: ViewPlacement = {
+  ...TURNING,
+  extent: {
+    kind: "size",
+    field: "widthM",
+    label: "Width",
+    meaning: "Its width",
+    min: TOUR_PICTURE_MIN_WIDTH_M,
+    max: TOUR_PICTURE_MAX_WIDTH_M,
+  },
+};
+
 type ViewsOf<K extends TourBlockKind> = (typeof TOUR_KINDS)[K]["views"][number];
 
 /** THE block table: one row per kind and view of the format. */
@@ -98,17 +111,15 @@ export const BLOCK_PLACEMENT = {
   // turns to the viewer as it is drawn.
   longText: { lectern: TURNING, reading: FACING, card: POSELESS },
   picture: {
-    plane: {
-      ...TURNING,
-      extent: {
-        kind: "size",
-        field: "widthM",
-        label: "Width",
-        meaning: "Its width",
-        min: TOUR_PICTURE_MIN_WIDTH_M,
-        max: TOUR_PICTURE_MAX_WIDTH_M,
-      },
-    },
+    plane: PICTURE_STANDING,
+    framed: PICTURE_STANDING,
+    cutout: PICTURE_STANDING,
+    // Drawn as a plane at the pose until their overlays stand.
+    thenNow: PICTURE_STANDING,
+    sharpen: PICTURE_STANDING,
+    finder: PICTURE_STANDING,
+    window: PICTURE_STANDING,
+    viewer: PICTURE_STANDING,
     card: POSELESS,
   },
   video: { card: POSELESS },

@@ -103,6 +103,10 @@ describe("blockFields", () => {
       ["title", "Title", 40, false],
       ["caption", "Caption", 1200, true],
       ["alt", "Alt text", 300, true],
+      // A picture's credit and year: the framed print's plate and the
+      // picture's sheet show them.
+      ["credit", "Credit", 200, false],
+      ["year", "Year", 24, false],
     ]);
     expect(blockFields(PICTURE)[1]?.value).toBe("The gate in 1870");
     expect(blockFields(MODEL).map((f) => [f.name, f.max])).toEqual([

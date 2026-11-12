@@ -234,6 +234,9 @@ export interface ShellEditCommands {
   block(itemId: string, field: string, value: string): TypedEditOutcome;
   /** A free block's view (`TOUR_BLOCK_VIEWS`): a long text's sign. */
   view(itemId: string, view: string): TypedEditOutcome;
+  /** A picture's tag shown or hidden (a cut-out's); absent: the page
+   *  has no such edit and the switch is not drawn. */
+  pictureTag?(itemId: string, shown: boolean): TypedEditOutcome;
   /** One of a model's own edits (`model-edits.ts`): its view, a note,
    *  a section, its clip. */
   model(itemId: string, edit: ModelEdit): TypedEditOutcome;

@@ -4089,6 +4089,137 @@
         #ar-status {
         display: none;
       }
+      /* A picture's details sheet (kinds/picture/picture-sheet.ts), opened
+         by a tap on a framed print or a cut-out on the page's screen: the
+         screen's host widens to the whole page while it holds one. */
+      #narration-card-root:has(.picture-sheet) {
+        inset: 0;
+        transform: none;
+        width: auto;
+        max-width: none;
+      }
+      .picture-sheet {
+        position: fixed;
+        inset: 0;
+        z-index: 60;
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        color: #f4ede1;
+      }
+      .picture-sheet-scrim {
+        position: absolute;
+        inset: 0;
+        background: rgb(10 8 6 / 55%);
+      }
+      .picture-sheet-card {
+        position: relative;
+        width: 100%;
+        max-width: 640px;
+        max-height: 92%;
+        overflow: auto;
+        background: #17140f;
+        border-radius: 22px 22px 0 0;
+        padding: 58px 16px calc(22px + env(safe-area-inset-bottom));
+        box-shadow: 0 -10px 40px rgb(0 0 0 / 40%);
+        animation: picture-sheet-up 0.34s cubic-bezier(0.2, 0.8, 0.2, 1);
+      }
+
+      @keyframes picture-sheet-up {
+        from {
+          transform: translateY(40px);
+          opacity: 0;
+        }
+        to {
+          transform: none;
+          opacity: 1;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .picture-sheet-card {
+          animation: none;
+        }
+      }
+      .picture-sheet-image {
+        width: 100%;
+        display: block;
+        border-radius: 4px;
+        box-shadow: 0 10px 28px rgb(0 0 0 / 45%);
+      }
+      .picture-sheet-year {
+        font:
+          600 42px/1 "Iowan Old Style",
+          "Palatino Linotype",
+          Palatino,
+          Georgia,
+          serif;
+        color: #e9b872;
+        margin: 16px 0 10px;
+      }
+      .picture-sheet[data-text-only="true"] .picture-sheet-year {
+        margin-top: 0;
+      }
+      .picture-sheet-title {
+        font:
+          600 20px/1.3 "Iowan Old Style",
+          "Palatino Linotype",
+          Palatino,
+          Georgia,
+          serif;
+        margin: 0 0 8px;
+      }
+      .picture-sheet-caption {
+        font:
+          18px/1.5 "Iowan Old Style",
+          "Palatino Linotype",
+          Palatino,
+          Georgia,
+          serif;
+        margin: 0 0 14px;
+      }
+      .picture-sheet-credit {
+        font-size: 13px;
+        line-height: 1.4;
+        color: #a99d8a;
+        margin: 0;
+      }
+      .picture-sheet-close {
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        z-index: 2;
+        border: 0;
+        border-radius: 999px;
+        background: rgb(20 17 14 / 85%);
+        color: #f4ede1;
+        padding: 8px 14px;
+        min-height: 36px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      @media (orientation: landscape) {
+        .picture-sheet {
+          align-items: center;
+        }
+        .picture-sheet-card {
+          border-radius: 20px;
+          display: grid;
+          grid-template-columns: 1.5fr 1fr;
+          gap: 22px;
+          width: 94%;
+          max-width: 1040px;
+          padding: 56px 18px 18px;
+          align-items: center;
+        }
+        .picture-sheet[data-text-only="true"] .picture-sheet-card {
+          grid-template-columns: 1fr;
+          width: 94%;
+          max-width: 620px;
+        }
+      }
     </style>
   </head>
   <body class="page">

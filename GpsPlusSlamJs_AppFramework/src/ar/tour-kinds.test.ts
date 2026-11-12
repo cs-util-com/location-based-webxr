@@ -318,3 +318,158 @@ describe('an audio item in the world', () => {
     expect(() => read('card', { volume: -1 })).toThrow(/volume/);
   });
 });
+
+describe('a picture in the world', () => {
+  const read = (view: string | null, fields: Record<string, unknown>) =>
+    TOUR_KINDS.picture.read(
+      {
+        id: 'p',
+        kind: 'picture',
+        view,
+        image: 'photo',
+        widthM: 1.6,
+        ...fields,
+      },
+      view,
+      contextFor('p')
+    );
+  const VIEWPOINT = {
+    position: [4, 1.6, -2],
+    rotation: [0, 0, 0, 1],
+    hfovDeg: 50,
+    distanceM: 12,
+  };
+
+  it('stands framed, cut out or lined up from a spot, free', () => {
+    // Why: every world view is one a station shows on its own; `plane`
+    // stays the floor, so an older or unknown view still draws something.
+    expect(TOUR_KINDS.picture.views).toEqual([
+      'plane',
+      'framed',
+      'cutout',
+      'thenNow',
+      'sharpen',
+      'finder',
+      'window',
+      'viewer',
+      'card',
+    ]);
+    expect(TOUR_KINDS.picture.freeViews).toEqual(
+      TOUR_KINDS.picture.views.filter((v) => v !== 'card')
+    );
+    expect(TOUR_KINDS.picture.floor).toBe('plane');
+  });
+
+  it('reads its credit, year, tag switch and viewpoint in write order', () => {
+    // Why: a plate and a sheet show the credit and the year; the year is
+    // text ("about 1880s"), never a number; the field order is the
+    // writer's, so a file round-trips byte for byte.
+    const fields = read('framed', {
+      credit: 'City archive',
+      year: 'about 1880s',
+      showTag: false,
+      viewpoint: VIEWPOINT,
+    });
+    expect(Object.keys(fields)).toEqual([
+      'image',
+      'credit',
+      'year',
+      'widthM',
+      'showTag',
+      'viewpoint',
+    ]);
+    expect(fields).toMatchObject({
+      year: 'about 1880s',
+      showTag: false,
+      viewpoint: VIEWPOINT,
+    });
+  });
+
+  it('leaves out an over-long credit or year alone, and says so', () => {
+    // Why: an optional text over its cap drops by itself (reported), the
+    // picture stays; the year's cap is 24 characters of text.
+    expect(() => read('framed', { year: 'x'.repeat(25) })).toThrow(/year/);
+    expect(() => read('framed', { credit: 'x'.repeat(201) })).toThrow(/credit/);
+    expect(read('framed', { year: 'x'.repeat(24) })).toMatchObject({
+      year: 'x'.repeat(24),
+    });
+  });
+
+  it('refuses a tag switch that is not true or false', () => {
+    // Why: a string "false" would show the tag the creator turned off.
+    expect(() => read('cutout', { showTag: 'false' })).toThrow(/showTag/);
+    expect(read('cutout', {})).not.toHaveProperty('showTag');
+  });
+
+  it('keeps a viewpoint in every view, so a view switch loses nothing', () => {
+    // Why: the creator tries views; switching from then-and-now to framed
+    // and back must find the spot where it was.
+    for (const view of [...TOUR_KINDS.picture.views, null]) {
+      expect(read(view, { viewpoint: VIEWPOINT })).toMatchObject({
+        viewpoint: VIEWPOINT,
+      });
+    }
+  });
+
+  it('reads a viewpoint view without a viewpoint, for the viewer to draw as a plane', () => {
+    // Why: the format keeps the picture (its floor drawing stands in);
+    // the editor never writes one, as it gives a viewpoint on the switch.
+    expect(read('thenNow', {})).not.toHaveProperty('viewpoint');
+  });
+
+  it.each([
+    [{ ...VIEWPOINT, hfovDeg: 9 }, /hfovDeg/],
+    [{ ...VIEWPOINT, hfovDeg: 121 }, /hfovDeg/],
+    [{ ...VIEWPOINT, hfovDeg: 'wide' }, /hfovDeg/],
+    [{ ...VIEWPOINT, distanceM: 0.5 }, /distanceM/],
+    [{ ...VIEWPOINT, distanceM: 501 }, /distanceM/],
+    [{ ...VIEWPOINT, position: [1, 2] }, /position/],
+    [{ ...VIEWPOINT, rotation: [0, 0, 0, 0] }, /rotation/],
+    ['north', /viewpoint/],
+  ])('refuses the viewpoint %j', (viewpoint, message) => {
+    // Why: the lens sizes the picture and the distance sets its depth; a
+    // value outside the bounds would hang it out of sight or fill the sky.
+    expect(() => read('thenNow', { viewpoint })).toThrow(message);
+  });
+
+  it('takes the bounds themselves', () => {
+    // Why: the bounds are inclusive, as every metres field of the format.
+    for (const [hfovDeg, distanceM] of [
+      [10, 1],
+      [120, 500],
+    ]) {
+      expect(
+        read('finder', { viewpoint: { ...VIEWPOINT, hfovDeg, distanceM } })
+      ).toMatchObject({ viewpoint: { hfovDeg, distanceM } });
+    }
+  });
+});
+
+describe("a newer minor's picture viewpoint", () => {
+  it('drops just the viewpoint, keeping the picture, and says so', () => {
+    // Why: a later minor may give the viewpoint a shape this reader does
+    // not know; the picture must still stand (as a plane), not fail the
+    // tour or vanish.
+    const drops: string[] = [];
+    const fields = TOUR_KINDS.picture.read(
+      {
+        id: 'p',
+        kind: 'picture',
+        image: 'photo',
+        widthM: 1,
+        viewpoint: { hfovDeg: 60 },
+      },
+      'thenNow',
+      {
+        ...contextFor('p'),
+        lenient: true,
+        onDropped: (drop) => drops.push(drop.reason),
+      }
+    );
+    expect(fields).not.toHaveProperty('viewpoint');
+    expect(fields).toMatchObject({ image: 'photo', widthM: 1 });
+    expect(drops).toEqual([
+      '"block.viewpoint.position" must be three numbers within 10000 m',
+    ]);
+  });
+});

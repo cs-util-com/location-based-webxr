@@ -123,6 +123,10 @@ never state). Design:
     not stand free in (`TOUR_FREE_BLOCK_VIEWS`: the format would refuse a text's
     or a picture's card at save), `MODEL_VIEW_ELSEWHERE` for a model (its view is
     `editModel`'s), `NOT_IN_TOUR` for an id the tour no longer carries.
+  - `editPictureTag(id, shown)` - a picture's tag, one undo step named
+    "the tag of <name>"; shown removes `showTag` (absent is shown), hidden
+    writes `false`; `unchanged` for its own state; refused for a block that
+    is no picture (`ONLY_A_PICTURE_TAG`) and an id the tour lacks.
   - `editBlockField(id, field, value)` - `blockFieldEdit`'s outcome
     (`block-fields.ts`: a short text's description, a picture's
     title, caption or alt text, a model's title), one step through the

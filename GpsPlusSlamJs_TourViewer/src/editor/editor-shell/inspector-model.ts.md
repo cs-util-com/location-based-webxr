@@ -72,7 +72,7 @@ view, advance, facingDeg }`) and `advance { mode, afterS }`;
     `meaning`, the tour's `value`, `min`, `max`; a model's Size, a
     picture's Width; null for an item with none), `fields` (its
     other text fields to type, `blockFields` of `../block-fields.ts`:
-    a short text's description, a picture's title, caption and alt text,
+    a short text's description, a picture's title, caption, alt text, credit and year,
     a model's title), `offset`
     (`northM`, `upM`, `eastM` in the station's frame, its folders composed
     in; null for a block with no place in the world, a video),
@@ -80,7 +80,9 @@ view, advance, facingDeg }`) and `advance { mode, afterS }`;
     placement row's: its gizmo has the round arrow), and `groundOffM` (the height
     over the ground of where it stands in the world, through its
     folders, `posedEntryOf` of `../../placement/placeables.ts`; rounded as
-    the station's; null while unknown or with no place);
+    the station's; null while unknown or with no place), and for a picture
+    only `picture` (`InspectorPicture`: its view, whether its tag shows,
+    its image's tour path or null), which its panel draws;
   - `CodeInspector` - `kind: "code"`, title, `sub` (its line),
     `printSizeM`, `position` or null when it has none;
   - `InspectorPosition` - `eastM` and `northM` from `origin` when it
