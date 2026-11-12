@@ -434,11 +434,14 @@ const WAITS = (
       prompt: words,
       options: fc.tuple(
         ...ids.map((option) =>
+          // An answer jumps or ends the story, never both: the reader
+          // refuses the pair.
           everyField<TourChoiceOption>({
             id: fc.constant(option),
             label: words,
             goto: maybe(fc.constantFrom(...childIds)),
-          }),
+            end: maybe(fc.constant(true as const)),
+          }).filter((o) => o.goto === undefined || o.end === undefined),
         ),
       ),
     }),
