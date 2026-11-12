@@ -210,6 +210,46 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
   };
   const view = contentOf("view");
 
+  /** Where each scrolled element in a panel stood: a panel leaves the
+   *  page while another tab of its group shows, which loses its scroll,
+   *  given back when it shows again. */
+  const offsets = new Map<Element, { top: number; left: number }>();
+  const onScroll = (event: Event) => {
+    const at = event.target;
+    if (!(at instanceof Element) || !at.isConnected) return;
+    offsets.set(at, { top: at.scrollTop, left: at.scrollLeft });
+  };
+  for (const content of contents.values()) {
+    content.addEventListener("scroll", onScroll, {
+      capture: true,
+      passive: true,
+    });
+  }
+  const scrollBack = (pane: HTMLElement) => {
+    const put = () => {
+      for (const [at, was] of offsets) {
+        if (!pane.contains(at)) continue;
+        at.scrollTop = was.top;
+        at.scrollLeft = was.left;
+      }
+    };
+    put();
+    // Shown in a group the docking has yet to lay out: again a frame on.
+    requestAnimationFrame(() => {
+      if (!disposed) put();
+    });
+  };
+  /** An adopted element, in the page or not (a panel behind another tab
+   *  is out of it). */
+  const nodeOf = (id: DockPanelId): Element | null => {
+    const spec = dockPanel(id);
+    if (spec.element === null) return null;
+    return (
+      homes.find((h) => h.node.id === spec.element)?.node ??
+      document.getElementById(spec.element)
+    );
+  };
+
   /** The 3D view's parts into its panel (the canvas first, under the
    *  rest); also those the view adds later (a new canvas). */
   const adoptViewParts = () => {
@@ -223,12 +263,18 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
 
   const dock: DockviewApi = createDockview(root, {
     theme: THEME,
-    createComponent: ({ name }) => ({
-      element: isDockPanelId(name)
+    createComponent: ({ name }) => {
+      const element = isDockPanelId(name)
         ? contentOf(name)
-        : document.createElement("div"),
-      init: () => undefined,
-    }),
+        : document.createElement("div");
+      return {
+        element,
+        init: () => undefined,
+        onShow: () => {
+          scrollBack(element);
+        },
+      };
+    },
     // Popouts never; the 3D view is not floated.
     getTabContextMenuItems: ({ panel }) =>
       panel.id === "view" ? ["maximize"] : ["float", "maximize"],
@@ -290,9 +336,12 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
       id: spec.id,
       component: spec.id,
       title: spec.title,
-      // Every panel keeps its element in the page while another tab shows:
-      // the 3D view keeps its canvas, the others their scroll and focus.
-      renderer: "always",
+      // The 3D view keeps its canvas in the page whatever shows. The other
+      // panels stand inside their group, after its tabs, and leave the
+      // page while another tab of their group shows: the docking library
+      // puts the content of an always-rendered panel after every group,
+      // so Tab would walk every tab strip before any panel.
+      renderer: spec.id === "view" ? "always" : "onlyWhenVisible",
       ...(step.against === undefined
         ? {}
         : {
@@ -594,9 +643,7 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
   };
 
   const fold = (id: FoldingPanel, shut: boolean) => {
-    const spec = dockPanel(id);
-    const node =
-      spec.element === null ? null : document.getElementById(spec.element);
+    const node = nodeOf(id);
     if (shut === folded.has(id) || node === null) return;
     const back = holdFocus([node]);
     if (shut) {
@@ -664,8 +711,11 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
       onSashUp();
       // The canvas first, back under the docks. Only what is still in the
       // layout goes back: a part removed meanwhile by the code that made
-      // it (the 3D view's canvas when the view closed) stays removed.
-      const going = homes.filter((home) => root.contains(home.node));
+      // it (the 3D view's canvas when the view closed) stays removed. A
+      // panel behind another tab is out of the page, and goes back too.
+      const going = homes.filter((home) =>
+        [root, ...contents.values()].some((at) => at.contains(home.node)),
+      );
       const back = holdFocus(going.map((home) => home.node));
       for (const home of [...going].reverse()) sendHome(home.node);
       dock.dispose();

@@ -55,9 +55,26 @@ are not part of the page's first load.
 
 ## Invariants & assumptions
 
-- The default layout is `defaultDockLayout` (`dock-layout.ts`). Panels
-  are added with `renderer: "always"`, so an inactive tab keeps its
-  element (the 3D view its canvas and drawing context).
+- The default layout is `defaultDockLayout` (`dock-layout.ts`). The 3D
+  view is added with `renderer: "always"`, so it keeps its canvas and
+  drawing context whatever shows. Every other panel is added with
+  `renderer: "onlyWhenVisible"`: its content stands inside its group,
+  after the group's tabs, so Tab follows what is seen (the top bar, the
+  list, then the panels to its right). With `"always"` the docking
+  library puts a panel's content after every group, and Tab walked every
+  tab strip before any panel.
+- A panel behind another tab of its group is out of the page. So:
+  - the scroll of each element in it is recorded on its `scroll` events
+    and given back when the panel shows again (`onShow`, and once more a
+    frame later for a group not yet laid out);
+  - a field half typed is committed by the tab's click, as a click
+    anywhere else does, and is in the field when its panel shows again;
+  - the work behind a panel (the shelf optimizing a file) goes on: it
+    draws into its element, in the page or not;
+  - an adopted element is found through the host's own record, not by
+    `getElementById` (`fold`), and `dispose` puts back the ones out of the
+    page too. Code elsewhere that looks a docked panel up by id finds
+    nothing while it is behind another tab.
 - The centre group is locked (nothing is dropped onto it as a tab). A
   group's tab strip hides while it holds only the 3D view or only the
   list (`stripHidden`), which carry their own head, and shows again as
@@ -117,4 +134,7 @@ dock.dispose();
   sizes; its data is `dock-layout.ts`'s, unit and property tested.
 - The same spec covers a tab's Delete and Backspace (nothing closed, nothing
   deleted), the focus kept over a fold and over a turn between docked and
-  undocked, and the canvas held during a splitter drag.
+  undocked, and the canvas held during a splitter drag, and a panel
+  behind another tab (Details behind Files, the list dragged beside
+  Files) keeping its scroll, its folds and a half-typed field; the shelf
+  spec covers a file added while Files is hidden.

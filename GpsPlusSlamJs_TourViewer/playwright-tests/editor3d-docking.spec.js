@@ -302,10 +302,11 @@ test("a docked tab's Delete and Backspace close nothing and delete nothing; the 
       await expect(gate, `${key} on ${name}`).toHaveCount(1);
     }
   }
-  await expect(page.locator(".dock-host #shell-shelf")).toHaveCount(1);
+  // Both panels still docked: Details shown, Files shown by its tab (a
+  // panel behind another tab is out of the page until then).
   await expect(page.locator(".dock-host #shell-inspector")).toHaveCount(1);
   await files.click();
-  await expect(page.locator("#shell-shelf")).toBeVisible();
+  await expect(page.locator(".dock-host #shell-shelf")).toBeVisible();
 });
 
 // Why: folding a side moves its element out of the layout and back; a
@@ -406,4 +407,141 @@ test("a splitter drag holds the canvas's size and fits it once on release", asyn
   const view = await box(page.locator(".dock-pane-view"));
   expect(view.width).toBeLessThan(before.width - 40);
   await expectCanvas(page, view, "after the release");
+});
+
+/**
+ * The element under `selector` that scrolls (its content taller than its
+ * box), marked for later reads; its scroll offset.
+ * @param {import("@playwright/test").Page} page
+ * @param {string} selector
+ */
+function markScroller(page, selector) {
+  return page.evaluate((s) => {
+    const start = document.querySelector(s);
+    if (start === null) return null;
+    const all = [start, ...start.querySelectorAll("*")];
+    const found = all.find(
+      (e) =>
+        e.scrollHeight > e.clientHeight + 20 &&
+        ["auto", "scroll"].includes(getComputedStyle(e).overflowY),
+    );
+    if (found === undefined) return null;
+    found.setAttribute("data-scroll-probe", "");
+    return found.scrollHeight - found.clientHeight;
+  }, selector);
+}
+
+/** @param {import("@playwright/test").Page} page */
+function probeScroll(page) {
+  return page.evaluate(
+    () => document.querySelector("[data-scroll-probe]")?.scrollTop ?? -1,
+  );
+}
+
+/**
+ * @param {import("@playwright/test").Page} page
+ * @param {number} px
+ */
+async function scrollProbe(page, px) {
+  await page.evaluate((top) => {
+    const e = document.querySelector("[data-scroll-probe]");
+    if (e !== null) e.scrollTop = top;
+  }, px);
+  return probeScroll(page);
+}
+
+/** @param {import("@playwright/test").Page} page */
+function gateTitle(page) {
+  return page.evaluate(
+    () =>
+      /** @type {any} */ (window).__tourEditor
+        .manifest()
+        .stations.find((/** @type {any} */ s) => s.id === "gate")?.title,
+  );
+}
+
+// Why: a docked panel leaves the page while another tab of its group
+// shows (so Tab walks each group's tabs, then its panel). Leaving the page
+// must lose nothing: not the details' scroll, not a field half typed, and
+// not a file the shelf is optimizing while Files is hidden.
+test("a docked panel hidden by its group's other tab keeps its scroll, its half-typed field and its work", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 1024, height: 600 });
+  await answerHosts(page);
+  await openSampleIn3d(page);
+  const host = tabs(page);
+  const details = host.getByRole("tab", { name: "Details", exact: true });
+  const files = host.getByRole("tab", { name: "Files", exact: true });
+  await page
+    .locator("#tree-body .card", { hasText: "The old gate" })
+    .locator(".pick")
+    .click();
+  const title = page.locator('#shell-inspector [data-field="title"]');
+  await expect(title).toHaveValue("The old gate");
+
+  // A field half typed, then the other tab and back: the text is still in
+  // the field and in the tour (the switch commits it, as a click anywhere
+  // else does).
+  await title.click();
+  await title.press("End");
+  await title.pressSequentially(" north");
+  await files.click();
+  await expect(page.locator("#shell-shelf")).toBeVisible();
+  await details.click();
+  await expect(title).toHaveValue("The old gate north");
+  await expect.poll(() => gateTitle(page)).toBe("The old gate north");
+
+  // The details scrolled down, the other tab, back: the same offset.
+  const room = await markScroller(page, ".dock-pane-details");
+  expect(room, "the details scroll at 1024 x 600").not.toBeNull();
+  const at = await scrollProbe(page, Math.min(150, room ?? 0));
+  expect(at).toBeGreaterThan(0);
+  await files.click();
+  await expect(page.locator("#shell-shelf")).toBeVisible();
+  await details.click();
+  await expect(page.locator("#inspector-body")).toBeVisible();
+  await expect.poll(() => probeScroll(page)).toBe(at);
+});
+
+// Why: the list shares no group at first, but a tab dragged onto it makes
+// it one tab of two; shown again after the other, the list must keep the
+// station unfolded and where it was scrolled.
+test("the list made a tab beside Files keeps its folds and its scroll across a tab switch", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 1024, height: 480 });
+  await answerHosts(page);
+  await openSampleIn3d(page);
+  const host = tabs(page);
+  for (const id of ["gate", "column"]) {
+    const unfold = page.locator(`#tree-body [data-unfold="${id}"]`);
+    if ((await unfold.getAttribute("aria-expanded")) !== "true") {
+      await unfold.click();
+    }
+  }
+  const gateKids = page.locator('#tree-body .card[data-station="gate"] .kids');
+  await expect(gateKids).toBeVisible();
+
+  const files = host.getByRole("tab", { name: "Files", exact: true });
+  await files.dragTo(page.locator(".dock-pane-list"));
+  const list = host.getByRole("tab", { name: "List", exact: true });
+  await expect(list).toBeVisible();
+
+  await list.click();
+  await expect(page.locator("#tree-body")).toBeVisible();
+  const room = await markScroller(page, ".dock-pane-list");
+  expect(room, "the list scrolls at 1024 x 480").not.toBeNull();
+  const at = await scrollProbe(page, Math.min(80, room ?? 0));
+  expect(at).toBeGreaterThan(0);
+
+  await files.click();
+  await expect(page.locator("#shell-shelf")).toBeVisible();
+  await expect(page.locator("#tree-body")).toHaveCount(0);
+  await list.click();
+  await expect(page.locator("#tree-body")).toBeVisible();
+  await expect(gateKids).toBeVisible();
+  await expect.poll(() => probeScroll(page)).toBe(at);
 });

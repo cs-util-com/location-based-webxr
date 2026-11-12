@@ -246,6 +246,7 @@ test("a 3D model and a sound added from the tree's menu stand in the tree, in 3D
   }
   // The files are on the panel again (named by their path in the tour: the
   // draft keeps the bytes, not the name they came in with).
+  await showFiles(page);
   await expect(shelf.locator(".as-card")).toHaveCount(cards);
   expect((await view3d(page))?.stations).toBe(3);
 });
@@ -443,7 +444,16 @@ test("the Assets panel sits where the chosen prototype puts it, on a desktop, a 
     name: "Files",
   });
   await expect(filesTab).toHaveAttribute("aria-selected", "false");
+  // The cards counted with Files shown (behind Details the shelf is out of
+  // the page), then Details shown again.
+  await filesTab.click();
+  await expect(page.locator("#shell-shelf")).toBeVisible();
   const before = await page.locator("#shell-shelf .as-card").count();
+  await page
+    .locator(".dock-host")
+    .getByRole("tab", { name: "Details", exact: true })
+    .click();
+  await expect(filesTab).toHaveAttribute("aria-selected", "false");
   await dropOnPage(page, [
     {
       name: "market-view.png",
@@ -513,4 +523,35 @@ test("the Assets panel sits where the chosen prototype puts it, on a desktop, a 
   for (const gap of cardGaps(layout)) expect(gap).toBeCloseTo(6, 0);
   expect(shownIn(layout, "#shell-shelf .as-foot")).toBe(false);
   await capture(page, "test-results/shelf-layout-phone.png");
+});
+
+// Why: docked, the shelf leaves the page while Details shows beside it
+// (the Files tab hidden). A file added then must still be listed and
+// optimized: the shelf's work is not tied to its element being shown.
+test("a file added while the docked Files tab is hidden is listed and done when Files shows", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await openSampleIn3d(page);
+  await dockSettled(page, 1440);
+  const host = page.locator(".dock-host");
+  await expect(
+    host.getByRole("tab", { name: "Details", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#shell-shelf")).toHaveCount(0);
+  await addFromMenu(page, "gate", "model", {
+    name: "little-arch.glb",
+    mimeType: "model/gltf-binary",
+    buffer: triangleGlb(),
+  });
+  await expect(
+    page.locator(".toast", { hasText: 'Added the 3D model "little arch"' }),
+  ).toBeVisible();
+  await expect(page.locator("#shell-shelf")).toHaveCount(0);
+  await showFiles(page);
+  const card = page
+    .locator("#shell-shelf .as-card")
+    .filter({ has: page.locator(".as-cname", { hasText: "little-arch.glb" }) });
+  await expect(card).toHaveCount(1);
+  await expect(card.locator(".as-cstate")).toHaveClass(/\b(ready|kept|idle)\b/);
 });
