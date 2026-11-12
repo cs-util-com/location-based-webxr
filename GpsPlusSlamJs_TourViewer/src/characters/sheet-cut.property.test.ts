@@ -55,6 +55,62 @@ describe("cutBackground and findFigures over varied sheets", () => {
       { numRuns: 12 },
     );
   });
+
+  // Why this test matters: the cut keeps a light grey figure only because
+  // its outline stops the background fill. The synthetic sheet once clipped
+  // pose 4's raised arm at a window narrower than the arm plus its outline,
+  // so the arm's tip touched the background without an outline; a random
+  // run then drew a grey fill whose noise reached the shadow floor and the
+  // fill took that pixel as shadow. This is that run's sheet.
+  it("keeps the arm tip of a light grey figure (seeded counterexample)", () => {
+    const width = 892;
+    const sheet = syntheticSheet({
+      width,
+      height: Math.round(width * 0.62),
+      figureShare: 0.5596745027124774,
+      fill: [166, 166, 168],
+      noise: 4,
+      seed: 788901,
+    });
+    const cut = cutBackground(sheet.image, CUT_SETTINGS);
+    const lost = sheet.truth.filter((t, i) => t === 1 && cut.alpha[i] === 0);
+    expect(lost.length).toBe(0);
+  });
+});
+
+// Why this test matters: the cut's tests assume every synthetic figure is
+// closed by its outline (the sidecar's "an outlined grey figure is safe at
+// every grey" rests on it). A figure pixel that is not outline ink but
+// touches the background means the generator drew an open figure, and a
+// failing cut test would then blame the cut for the generator's gap.
+describe("syntheticSheet", () => {
+  it("closes every figure with its outline", () => {
+    const width = 892;
+    const ink = 34;
+    for (const figureShare of [0.4, 0.56, 0.65]) {
+      const sheet = syntheticSheet({
+        width,
+        height: Math.round(width * 0.62),
+        figureShare,
+        fill: [190, 190, 190],
+      });
+      const d = sheet.image.data;
+      const t = sheet.truth;
+      let open = 0;
+      t.forEach((v, i) => {
+        const x = i % width;
+        const touches =
+          (x > 0 && t[i - 1] === 0) ||
+          (x < width - 1 && t[i + 1] === 0) ||
+          t[i - width] === 0 ||
+          t[i + width] === 0;
+        if (v === 1 && touches && d[i * 4] !== ink) {
+          open++;
+        }
+      });
+      expect(open).toBe(0);
+    }
+  });
 });
 
 // Why this test matters: the settings arrive from a page (sliders, a stored
