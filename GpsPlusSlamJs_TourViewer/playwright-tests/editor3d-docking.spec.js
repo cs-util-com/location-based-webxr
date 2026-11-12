@@ -739,6 +739,65 @@ test("a keyboard maximizes the docked group in use, its head in reach, and gives
   }
 });
 
+// Why: maximized over a keyboard, a panel's scrollers keep the 8 px they
+// leave below a field brought into sight, and where the layout runs on
+// under the keyboard they reach far enough for their last control to rise
+// above it (a margin alone does not lengthen a scroller).
+test("maximized over a keyboard, the scrollers keep their margin and their last control rises above the keyboard", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  for (const [width, height, kb] of [
+    [1024, 600, 300],
+    [844, 390, 274],
+  ]) {
+    const at = `at ${String(width)} x ${String(height)}, keyboard ${String(kb)}`;
+    await page.setViewportSize({ width, height });
+    if (width === 1024) {
+      await answerHosts(page);
+      await openSampleIn3d(page);
+      await page.addStyleTag({ content: ".toast { display: none; }" });
+      await page
+        .locator("#tree-body .card", { hasText: "The old gate" })
+        .locator(".pick")
+        .click();
+    }
+    await dockSettled(page, width);
+    await page.locator('#inspector-body [data-field="title"]').focus();
+    await keyboardOf(page, kb);
+    expect((await dockState(page)).max, at).toBe(true);
+    const reach = await page.evaluate((px) => {
+      const body = document.querySelector("#inspector-body");
+      if (body === null) return null;
+      const under = Number.parseFloat(
+        getComputedStyle(
+          /** @type {Element} */ (document.querySelector(".dock-host")),
+        ).getPropertyValue("--dock-under") || "0",
+      );
+      const all = [
+        ...body.querySelectorAll(
+          "button, input, select, textarea, [tabindex]:not([tabindex='-1'])",
+        ),
+      ].filter((e) => e.getClientRects().length > 0);
+      const last = all.at(-1);
+      if (last === undefined) return null;
+      last.scrollIntoView({ block: "end" });
+      return {
+        padding: getComputedStyle(body).scrollPaddingBottom,
+        under,
+        lastFoot: Math.round(last.getBoundingClientRect().bottom),
+        keyboardTop: innerHeight - px,
+      };
+    }, kb);
+    expect(reach, at).not.toBeNull();
+    if (reach === null) continue;
+    expect(reach.padding, at).toBe(`${String(8 + reach.under)}px`);
+    expect(reach.lastFoot, at).toBeLessThanOrEqual(reach.keyboardTop);
+    await keyboardOf(page, 0);
+    await expect.poll(async () => (await dockState(page)).max).toBe(false);
+  }
+});
+
 // Why: a docking module that fails to load is said once; every resize
 // asks for the layout again, and a toast each time would bury the page.
 test("a docking that fails to load is said once, not on every resize", async ({

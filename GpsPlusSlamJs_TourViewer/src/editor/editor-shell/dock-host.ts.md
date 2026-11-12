@@ -53,7 +53,12 @@ are not part of the page's first load.
     layout keeps its top (the panel's head and its buttons in sight) and
     runs on under the keyboard (`editor-shell.css`); `--dock-under` on
     the layout is how far, and the panels' scrollers stop a field brought
-    into sight that far above the layout's end (`scroll-padding-bottom`).
+    into sight that far, plus their usual 8 px, above the layout's end
+    (`scroll-padding-bottom`), and run that much longer (an empty
+    `::after`), so their last control can rise above the keyboard too.
+    What stands outside a scroller at the panel's foot (the list's
+    selection bar and its foot) stays under the keyboard while it is up:
+    the trade for the head in reach.
   - `dispose()` - every adopted element still in the layout back at its
     old place (parent and next sibling), the layout removed, `docked`
     taken off. A part removed meanwhile by the code that made it (the 3D view's canvas,

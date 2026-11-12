@@ -4142,6 +4142,18 @@ body[data-view="3d"] #toasts {
 #view3d.docked .dock-host.keyboard-max .dock-pane * {
   scroll-padding-bottom: var(--dock-under, 0px);
 }
+/* The scrollers keep their 8 px over it, and reach that much further: a
+ * margin alone does not lengthen a scroller, so a control at its content's
+ * very end could not otherwise rise above the keyboard. */
+#view3d.docked .dock-host.keyboard-max .dock-pane :is(.dbody, .pane) {
+  scroll-padding-bottom: calc(8px + var(--dock-under, 0px));
+}
+
+#view3d.docked .dock-host.keyboard-max .dock-pane :is(.dbody, .pane)::after {
+  display: block;
+  height: var(--dock-under, 0px);
+  content: "";
+}
 /* The layout never scrolls as a whole: a focus or a scroll into view in a
  * panel would otherwise shift the view box and every group in it, the tab
  * strips out of sight. Only a panel's own content scrolls. */
