@@ -2506,6 +2506,12 @@ async function main(): Promise<void> {
     // `layer-toggles.test.ts` holds the order to the screen.
     extrasBefore: {
       overlays: [el("category")],
+      // THE CITY LOOK, FOLDED. The colour scheme, invented roofs and zebras are
+      // build choices nobody switches often, so they sit with the furniture
+      // switch in a section that starts folded; spread through the header they
+      // wrapped the world group onto a second row at 1280 px. The scheme first,
+      // since it changes the whole picture; each status stays beside its control.
+      look: [el("colour-scheme-label"), el("colour-scheme-status")],
     },
     extrasAfter: {
       diagnostics: [el("perf-stats-label"), el("render-distance-label")],
@@ -2523,6 +2529,12 @@ async function main(): Promise<void> {
       // independently; this is one thing drawn three ways and is exclusive),
       // which is exactly why it needs the extras seam rather than the registry.
       world: [el("ground-mode-label")],
+      look: [
+        el("invented-roofs-label"),
+        el("invented-roofs-status"),
+        el("markings-label"),
+        el("markings-status"),
+      ],
     },
   });
   /**

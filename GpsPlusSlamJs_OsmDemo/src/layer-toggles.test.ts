@@ -8,7 +8,7 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { ALL_LAYERS } from "./layers.js";
+import { ALL_LAYERS, DEFAULT_LAYERS } from "./layers.js";
 import { attachLayerToggles, withLayerBusy } from "./layer-toggles.js";
 
 /**
@@ -384,11 +384,81 @@ describe("where an extra control lands inside its group", () => {
       "layer-buildings",
       "layer-trees",
       "layer-woods",
-      "layer-furniture",
       "layer-plates",
       "layer-tint",
       "layer-roads",
       "layer-poi",
     ]);
+  });
+});
+
+describe("the city-look section", () => {
+  /**
+   * WHY THESE TESTS MATTER. The city-look switches (furniture, plus the colour
+   * scheme, invented roofs and zebras the caller hands in) are long-term
+   * settings nobody toggles often, so they live in a section that STARTS
+   * FOLDED. Spread through the header they made the world group wrap at
+   * 1280 px, which took height from the canvas and moved the measured light
+   * numbers. A native `<details>` without `open` is the whole mechanism; if it
+   * became a plain box, or opened by default, the header would grow again and
+   * only a pixel-measuring e2e would notice.
+   */
+  beforeEach(() => {
+    document.body.replaceChildren();
+  });
+
+  it("is a <details> that starts folded, captioned by its <summary>", () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    attachLayerToggles({ container, onChange: () => {} });
+
+    const look = container.querySelector("#layer-group-look");
+    expect(look).toBeInstanceOf(HTMLDetailsElement);
+    expect((look as HTMLDetailsElement).open).toBe(false);
+    expect(look?.classList.contains("layer-group")).toBe(true);
+    const caption = look?.firstElementChild;
+    expect(caption?.tagName).toBe("SUMMARY");
+    expect(caption?.classList.contains("layer-group-label")).toBe(true);
+    expect(caption?.textContent).toBe("City look");
+  });
+
+  it("holds the furniture switch and the caller's look controls, in order", () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const extra = (id: string): HTMLElement => {
+      const node = document.createElement("span");
+      node.id = id;
+      return node;
+    };
+    attachLayerToggles({
+      container,
+      onChange: () => {},
+      extrasBefore: { look: [extra("scheme")] },
+      extrasAfter: { look: [extra("roofs")] },
+    });
+
+    const keys = [
+      ...(container.querySelector("#layer-group-look")?.children ?? []),
+    ].map((c) => c.querySelector("input")?.id || c.id || c.tagName);
+    expect(keys).toEqual(["SUMMARY", "scheme", "layer-furniture", "roofs"]);
+  });
+
+  it("still reports a switch inside the folded section to onChange", () => {
+    // The section is a child of the container, so the ONE delegated change
+    // listener still sees its switches; a second listener would be a second
+    // mechanism for the same thing.
+    const container = document.createElement("div");
+    document.body.append(container);
+    const seen: boolean[] = [];
+    const toggles = attachLayerToggles({
+      container,
+      onChange: (next) => seen.push(next.furniture),
+    });
+    toggles.render(DEFAULT_LAYERS);
+    const input = container.querySelector<HTMLInputElement>("#layer-furniture");
+    if (input === null) throw new Error("no furniture switch");
+    input.checked = !input.checked;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(seen).toEqual([input.checked]);
   });
 });

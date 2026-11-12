@@ -17,6 +17,7 @@ import {
   waitForRefresh,
   walkByMapClick,
   REPAINT,
+  openCityLook,
 } from "./fixtures.js";
 
 test.describe("the layer toggles", () => {
@@ -135,6 +136,7 @@ test.describe("the layer toggles", () => {
       const status = page.locator("#status");
       await expect(status).toContainText(/[1-9]\d* furniture/);
       const before = counts.overpassQuery;
+      await openCityLook(page);
       await page.locator("#layer-furniture").uncheck();
       await expect(status).not.toContainText(/\d+ furniture/);
       await expect(status).toContainText(/[1-9]\d* volumes/);
@@ -420,6 +422,8 @@ test.describe("the layer toggles", () => {
       // strongly blue-dominant, while the ground plane (0x3a4356), the buildings
       // (0xc8ccd8) and the plates (0x4a5468) are all near-neutral greys. A grey
       // pixel here is a surface that should not be drawn.
+      // The furniture switch sits in the folded city-look section.
+      await openCityLook(page);
       for (const layer of LAYERS) {
         const box = page.locator(`#layer-${layer}`);
         if (await box.isChecked()) await box.uncheck();

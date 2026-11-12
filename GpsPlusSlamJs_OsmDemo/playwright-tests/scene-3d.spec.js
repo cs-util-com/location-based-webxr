@@ -24,6 +24,7 @@ import {
   enableCellLayer,
   REPAINT,
   pinQuestClock,
+  openCityLook,
 } from "./fixtures.js";
 
 test.describe("the 3D view", () => {
@@ -1177,6 +1178,10 @@ async function underTheWorldSteps(page) {
       await panel.locator(".panel-close").click();
       await expect(panel).toBeHidden();
     }
+    // UNFOLDED BEFORE ANY MEASURING: the furniture switch below sits in the
+    // folded city-look section, and the sky-only page unfolds it too, so both
+    // pages compare frames under the same header height.
+    await openCityLook(page);
     await page.locator("#ground-mode").selectOption("none");
     // EVERY GROUND-HUGGING LAYER OFF, so what is left is the question actually
     // being asked. The affordance grid is DoubleSide and traces the terrain, so
@@ -1302,6 +1307,7 @@ async function skyOnlyFrameAfter(page, steps) {
     await stubNetwork(sky);
     await sky.goto(AT_FIXTURE);
     await waitForRefresh(sky);
+    await openCityLook(sky);
     await sky.locator("#ground-mode").selectOption("none");
     for (const layer of [
       "cells",
@@ -1674,6 +1680,7 @@ test.describe("the colour schemes (colour schemes plan 2026-11-10-0841)", () => 
     const base = `/?lat=${50.9231}&lng=${6.9445}&date=2026-06-21&time=12:00`;
     await page.goto(base);
     await waitForRefresh(page);
+    await openCityLook(page);
     await installFrameProbe(page);
     const select = page.locator("#colour-scheme");
     const status = page.locator("#colour-scheme-status");
@@ -1746,6 +1753,7 @@ test.describe("the read-only boot overrides (roofs, markings, furniture)", () =>
     await page.goto(`${base}&roofs=off`);
     await waitForRefresh(page);
     await expect(box).not.toBeChecked();
+    await openCityLook(page);
     await box.check();
     await expect(status).toHaveText("");
     await expect(box).toBeEnabled();
@@ -1755,6 +1763,7 @@ test.describe("the read-only boot overrides (roofs, markings, furniture)", () =>
     await page.goto(base);
     await waitForRefresh(page);
     await expect(box).toBeChecked();
+    await openCityLook(page);
     await box.uncheck();
     await expect(status).toHaveText("");
     await expect(box).toBeEnabled();
@@ -1776,6 +1785,7 @@ test.describe("the read-only boot overrides (roofs, markings, furniture)", () =>
     await page.goto(`${base}&markings=off`);
     await waitForRefresh(page);
     await expect(box).not.toBeChecked();
+    await openCityLook(page);
     await box.check();
     await expect(status).toHaveText("");
     await expect(box).toBeEnabled();
@@ -1785,6 +1795,7 @@ test.describe("the read-only boot overrides (roofs, markings, furniture)", () =>
     await page.goto(base);
     await waitForRefresh(page);
     await expect(box).toBeChecked();
+    await openCityLook(page);
     await box.uncheck();
     await expect(status).toHaveText("");
     await expect(box).toBeEnabled();
@@ -1806,9 +1817,57 @@ test.describe("the read-only boot overrides (roofs, markings, furniture)", () =>
     const status = page.locator("#status");
     await expect(box).not.toBeChecked();
     await expect(status).not.toContainText(/\d+ furniture/);
+    await openCityLook(page);
     await box.check();
     await expect(status).toContainText(/[1-9]\d* furniture/);
     await expect(page).toHaveURL(/[?&]furniture=off(&|$)/);
+  });
+});
+
+test.describe("the city-look section", () => {
+  // WHY THIS TEST MATTERS: the city-look settings are long-term choices, so
+  // they start FOLDED; unfolded across the header they wrapped it onto a
+  // second row at 1280 px, which took height from the canvas and moved the
+  // measured light. This pins that the section starts folded with its
+  // controls hidden, and that after unfolding it every switch still
+  // rebuilds and ends on its echo, as it did loose in the header.
+  test("starts folded, and after unfolding every switch still rebuilds", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    await page.goto(`/?lat=${50.9231}&lng=${6.9445}`);
+    await waitForRefresh(page);
+    const section = page.locator("#layer-group-look");
+    await expect(section).toBeVisible();
+    await expect(section).not.toHaveAttribute("open", "");
+    for (const id of [
+      "#colour-scheme",
+      "#invented-roofs",
+      "#markings",
+      "#layer-furniture",
+    ]) {
+      await expect(page.locator(id)).toBeHidden();
+    }
+
+    await openCityLook(page);
+    for (const [box, status] of [
+      ["#invented-roofs", "#invented-roofs-status"],
+      ["#markings", "#markings-status"],
+    ]) {
+      await page.locator(box).uncheck();
+      await expect(page.locator(status)).toHaveText("");
+      await expect(page.locator(box)).toBeEnabled();
+      await expect(page.locator(box)).not.toBeChecked();
+    }
+    const select = page.locator("#colour-scheme");
+    await select.selectOption("night");
+    await expect(page).toHaveURL(/[?&]scheme=night(&|$)/);
+    await expect(page.locator("#colour-scheme-status")).toHaveText("");
+    await expect(select).toBeEnabled();
+    const status = page.locator("#status");
+    await expect(status).toContainText(/[1-9]\d* furniture/);
+    await page.locator("#layer-furniture").uncheck();
+    await expect(status).not.toContainText(/\d+ furniture/);
   });
 });
 

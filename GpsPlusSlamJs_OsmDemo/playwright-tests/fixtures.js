@@ -1210,3 +1210,23 @@ export async function resetUi(page, baseline) {
     await waitForRefresh(page);
   }
 }
+
+/**
+ * Unfolds the header's "City look" section, so its controls can be clicked.
+ *
+ * WHY THIS EXISTS: the colour scheme, invented roofs, zebras and the furniture
+ * switch live in a `<details>` that starts folded, and Playwright refuses to
+ * click or select a control that is not visible. Every test that changes one
+ * of them goes through this one helper rather than repeating the click, so the
+ * section's markup is named in one place. A no-op when already unfolded; a
+ * page load folds it again.
+ *
+ * @param {import('@playwright/test').Page} page
+ */
+export async function openCityLook(page) {
+  const section = page.locator("#layer-group-look");
+  if ((await section.getAttribute("open")) === null) {
+    await section.locator("summary").click();
+  }
+  await expect(section).toHaveAttribute("open", "");
+}

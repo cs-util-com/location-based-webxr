@@ -21,6 +21,17 @@ switch without depending on DOM order.
   the grouping is not decoration: the three groups answer three different
   questions — what is the affordance analysis claiming, what is in the world, and
   what am I inspecting the renderer with.
+- **A fourth group, "City look", starts FOLDED.** It holds the furniture
+  switch, and `main.ts` hands it the colour scheme, invented roofs and zebras
+  through the same extras seam. It is a native `<details>` without `open`,
+  captioned by a `<summary class="layer-group-label">`, so the browser does the
+  folding (`FOLDED_GROUPS`); the other groups stay `<div>` boxes with a `<span>`
+  caption. Not remembered across reloads, like the header collapse. Why folded:
+  these are long-term choices, and spread through the header they wrapped the
+  world group onto a second row at 1280 px, which took height from the canvas.
+  The section is inside the container, so the one delegated `change` listener
+  still sees its switch. The e2e suite unfolds it through `openCityLook` in
+  `playwright-tests/fixtures.js`.
 - **THE IDS ARE THE CONTRACT.** Every switch keeps `#layer-<name>`; the e2e suite
   locates them that way, so the regrouping moved elements without renaming any.
 - **`extrasBefore` / `extrasAfter` put a non-layer control in a group**, above
@@ -153,8 +164,8 @@ is set and nothing happens.
 
 ## `furniture` joins `world` (objects M5, 2026-11-11)
 
-- Label "furniture", after "woods": mapped street lamps and bollards
-  (benches and bins stay with "poi"). Default on.
+- Label "furniture": mapped street lamps and bollards (benches and bins stay
+  with "poi"). Default on. In the folded "City look" group, not `world`.
 
 ## Since S3 (colour schemes plan 2026-11-10-0841)
 

@@ -204,6 +204,12 @@ None. Entry point only, loaded by `index.html`.
     query, which is why `cameraQuery` updates its keys in place rather than
     deleting and re-appending them.
 
+- **The city-look controls are folded.** The colour scheme (with its
+  status), the furniture switch, the invented roofs and the zebras (each with
+  its status) sit in the "City look" section of `layer-toggles.ts`, which
+  starts folded; `main.ts` hands the non-layer ones in through
+  `extrasBefore.look` / `extrasAfter.look`. The boot overrides below are
+  unchanged.
 - **`?furniture=off`** boots the street furniture layer off
   (`initialLayers`); a read-only boot override like `?roofs=off`. The status
   line counts the built lamps and bollards as `N furniture`.

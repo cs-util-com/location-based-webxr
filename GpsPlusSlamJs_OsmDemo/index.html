@@ -976,6 +976,18 @@
       .layer-toggle {
         white-space: nowrap;
       }
+      /* THE FOLDED CITY-LOOK GROUP (a native `<details>`, built by
+         `layer-toggles.ts`): its caption is the `<summary>` that unfolds it,
+         and the unfolded controls lay out like any other group's. */
+      #layer-group-look > summary {
+        cursor: pointer;
+      }
+      #layer-group-look::details-content {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.45rem;
+      }
       /* IN PROGRESS (F58): enabling the cell layer refetches, measured at ~1.9 s.
          Dimmed and non-interactive, never hidden -- a control that disappears
          reads as a bug.
@@ -1028,13 +1040,8 @@
       header[data-collapsed="true"] .hint,
       header[data-collapsed="true"] #status,
       header[data-collapsed="true"] #ground-mode-label,
-      header[data-collapsed="true"] #colour-scheme-label,
-      header[data-collapsed="true"] #colour-scheme-status,
-      header[data-collapsed="true"] #invented-roofs-label,
-      header[data-collapsed="true"] #invented-roofs-status,
-      header[data-collapsed="true"] #markings-label,
-      header[data-collapsed="true"] #markings-status,
       header[data-collapsed="true"] #layer-group-world,
+      header[data-collapsed="true"] #layer-group-look,
       header[data-collapsed="true"] #layer-group-diagnostics,
       header[data-collapsed="true"] #sun-group {
         display: none;

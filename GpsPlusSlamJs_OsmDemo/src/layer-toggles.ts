@@ -35,7 +35,12 @@ import {
 // Not exported: the group name reaches this module through
 // `LayerTogglesOptions`, which is the only way a caller ever names a group, and
 // knip is right that a second public name earns nothing.
-type LayerGroup = "overlays" | "world" | "diagnostics";
+//
+// `look` is the fourth: the city-look settings (furniture, and the colour
+// scheme, invented roofs and zebras the caller hands in). They are long-term
+// choices nobody switches often, so that group renders FOLDED (see
+// `FOLDED_GROUPS`).
+type LayerGroup = "overlays" | "world" | "diagnostics" | "look";
 
 /**
  * Which group each layer belongs to. Exhaustive over the union by construction:
@@ -47,7 +52,7 @@ const GROUP_OF: Readonly<Record<LayerKind, LayerGroup>> = {
   buildings: "world",
   trees: "world",
   woods: "world",
-  furniture: "world",
+  furniture: "look",
   plates: "world",
   tint: "world",
   roads: "world",
@@ -67,7 +72,19 @@ const GROUP_LABELS: readonly (readonly [LayerGroup, string])[] = [
   ["overlays", "Category"],
   ["world", "world"],
   ["diagnostics", "debug"],
+  ["look", "City look"],
 ];
+
+/**
+ * Groups that render as a native `<details>` without `open`, so they start
+ * folded and the browser does the folding.
+ *
+ * WHY. Spread through the header, the city-look switches made the world group
+ * wrap onto a second row at 1280 px, which took height from the canvas. Folded,
+ * the group is one caption wide. Not remembered across reloads, like the
+ * header's own collapse.
+ */
+const FOLDED_GROUPS: ReadonlySet<LayerGroup> = new Set(["look"]);
 
 export interface LayerTogglesOptions {
   readonly container: HTMLElement;
@@ -205,10 +222,12 @@ export function attachLayerToggles(options: LayerTogglesOptions): LayerToggles {
   };
 
   for (const [group, caption] of GROUP_LABELS) {
-    const box = document.createElement("div");
+    const folded = FOLDED_GROUPS.has(group);
+    const box = document.createElement(folded ? "details" : "div");
     box.className = "layer-group";
     box.id = `layer-group-${group}`;
-    const title = document.createElement("span");
+    // A folded group's caption is its `<summary>`, the element that unfolds it.
+    const title = document.createElement(folded ? "summary" : "span");
     title.className = "layer-group-label";
     title.textContent = caption;
     box.append(title);
