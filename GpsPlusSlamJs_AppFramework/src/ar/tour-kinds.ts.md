@@ -92,3 +92,9 @@ tourBlockMinor({ kind: 'model', view: 'placed' }); // 0
 a synthetic list). `tour-blocks.test.ts` and `tour-blocks.property.test.ts`
 cover what each row reads; `item-contract.test.ts` in the Tour Viewer holds
 every kind to what its views owe.
+
+A short text's views are `pin`, `sign`, `edgeHint` (all free and
+drawn in the world) and `card`; its look fields (role, orientation,
+reading distance, a point it points to, language, the ground view's style,
+bend and colours) are read by `tour-short-text.ts` in every view, so a
+view switch keeps them.

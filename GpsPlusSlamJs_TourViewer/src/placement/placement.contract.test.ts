@@ -79,6 +79,8 @@ const EXPECTED: readonly (readonly [
   string | null,
 ])[] = [
   ["shortText", "pin", true, false, null],
+  ["shortText", "sign", true, true, null],
+  ["shortText", "edgeHint", true, false, null],
   ["shortText", "card", false, false, null],
   ["longText", "lectern", true, true, null],
   ["longText", "reading", true, false, null],

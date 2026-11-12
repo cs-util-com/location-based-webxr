@@ -350,6 +350,14 @@ function extentOf(
   };
 }
 
+/** A short text as its panel shows it: its view, and its role and turn
+ *  (null: the reader's default). */
+export interface InspectorShortText {
+  readonly view: string;
+  readonly role: string | null;
+  readonly orientation: string | null;
+}
+
 /** A model's own parts as its inspector edits them. */
 export interface InspectorModelParts {
   readonly view: string;
@@ -435,6 +443,9 @@ interface ItemInspector {
   /** A model's view, notes, sections and clip; null for a pin or a
    *  photo. */
   readonly model: InspectorModelParts | null;
+  /** A short text's view and the choices its panel shows; absent for any
+   *  other item. */
+  readonly shortText?: InspectorShortText;
   /** A long text's writer's data; null for any other item. */
   readonly longText: InspectorLongText | null;
   /** In its station's frame (m), its folders composed in: where it stands
@@ -973,6 +984,15 @@ export function buildInspector(input: {
       text: item.kind === "shortText" ? item.caption : null,
       extent: extentOf(item, place?.extent ?? null),
       fields: blockFields(item),
+      ...(item.kind === "shortText"
+        ? {
+            shortText: {
+              view: item.view,
+              role: item.role ?? null,
+              orientation: item.orientation ?? null,
+            },
+          }
+        : {}),
       model:
         item.kind === "model"
           ? {

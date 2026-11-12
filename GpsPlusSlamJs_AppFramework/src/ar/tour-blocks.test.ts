@@ -414,7 +414,7 @@ describe('ids', () => {
 describe('views', () => {
   it('lists the views this reader draws, per kind', () => {
     expect(TOUR_BLOCK_VIEWS).toEqual({
-      shortText: ['pin', 'card'],
+      shortText: ['pin', 'sign', 'edgeHint', 'card'],
       longText: ['lectern', 'reading', 'card'],
       picture: ['plane', 'card'],
       video: ['card'],
@@ -502,7 +502,7 @@ describe('views', () => {
 describe('a file of a newer minor (lenient)', () => {
   it('a story block in an unknown view falls back to card', () => {
     const drops: TourBlockDrop[] = [];
-    const [block] = parse([{ ...VALID.shortText, view: 'sign' }], {
+    const [block] = parse([{ ...VALID.shortText, view: 'billboard' }], {
       lenient: true,
       drops,
     });
@@ -510,7 +510,7 @@ describe('a file of a newer minor (lenient)', () => {
   });
 
   it("a free block in an unknown view falls back to its kind's world view", () => {
-    const [pin] = parse([{ ...VALID.shortText, view: 'sign' }], {
+    const [pin] = parse([{ ...VALID.shortText, view: 'billboard' }], {
       lenient: true,
       shown: [],
     });
@@ -624,7 +624,7 @@ describe('the exact words a tour author reads, and shapes coerced into valid one
       '"blocks[0].widthM" must be a number of metres from 0.05 to 50'
     );
     expect(() => one('shortText', { view: 'plane' })).toThrow(
-      '"blocks[0].view" must be pin, card for a shortText'
+      '"blocks[0].view" must be pin, sign, edgeHint, card for a shortText'
     );
     expect(() => one('shortText', { createdAtIso: 'yesterday' })).toThrow(
       '"blocks[0].createdAtIso" must be an ISO-8601 timestamp'
@@ -702,6 +702,8 @@ describe("a model's views, notes, sections and clip", () => {
     }
     expect([...TOUR_WORLD_VIEWS]).toEqual([
       'pin',
+      'sign',
+      'edgeHint',
       'lectern',
       'reading',
       'plane',

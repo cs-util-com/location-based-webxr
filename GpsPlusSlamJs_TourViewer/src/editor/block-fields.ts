@@ -106,29 +106,32 @@ function numberOf(block: AnyBlock, name: string): number | undefined {
 /** The fields the inspector types for `block`, besides a short text's
  *  caption (the head's). */
 export function blockFields(block: AnyBlock): BlockField[] {
-  return ownFields(block).map((spec) => {
-    if (spec.number !== undefined) {
-      const n = numberOf(block, spec.name);
+  // A choice is the kind's panel's, on chips: never a box to type in.
+  return ownFields(block)
+    .flatMap((spec) => (spec.choices === undefined ? [spec] : []))
+    .map((spec) => {
+      if (spec.number !== undefined) {
+        const n = numberOf(block, spec.name);
+        return {
+          name: spec.name,
+          label: spec.label,
+          prose: false,
+          value: n === undefined ? "" : String(n),
+          required: spec.number.required,
+          number: { unit: spec.number.unit },
+        };
+      }
+      const rule = ruleOf(block.kind, spec.name);
       return {
         name: spec.name,
         label: spec.label,
-        prose: false,
-        value: n === undefined ? "" : String(n),
-        required: spec.number.required,
-        number: { unit: spec.number.unit },
+        prose: spec.prose,
+        value: textOf(block, spec.name),
+        max: rule.max,
+        unit: rule.unit,
+        required: rule.required,
       };
-    }
-    const rule = ruleOf(block.kind, spec.name);
-    return {
-      name: spec.name,
-      label: spec.label,
-      prose: spec.prose,
-      value: textOf(block, spec.name),
-      max: rule.max,
-      unit: rule.unit,
-      required: rule.required,
-    };
-  });
+    });
 }
 
 /** The fields the station's inspector types for `block`, one its story
@@ -179,6 +182,9 @@ export function blockFieldEdit<B extends AnyBlock>(
   if (spec === undefined) return { kind: "unchanged" };
   if (spec.number !== undefined) {
     return numberFieldEdit(block, spec.label, name, spec.number, value);
+  }
+  if (spec.choices !== undefined) {
+    return choiceFieldEdit(block, spec.label, name, spec.choices, value);
   }
   const text = value.trim();
   if (text === textOf(block, name)) return { kind: "unchanged" };
@@ -240,6 +246,36 @@ function numberFieldEdit<B extends AnyBlock>(
       reason: "Full volume within must be less than the reach.",
     };
   }
+  return { kind: "edited", after: rest as unknown as B };
+}
+
+/** What choosing `value` for a choice field writes (`blockFieldEdit`):
+ *  one of its `choices`, or none for a blank one (the reader's default). */
+function choiceFieldEdit<B extends AnyBlock>(
+  block: B,
+  label: string,
+  name: string,
+  choices: NonNullable<FieldSpec["choices"]>,
+  value: string,
+):
+  | { readonly kind: "edited"; readonly after: B }
+  | { readonly kind: "unchanged" }
+  | { readonly kind: "refused"; readonly reason: string } {
+  const rest = { ...(block as unknown as Record<string, unknown>) };
+  const was = rest[name];
+  if (value === "") {
+    if (was === undefined) return { kind: "unchanged" };
+    delete rest[name];
+    return { kind: "edited", after: rest as unknown as B };
+  }
+  if (!choices.some((c) => c.value === value)) {
+    return {
+      kind: "refused",
+      reason: `${label} is one of ${choices.map((c) => c.label).join(", ")}.`,
+    };
+  }
+  if (was === value) return { kind: "unchanged" };
+  rest[name] = value;
   return { kind: "edited", after: rest as unknown as B };
 }
 

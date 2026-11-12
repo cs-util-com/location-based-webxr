@@ -237,3 +237,7 @@ before the page goes (partial on Android; the draft survives the rest).
 - Hands the stations the radar's elements (`walk.radar`) and the peek's
   arrow and text (`distanceArrow` through `svgElement`, `distanceText`),
   and the AR entry the walk's `debugLines`.
+
+## World parts per frame
+
+The frame loop calls `tickWorldParts` with the window's height, so world parts that stand on the screen get their metres per pixel.

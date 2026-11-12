@@ -25,6 +25,7 @@ import { longTextPanel } from "../long-text/long-text-panel.js";
 import type { ModelFocus, ModelPick } from "../editor-view.js";
 import type { KindPanel, KindPanelDraw } from "./kind-panel.js";
 import { createModelPanel } from "./model-panel.js";
+import { createShortTextPanel } from "./short-text-panel.js";
 
 /** What the shell gives a kind's panel: its page, its edits and its
  *  words. */
@@ -84,6 +85,14 @@ function model(ctx: PanelContext): KindPanel {
   });
 }
 
+/** A short text's panel: its view, role and turn. */
+function shortText(ctx: PanelContext): KindPanel {
+  return createShortTextPanel({
+    view: (id, view) => ctx.edits.view(id, view),
+    block: (id, field, value) => ctx.edits.block(id, field, value),
+  });
+}
+
 /** A kind's panel maker, or null for a kind without one. */
 type KindPanelList = {
   readonly [K in TourBlockKind]: ((ctx: PanelContext) => KindPanel) | null;
@@ -91,7 +100,7 @@ type KindPanelList = {
 
 /** THE list, in the format's order. */
 export const KIND_PANELS = {
-  shortText: null,
+  shortText,
   longText,
   picture: null,
   video: null,

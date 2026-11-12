@@ -45,3 +45,7 @@ if (panels.act(act, model, selected)) draw();
 ## Tests
 
 `kind-panels.test.ts`: the list's keys equal `tourBlockKinds()`, routing and placement in the dock. Through the shell: `../editor-shell/editor-shell.test.ts` (model acts, the long text's preview and save while typing).
+
+## Short text
+
+`shortText` has a panel (`short-text-panel.ts`): the view, role and turn chips, writing through the shell's view and block edits.
