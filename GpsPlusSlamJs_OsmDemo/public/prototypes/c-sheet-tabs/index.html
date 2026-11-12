@@ -1,0 +1,1131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>OSM demo HUD - C: tabs on the sheet</title>
+    <meta
+      name="description"
+      content="Throwaway HUD prototype for the OSM demo: the map pane becomes a tabbed panel, settings briefly replace the map, the 3D view stays untouched."
+    />
+    <link rel="stylesheet" href="sheet-tabs.css" />
+  </head>
+  <body>
+    <div class="app" id="app">
+      <!-- The 3D view. A drawn placeholder; the only HUD on it is the strip. -->
+      <section id="scene" class="scene" aria-label="3D view">
+        <svg
+          class="scene-art"
+          id="scene-art"
+          viewBox="0 0 800 500"
+          preserveAspectRatio="xMidYMid slice"
+          aria-hidden="true"
+        >
+          <defs>
+            <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#11131a" />
+              <stop offset="0.7" stop-color="#2b3a63" />
+              <stop offset="1" stop-color="#5b5f8f" />
+            </linearGradient>
+            <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#2a3040" />
+              <stop offset="1" stop-color="#161a24" />
+            </linearGradient>
+            <radialGradient id="npc-glow">
+              <stop offset="0" stop-color="#f2971f" stop-opacity="0.8" />
+              <stop offset="1" stop-color="#f2971f" stop-opacity="0" />
+            </radialGradient>
+          </defs>
+          <rect x="0" y="0" width="800" height="210" fill="url(#sky)" />
+          <rect
+            id="ground-rect"
+            x="0"
+            y="210"
+            width="800"
+            height="290"
+            fill="url(#ground)"
+          />
+          <g id="hexes" class="hexes"></g>
+          <g id="buildings"></g>
+          <g id="npc">
+            <circle cx="430" cy="372" r="16" fill="url(#npc-glow)" />
+            <circle cx="430" cy="372" r="5" fill="#f2971f" />
+          </g>
+        </svg>
+
+        <!-- The two-control strip: category and cells, the only chrome on 3D. -->
+        <div class="strip plate" id="scene-strip" data-hud>
+          <div class="strip-row">
+            <label class="sr-only" for="category">Category</label>
+            <select id="category" class="select" aria-label="category">
+              <option value="battleArea">Battle area</option>
+              <option value="restingArea">Resting area</option>
+              <option value="spawnPoint">Spawn point</option>
+            </select>
+            <label class="switch" id="cells-switch">
+              <input type="checkbox" id="layer-cells" />
+              <span class="switch-track" aria-hidden="true"></span>
+              <span class="switch-text">cells</span>
+            </label>
+          </div>
+          <div class="strip-legend" id="strip-legend" hidden>
+            <span class="legend-name" data-mirror="category-id"
+              >battleArea</span
+            >
+            <span class="num">1</span>
+            <span class="legend-ramp" aria-hidden="true"></span>
+            <span class="num">10 000</span>
+            <span class="legend-extra">max here 6400 · 1933 above</span>
+          </div>
+        </div>
+
+        <div
+          id="loading-overlay"
+          class="loading plate"
+          role="status"
+          aria-live="polite"
+          hidden
+        >
+          <p class="loading-text">
+            Fetching and scoring around 50.92310, 6.94450...
+          </p>
+          <div class="loading-bar"><span></span></div>
+        </div>
+      </section>
+
+      <!-- The sheet (phone) / left pane (desktop) / right panel (landscape). -->
+      <section id="sheet" class="sheet" aria-label="Map and settings">
+        <button
+          type="button"
+          class="sheet-handle"
+          id="sheet-handle"
+          aria-label="Resize the panel (drag, or arrow keys)"
+        >
+          <span aria-hidden="true"></span>
+        </button>
+
+        <div class="tabs" role="tablist" aria-label="Map and settings">
+          <button
+            type="button"
+            role="tab"
+            class="tab"
+            id="tab-map"
+            data-tab="map"
+            aria-controls="panel-map"
+            aria-selected="true"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2zm0 0v14m6-12v14"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linejoin="round"
+              />
+            </svg>
+            <span class="tab-label">Map</span>
+            <span class="tab-dot" aria-hidden="true"></span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="tab"
+            id="tab-analysis"
+            data-tab="analysis"
+            aria-controls="panel-analysis"
+            aria-selected="false"
+            tabindex="-1"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="m7 3 4 2.3v4.6L7 12.2 3 9.9V5.3L7 3zm10 0 4 2.3v4.6l-4 2.3-4-2.3V5.3L17 3zM12 11.8l4 2.3v4.6L12 21l-4-2.3v-4.6l4-2.3z"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linejoin="round"
+              />
+            </svg>
+            <span class="tab-label">Analysis</span>
+            <span class="tab-dot" aria-hidden="true"></span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="tab"
+            id="tab-world"
+            data-tab="world"
+            aria-controls="panel-world"
+            aria-selected="false"
+            tabindex="-1"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M12 3 3 8l9 5 9-5-9-5zm-9 9 9 5 9-5M3 16l9 5 9-5"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linejoin="round"
+              />
+            </svg>
+            <span class="tab-label">World</span>
+            <span class="tab-dot" aria-hidden="true"></span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="tab"
+            id="tab-look"
+            data-tab="look"
+            aria-controls="panel-look"
+            aria-selected="false"
+            tabindex="-1"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M12 3a9 9 0 0 0 0 18c1.4 0 2-1 1.5-2.2-.6-1.4.3-2.8 1.8-2.8H18a3 3 0 0 0 3-3c0-5.5-4-10-9-10z"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+              />
+              <circle cx="7.5" cy="11" r="1.4" fill="currentColor" />
+              <circle cx="10.5" cy="7" r="1.4" fill="currentColor" />
+              <circle cx="15.5" cy="8" r="1.4" fill="currentColor" />
+            </svg>
+            <span class="tab-label">Look</span>
+            <span class="tab-dot" aria-hidden="true"></span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="tab"
+            id="tab-sun"
+            data-tab="sun"
+            aria-controls="panel-sun"
+            aria-selected="false"
+            tabindex="-1"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle
+                cx="12"
+                cy="12"
+                r="4"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+              />
+              <path
+                d="M12 2v3m0 14v3M2 12h3m14 0h3M4.9 4.9 7 7m10 10 2.1 2.1M4.9 19.1 7 17m10-10 2.1-2.1"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+              />
+            </svg>
+            <span class="tab-label">Sun</span>
+            <span class="tab-dot" aria-hidden="true"></span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="tab"
+            id="tab-info"
+            data-tab="info"
+            aria-controls="panel-info"
+            aria-selected="false"
+            tabindex="-1"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle
+                cx="12"
+                cy="12"
+                r="9"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+              />
+              <path
+                d="M12 11v6"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+              />
+              <circle cx="12" cy="7.6" r="1.3" fill="currentColor" />
+            </svg>
+            <span class="tab-label">Info</span>
+            <span class="tab-dot" aria-hidden="true"></span>
+          </button>
+        </div>
+
+        <div class="sheet-body" id="sheet-body">
+          <!-- MAP -->
+          <div
+            role="tabpanel"
+            id="panel-map"
+            class="panel panel-map"
+            aria-labelledby="tab-map"
+          >
+            <div id="map" class="map" aria-label="map">
+              <svg
+                class="map-art"
+                viewBox="0 0 400 300"
+                preserveAspectRatio="xMidYMid slice"
+                aria-hidden="true"
+              >
+                <rect width="400" height="300" fill="#cfe8bf" />
+                <path
+                  d="M0 210 C 90 190 160 240 260 200 S 380 170 400 180"
+                  stroke="#f4f1e8"
+                  stroke-width="9"
+                  fill="none"
+                />
+                <path
+                  d="M120 0 L 150 300"
+                  stroke="#f4f1e8"
+                  stroke-width="6"
+                  fill="none"
+                />
+                <polygon
+                  points="200,60 290,112 290,216 200,268 110,216 110,112"
+                  fill="none"
+                  stroke="#2f6f4f"
+                  stroke-width="2"
+                  stroke-dasharray="6 4"
+                />
+                <g id="map-cells" class="hexes"></g>
+                <circle cx="200" cy="164" r="12" fill="#2b7de9" opacity="0.2" />
+                <circle
+                  cx="200"
+                  cy="164"
+                  r="6"
+                  fill="#2b7de9"
+                  stroke="#fff"
+                  stroke-width="2"
+                />
+              </svg>
+
+              <div class="map-row">
+                <label class="field-inline">
+                  <span class="cap">Place</span>
+                  <select id="site" class="select" aria-label="location">
+                    <option value="" disabled>Jump to City</option>
+                    <option>New York</option>
+                    <option selected>Cologne</option>
+                    <option>Tokyo</option>
+                    <option>London - Tower Bridge</option>
+                    <option>London - Westminster</option>
+                    <option>Paris</option>
+                    <option>San Francisco</option>
+                    <option>Sydney</option>
+                    <option>Porto</option>
+                    <option>Rome</option>
+                    <option>Barcelona</option>
+                    <option>Venice</option>
+                    <option>Hong Kong</option>
+                    <option>Rio de Janeiro</option>
+                  </select>
+                </label>
+                <div class="quest-group">
+                  <button
+                    type="button"
+                    class="btn"
+                    id="geo-event"
+                    aria-controls="geo-event-picker"
+                    aria-expanded="false"
+                  >
+                    Show Quests
+                  </button>
+                  <span class="badge" id="quest-readout" hidden>340 m SW</span>
+                </div>
+              </div>
+
+              <div class="zoom" aria-label="zoom">
+                <button type="button" aria-label="Zoom in">+</button>
+                <button type="button" aria-label="Zoom out">-</button>
+              </div>
+
+              <section
+                id="geo-event-picker"
+                class="quest-picker plate"
+                aria-label="Find an event at"
+                hidden
+              >
+                <h3 class="cap">Find an event at</h3>
+                <div class="picker-fields">
+                  <input
+                    type="date"
+                    class="input"
+                    value="2026-09-23"
+                    aria-label="event date"
+                  />
+                  <input
+                    type="time"
+                    class="input"
+                    value="15:47"
+                    aria-label="event time"
+                  />
+                </div>
+                <div class="picker-actions">
+                  <button type="button" class="btn btn--small" id="quest-again">
+                    Search again
+                  </button>
+                  <button type="button" class="btn btn--small" id="quest-clear">
+                    Clear event
+                  </button>
+                </div>
+                <p class="picker-error" aria-live="polite"></p>
+              </section>
+
+              <div class="map-controls">
+                <button
+                  type="button"
+                  id="enter-ar"
+                  class="map-square map-square--ar"
+                  hidden
+                >
+                  AR
+                </button>
+                <button
+                  type="button"
+                  class="map-square locate-button"
+                  aria-label="Locate me"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"
+                      fill="currentColor"
+                    />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ANALYSIS -->
+          <div
+            role="tabpanel"
+            id="panel-analysis"
+            class="panel"
+            aria-labelledby="tab-analysis"
+            hidden
+          >
+            <div class="page">
+              <section class="group">
+                <h2 class="group-title">What is scored</h2>
+                <p class="group-lead">
+                  The category decides what the cells, the regions and the
+                  legend show. The same choice sits on the 3D view.
+                </p>
+                <div
+                  class="choice-list"
+                  role="radiogroup"
+                  aria-label="category"
+                  id="category-list"
+                >
+                  <label class="choice">
+                    <input type="radio" name="cat" value="battleArea" checked />
+                    <span class="choice-main">Battle area</span>
+                    <code class="choice-id">battleArea</code>
+                  </label>
+                  <label class="choice">
+                    <input type="radio" name="cat" value="restingArea" />
+                    <span class="choice-main">Resting area</span>
+                    <code class="choice-id">restingArea</code>
+                  </label>
+                  <label class="choice">
+                    <input type="radio" name="cat" value="spawnPoint" />
+                    <span class="choice-main">Spawn point</span>
+                    <code class="choice-id">spawnPoint</code>
+                  </label>
+                </div>
+              </section>
+
+              <section class="group">
+                <h2 class="group-title">Shown on the map and the 3D view</h2>
+                <label class="row">
+                  <span class="row-text">
+                    <span class="row-label">Cells</span>
+                    <span class="row-hint"
+                      >The heat grid: one hexagon per scored cell. Turning it on
+                      fetches the scores (about two seconds).</span
+                    >
+                  </span>
+                  <span class="switch">
+                    <input
+                      type="checkbox"
+                      data-mirror-of="layer-cells"
+                      aria-label="cells (mirror)"
+                    />
+                    <span class="switch-track" aria-hidden="true"></span>
+                  </span>
+                </label>
+                <label class="row">
+                  <span class="row-text">
+                    <span class="row-label">Areas</span>
+                    <span class="row-hint"
+                      >Merged regions of high-scoring cells, drawn as
+                      outlines.</span
+                    >
+                  </span>
+                  <span class="switch">
+                    <input type="checkbox" id="layer-areas" checked />
+                    <span class="switch-track" aria-hidden="true"></span>
+                  </span>
+                </label>
+                <label class="row" id="show-below-label">
+                  <span class="row-text">
+                    <span class="row-label">Below threshold</span>
+                    <span class="row-hint" id="show-below-hint"
+                      >Needs cells. Turn cells on to also draw cells under the
+                      bar.</span
+                    >
+                  </span>
+                  <span class="switch">
+                    <input type="checkbox" id="show-below" disabled />
+                    <span class="switch-track" aria-hidden="true"></span>
+                  </span>
+                </label>
+              </section>
+
+              <section class="group">
+                <h2 class="group-title">Legend</h2>
+                <div class="legend-box" id="legend">
+                  <p class="legend-off" id="legend-off">
+                    Turn cells on to see the score ramp for
+                    <code data-mirror="category-id">battleArea</code>.
+                  </p>
+                  <div class="legend-on" id="legend-on" hidden>
+                    <span class="legend-name" data-mirror="category-id"
+                      >battleArea</span
+                    >
+                    <span class="num">1</span>
+                    <span class="legend-ramp legend-ramp--wide"></span>
+                    <span class="num">10 000</span>
+                    <span class="legend-extra">max here 6400 · 1933 above</span>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+
+          <!-- WORLD -->
+          <div
+            role="tabpanel"
+            id="panel-world"
+            class="panel"
+            aria-labelledby="tab-world"
+            hidden
+          >
+            <div class="page">
+              <section class="group">
+                <h2 class="group-title">Layers</h2>
+                <p class="group-lead">
+                  What is drawn. These flip at once; nothing is rebuilt.
+                </p>
+                <label class="row">
+                  <span class="row-text">
+                    <span class="row-label">Buildings</span>
+                    <span class="row-hint">Extruded building volumes.</span>
+                  </span>
+                  <span class="switch">
+                    <input type="checkbox" id="layer-buildings" checked />
+                    <span class="switch-track" aria-hidden="true"></span>
+                  </span>
+                </label>
+                <label class="row">
+                  <span class="row-text">
+                    <span class="row-label">Trees</span>
+                    <span class="row-hint">Single trees mapped as points.</span>
+                  </span>
+                  <span class="switch">
+                    <input type="checkbox" id="layer-trees" checked />
+                    <span class="switch-track" aria-hidden="true"></span>
+                  </span>
+                </label>
+                <label class="row">
+                  <span class="row-text">
+                    <span class="row-label">Woods</span>
+                    <span class="row-hint"
+                      >Forest and wood areas, filled with trees.</span
+                    >
+                  </span>
+                  <span class="switch">
+                    <input type="checkbox" id="layer-woods" checked />
+                    <span class="switch-track" aria-hidden="true"></span>
+                  </span>
+                </label>
+                <label class="row">
+                  <span class="row-text">
+                    <span class="row-label">Landuse</span>
+                    <span class="row-hint"
+                      >Flat land-use plates under everything.</span
+                    >
+                  </span>
+                  <span class="switch">
+                    <input type="checkbox" id="layer-plates" />
+                    <span class="switch-track" aria-hidden="true"></span>
+                  </span>
+                </label>
+                <label class="row">
+                  <span class="row-text">
+                    <span class="row-label">Land-use colours</span>
+                    <span class="row-hint"
+                      >Tint the ground by what the land is used for.</span
+                    >
+                  </span>
+                  <span class="switch">
+                    <input type="checkbox" id="layer-tint" checked />
+                    <span class="switch-track" aria-hidden="true"></span>
+                  </span>
+                </label>
+                <label class="row">
+                  <span class="row-text">
+                    <span class="row-label">Roads</span>
+                    <span class="row-hint">Road ribbons on the ground.</span>
+                  </span>
+                  <span class="switch">
+                    <input type="checkbox" id="layer-roads" checked />
+                    <span class="switch-track" aria-hidden="true"></span>
+                  </span>
+                </label>
+                <label class="row">
+                  <span class="row-text">
+                    <span class="row-label">POI</span>
+                    <span class="row-hint"
+                      >Points of interest as small markers.</span
+                    >
+                  </span>
+                  <span class="switch">
+                    <input type="checkbox" id="layer-poi" checked />
+                    <span class="switch-track" aria-hidden="true"></span>
+                  </span>
+                </label>
+              </section>
+
+              <section class="group">
+                <h2 class="group-title">Ground</h2>
+                <label class="field" id="ground-mode-label">
+                  <span class="row-hint"
+                    >The surface under the city. Slope shades steep ground; a
+                    height ramp colours it by elevation.</span
+                  >
+                  <select id="ground-mode" class="select" aria-label="ground">
+                    <option>CPU ground</option>
+                    <option selected>CPU ground + slope</option>
+                    <option>CPU ground + height ramp</option>
+                    <option>GPU ground</option>
+                    <option>GPU ground + slope</option>
+                    <option>GPU ground + height ramp</option>
+                    <option>No ground</option>
+                  </select>
+                </label>
+              </section>
+
+              <section class="group">
+                <h2 class="group-title">View distance</h2>
+                <label class="field">
+                  <span class="field-head">
+                    <span class="row-label">Render distance</span>
+                    <output
+                      class="num"
+                      id="render-distance-value"
+                      for="render-distance"
+                      >draw 4800 m · haze 3168 m</output
+                    >
+                  </span>
+                  <input
+                    type="range"
+                    class="slider"
+                    id="render-distance"
+                    min="1"
+                    max="10"
+                    step="1"
+                    value="2"
+                    aria-label="render distance"
+                  />
+                  <span class="row-hint"
+                    >Further costs frame time on the phone.</span
+                  >
+                </label>
+              </section>
+            </div>
+          </div>
+
+          <!-- LOOK -->
+          <div
+            role="tabpanel"
+            id="panel-look"
+            class="panel"
+            aria-labelledby="tab-look"
+            hidden
+          >
+            <div class="page">
+              <p class="page-note">
+                These rebuild the city. A choice stays locked until the new city
+                is drawn.
+              </p>
+              <section class="group">
+                <div class="group-head">
+                  <h2 class="group-title">Colour scheme</h2>
+                  <span
+                    class="apply-status"
+                    id="colour-scheme-status"
+                    aria-live="polite"
+                  ></span>
+                </div>
+                <div
+                  class="swatches"
+                  id="colour-scheme"
+                  role="radiogroup"
+                  aria-label="colour scheme"
+                ></div>
+              </section>
+
+              <section class="group">
+                <h2 class="group-title">City details</h2>
+                <label class="row">
+                  <span class="row-text">
+                    <span class="row-label">Street furniture</span>
+                    <span class="row-hint"
+                      >Benches, bins, lamps and bollards where the map has
+                      them.</span
+                    >
+                    <span
+                      class="apply-status"
+                      id="layer-furniture-status"
+                      aria-live="polite"
+                    ></span>
+                  </span>
+                  <span class="switch">
+                    <input
+                      type="checkbox"
+                      id="layer-furniture"
+                      data-rebuild="furniture"
+                      aria-label="furniture"
+                      checked
+                    />
+                    <span class="switch-track" aria-hidden="true"></span>
+                  </span>
+                </label>
+                <label class="row">
+                  <span class="row-text">
+                    <span class="row-label">Invented roofs</span>
+                    <span class="row-hint"
+                      >Buildings the map gives no roof shape get a planned
+                      roof.</span
+                    >
+                    <span
+                      class="apply-status"
+                      id="invented-roofs-status"
+                      aria-live="polite"
+                    ></span>
+                  </span>
+                  <span class="switch">
+                    <input
+                      type="checkbox"
+                      id="invented-roofs"
+                      data-rebuild="invented roofs"
+                      aria-label="invented roofs"
+                      checked
+                    />
+                    <span class="switch-track" aria-hidden="true"></span>
+                  </span>
+                </label>
+                <label class="row">
+                  <span class="row-text">
+                    <span class="row-label">Zebras and pedestrian areas</span>
+                    <span class="row-hint"
+                      >Crossings painted on the roads, pedestrian squares
+                      paved.</span
+                    >
+                    <span
+                      class="apply-status"
+                      id="markings-status"
+                      aria-live="polite"
+                    ></span>
+                  </span>
+                  <span class="switch">
+                    <input
+                      type="checkbox"
+                      id="markings"
+                      data-rebuild="zebras and pedestrian areas"
+                      aria-label="zebras and pedestrian areas"
+                      checked
+                    />
+                    <span class="switch-track" aria-hidden="true"></span>
+                  </span>
+                </label>
+              </section>
+            </div>
+          </div>
+
+          <!-- SUN -->
+          <div
+            role="tabpanel"
+            id="panel-sun"
+            class="panel"
+            aria-labelledby="tab-sun"
+            hidden
+          >
+            <div class="page">
+              <section class="group" id="sun-group">
+                <h2 class="group-title">Sun</h2>
+                <div class="sun-time">
+                  <output class="sun-readout" id="sun-readout" for="sun-time"
+                    >15:47 solar time</output
+                  >
+                  <div class="sun-steps">
+                    <button
+                      type="button"
+                      class="btn btn--small"
+                      id="sun-back"
+                      aria-label="Earlier (T)"
+                    >
+                      Earlier
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn--small"
+                      id="sun-forward"
+                      aria-label="Later (t)"
+                    >
+                      Later
+                    </button>
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  class="slider"
+                  id="sun-time"
+                  min="0"
+                  max="1000"
+                  value="713"
+                  aria-label="time of day"
+                />
+                <div class="slider-ends" aria-hidden="true">
+                  <span>dawn</span><span>noon</span><span>dusk</span>
+                </div>
+                <label class="field field--row">
+                  <span class="row-label">Date</span>
+                  <input
+                    type="date"
+                    class="input"
+                    id="sun-date"
+                    value="2026-09-23"
+                    aria-label="date"
+                  />
+                </label>
+              </section>
+
+              <section class="group">
+                <button
+                  type="button"
+                  class="disclosure"
+                  id="light-open"
+                  aria-controls="light-dialog"
+                  aria-expanded="false"
+                >
+                  <span class="disclosure-text">
+                    <span class="row-label">Light settings</span>
+                    <span class="row-hint"
+                      >Gain, sky light, exposure and ambient occlusion. Key
+                      l.</span
+                    >
+                  </span>
+                  <span class="disclosure-caret" aria-hidden="true"></span>
+                </button>
+                <section
+                  id="light-dialog"
+                  class="light"
+                  aria-label="Light settings"
+                  hidden
+                >
+                  <div class="light-sliders" id="light-sliders"></div>
+                  <label class="row row--compact">
+                    <span class="row-text">
+                      <span class="row-label">Ambient occlusion</span>
+                      <span class="row-hint"
+                        >Darkens corners and the foot of walls.</span
+                      >
+                    </span>
+                    <span class="switch">
+                      <input type="checkbox" id="light-ao" checked />
+                      <span class="switch-track" aria-hidden="true"></span>
+                    </span>
+                  </label>
+                  <p class="light-readout num" id="light-readout">
+                    Lit surfaces 65.0
+                  </p>
+                  <div class="light-actions">
+                    <button type="button" class="btn" id="light-check">
+                      Check heat grid
+                    </button>
+                    <button type="button" class="btn" id="light-copy">
+                      Copy
+                    </button>
+                    <button type="button" class="btn" id="light-reset">
+                      Reset
+                    </button>
+                    <button type="button" class="btn" id="light-close">
+                      Close
+                    </button>
+                  </div>
+                </section>
+              </section>
+            </div>
+          </div>
+
+          <!-- INFO -->
+          <div
+            role="tabpanel"
+            id="panel-info"
+            class="panel"
+            aria-labelledby="tab-info"
+            hidden
+          >
+            <div class="page">
+              <section class="group">
+                <h2 class="group-title">Status</h2>
+                <p class="problem" id="status-problem">
+                  <span class="badge badge--warn">Problem</span>
+                  Rules: snapshot (live fetch failed and no cache)
+                </p>
+                <dl class="kv" id="status-rows"></dl>
+                <details class="raw">
+                  <summary>Full status line</summary>
+                  <p id="status" class="raw-text">starting...</p>
+                </details>
+              </section>
+
+              <section class="group">
+                <h2 class="group-title">Debug</h2>
+                <label class="row">
+                  <span class="row-text">
+                    <span class="row-label">Underground</span>
+                    <span class="row-hint"
+                      >Show cells that lie under the terrain.</span
+                    >
+                  </span>
+                  <span class="switch">
+                    <input type="checkbox" id="layer-underground" />
+                    <span class="switch-track" aria-hidden="true"></span>
+                  </span>
+                </label>
+                <label class="row">
+                  <span class="row-text">
+                    <span class="row-label">Perf</span>
+                    <span class="row-hint"
+                      >Frame time and draw counts over the 3D view.</span
+                    >
+                  </span>
+                  <span class="switch">
+                    <input type="checkbox" id="perf-stats" />
+                    <span class="switch-track" aria-hidden="true"></span>
+                  </span>
+                </label>
+                <div class="row row--button">
+                  <span class="row-text">
+                    <span class="row-label">Tile look</span>
+                    <span class="row-hint"
+                      >How the affordance tiles are drawn. Key p.</span
+                    >
+                  </span>
+                  <button type="button" class="btn" id="tile-preset">
+                    Default
+                  </button>
+                </div>
+              </section>
+
+              <section class="group">
+                <h2 class="group-title">Keys</h2>
+                <dl class="keys" id="hotkey-help">
+                  <dt><kbd>t</kbd></dt>
+                  <dd>step the sun forward</dd>
+                  <dt><kbd>T</kbd></dt>
+                  <dd>step the sun back</dd>
+                  <dt><kbd>l</kbd></dt>
+                  <dd>open or close the light settings</dd>
+                  <dt><kbd>p</kbd></dt>
+                  <dd>cycle the affordance-tile look preset</dd>
+                  <dt><kbd>?</kbd></dt>
+                  <dd>show or hide this list</dd>
+                </dl>
+              </section>
+            </div>
+          </div>
+
+          <!-- Details: over the 3D view on desktop, inside the sheet on phones. -->
+          <aside
+            id="details"
+            class="details plate"
+            aria-labelledby="details-title"
+            data-hud
+            hidden
+          >
+            <div class="details-head">
+              <h2 id="details-title">battleArea = 160</h2>
+              <button
+                type="button"
+                class="btn btn--icon"
+                id="details-close"
+                aria-label="Close details"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="m6 6 12 12M18 6 6 18"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                  />
+                </svg>
+              </button>
+            </div>
+            <p class="details-lead">Scored 160, above the 1 bar.</p>
+            <p class="row-hint">above the 1 threshold</p>
+            <ul class="details-list">
+              <li><a href="#details">way/123456789</a> <span>x 10</span></li>
+              <li><a href="#details">way/123456790</a> <span>x 4</span></li>
+              <li><a href="#details">way/123456791</a> <span>x 2</span></li>
+              <li><a href="#details">way/123456792</a> <span>x 2</span></li>
+            </ul>
+          </aside>
+        </div>
+
+        <footer class="sheet-foot">
+          <a class="legal" id="legal-link" href="#legal-link"
+            >Legal notice and privacy</a
+          >
+          <span class="map-attribution">
+            <a href="#map">OpenStreetMap</a> · Mapterhorn · Mapzen/AWS
+            <button
+              type="button"
+              class="attr-more"
+              aria-expanded="false"
+              aria-label="More attribution"
+            >
+              ...
+            </button>
+          </span>
+        </footer>
+      </section>
+    </div>
+
+    <!-- Messages above the sheet, centred on the 3D band: offer below, toast above. -->
+    <div class="float-stack" id="float-stack">
+      <div class="toast" id="toast-root" role="status" aria-live="polite"></div>
+      <div class="ar-offer plate" id="ar-offer" hidden>
+        <div class="ar-offer-text">
+          <strong>Found you.</strong>
+          <span class="row-hint">The camera view is ready.</span>
+        </div>
+        <button type="button" class="btn btn--accent" id="ar-offer-enter">
+          Enter AR now
+        </button>
+        <button
+          type="button"
+          class="btn btn--icon"
+          id="ar-offer-dismiss"
+          aria-label="Dismiss"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="m6 6 12 12M18 6 6 18"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+            />
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <div id="ar-root"></div>
+
+    <!-- Prototype tooling: not part of the design. -->
+    <button
+      type="button"
+      class="states-btn"
+      id="states-btn"
+      aria-controls="states-pop"
+      aria-expanded="false"
+    >
+      States
+    </button>
+    <div class="states-pop plate" id="states-pop" hidden>
+      <p class="cap">Show a state</p>
+      <div class="states-grid" id="states-grid"></div>
+      <p class="coverage">
+        3D covered by HUD: <strong id="coverage-out">-</strong>
+      </p>
+      <details class="notes">
+        <summary>About this variant</summary>
+        <div class="notes-body">
+          <p>
+            <strong>Direction C, tabs on the sheet.</strong> The top header is
+            gone. The map pane (left half on desktop, the bottom sheet on a
+            phone, a right panel in phone landscape) gets a tab strip: Map,
+            Analysis, World, Look, Sun, Info. A settings tab replaces the map
+            for a moment; the 3D view keeps its full size and shows only a
+            two-control strip (category, cells).
+          </p>
+          <p>
+            <strong>Visible by default:</strong> the 3D view with the strip, the
+            sheet on its Map tab (place, Show Quests, zoom, locate, AR), the
+            footer with the legal link and the attribution.
+            <strong>Folded:</strong> nothing; the other tabs are simply not
+            selected.
+          </p>
+          <p>
+            <strong>Async states:</strong> a rebuild disables its control and
+            says "Applying..." beside it; its tab carries a pulsing dot while
+            you are on another tab. Cells loading shows on the strip switch
+            itself and on the Analysis tab. "Finding..." stays on the Show
+            Quests button and a dot on the Map tab. A problem in the status puts
+            a red dot on Info; errors also go to the toast.
+          </p>
+          <p>
+            <strong>Light dialog:</strong> lives inside the Sun tab, so it no
+            longer covers the 3D view or the header. Key l opens the Sun tab
+            with it expanded; Escape closes it, then returns to the Map tab.
+          </p>
+          <p>
+            <strong>Details:</strong> over the right of the 3D view on desktop
+            as today; inside the sheet on phones (any tab closes it).
+          </p>
+          <p>
+            <strong>e2e helpers it needs:</strong> one
+            <code>openTab(page, name)</code> for Analysis, World, Look, Sun and
+            Info (Map is the default), plus <code>openLight(page)</code>.
+            <code>#category</code> and <code>#layer-cells</code> stay on the 3D
+            strip with no helper. <code>#status</code> keeps its text inside the
+            Info tab, so text reads work with the tab closed. The colour scheme
+            becomes a radio group of swatches: a
+            <code>chooseColourScheme</code> helper replaces
+            <code>selectOption</code>. Header geometry tests are replaced by one
+            layout test of the tabs, the strip and the footer.
+          </p>
+          <p>
+            <strong>Measure:</strong> <code>hudCoverage()</code> returns the
+            share of the visible 3D band (the 3D view minus the part under the
+            sheet) covered by HUD chrome. The sheet itself is not counted: it is
+            the map's own surface in every state, and in this variant settings
+            never add anything over the 3D band. Dragging the sheet up on a
+            phone shrinks the band instead.
+          </p>
+          <p>
+            <strong>Weaknesses:</strong> on desktop the map disappears while a
+            settings tab is open, so a map-and-settings comparison takes tab
+            switches; on a phone AR and locate are one tab away from any
+            settings tab; a small phone gives a settings page only about 170 px
+            unless the sheet is dragged up; the strip duplicates category and
+            cells with the Analysis tab (two views of one state); the colour
+            swatches cost an e2e helper rewrite.
+          </p>
+        </div>
+      </details>
+    </div>
+
+    <script src="sheet-tabs.js" defer></script>
+  </body>
+</html>
