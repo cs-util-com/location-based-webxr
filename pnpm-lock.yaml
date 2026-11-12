@@ -877,6 +877,12 @@ importers:
       '@zip.js/zip.js':
         specifier: ^2.11.2
         version: 2.11.2
+      dockview:
+        specifier: 8.7.1
+        version: 8.7.1
+      dockview-core:
+        specifier: 8.7.1
+        version: 8.7.1
       gps-plus-slam-app-framework:
         specifier: workspace:*
         version: link:../GpsPlusSlamJs_AppFramework
@@ -3178,6 +3184,12 @@ packages:
   dir-glob@3.0.1:
     resolution: {integrity: sha512-WkrWp9GR4KXfKGYzOLmTuGVi1UWFfws377n9cc55/tb6DuqyF6pcQ5AbiHEshaDpY9v6oaSr2XCDidGmMwdzIA==}
     engines: {node: '>=8'}
+
+  dockview-core@8.7.1:
+    resolution: {integrity: sha512-4+Z7GYsRMAyZYeIS4CaM5f0nloJtvpvri15xKbpNJnlR8+QEhJGjz8F/syMbTUsbWB0X2bQAWEx/I9Rh2vmGIQ==}
+
+  dockview@8.7.1:
+    resolution: {integrity: sha512-0KCiSkyXwjEJztaS63VPKBIg7HbJtpgFMFZhvQml28+VQPdt13T70j8ml6S4kQMikGwtvjXk7Qsg9f87Hi5UdQ==}
 
   doctypes@1.1.0:
     resolution: {integrity: sha512-LLBi6pEqS6Do3EKQ3J0NqHWV5hhb78Pi8vvESYwyOy2c31ZEZVdtitdzsQsKb7878PEERhzUk0ftqGhG6Mz+pQ==}
@@ -6884,6 +6896,12 @@ snapshots:
   dir-glob@3.0.1:
     dependencies:
       path-type: 4.0.0
+
+  dockview-core@8.7.1: {}
+
+  dockview@8.7.1:
+    dependencies:
+      dockview-core: 8.7.1
 
   doctypes@1.1.0: {}
 

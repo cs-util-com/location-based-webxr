@@ -1,0 +1,63 @@
+# dock-layout.ts
+
+## Purpose
+
+The editor's docked layout as data: which panels dock, which page element
+each adopts, where each starts and how wide. No DOM and no docking
+library: `dock-host.ts` applies it.
+
+## Public API
+
+- `DOCK_MIN_PX` (701) and `docksAt(widthPx)` - from this window width up
+  the panels dock (a phone held sideways, 844 px, included); below it the
+  phone's sheets (`phone-sheet.ts`, `PHONE_SHEET_PX` = 700) show them. A
+  non-finite width never docks.
+- `BOTTOM_PANEL_IDS` (`problems`, `history`, `tiles`, `perf`), the bottom
+  panel's tabs in its order (`bottom-panel-model.ts`'s `PANEL_TABS`), and
+  `isBottomPanelId(x)`.
+- `DockPanelId` - `view`, `list`, `details`, `files` or a bottom id.
+- `DOCK_PANELS` - every panel's `DockPanelSpec` `{ id, title, element,
+group }`, the 3D view first. `element` is the adopted page element's id
+  (`shell-tree`, `shell-inspector`, `shell-shelf`, `shell-pane-<tab>`), null
+  for the 3D view, whose canvas the host moves in. `group` is where it
+  starts: `centre`, `left`, `right` or `bottom`.
+- `dockPanel(id)` - a spec by id; throws on an unknown id.
+  `isDockPanelId(x)` - for ids read back from the library's events.
+- `dockWidths(widthPx)` - `{ list, column }`: 248 and 300 px, the list 210
+  from 1100 px down, the right column 268 from 900 px down.
+- `bottomStartPx(heightPx)` - the bottom group's first height: a third of
+  the height below the top bar, between 90 and 220 px.
+- `defaultDockLayout(widthPx, heightPx)` - `DockStep[]`: the 3D view; the
+  list left of it; Details right of it with Files as its second tab
+  (inactive); Problems below the view with History, Map loading and
+  Performance as its further tabs (inactive).
+
+## Invariants & assumptions
+
+- Every panel appears exactly once in the default layout, the 3D view
+  first and without an `against`; every other step is placed against a
+  panel added before it.
+- The side panels leave the 3D view at least 220 px at any docked width,
+  and the bottom group starts at most a third of the height (90 px at
+  least).
+- The bottom ids and the bottom panel's tab ids are the same list in the
+  same order (a unit test holds them together).
+
+## Examples
+
+```ts
+if (docksAt(window.innerWidth)) {
+  for (const step of defaultDockLayout(window.innerWidth, hostHeight)) {
+    // add dockPanel(step.id) beside step.against, at step.widthPx ...
+  }
+}
+```
+
+## Tests
+
+- `dock-layout.test.ts` - the threshold against the phone's sheets, the
+  adopted elements, the ids, the exact default layout at 1440 x 900, the
+  width steps and the bottom start heights.
+- `dock-layout.property.test.ts` - over windows from 701 x 300 to
+  4000 x 3000: every panel once, placed against an earlier one, the view
+  keeps 220 px, the bottom group at most a third of the height.

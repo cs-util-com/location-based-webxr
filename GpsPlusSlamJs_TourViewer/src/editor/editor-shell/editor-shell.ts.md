@@ -101,6 +101,16 @@ to a station, a story's name in the head takes the focus, selected.
   - `deps.codes()` - the open tour's codes (`InspectorCode[]`);
   - `deps.loadPicture(path)` - a picture's bytes from the open tour;
   - `deps.dialogOpen()` - a page dialog shows (the keys stay out of it);
+  - `deps.dock?()` - loads `dock-host.ts` (a dynamic import); absent, the
+    panels never dock. From `DOCK_MIN_PX` (701 px) wide, while the view
+    shows, the panels dock around it; narrower, or on `hide()`, they
+    undock. The folds stay the store's (`foldedDocks`): a folded side
+    hides its group and shows its folded head over the view, so the dock
+    rule and the approach fold keep working. Docked, a selection that
+    appears shows Details over Files, and the Details panel says "Select
+    a station or an item, in the list or in the view." while nothing is
+    selected;
+  - `deps.onDocked?(docked)` - the panels docked or undocked;
   - `deps.stations` (`ShellStationCommands`) - the page's commands:
     `add(place, "centre" | "here")`, `reorder(order)`, `split(itemId)`,
     `duplicate(selection)`, `remove(selection)`;
@@ -146,6 +156,10 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   open keeps that fold and does not restore the one from before the
   approach. Deliberately no flag for it: "stays as you left it" is the
   rule, and after a takeover the folded tree is what they left.
+- `EditorShell.docked()` - whether the panels are docked now;
+  `EditorShell.reveal(id)` - docked, shows a panel (`dock-layout.ts`'s ids),
+  unfolding its side in the store first; undocked, nothing (the asset
+  shelf's toggle reveals the Files panel through it).
 - `EditorShell.clearSearch()` - empties the tree's search, and draws the tree
   without it where it shows: the page calls it for every station it makes and
   for an item it copies (the search would hide the new one, its name matching

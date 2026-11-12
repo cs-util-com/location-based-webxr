@@ -41,6 +41,14 @@ this draws them and takes the clicks, the grip's drag and the keys.
     it (closes it, the focus back on its toggle);
   - `state()` - `{ open, tab, max, heightPx }`, for checks;
   - `hide()` - the view hides: closes it and forgets the frames.
+  - `dock(dock)` - docked (`PanelDock`: `show(tab)`, `hide()`, the shell's
+    bridge to `dock-host.ts`): each tab's pane is a docked panel of its
+    own, `#shell-panel` stays hidden and `--s-panel-h` 0, the shown tab's
+    tools stand above its pane, and every open, close and tab change
+    (the toggles, Ctrl+J, Ctrl+Shift+M, Escape) goes through `dock`;
+    `dock(null)` is the panel again.
+  - `docked({ open, tab })` - docked, what the docking's own controls
+    did (a tab chosen, the group hidden); no call back into `dock`.
 - `PanelMap` (internal, not exported) - the `map` dependency's shape.
 - `PANEL_STORAGE_KEY` - `"editor-bottom-panel"`, its kept JSON `{ h, tab }`.
 

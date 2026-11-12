@@ -1922,6 +1922,10 @@ const filePicker = createFilePicker(document.body);
 /** The asset shelf's panel of the open tour (`asset-shelf/shelf-panel.ts`). */
 let shelfPanel: ShelfPanel | null = null;
 
+/** The editor's panels docked around the 3D view (`editor-shell/`): the
+ *  shelf is its Files panel then. */
+let panelsDocked = false;
+
 /** A phone's layout: the shelf is a sheet (shelf-panel.css's width). */
 const phoneLayout = window.matchMedia("(width <= 700px)");
 phoneLayout.addEventListener("change", () => {
@@ -2061,6 +2065,10 @@ function openShelfPanel(open: EditorSession): void {
       store.dispatch(
         editorViewActions.dockFolded({ dock: "inspector", folded: true }),
       );
+    },
+    docked: () => panelsDocked,
+    revealDocked: () => {
+      shell.reveal("files");
     },
   });
 }
@@ -4803,6 +4811,12 @@ function shellCodes(): InspectorCode[] {
  *  selection is the page's (`select`), so the map follows it. */
 const shell = createEditorShell({
   store,
+  // The docking library comes with the 3D view, never with the page.
+  dock: () => import("./editor-shell/dock-host.js"),
+  onDocked: (docked) => {
+    panelsDocked = docked;
+    shelfPanel?.refresh();
+  },
   select: (id) => {
     select(id);
   },

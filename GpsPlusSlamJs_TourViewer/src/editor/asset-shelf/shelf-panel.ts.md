@@ -16,6 +16,10 @@ shelf runner (`asset-shelf.ts`); every word comes from
 - `createShelfPanel(deps): ShelfPanel`
   - `deps.root`: the dock (`aside#shell-shelf`); its frame is built once.
   - `deps.toggle`, `deps.pill`: the bar's toggle and the phone's pill.
+  - `deps.docked?()`, `deps.revealDocked?()`: while the editor's panels
+    are docked the shelf is the Files panel - never a rail, its fold
+    button hidden - and opening it (the toggle, `open`, `reveal`) shows
+    that panel.
   - `deps.host`: where the "Used in" popover goes (the page's body).
   - `deps.rows()`, `deps.subscribe(listener)`: the shelf's rows and their
     changes (the store's).

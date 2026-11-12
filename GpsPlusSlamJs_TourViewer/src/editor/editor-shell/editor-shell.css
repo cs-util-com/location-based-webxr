@@ -2033,7 +2033,7 @@ body[data-view="3d"] #view3d .view3d-canvas {
   content: "";
 }
 
-#shell-panel .badge,
+:is(#shell-panel, .dock-group-bottom) .badge,
 #shell-toggles .badge {
   display: inline-flex;
   align-items: center;
@@ -2049,26 +2049,26 @@ body[data-view="3d"] #view3d .view3d-canvas {
   text-transform: none;
 }
 
-#shell-panel .badge.error,
+:is(#shell-panel, .dock-group-bottom) .badge.error,
 #shell-toggles .badge.error {
   background: rgb(217 125 121 / 22%);
   color: #f0b0ad;
 }
 
-#shell-panel .badge.warning,
+:is(#shell-panel, .dock-group-bottom) .badge.warning,
 #shell-toggles .badge.warning {
   background: rgb(233 184 107 / 20%);
   color: #f1cf96;
 }
 
-#shell-panel .badge.busy,
+:is(#shell-panel, .dock-group-bottom) .badge.busy,
 #shell-toggles .badge.busy {
   padding: 0 2px;
   background: transparent;
   color: var(--s-muted);
 }
 
-#shell-panel .badge:empty,
+:is(#shell-panel, .dock-group-bottom) .badge:empty,
 #shell-toggles .badge:empty {
   display: none;
 }
@@ -2120,7 +2120,7 @@ body[data-view="3d"] #view3d .view3d-canvas {
   color: var(--s-accent-text);
 }
 
-#shell-panel .chip {
+:is(#shell-panel, .dock-group-bottom) .chip {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -2135,22 +2135,22 @@ body[data-view="3d"] #view3d .view3d-canvas {
   cursor: pointer;
 }
 
-#shell-panel .chip:hover:not(:disabled),
-#shell-panel .chip[aria-pressed="true"] {
+:is(#shell-panel, .dock-group-bottom) .chip:hover:not(:disabled),
+:is(#shell-panel, .dock-group-bottom) .chip[aria-pressed="true"] {
   background: var(--s-bg3);
   color: var(--s-text);
 }
 
-#shell-panel .chip[aria-pressed="false"] {
+:is(#shell-panel, .dock-group-bottom) .chip[aria-pressed="false"] {
   opacity: 0.55;
 }
 
-#shell-panel .chip:disabled {
+:is(#shell-panel, .dock-group-bottom) .chip:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
-#shell-panel .chip svg.i {
+:is(#shell-panel, .dock-group-bottom) .chip svg.i {
   width: 13px;
   height: 13px;
 }
@@ -2165,21 +2165,21 @@ body[data-view="3d"] #view3d .view3d-canvas {
   display: none;
 }
 
-#shell-panel .sev-error {
+:is(#shell-panel, .dock-group-bottom) .sev-error {
   color: var(--s-danger);
 }
 
-#shell-panel .sev-warning {
+:is(#shell-panel, .dock-group-bottom) .sev-warning {
   color: var(--s-warn);
 }
 
-#shell-panel .sev-note {
+:is(#shell-panel, .dock-group-bottom) .sev-note {
   color: var(--s-info);
 }
 
 /* The group heads and History rows are buttons (a row's look, a button's
  * keys); a problem's row is a focusable row holding its fix link. */
-#shell-panel :is(.ghead, .prow, .hrow) {
+:is(#shell-panel, .dock-group-bottom) :is(.ghead, .prow, .hrow) {
   width: 100%;
   border: 0;
   background: transparent;
@@ -2189,7 +2189,7 @@ body[data-view="3d"] #view3d .view3d-canvas {
   cursor: pointer;
 }
 
-#shell-panel .ghead {
+:is(#shell-panel, .dock-group-bottom) .ghead {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -2199,7 +2199,7 @@ body[data-view="3d"] #view3d .view3d-canvas {
   white-space: nowrap;
 }
 
-#shell-panel :is(.ghead, .prow, .hrow):hover {
+:is(#shell-panel, .dock-group-bottom) :is(.ghead, .prow, .hrow):hover {
   background: var(--s-bg2);
 }
 
@@ -2238,7 +2238,7 @@ body[data-view="3d"] #view3d .view3d-canvas {
   font-size: 11px;
 }
 
-#shell-panel .prow {
+:is(#shell-panel, .dock-group-bottom) .prow {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2246,18 +2246,18 @@ body[data-view="3d"] #view3d .view3d-canvas {
   padding: 2px 10px 2px 32px;
 }
 
-#shell-panel .prow.sel {
+:is(#shell-panel, .dock-group-bottom) .prow.sel {
   background: var(--s-accent-bg);
 }
 
-#shell-panel .prow:focus-visible {
+:is(#shell-panel, .dock-group-bottom) .prow:focus-visible {
   outline: 2px solid var(--s-accent);
   outline-offset: -2px;
 }
 
 /* A row's link (a problem's fix): shown on hover, on the selected row and
  * while the row or the link has the focus. */
-#shell-panel .lnk {
+:is(#shell-panel, .dock-group-bottom) .lnk {
   flex: none;
   padding: 0 4px;
   border: 0;
@@ -2268,15 +2268,17 @@ body[data-view="3d"] #view3d .view3d-canvas {
   cursor: pointer;
 }
 
-#shell-panel .lnk:hover {
+:is(#shell-panel, .dock-group-bottom) .lnk:hover {
   text-decoration: underline;
 }
 
-#shell-panel .prow .fix {
+:is(#shell-panel, .dock-group-bottom) .prow .fix {
   visibility: hidden;
 }
 
-#shell-panel .prow:is(:hover, .sel, :focus-within) .fix {
+:is(#shell-panel, .dock-group-bottom)
+  .prow:is(:hover, .sel, :focus-within)
+  .fix {
   visibility: visible;
 }
 
@@ -2299,7 +2301,7 @@ body[data-view="3d"] #view3d .view3d-canvas {
   font-style: normal;
 }
 
-#shell-panel .empty-state {
+:is(#shell-panel, .dock-group-bottom) .empty-state {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2307,13 +2309,13 @@ body[data-view="3d"] #view3d .view3d-canvas {
   color: var(--s-muted);
 }
 
-#shell-panel .empty-state svg.i {
+:is(#shell-panel, .dock-group-bottom) .empty-state svg.i {
   width: 14px;
   height: 14px;
   color: var(--s-ok);
 }
 
-#shell-panel .hrow {
+:is(#shell-panel, .dock-group-bottom) .hrow {
   position: relative;
   display: flex;
   align-items: center;
@@ -2363,11 +2365,11 @@ body[data-view="3d"] #view3d .view3d-canvas {
   box-shadow: 0 0 0 3px var(--s-accent-bg);
 }
 
-#shell-panel .hrow.cur {
+:is(#shell-panel, .dock-group-bottom) .hrow.cur {
   background: var(--s-accent-bg);
 }
 
-#shell-panel .hrow.undone {
+:is(#shell-panel, .dock-group-bottom) .hrow.undone {
   color: var(--s-dim);
 }
 
@@ -2403,13 +2405,13 @@ body[data-view="3d"] #view3d .view3d-canvas {
   white-space: nowrap;
 }
 
-#shell-panel .hnote {
+:is(#shell-panel, .dock-group-bottom) .hnote {
   padding: 6px 12px 8px;
   color: var(--s-dim);
   font-size: 11px;
 }
 
-#shell-panel .sumrow {
+:is(#shell-panel, .dock-group-bottom) .sumrow {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -2439,7 +2441,7 @@ body[data-view="3d"] #view3d .view3d-canvas {
   color: var(--s-muted);
 }
 
-#shell-panel .rl {
+:is(#shell-panel, .dock-group-bottom) .rl {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -2451,7 +2453,7 @@ body[data-view="3d"] #view3d .view3d-canvas {
   background: rgb(233 184 107 / 8%);
 }
 
-#shell-panel .rl[hidden] {
+:is(#shell-panel, .dock-group-bottom) .rl[hidden] {
   display: none;
 }
 
@@ -2491,12 +2493,12 @@ body[data-view="3d"] #view3d .view3d-canvas {
 }
 
 /* The near tiles: one row each, failed first; the head stays in view. */
-#shell-panel table.tiles {
+:is(#shell-panel, .dock-group-bottom) table.tiles {
   width: 100%;
   border-collapse: collapse;
 }
 
-#shell-panel table.tiles th {
+:is(#shell-panel, .dock-group-bottom) table.tiles th {
   position: sticky;
   top: 0;
   padding: 4px 12px;
@@ -2507,50 +2509,50 @@ body[data-view="3d"] #view3d .view3d-canvas {
   text-align: left;
 }
 
-#shell-panel table.tiles td {
+:is(#shell-panel, .dock-group-bottom) table.tiles td {
   padding: 3px 12px;
   white-space: nowrap;
 }
 
-#shell-panel table.tiles :is(td.k, td.ms) {
+:is(#shell-panel, .dock-group-bottom) table.tiles :is(td.k, td.ms) {
   font-family: var(--s-mono);
 }
 
-#shell-panel table.tiles .ms {
+:is(#shell-panel, .dock-group-bottom) table.tiles .ms {
   text-align: right;
 }
 
-#shell-panel .stt {
+:is(#shell-panel, .dock-group-bottom) .stt {
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
 
-#shell-panel .stt i {
+:is(#shell-panel, .dock-group-bottom) .stt i {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: currentcolor;
 }
 
-#shell-panel .stt.failed {
+:is(#shell-panel, .dock-group-bottom) .stt.failed {
   color: var(--s-danger);
 }
 
-#shell-panel .stt.loaded {
+:is(#shell-panel, .dock-group-bottom) .stt.loaded {
   color: var(--s-muted);
 }
 
-#shell-panel .stt.waiting {
+:is(#shell-panel, .dock-group-bottom) .stt.waiting {
   color: var(--s-text);
 }
 
-#shell-panel .stt.loading {
+:is(#shell-panel, .dock-group-bottom) .stt.loading {
   color: var(--s-accent-text);
 }
 
 /* Retry's status line, beside its chip. */
-#shell-panel .retry-note {
+:is(#shell-panel, .dock-group-bottom) .retry-note {
   min-width: 0;
   overflow: hidden;
   color: var(--s-muted);
@@ -2563,7 +2565,7 @@ body[data-view="3d"] #view3d .view3d-canvas {
   height: 100%;
 }
 
-#shell-panel .perf {
+:is(#shell-panel, .dock-group-bottom) .perf {
   display: grid;
   grid-template-rows: minmax(0, 1fr);
   grid-template-columns: minmax(0, 1fr) 260px;
@@ -2649,7 +2651,7 @@ body[data-view="3d"] #view3d .view3d-canvas {
     --s-tree-w: 210px;
   }
 
-  #shell-panel .perf {
+  :is(#shell-panel, .dock-group-bottom) .perf {
     grid-template-columns: minmax(0, 1fr) 210px;
   }
 }
@@ -2775,7 +2777,7 @@ body[data-view="3d"] #view3d .view3d-canvas {
 
   .tog .tl,
   .bp-tabs .tab .tl,
-  #shell-panel .chip .cl,
+  :is(#shell-panel, .dock-group-bottom) .chip .cl,
   .bp-tools .bp-span {
     display: none;
   }
@@ -2789,7 +2791,7 @@ body[data-view="3d"] #view3d .view3d-canvas {
     padding: 0 9px;
   }
 
-  #shell-panel .perf {
+  :is(#shell-panel, .dock-group-bottom) .perf {
     grid-template-rows: 120px auto;
     grid-template-columns: minmax(0, 1fr);
     height: auto;
@@ -2814,14 +2816,14 @@ body[data-view="3d"] #view3d .view3d-canvas {
 }
 
 @container (width <= 540px) {
-  #shell-panel .chip .cl,
+  :is(#shell-panel, .dock-group-bottom) .chip .cl,
   .bp-tools .bp-span {
     display: none;
   }
 }
 
 @container (width <= 420px) {
-  #shell-panel .chip {
+  :is(#shell-panel, .dock-group-bottom) .chip {
     gap: 3px;
     padding: 0 4px;
   }
@@ -3990,4 +3992,158 @@ body[data-view="3d"] #toasts {
   .selbar .abtn {
     height: 32px;
   }
+}
+
+/* --- the docked layout (`dock-host.ts`) ----------------------------------
+ * From 701 px wide the panels dock around the 3D view: the list, the
+ * details with the asset shelf as a second tab, and the bottom panel's
+ * four tabs below the view. The layout fills the view below its accent
+ * line; each adopted dock fills its panel, and the canvas fills the 3D
+ * view's (the inset framing above is for the undocked docks). The docking
+ * library's look comes from its own variables, set to the shell's tokens
+ * on its theme class. */
+.dockview-theme-tour {
+  --dv-paneview-active-outline-color: var(--s-focus);
+  --dv-tabs-and-actions-container-font-size: 11px;
+  --dv-tabs-and-actions-container-height: 30px;
+  --dv-drag-over-background-color: var(--s-accent-bg);
+  --dv-drag-over-border-color: var(--s-accent-line);
+  --dv-drag-over-border: 2px solid var(--s-accent-line);
+  --dv-edge-dock-indicator-color: var(--s-accent);
+  --dv-tabs-container-scrollbar-color: var(--s-bg4);
+  --dv-icon-hover-background-color: var(--s-bg3);
+  --dv-floating-box-shadow: 0 12px 34px rgb(0 0 0 / 55%);
+  --dv-floating-border: 1px solid var(--s-line2);
+  --dv-floating-group-border: 1px solid var(--s-line2);
+  --dv-overlay-z-index: 999;
+  --dv-tab-font-size: inherit;
+  --dv-border-radius: 0;
+  --dv-tab-margin: 0;
+  --dv-sash-color: transparent;
+  --dv-active-sash-color: var(--s-accent-line);
+  --dv-active-sash-transition-duration: 0.1s;
+  --dv-active-sash-transition-delay: 0.15s;
+  --dv-spacing-padding: 0;
+  --dv-tab-border-radius: 0;
+  --dv-sash-border-radius: 0;
+  --dv-dropdown-border-radius: 4px;
+  --dv-tab-close-icon-size: inherit;
+  --dv-floating-group-dragging-opacity: 0.6;
+  --dv-floating-titlebar-height: 14px;
+  --dv-floating-titlebar-background-color: var(--s-bg3);
+  --dv-floating-titlebar-border-bottom: 1px solid var(--s-line);
+  --dv-group-view-background-color: var(--s-bg1);
+  --dv-tabs-and-actions-container-background-color: var(--s-bg0);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--s-bg1);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--s-bg0);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--s-bg1);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--s-bg0);
+  --dv-tab-divider-color: var(--s-line);
+  --dv-activegroup-visiblepanel-tab-color: var(--s-text);
+  --dv-activegroup-hiddenpanel-tab-color: var(--s-muted);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--s-text);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--s-dim);
+  --dv-separator-border: var(--s-line);
+  --dv-paneview-header-border-color: var(--s-line);
+  --dv-context-menu-background-color: var(--s-bg2);
+  --dv-context-menu-color: var(--s-text);
+  --dv-scrollbar-background-color: var(--s-bg4);
+
+  color: var(--s-text);
+  font: 12px/1.4 var(--s-sans);
+  color-scheme: dark;
+}
+
+/* Each group's shown tab is underlined in the accent, the focused group's
+ * or not: the chosen arrangement marks what each column shows. */
+.dockview-theme-tour .dv-tab.dv-active-tab {
+  box-shadow: inset 0 -2px 0 var(--s-accent);
+}
+
+.dockview-theme-tour .dv-default-tab-content {
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* A docked panel is shown or hidden, never closed: its element is the
+ * page's. */
+.dockview-theme-tour .dv-tab .dv-default-tab .dv-default-tab-action {
+  display: none;
+}
+
+#view3d.docked .dock-host {
+  position: absolute;
+  inset: var(--s-dock-top) 0 var(--s-keyboard-foot);
+}
+/* A hidden group is only sized to nothing by the docking library: its tab
+   strip would still be drawn past its edge and take keyboard focus. */
+#view3d.docked .dock-host .dv-view:not(.visible) {
+  visibility: hidden;
+}
+
+#view3d.docked .dock-pane {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+#view3d.docked .dock-pane-view .view3d-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+#view3d.docked .dock-pane-view .model-notes {
+  inset: 0;
+}
+
+#view3d.docked .dock-pane-view #map-controls {
+  right: 12px;
+  bottom: 14px;
+}
+
+#view3d.docked .dock-pane > .dock {
+  position: static;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  border: 0;
+  box-shadow: none;
+}
+
+/* The asset shelf is a tab there: no fold of its own. */
+#view3d.docked .dock-pane > #shell-shelf [data-act="fold"] {
+  display: none;
+}
+
+/* Nothing selected: the details' panel says how to fill it. */
+#view3d.docked .dock-empty {
+  margin: 0;
+  padding: 16px 14px;
+  color: var(--s-muted);
+}
+
+#view3d.docked #shell-inspector:not([hidden]) ~ .dock-empty {
+  display: none;
+}
+
+/* The bottom panel's panes, each a panel: its tools above, scrolling. */
+#view3d.docked .dock-pane > .pane {
+  height: 100%;
+  overflow: auto;
+}
+
+#view3d.docked .dock-pane > .tools {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  height: 30px;
+  padding: 0 6px;
+  border-bottom: 1px solid var(--s-line);
+}
+
+#view3d.docked .dock-pane:has(> .tools) > .pane {
+  height: calc(100% - 30px);
 }

@@ -168,6 +168,11 @@ export interface ShelfPanelDeps {
   /** Asked when the shelf is opened while squeezed: makes the room (the
    *  page folds the details). */
   readonly makeRoom?: () => void;
+  /** True while the editor's panels are docked: the shelf is the Files
+   *  panel there, never a rail. Absent: never. */
+  readonly docked?: () => boolean;
+  /** Docked, shows the Files panel (opening the shelf asks for it). */
+  readonly revealDocked?: () => void;
 }
 
 export interface ShelfPanel {
@@ -869,6 +874,7 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
 
   /** Shown as its rail: folded by the creator, or squeezed. */
   function railShown(): boolean {
+    if (deps.docked?.() === true) return false;
     return state.folded || deps.squeezed?.() === true;
   }
 
@@ -978,6 +984,11 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
   }
 
   function open(): void {
+    if (deps.docked?.() === true) {
+      deps.revealDocked?.();
+      redraw();
+      return;
+    }
     if (deps.phone()) {
       state.sheet = true;
     } else {
@@ -1192,7 +1203,7 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     if (deps.phone()) {
       state.sheet = !state.sheet;
       redraw();
-    } else if (railShown()) {
+    } else if (railShown() || deps.docked?.() === true) {
       open();
     } else {
       setFolded(true);

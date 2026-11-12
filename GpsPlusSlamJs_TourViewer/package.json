@@ -34,6 +34,8 @@
   "dependencies": {
     "@reduxjs/toolkit": "^2.12.0",
     "@zip.js/zip.js": "^2.11.2",
+    "dockview": "8.7.1",
+    "dockview-core": "8.7.1",
     "gps-plus-slam-app-framework": "workspace:*",
     "gps-plus-slam-editor-kit": "workspace:*",
     "gps-plus-slam-globe": "workspace:*",
