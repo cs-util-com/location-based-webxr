@@ -34,8 +34,11 @@ are not part of the page's first load.
     frame (the phone keyboard calls it before scrolling a field into sight).
     While `keyboardMaximizes(innerHeight, px)` (what the keyboard leaves is
     under `KEYBOARD_ROOM_PX`), the shown group whose panel holds the focus
-    is maximized with its tab strip hidden; focus moving to a field of
-    another group (a `focusin` on the layout) maximizes that one instead.
+    is maximized with its tab strip hidden; a focus coming into the layout
+    while the keyboard is up (a `focusin`) maximizes the group it lands in.
+    While one is maximized the other groups are hidden and their panels out
+    of the page (they render only while shown), so the focus cannot move
+    to another group's field until the layout is given back.
     The focus leaving the panels (to the top bar) gives nothing back by
     itself: on a phone the keyboard goes with the focus, and its going
     gives the layout back.

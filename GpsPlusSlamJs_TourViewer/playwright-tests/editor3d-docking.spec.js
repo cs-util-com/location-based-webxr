@@ -658,8 +658,7 @@ async function keyboardOf(page, px) {
 // goes, the layout must come back as it was (sizes, shown tabs, tab
 // strips), or a creator who typed one word is left with a rearranged
 // editor. The maximized panel's head (its back and fold buttons) stays in
-// reach under the largest keyboard, and a field of another group takes
-// the maximized place.
+// reach under the largest keyboard.
 test("a keyboard maximizes the docked group in use, its head in reach, and gives the layout back when it goes", async ({
   page,
 }) => {
@@ -707,7 +706,10 @@ test("a keyboard maximizes the docked group in use, its head in reach, and gives
   }, kb);
   expect(reach).toBe("ok");
 
-  // The list's search focused: the list takes the maximized place.
+  // Maximized, the other groups are hidden and their panels out of the
+  // page (they render only while shown), so no field of another group can
+  // take the focus: the list's search cannot. Should the panels render
+  // always again, this fails, and the move to that group is to be tested.
   const moved = await page.evaluate(() => {
     const search = /** @type {HTMLElement | null} */ (
       document.querySelector("#shell-tree .tsearch input")
@@ -715,17 +717,7 @@ test("a keyboard maximizes the docked group in use, its head in reach, and gives
     search?.focus();
     return document.activeElement === search;
   });
-  if (moved) {
-    await afterFrames(page, 3);
-    const other = await dockState(page);
-    expect(other.max).toBe(true);
-    expect(other.boxes["list"]).not.toBeNull();
-    expect(other.boxes["details"]).toBeNull();
-  }
-  test.info().annotations.push({
-    type: "focus to another group while maximized",
-    description: moved ? "taken" : "not focusable (its group is hidden)",
-  });
+  expect(moved).toBe(false);
 
   await keyboardOf(page, 0);
   await expect.poll(async () => (await dockState(page)).max).toBe(false);
