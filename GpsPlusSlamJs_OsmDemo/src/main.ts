@@ -55,6 +55,7 @@ import {
   serializeLightSettings,
 } from "./light-settings.js";
 import { describeDrawCost } from "./draw-cost.js";
+import { readWoodsKnobs } from "./woods-readout.js";
 import {
   describeGeoEvent,
   geoEventButtonLabel,
@@ -460,9 +461,18 @@ async function main(): Promise<void> {
    */
   let reportCameraView: (view: CameraView) => void = () => undefined;
 
+  // THE WOODS GOVERNOR'S KNOBS (?woodsauto=off, ?treeform=trunk, ?perf=1),
+  // read-only boot overrides with no app control: read once here, never
+  // written back. The governor runs only on a coarse pointer (a phone).
+  const woodsKnobs = readWoodsKnobs(
+    window.location.search,
+    window.matchMedia("(pointer: coarse)").matches,
+  );
   const buildingView = new BuildingView({
     container: el("scene"),
     initialSun: sunAnglesAt(sunInstant, sunPlace),
+    woodsAuto: woodsKnobs.auto,
+    perfReadout: woodsKnobs.perf,
     onCameraMove: (view) => reportCameraView(view),
     // A cell selection dispatches the SAME action a 2D cell click does: the panel
     // does not know, and must not know, which view the selection came from. A POI
@@ -2979,6 +2989,7 @@ async function main(): Promise<void> {
           return (r << 16) | (g << 8) | b;
         },
         plateColour: colourSchemeOf(latestMesh.colourScheme).ground.plates,
+        treeForm: woodsKnobs.treeForm,
       });
     } else if (!wantsMeshLayers) {
       buildingView.clearScene();

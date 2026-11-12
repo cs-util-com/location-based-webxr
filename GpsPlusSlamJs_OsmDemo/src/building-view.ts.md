@@ -643,3 +643,35 @@ field ask that raised the default was literally about zooming further out.
   noon gain wherever it is applied (the frame loop and `render`), so it reaches
   buildings and roads only; `RangeError` outside 0.5-2. `main.ts` sets it,
   with the ground colours, from the scheme each full mesh was built in.
+
+## The woods governor and the `?perf=1` readout (city objects M2b)
+
+- **Options:** `woodsAuto` (absent: off) lets the library's woods governor
+  thin the invented woods; `perfReadout` (absent: hidden) mounts the frame
+  readout, a `data-testid="perf-readout"` line over the pane's top-left
+  corner, removed by `dispose()`. `main.ts` reads both from the link
+  (`woods-readout.ts` `readWoodsKnobs`).
+- **Chained frames only.** This view draws on demand, so `requestFrame`
+  records whether it was called from within the frame callback (a drag's
+  damping through the controls' `change`, a walk), and only such a frame's
+  interval is measured. The first frame of a burst follows an idle pause and
+  measures nothing; without this every phone would read its pauses as slow
+  frames and lose its woods.
+- **Order in the frame:** the governor is fed BEFORE the render, and a share
+  it just moved is applied then (`applyWoodsShare` on the group), so the frame
+  that crossed the line already draws fewer trees; an unchanged share is
+  never re-applied. `render()` re-applies the current share to every rebuild,
+  so a refetch on a slow phone keeps its thinned woods. The readout is
+  written AFTER the render, with this frame's draws and triangles.
+- **Desktop:** auto is off, so the share stays 1; the readout still shows the
+  measured frame time and p95.
+- Tested: the numbers in `woods-readout.test.ts`; the readout's presence,
+  absence and frame time in `playwright-tests/scene-3d.spec.js` ("the woods governor's frame readout").
+
+### Measuring the woods on a phone
+
+Open the branch preview's OsmDemo at the place, with `&perf=1` added, drag
+and orbit for some seconds, then read the line: `frame` (smoothed
+counted-frame ms), `p95` (last 10 s), `woods N % (mode)`, the invented trees
+drawn, draws and triangles. Repeat with `&woodsauto=off` for the full woods,
+and with `&treeform=trunk` for the trunk form.

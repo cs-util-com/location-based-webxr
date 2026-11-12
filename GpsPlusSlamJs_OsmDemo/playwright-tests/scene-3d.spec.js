@@ -3018,3 +3018,45 @@ test.describe("the ambient occlusion", () => {
     await expect(view).toHaveAttribute("data-ao", "on");
   });
 });
+
+test.describe("the woods governor's frame readout (?perf=1)", () => {
+  // WHY THIS TEST MATTERS: the readout is what the owner reads on his phone
+  // to learn whether the woods cost frames, so it must appear for `perf=1`,
+  // must show a measured frame time once frames are CHAINED (a drag's
+  // damping), and must never appear without the knob: the default picture
+  // and every pixel assertion stay as they were. On a desktop pointer the
+  // governor is off, so the woods stay at 100 %.
+  test("perf=1 shows the frame time after a drag, with the woods full on a desktop", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    await page.goto(`/?lat=${50.9231}&lng=${6.9445}&perf=1&treeform=trunk`);
+    await waitForRefresh(page);
+    const readout = page.getByTestId("perf-readout");
+    await expect(readout).toBeVisible();
+    await expect(readout).toContainText("woods 100 % (off)");
+
+    const box = await page.locator("#scene canvas").boundingBox();
+    if (box === null) throw new Error("no canvas box");
+    // At the left quarter, clear of a details panel over the right half.
+    const x = box.x + box.width * 0.25;
+    const y = box.y + box.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    for (let i = 1; i <= 8; i++) await page.mouse.move(x - 5 * i, y - 3 * i);
+    await page.mouse.up();
+
+    await expect(readout).toHaveText(
+      /^frame \d+\.\d ms · p95 \d+\.\d ms · /,
+      REPAINT,
+    );
+    await expect(readout).toContainText("woods 100 % (off)");
+  });
+
+  test("no readout without perf=1", async ({ page }) => {
+    await stubNetwork(page);
+    await page.goto(`/?lat=${50.9231}&lng=${6.9445}`);
+    await waitForRefresh(page);
+    await expect(page.getByTestId("perf-readout")).toHaveCount(0);
+  });
+});

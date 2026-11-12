@@ -51,6 +51,8 @@ import {
   cosmeticTreeObjects,
   streetFurnitureObjects,
   treeObjects,
+  type TreeForm,
+  type TreeObjectOptions,
 } from "gps-plus-slam-osm/three";
 
 import { RENDER_ORDER, groundLift } from "./layer-order.js";
@@ -196,6 +198,17 @@ export interface MeshLayerContext {
    * {@link PLATE_COLOUR}, today's.
    */
   readonly plateColour?: number;
+  /**
+   * How every tree is drawn, mapped and invented alike (`?treeform=trunk`,
+   * a read-only boot knob in `url-state.ts`). Absent means the library's
+   * default, the crown-only form.
+   */
+  readonly treeForm?: TreeForm;
+}
+
+/** The library's tree options for a context: no form, no option. */
+function treeOptions(context: MeshLayerContext): TreeObjectOptions {
+  return context.treeForm === undefined ? {} : { form: context.treeForm };
 }
 
 /**
@@ -413,7 +426,7 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
     // The library's `treeObjects`: one instanced mesh per variant on shared,
     // lazily made resources, each flagged `sharedResources` so `clear()` never
     // disposes them (three.js would silently draw nothing afterwards).
-    build: (mesh) => treeObjects(mesh.trees),
+    build: (mesh, context) => treeObjects(mesh.trees, treeOptions(context)),
     counters: (mesh) => ({ trees: mesh.trees.length }),
   },
   {
@@ -423,7 +436,8 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
     // same shared resources as `trees`, each mesh flagged
     // `userData.cosmetic` (hidden in AR, never a pick target), instances in
     // the build's rank order.
-    build: (mesh) => cosmeticTreeObjects(mesh.cosmeticTrees),
+    build: (mesh, context) =>
+      cosmeticTreeObjects(mesh.cosmeticTrees, treeOptions(context)),
     counters: (mesh) => ({ woods: mesh.cosmeticTrees.length }),
   },
   {

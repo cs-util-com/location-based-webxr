@@ -1290,3 +1290,36 @@ describe("drawMeshLayers - the furniture layer", () => {
     expect(tree.visible).toBe(true);
   });
 });
+
+describe("the tree form", () => {
+  // WHY THIS TEST MATTERS. `?treeform=trunk` reaches the library only through
+  // the render context, and both tree rows must honour it: a link that drew
+  // trunks for the mapped trees but crowns for the woods would be a mixed
+  // picture nobody asked for, and a measurement of the trunk form's cost
+  // would quietly measure half of it.
+  const onlyTrees = {
+    ...ALL_ON,
+    buildings: false,
+    furniture: false,
+    plates: false,
+    poi: false,
+    roads: false,
+    areas: false,
+  };
+  const forms = (treeForm?: "crown" | "trunk"): Set<unknown> =>
+    new Set(
+      drawMeshLayers(fullMesh(), onlyTrees, {
+        colourForScore: () => 0,
+        ...(treeForm === undefined ? {} : { treeForm }),
+      }).objects.map((object) => object.userData["treeForm"] as unknown),
+    );
+
+  it("draws the trunk form for both tree rows when the context asks for it", () => {
+    expect(forms("trunk")).toEqual(new Set(["trunk"]));
+  });
+
+  it("draws the crown-only default otherwise", () => {
+    expect(forms()).not.toContain("trunk");
+    expect(forms("crown")).not.toContain("trunk");
+  });
+});

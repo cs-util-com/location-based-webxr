@@ -41,7 +41,10 @@
  * zebras and pedestrian areas, `furniture=off` with the street furniture
  * layer off (all read in `main.ts`). `ao=off` boots with the ambient
  * occlusion off (read in `main.ts`; the light dialog's box changes it,
- * never the link).
+ * never the link). `woodsauto=off` keeps the woods governor from thinning
+ * the invented woods on a phone, `treeform=trunk` draws every tree with a
+ * trunk, `perf=1` shows the frame readout over the 3D pane (all three read
+ * in `main.ts` through `woods-readout.ts`; no app control changes them).
  *
  * FOUR WRITERS, EIGHT KEYS, AND NONE TOUCHES ANOTHER'S. `placeQuery` owns
  * `lat`/`lng`/`site`; `cameraQuery` owns `clat`/`clng`/`cdist`; `lightQuery`

@@ -220,6 +220,10 @@ None. Entry point only, loaded by `index.html`.
 - **`?furniture=off`** boots the street furniture layer off
   (`initialLayers`); a read-only boot override like `?roofs=off`. The status
   line counts the built lamps and bollards as `N furniture`.
+- **The woods governor knobs:** `?woodsauto=off`, `?treeform=trunk` and
+  `?perf=1`, read once by `readWoodsKnobs` (`woods-readout.ts`) with whether
+  the pointer is coarse; auto and perf go to `BuildingView`, the tree form
+  into the render context. Read-only boot overrides with no app control.
 - **The zebras and pedestrian areas:** `?markings=off` boots them off
   (read-only, like the roofs); the switch is `attachBuildChoiceSwitch` on
   `#markings`, dispatching `markingsChanged`; the switch itself rebuilds on

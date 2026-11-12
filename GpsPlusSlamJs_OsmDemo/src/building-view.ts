@@ -44,7 +44,9 @@ import {
   TERRAIN_SPACING_M,
   type Heightfield,
 } from "gps-plus-slam-osm";
+import { applyWoodsShare } from "gps-plus-slam-osm/three";
 import { heightRampColours } from "./height-ramp.js";
+import { createWoodsMeter, type WoodsMeter } from "./woods-readout.js";
 import {
   DEFAULT_CELL_PRESET,
   cellPreset,
@@ -344,6 +346,14 @@ export interface BuildingViewOptions {
    * be guessing at a policy it cannot see.
    */
   readonly onCameraMove?: (view: CameraView) => void;
+  /**
+   * Whether the woods governor may thin the invented woods (`woods-readout.ts`
+   * `readWoodsKnobs`: a phone, and not `woodsauto=off`). Absent means off:
+   * the frame time is still measured, the woods stay full.
+   */
+  readonly woodsAuto?: boolean;
+  /** Shows the `?perf=1` frame readout over the pane. Absent means hidden. */
+  readonly perfReadout?: boolean;
 }
 
 /** Where the camera is aimed, in scene coordinates, and from how far. */
@@ -591,10 +601,30 @@ export class BuildingView {
    * every pixel assertion in the suite — is unchanged by its existence.
    */
   private perfStats: PerfStatsOverlayHandle | undefined;
+  /**
+   * The woods governor and the frame readout's numbers. Fed from the frame
+   * callback with whether that frame was CHAINED (requested from within the
+   * previous frame's callback: a drag's damping, a walk), because this view
+   * draws on demand and an idle pause between two drags is not a slow frame.
+   */
+  private readonly woods: WoodsMeter;
+  /** The invented trees drawn at the current share, for the readout. */
+  private inventedTrees = 0;
+  /** The `?perf=1` line, mounted only when asked for. */
+  private readonly perfReadout: HTMLElement | undefined;
+  /** True while the frame callback runs, so `requestFrame` can tell chained. */
+  private inFrame = false;
+  /** Whether the frame now queued was requested from within a frame. */
+  private queuedChained = false;
 
   constructor(options: BuildingViewOptions) {
     this.container = options.container;
     this.sunAngles = options.initialSun;
+    this.woods = createWoodsMeter(options.woodsAuto ?? false);
+    this.perfReadout =
+      options.perfReadout === true
+        ? mountPerfReadout(this.container)
+        : undefined;
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
       // Without this the drawing buffer is cleared after each composite, so a
@@ -1850,62 +1880,96 @@ export class BuildingView {
     // resize — so refusing here is the only place that covers them all.
     if (this.suspended) return;
     if (this.frame !== undefined) return;
-    this.frame = requestAnimationFrame(() => {
+    this.queuedChained = this.inFrame;
+    this.frame = requestAnimationFrame((atMs) => {
       this.frame = undefined;
-      this.controls.update();
-      // BEFORE THE RENDER, so this frame shows where the agent now is rather
-      // than where it was one frame ago.
-      const walking = this.advanceWalk();
-      this.prepareFrame();
-      this.renderer.render(this.scene, this.camera);
-      // THE ONE OBSERVABLE BEHIND "THE SCENE GOES QUIET" (stage 4, DEC-R11-15).
-      // The regression this stage carries is a reintroduced permanent render
-      // loop — measured at ~6x slower e2e with one test into a timeout — and
-      // "quiet" had no machine-readable definition before this: a screenshot
-      // comparison also passes for a scene that stopped drawing, and a sleep
-      // asserts nothing at all.
-      //
-      // A MONOTONIC COUNTER ON THE CONTAINER, which is the same `#scene`
-      // element `publishFrameState` writes `data-frame-origin` and
-      // `data-ground-centre` onto, and for the same stated reason: an attribute
-      // cannot be read before it is written by mistake. A test polls it, sees it
-      // rise while the agent walks, and — the assertion that matters — sees it
-      // STOP rising once the agent arrives.
-      //
-      // Written here rather than in `main.ts` because this is where frames
-      // actually happen; a counter published from anywhere else would be
-      // counting something adjacent to rendering rather than rendering.
-      this.frames += 1;
-      this.container.dataset["frames"] = String(this.frames);
-      // The compile check's proof that a map was really drawn (three
-      // allocates it on the first shadow pass).
-      if (this.shadowCheck && this.sun.shadow.map !== null) {
-        this.container.dataset["shadowCheck"] = "rendered";
+      this.inFrame = true;
+      try {
+        this.drawFrame(atMs);
+      } finally {
+        this.inFrame = false;
       }
-      // Captured immediately after the render: three resets these counters at
-      // the START of each render, so any later read would describe a frame that
-      // has not happened yet.
-      this.lastDrawCost = {
-        calls: this.renderer.info.render.calls,
-        triangles: this.renderer.info.render.triangles,
-      };
-      // AFTER the cost capture: the AO's own renders reset those counters, and
-      // the cost reported is the scene's.
-      this.ao.render();
-      // DRIVEN FROM THE ON-DEMAND FRAME, and that is the accepted trade
-      // (DEC-R3-9). This view deliberately has no permanent rAF loop — one was
-      // measured to make the e2e suite ~6x slower and would burn a phone's
-      // battery repainting a static city — so FPS and frame-ms read only while
-      // the camera is moving, which is exactly when the CPU and GPU ground paths
-      // differ. The MB panel is meaningful throughout.
-      this.perfStats?.update();
-      // THE ONLY THING IN THIS VIEW THAT SCHEDULES A FRAME FROM WITHIN A FRAME,
-      // and it stops on its own: `advanceWalk` returns false the moment the
-      // agent arrives. That is the whole of DEC-R11-15's accepted risk — a loop
-      // that did not stop is the measured ~6x e2e slowdown — and the e2e's
-      // second half asserts the stopping rather than the moving.
-      if (walking) this.requestFrame();
     });
+  }
+
+  /** One on-demand frame; `requestFrame` is its only caller. */
+  private drawFrame(atMs: number): void {
+    this.meterWoods(atMs, this.queuedChained);
+    this.controls.update();
+    // BEFORE THE RENDER, so this frame shows where the agent now is rather
+    // than where it was one frame ago.
+    const walking = this.advanceWalk();
+    this.prepareFrame();
+    this.renderer.render(this.scene, this.camera);
+    // THE ONE OBSERVABLE BEHIND "THE SCENE GOES QUIET" (stage 4, DEC-R11-15).
+    // The regression this stage carries is a reintroduced permanent render
+    // loop — measured at ~6x slower e2e with one test into a timeout — and
+    // "quiet" had no machine-readable definition before this: a screenshot
+    // comparison also passes for a scene that stopped drawing, and a sleep
+    // asserts nothing at all.
+    //
+    // A MONOTONIC COUNTER ON THE CONTAINER, which is the same `#scene`
+    // element `publishFrameState` writes `data-frame-origin` and
+    // `data-ground-centre` onto, and for the same stated reason: an attribute
+    // cannot be read before it is written by mistake. A test polls it, sees it
+    // rise while the agent walks, and — the assertion that matters — sees it
+    // STOP rising once the agent arrives.
+    //
+    // Written here rather than in `main.ts` because this is where frames
+    // actually happen; a counter published from anywhere else would be
+    // counting something adjacent to rendering rather than rendering.
+    this.frames += 1;
+    this.container.dataset["frames"] = String(this.frames);
+    // The compile check's proof that a map was really drawn (three
+    // allocates it on the first shadow pass).
+    if (this.shadowCheck && this.sun.shadow.map !== null) {
+      this.container.dataset["shadowCheck"] = "rendered";
+    }
+    // Captured immediately after the render: three resets these counters at
+    // the START of each render, so any later read would describe a frame that
+    // has not happened yet.
+    this.lastDrawCost = {
+      calls: this.renderer.info.render.calls,
+      triangles: this.renderer.info.render.triangles,
+    };
+    // AFTER the cost capture: the AO's own renders reset those counters, and
+    // the cost reported is the scene's.
+    this.ao.render();
+    // DRIVEN FROM THE ON-DEMAND FRAME, and that is the accepted trade
+    // (DEC-R3-9). This view deliberately has no permanent rAF loop — one was
+    // measured to make the e2e suite ~6x slower and would burn a phone's
+    // battery repainting a static city — so FPS and frame-ms read only while
+    // the camera is moving, which is exactly when the CPU and GPU ground paths
+    // differ. The MB panel is meaningful throughout.
+    this.perfStats?.update();
+    this.showPerfReadout();
+    // THE ONLY THING IN THIS VIEW THAT SCHEDULES A FRAME FROM WITHIN A FRAME,
+    // and it stops on its own: `advanceWalk` returns false the moment the
+    // agent arrives. That is the whole of DEC-R11-15's accepted risk — a loop
+    // that did not stop is the measured ~6x e2e slowdown — and the e2e's
+    // second half asserts the stopping rather than the moving.
+    if (walking) this.requestFrame();
+  }
+
+  /**
+   * Feeds the woods governor one frame and applies a share it just moved.
+   * BEFORE the render, so the frame that crossed the line already draws the
+   * thinner woods. Only a changed share is applied: re-applying every frame
+   * would re-sort the trunk form's trees on every drag frame.
+   */
+  private meterWoods(atMs: number, chained: boolean): void {
+    const share = this.woods.frame(atMs, chained);
+    if (share === undefined) return;
+    this.inventedTrees = applyWoodsShare(this.group.children, share);
+  }
+
+  /** The `?perf=1` line, after the render so it carries this frame's cost. */
+  private showPerfReadout(): void {
+    if (this.perfReadout === undefined) return;
+    this.perfReadout.textContent = this.woods.describe(
+      this.inventedTrees,
+      this.lastDrawCost,
+    );
   }
 
   /**
@@ -1961,6 +2025,12 @@ export class BuildingView {
     // layer detectable, which the longhand form could not: see that file's header.
     const { objects, stats } = drawMeshLayers(mesh, layers, context);
     for (const object of objects) this.group.add(object);
+    // New woods arrive whole; the governor's share holds across a rebuild,
+    // or every refetch on a slow phone would bring the full woods back.
+    this.inventedTrees = applyWoodsShare(
+      this.group.children,
+      this.woods.share(),
+    );
     // New meshes arrive at factor 1; the noon brightening is held on the
     // view for exactly this (the lesson of the AR shell material below).
     applySurfaceGain(this.group, this.surfaceGain * this.brightnessTrim);
@@ -2563,6 +2633,7 @@ export class BuildingView {
     // "cancelled FIRST" stays literally true (PR #343 review), and pinned —
     // call and order — by `building-view-content.test.ts`.
     this.questBeacons.dispose();
+    this.perfReadout?.remove();
     this.container.removeEventListener("pointerdown", this.onPointerStart);
     this.container.removeEventListener("pointerup", this.onPointerDown);
     this.controls.dispose();
@@ -2735,3 +2806,20 @@ function installGroundDisplacement(
  * because the only path to it runs through `drawCells`, which needs a
  * `WebGLRenderer`.
  */
+
+/**
+ * The `?perf=1` line over the 3D pane's top-left corner: a plain text node
+ * the frame callback rewrites, never a pick target (`pointer-events: none`).
+ * `#scene` is positioned, so the corner is the pane's.
+ */
+function mountPerfReadout(container: HTMLElement): HTMLElement {
+  const readout = document.createElement("div");
+  readout.dataset["testid"] = "perf-readout";
+  readout.style.cssText =
+    "position:absolute;top:4px;left:4px;z-index:5;pointer-events:none;" +
+    "padding:2px 6px;border-radius:4px;background:rgba(0,0,0,0.6);" +
+    "color:#fff;font:11px/1.4 ui-monospace,monospace;white-space:nowrap;";
+  readout.textContent = "frame - ms";
+  container.appendChild(readout);
+  return readout;
+}

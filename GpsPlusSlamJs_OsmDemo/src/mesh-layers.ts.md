@@ -198,3 +198,11 @@ Tested in `mesh-layers.test.ts`.
 `BuildingStats.inventedRoofCount` carries the mesh's count of volumes with an
 invented pitched roof, zero while the buildings layer is off like every other
 buildings counter; the status line shows it beside the guessed heights.
+
+## The tree form
+
+`MeshLayerContext.treeForm` (`?treeform=trunk`, read by `main.ts` through
+`woods-readout.ts`) reaches both tree rows, the mapped `trees` and the
+invented `woods`, as the library's `TreeObjectOptions.form`; absent draws
+the crown-only default. Both rows take it so a trunk-form measurement
+covers every tree. Tested in `mesh-layers.test.ts` ("the tree form").
