@@ -88,8 +88,14 @@ resolutionScale?, noiseSeed?, enabled? })` returns `AmbientOcclusion`:
 - **The multiply happens in display space.** The canvas holds the frame
   after tone mapping and sRGB encoding, so a linear multiply there would
   darken by the encoded factor. The blend raises the factor to `1 / 2.2`, a
-  gamma fit of the sRGB curve, so a crease darkens about as much as the
-  look-dev page's linear multiply before its output pass. A factor of
+  gamma fit of the sRGB curve. That makes it LIGHTER than the look-dev
+  page's linear multiply before its output pass, not equal to it: measured
+  on one frame (OsmDemo, the Meggen capture at the city-look lab's landing
+  pose, desktop), the darkest wall foot went from 75 to 43 here and from 75
+  to 31 on the look-dev path, and over the pixels both darken the mean
+  ratio was 0.90 here against 0.83 there (a drop of 6 against 10 levels).
+  The tone mapping between the two points is why the gamma argument does
+  not carry over. One pose, so the size of the gap is provisional. A factor of
   exactly 1 stays exactly 1, which is what keeps the fogged distance and an
   intensity-0 frame bit-identical to the frame without AO.
 - **The fade is by view depth, the haze by distance along the ray.** Toward

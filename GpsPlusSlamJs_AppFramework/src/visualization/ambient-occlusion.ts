@@ -83,7 +83,9 @@ export const AO_NOISE_SEED = 1;
  * The exponent that carries the linear AO factor into the display-encoded
  * framebuffer the blend multiplies (a gamma-2.2 fit of the sRGB curve). The
  * frame is already tone-mapped and encoded when the AO is applied, so the
- * linear factor would darken too much; `1` stays `1` exactly.
+ * linear factor would darken too much; `1` stays `1` exactly. Measured, the
+ * result is lighter than the look-dev page's linear multiply before tone
+ * mapping; the sidecar carries the numbers.
  */
 const AO_DISPLAY_EXPONENT = 1 / 2.2;
 
