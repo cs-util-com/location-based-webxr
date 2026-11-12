@@ -160,6 +160,12 @@ wired into its logic: every interaction is faked.
   tabs with a toolbar, placing in the view), each on the same sample tour
   with story folders listed before free items and a light Markdown
   description; made 2026-11-03.
+- `editor-folders-1-tree-first/` ... `editor-folders-3-pin-to-anchor/` - three
+  directions for grouping a station's items into folders that move, turn and
+  scale as one (pick and group in the station tree, select and group in the
+  3D view with a first click that takes the whole group, or pin items to an
+  anchor such as a 3D model); each also ungroups, drags items in and out,
+  duplicates and undoes; made 2026-11-09.
 - `editor-bottom-panel-1-tabs/`, `editor-bottom-panel-2-status-drawer/` -
   two directions for the editor's bottom bar and a collapsible panel for
   problems, history, map loading and performance (one tabbed panel, or a

@@ -1,0 +1,4479 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Editor Folders: Scene First</title>
+    <!--
+  Throwaway prototype: grouping a station's items into folders, direction
+  "scene first". Grouping happens in the 3D view, as in drawing tools: drag a
+  box on the ground (desktop) or long-press an item and tap more (phone), then
+  "Group these". A folder is a soft frame on the ground with a name tag.
+  The first click on a member selects the whole folder; a second click (or a
+  double-click) enters the folder to edit one item; Esc or a click outside
+  leaves it. The station tree on the left mirrors every change and takes
+  drags in and out of a folder.
+  Original code. Inspired by the group and isolation behaviour of vector
+  drawing and slide tools (click selects the group, double-click enters it,
+  everything else fades) and by marquee selection. Rendering: three.js r185
+  (MIT licence), with OrbitControls and CSS2DRenderer. All icons are simple
+  original SVG paths in the style of the editor. Nothing is saved; all data is
+  hard-coded sample data.
+-->
+    <style>
+      :root {
+        --bg0: #18191c;
+        --bg1: #1f2023;
+        --bg2: #26282c;
+        --bg3: #2f3136;
+        --bg4: #383a40;
+        --line: #313338;
+        --line2: #3c3f46;
+        --text: #d9dbe0;
+        --muted: #8a8f99;
+        --dim: #646973;
+        --accent: #e9a23b;
+        --accentBg: rgba(233, 162, 59, 0.14);
+        --accentLine: rgba(233, 162, 59, 0.55);
+        --accentText: #f3c47e;
+        --fold: #a9bdd8;
+        --danger: #d97d79;
+        --focus: #5b9cf0;
+        --ax-e: #e0575b;
+        --ax-n: #4f8fe8;
+        --ax-u: #67bb57;
+        --mono:
+          "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", ui-monospace,
+          Menlo, monospace;
+        --treeW: 272px;
+        --inspW: 280px;
+        --sheetH: 0px;
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: var(--bg0);
+        color: var(--text);
+        font:
+          12px/1.4 "Segoe UI",
+          system-ui,
+          -apple-system,
+          "Helvetica Neue",
+          Arial,
+          sans-serif;
+        overflow: hidden;
+      }
+      body {
+        display: grid;
+        grid-template-rows: 40px minmax(0, 1fr) 24px;
+        grid-template-columns: minmax(0, 1fr);
+      }
+      svg.i {
+        width: 16px;
+        height: 16px;
+        flex: none;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.35;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      button,
+      input {
+        font: inherit;
+        color: inherit;
+      }
+      kbd {
+        font: 10px var(--mono);
+        color: var(--dim);
+      }
+      body.touch kbd {
+        display: none;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      :focus-visible {
+        outline: 2px solid var(--focus);
+        outline-offset: -2px;
+      }
+
+      /* top bar */
+      #tb {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 8px;
+        background: var(--bg1);
+        border-bottom: 1px solid var(--line);
+        min-width: 0;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding-right: 10px;
+        border-right: 1px solid var(--line);
+        height: 24px;
+        white-space: nowrap;
+        min-width: 0;
+      }
+      .brand b {
+        font-weight: 600;
+      }
+      .brand .doc {
+        color: var(--muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .grp {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 0 4px;
+        height: 26px;
+      }
+      .tbtn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 26px;
+        padding: 0 8px;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        background: transparent;
+        cursor: pointer;
+        white-space: nowrap;
+        color: var(--text);
+      }
+      .tbtn:hover:not(:disabled) {
+        background: var(--bg3);
+      }
+      .tbtn:disabled {
+        color: var(--dim);
+        cursor: default;
+      }
+      .tbtn.on {
+        background: var(--accentBg);
+        border-color: var(--accentLine);
+        color: var(--accentText);
+      }
+      .spacer {
+        flex: 1;
+      }
+      #bList {
+        display: none;
+      }
+
+      /* viewport */
+      #vp {
+        position: relative;
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+        background: #232427;
+      }
+      #cv {
+        display: block;
+        width: 100%;
+        height: 100%;
+        outline: none;
+        touch-action: none;
+      }
+      #labels {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        overflow: hidden;
+        z-index: 2;
+      }
+      #vp.inside::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        z-index: 3;
+        box-shadow:
+          inset 0 0 0 2px rgba(233, 162, 59, 0.85),
+          inset 0 0 70px rgba(233, 162, 59, 0.16);
+      }
+      #vp.selecttool #cv {
+        cursor: crosshair;
+      }
+      #vp #cv.grab {
+        cursor: grab !important;
+      }
+      #vp #cv.hand {
+        cursor: pointer !important;
+      }
+
+      /* labels in the 3D view */
+      .anchor {
+        width: 0;
+        height: 0;
+        position: relative;
+      }
+      .stag {
+        position: absolute;
+        left: 0;
+        bottom: 6px;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        padding: 2px 7px 2px 3px;
+        border-radius: 3px;
+        background: rgba(28, 29, 32, 0.86);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        color: #e6e8ec;
+        font-size: 11px;
+        white-space: nowrap;
+        pointer-events: none;
+      }
+      .stag .n {
+        font: 10px var(--mono);
+        background: #3d5a78;
+        color: #e6f0fa;
+        border-radius: 2px;
+        padding: 0 4px;
+      }
+      .ftag {
+        position: absolute;
+        left: 0;
+        bottom: 4px;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        height: 22px;
+        padding: 0 8px 0 5px;
+        border-radius: 4px 4px 4px 0;
+        background: rgba(28, 29, 32, 0.9);
+        border: 1px solid rgba(214, 218, 226, 0.35);
+        color: #e6e8ec;
+        font-size: 11.5px;
+        white-space: nowrap;
+        cursor: pointer;
+        pointer-events: auto;
+        transition: opacity 0.15s;
+      }
+      .ftag svg.i {
+        width: 14px;
+        height: 14px;
+        color: var(--fold);
+      }
+      .ftag .c {
+        font: 10px var(--mono);
+        color: var(--dim);
+      }
+      .ftag .st {
+        display: none;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #1c1c1c;
+        background: var(--accent);
+        border-radius: 3px;
+        padding: 0 5px;
+        line-height: 15px;
+      }
+      .ftag:hover {
+        border-color: rgba(255, 255, 255, 0.6);
+      }
+      .ftag.hover {
+        border-color: rgba(255, 255, 255, 0.7);
+      }
+      .ftag.sel {
+        border-color: var(--accent);
+      }
+      .ftag.sel svg.i {
+        color: var(--accentText);
+      }
+      .ftag.inside {
+        border-color: var(--accent);
+        background: rgba(48, 36, 18, 0.95);
+      }
+      .ftag.inside svg.i {
+        color: var(--accentText);
+      }
+      .ftag.inside .st {
+        display: inline-block;
+      }
+      .ftag.inside .c {
+        display: none;
+      }
+      .ftag.dim {
+        opacity: 0.3;
+      }
+      .htag {
+        position: absolute;
+        left: 12px;
+        top: -10px;
+        padding: 2px 7px;
+        border-radius: 3px;
+        background: rgba(24, 25, 28, 0.92);
+        border: 1px solid var(--line2);
+        color: var(--text);
+        font-size: 11px;
+        white-space: nowrap;
+        pointer-events: none;
+      }
+      .htag i {
+        font-style: normal;
+        color: var(--dim);
+      }
+
+      .ov {
+        position: absolute;
+        pointer-events: none;
+      }
+      #protoTag {
+        right: 8px;
+        bottom: 6px;
+        font-size: 10px;
+        color: rgba(220, 222, 226, 0.65);
+        letter-spacing: 0.03em;
+        padding: 1px 6px;
+        border-radius: 3px;
+        background: rgba(24, 25, 28, 0.6);
+        z-index: 4;
+      }
+      #readout {
+        display: none;
+        padding: 3px 7px;
+        border-radius: 3px;
+        background: rgba(24, 25, 28, 0.92);
+        border: 1px solid var(--line2);
+        font: 10.5px var(--mono);
+        color: var(--text);
+        white-space: nowrap;
+        z-index: 8;
+      }
+      #box {
+        display: none;
+        border: 1px dashed var(--accent);
+        background: rgba(233, 162, 59, 0.08);
+        z-index: 4;
+      }
+      .lp {
+        position: absolute;
+        width: 64px;
+        height: 64px;
+        margin: -32px 0 0 -32px;
+        border-radius: 50%;
+        border: 2px solid var(--accent);
+        pointer-events: none;
+        z-index: 8;
+        animation: lp 0.55s ease-out forwards;
+      }
+      @keyframes lp {
+        from {
+          transform: scale(0.3);
+          opacity: 1;
+        }
+        to {
+          transform: scale(1.2);
+          opacity: 0;
+        }
+      }
+
+      /* the "inside a folder" bar */
+      #crumbWrap {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        right: 10px;
+        display: flex;
+        justify-content: center;
+        pointer-events: none;
+        z-index: 6;
+      }
+      body.treeDock #crumbWrap {
+        left: calc(var(--treeW) + 10px);
+      }
+      body.inspOn #crumbWrap {
+        right: calc(var(--inspW) + 10px);
+      }
+      #crumb {
+        pointer-events: auto;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        max-width: 100%;
+        min-width: 0;
+        height: 34px;
+        padding: 0 4px 0 6px;
+        border-radius: 8px;
+        background: rgba(48, 36, 18, 0.96);
+        border: 1px solid var(--accent);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+      }
+      #crumb .cst {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 26px;
+        padding: 0 6px;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      #crumb .cst:hover {
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.06);
+      }
+      #crumb .sep {
+        color: var(--dim);
+      }
+      #crumb .cf {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        min-width: 0;
+        color: #fff;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      #crumb .cf span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      #crumb .cf svg {
+        color: var(--accentText);
+      }
+      #crumb .badge {
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #1c1c1c;
+        background: var(--accent);
+        border-radius: 3px;
+        padding: 1px 5px;
+        white-space: nowrap;
+        margin: 0 4px;
+      }
+      #crumb .leave {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 26px;
+        padding: 0 9px;
+        border: 1px solid var(--accentLine);
+        border-radius: 5px;
+        background: rgba(233, 162, 59, 0.12);
+        color: var(--accentText);
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      #crumb .leave:hover {
+        background: rgba(233, 162, 59, 0.22);
+      }
+
+      /* docked panels */
+      .dock {
+        position: absolute;
+        top: 0;
+        z-index: 5;
+        display: flex;
+        flex-direction: column;
+        max-height: calc(100% - 10px);
+        background: rgba(31, 32, 35, 0.97);
+        border: 1px solid var(--line);
+        border-top: 0;
+        box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
+      }
+      #tree {
+        left: 0;
+        width: var(--treeW);
+        border-left: 0;
+        border-radius: 0 0 8px 0;
+        max-height: calc(100% - 128px);
+      }
+      #insp {
+        right: 0;
+        width: var(--inspW);
+        border-right: 0;
+        border-radius: 0 0 0 8px;
+        max-height: calc(100% - 90px);
+        display: none;
+      }
+      body.inspOn #insp {
+        display: flex;
+      }
+      .dhead {
+        flex: none;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 5px 0 12px;
+      }
+      .dock:not(.collapsed) .dhead {
+        border-bottom: 1px solid var(--line);
+      }
+      .ttlh {
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .count {
+        font: 10px var(--mono);
+        color: var(--dim);
+      }
+      .sp {
+        flex: 1;
+      }
+      .ib {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 26px;
+        height: 26px;
+        border: 0;
+        background: transparent;
+        border-radius: 4px;
+        color: var(--muted);
+        cursor: pointer;
+        flex: none;
+        padding: 0;
+      }
+      .ib:hover {
+        background: var(--bg3);
+        color: var(--text);
+      }
+      .dbody {
+        overflow: auto;
+        min-height: 0;
+        padding: 4px 0 6px;
+      }
+      .dock.collapsed .dbody,
+      .dock.collapsed .tfoot {
+        display: none;
+      }
+      .dock.collapsed .dhead .fold svg {
+        transform: rotate(180deg);
+      }
+      .dbody::-webkit-scrollbar {
+        width: 10px;
+      }
+      .dbody::-webkit-scrollbar-thumb {
+        background: var(--bg4);
+        border: 3px solid var(--bg1);
+        border-radius: 6px;
+      }
+      .tfoot {
+        flex: none;
+        border-top: 1px solid var(--line);
+        padding: 6px 10px 7px;
+        color: var(--dim);
+        font-size: 10.5px;
+        line-height: 1.5;
+      }
+      .tfoot b {
+        color: var(--muted);
+        font-weight: 600;
+      }
+
+      /* tree rows (the editor's station tree) */
+      .row {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        height: 26px;
+        padding-left: calc(var(--d) * 16px + 4px);
+        padding-right: 6px;
+        cursor: pointer;
+        white-space: nowrap;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      .row:hover {
+        background: rgba(255, 255, 255, 0.035);
+      }
+      .row.sel {
+        background: var(--accentBg);
+        box-shadow: inset 2px 0 0 var(--accent);
+      }
+      .row.st {
+        height: 30px;
+        font-weight: 600;
+      }
+      .row .grip {
+        width: 16px;
+        height: 20px;
+        flex: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--muted);
+        cursor: grab;
+        opacity: 0;
+        touch-action: none;
+        border-radius: 4px;
+      }
+      .row .grip svg.i {
+        width: 12px;
+        height: 12px;
+      }
+      .row:hover .grip,
+      .row.sel .grip,
+      .row.dragging .grip {
+        opacity: 0.9;
+      }
+      .row .nogrip {
+        width: 16px;
+        flex: none;
+      }
+      .tw {
+        width: 16px;
+        height: 20px;
+        flex: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--muted);
+        border: 0;
+        background: transparent;
+        padding: 0;
+        cursor: pointer;
+      }
+      .tw svg.i {
+        width: 12px;
+        height: 12px;
+        transition: transform 0.12s;
+      }
+      .tw.open svg.i {
+        transform: rotate(90deg);
+      }
+      .tw.none {
+        visibility: hidden;
+      }
+      .badge {
+        font: 600 10px var(--mono);
+        min-width: 18px;
+        height: 16px;
+        line-height: 16px;
+        text-align: center;
+        border-radius: 3px;
+        background: #3d5a78;
+        color: #e6f0fa;
+        flex: none;
+        padding: 0 3px;
+      }
+      .ti {
+        display: inline-flex;
+        color: var(--muted);
+      }
+      .ti.story {
+        color: var(--accentText);
+      }
+      .ti.folder {
+        color: var(--fold);
+      }
+      .ti.sound {
+        color: #6cc3b8;
+      }
+      .ti.picture {
+        color: #c9a66b;
+      }
+      .ti.model {
+        color: #a3b1c2;
+      }
+      .ti.text {
+        color: #c8ccd4;
+      }
+      .nm {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .row:not(.st) .nm {
+        font-weight: 400;
+      }
+      .meta {
+        font: 10px var(--mono);
+        color: var(--dim);
+        flex: none;
+      }
+      .stepn {
+        font: 10px var(--mono);
+        color: var(--dim);
+        width: 16px;
+        text-align: right;
+        flex: none;
+      }
+      .pill {
+        font-size: 9.5px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #1c1c1c;
+        background: var(--accent);
+        border-radius: 3px;
+        padding: 0 5px;
+        line-height: 15px;
+        flex: none;
+      }
+      .row.member::before {
+        content: "";
+        position: absolute;
+        left: 30px;
+        top: 0;
+        bottom: 0;
+        width: 1px;
+        background: var(--line2);
+      }
+      .row.scope {
+        background: rgba(233, 162, 59, 0.11);
+        box-shadow: inset 2px 0 0 var(--accent);
+      }
+      .row.scope .ti.folder {
+        color: var(--accentText);
+      }
+      .row.inscope::before {
+        background: var(--accentLine);
+      }
+      .row.out {
+        opacity: 0.4;
+      }
+      .row.flash {
+        animation: flash 1.5s ease-out;
+      }
+      @keyframes flash {
+        0% {
+          background: rgba(233, 162, 59, 0.42);
+        }
+        100% {
+          background: transparent;
+        }
+      }
+      .row.dragging {
+        opacity: 0.55;
+      }
+      .row.drop-before {
+        box-shadow: inset 0 3px 0 0 var(--accent);
+      }
+      .row.drop-after {
+        box-shadow: inset 0 -3px 0 0 var(--accent);
+      }
+      .row.drop-into {
+        background: rgba(233, 162, 59, 0.14);
+        outline: 2px solid var(--accent);
+        outline-offset: -2px;
+      }
+      .sec {
+        padding: 8px 12px 2px;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        color: var(--dim);
+      }
+
+      /* drag ghost (the editor's nested drag) */
+      .nest-ghost {
+        position: fixed;
+        z-index: 1000;
+        display: none;
+        flex-direction: column;
+        gap: 2px;
+        max-width: 220px;
+        padding: 4px 8px;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        background: var(--bg1);
+        color: var(--text);
+        font-size: 12px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+        pointer-events: none;
+      }
+      .nest-ghost.on {
+        display: flex;
+      }
+      .nest-ghost-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .nest-ghost-no {
+        display: none;
+        align-items: center;
+        gap: 4px;
+        color: var(--danger);
+        font-weight: 600;
+      }
+      .nest-ghost-no svg.i {
+        width: 12px;
+        height: 12px;
+      }
+      .nest-ghost[data-refused] {
+        border-color: var(--danger);
+      }
+      .nest-ghost[data-refused] .nest-ghost-no {
+        display: flex;
+      }
+      :root[data-nest-drag="refused"],
+      :root[data-nest-drag="refused"] * {
+        cursor: not-allowed !important;
+      }
+
+      /* inspector */
+      #insp .dhead {
+        padding-left: 8px;
+      }
+      .hic {
+        display: inline-flex;
+        width: 22px;
+        justify-content: center;
+      }
+      .ttlin {
+        flex: 1;
+        min-width: 0;
+        height: 26px;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        background: transparent;
+        color: #f0f1f3;
+        font:
+          600 13.5px "Segoe UI",
+          system-ui,
+          sans-serif;
+        padding: 0 5px;
+        outline: none;
+        text-overflow: ellipsis;
+      }
+      .ttlin:hover {
+        border-color: var(--line2);
+      }
+      .ttlin:focus {
+        border-color: var(--focus);
+        background: var(--bg2);
+      }
+      .ttlstatic {
+        flex: 1;
+        min-width: 0;
+        font:
+          600 13.5px "Segoe UI",
+          system-ui,
+          sans-serif;
+        padding: 0 5px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .sub {
+        padding: 6px 12px 4px;
+        color: var(--dim);
+        font-size: 11px;
+      }
+      .isec {
+        padding: 6px 12px 8px;
+        border-top: 1px solid var(--line);
+      }
+      .isec h4 {
+        margin: 2px 0 6px;
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .f {
+        display: grid;
+        grid-template-columns: 64px minmax(0, 1fr);
+        align-items: center;
+        gap: 6px;
+        min-height: 24px;
+        margin: 3px 0;
+      }
+      .f > label {
+        color: var(--muted);
+      }
+      .vec {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 4px;
+      }
+      .num {
+        display: flex;
+        align-items: center;
+        height: 22px;
+        border: 1px solid var(--line);
+        border-radius: 3px;
+        min-width: 0;
+        font: 11px var(--mono);
+        color: var(--muted);
+        padding: 0 6px;
+        gap: 5px;
+      }
+      .num .ax {
+        font-weight: 600;
+      }
+      .ax.e {
+        color: var(--ax-e);
+      }
+      .ax.n {
+        color: var(--ax-n);
+      }
+      .num .u {
+        margin-left: auto;
+        color: var(--dim);
+      }
+      .note {
+        color: var(--dim);
+        font-size: 11px;
+        line-height: 1.45;
+        margin: 4px 0 2px;
+      }
+      .mem {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 24px;
+        padding: 0 6px;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      .mem:hover {
+        background: var(--bg3);
+      }
+
+      /* map tools (the 3D view's white pills) */
+      #tools {
+        position: absolute;
+        left: 12px;
+        bottom: 14px;
+        z-index: 4;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .wp {
+        background: #fff;
+        border-radius: 8px;
+        box-shadow:
+          0 1px 2px rgba(60, 64, 67, 0.25),
+          0 2px 8px rgba(60, 64, 67, 0.15);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .wp button {
+        width: 38px;
+        height: 38px;
+        border: none;
+        background: #fff;
+        cursor: pointer;
+        display: grid;
+        place-items: center;
+        color: #5f6670;
+        padding: 0;
+      }
+      .wp button:hover {
+        background: #f1f3f4;
+        color: #1f2328;
+      }
+      .wp button + button {
+        border-top: 1px solid #e4e7eb;
+      }
+      .wp button.on {
+        background: #fdf0db;
+        color: #9a5d06;
+      }
+      .wp svg.i {
+        width: 18px;
+        height: 18px;
+        stroke-width: 1.5;
+      }
+
+      /* the floating action bar: the scene's group / enter / ungroup actions */
+      #fab {
+        position: absolute;
+        left: 50%;
+        bottom: calc(14px + var(--sheetH));
+        transform: translateX(-50%);
+        z-index: 6;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 3px;
+        width: max-content;
+        max-width: calc(100% - 24px);
+        padding: 4px;
+        border-radius: 10px;
+        background: rgba(31, 32, 35, 0.97);
+        border: 1px solid var(--line2);
+        box-shadow: 0 8px 26px rgba(0, 0, 0, 0.45);
+      }
+      #fab.hint {
+        background: rgba(24, 25, 28, 0.82);
+        border-color: var(--line);
+        box-shadow: none;
+        padding: 5px 12px;
+        color: var(--muted);
+        font-size: 11.5px;
+      }
+      #fab.picking {
+        border-color: var(--accent);
+      }
+      .fb {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 32px;
+        padding: 0 10px;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--text);
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .fb svg.i {
+        color: var(--accentText);
+      }
+      .fb:hover:not(:disabled) {
+        background: var(--bg3);
+      }
+      .fb:disabled {
+        color: var(--dim);
+        cursor: default;
+      }
+      .fb:disabled svg.i {
+        color: var(--dim);
+      }
+      .fb.pri {
+        background: var(--accent);
+        color: #1c1c1c;
+        font-weight: 600;
+      }
+      .fb.pri svg.i {
+        color: #1c1c1c;
+      }
+      .fb.pri:hover {
+        background: #f0b257;
+      }
+      .fb.pri kbd {
+        color: rgba(28, 28, 28, 0.6);
+      }
+      .fb.danger svg.i {
+        color: var(--danger);
+      }
+      .fcount {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 8px 0 6px;
+        height: 32px;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .fcount b {
+        color: var(--text);
+        font-weight: 600;
+      }
+      .fsep {
+        width: 1px;
+        height: 20px;
+        background: var(--line2);
+        margin: 0 2px;
+      }
+      .fwhy {
+        color: var(--dim);
+        font-size: 11px;
+        padding: 0 6px;
+      }
+      .fin {
+        height: 30px;
+        width: 200px;
+        max-width: 56vw;
+        border: 1px solid var(--focus);
+        border-radius: 5px;
+        background: var(--bg2);
+        padding: 0 8px;
+        outline: none;
+      }
+
+      /* toast */
+      #toast {
+        left: 50%;
+        bottom: calc(24px + var(--sheetH) + var(--fabH, 44px));
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 5px 6px 5px 12px;
+        border-radius: 5px;
+        background: rgba(30, 31, 34, 0.96);
+        border: 1px solid var(--line2);
+        color: var(--text);
+        opacity: 0;
+        transition: opacity 0.25s;
+        z-index: 9;
+        max-width: calc(100% - 32px);
+        pointer-events: none;
+      }
+      #toast.show {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      #toast .tx {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0;
+      }
+      #toast button {
+        border: 1px solid var(--accentLine);
+        background: transparent;
+        color: var(--accentText);
+        border-radius: 4px;
+        height: 24px;
+        padding: 0 9px;
+        cursor: pointer;
+        flex: none;
+      }
+
+      /* status bar */
+      #sb {
+        display: flex;
+        align-items: center;
+        background: var(--bg1);
+        border-top: 1px solid var(--line);
+        font-size: 11px;
+        color: var(--muted);
+        min-width: 0;
+      }
+      #sb > div {
+        padding: 0 10px;
+        border-right: 1px solid var(--line);
+        height: 100%;
+        display: flex;
+        align-items: center;
+        white-space: nowrap;
+        overflow: hidden;
+        gap: 5px;
+      }
+      #sb .grow {
+        flex: 1;
+        min-width: 0;
+        display: block !important;
+        line-height: 23px;
+        text-overflow: ellipsis;
+      }
+      #sb .mono {
+        font: 10.5px var(--mono);
+      }
+      #sbScope.inside {
+        color: var(--accentText);
+      }
+      #sbScope svg.i {
+        width: 13px;
+        height: 13px;
+      }
+
+      /* notes */
+      #notesBack {
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        background: rgba(8, 9, 11, 0.6);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 12px;
+      }
+      #notesBack.show {
+        display: flex;
+      }
+      #notes {
+        width: min(600px, 100%);
+        max-height: calc(100% - 8px);
+        overflow: auto;
+        background: var(--bg1);
+        border: 1px solid var(--line2);
+        border-radius: 8px;
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+      }
+      #notes h2 {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 600;
+        color: #f0f1f3;
+        padding: 12px 14px 10px;
+        border-bottom: 1px solid var(--line);
+      }
+      #notes .nb {
+        padding: 4px 14px 2px;
+        font-size: 12.5px;
+        line-height: 1.5;
+        color: var(--text);
+      }
+      #notes h3 {
+        margin: 12px 0 4px;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accentText);
+      }
+      #notes p {
+        margin: 4px 0;
+      }
+      #notes ul,
+      #notes ol {
+        margin: 4px 0;
+        padding-left: 20px;
+      }
+      #notes li {
+        margin: 3px 0;
+      }
+      #notes .mf {
+        display: flex;
+        justify-content: flex-end;
+        padding: 10px 14px 12px;
+        border-top: 1px solid var(--line);
+        margin-top: 8px;
+        position: sticky;
+        bottom: 0;
+        background: var(--bg1);
+      }
+      .btn {
+        height: 30px;
+        padding: 0 16px;
+        border-radius: 4px;
+        border: 1px solid var(--accent);
+        background: var(--accent);
+        color: #1c1c1c;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .desk-only {
+        display: inline;
+      }
+      .touch-only {
+        display: none;
+      }
+      body.touch .desk-only {
+        display: none;
+      }
+      body.touch .touch-only {
+        display: inline;
+      }
+
+      @media (pointer: coarse) {
+        .row {
+          height: 34px;
+        }
+        .row.st {
+          height: 36px;
+        }
+        .row .grip {
+          opacity: 0.6;
+        }
+        .fb {
+          height: 40px;
+        }
+        .fcount {
+          height: 40px;
+        }
+      }
+      @media (max-width: 900px) {
+        .tbtn .lbl {
+          display: none;
+        }
+      }
+      @media (max-width: 700px) {
+        #bList {
+          display: inline-flex;
+        }
+        .brand b {
+          display: none;
+        }
+        #tree {
+          left: 0;
+          right: 0;
+          bottom: 0;
+          top: auto;
+          width: auto;
+          height: 46%;
+          max-height: 46%;
+          border: 0;
+          border-top: 1px solid var(--line2);
+          border-radius: 12px 12px 0 0;
+          box-shadow: 0 -10px 26px rgba(0, 0, 0, 0.45);
+          z-index: 7;
+        }
+        #tree .dhead {
+          position: relative;
+          padding-top: 6px;
+          height: 42px;
+        }
+        #tree .dhead::before {
+          content: "";
+          position: absolute;
+          left: 50%;
+          top: 5px;
+          width: 34px;
+          height: 3px;
+          border-radius: 2px;
+          background: #4a4f57;
+          transform: translateX(-50%);
+        }
+        #tree .fold {
+          display: none;
+        }
+        body:not(.treeOpen) #tree {
+          display: none;
+        }
+        body.treeOpen {
+          --sheetH: 46%;
+        }
+        #tools {
+          left: auto;
+          right: 10px;
+          bottom: calc(78px + var(--sheetH));
+        }
+        body.treeOpen #tools {
+          display: none;
+        }
+        .tfoot {
+          display: none;
+        }
+        #sbHint {
+          display: none !important;
+        }
+        #crumb .cst span,
+        #crumb .sep,
+        #crumb .leave kbd {
+          display: none;
+        }
+        #crumb .badge {
+          display: none;
+        }
+      }
+      @media (max-height: 460px) {
+        #tools {
+          flex-direction: row;
+        }
+        .wp {
+          flex-direction: row;
+        }
+        .wp button + button {
+          border-top: 0;
+          border-left: 1px solid #e4e7eb;
+        }
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.185.1/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <header id="tb">
+      <div class="brand">
+        <svg class="i" viewBox="0 0 16 16" style="color: var(--accent)">
+          <path d="M8 1.8l5.5 3v6.4L8 14.2 2.5 11.2V4.8z" />
+          <path d="M2.5 4.8L8 7.8l5.5-3M8 7.8v6.4" /></svg
+        ><b>Tour Editor</b><span class="doc">Old Town Walk</span>
+      </div>
+      <div class="grp">
+        <button class="tbtn" id="bUndo" title="Undo (Ctrl+Z)">
+          <i data-icon="undo"></i><span class="lbl">Undo</span>
+        </button>
+        <button class="tbtn" id="bRedo" title="Redo (Ctrl+Shift+Z)">
+          <i data-icon="redo"></i><span class="lbl">Redo</span>
+        </button>
+      </div>
+      <div class="spacer"></div>
+      <div class="grp">
+        <button class="tbtn" id="bList" title="Show the station list">
+          <i data-icon="list"></i><span class="lbl">List</span>
+        </button>
+        <button class="tbtn" id="bNotes" title="What this prototype is about">
+          <i data-icon="help"></i><span class="lbl">Notes</span>
+        </button>
+      </div>
+    </header>
+
+    <main id="vp">
+      <canvas id="cv" aria-label="3D view of the station"></canvas>
+      <div class="ov" id="box"></div>
+      <div id="crumbWrap" hidden><div id="crumb" role="status"></div></div>
+      <aside class="dock" id="tree" aria-label="Station">
+        <div class="dhead">
+          <span class="ttlh">Station</span
+          ><span class="count" id="treeCount"></span><span class="sp"></span>
+          <button class="ib fold" id="bTreeFold" title="Fold the panel">
+            <i data-icon="up"></i>
+          </button>
+          <button class="ib" id="bTreeClose" title="Close the list" hidden>
+            <i data-icon="close"></i>
+          </button>
+        </div>
+        <div class="dbody" id="treeBody" role="tree"></div>
+        <div class="tfoot">
+          <b>Drag a grip</b> to move an item into or out of a folder.
+          <b>Double-click</b> a folder to go inside.
+        </div>
+      </aside>
+      <aside class="dock" id="insp" aria-label="Properties">
+        <div class="dhead" id="inspHead"></div>
+        <div class="dbody" id="inspBody"></div>
+      </aside>
+      <div id="tools">
+        <div class="wp">
+          <button
+            id="tSelect"
+            title="Select tool (V): drag a box on the ground to select"
+          >
+            <i data-icon="cursor"></i>
+          </button>
+          <button
+            id="tOrbit"
+            title="Orbit tool (H): drag to turn the view. Hold Space for it while in the select tool"
+          >
+            <i data-icon="orbit"></i>
+          </button>
+        </div>
+        <div class="wp">
+          <button id="zIn" title="Zoom in"><i data-icon="plus"></i></button>
+          <button id="zOut" title="Zoom out"><i data-icon="minus"></i></button>
+          <button id="zFrame" title="Frame the selection (F)">
+            <i data-icon="frame"></i>
+          </button>
+        </div>
+      </div>
+      <div id="fab" role="toolbar" aria-label="Selection actions"></div>
+      <div class="ov" id="readout"></div>
+      <div class="ov" id="toast" role="status">
+        <span class="tx"></span><button id="toastUndo">Undo</button>
+      </div>
+      <div class="ov" id="protoTag">Prototype: folders, scene first</div>
+    </main>
+
+    <footer id="sb">
+      <div id="sbScope"></div>
+      <div id="sbHint" class="grow"></div>
+      <div id="sbHist" class="mono"></div>
+    </footer>
+
+    <div class="nest-ghost" id="ghost" aria-hidden="true">
+      <span class="nest-ghost-name"></span
+      ><span class="nest-ghost-no"
+        ><i data-icon="ban"></i>Not possible here</span
+      >
+    </div>
+
+    <div id="notesBack" class="show">
+      <div
+        id="notes"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="notesTtl"
+      >
+        <h2 id="notesTtl">Folders, scene first</h2>
+        <div class="nb">
+          <p>
+            You group items where you see them: in the 3D view. Select a few
+            items in place, press <b>Group these</b>, and they become a folder:
+            a soft frame on the ground with a name tag. The station list on the
+            left only mirrors what happened.
+          </p>
+          <p>
+            A folder behaves like a group in a drawing tool. The
+            <b>first</b> click on any of its items selects the whole folder,
+            which moves, turns and scales as one. A <b>second</b> click (or a
+            double-click) goes <b>inside</b> the folder: everything else fades,
+            the frame turns solid amber and a bar at the top says where you are.
+            Now you edit one item alone. <b>Esc</b>, a click outside the frame,
+            or <b>Leave folder</b> takes you out again.
+          </p>
+          <h3>Why this direction is good</h3>
+          <ul>
+            <li>
+              Things that belong together usually stand together (a text and a
+              picture beside a model). Selecting them where they stand is the
+              shortest way, and you see what you pick.
+            </li>
+            <li>
+              It is the grouping everyone already knows from slide and drawing
+              tools: box-select, group, click to select the group, double-click
+              to go in.
+            </li>
+            <li>
+              The frame shows before any drag what will move together, so a
+              folder can never move a hidden item by surprise.
+            </li>
+            <li>
+              The list stays the precise tool (order, drag in and out, items far
+              apart), but nothing has to start there.
+            </li>
+          </ul>
+          <h3>The strongest case against it</h3>
+          <ul>
+            <li>
+              Selecting in 3D is fragile: a box in a tilted view catches items
+              behind others, items far apart need a huge box, and overlapping
+              frames get cluttered.
+            </li>
+            <li>
+              "First click selects the folder" adds one click to every item
+              edit, and a tester who misses it thinks the item cannot be picked.
+            </li>
+            <li>
+              On a phone, long-press is invisible until someone explains it, and
+              it competes with turning the view with one finger.
+            </li>
+            <li>
+              On a desktop the select tool takes the left mouse button, so
+              turning the view moves to the right button or Space: a habit
+              change for anyone used to the current 3D view.
+            </li>
+          </ul>
+          <h3>What to try</h3>
+          <ol>
+            <li>
+              <span class="desk-only"
+                >Drag a box on the ground around the stone, the text card and
+                the picture (or Shift-click them).</span
+              ><span class="touch-only"
+                >Long-press the stone until the ring pulses, then tap the text
+                card and the picture.</span
+              >
+              Press <b>Group these</b>.
+            </li>
+            <li>
+              Drag the folder's middle disc to move it, the knob on its stalk to
+              turn it, a corner dot to scale it. Watch the list: the folder is
+              there too.
+            </li>
+            <li>
+              Click the picture again (second click) to go inside the folder.
+              Move the picture alone; the frame follows its items. Press
+              <b>Esc</b> to leave.
+            </li>
+            <li>
+              In the list, drag the text card's grip out of the folder (onto the
+              station row or between free items). Try dropping it on the story:
+              "Not possible here".
+            </li>
+            <li>
+              Select the folder and press <b>Duplicate</b>, then
+              <b>Ungroup</b> the copy, then <b>Undo</b> a few times.
+            </li>
+          </ol>
+          <p class="note">
+            One station, nothing saved.
+            <span class="desk-only"
+              >Right-drag (or Space + drag) turns the view, the wheel zooms,
+              middle-drag pans. Keys: Ctrl+G group, Ctrl+Shift+G ungroup, Enter
+              go inside, Esc leave, Ctrl+D duplicate, Del delete, Ctrl+Z
+              undo.</span
+            ><span class="touch-only"
+              >One finger turns the view (switch to the select tool to draw a
+              box instead), two fingers zoom and pan.</span
+            >
+          </p>
+        </div>
+        <div class="mf">
+          <button class="btn" id="bNotesClose">Try it</button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module">
+      import {
+        Scene,
+        Color,
+        PerspectiveCamera,
+        WebGLRenderer,
+        HemisphereLight,
+        DirectionalLight,
+        Group,
+        Mesh,
+        MeshBasicMaterial,
+        MeshStandardMaterial,
+        PlaneGeometry,
+        CircleGeometry,
+        RingGeometry,
+        CylinderGeometry,
+        IcosahedronGeometry,
+        BufferGeometry,
+        Float32BufferAttribute,
+        ShapeGeometry,
+        Shape,
+        LineSegments,
+        LineBasicMaterial,
+        Sprite,
+        SpriteMaterial,
+        CanvasTexture,
+        SRGBColorSpace,
+        DoubleSide,
+        Vector2,
+        Vector3,
+        Plane,
+        Raycaster,
+        MOUSE,
+        TOUCH,
+      } from "three";
+      import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+      import {
+        CSS2DRenderer,
+        CSS2DObject,
+      } from "three/addons/renderers/CSS2DRenderer.js";
+
+      // ---------------------------------------------------------------- utilities
+      const DEG = Math.PI / 180;
+      const $ = (q, r = document) => r.querySelector(q);
+      const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+      const norm180 = (a) => ((((a + 180) % 360) + 360) % 360) - 180;
+      const esc = (s) =>
+        String(s).replace(
+          /[&<>"]/g,
+          (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c],
+        );
+      const fmt = (v, d = 2) => {
+        const s = v.toFixed(d);
+        return /^-0\.?0*$/.test(s) ? s.slice(1) : s;
+      };
+      const AMBER = 0xe9a23b;
+
+      const ICON = {
+        undo: '<path d="M5.5 3.5L2.5 6.5l3 3"/><path d="M2.5 6.5h7a3.6 3.6 0 0 1 0 7.2H6.5"/>',
+        redo: '<path d="M10.5 3.5l3 3-3 3"/><path d="M13.5 6.5h-7a3.6 3.6 0 0 0 0 7.2h3"/>',
+        help: '<circle cx="8" cy="8" r="6.2"/><path d="M6.2 6.3a1.9 1.9 0 1 1 2.6 1.8c-.6.3-.8.7-.8 1.3v.3"/><circle cx="8" cy="11.6" r=".35"/>',
+        list: '<path d="M5.5 4h8M5.5 8h8M5.5 12h8M2.5 4h.4M2.5 8h.4M2.5 12h.4"/>',
+        up: '<path d="M4.5 9.5L8 6l3.5 3.5"/>',
+        right: '<path d="M6.5 4.5L10 8l-3.5 3.5"/>',
+        close: '<path d="M4 4l8 8M12 4l-8 8"/>',
+        plus: '<path d="M8 3v10M3 8h10"/>',
+        minus: '<path d="M3 8h10"/>',
+        frame:
+          '<path d="M2 5.5V2h3.5M10.5 2H14v3.5M14 10.5V14h-3.5M5.5 14H2v-3.5"/><circle cx="8" cy="8" r="1.6"/>',
+        cursor:
+          '<path d="M3.5 2.5l9 4.6-3.9 1.2 2.6 4.4-1.6.9-2.6-4.4-3.1 2.6z"/>',
+        orbit:
+          '<path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M12.2 1.6l-.3 2.6-2.6-.3"/>',
+        station:
+          '<circle cx="8" cy="8" r="5.6"/><path d="M8 4.2v4.6"/><circle cx="8" cy="10.6" r=".5"/>',
+        text: '<rect x="3" y="2" width="10" height="12" rx="1"/><path d="M5.5 5.5h5M5.5 8h5M5.5 10.5h3"/>',
+        picture:
+          '<rect x="2" y="3" width="12" height="10" rx="1"/><path d="M2.5 11.2l3.4-3.4 3 3 2-2 2.6 2.6"/><circle cx="10.6" cy="6" r="1"/>',
+        model:
+          '<path d="M8 1.8l5.5 3v6.4L8 14.2 2.5 11.2V4.8z"/><path d="M2.5 4.8L8 7.8l5.5-3M8 7.8v6.4"/>',
+        sound:
+          '<path d="M2.5 6h2.6L8.5 3v10L5.1 10H2.5z"/><path d="M10.8 5.6a3 3 0 0 1 0 4.8M12.4 3.8a5.5 5.5 0 0 1 0 8.4"/>',
+        folder:
+          '<path d="M2 4.5a1 1 0 0 1 1-1h3.2l1.4 1.6H13a1 1 0 0 1 1 1v6.4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>',
+        folderIn:
+          '<path d="M2 4.5a1 1 0 0 1 1-1h3.2l1.4 1.6H13a1 1 0 0 1 1 1v6.4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/><path d="M6 9.4h4.2M8.6 7.8l1.6 1.6-1.6 1.6"/>',
+        story: '<path d="M1.8 4h4.1l1.4 1.6h6.9v7.4H1.8z"/>',
+        storyOpen:
+          '<path d="M1.8 13V4h4.1l1.4 1.6h5.6v1.7"/><path d="M1.8 13l1.7-5.7h11.2L13 13z"/>',
+        group:
+          '<rect x="1.8" y="2.8" width="12.4" height="10.4" rx="2" stroke-dasharray="2 1.6"/><rect x="4" y="5" width="3.4" height="3.4" rx=".6"/><rect x="8.6" y="7.6" width="3.4" height="3.4" rx=".6"/>',
+        ungroup:
+          '<rect x="1.8" y="2.8" width="5.4" height="5.4" rx=".8"/><rect x="8.8" y="7.8" width="5.4" height="5.4" rx=".8"/><path d="M10 3.5h2.7v2.7M6 12.5H3.3V9.8"/>',
+        enter:
+          '<path d="M6.5 3H13v10H6.5"/><path d="M2 8h7M6.8 5.6L9.2 8l-2.4 2.4"/>',
+        leave:
+          '<path d="M9.5 3H3v10h6.5"/><path d="M7 8h7M11.8 5.6L14.2 8l-2.4 2.4"/>',
+        out: '<path d="M2 4.5a1 1 0 0 1 1-1h3.2l1.4 1.6H13a1 1 0 0 1 1 1v6.4a1 1 0 0 1-1 1H8"/><path d="M2 8.2v4.3h4.3M2 12.5l4.5-4.5"/>',
+        dup: '<rect x="5.5" y="5.5" width="8" height="8" rx="1"/><path d="M10.5 5.5V3.2a.7.7 0 0 0-.7-.7H3.2a.7.7 0 0 0-.7.7v6.6c0 .4.3.7.7.7h2.3"/>',
+        trash:
+          '<path d="M3 4.2h10M6.2 4.2V2.6h3.6v1.6M4.5 4.2l.7 9.3h5.6l.7-9.3"/>',
+        pencil:
+          '<path d="M10.6 2.9l2.5 2.5-7.6 7.6-3.1.6.6-3.1z"/><path d="M9.2 4.3l2.5 2.5"/>',
+        check: '<path d="M3 8.5l3.2 3.2L13 4.8"/>',
+        more: '<circle cx="8" cy="8" r="6"/><path d="M8 5.2v5.6M5.2 8h5.6"/>',
+        grip: '<path d="M6 3.5h.01M10 3.5h.01M6 8h.01M10 8h.01M6 12.5h.01M10 12.5h.01" stroke-width="2.2" stroke-linecap="round"/>',
+        ban: '<circle cx="8" cy="8" r="6"/><path d="M3.8 12.2l8.4-8.4"/>',
+      };
+      const icon = (n) =>
+        `<svg class="i" viewBox="0 0 16 16" aria-hidden="true">${ICON[n] || ""}</svg>`;
+      document.querySelectorAll("i[data-icon]").forEach((el) => {
+        el.outerHTML = icon(el.dataset.icon);
+      });
+
+      const IS_TOUCH = matchMedia("(pointer: coarse)").matches;
+      document.body.classList.toggle("touch", IS_TOUCH);
+      const phoneMQ = matchMedia("(max-width: 700px)");
+      const isPhone = () => phoneMQ.matches;
+
+      // ---------------------------------------------------------------- the station's data
+      // One station, its centre at the origin. Metres; E = +x, N = -z, up = +y. A node is an item or a
+      // folder. An item's pose (e, n, h, s) is in its parent's frame: the station's, or its folder's.
+      // A folder's pose is in the station's frame; it carries its items like a group in a scene graph.
+      // h is the heading in degrees, clockwise from north; s a uniform scale.
+      const TYPE_LABEL = {
+        text: "Text card",
+        picture: "Picture",
+        model: "3D model",
+        sound: "Sound circle",
+      };
+      const RAD = { model: 0.95, text: 0.62, picture: 0.72, sound: 2.25 }; // footprint radius per type, m
+      const TOP = { model: 1.45, text: 1.85, picture: 2.1, sound: 0.9 }; // height per type, m
+      let ST = {
+        name: "Market Square",
+        stories: [
+          {
+            id: "st1",
+            name: "Read the stone",
+            open: true,
+            steps: [
+              { id: "sp1", name: "Find the year on the stone" },
+              { id: "sp2", name: "Hold up the old photo" },
+            ],
+          },
+        ],
+        nodes: [
+          {
+            id: "m1",
+            kind: "item",
+            type: "model",
+            name: "Boundary stone",
+            e: 0.2,
+            n: 5.0,
+            h: 20,
+            s: 1,
+          },
+          {
+            id: "t1",
+            kind: "item",
+            type: "text",
+            name: "Inscription",
+            e: -2.0,
+            n: 5.4,
+            h: -12,
+            s: 1,
+          },
+          {
+            id: "p1",
+            kind: "item",
+            type: "picture",
+            name: "The square in 1900",
+            e: 2.6,
+            n: 5.1,
+            h: 14,
+            s: 1,
+          },
+          {
+            id: "a1",
+            kind: "item",
+            type: "sound",
+            name: "Market voices",
+            e: -3.2,
+            n: -2.4,
+            h: 0,
+            s: 1,
+          },
+        ],
+      };
+      let nextId = 10,
+        folderCount = 0;
+      const newId = (p) => p + nextId++;
+      let sel = { ids: [], story: null }; // selected nodes, all in the current scope; or one story
+      let scope = null; // the folder being edited inside, or null (the station)
+      let picking = false; // phone: long-press started "tap more items"
+      let renaming = false; // the action bar shows the folder's name field
+      let hover = null; // { id } of the node under the mouse (resolved like a click)
+      const treeOpen = { station: true };
+      const flashIds = new Set();
+
+      function findNode(id) {
+        for (const n of ST.nodes) {
+          if (n.id === id) return { node: n, parent: null, list: ST.nodes };
+          if (n.kind === "folder") {
+            const m = n.items.find((i) => i.id === id);
+            if (m) return { node: m, parent: n, list: n.items };
+          }
+        }
+        return null;
+      }
+      const nodeOf = (id) => findNode(id)?.node || null;
+      const parentIdOf = (id) => findNode(id)?.parent?.id ?? null;
+      const findStory = (id) => ST.stories.find((s) => s.id === id);
+
+      // clockwise rotation of an (e, n) offset by h degrees
+      function rot(e, n, h) {
+        const a = h * DEG,
+          c = Math.cos(a),
+          s = Math.sin(a);
+        return [e * c + n * s, -e * s + n * c];
+      }
+      function toStation(f, e, n) {
+        if (!f) return [e, n];
+        const [re, rn] = rot(e * f.s, n * f.s, f.h);
+        return [f.e + re, f.n + rn];
+      }
+      function fromStation(f, E, N) {
+        if (!f) return [E, N];
+        return rot((E - f.e) / f.s, (N - f.n) / f.s, -f.h);
+      }
+      // an item's pose in the station frame, and back
+      function bake(it, f) {
+        if (!f) return { ...it };
+        const [e, n] = toStation(f, it.e, it.n);
+        return { ...it, e, n, h: norm180(it.h + f.h), s: it.s * f.s };
+      }
+      function unbake(it, f) {
+        if (!f) return { ...it };
+        const [e, n] = fromStation(f, it.e, it.n);
+        return { ...it, e, n, h: norm180(it.h - f.h), s: it.s / f.s };
+      }
+
+      // a folder's frame in its own coordinates: the members' footprints plus a margin
+      function folderBox(f) {
+        if (!f.items.length) return null;
+        let minE = Infinity,
+          maxE = -Infinity,
+          minN = Infinity,
+          maxN = -Infinity,
+          top = 0;
+        for (const m of f.items) {
+          const r = RAD[m.type] * m.s;
+          minE = Math.min(minE, m.e - r);
+          maxE = Math.max(maxE, m.e + r);
+          minN = Math.min(minN, m.n - r);
+          maxN = Math.max(maxN, m.n + r);
+          top = Math.max(top, TOP[m.type] * m.s);
+        }
+        const pad = 0.35;
+        return {
+          minE: minE - pad,
+          maxE: maxE + pad,
+          minN: minN - pad,
+          maxN: maxN + pad,
+          top: top + 0.25,
+        };
+      }
+      function footprintBox(items) {
+        // station-frame box of loose items
+        let minE = Infinity,
+          maxE = -Infinity,
+          minN = Infinity,
+          maxN = -Infinity;
+        for (const m of items) {
+          const r = RAD[m.type] * m.s;
+          minE = Math.min(minE, m.e - r);
+          maxE = Math.max(maxE, m.e + r);
+          minN = Math.min(minN, m.n - r);
+          maxN = Math.max(maxN, m.n + r);
+        }
+        return { minE, maxE, minN, maxN };
+      }
+      const selectedNodes = () => sel.ids.map(nodeOf).filter(Boolean);
+      const scopeFolder = () => (scope ? nodeOf(scope) : null);
+
+      // ---------------------------------------------------------------- undo
+      const undoStack = [],
+        redoStack = [];
+      const snap = () =>
+        JSON.stringify({ ST, sel, scope, nextId, folderCount });
+      function restore(s) {
+        const o = JSON.parse(s);
+        ST = o.ST;
+        sel = o.sel;
+        scope = o.scope;
+        nextId = o.nextId;
+        folderCount = o.folderCount;
+        picking = false;
+        renaming = false;
+        refresh();
+      }
+      function commit(label, fn) {
+        const before = snap();
+        fn();
+        if (snap() === before) {
+          refresh();
+          return false;
+        }
+        undoStack.push({ label, s: before });
+        redoStack.length = 0;
+        refresh();
+        return true;
+      }
+      function undo() {
+        const u = undoStack.pop();
+        if (!u) return toast("Nothing to undo");
+        redoStack.push({ label: u.label, s: snap() });
+        restore(u.s);
+        toast("Undone: " + u.label, false);
+      }
+      function redo() {
+        const r = redoStack.pop();
+        if (!r) return toast("Nothing to redo");
+        undoStack.push({ label: r.label, s: snap() });
+        restore(r.s);
+        toast("Redone: " + r.label, false);
+      }
+
+      // ---------------------------------------------------------------- selection and scope
+      function setSel(ids, newScope = scope, story = null) {
+        scope = newScope;
+        sel = { ids: [...new Set(ids)], story };
+        renaming = false;
+        if (!sel.ids.length && !story) picking = false;
+        refresh();
+      }
+      // What a click on an item picks: outside a folder, the folder it belongs to; inside, the item
+      // itself (an item of another folder, or a loose one, takes you out first).
+      function resolveTarget(itemId) {
+        const pid = parentIdOf(itemId);
+        if (scope && pid === scope) return { id: itemId, scope };
+        return { id: pid || itemId, scope: null };
+      }
+      const isSelected = (t) => t.scope === scope && sel.ids.includes(t.id);
+      function toggleTarget(t) {
+        if (t.scope !== scope) return setSel([t.id], t.scope);
+        const ids = sel.ids.includes(t.id)
+          ? sel.ids.filter((x) => x !== t.id)
+          : [...sel.ids, t.id];
+        setSel(ids, scope);
+      }
+      function enterFolder(fid, itemId) {
+        const f = nodeOf(fid);
+        if (!f || f.kind !== "folder") return;
+        treeOpen[fid] = true;
+        picking = false;
+        setSel(itemId ? [itemId] : [], fid);
+        status('Inside "' + f.name + '": items move one by one now');
+      }
+      function leaveFolder(selectIt = true) {
+        if (!scope) return;
+        const fid = scope;
+        setSel(selectIt ? [fid] : [], null);
+      }
+
+      // ---------------------------------------------------------------- actions
+      function groupInfo() {
+        const nodes = selectedNodes();
+        const folders = nodes.filter((n) => n.kind === "folder"),
+          items = nodes.filter((n) => n.kind === "item");
+        if (scope)
+          return { ok: false, why: "Folders hold items only, one level deep" };
+        if (folders.length === 0 && items.length >= 2)
+          return { ok: true, mode: "new", items };
+        if (folders.length === 1 && items.length >= 1)
+          return { ok: true, mode: "add", folder: folders[0], items };
+        if (folders.length > 1)
+          return { ok: false, why: "A folder cannot hold another folder" };
+        return { ok: false, why: "Select two or more items" };
+      }
+      function group() {
+        const g = groupInfo();
+        if (!g.ok) return toast(g.why);
+        if (g.mode === "new") {
+          const b = footprintBox(g.items);
+          const e = (b.minE + b.maxE) / 2,
+            n = (b.minN + b.maxN) / 2;
+          const name = "Folder " + ++folderCount;
+          const f = {
+            id: newId("f"),
+            kind: "folder",
+            name,
+            e,
+            n,
+            h: 0,
+            s: 1,
+            items: [],
+          };
+          commit("Group " + g.items.length + " items", () => {
+            const at = Math.min(...g.items.map((it) => ST.nodes.indexOf(it)));
+            for (const it of g.items) ST.nodes.splice(ST.nodes.indexOf(it), 1);
+            f.items = g.items.map((it) => ({
+              ...it,
+              e: it.e - e,
+              n: it.n - n,
+            }));
+            ST.nodes.splice(at, 0, f);
+            treeOpen[f.id] = true;
+            flash(f.id);
+            f.items.forEach((m) => flash(m.id));
+            sel = { ids: [f.id], story: null };
+            scope = null;
+            picking = false;
+          });
+          toast(`Grouped ${g.items.length} items into "${name}"`);
+        } else {
+          const f = g.folder;
+          commit(`Add to "${f.name}"`, () => {
+            for (const it of g.items) {
+              ST.nodes.splice(ST.nodes.indexOf(it), 1);
+              f.items.push(unbake(it, f));
+              flash(it.id);
+            }
+            sel = { ids: [f.id], story: null };
+            picking = false;
+            treeOpen[f.id] = true;
+          });
+          toast(`Added ${g.items.length} to "${f.name}"`);
+        }
+      }
+      function ungroup() {
+        const fs = selectedNodes().filter((n) => n.kind === "folder");
+        if (!fs.length) return toast("Select a folder to ungroup");
+        const ids = [];
+        commit("Ungroup", () => {
+          for (const f of fs) {
+            const baked = f.items.map((m) => bake(m, f));
+            baked.forEach((m) => {
+              ids.push(m.id);
+              flash(m.id);
+            });
+            ST.nodes.splice(ST.nodes.indexOf(f), 1, ...baked);
+          }
+          sel = { ids, story: null };
+          scope = null;
+        });
+        toast(
+          fs.length === 1
+            ? `Ungrouped "${fs[0].name}": ${ids.length} loose items`
+            : "Ungrouped",
+        );
+      }
+      function cloneNode(n, offset) {
+        const c = JSON.parse(JSON.stringify(n));
+        c.id = newId(n.kind === "folder" ? "f" : "i");
+        c.name = n.name + " copy";
+        if (c.kind === "folder") {
+          c.items.forEach((m) => {
+            m.id = newId("i");
+          });
+          const b = folderBox(n);
+          c.e += (b ? (b.maxE - b.minE) * n.s : 2) + 0.8;
+        } else if (offset) {
+          c.e += 1.4;
+          c.n -= 1.4;
+        }
+        return c;
+      }
+      function duplicate() {
+        if (sel.story) return dupStory(sel.story);
+        const nodes = selectedNodes();
+        if (!nodes.length) return toast("Select something to duplicate");
+        const ids = [];
+        commit("Duplicate", () => {
+          for (const n of nodes) {
+            const r = findNode(n.id);
+            const c = cloneNode(n, true);
+            r.list.splice(r.list.indexOf(n) + 1, 0, c);
+            ids.push(c.id);
+            flash(c.id);
+            if (c.kind === "folder") treeOpen[c.id] = true;
+          }
+          sel = { ids, story: null };
+        });
+        toast(
+          nodes.length === 1
+            ? `Duplicated "${nodes[0].name}"`
+            : `Duplicated ${nodes.length}`,
+        );
+      }
+      function dupStory(id) {
+        const s = findStory(id);
+        if (!s) return;
+        let c;
+        commit("Duplicate story", () => {
+          c = JSON.parse(JSON.stringify(s));
+          c.id = newId("st");
+          c.name = s.name + " copy";
+          c.steps.forEach((p) => {
+            p.id = newId("sp");
+          });
+          ST.stories.splice(ST.stories.indexOf(s) + 1, 0, c);
+          flash(c.id);
+          sel = { ids: [], story: c.id };
+          scope = null;
+        });
+        toast(`Duplicated the story "${s.name}"`);
+      }
+      // remove folders that lost their last item (a drawing tool's group does the same)
+      function dropEmptyFolders() {
+        for (let i = ST.nodes.length - 1; i >= 0; i--) {
+          const n = ST.nodes[i];
+          if (n.kind === "folder" && !n.items.length) {
+            ST.nodes.splice(i, 1);
+            if (scope === n.id) scope = null;
+          }
+        }
+      }
+      function takeOut(ids = sel.ids) {
+        const f = scopeFolder();
+        if (!f) return;
+        const moved = [];
+        commit("Take out of folder", () => {
+          let at = ST.nodes.indexOf(f) + 1;
+          for (const id of ids) {
+            const m = f.items.find((x) => x.id === id);
+            if (!m) continue;
+            f.items.splice(f.items.indexOf(m), 1);
+            ST.nodes.splice(at++, 0, bake(m, f));
+            moved.push(id);
+            flash(id);
+          }
+          scope = null;
+          dropEmptyFolders();
+          sel = { ids: moved, story: null };
+        });
+        toast(
+          moved.length === 1
+            ? `Took "${nodeOf(moved[0])?.name}" out of "${f.name}"`
+            : `Took ${moved.length} out of "${f.name}"`,
+        );
+      }
+      function del() {
+        const nodes = selectedNodes();
+        if (!nodes.length) return;
+        commit("Delete", () => {
+          for (const n of nodes) {
+            const r = findNode(n.id);
+            r.list.splice(r.list.indexOf(n), 1);
+          }
+          dropEmptyFolders();
+          sel = { ids: [], story: null };
+        });
+        toast(
+          nodes.length === 1
+            ? `Deleted "${nodes[0].name}"`
+            : `Deleted ${nodes.length}`,
+        );
+      }
+      function rename(id, name) {
+        name = name.trim();
+        const n = nodeOf(id) || findStory(id);
+        if (!n || !name || name === n.name) return;
+        commit("Rename", () => {
+          n.name = name;
+        });
+      }
+      // a tree move keeps the item where it stands in the world
+      function moveNodeTo(id, listId, index) {
+        const r = findNode(id);
+        if (!r) return;
+        const oldParent = r.parent;
+        const fromList = r.list;
+        const ci = fromList.indexOf(r.node);
+        const newParent = listId ? nodeOf(listId) : null;
+        const toList = newParent ? newParent.items : ST.nodes;
+        const placed = newParent
+          ? unbake(bake(r.node, oldParent), newParent)
+          : bake(r.node, oldParent);
+        if (fromList === toList && ci < index) index--;
+        fromList.splice(ci, 1);
+        toList.splice(index, 0, placed);
+        dropEmptyFolders();
+        flash(id);
+        if (newParent) {
+          treeOpen[newParent.id] = true;
+          flash(newParent.id);
+          sel = { ids: [newParent.id], story: null };
+          scope = null;
+        } else {
+          sel = { ids: [id], story: null };
+          scope = null;
+        }
+      }
+      function flash(id) {
+        flashIds.add(id);
+        setTimeout(() => {
+          flashIds.delete(id);
+        }, 1600);
+      }
+
+      // ---------------------------------------------------------------- three.js scene
+      const vp = $("#vp"),
+        canvas = $("#cv");
+      const renderer = new WebGLRenderer({ canvas, antialias: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      const scene = new Scene();
+      const BG = new Color(0x232427),
+        BG_IN = new Color(0x27241f);
+      scene.background = BG.clone();
+      const camera = new PerspectiveCamera(48, 1, 0.1, 500);
+      camera.position.set(1.2, 8.2, 7.8);
+      const labelR = new CSS2DRenderer();
+      labelR.domElement.id = "labels";
+      vp.insertBefore(labelR.domElement, $("#box"));
+      scene.add(new HemisphereLight(0xffffff, 0x847a6a, 1.7));
+      const sun = new DirectionalLight(0xffffff, 1.6);
+      sun.position.set(7, 14, 9);
+      scene.add(sun);
+
+      function canvasTex(w, h, draw) {
+        const c = document.createElement("canvas");
+        c.width = w;
+        c.height = h;
+        draw(c.getContext("2d"), w, h);
+        const t = new CanvasTexture(c);
+        t.colorSpace = SRGBColorSpace;
+        t.anisotropy = 4;
+        return t;
+      }
+
+      // ground: a paved square, 80 m, with the station's arrival circle
+      const GROUND = 80,
+        GPX = 1600,
+        PPM = GPX / GROUND;
+      const groundTex = canvasTex(GPX, GPX, (g) => {
+        g.fillStyle = "#d6cfbf";
+        g.fillRect(0, 0, GPX, GPX);
+        const px = (E) => (E + GROUND / 2) * PPM,
+          py = (N) => (GROUND / 2 - N) * PPM;
+        g.fillStyle = "#c9c3b6";
+        g.fillRect(0, py(-14), GPX, 9 * PPM); // a street south of the square
+        g.fillStyle = "#efeadf";
+        g.fillRect(0, py(-14) - 1.2 * PPM, GPX, 1.2 * PPM);
+        g.fillRect(0, py(-23), GPX, 1.2 * PPM);
+        g.fillStyle = "#b9c9a0";
+        g.beginPath();
+        g.arc(px(-24), py(20), 9 * PPM, 0, 7);
+        g.fill(); // a patch of park
+        g.fillStyle = "#a7bb8b";
+        for (let i = 0; i < 40; i++) {
+          const a = i * 2.39,
+            r = 1 + (i % 7);
+          g.beginPath();
+          g.arc(
+            px(-24 + Math.cos(a) * r),
+            py(20 + Math.sin(a) * r),
+            (0.7 + (i % 3) * 0.4) * PPM,
+            0,
+            7,
+          );
+          g.fill();
+        }
+        g.fillStyle = "#c3b9aa";
+        [
+          [18, 18, 14, 9],
+          [-36, -2, 8, 10],
+          [26, -2, 10, 8],
+        ].forEach(([e, n, w, d]) => {
+          g.fillRect(px(e - w / 2), py(n + d / 2), w * PPM, d * PPM);
+          g.strokeStyle = "#a99f8f";
+          g.lineWidth = 2;
+          g.strokeRect(px(e - w / 2), py(n + d / 2), w * PPM, d * PPM);
+        });
+        for (let m = -40; m <= 40; m += 1) {
+          const major = m % 5 === 0;
+          g.strokeStyle = major ? "rgba(90,80,64,.20)" : "rgba(90,80,64,.07)";
+          g.lineWidth = major ? 2 : 1;
+          g.beginPath();
+          g.moveTo(px(m), 0);
+          g.lineTo(px(m), GPX);
+          g.stroke();
+          g.beginPath();
+          g.moveTo(0, py(m));
+          g.lineTo(GPX, py(m));
+          g.stroke();
+        }
+        g.setLineDash([1.2 * PPM, 0.8 * PPM]);
+        g.strokeStyle = "rgba(79,143,232,.8)";
+        g.lineWidth = 0.18 * PPM;
+        g.beginPath();
+        g.arc(px(0), py(0), 12 * PPM, 0, 7);
+        g.stroke();
+        g.setLineDash([]);
+        g.fillStyle = "rgba(79,143,232,.08)";
+        g.beginPath();
+        g.arc(px(0), py(0), 12 * PPM, 0, 7);
+        g.fill();
+      });
+      const ground = new Mesh(
+        new PlaneGeometry(GROUND, GROUND).rotateX(-Math.PI / 2),
+        new MeshBasicMaterial({ map: groundTex }),
+      );
+      scene.add(ground);
+      // the station's centre: a short blue pole with its name
+      const stationG = new Group();
+      scene.add(stationG);
+      {
+        const pole = new Mesh(
+          new CylinderGeometry(0.05, 0.05, 1.1, 8),
+          new MeshStandardMaterial({ color: 0x4f8fe8 }),
+        );
+        pole.position.y = 0.55;
+        const tip = new Mesh(
+          new CylinderGeometry(0.22, 0, 0.4, 4),
+          new MeshStandardMaterial({ color: 0x6fa8dc, flatShading: true }),
+        );
+        tip.position.y = 1.3;
+        scene.add(pole, tip);
+        const el = document.createElement("div");
+        el.className = "anchor";
+        el.innerHTML = `<div class="stag"><span class="n">1</span>${esc(ST.name)}</div>`;
+        const t = new CSS2DObject(el);
+        t.position.set(0, 1.55, 0);
+        scene.add(t);
+      }
+
+      // item looks
+      const TEX = {
+        text: canvasTex(512, 340, (g, w, h) => {
+          g.fillStyle = "#f4f1ea";
+          g.fillRect(0, 0, w, h);
+          g.strokeStyle = "#2b2d31";
+          g.lineWidth = 10;
+          g.strokeRect(5, 5, w - 10, h - 10);
+          g.fillStyle = "#26282c";
+          g.font = "700 46px Georgia, serif";
+          g.fillText("ANNO 1612", 38, 92);
+          g.font = "30px Georgia, serif";
+          g.fillStyle = "#44474d";
+          [
+            "This stone marked where",
+            "the market rights of the",
+            "town began. Look for",
+            "the carved year.",
+          ].forEach((l, i) => g.fillText(l, 38, 152 + i * 42));
+        }),
+        picture: canvasTex(512, 350, (g, w, h) => {
+          const sky = g.createLinearGradient(0, 0, 0, h);
+          sky.addColorStop(0, "#e2d2ad");
+          sky.addColorStop(1, "#bfa476");
+          g.fillStyle = sky;
+          g.fillRect(0, 0, w, h);
+          const b = [
+            [20, 120, 110, 190],
+            [140, 80, 90, 230],
+            [240, 140, 130, 170],
+            [380, 100, 110, 210],
+          ];
+          b.forEach(([x, y, bw, bh], i) => {
+            g.fillStyle = i % 2 ? "#7f6646" : "#8f7552";
+            g.fillRect(x, y, bw, bh);
+            g.fillStyle = "#5a4630";
+            for (let r = 0; r < 5; r++)
+              for (let c = 0; c < 3; c++)
+                g.fillRect(
+                  x + 12 + (c * (bw - 24)) / 3,
+                  y + 16 + r * 34,
+                  14,
+                  20,
+                );
+          });
+          g.fillStyle = "#9c8358";
+          g.fillRect(0, 300, w, 50);
+          g.fillStyle = "#6f5a3d";
+          for (let i = 0; i < 9; i++) g.fillRect(30 + i * 52, 286, 6, 20);
+          const v = g.createRadialGradient(w / 2, h / 2, 80, w / 2, h / 2, 330);
+          v.addColorStop(0, "rgba(60,40,20,0)");
+          v.addColorStop(1, "rgba(60,40,20,.55)");
+          g.fillStyle = v;
+          g.fillRect(0, 0, w, h);
+          g.strokeStyle = "#f3efe6";
+          g.lineWidth = 18;
+          g.strokeRect(9, 9, w - 18, h - 18);
+        }),
+        speaker: canvasTex(128, 128, (g) => {
+          g.fillStyle = "#2f8f86";
+          g.beginPath();
+          g.arc(64, 64, 58, 0, 7);
+          g.fill();
+          g.strokeStyle = "#fff";
+          g.lineWidth = 6;
+          g.stroke();
+          g.fillStyle = "#fff";
+          g.beginPath();
+          g.moveTo(34, 52);
+          g.lineTo(50, 52);
+          g.lineTo(70, 34);
+          g.lineTo(70, 94);
+          g.lineTo(50, 76);
+          g.lineTo(34, 76);
+          g.closePath();
+          g.fill();
+          g.lineWidth = 6;
+          g.lineCap = "round";
+          g.beginPath();
+          g.arc(70, 64, 16, -0.9, 0.9);
+          g.stroke();
+          g.beginPath();
+          g.arc(70, 64, 28, -0.9, 0.9);
+          g.stroke();
+        }),
+      };
+      function rockGeo() {
+        const geo = new IcosahedronGeometry(0.78, 1);
+        const p = geo.attributes.position;
+        for (let i = 0; i < p.count; i++) {
+          const x = p.getX(i),
+            y = p.getY(i),
+            z = p.getZ(i);
+          const hsh =
+            Math.sin(x * 12.9898 + y * 78.233 + z * 37.719) * 43758.5453;
+          const k = 1 + (hsh - Math.floor(hsh) - 0.5) * 0.3;
+          p.setXYZ(i, x * k * 1.1, y * k * 0.95, z * k * 0.85);
+        }
+        geo.computeVertexNormals();
+        return geo;
+      }
+      const ROCK = rockGeo();
+      const itemObjs = new Map();
+      function itemObj(it) {
+        let g = itemObjs.get(it.id);
+        if (g) return g;
+        g = new Group();
+        const mats = [],
+          pick = [];
+        const add = (geo, mat, y = 0, pickable = true) => {
+          const m = new Mesh(geo, mat);
+          m.position.y = y;
+          mats.push(mat);
+          if (pickable) {
+            m.userData.pick = it.id;
+            pick.push(m);
+          }
+          g.add(m);
+          return m;
+        };
+        const std = (color) =>
+          new MeshStandardMaterial({
+            color,
+            roughness: 0.85,
+            transparent: true,
+          });
+        if (it.type === "model") {
+          const m = add(
+            ROCK,
+            new MeshStandardMaterial({
+              color: 0x8f877a,
+              flatShading: true,
+              roughness: 0.95,
+              transparent: true,
+            }),
+            0.66,
+          );
+          m.rotation.y = 0.6;
+          add(new CylinderGeometry(0.95, 1.0, 0.08, 24), std(0xb4ab9a), 0.04);
+        } else if (it.type === "text" || it.type === "picture") {
+          const [w, h, y] =
+            it.type === "text" ? [1.0, 0.66, 1.45] : [1.24, 0.85, 1.62];
+          add(
+            new CylinderGeometry(0.035, 0.035, y - h / 2 + 0.02, 8),
+            std(0x55585e),
+            (y - h / 2) / 2,
+          );
+          add(
+            new PlaneGeometry(w, h),
+            new MeshBasicMaterial({
+              map: TEX[it.type],
+              transparent: true,
+              side: DoubleSide,
+            }),
+            y,
+          );
+          const back = add(
+            new PlaneGeometry(w + 0.04, h + 0.04),
+            new MeshBasicMaterial({
+              color: 0x3a3d43,
+              transparent: true,
+              side: DoubleSide,
+            }),
+            y,
+          );
+          back.position.z = -0.012;
+        } else {
+          const ring = add(
+            new RingGeometry(2.05, 2.25, 72).rotateX(-Math.PI / 2),
+            new MeshBasicMaterial({
+              color: 0x45b3a7,
+              transparent: true,
+              opacity: 0.8,
+              depthWrite: false,
+            }),
+            0.03,
+          );
+          ring.renderOrder = 2;
+          const fill = add(
+            new CircleGeometry(2.05, 72).rotateX(-Math.PI / 2),
+            new MeshBasicMaterial({
+              color: 0x45b3a7,
+              transparent: true,
+              opacity: 0.12,
+              depthWrite: false,
+            }),
+            0.025,
+            false,
+          );
+          fill.renderOrder = 1;
+          const sm = new SpriteMaterial({
+            map: TEX.speaker,
+            transparent: true,
+            alphaTest: 0.1,
+          });
+          const sp = new Sprite(sm);
+          sp.position.y = 0.55;
+          sp.scale.set(0.8, 0.8, 1);
+          sp.userData.pick = it.id;
+          g.add(sp);
+          mats.push(sm);
+          pick.push(sp);
+        }
+        const r = RAD[it.type] + 0.18;
+        const selRing = new Mesh(
+          new RingGeometry(r, r + 0.09, 64).rotateX(-Math.PI / 2),
+          new MeshBasicMaterial({
+            color: AMBER,
+            transparent: true,
+            depthTest: false,
+            depthWrite: false,
+          }),
+        );
+        selRing.position.y = 0.04;
+        selRing.renderOrder = 12;
+        selRing.visible = false;
+        g.add(selRing);
+        g.userData = {
+          id: it.id,
+          type: it.type,
+          mats,
+          base: mats.map((m) => m.opacity),
+          pick,
+          selRing,
+        };
+        itemObjs.set(it.id, g);
+        return g;
+      }
+
+      // folder looks: a soft frame on the ground (dashed when idle, solid amber when selected or
+      // entered), corner posts and top brackets that outline the folder's volume, and a name tag
+      const folderObjs = new Map();
+      function folderObj(f) {
+        let fo = folderObjs.get(f.id);
+        if (fo) return fo;
+        const g = new Group();
+        const mk = (color, opacity) =>
+          new MeshBasicMaterial({
+            color,
+            transparent: true,
+            opacity,
+            depthWrite: false,
+            side: DoubleSide,
+          });
+        const fill = new Mesh(new BufferGeometry(), mk(0xffffff, 0.05));
+        fill.renderOrder = 3;
+        const dash = new Mesh(new BufferGeometry(), mk(0xd6dae2, 0.6));
+        dash.renderOrder = 4;
+        const solid = new Mesh(new BufferGeometry(), mk(AMBER, 0.95));
+        solid.renderOrder = 4;
+        const posts = new LineSegments(
+          new BufferGeometry(),
+          new LineBasicMaterial({
+            color: AMBER,
+            transparent: true,
+            opacity: 0.8,
+          }),
+        );
+        const el = document.createElement("div");
+        el.className = "anchor";
+        el.innerHTML = `<button class="ftag" type="button">${icon("folder")}<span class="fn"></span><span class="c"></span><span class="st">inside</span></button>`;
+        const tag = new CSS2DObject(el);
+        g.add(fill, dash, solid, posts, tag);
+        fo = {
+          g,
+          fill,
+          dash,
+          solid,
+          posts,
+          tag,
+          btn: el.firstElementChild,
+          key: "",
+        };
+        fo.btn.addEventListener("pointerdown", (e) => e.stopPropagation());
+        fo.btn.addEventListener("click", (e) => tagClick(f.id, e));
+        fo.btn.addEventListener("dblclick", (e) => {
+          e.preventDefault();
+          if (scope !== f.id) enterFolder(f.id);
+        });
+        folderObjs.set(f.id, fo);
+        return fo;
+      }
+      function tagClick(fid, e) {
+        if (picking) return toggleTarget({ id: fid, scope: null });
+        if (e.shiftKey || e.ctrlKey || e.metaKey)
+          return toggleTarget({ id: fid, scope: null });
+        if (scope === fid) return; // already inside
+        if (!scope && sel.ids.length === 1 && sel.ids[0] === fid)
+          return enterFolder(fid); // second click goes in
+        setSel([fid], null);
+      }
+      function roundRect(b, rc, steps = 6) {
+        const pts = [];
+        const arc = (ce, cn, a0) => {
+          for (let i = 0; i <= steps; i++) {
+            const a = (a0 + (90 * i) / steps) * DEG;
+            pts.push([ce + Math.cos(a) * rc, cn + Math.sin(a) * rc]);
+          }
+        };
+        arc(b.maxE - rc, b.minN + rc, -90);
+        arc(b.maxE - rc, b.maxN - rc, 0);
+        arc(b.minE + rc, b.maxN - rc, 90);
+        arc(b.minE + rc, b.minN + rc, 180);
+        return pts;
+      }
+      function ribbonGeo(pts, w, dash) {
+        const pos = [],
+          idx = [];
+        const y = 0.045;
+        let acc = 0;
+        const quad = (a, b) => {
+          const de = b[0] - a[0],
+            dn = b[1] - a[1];
+          const L = Math.hypot(de, dn) || 1;
+          const oe = ((-dn / L) * w) / 2,
+            on = ((de / L) * w) / 2;
+          const k = pos.length / 3;
+          pos.push(
+            a[0] + oe,
+            y,
+            -(a[1] + on),
+            a[0] - oe,
+            y,
+            -(a[1] - on),
+            b[0] + oe,
+            y,
+            -(b[1] + on),
+            b[0] - oe,
+            y,
+            -(b[1] - on),
+          );
+          idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2);
+        };
+        const lerp = (a, b, t) => [
+          a[0] + (b[0] - a[0]) * t,
+          a[1] + (b[1] - a[1]) * t,
+        ];
+        for (let i = 0; i < pts.length; i++) {
+          const a = pts[i],
+            b = pts[(i + 1) % pts.length];
+          const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+          if (L < 1e-6) continue;
+          if (!dash) {
+            quad(a, b);
+            continue;
+          }
+          let t = 0;
+          // the dash phase is kept within one period, and every step moves on by at least
+          // a micrometre, so rounding can never stall the walk
+          while (t < L - 1e-6) {
+            const on = acc < dash;
+            const step = Math.min(
+              L - t,
+              Math.max(1e-6, on ? dash - acc : 2 * dash - acc),
+            );
+            if (on) quad(lerp(a, b, t / L), lerp(a, b, (t + step) / L));
+            t += step;
+            acc += step;
+            if (acc >= 2 * dash - 1e-9) acc = 0;
+          }
+        }
+        const geo = new BufferGeometry();
+        geo.setAttribute("position", new Float32BufferAttribute(pos, 3));
+        geo.setIndex(idx);
+        return geo;
+      }
+      function rebuildFrame(fo, f) {
+        const b = folderBox(f);
+        if (!b) return;
+        const key = [b.minE, b.maxE, b.minN, b.maxN, b.top, f.s]
+          .map((v) => v.toFixed(3))
+          .join();
+        if (key === fo.key) return;
+        fo.key = key;
+        const rc = Math.min(0.55, (b.maxE - b.minE) / 3, (b.maxN - b.minN) / 3);
+        const pts = roundRect(b, rc);
+        const w = 0.09 / f.s;
+        fo.dash.geometry.dispose();
+        fo.dash.geometry = ribbonGeo(pts, w, 0.42 / f.s);
+        fo.solid.geometry.dispose();
+        fo.solid.geometry = ribbonGeo(pts, w * 1.5, 0);
+        const sh = new Shape();
+        pts.forEach(([e, n], i) => (i ? sh.lineTo(e, n) : sh.moveTo(e, n)));
+        fo.fill.geometry.dispose();
+        fo.fill.geometry = new ShapeGeometry(sh).rotateX(-Math.PI / 2);
+        fo.fill.position.y = 0.035;
+        const c = [
+          [b.minE, b.minN],
+          [b.maxE, b.minN],
+          [b.maxE, b.maxN],
+          [b.minE, b.maxN],
+        ];
+        const lp = [];
+        const br = Math.min(0.6, (b.maxE - b.minE) / 4, (b.maxN - b.minN) / 4);
+        c.forEach(([e, n], i) => {
+          lp.push(e, 0, -n, e, b.top, -n);
+          const [pe, pn] = c[(i + 3) % 4],
+            [ne, nn] = c[(i + 1) % 4];
+          const tow = (te, tn) => {
+            const L = Math.hypot(te - e, tn - n) || 1;
+            lp.push(
+              e,
+              b.top,
+              -n,
+              e + ((te - e) / L) * br,
+              b.top,
+              -(n + ((tn - n) / L) * br),
+            );
+          };
+          tow(pe, pn);
+          tow(ne, nn);
+        });
+        fo.posts.geometry.dispose();
+        const pg = new BufferGeometry();
+        pg.setAttribute("position", new Float32BufferAttribute(lp, 3));
+        fo.posts.geometry = pg;
+        fo.tag.position.set(b.minE, b.top, -b.minN);
+      }
+      const pose = (o, n) => {
+        o.position.set(n.e, 0, -n.n);
+        o.rotation.y = -n.h * DEG;
+        o.scale.setScalar(n.s);
+      };
+
+      let pickables = [];
+      function syncScene() {
+        const present = new Set();
+        pickables = [];
+        const place = (it, parent) => {
+          const o = itemObj(it);
+          if (o.parent !== parent) parent.add(o);
+          pose(o, it);
+          present.add(it.id);
+          pickables.push(...o.userData.pick);
+        };
+        for (const n of ST.nodes) {
+          if (n.kind === "item") {
+            place(n, stationG);
+            continue;
+          }
+          const fo = folderObj(n);
+          if (fo.g.parent !== stationG) stationG.add(fo.g);
+          if (!fo.tag.parent) fo.g.add(fo.tag);
+          pose(fo.g, n);
+          present.add(n.id);
+          for (const m of n.items) place(m, fo.g);
+          rebuildFrame(fo, n);
+          fo.btn.querySelector(".fn").textContent = n.name;
+          fo.btn.querySelector(".c").textContent = String(n.items.length);
+        }
+        for (const [id, o] of itemObjs)
+          if (!present.has(id) && o.parent) o.removeFromParent();
+        for (const [id, fo] of folderObjs)
+          if (!present.has(id) && fo.g.parent) {
+            fo.tag.removeFromParent();
+            fo.g.removeFromParent();
+          }
+        scene.updateMatrixWorld(true);
+      }
+      function updateLooks() {
+        const multi = sel.ids.length > 1;
+        for (const [id, o] of itemObjs) {
+          if (!o.parent) continue;
+          const pid = parentIdOf(id);
+          const inScope = !scope || pid === scope;
+          const k = inScope ? 1 : 0.2;
+          o.userData.mats.forEach((m, i) => {
+            m.opacity = o.userData.base[i] * k;
+          });
+          const t = resolveTarget(id);
+          const selected = isSelected(t) && t.id === id;
+          const hov = hover && hover.id === id && !selected;
+          o.userData.selRing.visible =
+            (selected && (multi || picking)) || !!hov;
+          o.userData.selRing.material.opacity = selected ? 0.95 : 0.45;
+        }
+        for (const [id, fo] of folderObjs) {
+          if (!fo.g.parent) continue;
+          const st =
+            scope === id
+              ? "inside"
+              : !scope && sel.ids.includes(id)
+                ? "sel"
+                : scope
+                  ? "dim"
+                  : hover && hover.id === id
+                    ? "hover"
+                    : "idle";
+          fo.dash.visible = st === "idle" || st === "hover" || st === "dim";
+          fo.solid.visible = st === "sel" || st === "inside";
+          fo.posts.visible = st === "sel" || st === "inside" || st === "hover";
+          fo.dash.material.opacity =
+            st === "hover" ? 0.95 : st === "dim" ? 0.15 : 0.6;
+          fo.dash.material.color.setHex(st === "hover" ? 0xffffff : 0xd6dae2);
+          fo.solid.material.opacity = st === "inside" ? 1 : 0.9;
+          fo.fill.material.color.setHex(
+            st === "sel" || st === "inside" ? AMBER : 0xffffff,
+          );
+          fo.fill.material.opacity =
+            st === "inside"
+              ? 0.13
+              : st === "sel"
+                ? 0.08
+                : st === "hover"
+                  ? 0.08
+                  : st === "dim"
+                    ? 0.015
+                    : 0.045;
+          fo.posts.material.color.setHex(st === "hover" ? 0xffffff : AMBER);
+          fo.posts.material.opacity =
+            st === "hover" ? 0.5 : st === "inside" ? 1 : 0.75;
+          fo.btn.className = "ftag" + (st === "idle" ? "" : " " + st);
+          fo.btn.title =
+            st === "inside"
+              ? "You are inside this folder"
+              : st === "sel"
+                ? "Click again (or double-click) to go inside"
+                : "Click to select the folder";
+        }
+        vp.classList.toggle("inside", !!scope);
+        scene.background.copy(scope ? BG_IN : BG);
+      }
+
+      // hover label for items (mouse only)
+      const hlEl = document.createElement("div");
+      hlEl.className = "anchor";
+      hlEl.innerHTML = '<div class="htag"></div>';
+      const hoverLabel = new CSS2DObject(hlEl);
+      hoverLabel.visible = false;
+      scene.add(hoverLabel);
+
+      // ---------------------------------------------------------------- camera and tools
+      const orbit = new OrbitControls(camera, canvas);
+      orbit.target.set(0, 0.6, -2.2);
+      orbit.maxPolarAngle = 82 * DEG;
+      orbit.minDistance = 3;
+      orbit.maxDistance = 70;
+      orbit.zoomToCursor = true;
+      orbit.update();
+      let tool = IS_TOUCH ? "orbit" : "select";
+      let spaceHeld = false;
+      const effTool = () => (spaceHeld ? "orbit" : tool);
+      function applyTool() {
+        const t = effTool();
+        orbit.mouseButtons = {
+          LEFT: t === "orbit" ? MOUSE.ROTATE : null,
+          MIDDLE: MOUSE.PAN,
+          RIGHT: MOUSE.ROTATE,
+        };
+        orbit.touches = {
+          ONE: t === "orbit" ? TOUCH.ROTATE : null,
+          TWO: TOUCH.DOLLY_PAN,
+        };
+        $("#tSelect").classList.toggle("on", t === "select");
+        $("#tOrbit").classList.toggle("on", t === "orbit");
+        vp.classList.toggle("selecttool", t === "select");
+        renderHint();
+      }
+      let camAnim = null;
+      function frameOn(points, instant = false) {
+        if (!points.length) return;
+        let cx = 0,
+          cz = 0;
+        points.forEach((p) => {
+          cx += p.x;
+          cz += p.z;
+        });
+        cx /= points.length;
+        cz /= points.length;
+        const dir = camera.position.clone().sub(orbit.target).normalize();
+        // half extents across the view and along it (on the ground), fitted to the horizontal and
+        // the vertical view angle; depth shows foreshortened by the camera's elevation
+        const fwd = new Vector3(-dir.x, 0, -dir.z).normalize();
+        const right = new Vector3(-fwd.z, 0, fwd.x);
+        let hx = 1.5,
+          hz = 1.5;
+        points.forEach((p) => {
+          const dx = p.x - cx,
+            dz = p.z - cz;
+          hx = Math.max(hx, Math.abs(dx * right.x + dz * right.z) + 0.5);
+          hz = Math.max(hz, Math.abs(dx * fwd.x + dz * fwd.z) + 0.5);
+        });
+        const tv = Math.tan((camera.fov * DEG) / 2);
+        const th = tv * camera.aspect;
+        const elev = Math.asin(clamp(dir.y, 0.05, 1));
+        const dist = clamp(
+          Math.max(hx / th, (hz * Math.sin(elev) + 1) / tv) * 1.1,
+          orbit.minDistance,
+          orbit.maxDistance,
+        );
+        const target = new Vector3(cx, 0.6, cz);
+        camAnim = {
+          t0: performance.now(),
+          fromT: orbit.target.clone(),
+          fromP: camera.position.clone(),
+          toT: target,
+          toP: target.clone().add(dir.multiplyScalar(dist)),
+        };
+        if (instant) camAnim.t0 = -1e9;
+      }
+      function frameSelection(instant = false) {
+        const pts = [];
+        const nodes = sel.ids.length ? selectedNodes() : null;
+        const addItemObj = (id) => {
+          const o = itemObjs.get(id);
+          if (o && o.parent) {
+            const r = RAD[o.userData.type];
+            [
+              [r, 0],
+              [-r, 0],
+              [0, r],
+              [0, -r],
+            ].forEach(([dx, dz]) =>
+              pts.push(o.localToWorld(new Vector3(dx, 0, dz))),
+            );
+          }
+        };
+        if (nodes)
+          nodes.forEach((n) =>
+            n.kind === "folder"
+              ? n.items.forEach((m) => addItemObj(m.id))
+              : addItemObj(n.id),
+          );
+        else if (scope) scopeFolder()?.items.forEach((m) => addItemObj(m.id));
+        else for (const [id, o] of itemObjs) if (o.parent) addItemObj(id);
+        frameOn(pts, instant === true);
+      }
+
+      // ---------------------------------------------------------------- the gizmo: ring, middle disc, turn knob, corner dots
+      function spriteTex(draw, n = 96) {
+        return canvasTex(n, n, (g) => draw(g, n));
+      }
+      const TEX_DOT = spriteTex((g, n) => {
+        g.beginPath();
+        g.arc(n / 2, n / 2, n * 0.27, 0, 7);
+        g.fillStyle = "rgba(0,0,0,.35)";
+        g.fill();
+        g.beginPath();
+        g.arc(n / 2, n / 2, n * 0.21, 0, 7);
+        g.fillStyle = "#fff";
+        g.fill();
+        g.lineWidth = n * 0.06;
+        g.strokeStyle = "#e9a23b";
+        g.stroke();
+      }, 64);
+      const TEX_KNOB = spriteTex((g, n) => {
+        const c = n / 2;
+        g.beginPath();
+        g.arc(c, c, n * 0.33, 0, 7);
+        g.fillStyle = "#1f2023";
+        g.fill();
+        g.lineWidth = n * 0.05;
+        g.strokeStyle = "#e9a23b";
+        g.stroke();
+        g.strokeStyle = "#fff";
+        g.lineWidth = n * 0.055;
+        g.lineCap = "round";
+        g.beginPath();
+        g.arc(c, c, n * 0.17, -2.5, 1.2);
+        g.stroke();
+        const a = 1.2,
+          ex = c + n * 0.17 * Math.cos(a),
+          ey = c + n * 0.17 * Math.sin(a);
+        g.fillStyle = "#fff";
+        g.beginPath();
+        g.moveTo(ex + n * 0.1, ey - n * 0.03);
+        g.lineTo(ex - n * 0.08, ey + n * 0.09);
+        g.lineTo(ex - n * 0.06, ey - n * 0.11);
+        g.closePath();
+        g.fill();
+      });
+      const TEX_MOVE = spriteTex((g, n) => {
+        const c = n / 2,
+          k = n / 256;
+        g.beginPath();
+        g.arc(c, c, 120 * k, 0, 7);
+        g.fillStyle = "rgba(233,162,59,.24)";
+        g.fill();
+        g.lineWidth = 6 * k;
+        g.strokeStyle = "rgba(255,255,255,.95)";
+        g.stroke();
+        g.fillStyle = "rgba(255,255,255,.95)";
+        for (let i = 0; i < 4; i++) {
+          g.save();
+          g.translate(c, c);
+          g.rotate((i * Math.PI) / 2);
+          g.beginPath();
+          g.moveTo(0, -88 * k);
+          g.lineTo(24 * k, -56 * k);
+          g.lineTo(-24 * k, -56 * k);
+          g.closePath();
+          g.fill();
+          g.fillRect(-6 * k, -60 * k, 12 * k, 40 * k);
+          g.restore();
+        }
+      }, 256);
+      const gMat = new MeshBasicMaterial({
+        color: AMBER,
+        transparent: true,
+        opacity: 0.95,
+        depthTest: false,
+        depthWrite: false,
+      });
+      const gzRing = new Mesh(
+        new RingGeometry(0.93, 1, 96).rotateX(-Math.PI / 2),
+        gMat,
+      );
+      gzRing.renderOrder = 22;
+      const gzDisc = new Mesh(
+        new CircleGeometry(1, 48).rotateX(-Math.PI / 2),
+        new MeshBasicMaterial({
+          map: TEX_MOVE,
+          transparent: true,
+          opacity: 0.9,
+          depthWrite: false,
+        }),
+      );
+      gzDisc.renderOrder = 21;
+      const gzBar = new Mesh(
+        new PlaneGeometry(1, 1).rotateX(-Math.PI / 2).translate(0, 0, -0.5),
+        gMat,
+      );
+      gzBar.renderOrder = 22;
+      const mkSprite = (tex, handle) => {
+        const s = new Sprite(
+          new SpriteMaterial({
+            map: tex,
+            depthTest: false,
+            depthWrite: false,
+            transparent: true,
+            sizeAttenuation: false,
+          }),
+        );
+        s.renderOrder = 25;
+        s.userData.handle = handle;
+        scene.add(s);
+        return s;
+      };
+      const gzKnob = mkSprite(TEX_KNOB, "rotate");
+      const gzDots = [0, 1, 2, 3].map(() => mkSprite(TEX_DOT, "scale"));
+      scene.add(gzRing, gzDisc, gzBar);
+      const GIZMO = [gzRing, gzDisc, gzBar, gzKnob, ...gzDots];
+      let vpW = 1,
+        vpH = 1;
+      const wppAt = (x, y, z) =>
+        (2 *
+          new Vector3(x, y, z).distanceTo(camera.position) *
+          Math.tan((camera.fov * DEG) / 2)) /
+        vpH;
+      const pxScale = () => (2 * Math.tan((camera.fov * DEG) / 2)) / vpH;
+      // where the handles go for the current selection (station frame: E, N; F = facing)
+      function gizmoFrame() {
+        if (picking || renaming) return null;
+        const nodes = selectedNodes();
+        if (!nodes.length) return null;
+        const parent = scopeFolder();
+        if (nodes.length === 1 && nodes[0].kind === "folder") {
+          const f = nodes[0];
+          const b = folderBox(f);
+          if (!b) return null;
+          const corners = [
+            [b.minE, b.minN],
+            [b.maxE, b.minN],
+            [b.maxE, b.maxN],
+            [b.minE, b.maxN],
+          ].map(([e, n]) => toStation(f, e, n));
+          const wpp = wppAt(f.e, 0, -f.n);
+          return {
+            E: f.e,
+            N: f.n,
+            F: f.h,
+            ring: false,
+            R: Math.max(0.6, b.maxN * f.s),
+            disc: Math.max(0.35, 24 * wpp),
+            // scale dots only where the frame is big enough on screen not to cover its items
+            dots:
+              Math.hypot(b.maxE - b.minE, b.maxN - b.minN) * f.s > 130 * wpp
+                ? corners
+                : null,
+            label: "folder",
+          };
+        }
+        if (nodes.length === 1) {
+          const w = bake(nodes[0], parent);
+          const wpp = wppAt(w.e, 0, -w.n);
+          const R = Math.max(RAD[w.type] * w.s + 0.2, 30 * wpp);
+          const dots =
+            w.type === "model"
+              ? [0, 1, 2, 3].map((i) => {
+                  const a = (w.h + 45 + i * 90) * DEG;
+                  return [w.e + Math.sin(a) * R, w.n + Math.cos(a) * R];
+                })
+              : null;
+          return {
+            E: w.e,
+            N: w.n,
+            F: w.h,
+            ring: true,
+            R,
+            disc: R * 0.96,
+            dots,
+            label: TYPE_LABEL[w.type].toLowerCase(),
+          };
+        }
+        const pts = nodes.map((n) => {
+          if (n.kind === "folder") {
+            const b = folderBox(n);
+            return {
+              e: n.e,
+              n: n.n,
+              r: b
+                ? (Math.hypot(b.maxE - b.minE, b.maxN - b.minN) / 2) * n.s
+                : 1,
+            };
+          }
+          const w = bake(n, parent);
+          return { e: w.e, n: w.n, r: RAD[w.type] * w.s };
+        });
+        const E = pts.reduce((a, p) => a + p.e, 0) / pts.length,
+          N = pts.reduce((a, p) => a + p.n, 0) / pts.length;
+        const R =
+          Math.max(...pts.map((p) => Math.hypot(p.e - E, p.n - N) + p.r)) + 0.3;
+        return {
+          E,
+          N,
+          F: parent ? parent.h : 0,
+          ring: true,
+          R,
+          disc: Math.max(0.35, 24 * wppAt(E, 0, -N)),
+          dots: null,
+          label: nodes.length + " items",
+        };
+      }
+      let hoverHandle = null;
+      function updateGizmo() {
+        for (const o of GIZMO) o.visible = false;
+        const f = gizmoFrame();
+        if (!f) return;
+        const x = f.E,
+          z = -f.N;
+        const q = pxScale();
+        const wpp = wppAt(x, 0, z);
+        const big = (n) =>
+          hoverHandle === n || (drag && drag.type === n) ? 1.18 : 1;
+        if (f.ring) {
+          gzRing.visible = true;
+          gzRing.position.set(x, 0.06, z);
+          gzRing.scale.set(f.R, 1, f.R);
+          gzRing.material.opacity = sel.ids.length > 1 ? 0.6 : 0.95;
+        }
+        gzDisc.visible = true;
+        gzDisc.position.set(x, 0.05, z);
+        gzDisc.scale.set(f.disc, 1, f.disc);
+        gzDisc.material.opacity =
+          hoverHandle === "move" || (drag && drag.type === "move") ? 1 : 0.82;
+        const fe = Math.sin(f.F * DEG),
+          fn = Math.cos(f.F * DEG);
+        const L = f.R + 34 * wpp;
+        gzKnob.visible = true;
+        gzKnob.position.set(x + fe * L, 0.3, z - fn * L);
+        gzKnob.scale.setScalar(42 * q * big("rotate"));
+        gzBar.visible = true;
+        gzBar.position.set(x + fe * f.R, 0.06, z - fn * f.R);
+        gzBar.rotation.y = -f.F * DEG;
+        gzBar.scale.set(Math.max(0.02, 2 * wpp), 1, L - f.R);
+        if (f.dots)
+          f.dots.forEach(([e, n], i) => {
+            const d = gzDots[i];
+            d.visible = true;
+            d.position.set(e, 0.2, -n);
+            d.scale.setScalar(28 * q * big("scale"));
+          });
+      }
+
+      // ---------------------------------------------------------------- picking
+      const raycaster = new Raycaster();
+      const ndc = new Vector2();
+      function setNDC(e) {
+        const r = canvas.getBoundingClientRect();
+        ndc.set(
+          ((e.clientX - r.left) / r.width) * 2 - 1,
+          -((e.clientY - r.top) / r.height) * 2 + 1,
+        );
+        raycaster.setFromCamera(ndc, camera);
+      }
+      function pickItem() {
+        const h = raycaster.intersectObjects(pickables, false)[0];
+        return h ? h.object.userData.pick : null;
+      }
+      function pickHandleSprite() {
+        const s = [gzKnob, ...gzDots].filter((o) => o.visible);
+        const h = raycaster.intersectObjects(s, false)[0];
+        return h ? h.object.userData.handle : null;
+      }
+      const onDisc = () =>
+        gzDisc.visible && raycaster.intersectObject(gzDisc, false).length > 0;
+      const GROUND_PLANE = new Plane(new Vector3(0, 1, 0), 0);
+      function groundPt() {
+        const p = new Vector3();
+        return raycaster.ray.intersectPlane(GROUND_PLANE, p)
+          ? { E: p.x, N: -p.z }
+          : null;
+      }
+      const compassOf = (E0, N0, p) => Math.atan2(p.E - E0, p.N - N0) / DEG;
+
+      // ---------------------------------------------------------------- dragging the handles
+      let drag = null;
+      const readout = $("#readout");
+      function showReadout(e, txt) {
+        const r = vp.getBoundingClientRect();
+        readout.style.display = "block";
+        readout.textContent = txt;
+        readout.style.left =
+          clamp(e.clientX - r.left + 16, 4, r.width - 160) + "px";
+        readout.style.top =
+          clamp(e.clientY - r.top + 14, 4, r.height - 24) + "px";
+      }
+      function startDrag(type, e) {
+        const f = gizmoFrame();
+        setNDC(e);
+        const p = groundPt();
+        if (!f || !p) return false;
+        const parent = scopeFolder();
+        drag = {
+          type,
+          f,
+          p0: p,
+          before: snap(),
+          parent,
+          starts: selectedNodes().map((n) => ({
+            id: n.id,
+            e: n.e,
+            n: n.n,
+            h: n.h,
+            s: n.s,
+          })),
+          pointerId: e.pointerId,
+        };
+        drag.pv = parent ? fromStation(parent, f.E, f.N) : [f.E, f.N];
+        if (type === "rotate") drag.a0 = compassOf(f.E, f.N, p);
+        if (type === "scale")
+          drag.d0 = Math.max(0.2, Math.hypot(p.E - f.E, p.N - f.N));
+        orbit.enabled = false;
+        hoverLabel.visible = false;
+        return true;
+      }
+      function applyDrag(e) {
+        setNDC(e);
+        const p = groundPt();
+        if (!p) return;
+        const { parent, pv } = drag;
+        const ps = parent ? parent.s : 1,
+          ph = parent ? parent.h : 0;
+        let txt = "";
+        for (const s of drag.starts) {
+          const n = nodeOf(s.id);
+          if (!n) continue;
+          if (drag.type === "move") {
+            const dE = clamp(p.E, -36, 36) - drag.p0.E,
+              dN = clamp(p.N, -36, 36) - drag.p0.N;
+            const [le, ln] = rot(dE / ps, dN / ps, -ph);
+            n.e = s.e + le;
+            n.n = s.n + ln;
+            txt = `move  E ${dE >= 0 ? "+" : ""}${fmt(dE)} m   N ${dN >= 0 ? "+" : ""}${fmt(dN)} m`;
+          } else if (drag.type === "rotate") {
+            let d = norm180(compassOf(drag.f.E, drag.f.N, p) - drag.a0);
+            d = e.shiftKey ? Math.round(d / 15) * 15 : Math.round(d);
+            const [re, rn] = rot(s.e - pv[0], s.n - pv[1], d);
+            n.e = pv[0] + re;
+            n.n = pv[1] + rn;
+            n.h = norm180(s.h + d);
+            txt =
+              `turn  ${d >= 0 ? "+" : ""}${d}°` +
+              (drag.starts.length === 1
+                ? `   heading ${Math.round((((n.h + (parent ? parent.h : 0)) % 360) + 360) % 360)}°`
+                : "");
+          } else {
+            const k = clamp(
+              Math.hypot(p.E - drag.f.E, p.N - drag.f.N) / drag.d0,
+              0.25,
+              4,
+            );
+            n.e = pv[0] + (s.e - pv[0]) * k;
+            n.n = pv[1] + (s.n - pv[1]) * k;
+            n.s = clamp(s.s * k, 0.2, 5);
+            txt = `scale  ×${fmt(n.s, 2)}`;
+          }
+        }
+        syncScene();
+        renderInsp();
+        showReadout(e, txt);
+      }
+      function endDrag(cancel) {
+        if (!drag) return;
+        const d = drag;
+        drag = null;
+        readout.style.display = "none";
+        orbit.enabled = true;
+        if (cancel) {
+          restore(d.before);
+          toast("Cancelled");
+          return;
+        }
+        if (snap() !== d.before) {
+          const what = d.f.label;
+          undoStack.push({
+            label:
+              (d.type === "move"
+                ? "Move "
+                : d.type === "rotate"
+                  ? "Turn "
+                  : "Scale ") + what,
+            s: d.before,
+          });
+          redoStack.length = 0;
+        }
+        refresh();
+      }
+
+      // ---------------------------------------------------------------- pointer: clicks, boxes, long-press
+      // Capture listener: it runs before the orbit controls, so a press on a handle or a selected item
+      // switches the camera off for that gesture.
+      const touches = new Set();
+      let press = null;
+      let lpTimer = 0;
+      const boxEl = $("#box");
+      canvas.addEventListener("pointerdown", onDown, { capture: true });
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", (e) => {
+        touches.delete(e.pointerId);
+        if (press && e.pointerId === press.id) {
+          clearTimeout(lpTimer);
+          if (drag) endDrag(true);
+          hideBox();
+          press = null;
+          orbit.enabled = true;
+        }
+      });
+      function onDown(e) {
+        if (e.pointerType === "touch") touches.add(e.pointerId);
+        if (touches.size > 1) {
+          // a second finger: the camera takes over, a handle drag snaps back
+          clearTimeout(lpTimer);
+          if (drag) endDrag(true);
+          hideBox();
+          press = null;
+          orbit.enabled = true;
+          return;
+        }
+        if (e.pointerType === "mouse" && e.button !== 0) return; // right and middle buttons: the camera
+        setNDC(e);
+        const shift = e.shiftKey || e.ctrlKey || e.metaKey;
+        const t = effTool();
+        press = {
+          id: e.pointerId,
+          x: e.clientX,
+          y: e.clientY,
+          type: e.pointerType,
+          shift,
+          moved: false,
+          mode: null,
+          hit: null,
+          target: null,
+          wasSel: false,
+          justSel: false,
+          long: false,
+        };
+        if (spaceHeld) {
+          press.mode = "tapEmpty";
+          return;
+        }
+        const hs = pickHandleSprite();
+        if (hs) {
+          press.mode = "handle";
+          press.handle = hs;
+          orbit.enabled = false;
+          return;
+        }
+        const hit = pickItem();
+        if (hit) {
+          const tg = resolveTarget(hit);
+          press.hit = hit;
+          press.target = tg;
+          press.wasSel = isSelected(tg);
+          if (press.wasSel) {
+            press.mode = "selItem";
+            orbit.enabled = false;
+          } else if (t === "select" && !picking) {
+            if (shift) toggleTarget(tg);
+            else setSel([tg.id], tg.scope);
+            press.justSel = true;
+            press.mode = isSelected(tg) ? "selItem" : "tapItem";
+            orbit.enabled = false;
+          } else press.mode = "tapItem";
+          if (e.pointerType === "touch")
+            lpTimer = setTimeout(() => longPress(e.clientX, e.clientY), 480);
+          return;
+        }
+        if (onDisc()) {
+          press.mode = "handle";
+          press.handle = "move";
+          orbit.enabled = false;
+          return;
+        }
+        if (t === "select") {
+          press.mode = "box";
+          orbit.enabled = false;
+        } else press.mode = "tapEmpty";
+      }
+      function onMove(e) {
+        if (!press) {
+          if (e.pointerType === "mouse" && e.target === canvas && !tdrag)
+            hoverAt(e);
+          return;
+        }
+        if (e.pointerId !== press.id) return;
+        const dist = Math.hypot(e.clientX - press.x, e.clientY - press.y);
+        if (drag) return applyDrag(e);
+        if (dist > (press.type === "touch" ? 9 : 4)) {
+          press.moved = true;
+          clearTimeout(lpTimer);
+        }
+        if (!press.moved) return;
+        if (press.mode === "handle") {
+          if (
+            startDrag(press.handle, {
+              clientX: press.x,
+              clientY: press.y,
+              pointerId: press.id,
+            })
+          )
+            applyDrag(e);
+          return;
+        }
+        if (press.mode === "selItem" && !press.long) {
+          if (
+            startDrag("move", {
+              clientX: press.x,
+              clientY: press.y,
+              pointerId: press.id,
+            })
+          )
+            applyDrag(e);
+          return;
+        }
+        if (press.mode === "box") drawBox(e);
+      }
+      function onUp(e) {
+        if (e.pointerType === "touch") touches.delete(e.pointerId);
+        if (!press || e.pointerId !== press.id) return;
+        clearTimeout(lpTimer);
+        const p = press;
+        press = null;
+        if (drag) {
+          endDrag(false);
+          orbit.enabled = true;
+          return;
+        }
+        orbit.enabled = true;
+        if (p.long) return;
+        if (p.mode === "box") {
+          const r = hideBox();
+          if (p.moved && r) boxSelect(r, p.shift);
+          else emptyClick(e, p.shift);
+          return;
+        }
+        if (p.moved) return;
+        if (p.mode === "selItem" || p.mode === "tapItem") itemClick(p);
+        else if (p.mode === "tapEmpty") emptyClick(e, p.shift);
+      }
+      function itemClick(p) {
+        const t = p.target;
+        if (picking || (p.shift && !p.justSel)) return toggleTarget(t);
+        if (p.justSel) return;
+        if (p.wasSel) {
+          const f = nodeOf(t.id);
+          // the second click on a selected folder goes inside, to the item under the pointer
+          if (
+            f &&
+            f.kind === "folder" &&
+            sel.ids.length === 1 &&
+            p.hit !== t.id
+          )
+            return enterFolder(f.id, p.hit);
+          if (sel.ids.length > 1) setSel([t.id], t.scope);
+          return;
+        }
+        setSel([t.id], t.scope);
+      }
+      function emptyClick(e, shift) {
+        if (picking) return;
+        if (scope) {
+          const f = scopeFolder();
+          setNDC(e);
+          const p = groundPt();
+          const b = f && folderBox(f);
+          if (p && b) {
+            const [le, ln] = fromStation(f, p.E, p.N);
+            if (le >= b.minE && le <= b.maxE && ln >= b.minN && ln <= b.maxN) {
+              if (!shift) setSel([], scope);
+              return;
+            }
+          }
+          return leaveFolder(false);
+        }
+        if (!shift) setSel([], null);
+      }
+      function longPress(x, y) {
+        if (!press || press.moved || !press.target) return;
+        press.long = true;
+        orbit.enabled = false;
+        const r = vp.getBoundingClientRect();
+        const d = document.createElement("div");
+        d.className = "lp";
+        d.style.left = x - r.left + "px";
+        d.style.top = y - r.top + "px";
+        vp.appendChild(d);
+        setTimeout(() => d.remove(), 600);
+        try {
+          if (navigator.vibrate) navigator.vibrate(12);
+        } catch {
+          /* not available */
+        }
+        const t = press.target;
+        picking = true;
+        if (t.scope !== scope) {
+          scope = t.scope;
+          sel = { ids: [], story: null };
+        }
+        if (!sel.ids.includes(t.id)) sel.ids = [...sel.ids, t.id];
+        sel.story = null;
+        refresh();
+      }
+      let boxRect = null;
+      function drawBox(e) {
+        const r = vp.getBoundingClientRect();
+        const x0 = Math.min(press.x, e.clientX),
+          y0 = Math.min(press.y, e.clientY),
+          x1 = Math.max(press.x, e.clientX),
+          y1 = Math.max(press.y, e.clientY);
+        boxRect = { x0, y0, x1, y1 };
+        Object.assign(boxEl.style, {
+          display: "block",
+          left: x0 - r.left + "px",
+          top: y0 - r.top + "px",
+          width: x1 - x0 + "px",
+          height: y1 - y0 + "px",
+        });
+      }
+      function hideBox() {
+        const r = boxRect;
+        boxRect = null;
+        boxEl.style.display = "none";
+        return r;
+      }
+      function screenOfItem(id) {
+        const o = itemObjs.get(id);
+        if (!o || !o.parent) return null;
+        const v = o
+          .localToWorld(new Vector3(0, TOP[o.userData.type] * 0.35, 0))
+          .project(camera);
+        if (v.z > 1) return null;
+        const r = canvas.getBoundingClientRect();
+        return [
+          ((v.x + 1) / 2) * r.width + r.left,
+          ((1 - v.y) / 2) * r.height + r.top,
+        ];
+      }
+      // a box takes what it contains: an item by its centre, a folder only when all its items are inside
+      function boxSelect(r, add) {
+        const inside = (id) => {
+          const s = screenOfItem(id);
+          return (
+            s && s[0] >= r.x0 && s[0] <= r.x1 && s[1] >= r.y0 && s[1] <= r.y1
+          );
+        };
+        const cands = scope ? scopeFolder().items : ST.nodes;
+        const ids = cands
+          .filter((n) =>
+            n.kind === "folder"
+              ? n.items.every((m) => inside(m.id))
+              : inside(n.id),
+          )
+          .map((n) => n.id);
+        if (!ids.length && !add) {
+          status(
+            "The box caught nothing: an item counts when its middle is inside, a folder when all its items are",
+          );
+          return setSel([], scope);
+        }
+        setSel(add ? [...sel.ids, ...ids] : ids, scope);
+      }
+      function hoverAt(e) {
+        setNDC(e);
+        const hs = pickHandleSprite();
+        hoverHandle = hs || (onDisc() && !pickItem() ? "move" : null);
+        const hit = pickItem();
+        const t = hit ? resolveTarget(hit) : null;
+        const prev = hover ? hover.id : null;
+        hover = t ? { id: t.id } : null;
+        if (hit) {
+          const it = nodeOf(hit);
+          const pid = parentIdOf(hit);
+          const f = pid && nodeOf(pid);
+          const what =
+            t.id === hit
+              ? esc(it.name)
+              : `${esc(f.name)} <i>(folder, ${f.items.length} items)</i>`;
+          hlEl.firstElementChild.innerHTML =
+            what +
+            (isSelected(t) && t.id !== hit
+              ? " <i>- click again to go inside</i>"
+              : "");
+          hoverLabel.visible = true;
+          hoverLabel.position.copy(
+            raycaster.intersectObjects(pickables, false)[0].point,
+          );
+        } else hoverLabel.visible = false;
+        canvas.classList.toggle(
+          "grab",
+          !!hoverHandle || (!!t && isSelected(t)),
+        );
+        canvas.classList.toggle("hand", !!t && !isSelected(t));
+        if ((hover ? hover.id : null) !== prev) updateLooks();
+      }
+      canvas.addEventListener("pointerleave", () => {
+        hoverLabel.visible = false;
+        if (hover) {
+          hover = null;
+          updateLooks();
+        }
+      });
+
+      // ---------------------------------------------------------------- the station tree (mirrors the scene)
+      const treeBody = $("#treeBody");
+      function rowHtml(o) {
+        const cls = ["row"].concat(o.cls || []).join(" ");
+        const data = Object.entries(o.data)
+          .map(([k, v]) => `data-${k}="${esc(v)}"`)
+          .join(" ");
+        return `<div class="${cls}" ${data} style="--d:${o.d}" role="treeitem">${o.grip ? `<span class="grip" data-grip title="Drag to move">${icon("grip")}</span>` : '<span class="nogrip"></span>'}${o.tw === undefined ? "" : `<button class="tw ${o.tw === null ? "none" : o.tw ? "open" : ""}" data-tw tabindex="-1">${icon("right")}</button>`}${o.lead}<span class="nm">${esc(o.name)}</span>${o.tail || ""}</div>`;
+      }
+      function renderTree() {
+        const out = [];
+        const scoped = !!scope;
+        const items = ST.nodes.reduce(
+          (a, n) => a + (n.kind === "folder" ? n.items.length : 1),
+          0,
+        );
+        $("#treeCount").textContent =
+          `${ST.stories.length} story, ${items} items`;
+        out.push(
+          rowHtml({
+            d: 0,
+            cls: ["st"].concat(scoped ? ["out"] : []),
+            data: { k: "station" },
+            name: ST.name,
+            tw: treeOpen.station,
+            lead: '<span class="badge">1</span>',
+            tail: "",
+          }),
+        );
+        if (treeOpen.station) {
+          for (const s of ST.stories) {
+            const open = !!s.open;
+            out.push(
+              rowHtml({
+                d: 1,
+                cls: [
+                  sel.story === s.id ? "sel" : "",
+                  flashIds.has(s.id) ? "flash" : "",
+                  scoped ? "out" : "",
+                ],
+                data: { k: "story", id: s.id },
+                name: s.name,
+                tw: open,
+                lead: `<span class="ti story">${icon(open ? "storyOpen" : "story")}</span>`,
+                tail: `<span class="meta">${s.steps.length}</span>`,
+              }),
+            );
+            if (open)
+              s.steps.forEach((p, i) =>
+                out.push(
+                  rowHtml({
+                    d: 2,
+                    cls: [scoped ? "out" : ""],
+                    data: { k: "step", id: p.id, story: s.id },
+                    name: p.name,
+                    lead: `<span class="stepn">${i + 1}</span>`,
+                  }),
+                ),
+              );
+          }
+          for (const n of ST.nodes) {
+            if (n.kind === "item") {
+              out.push(
+                rowHtml({
+                  d: 1,
+                  grip: true,
+                  cls: [
+                    !scope && sel.ids.includes(n.id) ? "sel" : "",
+                    flashIds.has(n.id) ? "flash" : "",
+                    scoped ? "out" : "",
+                  ],
+                  data: { k: "item", id: n.id, parent: "" },
+                  name: n.name,
+                  lead: `<span class="ti ${n.type}">${icon(n.type)}</span>`,
+                }),
+              );
+              continue;
+            }
+            const open = !!treeOpen[n.id];
+            const inside = scope === n.id;
+            out.push(
+              rowHtml({
+                d: 1,
+                grip: true,
+                cls: [
+                  !scope && sel.ids.includes(n.id) ? "sel" : "",
+                  inside ? "scope" : "",
+                  flashIds.has(n.id) ? "flash" : "",
+                  scoped && !inside ? "out" : "",
+                ],
+                data: { k: "folder", id: n.id },
+                name: n.name,
+                tw: open,
+                lead: `<span class="ti folder">${icon(inside ? "folderIn" : "folder")}</span>`,
+                tail: inside
+                  ? '<span class="pill">inside</span>'
+                  : `<span class="meta">${n.items.length}</span>`,
+              }),
+            );
+            if (open)
+              for (const m of n.items) {
+                out.push(
+                  rowHtml({
+                    d: 2,
+                    grip: true,
+                    cls: [
+                      "member",
+                      inside ? "inscope" : "",
+                      inside && sel.ids.includes(m.id) ? "sel" : "",
+                      flashIds.has(m.id) ? "flash" : "",
+                      scoped && !inside ? "out" : "",
+                    ],
+                    data: { k: "item", id: m.id, parent: n.id },
+                    name: m.name,
+                    lead: `<span class="ti ${m.type}">${icon(m.type)}</span>`,
+                  }),
+                );
+              }
+          }
+        }
+        treeBody.innerHTML = out.join("");
+      }
+      treeBody.addEventListener("click", (e) => {
+        const row = e.target.closest(".row");
+        if (!row || e.target.closest("[data-grip]")) return;
+        const k = row.dataset.k,
+          id = row.dataset.id;
+        if (e.target.closest("[data-tw]")) {
+          if (k === "station") treeOpen.station = !treeOpen.station;
+          else if (k === "story") {
+            const s = findStory(id);
+            s.open = !s.open;
+          } else treeOpen[id] = !treeOpen[id];
+          return renderTree();
+        }
+        const add = e.shiftKey || e.ctrlKey || e.metaKey;
+        if (k === "station") return setSel([], null);
+        if (k === "story") return setSel([], null, id);
+        if (k === "step") return setSel([], null, row.dataset.story);
+        const t =
+          k === "item" && row.dataset.parent
+            ? { id, scope: row.dataset.parent }
+            : { id, scope: null };
+        if (add) return toggleTarget(t);
+        // a second click on a folder's row soon after the first goes inside (the row is drawn
+        // again after the first click, so the browser's own dblclick never reaches it)
+        const now = performance.now();
+        if (
+          k === "folder" &&
+          lastRowClick.id === id &&
+          now - lastRowClick.t < 450
+        ) {
+          lastRowClick.id = null;
+          return enterFolder(id);
+        }
+        lastRowClick.id = id;
+        lastRowClick.t = now;
+        setSel([t.id], t.scope);
+        if (isPhone() && t.scope)
+          status("Inside the folder: the other items fade");
+      });
+      const lastRowClick = { id: null, t: 0 };
+
+      // the tree's drag: by a grip, into a folder, out of it, or between free items (keeps world pose)
+      const ghost = $("#ghost");
+      let tdrag = null;
+      treeBody.addEventListener("pointerdown", (e) => {
+        const grip = e.target.closest("[data-grip]");
+        if (!grip || e.button > 0) return;
+        const row = grip.closest(".row");
+        e.preventDefault();
+        e.stopPropagation();
+        tdrag = {
+          id: row.dataset.id,
+          row,
+          pid: e.pointerId,
+          x0: e.clientX,
+          y0: e.clientY,
+          on: false,
+          drop: null,
+          touch: e.pointerType === "touch",
+        };
+        try {
+          grip.setPointerCapture(e.pointerId);
+        } catch {
+          /* fine */
+        }
+      });
+      window.addEventListener("pointermove", (e) => {
+        if (!tdrag || e.pointerId !== tdrag.pid) return;
+        if (!tdrag.on) {
+          if (Math.hypot(e.clientX - tdrag.x0, e.clientY - tdrag.y0) < 4)
+            return;
+          tdrag.on = true;
+          tdrag.row.classList.add("dragging");
+          ghost.classList.add("on");
+          ghost.querySelector(".nest-ghost-name").textContent =
+            nodeOf(tdrag.id)?.name || "";
+        }
+        ghost.style.left = e.clientX + (tdrag.touch ? -24 : 14) + "px";
+        ghost.style.top = e.clientY + (tdrag.touch ? -64 : 12) + "px";
+        clearMarks();
+        tdrag.drop = computeDrop(e);
+        if (tdrag.drop) tdrag.drop.row.classList.add("drop-" + tdrag.drop.mark);
+        if (tdrag.drop) ghost.removeAttribute("data-refused");
+        else ghost.setAttribute("data-refused", "");
+        document.documentElement.dataset.nestDrag = tdrag.drop
+          ? "on"
+          : "refused";
+      });
+      const endTreeDrag = (e, cancel) => {
+        if (!tdrag || (e && e.pointerId !== tdrag.pid)) return;
+        const d = tdrag;
+        tdrag = null;
+        clearMarks();
+        ghost.classList.remove("on");
+        delete document.documentElement.dataset.nestDrag;
+        d.row.classList.remove("dragging");
+        if (cancel || !d.on || !d.drop) {
+          if (d.on && !cancel)
+            status(
+              "Not possible there: an item goes into a folder, between free items or onto the station",
+            );
+          return;
+        }
+        const n = nodeOf(d.id);
+        const from = parentIdOf(d.id);
+        const to = d.drop.list;
+        const label =
+          from && from !== to
+            ? `Took "${n.name}" out of "${nodeOf(from).name}"`
+            : to && to !== from
+              ? `Moved "${n.name}" into "${nodeOf(to).name}"`
+              : `Moved "${n.name}"`;
+        const fromName = from ? nodeOf(from).name : "";
+        commit(label, () => moveNodeTo(d.id, to, d.drop.index));
+        toast(
+          label +
+            (from && !nodeOf(from)
+              ? ` - "${fromName}" was empty and is gone`
+              : ""),
+        );
+      };
+      window.addEventListener("pointerup", (e) => endTreeDrag(e, false));
+      window.addEventListener("pointercancel", (e) => endTreeDrag(e, true));
+      function clearMarks() {
+        treeBody
+          .querySelectorAll(".drop-before,.drop-after,.drop-into")
+          .forEach((r) =>
+            r.classList.remove("drop-before", "drop-after", "drop-into"),
+          );
+      }
+      function computeDrop(e) {
+        const el = document.elementFromPoint(e.clientX, e.clientY);
+        const row = el && el.closest("#treeBody .row");
+        if (!row) return null;
+        const k = row.dataset.k;
+        const rr = row.getBoundingClientRect();
+        const fr = (e.clientY - rr.top) / rr.height;
+        const D = findNode(tdrag.id);
+        if (!D) return null;
+        const isFolder = D.node.kind === "folder";
+        let drop = null;
+        if (k === "station")
+          drop = { list: null, index: ST.nodes.length, row, mark: "into" };
+        else if (k === "story" || k === "step" || row.dataset.id === tdrag.id)
+          return null;
+        else if (k === "folder") {
+          const idx = ST.nodes.findIndex((n) => n.id === row.dataset.id);
+          if (isFolder)
+            drop = {
+              list: null,
+              index: fr < 0.5 ? idx : idx + 1,
+              row,
+              mark: fr < 0.5 ? "before" : "after",
+            };
+          else if (fr < 0.3)
+            drop = { list: null, index: idx, row, mark: "before" };
+          else
+            drop = {
+              list: row.dataset.id,
+              index: nodeOf(row.dataset.id).items.length,
+              row,
+              mark: "into",
+            };
+        } else {
+          const parent = row.dataset.parent || null;
+          if (parent && isFolder) return null;
+          const list = parent ? nodeOf(parent).items : ST.nodes;
+          const idx = list.findIndex((n) => n.id === row.dataset.id);
+          drop = {
+            list: parent,
+            index: fr < 0.5 ? idx : idx + 1,
+            row,
+            mark: fr < 0.5 ? "before" : "after",
+          };
+        }
+        // a drop that changes nothing is refused, not written
+        if ((D.parent ? D.parent.id : null) === drop.list) {
+          const ci = D.list.indexOf(D.node);
+          if (drop.index === ci || drop.index === ci + 1) return null;
+        }
+        return drop;
+      }
+
+      // ---------------------------------------------------------------- inspector (desktop)
+      function renderInsp() {
+        const on =
+          !isPhone() &&
+          window.innerWidth >= 1000 &&
+          (sel.ids.length > 0 || !!sel.story);
+        document.body.classList.toggle("inspOn", on);
+        if (!on) return;
+        const head = $("#inspHead"),
+          body = $("#inspBody");
+        if (sel.story) {
+          const s = findStory(sel.story);
+          head.innerHTML = `<span class="hic ti story">${icon("story")}</span><input class="ttlin" data-rename="${s.id}" value="${esc(s.name)}" aria-label="Name">`;
+          body.innerHTML = `<div class="sub">Story, ${s.steps.length} steps. Stories stay at the top of a station; they hold steps, not folders.</div><div class="isec"><h4>Steps</h4>${s.steps.map((p, i) => `<div class="mem"><span class="stepn">${i + 1}</span>${esc(p.name)}</div>`).join("")}</div>`;
+          return;
+        }
+        const nodes = selectedNodes();
+        const parent = scopeFolder();
+        const poseHtml = (
+          n,
+          note,
+        ) => `<div class="isec"><h4>Place</h4><div class="f"><label>Position</label><div class="vec"><span class="num"><span class="ax e">E</span>${fmt(n.e)}<span class="u">m</span></span><span class="num"><span class="ax n">N</span>${fmt(n.n)}<span class="u">m</span></span></div></div>
+    <div class="f"><label>Heading</label><span class="num">${Math.round(((n.h % 360) + 360) % 360)}<span class="u">°</span></span></div><div class="f"><label>Scale</label><span class="num">×${fmt(n.s)}</span></div><p class="note">${note}</p></div>`;
+        if (nodes.length > 1) {
+          head.innerHTML = `<span class="hic">${icon("group")}</span><span class="ttlstatic">${nodes.length} selected</span>`;
+          const g = groupInfo();
+          body.innerHTML = `<div class="sub">${g.ok ? (g.mode === "new" ? "Group them with the button below the view, or Ctrl+G." : `Ctrl+G adds the items to "${esc(g.folder.name)}".`) : esc(g.why) + "."}</div><div class="isec">${nodes.map((n) => `<div class="mem"><span class="ti ${n.kind === "folder" ? "folder" : n.type}">${icon(n.kind === "folder" ? "folder" : n.type)}</span>${esc(n.name)}</div>`).join("")}</div>`;
+          return;
+        }
+        const n = nodes[0];
+        if (!n) return;
+        if (n.kind === "folder") {
+          head.innerHTML = `<span class="hic ti folder">${icon("folder")}</span><input class="ttlin" data-rename="${n.id}" value="${esc(n.name)}" aria-label="Name">`;
+          body.innerHTML = `<div class="sub">Folder, ${n.items.length} items. It moves, turns and scales them as one.</div>${poseHtml(n, "In the station's frame. The items keep their own places inside the folder.")}
+      <div class="isec"><h4>Items</h4>${n.items.map((m) => `<div class="mem" data-enter="${m.id}" title="Go inside and select it"><span class="ti ${m.type}">${icon(m.type)}</span>${esc(m.name)}</div>`).join("")}</div>`;
+          return;
+        }
+        head.innerHTML = `<span class="hic ti ${n.type}">${icon(n.type)}</span><input class="ttlin" data-rename="${n.id}" value="${esc(n.name)}" aria-label="Name">`;
+        body.innerHTML = `<div class="sub">${TYPE_LABEL[n.type]}${parent ? `, in the folder "${esc(parent.name)}"` : ""}</div>${poseHtml(n, parent ? "Relative to its folder: moving the folder carries it along." : "In the station's frame.")}`;
+      }
+      $("#insp").addEventListener("change", (e) => {
+        const i = e.target.closest("[data-rename]");
+        if (i) rename(i.dataset.rename, i.value);
+      });
+      $("#insp").addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && e.target.matches(".ttlin")) e.target.blur();
+      });
+      $("#insp").addEventListener("click", (e) => {
+        const m = e.target.closest("[data-enter]");
+        if (m && sel.ids.length === 1) enterFolder(sel.ids[0], m.dataset.enter);
+      });
+
+      // ---------------------------------------------------------------- the floating action bar
+      const fab = $("#fab");
+      const fb = (act, ic, label, o = {}) =>
+        `<button class="fb${o.pri ? " pri" : ""}${o.danger ? " danger" : ""}" data-act="${act}"${o.dis ? " disabled" : ""} title="${esc(o.title || label)}">${icon(ic)}<span>${label}</span>${o.kbd && !IS_TOUCH ? `<kbd>${o.kbd}</kbd>` : ""}</button>`;
+      function renderFab() {
+        fab.className = "";
+        if (renaming) {
+          const f = nodeOf(sel.ids[0]);
+          fab.innerHTML = `<input class="fin" id="fabName" value="${esc(f ? f.name : "")}" aria-label="Folder name">${fb("renameOk", "check", "Done", { pri: true })}`;
+          setTimeout(() => {
+            const i = $("#fabName");
+            if (i) {
+              i.focus();
+              i.select();
+            }
+          }, 0);
+          return;
+        }
+        const nodes = selectedNodes();
+        const parts = [];
+        if (picking) {
+          fab.className = "picking";
+          const g = groupInfo();
+          parts.push(
+            `<span class="fcount"><b>${nodes.length}</b> selected, tap more</span>`,
+          );
+          if (scope)
+            parts.push(fb("out", "out", "Take out", { dis: !nodes.length }));
+          else
+            parts.push(
+              fb(
+                "group",
+                "group",
+                g.mode === "add" ? "Add to folder" : "Group these",
+                {
+                  pri: true,
+                  dis: !g.ok,
+                  title: g.ok ? "Group them into a folder" : g.why,
+                },
+              ),
+            );
+          parts.push(fb("pickDone", "check", "Done"));
+          fab.innerHTML = parts.join("");
+          return;
+        }
+        if (sel.story) {
+          fab.innerHTML =
+            `<span class="fcount">${icon("story")}<b>${esc(findStory(sel.story)?.name || "")}</b></span>` +
+            fb("dup", "dup", "Duplicate story", { kbd: "Ctrl D" });
+          return;
+        }
+        if (!nodes.length) {
+          fab.className = "hint";
+          fab.innerHTML = scope
+            ? IS_TOUCH
+              ? "Tap an item of this folder to edit it alone"
+              : "Click an item of this folder to edit it alone"
+            : effTool() === "select"
+              ? IS_TOUCH
+                ? "Drag a box around items to select them"
+                : "Drag a box around items, or Shift-click them"
+              : IS_TOUCH
+                ? "Long-press an item to select several"
+                : "Click an item; Shift-click adds more";
+          return;
+        }
+        if (nodes.length > 1) {
+          const g = groupInfo();
+          parts.push(
+            `<span class="fcount"><b>${nodes.length}</b> selected</span>`,
+          );
+          if (scope) {
+            parts.push(fb("out", "out", "Take out of folder"));
+            parts.push(`<span class="fwhy">${esc(g.why)}</span>`);
+          } else if (g.ok)
+            parts.push(
+              fb(
+                "group",
+                "group",
+                g.mode === "add"
+                  ? `Add to "${esc(g.folder.name)}"`
+                  : "Group these",
+                { pri: true, kbd: "Ctrl G" },
+              ),
+            );
+          else parts.push(`<span class="fwhy">${esc(g.why)}</span>`);
+          parts.push(fb("dup", "dup", "Duplicate", { kbd: "Ctrl D" }));
+          if (IS_TOUCH && !scope) parts.push(fb("pick", "more", "Select more"));
+          fab.innerHTML = parts.join("");
+          return;
+        }
+        const n = nodes[0];
+        if (n.kind === "folder") {
+          parts.push(
+            fb("enter", "enter", "Go inside", {
+              pri: true,
+              kbd: "Enter",
+              title:
+                "Edit one item at a time (or click an item of the folder again)",
+            }),
+          );
+          parts.push(
+            fb("ungroup", "ungroup", "Ungroup", { kbd: "Ctrl Shift G" }),
+          );
+          parts.push(fb("dup", "dup", "Duplicate", { kbd: "Ctrl D" }));
+          parts.push(fb("rename", "pencil", "Rename"));
+          if (IS_TOUCH) parts.push(fb("pick", "more", "Select more"));
+          parts.push(
+            fb("del", "trash", "", {
+              danger: true,
+              title: "Delete the folder and its items (Del)",
+            }),
+          );
+        } else {
+          if (scope) parts.push(fb("out", "out", "Take out of folder"));
+          parts.push(fb("dup", "dup", "Duplicate", { kbd: "Ctrl D" }));
+          if (IS_TOUCH && !scope) parts.push(fb("pick", "more", "Select more"));
+          parts.push(
+            fb("del", "trash", "", { danger: true, title: "Delete (Del)" }),
+          );
+        }
+        fab.innerHTML = parts.join("");
+      }
+      fab.addEventListener("click", (e) => {
+        const b = e.target.closest("[data-act]");
+        if (!b || b.disabled) return;
+        const a = b.dataset.act;
+        if (a === "group") group();
+        else if (a === "ungroup") ungroup();
+        else if (a === "dup") duplicate();
+        else if (a === "del") del();
+        else if (a === "out") takeOut();
+        else if (a === "enter") enterFolder(sel.ids[0]);
+        else if (a === "pick") {
+          picking = true;
+          refresh();
+        } else if (a === "pickDone") {
+          picking = false;
+          refresh();
+        } else if (a === "rename") {
+          renaming = true;
+          refresh();
+        } else if (a === "renameOk") {
+          const v = $("#fabName")?.value || "";
+          renaming = false;
+          rename(sel.ids[0], v);
+          refresh();
+        }
+      });
+      fab.addEventListener("keydown", (e) => {
+        if (e.target.id === "fabName") {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            fab.querySelector("[data-act=renameOk]").click();
+          }
+          if (e.key === "Escape") {
+            e.stopPropagation();
+            renaming = false;
+            refresh();
+          }
+        }
+      });
+
+      // ---------------------------------------------------------------- the "inside" bar, status bar, toast
+      function renderCrumb() {
+        const f = scopeFolder();
+        $("#crumbWrap").hidden = !f;
+        if (!f) return;
+        $("#crumb").innerHTML =
+          `<button class="cst" data-leave title="Back to the station">${icon("station")}<span>${esc(ST.name)}</span></button><span class="sep">›</span><span class="cf">${icon("folderIn")}<span>${esc(f.name)}</span></span><span class="badge">inside</span><button class="leave" data-leave title="Leave the folder (Esc)">${icon("leave")}Leave<kbd>Esc</kbd></button>`;
+      }
+      $("#crumb").addEventListener("click", (e) => {
+        if (e.target.closest("[data-leave]")) leaveFolder(true);
+      });
+      let statusMsg = "",
+        statusTimer = 0;
+      function status(msg) {
+        statusMsg = msg;
+        clearTimeout(statusTimer);
+        statusTimer = setTimeout(() => {
+          statusMsg = "";
+          renderHint();
+        }, 4000);
+        renderHint();
+      }
+      function renderHint() {
+        const f = scopeFolder();
+        $("#sbScope").className = f ? "inside" : "";
+        $("#sbScope").innerHTML = f
+          ? `${icon("folderIn")}Inside "${esc(f.name)}"`
+          : `${icon("station")}${esc(ST.name)}`;
+        let h = statusMsg;
+        if (!h) {
+          if (picking)
+            h = "Tap items to add or remove them, then Group these or Done";
+          else if (f)
+            h = IS_TOUCH
+              ? "Tap an item to edit it alone. Leave at the top, or tap outside the frame"
+              : "Click an item to edit it alone. Esc, a click outside the frame, or Leave takes you out";
+          else if (
+            selectedNodes().length === 1 &&
+            selectedNodes()[0].kind === "folder"
+          )
+            h = IS_TOUCH
+              ? "Drag to move the whole folder. Tap one of its items again to go inside"
+              : "Drag to move the whole folder. Click one of its items again (or double-click) to go inside";
+          else
+            h =
+              effTool() === "select"
+                ? IS_TOUCH
+                  ? "Select tool: one finger draws a box; two fingers turn and zoom"
+                  : "Select tool: drag a box on the ground. Right-drag or Space-drag turns the view, the wheel zooms"
+                : IS_TOUCH
+                  ? "One finger turns the view. Long-press an item to select several"
+                  : "Orbit tool: drag to turn the view. Click selects; Shift-click adds";
+        }
+        $("#sbHint").textContent = h;
+        $("#sbHist").textContent = `undo ${undoStack.length}`;
+        $("#bUndo").disabled = !undoStack.length;
+        $("#bRedo").disabled = !redoStack.length;
+      }
+      let toastTimer = 0;
+      function toast(msg, withUndo = true) {
+        const t = $("#toast");
+        t.querySelector(".tx").textContent = msg;
+        $("#toastUndo").hidden = !withUndo || !undoStack.length;
+        t.classList.add("show");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => t.classList.remove("show"), 3600);
+      }
+      $("#toastUndo").addEventListener("click", () => {
+        $("#toast").classList.remove("show");
+        undo();
+      });
+
+      function refresh() {
+        if (scope && !(nodeOf(scope)?.kind === "folder")) scope = null;
+        sel.ids = sel.ids.filter(
+          (id) => findNode(id) && parentIdOf(id) === scope,
+        );
+        if (sel.story && !findStory(sel.story)) sel.story = null;
+        syncScene();
+        updateLooks();
+        renderTree();
+        renderInsp();
+        renderFab();
+        renderCrumb();
+        renderHint();
+      }
+
+      // ---------------------------------------------------------------- keys and buttons
+      const typing = (e) =>
+        e.target.closest && e.target.closest("input, textarea");
+      window.addEventListener("keydown", (e) => {
+        if (typing(e)) return;
+        const mod = e.ctrlKey || e.metaKey;
+        const k = e.key.toLowerCase();
+        if (mod && k === "z") {
+          e.preventDefault();
+          return e.shiftKey ? redo() : undo();
+        }
+        if (mod && k === "y") {
+          e.preventDefault();
+          return redo();
+        }
+        if (mod && k === "g") {
+          e.preventDefault();
+          return e.shiftKey ? ungroup() : group();
+        }
+        if (mod && k === "d") {
+          e.preventDefault();
+          return duplicate();
+        }
+        if (e.key === "Escape") {
+          if ($("#notesBack").classList.contains("show")) return closeNotes();
+          if (tdrag) return endTreeDrag(null, true);
+          if (drag) return endDrag(true);
+          if (picking) {
+            picking = false;
+            return refresh();
+          }
+          if (scope) return leaveFolder(true);
+          return setSel([], null);
+        }
+        if (e.key === "Enter") {
+          const n = selectedNodes();
+          if (!scope && n.length === 1 && n[0].kind === "folder") {
+            e.preventDefault();
+            enterFolder(n[0].id);
+          }
+          return;
+        }
+        if (e.key === "Delete" || e.key === "Backspace") {
+          e.preventDefault();
+          return del();
+        }
+        if (k === "f" && !mod) return frameSelection();
+        if (k === "v" && !mod) {
+          tool = "select";
+          applyTool();
+          renderFab();
+        }
+        if (k === "h" && !mod) {
+          tool = "orbit";
+          applyTool();
+          renderFab();
+        }
+        if (e.key === " " && !spaceHeld) {
+          e.preventDefault();
+          spaceHeld = true;
+          applyTool();
+        }
+      });
+      window.addEventListener("keyup", (e) => {
+        if (e.key === " " && spaceHeld) {
+          spaceHeld = false;
+          applyTool();
+        }
+      });
+      window.addEventListener("blur", () => {
+        if (spaceHeld) {
+          spaceHeld = false;
+          applyTool();
+        }
+      });
+      $("#bUndo").addEventListener("click", undo);
+      $("#bRedo").addEventListener("click", redo);
+      $("#tSelect").addEventListener("click", () => {
+        tool = "select";
+        applyTool();
+        renderFab();
+      });
+      $("#tOrbit").addEventListener("click", () => {
+        tool = "orbit";
+        applyTool();
+        renderFab();
+      });
+      const dolly = (k) => {
+        const d = camera.position.clone().sub(orbit.target);
+        const L = clamp(d.length() * k, orbit.minDistance, orbit.maxDistance);
+        camAnim = {
+          t0: performance.now(),
+          fromT: orbit.target.clone(),
+          fromP: camera.position.clone(),
+          toT: orbit.target.clone(),
+          toP: orbit.target.clone().add(d.setLength(L)),
+        };
+      };
+      $("#zIn").addEventListener("click", () => dolly(0.75));
+      $("#zOut").addEventListener("click", () => dolly(1.33));
+      $("#zFrame").addEventListener("click", frameSelection);
+      function closeNotes() {
+        $("#notesBack").classList.remove("show");
+        try {
+          localStorage.setItem("folders2-notes-seen", "1");
+        } catch {
+          /* storage off */
+        }
+      }
+      $("#bNotes").addEventListener("click", () =>
+        $("#notesBack").classList.add("show"),
+      );
+      $("#bNotesClose").addEventListener("click", closeNotes);
+      $("#notesBack").addEventListener("click", (e) => {
+        if (e.target.id === "notesBack") closeNotes();
+      });
+      try {
+        if (localStorage.getItem("folders2-notes-seen"))
+          $("#notesBack").classList.remove("show");
+      } catch {
+        /* storage off */
+      }
+      function setTreeOpen(on) {
+        document.body.classList.toggle("treeOpen", on);
+        $("#bList").classList.toggle("on", on);
+        applyViewOffset();
+      }
+      // on a phone the open list covers the lower half: the scene's centre moves up with it
+      function applyViewOffset() {
+        const off =
+          isPhone() && document.body.classList.contains("treeOpen")
+            ? vpH * 0.23
+            : 0;
+        if (off) camera.setViewOffset(vpW, vpH, 0, off, vpW, vpH);
+        else camera.clearViewOffset();
+      }
+      $("#bList").addEventListener("click", () =>
+        setTreeOpen(!document.body.classList.contains("treeOpen")),
+      );
+      $("#bTreeClose").addEventListener("click", () => setTreeOpen(false));
+      $("#bTreeFold").addEventListener("click", () => {
+        $("#tree").classList.toggle("collapsed");
+      });
+
+      // ---------------------------------------------------------------- layout and frame loop
+      function layout() {
+        const phone = isPhone();
+        document.body.classList.toggle("treeDock", !phone);
+        $("#bTreeClose").hidden = !phone;
+        if (!layout.done && !phone && window.innerHeight < 500)
+          $("#tree").classList.add("collapsed");
+        layout.done = true;
+        const r = vp.getBoundingClientRect();
+        vpW = Math.max(1, r.width);
+        vpH = Math.max(1, r.height);
+        renderer.setSize(vpW, vpH, false);
+        labelR.setSize(vpW, vpH);
+        camera.aspect = vpW / vpH;
+        camera.updateProjectionMatrix();
+        applyViewOffset();
+        renderInsp();
+      }
+      new ResizeObserver(layout).observe(vp);
+      phoneMQ.addEventListener("change", () => {
+        setTreeOpen(false);
+        refresh();
+      });
+      function loop(now) {
+        if (camAnim) {
+          const t = clamp((now - camAnim.t0) / 320, 0, 1);
+          const k = t * t * (3 - 2 * t);
+          orbit.target.lerpVectors(camAnim.fromT, camAnim.toT, k);
+          camera.position.lerpVectors(camAnim.fromP, camAnim.toP, k);
+          orbit.update();
+          if (t >= 1) camAnim = null;
+        }
+        updateGizmo();
+        renderer.render(scene, camera);
+        labelR.render(scene, camera);
+        requestAnimationFrame(loop);
+      }
+      layout();
+      applyTool();
+      refresh();
+      frameSelection(true);
+      new ResizeObserver(() =>
+        vp.style.setProperty("--fabH", fab.offsetHeight + "px"),
+      ).observe(fab);
+      requestAnimationFrame(loop);
+
+      // read-only hooks for a scripted check of the page (not part of the idea)
+      window.foldersProto = {
+        state: () => JSON.parse(snap()),
+        screenOf: (id) => screenOfItem(id),
+        screenOfHandle: (name) => {
+          updateGizmo();
+          const o = { rotate: gzKnob, scale: gzDots[0], move: gzDisc }[name];
+          if (!o || !o.visible) return null;
+          const v = o.position.clone().project(camera);
+          const r = canvas.getBoundingClientRect();
+          return [
+            ((v.x + 1) / 2) * r.width + r.left,
+            ((1 - v.y) / 2) * r.height + r.top,
+          ];
+        },
+      };
+    </script>
+  </body>
+</html>
