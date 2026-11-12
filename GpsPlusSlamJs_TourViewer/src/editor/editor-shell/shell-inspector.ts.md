@@ -161,7 +161,9 @@ content` (Chromium, the editor's browser; elsewhere it stays three
   station's "Put items on the ground"
   (`ground-items`, its note "N off", off when none is) and "Delete
   station"; an item's "Move to a new station" (`split`), "Put on the
-  ground" (`ground`, its note "x.x m up/down", off when on it) and
+  ground" (`ground`, its note "x.x m up/down", off when on it), one in a
+  plain folder "Select the folder" (`select:folder:<id>`, its note the
+  folder's name, in a row of its own) and
   "Delete pin" / "Delete photo" / "Delete long text" / "Delete 3D model". The command `busy`
   names says "Waiting for the ground...", is `aria-disabled` (not
   `disabled`, so it keeps the keyboard's focus) and `aria-busy`. Each

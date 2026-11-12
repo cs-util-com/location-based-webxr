@@ -612,6 +612,7 @@ describe("the placeables against the old gate", () => {
           expect(p.selection).toBe(b.id);
           expect(p.stationId).toBe("a");
           expect(p.members).toEqual([b.id]);
+          expect(p.group).toBe(false);
           expect(p.locked).toBe(false);
           expect(p.inheritedScale).toBe(1);
         }

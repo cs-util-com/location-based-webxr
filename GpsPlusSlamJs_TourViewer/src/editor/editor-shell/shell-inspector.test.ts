@@ -44,7 +44,7 @@ const NO_PLACE = {
   offset: null,
   headingDeg: null,
   turns: false,
-
+  folder: null,
   groundOffM: null,
 } as const;
 
@@ -401,6 +401,32 @@ describe("drawInspector", () => {
       ),
     ).toEqual(["delete"]);
     expect(dock.body.querySelector('[data-field="east"]')).toBeNull();
+  });
+
+  // Why: in the 3D view a click on a folder's item picks the item alone,
+  // so its inspector is the 3D view's way to the folder (the tree's row is
+  // the other); an item at its station's top has no folder to offer.
+  it("offers to select the folder holding a placed item, by its name", () => {
+    const placed = {
+      ...NO_PLACE,
+      itemKind: "shortText",
+      offset: { northM: 1, upM: 0, eastM: 2 },
+      headingDeg: 0,
+      fields: [],
+    } as const;
+    drawInspector(
+      dock,
+      { ...placed, folder: { id: "f", title: "Benches" } },
+      FOLD,
+      pictures,
+    );
+    const button = dock.body.querySelector<HTMLButtonElement>(
+      '[data-act="select:folder:f"]',
+    );
+    expect(button?.textContent).toContain("Select the folder");
+    expect(button?.textContent).toContain("Benches");
+    drawInspector(dock, placed, FOLD, pictures);
+    expect(dock.body.querySelector('[data-act^="select:"]')).toBeNull();
   });
 
   // Why: a sound's radius, reach and volume are numbers (block-fields.ts

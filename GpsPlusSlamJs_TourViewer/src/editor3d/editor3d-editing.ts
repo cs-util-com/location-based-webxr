@@ -80,6 +80,7 @@ import {
 } from "./gesture.js";
 import {
   gizmoLayout,
+  groupSpanM,
   handleAt,
   type GizmoHandle,
   type GizmoLayout,
@@ -351,13 +352,37 @@ export function createSceneEditing(deps: SceneEditingDeps) {
     viewHeightAtOneM(camera.fov) /
     Math.max(1, canvas.getBoundingClientRect().height);
 
+  /** The selected group's members as `layoutNow` last read them (none:
+   *  the selection is one object): their bodies are its grips. */
+  let grips: readonly string[] = [];
+  const box = new THREE.Box3();
+  /** How far `members`' drawings reach from `centre` (m), as drawn now
+   *  (a gesture's preview included). */
+  const spanOf = (members: readonly string[], centre: WorldPoint): number =>
+    groupSpanM(
+      centre,
+      members.flatMap((id) =>
+        layer.itemObjects(id).map((o) => {
+          box.setFromObject(o);
+          return {
+            minX: box.min.x,
+            maxX: box.max.x,
+            minZ: box.min.z,
+            maxZ: box.max.z,
+          };
+        }),
+      ),
+    );
+
   /** The gizmo's layout for the selection now: its target, or the
    *  preview of a gesture on it. */
   const layoutNow = (): GizmoLayout | null => {
+    grips = [];
     const selection = deps.page.selected();
     if (selection === null) return null;
     const target = targetOf(selection);
     if (target === null) return null;
+    grips = target.members ?? [];
     let centre = target.centre;
     let now: GesturePreview = {
       geo: target.geo,
@@ -376,7 +401,9 @@ export function createSceneEditing(deps: SceneEditingDeps) {
       new THREE.Vector3(centre.x, centre.y, centre.z),
     );
     const metresPerPx = Math.max(1e-6, distance * spritePerPx());
-    return gizmoLayout(gizmoSubjectOf(target, now, centre), metresPerPx);
+    const spanM =
+      target.members === undefined ? undefined : spanOf(target.members, centre);
+    return gizmoLayout(gizmoSubjectOf(target, now, centre, spanM), metresPerPx);
   };
 
   const screenOf = (at: THREE.Vector3): ScreenPoint | null => {
@@ -410,9 +437,15 @@ export function createSceneEditing(deps: SceneEditingDeps) {
             return s === null ? [] : [s];
           }),
         onDisc,
+        // A group's members count as its body.
         underPointer:
-          under === null ? null : under === selection ? "selected" : "other",
+          under === null
+            ? null
+            : under === selection || grips.includes(under)
+              ? "selected"
+              : "other",
         posable: layout.posable,
+        bodyGrips: layout.bodyGrips,
       });
     },
     pickAt(pointer) {

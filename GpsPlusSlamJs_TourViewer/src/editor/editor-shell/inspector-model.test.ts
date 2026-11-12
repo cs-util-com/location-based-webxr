@@ -443,6 +443,8 @@ describe("buildInspector", () => {
       expect(shown.offset?.upM).toBeCloseTo(3, 9);
       expect(shown.offset?.eastM).toBeCloseTo(-5, 9);
       expect(shown.headingDeg).toBeCloseTo(270, 6);
+      // Its folder, to select from here: the 3D view's way to a folder.
+      expect(shown.folder?.id).toBe("f");
       expect(at(() => 562.25)).toMatchObject({ groundOffM: 3 });
       // The station's count of items off the ground judges it there too.
       expect(
@@ -578,6 +580,7 @@ describe("buildInspector", () => {
       headingDeg: 0,
       // A pin faces the visitor: its gizmo has no round arrow.
       turns: false,
+      folder: null,
       groundOffM: null,
     });
     expect(inspect("model-1")).toMatchObject({

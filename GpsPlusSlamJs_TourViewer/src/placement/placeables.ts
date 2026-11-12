@@ -82,6 +82,9 @@ export interface Placeable {
    *  posed blocks it holds at any depth for a folder, none for a station
    *  (its whole drawing moves). */
   readonly members: readonly string[];
+  /** It moves its members as a whole (a plain folder): its gizmo rings
+   *  them, and their bodies are its grips. */
+  readonly group: boolean;
 }
 
 /** What the page knows that the tour does not. */
@@ -126,6 +129,7 @@ function blockPlaceable(
     extent: extentOf(row, block),
     locked: false,
     members: [block.id],
+    group: false,
   };
 }
 
@@ -198,6 +202,7 @@ function folderPlaceable(
     extent: extentOf(CONTAINER_PLACEMENT, { scale: folder.scale ?? 1 }),
     locked: false,
     members: walk(folder.children, station, chain).map((e) => e.block.id),
+    group: true,
   };
 }
 
@@ -234,6 +239,7 @@ function stationPlaceable(station: TourStation, scope: PlaceScope): Placeable {
     extent: extentOf(STATION_PLACEMENT, station),
     locked: scope.stationLocked?.(station.id) === true,
     members: [],
+    group: false,
   };
 }
 

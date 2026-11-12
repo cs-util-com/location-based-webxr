@@ -451,9 +451,25 @@ interface ItemInspector {
   /** Its gizmo turns it (its placement row's `turns`): a pin or a sound
    *  faces the visitor instead; false for one with no place. */
   readonly turns: boolean;
+  /** The plain folder holding it (the innermost), to select from here
+   *  (the 3D view's path to a folder); null at its station's top. */
+  readonly folder: { readonly id: string; readonly title: string } | null;
   /** Its height over the ground (m); null before the ground there has
    *  loaded. */
   readonly groundOffM: number | null;
+}
+
+/** The plain folder `id` of `station` with its name, or null (none, or
+ *  one the station lacks). */
+function holdingFolderOf(
+  station: TourStation,
+  id: string | undefined,
+): { readonly id: string; readonly title: string } | null {
+  const folder =
+    id === undefined ? undefined : folderChains(station).get(id)?.at(-1);
+  return folder === undefined
+    ? null
+    : { id: folder.id, title: folderName(folder) };
 }
 
 /** A plain folder's scale as its inspector types it: its placement
@@ -1026,6 +1042,7 @@ export function buildInspector(input: {
       headingDeg:
         inStation === null ? null : headingOfRotation(inStation.rotation),
       turns: place?.turns ?? false,
+      folder: holdingFolderOf(station, place?.folderPath.at(-1)),
       groundOffM: place === null ? null : offGroundOf(place.geo, groundAt),
     };
   }

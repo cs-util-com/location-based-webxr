@@ -72,6 +72,8 @@ function setup(
     keysFree?: boolean;
     world?: GestureWorld;
     clickPx?: number;
+    /** More targets by selection (the pin is always one). */
+    targets?: Readonly<Record<string, GestureTarget>>;
   } = {},
 ) {
   const log: string[] = [];
@@ -79,7 +81,7 @@ function setup(
   const commits: PlaceEdit[] = [];
   let selected = options.selected === undefined ? "pin" : options.selected;
   const scene: InputScene = {
-    target: (id) => (id === "pin" ? PIN : null),
+    target: (id) => (id === "pin" ? PIN : (options.targets?.[id] ?? null)),
     handleAt: vi.fn(() => options.handle ?? null),
     pickAt: () => options.pick ?? null,
     world: options.world ?? WORLD,
@@ -302,6 +304,70 @@ describe("a drag of the gizmo", () => {
     code.element.dispatchEvent(pointer("pointerdown", { x: 0, y: 0 }));
     expect(code.dispatched).toHaveLength(0);
     code.input.dispose();
+  });
+});
+
+// Why: a folder's items are its grips, so a press on one starts the
+// folder's drag at once - yet a click on one (no travel) must pick that
+// item alone, as the chosen design has it ("moves alone"), and a jitter
+// under the click distance must not write a nudge of the whole folder.
+describe("a press on a folder's item", () => {
+  const FOLDER: GestureTarget = {
+    ...PIN,
+    ref: { kind: "folder", id: "f" },
+    members: ["a", "b"],
+  };
+  const folder = (pick: string | null) =>
+    setup({
+      selected: "folder:f",
+      handle: "move",
+      pick,
+      targets: { "folder:f": FOLDER },
+    });
+
+  it("selects that item on a click, and writes nothing", () => {
+    for (const touch of [false, true]) {
+      const t = folder("a");
+      t.element.dispatchEvent(
+        pointer("pointerdown", { x: 5, y: 5 }, { touch }),
+      );
+      window.dispatchEvent(
+        pointer("pointermove", { x: 7, y: 5 }, { buttons: 1, touch }),
+      );
+      window.dispatchEvent(pointer("pointerup", { x: 7, y: 5 }, { touch }));
+      expect(t.commits).toEqual([]);
+      expect(t.page.select).toHaveBeenLastCalledWith("a");
+      // The drag was started and ended: the store saw both, nothing else.
+      expect(t.log.filter((l) => l.startsWith("dispatch:"))).toEqual([
+        "dispatch:gestureStarted",
+        "dispatch:gestureEnded",
+      ]);
+      t.input.dispose();
+    }
+  });
+
+  it("moves the folder on a drag, and selects nothing", () => {
+    const t = folder("a");
+    t.element.dispatchEvent(pointer("pointerdown", { x: 5, y: 5 }));
+    window.dispatchEvent(
+      pointer("pointermove", { x: 40, y: 5 }, { buttons: 1 }),
+    );
+    window.dispatchEvent(pointer("pointerup", { x: 40, y: 5 }));
+    expect(t.commits).toHaveLength(1);
+    expect(t.commits[0]?.ref).toEqual({ kind: "folder", id: "f" });
+    expect(t.page.select).not.toHaveBeenCalled();
+    t.input.dispose();
+  });
+
+  it("keeps the folder selected on a click of its disc over no item, or over what is not its own", () => {
+    for (const pick of [null, "station:s", "other"]) {
+      const t = folder(pick);
+      t.element.dispatchEvent(pointer("pointerdown", { x: 5, y: 5 }));
+      window.dispatchEvent(pointer("pointerup", { x: 5, y: 5 }));
+      expect(t.commits).toEqual([]);
+      expect(t.page.select).not.toHaveBeenCalled();
+      t.input.dispose();
+    }
   });
 });
 

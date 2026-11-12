@@ -90,6 +90,11 @@ pure gesture maths reads (`GestureWorld`).
   A card, a code or a story's step is no target. Of the dots, a station's
   reach and a model's size are shown; others (a picture's width) wait for
   a write of any extent through the session.
+- A group's gizmo (a plain folder's: `GestureTarget.members`) is measured
+  each frame from its members' drawings (`layer.itemObjects`, their boxes
+  in the world, a preview included): their reach from the pivot sets its
+  ring (`groupSpanM`). Under the pointer, a member counts as the
+  selection, so its body is a move grip (`handleAt`'s `bodyGrips`).
 - An item's gizmo centre is the ground under it (where loaded, else its
   own height); a station's is its point.
 - **A locked camera stands still:** `lockCamera(true)` (a press on a

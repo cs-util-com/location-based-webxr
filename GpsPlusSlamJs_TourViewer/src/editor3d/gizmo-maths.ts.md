@@ -19,7 +19,9 @@ layout, `editor3d-input.ts` feeds the pointer and the keys.
   radius); an item's ring at least 32 px and 1.25 m (a model's 0.625 m per
   metre of its size); a station's move disc at least 26 px and 2.2 m; the
   knob 30 px beyond the ring, drawn 42 px; a dot drawn 30 px; the stalk
-  2 px (at least 0.03 m); a handle under the pointer drawn 1.15 times.
+  2 px (at least 0.03 m); a handle under the pointer drawn 1.15 times; a
+  group's (a folder's) ring its members' reach (at least 0.6 m) plus 0.2 m,
+  and at least 34 px, its move disc 26 px at the pivot.
 - `KEY_STEPS` - nudge 0.1 m (Shift 1 m), turn 5 degrees (Shift 15), lift
   0.1 m (Shift 1 m).
 - `norm360(deg)`, `angleDiffDeg(a, b)` (signed, in (-180, 180]),
@@ -34,8 +36,14 @@ layout, `editor3d-input.ts` feeds the pointer and the keys.
   disc (a reach's own disc, else the ring), the four dots (whenever there
   is an extent, at heading + 45 + i x 90 degrees, on the ring), the knob
   along the heading and its stalk (both null for what does not turn: a
-  pin's label, a sound). RangeError for a scale that is not finite and
-  > 0.
+  pin's label, a sound). A subject with `spanM` is a GROUP (a plain
+  folder): its ring rings its members, its disc is the small one at the
+  pivot and the layout says `bodyGrips`. RangeError for a scale that is
+  not finite and > 0.
+- `groupSpanM(centre, footprints)` - how far a group's members reach from
+  its pivot: the farthest corner of their ground footprints (world x/z
+  boxes); 0 for none; a box with a bound that is not finite (nothing drawn
+  yet) counts nothing.
 - `handleAt({ pointer, knob, dots, onDisc, underPointer, posable })` -> `"move"`,
   `"turn"`, `"dot"` or null (the camera's): the knob and the dots first
   (the nearest within half its drawn size), then another object under
@@ -46,6 +54,11 @@ layout, `editor3d-input.ts` feeds the pointer and the keys.
   takes. The disc alone moves: the selected object's body off the disc is no handle
   (a tap selects, a drag turns the camera), and the disc moves even where
   that body covers it.
+  With `bodyGrips` (a group's gizmo) the order after the knob and the
+  dots is: the small disc (over whatever stands under it, as the chosen
+  design draws it over the scene), then a member's body (`underPointer:
+  "selected"`: the caller counts the members as the selection), and another
+  object takes no handle.
 - `turnedHeadingDeg(heading, fromDeg, toDeg, snap)`: whole degrees, 15
   with `snap`; in [0, 360).
 - `draggedRadiusM(distanceM, fine, bounds)`: half metres (tenths with
@@ -60,7 +73,7 @@ layout, `editor3d-input.ts` feeds the pointer and the keys.
   F, Home, Esc, Ctrl+Z, Ctrl+Y) and any other Ctrl/Cmd chord. Read by
   `code`, so the keyboard layout's letter does not matter.
 - Types `WorldPoint`, `GroundSpot`, `ScreenPoint`, `GizmoSubject`,
-  `GizmoLayout`, `GizmoHandle`, `DotBounds`, `SceneKey`, `KeyPress`.
+  `GizmoLayout`, `GizmoHandle`, `Footprint`, `DotBounds`, `SceneKey`, `KeyPress`.
 
 ## Invariants & assumptions
 

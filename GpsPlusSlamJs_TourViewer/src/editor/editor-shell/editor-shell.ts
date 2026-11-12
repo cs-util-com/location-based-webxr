@@ -2041,6 +2041,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     }
     if (act === "delete") deleteSelected(selected);
     if (act === "split") deps.stations.split(selected);
+    // An item's "Select the folder": the 3D view's way to its folder.
+    if (act?.startsWith("select:") === true)
+      deps.select(act.slice("select:".length));
     if (act === "ground" || act === "ground-items") void runGround(act);
     if (
       act?.startsWith("image:") === true &&

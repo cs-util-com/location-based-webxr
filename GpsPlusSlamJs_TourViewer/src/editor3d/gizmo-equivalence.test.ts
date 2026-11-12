@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   BLOCK_PLACEMENT,
+  CONTAINER_PLACEMENT,
   STATION_PLACEMENT,
   type ViewPlacement,
 } from "../placement/placement-rows.js";
@@ -76,6 +77,8 @@ function oldLayout(subject: OldSubject, metresPerPx: number): GizmoLayout {
     headingDeg: heading,
     ringM: station ? null : radius,
     moveM,
+    // The old gizmo had one object under it: no grips but its disc.
+    bodyGrips: false,
     dots,
     knob: along(subject.centre, heading, reach),
     bar: {
@@ -137,6 +140,7 @@ function placeable(
     extent,
     locked,
     members: [],
+    group: false,
   };
 }
 
@@ -312,5 +316,46 @@ describe("the dots' drag rules through the rows against the frozen rules", () =>
         }
       }
     }
+  });
+});
+
+// Why: a plain folder is the one placeable that moves other placeables
+// with it; its gizmo must read that from the placeable (`group`), never
+// from its kind, and an item or a station must keep the gizmo frozen
+// above.
+describe("a group's gizmo, from its placeable", () => {
+  const folder: Placeable = {
+    ...placeable({ kind: "folder", id: "f" }, CONTAINER_PLACEMENT, 30, 1),
+    members: ["a", "b"],
+    group: true,
+  };
+
+  it("carries its members to the gesture and rings them in the gizmo", () => {
+    const target = gestureTargetOf(folder, CENTRE);
+    expect(target.members).toEqual(["a", "b"]);
+    const now = { geo: target.geo, value: 1 };
+    const l = gizmoLayout(gizmoSubjectOf(target, now, CENTRE, 4), 0.01);
+    expect(l.ringM).toBeCloseTo(4.2, 9);
+    expect(l.bodyGrips).toBe(true);
+    expect(l.moveM).toBeCloseTo(GIZMO.groupMovePx * 0.01, 9);
+    // Before its members are drawn: the floor ring, still a group's.
+    const bare = gizmoLayout(gizmoSubjectOf(target, now, CENTRE), 0.01);
+    expect(bare.ringM).toBeCloseTo(0.8, 9);
+    expect(bare.bodyGrips).toBe(true);
+  });
+
+  it("gives an item no members, so a span handed in changes nothing", () => {
+    const item = placeable(
+      { kind: "block", id: "pin" },
+      BLOCK_PLACEMENT.shortText.pin,
+      0,
+      1,
+    );
+    const target = gestureTargetOf(item, CENTRE);
+    expect(target.members).toBeUndefined();
+    const now = { geo: target.geo, value: null };
+    expect(gizmoLayout(gizmoSubjectOf(target, now, CENTRE, 4), 0.01)).toEqual(
+      gizmoLayout(gizmoSubjectOf(target, now, CENTRE), 0.01),
+    );
   });
 });

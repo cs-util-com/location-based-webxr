@@ -39,9 +39,13 @@ dots, and the dots' bounds, are its placement row's
 - `poseLocked(target)`: the target's `locked`.
 - `gestureTargetOf(placeable, centre)` -> `GestureTarget`: a placeable
   as a gesture reads it, with every dot its row gives (a station's reach,
-  a model's size, a picture's width).
-- `gizmoSubjectOf(target, now, centre)` -> `GizmoSubject`: what the
-  gizmo is drawn for, the target as a preview (or its rest) shows it.
+  a model's size, a picture's width); a group's (a folder's) carries its
+  `members` (their bodies are its grips, and a click on one picks it
+  alone, `editor3d-input.ts`).
+- `gizmoSubjectOf(target, now, centre, spanM?)` -> `GizmoSubject`: what
+  the gizmo is drawn for, the target as a preview (or its rest) shows it;
+  a group's with its members' reach (0 before they are drawn), which the
+  scene measures from their drawings.
 - Types `GroundUnder` (a point, or a miss: `not-loaded`, `below-start`,
   `out-of-reach`, `above`), `GestureWorld` (`groundUnder`, `planeUnder`,
   `placeOf(at: WorldPoint)`, `groundAt(place)` in ellipsoidal metres),

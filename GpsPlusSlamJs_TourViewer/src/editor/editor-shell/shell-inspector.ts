@@ -30,7 +30,8 @@
  * at the ends), the card picture's choices (`image:<id>`, the shown one
  * pressed), and the selection's commands in words: a station's
  * `ground-items` and `delete`, its own `ground` under Place; an item's
- * `split` ("Move to a new station"), `ground` and `delete`; a story's
+ * `split` ("Move to a new station"), `ground` and `delete`, and one in a
+ * plain folder its `select:folder:<id>` ("Select the folder"); a story's
  * `add-entry` and `delete`; a story block's `entry-advance:<id>:<mode>` -
  * Delete last, behind a separator. A command the
  * shell is running (`busy`) shows as waiting.
@@ -47,6 +48,7 @@
  */
 import type { ShellPictures } from "./shell-pictures.js";
 import { FREE_LIST } from "../../station-children-moves.js";
+import { FOLDER_PREFIX } from "../editor-model.js";
 import { shellIcon, type ShellIcon } from "gps-plus-slam-editor-kit/chrome";
 import { fileFieldPart } from "./inspector-file.js";
 import {
@@ -819,6 +821,19 @@ function itemParts(
       itemDelete(model),
     ]),
   );
+  // The 3D view's way to the folder: a click there picks its item alone.
+  if (model.folder !== null) {
+    parts.push(
+      actions([
+        action(
+          `select:${FOLDER_PREFIX}${model.folder.id}`,
+          "folder",
+          "Select the folder",
+          { note: model.folder.title },
+        ),
+      ]),
+    );
+  }
   if (fields.length > 0) {
     const section = el("div", "isec");
     section.append(...fields.flatMap(blockTextField));

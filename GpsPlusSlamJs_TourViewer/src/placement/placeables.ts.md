@@ -33,7 +33,9 @@ find what stands in the world, and it reads the facts of each from
     lacks), `locked` (a station the creator locked), `members` (the block
     ids that follow it: itself for a block, the posed blocks it holds at
     any depth for a folder, none for a station, whose whole drawing
-    moves).
+    moves), `group` (true for a plain folder only: it moves its members
+    as a whole, so its gizmo rings them and their bodies are its grips -
+    the gizmo reads this, never the kind).
 - A plain folder's placeable (`folder:<id>`): its pivot is its origin
   (`local` is its pose, the holder's frame for none), its row is
   `CONTAINER_PLACEMENT` (it turns and lifts; its dots are its `scale`,

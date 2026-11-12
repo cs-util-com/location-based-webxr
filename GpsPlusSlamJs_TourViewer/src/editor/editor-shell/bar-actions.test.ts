@@ -45,6 +45,7 @@ const item: InspectorModel = {
   offset: { northM: 2, upM: 0.5, eastM: -1.25 },
   headingDeg: 15,
   turns: false,
+  folder: null,
   groundOffM: null,
 };
 

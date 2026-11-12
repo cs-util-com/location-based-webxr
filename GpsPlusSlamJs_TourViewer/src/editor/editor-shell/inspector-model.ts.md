@@ -77,7 +77,9 @@ view, advance, facingDeg }`) and `advance { mode, afterS }`;
     (`northM`, `upM`, `eastM` in the station's frame, its folders composed
     in; null for a block with no place in the world, a video),
     `headingDeg` (in the same frame; null with no place), `turns` (its
-    placement row's: its gizmo has the round arrow), and `groundOffM` (the height
+    placement row's: its gizmo has the round arrow), `folder` (the plain
+    folder holding it, the innermost, as `{ id, title }`; null at its
+    station's top: the 3D view's way to select a folder), and `groundOffM` (the height
     over the ground of where it stands in the world, through its
     folders, `posedEntryOf` of `../../placement/placeables.ts`; rounded as
     the station's; null while unknown or with no place);

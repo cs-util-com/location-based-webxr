@@ -200,7 +200,8 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   the shell.
 - The inspector's station extras: `contents` folds Contents (kept across
   selections), `add-content` opens the tree's type menu for the station,
-  `goto:<id>` selects and flies as a tree row does, and the radius slider
+  `goto:<id>` selects and flies as a tree row does, an item's
+  `select:<selection>` ("Select the folder") selects without flying, and the radius slider
   (`radius-slider.ts`) previews through `view.previewRadius` and is
   cancelled when the selection goes or the shell hides.
 
