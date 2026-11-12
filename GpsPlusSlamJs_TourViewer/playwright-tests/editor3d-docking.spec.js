@@ -819,6 +819,16 @@ test("the docked list's head buttons stay inside the list at 210 and at 140 px",
           out.push(`${id} ends ${String(Math.round(r.right - edge))} px past`);
         }
       }
+      // Narrow, Select keeps only its icon so the stations' header keeps
+      // a width that can be pressed.
+      const select = document.getElementById("tree-select");
+      const stations = document.getElementById("tree-stations");
+      if (select !== null && select.getBoundingClientRect().width > 26) {
+        out.push(`select ${String(Math.round(select.getBoundingClientRect().width))} px`);
+      }
+      if (stations !== null && stations.getBoundingClientRect().width < 24) {
+        out.push(`stations ${String(Math.round(stations.getBoundingClientRect().width))} px`);
+      }
       return out;
     });
   expect(await overflow()).toEqual(["width 210"]);

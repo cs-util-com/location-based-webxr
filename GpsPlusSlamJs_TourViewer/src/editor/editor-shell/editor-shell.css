@@ -1241,7 +1241,9 @@ body {
     overflow: hidden;
   }
 
-  #tree-select {
+  /* Scoped to the list: the Select button's own rule comes later in this
+   * file and would win at an equal weight. */
+  #shell-tree #tree-select {
     gap: 0;
     padding: 0 5px;
     font-size: 0;
