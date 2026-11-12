@@ -527,6 +527,28 @@ describe("acting on a file", () => {
 });
 
 describe("folding and the phone", () => {
+  // Why: docked, the shelf is a tab beside the details, so the toggle is
+  // pressed only while that tab shows; pressing it shows the tab, and the
+  // page redraws the toggle when the creator picks the other tab.
+  it("docked, its toggle is pressed only while the Files panel shows", () => {
+    let shown = false;
+    const revealDocked = vi.fn(() => {
+      shown = true;
+    });
+    const { panel: made } = panel({
+      docked: () => true,
+      filesShown: () => shown,
+      revealDocked,
+    });
+    expect($("#tog")?.getAttribute("aria-pressed")).toBe("false");
+    $<HTMLButtonElement>("#tog")?.click();
+    expect(revealDocked).toHaveBeenCalledTimes(1);
+    expect($("#tog")?.getAttribute("aria-pressed")).toBe("true");
+    shown = false;
+    made.refresh();
+    expect($("#tog")?.getAttribute("aria-pressed")).toBe("false");
+  });
+
   it("folds to the rail and keeps the fold for the next visit", () => {
     rows = [row({ status: "running", progress: 0.5 })];
     panel();

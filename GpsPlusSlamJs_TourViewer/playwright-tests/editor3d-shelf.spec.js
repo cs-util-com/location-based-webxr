@@ -151,6 +151,18 @@ test.beforeEach(async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
 });
 
+/**
+ * Shows the asset shelf: docked, it is the Files tab beside the details.
+ * @param {import("@playwright/test").Page} page
+ */
+async function showFiles(page) {
+  const files = page
+    .locator(".dock-host")
+    .getByRole("tab", { name: "Files", exact: true });
+  if ((await files.count()) > 0) await files.click();
+  await expect(page.locator("#shell-shelf")).toBeVisible();
+}
+
 test("a 3D model and a sound added from the tree's menu stand in the tree, in 3D and on the Assets panel, and a draft reload keeps them", async ({
   page,
 }) => {
@@ -187,11 +199,12 @@ test("a 3D model and a sound added from the tree's menu stand in the tree, in 3D
       .sort();
   expect(await kinds()).toEqual(["audio", "model"]);
   expect((await blocksOf(page, "gate")).length).toBe(before + 2);
-  // Docked, a file just added shows the Files tab, the shelf's processing
-  // in sight, without a step of the creator's.
+  // Docked, an add that makes an item keeps its Details in sight (its
+  // next step is there); the shelf is the Files tab beside them.
   await expect(
-    page.locator(".dock-host").getByRole("tab", { name: "Files" }),
+    page.locator(".dock-host").getByRole("tab", { name: "Details" }),
   ).toHaveAttribute("aria-selected", "true");
+  await showFiles(page);
 
   // In the tree, in 3D, and on the panel.
   for (const id of [model, sound]) {
@@ -282,6 +295,7 @@ test("a picture dropped onto a story's row becomes the story's last entry and a 
   expect(told.children.map((/** @type {any} */ c) => c.kind)).toEqual([
     "picture",
   ]);
+  await showFiles(page);
   await expect(
     page.locator("#shell-shelf .as-cname", { hasText: "market-view.png" }),
   ).toBeVisible();
@@ -308,6 +322,7 @@ test("a file in use is deleted from the shelf with its item and comes back whole
     (await blocksOf(page, "gate")).find((b) => b.id === sound)?.audio;
   const old = await audioOf();
   expect(typeof old).toBe("string");
+  await showFiles(page);
   const shelf = page.locator("#shell-shelf");
   const card = shelf.locator(".as-card", {
     has: page.locator(".as-cname", { hasText: "toll.wav" }),

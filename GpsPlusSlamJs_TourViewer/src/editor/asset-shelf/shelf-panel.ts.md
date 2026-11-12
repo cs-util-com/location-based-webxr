@@ -19,7 +19,9 @@ shelf runner (`asset-shelf.ts`); every word comes from
   - `deps.docked?()`, `deps.revealDocked?()`: while the editor's panels
     are docked the shelf is the Files panel - never a rail, its fold
     button hidden - and opening it (the toggle, `open`, `reveal`) shows
-    that panel.
+    that panel. `deps.filesShown?()` says whether that panel shows: the
+    toggle is `aria-pressed` only then (the page redraws it when it
+    changes).
   - `deps.host`: where the "Used in" popover goes (the page's body).
   - `deps.rows()`, `deps.subscribe(listener)`: the shelf's rows and their
     changes (the store's).

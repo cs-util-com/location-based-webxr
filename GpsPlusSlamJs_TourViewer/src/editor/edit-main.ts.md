@@ -999,7 +999,10 @@ on a desktop.
   name; dropped on a station's or a story's row it is added there
   (`addFromFile`, one step each); on an item's file field it becomes that
   item's file (`useAsItemFile`); anywhere else it goes onto the shelf only
-  (`addToShelf`). Every file lands on the shelf either way.
+  (`addToShelf`). Every file lands on the shelf either way. Docked, only
+  the loose files (the shelf's add, a drop on the page) show the Files
+  tab; an add that makes or changes an item keeps its Details in sight
+  (the shelf toggle's badge carries the processing).
 - `useAsItemFile` / `replaceItemFile` (the inspector's "Replace...", a
   picker of the block's own file kind): a busy toast
   (`data-testid="replace-file-busy"`) while the file is read, then "The

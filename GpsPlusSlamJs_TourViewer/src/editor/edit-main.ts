@@ -1926,8 +1926,11 @@ let shelfPanel: ShelfPanel | null = null;
  *  shelf is its Files panel then. */
 let panelsDocked = false;
 
-/** A file just put on the shelf, docked: the Files tab shows, so its
- *  processing is in sight (the shelf's own reveal does the same). */
+/** Docked, the Files tab shown: the shelf opened (its toggle), or files
+ *  put on it loose (its add, a drop on the page), so their processing is
+ *  in sight. An add that makes or changes an item keeps its Details in
+ *  sight instead: its next step is there, and the toggle's badge carries
+ *  the processing. */
 function showShelfDocked(): void {
   if (panelsDocked) shell.reveal("files");
 }
@@ -2074,6 +2077,7 @@ function openShelfPanel(open: EditorSession): void {
     },
     docked: () => panelsDocked,
     revealDocked: showShelfDocked,
+    filesShown: () => shell.filesShown(),
   });
 }
 
@@ -2114,7 +2118,6 @@ async function addFromFile(
     return;
   }
   select(outcome.id);
-  showShelfDocked();
   sayAdded(kind, at, outcome.fileName);
   if (!outcome.backedUp) toast(FILE_NOT_KEPT);
   tourChanged();
@@ -2229,7 +2232,6 @@ async function useAsItemFile(id: string, file: File): Promise<void> {
     toast(outcome.reason);
     return;
   }
-  showShelfDocked();
   toast(`The item now shows "${file.name}"`);
   if (!outcome.backedUp) toast(FILE_NOT_KEPT);
   if (outcome.kind === "edited") tourChanged();
@@ -4821,6 +4823,9 @@ const shell = createEditorShell({
   dock: () => import("./editor-shell/dock-host.js"),
   onDocked: (docked) => {
     panelsDocked = docked;
+    shelfPanel?.refresh();
+  },
+  onFilesShown: () => {
     shelfPanel?.refresh();
   },
   select: (id) => {

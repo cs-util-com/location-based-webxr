@@ -173,6 +173,9 @@ export interface ShelfPanelDeps {
   readonly docked?: () => boolean;
   /** Docked, shows the Files panel (opening the shelf asks for it). */
   readonly revealDocked?: () => void;
+  /** Docked, whether the Files panel shows (the toggle is pressed then).
+   *  Absent: never. */
+  readonly filesShown?: () => boolean;
 }
 
 export interface ShelfPanel {
@@ -885,7 +888,12 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     document.body.classList.toggle("shelf-folded", folded);
     document.body.classList.toggle("shelf-sheet", phone && state.sheet);
     fold.setAttribute("aria-expanded", String(!folded));
-    toggle.setAttribute("aria-pressed", String(phone ? state.sheet : !folded));
+    const pressed = phone
+      ? state.sheet
+      : deps.docked?.() === true
+        ? deps.filesShown?.() === true
+        : !folded;
+    toggle.setAttribute("aria-pressed", String(pressed));
     toggle.querySelector(".as-badge")?.remove();
     const badge = badgeEl(rows);
     if (badge !== null) toggle.append(badge);
