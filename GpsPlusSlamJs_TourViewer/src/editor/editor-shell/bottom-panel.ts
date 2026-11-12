@@ -1057,7 +1057,9 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     const which = target?.dataset["step"];
     if (which === "undo" || which === "redo") deps.step(which);
   });
-  body.addEventListener("click", (event) => {
+  // The rows' clicks and keys are heard on the panes themselves: docked,
+  // each pane sits in its docked panel, out of the panel's body.
+  const onPaneClick = (event: MouseEvent) => {
     const target = event.target as Element;
     const fold = target.closest<HTMLElement>("[data-fold]")?.dataset["fold"];
     if (fold !== undefined) {
@@ -1088,10 +1090,10 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     if (!Number.isInteger(steps) || steps === 0) return;
     const which = steps < 0 ? "undo" : "redo";
     for (let i = 0; i < Math.abs(steps); i += 1) deps.step(which);
-  });
+  };
   // A problem's row is a focusable row, not a button: Enter or Space on
   // it selects as its click does.
-  body.addEventListener("keydown", (event) => {
+  const onPaneKey = (event: KeyboardEvent) => {
     if (event.key !== "Enter" && event.key !== " ") return;
     const row = event.target as HTMLElement;
     if (!row.classList.contains("prow")) return;
@@ -1099,7 +1101,11 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     if (select === undefined) return;
     event.preventDefault();
     deps.choose(select);
-  });
+  };
+  for (const pane of panes.values()) {
+    pane.addEventListener("click", onPaneClick);
+    pane.addEventListener("keydown", onPaneKey);
+  }
 
   // --- the grip ------------------------------------------------------------
   let drag: { readonly pointer: number } | null = null;

@@ -340,6 +340,27 @@ describe("the Problems tab", () => {
     expect(document.activeElement).toBe(now);
   });
 
+  // Why: docked, each pane is moved out of the panel into its docked
+  // panel; a row's click and Enter were heard by the panel's body only, so
+  // a docked row selected nothing.
+  it("selects a docked problem's row by click and by Enter", () => {
+    const { panel, choose } = setUp();
+    panel.dock({ show: () => undefined, hide: () => undefined });
+    const docked = document.createElement("div");
+    document.body.append(docked);
+    const pane = document.getElementById("shell-pane-problems");
+    if (pane === null) throw new Error("no Problems pane");
+    docked.append(pane);
+    toggle("problems").click();
+    panel.problems(GROUPS, null);
+    const row = pane.querySelector<HTMLElement>('.prow[data-select="far"]');
+    row?.dispatchEvent(key({ key: "Enter" }));
+    expect(choose).toHaveBeenCalledWith("far");
+    choose.mockClear();
+    pane.querySelector<HTMLElement>('.prow[data-select="far"] .what')?.click();
+    expect(choose).toHaveBeenCalledWith("far");
+  });
+
   it("keeps the focus inside when its control is gone after a redraw", () => {
     const { panel, el } = setUp();
     panel.problems(GROUPS, null);

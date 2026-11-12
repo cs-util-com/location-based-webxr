@@ -69,7 +69,9 @@ this draws them and takes the clicks, the grip's drag and the keys.
   state, and "N hidden by the filters above." when the filters hide all.
   A problem's row is a focusable `div.prow` (Enter or Space selects; a
   button could not hold the fix link) with its fix link, `button.lnk.fix`,
-  where the problem has one. History is a timeline, newest on top, "now"
+  where the problem has one. The rows' clicks and keys are heard on each
+  pane, not on the panel's body: docked, a pane sits in its docked panel.
+  History is a timeline, newest on top, "now"
   and "saved" tags, and each step's age ("just now", "N min ago",
   `minutesAgo`) kept current on the tick; the base row ("Opened the tour")
   has no time. Map loading: a sum row (loaded, loading, waiting from the
