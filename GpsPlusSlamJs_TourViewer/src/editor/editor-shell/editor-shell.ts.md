@@ -202,7 +202,10 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   selections), `add-content` opens the tree's type menu for the station,
   `goto:<id>` selects and flies as a tree row does, and the radius slider
   (`radius-slider.ts`) previews through `view.previewRadius` and is
-  cancelled when the selection goes or the shell hides.
+  cancelled when the selection goes or the shell hides. A block's number
+  sliders (`field-sliders.ts`) write through `commitField`, as the number
+  typed, so one drag is one undo step; they have no 3D preview and are
+  cancelled with the radius slider.
 
 - Plain folders in the tree (the chosen tree-first prototype):
   - **Multi-select.** Ctrl (or Cmd) + click on an item's or a folder's row

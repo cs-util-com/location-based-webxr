@@ -1,5 +1,6 @@
 import fc from "fast-check";
 import {
+  type BufferAttribute,
   InstancedBufferGeometry,
   type Material,
   type Mesh,
@@ -136,7 +137,7 @@ describe("narrationLook, the plume", () => {
     const { plume, ground } = partsOf(look.object);
     const seed = (plume?.geometry as InstancedBufferGeometry).getAttribute(
       "aSeed",
-    );
+    ) as BufferAttribute;
     const version = seed.version;
     const plumeUniforms = (plume?.material as ShaderMaterial).uniforms;
     const before = uniform(plume, "uClock");

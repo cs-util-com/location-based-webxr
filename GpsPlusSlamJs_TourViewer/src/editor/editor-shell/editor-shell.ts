@@ -141,6 +141,7 @@ import {
   type SheetKind,
 } from "./phone-sheet.js";
 import { wireRadiusSlider } from "./radius-slider.js";
+import { wireFieldSliders } from "./field-sliders.js";
 import { createShellPictures } from "./shell-pictures.js";
 import { tourProblems } from "./tour-problems.js";
 import { drawSelectionBar, drawTree, type TreeRenaming } from "./shell-tree.js";
@@ -1068,6 +1069,15 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       deps.edits.station(id, { foundRadiusM });
     },
   });
+  // A block's sliders write as their number would be typed: one edit.
+  const fieldSliders = wireFieldSliders({
+    root: inspector.root,
+    selected: () => state().editorView.selected,
+    write: (box, text) => {
+      box.value = text;
+      commitField(box, state().editorView.selected);
+    },
+  });
 
   /** The inspector's field that has the focus, with text typed and not
    *  yet committed; null for none. */
@@ -1201,6 +1211,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       lastSelected = selected;
       positionOpen = false;
       radius.cancel();
+      fieldSliders.cancel();
       busy?.stop.abort();
       busy = null;
       const pending = typedField();
@@ -2439,6 +2450,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       }
       endUnfolding();
       radius.cancel();
+      fieldSliders.cancel();
       const pending = typedField();
       if (pending !== null) commitField(pending, lastSelected);
       panels.flush();

@@ -418,7 +418,7 @@ describe("drawInspector", () => {
             value: "6",
             required: true,
             prose: false,
-            number: { unit: "m" },
+            number: { unit: "m", scale: 1 },
           },
         ],
       },

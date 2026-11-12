@@ -6,12 +6,11 @@ One palette for every mark a sound draws in the world: an ambient zone's ground 
 
 ## Public API
 
-- `WARM_GLOW` - frozen `{ glow, rim, spark, ink }`, each an `Rgb` (`readonly [r, g, b]`, linear 0..1, as a shader's `vec3`):
+- `WARM_GLOW` - frozen `{ glow, rim, spark, ink }`, each a frozen `[r, g, b]` (linear 0..1, as a shader's `vec3`):
   - `glow` - the zone's glow, the plume's motes and the circle's centre;
   - `rim` - the zone's range ring and the circle's rim;
   - `spark` - the hot centre of a mote;
   - `ink` - the dark edge that keeps a rim legible on a bright ground.
-- `Rgb` - the triple's type.
 
 ## Invariants & assumptions
 
