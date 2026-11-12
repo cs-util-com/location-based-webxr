@@ -487,7 +487,12 @@ test.describe("the 3D view", () => {
     // pick on an untouched camera, and LAST the camera move under the world,
     // which cannot be undone.
     const counts = await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
+    // `ao=off`: every step here asks about geometry (layers, presets, a pick,
+    // what is under the world), not the look. The ambient occlusion adds a
+    // second pass to every software-rendered frame, which stretches the
+    // camera's damping tail in `rotateUnder` past its settle wait; the AO's
+    // own effect on the frame is the ambient-occlusion describe's job.
+    await page.goto(`${AT_FIXTURE}&ao=off`);
     await waitForRefresh(page);
 
     await test.step("fills the regions on the MAP when the areas layer is on", async () => {
@@ -1292,7 +1297,10 @@ async function skyOnlyFrameAfter(page, steps) {
   const sky = await page.context().newPage();
   try {
     await stubNetwork(sky);
-    await sky.goto(AT_FIXTURE);
+    // `ao=off` for the same reason as the boot of the test that calls this:
+    // the AO's second pass makes every software-rendered frame slower, so
+    // the damping tail in `rotateUnder` outlasts its settle wait.
+    await sky.goto(`${AT_FIXTURE}&ao=off`);
     await waitForRefresh(sky);
     await sky.locator("#ground-mode").selectOption("none");
     for (const layer of [
@@ -2859,5 +2867,32 @@ test.describe("the ambient occlusion", () => {
     expect(r.darkened / r.n).toBeGreaterThan(AO_DARKENED_SHARE_MIN);
     expect(r.meanOn / r.meanOff).toBeGreaterThan(AO_FRAME_LUMA_RATIO_MIN);
     expect(litOn / litOff).toBeGreaterThan(AO_LIT_LUMA_RATIO_MIN);
+
+    // REPORTED, NOT GATED: the heat grid's margin with the AO on, beside the
+    // same reading with it off. The heat-ramp gates run with the AO off, so
+    // this line is where a reader sees what the AO does to the one number the
+    // owner tunes the light by. Last, because it switches the cells on and
+    // clicks inside the dialog, which may send the NPC walking.
+    await enableCellLayer(page);
+    const heatMargin = async (on) => {
+      if (await dialog.isHidden()) await page.locator("body").press("l");
+      await box.evaluate((el, checked) => {
+        if (el.checked === checked) return;
+        el.checked = checked;
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      }, on);
+      await expect(view).toHaveAttribute("data-ao", on ? "on" : "off");
+      await page.locator("#light-check").click();
+      await expect(page.locator("#light-readout")).toContainText(
+        "Heat grid adds",
+      );
+      const text = (await page.locator("#light-readout").textContent()) ?? "";
+      return Number(/adds ([\d.-]+)/.exec(text)?.[1]);
+    };
+    const marginOn = await heatMargin(true);
+    const marginOff = await heatMargin(false);
+    console.log(
+      `ambient occlusion and the heat grid: margin ${marginOn.toFixed(2)} with the AO on, ${marginOff.toFixed(2)} off`,
+    );
   });
 });
