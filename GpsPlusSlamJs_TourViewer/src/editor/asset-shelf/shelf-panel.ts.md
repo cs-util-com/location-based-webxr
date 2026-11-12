@@ -21,7 +21,9 @@ shelf runner (`asset-shelf.ts`); every word comes from
     button hidden - and opening it (the toggle, `open`, `reveal`) shows
     that panel. `deps.filesShown?()` says whether that panel shows: the
     toggle is `aria-pressed` only then (the page redraws it when it
-    changes).
+    changes). `deps.hideDocked?()`: the pressed toggle pressed again,
+    docked, asks the page to show the Files panel's neighbour (Details)
+    instead, so the toggle un-presses as it does over the rail.
   - `deps.host`: where the "Used in" popover goes (the page's body).
   - `deps.rows()`, `deps.subscribe(listener)`: the shelf's rows and their
     changes (the store's).

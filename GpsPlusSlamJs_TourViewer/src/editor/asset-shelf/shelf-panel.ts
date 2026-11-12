@@ -176,6 +176,9 @@ export interface ShelfPanelDeps {
   /** Docked, whether the Files panel shows (the toggle is pressed then).
    *  Absent: never. */
   readonly filesShown?: () => boolean;
+  /** Docked, shows the tab beside the Files panel in its place (the
+   *  pressed toggle pressed again). */
+  readonly hideDocked?: () => void;
 }
 
 export interface ShelfPanel {
@@ -1210,6 +1213,9 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
   function onToggle(): void {
     if (deps.phone()) {
       state.sheet = !state.sheet;
+      redraw();
+    } else if (deps.docked?.() === true && deps.filesShown?.() === true) {
+      deps.hideDocked?.();
       redraw();
     } else if (railShown() || deps.docked?.() === true) {
       open();

@@ -1941,6 +1941,12 @@ function showShelfDocked(): void {
   if (panelsDocked) shell.reveal("files");
 }
 
+/** Docked, the Details tab shown in place of Files: the shelf's pressed
+ *  toggle pressed again. */
+function hideShelfDocked(): void {
+  if (panelsDocked) shell.reveal("details");
+}
+
 /** A phone's layout: the shelf is a sheet (shelf-panel.css's width). */
 const phoneLayout = window.matchMedia("(width <= 700px)");
 phoneLayout.addEventListener("change", () => {
@@ -2077,6 +2083,7 @@ function openShelfPanel(open: EditorSession): void {
     },
     docked: () => panelsDocked,
     revealDocked: showShelfDocked,
+    hideDocked: hideShelfDocked,
     filesShown: () => shell.filesShown(),
   });
 }

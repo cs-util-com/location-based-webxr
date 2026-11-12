@@ -549,6 +549,28 @@ describe("folding and the phone", () => {
     expect($("#tog")?.getAttribute("aria-pressed")).toBe("false");
   });
 
+  // Why: a pressed toggle that does nothing when pressed again is a switch
+  // that cannot be switched off; docked, pressing it then shows the other
+  // tab (the details) and it reads unpressed.
+  it("docked, its pressed toggle pressed again hides the Files panel and un-presses", () => {
+    let shown = true;
+    const hideDocked = vi.fn(() => {
+      shown = false;
+    });
+    const revealDocked = vi.fn();
+    panel({
+      docked: () => true,
+      filesShown: () => shown,
+      revealDocked,
+      hideDocked,
+    });
+    expect($("#tog")?.getAttribute("aria-pressed")).toBe("true");
+    $<HTMLButtonElement>("#tog")?.click();
+    expect(hideDocked).toHaveBeenCalledTimes(1);
+    expect(revealDocked).not.toHaveBeenCalled();
+    expect($("#tog")?.getAttribute("aria-pressed")).toBe("false");
+  });
+
   it("folds to the rail and keeps the fold for the next visit", () => {
     rows = [row({ status: "running", progress: 0.5 })];
     panel();
