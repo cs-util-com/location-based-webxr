@@ -6,6 +6,7 @@ import {
   answerHosts,
   capture,
   DOCK_TABS_PX,
+  dockSettled,
   dockWidthsAt,
   openSampleIn3d,
 } from "./editor3d-fixture.js";
@@ -355,6 +356,8 @@ function outOfSight(page, fields, size) {
 test("over a keyboard every field in use stays in sight, at every size and sheet height", async ({
   page,
 }) => {
+  // Seven sizes three times over, each waiting for its layout to settle.
+  test.setTimeout(90_000);
   await open(page, PORTRAIT);
   await station(page, "The old gate").click();
   await page.locator('#inspector-body [data-act="position"]').click();
@@ -367,6 +370,9 @@ test("over a keyboard every field in use stays in sight, at every size and sheet
   );
   for (const size of KEYBOARD_SIZES) {
     await page.setViewportSize(size);
+    // Docked from 701 px: its panels are moved into the layout a moment
+    // after the resize, which is not what this test is about.
+    await dockSettled(page, size.width);
     lost.push(...(await outOfSight(page, fields, size)));
   }
   // The list's search, the sheet the keyboard opens first.
@@ -374,6 +380,7 @@ test("over a keyboard every field in use stays in sight, at every size and sheet
   await page.locator('#inspector-head [data-act="back"]').click();
   for (const size of KEYBOARD_SIZES) {
     await page.setViewportSize(size);
+    await dockSettled(page, size.width);
     lost.push(
       ...(await outOfSight(page, ["#shell-tree .tsearch input"], size)),
     );
@@ -389,6 +396,7 @@ test("over a keyboard every field in use stays in sight, at every size and sheet
   await expect(writer).toHaveCount(1);
   for (const size of KEYBOARD_SIZES) {
     await page.setViewportSize(size);
+    await dockSettled(page, size.width);
     lost.push(
       ...(await outOfSight(
         page,

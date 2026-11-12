@@ -322,6 +322,9 @@ export interface EditorShellDeps {
   }>;
   /** The panels docked or undocked (the asset shelf redraws for it). */
   readonly onDocked?: (docked: boolean) => void;
+  /** Docked, the Files panel came into sight or went out of it (the
+   *  asset shelf's toggle says which). */
+  readonly onFilesShown?: (shown: boolean) => void;
 }
 
 export interface EditorShell {
@@ -350,6 +353,9 @@ export interface EditorShell {
   /** Docked, shows a panel (its side unfolded, it the shown tab); else
    *  nothing. */
   reveal(id: DockPanelId): void;
+  /** Docked, whether the Files panel shows: its group shown and it the
+   *  group's shown tab. Undocked: false. */
+  filesShown(): boolean;
 }
 
 const BAR_ICON: Readonly<Record<BarAction, ShellIcon>> = {
@@ -658,6 +664,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   let view: ShellView | null = null;
   /** The docked layout while the panels dock (below). */
   let dockHost: DockHost | null = null;
+  /** The on-screen keyboard's height as last read: a layout docked while
+   *  it is up is told at once, not only at its next change. */
+  let keyboardPx = 0;
   // When each history step was made: stamped on first sight by a
   // subscription as long-lived as the page, so the steps made while the 2D
   // map shows are timed too (the base the history opens from is not).
@@ -2264,6 +2273,20 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   // today's docks and a phone's sheets. The folds stay the store's: a
   // folded side hides its group, its folded head back over the view.
   let dockLoading = false;
+  /** The docking failed to load: said once, not tried again on every
+   *  resize (a module that failed to load fails again at once). */
+  let dockFailed = false;
+  let filesWereShown = false;
+  const filesShown = () =>
+    dockHost !== null &&
+    dockHost.groupShown("files") &&
+    dockHost.activeIn("files") === "files";
+  const syncFilesShown = () => {
+    const shown = filesShown();
+    if (shown === filesWereShown) return;
+    filesWereShown = shown;
+    deps.onFilesShown?.(shown);
+  };
   let stopDockFolds: (() => void) | null = null;
   const dockEmpty = document.createElement("p");
   dockEmpty.className = "dock-empty";
@@ -2271,6 +2294,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     "Select a station or an item, in the list or in the view.";
   /** The bottom panel learns what the docking's own controls did. */
   const syncFromDock = () => {
+    syncFilesShown();
     if (dockHost === null) return;
     const tab = dockHost.activeIn("problems");
     if (!dockHost.groupShown("problems")) {
@@ -2301,12 +2325,13 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         host.hideGroupOf("problems");
       },
     });
+    if (keyboardPx > 0) host.keyboard(keyboardPx);
     deps.onDocked?.(true);
   };
   const syncDock = () => {
     const load = deps.dock;
     if (view !== null && load !== undefined && docksAt(window.innerWidth)) {
-      if (dockHost !== null || dockLoading) return;
+      if (dockHost !== null || dockLoading || dockFailed) return;
       dockLoading = true;
       load().then(
         ({ mountDockHost: mount }) => {
@@ -2316,6 +2341,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         },
         (error: unknown) => {
           dockLoading = false;
+          dockFailed = true;
           deps.say(
             `The panels could not be docked: ${error instanceof Error ? error.message : String(error)}`,
           );
@@ -2330,12 +2356,14 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     dockEmpty.remove();
     dockHost.dispose();
     dockHost = null;
+    syncFilesShown();
     deps.onDocked?.(false);
   };
 
   return {
     clearSearch,
     docked: () => dockHost !== null,
+    filesShown,
     reveal(id) {
       if (dockHost === null) return;
       const side = dockPanel(id).group;
@@ -2383,7 +2411,10 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       stopKeyboard =
         box === null
           ? null
-          : watchKeyboard(window, box, () => dockHost?.layout());
+          : watchKeyboard(window, box, (px) => {
+              keyboardPx = px;
+              dockHost?.keyboard(px);
+            });
       syncDock();
     },
     flush() {
@@ -2422,6 +2453,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       window.removeEventListener("resize", onResize);
       stopKeyboard?.();
       stopKeyboard = null;
+      keyboardPx = 0;
       sheets.sync(null);
       showHelp(false);
       addMenu.close(false);

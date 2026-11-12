@@ -75,7 +75,8 @@ function middleIsCanvas(page) {
       r.left + r.width / 2,
       r.top + r.height / 2,
     );
-    return hit === canvas || hit?.closest(".dock-pane-view") !== null;
+    if (hit === null) return false;
+    return hit === canvas || hit.closest(".dock-pane-view") !== null;
   });
 }
 
@@ -244,4 +245,165 @@ test("a phone held upright keeps its sheets; narrowing undocks", async ({
   );
   await expect(page.locator("#tree-body")).toBeVisible();
   await capture(page, test.info().outputPath("undocked-390x844.png"));
+});
+
+/**
+ * Whether the focus is on the element `selector` finds.
+ * @param {import("@playwright/test").Page} page
+ * @param {string} selector
+ */
+function focusOn(page, selector) {
+  return page.evaluate(
+    (s) => document.activeElement === document.querySelector(s),
+    selector,
+  );
+}
+
+// Why: the docking library closes a tab's panel on Delete or Backspace,
+// and the key then reaches the page, which deletes the selection - two
+// losses from one key on a tab a click focused. A docked panel is never
+// closed, and the key on a tab deletes nothing. The shelf's toggle says
+// whether the Files tab shows, for a screen reader too.
+test("a docked tab's Delete and Backspace close nothing and delete nothing; the shelf toggle is pressed while Files shows", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await answerHosts(page);
+  await openSampleIn3d(page);
+  const host = tabs(page);
+  const details = host.getByRole("tab", { name: "Details", exact: true });
+  const files = host.getByRole("tab", { name: "Files", exact: true });
+  const toggle = page.locator("#shelf-toggle");
+  const gate = page.locator("#tree-body .card", { hasText: "The old gate" });
+  await gate.locator(".pick").click();
+  await expect(page.locator("#inspector-body")).toBeVisible();
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+
+  for (const [tab, name] of [
+    [files, "Files"],
+    [details, "Details"],
+  ]) {
+    await tab.click();
+    expect(
+      await page.evaluate(
+        () => document.activeElement?.closest(".dv-tab") != null,
+      ),
+      `the ${name} tab holds the focus`,
+    ).toBe(true);
+    await expect(toggle).toHaveAttribute(
+      "aria-pressed",
+      String(name === "Files"),
+    );
+    for (const key of ["Delete", "Backspace"]) {
+      await page.keyboard.press(key);
+      await expect(files, `${key} on ${name}`).toHaveCount(1);
+      await expect(details, `${key} on ${name}`).toHaveCount(1);
+      await expect(gate, `${key} on ${name}`).toHaveCount(1);
+    }
+  }
+  await expect(page.locator(".dock-host #shell-shelf")).toHaveCount(1);
+  await expect(page.locator(".dock-host #shell-inspector")).toHaveCount(1);
+  await files.click();
+  await expect(page.locator("#shell-shelf")).toBeVisible();
+});
+
+// Why: folding a side moves its element out of the layout and back; a
+// moved element loses the focus to the page, so a keyboard user would
+// start over from the top after each fold.
+test("a docked side folded and unfolded by the keyboard keeps the focus on its fold button", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await answerHosts(page);
+  await openSampleIn3d(page);
+  await page
+    .locator("#tree-body .card", { hasText: "The old gate" })
+    .locator(".pick")
+    .click();
+  await expect(page.locator("#inspector-body")).toBeVisible();
+  const fold = '#inspector-head [data-act="fold"]';
+  await page.locator(fold).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#inspector-body")).toBeHidden();
+  expect(await focusOn(page, fold), "folded").toBe(true);
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#inspector-body")).toBeVisible();
+  expect(await focusOn(page, fold), "unfolded").toBe(true);
+});
+
+// Why: a phone turned between upright and sideways docks or undocks its
+// panels, which moves the field in use; its focus (and with it the
+// keyboard) must stay on it.
+test("a field in use keeps the focus while a phone turns sideways and back", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 844, height: 390 });
+  await answerHosts(page);
+  await openSampleIn3d(page);
+  await page
+    .locator("#tree-body .card", { hasText: "The old gate" })
+    .locator(".pick")
+    .click();
+  const field = page.locator("#inspector-body input").first();
+  await expect(field).toBeVisible();
+  await field.focus();
+  const fieldIs = () =>
+    page.evaluate(() => {
+      const at = document.activeElement;
+      return (
+        at instanceof HTMLInputElement && at.closest("#inspector-body") !== null
+      );
+    });
+  expect(await fieldIs(), "docked").toBe(true);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator(".dock-host")).toHaveCount(0);
+  expect(await fieldIs(), "upright").toBe(true);
+  await page.setViewportSize({ width: 844, height: 390 });
+  await expect(page.locator(".dock-host #shell-inspector")).toHaveCount(1);
+  await expect.poll(fieldIs, { message: "sideways again" }).toBe(true);
+});
+
+// Why: each resize of the 3D view's canvas reallocates its drawing
+// buffers, so the canvas holds its size while a splitter is dragged and
+// fits its panel once, on release.
+test("a splitter drag holds the canvas's size and fits it once on release", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await answerHosts(page);
+  await openSampleIn3d(page);
+  const column = await box(page.locator(".dock-pane-details"));
+  const sashes = await page.locator(".dock-host .dv-sash").all();
+  let sash = null;
+  for (const candidate of sashes) {
+    const b = await candidate.boundingBox();
+    if (
+      b !== null &&
+      b.height > 200 &&
+      Math.abs(b.x + b.width / 2 - column.x) < 4
+    ) {
+      sash = b;
+    }
+  }
+  if (sash === null) throw new Error("no splitter beside the details");
+  const canvas = page.locator("#view3d canvas.view3d-canvas");
+  const before = await box(canvas);
+  const x = sash.x + sash.width / 2;
+  const y = sash.y + sash.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  for (const dx of [-20, -40, -60, -80]) {
+    await page.mouse.move(x + dx, y);
+    const now = await box(canvas);
+    expect(now.width, `held at ${String(dx)}`).toBeCloseTo(before.width, 0);
+    expect(now.height, `held at ${String(dx)}`).toBeCloseTo(before.height, 0);
+  }
+  await page.mouse.up();
+  const view = await box(page.locator(".dock-pane-view"));
+  expect(view.width).toBeLessThan(before.width - 40);
+  await expectCanvas(page, view, "after the release");
 });

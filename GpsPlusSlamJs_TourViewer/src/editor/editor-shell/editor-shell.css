@@ -4075,6 +4075,13 @@ body[data-view="3d"] #toasts {
   position: absolute;
   inset: var(--s-dock-top) 0 var(--s-keyboard-foot);
 }
+/* A group a keyboard maximized (`dock-host.ts`): the docking library never
+ * lays its centre out under 100 px tall, so where the keyboard leaves less
+ * the layout rises under the top bar and ends at the keyboard, rather than
+ * reach under it. */
+#view3d.docked .dock-host.keyboard-max {
+  top: min(var(--s-dock-top), 100% - var(--s-keyboard-foot) - 100px);
+}
 /* The layout never scrolls as a whole: a focus or a scroll into view in a
  * panel would otherwise shift the view box and every group in it, the tab
  * strips out of sight. Only a panel's own content scrolls. */
@@ -4089,11 +4096,21 @@ body[data-view="3d"] #toasts {
   visibility: hidden;
 }
 
+/* Clipped, not hidden: a hidden overflow still scrolls by a scroll into
+ * view, which would move the panel's head out of it. */
 #view3d.docked .dock-pane {
   position: relative;
   width: 100%;
   height: 100%;
-  overflow: hidden;
+  overflow: clip;
+}
+
+/* The asset shelf is a tab there, not a dock at the window's right edge:
+ * nothing at home keeps clear of it (a folded side's head, the view's
+ * framing). */
+#view3d.docked,
+body.shelf-folded #view3d.docked {
+  --s-shelf-cur: 0px;
 }
 
 #view3d.docked .dock-pane-view .view3d-canvas {

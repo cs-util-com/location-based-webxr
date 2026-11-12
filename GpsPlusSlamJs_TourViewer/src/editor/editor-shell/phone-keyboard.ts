@@ -29,13 +29,13 @@ export function keyboardPx(
 }
 
 /** Watches the keyboard for the fields inside `host`; the call it returns
- *  stops that. `relayout` runs each time the keyboard's height changed,
+ *  stops that. `relayout` gets the keyboard's height each time it changed,
  *  before a field is brought into sight: panels laid out by script (the
  *  docked ones) take their new size first. */
 export function watchKeyboard(
   win: Window,
   host: HTMLElement,
-  relayout: () => void = () => undefined,
+  relayout: (keyboardPx: number) => void = () => undefined,
 ): () => void {
   const viewport = win.visualViewport;
   if (viewport === null || viewport === undefined) return () => undefined;
@@ -81,7 +81,7 @@ export function watchKeyboard(
     }
     if (px !== shownPx) {
       shownPx = px;
-      relayout();
+      relayout(px);
     }
     // Come, or grown over the field (its suggestions, a phone turned).
     if (up && grew) inSight();

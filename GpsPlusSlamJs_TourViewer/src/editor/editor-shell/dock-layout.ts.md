@@ -33,6 +33,10 @@ group }`, the 3D view first. `element` is the adopted page element's id
   px and at most 52 % of the window (`long-text-editor.css`'s widths).
 - `bottomStartPx(heightPx)` - the bottom group's first height: a third of
   the height below the top bar, between 90 and 220 px.
+- `KEYBOARD_ROOM_PX` (390) and `keyboardMaximizes(heightPx, keyboardPx)` -
+  whether an on-screen keyboard leaves the window less than 390 px, so the
+  group holding the field in use takes the whole layout (`dock-host.ts`);
+  false without a keyboard or for a non-finite input.
 - `defaultDockLayout(widthPx, heightPx)` - `DockStep[]`: the 3D view; the
   list left of it; Details right of it with Files as its second tab
   (inactive); Problems below the view with History, Map loading and
@@ -46,6 +50,13 @@ group }`, the 3D view first. `element` is the adopted page element's id
 - The side panels leave the 3D view at least 220 px at any docked width,
   and the bottom group starts at most a third of the height (90 px at
   least).
+- The keyboard threshold was swept with the keyboard e2e (sizes 844 x 390,
+  915 x 412 and 1024 x 600, keyboards from 100 px to all but 116 px): every
+  field stays in sight from 300 px up to 800 px; at 200 px the writer is
+  cut by the keyboard where 262 px are left, and without maximizing (0)
+  18 cases fail. 390 px sits well inside the passing range, about 130 px
+  above the worst failing case, and still keeps the layout as it is for a
+  small keyboard on a tablet.
 - The bottom ids and the bottom panel's tab ids are the same list in the
   same order (a unit test holds them together).
 
@@ -63,7 +74,7 @@ if (docksAt(window.innerWidth)) {
 
 - `dock-layout.test.ts` - the threshold against the phone's sheets, the
   adopted elements, the ids, the exact default layout at 1440 x 900, the
-  width steps and the bottom start heights.
+  width steps, the bottom start heights and when a keyboard maximizes.
 - `dock-layout.property.test.ts` - over windows from 701 x 300 to
   4000 x 3000: every panel once, placed against an earlier one, the view
   keeps 220 px, the bottom group at most a third of the height.

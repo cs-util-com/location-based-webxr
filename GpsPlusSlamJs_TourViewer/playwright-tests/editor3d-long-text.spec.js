@@ -375,6 +375,29 @@ async function expectWriterLayout(page, size) {
   expect(phone.y + phone.height, at).toBeLessThanOrEqual(view.y + view.height);
 }
 
+// Why: docked, the details give the writer its width and take back the
+// one they had once it goes; a window resized meanwhile gives them the
+// new window's width instead, not the old window's.
+test("docked, the details closed from the writer after a resize take the new window's width", async ({
+  page,
+}) => {
+  test.setTimeout(BUDGET_MS);
+  await openEssay(page);
+  const size = { width: 880, height: 800 };
+  await page.setViewportSize(size);
+  await dockSettled(page, size.width);
+  await page.locator('#tree-body .card[data-station="gate"] .pick').click();
+  await expect(page.getByTestId("long-text-writer")).toHaveCount(0);
+  // The column's width from 900 px down (dockWidths).
+  await expect
+    .poll(async () =>
+      Math.round(
+        (await page.locator(".dock-pane-details").boundingBox())?.width ?? 0,
+      ),
+    )
+    .toBe(268);
+});
+
 /**
  * On a phone the writer is the details' sheet: the window's width, the
  * height the sheet takes of the view, the canvas ending at its top. The

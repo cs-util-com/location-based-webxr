@@ -495,13 +495,18 @@ export function dockBottomPx(height) {
 /**
  * Waits after a window resize until the docked layout fills the new
  * window (the docking lays its groups out a frame later, and its side
- * groups take their widths a frame after that); nothing to wait for
- * below `DOCK_MIN_PX`.
+ * groups take their widths a frame after that); below `DOCK_MIN_PX`,
+ * until the layout is gone (it is taken down a frame or two after the
+ * resize, its panels put back where they were).
  * @param {import("@playwright/test").Page} page
  * @param {number} width the window's
  */
 export async function dockSettled(page, width) {
-  if (width < DOCK_MIN_PX) return;
+  if (width < DOCK_MIN_PX) {
+    await expect(page.locator(".dock-host")).toHaveCount(0);
+    await afterFrames(page, 3);
+    return;
+  }
   await expect
     .poll(() =>
       page.evaluate(() =>

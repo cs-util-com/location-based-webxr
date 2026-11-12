@@ -6,6 +6,7 @@ import {
   DOCK_MIN_PX,
   DOCK_PANELS,
   dockWidths,
+  keyboardMaximizes,
 } from "./dock-layout.js";
 
 describe("the default layout at any docking window", () => {
@@ -39,6 +40,26 @@ describe("the default layout at any docking window", () => {
           // ...and at least two thirds of the height above the bottom one.
           const bottom = steps.find((s) => s.id === "problems")?.heightPx;
           expect(bottom).toBeLessThanOrEqual(Math.max(90, h / 3));
+        },
+      ),
+    );
+  });
+});
+
+describe("a keyboard over the docked layout, at any window", () => {
+  // Why: a keyboard that grows must never give the groups back their
+  // layout, and a shorter window with the same keyboard must never keep
+  // more of it: either would flip the layout while the creator types.
+  it("maximizes for a taller keyboard or a shorter window once it does", () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 200, max: 2000 }),
+        fc.integer({ min: 1, max: 1500 }),
+        fc.integer({ min: 0, max: 500 }),
+        (h, k, more) => {
+          if (!keyboardMaximizes(h, k)) return;
+          expect(keyboardMaximizes(h, k + more)).toBe(true);
+          expect(keyboardMaximizes(Math.max(1, h - more), k)).toBe(true);
         },
       ),
     );

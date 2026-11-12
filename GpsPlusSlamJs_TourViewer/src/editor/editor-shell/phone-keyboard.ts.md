@@ -12,7 +12,7 @@ styles, and the field in use brought into sight.
 - `watchKeyboard(win, host)` -> stop: writes `--s-keyboard-h` and
   `data-keyboard="up"` on the body while a keyboard is up, and scrolls the focused field inside `host` into
   sight when the keyboard comes, when it grows while up, and when the
-  focus moves under it. `relayout` (optional) runs each time the
+  focus moves under it. `relayout(px)` (optional) gets the height each time the
   keyboard's height changes, before the field is scrolled: the docked
   panels are laid out by script a frame after their box changed, and
   a field scrolled into the old layout would be covered again. For the

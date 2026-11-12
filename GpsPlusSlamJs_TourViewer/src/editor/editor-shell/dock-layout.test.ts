@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { PANEL_TABS } from "./bottom-panel-model.js";
 import { PHONE_SHEET_PX } from "./phone-sheet.js";
 import {
+  KEYBOARD_ROOM_PX,
+  keyboardMaximizes,
   BOTTOM_PANEL_IDS,
   bottomStartPx,
   defaultDockLayout,
@@ -166,5 +168,24 @@ describe("the details' width while they hold a writer", () => {
     expect(writerWidthPx(1440, true)).toBe(540);
     expect(writerWidthPx(1024, true)).toBe(532);
     expect(writerWidthPx(844, true)).toBe(438);
+  });
+});
+
+describe("a keyboard over the docked layout", () => {
+  // Why: a phone held sideways or a small tablet keeps too little of the
+  // layout over its keyboard for a field and its row under the groups'
+  // tab strips; the group in use then takes the whole layout.
+  it("maximizes while what the keyboard leaves is under the room", () => {
+    expect(keyboardMaximizes(390, 150)).toBe(true);
+    expect(keyboardMaximizes(600, 600 - KEYBOARD_ROOM_PX + 1)).toBe(true);
+    expect(keyboardMaximizes(600, 600 - KEYBOARD_ROOM_PX)).toBe(false);
+    expect(keyboardMaximizes(900, 300)).toBe(false);
+  });
+
+  it("never maximizes without a keyboard, or for nonsense", () => {
+    expect(keyboardMaximizes(390, 0)).toBe(false);
+    expect(keyboardMaximizes(390, -20)).toBe(false);
+    expect(keyboardMaximizes(Number.NaN, 200)).toBe(false);
+    expect(keyboardMaximizes(390, Number.NaN)).toBe(false);
   });
 });

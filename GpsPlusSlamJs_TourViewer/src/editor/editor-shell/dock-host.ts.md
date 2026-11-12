@@ -29,9 +29,23 @@ are not part of the page's first load.
     draws its folded head; unfolded, it comes back into its panel.
   - `content(id)` - the element a panel's content sits in
     (`.dock-pane.dock-pane-<id>.dock-group-<group>`).
-  - `layout()` - lays the groups out for the box now rather than on the
-    next frame (the phone keyboard calls it before scrolling a field into
-    sight).
+  - `keyboard(px)` - an on-screen keyboard of `px` (0: none) came, changed
+    or went: the groups are laid out for the box now rather than on the next
+    frame (the phone keyboard calls it before scrolling a field into sight).
+    While `keyboardMaximizes(innerHeight, px)` (what the keyboard leaves is
+    under `KEYBOARD_ROOM_PX`), the shown group whose panel holds the focus
+    is maximized with its tab strip hidden; focus moving to a field of
+    another group (a `focusin` on the layout) maximizes that one instead.
+    When the keyboard goes, or leaves enough room, or the focus leaves the
+    panels, the layout is given back: each group shown before at its size
+    and with its shown tab (a side group at the new window's width if the
+    window was resized meanwhile). A group shown or hidden meanwhile ends the
+    maximized state through the docking itself; nothing is then held.
+    Maximized, every group's least height is 0 (given back after), and the
+    layout carries `keyboard-max`: the docking library never lays its
+    centre out under 100 px tall, so where the keyboard leaves less the
+    layout rises under the top bar to end at the keyboard
+    (`editor-shell.css`).
   - `dispose()` - every adopted element still in the layout back at its
     old place (parent and next sibling), the layout removed, `docked`
     taken off. A part removed meanwhile by the code that made it (the 3D view's canvas,
@@ -49,7 +63,10 @@ are not part of the page's first load.
   list (`stripHidden`), which carry their own head, and shows again as
   soon as a tab joins it. The tab menu offers no popout; the 3D view
   offers only maximise. A docked panel's tab has no close button
-  (`editor-shell.css`): its element is the page's.
+  (`editor-shell.css`): its element is the page's. Nor does a tab's
+  Delete or Backspace close it (the library's tab-strip key): a
+  capture-phase listener on the layout stops both keys on a tab, so they
+  never reach the page either, where they delete the selection.
 - First sizes are pinned (minimum = maximum) and released after the next
   layout to 140 px wide / 90 px high, since a plain size is overruled by
   the relayout a constraint change starts. The bottom group starts hidden
@@ -59,13 +76,24 @@ are not part of the page's first load.
   new canvas). Moving a canvas keeps its WebGL context.
 - While the details hold the long text's writer (their `lw` class, `lw-wide`
   when wider) their group takes `writerWidthPx`, and gets back the width it
-  had once the writer goes.
+  had once the writer goes (the new window's column width after a window
+  resize while it showed).
 - A window resize scales every group (the docking library's proportional
   layout); the side groups then take `dockWidths` of the new window (the
   writer's width while it shows), the 3D view the rest. A side group hidden
   meanwhile, or hidden before its first width was laid out, takes it when
-  it next shows. A width dragged by hand therefore lasts until the next
-  window resize.
+  it next shows. The bottom group likewise takes `bottomStartPx` of the new
+  layout, now or when it next shows. A size dragged by hand therefore
+  lasts until the next window resize.
+- Moving an element loses its focus to the page (and a phone its
+  keyboard): a fold, the mount and `dispose` give the focus back to the
+  element that held it, or, out of sight now, to the first control in
+  sight in the moved element; so does `reveal` (a row picked from the keyboard
+  shows its details). A group just shown takes no focus until the docking
+  places it, so the focus is tried again on the next two frames while it
+  is still on the page.
+- `.dock-pane` clips (`overflow: clip`), so a scroll into view never
+  scrolls a panel's head out of it.
 - During a splitter drag the canvas is held at its size in px and fitted
   once on release (each resize reallocates the drawing buffers).
 - Defensive: an unknown panel id throws; a fold of a side already in that
@@ -87,3 +115,6 @@ dock.dispose();
 - No unit test of its own: it is DOM and library glue, covered by the
   layout e2e (`playwright-tests/editor3d-docking.spec.js`) at four window
   sizes; its data is `dock-layout.ts`'s, unit and property tested.
+- The same spec covers a tab's Delete and Backspace (nothing closed, nothing
+  deleted), the focus kept over a fold and over a turn between docked and
+  undocked, and the canvas held during a splitter drag.

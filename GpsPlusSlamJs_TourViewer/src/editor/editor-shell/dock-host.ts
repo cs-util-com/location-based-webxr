@@ -21,11 +21,13 @@ import {
 } from "dockview";
 
 import {
+  bottomStartPx,
   defaultDockLayout,
   DOCK_PANELS,
   dockPanel,
   dockWidths,
   isDockPanelId,
+  keyboardMaximizes,
   stripHidden,
   type DockPanelId,
   type DockStep,
@@ -35,6 +37,11 @@ import {
 /** The parts of the view box that move with the 3D view into its panel:
  *  the canvas, the model's notes over it, the map controls. */
 const VIEW_PARTS = [".view3d-canvas", ".model-notes", "#map-controls"];
+
+/** What takes the focus in a moved element when the one that held it
+ *  cannot any more. */
+const FOCUSABLE =
+  "button, input, select, textarea, a[href], [tabindex]:not([tabindex='-1'])";
 
 /** A side group's and the bottom group's least size once released
  *  (px). */
@@ -70,9 +77,11 @@ export interface DockHost {
   fold(id: FoldingPanel, folded: boolean): void;
   /** The element a panel's content sits in. */
   content(id: DockPanelId): HTMLElement;
-  /** Lays the groups out for the layout's box now, not on the next
-   *  frame (the box changed under a keyboard). */
-  layout(): void;
+  /** An on-screen keyboard of `px` (0: none) came, changed or went:
+   *  the groups are laid out for the layout's box now, not on the next
+   *  frame, and over a short window the group holding the field in use
+   *  takes the whole layout until the keyboard goes. */
+  keyboard(px: number): void;
   /** Puts every adopted element back where it was and removes the
    *  layout. */
   dispose(): void;
@@ -111,6 +120,22 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
   /** Groups whose first size is still to be given when they first show
    *  (the bottom group starts hidden). */
   const unsized = new Map<DockPanelId, DockStep>();
+  /** The group a keyboard maximized, and the layout to give back: each
+   *  shown group's size and shown tab. */
+  let maxed: {
+    readonly group: DockviewGroupPanel;
+    /** Each group's least height before: maximized, none has any, so the
+     *  group fits the little room a keyboard leaves (the hidden groups'
+     *  least heights still bound the layout's). */
+    readonly minimumHeights: ReadonlyMap<DockviewGroupPanel, number>;
+    readonly before: readonly {
+      readonly group: DockviewGroupPanel;
+      readonly width: number;
+      readonly height: number;
+      readonly active: IDockviewPanel | undefined;
+    }[];
+  } | null = null;
+  let keyboardPx = 0;
   /** Side panels whose group was hidden while its width was to change
    *  (before its first layout, or over a window resize): it takes its
    *  width when it next shows. */
@@ -133,6 +158,44 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
         ? home.next
         : null;
     home.parent.insertBefore(node, next);
+  };
+
+  /** The focus inside `nodes`, to give back once they stand where they
+   *  go: a moved element loses the focus to the page (and a phone its
+   *  keyboard). Given back to the element that held it, or, when that one
+   *  is out of sight now, to the first control in sight in its node. */
+  const holdFocus = (nodes: readonly Element[]): (() => void) => {
+    const at = document.activeElement;
+    const node = nodes.find((n) => at !== null && n.contains(at));
+    if (!(at instanceof HTMLElement) || node === undefined) {
+      return () => undefined;
+    }
+    const give = () => {
+      if (document.activeElement === at) return;
+      if (at.isConnected) at.focus({ preventScroll: true });
+      if (document.activeElement === at) return;
+      const next = [...node.querySelectorAll<HTMLElement>(FOCUSABLE)].find(
+        (e) => e.checkVisibility({ visibilityProperty: true }),
+      );
+      next?.focus({ preventScroll: true });
+    };
+    const lost = () =>
+      document.activeElement === null ||
+      document.activeElement === document.body;
+    // A group just shown stays hidden until the docking places it a frame
+    // or two later, and takes no focus till then: tried again on the next
+    // two frames, while the focus is still on the page.
+    const later = (frames: number) => {
+      requestAnimationFrame(() => {
+        if (disposed || !lost()) return;
+        give();
+        if (lost() && frames > 1) later(frames - 1);
+      });
+    };
+    return () => {
+      give();
+      if (lost()) later(2);
+    };
   };
 
   for (const spec of DOCK_PANELS) {
@@ -243,11 +306,13 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
       ...(step.inactive === true ? { inactive: true } : {}),
     });
   }
-  for (const spec of DOCK_PANELS) {
-    if (spec.element === null) continue;
-    const node = document.getElementById(spec.element);
-    if (node !== null) adopt(node, contentOf(spec.id));
-  }
+  const adopted = DOCK_PANELS.flatMap((spec) => {
+    const node =
+      spec.element === null ? null : document.getElementById(spec.element);
+    return node === null ? [] : [{ id: spec.id, node }];
+  });
+  const focusBack = holdFocus(adopted.map((a) => a.node));
+  for (const { id, node } of adopted) adopt(node, contentOf(id));
   adoptViewParts();
   watcher.observe(box, { childList: true });
 
@@ -257,8 +322,13 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
    *  tab joins gets its strip back. */
   const fitStrips = () => {
     for (const group of dock.groups) {
-      group.header.hidden = stripHidden(group.panels.map((p) => p.id));
+      group.header.hidden =
+        group === maxed?.group || stripHidden(group.panels.map((p) => p.id));
     }
+    // Maximized over a keyboard, the layout may rise under the top bar
+    // (`editor-shell.css`): the docking library never lays it out under
+    // 100 px tall, more than the least a keyboard leaves.
+    root.classList.toggle("keyboard-max", maxed !== null);
   };
   fitStrips();
   dock.layout(root.clientWidth, root.clientHeight);
@@ -343,14 +413,33 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
         window.innerWidth,
         detailsNode.classList.contains("lw-wide"),
       );
+      // Once the writer goes, the details take the new window's width.
+      beforeWriter = dockWidths(window.innerWidth).column;
     }
     afterLayout(() => {
       if (disposed) return;
+      if (maxed !== null) {
+        // Given back with the layout, at the new window's widths.
+        for (const side of SIDES) stale.add(side);
+        return;
+      }
       for (const side of SIDES) {
         const group = groupOf(side);
         if (group.api.isVisible) group.api.setSize({ width: sideWidth(side) });
         else stale.add(side);
       }
+      // The bottom group its first height for the new window, now or when
+      // it next shows.
+      const heightPx = bottomStartPx(root.clientHeight);
+      const bottom = groupOf("problems");
+      if (bottom.api.isVisible) {
+        bottom.api.setSize({ height: heightPx });
+        return;
+      }
+      for (const id of [...unsized.keys()]) {
+        if (dockPanel(id).group === "bottom") unsized.delete(id);
+      }
+      unsized.set("problems", { id: "problems", heightPx });
     });
   };
   const resizeWatch = new ResizeObserver(onResize);
@@ -362,6 +451,113 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
     });
     fitWriter();
   }
+
+  // --- a keyboard over a short window ------------------------------------
+  /** The shown group whose panel holds the focus, if any. */
+  const focusedGroup = (): DockviewGroupPanel | null => {
+    const at = document.activeElement;
+    if (at === null) return null;
+    for (const spec of DOCK_PANELS) {
+      if (!contentOf(spec.id).contains(at)) continue;
+      const group = groupOf(spec.id);
+      return group.api.isVisible ? group : null;
+    }
+    return null;
+  };
+  const restoreHeights = (heights: ReadonlyMap<DockviewGroupPanel, number>) => {
+    for (const [g, minimumHeight] of heights) {
+      g.api.setConstraints({ minimumHeight });
+    }
+  };
+  const giveBack = () => {
+    if (maxed === null) return;
+    const { before, minimumHeights } = maxed;
+    maxed = null;
+    if (dock.hasMaximizedGroup()) dock.exitMaximizedGroup();
+    restoreHeights(minimumHeights);
+    for (const was of before) {
+      if (!was.group.api.isVisible) continue;
+      const side = SIDES.find((id) => groupOf(id) === was.group);
+      const width =
+        side !== undefined && stale.delete(side) ? sideWidth(side) : was.width;
+      was.group.api.setSize({ width, height: was.height });
+      if (was.active !== undefined && was.group.activePanel !== was.active) {
+        was.active.api.setActive();
+      }
+    }
+    fitStrips();
+  };
+  const maximize = (group: DockviewGroupPanel) => {
+    giveBack();
+    maxed = {
+      group,
+      minimumHeights: new Map(dock.groups.map((g) => [g, g.minimumHeight])),
+      before: dock.groups
+        .filter((g) => g.api.isVisible)
+        .map((g) => ({
+          group: g,
+          width: g.api.width,
+          height: g.api.height,
+          active: g.activePanel,
+        })),
+    };
+    for (const g of dock.groups) g.api.setConstraints({ minimumHeight: 0 });
+    group.api.maximize();
+    fitStrips();
+    // Laid out again at the layout's box: one smaller than the least
+    // heights before was held at them.
+    dock.layout(root.clientWidth, root.clientHeight, true);
+  };
+  /** Over a window the keyboard leaves too short, the group holding the
+   *  field in use takes the whole layout; otherwise the layout is given
+   *  back as it was. */
+  const fitKeyboard = () => {
+    if (disposed) return;
+    const want = keyboardMaximizes(window.innerHeight, keyboardPx)
+      ? focusedGroup()
+      : null;
+    if (want === (maxed?.group ?? null)) return;
+    if (want === null) giveBack();
+    else maximize(want);
+    deps.onChange();
+  };
+  const onFocusIn = () => {
+    if (keyboardPx > 0) fitKeyboard();
+  };
+  root.addEventListener("focusin", onFocusIn);
+  // The field in use brought into sight again once its panel has its new
+  // size: the docking places a panel's content a frame or two after it
+  // lays out the group, so the keyboard's own scroll can come too early.
+  const paneWatch = new ResizeObserver((entries) => {
+    if (keyboardPx <= 0) return;
+    const at = document.activeElement;
+    if (!(at instanceof HTMLElement)) return;
+    if (entries.some((entry) => entry.target.contains(at))) {
+      at.scrollIntoView({ block: "nearest" });
+    }
+  });
+  for (const content of contents.values()) paneWatch.observe(content);
+  // Something else gave the layout back (a group shown or hidden ends the
+  // maximized state): nothing is held any more.
+  const unmaxed = dock.onDidMaximizedGroupChange(({ isMaximized }) => {
+    if (isMaximized || maxed === null) return;
+    restoreHeights(maxed.minimumHeights);
+    maxed = null;
+    fitStrips();
+  });
+
+  // A tab's Delete or Backspace closes its panel in the docking library;
+  // here a panel is never closed, and the key must not reach the page
+  // either, where it deletes the selection. On the root, in the capture
+  // phase: before the tab strip's own handler.
+  const onTabKey = (event: KeyboardEvent) => {
+    if (event.key !== "Delete" && event.key !== "Backspace") return;
+    const at = event.target;
+    if (!(at instanceof Element) || at.closest(".dv-tab") === null) return;
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  root.addEventListener("keydown", onTabKey, true);
 
   const changed = dock.onDidActivePanelChange(() => {
     deps.onChange();
@@ -402,6 +598,7 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
     const node =
       spec.element === null ? null : document.getElementById(spec.element);
     if (shut === folded.has(id) || node === null) return;
+    const back = holdFocus([node]);
     if (shut) {
       folded.add(id);
       groupOf(id).api.setVisible(false);
@@ -411,15 +608,21 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
       adopt(node, contentOf(id), true);
       showGroup(id);
     }
+    back();
     deps.onChange();
   };
+  focusBack();
 
   return {
     reveal(id) {
+      // The focus stays where it was (a row picked from the keyboard shows
+      // its details): a tab made active takes it otherwise.
+      const back = holdFocus([...contents.values()]);
       if (id === "list" || id === "details") fold(id, false);
       showGroup(id);
       const panel = panelOf(id);
       if (panel.group.activePanel !== panel) panel.api.setActive();
+      back();
       deps.onChange();
     },
     hideGroupOf(id) {
@@ -437,8 +640,11 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
     },
     fold,
     content: contentOf,
-    layout() {
-      if (!disposed) dock.layout(root.clientWidth, root.clientHeight);
+    keyboard(px) {
+      if (disposed) return;
+      keyboardPx = px;
+      fitKeyboard();
+      dock.layout(root.clientWidth, root.clientHeight);
     },
     dispose() {
       if (disposed) return;
@@ -446,6 +652,10 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
       watcher.disconnect();
       writerWatch.disconnect();
       resizeWatch.disconnect();
+      root.removeEventListener("focusin", onFocusIn);
+      paneWatch.disconnect();
+      root.removeEventListener("keydown", onTabKey, true);
+      unmaxed.dispose();
       changed.dispose();
       laidOut.dispose();
       document.removeEventListener("pointerdown", onSashDown, true);
@@ -455,12 +665,13 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
       // The canvas first, back under the docks. Only what is still in the
       // layout goes back: a part removed meanwhile by the code that made
       // it (the 3D view's canvas when the view closed) stays removed.
-      for (const home of [...homes].reverse()) {
-        if (root.contains(home.node)) sendHome(home.node);
-      }
+      const going = homes.filter((home) => root.contains(home.node));
+      const back = holdFocus(going.map((home) => home.node));
+      for (const home of [...going].reverse()) sendHome(home.node);
       dock.dispose();
       root.remove();
       box.classList.remove("docked");
+      back();
     },
   };
 }

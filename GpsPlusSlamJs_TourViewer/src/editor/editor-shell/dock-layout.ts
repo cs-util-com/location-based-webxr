@@ -144,6 +144,24 @@ export function writerWidthPx(widthPx: number, wide: boolean): number {
   return widthPx <= 1100 ? 340 : 360;
 }
 
+/** What a keyboard must leave of the window (px) for the docked layout
+ *  to stay as it is: less, and the group holding the field in use takes
+ *  the whole layout, its tab strip hidden (`dock-host.ts`). Every field
+ *  stays in sight from 300 px up; 390 keeps a margin over the long text
+ *  writer, the tallest field (the sidecar has the sweep). */
+export const KEYBOARD_ROOM_PX = 390;
+
+/** Whether a keyboard of `keyboardPx` over a window of `heightPx`
+ *  leaves less than `KEYBOARD_ROOM_PX`; never without a keyboard. */
+export function keyboardMaximizes(
+  heightPx: number,
+  keyboardPx: number,
+): boolean {
+  if (!Number.isFinite(heightPx) || !Number.isFinite(keyboardPx)) return false;
+  if (keyboardPx <= 0) return false;
+  return heightPx - keyboardPx < KEYBOARD_ROOM_PX;
+}
+
 /** The bottom group's height when first shown: 220 px, at most about a
  *  third of the space below the top bar so the 3D view keeps most of it
  *  (a phone held sideways, 326 px between the bars, gets 108). */
