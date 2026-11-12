@@ -36,16 +36,21 @@ are not part of the page's first load.
     under `KEYBOARD_ROOM_PX`), the shown group whose panel holds the focus
     is maximized with its tab strip hidden; focus moving to a field of
     another group (a `focusin` on the layout) maximizes that one instead.
-    When the keyboard goes, or leaves enough room, or the focus leaves the
-    panels, the layout is given back: each group shown before at its size
+    The focus leaving the panels (to the top bar) gives nothing back by
+    itself: on a phone the keyboard goes with the focus, and its going
+    gives the layout back.
+    When the keyboard goes or leaves enough room, the layout is given
+    back: each group shown before at its size
     and with its shown tab (a side group at the new window's width if the
     window was resized meanwhile). A group shown or hidden meanwhile ends the
     maximized state through the docking itself; nothing is then held.
     Maximized, every group's least height is 0 (given back after), and the
     layout carries `keyboard-max`: the docking library never lays its
     centre out under 100 px tall, so where the keyboard leaves less the
-    layout rises under the top bar to end at the keyboard
-    (`editor-shell.css`).
+    layout keeps its top (the panel's head and its buttons in sight) and
+    runs on under the keyboard (`editor-shell.css`); `--dock-under` on
+    the layout is how far, and the panels' scrollers stop a field brought
+    into sight that far above the layout's end (`scroll-padding-bottom`).
   - `dispose()` - every adopted element still in the layout back at its
     old place (parent and next sibling), the layout removed, `docked`
     taken off. A part removed meanwhile by the code that made it (the 3D view's canvas,

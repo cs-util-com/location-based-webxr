@@ -4090,10 +4090,15 @@ body[data-view="3d"] #toasts {
 }
 /* A group a keyboard maximized (`dock-host.ts`): the docking library never
  * lays its centre out under 100 px tall, so where the keyboard leaves less
- * the layout rises under the top bar and ends at the keyboard, rather than
- * reach under it. */
+ * the layout keeps its top (the panel's head and its buttons in sight) and
+ * runs on under the keyboard; a field brought into sight stops above it
+ * (`--dock-under`, the part under the keyboard, set by the host). */
 #view3d.docked .dock-host.keyboard-max {
-  top: min(var(--s-dock-top), 100% - var(--s-keyboard-foot) - 100px);
+  bottom: min(var(--s-keyboard-foot), 100% - var(--s-dock-top) - 100px);
+}
+#view3d.docked .dock-host.keyboard-max .dock-pane,
+#view3d.docked .dock-host.keyboard-max .dock-pane * {
+  scroll-padding-bottom: var(--dock-under, 0px);
 }
 /* The layout never scrolls as a whole: a focus or a scroll into view in a
  * panel would otherwise shift the view box and every group in it, the tab

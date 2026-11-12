@@ -226,6 +226,12 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
     });
   }
   const scrollBack = (pane: HTMLElement) => {
+    // An element no panel holds any more (a redraw replaced it) is let go.
+    for (const at of [...offsets.keys()]) {
+      if (![...contents.values()].some((c) => c.contains(at))) {
+        offsets.delete(at);
+      }
+    }
     const put = () => {
       for (const [at, was] of offsets) {
         if (!pane.contains(at)) continue;
@@ -374,10 +380,25 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
       group.header.hidden =
         group === maxed?.group || stripHidden(group.panels.map((p) => p.id));
     }
-    // Maximized over a keyboard, the layout may rise under the top bar
+    // Maximized over a keyboard, the layout may run on under it
     // (`editor-shell.css`): the docking library never lays it out under
     // 100 px tall, more than the least a keyboard leaves.
     root.classList.toggle("keyboard-max", maxed !== null);
+  };
+  /** How far the maximized layout runs under the keyboard, for its
+   *  panels' scrollers to stop above it. */
+  const fitUnder = () => {
+    const under =
+      maxed === null
+        ? 0
+        : Math.max(
+            0,
+            Math.round(
+              root.getBoundingClientRect().bottom -
+                (window.innerHeight - keyboardPx),
+            ),
+          );
+    root.style.setProperty("--dock-under", `${String(under)}px`);
   };
   fitStrips();
   dock.layout(root.clientWidth, root.clientHeight);
@@ -524,6 +545,10 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
     maxed = null;
     if (dock.hasMaximizedGroup()) dock.exitMaximizedGroup();
     restoreHeights(minimumHeights);
+    // The layout's own box again first (maximized it ran on under the
+    // keyboard): sizes set in the old box were scaled when it changed.
+    fitStrips();
+    dock.layout(root.clientWidth, root.clientHeight, true);
     for (const was of before) {
       if (!was.group.api.isVisible) continue;
       const side = SIDES.find((id) => groupOf(id) === was.group);
@@ -535,6 +560,7 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
       }
     }
     fitStrips();
+    fitUnder();
   };
   const maximize = (group: DockviewGroupPanel) => {
     giveBack();
@@ -556,6 +582,7 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
     // Laid out again at the layout's box: one smaller than the least
     // heights before was held at them.
     dock.layout(root.clientWidth, root.clientHeight, true);
+    fitUnder();
   };
   /** Over a window the keyboard leaves too short, the group holding the
    *  field in use takes the whole layout; otherwise the layout is given
@@ -593,6 +620,7 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
     restoreHeights(maxed.minimumHeights);
     maxed = null;
     fitStrips();
+    fitUnder();
   });
 
   // A tab's Delete or Backspace closes its panel in the docking library;
@@ -692,6 +720,7 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
       keyboardPx = px;
       fitKeyboard();
       dock.layout(root.clientWidth, root.clientHeight);
+      fitUnder();
     },
     dispose() {
       if (disposed) return;
