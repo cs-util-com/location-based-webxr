@@ -121,6 +121,36 @@ describe("createShellPictures", () => {
     expect(FakeObserver.last?.watched.has(again)).toBe(false);
   });
 
+  // Why: a docked panel behind another tab is out of the page, and a draw
+  // into it (another station selected while Files shows) must still get
+  // its pictures once the panel shows again: the sweep forgets only the
+  // cards no panel holds any more.
+  it("keeps watching a card in a panel that is out of the page, and forgets one its panel let go", async () => {
+    const load = vi.fn(() =>
+      Promise.resolve(new Blob([PNG], { type: "image/png" })),
+    );
+    const panel = document.createElement("div");
+    const pictures = createShellPictures({
+      load,
+      owns: (el) => panel.contains(el),
+    });
+    const kept = document.createElement("div");
+    panel.append(kept);
+    const dropped = document.createElement("div");
+    panel.append(dropped);
+    pictures.show(kept, "content/gate.png");
+    pictures.show(dropped, "content/steps.png");
+    dropped.remove();
+    pictures.sweep();
+    expect(FakeObserver.last?.watched.has(kept)).toBe(true);
+    expect(FakeObserver.last?.watched.has(dropped)).toBe(false);
+    // The panel shows again: the card comes into view and gets its picture.
+    document.body.append(panel);
+    FakeObserver.last?.see(kept);
+    await settle();
+    expect(kept.style.backgroundImage).toBe('url("blob:picture-1")');
+  });
+
   it("leaves a picture that cannot be read as its placeholder", async () => {
     const pictures = createShellPictures({
       load: () => Promise.resolve(new Blob(["not a picture"])),

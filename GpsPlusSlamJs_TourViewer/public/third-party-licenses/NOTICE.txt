@@ -42,6 +42,11 @@ ships with the app as third-party-licenses/NOTICE.txt.
 - glMatrix (npm: gl-matrix, https://glmatrix.net/) - MIT License
 - Sentry JavaScript SDK core (npm: @sentry/core,
   https://github.com/getsentry/sentry-javascript) - MIT License
+- Dockview (npm: dockview, https://github.com/dockview/dockview) - MIT
+  License; the 3D editor's docked panels, loaded with the 3D view
+- Dockview core (npm: dockview-core,
+  https://github.com/dockview/dockview) - MIT License; drawn in by
+  dockview
 
 Several of these reach the app through the App Framework
 (gps-plus-slam-app-framework, Apache License 2.0), which has its own

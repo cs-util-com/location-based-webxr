@@ -219,6 +219,7 @@
       "ignoreDependencies": [
         "@carlosjeurissen/stylelint-csstree-validator",
         "dependency-cruiser",
+        "dockview-core",
         "dpdm",
         "jscpd",
         "postcss-html",

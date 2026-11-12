@@ -240,6 +240,34 @@ describe("the keys", () => {
     expect(el.hidden).toBe(true);
     expect(document.activeElement).toBe(toggle("history"));
   });
+
+  // Why: inside the tablist the page stands back from the arrows, Home
+  // and End (key-target.ts), so the tablist must answer them itself or
+  // they do nothing at all there.
+  it("move between the panel's tabs by the arrows, Home and End", () => {
+    const { panel, el } = setUp();
+    toggle("history").click();
+    const tab = (id: string) =>
+      el.querySelector<HTMLButtonElement>(`.tab[data-tab='${id}']`);
+    const press = (k: string) => {
+      const event = key({ key: k });
+      (document.activeElement ?? el).dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    tab("history")?.focus();
+    expect(press("End")).toBe(true);
+    expect(panel.state().tab).toBe("perf");
+    expect(document.activeElement).toBe(tab("perf"));
+    expect(press("Home")).toBe(true);
+    expect(panel.state().tab).toBe("problems");
+    expect(document.activeElement).toBe(tab("problems"));
+    expect(press("ArrowLeft")).toBe(true);
+    expect(panel.state().tab).toBe("perf");
+    expect(press("ArrowRight")).toBe(true);
+    expect(panel.state().tab).toBe("problems");
+    expect(press("ArrowDown")).toBe(false);
+    expect(panel.state().tab).toBe("problems");
+  });
 });
 
 describe("the Problems tab", () => {
@@ -338,6 +366,27 @@ describe("the Problems tab", () => {
     expect(now).not.toBe(row);
     expect(now?.classList.contains("sel")).toBe(true);
     expect(document.activeElement).toBe(now);
+  });
+
+  // Why: docked, each pane is moved out of the panel into its docked
+  // panel; a row's click and Enter were heard by the panel's body only, so
+  // a docked row selected nothing.
+  it("selects a docked problem's row by click and by Enter", () => {
+    const { panel, choose } = setUp();
+    panel.dock({ show: () => undefined, hide: () => undefined });
+    const docked = document.createElement("div");
+    document.body.append(docked);
+    const pane = document.getElementById("shell-pane-problems");
+    if (pane === null) throw new Error("no Problems pane");
+    docked.append(pane);
+    toggle("problems").click();
+    panel.problems(GROUPS, null);
+    const row = pane.querySelector<HTMLElement>('.prow[data-select="far"]');
+    row?.dispatchEvent(key({ key: "Enter" }));
+    expect(choose).toHaveBeenCalledWith("far");
+    choose.mockClear();
+    pane.querySelector<HTMLElement>('.prow[data-select="far"] .what')?.click();
+    expect(choose).toHaveBeenCalledWith("far");
   });
 
   it("keeps the focus inside when its control is gone after a redraw", () => {

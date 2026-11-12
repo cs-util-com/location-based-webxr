@@ -5,6 +5,9 @@ import {
   afterFrames,
   answerHosts,
   capture,
+  DOCK_TABS_PX,
+  dockSettled,
+  dockWidthsAt,
   openSampleIn3d,
 } from "./editor3d-fixture.js";
 
@@ -191,36 +194,53 @@ test("on a phone the bottom panel stands under the sheet, a problem opening its 
 test("on a phone's side both panels stay, the map between, and the close button goes back", async ({
   page,
 }) => {
+  // Sideways the panels dock (`dock-layout.ts`): the list at the left,
+  // hanging from the accent line, the details at the right under their
+  // group's tab strip, the asset shelf that group's other tab (no rail
+  // beside the details, so nothing squeezes them).
   await open(page, SIDEWAYS);
   const foot = viewFoot(390);
+  const widths = dockWidthsAt(844);
   const list = await box(tree(page));
   expect(list.x).toBe(0);
-  expect(list.width).toBe(226);
-  expect(list.y).toBeLessThanOrEqual(viewTop + 3);
+  expect(list.width).toBe(widths.list);
+  expect(list.y).toBe(viewTop + 3);
   expect(list.y + list.height).toBeCloseTo(foot, 0);
 
   await station(page, "The old gate").click();
-  // The asset shelf shows as its rail beside the details (no room for its
-  // panel), the details against it.
-  const rail = page.locator("#shell-shelf");
-  await expect.poll(async () => (await box(rail)).width).toBe(38);
-  expect((await box(rail)).x).toBe(844 - 38);
+  await expect(page.locator("#shell-shelf")).toBeHidden();
+  await expect(
+    page.locator(".dock-host").getByRole("tab", { name: "Files" }),
+  ).toBeVisible();
   const sheet = await box(details(page));
-  expect(sheet.x).toBe(844 - 38 - 268);
-  expect(sheet.width).toBe(268);
+  expect(sheet.x).toBe(844 - widths.column);
+  expect(sheet.width).toBe(widths.column);
+  expect(sheet.y).toBe(viewTop + 3 + DOCK_TABS_PX);
   expect(sheet.y + sheet.height).toBeCloseTo(foot, 0);
   // The list stays, unfolded, and the map keeps the room between them.
   expect(await box(tree(page))).toEqual(list);
-  expect(sheet.x - (list.x + list.width)).toBe(844 - 226 - 268 - 38);
+  const map = await box(canvas(page));
+  for (const gap of [
+    map.x - (list.x + list.width),
+    sheet.x - (map.x + map.width),
+  ]) {
+    expect(gap).toBeGreaterThanOrEqual(-0.5);
+    expect(gap).toBeLessThanOrEqual(2);
+  }
   const controls = await box(page.locator("#map-controls"));
   expect(controls.x + controls.width).toBeLessThanOrEqual(sheet.x);
   await expect(page.locator('#inspector-head [data-act="back"]')).toBeHidden();
   await expect(page.locator("#studio-list")).toBeHidden();
 
+  // Closed, the details' panel says how to fill it; the list and the map
+  // keep their places, the map from the line to the bottom bar.
   await page.locator('#inspector-head [data-act="close"]').click();
   await expect(details(page)).toBeHidden();
+  await expect(
+    page.getByText("Select a station or an item, in the list or in the view."),
+  ).toBeVisible();
   expect(await box(tree(page))).toEqual(list);
-  expect((await box(canvas(page))).height).toBe(foot - viewTop);
+  expect((await box(canvas(page))).height).toBe(foot - viewTop - 3);
 });
 
 test("on a phone the controls smaller for a mouse take a finger", async ({
@@ -277,7 +297,7 @@ function outOfSight(page, fields, size) {
   const most = size.height - FIELD_ROOM_PX;
   const keyboards = [...KEYBOARDS.filter((px) => px < most), most];
   return page.evaluate(
-    ({ fields, keyboards, shares }) => {
+    async ({ fields, keyboards, shares }) => {
       const viewport = /** @type {VisualViewport} */ (window.visualViewport);
       const { style } = document.body;
       const was = style.getPropertyValue("--s-sheet-share");
@@ -297,6 +317,14 @@ function outOfSight(page, fields, size) {
               document.querySelector(selector)
             );
             field.focus();
+            // Docked (above 700 px), the panels' contents are placed a frame
+            // after their groups are laid out, and the field is brought into
+            // sight again two frames later; the undocked styles apply at once.
+            if (innerWidth > 700) {
+              for (let i = 0; i < 3; i += 1) {
+                await new Promise((done) => requestAnimationFrame(done));
+              }
+            }
             const at = field.getBoundingClientRect();
             const hit = document.elementFromPoint(
               at.x + at.width / 2,
@@ -328,6 +356,8 @@ function outOfSight(page, fields, size) {
 test("over a keyboard every field in use stays in sight, at every size and sheet height", async ({
   page,
 }) => {
+  // Seven sizes three times over, each waiting for its layout to settle.
+  test.setTimeout(90_000);
   await open(page, PORTRAIT);
   await station(page, "The old gate").click();
   await page.locator('#inspector-body [data-act="position"]').click();
@@ -340,6 +370,9 @@ test("over a keyboard every field in use stays in sight, at every size and sheet
   );
   for (const size of KEYBOARD_SIZES) {
     await page.setViewportSize(size);
+    // Docked from 701 px: its panels are moved into the layout a moment
+    // after the resize, which is not what this test is about.
+    await dockSettled(page, size.width);
     lost.push(...(await outOfSight(page, fields, size)));
   }
   // The list's search, the sheet the keyboard opens first.
@@ -347,6 +380,7 @@ test("over a keyboard every field in use stays in sight, at every size and sheet
   await page.locator('#inspector-head [data-act="back"]').click();
   for (const size of KEYBOARD_SIZES) {
     await page.setViewportSize(size);
+    await dockSettled(page, size.width);
     lost.push(
       ...(await outOfSight(page, ["#shell-tree .tsearch input"], size)),
     );
@@ -362,6 +396,7 @@ test("over a keyboard every field in use stays in sight, at every size and sheet
   await expect(writer).toHaveCount(1);
   for (const size of KEYBOARD_SIZES) {
     await page.setViewportSize(size);
+    await dockSettled(page, size.width);
     lost.push(
       ...(await outOfSight(
         page,

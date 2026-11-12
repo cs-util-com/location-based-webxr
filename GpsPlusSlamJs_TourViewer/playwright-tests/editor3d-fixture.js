@@ -5,6 +5,11 @@ import {
   encodeRgbPng,
   terrariumPng,
 } from "../../scripts/e2e/terrarium-png.mjs";
+import {
+  bottomStartPx,
+  DOCK_MIN_PX as DOCK_MIN,
+  dockWidths,
+} from "../src/editor/editor-shell/dock-layout.ts";
 import { startOnMap } from "./editor-menus.js";
 
 /** A 1x1 grey PNG: a map tile the page can decode. Encoded here, not
@@ -460,4 +465,58 @@ export function shownIn(layout, selector, index = 0) {
  */
 export function styleIn(layout, selector, property, index = 0) {
   return layout[selector]?.[index]?.styles[property] ?? "";
+}
+
+/** From this window width the editor's panels dock around the 3D view
+ *  (`dock-layout.ts`); below it the phone's sheets show them. */
+export const DOCK_MIN_PX = DOCK_MIN;
+
+/** The docking's tab strip over a group (`editor-shell.css`'s theme). */
+export const DOCK_TABS_PX = 30;
+
+/**
+ * The docked list's and right column's first widths at a window width
+ * (`dock-layout.ts`'s `dockWidths`).
+ * @param {number} width
+ */
+export function dockWidthsAt(width) {
+  return dockWidths(width);
+}
+
+/**
+ * The bottom group's first height (`dock-layout.ts`'s `bottomStartPx`):
+ * from the layout's height below the top bar, its line and above the bottom
+ * bar (`editor-shell.css`: 40, 3 and 24 px, not in `dock-layout.ts`).
+ * @param {number} height the window's
+ */
+export function dockBottomPx(height) {
+  return bottomStartPx(height - 40 - 3 - 24);
+}
+
+/**
+ * Waits after a window resize until the docked layout fills the new
+ * window (the docking lays its groups out a frame later, and its side
+ * groups take their widths a frame after that); below `DOCK_MIN_PX`,
+ * until the layout is gone (it is taken down a frame or two after the
+ * resize, its panels put back where they were).
+ * @param {import("@playwright/test").Page} page
+ * @param {number} width the window's
+ */
+export async function dockSettled(page, width) {
+  if (width < DOCK_MIN_PX) {
+    await expect(page.locator(".dock-host")).toHaveCount(0);
+    await afterFrames(page, 3);
+    return;
+  }
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        Math.round(
+          document.querySelector(".dock-host")?.getBoundingClientRect().right ??
+            0,
+        ),
+      ),
+    )
+    .toBe(width);
+  await afterFrames(page, 3);
 }

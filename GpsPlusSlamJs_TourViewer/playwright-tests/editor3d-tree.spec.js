@@ -21,9 +21,12 @@ import {
   answerHosts,
   boxIn,
   capture,
+  dockSettled,
+  dockWidthsAt,
   layoutOf,
   openSampleIn3d,
   openZip,
+  shownIn,
   view3d,
 } from "./editor3d-fixture.js";
 import { save } from "./editor-menus.js";
@@ -906,25 +909,17 @@ async function expectTreeControls(page, size) {
   expect(grip.y, at).toBe(tw.y);
   expect(grip.height, at).toBe(tw.height);
   expect(grip.y + grip.height, at).toBeLessThanOrEqual(row.y + row.height);
-  // The tree: 248 px wide on a desktop, 210 px at 1100 px or less, as the
-  // explorer's, 226 px at 900 px or less and the width on a phone; its
-  // search 8 px in, to the dock's line (a phone's sheet has none).
+  // The tree: 248 px wide on a desktop, 210 px at 1100 px or less down
+  // to the docking's 701 px (`dock-layout.ts`), as the explorer's, and the
+  // width on a phone; its search 8 px in from both of its edges (a phone's
+  // sheet has no line at its side; docked, the line beside it is the
+  // docking's splitter).
   const tree = await box(page.locator("#shell-tree"));
-  const phone = size.width <= 700;
-  const treePx =
-    size.width > 1100
-      ? 248
-      : size.width > 900
-        ? 210
-        : size.width > 700
-          ? 226
-          : size.width;
+  const treePx = size.width > 700 ? dockWidthsAt(size.width).list : size.width;
   expect(tree.width, at).toBe(treePx);
   const search = await box(page.locator("#tree-search"));
   expect(search.x - tree.x, at).toBe(8);
-  expect(tree.x + tree.width - (search.x + search.width), at).toBe(
-    phone ? 8 : 9,
-  );
+  expect(tree.x + tree.width - (search.x + search.width), at).toBe(8);
   // A row's "+": 22 px, 4 px from the row's right end, in its middle.
   const plus = await box(page.locator("#tree-body .card > .head .add").first());
   expect([plus.width, plus.height], at).toEqual([22, 22]);
@@ -1113,6 +1108,7 @@ test("a station's picture is a strip under its row, and a tap on it selects the 
     { width: 390, height: 844 },
   ]) {
     await page.setViewportSize(size);
+    await dockSettled(page, size.width);
     const at = atSize(size);
     const fountain = card(page, "fountain");
     await expect(fountain).toBeVisible();
@@ -1170,6 +1166,7 @@ test("the tree's add, its grips and the bar's actions sit in place at a phone, a
     { width: 390, height: 844 },
   ]) {
     await page.setViewportSize(size);
+    await dockSettled(page, size.width);
     if (
       await page
         .locator("#shell-tree")
@@ -1195,15 +1192,14 @@ test("the tree's add, its grips and the bar's actions sit in place at a phone, a
       "#shell-acts .sact .lbl",
     ]);
     // A station selected on a desktop: the tree keeps its width beside
-    // the inspector, which stands against the Assets panel, open at the
-    // window's right edge.
+    // the inspector, which stands at the window's right edge (docked, the
+    // Assets panel is its group's other tab, not shown beside it).
     if (size.width > 1100) {
       const tree = boxIn(l, "#shell-tree");
       const inspector = boxIn(l, "#shell-inspector");
-      const shelf = boxIn(l, "#shell-shelf");
       expect(tree.width).toBe(248);
-      expect(shelf.x + shelf.width).toBe(size.width);
-      expect(inspector.x + inspector.width).toBe(shelf.x);
+      expect(shownIn(l, "#shell-shelf")).toBe(false);
+      expect(inspector.x + inspector.width).toBe(size.width);
       expect(inspector.x).toBeGreaterThanOrEqual(tree.x + tree.width);
     }
     const bar = boxIn(l, "#shell-bar");
@@ -1306,6 +1302,7 @@ test("a folded station is one line, its number and name side by side; unfolded i
     const at = `at ${String(size.width)}x${String(size.height)}`;
     const name = `${String(size.width)}x${String(size.height)}`;
     await page.setViewportSize(size);
+    await dockSettled(page, size.width);
     if (
       await page
         .locator("#shell-tree")

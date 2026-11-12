@@ -13,6 +13,10 @@ import {
   answerHosts,
   boxIn,
   capture,
+  DOCK_TABS_PX,
+  dockBottomPx,
+  dockSettled,
+  dockWidthsAt,
   keepRejections,
   layoutOf,
   openSampleIn3d,
@@ -129,6 +133,8 @@ const FRAME_PARTS = [
   "#shell-bar",
   "#view3d",
   "#load-line",
+  ".dock-host",
+  ".dock-pane-view",
   "#shell-tree",
   "#tree-body",
   "#shell-inspector",
@@ -224,6 +230,7 @@ async function shelfSettled(page) {
  * @param {{ width: number, height: number }} size
  */
 async function expectFrame(page, size) {
+  await dockSettled(page, size.width);
   const frame = await frameOf(page);
   const must = (/** @type {string} */ selector) =>
     boxIn(frame.layout, selector);
@@ -263,6 +270,24 @@ async function expectFrame(page, size) {
   );
   // Every open dock hangs from the line, no gap, and runs down to the
   // bottom bar; a folded one is its head, hanging from the line too.
+  // Docked (above 700 px) the layout fills the view under the line; the
+  // list's group shows no tab strip (the list has its own head), so the
+  // list hangs from the line itself; the details and the asset shelf are
+  // the two tabs of one group at the window's right, never shown together
+  // (so never one over the other), the shown one under the group's tab
+  // strip.
+  if (!phone) {
+    expect(must(".dock-host"), at).toEqual({
+      x: 0,
+      y: DOCK_TOP_PX,
+      width: size.width,
+      height: size.height - 24 - DOCK_TOP_PX,
+    });
+    expect(
+      shownNow("#shell-inspector") && shownNow("#shell-shelf"),
+      `the details and the shelf both shown ${at}`,
+    ).toBe(false);
+  }
   for (const [id, body] of [
     ["#shell-tree", "#tree-body"],
     ["#shell-inspector", "#inspector-body"],
@@ -278,7 +303,10 @@ async function expectFrame(page, size) {
       );
       continue;
     }
-    expect(dock.y, `${id} ${at}`).toBe(DOCK_TOP_PX);
+    const tabbed = id === "#shell-inspector" && shownNow(body);
+    expect(dock.y, `${id} ${at}`).toBe(
+      tabbed ? DOCK_TOP_PX + DOCK_TABS_PX : DOCK_TOP_PX,
+    );
     if (shownNow(body)) {
       expect(dock.y + dock.height, `${id} ${at}`).toBeCloseTo(
         size.height - 24,
@@ -287,13 +315,26 @@ async function expectFrame(page, size) {
     } else {
       expect(dock.height, `${id} ${at}`).toBeCloseTo(FOLDED_PX, 0);
     }
+    // The details at the window's right edge, folded to their head too
+    // (the asset shelf, a tab, keeps nothing clear of it).
+    if (id === "#shell-inspector") {
+      expect(dock.x + dock.width, `${id} ${at}`).toBeCloseTo(size.width, 0);
+    }
   }
-  // The map controls: one row 14 px over the bottom bar (on a phone 12 px
-  // under the top bar, clear of the sheet), the compass left of + and -, 38 px
-  // buttons, the zoom pill 8 px right of the compass, its right edge 12 px
-  // left of an open inspector, else of the asset shelf, else 12 px from the
-  // window's right. The shelf stands at the window's right, an open
-  // inspector against it (a phone's shelf is a sheet of its own).
+  if (!phone && shownNow("#shell-shelf")) {
+    const shelf = must("#shell-shelf");
+    expect(shelf.y, `the shelf ${at}`).toBe(DOCK_TOP_PX + DOCK_TABS_PX);
+    expect(shelf.x + shelf.width, `the shelf ${at}`).toBeCloseTo(size.width, 0);
+    expect(shelf.y + shelf.height, `the shelf ${at}`).toBeCloseTo(
+      size.height - 24,
+      0,
+    );
+  }
+  // The map controls: one row 14 px over the 3D view's foot (on a phone
+  // 12 px under the top bar, clear of the sheet), the compass left of + and
+  // -, 38 px buttons, the zoom pill 8 px right of the compass, its right
+  // edge 12 px in from the 3D view's right: docked, the view's panel
+  // between the docks; on a phone, the window's.
   const compass = must("#compass");
   const zoomIn = must("#zoom-in");
   const zoomOut = must("#zoom-out");
@@ -302,42 +343,59 @@ async function expectFrame(page, size) {
   expect(zoomIn.x - (compass.x + compass.width), at).toBe(8);
   // The second button's 1 px divider is inside its 38 px.
   expect(zoomOut.x, at).toBe(zoomIn.x + 38);
+  const view = phone
+    ? {
+        x: 0,
+        y: VIEW_TOP_PX,
+        width: size.width,
+        height: size.height - 24 - VIEW_TOP_PX,
+      }
+    : must(".dock-pane-view");
   if (phone) expect(compass.y, at).toBe(VIEW_TOP_PX + 12);
-  else expect(size.height - 24 - (compass.y + compass.height), at).toBe(14);
-  const shelf =
-    !phone && shownNow("#shell-shelf") ? must("#shell-shelf") : null;
-  if (shelf !== null) {
-    expect(shelf.x + shelf.width, `the shelf ${at}`).toBeCloseTo(size.width, 0);
-  }
-  const shelfX = shelf?.x ?? size.width;
-  if (shownNow("#shell-inspector") && !phone) {
-    const inspector = must("#shell-inspector");
-    expect(inspector.x + inspector.width, `#shell-inspector ${at}`).toBeCloseTo(
-      shelfX,
-      0,
-    );
-  }
-  const rightEdge =
-    shownNow("#inspector-body") && !phone
-      ? must("#shell-inspector").x - 12
-      : shelfX - 12;
-  expect(zoomOut.x + zoomOut.width, at).toBeCloseTo(rightEdge, 0);
-  // The canvas covers only the view between the open docks (a phone's
-  // sheets lie under it, the width its own): what the view frames at its
-  // middle is in sight, never under a dock.
-  const canvas = must("#view3d .view3d-canvas");
-  const tree = !phone && shownNow("#tree-body") ? must("#shell-tree") : null;
-  const canvasLeft = tree === null ? 0 : tree.x + tree.width;
-  const canvasRight = phone
-    ? size.width
-    : shownNow("#inspector-body")
-      ? must("#shell-inspector").x
-      : shelfX;
-  expect(canvas.x, `the canvas ${at}`).toBeCloseTo(canvasLeft, 0);
-  expect(canvas.x + canvas.width, `the canvas ${at}`).toBeCloseTo(
-    canvasRight,
+  else expect(view.y + view.height - (compass.y + compass.height), at).toBe(14);
+  expect(zoomOut.x + zoomOut.width, at).toBeCloseTo(
+    view.x + view.width - 12,
     0,
   );
+  // The canvas covers only the 3D view (a phone's sheets lie under it, the
+  // width its own): what the view frames at its middle is in sight, never
+  // under a dock. Docked, the view's panel lies between the open docks, at
+  // most a splitter (2 px) from each, from the line to the bottom bar.
+  const canvas = must("#view3d .view3d-canvas");
+  expect(canvas.x, `the canvas ${at}`).toBeCloseTo(view.x, 0);
+  expect(canvas.x + canvas.width, `the canvas ${at}`).toBeCloseTo(
+    view.x + view.width,
+    0,
+  );
+  if (!phone) {
+    expect([view.y, view.y + view.height], `the 3D view ${at}`).toEqual([
+      DOCK_TOP_PX,
+      size.height - 24,
+    ]);
+    expect(canvas.y, `the canvas ${at}`).toBeCloseTo(view.y, 0);
+    expect(canvas.y + canvas.height, `the canvas ${at}`).toBeCloseTo(
+      view.y + view.height,
+      0,
+    );
+    const gaps = [];
+    if (shownNow("#tree-body")) {
+      const tree = must("#shell-tree");
+      gaps.push(view.x - (tree.x + tree.width));
+    }
+    for (const id of ["#inspector-body", "#shell-shelf"]) {
+      if (!shownNow(id)) continue;
+      gaps.push(
+        must(id === "#inspector-body" ? "#shell-inspector" : id).x -
+          (view.x + view.width),
+      );
+    }
+    for (const gap of gaps) {
+      expect(gap, `the 3D view beside a dock ${at}`).toBeGreaterThanOrEqual(
+        -0.5,
+      );
+      expect(gap, `the 3D view beside a dock ${at}`).toBeLessThanOrEqual(2);
+    }
+  }
   const controls = must("#map-controls");
   for (const id of ["#shell-tree", "#shell-inspector", "#shell-shelf"]) {
     if (!shownNow(id)) continue;
@@ -441,18 +499,18 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   await expectFrame(page, phone);
   await capture(page, test.info().outputPath("shell-390x844.png"));
 
-  // Turned, both docks stand, 226 and 268 px, the map controls left of the
-  // inspector; folded to its head, it gives the view back.
+  // Turned, the panels dock: the list 210 px and the details 268 px, at
+  // the window's right (the asset shelf their other tab), the map
+  // controls left of them; folded to its head, the details give the view
+  // back.
   const landscape = { width: 844, height: 390 };
   await page.setViewportSize(landscape);
   await expectFrame(page, landscape);
-  await expectTree(page, 226, true);
+  await expectTree(page, dockWidthsAt(landscape.width).list, true);
   const turned = await box(page.locator("#shell-inspector"));
-  expect(turned.width).toBeCloseTo(268, 0);
-  expect(turned.x + turned.width).toBeCloseTo(
-    (await box(page.locator("#shell-shelf"))).x,
-    0,
-  );
+  expect(turned.width).toBeCloseTo(dockWidthsAt(landscape.width).column, 0);
+  expect(turned.x + turned.width).toBeCloseTo(landscape.width, 0);
+  await expect(page.locator("#shell-shelf")).toBeHidden();
   await capture(page, test.info().outputPath("shell-844x390.png"));
   await page.locator('#inspector-head [data-act="fold"]').click();
   await expect(page.locator("#inspector-body")).toBeHidden();
@@ -464,33 +522,36 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   const tablet = { width: 820, height: 1180 };
   await page.setViewportSize(tablet);
   await expectFrame(page, tablet);
-  await expectTree(page, 226, true);
+  await expectTree(page, dockWidthsAt(tablet.width).list, true);
   const tabletInspector = await box(page.locator("#shell-inspector"));
-  expect(tabletInspector.width).toBeCloseTo(268, 0);
+  expect(tabletInspector.width).toBeCloseTo(
+    dockWidthsAt(tablet.width).column,
+    0,
+  );
   await expect(page.locator("#inspector-body")).toBeVisible();
 
-  // A desktop: both docks open side by side, 248 and 290 px, the
-  // inspector against the 300 px asset shelf at the window's right, the
-  // labels shown, the scene between them 602 px wide.
+  // A desktop: both docks open side by side, 248 and 300 px, the
+  // details at the window's right under their group's tab strip (the
+  // asset shelf the group's other tab), the labels shown, the scene
+  // between them.
   const desktop = { width: 1440, height: 900 };
   await page.setViewportSize(desktop);
   await expectFrame(page, desktop);
   await expectTree(page, 248, true);
   const inspector = await box(page.locator("#shell-inspector"));
-  const shelf = await box(page.locator("#shell-shelf"));
-  expect(shelf.x + shelf.width).toBe(1440);
-  expect(shelf.width).toBe(300);
+  await expect(page.locator("#shell-shelf")).toBeHidden();
   expect(inspector).toMatchObject({
-    x: shelf.x - 290,
-    y: DOCK_TOP_PX,
-    width: 290,
-    height: 900 - 24 - DOCK_TOP_PX,
+    x: 1440 - 300,
+    y: DOCK_TOP_PX + DOCK_TABS_PX,
+    width: 300,
+    height: 900 - 24 - DOCK_TOP_PX - DOCK_TABS_PX,
   });
   await expect(page.locator("#inspector-body")).toBeVisible();
   await expectFrame(page, desktop);
   await capture(page, test.info().outputPath("shell-1440x900.png"));
   // The stations: flush with the dock, one 28 px row each, no gap between
-  // them (the explorer's rows); the row runs to the dock's 1 px border.
+  // them (the explorer's rows); the row runs to the dock's edge (its 1 px
+  // border undocked; docked, the splitter's line is the docking's).
   const tree = await box(page.locator("#shell-tree"));
   const inner = await page
     .locator("#tree-body")
@@ -518,30 +579,7 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
 async function expectPanel(page, size, heightPx) {
   await shelfSettled(page);
   const at = `at ${String(size.width)} x ${String(size.height)}`;
-  const bar = await box(page.locator("#shell-bar"));
-  const toggles = page.locator("#shell-toggles .tog");
-  await expect(toggles).toHaveCount(4);
-  const boxes = [];
-  for (const toggle of await toggles.all()) boxes.push(await box(toggle));
-  for (const [i, b] of boxes.entries()) {
-    expect(b.y, at).toBe(bar.y + 1);
-    expect(b.height, at).toBe(23);
-    if (i > 0) {
-      expect(b.x, at).toBeCloseTo(boxes[i - 1].x + boxes[i - 1].width, 0);
-    }
-  }
-  const last = boxes[boxes.length - 1];
-  const assets = await box(page.locator("#shelf-toggle"));
-  expect(assets.y, at).toBe(bar.y + 1);
-  expect(last.x + last.width, at).toBeCloseTo(assets.x, 0);
-  expect(assets.x + assets.width, at).toBeCloseTo(size.width, 0);
-  // The credits and the selection's actions keep left of the toggles.
-  for (const id of ["#view3d-credits", "#shell-acts"]) {
-    const part = page.locator(id);
-    if (!(await part.isVisible())) continue;
-    const b = await box(part);
-    expect(b.x + b.width, `${id} ${at}`).toBeLessThanOrEqual(boxes[0].x);
-  }
+  await expectToggles(page, size);
   const panel = await box(page.locator("#shell-panel"));
   expect(panel.y + panel.height, at).toBeCloseTo(size.height - 24, 0);
   expect(panel.height, at).toBeCloseTo(heightPx, 0);
@@ -557,12 +595,7 @@ async function expectPanel(page, size, heightPx) {
     const sheet = (await inspector.isVisible()) ? inspector : tree;
     if (await sheet.isVisible()) mapFoot = (await box(sheet)).y;
   }
-  await expect
-    .poll(async () => {
-      const canvas = await box(page.locator("#view3d canvas.view3d-canvas"));
-      return Math.abs(canvas.y + canvas.height - mapFoot);
-    }, at)
-    .toBeLessThan(0.5);
+  await expectCanvasFoot(page, mapFoot, at);
   const head = await box(page.locator("#shell-panel .bp-head"));
   expect(head.height, at).toBe(30);
   expect(head.y, at).toBeCloseTo(panel.y + 1, 0);
@@ -618,40 +651,173 @@ async function expectPanel(page, size, heightPx) {
   }
 }
 
-// Why: the details take their new place at once when the shelf folds to
-// its rail (by the creator, or squeezed when a phone turns sideways), so a
-// shelf narrowing in an animation would lie over their right part for its
-// length and swallow a tap there. Every frame after a fold and an unfold
-// is read, the animation's included.
-test("the details are never under the shelf while it folds or unfolds", async ({
+/**
+ * The canvas's foot at `y`, polled: the canvas takes its size from a
+ * ResizeObserver, a callback after the layout the boxes are read from,
+ * which a busy page delays.
+ * @param {import("@playwright/test").Page} page
+ * @param {number} y
+ * @param {string} at
+ */
+async function expectCanvasFoot(page, y, at) {
+  await expect
+    .poll(async () => {
+      const canvas = await box(page.locator("#view3d canvas.view3d-canvas"));
+      return Math.abs(canvas.y + canvas.height - y);
+    }, at)
+    .toBeLessThan(0.5);
+}
+
+/**
+ * The docked bottom panel, at one size: the bar's toggles as undocked;
+ * its Problems tab's group under the 3D view and exactly as wide (so
+ * between the side docks, which run down to the bottom bar beside it),
+ * from the view's foot (a splitter, at most 2 px) to the bottom bar, its
+ * height `heightPx` (its tab strip's included), the canvas ending at its top and the map controls 14 px over
+ * it. The undocked panel's own frame stays hidden.
+ * @param {import("@playwright/test").Page} page
+ * @param {{ width: number, height: number }} size
+ * @param {number} heightPx
+ */
+async function expectDockedPanel(page, size, heightPx) {
+  const at = `at ${String(size.width)} x ${String(size.height)}`;
+  await expectToggles(page, size);
+  const l = await layoutOf(page, [
+    "#shell-panel",
+    ".dock-pane-problems",
+    ".dock-pane-view",
+    "#shell-tree",
+    "#tree-body",
+    "#compass",
+  ]);
+  expect(shownIn(l, "#shell-panel"), at).toBe(false);
+  const pane = boxIn(l, ".dock-pane-problems");
+  const view = boxIn(l, ".dock-pane-view");
+  const foot = size.height - 24;
+  expect(pane.y + pane.height, at).toBeCloseTo(foot, 0);
+  expect(
+    Math.abs(pane.height + DOCK_TABS_PX - heightPx),
+    at,
+  ).toBeLessThanOrEqual(2);
+  expect(pane.x, at).toBeCloseTo(view.x, 0);
+  expect(pane.x + pane.width, at).toBeCloseTo(view.x + view.width, 0);
+  const gap = pane.y - DOCK_TABS_PX - (view.y + view.height);
+  expect(gap, at).toBeGreaterThanOrEqual(-0.5);
+  expect(gap, at).toBeLessThanOrEqual(2);
+  if (shownIn(l, "#tree-body")) {
+    const tree = boxIn(l, "#shell-tree");
+    expect(tree.y + tree.height, `the list ${at}`).toBeCloseTo(foot, 0);
+  }
+  await expectCanvasFoot(page, view.y + view.height, at);
+  const compass = boxIn(l, "#compass");
+  expect(view.y + view.height - (compass.y + compass.height), at).toBe(14);
+}
+
+/**
+ * The bottom bar's four toggles side by side, flush with the asset
+ * shelf's toggle at the bar's right edge, the credits and the
+ * selection's actions left of them.
+ * @param {import("@playwright/test").Page} page
+ * @param {{ width: number, height: number }} size
+ */
+async function expectToggles(page, size) {
+  const at = `at ${String(size.width)} x ${String(size.height)}`;
+  const bar = await box(page.locator("#shell-bar"));
+  const toggles = page.locator("#shell-toggles .tog");
+  await expect(toggles).toHaveCount(4);
+  const boxes = [];
+  for (const toggle of await toggles.all()) boxes.push(await box(toggle));
+  for (const [i, b] of boxes.entries()) {
+    expect(b.y, at).toBe(bar.y + 1);
+    expect(b.height, at).toBe(23);
+    if (i > 0) {
+      expect(b.x, at).toBeCloseTo(boxes[i - 1].x + boxes[i - 1].width, 0);
+    }
+  }
+  const last = boxes[boxes.length - 1];
+  const assets = await box(page.locator("#shelf-toggle"));
+  expect(assets.y, at).toBe(bar.y + 1);
+  expect(last.x + last.width, at).toBeCloseTo(assets.x, 0);
+  expect(assets.x + assets.width, at).toBeCloseTo(size.width, 0);
+  // The credits and the selection's actions keep left of the toggles.
+  for (const id of ["#view3d-credits", "#shell-acts"]) {
+    const part = page.locator(id);
+    if (!(await part.isVisible())) continue;
+    const b = await box(part);
+    expect(b.x + b.width, `${id} ${at}`).toBeLessThanOrEqual(boxes[0].x);
+  }
+}
+
+// Why: a shelf lying over the details, even for the frames of a change,
+// would swallow a tap on their part under it. Docked, the details and the
+// asset shelf are the two tabs of one group: choosing one hides the other
+// at once. Every frame after each choice is read, at a desktop and a phone
+// held sideways (where the shelf once squeezed to a rail beside the
+// details); the shelf has no fold of its own there.
+test("the details are never under the shelf while it shows or goes", async ({
   page,
 }) => {
+  test.setTimeout(150_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   await open3d(page);
   await card(page, "The old gate").locator(".pick").click();
   await expect(page.locator("#inspector-body")).toBeVisible();
-  for (const act of ["fold", "unfold"]) {
-    const gaps = await page.evaluate(async (act) => {
-      const shelf = /** @type {HTMLElement} */ (
-        document.getElementById("shell-shelf")
-      );
-      const details = /** @type {HTMLElement} */ (
-        document.getElementById("shell-inspector")
-      );
-      /** @type {HTMLElement} */ (
-        shelf.querySelector(`[data-act="${act}"]`)
-      ).click();
-      const out = [];
-      for (let i = 0; i < 12; i += 1) {
-        await new Promise((done) => requestAnimationFrame(done));
-        out.push(
-          shelf.getBoundingClientRect().left -
-            details.getBoundingClientRect().right,
+  for (const size of [
+    { width: 1440, height: 900 },
+    { width: 844, height: 390 },
+  ]) {
+    await page.setViewportSize(size);
+    await expect(page.locator("#inspector-body")).toBeVisible();
+    await expect(page.locator('#shell-shelf [data-act="fold"]')).toBeHidden();
+    for (const tab of ["Files", "Details"]) {
+      const at = `${tab} at ${String(size.width)}`;
+      const frames = await page.evaluate(async (name) => {
+        const shown = (/** @type {HTMLElement | null} */ el) => {
+          if (el === null) return null;
+          const r = el.getBoundingClientRect();
+          return r.width > 0 &&
+            r.height > 0 &&
+            getComputedStyle(el).visibility !== "hidden"
+            ? r
+            : null;
+        };
+        const choice = [
+          ...document.querySelectorAll('.dock-host [role="tab"]'),
+        ].find((t) => t.textContent?.trim() === name);
+        if (!(choice instanceof HTMLElement)) return null;
+        choice.dispatchEvent(
+          new PointerEvent("pointerdown", { bubbles: true, button: 0 }),
         );
-      }
-      return out;
-    }, act);
-    for (const gap of gaps) expect(gap, act).toBeGreaterThan(-0.5);
+        choice.dispatchEvent(
+          new PointerEvent("pointerup", { bubbles: true, button: 0 }),
+        );
+        choice.click();
+        const out = [];
+        for (let i = 0; i < 12; i += 1) {
+          await new Promise((done) => requestAnimationFrame(done));
+          const shelf = shown(document.getElementById("shell-shelf"));
+          const details = shown(document.getElementById("shell-inspector"));
+          out.push(
+            shelf !== null &&
+              details !== null &&
+              shelf.left < details.right &&
+              details.left < shelf.right &&
+              shelf.top < details.bottom &&
+              details.top < shelf.bottom,
+          );
+        }
+        return out;
+      }, tab);
+      expect(frames, at).toEqual(new Array(12).fill(false));
+      await expect(
+        page.locator(".dock-host").getByRole("tab", { name: tab }),
+        at,
+      ).toHaveAttribute("aria-selected", "true");
+      await expect(
+        page.locator(tab === "Files" ? "#shell-shelf" : "#shell-inspector"),
+        at,
+      ).toBeVisible();
+    }
   }
 });
 
@@ -672,29 +838,28 @@ test("the bottom bar's toggles open the bottom panel between the docks, at a pho
   const problems = page.locator('#shell-toggles [data-tab="problems"]');
   await problems.click();
   await expect(problems).toHaveAttribute("aria-pressed", "true");
-  await expect(page.locator("#shell-panel")).toBeVisible();
-  await expectPanel(page, desktop, 220);
+  // Docked, the toggle shows the Problems tab's group under the 3D view
+  // (the panel's own frame, with its span button, is the phone's alone: a
+  // docked group spans by being dragged).
+  await expect(
+    page.locator(".dock-host").getByRole("tab", { name: "Problems" }),
+  ).toBeVisible();
+  await expectDockedPanel(page, desktop, dockBottomPx(desktop.height));
   await page.screenshot({ path: test.info().outputPath("panel-1440x900.png") });
-  // Spanned, it runs under every dock, which end at its top.
-  await page.locator("#shell-panel .bp-span").click();
-  await expectPanel(page, desktop, 220);
-  await page.locator("#shell-panel .bp-span").click();
 
-  // Two laptop widths: at 1180 px the tree is still 248 px, at 1024 px it
-  // is 210 px (the 1100 px step), the panel still between both docks and
-  // the toggles still clear of the selection's actions.
-  for (const laptop of [
+  // Two laptop widths and a phone in landscape: the group still between
+  // both docks and the toggles still clear of the selection's actions.
+  // The group takes its first height for the new window, as the side
+  // groups take their widths.
+  for (const docked of [
     { width: 1180, height: 820 },
     { width: 1024, height: 768 },
+    { width: 844, height: 390 },
   ]) {
-    await page.setViewportSize(laptop);
-    await expectPanel(page, laptop, 220);
+    await page.setViewportSize(docked);
+    await dockSettled(page, docked.width);
+    await expectDockedPanel(page, docked, dockBottomPx(docked.height));
   }
-
-  // A phone in landscape: between the two docks.
-  const landscape = { width: 844, height: 390 };
-  await page.setViewportSize(landscape);
-  await expectPanel(page, landscape, 220);
   await page.screenshot({ path: test.info().outputPath("panel-844x390.png") });
 
   // A phone: the panel takes the width, the toggles keep their icons.
@@ -912,9 +1077,9 @@ test("the top bar holds every control in its most crowded state, at every step i
 });
 
 // Why: a fresh page opens the panel at half the view at most (at least
-// 120 px, at most its usual height), as the chosen layout does, so a phone
-// in landscape starts at half the view; the resize in the test above keeps
-// the height the panel already had. Each size is its own fresh page with
+// 120 px, at most its usual height) on a phone, and docked at a third of
+// the layout (90 to 220 px), so the 3D view keeps most of the height; the
+// resize in the test above keeps the height the panel already had. Each size is its own fresh page with
 // nothing selected: the screenshots are the side-by-side check against
 // the chosen prototype.
 test("the bottom panel opens at its start height on a fresh page, at a phone, a phone in landscape and a desktop", async ({
@@ -930,15 +1095,22 @@ test("the bottom panel opens at its start height on a fresh page, at a phone, a 
     const page = await context.newPage();
     await open3d(page);
     await page.locator('#shell-toggles [data-tab="problems"]').click();
-    await expect(page.locator("#shell-panel")).toBeVisible();
-    const main = await page
-      .locator("#view3d")
-      .evaluate((el) => el.clientHeight);
-    const start = Math.max(
-      90,
-      Math.min(Math.min(220, Math.max(120, main * 0.5)), main),
-    );
-    await expectPanel(page, size, start);
+    if (size.width <= 700) {
+      await expect(page.locator("#shell-panel")).toBeVisible();
+      const main = await page
+        .locator("#view3d")
+        .evaluate((el) => el.clientHeight);
+      const start = Math.max(
+        90,
+        Math.min(Math.min(220, Math.max(120, main * 0.5)), main),
+      );
+      await expectPanel(page, size, start);
+    } else {
+      // Docked: the Problems tab's group at a third of the layout's
+      // height, 90 to 220 px (`dock-layout.ts`).
+      await expect(page.locator(".dock-pane-problems")).toBeVisible();
+      await expectDockedPanel(page, size, dockBottomPx(size.height));
+    }
     await page.screenshot({
       path: test
         .info()
@@ -953,41 +1125,54 @@ test("the bottom panel opens at its start height on a fresh page, at a phone, a 
 // Why: a problem's row redraws the panel as it selects (the selection is
 // marked); the focus once fell to the page, where Escape no longer closed
 // the panel and the keyboard user lost their place.
-test("the bottom panel keeps the keyboard focus through a choice, and Escape closes it", async ({
-  page,
-}) => {
-  test.setTimeout(150_000);
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await open3d(page);
-  // The sample has no problems; a new station has no content yet, which is
-  // one. The first station is selected again so the Enter makes a choice.
-  await page.locator("#tree-add").click();
-  await expect(page.locator("#tree-body .card")).toHaveCount(4);
-  await page.locator("#tree-body .card > .head").first().click();
-  const toggle = page.locator('#shell-toggles [data-tab="problems"]');
-  await toggle.click();
-  const rows = page.locator("#shell-panel .prow");
-  await expect(rows.first()).toBeVisible();
-  await rows.first().focus();
-  const chosen = await rows.first().getAttribute("data-select");
-  await page.keyboard.press("Enter");
-  await expect(
-    page.locator(`#shell-panel .prow[data-select="${chosen ?? ""}"]`),
-  ).toHaveClass(/\bsel\b/);
-  await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const at = document.activeElement;
-        return at instanceof HTMLElement && at.closest("#shell-panel") !== null
-          ? (at.dataset["select"] ?? at.className)
-          : "outside";
-      }),
-    )
-    .toBe(chosen);
-  await page.keyboard.press("Escape");
-  await expect(page.locator("#shell-panel")).toBeHidden();
-  await expect(toggle).toBeFocused();
-});
+// Docked, the panel's rows live in the Problems tab's pane; on a phone in
+// the panel's own frame. Both are checked.
+for (const { size, root } of [
+  { size: { width: 1440, height: 900 }, root: "#shell-pane-problems" },
+  { size: { width: 390, height: 844 }, root: "#shell-panel" },
+]) {
+  test(`the bottom panel keeps the keyboard focus through a choice, and Escape closes it, at ${String(size.width)} x ${String(size.height)}`, async ({
+    page,
+  }) => {
+    test.setTimeout(150_000);
+    await page.setViewportSize(size);
+    await open3d(page);
+    // The sample has no problems; a new station has no content yet, which
+    // is one. The first station is selected again (on a phone, where the
+    // new station's details cover the list, the back arrow clears the
+    // selection) so the Enter makes a choice.
+    await page.locator("#tree-add").click();
+    await expect(page.locator("#tree-body .card")).toHaveCount(4);
+    if (size.width <= 700) {
+      await page.locator('#inspector-head [data-act="back"]').click();
+    } else {
+      await page.locator("#tree-body .card > .head").first().click();
+    }
+    const toggle = page.locator('#shell-toggles [data-tab="problems"]');
+    await toggle.click();
+    const rows = page.locator(`${root} .prow`);
+    await expect(rows.first()).toBeVisible();
+    await rows.first().focus();
+    const chosen = await rows.first().getAttribute("data-select");
+    await page.keyboard.press("Enter");
+    await expect(
+      page.locator(`${root} .prow[data-select="${chosen ?? ""}"]`),
+    ).toHaveClass(/\bsel\b/);
+    await expect
+      .poll(() =>
+        page.evaluate((inside) => {
+          const at = document.activeElement;
+          return at instanceof HTMLElement && at.closest(inside) !== null
+            ? (at.dataset["select"] ?? at.className)
+            : "outside";
+        }, root),
+      )
+      .toBe(chosen);
+    await page.keyboard.press("Escape");
+    await expect(page.locator(root)).toBeHidden();
+    await expect(toggle).toBeFocused();
+  });
+}
 
 test("the File, Edit and View menus work from the keyboard and by touch", async ({
   page,
@@ -1196,6 +1381,9 @@ test("the tree can be used from the keyboard alone", async ({ page }) => {
   test.setTimeout(150_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   await open3d(page);
+  // Docked, the panels are moved into the layout a moment after the view
+  // opens, and the tab order is theirs only then.
+  await dockSettled(page, 1440);
   // From the start of the page: a click on the bar's empty corner puts
   // Tab's starting point there.
   await page.mouse.click(2, 2);

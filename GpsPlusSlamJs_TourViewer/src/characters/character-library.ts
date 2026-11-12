@@ -105,7 +105,7 @@ export function createCharacterLibrary(
   const stale = (ids: readonly string[], now: number): string[] =>
     ids.filter((id) => {
       const t = libraryIdTime(id);
-      return t === null || Math.abs(now - t) >= UNFINISHED_AGE_MS;
+      return t === null || now - t >= UNFINISHED_AGE_MS;
     });
 
   async function scan(): Promise<{

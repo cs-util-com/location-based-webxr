@@ -155,9 +155,14 @@ describe("the tidy-up spares a save in flight", () => {
   // Why: another tab (the maker beside the editor) may be saving right
   // now; its folder has no record YET. Only a folder older than
   // UNFINISHED_AGE_MS, judged by the time in its id, is an interrupted
-  // save. Swept over ages from a moment to an hour around the cap.
+  // save. Swept over ages from a moment to an hour around the cap, and
+  // into the future: a folder dated ahead of this clock (the other tab's
+  // clock runs ahead) is younger than the cap, so it is kept.
   const MIN = 60_000;
   const ages = [
+    -60 * MIN,
+    -11 * MIN,
+    -1_000,
     0,
     1_000,
     30_000,

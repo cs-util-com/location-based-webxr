@@ -20,6 +20,7 @@ import {
   afterFrames,
   answerHosts,
   capture,
+  dockSettled,
   openSample,
   openZip,
   view3d,
@@ -793,6 +794,8 @@ test.describe("on a touch screen", () => {
 test("draws the gizmo's handles at their size on the screen, at a phone, a tablet and a desktop, in a wide face", async ({
   page,
 }) => {
+  // Four sizes, each waiting for the view to settle at it.
+  test.slow();
   await useWideFont(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   const station = await openWithPin(page, { turning: true });
@@ -818,7 +821,27 @@ test("draws the gizmo's handles at their size on the screen, at a phone, a table
     { width: 390, height: 844 },
   ]) {
     await page.setViewportSize(size);
+    // The knob's size reads right before the docked view has taken its new
+    // size, and the handles' screen positions only after: wait for the dock.
+    await dockSettled(page, size.width);
     const at = `at ${String(size.width)}x${String(size.height)}`;
+    // A slow runner draws the view at its new size over several frames,
+    // the gizmo's sizes and its handles read from different ones between:
+    // read them once the canvas kept its size over two drawn frames.
+    const canvasSize = async () => {
+      const b = await page.locator("#view3d canvas").boundingBox();
+      return b === null ? "none" : `${String(b.width)}x${String(b.height)}`;
+    };
+    await expect
+      .poll(
+        async () => {
+          const before = await canvasSize();
+          await afterFrames(page, 2);
+          return before === (await canvasSize());
+        },
+        { message: at },
+      )
+      .toBe(true);
     await expect
       .poll(
         () =>

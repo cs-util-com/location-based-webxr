@@ -195,3 +195,8 @@ for one entry. What actually protects this is
 ever stopped being built and went back to a CDN, that test fails. So the ignore
 here cannot hide a regression, only a bookkeeping question knip is not equipped
 to answer.
+
+- `GpsPlusSlamJs_TourViewer` ignores `dockview-core`: no source file imports
+  it (the editor imports `dockview`, which re-exports it), but it is a direct
+  dependency so the core is pinned at the exact version `dockview` is pinned
+  at; `dockview` itself asks for it with a caret range.

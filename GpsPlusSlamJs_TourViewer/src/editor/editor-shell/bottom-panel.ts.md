@@ -41,6 +41,14 @@ this draws them and takes the clicks, the grip's drag and the keys.
     it (closes it, the focus back on its toggle);
   - `state()` - `{ open, tab, max, heightPx }`, for checks;
   - `hide()` - the view hides: closes it and forgets the frames.
+  - `dock(dock)` - docked (`PanelDock`: `show(tab)`, `hide()`, the shell's
+    bridge to `dock-host.ts`): each tab's pane is a docked panel of its
+    own, `#shell-panel` stays hidden and `--s-panel-h` 0, the shown tab's
+    tools stand above its pane, and every open, close and tab change
+    (the toggles, Ctrl+J, Ctrl+Shift+M, Escape) goes through `dock`;
+    `dock(null)` is the panel again.
+  - `docked({ open, tab })` - docked, what the docking's own controls
+    did (a tab chosen, the group hidden); no call back into `dock`.
 - `PanelMap` (internal, not exported) - the `map` dependency's shape.
 - `PANEL_STORAGE_KEY` - `"editor-bottom-panel"`, its kept JSON `{ h, tab }`.
 
@@ -52,8 +60,10 @@ this draws them and takes the clicks, the grip's drag and the keys.
   (`editor-shell.css`), and both views read their size from the canvas;
   the docks keep their height. The map controls (inside the view) and the
   toasts (outside it) stand above it.
-- **The head:** the tab strip (`role="tablist"`, arrow keys move between
-  tabs), the tab's tools (Problems: the Errors, Warnings and Notes
+- **The head:** the tab strip (`role="tablist"`: ArrowLeft and ArrowRight
+  step round the tabs, Home and End go to the first and the last; ArrowUp
+  and ArrowDown do nothing there, the page standing back from them too,
+  `GpsPlusSlamJs_EditorKit/src/chrome/key-target.ts`), the tab's tools (Problems: the Errors, Warnings and Notes
   filters, each with its count; History: Undo and Redo, disabled without
   a step; Map loading: "Retry failed" and its status line), then span,
   maximise and close.
@@ -61,7 +71,9 @@ this draws them and takes the clicks, the grip's drag and the keys.
   state, and "N hidden by the filters above." when the filters hide all.
   A problem's row is a focusable `div.prow` (Enter or Space selects; a
   button could not hold the fix link) with its fix link, `button.lnk.fix`,
-  where the problem has one. History is a timeline, newest on top, "now"
+  where the problem has one. The rows' clicks and keys are heard on each
+  pane, not on the panel's body: docked, a pane sits in its docked panel.
+  History is a timeline, newest on top, "now"
   and "saved" tags, and each step's age ("just now", "N min ago",
   `minutesAgo`) kept current on the tick; the base row ("Opened the tour")
   has no time. Map loading: a sum row (loaded, loading, waiting from the

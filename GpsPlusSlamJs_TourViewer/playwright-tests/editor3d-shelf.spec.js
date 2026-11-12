@@ -12,6 +12,8 @@ import {
   answerHosts,
   boxIn,
   capture,
+  DOCK_TABS_PX,
+  dockSettled,
   layoutOf,
   openSampleIn3d,
   shownIn,
@@ -149,6 +151,18 @@ test.beforeEach(async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
 });
 
+/**
+ * Shows the asset shelf: docked, it is the Files tab beside the details.
+ * @param {import("@playwright/test").Page} page
+ */
+async function showFiles(page) {
+  const files = page
+    .locator(".dock-host")
+    .getByRole("tab", { name: "Files", exact: true });
+  if ((await files.count()) > 0) await files.click();
+  await expect(page.locator("#shell-shelf")).toBeVisible();
+}
+
 test("a 3D model and a sound added from the tree's menu stand in the tree, in 3D and on the Assets panel, and a draft reload keeps them", async ({
   page,
 }) => {
@@ -185,6 +199,12 @@ test("a 3D model and a sound added from the tree's menu stand in the tree, in 3D
       .sort();
   expect(await kinds()).toEqual(["audio", "model"]);
   expect((await blocksOf(page, "gate")).length).toBe(before + 2);
+  // Docked, an add that makes an item keeps its Details in sight (its
+  // next step is there); the shelf is the Files tab beside them.
+  await expect(
+    page.locator(".dock-host").getByRole("tab", { name: "Details" }),
+  ).toHaveAttribute("aria-selected", "true");
+  await showFiles(page);
 
   // In the tree, in 3D, and on the panel.
   for (const id of [model, sound]) {
@@ -226,6 +246,7 @@ test("a 3D model and a sound added from the tree's menu stand in the tree, in 3D
   }
   // The files are on the panel again (named by their path in the tour: the
   // draft keeps the bytes, not the name they came in with).
+  await showFiles(page);
   await expect(shelf.locator(".as-card")).toHaveCount(cards);
   expect((await view3d(page))?.stations).toBe(3);
 });
@@ -268,6 +289,12 @@ test("a picture dropped onto a story's row becomes the story's last entry and a 
   await expect(
     page.locator(".toast", { hasText: 'Added the picture "market view"' }),
   ).toBeVisible();
+  // Docked, a drop that makes an item keeps its Details in sight.
+  await expect(
+    page
+      .locator(".dock-host")
+      .getByRole("tab", { name: "Details", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
   const tour = await tourNow(page);
   const told = tour.stations
     .find((/** @type {any} */ s) => s.id === "gate")
@@ -275,6 +302,7 @@ test("a picture dropped onto a story's row becomes the story's last entry and a 
   expect(told.children.map((/** @type {any} */ c) => c.kind)).toEqual([
     "picture",
   ]);
+  await showFiles(page);
   await expect(
     page.locator("#shell-shelf .as-cname", { hasText: "market-view.png" }),
   ).toBeVisible();
@@ -301,6 +329,7 @@ test("a file in use is deleted from the shelf with its item and comes back whole
     (await blocksOf(page, "gate")).find((b) => b.id === sound)?.audio;
   const old = await audioOf();
   expect(typeof old).toBe("string");
+  await showFiles(page);
   const shelf = page.locator("#shell-shelf");
   const card = shelf.locator(".as-card", {
     has: page.locator(".as-cname", { hasText: "toll.wav" }),
@@ -405,18 +434,32 @@ async function shelfSettled(page) {
 
 // The positions and gaps are the chosen prototype's
 // (public/prototypes/asset-shelf-2), read from it at the same three sizes:
-// a 300 px dock at the right edge on a desktop (246 px in a phone's
-// landscape window), cards 8 px in from the panel and 6 px apart (4 px in
-// landscape), the foot only where the window is tall, and on a phone a
-// sheet across the whole width that ends on the bottom bar.
+// a 300 px dock at the right edge on a desktop, cards 8 px in from the
+// panel and 6 px apart (4 px in landscape), the foot only where the window
+// is tall, and on a phone a sheet across the whole width that ends on the
+// bottom bar. Docked (above 700 px) the shelf is the right column's Files
+// tab, so a phone in landscape takes that column's 268 px.
 test("the Assets panel sits where the chosen prototype puts it, on a desktop, a phone in landscape and a phone", async ({
   page,
 }) => {
   test.setTimeout(240_000);
   await openSampleIn3d(page);
-  // A desktop opens with the shelf open, as the prototype does.
-  await expect(page.locator("#shell-shelf")).not.toHaveClass(/folded/);
+  // Docked, the shelf is the Files tab beside Details, which shows first;
+  // the dropped files reveal it.
+  const filesTab = page.locator(".dock-host").getByRole("tab", {
+    name: "Files",
+  });
+  await expect(filesTab).toHaveAttribute("aria-selected", "false");
+  // The cards counted with Files shown (behind Details the shelf is out of
+  // the page), then Details shown again.
+  await filesTab.click();
+  await expect(page.locator("#shell-shelf")).toBeVisible();
   const before = await page.locator("#shell-shelf .as-card").count();
+  await page
+    .locator(".dock-host")
+    .getByRole("tab", { name: "Details", exact: true })
+    .click();
+  await expect(filesTab).toHaveAttribute("aria-selected", "false");
   await dropOnPage(page, [
     {
       name: "market-view.png",
@@ -426,18 +469,21 @@ test("the Assets panel sits where the chosen prototype puts it, on a desktop, a 
     { name: "bell.wav", type: "audio/wav", bytes: [...silenceWav()] },
   ]);
   await expect(page.locator("#shell-shelf .as-card")).toHaveCount(before + 2);
+  await expect(filesTab).toHaveAttribute("aria-selected", "true");
 
-  // A desktop.
+  // A desktop: the right column, under its tab strip, down to the list's
+  // foot.
   let layout = await layoutOf(page, SHELF_PARTS);
   let shelf = boxIn(layout, "#shell-shelf");
   let tree = boxIn(layout, "#shell-tree");
   expect(shelf.width).toBe(300);
   expect(shelf.x + shelf.width).toBe(1440);
-  expect(shelf.y).toBe(tree.y);
+  expect(shelf.y).toBe(tree.y + DOCK_TABS_PX);
   expect(shelf.y + shelf.height).toBe(tree.y + tree.height);
   expect(boxIn(layout, "#shell-shelf .as-head").height).toBe(36);
   let card = boxIn(layout, "#shell-shelf .as-card", 0);
-  expect(card.x - shelf.x).toBe(9); // its 1 px border and 8 px in
+  // 8 px in (docked, the line beside it is the docking's splitter).
+  expect(card.x - shelf.x).toBe(8);
   expect(shelf.x + shelf.width - (card.x + card.width)).toBe(8);
   for (const gap of cardGaps(layout)) expect(gap).toBeCloseTo(6, 0);
   expect(shownIn(layout, "#shell-shelf .as-foot")).toBe(true);
@@ -445,17 +491,18 @@ test("the Assets panel sits where the chosen prototype puts it, on a desktop, a 
   expect(foot.y + foot.height).toBeCloseTo(shelf.y + shelf.height, 0);
   await capture(page, "test-results/shelf-layout-desktop.png");
 
-  // A phone in landscape: narrower, denser, no foot.
+  // A phone in landscape: the docked column's 268 px, denser, no foot.
   await page.setViewportSize({ width: 844, height: 390 });
+  await dockSettled(page, 844);
   await shelfSettled(page);
   layout = await layoutOf(page, SHELF_PARTS);
   shelf = boxIn(layout, "#shell-shelf");
   tree = boxIn(layout, "#shell-tree");
-  expect(shelf.width).toBe(246);
+  expect(shelf.width).toBe(268);
   expect(shelf.x + shelf.width).toBe(844);
-  expect(shelf.y).toBe(tree.y);
+  expect(shelf.y).toBe(tree.y + DOCK_TABS_PX);
   card = boxIn(layout, "#shell-shelf .as-card", 0);
-  expect(card.x - shelf.x).toBe(7); // its 1 px border and 6 px in
+  expect(card.x - shelf.x).toBe(6); // 6 px in
   for (const gap of cardGaps(layout)) expect(gap).toBeCloseTo(4, 0);
   expect(shownIn(layout, "#shell-shelf .as-foot")).toBe(false);
   await capture(page, "test-results/shelf-layout-landscape.png");
@@ -482,4 +529,112 @@ test("the Assets panel sits where the chosen prototype puts it, on a desktop, a 
   for (const gap of cardGaps(layout)) expect(gap).toBeCloseTo(6, 0);
   expect(shownIn(layout, "#shell-shelf .as-foot")).toBe(false);
   await capture(page, "test-results/shelf-layout-phone.png");
+});
+
+// Why: docked, the shelf leaves the page while Details shows beside it
+// (the Files tab hidden). A file added then must still be listed and
+// optimized: the shelf's work is not tied to its element being shown.
+test("a file added while the docked Files tab is hidden is listed and done when Files shows", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await openSampleIn3d(page);
+  await dockSettled(page, 1440);
+  const host = page.locator(".dock-host");
+  await expect(
+    host.getByRole("tab", { name: "Details", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#shell-shelf")).toHaveCount(0);
+  await addFromMenu(page, "gate", "model", {
+    name: "little-arch.glb",
+    mimeType: "model/gltf-binary",
+    buffer: triangleGlb(),
+  });
+  await expect(
+    page.locator(".toast", { hasText: 'Added the 3D model "little arch"' }),
+  ).toBeVisible();
+  await expect(page.locator("#shell-shelf")).toHaveCount(0);
+  await showFiles(page);
+  const card = page
+    .locator("#shell-shelf .as-card")
+    .filter({ has: page.locator(".as-cname", { hasText: "little-arch.glb" }) });
+  await expect(card).toHaveCount(1);
+  await expect(card.locator(".as-cstate")).toHaveClass(/\b(ready|kept|idle)\b/);
+});
+
+// Why: a file dropped on an item's file field gives the item that file;
+// docked, its Details stay the shown tab (the next step is there), not the
+// Files tab a loose drop shows.
+test("a file dropped on an item's file field keeps the docked Details shown", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await openSampleIn3d(page);
+  await dockSettled(page, 1440);
+  await addFromMenu(page, "gate", "model", {
+    name: "little-arch.glb",
+    mimeType: "model/gltf-binary",
+    buffer: triangleGlb(),
+  });
+  const field = page.locator("#shell-inspector [data-filefield]").first();
+  await expect(field).toBeVisible();
+  await field.evaluate((target, bytes) => {
+    const data = new DataTransfer();
+    data.items.add(
+      new File([new Uint8Array(bytes)], "big-arch.glb", {
+        type: "model/gltf-binary",
+      }),
+    );
+    for (const type of ["dragover", "drop"]) {
+      target.dispatchEvent(
+        new DragEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: data,
+        }),
+      );
+    }
+  }, Array.from(triangleGlb()));
+  await expect(
+    page.locator(".toast", { hasText: 'The item now shows "big-arch.glb"' }),
+  ).toBeVisible();
+  const host = page.locator(".dock-host");
+  await expect(
+    host.getByRole("tab", { name: "Details", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(
+    host.getByRole("tab", { name: "Files", exact: true }),
+  ).toHaveAttribute("aria-selected", "false");
+});
+
+// Why: docked, the list behind another tab is out of the page. A file
+// dropped then must still be read against the list and reach the shelf,
+// not throw on a lookup that finds no list and lose the file unsaid.
+test("a file dropped while the list is behind the Files tab reaches the shelf", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await openSampleIn3d(page);
+  await dockSettled(page, 1440);
+  const host = page.locator(".dock-host");
+  const files = host.getByRole("tab", { name: "Files", exact: true });
+  await files.dragTo(page.locator(".dock-pane-list"));
+  await expect(
+    host.getByRole("tab", { name: "List", exact: true }),
+  ).toBeVisible();
+  await files.click();
+  await expect(page.locator("#shell-shelf")).toBeVisible();
+  await expect(page.locator("#shell-tree")).toHaveCount(0);
+  const errors = /** @type {string[]} */ ([]);
+  page.on("pageerror", (error) => errors.push(error.message));
+  const before = await page.locator("#shell-shelf .as-card").count();
+  await dropOnPage(page, [
+    {
+      name: "market-view.png",
+      type: "image/png",
+      bytes: [...encodeRgbPng(4, 3, new Array(36).fill(200))],
+    },
+  ]);
+  await expect(page.locator("#shell-shelf .as-card")).toHaveCount(before + 1);
+  expect(errors).toEqual([]);
 });

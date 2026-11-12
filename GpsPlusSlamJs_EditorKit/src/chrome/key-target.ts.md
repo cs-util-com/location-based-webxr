@@ -20,9 +20,14 @@ a menu answers itself, and leave those alone.
   (`MENU_BUTTON_KEYS`: ArrowDown, ArrowUp, Enter, Space, Escape). Home
   and End on a closed menu's button are the page's.
 - `inComposite(target, key)` -> `boolean`: `key` is an arrow, Home or End
-  and the target is inside (or is) an element with `role="toolbar"` or
-  `role="radiogroup"` (the long-text writer's toolbar and view picker,
-  which move their focus by those keys). Any modifier counts the same.
+  and the target is inside (or is) an element with `role="toolbar"`,
+  `role="radiogroup"` (the long-text writer's toolbar and view picker)
+  or `role="tablist"` (the editor's panel tabs). All six keys are taken
+  from the page there, whichever of them the group itself answers: the
+  bottom panel's tablist (`GpsPlusSlamJs_TourViewer/src/editor/editor-shell/bottom-panel.ts`)
+  answers ArrowLeft, ArrowRight, Home and End, so ArrowUp and ArrowDown
+  on its tabs do nothing at all; the docked panels' tab strips are the
+  docking library's. Any modifier counts the same.
 - All three take any `EventTarget | null` and answer false for anything
   that is not an element (the window, the document, null).
 
@@ -39,9 +44,10 @@ a menu answers itself, and leave those alone.
   letter on the button is the page's: a click on View's Top view puts the
   focus back on View's button, and T must still toggle the top view there
   (typeahead was decided against, so no letter is a menu's).
-- Inside a toolbar or a radio group the page's keys stand back from the
-  arrows, Home and End only: without this an arrow on a toolbar button
-  also nudged the selected sign (an undo step) and Home framed the tour.
+- Inside a toolbar, a radio group or a tablist the page's keys stand back
+  from the arrows, Home and End only: without this an arrow on a toolbar
+  button also nudged the selected sign (an undo step) and Home on a
+  toolbar button or a panel tab framed the tour.
   Letters, Delete and Escape there stay the page's.
 - A button that opens a dialog (`aria-haspopup="dialog"`) is not a menu's.
 - The shell asks `inMenu` FIRST, before the help's Escape: with the help

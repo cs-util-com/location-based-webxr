@@ -527,6 +527,50 @@ describe("acting on a file", () => {
 });
 
 describe("folding and the phone", () => {
+  // Why: docked, the shelf is a tab beside the details, so the toggle is
+  // pressed only while that tab shows; pressing it shows the tab, and the
+  // page redraws the toggle when the creator picks the other tab.
+  it("docked, its toggle is pressed only while the Files panel shows", () => {
+    let shown = false;
+    const revealDocked = vi.fn(() => {
+      shown = true;
+    });
+    const { panel: made } = panel({
+      docked: () => true,
+      filesShown: () => shown,
+      revealDocked,
+    });
+    expect($("#tog")?.getAttribute("aria-pressed")).toBe("false");
+    $<HTMLButtonElement>("#tog")?.click();
+    expect(revealDocked).toHaveBeenCalledTimes(1);
+    expect($("#tog")?.getAttribute("aria-pressed")).toBe("true");
+    shown = false;
+    made.refresh();
+    expect($("#tog")?.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  // Why: a pressed toggle that does nothing when pressed again is a switch
+  // that cannot be switched off; docked, pressing it then shows the other
+  // tab (the details) and it reads unpressed.
+  it("docked, its pressed toggle pressed again hides the Files panel and un-presses", () => {
+    let shown = true;
+    const hideDocked = vi.fn(() => {
+      shown = false;
+    });
+    const revealDocked = vi.fn();
+    panel({
+      docked: () => true,
+      filesShown: () => shown,
+      revealDocked,
+      hideDocked,
+    });
+    expect($("#tog")?.getAttribute("aria-pressed")).toBe("true");
+    $<HTMLButtonElement>("#tog")?.click();
+    expect(hideDocked).toHaveBeenCalledTimes(1);
+    expect(revealDocked).not.toHaveBeenCalled();
+    expect($("#tog")?.getAttribute("aria-pressed")).toBe("false");
+  });
+
   it("folds to the rail and keeps the fold for the next visit", () => {
     rows = [row({ status: "running", progress: 0.5 })];
     panel();

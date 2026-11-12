@@ -168,6 +168,17 @@ export interface ShelfPanelDeps {
   /** Asked when the shelf is opened while squeezed: makes the room (the
    *  page folds the details). */
   readonly makeRoom?: () => void;
+  /** True while the editor's panels are docked: the shelf is the Files
+   *  panel there, never a rail. Absent: never. */
+  readonly docked?: () => boolean;
+  /** Docked, shows the Files panel (opening the shelf asks for it). */
+  readonly revealDocked?: () => void;
+  /** Docked, whether the Files panel shows (the toggle is pressed then).
+   *  Absent: never. */
+  readonly filesShown?: () => boolean;
+  /** Docked, shows the tab beside the Files panel in its place (the
+   *  pressed toggle pressed again). */
+  readonly hideDocked?: () => void;
 }
 
 export interface ShelfPanel {
@@ -869,6 +880,7 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
 
   /** Shown as its rail: folded by the creator, or squeezed. */
   function railShown(): boolean {
+    if (deps.docked?.() === true) return false;
     return state.folded || deps.squeezed?.() === true;
   }
 
@@ -879,7 +891,12 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     document.body.classList.toggle("shelf-folded", folded);
     document.body.classList.toggle("shelf-sheet", phone && state.sheet);
     fold.setAttribute("aria-expanded", String(!folded));
-    toggle.setAttribute("aria-pressed", String(phone ? state.sheet : !folded));
+    const pressed = phone
+      ? state.sheet
+      : deps.docked?.() === true
+        ? deps.filesShown?.() === true
+        : !folded;
+    toggle.setAttribute("aria-pressed", String(pressed));
     toggle.querySelector(".as-badge")?.remove();
     const badge = badgeEl(rows);
     if (badge !== null) toggle.append(badge);
@@ -978,6 +995,11 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
   }
 
   function open(): void {
+    if (deps.docked?.() === true) {
+      deps.revealDocked?.();
+      redraw();
+      return;
+    }
     if (deps.phone()) {
       state.sheet = true;
     } else {
@@ -1192,7 +1214,10 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     if (deps.phone()) {
       state.sheet = !state.sheet;
       redraw();
-    } else if (railShown()) {
+    } else if (deps.docked?.() === true && deps.filesShown?.() === true) {
+      deps.hideDocked?.();
+      redraw();
+    } else if (railShown() || deps.docked?.() === true) {
       open();
     } else {
       setFolded(true);

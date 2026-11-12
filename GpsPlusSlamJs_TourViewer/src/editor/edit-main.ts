@@ -488,6 +488,12 @@ const tourNameText = element("tour-name-text");
 const coverList = element("details-covers");
 const coversNone = element("details-covers-none");
 const toasts = element("toasts");
+/** The docked panels' elements, held from the start: docked, a panel
+ *  behind another tab is out of the page, where a lookup by id finds
+ *  nothing. */
+const shellTree = element("shell-tree");
+const shellShelf = element("shell-shelf");
+const shellInspector = element("shell-inspector");
 /** The File menu's Save (`edit.html`; the menu: `menu-button.ts`). */
 const saveButton = element<HTMLButtonElement>("file-save");
 /** "Save a copy…": the tour as it stands into a file of its own. */
@@ -1922,6 +1928,25 @@ const filePicker = createFilePicker(document.body);
 /** The asset shelf's panel of the open tour (`asset-shelf/shelf-panel.ts`). */
 let shelfPanel: ShelfPanel | null = null;
 
+/** The editor's panels docked around the 3D view (`editor-shell/`): the
+ *  shelf is its Files panel then. */
+let panelsDocked = false;
+
+/** Docked, the Files tab shown: the shelf opened (its toggle), or files
+ *  put on it loose (its add, a drop on the page), so their processing is
+ *  in sight. An add that makes or changes an item keeps its Details in
+ *  sight instead: its next step is there, and the toggle's badge carries
+ *  the processing. */
+function showShelfDocked(): void {
+  if (panelsDocked) shell.reveal("files");
+}
+
+/** Docked, the Details tab shown in place of Files: the shelf's pressed
+ *  toggle pressed again. */
+function hideShelfDocked(): void {
+  if (panelsDocked) shell.reveal("details");
+}
+
 /** A phone's layout: the shelf is a sheet (shelf-panel.css's width). */
 const phoneLayout = window.matchMedia("(width <= 700px)");
 phoneLayout.addEventListener("change", () => {
@@ -1930,25 +1955,19 @@ phoneLayout.addEventListener("change", () => {
 
 /** The details (the inspector dock) open: shown and not folded. */
 function detailsOpen(): boolean {
-  const details = document.getElementById("shell-inspector");
   return (
-    details !== null &&
-    !details.hidden &&
-    !details.classList.contains("collapsed")
+    !shellInspector.hidden && !shellInspector.classList.contains("collapsed")
   );
 }
 
 // The shelf's squeeze follows the details and the window's width: a
 // redraw whenever either changes (the shell draws the details).
-const detailsSeen = document.getElementById("shell-inspector");
-if (detailsSeen !== null) {
-  new MutationObserver(() => {
-    shelfPanel?.refresh();
-  }).observe(detailsSeen, {
-    attributes: true,
-    attributeFilter: ["hidden", "class"],
-  });
-}
+new MutationObserver(() => {
+  shelfPanel?.refresh();
+}).observe(shellInspector, {
+  attributes: true,
+  attributeFilter: ["hidden", "class"],
+});
 window.addEventListener("resize", () => {
   shelfPanel?.refresh();
 });
@@ -1998,7 +2017,7 @@ const shelfActions = createShelfPageActions({
 function openShelfPanel(open: EditorSession): void {
   shelfPanel?.destroy();
   shelfPanel = createShelfPanel({
-    root: element("shell-shelf"),
+    root: shellShelf,
     toggle: element<HTMLButtonElement>("shelf-toggle"),
     pill: element<HTMLButtonElement>("shelf-pill"),
     host: document.body,
@@ -2062,6 +2081,10 @@ function openShelfPanel(open: EditorSession): void {
         editorViewActions.dockFolded({ dock: "inspector", folded: true }),
       );
     },
+    docked: () => panelsDocked,
+    revealDocked: showShelfDocked,
+    hideDocked: hideShelfDocked,
+    filesShown: () => shell.filesShown(),
   });
 }
 
@@ -2253,7 +2276,7 @@ async function dropFiles(
   at: Element | null,
 ): Promise<void> {
   if (editor === null) return;
-  const dropTarget = fileDropTarget(at, element("shell-tree"));
+  const dropTarget = fileDropTarget(at, shellTree);
   const loose: File[] = [];
   for (const file of files) {
     const kind = fileAddKindOf(file.name);
@@ -4213,7 +4236,7 @@ document.addEventListener("dragover", (event) => {
   if (at === undefined) return;
   document.body.classList.add("file-drag");
   markFileDrop(
-    fileDropTarget(at, element("shell-tree")) === null
+    fileDropTarget(at, shellTree) === null
       ? null
       : (at?.closest(`[${FILE_FIELD_ATTR}], [data-select]`) ?? null),
   );
@@ -4803,6 +4826,15 @@ function shellCodes(): InspectorCode[] {
  *  selection is the page's (`select`), so the map follows it. */
 const shell = createEditorShell({
   store,
+  // The docking library comes with the 3D view, never with the page.
+  dock: () => import("./editor-shell/dock-host.js"),
+  onDocked: (docked) => {
+    panelsDocked = docked;
+    shelfPanel?.refresh();
+  },
+  onFilesShown: () => {
+    shelfPanel?.refresh();
+  },
   select: (id) => {
     select(id);
   },

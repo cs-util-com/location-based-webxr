@@ -64,6 +64,8 @@ phone wider than 700 px keeps the two docks, and turning one with
 something selected unfolds the list the details covered. The on-screen keyboard
 (`phone-keyboard.ts`) is `--s-keyboard-h` on the page; at every width a
 panel stands on the keyboard, so a focused field can scroll above it.
+Docked, the layout is told the keyboard's height on every change and,
+when it is docked while a keyboard is up, at once.
 
 The tree's editing (G2 M3b) goes through it: "+" in the tree's head adds a
 station at the centre of the view (where the view has none, `centre()`
@@ -101,6 +103,20 @@ to a station, a story's name in the head takes the focus, selected.
   - `deps.codes()` - the open tour's codes (`InspectorCode[]`);
   - `deps.loadPicture(path)` - a picture's bytes from the open tour;
   - `deps.dialogOpen()` - a page dialog shows (the keys stay out of it);
+  - `deps.dock?()` - loads `dock-host.ts` (a dynamic import); absent, the
+    panels never dock. From `DOCK_MIN_PX` (701 px) wide, while the view
+    shows, the panels dock around it; narrower, or on `hide()`, they
+    undock. The folds stay the store's (`foldedDocks`): a folded side
+    hides its group and shows its folded head over the view, so the dock
+    rule and the approach fold keep working. Docked, a selection that
+    appears shows Details over Files, and the Details panel says "Select
+    a station or an item, in the list or in the view." while nothing is
+    selected;
+  - `deps.onDocked?(docked)` - the panels docked or undocked;
+  - `deps.onFilesShown?(shown)` - docked, the Files panel came into sight
+    or went (the asset shelf's toggle redraws);
+  - a docking that failed to load is said once and not tried again until
+    a reload;
   - `deps.stations` (`ShellStationCommands`) - the page's commands:
     `add(place, "centre" | "here")`, `reorder(order)`, `split(itemId)`,
     `duplicate(selection)`, `remove(selection)`;
@@ -146,6 +162,12 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   open keeps that fold and does not restore the one from before the
   approach. Deliberately no flag for it: "stays as you left it" is the
   rule, and after a takeover the folded tree is what they left.
+- `EditorShell.docked()` - whether the panels are docked now;
+  `EditorShell.reveal(id)` - docked, shows a panel (`dock-layout.ts`'s ids),
+  unfolding its side in the store first; undocked, nothing (the asset
+  shelf's toggle reveals the Files panel through it).
+  `EditorShell.filesShown()` - docked, whether the Files panel shows (its
+  group shown, it the shown tab); undocked, false.
 - `EditorShell.clearSearch()` - empties the tree's search, and draws the tree
   without it where it shows: the page calls it for every station it makes and
   for an item it copies (the search would hide the new one, its name matching
