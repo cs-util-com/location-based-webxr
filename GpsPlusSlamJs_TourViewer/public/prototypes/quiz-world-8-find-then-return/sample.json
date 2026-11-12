@@ -1,0 +1,147 @@
+{
+  "normal": {
+    "question": "Which of these stood on this square first?",
+    "points": 10,
+    "answer": {
+      "type": "single",
+      "options": [
+        {
+          "id": "fountain",
+          "label": "The fountain",
+          "clue": "Water has run here since 1652.",
+          "hide": {
+            "x": -6.2,
+            "z": -4.6
+          },
+          "lift": 0.56
+        },
+        {
+          "id": "statue",
+          "label": "The statue",
+          "clue": "Cast in bronze for the town fair of 1890.",
+          "hide": {
+            "x": 8.1,
+            "z": -6.3
+          },
+          "lift": 0
+        },
+        {
+          "id": "tree",
+          "label": "The plane tree",
+          "clue": "Planted the year the tram came, 1921.",
+          "hide": {
+            "x": 8.6,
+            "z": 6.4
+          },
+          "lift": 0
+        },
+        {
+          "id": "bench",
+          "label": "The bench",
+          "clue": "Its plaque says: new this spring.",
+          "hide": {
+            "x": -6.5,
+            "z": 8
+          },
+          "lift": 0.5
+        }
+      ],
+      "correct": "fountain"
+    },
+    "find": {
+      "radius": 1.5,
+      "hintAfterS": 25,
+      "askFirst": true
+    },
+    "choose": {
+      "reach": 3,
+      "retry": true
+    },
+    "says": {
+      "right": "The fountain. Its water ran here more than two hundred years before the statue came.",
+      "retry": "Not that one. Think of the clues you found, and walk to another.",
+      "wrong": "It was the fountain, from 1652. The statue came in 1890, the tree in 1921."
+    }
+  },
+  "longest": {
+    "question": "You have walked the whole square now and read what each of these four things told you. So which one of them was standing here first, long before the others? Walk back to it and tap it.",
+    "points": 20,
+    "answer": {
+      "type": "single",
+      "options": [
+        {
+          "id": "fountain",
+          "label": "The fountain with its wide stone basin",
+          "clue": "Its water has run from the same old town spring since the summer of 1652.",
+          "hide": {
+            "x": -6.2,
+            "z": -4.6
+          },
+          "lift": 0.56
+        },
+        {
+          "id": "statue",
+          "label": "The bronze figure on the stone plinth",
+          "clue": "Cast in bronze for the town fair of 1890 and lifted onto its plinth that same autumn.",
+          "hide": {
+            "x": 8.1,
+            "z": -6.3
+          },
+          "lift": 0
+        },
+        {
+          "id": "tree",
+          "label": "The plane tree beside the grass",
+          "clue": "Planted in 1921, the year the first tram rolled through the gate at the south end.",
+          "hide": {
+            "x": 8.6,
+            "z": 6.4
+          },
+          "lift": 2.5
+        },
+        {
+          "id": "bench",
+          "label": "The wooden bench near the old path",
+          "clue": "A small brass plaque on its back says that it is new this spring, a gift of the town.",
+          "hide": {
+            "x": -6.5,
+            "z": 8
+          },
+          "lift": 0.5
+        }
+      ],
+      "correct": "fountain"
+    },
+    "find": {
+      "radius": 3,
+      "hintAfterS": 10,
+      "askFirst": false
+    },
+    "choose": {
+      "reach": 4,
+      "retry": true
+    },
+    "says": {
+      "right": "The fountain it is. Its water was running here for more than two hundred years before the statue arrived, and nearly three hundred before the tree.",
+      "retry": "Not that one. Think back to what each of them told you when you found it, then walk over to another one and tap it there.",
+      "wrong": "It was the fountain, from 1652. The statue only came in 1890, the tree in 1921, and the bench, as its plaque told you, this very spring."
+    }
+  },
+  "missing": {
+    "question": "Which is older?",
+    "answer": {
+      "type": "single",
+      "options": [
+        {
+          "id": "a",
+          "label": "The fountain"
+        },
+        {
+          "id": "b",
+          "label": "The bench"
+        }
+      ],
+      "correct": "a"
+    }
+  }
+}

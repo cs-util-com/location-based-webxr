@@ -278,10 +278,14 @@ const EXEMPT = new Map([
     'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-7-answer-scenes/index.html',
     'design prototype in the inspiration gallery, wired to nothing',
   ],
-  // Its card also builds sliders of its own (found radius, hint delay, position error): test
-  // aids that change only the draft's own feel.
+  // Their cards also build sliders of their own (found radius, hint delay, position error, and on
+  // page 8 the choosing reach): test aids that change only the draft's own feel.
   [
     'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-6-find-first/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-8-find-then-return/index.html',
     'design prototype in the inspiration gallery, wired to nothing',
   ],
   [
