@@ -46,8 +46,14 @@ view would be the first such kind).
 - `shortText`: `pin` posed, facing (the label faces the camera); `card` poseless.
 - `longText`: `lectern` posed, turning (the stand keeps its turn about up);
   `reading` posed, facing (the plate turns to the viewer); `card` poseless.
-- `picture`: every standing view (`plane`, `framed`, `cutout` and the viewpoint views, which are drawn as a plane at the pose until their overlays stand) posed, turning, `size` on `widthM`
-  (`TOUR_PICTURE_MIN_WIDTH_M` to `TOUR_PICTURE_MAX_WIDTH_M`); `card` poseless.
+- `picture`: `plane`, `framed` and `cutout` posed, turning, `size` on `widthM`
+  (`TOUR_PICTURE_MIN_WIDTH_M` to `TOUR_PICTURE_MAX_WIDTH_M`); the viewpoint
+  views (`thenNow`, `sharpen`, `viewer`, `finder`, `window`) posed, not
+  turning, no dots: their look stands in the station's frame, lined up from
+  the viewpoint and sized by its lens and depth, so the pose's turn and the
+  width change nothing on screen (the handle stays at the pose; the
+  viewpoint is typed in the inspector, `editor/kind-panels/picture-panel.ts`);
+  `card` poseless.
 - `video`: `card` poseless (no world view yet).
 - `audio`: `spot` and `zone` posed, facing, no dots (a sound's reach is
   set in the inspector); `card` poseless.

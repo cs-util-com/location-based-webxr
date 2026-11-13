@@ -218,6 +218,11 @@ describe("the gizmo through the placement rows against the frozen layout", () =>
       "audio.spot",
       "audio.zone",
       "longText.reading",
+      "picture.finder",
+      "picture.sharpen",
+      "picture.thenNow",
+      "picture.viewer",
+      "picture.window",
       "shortText.pin",
     ]);
     for (const { kind, view, row } of facing) {

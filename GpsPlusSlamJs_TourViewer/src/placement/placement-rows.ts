@@ -102,6 +102,15 @@ const PICTURE_STANDING: ViewPlacement = {
   },
 };
 
+/**
+ * A picture seen from its viewpoint: the handle stands at its pose, where
+ * a viewpoint view without a viewpoint draws as a plane, but what shows is
+ * lined up from the viewpoint, in the station's frame, and its size is the
+ * viewpoint's lens and depth. So turning the pose shows nothing and it has
+ * no width dots; its viewpoint is typed in the inspector.
+ */
+const PICTURE_FROM_VIEWPOINT: ViewPlacement = FACING;
+
 type ViewsOf<K extends TourBlockKind> = (typeof TOUR_KINDS)[K]["views"][number];
 
 /** THE block table: one row per kind and view of the format. */
@@ -114,12 +123,11 @@ export const BLOCK_PLACEMENT = {
     plane: PICTURE_STANDING,
     framed: PICTURE_STANDING,
     cutout: PICTURE_STANDING,
-    // Drawn as a plane at the pose until their overlays stand.
-    thenNow: PICTURE_STANDING,
-    sharpen: PICTURE_STANDING,
-    finder: PICTURE_STANDING,
-    window: PICTURE_STANDING,
-    viewer: PICTURE_STANDING,
+    thenNow: PICTURE_FROM_VIEWPOINT,
+    sharpen: PICTURE_FROM_VIEWPOINT,
+    finder: PICTURE_FROM_VIEWPOINT,
+    window: PICTURE_FROM_VIEWPOINT,
+    viewer: PICTURE_FROM_VIEWPOINT,
     card: POSELESS,
   },
   video: { card: POSELESS },
