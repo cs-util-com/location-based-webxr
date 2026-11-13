@@ -279,14 +279,19 @@ const EXEMPT = new Map([
     'design prototype in the inspiration gallery, wired to nothing',
   ],
   // Their cards also build sliders of their own (found radius, hint delay, position error, and on
-  // page 8 the choosing reach, on page 10 the dwell and the take-back window, on page 11 the dwell
-  // and grace): test aids that change only the draft's own feel.
+  // page 8 the choosing reach, on page 9 the ring, the dwell and the take-back, on page 10 the dwell
+  // and the take-back window, on page 11 the dwell and grace): test aids that change only the
+  // draft's own feel.
   [
     'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-6-find-first/index.html',
     'design prototype in the inspiration gallery, wired to nothing',
   ],
   [
     'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-8-find-then-return/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-9-ground-dwell/index.html',
     'design prototype in the inspiration gallery, wired to nothing',
   ],
   [

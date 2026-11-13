@@ -262,6 +262,16 @@ wired into its logic: every interaction is faked.
   back to the right one and tap it there) made 2026-11-12. Each page says
   why its 3D carries meaning and the strongest case against; the plain card,
   `quiz-visitor-1-story-card/`, is the baseline.
+- `quiz-world-9-ground-dwell/` - find them first as on page 8, then choose
+  by standing still in an answer's ring on the ground: the ring closes from
+  its far side round to the visitor's feet in 3 s, locks in with a pulse and
+  a sound, and a white seal closes for 2.5 s more, during which walking away
+  takes the answer back quietly; then the ring turns teal or breaks apart. The
+  question lies on the ground amid the answers, and the screen keeps only a
+  small pill (the count while searching, a "more" button while choosing,
+  behind which the answers can be chosen without walking). Its card shrinks
+  the stage's sheet through a `:has()` rule, the one rule outside its own
+  `[data-kind]`; made 2026-11-13.
 - `quiz-world-10-object-charges/` - the find-then-go-back quiz with the
   choice made by standing: the question rises out of the last egg found and
   flies into every egg; standing by one makes it wake, fill with light from
