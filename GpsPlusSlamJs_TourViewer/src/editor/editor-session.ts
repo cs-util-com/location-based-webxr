@@ -57,7 +57,7 @@ import {
   TOUR_PICTURE_MIN_HFOV_DEG,
 } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import { posedEntryOf } from "../placement/placeables.js";
-import { mintViewpoint } from "./picture-viewpoint.js";
+import { mintViewpoint, viewpointAt } from "./picture-viewpoint.js";
 import {
   TOUR_DESCRIPTION_MAX_CHARS,
   TOUR_TITLE_MAX_CHARS,
@@ -689,6 +689,7 @@ const MODEL_VIEW_ELSEWHERE = "A 3D model's view is set in its own fields.";
 const ONLY_A_PICTURE_TAG = "Only a picture has a tag.";
 
 const ONLY_A_PICTURE_VIEWPOINT = "Only a picture has a viewpoint.";
+const NO_VIEWPOINT = "This picture has no viewpoint to move yet.";
 
 const NOT_A_VIEWPOINT =
   "A viewpoint needs a place, a turn, a lens of 10 to 120 degrees and a depth of 1 to 500 m.";
@@ -883,6 +884,15 @@ export interface EditorSession {
   editPictureViewpoint(
     id: string,
     viewpoint: TourPictureViewpoint | null,
+  ): { kind: "edited" | "unchanged" } | EditorRefusal;
+  /** Move a picture's viewpoint to where its handle in the 3D view was
+   *  let go (`geo`): its place, and the facing of `geo`'s heading, its
+   *  pitch, lens and depth kept (`viewpointAt`): one step, as
+   *  `editPictureViewpoint`. Refused in words for an id the tour does not
+   *  carry, a block that is no picture and a picture with no viewpoint. */
+  moveViewpoint(
+    id: string,
+    geo: QrGeoPose,
   ): { kind: "edited" | "unchanged" } | EditorRefusal;
   /** Show or hide a picture's tag (a cut-out's, `showTag`): one step;
    *  shown is the field's absence. Refused in words for an id the tour
@@ -1445,6 +1455,40 @@ export function createEditorSession(input: {
       if (place !== undefined && place !== null) return place;
     }
     return { position: [0, 0, 0], rotation: [0, 0, 0, 1] };
+  }
+
+  /** Write the viewpoint `next` makes of the picture `id`'s (none: it has
+   *  none to change) as one step, refused in words for an id the tour
+   *  does not carry, a block that is no picture, no viewpoint and one the
+   *  format would not keep. */
+  function writeViewpoint(
+    id: string,
+    next: (vp: TourPictureViewpoint | undefined) => TourPictureViewpoint | null,
+  ): { kind: "edited" | "unchanged" } | EditorRefusal {
+    const found = find(id);
+    if (found === undefined) return notInTour;
+    const object = found.object;
+    if (object.kind !== "picture") {
+      return { kind: "refused", reason: ONLY_A_PICTURE_VIEWPOINT };
+    }
+    const viewpoint = next(object.viewpoint);
+    if (viewpoint === null) return { kind: "refused", reason: NO_VIEWPOINT };
+    if (!keptViewpoint(viewpoint)) {
+      return { kind: "refused", reason: NOT_A_VIEWPOINT };
+    }
+    if (sameJson(object.viewpoint ?? null, viewpoint)) {
+      return { kind: "unchanged" };
+    }
+    const after: typeof object = { ...object, viewpoint };
+    const applied = took(() =>
+      store.dispatch(
+        tourDocumentActions.edited({
+          object: after,
+          what: `the viewpoint of ${objectName(object)}`,
+        }),
+      ),
+    );
+    return applied ? { kind: "edited" } : notApplied;
   }
 
   /** Undefined for an id the tour no longer carries, or a tour no longer
@@ -2513,29 +2557,18 @@ export function createEditorSession(input: {
       return applied ? { kind: "edited" } : notApplied;
     },
     editPictureViewpoint(id, viewpoint) {
-      const found = find(id);
-      if (found === undefined) return notInTour;
-      const object = found.object;
-      if (object.kind !== "picture") {
-        return { kind: "refused", reason: ONLY_A_PICTURE_VIEWPOINT };
-      }
-      const next = viewpoint ?? mintViewpoint(stationPoseOf(id));
-      if (!keptViewpoint(next)) {
-        return { kind: "refused", reason: NOT_A_VIEWPOINT };
-      }
-      if (sameJson(object.viewpoint ?? null, next)) {
-        return { kind: "unchanged" };
-      }
-      const after: typeof object = { ...object, viewpoint: next };
-      const applied = took(() =>
-        store.dispatch(
-          tourDocumentActions.edited({
-            object: after,
-            what: `the viewpoint of ${objectName(object)}`,
-          }),
-        ),
+      return writeViewpoint(
+        id,
+        () => viewpoint ?? mintViewpoint(stationPoseOf(id)),
       );
-      return applied ? { kind: "edited" } : notApplied;
+    },
+    moveViewpoint(id, geo) {
+      const station = now().stations.find((s) => posedEntryOf(s, id) !== null);
+      return writeViewpoint(id, (vp) =>
+        vp === undefined || station === undefined
+          ? null
+          : viewpointAt(vp, localPoseOf(geo, station.geo)),
+      );
     },
     editPictureTag(id, shown) {
       const found = find(id);

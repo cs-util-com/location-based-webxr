@@ -34,6 +34,9 @@ interface BlockFieldBase {
   readonly required: boolean;
   /** Prose: a text area that keeps its lines, else one line. */
   readonly prose: boolean;
+  /** Said under it: how the block's view uses it (a picture's views);
+   *  none: nothing is said. */
+  readonly mark?: string;
 }
 
 /** A text to type, counted against the format's cap. */

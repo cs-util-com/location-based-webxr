@@ -95,6 +95,7 @@ function context() {
     changed: vi.fn(),
     pickAsked: vi.fn(),
     focused: vi.fn(),
+    lookFrom: vi.fn(() => true),
   };
   return { ctx, edits };
 }

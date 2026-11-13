@@ -45,6 +45,7 @@ import { buildLecternStand } from "../lectern-view.js";
 import { buildReadingSign } from "../reading-sign.js";
 import { renderTourStation } from "../content-placement.js";
 import { posedBlocks } from "../placement/placeables.js";
+import { viewpointRotation } from "../editor/picture-viewpoint.js";
 import {
   mountedWorldParts,
   worldEnv,
@@ -778,6 +779,41 @@ describe("createStationsLayer", () => {
     expect(c1.y - a.y).toBeCloseTo(2, 3);
     expect(layer.itemPointOf("gone")).toBeNull();
     expect(layer.codePointOf("gone")).toBeNull();
+  });
+
+  // Why: "Look from the viewpoint" stands the camera at a picture's
+  // viewpoint, looking where the picture hangs from it, so the layer must
+  // say both in the world's frame: the viewpoint where its station's
+  // frame has it (never the picture's own pose), and the point its depth
+  // ahead along its facing; nothing for a picture without one or an id
+  // the tour lacks.
+  it("says where a picture's viewpoint stands and where it looks", () => {
+    const { d } = deps();
+    const layer = createStationsLayer(d);
+    const seen = {
+      ...photo("v"),
+      viewpoint: {
+        position: [2, 1.6, 0],
+        rotation: viewpointRotation(90, 0),
+        hfovDeg: 56,
+        distanceM: 6,
+      },
+    } as TourBlock;
+    layer.setTour(
+      manifest([station("a", 0, 0, [seen, photo("p1")])]),
+      new Map(),
+    );
+    const a = layer.pointOf("a")!;
+    const vp = layer.viewpointOf("v")!;
+    // 2 m north is the world's -z; facing east, the world's +x.
+    expect(vp.at.x - a.x).toBeCloseTo(0, 3);
+    expect(vp.at.y - a.y).toBeCloseTo(1.6, 3);
+    expect(vp.at.z - a.z).toBeCloseTo(-2, 3);
+    expect(vp.ahead.x - vp.at.x).toBeCloseTo(6, 3);
+    expect(vp.ahead.y - vp.at.y).toBeCloseTo(0, 3);
+    expect(vp.ahead.z - vp.at.z).toBeCloseTo(0, 3);
+    expect(layer.viewpointOf("p1")).toBeNull();
+    expect(layer.viewpointOf("gone")).toBeNull();
   });
 
   // Why: the layer chips turn the station names (billboards and their

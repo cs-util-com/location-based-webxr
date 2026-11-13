@@ -10,11 +10,14 @@ import { stationBlocks } from "./tour-fixture.mjs";
  * viewer, finder, window) only work with a viewpoint: switching to one
  * must stand a viewpoint in front of the picture, its typed values must
  * reach the tour as one step each, it must survive a switch between those
- * views, and "Stand in front of it again" must give a fresh one. Only the
+ * views, and "Stand in front of it again" must give a fresh one. The 3D
+ * view's keys move and turn that viewpoint (a step each), never the
+ * picture's own pose, and "Look from the viewpoint" takes the camera
+ * there. Only the
  * page shows the chips, the shell's typed fields, the session and the
  * tour document working together, at a desktop and on a phone's side.
  * With PLAYWRIGHT_CAPTURE=1 it also shoots the prototype and the build at
- * each size, for the side-by-side check.
+ * each size and on a phone held upright, for the side-by-side check.
  */
 
 // One worker for the file, its tests in order: software-drawn 3D views
@@ -26,6 +29,8 @@ const SIZES = [
   { name: "desktop", width: 1280, height: 800 },
   { name: "sideways", width: 844, height: 390 },
 ];
+/** The shots add a phone held upright. */
+const SHOT_SIZES = [...SIZES, { name: "upright", width: 390, height: 844 }];
 /** The chips of the viewpoint views and the format's names for them. */
 const VIEWPOINT_CHIPS = [
   ["Then and now", "thenNow"],
@@ -62,6 +67,30 @@ async function photoNow(page) {
 }
 
 /** @param {import("@playwright/test").Page} page */
+function revision(page) {
+  return page.evaluate(() =>
+    /** @type {any} */ (window).__tourEditor.editor().revision(),
+  );
+}
+
+/** @param {import("@playwright/test").Page} page */
+function view3d(page) {
+  return page.evaluate(() => /** @type {any} */ (window).__tourEditor.view3d());
+}
+
+/**
+ * Looks from the photo's viewpoint and waits for the camera to get there.
+ * @param {import("@playwright/test").Page} page
+ */
+async function lookFromViewpoint(page) {
+  await page
+    .locator("#shell-inspector")
+    .getByRole("button", { name: "Look from the viewpoint" })
+    .click();
+  await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
+}
+
+/** @param {import("@playwright/test").Page} page */
 function selected(page) {
   return page.evaluate(() =>
     /** @type {any} */ (window).__tourEditor.selected(),
@@ -94,8 +123,14 @@ async function openWithPhoto(page, size) {
     timeout: 60_000,
   });
   const card = page.locator('#tree-body .card[data-station="gate"]');
-  await card.locator(".pick").click();
-  await expect.poll(() => selected(page)).toBe("station:gate");
+  if (size.height > size.width) {
+    // Upright, a picked station turns the list into its details: the
+    // station is unfolded in the list instead.
+    await card.locator("[data-unfold]").click();
+  } else {
+    await card.locator(".pick").click();
+    await expect.poll(() => selected(page)).toBe("station:gate");
+  }
   await card.locator(`[data-select="${PHOTO}"]`).click();
   await expect.poll(() => selected(page)).toBe(PHOTO);
 }
@@ -163,6 +198,38 @@ for (const size of SIZES) {
       );
     }
 
+    // The 3D view's keys move and turn the viewpoint, one step each, and
+    // leave the picture's own pose alone.
+    await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
+    await page.evaluate(() =>
+      /** @type {HTMLElement | null} */ (document.activeElement)?.blur(),
+    );
+    const was = await photoNow(page);
+    const steps = await revision(page);
+    await page.keyboard.press("PageUp");
+    await expect.poll(() => revision(page)).toBe(steps + 1);
+    const lifted = await photoNow(page);
+    expect(
+      lifted.viewpoint.position[1] - was.viewpoint.position[1],
+    ).toBeCloseTo(0.1, 3);
+    expect(lifted.pose).toEqual(was.pose);
+    await page.keyboard.press("e");
+    await expect.poll(() => revision(page)).toBe(steps + 2);
+    const turned = await photoNow(page);
+    expect(turned.viewpoint.rotation).not.toEqual(lifted.viewpoint.rotation);
+    expect(turned.viewpoint.position[1]).toBeCloseTo(
+      lifted.viewpoint.position[1],
+      3,
+    );
+    expect(turned.viewpoint.hfovDeg).toBe(40);
+    expect(turned.pose).toEqual(was.pose);
+
+    // The camera goes to the viewpoint, and nothing is edited on the way.
+    const camera = (await view3d(page))?.camera;
+    await lookFromViewpoint(page);
+    expect((await view3d(page))?.camera).not.toEqual(camera);
+    expect(await revision(page)).toBe(steps + 2);
+
     // A fresh one stands in front of the picture again.
     await inspector
       .getByRole("button", { name: "Stand in front of it again" })
@@ -174,12 +241,13 @@ for (const size of SIZES) {
 }
 
 test("the prototype and the build, side by side, per viewpoint view and size", async ({
+  browser,
   page,
 }) => {
   // Only for the check by eye: the shots are what is read.
   test.skip(process.env.PLAYWRIGHT_CAPTURE !== "1", "capture only");
-  test.setTimeout(600_000);
-  for (const size of SIZES) {
+  test.setTimeout(1_800_000);
+  for (const size of SHOT_SIZES) {
     await page.setViewportSize(size);
     for (const [, view] of VIEWPOINT_CHIPS) {
       await page.goto(
@@ -189,13 +257,27 @@ test("the prototype and the build, side by side, per viewpoint view and size", a
       await capture(page, `${SHOTS}/${size.name}-${view}-prototype.png`);
     }
   }
-  for (const size of SIZES) {
-    await openWithPhoto(page, size);
-    const inspector = page.locator("#shell-inspector");
+  // PICTURE_SHOT_SIZES (names, comma-separated) shoots the build at some
+  // sizes only.
+  const only = process.env.PICTURE_SHOT_SIZES?.split(",");
+  for (const size of SHOT_SIZES.filter(
+    (s) => only === undefined || only.includes(s.name),
+  )) {
+    // A fresh browser per size: an earlier size's draft would greet this
+    // one with its restore offer over the view.
+    const context = await browser.newContext({
+      baseURL: test.info().project.use.baseURL,
+    });
+    const fresh = await context.newPage();
+    await openWithPhoto(fresh, size);
+    const inspector = fresh.locator("#shell-inspector");
     for (const [name, view] of VIEWPOINT_CHIPS) {
       await inspector.getByRole("button", { name, exact: true }).click();
-      await expect.poll(async () => (await photoNow(page))?.view).toBe(view);
-      await capture(page, `${SHOTS}/${size.name}-${view}-build.png`);
+      await expect.poll(async () => (await photoNow(fresh))?.view).toBe(view);
+      // Framed from the viewpoint, as the prototype frames its picture.
+      await lookFromViewpoint(fresh);
+      await capture(fresh, `${SHOTS}/${size.name}-${view}-build.png`);
     }
+    await context.close();
   }
 });

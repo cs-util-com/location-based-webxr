@@ -217,3 +217,7 @@ the gizmo's sizes on the screen at four window sizes in a wide face. `app-bundle
 `import()` runs.
 
 The lock in the scene: `editor3d-edit.spec.js`.
+
+## `lookFrom`
+
+- `lookFrom(selection)` flies the camera to a picture's viewpoint, looking along its line of sight (`orbitPoseOf(at, ahead)`, `FLIGHT.flyMs`); false when the selection has no viewpoint. The orbit's distance limits may stop the camera short of the viewpoint, and the editor camera keeps its own field of view rather than the viewpoint's lens.

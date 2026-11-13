@@ -9,7 +9,8 @@
  * the dock's fields (`kinds/edit-kinds.ts`).
  *
  * Its buttons (`data-act`): `picture-view:<view>`, `picture-tag`,
- * `picture-viewpoint-new`. Its fields (`data-field`, committed by the
+ * `picture-viewpoint-new`, `picture-look-from` (the 3D view's camera
+ * stood at the viewpoint). Its fields (`data-field`, committed by the
  * shell through `inspector-edits.ts`): `vp-north`, `vp-up`, `vp-east`,
  * `vp-facing`, `vp-pitch`, `vp-lens`, `vp-distance`.
  *
@@ -27,7 +28,7 @@ import { VIEWPOINT_FIELDS, type ViewpointFacts } from "../picture-viewpoint.js";
 import type { KindPanel, KindPanelDraw, PanelItem } from "./kind-panel.js";
 
 /** The views a creator picks among, in the format's order. */
-const PICTURE_VIEW_CHOICES: readonly {
+export const PICTURE_VIEW_CHOICES: readonly {
   readonly view: string;
   readonly label: string;
   readonly note: string;
@@ -83,6 +84,72 @@ const VIEWPOINT_VIEWS: ReadonlySet<string> = new Set([
 const VIEWPOINT_NOTE =
   "Where to stand to see it lined up, in the station's frame. Its spot shows in the 3D view.";
 
+/** Where the visitor meets each of a picture's dock fields in each view
+ *  the chips offer, in a few words; null: the view does not show it. The
+ *  sheet is what a tap on the picture opens (a cut-out's shows its words
+ *  only, so its alt text has no picture to describe). */
+const FIELD_USE: Readonly<
+  Record<string, Readonly<Record<string, string | null>>>
+> = {
+  plane: { title: null, caption: null, alt: null, credit: null, year: null },
+  framed: {
+    title: "the sheet a tap opens",
+    caption: "the plate (its first lines) and the sheet",
+    alt: "the picture in the sheet, for a screen reader",
+    credit: "the plate and the sheet",
+    year: "the plate and the sheet",
+  },
+  cutout: {
+    title: "the tag at its foot, and the sheet",
+    caption: "the sheet, and the tag when there is no title",
+    alt: null,
+    credit: "the sheet",
+    year: "the tag and the sheet",
+  },
+  thenNow: {
+    title: "the sheet a tap opens",
+    caption: "the slider once lined up (its first sentence), and the sheet",
+    alt: "the picture in the sheet, for a screen reader",
+    credit: "the sheet",
+    year: "the slider and the sheet",
+  },
+  ...Object.fromEntries(
+    ["sharpen", "viewer", "finder", "window"].map((view) => [
+      view,
+      {
+        title: "the sheet a tap opens",
+        caption: "the sheet",
+        alt: "the picture in the sheet, for a screen reader",
+        credit: "the sheet",
+        year: "the sheet",
+      },
+    ]),
+  ),
+};
+
+/** The label of the view `view`, or null for one the chips lack. */
+function viewLabel(view: string): string | null {
+  return PICTURE_VIEW_CHOICES.find((c) => c.view === view)?.label ?? null;
+}
+
+/**
+ * The mark said under a picture's dock field `field` (its title, caption,
+ * alt text, credit or year) in `view`: where the view shows it, or that
+ * it does not. Null for a view the chips do not offer and a field that is
+ * none of those.
+ */
+export function pictureFieldMark(view: string, field: string): string | null {
+  const label = viewLabel(view);
+  const uses = FIELD_USE[view];
+  if (label === null || uses === undefined || !Object.hasOwn(uses, field)) {
+    return null;
+  }
+  const use = uses[field];
+  return use === null || use === undefined
+    ? `Not used by ${label}.`
+    : `Used by ${label}: ${use}.`;
+}
+
 /** Said under the chips for a view the chips do not offer. */
 export const OTHER_VIEW_NOTE =
   "Shown in a view of its own here; a chip moves it to a standing view.";
@@ -101,6 +168,9 @@ export interface PicturePanelDeps {
     itemId: string,
     viewpoint: TourPictureViewpoint | null,
   ) => TypedEditOutcome;
+  /** Stand the 3D view's camera at the picture's viewpoint; absent: no
+   *  button is drawn. */
+  readonly lookFrom?: (itemId: string) => void;
   /** Whether the picture at a tour path has see-through parts; null:
    *  cannot tell. */
   readonly seeThrough: (path: string) => Promise<boolean | null>;
@@ -128,11 +198,19 @@ export function createPicturePanel(deps: PicturePanelDeps): KindPanel {
 
   /** A viewpoint view's section: its fields, or the button that gives
    *  it one. */
-  const viewpointPart = (vp: ViewpointFacts | null): HTMLElement => {
+  const viewpointPart = (
+    view: string,
+    vp: ViewpointFacts | null,
+  ): HTMLElement => {
     const box = el("div", "isec pviewpoint");
     box.append(
       el("div", "flabel", "Viewpoint"),
       el("div", "note", VIEWPOINT_NOTE),
+      el(
+        "div",
+        "note use",
+        `Used by ${viewLabel(view) ?? view}: it sets where the picture hangs, so its Position below is not used.`,
+      ),
     );
     if (vp !== null) {
       const values: Readonly<Record<string, number>> = {
@@ -155,6 +233,12 @@ export function createPicturePanel(deps: PicturePanelDeps): KindPanel {
           ),
         );
       }
+    }
+    if (vp !== null && deps.lookFrom !== undefined) {
+      const look = el("button", "mini", "Look from the viewpoint");
+      look.type = "button";
+      look.dataset["act"] = "picture-look-from";
+      box.append(look);
     }
     const fresh = el(
       "button",
@@ -201,7 +285,7 @@ export function createPicturePanel(deps: PicturePanelDeps): KindPanel {
       }
     }
     if (deps.setViewpoint !== undefined && VIEWPOINT_VIEWS.has(picture.view)) {
-      return [box, viewpointPart(picture.viewpoint)];
+      return [box, viewpointPart(picture.view, picture.viewpoint)];
     }
     return [box];
   };
@@ -243,6 +327,10 @@ export function createPicturePanel(deps: PicturePanelDeps): KindPanel {
       }
       if (name === "picture-viewpoint-new" && deps.setViewpoint !== undefined) {
         deps.setViewpoint(selected, null);
+        return true;
+      }
+      if (name === "picture-look-from" && deps.lookFrom !== undefined) {
+        deps.lookFrom(selected);
         return true;
       }
       return false;

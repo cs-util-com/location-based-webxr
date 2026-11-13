@@ -62,6 +62,8 @@ import {
   withWorldObjects,
 } from "../test-support/tour-of.js";
 import type { EditorModel } from "./editor-model.js";
+import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import { viewpointFacts, viewpointRotation } from "./picture-viewpoint.js";
 import { openTourForEditing } from "./editor-open.js";
 import { bundleMatchesTour, readDebugBundle } from "../debug-bundle.js";
 import {
@@ -335,6 +337,58 @@ describe("createEditorSession", () => {
     // Null: a fresh one in front of the picture.
     expect(editor.editPictureViewpoint("c", null)).toEqual({ kind: "edited" });
     expect(JSON.stringify(editor.undo())).toContain("the viewpoint of");
+    await session.close();
+  });
+
+  // Why: a drag of a viewpoint's handle in the 3D view writes the
+  // viewpoint through one session edit: it stands where the handle was
+  // let go, faces the handle's heading and keeps its pitch, lens and
+  // depth; one undo puts it back. A picture with no viewpoint has none
+  // to move, and says so.
+  it("moves a picture's viewpoint where its handle was let go, as one step", async () => {
+    const { session, manifest } = await opened([photo("c")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    const station = manifest.stations[0]!;
+    const half = (-120 * Math.PI) / 360;
+    const geo = itemGeoPose(
+      {
+        position: [4, 2, -3],
+        rotation: [0, Math.sin(half), 0, Math.cos(half)],
+      },
+      station.geo,
+    );
+    expect(editor.moveViewpoint("c", geo)).toMatchObject({ kind: "refused" });
+    expect(editor.moveViewpoint("nope", geo)).toMatchObject({
+      kind: "refused",
+    });
+    const vp = {
+      position: [1, 1.5, 2] as [number, number, number],
+      rotation: viewpointRotation(30, -10),
+      hfovDeg: 40,
+      distanceM: 12,
+    };
+    expect(editor.editPictureViewpoint("c", vp)).toEqual({ kind: "edited" });
+    expect(editor.moveViewpoint("c", geo)).toEqual({ kind: "edited" });
+    let saved = await editor.save({ keepScan: false });
+    const moved = (await carried(saved.blob)).objects.find((o) => o.id === "c");
+    const now = moved?.kind === "picture" ? moved.viewpoint : undefined;
+    expect(now?.position[0]).toBeCloseTo(4, 4);
+    expect(now?.position[1]).toBeCloseTo(2, 4);
+    expect(now?.position[2]).toBeCloseTo(-3, 4);
+    expect(now?.hfovDeg).toBe(40);
+    expect(now?.distanceM).toBe(12);
+    const facts = now === undefined ? null : viewpointFacts(now);
+    expect(facts?.facingDeg).toBeCloseTo(120, 4);
+    expect(facts?.pitchDeg).toBeCloseTo(-10, 4);
+    editor.undo();
+    saved = await editor.save({ keepScan: false });
+    expect(
+      (await carried(saved.blob)).objects.find((o) => o.id === "c"),
+    ).toMatchObject({ viewpoint: vp });
     await session.close();
   });
 

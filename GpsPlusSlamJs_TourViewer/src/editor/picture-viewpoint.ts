@@ -4,8 +4,10 @@
  * (`mintViewpoint`: standing in front of the picture, facing it), what the
  * inspector shows of one (`viewpointFacts`: where it stands, its facing,
  * its pitch, its lens and its depth), and one typed field written into it
- * (`viewpointWithField`). The frame is the station's: x north, y up,
- * z east; the camera looks along its local -Z, up its local +Y.
+ * (`viewpointWithField`), and the pose of its handle in the 3D view and
+ * back (`viewpointPose`, `viewpointAt`). The frame is the station's:
+ * x north, y up, z east; the camera looks along its local -Z, up its
+ * local +Y.
  *
  * @see picture-viewpoint.ts.md
  */
@@ -145,6 +147,49 @@ export function mintViewpoint(pose: StationPose): TourPictureViewpoint {
     rotation: viewpointRotation(facingDeg, 0),
     hfovDeg: VIEWPOINT_LENS_DEG,
     distanceM: back,
+  };
+}
+
+/**
+ * The pose of `vp`'s handle in the 3D view, in the station's frame: where
+ * it stands, turned level so that its heading (its x axis, clockwise from
+ * north, as every pose's heading is read) is the viewpoint's facing. The
+ * handle's turn ring then turns the facing; its pitch is typed.
+ */
+export function viewpointPose(vp: TourPictureViewpoint): {
+  readonly position: [number, number, number];
+  readonly rotation: [number, number, number, number];
+} {
+  const half = (-viewpointFacts(vp).facingDeg * DEG) / 2;
+  return {
+    position: [vp.position[0], vp.position[1], vp.position[2]],
+    rotation: [0, Math.sin(half), 0, Math.cos(half)],
+  };
+}
+
+/**
+ * `vp` stood where its handle was let go: at `pose`'s place (the
+ * station's frame), facing `pose`'s heading, its pitch, lens and depth
+ * kept. A pose whose heading cannot be read (its x axis straight up or
+ * down) keeps the facing.
+ */
+export function viewpointAt(
+  vp: TourPictureViewpoint,
+  pose: StationPose,
+): TourPictureViewpoint {
+  const [n = 0, u = 0, e = 0] = pose.position;
+  const [x = 0, y = 0, z = 0, w = 1] = pose.rotation;
+  const north = 1 - 2 * (y * y + z * z);
+  const east = 2 * (x * z - w * y);
+  const facts = viewpointFacts(vp);
+  const facingDeg =
+    Math.hypot(north, east) < 1e-9
+      ? facts.facingDeg
+      : wrap(Math.atan2(east, north) / DEG);
+  return {
+    ...vp,
+    position: [n, u, e],
+    rotation: viewpointRotation(facingDeg, facts.pitchDeg),
   };
 }
 

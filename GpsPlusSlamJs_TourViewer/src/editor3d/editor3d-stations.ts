@@ -50,6 +50,8 @@
 import { tourStationBlocks } from "gps-plus-slam-app-framework/ar/tour-story";
 import * as THREE from "three";
 
+import { viewpointForward } from "../kinds/picture/viewpoint-fade.js";
+
 import { localPlaneToEnu } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
@@ -899,8 +901,22 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     }
   };
 
-  /** Draw `p` where the drag has it. */
+  /** `point` (a point in `entry`'s station frame) in the layer's frame,
+   *  in place. */
+  const inLayer = (entry: StationEntry, point: THREE.Vector3) => {
+    const { geo } = entry.station;
+    const frame = objectPoseNue(geo, { lat: geo.lat, lon: geo.lon });
+    return point
+      .applyQuaternion(new THREE.Quaternion(...frame.rotationNue))
+      .add(new THREE.Vector3(...frame.positionNue))
+      .applyMatrix4(entry.root.matrix);
+  };
+
+  /** Draw `p` where the drag has it. A picture's viewpoint is not
+   *  previewed: its look hangs from the viewpoint the tour has, so the
+   *  picture moves on release (the handle follows the drag). */
   const applyPreview = (p: LayerPreview) => {
+    if (p.ref.kind === "viewpoint") return;
     if (p.ref.kind === "station") {
       const entry = stations.get(p.ref.id);
       if (entry === undefined) return;
@@ -928,6 +944,7 @@ export function createStationsLayer(deps: StationsLayerDeps) {
 
   /** Draw what `p` showed where the tour has it again. */
   const clearPreview = (p: LayerPreview) => {
+    if (p.ref.kind === "viewpoint") return;
     if (p.ref.kind === "station") {
       const entry = stations.get(p.ref.id);
       if (entry === undefined) return;
@@ -1160,12 +1177,28 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       for (const entry of stations.values()) {
         const item = tourFreeBlocks(entry.station).find((i) => i.id === id);
         if (item === undefined) continue;
-        const { geo } = entry.station;
-        const frame = objectPoseNue(geo, { lat: geo.lat, lon: geo.lon });
-        return new THREE.Vector3(...item.pose.position)
-          .applyQuaternion(new THREE.Quaternion(...frame.rotationNue))
-          .add(new THREE.Vector3(...frame.positionNue))
-          .applyMatrix4(entry.root.matrix);
+        return inLayer(entry, new THREE.Vector3(...item.pose.position));
+      }
+      return null;
+    },
+    /** Where the viewpoint of the picture `id` stands in the layer's
+     *  frame (in its station's frame, as the format keeps it), and the
+     *  point it looks at: its depth ahead along its facing, where the
+     *  picture hangs from it. Null for an id no station holds as a
+     *  picture with a viewpoint. */
+    viewpointOf(
+      id: string,
+    ): { at: THREE.Vector3; ahead: THREE.Vector3 } | null {
+      for (const entry of stations.values()) {
+        const item = tourFreeBlocks(entry.station).find((i) => i.id === id);
+        if (item === undefined) continue;
+        if (item.kind !== "picture" || item.viewpoint === undefined) {
+          return null;
+        }
+        const vp = item.viewpoint;
+        const at = new THREE.Vector3(...vp.position);
+        const ahead = viewpointForward(vp).multiplyScalar(vp.distanceM).add(at);
+        return { at: inLayer(entry, at), ahead: inLayer(entry, ahead) };
       }
       return null;
     },

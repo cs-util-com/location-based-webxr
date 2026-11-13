@@ -78,6 +78,7 @@ import {
 import { FOLDER_PREFIX, STORY_PREFIX } from "../editor-model.js";
 import { viewpointFacts, type ViewpointFacts } from "../picture-viewpoint.js";
 import { folderName } from "../folder-commands.js";
+import { pictureFieldMark } from "../kind-panels/picture-panel.js";
 import {
   FREE_LIST,
   childMayGo,
@@ -986,7 +987,13 @@ export function buildInspector(input: {
       moves: movesOf(item.id, stations, input.selectedFileUnsaved === true),
       text: item.kind === "shortText" ? item.caption : null,
       extent: extentOf(item, place?.extent ?? null),
-      fields: blockFields(item),
+      fields:
+        item.kind === "picture"
+          ? blockFields(item).map((f) => {
+              const mark = pictureFieldMark(item.view, f.name);
+              return mark === null ? f : { ...f, mark };
+            })
+          : blockFields(item),
       model:
         item.kind === "model"
           ? {

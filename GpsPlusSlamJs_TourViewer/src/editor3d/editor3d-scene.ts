@@ -179,6 +179,10 @@ export interface Editor3dView {
    *  code's level id): a station framed, an item or a code brought to a
    *  working distance. False for one the tour has no place for. */
   flyTo(selection: string): boolean;
+  /** Stand the camera at the viewpoint of the picture `selection` (its
+   *  id), looking where the picture hangs from it. False for one that is
+   *  no picture with a viewpoint. */
+  lookFrom(selection: string): boolean;
   /** Fit the selection (null: the whole tour) into the view. */
   frame(selection: string | null): void;
   /** Look straight down (the left button then pans like a map), or go
@@ -736,6 +740,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
             groundM: groundUnder(controls.target),
           },
         ],
+        focusM: camera.position.distanceTo(controls.target),
       });
       camera.near = planes.near;
       camera.far = planes.far;
@@ -805,6 +810,15 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
         const place = placeOf(selection);
         if (place === null) return false;
         fly(flightGoal(poseNow(), place), FLIGHT.flyMs);
+        return true;
+      },
+      lookFrom(selection) {
+        const seen = layer.viewpointOf(selection);
+        if (seen === null) return false;
+        // The orbit turns about where the picture hangs; its limits (its
+        // nearest distance, its lowest tilt) may hold the camera short of
+        // the viewpoint itself.
+        fly(orbitPoseOf(seen.at, seen.ahead), FLIGHT.flyMs);
         return true;
       },
       frame: frameView,

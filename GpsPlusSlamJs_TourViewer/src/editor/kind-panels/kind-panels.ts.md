@@ -45,3 +45,7 @@ if (panels.act(act, model, selected)) draw();
 ## Tests
 
 `kind-panels.test.ts`: the list's keys equal `tourBlockKinds()`, routing and placement in the dock. Through the shell: `../editor-shell/editor-shell.test.ts` (model acts, the long text's preview and save while typing).
+
+## `lookFrom`
+
+- `PanelContext.lookFrom(selection)` asks the open 3D view to look from a picture's viewpoint; when it answers false (no 3D view open) the picture panel's button says "Open the 3D view to look from the viewpoint." instead.

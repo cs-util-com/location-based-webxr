@@ -10,7 +10,9 @@ import { describe, expect, it } from "vitest";
 import { viewpointForward } from "../kinds/picture/viewpoint-fade.js";
 import {
   mintViewpoint,
+  viewpointAt,
   viewpointFacts,
+  viewpointPose,
   viewpointRotation,
   viewpointWithField,
   VIEWPOINT_EYE_M,
@@ -151,5 +153,106 @@ describe("viewpointWithField", () => {
     expect(viewpointWithField(vp, "vp-roll", 3)).toBeNull();
     expect(viewpointWithField(vp, "vp-north", NaN)).toBeNull();
     expect(viewpointWithField(vp, "vp-lens", Infinity)).toBeNull();
+  });
+});
+
+/** The level turn whose heading (its x axis, clockwise from north) is
+ *  `deg`: what the 3D view's turn handle gives a pose. */
+function headingTo(deg: number): [number, number, number, number] {
+  const half = (-deg * Math.PI) / 360;
+  return [0, Math.sin(half), 0, Math.cos(half)];
+}
+
+/** The heading of a turn: its x axis, clockwise from north. */
+function headingOf(q: readonly number[]): number {
+  const [x = 0, y = 0, z = 0, w = 1] = q;
+  const north = 1 - 2 * (y * y + z * z);
+  const east = 2 * (x * z - w * y);
+  return ((((Math.atan2(east, north) * 180) / Math.PI) % 360) + 360) % 360;
+}
+
+describe("a viewpoint's handle in the 3D view", () => {
+  // Why: the 3D view moves and turns a viewpoint through the same handle
+  // as any item that faces somewhere. A handle that put the viewpoint
+  // back anywhere else on release, or turned its facing the other way,
+  // would make every drag a jump.
+  it("gives back the viewpoint it was made from", () => {
+    fc.assert(
+      fc.property(
+        fc.tuple(
+          fc.double({ min: -50, max: 50, noNaN: true }),
+          fc.double({ min: 0, max: 3, noNaN: true }),
+          fc.double({ min: -50, max: 50, noNaN: true }),
+        ),
+        fc.double({ min: 0, max: 359.9, noNaN: true }),
+        fc.double({ min: -80, max: 80, noNaN: true }),
+        (position, facing, pitch) => {
+          const vp = {
+            position,
+            rotation: viewpointRotation(facing, pitch),
+            hfovDeg: 40,
+            distanceM: 9,
+          };
+          const back = viewpointAt(vp, viewpointPose(vp));
+          expect(back.position).toEqual(position);
+          expect(back.hfovDeg).toBe(40);
+          expect(back.distanceM).toBe(9);
+          const was = viewpointFacts(vp);
+          const now = viewpointFacts(back);
+          expect(apart(now.facingDeg, was.facingDeg)).toBeLessThan(1e-6);
+          expect(now.pitchDeg).toBeCloseTo(was.pitchDeg, 6);
+        },
+      ),
+    );
+  });
+
+  it("stands level, its heading the viewpoint's facing", () => {
+    const vp = {
+      position: [1, 1.6, 2] as [number, number, number],
+      rotation: viewpointRotation(210, 25),
+      hfovDeg: 40,
+      distanceM: 9,
+    };
+    const pose = viewpointPose(vp);
+    expect(pose.position).toEqual([1, 1.6, 2]);
+    expect(apart(headingOf(pose.rotation), 210)).toBeLessThan(1e-6);
+    // Level: a turn about up only.
+    expect(pose.rotation[0]).toBe(0);
+    expect(pose.rotation[2]).toBe(0);
+  });
+
+  it("faces where the handle's heading points, keeping its pitch, lens and depth", () => {
+    const vp = {
+      position: [1, 1.6, 2] as [number, number, number],
+      rotation: viewpointRotation(30, -10),
+      hfovDeg: 40,
+      distanceM: 9,
+    };
+    const moved = viewpointAt(vp, {
+      position: [5, 2, -3],
+      rotation: headingTo(120),
+    });
+    expect(moved.position).toEqual([5, 2, -3]);
+    const facts = viewpointFacts(moved);
+    expect(apart(facts.facingDeg, 120)).toBeLessThan(1e-6);
+    expect(facts.pitchDeg).toBeCloseTo(-10, 6);
+    expect(moved.hfovDeg).toBe(40);
+    expect(moved.distanceM).toBe(9);
+  });
+
+  it("keeps its facing for a handle whose heading cannot be read", () => {
+    const vp = {
+      position: [1, 1.6, 2] as [number, number, number],
+      rotation: viewpointRotation(30, 0),
+      hfovDeg: 40,
+      distanceM: 9,
+    };
+    // Turned on its side: its x axis points straight up.
+    const s = Math.SQRT1_2;
+    const moved = viewpointAt(vp, {
+      position: [0, 1, 0],
+      rotation: [0, 0, s, s],
+    });
+    expect(apart(viewpointFacts(moved).facingDeg, 30)).toBeLessThan(1e-6);
   });
 });

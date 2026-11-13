@@ -334,3 +334,8 @@ canvas at four window sizes (12 px; the sweep's three sizes are
 above): `playwright-tests/editor3d-edit.spec.js`. The found radius over a
 relief standing above its station:
 `playwright-tests/editor3d-station-ring.spec.js`.
+
+## A picture's viewpoint
+
+- `viewpointOf(id)` gives `{ at, ahead }` for a picture with a viewpoint, in any view: where the viewpoint stands and a point along its line of sight, in the layer's frame. The 3D views' `lookFrom` reads it; null for anything else.
+- `applyPreview` and `clearPreview` leave a picture alone for a `viewpoint` ref: the drag moves the gizmo only, and the picture is drawn at its new place once the edit is applied on release.

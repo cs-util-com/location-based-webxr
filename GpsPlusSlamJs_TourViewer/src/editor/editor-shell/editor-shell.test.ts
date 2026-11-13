@@ -91,6 +91,7 @@ const ground: { m: number | null } = { m: null };
 function fakeView() {
   return {
     flyTo: vi.fn(() => true),
+    lookFrom: vi.fn(() => true),
     frame: vi.fn(),
     setTop: vi.fn(),
     zoom: vi.fn(),

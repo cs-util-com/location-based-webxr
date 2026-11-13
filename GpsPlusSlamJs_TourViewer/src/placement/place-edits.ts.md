@@ -57,3 +57,9 @@ a gesture (an item's move and turn; a station's move, turn and radius;
 reach 1, 20 and 200 m against a 25 m found radius; ground amplitude 0 and
 50 m) written through the real session and undone restores the saved
 manifest exactly.
+
+## A viewpoint ref
+
+- A pose edit for `{ kind: "viewpoint", id }` calls `editor.moveViewpoint(id, geo)`: one session call, one undo step, never the picture's own pose and never a station to join (the viewpoint stays in its station's frame).
+- An extent edit for it is refused with "A viewpoint has no size to change." rather than resizing the picture.
+- Tested in `place-edits.test.ts` ("moves a picture's viewpoint through its own call, and sizes none").

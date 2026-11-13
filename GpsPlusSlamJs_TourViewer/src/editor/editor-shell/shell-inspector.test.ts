@@ -403,6 +403,34 @@ describe("drawInspector", () => {
     expect(dock.body.querySelector('[data-field="east"]')).toBeNull();
   });
 
+  // Why: a field the item's view shows somewhere (or not at all) says so
+  // under it, so a creator knows where the words go before typing them.
+  it("says under a field how the item's view uses it", () => {
+    drawInspector(
+      dock,
+      {
+        ...NO_PLACE,
+        fields: [
+          {
+            name: "caption",
+            label: "Caption",
+            value: "",
+            required: false,
+            prose: true,
+            max: 1200,
+            unit: "codePoints",
+            mark: "Not used by Plane.",
+          },
+        ],
+      },
+      FOLD,
+      pictures,
+    );
+    expect(dock.body.querySelector(".note.use")?.textContent).toBe(
+      "Not used by Plane.",
+    );
+  });
+
   // Why: a sound's radius, reach and volume are numbers (block-fields.ts
   // `number`): typed in a decimal box with the unit beside it, never a
   // text with a character counter.

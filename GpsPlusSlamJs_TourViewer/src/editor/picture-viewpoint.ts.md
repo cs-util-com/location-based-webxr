@@ -52,3 +52,9 @@ viewpointWithField(vp, "vp-lens", 40); // the same with a 40 degree lens
 `picture-viewpoint.test.ts` (round trip of facing and pitch as a property,
 agreement with the viewer's `viewpointForward`, the mint as a property,
 the flat and NaN cases, every field, the bounds, the null cases).
+
+## The 3D view's handle
+
+- `viewpointPose(vp)`: the pose a handle shows for a viewpoint: its position, and a level turn whose heading is the viewpoint's facing (rotation `[0, sin(-f/2), 0, cos(-f/2)]`).
+- `viewpointAt(vp, pose)`: the viewpoint after its handle was let go at `pose`: the pose's position, its heading as the new facing, pitch, lens and depth kept. A pose whose heading cannot be read (its x axis near vertical) keeps the old facing.
+- The two round-trip: `viewpointAt(vp, viewpointPose(vp))` gives back `vp`'s position, facing and pitch (property test in `picture-viewpoint.test.ts`).

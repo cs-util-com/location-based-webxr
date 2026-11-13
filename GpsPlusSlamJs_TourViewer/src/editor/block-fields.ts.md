@@ -102,3 +102,7 @@ if (out.kind === "edited")
   field of every kind, story kinds included, keeps each text within its
   rule (`checkTourBlockText`), every needed field set, and the envelope
   untouched.
+
+## `mark`
+
+- `BlockField.mark` (optional) is a line said under the field about how the block's view uses it. `blockFields` never sets it; the inspector model adds it for pictures.

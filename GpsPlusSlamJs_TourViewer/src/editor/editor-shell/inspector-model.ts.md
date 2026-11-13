@@ -194,3 +194,7 @@ again under the creator's typing on every tile of finer ground.
 `InspectorModel` carries an optional `file` (`inspector-file.ts`), added
 by the shell after `buildInspector`; `buildInspector` itself never sets
 it.
+
+## A picture's field marks
+
+- A picture's block fields carry `mark` from `pictureFieldMark(item.view, field.name)` (in `kind-panels/picture-panel.ts`), so each says how the picture's view shows it; other kinds' fields carry none.

@@ -144,6 +144,7 @@ import { morphStanding } from "./editor3d-visibility.js";
 import {
   GLOBE_EDITOR_LOOK,
   aimView,
+  lookFromView,
   daylightStartMs,
   globeEditorSettings,
   globeHidden,
@@ -1542,6 +1543,18 @@ export async function openGlobeEditor(
         const place = placeOf(selection);
         if (place === null) return false;
         aimAt(place.at, place.radiusM);
+        return true;
+      },
+      lookFrom(selection) {
+        const seen = layer.viewpointOf(selection);
+        if (seen === null) return false;
+        approach?.takeOver(performance.now());
+        controls.release();
+        view.placeView(
+          lookFromView(placeOfTour(seen.at), placeOfTour(seen.ahead)),
+        );
+        dust.reset();
+        controls.followIntro();
         return true;
       },
       frame: frameView,

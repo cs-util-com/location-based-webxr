@@ -16,6 +16,8 @@ import {
   createPicturePanel,
   NO_ALPHA_WARNING,
   OTHER_VIEW_NOTE,
+  PICTURE_VIEW_CHOICES,
+  pictureFieldMark,
 } from "./picture-panel.js";
 
 type Picture = NonNullable<PanelItem["picture"]>;
@@ -48,6 +50,7 @@ function panelWith(answer: boolean | null) {
     setView: vi.fn((): "written" => "written"),
     setTag: vi.fn((): "written" => "written"),
     setViewpoint: vi.fn((): "written" => "written"),
+    lookFrom: vi.fn(),
     seeThrough: vi.fn(() => Promise.resolve(answer)),
     changed: vi.fn(),
   };
@@ -154,6 +157,69 @@ describe("createPicturePanel", () => {
       viewpoint: { ...vp, northM: 3 },
     });
     expect(panel.sync(moved)!.key).not.toBe(panel.sync(thenNow)!.key);
+  });
+
+  // Why: a creator checks a viewpoint by looking through it: the button
+  // stands the 3D view's camera there, and only a viewpoint that exists
+  // can be looked from.
+  it("looks from the viewpoint when there is one", () => {
+    const { panel, deps } = panelWith(true);
+    const vp = {
+      northM: 1,
+      upM: 1.6,
+      eastM: 0,
+      facingDeg: 90,
+      pitchDeg: 0,
+      lensDeg: 56,
+      distanceM: 6,
+    };
+    const seen = item({
+      view: "sharpen",
+      showTag: true,
+      imagePath: null,
+      viewpoint: vp,
+    });
+    const host = drawn(panel.sync(seen)!.parts());
+    expect(
+      host.querySelector('[data-act="picture-look-from"]')?.textContent,
+    ).toBe("Look from the viewpoint");
+    expect(panel.act("picture-look-from", seen, "p1")).toBe(true);
+    expect(deps.lookFrom).toHaveBeenCalledWith("p1");
+    const bare = item({ view: "sharpen", showTag: true, imagePath: null });
+    expect(
+      drawn(panel.sync(bare)!.parts()).querySelector(
+        '[data-act="picture-look-from"]',
+      ),
+    ).toBeNull();
+  });
+
+  // Why: a creator filling in a picture's words must see which of them
+  // the chosen view shows the visitor, and where: a caption typed for a
+  // view that never shows it is work lost. Every view the chips offer has
+  // a mark for each dock field.
+  it("marks each dock field with where the view shows it, or that it does not", () => {
+    expect(pictureFieldMark("framed", "caption")).toBe(
+      "Used by Framed: the plate (its first lines) and the sheet.",
+    );
+    expect(pictureFieldMark("plane", "caption")).toBe("Not used by Plane.");
+    expect(pictureFieldMark("cutout", "alt")).toBe("Not used by Cut-out.");
+    expect(pictureFieldMark("thenNow", "year")).toContain("the slider");
+    expect(pictureFieldMark("card", "caption")).toBeNull();
+    expect(pictureFieldMark("framed", "widthM")).toBeNull();
+    for (const { view } of PICTURE_VIEW_CHOICES) {
+      for (const field of ["title", "caption", "alt", "credit", "year"]) {
+        expect(pictureFieldMark(view, field)).not.toBeNull();
+      }
+    }
+    const { panel } = panelWith(true);
+    const host = drawn(
+      panel
+        .sync(item({ view: "finder", showTag: true, imagePath: null }))!
+        .parts(),
+    );
+    expect(host.querySelector(".pviewpoint .use")?.textContent).toContain(
+      "Used by Finder",
+    );
   });
 
   it("offers a viewpoint to a viewpoint view without one, and none without the edit", () => {

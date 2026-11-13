@@ -664,3 +664,9 @@ examples).
   draft's restore and from an opened tour; the entry's delete with its
   undo, its refusal while he speaks, Remove and restore taking it off
   and back).
+
+## `moveViewpoint`
+
+- `moveViewpoint(id, geo)` writes a picture's viewpoint where the 3D view's handle was let go: `geo` is read into the station's frame and passed to `viewpointAt`, so the facing follows the handle's heading and pitch, lens and depth stay. One dispatch, one undo step.
+- Refused, with nothing written, for an unknown id, a block that is no picture, and a picture without a viewpoint ("This picture has no viewpoint to move yet."). It shares its write path with `editPictureViewpoint` (`writeViewpoint`), so an unchanged viewpoint dispatches nothing.
+- Tested in `editor-session.test.ts` ("moves a picture's viewpoint where its handle was let go, as one step").

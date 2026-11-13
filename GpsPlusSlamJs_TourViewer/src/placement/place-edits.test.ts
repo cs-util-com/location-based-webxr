@@ -16,6 +16,7 @@ const BLOCK = { kind: "block", id: "p" } as const;
 const MODEL = { kind: "block", id: "m" } as const;
 const STATION = { kind: "station", id: "st" } as const;
 const FOLDER = { kind: "folder", id: "f" } as const;
+const VIEWPOINT = { kind: "viewpoint", id: "p" } as const;
 
 function fakeSession(refuse = false) {
   const outcome = refuse
@@ -40,6 +41,11 @@ function fakeSession(refuse = false) {
         ? { kind: "refused" as const, reason: "No." }
         : { kind: "resized" as const },
     ),
+    moveViewpoint: vi.fn(() =>
+      refuse
+        ? { kind: "refused" as const, reason: "No." }
+        : { kind: "edited" as const },
+    ),
   };
 }
 
@@ -52,6 +58,7 @@ const asSession = (s: ReturnType<typeof fakeSession>) =>
     | "setExtent"
     | "moveFolder"
     | "scaleFolder"
+    | "moveViewpoint"
   >;
 
 describe("a placement edit", () => {
@@ -83,6 +90,34 @@ describe("a placement edit", () => {
     }
   });
 
+  // Why: a picture's viewpoint is dragged with the picture's handle, but
+  // it is the viewpoint that moves (one session call, one undo step),
+  // never the picture's own pose, and never with a station to join: the
+  // viewpoint stands in its station's frame wherever it goes. It has no
+  // dots, so a size edit for it is refused rather than resizing the
+  // picture.
+  it("moves a picture's viewpoint through its own call, and sizes none", () => {
+    const s = fakeSession();
+    expect(
+      applyPlaceEdit(
+        asSession(s),
+        { kind: "pose", ref: VIEWPOINT, geo: GEO },
+        "b",
+      ),
+    ).toEqual({ kind: "applied" });
+    expect(s.moveViewpoint).toHaveBeenCalledTimes(1);
+    expect(s.moveViewpoint).toHaveBeenCalledWith("p", GEO);
+    expect(s.pose).not.toHaveBeenCalled();
+    expect(
+      applyPlaceEdit(asSession(s), {
+        kind: "extent",
+        ref: VIEWPOINT,
+        value: 2,
+      }),
+    ).toMatchObject({ kind: "refused" });
+    expect(s.setExtent).not.toHaveBeenCalled();
+  });
+
   // Why: the creator's answer to "join the station it now stands in?"
   // travels with a block's move, and only with it.
   it("hands a block's move the station it joins", () => {
@@ -102,6 +137,7 @@ describe("a placement edit", () => {
       { kind: "extent", ref: MODEL, value: 2 },
       { kind: "pose", ref: FOLDER, geo: GEO },
       { kind: "extent", ref: FOLDER, value: 3 },
+      { kind: "pose", ref: VIEWPOINT, geo: GEO },
     ];
     for (const edit of edits) {
       expect(applyPlaceEdit(asSession(s), edit)).toEqual({

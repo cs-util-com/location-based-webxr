@@ -60,7 +60,13 @@ export interface PanelContext {
   readonly pickAsked: (pick: ModelPick | null) => void;
   /** The selected model's part in focus. */
   readonly focused: (focus: ModelFocus | null) => void;
+  /** Stand the 3D view's camera at a picture's viewpoint; false: no view
+   *  open, or nothing to look from. */
+  readonly lookFrom: (selection: string) => boolean;
 }
+
+/** Said when the 3D view cannot look from a viewpoint. */
+const NO_LOOK_FROM = "Open the 3D view to look from the viewpoint.";
 
 /** A long text's panel: its writer and its preview. */
 function longText(ctx: PanelContext): KindPanel {
@@ -112,6 +118,9 @@ function picture(ctx: PanelContext): KindPanel {
         }),
     seeThrough: async (path) => pictureSeeThrough(await ctx.loadPicture(path)),
     changed: ctx.changed,
+    lookFrom: (id) => {
+      if (!ctx.lookFrom(id)) ctx.say(NO_LOOK_FROM);
+    },
   });
 }
 

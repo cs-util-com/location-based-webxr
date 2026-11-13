@@ -12,7 +12,9 @@
  * - a block's dots (a model's size, a picture's width) through
  *   `setExtent`;
  * - a plain folder's pose through `moveFolder`, its dots (its scale)
- *   through `scaleFolder` (its items follow it either way).
+ *   through `scaleFolder` (its items follow it either way);
+ * - a picture's viewpoint through `moveViewpoint` (it has no dots: a size
+ *   edit for it is refused).
  *
  * A refusal comes back with its words for the page to say.
  *
@@ -41,7 +43,11 @@ type PlaceEditSession = Pick<
   | "setExtent"
   | "moveFolder"
   | "scaleFolder"
+  | "moveViewpoint"
 >;
+
+/** Why a viewpoint takes no size edit (none of its handles sends one). */
+const VIEWPOINT_HAS_NO_SIZE = "A viewpoint has no size to change.";
 
 /** Applied, or refused with the reason the creator reads. */
 export type PlaceEditOutcome =
@@ -56,6 +62,15 @@ export function applyPlaceEdit(
   joinStation?: string,
 ): PlaceEditOutcome {
   const { ref } = edit;
+  if (ref.kind === "viewpoint") {
+    if (edit.kind !== "pose") {
+      return { kind: "refused", reason: VIEWPOINT_HAS_NO_SIZE };
+    }
+    const moved = editor.moveViewpoint(ref.id, edit.geo);
+    return moved.kind === "refused"
+      ? { kind: "refused", reason: moved.reason }
+      : { kind: "applied" };
+  }
   const outcome =
     edit.kind === "pose"
       ? ref.kind === "station"

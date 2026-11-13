@@ -88,3 +88,12 @@ if (target !== null && target.turns) showKnob();
 - `placeables.folders.test.ts` - a folder's placeable: its pivot through
   its holders, its scale as its dots, its members at any depth, the
   scale its holders give it and its blocks, and an unknown folder none.
+
+## A picture's viewpoint as its handle
+
+- `PlaceRef` has a `viewpoint` member (`{ kind: "viewpoint", id }`). `placeableOf` returns it for a selected picture in a viewpoint view (`TOUR_PICTURE_VIEWPOINT_VIEWS`) that has a viewpoint: such a picture is drawn where its viewpoint says, so dragging its own pose would move nothing visible.
+  - The placeable stands in the station's frame (`folderPath` `[]`, `inheritedScale` 1), because the viewpoint does not follow the picture's folders. Its pose is `viewpointPose(vp)`: level, its heading the viewpoint's facing. It turns and lifts, has no extent (no dots) and is never locked.
+- Only the selection's handle changes. `posedEntries`, `posedBlocks` and `posedEntryOf` still give the picture's own pose, so the station's circle, its grounding and a new pin's free spot read what they read before; "Stand in front of it again" still mints from the picture's pose.
+- The inspector's Position still edits the picture's own pose, which a viewpoint view does not draw; the picture panel says so in its viewpoint section.
+- The 3D view does not preview the picture mid-drag for this handle (`editor3d-stations.ts`): only the gizmo follows, and the picture moves on release.
+- Tests: `placeables.viewpoint.test.ts`.

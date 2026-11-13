@@ -184,6 +184,7 @@ function timingsStampOf(timings: object): string {
 type ShellView = Pick<
   Editor3dView,
   | "flyTo"
+  | "lookFrom"
   | "frame"
   | "setTop"
   | "zoom"
@@ -660,6 +661,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     focused: (focus) => {
       store.dispatch(editorViewActions.modelFocused({ focus }));
     },
+    lookFrom: (selection) => view?.lookFrom(selection) ?? false,
   });
   const said = byId("shell-said");
   const ground = createSceneMenu({

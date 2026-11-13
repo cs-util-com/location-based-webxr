@@ -579,3 +579,7 @@ shell unfolds the station (or reveals the story), clears the search and
 hands the place over. The page then opens the character maker and adds the
 character that was made (`edit-main.ts`, `addCharacterTo`). Tested in
 `editor-shell.test.ts` ("the add menu's Character").
+
+## Look from a viewpoint
+
+- The shell passes `lookFrom` to the panels as `view?.lookFrom(selection) ?? false`, so the picture panel's "Look from the viewpoint" works in whichever 3D view is open and says so when none is.

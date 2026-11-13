@@ -415,3 +415,7 @@ see-through), null without buildings.
   pinch on a touch screen at three separations (60 to 120, 60 to 300 and
   300 to 60 px) stepping toward or away from the ground under the fingers
   by a bounded share of the distance to it, never under the ground.
+
+## `lookFrom`
+
+- `lookFrom(selection)` places the globe camera at a picture's viewpoint looking along its line of sight (`lookFromView`), through the same take-over, release, `placeView`, dust reset and `followIntro` steps as a fly-to; false when the selection has no viewpoint. The camera keeps its own field of view, not the viewpoint's lens.

@@ -19,6 +19,7 @@ import {
   daylightStartMs,
   globeEditorSettings,
   globeHidden,
+  lookFromView,
   steppedView,
   streetView,
   viewPoseOf,
@@ -197,6 +198,43 @@ describe("aimView", () => {
       RangeError,
     );
     expect(() => aimView({ lat: 0, lng: 0 }, Infinity, 1)).toThrow(RangeError);
+  });
+});
+
+describe("lookFromView", () => {
+  // Why: "Look from the viewpoint" in the globe view stands the eye at
+  // the viewpoint and turns it toward where the picture hangs; a heading
+  // or a pitch read the wrong way round would show the creator the
+  // picture's back, or the sky.
+  it("stands at the viewpoint, heading and tilting toward the point it looks at", () => {
+    const at = { lat: 48, lng: 11, heightM: 501.6 };
+    const metresEast = 6 / (111_320 * Math.cos((48 * Math.PI) / 180));
+    const east = lookFromView(at, {
+      lat: 48,
+      lng: 11 + metresEast,
+      heightM: 500.6,
+    });
+    expect(east.lat).toBe(48);
+    expect(east.lng).toBe(11);
+    expect(east.altitudeKm).toBeCloseTo(0.5016, 6);
+    expect(east.headingDeg).toBeCloseTo(90, 6);
+    expect(east.pitchDeg).toBeCloseTo((Math.atan2(-1, 6) * 180) / Math.PI, 3);
+    const south = lookFromView(at, {
+      lat: 48 - 6 / 111_320,
+      lng: 11,
+      heightM: 503.6,
+    });
+    expect(south.headingDeg).toBeCloseTo(180, 6);
+    expect(south.pitchDeg).toBeGreaterThan(0);
+  });
+
+  it("looks north level at a point straight above or below, and refuses a place not finite", () => {
+    const at = { lat: 48, lng: 11, heightM: 500 };
+    expect(lookFromView(at, { ...at, heightM: 510 }).headingDeg).toBe(0);
+    expect(() => lookFromView({ ...at, lat: NaN }, at)).toThrow(RangeError);
+    expect(() => lookFromView(at, { ...at, heightM: Infinity })).toThrow(
+      RangeError,
+    );
   });
 });
 

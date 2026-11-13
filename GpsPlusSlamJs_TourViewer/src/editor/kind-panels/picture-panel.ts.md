@@ -49,3 +49,10 @@ handle for it, and the fields take no slider yet.
 ## Tests
 
 `picture-panel.test.ts`; the list's row in `kind-panels.test.ts`.
+
+## Look from the viewpoint, and the field marks
+
+- With a viewpoint and a `lookFrom` dep, the viewpoint section draws "Look from the viewpoint" (`picture-look-from`), which calls `lookFrom(itemId)`.
+- The section also says that the viewpoint sets where the picture hangs, so the inspector's Position is not used in that view.
+- `pictureFieldMark(view, field)` is the line under each dock field (title, caption, alt, credit, year): "Used by <View>: <where>." or "Not used by <View>."; null for a view the chips lack or another field. The table follows what the viewer draws per view (plate, tag, slider, and the sheet a tap opens). `inspector-model.ts` attaches it to a picture's fields.
+- `PICTURE_VIEW_CHOICES` is exported for the tests that walk every offered view.

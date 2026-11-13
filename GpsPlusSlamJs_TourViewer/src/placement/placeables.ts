@@ -33,7 +33,10 @@ import {
   type TourStationChild,
 } from "gps-plus-slam-app-framework/ar/tour-story";
 
+import { TOUR_PICTURE_VIEWPOINT_VIEWS } from "gps-plus-slam-app-framework/ar/tour-kinds";
+
 import { FOLDER_PREFIX, STATION_PREFIX } from "../editor/editor-model.js";
+import { viewpointPose } from "../editor/picture-viewpoint.js";
 import {
   CONTAINER_PLACEMENT,
   STATION_PLACEMENT,
@@ -43,11 +46,13 @@ import {
 } from "./placement-rows.js";
 
 /** What the document can name and write a placement back to: one arm
- *  per kind of HOLDER, never per block kind. */
+ *  per kind of HOLDER, never per block kind; a picture's viewpoint is the
+ *  one place a block holds besides its pose (`id`: the picture's). */
 export type PlaceRef =
   | { readonly kind: "block"; readonly id: string }
   | { readonly kind: "folder"; readonly id: string }
-  | { readonly kind: "station"; readonly id: string };
+  | { readonly kind: "station"; readonly id: string }
+  | { readonly kind: "viewpoint"; readonly id: string };
 
 /** A placeable's dots: what they change, and the value now. */
 export type PlaceExtent = ExtentSpec & { readonly value: number };
@@ -250,8 +255,45 @@ export function placeablesOf(
   ]);
 }
 
+const VIEWPOINT_VIEWS: ReadonlySet<string> = new Set(
+  TOUR_PICTURE_VIEWPOINT_VIEWS,
+);
+
+/** The viewpoint of the picture `block` in `station`, as a placeable: a
+ *  picture seen from its viewpoint is drawn where the viewpoint says, so
+ *  its handle is the viewpoint (in the station's frame, its folders do
+ *  not carry it); null for any other block. */
+function viewpointPlaceable(
+  block: TourBlock,
+  station: TourStation,
+): Placeable | null {
+  if (block.kind !== "picture" || !VIEWPOINT_VIEWS.has(block.view)) {
+    return null;
+  }
+  const vp = block.viewpoint;
+  if (vp === undefined) return null;
+  const inStation = viewpointPose(vp);
+  return {
+    ref: { kind: "viewpoint", id: block.id },
+    selection: block.id,
+    stationId: station.id,
+    folderPath: [],
+    geo: itemGeoPose(inStation, station.geo),
+    local: inStation,
+    inStation,
+    inheritedScale: 1,
+    turns: true,
+    lifts: true,
+    extent: null,
+    locked: false,
+    members: [block.id],
+  };
+}
+
 /** The placeable the page's `selection` names; null for one that names
- *  nothing placeable (a code, a card, a block or folder the tour lacks). */
+ *  nothing placeable (a code, a card, a block or folder the tour lacks).
+ *  A picture seen from its viewpoint is named by its viewpoint; every
+ *  other reader of a station's blocks (`posedEntries`) keeps its pose. */
 export function placeableOf(
   tour: { readonly stations: readonly TourStation[] },
   selection: string,
@@ -271,8 +313,10 @@ export function placeableOf(
     return null;
   }
   for (const station of tour.stations) {
-    const found = posedBlocks(station).find((p) => p.selection === selection);
-    if (found !== undefined) return found;
+    const found = posedEntryOf(station, selection);
+    if (found !== null) {
+      return viewpointPlaceable(found.block, station) ?? found.place;
+    }
   }
   return null;
 }
