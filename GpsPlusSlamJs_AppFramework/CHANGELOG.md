@@ -24,9 +24,28 @@
   reported as a `folderTitle` drop.
 - `TourChildDrop` names a plain folder's scale other than 1, read as 1,
   as a `folderScale` drop.
+- **A short text has more world views than a pin** (`ar/tour-kinds`): `sign`
+  (a sign on posts) and `edgeHint` (a hint that keeps to the screen's edge
+  while its spot is out of view), beside `pin` and `ground` (an arrow on
+  the ground toward the point it points to).
+- **A short text's look fields** (`ar/tour-short-text`, a new deep entry):
+  `role` (`instruction`, `label`, `warning`), `orientation` (`world`,
+  `upright`, `face`), `readAtM` (the distance its words read from, 1 to
+  40 m; `shortTextLetterHeightM`), `pointsTo` (a point in its station's
+  frame, within 1000 m), `lang` (a BCP-47 tag), and the ground arrow's
+  `style` (`ribbon`, `vanes`, `footprints`, `lights`, `floor`),
+  `bendDeg` (up to 60 degrees either way), `floorPlacement` (`lying`,
+  `hovering`, `upright`), `captionOnArrow`, `color` and `darkColor`
+  (`#rrggbb`). Every field is optional and read in every view. A value
+  of the wrong type fails at every minor; an unknown word or an
+  out-of-range value fails a file of this minor and is dropped, alone,
+  from a newer one.
 
 ### Changed
 
+- `TourPin` (`ar/tour-manifest`) is a short text in any of its world
+  views (`pin`, `sign`, `edgeHint`, `ground`), as `tourObjects` yields
+  it; it was typed as `pin` alone.
 - **Every container is a folder** (`ar/tour-story`): a story is
   `{ kind: 'folder', role: 'story', title, children }` (was
   `kind: 'story'`), read and written in that shape. A folder without a
