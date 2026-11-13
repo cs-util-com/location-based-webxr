@@ -1492,13 +1492,15 @@ test("File's Add debug data opens the same add as the map's panel", async ({
   await expect(add).toHaveText("Add debug data…");
 });
 
-test("a tap on the folded tree's Stations header opens the dock with its stations shown", async ({
+test("a tap on the folded list's rail opens it with its stations shown", async ({
   page,
 }) => {
-  // Why: the folded head's "Stations" header is the larger target. A tap
-  // on it unfolded the dock and also closed the Stations section, so the
-  // tree came back with every station hidden and seemed to have collapsed;
-  // the next tap opened it. On a folded dock the header only unfolds.
+  // Why: a tap that unfolded the list also closed its Stations section
+  // once (the folded head's header was the target), so the list came back
+  // with every station hidden and seemed to have collapsed; the next tap
+  // opened it. Docked, the folded list is its group's rail, the header out
+  // of sight: a tap on the rail's List button only unfolds, the section as
+  // it was.
   test.setTimeout(150_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   await open3d(page);
@@ -1508,7 +1510,7 @@ test("a tap on the folded tree's Stations header opens the dock with its station
     "aria-expanded",
     "true",
   );
-  await page.locator("#tree-stations").click();
+  await page.locator('.dock-host .dock-tab[data-panel="list"]').click();
   await expect(page.locator("#shell-tree")).not.toHaveClass(/\bcollapsed\b/);
   await expect(page.locator("#tree-stations")).toHaveAttribute(
     "aria-expanded",
