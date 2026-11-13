@@ -236,6 +236,9 @@ function blockTextField(field: BlockField): HTMLElement[] {
     row.querySelector("input")?.setAttribute("placeholder", hint);
     return [row];
   }
+  if (field.typed !== undefined) {
+    return [lineField(field.label, field.name, field.value, hint)];
+  }
   const row = field.prose
     ? proseField(field.label, field.name, field.value, hint)
     : lineField(field.label, field.name, field.value, hint);

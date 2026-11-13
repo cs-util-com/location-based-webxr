@@ -18,11 +18,15 @@ import {
   type TourTextUnit,
 } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import {
+  shortTextLook,
+  TOUR_SHORT_TEXT_POINT_MAX_M,
+} from "gps-plus-slam-app-framework/ar/tour-short-text";
 
 import { KIND_EDIT, type FieldSpec } from "../kinds/edit-kinds.js";
 
 /** One field of a block, as the inspector draws it. */
-export type BlockField = BlockTextField | BlockNumberField;
+export type BlockField = BlockTextField | BlockNumberField | BlockTypedField;
 
 interface BlockFieldBase {
   /** The block's own field (`data-field` in the inspector). */
@@ -44,6 +48,16 @@ interface BlockTextField extends BlockFieldBase {
    *  body). */
   readonly unit: TourTextUnit;
   readonly number?: undefined;
+  readonly typed?: undefined;
+}
+
+/** A value the format's look reader checks (`FieldSpec` `typed`),
+ *  typed on one line with no counter: a point or a language tag. */
+interface BlockTypedField extends BlockFieldBase {
+  readonly typed: { readonly example: string };
+  readonly number?: undefined;
+  readonly max?: undefined;
+  readonly unit?: undefined;
 }
 
 /** A number to type, with its unit (`FieldSpec` `number`). No cap: its
@@ -52,6 +66,7 @@ interface BlockNumberField extends BlockFieldBase {
   readonly number: { readonly unit: string };
   readonly max?: undefined;
   readonly unit?: undefined;
+  readonly typed?: undefined;
 }
 
 /** A block the inspector reads: a free one in the world or one a story
@@ -116,7 +131,18 @@ export function blockFields(block: AnyBlock): BlockField[] {
         ? [spec]
         : [],
     )
-    .map((spec) => {
+    .map((spec): BlockField => {
+      if (spec.typed !== undefined) {
+        const raw = (block as unknown as Record<string, unknown>)[spec.name];
+        return {
+          name: spec.name,
+          label: spec.label,
+          prose: false,
+          value: shownTyped(raw),
+          required: false,
+          typed: { example: TYPED[spec.typed].example },
+        };
+      }
       if (spec.number !== undefined) {
         const n = numberOf(block, spec.name);
         return {
@@ -196,6 +222,9 @@ export function blockFieldEdit<B extends AnyBlock>(
   if (spec.flag !== undefined) return flagFieldEdit(block, name, value);
   if (spec.colour !== undefined) {
     return colourFieldEdit(block, spec.label, name, value);
+  }
+  if (spec.typed !== undefined) {
+    return typedFieldEdit(block, name, TYPED[spec.typed], value);
   }
   const text = value.trim();
   if (text === textOf(block, name)) return { kind: "unchanged" };
@@ -336,6 +365,108 @@ function colourFieldEdit<B extends AnyBlock>(
   return withField(block, name, text.toLowerCase());
 }
 
+/** A plain decimal with an exponent, as `String` shows a very small or
+ *  very large number. */
+const EXPONENT = /^[+-]?(?:\d+\.?\d*|\.\d+)e[+-]?\d+$/i;
+
+/** A point's coordinate as typed: a plain decimal (`typedNumber`), or one
+ *  with an exponent, so every number the box shows reads back. */
+function pointNumber(token: string): number | null {
+  const n = typedNumber(token);
+  if (n !== null || !EXPONENT.test(token)) return n;
+  const e = Number(token);
+  return Number.isFinite(e) ? e : null;
+}
+
+/** How a typed field reads its line, and what it says on a refusal. */
+interface TypedRule {
+  readonly example: string;
+  readonly refusal: string;
+  /** The value the line stands for, or null for one it cannot. */
+  readonly parse: (text: string) => unknown;
+}
+
+const TYPED: Readonly<Record<NonNullable<FieldSpec["typed"]>, TypedRule>> = {
+  point: {
+    example: "2 1.2 -19.6",
+    refusal: `Points to takes three numbers in metres, each within ${String(TOUR_SHORT_TEXT_POINT_MAX_M)} m of the station, such as 2 1.2 -19.6.`,
+    // Spaces or ", " part the numbers: a comma alone is a decimal point.
+    parse: (text) => {
+      const point = text.split(/\s*;\s*|,\s+|\s+/).map(pointNumber);
+      return point.length === 3 && point.every((n) => n !== null)
+        ? point
+        : null;
+    },
+  },
+  tag: {
+    example: "en or pt-BR",
+    refusal: "A language is a tag such as en, de or pt-BR.",
+    parse: (text) => text,
+  },
+};
+
+/** A typed field's value as its box shows it. */
+function shownTyped(raw: unknown): string {
+  if (typeof raw === "string") return raw;
+  if (Array.isArray(raw)) return raw.map((n) => String(n)).join(" ");
+  return "";
+}
+
+/** Whether the format's reader keeps `value` as the short text's
+ *  `name`: the one rule for its shape and bounds. */
+function lookKeeps(name: string, value: unknown): boolean {
+  try {
+    const look = shortTextLook(
+      { [name]: value },
+      {
+        at: name,
+        id: "",
+        assets: new Map(),
+        characters: new Map(),
+        fail: (message: string): never => {
+          throw new Error(message);
+        },
+        lenient: false,
+        onDropped: undefined,
+      },
+    ) as Readonly<Record<string, unknown>>;
+    return name in look;
+  } catch {
+    return false;
+  }
+}
+
+/** Two values of a typed field alike: the same tag, or the same numbers. */
+function sameTyped(a: unknown, b: unknown): boolean {
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((n, i) => n === b[i]);
+  }
+  return a === b;
+}
+
+/** What typing `value` into a typed field writes (`blockFieldEdit`): the
+ *  value its line stands for when the format's reader keeps it, or none
+ *  for a blank one. */
+function typedFieldEdit<B extends AnyBlock>(
+  block: B,
+  name: string,
+  rule: TypedRule,
+  value: string,
+):
+  | { readonly kind: "edited"; readonly after: B }
+  | { readonly kind: "unchanged" }
+  | { readonly kind: "refused"; readonly reason: string } {
+  const text = value.trim();
+  if (text === "") return withField(block, name, undefined);
+  const parsed = rule.parse(text);
+  if (parsed === null || !lookKeeps(name, parsed)) {
+    return { kind: "refused", reason: rule.refusal };
+  }
+  const was = (block as unknown as Record<string, unknown>)[name];
+  if (sameTyped(was, parsed)) return { kind: "unchanged" };
+  return withField(block, name, parsed);
+}
+
 /** What a cap counts, in the refusal's words. */
 const UNIT_WORDS: Readonly<Record<TourTextUnit, string>> = {
   codePoints: "characters",
@@ -344,6 +475,9 @@ const UNIT_WORDS: Readonly<Record<TourTextUnit, string>> = {
 
 /** The empty field's hint: whether the block needs the field. */
 export function blockFieldPlaceholder(field: BlockField): string {
+  if (field.typed !== undefined) {
+    return `Optional, such as ${field.typed.example}`;
+  }
   return field.required ? "Required" : "Optional";
 }
 

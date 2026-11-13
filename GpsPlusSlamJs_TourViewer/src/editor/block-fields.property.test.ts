@@ -12,6 +12,7 @@ import {
   TOUR_BLOCK_TEXT_RULES,
   checkTourBlockText,
 } from "gps-plus-slam-app-framework/ar/tour-blocks";
+import { shortTextLook } from "gps-plus-slam-app-framework/ar/tour-short-text";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { describe, expect, it } from "vitest";
 
@@ -94,6 +95,70 @@ describe("block field edits", () => {
           }
         },
       ),
+      { numRuns: 300 },
+    );
+  });
+});
+
+describe("a short text's point and language edits", () => {
+  const SIGN = {
+    id: "s",
+    kind: "shortText",
+    view: "sign",
+    caption: "Sign",
+    geo: GEO,
+  } as unknown as TourObject;
+  const strict = {
+    at: "t",
+    id: "s",
+    assets: new Map(),
+    characters: new Map(),
+    fail: (m: string): never => {
+      throw new Error(m);
+    },
+    lenient: false,
+    onDropped: undefined,
+  };
+  const within = fc.double({ min: -1000, max: 1000, noNaN: true });
+
+  it("write only what the format's reader keeps, whatever is typed", () => {
+    // Why: a refused edit is the inspector's to explain, but an accepted
+    // one must never produce a file the reader fails or trims.
+    fc.assert(
+      fc.property(
+        fc.constantFrom("pointsTo", "lang"),
+        fc.oneof(
+          fc.string({ maxLength: 40 }),
+          fc.tuple(within, within, within).map((p) => p.join(" ")),
+          fc.constantFrom("en", "pt-BR", "zh-Hant-TW", "1001 0 0", "1 2"),
+        ),
+        (name, value) => {
+          const out = blockFieldEdit(SIGN, name, value);
+          if (out.kind !== "edited") return;
+          const fields = out.after as unknown as Record<string, unknown>;
+          expect(shortTextLook(fields, strict)).toMatchObject({
+            [name]: fields[name],
+          });
+        },
+      ),
+      { numRuns: 300 },
+    );
+  });
+
+  it("show a written point so that typing it back changes nothing", () => {
+    // Why: the box is redrawn from the block after every write; a shown
+    // value that read back differently would edit the block on blur.
+    fc.assert(
+      fc.property(within, within, within, (x, y, z) => {
+        const set = {
+          ...(SIGN as unknown as Record<string, unknown>),
+          pointsTo: [x, y, z],
+        } as unknown as TourObject;
+        const shown = blockFields(set).find((f) => f.name === "pointsTo");
+        expect(blockFieldEdit(set, "pointsTo", shown!.value)).toEqual({
+          kind: "unchanged",
+        });
+      }),
       { numRuns: 300 },
     );
   });

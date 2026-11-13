@@ -18,7 +18,8 @@ import { stationBlocks } from "./tour-fixture.mjs";
  * edit store and the 3D view working together. Each control is found by
  * its role and its name, as a creator (and a screen reader) finds it, on
  * a desktop and on a phone on its side, and must write exactly its own
- * field.
+ * field. Where it points and its language are typed in the dock, and a
+ * point that is not three numbers is refused in words.
  */
 
 // One worker for the file: software-drawn 3D views side by side are
@@ -150,6 +151,31 @@ for (const viewport of VIEWPORTS) {
     await expect
       .poll(async () => (await shortTextNow(page, block.id))?.bendDeg)
       .toBe(25);
+
+    // Pointed at a spot 10 m on, typed as three numbers; a line that is
+    // not three numbers is refused in words and the point is kept.
+    const points = inspector.getByLabel("Points to", { exact: true });
+    await expect(points).toHaveAttribute("placeholder", /^Optional, such as /);
+    await points.fill("2 0 -10");
+    await points.press("Enter");
+    await expect
+      .poll(async () => (await shortTextNow(page, block.id))?.pointsTo)
+      .toEqual([2, 0, -10]);
+    await expect(points).toHaveValue("2 0 -10");
+    await points.fill("2 1");
+    await points.press("Enter");
+    await expect(
+      page.locator(".toast", { hasText: "three numbers in metres" }),
+    ).toBeVisible();
+    expect((await shortTextNow(page, block.id))?.pointsTo).toEqual([2, 0, -10]);
+
+    // Its language, as a tag.
+    const lang = inspector.getByLabel("Language", { exact: true });
+    await lang.fill("de");
+    await lang.press("Enter");
+    await expect
+      .poll(async () => (await shortTextNow(page, block.id))?.lang)
+      .toBe("de");
 
     const after = await shortTextNow(page, block.id);
     expect(after.caption).toBe(block.caption);

@@ -179,7 +179,7 @@ row removed.
 
 ## Choice fields
 
-A `FieldSpec` may carry `choices` (`FieldChoice`: value and label): a field chosen on chips by the kind's panel, never typed. The short text has `role` (`SHORT_TEXT_ROLES`) and, for a sign, `orientation` (`SHORT_TEXT_TURNS`), plus the number field `readAtM` (1-40 m, signs and ground arrows). A ground arrow also has `style` and `floorPlacement` (chips), `bendDeg` (a number, -60 to 60 degrees), `captionOnArrow` (`flag`: a switch, written as true or left out) and `color` / `darkColor` (`colour`: `#rrggbb`, picked in colour wells); `orientation` turns its plate.
+A `FieldSpec` may carry `choices` (`FieldChoice`: value and label): a field chosen on chips by the kind's panel, never typed. The short text has `role` (`SHORT_TEXT_ROLES`) and, for a sign, `orientation` (`SHORT_TEXT_TURNS`), plus the number field `readAtM` (1-40 m, signs and ground arrows). A ground arrow also has `style` and `floorPlacement` (chips), `bendDeg` (a number, -60 to 60 degrees), `captionOnArrow` (`flag`: a switch, written as true or left out) and `color` / `darkColor` (`colour`: `#rrggbb`, picked in colour wells); `orientation` turns its plate. A short text also has `pointsTo` (`typed: "point"`, signs and ground arrows) and `lang` (`typed: "tag"`, every view), each typed on one line and checked by the format's reader (`block-fields.ts`).
 
 ## A block's name by its view
 

@@ -96,7 +96,10 @@ describe("blockFields", () => {
   it("lists each kind's fields with the format's caps, in the inspector's order", () => {
     expect(
       blockFields(PIN).map((f) => [f.name, f.label, f.max, f.prose, f.value]),
-    ).toEqual([["description", "Description", 160, true, ""]]);
+    ).toEqual([
+      ["description", "Description", 160, true, ""],
+      ["lang", "Language", undefined, false, ""],
+    ]);
     expect(
       blockFields(PICTURE).map((f) => [f.name, f.label, f.max, f.prose]),
     ).toEqual([
@@ -148,6 +151,7 @@ describe("storyBlockFields", () => {
     expect(rows(PIN)).toEqual([
       ["caption", 40, true],
       ["description", 160, false],
+      ["lang", undefined, false],
     ]);
     expect(rows(CHARACTER).map((r) => r[0])).toEqual(["name", "caption"]);
     expect(
@@ -560,5 +564,114 @@ describe("a ground arrow's own fields", () => {
       kind: "edited",
       after: GROUND,
     });
+  });
+});
+
+describe("a short text's point and language", () => {
+  const view = (v: string, own: Record<string, unknown> = {}) =>
+    ({
+      ...(PIN as unknown as Record<string, unknown>),
+      view: v,
+      ...own,
+    }) as unknown as TourObject;
+  const edited = (out: ReturnType<typeof blockFieldEdit>) => {
+    if (out.kind !== "edited") throw new Error(`not edited: ${out.kind}`);
+    return out.after as unknown as Record<string, unknown>;
+  };
+
+  it("types the point in the views that point, and the language in every view", () => {
+    // Why: only a sign and a ground arrow draw toward `pointsTo`; a pin
+    // and an edge hint would offer a field that changes nothing. The
+    // language matters to every view's line breaking and font.
+    const names = (v: string) => blockFields(view(v)).map((f) => f.name);
+    for (const v of ["sign", "ground"]) {
+      expect(names(v)).toContain("pointsTo");
+    }
+    for (const v of ["pin", "edgeHint"]) {
+      expect(names(v)).not.toContain("pointsTo");
+    }
+    for (const v of ["pin", "sign", "edgeHint", "ground"]) {
+      expect(names(v)).toContain("lang");
+    }
+  });
+
+  it("writes a point typed as three numbers, and shows it back the same way", () => {
+    // Why: the format stores three numbers in the station's frame; the
+    // inspector types them on one line, separated by spaces or ", ", a
+    // comma alone still being a decimal point as in every number box.
+    const sign = view("sign");
+    expect(
+      edited(blockFieldEdit(sign, "pointsTo", "2 1.2 -19.6")).pointsTo,
+    ).toEqual([2, 1.2, -19.6]);
+    expect(
+      edited(blockFieldEdit(sign, "pointsTo", " 2, 1.2, -19.6 ")).pointsTo,
+    ).toEqual([2, 1.2, -19.6]);
+    expect(
+      edited(blockFieldEdit(sign, "pointsTo", "1,5 0 -3")).pointsTo,
+    ).toEqual([1.5, 0, -3]);
+    const set = view("sign", { pointsTo: [2, 1.2, -19.6] });
+    expect(blockFields(set).find((f) => f.name === "pointsTo")?.value).toBe(
+      "2 1.2 -19.6",
+    );
+    expect(blockFieldEdit(set, "pointsTo", "2 1.2 -19.6")).toEqual({
+      kind: "unchanged",
+    });
+    expect("pointsTo" in edited(blockFieldEdit(set, "pointsTo", ""))).toBe(
+      false,
+    );
+    expect(blockFieldEdit(sign, "pointsTo", "")).toEqual({ kind: "unchanged" });
+  });
+
+  it("refuses a point that is not three numbers within the format's reach", () => {
+    // Why: the reader fails a file with two numbers, and drops a point
+    // over 1000 m from its station; the editor must not write either.
+    const sign = view("sign");
+    for (const bad of [
+      "2 1",
+      "2 1 3 4",
+      "a b c",
+      "1,2,3",
+      "1001 0 0",
+      "0 0 -1000.5",
+    ]) {
+      expect(blockFieldEdit(sign, "pointsTo", bad), bad).toEqual({
+        kind: "refused",
+        reason: expect.stringContaining("1000 m"),
+      });
+    }
+    expect(blockFieldEdit(sign, "pointsTo", "1000 -1000 0").kind).toBe(
+      "edited",
+    );
+  });
+
+  it("writes a language tag the format keeps, trimmed, and refuses one it would not", () => {
+    // Why: the reader keeps only a BCP-47 shaped tag of at most 35
+    // characters; anything else would be dropped or fail the file.
+    const pin = view("pin");
+    expect(edited(blockFieldEdit(pin, "lang", " pt-BR ")).lang).toBe("pt-BR");
+    expect(edited(blockFieldEdit(pin, "lang", "de")).lang).toBe("de");
+    for (const bad of [
+      "english!",
+      "d",
+      "de_DE",
+      `de-${"a".repeat(8)}-${"b".repeat(8)}-${"c".repeat(8)}-${"d".repeat(8)}`,
+    ]) {
+      const out = blockFieldEdit(pin, "lang", bad);
+      expect(out.kind, bad).toBe("refused");
+    }
+    const set = view("pin", { lang: "de" });
+    expect(blockFields(set).find((f) => f.name === "lang")?.value).toBe("de");
+    expect("lang" in edited(blockFieldEdit(set, "lang", " "))).toBe(false);
+    expect(blockFieldEdit(set, "lang", "de")).toEqual({ kind: "unchanged" });
+  });
+
+  it("hints at what to type in the empty point and language fields", () => {
+    // Why: neither field says on its own how it is written; the hint is
+    // the one place that does.
+    const fields = blockFields(view("sign"));
+    const hint = (n: string) =>
+      blockFieldPlaceholder(fields.find((f) => f.name === n)!);
+    expect(hint("pointsTo")).toMatch(/^Optional, such as /);
+    expect(hint("lang")).toMatch(/^Optional, such as /);
   });
 });

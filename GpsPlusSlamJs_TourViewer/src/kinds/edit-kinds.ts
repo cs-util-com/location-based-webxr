@@ -94,6 +94,9 @@ export interface FieldSpec {
   /** A colour (`#rrggbb`) picked on the kind's panel, or left out (its
    *  reader's default). */
   readonly colour?: true;
+  /** A value typed on one line that the format's look reader checks: a
+   *  point as three numbers in metres, or a language tag. */
+  readonly typed?: "point" | "tag";
 }
 
 /** One value a choice field takes, and its chip's words. */
@@ -228,6 +231,14 @@ export const KIND_EDIT = {
         choices: SHORT_TEXT_TURNS,
         views: ["sign", "ground"],
       },
+      {
+        name: "pointsTo",
+        label: "Points to",
+        prose: false,
+        typed: "point",
+        views: ["sign", "ground"],
+      },
+      { name: "lang", label: "Language", prose: false, typed: "tag" },
       {
         name: "style",
         label: "Ground style",
