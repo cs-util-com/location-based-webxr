@@ -109,6 +109,32 @@ describe("figures the shadow pass must keep", () => {
   });
 });
 
+// Why this test matters: the sidecar names the price of the shadow pass as a
+// grey figure without an outline lighter than the floor (170), and says
+// noise moves that edge down a little: with noise 4 a pixel whose three
+// channels all round up to the floor is taken from a grey of 166. Pinning
+// both sides keeps that sentence true if the floor or the noise model moves.
+describe("the eaten band of a grey figure without an outline", () => {
+  const lost = (grey: number, seed: number): number =>
+    outcome(
+      { fill: [grey, grey, grey], outline: 0, noise: 4, seed },
+      CUT_SETTINGS,
+    ).figureLost;
+
+  it("keeps a grey of 165 whole at noise 4", () => {
+    for (const seed of [1, 2, 3, 4]) {
+      expect(lost(165, seed)).toBe(0);
+    }
+  });
+
+  it("loses edge pixels of a grey of 167 at noise 4, below the floor", () => {
+    expect(CUT_SETTINGS.shadowFloor).toBe(170);
+    for (const seed of [1, 2, 3, 4]) {
+      expect(lost(167, seed)).toBeGreaterThan(0);
+    }
+  });
+});
+
 // Why this test matters: the island filter removes leftover specks around
 // the feet; it must count what it removed so the page can say so, and it
 // must leave a small detail that belongs to a pose (an eye, a button)

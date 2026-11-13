@@ -59,17 +59,52 @@ function seeded(seed: number): () => number {
   };
 }
 
-type Shape = (x: number, y: number, grow: number) => boolean;
+/** A shape with its bounding box (before growing), so the drawing window
+ *  follows from the shapes themselves and cannot clip one of them. */
+interface Shape {
+  /** Whether (x, y) lies inside the shape grown by `grow` pixels. */
+  readonly at: (x: number, y: number, grow: number) => boolean;
+  /** [x0, y0, x1, y1], inclusive; growing by g widens it by g each side. */
+  readonly box: readonly [number, number, number, number];
+}
 
-const ellipse =
-  (cx: number, cy: number, rx: number, ry: number): Shape =>
-  (x, y, g) =>
-    ((x - cx) / (rx + g)) ** 2 + ((y - cy) / (ry + g)) ** 2 <= 1;
+const ellipse = (cx: number, cy: number, rx: number, ry: number): Shape => ({
+  at: (x, y, g) => ((x - cx) / (rx + g)) ** 2 + ((y - cy) / (ry + g)) ** 2 <= 1,
+  box: [cx - rx, cy - ry, cx + rx, cy + ry],
+});
 
-const rect =
-  (x0: number, y0: number, x1: number, y1: number): Shape =>
-  (x, y, g) =>
-    x >= x0 - g && x <= x1 + g && y >= y0 - g && y <= y1 + g;
+const rect = (x0: number, y0: number, x1: number, y1: number): Shape => ({
+  at: (x, y, g) => x >= x0 - g && x <= x1 + g && y >= y0 - g && y <= y1 + g,
+  box: [x0, y0, x1, y1],
+});
+
+/** The pixel window that holds every shape grown by `grow`, clipped to the
+ *  picture. */
+function windowOf(
+  shapes: readonly Shape[],
+  grow: number,
+  w: number,
+  h: number,
+): { x0: number; y0: number; x1: number; y1: number } {
+  return {
+    x0: Math.max(
+      0,
+      Math.floor(Math.min(...shapes.map((s) => s.box[0])) - grow),
+    ),
+    y0: Math.max(
+      0,
+      Math.floor(Math.min(...shapes.map((s) => s.box[1])) - grow),
+    ),
+    x1: Math.min(
+      w - 1,
+      Math.ceil(Math.max(...shapes.map((s) => s.box[2])) + grow),
+    ),
+    y1: Math.min(
+      h - 1,
+      Math.ceil(Math.max(...shapes.map((s) => s.box[3])) + grow),
+    ),
+  };
+}
 
 interface Pose {
   readonly body: Shape[];
@@ -77,8 +112,10 @@ interface Pose {
   readonly mouth: Shape;
 }
 
-/** One pose: head, body, legs and feet; pose 3 also raises an arm to the
- *  right; the mouth opens in poses 1 and 2. The lowest row is `bottom`. */
+/** One pose, `index` 0-3 from the left: head, body, legs and feet; the
+ *  fourth pose (index 3) also raises an arm to the right; the mouth opens in
+ *  the second and third (index 1 and 2), whose body shifts by `jitter`. The
+ *  lowest row is `bottom`. */
 function pose(
   index: number,
   cx: number,
@@ -176,25 +213,24 @@ export function syntheticSheet(spec: SheetSpec): SyntheticSheet {
   const alpha = spec.transparent === true ? 253 : 255;
   centres.forEach((cx, k) => {
     const p = pose(k, cx, bottom, H, spec.talkJitter ?? 0);
-    // The widest part (pose 4's raised arm) reaches 0.3 * H from the centre;
-    // the window adds the outline, or the arm's tip would be left open.
-    const x0 = Math.max(0, Math.floor(cx - 0.3 * H) - outline - 1);
-    const x1 = Math.min(w - 1, Math.ceil(cx + 0.3 * H) + outline + 1);
-    for (let y = bottom - H - outline - 1; y <= bottom + outline; y++) {
-      for (let x = x0; x <= x1; x++) {
+    // The window comes from the shapes grown by the outline, so no part
+    // (the raised arm, a jittered body) is clipped and left without one.
+    const win = windowOf(p.body, outline, w, h);
+    for (let y = win.y0; y <= win.y1; y++) {
+      for (let x = win.x0; x <= win.x1; x++) {
         const i = y * w + x;
-        if (!p.body.some((s) => s(x, y, outline))) {
+        if (!p.body.some((s) => s.at(x, y, outline))) {
           continue;
         }
         truth[i] = 1;
         shadow[i] = 0;
-        const inner = p.body.some((s) => s(x, y, 0));
-        const eye = inner && p.eyes.some((s) => s(x, y, 0));
+        const inner = p.body.some((s) => s.at(x, y, 0));
+        const eye = inner && p.eyes.some((s) => s.at(x, y, 0));
         const colour: Rgb = !inner
           ? ink
           : eye
             ? [255, 255, 255]
-            : p.mouth(x, y, 0)
+            : p.mouth.at(x, y, 0)
               ? [70, 22, 22]
               : fill;
         setPixel(d, i, colour, alpha);

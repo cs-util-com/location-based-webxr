@@ -54,14 +54,17 @@ describe("cutBackground and findFigures over varied sheets", () => {
       ),
       { numRuns: 12 },
     );
-  });
+    // Twelve full cuts of sheets up to 900 px wide take a few seconds alone;
+    // a loaded runner must not turn that into a timeout.
+  }, 30_000);
 
   // Why this test matters: the cut keeps a light grey figure only because
   // its outline stops the background fill. The synthetic sheet once clipped
   // pose 4's raised arm at a window narrower than the arm plus its outline,
   // so the arm's tip touched the background without an outline; a random
   // run then drew a grey fill whose noise reached the shadow floor and the
-  // fill took that pixel as shadow. This is that run's sheet.
+  // fill took that pixel as shadow. This is that run's sheet (the fourth
+  // pose is index 3 in the generator's `pose()`).
   it("keeps the arm tip of a light grey figure (seeded counterexample)", () => {
     const width = 892;
     const sheet = syntheticSheet({
@@ -78,39 +81,81 @@ describe("cutBackground and findFigures over varied sheets", () => {
   });
 });
 
-// Why this test matters: the cut's tests assume every synthetic figure is
-// closed by its outline (the sidecar's "an outlined grey figure is safe at
-// every grey" rests on it). A figure pixel that is not outline ink but
-// touches the background means the generator drew an open figure, and a
-// failing cut test would then blame the cut for the generator's gap.
-describe("syntheticSheet", () => {
-  it("closes every figure with its outline", () => {
-    const width = 892;
-    const ink = 34;
-    for (const figureShare of [0.4, 0.56, 0.65]) {
-      const sheet = syntheticSheet({
-        width,
-        height: Math.round(width * 0.62),
-        figureShare,
-        fill: [190, 190, 190],
-      });
-      const d = sheet.image.data;
-      const t = sheet.truth;
-      let open = 0;
-      t.forEach((v, i) => {
-        const x = i % width;
-        const touches =
-          (x > 0 && t[i - 1] === 0) ||
-          (x < width - 1 && t[i + 1] === 0) ||
-          t[i - width] === 0 ||
-          t[i + width] === 0;
-        if (v === 1 && touches && d[i * 4] !== ink) {
-          open++;
-        }
-      });
-      expect(open).toBe(0);
+/** A figure share near 0.56 whose figure height H makes `0.3 * H` a whole
+ *  number: the raised arm's tip then lands exactly on a pixel column, the
+ *  case in which the generator once left the tip open. Derived rather than
+ *  hard-coded, so the case survives a change of the sheet's size. */
+function wholeArmShare(height: number): { share: number; H: number } {
+  for (let H = Math.round(0.56 * height); H > 0; H--) {
+    if (Number.isInteger(0.3 * H)) {
+      return { share: H / height, H };
+    }
+  }
+  throw new Error(`no whole arm reach below ${height}`);
+}
+
+/** Figure pixels that are not outline ink but touch the background. */
+function openPixels(
+  sheet: ReturnType<typeof syntheticSheet>,
+  width: number,
+  ink: number,
+): number {
+  const d = sheet.image.data;
+  const t = sheet.truth;
+  let open = 0;
+  t.forEach((v, i) => {
+    const x = i % width;
+    const touches =
+      (x > 0 && t[i - 1] === 0) ||
+      (x < width - 1 && t[i + 1] === 0) ||
+      t[i - width] === 0 ||
+      t[i + width] === 0;
+    if (v === 1 && touches && d[i * 4] !== ink) {
+      open++;
     }
   });
+  return open;
+}
+
+// Why this test matters: the cut's tests assume every outlined synthetic
+// figure is closed by its outline (the sidecar's "an outlined grey figure is
+// safe at every grey" rests on it). A figure pixel that is not outline ink
+// but touches the background means the generator drew an open figure, and a
+// failing cut test would then blame the cut for the generator's gap. Two
+// generator gaps are covered on purpose: the raised arm's tip on a whole
+// pixel column (a derived share, asserted below so it cannot silently stop
+// being whole), and a talking pose's body shifted far enough sideways to
+// leave a drawing window that once assumed the arm was the widest part (a
+// jitter above 0.13 * H + 1).
+describe("syntheticSheet", () => {
+  it("closes every figure with its outline", () => {
+    const ink = 34;
+    for (const width of [560, 700, 892, 900]) {
+      const height = Math.round(width * 0.62);
+      const whole = wholeArmShare(height);
+      expect(Number.isInteger(0.3 * whole.H)).toBe(true);
+      expect(Math.round(whole.share * height)).toBe(whole.H);
+      for (const figureShare of [0.4, whole.share, 0.65]) {
+        const H = Math.round(figureShare * height);
+        const far = Math.ceil(0.13 * H) + 3;
+        for (const talkJitter of [0, far, -far]) {
+          const sheet = syntheticSheet({
+            width,
+            height,
+            figureShare,
+            fill: [190, 190, 190],
+            talkJitter,
+          });
+          expect({
+            width,
+            figureShare,
+            talkJitter,
+            open: openPixels(sheet, width, ink),
+          }).toEqual({ width, figureShare, talkJitter, open: 0 });
+        }
+      }
+    }
+  }, 30_000);
 });
 
 // Why this test matters: the settings arrive from a page (sliders, a stored

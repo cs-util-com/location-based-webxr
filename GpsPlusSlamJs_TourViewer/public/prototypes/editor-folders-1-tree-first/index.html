@@ -1,0 +1,4358 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Folders Tree First</title>
+    <!--
+  Throwaway prototype: grouping a station's items into plain folders, the
+  "tree first" direction. Grouping happens in the station tree (Ctrl/Shift-click
+  on a desktop, a Select mode with checkboxes on a phone, then Group); the 3D
+  view only follows: a selected folder shows one gizmo at its pivot and a light
+  outline around its items. Rows move into and out of a folder with the tree's
+  nested drag (grip, ghost, "Not possible here").
+  Original code, in the look of the editor's explorer tree, bottom bar and the
+  studio 3D view of this gallery (the gizmo pictures are the studio page's).
+  Rendering: three.js r185 (MIT licence) with OrbitControls. All icons are
+  simple original SVG paths. Nothing is saved; all data is hard-coded sample
+  data. Hooks for headless checks: window.__folders.
+-->
+    <style>
+      :root {
+        --bg0: #18191c;
+        --bg1: #1f2023;
+        --bg2: #26282c;
+        --bg3: #2f3136;
+        --bg4: #383a40;
+        --line: #313338;
+        --line2: #3c3f46;
+        --text: #d9dbe0;
+        --muted: #8a8f99;
+        --dim: #646973;
+        --accent: #e9a23b;
+        --accent-bg: rgb(233 162 59 / 14%);
+        --accent-line: rgb(233 162 59 / 55%);
+        --accent-text: #f3c47e;
+        --fold: #57c4b8;
+        --fold-bg: rgb(87 196 184 / 10%);
+        --fold-line: rgb(87 196 184 / 45%);
+        --danger: #d97d79;
+        --focus: #5b9cf0;
+        --ax-e: #e0575b;
+        --ax-n: #4f8fe8;
+        --ax-u: #67bb57;
+        --mono:
+          "Cascadia Mono", "Cascadia Code", consolas, "SF Mono", ui-monospace,
+          menlo, monospace;
+        --sans:
+          "Segoe UI", system-ui, -apple-system, "Helvetica Neue", arial,
+          sans-serif;
+        --tree-w: 264px;
+        --insp-w: 290px;
+        --sheet-top: 44%;
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: var(--bg0);
+        color: var(--text);
+        font: 12px/1.4 var(--sans);
+      }
+      button {
+        font: inherit;
+        color: inherit;
+      }
+      svg.i {
+        width: 16px;
+        height: 16px;
+        flex: none;
+        fill: none;
+        stroke: currentcolor;
+        stroke-width: 1.5;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      svg.i.dots {
+        stroke-width: 2.8;
+      }
+
+      /* top bar */
+      #tb {
+        position: fixed;
+        inset: 0 0 auto;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 0 8px;
+        background: var(--bg1);
+        border-bottom: 1px solid var(--line);
+        min-width: 0;
+        overflow: hidden;
+        z-index: 20;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 24px;
+        padding-right: 10px;
+        margin-right: 2px;
+        border-right: 1px solid var(--line);
+        white-space: nowrap;
+        min-width: 0;
+      }
+      .brand b {
+        font-weight: 600;
+      }
+      .brand .doc {
+        color: var(--muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .grp {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        height: 26px;
+        padding: 0 4px;
+        border-right: 1px solid var(--line);
+      }
+      .grp:last-of-type {
+        border-right: 0;
+      }
+      .tbtn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 26px;
+        padding: 0 8px;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        background: transparent;
+        color: var(--text);
+        white-space: nowrap;
+        cursor: pointer;
+      }
+      .tbtn:hover:not(:disabled) {
+        background: var(--bg3);
+      }
+      .tbtn:disabled {
+        color: var(--dim);
+        cursor: default;
+      }
+      .tbtn.on {
+        border-color: var(--accent-line);
+        background: var(--accent-bg);
+        color: var(--accent-text);
+      }
+      .tbtn kbd {
+        color: var(--dim);
+        font: 10px var(--mono);
+      }
+      .sp {
+        flex: 1;
+      }
+
+      #main {
+        position: fixed;
+        top: 40px;
+        bottom: 24px;
+        left: 0;
+        right: 0;
+      }
+      #bar {
+        position: fixed;
+        inset: auto 0 0;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 0 10px;
+        background: var(--bg1);
+        border-top: 1px solid var(--line);
+        color: var(--dim);
+        font-size: 11px;
+        white-space: nowrap;
+        overflow: hidden;
+      }
+      #bar b {
+        color: var(--muted);
+        font-weight: 600;
+      }
+
+      /* docks */
+      .dock {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        display: flex;
+        flex-direction: column;
+        background: rgb(31 32 35 / 98%);
+        min-height: 0;
+      }
+      #tree {
+        left: 0;
+        width: var(--tree-w);
+        border-right: 1px solid var(--line);
+      }
+      #insp {
+        right: 0;
+        width: var(--insp-w);
+        border-left: 1px solid var(--line);
+      }
+      .dhead {
+        flex: none;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 36px;
+        padding: 0 6px 0 12px;
+        border-bottom: 1px solid var(--line);
+      }
+      .dtitle {
+        color: var(--muted);
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+      }
+      .dbody {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: auto;
+      }
+      .smallbtn {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 24px;
+        padding: 0 8px;
+        border: 1px solid var(--line2);
+        border-radius: 4px;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .smallbtn:hover {
+        background: var(--bg3);
+        color: var(--text);
+      }
+      .smallbtn.on {
+        border-color: var(--accent-line);
+        background: var(--accent-bg);
+        color: var(--accent-text);
+      }
+      .smallbtn svg.i {
+        width: 13px;
+        height: 13px;
+      }
+      .treefoot {
+        flex: none;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 3px 8px;
+        padding: 7px 12px 9px;
+        border-top: 1px solid var(--line);
+        color: var(--dim);
+        font-size: 11px;
+      }
+      .treefoot span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .treefoot kbd {
+        padding: 0 3px;
+        border: 1px solid var(--line2);
+        border-radius: 3px;
+        color: var(--muted);
+        font: 10px var(--mono);
+      }
+
+      /* the tree (the editor's explorer rows) */
+      .cards {
+        padding: 4px 0;
+      }
+      .trow {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        height: 26px;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
+      }
+      .trow:hover {
+        background: rgb(255 255 255 / 3.5%);
+      }
+      .trow.sel {
+        background: var(--accent-bg);
+      }
+      .trow.sel::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        width: 2px;
+        background: var(--accent);
+      }
+      #tree-body:focus-within .trow.sel {
+        background: rgb(233 162 59 / 20%);
+      }
+      .trow.ctx {
+        background: var(--fold-bg);
+      }
+      .head {
+        height: 28px;
+        padding: 0 4px;
+      }
+      .folder {
+        padding: 0 4px 0 40px;
+      }
+      .kid {
+        padding: 0 6px 0 60px;
+      }
+      .kid.deep {
+        padding-left: 76px;
+      }
+      .pick {
+        display: flex;
+        flex: 1 1 auto;
+        align-items: center;
+        gap: 6px;
+        align-self: stretch;
+        min-width: 0;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        text-align: left;
+        cursor: pointer;
+      }
+      .pick:focus-visible,
+      .tw:focus-visible,
+      .ren:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: -2px;
+      }
+      .nm {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .trow.sel .nm {
+        color: #fff;
+      }
+      .head .nm {
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .stn {
+        flex: none;
+        min-width: 18px;
+        height: 16px;
+        padding: 0 3px;
+        border-radius: 3px;
+        background: #3d5a78;
+        color: #e6f0fa;
+        font: 600 10px/16px var(--mono);
+        text-align: center;
+      }
+      .head.sel .stn {
+        background: var(--accent);
+        color: #1c1c1c;
+      }
+      .meta {
+        flex: none;
+        color: var(--dim);
+        font: 10px var(--mono);
+      }
+      .tw {
+        display: flex;
+        flex: none;
+        align-items: center;
+        justify-content: center;
+        width: 16px;
+        height: 20px;
+        padding: 0;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+      }
+      .tw:hover {
+        background: var(--bg3);
+        color: var(--text);
+      }
+      .tw svg.i {
+        width: 12px;
+        height: 12px;
+        transition: transform 0.12s;
+      }
+      .tw.folded svg.i {
+        transform: rotate(-90deg);
+      }
+      .ic {
+        display: inline-flex;
+        flex: none;
+        color: var(--muted);
+      }
+      .ic svg.i {
+        width: 15px;
+        height: 15px;
+      }
+      .ic.model {
+        color: #a3b1c2;
+      }
+      .ic.text {
+        color: #b7a7d6;
+      }
+      .ic.photo {
+        color: #c9a66b;
+      }
+      .ic.sound {
+        color: #8fb3d9;
+      }
+      .ic.story {
+        color: var(--accent-text);
+      }
+      .ic.fold {
+        color: var(--fold);
+      }
+      .grip {
+        position: absolute;
+        top: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 16px;
+        height: 20px;
+        border-radius: 4px;
+        color: var(--muted);
+        cursor: grab;
+        opacity: 0;
+        touch-action: none;
+        transform: translateY(-50%);
+      }
+      .grip svg.i {
+        width: 12px;
+        height: 12px;
+      }
+      .kid > .grip {
+        left: 42px;
+      }
+      .kid.deep > .grip {
+        left: 58px;
+      }
+      .folder > .grip {
+        left: 22px;
+      }
+      .trow:hover > .grip,
+      .trow.sel > .grip,
+      .trow.dragging > .grip {
+        opacity: 0.9;
+      }
+      .trow.dragging {
+        opacity: 0.55;
+      }
+      .trow.drop-before {
+        box-shadow: inset 0 3px 0 0 var(--accent);
+      }
+      .trow.drop-after {
+        box-shadow: inset 0 -3px 0 0 var(--accent);
+      }
+      .trow.drop-into {
+        background: rgb(233 162 59 / 14%);
+        outline: 2px solid var(--accent);
+        outline-offset: -2px;
+      }
+      /* a story: an amber book, numbered steps (order is what plays) */
+      .stepn {
+        flex: none;
+        min-width: 16px;
+        height: 16px;
+        border: 1px solid var(--accent-line);
+        border-radius: 50%;
+        color: var(--accent-text);
+        font: 600 9.5px/14px var(--mono);
+        text-align: center;
+      }
+      /* a folder: a teal folder, unnumbered items on a teal guide line, a pivot */
+      .gfolder .meta {
+        color: rgb(87 196 184 / 75%);
+      }
+      .kid.infolder::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 48px;
+        width: 1px;
+        background: var(--fold-line);
+      }
+      .kid.infolder.last::after {
+        bottom: 50%;
+      }
+      .kid.infolder::before {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 48px;
+        width: 8px;
+        height: 1px;
+        background: var(--fold-line);
+      }
+      .kid.infolder.sel::before {
+        top: 0;
+        bottom: 0;
+        left: 0;
+        width: 2px;
+        height: auto;
+        background: var(--accent);
+      }
+      .emptyrow {
+        display: flex;
+        align-items: center;
+        height: 26px;
+        padding-left: 76px;
+        color: var(--dim);
+        font-size: 11px;
+        font-style: italic;
+      }
+      .emptyrow.infolder {
+        position: relative;
+      }
+      .emptyrow.infolder::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        bottom: 50%;
+        left: 48px;
+        width: 1px;
+        background: var(--fold-line);
+      }
+      .ren {
+        display: none;
+        flex: none;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        padding: 0;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+      }
+      .ren svg.i {
+        width: 12px;
+        height: 12px;
+      }
+      .ren:hover {
+        background: var(--bg3);
+        color: var(--text);
+      }
+      .trow.sel .ren,
+      .trow:hover .ren {
+        display: inline-flex;
+      }
+      .renin {
+        flex: 1;
+        min-width: 0;
+        height: 22px;
+        padding: 0 5px;
+        border: 1px solid var(--focus);
+        border-radius: 3px;
+        outline: none;
+        background: var(--bg0);
+        color: var(--text);
+        font: inherit;
+        font-size: 12px;
+      }
+      .cb {
+        display: none;
+        flex: none;
+        align-items: center;
+        justify-content: center;
+        width: 16px;
+        height: 16px;
+        margin-left: auto;
+        border: 1.5px solid var(--muted);
+        border-radius: 3px;
+        color: transparent;
+      }
+      .cb svg.i {
+        width: 12px;
+        height: 12px;
+        stroke-width: 2.4;
+      }
+      .cb.on {
+        border-color: var(--accent);
+        background: var(--accent);
+        color: #1c1c1c;
+      }
+      .selmode .cb {
+        display: inline-flex;
+      }
+      .selmode .meta {
+        display: none;
+      }
+      .hint {
+        margin: 8px 10px;
+        padding: 7px 9px;
+        border: 1px dashed var(--line2);
+        border-radius: 5px;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.5;
+      }
+      .hint b {
+        color: var(--text);
+        font-weight: 600;
+      }
+
+      /* the selection bar under the tree */
+      #selbar {
+        flex: none;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 5px;
+        padding: 7px 8px;
+        border-top: 1px solid var(--accent-line);
+        background: rgb(233 162 59 / 6%);
+      }
+      #selbar[hidden] {
+        display: none;
+      }
+      #selbar .cnt {
+        margin-right: auto;
+        color: var(--accent-text);
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      #selbar .why {
+        flex-basis: 100%;
+        color: var(--dim);
+        font-size: 11px;
+        line-height: 1.4;
+      }
+      .abtn {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 28px;
+        padding: 0 9px;
+        border: 1px solid var(--line2);
+        border-radius: 4px;
+        background: var(--bg2);
+        color: var(--text);
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .abtn:hover:not(:disabled) {
+        background: var(--bg3);
+      }
+      .abtn:disabled {
+        color: var(--dim);
+        cursor: default;
+        background: transparent;
+      }
+      .abtn.primary:not(:disabled) {
+        border-color: var(--accent-line);
+        background: var(--accent-bg);
+        color: var(--accent-text);
+      }
+      .abtn svg.i {
+        width: 14px;
+        height: 14px;
+      }
+
+      /* the drag ghost (the editor's nested drag) */
+      .nest-ghost {
+        position: fixed;
+        z-index: 1000;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        max-width: 230px;
+        padding: 4px 8px;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        background: var(--bg1);
+        color: var(--text);
+        font-size: 12px;
+        box-shadow: 0 4px 12px rgb(0 0 0 / 35%);
+        pointer-events: none;
+      }
+      .nest-ghost-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .nest-ghost-no {
+        display: none;
+        align-items: center;
+        gap: 4px;
+        color: var(--danger);
+        font-weight: 600;
+      }
+      .nest-ghost-no svg.i {
+        width: 12px;
+        height: 12px;
+      }
+      .nest-ghost-why {
+        display: none;
+        color: var(--muted);
+        font-size: 11px;
+        white-space: normal;
+      }
+      .nest-ghost[data-refused] {
+        border-color: var(--danger);
+      }
+      .nest-ghost[data-refused] .nest-ghost-no {
+        display: flex;
+      }
+      .nest-ghost[data-refused] .nest-ghost-why:not(:empty) {
+        display: block;
+      }
+      :root[data-nest-drag="refused"],
+      :root[data-nest-drag="refused"] * {
+        cursor: not-allowed !important;
+      }
+      :root[data-nest-drag="on"],
+      :root[data-nest-drag="on"] * {
+        cursor: grabbing !important;
+      }
+
+      /* inspector */
+      .hic {
+        display: inline-flex;
+        justify-content: center;
+        width: 22px;
+      }
+      .ttl {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        color: #f0f1f3;
+        font-size: 13.5px;
+        font-weight: 600;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .ttlin {
+        flex: 1;
+        min-width: 0;
+        height: 26px;
+        padding: 0 5px;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        outline: none;
+        background: transparent;
+        color: #f0f1f3;
+        font: 600 13.5px var(--sans);
+        text-decoration: underline dotted var(--muted);
+        text-underline-offset: 3px;
+      }
+      .ttlin:hover {
+        border-color: var(--line2);
+      }
+      .ttlin:focus {
+        border-color: var(--focus);
+        background: var(--bg2);
+        text-decoration: none;
+      }
+      .sub {
+        padding: 6px 12px 2px;
+        color: var(--dim);
+        font-size: 11px;
+      }
+      .isec {
+        margin-top: 4px;
+        padding: 6px 12px 8px;
+        border-top: 1px solid var(--line);
+      }
+      .isec h4 {
+        margin: 2px 0 6px;
+        color: var(--muted);
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .f {
+        display: grid;
+        grid-template-columns: 70px minmax(0, 1fr);
+        align-items: center;
+        gap: 6px;
+        min-height: 26px;
+        margin: 3px 0;
+      }
+      .f > .flabel {
+        overflow: hidden;
+        color: var(--muted);
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .vec {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 4px;
+      }
+      .vec.n2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .num {
+        display: flex;
+        align-items: center;
+        min-width: 0;
+        height: 24px;
+        border: 1px solid var(--line2);
+        border-radius: 3px;
+        background: var(--bg2);
+      }
+      .num:focus-within {
+        border-color: var(--focus);
+      }
+      .num input {
+        flex: 1;
+        min-width: 0;
+        height: 100%;
+        padding: 0 4px;
+        border: 0;
+        outline: none;
+        background: transparent;
+        color: var(--text);
+        font: 11px var(--mono);
+      }
+      .num .unit {
+        padding-right: 5px;
+        color: var(--dim);
+        font: 10px var(--mono);
+      }
+      .ax {
+        display: flex;
+        align-self: stretch;
+        align-items: center;
+        padding: 0 5px;
+        border-right: 1px solid var(--line2);
+        font: 600 10px var(--mono);
+      }
+      .ax.e {
+        color: var(--ax-e);
+      }
+      .ax.n {
+        color: var(--ax-n);
+      }
+      .ax.u {
+        color: var(--ax-u);
+      }
+      .note {
+        margin: 4px 0;
+        color: var(--dim);
+        font-size: 11px;
+        line-height: 1.5;
+      }
+      .acts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+      }
+      .mlist {
+        display: flex;
+        flex-direction: column;
+      }
+      .mrow {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        height: 26px;
+        padding: 0 6px;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        color: var(--text);
+        text-align: left;
+        cursor: pointer;
+      }
+      .mrow:hover {
+        background: var(--bg3);
+      }
+      .mrow .nm {
+        flex: 1;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 1px 6px;
+        border: 1px solid var(--fold-line);
+        border-radius: 999px;
+        color: var(--fold);
+        font-size: 10.5px;
+        white-space: nowrap;
+      }
+      .badge.story {
+        border-color: var(--accent-line);
+        color: var(--accent-text);
+      }
+
+      /* viewport */
+      #vp {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: var(--tree-w);
+        right: var(--insp-w);
+        overflow: hidden;
+        background: #1d2026;
+      }
+      #vp canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        touch-action: none;
+        outline: none;
+      }
+      #chip {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        right: 10px;
+        display: flex;
+        justify-content: center;
+        pointer-events: none;
+      }
+      #chip > div {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        max-width: 100%;
+        padding: 5px 10px;
+        border: 1px solid var(--line2);
+        border-radius: 999px;
+        background: rgb(31 32 35 / 92%);
+        color: var(--muted);
+        font-size: 11.5px;
+        pointer-events: auto;
+        text-align: center;
+      }
+      #chip b {
+        color: var(--text);
+        font-weight: 600;
+      }
+      #chip .lnk {
+        padding: 1px 7px;
+        border: 1px solid var(--fold-line);
+        border-radius: 999px;
+        background: transparent;
+        color: var(--fold);
+        cursor: pointer;
+      }
+      #chip .lnk.amber {
+        border-color: var(--accent-line);
+        color: var(--accent-text);
+      }
+      #readout {
+        position: absolute;
+        display: none;
+        padding: 3px 7px;
+        border: 1px solid var(--line2);
+        border-radius: 4px;
+        background: rgb(31 32 35 / 95%);
+        font: 11px var(--mono);
+        white-space: nowrap;
+        pointer-events: none;
+      }
+      #toast {
+        position: absolute;
+        left: 50%;
+        bottom: 14px;
+        max-width: calc(100% - 24px);
+        padding: 7px 12px;
+        border: 1px solid var(--line2);
+        border-radius: 6px;
+        background: rgb(42 45 50 / 97%);
+        box-shadow: 0 6px 18px rgb(0 0 0 / 40%);
+        color: var(--text);
+        font-size: 12px;
+        opacity: 0;
+        transform: translate(-50%, 6px);
+        transition:
+          opacity 0.15s,
+          transform 0.15s;
+        pointer-events: none;
+        text-align: center;
+      }
+      #toast.on {
+        opacity: 1;
+        transform: translate(-50%, 0);
+      }
+      #loadmsg {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--dim);
+      }
+
+      /* about */
+      #about {
+        position: absolute;
+        z-index: 8;
+        top: 12px;
+        left: calc(var(--tree-w) + 12px);
+        width: min(340px, calc(100% - var(--tree-w) - var(--insp-w) - 24px));
+        max-height: calc(100% - 24px);
+        overflow: auto;
+        display: none;
+        padding: 12px 14px;
+        border: 1px solid var(--line2);
+        border-radius: 8px;
+        background: rgb(31 32 35 / 97%);
+        box-shadow: 0 10px 28px rgb(0 0 0 / 45%);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      body[data-about="open"] #about {
+        display: block;
+      }
+      #about h2 {
+        margin: 0 0 4px;
+        font-size: 14px;
+      }
+      #about h3 {
+        margin: 12px 0 4px;
+        color: var(--accent-text);
+        font-size: 11px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      #about p,
+      #about ul,
+      #about ol {
+        margin: 4px 0;
+      }
+      #about ul,
+      #about ol {
+        padding-left: 18px;
+      }
+      #about li {
+        margin: 2px 0;
+      }
+      #about .x {
+        float: right;
+      }
+      #about kbd {
+        padding: 0 3px;
+        border: 1px solid var(--line2);
+        border-radius: 3px;
+        color: var(--muted);
+        font: 10px var(--mono);
+      }
+      .legend {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin: 6px 0;
+      }
+      .legend > div {
+        padding: 6px 0 4px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--bg1);
+        overflow: hidden;
+      }
+      .legend .lt {
+        padding: 0 8px 4px;
+        font-weight: 600;
+      }
+      .legend .trow {
+        pointer-events: none;
+      }
+      .legend .folder {
+        padding-left: 8px;
+      }
+      .legend .kid {
+        padding-left: 26px;
+      }
+      .legend .kid.infolder::after,
+      .legend .kid.infolder::before {
+        left: 15px;
+      }
+      .legend ul {
+        margin: 4px 0 0 !important;
+        padding: 0 8px 0 22px !important;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      #tabs {
+        display: none;
+      }
+
+      @media (width <= 1100px) {
+        :root {
+          --tree-w: 224px;
+          --insp-w: 250px;
+        }
+      }
+      @media (width <= 700px), (pointer: coarse) {
+        .trow {
+          height: 32px;
+        }
+        .head {
+          height: 34px;
+        }
+        .emptyrow {
+          height: 32px;
+        }
+        .grip {
+          opacity: 0.6;
+        }
+        .grip::after {
+          content: "";
+          position: absolute;
+          inset: -4px -4px;
+        }
+        .abtn {
+          height: 32px;
+        }
+      }
+      @media (width <= 700px) {
+        .tbtn .lbl,
+        .brand .doc,
+        .tbtn kbd {
+          display: none;
+        }
+        .tbtn {
+          padding: 0 7px;
+        }
+        #vp {
+          left: 0;
+          right: 0;
+          bottom: auto;
+          height: var(--sheet-top);
+        }
+        #tabs {
+          position: absolute;
+          top: var(--sheet-top);
+          left: 0;
+          right: 0;
+          display: flex;
+          height: 38px;
+          border-top: 1px solid var(--line2);
+          border-bottom: 1px solid var(--line);
+          background: var(--bg1);
+          border-radius: 10px 10px 0 0;
+        }
+        #tabs button {
+          flex: 1;
+          border: 0;
+          background: transparent;
+          color: var(--muted);
+          font-weight: 600;
+          cursor: pointer;
+        }
+        #tabs button[aria-selected="true"] {
+          color: var(--accent-text);
+          box-shadow: inset 0 -2px 0 var(--accent);
+        }
+        #tree,
+        #insp,
+        #about {
+          top: calc(var(--sheet-top) + 38px);
+          left: 0;
+          right: 0;
+          bottom: 0;
+          width: auto;
+          max-height: none;
+          border: 0;
+          border-radius: 0;
+          box-shadow: none;
+          display: none;
+        }
+        body[data-tab="tree"] #tree,
+        body[data-tab="insp"] #insp {
+          display: flex;
+        }
+        body[data-tab="about"] #about {
+          display: block;
+        }
+        body:not([data-tab="about"]) #about {
+          display: none;
+        }
+        #about .x {
+          display: none;
+        }
+        .treefoot {
+          display: none;
+        }
+        #insp .dhead {
+          display: flex;
+        }
+      }
+      /* a short window (a phone on its side) keeps the tree's rows, not its key list */
+      @media (height <= 520px), (pointer: coarse) {
+        .treefoot {
+          display: none;
+        }
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.185.1/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body data-tab="tree">
+    <header id="tb">
+      <div class="brand">
+        <b>Tour editor</b><span class="doc">Mill walk</span>
+      </div>
+      <div class="grp">
+        <button class="tbtn" data-cmd="undo" id="b-undo" title="Undo (Ctrl+Z)">
+          <span data-i="undo"></span><span class="lbl">Undo</span>
+        </button>
+        <button
+          class="tbtn"
+          data-cmd="redo"
+          id="b-redo"
+          title="Redo (Ctrl+Shift+Z)"
+        >
+          <span data-i="redo"></span><span class="lbl">Redo</span>
+        </button>
+      </div>
+      <div class="grp">
+        <button
+          class="tbtn"
+          data-cmd="group"
+          id="b-group"
+          title="Group the selected items into a folder (Ctrl+G)"
+        >
+          <span data-i="group"></span><span class="lbl">Group</span
+          ><kbd>Ctrl+G</kbd>
+        </button>
+        <button
+          class="tbtn"
+          data-cmd="ungroup"
+          id="b-ungroup"
+          title="Ungroup the selected folder (Ctrl+Shift+G)"
+        >
+          <span data-i="ungroup"></span><span class="lbl">Ungroup</span>
+        </button>
+        <button
+          class="tbtn"
+          data-cmd="dup"
+          id="b-dup"
+          title="Duplicate (Ctrl+D)"
+        >
+          <span data-i="copy"></span><span class="lbl">Duplicate</span>
+        </button>
+      </div>
+      <span class="sp"></span>
+      <button
+        class="tbtn"
+        data-cmd="about"
+        id="b-about"
+        title="What this page is and what to try"
+      >
+        <span data-i="info"></span><span class="lbl">About</span>
+      </button>
+    </header>
+
+    <main id="main">
+      <section id="vp" aria-label="3D view">
+        <div id="loadmsg">Loading the 3D view...</div>
+        <div id="chip" aria-live="polite"></div>
+        <div id="readout"></div>
+        <div id="toast" role="status"></div>
+      </section>
+
+      <nav id="tabs" role="tablist" aria-label="Panels">
+        <button role="tab" data-tab="tree" aria-selected="true">Station</button>
+        <button role="tab" data-tab="insp" aria-selected="false">
+          Details
+        </button>
+        <button role="tab" data-tab="about" aria-selected="false">About</button>
+      </nav>
+
+      <aside id="tree" class="dock" aria-label="Station tree">
+        <div class="dhead">
+          <span class="dtitle">Stations</span><span class="meta">1</span
+          ><span class="sp"></span>
+          <button
+            class="smallbtn"
+            data-cmd="selmode"
+            id="b-selmode"
+            aria-pressed="false"
+            title="Pick several rows with checkboxes"
+          >
+            <span data-i="selmode"></span>Select
+          </button>
+        </div>
+        <div id="tree-body" class="dbody"></div>
+        <div id="selbar" hidden></div>
+        <div class="treefoot">
+          <span><kbd>Ctrl</kbd>+click add</span
+          ><span><kbd>Shift</kbd>+click range</span>
+          <span><kbd>Ctrl+G</kbd> group</span
+          ><span><kbd>Ctrl+Shift+G</kbd> ungroup</span>
+          <span><kbd>Ctrl+D</kbd> duplicate</span
+          ><span><kbd>F2</kbd> rename</span>
+        </div>
+      </aside>
+
+      <aside id="insp" class="dock" aria-label="Inspector">
+        <div class="dhead" id="insp-head"></div>
+        <div id="insp-body" class="dbody"></div>
+      </aside>
+
+      <article id="about" aria-label="About this prototype">
+        <button class="smallbtn x" data-cmd="about" title="Close">Close</button>
+        <h2>Folders, tree first</h2>
+        <p>
+          Items are grouped where the structure of a station already lives: in
+          the station tree. The 3D view only follows: a selected folder shows
+          one gizmo at its pivot and a light teal outline around its items.
+        </p>
+        <h3>Why this direction</h3>
+        <ul>
+          <li>
+            A folder is structure, and the tree is where structure is seen:
+            stories, items and now folders sit in one list, made and changed
+            with one set of moves.
+          </li>
+          <li>
+            Picking rows is exact. In a crowded scene a tap in 3D hits the wrong
+            card; a row cannot.
+          </li>
+          <li>
+            It reuses what creators already know: the grip, the nested drag and
+            "Not possible here" of story folders, and the one gizmo of a single
+            item.
+          </li>
+          <li>
+            Mouse and finger get the same model: Ctrl/Shift-click on a desktop,
+            a Select mode with checkboxes on a phone (or a long press on a row).
+          </li>
+        </ul>
+        <h3>The strongest case against it</h3>
+        <p>
+          Grouping is a spatial wish ("the two cards beside the stone"), but the
+          tree shows names, not places. A creator must know which "Old photo" is
+          the one beside the stone; with twenty items called "Picture", picking
+          by name is slower than drawing a lasso around them in 3D. On a phone
+          the list and the scene share one screen, so grouping means switching
+          between them.
+        </p>
+        <h3>Try this</h3>
+        <ol>
+          <li>
+            Pick "Built in 1820" and "Old photo": <kbd>Ctrl</kbd>+click (or
+            <kbd>Shift</kbd>+click a range) on a desktop; on a phone tap
+            <b>Select</b> and tick both, or long-press a row.
+          </li>
+          <li>Press <b>Group</b> (<kbd>Ctrl+G</kbd>) and type a name.</li>
+          <li>
+            In 3D, drag the round arrow to turn the folder, the middle arrows to
+            move it, a white dot to scale it.
+          </li>
+          <li>
+            Click one card in 3D: it is picked alone and moves alone; the folder
+            stays outlined.
+          </li>
+          <li>
+            In the tree, drag a card's grip out of the folder, onto the station
+            row or between free items. It keeps its place in the scene.
+          </li>
+          <li>
+            Drag "Water sound" onto the middle of the folder row to put it in.
+          </li>
+          <li>Drag the folder onto the story: "Not possible here".</li>
+          <li>
+            Duplicate the folder (<kbd>Ctrl+D</kbd>), Ungroup it
+            (<kbd>Ctrl+Shift+G</kbd>), then Undo (<kbd>Ctrl+Z</kbd>).
+          </li>
+        </ol>
+        <h3>A folder is not a story</h3>
+        <div class="legend" id="legend"></div>
+      </article>
+    </main>
+    <footer id="bar">
+      <span id="bar-sel"></span><span class="sp"></span
+      ><span id="bar-hist"></span>
+    </footer>
+
+    <script type="module">
+      import {
+        WebGLRenderer,
+        Scene,
+        Color,
+        Fog,
+        PerspectiveCamera,
+        HemisphereLight,
+        DirectionalLight,
+        Mesh,
+        Group,
+        PlaneGeometry,
+        CanvasTexture,
+        SRGBColorSpace,
+        MeshStandardMaterial,
+        MeshBasicMaterial,
+        DodecahedronGeometry,
+        CylinderGeometry,
+        RingGeometry,
+        CircleGeometry,
+        Sprite,
+        SpriteMaterial,
+        BoxGeometry,
+        EdgesGeometry,
+        LineSegments,
+        LineBasicMaterial,
+        LineDashedMaterial,
+        LineLoop,
+        BufferGeometry,
+        Float32BufferAttribute,
+        Vector2,
+        Vector3,
+        Plane,
+        Raycaster,
+        DoubleSide,
+      } from "three";
+      import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+      // ---------------------------------------------------------------- small helpers
+      const $ = (s, r = document) => r.querySelector(s);
+      const DEG = Math.PI / 180;
+      const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+      const norm = (h) => {
+        const x = ((((h + 180) % 360) + 360) % 360) - 180;
+        return x === -180 ? 180 : x;
+      };
+      const fmt = (v, d) =>
+        (Math.abs(v) < 0.5 * Math.pow(10, -d) ? 0 : v).toFixed(d);
+      const phone = () => window.matchMedia("(width <= 700px)").matches;
+      // clockwise rotation (heading clockwise from north) of an east/north vector
+      function cw(e, n, hDeg) {
+        const c = Math.cos(hDeg * DEG),
+          s = Math.sin(hDeg * DEG);
+        return [e * c + n * s, -e * s + n * c];
+      }
+
+      const ICONS = {
+        grip: "M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01",
+        chev: "M6 9l6 6 6-6",
+        fold: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM12 11v4M10 13h4",
+        story:
+          "M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5zM5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3M9 7.5h6M9 10.5h4",
+        model: "M12 3l8 4.5v9L12 21l-8-4.5v-9zM12 12l8-4.5M12 12v9M12 12L4 7.5",
+        text: "M5 6.5V5h14v1.5M12 5v14M9 19h6",
+        photo: "M4 5h16v14H4zM4 15.5l4.5-4.5 4 4 3-3 4.5 4.5M15.5 9h.01",
+        sound:
+          "M4 10v4h3.5L12 18V6L7.5 10zM15.5 9.5a3.5 3.5 0 0 1 0 5M18 7a7 7 0 0 1 0 10",
+        undo: "M9 14L4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11",
+        redo: "M15 14l5-5-5-5M20 9H9.5a5.5 5.5 0 0 0 0 11H13",
+        group:
+          "M4 7V4h3M17 4h3v3M20 17v3h-3M7 20H4v-3M8.5 8.5h4v4h-4zM11.5 11.5h4v4h-4z",
+        ungroup: "M4 4h6.5v6.5H4zM13.5 13.5H20V20h-6.5z",
+        copy: "M8.5 8.5h11v11h-11zM15.5 8.5V4.5h-11v11h4",
+        check: "M5 12.5l4.5 4.5L19 7.5",
+        pen: "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z",
+        ban: "M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18M5.6 5.6l12.8 12.8",
+        selmode: "M4 5h4v4H4zM11 7h9M4.5 15.5l1.5 1.5 2.5-3M11 16h9",
+        info: "M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18M12 11v6M12 7.5h.01",
+        pivot:
+          "M12 2.5v5M12 16.5v5M2.5 12h5M16.5 12h5M12 8.5l3.5 3.5-3.5 3.5L8.5 12z",
+        out: "M10 17l-5-5 5-5M5 12h10a4 4 0 0 0 4-4V5",
+        station:
+          "M12 21s-6.5-6.2-6.5-11a6.5 6.5 0 0 1 13 0c0 4.8-6.5 11-6.5 11zM12 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5",
+      };
+      const I = (name) =>
+        `<svg class="i${name === "grip" ? " dots" : ""}" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONS[name]}"/></svg>`;
+      document.querySelectorAll("[data-i]").forEach((s) => {
+        s.outerHTML = I(s.dataset.i);
+      });
+
+      function h(tag, p = {}, ...kids) {
+        const e = document.createElement(tag);
+        if (p.class) e.className = p.class;
+        if (p.text != null) e.textContent = p.text;
+        if (p.html != null) e.innerHTML = p.html;
+        if (p.dataset) Object.assign(e.dataset, p.dataset);
+        if (p.attrs)
+          for (const [k, v] of Object.entries(p.attrs))
+            if (v != null) e.setAttribute(k, v);
+        for (const k of kids) if (k) e.append(k);
+        return e;
+      }
+
+      // ---------------------------------------------------------------- the data (metres, heading clockwise from north)
+      const TYPES = {
+        model: {
+          label: "3D model",
+          foot: 1.25,
+          box: [2.3, 1.55, 1.9],
+          cy: 0.78,
+        },
+        text: {
+          label: "Text card",
+          foot: 0.75,
+          box: [1.4, 1.95, 0.16],
+          cy: 0.97,
+        },
+        photo: {
+          label: "Picture",
+          foot: 0.65,
+          box: [1.2, 1.95, 0.16],
+          cy: 0.97,
+        },
+        sound: {
+          label: "Sound circle",
+          foot: 2.45,
+          box: [4.9, 0.7, 4.9],
+          cy: 0.35,
+        },
+      };
+      let uid = 100;
+      const nid = (p) => p + uid++;
+      const S = {
+        station: {
+          id: "st1",
+          kind: "station",
+          name: "Old mill",
+          stories: [
+            {
+              id: "s1",
+              kind: "story",
+              name: "The miller's day",
+              steps: [
+                { id: "p1", kind: "step", name: "Look at the wheel" },
+                { id: "p2", kind: "step", name: "Listen to the stream" },
+              ],
+            },
+          ],
+          free: [
+            {
+              id: "i1",
+              kind: "item",
+              type: "model",
+              name: "Millstone",
+              e: 0,
+              n: 0,
+              y: 0,
+              rot: 20,
+              scale: 1,
+            },
+            {
+              id: "i2",
+              kind: "item",
+              type: "text",
+              name: "Built in 1820",
+              e: 2.7,
+              n: 0.9,
+              y: 0,
+              rot: -15,
+              scale: 1,
+            },
+            {
+              id: "i3",
+              kind: "item",
+              type: "photo",
+              name: "Old photo",
+              e: -2.7,
+              n: 1.1,
+              y: 0,
+              rot: 12,
+              scale: 1,
+            },
+            {
+              id: "i4",
+              kind: "item",
+              type: "sound",
+              name: "Water sound",
+              e: 1.4,
+              n: -5.6,
+              y: 0,
+              rot: 0,
+              scale: 1,
+            },
+          ],
+        },
+        folded: new Set(),
+        sel: [],
+        anchor: null,
+        selMode: false,
+        renaming: null,
+        hover: null,
+      };
+
+      function findNode(id) {
+        const st = S.station;
+        if (id === st.id)
+          return { node: st, list: null, key: null, parent: null };
+        for (const s of st.stories) {
+          if (s.id === id)
+            return { node: s, list: st.stories, key: "stories", parent: null };
+          for (const p of s.steps)
+            if (p.id === id)
+              return {
+                node: p,
+                list: s.steps,
+                key: "story:" + s.id,
+                parent: s,
+              };
+        }
+        for (const n of st.free) {
+          if (n.id === id)
+            return { node: n, list: st.free, key: "free", parent: null };
+          if (n.kind === "folder")
+            for (const c of n.children)
+              if (c.id === id)
+                return {
+                  node: c,
+                  list: n.children,
+                  key: "folder:" + n.id,
+                  parent: n,
+                };
+        }
+        return null;
+      }
+      function listByKey(key) {
+        const st = S.station;
+        if (key === "free") return st.free;
+        if (key === "stories") return st.stories;
+        const [k, id] = key.split(":");
+        const f = findNode(id);
+        if (!f) return null;
+        return k === "folder" ? f.node.children : f.node.steps;
+      }
+      const kindOf = (id) => findNode(id)?.node.kind;
+      const is3D = (id) => {
+        const k = kindOf(id);
+        return k === "item" || k === "folder";
+      };
+      function allItems() {
+        const out = [];
+        for (const n of S.station.free) {
+          if (n.kind === "item") out.push(n);
+          else out.push(...n.children);
+        }
+        return out;
+      }
+      const folders = () => S.station.free.filter((n) => n.kind === "folder");
+
+      // world placement of an item or folder; a folder's items are relative to its pivot
+      function worldOf(id) {
+        const f = findNode(id);
+        const nd = f.node;
+        if (f.key === "free")
+          return {
+            e: nd.e,
+            n: nd.n,
+            y: nd.y || 0,
+            rot: nd.rot,
+            scale: nd.scale,
+          };
+        const F = f.parent;
+        const [de, dn] = cw(nd.e * F.scale, nd.n * F.scale, F.rot);
+        return {
+          e: F.e + de,
+          n: F.n + dn,
+          y: (nd.y || 0) * F.scale,
+          rot: F.rot + nd.rot,
+          scale: F.scale * nd.scale,
+        };
+      }
+      function setWorld(id, w) {
+        const f = findNode(id);
+        const nd = f.node;
+        if (f.key === "free") {
+          Object.assign(nd, {
+            e: w.e,
+            n: w.n,
+            rot: norm(w.rot),
+            scale: w.scale,
+          });
+          if (nd.kind === "item") nd.y = w.y;
+          return;
+        }
+        const F = f.parent;
+        const [le, ln] = cw(
+          (w.e - F.e) / F.scale,
+          (w.n - F.n) / F.scale,
+          -F.rot,
+        );
+        Object.assign(nd, {
+          e: le,
+          n: ln,
+          y: w.y / F.scale,
+          rot: norm(w.rot - F.rot),
+          scale: w.scale / F.scale,
+        });
+      }
+      function folderName() {
+        const used = new Set(folders().map((f) => f.name));
+        let k = 1;
+        while (used.has("Folder " + k)) k++;
+        return "Folder " + k;
+      }
+
+      // ---------------------------------------------------------------- selection
+      // What the gizmo moves: selected items and folders, an item dropped when its folder is selected too.
+      function targets() {
+        const ids = S.sel.filter(is3D);
+        return ids.filter((id) => {
+          const f = findNode(id);
+          return !(f.key.startsWith("folder:") && ids.includes(f.parent.id));
+        });
+      }
+      function treeOrder() {
+        return [
+          ...document.querySelectorAll(
+            '#tree-body .trow[data-kind="item"], #tree-body .trow[data-kind="folder"]',
+          ),
+        ].map((r) => r.dataset.id);
+      }
+      function clickSelect(id, { toggle = false, range = false } = {}) {
+        const k = kindOf(id);
+        const multi = k === "item" || k === "folder";
+        if (range && multi && S.anchor && is3D(S.anchor)) {
+          const order = treeOrder();
+          const a = order.indexOf(S.anchor),
+            b = order.indexOf(id);
+          if (a >= 0 && b >= 0) {
+            S.sel = order.slice(Math.min(a, b), Math.max(a, b) + 1);
+            changed({ tree: true });
+            return;
+          }
+        }
+        if ((toggle || S.selMode) && multi) {
+          S.sel = S.sel.filter(is3D);
+          S.sel = S.sel.includes(id)
+            ? S.sel.filter((x) => x !== id)
+            : [...S.sel, id];
+          S.anchor = id;
+        } else {
+          if (S.selMode && !multi) S.selMode = false;
+          S.sel = [id];
+          S.anchor = id;
+        }
+        changed({ tree: true });
+      }
+
+      // ---------------------------------------------------------------- history (whole-station snapshots)
+      const hist = { past: [], future: [] };
+      const snapshot = () =>
+        JSON.stringify({
+          station: S.station,
+          sel: S.sel,
+          folded: [...S.folded],
+          uid,
+        });
+      function record(label) {
+        hist.past.push({ snap: snapshot(), label });
+        if (hist.past.length > 200) hist.past.shift();
+        hist.future = [];
+      }
+      function restore(snap) {
+        const o = JSON.parse(snap);
+        S.station = o.station;
+        S.sel = o.sel;
+        S.folded = new Set(o.folded);
+        uid = Math.max(uid, o.uid);
+        S.renaming = null;
+      }
+      function undo() {
+        const e = hist.past.pop();
+        if (!e) {
+          toast("Nothing to undo");
+          return;
+        }
+        hist.future.push({ snap: snapshot(), label: e.label });
+        restore(e.snap);
+        changed();
+        toast("Undo: " + e.label);
+      }
+      function redo() {
+        const e = hist.future.pop();
+        if (!e) {
+          toast("Nothing to redo");
+          return;
+        }
+        hist.past.push({ snap: snapshot(), label: e.label });
+        restore(e.snap);
+        changed();
+        toast("Redo: " + e.label);
+      }
+
+      // ---------------------------------------------------------------- the commands
+      function groupCheck() {
+        const ids = S.sel.filter((id) => id !== S.station.id);
+        if (!ids.length)
+          return {
+            ok: false,
+            why: "Pick items first: Ctrl+click or Shift+click rows, or tap Select.",
+          };
+        if (
+          ids.some((id) => {
+            const k = kindOf(id);
+            return k === "story" || k === "step";
+          })
+        )
+          return {
+            ok: false,
+            why: "Stories and their steps do not go into folders.",
+          };
+        if (ids.some((id) => kindOf(id) === "folder"))
+          return {
+            ok: false,
+            why: "A folder cannot go into a folder: folders are one level deep.",
+          };
+        return { ok: true, ids };
+      }
+      function doGroup() {
+        const g = groupCheck();
+        if (!g.ok) {
+          toast(g.why);
+          return;
+        }
+        const order = treeOrder();
+        const ids = [...g.ids].sort(
+          (a, b) => order.indexOf(a) - order.indexOf(b),
+        );
+        record(`Group ${ids.length} item${ids.length > 1 ? "s" : ""}`);
+        const worlds = ids.map(worldOf);
+        const pe = worlds.reduce((s, w) => s + w.e, 0) / worlds.length,
+          pn = worlds.reduce((s, w) => s + w.n, 0) / worlds.length;
+        const st = S.station;
+        const idx = Math.min(
+          ...ids.map((id) => {
+            const f = findNode(id);
+            return st.free.indexOf(f.parent || f.node);
+          }),
+        );
+        const folder = {
+          id: nid("f"),
+          kind: "folder",
+          name: folderName(),
+          e: Math.round(pe * 100) / 100,
+          n: Math.round(pn * 100) / 100,
+          rot: 0,
+          scale: 1,
+          children: [],
+        };
+        st.free.splice(idx, 0, folder);
+        for (const id of ids) {
+          const f = findNode(id);
+          f.list.splice(f.list.indexOf(f.node), 1);
+          folder.children.push(f.node);
+        }
+        ids.forEach((id, k) => setWorld(id, worlds[k]));
+        S.sel = [folder.id];
+        S.anchor = folder.id;
+        S.folded.delete(folder.id);
+        S.selMode = false;
+        S.renaming = folder.id;
+        changed();
+        toast(
+          `Grouped ${ids.length} item${ids.length > 1 ? "s" : ""} into a folder - type its name`,
+        );
+      }
+      function doUngroup() {
+        const fids = S.sel.filter((id) => kindOf(id) === "folder");
+        if (!fids.length) {
+          const f = findNode(S.sel[0] || "");
+          if (f && f.key?.startsWith("folder:")) fids.push(f.parent.id);
+        }
+        if (!fids.length) {
+          toast("Select a folder to ungroup it");
+          return;
+        }
+        record(
+          fids.length > 1
+            ? `Ungroup ${fids.length} folders`
+            : `Ungroup "${findNode(fids[0]).node.name}"`,
+        );
+        const out = [];
+        for (const fid of fids) {
+          const F = findNode(fid).node;
+          const ws = F.children.map((c) => worldOf(c.id));
+          const i = S.station.free.indexOf(F);
+          S.station.free.splice(i, 1, ...F.children);
+          F.children.forEach((c, k) => setWorld(c.id, ws[k]));
+          out.push(...F.children.map((c) => c.id));
+        }
+        S.sel = out;
+        S.anchor = out[0] || null;
+        changed();
+        toast(
+          `Ungrouped - ${out.length} item${out.length === 1 ? "" : "s"} stay where they are`,
+        );
+      }
+      function renewIds(n) {
+        n.id = nid(
+          n.kind === "folder"
+            ? "f"
+            : n.kind === "story"
+              ? "s"
+              : n.kind === "step"
+                ? "p"
+                : "i",
+        );
+        (n.children || []).forEach(renewIds);
+        (n.steps || []).forEach(renewIds);
+      }
+      function doDuplicate() {
+        let ids = S.sel.filter((id) => id !== S.station.id);
+        ids = ids.filter((id) => {
+          const f = findNode(id);
+          return !(f.parent && ids.includes(f.parent.id));
+        });
+        if (!ids.length) {
+          toast("Select something to duplicate");
+          return;
+        }
+        const names = ids.map((id) => findNode(id).node.name);
+        record(
+          ids.length > 1
+            ? `Duplicate ${ids.length}`
+            : `Duplicate "${names[0]}"`,
+        );
+        const copies = [];
+        for (const id of ids) {
+          const f = findNode(id);
+          const copy = JSON.parse(JSON.stringify(f.node));
+          renewIds(copy);
+          copy.name = f.node.name + " copy";
+          f.list.splice(f.list.indexOf(f.node) + 1, 0, copy);
+          if (is3D(id)) {
+            const w = worldOf(id);
+            setWorld(copy.id, { ...w, e: w.e + 1.5, n: w.n - 1.5 });
+          }
+          copies.push(copy.id);
+        }
+        S.sel = copies;
+        S.anchor = copies[0];
+        changed();
+        toast(
+          ids.length > 1
+            ? `Duplicated ${ids.length}`
+            : `Duplicated "${names[0]}"${is3D(copies[0]) ? " - the copy stands 1.5 m to the side" : ""}`,
+        );
+      }
+      function moveNodes(ids, key, refId, where, label) {
+        record(label);
+        const worlds = ids.map((id) => (is3D(id) ? worldOf(id) : null));
+        const from = ids.map((id) => findNode(id).key);
+        const nodes = ids.map((id) => {
+          const f = findNode(id);
+          f.list.splice(f.list.indexOf(f.node), 1);
+          return f.node;
+        });
+        const list = listByKey(key);
+        let at = list.length;
+        if (refId) {
+          const ri = list.findIndex((n) => n.id === refId);
+          at = where === "after" ? ri + 1 : ri;
+        }
+        list.splice(at, 0, ...nodes);
+        ids.forEach((id, k) => {
+          if (worlds[k]) setWorld(id, worlds[k]);
+        });
+        const nm =
+          ids.length > 1 ? `${ids.length} items` : `"${nodes[0].name}"`;
+        if (key.startsWith("folder:") && !from.every((f) => f === key))
+          toast(
+            `${nm} now in "${findNode(key.slice(7)).node.name}" - kept its place in the scene`,
+          );
+        else if (
+          from.some((f) => f.startsWith("folder:")) &&
+          !key.startsWith("folder:")
+        )
+          toast(`${nm} left the folder - kept its place in the scene`);
+        else toast("Moved " + nm);
+        changed();
+      }
+      function takeOut(id) {
+        const f = findNode(id);
+        if (!f || !f.key.startsWith("folder:")) return;
+        moveNodes(
+          [id],
+          "free",
+          f.parent.id,
+          "after",
+          `Take "${f.node.name}" out of "${f.parent.name}"`,
+        );
+      }
+      function pivotToCentre(fid) {
+        const F = findNode(fid).node;
+        if (!F.children.length) return;
+        record("Pivot to centre");
+        const ws = F.children.map((c) => worldOf(c.id));
+        F.e = ws.reduce((s, w) => s + w.e, 0) / ws.length;
+        F.n = ws.reduce((s, w) => s + w.n, 0) / ws.length;
+        F.children.forEach((c, k) => setWorld(c.id, ws[k]));
+        changed();
+        toast("The pivot is in the middle of its items again");
+      }
+      function rename(id, value) {
+        const f = findNode(id);
+        const v = value.trim();
+        if (f && v && v !== f.node.name) {
+          record(`Rename to "${v}"`);
+          f.node.name = v;
+        }
+      }
+
+      // ---------------------------------------------------------------- the tree
+      const treeBody = $("#tree-body");
+      function rowEl({
+        id,
+        kind,
+        list,
+        cls,
+        icon,
+        iconCls,
+        name,
+        meta,
+        tw,
+        grip = true,
+        cb = false,
+        lead,
+        title,
+      }) {
+        const sel = S.sel.includes(id);
+        const r = h("div", {
+          class: `trow ${cls}${sel ? " sel" : ""}`,
+          dataset: { id, kind },
+        });
+        if (list) r.dataset.list = list;
+        if (grip && !S.renaming)
+          r.append(
+            h("span", {
+              class: "grip",
+              html: I("grip"),
+              attrs: { "aria-hidden": "true", title: "Drag to move" },
+            }),
+          );
+        if (tw !== undefined)
+          r.append(
+            h("button", {
+              class: "tw" + (tw ? " folded" : ""),
+              html: I("chev"),
+              dataset: { fold: id },
+              attrs: {
+                "aria-label": (tw ? "Unfold " : "Fold ") + name,
+                "aria-expanded": String(!tw),
+              },
+            }),
+          );
+        if (S.renaming === id) {
+          const box = h("div", { class: "pick" });
+          if (icon)
+            box.append(h("span", { class: "ic " + iconCls, html: I(icon) }));
+          const inp = h("input", {
+            class: "renin",
+            attrs: { "aria-label": "Name", value: name },
+          });
+          inp.dataset.ren = id;
+          box.append(inp);
+          r.append(box);
+          return r;
+        }
+        const pick = h("button", {
+          class: "pick",
+          dataset: { pick: id },
+          attrs: { "aria-pressed": String(sel), title: title || name },
+        });
+        if (lead) pick.append(lead);
+        if (icon)
+          pick.append(h("span", { class: "ic " + iconCls, html: I(icon) }));
+        pick.append(h("span", { class: "nm", text: name }));
+        if (meta) pick.append(h("span", { class: "meta", text: meta }));
+        if (cb)
+          pick.append(
+            h("span", {
+              class: "cb" + (sel ? " on" : ""),
+              html: I("check"),
+              attrs: { "aria-hidden": "true" },
+            }),
+          );
+        r.append(pick);
+        return r;
+      }
+      function itemRow(it, list, inFolder, last) {
+        const ctx =
+          inFolder && S.sel.includes(list.slice(7)) && !S.sel.includes(it.id);
+        return rowEl({
+          id: it.id,
+          kind: "item",
+          list,
+          cls: `kid${inFolder ? " deep infolder" : ""}${last ? " last" : ""}${ctx ? " ctx" : ""}`,
+          icon: it.type,
+          iconCls: it.type,
+          name: it.name,
+          cb: true,
+          title: `${it.name} (${TYPES[it.type].label})`,
+        });
+      }
+      function drawTree() {
+        const focus =
+          document.activeElement && treeBody.contains(document.activeElement)
+            ? document.activeElement.dataset.pick ||
+              document.activeElement.dataset.fold
+            : null;
+        treeBody.textContent = "";
+        treeBody.classList.toggle("selmode", S.selMode);
+        const st = S.station;
+        const wrap = h("div", { class: "cards" });
+        const folded = S.folded.has(st.id);
+        wrap.append(
+          rowEl({
+            id: st.id,
+            kind: "station",
+            cls: "head",
+            name: st.name,
+            tw: folded,
+            grip: false,
+            lead: h("span", { class: "stn", text: "1" }),
+            meta: folded
+              ? `${allItems().length + st.stories.length} items`
+              : "",
+          }),
+        );
+        if (!folded) {
+          for (const s of st.stories) {
+            const sf = S.folded.has(s.id);
+            wrap.append(
+              rowEl({
+                id: s.id,
+                kind: "story",
+                list: "stories",
+                cls: "folder story",
+                icon: "story",
+                iconCls: "story",
+                name: s.name,
+                tw: sf,
+                meta: `${s.steps.length} step${s.steps.length === 1 ? "" : "s"}`,
+              }),
+            );
+            if (!sf)
+              s.steps.forEach((p, k) =>
+                wrap.append(
+                  rowEl({
+                    id: p.id,
+                    kind: "step",
+                    list: "story:" + s.id,
+                    cls: "kid deep step",
+                    lead: h("span", { class: "stepn", text: String(k + 1) }),
+                    name: p.name,
+                  }),
+                ),
+              );
+          }
+          for (const n of st.free) {
+            if (n.kind === "item") {
+              wrap.append(itemRow(n, "free", false));
+              continue;
+            }
+            const ff = S.folded.has(n.id);
+            const r = rowEl({
+              id: n.id,
+              kind: "folder",
+              list: "free",
+              cls: "folder gfolder",
+              icon: "fold",
+              iconCls: "fold",
+              name: n.name,
+              tw: ff,
+              cb: true,
+              meta: `${n.children.length} item${n.children.length === 1 ? "" : "s"}`,
+              title: `${n.name} (folder: a group in the scene)`,
+            });
+            if (S.renaming !== n.id)
+              r.append(
+                h("button", {
+                  class: "ren",
+                  html: I("pen"),
+                  dataset: { ren: n.id },
+                  attrs: {
+                    title: "Rename (F2)",
+                    "aria-label": "Rename " + n.name,
+                  },
+                }),
+              );
+            wrap.append(r);
+            if (!ff) {
+              n.children.forEach((c, k) =>
+                wrap.append(
+                  itemRow(
+                    c,
+                    "folder:" + n.id,
+                    true,
+                    k === n.children.length - 1,
+                  ),
+                ),
+              );
+              if (!n.children.length)
+                wrap.append(
+                  h("div", {
+                    class: "emptyrow infolder trow",
+                    text: "Empty - drag items here",
+                    dataset: { kind: "emptyfolder", folder: n.id },
+                  }),
+                );
+            }
+          }
+          if (!st.free.length)
+            wrap.append(
+              h("div", { class: "emptyrow", text: "Nothing here yet." }),
+            );
+        }
+        treeBody.append(wrap);
+        if (!S.sel.length && !S.selMode)
+          treeBody.append(
+            h("div", {
+              class: "hint",
+              html:
+                phone() || matchMedia("(pointer: coarse)").matches
+                  ? "To group: tap <b>Select</b> (or long-press a row), tick a few items, then <b>Group</b>."
+                  : "To group: <b>Ctrl</b>+click or <b>Shift</b>+click a few items, then <b>Group</b> (Ctrl+G).",
+            }),
+          );
+        const inp = treeBody.querySelector("input.renin");
+        if (inp) {
+          inp.focus();
+          inp.select();
+        } else if (focus)
+          treeBody
+            .querySelector(`[data-pick="${focus}"],[data-fold="${focus}"]`)
+            ?.focus();
+      }
+      function drawLegend() {
+        const L = $("#legend");
+        L.textContent = "";
+        const fold = h(
+          "div",
+          {},
+          h("div", { class: "lt", text: "Folder" }),
+          rowEl({
+            id: "lgf",
+            kind: "x",
+            cls: "folder gfolder",
+            icon: "fold",
+            iconCls: "fold",
+            name: "Folder 1",
+            tw: false,
+            grip: false,
+            meta: "2 items",
+          }),
+          rowEl({
+            id: "lgf1",
+            kind: "x",
+            cls: "kid deep infolder",
+            icon: "text",
+            iconCls: "text",
+            name: "Built in 1820",
+            grip: false,
+          }),
+          rowEl({
+            id: "lgf2",
+            kind: "x",
+            cls: "kid deep infolder last",
+            icon: "photo",
+            iconCls: "photo",
+            name: "Old photo",
+            grip: false,
+          }),
+        );
+        fold.append(
+          h("ul", {
+            html: '<li>teal folder, "items"</li><li>no numbers: no order</li><li>a pivot and a gizmo in 3D</li><li>moves, turns and scales its items together</li>',
+          }),
+        );
+        const story = h(
+          "div",
+          {},
+          h("div", { class: "lt", text: "Story" }),
+          rowEl({
+            id: "lgs",
+            kind: "x",
+            cls: "folder story",
+            icon: "story",
+            iconCls: "story",
+            name: "The miller's day",
+            tw: false,
+            grip: false,
+            meta: "2 steps",
+          }),
+          rowEl({
+            id: "lgs1",
+            kind: "x",
+            cls: "kid deep",
+            lead: h("span", { class: "stepn", text: "1" }),
+            name: "Look at the wheel",
+            grip: false,
+          }),
+          rowEl({
+            id: "lgs2",
+            kind: "x",
+            cls: "kid deep",
+            lead: h("span", { class: "stepn", text: "2" }),
+            name: "Listen to the...",
+            grip: false,
+          }),
+        );
+        story.append(
+          h("ul", {
+            html: '<li>amber book, "steps"</li><li>numbered: the order plays</li><li>no place in 3D, no gizmo</li><li>items cannot be dropped in</li>',
+          }),
+        );
+        L.querySelectorAll("button").forEach((b) =>
+          b.setAttribute("tabindex", "-1"),
+        );
+        L.append(fold, story);
+        L.querySelectorAll("button").forEach((b) => {
+          b.setAttribute("tabindex", "-1");
+          b.setAttribute("aria-hidden", "true");
+        });
+      }
+
+      // tree clicks: fold, rename, select (Ctrl toggles, Shift ranges), long press enters Select mode
+      let suppressClick = false,
+        lp = null;
+      treeBody.addEventListener("click", (e) => {
+        if (suppressClick) {
+          suppressClick = false;
+          return;
+        }
+        const fold = e.target.closest("[data-fold]");
+        if (fold) {
+          const id = fold.dataset.fold;
+          if (S.folded.has(id)) S.folded.delete(id);
+          else S.folded.add(id);
+          drawTree();
+          return;
+        }
+        const ren = e.target.closest("button[data-ren]");
+        if (ren) {
+          S.renaming = ren.dataset.ren;
+          drawTree();
+          return;
+        }
+        const pick = e.target.closest("[data-pick]");
+        if (pick)
+          clickSelect(pick.dataset.pick, {
+            toggle: e.ctrlKey || e.metaKey,
+            range: e.shiftKey,
+          });
+      });
+      treeBody.addEventListener("dblclick", (e) => {
+        const pick = e.target.closest("[data-pick]");
+        if (!pick || S.selMode) return;
+        const k = kindOf(pick.dataset.pick);
+        if (k === "station") return;
+        S.renaming = pick.dataset.pick;
+        drawTree();
+      });
+      treeBody.addEventListener("pointerdown", (e) => {
+        const pick = e.target.closest("[data-pick]");
+        if (!pick || e.pointerType === "mouse") return;
+        const id = pick.dataset.pick;
+        if (!is3D(id)) return;
+        lp = {
+          id,
+          x: e.clientX,
+          y: e.clientY,
+          t: setTimeout(() => {
+            lp = null;
+            suppressClick = true;
+            if (!S.selMode) {
+              S.selMode = true;
+              S.sel = S.sel.filter(is3D);
+            }
+            if (!S.sel.includes(id)) S.sel = [...S.sel, id];
+            S.anchor = id;
+            changed();
+            toast("Select mode: tap rows to tick them");
+            if (navigator.vibrate) navigator.vibrate(15);
+          }, 450),
+        };
+      });
+      const lpCancel = (e) => {
+        if (
+          lp &&
+          (e.type !== "pointermove" ||
+            Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > 8)
+        ) {
+          clearTimeout(lp.t);
+          lp = null;
+        }
+      };
+      ["pointerup", "pointercancel", "pointermove"].forEach((t) =>
+        treeBody.addEventListener(t, lpCancel),
+      );
+      treeBody.addEventListener("contextmenu", (e) => {
+        if (e.target.closest(".trow")) e.preventDefault();
+      });
+      treeBody.addEventListener("pointerover", (e) => {
+        const r = e.target.closest(".trow");
+        const id = r && (r.dataset.kind === "folder" ? r.dataset.id : null);
+        if (id !== S.hover) {
+          S.hover = id;
+          highlights();
+        }
+      });
+      treeBody.addEventListener("pointerleave", () => {
+        if (S.hover) {
+          S.hover = null;
+          highlights();
+        }
+      });
+      treeBody.addEventListener("keydown", (e) => {
+        const inp = e.target.closest("input.renin");
+        if (!inp) return;
+        if (e.key === "Enter") {
+          rename(inp.dataset.ren, inp.value);
+          S.renaming = null;
+          changed();
+          e.preventDefault();
+        } else if (e.key === "Escape") {
+          S.renaming = null;
+          changed();
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      });
+      treeBody.addEventListener("focusout", (e) => {
+        const inp = e.target.closest("input.renin");
+        if (!inp || S.renaming !== inp.dataset.ren) return;
+        rename(inp.dataset.ren, inp.value);
+        S.renaming = null;
+        setTimeout(changed, 0);
+      });
+
+      // ---------------------------------------------------------------- the nested drag (the editor's: grip, ghost, marks, "Not possible here")
+      let nd = null;
+      treeBody.addEventListener("pointerdown", (e) => {
+        const g = e.target.closest(".grip");
+        if (!g || e.button !== 0) return;
+        const row = g.closest(".trow");
+        const id = row.dataset.id;
+        e.preventDefault();
+        e.stopPropagation();
+        let ids = [id];
+        if (S.sel.includes(id) && is3D(id)) {
+          const order = treeOrder();
+          ids = targets().sort((a, b) => order.indexOf(a) - order.indexOf(b));
+        }
+        nd = {
+          ids,
+          pointerId: e.pointerId,
+          x0: e.clientX,
+          y0: e.clientY,
+          started: false,
+          touch: e.pointerType !== "mouse",
+          target: null,
+        };
+        window.addEventListener("pointermove", ndMove, true);
+        window.addEventListener("pointerup", ndUp, true);
+        window.addEventListener("pointercancel", ndEnd, true);
+      });
+      function ndClear() {
+        treeBody
+          .querySelectorAll(".drop-before,.drop-after,.drop-into")
+          .forEach((r) =>
+            r.classList.remove("drop-before", "drop-after", "drop-into"),
+          );
+      }
+      function ndEnd() {
+        window.removeEventListener("pointermove", ndMove, true);
+        window.removeEventListener("pointerup", ndUp, true);
+        window.removeEventListener("pointercancel", ndEnd, true);
+        if (nd?.ghost) nd.ghost.remove();
+        ndClear();
+        treeBody
+          .querySelectorAll(".dragging")
+          .forEach((r) => r.classList.remove("dragging"));
+        delete document.documentElement.dataset.nestDrag;
+        nd = null;
+      }
+      function ndUp(e) {
+        if (!nd || e.pointerId !== nd.pointerId) return;
+        const t = nd.started && nd.target;
+        const ids = nd.ids;
+        ndEnd();
+        if (t && !t.refused)
+          moveNodes(
+            ids,
+            t.key,
+            t.ref,
+            t.where,
+            ids.length > 1
+              ? `Move ${ids.length} items`
+              : `Move "${findNode(ids[0]).node.name}"`,
+          );
+      }
+      function ndMove(e) {
+        if (!nd || e.pointerId !== nd.pointerId) return;
+        e.preventDefault();
+        if (!nd.started) {
+          if (Math.hypot(e.clientX - nd.x0, e.clientY - nd.y0) < 4) return;
+          nd.started = true;
+          const label =
+            nd.ids.length > 1
+              ? `${nd.ids.length} items`
+              : findNode(nd.ids[0]).node.name;
+          nd.ghost = h(
+            "div",
+            { class: "nest-ghost", attrs: { "aria-hidden": "true" } },
+            h("span", { class: "nest-ghost-name", text: label }),
+            h("span", {
+              class: "nest-ghost-no",
+              html: I("ban") + "<span>Not possible here</span>",
+            }),
+            h("span", { class: "nest-ghost-why" }),
+          );
+          document.body.append(nd.ghost);
+          for (const id of nd.ids)
+            treeBody
+              .querySelector(`.trow[data-id="${id}"]`)
+              ?.classList.add("dragging");
+        }
+        nd.ghost.style.left =
+          (nd.touch ? e.clientX - 24 : e.clientX + 14) + "px";
+        nd.ghost.style.top =
+          (nd.touch ? e.clientY - 64 : e.clientY + 12) + "px";
+        ndClear();
+        const t = ndTarget(e.clientX, e.clientY);
+        nd.target = t;
+        if (t && !t.refused) t.row.classList.add(t.mark);
+        const refused = !t || t.refused;
+        if (refused) nd.ghost.setAttribute("data-refused", "");
+        else nd.ghost.removeAttribute("data-refused");
+        nd.ghost.querySelector(".nest-ghost-why").textContent =
+          refused && t ? t.why || "" : "";
+        document.documentElement.dataset.nestDrag = refused ? "refused" : "on";
+      }
+      function rowAt(x, y) {
+        for (const dy of [0, -8, 8]) {
+          const el = document.elementFromPoint(x, y + dy);
+          const r = el && el.closest && el.closest("#tree-body .trow");
+          if (r && !r.closest(".legend")) return r;
+        }
+        return null;
+      }
+      // where a drop on that row lands, or why it is refused
+      function ndTarget(x, y) {
+        const row = rowAt(x, y);
+        if (!row) return null;
+        const kinds = nd.ids.map(kindOf);
+        const k = row.dataset.kind;
+        const rid = row.dataset.id;
+        const rect = row.getBoundingClientRect();
+        const f = (y - rect.top) / rect.height;
+        const items = kinds.every((x2) => x2 === "item"),
+          spatial = kinds.every((x2) => x2 === "item" || x2 === "folder");
+        let t = null;
+        if (k === "station")
+          t = { key: spatial ? "free" : null, where: "end", mark: "drop-into" };
+        else if (k === "folder") {
+          if (items && f > 0.25 && f < 0.75)
+            t = { key: "folder:" + rid, where: "end", mark: "drop-into" };
+          else
+            t = {
+              key: "free",
+              ref: rid,
+              where: f < 0.5 ? "before" : "after",
+              mark: f < 0.5 ? "drop-before" : "drop-after",
+            };
+        } else if (k === "emptyfolder")
+          t = {
+            key: "folder:" + row.dataset.folder,
+            where: "end",
+            mark: "drop-into",
+            row,
+          };
+        else if (k === "item" || k === "step")
+          t = {
+            key: row.dataset.list,
+            ref: rid,
+            where: f < 0.5 ? "before" : "after",
+            mark: f < 0.5 ? "drop-before" : "drop-after",
+          };
+        else if (k === "story") {
+          if (kinds.every((x2) => x2 === "step"))
+            t = { key: "story:" + rid, where: "end", mark: "drop-into" };
+          else
+            t = {
+              key: "stories",
+              ref: rid,
+              where: f < 0.5 ? "before" : "after",
+              mark: f < 0.5 ? "drop-before" : "drop-after",
+            };
+        }
+        if (!t) return null;
+        t.row = t.row || row;
+        const why = refuseWhy(kinds, t.key, k);
+        if (why !== null) return { ...t, refused: true, why };
+        if (nd.ids.includes(rid) || (k === "emptyfolder" && false))
+          return { ...t, refused: true, why: "" };
+        if (nd.ids.length === 1) {
+          // a drop where it already stands changes nothing
+          const f0 = findNode(nd.ids[0]);
+          const list = f0.list;
+          const i = list.indexOf(f0.node);
+          if (f0.key === t.key) {
+            if (t.where === "end" && i === list.length - 1)
+              return { ...t, refused: true, why: "It is already there." };
+            if (
+              t.ref &&
+              ((t.where === "before" && list[i + 1]?.id === t.ref) ||
+                (t.where === "after" && list[i - 1]?.id === t.ref))
+            )
+              return { ...t, refused: true, why: "" };
+          }
+        }
+        return t;
+      }
+      function refuseWhy(kinds, key, overKind) {
+        if (!key) return "Stories and steps stay in their place.";
+        const has = (x2) => kinds.includes(x2);
+        if (key === "free")
+          return has("story") || has("step")
+            ? has("step")
+              ? "A step belongs in a story."
+              : "Stories stay at the top of the station."
+            : null;
+        if (key.startsWith("folder:"))
+          return has("folder")
+            ? "Folders are one level deep: no folder in a folder."
+            : has("item") && kinds.every((x2) => x2 === "item")
+              ? null
+              : "A folder holds items only.";
+        if (key === "stories")
+          return has("story") && kinds.every((x2) => x2 === "story")
+            ? null
+            : overKind === "story" && has("folder")
+              ? "A folder cannot go into a story."
+              : "A story holds steps, not items or folders.";
+        if (key.startsWith("story:"))
+          return kinds.every((x2) => x2 === "step")
+            ? null
+            : "A story holds steps, not items or folders.";
+        return "";
+      }
+      window.addEventListener(
+        "keydown",
+        (e) => {
+          if (e.key === "Escape" && nd) {
+            e.stopPropagation();
+            e.preventDefault();
+            ndEnd();
+          }
+        },
+        true,
+      );
+
+      // ---------------------------------------------------------------- the selection bar, the inspector, the chip, the bar
+      function drawSelbar() {
+        const bar = $("#selbar");
+        const tg = targets();
+        const nsel = S.sel.filter(is3D).length;
+        const folderSel = S.sel.some((id) => kindOf(id) === "folder");
+        const show = S.selMode || nsel >= 2 || folderSel;
+        bar.hidden = !show;
+        if (!show) return;
+        bar.textContent = "";
+        const g = groupCheck();
+        const b = (cmd, icon, label, ok, cls = "") =>
+          h("button", {
+            class: "abtn " + cls,
+            html: I(icon) + `<span>${label}</span>`,
+            dataset: { cmd },
+            attrs: { disabled: ok ? null : "" },
+          });
+        bar.append(
+          h("span", {
+            class: "cnt",
+            text: nsel ? `${nsel} selected` : "Tick rows",
+          }),
+          b("group", "group", "Group", g.ok && nsel >= 1, "primary"),
+          b("ungroup", "ungroup", "Ungroup", folderSel),
+          b("dup", "copy", "Duplicate", tg.length > 0),
+        );
+        if (S.selMode) bar.append(b("done", "check", "Done", true));
+        if (!g.ok && nsel && !(nsel === 1 && folderSel)) bar.append(h("span", { class: "why", text: g.why }));
+        else if (nsel === 1 && !folderSel)
+          bar.append(
+            h("span", {
+              class: "why",
+              text: "One item can be a folder too; tick more to group them.",
+            }),
+          );
+      }
+      function numBox(ax, val, unit, onSet, d = 2) {
+        const inp = h("input", {
+          attrs: {
+            inputmode: "decimal",
+            value: fmt(val, d),
+            "aria-label": ax || unit,
+          },
+        });
+        inp.addEventListener("change", () => {
+          const v = parseFloat(inp.value.replace(",", "."));
+          if (Number.isFinite(v)) onSet(v);
+          else changed();
+        });
+        inp.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") inp.blur();
+        });
+        return h(
+          "div",
+          { class: "num" },
+          ax ? h("span", { class: "ax " + ax.toLowerCase(), text: ax }) : null,
+          inp,
+          unit ? h("span", { class: "unit", text: unit }) : null,
+        );
+      }
+      function field(label, ...ctrl) {
+        return h(
+          "div",
+          { class: "f" },
+          h("span", { class: "flabel", text: label }),
+          ...ctrl,
+        );
+      }
+      function edit(label, fn) {
+        return (v) => {
+          record(label);
+          fn(v);
+          changed();
+        };
+      }
+      function nameInput(id, name) {
+        const inp = h("input", {
+          class: "ttlin",
+          attrs: { value: name, "aria-label": "Name" },
+        });
+        inp.addEventListener("change", () => {
+          rename(id, inp.value);
+          changed();
+        });
+        inp.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") inp.blur();
+        });
+        return inp;
+      }
+      function abtn(cmd, icon, label, arg, ok = true) {
+        return h("button", {
+          class: "abtn",
+          html: I(icon) + `<span>${label}</span>`,
+          dataset: { cmd, arg: arg || "" },
+          attrs: { disabled: ok ? null : "" },
+        });
+      }
+      function drawInspector() {
+        const head = $("#insp-head"),
+          body = $("#insp-body");
+        head.textContent = "";
+        body.textContent = "";
+        const ids = S.sel;
+        if (ids.length > 1) {
+          head.append(
+            h("span", { class: "hic", html: I("group") }),
+            h("span", { class: "ttl", text: `${ids.length} selected` }),
+          );
+          const list = h("div", { class: "mlist" });
+          for (const id of ids) {
+            const n = findNode(id)?.node;
+            if (!n) continue;
+            const r = h("button", {
+              class: "mrow",
+              dataset: { cmd: "pick", arg: id },
+              html: I(n.kind === "folder" ? "fold" : n.type),
+            });
+            r.append(h("span", { class: "nm", text: n.name }));
+            list.append(r);
+          }
+          const g = groupCheck();
+          body.append(
+            h("div", { class: "isec" }, h("h4", { text: "Selection" }), list),
+            h(
+              "div",
+              { class: "isec" },
+              h(
+                "div",
+                { class: "acts" },
+                abtn("group", "group", "Group into a folder", "", g.ok),
+                abtn("dup", "copy", "Duplicate"),
+              ),
+              h("p", {
+                class: "note",
+                text: g.ok
+                  ? "The gizmo in 3D moves and turns them together for now. Group them to keep them together: the folder remembers the arrangement."
+                  : g.why,
+              }),
+            ),
+          );
+          return;
+        }
+        const id = ids[0];
+        const f = id && findNode(id);
+        if (!f) {
+          head.append(h("span", { class: "ttl", text: "Nothing selected" }));
+          body.append(
+            h("p", {
+              class: "note",
+              attrs: { style: "padding: 8px 12px" },
+              text: "Pick a row in the station tree or an item in 3D. To group several items, pick them in the tree (Ctrl/Shift-click, or Select on a phone) and press Group.",
+            }),
+          );
+          return;
+        }
+        const n = f.node;
+        if (n.kind === "station") {
+          head.append(
+            h("span", { class: "hic", html: I("station") }),
+            nameInput(id, n.name),
+          );
+          body.append(
+            h("div", {
+              class: "sub",
+              text: `Station 1 - ${allItems().length} items, ${folders().length} folder${folders().length === 1 ? "" : "s"}, ${n.stories.length} story`,
+            }),
+            h(
+              "div",
+              { class: "isec" },
+              h("p", {
+                class: "note",
+                text: "Drop an item or several onto this row in the tree to take them out of a folder: they keep their place in the scene.",
+              }),
+            ),
+          );
+          return;
+        }
+        if (n.kind === "story" || n.kind === "step") {
+          const story = n.kind === "story" ? n : f.parent;
+          head.append(
+            h("span", { class: "hic ic story", html: I("story") }),
+            nameInput(id, n.name),
+          );
+          body.append(
+            h(
+              "div",
+              { class: "sub" },
+              h("span", {
+                class: "badge story",
+                text:
+                  n.kind === "story"
+                    ? `Story - ${n.steps.length} steps`
+                    : `Step ${story.steps.indexOf(n) + 1} of ${story.steps.length} in "${story.name}"`,
+              }),
+            ),
+          );
+          const steps = h("div", { class: "mlist" });
+          story.steps.forEach((p, k) => {
+            const r = h(
+              "button",
+              { class: "mrow", dataset: { cmd: "pick", arg: p.id } },
+              h("span", { class: "stepn", text: String(k + 1) }),
+              h("span", { class: "nm", text: p.name }),
+            );
+            steps.append(r);
+          });
+          body.append(
+            h(
+              "div",
+              { class: "isec" },
+              h("h4", { text: "Steps, in the order they play" }),
+              steps,
+            ),
+            h(
+              "div",
+              { class: "isec" },
+              h("div", { class: "acts" }, abtn("dup", "copy", "Duplicate")),
+              h("p", {
+                class: "note",
+                text: "A story is a sequence that plays step by step. It has no place in the scene, so there is no gizmo. Items and folders cannot be dropped into it, and it cannot go into a folder.",
+              }),
+            ),
+          );
+          return;
+        }
+        if (n.kind === "folder") {
+          head.append(
+            h("span", { class: "hic ic fold", html: I("fold") }),
+            nameInput(id, n.name),
+          );
+          body.append(
+            h(
+              "div",
+              { class: "sub" },
+              h("span", {
+                class: "badge",
+                html:
+                  I("pivot").replace(
+                    'class="i"',
+                    'class="i" style="width:12px;height:12px"',
+                  ) +
+                  `<span>Folder - ${n.children.length} item${n.children.length === 1 ? "" : "s"}</span>`,
+              }),
+            ),
+          );
+          body.append(
+            h(
+              "div",
+              { class: "isec" },
+              h("h4", { text: "Pivot (from the station centre)" }),
+              field(
+                "Position",
+                h(
+                  "div",
+                  { class: "vec n2" },
+                  numBox(
+                    "E",
+                    n.e,
+                    "m",
+                    edit("Move folder", (v) => {
+                      n.e = v;
+                    }),
+                  ),
+                  numBox(
+                    "N",
+                    n.n,
+                    "m",
+                    edit("Move folder", (v) => {
+                      n.n = v;
+                    }),
+                  ),
+                ),
+              ),
+              field(
+                "Heading",
+                numBox(
+                  "",
+                  n.rot,
+                  "deg",
+                  edit("Turn folder", (v) => {
+                    n.rot = norm(v);
+                  }),
+                  0,
+                ),
+              ),
+              field(
+                "Scale",
+                numBox(
+                  "",
+                  n.scale,
+                  "x",
+                  edit("Scale folder", (v) => {
+                    n.scale = clamp(v, 0.2, 5);
+                  }),
+                  2,
+                ),
+              ),
+              h(
+                "div",
+                { class: "acts" },
+                abtn(
+                  "pivot",
+                  "pivot",
+                  "Pivot to centre",
+                  id,
+                  n.children.length > 0,
+                ),
+              ),
+            ),
+          );
+          const list = h("div", { class: "mlist" });
+          for (const c of n.children) {
+            const r = h("button", {
+              class: "mrow",
+              dataset: { cmd: "pick", arg: c.id },
+              html: `<span class="ic ${c.type}">${I(c.type)}</span>`,
+            });
+            r.append(h("span", { class: "nm", text: c.name }));
+            list.append(r);
+          }
+          if (!n.children.length)
+            list.append(
+              h("p", {
+                class: "note",
+                text: "Empty. Drag items onto the folder row.",
+              }),
+            );
+          body.append(
+            h(
+              "div",
+              { class: "isec" },
+              h("h4", { text: "Items (each movable alone)" }),
+              list,
+            ),
+            h(
+              "div",
+              { class: "isec" },
+              h(
+                "div",
+                { class: "acts" },
+                abtn("ungroup", "ungroup", "Ungroup"),
+                abtn("dup", "copy", "Duplicate"),
+                abtn(
+                  "selmembers",
+                  "selmode",
+                  "Select its items",
+                  id,
+                  n.children.length > 0,
+                ),
+              ),
+              h("p", {
+                class: "note",
+                text: "A folder is a group in the scene: its items keep their place relative to the pivot, so moving, turning or scaling the folder carries them along. It has no order and plays nothing - that is what stories are for.",
+              }),
+            ),
+          );
+          return;
+        }
+        // an item
+        const T = TYPES[n.type];
+        const inF = f.key.startsWith("folder:");
+        head.append(
+          h("span", { class: "hic ic " + n.type, html: I(n.type) }),
+          nameInput(id, n.name),
+        );
+        const sub = h("div", {
+          class: "sub",
+          text: T.label + (inF ? " in " : " - a free item"),
+        });
+        if (inF)
+          sub.append(
+            h("span", {
+              class: "badge",
+              html:
+                I("fold").replace(
+                  'class="i"',
+                  'class="i" style="width:12px;height:12px"',
+                ) + "<span></span>",
+            }),
+          );
+        if (inF) sub.querySelector(".badge span").textContent = f.parent.name;
+        const w = worldOf(id);
+        body.append(
+          sub,
+          h(
+            "div",
+            { class: "isec" },
+            h("h4", {
+              text: inF
+                ? `Position in m (from the pivot of "${f.parent.name}")`
+                : "Position in m (from the station centre)",
+            }),
+            field(
+              "Position",
+              h(
+                "div",
+                { class: "vec" },
+                numBox(
+                  "E",
+                  n.e,
+                  null,
+                  edit("Move " + T.label.toLowerCase(), (v) => {
+                    n.e = v;
+                  }),
+                ),
+                numBox(
+                  "N",
+                  n.n,
+                  null,
+                  edit("Move " + T.label.toLowerCase(), (v) => {
+                    n.n = v;
+                  }),
+                ),
+                numBox(
+                  "U",
+                  n.y || 0,
+                  null,
+                  edit("Raise " + T.label.toLowerCase(), (v) => {
+                    n.y = clamp(v, -2, 20);
+                  }),
+                ),
+              ),
+            ),
+            field(
+              "Heading",
+              numBox(
+                "",
+                n.rot,
+                "deg",
+                edit("Turn " + T.label.toLowerCase(), (v) => {
+                  n.rot = norm(v);
+                }),
+                0,
+              ),
+            ),
+            n.type === "model"
+              ? field(
+                  "Size",
+                  numBox(
+                    "",
+                    n.scale,
+                    "x",
+                    edit("Scale 3D model", (v) => {
+                      n.scale = clamp(v, 0.2, 5);
+                    }),
+                    2,
+                  ),
+                )
+              : null,
+            inF
+              ? h("p", {
+                  class: "note",
+                  text: `In the scene: E ${fmt(w.e, 2)}, N ${fmt(w.n, 2)}, facing ${fmt(norm(w.rot), 0)} deg.`,
+                })
+              : null,
+          ),
+        );
+        body.append(
+          h(
+            "div",
+            { class: "isec" },
+            h(
+              "div",
+              { class: "acts" },
+              abtn("dup", "copy", "Duplicate"),
+              inF ? abtn("takeout", "out", "Take out of folder", id) : null,
+              inF
+                ? abtn("pick", "fold", "Select the folder", f.parent.id)
+                : null,
+              abtn("noop", "station", "Move to station...", "", false),
+            ),
+            h("p", {
+              class: "note",
+              text: inF
+                ? "Moving it with the gizmo moves it alone, inside the folder. Taking it out keeps its place in the scene."
+                : "Move to station... is the editor's; this page has one station.",
+            }),
+          ),
+        );
+      }
+      function drawChip() {
+        const c = $("#chip");
+        c.textContent = "";
+        const tg = targets();
+        const box = h("div");
+        if (!S.sel.length)
+          box.innerHTML = phone()
+            ? "Tap an item. To group, use <b>Select</b> in the station list."
+            : "Click an item. To group, Ctrl/Shift-click rows in the tree, then <b>Group</b>.";
+        else if (S.sel.length === 1) {
+          const f = findNode(S.sel[0]);
+          const n = f.node;
+          if (n.kind === "folder")
+            box.append(
+              h("span", {
+                html: `<b></b> - ${n.children.length} items move, turn and scale together. Click one to move it alone.`,
+              }),
+            );
+          else if (n.kind === "item" && f.key.startsWith("folder:")) {
+            box.append(h("span", { html: "<b></b> moves alone, inside" }));
+            box.append(
+              h("button", {
+                class: "lnk",
+                dataset: { cmd: "pick", arg: f.parent.id },
+                text: f.parent.name,
+              }),
+            );
+          } else if (n.kind === "item")
+            box.append(h("span", { html: "<b></b> - a free item" }));
+          else
+            box.append(
+              h("span", {
+                html:
+                  n.kind === "station"
+                    ? "<b></b> - its items stand around its centre"
+                    : "<b></b> - a story has no place in the scene",
+              }),
+            );
+          const b = box.querySelector("b");
+          if (b) b.textContent = n.name;
+        } else {
+          box.append(
+            h("span", {
+              html: `<b>${S.sel.length} selected</b> - they move together for now`,
+            }),
+          );
+          if (groupCheck().ok)
+            box.append(
+              h("button", {
+                class: "lnk amber",
+                dataset: { cmd: "group" },
+                text: "Group",
+              }),
+            );
+          if (!tg.length) box.textContent = `${S.sel.length} selected`;
+        }
+        c.append(box);
+      }
+      function drawBar() {
+        $("#bar-sel").innerHTML =
+          `<b>Old mill</b> &nbsp;${allItems().length} items, ${folders().length} folder${folders().length === 1 ? "" : "s"}, 1 story`;
+        $("#bar-hist").textContent = hist.past.length
+          ? `Undo: ${hist.past[hist.past.length - 1].label}`
+          : "No changes yet";
+        $("#b-undo").disabled = !hist.past.length;
+        $("#b-redo").disabled = !hist.future.length;
+        $("#b-group").disabled = !groupCheck().ok;
+        $("#b-ungroup").disabled = !S.sel.some((id) => kindOf(id) === "folder");
+        $("#b-dup").disabled = !S.sel.some((id) => id !== S.station.id);
+        const sm = $("#b-selmode");
+        sm.classList.toggle("on", S.selMode);
+        sm.setAttribute("aria-pressed", String(S.selMode));
+      }
+      function changed({ tree = true } = {}) {
+        if (S.sel.some((id) => !findNode(id)))
+          S.sel = S.sel.filter((id) => findNode(id));
+        if (tree) drawTree();
+        drawSelbar();
+        drawInspector();
+        drawChip();
+        drawBar();
+        sync3D();
+      }
+
+      // commands from every button
+      document.addEventListener("click", (e) => {
+        const b = e.target.closest("[data-cmd]");
+        if (!b || b.disabled) return;
+        const a = b.dataset.arg;
+        switch (b.dataset.cmd) {
+          case "undo":
+            undo();
+            break;
+          case "redo":
+            redo();
+            break;
+          case "group":
+            doGroup();
+            break;
+          case "ungroup":
+            doUngroup();
+            break;
+          case "dup":
+            doDuplicate();
+            break;
+          case "selmode":
+            S.selMode = !S.selMode;
+            if (S.selMode) S.sel = S.sel.filter(is3D);
+            changed();
+            break;
+          case "done":
+            S.selMode = false;
+            changed();
+            break;
+          case "takeout":
+            takeOut(a);
+            break;
+          case "pivot":
+            pivotToCentre(a);
+            break;
+          case "selmembers": {
+            const F = findNode(a).node;
+            S.sel = F.children.map((c) => c.id);
+            S.anchor = S.sel[0];
+            changed();
+            break;
+          }
+          case "pick":
+            S.sel = [a];
+            S.anchor = a;
+            S.selMode = false;
+            changed();
+            break;
+          case "about":
+            if (phone())
+              setTab(document.body.dataset.tab === "about" ? "tree" : "about");
+            else
+              document.body.dataset.about =
+                document.body.dataset.about === "open" ? "" : "open";
+            break;
+          default:
+            break;
+        }
+      });
+      function setTab(t) {
+        document.body.dataset.tab = t;
+        document
+          .querySelectorAll("#tabs [data-tab]")
+          .forEach((b) =>
+            b.setAttribute("aria-selected", String(b.dataset.tab === t)),
+          );
+      }
+      $("#tabs").addEventListener("click", (e) => {
+        const b = e.target.closest("[data-tab]");
+        if (b) setTab(b.dataset.tab);
+      });
+      window.addEventListener("keydown", (e) => {
+        if (e.target.closest && e.target.closest("input, textarea")) return;
+        const mod = e.ctrlKey || e.metaKey;
+        const k = e.key.toLowerCase();
+        if (mod && k === "z" && !e.shiftKey) {
+          e.preventDefault();
+          undo();
+        } else if (mod && (k === "y" || (k === "z" && e.shiftKey))) {
+          e.preventDefault();
+          redo();
+        } else if (mod && k === "g") {
+          e.preventDefault();
+          if (e.shiftKey) doUngroup();
+          else doGroup();
+        } else if (mod && k === "d") {
+          e.preventDefault();
+          doDuplicate();
+        } else if (
+          k === "f2" &&
+          S.sel.length === 1 &&
+          S.sel[0] !== S.station.id
+        ) {
+          e.preventDefault();
+          S.renaming = S.sel[0];
+          drawTree();
+        } else if (k === "escape" && !drag) {
+          if (S.selMode) S.selMode = false;
+          S.sel = [];
+          changed();
+        }
+      });
+      let toastT = 0;
+      function toast(msg) {
+        const t = $("#toast");
+        t.textContent = msg;
+        t.classList.add("on");
+        clearTimeout(toastT);
+        toastT = setTimeout(() => t.classList.remove("on"), 2600);
+      }
+
+      // ---------------------------------------------------------------- 3D
+      const vp = $("#vp");
+      const renderer = new WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+      const canvas = renderer.domElement;
+      canvas.tabIndex = 0;
+      canvas.setAttribute("aria-label", "3D view of the station");
+      vp.prepend(canvas);
+      $("#loadmsg").remove();
+      const scene = new Scene();
+      scene.background = new Color(0x1d2026);
+      scene.fog = new Fog(0x1d2026, 45, 90);
+      const camera = new PerspectiveCamera(50, 1, 0.1, 300);
+      camera.position.set(0, 6.8, 8.6);
+      const orbit = new OrbitControls(camera, canvas);
+      orbit.target.set(0, 0.6, -1.6);
+      orbit.maxPolarAngle = 84 * DEG;
+      orbit.minDistance = 3;
+      orbit.maxDistance = 60;
+      orbit.update();
+      scene.add(new HemisphereLight(0xe2e8ef, 0x3a3f36, 1.7));
+      const sun = new DirectionalLight(0xffffff, 1.9);
+      sun.position.set(6, 12, 7);
+      scene.add(sun);
+
+      function canvasTex(w, hgt, draw) {
+        const c = document.createElement("canvas");
+        c.width = w;
+        c.height = hgt;
+        draw(c.getContext("2d"), w, hgt);
+        const t = new CanvasTexture(c);
+        t.colorSpace = SRGBColorSpace;
+        t.anisotropy = 4;
+        return t;
+      }
+      // the ground: a quiet map look with a 1 m grid and a path
+      const groundTex = canvasTex(1024, 1024, (g, W) => {
+        g.fillStyle = "#353b37";
+        g.fillRect(0, 0, W, W);
+        const px = W / 60;
+        g.fillStyle = "#4a4741";
+        g.beginPath();
+        g.moveTo(0, W * 0.62);
+        g.bezierCurveTo(W * 0.3, W * 0.55, W * 0.6, W * 0.7, W, W * 0.58);
+        g.lineTo(W, W * 0.64);
+        g.bezierCurveTo(W * 0.6, W * 0.76, W * 0.3, W * 0.61, 0, W * 0.68);
+        g.fill();
+        g.fillStyle = "#2f4256";
+        g.fillRect(0, W * 0.2, W, px * 3.2);
+        for (let i = 0; i <= 60; i++) {
+          g.strokeStyle =
+            i % 5 ? "rgba(255,255,255,.035)" : "rgba(255,255,255,.08)";
+          g.lineWidth = 1;
+          g.beginPath();
+          g.moveTo(i * px, 0);
+          g.lineTo(i * px, W);
+          g.moveTo(0, i * px);
+          g.lineTo(W, i * px);
+          g.stroke();
+        }
+      });
+      const ground = new Mesh(
+        new PlaneGeometry(60, 60).rotateX(-Math.PI / 2),
+        new MeshStandardMaterial({ map: groundTex, roughness: 1 }),
+      );
+      scene.add(ground);
+      {
+        // the station: a dashed ring and its centre
+        const pts = [];
+        for (let k = 0; k < 96; k++) {
+          const a = (k / 96) * Math.PI * 2;
+          pts.push(Math.cos(a) * 10, 0.02, Math.sin(a) * 10);
+        }
+        const g = new BufferGeometry();
+        g.setAttribute("position", new Float32BufferAttribute(pts, 3));
+        const ring = new LineLoop(
+          g,
+          new LineDashedMaterial({
+            color: 0x8db8e3,
+            dashSize: 0.6,
+            gapSize: 0.4,
+            transparent: true,
+            opacity: 0.45,
+          }),
+        );
+        ring.computeLineDistances();
+        scene.add(ring);
+        const cross = new BufferGeometry();
+        cross.setAttribute(
+          "position",
+          new Float32BufferAttribute(
+            [-0.4, 0.02, 0, 0.4, 0.02, 0, 0, 0.02, -0.4, 0, 0.02, 0.4],
+            3,
+          ),
+        );
+        scene.add(
+          new LineSegments(
+            cross,
+            new LineBasicMaterial({
+              color: 0x8db8e3,
+              transparent: true,
+              opacity: 0.6,
+            }),
+          ),
+        );
+      }
+      const cardTex = (name) =>
+        canvasTex(512, 296, (g, W, H) => {
+          g.fillStyle = "#f2ece0";
+          g.fillRect(0, 0, W, H);
+          g.strokeStyle = "#b7a7d6";
+          g.lineWidth = 10;
+          g.strokeRect(5, 5, W - 10, H - 10);
+          g.fillStyle = "#2b2730";
+          g.font = "bold 50px Segoe UI, sans-serif";
+          g.textAlign = "center";
+          g.fillText(name, W / 2, 130);
+          g.font = "26px Segoe UI, sans-serif";
+          g.fillStyle = "#5a5560";
+          g.fillText("The wheel turned for 140 years", W / 2, 190);
+        });
+      const photoTex = canvasTex(400, 300, (g, W, H) => {
+        const sky = g.createLinearGradient(0, 0, 0, H);
+        sky.addColorStop(0, "#e9d7b4");
+        sky.addColorStop(1, "#bfa47a");
+        g.fillStyle = sky;
+        g.fillRect(0, 0, W, H);
+        g.fillStyle = "#8a7350";
+        g.beginPath();
+        g.moveTo(0, 220);
+        g.quadraticCurveTo(200, 160, W, 215);
+        g.lineTo(W, H);
+        g.lineTo(0, H);
+        g.fill();
+        g.fillStyle = "#5d4a33";
+        g.fillRect(150, 120, 90, 100);
+        g.beginPath();
+        g.moveTo(140, 122);
+        g.lineTo(195, 80);
+        g.lineTo(250, 122);
+        g.fill();
+        g.strokeStyle = "#4a3b28";
+        g.lineWidth = 7;
+        g.beginPath();
+        g.arc(262, 178, 40, 0, 7);
+        g.stroke();
+        g.strokeStyle = "#fff";
+        g.lineWidth = 18;
+        g.strokeRect(0, 0, W, H);
+      });
+      const speakerTex = canvasTex(128, 128, (g) => {
+        g.fillStyle = "rgba(30,40,55,.9)";
+        g.beginPath();
+        g.arc(64, 64, 56, 0, 7);
+        g.fill();
+        g.strokeStyle = "#8fb3d9";
+        g.lineWidth = 6;
+        g.stroke();
+        g.fillStyle = "#cfe0f2";
+        g.beginPath();
+        g.moveTo(34, 52);
+        g.lineTo(50, 52);
+        g.lineTo(68, 36);
+        g.lineTo(68, 92);
+        g.lineTo(50, 76);
+        g.lineTo(34, 76);
+        g.fill();
+        g.strokeStyle = "#cfe0f2";
+        g.lineWidth = 6;
+        g.lineCap = "round";
+        g.beginPath();
+        g.arc(70, 64, 16, -0.8, 0.8);
+        g.stroke();
+        g.beginPath();
+        g.arc(70, 64, 28, -0.8, 0.8);
+        g.stroke();
+      });
+      const postMat = new MeshStandardMaterial({
+        color: 0x4b4f55,
+        roughness: 0.8,
+      });
+      const views = new Map();
+      const pickables = [];
+      function makeView(it) {
+        const o = new Group();
+        const add = (m) => {
+          m.userData.id = it.id;
+          pickables.push(m);
+          o.add(m);
+          return m;
+        };
+        if (it.type === "model") {
+          const m = add(
+            new Mesh(
+              new DodecahedronGeometry(0.9, 0),
+              new MeshStandardMaterial({
+                color: 0x9a958c,
+                roughness: 0.9,
+                flatShading: true,
+              }),
+            ),
+          );
+          m.scale.set(1.25, 0.85, 1.0);
+          m.position.y = 0.76;
+          m.rotation.set(0.2, 0.4, 0.1);
+        } else if (it.type === "text" || it.type === "photo") {
+          const post = add(
+            new Mesh(new CylinderGeometry(0.035, 0.035, 1.15, 8), postMat),
+          );
+          post.position.y = 0.575;
+          const [w, hh] = it.type === "text" ? [1.3, 0.75] : [1.07, 0.8];
+          const card = add(
+            new Mesh(
+              new PlaneGeometry(w, hh),
+              new MeshBasicMaterial({
+                map: it.type === "text" ? cardTex(it.name) : photoTex,
+                side: DoubleSide,
+              }),
+            ),
+          );
+          card.position.y = 1.15 + hh / 2 - 0.05;
+        } else {
+          const ring = add(
+            new Mesh(
+              new RingGeometry(2.2, 2.42, 72).rotateX(-Math.PI / 2),
+              new MeshBasicMaterial({
+                color: 0x6fa8dc,
+                transparent: true,
+                opacity: 0.8,
+              }),
+            ),
+          );
+          ring.position.y = 0.03;
+          const disc = add(
+            new Mesh(
+              new CircleGeometry(2.2, 72).rotateX(-Math.PI / 2),
+              new MeshBasicMaterial({
+                color: 0x6fa8dc,
+                transparent: true,
+                opacity: 0.1,
+                depthWrite: false,
+              }),
+            ),
+          );
+          disc.position.y = 0.025;
+          const spk = add(new Sprite(new SpriteMaterial({ map: speakerTex })));
+          spk.scale.setScalar(0.75);
+          spk.position.y = 0.6;
+        }
+        const T = TYPES[it.type];
+        const box = new LineSegments(
+          new EdgesGeometry(new BoxGeometry(...T.box)),
+          new LineBasicMaterial({
+            color: 0xe9a23b,
+            transparent: true,
+            depthTest: false,
+          }),
+        );
+        box.position.y = T.cy;
+        box.renderOrder = 10;
+        box.visible = false;
+        o.add(box);
+        scene.add(o);
+        return { o, box, type: it.type };
+      }
+      // a folder in 3D: a dashed hull around its items, a pivot mark and a name tag
+      const TEAL = 0x57c4b8,
+        AMBER = 0xe9a23b;
+      const pivotTex = canvasTex(64, 64, (g) => {
+        g.strokeStyle = "#57c4b8";
+        g.fillStyle = "rgba(20,30,30,.7)";
+        g.lineWidth = 5;
+        g.beginPath();
+        g.moveTo(32, 12);
+        g.lineTo(52, 32);
+        g.lineTo(32, 52);
+        g.lineTo(12, 32);
+        g.closePath();
+        g.fill();
+        g.stroke();
+        g.beginPath();
+        g.moveTo(32, 0);
+        g.lineTo(32, 64);
+        g.moveTo(0, 32);
+        g.lineTo(64, 32);
+        g.lineWidth = 3;
+        g.stroke();
+      });
+      function labelTex(name) {
+        const c = document.createElement("canvas");
+        const g = c.getContext("2d");
+        g.font = "600 26px Segoe UI, sans-serif";
+        const w = Math.ceil(g.measureText(name).width) + 48;
+        c.width = w;
+        c.height = 40;
+        g.fillStyle = "rgba(24,36,36,.92)";
+        g.strokeStyle = "#57c4b8";
+        g.lineWidth = 3;
+        g.beginPath();
+        g.roundRect(2, 2, w - 4, 36, 8);
+        g.fill();
+        g.stroke();
+        g.fillStyle = "#57c4b8";
+        g.fillRect(12, 13, 18, 14);
+        g.fillStyle = "#d9f2ef";
+        g.font = "600 24px Segoe UI, sans-serif";
+        g.textBaseline = "middle";
+        g.fillText(name, 38, 21);
+        const t = new CanvasTexture(c);
+        t.colorSpace = SRGBColorSpace;
+        return { t, aspect: w / 40 };
+      }
+      const hulls = new Map();
+      function makeHull() {
+        const line = new LineLoop(
+          new BufferGeometry(),
+          new LineDashedMaterial({
+            color: TEAL,
+            dashSize: 0.3,
+            gapSize: 0.18,
+            transparent: true,
+            depthTest: false,
+          }),
+        );
+        line.renderOrder = 9;
+        const pivot = new Sprite(
+          new SpriteMaterial({
+            map: pivotTex,
+            depthTest: false,
+            transparent: true,
+            sizeAttenuation: false,
+          }),
+        );
+        pivot.renderOrder = 12;
+        const label = new Sprite(
+          new SpriteMaterial({
+            depthTest: false,
+            transparent: true,
+            sizeAttenuation: false,
+          }),
+        );
+        label.renderOrder = 12;
+        label.center.set(0, 0);
+        scene.add(line, pivot, label);
+        return {
+          line,
+          pivot,
+          label,
+          name: null,
+          aspect: 1,
+          corner: new Vector3(),
+        };
+      }
+      function sync3D() {
+        const live = new Set();
+        for (const it of allItems()) {
+          live.add(it.id);
+          if (!views.has(it.id)) views.set(it.id, makeView(it));
+          const v = views.get(it.id);
+          const w = worldOf(it.id);
+          v.o.position.set(w.e, w.y, -w.n);
+          v.o.rotation.y = -w.rot * DEG;
+          v.o.scale.setScalar(w.scale);
+        }
+        for (const [id, v] of views)
+          if (!live.has(id)) {
+            scene.remove(v.o);
+            for (let i = pickables.length - 1; i >= 0; i--)
+              if (pickables[i].userData.id === id) pickables.splice(i, 1);
+            views.delete(id);
+          }
+        const liveF = new Set();
+        for (const F of folders()) {
+          liveF.add(F.id);
+          if (!hulls.has(F.id)) hulls.set(F.id, makeHull());
+          const hl = hulls.get(F.id);
+          let x0 = -0.5,
+            x1 = 0.5,
+            z0 = -0.5,
+            z1 = 0.5;
+          if (F.children.length) {
+            x0 = z0 = Infinity;
+            x1 = z1 = -Infinity;
+            for (const c of F.children) {
+              const r = TYPES[c.type].foot * c.scale + 0.3;
+              x0 = Math.min(x0, c.e - r);
+              x1 = Math.max(x1, c.e + r);
+              z0 = Math.min(z0, c.n - r);
+              z1 = Math.max(z1, c.n + r);
+            }
+          }
+          // hull in the folder's frame, drawn in world coordinates
+          const corners = [
+            [x0, z0],
+            [x1, z0],
+            [x1, z1],
+            [x0, z1],
+          ].map(([e, n]) => {
+            const [de, dn] = cw(e * F.scale, n * F.scale, F.rot);
+            return [F.e + de, F.n + dn];
+          });
+          const pos = [];
+          corners.forEach(([e, n]) => pos.push(e, 0.05, -n));
+          hl.line.geometry.dispose();
+          hl.line.geometry = new BufferGeometry();
+          hl.line.geometry.setAttribute(
+            "position",
+            new Float32BufferAttribute(pos, 3),
+          );
+          hl.line.computeLineDistances();
+          hl.pivot.position.set(F.e, 0.06, -F.n);
+          hl.corner.set(corners[3][0], 0.05, -corners[3][1]);
+          hl.label.position.copy(hl.corner);
+          if (hl.name !== F.name) {
+            hl.label.material.map?.dispose();
+            const L = labelTex(F.name);
+            hl.label.material.map = L.t;
+            hl.label.material.needsUpdate = true;
+            hl.aspect = L.aspect;
+            hl.name = F.name;
+          }
+        }
+        for (const [id, hl] of hulls)
+          if (!liveF.has(id)) {
+            scene.remove(hl.line, hl.pivot, hl.label);
+            hulls.delete(id);
+          }
+        highlights();
+      }
+      // the light outlines: amber for the selection, teal for a selected or hovered folder's items
+      function highlights() {
+        for (const [id, v] of views) {
+          const f = findNode(id);
+          const inF = f && f.key.startsWith("folder:") ? f.parent.id : null;
+          const sel = S.sel.includes(id);
+          const member = inF && (S.sel.includes(inF) || S.hover === inF);
+          v.box.visible = sel || !!member;
+          v.box.material.color.setHex(sel ? AMBER : TEAL);
+          v.box.material.opacity = sel ? 0.95 : 0.6;
+        }
+        for (const [fid, hl] of hulls) {
+          const F = findNode(fid)?.node;
+          if (!F) continue;
+          const strong = S.sel.includes(fid) || S.hover === fid;
+          const ctx = F.children.some((c) => S.sel.includes(c.id));
+          hl.line.material.opacity = strong ? 0.95 : ctx ? 0.6 : 0.28;
+          hl.pivot.visible = strong || ctx;
+          hl.label.material.opacity = strong ? 1 : ctx ? 0.85 : 0.5;
+        }
+      }
+
+      // ---------------------------------------------------------------- the gizmo (the studio's: ring, move arrows, turn knob on a stalk, scale dots)
+      function spriteTex(draw, size) {
+        const c = document.createElement("canvas");
+        c.width = c.height = size;
+        draw(c.getContext("2d"), size);
+        const t = new CanvasTexture(c);
+        t.colorSpace = SRGBColorSpace;
+        return t;
+      }
+      const TEX_DOT = spriteTex((g, n) => {
+        g.beginPath();
+        g.arc(n / 2, n / 2, n * 0.27, 0, 7);
+        g.fillStyle = "rgba(0,0,0,.35)";
+        g.fill();
+        g.beginPath();
+        g.arc(n / 2, n / 2, n * 0.22, 0, 7);
+        g.fillStyle = "#fff";
+        g.fill();
+        g.lineWidth = n * 0.06;
+        g.strokeStyle = "#e9a23b";
+        g.stroke();
+      }, 64);
+      const TEX_KNOB = spriteTex((g, n) => {
+        const c = n / 2;
+        g.beginPath();
+        g.arc(c, c, n * 0.33, 0, 7);
+        g.fillStyle = "#1f2023";
+        g.fill();
+        g.lineWidth = n * 0.05;
+        g.strokeStyle = "#e9a23b";
+        g.stroke();
+        g.strokeStyle = "#fff";
+        g.lineWidth = n * 0.055;
+        g.lineCap = "round";
+        g.beginPath();
+        g.arc(c, c, n * 0.17, -2.5, 1.2);
+        g.stroke();
+        const a = 1.2,
+          ex = c + n * 0.17 * Math.cos(a),
+          ey = c + n * 0.17 * Math.sin(a);
+        g.fillStyle = "#fff";
+        g.beginPath();
+        g.moveTo(ex + n * 0.1, ey - n * 0.03);
+        g.lineTo(ex - n * 0.08, ey + n * 0.09);
+        g.lineTo(ex - n * 0.06, ey - n * 0.11);
+        g.closePath();
+        g.fill();
+      }, 96);
+      const TEX_MOVE = spriteTex((g, n) => {
+        const c = n / 2,
+          k = n / 256;
+        g.beginPath();
+        g.arc(c, c, 124 * k, 0, 7);
+        g.fillStyle = "rgba(233,162,59,.22)";
+        g.fill();
+        g.lineWidth = 6 * k;
+        g.strokeStyle = "rgba(255,255,255,.95)";
+        g.stroke();
+        g.fillStyle = "rgba(255,255,255,.95)";
+        g.strokeStyle = "rgba(255,255,255,.95)";
+        g.lineWidth = 9 * k;
+        g.lineCap = "round";
+        for (let q = 0; q < 4; q++) {
+          g.save();
+          g.translate(c, c);
+          g.rotate((q * Math.PI) / 2);
+          g.beginPath();
+          g.moveTo(0, 22 * k);
+          g.lineTo(0, 72 * k);
+          g.stroke();
+          g.beginPath();
+          g.moveTo(0, 96 * k);
+          g.lineTo(-17 * k, 70 * k);
+          g.lineTo(17 * k, 70 * k);
+          g.closePath();
+          g.fill();
+          g.restore();
+        }
+      }, 256);
+      const hMat = new MeshBasicMaterial({
+        color: AMBER,
+        transparent: true,
+        opacity: 0.95,
+        depthTest: false,
+        depthWrite: false,
+      });
+      const hMoveMat = new MeshBasicMaterial({
+        map: TEX_MOVE,
+        transparent: true,
+        opacity: 0.9,
+        depthTest: false,
+        depthWrite: false,
+      });
+      const hRing = new Mesh(
+        new RingGeometry(0.93, 1, 96).rotateX(-Math.PI / 2),
+        hMat,
+      );
+      hRing.renderOrder = 22;
+      const hDisc = new Mesh(
+        new CircleGeometry(1, 64).rotateX(-Math.PI / 2),
+        hMoveMat,
+      );
+      hDisc.renderOrder = 21;
+      const hBar = new Mesh(
+        new PlaneGeometry(1, 1).rotateX(-Math.PI / 2).translate(0, 0, -0.5),
+        hMat,
+      );
+      hBar.renderOrder = 22;
+      const mkSprite = (tex, handle) => {
+        const s = new Sprite(
+          new SpriteMaterial({
+            map: tex,
+            depthTest: false,
+            depthWrite: false,
+            transparent: true,
+            sizeAttenuation: false,
+          }),
+        );
+        s.renderOrder = 25;
+        s.userData.handle = handle;
+        scene.add(s);
+        return s;
+      };
+      const hKnob = mkSprite(TEX_KNOB, "rotate");
+      const hDots = [0, 1, 2, 3].map(() => mkSprite(TEX_DOT, "scale"));
+      scene.add(hRing, hDisc, hBar);
+      const HANDLES = [hRing, hDisc, hBar, hKnob, ...hDots];
+      let vpH = 1,
+        hover = null,
+        frameNow = null;
+      const _v = new Vector3();
+      const wppAt = (x, y, z) =>
+        (2 *
+          _v.set(x, y, z).distanceTo(camera.position) *
+          Math.tan((camera.fov * DEG) / 2)) /
+        vpH;
+      const pxScale = () => (2 * Math.tan((camera.fov * DEG) / 2)) / vpH;
+      // where the gizmo sits: an item at itself, a folder at its pivot, several at their middle
+      function gizmoFrame() {
+        const ids = targets();
+        if (!ids.length) return null;
+        if (ids.length === 1) {
+          const n = findNode(ids[0]).node;
+          if (n.kind === "folder") {
+            let R = 0.6;
+            for (const c of n.children) {
+              const w = worldOf(c.id);
+              R = Math.max(
+                R,
+                Math.hypot(w.e - n.e, w.n - n.n) +
+                  TYPES[c.type].foot * w.scale * 0.6,
+              );
+            }
+            return {
+              e: n.e,
+              n: n.n,
+              rot: n.rot,
+              R: R + 0.2,
+              full: false,
+              dots: true,
+              kind: "folder",
+            };
+          }
+          const w = worldOf(n.id);
+          return {
+            e: w.e,
+            n: w.n,
+            rot: w.rot,
+            R: TYPES[n.type].foot * w.scale + 0.15,
+            full: true,
+            dots: n.type === "model",
+            kind: "item",
+          };
+        }
+        const ws = ids.map(worldOf);
+        const e = ws.reduce((s, w) => s + w.e, 0) / ws.length,
+          n = ws.reduce((s, w) => s + w.n, 0) / ws.length;
+        let R = 0.6;
+        ids.forEach((id, k) => {
+          const nd2 = findNode(id).node;
+          const foot = nd2.kind === "folder" ? 1 : TYPES[nd2.type].foot;
+          R = Math.max(
+            R,
+            Math.hypot(ws[k].e - e, ws[k].n - n) + foot * ws[k].scale * 0.6,
+          );
+        });
+        return {
+          e,
+          n,
+          rot: 0,
+          R: R + 0.2,
+          full: false,
+          dots: true,
+          kind: "multi",
+        };
+      }
+      function updateHandles() {
+        const f = gizmoFrame();
+        frameNow = f;
+        for (const o of HANDLES) o.visible = false;
+        if (!f) return;
+        const x = f.e,
+          z = -f.n;
+        const wpp = wppAt(x, 0, z),
+          q = pxScale();
+        const R = Math.max(f.R, 34 * wpp);
+        f.Rd = R;
+        const big = (n) =>
+          hover === n || (drag && drag.type === n) ? 1.15 : 1;
+        hRing.visible = true;
+        hRing.position.set(x, 0.07, z);
+        hRing.scale.set(R, 1, R);
+        const Rm = f.full ? R : 26 * wpp;
+        f.Rm = Rm;
+        hDisc.visible = true;
+        hDisc.position.set(x, 0.08, z);
+        hDisc.scale.set(Rm, 1, Rm);
+        hMoveMat.opacity = hover === "move" || drag?.type === "move" ? 1 : 0.85;
+        const fx = Math.sin(f.rot * DEG),
+          fz = -Math.cos(f.rot * DEG);
+        if (f.dots)
+          hDots.forEach((d, i) => {
+            const a = (f.rot + 45 + i * 90) * DEG;
+            d.visible = true;
+            d.position.set(x + Math.sin(a) * R, 0.15, z - Math.cos(a) * R);
+            d.scale.setScalar(30 * q * big("scale"));
+          });
+        const L = R + 30 * wpp;
+        hKnob.visible = true;
+        hKnob.position.set(x + fx * L, 0.2, z + fz * L);
+        hKnob.scale.setScalar(42 * q * big("rotate"));
+        hBar.visible = true;
+        hBar.position.set(x + fx * R, 0.08, z + fz * R);
+        hBar.rotation.y = -f.rot * DEG;
+        hBar.scale.set(Math.max(0.03, 2 * wpp), 1, L - R);
+      }
+      function updateTags() {
+        const q = pxScale();
+        for (const hl of hulls.values()) {
+          hl.pivot.scale.setScalar(20 * q);
+          hl.label.scale.set(20 * q * hl.aspect, 20 * q, 1);
+        }
+      }
+
+      // ---------------------------------------------------------------- pointer in 3D: handles, picking, clicks, the two-finger guard
+      const ray = new Raycaster();
+      const ndc = new Vector2();
+      const groundPlane = new Plane(new Vector3(0, 1, 0), 0);
+      function setNDC(x, y) {
+        const r = canvas.getBoundingClientRect();
+        ndc.set(
+          ((x - r.left) / r.width) * 2 - 1,
+          -((y - r.top) / r.height) * 2 + 1,
+        );
+        ray.setFromCamera(ndc, camera);
+      }
+      function hitAt(x, y) {
+        setNDC(x, y);
+        const p = new Vector3();
+        return ray.ray.intersectPlane(groundPlane, p)
+          ? { e: p.x, n: -p.z }
+          : null;
+      }
+      function pickItem() {
+        const hit = ray.intersectObjects(pickables, false)[0];
+        return hit ? hit.object.userData.id : null;
+      }
+      const covered = (id) => {
+        const tg = targets();
+        if (tg.includes(id)) return true;
+        const f = findNode(id);
+        return !!(f && f.key.startsWith("folder:") && tg.includes(f.parent.id));
+      };
+      function pickHandle(x, y) {
+        setNDC(x, y);
+        if (!frameNow) return null;
+        const spr = [...hDots, hKnob].filter((s) => s.visible);
+        const sh = ray.intersectObjects(spr, false)[0];
+        if (sh) return sh.object.userData.handle;
+        // a folder's (or a multi-selection's) small move arrows are drawn over
+        // the scene, so they win over whatever stands under the pivot
+        if (
+          !frameNow.full &&
+          hDisc.visible &&
+          ray.intersectObject(hDisc, false).length
+        )
+          return "move";
+        const it = pickItem();
+        if (it) return covered(it) ? "move" : null;
+        setNDC(x, y);
+        if (hDisc.visible && ray.intersectObject(hDisc, false).length)
+          return "move";
+        return null;
+      }
+      let ptr = null,
+        drag = null;
+      const touches = new Set();
+      const readout = $("#readout");
+      function showReadout(x, y, txt) {
+        const r = vp.getBoundingClientRect();
+        readout.style.display = "block";
+        readout.textContent = txt;
+        readout.style.left =
+          Math.min(x - r.left + 16, r.width - readout.offsetWidth - 6) + "px";
+        readout.style.top = Math.max(4, y - r.top - 34) + "px";
+      }
+      const compass = (pe, pn, p) => Math.atan2(p.e - pe, p.n - pn) / DEG;
+      canvas.addEventListener(
+        "pointerdown",
+        (e) => {
+          if (e.pointerType === "touch") {
+            touches.add(e.pointerId);
+            if (touches.size > 1) {
+              if (drag) cancelDrag();
+              ptr = null;
+              return;
+            }
+          }
+          if (e.pointerType === "mouse" && e.button !== 0) return;
+          updateHandles();
+          const handle = pickHandle(e.clientX, e.clientY);
+          setNDC(e.clientX, e.clientY);
+          const it = pickItem();
+          ptr = {
+            id: e.pointerId,
+            x: e.clientX,
+            y: e.clientY,
+            handle,
+            it,
+            moved: false,
+            toggle: e.ctrlKey || e.metaKey || e.shiftKey,
+          };
+          if (handle) {
+            orbit.enabled = false;
+            canvas.setPointerCapture(e.pointerId);
+          }
+        },
+        { capture: true },
+      );
+      canvas.addEventListener("pointermove", (e) => {
+        if (!ptr || e.pointerId !== ptr.id) {
+          if (e.pointerType === "mouse" && !ptr) {
+            const h2 = pickHandle(e.clientX, e.clientY);
+            hover = h2;
+            setNDC(e.clientX, e.clientY);
+            canvas.style.cursor = h2 ? "grab" : pickItem() ? "pointer" : "";
+          }
+          return;
+        }
+        if (
+          !ptr.moved &&
+          Math.hypot(e.clientX - ptr.x, e.clientY - ptr.y) > 5
+        ) {
+          ptr.moved = true;
+          if (ptr.handle) startDrag(ptr.handle, ptr.x, ptr.y);
+        }
+        if (drag) applyDrag(e);
+      });
+      function endPtr(e) {
+        if (e.pointerType === "touch") touches.delete(e.pointerId);
+        if (ptr && e.pointerId === ptr.id) {
+          if (drag) endDrag();
+          else if (!ptr.moved && e.type === "pointerup") {
+            if (ptr.it) clickSelect(ptr.it, { toggle: ptr.toggle });
+            else if (!ptr.toggle && !S.selMode && S.sel.length) {
+              S.sel = [];
+              changed();
+            }
+          }
+          ptr = null;
+        }
+        if (!touches.size && !drag) orbit.enabled = true;
+      }
+      canvas.addEventListener("pointerup", endPtr);
+      canvas.addEventListener("pointercancel", endPtr);
+      canvas.addEventListener("pointerleave", () => {
+        if (!ptr) hover = null;
+      });
+      function noun() {
+        const tg = targets();
+        if (tg.length > 1) return `${tg.length} items`;
+        const n = findNode(tg[0]).node;
+        return n.kind === "folder"
+          ? `"${n.name}"`
+          : TYPES[n.type].label.toLowerCase();
+      }
+      function startDrag(type, x, y) {
+        const f = gizmoFrame();
+        const hit = hitAt(x, y);
+        if (!f || !hit) return;
+        const ids = targets();
+        drag = {
+          type,
+          ids,
+          w0: ids.map(worldOf),
+          pe: f.e,
+          pn: f.n,
+          hit0: hit,
+          snap: snapshot(),
+        };
+        if (type === "rotate") drag.a0 = compass(f.e, f.n, hit);
+        if (type === "scale")
+          drag.d0 = Math.max(0.2, Math.hypot(hit.e - f.e, hit.n - f.n));
+        record(
+          `${type === "move" ? "Move" : type === "rotate" ? "Turn" : "Scale"} ${noun()}`,
+        );
+        orbit.enabled = false;
+        canvas.style.cursor = "grabbing";
+      }
+      function applyDrag(e) {
+        const hit = hitAt(e.clientX, e.clientY);
+        if (!hit) return;
+        let de = 0,
+          dn = 0,
+          a = 0,
+          k = 1;
+        let txt = "";
+        if (drag.type === "move") {
+          de = hit.e - drag.hit0.e;
+          dn = hit.n - drag.hit0.n;
+          if (e.shiftKey) {
+            de = Math.round((drag.pe + de) * 2) / 2 - drag.pe;
+            dn = Math.round((drag.pn + dn) * 2) / 2 - drag.pn;
+          }
+          txt = `E ${fmt(drag.pe + de, 1)}  N ${fmt(drag.pn + dn, 1)}${drag.ids.length === 1 && kindOf(drag.ids[0]) === "folder" ? ` - ${findNode(drag.ids[0]).node.children.length} items follow` : ""}`;
+        } else if (drag.type === "rotate") {
+          a = norm(compass(drag.pe, drag.pn, hit) - drag.a0);
+          a = e.shiftKey ? Math.round(a / 15) * 15 : Math.round(a);
+          txt = `turned ${a > 0 ? "+" : ""}${a} deg${e.shiftKey ? "" : "  (Shift: 15 deg steps)"}`;
+        } else {
+          k = Math.hypot(hit.e - drag.pe, hit.n - drag.pn) / drag.d0;
+          const lo = Math.max(...drag.w0.map((w) => 0.2 / w.scale)),
+            hi = Math.min(...drag.w0.map((w) => 5 / w.scale));
+          k = clamp(k, lo, hi);
+          k = Math.round(k * 100) / 100;
+          txt = `scale x${fmt(k, 2)}`;
+        }
+        drag.ids.forEach((id, i) => {
+          const w = drag.w0[i];
+          const [re, rn] = cw((w.e - drag.pe) * k, (w.n - drag.pn) * k, a);
+          setWorld(id, {
+            e: drag.pe + de + re,
+            n: drag.pn + dn + rn,
+            y: w.y * k,
+            rot: w.rot + a,
+            scale: w.scale * k,
+          });
+        });
+        drag.changed = true;
+        showReadout(e.clientX, e.clientY, txt);
+        sync3D();
+      }
+      function endDrag() {
+        const d = drag;
+        drag = null;
+        readout.style.display = "none";
+        canvas.style.cursor = "";
+        if (!d.changed) hist.past.pop();
+        changed({ tree: false });
+      }
+      function cancelDrag() {
+        const d = drag;
+        drag = null;
+        restore(d.snap);
+        hist.past.pop();
+        readout.style.display = "none";
+        changed();
+        toast("Two fingers move the camera - the edit was undone");
+      }
+      window.addEventListener(
+        "keydown",
+        (e) => {
+          if (e.key === "Escape" && drag) {
+            e.stopPropagation();
+            cancelDrag();
+          }
+        },
+        true,
+      );
+
+      // ---------------------------------------------------------------- frame loop and sizing
+      function resize() {
+        const r = vp.getBoundingClientRect();
+        const w = Math.max(1, r.width),
+          hh = Math.max(1, r.height);
+        vpH = hh;
+        renderer.setSize(w, hh, false);
+        camera.aspect = w / hh;
+        camera.updateProjectionMatrix();
+      }
+      new ResizeObserver(resize).observe(vp);
+      resize();
+      if (camera.aspect < 1.1) {
+        camera.position.set(0, 10, 12.5);
+        orbit.update();
+      }
+      function loop() {
+        updateHandles();
+        updateTags();
+        renderer.render(scene, camera);
+        requestAnimationFrame(loop);
+      }
+
+      // ---------------------------------------------------------------- start
+      if (!phone() && innerWidth >= 1000 && innerHeight >= 600)
+        document.body.dataset.about = "open";
+      drawLegend();
+      changed();
+      loop();
+
+      // hooks for headless checks: the page's state and its commands
+      window.__folders = {
+        S,
+        targets,
+        worldOf,
+        doGroup,
+        doUngroup,
+        doDuplicate,
+        undo,
+        redo,
+        moveNodes,
+        takeOut,
+        select: (ids) => {
+          S.sel = [...ids];
+          S.anchor = ids[0] || null;
+          changed();
+        },
+        handle: (name) => {
+          updateHandles();
+          const o = { move: hDisc, rotate: hKnob, scale: hDots[0] }[name];
+          if (!o || !o.visible) return null;
+          const p = o.position.clone().project(camera);
+          const r = canvas.getBoundingClientRect();
+          return {
+            x: r.left + ((p.x + 1) / 2) * r.width,
+            y: r.top + ((1 - p.y) / 2) * r.height,
+          };
+        },
+        itemAt: (id) => {
+          const w = worldOf(id);
+          const T = TYPES[findNode(id).node.type];
+          const p = new Vector3(w.e, T.cy * w.scale, -w.n).project(camera);
+          const r = canvas.getBoundingClientRect();
+          return {
+            x: r.left + ((p.x + 1) / 2) * r.width,
+            y: r.top + ((1 - p.y) / 2) * r.height,
+          };
+        },
+      };
+    </script>
+  </body>
+</html>

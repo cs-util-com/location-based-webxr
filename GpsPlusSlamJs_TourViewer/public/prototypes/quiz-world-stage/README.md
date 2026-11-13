@@ -40,12 +40,18 @@ copy them.
 </html>
 ```
 
-`runStage({ kind, samples | block, title, story?, at?, heading? })`:
+`runStage({ kind, samples | block, title, story?, at?, heading?, hud?, variants?, variant? })`:
 
 - `samples`: `{ normal, longest, missing }`, raw records; the Cost panel switches them.
   `loadSamples(url)` fetches them, or says on the page why it could not and returns `null`.
 - `story`: `{ speaker, station, before, after }`, the lines around the kind. Sensible defaults exist.
 - `at: { x, z }`, `heading` (radians): where the stage puts the item. Default the middle of the square.
+- `hud`: `"card"` (the default, the story card at the bottom) or `"compact"`; see "The compact HUD".
+  `?hud=card` or `?hud=compact` in the page's address overrides it, to compare the two on one page.
+- `variants: [{ letter, name, href }]`, `variant`: one of them. Sibling pages that answer the same
+  question differently; the compact HUD shows them as a tiny A / B / C switcher of plain links, the
+  current one marked, and names the current one in its sheet. `stand-variants.js` holds the list for
+  the find-then-stand pages 9, 10 and 11.
 
 ## The kind
 
@@ -120,6 +126,14 @@ export const kind = {
   Before that, Skip moves on. The stage does not read a result: points and whether to show them
   are yours.
 - `env.sound(id).play()`: `tap`, `right`, `wrong`, `done`, synthesised, silent in edit.
+- `env.hud`: `{ compact, dots(total, colours) }`. `compact` says which HUD the page runs on, so a card
+  can leave out what the compact HUD shows elsewhere. `dots(4, ['#fbbf24'])` draws the found-dots
+  pill (four dots, the first filled in that colour); `dots(0)` hides it. A no-op on the card HUD;
+  the stage hides the pill when the world closes.
+- `env.fitWidth(object, width, share = 0.4)`: the largest local scale at which `object`, `width`
+  metres wide at scale 1, covers no more than `share` of the view's width where it stands now;
+  `Infinity` when nothing limits it. Labels take `Math.min(theirScale, env.fitWidth(label, W))`, so
+  one stood right next to never fills the screen, while from far they keep their size.
 - `env.loadAsset(id)`: rejects, this stage has no files.
 
 ## `FieldSpec`
@@ -154,6 +168,43 @@ liked, use them instead of drawing your own:
 
 The card must leave the world visible. The phone's keyboard lifts it by itself.
 
+## The compact HUD
+
+Why: on a 390 x 844 phone the story card took about a third of the screen during the search (the
+guide's portrait and line, the question, the count, the found chips, the hint countdown, the
+prototype's notes, the step pips and Skip), and a found label stood next to filled the view. A quiz
+in the world should leave the world on screen; the card HUD stays as the reference (page 8 and the
+stage demo use it).
+
+With `hud: "compact"`, while playing:
+
+- The story card, with the kind's own card in it, moves behind a small "i" at the top right, under
+  the page's tools (Play / Edit, Bright / Dark, Cost) and the variant's name. Skip and the step pips
+  are there too. Nothing of it is on screen until the "i" is tapped.
+- Each new line of the guide shows once as a small toast under the top row, then fades (3 to 10 s
+  by its length; a tap takes it away sooner). No portrait stays on screen.
+- The one step forward (Continue before the question and after it, Restart at the end) is a single
+  button at the foot, on the left on a touch screen so the stick keeps the right.
+- During the search the only HUD is `env.hud.dots`: a pill of dots in the found answers' colours,
+  no text. What was found is said by the world, on the object.
+- Leaving the station's ring with the question open is said once as a toast instead of folding the
+  card.
+- The stick sits at the foot of the screen, since no card lifts it.
+- Edit mode is unchanged: the top bar and the edit panel as on the card HUD.
+
+What a kind does on it (pages 9, 10 and 11 are the examples): call `env.hud.dots` from its card
+while searching; leave the count, chips, question and countdown out of its card when
+`env.hud.compact`; say nothing on a find (its label in the world says it); and cap its labels with
+`env.fitWidth`. Whatever stays in its card (the way to answer without walking, the sliders, the case
+for and against) is reached through the "i".
+
+Measured on a 390 x 844 portrait phone in the middle of the search (the union of the HUD's boxes):
+about 2 % of the screen without the walking stick and 5 % with it, against 46 to 54 % for the card
+HUD on pages 10 and 11. A guide's toast adds up to about 9 % while it shows.
+
+The question signs of pages 10 and 11 are read in the world, so they cap at 80 % of the view's
+width rather than a label's 40 %.
+
 ## What the place gives you, and takes away
 
 Walking: on a phone one thumb drags to look, the stick walks (up and down walks, sideways turns
@@ -177,7 +228,8 @@ triangles, two 1024 px canvases, under 1 ms in `update`.
 ## Checking your variant
 
 `window.__stage` has `state()` (position, mode, step, counts, cost, last ten rounds), `screenOf(x, y, z)`
-(a world point on screen, to drive a tap) and `tenRounds()`. Serve by `index.html`, in Chromium headless
+(a world point on screen, to drive a tap), `tenRounds()`, `walkTo(x, z)` (walk there, as a tap on the
+ground would) and `face(x, y, z)` (turn the view to a world point). Serve by `index.html`, in Chromium headless
 with `--use-angle=swiftshader`. Software GL runs at about 10 fps and the stage caps one step at
 0.1 s, so wait on positions, not on the clock. A portrait phone sees only about 40 degrees across:
 turn the view before you tap.

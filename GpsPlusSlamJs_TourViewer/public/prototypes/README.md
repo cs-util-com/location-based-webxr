@@ -160,6 +160,12 @@ wired into its logic: every interaction is faked.
   tabs with a toolbar, placing in the view), each on the same sample tour
   with story folders listed before free items and a light Markdown
   description; made 2026-11-03.
+- `editor-folders-1-tree-first/` ... `editor-folders-3-pin-to-anchor/` - three
+  directions for grouping a station's items into folders that move, turn and
+  scale as one (pick and group in the station tree, select and group in the
+  3D view with a first click that takes the whole group, or pin items to an
+  anchor such as a 3D model); each also ungroups, drags items in and out,
+  duplicates and undoes; made 2026-11-09.
 - `editor-bottom-panel-1-tabs/`, `editor-bottom-panel-2-status-drawer/` -
   two directions for the editor's bottom bar and a collapsible panel for
   problems, history, map loading and performance (one tabbed panel, or a
@@ -248,12 +254,35 @@ wired into its logic: every interaction is faked.
   two directions for bringing pictures and 3D models into the desktop
   editor: straight onto the place, or a checked library shelf first; the
   size limits on both pages are guesses; made 2026-11-06.
-- `quiz-world-stage/` and `quiz-world-1-fan/` ... `quiz-world-7-answer-scenes/` -
+- Quiz: find, then stand at the answer (A/B/C) - three ways to choose by
+  standing at the answer once all are found as on page 8, made 2026-11-13.
+  All three run on the stage's compact HUD (a pill of found-dots, the
+  guide's line as a toast that fades, the story card, Skip and the notes
+  behind an "i"), and the A B C at the top left of each page switches
+  between them; `?hud=card` shows the full card instead.
+  - A, `quiz-world-9-ground-dwell/` - stand still in an answer's ring on
+    the ground: the ring closes from its far side round to the visitor's
+    feet in 3 s, locks in with a pulse and a sound, and a white seal closes
+    for 2.5 s more, during which walking away takes the answer back
+    quietly; then the ring turns teal or breaks apart. The question lies on
+    the ground amid the answers.
+  - B, `quiz-world-10-object-charges/` - the question rises out of the last
+    egg found and flies into every egg; standing by one makes it wake, fill
+    with light from below, rise and open (4 s dwell, a 3 s window in which a
+    step away takes it back).
+  - C, `quiz-world-11-light-pillars/` - the question rises as a sign in the
+    middle of the station and each answer becomes a tall soft pillar of
+    light, seen from across the square. Standing in a pillar pours the light
+    down from the top; after 4 s it is full and the answer locks in, and it
+    counts 3 s later unless the visitor steps out.
+  - Each keeps a quiet way to answer without walking, behind the "i".
+- `quiz-world-stage/` and `quiz-world-1-fan/` ... `quiz-world-8-find-then-return/` -
   quizzes whose answers stand in a walkable place, all on one shared stage
   (`quiz-world-stage/README.md` is the contract a kind module follows); 1-4
   made 2026-11-07, 5-7 (the creator places the answers, find them first,
-  answers as small scenes) made 2026-11-08. Each page says why its 3D carries
-  meaning and the strongest case against; the plain card,
+  answers as small scenes) made 2026-11-08, 8 (find them first, then walk
+  back to the right one and tap it there) made 2026-11-12. Each page says
+  why its 3D carries meaning and the strongest case against; the plain card,
   `quiz-visitor-1-story-card/`, is the baseline.
 - `model-lod-1/` - a mesh simplifier written for the page (edge collapses
   ordered by a quadric error) on three scanned rocks from Poly Haven (CC0):

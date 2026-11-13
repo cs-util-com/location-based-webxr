@@ -1,0 +1,3906 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Editor Folders: Pin to Anchor</title>
+    <!--
+  Throwaway prototype: grouping a station's free items, direction "pin to an
+  anchor". A group is not a separate folder object: it starts from one item
+  (usually a 3D model), other items are pinned to it, and the group takes the
+  anchor's position as its pivot and the anchor's name as its own. Moving or
+  turning the anchor carries its pinned items; each pinned item can still be
+  moved alone, and its position is kept relative to the anchor. In the tree
+  the pinned items sit under the anchor; in 3D each pinned item shows a thin
+  line to its anchor. Built to sit inside the chosen editor prototypes (the
+  explorer tree, the bottom bar with the selection's actions, the studio's
+  ring, move arrow, turn knob and scale dots). Original code. Rendering:
+  three.js r185 (MIT licence) with OrbitControls. All icons are simple
+  original SVG paths. All data is hard-coded sample data; nothing is saved.
+  Hidden URL flag: #noabout skips the opening explanation.
+-->
+    <style>
+      :root {
+        --bg0: #18191c;
+        --bg1: #1f2023;
+        --bg2: #26282c;
+        --bg3: #2f3136;
+        --bg4: #383a40;
+        --line: #313338;
+        --line2: #3c3f46;
+        --text: #d9dbe0;
+        --muted: #8a8f99;
+        --dim: #646973;
+        --accent: #e9a23b;
+        --accentBg: rgba(233, 162, 59, 0.14);
+        --accentLine: rgba(233, 162, 59, 0.55);
+        --accentText: #f3c47e;
+        --danger: #d97d79;
+        --focus: #5b9cf0;
+        --ax-e: #e0575b;
+        --ax-n: #4f8fe8;
+        --ax-u: #67bb57;
+        --pin: #f3c47e;
+        --mono:
+          "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", ui-monospace,
+          Menlo, monospace;
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: var(--bg0);
+        color: var(--text);
+        font:
+          12px/1.4 "Segoe UI",
+          system-ui,
+          -apple-system,
+          "Helvetica Neue",
+          Arial,
+          sans-serif;
+        overflow: hidden;
+      }
+      body {
+        display: grid;
+        grid-template-rows: 40px minmax(0, 1fr) 32px;
+        grid-template-columns: minmax(0, 1fr);
+      }
+      svg.i {
+        width: 16px;
+        height: 16px;
+        flex: none;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.35;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      button,
+      input,
+      select {
+        font: inherit;
+        color: inherit;
+        -webkit-tap-highlight-color: transparent;
+      }
+      kbd {
+        font: 10px var(--mono);
+        color: var(--dim);
+      }
+      [hidden] {
+        display: none !important;
+      }
+      :focus-visible {
+        outline: 2px solid var(--focus);
+        outline-offset: -2px;
+      }
+
+      /* top bar */
+      #tb {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 8px;
+        background: var(--bg1);
+        border-bottom: 1px solid var(--line);
+        min-width: 0;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding-right: 10px;
+        margin-right: 2px;
+        border-right: 1px solid var(--line);
+        height: 24px;
+        white-space: nowrap;
+        min-width: 0;
+      }
+      .brand b {
+        font-weight: 600;
+      }
+      .brand .doc {
+        color: var(--muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .grp {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 0 6px;
+        border-right: 1px solid var(--line);
+        height: 26px;
+      }
+      .grp:last-child {
+        border-right: 0;
+      }
+      .tbtn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 26px;
+        padding: 0 8px;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        background: transparent;
+        cursor: pointer;
+        white-space: nowrap;
+        color: var(--text);
+      }
+      .tbtn:hover:not(:disabled) {
+        background: var(--bg3);
+      }
+      .tbtn:disabled {
+        color: var(--dim);
+        cursor: default;
+      }
+      .tbtn.on {
+        background: var(--accentBg);
+        border-color: var(--accentLine);
+        color: var(--accentText);
+      }
+      .spacer {
+        flex: 1;
+      }
+
+      /* main: the 3D view with the docks over it */
+      #main {
+        position: relative;
+        min-width: 0;
+        min-height: 0;
+      }
+      #vp {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        background: #232427;
+      }
+      #vp canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        outline: none;
+        touch-action: none;
+      }
+      #tags {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        overflow: hidden;
+      }
+      .tag {
+        position: absolute;
+        left: 0;
+        top: 0;
+        pointer-events: auto;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        padding: 2px 7px 2px 4px;
+        border-radius: 3px;
+        background: rgba(28, 29, 32, 0.86);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        color: #e6e8ec;
+        font-size: 11px;
+        white-space: nowrap;
+        cursor: pointer;
+      }
+      .tag svg.i {
+        width: 13px;
+        height: 13px;
+        color: var(--muted);
+      }
+      .tag.sel {
+        border-color: var(--accent);
+      }
+      .tag.grp-of {
+        border-color: var(--accentLine);
+      }
+      .tag .pc {
+        font: 10px var(--mono);
+        background: var(--accentBg);
+        color: var(--accentText);
+        border-radius: 2px;
+        padding: 0 4px;
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+      }
+      .tag .pc svg.i {
+        width: 10px;
+        height: 10px;
+        color: var(--accentText);
+      }
+      .tag.pinmode {
+        padding: 5px 9px 5px 6px;
+        font-size: 12px;
+      }
+      .tag.pinmode.cand {
+        border-color: var(--line2);
+        background: rgba(40, 42, 46, 0.95);
+      }
+      .tag.pinmode.on {
+        border-color: var(--accent);
+        background: rgba(80, 58, 24, 0.95);
+        color: #fff;
+      }
+      .tag.pinmode.anchor {
+        border-color: var(--accent);
+        background: var(--accent);
+        color: #1c1c1c;
+      }
+      .tag.pinmode.anchor svg.i {
+        color: #1c1c1c;
+      }
+      .tag.pinmode.no {
+        opacity: 0.55;
+      }
+      .ov {
+        position: absolute;
+        pointer-events: none;
+        font-size: 11px;
+        color: #b9bdc5;
+      }
+      #protoTag {
+        right: 8px;
+        bottom: 8px;
+        font-size: 10px;
+        color: rgba(220, 222, 226, 0.7);
+        padding: 1px 6px;
+        border-radius: 3px;
+        background: rgba(24, 25, 28, 0.6);
+      }
+      #toast {
+        left: 50%;
+        bottom: 18px;
+        transform: translateX(-50%);
+        padding: 5px 12px;
+        border-radius: 4px;
+        background: rgba(30, 31, 34, 0.96);
+        border: 1px solid var(--line2);
+        color: var(--text);
+        opacity: 0;
+        transition: opacity 0.25s;
+        z-index: 9;
+        white-space: nowrap;
+        max-width: calc(100% - 32px);
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      #toast.show {
+        opacity: 1;
+      }
+      #readout {
+        display: none;
+        padding: 3px 7px;
+        border-radius: 3px;
+        background: rgba(24, 25, 28, 0.92);
+        border: 1px solid var(--line2);
+        font: 10.5px var(--mono);
+        color: var(--text);
+        white-space: nowrap;
+        z-index: 8;
+      }
+      #banner {
+        position: absolute;
+        top: 8px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 12;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        max-width: calc(100% - 24px);
+        padding: 6px 6px 6px 10px;
+        border-radius: 6px;
+        background: rgba(42, 36, 26, 0.97);
+        border: 1px solid var(--accent);
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+        color: #f4e6cf;
+      }
+      #banner .bt {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #banner svg.i {
+        color: var(--accentText);
+      }
+      #banner b {
+        color: #fff;
+      }
+
+      /* docks (flush with the edges, only as tall as their content) */
+      .dock {
+        position: absolute;
+        top: 0;
+        z-index: 5;
+        display: flex;
+        flex-direction: column;
+        max-height: calc(100% - 12px);
+        background: rgba(31, 32, 35, 0.97);
+        border: 1px solid var(--line);
+        border-top: 0;
+        box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
+      }
+      #tree {
+        left: 0;
+        width: min(284px, 36vw);
+        border-left: 0;
+        border-radius: 0 0 8px 0;
+      }
+      #insp {
+        right: 0;
+        width: min(296px, 36vw);
+        border-right: 0;
+        border-radius: 0 0 0 8px;
+      }
+      .dhead {
+        flex: none;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 5px 0 12px;
+        min-width: 0;
+      }
+      .dock:not(.collapsed) .dhead {
+        border-bottom: 1px solid var(--line);
+      }
+      .dhead .ttlh {
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .dhead .sp {
+        flex: 1;
+      }
+      .ib {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 26px;
+        height: 26px;
+        border: 0;
+        background: transparent;
+        border-radius: 4px;
+        color: var(--muted);
+        cursor: pointer;
+        flex: none;
+        padding: 0;
+      }
+      .ib:hover {
+        background: var(--bg3);
+        color: var(--text);
+      }
+      .ib.acc {
+        color: var(--accentText);
+      }
+      .dbody {
+        overflow: auto;
+        min-height: 0;
+      }
+      .dock.collapsed .dbody {
+        display: none;
+      }
+      .dock.collapsed .fold svg {
+        transform: rotate(180deg);
+      }
+      .dbody::-webkit-scrollbar {
+        width: 10px;
+      }
+      .dbody::-webkit-scrollbar-thumb {
+        background: var(--bg4);
+        border: 3px solid var(--bg1);
+        border-radius: 6px;
+      }
+
+      /* tree (explorer rows) */
+      #rows {
+        padding: 4px 0 8px;
+      }
+      .row {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        height: 26px;
+        padding-left: calc(var(--d, 0) * 16px + 4px);
+        padding-right: 4px;
+        cursor: pointer;
+        white-space: nowrap;
+        user-select: none;
+      }
+      .row:hover {
+        background: rgba(255, 255, 255, 0.035);
+      }
+      .row.sel {
+        background: var(--accentBg);
+        box-shadow: inset 2px 0 0 var(--accent);
+      }
+      .row.ingrp {
+        background: rgba(233, 162, 59, 0.05);
+      }
+      .row.st {
+        height: 30px;
+        font-weight: 600;
+      }
+      .row .grip {
+        width: 12px;
+        height: 18px;
+        flex: none;
+        cursor: grab;
+        opacity: 0.35;
+        touch-action: none;
+        background-image: radial-gradient(
+          circle,
+          #8b919a 1px,
+          transparent 1.3px
+        );
+        background-size: 4px 4px;
+        background-position: 2px 1px;
+      }
+      .row:hover .grip,
+      .row.sel .grip {
+        opacity: 0.9;
+      }
+      .row .gsp {
+        width: 12px;
+        flex: none;
+      }
+      .tw {
+        width: 16px;
+        height: 20px;
+        flex: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--muted);
+        border: 0;
+        background: transparent;
+        padding: 0;
+        cursor: pointer;
+      }
+      .tw svg {
+        width: 12px;
+        height: 12px;
+        transition: transform 0.12s;
+      }
+      .tw.open svg {
+        transform: rotate(90deg);
+      }
+      .tw.none {
+        visibility: hidden;
+      }
+      .badge {
+        font: 600 10px var(--mono);
+        min-width: 18px;
+        height: 16px;
+        line-height: 16px;
+        text-align: center;
+        border-radius: 3px;
+        background: #3d5a78;
+        color: #e6f0fa;
+        flex: none;
+        padding: 0 3px;
+      }
+      .row .ti {
+        color: var(--muted);
+        display: inline-flex;
+      }
+      .row .ti.story {
+        color: var(--accentText);
+      }
+      .row .ti.model {
+        color: #a3b1c2;
+      }
+      .row .ti.text {
+        color: #c7cbd2;
+      }
+      .row .ti.picture {
+        color: #c9a66b;
+      }
+      .row .ti.sound {
+        color: #8fc0b4;
+      }
+      .nm {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .row:not(.st) .nm {
+        font-weight: 400;
+      }
+      .meta {
+        font: 10px var(--mono);
+        color: var(--dim);
+        flex: none;
+      }
+      .pc {
+        font: 10px var(--mono);
+        flex: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        padding: 0 5px;
+        height: 16px;
+        border-radius: 8px;
+        background: var(--accentBg);
+        color: var(--accentText);
+      }
+      .pc svg.i {
+        width: 11px;
+        height: 11px;
+      }
+      .pinned .pinglyph {
+        color: var(--pin);
+        display: inline-flex;
+      }
+      .pinned .pinglyph svg.i {
+        width: 13px;
+        height: 13px;
+      }
+      /* the indent guide under an anchor: the tree's echo of the thin line in 3D */
+      .pinned .guide {
+        position: absolute;
+        left: calc(var(--d) * 16px - 6px);
+        top: 0;
+        bottom: 0;
+        width: 10px;
+        pointer-events: none;
+      }
+      .pinned .guide::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        border-left: 1px dashed rgba(233, 162, 59, 0.55);
+      }
+      .pinned .guide::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 50%;
+        width: 8px;
+        border-top: 1px dashed rgba(233, 162, 59, 0.55);
+      }
+      .pinned.last .guide::before {
+        bottom: 50%;
+      }
+      .hov {
+        width: 24px;
+        height: 22px;
+        opacity: 0;
+        color: var(--accentText);
+      }
+      .row:hover .hov,
+      .row.sel .hov,
+      .hov:focus-visible {
+        opacity: 1;
+      }
+      @media (hover: none) {
+        .hov {
+          opacity: 0.8;
+        }
+      }
+      .ck {
+        width: 14px;
+        height: 14px;
+        flex: none;
+        border: 1px solid #6a6f78;
+        border-radius: 3px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .ck svg.i {
+        width: 11px;
+        height: 11px;
+        stroke-width: 2;
+        opacity: 0;
+      }
+      .row.sel .ck {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #1c1c1c;
+      }
+      .row.sel .ck svg.i {
+        opacity: 1;
+      }
+      .pinchip {
+        flex: none;
+        height: 20px;
+        padding: 0 8px;
+        border-radius: 10px;
+        border: 1px solid var(--line2);
+        background: var(--bg3);
+        color: var(--muted);
+        font-size: 11px;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .pinchip.on {
+        border-color: var(--accent);
+        background: var(--accentBg);
+        color: var(--accentText);
+      }
+      .pinchip.anchor {
+        border-color: var(--accent);
+        background: var(--accent);
+        color: #1c1c1c;
+      }
+      .pinchip svg.i {
+        width: 11px;
+        height: 11px;
+      }
+      .row.no {
+        opacity: 0.5;
+      }
+      .sech {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 24px;
+        padding: 6px 10px 0 12px;
+        color: var(--muted);
+        user-select: none;
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+      }
+      .sech .count {
+        font: 10px var(--mono);
+        color: var(--dim);
+        letter-spacing: 0;
+      }
+      .row.drop-before::before,
+      .row.drop-after::after {
+        content: "";
+        position: absolute;
+        left: calc(var(--d, 0) * 16px + 4px);
+        right: 6px;
+        height: 2px;
+        background: var(--accent);
+        border-radius: 1px;
+        pointer-events: none;
+      }
+      .row.drop-before::before {
+        top: -1px;
+      }
+      .row.drop-after::after {
+        bottom: -1px;
+      }
+      .row.drop-into {
+        background: var(--accentBg);
+        box-shadow: inset 0 0 0 1px var(--accent);
+      }
+      .row.dragging {
+        opacity: 0.4;
+      }
+      .unpinzone {
+        display: none;
+        margin: 4px 8px 2px 20px;
+        height: 32px;
+        border: 1px dashed var(--line2);
+        border-radius: 5px;
+        color: var(--muted);
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        font-size: 11px;
+      }
+      /* while a pinned row is carried, the unpin zone sticks to the list's bottom: always in reach */
+      body.drag-pinned .unpinzone {
+        display: flex;
+        position: sticky;
+        bottom: 6px;
+        z-index: 2;
+        background: rgba(36, 38, 42, 0.97);
+      }
+      .unpinzone.drop-into {
+        border-color: var(--accent);
+        color: var(--accentText);
+        background: var(--accentBg);
+      }
+      .treefoot {
+        padding: 8px 12px 10px;
+        color: var(--dim);
+        font-size: 11px;
+        line-height: 1.5;
+        border-top: 1px solid var(--line);
+      }
+      #ghost {
+        position: fixed;
+        z-index: 60;
+        pointer-events: none;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 9px;
+        border-radius: 4px;
+        background: rgba(36, 38, 42, 0.97);
+        border: 1px solid var(--accentLine);
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+        white-space: nowrap;
+        font-size: 12px;
+      }
+      #ghost .say {
+        font-size: 10.5px;
+        color: var(--accentText);
+      }
+      #ghost.refused {
+        border-color: var(--danger);
+      }
+      #ghost.refused .say {
+        color: var(--danger);
+      }
+      html[data-nest-drag="refused"],
+      html[data-nest-drag="refused"] * {
+        cursor: not-allowed !important;
+      }
+      html[data-nest-drag="on"],
+      html[data-nest-drag="on"] * {
+        cursor: grabbing !important;
+      }
+
+      /* inspector */
+      #insp .dhead {
+        padding-left: 8px;
+      }
+      .hic {
+        display: inline-flex;
+        width: 22px;
+        justify-content: center;
+        color: var(--accentText);
+        flex: none;
+      }
+      .ttlin {
+        flex: 1;
+        min-width: 0;
+        height: 26px;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        background: transparent;
+        color: #f0f1f3;
+        font:
+          600 13.5px "Segoe UI",
+          system-ui,
+          sans-serif;
+        padding: 0 5px;
+        outline: none;
+        text-overflow: ellipsis;
+      }
+      .ttlin:hover {
+        border-color: var(--line2);
+      }
+      .ttlin:focus {
+        border-color: var(--focus);
+        background: var(--bg2);
+      }
+      .ttlstatic {
+        flex: 1;
+        min-width: 0;
+        font:
+          600 13.5px "Segoe UI",
+          system-ui,
+          sans-serif;
+        color: #f0f1f3;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .crumb {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 6px 12px 2px;
+        color: var(--dim);
+        font-size: 11px;
+        min-width: 0;
+        flex-wrap: wrap;
+      }
+      .crumb button {
+        border: 0;
+        background: transparent;
+        padding: 0;
+        color: var(--muted);
+        cursor: pointer;
+      }
+      .crumb button:hover {
+        color: var(--text);
+        text-decoration: underline;
+      }
+      .isec {
+        padding: 6px 12px 8px;
+        border-top: 1px solid var(--line);
+      }
+      .isec:first-child {
+        border-top: 0;
+      }
+      .ilab {
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin: 2px 0 6px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .ilab .count {
+        font: 10px var(--mono);
+        color: var(--dim);
+        letter-spacing: 0;
+      }
+      .note {
+        color: var(--dim);
+        font-size: 11px;
+        line-height: 1.45;
+        margin: 3px 0 4px;
+      }
+      .warn {
+        color: #e9b86b;
+        font-size: 11px;
+        line-height: 1.45;
+        margin: 4px 0 2px;
+      }
+      .act {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        width: 100%;
+        min-height: 28px;
+        padding: 0 8px;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        cursor: pointer;
+        text-align: left;
+        color: var(--text);
+      }
+      .act:hover:not(:disabled) {
+        background: var(--bg3);
+      }
+      .act svg {
+        color: var(--accentText);
+      }
+      .act kbd {
+        margin-left: auto;
+      }
+      .act:disabled {
+        color: var(--dim);
+        cursor: default;
+      }
+      .act:disabled svg {
+        color: var(--dim);
+      }
+      .act.danger svg {
+        color: var(--danger);
+      }
+      .act.danger:hover {
+        color: #f0a8a5;
+      }
+      .plist {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .pitem {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 26px;
+        padding: 0 2px 0 6px;
+        border-radius: 4px;
+        background: var(--bg2);
+      }
+      .pitem .nm {
+        cursor: pointer;
+      }
+      .pitem .nm:hover {
+        text-decoration: underline;
+      }
+      .seg {
+        display: inline-flex;
+        border: 1px solid var(--line2);
+        border-radius: 4px;
+        overflow: hidden;
+        flex: none;
+      }
+      .seg button {
+        border: 0;
+        background: transparent;
+        padding: 0 9px;
+        height: 24px;
+        cursor: pointer;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .seg button + button {
+        border-left: 1px solid var(--line2);
+      }
+      .seg button.on {
+        background: var(--accentBg);
+        color: var(--accentText);
+      }
+      .f {
+        display: grid;
+        grid-template-columns: 82px minmax(0, 1fr);
+        align-items: center;
+        gap: 6px;
+        min-height: 24px;
+        margin: 2px 0;
+      }
+      .f > label,
+      .f > .lbl {
+        color: var(--muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .val {
+        font: 11px var(--mono);
+        color: var(--text);
+      }
+      .val .ax {
+        font-weight: 600;
+        margin-right: 3px;
+      }
+      .ax.e {
+        color: var(--ax-e);
+      }
+      .ax.n {
+        color: var(--ax-n);
+      }
+      .ax.u {
+        color: var(--ax-u);
+      }
+      .sel1 {
+        height: 26px;
+        width: 100%;
+        min-width: 0;
+        background: var(--bg2);
+        border: 1px solid var(--line2);
+        border-radius: 3px;
+        padding: 0 6px;
+      }
+      .btnrow {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-top: 6px;
+      }
+      .btn {
+        height: 28px;
+        padding: 0 12px;
+        border-radius: 4px;
+        border: 1px solid var(--line2);
+        background: var(--bg2);
+        color: var(--text);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .btn:hover:not(:disabled) {
+        background: var(--bg3);
+      }
+      .btn:disabled {
+        color: var(--dim);
+        cursor: default;
+      }
+      .btn.pri {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #1c1c1c;
+        font-weight: 600;
+      }
+      .btn.pri:hover:not(:disabled) {
+        background: #f0b257;
+      }
+      .btn.pri svg {
+        color: #1c1c1c;
+      }
+      .steps {
+        margin: 0;
+        padding: 0 0 0 18px;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+
+      /* bottom bar: the selection's actions */
+      #sb {
+        display: flex;
+        align-items: center;
+        background: var(--bg1);
+        border-top: 1px solid var(--line);
+        font-size: 11px;
+        color: var(--muted);
+        min-width: 0;
+      }
+      #sbActs {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 0 4px;
+        height: 100%;
+        overflow-x: auto;
+        overflow-y: hidden;
+        flex: 0 1 auto;
+        min-width: 0;
+        scrollbar-width: none;
+        border-right: 1px solid var(--line);
+      }
+      #sbActs:empty {
+        display: none;
+      }
+      #sbActs .seg {
+        margin: 0 4px;
+      }
+      #sbActs .seg button {
+        height: 22px;
+        font-size: 11px;
+      }
+      .sact {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 24px;
+        padding: 0 7px;
+        border: 1px solid transparent;
+        border-radius: 3px;
+        background: transparent;
+        color: var(--text);
+        cursor: pointer;
+        font-size: 11px;
+        white-space: nowrap;
+        flex: none;
+      }
+      .sact svg {
+        width: 14px;
+        height: 14px;
+        color: var(--accentText);
+      }
+      .sact.danger svg {
+        color: var(--danger);
+      }
+      .sact:hover:not(:disabled) {
+        background: var(--bg3);
+        border-color: var(--line2);
+      }
+      .sact:disabled {
+        color: var(--dim);
+        cursor: default;
+      }
+      .sact:disabled svg {
+        color: var(--dim);
+      }
+      .sact.pri {
+        background: var(--accentBg);
+        border-color: var(--accentLine);
+        color: var(--accentText);
+      }
+      #sbHint {
+        flex: 1;
+        min-width: 0;
+        padding: 0 10px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #sheetTabs {
+        display: none;
+      }
+
+      /* modal (delete question, about) */
+      #modalBack {
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        background: rgba(8, 9, 11, 0.6);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+      }
+      #modalBack.show {
+        display: flex;
+      }
+      #modal {
+        width: min(460px, 100%);
+        max-height: calc(100% - 8px);
+        overflow: auto;
+        background: var(--bg1);
+        border: 1px solid var(--line2);
+        border-radius: 8px;
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+      }
+      #modal.wide {
+        width: min(640px, 100%);
+      }
+      #modal h2 {
+        margin: 0;
+        font-size: 13.5px;
+        font-weight: 600;
+        color: #f0f1f3;
+        padding: 12px 14px 10px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      #modal h2 .sp {
+        flex: 1;
+      }
+      #modal .mb {
+        padding: 8px 14px 4px;
+        line-height: 1.5;
+      }
+      #modal .mb h3 {
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accentText);
+        margin: 12px 0 4px;
+      }
+      #modal .mb ul {
+        margin: 0;
+        padding-left: 18px;
+        color: var(--text);
+      }
+      #modal .mb li {
+        margin: 3px 0;
+      }
+      #modal .mb p {
+        margin: 4px 0 6px;
+        color: var(--muted);
+      }
+      #modal .mf {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        padding: 10px 14px 12px;
+        border-top: 1px solid var(--line);
+        margin-top: 6px;
+        flex-wrap: wrap;
+      }
+      #modal .choice {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 8px 14px 12px;
+      }
+      #modal .choice .btn {
+        height: auto;
+        min-height: 40px;
+        padding: 6px 12px;
+        text-align: left;
+        flex-direction: column;
+        align-items: flex-start;
+        justify-content: center;
+        gap: 1px;
+        line-height: 1.35;
+      }
+      #modal .choice .btn span {
+        display: block;
+        font-weight: 400;
+        font-size: 11px;
+        color: inherit;
+        opacity: 0.8;
+      }
+
+      @media (max-width: 1000px) {
+        .tbtn .lbl,
+        .tbtn kbd {
+          display: none;
+        }
+        .brand b {
+          display: none;
+        }
+      }
+      /* a phone held upright: the 3D view above, the list or the details as a sheet below, the actions at the bottom */
+      @media (max-width: 700px) {
+        body {
+          grid-template-rows: 44px minmax(0, 1fr) 46px;
+        }
+        #tb {
+          gap: 2px;
+          padding: 0 4px;
+        }
+        .grp {
+          padding: 0 2px;
+        }
+        .tbtn {
+          padding: 0 7px;
+          height: 32px;
+        }
+        .brand {
+          padding-right: 6px;
+          flex: 0 1 auto;
+        }
+        #main {
+          display: grid;
+          grid-template-rows: minmax(0, 1fr) 36px 44%;
+        }
+        #vp {
+          position: relative;
+          inset: auto;
+          grid-row: 1;
+        }
+        .dock {
+          position: static;
+          width: auto;
+          max-height: none;
+          border: 0;
+          border-top: 1px solid var(--line);
+          border-radius: 0;
+          box-shadow: none;
+          grid-row: 3;
+          min-height: 0;
+        }
+        #tree,
+        #insp {
+          width: auto;
+        }
+        .dock .fold {
+          display: none;
+        }
+        .dock.collapsed .dbody {
+          display: block;
+        }
+        body[data-tab="tree"] #insp,
+        body[data-tab="insp"] #tree {
+          display: none;
+        }
+        #sheetTabs {
+          display: flex;
+          grid-row: 2;
+          background: var(--bg1);
+          border-top: 1px solid var(--line);
+        }
+        #sheetTabs button {
+          flex: 1;
+          border: 0;
+          background: transparent;
+          color: var(--muted);
+          font-size: 12px;
+          font-weight: 600;
+          letter-spacing: 0.04em;
+          border-bottom: 2px solid transparent;
+          cursor: pointer;
+        }
+        #sheetTabs button.on {
+          color: var(--accentText);
+          border-bottom-color: var(--accent);
+        }
+        .row {
+          height: 34px;
+        }
+        .row.st {
+          height: 36px;
+        }
+        .row .grip {
+          width: 18px;
+          height: 28px;
+          opacity: 0.8;
+          background-position: 5px 6px;
+        }
+        .row .gsp {
+          width: 18px;
+        }
+        .hov {
+          width: 32px;
+          height: 30px;
+        }
+        #sbActs {
+          border-right: 0;
+          flex: 1;
+        }
+        .sact {
+          height: 36px;
+          padding: 0 9px;
+          font-size: 12px;
+        }
+        #sbActs .seg button {
+          height: 32px;
+        }
+        #sbHint {
+          display: none;
+        }
+        #protoTag {
+          display: none;
+        }
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.185.1/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body data-tab="tree">
+    <header id="tb">
+      <div class="brand">
+        <svg class="i" viewBox="0 0 16 16" style="color: var(--accent)">
+          <path d="M8 1.8l5.5 3v6.4L8 14.2 2.5 11.2V4.8z" />
+          <path d="M2.5 4.8L8 7.8l5.5-3M8 7.8v6.4" /></svg
+        ><b>Tour Editor</b><span class="doc">Old town walk</span>
+      </div>
+      <div class="grp">
+        <button class="tbtn" id="bUndo" title="Undo (Ctrl+Z)">
+          <i data-icon="undo"></i><span class="lbl">Undo</span>
+        </button>
+        <button class="tbtn" id="bRedo" title="Redo (Ctrl+Shift+Z)">
+          <i data-icon="redo"></i><span class="lbl">Redo</span>
+        </button>
+      </div>
+      <div class="grp">
+        <button
+          class="tbtn"
+          id="bMulti"
+          aria-pressed="false"
+          title="Select several: every tap adds or removes an item (on a desktop, Ctrl- or Shift-click does the same)"
+        >
+          <i data-icon="multi"></i><span class="lbl">Select several</span>
+        </button>
+      </div>
+      <div class="spacer"></div>
+      <div class="grp">
+        <button class="tbtn" id="bFrame" title="Frame the selection (F)">
+          <i data-icon="frame"></i><span class="lbl">Frame</span><kbd>F</kbd>
+        </button>
+        <button class="tbtn" id="bReset" title="Start the demonstration again">
+          <i data-icon="reset"></i><span class="lbl">Reset</span>
+        </button>
+      </div>
+      <div class="grp">
+        <button
+          class="tbtn"
+          id="bAbout"
+          title="Why this idea, the case against it, what to try"
+        >
+          <i data-icon="info"></i><span class="lbl">About this idea</span>
+        </button>
+      </div>
+    </header>
+
+    <main id="main">
+      <div id="vp">
+        <div id="tags"></div>
+        <div id="banner" hidden></div>
+        <div class="ov" id="readout"></div>
+        <div class="ov" id="toast"></div>
+        <div class="ov" id="protoTag">
+          Prototype: folders as pins to an anchor
+        </div>
+      </div>
+      <aside class="dock" id="tree">
+        <div class="dhead">
+          <span class="ttlh">Station</span><span class="sp"></span>
+          <button class="ib fold" id="bTreeFold" title="Collapse the panel">
+            <i data-icon="up"></i>
+          </button>
+        </div>
+        <div class="dbody" id="treeBody"></div>
+      </aside>
+      <aside class="dock" id="insp">
+        <div class="dhead" id="inspHead"></div>
+        <div class="dbody" id="inspBody"></div>
+      </aside>
+      <nav id="sheetTabs">
+        <button data-tab="tree" class="on">Station</button
+        ><button data-tab="insp">Details</button>
+      </nav>
+    </main>
+
+    <footer id="sb">
+      <div id="sbActs"></div>
+      <div id="sbHint"></div>
+    </footer>
+    <div id="modalBack">
+      <div
+        id="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modalTtl"
+      ></div>
+    </div>
+
+    <script type="module">
+      import * as THREE from "three";
+      import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+      const $ = (s, r = document) => r.querySelector(s);
+      const DEG = Math.PI / 180;
+      const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+      const norm360 = (h) => ((h % 360) + 360) % 360;
+      const angDiff = (a, b) => {
+        const d = norm360(b - a);
+        return d > 180 ? d - 360 : d;
+      };
+      const fmt = (v, d = 1) => {
+        const s = v.toFixed(d);
+        return /^-0(\.0+)?$/.test(s) ? s.slice(1) : s;
+      };
+      const esc = (s) =>
+        String(s).replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[c],
+        );
+
+      // ---------------------------------------------------------------- icons (original paths)
+      const P = {
+        model:
+          "M8 1.8l5.5 3v6.4L8 14.2 2.5 11.2V4.8z M2.5 4.8L8 7.8l5.5-3M8 7.8v6.4",
+        text: "M3 3.5h10M8 3.5v9M5.5 12.5h5",
+        picture:
+          "M2.5 3.5h11v9h-11z M2.5 10.5l3.2-3 2.6 2.4 2-1.8 3.2 2.6 M10.5 6.2h.01",
+        sound:
+          "M3 6.2h2.2L8.5 3.5v9L5.2 9.8H3z M10.5 5.8a3 3 0 0 1 0 4.4 M12.3 4.2a5.4 5.4 0 0 1 0 7.6",
+        pin: "M6 2.5h4 M7 2.5v4l-2.5 2.5h7L9 6.5v-4 M8 9v4.5",
+        unpin: "M6 2.5h4 M7 2.5v4l-2.5 2.5h7L9 6.5v-4 M8 9v4.5 M2.5 2.5l11 11",
+        story: "M2.5 4.5h4l1.2 1.3h5.8v6.7h-11z",
+        step: "M4 8h8 M9 5l3 3-3 3",
+        station:
+          "M8 14s-4.5-4.4-4.5-7.6a4.5 4.5 0 0 1 9 0C12.5 9.6 8 14 8 14z M8 6.4h.01",
+        chev: "M6 4l4 4-4 4",
+        up: "M4 10l4-4 4 4",
+        undo: "M5.5 4L2.5 7l3 3 M2.5 7h7a3.5 3.5 0 0 1 0 7H7",
+        redo: "M10.5 4l3 3-3 3 M13.5 7h-7a3.5 3.5 0 0 0 0 7H9",
+        copy: "M5.5 5.5h7v7h-7z M3.5 10.5v-7h7",
+        trash: "M3 4.5h10 M6.5 4.5V3h3v1.5 M4.5 4.5l.7 8.5h5.6l.7-8.5",
+        frame: "M2.5 5.5v-3h3 M10.5 2.5h3v3 M13.5 10.5v3h-3 M5.5 13.5h-3v-3",
+        info: "M8 14.5a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13z M8 7.2v4 M8 4.9v.1",
+        check: "M3 8.5l3 3 7-7",
+        x: "M4 4l8 8M12 4l-8 8",
+        multi:
+          "M2.5 2.5h5v5h-5z M3.8 5l1.2 1.2 2-2.2 M9.5 4h4 M2.5 9.5h5v5h-5z M9.5 11.5h4",
+        target:
+          "M8 13.5a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11z M8 9.6a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2z",
+        reset: "M2.8 8a5.2 5.2 0 1 0 1.6-3.8 M2.5 2.5v2.8h2.8",
+        plus: "M8 3v10M3 8h10",
+        group:
+          "M8 6.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z M8 6.5V3 M6.7 8.8l-3 2 M9.3 8.8l3 2",
+        alone: "M8 6.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z M3 3l10 10",
+      };
+      const icon = (n) =>
+        `<svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="${P[n]}"/></svg>`;
+      const fillIcons = (root = document) =>
+        root.querySelectorAll("i[data-icon]").forEach((el) => {
+          el.outerHTML = icon(el.dataset.icon);
+        });
+      fillIcons();
+      const TYPE_LABEL = {
+        model: "3D model",
+        text: "Text",
+        picture: "Picture",
+        sound: "Sound circle",
+      };
+
+      // ---------------------------------------------------------------- the data
+      // Station-local metres: e east, n north, y up. h = the heading an item faces (degrees clockwise from north).
+      // A free item stores its pose in the station's frame. A PINNED item (anchor set) stores its pose in its
+      // anchor's frame: e to the anchor's right, n ahead of it, y above it, h relative to the anchor's heading.
+      // That relative pose is the whole "folder": move or turn the anchor and its pinned items follow.
+      function initState() {
+        return {
+          station: { name: "Market Square", num: 1, radius: 12 },
+          items: [
+            {
+              id: "m1",
+              type: "model",
+              name: "Fountain",
+              e: 0,
+              n: 2,
+              y: 0,
+              h: 0,
+              s: 1,
+              anchor: null,
+            },
+            {
+              id: "t1",
+              type: "text",
+              name: "Built in 1612",
+              e: 2.6,
+              n: 2.8,
+              y: 1.3,
+              h: 165,
+              s: 1,
+              anchor: null,
+            },
+            {
+              id: "p1",
+              type: "picture",
+              name: "The fountain in 1900",
+              e: -2.7,
+              n: 2.5,
+              y: 1.3,
+              h: 195,
+              s: 1,
+              anchor: null,
+            },
+            {
+              id: "a1",
+              type: "sound",
+              name: "Water sounds",
+              e: 0.4,
+              n: -3.4,
+              y: 0,
+              h: 0,
+              s: 1,
+              r: 2.2,
+              anchor: null,
+            },
+          ],
+          stories: [
+            {
+              id: "s1",
+              name: "The fountain walk",
+              steps: [
+                { id: "s1a", name: "Look at the fountain" },
+                { id: "s1b", name: "Listen to the water" },
+              ],
+            },
+          ],
+          sel: [],
+          nextId: 20,
+        };
+      }
+      let S = initState();
+      const ui = {
+        alone: false,
+        multi: false,
+        pinMode: null,
+        open: {},
+        storyOpen: { s1: true },
+        tab: "tree",
+        anchorPick: null,
+      };
+
+      const byId = (id) => S.items.find((i) => i.id === id) || null;
+      const pinsOf = (id) => S.items.filter((i) => i.anchor === id);
+      const hasPins = (it) => !!it && pinsOf(it.id).length > 0;
+      const selItems = () => S.sel.map(byId).filter(Boolean);
+      const primary = () => (S.sel.length ? S.sel[S.sel.length - 1] : null);
+      const newId = (p) => p + S.nextId++;
+
+      function pose(it) {
+        if (!it.anchor)
+          return { e: it.e, n: it.n, y: it.y, h: it.h, s: it.s || 1 };
+        const a = byId(it.anchor);
+        if (!a) return { e: it.e, n: it.n, y: it.y, h: it.h, s: it.s || 1 };
+        const ap = pose(a);
+        const c = Math.cos(ap.h * DEG),
+          s = Math.sin(ap.h * DEG);
+        return {
+          e: ap.e + it.e * c + it.n * s,
+          n: ap.n - it.e * s + it.n * c,
+          y: ap.y + it.y,
+          h: norm360(ap.h + it.h),
+          s: it.s || 1,
+        };
+      }
+      function setWorld(it, W) {
+        if (it.anchor) {
+          const ap = pose(byId(it.anchor));
+          const c = Math.cos(ap.h * DEG),
+            s = Math.sin(ap.h * DEG);
+          const de = W.e - ap.e,
+            dn = W.n - ap.n;
+          it.e = de * c - dn * s;
+          it.n = de * s + dn * c;
+          it.y = W.y - ap.y;
+          it.h = norm360(W.h - ap.h);
+        } else {
+          it.e = W.e;
+          it.n = W.n;
+          it.y = W.y;
+          it.h = norm360(W.h);
+        }
+      }
+      /** The array order is the tree order: top-level items in order, each anchor's pins in order. */
+      function moveInArray(it, refFn, after) {
+        const i = S.items.indexOf(it);
+        if (i < 0) return;
+        S.items.splice(i, 1);
+        const ref = refFn();
+        const j = ref ? S.items.indexOf(ref) : -1;
+        if (j < 0) S.items.push(it);
+        else S.items.splice(j + (after ? 1 : 0), 0, it);
+      }
+      const lastOfGroup = (aid) => {
+        const p = pinsOf(aid);
+        return p.length ? p[p.length - 1] : byId(aid);
+      };
+      /** May `d` be pinned to `a`? One level deep: an anchor is never pinned, and an item that holds pins is never pinned. */
+      function pinRefusal(d, a) {
+        if (!d || !a) return "nothing to pin to";
+        if (d.id === a.id) return "an item cannot be pinned to itself";
+        if (a.anchor)
+          return `"${a.name}" is pinned itself - folders are one level deep`;
+        if (hasPins(d))
+          return `"${d.name}" holds pins of its own - folders are one level deep`;
+        return null;
+      }
+
+      // ---------------------------------------------------------------- history
+      const hist = { past: [], future: [], gesture: null };
+      const snapshot = () => JSON.stringify(S);
+      function commit(label, fn) {
+        const before = snapshot();
+        fn();
+        if (snapshot() !== before) {
+          hist.past.push({ snap: before, label });
+          if (hist.past.length > 200) hist.past.shift();
+          hist.future.length = 0;
+        }
+        afterChange(true);
+      }
+      function beginGesture(label) {
+        hist.gesture = { snap: snapshot(), label };
+      }
+      function endGesture() {
+        const g = hist.gesture;
+        hist.gesture = null;
+        if (g && snapshot() !== g.snap) {
+          hist.past.push({ snap: g.snap, label: g.label });
+          hist.future.length = 0;
+        }
+      }
+      function abortGesture() {
+        const g = hist.gesture;
+        hist.gesture = null;
+        if (g) S = JSON.parse(g.snap);
+      }
+      function undo() {
+        const e = hist.past.pop();
+        if (!e) return toast("Nothing to undo");
+        hist.future.push({ snap: snapshot(), label: e.label });
+        S = JSON.parse(e.snap);
+        endPinMode(true);
+        afterChange(true);
+        toast("Undo: " + e.label);
+      }
+      function redo() {
+        const e = hist.future.pop();
+        if (!e) return toast("Nothing to redo");
+        hist.past.push({ snap: snapshot(), label: e.label });
+        S = JSON.parse(e.snap);
+        endPinMode(true);
+        afterChange(true);
+        toast("Redo: " + e.label);
+      }
+
+      // ---------------------------------------------------------------- three.js scene
+      const vp = $("#vp");
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      vp.prepend(renderer.domElement);
+      const canvas = renderer.domElement;
+      canvas.tabIndex = 0;
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x232427);
+      scene.fog = new THREE.Fog(0x232427, 45, 110);
+      const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 400);
+      camera.position.set(3, 7.5, 12.5);
+      const orbit = new OrbitControls(camera, canvas);
+      orbit.target.set(0, 0.8, 0.5);
+      orbit.enableDamping = true;
+      orbit.dampingFactor = 0.12;
+      orbit.minDistance = 3;
+      orbit.maxDistance = 70;
+      orbit.maxPolarAngle = 1.45;
+      orbit.update();
+      function lockCam(on) {
+        orbit.enableRotate = orbit.enablePan = orbit.enableZoom = !on;
+      }
+
+      scene.add(new THREE.HemisphereLight(0xe9eef5, 0x5d5a52, 1.3));
+      const sun = new THREE.DirectionalLight(0xfff6e8, 1.8);
+      sun.position.set(-12, 22, 9);
+      scene.add(sun);
+
+      function canvasTex(w, h, draw) {
+        const c = document.createElement("canvas");
+        c.width = w;
+        c.height = h;
+        draw(c.getContext("2d"), w, h);
+        const t = new THREE.CanvasTexture(c);
+        t.colorSpace = THREE.SRGBColorSpace;
+        return t;
+      }
+      // the square: paving stones
+      const paveTex = canvasTex(512, 512, (g, w) => {
+        g.fillStyle = "#8c877d";
+        g.fillRect(0, 0, w, w);
+        let seed = 7;
+        const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+        for (let y = 0; y < 16; y++)
+          for (let x = 0; x < 16; x++) {
+            const v = 128 + Math.floor(rnd() * 12) - 6;
+            g.fillStyle = `rgb(${v + 10},${v + 5},${v - 4})`;
+            g.fillRect(x * 32 + 1, y * 32 + 1, 30, 30);
+          }
+      });
+      paveTex.wrapS = paveTex.wrapT = THREE.RepeatWrapping;
+      paveTex.repeat.set(15, 15);
+      paveTex.anisotropy = 8;
+      const ground = new THREE.Mesh(
+        new THREE.PlaneGeometry(120, 120).rotateX(-Math.PI / 2),
+        new THREE.MeshLambertMaterial({ map: paveTex }),
+      );
+      scene.add(ground);
+      // the station's radius and centre
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: 0x4f8fe8,
+        transparent: true,
+        opacity: 0.75,
+        depthWrite: false,
+      });
+      const stRing = new THREE.Mesh(
+        new THREE.RingGeometry(11.88, 12, 160).rotateX(-Math.PI / 2),
+        ringMat,
+      );
+      stRing.position.y = 0.02;
+      scene.add(stRing);
+      const stFill = new THREE.Mesh(
+        new THREE.CircleGeometry(11.9, 96).rotateX(-Math.PI / 2),
+        new THREE.MeshBasicMaterial({
+          color: 0x4f8fe8,
+          transparent: true,
+          opacity: 0.05,
+          depthWrite: false,
+        }),
+      );
+      stFill.position.y = 0.015;
+      scene.add(stFill);
+      const stMark = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.22),
+        new THREE.MeshLambertMaterial({ color: 0x4f8fe8, emissive: 0x10263a }),
+      );
+      stMark.position.y = 0.3;
+      scene.add(stMark);
+      // a few house fronts for scale
+      {
+        const m = new THREE.MeshLambertMaterial({ color: 0xbdb6aa });
+        const roof = new THREE.MeshLambertMaterial({ color: 0x8d6b5b });
+        const houses = [
+          [-18, -10, 6, 9, 8],
+          [-18, 2, 6, 10, 11],
+          [-18, 13, 6, 9, 9],
+          [18, -8, 6, 12, 10],
+          [18, 6, 6, 12, 8],
+          [-5, 21, 12, 6, 12],
+          [9, 21, 10, 6, 9],
+        ];
+        for (const [x, z, w, d, h] of houses) {
+          const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+          b.position.set(x, h / 2, -z);
+          scene.add(b);
+          const r = new THREE.Mesh(
+            new THREE.BoxGeometry(w + 0.3, 0.6, d + 0.3),
+            roof,
+          );
+          r.position.set(x, h + 0.3, -z);
+          scene.add(r);
+        }
+      }
+
+      function wrapText(g, text, x, y, maxW, lh) {
+        const words = text.split(" ");
+        let line = "";
+        for (const w of words) {
+          const t = line ? line + " " + w : w;
+          if (g.measureText(t).width > maxW && line) {
+            g.fillText(line, x, y);
+            y += lh;
+            line = w;
+          } else line = t;
+        }
+        if (line) g.fillText(line, x, y);
+      }
+      const texCache = new Map();
+      function cardTex(it) {
+        const key = it.type + ":" + it.name;
+        if (texCache.has(key)) return texCache.get(key);
+        let t;
+        if (it.type === "text") {
+          t = canvasTex(512, 292, (g, w, h) => {
+            g.fillStyle = "#f4f1ea";
+            g.fillRect(0, 0, w, h);
+            g.fillStyle = "#e9a23b";
+            g.fillRect(0, 0, 10, h);
+            g.fillStyle = "#1f2023";
+            g.font = '600 46px "Segoe UI", system-ui, sans-serif';
+            wrapText(g, it.name, 36, 70, w - 64, 52);
+            g.fillStyle = "#5b5f66";
+            g.font = '28px "Segoe UI", system-ui, sans-serif';
+            wrapText(
+              g,
+              "The basin was carved from one block of local sandstone.",
+              36,
+              190,
+              w - 64,
+              34,
+            );
+          });
+        } else {
+          t = canvasTex(400, 300, (g, w, h) => {
+            g.fillStyle = "#d8c39b";
+            g.fillRect(0, 0, w, h);
+            const gr = g.createLinearGradient(0, 0, 0, h);
+            gr.addColorStop(0, "#cdb48a");
+            gr.addColorStop(1, "#8a6f4c");
+            g.fillStyle = gr;
+            g.fillRect(14, 14, w - 28, h - 28);
+            g.fillStyle = "#5a4630";
+            g.fillRect(14, 200, w - 28, 86);
+            g.fillStyle = "#3f3122";
+            g.fillRect(120, 160, 160, 50);
+            g.fillRect(185, 90, 30, 75);
+            g.fillRect(160, 80, 80, 16);
+            g.fillStyle = "#2e2418";
+            g.fillRect(40, 60, 50, 140);
+            g.fillRect(310, 50, 50, 150);
+            g.strokeStyle = "#f2ead8";
+            g.lineWidth = 10;
+            g.strokeRect(5, 5, w - 10, h - 10);
+          });
+        }
+        texCache.set(key, t);
+        return t;
+      }
+
+      const STONE = new THREE.MeshLambertMaterial({ color: 0xb9b1a3 });
+      const WATER = new THREE.MeshLambertMaterial({
+        color: 0x5b8fb0,
+        emissive: 0x0d2230,
+      });
+      const POST = new THREE.MeshLambertMaterial({ color: 0x55585e });
+      function buildView(it) {
+        const root = new THREE.Group();
+        const picks = [];
+        const add = (m, pick = true) => {
+          root.add(m);
+          if (pick) {
+            m.userData.pick = it.id;
+            picks.push(m);
+          }
+          return m;
+        };
+        const v = { root, picks, post: null, type: it.type };
+        if (it.type === "model") {
+          const basin = add(
+            new THREE.Mesh(
+              new THREE.CylinderGeometry(1.25, 1.35, 0.55, 40),
+              STONE,
+            ),
+          );
+          basin.position.y = 0.275;
+          const water = add(
+            new THREE.Mesh(
+              new THREE.CylinderGeometry(1.1, 1.1, 0.04, 40),
+              WATER,
+            ),
+          );
+          water.position.y = 0.53;
+          const col = add(
+            new THREE.Mesh(
+              new THREE.CylinderGeometry(0.17, 0.22, 1.3, 16),
+              STONE,
+            ),
+          );
+          col.position.y = 1.15;
+          const bowl = add(
+            new THREE.Mesh(
+              new THREE.CylinderGeometry(0.55, 0.28, 0.28, 24),
+              STONE,
+            ),
+          );
+          bowl.position.y = 1.86;
+          const knob = add(
+            new THREE.Mesh(new THREE.SphereGeometry(0.14, 16, 10), STONE),
+          );
+          knob.position.y = 2.1;
+          // a small mark on the side the model faces
+          const nose = add(
+            new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.12, 0.12), STONE),
+          );
+          nose.position.set(0, 0.4, -1.32);
+        } else if (it.type === "text" || it.type === "picture") {
+          const [w, h] = it.type === "text" ? [1.4, 0.8] : [1.2, 0.9];
+          const card = add(
+            new THREE.Mesh(
+              new THREE.PlaneGeometry(w, h),
+              new THREE.MeshBasicMaterial({
+                map: cardTex(it),
+                side: THREE.DoubleSide,
+              }),
+            ),
+          );
+          card.rotation.y = Math.PI; // the card's printed face looks along the item's heading
+          const back = add(
+            new THREE.Mesh(
+              new THREE.BoxGeometry(w + 0.04, h + 0.04, 0.03),
+              POST,
+            ),
+          );
+          back.position.z = 0.025;
+          v.post = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.03, 0.03, 1, 8),
+            POST,
+          );
+          root.add(v.post);
+          v.h = h;
+        } else {
+          const r = it.r || 2;
+          const ring = new THREE.Mesh(
+            new THREE.RingGeometry(r - 0.07, r, 96).rotateX(-Math.PI / 2),
+            new THREE.MeshBasicMaterial({
+              color: 0x8fc0b4,
+              transparent: true,
+              opacity: 0.9,
+              depthWrite: false,
+            }),
+          );
+          ring.position.y = 0.03;
+          root.add(ring);
+          const fill = add(
+            new THREE.Mesh(
+              new THREE.CircleGeometry(r, 64).rotateX(-Math.PI / 2),
+              new THREE.MeshBasicMaterial({
+                color: 0x8fc0b4,
+                transparent: true,
+                opacity: 0.12,
+                depthWrite: false,
+              }),
+            ),
+          );
+          fill.position.y = 0.025;
+          const spk = add(
+            new THREE.Mesh(
+              new THREE.ConeGeometry(0.22, 0.4, 16).rotateZ(Math.PI / 2),
+              new THREE.MeshLambertMaterial({ color: 0x8fc0b4 }),
+            ),
+          );
+          spk.position.y = 0.3;
+          const box = add(
+            new THREE.Mesh(
+              new THREE.BoxGeometry(0.2, 0.22, 0.22),
+              new THREE.MeshLambertMaterial({ color: 0x5d7f78 }),
+            ),
+          );
+          box.position.set(-0.24, 0.3, 0);
+        }
+        scene.add(root);
+        return v;
+      }
+      const views = new Map();
+      let pickables = [];
+      function rebuildViews() {
+        for (const v of views.values()) {
+          scene.remove(v.root);
+          v.root.traverse((o) => {
+            if (o.geometry) o.geometry.dispose();
+          });
+        }
+        views.clear();
+        pickables = [];
+        for (const it of S.items) {
+          const v = buildView(it);
+          views.set(it.id, v);
+          pickables.push(...v.picks);
+        }
+      }
+      // three: x = e, z = -n. A heading h faces (sin h, -cos h) in x/z; rotation.y = -h turns the model's -z front there.
+      function placeViews() {
+        for (const it of S.items) {
+          const v = views.get(it.id);
+          if (!v) continue;
+          const W = pose(it);
+          v.root.position.set(W.e, W.y, -W.n);
+          v.root.rotation.y = -W.h * DEG;
+          if (it.type === "model") v.root.scale.setScalar(W.s);
+          if (v.post) {
+            const len = Math.max(0.01, W.y - v.h / 2);
+            v.post.scale.y = len;
+            v.post.position.y = -v.h / 2 - len / 2;
+            v.post.visible = W.y - v.h / 2 > 0.05;
+          }
+        }
+      }
+      // where the thin pin line ends on an item
+      function pinPoint(it) {
+        const W = pose(it);
+        const up =
+          it.type === "model" ? 1.2 * W.s : it.type === "sound" ? 0.35 : 0;
+        return new THREE.Vector3(W.e, W.y + up, -W.n);
+      }
+
+      // pin lines: faint for every pin, bright for the selected group
+      const lineDim = new THREE.LineSegments(
+        new THREE.BufferGeometry(),
+        new THREE.LineDashedMaterial({
+          color: 0xe9a23b,
+          dashSize: 0.22,
+          gapSize: 0.14,
+          transparent: true,
+          opacity: 0.45,
+          depthTest: false,
+        }),
+      );
+      const lineHot = new THREE.LineSegments(
+        new THREE.BufferGeometry(),
+        new THREE.LineDashedMaterial({
+          color: 0xffc46a,
+          dashSize: 0.28,
+          gapSize: 0.1,
+          transparent: true,
+          opacity: 1,
+          depthTest: false,
+        }),
+      );
+      lineDim.renderOrder = 18;
+      lineHot.renderOrder = 19;
+      const pinDots = new THREE.Points(
+        new THREE.BufferGeometry(),
+        new THREE.PointsMaterial({
+          color: 0xffc46a,
+          size: 7,
+          sizeAttenuation: false,
+          depthTest: false,
+          transparent: true,
+        }),
+      );
+      pinDots.renderOrder = 20;
+      scene.add(lineDim, lineHot, pinDots);
+      function hotGroup() {
+        // the anchor whose group is in focus: a selected anchor, or the anchor of a selected pinned item
+        const p = byId(primary());
+        if (!p) return ui.pinMode;
+        return ui.pinMode || (p.anchor ? p.anchor : hasPins(p) ? p.id : null);
+      }
+      function updatePinLines() {
+        const hot = hotGroup();
+        const dim = [],
+          bright = [],
+          dots = [];
+        for (const it of S.items) {
+          if (!it.anchor) continue;
+          const a = byId(it.anchor);
+          if (!a) continue;
+          const p0 = pinPoint(a),
+            p1 = pinPoint(it);
+          const arr = it.anchor === hot ? bright : dim;
+          arr.push(p0.x, p0.y, p0.z, p1.x, p1.y, p1.z);
+          dots.push(p0.x, p0.y, p0.z, p1.x, p1.y, p1.z);
+        }
+        for (const [obj, arr] of [
+          [lineDim, dim],
+          [lineHot, bright],
+        ]) {
+          obj.geometry.setAttribute(
+            "position",
+            new THREE.Float32BufferAttribute(arr, 3),
+          );
+          obj.geometry.computeBoundingSphere();
+          obj.computeLineDistances();
+          obj.visible = arr.length > 0;
+        }
+        pinDots.geometry.setAttribute(
+          "position",
+          new THREE.Float32BufferAttribute(dots, 3),
+        );
+        pinDots.geometry.computeBoundingSphere();
+        pinDots.visible = dots.length > 0;
+      }
+
+      // selection boxes: strong for the selection, light for the members of a selected group
+      const boxPool = { strong: [], weak: [] };
+      function boxes(kind, ids) {
+        const pool = boxPool[kind];
+        const col = kind === "strong" ? 0xe9a23b : 0x9c7740;
+        while (pool.length < ids.length) {
+          const b = new THREE.Box3Helper(new THREE.Box3(), col);
+          b.renderOrder = 17;
+          b.material.depthTest = false;
+          b.material.transparent = true;
+          b.material.opacity = kind === "strong" ? 0.95 : 0.6;
+          scene.add(b);
+          pool.push(b);
+        }
+        pool.forEach((b, i) => {
+          const v = views.get(ids[i]);
+          b.visible = !!v;
+          if (v) {
+            b.box.setFromObject(v.root);
+            b.box.expandByScalar(0.08);
+          }
+        });
+      }
+      function updateSelectionBoxes() {
+        const sel = selItems().map((i) => i.id);
+        const weak = [];
+        const hot = hotGroup();
+        if (hot && !ui.pinMode) {
+          // the group's members are marked unless the anchor is set to move alone
+          const pinnedSelected = !!byId(primary())?.anchor;
+          if (byId(hot) && (!ui.alone || pinnedSelected)) {
+            if (!sel.includes(hot)) weak.push(hot);
+            for (const p of pinsOf(hot))
+              if (!sel.includes(p.id)) weak.push(p.id);
+          }
+        }
+        if (ui.pinMode) {
+          weak.push(...pinsOf(ui.pinMode).map((p) => p.id));
+          sel.push(ui.pinMode);
+        }
+        boxes("strong", sel);
+        boxes("weak", weak);
+      }
+
+      // ---------------------------------------------------------------- the gizmo: ring, move arrow, turn knob on a stalk, scale dots
+      const TEX_MOVE = canvasTex(256, 256, (g) => {
+        g.translate(128, 128);
+        g.fillStyle = "rgba(233,162,59,.16)";
+        g.beginPath();
+        g.arc(0, 0, 126, 0, Math.PI * 2);
+        g.fill();
+        g.strokeStyle = "rgba(20,20,22,.6)";
+        g.lineWidth = 16;
+        g.lineCap = "round";
+        const arrows = () => {
+          for (let k = 0; k < 4; k++) {
+            g.save();
+            g.rotate((k * Math.PI) / 2);
+            g.beginPath();
+            g.moveTo(0, 0);
+            g.lineTo(0, -60);
+            g.moveTo(-14, -46);
+            g.lineTo(0, -62);
+            g.lineTo(14, -46);
+            g.stroke();
+            g.restore();
+          }
+        };
+        arrows();
+        g.strokeStyle = "#f3c47e";
+        g.lineWidth = 8;
+        arrows();
+      });
+      const TEX_KNOB = canvasTex(128, 128, (g) => {
+        g.fillStyle = "#e9a23b";
+        g.beginPath();
+        g.arc(64, 64, 56, 0, Math.PI * 2);
+        g.fill();
+        g.strokeStyle = "#1c1c1c";
+        g.lineWidth = 9;
+        g.lineCap = "round";
+        g.beginPath();
+        g.arc(64, 64, 28, -2.4, 1.2);
+        g.stroke();
+        g.beginPath();
+        g.moveTo(84, 74);
+        g.lineTo(76, 92);
+        g.lineTo(96, 92);
+        g.stroke();
+      });
+      const TEX_DOT = canvasTex(64, 64, (g) => {
+        g.fillStyle = "#fff";
+        g.strokeStyle = "#e9a23b";
+        g.lineWidth = 9;
+        g.beginPath();
+        g.arc(32, 32, 24, 0, Math.PI * 2);
+        g.fill();
+        g.stroke();
+      });
+      const hMat = new THREE.MeshBasicMaterial({
+        color: 0xe9a23b,
+        transparent: true,
+        opacity: 0.95,
+        depthTest: false,
+        depthWrite: false,
+      });
+      const hMoveMat = new THREE.MeshBasicMaterial({
+        map: TEX_MOVE,
+        transparent: true,
+        opacity: 0.9,
+        depthTest: false,
+        depthWrite: false,
+      });
+      const hRing = new THREE.Mesh(
+        new THREE.RingGeometry(0.93, 1, 128).rotateX(-Math.PI / 2),
+        hMat,
+      );
+      hRing.renderOrder = 22;
+      const hDisc = new THREE.Mesh(
+        new THREE.CircleGeometry(1, 64).rotateX(-Math.PI / 2),
+        hMoveMat,
+      );
+      hDisc.renderOrder = 21;
+      const hBar = new THREE.Mesh(
+        new THREE.PlaneGeometry(1, 1)
+          .rotateX(-Math.PI / 2)
+          .translate(0, 0, -0.5),
+        hMat,
+      );
+      hBar.renderOrder = 22;
+      const mkSprite = (tex, handle) => {
+        const s = new THREE.Sprite(
+          new THREE.SpriteMaterial({
+            map: tex,
+            depthTest: false,
+            depthWrite: false,
+            transparent: true,
+            sizeAttenuation: false,
+          }),
+        );
+        s.renderOrder = 25;
+        s.userData.handle = handle;
+        scene.add(s);
+        return s;
+      };
+      const hKnob = mkSprite(TEX_KNOB, "rotate");
+      const hDots = [0, 1, 2, 3].map(() => mkSprite(TEX_DOT, "scale"));
+      scene.add(hRing, hDisc, hBar);
+      const HANDLES = [hRing, hDisc, hBar, hKnob, ...hDots];
+      let vpW = 1,
+        vpH = 1;
+      const _v = new THREE.Vector3();
+      const wppAt = (x, y, z) =>
+        (2 *
+          _v.set(x, y, z).distanceTo(camera.position) *
+          Math.tan((camera.fov * DEG) / 2)) /
+        vpH;
+      const pxScale = () => (2 * Math.tan((camera.fov * DEG) / 2)) / vpH;
+      const BASE_R = { model: 1.6, text: 0.95, picture: 0.9, sound: 0 };
+      function itemRadius(it) {
+        const W = pose(it);
+        return it.type === "sound"
+          ? (it.r || 2) + 0.15
+          : BASE_R[it.type] * (it.type === "model" ? W.s : 1);
+      }
+      /** What the gizmo works on: one item (a group when it is an anchor and the mode is "with pinned items"), or several. */
+      function gizmoFrame() {
+        if (ui.pinMode) return null;
+        const its = selItems();
+        if (!its.length) return null;
+        if (its.length === 1) {
+          const it = its[0];
+          const W = pose(it);
+          let R = itemRadius(it);
+          const group = hasPins(it) && !ui.alone;
+          if (group)
+            for (const p of pinsOf(it.id)) {
+              const Q = pose(p);
+              R = Math.max(
+                R,
+                Math.hypot(Q.e - W.e, Q.n - W.n) + itemRadius(p) * 0.6,
+              );
+            }
+          R = Math.max(R, 30 * wppAt(W.e, 0, -W.n));
+          return {
+            x: W.e,
+            z: -W.n,
+            F: W.h,
+            R,
+            dots: it.type === "model",
+            group,
+            items: [it],
+          };
+        }
+        const tops = movers(its);
+        let cx = 0,
+          cz = 0;
+        for (const it of tops) {
+          const W = pose(it);
+          cx += W.e;
+          cz -= W.n;
+        }
+        cx /= tops.length;
+        cz /= tops.length;
+        let R = 0;
+        for (const it of tops) {
+          const W = pose(it);
+          R = Math.max(
+            R,
+            Math.hypot(W.e - cx, -W.n - cz) + itemRadius(it) * 0.6,
+          );
+        }
+        R = Math.max(R, 30 * wppAt(cx, 0, cz));
+        return {
+          x: cx,
+          z: cz,
+          F: 0,
+          R,
+          dots: false,
+          group: false,
+          items: tops,
+        };
+      }
+      /** Of a multi-selection, the items to move: a pinned item whose anchor is also selected rides with it. */
+      function movers(its) {
+        const ids = new Set(its.map((i) => i.id));
+        return its.filter((i) => !(i.anchor && ids.has(i.anchor)));
+      }
+      let hoverHandle = null,
+        gdrag = null;
+      function updateHandles() {
+        const f = gizmoFrame();
+        for (const o of HANDLES) o.visible = false;
+        if (!f) return;
+        const q = pxScale();
+        const wpp = wppAt(f.x, 0, f.z);
+        const fx = Math.sin(f.F * DEG),
+          fz = -Math.cos(f.F * DEG);
+        const big = (n) =>
+          hoverHandle === n || (gdrag && gdrag.type === n) ? 1.15 : 1;
+        hRing.visible = true;
+        hRing.position.set(f.x, 0.04, f.z);
+        hRing.scale.set(f.R, 1, f.R);
+        hMat.opacity = f.group ? 1 : 0.9;
+        // the move arrow fills a single item's ring; for a group it covers the anchor only,
+        // so a tap on a pinned item still selects that item
+        const Rm =
+          f.items.length > 1
+            ? 34 * wpp
+            : f.group
+              ? Math.max(itemRadius(f.items[0]), 34 * wpp)
+              : f.R;
+        hDisc.visible = true;
+        hDisc.position.set(f.x, 0.05, f.z);
+        hDisc.scale.set(Rm, 1, Rm);
+        hMoveMat.opacity =
+          hoverHandle === "move" || (gdrag && gdrag.type === "move") ? 1 : 0.85;
+        if (f.dots)
+          hDots.forEach((d, i) => {
+            const a = (f.F + 45 + i * 90) * DEG;
+            d.visible = true;
+            d.position.set(
+              f.x + Math.sin(a) * f.R,
+              0.3,
+              f.z - Math.cos(a) * f.R,
+            );
+            d.scale.setScalar(30 * q * big("scale"));
+          });
+        const L = f.R + 32 * wpp;
+        hKnob.visible = true;
+        hKnob.position.set(f.x + fx * L, 0.35, f.z + fz * L);
+        hKnob.scale.setScalar(42 * q * big("rotate"));
+        hBar.visible = true;
+        hBar.position.set(f.x + fx * f.R, 0.05, f.z + fz * f.R);
+        hBar.rotation.y = -f.F * DEG;
+        hBar.scale.set(Math.max(0.02, 2 * wpp), 1, L - f.R);
+      }
+
+      // ---------------------------------------------------------------- picking
+      const raycaster = new THREE.Raycaster();
+      const ndc = new THREE.Vector2();
+      function setNDC(e) {
+        const r = canvas.getBoundingClientRect();
+        ndc.set(
+          ((e.clientX - r.left) / r.width) * 2 - 1,
+          -((e.clientY - r.top) / r.height) * 2 + 1,
+        );
+      }
+      function pickItem() {
+        raycaster.setFromCamera(ndc, camera);
+        const h = raycaster.intersectObjects(pickables, false)[0];
+        return h ? h.object.userData.pick : null;
+      }
+      function groundHit() {
+        raycaster.setFromCamera(ndc, camera);
+        const p = new THREE.Vector3();
+        return raycaster.ray.intersectPlane(
+          new THREE.Plane(new THREE.Vector3(0, 1, 0), 0),
+          p,
+        )
+          ? p
+          : null;
+      }
+      function pickHandle() {
+        const f = gizmoFrame();
+        if (!f) return null;
+        raycaster.setFromCamera(ndc, camera);
+        const sprites = [...hDots, hKnob].filter((s) => s.visible);
+        const h = raycaster.intersectObjects(sprites, false)[0];
+        if (h) return h.object.userData.handle;
+        const hit = pickItem();
+        if (hit) return S.sel.includes(hit) ? "move" : null; // another item under the pointer: a click selects it
+        raycaster.setFromCamera(ndc, camera);
+        if (hDisc.visible && raycaster.intersectObject(hDisc, false).length)
+          return "move";
+        return null;
+      }
+
+      // ---------------------------------------------------------------- gizmo drags
+      const readout = $("#readout");
+      function showReadout(e, txt) {
+        const r = vp.getBoundingClientRect();
+        readout.style.display = "block";
+        readout.textContent = txt;
+        readout.style.left =
+          clamp(e.clientX - r.left + 16, 4, r.width - 220) + "px";
+        readout.style.top =
+          clamp(e.clientY - r.top + 14, 4, r.height - 24) + "px";
+      }
+      const compassOf = (cx, cz, p) => Math.atan2(p.x - cx, -(p.z - cz)) / DEG;
+      function startDrag(handle, e) {
+        const f = gizmoFrame();
+        const pt = groundHit();
+        if (!f || !pt) return false;
+        const alone = ui.alone || e.altKey;
+        const single = f.items.length === 1 ? f.items[0] : null;
+        // start poses: the items the gizmo moves, plus the pinned items it must leave in place ("alone")
+        const keep =
+          single && hasPins(single) && alone ? pinsOf(single.id) : [];
+        gdrag = {
+          type: handle,
+          pointerId: e.pointerId,
+          f,
+          alone,
+          single,
+          keep: keep.map((p) => ({ id: p.id, W: pose(p) })),
+          start: f.items.map((it) => ({ id: it.id, W: pose(it) })),
+          off: { x: f.x - pt.x, z: f.z - pt.z },
+          a0: compassOf(f.x, f.z, pt),
+          d0: Math.max(0.2, Math.hypot(pt.x - f.x, pt.z - f.z)),
+          pinsStart:
+            single && hasPins(single) && !alone
+              ? pinsOf(single.id).map((p) => ({
+                  id: p.id,
+                  e: p.e,
+                  n: p.n,
+                  y: p.y,
+                  s: p.s || 1,
+                }))
+              : [],
+        };
+        const what = single
+          ? hasPins(single)
+            ? alone
+              ? `"${single.name}" alone`
+              : `group "${single.name}"`
+            : `"${single.name}"`
+          : `${f.items.length} items`;
+        beginGesture(
+          (handle === "move"
+            ? "Move "
+            : handle === "rotate"
+              ? "Turn "
+              : "Scale ") + what,
+        );
+        lockCam(true);
+        canvas.style.cursor = "grabbing";
+        return true;
+      }
+      function applyDrag(e) {
+        const d = gdrag;
+        const pt = groundHit();
+        if (!pt) return;
+        if (d.type === "move") {
+          let x = pt.x + d.off.x,
+            z = pt.z + d.off.z;
+          if (e.shiftKey) {
+            x = Math.round(x * 2) / 2;
+            z = Math.round(z * 2) / 2;
+          }
+          x = clamp(x, -40, 40);
+          z = clamp(z, -40, 40);
+          const dE = x - d.f.x,
+            dN = -(z - d.f.z);
+          for (const s of d.start) {
+            const it = byId(s.id);
+            setWorld(it, { ...s.W, e: s.W.e + dE, n: s.W.n + dN });
+          }
+        } else if (d.type === "rotate") {
+          let dh = angDiff(d.a0, compassOf(d.f.x, d.f.z, pt));
+          dh = e.shiftKey ? Math.round(dh / 15) * 15 : Math.round(dh);
+          const c = Math.cos(dh * DEG),
+            s = Math.sin(dh * DEG);
+          const ce = d.f.x,
+            cn = -d.f.z;
+          for (const st of d.start) {
+            const it = byId(st.id);
+            const de = st.W.e - ce,
+              dn = st.W.n - cn;
+            setWorld(it, {
+              ...st.W,
+              e: ce + de * c + dn * s,
+              n: cn - de * s + dn * c,
+              h: st.W.h + dh,
+            });
+          }
+        } else if (d.single) {
+          const k = Math.hypot(pt.x - d.f.x, pt.z - d.f.z) / d.d0;
+          const s0 = d.start[0].W.s;
+          const s1 = clamp(Math.round(s0 * k * 20) / 20, 0.25, 6);
+          const ratio = s1 / s0;
+          d.single.s = s1;
+          for (const p0 of d.pinsStart) {
+            const p = byId(p0.id);
+            p.e = p0.e * ratio;
+            p.n = p0.n * ratio;
+            p.y = p0.y * ratio;
+            if (p.type === "model") p.s = clamp(p0.s * ratio, 0.25, 6);
+          }
+        }
+        for (const k of d.keep) setWorld(byId(k.id), k.W); // "alone": the pinned items stay where they stand
+        showReadout(e, dragText(d));
+        afterChange(false);
+      }
+      function dragText(d) {
+        const it = d.single;
+        if (d.type === "scale")
+          return (
+            `size x${fmt(it.s, 2)}` +
+            (d.pinsStart.length
+              ? ` - ${d.pinsStart.length} pinned keep their side of it`
+              : "")
+          );
+        if (d.type === "rotate") {
+          const W = pose(d.start[0] ? byId(d.start[0].id) : it);
+          return (
+            `facing ${Math.round(W.h)} deg` +
+            (d.alone && d.keep.length
+              ? " - pinned items stay"
+              : d.single && hasPins(d.single)
+                ? ` - ${pinsOf(d.single.id).length} pinned turn with it`
+                : "") +
+            "  (Shift: 15 deg steps)"
+          );
+        }
+        if (it && it.anchor) {
+          const a = byId(it.anchor);
+          const W = pose(it),
+            A = pose(a);
+          return `${fmt(Math.hypot(W.e - A.e, W.n - A.n))} m from ${a.name} - stays pinned`;
+        }
+        const W = it ? pose(it) : null;
+        if (it && hasPins(it))
+          return d.alone
+            ? `E ${fmt(W.e)}  N ${fmt(W.n)} - ${it.name} alone, its pinned items stay`
+            : `E ${fmt(W.e)}  N ${fmt(W.n)} - ${pinsOf(it.id).length} pinned items follow (Alt: alone)`;
+        if (it) return `E ${fmt(W.e)}  N ${fmt(W.n)}`;
+        return `${d.start.length} items move together - pin them to keep them together`;
+      }
+      function endDrag() {
+        gdrag = null;
+        lockCam(false);
+        readout.style.display = "none";
+        canvas.style.cursor = "";
+        endGesture();
+        afterChange(true);
+      }
+      function cancelDrag() {
+        gdrag = null;
+        lockCam(false);
+        readout.style.display = "none";
+        canvas.style.cursor = "";
+        abortGesture();
+        afterChange(true);
+        toast("Two fingers move the camera - the edit was undone");
+      }
+
+      // ---------------------------------------------------------------- pointer on the 3D view
+      const touchIds = new Set();
+      let touchBlocked = false;
+      let ptr = null;
+      vp.addEventListener(
+        "pointerdown",
+        (e) => {
+          if (e.pointerType === "touch") {
+            touchIds.add(e.pointerId);
+            if (touchIds.size > 1) {
+              touchBlocked = true;
+              if (gdrag) cancelDrag();
+              if (ptr) ptr.multi = true;
+              return;
+            }
+          }
+          if (e.target !== canvas) return;
+          canvas.focus({ preventScroll: true });
+          setNDC(e);
+          ptr = {
+            id: e.pointerId,
+            x: e.clientX,
+            y: e.clientY,
+            b: e.button,
+            moved: false,
+            multi: touchBlocked,
+            touch: e.pointerType === "touch",
+            mod: e.ctrlKey || e.metaKey || e.shiftKey,
+          };
+          if (touchBlocked || e.button !== 0) return;
+          const h = pickHandle();
+          if (h && startDrag(h, e)) ptr.drag = true;
+        },
+        true,
+      );
+      window.addEventListener("pointermove", (e) => {
+        if (gdrag && e.pointerId === gdrag.pointerId) {
+          setNDC(e);
+          if (ptr) ptr.moved = true;
+          applyDrag(e);
+          return;
+        }
+        if (
+          ptr &&
+          e.pointerId === ptr.id &&
+          Math.hypot(e.clientX - ptr.x, e.clientY - ptr.y) > (ptr.touch ? 8 : 4)
+        )
+          ptr.moved = true;
+        if (!ptr && e.target === canvas && e.pointerType === "mouse") {
+          setNDC(e);
+          const h = pickHandle();
+          hoverHandle = h;
+          canvas.style.cursor =
+            h === "move"
+              ? "move"
+              : h === "rotate"
+                ? "grab"
+                : h === "scale"
+                  ? "nesw-resize"
+                  : pickItem()
+                    ? "pointer"
+                    : "";
+        }
+      });
+      function onPointerEnd(e) {
+        if (e.pointerType === "touch") {
+          touchIds.delete(e.pointerId);
+          if (touchIds.size === 0) touchBlocked = false;
+        }
+        if (gdrag && e.pointerId === gdrag.pointerId) {
+          if (e.type === "pointercancel") cancelDrag();
+          else endDrag();
+        }
+        if (!ptr || e.pointerId !== ptr.id) return;
+        const p = ptr;
+        ptr = null;
+        if (
+          e.type === "pointerup" &&
+          !p.moved &&
+          !p.drag &&
+          !p.multi &&
+          p.b === 0 &&
+          e.target === canvas
+        ) {
+          setNDC(e);
+          tapItem(pickItem(), p.mod);
+        }
+      }
+      window.addEventListener("pointerup", onPointerEnd);
+      window.addEventListener("pointercancel", onPointerEnd);
+      canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+      canvas.addEventListener("dblclick", () => {
+        if (S.sel.length) frameSelection();
+      });
+
+      /** A tap on an item (3D, tag or tree): pin mode toggles its pin, otherwise it selects. */
+      function tapItem(id, additive) {
+        if (ui.pinMode) {
+          if (id) togglePin(id);
+          return;
+        }
+        if (!id) {
+          if (!additive && !ui.multi) select([]);
+          return;
+        }
+        if (additive || ui.multi) {
+          const i = S.sel.indexOf(id);
+          const next = S.sel.filter((x) => x !== id);
+          if (i < 0) next.push(id);
+          select(next);
+        } else select([id]);
+      }
+      function select(ids) {
+        S.sel = ids.slice();
+        ui.anchorPick = null;
+        afterChange(true);
+      }
+
+      // ---------------------------------------------------------------- the commands
+      function startPinMode(aid) {
+        const a = byId(aid);
+        if (!a) return;
+        if (a.anchor)
+          return toast(
+            `"${a.name}" is pinned itself - folders are one level deep`,
+          );
+        ui.pinMode = aid;
+        ui.open[aid] = true;
+        S.sel = [aid];
+        afterChange(true);
+      }
+      function endPinMode(quiet) {
+        if (!ui.pinMode) return;
+        const a = byId(ui.pinMode);
+        ui.pinMode = null;
+        if (!quiet) {
+          afterChange(true);
+          if (a) toast(`${pinsOf(a.id).length} items pinned to ${a.name}`);
+        }
+      }
+      function pinTo(it, aid, label) {
+        const W = pose(it);
+        it.anchor = aid;
+        setWorld(it, W);
+        moveInArray(it, () => lastOfGroup(aid), true);
+        ui.open[aid] = true;
+        return label;
+      }
+      function unpinItem(it) {
+        const W = pose(it);
+        const aid = it.anchor;
+        it.anchor = null;
+        setWorld(it, W);
+        moveInArray(it, () => lastOfGroup(aid), true);
+      }
+      function togglePin(id) {
+        const A = byId(ui.pinMode),
+          it = byId(id);
+        if (!A || !it) return;
+        if (id === A.id) return toast(`${A.name} is the anchor`);
+        if (it.anchor === A.id) {
+          commit(`Unpin "${it.name}"`, () => unpinItem(it));
+          return toast(`Unpinned "${it.name}" - it stays where it stands`);
+        }
+        const why = pinRefusal(it, A);
+        if (why) return toast("Not possible here: " + why);
+        const from = it.anchor ? byId(it.anchor) : null;
+        commit(`Pin "${it.name}" to ${A.name}`, () => pinTo(it, A.id));
+        toast(
+          from
+            ? `Moved the pin from ${from.name} to ${A.name}`
+            : `Pinned "${it.name}" to ${A.name}`,
+        );
+      }
+      /** The anchor a multi-selection would be pinned to: the chosen one, else a 3D model, else the first selected. */
+      function anchorFor(its) {
+        const pick = its.find((i) => i.id === ui.anchorPick);
+        return (
+          pick ||
+          its.find((i) => i.type === "model" && !i.anchor) ||
+          its.find((i) => !i.anchor) ||
+          its[0]
+        );
+      }
+      function pinSelectionRefusal(its) {
+        if (its.length < 2) return "select at least two items";
+        const A = anchorFor(its);
+        if (A.anchor)
+          return `"${A.name}" is pinned to ${byId(A.anchor).name} - unpin it before it can be an anchor`;
+        for (const it of its) {
+          if (it === A) continue;
+          const why = pinRefusal(it, A);
+          if (why) return why;
+        }
+        return null;
+      }
+      function pinSelection() {
+        const its = selItems();
+        const why = pinSelectionRefusal(its);
+        if (why) return toast("Not possible: " + why);
+        const A = anchorFor(its);
+        const others = its.filter((i) => i !== A);
+        commit(`Pin ${others.length} items to ${A.name}`, () => {
+          for (const it of others) pinTo(it, A.id);
+          S.sel = [A.id];
+        });
+        toast(
+          `${others.length} items pinned to ${A.name} - the group is named after it`,
+        );
+      }
+      function unpinAll(aid) {
+        const a = byId(aid);
+        const ps = pinsOf(aid);
+        if (!ps.length) return;
+        commit(`Unpin all from ${a.name}`, () => {
+          for (const p of ps.slice().reverse()) unpinItem(p);
+        });
+        toast(`${ps.length} items unpinned - they stay where they stand`);
+      }
+      function unpinSelected() {
+        const ps = selItems().filter((i) => i.anchor);
+        if (!ps.length) return;
+        commit(
+          ps.length === 1
+            ? `Unpin "${ps[0].name}"`
+            : `Unpin ${ps.length} items`,
+          () => ps.forEach(unpinItem),
+        );
+        toast(
+          ps.length === 1
+            ? `Unpinned "${ps[0].name}" - it stays where it stands`
+            : `${ps.length} items unpinned`,
+        );
+      }
+      function cloneItem(it, over) {
+        return {
+          ...JSON.parse(JSON.stringify(it)),
+          id: newId(it.type[0]),
+          name: it.name + " (copy)",
+          ...over,
+        };
+      }
+      function duplicate(mode) {
+        const it = byId(primary());
+        if (!it) return;
+        if (hasPins(it) && mode !== "only") {
+          commit(`Duplicate group "${it.name}"`, () => {
+            const W = pose(it);
+            const a2 = cloneItem(it, { anchor: null });
+            setWorld(a2, { ...W, e: W.e + 5 });
+            const end = lastOfGroup(it.id);
+            let at = S.items.indexOf(end) + 1;
+            S.items.splice(at++, 0, a2);
+            for (const p of pinsOf(it.id)) {
+              const c = cloneItem(p, { anchor: a2.id, name: p.name });
+              S.items.splice(at++, 0, c);
+            }
+            ui.open[a2.id] = true;
+            S.sel = [a2.id];
+          });
+          return toast(
+            "Duplicated the group: the copy keeps its pins, 5 m to the east",
+          );
+        }
+        commit(`Duplicate "${it.name}"`, () => {
+          const c = cloneItem(it, { anchor: it.anchor });
+          if (it.anchor) {
+            c.e = it.e + 0.7;
+          } else {
+            const W = pose(it);
+            c.e = W.e + 2;
+          }
+          S.items.splice(
+            S.items.indexOf(it.anchor ? it : lastOfGroup(it.id)) + 1,
+            0,
+            c,
+          );
+          S.sel = [c.id];
+        });
+        toast(
+          it.anchor
+            ? `Duplicated - the copy is pinned to ${byId(it.anchor).name} too`
+            : hasPins(it)
+              ? `Duplicated ${it.name} alone - its pins stay on the original`
+              : "Duplicated",
+        );
+      }
+      function duplicateStory(sid) {
+        const s = S.stories.find((x) => x.id === sid);
+        if (!s) return;
+        commit(`Duplicate story "${s.name}"`, () => {
+          const c = {
+            id: newId("s"),
+            name: s.name + " (copy)",
+            steps: s.steps.map((st) => ({ id: newId("st"), name: st.name })),
+          };
+          S.stories.splice(S.stories.indexOf(s) + 1, 0, c);
+          S.sel = ["story:" + c.id];
+          ui.storyOpen[c.id] = true;
+        });
+        toast(`Duplicated the story with its ${s.steps.length} steps`);
+      }
+      /** Unpin one item without changing the selection (the list's and the details' unpin buttons). */
+      function unpinOne(id) {
+        const p = byId(id);
+        if (!p || !p.anchor) return;
+        commit(`Unpin "${p.name}"`, () => unpinItem(p));
+        toast(`Unpinned "${p.name}" - it stays where it stands`);
+      }
+      function deleteSel() {
+        const its = selItems();
+        if (!its.length) return;
+        const anchors = its.filter(hasPins);
+        const dangling = anchors
+          .flatMap((a) => pinsOf(a.id))
+          .filter((p) => !S.sel.includes(p.id));
+        if (dangling.length) return askDelete(its, anchors, dangling);
+        commit(
+          its.length === 1
+            ? `Delete "${its[0].name}"`
+            : `Delete ${its.length} items`,
+          () => {
+            const ids = new Set(its.map((i) => i.id));
+            S.items = S.items.filter((i) => !ids.has(i.id));
+            S.sel = [];
+          },
+        );
+      }
+      function doDelete(its, keepPins) {
+        const ids = new Set(its.map((i) => i.id));
+        const anchors = its.filter(hasPins);
+        commit(
+          keepPins
+            ? `Delete ${anchors.map((a) => a.name).join(", ")}, keep its pinned items`
+            : `Delete ${anchors.map((a) => a.name).join(", ")} with its pinned items`,
+          () => {
+            for (const a of anchors)
+              for (const p of pinsOf(a.id)) {
+                if (keepPins) {
+                  if (!ids.has(p.id)) unpinItem(p);
+                } else ids.add(p.id);
+              }
+            S.items = S.items.filter((i) => !ids.has(i.id));
+            S.sel = [];
+          },
+        );
+        toast(
+          keepPins
+            ? "Deleted - the pinned items are free now and stay where they stood"
+            : "Deleted the group",
+        );
+      }
+
+      // ---------------------------------------------------------------- tree
+      const treeBody = $("#treeBody");
+      function rowItem(it, depth, extra = "") {
+        const sel = S.sel.includes(it.id);
+        const pins = pinsOf(it.id);
+        const open = ui.open[it.id] !== false;
+        const hot = hotGroup();
+        const inGrp = !sel && hot && (it.id === hot || it.anchor === hot);
+        const pm = ui.pinMode;
+        let chip = "",
+          no = "";
+        if (pm) {
+          if (it.id === pm)
+            chip = `<span class="pinchip anchor">${icon("pin")}Anchor</span>`;
+          else if (it.anchor === pm)
+            chip = `<span class="pinchip on">${icon("check")}Pinned</span>`;
+          else {
+            const why = pinRefusal(it, byId(pm));
+            chip = why ? "" : `<span class="pinchip">${icon("plus")}Pin</span>`;
+            if (why) no = ` no" title="${esc(why)}`;
+          }
+        }
+        const kids = pins.length
+          ? `<button class="tw${open ? " open" : ""}" data-fold="${it.id}" title="${open ? "Fold" : "Unfold"} the pinned items">${icon("chev")}</button>`
+          : depth === 1
+            ? '<span class="tw none"></span>'
+            : "";
+        const ck =
+          ui.multi && !pm ? `<span class="ck">${icon("check")}</span>` : "";
+        const pinG = it.anchor
+          ? `<span class="guide"></span><span class="pinglyph" title="Pinned to ${esc(byId(it.anchor)?.name || "")}">${icon("pin")}</span>`
+          : "";
+        const count =
+          pins.length && !pm
+            ? `<span class="pc" title="${pins.length} items pinned to it: this is a group">${icon("pin")}${pins.length}</span>`
+            : "";
+        const hov = pm
+          ? ""
+          : it.anchor
+            ? `<button class="ib hov" data-unpin="${it.id}" title="Unpin: it stays where it stands">${icon("unpin")}</button>`
+            : `<button class="ib hov" data-pinhere="${it.id}" title="Pin items here">${icon("pin")}</button>`;
+        return `<div class="row ${it.anchor ? "pinned" : "item"}${sel ? " sel" : ""}${inGrp ? " ingrp" : ""}${extra}${no}" data-k="${it.anchor ? "pinned" : "item"}" data-id="${it.id}" style="--d:${depth}" role="button" tabindex="0" aria-pressed="${sel}">
+    ${pm ? '<span class="gsp"></span>' : '<span class="grip" title="Drag: onto an item to pin it there, between rows to place it"></span>'}${kids}${ck}${pinG}<span class="ti ${it.type}">${icon(it.type)}</span><span class="nm" title="${esc(it.name)}">${esc(it.name)}</span>${count}${chip}${hov}</div>`;
+      }
+      function drawTree() {
+        const st = S.station;
+        const tops = S.items.filter((i) => !i.anchor);
+        let h = `<div id="rows"><div class="row st${S.sel.includes("station") ? " sel" : ""}" data-k="station" data-id="station" style="--d:0"><span class="tw open">${icon("chev")}</span><span class="badge">${st.num}</span><span class="nm">${esc(st.name)}</span><span class="meta">${S.items.length} items</span></div>`;
+        h += `<div class="sech">Stories <span class="count">${S.stories.length}</span></div>`;
+        for (const s of S.stories) {
+          const open = ui.storyOpen[s.id] !== false;
+          const sel = S.sel.includes("story:" + s.id);
+          h += `<div class="row${sel ? " sel" : ""}" data-k="story" data-id="story:${s.id}" style="--d:1" role="button" tabindex="0"><span class="gsp"></span><button class="tw${open ? " open" : ""}" data-sfold="${s.id}">${icon("chev")}</button><span class="ti story">${icon("story")}</span><span class="nm">${esc(s.name)}</span><span class="meta">${s.steps.length} steps</span><button class="ib hov" data-dupstory="${s.id}" title="Duplicate the story">${icon("copy")}</button></div>`;
+          if (open)
+            s.steps.forEach((x, i) => {
+              h += `<div class="row" data-k="step" data-id="story:${s.id}" style="--d:2"><span class="gsp"></span><span class="ti">${icon("step")}</span><span class="nm">${i + 1}  ${esc(x.name)}</span></div>`;
+            });
+        }
+        h += `<div class="sech" data-k="itemshead">Items <span class="count">${tops.length}</span></div>`;
+        for (const it of tops) {
+          h += rowItem(it, 1);
+          const pins = pinsOf(it.id);
+          if (pins.length && ui.open[it.id] !== false)
+            pins.forEach((p, i) => {
+              h += rowItem(p, 2, i === pins.length - 1 ? " last" : "");
+            });
+        }
+        h += `<div class="unpinzone" data-k="unpinzone">${icon("unpin")}Drop here to unpin - it stays where it stands</div>`;
+        h += `</div><div class="treefoot">${ui.pinMode ? "Tap items to pin or unpin them." : "Select an item and <b>Pin items here</b>, or drag a row onto another item to pin it there. Drag a pinned row out to unpin it."}</div>`;
+        treeBody.innerHTML = h;
+      }
+      treeBody.addEventListener("click", (e) => {
+        if (tdragJustEnded) return;
+        const b = e.target.closest("button");
+        if (b) {
+          e.stopPropagation();
+          if (b.dataset.fold) {
+            ui.open[b.dataset.fold] = ui.open[b.dataset.fold] === false;
+            drawTree();
+          } else if (b.dataset.sfold) {
+            ui.storyOpen[b.dataset.sfold] =
+              ui.storyOpen[b.dataset.sfold] === false;
+            drawTree();
+          } else if (b.dataset.unpin) {
+            unpinOne(b.dataset.unpin);
+          } else if (b.dataset.pinhere) startPinMode(b.dataset.pinhere);
+          else if (b.dataset.dupstory) duplicateStory(b.dataset.dupstory);
+          return;
+        }
+        const row = e.target.closest(".row");
+        if (!row) return;
+        const k = row.dataset.k,
+          id = row.dataset.id;
+        if (k === "item" || k === "pinned")
+          tapItem(id, e.ctrlKey || e.metaKey || e.shiftKey);
+        else if (!ui.pinMode) select([id]);
+      });
+      treeBody.addEventListener("keydown", (e) => {
+        if (
+          (e.key === "Enter" || e.key === " ") &&
+          e.target.classList.contains("row")
+        ) {
+          e.preventDefault();
+          e.target.click();
+        }
+      });
+
+      // tree drag: a row by its grip, onto an item (pin it there), between rows (place it), onto the unpin zone
+      let tdrag = null,
+        tdragJustEnded = false;
+      treeBody.addEventListener("pointerdown", (e) => {
+        const grip = e.target.closest(".grip");
+        if (!grip || e.button !== 0) return;
+        const row = grip.closest(".row");
+        e.preventDefault();
+        tdrag = {
+          id: row.dataset.id,
+          pid: e.pointerId,
+          x0: e.clientX,
+          y0: e.clientY,
+          on: false,
+          target: null,
+          ghost: null,
+        };
+      });
+      function clearMarks() {
+        treeBody
+          .querySelectorAll(".drop-before,.drop-after,.drop-into")
+          .forEach((el) =>
+            el.classList.remove("drop-before", "drop-after", "drop-into"),
+          );
+      }
+      function treeTarget(x, y) {
+        const d = byId(tdrag.id);
+        const el = document.elementFromPoint(x, y);
+        const row = el && el.closest("#treeBody .row, #treeBody .unpinzone");
+        if (!row) return null;
+        const k = row.dataset.k,
+          id = row.dataset.id;
+        if (k === "unpinzone")
+          return d.anchor
+            ? {
+                el: row,
+                mark: "drop-into",
+                op: { kind: "unpin" },
+                say: "Unpin - it stays where it stands",
+              }
+            : null;
+        if (id === d.id) return null;
+        const r = row.getBoundingClientRect();
+        const rel = (y - r.top) / r.height;
+        if (k === "item") {
+          const T = byId(id);
+          const why = pinRefusal(d, T);
+          if (!why && rel > 0.25 && rel < 0.75)
+            return {
+              el: row,
+              mark: "drop-into",
+              op: { kind: "pin", anchor: T.id },
+              say: "Pin to " + T.name,
+            };
+          if (rel <= 0.5)
+            return {
+              el: row,
+              mark: "drop-before",
+              op: { kind: "place", anchor: null, ref: T.id, after: false },
+              say: d.anchor ? "Unpin and place here" : "Place here",
+            };
+          if (hasPins(T) && ui.open[T.id] !== false)
+            return why
+              ? null
+              : {
+                  el: row,
+                  mark: "drop-after",
+                  op: {
+                    kind: "place",
+                    anchor: T.id,
+                    ref: pinsOf(T.id)[0].id,
+                    after: false,
+                  },
+                  say: "Pin to " + T.name,
+                };
+          return {
+            el: row,
+            mark: "drop-after",
+            op: {
+              kind: "place",
+              anchor: null,
+              ref: T.id,
+              after: true,
+              group: true,
+            },
+            say: d.anchor ? "Unpin and place here" : "Place here",
+          };
+        }
+        if (k === "pinned") {
+          const Pn = byId(id);
+          const A = byId(Pn.anchor);
+          if (pinRefusal(d, A)) return null;
+          return {
+            el: row,
+            mark: rel < 0.5 ? "drop-before" : "drop-after",
+            op: { kind: "place", anchor: A.id, ref: Pn.id, after: rel >= 0.5 },
+            say: d.anchor === A.id ? "Place here" : "Pin to " + A.name,
+          };
+        }
+        return null;
+      }
+      window.addEventListener("pointermove", (e) => {
+        if (!tdrag || e.pointerId !== tdrag.pid) return;
+        if (!tdrag.on) {
+          if (Math.hypot(e.clientX - tdrag.x0, e.clientY - tdrag.y0) < 5)
+            return;
+          tdrag.on = true;
+          const d = byId(tdrag.id);
+          tdrag.ghost = document.createElement("div");
+          tdrag.ghost.id = "ghost";
+          document.body.append(tdrag.ghost);
+          tdrag.ghost.innerHTML = `${icon(d.type)}<span>${esc(d.name)}</span><span class="say"></span>`;
+          treeBody
+            .querySelector(`.row[data-id="${tdrag.id}"]`)
+            ?.classList.add("dragging");
+          document.body.classList.toggle("drag-pinned", !!d.anchor);
+        }
+        const touch = e.pointerType === "touch";
+        tdrag.ghost.style.left = e.clientX + (touch ? -24 : 14) + "px";
+        tdrag.ghost.style.top = e.clientY + (touch ? -64 : 12) + "px";
+        clearMarks();
+        const t = treeTarget(e.clientX, e.clientY);
+        tdrag.target = t;
+        if (t) t.el.classList.add(t.mark);
+        tdrag.ghost.classList.toggle("refused", !t);
+        tdrag.ghost.querySelector(".say").textContent = t
+          ? t.say
+          : "Not possible here";
+        document.documentElement.dataset.nestDrag = t ? "on" : "refused";
+        // keep the list scrolling while a row is carried near its edges
+        // (not over the unpin zone, which sticks to the bottom edge)
+        const r = treeBody.getBoundingClientRect();
+        if (t && t.op.kind === "unpin") return;
+        if (e.clientY < r.top + 20) treeBody.scrollTop -= 6;
+        else if (e.clientY > r.bottom - 20) treeBody.scrollTop += 6;
+      });
+      function endTreeDrag(write) {
+        const t = tdrag;
+        tdrag = null;
+        if (!t) return;
+        clearMarks();
+        t.ghost?.remove();
+        document.body.classList.remove("drag-pinned");
+        delete document.documentElement.dataset.nestDrag;
+        treeBody
+          .querySelectorAll(".dragging")
+          .forEach((el) => el.classList.remove("dragging"));
+        if (!t.on) return;
+        tdragJustEnded = true;
+        setTimeout(() => {
+          tdragJustEnded = false;
+        }, 0);
+        if (!write || !t.target) {
+          if (write) toast("Not possible here - nothing changed");
+          return;
+        }
+        const d = byId(t.id),
+          op = t.target.op;
+        const was = d.anchor ? byId(d.anchor) : null;
+        if (op.kind === "unpin") {
+          commit(`Unpin "${d.name}"`, () => unpinItem(d));
+          return toast(`Unpinned "${d.name}" - it stays where it stands`);
+        }
+        if (op.kind === "pin") {
+          commit(`Pin "${d.name}" to ${byId(op.anchor).name}`, () =>
+            pinTo(d, op.anchor),
+          );
+          return toast(`Pinned "${d.name}" to ${byId(op.anchor).name}`);
+        }
+        const label = op.anchor
+          ? d.anchor === op.anchor
+            ? `Reorder "${d.name}"`
+            : `Pin "${d.name}" to ${byId(op.anchor).name}`
+          : was
+            ? `Unpin "${d.name}"`
+            : `Reorder "${d.name}"`;
+        commit(label, () => {
+          const W = pose(d);
+          d.anchor = op.anchor;
+          setWorld(d, W);
+          moveInArray(
+            d,
+            () => (op.group ? lastOfGroup(op.ref) : byId(op.ref)),
+            op.after,
+          );
+          if (op.anchor) ui.open[op.anchor] = true;
+        });
+        if (was && !op.anchor)
+          toast(`Unpinned "${d.name}" - it stays where it stands`);
+        else if (op.anchor && was?.id !== op.anchor)
+          toast(`Pinned "${d.name}" to ${byId(op.anchor).name}`);
+      }
+      window.addEventListener("pointerup", (e) => {
+        if (tdrag && e.pointerId === tdrag.pid) endTreeDrag(true);
+      });
+      window.addEventListener("pointercancel", (e) => {
+        if (tdrag && e.pointerId === tdrag.pid) endTreeDrag(false);
+      });
+
+      // ---------------------------------------------------------------- inspector
+      const inspHead = $("#inspHead"),
+        inspBody = $("#inspBody");
+      const posRow = (lab, html) =>
+        `<div class="f"><span class="lbl">${lab}</span><span class="val">${html}</span></div>`;
+      function drawInsp() {
+        const id = primary();
+        const its = selItems();
+        const fold = `<button class="ib fold" id="bInspFold" title="Collapse the panel">${icon("up")}</button>`;
+        if (ui.pinMode) {
+          const A = byId(ui.pinMode);
+          const ps = pinsOf(A.id);
+          inspHead.innerHTML = `<span class="hic">${icon("pin")}</span><span class="ttlstatic">Pinning to ${esc(A.name)}</span>${fold}`;
+          inspBody.innerHTML = `<div class="isec"><p class="note">Tap items in the view or in the list. A tap pins an item; a second tap unpins it. Each pin keeps the item exactly where it stands.</p>
+      <div class="ilab">Pinned here <span class="count">${ps.length}</span></div><div class="plist">${ps.map((p) => `<div class="pitem">${icon(p.type)}<span class="nm">${esc(p.name)}</span></div>`).join("") || '<p class="note">Nothing yet.</p>'}</div>
+      <div class="btnrow"><button class="btn pri" data-act="donepin">${icon("check")}Done</button></div></div>`;
+          return;
+        }
+        if (!id) {
+          inspHead.innerHTML = `<span class="hic">${icon("info")}</span><span class="ttlstatic">Nothing selected</span>${fold}`;
+          inspBody.innerHTML = `<div class="isec"><div class="ilab">Group items by pinning them</div>
+      <ol class="steps"><li>Select the fountain (the 3D model).</li><li>Choose <b>Pin items here</b>, then tap the text and the picture.</li><li>Move or turn the fountain: the pinned items come along.</li></ol>
+      <p class="note">Or select several items (Ctrl/Shift-click, or <b>Select several</b>) and choose <b>Pin to ...</b>. Or drag a row in the list onto the fountain's row.</p></div>`;
+          return;
+        }
+        if (id === "station") {
+          inspHead.innerHTML = `<span class="hic">${icon("station")}</span><span class="ttlstatic">${esc(S.station.name)}</span>${fold}`;
+          inspBody.innerHTML = `<div class="isec">${posRow("Radius", `${S.station.radius} m`)}${posRow("Items", `${S.items.length}, ${S.items.filter((i) => hasPins(i)).length} of them anchors`)}<p class="note">Stories stay at the top of a station. Items are pinned to items; nothing is pinned inside a story step.</p></div>`;
+          return;
+        }
+        if (id.startsWith("story:")) {
+          const s = S.stories.find((x) => "story:" + x.id === id);
+          if (!s) return;
+          inspHead.innerHTML = `<span class="hic">${icon("story")}</span><input class="ttlin" data-rename-story="${s.id}" value="${esc(s.name)}" aria-label="Story name">${fold}`;
+          inspBody.innerHTML = `<div class="isec"><div class="ilab">Steps <span class="count">${s.steps.length}</span></div><ol class="steps">${s.steps.map((x) => `<li>${esc(x.name)}</li>`).join("")}</ol></div>
+      <div class="isec"><button class="act" data-act="dupstory">${icon("copy")}Duplicate the story<kbd>Ctrl+D</kbd></button><p class="note">A story is never pinned: stories stay at the top of the station, in their own order.</p></div>`;
+          return;
+        }
+        if (its.length > 1) {
+          const A = anchorFor(its);
+          const why = pinSelectionRefusal(its);
+          const cands = its.filter((i) => !i.anchor);
+          inspHead.innerHTML = `<span class="hic">${icon("multi")}</span><span class="ttlstatic">${its.length} items selected</span>${fold}`;
+          inspBody.innerHTML = `<div class="isec"><div class="plist">${its.map((i) => `<div class="pitem">${icon(i.type)}<span class="nm" data-only="${i.id}">${esc(i.name)}</span>${i.anchor ? `<span class="meta">pinned</span>` : ""}</div>`).join("")}</div></div>
+      <div class="isec"><div class="ilab">Keep them together</div>
+      <div class="f"><label for="anchorSel">Anchor</label><select class="sel1" id="anchorSel">${cands.map((i) => `<option value="${i.id}"${i === A ? " selected" : ""}>${esc(i.name)}</option>`).join("")}</select></div>
+      <p class="note">The others are pinned to the anchor. The group turns around it and is named after it.</p>
+      ${why ? `<p class="warn">${esc(why)}</p>` : ""}
+      <div class="btnrow"><button class="btn pri" data-act="pinsel"${why ? " disabled" : ""}>${icon("pin")}Pin ${its.length - 1} to ${esc(A.name)}</button></div></div>
+      <div class="isec"><p class="note">Until they are pinned, the arrow moves them together for this one move only.</p><button class="act danger" data-act="del">${icon("trash")}Delete ${its.length} items<kbd>Del</kbd></button></div>`;
+          return;
+        }
+        const it = its[0];
+        if (!it) return;
+        const W = pose(it);
+        const pins = pinsOf(it.id);
+        inspHead.innerHTML = `<span class="hic">${icon(it.type)}</span><input class="ttlin" data-rename="${it.id}" value="${esc(it.name)}" aria-label="Name">${fold}`;
+        let h = `<div class="crumb"><button data-goto="station">${esc(S.station.name)}</button><span>/</span>${it.anchor ? `<button data-goto="${it.anchor}">${esc(byId(it.anchor).name)}</button><span>/</span>` : ""}<span>${TYPE_LABEL[it.type]}</span></div>`;
+        if (it.anchor) {
+          const A = byId(it.anchor);
+          const AW = pose(A);
+          const c = Math.cos(AW.h * DEG),
+            s = Math.sin(AW.h * DEG);
+          const de = W.e - AW.e,
+            dn = W.n - AW.n;
+          h += `<div class="isec"><div class="ilab">${icon("pin")}Pinned to ${esc(A.name)}</div>
+      <p class="note">Moving ${esc(A.name)} moves this too. Moving this alone keeps it pinned, at its new place beside ${esc(A.name)}.</p>
+      ${posRow("Beside it", `<span class="ax e">R</span>${fmt(de * c - dn * s)} m  <span class="ax n">A</span>${fmt(de * s + dn * c)} m  <span class="ax u">U</span>${fmt(W.y - AW.y)} m`)}
+      ${posRow("Distance", `${fmt(Math.hypot(de, dn))} m`)}
+      <div class="f"><label for="repin">Pinned to</label><select class="sel1" id="repin"><option value="">Nothing (unpin)</option>${S.items
+        .filter((x) => !pinRefusal(it, x))
+        .map(
+          (x) =>
+            `<option value="${x.id}"${x.id === it.anchor ? " selected" : ""}>${esc(x.name)}</option>`,
+        )
+        .join("")}</select></div>
+      <div class="btnrow"><button class="btn" data-act="selgroup">${icon("target")}Select the group</button><button class="btn" data-act="unpin">${icon("unpin")}Unpin</button></div></div>`;
+        } else {
+          h += `<div class="isec"><div class="ilab">${icon("pin")}Pinned here <span class="count">${pins.length}</span></div>
+      ${
+        pins.length
+          ? `<div class="plist">${pins.map((p) => `<div class="pitem">${icon(p.type)}<span class="nm" data-only="${p.id}">${esc(p.name)}</span><button class="ib" data-unpin="${p.id}" title="Unpin">${icon("unpin")}</button></div>`).join("")}</div>
+        <p class="note">This is a group named "${esc(it.name)}". Its pivot is ${esc(it.name)}'s own position.</p>
+        <div class="f"><span class="lbl">Moving it</span><span class="seg"><button data-act="mode-group" class="${ui.alone ? "" : "on"}">With pinned items</button><button data-act="mode-alone" class="${ui.alone ? "on" : ""}">Alone</button></span></div>
+        <p class="note">Hold Alt while dragging to move it alone once.</p>`
+          : `<p class="note">Nothing is pinned to it yet.</p>`
+      }
+      <div class="btnrow"><button class="btn${pins.length ? "" : " pri"}" data-act="pinhere">${icon("pin")}Pin items here</button>${pins.length ? `<button class="btn" data-act="unpinall">${icon("unpin")}Unpin all</button>` : ""}</div></div>`;
+        }
+        h += `<div class="isec"><div class="ilab">Position on the station</div>${posRow("Place", `<span class="ax e">E</span>${fmt(W.e)} m  <span class="ax n">N</span>${fmt(W.n)} m`)}${posRow("Height", `${fmt(W.y)} m`)}${posRow("Facing", `${Math.round(W.h)} deg`)}${it.type === "model" ? posRow("Size", `x${fmt(W.s, 2)}`) : ""}</div>`;
+        h += `<div class="isec">${pins.length ? `<button class="act" data-act="dup">${icon("copy")}Duplicate the group (${pins.length + 1} items)<kbd>Ctrl+D</kbd></button><button class="act" data-act="duponly">${icon("copy")}Duplicate ${esc(it.name)} only</button>` : `<button class="act" data-act="dup">${icon("copy")}Duplicate<kbd>Ctrl+D</kbd></button>`}
+    <button class="act danger" data-act="del">${icon("trash")}Delete${pins.length ? "..." : ""}<kbd>Del</kbd></button></div>`;
+        inspBody.innerHTML = h;
+      }
+      $("#insp").addEventListener("click", (e) => {
+        const b = e.target.closest(
+          "[data-act],[data-unpin],[data-goto],[data-only],#bInspFold",
+        );
+        if (!b) return;
+        if (b.id === "bInspFold") {
+          $("#insp").classList.toggle("collapsed");
+          return;
+        }
+        if (b.dataset.unpin) return unpinOne(b.dataset.unpin);
+        if (b.dataset.goto) return select([b.dataset.goto]);
+        if (b.dataset.only) return select([b.dataset.only]);
+        act(b.dataset.act);
+      });
+      $("#insp").addEventListener("change", (e) => {
+        if (e.target.id === "anchorSel") {
+          ui.anchorPick = e.target.value;
+          drawInsp();
+          drawActs();
+        }
+        if (e.target.id === "repin") {
+          const it = byId(primary());
+          const v = e.target.value;
+          if (!it) return;
+          if (!v) unpinSelected();
+          else {
+            commit(`Pin "${it.name}" to ${byId(v).name}`, () => pinTo(it, v));
+            toast(`Pinned "${it.name}" to ${byId(v).name}`);
+          }
+        }
+        if (e.target.dataset.rename) {
+          const it = byId(e.target.dataset.rename);
+          const v = e.target.value.trim();
+          if (it && v && v !== it.name)
+            commit(`Rename to "${v}"`, () => {
+              it.name = v;
+            });
+        }
+        if (e.target.dataset.renameStory) {
+          const s = S.stories.find(
+            (x) => x.id === e.target.dataset.renameStory,
+          );
+          const v = e.target.value.trim();
+          if (s && v && v !== s.name)
+            commit(`Rename story to "${v}"`, () => {
+              s.name = v;
+            });
+        }
+      });
+      $("#insp").addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && e.target.classList.contains("ttlin"))
+          e.target.blur();
+      });
+
+      // ---------------------------------------------------------------- the bottom bar: the selection's actions
+      const sact = (a, ic, lab, opts = {}) =>
+        `<button class="sact${opts.pri ? " pri" : ""}${opts.danger ? " danger" : ""}" data-act="${a}"${opts.dis ? " disabled" : ""} title="${esc(opts.title || lab)}">${icon(ic)}<span class="lbl">${esc(lab)}</span></button>`;
+      function drawActs() {
+        const its = selItems();
+        const id = primary();
+        let h = "",
+          hint = "";
+        if (ui.pinMode) {
+          h = sact("donepin", "check", "Done pinning", { pri: true });
+          hint =
+            "Tap items to pin them to " +
+            byId(ui.pinMode).name +
+            "; tap again to unpin. Esc or Done ends.";
+        } else if (id && id.startsWith("story:")) {
+          h = sact("dupstory", "copy", "Duplicate story");
+          hint = "Stories stay at the top of the station.";
+        } else if (its.length > 1) {
+          const why = pinSelectionRefusal(its);
+          const A = anchorFor(its);
+          h =
+            sact("pinsel", "pin", `Pin to ${A.name}`, {
+              pri: !why,
+              dis: !!why,
+              title: why || `Pin the others to ${A.name}`,
+            }) +
+            sact("clear", "x", "Clear") +
+            sact("del", "trash", "Delete", { danger: true });
+          hint = why
+            ? "Not possible: " + why
+            : `The arrow moves the ${its.length} together once. Pin them to ${A.name} to keep them together.`;
+        } else if (its.length === 1) {
+          const it = its[0];
+          if (it.anchor) {
+            h =
+              sact("selgroup", "target", "Select group") +
+              sact("unpin", "unpin", "Unpin") +
+              sact("dup", "copy", "Duplicate") +
+              sact("del", "trash", "Delete", { danger: true });
+            hint = `Pinned to ${byId(it.anchor).name}: the arrow moves it alone, it stays pinned.`;
+          } else if (hasPins(it)) {
+            h =
+              `<span class="seg"><button data-act="mode-group" class="${ui.alone ? "" : "on"}" title="The gizmo moves the group">With pins</button><button data-act="mode-alone" class="${ui.alone ? "on" : ""}" title="The gizmo moves ${esc(it.name)} alone; its pinned items stay">Alone</button></span>` +
+              sact("pinhere", "pin", "Pin items here") +
+              sact("unpinall", "unpin", "Unpin all") +
+              sact("dup", "copy", "Duplicate group") +
+              sact("del", "trash", "Delete", { danger: true });
+            hint = ui.alone
+              ? `Moves ${it.name} alone - its ${pinsOf(it.id).length} pinned items stay.`
+              : `The group "${it.name}": move, turn and scale carry its ${pinsOf(it.id).length} pinned items. Alt: alone.`;
+          } else {
+            h =
+              sact("pinhere", "pin", "Pin items here", { pri: true }) +
+              sact("dup", "copy", "Duplicate") +
+              sact("del", "trash", "Delete", { danger: true });
+            hint = `Pin items here: ${it.name} becomes an anchor, and the items you tap move with it.`;
+          }
+        } else
+          hint =
+            'Select the fountain and choose "Pin items here" - or Ctrl/Shift-click several items.';
+        $("#sbActs").innerHTML = h;
+        $("#sbHint").textContent = hint;
+      }
+      $("#sbActs").addEventListener("click", (e) => {
+        const b = e.target.closest("[data-act]");
+        if (b && !b.disabled) act(b.dataset.act);
+      });
+
+      function act(a) {
+        const id = primary();
+        const it = byId(id);
+        switch (a) {
+          case "pinhere":
+            if (it) startPinMode(it.id);
+            break;
+          case "donepin":
+            endPinMode();
+            break;
+          case "pinsel":
+            pinSelection();
+            break;
+          case "unpin":
+            unpinSelected();
+            break;
+          case "unpinall":
+            if (it) unpinAll(it.id);
+            break;
+          case "selgroup":
+            if (it && it.anchor) select([it.anchor]);
+            break;
+          case "dup":
+            if (id && id.startsWith("story:")) duplicateStory(id.slice(6));
+            else duplicate("group");
+            break;
+          case "duponly":
+            duplicate("only");
+            break;
+          case "dupstory":
+            if (id && id.startsWith("story:")) duplicateStory(id.slice(6));
+            break;
+          case "del":
+            deleteSel();
+            break;
+          case "clear":
+            select([]);
+            break;
+          case "mode-group":
+            ui.alone = false;
+            afterChange(true);
+            break;
+          case "mode-alone":
+            ui.alone = true;
+            afterChange(true);
+            break;
+        }
+      }
+
+      // ---------------------------------------------------------------- modal: delete an anchor, about
+      const modalBack = $("#modalBack"),
+        modal = $("#modal");
+      function openModal(html, wide) {
+        modal.innerHTML = html;
+        modal.classList.toggle("wide", !!wide);
+        modalBack.classList.add("show");
+        modal.querySelector(".btn.pri, .btn")?.focus({ preventScroll: true });
+        modal.scrollTop = 0;
+      }
+      function closeModal() {
+        modalBack.classList.remove("show");
+        canvas.focus({ preventScroll: true });
+      }
+      modalBack.addEventListener("click", (e) => {
+        if (e.target === modalBack) closeModal();
+      });
+      function askDelete(its, anchors, dangling) {
+        const names = anchors.map((a) => a.name).join(", ");
+        openModal(`<h2 id="modalTtl">${icon("trash")}Delete ${esc(names)}?<span class="sp"></span><button class="ib" data-close title="Cancel">${icon("x")}</button></h2>
+    <div class="mb"><p>${dangling.length} item${dangling.length > 1 ? "s are" : " is"} pinned to it: ${dangling.map((d) => '"' + esc(d.name) + '"').join(", ")}. An anchor is the group's handle, so deleting it asks what happens to them.</p></div>
+    <div class="choice"><button class="btn pri" data-del="keep">Delete ${esc(names)}, keep the pinned items<span>They become free items and stay exactly where they stand.</span></button>
+    <button class="btn" data-del="all">Delete the whole group (${its.length + dangling.length} items)<span>${esc(names)} and everything pinned to it.</span></button>
+    <button class="btn" data-close>Cancel</button></div>`);
+        modal.onclick = (e) => {
+          const b = e.target.closest("[data-del],[data-close]");
+          if (!b) return;
+          closeModal();
+          if (b.dataset.del) doDelete(its, b.dataset.del === "keep");
+        };
+      }
+      function openAbout() {
+        openModal(
+          `<h2 id="modalTtl">${icon("pin")}Folders as pins to an anchor<span class="sp"></span><button class="ib" data-close title="Close">${icon("x")}</button></h2>
+  <div class="mb">
+    <p>A group starts from one item, usually the 3D model. Other items are pinned to it. The group has no name or pivot of its own: it takes the anchor's. Moving the anchor moves its pinned items; each pinned item can still be moved alone. In the list the pinned items sit under the anchor; in 3D each one has a thin line to it.</p>
+    <h3>Why this direction is good</h3>
+    <ul><li>It matches how people describe a place: "the text next to the fountain". The group already has a name and a natural centre, so nobody has to invent a folder name or place a pivot.</li>
+    <li>Nothing new to aim at in 3D: the model you already see is the handle. Select it and its pinned items come along.</li>
+    <li>Turning is meaningful: the text and the picture swing around the fountain and stay on the same side of it. Scaling the model moves its captions outward so they stay beside it, while the text keeps its readable size.</li>
+    <li>Pins survive changing the model's file: the pinned items belong to the item, not to its geometry.</li></ul>
+    <h3>The strongest case against it</h3>
+    <ul><li>Not every group has an anchor. Three signs along a wall, or a row of pictures, have no thing in the middle: one of them must be the anchor, so the pivot sits at one end and turning swings the rest around it. A plain folder with its own pivot would do this better.</li>
+    <li>The anchor does two jobs, an item and a group handle. Moving only the model needs a switch (With pins / Alone, or Alt), a hidden mode that can surprise.</li>
+    <li>Deleting an anchor always asks a question. Replacing it means re-pinning.</li>
+    <li>It is one level deep by nature. If folders ever need folders inside them, this would have to grow into real folders anyway.</li></ul>
+    <h3>What to try</h3>
+    <ul><li>Select the fountain, choose <b>Pin items here</b>, tap the text and the picture, then <b>Done</b>.</li>
+    <li>Drag the arrow under the fountain: the group moves. Turn it with the knob on the stalk; scale it with a round dot.</li>
+    <li>Select the text alone and move it: it stays pinned, its line follows.</li>
+    <li>Switch to <b>Alone</b> (or hold Alt) and move the fountain: the pinned items stay.</li>
+    <li>Ctrl/Shift-click (or <b>Select several</b>) the sound circle and the picture, then <b>Pin to ...</b>; change the anchor in the details.</li>
+    <li>In the list, drag the sound circle's grip onto the fountain's row; drag a pinned row out onto "Drop here to unpin".</li>
+    <li>Duplicate the group, duplicate the story, delete the fountain (you are asked what happens to the pinned items), then Undo.</li></ul>
+    <h3>Not in this prototype</h3>
+    <ul><li>No lasso. No dragging an item onto the model in 3D to pin it: moving things beside the model is the common case, and a drop there would pin by accident.</li>
+    <li>Only 3D models scale. One station, no saving.</li></ul>
+    <p>Keys: Ctrl+Z / Ctrl+Shift+Z undo and redo, Ctrl+G pins the selection, P pins items here, Ctrl+D duplicates, Delete deletes, F frames, Esc ends pinning or clears the selection.</p>
+  </div><div class="mf"><button class="btn pri" data-close>Try it</button></div>`,
+          true,
+        );
+        modal.onclick = (e) => {
+          if (e.target.closest("[data-close]")) closeModal();
+        };
+      }
+
+      // ---------------------------------------------------------------- 3D labels over the items
+      const tagsEl = $("#tags");
+      let tagEls = new Map();
+      function drawTags() {
+        tagsEl.innerHTML = "";
+        tagEls = new Map();
+        const pm = ui.pinMode;
+        const hot = hotGroup();
+        for (const it of S.items) {
+          const el = document.createElement("div");
+          let cls = "tag";
+          let inner = icon(it.type) + `<span>${esc(it.name)}</span>`;
+          if (pm) {
+            cls += " pinmode";
+            if (it.id === pm) {
+              cls += " anchor";
+              inner = icon("pin") + `<span>${esc(it.name)}: anchor</span>`;
+            } else if (it.anchor === pm) {
+              cls += " on";
+              inner = icon("check") + `<span>Pinned</span>`;
+            } else if (pinRefusal(it, byId(pm))) {
+              cls += " no";
+              el.title = pinRefusal(it, byId(pm));
+            } else {
+              cls += " cand";
+              inner = icon("plus") + `<span>Pin ${esc(it.name)}</span>`;
+            }
+          } else {
+            if (S.sel.includes(it.id)) cls += " sel";
+            else if (hot && (it.id === hot || it.anchor === hot))
+              cls += " grp-of";
+            const n = pinsOf(it.id).length;
+            if (n) inner += `<span class="pc">${icon("pin")}${n}</span>`;
+          }
+          el.className = cls;
+          el.innerHTML = inner;
+          el.dataset.id = it.id;
+          el.addEventListener("click", (e) =>
+            tapItem(it.id, e.ctrlKey || e.metaKey || e.shiftKey),
+          );
+          tagsEl.append(el);
+          tagEls.set(it.id, el);
+        }
+      }
+      const _tp = new THREE.Vector3();
+      function placeTags() {
+        for (const it of S.items) {
+          const el = tagEls.get(it.id);
+          if (!el) continue;
+          const W = pose(it);
+          const top =
+            it.type === "model"
+              ? 2.5 * W.s
+              : it.type === "sound"
+                ? 0.8
+                : (it.type === "text" ? 0.4 : 0.45) + 0.12;
+          _tp.set(W.e, W.y + top, -W.n).project(camera);
+          if (_tp.z > 1 || Math.abs(_tp.x) > 1.2 || Math.abs(_tp.y) > 1.2) {
+            el.style.display = "none";
+            continue;
+          }
+          el.style.display = "";
+          el.style.transform = `translate(${(((_tp.x + 1) / 2) * vpW).toFixed(1)}px, ${(((1 - _tp.y) / 2) * vpH).toFixed(1)}px) translate(-50%, -100%)`;
+        }
+      }
+
+      // ---------------------------------------------------------------- banner, toast, frame
+      const banner = $("#banner");
+      function drawBanner() {
+        if (!ui.pinMode) {
+          banner.hidden = true;
+          return;
+        }
+        const A = byId(ui.pinMode);
+        banner.hidden = false;
+        banner.innerHTML = `${icon("pin")}<span class="bt">Pinning to <b>${esc(A.name)}</b>: tap items to pin or unpin them</span><button class="btn pri" data-act="donepin">Done</button>`;
+      }
+      banner.addEventListener("click", (e) => {
+        if (e.target.closest("[data-act]")) endPinMode();
+      });
+      let toastT = 0;
+      function toast(msg) {
+        const t = $("#toast");
+        t.textContent = msg;
+        t.classList.add("show");
+        clearTimeout(toastT);
+        toastT = setTimeout(() => t.classList.remove("show"), 2600);
+      }
+      let tween = null;
+      function frameSelection() {
+        const its = selItems().length ? selItems() : S.items;
+        const ids = new Set(its.map((i) => i.id));
+        for (const i of its)
+          if (hasPins(i) && !ui.alone)
+            pinsOf(i.id).forEach((p) => ids.add(p.id));
+        const box = new THREE.Box3();
+        for (const id of ids) {
+          const v = views.get(id);
+          if (v) box.expandByObject(v.root);
+        }
+        if (box.isEmpty()) return;
+        const c = box.getCenter(new THREE.Vector3());
+        const r = Math.max(2, box.getSize(new THREE.Vector3()).length() / 2);
+        const dir = camera.position.clone().sub(orbit.target).normalize();
+        const aspect = Math.min(1, vpW / vpH);
+        const dist = clamp(
+          (r / Math.sin((camera.fov * DEG) / 2) / aspect) * 0.9,
+          orbit.minDistance,
+          orbit.maxDistance,
+        );
+        tween = {
+          t0: performance.now(),
+          from: { t: orbit.target.clone(), p: camera.position.clone() },
+          to: { t: c, p: c.clone().add(dir.multiplyScalar(dist)) },
+        };
+      }
+      function stepTween(now) {
+        if (!tween) return;
+        const k = clamp((now - tween.t0) / 500, 0, 1);
+        const e = 1 - Math.pow(1 - k, 3);
+        orbit.target.lerpVectors(tween.from.t, tween.to.t, e);
+        camera.position.lerpVectors(tween.from.p, tween.to.p, e);
+        if (k >= 1) tween = null;
+      }
+
+      // ---------------------------------------------------------------- top bar, keys, sheet tabs
+      $("#bUndo").addEventListener("click", undo);
+      $("#bRedo").addEventListener("click", redo);
+      $("#bFrame").addEventListener("click", frameSelection);
+      $("#bAbout").addEventListener("click", openAbout);
+      $("#bReset").addEventListener("click", () => {
+        commit("Reset the demonstration", () => {
+          const keep = S.nextId;
+          S = initState();
+          S.nextId = keep;
+        });
+        ui.alone = false;
+        ui.pinMode = null;
+        afterChange(true);
+      });
+      $("#bMulti").addEventListener("click", () => {
+        ui.multi = !ui.multi;
+        afterChange(true);
+        toast(
+          ui.multi
+            ? "Select several: every tap adds or removes an item"
+            : "Back to single selection",
+        );
+      });
+      $("#bTreeFold").addEventListener("click", () =>
+        $("#tree").classList.toggle("collapsed"),
+      );
+      $("#sheetTabs").addEventListener("click", (e) => {
+        const b = e.target.closest("[data-tab]");
+        if (b) {
+          ui.tab = b.dataset.tab;
+          drawTabs();
+        }
+      });
+      function drawTabs() {
+        document.body.dataset.tab = ui.tab;
+        $("#sheetTabs")
+          .querySelectorAll("button")
+          .forEach((b) => b.classList.toggle("on", b.dataset.tab === ui.tab));
+      }
+      window.addEventListener("keydown", (e) => {
+        if (e.target.closest("input, select, textarea")) return;
+        if (modalBack.classList.contains("show")) {
+          if (e.key === "Escape") closeModal();
+          return;
+        }
+        const mod = e.ctrlKey || e.metaKey;
+        const k = e.key.toLowerCase();
+        if (e.key === "Escape" && tdrag) {
+          endTreeDrag(false);
+          return;
+        }
+        if (mod && k === "z") {
+          e.preventDefault();
+          if (e.shiftKey) redo();
+          else undo();
+        } else if (mod && k === "y") {
+          e.preventDefault();
+          redo();
+        } else if (mod && k === "d") {
+          e.preventDefault();
+          act("dup");
+        } else if (mod && k === "g") {
+          e.preventDefault();
+          if (e.shiftKey) {
+            const it = byId(primary());
+            if (it && hasPins(it)) unpinAll(it.id);
+            else unpinSelected();
+          } else pinSelection();
+        } else if (!mod && k === "p") {
+          const it = byId(primary());
+          if (it) startPinMode(it.id);
+        } else if (e.key === "Delete" || e.key === "Backspace") {
+          e.preventDefault();
+          deleteSel();
+        } else if (!mod && k === "f") frameSelection();
+        else if (e.key === "Escape") {
+          if (ui.pinMode) endPinMode();
+          else select([]);
+        }
+      });
+
+      // ---------------------------------------------------------------- redraw and the frame loop
+      function afterChange(full) {
+        S.sel = S.sel.filter((id) =>
+          id === "station" || id.startsWith("story:")
+            ? id === "station" || S.stories.some((s) => "story:" + s.id === id)
+            : !!byId(id),
+        );
+        if (ui.pinMode && !byId(ui.pinMode)) ui.pinMode = null;
+        $("#bUndo").disabled = !hist.past.length;
+        $("#bRedo").disabled = !hist.future.length;
+        $("#bMulti").classList.toggle("on", ui.multi);
+        $("#bMulti").setAttribute("aria-pressed", String(ui.multi));
+        if (full) {
+          rebuildViews();
+          drawTree();
+          drawTags();
+        }
+        drawInsp();
+        drawActs();
+        drawBanner();
+      }
+      function resize() {
+        const w = vp.clientWidth,
+          h = vp.clientHeight;
+        if (w === vpW && h === vpH) return;
+        vpW = Math.max(1, w);
+        vpH = Math.max(1, h);
+        renderer.setSize(vpW, vpH, false);
+        camera.aspect = vpW / vpH;
+        camera.updateProjectionMatrix();
+      }
+      function frame(now) {
+        resize();
+        stepTween(now);
+        orbit.update();
+        placeViews();
+        updatePinLines();
+        updateSelectionBoxes();
+        updateHandles();
+        placeTags();
+        renderer.render(scene, camera);
+        requestAnimationFrame(frame);
+      }
+      afterChange(true);
+      drawTabs();
+      if (vp.clientWidth / Math.max(1, vp.clientHeight) < 0.9) {
+        camera.position.set(3, 9.5, 16);
+      }
+      requestAnimationFrame(frame);
+      if (!/noabout/.test(location.hash)) openAbout();
+      // read by the headless checks only
+      window.__folders = {
+        get S() {
+          return S;
+        },
+        ui,
+        act,
+        tapItem,
+        select,
+        startPinMode,
+        endPinMode,
+        pinSelection,
+        undo,
+        redo,
+        pose,
+        hist,
+        // an item's ground point on the screen (client px)
+        screenOf(id, up = 0) {
+          const it = byId(id);
+          if (!it) return null;
+          const W = pose(it);
+          const p = new THREE.Vector3(W.e, W.y + up, -W.n).project(camera);
+          const r = canvas.getBoundingClientRect();
+          return {
+            x: r.left + ((p.x + 1) / 2) * r.width,
+            y: r.top + ((1 - p.y) / 2) * r.height,
+          };
+        },
+      };
+    </script>
+  </body>
+</html>
