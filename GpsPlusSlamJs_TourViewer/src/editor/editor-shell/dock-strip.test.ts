@@ -66,10 +66,9 @@ describe("a finger on a tab of a strip that scrolls", () => {
         (slop, hold, dx, dy, ms) => {
           const got = stripGesture({ dx, dy, ms }, true, slop, hold);
           const far = Math.hypot(dx, dy) >= slop;
-          if (!far) expect(got).toBe("undecided");
-          else if (ms < hold && Math.abs(dx) > Math.abs(dy)) {
-            expect(got).toBe("scroll");
-          } else expect(got).toBe("drag");
+          const sideways = ms < hold && Math.abs(dx) > Math.abs(dy);
+          const want = !far ? "undecided" : sideways ? "scroll" : "drag";
+          expect(got).toBe(want);
         },
       ),
     );
@@ -158,9 +157,10 @@ describe("a tab scrolled into its strip", () => {
         (scroll, size, start, width) => {
           const at = scrolledToShow({ scroll, size }, { start, size: width });
           expect(start).toBeGreaterThanOrEqual(at);
-          if (width <= size) {
-            expect(start + width).toBeLessThanOrEqual(at + size);
-          } else expect(at).toBe(start);
+          // A tab that fits ends in sight; a wider one starts at the edge.
+          const inSight =
+            width <= size ? start + width <= at + size : at === start;
+          expect(inSight).toBe(true);
         },
       ),
     );

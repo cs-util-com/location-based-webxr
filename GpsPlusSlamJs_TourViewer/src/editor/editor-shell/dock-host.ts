@@ -1059,13 +1059,15 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
     });
   };
 
-  const changed = dock.onDidActivePanelChange((panel) => {
-    if (laying) return;
-    if (panel !== undefined) showTabSoon(panel.id);
-    updateFolders();
-    keepSoon();
-    deps.onChange();
-  });
+  const changed = dock.onDidActivePanelChange(
+    (panel: IDockviewPanel | undefined) => {
+      if (laying) return;
+      if (panel !== undefined) showTabSoon(panel.id);
+      updateFolders();
+      keepSoon();
+      deps.onChange();
+    },
+  );
   const laidOut = dock.onDidLayoutChange(() => {
     if (laying) return;
     // A group dragged empty is gone, its fold with it.
@@ -1299,13 +1301,13 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
     if (group.panels.some((p) => p.id === "view")) return;
     const back = holdFocus([...contents.values()]);
     if (folds.has(group.id)) foldGroup(group, false);
-    const box = root.getBoundingClientRect();
+    const area = root.getBoundingClientRect();
     const at = groupOf("view").element.getBoundingClientRect();
-    const width = Math.round(Math.min(300, box.width * 0.6));
-    const height = Math.round(Math.min(360, box.height * 0.7));
+    const width = Math.round(Math.min(300, area.width * 0.6));
+    const height = Math.round(Math.min(360, area.height * 0.7));
     dock.addFloatingGroup(group, {
-      x: Math.max(8, Math.round(at.right - box.left - width - 12)),
-      y: Math.max(8, Math.round(at.top - box.top + 12)),
+      x: Math.max(8, Math.round(at.right - area.left - width - 12)),
+      y: Math.max(8, Math.round(at.top - area.top + 12)),
       width,
       height,
     });
