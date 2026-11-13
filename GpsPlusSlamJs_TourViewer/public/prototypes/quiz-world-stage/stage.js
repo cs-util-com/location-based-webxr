@@ -4,6 +4,10 @@
 // renderer, frame loop, lights, all input and the story card. A kind gets the seam only:
 // kind.world(block, env) and kind.card?.(block, el, env). See README.md.
 //
+// Two HUDs: "card" (the story card at the bottom, the reference) and "compact" (the card behind a
+// small "i", the guide's lines as a toast that fades, a found-dots pill), so the 3D scene keeps the
+// screen. A page picks one with runStage({ hud }); ?hud=card or ?hud=compact overrides it.
+//
 // Reused ideas, all rewritten here: the eye-height camera, drag gain and pitch clamp of
 // editor3d-2-walk-it-r2; the walk sheet, tokens, portrait and answer tiles of
 // quiz-visitor-1-story-card; the import map of the gallery's three.js pages.
@@ -63,6 +67,10 @@ const TAP_MOVE_PX = 10;
 const TAP_MS = 400;
 const HIT_MIN_PX = 26; // a hit area is never smaller than a thumb on screen
 const HANDLE_PX = 44;
+const LABEL_SHARE = 0.4; // the most of the view's width a label in the world may cover, env.fitWidth
+const SAY_MS_MIN = 3000; // compact HUD: how long a guide's line stays before it fades
+const SAY_MS_PER_CHAR = 60;
+const SAY_MS_MAX = 10000;
 
 const LOOKS = {
   bright: {
@@ -340,6 +348,88 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: #14171d; }
   .qs .fold { min-height: 48px; }
   .qs .stick { bottom: 10px; right: 10px; }
   .qs .hint { left: auto; right: 12px; transform: none; max-width: 44%; }
+}
+/* ---------- the compact HUD: the card behind an "i", the world in front ---------- */
+.qs .cbar, .qs .say, .qs .cta, .qs .info { display: none; }
+.qs[data-hud="compact"][data-mode="play"] .top,
+.qs[data-hud="compact"][data-mode="play"] .sheet { display: none; }
+.qs[data-hud="compact"][data-mode="play"] .cbar { display: grid; }
+.qs[data-hud="compact"][data-mode="play"] .say,
+.qs[data-hud="compact"][data-mode="play"] .cta { display: block; }
+.qs[data-hud="compact"][data-mode="play"] .info { display: flex; }
+.qs .cbar {
+  position: absolute; z-index: 6; top: calc(10px + env(safe-area-inset-top)); left: 12px; right: 12px;
+  grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; pointer-events: none;
+}
+.qs .vars {
+  grid-column: 1; justify-self: start; display: flex; padding: 2px; border-radius: 18px;
+  border: 1px solid rgb(255 255 255 / 30%); background: rgb(10 14 18 / 55%); pointer-events: auto;
+}
+.qs .vars:empty { display: none; }
+.qs .vars a {
+  display: grid; place-items: center; width: 32px; height: 32px; border-radius: 16px; color: #fff;
+  font-size: 13px; font-weight: 700; text-decoration: none;
+}
+.qs .vars a[aria-current="page"] { background: #fff; color: #14171d; }
+.qs .found {
+  grid-column: 2; display: flex; gap: 6px; padding: 8px 10px; border-radius: 14px;
+  background: rgb(10 14 18 / 55%);
+}
+.qs .found i { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid rgb(255 255 255 / 75%); }
+.qs .found i.on { border-color: transparent; background: var(--hue, var(--walk-found)); }
+.qs .found.in { animation: qs-pop 0.3s cubic-bezier(0.3, 1.6, 0.5, 1); }
+.qs .ibtn {
+  position: relative; grid-column: 3; justify-self: end; width: 36px; height: 36px; padding: 0;
+  border-radius: 50%; border: 1px solid rgb(255 255 255 / 34%); background: rgb(10 14 18 / 55%);
+  color: #fff; font: italic 700 17px/1 Georgia, "Times New Roman", serif; pointer-events: auto;
+}
+.qs .ibtn::before { content: ""; position: absolute; inset: -6px; }
+.qs .ibtn[aria-expanded="true"] { background: #fff; color: #14171d; }
+.qs .say {
+  position: absolute; z-index: 7; top: calc(56px + env(safe-area-inset-top)); left: 50%;
+  transform: translateX(-50%); width: max-content; max-width: min(360px, calc(100% - 24px));
+  padding: 8px 12px; border-radius: 14px; background: rgb(12 16 21 / 80%); color: var(--walk-ink);
+  font-size: 14px; line-height: 1.35; transition: opacity 0.6s; cursor: pointer;
+}
+.qs .say b { margin-right: 6px; color: var(--gold); font-weight: 700; }
+.qs .say.gone { opacity: 0; pointer-events: none; }
+.qs .cta {
+  position: absolute; z-index: 7; bottom: calc(18px + env(safe-area-inset-bottom)); left: 50%;
+  transform: translateX(-50%); min-height: var(--tap); padding: 10px 22px; border: 0; border-radius: 22px;
+  background: var(--walk-found); color: var(--walk-found-ink); font-size: 16px; font-weight: 700;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 30%);
+}
+.qs .cta:disabled { opacity: 0.55; cursor: default; }
+.qs[data-hud="compact"] .stick { bottom: calc(14px + env(safe-area-inset-bottom)); }
+.qs[data-hud="compact"] .hint {
+  top: auto; bottom: calc(76px + env(safe-area-inset-bottom)); left: 12px; right: auto; transform: none;
+  max-width: min(300px, calc(100% - 170px)); text-align: left;
+}
+@media (pointer: coarse) { .qs .cta { left: 16px; transform: none; } }
+.qs .info {
+  position: absolute; z-index: 9; left: 0; right: 0; bottom: var(--kbd); max-height: 72%; margin: 0 auto;
+  max-width: 520px; flex-direction: column; padding-bottom: env(safe-area-inset-bottom);
+  border-top: 1px solid var(--walk-line); border-radius: 22px 22px 0 0; background: rgb(12 16 21 / 92%);
+  box-shadow: 0 -10px 30px rgb(0 0 0 / 25%);
+}
+.qs .info .head { flex: none; display: flex; align-items: center; gap: 10px; padding: 10px 10px 8px 16px; }
+.qs .info .head p { flex: 1; min-width: 0; font-size: 15px; font-weight: 700; line-height: 1.25; }
+.qs .info .head small { display: block; font-size: 12.5px; font-weight: 500; color: var(--walk-muted); }
+.qs .info .x {
+  flex: none; width: 40px; height: 40px; border: 0; border-radius: 50%; background: var(--walk-surface-2);
+  font-size: 22px; line-height: 1;
+}
+.qs .info .tools-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.qs .info .tools-row .seg { height: 40px; }
+.qs .info .tools-row .btn { min-height: 40px; padding: 6px 14px; border-radius: 20px; }
+@media (min-width: 900px), (orientation: landscape) and (max-height: 520px) {
+  .qs .info {
+    left: auto; right: 10px; bottom: calc(10px + var(--kbd)); width: min(380px, 52%);
+    max-height: calc(100% - 20px); padding-bottom: 0; border: 1px solid var(--walk-line); border-radius: 20px;
+  }
+}
+@media (orientation: landscape) and (max-height: 520px) {
+  .qs .say { max-width: min(420px, 60%); }
 }
 @media (prefers-reduced-motion: reduce) {
   .qs *, .qs *::before, .qs *::after { animation: none !important; transition: none !important; }
@@ -741,6 +831,9 @@ export function runStage(options) {
     story,
     at,
     heading = 0,
+    hud: hudOption = "card",
+    variant,
+    variants = [],
   } = options ?? {};
   if (
     !kind ||
@@ -757,6 +850,11 @@ export function runStage(options) {
     throw new Error("runStage needs a block or at least one sample");
   const tale = { ...DEFAULT_STORY, ...story };
   const foot = { x: at?.x ?? 0, z: at?.z ?? 0 };
+  // ?hud=card or ?hud=compact, so the two HUDs can be compared on the same page
+  const askedHud = new URLSearchParams(location.search).get("hud");
+  const compact =
+    (askedHud === "card" || askedHud === "compact" ? askedHud : hudOption) ===
+    "compact";
 
   document.title = title;
   const style = document.createElement("style");
@@ -767,6 +865,7 @@ export function runStage(options) {
   root.className = "qs";
   root.dataset.mode = "play";
   root.dataset.look = "bright";
+  root.dataset.hud = compact ? "compact" : "card";
   root.innerHTML = `
     <canvas class="gl" tabindex="0" aria-label="The place, in 3D"></canvas>
     <div class="top">
@@ -813,6 +912,32 @@ export function runStage(options) {
         </button>
         <div class="edit" hidden></div>
       </div>
+    </section>
+    <div class="cbar">
+      <nav class="vars" aria-label="Variants"></nav>
+      <p class="found" role="img" hidden></p>
+      <button type="button" class="ibtn" aria-expanded="false" aria-label="About this page, the story card and Skip">i</button>
+    </div>
+    <p class="say" role="status" aria-live="polite" hidden></p>
+    <button type="button" class="cta" hidden></button>
+    <section class="info" aria-label="About this page" hidden>
+      <div class="head">
+        <p><span class="vname"></span><small class="vtitle"></small></p>
+        <button type="button" class="x" aria-label="Close">&times;</button>
+      </div>
+      <div class="body">
+        <div class="tools-row">
+          <div class="seg" role="group" aria-label="Mode">
+            <button type="button" data-mode="play" aria-pressed="true">Play</button>
+            <button type="button" data-mode="edit" aria-pressed="false">Edit</button>
+          </div>
+          <div class="seg" role="group" aria-label="Backdrop">
+            <button type="button" data-look="bright" aria-pressed="true">Bright</button>
+            <button type="button" data-look="dark" aria-pressed="false">Dark</button>
+          </div>
+          <button type="button" class="btn" data-cost aria-expanded="false">Cost</button>
+        </div>
+      </div>
     </section>`;
   document.body.append(root);
 
@@ -840,11 +965,92 @@ export function runStage(options) {
     slot: $(".slot"),
     dots: $(".dots"),
     acts: $(".acts"),
+    found: $(".found"),
+    ibtn: $(".ibtn"),
+    say: $(".say"),
+    cta: $(".cta"),
+    info: $(".info"),
   };
   $("#qsTitle").textContent = title;
   ui.slot.dataset.kind = kind.name;
   ui.edit.dataset.kind = kind.name;
   ui.speaker.textContent = tale.speaker;
+
+  // The compact HUD: the whole story card moves behind the "i", under the page's own tools.
+  const speakerShort = tale.speaker.split(",")[0];
+  if (compact) $(".info .body").append(ui.story);
+  if (variant) {
+    $(".vname").textContent = `${variant.letter} - ${variant.name}`;
+    $(".vtitle").textContent = title;
+  } else $(".vname").textContent = title;
+  for (const v of variants) {
+    const a = document.createElement("a");
+    a.href = `${v.href}${location.search}`; // keeps ?hud= while switching
+    a.textContent = v.letter;
+    a.title = `${v.letter} - ${v.name}`;
+    a.setAttribute("aria-label", `Variant ${v.letter}: ${v.name}`);
+    if (v.letter === variant?.letter) a.setAttribute("aria-current", "page");
+    $(".vars").append(a);
+  }
+  const setInfo = (open) => {
+    ui.info.hidden = !open;
+    ui.ibtn.setAttribute("aria-expanded", String(open));
+  };
+  ui.ibtn.addEventListener("click", () => setInfo(ui.info.hidden));
+  $(".info .x").addEventListener("click", () => setInfo(false));
+
+  // A guide's line, once, as a toast that fades. A tap takes it away sooner.
+  let sayTimer = 0;
+  let sayKey = null;
+  const sayText = (text) => {
+    clearTimeout(sayTimer);
+    ui.say.replaceChildren();
+    const who = document.createElement("b");
+    who.textContent = speakerShort;
+    ui.say.append(who, document.createTextNode(text));
+    ui.say.hidden = false;
+    ui.say.classList.remove("gone");
+    const ms = clamp(
+      SAY_MS_MIN + text.length * SAY_MS_PER_CHAR,
+      SAY_MS_MIN,
+      SAY_MS_MAX,
+    );
+    sayTimer = setTimeout(fadeSay, ms);
+  };
+  function fadeSay() {
+    clearTimeout(sayTimer);
+    ui.say.classList.add("gone");
+    sayTimer = setTimeout(() => (ui.say.hidden = true), 650);
+  }
+  ui.say.addEventListener("click", fadeSay);
+
+  // The found-dots pill: no text, no chips; the world shows what was found.
+  const hud = {
+    compact,
+    dots(total = 0, colours = []) {
+      if (!compact) return;
+      const n = Math.max(0, Math.min(12, Math.floor(Number(total) || 0)));
+      const on = Array.isArray(colours) ? colours.slice(0, n) : [];
+      ui.found.hidden = n === 0;
+      if (!n) return;
+      const grew = on.length > ui.found.querySelectorAll("i.on").length;
+      ui.found.replaceChildren();
+      for (let i = 0; i < n; i++) {
+        const dot = document.createElement("i");
+        if (i < on.length) {
+          dot.className = "on";
+          if (typeof on[i] === "string") dot.style.setProperty("--hue", on[i]);
+        }
+        ui.found.append(dot);
+      }
+      ui.found.setAttribute("aria-label", `${on.length} of ${n} found`);
+      if (grew) {
+        ui.found.classList.remove("in");
+        void ui.found.offsetWidth;
+        ui.found.classList.add("in");
+      }
+    },
+  };
 
   let toastTimer = 0;
   const toast = (text) => {
@@ -1145,18 +1351,39 @@ export function runStage(options) {
     if (step === "kind") {
       renderStory(false);
       // The thumb is still on the answer: Continue wakes a moment later.
-      const next = ui.acts.querySelector('[data-act="next"]');
-      if (next) {
+      for (const next of [
+        ui.acts.querySelector('[data-act="next"]'),
+        compact ? ui.cta : null,
+      ]) {
+        if (!next) continue;
         next.disabled = true;
         setTimeout(() => (next.disabled = false), 450);
       }
     }
   };
 
+  // The most a local scale of `object` may be so that it, `width` metres wide at scale 1, covers no
+  // more than `share` of the view's width where it stands now. Infinity when nothing limits it.
+  const capAt = new Vector3();
+  const capScale = new Vector3();
+  const fitWidth = (object, width, share = LABEL_SHARE) => {
+    if (!object?.parent || !(width > 0) || !(share > 0)) return Infinity;
+    object.parent.getWorldScale(capScale);
+    capAt.copy(object.position).applyMatrix4(object.parent.matrixWorld);
+    const depth = Math.max(
+      camera.near,
+      capAt.sub(camera.position).dot(frame.viewWorld),
+    );
+    const across = width * Math.abs(capScale.x || 1);
+    return (share * 2 * depth * frame.eye.tanH) / across;
+  };
+
   const env = {
     mode: "play",
     frame,
     place: { size: EDGE * 2, edge: EDGE, ring: RING, anchors },
+    hud,
+    fitWidth,
     paintText,
     hitArea,
     sound,
@@ -1264,6 +1491,7 @@ export function runStage(options) {
     cardHandle?.dispose?.();
     cardHandle = null;
     ui.slot.replaceChildren();
+    hud.dots(0);
     holder.remove(part.object);
     notFreed = pending.size;
     painted.clear();
@@ -1297,8 +1525,15 @@ export function runStage(options) {
       if (mode === "play" && part) {
         counts.leave += 1;
         part.leave?.();
-        // A card folded by hand stays folded by hand; only its words change.
-        if (step === "kind" && !finished) setFold(folded ?? "auto");
+        // A card folded by hand stays folded by hand; only its words change. The compact HUD has
+        // no card on screen to fold: it says so once instead.
+        if (step === "kind" && !finished) {
+          if (compact)
+            sayText(
+              `The question waits at ${tale.station}. Come back inside the circle.`,
+            );
+          else setFold(folded ?? "auto");
+        }
       }
     } else if (outside && d < RING_BACK) {
       outside = false;
@@ -1306,6 +1541,7 @@ export function runStage(options) {
       if (mode === "play" && part) {
         counts.back += 1;
         part.back?.();
+        if (compact) return;
         if (folded === "auto") setFold(null);
         else if (folded === "hand") setFold("hand");
       }
@@ -1387,6 +1623,17 @@ export function runStage(options) {
         setTimeout(() => (skip.disabled = false), wait);
       }
     }
+    if (!compact) return;
+    // The line once as a toast; the one step forward as a single button at the foot.
+    const key = step === "kind" ? said : step;
+    if (fresh && text && key !== sayKey && mode === "play") sayText(text);
+    sayKey = key;
+    let cta = "";
+    if (step === "before" || (step === "kind" && finished)) cta = "next";
+    else if (step === "after") cta = "restart";
+    ui.cta.hidden = !cta || mode !== "play";
+    ui.cta.dataset.act = cta;
+    ui.cta.textContent = cta === "restart" ? "Restart" : "Continue";
   }
 
   function restart() {
@@ -1401,7 +1648,7 @@ export function runStage(options) {
     renderStory(true);
   }
 
-  ui.acts.addEventListener("click", (e) => {
+  const onAct = (e) => {
     const act = e.target.closest("[data-act]")?.dataset.act;
     if (act === "restart") restart();
     if (act !== "next") return;
@@ -1414,7 +1661,9 @@ export function runStage(options) {
       step = "after";
       renderStory(true);
     }
-  });
+  };
+  ui.acts.addEventListener("click", onAct);
+  ui.cta.addEventListener("click", onAct);
   ui.grab.addEventListener("click", () => setFold(folded ? null : "hand"));
   ui.fold.addEventListener("click", () => setFold(null));
 
@@ -1678,6 +1927,7 @@ export function runStage(options) {
     mode = next;
     env.mode = next;
     root.dataset.mode = next;
+    setInfo(false);
     root
       .querySelectorAll(".seg [data-mode]")
       .forEach((b) =>
@@ -1933,10 +2183,13 @@ export function runStage(options) {
     .forEach((b) =>
       b.addEventListener("click", () => applyLook(b.dataset.look)),
     );
-  ui.costBtn.addEventListener("click", () => {
-    ui.tools.hidden = !ui.tools.hidden;
-    ui.costBtn.setAttribute("aria-expanded", String(!ui.tools.hidden));
-  });
+  const costButtons = root.querySelectorAll("#qsCost, [data-cost]");
+  for (const b of costButtons)
+    b.addEventListener("click", () => {
+      ui.tools.hidden = !ui.tools.hidden;
+      for (const c of costButtons)
+        c.setAttribute("aria-expanded", String(!ui.tools.hidden));
+    });
   const sampleRow = $("#qsSamples");
   for (const name of sampleNames) {
     const b = document.createElement("button");
@@ -2129,6 +2382,21 @@ export function runStage(options) {
     },
     tenRounds,
     setMode,
+    /** For checks: walk to a world point, as a tap on the ground there would. */
+    walkTo(x, z) {
+      if (!Number.isFinite(x) || !Number.isFinite(z)) return;
+      walkTo = { x: clamp(x, -EDGE, EDGE), z: clamp(z, -EDGE, EDGE) };
+      walked();
+    },
+    /** For checks: turn the view to a world point. */
+    face(x, y, z) {
+      const dx = x - me.x;
+      const dz = z - me.z;
+      if (![dx, y, dz].every(Number.isFinite)) return;
+      spinYaw = spinPitch = 0;
+      me.yaw = Math.atan2(-dx, -dz);
+      me.pitch = clamp(Math.atan2(y - EYE, Math.hypot(dx, dz)), -1.35, 1.35);
+    },
   };
   window.__stage = stage;
   return stage;
