@@ -9,8 +9,9 @@
  * after the visitor has touched the page; a start the browser still
  * refuses is muted and said. While the visitor is there its card
  * (`video-card.ts`) is on the page's screen with play, the sound switch
- * (remembered for every video) and the hint; a porthole's tap opens the
- * clip large in that card. In the editor: the same look, still and
+ * (remembered for every video), the hint and, with captions, a CC switch
+ * over a caption strip; a porthole's tap opens the clip large in that
+ * card. A looping video plays again on the element itself. In the editor: the same look, still and
  * silent, its first frame or its poster.
  *
  * @see video-world.ts.md
@@ -34,7 +35,12 @@ import {
   type PrefsStorage,
 } from "../../visitor-prefs.js";
 import type { WorldEnv, WorldPart } from "../../world-part.js";
-import { videoCard, type VideoCard } from "./video-card.js";
+import { captionAt, readCaptions } from "./video-captions.js";
+import {
+  videoCard,
+  type VideoCaptionControls,
+  type VideoCard,
+} from "./video-card.js";
 import {
   VIDEO_DEFAULT_ASPECT,
   videoLook,
@@ -62,6 +68,7 @@ import {
 export interface ClipPlayer {
   src: string;
   muted: boolean;
+  loop: boolean;
   currentTime: number;
   readonly paused: boolean;
   readonly duration: number;
@@ -215,6 +222,20 @@ export function videoWorld(
   let soundDecided = false;
   let note: string | null = null;
   let playAskedAt: number | null = null;
+  // Captions, on until the visitor's CC turns them off; none offered
+  // when the text reads to no cue.
+  const cues = readCaptions(block.captions).cues;
+  let captionsOn = true;
+  const captions: VideoCaptionControls | undefined =
+    cues.length === 0
+      ? undefined
+      : {
+          text: () => captionAt(cues, player?.currentTime ?? 0),
+          on: () => captionsOn,
+          toggle: () => {
+            captionsOn = !captionsOn;
+          },
+        };
 
   const startPlaying = (): void => {
     const p = player;
@@ -325,6 +346,7 @@ export function videoWorld(
           timeMs: () => (player?.currentTime ?? 0) * 1000,
           durationMs: () => durationOf(player) * 1000,
           line: () => note ?? videoHint(start, state, distanceM, reachM),
+          ...(captions === undefined ? {} : { captions }),
         },
         element === null
           ? null
@@ -361,6 +383,7 @@ export function videoWorld(
     const p = deps.makePlayer();
     if (p === null) return;
     player = p;
+    p.loop = block.loop === "on";
     url = deps.url(blob);
     await new Promise<void>((resolve, reject) => {
       p.addEventListener("loadedmetadata", () => {

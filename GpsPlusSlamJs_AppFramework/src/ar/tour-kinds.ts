@@ -100,7 +100,11 @@ const PICTURE_RULES = {
   caption: optional(1200),
   alt: optional(300),
 };
-const VIDEO_RULES = { title: optional(40), transcript: optional(32_000) };
+const VIDEO_RULES = {
+  title: optional(40),
+  transcript: optional(32_000),
+  captions: optional(32_000),
+};
 const AUDIO_RULES = { title: optional(40), transcript: optional(32_000) };
 const MODEL_RULES = { title: optional(80) };
 const CHARACTER_RULES = { name: required(80), caption: optional(2000) };
@@ -190,6 +194,9 @@ export const TOUR_VIDEO_SOUNDS = ['on', 'off'] as const;
  *  `cutout` view needs to cut its figure out. Absent: none. */
 export const TOUR_VIDEO_ALPHAS = ['none', 'stacked'] as const;
 
+/** Whether a video plays again from its start when it ends. Absent: off. */
+export const TOUR_VIDEO_LOOPS = ['off', 'on'] as const;
+
 interface TourBlockEnvelope<K extends string, V extends string> {
   /** Short path-safe id, unique among the tour's blocks (asset ids are a
    *  namespace of their own). */
@@ -278,6 +285,12 @@ export interface TourVideoBlock extends TourBlockEnvelope<
   readonly sound?: (typeof TOUR_VIDEO_SOUNDS)[number];
   /** How its clip carries transparency; absent: `none`. */
   readonly alpha?: (typeof TOUR_VIDEO_ALPHAS)[number];
+  /** Whether it plays again when it ends; absent: `off`. */
+  readonly loop?: (typeof TOUR_VIDEO_LOOPS)[number];
+  /** Its captions as WebVTT text, shown under it in the visitor's player.
+   *  The format caps their length only; a cue the viewer cannot read is
+   *  left out there (`kinds/video/video-captions.ts` in the viewer). */
+  readonly captions?: string;
 }
 
 export interface TourAudioBlock extends TourBlockEnvelope<
@@ -472,7 +485,7 @@ const VIDEO_WORLD_VIEWS: ReadonlySet<string> = new Set([
 ]);
 
 /** A video's world fields: its width (required in a world view), when it
- *  starts, a near start's distance, its sound and its alpha. */
+ *  starts, a near start's distance, its sound, its alpha and its loop. */
 function videoWorld(
   v: TourBlockFields,
   view: string | null,
@@ -496,6 +509,7 @@ function videoWorld(
       : { withinM: metres(v.withinM, `${ctx.at}.withinM`, within, ctx) }),
     ...oneOf(v, 'sound', TOUR_VIDEO_SOUNDS, ctx),
     ...oneOf(v, 'alpha', TOUR_VIDEO_ALPHAS, ctx),
+    ...oneOf(v, 'loop', TOUR_VIDEO_LOOPS, ctx),
   };
 }
 
@@ -920,6 +934,7 @@ export const TOUR_KINDS = {
       video: assetRef(v, 'video', 'video', ctx),
       ...optionalText(v, 'transcript', VIDEO_RULES.transcript, ctx),
       ...optionalText(v, 'title', VIDEO_RULES.title, ctx),
+      ...optionalText(v, 'captions', VIDEO_RULES.captions, ctx),
       ...optionalAssetRef(v, 'poster', 'image', ctx),
       ...videoWorld(v, view, ctx),
     }),

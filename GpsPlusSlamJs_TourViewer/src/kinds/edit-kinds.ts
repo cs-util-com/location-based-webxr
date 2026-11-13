@@ -46,6 +46,10 @@ export interface FieldSpec {
   /** One of a few values, set by chips the kind's panel draws
    *  (`editor/kind-panels`), not a box the dock types. */
   readonly choice?: ChoiceSpec;
+  /** Only while another of the block's choices has this value (its
+   *  fallback counted for an absent one): a setting that does nothing
+   *  otherwise is not shown, and not written. */
+  readonly when?: { readonly field: string; readonly value: string };
 }
 
 /** The values a choice field takes, in the creator's words, and what an
@@ -212,12 +216,39 @@ const VIDEO_NEAR: FieldSpec = {
   label: "Starts within",
   prose: false,
   views: VIDEO_WORLD_VIEWS,
+  when: { field: "start", value: "near" },
   number: {
     min: TOUR_VIDEO_MIN_WITHIN_M,
     max: TOUR_VIDEO_MAX_WITHIN_M,
     unit: "m",
     required: false,
   },
+};
+
+/** Whether a video plays again when it ends (`TOUR_VIDEO_LOOPS`); its
+ *  panel draws it as a switch. Absent: off. */
+const VIDEO_LOOP: FieldSpec = {
+  name: "loop",
+  label: "Loop",
+  prose: false,
+  views: VIDEO_WORLD_VIEWS,
+  choice: {
+    values: [
+      { value: "off", label: "Plays once" },
+      { value: "on", label: "Loops" },
+    ],
+    fallback: "off",
+  },
+};
+
+/** A video's captions in the world, WebVTT text the visitor's player
+ *  shows; its panel says how many cues it read and which lines it left
+ *  out. */
+const VIDEO_CAPTIONS: FieldSpec = {
+  name: "captions",
+  label: "Captions (WebVTT)",
+  prose: true,
+  views: VIDEO_WORLD_VIEWS,
 };
 
 /** THE list. Key order is the order of every derived menu. */
@@ -278,9 +309,11 @@ export const KIND_EDIT = {
     fields: [
       TITLE,
       TRANSCRIPT,
+      VIDEO_CAPTIONS,
       VIDEO_START,
       VIDEO_NEAR,
       VIDEO_SOUND,
+      VIDEO_LOOP,
       VIDEO_ALPHA,
     ],
     add: {

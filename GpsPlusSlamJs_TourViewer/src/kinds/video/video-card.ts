@@ -3,7 +3,8 @@
  * the visitor is at the video: its title, what it does, play or pause, the
  * sound switch ("Sound on", or "Tap for sound" while muted) with the time,
  * and one line for a hint or a note ("Walk closer to start · 4 m", "The
- * browser kept the sound off"). A porthole's card also carries the clip
+ * browser kept the sound off"). A video with captions also has a CC switch
+ * and a caption strip that follows the clip's time. A porthole's card also carries the clip
  * itself, large, with a close - the prototype's full-screen player. The
  * card shares the narration card's frame (`narration-card.ts`), scoped to
  * the video kind.
@@ -26,6 +27,18 @@ export interface VideoControls {
   durationMs(): number;
   /** A hint or a note; null: none. */
   line(): string | null;
+  /** Its captions; absent: it has none, and the card offers no CC. */
+  readonly captions?: VideoCaptionControls;
+}
+
+/** What the card asks of a video's captions. */
+export interface VideoCaptionControls {
+  /** The words on now; "" between cues. */
+  text(): string;
+  /** Whether the visitor has them on. */
+  on(): boolean;
+  /** The visitor's CC switch. */
+  toggle(): void;
 }
 
 /** An open card: `render` brings it up to the video (each frame; it
@@ -97,6 +110,21 @@ export function videoCard(
   const sound = make("button", "video-card-sound", row);
   sound.type = "button";
   const time = make("span", "narration-card-time", row);
+  const captions = controls.captions;
+  const cc =
+    captions === undefined ? null : make("button", "video-card-cc", row);
+  if (cc !== null) {
+    cc.type = "button";
+    cc.textContent = "CC";
+    cc.setAttribute("aria-label", "Captions");
+    cc.addEventListener("click", () => {
+      captions?.toggle();
+      render();
+    });
+  }
+  // Not a live region: the transcript is the text for a screen reader.
+  const strip =
+    captions === undefined ? null : make("p", "video-card-caption", root);
   const line = make("p", "narration-card-line", root);
   play.addEventListener("click", () => {
     controls.toggle();
@@ -107,7 +135,15 @@ export function videoCard(
     render();
   });
 
-  const last = { state: "", button: "", sound: "", time: "", line: "\u0000" };
+  const last = {
+    state: "",
+    button: "",
+    sound: "",
+    time: "",
+    line: "\u0000",
+    cc: "",
+    caption: "\u0000",
+  };
   function render(): void {
     const words = stateWords(controls);
     if (words.state !== last.state) {
@@ -131,11 +167,27 @@ export function videoCard(
       time.textContent = shown;
       last.time = shown;
     }
+    renderCaptions();
     const said = controls.line() ?? "";
     if (said !== last.line) {
       line.textContent = said;
       line.hidden = said === "";
       last.line = said;
+    }
+  }
+  /** The CC switch's state and the cue on now (none while switched off). */
+  function renderCaptions(): void {
+    if (captions === undefined || cc === null || strip === null) return;
+    const ccOn = captions.on();
+    if (String(ccOn) !== last.cc) {
+      cc.setAttribute("aria-pressed", String(ccOn));
+      last.cc = String(ccOn);
+    }
+    const cue = ccOn ? captions.text() : "";
+    if (cue !== last.caption) {
+      strip.textContent = cue;
+      strip.hidden = cue === "";
+      last.caption = cue;
     }
   }
   render();

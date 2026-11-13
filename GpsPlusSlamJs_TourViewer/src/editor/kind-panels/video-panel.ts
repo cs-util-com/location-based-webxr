@@ -3,7 +3,8 @@
  * (screen, cutout, porthole) and its choices in that view - how it
  * starts, whether it starts with its sound, a cutout's background - as
  * chips, the one in use pressed, with a line under the view saying what
- * it does. A press writes the view (`edits.view`) or the choice
+ * it does; its loop as one switch; and a line saying how many caption
+ * cues its WebVTT read to (the text itself is a dock field). A press writes the view (`edits.view`) or the choice
  * (`edits.block`, refused or written by `block-fields.ts`); the `near`
  * start's distance is a number the dock types (`KIND_EDIT` `fields`).
  *
@@ -14,6 +15,7 @@
  */
 import { TOUR_FREE_BLOCK_VIEWS } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import type { TypedEditOutcome } from "../editor-shell/editor-shell.js";
+import { captionsStatus } from "../../kinds/video/video-captions.js";
 import { chipGroup, el } from "../editor-shell/inspector-fields.js";
 import type { InspectorVideo } from "../editor-shell/inspector-model.js";
 import type { KindPanel, KindPanelDraw } from "./kind-panel.js";
@@ -66,6 +68,10 @@ function videoParts(video: InspectorVideo): HTMLElement {
   );
   box.append(label, chips, el("div", "note", VIEW_NOTE[video.view] ?? ""));
   for (const choice of video.choices) {
+    if (choice.name === "loop") {
+      box.append(loopSwitch(choice.value === "on"));
+      continue;
+    }
     box.append(
       ...chipGroup(
         choice.label,
@@ -78,7 +84,21 @@ function videoParts(video: InspectorVideo): HTMLElement {
       box.append(el("div", "note", CUTOUT_AS_FILMED));
     }
   }
+  const status = captionsStatus(video.captions);
+  if (status !== null) box.append(el("div", "note", `Captions: ${status}`));
   return box;
+}
+
+/** The loop: one switch, its press writing the other value. */
+function loopSwitch(on: boolean): HTMLElement {
+  const row = el("div", "vchips");
+  const b = el("button", on ? "chip on" : "chip", "Loop");
+  b.type = "button";
+  b.setAttribute("role", "switch");
+  b.setAttribute("aria-checked", String(on));
+  b.dataset["act"] = `video-set:loop:${on ? "off" : "on"}`;
+  row.append(b);
+  return row;
 }
 
 /** A free video's panel. */

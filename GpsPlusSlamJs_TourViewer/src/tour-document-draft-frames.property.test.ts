@@ -311,6 +311,8 @@ const BLOCKS: Record<TourBlockKind, (id: string) => fc.Arbitrary<TourBlock>> = {
       withinM: maybe(fc.integer({ min: 1, max: 20 })),
       sound: maybe(fc.constantFrom("on", "off")),
       alpha: maybe(fc.constantFrom("none", "stacked")),
+      loop: maybe(fc.constantFrom("off", "on")),
+      captions: maybe(words),
     }),
   audio: (id) =>
     everyField<TourAudioBlock>({

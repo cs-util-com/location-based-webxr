@@ -6,7 +6,10 @@
  * trigger, a sound start that waits for the page to be touched, a start
  * the browser refuses (rejected and silent), the remembered choice, a
  * pause on leaving and a resume on return, a finished video replayed by a
- * tap, the porthole's large clip, and a silent editor.
+ * tap, the porthole's large clip, a loop, the captions strip, and a
+ * silent editor.
+ *
+ * @vitest-environment jsdom
  */
 import type { TourVideoBlock } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import { Texture } from "three";
@@ -34,6 +37,7 @@ import {
 class FakePlayer implements ClipPlayer {
   src = "";
   muted = true;
+  loop = false;
   currentTime = 0;
   paused = true;
   duration = 20;
@@ -116,10 +120,15 @@ async function video(setup: Setup = {}) {
       throw new Error("a video plays its own sound");
     },
     screen: {
-      show: () => {
+      // The card is drawn into a fresh host, kept for the test to read.
+      show: (draw) => {
         shown.open++;
+        const host = document.createElement("div");
+        shown.host = host;
+        const close = draw(host);
         return () => {
           shown.open--;
+          close();
         };
       },
     },
@@ -326,6 +335,37 @@ describe("a free video's part", () => {
     // A second tap on a playing porthole does not pause it behind the card.
     part.tap?.();
     expect(player.calls).toEqual(["play muted"]);
+  });
+
+  // Why: a loop is the creator's, and the element's own loop is what
+  // plays it again without a gap or an "ended" that would finish it.
+  it("loops on the player itself when the creator says so", async () => {
+    expect((await video()).player.loop).toBe(false);
+    expect((await video({ block: { loop: "on" } })).player.loop).toBe(true);
+  });
+
+  // Why: the strip is how a muted start is followed; it must show the cue
+  // at the clip's time, go with the CC switch, and not be offered for a
+  // video without readable captions.
+  it("shows its captions at the clip's time, switched by CC", async () => {
+    const captions = "WEBVTT\n\n00:01.000 --> 00:03.000\nThe gate";
+    const { part, player, shown } = await video({ block: { captions } });
+    part.update?.(at(1, 0));
+    const host = shown.host as HTMLElement;
+    const strip = host.querySelector<HTMLElement>(".video-card-caption");
+    expect(strip?.hidden).toBe(true);
+    player.currentTime = 2;
+    part.update?.(at(1, 1));
+    expect(strip?.textContent).toBe("The gate");
+    host.querySelector<HTMLElement>(".video-card-cc")?.click();
+    expect(strip?.hidden).toBe(true);
+    for (const none of [undefined, "no header"]) {
+      const plain = await video(
+        none === undefined ? {} : { block: { captions: none } },
+      );
+      plain.part.update?.(at(1, 0));
+      expect(plain.shown.host?.querySelector(".video-card-cc")).toBeNull();
+    }
   });
 
   it("stays still and silent in the editor", async () => {

@@ -2929,6 +2929,21 @@
         margin: 8px 0 0;
         font-size: 0.9rem;
       }
+      [data-kind="video"] .video-card-cc[aria-pressed="true"] {
+        color: var(--walk-accent);
+      }
+      /* The caption strip: the cue on now, on a dark band as subtitles. */
+      .video-card-caption {
+        margin: 8px 0 0;
+        padding: 6px 10px;
+        border-radius: 6px;
+        background: rgb(0 0 0 / 72%);
+        color: #fff;
+        font-size: 0.95rem;
+        line-height: 1.35;
+        text-align: center;
+        white-space: pre-line;
+      }
       #narration-card-root:has([data-player="open"]) {
         /* stylelint-disable-next-line csstree/validator -- valid CSS; the bundled css-tree grammar predates it. */
         max-width: min(720px, calc(100vw - 32px));

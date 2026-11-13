@@ -489,10 +489,12 @@ describe("choice fields", () => {
     expect(blockChoices(SCREEN).map((c) => [c.name, c.value])).toEqual([
       ["start", "enter"],
       ["sound", "off"],
+      ["loop", "off"],
     ]);
     expect(blockChoices(CUTOUT).map((c) => [c.name, c.value])).toEqual([
       ["start", "near"],
       ["sound", "on"],
+      ["loop", "off"],
       ["alpha", "none"],
     ]);
     // A story's card reads none of them.
@@ -503,8 +505,36 @@ describe("choice fields", () => {
     expect(blockFields(CUTOUT).map((f) => f.name)).toEqual([
       "title",
       "transcript",
+      "captions",
       "withinM",
     ]);
+  });
+
+  // Why: "Starts within" is a near start's distance; shown for another
+  // start it reads as a setting that does something, and a number typed
+  // there would be written to a field the viewer ignores.
+  it("shows a near start's distance only while the start is near", () => {
+    const names = (b: TourObject) => blockFields(b).map((f) => f.name);
+    expect(names(SCREEN)).not.toContain("withinM");
+    for (const start of ["enter", "look", "tap"]) {
+      const other = { ...SCREEN, start } as unknown as TourObject;
+      expect(names(other)).not.toContain("withinM");
+      expect(blockFieldEdit(other, "withinM", "5")).toEqual({
+        kind: "unchanged",
+      });
+    }
+    const near = { ...SCREEN, start: "near" } as unknown as TourObject;
+    expect(names(near)).toContain("withinM");
+    const edit = blockFieldEdit(near, "withinM", "5");
+    expect(edit.kind === "edited" && edit.after).toMatchObject({ withinM: 5 });
+  });
+
+  it("offers the loop as a choice in the world views", () => {
+    expect(blockChoices(SCREEN).find((c) => c.name === "loop")).toMatchObject({
+      value: "off",
+    });
+    const edit = blockFieldEdit(SCREEN, "loop", "on");
+    expect(edit.kind === "edited" && edit.after).toMatchObject({ loop: "on" });
   });
 
   it("writes a choice, and nothing for the one in use", () => {

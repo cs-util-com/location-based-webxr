@@ -57,8 +57,9 @@ model | character`.
   - `picture`: `title` optional 40, `caption` optional 1200, `alt`
     optional 300;
   - `video`, `audio`: `title` optional 40, `transcript` optional 32 000;
-    a video's world fields (`widthM`, `start`, `withinM`, `sound`, `alpha`)
-    are its kind row's (`tour-kinds.ts`);
+    a video's `captions` optional 32 000; its world fields (`widthM`,
+    `start`, `withinM`, `sound`, `alpha`, `loop`) are its kind row's
+    (`tour-kinds.ts`);
   - `model`: `title` optional 80;
   - `character`: `name` required 80, `caption` optional 2000.
 - `TOUR_PICTURE_MIN_WIDTH_M` (0.05), `TOUR_PICTURE_MAX_WIDTH_M` (50) - a
@@ -123,8 +124,10 @@ durationMs? }`: `audio` names an audio asset; `timing` must be the
 - `video`: `video` (a video asset), `transcript`, optional `title`, optional
   `poster` (an image asset); in the world `widthM` (required in every world
   view, kept in a card), optional `start` (`enter`, `near`, `look`, `tap`),
-  `withinM` (a `near` start's distance, 1 to 20 m), `sound` (`on`, `off`)
-  and `alpha` (`none`, `stacked`).
+  `withinM` (a `near` start's distance, 1 to 20 m), `sound` (`on`, `off`),
+  `alpha` (`none`, `stacked`) and `loop` (`off`, `on`); in any view
+  optional `captions` (WebVTT text, at most 32 000 characters, kept as
+  written: the viewer reads its cues and leaves out one it cannot read).
 - `audio`: `audio` (an audio asset), `transcript`, optional `title`.
 - `model`: `asset` (a model asset), `sizeM` by view - required in every
   world view, optional for `card` - and optional `title`. In any view:

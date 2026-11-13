@@ -41,11 +41,14 @@ there.
     and `views?` - the views that read it, none: every view), besides a
     short text's caption, which the head types (`editor/block-fields.ts`).
     Audio lists a narration circle's radius (`spot`) and a zone's reach,
-    calm and volume (`zone`); a video in the world its `near` start's
-    distance. A field may instead be a `choice` (`ChoiceSpec`: its values
-    in the creator's words and the fallback an absent one means), drawn
-    as chips by the kind's panel, not typed: a video's start, its sound
-    and a cutout's background.
+    calm and volume (`zone`); a video in the world its captions (WebVTT,
+    prose) and its `near` start's distance. A field may instead be a
+    `choice` (`ChoiceSpec`: its values in the creator's words and the
+    fallback an absent one means), drawn by the kind's panel, not typed:
+    a video's start, its sound, its loop (a switch) and a cutout's
+    background. `when?` (`{ field, value }`) shows a field only while
+    another choice of the block has that value (its fallback counted):
+    a video's Starts within only while its start is `near`.
   - `add` - its line in the tree's add menu (`KindAdd`: `label`, `hint`,
     `words`, `addable`, and for a kind made from a file `file`: the
     asset kind its file must be); a row without one is

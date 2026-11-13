@@ -352,7 +352,7 @@ describe('a video in the world', () => {
     }
   );
 
-  it('reads the start, its distance, the sound and the alpha', () => {
+  it('reads the start, its distance, the sound, the alpha and the loop', () => {
     const world = { view: 'screen', widthM: 1 };
     for (const start of ['enter', 'near', 'look', 'tap']) {
       expect(one('video', { ...world, start })).toMatchObject({ start });
@@ -366,8 +366,11 @@ describe('a video in the world', () => {
     for (const alpha of ['none', 'stacked']) {
       expect(one('video', { ...world, alpha })).toMatchObject({ alpha });
     }
+    for (const loop of ['off', 'on']) {
+      expect(one('video', { ...world, loop })).toMatchObject({ loop });
+    }
     const plain = one('video', world) as unknown as Record<string, unknown>;
-    for (const field of ['start', 'withinM', 'sound', 'alpha']) {
+    for (const field of ['start', 'withinM', 'sound', 'alpha', 'loop']) {
       expect(field in plain, field).toBe(false);
     }
   });
@@ -383,8 +386,24 @@ describe('a video in the world', () => {
     expect(() => one('video', { ...world, alpha: 'green' })).toThrow(
       '"blocks[0].alpha" must be one of none, stacked'
     );
+    expect(() => one('video', { ...world, loop: true })).toThrow(
+      '"blocks[0].loop" must be one of off, on'
+    );
     for (const withinM of [0.5, 21]) {
       expect(() => one('video', { ...world, withinM })).toThrow(/from 1 to 20/);
+    }
+  });
+
+  // Why this test matters: captions are the creator's WebVTT text, kept
+  // as written (the viewer reads the cues) and capped like a transcript,
+  // so a tour file cannot carry an unbounded text into every visitor's
+  // player.
+  it('keeps captions as written and leaves them out over their cap', () => {
+    const vtt = 'WEBVTT\n\n00:00.000 --> 00:02.000\nHello';
+    expect(one('video', { captions: vtt })).toMatchObject({ captions: vtt });
+    for (const captions of ['x'.repeat(32_001), 7]) {
+      const read = one('video', { captions }) as unknown as object;
+      expect('captions' in read).toBe(false);
     }
   });
 

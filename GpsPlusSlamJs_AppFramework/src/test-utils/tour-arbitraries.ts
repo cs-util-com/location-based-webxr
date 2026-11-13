@@ -56,6 +56,7 @@ import {
   TOUR_VIDEO_ALPHAS,
   TOUR_VIDEO_MAX_WITHIN_M,
   TOUR_VIDEO_MIN_WITHIN_M,
+  TOUR_VIDEO_LOOPS,
   TOUR_VIDEO_SOUNDS,
   TOUR_VIDEO_STARTS,
 } from '../ar/tour-kinds.js';
@@ -271,6 +272,10 @@ const KIND_FIELDS: Record<
       alpha: fc.option(fc.constantFrom(...TOUR_VIDEO_ALPHAS), {
         nil: undefined,
       }),
+      loop: fc.option(fc.constantFrom(...TOUR_VIDEO_LOOPS), {
+        nil: undefined,
+      }),
+      captions: optionalText(r.video.captions),
     }),
   audio: (view) =>
     fc

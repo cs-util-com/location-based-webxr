@@ -94,12 +94,21 @@ export function typedNumber(value: string): number | null {
 }
 
 /** `block`'s own fields in its view: a field its row names for some
- *  views only is left out of the others. */
+ *  views only is left out of the others, and one shown only while another
+ *  choice has a value (`FieldSpec` `when`) is left out otherwise. */
 function ownFields(block: AnyBlock): readonly FieldSpec[] {
   const own: readonly FieldSpec[] = KIND_EDIT[block.kind].fields;
-  return own.filter(
+  const inView = own.filter(
     (spec) => spec.views === undefined || spec.views.includes(block.view),
   );
+  return inView.filter((spec) => {
+    if (spec.when === undefined) return true;
+    const { field, value } = spec.when;
+    const other = inView.find((s) => s.name === field)?.choice;
+    if (other === undefined) return false;
+    const set = textOf(block, field);
+    return (set === "" ? other.fallback : set) === value;
+  });
 }
 
 function numberOf(block: AnyBlock, name: string): number | undefined {

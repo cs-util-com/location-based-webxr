@@ -16,6 +16,7 @@ import { createVideoPanel, VIDEO_VIEW_CHOICES } from "./video-panel.js";
 function videoItem(
   view: string,
   choices: NonNullable<PanelItem["video"]>["choices"],
+  captions = "",
 ): PanelItem {
   return {
     kind: "item",
@@ -28,7 +29,7 @@ function videoItem(
     fields: [],
     model: null,
     longText: null,
-    video: { view, choices },
+    video: { view, choices, captions },
     offset: { northM: 0, upM: 0, eastM: 0 },
     headingDeg: 0,
     turns: true,
@@ -43,6 +44,15 @@ const START = {
   values: [
     { value: "enter", label: "On arrival" },
     { value: "near", label: "When near" },
+  ],
+};
+const LOOP = {
+  name: "loop",
+  label: "Loop",
+  value: "off",
+  values: [
+    { value: "off", label: "Plays once" },
+    { value: "on", label: "Loops" },
   ],
 };
 const ALPHA = {
@@ -107,6 +117,41 @@ describe("the video panel", () => {
     expect(p.act("video-set:start:enter", item, "v")).toBe(true);
     expect(deps.writeView.mock.calls).toEqual([["v", "porthole"]]);
     expect(deps.writeChoice.mock.calls).toEqual([["v", "start", "near"]]);
+  });
+
+  // Why: a loop is on or off, so it is one switch (its state said to a
+  // screen reader), and a press writes the other value, never the same.
+  it("draws the loop as one switch that writes the other value", () => {
+    const { panel: p, deps } = panel();
+    const root = document.createElement("div");
+    root.append(...(p.sync(videoItem("screen", [LOOP]))?.parts() ?? []));
+    const loop = root.querySelector<HTMLElement>('[role="switch"]');
+    expect(loop?.textContent).toBe("Loop");
+    expect(loop?.getAttribute("aria-checked")).toBe("false");
+    expect(loop?.dataset["act"]).toBe("video-set:loop:on");
+    expect(root.textContent).not.toContain("Plays once");
+    expect(p.act("video-set:loop:on", videoItem("screen", [LOOP]), "v")).toBe(
+      true,
+    );
+    expect(deps.writeChoice.mock.calls).toEqual([["v", "loop", "on"]]);
+  });
+
+  // Why: WebVTT is typed or pasted by hand; the creator must see how many
+  // cues were read and what was left out before a visitor meets it.
+  it("says how many caption cues it read, and why none", () => {
+    const { panel: p } = panel();
+    const text = (captions: string) => {
+      const root = document.createElement("div");
+      root.append(
+        ...(p.sync(videoItem("screen", [], captions))?.parts() ?? []),
+      );
+      return root.textContent ?? "";
+    };
+    expect(text("WEBVTT\n\n00:00.000 --> 00:01.000\nHi")).toContain(
+      "Captions: 1 cue · 2 characters",
+    );
+    expect(text("Hi")).toContain("Captions: Not read");
+    expect(text("")).not.toContain("Captions:");
   });
 
   it("leaves other acts and a choice of another view to the shell", () => {

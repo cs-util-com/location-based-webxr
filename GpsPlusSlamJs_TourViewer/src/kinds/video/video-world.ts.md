@@ -43,6 +43,12 @@ same look, still and silent.
   visitor's tap is the next try. A muted start that is only slow to load is
   left to its own promise and still counts as playing.
 - The sound switch stores the visitor's choice for every video.
+- A `loop: "on"` video sets the element's own `loop`, so it plays again
+  without an `ended` (it never reaches `finished`).
+- Captions are read once (`video-captions.ts`); with at least one cue the
+  card gets a CC switch, on at first and for this video only (not
+  remembered), and a strip showing `captionAt` the player's time. With
+  none (absent, unreadable) no CC is offered.
 - A porthole's tap opens the card with the clip large and starts it if it
   does not play; Close returns to the plain card.
 - The viewer is handed to the look in the part's own frame (the object's
@@ -62,6 +68,7 @@ part?.update?.({ seconds, viewer, facing });
 
 - `video-world.test.ts` - with a fake player and screen: each trigger, the
   sound paths (creator, untouched page, refusal, a refused muted start, a
-  slow muted load, remembered choice), leave
+  slow muted load, remembered choice), the loop, the captions strip and
+  CC, leave
   and return, finished then replay, the porthole, the silent editor, a
   posed cutout's turn and dispose.

@@ -27,8 +27,9 @@ required, prose, number }`: the block's own field name (the inspector's `data-fi
     prose);
   - picture: Title (40), Caption (1200, prose), Alt text (300, prose);
   - video and audio: Title (40), Transcript (32 000, needed, prose);
-    a video in the world also Starts within (1-20 m, its `near` start's
-    distance, optional);
+    a video in the world also Captions (WebVTT, 32 000, prose) and, only
+    while its start is `near` (`FieldSpec` `when`), Starts within (1-20
+    m, optional) - for any other start it is neither listed nor written;
     audio also, each only in the view that reads it (`FieldSpec`
     `views`): in `spot` Radius (1-50 m, needed); in `zone` Reach (1-200
     m, needed), Full volume within (1-200 m) and Volume (0-1, needed). A

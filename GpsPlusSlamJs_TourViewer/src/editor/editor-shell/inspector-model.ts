@@ -382,6 +382,8 @@ export interface InspectorVideo {
   readonly view: string;
   /** Its choices in that view (`block-fields.ts` `blockChoices`). */
   readonly choices: readonly BlockChoice[];
+  /** Its WebVTT captions as typed; "" for none. */
+  readonly captions: string;
 }
 
 /** A long text as its writer shows it (`long-text-writer.ts`). */
@@ -1029,7 +1031,11 @@ export function buildInspector(input: {
           : null,
       video:
         item.kind === "video"
-          ? { view: item.view, choices: blockChoices(item) }
+          ? {
+              view: item.view,
+              choices: blockChoices(item),
+              captions: item.captions ?? "",
+            }
           : null,
       offset:
         inStation === null

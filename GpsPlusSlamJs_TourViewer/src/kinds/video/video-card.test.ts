@@ -84,6 +84,43 @@ describe("a free video's card", () => {
     expect(p.textContent).toBe("Walk closer to start · 4 m");
   });
 
+  // Why: captions are what a visitor reads while the video starts muted;
+  // the strip must follow the clip's time, the CC button must switch it
+  // and say its state, and a video with no captions offers neither.
+  it("shows the captions in a strip under a CC switch, and none without captions", () => {
+    const host = document.createElement("div");
+    let words = "The gate";
+    let on = true;
+    const { c } = controls({
+      captions: {
+        text: () => words,
+        on: () => on,
+        toggle: vi.fn(() => {
+          on = !on;
+        }),
+      },
+    });
+    const card = videoCard(host, {}, c);
+    const strip = q(host, ".video-card-caption");
+    const cc = q(host, ".video-card-cc");
+    expect(strip.textContent).toBe("The gate");
+    expect(strip.hidden).toBe(false);
+    expect(cc.textContent).toBe("CC");
+    expect(cc.getAttribute("aria-pressed")).toBe("true");
+    words = "";
+    card.render();
+    expect(strip.hidden).toBe(true);
+    words = "was built";
+    cc.click();
+    expect(c.captions?.toggle).toHaveBeenCalledTimes(1);
+    expect(cc.getAttribute("aria-pressed")).toBe("false");
+    expect(strip.hidden).toBe(true);
+    const plain = document.createElement("div");
+    videoCard(plain, {}, controls().c);
+    expect(plain.querySelector(".video-card-cc")).toBeNull();
+    expect(plain.querySelector(".video-card-caption")).toBeNull();
+  });
+
   it("holds a porthole's clip until closed, and lets it go with the card", () => {
     const host = document.createElement("div");
     const clip = document.createElement("video");
