@@ -803,7 +803,10 @@ function storyParts(model: StoryModel, state: InspectorState): HTMLElement[] {
   const goes = n === 1 ? "1 entry" : `${String(n)} entries`;
   return [
     list,
-    actions([action("add-entry", "plus", "Add step...")]),
+    actions([
+      action("add-entry", "plus", "Add step..."),
+      ...(n === 0 ? [] : [action("preview-story", "eye", "Preview the story")]),
+    ]),
     actions([
       action(
         "delete",

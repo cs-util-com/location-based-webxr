@@ -1379,6 +1379,20 @@ describe("a story's folder in the tree", () => {
     shell.hide();
   });
 
+  // Why: the story's preview is the page's (the visitor's panel in a
+  // dialog): the inspector's button hands it the story and the button the
+  // focus goes back to.
+  it("hands a story's preview to the page", () => {
+    const { deps, select, shell } = withStory();
+    const previewStory = vi.fn();
+    Object.assign(deps, { previewStory });
+    select("story:legend");
+    const button = inspectorAct("preview-story");
+    button.click();
+    expect(previewStory).toHaveBeenCalledWith("legend", button);
+    shell.hide();
+  });
+
   // Why: a step can go between two others: the gap before a card opens
   // the story's menu for that place, and its add carries the place.
   it("inserts a step before a card from the gap above it", () => {

@@ -231,6 +231,7 @@ import {
   type FileAddTarget,
 } from "./add-file-item.js";
 import { createFilePicker } from "./file-picker.js";
+import { createStoryPreview } from "./story-preview.js";
 import {
   dragHasFiles,
   FILE_FIELD_ATTR,
@@ -1948,6 +1949,14 @@ function addToStoryEntry(storyId: string, kind: AddKind, at?: number): void {
 /** The file picker the add menu's file kinds open. */
 const filePicker = createFilePicker(document.body);
 
+/** A story played as a visitor meets it (`story-preview.ts`), from the
+ *  tour as it is now, unsaved edits included. */
+const storyPreview = createStoryPreview({
+  doc: document,
+  tour: () => manifestToWrite(store.getState().tourDocument),
+  loadAsset: readContent,
+});
+
 /** The asset shelf's panel of the open tour (`asset-shelf/shelf-panel.ts`). */
 let shelfPanel: ShelfPanel | null = null;
 
@@ -2626,6 +2635,7 @@ tourName.addEventListener("click", openDetails);
 function dialogOpen(): boolean {
   return (
     !modal.hidden ||
+    storyPreview.isOpen() ||
     details.isOpen() ||
     done.isOpen() ||
     characters.dialogOpen()
@@ -4867,6 +4877,10 @@ const shell = createEditorShell({
   fileNameOf: (id) => store.getState().assetShelf.entries[id]?.name,
   loadPicture: readContent,
   dialogOpen,
+  previewStory: (storyId, opener) => {
+    const refused = storyPreview.open(storyId, opener);
+    if (refused !== null) toast(refused);
+  },
   stations: {
     add: addStationAt,
     reorder: reorderStations,

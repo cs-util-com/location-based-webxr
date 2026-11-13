@@ -335,6 +335,9 @@ describe("drawInspector", () => {
       dock.body.querySelector('[data-act="add-entry"]')?.textContent,
     ).toContain("Add step...");
     expect(
+      dock.body.querySelector('[data-act="preview-story"]')?.textContent,
+    ).toContain("Preview the story");
+    expect(
       dock.body.querySelector('[data-act="delete"]')?.textContent,
     ).toContain("Delete story and its 2 entries...");
   });
@@ -454,6 +457,7 @@ describe("drawInspector", () => {
       pictures,
     );
     expect(dock.body.querySelector(".scard")).toBeNull();
+    expect(dock.body.querySelector('[data-act="preview-story"]')).toBeNull();
     expect(dock.body.textContent).toContain("This story has no steps yet.");
     expect(
       dock.body.querySelector('[data-act="delete"]')?.textContent,

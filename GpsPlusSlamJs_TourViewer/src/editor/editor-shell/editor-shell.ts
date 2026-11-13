@@ -325,6 +325,9 @@ export interface EditorShellDeps {
   readonly loadPicture: (path: string) => Promise<Blob>;
   /** A dialog of the page shows: the shell's keys stay out of it. */
   readonly dialogOpen: () => boolean;
+  /** Play the story `storyId` as a visitor meets it (`story-preview.ts`),
+   *  the focus going back to `opener` on close. None: no preview. */
+  readonly previewStory?: (storyId: string, opener: HTMLElement) => void;
   readonly stations: ShellStationCommands;
   readonly edits: ShellEditCommands;
   /** The plain folders' commands (Group, Ungroup, a move into or out of a
@@ -2167,6 +2170,15 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       const model = inspectorModel(state().editorView);
       if (button !== null && model?.kind === "story") {
         addMenu.openForStory(button, model.storyId, model.title);
+      }
+    }
+    if (act === "preview-story") {
+      const button = (event.target as Element).closest<HTMLElement>(
+        "[data-act]",
+      );
+      const model = inspectorModel(state().editorView);
+      if (button !== null && model?.kind === "story") {
+        deps.previewStory?.(model.storyId, button);
       }
     }
     if (act?.startsWith("insert:") === true) {

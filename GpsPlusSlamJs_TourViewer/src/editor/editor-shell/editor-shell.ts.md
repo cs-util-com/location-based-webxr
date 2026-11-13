@@ -98,7 +98,9 @@ focusout or Enter (`inspector-edits.ts`), the jump picker on `change`
 (`stepWithGoto`), Add, Remove and the right answer on a click
 (`stepActEdit`, `../story-step-edits.ts`) - one undo step each. The story
 menu's Choice and Quiz call `deps.edits.addStepToStory(storyId, kind)`.
-A desktop's "Insert step" between two cards (`insert:<n>`) opens the
+A story's "Preview the story" (`preview-story`) calls
+`deps.previewStory(storyId, button)`, which plays it in the visitor's
+panel (`../story-preview.ts`). A desktop's "Insert step" between two cards (`insert:<n>`) opens the
 same menu for that place: its adds pass `at` (`addToStory`,
 `addStepToStory`, 0-based, the new step before the card at `n`); a
 character still goes to the story's end, as the character maker adds it.

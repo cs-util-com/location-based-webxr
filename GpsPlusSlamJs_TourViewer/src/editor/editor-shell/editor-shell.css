@@ -3711,6 +3711,135 @@ body[data-view="3d"] #view3d .view3d-canvas {
   border-top: 1px solid var(--s-line);
 }
 
+/* A story's preview (story-preview.ts): the visitor's panel in a dialog
+   over the view; the whole screen on a phone. */
+.spv {
+  position: fixed;
+  z-index: 60;
+  inset: 48px auto 24px 50%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 72px);
+  padding: 10px 14px 14px;
+  overflow-y: auto;
+  border: 1px solid var(--s-line2);
+  border-radius: 10px;
+  background: var(--s-bg1);
+  color: var(--s-text);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 45%);
+  transform: translateX(-50%);
+}
+
+.spv[hidden] {
+  display: none;
+}
+
+.spv .spvbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.spv .spvbar .where {
+  flex: 1;
+  min-width: 120px;
+}
+
+.spv .spvbar .where b {
+  display: block;
+}
+
+.spv .spvbar .where span,
+.spv .spvworld,
+.spv .spvnote,
+.spv .status,
+.spv .desc {
+  color: var(--s-muted);
+  font-size: 12px;
+}
+
+.spv .spvpanel {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--s-bg2);
+}
+
+.spv .spvpanel[hidden],
+.spv .spvpanel [hidden],
+.spv .spvacts [hidden] {
+  display: none;
+}
+
+.spv .spvpanel h3,
+.spv .spvpanel p {
+  margin: 0;
+}
+
+.spv .stitle {
+  font-size: 18px;
+}
+
+.spv .speaker {
+  font-weight: 600;
+}
+
+.spv .text {
+  min-height: 3em;
+  line-height: 1.45;
+  white-space: pre-line;
+}
+
+.spv .image,
+.spv .simg,
+.spv .video {
+  max-width: 100%;
+  max-height: 30vh;
+  object-fit: contain;
+}
+
+.spv .portrait {
+  float: left;
+  width: 56px;
+  height: 56px;
+  margin: 2px 10px 4px 0;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.spv .surface:empty,
+.spv .status:empty,
+.spv .choices:empty {
+  display: none;
+}
+
+.spv .choices,
+.spv .spvacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.spv .spvend {
+  margin: 0;
+  font-weight: 600;
+}
+
+@media (max-width: 700px), (max-height: 500px) {
+  .spv {
+    inset: 0;
+    width: auto;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+    transform: none;
+  }
+}
+
 /* The gap above a card (a desktop's): "Insert step", seen on hover or
    focus. */
 .scards .gap {

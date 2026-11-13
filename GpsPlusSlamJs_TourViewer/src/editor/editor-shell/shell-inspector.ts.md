@@ -88,7 +88,8 @@ content` (Chromium, the editor's browser; elsewhere it stays three
     in its station's frame. Its items follow every one.
   - A story: its name to type in the head (`data-field="story-title"`, its
     count under it), its steps as cards (`.scards`, `story-cards.ts`),
-    "Add step..." (`add-entry`) and "Delete story" (with an entry count
+    "Add step..." (`add-entry`), "Preview the story" (`preview-story`,
+    once it has a step) and "Delete story" (with an entry count
     and "..." when it holds any). A card (`article.scard`, `data-card`
     its step's id) has a head (`card:<id>`: its number, kind icon, tag,
     title, a choice's or quiz's line and a block's moves-on chip; on a
