@@ -75,10 +75,16 @@ content` (Chromium, the editor's browser; elsewhere it stays three
     position cannot be read has its Radius and that line in its fields,
     and says so. The radius sits with the position because both say where
     the station is felt; an item's disclosure stays "Position".
-  - A plain folder: the folder icon, its name and "Folder in <station>,
-    <n> items"; its Scale to type (`scale`, "x") with its meaning and
-    bounds; under "Place", its offset east and north, height and heading
-    in its station's frame. Its items follow every one.
+  - A plain folder (the chosen design's open "Pivot (from the station
+    centre)" section, no disclosure): the folder icon, its name and
+    "Folder in <station>, <n> items"; its pivot's Position east and
+    north, Height, Heading and Scale (`scale`, "x") to type, in its
+    station's frame, with a note that the scale is typed from 0.1 to 10
+    times and dragged by a white dot from 0.2 to 5; "Pivot to centre"
+    (`pivot-centre`); "Items (each movable alone)" with a `goto:<id>`
+    row per item (or "No items in it yet."); "Select its items"
+    (`select-items`, disabled for an empty folder) and a note on how its
+    items move with it. Its items follow every typed field.
   - A story: its name to type in the head (`data-field="story-title"`, its
     count under it), its "Entries" fold ("<n>, played in order"), a numbered
     `.kids` row each, `goto:<id>`), "Add entry..." (`add-entry`) and
@@ -161,7 +167,9 @@ content` (Chromium, the editor's browser; elsewhere it stays three
   station's "Put items on the ground"
   (`ground-items`, its note "N off", off when none is) and "Delete
   station"; an item's "Move to a new station" (`split`), "Put on the
-  ground" (`ground`, its note "x.x m up/down", off when on it) and
+  ground" (`ground`, its note "x.x m up/down", off when on it), one in a
+  plain folder "Select the folder" (`select:folder:<id>`, its note the
+  folder's name, in a row of its own) and
   "Delete pin" / "Delete photo" / "Delete long text" / "Delete 3D model". The command `busy`
   names says "Waiting for the ground...", is `aria-disabled` (not
   `disabled`, so it keeps the keyboard's focus) and `aria-busy`. Each
@@ -215,8 +223,8 @@ frame, a code without a position, and the folded head. The page by
 `playwright-tests/editor3d-inspector.spec.js` (the edits, saved and
 opened again, and the fields' layout at four window sizes).
 
-`shell-inspector.test.ts` also covers a plain folder's Scale and Place
-fields, the ground changing under a drawn station (only its ground button updated, the typed field and its focus kept), the lock button's place, state and words, and its absence for a station without a position; Earlier and Later beside a station's place, off at the ends; and the commands in words per kind (a station's Delete with its key, an item's two, none for a code).
+`shell-inspector.test.ts` also covers a plain folder's pivot fields in
+their order, its item rows and its two commands (off for an empty folder), the ground changing under a drawn station (only its ground button updated, the typed field and its focus kept), the lock button's place, state and words, and its absence for a station without a position; Earlier and Later beside a station's place, off at the ends; and the commands in words per kind (a station's Delete with its key, an item's two, none for a code).
 
 It also covers a story (its name, its numbered Entries, its Add entry and
 its Delete, an empty one), a choice's and a quiz's summary, an item with

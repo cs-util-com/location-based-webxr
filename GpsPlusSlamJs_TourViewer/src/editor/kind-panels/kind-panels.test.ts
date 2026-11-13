@@ -47,6 +47,7 @@ function item(over: Partial<PanelItem> = {}): PanelItem {
     offset: { northM: 0, upM: 0, eastM: 0 },
     headingDeg: 0,
     turns: true,
+    folder: null,
     groundOffM: null,
     ...over,
   };

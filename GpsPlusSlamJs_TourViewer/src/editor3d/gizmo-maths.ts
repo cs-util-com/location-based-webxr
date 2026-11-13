@@ -42,6 +42,20 @@ export const GIZMO = Object.freeze({
   stationMovePx: 26,
   /** ...and at least this many metres. */
   stationMoveMinM: 2.2,
+  /** A group's ring (a folder's): its members' reach, at least this
+   *  many metres... */
+  groupRingMinM: 0.6,
+  /** ...plus this margin (m)... */
+  groupRingMarginM: 0.2,
+  /** ...and at least this many pixels. */
+  groupRingPx: 34,
+  /** A group's move disc at its pivot (px): small, so its members stay
+   *  in view and grabbable round it. */
+  groupMovePx: 26,
+  /** A group's scale drag stays within these factors (the format reads
+   *  0.1 to 10 from a file; the drag keeps to what is useful to aim). */
+  groupScaleMin: 0.2,
+  groupScaleMax: 5,
   /** The knob's stalk beyond the ring (px). */
   knobGapPx: 30,
   /** The knob's drawn size (px); half of it is its grip. */
@@ -108,6 +122,104 @@ export interface GizmoSubject {
   } | null;
   /** Its pose is locked: only its dots are handles. */
   readonly locked: boolean;
+  /** A group's (a folder's): how far its members reach from its pivot
+   *  (m, `groupSpanM`). Present, the ring rings them, the move disc is a
+   *  small one at the pivot and the members' bodies are grips; absent:
+   *  one object's gizmo. */
+  readonly spanM?: number;
+}
+
+/** An object's footprint on the ground (m, world x and z). */
+export interface Footprint {
+  readonly minX: number;
+  readonly maxX: number;
+  readonly minZ: number;
+  readonly maxZ: number;
+}
+
+/**
+ * How far a group's members reach from `centre` on the ground: the
+ * farthest corner of their footprints (m); 0 for none. A footprint with
+ * a bound that is not finite (an empty box: nothing drawn yet) counts
+ * nothing.
+ */
+export function groupSpanM(
+  centre: GroundSpot,
+  footprints: readonly Footprint[],
+): number {
+  let span = 0;
+  for (const f of footprints) {
+    if (![f.minX, f.maxX, f.minZ, f.maxZ].every(Number.isFinite)) continue;
+    const dx = Math.max(
+      Math.abs(f.minX - centre.x),
+      Math.abs(f.maxX - centre.x),
+    );
+    const dz = Math.max(
+      Math.abs(f.minZ - centre.z),
+      Math.abs(f.maxZ - centre.z),
+    );
+    span = Math.max(span, Math.hypot(dx, dz));
+  }
+  return span;
+}
+
+/** The dashed outline round a group: four corners on the ground, in
+ *  order round it from its front left, and where its name tag stands. */
+export interface GroupHull {
+  readonly corners: readonly GroundSpot[];
+  readonly tag: GroundSpot;
+}
+
+/**
+ * The rectangle square to `headingDeg` (its front faces the heading)
+ * round every corner of `footprints`, `padM` beyond the outermost on
+ * each side; its tag at the front left corner. Null when no footprint is
+ * a finite box (nothing drawn yet).
+ */
+export function groupHull(
+  centre: GroundSpot,
+  headingDeg: number,
+  footprints: readonly Footprint[],
+  padM: number,
+): GroupHull | null {
+  // The heading's own axes on the ground: forward, and right of it.
+  const fx = Math.sin(headingDeg * RAD);
+  const fz = -Math.cos(headingDeg * RAD);
+  const rx = -fz;
+  const rz = fx;
+  let minR = Infinity;
+  let maxR = -Infinity;
+  let minF = Infinity;
+  let maxF = -Infinity;
+  for (const b of footprints) {
+    if (![b.minX, b.maxX, b.minZ, b.maxZ].every(Number.isFinite)) continue;
+    for (const x of [b.minX, b.maxX]) {
+      for (const z of [b.minZ, b.maxZ]) {
+        const dx = x - centre.x;
+        const dz = z - centre.z;
+        const r = dx * rx + dz * rz;
+        const f = dx * fx + dz * fz;
+        minR = Math.min(minR, r);
+        maxR = Math.max(maxR, r);
+        minF = Math.min(minF, f);
+        maxF = Math.max(maxF, f);
+      }
+    }
+  }
+  if (minR > maxR) return null;
+  const at = (r: number, f: number): GroundSpot => ({
+    x: centre.x + r * rx + f * fx,
+    z: centre.z + r * rz + f * fz,
+  });
+  const left = minR - padM;
+  const right = maxR + padM;
+  const front = maxF + padM;
+  const back = minF - padM;
+  const tag = at(left, front);
+  return {
+    corners: [tag, at(right, front), at(right, back), at(left, back)],
+    tag,
+  };
 }
 
 /** Where the gizmo's parts lie (m, in the world). */
@@ -122,6 +234,9 @@ export interface GizmoLayout {
   readonly ringM: number | null;
   /** The move arrow's disc radius. */
   readonly moveM: number;
+  /** A group's: its members' bodies move it, and its disc wins over what
+   *  stands under it (`handleAt`'s `bodyGrips`). */
+  readonly bodyGrips: boolean;
   /** The four dots (a placeable with an extent), else none. */
   readonly dots: readonly GroundSpot[];
   /** The turn knob; null for what does not turn. */
@@ -173,19 +288,27 @@ export function gizmoLayout(
       `the metres a pixel covers must be finite and > 0, got ${metresPerPx}`,
     );
   }
-  const { extent } = subject;
+  const { extent, spanM } = subject;
   const reaches = extent?.kind === "reach";
+  const group = spanM !== undefined;
   const radius = reaches
     ? extent.value
-    : Math.max(
-        extent?.kind === "size"
-          ? GIZMO.modelRingPerSizeM * extent.value
-          : GIZMO.itemRingMinM,
-        GIZMO.itemRingPx * metresPerPx,
-      );
+    : group
+      ? Math.max(
+          Math.max(GIZMO.groupRingMinM, spanM) + GIZMO.groupRingMarginM,
+          GIZMO.groupRingPx * metresPerPx,
+        )
+      : Math.max(
+          extent?.kind === "size"
+            ? GIZMO.modelRingPerSizeM * extent.value
+            : GIZMO.itemRingMinM,
+          GIZMO.itemRingPx * metresPerPx,
+        );
   const moveM = reaches
     ? Math.max(GIZMO.stationMoveMinM, GIZMO.stationMovePx * metresPerPx)
-    : radius;
+    : group
+      ? GIZMO.groupMovePx * metresPerPx
+      : radius;
   const heading = subject.headingDeg;
   const dots =
     extent === null
@@ -200,6 +323,7 @@ export function gizmoLayout(
     headingDeg: heading,
     ringM: reaches ? null : radius,
     moveM,
+    bodyGrips: group,
     dots,
     knob: subject.turns ? along(subject.centre, heading, knobM) : null,
     bar: subject.turns
@@ -226,6 +350,12 @@ export type GizmoHandle = "move" | "turn" | "dot";
  * never takes a drag meant for the view. Null: the pointer moves the
  * camera. Not `posable` (a locked station): the dots
  * alone - the knob, the selection and the disc take no handle.
+ *
+ * With `bodyGrips` (a group's gizmo: a folder's), after the knob and the
+ * dots the small disc at the pivot moves, over whatever stands under it
+ * (it is drawn over the scene); then a member's body ("selected": the
+ * caller counts the group's members as the selection) moves too, and
+ * another object takes no handle.
  */
 export function handleAt(input: {
   readonly pointer: ScreenPoint;
@@ -238,6 +368,9 @@ export function handleAt(input: {
   readonly underPointer: "selected" | "other" | null;
   /** The middle and the knob are handles (default true). */
   readonly posable?: boolean;
+  /** A group's gizmo: the disc first, then its members' bodies (default
+   *  false). */
+  readonly bodyGrips?: boolean;
 }): GizmoHandle | null {
   const { pointer } = input;
   const posable = input.posable !== false;
@@ -256,6 +389,10 @@ export function handleAt(input: {
   const found = best as { handle: GizmoHandle; d: number } | null;
   if (found !== null) return found.handle;
   if (!posable) return null;
+  if (input.bodyGrips === true) {
+    if (input.onDisc || input.underPointer === "selected") return "move";
+    return null;
+  }
   if (input.underPointer === "other") return null;
   return input.onDisc ? "move" : null;
 }
@@ -293,6 +430,16 @@ export function draggedRadiusM(
 function threeDigits(m: number): number {
   const p = Math.pow(10, Math.floor(Math.log10(Math.max(1e-6, m))) - 2);
   return Number((Math.round(m / p) * p).toPrecision(3));
+}
+
+/** The bounds a group's scale drag keeps to: `GIZMO`'s range within
+ *  `format`'s, widened to `value` when the group is written beyond it
+ *  (it keeps its factor until the drag takes it inward). */
+export function groupScaleBounds(value: number, format: DotBounds): DotBounds {
+  return {
+    min: Math.max(format.min, Math.min(GIZMO.groupScaleMin, value)),
+    max: Math.min(format.max, Math.max(GIZMO.groupScaleMax, value)),
+  };
 }
 
 /**

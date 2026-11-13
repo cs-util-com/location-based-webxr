@@ -26,6 +26,7 @@ import {
   CHARACTER_VIEW_CHOICES,
   headingOfRotation,
   inspectorHint,
+  sceneHint,
   ON_GROUND_M,
 } from "./inspector-model.js";
 import {
@@ -443,6 +444,8 @@ describe("buildInspector", () => {
       expect(shown.offset?.upM).toBeCloseTo(3, 9);
       expect(shown.offset?.eastM).toBeCloseTo(-5, 9);
       expect(shown.headingDeg).toBeCloseTo(270, 6);
+      // Its folder, to select from here: the 3D view's way to a folder.
+      expect(shown.folder?.id).toBe("f");
       expect(at(() => 562.25)).toMatchObject({ groundOffM: 3 });
       // The station's count of items off the ground judges it there too.
       expect(
@@ -578,6 +581,7 @@ describe("buildInspector", () => {
       headingDeg: 0,
       // A pin faces the visitor: its gizmo has no round arrow.
       turns: false,
+      folder: null,
       groundOffM: null,
     });
     expect(inspect("model-1")).toMatchObject({
@@ -1033,9 +1037,18 @@ describe("buildInspector: a plain folder", () => {
       },
     ],
   };
+  // An item beside the folder, which its item list must leave out.
+  const loose = {
+    id: "loose",
+    kind: "shortText",
+    view: "pin",
+    caption: "Loose",
+    createdAtIso: AT,
+    pose: { position: [-3, 0, 1], rotation: [0, 0, 0, 1] },
+  };
   const station = {
     ...STATIONS[0]!,
-    children: [folder],
+    children: [folder, loose],
   } as unknown as TourStation;
   const at = (selected: string, groundAt?: () => number) =>
     buildInspector({
@@ -1071,5 +1084,27 @@ describe("buildInspector: a plain folder", () => {
 
   it("shows nothing for a folder the tour lacks", () => {
     expect(at("folder:nope")).toBeNull();
+  });
+
+  // Why: the items list is the folder's way to one of its items alone (a
+  // press selects it), and "Select its items" picks them all; both need
+  // every item it holds, nested ones too, by kind and name. The hint over
+  // the scene says what its gizmo does with them, by count.
+  it("lists its items, by kind and name, and says over the scene that they move together", () => {
+    const shown = at("folder:f");
+    if (shown?.kind !== "folder") throw new Error("not a folder");
+    expect(shown.items).toEqual([{ id: "deep", kind: "pin", title: "Deep" }]);
+    expect(sceneHint(shown)).toBe(
+      "Benches - 1 item moves, turns and scales with it. Click it to move it alone.",
+    );
+    expect(
+      sceneHint({ ...shown, items: [...shown.items, ...shown.items] }),
+    ).toBe(
+      "Benches - 2 items move, turn and scale together. Click one to move it alone.",
+    );
+    expect(sceneHint(at("folder:nope"))).toBeNull();
+    // An item is moved alone: no line over the scene for it.
+    expect(at("loose")).not.toBeNull();
+    expect(sceneHint(at("loose"))).toBeNull();
   });
 });

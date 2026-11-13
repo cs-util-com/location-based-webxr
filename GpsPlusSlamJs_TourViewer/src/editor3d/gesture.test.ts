@@ -13,6 +13,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 
 import {
+  CONTAINER_PLACEMENT,
   STATION_PLACEMENT,
   blockPlacement,
   type ExtentSpec,
@@ -280,6 +281,37 @@ describe("a dot", () => {
     const big = startGesture("dot", model(40), at(0, 4), world);
     big?.move(at(0, 8), false);
     expect(big?.preview().value).toBe(80);
+  });
+  // Why: a folder's dots scale its whole group, and the gizmo keeps that
+  // drag between 0.2 and 5 times (a drag past it would shrink the items
+  // into the pivot or throw them far off); the format still reads 0.1 to
+  // 10 from a file, and a folder written outside the drag's range must
+  // not jump into it at the first touch - it keeps its factor until the
+  // drag takes it inward.
+  it("keeps a folder's scale drag between 0.2 and 5, a factor beyond them as it was", () => {
+    const { world } = flatWorld();
+    const folder = (scale: number): GestureTarget => ({
+      ...LECTERN,
+      ref: { kind: "folder", id: "f" },
+      extent: dots(CONTAINER_PLACEMENT.extent, scale),
+      members: ["a", "b"],
+    });
+    const up = startGesture("dot", folder(2), at(0, 4), world);
+    up?.move(at(0, 40), false);
+    expect(up?.preview().value).toBe(5);
+    const down = startGesture("dot", folder(1), at(0, 40), world);
+    down?.move(at(0, 1), false);
+    expect(down?.preview().value).toBe(0.2);
+    // Written at 8 from a file: a drag outward keeps 8 at most, inward
+    // follows the hand.
+    const big = startGesture("dot", folder(8), at(0, 4), world);
+    big?.move(at(0, 8), false);
+    expect(big?.preview().value).toBe(8);
+    big?.move(at(0, 2), false);
+    expect(big?.preview().value).toBe(4);
+    const small = startGesture("dot", folder(0.1), at(0, 4), world);
+    small?.move(at(0, 2), false);
+    expect(small?.preview().value).toBe(0.1);
   });
 
   it("is no handle of a pin or a photo", () => {

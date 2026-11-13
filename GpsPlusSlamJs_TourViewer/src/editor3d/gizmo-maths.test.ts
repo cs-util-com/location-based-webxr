@@ -20,6 +20,8 @@ import {
   draggedRadiusM,
   draggedSizeM,
   gizmoLayout,
+  groupHull,
+  groupSpanM,
   handleAt,
   sceneKey,
   turnedHeadingDeg,
@@ -176,6 +178,185 @@ describe("the gizmo's layout", () => {
   });
 });
 
+// Why: a folder is moved as a whole, so its gizmo must ring all of its
+// items (a creator sees what follows) and keep its move grip small at the
+// pivot - an item-size disc there would hide the items and take every
+// press meant for one of them. Pinned to the chosen prototype's sizes.
+describe("a group's gizmo (a folder at its pivot)", () => {
+  const group = (spanM: number, headingDeg = 0): GizmoSubject => ({
+    ...ITEM,
+    headingDeg,
+    extent: { kind: "factor", value: 1 },
+    spanM,
+  });
+
+  it("rings its members: their reach plus 0.2 m, at least 0.8 m and 34 px", () => {
+    expect(gizmoLayout(group(3), 0.01).ringM).toBeCloseTo(3.2, 9);
+    // A tight group (or an empty one): the 0.6 m floor plus the margin.
+    expect(gizmoLayout(group(0.1), 0.01).ringM).toBeCloseTo(0.8, 9);
+    expect(gizmoLayout(group(0), 0.01).ringM).toBeCloseTo(0.8, 9);
+    // Far away: 34 px of 0.1 m is 3.4 m.
+    expect(gizmoLayout(group(3), 0.1).ringM).toBeCloseTo(3.4, 9);
+  });
+
+  it("keeps its move disc 26 px at any zoom, and its members' bodies as grips", () => {
+    for (const mpp of [0.001, 0.01, 0.1, 1]) {
+      const l = gizmoLayout(group(3), mpp);
+      expect(l.moveM / mpp).toBeCloseTo(GIZMO.groupMovePx, 9);
+      expect(l.bodyGrips).toBe(true);
+    }
+    // An item's and a station's gizmo keep theirs: no body grips.
+    expect(gizmoLayout(model(2), 0.01).bodyGrips).toBe(false);
+    expect(gizmoLayout(station(25), 0.01).bodyGrips).toBe(false);
+  });
+
+  it("puts its scale dots on the ring and its knob 30 px beyond, for any heading, span and zoom", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: 0, max: 360, noNaN: true }),
+        fc.double({ min: 0, max: 5_000, noNaN: true }),
+        fc.double({ min: 1e-4, max: 5, noNaN: true }),
+        (headingDeg, spanM, mpp) => {
+          const l = gizmoLayout(group(spanM, headingDeg), mpp);
+          const ring = l.ringM ?? Number.NaN;
+          expect(ring).toBeGreaterThanOrEqual(
+            Math.max(0.6, spanM) + 0.2 - 1e-9,
+          );
+          expect(ring).toBeGreaterThanOrEqual(34 * mpp - 1e-9);
+          expect(l.dots).toHaveLength(4);
+          for (const dot of l.dots) {
+            expect(Math.hypot(dot.x - CENTRE.x, dot.z - CENTRE.z)).toBeCloseTo(
+              ring,
+              6,
+            );
+          }
+          const knob = l.knob;
+          if (knob === null) throw new Error("a folder turns");
+          expect(Math.hypot(knob.x - CENTRE.x, knob.z - CENTRE.z)).toBeCloseTo(
+            ring + 30 * mpp,
+            6,
+          );
+        },
+      ),
+    );
+  });
+
+  it("reads its members' reach as the farthest corner of their footprints", () => {
+    const centre = { x: 10, y: 0, z: -4 };
+    expect(groupSpanM(centre, [])).toBe(0);
+    expect(
+      groupSpanM(centre, [
+        { minX: 11, maxX: 12, minZ: -4, maxZ: -4 },
+        { minX: 7, maxX: 8, minZ: -8, maxZ: -6 },
+      ]),
+    ).toBeCloseTo(5, 9);
+    // A box the pivot stands in still counts its far corner.
+    expect(
+      groupSpanM(centre, [{ minX: 9, maxX: 13, minZ: -4, maxZ: 0 }]),
+    ).toBeCloseTo(5, 9);
+    // An empty or broken box (nothing drawn yet) counts nothing.
+    expect(
+      groupSpanM(centre, [
+        { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity },
+        { minX: Number.NaN, maxX: 1, minZ: 0, maxZ: 1 },
+      ]),
+    ).toBe(0);
+  });
+});
+
+describe("the dashed outline round a group", () => {
+  // Why: the outline is how the creator sees what a folder holds and
+  // where its name stands; it must hold every member's footprint, sit
+  // square to the folder's heading (it turns with the folder), and keep
+  // its margin, or a member would poke out of the drawn group.
+  it("rings its members' footprints square to the heading, padded, its tag at the front left", () => {
+    const hull = groupHull(
+      { x: 10, z: -4 },
+      0,
+      [
+        { minX: 11, maxX: 12, minZ: -4, maxZ: -4 },
+        { minX: 7, maxX: 8, minZ: -8, maxZ: -6 },
+      ],
+      0.5,
+    );
+    // Heading 0 faces north (-z): front is the north edge, left the west.
+    const near = (
+      p: { x: number; z: number } | undefined,
+      x: number,
+      z: number,
+    ) => {
+      expect(p?.x).toBeCloseTo(x, 9);
+      expect(p?.z).toBeCloseTo(z, 9);
+    };
+    near(hull?.corners[0], 6.5, -8.5);
+    near(hull?.corners[1], 12.5, -8.5);
+    near(hull?.corners[2], 12.5, -3.5);
+    near(hull?.corners[3], 6.5, -3.5);
+    near(hull?.tag, 6.5, -8.5);
+  });
+
+  it("holds every footprint corner, each edge one margin from the nearest, at any heading", () => {
+    const box = fc
+      .tuple(
+        fc.double({ min: -20, max: 20, noNaN: true }),
+        fc.double({ min: -20, max: 20, noNaN: true }),
+        fc.double({ min: 0, max: 5, noNaN: true }),
+        fc.double({ min: 0, max: 5, noNaN: true }),
+      )
+      .map(([x, z, w, d]) => ({ minX: x, maxX: x + w, minZ: z, maxZ: z + d }));
+    fc.assert(
+      fc.property(
+        fc.double({ min: -360, max: 720, noNaN: true }),
+        fc.array(box, { minLength: 1, maxLength: 5 }),
+        (headingDeg, boxes) => {
+          const centre = { x: 1, z: 2 };
+          const pad = 0.3;
+          const hull = groupHull(centre, headingDeg, boxes, pad);
+          expect(hull).not.toBeNull();
+          const c = hull?.corners ?? [];
+          expect(c).toHaveLength(4);
+          // Each edge as the line through two corners; a point's signed
+          // distance inside it.
+          const inside = (p: { x: number; z: number }, a: number) => {
+            const p0 = c[a];
+            const p1 = c[(a + 1) % 4];
+            const p3 = c[(a + 3) % 4];
+            if (p0 === undefined || p1 === undefined || p3 === undefined)
+              throw new Error("corner");
+            const len = Math.hypot(p3.x - p0.x, p3.z - p0.z);
+            return (
+              ((p.x - p0.x) * (p3.x - p0.x) + (p.z - p0.z) * (p3.z - p0.z)) /
+              len
+            );
+          };
+          const corners = boxes.flatMap((b) => [
+            { x: b.minX, z: b.minZ },
+            { x: b.maxX, z: b.minZ },
+            { x: b.maxX, z: b.maxZ },
+            { x: b.minX, z: b.maxZ },
+          ]);
+          for (let edge = 0; edge < 4; edge += 1) {
+            const depths = corners.map((p) => inside(p, edge));
+            expect(Math.min(...depths)).toBeCloseTo(pad, 6);
+          }
+        },
+      ),
+    );
+  });
+
+  it("is none without a drawn member", () => {
+    expect(groupHull({ x: 0, z: 0 }, 0, [], 0.3)).toBeNull();
+    expect(
+      groupHull(
+        { x: 0, z: 0 },
+        0,
+        [{ minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity }],
+        0.3,
+      ),
+    ).toBeNull();
+  });
+});
+
 describe("which handle the pointer is on", () => {
   const knob = { x: 100, y: 100 };
   const dots = [
@@ -266,6 +447,50 @@ describe("which handle the pointer is on", () => {
       expect(
         handleAt({ ...base, onDisc: false, underPointer: "other" }),
       ).toBeNull();
+    });
+
+    // Why: a folder has no body of its own; its items are what a creator
+    // sees and grabs, so each member's body moves the whole folder, and the
+    // small disc at the pivot wins over whatever stands under it (it is
+    // drawn over the scene). Another object still takes no handle.
+    describe("with body grips (a folder)", () => {
+      const grips = { ...base, bodyGrips: true };
+      it("a member's body, off the disc: moves", () => {
+        expect(
+          handleAt({ ...grips, onDisc: false, underPointer: "selected" }),
+        ).toBe("move");
+      });
+      it("the disc, even over another object: moves", () => {
+        expect(
+          handleAt({ ...grips, onDisc: true, underPointer: "other" }),
+        ).toBe("move");
+      });
+      it("another object off the disc: no handle; empty ground: the camera's", () => {
+        expect(
+          handleAt({ ...grips, onDisc: false, underPointer: "other" }),
+        ).toBeNull();
+        expect(
+          handleAt({ ...grips, onDisc: false, underPointer: null }),
+        ).toBeNull();
+      });
+      it("the knob and the dots still come first", () => {
+        expect(
+          handleAt({
+            ...grips,
+            pointer: knob,
+            onDisc: true,
+            underPointer: "selected",
+          }),
+        ).toBe("turn");
+        expect(
+          handleAt({
+            ...grips,
+            pointer: { x: 200, y: 100 },
+            onDisc: false,
+            underPointer: "other",
+          }),
+        ).toBe("dot");
+      });
     });
 
     it("empty ground: the camera's", () => {

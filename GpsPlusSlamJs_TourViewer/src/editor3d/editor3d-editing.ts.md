@@ -41,9 +41,11 @@ pure gesture maths reads (`GestureWorld`).
     `underAt(pointer)` (what a press there picks, and whether it meets
     the move disc),
     `handleSizes()` - for the page's checks: CSS px on the canvas.
-  - `folderOutlines()` - how many teal boxes the folder outline
-    (`folder-outline.ts`) draws now: around each item of a selected
-    plain folder, refreshed in `update()`; for the page's checks.
+  - `folderOutlines()` - what the folder outline (`folder-outline.ts`)
+    draws now (`FolderOutlineShown`): how many teal boxes round a
+    selected plain folder's items, and its dashed outline and name tag
+    while its gizmo is drawn, refreshed in `update()`; for the page's
+    checks.
   - `dispose()` (the outline's too).
 - Types `GizmoPart`, `EditingCamera` (`lock(on)`, the optional
   `takesTwoFingers`, `twoFingerStart()`, `twoFinger(mode, last, now, world)`, `lookAt()`); `takesTwoFingers` reaches the input as
@@ -90,6 +92,11 @@ pure gesture maths reads (`GestureWorld`).
   A card, a code or a story's step is no target. Of the dots, a station's
   reach and a model's size are shown; others (a picture's width) wait for
   a write of any extent through the session.
+- A group's gizmo (a plain folder's: `GestureTarget.members`) is measured
+  each frame from its members' drawings (`layer.itemObjects`, their boxes
+  in the world, a preview included): their reach from the pivot sets its
+  ring (`groupSpanM`). Under the pointer, a member counts as the
+  selection, so its body is a move grip (`handleAt`'s `bodyGrips`).
 - An item's gizmo centre is the ground under it (where loaded, else its
   own height); a station's is its point.
 - **A locked camera stands still:** `lockCamera(true)` (a press on a

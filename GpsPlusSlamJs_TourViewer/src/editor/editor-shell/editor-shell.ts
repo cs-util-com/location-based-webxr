@@ -115,6 +115,7 @@ import {
   buildInspector,
   detailsOnPhone,
   inspectorHint,
+  sceneHint,
   type InspectorCode,
   type InspectorModel,
 } from "./inspector-model.js";
@@ -621,6 +622,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   const needle = byId<HTMLElement>("compass-needle");
   /** The selection's hint, in the help (what a click there does). */
   const helpHint = byId("shell-help-hint");
+  /** The line over the 3D view for the selection (a folder's). */
+  const sceneHintLine = byId("shell-scene-hint");
   for (const root of [byId("topbar"), byId("view3d")]) placeShellIcons(root);
 
   const pictures = createShellPictures({
@@ -1050,6 +1053,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     drawInspectorNow(model);
     drawActs(model);
     helpHint.textContent = inspectorHint(model);
+    const overScene = sceneHint(model);
+    sceneHintLine.hidden = overScene === null;
+    sceneHintLine.textContent = overScene ?? "";
     panel.problems(tourProblems(tour?.stations ?? []), ui.selected);
     // The cards and the thumbnail a draw replaced are no longer watched.
     pictures.sweep();
@@ -2053,6 +2059,17 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     }
     if (act === "delete") deleteSelected(selected);
     if (act === "split") deps.stations.split(selected);
+    // An item's "Select the folder": the 3D view's way to its folder.
+    if (act?.startsWith("select:") === true)
+      deps.select(act.slice("select:".length));
+    // A folder's Pivot to centre and Select its items.
+    if (act === "pivot-centre" || act === "select-items") {
+      const model = inspectorModel(state().editorView);
+      if (model?.kind === "folder" && act === "pivot-centre")
+        deps.folders.pivotToCentre(model.folderId);
+      if (model?.kind === "folder" && act === "select-items")
+        pickRows(model.items.map((item) => item.id));
+    }
     if (act === "ground" || act === "ground-items") void runGround(act);
     if (
       act?.startsWith("image:") === true &&

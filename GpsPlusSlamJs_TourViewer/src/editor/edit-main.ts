@@ -812,7 +812,9 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
         ) => readonly [number, number] | null;
         view3dGizmoSizes: () => ReturnType<Editor3dView["gizmoSizes"]>;
         view3dModelParts: () => ReturnType<Editor3dView["modelParts"]> | null;
-        view3dFolderOutlines: () => number | null;
+        view3dFolderOutlines: () => ReturnType<
+          Editor3dView["folderOutlines"]
+        > | null;
         view3dModelScreen: (
           id: string,
           at: readonly [number, number, number],

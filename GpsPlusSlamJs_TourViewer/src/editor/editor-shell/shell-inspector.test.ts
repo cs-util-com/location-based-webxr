@@ -44,7 +44,7 @@ const NO_PLACE = {
   offset: null,
   headingDeg: null,
   turns: false,
-
+  folder: null,
   groundOffM: null,
 } as const;
 
@@ -403,6 +403,32 @@ describe("drawInspector", () => {
     expect(dock.body.querySelector('[data-field="east"]')).toBeNull();
   });
 
+  // Why: in the 3D view a click on a folder's item picks the item alone,
+  // so its inspector is the 3D view's way to the folder (the tree's row is
+  // the other); an item at its station's top has no folder to offer.
+  it("offers to select the folder holding a placed item, by its name", () => {
+    const placed = {
+      ...NO_PLACE,
+      itemKind: "shortText",
+      offset: { northM: 1, upM: 0, eastM: 2 },
+      headingDeg: 0,
+      fields: [],
+    } as const;
+    drawInspector(
+      dock,
+      { ...placed, folder: { id: "f", title: "Benches" } },
+      FOLD,
+      pictures,
+    );
+    const button = dock.body.querySelector<HTMLButtonElement>(
+      '[data-act="select:folder:f"]',
+    );
+    expect(button?.textContent).toContain("Select the folder");
+    expect(button?.textContent).toContain("Benches");
+    drawInspector(dock, placed, FOLD, pictures);
+    expect(dock.body.querySelector('[data-act^="select:"]')).toBeNull();
+  });
+
   // Why: a sound's radius, reach and volume are numbers (block-fields.ts
   // `number`): typed in a decimal box with the unit beside it, never a
   // text with a character counter.
@@ -710,10 +736,12 @@ describe("drawInspector", () => {
     ).toBe(dock.body.querySelector(".pos .f > .flabel")?.id);
   });
 
-  // Why: a folder's Scale and Place are what the creator types to move,
-  // turn or scale its whole group; each field must carry the folder's
-  // value and its name, or the edit would land on nothing.
-  it("shows a folder's scale and, under Place, its origin and heading to type", () => {
+  // Why: a folder's pivot fields are what the creator types to move, turn
+  // or scale its whole group; each field must carry the folder's value
+  // and its name, or the edit would land on nothing. They show open, under
+  // their own heading, as the chosen design has them (a folder has no
+  // other fields to fold them away from).
+  it("shows a folder's pivot to type: its position, height, heading and scale", () => {
     const folderStation = {
       ...STATIONS[0]!,
       children: [
@@ -736,23 +764,82 @@ describe("drawInspector", () => {
     drawInspector(
       dock,
       model,
-      { folded: false, positionOpen: true, busy: null },
+      { folded: false, positionOpen: false, busy: null },
       pictures,
     );
     expect(dock.head.querySelector(".ttl")?.textContent).toBe("Benches");
+    expect(dock.body.querySelector(".isec-h")?.textContent).toBe(
+      "Pivot (from the station centre)",
+    );
     expect(dock.body.querySelector(".sub")?.textContent).toBe(
       "Folder in The old gate, 0 items",
     );
     expect(fields()).toEqual([
-      [expect.any(String), "2.00 x"],
-      ["Offset east", "-2.00 m"],
-      ["Offset north", "4.00 m"],
+      ["Position east", "-2.00 m"],
+      ["Position north", "4.00 m"],
       ["Height", "1.00 m"],
       ["Heading", "0.0 deg"],
+      ["Scale", "2.00 x"],
     ]);
     for (const name of ["scale", "east", "north", "height", "heading"]) {
       expect(input(name)).not.toBeNull();
     }
+  });
+
+  // Why: the prototype's folder inspector is the way from the folder to
+  // one of its items alone (a row selects it, as the tree's does), to all
+  // of them picked ("Select its items"), and to a pivot at their centre;
+  // each must carry the act the shell answers, and an empty folder offers
+  // no pick of nothing.
+  it("lists a folder's items to select alone, and offers Pivot to centre and Select its items", () => {
+    const pinOf = (id: string, caption: string) => ({
+      id,
+      kind: "shortText",
+      view: "pin",
+      caption,
+      createdAtIso: AT,
+      pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+    });
+    const station = (children: unknown[]) =>
+      ({
+        ...STATIONS[0]!,
+        children: [
+          {
+            id: "f",
+            kind: "folder",
+            title: "Benches",
+            pose: { position: [4, 1, -2], rotation: [0, 0, 0, 1] },
+            children,
+          },
+        ],
+      }) as unknown as TourStation;
+    const show = (children: unknown[]) => {
+      drawInspector(
+        dock,
+        buildInspector({
+          selected: "folder:f",
+          stations: [station(children)],
+          assets: [],
+          codes: CODES,
+        }),
+        { folded: false, positionOpen: false, busy: null },
+        pictures,
+      );
+    };
+    show([pinOf("a", "North bench"), pinOf("b", "South bench")]);
+    const rows = [...dock.body.querySelectorAll<HTMLElement>(".kids .kid")];
+    expect(rows.map((r) => [r.dataset["act"], r.textContent])).toEqual([
+      ["goto:a", "North bench"],
+      ["goto:b", "South bench"],
+    ]);
+    const act = (name: string) =>
+      dock.body.querySelector<HTMLButtonElement>(`[data-act="${name}"]`);
+    expect(act("pivot-centre")?.textContent).toContain("Pivot to centre");
+    expect(act("select-items")?.textContent).toContain("Select its items");
+    expect(act("select-items")?.disabled).toBe(false);
+    show([]);
+    expect(dock.body.querySelectorAll(".kids .kid")).toHaveLength(0);
+    expect(act("select-items")?.disabled).toBe(true);
   });
 
   it("shows an item's offset in its station's frame, its height and heading to type", () => {

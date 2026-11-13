@@ -40,6 +40,7 @@ import {
   compassDeg,
   draggedRadiusM,
   draggedSizeM,
+  groupScaleBounds,
   turnedHeadingDeg,
   type GizmoHandle,
   type GizmoSubject,
@@ -82,7 +83,12 @@ export interface GestureWorld {
 export type GestureTarget = Pick<
   Placeable,
   "ref" | "geo" | "turns" | "lifts" | "extent" | "locked"
-> & { readonly centre: WorldPoint };
+> & {
+  readonly centre: WorldPoint;
+  /** A group's (a folder's) members: their bodies are its grips, and a
+   *  click on one picks it alone; absent for one object. */
+  readonly members?: readonly string[];
+};
 
 /** What the scene shows while a gesture runs. */
 export interface GesturePreview {
@@ -133,18 +139,22 @@ export function gestureTargetOf(
     extent: p.extent,
     locked: p.locked,
     centre,
+    ...(p.group ? { members: p.members } : {}),
   };
 }
 
 /** What the gizmo is drawn for: `target` as `now` shows it, at
- *  `centre`. */
+ *  `centre`; a group's with its members' reach `spanM` (the scene
+ *  measures it from their drawings). */
 export function gizmoSubjectOf(
   target: GestureTarget,
   now: GesturePreview,
   centre: WorldPoint,
+  spanM?: number,
 ): GizmoSubject {
   const { extent } = target;
   return {
+    ...(target.members === undefined ? {} : { spanM: spanM ?? 0 }),
     centre,
     headingDeg: headingOfGeo(now.geo),
     turns: target.turns,
@@ -257,7 +267,15 @@ export function startGesture(
       value:
         extent.kind === "reach"
           ? draggedRadiusM(d, fine, extent)
-          : draggedSizeM(extent.value, dotStart, d, extent),
+          : draggedSizeM(
+              extent.value,
+              dotStart,
+              d,
+              // A group's scale drag keeps to the gizmo's narrower range.
+              target.members !== undefined
+                ? groupScaleBounds(extent.value, extent)
+                : extent,
+            ),
     };
     return true;
   };

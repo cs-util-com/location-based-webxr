@@ -174,6 +174,10 @@ export interface FolderCommands {
    *  top-level folders (the tree's drag of a folder row): whether it
    *  moved. Its own place is no step, quietly. */
   reorder(folderId: string, index: number): boolean;
+  /** The folder's pivot put at the centre of its items, nothing moving
+   *  (the inspector's Pivot to centre): whether it changed. Said either
+   *  way; a pivot there already is no step. */
+  pivotToCentre(folderId: string): boolean;
 }
 
 function counted(n: number, one: string, many: string): string {
@@ -318,6 +322,31 @@ export function createFolderCommands(deps: FolderCommandDeps): FolderCommands {
           what: `the name of "${folderName(place.folder)}"`,
         }),
       );
+    },
+    pivotToCentre(folderId) {
+      const place = plainFolderOf(deps.getState(), folderId);
+      if (place === null) {
+        refused("gone");
+        return false;
+      }
+      const name = folderName(place.folder);
+      if (place.itemIds.length === 0) {
+        deps.say(`"${name}" holds no items to centre its pivot on`);
+        return false;
+      }
+      const took = edit(
+        tourDocumentActions.folderPivotCentred({
+          stationId: place.stationId,
+          folderId,
+          what: `the pivot of "${name}"`,
+        }),
+      );
+      deps.say(
+        took
+          ? `The pivot of "${name}" stands at its items' centre - nothing moved`
+          : `The pivot of "${name}" already stands at its items' centre`,
+      );
+      return took;
     },
     reorder(folderId, index) {
       const place = plainFolderOf(deps.getState(), folderId);

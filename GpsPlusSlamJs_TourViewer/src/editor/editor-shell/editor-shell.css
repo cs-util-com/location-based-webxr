@@ -1356,6 +1356,16 @@ body {
   border-top: 1px solid var(--s-line);
 }
 
+/* A section's heading in the inspector (a folder's Pivot, its Items). */
+.isec-h {
+  margin: 2px 0 4px;
+  color: var(--s-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .f {
   display: grid;
   grid-template-columns: 74px minmax(0, 1fr);
@@ -1954,6 +1964,37 @@ body[data-view="3d"] #view3d:has(#shell-inspector:not([hidden], .collapsed)) {
 body[data-view="3d"] #view3d .view3d-canvas {
   width: calc(100% - var(--s-view-left) - var(--s-view-right));
   margin-left: var(--s-view-left);
+}
+
+/* The line over the scene for the selection (a folder's: its items move
+ * together), centred on the canvas between the open docks; a picture of
+ * words, so a press goes through to the scene. */
+.scene-hint {
+  position: absolute;
+  top: 12px;
+  left: calc(
+    var(--s-view-left, 0px) +
+      (100% - var(--s-view-left, 0px) - var(--s-view-right, 0px)) / 2
+  );
+  z-index: 3;
+  max-width: min(
+    560px,
+    calc(100% - var(--s-view-left, 0px) - var(--s-view-right, 0px) - 32px)
+  );
+  margin: 0;
+  padding: 6px 14px;
+  border: 1px solid var(--s-line2);
+  border-radius: 16px;
+  background: rgb(20 22 26 / 88%);
+  color: var(--s-muted);
+  font: 12px/1.45 var(--s-sans);
+  text-align: center;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.scene-hint[hidden] {
+  display: none;
 }
 
 /* At the view's foot between the open docks (each runs down to the bottom
@@ -2812,6 +2853,16 @@ body[data-view="3d"] #view3d .view3d-canvas {
     top: 12px;
     right: 12px;
     bottom: auto;
+  }
+
+  /* At the view's top left, beside the map controls at its top right
+   * (a compass and two zoom buttons of 38 px, 8 px apart): the gizmo in
+   * the short view below stays clear. */
+  .scene-hint {
+    left: 12px;
+    max-width: calc(100% - 24px - 3 * 38px - 1px - 8px - 8px);
+    text-align: left;
+    transform: none;
   }
 
   #studio-list {

@@ -72,6 +72,7 @@ describe("a plain folder as a placeable", () => {
       lifts: true,
       locked: false,
       members: ["a", "b"],
+      group: true,
     });
     expect(outer?.extent).toMatchObject({
       kind: "factor",

@@ -451,9 +451,25 @@ interface ItemInspector {
   /** Its gizmo turns it (its placement row's `turns`): a pin or a sound
    *  faces the visitor instead; false for one with no place. */
   readonly turns: boolean;
+  /** The plain folder holding it (the innermost), to select from here
+   *  (the 3D view's path to a folder); null at its station's top. */
+  readonly folder: { readonly id: string; readonly title: string } | null;
   /** Its height over the ground (m); null before the ground there has
    *  loaded. */
   readonly groundOffM: number | null;
+}
+
+/** The plain folder `id` of `station` with its name, or null (none, or
+ *  one the station lacks). */
+function holdingFolderOf(
+  station: TourStation,
+  id: string | undefined,
+): { readonly id: string; readonly title: string } | null {
+  const folder =
+    id === undefined ? undefined : folderChains(station).get(id)?.at(-1);
+  return folder === undefined
+    ? null
+    : { id: folder.id, title: folderName(folder) };
 }
 
 /** A plain folder's scale as its inspector types it: its placement
@@ -486,6 +502,9 @@ interface FolderInspector {
   /** Its origin's height over the ground (m); null before the ground
    *  there has loaded. */
   readonly groundOffM: number | null;
+  /** The items it holds at any depth, by kind and name, in the tour's
+   *  order: each movable alone from here (a press selects it). */
+  readonly items: readonly StationContent[];
   /** A phone shows no details sheet for it: a tap keeps the list, where
    *  its band marks the items that move with it, and its 3D handles move,
    *  turn and scale it. Its typed fields are a wider window's. */
@@ -551,6 +570,16 @@ export function inspectorHint(model: InspectorModel | null): string {
     return `${model.title} - it has no place in the 3D view; Esc deselects`;
   }
   return `${model.title} - read-only here; F frames it, Esc deselects`;
+}
+
+/** The line over the 3D view for the selection: what a folder's gizmo
+ *  does with its items, by count; null for any other selection. */
+export function sceneHint(model: InspectorModel | null): string | null {
+  if (model?.kind !== "folder") return null;
+  const n = model.items.length;
+  return n === 1
+    ? `${model.title} - 1 item moves, turns and scales with it. Click it to move it alone.`
+    : `${model.title} - ${String(n)} items move, turn and scale together. Click one to move it alone.`;
 }
 
 /** A code as the inspector reads it. */
@@ -880,6 +909,7 @@ function folderInspector(
     },
     headingDeg: headingOfRotation(inStation.rotation),
     groundOffM: offGroundOf(place.geo, groundAt),
+    items: stationContents(station).filter((c) => place.members.includes(c.id)),
     phoneDetails: false,
   };
 }
@@ -1026,6 +1056,7 @@ export function buildInspector(input: {
       headingDeg:
         inStation === null ? null : headingOfRotation(inStation.rotation),
       turns: place?.turns ?? false,
+      folder: holdingFolderOf(station, place?.folderPath.at(-1)),
       groundOffM: place === null ? null : offGroundOf(place.geo, groundAt),
     };
   }
