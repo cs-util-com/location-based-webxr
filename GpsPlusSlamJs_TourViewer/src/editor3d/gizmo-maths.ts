@@ -17,6 +17,7 @@
  *
  * @see gizmo-maths.ts.md
  */
+import type { LinearRing } from "../placement/placement-rows.js";
 
 /**
  * How tall (m) the view of a vertical lens of `fovDeg` is at 1 m from the
@@ -109,7 +110,7 @@ export interface GizmoSubject {
     | {
         readonly kind: "scale";
         readonly value: number;
-        readonly ring: { readonly baseM: number; readonly perM: number };
+        readonly ring: LinearRing;
       }
     | null;
   /** Its bend (degrees, clockwise) for what bends: a knob behind its
@@ -319,7 +320,7 @@ export function draggedRadiusM(
 export function draggedScale(
   distanceM: number,
   fine: boolean,
-  ring: { readonly baseM: number; readonly perM: number },
+  ring: LinearRing,
   bounds: DotBounds,
 ): number {
   const s = (distanceM - ring.baseM) / ring.perM;
