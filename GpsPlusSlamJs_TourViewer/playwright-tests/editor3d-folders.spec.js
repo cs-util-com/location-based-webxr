@@ -194,10 +194,14 @@ async function openFolders(page, zip) {
  */
 async function unfold(page) {
   // Docked, the tree is moved into the layout a moment after the 3D view
-  // opens; a phone shows it on its List button's press.
+  // opens; a phone shows it on its List button's press, and wider than
+  // 700 px (a phone on its side), where the top bar is the desk's, on its
+  // List tab.
   await dockSettled(page, page.viewportSize()?.width ?? 0);
   if (!(await page.locator("#tree-body").isVisible())) {
-    await page.locator("#studio-list").click();
+    const button = page.locator("#studio-list");
+    if (await button.isVisible()) await button.click();
+    else await page.locator('.dock-host .dock-tab[data-panel="list"]').click();
   }
   const card = page.locator('#tree-body .card[data-station="a"]');
   const p = card.locator('.kid[data-select="p"]');
