@@ -11,7 +11,8 @@ tile in memory.
 
 - `hasGzipMagic(bytes)` - the body starts with `1f 8b`.
 - `inflateHead(gzip, maxBytes)` - the first `maxBytes` decoded bytes,
-  inflating at most the first `GZIP_HEAD_INPUT_BYTES` (16 KB) of input.
+  inflating at most the first 16 KB (`GZIP_HEAD_INPUT_BYTES`, module-private)
+  of input.
   Rejects when those bytes are not a valid gzip start, or when a body
   given whole fails to inflate; a stream merely cut at the input bound is
   fine once anything came out.
@@ -19,7 +20,6 @@ tile in memory.
   its end (through `DecompressionStream` when `gzip`), keeping only the
   first `headBytes` and the last `tailBytes`. Rejects on a gzip error,
   a cut gzip stream included.
-- `GZIP_HEAD_INPUT_BYTES` - 16,384.
 
 ## Invariants & assumptions
 

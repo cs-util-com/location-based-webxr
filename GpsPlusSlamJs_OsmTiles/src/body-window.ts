@@ -7,7 +7,7 @@
  */
 
 /** Gzip bytes of an answer's start that are inflated for its head. */
-export const GZIP_HEAD_INPUT_BYTES = 16_384;
+const GZIP_HEAD_INPUT_BYTES = 16_384;
 
 /** Whether `bytes` start with the gzip magic number (1f 8b). */
 export function hasGzipMagic(bytes: Uint8Array): boolean {
