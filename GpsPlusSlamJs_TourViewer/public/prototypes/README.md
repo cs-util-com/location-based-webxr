@@ -262,6 +262,12 @@ wired into its logic: every interaction is faked.
   back to the right one and tap it there) made 2026-11-12. Each page says
   why its 3D carries meaning and the strongest case against; the plain card,
   `quiz-visitor-1-story-card/`, is the baseline.
+- `quiz-world-10-object-charges/` - the find-then-go-back quiz with the
+  choice made by standing: the question rises out of the last egg found and
+  flies into every egg; standing by one makes it wake, fill with light from
+  below, rise and open (4 s dwell, a 3 s window in which a step away takes it
+  back), and the card holds only a quiet "choose here" list for anyone who
+  cannot walk there; made 2026-11-13.
 - `model-lod-1/` - a mesh simplifier written for the page (edge collapses
   ordered by a quadric error) on three scanned rocks from Poly Haven (CC0):
   a quality slider for the triangle count an author keeps, a distance

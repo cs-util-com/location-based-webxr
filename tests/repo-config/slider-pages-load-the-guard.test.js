@@ -40,12 +40,12 @@
  * import nothing), and keeps pages off the per-slider install, which would
  * double-guard a slider that the page-wide install already covers.
  */
-import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { describe, expect, it } from "vitest";
 
-import { readTracked, repoRoot, trackedFiles } from './tracked-tree.js';
+import { readTracked, repoRoot, trackedFiles } from "./tracked-tree.js";
 
 /**
  * Pages that keep sliders without the guard, each with its reason.
@@ -62,235 +62,242 @@ import { readTracked, repoRoot, trackedFiles } from './tracked-tree.js';
  *   and nothing outside the draft is touched.
  */
 const EXEMPT = new Map([
-  ['GpsPlusSlamJs_DesignSystem/index.html', 'undeployed specimen sheet over file://'],
   [
-    'GpsPlusSlamJs_OsmDemo/public/prototypes/a-command-bar/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_DesignSystem/index.html",
+    "undeployed specimen sheet over file://",
   ],
   [
-    'GpsPlusSlamJs_OsmDemo/public/prototypes/b-icon-rail/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_OsmDemo/public/prototypes/a-command-bar/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_OsmDemo/public/prototypes/c-sheet-tabs/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_OsmDemo/public/prototypes/b-icon-rail/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/landing-5-map-path/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_OsmDemo/public/prototypes/c-sheet-tabs/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/landing-r2-1-l5-extended/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/landing-5-map-path/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/editor3d-2-walk-it/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/landing-r2-1-l5-extended/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/editor3d-3-storyboard/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/editor3d-2-walk-it/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/editor-panel-1-explorer/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/editor3d-3-storyboard/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/editor-panel-2-content-gallery/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/editor-panel-1-explorer/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/editor-panel-3-tabs-toolbar/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/editor-panel-2-content-gallery/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/editor-panels-1-clear-area/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/editor-panel-3-tabs-toolbar/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/editor-panels-2-floating/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/editor-panels-1-clear-area/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/editor-panels-3-one-column/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/editor-panels-2-floating/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/editor-docking-1-dockview/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/editor-panels-3-one-column/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/editor3d-4-map-tilt/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/editor-docking-1-dockview/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/editor3d-4-map-tilt-r2/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/editor3d-4-map-tilt/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/editor3d-4-map-r3/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/editor3d-4-map-tilt-r2/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/editor-import-2-tour-library/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/editor3d-4-map-r3/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/world-items-3-tap-a-card/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/editor-import-2-tour-library/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/model-lod-1/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/world-items-3-tap-a-card/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-1-narrated-text/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/model-lod-1/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2-short-text/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-1-narrated-text/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2a-ground-road-marking/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2-short-text/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2b-ground-light-trail/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2a-ground-road-marking/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2c-ground-chevron-ribbon/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2b-ground-light-trail/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2d-ground-medallion/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2c-ground-chevron-ribbon/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2e-ground-spotlight/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2d-ground-medallion/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2f-ground-stepping-cards/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2e-ground-spotlight/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2g-ground-laid-ribbon/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2f-ground-stepping-cards/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2h-ground-chevron-vanes/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2g-ground-laid-ribbon/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2i-ground-chevron-track/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2h-ground-chevron-vanes/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2j-ground-footprints/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2i-ground-chevron-track/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2k-ground-guide-lights/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2j-ground-footprints/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2l-ground-floor-arrow/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2k-ground-guide-lights/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2m-ground-stakes/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2l-ground-floor-arrow/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2n-ground-runner/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2m-ground-stakes/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2o-ground-arc/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2n-ground-runner/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2p-ground-styles-bend-knob/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2o-ground-arc/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2q-ground-styles-bend-drag/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2p-ground-styles-bend-knob/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-3-pictures/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-2q-ground-styles-bend-drag/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-4-video/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-3-pictures/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-5-models/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-4-video/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-6-primitives/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-5-models/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-7-character/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-6-primitives/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-8-audio/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-7-character/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/editor-approach-3-work-while-flying/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/station-blocks-8-audio/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-visitor-2-guide-asks/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/editor-approach-3-work-while-flying/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
+  ],
+  [
+    "GpsPlusSlamJs_TourViewer/public/prototypes/quiz-visitor-2-guide-asks/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   // The quiz-world pages get their sliders from the shared stage's edit panel, built at runtime
   // from each kind's fields and reached through an inline module script, which this check does
   // not follow. They are listed so the exemption is a decision rather than a blind spot.
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-1-fan/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-1-fan/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-2-on-the-things/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-2-on-the-things/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-3-walk-to-it/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-3-walk-to-it/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-4-card-unfolds/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-4-card-unfolds/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-5-creator-places/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-5-creator-places/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-7-answer-scenes/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-7-answer-scenes/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   // Their cards also build sliders of their own (found radius, hint delay, position error, and on
-  // page 8 the choosing reach): test aids that change only the draft's own feel.
+  // page 8 the choosing reach, on page 10 the dwell and the take-back window): test aids that change only the draft's own feel.
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-6-find-first/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-6-find-first/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-8-find-then-return/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-8-find-then-return/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
   [
-    'GpsPlusSlamJs_TourViewer/public/prototypes/character-library-1/maker.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    "GpsPlusSlamJs_TourViewer/public/prototypes/quiz-world-10-object-charges/index.html",
+    "design prototype in the inspiration gallery, wired to nothing",
+  ],
+  [
+    "GpsPlusSlamJs_TourViewer/public/prototypes/character-library-1/maker.html",
+    "design prototype in the inspiration gallery, wired to nothing",
   ],
 ]);
 
@@ -299,8 +306,10 @@ const RANGE_AT_RUNTIME =
   /\.type\s*=\s*["']range["']|setAttribute\(\s*["']type["']\s*,\s*["']range["']|type=\\?["']range\\?["']/;
 const INSTALL = /\bguardSlidersIn\(\s*document\s*\)/g;
 const HTML_COMMENT = /<!--[\s\S]*?(?:-->|$)/g;
-const MODULE_SCRIPT = /<script\b[^>]*\btype\s*=\s*["']module["'][^>]*>([\s\S]*?)<\/script>/gi;
-const LOCAL_IMPORT = /(?:^|[;\s])(?:import|export)\s*(?:[\w*${}\s,]*?\bfrom\s*)?['"](\.{1,2}\/[^'"]+)['"]/g;
+const MODULE_SCRIPT =
+  /<script\b[^>]*\btype\s*=\s*["']module["'][^>]*>([\s\S]*?)<\/script>/gi;
+const LOCAL_IMPORT =
+  /(?:^|[;\s])(?:import|export)\s*(?:[\w*${}\s,]*?\bfrom\s*)?['"](\.{1,2}\/[^'"]+)['"]/g;
 
 /** Tokens after which a `/` starts a regex literal rather than a division. */
 const REGEX_AFTER =
@@ -313,13 +322,13 @@ const REGEX_AFTER =
  */
 function scanJs(source) {
   const n = source.length;
-  const code = source.split('');
-  const skeleton = source.split('');
+  const code = source.split("");
+  const skeleton = source.split("");
   const blank = (from, to, alsoCode) => {
     for (let k = from; k < Math.min(to, n); k++) {
-      if (source[k] === '\n') continue;
-      skeleton[k] = ' ';
-      if (alsoCode) code[k] = ' ';
+      if (source[k] === "\n") continue;
+      skeleton[k] = " ";
+      if (alsoCode) code[k] = " ";
     }
   };
   /** Brace depth inside each open template `${`. */
@@ -329,45 +338,54 @@ function scanJs(source) {
   while (i < n) {
     if (inTemplate) {
       const from = i;
-      while (i < n && source[i] !== '`' && !(source[i] === '$' && source[i + 1] === '{')) {
-        i += source[i] === '\\' ? 2 : 1;
+      while (
+        i < n &&
+        source[i] !== "`" &&
+        !(source[i] === "$" && source[i + 1] === "{")
+      ) {
+        i += source[i] === "\\" ? 2 : 1;
       }
       blank(from, i, false);
       inTemplate = false;
-      if (source[i] === '$') holes.push(0);
-      i += source[i] === '$' ? 2 : 1;
+      if (source[i] === "$") holes.push(0);
+      i += source[i] === "$" ? 2 : 1;
       continue;
     }
     const c = source[i];
     const next = source[i + 1];
-    if (c === '/' && (next === '/' || next === '*')) {
-      const close = next === '/' ? source.indexOf('\n', i) : source.indexOf('*/', i + 2);
-      const stop = close < 0 ? n : next === '/' ? close : close + 2;
+    if (c === "/" && (next === "/" || next === "*")) {
+      const close =
+        next === "/" ? source.indexOf("\n", i) : source.indexOf("*/", i + 2);
+      const stop = close < 0 ? n : next === "/" ? close : close + 2;
       blank(i, stop, true);
       i = stop;
     } else if (c === '"' || c === "'") {
       let j = i + 1;
-      while (j < n && source[j] !== c && source[j] !== '\n') j += source[j] === '\\' ? 2 : 1;
+      while (j < n && source[j] !== c && source[j] !== "\n")
+        j += source[j] === "\\" ? 2 : 1;
       blank(i + 1, j, false);
       i = j + 1;
-    } else if (c === '`') {
+    } else if (c === "`") {
       inTemplate = true;
       i += 1;
-    } else if (c === '/' && REGEX_AFTER.test(source.slice(Math.max(0, i - 12), i))) {
+    } else if (
+      c === "/" &&
+      REGEX_AFTER.test(source.slice(Math.max(0, i - 12), i))
+    ) {
       let j = i + 1;
       let inClass = false;
-      while (j < n && source[j] !== '\n' && (inClass || source[j] !== '/')) {
-        if (source[j] === '\\') j += 1;
-        else if (source[j] === '[') inClass = true;
-        else if (source[j] === ']') inClass = false;
+      while (j < n && source[j] !== "\n" && (inClass || source[j] !== "/")) {
+        if (source[j] === "\\") j += 1;
+        else if (source[j] === "[") inClass = true;
+        else if (source[j] === "]") inClass = false;
         j += 1;
       }
       blank(i + 1, j, false);
       i = j + 1;
     } else {
       const top = holes.length - 1;
-      if (top >= 0 && c === '{') holes[top] += 1;
-      if (top >= 0 && c === '}') {
+      if (top >= 0 && c === "{") holes[top] += 1;
+      if (top >= 0 && c === "}") {
         if (holes[top] === 0) {
           // This `}` closes the `${`: back into the template's text.
           holes.pop();
@@ -379,15 +397,15 @@ function scanJs(source) {
       i += 1;
     }
   }
-  return { code: code.join(''), skeleton: skeleton.join('') };
+  return { code: code.join(""), skeleton: skeleton.join("") };
 }
 
 /** Offsets of the `{` still open at `index` in a skeleton, outermost first. */
 function openBraces(skeleton, index) {
   const open = [];
   for (let k = 0; k < index; k++) {
-    if (skeleton[k] === '{') open.push(k);
-    else if (skeleton[k] === '}') open.pop();
+    if (skeleton[k] === "{") open.push(k);
+    else if (skeleton[k] === "}") open.pop();
   }
   return open;
 }
@@ -396,11 +414,12 @@ function openBraces(skeleton, index) {
 function calledAtTopLevel(skeleton, name) {
   // The name comes first in the pattern: a leading `(?<!function\s+)` would
   // backtrack over every blanked comment at every offset, which is seconds.
-  const call = new RegExp(`(?<![.\\w$])${name}\\s*\\(`, 'g');
+  const call = new RegExp(`(?<![.\\w$])${name}\\s*\\(`, "g");
   return [...skeleton.matchAll(call)].some(
     (m) =>
-      !/\bfunction\s*$/.test(skeleton.slice(Math.max(0, m.index - 40), m.index)) &&
-      openBraces(skeleton, m.index).length === 0
+      !/\bfunction\s*$/.test(
+        skeleton.slice(Math.max(0, m.index - 40), m.index),
+      ) && openBraces(skeleton, m.index).length === 0,
   );
 }
 
@@ -416,25 +435,28 @@ function installRuns(source) {
     if (open.length === 0) return true;
     if (open.length !== 1) return false;
     const header = skeleton.slice(Math.max(0, open[0] - 400), open[0]);
-    const name = header.match(/\bfunction\s+([\w$]+)\s*\([^)]*\)\s*(?::[^{};]*)?$/)?.[1];
+    const name = header.match(
+      /\bfunction\s+([\w$]+)\s*\([^)]*\)\s*(?::[^{};]*)?$/,
+    )?.[1];
     return name !== undefined && calledAtTopLevel(skeleton, name);
   });
 }
 
 function tracked(...patterns) {
-  return trackedFiles(...patterns)
-    .filter((f) => !f.includes('node_modules/') && !f.includes('/dist/'));
+  return trackedFiles(...patterns).filter(
+    (f) => !f.includes("node_modules/") && !f.includes("/dist/"),
+  );
 }
 
 /** Tracked files that contain `text` literally (git grep exits 1 on no match). */
 function gitGrep(text, ...patterns) {
   try {
-    return execFileSync('git', ['grep', '-l', '-F', text, '--', ...patterns], {
+    return execFileSync("git", ["grep", "-l", "-F", text, "--", ...patterns], {
       cwd: repoRoot,
-      encoding: 'utf8',
+      encoding: "utf8",
       maxBuffer: 64 * 1024 * 1024,
     })
-      .split('\n')
+      .split("\n")
       .filter(Boolean);
   } catch (error) {
     if (error.status === 1) return [];
@@ -443,14 +465,19 @@ function gitGrep(text, ...patterns) {
 }
 
 function packageRootOf(file) {
-  return file.split('/')[0];
+  return file.split("/")[0];
 }
 
 /** A module file from an import specifier (TS sources are imported as `.js` or bare). */
 function resolveModule(fromFile, specifier) {
   const base = resolve(dirname(fromFile), specifier);
-  const candidates = [base, base.replace(/\.js$/, '.ts'), `${base}.ts`, `${base}.js`];
-  return candidates.find((c) => existsSync(c) && !c.endsWith('/')) ?? null;
+  const candidates = [
+    base,
+    base.replace(/\.js$/, ".ts"),
+    `${base}.ts`,
+    `${base}.js`,
+  ];
+  return candidates.find((c) => existsSync(c) && !c.endsWith("/")) ?? null;
 }
 
 /**
@@ -460,13 +487,13 @@ function resolveModule(fromFile, specifier) {
  */
 function entryModules(page, html, read) {
   const out = [];
-  for (const match of html.replace(HTML_COMMENT, '').matchAll(MODULE_SCRIPT)) {
+  for (const match of html.replace(HTML_COMMENT, "").matchAll(MODULE_SCRIPT)) {
     const src = match[0].match(/\bsrc\s*=\s*["']([^"']+)["']/)?.[1];
     if (!src) {
       out.push({ file: null, source: match[1] });
       continue;
     }
-    const file = src.startsWith('/')
+    const file = src.startsWith("/")
       ? join(repoRoot, packageRootOf(page), src)
       : resolve(repoRoot, dirname(page), src);
     if (existsSync(file)) out.push({ file, source: read(file) });
@@ -500,11 +527,12 @@ function unguardedPages(pages, readPage, read) {
     const html = readPage(page);
     const entries = entryModules(page, html, read);
     const hasSlider =
-      RANGE_IN_HTML.test(html.replace(HTML_COMMENT, '')) || buildsSliderAtRuntime(entries, read);
+      RANGE_IN_HTML.test(html.replace(HTML_COMMENT, "")) ||
+      buildsSliderAtRuntime(entries, read);
     if (!hasSlider) continue;
     if (!entries.some((e) => installRuns(e.source))) {
       problems.push(
-        `${page}: has a slider, but no module script it loads runs guardSlidersIn(document) on load`
+        `${page}: has a slider, but no module script it loads runs guardSlidersIn(document) on load`,
       );
     }
   }
@@ -514,52 +542,52 @@ function unguardedPages(pages, readPage, read) {
 const readRepo = (page) => readTracked(page);
 const readAbs = (file) => readTracked(file);
 
-describe('every page with a slider installs the page-wide slider guard', () => {
-  const pages = tracked('*.html');
+describe("every page with a slider installs the page-wide slider guard", () => {
+  const pages = tracked("*.html");
 
   // Non-vacuous: the pages the 2026-09-30 inventory found must be seen as
   // slider pages, or the check below would pass by finding nothing.
-  it('finds the slider pages', () => {
+  it("finds the slider pages", () => {
     const sliderPages = pages.filter((p) => RANGE_IN_HTML.test(readRepo(p)));
     expect(sliderPages).toEqual(
       expect.arrayContaining([
-        'GpsPlusSlamJs_DesignSystem/3d/index.html',
-        'GpsPlusSlamJs_DesignSystem/labs/ar-shadows/index.html',
-        'GpsPlusSlamJs_DesignSystem/labs/globe/index.html',
-        'GpsPlusSlamJs_DesignSystem/labs/terrain/index.html',
-        'GpsPlusSlamJs_OsmDemo/index.html',
-        'GpsPlusSlamJs_PhysicsDemo/index.html',
-        'GpsPlusSlamJs_RecorderApp/index.html',
-        'GpsPlusSlamJs_WayfindingHudDemo/index.html',
-      ])
+        "GpsPlusSlamJs_DesignSystem/3d/index.html",
+        "GpsPlusSlamJs_DesignSystem/labs/ar-shadows/index.html",
+        "GpsPlusSlamJs_DesignSystem/labs/globe/index.html",
+        "GpsPlusSlamJs_DesignSystem/labs/terrain/index.html",
+        "GpsPlusSlamJs_OsmDemo/index.html",
+        "GpsPlusSlamJs_PhysicsDemo/index.html",
+        "GpsPlusSlamJs_RecorderApp/index.html",
+        "GpsPlusSlamJs_WayfindingHudDemo/index.html",
+      ]),
     );
   });
 
-  it('each one loads a module that calls guardSlidersIn(document)', () => {
+  it("each one loads a module that calls guardSlidersIn(document)", () => {
     expect(unguardedPages(pages, readRepo, readAbs)).toEqual([]);
   });
 
   // The check must be able to fail, for both ways a page can have a slider.
-  it('flags a page with a range input and no install', () => {
+  it("flags a page with a range input and no install", () => {
     const problems = unguardedPages(
-      ['GpsPlusSlamJs_PhysicsDemo/__planted__.html'],
+      ["GpsPlusSlamJs_PhysicsDemo/__planted__.html"],
       () => '<input type="range"><script type="module">console.log(1)</script>',
-      readAbs
+      readAbs,
     );
-    expect(problems.join('\n')).toContain('__planted__.html');
+    expect(problems.join("\n")).toContain("__planted__.html");
   });
 
-  it('flags a page whose module builds a slider at runtime', () => {
+  it("flags a page whose module builds a slider at runtime", () => {
     // The entry imports a real sibling, which is read as building a slider.
     const problems = unguardedPages(
-      ['GpsPlusSlamJs_PhysicsDemo/index.html'],
+      ["GpsPlusSlamJs_PhysicsDemo/index.html"],
       () => '<script type="module" src="/src/main.ts"></script>',
       (file) =>
-        file.endsWith(join('src', 'main.ts'))
+        file.endsWith(join("src", "main.ts"))
           ? 'import { x } from "./replay-physics.js";'
-          : 'const s = document.createElement("input"); s.type = "range";'
+          : 'const s = document.createElement("input"); s.type = "range";',
     );
-    expect(problems.join('\n')).toContain('PhysicsDemo/index.html');
+    expect(problems.join("\n")).toContain("PhysicsDemo/index.html");
   });
 
   // Hardening of 2026-09-30: an install that never runs must not pass. Each
@@ -567,41 +595,42 @@ describe('every page with a slider installs the page-wide slider guard', () => {
   // installs the guard.
   const plantedPage = (script) =>
     unguardedPages(
-      ['GpsPlusSlamJs_PhysicsDemo/__planted__.html'],
+      ["GpsPlusSlamJs_PhysicsDemo/__planted__.html"],
       () => `<input type="range"><script type="module">${script}</script>`,
-      readAbs
+      readAbs,
     );
   const NEVER_RUNS = {
-    'a line-commented install': '// guardSlidersIn(document);',
-    'a block-commented install': '/*\n guardSlidersIn(document);\n*/',
-    'an install inside a function nothing calls':
-      'function setUp() {\n  guardSlidersIn(document);\n}\nconsole.log(setUp);',
-    'an install in a callback of the entry function':
-      'function main() {\n  const later = () => {\n    guardSlidersIn(document);\n  };\n  return later;\n}\nmain();',
-    'an install quoted in a string': 'console.log("guardSlidersIn(document)");',
+    "a line-commented install": "// guardSlidersIn(document);",
+    "a block-commented install": "/*\n guardSlidersIn(document);\n*/",
+    "an install inside a function nothing calls":
+      "function setUp() {\n  guardSlidersIn(document);\n}\nconsole.log(setUp);",
+    "an install in a callback of the entry function":
+      "function main() {\n  const later = () => {\n    guardSlidersIn(document);\n  };\n  return later;\n}\nmain();",
+    "an install quoted in a string": 'console.log("guardSlidersIn(document)");',
   };
   for (const [name, script] of Object.entries(NEVER_RUNS)) {
     it(`flags ${name}`, () => {
-      expect(plantedPage(script).join('\n')).toContain('__planted__.html');
+      expect(plantedPage(script).join("\n")).toContain("__planted__.html");
     });
   }
 
-  it('flags an install in a commented-out script tag', () => {
+  it("flags an install in a commented-out script tag", () => {
     const problems = unguardedPages(
-      ['GpsPlusSlamJs_PhysicsDemo/__planted__.html'],
+      ["GpsPlusSlamJs_PhysicsDemo/__planted__.html"],
       () =>
         '<input type="range"><!-- <script type="module">guardSlidersIn(document);</script> -->',
-      readAbs
+      readAbs,
     );
-    expect(problems.join('\n')).toContain('__planted__.html');
+    expect(problems.join("\n")).toContain("__planted__.html");
   });
 
   // The positive controls for the planted cases: the two shapes the real
   // entries use must pass, so the checks above fail for the right reason.
   // The strings and the regex are there to trip a naive comment stripper.
   const RUNS = {
-    'a top-level install': 'const url = "https://example.org/a//b";\nguardSlidersIn(document);',
-    'an install in an entry function the module calls':
+    "a top-level install":
+      'const url = "https://example.org/a//b";\nguardSlidersIn(document);',
+    "an install in an entry function the module calls":
       'const re = /["\'`{]/;\nasync function main(): Promise<void> {\n  const s = `${"{"}`;\n  guardSlidersIn(document);\n}\nvoid main().catch(() => {});',
   };
   for (const [name, script] of Object.entries(RUNS)) {
@@ -610,19 +639,29 @@ describe('every page with a slider installs the page-wide slider guard', () => {
     });
   }
 
-  it('keeps pages off the per-slider install', () => {
+  it("keeps pages off the per-slider install", () => {
     // git grep, not a read of every file: this suite runs beside other
     // whole-tree scans that share its 5 s timeout.
-    const offenders = gitGrep('guardSliderAgainstScroll(', '*.ts', '*.js', '*.mjs')
+    const offenders = gitGrep(
+      "guardSliderAgainstScroll(",
+      "*.ts",
+      "*.js",
+      "*.mjs",
+    )
       .filter((f) => !/\.(test|spec|property\.test)\.|\/tests?\//.test(f))
-      .filter((f) => f !== 'GpsPlusSlamJs_AppFramework/src/utils/slider-scroll-guard.ts');
+      .filter(
+        (f) =>
+          f !== "GpsPlusSlamJs_AppFramework/src/utils/slider-scroll-guard.ts",
+      );
     expect(offenders).toEqual([]);
   });
 });
 
-describe('the slider guard stays servable to the no-build design-system pages', () => {
-  it('imports nothing', () => {
-    const source = readRepo('GpsPlusSlamJs_AppFramework/src/utils/slider-scroll-guard.ts');
+describe("the slider guard stays servable to the no-build design-system pages", () => {
+  it("imports nothing", () => {
+    const source = readRepo(
+      "GpsPlusSlamJs_AppFramework/src/utils/slider-scroll-guard.ts",
+    );
     expect(source).not.toMatch(/^\s*(?:import|export)\b[^;]*\bfrom\s*['"]/m);
     expect(source).not.toMatch(/^\s*import\s*['"]/m);
     expect(source).not.toMatch(/\benum\s+\w+/);
