@@ -137,17 +137,24 @@ export function edgeHintPlace(
       angle: 0,
     };
   }
+  const cx = screenW / 2;
+  const cy = (insetTop + screenH - insetBottom) / 2;
   let dx = spot.dirX;
   let dy = spot.dirY;
   if (spot.behind) {
     dy *= 0.2;
     if (Math.abs(dx) < 1e-3) dx = 1;
   }
-  const len = Math.hypot(dx, dy) || 1;
+  // No direction (a spot on the lens's axis): toward its screen point,
+  // and right when that is the centre too.
+  if (Math.hypot(dx, dy) < 1e-9) {
+    dx = spot.sx - cx;
+    dy = cy - spot.sy;
+    if (Math.hypot(dx, dy) < 1e-9) dx = 1;
+  }
+  const len = Math.hypot(dx, dy);
   dx /= len;
   dy /= len;
-  const cx = screenW / 2;
-  const cy = (insetTop + screenH - insetBottom) / 2;
   const hx = Math.max(0, screenW / 2 - insetX - w / 2);
   const hy = Math.max(0, (screenH - insetBottom - insetTop) / 2 - h / 2);
   const t = Math.min(

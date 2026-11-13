@@ -60,6 +60,25 @@ describe("where the tag goes", () => {
     expect(behindLeft.x).toBeCloseTo(EDGE_HINT.insetX, 5);
   });
 
+  it("places a spot with no direction on the edge toward its screen point", () => {
+    // Why: a spot dead ahead of the lens but out of the tag's room (its
+    // camera-frame direction zero) once made the tag's position NaN, so
+    // the tag vanished; it goes to the edge its screen point lies toward.
+    const at = edgeHintPlace(
+      { sx: 0, sy: 0, behind: false, dirX: 0, dirY: 0 },
+      W,
+      H,
+      size,
+    );
+    expect(at.edge).toBe(true);
+    expect(Number.isFinite(at.x) && Number.isFinite(at.y)).toBe(true);
+    // Toward the top left, where the spot's screen point is.
+    expect(at.angle).toBeGreaterThan(Math.PI / 2);
+    expect(at.angle).toBeLessThan(Math.PI);
+    expect(at.x).toBeGreaterThanOrEqual(EDGE_HINT.insetX - 1e-6);
+    expect(at.y).toBeGreaterThanOrEqual(EDGE_HINT.insetTop - 1e-6);
+  });
+
   it("is always on the screen, inside its insets", () => {
     // Why: wherever the spot is, the tag is readable: the property over
     // any spot and direction, on a phone on its side, upright, and a

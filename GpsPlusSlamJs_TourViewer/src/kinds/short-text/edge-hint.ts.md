@@ -13,7 +13,7 @@ A short text's `edgeHint` view: a faint ring on the ground at its spot and a sma
 
 ## Invariants and defensive measures
 
-- The tag is always inside the screen's insets, for any spot, in front or behind (a property test).
+- The tag is always inside the screen's insets, for any spot, in front or behind (a property test). A spot with no camera-frame direction (on the lens's axis) goes to the edge toward its screen point, or right from the centre.
 - The tag is a camera-space plate: each frame it is placed at a depth along the view axis (1 m in play, the spot's depth in edit, so the editor sees it at its spot), with the camera's rotation and a size from `metresPerPxAtOneM`. In play it draws over the world (`depthTest` off).
 - Without a camera or a scale in the frame, the tag and chip are hidden and only the ring shows; a hidden mesh is also scaled to zero so a bounding box (the editor's) does not count it.
 - In edit mode the tag always stands over its spot.
