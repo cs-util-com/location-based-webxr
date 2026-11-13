@@ -2052,17 +2052,17 @@ export function createEditorSession(input: {
     const fileName = `${objectTitle(before)} poster.jpg`;
     const added = await addFile(image, fileName, ["image"]);
     if (added.kind === "refused") return added;
-    const current = freeVideo();
-    if (current === null) return notInTour;
-    const after = { ...current, poster: added.asset.id };
-    if (sameJson(after, current)) {
+    const videoNow = freeVideo();
+    if (videoNow === null) return notInTour;
+    const after = { ...videoNow, poster: added.asset.id };
+    if (sameJson(after, videoNow)) {
       return { kind: "unchanged", backedUp: added.backedUp };
     }
     const applied = took(() =>
       store.dispatch(
         tourDocumentActions.edited({
           object: after,
-          what: `the poster of ${objectName(current)}`,
+          what: `the poster of ${objectName(videoNow)}`,
         }),
       ),
     );
