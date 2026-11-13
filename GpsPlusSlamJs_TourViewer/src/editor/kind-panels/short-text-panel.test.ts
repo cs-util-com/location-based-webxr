@@ -29,6 +29,7 @@ function item(shortText: NonNullable<PanelItem["shortText"]>): PanelItem {
     headingDeg: 0,
     turns: false,
     groundOffM: null,
+    folder: null,
   };
 }
 

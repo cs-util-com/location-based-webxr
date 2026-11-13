@@ -34,6 +34,7 @@ function item(picture: NonNullable<PanelItem["picture"]>): PanelItem {
     headingDeg: 0,
     turns: true,
     groundOffM: null,
+    folder: null,
     picture,
   };
 }
