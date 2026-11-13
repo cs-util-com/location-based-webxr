@@ -911,3 +911,85 @@ for (const view of VIEWS) {
     );
   });
 }
+
+/**
+ * The toasts' boxes on the page, each with its words.
+ * @param {import("@playwright/test").Page} page
+ */
+function toastBoxes(page) {
+  return page.locator("#toasts .toast").evaluateAll((all) =>
+    all.map((t) => ({
+      ...t.getBoundingClientRect().toJSON(),
+      text: t.textContent,
+    })),
+  );
+}
+
+// Why: an undo or a redo says so in a toast for six seconds, and the
+// next gesture follows at once. On a short screen (a phone held sideways)
+// the toasts stood over the middle of the 3D view, where the gizmo of the
+// selection stands, and took the press meant for it. The toasts must keep
+// clear of the gizmo - its ring and its turn knob - and a press on the
+// gizmo while they show must still make its step, by mouse and by touch.
+const TOAST_VIEWS = [
+  { name: "sideways", width: 844, height: 390, touch: true },
+  { name: "sideways-mouse", width: 844, height: 390, touch: false },
+  { name: "phone", width: 390, height: 844, touch: true },
+  { name: "desktop", width: 1280, height: 800, touch: false },
+];
+
+for (const view of TOAST_VIEWS) {
+  test.describe(`toasts at ${view.name}`, () => {
+    test.use({ hasTouch: view.touch });
+    test(`the undo and redo toasts keep clear of the gizmo, which still takes a press while they show (${view.name})`, async ({
+      page,
+    }) => {
+      test.slow();
+      await page.setViewportSize({ width: view.width, height: view.height });
+      await openFolders(page, await foldersTour());
+      await selectYard(page);
+      const pointer = view.touch ? byTouch : byMouse;
+      // One move, undone and redone: two toasts stand on the page.
+      let steps = await revision(page);
+      let middle = await handleAt(page, "middle");
+      await pointer(page, [
+        middle,
+        ...line(middle, { x: middle.x + 40, y: middle.y + 15 }),
+      ]);
+      await expect.poll(() => revision(page)).toBe(steps + 1);
+      const moved = await wholeTour(page);
+      await page.keyboard.press("Control+z");
+      await page.keyboard.press("Control+y");
+      await expect.poll(() => wholeTour(page)).toEqual(moved);
+      await expect(
+        page.locator(".toast", { hasText: /^(Undone|Redone)/ }),
+      ).toHaveCount(2);
+      // Where the gizmo stands now: its ring round the pivot and its knob.
+      middle = await handleAt(page, "middle");
+      const knob = await handleAt(page, "knob");
+      const reach = Math.hypot(knob.x - middle.x, knob.y - middle.y) + 12;
+      for (const t of await toastBoxes(page)) {
+        const nx = Math.max(t.left, Math.min(middle.x, t.right));
+        const ny = Math.max(t.top, Math.min(middle.y, t.bottom));
+        expect(
+          Math.hypot(nx - middle.x, ny - middle.y),
+          `the toast "${t.text}" clear of the gizmo`,
+        ).toBeGreaterThan(reach);
+      }
+      // A press on the gizmo while they show is its step.
+      steps = await revision(page);
+      await pointer(page, [
+        middle,
+        ...line(middle, { x: middle.x - 40, y: middle.y - 15 }),
+      ]);
+      await expect.poll(() => revision(page)).toBe(steps + 1);
+      await expect(
+        page.locator(".toast", { hasText: /^(Undone|Redone)/ }),
+      ).not.toHaveCount(0);
+      await capture(
+        page,
+        test.info().outputPath(`folder-toasts-${view.name}.png`),
+      );
+    });
+  });
+}
