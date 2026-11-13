@@ -35,9 +35,13 @@ same look, still and silent.
   direction to the object's position (its pose, not its drawn centre).
 - Sound: decided once, at the first start, by `decideStartSound`. A start
   that wanted sound before the page was touched plays muted, and the next
-  tap turns the sound on instead of pausing. A `play()` the browser rejects,
-  or one that has not played after `VIDEO_SOUND_REFUSED_MS`, is muted,
-  tried again and said.
+  tap turns the sound on instead of pausing. A `play()` with sound the
+  browser rejects, or one that has not played after
+  `VIDEO_SOUND_REFUSED_MS`, is muted, tried again and said. A muted
+  `play()` the browser rejects stops it: the state goes to `paused` (the
+  card says Play), the line says the browser did not start it, and the
+  visitor's tap is the next try. A muted start that is only slow to load is
+  left to its own promise and still counts as playing.
 - The sound switch stores the visitor's choice for every video.
 - A porthole's tap opens the card with the clip large and starts it if it
   does not play; Close returns to the plain card.
@@ -57,6 +61,7 @@ part?.update?.({ seconds, viewer, facing });
 ## Tests
 
 - `video-world.test.ts` - with a fake player and screen: each trigger, the
-  sound paths (creator, untouched page, refusal, remembered choice), leave
+  sound paths (creator, untouched page, refusal, a refused muted start, a
+  slow muted load, remembered choice), leave
   and return, finished then replay, the porthole, the silent editor, a
   posed cutout's turn and dispose.

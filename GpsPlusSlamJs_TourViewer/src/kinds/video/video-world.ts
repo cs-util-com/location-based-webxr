@@ -163,6 +163,9 @@ const viewerLocal = new Vector3();
 /** The note when the browser kept a wanted sound off. */
 export const SOUND_REFUSED_NOTE = "The browser kept the sound off";
 
+/** The note when the browser refused to play it at all, even muted. */
+const PLAY_REFUSED_NOTE = "The browser did not start it. Tap to play";
+
 /**
  * `block`'s part: null in a view that stands nothing in the station (the
  * card) or with no width. Its `ready` settles once the clip's size is
@@ -217,18 +220,28 @@ export function videoWorld(
     const p = player;
     if (p === null) return;
     playAskedAt = seconds;
+    if (note === PLAY_REFUSED_NOTE) note = null;
     p.play().catch(() => {
       refused();
     });
   };
-  /** The browser refused to play: with sound, muted and tried again. */
+  /** The browser refused to play: with sound, muted and tried again;
+   *  muted already, stopped - paused, said, and the visitor's tap is the
+   *  next try - so the part never counts as playing while nothing plays. */
   const refused = (): void => {
     const p = player;
-    if (gone || p === null || state !== "playing" || p.muted) return;
+    if (gone || p === null || state !== "playing") return;
+    playAskedAt = null;
+    if (p.muted) {
+      state = "paused";
+      note = PLAY_REFUSED_NOTE;
+      return;
+    }
     p.muted = true;
     note = SOUND_REFUSED_NOTE;
-    playAskedAt = null;
-    p.play().catch(() => undefined);
+    p.play().catch(() => {
+      refused();
+    });
   };
   const decideSound = (): void => {
     if (soundDecided || player === null) return;
@@ -447,10 +460,12 @@ export function videoWorld(
         event("start");
       }
       // A start with sound that the browser has not played after a
-      // second: muted, and said.
+      // second: muted, and said. A muted one may only be slow to load, and
+      // is left to its own promise.
       if (
         playAskedAt !== null &&
         player !== null &&
+        !player.muted &&
         player.paused &&
         (seconds - playAskedAt) * 1000 >= VIDEO_SOUND_REFUSED_MS
       ) {

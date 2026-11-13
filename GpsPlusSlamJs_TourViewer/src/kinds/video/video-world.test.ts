@@ -42,10 +42,12 @@ class FakePlayer implements ClipPlayer {
   calls: string[] = [];
   /** What the next `play()` does: start, or reject as a browser that
    *  refuses sound does. */
-  refuse: "never" | "sound" | "always" = "never";
+  refuse: "never" | "sound" | "always" | "hang" = "never";
   private readonly listeners = new Map<string, (() => void)[]>();
   play(): Promise<void> {
     this.calls.push(this.muted ? "play muted" : "play sound");
+    // A clip still loading: the promise neither settles nor plays yet.
+    if (this.refuse === "hang") return new Promise<void>(() => undefined);
     if (this.refuse === "always" || (this.refuse === "sound" && !this.muted)) {
       return Promise.reject(new Error("NotAllowedError"));
     }
@@ -244,6 +246,34 @@ describe("a free video's part", () => {
     expect(player.calls).toEqual(["play sound", "play muted"]);
     expect(player.muted).toBe(true);
     expect(SOUND_REFUSED_NOTE).toMatch(/kept the sound off/);
+  });
+
+  it("stops counting as playing when the browser refuses even a muted start, and a tap tries again", async () => {
+    // Why: a refused muted play() used to leave the part "playing" while
+    // nothing played - the card said Pause over a still frame and a tap
+    // paused nothing. A refusal with no sound to drop is a stop the
+    // visitor is told about, and his tap is the next try.
+    const { part, player } = await video({ refuse: "always" });
+    part.update?.(at(1, 0));
+    await settle();
+    part.update?.(at(1, 3));
+    expect(player.calls).toEqual(["play muted"]);
+    player.refuse = "never";
+    part.tap?.();
+    expect(player.calls).toEqual(["play muted", "play muted"]);
+    expect(player.paused).toBe(false);
+  });
+
+  it("leaves a muted start that is only slow to load counted as playing", async () => {
+    // Why: the one-second check is for a start with sound; a muted clip
+    // still loading after a second must not be taken for a refusal, or it
+    // would start playing later behind a card that says it is paused.
+    const { part, player } = await video({ refuse: "hang" });
+    part.update?.(at(1, 0));
+    part.update?.(at(1, 3));
+    await settle();
+    part.tap?.();
+    expect(player.calls).toEqual(["play muted", "pause"]);
   });
 
   it("follows the visitor's remembered choice over the creator's", async () => {
