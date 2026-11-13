@@ -262,6 +262,13 @@ wired into its logic: every interaction is faked.
   back to the right one and tap it there) made 2026-11-12. Each page says
   why its 3D carries meaning and the strongest case against; the plain card,
   `quiz-visitor-1-story-card/`, is the baseline.
+- `quiz-world-11-light-pillars/` - page 8 with a different choice: once all
+  answers are found, the question rises as a sign in the middle of the
+  station and each answer becomes a tall soft pillar of light, seen from
+  across the square. Standing in a pillar pours the light down from the top;
+  after 4 s it is full and the answer locks in, and it counts 3 s later
+  unless the visitor steps out. The card keeps only a tiny glyph and a quiet
+  way to answer without walking; made 2026-11-13.
 - `model-lod-1/` - a mesh simplifier written for the page (edge collapses
   ordered by a quadric error) on three scanned rocks from Poly Haven (CC0):
   a quality slider for the triangle count an author keeps, a distance
