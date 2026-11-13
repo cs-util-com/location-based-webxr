@@ -2128,13 +2128,13 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     if (act === "lock") {
       // The selected station's position locked or unlocked: view state,
       // never an edit; the session refuses its moves while locked.
-      const view = state().editorView;
-      if (view.selected?.startsWith(STATION_PREFIX) === true) {
-        const id = view.selected.slice(STATION_PREFIX.length);
+      const lockView = state().editorView;
+      if (lockView.selected?.startsWith(STATION_PREFIX) === true) {
+        const id = lockView.selected.slice(STATION_PREFIX.length);
         store.dispatch(
           editorViewActions.stationLocked({
             id,
-            locked: !isStationLocked(view, id),
+            locked: !isStationLocked(lockView, id),
           }),
         );
       }
