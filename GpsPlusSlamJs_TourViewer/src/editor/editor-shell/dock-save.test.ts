@@ -1,10 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SerializedDockview } from "dockview";
 
 import { DOCK_PANELS } from "./dock-layout.js";
 import {
+  createDockKeeper,
   dockFormFactor,
   dockSaveKey,
+  keptAtSize,
   readSavedDock,
   writeSavedDock,
 } from "./dock-save.js";
@@ -210,5 +212,88 @@ describe("readSavedDock", () => {
     expect(DEFAULT_GROUPS.flat().sort()).toEqual(
       DOCK_PANELS.map((p) => p.id).sort(),
     );
+  });
+});
+
+describe("keptAtSize", () => {
+  // Why: a kept layout's sizes are the creator's only at the size it was
+  // kept at. Opened in a layout of another size it is treated as a window
+  // resize (side groups at the new window's widths), not scaled in
+  // proportion - which would give a 1280 px desk's list half again its
+  // width on a 1920 px one.
+  it("holds within a pixel of the kept layout's size, not beyond", () => {
+    const saved = { layout: layoutOf(DEFAULT_GROUPS), folds: [] };
+    expect(keptAtSize(saved, 1200, 600)).toBe(true);
+    expect(keptAtSize(saved, 1201, 599)).toBe(true);
+    expect(keptAtSize(saved, 1202, 600)).toBe(false);
+    expect(keptAtSize(saved, 1200, 598)).toBe(false);
+    expect(keptAtSize(saved, 1920, 1000)).toBe(false);
+  });
+});
+
+describe("createDockKeeper", () => {
+  // Why: a layout is written only once its changes settle (a drag
+  // changes it many times a second), but a change made just before the
+  // window turns to another form factor, or before the docking closes,
+  // must still reach that form factor's key - the last one taken, never
+  // a layout taken after the turn.
+  function keeperOf() {
+    const writes: [string, string][] = [];
+    const keeper = createDockKeeper((key, text) => {
+      writes.push([key, text]);
+    }, 300);
+    return { keeper, writes };
+  }
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("writes the last layout once its changes settle", () => {
+    vi.useFakeTimers();
+    const { keeper, writes } = keeperOf();
+    keeper.soon("k:desk", "a");
+    vi.advanceTimersByTime(200);
+    keeper.soon("k:desk", "b");
+    vi.advanceTimersByTime(299);
+    expect(writes).toEqual([]);
+    vi.advanceTimersByTime(1);
+    expect(writes).toEqual([["k:desk", "b"]]);
+    vi.advanceTimersByTime(1000);
+    expect(writes).toHaveLength(1);
+  });
+
+  it("writes a pending layout at once on flush, and only once", () => {
+    vi.useFakeTimers();
+    const { keeper, writes } = keeperOf();
+    keeper.soon("k:desk", "a");
+    vi.advanceTimersByTime(50);
+    keeper.flush();
+    expect(writes).toEqual([["k:desk", "a"]]);
+    vi.advanceTimersByTime(1000);
+    keeper.flush();
+    expect(writes).toHaveLength(1);
+  });
+
+  it("writes another key's pending layout before taking a new one", () => {
+    vi.useFakeTimers();
+    const { keeper, writes } = keeperOf();
+    keeper.soon("k:desk", "a");
+    keeper.soon("k:sideways", "b");
+    expect(writes).toEqual([["k:desk", "a"]]);
+    vi.advanceTimersByTime(300);
+    expect(writes).toEqual([
+      ["k:desk", "a"],
+      ["k:sideways", "b"],
+    ]);
+  });
+
+  it("drops a pending layout on cancel", () => {
+    vi.useFakeTimers();
+    const { keeper, writes } = keeperOf();
+    keeper.soon("k:desk", "a");
+    keeper.cancel();
+    keeper.flush();
+    vi.advanceTimersByTime(1000);
+    expect(writes).toEqual([]);
   });
 });

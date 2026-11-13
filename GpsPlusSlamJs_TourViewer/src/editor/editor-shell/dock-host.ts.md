@@ -97,14 +97,19 @@ are not part of the page's first load.
 - The layout is kept per form factor (`dockFormFactor`: the desk, a phone
   upright, a phone sideways) under `dockSaveKey(formFactor)`, with the
   folds of its groups (and the size each had before folding). It is
-  written `KEEP_DELAY_MS` after the last change (a drag, a fold, a tab
-  chosen), flushed on `dispose`, and never while a group is maximized or
-  once the window has taken another form factor. On mount the window's
+  taken at each change (a drag, a fold, a tab chosen) and written
+  `KEEP_DELAY_MS` after the last (`createDockKeeper`); a pending one is
+  written at once when the window turns to another form factor and on
+  `dispose`. Nothing is taken while a group is maximized or once the
+  window has taken another form factor, so the layout written is the one
+  of before the turn. On mount the window's
   form factor's kept layout is loaded when `readSavedDock` accepts it and
   the library loads it with every panel; otherwise the layout is cleared
   and the default laid out, never an empty one. A resize into another
   form factor clears the layout and lays out that form factor's kept one
-  (or the default), refolding its kept folds.
+  (or the default), refolding its kept folds. A kept layout laid out at
+  another size than it was kept at (`keptAtSize`) is fitted as after a
+  window resize (below), not scaled in proportion.
 - A tab's Shift+F10 or ContextMenu key opens "Move to..." (`dock-move.ts`)
   for its panel: into another group, or left of, right of or below the 3D
   view. The library's tab menu offers the same entry for a mouse. The move
@@ -175,8 +180,11 @@ are not part of the page's first load.
   writer's width while it shows), the 3D view the rest. A side group hidden
   meanwhile, or hidden before its first width was laid out, takes it when
   it next shows. The bottom group likewise takes `bottomStartPx` of the new
-  layout, now or when it next shows. A folded group keeps its rail. A size
-  dragged by hand therefore lasts until the next window resize.
+  layout, now or when it next shows, while its group holds only the bottom
+  panel's panes (Problems dragged into the right column leaves that
+  column's height alone). A folded group keeps its rail. A size dragged
+  by hand therefore lasts until the next window resize, or a reload at
+  another window size.
 - A fold takes the focus out of the group's panel: it goes to the group's
   fold button, which keeps it while it unfolds; where the unfolded group
   shows no strip (the list alone), to the panel's own head's fold button
@@ -213,8 +221,10 @@ dock.dispose();
 - The kept layout's checks are `dock-save.ts`'s and the move menu is
   `dock-move.ts`'s, unit tested there; the spec covers a rearranged layout
   coming back on the next open, a broken one giving the default, the desk
-  and a phone sideways keeping their own, the keyboard move, and the
-  problem count on a folded rail.
+  and a phone sideways keeping their own, a change just before the window
+  turns kept, a kept layout opened in a wider window at that window's side
+  widths, the 3D view's canvas staying in its panel and drawing while the
+  window turns, the keyboard move, and the problem count on a folded rail.
 - No unit test of its own: it is DOM and library glue, covered by the
   layout e2e (`playwright-tests/editor3d-docking.spec.js`) at four window
   sizes; its data is `dock-layout.ts`'s, unit and property tested.

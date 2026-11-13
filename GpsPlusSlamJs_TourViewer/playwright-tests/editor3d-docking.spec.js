@@ -1446,3 +1446,145 @@ test("a folded rail shows the problem count on its Problems tab", async ({
     /^\d+ errors?, \d+ warnings?, [1-9]\d* notes?$/,
   );
 });
+
+/**
+ * The 3D view's canvas against its panel: in it, its box the panel's, its
+ * drawing buffer in the box's proportions, its drawing context alive.
+ * @param {import("@playwright/test").Page} page
+ */
+function canvasInPanel(page) {
+  return page.evaluate(() => {
+    const canvas = document.querySelector("#view3d canvas.view3d-canvas");
+    const pane = document.querySelector(".dock-host .dock-pane-view");
+    if (!(canvas instanceof HTMLCanvasElement) || pane === null) {
+      return "missing";
+    }
+    if (canvas.dataset["mark"] !== "kept") return "another canvas";
+    if (!pane.contains(canvas)) return "out of its panel";
+    const c = canvas.getBoundingClientRect();
+    const p = pane.getBoundingClientRect();
+    if (
+      Math.max(
+        Math.abs(c.left - p.left),
+        Math.abs(c.top - p.top),
+        Math.abs(c.width - p.width),
+        Math.abs(c.height - p.height),
+      ) > 1.5
+    ) {
+      return "not the panel's size";
+    }
+    const box = c.width / c.height;
+    const buffer = canvas.width / canvas.height;
+    if (!(Math.abs(box - buffer) / box < 0.03)) return "buffer not fitted";
+    const gl = canvas.getContext("webgl2") ?? canvas.getContext("webgl");
+    if (gl === null || gl.isContextLost()) return "context lost";
+    return "drawing";
+  });
+}
+
+// Why: a window turning to another form factor lays the docking out
+// again from scratch (that form factor's own layout). The 3D view's
+// canvas must come through in its panel, with its drawing context and a
+// buffer fitted to its new box, and go on drawing - a canvas left out of
+// the page or a lost context would leave the creator a blank view.
+test("the 3D view's canvas stays in its panel and draws on while the window turns", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await answerHosts(page);
+  await openSampleIn3d(page);
+  await dockSettled(page, 1440);
+  await page.evaluate(() => {
+    const canvas = document.querySelector("#view3d canvas.view3d-canvas");
+    if (canvas instanceof HTMLElement) canvas.dataset["mark"] = "kept";
+  });
+  await expect.poll(() => canvasInPanel(page)).toBe("drawing");
+  for (const size of [
+    { width: 844, height: 390 },
+    { width: 1440, height: 900 },
+  ]) {
+    await page.setViewportSize(size);
+    await dockSettled(page, size.width);
+    await expect
+      .poll(() => canvasInPanel(page), `at ${String(size.width)}`)
+      .toBe("drawing");
+    await afterFrames(page, 3);
+    expect(await middleIsCanvas(page)).toBe(true);
+  }
+});
+
+// Why: a change made just before the window turns (a drop, then the
+// phone turned at once) belongs to the form factor it was made in. It is
+// written only once its changes settle, and the turn must write it then
+// rather than drop it.
+test("a change made just before the window turns is kept for the form factor it was made in", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await answerHosts(page);
+  await openSampleIn3d(page);
+  await dockSettled(page, 1440);
+  const files = tabs(page).getByRole("tab", { name: "Files", exact: true });
+  const column = await box(groupOf(page, "details"));
+  await files.dragTo(groupOf(page, "details"), {
+    targetPosition: { x: column.width / 2, y: column.height * 0.85 },
+  });
+  await page.setViewportSize({ width: 844, height: 390 });
+  await expect
+    .poll(async () => (await dockState(page)).strips)
+    .toEqual(["DetailsFiles"]);
+  expect(await keptFilesAlone(page, "desk")).toBe(true);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect.poll(() => filesBelowDetails(page)).toBe("below");
+});
+
+/**
+ * The docked list's and the right column's widths, rounded.
+ * @param {import("@playwright/test").Page} page
+ */
+function sideWidths(page) {
+  return page.evaluate(() => {
+    const widthOf = (/** @type {string} */ selector) =>
+      Math.round(
+        document
+          .querySelector(selector)
+          ?.closest(".dv-groupview")
+          ?.getBoundingClientRect().width ?? 0,
+      );
+    return {
+      list: widthOf(".dock-host .dock-pane-list"),
+      column: widthOf(".dock-host .dock-pane-details"),
+    };
+  });
+}
+
+// Why: a kept layout's sizes are the creator's at the window it was kept
+// at. Opened in a wider window it is fitted as after a window resize -
+// the side groups at that window's widths, the 3D view taking the rest -
+// not scaled in proportion, which would widen the list and the column by
+// half again from a 1280 px window to a 1920 px one.
+test("a kept layout opened in a wider window takes that window's side widths", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  const before = widths(1280);
+  const after = widths(1920);
+  // The test tells the two rules apart only while they differ.
+  expect(Math.abs(after.column - before.column * 1.5)).toBeGreaterThan(4);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await answerHosts(page);
+  await openSampleIn3d(page);
+  await dockSettled(page, 1280);
+  await dragFilesBelowDetails(page);
+  await expect.poll(() => keptFilesAlone(page, "desk")).toBe(true);
+
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await openSampleIn3d(page);
+  await dockSettled(page, 1920);
+  await expect.poll(() => filesBelowDetails(page)).toBe("below");
+  await expect
+    .poll(() => sideWidths(page))
+    .toEqual({ list: after.list, column: after.column });
+});

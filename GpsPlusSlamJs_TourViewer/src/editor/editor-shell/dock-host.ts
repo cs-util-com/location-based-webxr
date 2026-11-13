@@ -47,8 +47,10 @@ import {
 } from "./dock-rail.js";
 import { moveTargets, showMoveMenu, type MoveTarget } from "./dock-move.js";
 import {
+  createDockKeeper,
   dockFormFactor,
   dockSaveKey,
+  keptAtSize,
   readSavedDock,
   writeSavedDock,
   type DockFormFactor,
@@ -721,6 +723,39 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
   // proportional layout); the side groups then take the widths of the new
   // window, the 3D view the rest. A hidden one takes it when it shows.
   let windowPx = root.clientWidth;
+  /** The groups fitted to the window as after a resize: the side groups
+   *  at its widths (a hidden one when it shows), the bottom panel's group
+   *  at its first height (a hidden one when it shows). */
+  const refit = () => {
+    if (disposed) return;
+    if (maxed !== null) {
+      // Given back with the layout, at the new window's widths.
+      for (const side of SIDES) stale.add(side);
+      return;
+    }
+    for (const side of SIDES) {
+      const group = groupOf(side);
+      if (folds.has(group.id)) continue;
+      if (group.api.isVisible) group.api.setSize({ width: sideWidth(side) });
+      else stale.add(side);
+    }
+    // Only a group of the bottom panel's panes takes the bottom's height:
+    // Problems dragged into the right column leaves that column's height.
+    const bottom = groupOf("problems");
+    const onlyBottomPanes = bottom.panels.every(
+      (p) => isDockPanelId(p.id) && dockPanel(p.id).group === "bottom",
+    );
+    if (!onlyBottomPanes || folds.has(bottom.id)) return;
+    const heightPx = bottomStartPx(root.clientHeight);
+    if (bottom.api.isVisible) {
+      bottom.api.setSize({ height: heightPx });
+      return;
+    }
+    for (const id of [...unsized.keys()]) {
+      if (dockPanel(id).group === "bottom") unsized.delete(id);
+    }
+    unsized.set("problems", { id: "problems", heightPx });
+  };
   const onResize = () => {
     if (disposed) return;
     const now = dockFormFactor(window.innerWidth, window.innerHeight);
@@ -738,32 +773,7 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
       // Once the writer goes, the details take the new window's width.
       beforeWriter = dockWidths(window.innerWidth).column;
     }
-    afterLayout(() => {
-      if (disposed) return;
-      if (maxed !== null) {
-        // Given back with the layout, at the new window's widths.
-        for (const side of SIDES) stale.add(side);
-        return;
-      }
-      for (const side of SIDES) {
-        const group = groupOf(side);
-        if (folds.has(group.id)) continue;
-        if (group.api.isVisible) group.api.setSize({ width: sideWidth(side) });
-        else stale.add(side);
-      }
-      // The bottom group its first height for the new window, now or when
-      // it next shows.
-      const heightPx = bottomStartPx(root.clientHeight);
-      const bottom = groupOf("problems");
-      if (bottom.api.isVisible) {
-        bottom.api.setSize({ height: heightPx });
-        return;
-      }
-      for (const id of [...unsized.keys()]) {
-        if (dockPanel(id).group === "bottom") unsized.delete(id);
-      }
-      unsized.set("problems", { id: "problems", heightPx });
-    });
+    afterLayout(refit);
   };
   const resizeWatch = new ResizeObserver(onResize);
   resizeWatch.observe(root);
@@ -911,15 +921,20 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
   root.addEventListener("contextmenu", onTabMenu, true);
 
   // --- keeping the layout ------------------------------------------------
-  let keepTimer: ReturnType<typeof setTimeout> | null = null;
-  /** Keeps the layout for its form factor now; not while a keyboard
-   *  holds a group maximized, nor once the window has another form factor
-   *  (the layout squeezed into it is not the creator's). */
-  const keep = () => {
-    if (keepTimer !== null) clearTimeout(keepTimer);
-    keepTimer = null;
-    const storage = deps.storage;
-    if (storage === undefined || storage === null || maxed !== null) return;
+  const keeper = createDockKeeper((key, text) => {
+    try {
+      deps.storage?.setItem(key, text);
+    } catch {
+      // Storage full or blocked: the layout is not kept.
+    }
+  }, KEEP_DELAY_MS);
+  /** The layout taken as it is now, to keep for its form factor once its
+   *  changes settle; not while a keyboard holds a group maximized, nor
+   *  once the window has another form factor (the layout squeezed into it
+   *  is not the creator's: the one taken before the turn is kept). */
+  const keepSoon = () => {
+    if (disposed || laying || maxed !== null) return;
+    if (deps.storage === undefined || deps.storage === null) return;
     if (dockFormFactor(window.innerWidth, window.innerHeight) !== formFactor) {
       return;
     }
@@ -928,19 +943,7 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
       const panel = group?.panels.map((p) => p.id).find(isDockPanelId);
       return panel === undefined ? [] : [{ panel, prevPx: fold.prevPx }];
     });
-    try {
-      storage.setItem(
-        dockSaveKey(formFactor),
-        writeSavedDock(dock.toJSON(), kept),
-      );
-    } catch {
-      // Storage full or blocked: the layout is not kept.
-    }
-  };
-  const keepSoon = () => {
-    if (disposed || laying) return;
-    if (keepTimer !== null) clearTimeout(keepTimer);
-    keepTimer = setTimeout(keep, KEEP_DELAY_MS);
+    keeper.soon(dockSaveKey(formFactor), writeSavedDock(dock.toJSON(), kept));
   };
 
   const changed = dock.onDidActivePanelChange(() => {
@@ -1097,12 +1100,24 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
     }
   };
   refold();
+  /** A kept layout opened at another size than it was kept at is fitted
+   *  as after a window resize. */
+  const fitKept = () => {
+    if (
+      restoredFrom !== null &&
+      !keptAtSize(restoredFrom, root.clientWidth, root.clientHeight)
+    ) {
+      afterLayout(refit);
+    }
+  };
+  fitKept();
 
   /** The window took another form factor: its own kept layout (or the
    *  default) replaces this one, which stays kept for its own. */
   const switchTo = (next: DockFormFactor) => {
-    if (keepTimer !== null) clearTimeout(keepTimer);
-    keepTimer = null;
+    // A change made just before the turn is kept for the form factor it
+    // was made in.
+    keeper.flush();
     giveBack();
     const back = holdFocus([...contents.values()]);
     laying = true;
@@ -1117,6 +1132,7 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
     settle(layOut());
     laying = false;
     refold();
+    fitKept();
     windowPx = root.clientWidth;
     fitWriter();
     fitStrips();
@@ -1246,7 +1262,7 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
       root.removeEventListener("keydown", onTabKey, true);
       root.removeEventListener("contextmenu", onTabMenu, true);
       // A change still to keep is kept before the layout goes.
-      if (keepTimer !== null) keep();
+      keeper.flush();
       unmaxed.dispose();
       changed.dispose();
       laidOut.dispose();

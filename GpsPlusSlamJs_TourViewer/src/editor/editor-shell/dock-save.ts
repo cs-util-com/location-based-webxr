@@ -149,3 +149,57 @@ export function readSavedDock(raw: string | null): SavedDock | null {
     : [];
   return { layout, folds };
 }
+
+/** Whether a kept layout is laid out at the size it was kept at (within a
+ *  pixel each way). At another size its sizes are not the creator's: the
+ *  host then fits it as after a window resize. */
+export function keptAtSize(
+  saved: SavedDock,
+  widthPx: number,
+  heightPx: number,
+): boolean {
+  const { width, height } = saved.layout.grid;
+  return Math.abs(width - widthPx) <= 1 && Math.abs(height - heightPx) <= 1;
+}
+
+/** A layout's write put off until its changes settle. */
+export interface DockKeeper {
+  /** `text` to write under `key` once `delayMs` pass with no other
+   *  change; a pending one of another key is written first. */
+  soon(key: string, text: string): void;
+  /** The pending layout written now, if any. */
+  flush(): void;
+  /** The pending layout dropped. */
+  cancel(): void;
+}
+
+/** A keeper writing through `write` (which handles its own failures). The
+ *  layout is taken when it changes, not when it is written, so a write
+ *  flushed after the window turned keeps the layout of before the turn. */
+export function createDockKeeper(
+  write: (key: string, text: string) => void,
+  delayMs: number,
+): DockKeeper {
+  let pending: { readonly key: string; readonly text: string } | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const cancel = () => {
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
+    pending = null;
+  };
+  const flush = () => {
+    const was = pending;
+    cancel();
+    if (was !== null) write(was.key, was.text);
+  };
+  return {
+    soon(key, text) {
+      if (pending !== null && pending.key !== key) flush();
+      if (timer !== null) clearTimeout(timer);
+      pending = { key, text };
+      timer = setTimeout(flush, delayMs);
+    },
+    flush,
+    cancel,
+  };
+}
