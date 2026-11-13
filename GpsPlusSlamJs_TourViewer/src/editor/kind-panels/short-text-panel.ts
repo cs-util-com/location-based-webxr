@@ -12,18 +12,12 @@
  */
 import {
   KIND_EDIT,
+  SHORT_TEXT_VIEWS,
   type FieldChoice,
   type FieldSpec,
 } from "../../kinds/edit-kinds.js";
 import { chipGroup, el } from "../editor-shell/inspector-fields.js";
 import type { KindPanel } from "./kind-panel.js";
-
-/** The views a creator chooses between, in the order they show. */
-const SHORT_TEXT_VIEW_CHOICES: readonly FieldChoice[] = [
-  { value: "pin", label: "Pin" },
-  { value: "sign", label: "Sign" },
-  { value: "edgeHint", label: "Edge hint" },
-];
 
 /** What each view does, under its chips. */
 const VIEW_NOTE: Readonly<Record<string, string>> = {
@@ -73,7 +67,7 @@ export function createShortTextPanel(deps: ShortTextPanelDeps): KindPanel {
           const [viewLabel, viewChips] = chipGroup(
             "Shows as",
             "short-view",
-            SHORT_TEXT_VIEW_CHOICES,
+            SHORT_TEXT_VIEWS,
             parts.view,
           );
           box.append(

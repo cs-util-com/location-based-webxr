@@ -542,6 +542,39 @@ describe("buildInspector", () => {
     });
   });
 
+  it("names a short text by the view it shows as", () => {
+    // Why: a sign or an edge hint headed "Pin in ..." told the creator
+    // it was still a pin after choosing otherwise.
+    const as = (view: "pin" | "sign" | "edgeHint") => {
+      const [first, ...rest] = STATIONS;
+      if (first === undefined) throw new Error("no station");
+      const station = {
+        ...first,
+        ...stationContent([
+          {
+            id: "t",
+            kind: "shortText",
+            view,
+            caption: "Gate",
+            createdAtIso: AT,
+            pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+          },
+        ]),
+      };
+      const model = buildInspector({
+        selected: "t",
+        stations: [station, ...rest],
+        assets: [],
+        codes: [],
+        unlockedStations: [],
+      });
+      return model !== null && "sub" in model ? model.sub : null;
+    };
+    expect(as("sign")).toBe("Sign in Market Square");
+    expect(as("edgeHint")).toBe("Edge hint in Market Square");
+    expect(as("pin")).toBe("Pin in Market Square");
+  });
+
   it("shows an item's kind, its station, its offset and its size", () => {
     expect(inspect("pin-1")).toEqual({
       kind: "item",

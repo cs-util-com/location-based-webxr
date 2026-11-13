@@ -48,6 +48,14 @@ const SHORT_TEXT_TURNS: readonly FieldChoice[] = [
   { value: "face", label: "Faces you" },
 ];
 
+/** How a short text shows, by the words a creator reads (its views
+ *  with a world look; the card has no chip). */
+export const SHORT_TEXT_VIEWS: readonly FieldChoice[] = [
+  { value: "pin", label: "Pin" },
+  { value: "sign", label: "Sign" },
+  { value: "edgeHint", label: "Edge hint" },
+];
+
 /** One field of a kind, as the inspector draws it. */
 export interface FieldSpec {
   /** The block's own field (`data-field` in the inspector). */
@@ -343,6 +351,19 @@ export function isStoryOnly(kind: TourBlockKind): boolean {
 export function kindNoun(kind: TourBlockKind): string {
   const label: string = KIND_EDIT[kind].label;
   return label.charAt(0).toLowerCase() + label.slice(1);
+}
+
+/** What a block is called in the inspector's head: its kind's label,
+ *  or for a short text the view it shows as ("Sign", "Edge hint"). */
+export function blockLabel(block: {
+  readonly kind: TourBlockKind;
+  readonly view: string;
+}): string {
+  if (block.kind === "shortText") {
+    const view = SHORT_TEXT_VIEWS.find((v) => v.value === block.view);
+    if (view !== undefined) return view.label;
+  }
+  return KIND_EDIT[block.kind].label;
 }
 
 /** Its word with its article: "a pin", "an audio". */

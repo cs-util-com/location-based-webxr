@@ -180,3 +180,7 @@ row removed.
 ## Choice fields
 
 A `FieldSpec` may carry `choices` (`FieldChoice`: value and label): a field chosen on chips by the kind's panel, never typed. The short text has `role` (`SHORT_TEXT_ROLES`) and, for a sign, `orientation` (`SHORT_TEXT_TURNS`), plus the number field `readAtM` (1-40 m, signs only).
+
+## A block's name by its view
+
+`SHORT_TEXT_VIEWS` names a short text's views (Pin, Sign, Edge hint); `blockLabel(block)` is the kind's label, or for a short text its view's name. The inspector's head reads it, so a sign is headed "Sign in ...".

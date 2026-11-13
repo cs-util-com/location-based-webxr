@@ -59,7 +59,7 @@ import {
 import type { ModelFocus, ModelPick } from "../editor-view.js";
 import { facingDegOf } from "../../character-views.js";
 
-import { KIND_EDIT } from "../../kinds/edit-kinds.js";
+import { blockLabel, KIND_EDIT } from "../../kinds/edit-kinds.js";
 import { objectTitle } from "../../object-describe.js";
 import { readingSheetContent } from "../../reading-sign.js";
 import { stationTitle } from "../../station-run.js";
@@ -793,7 +793,7 @@ function storyChildInspector(
       moves: movesOf(child.id, stations),
       rowKind: storyRows({ children: [child] })[0]?.kind ?? "text",
       title: objectTitle(child),
-      sub: `${crumb} / ${KIND_EDIT[child.kind].label}, ${entry}`,
+      sub: `${crumb} / ${blockLabel(child)}, ${entry}`,
       block: storyEntry(child),
       advance: {
         mode: child.advance.mode,
@@ -978,7 +978,7 @@ export function buildInspector(input: {
       kind: "item",
       itemKind: item.kind,
       title: objectTitle(item),
-      sub: `${KIND_EDIT[item.kind].label} in ${stationTitle(station, index + 1)}`,
+      sub: `${blockLabel(item)} in ${stationTitle(station, index + 1)}`,
       stationId: station.id,
       moves: movesOf(item.id, stations, input.selectedFileUnsaved === true),
       text: item.kind === "shortText" ? item.caption : null,
