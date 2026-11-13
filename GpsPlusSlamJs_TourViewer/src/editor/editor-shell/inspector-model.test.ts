@@ -692,6 +692,38 @@ describe("inspectorHint", () => {
       extent: { field: "widthM", label: "Width", value: 1.5, max: 50 },
     });
     expect(inspectorHint(photo)).toMatch(/, a white dot to resize$/);
+    // A picture has no slider: its width is typed. A video standing as a
+    // screen has one beside the number, on the track set by feel.
+    expect(photo).toMatchObject({ extent: { slider: null } });
+    const screen = buildInspector({
+      selected: "clip",
+      stations: [
+        {
+          ...STATIONS[0]!,
+          ...stationContent([
+            {
+              id: "clip",
+              kind: "video",
+              view: "screen",
+              video: "v",
+              widthM: 2,
+              createdAtIso: AT,
+              pose: { position: [1, 1, 0], rotation: [0, 0, 0, 1] },
+            },
+          ]),
+        },
+      ],
+      assets: [],
+      codes: CODES,
+      unlockedStations: [],
+    });
+    expect(screen).toMatchObject({
+      extent: {
+        field: "widthM",
+        value: 2,
+        slider: { min: 0.3, max: 6, step: 0.05 },
+      },
+    });
     expect(inspectorHint(inspect("level-1"))).toBe(
       "Code 1 - read-only here; F frames it, Esc deselects",
     );

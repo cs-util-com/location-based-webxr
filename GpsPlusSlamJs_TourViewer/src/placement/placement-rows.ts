@@ -50,6 +50,14 @@ export interface ExtentSpec {
   readonly meaning: string;
   readonly min: number;
   readonly max: number;
+  /** The inspector's slider beside the typed value: the values a creator
+   *  sets by feel (the number takes the rest of `min`..`max`); absent:
+   *  typed only. */
+  readonly slider?: {
+    readonly min: number;
+    readonly max: number;
+    readonly step: number;
+  };
 }
 
 /** What one view of a kind (or a folder, or a station) says about
@@ -103,6 +111,16 @@ const WIDE: ViewPlacement = {
   },
 };
 
+/** A video's dots: a picture's, and a slider for the widths a wall, a
+ *  table or a doorway takes. */
+const VIDEO_WIDE: ViewPlacement = {
+  ...WIDE,
+  extent: {
+    ...(WIDE.extent as ExtentSpec),
+    slider: { min: 0.3, max: 6, step: 0.05 },
+  },
+};
+
 type ViewsOf<K extends TourBlockKind> = (typeof TOUR_KINDS)[K]["views"][number];
 
 /** THE block table: one row per kind and view of the format. */
@@ -115,9 +133,9 @@ export const BLOCK_PLACEMENT = {
   // A screen and a porthole stand at their pose; a cutout turns toward
   // the viewer by a little from it, so its pose's turn is still its own.
   video: {
-    screen: WIDE,
-    cutout: WIDE,
-    porthole: WIDE,
+    screen: VIDEO_WIDE,
+    cutout: VIDEO_WIDE,
+    porthole: VIDEO_WIDE,
     card: POSELESS,
   },
   // A sound's reach has no dots: it is set in the inspector.

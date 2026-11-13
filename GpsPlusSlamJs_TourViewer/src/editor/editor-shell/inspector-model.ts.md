@@ -69,7 +69,8 @@ view, advance, facingDeg }`) and `advance { mode, afterS }`;
     title by `objectTitle`), `stationId`, `text` (a pin's caption to edit; null for a
     photo or a model), `extent` (`InspectorExtent`: the size its white
     dots change, as its placement row gives it - `field`, `label`,
-    `meaning`, the tour's `value`, `min`, `max`; a model's Size, a
+    `meaning`, the tour's `value`, `min`, `max`, `slider` (the track of
+    the slider beside the number, or null); a model's Size, a
     picture's Width; null for an item with none), `fields` (its
     other text fields to type, `blockFields` of `../block-fields.ts`:
     a short text's description, a picture's title, caption and alt text,

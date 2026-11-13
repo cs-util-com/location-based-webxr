@@ -140,6 +140,7 @@ import {
   wirePhoneSheets,
   type SheetKind,
 } from "./phone-sheet.js";
+import { wireExtentSlider } from "./extent-slider.js";
 import { wireRadiusSlider } from "./radius-slider.js";
 import { createShellPictures } from "./shell-pictures.js";
 import { tourProblems } from "./tour-problems.js";
@@ -1072,6 +1073,23 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     },
   });
 
+  const extentSlider = wireExtentSlider({
+    root: inspector.root,
+    // Read once, at a drag's start.
+    item: () => {
+      const ui = state().editorView;
+      const model = inspectorModel(ui);
+      return ui.selected !== null &&
+        model?.kind === "item" &&
+        model.extent !== null
+        ? { id: ui.selected, value: model.extent.value }
+        : null;
+    },
+    write: (id, value) => {
+      deps.edits.scene({ kind: "extent", ref: { kind: "block", id }, value });
+    },
+  });
+
   /** The inspector's field that has the focus, with text typed and not
    *  yet committed; null for none. */
   const typedField = (): TypedField | null => {
@@ -1204,6 +1222,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       lastSelected = selected;
       positionOpen = false;
       radius.cancel();
+      extentSlider.cancel();
       busy?.stop.abort();
       busy = null;
       const pending = typedField();
@@ -2445,6 +2464,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       }
       endUnfolding();
       radius.cancel();
+      extentSlider.cancel();
       const pending = typedField();
       if (pending !== null) commitField(pending, lastSelected);
       panels.flush();

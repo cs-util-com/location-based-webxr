@@ -81,6 +81,7 @@ import {
   contentsSummary,
   entriesList,
 } from "./inspector-contents.js";
+import { extentRange } from "./extent-slider.js";
 import { radiusRange } from "./radius-slider.js";
 import { wirePinTextCounter, wireTextCounter } from "../../pin-text.js";
 import { blockFieldPlaceholder, type BlockField } from "../block-fields.js";
@@ -769,11 +770,17 @@ function itemDelete(model: ItemModel): HTMLButtonElement {
   });
 }
 
-/** The size an item's white dots change, to type, with what it means. */
+/** The size an item's white dots change, to type (beside its slider, for
+ *  a kind that has one), with what it means. */
 function extentParts(extent: InspectorExtent): HTMLElement {
   const section = el("div", "isec");
+  const { box, input } = numberBox("size", fixed(extent.value, 2), "m");
+  const shown =
+    extent.slider === null
+      ? box
+      : extentRange(box, extent.label, extent.slider, extent.value);
   section.append(
-    numberField(extent.label, "size", fixed(extent.value, 2), "m"),
+    labelled(extent.label, input, shown),
     el(
       "div",
       "note",

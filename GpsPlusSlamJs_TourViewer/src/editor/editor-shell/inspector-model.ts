@@ -70,6 +70,7 @@ import {
   posedEntryOf,
 } from "../../placement/placeables.js";
 import type { ExtentSpec } from "../../placement/placement-rows.js";
+import type { SliderTrack } from "./range-slider.js";
 import {
   blockChoices,
   blockFields,
@@ -330,6 +331,9 @@ export interface InspectorExtent {
   readonly value: number;
   readonly min: number;
   readonly max: number;
+  /** The slider beside the number (`ExtentSpec.slider`); null: typed
+   *  only. */
+  readonly slider: SliderTrack | null;
 }
 
 /** `item`'s size its row's `spec` names, with the tour's value; null for
@@ -349,6 +353,7 @@ function extentOf(
     value,
     min: spec.min,
     max: spec.max,
+    slider: spec.slider ?? null,
   };
 }
 

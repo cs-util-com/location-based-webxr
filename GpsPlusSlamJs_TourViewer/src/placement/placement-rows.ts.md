@@ -17,7 +17,9 @@ folder and a station), what the 3D editor's handles do with it:
   never mixed: `size` (a real size of the drawing, which scales with it:
   a model's `sizeM`, a picture's `widthM`), `reach` (a distance that is
   no scale of the drawing: a station's `foundRadiusM`) and `factor` (a
-  uniform scale of a whole frame: a folder's `scale`).
+  uniform scale of a whole frame: a folder's `scale`). Its optional
+  `slider` is the inspector's track beside the typed value (a video's
+  width: 0.3-6 m, step 0.05 m; `extent-slider.ts`).
 
 The rows are per VIEW, not per kind, because a block may stand in the
 world in one view and be a card in another (a video: a screen, a cutout
