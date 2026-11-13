@@ -2463,6 +2463,31 @@ describe("docked folds and counts", () => {
     shell.hide();
   });
 
+  // Why: the docking refuses a fold it cannot make (a floating group, a
+  // size not yet known). The store must not keep the fold then: the
+  // details were marked folded with no rail to unfold them by.
+  it("a fold the docking refuses leaves the store unfolded", async () => {
+    const { store, host, shell } = await docked();
+    host.fold.mockImplementation(() => undefined);
+    store.dispatch(
+      editorViewActions.dockFolded({ dock: "inspector", folded: true }),
+    );
+    expect(host.fold).toHaveBeenCalledWith("details", true);
+    expect(host.folded()).toBe(false);
+    expect(store.getState().editorView.foldedDocks).toEqual({
+      tree: false,
+      inspector: false,
+    });
+    // A later fold the docking takes still reaches it.
+    host.fold.mockRestore();
+    store.dispatch(
+      editorViewActions.dockFolded({ dock: "inspector", folded: true }),
+    );
+    expect(host.folded()).toBe(true);
+    expect(store.getState().editorView.foldedDocks.inspector).toBe(true);
+    shell.hide();
+  });
+
   // Why: where the details share a group with the list (a phone's one
   // group), a tap on a row must bring the details forward, and so must a
   // tap on another row while the list is the tab in front. The details'

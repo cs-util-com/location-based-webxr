@@ -123,7 +123,9 @@ to a station, a story's name in the head takes the focus, selected.
     in sight too: `docked({ shown })`, a toggle's hide is `hidePane`), so
     two panels dragged into one group (one fold for both) never undo
     each other, and the approach fold keeps working. An unfold from a rail
-    counts as the creator's for the approach. Docked, the dock rule
+    counts as the creator's for the approach. A fold the docking refuses (a
+    floating group, a size not yet known) is written back, so the store
+    never shows a fold that did not happen. Docked, the dock rule
     folds no side for the other (the 3D view gives way); only a phone
     turned sideways still unfolds the list. Docked, a selection that
     appears shows Details over Files, and the Details panel says "Select

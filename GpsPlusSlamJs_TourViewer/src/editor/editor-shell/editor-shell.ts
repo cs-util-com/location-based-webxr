@@ -2403,6 +2403,13 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       if (folded === carried[dock]) continue;
       carried = { ...carried, [dock]: folded };
       dockHost.fold(id, folded);
+      // The docking may refuse (a floating group, a size not yet known),
+      // so the store follows what it did rather than what was asked.
+      const took = dockHost.folded(id);
+      if (took !== folded) {
+        carried = { ...carried, [dock]: took };
+        store.dispatch(editorViewActions.dockFolded({ dock, folded: took }));
+      }
     }
   };
   const mountDock = (mount: typeof mountDockHost) => {
