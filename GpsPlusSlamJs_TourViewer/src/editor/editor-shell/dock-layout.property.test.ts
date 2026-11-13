@@ -95,4 +95,21 @@ describe("a keyboard over the docked layout, at any window", () => {
       ),
     );
   });
+
+  // Why: a group further down keeps less over the same keyboard; once its
+  // room is too little, a group lower still must never get the layout back.
+  it("maximizes for a group lower down once it does", () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 200, max: 2000 }),
+        fc.integer({ min: 1, max: 1500 }),
+        fc.integer({ min: 0, max: 1500 }),
+        fc.integer({ min: 0, max: 500 }),
+        (h, k, top, more) => {
+          if (!keyboardMaximizes(h, k, top)) return;
+          expect(keyboardMaximizes(h, k, top + more)).toBe(true);
+        },
+      ),
+    );
+  });
 });

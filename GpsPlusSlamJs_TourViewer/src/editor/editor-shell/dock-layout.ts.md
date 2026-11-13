@@ -37,10 +37,14 @@ group, icon }`, the 3D view first. `element` is the adopted page element's id
   px and at most 52 % of the window (`long-text-editor.css`'s widths).
 - `bottomStartPx(heightPx)` - the bottom group's first height: a third of
   the height below the top bar, between 90 and 220 px.
-- `KEYBOARD_ROOM_PX` (390) and `keyboardMaximizes(heightPx, keyboardPx)` -
-  whether an on-screen keyboard leaves the window less than 390 px, so the
+- `KEYBOARD_ROOM_PX` (390) and `keyboardMaximizes(heightPx, keyboardPx, belowTopPx?)` -
+  whether an on-screen keyboard leaves less than 390 px for the group in
+  use, counted from that group's top (`belowTopPx` below the layout's top:
+  a phone's group held upright stands about 420 px down, under the 3D view,
+  so any keyboard covers it while the window still counts as tall), so the
   group holding the field in use takes the whole layout (`dock-host.ts`);
-  false without a keyboard or for a non-finite input.
+  false without a keyboard or for a non-finite size; a negative or
+  non-finite top counts as 0.
 - `defaultDockLayout(widthPx, heightPx)` - `DockStep[]`: the 3D view; the
   list left of it; Details right of it with Files as its second tab
   (inactive); Problems below the view with History, Map loading and

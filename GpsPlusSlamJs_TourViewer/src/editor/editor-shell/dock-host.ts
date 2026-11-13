@@ -206,6 +206,9 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
    *  shown group's size and shown tab. */
   let maxed: {
     readonly group: DockviewGroupPanel;
+    /** How far below the layout's top the group stood before: maximized
+     *  it stands at the top, which must not end its maximizing. */
+    readonly belowTopPx: number;
     /** Each group's least height before: maximized, none has any, so the
      *  group fits the little room a keyboard leaves (the hidden groups'
      *  least heights still bound the layout's). */
@@ -903,10 +906,16 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
     fitStrips();
     fitUnder();
   };
+  /** How far below the layout's top `group` stands now. */
+  const belowTop = (group: DockviewGroupPanel) =>
+    group.element.getBoundingClientRect().top -
+    root.getBoundingClientRect().top;
   const maximize = (group: DockviewGroupPanel) => {
+    const belowTopPx = belowTop(group);
     giveBack();
     maxed = {
       group,
+      belowTopPx,
       minimumHeights: new Map(dock.groups.map((g) => [g, g.minimumHeight])),
       before: dock.groups
         .filter((g) => g.api.isVisible)
@@ -925,13 +934,21 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
     dock.layout(root.clientWidth, root.clientHeight, true);
     fitUnder();
   };
-  /** Over a window the keyboard leaves too short, the group holding the
-   *  field in use takes the whole layout; otherwise the layout is given
-   *  back as it was. */
+  /** Where the keyboard leaves the group holding the field in use too
+   *  little room (a short window, or a phone's group held upright under
+   *  the 3D view), that group takes the whole layout; otherwise the layout
+   *  is given back as it was. */
   const fitKeyboard = () => {
     if (disposed) return;
-    const want = keyboardMaximizes(window.innerHeight, keyboardPx)
-      ? focusedGroup()
+    const focused = focusedGroup();
+    const top =
+      focused === null
+        ? 0
+        : maxed?.group === focused
+          ? maxed.belowTopPx
+          : belowTop(focused);
+    const want = keyboardMaximizes(window.innerHeight, keyboardPx, top)
+      ? focused
       : null;
     if (want === (maxed?.group ?? null)) return;
     if (want === null) giveBack();

@@ -255,6 +255,24 @@ describe("a keyboard over the docked layout", () => {
     expect(keyboardMaximizes(900, 300)).toBe(false);
   });
 
+  // Why: a phone held upright has room over any keyboard, but its group
+  // stands under the 3D view, about 420 px below the layout's top: a
+  // keyboard covers it from the foot, the list's search and the details'
+  // fields with it, while the window still counts as tall. The room that
+  // counts is the one the group in use keeps over the keyboard.
+  it("counts the room from the top of the group in use", () => {
+    expect(keyboardMaximizes(777, 150)).toBe(false);
+    expect(keyboardMaximizes(777, 150, 420)).toBe(true);
+    expect(keyboardMaximizes(777, 80, 420)).toBe(true);
+    expect(keyboardMaximizes(900, 100, 400)).toBe(false);
+    expect(keyboardMaximizes(900, 100, 411)).toBe(true);
+    expect(keyboardMaximizes(777, 0, 420)).toBe(false);
+    // A group at the layout's top, or a nonsense top, counts the window.
+    expect(keyboardMaximizes(600, 150, 0)).toBe(false);
+    expect(keyboardMaximizes(600, 150, -40)).toBe(false);
+    expect(keyboardMaximizes(600, 150, Number.NaN)).toBe(false);
+  });
+
   it("never maximizes without a keyboard, or for nonsense", () => {
     expect(keyboardMaximizes(390, 0)).toBe(false);
     expect(keyboardMaximizes(390, -20)).toBe(false);

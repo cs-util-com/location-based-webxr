@@ -180,14 +180,19 @@ export function writerWidthPx(widthPx: number, wide: boolean): number {
 export const KEYBOARD_ROOM_PX = 390;
 
 /** Whether a keyboard of `keyboardPx` over a window of `heightPx`
- *  leaves less than `KEYBOARD_ROOM_PX`; never without a keyboard. */
+ *  leaves less than `KEYBOARD_ROOM_PX` for the group in use, whose top
+ *  stands `belowTopPx` below the layout's (a phone's group held upright,
+ *  under the 3D view; 0 for one at the top, as is a nonsense value);
+ *  never without a keyboard. */
 export function keyboardMaximizes(
   heightPx: number,
   keyboardPx: number,
+  belowTopPx = 0,
 ): boolean {
   if (!Number.isFinite(heightPx) || !Number.isFinite(keyboardPx)) return false;
   if (keyboardPx <= 0) return false;
-  return heightPx - keyboardPx < KEYBOARD_ROOM_PX;
+  const below = Number.isFinite(belowTopPx) ? Math.max(0, belowTopPx) : 0;
+  return heightPx - keyboardPx - below < KEYBOARD_ROOM_PX;
 }
 
 /** The bottom group's height when first shown: 220 px, at most about a

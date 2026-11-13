@@ -58,8 +58,12 @@ are not part of the page's first load.
   - `keyboard(px)` - an on-screen keyboard of `px` (0: none) came, changed
     or went: the groups are laid out for the box now rather than on the next
     frame (the phone keyboard calls it before scrolling a field into sight).
-    While `keyboardMaximizes(innerHeight, px)` (what the keyboard leaves is
-    under `KEYBOARD_ROOM_PX`), the shown group whose panel holds the focus
+    While `keyboardMaximizes(innerHeight, px, belowTop)` (what the keyboard
+    leaves the group in use, counted from its top, is under
+    `KEYBOARD_ROOM_PX`: a short window, or a phone's group held upright
+    under the 3D view at any keyboard; maximized, the group keeps the top
+    it had before, so standing at the top does not end it), the shown
+    group whose panel holds the focus
     is maximized with its tab strip hidden; a focus coming into the layout
     while the keyboard is up (a `focusin`) maximizes the group it lands in.
     While one is maximized the other groups are hidden and their panels out
