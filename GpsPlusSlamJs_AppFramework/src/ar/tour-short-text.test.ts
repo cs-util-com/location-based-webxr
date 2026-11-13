@@ -48,7 +48,7 @@ const read = (fields: Record<string, unknown>, view: string | null = 'sign') =>
   );
 
 describe('a short text in the world', () => {
-  it('stands as a pin, a sign or a hint at the screen edge', () => {
+  it('stands as a pin, a sign, a hint at the screen edge or an arrow on the ground', () => {
     // Why: every one of these is drawn in the station for as long as the
     // block is there; the card is a story's alone. An unknown view of a
     // newer file falls back to the pin, which every reader draws.
@@ -56,9 +56,15 @@ describe('a short text in the world', () => {
       'pin',
       'sign',
       'edgeHint',
+      'ground',
       'card',
     ]);
-    expect(TOUR_KINDS.shortText.freeViews).toEqual(['pin', 'sign', 'edgeHint']);
+    expect(TOUR_KINDS.shortText.freeViews).toEqual([
+      'pin',
+      'sign',
+      'edgeHint',
+      'ground',
+    ]);
     expect(TOUR_KINDS.shortText.worldViews).toEqual(
       TOUR_KINDS.shortText.freeViews
     );
@@ -88,7 +94,7 @@ describe('a short text in the world', () => {
       color: '#5fe3c9',
       darkColor: '#151A20',
     };
-    for (const view of ['pin', 'sign', 'edgeHint', 'card', null]) {
+    for (const view of ['pin', 'sign', 'edgeHint', 'ground', 'card', null]) {
       expect(read(fields, view)).toEqual({ caption: 'Gate', ...fields });
     }
   });

@@ -6,7 +6,7 @@ The short text's world door (`PLAY_KINDS.shortText.world`): what stands in the w
 
 ## Public API
 
-- `shortTextWorld(block, env): WorldPart | null` - `sign` to `signPart`, `edgeHint` to `edgeHintPart`, null for the rest (a `pin` is the renderer's label; a `card` stands nothing).
+- `shortTextWorld(block, env): WorldPart | null` - `sign` to `signPart`, `edgeHint` to `edgeHintPart`, `ground` to `groundPart`, null for the rest (a `pin` is the renderer's label; a `card` stands nothing).
 
 ## Invariants
 

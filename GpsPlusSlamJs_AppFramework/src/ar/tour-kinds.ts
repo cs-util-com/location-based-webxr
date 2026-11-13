@@ -77,11 +77,11 @@ const MODEL_WORLD_VIEWS: ReadonlySet<string> = new Set(TOUR_MODEL_WORLD_VIEWS);
 
 /* Each kind's views. A view joins the format with its renderer; `card` (the
  * block in the scene card) exists for every kind. */
-/* A short text stands as a pin, a sign on posts (`sign`) or a hint that
- * keeps to the screen's edge while its spot is out of view (`edgeHint`).
- * The ground arrow's fields are read already (`tour-short-text.ts`); its
- * view joins with its renderer. */
-const SHORT_TEXT_WORLD_VIEWS = ['pin', 'sign', 'edgeHint'] as const;
+/* A short text stands as a pin, a sign on posts (`sign`), a hint that
+ * keeps to the screen's edge while its spot is out of view (`edgeHint`)
+ * or an arrow on the ground toward the point it points to (`ground`, its
+ * fields read by `tour-short-text.ts`). */
+const SHORT_TEXT_WORLD_VIEWS = ['pin', 'sign', 'edgeHint', 'ground'] as const;
 const SHORT_TEXT_VIEWS = [...SHORT_TEXT_WORLD_VIEWS, 'card'] as const;
 const LONG_TEXT_VIEWS = ['lectern', 'reading', 'card'] as const;
 const PICTURE_VIEWS = ['plane', 'card'] as const;

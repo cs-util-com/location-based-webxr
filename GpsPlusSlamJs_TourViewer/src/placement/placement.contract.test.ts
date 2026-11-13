@@ -81,6 +81,7 @@ const EXPECTED: readonly (readonly [
   ["shortText", "pin", true, false, null],
   ["shortText", "sign", true, true, null],
   ["shortText", "edgeHint", true, false, null],
+  ["shortText", "ground", true, true, null],
   ["shortText", "card", false, false, null],
   ["longText", "lectern", true, true, null],
   ["longText", "reading", true, false, null],

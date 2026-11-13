@@ -1182,6 +1182,9 @@ export function createViewerPlacement(deps: {
       ...(deps.worldScreen === undefined ? {} : { screen: deps.worldScreen }),
       parseModel: (blob) => seams.loadGlbModel(blob),
       enableClipping: () => seams.enableClipping(),
+      reduceMotion: () =>
+        globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ===
+        true,
     });
     const rendererDeps = (parent: Object3D, alive: () => boolean) => ({
       assets: manifest.assets,
