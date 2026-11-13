@@ -31,6 +31,7 @@ import {
 } from "gps-plus-slam-editor-kit/chrome";
 
 import { ADD_CHOICES, type AddKind } from "../../kinds/edit-kinds.js";
+import type { StepKind } from "../story-step-edits.js";
 
 export interface TreeAddMenu {
   /** Open under `anchor` for the station `stationId`, titled `title`, the
@@ -44,8 +45,9 @@ export interface TreeAddMenu {
 }
 
 /** What the menu adds: an addable kind, a character (made in the
- *  character maker first, then added) or a story. */
-export type TreeAddChoice = AddKind | "character" | "story";
+ *  character maker first, then added), a story, or - into a story only -
+ *  a choice or a quiz. */
+export type TreeAddChoice = AddKind | "character" | "story" | StepKind;
 
 /** The menu's least distance from the window's edges (px). */
 const EDGE_PX = 8;
@@ -92,7 +94,10 @@ export function createTreeAddMenu(deps: {
   /** Where the menu goes (the page's body). */
   readonly host: HTMLElement;
   /** Add `kind` to the station; run after the menu closed. */
-  readonly choose: (stationId: string, kind: TreeAddChoice) => void;
+  readonly choose: (
+    stationId: string,
+    kind: Exclude<TreeAddChoice, StepKind>,
+  ) => void;
   /** Add `kind` to the story; run after the menu closed. */
   readonly chooseForStory: (
     storyId: string,
@@ -154,6 +159,25 @@ export function createTreeAddMenu(deps: {
       "character",
     ),
   );
+  // What a story asks goes behind a line, on a story's menu only: a
+  // choice and a quiz are steps of a story, never a station's items.
+  const askPart = document.createElement("div");
+  askPart.className = "storypart";
+  askPart.append(
+    itemOf(
+      "choice",
+      "Choice",
+      "2 to 4 answers; each goes on, jumps to a step or ends the story",
+      "choice",
+    ),
+    itemOf(
+      "quiz",
+      "Quiz",
+      "One right answer and points; then the story goes on",
+      "quiz",
+    ),
+  );
+  menu.append(askPart);
   // A story goes behind a line: it is a folder, the others are what fills
   // one.
   const storyPart = document.createElement("div");
@@ -211,6 +235,7 @@ export function createTreeAddMenu(deps: {
     head.textContent = words;
     menu.setAttribute("aria-label", words);
     storyPart.hidden = to.kind === "story";
+    askPart.hidden = to.kind === "station";
     fitTo(to.kind);
     menu.hidden = false;
     const { left, top } = addMenuSpot(
@@ -257,8 +282,11 @@ export function createTreeAddMenu(deps: {
     const from = target;
     const kind = item.dataset["kind"] as TreeAddChoice;
     close(true);
-    if (from.kind === "station") deps.choose(from.id, kind);
-    else if (kind !== "story") deps.chooseForStory(from.id, kind);
+    if (from.kind === "story") {
+      if (kind !== "story") deps.chooseForStory(from.id, kind);
+    } else if (kind !== "choice" && kind !== "quiz") {
+      deps.choose(from.id, kind);
+    }
   });
 
   return {

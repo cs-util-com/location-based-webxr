@@ -207,6 +207,57 @@ describe("tourProblems", () => {
     ).toEqual([]);
   });
 
+  // Why: a backward jump is allowed, but a loop no answer can leave keeps
+  // a visitor from the end of the story for good: that is the one story
+  // rule the Problems list warns of, and its row goes to the loop's first
+  // step. A loop an answer can leave is no problem.
+  it("warns of a story's loop no answer can leave, at its first step", () => {
+    const line = (id: string) => ({
+      id,
+      kind: "shortText",
+      view: "card",
+      caption: id,
+      pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+      advance: { mode: "tap" },
+    });
+    const ask = (ways: readonly (string | undefined)[]) => ({
+      id: "ask",
+      kind: "choice",
+      prompt: "Again?",
+      options: ways.map((goto, i) => ({
+        id: `o${String(i)}`,
+        label: `A${String(i)}`,
+        ...(goto === undefined ? {} : { goto }),
+      })),
+    });
+    const told = station("a", [], "Square");
+    const withStory = (ways: readonly (string | undefined)[]) =>
+      tourProblems([
+        {
+          ...told,
+          children: [
+            storyOf("first", [line("hi"), ask(ways)] as never, "The legend"),
+          ],
+        },
+      ]);
+    expect(withStory(["hi", "hi"])).toEqual([
+      {
+        stationId: "a",
+        number: 1,
+        title: "Square",
+        problems: [
+          {
+            severity: "warning",
+            what: "Steps 1 and 2 go round in a loop that no answer can leave: a visitor who gets to step 1 never reaches the end. Let one answer end the story or go on.",
+            who: "The legend",
+            select: "hi",
+          },
+        ],
+      },
+    ]);
+    expect(withStory(["hi", undefined])).toEqual([]);
+  });
+
   // Why: the other edge of the same rule. A story with nothing in it shows
   // a visitor nothing, so the note still stands.
   it("notes a station whose only story is empty", () => {

@@ -38,6 +38,7 @@ import {
   tourChildPlace,
   tourStories,
   type TourChoice,
+  type TourContainer,
   type TourQuizEntry,
   type TourStory,
   type TourStoryBlock,
@@ -88,6 +89,19 @@ import {
 import { eastNorthOf, tourCentre } from "../tour-origin.js";
 import type { InspectorFile } from "./inspector-file.js";
 import { outsideItems } from "./tour-problems.js";
+import {
+  gotoChoices,
+  gotoValue,
+  stepJump,
+  stepJumpText,
+  type GotoChoice,
+} from "../story-steps.js";
+import {
+  isSingleQuiz,
+  MAX_ANSWERS,
+  MIN_ANSWERS,
+  type StoryStep,
+} from "../story-step-edits.js";
 import {
   stationContents,
   stationImagePath,
@@ -228,7 +242,42 @@ interface StoryEntryInspector {
   };
 }
 
-/** A choice or a quiz of a story: read here, not edited. */
+/** One answer of a step, as its inspector edits it. */
+interface InspectorAnswer {
+  readonly id: string;
+  /** Text, never markup: it comes from a file anyone can write. */
+  readonly label: string;
+  /** The jump picker's value (`gotoValue`); "" for a quiz's. */
+  readonly way: string;
+  /** Where it leads, as its chip says it (`stepJumpText`). */
+  readonly jump: string;
+  /** It goes back to this step or an earlier one. */
+  readonly back: boolean;
+  /** A quiz's right answer. */
+  readonly right: boolean;
+}
+
+/** A choice or a single quiz as its inspector edits it. */
+interface InspectorStepForm {
+  /** The step as the tour holds it: each control writes it whole
+   *  (`story-step-edits.ts`). */
+  readonly step: StoryStep;
+  /** Its question. */
+  readonly prompt: string;
+  readonly answers: readonly InspectorAnswer[];
+  /** The jump picker's ways (a choice's; none for a quiz). */
+  readonly ways: readonly GotoChoice[];
+  /** Another answer may be added, one removed (2 to 4). */
+  readonly canAdd: boolean;
+  readonly canRemove: boolean;
+  /** A quiz's points; null for a choice. */
+  readonly points: number | null;
+  /** Where a quiz's story goes on, said; null for a choice. */
+  readonly then: string | null;
+}
+
+/** A choice or a quiz of a story: a choice and a single quiz edited
+ *  (`form`), another quiz read only. */
 interface StoryStepInspector {
   readonly kind: "storyStep";
   readonly stepKind: "choice" | "quiz";
@@ -244,6 +293,8 @@ interface StoryStepInspector {
   readonly heading: string;
   /** Text, never markup: it comes from a file anyone can write. */
   readonly lines: readonly string[];
+  /** What is edited; absent for a quiz of a typed answer. */
+  readonly form?: InspectorStepForm;
 }
 
 /** A block of a story, as its entry's inspector shows it. */
@@ -730,14 +781,163 @@ function quizLines(quiz: TourQuizEntry): string[] {
   }
 }
 
+/** One part of the inspector's crumb: a level above the selection, or
+ *  the selection itself (the last part). */
+export interface InspectorCrumb {
+  readonly label: string;
+  /** The selection id that goes to it; null for the whole tour (the
+   *  list, nothing selected). */
+  readonly select: string | null;
+}
+
+const TOUR_CRUMB: InspectorCrumb = { label: "Tour", select: null };
+
+/** Where `selected` stands, from the tour down to itself: its station,
+ *  the stories and plain folders holding it, then it. A step of a story
+ *  is "Step n". Nothing selected, or a selection the tour lacks: the
+ *  tour alone. The last-but-one part is the selection's way up. */
+export function inspectorCrumb(input: {
+  readonly selected: string | null;
+  readonly stations: readonly TourStation[];
+  readonly codes: readonly InspectorCode[];
+}): InspectorCrumb[] {
+  const { selected, stations } = input;
+  if (selected === null) return [TOUR_CRUMB];
+  const stationPart = (station: TourStation): InspectorCrumb => {
+    const number = stations.indexOf(station) + 1;
+    return {
+      label: `${String(number)} ${stationTitle(station, number)}`,
+      select: `station:${station.id}`,
+    };
+  };
+  if (selected.startsWith("station:")) {
+    const station = stations.find(
+      (s) => s.id === selected.slice("station:".length),
+    );
+    return station === undefined
+      ? [TOUR_CRUMB]
+      : [TOUR_CRUMB, stationPart(station)];
+  }
+  const code = input.codes.find((c) => c.id === selected);
+  if (code !== undefined) {
+    return [TOUR_CRUMB, { label: code.title, select: selected }];
+  }
+  const id = selected.startsWith(STORY_PREFIX)
+    ? selected.slice(STORY_PREFIX.length)
+    : selected.startsWith(FOLDER_PREFIX)
+      ? selected.slice(FOLDER_PREFIX.length)
+      : selected;
+  const place = tourChildPlace({ stations }, id);
+  if (place === null) return [TOUR_CRUMB];
+  const holders = place.path.map((holder): InspectorCrumb =>
+    isStory(holder)
+      ? { label: holder.title, select: `${STORY_PREFIX}${holder.id}` }
+      : { label: folderName(holder), select: `${FOLDER_PREFIX}${holder.id}` },
+  );
+  const label =
+    place.story === undefined ? namedChild(place) : stepLabel(place.index);
+  if (label === null) return [TOUR_CRUMB];
+  return [
+    TOUR_CRUMB,
+    stationPart(place.station),
+    ...holders,
+    { label, select: selected },
+  ];
+}
+
+/** A story's step as the crumb names it. */
+function stepLabel(index: number): string {
+  return `Step ${String(index + 1)}`;
+}
+
+/** The name of the child outside any story at `place`: a story's title,
+ *  a plain folder's name or a free item's title; null for none there. */
+function namedChild(place: {
+  readonly station: TourStation;
+  readonly path: readonly TourContainer[];
+  readonly index: number;
+}): string | null {
+  const holder = place.path.at(-1);
+  const child =
+    holder === undefined
+      ? place.station.children[place.index]
+      : isStory(holder)
+        ? undefined
+        : holder.children[place.index];
+  if (child === undefined) return null;
+  if (isStory(child)) return child.title;
+  return child.kind === "folder" ? folderName(child) : objectTitle(child);
+}
+
 /** A choice's answers and where each leads. */
 function choiceLines(choice: TourChoice, story: TourStory): string[] {
   const rows = storyRows(story);
   return choice.options.map((option) => {
+    if (option.end === true) return `${option.label} - ends the story`;
     if (option.goto === undefined) return `${option.label} - plays on`;
     const to = rows.find((r) => r.id === option.goto);
     return `${option.label} - goes to ${to?.title ?? "another entry"}`;
   });
+}
+
+/** The step at `index` of `story` as its inspector edits it; undefined
+ *  for a quiz of a typed answer. */
+function stepForm(
+  story: TourStory,
+  index: number,
+  step: StoryStep,
+): InspectorStepForm | undefined {
+  const steps = story.children;
+  const rows = storyRows(story);
+  const title = (s: { readonly id: string }) =>
+    rows.find((r) => r.id === s.id)?.title ?? "";
+  if (step.kind === "choice") {
+    const count = step.options.length;
+    return {
+      step,
+      prompt: step.prompt,
+      answers: step.options.map((option) => {
+        const jump = stepJump(steps, index, option);
+        return {
+          id: option.id,
+          label: option.label,
+          way: gotoValue(steps, index, option),
+          jump: stepJumpText(jump),
+          back: jump.type === "back",
+          right: false,
+        };
+      }),
+      ways: gotoChoices(steps, index, title),
+      canAdd: count < MAX_ANSWERS,
+      canRemove: count > MIN_ANSWERS,
+      points: null,
+      then: null,
+    };
+  }
+  if (!isSingleQuiz(step)) return undefined;
+  const next = steps[index + 1];
+  const count = step.answer.options.length;
+  return {
+    step,
+    prompt: step.question,
+    answers: step.answer.options.map((o) => ({
+      id: o.id,
+      label: o.label,
+      way: "",
+      jump: "",
+      back: false,
+      right: o.id === step.answer.correct,
+    })),
+    ways: [],
+    canAdd: count < MAX_ANSWERS,
+    canRemove: count > MIN_ANSWERS,
+    points: step.points,
+    then: `Right or wrong, the visitor sees the result, and the story ${
+      next === undefined
+        ? "ends"
+        : `goes on at step ${String(index + 2)}: ${title(next)}`
+    }`,
+  };
 }
 
 /** Where the station's item or story `id` may move in its station
@@ -809,8 +1009,6 @@ function storyChildInspector(
   const place = tourChildPlace({ stations }, selected);
   if (place === null || place.story === undefined) return null;
   const { station, story, index } = place;
-  const number = stations.findIndex((s) => s.id === station.id) + 1;
-  const crumb = `${String(number)} ${stationTitle(station, number)} / ${story.title}`;
   const entry = `entry ${String(index + 1)}`;
   const child = story.children[index];
   if (child === undefined) return null;
@@ -822,7 +1020,7 @@ function storyChildInspector(
       moves: movesOf(child.id, stations),
       rowKind: storyRows({ children: [child] })[0]?.kind ?? "text",
       title: objectTitle(child),
-      sub: `${crumb} / ${KIND_EDIT[child.kind].label}, ${entry}`,
+      sub: `${KIND_EDIT[child.kind].label}, ${entry}`,
       block: storyEntry(child),
       advance: {
         mode: child.advance.mode,
@@ -837,21 +1035,24 @@ function storyChildInspector(
     moves: movesOf(child.id, stations),
     heading: "Answers",
   } as const;
-  return child.kind === "choice"
-    ? {
-        ...common,
-        stepKind: "choice",
-        title: child.prompt,
-        sub: `${crumb} / Choice, ${entry}`,
-        lines: choiceLines(child, story),
-      }
-    : {
-        ...common,
-        stepKind: "quiz",
-        title: child.question,
-        sub: `${crumb} / Quiz, ${entry}`,
-        lines: quizLines(child),
-      };
+  const form = stepForm(story, index, child);
+  return {
+    ...common,
+    ...(form === undefined ? {} : { form }),
+    ...(child.kind === "choice"
+      ? {
+          stepKind: "choice",
+          title: child.prompt,
+          sub: `Choice, ${entry}`,
+          lines: choiceLines(child, story),
+        }
+      : {
+          stepKind: "quiz",
+          title: child.question,
+          sub: `Quiz, ${entry}`,
+          lines: quizLines(child),
+        }),
+  };
 }
 
 /** The inspector of the story `storyId`, or null for a gone one. */
@@ -859,17 +1060,16 @@ function storyInspector(
   storyId: string,
   stations: readonly TourStation[],
 ): InspectorModel | null {
-  for (const [index, station] of stations.entries()) {
+  for (const station of stations) {
     const story = tourStories(station).find((s) => s.id === storyId);
     if (story === undefined) continue;
-    const number = index + 1;
     return {
       kind: "story",
       storyId,
       stationId: station.id,
       moves: movesOf(storyId, stations),
       title: story.title,
-      sub: `${String(number)} ${stationTitle(station, number)} / Story`,
+      sub: "Story",
       entries: storyRows(story),
     };
   }

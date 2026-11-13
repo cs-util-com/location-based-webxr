@@ -56,8 +56,13 @@ keeps the list, its band and the 3D handles), each with a grip
 (drag to resize, down past the floor to dismiss). The share of the page
 is one CSS number on the body (`--s-sheet-share`), which the canvas reads
 too, so the map ends where the sheet begins and is told of its new size
-on release only. The head of the details has a back arrow to the list
-(`act` "back", `showList`: the selection goes, the list shows) beside
+on release only. The head of the details has a back arrow that goes one
+level up, editor-wide (`act` "back": a story's step to its story, the
+story or a free item to its station, an item in a plain folder to its
+folder, the station to the list - `showList`: the selection goes, the
+list shows); the crumb over the details (`nav:<selection>`) goes to any
+level above at once. Both read `inspectorCrumb`, built only while a
+selection shows (nothing selected builds no tour). The arrow sits beside
 its close button, and `#studio-list` in the top bar brings a dismissed
 list back. An open bottom panel stays at the foot and the sheet stands
 on it, taking its share of what is left, so Problems and History still
@@ -90,6 +95,13 @@ becomes one edit (`inspector-edits.ts`) and one page command
 items on the ground, the card's picture, and a story
 character's view and advance chips (`characterChipEdit`: his station's
 `StationEdit.character`; the chip already pressed writes nothing).
+
+A story's choice or quiz is edited in its inspector: each control writes
+the whole step through `deps.edits.storyStep(step)` - a typed field on
+focusout or Enter (`inspector-edits.ts`), the jump picker on `change`
+(`stepWithGoto`), Add, Remove and the right answer on a click
+(`stepActEdit`, `../story-step-edits.ts`) - one undo step each. The story
+menu's Choice and Quiz call `deps.edits.addStepToStory(storyId, kind)`.
 
 A story is a folder of the tree: its arrow folds it (`storyFolded`), its name
 selects it, its "+" and its empty line open the type menu for it, a click

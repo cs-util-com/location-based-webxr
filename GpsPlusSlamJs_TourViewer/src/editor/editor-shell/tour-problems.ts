@@ -4,20 +4,26 @@
  * tour's order, the worst first within a station. An item outside its
  * station's circle is a warning (a visitor at the station never finds
  * it), judged where it stands (`placement/placeables.ts`: through its
- * folders); a station with nothing in it is a note. A problem one click can
+ * folders); a story's loop no answer can leave is a warning (a visitor in
+ * it never reaches the end; `../story-steps.ts`), its row going to the
+ * loop's first step; a station with nothing in it is a note. A problem one click can
  * mend carries its fixes: an outside item is moved inside, along its
  * line, or given a station of its own where it stands.
  *
  * @see tour-problems.ts.md
  */
 import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";
-import { isStory } from "gps-plus-slam-app-framework/ar/tour-story";
+import {
+  isStory,
+  tourStories,
+} from "gps-plus-slam-app-framework/ar/tour-story";
 import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 import { objectTitle } from "../../object-describe.js";
 import { isPlayableInK4 } from "../../scene-player.js";
 import { stationTitle } from "../../station-run.js";
+import { storyTrap } from "../story-steps.js";
 import type { PlaceEdit } from "../../placement/place-edits.js";
 import { posedEntries, type PosedBlock } from "../../placement/placeables.js";
 import { STATION_PREFIX } from "../editor-model.js";
@@ -160,6 +166,17 @@ export function tourProblems(stations: readonly TourStation[]): ProblemGroup[] {
         { label: "Move to a new station", split: true },
       ],
     }));
+    for (const story of tourStories(station)) {
+      const trap = storyTrap(story.children);
+      const first = story.children[trap?.steps[0] ?? -1];
+      if (trap === null || first === undefined) continue;
+      problems.push({
+        severity: "warning",
+        what: trap.message,
+        who: story.title,
+        select: first.id,
+      });
+    }
     if (!hasContent(station)) {
       problems.push({
         severity: "note",

@@ -187,6 +187,7 @@ import {
   type EditorSession,
   type NarrationChange,
 } from "./editor-session.js";
+import type { StepKind } from "./story-step-edits.js";
 import { videoLookOf } from "./video-poster.js";
 import { waitForSaveSlot } from "gps-plus-slam-app-framework/storage/save-slot-wait";
 import { guardSlidersIn } from "gps-plus-slam-app-framework/utils/slider-scroll-guard";
@@ -1903,6 +1904,22 @@ function addStoryTo(stationId: string): void {
   store.dispatch(editorViewActions.storyFolded({ id: outcome.id, open: true }));
   select(`${STORY_PREFIX}${outcome.id}`);
   toast(`Added a story to "${stationTitleOf(stationId)}"`);
+  tourChanged();
+}
+
+/** The story menu's Choice or Quiz: a new step at the story's end,
+ *  selected, its inspector open on its fields. */
+function addStepToStoryEntry(storyId: string, kind: StepKind): void {
+  if (editor === null) return;
+  endUndo();
+  const outcome = editor.addStepToStory(storyId, kind);
+  refresh();
+  if (outcome.kind === "refused") {
+    toast(outcome.reason);
+    return;
+  }
+  select(outcome.id);
+  toast(`Added a ${kind} to the story "${storyNamed(storyId)?.title ?? ""}"`);
   tourChanged();
 }
 
@@ -4880,6 +4897,7 @@ const shell = createEditorShell({
     addItem: addItemTo,
     addStory: addStoryTo,
     addToStory: addToStoryEntry,
+    addStepToStory: addStepToStoryEntry,
     addCharacter: (to) => {
       void addCharacterTo(to);
     },
@@ -4887,6 +4905,7 @@ const shell = createEditorShell({
       writeInspectorEdit((e) => e.renameStory(id, title)),
     storyAdvance: (id, advance) =>
       writeInspectorEdit((e) => e.setStoryAdvance(id, advance)),
+    storyStep: (step) => writeInspectorEdit((e) => e.setStoryStep(step)),
     narration: (id) =>
       editor === null
         ? Promise.resolve({

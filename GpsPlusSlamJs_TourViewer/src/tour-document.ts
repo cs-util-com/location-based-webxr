@@ -30,6 +30,8 @@ import {
   TOUR_FOLDER_MIN_SCALE,
   tourStoryChildrenBlocks,
   TOUR_STORY_TITLE_RULE,
+  type TourChoice,
+  type TourQuizEntry,
   type TourStory,
   type TourStoryBlock,
   type TourStepAdvance,
@@ -42,6 +44,7 @@ import {
   withoutStoryChild,
   withStory,
   withStoryChild,
+  withStoryStep,
   withStoryTitle,
 } from "./tour-story-edit.js";
 import {
@@ -2576,6 +2579,9 @@ export interface StationEdit {
   readonly storyAdvance?: StationStoryAdvanceEdit;
   /** The file of a block the station's story shows, replaced. */
   readonly storyFile?: StationStoryFileEdit;
+  /** A choice or quiz of the station's story, written whole: its words,
+   *  its answers and where each leads (`withStoryStep`). */
+  readonly storyStep?: TourChoice | TourQuizEntry;
 }
 
 /** The story block `block` made from the file `asset` (an asset the tour
@@ -2631,7 +2637,8 @@ export type StationEditChange =
         | "character"
         | "storyText"
         | "storyAdvance"
-        | "storyFile";
+        | "storyFile"
+        | "storyStep";
     }
   | { readonly kind: "missing" };
 
@@ -2789,7 +2796,8 @@ function withStoryFile(
  * with the preload radius twice it, a description of at most 2000
  * (`checkTourDescription`), a card image naming a photo of THIS station or
  * an image asset of the tour (`stationImages`), a story character set by
- * `withCharacter`, a story block's text set by `withStoryText`.
+ * `withCharacter`, a story block's text set by `withStoryText`, a
+ * story's choice or quiz written whole by `withStoryStep`.
  */
 export function stationEditChange(
   state: TourDocumentState,
@@ -2845,6 +2853,11 @@ export function stationEditChange(
     const filed = withStoryFile(state, next, edit.storyFile);
     if (filed === null) return { kind: "refused", reason: "storyFile" };
     next = filed;
+  }
+  if (edit.storyStep !== undefined) {
+    const stepped = withStoryStep(next, edit.storyStep);
+    if (stepped === null) return { kind: "refused", reason: "storyStep" };
+    next = stepped;
   }
   return sameJson(next, frame)
     ? { kind: "unchanged" }

@@ -20,9 +20,11 @@ import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import { TOUR_CHARACTER_VIEWS } from "gps-plus-slam-app-framework/ar/tour-blocks";
 
+import { END_TARGET } from "../story-steps.js";
 import { facingRotation } from "../../character-views.js";
 import {
   buildInspector,
+  inspectorCrumb,
   CHARACTER_VIEW_CHOICES,
   headingOfRotation,
   inspectorHint,
@@ -117,6 +119,63 @@ function positionOf(selected: string) {
   }
   return model.position;
 }
+
+describe("inspectorCrumb", () => {
+  const crumb = (selected: string | null, stations = STATIONS) =>
+    inspectorCrumb({ selected, stations, codes: CODES });
+  const tour = { label: "Tour", select: null };
+
+  // Why: a free item's way up is its station, a code's the tour; nothing
+  // selected, or a selection the tour lacks, is the tour itself.
+  it("leads from a free item to its station and from a code to the tour", () => {
+    expect(crumb("pin-1")).toEqual([
+      tour,
+      { label: "1 Market Square", select: "station:a" },
+      { label: "Fountain, 1612", select: "pin-1" },
+    ]);
+    expect(crumb("level-1")).toEqual([
+      tour,
+      { label: "Code 1", select: "level-1" },
+    ]);
+    expect(crumb(null)).toEqual([tour]);
+    expect(crumb("gone")).toEqual([tour]);
+  });
+
+  // Why: an item in a plain folder goes up to its folder, and the folder
+  // to its station, as the tree nests them.
+  it("leads from an item in a folder to its folder, then its station", () => {
+    const station = {
+      ...STATIONS[0]!,
+      children: [
+        {
+          id: "f",
+          kind: "folder",
+          title: "Benches",
+          pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+          children: [
+            {
+              id: "deep",
+              kind: "shortText",
+              view: "pin",
+              caption: "Deep",
+              createdAtIso: AT,
+              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+            },
+          ],
+        },
+      ],
+    } as unknown as TourStation;
+    const square = { label: "1 Market Square", select: "station:a" };
+    const benches = { label: "Benches", select: "folder:f" };
+    expect(crumb("deep", [station])).toEqual([
+      tour,
+      square,
+      benches,
+      { label: "Deep", select: "deep" },
+    ]);
+    expect(crumb("folder:f", [station])).toEqual([tour, square, benches]);
+  });
+});
 
 describe("buildInspector", () => {
   it("shows nothing without a selection, or for one the tour does not have", () => {
@@ -213,6 +272,7 @@ describe("buildInspector", () => {
               options: [
                 { id: "o1", label: "Back", goto: "intro" },
                 { id: "o2", label: "On" },
+                { id: "o3", label: "Stop", end: true },
               ],
             },
             {
@@ -279,7 +339,7 @@ describe("buildInspector", () => {
           stations: [{ id: "a", label: "Market Square" }],
         },
         title: "The legend",
-        sub: "2 The gate / Story",
+        sub: "Story",
         entries: [
           { id: "intro", kind: "text", title: "The siege", place: 1 },
           { id: "wendel", kind: "character", title: "Wendel", place: 2 },
@@ -296,7 +356,7 @@ describe("buildInspector", () => {
       if (model?.kind !== "storyEntry") return;
       expect(model.stationId).toBe("b");
       expect(model.title).toBe("The siege");
-      expect(model.sub).toBe("2 The gate / The legend / Long text, entry 1");
+      expect(model.sub).toBe("Long text, entry 1");
       expect(model.advance).toEqual({ mode: "auto", afterS: 8 });
       expect(model.block.fields.map((f) => [f.name, f.value])).toEqual([
         ["title", "The siege"],
@@ -320,6 +380,8 @@ describe("buildInspector", () => {
       ]);
     });
 
+    // Why: an answer that ends the story names no step, and must not read
+    // as one that plays on - those two lead to different places.
     it("sums up a choice: each answer and where it leads", () => {
       expect(inStory("way")).toMatchObject({
         kind: "storyStep",
@@ -327,9 +389,107 @@ describe("buildInspector", () => {
         id: "way",
         stationId: "b",
         title: "Which way?",
-        sub: "2 The gate / The legend / Choice, entry 3",
-        lines: ["Back - goes to The siege", "On - plays on"],
+        sub: "Choice, entry 3",
+        lines: [
+          "Back - goes to The siege",
+          "On - plays on",
+          "Stop - ends the story",
+        ],
       });
+    });
+
+    // Why: the crumb is the way back to every level above a step, and Back
+    // takes its last-but-one part: a step's way up is its story, the
+    // story's its station, the station's the whole tour.
+    it("says where a story's step, the story and its station stand", () => {
+      const crumb = (selected: string) =>
+        inspectorCrumb({
+          selected,
+          stations: [STATIONS[0]!, STORY_STATION],
+          codes: CODES,
+        });
+      const tour = { label: "Tour", select: null };
+      const station = { label: "2 The gate", select: "station:b" };
+      const story = { label: "The legend", select: "story:legend" };
+      expect(crumb("way")).toEqual([
+        tour,
+        station,
+        story,
+        { label: "Step 3", select: "way" },
+      ]);
+      expect(crumb("story:legend")).toEqual([tour, station, story]);
+      expect(crumb("station:b")).toEqual([tour, station]);
+    });
+
+    // Why: the choice inspector edits each answer's words and where it
+    // leads; the picker's value must be the answer's own way, and the chip
+    // must say a backward jump as one, since it is drawn apart.
+    it("lays out a choice's answers to edit, each with its way on", () => {
+      const model = inStory("way");
+      if (model?.kind !== "storyStep") throw new Error("no step");
+      expect(model.form?.prompt).toBe("Which way?");
+      expect(model.form?.answers).toEqual([
+        {
+          id: "o1",
+          label: "Back",
+          way: "intro",
+          jump: "goes back to step 1",
+          back: true,
+          right: false,
+        },
+        {
+          id: "o2",
+          label: "On",
+          way: "",
+          jump: "next: step 4",
+          back: false,
+          right: false,
+        },
+        {
+          id: "o3",
+          label: "Stop",
+          way: END_TARGET,
+          jump: "ends the story",
+          back: false,
+          right: false,
+        },
+      ]);
+      expect(model.form?.ways.map((w) => w.label)).toEqual([
+        "Next step (4: Quiz: How old?)",
+        "Jump to step 5: Quiz: Which year?",
+        "Go back to step 1: The siege",
+        "Go back to step 2: Wendel",
+        "Ask this again (step 3)",
+        "End the story",
+      ]);
+      expect(model.form).toMatchObject({
+        canAdd: true,
+        canRemove: true,
+        points: null,
+        then: null,
+      });
+    });
+
+    // Why: a quiz does not branch, so its inspector says where the story
+    // goes on instead of offering a jump; a quiz of a typed answer is not
+    // edited here and keeps its summary only.
+    it("lays out a single quiz to edit, and says where the story goes on", () => {
+      const model = inStory("age");
+      if (model?.kind !== "storyStep") throw new Error("no step");
+      expect(model.form).toMatchObject({
+        prompt: "How old?",
+        points: 2,
+        ways: [],
+        canAdd: true,
+        canRemove: false,
+        then: "Right or wrong, the visitor sees the result, and the story goes on at step 5: Quiz: Which year?",
+      });
+      expect(model.form?.answers.map((a) => [a.label, a.right])).toEqual([
+        ["Old", true],
+        ["New", false],
+      ]);
+      const year = inStory("year");
+      expect(year?.kind === "storyStep" && year.form).toBeUndefined();
     });
 
     it("sums up a quiz: its points, and its answers with the right one", () => {

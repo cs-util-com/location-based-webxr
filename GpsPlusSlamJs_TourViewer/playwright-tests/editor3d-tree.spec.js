@@ -410,9 +410,11 @@ test("a story is a folder of the tree: added, named, filled, its entry's texts s
   expect(await revision(page)).toBe(start + 3);
 
   // A story block's texts are in its own inspector.
-  await expect(inspector.locator(".sub")).toContainText(
-    "/ The legend / Long text, entry 1",
-  );
+  // Where it stands is the crumb's: its story a level above it.
+  await expect(inspector.locator(".sub")).toHaveText("Long text, entry 1");
+  await expect(
+    inspector.getByRole("navigation", { name: "Where you are" }),
+  ).toContainText("The legend");
   await expect(
     inspector.locator(`[data-field="block:${entry.id}:title"]`),
   ).toHaveValue("New long text 1");

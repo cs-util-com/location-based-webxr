@@ -531,9 +531,13 @@ const quizActionArbitrary = fc
     answer,
   }));
 
+/** Where an answer leads: the next child (null), a child by index, or the
+ *  end of the story. */
+type GeneratedWayOn = number | null | 'end';
+
 function choiceAction(
   childIds: readonly string[],
-  gotos: readonly (number | null)[]
+  gotos: readonly GeneratedWayOn[]
 ): Record<string, unknown> {
   return {
     kind: 'choice',
@@ -543,9 +547,10 @@ function choiceAction(
         id: `o${String(i)}`,
         label: `Option ${String(i)}`,
         goto:
-          g === null || childIds.length === 0
+          g === null || g === 'end' || childIds.length === 0
             ? undefined
             : childIds[g % childIds.length],
+        end: g === 'end' ? true : undefined,
       })
     ),
   };
@@ -643,7 +648,14 @@ function storyChildArbitrary(
   if (kind === 'quiz') return quizActionArbitrary.map((q) => ({ id, ...q }));
   if (kind === 'choice') {
     return fc
-      .array(fc.option(fc.nat(), { nil: null }), { minLength: 2, maxLength: 4 })
+      .array(
+        fc.oneof(
+          fc.nat(),
+          fc.constant<GeneratedWayOn>(null),
+          fc.constant<GeneratedWayOn>('end')
+        ),
+        { minLength: 2, maxLength: 4 }
+      )
       .map((gotos) => ({ id, ...choiceAction(storyIds, gotos) }));
   }
   return fc

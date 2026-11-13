@@ -19,6 +19,12 @@ document's story actions (`storyAdded`, `storyRenamed`, `storyDeleted`,
 - `withoutStory(holder, id)` -> the holder without it, or null.
 - `withStoryChild(holder, id, child)` -> the holder with the child at the
   end of that story, or null.
+- `withStoryStep(holder, step)` -> the holder with the story's choice or
+  quiz of that id replaced by `step`, or null: no such child, another
+  kind, or a step the format refuses. The check is the format's own strict
+  read of the story's children (`parseTourStationChildren`), the other
+  steps standing in under their ids, so a jump names a step the story
+  holds and every text has words.
 - `withoutStoryChild(holder, id)` -> `{ frame, answers }` with the child gone
   and every `goto` naming it removed, or null. `answers` counts the options
   that changed; the page says it in its toast.

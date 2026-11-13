@@ -10,7 +10,10 @@
  *   `storyBlockFields`): that block's edit, as a free block's other
  *   texts are.
  * - A story's title (`story-title`): the story's. A story block's seconds
- *   (`entry-after:<id>`): how it moves on.
+ *   (`entry-after:<id>`): how it moves on. A story's choice's or quiz's
+ *   question, answer words and points (`step:prompt`,
+ *   `step:label:<answer id>`, `step:points`): the whole step it makes
+ *   (`story-step-edits.ts`).
  * - A text of a free block that stands nowhere in the world: its edit.
  * - A station's east and north: its anchor at the place those metres name
  *   from the 3D view's origin (`placeAtEastNorth`), height and turn kept.
@@ -66,6 +69,11 @@ import {
 import { eastNorthOf, placeAtEastNorth } from "../tour-origin.js";
 import { blockFields, storyBlockFields, typedNumber } from "../block-fields.js";
 import type { ModelEdit } from "../model-edits.js";
+import {
+  STEP_FIELD,
+  stepFieldEdit,
+  type StoryStep,
+} from "../story-step-edits.js";
 import { headingOfRotation, ON_GROUND_M } from "./inspector-model.js";
 import { inputText } from "../../input-text.js";
 import { facingDegOf } from "../../character-views.js";
@@ -89,6 +97,8 @@ export type InspectorEdit =
       readonly id: string;
       readonly title: string;
     }
+  /** A story's choice or quiz, written whole (`story-step-edits.ts`). */
+  | { readonly kind: "story-step"; readonly step: StoryStep }
   /** How a story's block moves on. */
   | {
       readonly kind: "story-advance";
@@ -458,6 +468,15 @@ export function inspectorEdit(input: {
       : NONE;
   }
   const place = tourChildPlace({ stations }, selected);
+  const step = place?.story?.children[place.index];
+  if (field.startsWith(STEP_FIELD) && step !== undefined) {
+    if (step.kind !== "choice" && step.kind !== "quiz") return NONE;
+    const edited = stepFieldEdit(step, field, value);
+    if (edited === null) return NONE;
+    return "invalid" in edited
+      ? { kind: "invalid", reason: edited.invalid }
+      : { kind: "story-step", step: edited };
+  }
   if (place?.story !== undefined) {
     return storyEntryEdit(place.station, selected, field, value, input.origin);
   }

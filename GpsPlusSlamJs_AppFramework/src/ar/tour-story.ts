@@ -24,7 +24,8 @@
  *   words have had their time to be read (the viewer's rule).
  * - `choice`: a prompt and at least two options; an option's `goto` names a
  *   child of this story, or is absent - then the scene continues at the
- *   next child. A `goto` naming nothing fails the file.
+ *   next child. An option with `end: true` ends the story instead (never
+ *   together with a `goto`). A `goto` naming nothing fails the file.
  * - `quiz`: question, points and answer. There is no `route` (the walk is
  *   not branched by answers); a `route` field is an unknown field and
  *   ignored.
@@ -82,8 +83,11 @@ export type TourStepAdvance =
 export interface TourChoiceOption {
   readonly id: string;
   readonly label: string;
-  /** A child of the same story. Absent: the next one. */
+  /** A child of the same story. Absent: the next one (or the end, with
+   *  `end`). */
   readonly goto?: string;
+  /** The answer ends the story; never together with `goto`. */
+  readonly end?: true;
 }
 
 export interface TourQuizOption {
@@ -287,18 +291,28 @@ function parseAdvance(
   return { mode: 'auto', afterS: value.afterS };
 }
 
+/** A choice's option. `end` is absent or `true`, and never beside a
+ *  `goto`: anything else is a fault at every minor, since a writer never
+ *  writes it and a reader could not tell which way the answer leads. */
 function parseOption(
   value: unknown,
   at: string,
   fail: TourFail
 ): TourChoiceOption {
   if (!isRecord(value)) return fail(`"${at}" must be an object`);
+  if (value.end !== undefined) {
+    if (value.end !== true) return fail(`"${at}.end" must be true or absent`);
+    if (value.goto !== undefined) {
+      return fail(`"${at}.end" and "${at}.goto" exclude each other`);
+    }
+  }
   return {
     id: requireTourId(value.id, `${at}.id`, fail),
     label: requireTourText(value.label, `${at}.label`, fail),
     ...(value.goto === undefined
       ? {}
       : { goto: requireTourId(value.goto, `${at}.goto`, fail) }),
+    ...(value.end === true ? { end: true as const } : {}),
   };
 }
 
@@ -361,7 +375,8 @@ export interface TourChoice {
   readonly id: string;
   readonly kind: 'choice';
   readonly prompt: string;
-  /** Each `goto` names a child of the SAME story; absent: the next child. */
+  /** Each `goto` names a child of the SAME story; absent: the next child,
+   *  or the end of the story for an option with `end`. */
   readonly options: readonly TourChoiceOption[];
 }
 

@@ -60,6 +60,7 @@ import {
   CHARACTER_VIEW_CHOICES,
   ON_GROUND_M,
   type InspectorCharacter,
+  type InspectorCrumb,
   type InspectorExtent,
   type InspectorModel,
   type InspectorPosition,
@@ -756,20 +757,176 @@ function storyEntryParts(model: StoryEntryModel): HTMLElement[] {
   return parts;
 }
 
-/** A choice or a quiz: what it says and its Delete. */
-function storyStepParts(model: StoryStepModel): HTMLElement[] {
-  const box = el("div", "isec");
-  const list = el("ul", "steplines");
-  for (const line of model.lines) list.append(el("li", "", line));
-  box.append(el("div", "flabel", model.heading), list);
+type StepForm = NonNullable<StoryStepModel["form"]>;
+
+/** The jump picker of the answer `answer` (numbered `n`): the next
+ *  step, the steps ahead and back in their groups, the end; its own way
+ *  picked. The shell answers its change (`step-goto:<answer id>`). */
+function jumpPicker(
+  form: StepForm,
+  answer: StepForm["answers"][number],
+  n: number,
+): HTMLSelectElement {
+  const pick = el("select", "tfield");
+  pick.dataset["act"] = `step-goto:${answer.id}`;
+  pick.setAttribute("aria-label", `Where answer ${String(n)} leads`);
+  const groups = { ahead: "Jump ahead", back: "Go back" } as const;
+  let group: HTMLOptGroupElement | null = null;
+  for (const way of form.ways) {
+    const option = el("option", "", way.label);
+    option.value = way.value;
+    if (way.group === "ahead" || way.group === "back") {
+      if (group?.label !== groups[way.group]) {
+        group = el("optgroup", "");
+        group.label = groups[way.group];
+        pick.append(group);
+      }
+      group.append(option);
+    } else {
+      group = null;
+      pick.append(option);
+    }
+  }
+  pick.value = answer.way;
+  return pick;
+}
+
+/** An answer's Remove: off at the fewest answers a step takes. */
+function removeAnswer(id: string, n: number, on: boolean): HTMLButtonElement {
+  const b = el("button", "rbtn");
+  b.type = "button";
+  b.dataset["act"] = `step-remove:${id}`;
+  b.setAttribute("aria-label", `Remove answer ${String(n)}`);
+  b.title = on ? "Remove this answer" : "A step needs at least 2 answers";
+  b.disabled = !on;
+  b.append(shellIcon("close"));
+  return b;
+}
+
+/** An answer's words to type (`step:label:<id>`), named by its number. */
+function answerText(id: string, label: string, n: number): HTMLInputElement {
+  const input = typed(`step:label:${id}`, label, "tfield");
+  input.maxLength = 60;
+  input.placeholder = `Answer ${String(n)}`;
+  input.setAttribute("aria-label", `Answer ${String(n)}`);
+  return input;
+}
+
+/** A choice's or a single quiz's controls: its question, each answer
+ *  (its words, and where it leads or whether it is the right one, and its
+ *  Remove), Add, a quiz's points and where its story goes on. */
+function stepFormParts(model: StoryStepModel, form: StepForm): HTMLElement[] {
+  const quiz = model.stepKind === "quiz";
+  const question = proseField(
+    "Question",
+    "step:prompt",
+    form.prompt,
+    "What the visitor is asked",
+  );
+  const area = question.querySelector("textarea");
+  if (area !== null) area.rows = 2;
+  const answers = storyBox(
+    model.id,
+    "isec answers",
+    quiz
+      ? "Answers: tick the right one"
+      : "Answers (2 to 4), and where each one leads",
+  );
+  form.answers.forEach((answer, i) => {
+    const n = i + 1;
+    const row = el("div", "optrow");
+    if (quiz) {
+      const right = el("input", "");
+      right.type = "radio";
+      right.name = `right-${model.id}`;
+      right.checked = answer.right;
+      right.dataset["act"] = `step-right:${answer.id}`;
+      right.setAttribute("aria-label", `Answer ${String(n)} is the right one`);
+      const radio = el("label", "radio");
+      radio.title = "The right answer";
+      radio.append(right);
+      row.append(radio);
+    }
+    row.append(
+      answerText(answer.id, answer.label, n),
+      removeAnswer(answer.id, n, form.canRemove),
+    );
+    if (quiz) {
+      answers.append(row);
+      return;
+    }
+    const lead = el("div", "optrow lead");
+    const leads = el("span", "leads", "leads to");
+    lead.append(leads, jumpPicker(form, answer, n));
+    const box = el("div", "optbox");
+    box.append(row, lead);
+    answers.append(box);
+  });
+  const add = el("button", "act");
+  add.type = "button";
+  add.dataset["act"] = "step-add";
+  add.disabled = !form.canAdd;
+  add.append(
+    shellIcon("plus"),
+    el(
+      "span",
+      "lbl",
+      form.canAdd ? "Add an answer" : "Four answers is the most",
+    ),
+  );
+  answers.append(add);
+  const parts = [question, answers];
+  if (!quiz) {
+    answers.append(
+      el(
+        "p",
+        "note",
+        "An answer goes on to the next step unless you choose otherwise. It can also jump ahead, go back to an earlier step (to try again, say), or end the story.",
+      ),
+    );
+    return parts;
+  }
+  const then = el("div", "isec");
+  const said = form.then ?? "";
+  const thenBox = el("div", "thenbox", /[.?!]$/.test(said) ? said : `${said}.`);
+  then.append(
+    el("div", "flabel", "Then"),
+    thenBox,
+    el(
+      "p",
+      "note",
+      "A quiz does not branch. To lead somewhere by the visitor's wish, add a choice after it.",
+    ),
+  );
   return [
-    box,
+    question,
+    answers,
+    numberField("Points", "step:points", String(form.points ?? 0), ""),
+    then,
+  ];
+}
+
+/** A choice or a quiz: its controls (`form`) or, for a quiz the
+ *  inspector does not edit, what it says; and its Delete. */
+function storyStepParts(model: StoryStepModel): HTMLElement[] {
+  const parts: HTMLElement[] = [];
+  if (model.form !== undefined) {
+    parts.push(...stepFormParts(model, model.form));
+  } else {
+    const box = el("div", "isec");
+    const list = el("ul", "steplines");
+    for (const line of model.lines) list.append(el("li", "", line));
+    box.append(el("div", "flabel", model.heading), list);
+    parts.push(box);
+  }
+  parts.push(
     actions([
       action("delete", "trash", `Delete ${model.stepKind}`, {
         key: DELETE_KEY,
       }),
     ]),
-  ];
+  );
+  return parts;
 }
 
 /** An item's Delete, with its key. */
@@ -1102,6 +1259,43 @@ export interface InspectorState {
   /** A station's Contents unfolded (none said: it is). */
   readonly contentsOpen?: boolean;
   readonly busy?: string | null;
+  /** Where the selection stands (`inspectorCrumb`): drawn as buttons
+   *  over its details, its last-but-one part naming the Back button's
+   *  way up. None given: no crumb, and Back goes to the list. */
+  readonly crumb?: readonly InspectorCrumb[];
+}
+
+/** The crumb: every part a button that goes to its level
+ *  (`nav:<selection>`, `nav:` for the whole tour), the last one the
+ *  selection itself, marked current. */
+function crumbNav(crumb: readonly InspectorCrumb[]): HTMLElement {
+  const nav = el("nav", "crumbs");
+  nav.setAttribute("aria-label", "Where you are");
+  crumb.forEach((part, k) => {
+    if (k > 0) {
+      const sep = el("span", "csep", "\u203a");
+      sep.setAttribute("aria-hidden", "true");
+      nav.append(sep);
+    }
+    const b = el("button", "cb", part.label);
+    b.type = "button";
+    if (k === crumb.length - 1) {
+      b.setAttribute("aria-current", "page");
+    } else {
+      b.title = `Go to ${part.label}`;
+      b.dataset["act"] = `nav:${part.select ?? ""}`;
+    }
+    nav.append(b);
+  });
+  return nav;
+}
+
+/** The Back button's name: the level it goes up to. */
+function backLabel(crumb: readonly InspectorCrumb[] | undefined): string {
+  const up = crumb?.at(-2);
+  return up === undefined || up.select === null
+    ? "Back to the list"
+    : `Back to ${up.label}`;
 }
 
 /**
@@ -1339,7 +1533,7 @@ function drawDock(
   const head = headTitle(model, panel);
   const count = pinCount(model, head);
   dock.head.replaceChildren(
-    iconButton("right", "Back to the list", "back"),
+    iconButton("right", backLabel(state.crumb), "back"),
     icon,
     head,
     ...(panel?.head() ?? []),
@@ -1357,7 +1551,11 @@ function drawDock(
     ...moveParts(model, sub),
     ...(model.file === undefined ? [] : [fileFieldPart(model.file)]),
   ];
-  const before = [sub, ...(count === null ? [] : [count])];
+  const before = [
+    ...(state.crumb === undefined ? [] : [crumbNav(state.crumb)]),
+    sub,
+    ...(count === null ? [] : [count]),
+  ];
   placeAround(dock.body, before, panel?.kept ?? null, parts);
 }
 

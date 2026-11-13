@@ -156,9 +156,11 @@ function setUp() {
     addItem: vi.fn(),
     addStory: vi.fn(),
     addToStory: vi.fn(),
+    addStepToStory: vi.fn(),
     addCharacter: vi.fn(),
     storyTitle: vi.fn(() => "written" as const),
     storyAdvance: vi.fn(() => "written" as const),
+    storyStep: vi.fn(() => "written" as const),
     narration: vi.fn(() =>
       Promise.resolve({ kind: "refused" as const, reason: "none" }),
     ),
@@ -1241,6 +1243,29 @@ describe("a story's folder in the tree", () => {
               pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
               advance: { mode: "tap" },
             },
+            {
+              id: "c1",
+              kind: "choice",
+              prompt: "Which way?",
+              options: [
+                { id: "o1", label: "Back", goto: "l1" },
+                { id: "o2", label: "On" },
+              ],
+            },
+            {
+              id: "q1",
+              kind: "quiz",
+              question: "How old?",
+              points: 1,
+              answer: {
+                type: "single",
+                options: [
+                  { id: "a", label: "Old" },
+                  { id: "b", label: "New" },
+                ],
+                correct: "a",
+              },
+            },
           ],
           "The legend",
         ),
@@ -1272,6 +1297,27 @@ describe("a story's folder in the tree", () => {
     return found;
   };
 
+  // Why: Back goes one level up, editor-wide - from a step to its story,
+  // from the story to its station, from the station to the list - and the
+  // crumb goes to any level above at once.
+  it("goes one level up on Back, and to any level by the crumb", () => {
+    const { store, shell } = withStory();
+    const selected = () => store.getState().editorView.selected;
+    store.dispatch(editorViewActions.selected({ id: "l1" }));
+    inspectorAct("back").click();
+    expect(selected()).toBe("story:legend");
+    inspectorAct("back").click();
+    expect(selected()).toBe("station:c");
+    inspectorAct("back").click();
+    expect(selected()).toBeNull();
+    store.dispatch(editorViewActions.selected({ id: "l1" }));
+    inspectorAct("nav:station:c").click();
+    expect(selected()).toBe("station:c");
+    inspectorAct("nav:").click();
+    expect(selected()).toBeNull();
+    shell.hide();
+  });
+
   it("folds by its arrow, and selects by its name, unfolding only its holders", () => {
     const { store, shell } = withStory();
     tree('[data-select="story:legend"]').click();
@@ -1295,6 +1341,21 @@ describe("a story's folder in the tree", () => {
     menu?.querySelector<HTMLElement>('[data-kind="shortText"]')?.click();
     expect(edits.addToStory).toHaveBeenCalledWith("legend", "shortText");
     expect(edits.addItem).not.toHaveBeenCalled();
+    shell.hide();
+  });
+
+  // Why: a choice and a quiz are steps only a story holds; its menu's
+  // Choice and Quiz must reach the story's own add, never an item's.
+  it("adds a choice and a quiz from the story's menu", () => {
+    const { edits, shell } = withStory();
+    for (const kind of ["choice", "quiz"] as const) {
+      tree('[data-storyadd="legend"]').click();
+      document
+        .querySelector<HTMLElement>(`#tree-add-menu [data-kind="${kind}"]`)
+        ?.click();
+      expect(edits.addStepToStory).toHaveBeenLastCalledWith("legend", kind);
+    }
+    expect(edits.addToStory).not.toHaveBeenCalled();
     shell.hide();
   });
 
@@ -1345,6 +1406,61 @@ describe("a story's folder in the tree", () => {
       mode: "auto",
       afterS: 5,
     });
+    shell.hide();
+  });
+
+  // Why: every control of a choice's and a quiz's inspector writes the
+  // whole step through one command, so each is one undo step; a jump
+  // picked, an answer added, the right answer ticked and the points typed
+  // must each reach it as the step they make, and points that are no
+  // whole number are said and never written.
+  it("writes each control of a choice and a quiz as the whole step", () => {
+    const { edits, select, deps, shell } = withStory();
+    const last = () => edits.storyStep.mock.calls.at(-1)?.at(0) as unknown;
+    select("c1");
+    const question = document.querySelector<HTMLTextAreaElement>(
+      '#shell-inspector [data-field="step:prompt"]',
+    );
+    if (question === null) throw new Error("no question");
+    question.focus();
+    question.value = "Up or down?";
+    question.blur();
+    expect(last()).toMatchObject({ id: "c1", prompt: "Up or down?" });
+    const pick = inspectorAct("step-goto:o2") as HTMLSelectElement;
+    pick.value = ":end";
+    pick.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(last()).toMatchObject({
+      options: [
+        { id: "o1", label: "Back", goto: "l1" },
+        { id: "o2", label: "On", end: true },
+      ],
+    });
+    inspectorAct("step-add").click();
+    expect(last()).toMatchObject({
+      options: [{ id: "o1" }, { id: "o2" }, { id: "a1", label: "Answer 3" }],
+    });
+    expect((inspectorAct("step-remove:o1") as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    select("q1");
+    inspectorAct("step-right:b").click();
+    expect(last()).toMatchObject({ id: "q1", answer: { correct: "b" } });
+    const points = document.querySelector<HTMLInputElement>(
+      '#shell-inspector [data-field="step:points"]',
+    );
+    if (points === null) throw new Error("no points");
+    const calls = edits.storyStep.mock.calls.length;
+    points.focus();
+    points.value = "1.5";
+    points.blur();
+    expect(edits.storyStep.mock.calls.length).toBe(calls);
+    expect(deps.say).toHaveBeenCalledWith(
+      "Points are a whole number, 0 or more.",
+    );
+    points.focus();
+    points.value = "4";
+    points.blur();
+    expect(last()).toMatchObject({ id: "q1", points: 4 });
     shell.hide();
   });
 

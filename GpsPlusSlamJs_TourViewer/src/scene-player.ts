@@ -1,7 +1,8 @@
 /**
  * A station's scene, step by step (tour kit plan K4, §4.2): a story's
  * children in order, a scene choice that jumps to its option's child (or,
- * for an option that names none, goes on to the next child), and the end.
+ * for an option that names none, goes on to the next child, and for an
+ * option with `end`, ends the story), and the end.
  * Pure: which child is showing, nothing about how (`scene-view.ts` renders
  * it, and owns the tap and the timer of an auto block).
  *
@@ -36,9 +37,10 @@ export interface ScenePlayer {
    *  choice is not continued: it waits for an answer. Returns the new
    *  current child. */
   next(): TourStoryChild | null;
-  /** Answer the current choice: jump to its option's child, or to the next
-   *  child for an option that names none. An unknown option, or a call
-   *  while no choice shows, changes nothing. */
+  /** Answer the current choice: jump to its option's child, to the next
+   *  child for an option that names none, or end the scene for an option
+   *  with `end`. An unknown option, or a call while no choice shows,
+   *  changes nothing. */
   choose(optionId: string): TourStoryChild | null;
   ended(): boolean;
 }
@@ -71,6 +73,10 @@ export function createScenePlayer(
       if (child === null || child.kind !== "choice") return child;
       const option = child.options.find((o) => o.id === optionId);
       if (option === undefined) return child;
+      if (option.end === true) {
+        index = -1;
+        return null;
+      }
       const target =
         option.goto === undefined ? index + 1 : byId.get(option.goto);
       if (target === undefined) return child;

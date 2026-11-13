@@ -41,8 +41,15 @@ tabbed)` puts the focus on the control drawn under `name` (none, a
   one-line field's text, as Tab does in a field no draw replaced. The shell uses the two for the control the
   focus was moving to when a commit drew the dock again: Chromium drops
   a focus whose target a draw removed during `focusout` to the page.
-  - Every head starts with "Back to the list" (`data-act="back"`), shown
-    only on a phone (`editor-shell.css`), which drops the selection.
+  - Every head starts with the Back button (`data-act="back"`), shown
+    only on a phone (`editor-shell.css`): it goes one level up, and its
+    name says where to - "Back to <level>" by the crumb's last-but-one
+    part, "Back to the list" when that is the whole tour or no crumb is
+    given.
+  - `state.crumb` (`inspectorCrumb`), when given, is drawn over the
+    details as `nav.crumbs` ("Where you are"): each level above a button
+    (`data-act="nav:<selection>"`, `nav:` for the whole tour), the
+    selection itself the current part (`aria-current="page"`, no act).
   - The head's icon (`headLook`, one case per kind of selection, none
     by default): a block's is its kind's look in the editor's list of
     kinds (`../../kinds/edit-kinds.ts`), and so are the words of its
@@ -113,8 +120,16 @@ content` (Chromium, the editor's browser; elsewhere it stays three
     `block:<id>:<field>` and drawn as an item's other texts are
     (`blockTextField`, its count under it; a number field, a sound's radius, reach or volume, is a decimal box with its unit and no count). Where these controls sit is this build's choice, made before the
     owner's prototype round on the editor's character UI.
-  - A story's choice or quiz: its summary (`ul.steplines`), read here and
-    not edited, and "Delete choice" / "Delete quiz".
+  - A story's choice or quiz: with a `form`, its Question
+    (`data-field="step:prompt"`) and an "Answers" box: each answer a typed
+    field (`step:label:<id>`, "Answer N"), a remove button
+    (`step-remove:<id>`, off at two), for a choice a "leads to" jump picker
+    (`select[data-act="step-goto:<id>"]`, groups "Jump ahead" and "Go
+    back", "End the story" last), for a quiz a radio
+    (`step-right:<id>`); "Add an answer" (`step-add`, "Four answers is the
+    most" when off); a quiz's Points (`step:points`) and its "Then" line.
+    Without a form (a quiz of another answer type) its summary
+    (`ul.steplines`), read only. Then "Delete choice" / "Delete quiz".
   - An item with no place in the world (a video, its `offset` null): its
     texts, its kind panel's parts and its Delete; no split, no ground, no
     Position.

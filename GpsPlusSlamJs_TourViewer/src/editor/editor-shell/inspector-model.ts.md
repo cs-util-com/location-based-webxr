@@ -19,6 +19,14 @@ edit. The DOM is `shell-inspector.ts`'s; what a typed value writes is
   story for a free item whose file the tour on disk lacks
   (`selectedFileUnsaved`, from `freeItemUnsaved`: the move would be
   refused).
+- `inspectorCrumb({ selected, stations, codes })` -> `InspectorCrumb[]`
+  (`{ label, select }`): where the selection stands, from the tour
+  (`{ label: "Tour", select: null }`) through its station ("2 The gate",
+  `station:<id>`), the stories and plain folders holding it (`story:<id>`,
+  `folder:<id>`) to itself (a story's step is "Step n"; a code goes
+  straight under the tour). The last-but-one part is the selection's way
+  up, which the details' Back takes. Nothing selected, or a selection the
+  tour lacks: the tour alone.
 - `buildInspector({ selected, stations, assets, codes, unlockedStations?,
 origin?, groundAt? })` ->
   `InspectorModel | null`:
@@ -51,18 +59,25 @@ origin?, groundAt? })` ->
     (its items at any depth as `StationContent` rows, in the station's
     order); read through `placeableOf`, so it shows what the gizmo moves;
   - `StoryInspector` - `kind: "story"` (selection `story:<id>`), `storyId`,
-    `stationId`, `title`, `sub` ("2 The gate / Story") and `entries`
+    `stationId`, `title`, `sub` ("Story"; where it stands is the crumb's)
+    and `entries`
     (`storyRows` of `tree-model.ts`: `{ id, kind, title, place }`);
   - `StoryEntryInspector` - `kind: "storyEntry"`, a block of a story: `id`,
-    `stationId`, `rowKind`, `title`, `sub` ("2 The gate / The legend / Long
-    text, entry 1"), `block` (`InspectorStoryBlock { id, kind, title, fields,
+    `stationId`, `rowKind`, `title`, `sub` ("Long text, entry 1"), `block`
+    (`InspectorStoryBlock { id, kind, title, fields,
 character? }`, `kind` in the block model's words, `title` by `objectTitle`,
     `fields` by `storyBlockFields`; a character carries `InspectorCharacter {
 view, advance, facingDeg }`) and `advance { mode, afterS }`;
   - `StoryStepInspector` - `kind: "storyStep"`, `stepKind` "choice" or "quiz",
     `id`, `stationId`, `title`, `sub`, `heading` and `lines`: where each answer
-    leads, or a quiz's points and its answers with the right one said (a typed
-    answer's check is not said);
+    leads ("plays on", "goes to <entry>" or "ends the story"), or a quiz's
+    points and its answers with the right one said (a typed answer's check is
+    not said); `form?: InspectorStepForm` for a choice and a single-answer
+    quiz: `{ step, prompt, answers, ways, canAdd, canRemove, points, then }`,
+    each `InspectorAnswer { id, label, way, jump, back, right }` with its jump
+    picker's value (`gotoValue`), its chip words and whether it goes back;
+    `ways` the picker's `GotoChoice`s (`../story-steps.ts`); a quiz's
+    `then` says where the story goes on, without a closing stop;
   - `ItemInspector` - `kind: "item"`, every free block (a video and a
     free character too), `itemKind`, title, `sub` naming
     its kind in the one word every creator page uses and its station ("Pin in

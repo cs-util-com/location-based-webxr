@@ -112,7 +112,7 @@ describe("the menu for a story", () => {
     const { root } = forStory();
     key(root, "End");
     expect((document.activeElement as HTMLElement).dataset["kind"]).toBe(
-      "character",
+      "quiz",
     );
     key(root, "ArrowDown");
     expect((document.activeElement as HTMLElement).dataset["kind"]).toBe(
@@ -139,6 +139,19 @@ describe("the menu for a story", () => {
     root.querySelector<HTMLElement>('[data-kind="character"]')?.click();
     expect(chooseForStory).toHaveBeenCalledWith("legend", "character");
     expect(choose).not.toHaveBeenCalled();
+  });
+
+  // Why: a choice and a quiz are what a story asks; they are steps of a
+  // story only, so its menu offers them and a station's hides them.
+  it("offers a choice and a quiz in a story, and hides them on a station", () => {
+    const { menu, root, chooseForStory } = forStory();
+    const quiz = root.querySelector<HTMLElement>('[data-kind="quiz"]');
+    expect(quiz?.closest("[hidden]")).toBeNull();
+    expect(quiz?.textContent).toContain("Quiz");
+    root.querySelector<HTMLElement>('[data-kind="choice"]')?.click();
+    expect(chooseForStory).toHaveBeenCalledWith("legend", "choice");
+    menu.openFor(plusFor(body, "gate"), "gate", "The old gate");
+    expect(quiz?.closest("[hidden]")).not.toBeNull();
   });
 
   it("offers a story again on a station's +", () => {
@@ -172,7 +185,13 @@ describe("createTreeAddMenu", () => {
       [...root.querySelectorAll<HTMLElement>('[role="menuitem"]')].map(
         (i) => i.dataset["kind"],
       ),
-    ).toEqual([...ADD_CHOICES.map((c) => c.kind), "character", "story"]);
+    ).toEqual([
+      ...ADD_CHOICES.map((c) => c.kind),
+      "character",
+      "choice",
+      "quiz",
+      "story",
+    ]);
     const character = item("character");
     expect(character?.getAttribute("aria-disabled")).toBeNull();
     expect(character?.textContent).toContain("character maker");
