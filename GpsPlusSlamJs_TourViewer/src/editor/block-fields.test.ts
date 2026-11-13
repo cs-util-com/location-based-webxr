@@ -509,7 +509,13 @@ describe("a ground arrow's own fields", () => {
     const names = blockFields(GROUND).map((f) => f.name);
     expect(names).toContain("bendDeg");
     expect(names).toContain("readAtM");
-    for (const own of ["style", "floorPlacement", "captionOnArrow", "color", "darkColor"]) {
+    for (const own of [
+      "style",
+      "floorPlacement",
+      "captionOnArrow",
+      "color",
+      "darkColor",
+    ]) {
       expect(names).not.toContain(own);
     }
     expect(blockFieldEdit(GROUND, "bendDeg", "-30")).toEqual({
@@ -523,13 +529,18 @@ describe("a ground arrow's own fields", () => {
     // Why: the format reads `captionOnArrow` as a boolean; the text "true"
     // would be refused by the reader and lose the block's look.
     const on = blockFieldEdit(GROUND, "captionOnArrow", "true");
-    expect(on).toEqual({ kind: "edited", after: { ...GROUND, captionOnArrow: true } });
+    expect(on).toEqual({
+      kind: "edited",
+      after: { ...GROUND, captionOnArrow: true },
+    });
     const after = on.kind === "edited" ? on.after : GROUND;
     expect(blockFieldEdit(after, "captionOnArrow", "")).toEqual({
       kind: "edited",
       after: GROUND,
     });
-    expect(blockFieldEdit(GROUND, "captionOnArrow", "")).toEqual({ kind: "unchanged" });
+    expect(blockFieldEdit(GROUND, "captionOnArrow", "")).toEqual({
+      kind: "unchanged",
+    });
   });
 
   it("takes a colour as #rrggbb only, and leaves it out when cleared", () => {
@@ -541,7 +552,13 @@ describe("a ground arrow's own fields", () => {
     });
     expect(blockFieldEdit(GROUND, "darkColor", "red").kind).toBe("refused");
     expect(blockFieldEdit(GROUND, "color", "")).toEqual({ kind: "unchanged" });
-    const set = { ...(GROUND as unknown as Record<string, unknown>), color: "#5fe3c9" } as unknown as TourObject;
-    expect(blockFieldEdit(set, "color", "")).toEqual({ kind: "edited", after: GROUND });
+    const set = {
+      ...(GROUND as unknown as Record<string, unknown>),
+      color: "#5fe3c9",
+    } as unknown as TourObject;
+    expect(blockFieldEdit(set, "color", "")).toEqual({
+      kind: "edited",
+      after: GROUND,
+    });
   });
 });

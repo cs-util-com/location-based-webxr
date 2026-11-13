@@ -86,7 +86,9 @@ describe("a short text's panel", () => {
 
 describe("a ground arrow's panel", () => {
   const ground = (
-    own: Partial<NonNullable<NonNullable<PanelItem["shortText"]>["ground"]>> = {},
+    own: Partial<
+      NonNullable<NonNullable<PanelItem["shortText"]>["ground"]>
+    > = {},
   ) => ({
     view: "ground",
     role: null,
@@ -132,7 +134,9 @@ describe("a ground arrow's panel", () => {
     const check = box.querySelector<HTMLInputElement>("input[type=checkbox]")!;
     check.checked = true;
     check.dispatchEvent(new Event("change"));
-    const [main, dark] = [...box.querySelectorAll<HTMLInputElement>("input[type=color]")];
+    const [main, dark] = [
+      ...box.querySelectorAll<HTMLInputElement>("input[type=color]"),
+    ];
     main!.value = "#ff2200";
     main!.dispatchEvent(new Event("change"));
     dark!.value = "#002244";
@@ -154,7 +158,9 @@ describe("a ground arrow's panel", () => {
     // Why: in direct sun on pale paving it is the dark part that carries
     // the arrow's shape; below 3 : 1 it is lost there.
     const plain = drawn(ground({ style: "lights" }));
-    const wells = [...plain.box.querySelectorAll<HTMLInputElement>("input[type=color]")];
+    const wells = [
+      ...plain.box.querySelectorAll<HTMLInputElement>("input[type=color]"),
+    ];
     expect(wells.map((w) => w.value)).toEqual(["#f1d79c", "#2a3038"]);
     expect(plain.box.querySelector(".sunwarn")).toBeNull();
     expect(plain.box.textContent).toContain("Sun check");
