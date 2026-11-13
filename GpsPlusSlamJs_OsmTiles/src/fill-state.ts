@@ -1,9 +1,10 @@
 /**
  * The fill's small bookkeeping objects in R2: the daily counter (the global
- * cap), the per-tile failure record (backoff) and one pending marker per
- * queued or running fill (the backlog). Only the serial queue consumer
- * writes the counter and the records, so a read-modify-write needs no lock;
- * the fill endpoint writes only its own cell's marker.
+ * caps), the per-tile failure record (backoff), one pending marker per
+ * queued or running fill (the backlog) and the verified memo (the ETag a
+ * verify found good). Only the serial queue consumer writes the counter,
+ * the records and the memos, so a read-modify-write needs no lock; the fill
+ * endpoint writes only its own cell's marker.
  *
  * @see fill-state.ts.md
  */
@@ -15,10 +16,15 @@ export interface DailyState {
   readonly upstreamRequests: number;
   readonly fills: number;
   readonly failures: number;
-  /** Bytes as Overpass sent them, summed over today's fills. */
+  /**
+   * Decoded bytes, summed over today's fills whose size is known: a gzip
+   * answer is stored without inflating, so it adds nothing here.
+   */
   readonly rawBytes: number;
-  /** Bytes as stored (gzip), summed over today's fills. */
+  /** Bytes as stored, summed over today's fills. */
   readonly storedBytes: number;
+  /** Verifies of reported tiles run today. */
+  readonly verifies: number;
 }
 
 export interface FailureRecord {
@@ -26,6 +32,12 @@ export interface FailureRecord {
   /** Epoch ms before which the tile is not tried again. */
   readonly retryAt: number;
   readonly reason: string;
+  /**
+   * Stored tiles of this cell a verify found bad, ever; present only when
+   * above 0. It survives a successful fill, so the backoff after the next
+   * bad tile is longer (no fill, report, delete loop once an hour).
+   */
+  readonly badCount?: number;
 }
 
 const EMPTY_DAY: DailyState = Object.freeze({
@@ -34,6 +46,7 @@ const EMPTY_DAY: DailyState = Object.freeze({
   failures: 0,
   rawBytes: 0,
   storedBytes: 0,
+  verifies: 0,
 });
 
 const HOUR_MS = 3_600_000;
@@ -41,6 +54,7 @@ const DAY_MS = 86_400_000;
 const MAX_BACKOFF_MS = 7 * DAY_MS;
 
 const PENDING_PREFIX = "state/pending/";
+const VERIFIED_PREFIX = "state/verified/";
 
 /**
  * A marker older than this no longer counts: a consumer invocation has 15
@@ -115,6 +129,7 @@ export async function readDaily(
     failures: count(raw["failures"]),
     rawBytes: count(raw["rawBytes"]),
     storedBytes: count(raw["storedBytes"]),
+    verifies: count(raw["verifies"]),
   };
 }
 
@@ -134,10 +149,12 @@ export async function readFailure(
 ): Promise<FailureRecord | undefined> {
   const raw = await readJson(bucket, failureKey(cell));
   if (raw === undefined) return undefined;
+  const badCount = count(raw["badCount"]);
   return {
     count: count(raw["count"]),
     retryAt: count(raw["retryAt"]),
     reason: typeof raw["reason"] === "string" ? raw["reason"] : "unknown",
+    ...(badCount > 0 ? { badCount } : {}),
   };
 }
 
@@ -165,16 +182,82 @@ export async function recordFailure(
     count: failures,
     retryAt: now + failureBackoffMs(failures),
     reason,
+    ...(previous?.badCount === undefined
+      ? {}
+      : { badCount: previous.badCount }),
   };
   await writeFailure(bucket, cell, record);
   return record;
 }
 
+/**
+ * A stored tile of `cell` was found bad and deleted: one more bad tile, and
+ * the backoff of that count (an hour, doubling, at most a week), so the
+ * cell is not filled again at once with what is likely the same answer.
+ */
+export async function recordBadTile(
+  bucket: TileBucket,
+  cell: string,
+  now: number,
+  reason: string,
+): Promise<FailureRecord> {
+  const previous = await readFailure(bucket, cell);
+  const badCount = (previous?.badCount ?? 0) + 1;
+  const record: FailureRecord = {
+    count: previous?.count ?? 0,
+    retryAt: now + failureBackoffMs(badCount),
+    reason: `bad-tile:${reason}`,
+    badCount,
+  };
+  await writeFailure(bucket, cell, record);
+  return record;
+}
+
+/**
+ * A successful fill: the record goes, except a cell's bad-tile count, which
+ * stays (with no backoff now) so the next bad tile backs off longer.
+ */
 export async function clearFailure(
   bucket: TileBucket,
   cell: string,
 ): Promise<void> {
-  await bucket.delete(failureKey(cell));
+  const previous = await readFailure(bucket, cell);
+  if (previous?.badCount === undefined) {
+    await bucket.delete(failureKey(cell));
+    return;
+  }
+  await writeFailure(bucket, cell, {
+    count: 0,
+    retryAt: 0,
+    reason: previous.reason,
+    badCount: previous.badCount,
+  });
+}
+
+/** The ETag of the object of `cell` last verified good, if any. */
+export async function readVerifiedEtag(
+  bucket: TileBucket,
+  cell: string,
+): Promise<string | undefined> {
+  const memo = await bucket.head(`${VERIFIED_PREFIX}${cell}`);
+  return memo?.customMetadata?.["etag"];
+}
+
+export async function writeVerified(
+  bucket: TileBucket,
+  cell: string,
+  etag: string,
+): Promise<void> {
+  await bucket.put(`${VERIFIED_PREFIX}${cell}`, "", {
+    customMetadata: { etag },
+  });
+}
+
+export async function clearVerified(
+  bucket: TileBucket,
+  cell: string,
+): Promise<void> {
+  await bucket.delete(`${VERIFIED_PREFIX}${cell}`);
 }
 
 /** Marks `cell` queued (the endpoint) or running (the consumer). */

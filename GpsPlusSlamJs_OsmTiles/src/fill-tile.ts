@@ -1,8 +1,10 @@
 /**
  * One tile fill, as the serial queue consumer runs it: re-check the store,
  * the failure record and the daily cap; fetch the client's exact query from
- * the operators in turn; keep the bytes as sent; refuse a partial answer;
- * never replace a newer tile with an older one; gzip; store.
+ * the operators in turn, asking for gzip; keep the bytes as sent; refuse a
+ * bad answer (the head of a gzip one, head and tail of an uncompressed
+ * one); never replace a newer tile with an older one; store. Nothing is
+ * compressed or fully decompressed here (CPU).
  *
  * @see fill-tile.ts.md
  */
@@ -13,7 +15,12 @@ import {
   OVERPASS_SELECT_KEYS,
 } from "gps-plus-slam-osm/source/overpass-query";
 import type { FillMessage, TileBucket } from "./bindings";
-import { checkOverpassBody } from "./overpass-body-check";
+import { hasGzipMagic, inflateHead } from "./body-window";
+import {
+  BODY_HEAD_BYTES,
+  checkOverpassBody,
+  checkOverpassHead,
+} from "./overpass-body-check";
 import {
   clearFailure,
   readDaily,
@@ -53,8 +60,6 @@ export interface FillDeps {
   readonly dailyUpstreamCap: number;
   readonly attemptTimeoutMs?: number;
   readonly wallLimitMs?: number;
-  /** Store gzip (default) or the bytes as sent. */
-  readonly gzip?: boolean;
 }
 
 interface FillAttempt {
@@ -64,6 +69,7 @@ interface FillAttempt {
     | "ok"
     | "status"
     | "error"
+    | "encoding"
     | "not-json"
     | "no-timestamp"
     | "future-timestamp"
@@ -87,6 +93,7 @@ export interface FillOutcome {
   readonly attempts: readonly FillAttempt[];
   readonly endpoint?: string;
   readonly osmBase?: string;
+  /** Decoded size; only for an uncompressed answer (gzip is not inflated). */
   readonly rawBytes?: number;
   readonly storedBytes?: number;
   readonly wallMs: number;
@@ -101,17 +108,44 @@ function operatorOf(endpoint: string): string {
   return new URL(endpoint).hostname.split(".").slice(-2).join(".");
 }
 
-async function compressGzip(bytes: Uint8Array): Promise<Uint8Array> {
-  const stream = new Blob([bytes as BlobPart])
-    .stream()
-    .pipeThrough(new CompressionStream("gzip"));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
-}
-
 interface Fetched {
+  /** The body as the operator sent it, gzip or not. */
   readonly bytes: Uint8Array;
+  readonly gzip: boolean;
   readonly osmBase: string;
   readonly endpoint: string;
+}
+
+type AnswerCheck =
+  | { readonly ok: true; readonly osmBase: string; readonly gzip: boolean }
+  | { readonly ok: false; readonly reason: FillAttempt["result"] };
+
+/**
+ * An uncompressed answer gets the full head and tail check; a gzip one
+ * only its inflated head (a bounded cost), as its tail is reached only by
+ * inflating the whole tile. Any other encoding was never asked for.
+ */
+async function checkAnswer(
+  bytes: Uint8Array,
+  contentEncoding: string | null,
+  now: number,
+): Promise<AnswerCheck> {
+  const encoding = (contentEncoding ?? "").trim().toLowerCase();
+  if (encoding === "" || encoding === "identity") {
+    const check = checkOverpassBody(bytes, now);
+    return check.ok ? { ...check, gzip: false } : check;
+  }
+  if (encoding !== "gzip" || !hasGzipMagic(bytes)) {
+    return { ok: false, reason: "encoding" };
+  }
+  let head: Uint8Array;
+  try {
+    head = await inflateHead(bytes, BODY_HEAD_BYTES);
+  } catch {
+    return { ok: false, reason: "encoding" };
+  }
+  const check = checkOverpassHead(new TextDecoder().decode(head), now);
+  return check.ok ? { ...check, gzip: true } : check;
 }
 
 /** What the store says about the tile before any request is sent. */
@@ -145,21 +179,26 @@ async function attemptOnce(
 ): Promise<{ attempt: FillAttempt; fetched?: Fetched }> {
   const started = deps.now();
   const elapsed = (): number => Math.max(0, deps.now() - started);
+  // `encodeResponseBody: "manual"` (workerd; Node ignores it) hands over
+  // the body as the operator encoded it, so a gzip answer is stored as is.
+  const init = {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json",
+      "Accept-Encoding": "gzip",
+      "User-Agent": deps.userAgent,
+    },
+    body: new URLSearchParams({ data: query }).toString(),
+    signal: AbortSignal.timeout(
+      deps.attemptTimeoutMs ?? DEFAULT_ATTEMPT_TIMEOUT_MS,
+    ),
+    encodeResponseBody: "manual",
+  } as RequestInit;
   try {
-    const response = await deps.fetchImpl(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "application/json",
-        "User-Agent": deps.userAgent,
-      },
-      body: new URLSearchParams({ data: query }).toString(),
-      signal: AbortSignal.timeout(
-        deps.attemptTimeoutMs ?? DEFAULT_ATTEMPT_TIMEOUT_MS,
-      ),
-    });
+    const response = await deps.fetchImpl(endpoint, init);
     if (response.status !== 200) {
-      await response.body?.cancel();
+      await response.body?.cancel().catch(() => undefined);
       return {
         attempt: {
           endpoint,
@@ -169,14 +208,18 @@ async function attemptOnce(
         },
       };
     }
-    // The bytes as sent: no JSON.parse (CPU), only the head and tail check.
+    // The bytes as sent: no JSON.parse (CPU), only the bounded checks.
     const bytes = new Uint8Array(await response.arrayBuffer());
-    const check = checkOverpassBody(bytes, deps.now());
+    const check = await checkAnswer(
+      bytes,
+      response.headers.get("content-encoding"),
+      deps.now(),
+    );
     const base = { endpoint, status: 200, ms: elapsed(), bytes: bytes.length };
     if (!check.ok) return { attempt: { ...base, result: check.reason } };
     return {
       attempt: { ...base, result: "ok" },
-      fetched: { bytes, osmBase: check.osmBase, endpoint },
+      fetched: { bytes, gzip: check.gzip, osmBase: check.osmBase, endpoint },
     };
   } catch {
     return { attempt: { endpoint, result: "error", ms: elapsed() } };
@@ -232,10 +275,9 @@ async function store(
   cell: string,
   fetched: Fetched,
   deps: FillDeps,
-): Promise<number> {
-  const gzip = deps.gzip !== false;
-  const stored = gzip ? await compressGzip(fetched.bytes) : fetched.bytes;
-  await deps.bucket.put(tileObjectKey(cell), stored, {
+): Promise<void> {
+  const { gzip, bytes } = fetched;
+  await deps.bucket.put(tileObjectKey(cell), bytes, {
     httpMetadata: {
       contentType: "application/json",
       ...(gzip ? { contentEncoding: "gzip" } : {}),
@@ -245,10 +287,13 @@ async function store(
       osmBase: fetched.osmBase,
       filledAt: new Date(deps.now()).toISOString(),
       endpoint: new URL(fetched.endpoint).hostname,
-      rawBytes: String(fetched.bytes.length),
+      // `checked: head` - the tail of a gzip answer is the reader's check
+      // (a viewer's report and the verify job), see fill-tile.ts.md.
+      storedAs: gzip ? "upstream-gzip" : "raw",
+      checked: gzip ? "head" : "full",
+      ...(gzip ? {} : { rawBytes: String(bytes.length) }),
     },
   });
-  return stored.length;
 }
 
 export async function fillTile(
@@ -292,23 +337,25 @@ export async function fillTile(
     await bumpDaily(deps, (d) => ({ ...d, failures: d.failures + 1 }));
     return done("failed", { attempts });
   }
+  const rawBytes = fetched.gzip ? undefined : fetched.bytes.length;
   const facts = {
     attempts,
     endpoint: new URL(fetched.endpoint).hostname,
     osmBase: fetched.osmBase,
-    rawBytes: fetched.bytes.length,
+    ...(rawBytes === undefined ? {} : { rawBytes }),
   };
   // ISO-8601 UTC strings of one format compare correctly as text.
   if (pre.existingBase !== undefined && fetched.osmBase <= pre.existingBase) {
     await clearFailure(deps.bucket, message.cell);
     return done("kept-newer", facts);
   }
-  const storedBytes = await store(message.cell, fetched, deps);
+  await store(message.cell, fetched, deps);
+  const storedBytes = fetched.bytes.length;
   await clearFailure(deps.bucket, message.cell);
   await bumpDaily(deps, (d) => ({
     ...d,
     fills: d.fills + 1,
-    rawBytes: d.rawBytes + fetched.bytes.length,
+    rawBytes: d.rawBytes + (rawBytes ?? 0),
     storedBytes: d.storedBytes + storedBytes,
   }));
   return done("filled", { ...facts, storedBytes });

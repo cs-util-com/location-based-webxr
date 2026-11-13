@@ -13,17 +13,21 @@ methods, so the unit tests can pass small fakes.
   `TileObjectHead` / `TileObjectBody` / `BucketListing` results
   (`BucketListOptions`: `prefix`, `limit`, `cursor`, `include`); a subset
   of `R2Bucket`.
-- `FillMessage` - `{ cell, kind: "fill" | "refresh", at }`, the queue body.
+- `FillMessage` - `{ cell, kind: "fill" | "refresh" | "verify", at, etag? }`,
+  the queue body; `etag` names the object a `verify` is about.
 - `FillQueue`, `RateLimiter` - one method each.
 - `OsmTilesEnv` - `TILES`, `FILL_QUEUE`, optional `FILL_LIMITER`, and the
-  string vars `DAILY_UPSTREAM_CAP`, `MAX_PENDING_FILLS`, `USER_AGENT`,
-  `STORE_GZIP`.
+  string vars `DAILY_UPSTREAM_CAP`, `MAX_PENDING_FILLS`,
+  `DAILY_VERIFY_CAP`, `USER_AGENT`.
 
 ## Invariants & assumptions
 
 - Every var is optional and parsed defensively where it is read
-  (`DAILY_UPSTREAM_CAP` falls back to 300 and `MAX_PENDING_FILLS` to 4 on
-  a missing or invalid value).
+  (`DAILY_UPSTREAM_CAP` falls back to 300, `MAX_PENDING_FILLS` to 4 and
+  `DAILY_VERIFY_CAP` to 50 on a missing or invalid value).
+- Queue messages are data from the past: the consumer validates the cell
+  and the kind of each, and a `fill` or `refresh` queued before a deploy
+  stays valid after it.
 - `list` returns custom metadata only when `include` names it, as R2
   does; the test fake copies that.
 - `FILL_LIMITER` is optional: without the binding the fill endpoint relies

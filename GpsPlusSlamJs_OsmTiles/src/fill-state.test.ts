@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import {
+  clearFailure,
+  clearVerified,
+  readVerifiedEtag,
+  recordBadTile,
+  writeVerified,
   failureBackoffMs,
   msUntilNextUtcDay,
   readDaily,
@@ -52,6 +57,7 @@ describe("the daily counter", () => {
       failures: 0,
       rawBytes: 0,
       storedBytes: 0,
+      verifies: 0,
     });
     await writeDaily(bucket, now, {
       upstreamRequests: 3,
@@ -59,6 +65,7 @@ describe("the daily counter", () => {
       failures: 0,
       rawBytes: 10,
       storedBytes: 4,
+      verifies: 0,
     });
     expect((await readDaily(bucket, now)).upstreamRequests).toBe(3);
     const nextDay = Date.parse("2026-11-12T00:00:01Z");
@@ -90,6 +97,50 @@ describe("the failure record", () => {
     const second = await recordFailure(bucket, "871fa", now, "timeout");
     expect(second.count).toBe(2);
     expect((await readFailure(bucket, "871fa"))?.retryAt).toBe(now + 7_200_000);
+  });
+});
+
+describe("a bad tile's record", () => {
+  // Why: a verify that finds a stored tile bad deletes it; without a record
+  // that outlives the next successful fill, a cell whose answer is always
+  // partial would loop fill, report, delete, fill once an hour.
+  it("backs the cell off by its bad count, and survives a successful fill", async () => {
+    const bucket = new FakeBucket();
+    const first = await recordBadTile(bucket, "871fa", 0, "remark");
+    expect(first).toMatchObject({ retryAt: 3_600_000, badCount: 1 });
+    await clearFailure(bucket, "871fa");
+    expect(await readFailure(bucket, "871fa")).toMatchObject({
+      count: 0,
+      retryAt: 0,
+      badCount: 1,
+    });
+    const second = await recordBadTile(bucket, "871fa", 10, "remark");
+    expect(second).toMatchObject({ retryAt: 10 + 7_200_000, badCount: 2 });
+  });
+
+  it("keeps its bad count through ordinary failures", async () => {
+    const bucket = new FakeBucket();
+    await recordBadTile(bucket, "871fa", 0, "incomplete");
+    const failed = await recordFailure(bucket, "871fa", 0, "status");
+    expect(failed).toMatchObject({ count: 1, badCount: 1 });
+  });
+
+  it("is removed by a successful fill when no tile of the cell was ever bad", async () => {
+    const bucket = new FakeBucket();
+    await recordFailure(bucket, "871fa", 0, "status");
+    await clearFailure(bucket, "871fa");
+    expect(await readFailure(bucket, "871fa")).toBeUndefined();
+  });
+});
+
+describe("the verified memo", () => {
+  it("holds the ETag of the object last verified good", async () => {
+    const bucket = new FakeBucket();
+    expect(await readVerifiedEtag(bucket, "871fa")).toBeUndefined();
+    await writeVerified(bucket, "871fa", '"abc"');
+    expect(await readVerifiedEtag(bucket, "871fa")).toBe('"abc"');
+    await clearVerified(bucket, "871fa");
+    expect(await readVerifiedEtag(bucket, "871fa")).toBeUndefined();
   });
 });
 

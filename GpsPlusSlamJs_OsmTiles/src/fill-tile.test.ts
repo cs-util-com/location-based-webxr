@@ -30,6 +30,8 @@ interface Call {
   readonly url: string;
   readonly body: string;
   readonly userAgent: string | null;
+  readonly acceptEncoding?: string | null;
+  readonly encodeResponseBody?: string | undefined;
 }
 
 function deps(
@@ -58,6 +60,9 @@ function deps(
           url,
           body: String(init?.body),
           userAgent: new Headers(init?.headers).get("user-agent"),
+          acceptEncoding: new Headers(init?.headers).get("accept-encoding"),
+          encodeResponseBody: (init as { encodeResponseBody?: string })
+            .encodeResponseBody,
         });
         return Promise.resolve(answers(url, calls.length - 1));
       },
@@ -66,18 +71,25 @@ function deps(
   };
 }
 
-async function gunzip(bytes: Uint8Array): Promise<string> {
-  const stream = new Blob([bytes as BlobPart])
+async function gzip(text: string): Promise<Uint8Array> {
+  const stream = new Blob([text])
     .stream()
-    .pipeThrough(new DecompressionStream("gzip"));
-  return new Response(stream).text();
+    .pipeThrough(new CompressionStream("gzip"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+/** An operator's gzip answer, as `encodeResponseBody: "manual"` delivers it. */
+function gzipped(bytes: Uint8Array, encoding = "gzip"): Response {
+  return new Response(bytes as BodyInit, {
+    headers: { "content-encoding": encoding },
+  });
 }
 
 const fill = { cell: CELL, kind: "fill", at: NOW } as const;
 const refresh = { cell: CELL, kind: "refresh", at: NOW } as const;
 
 describe("fillTile", () => {
-  it("fetches the client's exact query once and stores it gzip with its metadata", async () => {
+  it("fetches the client's exact query once and stores an uncompressed answer as sent", async () => {
     const bucket = new FakeBucket();
     const raw = overpassBody("2026-11-11T09:00:00Z");
     const { deps: d, calls } = deps(bucket, () => new Response(raw));
@@ -92,15 +104,23 @@ describe("fillTile", () => {
     );
     expect(new URLSearchParams(calls[0]!.body).get("data")).toBe(query);
     expect(calls[0]!.userAgent).toBe("test-agent/1");
+    // gzip is asked for, and the runtime must hand over the bytes as the
+    // operator encoded them, so a gzip answer is stored without inflating.
+    expect(calls[0]!.acceptEncoding).toBe("gzip");
+    expect(calls[0]!.encodeResponseBody).toBe("manual");
 
+    // No gzip from the operator: stored raw, so the edge compresses it per
+    // client; the Worker compresses nothing (CPU).
     const stored = bucket.objects.get(KEY)!;
-    expect(await gunzip(stored.bytes)).toBe(raw);
-    expect(stored.options.httpMetadata?.contentEncoding).toBe("gzip");
+    expect(new TextDecoder().decode(stored.bytes)).toBe(raw);
+    expect(stored.options.httpMetadata?.contentEncoding).toBeUndefined();
     expect(stored.options.httpMetadata?.contentType).toBe("application/json");
-    expect(stored.options.customMetadata).toMatchObject({
+    expect(stored.options.customMetadata).toEqual({
       osmBase: "2026-11-11T09:00:00Z",
       filledAt: new Date(NOW).toISOString(),
       endpoint: "lz4.overpass-api.de",
+      storedAs: "raw",
+      checked: "full",
       rawBytes: String(raw.length),
     });
     // A success leaves no failure record (one is written before the attempt).
@@ -258,14 +278,111 @@ describe("fillTile", () => {
     expect(outcome.attempts.every((a) => a.result === "error")).toBe(true);
   });
 
-  it("can store the bytes uncompressed when gzip is switched off", async () => {
+  it("stores an operator's gzip answer byte for byte, judged by its head", async () => {
     const bucket = new FakeBucket();
     const raw = overpassBody("2026-11-11T09:00:00Z");
-    const { deps: d } = deps(bucket, () => new Response(raw), { gzip: false });
-    await fillTile(fill, d);
+    const body = await gzip(raw);
+    const { deps: d } = deps(bucket, () => gzipped(body));
+    const outcome = await fillTile(fill, d);
+    expect(outcome).toMatchObject({
+      outcome: "filled",
+      osmBase: "2026-11-11T09:00:00Z",
+      storedBytes: body.length,
+    });
+    expect(outcome.rawBytes).toBeUndefined();
     const stored = bucket.objects.get(KEY)!;
-    expect(new TextDecoder().decode(stored.bytes)).toBe(raw);
-    expect(stored.options.httpMetadata?.contentEncoding).toBeUndefined();
+    expect(stored.bytes).toEqual(body);
+    expect(stored.options.httpMetadata?.contentEncoding).toBe("gzip");
+    expect(stored.options.customMetadata).toEqual({
+      osmBase: "2026-11-11T09:00:00Z",
+      filledAt: new Date(NOW).toISOString(),
+      endpoint: "lz4.overpass-api.de",
+      storedAs: "upstream-gzip",
+      checked: "head",
+    });
+    // The raw size of a gzip answer is unknown without inflating it all.
+    expect(await readDaily(bucket, NOW)).toMatchObject({
+      rawBytes: 0,
+      storedBytes: body.length,
+    });
+  });
+
+  it("reads the data timestamp from a large gzip answer's head alone", async () => {
+    // A dense tile is tens of MB raw; the head is inflated only to its
+    // first 2 KB, whatever the size, and the timestamp is there.
+    const bucket = new FakeBucket();
+    const many = Array.from(
+      { length: 40_000 },
+      (_, i) => `{"type":"node","id":${i},"lat":${i % 90},"lon":${i % 180}}`,
+    ).join(",\n");
+    const raw = overpassBody("2026-11-11T09:00:00Z").replace(
+      '{"type":"node","id":1,"lat":1,"lon":2}',
+      many,
+    );
+    const body = await gzip(raw);
+    const { deps: d } = deps(bucket, () => gzipped(body));
+    const outcome = await fillTile(fill, d);
+    expect(outcome).toMatchObject({
+      outcome: "filled",
+      osmBase: "2026-11-11T09:00:00Z",
+    });
+  });
+
+  it("refuses a gzip answer whose head is no Overpass JSON (a gzipped error page), and asks the next operator", async () => {
+    const bucket = new FakeBucket();
+    const page = await gzip("<html><body>502 Bad Gateway</body></html>");
+    const good = await gzip(overpassBody("2026-11-11T09:00:00Z"));
+    const { deps: d } = deps(bucket, (_url, i) =>
+      gzipped(i === 0 ? page : good),
+    );
+    const outcome = await fillTile(fill, d);
+    expect(outcome.attempts.map((a) => a.result)).toEqual(["not-json", "ok"]);
+  });
+
+  it("refuses a gzip answer with an invalid data timestamp", async () => {
+    const bucket = new FakeBucket();
+    const bad = await gzip(overpassBody("2026-13-01T00:00:00Z"));
+    const { deps: d } = deps(bucket, (_url, i) =>
+      i === 0
+        ? gzipped(bad)
+        : new Response(overpassBody("2026-11-11T09:00:00Z")),
+    );
+    const outcome = await fillTile(fill, d);
+    expect(outcome.attempts.map((a) => a.result)).toEqual([
+      "no-timestamp",
+      "ok",
+    ]);
+  });
+
+  it("refuses an answer labelled gzip that is not gzip, and an encoding it never asked for", async () => {
+    const bucket = new FakeBucket();
+    const raw = new TextEncoder().encode(overpassBody("2026-11-11T09:00:00Z"));
+    const { deps: d } = deps(bucket, (_url, i) =>
+      i === 0
+        ? gzipped(raw)
+        : i === 1
+          ? gzipped(raw, "br")
+          : new Response(raw as BodyInit),
+    );
+    const outcome = await fillTile(fill, d);
+    expect(outcome.attempts.map((a) => a.result)).toEqual([
+      "encoding",
+      "encoding",
+      "ok",
+    ]);
+  });
+
+  it("stores a gzip answer whose tail carries a remark: the tail is the reader's check", async () => {
+    // Known and accepted: inflating the whole answer to see its tail costs
+    // CPU per MB the Free plan does not have. The client rejects such a
+    // body and reports it; the verify job then deletes it.
+    const bucket = new FakeBucket();
+    const partial = await gzip(overpassBody("2026-11-11T09:00:00Z", REMARK));
+    const { deps: d } = deps(bucket, () => gzipped(partial));
+    expect((await fillTile(fill, d)).outcome).toBe("filled");
+    expect(bucket.objects.get(KEY)!.options.customMetadata?.checked).toBe(
+      "head",
+    );
   });
 
   it("writes the failure record BEFORE the first attempt, so a fill the runtime kills still backs off", async () => {

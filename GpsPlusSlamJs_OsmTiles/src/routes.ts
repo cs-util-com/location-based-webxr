@@ -1,7 +1,9 @@
 /**
- * The Worker's HTTP surface: open GETs of stored tiles, and the guarded
- * fill endpoint that enqueues a missing tile. There is deliberately no list
- * of stored tiles (see routes.ts.md, "No list of stored tiles").
+ * The Worker's HTTP surface: open GETs of stored tiles, the guarded fill
+ * endpoint that enqueues a missing tile, and the guarded report endpoint
+ * that enqueues a verify of a tile a viewer found bad. There is
+ * deliberately no list of stored tiles (see routes.ts.md, "No list of
+ * stored tiles").
  *
  * @see routes.ts.md
  */
@@ -14,10 +16,18 @@ import {
   msUntilNextUtcDay,
   readDaily,
   readFailure,
+  readVerifiedEtag,
   type PendingFill,
 } from "./fill-state";
 import { REFRESH_AGE_MS } from "./fill-tile";
-import { parseTileCell, TILE_PREFIX, tileObjectKey } from "./tile-cell";
+import {
+  FILL_PREFIX,
+  parseTileCell,
+  REPORT_PREFIX,
+  TILE_PREFIX,
+  tileObjectKey,
+} from "./tile-cell";
+import { strongEtag } from "./verify-tile";
 
 export interface RouteDeps {
   readonly env: OsmTilesEnv;
@@ -26,6 +36,13 @@ export interface RouteDeps {
 
 /** Upstream requests a UTC day may spend when the var is unset or invalid. */
 const DEFAULT_DAILY_UPSTREAM_CAP = 300;
+
+/**
+ * Verifies of reported tiles a UTC day may run when the var is unset or
+ * invalid. A verify costs CPU only (no upstream request); a dense tile's
+ * inflate leans on the Free plan's burst budget, so the day is bounded.
+ */
+const DEFAULT_DAILY_VERIFY_CAP = 50;
 
 /** Seconds a client should wait before looking for a queued tile. */
 const FILL_RETRY_AFTER_S = 15;
@@ -45,14 +62,17 @@ const DEFAULT_MAX_PENDING_FILLS = 4;
 const BUSY_RETRY_AFTER_S = 60;
 
 const TILE_PATH = new RegExp(`^/${TILE_PREFIX}([^/]+)\\.json\\.gz$`);
-const FILL_PATH = /^\/fill\/v3\/([^/]+)$/;
+const FILL_PATH = new RegExp(`^/${FILL_PREFIX}([^/]+)$`);
+const REPORT_PATH = new RegExp(`^/${REPORT_PREFIX}([^/]+)$`);
 const PREVIEW_ORIGIN = /^https:\/\/[a-z0-9-]+\.csutil\.workers\.dev$/;
 const LOCAL_ORIGIN = /^http:\/\/(localhost|127\.0\.0\.1)(:\d{1,5})?$/;
 
 const SERVICE_TEXT = `osm-tiles: OpenStreetMap data as static files, one per H3 resolution-7 cell.
 
-GET  /osm/v3/<cell>.json.gz  the Overpass "out geom" JSON of that cell (gzip)
-POST /fill/v3/<cell>         ask for a missing cell to be filled (app origins only)
+GET  /${TILE_PREFIX}<cell>.json.gz  the Overpass "out geom" JSON of that cell
+POST /${FILL_PREFIX}<cell>         ask for a missing cell to be filled (app origins only)
+POST /${REPORT_PREFIX}<cell>?etag=  report a stored cell as broken; the service
+                                checks the stored file itself (app origins only)
 
 Data (c) OpenStreetMap contributors, available under the Open Database
 Licence (ODbL) 1.0: https://www.openstreetmap.org/copyright
@@ -88,6 +108,10 @@ export function dailyUpstreamCap(env: OsmTilesEnv): number {
   return nonNegativeInt(env.DAILY_UPSTREAM_CAP, DEFAULT_DAILY_UPSTREAM_CAP);
 }
 
+export function dailyVerifyCap(env: OsmTilesEnv): number {
+  return nonNegativeInt(env.DAILY_VERIFY_CAP, DEFAULT_DAILY_VERIFY_CAP);
+}
+
 function maxPendingFills(env: OsmTilesEnv): number {
   return nonNegativeInt(env.MAX_PENDING_FILLS, DEFAULT_MAX_PENDING_FILLS);
 }
@@ -99,8 +123,7 @@ const DATA_LICENSE = "ODbL-1.0; (c) OpenStreetMap contributors";
 function openHeaders(): Headers {
   return new Headers({
     "access-control-allow-origin": "*",
-    "access-control-expose-headers":
-      "X-Osm-Base, X-Data-License, Link, Last-Modified, ETag",
+    "access-control-expose-headers": "X-Osm-Base, X-Data-License, Link, ETag",
   });
 }
 
@@ -120,7 +143,6 @@ function tileHeaders(object: TileObjectHead): Headers {
   }
   headers.set("cache-control", meta?.cacheControl ?? "public, max-age=86400");
   headers.set("etag", object.httpEtag);
-  headers.set("last-modified", object.uploaded.toUTCString());
   headers.set("link", LICENSE_LINK);
   headers.set("x-data-license", DATA_LICENSE);
   const base = object.customMetadata?.["osmBase"];
@@ -131,7 +153,8 @@ function tileHeaders(object: TileObjectHead): Headers {
 /**
  * A response whose body is the stored gzip, sent as is. Without
  * `encodeBody: "manual"` the Workers runtime compresses the body a second
- * time under the same header.
+ * time under the same header. An object stored uncompressed is sent as a
+ * plain response instead, which the edge compresses per client.
  *
  * No Cache API in front of R2, measured: `caches.default` keeps such a body
  * as if it were plain content and gzips it again on every hit, so a client
@@ -163,7 +186,11 @@ async function serveTile(
   }
   const object = await deps.env.TILES.get(key);
   if (object === null) return notFound();
-  return passThrough(object.body, 200, tileHeaders(object));
+  const headers = tileHeaders(object);
+  if (object.httpMetadata?.contentEncoding === undefined) {
+    return new Response(object.body, { status: 200, headers });
+  }
+  return passThrough(object.body, 200, headers);
 }
 
 function fillCors(origin: string): Headers {
@@ -239,6 +266,12 @@ async function answerStored(
     ctx.origin,
   );
   if (!isOld(existing, ctx.now)) return present;
+  // A refresh is an upstream request like a fill: it waits out the cell's
+  // failure backoff and the day's cap, and the old file serves meanwhile.
+  const failure = await readFailure(deps.env.TILES, ctx.cell);
+  if (failure !== undefined && failure.retryAt > ctx.now) return present;
+  const daily = await readDaily(deps.env.TILES, ctx.now);
+  if (daily.upstreamRequests >= dailyUpstreamCap(deps.env)) return present;
   const pending = await listPending(deps.env.TILES, ctx.now);
   const refreshing = fillAnswer(
     200,
@@ -293,11 +326,17 @@ async function answerMissing(
   return fillAnswer(202, queued, origin, FILL_RETRY_AFTER_S);
 }
 
-async function handleFill(
+/**
+ * The guards both POST endpoints share, in order: the origin allowlist
+ * (403), the preflight, cell validation (400) and the per-IP limit under
+ * `limitKey(ip)` (429). Returns the answer to send, or the checked cell.
+ */
+async function guardPost(
   request: Request,
   rawCell: string,
   deps: RouteDeps,
-): Promise<Response> {
+  limitKey: (ip: string) => string,
+): Promise<Response | { cell: string; origin: string }> {
   const origin = request.headers.get("origin") ?? "";
   if (!isAllowedFillOrigin(origin)) {
     return new Response("origin not allowed\n", { status: 403 });
@@ -313,10 +352,21 @@ async function handleFill(
     return fillAnswer(400, { status: "invalid-cell" }, origin);
   }
   const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
-  const limited = await deps.env.FILL_LIMITER?.limit({ key: ip });
+  const limited = await deps.env.FILL_LIMITER?.limit({ key: limitKey(ip) });
   if (limited !== undefined && !limited.success) {
     return fillAnswer(429, { status: "limited" }, origin, LIMIT_RETRY_AFTER_S);
   }
+  return { cell, origin };
+}
+
+async function handleFill(
+  request: Request,
+  rawCell: string,
+  deps: RouteDeps,
+): Promise<Response> {
+  const guard = await guardPost(request, rawCell, deps, (ip) => ip);
+  if (guard instanceof Response) return guard;
+  const { cell, origin } = guard;
   const ctx: FillContext = {
     cell,
     origin,
@@ -329,17 +379,83 @@ async function handleFill(
     : answerStored(existing, ctx, deps);
 }
 
+/**
+ * A viewer found the stored tile bad (not JSON, no elements, a remark).
+ * The report only ever queues a verify of the object it names; the serial
+ * consumer judges the stored bytes and deletes only a bad tile, so a forged
+ * report can cost CPU (bounded per IP and per day) but never a good tile
+ * or an upstream request.
+ */
+async function handleReport(
+  request: Request,
+  rawCell: string,
+  deps: RouteDeps,
+): Promise<Response> {
+  const guard = await guardPost(request, rawCell, deps, (ip) => `report:${ip}`);
+  if (guard instanceof Response) return guard;
+  const { cell, origin } = guard;
+  const named = new URL(request.url).searchParams.get("etag");
+  if (named === null || named === "") {
+    return fillAnswer(400, { status: "invalid-etag" }, origin);
+  }
+  const existing = await deps.env.TILES.head(tileObjectKey(cell));
+  if (existing === null) return fillAnswer(200, { status: "missing" }, origin);
+  if (strongEtag(named) !== existing.httpEtag) {
+    return fillAnswer(200, { status: "stale" }, origin);
+  }
+  if ((await readVerifiedEtag(deps.env.TILES, cell)) === existing.httpEtag) {
+    return fillAnswer(200, { status: "verified" }, origin);
+  }
+  const now = deps.now();
+  const daily = await readDaily(deps.env.TILES, now);
+  if (daily.verifies >= dailyVerifyCap(deps.env)) {
+    const wait = Math.ceil(msUntilNextUtcDay(now) / 1000);
+    return fillAnswer(503, { status: "cap" }, origin, wait);
+  }
+  try {
+    await deps.env.FILL_QUEUE.send({
+      cell,
+      kind: "verify",
+      at: now,
+      etag: existing.httpEtag,
+    });
+  } catch (error) {
+    console.log(
+      JSON.stringify({
+        report: "enqueue-failed",
+        cell,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
+    return unavailable(origin);
+  }
+  return fillAnswer(202, { status: "checking" }, origin);
+}
+
+/** The POST endpoints: their handler for a matching path, else undefined. */
+function postEndpoint(
+  path: string,
+): { handle: typeof handleFill; rawCell: string } | undefined {
+  const fill = FILL_PATH.exec(path);
+  if (fill !== null) return { handle: handleFill, rawCell: fill[1] as string };
+  const report = REPORT_PATH.exec(path);
+  if (report !== null) {
+    return { handle: handleReport, rawCell: report[1] as string };
+  }
+  return undefined;
+}
+
 export async function handleRequest(
   request: Request,
   deps: RouteDeps,
 ): Promise<Response> {
   const path = new URL(request.url).pathname;
-  const fill = FILL_PATH.exec(path);
-  if (fill !== null) {
+  const endpoint = postEndpoint(path);
+  if (endpoint !== undefined) {
     if (request.method !== "POST" && request.method !== "OPTIONS") {
       return new Response("method not allowed\n", { status: 405 });
     }
-    return handleFill(request, fill[1] as string, deps);
+    return endpoint.handle(request, endpoint.rawCell, deps);
   }
   const readable = request.method === "GET" || request.method === "HEAD";
   const tile = TILE_PATH.exec(path);

@@ -139,4 +139,19 @@ describe("checkOverpassBody", () => {
     const close = Date.parse("2026-11-11T08:13:00Z");
     expect(checkOverpassBody(body(ELEMENT), close).ok).toBe(true);
   });
+
+  it("refuses a data timestamp of the right shape that is not a date", () => {
+    // The pattern admits any 20 characters of digits, T, Z, colons and
+    // hyphens; a value that does not parse would pass the future check (NaN
+    // compares false) and be stored as the tile's data age.
+    for (const bad of ["9999-99-99T99:99:99Z", "2026-13-01T00:00:00Z"]) {
+      const text = new TextDecoder()
+        .decode(body(ELEMENT))
+        .replace("2026-11-11T09:12:34Z", bad);
+      expect(checkOverpassBody(encoder.encode(text)), bad).toEqual({
+        ok: false,
+        reason: "no-timestamp",
+      });
+    }
+  });
 });

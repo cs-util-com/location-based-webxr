@@ -60,13 +60,18 @@ export interface TileBucket {
   list(options: BucketListOptions): Promise<BucketListing>;
 }
 
-/** What the fill endpoint enqueues for the serial consumer. */
+/** What the fill and report endpoints enqueue for the serial consumer. */
 export interface FillMessage {
   readonly cell: string;
-  /** `fill`: the tile is missing; `refresh`: it is older than the refresh age. */
-  readonly kind: "fill" | "refresh";
+  /**
+   * `fill`: the tile is missing; `refresh`: it is older than the refresh
+   * age; `verify`: a viewer reported the stored object bad.
+   */
+  readonly kind: "fill" | "refresh" | "verify";
   /** Epoch ms of the request. */
   readonly at: number;
+  /** `verify` only: the ETag of the object the viewer read. */
+  readonly etag?: string;
 }
 
 /** Queue producer subset. */
@@ -87,8 +92,8 @@ export interface OsmTilesEnv {
   readonly DAILY_UPSTREAM_CAP?: string;
   /** Queued or running fills at which the endpoint answers busy (a string var). */
   readonly MAX_PENDING_FILLS?: string;
-  /** `"false"` stores the bytes as sent instead of gzip (a measurement knob). */
-  readonly STORE_GZIP?: string;
+  /** Verifies of reported tiles per UTC day (a string var). */
+  readonly DAILY_VERIFY_CAP?: string;
   /** The real User-Agent the fill sends to the Overpass operators. */
   readonly USER_AGENT?: string;
 }

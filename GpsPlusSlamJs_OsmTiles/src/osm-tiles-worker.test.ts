@@ -65,6 +65,28 @@ describe("the worker entry", () => {
     log.mockRestore();
   });
 
+  it("runs a verify message without touching the cell's pending fill marker", async () => {
+    // A verify is no fill: the cell's marker may belong to a fill queued
+    // behind it, and clearing it would hide that fill from the backlog.
+    const bucket = new FakeBucket();
+    const key = tileObjectKey(CELL);
+    await bucket.put(key, "{ cut", {
+      customMetadata: { osmBase: "2026-11-11T09:00:00Z", storedAs: "raw" },
+    });
+    const etag = (await bucket.head(key))!.httpEtag;
+    await markPending(bucket, CELL, Date.now());
+    const env = { TILES: bucket, FILL_QUEUE: new FakeQueue() };
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const { batch: b, acked } = batch([
+      { cell: CELL, kind: "verify", at: 1, etag },
+    ]);
+    await worker.queue(b, env);
+    log.mockRestore();
+    expect(acked).toEqual([0]);
+    expect(bucket.objects.has(key)).toBe(false);
+    expect(bucket.objects.has(`state/pending/${CELL}`)).toBe(true);
+  });
+
   it("clears its pending marker when the fill ends, also when it threw", async () => {
     // The marker is the backlog the fill endpoint counts; one left behind by
     // a finished fill would make the endpoint answer busy for nothing.

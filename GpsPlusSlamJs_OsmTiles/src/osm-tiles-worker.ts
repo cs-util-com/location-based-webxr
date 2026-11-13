@@ -9,8 +9,9 @@ import { DEFAULT_OVERPASS_ENDPOINTS } from "gps-plus-slam-osm/source/overpass-so
 import type { FillMessage, OsmTilesEnv } from "./bindings";
 import { clearPending, markPending, sweepPending } from "./fill-state";
 import { fillTile } from "./fill-tile";
-import { dailyUpstreamCap, handleRequest } from "./routes";
+import { dailyUpstreamCap, dailyVerifyCap, handleRequest } from "./routes";
 import { parseTileCell } from "./tile-cell";
+import { verifyTile } from "./verify-tile";
 
 /** Sent to the operators when the `USER_AGENT` var is unset. */
 const DEFAULT_USER_AGENT =
@@ -27,10 +28,50 @@ function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * A verify reads and may delete the stored tile; it is no fill, so it
+ * neither marks nor clears the cell's pending marker (a fill of the same
+ * cell may be queued behind it).
+ */
+async function verifyOne(
+  cell: string,
+  body: FillMessage,
+  env: OsmTilesEnv,
+): Promise<void> {
+  try {
+    const outcome = await verifyTile(
+      {
+        cell,
+        kind: "verify",
+        at: body.at,
+        ...(typeof body.etag === "string" ? { etag: body.etag } : {}),
+      },
+      {
+        bucket: env.TILES,
+        now: () => Date.now(),
+        dailyVerifyCap: dailyVerifyCap(env),
+      },
+    );
+    console.log(JSON.stringify({ verify: outcome }));
+  } catch (error) {
+    console.log(
+      JSON.stringify({ verify: "error", cell, error: describeError(error) }),
+    );
+  }
+}
+
 async function consumeOne(body: FillMessage, env: OsmTilesEnv): Promise<void> {
   const cell = parseTileCell(String(body.cell));
-  if (cell === undefined || (body.kind !== "fill" && body.kind !== "refresh")) {
+  const kind = body.kind;
+  if (
+    cell === undefined ||
+    (kind !== "fill" && kind !== "refresh" && kind !== "verify")
+  ) {
     console.log(JSON.stringify({ fill: "invalid-message", body }));
+    return;
+  }
+  if (kind === "verify") {
+    await verifyOne(cell, body, env);
     return;
   }
   try {
@@ -38,7 +79,7 @@ async function consumeOne(body: FillMessage, env: OsmTilesEnv): Promise<void> {
     await sweepPending(env.TILES, Date.now());
     await markPending(env.TILES, cell, Date.now(), true);
     const outcome = await fillTile(
-      { cell, kind: body.kind, at: body.at },
+      { cell, kind, at: body.at },
       {
         bucket: env.TILES,
         fetchImpl: (input, init) => fetch(input, init),
@@ -46,7 +87,6 @@ async function consumeOne(body: FillMessage, env: OsmTilesEnv): Promise<void> {
         userAgent: env.USER_AGENT ?? DEFAULT_USER_AGENT,
         endpoints: DEFAULT_OVERPASS_ENDPOINTS,
         dailyUpstreamCap: dailyUpstreamCap(env),
-        gzip: env.STORE_GZIP !== "false",
       },
     );
     // One line per fill: what `wrangler tail` and the dashboard logs show.

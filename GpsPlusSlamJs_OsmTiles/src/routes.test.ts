@@ -2,13 +2,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import fc from "fast-check";
 import { latLngToCell } from "h3-js";
 import { handleRequest, isAllowedFillOrigin, type RouteDeps } from "./routes";
-import { tileObjectKey } from "./tile-cell";
+import {
+  TILE_SCHEMA_VERSION as OVERPASS_SCHEMA_VERSION,
+  tileObjectKey,
+} from "./tile-cell";
 import {
   listPending,
   markPending,
   PENDING_STALE_MS,
   recordFailure,
   writeDaily,
+  writeVerified,
 } from "./fill-state";
 import { FakeBucket, FakeLimiter, FakeQueue } from "./testing/fake-bindings";
 
@@ -47,7 +51,7 @@ function get(path: string, init: RequestInit = {}): Request {
 }
 
 function post(cell: string, origin: string | null = PROD): Request {
-  return new Request(`${BASE}/fill/v3/${cell}`, {
+  return new Request(`${BASE}/fill/v${OVERPASS_SCHEMA_VERSION}/${cell}`, {
     method: "POST",
     headers: {
       ...(origin === null ? {} : { Origin: origin }),
@@ -83,7 +87,12 @@ describe("GET a tile", () => {
     );
     // The fill time is not sent: it is a second date per place, and no
     // client needs it (the data's own age is X-Osm-Base and the body).
+    // Last-Modified is R2's upload time, i.e. the fill time to the second.
     expect(response.headers.get("x-filled-at")).toBeNull();
+    expect(response.headers.get("last-modified")).toBeNull();
+    expect(response.headers.get("access-control-expose-headers")).not.toMatch(
+      /last-modified/i,
+    );
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(
       new Uint8Array([31, 139, 8, 0, 1, 2, 3]),
     );
@@ -158,6 +167,7 @@ describe("GET a tile", () => {
     );
     expect(response.status).toBe(200);
     expect(response.headers.get("x-osm-base")).toBe("2026-11-11T09:00:00Z");
+    expect(response.headers.get("last-modified")).toBeNull();
     expect(response.body).toBeNull();
   });
 
@@ -204,6 +214,25 @@ describe("GET a tile", () => {
     expect(text).toContain("OpenStreetMap contributors");
     expect(text).toContain("ODbL");
     expect(text).not.toContain("manifest");
+    // The paths it names follow the query schema, like the routes do.
+    expect(text).toContain(`/osm/v${OVERPASS_SCHEMA_VERSION}/<cell>.json.gz`);
+    expect(text).toContain(`/fill/v${OVERPASS_SCHEMA_VERSION}/<cell>`);
+  });
+
+  it("answers the fill path of another schema version 404, never a fill", async () => {
+    // The fill path is derived from the query schema, as the tile path is: a
+    // client of another schema must not fill tiles under this one's key.
+    const { deps, queue } = setup();
+    const other = OVERPASS_SCHEMA_VERSION + 1;
+    const response = await handleRequest(
+      new Request(`${BASE}/fill/v${other}/${CELL}`, {
+        method: "POST",
+        headers: { Origin: PROD },
+      }),
+      deps,
+    );
+    expect(response.status).toBe(404);
+    expect(queue.sent).toEqual([]);
   });
 });
 
@@ -296,6 +325,7 @@ describe("POST /fill", () => {
       failures: 0,
       rawBytes: 0,
       storedBytes: 0,
+      verifies: 0,
     });
     const response = await handleRequest(post(CELL), deps);
     expect(response.status).toBe(503);
@@ -367,6 +397,35 @@ describe("POST /fill", () => {
     expect(response.headers.get("access-control-allow-origin")).toBe(PROD);
     expect(await response.json()).toMatchObject({ status: "unavailable" });
     expect(await listPending(bucket, NOW)).toEqual([]);
+  });
+
+  it("queues no refresh for an old tile in failure backoff, and still answers present", async () => {
+    // A refresh is an upstream request like a fill; a cell whose last
+    // attempt failed (or was killed) waits out its backoff either way.
+    const { bucket, deps, queue } = setup();
+    await storeTile(bucket, "2026-09-01T00:00:00Z");
+    await recordFailure(bucket, CELL, NOW - 60_000, "status");
+    const response = await handleRequest(post(CELL), deps);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ status: "present" });
+    expect(queue.sent).toEqual([]);
+  });
+
+  it("queues no refresh for an old tile once today's upstream cap is spent", async () => {
+    const { bucket, deps, queue } = setup();
+    await storeTile(bucket, "2026-09-01T00:00:00Z");
+    await writeDaily(bucket, NOW, {
+      upstreamRequests: 10,
+      fills: 3,
+      failures: 0,
+      rawBytes: 0,
+      storedBytes: 0,
+      verifies: 0,
+    });
+    const response = await handleRequest(post(CELL), deps);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ status: "present" });
+    expect(queue.sent).toEqual([]);
   });
 
   it("queues one refresh per old tile, however many viewers ask", async () => {
@@ -452,5 +511,201 @@ describe("isAllowedFillOrigin", () => {
     ]) {
       expect(isAllowedFillOrigin(origin), origin).toBe(false);
     }
+  });
+});
+
+describe("GET a tile stored uncompressed", () => {
+  // Why: an operator that answers without gzip is stored raw; the edge must
+  // then compress it per client, which it does only for a response without
+  // a Content-Encoding and without the manual-encoding flag.
+  it("serves it with no Content-Encoding and lets the runtime encode it", async () => {
+    const { bucket, deps } = setup();
+    await bucket.put(KEY, '{"elements":[]}', {
+      httpMetadata: { contentType: "application/json" },
+      customMetadata: { osmBase: "2026-11-11T09:00:00Z", storedAs: "raw" },
+    });
+    const inits: (ResponseInit | undefined)[] = [];
+    const Real = Response;
+    vi.stubGlobal(
+      "Response",
+      class extends Real {
+        constructor(body?: BodyInit | null, init?: ResponseInit) {
+          super(body, init);
+          inits.push(init);
+        }
+      },
+    );
+    const response = await handleRequest(get(`/${KEY}`), deps);
+    vi.unstubAllGlobals();
+    expect(response.headers.get("content-encoding")).toBeNull();
+    expect(response.headers.get("x-osm-base")).toBe("2026-11-11T09:00:00Z");
+    expect(await response.text()).toBe('{"elements":[]}');
+    expect((inits[0] as { encodeBody?: string }).encodeBody).toBeUndefined();
+  });
+});
+
+describe("POST a bad-tile report", () => {
+  // Why these tests matter: a report is the only request that can lead to a
+  // stored tile being deleted, and its Origin header is free for any script.
+  // So it only ever queues a verify of the stored bytes (bounded per IP and
+  // per day), never deletes by itself, and costs nothing for an object that
+  // was already replaced or already verified good.
+  const REPORT = `/report/v${OVERPASS_SCHEMA_VERSION}/`;
+
+  function report(
+    cell: string,
+    etag: string | null,
+    origin: string | null = PROD,
+    method = "POST",
+  ): Request {
+    const query = etag === null ? "" : `?etag=${encodeURIComponent(etag)}`;
+    return new Request(`${BASE}${REPORT}${cell}${query}`, {
+      method,
+      headers: {
+        ...(origin === null ? {} : { Origin: origin }),
+        "CF-Connecting-IP": "203.0.113.7",
+      },
+    });
+  }
+
+  async function etagOf(bucket: FakeBucket): Promise<string> {
+    return (await bucket.head(KEY))!.httpEtag;
+  }
+
+  it("queues one verify of the reported object and deletes nothing", async () => {
+    const { bucket, deps, queue } = setup();
+    await storeTile(bucket, "2026-11-11T09:00:00Z");
+    const etag = await etagOf(bucket);
+    const response = await handleRequest(report(CELL, etag), deps);
+    expect(response.status).toBe(202);
+    expect(await response.json()).toEqual({ status: "checking" });
+    expect(response.headers.get("access-control-allow-origin")).toBe(PROD);
+    expect(queue.sent).toEqual([{ cell: CELL, kind: "verify", at: NOW, etag }]);
+    expect(bucket.objects.has(KEY)).toBe(true);
+  });
+
+  it("matches the ETag a browser saw weakened by the edge's compression", async () => {
+    // The edge compresses a raw tile per client and then sends W/"...".
+    const { bucket, deps, queue } = setup();
+    await storeTile(bucket, "2026-11-11T09:00:00Z");
+    const etag = await etagOf(bucket);
+    const response = await handleRequest(report(CELL, `W/${etag}`), deps);
+    expect(response.status).toBe(202);
+    expect(queue.sent[0]?.etag).toBe(etag);
+  });
+
+  it("answers stale for an object already replaced, and queues nothing", async () => {
+    const { bucket, deps, queue } = setup();
+    await storeTile(bucket, "2026-11-11T09:00:00Z");
+    const response = await handleRequest(report(CELL, '"older"'), deps);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ status: "stale" });
+    expect(queue.sent).toEqual([]);
+  });
+
+  it("answers missing for a cell with no tile", async () => {
+    const { deps, queue } = setup();
+    const response = await handleRequest(report(CELL, '"x"'), deps);
+    expect(await response.json()).toEqual({ status: "missing" });
+    expect(queue.sent).toEqual([]);
+  });
+
+  it("answers verified, at the cost of one read, for an object already verified good", async () => {
+    const { bucket, deps, queue } = setup();
+    await storeTile(bucket, "2026-11-11T09:00:00Z");
+    const etag = await etagOf(bucket);
+    await writeVerified(bucket, CELL, etag);
+    const response = await handleRequest(report(CELL, etag), deps);
+    expect(await response.json()).toEqual({ status: "verified" });
+    expect(queue.sent).toEqual([]);
+  });
+
+  it("answers cap once today's verifies are spent", async () => {
+    const { bucket, deps, queue } = setup();
+    await storeTile(bucket, "2026-11-11T09:00:00Z");
+    await writeDaily(bucket, NOW, {
+      upstreamRequests: 0,
+      fills: 0,
+      failures: 0,
+      rawBytes: 0,
+      storedBytes: 0,
+      verifies: 50,
+    });
+    const response = await handleRequest(
+      report(CELL, await etagOf(bucket)),
+      deps,
+    );
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ status: "cap" });
+    expect(queue.sent).toEqual([]);
+  });
+
+  it("applies the fill endpoint's guards: origin, cell, per-IP limit under its own key", async () => {
+    const { bucket, deps, queue, limiter } = setup();
+    await storeTile(bucket, "2026-11-11T09:00:00Z");
+    const etag = await etagOf(bucket);
+    expect(
+      (await handleRequest(report(CELL, etag, "https://evil.example"), deps))
+        .status,
+    ).toBe(403);
+    expect((await handleRequest(report(CELL, etag, null), deps)).status).toBe(
+      403,
+    );
+    expect(
+      (await handleRequest(report("871fa4ac9ffffff0", etag), deps)).status,
+    ).toBe(400);
+    expect((await handleRequest(report(CELL, null), deps)).status).toBe(400);
+    limiter.allow = false;
+    expect((await handleRequest(report(CELL, etag), deps)).status).toBe(429);
+    // Reports draw on their own per-IP budget, never on the fill one.
+    expect(new Set(limiter.keys)).toEqual(new Set(["report:203.0.113.7"]));
+    expect(queue.sent).toEqual([]);
+  });
+
+  it("answers the preflight, refuses other methods", async () => {
+    const { deps } = setup();
+    const preflight = await handleRequest(
+      report(CELL, '"x"', PROD, "OPTIONS"),
+      deps,
+    );
+    expect(preflight.status).toBe(204);
+    expect(preflight.headers.get("access-control-allow-methods")).toContain(
+      "POST",
+    );
+    expect(
+      (await handleRequest(report(CELL, '"x"', PROD, "GET"), deps)).status,
+    ).toBe(405);
+  });
+
+  it("answers a queue outage 503 with CORS", async () => {
+    const { bucket, deps, queue } = setup();
+    await storeTile(bucket, "2026-11-11T09:00:00Z");
+    queue.failWith = new Error("queue down");
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const response = await handleRequest(
+      report(CELL, await etagOf(bucket)),
+      deps,
+    );
+    log.mockRestore();
+    expect(response.status).toBe(503);
+    expect(response.headers.get("access-control-allow-origin")).toBe(PROD);
+  });
+
+  it("property: no sequence of reports removes a stored tile", async () => {
+    const { bucket, deps } = setup();
+    await storeTile(bucket, "2026-11-11T09:00:00Z");
+    const etag = await etagOf(bucket);
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(fc.oneof(fc.constant(etag), fc.string({ maxLength: 12 })), {
+          maxLength: 8,
+        }),
+        async (etags) => {
+          for (const e of etags) await handleRequest(report(CELL, e), deps);
+          expect(bucket.objects.has(KEY)).toBe(true);
+        },
+      ),
+      { numRuns: 30 },
+    );
   });
 });

@@ -6,7 +6,8 @@ main = "src/osm-tiles-worker.ts"
 compatibility_date = "2026-04-28"
 account_id = "1ad957e7187b9200f60c49128bfaa57c"
 # Served on workers.dev until a custom domain is attached; moving to one is a
-# `routes` entry here plus the domain in the client option.
+# `routes` entry here plus the domain in the client option. The domain goes
+# on this Worker, never on the R2 bucket (which would skip the headers).
 workers_dev = true
 
 [[r2_buckets]]
@@ -26,7 +27,8 @@ max_batch_timeout = 1
 max_concurrency = 1
 max_retries = 0
 
-# Approximate per-IP limit on the fill endpoint (per Cloudflare location).
+# Approximate per-IP limit on the fill and report endpoints (per Cloudflare
+# location); reports count under their own key, `report:<ip>`.
 [[ratelimits]]
 name = "FILL_LIMITER"
 namespace_id = "1188"
@@ -37,6 +39,8 @@ simple = { limit = 20, period = 60 }
 DAILY_UPSTREAM_CAP = "300"
 # Queued or running fills at which the fill endpoint answers busy at once.
 MAX_PENDING_FILLS = "4"
+# Verifies of reported tiles one UTC day may run (CPU only, no upstream).
+DAILY_VERIFY_CAP = "50"
 USER_AGENT = "gps-plus-slam osm-tiles (+https://github.com/cs-util-com/location-based-webxr)"
 
 [observability.logs]

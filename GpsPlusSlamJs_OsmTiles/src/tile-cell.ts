@@ -26,8 +26,17 @@ export function parseTileCell(raw: string): string | undefined {
   return raw;
 }
 
+/** The query schema the stored tiles and every host path are versioned by. */
+export const TILE_SCHEMA_VERSION = OVERPASS_SCHEMA_VERSION;
+
 /** The path segment and R2 key prefix of this schema's tiles. */
-export const TILE_PREFIX = `osm/v${OVERPASS_SCHEMA_VERSION}/`;
+export const TILE_PREFIX = `osm/v${TILE_SCHEMA_VERSION}/`;
+
+/** The path prefix of this schema's fill requests. */
+export const FILL_PREFIX = `fill/v${TILE_SCHEMA_VERSION}/`;
+
+/** The path prefix of this schema's bad-tile reports. */
+export const REPORT_PREFIX = `report/v${TILE_SCHEMA_VERSION}/`;
 
 /** R2 key (and URL path without the leading slash) of a validated cell. */
 export function tileObjectKey(cell: string): string {
