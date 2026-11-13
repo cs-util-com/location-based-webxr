@@ -78,7 +78,11 @@ test("a video added at a station stands there as a screen, and its panel sets it
   ).setFiles({ name: "clip.webm", mimeType: "video/webm", buffer: CLIP });
 
   // Added free, as a screen with a width, and selected: its panel shows.
-  await expect.poll(async () => (await gateVideo(page))?.view).toBe("screen");
+  // The add reads the clip's length and mints its poster first, each with
+  // its own wait (a recorded WebM states no length): seconds, not frames.
+  await expect
+    .poll(async () => (await gateVideo(page))?.view, { timeout: 30_000 })
+    .toBe("screen");
   const added = await gateVideo(page);
   expect(added.widthM).toBeGreaterThan(0);
   expect(added.pose).toBeDefined();

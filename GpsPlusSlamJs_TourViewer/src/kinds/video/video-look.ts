@@ -42,7 +42,7 @@ import {
 import { markPlaceScale } from "../../placement/place-scale.js";
 
 /** The prototype's width, at which its measures hold (m). */
-export const LOOK_REFERENCE_WIDTH_M = 1.6;
+const LOOK_REFERENCE_WIDTH_M = 1.6;
 
 /** The clip's height over its width until its own is known: the
  *  prototype's 512 x 640 clip. */

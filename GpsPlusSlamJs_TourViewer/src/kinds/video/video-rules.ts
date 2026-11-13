@@ -10,12 +10,12 @@
  * @see video-rules.ts.md
  */
 
-import type {
-  TourVideoBlock,
-  TourVideoStart,
-} from "gps-plus-slam-app-framework/ar/tour-kinds";
+import type { TourVideoBlock } from "gps-plus-slam-app-framework/ar/tour-kinds";
 
 import { prefsRoot } from "../../visitor-prefs.js";
+
+/** How a video starts: the format's `start` values. */
+type TourVideoStart = NonNullable<TourVideoBlock["start"]>;
 
 /** A video's width in the world (m) when it first stands there - a new
  *  video from a file, or a story's card moved out of its story: about a

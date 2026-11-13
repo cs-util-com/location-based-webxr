@@ -18,8 +18,8 @@ approved station-blocks video prototype's measures:
 
 ## Public API
 
-- `LOOK_REFERENCE_WIDTH_M` (1.6), `VIDEO_DEFAULT_ASPECT` (1.25, until the
-  clip's own is known), `CUTOUT_MAX_TURN`.
+- `VIDEO_DEFAULT_ASPECT` (1.25, until the clip's own is known),
+  `CUTOUT_MAX_TURN`.
 - `VideoWorldView` - `"screen" | "cutout" | "porthole"`.
 - `LookState` - what the part tells the look each frame: the clip and
   poster textures, started, playing, progress, time text, sound, the page
@@ -34,7 +34,7 @@ approved station-blocks video prototype's measures:
 
 ## Invariants & assumptions
 
-- Built at `LOOK_REFERENCE_WIDTH_M` and scaled by `widthM / 1.6`, then
+- Built at a reference width of 1.6 m (module-private) and scaled by `widthM / 1.6`, then
   marked with `markPlaceScale` (`placement/place-scale.ts`): a drawing is
   exactly proportional to its width, which the editor's size preview and
   the placement contract need. The prototype's size floors for small

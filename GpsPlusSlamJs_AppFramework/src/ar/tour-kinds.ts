@@ -175,7 +175,7 @@ export const TOUR_PICTURE_MAX_WIDTH_M = 50;
  *  within `withinM` of it, when the visitor looks at it, or on a tap only.
  *  Absent: on entering. */
 export const TOUR_VIDEO_STARTS = ['enter', 'near', 'look', 'tap'] as const;
-export type TourVideoStart = (typeof TOUR_VIDEO_STARTS)[number];
+type TourVideoStart = (typeof TOUR_VIDEO_STARTS)[number];
 
 /** A `near` start's distance (m), inclusive. */
 export const TOUR_VIDEO_MIN_WITHIN_M = 1;

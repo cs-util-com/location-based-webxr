@@ -16,11 +16,10 @@ same look, still and silent.
 - `VideoDeps` - the page: `makePlayer`, `clipTexture`, `posterTexture`,
   `url` / `revoke`, `activated` (the page was touched), `storage` (the
   visitor's preferences), `element` (the player as a page element).
-- `browserVideoDeps()` - the browser's.
 - `SOUND_REFUSED_NOTE` - the card's line when the browser kept a wanted
   sound off.
 - `videoWorld(block, env, deps?)` -> `WorldPart | null`: null in the card
-  view and without `widthM`.
+  view and without `widthM`; `deps` defaults to the browser's.
 
 ## Invariants & assumptions
 

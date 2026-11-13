@@ -94,7 +94,7 @@ export interface VideoDeps {
 
 /** The browser's: a `<video>`, its frames, `createImageBitmap`, object
  *  URLs, `navigator.userActivation` and `localStorage`. */
-export function browserVideoDeps(): VideoDeps {
+function browserVideoDeps(): VideoDeps {
   const g = globalThis as {
     document?: Document;
     navigator?: { userActivation?: { hasBeenActive?: boolean } };
