@@ -569,8 +569,8 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
 /**
  * The bottom bar's toggles and the bottom panel they open, at one size:
  * the four named toggles side by side, flush with the asset shelf's toggle
- * at the bar's right edge; the panel on the bar, between the open docks
- * (or under both, spanned), left of the asset shelf, its
+ * at the bar's right edge; the panel on the bar, between the open docks,
+ * left of the asset shelf, its
  * 30 px head with the tabs at its left, the map controls 14 px over it.
  * @param {import("@playwright/test").Page} page
  * @param {{ width: number, height: number }} size
@@ -608,12 +608,8 @@ async function expectPanel(page, size, heightPx) {
   const open = async (/** @type {import("@playwright/test").Locator} */ d) =>
     (await d.isVisible()) &&
     !(await d.evaluate((el) => el.classList.contains("collapsed")));
-  const spanned = await page
-    .locator("#shell-panel")
-    .evaluate((el) => el.classList.contains("span"));
   // The asset shelf at the window's right runs down to the bottom bar
-  // beside the panel; spanned, the panel runs under it too (a phone's
-  // shelf is a sheet of its own, closed here).
+  // beside the panel (a phone's shelf is a sheet of its own, closed here).
   const shelf = page.locator("#shell-shelf");
   const shelfShown = size.width > 700 && (await shelf.isVisible());
   let left = 0;
@@ -621,15 +617,10 @@ async function expectPanel(page, size, heightPx) {
   if (shelfShown) {
     const s = await box(shelf);
     expect(s.x + s.width, `the shelf ${at}`).toBeCloseTo(size.width, 0);
-    if (!spanned) {
-      expect(s.y + s.height, `the shelf ${at}`).toBeCloseTo(
-        size.height - 24,
-        0,
-      );
-      right = s.x;
-    }
+    expect(s.y + s.height, `the shelf ${at}`).toBeCloseTo(size.height - 24, 0);
+    right = s.x;
   }
-  if (size.width > 700 && !spanned) {
+  if (size.width > 700) {
     if (await open(tree)) {
       const t = await box(tree);
       left = t.x + t.width;
@@ -839,8 +830,8 @@ test("the bottom bar's toggles open the bottom panel between the docks, at a pho
   await problems.click();
   await expect(problems).toHaveAttribute("aria-pressed", "true");
   // Docked, the toggle shows the Problems tab's group under the 3D view
-  // (the panel's own frame, with its span button, is the phone's alone: a
-  // docked group spans by being dragged).
+  // (the panel's own frame is the phone's alone: a docked group spans by
+  // being dragged).
   await expect(
     page.locator(".dock-host").getByRole("tab", { name: "Problems" }),
   ).toBeVisible();

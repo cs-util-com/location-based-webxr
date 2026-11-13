@@ -76,6 +76,16 @@ const PATHS = {
   grip: '<path d="M6 3.5h.01M10 3.5h.01M6 8h.01M10 8h.01M6 12.5h.01M10 12.5h.01" stroke-width="2.2" stroke-linecap="round"/>',
   ban: '<circle cx="8" cy="8" r="6"/><path d="M3.8 12.2l8.4-8.4"/>',
   foldall: '<path d="M4.5 6.5L8 3l3.5 3.5M4.5 13L8 9.5l3.5 3.5"/>',
+  left: '<path d="M9.5 4.5L6 8l3.5 3.5"/>',
+  // The docked panels' tabs and rails: the details, and the bottom
+  // panel's four panes.
+  details:
+    '<rect x="2" y="2.5" width="12" height="11" rx="1"/><path d="M9.5 2.5v11M11 5.5h1.5M11 8h1.5"/>',
+  problems: '<path d="M8 2.2 14.2 13H1.8z"/><path d="M8 6.4v3.2M8 11.4v.1"/>',
+  history: '<circle cx="8" cy="8" r="5.8"/><path d="M8 4.6V8l2.3 1.5"/>',
+  tiles:
+    '<path d="M1.8 4.2 5.8 2.6l4.4 1.6 4-1.6v9.2l-4 1.6-4.4-1.6-4 1.6z"/><path d="M5.8 2.6v9.2M10.2 4.2v9.2"/>',
+  perf: '<path d="M1.5 8.6h2.8l1.6-4.2 2.5 8 1.8-5.4 1.1 1.6h3.2"/>',
 } as const;
 
 export type ShellIcon = keyof typeof PATHS;

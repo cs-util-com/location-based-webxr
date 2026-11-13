@@ -1941,10 +1941,11 @@ function showShelfDocked(): void {
   if (panelsDocked) shell.reveal("files");
 }
 
-/** Docked, the Details tab shown in place of Files: the shelf's pressed
- *  toggle pressed again. */
+/** Docked, Files out of sight: the shelf's pressed toggle pressed again.
+ *  Details takes its place where they share a group, else the group's
+ *  next panel; Files alone, its group hides. */
 function hideShelfDocked(): void {
-  if (panelsDocked) shell.reveal("details");
+  if (panelsDocked) shell.conceal("files", "details");
 }
 
 /** A phone's layout: the shelf is a sheet (shelf-panel.css's width). */
@@ -2081,10 +2082,15 @@ function openShelfPanel(open: EditorSession): void {
         editorViewActions.dockFolded({ dock: "inspector", folded: true }),
       );
     },
-    docked: () => panelsDocked,
-    revealDocked: showShelfDocked,
-    hideDocked: hideShelfDocked,
-    filesShown: () => shell.filesShown(),
+    dock: {
+      active: () => panelsDocked,
+      reveal: showShelfDocked,
+      shown: () => shell.filesShown(),
+      hide: hideShelfDocked,
+      badge: (badge) => {
+        shell.badge("files", badge);
+      },
+    },
   });
 }
 

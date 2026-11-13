@@ -33,6 +33,8 @@ import {
   shapeKey,
   SHELF_KINDS,
   shelfBadge,
+  filesBadge,
+  type FilesBadge,
   shelfChips,
   shelfSummary,
   stateLine,
@@ -168,17 +170,27 @@ export interface ShelfPanelDeps {
   /** Asked when the shelf is opened while squeezed: makes the room (the
    *  page folds the details). */
   readonly makeRoom?: () => void;
+  /** The editor's docked panels, where the shelf is the Files panel.
+   *  Absent: the panels never dock. One object, as the five calls are
+   *  right only together. */
+  readonly dock?: ShelfDock;
+}
+
+/** The shelf as the docked Files panel. */
+interface ShelfDock {
   /** True while the editor's panels are docked: the shelf is the Files
-   *  panel there, never a rail. Absent: never. */
-  readonly docked?: () => boolean;
-  /** Docked, shows the Files panel (opening the shelf asks for it). */
-  readonly revealDocked?: () => void;
-  /** Docked, whether the Files panel shows (the toggle is pressed then).
-   *  Absent: never. */
-  readonly filesShown?: () => boolean;
-  /** Docked, shows the tab beside the Files panel in its place (the
-   *  pressed toggle pressed again). */
-  readonly hideDocked?: () => void;
+   *  panel then, never a rail. */
+  readonly active: () => boolean;
+  /** Shows the Files panel (opening the shelf asks for it). */
+  readonly reveal: () => void;
+  /** Whether the Files panel shows (the toggle is pressed then). */
+  readonly shown: () => boolean;
+  /** Takes the Files panel out of sight (the pressed toggle pressed
+   *  again). */
+  readonly hide: () => void;
+  /** The Files tab's badge, given on every draw (null: nothing to say);
+   *  docked, the shelf has no rail of its own to carry it. */
+  readonly badge: (badge: FilesBadge | null) => void;
 }
 
 export interface ShelfPanel {
@@ -880,7 +892,7 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
 
   /** Shown as its rail: folded by the creator, or squeezed. */
   function railShown(): boolean {
-    if (deps.docked?.() === true) return false;
+    if (deps.dock?.active() === true) return false;
     return state.folded || deps.squeezed?.() === true;
   }
 
@@ -893,14 +905,15 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     fold.setAttribute("aria-expanded", String(!folded));
     const pressed = phone
       ? state.sheet
-      : deps.docked?.() === true
-        ? deps.filesShown?.() === true
+      : deps.dock?.active() === true
+        ? deps.dock.shown()
         : !folded;
     toggle.setAttribute("aria-pressed", String(pressed));
     toggle.querySelector(".as-badge")?.remove();
     const badge = badgeEl(rows);
     if (badge !== null) toggle.append(badge);
     drawPill(rows, phone);
+    if (deps.dock?.active() === true) deps.dock.badge(filesBadge(rows));
     count.textContent = rows.length > 0 ? String(rows.length) : "";
   }
 
@@ -995,8 +1008,8 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
   }
 
   function open(): void {
-    if (deps.docked?.() === true) {
-      deps.revealDocked?.();
+    if (deps.dock?.active() === true) {
+      deps.dock.reveal();
       redraw();
       return;
     }
@@ -1214,10 +1227,10 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     if (deps.phone()) {
       state.sheet = !state.sheet;
       redraw();
-    } else if (deps.docked?.() === true && deps.filesShown?.() === true) {
-      deps.hideDocked?.();
+    } else if (deps.dock?.active() === true && deps.dock.shown()) {
+      deps.dock.hide();
       redraw();
-    } else if (railShown() || deps.docked?.() === true) {
+    } else if (railShown() || deps.dock?.active() === true) {
       open();
     } else {
       setFolded(true);

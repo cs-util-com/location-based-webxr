@@ -23,6 +23,24 @@ describe("placeShellIcons", () => {
     expect(unknown?.querySelector("i[data-icon]")).not.toBeNull();
   });
 
+  // Why: the docked panels' tabs and rails draw each panel's icon from
+  // this one set; a name missing here would draw an empty icon.
+  it("has an icon for every docked panel and a chevron each way", () => {
+    for (const name of [
+      "details",
+      "problems",
+      "history",
+      "tiles",
+      "perf",
+      "left",
+      "right",
+      "up",
+      "down",
+    ] as const) {
+      expect(shellIcon(name).childElementCount, name).toBeGreaterThan(0);
+    }
+  });
+
   it("draws an icon in the text colour, hidden from screen readers", () => {
     const svg = shellIcon("qr");
     expect(svg.getAttribute("viewBox")).toBe("0 0 16 16");

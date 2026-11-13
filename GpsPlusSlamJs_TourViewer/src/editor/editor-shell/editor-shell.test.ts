@@ -31,6 +31,7 @@ import { documentObjects, tourDocumentActions } from "../../tour-document.js";
 import type * as TourDocument from "../../tour-document.js";
 import { createTourViewerStore } from "../../tour-viewer-session.js";
 import { editorViewActions, editorViewReducer } from "../editor-view.js";
+import type { DockHost, mountDockHost } from "./dock-host.js";
 import { createEditorShell, type EditorShellDeps } from "./editor-shell.js";
 import { createFolderCommands, NOTHING_TO_GROUP } from "../folder-commands.js";
 import {
@@ -2344,5 +2345,137 @@ describe("the add menu's Character", () => {
     });
     expect(edits.addItem).not.toHaveBeenCalled();
     expect(store.getState().editorView.openStations).toContain("b");
+  });
+});
+
+describe("a phone's keyboard over the panels", () => {
+  // Why: docked, the list sits in a pane of its own; a keyboard watcher
+  // hosted by the list's parent would not see the details' fields, and a
+  // field typed into would stay under the keyboard. The watcher is hosted
+  // by the 3D view, which holds every panel wherever it sits.
+  it("brings a details field into sight while the list sits in a pane of its own", () => {
+    const { shell, view, select } = setUp();
+    shell.hide();
+    const pane = document.createElement("div");
+    document.getElementById("view3d")?.append(pane);
+    const tree = document.getElementById("shell-tree");
+    if (tree === null) throw new Error("no tree");
+    pane.append(tree);
+    const viewport = Object.assign(new EventTarget(), {
+      height: window.innerHeight,
+      offsetTop: 0,
+      scale: 1,
+    });
+    Object.defineProperty(window, "visualViewport", {
+      value: viewport,
+      configurable: true,
+    });
+    const scrolled = vi.fn();
+    const scroll = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrolled;
+    try {
+      shell.show(view);
+      select("station:a");
+      const title = field("title");
+      title.focus();
+      viewport.height = window.innerHeight - 300;
+      viewport.dispatchEvent(new Event("resize"));
+      expect(document.body.dataset["keyboard"]).toBe("up");
+      expect(scrolled.mock.contexts).toContain(title);
+    } finally {
+      Element.prototype.scrollIntoView = scroll;
+      Reflect.deleteProperty(window, "visualViewport");
+      shell.hide();
+    }
+  });
+});
+
+describe("docked folds and counts", () => {
+  /** A docking whose list and details share one group: one fold for both,
+   *  as when a creator drags one into the other's group. */
+  function sharedGroupDock() {
+    let shut = false;
+    let onChange = () => undefined as void;
+    const host = {
+      fold: vi.fn((_id: string, folded: boolean) => {
+        if (folded === shut) return;
+        shut = folded;
+        onChange();
+      }),
+      folded: () => shut,
+      reveal: vi.fn(() => {
+        if (!shut) return;
+        shut = false;
+        onChange();
+      }),
+      badge: vi.fn(),
+      content: () => document.createElement("div"),
+      groupShown: () => !shut,
+      activeIn: () => null,
+      conceal: vi.fn(),
+      hideGroupOf: vi.fn(),
+      keyboard: vi.fn(),
+      dispose: vi.fn(),
+    } satisfies DockHost;
+    const mount: typeof mountDockHost = (deps) => {
+      onChange = deps.onChange;
+      return host;
+    };
+    return { host, load: () => Promise.resolve({ mountDockHost: mount }) };
+  }
+
+  async function docked() {
+    const made = setUp();
+    const dock = sharedGroupDock();
+    made.shell.hide();
+    Object.assign(made.deps, { dock: dock.load });
+    made.shell.show(made.view);
+    await vi.waitFor(() => {
+      expect(made.shell.docked()).toBe(true);
+    });
+    return { ...made, host: dock.host };
+  }
+
+  // Why: two panels in one group fold together. Were the store and the
+  // docking to hear their own echoes, the list's fold would fold the
+  // details, whose fold in the store would then unfold the group again -
+  // a flip-flop a creator sees as a fold that will not stay.
+  it("a fold of one panel in a shared group is the other's too, and stays", async () => {
+    const { store, host, shell } = await docked();
+    store.dispatch(
+      editorViewActions.dockFolded({ dock: "tree", folded: true }),
+    );
+    expect(store.getState().editorView.foldedDocks).toEqual({
+      tree: true,
+      inspector: true,
+    });
+    expect(host.folded()).toBe(true);
+    expect(host.fold).toHaveBeenCalledTimes(1);
+    // Revealing a panel is the one way to unfold: the store follows.
+    shell.reveal("details");
+    expect(host.reveal).toHaveBeenCalledWith("details");
+    expect(store.getState().editorView.foldedDocks).toEqual({
+      tree: false,
+      inspector: false,
+    });
+    expect(host.fold).toHaveBeenCalledTimes(1);
+    shell.hide();
+  });
+
+  // Why: the shelf hands its count to the shell before the docking has
+  // loaded; a count dropped then would leave the Files tab silent about
+  // files that failed until the next change.
+  it("keeps a tab's count for when the panels dock", async () => {
+    const made = setUp();
+    const dock = sharedGroupDock();
+    made.shell.hide();
+    const badge = { count: 2, bad: true, label: "2 files not optimized" };
+    made.shell.badge("files", badge);
+    Object.assign(made.deps, { dock: dock.load });
+    made.shell.show(made.view);
+    await vi.waitFor(() => {
+      expect(dock.host.badge).toHaveBeenCalledWith("files", badge);
+    });
+    made.shell.hide();
   });
 });

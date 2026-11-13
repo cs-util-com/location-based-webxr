@@ -13,8 +13,7 @@ this draws them and takes the clicks, the grip's drag and the keys.
 - `createBottomPanel(deps)` -> `BottomPanel`. `deps`:
   - `panel` (`#shell-panel`) and `toggles` (`#shell-toggles`): the page's
     empty boxes, filled here;
-  - `box` (`#view3d`): its height bounds the panel's; it carries the
-    `panel-span` class while a spanned panel is open;
+  - `box` (`#view3d`): its height bounds the panel's;
   - `choose(selection)` - a problem's row clicked, or Enter or Space on
     it (the shell selects and flies to it);
   - `fix(selection, fix)` - a problem's fix link clicked (`ProblemFix`,
@@ -65,7 +64,7 @@ this draws them and takes the clicks, the grip's drag and the keys.
   and ArrowDown do nothing there, the page standing back from them too,
   `GpsPlusSlamJs_EditorKit/src/chrome/key-target.ts`), the tab's tools (Problems: the Errors, Warnings and Notes
   filters, each with its count; History: Undo and Redo, disabled without
-  a step; Map loading: "Retry failed" and its status line), then span,
+  a step; Map loading: "Retry failed" and its status line), then
   maximise and close.
 - **The panes:** Problems groups by station (a group folds), an empty
   state, and "N hidden by the filters above." when the filters hide all.

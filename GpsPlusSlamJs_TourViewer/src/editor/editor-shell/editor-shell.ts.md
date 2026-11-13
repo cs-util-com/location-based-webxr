@@ -64,6 +64,8 @@ phone wider than 700 px keeps the two docks, and turning one with
 something selected unfolds the list the details covered. The on-screen keyboard
 (`phone-keyboard.ts`) is `--s-keyboard-h` on the page; at every width a
 panel stands on the keyboard, so a focused field can scroll above it.
+The watcher is hosted by the 3D view, which holds every panel wherever
+it sits (docked, each in a pane of its own).
 Docked, the layout is told the keyboard's height on every change and,
 when it is docked while a keyboard is up, at once.
 
@@ -106,9 +108,15 @@ to a station, a story's name in the head takes the focus, selected.
   - `deps.dock?()` - loads `dock-host.ts` (a dynamic import); absent, the
     panels never dock. From `DOCK_MIN_PX` (701 px) wide, while the view
     shows, the panels dock around it; narrower, or on `hide()`, they
-    undock. The folds stay the store's (`foldedDocks`): a folded side
-    hides its group and shows its folded head over the view, so the dock
-    rule and the approach fold keep working. Docked, a selection that
+    undock. A fold is the store's (`foldedDocks`) and the docking's
+    at once: the list's and the details' folds are carried to the groups
+    holding them (`dock-host.ts`'s `fold`, a rail) and back from them
+    (`syncFromDock`), each side hearing only the other's changes, so
+    two panels dragged into one group (one fold for both) never undo
+    each other, and the approach fold keeps working. An unfold from a rail
+    counts as the creator's for the approach. Docked, the dock rule
+    folds no side for the other (the 3D view gives way); only a phone
+    turned sideways still unfolds the list. Docked, a selection that
     appears shows Details over Files, and the Details panel says "Select
     a station or an item, in the list or in the view." while nothing is
     selected;
@@ -164,8 +172,12 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   rule, and after a takeover the folded tree is what they left.
 - `EditorShell.docked()` - whether the panels are docked now;
   `EditorShell.reveal(id)` - docked, shows a panel (`dock-layout.ts`'s ids),
-  unfolding its side in the store first; undocked, nothing (the asset
+  its group unfolded (the store follows); undocked, nothing (the asset
   shelf's toggle reveals the Files panel through it).
+  `EditorShell.badge(id, badge | null)` - the count on a docked panel's
+  tab (the shelf's Files count), kept for when the panels dock.
+  `EditorShell.conceal(id, instead?)` - docked, takes a shown panel out of
+  sight (`dock-host.ts`'s `conceal`); the shelf's toggle pressed again.
   `EditorShell.filesShown()` - docked, whether the Files panel shows (its
   group shown, it the shown tab); undocked, false.
 - `EditorShell.clearSearch()` - empties the tree's search, and draws the tree
@@ -358,8 +370,7 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   only (`.said`), the bar's other parts after the credits: the
   selection's actions, then the panel's toggles flush at the right edge.
   The bottom panel sits at the view's foot and pushes the view up (the
-  view's canvas ends at its top), between the open docks (or under both,
-  spanned), its height in `--s-panel-h` on the page, which the map
+  view's canvas ends at its top), between the open docks, its height in `--s-panel-h` on the page, which the map
   controls and the toasts stand above; at 700 px or less it takes
   the width, the inspector ending at its top. Every top-bar
   control keeps its words at every width; the tour's name keeps a floor
@@ -498,8 +509,7 @@ unfolding and flying, a double click not toggling, a later click
 deselecting and folding, the folds and a layer kept across a trip to the
 map, Top view from View and by T, the zoom steps and the Performance
 tab's view and draw calls, the bottom panel's toggles and panel at a
-phone, a phone in landscape and a desktop (positions and gaps, spanned
-too, Ctrl+J),
+phone, a phone in landscape and a desktop (positions and gaps, Ctrl+J),
 and on a phone the folded tree's "Stations" header unfolding the dock
 with its stations shown.
 

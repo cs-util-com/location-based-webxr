@@ -5,6 +5,7 @@
  *
  * @see dock-layout.ts.md
  */
+import type { ShellIcon } from "gps-plus-slam-editor-kit/chrome";
 
 /** From this window width up (CSS px) the editor's panels dock around the
  *  3D view, a phone held sideways (844 px) included; below it a phone's
@@ -44,42 +45,71 @@ export interface DockPanelSpec {
    *  canvas the host moves in. */
   readonly element: string | null;
   readonly group: DockGroup;
+  /** Its icon, on its tab and on its group's rail. */
+  readonly icon: ShellIcon;
+  /** Its head's own fold button, by selector, where its group shows no
+   *  tab strip unfolded: an unfold from the rail gives the focus there. */
+  readonly fold?: string;
 }
 
 /** Every docked panel, the 3D view first. */
 export const DOCK_PANELS: readonly DockPanelSpec[] = [
-  { id: "view", title: "3D view", element: null, group: "centre" },
-  { id: "list", title: "List", element: "shell-tree", group: "left" },
+  {
+    id: "view",
+    title: "3D view",
+    element: null,
+    group: "centre",
+    icon: "model",
+  },
+  {
+    id: "list",
+    title: "List",
+    element: "shell-tree",
+    group: "left",
+    icon: "ul",
+    fold: "#tree-fold",
+  },
   {
     id: "details",
     title: "Details",
     element: "shell-inspector",
     group: "right",
+    icon: "details",
   },
-  { id: "files", title: "Files", element: "shell-shelf", group: "right" },
+  {
+    id: "files",
+    title: "Files",
+    element: "shell-shelf",
+    group: "right",
+    icon: "folder",
+  },
   {
     id: "problems",
     title: "Problems",
     element: "shell-pane-problems",
     group: "bottom",
+    icon: "problems",
   },
   {
     id: "history",
     title: "History",
     element: "shell-pane-history",
     group: "bottom",
+    icon: "history",
   },
   {
     id: "tiles",
     title: "Map loading",
     element: "shell-pane-tiles",
     group: "bottom",
+    icon: "tiles",
   },
   {
     id: "perf",
     title: "Performance",
     element: "shell-pane-perf",
     group: "bottom",
+    icon: "perf",
   },
 ];
 
