@@ -119,6 +119,7 @@ import {
   type StepKind,
   type StoryStep,
 } from "../story-step-edits.js";
+import { END_TARGET } from "../story-steps.js";
 import {
   buildInspector,
   detailsOnPhone,
@@ -773,6 +774,10 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   let positionOpen = false;
   /** A station's Contents unfolded: kept from one station to the next. */
   let contentsOpen = true;
+  /** A story's cards open in place (by child id), and a count changed
+   *  with them so a draw sees the change. */
+  const openCards = new Set<string>();
+  let cardsChanged = 0;
   /** A ground command waiting for the ground: the inspector shows it in
    *  progress; a new selection or the view hidden calls it off. */
   let busy: {
@@ -785,6 +790,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     ui: EditorViewState;
     positionOpen: boolean;
     contentsOpen: boolean;
+    cards: number;
     busy: string | null;
   } | null = null;
 
@@ -812,6 +818,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       modelPick: ui.modelPick,
       timingsStamp: timingsStampOf(state().tourDocument.timings),
       selectedFileUnsaved: freeItemUnsaved(state().tourDocument, ui.selected),
+      // On a phone a card goes to its step: none opens in place.
+      openCards: phoneSheets(window.innerWidth) ? [] : [...openCards],
     });
     const file = inspectorFileOf(
       ui.selected,
@@ -842,6 +850,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         positionOpen,
         contentsOpen,
         busy: busy?.act ?? null,
+        drill: phoneSheets(window.innerWidth),
         // Only for a selection shown: nothing selected builds no tour.
         ...(model === null
           ? {}
@@ -1074,6 +1083,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       drawn.ui === ui &&
       drawn.positionOpen === positionOpen &&
       drawn.contentsOpen === contentsOpen &&
+      drawn.cards === cardsChanged &&
       drawn.busy === busyAct
     ) {
       return;
@@ -1081,7 +1091,14 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     const docChanged = drawn?.doc !== doc;
     const uiChanged = drawn?.ui !== ui;
     const before = drawn?.ui ?? null;
-    drawn = { doc, ui, positionOpen, contentsOpen, busy: busyAct };
+    drawn = {
+      doc,
+      ui,
+      positionOpen,
+      contentsOpen,
+      cards: cardsChanged,
+      busy: busyAct,
+    };
     const tour = manifest();
     if (docChanged || uiChanged) drawTreeNow();
     const model = inspectorModel(ui);
@@ -2013,14 +2030,73 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     store.dispatch(editorViewActions.dockFolded({ dock: "tree", folded }));
     if (!folded) applyDocks("tree-unfolded");
   });
+  /** The item `item` selected from the inspector, its story unfolded in
+   *  the list and the view flown to it. */
+  const goToItem = (item: string) => {
+    deps.select(item);
+    const tour = manifest();
+    const story =
+      tour === null ? undefined : tourChildPlace(tour, item)?.story;
+    if (story !== undefined) revealStory(story.id);
+    flyToSelection(item);
+  };
+  /** A press on a story's card (`card:<id>`) opens or closes it in
+   *  place, a jump chip (`card-show:<id>`) opens the step it names, and
+   *  on a phone both go to that step; the loop warning's fix
+   *  (`card-fix:<id>`) lets the choice's last answer end the story. True
+   *  when `act` was one of them. */
+  const cardAct = (act: string): boolean => {
+    const colon = act.indexOf(":");
+    const name = act.slice(0, colon);
+    const id = act.slice(colon + 1);
+    if (name === "card-fix") {
+      const model = inspectorModel({ ...state().editorView, selected: id });
+      const step = model?.kind === "storyStep" ? model.form?.step : undefined;
+      const last = step?.kind === "choice" ? step.options.at(-1) : undefined;
+      if (step?.kind === "choice" && last !== undefined) {
+        const edited = stepWithGoto(step, last.id, END_TARGET);
+        if (edited !== null) deps.edits.storyStep(edited);
+      }
+      return true;
+    }
+    if (name !== "card" && name !== "card-show") return false;
+    if (phoneSheets(window.innerWidth)) {
+      goToItem(id);
+      return true;
+    }
+    if (name === "card" && openCards.has(id)) openCards.delete(id);
+    else openCards.add(id);
+    cardsChanged += 1;
+    draw();
+    const head = inspector.root.querySelector<HTMLElement>(
+      `[data-act=${JSON.stringify(`card:${id}`)}]`,
+    );
+    head?.focus();
+    if (name === "card-show") head?.scrollIntoView?.({ block: "nearest" });
+    return true;
+  };
+  /** The selection a control inside the inspector answers for: its
+   *  story card's step (`data-card`), else the selection. */
+  const answersFor = (target: EventTarget | null): EditorViewState => {
+    const card =
+      target instanceof Element
+        ? target.closest<HTMLElement>("[data-card]")?.dataset["card"]
+        : undefined;
+    const ui = state().editorView;
+    return card === undefined ? ui : { ...ui, selected: card };
+  };
   inspector.root.addEventListener("click", (event) => {
     const act = (event.target as Element).closest<HTMLElement>("[data-act]")
       ?.dataset["act"];
-    const chosen = state().editorView.selected;
+    if (act !== undefined && cardAct(act)) return;
+    // Inside an open card every command is the card's step's.
+    const ui = answersFor(event.target);
+    const inCard = ui !== state().editorView;
+    const chosen = ui.selected;
     if (
       act !== undefined &&
       chosen !== null &&
-      panels.act(act, inspectorModel(state().editorView), chosen)
+      panels.act(act, inspectorModel(ui), chosen)
     ) {
       draw();
       return;
@@ -2063,7 +2139,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       contentsOpen = !contentsOpen;
       draw();
     }
-    const { selected } = state().editorView;
+    const { selected } = ui;
     if (selected === null) return;
     if (act === "add-content" && selected.startsWith(STATION_PREFIX)) {
       const button = (event.target as Element).closest<HTMLElement>(
@@ -2088,13 +2164,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       }
     }
     if (act?.startsWith("goto:") === true) {
-      const item = act.slice("goto:".length);
-      deps.select(item);
-      const tour = manifest();
-      const story =
-        tour === null ? undefined : tourChildPlace(tour, item)?.story;
-      if (story !== undefined) revealStory(story.id);
-      flyToSelection(item);
+      goToItem(act.slice("goto:".length));
     }
     if (act === "earlier" || act === "later") moveSelected(selected, act);
     if (act?.startsWith("move-to:") === true) {
@@ -2105,7 +2175,12 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       if (model?.file !== undefined)
         deps.edits.replaceFile?.(model.file.blockId);
     }
-    if (act === "delete") deleteSelected(selected);
+    // A card's step goes without moving the focus to the list: its story
+    // stays selected.
+    if (act === "delete") {
+      if (inCard) deps.stations.remove(selected);
+      else deleteSelected(selected);
+    }
     if (act === "split") deps.stations.split(selected);
     if (act === "ground" || act === "ground-items") void runGround(act);
     if (
@@ -2119,7 +2194,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       }
     }
     if (act !== undefined) {
-      const model = inspectorModel(state().editorView);
+      const model = inspectorModel(ui);
       const edit = characterChipEdit(model, act);
       if (edit !== null && model?.kind === "storyEntry") {
         deps.edits.station(model.stationId, { character: edit });
@@ -2161,7 +2236,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       !inspectorDrawing(inspector.root)
     ) {
       const next = controlName(inspector.root, event.relatedTarget);
-      commitField(input, state().editorView.selected);
+      commitField(input, answersFor(input).selected);
       focusControl(inspector.root, next, tabbed);
     }
   });
@@ -2173,7 +2248,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     if (!(pick instanceof HTMLSelectElement)) return;
     const act = pick.dataset["act"];
     if (act?.startsWith(STEP_GOTO) !== true) return;
-    const model = inspectorModel(state().editorView);
+    const model = inspectorModel(answersFor(pick));
     const step = model?.kind === "storyStep" ? model.form?.step : undefined;
     if (step?.kind !== "choice") return;
     const edited = stepWithGoto(step, act.slice(STEP_GOTO.length), pick.value);
@@ -2210,7 +2285,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       input instanceof HTMLInputElement
     ) {
       event.preventDefault();
-      commitField(input, state().editorView.selected);
+      commitField(input, answersFor(input).selected);
     } else if (event.key === "Escape" && input.value !== input.defaultValue) {
       // The tour's value back; the next Escape is the page's again.
       event.preventDefault();

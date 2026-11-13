@@ -23,7 +23,8 @@
  *   items it holds, its scale (how much larger it draws its items and
  *   their distances), and where its origin stands in its station's frame
  *   with its heading there, and how far that stands off the ground.
- * - A story (`story:<id>`): its title, its place and its numbered entries.
+ * - A story (`story:<id>`): its title, its place and its steps as cards
+ *   (`story-cards.ts`), with the inspectors of the cards open in place.
  * - A story's block: its texts, how it moves on and, for a character, what
  *   is set of him; a story's choice or quiz: a summary, read here and not
  *   edited.
@@ -77,6 +78,7 @@ import {
   type BlockField,
 } from "../block-fields.js";
 import { FOLDER_PREFIX, STORY_PREFIX } from "../editor-model.js";
+import { storyCards, type StoryCard } from "./story-cards.js";
 import { folderName } from "../folder-commands.js";
 import {
   FREE_LIST,
@@ -212,12 +214,11 @@ interface StoryInspector {
   readonly title: string;
   /** Its station, numbered as the tree numbers it. */
   readonly sub: string;
-  readonly entries: readonly {
-    readonly id: string;
-    readonly kind: TreeRowKind;
-    readonly title: string;
-    readonly place: number;
-  }[];
+  /** Its steps as cards, in order (`story-cards.ts`). */
+  readonly cards: readonly StoryCard[];
+  /** The inspectors of the cards open in place (`openCards`), in the
+   *  story's order; none: every card is closed. */
+  readonly opened?: readonly InspectorModel[];
 }
 
 /** A block of a story, as its inspector shows it. */
@@ -1030,7 +1031,7 @@ function storyInspector(
       moves: movesOf(storyId, stations),
       title: story.title,
       sub: "Story",
-      entries: storyRows(story),
+      cards: storyCards(story.children),
     };
   }
   return null;
@@ -1108,6 +1109,9 @@ export function buildInspector(input: {
   /** The selected free item's file is not in the tour on disk yet, so it
    *  is offered no story (`freeItemUnsaved`); none given: it is. */
   readonly selectedFileUnsaved?: boolean;
+  /** A selected story's cards open in place, by child id; none given:
+   *  every card is closed. */
+  readonly openCards?: readonly string[];
 }): InspectorModel | null {
   const { selected, stations, groundAt } = input;
   if (selected === null) return null;
@@ -1149,7 +1153,15 @@ export function buildInspector(input: {
     };
   }
   if (selected.startsWith(STORY_PREFIX)) {
-    return storyInspector(selected.slice(STORY_PREFIX.length), stations);
+    const story = storyInspector(selected.slice(STORY_PREFIX.length), stations);
+    const open = input.openCards ?? [];
+    if (story?.kind !== "story" || open.length === 0) return story;
+    const opened = story.cards.flatMap((card) => {
+      if (!open.includes(card.id)) return [];
+      const model = buildInspector({ ...input, selected: card.id, openCards: [] });
+      return model === null ? [] : [model];
+    });
+    return opened.length === 0 ? story : { ...story, opened };
   }
   if (selected.startsWith(FOLDER_PREFIX)) {
     return folderInspector(selected, stations, groundAt);

@@ -325,8 +325,9 @@ describe("buildInspector", () => {
       expect(model).not.toHaveProperty("story");
     });
 
-    it("shows a story's title, its place and its numbered entries", () => {
-      expect(inStory("story:legend")).toEqual({
+    it("shows a story's title, its place and its steps as cards", () => {
+      const model = inStory("story:legend");
+      expect(model).toMatchObject({
         kind: "story",
         storyId: "legend",
         stationId: "b",
@@ -339,14 +340,37 @@ describe("buildInspector", () => {
         },
         title: "The legend",
         sub: "Story",
-        entries: [
-          { id: "intro", kind: "text", title: "The siege", place: 1 },
-          { id: "wendel", kind: "character", title: "Wendel", place: 2 },
-          { id: "way", kind: "choice", title: "Choice: Which way?", place: 3 },
-          { id: "age", kind: "quiz", title: "Quiz: How old?", place: 4 },
-          { id: "year", kind: "quiz", title: "Quiz: Which year?", place: 5 },
-        ],
       });
+      if (model?.kind !== "story") throw new Error("no story");
+      expect(model).not.toHaveProperty("opened");
+      expect(
+        model.cards.map((c) => [c.id, c.kind, c.number, c.tag, c.title]),
+      ).toEqual([
+        ["intro", "text", 1, "Shows a long text", "The siege"],
+        ["wendel", "character", 2, "Shows a character", "Wendel"],
+        ["way", "choice", 3, "Asks", "Which way?"],
+        ["age", "quiz", 4, "Quiz", "How old?"],
+        ["year", "quiz", 5, "Quiz", "Which year?"],
+      ]);
+    });
+
+    // Why: a card opened in place edits its step with the step's own
+    // controls, so the story's inspector carries the step's inspector for
+    // each open card, in the story's order; an id the story lacks opens
+    // nothing.
+    it("carries the inspectors of the cards open in place", () => {
+      const model = buildInspector({
+        selected: "story:legend",
+        stations: [STATIONS[0]!, STORY_STATION],
+        assets: [],
+        codes: CODES,
+        openCards: ["way", "gone", "intro"],
+      });
+      if (model?.kind !== "story") throw new Error("no story");
+      expect(model.opened?.map((m) => [m.kind, "id" in m ? m.id : null])).toEqual([
+        ["storyEntry", "intro"],
+        ["storyStep", "way"],
+      ]);
     });
 
     it("shows a story's block by its texts and how it moves on", () => {

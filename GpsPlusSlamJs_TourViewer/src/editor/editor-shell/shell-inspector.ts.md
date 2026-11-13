@@ -87,9 +87,19 @@ content` (Chromium, the editor's browser; elsewhere it stays three
     bounds; under "Place", its offset east and north, height and heading
     in its station's frame. Its items follow every one.
   - A story: its name to type in the head (`data-field="story-title"`, its
-    count under it), its "Entries" fold ("<n>, played in order"), a numbered
-    `.kids` row each, `goto:<id>`), "Add entry..." (`add-entry`) and
-    "Delete story" (with an entry count and "..." when it holds any).
+    count under it), its steps as cards (`.scards`, `story-cards.ts`),
+    "Add step..." (`add-entry`) and "Delete story" (with an entry count
+    and "..." when it holds any). A card (`article.scard`, `data-card`
+    its step's id) has a head (`card:<id>`: its number, kind icon, tag,
+    title, a choice's or quiz's line and a block's moves-on chip; on a
+    desktop with `aria-expanded`, with `InspectorState.drill` none, as it
+    goes to the step), its answers each with a jump chip (a button
+    `card-show:<id>` for a step, words for the end or a gone step; a
+    quiz's right mark and "After the answer"), the loop warning with,
+    on the loop's last choice, its fix (`card-fix:<id>`), and, open in
+    place (`opened`), the step's own parts in `.cbody`. `controlName`
+    prefixes a control inside a card with its card, as open cards draw
+    the same fields.
   - A story's block: its texts and, unless a character's, "Moves on" chips
     (`entry-advance:<id>:tap`, `:auto`; `:lineEnd` shown only while it is
     the block's), "After" in seconds (`data-field="entry-after:<id>"`) while
@@ -233,8 +243,10 @@ opened again, and the fields' layout at four window sizes).
 `shell-inspector.test.ts` also covers a plain folder's Scale and Place
 fields, the ground changing under a drawn station (only its ground button updated, the typed field and its focus kept), the lock button's place, state and words, and its absence for a station without a position; Earlier and Later beside a station's place, off at the ends; and the commands in words per kind (a station's Delete with its key, an item's two, none for a code).
 
-It also covers a story (its name, its numbered Entries, its Add entry and
-its Delete, an empty one), a choice's and a quiz's summary, an item with
+It also covers a story (its name, its step cards, its Add step and its
+Delete, an empty one; the jump chips, a phone's cards without
+aria-expanded, the loop warning with its fix on the last choice only, an
+open card's controls inside it), a choice's and a quiz's summary, an item with
 no place in the world (its texts and Delete only), a
 story block's moves-on chips and seconds, a story
 character's view and advance chips (the one in use pressed, each group

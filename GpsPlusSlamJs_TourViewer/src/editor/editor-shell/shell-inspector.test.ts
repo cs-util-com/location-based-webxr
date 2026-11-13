@@ -257,27 +257,59 @@ describe("drawInspector", () => {
     }) as const;
   const FOLD = { folded: false, positionOpen: false };
 
-  // Why: a story's parts left the station's inspector for a story's own: a
-  // story's title is typed in the head, its entries are listed in order
-  // with the way to add one, and its Delete says what goes with it. Names
-  // are the file's, never markup.
-  it("draws a story: its typed title, its numbered entries, its commands", () => {
-    drawInspector(
-      dock,
+  const CARD = {
+    line: null,
+    chips: [],
+    answers: [],
+    issue: null,
+    fix: null,
+  } as const;
+  const STORY = {
+    kind: "story",
+    storyId: "legend",
+    stationId: "gate",
+    title: "The <b>legend</b>",
+    sub: "1 The old gate / Story",
+    cards: [
       {
-        kind: "story",
-        storyId: "legend",
-        stationId: "gate",
-        title: "The <b>legend</b>",
-        sub: "1 The old gate / Story",
-        entries: [
-          { id: "intro", kind: "text", title: "The <i>siege</i>", place: 1 },
-          { id: "way", kind: "choice", title: "Choice: Which?", place: 2 },
+        ...CARD,
+        id: "intro",
+        number: 1,
+        kind: "text",
+        tag: "Shows a long text",
+        title: "The <i>siege</i>",
+        chips: ["On a tap"],
+      },
+      {
+        ...CARD,
+        id: "way",
+        number: 2,
+        kind: "choice",
+        tag: "Asks",
+        title: "Which?",
+        line: "The visitor picks one of 2 answers.",
+        answers: [
+          {
+            label: "Again",
+            right: null,
+            jump: { text: "goes back to step 1", type: "back", to: "intro" },
+          },
+          {
+            label: "Stop",
+            right: null,
+            jump: { text: "ends the story", type: "end", to: null },
+          },
         ],
       },
-      FOLD,
-      pictures,
-    );
+    ],
+  } as const satisfies InspectorModel;
+
+  // Why: a story's parts left the station's inspector for a story's own: a
+  // story's title is typed in the head, its steps are cards in order with
+  // the way to add one, and its Delete says what goes with it. Names are
+  // the file's, never markup.
+  it("draws a story: its typed title, its step cards, its commands", () => {
+    drawInspector(dock, STORY, FOLD, pictures);
     const title = dock.head.querySelector<HTMLInputElement>(
       '[data-field="story-title"]',
     );
@@ -286,44 +318,119 @@ describe("drawInspector", () => {
     expect(dock.body.querySelector(".sub")?.textContent).toBe(
       "1 The old gate / Story",
     );
-    expect(dock.body.querySelector('[data-act="contents"]')?.textContent).toBe(
-      "Entries2, played in order",
-    );
     expect(
-      [...dock.body.querySelectorAll<HTMLElement>(".kids .kid")].map((k) => [
-        k.dataset["act"],
-        k.querySelector(".meta")?.textContent,
-        k.querySelector(".nm")?.textContent,
+      [...dock.body.querySelectorAll<HTMLElement>(".scard")].map((k) => [
+        k.dataset["card"],
+        k.querySelector<HTMLElement>(".chead")?.dataset["act"],
+        k.querySelector(".num")?.textContent,
+        k.querySelector(".kindtag")?.textContent,
+        k.querySelector(".ttl")?.textContent,
       ]),
     ).toEqual([
-      ["goto:intro", "1", "The <i>siege</i>"],
-      ["goto:way", "2", "Choice: Which?"],
+      ["intro", "card:intro", "1", "Shows a long text", "The <i>siege</i>"],
+      ["way", "card:way", "2", "Asks", "Which?"],
     ]);
     expect(dock.body.querySelector("b, i")).toBeNull();
     expect(
       dock.body.querySelector('[data-act="add-entry"]')?.textContent,
-    ).toContain("Add entry...");
+    ).toContain("Add step...");
     expect(
       dock.body.querySelector('[data-act="delete"]')?.textContent,
     ).toContain("Delete story and its 2 entries...");
   });
 
-  it("says an empty story has no entries, and needs no words on its Delete", () => {
+  // Why: each answer says where it leads as a chip, and a chip naming a
+  // step is a button that shows it (`card-show:<id>`); the end is words.
+  // A card on a desktop says it opens in place (aria-expanded), on a
+  // phone it is a way into its step and says nothing of opening.
+  it("draws a choice's answers with their jump chips", () => {
+    drawInspector(dock, STORY, FOLD, pictures);
+    const way = dock.body.querySelector<HTMLElement>('[data-card="way"]');
+    expect(
+      [...(way?.querySelectorAll<HTMLElement>(".ans") ?? [])].map((a) => [
+        a.querySelector(".albl")?.textContent,
+        a.querySelector(".jump")?.tagName,
+        a.querySelector(".jump")?.textContent,
+        a.querySelector<HTMLElement>(".jump")?.dataset["act"],
+      ]),
+    ).toEqual([
+      ["Again", "BUTTON", "goes back to step 1", "card-show:intro"],
+      ["Stop", "SPAN", "ends the story", undefined],
+    ]);
+    expect(way?.querySelector(".chead")?.getAttribute("aria-expanded")).toBe(
+      "false",
+    );
+    drawInspector(dock, STORY, { ...FOLD, drill: true }, pictures);
+    expect(
+      dock.body
+        .querySelector('[data-card="way"] .chead')
+        ?.hasAttribute("aria-expanded"),
+    ).toBe(false);
+  });
+
+  // Why: the loop warning is said on every step of the loop, and only the
+  // loop's last choice carries the one-click fix, named by the answer it
+  // changes; a card open in place draws its step's own controls inside
+  // itself, so the shell can tell whose they are (`data-card`).
+  it("draws the loop warning with its fix, and an open card's controls", () => {
+    const [intro, way] = STORY.cards;
     drawInspector(
       dock,
       {
-        kind: "story",
-        storyId: "legend",
-        stationId: "gate",
-        title: "Empty",
-        sub: "1 The old gate / Story",
-        entries: [],
+        ...STORY,
+        cards: [
+          { ...intro, issue: "Steps 1 and 2 go round in a loop" },
+          {
+            ...way,
+            issue: "Steps 1 and 2 go round in a loop",
+            fix: 'Let "Stop" end the story',
+          },
+        ],
+        opened: [
+          {
+            kind: "storyStep",
+            stepKind: "choice",
+            id: "way",
+            stationId: "gate",
+            title: "Which?",
+            sub: "Choice, entry 2",
+            heading: "Answers",
+            lines: ["Again - goes to The siege"],
+          },
+        ],
       },
       FOLD,
       pictures,
     );
-    expect(dock.body.querySelector(".kids")).toBeNull();
-    expect(dock.body.textContent).toContain("No entries yet.");
+    expect(
+      [...dock.body.querySelectorAll<HTMLElement>(".scard")].map((k) => [
+        k.classList.contains("bad"),
+        k.classList.contains("open"),
+        k.querySelector<HTMLElement>(".fix")?.dataset["act"] ?? null,
+      ]),
+    ).toEqual([
+      [true, false, null],
+      [true, true, "card-fix:way"],
+    ]);
+    expect(dock.body.querySelector(".fix")?.textContent).toBe(
+      'Let "Stop" end the story',
+    );
+    const open = dock.body.querySelector('[data-card="way"]');
+    expect(open?.querySelector(".cbody .steplines")?.textContent).toBe(
+      "Again - goes to The siege",
+    );
+    expect(open?.querySelector(".cbody [data-act=\"delete\"]")).not.toBeNull();
+  });
+
+  it("says an empty story has no steps, and needs no words on its Delete", () => {
+    drawInspector(
+      dock,
+      { ...STORY, title: "Empty", cards: [] },
+      FOLD,
+      pictures,
+    );
+    expect(dock.body.querySelector(".scard")).toBeNull();
+    expect(dock.body.textContent).toContain("This story has no steps yet.");
     expect(
       dock.body.querySelector('[data-act="delete"]')?.textContent,
     ).toContain("Delete story");

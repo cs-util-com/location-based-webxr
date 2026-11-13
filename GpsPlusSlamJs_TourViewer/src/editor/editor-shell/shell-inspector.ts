@@ -82,6 +82,7 @@ import {
   contentsSummary,
   entriesList,
 } from "./inspector-contents.js";
+import type { StoryCard, StoryCardJump } from "./story-cards.js";
 import { radiusRange } from "./radius-slider.js";
 import { wirePinTextCounter, wireTextCounter } from "../../pin-text.js";
 import { blockFieldPlaceholder, type BlockField } from "../block-fields.js";
@@ -661,29 +662,147 @@ function stationParts(
   return parts;
 }
 
-/** A story: its Entries in order, the way to add one, its Delete saying
- *  what goes with it. */
-function storyParts(model: StoryModel, state: InspectorState): HTMLElement[] {
-  const n = model.entries.length;
-  const entries = disclosure(
-    state.contentsOpen ?? true,
-    `${String(n)}, played in order`,
-    () => [
-      n === 0
-        ? el("div", "note", "No entries yet.")
-        : entriesList(model.entries),
-      actions([action("add-entry", "plus", "Add entry...")]),
-    ],
-    {
-      label: "Entries",
-      title: "What this story plays",
-      act: "contents",
-      body: "contents",
-    },
+/** A jump chip: a button showing the step it names (`card-show:<id>`),
+ *  else words (the end, a step that is gone). */
+function jumpChip(jump: StoryCardJump): HTMLElement {
+  if (jump.to === null) return el("span", `jump ${jump.type}`, jump.text);
+  const chip = el("button", `jump ${jump.type}`, jump.text);
+  chip.type = "button";
+  chip.dataset["act"] = `card-show:${jump.to}`;
+  chip.title = "Show that step";
+  return chip;
+}
+
+/** A card's answers: each with its jump chip, a quiz's with its right
+ *  mark and its "After the answer". */
+function cardAnswers(card: StoryCard): HTMLElement | null {
+  if (card.answers.length === 0) return null;
+  const list = el("ul", "answers");
+  for (const answer of card.answers) {
+    const row = el("li", answer.jump !== null && answer.right === null && card.kind === "quiz" ? "ans after" : "ans");
+    if (answer.right !== null) {
+      const mark = el("span", answer.right ? "mark right" : "mark");
+      if (answer.right) {
+        mark.append(shellIcon("check"));
+        mark.title = "The right answer";
+      }
+      row.append(mark);
+    }
+    const said = answer.label.trim();
+    row.append(
+      el(
+        "span",
+        said === "" ? "albl empty" : card.kind === "quiz" && answer.jump !== null ? "albl quiet" : "albl",
+        said === "" ? "empty answer" : said,
+      ),
+    );
+    if (answer.jump !== null) row.append(jumpChip(answer.jump));
+    list.append(row);
+  }
+  return list;
+}
+
+/** A step's card: its head (a press opens it in place, or on a phone
+ *  goes to the step: `card:<id>`), its answers, the loop warning with
+ *  its fix, and, open, its inspector's parts. Every control inside
+ *  answers for the step (`data-card`). */
+function storyCard(
+  card: StoryCard,
+  opened: InspectorModel | undefined,
+  drill: boolean,
+): HTMLElement {
+  const box = el("article", `scard k-${card.kind}`);
+  box.dataset["card"] = card.id;
+  box.classList.toggle("open", opened !== undefined);
+  box.classList.toggle("bad", card.issue !== null);
+  const head = el("button", "chead");
+  head.type = "button";
+  head.dataset["act"] = `card:${card.id}`;
+  const shown = card.title.trim();
+  if (!drill) head.setAttribute("aria-expanded", String(opened !== undefined));
+  head.setAttribute(
+    "aria-label",
+    `Step ${String(card.number)}: ${shown === "" ? card.tag : shown}. ${!drill && opened !== undefined ? "Close" : "Open to edit"}`,
   );
+  const icon = el("span", `ic ${card.kind}`);
+  icon.append(shellIcon(card.kind));
+  const sum = el("span", "sum");
+  sum.append(
+    el("span", `kindtag ${card.kind}`, card.tag),
+    el(
+      "span",
+      shown === "" ? "ttl empty" : "ttl",
+      shown === "" ? (card.kind === "choice" || card.kind === "quiz" ? "No question yet" : "No name yet") : shown,
+    ),
+  );
+  if (card.line !== null) sum.append(el("span", "l2", card.line));
+  if (card.chips.length > 0) {
+    const chips = el("span", "chips");
+    for (const chip of card.chips) chips.append(el("span", "chip", chip));
+    sum.append(chips);
+  }
+  const chev = el("span", "chev");
+  chev.append(shellIcon(drill ? "right" : "down"));
+  head.append(el("span", "num", String(card.number)), icon, sum, chev);
+  box.append(head);
+  const answers = cardAnswers(card);
+  if (answers !== null) box.append(answers);
+  if (card.issue !== null) {
+    const issue = el("div", "issue");
+    issue.append(el("span", "", card.issue));
+    if (card.fix !== null) {
+      const fix = el("button", "act fix", card.fix);
+      fix.type = "button";
+      fix.dataset["act"] = `card-fix:${card.id}`;
+      issue.append(fix);
+    }
+    box.append(issue);
+  }
+  if (opened !== undefined) {
+    const body = el("div", "cbody");
+    body.append(
+      ...(opened.kind === "storyEntry"
+        ? storyEntryParts(opened)
+        : opened.kind === "storyStep"
+          ? storyStepParts(opened)
+          : []),
+    );
+    box.append(body);
+  }
+  return box;
+}
+
+/** A story: its steps as cards in order (`story-cards.ts`), each open
+ *  in place or, on a phone (`InspectorState.drill`), a way into its
+ *  step; the way to add one, and its Delete saying what goes with it. */
+function storyParts(model: StoryModel, state: InspectorState): HTMLElement[] {
+  const n = model.cards.length;
+  const drill = state.drill === true;
+  const list = el("div", "scards");
+  list.append(
+    el(
+      "p",
+      "note",
+      n === 0
+        ? "This story has no steps yet. Visitors are offered it once it has one."
+        : drill
+          ? "What the visitor meets in this story, in order. Tap a step to edit it."
+          : "What the visitor meets in this story, in order. Open a card to edit it; open several to compare them.",
+    ),
+  );
+  for (const card of model.cards) {
+    const opened = drill
+      ? undefined
+      : model.opened?.find(
+          (m) => (m.kind === "storyEntry" || m.kind === "storyStep") && m.id === card.id,
+        );
+    list.append(storyCard(card, opened, drill));
+  }
+  if (n > 0) list.append(el("div", "endmark", "end of the story"));
   const goes = n === 1 ? "1 entry" : `${String(n)} entries`;
   return [
-    ...entries,
+    list,
+    actions([action("add-entry", "plus", "Add step...")]),
     actions([
       action(
         "delete",
@@ -1143,10 +1262,14 @@ export function controlName(
   if (!(target instanceof HTMLElement) || !root.contains(target)) return null;
   const act = target.dataset["act"];
   const name = target.dataset["field"];
+  // Inside a story's card: the same control of that card, as each open
+  // card draws the same fields.
+  const card = target.closest<HTMLElement>("[data-card]")?.dataset["card"];
+  const within = card === undefined ? "" : `[data-card=${quoted(card)}] `;
   return act !== undefined
-    ? `[data-act=${quoted(act)}]`
+    ? `${within}[data-act=${quoted(act)}]`
     : name !== undefined
-      ? `[data-field=${quoted(name)}]`
+      ? `${within}[data-field=${quoted(name)}]`
       : null;
 }
 
@@ -1232,6 +1355,9 @@ export interface InspectorState {
    *  over its details, its last-but-one part naming the Back button's
    *  way up. None given: no crumb, and Back goes to the list. */
   readonly crumb?: readonly InspectorCrumb[];
+  /** A story's cards go to their step on a press, never open in place
+   *  (a phone: `phoneSheets`); none said: they open in place. */
+  readonly drill?: boolean;
 }
 
 /** The crumb: every part a button that goes to its level

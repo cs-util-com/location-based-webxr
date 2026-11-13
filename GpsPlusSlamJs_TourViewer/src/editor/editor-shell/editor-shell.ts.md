@@ -99,6 +99,18 @@ focusout or Enter (`inspector-edits.ts`), the jump picker on `change`
 (`stepActEdit`, `../story-step-edits.ts`) - one undo step each. The story
 menu's Choice and Quiz call `deps.edits.addStepToStory(storyId, kind)`.
 
+A story's steps are cards in its inspector. Wider than 700 px
+(`phoneSheets`) a card's head (`card:<id>`) opens or closes it in place,
+the story staying selected (the open set is the shell's, passed as
+`openCards`), and a jump chip (`card-show:<id>`) opens the step it
+names and moves the focus to its head; at 700 px or less both select the
+step (drill in, as the tree's row does) and Back comes up to the story.
+Every control inside an open card answers for its step (`answersFor`:
+the nearest `data-card`): typed fields commit to it, its Delete deletes
+it without moving the focus to the list. The loop warning's fix
+(`card-fix:<id>`) writes the choice with its last answer ending the
+story (`stepWithGoto` to `END_TARGET`), one undo step.
+
 A story is a folder of the tree: its arrow folds it (`storyFolded`), its name
 selects it, its "+" and its empty line open the type menu for it, a click
 unfolds what holds a row. The inspector's `goto:` reveals the entry's folder,

@@ -59,8 +59,9 @@ origin?, groundAt? })` ->
     through `placeableOf`, so it shows what the gizmo moves;
   - `StoryInspector` - `kind: "story"` (selection `story:<id>`), `storyId`,
     `stationId`, `title`, `sub` ("Story"; where it stands is the crumb's)
-    and `entries`
-    (`storyRows` of `tree-model.ts`: `{ id, kind, title, place }`);
+    `cards` (its steps, `storyCards` of `story-cards.ts`) and, for the
+    cards open in place (the input's `openCards`, by child id), `opened`:
+    each one's own inspector, in the story's order (absent while none is);
   - `StoryEntryInspector` - `kind: "storyEntry"`, a block of a story: `id`,
     `stationId`, `rowKind`, `title`, `sub` ("Long text, entry 1"), `block`
     (`InspectorStoryBlock { id, kind, title, fields,
