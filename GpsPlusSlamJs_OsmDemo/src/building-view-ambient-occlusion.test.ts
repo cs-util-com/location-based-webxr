@@ -33,17 +33,18 @@ const sourceFiles = (dir: string): string[] =>
   });
 
 describe("BuildingView's ambient occlusion", () => {
-  // Why this test matters: the `ao=strong` link reaches the pass only through
-  // this option; absent, the framework's own 1 / 2.2 applies, so the default
-  // look cannot change without the knob.
-  it("hands the link's display exponent to the pass, and nothing else", () => {
+  // Why this test matters: the demo draws its AO with display exponent 1 (the
+  // linear factor straight onto the encoded canvas, the stronger look), while
+  // the framework keeps its own 1 / 2.2 for every other caller. It is the
+  // demo's fixed choice, so no link or option may reach it: a knob here would
+  // bring back two looks that every AO bound would have to hold for.
+  it("draws the AO with display exponent 1, and no link changes it", () => {
+    expect(source).toMatch(/\nconst AO_DISPLAY_EXPONENT = 1;\n/);
     expect(source).toMatch(
-      /createAmbientOcclusion\(\{[^}]*displayExponent: options\.aoDisplayExponent,/,
+      /createAmbientOcclusion\(\{[^}]*displayExponent: AO_DISPLAY_EXPONENT,/,
     );
     const main = readFileSync(path.join(here, "main.ts"), "utf8");
-    expect(main).toMatch(
-      /aoDisplayExponent: aoDisplayExponent\(window\.location\.search\)/,
-    );
+    expect(main).not.toMatch(/aoDisplayExponent/);
   });
 
   // Why this test matters: the AO factor is exactly 1 past its fade end, which

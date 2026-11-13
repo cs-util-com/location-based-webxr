@@ -507,6 +507,12 @@ location; `building-view-content.test.ts` pins the four invariants above.
   before the nearest the fog ever starts (`FOG_NEAR_M`, 1584 m at the
   shortest render distance), so the fogged distance and the sky keep
   their colour bit for bit.
+- **Display exponent 1** (`AO_DISPLAY_EXPONENT`): the linear factor is
+  multiplied straight onto the tone-mapped, sRGB-encoded canvas, so the
+  creases read darker than with the framework's default 1 / 2.2, which
+  stays unchanged for every other caller. The stronger look was chosen
+  side by side on the phone; it is fixed here, and no link or option
+  changes it (`building-view-ambient-occlusion.test.ts` pins both).
 - **Off while the ground is displaced on the GPU**, whatever the switch
   says. The AO's normal/depth pass draws every mesh with one override
   material, which does not run the ground's displacement shader, so it

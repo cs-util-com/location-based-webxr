@@ -36,7 +36,6 @@ import {
   parseCameraTarget,
   placeQuery,
   staticTilesEnabled,
-  aoDisplayExponent,
   sunPinnedHref,
   writeCamera,
   writePlace,
@@ -543,20 +542,6 @@ describe("the colour scheme in the link (colour schemes plan 2026-11-10-0841, D6
     expect(replace).not.toHaveBeenCalled();
     writeScheme({ search: "", replace }, "night");
     expect(replace).toHaveBeenCalledWith("?scheme=night");
-  });
-});
-
-// Why this test matters: `ao=strong` is the owner's link for comparing the
-// two AO strengths on his phone. Only that value may change the look; every
-// other link (none, `ao=off`, a typo) must leave the pass on its shipped
-// 1 / 2.2 exponent, which `undefined` here means.
-describe("aoDisplayExponent", () => {
-  it("is 1 for ao=strong and the pass's own default otherwise", () => {
-    expect(aoDisplayExponent("?ao=strong")).toBe(1);
-    expect(aoDisplayExponent("?lat=1&ao=strong&perf=1")).toBe(1);
-    expect(aoDisplayExponent("")).toBeUndefined();
-    expect(aoDisplayExponent("?ao=off")).toBeUndefined();
-    expect(aoDisplayExponent("?ao=Strong")).toBeUndefined();
   });
 });
 

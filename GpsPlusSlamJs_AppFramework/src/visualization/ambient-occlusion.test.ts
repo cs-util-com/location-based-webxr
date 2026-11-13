@@ -402,10 +402,10 @@ describe('createAmbientOcclusion', () => {
   });
 
   it('takes a display exponent of 1 for the stronger, linear-strength AO', () => {
-    // Why: OsmDemo's `ao=strong` link lets the owner compare the shipped
-    // display-space AO with the linear factor multiplied straight onto the
-    // encoded canvas (darker creases). The option must reach the blend, and
-    // leaving it out must keep the shipped 1 / 2.2 (pinned above).
+    // Why: OsmDemo draws its AO with the linear factor multiplied straight
+    // onto the encoded canvas (darker creases) instead of the default
+    // display-space AO. The option must reach the blend, and leaving it out
+    // must keep the default 1 / 2.2 (pinned above) for every other caller.
     const fake = recordingRenderer();
     createAmbientOcclusion({
       renderer: asRenderer(fake),

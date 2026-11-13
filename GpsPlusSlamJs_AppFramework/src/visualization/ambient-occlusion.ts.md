@@ -54,7 +54,7 @@ sky stay exactly where three puts them.
   tone-mapped and sRGB-encoded (see below). The `displayExponent` option
   replaces it (finite and above 0, else `RangeError`); `1` multiplies the
   linear factor straight onto the encoded canvas, a stronger look that
-  OsmDemo's `ao=strong` link offers for comparison.
+  OsmDemo draws by default.
 - `createAmbientOcclusion({ renderer, scene, camera, params?, denoise?,
 resolutionScale?, noiseSeed?, enabled?, displayExponent? })` returns `AmbientOcclusion`:
   - `enabled` (get/set): whether `render` draws. Switching costs nothing and

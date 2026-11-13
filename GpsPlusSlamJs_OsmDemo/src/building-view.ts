@@ -223,6 +223,15 @@ export const FOG_NEAR_M = FAR_PLANE_M * FOG_NEAR_RATIO;
 const AO_FADE = { fadeStartM: 700, fadeEndM: 1400 } as const;
 
 /**
+ * The ambient occlusion's display exponent: 1 multiplies the linear factor
+ * straight onto the tone-mapped, sRGB-encoded canvas, so the creases read
+ * darker than the framework's own 1 / 2.2, which stays the default for
+ * every other caller. Compared side by side on the phone, the stronger
+ * look was chosen for this demo. A fixed choice, not a link knob.
+ */
+const AO_DISPLAY_EXPONENT = 1;
+
+/**
  * Upper bound on plane subdivisions per axis.
  *
  * RAISED FROM 128 TO 256 ON 2026-07-30, because the measurement that justified
@@ -354,12 +363,6 @@ export interface BuildingViewOptions {
   readonly woodsAuto?: boolean;
   /** Shows the `?perf=1` frame readout over the pane. Absent means hidden. */
   readonly perfReadout?: boolean;
-  /**
-   * The ambient occlusion's display exponent (`url-state.ts`
-   * `aoDisplayExponent`: 1 for `ao=strong`). Absent keeps the pass's own
-   * 1 / 2.2.
-   */
-  readonly aoDisplayExponent?: number | undefined;
 }
 
 /** Where the camera is aimed, in scene coordinates, and from how far. */
@@ -869,7 +872,7 @@ export class BuildingView {
       camera: this.camera,
       params: AO_FADE,
       enabled: false,
-      displayExponent: options.aoDisplayExponent,
+      displayExponent: AO_DISPLAY_EXPONENT,
     });
     this.container.dataset["ao"] = "off";
 

@@ -2785,17 +2785,18 @@ test.describe("the light dialog", () => {
 });
 
 /*
- * The ambient occlusion's bounds at the June-noon boot view (measured
- * 2026-11-11, SwiftShader, 639 x 453, the same in two runs): 10.4 % of the
- * pixels darkened by 3 or more (largest drop 67 levels), the frame's mean
- * luma 35.13 against 35.90 without it (0.979), the lit surfaces 24.0 against
- * 24.7 (0.972).
+ * The ambient occlusion's bounds at the June-noon boot view, drawn with the
+ * demo's display exponent 1 (measured 2026-11-13, SwiftShader, 639 x 720):
+ * 19.4 % of the pixels darkened by 3 or more (largest drop 81 levels), the
+ * frame's mean luma 35.18 against 37.07 without it (0.949), the lit surfaces
+ * 24.5 against 26.0 (0.942). With the framework's default exponent 1 / 2.2
+ * the same frame measured 12.9 % (largest drop 55), 0.975 and 0.973.
  *
- * AO_DARKENED_SHARE_MIN says it does something: a fifth of the measured share,
- * so only an AO that stopped drawing (or lost most of its radius) fails it.
- * The two ratios say it does not darken too much: 0.9 leaves the measured
- * values a margin of about 0.07, so an AO about four times as strong fails,
- * and any bound above 0.97 would fail the shipped look itself.
+ * AO_DARKENED_SHARE_MIN says it does something: about a tenth of the measured
+ * share, so only an AO that stopped drawing (or lost most of its radius)
+ * fails it. The two ratios say it does not darken too much: 0.9 leaves the
+ * measured values a margin of about 0.05, so an AO about twice as strong
+ * fails, and any bound above 0.94 would fail the shipped look itself.
  */
 const AO_DARKENED_SHARE_MIN = 0.02;
 const AO_FRAME_LUMA_RATIO_MIN = 0.9;
