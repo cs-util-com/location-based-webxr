@@ -128,7 +128,7 @@ stage.follow((id) => id === "gate");
   (the bubble closes as the camera walks off), follows a voice set before
   it stood (the beckon is asked), fades by its presence and leaves the
   scene, `clear` stops its frames, and no camera is no error; the block's
-  pose and the 60 degree turn from its facing; a released look staying,
+  pose and its facing toward the camera; a released look staying,
   beckoning, until its station is left, never back; `release` clearing a
   look still waiting; `characterTapTargets` and `toggleBubble`; the voice
   and its length reaching a released look; a frames sheet sliced by the

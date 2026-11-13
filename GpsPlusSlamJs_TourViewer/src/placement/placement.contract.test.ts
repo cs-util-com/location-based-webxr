@@ -95,10 +95,10 @@ const EXPECTED: readonly (readonly [
   ["model", "cutaway", true, true, "sizeM"],
   ["model", "toy", true, true, "sizeM"],
   ["model", "card", false, false, null],
-  ["character", "bubble", true, true, null],
-  ["character", "speak", true, true, null],
-  ["character", "two-stations", true, true, null],
-  ["character", "portrait", true, true, null],
+  ["character", "bubble", true, false, null],
+  ["character", "speak", true, false, null],
+  ["character", "two-stations", true, false, null],
+  ["character", "portrait", true, false, null],
   ["character", "popup", true, true, null],
   ["character", "card", false, false, null],
 ];
@@ -439,10 +439,8 @@ describe("the placement rows against the editor's drawing", () => {
     async (_name, kind, view, row) => {
       const still = await drawnBox(blockOf(kind, view, 0));
       expect(still, "a posed view the editor draws nothing for").not.toBeNull();
-      // Turned round in steps: a drawing that swings toward the camera (a
-      // character) follows its heading only where the camera is far
-      // enough round, so the largest change over the turns is the one
-      // that tells.
+      // Turned round in steps, the largest change over the turns is the
+      // one that tells.
       let largest = 0;
       for (let headingDeg = 30; headingDeg < 360; headingDeg += 30) {
         const turned = await drawnBox(blockOf(kind, view, headingDeg));

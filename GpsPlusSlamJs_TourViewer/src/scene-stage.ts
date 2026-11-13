@@ -34,7 +34,7 @@
  * presence (`setSubtreeOpacity` caches material opacities the look changes
  * every frame), and its holder is never turned. It stands at the block's
  * pose in the station's frame and rests at the block's facing, which the
- * look turns from toward the visitor by at most 60 degrees.
+ * pop-up keeps; the other views face the visitor fully.
  *
  * After his step a look stays (`release`, the story ended): idle,
  * beckoning in two stations, until his station stops showing; then he

@@ -145,6 +145,9 @@ export interface StationsLayerView {
   /** The camera drawing the view: handed with its lens to each drawn
    *  world part that has an `update`. Absent: no part is ticked. */
   readonly eye?: THREE.Camera;
+  /** The editor's selection, handed to each ticked part (a character
+   *  opens his bubble while selected). */
+  readonly selected?: string | null;
 }
 
 /** A code's printed side when the tour does not say (m). */
@@ -957,7 +960,11 @@ export function createStationsLayer(deps: StationsLayerDeps) {
    *  clock, the camera's position in the part's parent frame (as the
    *  visitor's `tickWorldParts` gives it), the camera and its lens. A
    *  part a failed load took out (no parent) is skipped. */
-  const tickParts = (eye: THREE.Camera, metresPerPxAtOneM: number) => {
+  const tickParts = (
+    eye: THREE.Camera,
+    metresPerPxAtOneM: number,
+    selected: string | null,
+  ) => {
     const seconds = performance.now() / 1000;
     eye.updateMatrixWorld();
     for (const entry of stations.values()) {
@@ -973,6 +980,7 @@ export function createStationsLayer(deps: StationsLayerDeps) {
           viewer: [eyeLocal.x, eyeLocal.y, eyeLocal.z],
           camera: eye,
           metresPerPxAtOneM,
+          selected,
         });
       }
     }
@@ -1080,7 +1088,9 @@ export function createStationsLayer(deps: StationsLayerDeps) {
           .multiplyScalar((1 - view.standing) * grown)
           .add(code.base);
       }
-      if (view.eye !== undefined) tickParts(view.eye, 1 / focal);
+      if (view.eye !== undefined) {
+        tickParts(view.eye, 1 / focal, view.selected ?? null);
+      }
     },
     /** Draw a drag's preview (null: none; what the last one showed is
      *  drawn where the tour has it again). */

@@ -368,13 +368,44 @@ describe("buildInspector", () => {
     });
 
     // Why: a free character stands in the world like any item, so he gets
-    // the item's inspector - his place, his turn, the ground under him -
-    // where he had his texts alone.
-    it("shows a free character as an item with his place and his turn", () => {
+    // the item's inspector - his place, the ground under him, and his turn
+    // where a turn shows: in the pop-up, a stage set that keeps his
+    // facing. A flat figure faces the camera fully, so in the other views
+    // a turn would change nothing and none is offered.
+    it("shows a free character as an item with his place, and his turn in the pop-up", () => {
+      const speaking = buildInspector({
+        selected: "zz",
+        stations: [
+          {
+            ...STATIONS[0]!,
+            children: [
+              {
+                id: "zz",
+                kind: "character",
+                view: "speak",
+                name: "Zz",
+                image: "cut",
+                pose: { position: [3, 0, -4], rotation: turn(-90) },
+              },
+            ],
+          } as unknown as TourStation,
+        ],
+        assets: [],
+        codes: CODES,
+        groundAt: () => 562.25,
+      });
+      expect(speaking).toMatchObject({
+        kind: "item",
+        itemKind: "character",
+        offset: { northM: 3, upM: 0, eastM: -4 },
+        turns: false,
+      });
+      if (speaking?.kind !== "item") return;
+      expect(inspectorHint(speaking)).not.toContain("turn");
       const zz = {
         id: "zz",
         kind: "character",
-        view: "speak",
+        view: "popup",
         name: "Zz",
         image: "cut",
         pose: { position: [3, 0, -4], rotation: turn(-90) },

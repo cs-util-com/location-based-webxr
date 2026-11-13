@@ -506,15 +506,16 @@ describe("drawInspector", () => {
   // controls a model's view already has - chips, the one in use pressed -
   // and his facing as a heading typed like an item's: each control named
   // by the block it sets (`data-act` / `data-field`), so the shell writes
-  // to the right character.
-  it("draws a story character's view and advance as chips and his facing as a heading", () => {
+  // to the right character. The facing turns only the pop-up stage (a
+  // flat figure faces the visitor fully), so it shows in that view alone.
+  it("draws a story character's view and advance as chips and, in the pop-up, his facing as a heading", () => {
     drawInspector(
       dock,
       entryOf({
         id: "w1",
         kind: "Character",
         title: "Wendel",
-        character: { view: "speak", advance: "lineEnd", facingDeg: 179.6 },
+        character: { view: "popup", advance: "lineEnd", facingDeg: 179.6 },
         fields: [],
       }),
       FOLD,
@@ -537,10 +538,10 @@ describe("drawInspector", () => {
       ]);
     expect(chips("character-view:")).toEqual([
       ["character-view:w1:bubble", "Bubble", "false"],
-      ["character-view:w1:speak", "Tap to speak", "true"],
+      ["character-view:w1:speak", "Tap to speak", "false"],
       ["character-view:w1:two-stations", "Two stations", "false"],
       ["character-view:w1:portrait", "Portrait", "false"],
-      ["character-view:w1:popup", "Pop-up", "false"],
+      ["character-view:w1:popup", "Pop-up", "true"],
     ]);
     expect(chips("character-advance:")).toEqual([
       ["character-advance:w1:tap", "On a tap", "false"],
@@ -562,6 +563,26 @@ describe("drawInspector", () => {
     expect(facing?.defaultValue).toBe("180");
     expect(facing?.labels?.[0]?.textContent).toBe("Facing");
     expect(section?.textContent).toContain("Wendel");
+
+    // In every flat-figure view a turn shows nothing: no Facing field.
+    for (const view of ["bubble", "speak", "two-stations", "portrait"]) {
+      drawInspector(
+        dock,
+        entryOf({
+          id: "w1",
+          kind: "Character",
+          title: "Wendel",
+          character: { view, advance: "tap", facingDeg: 90 },
+          fields: [],
+        }),
+        FOLD,
+        pictures,
+      );
+      expect(
+        dock.body.querySelector('[data-field="character-facing:w1"]'),
+        view,
+      ).toBeNull();
+    }
   });
 
   // Why: a story block's texts are typed in its entry's inspector, each
@@ -637,7 +658,7 @@ describe("drawInspector", () => {
       [...(kay?.querySelectorAll<HTMLElement>("[data-field]") ?? [])].map(
         (f) => f.dataset["field"],
       ),
-    ).toEqual(["character-facing:k1", "block:k1:name", "block:k1:caption"]);
+    ).toEqual(["block:k1:name", "block:k1:caption"]);
     expect(dock.body.querySelector('.story-text[data-block="k1"]')).toBeNull();
 
     drawInspector(

@@ -115,6 +115,8 @@ keys), and writes only through the page's `edits`.
 - `modelParts()` and `modelScreenOf(id, at)` - the selected model's
   discs and planes, and a point of a drawn model on the canvas (the page's
   checks).
+- `characterCheck(id)` - what a drawn character shows now (bubble, name
+  tag, squareness to the camera), or null (the page's checks).
 - `showSoundIcons(on)` - every sound's speaker icon shown or hidden (the
   page's checks).
 - `previewRadius(stationId, radiusM)` - forwards to the editing layer, for

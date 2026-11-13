@@ -8,7 +8,7 @@ import {
 import { describe, expect, it, vi } from "vitest";
 
 import { createCharacterLook, paintPoses } from "./character-look";
-import type { StageCharacterView } from "./character-views";
+import type { BubbleRule, StageCharacterView } from "./character-views";
 import {
   fakeCharacterPainters,
   UPRIGHT_MARK,
@@ -21,6 +21,7 @@ function setup(
     voiced?: boolean;
     sheet?: boolean;
     noCard?: boolean;
+    bubbleRule?: BubbleRule;
   } = {},
 ) {
   const { painters, painted } = fakeCharacterPainters();
@@ -62,6 +63,55 @@ describe("createCharacterLook: the bubble and the name tag", () => {
     expect(look.state()).toMatchObject({ bubble: 0, pip: 1 });
     expect(look.parts.bubble.visible).toBe(false);
     expect(look.parts.pip.visible).toBe(true);
+  });
+
+  // Why this test matters: in the editor a close camera opened every
+  // character's full bubble and they covered the scene; there the bubble
+  // opens only for the selected character or while his line plays, and
+  // every other one shows his name tag, at any distance. Swept from 1 m
+  // to 30 m over the three talking views.
+  it("under the editor's selection rule opens only while selected or speaking, at any distance", () => {
+    for (const view of ["bubble", "speak", "two-stations"] as const) {
+      const { look, standAt, tick } = setup(view, { bubbleRule: "selection" });
+      for (const r of [1, 3, 8.9, 9.1, 30]) {
+        standAt(0, r);
+        look.setSelected(false);
+        tick(0, true);
+        expect(look.state(), `${view} ${r} m`).toMatchObject({
+          bubble: 0,
+          pip: 1,
+        });
+        look.setSelected(true);
+        tick(0, true);
+        expect(look.state(), `${view} ${r} m selected`).toMatchObject({
+          bubble: 1,
+          pip: 0,
+        });
+      }
+      // His line playing opens it too, unselected (a fresh look: the
+      // bubble view shuts its bubble when a voice ends).
+      for (const r of [1, 30]) {
+        const talking = setup(view, { bubbleRule: "selection" });
+        talking.standAt(0, r);
+        talking.look.setVoice("speaking");
+        talking.tick(0, true);
+        expect(talking.look.state().bubble, `${view} ${r} m speaking`).toBe(1);
+      }
+    }
+  });
+
+  // Why this test matters: the visitor's look is unchanged - a selection
+  // means nothing there, the distance decides.
+  it("under the visitor's distance rule ignores the selection", () => {
+    const { look, standAt, tick } = setup("speak");
+    look.setSelected(true);
+    standAt(0, 20);
+    tick(0, true);
+    expect(look.state()).toMatchObject({ bubble: 0, pip: 1 });
+    look.setSelected(false);
+    standAt(0, 5);
+    tick(0, true);
+    expect(look.state()).toMatchObject({ bubble: 1, pip: 0 });
   });
 
   it("opens at the prototype's rate, not at once", () => {
@@ -111,31 +161,73 @@ describe("createCharacterLook: the bubble and the name tag", () => {
 });
 
 describe("createCharacterLook: facing and the beckon", () => {
-  // Why this test matters: the prototype rests him at the creator's
-  // facing and turns him toward the visitor by at most 60 degrees, so a
-  // visitor walking round him sees him from the side and behind, not a
-  // card spinning to follow them.
-  it("turns from the creator's facing toward the camera, by at most 60 degrees", () => {
-    const cap = Math.PI / 3;
-    const { look, standAt, tick } = setup("bubble");
+  // Why this test matters: he is a flat cut-out, so he faces the camera
+  // fully from wherever it stands, whatever the creator's facing (seen at
+  // a slant he reads squashed, from behind his back shows). Swept every
+  // 15 degrees round him at 3 m and 20 m, over three rests.
+  it("faces the camera fully from every heading, whatever the creator's facing", () => {
+    const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+    for (const restYaw of [0, Math.PI / 2, -2.8]) {
+      const { look, standAt, tick } = setup("bubble", { restYaw });
+      for (const r of [3, 20]) {
+        for (let deg = 0; deg < 360; deg += 15) {
+          const h = (deg * Math.PI) / 180;
+          standAt(r * Math.sin(h), r * Math.cos(h));
+          tick(0, true);
+          expect(
+            Math.abs(wrap(look.state().turn - h)),
+            `rest ${restYaw}, ${r} m, ${deg} deg`,
+          ).toBeLessThan(1e-9);
+        }
+      }
+    }
+  });
+
+  // Why this test matters: a camera that jumps round him (the editor's
+  // framing, an orbit flick) must not snap the figure: the turn eases at
+  // the look's rate, and settles facing the camera.
+  it("eases the turn when the camera jumps round him, then settles facing it", () => {
+    const { look, standAt, tick } = setup("speak");
     standAt(0, 5);
     tick(0, true);
-    expect(look.state().turn).toBeCloseTo(0, 5);
+    expect(look.state().turn).toBeCloseTo(0, 9);
+    const h = (150 * Math.PI) / 180;
+    standAt(5 * Math.sin(h), 5 * Math.cos(h));
+    tick(100);
+    // One 0.1 s step at an ease rate of 4 a second: 1 - e^-0.4 of the way.
+    expect(look.state().turn).toBeCloseTo(h * (1 - Math.exp(-0.4)), 6);
+    for (let i = 0; i < 100; i++) tick(50);
+    expect(look.state().turn).toBeCloseTo(h, 3);
+  });
+
+  // Why this test matters: from straight above him the direction to the
+  // camera is undefined (atan2 of two zeros); he keeps his last turn
+  // rather than spin to an arbitrary one.
+  it("keeps his turn with the camera straight above him", () => {
+    const { look, camera, standAt, tick } = setup("speak");
     standAt(5, 0);
     tick(0, true);
-    expect(look.state().turn).toBeCloseTo(cap, 5);
-    standAt(0, -5);
-    tick(0, true);
-    expect(Math.abs(look.state().turn)).toBeCloseTo(cap, 5);
-    // Facing north (the creator's rotation): a camera east is 90 degrees
-    // off, so he turns 60 toward it.
-    const north = setup("speak", { restYaw: Math.PI / 2 });
-    north.standAt(0, 5);
-    north.tick(0, true);
-    expect(north.look.state().turn).toBeCloseTo(Math.PI / 2 - cap, 5);
-    north.standAt(5, 0);
-    north.tick(0, true);
-    expect(north.look.state().turn).toBeCloseTo(Math.PI / 2, 5);
+    expect(look.state().turn).toBeCloseTo(Math.PI / 2, 9);
+    camera.position.set(0, 12, 0);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld();
+    tick(100);
+    expect(look.state().turn).toBeCloseTo(Math.PI / 2, 9);
+  });
+
+  // Why this test matters: the pop-up is a stage set the creator turns;
+  // it keeps his facing whatever the camera does.
+  it("keeps the creator's facing in the pop-up", () => {
+    const { look, standAt, tick } = setup("popup", { restYaw: 1.1 });
+    for (const [n, e] of [
+      [0, 5],
+      [5, 0],
+      [-4, -3],
+    ] as const) {
+      standAt(n, e);
+      tick(0, true);
+      expect(look.state().turn).toBeCloseTo(1.1, 9);
+    }
   });
 
   // Why this test matters: the ground arrows are the creator's own blocks

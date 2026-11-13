@@ -53,8 +53,10 @@ view would be the first such kind).
   set in the inspector); `card` poseless.
 - `model`: every world view posed, turning, `size` on `sizeM`
   (`TOUR_MODEL_MIN_SIZE_M` to `TOUR_MODEL_MAX_SIZE_M`); `card` poseless.
-- `character`: every figure view posed and turning (he turns toward the
-  camera by at most 60 degrees from his facing, so the facing shows);
+- `character`: every figure view posed; the flat-figure views (bubble,
+  speak, two-stations, portrait) facing (he faces the camera fully, so a
+  turn shows nothing: no knob, no Heading field), the pop-up turning (the
+  stage set keeps his facing);
   `card` poseless.
 - Every posed block lifts.
 

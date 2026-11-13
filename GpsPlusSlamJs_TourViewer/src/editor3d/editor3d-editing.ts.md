@@ -69,7 +69,9 @@ pure gesture maths reads (`GestureWorld`).
   drawn again (`heldClickNext`): dropped when the selection or the wait
   changed, said missed after `HELD_CLICK_MS`. A model without a size is
   never drawn here, so a click on one is said missed at once.
-- `modelParts()` and `modelScreenOf(id, at)` - for the page's checks.
+- `modelParts()`, `modelScreenOf(id, at)` and `characterCheck(id)` (a drawn
+  character's bubble, name tag and squareness to the camera, found by
+  the part's `CHARACTER_CHECK_KEY`) - for the page's checks.
 - `showSoundIcons(on)` - shows or hides every sound's speaker icon in the
   scene, for the page's checks.
 - `previewRadius(stationId, radiusM)` - the station's ring and its rim at
