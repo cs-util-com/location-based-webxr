@@ -267,7 +267,7 @@ const RING_CONTEXT = 0xa8c8ea;
 export const RING_ITEM_OUT = 0xe9b86b;
 const POLE_COLOUR = 0xdfe3ea;
 /** A selected picture's field-of-view lines (the viewpoint's blue). */
-export const VIEWPOINT_FRUSTUM_COLOUR = 0x9ccbff;
+const VIEWPOINT_FRUSTUM_COLOUR = 0x9ccbff;
 /** The views a picture is seen from its viewpoint in. */
 const VIEWPOINT_VIEWS: ReadonlySet<string> = new Set(
   TOUR_PICTURE_VIEWPOINT_VIEWS,
