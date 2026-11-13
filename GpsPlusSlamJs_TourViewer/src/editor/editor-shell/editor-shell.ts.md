@@ -120,7 +120,11 @@ to a station, a story's name in the head takes the focus, selected.
     turned sideways still unfolds the list. Docked, a selection that
     appears shows Details over Files, and the Details panel says "Select
     a station or an item, in the list or in the view." while nothing is
-    selected;
+    selected. The docking gets the browser's storage to keep its layout
+    in; a kept layout's folds are taken into the store (`restored()`)
+    rather than undone by it. The tour's problem count (`bottom-panel-model.ts`'s
+    `problemsBadge`, the Problems toggle's own) is the Problems tab's
+    badge, so a folded rail shows it;
   - `deps.onDocked?(docked)` - the panels docked or undocked;
   - `deps.onFilesShown?(shown)` - docked, the Files panel came into sight
     or went (the asset shelf's toggle redraws);

@@ -14,12 +14,16 @@ are not part of the page's first load.
 
 ## Public API
 
-- `mountDockHost({ box, onChange })` -> `DockHost`. `box` is `#view3d`;
-  the layout is a `.dock-host` element in it (below the accent line) and
-  `box` carries the `docked` class while it lives. `onChange()` runs
-  whenever a panel is shown, hidden or chosen, by the library's own
-  controls or by this host.
+- `mountDockHost({ box, onChange, storage? })` -> `DockHost`. `box` is
+  `#view3d`; the layout is a `.dock-host` element in it (below the accent
+  line) and `box` carries the `docked` class while it lives. `onChange()`
+  runs whenever a panel is shown, hidden or chosen, by the library's own
+  controls or by this host. `storage` (the browser's; `null` or absent:
+  nothing kept) is where the layout is kept per form factor
+  (`dock-save.ts`).
 - `DockHost`:
+  - `restored()` - whether the layout came from a kept one rather than the
+    default (the shell then takes its folds into the store).
   - `reveal(id)` - shows a panel: its group visible and unfolded, the
     panel its group's shown tab. The page's one way to unfold a group:
     the store learns of it through `onChange` (`editor-shell.ts`).
@@ -90,6 +94,23 @@ are not part of the page's first load.
 
 ## Invariants & assumptions
 
+- The layout is kept per form factor (`dockFormFactor`: the desk, a phone
+  upright, a phone sideways) under `dockSaveKey(formFactor)`, with the
+  folds of its groups (and the size each had before folding). It is
+  written `KEEP_DELAY_MS` after the last change (a drag, a fold, a tab
+  chosen), flushed on `dispose`, and never while a group is maximized or
+  once the window has taken another form factor. On mount the window's
+  form factor's kept layout is loaded when `readSavedDock` accepts it and
+  the library loads it with every panel; otherwise the layout is cleared
+  and the default laid out, never an empty one. A resize into another
+  form factor clears the layout and lays out that form factor's kept one
+  (or the default), refolding its kept folds.
+- A tab's Shift+F10 or ContextMenu key opens "Move to..." (`dock-move.ts`)
+  for its panel: into another group, or left of, right of or below the 3D
+  view. The library's tab menu offers the same entry for a mouse. The move
+  is the library's `moveTo`; the panel is then revealed and the focus put
+  on its tab. The library's own context menu, which the key would also
+  open, is suppressed for a moment.
 - The default layout is `defaultDockLayout` (`dock-layout.ts`). The 3D
   view is added with `renderer: "always"`, so it keeps its canvas and
   drawing context whatever shows. Every other panel is added with
@@ -189,6 +210,11 @@ dock.dispose();
 
 ## Tests
 
+- The kept layout's checks are `dock-save.ts`'s and the move menu is
+  `dock-move.ts`'s, unit tested there; the spec covers a rearranged layout
+  coming back on the next open, a broken one giving the default, the desk
+  and a phone sideways keeping their own, the keyboard move, and the
+  problem count on a folded rail.
 - No unit test of its own: it is DOM and library glue, covered by the
   layout e2e (`playwright-tests/editor3d-docking.spec.js`) at four window
   sizes; its data is `dock-layout.ts`'s, unit and property tested.

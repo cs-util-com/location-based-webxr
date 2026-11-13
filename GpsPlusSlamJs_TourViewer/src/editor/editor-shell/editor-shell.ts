@@ -137,7 +137,8 @@ import {
 } from "./phone-sheet.js";
 import { wireRadiusSlider } from "./radius-slider.js";
 import { createShellPictures } from "./shell-pictures.js";
-import { tourProblems } from "./tour-problems.js";
+import { problemsBadge } from "./bottom-panel-model.js";
+import { problemCounts, tourProblems } from "./tour-problems.js";
 import { drawSelectionBar, drawTree, type TreeRenaming } from "./shell-tree.js";
 import {
   FREE_LIST,
@@ -685,6 +686,15 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   };
   stampSteps();
   store.subscribe(stampSteps);
+  /** The browser's storage, where it may be used: the bottom panel's
+   *  height and tab, the docked layout. */
+  const storage = (() => {
+    try {
+      return window.localStorage;
+    } catch {
+      return null;
+    }
+  })();
   const panel = createBottomPanel({
     panel: byId("shell-panel"),
     toggles: byId("shell-toggles"),
@@ -721,18 +731,39 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     step: (which) => {
       deps.step(which);
     },
-    storage: (() => {
-      try {
-        return window.localStorage;
-      } catch {
-        return null;
-      }
-    })(),
+    storage,
   });
   let unsubscribe: (() => void) | null = null;
   let timer: number | null = null;
   let memory: TreeClickMemory = NO_TREE_CLICK;
   let positionOpen = false;
+  /** Each tab's count, for the layout when it docks. */
+  const dockBadges = new Map<DockPanelId, DockBadge>();
+  const setBadge = (id: DockPanelId, badge: DockBadge | null) => {
+    if (badge === null) dockBadges.delete(id);
+    else dockBadges.set(id, badge);
+    dockHost?.badge(id, badge);
+  };
+  /** The Problems tab's count, given on when it changes: the bottom
+   *  panel's own toggle badge (every problem, notes too), so a rail and
+   *  the toggle never disagree. */
+  let problemsShared = "";
+  const shareProblems = (groups: ReturnType<typeof tourProblems>) => {
+    const found = problemsBadge(problemCounts(groups));
+    const key = found === null ? "" : `${found.tone}|${found.title}`;
+    if (key === problemsShared) return;
+    problemsShared = key;
+    setBadge(
+      "problems",
+      found === null
+        ? null
+        : {
+            count: Number(found.text),
+            bad: found.tone === "error",
+            label: found.title,
+          },
+    );
+  };
   /** A station's Contents unfolded: kept from one station to the next. */
   let contentsOpen = true;
   /** A ground command waiting for the ground: the inspector shows it in
@@ -1050,7 +1081,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     drawInspectorNow(model);
     drawActs(model);
     helpHint.textContent = inspectorHint(model);
-    panel.problems(tourProblems(tour?.stations ?? []), ui.selected);
+    const problems = tourProblems(tour?.stations ?? []);
+    panel.problems(problems, ui.selected);
+    shareProblems(problems);
     // The cards and the thumbnail a draw replaced are no longer watched.
     pictures.sweep();
     drawHistory(doc);
@@ -2307,8 +2340,6 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   dockEmpty.className = "dock-empty";
   dockEmpty.textContent =
     "Select a station or an item, in the list or in the view.";
-  /** Each tab's count, for the layout when it docks. */
-  const dockBadges = new Map<DockPanelId, DockBadge>();
   /** The side folds last carried between the store and the docking: each
    *  side hears only the other's changes, so two panels sharing a group
    *  (one fold for both) never undo each other. */
@@ -2354,11 +2385,28 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     if (dockHost !== null || view === null || !docksAt(window.innerWidth)) {
       return;
     }
-    const host = mount({ box: viewBox, onChange: syncFromDock });
+    const host = mount({ box: viewBox, onChange: syncFromDock, storage });
     dockHost = host;
     host.content("details").append(dockEmpty);
     for (const [id, badge] of dockBadges) host.badge(id, badge);
-    carried = { tree: host.folded("list"), inspector: host.folded("details") };
+    if (host.restored()) {
+      // A kept layout is the creator's own: its folds reach the store
+      // (dispatched only where they differ, so nothing echoes back).
+      const want = state().editorView.foldedDocks;
+      carried = { tree: want.tree, inspector: want.inspector };
+      for (const [dock, id] of FOLDING) {
+        const folded = host.folded(id);
+        carried = { ...carried, [dock]: folded };
+        if (want[dock] !== folded) {
+          store.dispatch(editorViewActions.dockFolded({ dock, folded }));
+        }
+      }
+    } else {
+      carried = {
+        tree: host.folded("list"),
+        inspector: host.folded("details"),
+      };
+    }
     foldDocked();
     stopDockFolds = store.subscribe(foldDocked);
     panel.dock({
@@ -2415,11 +2463,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       // The store learns of an unfold from the docking (`syncFromDock`).
       dockHost?.reveal(id);
     },
-    badge(id, badge) {
-      if (badge === null) dockBadges.delete(id);
-      else dockBadges.set(id, badge);
-      dockHost?.badge(id, badge);
-    },
+    badge: setBadge,
     show(next, options) {
       view = next;
       drawn = null;

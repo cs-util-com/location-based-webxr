@@ -2393,8 +2393,8 @@ describe("a phone's keyboard over the panels", () => {
 describe("docked folds and counts", () => {
   /** A docking whose list and details share one group: one fold for both,
    *  as when a creator drags one into the other's group. */
-  function sharedGroupDock() {
-    let shut = false;
+  function sharedGroupDock(kept = false) {
+    let shut = kept;
     let onChange = () => undefined as void;
     const host = {
       fold: vi.fn((_id: string, folded: boolean) => {
@@ -2414,6 +2414,7 @@ describe("docked folds and counts", () => {
       activeIn: () => null,
       conceal: vi.fn(),
       hidePane: vi.fn(),
+      restored: () => kept,
       keyboard: vi.fn(),
       dispose: vi.fn(),
     } satisfies DockHost;
@@ -2465,6 +2466,63 @@ describe("docked folds and counts", () => {
   // Why: the shelf hands its count to the shell before the docking has
   // loaded; a count dropped then would leave the Files tab silent about
   // files that failed until the next change.
+  // Why: docked, a folded rail shows the tour's problem count on the
+  // Problems tab it holds; the count must follow the tour as it changes
+  // and go when the problems are fixed.
+  it("gives the docking the tour's problem count as it changes", async () => {
+    const { store, shell, host } = await docked();
+    expect(host.badge).not.toHaveBeenCalledWith("problems", expect.anything());
+    const far = station("c", 0.0008);
+    const open = (stations: TourStation[]) => {
+      store.dispatch(
+        tourDocumentActions.opened({
+          manifest: { ...createEmptyTourManifest(), stations },
+        }),
+      );
+    };
+    open([
+      {
+        ...far,
+        ...stationContent([
+          {
+            ...(stationBlocks(far)[0] as object),
+            id: "far",
+            pose: { position: [40, 1.5, 0], rotation: [0, 0, 0, 1] },
+          } as unknown as TourBlock,
+        ]),
+      },
+    ]);
+    expect(host.badge).toHaveBeenLastCalledWith("problems", {
+      count: 1,
+      bad: false,
+      label: "0 errors, 1 warning, 0 notes",
+    });
+    open([station("a", 0)]);
+    expect(host.badge).toHaveBeenLastCalledWith("problems", null);
+    shell.hide();
+  });
+
+  // Why: a kept layout is the creator's own arrangement. Its folds must
+  // reach the store when the panels dock, not be undone by the store's
+  // (unfolded) sides - else a reload would unfold every kept rail.
+  it("takes a kept layout's folds into the store rather than undoing them", async () => {
+    const made = setUp();
+    const dock = sharedGroupDock(true);
+    made.shell.hide();
+    Object.assign(made.deps, { dock: dock.load });
+    expect(made.store.getState().editorView.foldedDocks.tree).toBe(false);
+    made.shell.show(made.view);
+    await vi.waitFor(() => {
+      expect(made.shell.docked()).toBe(true);
+    });
+    expect(dock.host.fold).not.toHaveBeenCalled();
+    expect(made.store.getState().editorView.foldedDocks).toMatchObject({
+      tree: true,
+      inspector: true,
+    });
+    made.shell.hide();
+  });
+
   it("keeps a tab's count for when the panels dock", async () => {
     const made = setUp();
     const dock = sharedGroupDock();

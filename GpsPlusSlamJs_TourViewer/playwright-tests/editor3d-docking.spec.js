@@ -1280,3 +1280,169 @@ test.describe("by touch", () => {
     await capture(page, test.info().outputPath("touch-folded-844x390.png"));
   });
 });
+
+/**
+ * Files dragged below Details, in the right column, as a creator does.
+ * @param {import("@playwright/test").Page} page
+ */
+async function dragFilesBelowDetails(page) {
+  const files = tabs(page).getByRole("tab", { name: "Files", exact: true });
+  const column = await box(groupOf(page, "details"));
+  await files.dragTo(groupOf(page, "details"), {
+    targetPosition: { x: column.width / 2, y: column.height * 0.85 },
+  });
+  await expect.poll(() => filesBelowDetails(page)).toBe("below");
+}
+
+/**
+ * Whether the layout kept for `formFactor` holds Files in a group of its
+ * own: the kept layout once the drag's changes have settled.
+ * @param {import("@playwright/test").Page} page
+ * @param {string} formFactor
+ */
+function keptFilesAlone(page, formFactor) {
+  return page.evaluate((key) => {
+    const raw = window.localStorage.getItem(key);
+    return raw !== null && raw.includes('"views":["files"]');
+  }, `editor-dock-layout:${formFactor}`);
+}
+
+// Why: a creator's arrangement is theirs - it must come back when the
+// editor opens again, and a kept layout that is broken (another version,
+// a panel missing) must give the default layout, never an empty or a
+// partial one.
+test("a rearranged layout comes back when the editor opens again, a broken one gives the default", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await answerHosts(page);
+  await openSampleIn3d(page);
+  await dockSettled(page, 1440);
+  await dragFilesBelowDetails(page);
+  await expect.poll(() => keptFilesAlone(page, "desk")).toBe(true);
+
+  await openSampleIn3d(page);
+  await dockSettled(page, 1440);
+  await expect.poll(() => filesBelowDetails(page)).toBe("below");
+
+  await page.evaluate(() => {
+    window.localStorage.setItem(
+      "editor-dock-layout:desk",
+      JSON.stringify({ v: 1, layout: { grid: {}, panels: {} }, folds: [] }),
+    );
+  });
+  await openSampleIn3d(page);
+  await dockSettled(page, 1440);
+  expect((await dockState(page)).strips).toEqual(["DetailsFiles"]);
+  expect(await filesBelowDetails(page)).not.toBe("below");
+});
+
+// Why: a desk's three columns do not fit a phone held sideways, nor its
+// arrangement the desk: each form factor keeps its own layout, and the
+// window turning from one to the other swaps them.
+test("the desk and a phone held sideways keep their own layouts", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await answerHosts(page);
+  await openSampleIn3d(page);
+  await dockSettled(page, 1440);
+  await dragFilesBelowDetails(page);
+  await expect.poll(() => keptFilesAlone(page, "desk")).toBe(true);
+
+  await page.setViewportSize({ width: 844, height: 390 });
+  await expect
+    .poll(async () => (await dockState(page)).strips)
+    .toEqual(["DetailsFiles"]);
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect.poll(() => filesBelowDetails(page)).toBe("below");
+  expect(await keptFilesAlone(page, "sideways")).toBe(false);
+});
+
+// Why: a keyboard cannot drag a tab. Shift+F10 on a focused tab offers
+// where its panel can go; the move lands there and the focus stays on
+// the moved tab, so the creator can go on from it.
+test("a tab's Shift+F10 moves its panel by the keyboard, the focus on its tab after", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await answerHosts(page);
+  await openSampleIn3d(page);
+  await dockSettled(page, 1440);
+  const files = tabs(page).getByRole("tab", { name: "Files", exact: true });
+  await files.focus();
+  await page.keyboard.press("Shift+F10");
+  const menu = page.getByRole("menu", { name: "Move Files to" });
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole("menuitem")).toHaveText([
+    "Into List",
+    "Left of the 3D view",
+    "Right of the 3D view",
+    "Below the 3D view",
+  ]);
+  // The docking library's own mouse menu does not open as well.
+  await expect(page.locator(".dv-context-menu")).toHaveCount(0);
+  await expect(menu.getByRole("menuitem").first()).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await expect(files).toBeFocused();
+
+  await page.keyboard.press("Shift+F10");
+  await page.keyboard.press("End");
+  await page.keyboard.press("Enter");
+  await expect(menu).toHaveCount(0);
+  await expect
+    .poll(async () => {
+      const g = await groupBoxes(page);
+      const view = g["view"];
+      const moved = g["files"];
+      if (view === undefined || moved === undefined) return "missing";
+      return moved[1] >= view[1] + view[3] - SASH_PX ? "below" : "elsewhere";
+    })
+    .toBe("below");
+  await expect(files).toBeFocused();
+  await expect(files).toHaveAttribute("aria-selected", "true");
+});
+
+// Why: a folded group is a rail of its tabs' icons; the Problems tab on
+// it carries the tour's problem count, so a creator sees there is
+// something to fix without unfolding it.
+test("a folded rail shows the problem count on its Problems tab", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await answerHosts(page);
+  await openSampleIn3d(page);
+  await dockSettled(page, 1440);
+  // A new station has no content yet: a note among the tour's problems.
+  await page.locator("#tree-add").click();
+  await expect(page.locator("#tree-body .card")).toHaveCount(4);
+  // Problems into the right column's group by its menu, then the group
+  // folded to its rail.
+  await page.locator('#shell-toggles [data-tab="problems"]').click();
+  const problems = tabs(page).getByRole("tab", { name: /^Problems/ });
+  await problems.focus();
+  await page.keyboard.press("Shift+F10");
+  await page
+    .getByRole("menu", { name: "Move Problems to" })
+    .getByRole("menuitem", { name: /^Into Details/ })
+    .click();
+  await expect
+    .poll(async () => (await dockState(page)).strips.join("|"))
+    .toContain("DetailsFilesProblems");
+  await foldOf(page, "problems").click();
+  const badge = groupOf(page, "problems").locator(
+    '.dock-tab[data-panel="problems"] .dock-badge',
+  );
+  await expect(badge).toBeVisible();
+  await expect(badge).toHaveText(/^\d+$/);
+  await expect(badge).toHaveAttribute(
+    "aria-label",
+    /^\d+ errors?, \d+ warnings?, [1-9]\d* notes?$/,
+  );
+});

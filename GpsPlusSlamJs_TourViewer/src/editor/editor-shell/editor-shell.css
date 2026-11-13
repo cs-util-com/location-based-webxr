@@ -4387,3 +4387,38 @@ body.shelf-folded #view3d.docked {
 #view3d.docked .dock-pane:has(> .tools) > .pane {
   height: calc(100% - 30px);
 }
+
+/* "Move to...": the keyboard's menu for moving a docked panel
+ * (`dock-move.ts`), in the page's body below the tab it moves. */
+.dock-move {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: 4px;
+  border: 1px solid var(--s-line2);
+  border-radius: 6px;
+  background: var(--s-bg2);
+  box-shadow: 0 12px 34px rgb(0 0 0 / 55%);
+  color: var(--s-text);
+  font: 12px/1.4 var(--s-sans);
+}
+
+.dock-move-item {
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dock-move-item:hover,
+.dock-move-item:focus-visible {
+  outline: none;
+  background: var(--s-bg3);
+  box-shadow: inset 0 0 0 1px var(--s-focus);
+}
