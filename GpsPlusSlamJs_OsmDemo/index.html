@@ -54,6 +54,24 @@
     <style>
       :root {
         color-scheme: dark;
+
+        /* The HUD's tokens (the command bar, the panels and the dock below). */
+        --hud-bar-h: 52px;
+        --hud-foot: 24px;
+        --hud-slot-w: 320px;
+        --hud-map-column: 64px;
+        --hud-surface: linear-gradient(
+          160deg,
+          rgb(52 58 80 / 92%),
+          rgb(20 24 36 / 92%)
+        );
+        --hud-line: rgb(255 255 255 / 10%);
+        --hud-radius: 14px;
+        --hud-shadow: 0 6px 22px rgb(0 0 0 / 45%);
+        --hud-accent: #f2971f;
+        --hud-accent-ink: #1d1407;
+        --hud-well: rgb(14 17 26 / 90%);
+        --hud-font: corbel, "Segoe UI", system-ui, sans-serif;
       }
       /* PINS until the restyle (adoption plan M6a, DEC-L2-8's rule): the
          three places design.css's reset and base layers landed where this
@@ -1010,25 +1028,8 @@
          here, unlayered, so they win over the vendored `design.css`, which is
          never edited. Controls stay native. Casing comes only from
          `text-transform`, so every accessible name the suite matches keeps
-         its DOM text. */
-      :root {
-        --hud-bar-h: 52px;
-        --hud-foot: 24px;
-        --hud-slot-w: 320px;
-        --hud-map-column: 64px;
-        --hud-surface: linear-gradient(
-          160deg,
-          rgb(52 58 80 / 92%),
-          rgb(20 24 36 / 92%)
-        );
-        --hud-line: rgb(255 255 255 / 10%);
-        --hud-radius: 14px;
-        --hud-shadow: 0 6px 22px rgb(0 0 0 / 45%);
-        --hud-accent: #f2971f;
-        --hud-accent-ink: #1d1407;
-        --hud-well: rgb(14 17 26 / 90%);
-        --hud-font: corbel, "Segoe UI", system-ui, sans-serif;
-      }
+         its DOM text. The tokens (`--hud-*`) are on the page's one `:root`
+         rule at the top of this sheet. */
       .command-bar {
         position: fixed;
         inset: 0 0 auto;
@@ -1149,11 +1150,13 @@
       .bar-settings[data-busy="true"] .bar-spinner {
         display: block;
       }
+
       @keyframes bar-spin {
         to {
           transform: rotate(360deg);
         }
       }
+
       @media (prefers-reduced-motion: reduce) {
         .bar-spinner {
           animation: none;
@@ -1199,6 +1202,15 @@
         padding: 4px 16px 16px;
         overflow-y: auto;
       }
+      .hud-caption {
+        margin: 0;
+        padding-top: 8px;
+        color: #9aa3b8;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
       .hud-panel-head {
         display: flex;
         flex: none;
@@ -1210,24 +1222,13 @@
       }
       .hud-panel-head .hud-caption {
         flex: 1 1 auto;
+        padding-top: 0;
       }
       .hud-panel-body {
         flex: 1 1 auto;
         padding: 8px 12px 16px;
         overflow-y: auto;
         overscroll-behavior: contain;
-      }
-      .hud-caption {
-        margin: 0;
-        padding-top: 8px;
-        color: #9aa3b8;
-        font-size: 13px;
-        font-weight: 700;
-        letter-spacing: 0.1em;
-        text-transform: uppercase;
-      }
-      .hud-panel-head .hud-caption {
-        padding-top: 0;
       }
       #status {
         color: #9aa3b8;
@@ -1241,8 +1242,7 @@
       /* THE DRAWER'S SECTIONS: each a native `<details>`, folded until asked
          for; a section head is a full-width 44 px target. */
       .hud-panel .layer-toggles {
-        flex-direction: column;
-        flex-wrap: nowrap;
+        flex-flow: column nowrap;
         gap: 8px;
         font-size: 14px;
         color: #e6e8ef;
@@ -1297,8 +1297,13 @@
         flex-direction: column;
         align-items: flex-start;
         gap: 8px;
-        max-width: min(300px, calc(50% - 16px));
+        /* Two caps rather than `min()`, which the gate's CSS validator
+           rejects: the pane's half here, 300 px on each item below. */
+        max-width: calc(50% - 16px);
         pointer-events: none;
+      }
+      .hud-dock > * {
+        max-width: 300px;
       }
       .legend-plate {
         padding: 8px 12px;
@@ -1326,12 +1331,14 @@
           position: fixed;
           top: calc(var(--hud-bar-h) + 8px);
           left: calc(50% + 8px);
-          width: max(160px, min(300px, calc(50% - 332px)));
+          width: calc(50% - 332px);
+          min-width: 160px;
+          max-width: 300px;
         }
+        /* Its own 21rem cap holds: half a pane this wide is always more. */
         .ar-offer {
           left: calc(50% + 8px);
           bottom: 5rem;
-          max-width: min(21rem, calc(50% - 16px));
           transform: none;
         }
       }
@@ -1384,7 +1391,7 @@
         }
       }
       /* The footer the panels stop above holds both lines on a narrow phone
-         (after the token block, which would otherwise win). */
+         (after the `:root` tokens at the top, which would otherwise win). */
       @media (width <= 480px) {
         :root {
           --hud-foot: 48px;
