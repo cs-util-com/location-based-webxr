@@ -71,7 +71,7 @@ function folderTitleOf(
 
 /** Where the folder's gizmo stands this frame: its pivot, its heading and
  *  the metres a screen pixel covers one metre from the camera. */
-export interface FolderGizmoAt {
+interface FolderGizmoAt {
   readonly centre: WorldPoint;
   readonly headingDeg: number;
   readonly spritePerPx: number;

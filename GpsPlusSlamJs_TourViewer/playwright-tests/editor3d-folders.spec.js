@@ -571,10 +571,6 @@ function handleAt(page, part) {
 }
 
 /**
- * Item y on the page (it stands in the folder "Yard").
- * @param {import("@playwright/test").Page} page
- */
-/**
  * The front-left corner of the selected folder's dashed outline on the
  * ground (world metres), once drawn.
  * @param {import("@playwright/test").Page} page
@@ -597,6 +593,10 @@ async function folderHullAt(page) {
   return at;
 }
 
+/**
+ * Item y on the page (it stands in the folder "Yard").
+ * @param {import("@playwright/test").Page} page
+ */
 function itemY(page) {
   return shownAt(page, () =>
     page.evaluate(() =>

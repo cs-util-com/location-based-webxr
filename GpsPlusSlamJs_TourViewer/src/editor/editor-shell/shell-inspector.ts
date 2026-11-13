@@ -883,12 +883,10 @@ function itemParts(
   return parts;
 }
 
-/** A plain folder's parts: its scale to type, and its Place (its
- *  origin's offset, height and heading in its station's frame) folded
- *  away as an item's position is. Its items follow either. */
-/** A folder's pivot, open under its own heading: where it stands, its
- *  heading and its scale to type, and Pivot to centre; then its items,
- *  each a row that selects it alone, and Select its items. */
+/** A plain folder's parts: its pivot, open under its own heading (its
+ *  origin's offset, height and heading in its station's frame, and its
+ *  scale to type; its items follow each), and Pivot to centre; then its
+ *  items, each a row that selects it alone, and Select its items. */
 function folderParts(model: FolderModel): HTMLElement[] {
   const o = model.offset;
   const { scale } = model;
