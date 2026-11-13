@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Asset optimizer check</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, sans-serif;
+      }
+      body {
+        margin: 0;
+        padding: 16px;
+        max-width: 1100px;
+        line-height: 1.4;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 8px;
+      }
+      h2 {
+        font-size: 16px;
+        margin: 24px 0 4px;
+      }
+      p {
+        margin: 4px 0 8px;
+      }
+      button,
+      input {
+        font: inherit;
+        margin: 4px 8px 4px 0;
+      }
+      button {
+        padding: 10px 14px;
+        min-height: 44px;
+      }
+      .results {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 12px;
+        margin: 8px 0;
+      }
+      figure {
+        margin: 0;
+        border: 1px solid #8888;
+        border-radius: 6px;
+        padding: 8px;
+        min-width: 0;
+      }
+      figure.chosen {
+        border: 2px solid #3a7bd5;
+      }
+      figure img {
+        width: 100%;
+        height: auto;
+        display: block;
+        image-rendering: auto;
+      }
+      figure audio {
+        width: 100%;
+      }
+      figcaption {
+        font-size: 13px;
+        overflow-wrap: anywhere;
+      }
+      #status {
+        font-size: 13px;
+        min-height: 1.4em;
+      }
+      @media (min-width: 680px) {
+        .results {
+          grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Asset optimizer check</h1>
+    <p>
+      Runs the editor's own picture and sound optimizers on a file you choose,
+      or on a test file, at the chosen setting and one step either side, so the
+      results can be seen and heard next to the original. The chosen setting has
+      a blue frame. Everything stays in this browser.
+    </p>
+    <p id="status" role="status" aria-live="polite"></p>
+
+    <h2>Pictures</h2>
+    <p>
+      Chosen: longest side 1600 px, WebP at quality 0.75. Either side: quality
+      0.6 and 0.9, and sides 1280 and 2048 px. Zoom into the pictures to compare
+      detail; SSIM (1 is identical) compares each with the original scaled to
+      the same size.
+    </p>
+    <input id="picture-file" type="file" accept="image/*" />
+    <button id="picture-test" type="button">Use a test photo (12 MP)</button>
+    <div id="picture-results" class="results"></div>
+
+    <h2>Sounds</h2>
+    <p>
+      Chosen: speech (a mono sound) as Opus at 24 kbps, music (stereo) at 64
+      kbps. Either side: 16 and 32 kbps for speech, 48 and 96 kbps for music.
+      Listen with headphones; the length must stay the same to the millisecond.
+    </p>
+    <input id="sound-file" type="file" accept="audio/*" />
+    <button id="sound-speech" type="button">Use a test voice (3 min)</button>
+    <button id="sound-music" type="button">Use test music (30 s)</button>
+    <div id="sound-results" class="results"></div>
+
+    <script type="module">
+      import { ASSET_OPTIMIZERS } from "./src/editor/asset-shelf/asset-optimizers.ts";
+      import {
+        createOptimizerHost,
+        spawnOptimizerWorker,
+      } from "./src/editor/asset-shelf/optimizer-client.ts";
+      import { OPTIMIZER_SETTINGS } from "./src/editor/asset-shelf/optimizer-settings.ts";
+      import {
+        bestLag,
+        lumaOf,
+        ssim,
+        testPicturePixels,
+        testSoundPlanes,
+        wavOf,
+      } from "./src/checks/asset-optimizer-check.ts";
+
+      const host = createOptimizerHost(spawnOptimizerWorker);
+      const status = document.getElementById("status");
+      const say = (text) => {
+        status.textContent = text;
+      };
+
+      /** One run of a shipped optimizer row, with its own settings. */
+      async function run(kind, source, settings) {
+        const started = performance.now();
+        const outcome = await ASSET_OPTIMIZERS[kind].optimize(source, {
+          signal: new AbortController().signal,
+          progress: () => {},
+          settings,
+          host,
+        });
+        const ms = Math.round(performance.now() - started);
+        if (outcome.kind !== "optimized") throw new Error(outcome.reason);
+        return { ...outcome, ms };
+      }
+
+      const optimizePicture = (source, maxSidePx, quality) =>
+        run("image", source, {
+          ...OPTIMIZER_SETTINGS,
+          picture: { ...OPTIMIZER_SETTINGS.picture, maxSidePx, quality },
+        });
+
+      const optimizeSound = (source, bitsPerSecond) =>
+        run("audio", source, {
+          ...OPTIMIZER_SETTINGS,
+          speech: { ...OPTIMIZER_SETTINGS.speech, bitsPerSecond },
+          music: { ...OPTIMIZER_SETTINGS.music, bitsPerSecond },
+        });
+
+      /** A JPEG of the photo-like test picture. */
+      async function testPicture(width, height, seed = 1) {
+        const canvas = new OffscreenCanvas(width, height);
+        const context = canvas.getContext("2d");
+        const pixels = testPicturePixels(width, height, seed);
+        context.putImageData(new ImageData(pixels, width, height), 0, 0);
+        return canvas.convertToBlob({ type: "image/jpeg", quality: 0.92 });
+      }
+
+      /** A WAV of a test sound. */
+      function testSound(kind, seconds, sampleRate, seed = 1) {
+        const planes = testSoundPlanes(kind, seconds, sampleRate, seed);
+        return new Blob([wavOf(planes, sampleRate)], { type: "audio/wav" });
+      }
+
+      /** The SSIM of `optimized` against `original` scaled to its size. */
+      async function pictureSsim(original, optimized) {
+        const small = await createImageBitmap(optimized);
+        const { width, height } = small;
+        const lumaAt = async (blob) => {
+          const bitmap = await createImageBitmap(blob, {
+            resizeWidth: width,
+            resizeHeight: height,
+            resizeQuality: "high",
+            imageOrientation: "from-image",
+          });
+          const canvas = new OffscreenCanvas(width, height);
+          const context = canvas.getContext("2d");
+          context.drawImage(bitmap, 0, 0);
+          bitmap.close();
+          return lumaOf(context.getImageData(0, 0, width, height).data);
+        };
+        small.close();
+        return ssim(
+          await lumaAt(original),
+          await lumaAt(optimized),
+          width,
+          height,
+        );
+      }
+
+      /** The decoded planes of `blob` at 48 kHz, as the editor decodes. */
+      async function decode(blob) {
+        const context = new OfflineAudioContext({
+          numberOfChannels: 1,
+          length: 1,
+          sampleRate: 48000,
+        });
+        const buffer = await context.decodeAudioData(await blob.arrayBuffer());
+        return Array.from({ length: buffer.numberOfChannels }, (_, c) =>
+          buffer.getChannelData(c),
+        );
+      }
+
+      /** What an <audio> element says the sound lasts, in milliseconds,
+       *  rounded as the narration editor rounds it. */
+      function durationMs(blob) {
+        return new Promise((resolve, reject) => {
+          const audio = new Audio();
+          const url = URL.createObjectURL(blob);
+          audio.preload = "metadata";
+          audio.addEventListener("loadedmetadata", () => {
+            URL.revokeObjectURL(url);
+            resolve(Math.round(audio.duration * 1000));
+          });
+          audio.addEventListener("error", () => {
+            URL.revokeObjectURL(url);
+            reject(new Error("the sound could not be played"));
+          });
+          audio.src = url;
+        });
+      }
+
+      const kib = (bytes) => `${(bytes / 1024).toFixed(0)} KiB`;
+
+      function card(parent, chosen, media, lines) {
+        const figure = document.createElement("figure");
+        if (chosen) figure.className = "chosen";
+        figure.append(media);
+        const caption = document.createElement("figcaption");
+        caption.textContent = lines.join(" - ");
+        figure.append(caption);
+        parent.append(figure);
+      }
+
+      const PICTURE_VARIANTS = [
+        { side: 1600, quality: 0.75, chosen: true },
+        { side: 1600, quality: 0.6 },
+        { side: 1600, quality: 0.9 },
+        { side: 1280, quality: 0.75 },
+        { side: 2048, quality: 0.75 },
+      ];
+
+      async function showPictures(source) {
+        const out = document.getElementById("picture-results");
+        out.replaceChildren();
+        const original = document.createElement("img");
+        original.src = URL.createObjectURL(source);
+        original.alt = "The original picture";
+        card(out, false, original, ["Original", kib(source.size)]);
+        for (const v of PICTURE_VARIANTS) {
+          say(`Making the ${v.side} px, ${v.quality} picture...`);
+          const result = await optimizePicture(source, v.side, v.quality);
+          const score = await pictureSsim(source, result.blob);
+          const img = document.createElement("img");
+          img.src = URL.createObjectURL(result.blob);
+          img.alt = `The picture at ${v.side} px, quality ${v.quality}`;
+          card(out, v.chosen === true, img, [
+            `${v.side} px, quality ${v.quality}`,
+            `${result.width} x ${result.height}`,
+            kib(result.blob.size),
+            `${((100 * result.blob.size) / source.size).toFixed(0)} % of the original`,
+            `SSIM ${score.toFixed(4)}`,
+            `${result.ms} ms`,
+          ]);
+        }
+        say("Pictures done.");
+      }
+
+      async function showSounds(source) {
+        const out = document.getElementById("sound-results");
+        out.replaceChildren();
+        const planes = await decode(source);
+        const speech = planes.length === 1;
+        const variants = speech
+          ? [{ bps: 24000, chosen: true }, { bps: 16000 }, { bps: 32000 }]
+          : [{ bps: 64000, chosen: true }, { bps: 48000 }, { bps: 96000 }];
+        const originalMs = await durationMs(source);
+        const original = document.createElement("audio");
+        original.controls = true;
+        original.src = URL.createObjectURL(source);
+        card(out, false, original, [
+          `Original (${speech ? "speech" : "music"})`,
+          kib(source.size),
+          `${originalMs} ms`,
+        ]);
+        for (const v of variants) {
+          say(`Making the ${v.bps / 1000} kbps sound...`);
+          const result = await optimizeSound(source, v.bps);
+          const ms = await durationMs(result.blob);
+          const audio = document.createElement("audio");
+          audio.controls = true;
+          audio.src = URL.createObjectURL(result.blob);
+          card(out, v.chosen === true, audio, [
+            `Opus ${v.bps / 1000} kbps`,
+            kib(result.blob.size),
+            `${((100 * result.blob.size) / source.size).toFixed(1)} % of the original`,
+            `${ms} ms${ms === originalMs ? "" : " (NOT the original's length)"}`,
+            `${result.ms} ms to make`,
+          ]);
+        }
+        say("Sounds done.");
+      }
+
+      const guard = (task) => () =>
+        task().catch((error) => say(`Failed: ${error.message}`));
+      document
+        .getElementById("picture-file")
+        .addEventListener("change", (event) => {
+          const file = event.target.files?.[0];
+          if (file) void guard(() => showPictures(file))();
+        });
+      document.getElementById("picture-test").addEventListener(
+        "click",
+        guard(async () => {
+          say("Making a test photo...");
+          await showPictures(await testPicture(4000, 3000));
+        }),
+      );
+      document
+        .getElementById("sound-file")
+        .addEventListener("change", (event) => {
+          const file = event.target.files?.[0];
+          if (file) void guard(() => showSounds(file))();
+        });
+      document.getElementById("sound-speech").addEventListener(
+        "click",
+        guard(() => showSounds(testSound("speech", 180, 44100))),
+      );
+      document.getElementById("sound-music").addEventListener(
+        "click",
+        guard(() => showSounds(testSound("music", 30, 44100))),
+      );
+
+      // For the e2e (playwright-tests/editor-asset-optimizers.spec.js).
+      window.assetOptimizerCheck = {
+        bestLag,
+        optimizePicture,
+        optimizeSound,
+        testPicture,
+        testSound,
+        pictureSsim,
+        decode,
+        durationMs,
+      };
+      say("Ready.");
+    </script>
+  </body>
+</html>
