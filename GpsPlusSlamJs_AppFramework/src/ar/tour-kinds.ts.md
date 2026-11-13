@@ -77,6 +77,25 @@ declares a kind or a field, because a tour is untrusted input.
   required in its own view and kept, still checked, in every other, so the
   editor's view switch loses nothing. The format floor is 1 m; the editor's
   default radius is larger (the viewer's `narration-circle` sweep).
+- A picture stands free in every view but `card`
+  (`TOUR_PICTURE_WORLD_VIEWS`): `plane`, `framed` (a print in a frame with
+  a plate), `cutout` (on the ground, by the image's alpha), and the
+  viewpoint views `thenNow`, `sharpen`, `finder`, `window`, `viewer`
+  (`TOUR_PICTURE_VIEWPOINT_VIEWS`), which line the picture up with the
+  place from one spot. Its texts: `title` 40, `caption` 1200, `alt` 300,
+  `credit` 200, `year` 24 (text, "about 1880s", never a number); each is
+  left out alone, reported, when over its cap. `showTag` is true or false
+  (absent: the cut-out's tag shows). `viewpoint` is `{ position [n, u, e],
+rotation [x, y, z, w], hfovDeg 10-120, distanceM 1-500 }` in the
+  STATION's frame, whatever folders hold the picture, so moving the
+  picture's pose never moves where it lines up; the camera looks along its
+  local -Z. Like a sound's world fields, `showTag` and `viewpoint` are
+  kept in every view, so a view switch loses nothing.
+- A viewpoint view WITHOUT a viewpoint is read, not refused: the viewer
+  draws it as its floor, a `plane`, and the editor never writes one (its
+  view switch gives the picture a viewpoint). A broken viewpoint fails a
+  file of this reader's own minor; a newer minor's drops just the
+  viewpoint, reported, keeping the picture.
 
 ## Examples
 

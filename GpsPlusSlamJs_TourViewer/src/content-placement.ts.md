@@ -10,7 +10,9 @@ the creator's live preview and the visitor's session share.
 
 - `drawnKindOf(block, view)` - what `block` is drawn as in `view`: a long
   text's `reading` and a visitor's `captions` both give `reading` (the
-  reading sign), `lectern` gives `lectern`; any other view is its own
+  reading sign), `lectern` gives `lectern`, a picture's `plane` and its
+  viewpoint views without a viewpoint give `plane` (the format reads
+  those as a plane); any other view is its own
   name. What `viewer-placement.ts` compares to tell whether a changed
   view changes anything drawn.
 - `newObjectId(random?)` - 12 base-36 characters; the manifest id and the
@@ -64,7 +66,8 @@ under - what a tap in AR is cast against to name the object
   blocks outside its stories) as children at their LOCAL poses
   (`[north, up, east]` and a rotation relative to the station), added to
   `scene` once every picture decoded; `root` is that group. A `pin` short
-  text is a label, a `plane` picture a photo plane (as wide as its
+  text is a label, a `plane` picture (and one in a viewpoint view without a
+  viewpoint) a photo plane (as wide as its
   `widthM`; a 1 m picture is drawn as it always was) whose file is the
   tour's asset of its `image` (from `assets`; a picture whose asset the
   tour lacks is named in `skipped`, as one whose file fails). A placed

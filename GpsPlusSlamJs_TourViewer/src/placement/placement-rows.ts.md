@@ -46,7 +46,7 @@ view would be the first such kind).
 - `shortText`: `pin` posed, facing (the label faces the camera); `card` poseless.
 - `longText`: `lectern` posed, turning (the stand keeps its turn about up);
   `reading` posed, facing (the plate turns to the viewer); `card` poseless.
-- `picture`: `plane` posed, turning, `size` on `widthM`
+- `picture`: every standing view (`plane`, `framed`, `cutout` and the viewpoint views, which are drawn as a plane at the pose until their overlays stand) posed, turning, `size` on `widthM`
   (`TOUR_PICTURE_MIN_WIDTH_M` to `TOUR_PICTURE_MAX_WIDTH_M`); `card` poseless.
 - `video`: `card` poseless (no world view yet).
 - `audio`: `spot` and `zone` posed, facing, no dots (a sound's reach is

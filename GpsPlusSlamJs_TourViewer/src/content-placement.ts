@@ -58,6 +58,7 @@ import type {
   TourPin,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { TOUR_PICTURE_VIEWPOINT_VIEWS } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import { tourFreeEntries } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
 import type { LatLong, Matrix4 } from "gps-plus-slam-app-framework/core";
@@ -439,6 +440,21 @@ const LONG_TEXT_WORLD_VIEWS: ReadonlySet<string> = new Set([
   "captions",
 ]);
 
+const VIEWPOINT_VIEWS: ReadonlySet<string> = new Set(
+  TOUR_PICTURE_VIEWPOINT_VIEWS,
+);
+
+/** Whether a picture in `view` is drawn as a plane at its pose: `plane`,
+ *  and a viewpoint view of a picture without a viewpoint (the format
+ *  reads one so); a viewpoint view with one goes to the world door. */
+function drawnAsPlane(block: TourBlock, view: string): boolean {
+  if (block.kind !== "picture") return false;
+  return (
+    view === "plane" ||
+    (VIEWPOINT_VIEWS.has(view) && block.viewpoint === undefined)
+  );
+}
+
 /** What a long text's world view draws: the reading sign for `reading`
  *  and a visitor's `captions` (the strip itself is the page's), the
  *  reading stand for `lectern`. */
@@ -452,6 +468,7 @@ function longTextDrawnAs(view: string): "reading" | "lectern" {
  * caller comparing two views can tell whether anything drawn changed.
  */
 export function drawnKindOf(block: TourBlock, view: string): string {
+  if (drawnAsPlane(block, view)) return "plane";
   return block.kind === "longText" && LONG_TEXT_WORLD_VIEWS.has(view)
     ? longTextDrawnAs(view)
     : view;
@@ -507,7 +524,7 @@ function drawnBlock(
   if (block.kind === "longText" && LONG_TEXT_WORLD_VIEWS.has(block.view)) {
     return longTextOf(block);
   }
-  if (block.kind === "picture" && block.view === "plane") {
+  if (block.kind === "picture" && drawnAsPlane(block, block.view)) {
     return {
       id: block.id,
       as: "plane",

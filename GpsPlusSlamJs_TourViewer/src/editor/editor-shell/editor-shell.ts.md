@@ -219,7 +219,8 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   takes draws again and ends there; `flush` writes pending typing before a
   selection change or a save. A long text's panel is its dock
   (`../long-text/long-text-dock.ts`, body through `edits.block(id, "body",
-...)`, view through `edits.view`); a model's answers its part buttons,
+...)`, view through `edits.view`); a picture's writes its view through
+  `edits.view` and its tag through the optional `edits.pictureTag`; a model's answers its part buttons,
   the 3D view's wait and focus going to `modelPickAsked` and
   `modelFocused`. The shell's generic field input skips a writer's fields:
   only an input drawn under a field name (`data-field`) is written by

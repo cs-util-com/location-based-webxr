@@ -434,6 +434,15 @@ export interface InspectorModelParts {
   readonly pick: ModelPick | null;
 }
 
+/** A picture as its panel shows it (`kind-panels/picture-panel.ts`). */
+interface InspectorPicture {
+  readonly view: string;
+  /** Its tag shows (a cut-out's; `showTag` absent or true). */
+  readonly showTag: boolean;
+  /** Its image's tour path; null when the tour lacks the asset. */
+  readonly imagePath: string | null;
+}
+
 /** A long text as its writer shows it (`long-text-writer.ts`). */
 export interface InspectorLongText {
   readonly blockId: string;
@@ -519,6 +528,8 @@ interface ItemInspector {
   /** Its height over the ground (m); null before the ground there has
    *  loaded. */
   readonly groundOffM: number | null;
+  /** A picture's view, tag and image; absent for any other item. */
+  readonly picture?: InspectorPicture;
 }
 
 /** The plain folder `id` of `station` with its name, or null (none, or
@@ -1278,6 +1289,16 @@ export function buildInspector(input: {
       turns: place?.turns ?? false,
       folder: holdingFolderOf(station, place?.folderPath.at(-1)),
       groundOffM: place === null ? null : offGroundOf(place.geo, groundAt),
+      ...(item.kind === "picture"
+        ? {
+            picture: {
+              view: item.view,
+              showTag: item.showTag !== false,
+              imagePath:
+                input.assets.find((a) => a.id === item.image)?.path ?? null,
+            },
+          }
+        : {}),
     };
   }
   const code = input.codes.find((c) => c.id === selected);

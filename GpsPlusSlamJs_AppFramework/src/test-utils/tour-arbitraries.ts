@@ -52,6 +52,13 @@ import {
   type TourTextRule,
 } from '../ar/tour-blocks.js';
 import {
+  TOUR_PICTURE_MAX_DISTANCE_M,
+  TOUR_PICTURE_MAX_HFOV_DEG,
+  TOUR_PICTURE_MIN_DISTANCE_M,
+  TOUR_PICTURE_MIN_HFOV_DEG,
+  TOUR_PICTURE_WORLD_VIEWS,
+} from '../ar/tour-kinds.js';
+import {
   TOUR_GROUND_FLOOR_PLACEMENTS,
   TOUR_GROUND_MAX_BEND_DEG,
   TOUR_GROUND_STYLES,
@@ -202,6 +209,24 @@ export const tourLocalPoseArbitrary = fc.record({
   rotation: yawRotation,
 });
 
+/** A picture's viewpoint: a station-frame pose, a lens and a distance
+ *  inside the format's bounds. */
+const pictureViewpointArbitrary = fc
+  .tuple(
+    tourLocalPoseArbitrary,
+    fc.double({
+      min: TOUR_PICTURE_MIN_HFOV_DEG,
+      max: TOUR_PICTURE_MAX_HFOV_DEG,
+      noNaN: true,
+    }),
+    fc.double({
+      min: TOUR_PICTURE_MIN_DISTANCE_M,
+      max: TOUR_PICTURE_MAX_DISTANCE_M,
+      noNaN: true,
+    })
+  )
+  .map(([pose, hfovDeg, distanceM]) => ({ ...pose, hfovDeg, distanceM }));
+
 const iso = fc
   .integer({ min: 0, max: 4_102_444_800_000 })
   .map((ms) => new Date(ms).toISOString());
@@ -290,11 +315,15 @@ const KIND_FIELDS: Record<
       title: optionalText(r.picture.title),
       caption: optionalText(r.picture.caption),
       alt: optionalText(r.picture.alt),
+      credit: optionalText(r.picture.credit),
+      year: optionalText(r.picture.year),
       widthM: fc.double({
         min: TOUR_PICTURE_MIN_WIDTH_M,
         max: TOUR_PICTURE_MAX_WIDTH_M,
         noNaN: true,
       }),
+      showTag: fc.option(fc.boolean(), { nil: undefined }),
+      viewpoint: fc.option(pictureViewpointArbitrary, { nil: undefined }),
     }),
   video: () =>
     fc.record({
@@ -450,7 +479,7 @@ export const TOUR_FREE_VIEWS: Readonly<
 > = {
   shortText: ['pin', 'sign', 'edgeHint'],
   longText: ['lectern', 'reading'],
-  picture: ['plane'],
+  picture: TOUR_PICTURE_WORLD_VIEWS,
   video: ['card'],
   audio: ['spot', 'zone'],
   model: TOUR_MODEL_WORLD_VIEWS,

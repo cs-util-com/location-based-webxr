@@ -295,15 +295,19 @@ export function mountedWorldParts(): WorldPart[] {
 
 const viewerLocal = new Vector3();
 
+function isCamera(object: Object3D): object is Camera {
+  return (object as Partial<Camera>).isCamera === true;
+}
+
 /**
  * Every camera frame (`main.ts`): each of `parts` shown under a
  * station's content group of `scene` (`shownIn`) and having an
  * `update` is given the page clock (`nowMs`, as seconds) and the world
  * position of `viewer` (the camera) in its object's parent frame. A
  * viewer that is a camera is handed on too (a hint at the screen's edge
- * places its tag by it), with its lens over `viewHeightPx` (the view's
- * height in CSS px) where that is given. No scene or no camera: nothing
- * is ticked.
+ * places its tag by it, a picture faces it), with its lens over
+ * `viewHeightPx` (the view's height in CSS px) where that is given. No
+ * scene or no camera: nothing is ticked.
  */
 export function tickWorldParts(
   scene: Object3D | null,
@@ -335,11 +339,6 @@ export function tickWorldParts(
       ...(metresPerPxAtOneM === undefined ? {} : { metresPerPxAtOneM }),
     });
   }
-}
-
-/** Whether `o` is a camera (three marks every camera so). */
-function isCamera(o: Object3D): o is Camera {
-  return (o as Partial<Camera>).isCamera === true;
 }
 
 /**
