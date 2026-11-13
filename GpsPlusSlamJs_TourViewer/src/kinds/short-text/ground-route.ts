@@ -137,7 +137,7 @@ export function groundBendDeg(bendDeg: number | undefined): number {
 
 /** A sample of a route: its point, its direction (unit), and how far
  *  along it lies (m). */
-export interface RouteSample {
+interface RouteSample {
   readonly x: number;
   readonly z: number;
   readonly tx: number;
@@ -384,7 +384,7 @@ export function sunContrast(hex: string): number {
 }
 
 /** The float of the hovering pieces. */
-export const GROUND_FLOAT = {
+const GROUND_FLOAT = {
   /** The largest piece's amplitude (m); each piece 0.6-1 of it. */
   ampM: 0.025,
   /** The period (s); each piece 0.8-1.25 of it. */

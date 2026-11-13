@@ -32,8 +32,8 @@ no DOM: every promise here is checked by property tests.
   (clamped to the path).
 - `GROUND_SUN_MIN_RATIO` (3) and `sunContrast(hex)` - a colour's contrast
   ratio against pale sunlit paving; NaN for a string that is no `#rrggbb`.
-- `GROUND_FLOAT` and `groundFloatM(seed, t)` - a hovering piece's height
-  offset at time `t`, within `GROUND_FLOAT.amp`.
+- `groundFloatM(seed, t)` - a hovering piece's height
+  offset at time `t`, within its amplitude (2.5 cm).
 
 ## Invariants
 
