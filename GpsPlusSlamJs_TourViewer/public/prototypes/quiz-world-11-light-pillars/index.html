@@ -20,10 +20,19 @@
   <body>
     <script type="module">
       import { loadSamples, runStage } from "../quiz-world-stage/stage.js";
+      import { STAND_VARIANTS } from "../quiz-world-stage/stand-variants.js";
       import { kind } from "./kind.js";
 
       const samples = await loadSamples("./sample.json");
-      if (samples) runStage({ kind, samples, title: "Stand In The Light" });
+      if (samples)
+        runStage({
+          kind,
+          samples,
+          title: "Stand In The Light",
+          hud: "compact",
+          variants: STAND_VARIANTS,
+          variant: STAND_VARIANTS[2],
+        });
     </script>
   </body>
 </html>

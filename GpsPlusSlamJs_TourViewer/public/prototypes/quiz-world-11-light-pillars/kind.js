@@ -3,7 +3,8 @@
 // found answer becomes a tall soft pillar of light, seen from across the square. The visitor
 // answers by standing in the pillar of the one they think is right: the light pours down from the
 // top until the pillar is full, and then the answer locks in. Stepping out before it is full
-// drains it again. The card keeps only a tiny glyph; the sign and the pillars carry the rest.
+// drains it again. The card keeps only a tiny glyph; the sign and the pillars carry the rest. On the
+// stage's compact HUD even that waits behind the "i", and the screen keeps only the found-dots.
 // Throwaway; not wired to the app.
 import {
   BufferGeometry,
@@ -65,6 +66,9 @@ const MOTE_SIZE = 0.16;
 const SIGN_Y = 3.1; // metres: the middle of the sign, over the heads
 const SIGN_W = 3.2;
 const SIGN_H = 1.6;
+// The question is read on the sign, so it may take more of the view than a label (0.4), never more
+// than this: walked under, it would fill a portrait phone's narrow view.
+const SIGN_SHARE = 0.8;
 const SIGN_PX_W = 640;
 const SIGN_PX_H = 320;
 const SIGN_TRACK = 22; // pixels from the bottom: the middle of the sign's bar
@@ -835,10 +839,12 @@ function makeSession(block, env, spots) {
       s.ask();
     } else {
       env.sound("tap").play();
-      env.say(o.clue ? `"${o.label}". ${o.clue}` : `"${o.label}".`, {
-        mood: "happy",
-        eyebrow: `${memory.found.length} of ${n} found`,
-      });
+      // The compact HUD keeps this off the screen: the egg's own label says it, in the world.
+      if (!env.hud?.compact)
+        env.say(o.clue ? `"${o.label}". ${o.clue}` : `"${o.label}".`, {
+          mood: "happy",
+          eyebrow: `${memory.found.length} of ${n} found`,
+        });
     }
     changed();
   };
@@ -1401,7 +1407,10 @@ function world(block, env) {
       e.label.visible = e.pop > 0.02;
       // standing at the egg, the label shrinks so it never fills the view
       const close = play ? clamp(d / LABEL_FULL, LABEL_MIN, 1) : 1;
-      e.label.scale.setScalar(Math.max(0.001, e.pop * close));
+      // ... and never covers more than about 40 % of the view's width, however close
+      e.label.scale.setScalar(
+        Math.max(0.001, Math.min(e.pop * close, env.fitWidth(e.label, LABEL_W))),
+      );
       const lx = spots[i].x + ox;
       const lz = spots[i].z + oz;
       e.label.rotation.y = Math.atan2(v.x - lx, v.z - lz);
@@ -1504,7 +1513,9 @@ function world(block, env) {
     sign.visible = rise > 0.01;
     if (sign.visible) {
       board.position.y = 0.4 + (SIGN_Y - 0.4) * rise + 0.05 * Math.sin(t * 0.8);
-      board.scale.setScalar(Math.max(0.001, rise));
+      board.scale.setScalar(
+        Math.max(0.001, Math.min(rise, env.fitWidth(board, SIGN_W, SIGN_SHARE))),
+      );
       const want = Math.atan2(s.vx, s.vz);
       signYaw += play
         ? wrapAngle(want - signYaw) * (1 - Math.exp(-dt / SIGN_TURN_TAU))
@@ -1825,6 +1836,7 @@ function card(block, el, env) {
   el.append(host, box, whyBlock());
   const { options } = block;
   const n = options.length;
+  const compact = env.hud?.compact === true;
   let note = null;
   const bars = []; // the glyph's little pillars while choosing
 
@@ -1897,6 +1909,11 @@ function card(block, el, env) {
   s.render = () => {
     host.replaceChildren();
     note = null;
+    if (compact)
+      env.hud.dots(
+        s.phase() === "search" && !s.skipped ? n : 0,
+        memory.found.map((i) => HUES[i]),
+      );
     bars.length = 0;
     const phase = s.phase();
     if (phase === "done") {
@@ -1939,28 +1956,36 @@ function card(block, el, env) {
       );
       host.append(q);
     }
-    const count = make("div", "lp-count");
-    const pips = make("span", "lp-pips");
-    pips.setAttribute("aria-hidden", "true");
-    for (let k = 0; k < n; k++) {
-      const pip = make("i", k < memory.found.length ? "on" : "");
-      if (k < memory.found.length)
-        pip.style.setProperty("--hue", HUES[memory.found[k]]);
-      pips.append(pip);
-    }
-    count.append(make("b", "", `${memory.found.length} of ${n} found`), pips);
-    host.append(count);
-    if (memory.found.length) {
-      const found = make("div", "lp-found");
-      for (const i of memory.found) {
-        const chip = make("span", "", options[i].label);
-        chip.style.setProperty("--hue", HUES[i]);
-        found.append(chip);
+    // The compact HUD shows none of this: the stage's dots say how many, the eggs say which, and
+    // the hint comes as the guide's line when it is due. The question asked first and the way out
+    // stay in the card, behind the "i".
+    if (!compact) {
+      const count = make("div", "lp-count");
+      const pips = make("span", "lp-pips");
+      pips.setAttribute("aria-hidden", "true");
+      for (let k = 0; k < n; k++) {
+        const pip = make("i", k < memory.found.length ? "on" : "");
+        if (k < memory.found.length)
+          pip.style.setProperty("--hue", HUES[memory.found[k]]);
+        pips.append(pip);
       }
-      host.append(found);
+      count.append(
+        make("b", "", `${memory.found.length} of ${n} found`),
+        pips,
+      );
+      host.append(count);
+      if (memory.found.length) {
+        const found = make("div", "lp-found");
+        for (const i of memory.found) {
+          const chip = make("span", "", options[i].label);
+          chip.style.setProperty("--hue", HUES[i]);
+          found.append(chip);
+        }
+        host.append(found);
+      }
+      note = make("p", "lp-note", searchNote());
+      host.append(note);
     }
-    note = make("p", "lp-note", searchNote());
-    host.append(note);
     if (memory.hinted && !s.skipped) {
       const rest = make(
         "button",

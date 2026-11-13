@@ -3,9 +3,10 @@
 // two arcs growing from its far side round to the visitor's feet; when they meet, the answer locks
 // in with a pulse and a sound, and a thin white seal then closes the same way. Stepping out before
 // the seal is shut takes the answer back without a word; once it is shut, the ring turns teal or
-// breaks apart. The question lies on the ground in the middle of the answers, and the screen keeps
-// only a small pill: the count while searching, a "more" button while choosing, behind which the
-// answers can be chosen without walking. Throwaway; not wired to the app.
+// breaks apart. The question lies on the ground in the middle of the answers. On the stage's compact
+// HUD the screen keeps only the stage's found-dots and its "i", behind which the answers can be
+// chosen without walking; on the card HUD a small pill in the card does the same: the count while
+// searching, a "more" button while choosing. Throwaway; not wired to the app.
 import {
   BufferGeometry,
   Color,
@@ -931,10 +932,17 @@ function makeSession(block, env, spots) {
     memory.revealed = true;
     memory.open = false;
     const right = memory.result === "right";
-    env.say(right ? block.says.right : block.says.wrong, {
-      mood: right ? "happy" : "doubt",
-      eyebrow: right ? "Right" : "Not this time",
-    });
+    // The compact HUD has no card for the points: the guide says them.
+    const line = right ? block.says.right : block.says.wrong;
+    env.say(
+      env.hud?.compact && right && memory.earned > 0
+        ? `${line} +${memory.earned} points.`
+        : line,
+      {
+        mood: right ? "happy" : "doubt",
+        eyebrow: right ? "Right" : "Not this time",
+      },
+    );
     s.render();
     env.done();
   };
@@ -1571,7 +1579,10 @@ function world(block, env) {
       e.lid.rotation.z = e.open * 0.55;
       e.label.visible = e.pop > 0.02;
       const close = play ? clamp(d / LABEL_FULL, LABEL_MIN, 1) : 1;
-      e.label.scale.setScalar(Math.max(0.001, e.pop * close));
+      // and never covers more than about 40 % of the view's width, however close
+      e.label.scale.setScalar(
+        Math.max(0.001, Math.min(e.pop * close, env.fitWidth(e.label, LABEL_W))),
+      );
       const lx = spots[i].x + ox;
       const lz = spots[i].z + oz;
       e.label.rotation.y = Math.atan2(v.x - lx, v.z - lz);
@@ -1775,23 +1786,9 @@ function world(block, env) {
 }
 
 /* ---------- the story card: DOM, inside el only ---------- */
-// The card shrinks to a small pill once the visitor sets off: the stage's sheet loses its face,
-// line, dots and Skip while this kind's `.dw-slim` is in it. That is the one rule here that reaches
-// outside `[data-kind]`, through `:has()`; it lives in this card's own style element, so it goes
-// with the card.
+// On the compact HUD the stage keeps the card behind its "i" and shows the found-dots itself; this
+// card then holds only what the "more" button opens. On the card HUD the card keeps a small pill.
 const CSS = `
-.qs .sheet:has(.dw-slim) {
-  left: 50%; right: auto; width: auto; max-width: calc(100% - 24px); max-height: none; margin: 0;
-  transform: translateX(-50%); bottom: calc(12px + var(--kbd) + env(safe-area-inset-bottom));
-  padding: 0; border: 1px solid rgb(255 255 255 / 24%); border-radius: 26px;
-  background: rgb(10 14 18 / 52%); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
-}
-.qs .sheet:has(.dw-slim) > .grab,
-.qs .sheet:has(.dw-slim) .eyerow,
-.qs .sheet:has(.dw-slim) .who,
-.qs .sheet:has(.dw-slim) .dots,
-.qs .sheet:has(.dw-slim) .acts { display: none; }
-.qs .sheet:has(.dw-slim) .body { padding: 4px; overflow: visible; }
 [data-kind="${NAME}"] .dw-pill { display: flex; align-items: center; gap: 10px; min-height: 44px; }
 [data-kind="${NAME}"] .dw-pill.has-count { padding-left: 12px; }
 [data-kind="${NAME}"] .dw-count { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -2032,8 +2029,16 @@ function card(block, el, env) {
   el.append(host);
   const { options } = block;
   const n = options.length;
+  const compact = env.hud?.compact === true;
   let yesTimer = 0;
   let tickTune = () => {};
+  // Compact: the way out is behind the "i", so the guide says once that it is there.
+  const told = { search: false, choose: false };
+  const tell = (key, text) => {
+    if (told[key]) return;
+    told[key] = true;
+    env.say(text, { eyebrow: "A way out" });
+  };
 
   const intro = `${COUNT[n]} answers are hidden around this square, each by the thing it is about. Find them all, then stand in the ring of the one you think is right until it closes.`;
 
@@ -2152,6 +2157,12 @@ function card(block, el, env) {
         if (o.clue) b.append(make("small", "", o.clue));
         wrap.append(b);
       }
+      if (compact) {
+        // the question lies on the ground; here it is once more, for an answer chosen from the list
+        const q = make("p", "dw-note");
+        q.append(make("b", "", "The question: "), document.createTextNode(block.question));
+        host.append(q);
+      }
       host.append(wrap);
       if (s.listPick >= 0 && !s.countAt) {
         const yes = make("div", "dw-yes");
@@ -2167,12 +2178,15 @@ function card(block, el, env) {
         host.append(yes);
       }
     }
-    const row = make("div", "dw-row");
-    const back = make("button", "btn", "Back to the place");
-    back.type = "button";
-    back.dataset.act = "less";
-    row.append(back);
-    host.append(row);
+    if (!compact) {
+      // the compact HUD's sheet has its own close
+      const row = make("div", "dw-row");
+      const back = make("button", "btn", "Back to the place");
+      back.type = "button";
+      back.dataset.act = "less";
+      row.append(back);
+      host.append(row);
+    }
     const { box, tick } = tuneBlock(s);
     tickTune = tick;
     host.append(box, whyBlock());
@@ -2184,9 +2198,29 @@ function card(block, el, env) {
     host.replaceChildren();
     host.className = "dw";
     const phase = s.phase();
+    if (compact)
+      env.hud.dots(
+        phase === "search" && !s.skipped ? n : 0,
+        memory.found.map((i) => HUES[i]),
+      );
     if (phase === "done" && memory.revealed) {
       host.append(tiles());
       if (block.points > 0) host.append(pointsRow());
+      return;
+    }
+    if (compact) {
+      // Everything the "more" button would open, always, since it already sits behind the "i".
+      if (phase === "search" && memory.hinted && !s.skipped)
+        tell(
+          "search",
+          "Follow the arrow. If you cannot get there, the i button can show you the rest.",
+        );
+      if (phase === "choose" && s.help && !s.skipped)
+        tell(
+          "choose",
+          "Cannot walk to a ring? The i button lets you choose from here.",
+        );
+      if (phase !== "done") openView();
       return;
     }
     if (memory.open) {
@@ -2231,7 +2265,7 @@ function card(block, el, env) {
       s.render();
     } else if (act === "rest") {
       s.showRest();
-      openMore();
+      if (!compact) openMore();
     } else if (act === "yes") s.lockFromList(s.listPick);
     else if (act === "no") {
       s.listPick = -1;
@@ -2250,7 +2284,7 @@ function card(block, el, env) {
         mood: right ? "happy" : "doubt",
       });
     } else s.reveal();
-  } else if (memory.open) openMore();
+  } else if (memory.open && !compact) openMore();
   else
     env.say(memory.found.length ? block.question : intro, {
       eyebrow: "Find them, then stand in a ring",
