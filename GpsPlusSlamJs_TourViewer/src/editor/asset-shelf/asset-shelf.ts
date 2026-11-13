@@ -78,6 +78,14 @@ interface HeldOriginal {
   readonly load: () => Promise<Blob | undefined>;
 }
 
+/** A card removed from the shelf, as it was, with the original it held
+ *  and the document's last written tour when it was removed. */
+interface RemovedCard {
+  readonly entry: ShelfEntry;
+  readonly held?: HeldOriginal;
+  readonly writtenAt?: TourDocumentState["written"];
+}
+
 export interface AssetShelfDeps {
   readonly store: {
     dispatch(action: UnknownAction): unknown;
@@ -173,10 +181,11 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
   const running = new Map<string, AbortController>();
   /** The originals a smaller file replaced, while they are offered. */
   const originals = new Map<string, HeldOriginal>();
-  /** The cards removed from the shelf, as they were (no original): one
-   *  comes back when the document names its file again - the page's Undo
-   *  of a delete brings the items back through the document alone. */
-  const removed = new Map<string, ShelfEntry>();
+  /** The cards removed from the shelf, as they were, with the original
+   *  each held: one comes back when the document names its file again -
+   *  the page's Undo of a delete brings the items back through the
+   *  document alone - or by the removal's own undo. */
+  const removed = new Map<string, RemovedCard>();
   let seenDocument: TourDocumentState | null = null;
   let closed = false;
 
@@ -192,14 +201,24 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
   };
 
   /** Each original no longer offered - a save wrote the smaller file's
-   *  bytes, or the job left "optimized" - is let go: it may be large. One
-   *  whose entry left the shelf went with it (`remove`). */
+   *  bytes, or the job left "optimized" - is let go: it may be large. A
+   *  removed card's goes at the next landed save: nothing uses its file,
+   *  so no save writes it and the smaller file never "lands" for it. */
   function freeOriginals(): void {
-    if (closed || originals.size === 0) return;
-    for (const row of selectShelfRows(store.getState())) {
-      if (!originals.has(row.id) || row.canUseOriginal) continue;
-      originals.delete(row.id);
-      dispatch(act.originalFreed({ id: row.id }));
+    if (closed) return;
+    if (originals.size > 0) {
+      for (const row of selectShelfRows(store.getState())) {
+        if (!originals.has(row.id) || row.canUseOriginal) continue;
+        originals.delete(row.id);
+        dispatch(act.originalFreed({ id: row.id }));
+      }
+    }
+    const document = store.getState().tourDocument;
+    for (const [id, card] of removed) {
+      if (card.held === undefined || document.written === card.writtenAt) {
+        continue;
+      }
+      removed.set(id, { entry: { ...card.entry, originalHeld: false } });
     }
   }
   /** Each removed card whose file an item names again is back on the
@@ -209,10 +228,9 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
     const document = store.getState().tourDocument;
     if (document === seenDocument) return;
     seenDocument = document;
-    for (const [id, entry] of removed) {
+    for (const [id, card] of removed) {
       if (fileUseCount(fileUsesOf(document, id)) === 0) continue;
-      removed.delete(id);
-      dispatch(act.entryRestored({ entry: asPutBack(entry) }));
+      putBack(id, card);
     }
     pump();
   }
@@ -351,13 +369,20 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
     );
   }
 
-  /** A removed card as it comes back: a job it was waiting for or running
-   *  starts again; an original it offered is no longer held. */
-  function asPutBack(entry: ShelfEntry): ShelfEntry {
+  /** A removed card back on the shelf, with the original it still held: a
+   *  job it was waiting for or running starts again. */
+  function putBack(id: string, card: RemovedCard): void {
+    removed.delete(id);
+    if (card.held !== undefined) originals.set(id, card.held);
+    const { entry } = card;
     const waiting = entry.phase === "queued" || entry.phase === "running";
-    return waiting
-      ? { ...entry, phase: "queued", progress: 0, attempts: 0 }
-      : entry;
+    dispatch(
+      act.entryRestored({
+        entry: waiting
+          ? { ...entry, phase: "queued", progress: 0, attempts: 0 }
+          : entry,
+      }),
+    );
   }
 
   function stopJob(id: string): void {
@@ -473,27 +498,28 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
       const entry = entries()[id];
       if (closed || entry === undefined) return null;
       stopJob(id);
-      // The undo alone keeps it: an original may be large, and a removal
-      // nobody takes back must not hold it until the tour closes.
-      let held = originals.get(id);
+      // The removed card keeps its original while an undo could still
+      // offer it: an original may be large, so a delete nobody takes back
+      // holds it until the next landed save (`freeOriginals`), not until
+      // the tour closes.
+      const held = originals.get(id);
       originals.delete(id);
       dispatch(act.entryRemoved({ id }));
-      removed.set(id, { ...entry, originalHeld: false });
+      removed.set(
+        id,
+        held === undefined
+          ? { entry: { ...entry, originalHeld: false } }
+          : { entry, held, writtenAt: store.getState().tourDocument.written },
+      );
       seenDocument = null;
       putBackNamed();
       pump();
       return () => {
-        if (closed || entries()[id] !== undefined) return;
-        removed.delete(id);
-        if (held !== undefined) originals.set(id, held);
-        dispatch(
-          act.entryRestored({
-            entry: asPutBack(
-              held === undefined ? { ...entry, originalHeld: false } : entry,
-            ),
-          }),
-        );
-        held = undefined;
+        const card = removed.get(id);
+        if (closed || card === undefined || entries()[id] !== undefined) {
+          return;
+        }
+        putBack(id, card);
         pump();
       };
     },
@@ -516,6 +542,7 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
       unsubscribe();
       for (const id of [...running.keys()]) stopJob(id);
       originals.clear();
+      removed.clear();
       host.close();
     },
   };

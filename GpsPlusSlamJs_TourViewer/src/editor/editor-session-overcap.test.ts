@@ -224,4 +224,37 @@ describe("a file over the caps, until a smaller one replaces it", () => {
     );
     await session.close();
   });
+
+  // Why: a delete takes a file's uses out and its card off the shelf, but
+  // the draft keeps the file and its original until a save lands. So a
+  // reload after the delete and before a save must not lose an original
+  // an undo could still have brought back: the draft's file comes back on
+  // the shelf as made smaller, with that original still offered.
+  it("keeps the original of a deleted file through a reload before a save", async () => {
+    const session = await openedTour();
+    const { editor, fake, rows } = editorWithShelf(session);
+    const small = { ...VOICE_WAV, path: `content/${VOICE_ID}.opus` };
+    const original = new Blob(["RIFF", "y".repeat(900)]);
+    editor.restore({
+      // The voice's use was deleted: nothing names the file any more.
+      objects: [ESSAY],
+      deleted: [],
+      files: [
+        {
+          asset: small,
+          blob: new Blob(["OggS-small"]),
+          original: { asset: VOICE_WAV, blob: original },
+        },
+      ],
+    });
+    await settle();
+    expect(rows().find((r) => r.id === VOICE_ID)).toMatchObject({
+      status: "optimized",
+      originalBytes: original.size,
+      canUseOriginal: true,
+    });
+    expect(fake.calls).toHaveLength(0);
+    expect(await editor.shelf.useOriginal(VOICE_ID)).toBe(true);
+    await session.close();
+  });
 });
