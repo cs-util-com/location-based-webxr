@@ -19,6 +19,7 @@ import { GIZMO, gizmoLayout, type GizmoSubject } from "./gizmo-maths.js";
 const PICTURES = {
   dot: new THREE.Texture(),
   knob: new THREE.Texture(),
+  bend: new THREE.Texture(),
   move: new THREE.Texture(),
 };
 

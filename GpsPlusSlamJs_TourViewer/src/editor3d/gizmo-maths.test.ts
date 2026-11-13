@@ -16,7 +16,9 @@ import {
   GIZMO,
   KEY_STEPS,
   angleDiffDeg,
+  bentDeg,
   compassDeg,
+  draggedScale,
   draggedRadiusM,
   draggedSizeM,
   gizmoLayout,
@@ -52,6 +54,14 @@ const station = (radiusM: number, headingDeg = 0): GizmoSubject => ({
   headingDeg,
   extent: { kind: "reach", value: radiusM },
 });
+
+/** A ground arrow at scale `scale`, bent `bendDeg` (its row's ring). */
+const arrow = (scale: number, bendDeg = 0): GizmoSubject => ({
+  ...ITEM,
+  extent: { kind: "scale", value: scale, ring: { baseM: 0.3, perM: 0.075 } },
+  bendDeg,
+});
+const RING = { baseM: 0.3, perM: 0.075 };
 
 /** The dots' bounds, from the placement rows (one copy of them). */
 function boundsOf(spec: { min: number; max: number } | undefined) {
@@ -173,6 +183,101 @@ describe("the gizmo's layout", () => {
     const locked = gizmoLayout({ ...subject, locked: true }, 0.2);
     expect(locked.posable).toBe(false);
     expect(locked.dots).toHaveLength(4);
+  });
+});
+
+// Why: a ground arrow's ring is the prototype's (0.3 m + 0.075 m per unit
+// of its scale), not a model's 0.625 per metre, and its bend knob stands
+// behind its start, swung by the bend like a tiller: what the creator
+// grabs must be where the arrow's own maths says.
+describe("a ground arrow's gizmo", () => {
+  it("rings its scale linearly and puts the dots on that ring", () => {
+    const at6 = gizmoLayout(arrow(6), 1e-4);
+    expect(at6.ringM).toBeCloseTo(0.75, 9);
+    expect(
+      Math.hypot(at6.dots[0]!.x - CENTRE.x, at6.dots[0]!.z - CENTRE.z),
+    ).toBeCloseTo(0.75, 9);
+    expect(gizmoLayout(arrow(40), 1e-4).ringM).toBeCloseTo(3.3, 9);
+    // Far away the ring keeps its least on-screen size, as an item's.
+    expect(gizmoLayout(arrow(6), 1).ringM).toBe(GIZMO.itemRingPx);
+  });
+
+  it("puts the bend knob behind the start, swung clockwise by the bend", () => {
+    const straight = gizmoLayout(arrow(6), 1e-4);
+    const r =
+      straight.knob === null
+        ? NaN
+        : Math.hypot(straight.knob.x - CENTRE.x, straight.knob.z - CENTRE.z);
+    expect(straight.bendKnob).not.toBeNull();
+    const k = straight.bendKnob!;
+    expect(Math.hypot(k.x - CENTRE.x, k.z - CENTRE.z)).toBeCloseTo(r, 9);
+    expect(compassDeg(CENTRE, k)).toBeCloseTo(180, 6);
+    const bent = gizmoLayout({ ...arrow(6, 30), headingDeg: 90 }, 1e-4);
+    expect(compassDeg(CENTRE, bent.bendKnob!)).toBeCloseTo(-60, 6);
+    expect(gizmoLayout(ITEM, 1e-4).bendKnob).toBeNull();
+    expect(
+      gizmoLayout({ ...arrow(6), locked: true }, 1e-4).bendKnob,
+    ).toBeNull();
+  });
+
+  it("is the bend handle under the pointer, not on a locked placeable", () => {
+    const base = {
+      knob: null,
+      dots: [],
+      onDisc: true,
+      underPointer: null,
+    } as const;
+    expect(
+      handleAt({ ...base, pointer: { x: 3, y: 0 }, bendKnob: { x: 0, y: 0 } }),
+    ).toBe("bend");
+    expect(
+      handleAt({
+        ...base,
+        pointer: { x: 3, y: 0 },
+        bendKnob: { x: 0, y: 0 },
+        posable: false,
+      }),
+    ).toBeNull();
+  });
+
+  it("sets the scale from the dot's distance: whole units, tenths with Shift, 1 to 40", () => {
+    const B = { min: 1, max: 40 };
+    expect(draggedScale(0.75, false, RING, B)).toBe(6);
+    expect(draggedScale(0.8, false, RING, B)).toBe(7);
+    expect(draggedScale(0.8, true, RING, B)).toBe(6.7);
+    expect(draggedScale(0, false, RING, B)).toBe(1);
+    expect(draggedScale(99, false, RING, B)).toBe(40);
+  });
+
+  it("bends by the knob's sweep, whole degrees or 5 with Shift, within the bound", () => {
+    expect(bentDeg(0, 180, 210.4, false, 60)).toBe(30);
+    expect(bentDeg(10, 180, 172, true, 60)).toBe(0);
+    expect(bentDeg(50, 180, 230, false, 60)).toBe(60);
+    expect(bentDeg(-50, 180, 130, false, 60)).toBe(-60);
+  });
+
+  it("holds every dragged scale and bend in bounds, and finds a ring's own scale again", () => {
+    const B = { min: 1, max: 40 };
+    fc.assert(
+      fc.property(
+        fc.double({ min: 0, max: 1e4, noNaN: true }),
+        fc.boolean(),
+        fc.integer({ min: 1, max: 40 }),
+        fc.double({ min: -60, max: 60, noNaN: true }),
+        fc.double({ min: -720, max: 720, noNaN: true }),
+        fc.double({ min: -720, max: 720, noNaN: true }),
+        (d, fine, scale, b0, from, to) => {
+          const s = draggedScale(d, fine, RING, B);
+          expect(s).toBeGreaterThanOrEqual(1);
+          expect(s).toBeLessThanOrEqual(40);
+          const ring = gizmoLayout(arrow(scale), 1e-4).ringM ?? NaN;
+          expect(draggedScale(ring, fine, RING, B)).toBe(scale);
+          const b = bentDeg(b0, from, to, fine, 60);
+          expect(Math.abs(b)).toBeLessThanOrEqual(60);
+          expect(Number.isInteger(b)).toBe(true);
+        },
+      ),
+    );
   });
 });
 

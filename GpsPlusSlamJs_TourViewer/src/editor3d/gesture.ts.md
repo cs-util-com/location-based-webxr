@@ -87,3 +87,12 @@ and its radius drag. The property tests live with `place-edits.ts`.
 layout the editor drew before the placement rows (a frozen copy of it)
 at camera distances of 5, 50 and 300 m, except the knob and stalk of
 what does not turn; the dragged radius and size equal the frozen rules.
+
+## A ground arrow's handles
+
+- A dot on a `scale` extent sets it by `draggedScale` from the dot's
+  distance (not by the ratio a `size` uses).
+- `bend`: only on a target with `bendDeg`, never on a locked one; grabbed
+  on the level plane, it previews `bendDeg` and edits `{ kind: "bend" }` on
+  release (nothing when unchanged). The drawing itself redraws the bend on
+  release; while dragging, the knob shows it.

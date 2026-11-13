@@ -55,3 +55,9 @@ item draws over the disc takes the press, `handleAt`). The on-screen
 sizes in a browser: `playwright-tests/editor3d-edit.spec.js`.
 
 A locked station's drawing is checked in `editor3d-edit.spec.js` (no knob and no middle on the screen, the dots shown).
+
+## Bend knob
+
+`parts.bend`: a sprite with the `bend` picture (a bow with a head at each
+end), drawn at `layout.bendKnob` like the turn knob, larger when hovered
+or held (`bend`). `GizmoPictures` carries the `bend` texture.

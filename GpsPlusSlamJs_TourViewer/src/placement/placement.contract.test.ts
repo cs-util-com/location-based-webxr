@@ -81,7 +81,7 @@ const EXPECTED: readonly (readonly [
   ["shortText", "pin", true, false, null],
   ["shortText", "sign", true, true, null],
   ["shortText", "edgeHint", true, false, null],
-  ["shortText", "ground", true, true, null],
+  ["shortText", "ground", true, true, "readAtM"],
   ["shortText", "card", false, false, null],
   ["longText", "lectern", true, true, null],
   ["longText", "reading", true, false, null],
@@ -201,6 +201,41 @@ describe("the placement rows against the format", () => {
       lifts: false,
       extent: { kind: "reach", field: "foundRadiusM", min: 2, max: 300 },
     });
+  });
+});
+
+// Why: a ground arrow's letters, length and width all follow one scale
+// along their own curves, so its dots set that scale and its ring grows
+// linearly with it (the drawing does not double at twice the value, which
+// is why this is no `size`); its bend has a knob of its own.
+describe("a ground arrow's handles", () => {
+  it("give its dots its one scale, within the format's bounds, and a linear ring", () => {
+    expect(BLOCK_PLACEMENT.shortText.ground).toMatchObject({
+      bends: true,
+      extent: {
+        kind: "scale",
+        field: "readAtM",
+        min: 1,
+        max: 40,
+        ring: { baseM: 0.3, perM: 0.075 },
+      },
+    });
+    expect(BLOCK_PLACEMENT.shortText.sign).not.toHaveProperty("bends");
+  });
+
+  it("read its scale and its bend (0 where none is written) from the block", () => {
+    const ground = (extra: object) => ({
+      ...blockOf("shortText", "ground", 0),
+      ...extra,
+    });
+    const [set] = posedBlocks(stationOf([ground({ readAtM: 6, bendDeg: 20 })]));
+    expect(set?.extent).toMatchObject({ kind: "scale", value: 6 });
+    expect(set?.bendDeg).toBe(20);
+    const [bare] = posedBlocks(stationOf([ground({})]));
+    expect(bare?.extent).toBeNull();
+    expect(bare?.bendDeg).toBe(0);
+    const [sign] = posedBlocks(stationOf([blockOf("shortText", "sign", 0)]));
+    expect(sign?.bendDeg).toBeUndefined();
   });
 });
 

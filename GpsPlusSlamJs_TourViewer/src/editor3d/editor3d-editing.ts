@@ -369,6 +369,9 @@ export function createSceneEditing(deps: SceneEditingDeps) {
       now = {
         geo: preview.now.geo,
         value: preview.now.value ?? now.value,
+        ...(preview.now.bendDeg === undefined
+          ? {}
+          : { bendDeg: preview.now.bendDeg }),
       };
       centre = centreOf(ref, now.geo);
     }
@@ -402,6 +405,9 @@ export function createSceneEditing(deps: SceneEditingDeps) {
         pointer,
         knob: gizmo.parts.knob.visible
           ? screenOf(gizmo.parts.knob.position)
+          : null,
+        bendKnob: gizmo.parts.bend.visible
+          ? screenOf(gizmo.parts.bend.position)
           : null,
         dots: gizmo.parts.dots
           .filter((d) => d.visible)

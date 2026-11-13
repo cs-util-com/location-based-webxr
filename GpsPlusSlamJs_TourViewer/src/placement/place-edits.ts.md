@@ -57,3 +57,10 @@ a gesture (an item's move and turn; a station's move, turn and radius;
 reach 1, 20 and 200 m against a 25 m found radius; ground amplitude 0 and
 50 m) written through the real session and undone restores the saved
 manifest exactly.
+
+## Bend
+
+`{ kind: "bend", ref, deg }` (a ground arrow's knob) goes through
+`editBlockField(id, "bendDeg", String(deg))`, so the knob is checked by
+the same rule as a typed bend (whole range +-60 degrees) and is one undo
+step with the same wording.

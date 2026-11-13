@@ -6,7 +6,8 @@
  *
  * The gizmo (the design's): a ring with four white dots (a station's found
  * radius, a model's size: a placeable's extent), a turn knob on a stalk
- * along the heading (only on what turns), and a move arrow lying on the
+ * along the heading (only on what turns), a bend knob behind the start
+ * (only on what bends: a ground arrow), and a move arrow lying on the
  * ground in the middle. Its sizes are screen
  * pixels, turned into metres by the metres a pixel covers at the
  * selection (`metresPerPx`), so a handle stays grabbable at any zoom.
@@ -101,11 +102,19 @@ export interface GizmoSubject {
   /** Its dots and their value; null: none. A reach (a station's found
    *  radius, m) has no ring of its own - the tour draws its circle - and
    *  a move disc in the middle; a size (m) sets the ring round it; a
-   *  factor keeps an item's ring. */
-  readonly extent: {
-    readonly kind: "size" | "reach" | "factor";
-    readonly value: number;
-  } | null;
+   *  factor keeps an item's ring; a scale's ring is its `ring`, linear in
+   *  it. */
+  readonly extent:
+    | { readonly kind: "size" | "reach" | "factor"; readonly value: number }
+    | {
+        readonly kind: "scale";
+        readonly value: number;
+        readonly ring: { readonly baseM: number; readonly perM: number };
+      }
+    | null;
+  /** Its bend (degrees, clockwise) for what bends: a knob behind its
+   *  start; absent: none. */
+  readonly bendDeg?: number;
   /** Its pose is locked: only its dots are handles. */
   readonly locked: boolean;
 }
@@ -126,6 +135,10 @@ export interface GizmoLayout {
   readonly dots: readonly GroundSpot[];
   /** The turn knob; null for what does not turn. */
   readonly knob: GroundSpot | null;
+  /** The bend knob, as far out as the turn knob, behind the start and
+   *  swung clockwise by the bend (a tiller); null for what does not bend
+   *  and a locked placeable. */
+  readonly bendKnob: GroundSpot | null;
   /** The stalk from the ring to the knob; null with the knob. */
   readonly bar: {
     readonly fromM: number;
@@ -180,7 +193,9 @@ export function gizmoLayout(
     : Math.max(
         extent?.kind === "size"
           ? GIZMO.modelRingPerSizeM * extent.value
-          : GIZMO.itemRingMinM,
+          : extent?.kind === "scale"
+            ? extent.ring.baseM + extent.ring.perM * extent.value
+            : GIZMO.itemRingMinM,
         GIZMO.itemRingPx * metresPerPx,
       );
   const moveM = reaches
@@ -202,6 +217,10 @@ export function gizmoLayout(
     moveM,
     dots,
     knob: subject.turns ? along(subject.centre, heading, knobM) : null,
+    bendKnob:
+      subject.bendDeg === undefined || subject.locked
+        ? null
+        : along(subject.centre, heading + 180 + subject.bendDeg, knobM),
     bar: subject.turns
       ? {
           fromM: radius,
@@ -213,8 +232,8 @@ export function gizmoLayout(
 }
 
 /** A part of the gizmo a pointer can take: the middle (move), the knob
- *  (turn) or a dot (a placeable's extent). */
-export type GizmoHandle = "move" | "turn" | "dot";
+ *  (turn), a dot (a placeable's extent) or the bend knob (bend). */
+export type GizmoHandle = "move" | "turn" | "dot" | "bend";
 
 /**
  * The handle under the pointer, by the design's order: the knob and the
@@ -232,6 +251,8 @@ export function handleAt(input: {
   /** The knob's and the dots' centres on the screen (null: not shown). */
   readonly knob: ScreenPoint | null;
   readonly dots: readonly ScreenPoint[];
+  /** The bend knob's centre on the screen (null or absent: not shown). */
+  readonly bendKnob?: ScreenPoint | null;
   /** The pointer's ray meets the move disc. */
   readonly onDisc: boolean;
   /** What object the pointer is over: the selected one, another, none. */
@@ -251,7 +272,10 @@ export function handleAt(input: {
     const d = Math.hypot(at.x - pointer.x, at.y - pointer.y);
     if (d <= sizePx / 2 && (best === null || d < best.d)) best = { handle, d };
   };
-  if (posable) consider(input.knob, GIZMO.knobPx, "turn");
+  if (posable) {
+    consider(input.knob, GIZMO.knobPx, "turn");
+    consider(input.bendKnob ?? null, GIZMO.knobPx, "bend");
+  }
   for (const dot of input.dots) consider(dot, GIZMO.dotPx, "dot");
   const found = best as { handle: GizmoHandle; d: number } | null;
   if (found !== null) return found.handle;
@@ -287,6 +311,38 @@ export function draggedRadiusM(
     ? Math.round(distanceM * 10) / 10
     : Math.round(distanceM * 2) / 2;
   return Math.min(bounds.max, Math.max(bounds.min, r));
+}
+
+/** A scale (a ground arrow's) from a dot dragged `distanceM` from its
+ *  centre, on its linear `ring`: whole units, tenths with `fine`
+ *  (Shift), within `bounds` (its row's). */
+export function draggedScale(
+  distanceM: number,
+  fine: boolean,
+  ring: { readonly baseM: number; readonly perM: number },
+  bounds: DotBounds,
+): number {
+  const s = (distanceM - ring.baseM) / ring.perM;
+  const stepped = fine ? Math.round(s * 10) / 10 : Math.round(s);
+  return Math.min(bounds.max, Math.max(bounds.min, stepped));
+}
+
+/**
+ * The bend after its knob swept from bearing `fromDeg` to `toDeg` (seen
+ * from the start), starting at `bendDeg`: the knob follows the pointer,
+ * so the bend grows by the sweep; whole degrees, or 5-degree steps with
+ * `snap` (Shift); within +-`maxDeg`.
+ */
+export function bentDeg(
+  bendDeg: number,
+  fromDeg: number,
+  toDeg: number,
+  snap: boolean,
+  maxDeg: number,
+): number {
+  const b = bendDeg + angleDiffDeg(fromDeg, toDeg);
+  const stepped = snap ? Math.round(b / 5) * 5 : Math.round(b);
+  return Math.min(maxDeg, Math.max(-maxDeg, stepped)) + 0;
 }
 
 /** `m` rounded to three significant digits. */

@@ -5,6 +5,7 @@
  * Four facts per row: whether the drawing reads the pose (`posed`),
  * whether turning it shows (`turns`), whether its height is its own
  * (`lifts`), and what its size dots change (`extent`, none: no dots).
+ * A row that bends (a ground arrow) also has a bend knob (`bends`).
  *
  * The block table `satisfies` the format's list of views
  * (`TOUR_KINDS[kind].views`), so a view joining the format is a compile
@@ -27,9 +28,22 @@ import {
   TOUR_FOLDER_MAX_SCALE,
   TOUR_FOLDER_MIN_SCALE,
 } from "gps-plus-slam-app-framework/ar/tour-story";
+import {
+  TOUR_SHORT_TEXT_MAX_READ_AT_M,
+  TOUR_SHORT_TEXT_MIN_READ_AT_M,
+} from "gps-plus-slam-app-framework/ar/tour-short-text";
+
+import { GROUND } from "../kinds/short-text/ground-route.js";
+
+/** A ring that grows linearly with a scale: `baseM` plus `perM` per
+ *  unit of it. */
+export interface LinearRing {
+  readonly baseM: number;
+  readonly perM: number;
+}
 
 /**
- * What a placeable's dots change. Three meanings, kept apart:
+ * What a placeable's dots change. Four meanings, kept apart:
  * - `size`: a real size of the drawing, which scales uniformly with it
  *   (a model's largest side, a picture's width); a dot drag scales it by
  *   the dot's distance against where it was grabbed.
@@ -37,11 +51,19 @@ import {
  *   (a station's found radius); a dot drag sets it to the dot's distance.
  * - `factor`: a uniform factor on a whole frame (a plain folder): its
  *   children's positions and drawings scale about its origin.
+ * - `scale`: the one scale a drawing's parts follow along their own
+ *   curves (a ground arrow's letters, length and width), so the drawing
+ *   does not double at twice it; its ring is `ring`, linear in it, and a
+ *   dot drag sets it from the dot's distance on that ring.
  * `min` and `max` bound the value, inclusive (metres for `size` and
- * `reach`, a ratio for `factor`).
+ * `reach`, a ratio for `factor`, the scale's own unit for `scale`).
  */
-export interface ExtentSpec {
-  readonly kind: "size" | "reach" | "factor";
+export type ExtentSpec =
+  | (ExtentCommon & { readonly kind: "size" | "reach" | "factor" })
+  | (ExtentCommon & { readonly kind: "scale"; readonly ring: LinearRing });
+
+/** What every kind of dots says. */
+interface ExtentCommon {
   /** The field of the placed thing that holds the value. */
   readonly field: string;
   /** Its name in the inspector. */
@@ -50,6 +72,14 @@ export interface ExtentSpec {
   readonly meaning: string;
   readonly min: number;
   readonly max: number;
+}
+
+/** Whether `spec` is dots that write a number on the block itself (a
+ *  size or a scale), as the session's `setExtent` and the document's
+ *  `blockNumberSet` take them; a reach and a factor are written by
+ *  their own holders' calls. */
+export function writesBlockNumber(spec: ExtentSpec | undefined): boolean {
+  return spec?.kind === "size" || spec?.kind === "scale";
 }
 
 /** What one view of a kind (or a folder, or a station) says about
@@ -67,6 +97,9 @@ export interface ViewPlacement {
   readonly lifts: boolean;
   /** What its dots change; absent: no dots. */
   readonly extent?: ExtentSpec;
+  /** It bends (a ground arrow): a knob behind its start sets its
+   *  `bendDeg`; absent: no such knob. */
+  readonly bends?: true;
 }
 
 /** A view the world never shows: its block is no placeable. */
@@ -99,7 +132,19 @@ export const BLOCK_PLACEMENT = {
     pin: FACING,
     sign: TURNING,
     edgeHint: FACING,
-    ground: TURNING,
+    ground: {
+      ...TURNING,
+      bends: true,
+      extent: {
+        kind: "scale",
+        field: "readAtM",
+        label: "Reading distance",
+        meaning: "The one scale its letters, length and width follow",
+        min: TOUR_SHORT_TEXT_MIN_READ_AT_M,
+        max: TOUR_SHORT_TEXT_MAX_READ_AT_M,
+        ring: { baseM: GROUND.ringA, perM: GROUND.ringB },
+      },
+    },
     card: POSELESS,
   },
   // The stand keeps its turn about up (`uprightTurn`); the sign's plate

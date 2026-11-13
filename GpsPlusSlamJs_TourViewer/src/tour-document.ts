@@ -113,7 +113,10 @@ import {
   type TourCode,
 } from "./code-book.js";
 import { newObjectId } from "./content-placement.js";
-import { blockPlacement } from "./placement/placement-rows.js";
+import {
+  blockPlacement,
+  writesBlockNumber,
+} from "./placement/placement-rows.js";
 import { finishedManifest, pendingAfterRebuild } from "./finish-rebuild.js";
 import { stationHolding, type StationPoint } from "./station-assign.js";
 import {
@@ -4642,7 +4645,7 @@ function folderDelete(
 }
 
 /** A block's size set (`blockNumberSet`): the field its placement row's
- *  `size` extent names, within the row's bounds. */
+ *  `size` or `scale` extent names, within the row's bounds. */
 function numberSet(
   before: TourDocumentState,
   payload: { id: string; field: string; value: number; what: string },
@@ -4657,7 +4660,8 @@ function numberSet(
       : blockPlacement(object.kind, object.view)?.extent;
   if (
     object === undefined ||
-    spec?.kind !== "size" ||
+    spec === undefined ||
+    !writesBlockNumber(spec) ||
     spec.field !== field ||
     !(value >= spec.min && value <= spec.max) ||
     (object as unknown as Record<string, unknown>)[field] === value
@@ -5128,9 +5132,10 @@ const tourDocumentSlice = createSlice({
     ) {
       return itemsGround(plain(state), action.payload);
     },
-    /** A block's size set - the field its placement row's `size` extent
-     *  names (a model's largest side, 0.05 m to 500 m; a picture's width,
-     *  0.05 m to 50 m): one step. Not for another field, a block whose row
+    /** A block's size set - the field its placement row's `size` or
+     *  `scale` extent names (a model's largest side, 0.05 m to 500 m; a
+     *  picture's width, 0.05 m to 50 m; a ground arrow's scale, 1 to 40):
+     *  one step. Not for another field, a block whose row
      *  has no size, an unknown id, or a value out of the row's bounds. */
     blockNumberSet(
       state,

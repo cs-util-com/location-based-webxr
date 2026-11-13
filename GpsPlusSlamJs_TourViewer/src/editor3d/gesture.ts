@@ -33,12 +33,15 @@
  * @see gesture.ts.md
  */
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
+import { TOUR_GROUND_MAX_BEND_DEG } from "gps-plus-slam-app-framework/ar/tour-short-text";
 
 import type { PlaceEdit } from "../placement/place-edits.js";
 import type { Placeable } from "../placement/placeables.js";
 import {
+  bentDeg,
   compassDeg,
   draggedRadiusM,
+  draggedScale,
   draggedSizeM,
   turnedHeadingDeg,
   type GizmoHandle,
@@ -81,7 +84,7 @@ export interface GestureWorld {
  *  ground under it in the world (the gizmo's centre). */
 export type GestureTarget = Pick<
   Placeable,
-  "ref" | "geo" | "turns" | "lifts" | "extent" | "locked"
+  "ref" | "geo" | "turns" | "lifts" | "extent" | "locked" | "bendDeg"
 > & { readonly centre: WorldPoint };
 
 /** What the scene shows while a gesture runs. */
@@ -89,6 +92,8 @@ export interface GesturePreview {
   readonly geo: QrGeoPose;
   /** The dots' value; null for a placeable without dots. */
   readonly value: number | null;
+  /** The bend, for what bends; absent otherwise. */
+  readonly bendDeg?: number;
 }
 
 export interface Gesture {
@@ -131,6 +136,7 @@ export function gestureTargetOf(
     turns: p.turns,
     lifts: p.lifts,
     extent: p.extent,
+    ...(p.bendDeg === undefined ? {} : { bendDeg: p.bendDeg }),
     locked: p.locked,
     centre,
   };
@@ -151,7 +157,12 @@ export function gizmoSubjectOf(
     extent:
       extent === null || now.value === null
         ? null
-        : { kind: extent.kind, value: now.value },
+        : extent.kind === "scale"
+          ? { kind: "scale", value: now.value, ring: extent.ring }
+          : { kind: extent.kind, value: now.value },
+    ...(target.bendDeg === undefined
+      ? {}
+      : { bendDeg: now.bendDeg ?? target.bendDeg }),
     locked: target.locked,
   };
 }
@@ -163,7 +174,11 @@ export function poseLocked(target: GestureTarget): boolean {
 
 /** What `target` shows before any gesture moved it. */
 function restingPreview(target: GestureTarget): GesturePreview {
-  return { geo: target.geo, value: target.extent?.value ?? null };
+  return {
+    geo: target.geo,
+    value: target.extent?.value ?? null,
+    ...(target.bendDeg === undefined ? {} : { bendDeg: target.bendDeg }),
+  };
 }
 
 /** The ground under the pointer, else the level plane at `y`. */
@@ -192,10 +207,11 @@ export function startGesture(
   const { extent } = target;
   if (handle === "dot" && extent === null) return null;
   if (handle === "turn" && !target.turns) return null;
+  if (handle === "bend" && target.bendDeg === undefined) return null;
   if (handle !== "dot" && poseLocked(target)) return null;
   const centre = target.centre;
   const grab =
-    handle === "turn"
+    handle === "turn" || handle === "bend"
       ? world.planeUnder(pressedAt, centre.y)
       : grabPoint(world, pressedAt, centre.y);
   if (grab === null) return null;
@@ -249,6 +265,21 @@ export function startGesture(
       now = { ...now, geo: turnedGeo(target.geo, heading - headingStart) };
       return true;
     }
+    if (handle === "bend") {
+      const p = world.planeUnder(pointer, centre.y);
+      if (p === null) return true;
+      now = {
+        ...now,
+        bendDeg: bentDeg(
+          target.bendDeg ?? 0,
+          bearingStart,
+          compassDeg(centre, p),
+          fine,
+          TOUR_GROUND_MAX_BEND_DEG,
+        ),
+      };
+      return true;
+    }
     const p = grabPoint(world, pointer, centre.y);
     if (p === null || extent === null) return true;
     const d = Math.hypot(p.x - centre.x, p.z - centre.z);
@@ -257,7 +288,9 @@ export function startGesture(
       value:
         extent.kind === "reach"
           ? draggedRadiusM(d, fine, extent)
-          : draggedSizeM(extent.value, dotStart, d, extent),
+          : extent.kind === "scale"
+            ? draggedScale(d, fine, extent.ring, extent)
+            : draggedSizeM(extent.value, dotStart, d, extent),
     };
     return true;
   };
@@ -275,6 +308,12 @@ export function startGesture(
     waiting: () => pending !== null,
     preview: () => now,
     edit() {
+      if (handle === "bend") {
+        const deg = now.bendDeg;
+        return deg === undefined || deg === start.bendDeg
+          ? null
+          : { kind: "bend", ref: target.ref, deg };
+      }
       if (handle === "dot") {
         const value = now.value;
         return value === null || value === start.value

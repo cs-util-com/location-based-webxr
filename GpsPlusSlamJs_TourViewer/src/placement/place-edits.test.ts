@@ -35,6 +35,11 @@ function fakeSession(refuse = false) {
         : { kind: "resized" as const },
     ),
     moveFolder: vi.fn(() => outcome),
+    editBlockField: vi.fn(() =>
+      refuse
+        ? { kind: "refused" as const, reason: "No." }
+        : { kind: "edited" as const },
+    ),
     scaleFolder: vi.fn(() =>
       refuse
         ? { kind: "refused" as const, reason: "No." }
@@ -52,6 +57,7 @@ const asSession = (s: ReturnType<typeof fakeSession>) =>
     | "setExtent"
     | "moveFolder"
     | "scaleFolder"
+    | "editBlockField"
   >;
 
 describe("a placement edit", () => {
@@ -71,6 +77,8 @@ describe("a placement edit", () => {
     expect(s.moveFolder).toHaveBeenCalledWith("f", GEO);
     applyPlaceEdit(asSession(s), { kind: "extent", ref: FOLDER, value: 3 });
     expect(s.scaleFolder).toHaveBeenCalledWith("f", 3);
+    applyPlaceEdit(asSession(s), { kind: "bend", ref: BLOCK, deg: -25 });
+    expect(s.editBlockField).toHaveBeenCalledWith("p", "bendDeg", "-25");
     for (const call of [
       s.pose,
       s.moveStation,
@@ -78,6 +86,7 @@ describe("a placement edit", () => {
       s.setExtent,
       s.moveFolder,
       s.scaleFolder,
+      s.editBlockField,
     ]) {
       expect(call).toHaveBeenCalledTimes(1);
     }
@@ -102,6 +111,7 @@ describe("a placement edit", () => {
       { kind: "extent", ref: MODEL, value: 2 },
       { kind: "pose", ref: FOLDER, geo: GEO },
       { kind: "extent", ref: FOLDER, value: 3 },
+      { kind: "bend", ref: BLOCK, deg: 10 },
     ];
     for (const edit of edits) {
       expect(applyPlaceEdit(asSession(s), edit)).toEqual({

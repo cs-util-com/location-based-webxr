@@ -60,10 +60,16 @@ export type ShellLayer = "codes" | "names" | "walk" | "depth" | "buildings";
 const TREE_SECTIONS: readonly string[] = ["stations", "codes", "layers"];
 const SHELL_DOCKS: readonly string[] = ["tree", "inspector"];
 /** What a 3D gesture holds: the middle (a move), the turn knob, a dot (a
- *  station's radius or a model's size), or a held key (a nudge, a turn, a
+ *  station's radius or a model's size), the bend knob, or a held key (a nudge, a turn, a
  *  lift). */
-type GestureHandle = "move" | "turn" | "dot" | "key";
-const GESTURE_HANDLES: readonly string[] = ["move", "turn", "dot", "key"];
+type GestureHandle = "move" | "turn" | "dot" | "bend" | "key";
+const GESTURE_HANDLES: readonly string[] = [
+  "move",
+  "turn",
+  "dot",
+  "bend",
+  "key",
+];
 
 /** A gesture of the 3D view in flight: on what, and with which handle. */
 interface EditorGesture {
