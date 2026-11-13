@@ -10,7 +10,8 @@ The r509 review found the far-travel warning failing twice over, independently:
 
 - **It was outside the DOM overlay.** `initAR` passes its container to WebXR as
   `domOverlay.root`, and the browser composites **only that subtree** over the
-  camera feed. The demo's status line lives in the header, outside `#ar-root`,
+  camera feed. The demo's status line lives outside `#ar-root` (today behind the command
+  bar's info button),
   so a message written there is invisible for exactly as long as it is relevant.
 - **It was erased before it could be painted.** `nonFatalError` sets
   `loading.phase = "error"`, and the warning was emitted in the same synchronous

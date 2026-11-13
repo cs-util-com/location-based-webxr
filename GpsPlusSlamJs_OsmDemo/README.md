@@ -15,7 +15,7 @@ pnpm test               # typecheck + unit + e2e
 pnpm run test:e2e:headed  # watch the e2e suite drive it
 ```
 
-It opens on **Manhattan at the Central Park edge**, and the header's `location`
+It opens on **Manhattan at the Central Park edge**, and the command bar's `location`
 dropdown offers fourteen places worth looking at (`src/picker-places.ts`).
 
 **`?site=<id>` reaches more than the dropdown lists, and that is deliberate.** It
@@ -46,7 +46,7 @@ real place_. Four questions need eyes:
    multiplicative and deliberately unbounded, so a cell overlapped by five mapped
    features outscores the identical surface with one. The colour ramp is
    **logarithmic above the threshold** — equal ratios, equal colour steps — which
-   is the honest presentation of a product; the scale is printed in the header so
+   is the honest presentation of a product; the scale is printed in the legend so
    the picture can be checked against the arithmetic.
 3. **Do regions land in the right places?** The arithmetic is verified; the
    geography is not.

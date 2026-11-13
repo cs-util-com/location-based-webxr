@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Populates the header's location `<select>` from `PICKER_PLACES` and reports the
+Populates the command bar's location `<select>` from `PICKER_PLACES` and reports the
 chosen place's position, so the demo can be moved to any of fourteen famous
 places without editing a URL.
 

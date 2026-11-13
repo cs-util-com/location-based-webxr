@@ -320,9 +320,8 @@ export class LocateControl {
    * - `title` and `aria-label` carry the wording — the only place the four states
    *   are actually spelled out, and the only channel available to a screen reader.
    *   A `title` alone would be invisible on touch, which is why it is not alone.
-   * - The status line gets the failures, via the caller's `onError`. Because a
-   *   collapsed header hides the status line, DEC-R2-15 makes an error expand it,
-   *   so a message can never be written into something invisible.
+   * - The failures go to the caller's `onError`, which toasts them, so a
+   *   message can never be written into something invisible.
    */
   private setState(state: LocateState): void {
     this.state = state;
