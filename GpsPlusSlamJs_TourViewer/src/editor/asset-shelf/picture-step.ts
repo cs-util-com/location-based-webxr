@@ -39,7 +39,7 @@ export interface PictureFormat {
  *  `texture` (a 3D model's) as three.js reads one - no colour profile
  *  applied and its alpha not premultiplied, so the numbers a shader reads
  *  stay what the file holds. */
-export type PicturePurpose = "photo" | "texture";
+type PicturePurpose = "photo" | "texture";
 
 /** The browser's part: decode, then resize and encode. */
 export interface PictureDevice<P extends DecodedPicture = DecodedPicture> {
@@ -130,7 +130,10 @@ function decodeOptions(purpose: PicturePurpose): ImageBitmapOptions {
  *  resized with high quality) and an `OffscreenCanvas`, both available in
  *  a Worker. Not unit-tested (it needs a browser); the e2e runs it. */
 export const PICTURE_DEVICE: PictureDevice<
-  DecodedPicture & { readonly bitmap: ImageBitmap }
+  DecodedPicture & {
+    readonly bitmap: ImageBitmap;
+    readonly purpose: PicturePurpose;
+  }
 > = {
   async decode(source, purpose = "photo") {
     const bitmap = await createImageBitmap(source, decodeOptions(purpose));
@@ -139,9 +142,10 @@ export const PICTURE_DEVICE: PictureDevice<
       height: bitmap.height,
       close: () => bitmap.close(),
       bitmap,
+      purpose,
     };
   },
-  async encode({ bitmap }, width, height, { type, quality }) {
+  async encode({ bitmap, purpose }, width, height, { type, quality }) {
     const resized =
       width === bitmap.width && height === bitmap.height
         ? null
@@ -149,7 +153,12 @@ export const PICTURE_DEVICE: PictureDevice<
             resizeWidth: width,
             resizeHeight: height,
             resizeQuality: "high",
-            premultiplyAlpha: "none",
+            // A texture keeps its straight alpha through the resize. Only
+            // for a texture: on a photo this option made Chromium's resize
+            // visibly worse (lower similarity, larger files).
+            ...(purpose === "texture"
+              ? { premultiplyAlpha: "none" as const }
+              : {}),
           });
     try {
       const canvas = new OffscreenCanvas(width, height);

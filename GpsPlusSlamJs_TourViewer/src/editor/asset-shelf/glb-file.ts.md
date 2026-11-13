@@ -13,7 +13,7 @@
 - `appendView(parts, bytes, fields?)`: adds a buffer view (with `byteStride`, `target` and the like); its index.
 - `writeGlb(parts)`: a `.glb` of one JSON chunk (padded with spaces) and, when any view is still named, one binary chunk (padded with zeros), each view starting on a 4-byte boundary. Views no accessor, sparse part or image names are left out and the rest renumbered in their order; `buffers[0].byteLength` is rewritten. `parts` is changed.
 - `readAccessor(parts, index): AccessorData | null`: `{ size, count, values }`, strided and normalized data turned into values (normalized -32768 clamped to -1, as glTF says). Null for no such accessor, a sparse one, a matrix type, an unknown component type, no buffer view, or elements past the end of the view.
-- `listOf`, `objectOf`, `indexOf`: the defensive field readers the passes share. `COMPONENT_BYTES`, `TYPE_SIZE`: glTF's sizes.
+- `listOf`, `objectOf`, `indexOf`: the defensive field readers the passes share.
 
 ## Invariants
 

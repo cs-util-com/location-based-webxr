@@ -274,7 +274,7 @@ export function writeGlb(parts: GlbParts): Uint8Array<ArrayBuffer> {
 }
 
 /** Bytes of one component, by glTF component type. */
-export const COMPONENT_BYTES: Readonly<Record<number, number>> = {
+const COMPONENT_BYTES: Readonly<Record<number, number>> = {
   5120: 1,
   5121: 1,
   5122: 2,
@@ -284,7 +284,7 @@ export const COMPONENT_BYTES: Readonly<Record<number, number>> = {
 };
 
 /** Components per element, for the types an optimizer reads. */
-export const TYPE_SIZE: Readonly<Record<string, number>> = {
+const TYPE_SIZE: Readonly<Record<string, number>> = {
   SCALAR: 1,
   VEC2: 2,
   VEC3: 3,

@@ -6,11 +6,11 @@
 
 - `GIF_KEPT`: the words a GIF is kept with (a canvas keeps only an animation's first frame).
 - `DecodedPicture`: `{ width, height, close() }`.
-- `PictureFormat`: `{ type: "image/webp" | "image/jpeg" | "image/png", quality }`; `PicturePurpose`: `"photo"` (the default) or `"texture"`.
+- `PictureFormat`: `{ type: "image/webp" | "image/jpeg" | "image/png", quality }`; a decode's purpose is `"photo"` (the default) or `"texture"`.
 - `PictureDevice<P>`: `decode(blob, purpose?)` and `encode(picture, width, height, format)`; injected so the step's rules are unit-tested. The model step (`model-textures.ts`) uses the same device for a model's textures, as JPEG or PNG.
 - `fitWithin(width, height, maxSide)`: the size that fits `maxSide` with the proportions kept; never larger than the picture, no side under 1. Throws for sizes that are no positive whole numbers.
 - `optimizePicture(payload, settings, control, device)`: `{ type: "done", blob, extension: "webp", width, height }` or `{ type: "kept", reason: GIF_KEPT }`.
-- `PICTURE_DEVICE`: the browser's: `createImageBitmap` with `imageOrientation: "from-image"` (a phone photo stands the way it was taken), a resize with `resizeQuality: "high"` and `premultiplyAlpha: "none"`, `OffscreenCanvas.convertToBlob` in the asked format and quality. A `"texture"` is decoded with `colorSpaceConversion: "none"` and `premultiplyAlpha: "none"`, as three.js decodes it, so a normal map's or roughness map's values are not changed by a colour profile or by alpha.
+- `PICTURE_DEVICE`: the browser's: `createImageBitmap` with `imageOrientation: "from-image"` (a phone photo stands the way it was taken), a resize with `resizeQuality: "high"` (and `premultiplyAlpha: "none"` for a texture only: on a photo that option made the resize worse, measured by the picture e2e), `OffscreenCanvas.convertToBlob` in the asked format and quality. A `"texture"` is decoded with `colorSpaceConversion: "none"` and `premultiplyAlpha: "none"`, as three.js decodes it, so a normal map's or roughness map's values are not changed by a colour profile or by alpha.
 
 ## Invariants
 
