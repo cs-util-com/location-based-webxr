@@ -45,9 +45,18 @@
  * the tour has it. `pick` says what a ray meets first: a station by its
  * billboard, an item by its drawing, a code by its square.
  *
+ * The open story (`StationsLayerView.openStory`: the story chosen in the
+ * tree, or one of its entries) also has its posed entries drawn in their
+ * views' look where they stand (`storyEntries`), apart from its
+ * station's free items so opening and closing it draws nothing else anew;
+ * closed, they are freed. They pick as their ids and take no drag.
+ *
  * @see editor3d-stations.ts.md
  */
-import { tourStationBlocks } from "gps-plus-slam-app-framework/ar/tour-story";
+import {
+  tourStationBlocks,
+  tourStories,
+} from "gps-plus-slam-app-framework/ar/tour-story";
 import * as THREE from "three";
 
 import { localPlaneToEnu } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
@@ -70,14 +79,20 @@ import type {
 
 import {
   objectPoseNue,
+  renderStationBlocks,
   renderTourStation,
   uprightTurn,
+  type TourStationRendererDeps,
   type RenderedTourObjects,
 } from "../content-placement.js";
 import { worldEnv, type WorldEnv, type WorldPart } from "../world-part.js";
 import { pointRootMatrix, type GlobeEllipsoid } from "./editor3d-tour-root.js";
 import { NEAR_STATIONS, nearStations } from "./editor3d-visibility.js";
-import { posedEntries, type PlaceRef } from "../placement/placeables.js";
+import {
+  posedEntries,
+  storyEntries,
+  type PlaceRef,
+} from "../placement/placeables.js";
 import { drawAtExtent, drawInherited } from "../placement/place-scale.js";
 import { folderChains } from "../tour-document.js";
 import { viewHeightAtOneM } from "./gizmo-maths.js";
@@ -142,6 +157,9 @@ export interface StationsLayerView {
    *  what a code's size on screen is worked out from (`focalPxOf`). */
   readonly viewportPx: number;
   readonly fovDeg: number;
+  /** The story whose posed entries are drawn (`openStoryOf`); absent or
+   *  null: none. */
+  readonly openStory?: string | null;
   /** The camera drawing the view: handed with its lens to each drawn
    *  world part that has an `update`. Absent: no part is ticked. */
   readonly eye?: THREE.Camera;
@@ -265,6 +283,14 @@ interface StationContent {
   readonly photos: { mesh: THREE.Mesh; upright: THREE.Quaternion }[];
   /** The world parts drawn for it that take a frame (`update`). */
   readonly parts: WorldPart[];
+  /** Its open story's entries, drawn apart (`drawStory`); null: none. */
+  story: StoryDrawing | null;
+}
+
+interface StoryDrawing {
+  readonly id: string;
+  alive: boolean;
+  rendered: RenderedTourObjects | null;
 }
 
 interface StationEntry {
@@ -596,7 +622,9 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     // frees the labels and textures): the station is freed either way and
     // drawn anew when it is near.
     entry.content = null;
+    if (content.story !== null) content.story.alive = false;
     freeEach([
+      () => content.story?.rendered?.dispose(),
       () => content.rendered?.dispose(),
       () => freeObject(content.ring),
       () => freeObject(content.pole),
@@ -632,55 +660,139 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       pole,
       photos: [],
       parts: [],
+      story: null,
     };
     entry.content = content;
     renders++;
-    void renderTourStation(entry.station, {
-      assets: tourAssets,
-      scene: entry.root,
-      zero: { lat: entry.station.geo.lat, lon: entry.station.geo.lon },
-      alive: () => content.alive,
-      makeLabel: (text) => deps.makeLabel(text),
-      loadPhotoTexture: (entryName) => deps.loadPhotoTexture(entryName),
-      ...(deps.makeLectern === undefined
-        ? {}
-        : { makeLectern: deps.makeLectern.bind(deps) }),
-      ...(deps.makeReadingSign === undefined
-        ? {}
-        : { makeReadingSign: deps.makeReadingSign.bind(deps) }),
-      ...(deps.worldPart === undefined
-        ? {}
-        : {
-            worldPart: (block: TourBlock) => {
-              const part = deps.worldPart?.(block, env) ?? null;
-              if (part !== null) {
-                partObjects.add(part.object);
-                if (part.update !== undefined) content.parts.push(part);
-              }
-              return part;
-            },
-          }),
-    })
+    void renderTourStation(
+      entry.station,
+      drawDeps(entry, content, () => content.alive),
+    )
       .then((rendered) => {
         if (!content.alive) {
           rendered.dispose();
           return;
         }
         content.rendered = rendered;
-        rendered.root.traverse((o) => {
-          const mesh = o as THREE.Mesh;
-          // A stand's and a part's meshes keep their pose: they are no
-          // photo planes.
-          if (mesh.isMesh && !inStand(mesh) && !inPart(mesh)) {
-            content.photos.push({ mesh, upright: mesh.quaternion.clone() });
-          }
-        });
+        collectPhotos(content, rendered.root);
       })
       .catch(() => {
         // A station whose items cannot be drawn keeps its billboard and
         // ring; the 2D view still lists them.
       });
   };
+
+  /** Every photo plane under `root` joins `content`'s morph. */
+  const collectPhotos = (content: StationContent, root: THREE.Object3D) => {
+    root.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      // A stand's and a part's meshes keep their pose: they are no
+      // photo planes.
+      if (mesh.isMesh && !inStand(mesh) && !inPart(mesh)) {
+        content.photos.push({ mesh, upright: mesh.quaternion.clone() });
+      }
+    });
+  };
+
+  /** Draws `entry`'s story `storyId` (its posed entries) into the
+   *  station's root, beside its free items. */
+  const drawStory = (
+    entry: StationEntry,
+    content: StationContent,
+    storyId: string,
+  ) => {
+    const story: StoryDrawing = { id: storyId, alive: true, rendered: null };
+    content.story = story;
+    // Freeing the station marks its story dead too (`freeContent`).
+    const alive = () => story.alive;
+    void renderStationBlocks(
+      entry.station,
+      storyEntries(entry.station, storyId).map((e) => e.block),
+      drawDeps(entry, content, alive),
+    )
+      .then((rendered) => {
+        if (!alive()) {
+          rendered.dispose();
+          return;
+        }
+        story.rendered = rendered;
+        collectPhotos(content, rendered.root);
+      })
+      .catch(() => {
+        // A story whose entries cannot be drawn is still listed in the
+        // tree.
+      });
+  };
+
+  /** Frees `content`'s story drawing, its photos and parts with it. */
+  const freeStory = (content: StationContent) => {
+    const story = content.story;
+    if (story === null) return;
+    story.alive = false;
+    content.story = null;
+    const root = story.rendered?.root;
+    if (root !== undefined) {
+      const under = (o: THREE.Object3D) => {
+        for (let at: THREE.Object3D | null = o; at !== null; at = at.parent) {
+          if (at === root) return true;
+        }
+        return false;
+      };
+      const photos = content.photos.filter((ph) => !under(ph.mesh));
+      content.photos.splice(0, content.photos.length, ...photos);
+      const parts = content.parts.filter((part) => !under(part.object));
+      content.parts.splice(0, content.parts.length, ...parts);
+    }
+    story.rendered?.dispose();
+  };
+
+  /** Draws the open story of `entry` as `openStory` has it: its own
+   *  story, or none when the station holds another. */
+  const syncStory = (entry: StationEntry, openStory: string | null) => {
+    const content = entry.content;
+    if (content === null) return;
+    const wanted =
+      openStory !== null &&
+      entry.station.children.some((c) => c.id === openStory)
+        ? openStory
+        : null;
+    if ((content.story?.id ?? null) === wanted) return;
+    freeStory(content);
+    if (wanted !== null) drawStory(entry, content, wanted);
+  };
+
+  /** What the renderer is handed for `entry`: its tour's assets, the
+   *  page's makers and the world door, its parts joining `content`. */
+  const drawDeps = (
+    entry: StationEntry,
+    content: StationContent,
+    alive: () => boolean,
+  ): TourStationRendererDeps => ({
+    assets: tourAssets,
+    scene: entry.root,
+    zero: { lat: entry.station.geo.lat, lon: entry.station.geo.lon },
+    alive,
+    makeLabel: (text) => deps.makeLabel(text),
+    loadPhotoTexture: (entryName) => deps.loadPhotoTexture(entryName),
+    ...(deps.makeLectern === undefined
+      ? {}
+      : { makeLectern: deps.makeLectern.bind(deps) }),
+    ...(deps.makeReadingSign === undefined
+      ? {}
+      : { makeReadingSign: deps.makeReadingSign.bind(deps) }),
+    ...(deps.worldPart === undefined
+      ? {}
+      : {
+          worldPart: (block: TourBlock) => {
+            const part = deps.worldPart?.(block, env) ?? null;
+            if (part !== null) {
+              partObjects.add(part.object);
+              if (part.update !== undefined) content.parts.push(part);
+            }
+            return part;
+          },
+        }),
+  });
 
   const setCodes = (levels: ReadonlyMap<string, QrLevel>) => {
     for (const code of codes) freeObject(code);
@@ -1044,6 +1156,7 @@ export function createStationsLayer(deps: StationsLayerDeps) {
         const near = shown.has(entry.id);
         if (near && entry.content === null) renderContent(entry);
         if (!near && entry.content !== null) freeContent(entry);
+        syncStory(entry, view.openStory ?? null);
       }
       // Each frame: a station drawn anew, or items that arrived since,
       // take the drag's preview too.
@@ -1155,10 +1268,15 @@ export function createStationsLayer(deps: StationsLayerDeps) {
      *  not; null for an id no station holds. Any free block, as
      *  `clearPreview` reads them: a part from the door is located too
      *  (the view flies to it), though only world blocks are a gesture's
-     *  target (`editor3d-editing.ts`). */
+     *  target (`editor3d-editing.ts`). A story's posed entry too: it is
+     *  drawn where it stands while its story is open (`storyEntries`). */
     itemPointOf(id: string): THREE.Vector3 | null {
       for (const entry of stations.values()) {
-        const item = tourFreeBlocks(entry.station).find((i) => i.id === id);
+        const item =
+          tourFreeBlocks(entry.station).find((i) => i.id === id) ??
+          tourStories(entry.station)
+            .flatMap((story) => storyEntries(entry.station, story.id))
+            .find((e) => e.block.id === id)?.block;
         if (item === undefined) continue;
         const { geo } = entry.station;
         const frame = objectPoseNue(geo, { lat: geo.lat, lon: geo.lon });

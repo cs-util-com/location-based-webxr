@@ -84,6 +84,16 @@ async function foldersTour() {
                 pose: { position: [2, 1.5, 0], rotation: [0, 0, 0, 1] },
                 advance: { mode: "tap" },
               },
+              {
+                id: "e2",
+                kind: "shortText",
+                view: "pin",
+                caption: "Entry e2",
+                createdAtIso: "2026-11-10T09:00:00.000Z",
+                // 4 m west of the station, clear of the free pins.
+                pose: { position: [0, 1.5, -4], rotation: [0, 0, 0, 1] },
+                advance: { mode: "tap" },
+              },
             ],
           },
           {
@@ -349,6 +359,75 @@ test("a folder dropped onto a story, or a folder's item, says Not possible here 
     expect(await revision(page)).toBe(start);
     expect(await groups(page)).toEqual({ Yard: ["y"], free: ["p", "q", "r"] });
   }
+});
+
+/**
+ * What the 3D view picks at the point where entry e2 stands (null: off
+ * the screen).
+ * @param {import("@playwright/test").Page} page
+ */
+function pickAtE2(page) {
+  return page.evaluate(() => {
+    const hook = /** @type {any} */ (window).__tourEditor;
+    const at = hook.view3dScreenOf("e2");
+    return at === null ? null : (hook.view3dUnder(at[0], at[1])?.pick ?? null);
+  });
+}
+
+// Why: a story's scene is seen where it stands while the story is open
+// (chosen in the tree, or one of its entries), and only then; picking an
+// entry in the 3D view chooses it in the tree. Its entries take no
+// handle: a move the story editor cannot save yet is not offered.
+test("an open story's posed entry shows in the 3D view, is chosen there, and takes no handle", async ({
+  page,
+}) => {
+  test.slow();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openFolders(page, await foldersTour());
+  const card = await unfold(page);
+  const start = await revision(page);
+  const selected = () =>
+    page.evaluate(() => /** @type {any} */ (window).__tourEditor.selected());
+  const settled = () =>
+    expect
+      .poll(async () => (await view3dStats(page))?.flying, { timeout: 30_000 })
+      .toBe(false);
+
+  // Closed: nothing of the story stands there.
+  await card.locator('.kid[data-select="p"]').click();
+  await expect.poll(selected).toBe("p");
+  await settled();
+  expect(await pickAtE2(page)).not.toBe("e2");
+
+  await card.locator('.folder[data-story="s1"] button.fname').click();
+  await expect.poll(selected).toBe("story:s1");
+  await settled();
+  await expect.poll(() => pickAtE2(page)).toBe("e2");
+
+  // Chosen in the 3D view, it is chosen in the tree, with no handle.
+  const at = await shownAt(page, () =>
+    page.evaluate(() =>
+      /** @type {any} */ (window).__tourEditor.view3dScreenOf("e2"),
+    ),
+  );
+  await page.mouse.click(at.x, at.y);
+  await expect.poll(selected).toBe("e2");
+  await settled();
+  expect(
+    await page.evaluate(() =>
+      /** @type {any} */ (window).__tourEditor.view3dHandle("middle"),
+    ),
+  ).toBeNull();
+  // Still drawn while its entry is chosen.
+  await expect.poll(() => pickAtE2(page)).toBe("e2");
+  await capture(page, "editor3d-story-entry-open");
+
+  // Another item chosen: the story closes, and nothing was written.
+  await card.locator('.kid[data-select="p"]').click();
+  await expect.poll(selected).toBe("p");
+  await settled();
+  await expect.poll(() => pickAtE2(page)).not.toBe("e2");
+  expect(await revision(page)).toBe(start);
 });
 
 /**

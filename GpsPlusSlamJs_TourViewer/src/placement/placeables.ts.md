@@ -55,7 +55,18 @@ find what stands in the world, and it reads the facts of each from
   (no folders: the world draws no mark of one to pick, so a folder is
   placed only by its name, chosen in the tree).
 - `placeableOf(tour, selection, scope?)` - the placeable a selection
-  names (a folder's too), or null (a code, a card, an unknown id).
+  names (a folder's too), or null (a code, a card, an unknown id, a
+  story's entry).
+- `storyEntries(station, storyId)` - the open story's scope: the posed
+  entries of one story of `station`, in its order, each with the
+  placeable it would be (its pose in the station's frame: a story stands
+  only at the station's top). A card, a choice and a quiz are left out;
+  a story the station lacks, a plain folder or a block id gives none.
+  The 3D view draws them while the story is open.
+- `openStoryOf(tour, selection)` - the story a selection opens: the
+  story itself (`story:<id>`) or the story holding the chosen entry (a
+  card, a choice or a quiz too); null for anything else, an unknown id,
+  no selection or no tour.
 
 ## Invariants
 
@@ -68,6 +79,13 @@ find what stands in the world, and it reads the facts of each from
   stations with nested, posed folders.
 - An extent's value is read from the row's `field` on the block or the
   station; a value that is not a finite number gives no dots.
+- A story's entries are read-only: `storyEntries` gives them, but
+  `placeablesOf` and `placeableOf` never do, so the gizmo offers no
+  handle on one (no move disc, no knob, no dots), whatever its view. A
+  move that could not be saved would be worse than none: moving a story's
+  entry comes with the save path for a story's edits, once the story
+  editor work has landed. Card and stage entries get no handles even
+  then (their rows are not `posed`).
 
 ## Examples
 
@@ -87,6 +105,15 @@ if (target !== null && target.turns) showKnob();
   station comes first with its lock and its found radius; a block keeps
   its pose in its holder and names its folders; a card and an unknown id
   are no placeable.
+- `placeables.story.test.ts` - the open story's entries: its posed
+  entries in its order where they stand from the station, none for a
+  story the station lacks, a plain folder or a block, and none of them
+  (nor a card) a placeable while a free block beside them is one; the
+  open story of `story:<id>`, of an entry, a card and a choice, none for
+  anything else, and a property (whatever is chosen, an open story is
+  one, holding the chosen entry). Two mutants survive as equivalent: a
+  choice is no posed row either way, and the station check before
+  drawing only saves an empty drawing.
 - `placeables.folders.test.ts` - a folder's placeable: its pivot through
   its holders, its scale as its dots, its members at any depth, the
   scale its holders give it and its blocks, and an unknown folder none.

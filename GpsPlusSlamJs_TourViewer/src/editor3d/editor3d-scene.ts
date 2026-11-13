@@ -90,6 +90,7 @@ import {
   orbitEditingCamera,
   type GizmoPart,
 } from "./editor3d-editing.js";
+import { openStoryOf } from "../placement/placeables.js";
 import type { InputPage } from "./editor3d-input.js";
 import type { ModelEdit } from "../editor/model-edits.js";
 import { createEditorTerrain, reliefDeviceClass } from "./editor3d-terrain.js";
@@ -747,6 +748,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
       layer.update({
         centre: controls.target,
         selectedStation: selectedStationOf(ui.selected, tourNow),
+        openStory: openStoryOf(tourNow, ui.selected),
         stationSelected: ui.selected?.startsWith(STATION) ?? false,
         standing,
         camera: camera.position,
