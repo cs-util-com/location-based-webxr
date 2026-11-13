@@ -43,7 +43,7 @@ export interface StoryPreviewDeps {
   /** The sound channel; default: one `<audio>` element. */
   readonly audio?: SceneAudio & { unlock?(): void };
   /** A one-shot clock; default: `setTimeout`. */
-  schedule?(fn: () => void, ms: number): () => void;
+  readonly schedule?: (fn: () => void, ms: number) => () => void;
 }
 
 export interface StoryPreview {

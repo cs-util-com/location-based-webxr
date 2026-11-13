@@ -2044,8 +2044,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   const goToItem = (item: string) => {
     deps.select(item);
     const tour = manifest();
-    const story =
-      tour === null ? undefined : tourChildPlace(tour, item)?.story;
+    const story = tour === null ? undefined : tourChildPlace(tour, item)?.story;
     if (story !== undefined) revealStory(story.id);
     flyToSelection(item);
   };
@@ -2129,13 +2128,13 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     if (act === "lock") {
       // The selected station's position locked or unlocked: view state,
       // never an edit; the session refuses its moves while locked.
-      const ui = state().editorView;
-      if (ui.selected?.startsWith(STATION_PREFIX) === true) {
-        const id = ui.selected.slice(STATION_PREFIX.length);
+      const view = state().editorView;
+      if (view.selected?.startsWith(STATION_PREFIX) === true) {
+        const id = view.selected.slice(STATION_PREFIX.length);
         store.dispatch(
           editorViewActions.stationLocked({
             id,
-            locked: !isStationLocked(ui, id),
+            locked: !isStationLocked(view, id),
           }),
         );
       }

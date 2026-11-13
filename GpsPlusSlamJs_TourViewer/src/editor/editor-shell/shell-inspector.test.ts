@@ -387,9 +387,9 @@ describe("drawInspector", () => {
       ["insert:1", "Insert a step before step 2", null],
     ]);
     expect(
-      dock.body.querySelector(".gap")?.nextElementSibling?.getAttribute(
-        "data-card",
-      ),
+      dock.body
+        .querySelector(".gap")
+        ?.nextElementSibling?.getAttribute("data-card"),
     ).toBe("intro");
     drawInspector(dock, STORY, { ...FOLD, drill: true }, pictures);
     expect(dock.body.querySelector(".gap")).toBeNull();
@@ -446,7 +446,7 @@ describe("drawInspector", () => {
     expect(open?.querySelector(".cbody .steplines")?.textContent).toBe(
       "Again - goes to The siege",
     );
-    expect(open?.querySelector(".cbody [data-act=\"delete\"]")).not.toBeNull();
+    expect(open?.querySelector('.cbody [data-act="delete"]')).not.toBeNull();
   });
 
   it("says an empty story has no steps, and needs no words on its Delete", () => {

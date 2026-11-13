@@ -94,8 +94,16 @@ function answersOf(
   const options = step.answer.type === "single" ? step.answer.options : [];
   const correct = step.answer.type === "single" ? step.answer.correct : null;
   return [
-    ...options.map((o) => ({ label: o.label, right: o.id === correct, jump: null })),
-    { label: "After the answer", right: null, jump: jumpOf(steps, index, null) },
+    ...options.map((o) => ({
+      label: o.label,
+      right: o.id === correct,
+      jump: null,
+    })),
+    {
+      label: "After the answer",
+      right: null,
+      jump: jumpOf(steps, index, null),
+    },
   ];
 }
 

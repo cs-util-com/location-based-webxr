@@ -1454,7 +1454,9 @@ describe("a story's folder in the tree", () => {
     inspectorAct("card-show:l1").click();
     const open = () =>
       [
-        ...document.querySelectorAll<HTMLElement>("#shell-inspector .scard.open"),
+        ...document.querySelectorAll<HTMLElement>(
+          "#shell-inspector .scard.open",
+        ),
       ].map((c) => c.dataset["card"]);
     expect(open()).toEqual(["l1", "c1"]);
     document

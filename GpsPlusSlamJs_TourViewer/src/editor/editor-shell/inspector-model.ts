@@ -1158,7 +1158,11 @@ export function buildInspector(input: {
     if (story?.kind !== "story" || open.length === 0) return story;
     const opened = story.cards.flatMap((card) => {
       if (!open.includes(card.id)) return [];
-      const model = buildInspector({ ...input, selected: card.id, openCards: [] });
+      const model = buildInspector({
+        ...input,
+        selected: card.id,
+        openCards: [],
+      });
       return model === null ? [] : [model];
     });
     return opened.length === 0 ? story : { ...story, opened };

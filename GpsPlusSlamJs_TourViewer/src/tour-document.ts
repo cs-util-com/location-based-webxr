@@ -3239,12 +3239,7 @@ function storyChildAdd(
   ) {
     return before;
   }
-  const next = withStoryChild(
-    frame,
-    payload.story,
-    payload.child,
-    payload.at,
-  );
+  const next = withStoryChild(frame, payload.story, payload.child, payload.at);
   return next === null ? before : frameReplaced(before, next, payload.what);
 }
 

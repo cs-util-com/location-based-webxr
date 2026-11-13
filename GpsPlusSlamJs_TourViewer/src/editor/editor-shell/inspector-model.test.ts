@@ -367,7 +367,9 @@ describe("buildInspector", () => {
         openCards: ["way", "gone", "intro"],
       });
       if (model?.kind !== "story") throw new Error("no story");
-      expect(model.opened?.map((m) => [m.kind, "id" in m ? m.id : null])).toEqual([
+      expect(
+        model.opened?.map((m) => [m.kind, "id" in m ? m.id : null]),
+      ).toEqual([
         ["storyEntry", "intro"],
         ["storyStep", "way"],
       ]);

@@ -675,7 +675,12 @@ function cardAnswers(card: StoryCard): HTMLElement | null {
   if (card.answers.length === 0) return null;
   const list = el("ul", "answers");
   for (const answer of card.answers) {
-    const row = el("li", answer.jump !== null && answer.right === null && card.kind === "quiz" ? "ans after" : "ans");
+    const row = el(
+      "li",
+      answer.jump !== null && answer.right === null && card.kind === "quiz"
+        ? "ans after"
+        : "ans",
+    );
     if (answer.right !== null) {
       const mark = el("span", answer.right ? "mark right" : "mark");
       if (answer.right) {
@@ -688,7 +693,11 @@ function cardAnswers(card: StoryCard): HTMLElement | null {
     row.append(
       el(
         "span",
-        said === "" ? "albl empty" : card.kind === "quiz" && answer.jump !== null ? "albl quiet" : "albl",
+        said === ""
+          ? "albl empty"
+          : card.kind === "quiz" && answer.jump !== null
+            ? "albl quiet"
+            : "albl",
         said === "" ? "empty answer" : said,
       ),
     );
@@ -728,7 +737,11 @@ function storyCard(
     el(
       "span",
       shown === "" ? "ttl empty" : "ttl",
-      shown === "" ? (card.kind === "choice" || card.kind === "quiz" ? "No question yet" : "No name yet") : shown,
+      shown === ""
+        ? card.kind === "choice" || card.kind === "quiz"
+          ? "No question yet"
+          : "No name yet"
+        : shown,
     ),
   );
   if (card.line !== null) sum.append(el("span", "l2", card.line));
@@ -791,7 +804,9 @@ function storyParts(model: StoryModel, state: InspectorState): HTMLElement[] {
     const opened = drill
       ? undefined
       : model.opened?.find(
-          (m) => (m.kind === "storyEntry" || m.kind === "storyStep") && m.id === card.id,
+          (m) =>
+            (m.kind === "storyEntry" || m.kind === "storyStep") &&
+            m.id === card.id,
         );
     list.append(storyCard(card, opened, drill));
   }

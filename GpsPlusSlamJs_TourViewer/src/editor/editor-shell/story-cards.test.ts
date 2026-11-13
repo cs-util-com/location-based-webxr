@@ -111,10 +111,7 @@ describe("storyCards", () => {
       expect.stringContaining("Steps 1 and 2 go round in a loop"),
       expect.stringContaining("Steps 1 and 2 go round in a loop"),
     ]);
-    expect(cards.map((c) => c.fix)).toEqual([
-      null,
-      'Let "Sure" end the story',
-    ]);
+    expect(cards.map((c) => c.fix)).toEqual([null, 'Let "Sure" end the story']);
     expect(storyCards([TEXT, CHOICE]).every((c) => c.issue === null)).toBe(
       true,
     );
