@@ -34,7 +34,7 @@ interface Box extends Size {
 }
 
 /** A folded group: the axis it folded along, its size there before. */
-export interface Fold {
+interface Fold {
   readonly axis: RailAxis;
   readonly prevPx: number;
 }
