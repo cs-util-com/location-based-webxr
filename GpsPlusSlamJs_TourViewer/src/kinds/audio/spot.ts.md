@@ -43,8 +43,11 @@ inside, its player card (`narration-card.ts`) is open on the page's screen
 - The default radius (6 m, margin 1.5 m) holds while the AR view tracks the
   phone; under GPS alone it holds only from about 10 m in open sky
   (`sound-reach.ts.md`). Which default to ship is an open question.
-- Its look is `narration-look.ts`'s, behind one function, until the look is
-  decided. In the editor it also wears the speaker icon (`sound-icon.ts`)
+- Its look is `narration-look.ts`'s plume, told each play frame what the
+  voice does (idle, playing, paused by a tap, away while the visitor is
+  out, heard to its end) and where the viewer stands, for its plate; in
+  the editor the plate turns to the camera. The plate canvas is made only
+  where a document exists. In the editor it also wears the speaker icon (`sound-icon.ts`)
   at its centre, ticked with the frame's camera; the visitor never sees
   it. There the icon is all a ray meets: the circle, the particles and
   the invisible tap cylinder take none (in play the cylinder still takes

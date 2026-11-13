@@ -895,16 +895,22 @@ function world(block, env) {
       transparent: true,
       side: DoubleSide,
     });
+    // The egg and its label take no tap themselves: the hit areas below do, only while
+    // choosing, so any other tap on them walks the visitor as on the ground.
     const low = new Mesh(lowGeo, mat);
+    low.raycast = flat;
     const lid = new Group();
     lid.position.y = CRACK * EGG_H;
-    lid.add(new Mesh(topGeo, mat));
+    const top = new Mesh(topGeo, mat);
+    top.raycast = flat;
+    lid.add(top);
     // The label, its marker and their taps hang from one holder, which rises to the eye while
     // the visitor stands within reach: down at the egg they would sit under the story card.
     const hold = new Group();
     const labelGeo = labelGeometry(i);
     const label = new Mesh(labelGeo, labelMat);
     label.position.y = labelMid;
+    label.raycast = flat;
     // The marker: a thin line of the answer's colour over its label, seen across the square.
     const beamMat = new MeshBasicMaterial({
       color: HUES[i],
@@ -1325,6 +1331,7 @@ const CSS = `
 [data-kind="${NAME}"] .fr-found { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 [data-kind="${NAME}"] .fr-found > span { max-width: 100%; padding: 3px 9px; border-radius: 9px; border-left: 4px solid var(--hue); background: rgb(255 255 255 / 10%); font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 [data-kind="${NAME}"] .fr-list { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
+[data-kind="${NAME}"] .fr-entry { display: grid; min-width: 0; }
 [data-kind="${NAME}"] .fr-chip { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 40px; padding: 4px 8px 4px 9px; border: 1.5px solid transparent; border-left: 5px solid var(--hue); border-radius: 10px; background: rgb(255 255 255 / 10%); color: var(--walk-ink); font: inherit; text-align: left; }
 [data-kind="${NAME}"] button.fr-chip { cursor: pointer; border-color: var(--walk-line); border-left-color: var(--hue); }
 [data-kind="${NAME}"] .fr-chip > span { flex: 1; min-width: 0; font-size: 13.5px; font-weight: 600; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1593,8 +1600,11 @@ function card(block, el, env) {
     for (const i of memory.found) {
       const tried = memory.crossed.has(i);
       const pickable = memory.anywhere && !tried;
+      // The list item holds the chip, so a pickable chip keeps its button role.
+      const entry = make("div", "fr-entry");
+      entry.setAttribute("role", "listitem");
       const item = make(pickable ? "button" : "div", "fr-chip");
-      item.setAttribute("role", "listitem");
+      entry.append(item);
       if (pickable) {
         item.type = "button";
         item.dataset.answer = String(i);
@@ -1608,7 +1618,7 @@ function card(block, el, env) {
       info.append(arrow, m);
       item.append(make("span", "", options[i].label), info);
       chips[i] = { node: item, arrow, metres: m, tried };
-      wrap.append(item);
+      wrap.append(entry);
     }
     return wrap;
   };

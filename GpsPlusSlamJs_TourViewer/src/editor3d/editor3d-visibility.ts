@@ -11,17 +11,7 @@
  * @see editor3d-visibility.ts.md
  */
 
-/**
- * The GLSL smooth step: 0 at `edge0` and below, 1 at `edge1` and above,
- * 3t^2 - 2t^3 between. The package's one copy (a one-liner may exist once
- * per package): the framework's `utils/smoothstep.ts` is no deep-import
- * entry of its build, and making it one would put every dependent of the
- * framework behind this package's change.
- */
-function smoothstep(edge0: number, edge1: number, x: number): number {
-  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
-  return t * t * (3 - 2 * t);
-}
+import { smoothstep } from "../smoothstep.js";
 
 /** A band of camera tilt (degrees from straight down). */
 export interface MorphBand {

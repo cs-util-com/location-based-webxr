@@ -41,8 +41,15 @@ tabbed)` puts the focus on the control drawn under `name` (none, a
   one-line field's text, as Tab does in a field no draw replaced. The shell uses the two for the control the
   focus was moving to when a commit drew the dock again: Chromium drops
   a focus whose target a draw removed during `focusout` to the page.
-  - Every head starts with "Back to the list" (`data-act="back"`), shown
-    only on a phone (`editor-shell.css`), which drops the selection.
+  - Every head starts with the Back button (`data-act="back"`), shown
+    only on a phone (`editor-shell.css`): it goes one level up, and its
+    name says where to - "Back to <level>" by the crumb's last-but-one
+    part, "Back to the list" when that is the whole tour or no crumb is
+    given.
+  - `state.crumb` (`inspectorCrumb`), when given, is drawn over the
+    details as `nav.crumbs` ("Where you are"): each level above a button
+    (`data-act="nav:<selection>"`, `nav:` for the whole tour), the
+    selection itself the current part (`aria-current="page"`, no act).
   - The head's icon (`headLook`, one case per kind of selection, none
     by default): a block's is its kind's look in the editor's list of
     kinds (`../../kinds/edit-kinds.ts`), and so are the words of its
@@ -75,10 +82,16 @@ content` (Chromium, the editor's browser; elsewhere it stays three
     position cannot be read has its Radius and that line in its fields,
     and says so. The radius sits with the position because both say where
     the station is felt; an item's disclosure stays "Position".
-  - A plain folder: the folder icon, its name and "Folder in <station>,
-    <n> items"; its Scale to type (`scale`, "x") with its meaning and
-    bounds; under "Place", its offset east and north, height and heading
-    in its station's frame. Its items follow every one.
+  - A plain folder (the chosen design's open "Pivot (from the station
+    centre)" section, no disclosure): the folder icon, its name and
+    "Folder in <station>, <n> items"; its pivot's Position east and
+    north, Height, Heading and Scale (`scale`, "x") to type, in its
+    station's frame, with a note that the scale is typed from 0.1 to 10
+    times and dragged by a white dot from 0.2 to 5; "Pivot to centre"
+    (`pivot-centre`); "Items (each movable alone)" with a `goto:<id>`
+    row per item (or "No items in it yet."); "Select its items"
+    (`select-items`, disabled for an empty folder) and a note on how its
+    items move with it. Its items follow every typed field.
   - A story: its name to type in the head (`data-field="story-title"`, its
     count under it), its "Entries" fold ("<n>, played in order"), a numbered
     `.kids` row each, `goto:<id>`), "Add entry..." (`add-entry`) and
@@ -93,7 +106,9 @@ content` (Chromium, the editor's browser; elsewhere it stays three
     ends"), each group a `role=group` named by its label and the one in
     use pressed, as a model's view chips are (`chipGroup`, which both
     use); a note when his view or his step's advance is none the chips
-    offer (an older tour's view, `auto`); and "Facing" in degrees
+    offer (an older tour's view, `auto`); and, in the pop-up view only (the
+    one view that keeps the creator's facing; a flat figure faces the
+    visitor fully), "Facing" in degrees
     (`data-field="character-facing:<id>"`, whole degrees, 360 shown as
     0), then his texts. Every other story block with texts to type gets
     a section of its own (`div.isec.story-text`, `data-block` its id)
@@ -105,8 +120,16 @@ content` (Chromium, the editor's browser; elsewhere it stays three
     `block:<id>:<field>` and drawn as an item's other texts are
     (`blockTextField`, its count under it; a number field, a sound's radius, reach or volume, is a decimal box with its unit and no count). Where these controls sit is this build's choice, made before the
     owner's prototype round on the editor's character UI.
-  - A story's choice or quiz: its summary (`ul.steplines`), read here and
-    not edited, and "Delete choice" / "Delete quiz".
+  - A story's choice or quiz: with a `form`, its Question
+    (`data-field="step:prompt"`) and an "Answers" box: each answer a typed
+    field (`step:label:<id>`, "Answer N"), a remove button
+    (`step-remove:<id>`, off at two), for a choice a "leads to" jump picker
+    (`select[data-act="step-goto:<id>"]`, groups "Jump ahead" and "Go
+    back", "End the story" last), for a quiz a radio
+    (`step-right:<id>`); "Add an answer" (`step-add`, "Four answers is the
+    most" when off); a quiz's Points (`step:points`) and its "Then" line.
+    Without a form (a quiz of another answer type) its summary
+    (`ul.steplines`), read only. Then "Delete choice" / "Delete quiz".
   - An item with no place in the world (a video, its `offset` null): its
     texts, its kind panel's parts and its Delete; no split, no ground, no
     Position.
@@ -161,7 +184,9 @@ content` (Chromium, the editor's browser; elsewhere it stays three
   station's "Put items on the ground"
   (`ground-items`, its note "N off", off when none is) and "Delete
   station"; an item's "Move to a new station" (`split`), "Put on the
-  ground" (`ground`, its note "x.x m up/down", off when on it) and
+  ground" (`ground`, its note "x.x m up/down", off when on it), one in a
+  plain folder "Select the folder" (`select:folder:<id>`, its note the
+  folder's name, in a row of its own) and
   "Delete pin" / "Delete photo" / "Delete long text" / "Delete 3D model". The command `busy`
   names says "Waiting for the ground...", is `aria-disabled` (not
   `disabled`, so it keeps the keyboard's focus) and `aria-busy`. Each
@@ -186,6 +211,9 @@ content` (Chromium, the editor's browser; elsewhere it stays three
   `contentsOpen` is false): its items (`inspector-contents.ts`) and Add
   content (`data-act="add-content"`). Its radius has a slider beside the
   number (`radius-slider.ts`).
+- A block's number field with a `slider` track draws the slider beside
+  its box, a pair as two thumbs on one track, and a `curve` under it
+  (`field-sliders.ts`).
 
 ## Invariants & assumptions
 
@@ -215,15 +243,15 @@ frame, a code without a position, and the folded head. The page by
 `playwright-tests/editor3d-inspector.spec.js` (the edits, saved and
 opened again, and the fields' layout at four window sizes).
 
-`shell-inspector.test.ts` also covers a plain folder's Scale and Place
-fields, the ground changing under a drawn station (only its ground button updated, the typed field and its focus kept), the lock button's place, state and words, and its absence for a station without a position; Earlier and Later beside a station's place, off at the ends; and the commands in words per kind (a station's Delete with its key, an item's two, none for a code).
+`shell-inspector.test.ts` also covers a plain folder's pivot fields in
+their order, its item rows and its two commands (off for an empty folder), the ground changing under a drawn station (only its ground button updated, the typed field and its focus kept), the lock button's place, state and words, and its absence for a station without a position; Earlier and Later beside a station's place, off at the ends; and the commands in words per kind (a station's Delete with its key, an item's two, none for a code).
 
 It also covers a story (its name, its numbered Entries, its Add entry and
 its Delete, an empty one), a choice's and a quiz's summary, an item with
 no place in the world (its texts and Delete only), a
 story block's moves-on chips and seconds, a story
 character's view and advance chips (the one in use pressed, each group
-named) and his facing, none for a long text, a story block's texts
+named) and his facing in the pop-up view alone, none for a long text, a story block's texts
 named `block:<id>:<field>` (a character's in his box, none for a
 block without texts), the fields to type
 per kind (each counted in its unit), a locked station's place

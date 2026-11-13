@@ -24,7 +24,7 @@ tour document and none moves an item in the world.
   (Del and Ctrl+D on a plain folder, `editor3d-input.ts`) - the lines
   said where no folder rule refused.
 - `createFolderCommands(deps)` -> `{ group, ungroup, moveInto, rename,
-reorder }`:
+reorder, pivotToCentre }`:
   - `deps`: `getState` (the tour document), `dispatch`, `before` (called
     before each edit: the page ends a pending Undo offer), `changed`
     (after an edit the tour took: the page refreshes and autosaves), `say`
@@ -42,7 +42,13 @@ reorder }`:
   - `reorder(folderId, index)` - a folder at its station's top put at
     `index` among the station's top-level folders (the tree's drag of a
     folder row): whether it moved; its own place quietly nothing, a
-    folder gone says `gone`.
+    folder gone says `gone`;
+  - `pivotToCentre(folderId)` - the inspector's "Pivot to centre": the
+    folder's pivot put at its items' centre on the ground, as one step,
+    nothing in the scene moving (`folderPivotCentred`); whether it
+    changed. Said: `The pivot of "F" stands at its items' centre -
+nothing moved`, or `already stands` when it did; an empty folder says
+    it holds no items, a gone one `gone`.
 
 ## Invariants & assumptions
 
@@ -81,4 +87,5 @@ const id = folders.group(["p", "q"]); // "Folder 2" when "Folder 1" exists
 refusals (a foldered item, a folder, two stations, an unknown id), none
 picked, ungroup counts, a gone folder and one lifted past the bound, moves in and out, another
 station's folder, the 10 km bound, a move into the folder an item is in,
-rename and its cap, the reorder as one step.
+rename and its cap, the reorder as one step, the pivot put at the
+items' centre (then a no-op), a gone and an empty folder.

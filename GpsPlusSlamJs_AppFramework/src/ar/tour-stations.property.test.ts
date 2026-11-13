@@ -248,8 +248,10 @@ function refusesAChoiceToNoChild(
     return false;
   }
   const choice = kidsOf(story).find((c) => c.kind === 'choice') as unknown as {
-    options: { goto?: string }[];
+    options: { goto?: string; end?: true }[];
   };
+  // Re-pointed at the ghost, the answer no longer ends the story.
+  delete choice.options[0]!.end;
   choice.options[0]!.goto = ghost;
   expect(() => parseAll(jumped), 'a choice to no child').toThrow(
     /must name a child of this story/

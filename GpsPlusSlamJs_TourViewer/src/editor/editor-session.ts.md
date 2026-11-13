@@ -123,6 +123,10 @@ never state). Design:
     not stand free in (`TOUR_FREE_BLOCK_VIEWS`: the format would refuse a text's
     or a picture's card at save), `MODEL_VIEW_ELSEWHERE` for a model (its view is
     `editModel`'s), `NOT_IN_TOUR` for an id the tour no longer carries.
+  - `editPictureTag(id, shown)` - a picture's tag, one undo step named
+    "the tag of <name>"; shown removes `showTag` (absent is shown), hidden
+    writes `false`; `unchanged` for its own state; refused for a block that
+    is no picture (`ONLY_A_PICTURE_TAG`) and an id the tour lacks.
   - `editBlockField(id, field, value)` - `blockFieldEdit`'s outcome
     (`block-fields.ts`: a short text's description, a picture's
     title, caption or alt text, a model's title), one step through the
@@ -213,7 +217,12 @@ never state). Design:
 child)` (an entry made elsewhere - a file's, `new-file-item.ts` -
       added at the story's end, refused for a story that is gone or an id
       the tour holds), `deleteStoryChild(id)` (says how many
-      answers no longer lead anywhere), `setStoryAdvance(id, advance)` - the
+      answers no longer lead anywhere), `addStepToStory(storyId, kind)` (a
+      new choice or quiz, `newStoryStep`, at the story's end),
+      `setStoryStep(step)` (a choice or quiz rewritten whole by its
+      inspector; refused in words when the format would refuse it - a jump
+      to a gone step, a blank text, points below 0),
+      `setStoryAdvance(id, advance)` - the
       tree's and the inspector's story edits, each one step, a refusal said
       in the creator's words.
     - `moveChild(id, to)` - a station's item or story moved within its

@@ -33,10 +33,7 @@ station near-K must keep.
 - Near-K returns at most `k + 1` ids, always the selected one when it
   exists, the same set whatever the input order, and never leaves out a
   station nearer than one it kept.
-- **The smooth step is this package's one copy** (a pure one-liner may
-  exist once per package): the framework's `utils/smoothstep.ts` is not a
-  deep-import entry of its build, and making it one would pull every
-  dependent of the framework into this change.
+- The smooth step is the package's one copy, `../smoothstep.ts`.
 - The band is 8-42 degrees. The tests run the edge rule over
   other bands too (3-22, 15-60); nothing else here depends on its values.
 

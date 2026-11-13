@@ -9,7 +9,7 @@ The visitor's kinds: one row per kind of the format (`TOUR_KINDS` in the framewo
 - `KindPlay<B>`: what a row holds.
   - `card(block, host)`: the item's words at once, its media as they load, through the `ItemCardHost` only.
   - `assets(block, characters)`: every file `card` may read, in the card or in the world.
-  - `world?(block, env)`: the kind's part in the world (`world-part.ts` `WorldPart`), built with a `WorldEnv` (`mode` "play" or "edit", `loadAsset`, `canvasTexture`, `loadModel`, `enableClipping`, `sound`, `screen?`); null or absent: nothing stands. The audio row's is `kinds/audio/play.ts` (a `zone` or a `spot`), the model row's `kinds/model/world.ts` `modelWorld` (its world view through the adapter, in play and edit); the reading stand and the reading sign are still the renderer's own drawings until their kinds are next worked on.
+  - `world?(block, env)`: the kind's part in the world (`world-part.ts` `WorldPart`), built with a `WorldEnv` (`mode` "play" or "edit", `loadAsset`, `canvasTexture`, `loadModel`, `enableClipping`, `sound`, `screen?`); null or absent: nothing stands. The audio row's is `kinds/audio/play.ts` (a `zone` or a `spot`), the model row's `kinds/model/world.ts` `modelWorld` (its world view through the adapter, in play and edit), the picture row's `kinds/picture/world.ts` `pictureWorld` (a framed print or a cut-out; a tap in play opens its sheet); the reading stand and the reading sign are still the renderer's own drawings until their kinds are next worked on.
 - `PLAY_KINDS`: the list, keyed by `TourBlockKind`, in the format's order. Checked with `satisfies { [K in TourBlockKind]: KindPlay<TourBlockOfKind[K]> }`, so each row's block is its own kind's.
 - `playKindOf(kind)`: the row of `kind`, or `undefined` for any value that is no kind this viewer knows (checked with `isTourBlockKind`, an own-property test, so `"toString"` or `"__proto__"` find nothing).
 - `worldPartOf(block, env)`: the world door, its row's `world` part or `null` (no row, or no part). `viewer-placement.ts` hands it to the renderer as `worldPart`.
@@ -38,3 +38,7 @@ const files = row?.assets(block, characters) ?? [];
 - `play-kinds.test.ts`: the list has exactly the format's kinds in order; every row fills a card through `showItemCard` and reads only what its `assets` lists; a block of no known kind (`stamp`, `toString`, `__proto__`) is refused with words and reads nothing.
 - `item-contract.test.ts`: the contract over every kind through the two real hosts.
 - `scene-view.test.ts`: the per-kind behaviour in depth, unchanged by the move to rows.
+
+## Short text in the world
+
+`shortText.world` is `kinds/short-text/world.ts`: a sign or an edge hint stands in the world; a pin stays the renderer's label.

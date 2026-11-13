@@ -25,6 +25,9 @@ import { longTextPanel } from "../long-text/long-text-panel.js";
 import type { ModelFocus, ModelPick } from "../editor-view.js";
 import type { KindPanel, KindPanelDraw } from "./kind-panel.js";
 import { createModelPanel } from "./model-panel.js";
+import { createPicturePanel } from "./picture-panel.js";
+import { pictureSeeThrough } from "../../kinds/picture/picture-alpha.js";
+import { createShortTextPanel } from "./short-text-panel.js";
 
 /** What the shell gives a kind's panel: its page, its edits and its
  *  words. */
@@ -39,7 +42,13 @@ export interface PanelContext {
   readonly treeRoot: HTMLElement | null;
   readonly edits: Pick<
     ShellEditCommands,
-    "block" | "view" | "model" | "narration" | "editNarration" | "voiceMaxBytes"
+    | "block"
+    | "view"
+    | "model"
+    | "narration"
+    | "editNarration"
+    | "voiceMaxBytes"
+    | "pictureTag"
   >;
   /** A tour file by its path. */
   readonly loadPicture: (path: string) => Promise<Blob>;
@@ -84,6 +93,27 @@ function model(ctx: PanelContext): KindPanel {
   });
 }
 
+/** A short text's panel: its view, role and turn. */
+function shortText(ctx: PanelContext): KindPanel {
+  return createShortTextPanel({
+    view: (id, view) => ctx.edits.view(id, view),
+    block: (id, field, value) => ctx.edits.block(id, field, value),
+  });
+}
+
+/** A picture's panel: its view, its tag, the cut-out's alpha warning. */
+function picture(ctx: PanelContext): KindPanel {
+  const tag = ctx.edits.pictureTag;
+  return createPicturePanel({
+    setView: (id, view) => ctx.edits.view(id, view),
+    ...(tag === undefined
+      ? {}
+      : { setTag: (id: string, shown: boolean) => tag(id, shown) }),
+    seeThrough: async (path) => pictureSeeThrough(await ctx.loadPicture(path)),
+    changed: ctx.changed,
+  });
+}
+
 /** A kind's panel maker, or null for a kind without one. */
 type KindPanelList = {
   readonly [K in TourBlockKind]: ((ctx: PanelContext) => KindPanel) | null;
@@ -91,9 +121,9 @@ type KindPanelList = {
 
 /** THE list, in the format's order. */
 export const KIND_PANELS = {
-  shortText: null,
+  shortText,
   longText,
-  picture: null,
+  picture,
   video: null,
   audio: null,
   model,

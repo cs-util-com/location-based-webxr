@@ -44,7 +44,7 @@ const NO_PLACE = {
   offset: null,
   headingDeg: null,
   turns: false,
-
+  folder: null,
   groundOffM: null,
 } as const;
 
@@ -332,9 +332,9 @@ describe("drawInspector", () => {
     ).not.toContain("entries");
   });
 
-  // Why: an entry that is no block waits for an answer. It cannot be edited
-  // yet, so what it says and its Delete are all there is: a summary drawn as
-  // text, and no field that would suggest otherwise.
+  // Why: a step the inspector does not edit (a quiz of a typed answer)
+  // shows what it says and its Delete only: a summary drawn as text, and
+  // no field that would suggest otherwise.
   it("draws a choice's or a quiz's summary as text, with its Delete", () => {
     drawInspector(
       dock,
@@ -364,6 +364,174 @@ describe("drawInspector", () => {
     expect(
       dock.body.querySelector('[data-act="delete"]')?.textContent,
     ).toContain("Delete choice");
+  });
+
+  // Why: a choice is edited in place - its question, each answer's words
+  // and where it leads - and every control names the answer it is for, so
+  // a screen reader and the shell tell four answers apart; Remove stops at
+  // two answers and Add at four.
+  it("draws a choice to edit: its question, answers, ways, Add and Remove", () => {
+    const ways = [
+      { group: "next", value: "", label: "Next step (3: B)" },
+      { group: "ahead", value: "d", label: "Jump to step 4: D" },
+      { group: "back", value: "a", label: "Go back to step 1: A" },
+      { group: "back", value: "way", label: "Ask this again (step 2)" },
+      { group: "end", value: ":end", label: "End the story" },
+    ] as const;
+    const answer = (id: string, label: string, way: string) => ({
+      id,
+      label,
+      way,
+      jump: "",
+      back: false,
+      right: false,
+    });
+    drawInspector(
+      dock,
+      {
+        kind: "storyStep",
+        stepKind: "choice",
+        id: "way",
+        stationId: "gate",
+        title: "Which way?",
+        sub: "Choice, entry 2",
+        heading: "Answers",
+        lines: [],
+        form: {
+          step: {
+            id: "way",
+            kind: "choice",
+            prompt: "Which way?",
+            options: [],
+          },
+          prompt: "Which way?",
+          answers: [answer("o1", "Again", "way"), answer("o2", "Stop", ":end")],
+          ways,
+          canAdd: true,
+          canRemove: false,
+          points: null,
+          then: null,
+        },
+      },
+      FOLD,
+      pictures,
+    );
+    const body = dock.body;
+    const question = body.querySelector<HTMLTextAreaElement>(
+      'textarea[data-field="step:prompt"]',
+    );
+    expect(question?.defaultValue).toBe("Which way?");
+    expect(
+      body.querySelector<HTMLInputElement>('[data-field="step:label:o2"]')
+        ?.defaultValue,
+    ).toBe("Stop");
+    expect(
+      body
+        .querySelector('[data-field="step:label:o1"]')
+        ?.getAttribute("aria-label"),
+    ).toBe("Answer 1");
+    const pick = body.querySelector<HTMLSelectElement>(
+      'select[data-act="step-goto:o1"]',
+    );
+    expect(pick?.getAttribute("aria-label")).toBe("Where answer 1 leads");
+    expect(pick?.value).toBe("way");
+    expect(
+      [...(pick?.querySelectorAll("optgroup") ?? [])].map((g) => g.label),
+    ).toEqual(["Jump ahead", "Go back"]);
+    expect([...(pick?.options ?? [])].map((o) => o.text)).toEqual(
+      ways.map((w) => w.label),
+    );
+    expect(
+      body.querySelector<HTMLSelectElement>('select[data-act="step-goto:o2"]')
+        ?.value,
+    ).toBe(":end");
+    const remove = body.querySelector<HTMLButtonElement>(
+      '[data-act="step-remove:o1"]',
+    );
+    expect(remove?.getAttribute("aria-label")).toBe("Remove answer 1");
+    expect(remove?.disabled).toBe(true);
+    const add = body.querySelector<HTMLButtonElement>('[data-act="step-add"]');
+    expect(add?.disabled).toBe(false);
+    expect(add?.textContent).toContain("Add an answer");
+    expect(body.querySelector(".steplines")).toBeNull();
+    expect(body.querySelector('[data-act="delete"]')?.textContent).toContain(
+      "Delete choice",
+    );
+  });
+
+  // Why: a quiz is edited the same way, its right answer a radio of its
+  // own per answer, its points a number, and where the story goes on said
+  // in words, since a quiz does not branch.
+  it("draws a quiz to edit: the right answer, its points, then", () => {
+    const answer = (id: string, label: string, right: boolean) => ({
+      id,
+      label,
+      way: "",
+      jump: "",
+      back: false,
+      right,
+    });
+    drawInspector(
+      dock,
+      {
+        kind: "storyStep",
+        stepKind: "quiz",
+        id: "age",
+        stationId: "gate",
+        title: "How old?",
+        sub: "Quiz, entry 3",
+        heading: "Answers",
+        lines: [],
+        form: {
+          step: {
+            id: "age",
+            kind: "quiz",
+            question: "How old?",
+            points: 2,
+            answer: { type: "single", options: [], correct: "" },
+          },
+          prompt: "How old?",
+          answers: [
+            answer("q1", "Old", false),
+            answer("q2", "New", true),
+            answer("q3", "Both", false),
+            answer("q4", "None", false),
+          ],
+          ways: [],
+          canAdd: false,
+          canRemove: true,
+          points: 2,
+          then: "Right or wrong, the visitor sees the result, and the story ends",
+        },
+      },
+      FOLD,
+      pictures,
+    );
+    const body = dock.body;
+    const radios = [
+      ...body.querySelectorAll<HTMLInputElement>('input[type="radio"]'),
+    ];
+    expect(radios.map((r) => [r.dataset["act"], r.checked])).toEqual([
+      ["step-right:q1", false],
+      ["step-right:q2", true],
+      ["step-right:q3", false],
+      ["step-right:q4", false],
+    ]);
+    expect(radios[0]?.getAttribute("aria-label")).toBe(
+      "Answer 1 is the right one",
+    );
+    expect(new Set(radios.map((r) => r.name)).size).toBe(1);
+    expect(
+      body.querySelector<HTMLInputElement>('[data-field="step:points"]')
+        ?.defaultValue,
+    ).toBe("2");
+    expect(body.querySelector("select")).toBeNull();
+    const add = body.querySelector<HTMLButtonElement>('[data-act="step-add"]');
+    expect(add?.disabled).toBe(true);
+    expect(add?.textContent).toContain("Four answers is the most");
+    expect(body.querySelector(".thenbox")?.textContent).toBe(
+      "Right or wrong, the visitor sees the result, and the story ends.",
+    );
   });
 
   // Why: a video has no place in the world, so its inspector has nothing
@@ -403,6 +571,32 @@ describe("drawInspector", () => {
     expect(dock.body.querySelector('[data-field="east"]')).toBeNull();
   });
 
+  // Why: in the 3D view a click on a folder's item picks the item alone,
+  // so its inspector is the 3D view's way to the folder (the tree's row is
+  // the other); an item at its station's top has no folder to offer.
+  it("offers to select the folder holding a placed item, by its name", () => {
+    const placed = {
+      ...NO_PLACE,
+      itemKind: "shortText",
+      offset: { northM: 1, upM: 0, eastM: 2 },
+      headingDeg: 0,
+      fields: [],
+    } as const;
+    drawInspector(
+      dock,
+      { ...placed, folder: { id: "f", title: "Benches" } },
+      FOLD,
+      pictures,
+    );
+    const button = dock.body.querySelector<HTMLButtonElement>(
+      '[data-act="select:folder:f"]',
+    );
+    expect(button?.textContent).toContain("Select the folder");
+    expect(button?.textContent).toContain("Benches");
+    drawInspector(dock, placed, FOLD, pictures);
+    expect(dock.body.querySelector('[data-act^="select:"]')).toBeNull();
+  });
+
   // Why: a sound's radius, reach and volume are numbers (block-fields.ts
   // `number`): typed in a decimal box with the unit beside it, never a
   // text with a character counter.
@@ -418,7 +612,7 @@ describe("drawInspector", () => {
             value: "6",
             required: true,
             prose: false,
-            number: { unit: "m" },
+            number: { unit: "m", scale: 1 },
           },
         ],
       },
@@ -480,15 +674,16 @@ describe("drawInspector", () => {
   // controls a model's view already has - chips, the one in use pressed -
   // and his facing as a heading typed like an item's: each control named
   // by the block it sets (`data-act` / `data-field`), so the shell writes
-  // to the right character.
-  it("draws a story character's view and advance as chips and his facing as a heading", () => {
+  // to the right character. The facing turns only the pop-up stage (a
+  // flat figure faces the visitor fully), so it shows in that view alone.
+  it("draws a story character's view and advance as chips and, in the pop-up, his facing as a heading", () => {
     drawInspector(
       dock,
       entryOf({
         id: "w1",
         kind: "Character",
         title: "Wendel",
-        character: { view: "speak", advance: "lineEnd", facingDeg: 179.6 },
+        character: { view: "popup", advance: "lineEnd", facingDeg: 179.6 },
         fields: [],
       }),
       FOLD,
@@ -511,10 +706,10 @@ describe("drawInspector", () => {
       ]);
     expect(chips("character-view:")).toEqual([
       ["character-view:w1:bubble", "Bubble", "false"],
-      ["character-view:w1:speak", "Tap to speak", "true"],
+      ["character-view:w1:speak", "Tap to speak", "false"],
       ["character-view:w1:two-stations", "Two stations", "false"],
       ["character-view:w1:portrait", "Portrait", "false"],
-      ["character-view:w1:popup", "Pop-up", "false"],
+      ["character-view:w1:popup", "Pop-up", "true"],
     ]);
     expect(chips("character-advance:")).toEqual([
       ["character-advance:w1:tap", "On a tap", "false"],
@@ -536,6 +731,26 @@ describe("drawInspector", () => {
     expect(facing?.defaultValue).toBe("180");
     expect(facing?.labels?.[0]?.textContent).toBe("Facing");
     expect(section?.textContent).toContain("Wendel");
+
+    // In every flat-figure view a turn shows nothing: no Facing field.
+    for (const view of ["bubble", "speak", "two-stations", "portrait"]) {
+      drawInspector(
+        dock,
+        entryOf({
+          id: "w1",
+          kind: "Character",
+          title: "Wendel",
+          character: { view, advance: "tap", facingDeg: 90 },
+          fields: [],
+        }),
+        FOLD,
+        pictures,
+      );
+      expect(
+        dock.body.querySelector('[data-field="character-facing:w1"]'),
+        view,
+      ).toBeNull();
+    }
   });
 
   // Why: a story block's texts are typed in its entry's inspector, each
@@ -611,7 +826,7 @@ describe("drawInspector", () => {
       [...(kay?.querySelectorAll<HTMLElement>("[data-field]") ?? [])].map(
         (f) => f.dataset["field"],
       ),
-    ).toEqual(["character-facing:k1", "block:k1:name", "block:k1:caption"]);
+    ).toEqual(["block:k1:name", "block:k1:caption"]);
     expect(dock.body.querySelector('.story-text[data-block="k1"]')).toBeNull();
 
     drawInspector(
@@ -710,10 +925,12 @@ describe("drawInspector", () => {
     ).toBe(dock.body.querySelector(".pos .f > .flabel")?.id);
   });
 
-  // Why: a folder's Scale and Place are what the creator types to move,
-  // turn or scale its whole group; each field must carry the folder's
-  // value and its name, or the edit would land on nothing.
-  it("shows a folder's scale and, under Place, its origin and heading to type", () => {
+  // Why: a folder's pivot fields are what the creator types to move, turn
+  // or scale its whole group; each field must carry the folder's value
+  // and its name, or the edit would land on nothing. They show open, under
+  // their own heading, as the chosen design has them (a folder has no
+  // other fields to fold them away from).
+  it("shows a folder's pivot to type: its position, height, heading and scale", () => {
     const folderStation = {
       ...STATIONS[0]!,
       children: [
@@ -736,23 +953,82 @@ describe("drawInspector", () => {
     drawInspector(
       dock,
       model,
-      { folded: false, positionOpen: true, busy: null },
+      { folded: false, positionOpen: false, busy: null },
       pictures,
     );
     expect(dock.head.querySelector(".ttl")?.textContent).toBe("Benches");
+    expect(dock.body.querySelector(".isec-h")?.textContent).toBe(
+      "Pivot (from the station centre)",
+    );
     expect(dock.body.querySelector(".sub")?.textContent).toBe(
       "Folder in The old gate, 0 items",
     );
     expect(fields()).toEqual([
-      [expect.any(String), "2.00 x"],
-      ["Offset east", "-2.00 m"],
-      ["Offset north", "4.00 m"],
+      ["Position east", "-2.00 m"],
+      ["Position north", "4.00 m"],
       ["Height", "1.00 m"],
       ["Heading", "0.0 deg"],
+      ["Scale", "2.00 x"],
     ]);
     for (const name of ["scale", "east", "north", "height", "heading"]) {
       expect(input(name)).not.toBeNull();
     }
+  });
+
+  // Why: the prototype's folder inspector is the way from the folder to
+  // one of its items alone (a row selects it, as the tree's does), to all
+  // of them picked ("Select its items"), and to a pivot at their centre;
+  // each must carry the act the shell answers, and an empty folder offers
+  // no pick of nothing.
+  it("lists a folder's items to select alone, and offers Pivot to centre and Select its items", () => {
+    const pinOf = (id: string, caption: string) => ({
+      id,
+      kind: "shortText",
+      view: "pin",
+      caption,
+      createdAtIso: AT,
+      pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+    });
+    const station = (children: unknown[]) =>
+      ({
+        ...STATIONS[0]!,
+        children: [
+          {
+            id: "f",
+            kind: "folder",
+            title: "Benches",
+            pose: { position: [4, 1, -2], rotation: [0, 0, 0, 1] },
+            children,
+          },
+        ],
+      }) as unknown as TourStation;
+    const show = (children: unknown[]) => {
+      drawInspector(
+        dock,
+        buildInspector({
+          selected: "folder:f",
+          stations: [station(children)],
+          assets: [],
+          codes: CODES,
+        }),
+        { folded: false, positionOpen: false, busy: null },
+        pictures,
+      );
+    };
+    show([pinOf("a", "North bench"), pinOf("b", "South bench")]);
+    const rows = [...dock.body.querySelectorAll<HTMLElement>(".kids .kid")];
+    expect(rows.map((r) => [r.dataset["act"], r.textContent])).toEqual([
+      ["goto:a", "North bench"],
+      ["goto:b", "South bench"],
+    ]);
+    const act = (name: string) =>
+      dock.body.querySelector<HTMLButtonElement>(`[data-act="${name}"]`);
+    expect(act("pivot-centre")?.textContent).toContain("Pivot to centre");
+    expect(act("select-items")?.textContent).toContain("Select its items");
+    expect(act("select-items")?.disabled).toBe(false);
+    show([]);
+    expect(dock.body.querySelectorAll(".kids .kid")).toHaveLength(0);
+    expect(act("select-items")?.disabled).toBe(true);
   });
 
   it("shows an item's offset in its station's frame, its height and heading to type", () => {
@@ -765,6 +1041,8 @@ describe("drawInspector", () => {
       ["Title", ""],
       ["Caption", ""],
       ["Alt text", ""],
+      ["Credit", ""],
+      ["Year", ""],
       // Its width, the size its white dots change.
       ["Width", "1.00 m"],
       ["Offset east", "-2.00 m"],
@@ -780,7 +1058,13 @@ describe("drawInspector", () => {
     const counts = [...dock.body.querySelectorAll("output.count")].map(
       (o) => o.textContent,
     );
-    expect(counts).toEqual(["0 / 40", "0 / 1200", "0 / 300"]);
+    expect(counts).toEqual([
+      "0 / 40",
+      "0 / 1200",
+      "0 / 300",
+      "0 / 200",
+      "0 / 24",
+    ]);
     const alt = input("alt") as unknown as HTMLTextAreaElement | null;
     expect(alt?.tagName).toBe("TEXTAREA");
     expect(alt?.getAttribute("aria-describedby")).toBe(
@@ -1495,6 +1779,51 @@ describe("the radius slider", () => {
     const range = dock.body.querySelector(".pos .range");
     expect(range?.querySelector("input[type=range]")).not.toBeNull();
     expect(range?.contains(input("radius"))).toBe(true);
+  });
+});
+
+describe("the crumb and the way up", () => {
+  // Why: Back goes one level up, everywhere in the editor: its name says
+  // where to, and the crumb over the details goes to any level above,
+  // the selection itself shown as the current part, not a button.
+  it("draws each level as a button, names Back by the level above", () => {
+    drawInspector(
+      dock,
+      buildInspector({
+        selected: "photo-1",
+        stations:
+          manifestToWrite(storeWith("photo-1").getState().tourDocument)
+            ?.stations ?? [],
+        assets: [],
+        codes: CODES,
+      }),
+      {
+        folded: false,
+        positionOpen: false,
+        crumb: [
+          { label: "Tour", select: null },
+          { label: "1 The old gate", select: "station:gate" },
+          { label: "Photo", select: "photo-1" },
+        ],
+      },
+      pictures,
+    );
+    const parts = [
+      ...dock.body.querySelectorAll<HTMLButtonElement>(
+        'nav.crumbs[aria-label="Where you are"] button',
+      ),
+    ];
+    expect(parts.map((b) => [b.textContent, b.dataset["act"] ?? null])).toEqual(
+      [
+        ["Tour", "nav:"],
+        ["1 The old gate", "nav:station:gate"],
+        ["Photo", null],
+      ],
+    );
+    expect(parts[2]?.getAttribute("aria-current")).toBe("page");
+    expect(
+      dock.head.querySelector('[data-act="back"]')?.getAttribute("aria-label"),
+    ).toBe("Back to 1 The old gate");
   });
 });
 

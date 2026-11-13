@@ -68,6 +68,7 @@
         "src/ar/tour-blocks.ts",
         "src/ar/tour-story.ts",
         "src/ar/tour-markdown.ts",
+        "src/ar/tour-short-text.ts",
         "config/eslint.config.mjs"
       ],
       "project": ["src/**/*.ts"],
@@ -210,6 +211,7 @@
         "src/checks/item-lab.ts",
         "src/checks/lectern-check.ts",
         "src/checks/long-text-check.ts",
+        "src/checks/narration-look-check.ts",
         "src/characters/maker-main.ts",
         "config/stylelint.config.mjs",
         "playwright-tests/**/*.{js,ts}",

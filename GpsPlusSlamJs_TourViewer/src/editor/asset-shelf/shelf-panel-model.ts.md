@@ -37,6 +37,8 @@ and the phone's progress pill. Pure functions over the shelf's rows
   failed (a failure full), the rest counted, a check once all is done.
 - `shelfBadge(rows)`: failures (bad) first, else files in the works, else
   null.
+- `filesBadge(rows)` (`FilesBadge`): `shelfBadge` plus an accessible name
+  ("2 files not optimized", "optimizing 1 file") for the docked Files tab.
 - `pillView(rows)`: the phone pill's text, or null.
 - `cardWarning(row)`: a video's words when it is large for its length
   (`video-size.ts`, on `estimatedBytes` over `seconds`); null for other

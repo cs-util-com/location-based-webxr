@@ -90,6 +90,7 @@ import {
   type TourShortTextBlock,
   type TourVideoBlock,
 } from './tour-blocks.js';
+import type { TourPictureWorldView } from './tour-kinds.js';
 import {
   parseTourDetails,
   tourImageIds,
@@ -181,13 +182,13 @@ type InWorld<B> = Omit<B, 'pose'> & TourPlacement;
 /** A short text in the world, drawn as a pin. */
 export type TourPin = InWorld<TourShortTextBlock> & { readonly view: 'pin' };
 /**
- * A picture in the world, drawn as a plane, with its image asset inline
+ * A picture in the world, in one of its world views, with its image asset inline
  * (`imageAsset.id === image`): the page that captured a photo holds its
  * asset before any tour lists it, and every page drawing or saving the
  * picture needs the file it names.
  */
 export type TourPicture = InWorld<TourPictureBlock> & {
-  readonly view: 'plane';
+  readonly view: TourPictureWorldView;
   readonly imageAsset: TourAsset;
 };
 /** A 3D model in the world at its size, in one of its world views. */

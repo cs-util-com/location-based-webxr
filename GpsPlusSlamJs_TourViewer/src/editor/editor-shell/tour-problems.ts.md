@@ -45,6 +45,10 @@ its station's circle" that the inspector's count reads too.
     story holding a child that plays (a story of just a choice counts as
     content; an empty story does not, nor does one of only quizzes, which
     do not play yet).
+  - warning: a story's loop that no answer can leave (`storyTrap`,
+    `../story-steps.ts`): "Steps 1 and 2 go round in a loop that no answer
+    can leave: ...", `who` the story's title, `select` the loop's first
+    step. A backward jump that can be left is no problem.
 - `problemCounts(groups)` -> `{ error, warning, note }`.
 
 ## Invariants & assumptions

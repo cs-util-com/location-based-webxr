@@ -103,8 +103,8 @@ keys), and writes only through the page's `edits`.
   press there picks, and whether it meets the move disc) and
   `gizmoSizes()` - CSS px
   on the canvas, for the page's checks. `folderOutlines()` - how many teal boxes show
-  around a selected plain folder's items (`folder-outline.ts`), for the
-  same checks; the globe view answers it too.
+  around a selected plain folder's items, and its dashed outline and name
+  tag (`folder-outline.ts`, `FolderOutlineShown`), for the same checks; the globe view answers it too.
 - `stats()` also carries the orbit's `target`, `distanceM`, the
   `camera`'s position, whether a flight is `flying`, and `top`.
 - Types `Editor3dDeps`, `Editor3dEdits`, `Editor3dStats` (the store it
@@ -115,6 +115,8 @@ keys), and writes only through the page's `edits`.
 - `modelParts()` and `modelScreenOf(id, at)` - the selected model's
   discs and planes, and a point of a drawn model on the canvas (the page's
   checks).
+- `characterCheck(id)` - what a drawn character shows now (bubble, name
+  tag, squareness to the camera), or null (the page's checks).
 - `showSoundIcons(on)` - every sound's speaker icon shown or hidden (the
   page's checks).
 - `previewRadius(stationId, radiusM)` - forwards to the editing layer, for

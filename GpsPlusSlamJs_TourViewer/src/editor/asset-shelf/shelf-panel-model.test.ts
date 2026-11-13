@@ -24,6 +24,7 @@ import {
   RAIL_RINGS,
   railView,
   shapeKey,
+  filesBadge,
   shelfBadge,
   shelfChips,
   shelfSummary,
@@ -386,6 +387,27 @@ describe("the folded rail", () => {
 });
 
 describe("the badge and the pill", () => {
+  // Why: docked, the Files tab and its rail carry the badge; a number alone
+  // says nothing to a screen reader, so the badge names what it counts.
+  it("names what the docked Files badge counts", () => {
+    const busy = [row({ id: "1", status: "running" }), row({ id: "2" })];
+    expect(filesBadge([])).toBeNull();
+    expect(filesBadge(busy)).toEqual({
+      count: 1,
+      bad: false,
+      label: "optimizing 1 file",
+    });
+    const bad = [
+      row({ id: "3", status: "failed" }),
+      row({ id: "4", status: "failed" }),
+    ];
+    expect(filesBadge([...busy, ...bad])).toEqual({
+      count: 2,
+      bad: true,
+      label: "2 files not optimized",
+    });
+  });
+
   it("count the failures first, marked bad, else the files in the works", () => {
     const busy = [row({ id: "1", status: "running" }), row({ id: "2" })];
     expect(shelfBadge(busy)).toEqual({ count: 1, bad: false });

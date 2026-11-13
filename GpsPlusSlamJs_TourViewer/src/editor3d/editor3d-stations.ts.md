@@ -32,7 +32,8 @@ ray (`pick`).
   `viewportPx` and `fovDeg` (the view's height in CSS px and the camera's
   vertical lens: what a code's size on screen is worked out from), and
   the optional `eye` (the camera itself: given, each drawn part with an
-  `update` is ticked, see below).
+  `update` is ticked, see below) and the optional `selected` (the
+  editor's selection, handed on in each part's frame).
 - `LayerPreview` - `{ ref, geo, value }`: the placeable
   (`../placement/placeables.ts` `PlaceRef`, a station or a block), its
   dragged pose (an ellipsoidal geo pose, as the file) and its dots' value
@@ -69,7 +70,9 @@ standing`). A distance, size or focal length that is not a positive
     with `view.eye`, each part of a shown station that has an `update`
     is handed a `WorldFrame`: the page clock, the camera's position in
     the part's parent frame (as the visitor's `tickWorldParts` gives it),
-    the camera and `metresPerPxAtOneM` (1 / `focalPxOf`), so a part can
+    the camera, `metresPerPxAtOneM` (1 / `focalPxOf`) and `selected`
+    (`view.selected`, null when none; a character opens his full bubble
+    only while selected), so a part can
     keep a size on the screen or face the camera (the speaker icon,
     `kinds/audio/sound-icon.ts`) without importing the editor;
   - `stats()` - `{ stations, codes, codeScales, shown, renders }`

@@ -89,26 +89,39 @@ const MODEL: ViewPlacement = {
   },
 };
 
+/** A picture standing at its pose: turned by it, sized by its width. */
+const PICTURE_STANDING: ViewPlacement = {
+  ...TURNING,
+  extent: {
+    kind: "size",
+    field: "widthM",
+    label: "Width",
+    meaning: "Its width",
+    min: TOUR_PICTURE_MIN_WIDTH_M,
+    max: TOUR_PICTURE_MAX_WIDTH_M,
+  },
+};
+
 type ViewsOf<K extends TourBlockKind> = (typeof TOUR_KINDS)[K]["views"][number];
 
 /** THE block table: one row per kind and view of the format. */
 export const BLOCK_PLACEMENT = {
-  shortText: { pin: FACING, card: POSELESS },
+  // A sign keeps its pose's turn unless it is told to turn to the
+  // visitor; a hint at the edge is a ring and a tag on the screen.
+  shortText: { pin: FACING, sign: TURNING, edgeHint: FACING, card: POSELESS },
   // The stand keeps its turn about up (`uprightTurn`); the sign's plate
   // turns to the viewer as it is drawn.
   longText: { lectern: TURNING, reading: FACING, card: POSELESS },
   picture: {
-    plane: {
-      ...TURNING,
-      extent: {
-        kind: "size",
-        field: "widthM",
-        label: "Width",
-        meaning: "Its width",
-        min: TOUR_PICTURE_MIN_WIDTH_M,
-        max: TOUR_PICTURE_MAX_WIDTH_M,
-      },
-    },
+    plane: PICTURE_STANDING,
+    framed: PICTURE_STANDING,
+    cutout: PICTURE_STANDING,
+    // Drawn as a plane at the pose until their overlays stand.
+    thenNow: PICTURE_STANDING,
+    sharpen: PICTURE_STANDING,
+    finder: PICTURE_STANDING,
+    window: PICTURE_STANDING,
+    viewer: PICTURE_STANDING,
     card: POSELESS,
   },
   video: { card: POSELESS },
@@ -122,13 +135,13 @@ export const BLOCK_PLACEMENT = {
     toy: MODEL,
     card: POSELESS,
   },
-  // He turns toward the camera by at most 60 degrees from his facing, so
-  // his facing shows.
+  // His flat figure faces the camera fully, so a turn shows nothing; the
+  // pop-up is a stage set that keeps his facing.
   character: {
-    bubble: TURNING,
-    speak: TURNING,
-    "two-stations": TURNING,
-    portrait: TURNING,
+    bubble: FACING,
+    speak: FACING,
+    "two-stations": FACING,
+    portrait: FACING,
     popup: TURNING,
     card: POSELESS,
   },

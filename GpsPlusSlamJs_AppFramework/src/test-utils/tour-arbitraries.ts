@@ -51,6 +51,23 @@ import {
   type TourBlockKind,
   type TourTextRule,
 } from '../ar/tour-blocks.js';
+import {
+  TOUR_PICTURE_MAX_DISTANCE_M,
+  TOUR_PICTURE_MAX_HFOV_DEG,
+  TOUR_PICTURE_MIN_DISTANCE_M,
+  TOUR_PICTURE_MIN_HFOV_DEG,
+  TOUR_PICTURE_WORLD_VIEWS,
+} from '../ar/tour-kinds.js';
+import {
+  TOUR_GROUND_FLOOR_PLACEMENTS,
+  TOUR_GROUND_MAX_BEND_DEG,
+  TOUR_GROUND_STYLES,
+  TOUR_SHORT_TEXT_MAX_READ_AT_M,
+  TOUR_SHORT_TEXT_MIN_READ_AT_M,
+  TOUR_SHORT_TEXT_ORIENTATIONS,
+  TOUR_SHORT_TEXT_POINT_MAX_M,
+  TOUR_SHORT_TEXT_ROLES,
+} from '../ar/tour-short-text.js';
 import { TOUR_STORY_TITLE_RULE } from '../ar/tour-story.js';
 
 /** The assets every generated block names: one or two of each kind, with
@@ -192,6 +209,24 @@ export const tourLocalPoseArbitrary = fc.record({
   rotation: yawRotation,
 });
 
+/** A picture's viewpoint: a station-frame pose, a lens and a distance
+ *  inside the format's bounds. */
+const pictureViewpointArbitrary = fc
+  .tuple(
+    tourLocalPoseArbitrary,
+    fc.double({
+      min: TOUR_PICTURE_MIN_HFOV_DEG,
+      max: TOUR_PICTURE_MAX_HFOV_DEG,
+      noNaN: true,
+    }),
+    fc.double({
+      min: TOUR_PICTURE_MIN_DISTANCE_M,
+      max: TOUR_PICTURE_MAX_DISTANCE_M,
+      noNaN: true,
+    })
+  )
+  .map(([pose, hfovDeg, distanceM]) => ({ ...pose, hfovDeg, distanceM }));
+
 const iso = fc
   .integer({ min: 0, max: 4_102_444_800_000 })
   .map((ms) => new Date(ms).toISOString());
@@ -209,6 +244,55 @@ function defined(record: Record<string, unknown>): Record<string, unknown> {
 
 const r = TOUR_BLOCK_TEXT_RULES;
 
+/** An optional value (absent is undefined). */
+const maybe = <T>(a: fc.Arbitrary<T>) => fc.option(a, { nil: undefined });
+
+/** JSON writes -0 as 0, so a file never holds one. */
+const noNegZero = (x: number) => (x === 0 ? 0 : x);
+
+const hexColor = fc
+  .integer({ min: 0, max: 0xffffff })
+  .map((n) => `#${n.toString(16).padStart(6, '0')}`);
+
+/** One coordinate of a short text's `pointsTo`, in metres. */
+const pointCoord = fc
+  .double({
+    min: -TOUR_SHORT_TEXT_POINT_MAX_M,
+    max: TOUR_SHORT_TEXT_POINT_MAX_M,
+    noNaN: true,
+  })
+  .map(noNegZero);
+
+/** A short text's look fields (`tour-short-text.ts`), each optional;
+ *  exported for a consumer's own every-field generator. */
+export const shortTextLookArbitraries = {
+  role: maybe(fc.constantFrom(...TOUR_SHORT_TEXT_ROLES)),
+  orientation: maybe(fc.constantFrom(...TOUR_SHORT_TEXT_ORIENTATIONS)),
+  readAtM: maybe(
+    fc.double({
+      min: TOUR_SHORT_TEXT_MIN_READ_AT_M,
+      max: TOUR_SHORT_TEXT_MAX_READ_AT_M,
+      noNaN: true,
+    })
+  ),
+  pointsTo: maybe(fc.tuple(pointCoord, pointCoord, pointCoord)),
+  lang: maybe(fc.constantFrom('en', 'de-CH', 'zh-Hant-TW')),
+  style: maybe(fc.constantFrom(...TOUR_GROUND_STYLES)),
+  bendDeg: maybe(
+    fc
+      .double({
+        min: -TOUR_GROUND_MAX_BEND_DEG,
+        max: TOUR_GROUND_MAX_BEND_DEG,
+        noNaN: true,
+      })
+      .map(noNegZero)
+  ),
+  floorPlacement: maybe(fc.constantFrom(...TOUR_GROUND_FLOOR_PLACEMENTS)),
+  captionOnArrow: maybe(fc.boolean()),
+  color: maybe(hexColor),
+  darkColor: maybe(hexColor),
+};
+
 /** Each kind's own fields for a block in `view`. */
 const KIND_FIELDS: Record<
   TourBlockKind,
@@ -218,6 +302,7 @@ const KIND_FIELDS: Record<
     fc.record({
       caption: tourTextArbitrary(r.shortText.caption),
       description: optionalText(r.shortText.description),
+      ...shortTextLookArbitraries,
     }),
   longText: () =>
     fc.record({
@@ -230,11 +315,15 @@ const KIND_FIELDS: Record<
       title: optionalText(r.picture.title),
       caption: optionalText(r.picture.caption),
       alt: optionalText(r.picture.alt),
+      credit: optionalText(r.picture.credit),
+      year: optionalText(r.picture.year),
       widthM: fc.double({
         min: TOUR_PICTURE_MIN_WIDTH_M,
         max: TOUR_PICTURE_MAX_WIDTH_M,
         noNaN: true,
       }),
+      showTag: fc.option(fc.boolean(), { nil: undefined }),
+      viewpoint: fc.option(pictureViewpointArbitrary, { nil: undefined }),
     }),
   video: () =>
     fc.record({
@@ -388,9 +477,9 @@ const modelSize = fc.double({
 export const TOUR_FREE_VIEWS: Readonly<
   Record<TourBlockKind, readonly string[]>
 > = {
-  shortText: ['pin'],
+  shortText: ['pin', 'sign', 'edgeHint'],
   longText: ['lectern', 'reading'],
-  picture: ['plane'],
+  picture: TOUR_PICTURE_WORLD_VIEWS,
   video: ['card'],
   audio: ['spot', 'zone'],
   model: TOUR_MODEL_WORLD_VIEWS,
@@ -471,9 +560,13 @@ const quizActionArbitrary = fc
     answer,
   }));
 
+/** Where an answer leads: the next child (null), a child by index, or the
+ *  end of the story. */
+type GeneratedWayOn = number | null | 'end';
+
 function choiceAction(
   childIds: readonly string[],
-  gotos: readonly (number | null)[]
+  gotos: readonly GeneratedWayOn[]
 ): Record<string, unknown> {
   return {
     kind: 'choice',
@@ -483,9 +576,10 @@ function choiceAction(
         id: `o${String(i)}`,
         label: `Option ${String(i)}`,
         goto:
-          g === null || childIds.length === 0
+          g === null || g === 'end' || childIds.length === 0
             ? undefined
             : childIds[g % childIds.length],
+        end: g === 'end' ? true : undefined,
       })
     ),
   };
@@ -583,7 +677,14 @@ function storyChildArbitrary(
   if (kind === 'quiz') return quizActionArbitrary.map((q) => ({ id, ...q }));
   if (kind === 'choice') {
     return fc
-      .array(fc.option(fc.nat(), { nil: null }), { minLength: 2, maxLength: 4 })
+      .array(
+        fc.oneof(
+          fc.nat(),
+          fc.constant<GeneratedWayOn>(null),
+          fc.constant<GeneratedWayOn>('end')
+        ),
+        { minLength: 2, maxLength: 4 }
+      )
       .map((gotos) => ({ id, ...choiceAction(storyIds, gotos) }));
   }
   return fc

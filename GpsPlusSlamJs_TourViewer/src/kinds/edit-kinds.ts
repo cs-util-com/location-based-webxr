@@ -19,16 +19,50 @@ import {
   type TourBlockKind,
 } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import type { TourAssetKind } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import {
+  TOUR_SHORT_TEXT_MAX_READ_AT_M,
+  TOUR_SHORT_TEXT_MIN_READ_AT_M,
+} from "gps-plus-slam-app-framework/ar/tour-short-text";
 
 /** A number a field takes: the format's bounds, its unit, and whether the
  *  views it shows in need it. */
 interface NumberSpec {
+  /** The bounds, in what the box shows. */
   readonly min: number;
   readonly max: number;
   /** Shown beside the box ("m"; "" for none). */
   readonly unit: string;
   readonly required: boolean;
+  /** The box shows `scale` times what the file holds (a volume of 0.5 is
+   *  50 %); none: as the file holds it. */
+  readonly scale?: number;
+  /** A slider beside the box over the values set by feel, in what the box
+   *  shows; the box takes the rest of the bounds. */
+  readonly slider?: {
+    readonly min: number;
+    readonly max: number;
+    readonly step: number;
+  };
+  /** The field this slider shares its track with as the lower thumb: one
+   *  track, two thumbs that never cross. */
+  readonly low?: string;
+  /** Drawn under it: the zone's loudness over distance. */
+  readonly curve?: "loudness";
 }
+
+/** A short text's roles, as its panel offers them. */
+const SHORT_TEXT_ROLES: readonly FieldChoice[] = [
+  { value: "instruction", label: "Instruction" },
+  { value: "label", label: "Label" },
+  { value: "warning", label: "Warning" },
+];
+
+/** How a sign turns, as its panel offers it. */
+const SHORT_TEXT_TURNS: readonly FieldChoice[] = [
+  { value: "world", label: "Fixed" },
+  { value: "upright", label: "Upright" },
+  { value: "face", label: "Faces you" },
+];
 
 /** One field of a kind, as the inspector draws it. */
 export interface FieldSpec {
@@ -41,6 +75,15 @@ export interface FieldSpec {
   readonly number?: NumberSpec;
   /** Only in these views (the ones that read it); none: in every view. */
   readonly views?: readonly string[];
+  /** One of these values, chosen on the kind's panel's chips rather than
+   *  typed (none: typed). */
+  readonly choices?: readonly FieldChoice[];
+}
+
+/** One value a choice field takes, and its chip's words. */
+export interface FieldChoice {
+  readonly value: string;
+  readonly label: string;
 }
 
 /** How a kind is added from nothing: its line in the tree's type menu (and,
@@ -91,6 +134,10 @@ const TRANSCRIPT = {
   prose: true,
 } as const;
 
+/** The reach's track, its two thumbs the full volume's edge and the
+ *  reach (m). */
+const REACH_SLIDER = { min: 1, max: 60, step: 1 } as const;
+
 /** A sound's world fields, each in the view that reads it, bounded as
  *  the format bounds them (`tour-kinds.ts` `audioWorld`). */
 const AUDIO_WORLD: readonly FieldSpec[] = [
@@ -104,6 +151,7 @@ const AUDIO_WORLD: readonly FieldSpec[] = [
       max: TOUR_AUDIO_MAX_RADIUS_M,
       unit: "m",
       required: true,
+      slider: { min: 2, max: 15, step: 0.5 },
     },
   },
   {
@@ -116,6 +164,8 @@ const AUDIO_WORLD: readonly FieldSpec[] = [
       max: TOUR_AUDIO_MAX_REACH_M,
       unit: "m",
       required: true,
+      slider: REACH_SLIDER,
+      low: "minM",
     },
   },
   {
@@ -135,7 +185,15 @@ const AUDIO_WORLD: readonly FieldSpec[] = [
     label: "Volume",
     prose: false,
     views: ["zone"],
-    number: { min: 0, max: 1, unit: "", required: true },
+    number: {
+      min: 0,
+      max: 100,
+      unit: "%",
+      required: true,
+      scale: 100,
+      slider: { min: 0, max: 100, step: 1 },
+      curve: "loudness",
+    },
   },
 ];
 
@@ -147,7 +205,29 @@ export const KIND_EDIT = {
     thing: "pin",
     look: "pin",
     searchWords: "pin note short text",
-    fields: [{ name: "description", label: "Description", prose: true }],
+    fields: [
+      { name: "description", label: "Description", prose: true },
+      {
+        name: "readAtM",
+        label: "Reads at",
+        prose: false,
+        number: {
+          min: TOUR_SHORT_TEXT_MIN_READ_AT_M,
+          max: TOUR_SHORT_TEXT_MAX_READ_AT_M,
+          unit: "m",
+          required: false,
+        },
+        views: ["sign"],
+      },
+      { name: "role", label: "Role", prose: false, choices: SHORT_TEXT_ROLES },
+      {
+        name: "orientation",
+        label: "Turns",
+        prose: false,
+        choices: SHORT_TEXT_TURNS,
+        views: ["sign"],
+      },
+    ],
     add: {
       label: "Short text",
       hint: "A pin with a caption",
@@ -179,6 +259,8 @@ export const KIND_EDIT = {
       TITLE,
       { name: "caption", label: "Caption", prose: true },
       { name: "alt", label: "Alt text", prose: true },
+      { name: "credit", label: "Credit", prose: false },
+      { name: "year", label: "Year", prose: false },
     ],
     add: {
       label: "Picture",

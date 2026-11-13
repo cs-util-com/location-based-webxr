@@ -479,6 +479,18 @@ function card(page, name) {
   return page.locator("#tree-body .card", { hasText: name });
 }
 
+/**
+ * The fold button of the docked group holding panel `id`'s tab: on a
+ * folded group it is the rail's unfold button.
+ * @param {import("@playwright/test").Page} page
+ * @param {string} id
+ */
+function railFold(page, id) {
+  return page
+    .locator(`.dock-host .dv-groupview:has(.dock-tab[data-panel="${id}"])`)
+    .locator(".dock-fold");
+}
+
 test("the shell's layout at a phone, a phone in landscape, a tablet and a desktop", async ({
   page,
 }) => {
@@ -515,7 +527,15 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   await page.locator('#inspector-head [data-act="fold"]').click();
   await expect(page.locator("#inspector-body")).toBeHidden();
   await expectFrame(page, landscape);
-  await page.locator('#inspector-head [data-act="fold"]').click();
+  // Folded, the details are a rail at the window's right edge, and the
+  // head's fold button goes with the panel: the rail's own button unfolds.
+  const rail = railFold(page, "details");
+  await expect(rail).toBeVisible();
+  await expect(rail).toHaveAttribute("aria-expanded", "false");
+  const railBox = await box(rail);
+  expect(railBox.x + railBox.width).toBeLessThanOrEqual(landscape.width);
+  expect(railBox.x).toBeGreaterThan(landscape.width - 60);
+  await rail.click();
   await expect(page.locator("#inspector-body")).toBeVisible();
 
   // A tablet in portrait: the labels go, the same two docks.
@@ -569,8 +589,8 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
 /**
  * The bottom bar's toggles and the bottom panel they open, at one size:
  * the four named toggles side by side, flush with the asset shelf's toggle
- * at the bar's right edge; the panel on the bar, between the open docks
- * (or under both, spanned), left of the asset shelf, its
+ * at the bar's right edge; the panel on the bar, between the open docks,
+ * left of the asset shelf, its
  * 30 px head with the tabs at its left, the map controls 14 px over it.
  * @param {import("@playwright/test").Page} page
  * @param {{ width: number, height: number }} size
@@ -608,12 +628,8 @@ async function expectPanel(page, size, heightPx) {
   const open = async (/** @type {import("@playwright/test").Locator} */ d) =>
     (await d.isVisible()) &&
     !(await d.evaluate((el) => el.classList.contains("collapsed")));
-  const spanned = await page
-    .locator("#shell-panel")
-    .evaluate((el) => el.classList.contains("span"));
   // The asset shelf at the window's right runs down to the bottom bar
-  // beside the panel; spanned, the panel runs under it too (a phone's
-  // shelf is a sheet of its own, closed here).
+  // beside the panel (a phone's shelf is a sheet of its own, closed here).
   const shelf = page.locator("#shell-shelf");
   const shelfShown = size.width > 700 && (await shelf.isVisible());
   let left = 0;
@@ -621,15 +637,10 @@ async function expectPanel(page, size, heightPx) {
   if (shelfShown) {
     const s = await box(shelf);
     expect(s.x + s.width, `the shelf ${at}`).toBeCloseTo(size.width, 0);
-    if (!spanned) {
-      expect(s.y + s.height, `the shelf ${at}`).toBeCloseTo(
-        size.height - 24,
-        0,
-      );
-      right = s.x;
-    }
+    expect(s.y + s.height, `the shelf ${at}`).toBeCloseTo(size.height - 24, 0);
+    right = s.x;
   }
-  if (size.width > 700 && !spanned) {
+  if (size.width > 700) {
     if (await open(tree)) {
       const t = await box(tree);
       left = t.x + t.width;
@@ -839,8 +850,8 @@ test("the bottom bar's toggles open the bottom panel between the docks, at a pho
   await problems.click();
   await expect(problems).toHaveAttribute("aria-pressed", "true");
   // Docked, the toggle shows the Problems tab's group under the 3D view
-  // (the panel's own frame, with its span button, is the phone's alone: a
-  // docked group spans by being dragged).
+  // (the panel's own frame is the phone's alone: a docked group spans by
+  // being dragged).
   await expect(
     page.locator(".dock-host").getByRole("tab", { name: "Problems" }),
   ).toBeVisible();
@@ -1504,10 +1515,10 @@ test("File's Add debug data opens the same add as the map's panel", async ({
 test("a tap on the folded tree's Stations header opens the dock with its stations shown", async ({
   page,
 }) => {
-  // Why: the folded head's "Stations" header is the larger target. A tap
-  // on it unfolded the dock and also closed the Stations section, so the
-  // tree came back with every station hidden and seemed to have collapsed;
-  // the next tap opened it. On a folded dock the header only unfolds.
+  // Why: a tap that unfolded the dock once also closed the Stations
+  // section, so the tree came back with every station hidden and seemed to
+  // have collapsed. The folded tree is now a rail, which hides the header:
+  // the rail's button unfolds it, and the Stations come back shown.
   test.setTimeout(150_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   await open3d(page);
@@ -1517,7 +1528,7 @@ test("a tap on the folded tree's Stations header opens the dock with its station
     "aria-expanded",
     "true",
   );
-  await page.locator("#tree-stations").click();
+  await railFold(page, "list").click();
   await expect(page.locator("#shell-tree")).not.toHaveClass(/\bcollapsed\b/);
   await expect(page.locator("#tree-stations")).toHaveAttribute(
     "aria-expanded",

@@ -112,9 +112,19 @@ import {
   type EntryAdvance,
 } from "./inspector-edits.js";
 import {
+  stepWithAnswer,
+  stepWithGoto,
+  stepWithoutAnswer,
+  stepWithRight,
+  type StepKind,
+  type StoryStep,
+} from "../story-step-edits.js";
+import {
   buildInspector,
   detailsOnPhone,
+  inspectorCrumb,
   inspectorHint,
+  sceneHint,
   type InspectorCode,
   type InspectorModel,
 } from "./inspector-model.js";
@@ -126,13 +136,8 @@ import {
   inspectorDrawing,
 } from "./shell-inspector.js";
 import { createBottomPanel } from "./bottom-panel.js";
-import type { DockHost, mountDockHost } from "./dock-host.js";
-import {
-  dockPanel,
-  docksAt,
-  isBottomPanelId,
-  type DockPanelId,
-} from "./dock-layout.js";
+import type { DockBadge, DockHost, mountDockHost } from "./dock-host.js";
+import { docksAt, isBottomPanelId, type DockPanelId } from "./dock-layout.js";
 import { watchKeyboard } from "./phone-keyboard.js";
 import {
   SHELL_DOCK_LAYOUT,
@@ -141,6 +146,7 @@ import {
   type SheetKind,
 } from "./phone-sheet.js";
 import { wireRadiusSlider } from "./radius-slider.js";
+import { wireFieldSliders } from "./field-sliders.js";
 import { createShellPictures } from "./shell-pictures.js";
 import { tourProblems } from "./tour-problems.js";
 import { drawSelectionBar, drawTree, type TreeRenaming } from "./shell-tree.js";
@@ -234,6 +240,9 @@ export interface ShellEditCommands {
   block(itemId: string, field: string, value: string): TypedEditOutcome;
   /** A free block's view (`TOUR_BLOCK_VIEWS`): a long text's sign. */
   view(itemId: string, view: string): TypedEditOutcome;
+  /** A picture's tag shown or hidden (a cut-out's); absent: the page
+   *  has no such edit and the switch is not drawn. */
+  pictureTag?(itemId: string, shown: boolean): TypedEditOutcome;
   /** One of a model's own edits (`model-edits.ts`): its view, a note,
    *  a section, its clip. */
   model(itemId: string, edit: ModelEdit): TypedEditOutcome;
@@ -252,6 +261,9 @@ export interface ShellEditCommands {
   addStory(stationId: string): void;
   /** A new entry of `kind` in the story, selected, one undo step. */
   addToStory(storyId: string, kind: AddKind): void;
+  /** A new choice or quiz at the end of the story, selected, one undo
+   *  step. */
+  addStepToStory(storyId: string, kind: StepKind): void;
   /** The add menu's Character: the character maker opens on a new
    *  character, which is then added to the station (standing free) or to
    *  the end of the story. */
@@ -263,6 +275,9 @@ export interface ShellEditCommands {
   storyTitle(storyId: string, title: string): TypedEditOutcome;
   /** How a story's block moves on. */
   storyAdvance(id: string, advance: EntryAdvance): TypedEditOutcome;
+  /** A story's choice or quiz written whole: its question, its answers,
+   *  where each leads, the right one, its points. */
+  storyStep(step: StoryStep): TypedEditOutcome;
   /** A long text's narration as it stands (`EditorSession.narration`). */
   narration(
     itemId: string,
@@ -353,9 +368,16 @@ export interface EditorShell {
   /** Docked, shows a panel (its side unfolded, it the shown tab); else
    *  nothing. */
   reveal(id: DockPanelId): void;
+  /** Docked, takes a shown panel out of sight: `instead` shown in its
+   *  place when its group holds it, else the group's next panel, or, alone
+   *  in its group, the group hidden; else nothing. */
+  conceal(id: DockPanelId, instead?: DockPanelId): void;
   /** Docked, whether the Files panel shows: its group shown and it the
    *  group's shown tab. Undocked: false. */
   filesShown(): boolean;
+  /** The count on a docked panel's tab (null: none), kept for when the
+   *  panels dock. */
+  badge(id: DockPanelId, badge: DockBadge | null): void;
 }
 
 const BAR_ICON: Readonly<Record<BarAction, ShellIcon>> = {
@@ -420,6 +442,30 @@ function entryAdvanceEdit(
 
 /** A chip of how a story's block moves on: its block and its mode. */
 const ENTRY_ADVANCE = /^entry-advance:(.+):([^:]+)$/;
+
+/** A step's jump picker: `step-goto:<answer id>`. */
+const STEP_GOTO = "step-goto:";
+
+/** A step's Add, an answer's Remove (`step-remove:<answer id>`) or its
+ *  right-answer radio (`step-right:<answer id>`) as the whole step it
+ *  writes; null for another act, a selection that is no edited step,
+ *  and one that changes nothing (the right one ticked again, Add at four,
+ *  Remove at two). */
+function stepActEdit(
+  model: InspectorModel | null,
+  act: string,
+): StoryStep | null {
+  const step = model?.kind === "storyStep" ? model.form?.step : undefined;
+  if (step === undefined) return null;
+  if (act === "step-add") return stepWithAnswer(step);
+  if (act.startsWith("step-remove:")) {
+    return stepWithoutAnswer(step, act.slice("step-remove:".length));
+  }
+  if (act.startsWith("step-right:") && step.kind === "quiz") {
+    return stepWithRight(step, act.slice("step-right:".length));
+  }
+  return null;
+}
 
 /** A story character's chip (`character-view:<block>:<view>` or
  *  `character-advance:<block>:<mode>`) as his station's edit, or null for
@@ -509,7 +555,14 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         deps.edits.addCharacter({ kind: "story", id });
         return;
       }
-      addInStory(id, kind);
+      // Added into a story: its station and its folder unfolded first.
+      clearSearch();
+      revealStory(id);
+      if (kind === "choice" || kind === "quiz") {
+        deps.edits.addStepToStory(id, kind);
+      } else {
+        deps.edits.addToStory(id, kind);
+      }
       if (document.activeElement === document.body) {
         focusControl(inspector.root, '[data-act="close"]');
       }
@@ -550,12 +603,6 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     );
     title?.focus();
     title?.select();
-  }
-  /** Add to a story, its station and its folder unfolded first. */
-  function addInStory(storyId: string, kind: AddKind): void {
-    clearSearch();
-    revealStory(storyId);
-    deps.edits.addToStory(storyId, kind);
   }
   /** The folder of the story as last drawn. */
   function drawnFolder(id: string): TreeFolder | undefined {
@@ -619,6 +666,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   const needle = byId<HTMLElement>("compass-needle");
   /** The selection's hint, in the help (what a click there does). */
   const helpHint = byId("shell-help-hint");
+  /** The line over the 3D view for the selection (a folder's). */
+  const sceneHintLine = byId("shell-scene-hint");
   for (const root of [byId("topbar"), byId("view3d")]) placeShellIcons(root);
 
   const pictures = createShellPictures({
@@ -802,6 +851,16 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         positionOpen,
         contentsOpen,
         busy: busy?.act ?? null,
+        // Only for a selection shown: nothing selected builds no tour.
+        ...(model === null
+          ? {}
+          : {
+              crumb: inspectorCrumb({
+                selected: state().editorView.selected,
+                stations: manifest()?.stations ?? [],
+                codes: deps.codes(),
+              }),
+            }),
       },
       pictures,
       panels.sync(model),
@@ -851,6 +910,16 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     // Turned sideways, the list the details covered stands beside them.
     const turnedWide = change === "resized" && onPhone && !phone;
     onPhone = phone;
+    // Docked, a side never folds to make room for the other: the 3D view
+    // gives way, and each side folds only when the creator folds it.
+    if (deps.dock !== undefined && docksAt(window.innerWidth)) {
+      if (turnedWide && ui.foldedDocks.tree) {
+        store.dispatch(
+          editorViewActions.dockFolded({ dock: "tree", folded: false }),
+        );
+      }
+      return;
+    }
     const folded = {
       tree: ui.foldedDocks.tree && !turnedWide,
       // A phone's details are a whole sheet, with no head to unfold it by.
@@ -1038,6 +1107,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     drawInspectorNow(model);
     drawActs(model);
     helpHint.textContent = inspectorHint(model);
+    const overScene = sceneHint(model);
+    sceneHintLine.hidden = overScene === null;
+    sceneHintLine.textContent = overScene ?? "";
     panel.problems(tourProblems(tour?.stations ?? []), ui.selected);
     // The cards and the thumbnail a draw replaced are no longer watched.
     pictures.sweep();
@@ -1066,6 +1138,15 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     preview: (id, radiusM) => view?.previewRadius(id, radiusM),
     write: (id, foundRadiusM) => {
       deps.edits.station(id, { foundRadiusM });
+    },
+  });
+  // A block's sliders write as their number would be typed: one edit.
+  const fieldSliders = wireFieldSliders({
+    root: inspector.root,
+    selected: () => state().editorView.selected,
+    write: (box, text) => {
+      box.value = text;
+      commitField(box, state().editorView.selected);
     },
   });
 
@@ -1111,6 +1192,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       outcome = deps.edits.storyTitle(edit.id, edit.title);
     else if (edit.kind === "story-advance")
       outcome = deps.edits.storyAdvance(edit.id, edit.advance);
+    else if (edit.kind === "story-step")
+      outcome = deps.edits.storyStep(edit.step);
     else if (edit.kind === "block") {
       outcome = deps.edits.block(edit.id, edit.field, edit.value);
     } else if (edit.kind === "model") {
@@ -1201,6 +1284,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       lastSelected = selected;
       positionOpen = false;
       radius.cancel();
+      fieldSliders.cancel();
       busy?.stop.abort();
       busy = null;
       const pending = typedField();
@@ -1974,7 +2058,21 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       return;
     }
     if (act === "close") deps.select(null);
-    if (act === "back") showList();
+    if (act === "back" || act?.startsWith("nav:") === true) {
+      // Back goes one level up (the crumb's last-but-one part); a crumb
+      // part goes to its level. The whole tour is the list.
+      const to =
+        act === "back"
+          ? (inspectorCrumb({
+              selected: chosen,
+              stations: manifest()?.stations ?? [],
+              codes: deps.codes(),
+            }).at(-2)?.select ?? null)
+          : act.slice("nav:".length) || null;
+      if (to === null) showList();
+      else deps.select(to);
+      return;
+    }
     if (act === "lock") {
       // The selected station's position locked or unlocked: view state,
       // never an edit; the session refuses its moves while locked.
@@ -2041,6 +2139,17 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     }
     if (act === "delete") deleteSelected(selected);
     if (act === "split") deps.stations.split(selected);
+    // An item's "Select the folder": the 3D view's way to its folder.
+    if (act?.startsWith("select:") === true)
+      deps.select(act.slice("select:".length));
+    // A folder's Pivot to centre and Select its items.
+    if (act === "pivot-centre" || act === "select-items") {
+      const model = inspectorModel(state().editorView);
+      if (model?.kind === "folder" && act === "pivot-centre")
+        deps.folders.pivotToCentre(model.folderId);
+      if (model?.kind === "folder" && act === "select-items")
+        pickRows(model.items.map((item) => item.id));
+    }
     if (act === "ground" || act === "ground-items") void runGround(act);
     if (
       act?.startsWith("image:") === true &&
@@ -2062,6 +2171,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       if (advance !== null) {
         deps.edits.storyAdvance(advance.id, advance.advance);
       }
+      const step = stepActEdit(model, act);
+      if (step !== null) deps.edits.storyStep(step);
     }
     if (act === "fold") {
       const folded = !state().editorView.foldedDocks.inspector;
@@ -2096,6 +2207,21 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       commitField(input, state().editorView.selected);
       focusControl(inspector.root, next, tabbed);
     }
+  });
+  // A step's jump picker (`step-goto:<answer id>`) and its right-answer
+  // radio (`step-right:<answer id>`, answered on its click): each writes
+  // the whole step; the control drawn again keeps the focus.
+  inspector.root.addEventListener("change", (event) => {
+    const pick = event.target;
+    if (!(pick instanceof HTMLSelectElement)) return;
+    const act = pick.dataset["act"];
+    if (act?.startsWith(STEP_GOTO) !== true) return;
+    const model = inspectorModel(state().editorView);
+    const step = model?.kind === "storyStep" ? model.form?.step : undefined;
+    if (step?.kind !== "choice") return;
+    const edited = stepWithGoto(step, act.slice(STEP_GOTO.length), pick.value);
+    if (edited !== null) deps.edits.storyStep(edited);
+    focusControl(inspector.root, `[data-act="${act}"]`);
   });
   // The inspector's Move to station (`data-move-station`): a choice moves
   // the selection there, and the picker, drawn again, keeps the focus.
@@ -2295,10 +2421,30 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   dockEmpty.className = "dock-empty";
   dockEmpty.textContent =
     "Select a station or an item, in the list or in the view.";
-  /** The bottom panel learns what the docking's own controls did. */
+  /** Each tab's count, for the layout when it docks. */
+  const dockBadges = new Map<DockPanelId, DockBadge>();
+  /** The side folds last carried between the store and the docking: each
+   *  side hears only the other's changes, so two panels sharing a group
+   *  (one fold for both) never undo each other. */
+  let carried = { tree: false, inspector: false };
+  const FOLDING = [
+    ["tree", "list"],
+    ["inspector", "details"],
+  ] as const;
+  /** The bottom panel and the store learn what the docking's own
+   *  controls did. */
   const syncFromDock = () => {
     syncFilesShown();
     if (dockHost === null) return;
+    for (const [dock, id] of FOLDING) {
+      const folded = dockHost.folded(id);
+      if (folded === carried[dock]) continue;
+      carried = { ...carried, [dock]: folded };
+      if (dock === "tree" && !folded) creatorTouchesTree();
+      if (state().editorView.foldedDocks[dock] !== folded) {
+        store.dispatch(editorViewActions.dockFolded({ dock, folded }));
+      }
+    }
     const tab = dockHost.activeIn("problems");
     if (!dockHost.groupShown("problems")) {
       panel.docked({ open: false, tab: "problems" });
@@ -2307,9 +2453,15 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     }
   };
   const foldDocked = () => {
-    const folded = state().editorView.foldedDocks;
-    dockHost?.fold("list", folded.tree);
-    dockHost?.fold("details", folded.inspector);
+    if (dockHost === null) return;
+    for (const [dock, id] of FOLDING) {
+      // Read per side: a fold re-enters through syncFromDock (a shared
+      // group folds both panels), so a value read before it is stale.
+      const folded = state().editorView.foldedDocks[dock];
+      if (folded === carried[dock]) continue;
+      carried = { ...carried, [dock]: folded };
+      dockHost.fold(id, folded);
+    }
   };
   const mountDock = (mount: typeof mountDockHost) => {
     if (dockHost !== null || view === null || !docksAt(window.innerWidth)) {
@@ -2318,6 +2470,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     const host = mount({ box: viewBox, onChange: syncFromDock });
     dockHost = host;
     host.content("details").append(dockEmpty);
+    for (const [id, badge] of dockBadges) host.badge(id, badge);
+    carried = { tree: host.folded("list"), inspector: host.folded("details") };
     foldDocked();
     stopDockFolds = store.subscribe(foldDocked);
     panel.dock({
@@ -2367,22 +2521,17 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     clearSearch,
     docked: () => dockHost !== null,
     filesShown,
+    conceal(id, instead) {
+      dockHost?.conceal(id, instead);
+    },
     reveal(id) {
-      if (dockHost === null) return;
-      const side = dockPanel(id).group;
-      const folded = state().editorView.foldedDocks;
-      if (side === "left" && folded.tree) {
-        creatorTouchesTree();
-        store.dispatch(
-          editorViewActions.dockFolded({ dock: "tree", folded: false }),
-        );
-      }
-      if (side === "right" && folded.inspector) {
-        store.dispatch(
-          editorViewActions.dockFolded({ dock: "inspector", folded: false }),
-        );
-      }
-      dockHost.reveal(id);
+      // The store learns of an unfold from the docking (`syncFromDock`).
+      dockHost?.reveal(id);
+    },
+    badge(id, badge) {
+      if (badge === null) dockBadges.delete(id);
+      else dockBadges.set(id, badge);
+      dockHost?.badge(id, badge);
     },
     show(next, options) {
       view = next;
@@ -2409,15 +2558,13 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       window.addEventListener("keydown", onKey, true);
       document.addEventListener("pointerdown", onOutside);
       window.addEventListener("resize", onResize);
-      const box = tree.root.parentElement;
+      // The view holds every panel, docked or not (a docked one sits in a
+      // pane of its own).
       stopKeyboard?.();
-      stopKeyboard =
-        box === null
-          ? null
-          : watchKeyboard(window, box, (px) => {
-              keyboardPx = px;
-              dockHost?.keyboard(px);
-            });
+      stopKeyboard = watchKeyboard(window, viewBox, (px) => {
+        keyboardPx = px;
+        dockHost?.keyboard(px);
+      });
       syncDock();
     },
     flush() {
@@ -2439,6 +2586,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       }
       endUnfolding();
       radius.cancel();
+      fieldSliders.cancel();
       const pending = typedField();
       if (pending !== null) commitField(pending, lastSelected);
       panels.flush();

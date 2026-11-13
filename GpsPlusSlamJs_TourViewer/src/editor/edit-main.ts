@@ -187,6 +187,7 @@ import {
   type EditorSession,
   type NarrationChange,
 } from "./editor-session.js";
+import type { StepKind } from "./story-step-edits.js";
 import { videoLookOf } from "./video-poster.js";
 import { waitForSaveSlot } from "gps-plus-slam-app-framework/storage/save-slot-wait";
 import { guardSlidersIn } from "gps-plus-slam-app-framework/utils/slider-scroll-guard";
@@ -812,12 +813,17 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
         ) => readonly [number, number] | null;
         view3dGizmoSizes: () => ReturnType<Editor3dView["gizmoSizes"]>;
         view3dModelParts: () => ReturnType<Editor3dView["modelParts"]> | null;
-        view3dFolderOutlines: () => number | null;
+        view3dFolderOutlines: () => ReturnType<
+          Editor3dView["folderOutlines"]
+        > | null;
         view3dModelScreen: (
           id: string,
           at: readonly [number, number, number],
         ) => readonly [number, number] | null;
         view3dSoundIcons: (on: boolean) => void;
+        view3dCharacter: (
+          id: string,
+        ) => ReturnType<Editor3dView["characterCheck"]> | null;
         manifest: () => ReturnType<typeof manifestToWrite>;
         selected: () => string | null;
         dropTour: (reason: string) => void;
@@ -853,6 +859,7 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
     view3dSoundIcons: (on) => {
       shown3d?.showSoundIcons(on);
     },
+    view3dCharacter: (id) => shown3d?.characterCheck(id) ?? null,
     manifest: () => manifestToWrite(store.getState().tourDocument),
     selected: () => ui().selected,
     // What a late integrity failure does to the open tour (`openFile`'s
@@ -1900,6 +1907,22 @@ function addStoryTo(stationId: string): void {
   tourChanged();
 }
 
+/** The story menu's Choice or Quiz: a new step at the story's end,
+ *  selected, its inspector open on its fields. */
+function addStepToStoryEntry(storyId: string, kind: StepKind): void {
+  if (editor === null) return;
+  endUndo();
+  const outcome = editor.addStepToStory(storyId, kind);
+  refresh();
+  if (outcome.kind === "refused") {
+    toast(outcome.reason);
+    return;
+  }
+  select(outcome.id);
+  toast(`Added a ${kind} to the story "${storyNamed(storyId)?.title ?? ""}"`);
+  tourChanged();
+}
+
 /** The tree's add into the story `storyId`: a new entry of `kind`,
  *  selected, said once it was made; one step. */
 function addToStoryEntry(storyId: string, kind: AddKind): void {
@@ -1941,10 +1964,11 @@ function showShelfDocked(): void {
   if (panelsDocked) shell.reveal("files");
 }
 
-/** Docked, the Details tab shown in place of Files: the shelf's pressed
- *  toggle pressed again. */
+/** Docked, Files out of sight: the shelf's pressed toggle pressed again.
+ *  Details takes its place where they share a group, else the group's
+ *  next panel; Files alone, its group hides. */
 function hideShelfDocked(): void {
-  if (panelsDocked) shell.reveal("details");
+  if (panelsDocked) shell.conceal("files", "details");
 }
 
 /** A phone's layout: the shelf is a sheet (shelf-panel.css's width). */
@@ -2081,10 +2105,15 @@ function openShelfPanel(open: EditorSession): void {
         editorViewActions.dockFolded({ dock: "inspector", folded: true }),
       );
     },
-    docked: () => panelsDocked,
-    revealDocked: showShelfDocked,
-    hideDocked: hideShelfDocked,
-    filesShown: () => shell.filesShown(),
+    dock: {
+      active: () => panelsDocked,
+      reveal: showShelfDocked,
+      shown: () => shell.filesShown(),
+      hide: hideShelfDocked,
+      badge: (badge) => {
+        shell.badge("files", badge);
+      },
+    },
   });
 }
 
@@ -4860,6 +4889,8 @@ const shell = createEditorShell({
     block: (id, field, value) =>
       writeInspectorEdit((e) => e.editBlockField(id, field, value)),
     view: (id, view) => writeInspectorEdit((e) => e.editBlockView(id, view)),
+    pictureTag: (id, shown) =>
+      writeInspectorEdit((e) => e.editPictureTag(id, shown)),
     model: (id, edit) => writeInspectorEdit((e) => e.editModel(id, edit)),
     scene: commitSceneEdit,
     groundItems: (items) => {
@@ -4868,6 +4899,7 @@ const shell = createEditorShell({
     addItem: addItemTo,
     addStory: addStoryTo,
     addToStory: addToStoryEntry,
+    addStepToStory: addStepToStoryEntry,
     addCharacter: (to) => {
       void addCharacterTo(to);
     },
@@ -4875,6 +4907,7 @@ const shell = createEditorShell({
       writeInspectorEdit((e) => e.renameStory(id, title)),
     storyAdvance: (id, advance) =>
       writeInspectorEdit((e) => e.setStoryAdvance(id, advance)),
+    storyStep: (step) => writeInspectorEdit((e) => e.setStoryStep(step)),
     narration: (id) =>
       editor === null
         ? Promise.resolve({

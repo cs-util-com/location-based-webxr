@@ -181,7 +181,11 @@ describe('tourStationChildrenArbitrary', () => {
               const kind = kid['kind'] as string;
               seen.add(kind === 'choice' || kind === 'quiz' ? kind : 'block');
               if (kind !== 'choice') return;
-              for (const o of kid['options'] as { goto?: string }[]) {
+              for (const o of kid['options'] as {
+                goto?: string;
+                end?: true;
+              }[]) {
+                if (o.end === true) seen.add('end');
                 if (o.goto === undefined) continue;
                 const j = kids.findIndex((k) => k['id'] === o.goto);
                 seen.add(
@@ -203,6 +207,7 @@ describe('tourStationChildrenArbitrary', () => {
         'quiz',
         'goto back',
         'goto forward',
+        'end',
       ]) {
         expect(seen, shape).toContain(shape);
       }

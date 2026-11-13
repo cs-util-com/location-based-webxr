@@ -691,6 +691,103 @@ describe("a story's delete", () => {
     await session.close();
   });
 
+  // Why: the choice inspector writes a whole step at once - its words,
+  // its answers, where each leads; each write is one undo step, an answer
+  // that ends the story survives the undo and redo, and a step the format
+  // refuses is said in words and writes nothing.
+  it("writes a choice's step as one undo step, and refuses in words", async () => {
+    const { session, manifest } = await opened();
+    const store = editorStore();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      store,
+    });
+    const step = () => {
+      const station = manifestToWrite(store.getState().tourDocument)
+        ?.stations[0];
+      const story = station === undefined ? undefined : tourStories(station)[0];
+      return story?.children.find((c) => c.id === "c1");
+    };
+    const before = step();
+    const revision = editor.revision();
+    const edited = {
+      id: "c1",
+      kind: "choice" as const,
+      prompt: "Stay or go?",
+      options: [
+        { id: "o1", label: "Again", goto: "c1" },
+        { id: "o2", label: "Stop", end: true as const },
+      ],
+    };
+    expect(editor.setStoryStep(edited)).toEqual({ kind: "edited" });
+    expect(editor.revision()).toBe(revision + 1);
+    expect(step()).toEqual(edited);
+    expect(editor.setStoryStep(edited)).toEqual({ kind: "unchanged" });
+    expect(editor.revision()).toBe(revision + 1);
+    editor.undo();
+    expect(step()).toEqual(before);
+    editor.redo();
+    expect(step()).toEqual(edited);
+    const settled = editor.revision();
+    const refused = editor.setStoryStep({
+      ...edited,
+      options: [
+        { id: "o1", label: "Lost", goto: "gone" },
+        { id: "o2", label: "Stop", end: true as const },
+      ],
+    });
+    expect(refused.kind).toBe("refused");
+    expect(refused).toHaveProperty("reason", expect.stringMatching(/answer/));
+    expect(editor.setStoryStep({ ...edited, id: "gone" }).kind).toBe("refused");
+    expect(step()).toEqual(edited);
+    expect(editor.revision()).toBe(settled);
+    await session.close();
+  });
+
+  // Why: the story menu's Choice and Quiz add a step at the story's end
+  // as one undo step, selected by the caller through the id it returns;
+  // an unknown story is refused in words and changes nothing.
+  it("adds a choice and a quiz at the end of a story, one undo step each", async () => {
+    const { session, manifest } = await opened();
+    const store = editorStore();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      store,
+    });
+    const children = () => {
+      const station = manifestToWrite(store.getState().tourDocument)
+        ?.stations[0];
+      const story = station === undefined ? undefined : tourStories(station)[0];
+      return story?.children ?? [];
+    };
+    const before = children();
+    const choice = editor.addStepToStory("first", "choice");
+    if (choice.kind !== "added") throw new Error("not added");
+    expect(children().at(-1)).toMatchObject({
+      id: choice.id,
+      kind: "choice",
+    });
+    const quiz = editor.addStepToStory("first", "quiz");
+    if (quiz.kind !== "added") throw new Error("not added");
+    expect(children().map((c) => c.id)).toEqual([
+      ...before.map((c) => c.id),
+      choice.id,
+      quiz.id,
+    ]);
+    expect(children().at(-1)).toMatchObject({ kind: "quiz", points: 10 });
+    editor.undo();
+    editor.undo();
+    expect(children()).toEqual(before);
+    const revision = editor.revision();
+    expect(editor.addStepToStory("gone", "quiz").kind).toBe("refused");
+    expect(editor.revision()).toBe(revision);
+    await session.close();
+  });
+
   it("refuses a title the format cannot carry, in words", async () => {
     const { session, manifest } = await opened();
     const editor = createEditorSession({

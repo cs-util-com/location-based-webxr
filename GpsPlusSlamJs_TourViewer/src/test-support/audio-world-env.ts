@@ -1,6 +1,7 @@
 /** A world env for the audio parts' tests: every sound it hands out is
  *  recorded, with the calls made on it. */
 import type { TourAudioBlock } from "gps-plus-slam-app-framework/ar/tour-kinds";
+import { CanvasTexture } from "three";
 
 import type { WorldEnv, WorldMode } from "../world-part.js";
 import type { SoundChannel, SoundHandle } from "../world-sound.js";
@@ -20,9 +21,9 @@ export function recordingEnv(mode: WorldMode = "play") {
   const env: WorldEnv = {
     mode,
     loadAsset: () => Promise.resolve(new Blob(["x"])),
-    canvasTexture: () => {
-      throw new Error("no canvas in node");
-    },
+    // The narration plate paints on a canvas where a page has a document
+    // (jsdom); the texture is never uploaded in a test.
+    canvasTexture: (canvas) => new CanvasTexture(canvas),
     loadModel: () => Promise.reject(new Error("no model in an audio test")),
     enableClipping: () => undefined,
     sound(_id, channel) {

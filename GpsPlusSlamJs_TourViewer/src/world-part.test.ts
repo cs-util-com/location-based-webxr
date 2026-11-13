@@ -385,4 +385,24 @@ describe("the world's sound and frame", () => {
     tickWorldParts(scene, null, 0, parts);
     expect(frames).toHaveLength(1);
   });
+
+  it("hands the parts the camera when the viewer is one", () => {
+    // Why: a picture seen from a viewpoint shows by which way the visitor
+    // looks, read from the camera; a viewer that is no camera gives none.
+    const { scene, shown } = stage();
+    const cameras: unknown[] = [];
+    const object = new Group();
+    shown.add(object);
+    const parts: WorldPart[] = [
+      {
+        object,
+        update: (f) => cameras.push(f.camera),
+        dispose: () => undefined,
+      },
+    ];
+    const camera = new PerspectiveCamera();
+    tickWorldParts(scene, camera, 0, parts);
+    tickWorldParts(scene, new Object3D(), 0, parts);
+    expect(cameras).toEqual([camera, undefined]);
+  });
 });

@@ -10,6 +10,7 @@ import {
   SQUARE_GROUND_M,
   answerHosts,
   boxIn,
+  capture,
   dockSettled,
   layoutOf,
   openZip,
@@ -271,8 +272,10 @@ test("Ctrl+click and Ctrl+G group items into a named folder, a drag takes one ou
   await expect
     .poll(
       () =>
-        page.evaluate(() =>
-          /** @type {any} */ (window).__tourEditor.view3dFolderOutlines(),
+        page.evaluate(
+          () =>
+            /** @type {any} */ (window).__tourEditor.view3dFolderOutlines()
+              ?.boxes,
         ),
       { timeout: 30_000 },
     )
@@ -508,5 +511,403 @@ for (const view of VIEWS) {
     expect(
       Math.abs(tick.y + tick.height / 2 - (pRow.y + pRow.height / 2)),
     ).toBeLessThan(1);
+  });
+}
+
+/**
+ * Station A's folder "Yard" as the tour holds it (its pose and scale).
+ * @param {import("@playwright/test").Page} page
+ */
+function yardOf(page) {
+  return page.evaluate(() => {
+    const yard = /** @type {any} */ (window).__tourEditor
+      .manifest()
+      .stations[0].children.find((/** @type {any} */ c) => c.id === "yard");
+    return {
+      pose: yard.pose,
+      scale: yard.scale ?? 1,
+      item: yard.children[0].pose.position,
+    };
+  });
+}
+
+/** @param {import("@playwright/test").Page} page */
+function wholeTour(page) {
+  return page.evaluate(() =>
+    /** @type {any} */ (window).__tourEditor.manifest(),
+  );
+}
+
+/** @param {import("@playwright/test").Page} page */
+function view3dStats(page) {
+  return page.evaluate(() => /** @type {any} */ (window).__tourEditor.view3d());
+}
+
+/**
+ * A point of the 3D view's hook (CSS px on the canvas) on the page, once
+ * it shows.
+ * @param {import("@playwright/test").Page} page
+ * @param {() => Promise<readonly [number, number] | null>} read
+ */
+async function shownAt(page, read) {
+  await expect.poll(read).not.toBeNull();
+  const at = await read();
+  const canvas = await page.locator("#view3d canvas").boundingBox();
+  if (at === null || canvas === null) throw new Error("not on the screen");
+  return { x: canvas.x + at[0], y: canvas.y + at[1] };
+}
+
+/**
+ * @param {import("@playwright/test").Page} page
+ * @param {"middle" | "knob" | "dot"} part
+ */
+function handleAt(page, part) {
+  return shownAt(page, () =>
+    page.evaluate(
+      (p) => /** @type {any} */ (window).__tourEditor.view3dHandle(p),
+      part,
+    ),
+  );
+}
+
+/**
+ * The front-left corner of the selected folder's dashed outline on the
+ * ground (world metres), once drawn.
+ * @param {import("@playwright/test").Page} page
+ * @returns {Promise<{ x: number, z: number }>}
+ */
+async function folderHullAt(page) {
+  /** @type {{ x: number, z: number } | null} */
+  let at = null;
+  await expect
+    .poll(async () => {
+      at = await page.evaluate(
+        () =>
+          /** @type {any} */ (window).__tourEditor.view3dFolderOutlines()?.hull
+            ?.tag ?? null,
+      );
+      return at !== null;
+    })
+    .toBe(true);
+  if (at === null) throw new Error("no outline");
+  return at;
+}
+
+/**
+ * Item y on the page (it stands in the folder "Yard").
+ * @param {import("@playwright/test").Page} page
+ */
+function itemY(page) {
+  return shownAt(page, () =>
+    page.evaluate(() =>
+      /** @type {any} */ (window).__tourEditor.view3dScreenOf("y"),
+    ),
+  );
+}
+
+/**
+ * A pointer that presses at the first point, passes the others and lifts:
+ * the mouse, or one finger through the browser's touch input. `between`
+ * runs before the lift, the press still held.
+ * @typedef {(page: import("@playwright/test").Page,
+ *   path: { x: number, y: number }[],
+ *   between?: () => Promise<void>) => Promise<void>} Pointer
+ */
+
+/** @type {Pointer} */
+async function byMouse(page, path, between) {
+  const [first, ...rest] = path;
+  if (first === undefined) return;
+  await page.mouse.move(first.x, first.y);
+  await page.mouse.down();
+  for (const p of rest) await page.mouse.move(p.x, p.y);
+  await between?.();
+  await page.mouse.up();
+}
+
+/** @type {Pointer} */
+async function byTouch(page, path, between) {
+  const cdp = await page.context().newCDPSession(page);
+  /** @param {string} type @param {{ x: number, y: number }[]} points */
+  const send = (type, points) =>
+    cdp.send("Input.dispatchTouchEvent", {
+      type,
+      touchPoints: points.map((p) => ({ x: p.x, y: p.y, id: 1 })),
+    });
+  const [first, ...rest] = path;
+  if (first === undefined) return;
+  await send("touchStart", [first]);
+  for (const p of rest) await send("touchMove", [p]);
+  await between?.();
+  await send("touchEnd", []);
+  await cdp.detach();
+}
+
+/**
+ * `n` points from `a` to `b`, `a` left out.
+ * @param {{ x: number, y: number }} a
+ * @param {{ x: number, y: number }} b
+ * @param {number} [n]
+ */
+function line(a, b, n = 8) {
+  return Array.from({ length: n }, (_, i) => ({
+    x: a.x + ((b.x - a.x) * (i + 1)) / n,
+    y: a.y + ((b.y - a.y) * (i + 1)) / n,
+  }));
+}
+
+/**
+ * The gesture undone gives back `before`, and redone `after`, each one
+ * step (Ctrl+Z and Ctrl+Y, as for the item gizmo).
+ * @param {import("@playwright/test").Page} page
+ * @param {any} before
+ * @param {any} after
+ */
+async function undoesAndRedoes(page, before, after) {
+  await page.keyboard.press("Control+z");
+  await expect.poll(() => wholeTour(page)).toEqual(before);
+  await page.keyboard.press("Control+y");
+  await expect.poll(() => wholeTour(page)).toEqual(after);
+  // Their lines cleared before the next press: on a phone held sideways
+  // the undo and redo lines stack over the gizmo and would take it.
+  await expect(
+    page.locator(".toast", { hasText: /^(Undone|Redone)/ }),
+  ).toHaveCount(0, { timeout: 15_000 });
+}
+
+/**
+ * Select the folder "Yard" from its tree row and wait for its gizmo: one
+ * ring round its items at its pivot, at least 34 px on the screen.
+ * @param {import("@playwright/test").Page} page
+ */
+async function selectYard(page) {
+  const card = await unfold(page);
+  await card.locator('.gfolder[data-plainfolder="yard"] button.fname').click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => /** @type {any} */ (window).__tourEditor.selected()),
+    )
+    .toBe("folder:yard");
+  await expect
+    .poll(async () => (await view3dStats(page))?.flying, { timeout: 30_000 })
+    .toBe(false);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          /** @type {any} */ (window).__tourEditor.view3dGizmoSizes()?.ringPx,
+      ),
+    )
+    .toBeGreaterThanOrEqual(34 - 0.5);
+}
+
+/**
+ * Move, turn and scale the folder "Yard" with its gizmo, by `pointer`:
+ * each one step, its item following in the 3D view while the drag runs
+ * and in the file after it, each undone and redone exactly.
+ * @param {import("@playwright/test").Page} page
+ * @param {Pointer} pointer
+ */
+async function moveTurnAndScaleYard(page, pointer) {
+  await selectYard(page);
+  let steps = await revision(page);
+
+  // Move: the disc at the pivot dragged over the ground. The item follows
+  // on the screen before the release, with nothing written yet.
+  let before = await wholeTour(page);
+  const was = await yardOf(page);
+  const middle = await handleAt(page, "middle");
+  // The dashed outline is drawn round the item's drawing as it stands this
+  // frame, so it shows the item following before anything is written
+  // (the item's own screen point is read from the tour, not the drawing).
+  const hullStart = await folderHullAt(page);
+  await pointer(
+    page,
+    [middle, ...line(middle, { x: middle.x + 70, y: middle.y + 25 })],
+    async () => {
+      await expect
+        .poll(async () => {
+          const now = await folderHullAt(page);
+          return Math.hypot(now.x - hullStart.x, now.z - hullStart.z);
+        })
+        .toBeGreaterThan(0.5);
+      expect(await revision(page)).toBe(steps);
+    },
+  );
+  await expect.poll(() => revision(page)).toBe(steps + 1);
+  const moved = await yardOf(page);
+  expect(
+    Math.hypot(
+      moved.pose.position[0] - was.pose.position[0],
+      moved.pose.position[2] - was.pose.position[2],
+    ),
+  ).toBeGreaterThan(0.5);
+  expect(moved.scale).toBe(1);
+  // The item keeps its place in the folder: it moved with it.
+  expect(moved.item).toEqual(was.item);
+  await undoesAndRedoes(page, before, await wholeTour(page));
+  // The undo and the redo count as changes too: count on from here.
+  steps = await revision(page);
+
+  // Turn: the knob carried 60 degrees round the pivot.
+  before = await wholeTour(page);
+  const centre = await handleAt(page, "middle");
+  const knob = await handleAt(page, "knob");
+  const r = Math.hypot(knob.x - centre.x, knob.y - centre.y);
+  const a0 = Math.atan2(knob.y - centre.y, knob.x - centre.x);
+  const arc = Array.from({ length: 10 }, (_, i) => {
+    const a = a0 + ((i + 1) * Math.PI) / 30;
+    return { x: centre.x + r * Math.cos(a), y: centre.y + r * Math.sin(a) };
+  });
+  await pointer(page, [knob, ...arc]);
+  await expect.poll(() => revision(page)).toBe(steps + 1);
+  const turned = await yardOf(page);
+  expect(turned.pose.rotation).not.toEqual(moved.pose.rotation);
+  expect(turned.pose.position).toEqual(moved.pose.position);
+  expect(turned.item).toEqual(was.item);
+  await undoesAndRedoes(page, before, await wholeTour(page));
+  steps = await revision(page);
+
+  // Scale: a dot on the ring pulled outwards. Everything grows about the
+  // pivot: the item stands further from it on the screen.
+  before = await wholeTour(page);
+  const pivot = await handleAt(page, "middle");
+  const dot = await handleAt(page, "dot");
+  const yBefore = await itemY(page);
+  const out = Math.hypot(dot.x - pivot.x, dot.y - pivot.y);
+  const to = {
+    x: pivot.x + ((dot.x - pivot.x) * (out + 60)) / out,
+    y: pivot.y + ((dot.y - pivot.y) * (out + 60)) / out,
+  };
+  await pointer(page, [dot, ...line(dot, to)]);
+  await expect.poll(() => revision(page)).toBe(steps + 1);
+  const scaled = await yardOf(page);
+  expect(scaled.scale).toBeGreaterThan(1.05);
+  expect(scaled.pose).toEqual(turned.pose);
+  expect(scaled.item).toEqual(was.item);
+  const yAfter = await itemY(page);
+  expect(Math.hypot(yAfter.x - pivot.x, yAfter.y - pivot.y)).toBeGreaterThan(
+    Math.hypot(yBefore.x - pivot.x, yBefore.y - pivot.y),
+  );
+  await undoesAndRedoes(page, before, await wholeTour(page));
+}
+
+// Why: a folder is moved, turned and scaled with ONE gizmo at its pivot,
+// as the item gizmo moves one item: each gesture one undo step, the
+// folder's items following live in the 3D view and in the file, by mouse
+// and by touch, at a desktop and a phone held sideways. The gizmo's
+// maths, the input's rules and the write-back each have unit tests; only
+// the page shows them agreeing on a real drag.
+const GIZMO_VIEWS = [
+  { width: 1280, height: 800 },
+  { width: 844, height: 390 },
+];
+
+for (const view of GIZMO_VIEWS) {
+  const at = `${String(view.width)}x${String(view.height)}`;
+  test(`a folder's gizmo moves, turns and scales it by mouse at ${at}: one step each, its items follow, undo restores`, async ({
+    page,
+  }) => {
+    test.slow();
+    await page.setViewportSize(view);
+    await openFolders(page, await foldersTour());
+    await moveTurnAndScaleYard(page, byMouse);
+  });
+}
+
+test.describe("on a touch screen", () => {
+  test.use({ hasTouch: true });
+  for (const view of GIZMO_VIEWS) {
+    const at = `${String(view.width)}x${String(view.height)}`;
+    test(`a folder's gizmo moves, turns and scales it by touch at ${at}: one step each, its items follow, undo restores`, async ({
+      page,
+    }) => {
+      test.slow();
+      await page.setViewportSize(view);
+      await openFolders(page, await foldersTour());
+      await moveTurnAndScaleYard(page, byTouch);
+    });
+  }
+});
+
+// Why: the folder gizmo as chosen - one ring round the folder's items at
+// its pivot, at least 34 px, its scale dots on the ring and its turn knob
+// on a 30 px stalk beyond it - at a phone, a phone held sideways and a
+// desktop. A test that only finds a gizmo would pass a ring drawn at the
+// item gizmo's size, or a knob on the ring.
+for (const view of VIEWS) {
+  test(`a folder's gizmo keeps its chosen arrangement (${view.name})`, async ({
+    page,
+  }) => {
+    test.slow();
+    await page.setViewportSize({ width: view.width, height: view.height });
+    await openFolders(page, await foldersTour());
+    await selectYard(page);
+    // Straight down, the screen shows the ground plane undistorted.
+    await page.keyboard.press("t");
+    await expect
+      .poll(async () => (await view3dStats(page))?.flying, { timeout: 30_000 })
+      .toBe(false);
+    const sizes = await page.evaluate(() =>
+      /** @type {any} */ (window).__tourEditor.view3dGizmoSizes(),
+    );
+    const middle = await handleAt(page, "middle");
+    const knob = await handleAt(page, "knob");
+    const dot = await handleAt(page, "dot");
+    // Counted at the ground's depth; the knob and dots are drawn a little
+    // over the ground, nearer the camera, so they read a few per cent out.
+    const reach = Math.hypot(knob.x - middle.x, knob.y - middle.y);
+    expect(reach).toBeGreaterThanOrEqual(sizes.ringPx + 30 - 1);
+    expect(reach).toBeLessThanOrEqual((sizes.ringPx + 30) * 1.06);
+    const onRing = Math.hypot(dot.x - middle.x, dot.y - middle.y);
+    expect(onRing).toBeGreaterThanOrEqual(sizes.ringPx - 1);
+    expect(onRing).toBeLessThanOrEqual(sizes.ringPx * 1.06 + 1);
+    // The dashed outline round its item, named on its tag.
+    const shown = await page.evaluate(() =>
+      /** @type {any} */ (window).__tourEditor.view3dFolderOutlines(),
+    );
+    expect(shown?.boxes).toBe(1);
+    expect(shown?.tag).toBe("Yard");
+    expect(shown?.hull?.corners).toHaveLength(4);
+    // The line naming the folder stands over the 3D view, clear of the
+    // docks at their side and of the map controls, so it is read before
+    // the gizmo is touched.
+    const hint = page.locator("#shell-scene-hint");
+    await expect(hint).toBeVisible();
+    await expect(hint).toContainText(
+      "Yard - 1 item moves, turns and scales with it. Click it to move it alone.",
+    );
+    const hintBox = await hint.boundingBox();
+    // Nor does it lie over the gizmo's turn knob.
+    if (hintBox !== null) {
+      const overKnob =
+        knob.x >= hintBox.x &&
+        knob.x <= hintBox.x + hintBox.width &&
+        knob.y >= hintBox.y &&
+        knob.y <= hintBox.y + hintBox.height;
+      expect(overKnob, "the hint clear of the turn knob").toBe(false);
+    }
+    const viewBox = await page.locator("#view3d").boundingBox();
+    if (hintBox === null || viewBox === null) throw new Error("no hint box");
+    expect(hintBox.x).toBeGreaterThanOrEqual(viewBox.x);
+    expect(hintBox.x + hintBox.width).toBeLessThanOrEqual(
+      viewBox.x + viewBox.width,
+    );
+    for (const dock of ["#shell-tree", "#shell-inspector", "#map-controls"]) {
+      const at = page.locator(dock);
+      if (!(await at.isVisible())) continue;
+      const box = await at.boundingBox();
+      if (box === null) continue;
+      const apart =
+        hintBox.x + hintBox.width <= box.x + 1 ||
+        box.x + box.width <= hintBox.x + 1 ||
+        hintBox.y + hintBox.height <= box.y + 1 ||
+        box.y + box.height <= hintBox.y + 1;
+      expect(apart, `the hint clear of ${dock}`).toBe(true);
+    }
+    await capture(
+      page,
+      test.info().outputPath(`folder-gizmo-${view.name}.png`),
+    );
   });
 }

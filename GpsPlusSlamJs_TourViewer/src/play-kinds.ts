@@ -24,6 +24,8 @@ import { CHARACTER_PLAY } from "./character-card.js";
 import { AUDIO_PLAY } from "./kinds/audio/play.js";
 import type { ItemCardHost } from "./item-card.js";
 import { modelWorld } from "./kinds/model/world.js";
+import { pictureWorld } from "./kinds/picture/world.js";
+import { shortTextWorld } from "./kinds/short-text/world.js";
 import type { WorldEnv, WorldPart } from "./world-part.js";
 
 /** What one kind does for a visitor. */
@@ -53,6 +55,8 @@ export const PLAY_KINDS = {
       slots.text.textContent = block.caption;
     },
     assets: NO_FILES,
+    // A sign or a hint at the edge; the pin is the renderer's label.
+    world: shortTextWorld,
   },
   longText: {
     card(block, { slots }) {
@@ -89,6 +93,8 @@ export const PLAY_KINDS = {
       });
     },
     assets: (block) => [block.image],
+    // A framed print or a cut-out stands in the station.
+    world: (block, env) => pictureWorld(block, env),
   },
   video: {
     card(block, host) {

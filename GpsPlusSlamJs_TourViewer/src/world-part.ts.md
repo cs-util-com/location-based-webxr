@@ -54,9 +54,10 @@ the reading sign (`reading-sign.ts`) are world parts too.
   narration circle's player card.
 - `WorldPart` - `object` (what stands; placed by the renderer, never by the
   part), `tapTarget?` (what a tap is cast against; none: no tap),
-  `update?({ seconds, viewer, camera?, metresPerPxAtOneM? })` (driven by
+  `update?({ seconds, viewer, camera?, metresPerPxAtOneM?, selected? })` (driven by
   `tickWorldParts` in play, by the editor's stations layer in the editor,
-  which also hands the camera and its lens), `tap?()`,
+  which also hands the camera, its lens and the editor's selection - the
+  selected block id, a station's `station:<id>`, or null; absent in play), `tap?()`,
   `ready?` (a promise that settles once a part that loads something
   stands; the renderer places the part at once and never waits for it, so
   a model file holds back no other block, and a rejection then disposes
@@ -153,3 +154,7 @@ on, the refusal without a parser, its sound in both modes, and
 door's delegation is in `play-kinds.test.ts`, the placement (the
 pose's rotation kept, tilt included, and a part that unmounts itself in its
 own dispose still freed) in `content-placement.test.ts`.
+
+## The camera and the screen scale
+
+`tickWorldParts(scene, viewer, nowMs, parts?, viewHeightPx?)` also hands each part the `camera` when the viewer is a camera, and, with `viewHeightPx`, `metresPerPxAtOneM` (2 / (projection[5] x height)): what a part that stands on the screen (a short text's edge hint) needs to size itself in pixels. Parts that do not read them are unchanged.

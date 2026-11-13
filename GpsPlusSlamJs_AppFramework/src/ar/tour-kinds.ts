@@ -33,7 +33,8 @@ import {
 } from './tour-block-read.js';
 import { blockBodyAssets } from './tour-body-assets.js';
 import { isTourId } from './tour-fields.js';
-import type { TourLocalPose } from './tour-items.js';
+import { parseTourLocalPose, type TourLocalPose } from './tour-items.js';
+import { shortTextLook, type TourShortTextLook } from './tour-short-text.js';
 import { tourTimingEntryName } from './tour-timing.js';
 
 /** The views a character stands in, besides `card`: a speech bubble over
@@ -76,9 +77,28 @@ const MODEL_WORLD_VIEWS: ReadonlySet<string> = new Set(TOUR_MODEL_WORLD_VIEWS);
 
 /* Each kind's views. A view joins the format with its renderer; `card` (the
  * block in the scene card) exists for every kind. */
-const SHORT_TEXT_VIEWS = ['pin', 'card'] as const;
+/* A short text stands as a pin, a sign on posts (`sign`) or a hint that
+ * keeps to the screen's edge while its spot is out of view (`edgeHint`).
+ * The ground arrow's fields are read already (`tour-short-text.ts`); its
+ * view joins with its renderer. */
+const SHORT_TEXT_WORLD_VIEWS = ['pin', 'sign', 'edgeHint'] as const;
+const SHORT_TEXT_VIEWS = [...SHORT_TEXT_WORLD_VIEWS, 'card'] as const;
 const LONG_TEXT_VIEWS = ['lectern', 'reading', 'card'] as const;
-const PICTURE_VIEWS = ['plane', 'card'] as const;
+/* A picture stands in the world as a bare `plane`, a print in a frame
+ * with a plate (`framed`), or a cut-out on the ground (`cutout`); the
+ * viewpoint views line it up with the place from one spot
+ * ({@link TOUR_PICTURE_VIEWPOINT_VIEWS}). */
+const PICTURE_VIEWS = [
+  'plane',
+  'framed',
+  'cutout',
+  'thenNow',
+  'sharpen',
+  'finder',
+  'window',
+  'viewer',
+  'card',
+] as const;
 const VIDEO_VIEWS = ['card'] as const;
 /* An audio item stands as a narration circle (`spot`: the voice plays on
  * a tap inside it) or an ambient zone (`zone`: it plays by itself within
@@ -97,6 +117,9 @@ const PICTURE_RULES = {
   title: optional(40),
   caption: optional(1200),
   alt: optional(300),
+  credit: optional(200),
+  // Text, not a number: "about 1880s", "1920-1925".
+  year: optional(24),
 };
 const VIDEO_RULES = { title: optional(40), transcript: optional(32_000) };
 const AUDIO_RULES = { title: optional(40), transcript: optional(32_000) };
@@ -169,6 +192,40 @@ export const TOUR_AUDIO_MAX_REACH_M = 200;
 export const TOUR_PICTURE_MIN_WIDTH_M = 0.05;
 export const TOUR_PICTURE_MAX_WIDTH_M = 50;
 
+/** The views a picture stands in the world in (every view but `card`). */
+export const TOUR_PICTURE_WORLD_VIEWS = [
+  'plane',
+  'framed',
+  'cutout',
+  'thenNow',
+  'sharpen',
+  'finder',
+  'window',
+  'viewer',
+] as const satisfies readonly (typeof PICTURE_VIEWS)[number][];
+
+/** A picture's world view. */
+export type TourPictureWorldView = (typeof TOUR_PICTURE_WORLD_VIEWS)[number];
+
+/** The views that show a picture lined up from one spot: each draws it
+ *  from its `viewpoint`, and without one it is drawn as a `plane`. */
+export const TOUR_PICTURE_VIEWPOINT_VIEWS = [
+  'thenNow',
+  'sharpen',
+  'finder',
+  'window',
+  'viewer',
+] as const satisfies readonly TourPictureWorldView[];
+
+/** A viewpoint's lens: its horizontal field of view (degrees), inclusive. */
+export const TOUR_PICTURE_MIN_HFOV_DEG = 10;
+export const TOUR_PICTURE_MAX_HFOV_DEG = 120;
+
+/** How far the subject stands from a viewpoint (m), inclusive: the depth
+ *  its picture hangs at. */
+export const TOUR_PICTURE_MIN_DISTANCE_M = 1;
+export const TOUR_PICTURE_MAX_DISTANCE_M = 500;
+
 interface TourBlockEnvelope<K extends string, V extends string> {
   /** Short path-safe id, unique among the tour's blocks (asset ids are a
    *  namespace of their own). */
@@ -182,10 +239,10 @@ interface TourBlockEnvelope<K extends string, V extends string> {
   readonly createdAtIso?: string;
 }
 
-export interface TourShortTextBlock extends TourBlockEnvelope<
-  'shortText',
-  (typeof SHORT_TEXT_VIEWS)[number]
-> {
+export interface TourShortTextBlock
+  extends
+    TourBlockEnvelope<'shortText', (typeof SHORT_TEXT_VIEWS)[number]>,
+    TourShortTextLook {
   readonly caption: string;
   readonly description?: string;
 }
@@ -231,8 +288,38 @@ export interface TourPictureBlock extends TourBlockEnvelope<
   readonly caption?: string;
   /** A plain description for a visitor who cannot see it. */
   readonly alt?: string;
+  /** Who made it, or where it is from: a small line on a plate and in its
+   *  sheet. */
+  readonly credit?: string;
+  /** When it was made, as text ("about 1880s"). */
+  readonly year?: string;
   /** Its width in the world, in metres. */
   readonly widthM: number;
+  /** A cut-out's small tag at its foot (its year and first words);
+   *  absent: shown. Kept in every view, read by `cutout`. */
+  readonly showTag?: boolean;
+  /** Where to stand to see it lined up with the place; read by the
+   *  viewpoint views ({@link TOUR_PICTURE_VIEWPOINT_VIEWS}), kept in
+   *  every other so a view switch loses nothing. */
+  readonly viewpoint?: TourPictureViewpoint;
+}
+
+/**
+ * A picture's viewpoint: the spot a visitor stands on and the way the
+ * camera that took it looked, in the station's frame (metres north, up and
+ * east of the station's anchor, whatever folders hold the picture), so
+ * moving the picture's own pose never moves where it lines up.
+ */
+export interface TourPictureViewpoint {
+  /** The eye point, `[north, up, east]` (m). */
+  readonly position: readonly [number, number, number];
+  /** The camera's turn, a unit quaternion `[x, y, z, w]` in the same
+   *  frame: it looks along its local -Z, up its local +Y. */
+  readonly rotation: readonly [number, number, number, number];
+  /** The lens's horizontal field of view (degrees). */
+  readonly hfovDeg: number;
+  /** How far the subject stands (m): the depth the picture hangs at. */
+  readonly distanceM: number;
 }
 
 export interface TourVideoBlock extends TourBlockEnvelope<
@@ -593,6 +680,70 @@ function characterFields(v: TourBlockFields, ctx: TourBlockReadContext) {
   return { name, image };
 }
 
+/** A cut-out's tag switch: absent, or true or false. */
+function pictureShowTag(v: TourBlockFields, ctx: TourBlockReadContext) {
+  const value = v.showTag;
+  if (value === undefined) return {};
+  if (typeof value !== 'boolean') {
+    return problem(ctx, `"${ctx.at}.showTag" must be true or false`);
+  }
+  return { showTag: value };
+}
+
+/** Thrown by {@link viewpointOf} to stop at its first fault. */
+class ViewpointFault extends Error {}
+
+/** A viewpoint record as the format reads it, or why it breaks a rule. */
+function viewpointOf(
+  value: unknown,
+  at: string
+): TourPictureViewpoint | string {
+  if (!isRecord(value)) return `"${at}" must be an object`;
+  const stop = (message: string): never => {
+    throw new ViewpointFault(message);
+  };
+  try {
+    const { position, rotation } = parseTourLocalPose(value, at, stop);
+    const { hfovDeg, distanceM } = value;
+    if (
+      !isFiniteNumber(hfovDeg) ||
+      hfovDeg < TOUR_PICTURE_MIN_HFOV_DEG ||
+      hfovDeg > TOUR_PICTURE_MAX_HFOV_DEG
+    ) {
+      return `"${at}.hfovDeg" must be a number of degrees from ${String(TOUR_PICTURE_MIN_HFOV_DEG)} to ${String(TOUR_PICTURE_MAX_HFOV_DEG)}`;
+    }
+    if (
+      !isFiniteNumber(distanceM) ||
+      distanceM < TOUR_PICTURE_MIN_DISTANCE_M ||
+      distanceM > TOUR_PICTURE_MAX_DISTANCE_M
+    ) {
+      return `"${at}.distanceM" must be a number of metres from ${String(TOUR_PICTURE_MIN_DISTANCE_M)} to ${String(TOUR_PICTURE_MAX_DISTANCE_M)}`;
+    }
+    return { position, rotation, hfovDeg, distanceM };
+  } catch (error) {
+    if (error instanceof ViewpointFault) return error.message;
+    throw error;
+  }
+}
+
+/** A picture's viewpoint, in any view. One breaking a rule fails a file of
+ *  this reader's own minor; a newer one's drops just the viewpoint (the
+ *  picture is then drawn as a plane), keeping the picture. */
+function pictureViewpoint(v: TourBlockFields, ctx: TourBlockReadContext) {
+  const value = v.viewpoint;
+  if (value === undefined) return {};
+  const viewpoint = viewpointOf(value, `${ctx.at}.viewpoint`);
+  if (typeof viewpoint !== 'string') return { viewpoint };
+  if (!ctx.lenient) return ctx.fail(viewpoint);
+  ctx.onDropped?.({
+    kind: 'field',
+    block: ctx.id,
+    field: 'viewpoint',
+    reason: viewpoint,
+  });
+  return {};
+}
+
 /** A narration's length: whole milliseconds, 1 to the cap. */
 function isNarrationDuration(ms: unknown): boolean {
   return (
@@ -756,13 +907,14 @@ export const TOUR_KINDS = {
   shortText: {
     sinceMinor: 0,
     views: SHORT_TEXT_VIEWS,
-    freeViews: ['pin'],
-    worldViews: ['pin'],
+    freeViews: SHORT_TEXT_WORLD_VIEWS,
+    worldViews: SHORT_TEXT_WORLD_VIEWS,
     floor: 'pin',
     text: SHORT_TEXT_RULES,
     read: (v, _view, ctx) => ({
       caption: requiredText(v, 'caption', SHORT_TEXT_RULES.caption, ctx),
       ...optionalText(v, 'description', SHORT_TEXT_RULES.description, ctx),
+      ...shortTextLook(v, ctx),
     }),
     refs: () => [],
   },
@@ -801,8 +953,8 @@ export const TOUR_KINDS = {
   picture: {
     sinceMinor: 0,
     views: PICTURE_VIEWS,
-    freeViews: ['plane'],
-    worldViews: ['plane'],
+    freeViews: TOUR_PICTURE_WORLD_VIEWS,
+    worldViews: TOUR_PICTURE_WORLD_VIEWS,
     floor: 'plane',
     text: PICTURE_RULES,
     read: (v, _view, ctx) => ({
@@ -810,12 +962,16 @@ export const TOUR_KINDS = {
       ...optionalText(v, 'title', PICTURE_RULES.title, ctx),
       ...optionalText(v, 'caption', PICTURE_RULES.caption, ctx),
       ...optionalText(v, 'alt', PICTURE_RULES.alt, ctx),
+      ...optionalText(v, 'credit', PICTURE_RULES.credit, ctx),
+      ...optionalText(v, 'year', PICTURE_RULES.year, ctx),
       widthM: metres(
         v.widthM,
         `${ctx.at}.widthM`,
         [TOUR_PICTURE_MIN_WIDTH_M, TOUR_PICTURE_MAX_WIDTH_M],
         ctx
       ),
+      ...pictureShowTag(v, ctx),
+      ...pictureViewpoint(v, ctx),
     }),
     refs: (b) => refTo(b.image, 'image', 'image'),
   },

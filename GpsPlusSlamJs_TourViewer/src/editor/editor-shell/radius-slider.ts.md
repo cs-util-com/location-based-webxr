@@ -4,7 +4,8 @@
 
 A station's radius slider beside its number in the inspector: a drag shows
 the radius in the number and on the 3D view's ring, and the release writes
-one edit.
+one edit. Its drag rule is the inspector's one for every slider
+(`range-slider.ts`).
 
 ## Public API
 

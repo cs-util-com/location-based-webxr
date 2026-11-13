@@ -52,12 +52,18 @@ interface WorldFrame {
   readonly viewer: readonly [number, number, number];
   /** The camera drawing the frame, for a part that turns toward it or
    *  keeps a size on the screen (the editor's marks, a character's
-   *  card); absent where the page gives none. Read, never moved. */
+   *  card, a hint's tag); absent where the page gives none. Read, never
+   *  moved. */
   readonly camera?: Camera;
   /** How many metres one CSS px covers 1 m from `camera` (its lens over
    *  the view's height): a size on the screen at a distance `d` is
    *  `px * d * metresPerPxAtOneM` metres. Absent without `camera`. */
   readonly metresPerPxAtOneM?: number;
+  /** The editor's selection (an item's id, `station:<id>` for a
+   *  station), for a part that shows more of itself while selected (a
+   *  character's bubble); absent where nothing is selected or the page
+   *  has no selection (the visitor's). */
+  readonly selected?: string | null;
 }
 
 /** The page's screen beside the world, where a part may open one panel
@@ -289,11 +295,18 @@ export function mountedWorldParts(): WorldPart[] {
 
 const viewerLocal = new Vector3();
 
+function isCamera(object: Object3D): object is Camera {
+  return (object as Partial<Camera>).isCamera === true;
+}
+
 /**
  * Every camera frame (`main.ts`): each of `parts` shown under a
  * station's content group of `scene` (`shownIn`) and having an
  * `update` is given the page clock (`nowMs`, as seconds) and the world
- * position of `viewer` (the camera) in its object's parent frame. No
+ * position of `viewer` (the camera) in its object's parent frame. A
+ * viewer that is a camera is handed on too (a hint at the screen's edge
+ * places its tag by it, a picture faces it), with its lens over
+ * `viewHeightPx` (the view's height in CSS px) where that is given. No
  * scene or no camera: nothing is ticked.
  */
 export function tickWorldParts(
@@ -301,9 +314,19 @@ export function tickWorldParts(
   viewer: Object3D | null,
   nowMs: number,
   parts: readonly WorldPart[] = mountedWorldParts(),
+  viewHeightPx?: number,
 ): void {
   if (scene === null || viewer === null) return;
   const seconds = nowMs / 1000;
+  const camera = isCamera(viewer) ? viewer : undefined;
+  const lens = camera?.projectionMatrix.elements[5] ?? 0;
+  const metresPerPxAtOneM =
+    camera !== undefined &&
+    viewHeightPx !== undefined &&
+    viewHeightPx > 0 &&
+    lens > 0
+      ? 2 / (lens * viewHeightPx)
+      : undefined;
   for (const part of parts) {
     if (part.update === undefined || !shownIn(part.object, scene)) continue;
     const parent = part.object.parent;
@@ -312,6 +335,8 @@ export function tickWorldParts(
     part.update({
       seconds,
       viewer: [viewerLocal.x, viewerLocal.y, viewerLocal.z],
+      ...(camera === undefined ? {} : { camera }),
+      ...(metresPerPxAtOneM === undefined ? {} : { metresPerPxAtOneM }),
     });
   }
 }

@@ -57,6 +57,7 @@ import {
   settingsRecord,
   settingsRecordText,
 } from "./tour-document-draft.js";
+import { shortTextLookArbitraries } from "gps-plus-slam-app-framework/test-utils/tour-arbitraries";
 import "./test-support/tour-of.js";
 
 const GUIDE: TourCharacter = {
@@ -278,6 +279,7 @@ const BLOCKS: Record<TourBlockKind, (id: string) => fc.Arbitrary<TourBlock>> = {
       kind: fc.constant("shortText"),
       caption: words,
       description: maybe(words),
+      ...shortTextLookArbitraries,
     }),
   longText: (id) =>
     everyField<TourLongTextBlock>({
@@ -289,13 +291,34 @@ const BLOCKS: Record<TourBlockKind, (id: string) => fc.Arbitrary<TourBlock>> = {
     }),
   picture: (id) =>
     everyField<TourPictureBlock>({
-      ...envelope(id, ["plane", "card"] as const),
+      ...envelope(id, [
+        "plane",
+        "framed",
+        "cutout",
+        "thenNow",
+        "sharpen",
+        "finder",
+        "window",
+        "viewer",
+        "card",
+      ] as const),
       kind: fc.constant("picture"),
       image: fc.constantFrom("photo", "guide-png"),
       title: maybe(words),
       caption: maybe(words),
       alt: maybe(words),
+      credit: maybe(words),
+      year: maybe(fc.constantFrom("1890", "about 1880s")),
       widthM: fc.integer({ min: 1, max: 50 }),
+      showTag: maybe(fc.boolean()),
+      viewpoint: maybe(
+        fc.constant({
+          position: [0, 0, 0] as const,
+          rotation: [0, 0, 0, 1] as const,
+          hfovDeg: 60,
+          distanceM: 12,
+        }),
+      ),
     }),
   video: (id) =>
     everyField<TourVideoBlock>({
@@ -434,11 +457,14 @@ const WAITS = (
       prompt: words,
       options: fc.tuple(
         ...ids.map((option) =>
+          // An answer jumps or ends the story, never both: the reader
+          // refuses the pair.
           everyField<TourChoiceOption>({
             id: fc.constant(option),
             label: words,
             goto: maybe(fc.constantFrom(...childIds)),
-          }),
+            end: maybe(fc.constant(true as const)),
+          }).filter((o) => o.goto === undefined || o.end === undefined),
         ),
       ),
     }),

@@ -1241,7 +1241,9 @@ body {
     overflow: hidden;
   }
 
-  #tree-select {
+  /* Scoped to the list: the Select button's own rule comes later in this
+   * file and would win at an equal weight. */
+  #shell-tree #tree-select {
     gap: 0;
     padding: 0 5px;
     font-size: 0;
@@ -1348,10 +1350,77 @@ body {
   font-size: 11px;
 }
 
+/* The crumb over the details: every level above the selection a button,
+   the selection itself the current part. */
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  min-width: 0;
+  padding: 4px 6px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.crumbs .cb {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 240px;
+  min-height: 28px;
+  padding: 3px 6px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--s-muted);
+  font: inherit;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.crumbs .cb:hover:not([aria-current]) {
+  background: var(--s-bg3);
+  color: var(--s-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.crumbs .cb[aria-current] {
+  color: var(--s-text);
+  font-weight: 600;
+  cursor: default;
+}
+
+.crumbs .csep {
+  flex: none;
+  color: var(--s-dim);
+}
+
+@media (max-width: 700px) {
+  .crumbs .cb {
+    flex: none;
+    min-height: 36px;
+    max-width: 60vw;
+    font-size: 13px;
+  }
+}
+
 .isec {
   margin-top: 4px;
   padding: 6px 12px 8px;
   border-top: 1px solid var(--s-line);
+}
+
+/* A section's heading in the inspector (a folder's Pivot, its Items). */
+.isec-h {
+  margin: 2px 0 4px;
+  color: var(--s-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .f {
@@ -1679,6 +1748,99 @@ button.thumb:focus-visible {
   width: 74px;
 }
 
+/* Two thumbs on one track (a zone's full volume edge and its reach): the
+   two sliders lie on each other and only their thumbs take a press, so
+   each thumb is pressed, dragged and focused on its own. */
+.range .pair {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+  min-height: 20px;
+}
+
+.range .pair input[type="range"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  appearance: none;
+  background: transparent;
+  pointer-events: none;
+}
+
+/* The one groove is the low slider's; the high one lies on it bare. */
+.range .pair input[data-pair="low"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--s-line2);
+}
+
+.range .pair input[data-pair="low"]::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--s-line2);
+}
+
+.range .pair input[data-pair="high"]::-webkit-slider-runnable-track {
+  height: 4px;
+  background: transparent;
+}
+
+.range .pair input[type="range"]::-webkit-slider-thumb {
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border: 2px solid var(--s-bg1);
+  border-radius: 50%;
+  appearance: none;
+  background: var(--s-accent);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.range .pair input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--s-bg1);
+  border-radius: 50%;
+  background: var(--s-accent);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.range .pair input[type="range"]:focus-visible {
+  outline: none;
+}
+
+.range .pair input[type="range"]:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--s-accent);
+  outline-offset: 2px;
+}
+
+/* A zone's loudness over distance, under its volume. */
+.curve {
+  padding: 0 0 6px;
+}
+
+.curve svg.loudness {
+  display: block;
+  width: 100%;
+  height: 40px;
+}
+
+.curve .area {
+  fill: color-mix(in srgb, var(--s-accent) 18%, transparent);
+}
+
+.curve .line {
+  fill: none;
+  stroke: var(--s-accent);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
 /* A station's Position row: the disclosure and its lock side by side. */
 .posrow {
   display: flex;
@@ -1954,9 +2116,39 @@ body[data-view="3d"] #view3d .view3d-canvas {
   margin-left: var(--s-view-left);
 }
 
+/* The line over the scene for the selection (a folder's: its items move
+ * together), centred on the canvas between the open docks; a picture of
+ * words, so a press goes through to the scene. */
+.scene-hint {
+  position: absolute;
+  top: 12px;
+  left: calc(
+    var(--s-view-left, 0px) +
+      (100% - var(--s-view-left, 0px) - var(--s-view-right, 0px)) / 2
+  );
+  z-index: 3;
+  max-width: min(
+    560px,
+    calc(100% - var(--s-view-left, 0px) - var(--s-view-right, 0px) - 32px)
+  );
+  margin: 0;
+  padding: 6px 14px;
+  border: 1px solid var(--s-line2);
+  border-radius: 16px;
+  background: rgb(20 22 26 / 88%);
+  color: var(--s-muted);
+  font: 12px/1.45 var(--s-sans);
+  text-align: center;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.scene-hint[hidden] {
+  display: none;
+}
+
 /* At the view's foot between the open docks (each runs down to the bottom
- * bar beside it), or under both with its span button, the docks then
- * ending at its top. Its height is `--s-panel-h` on the page, which the
+ * bar beside it). Its height is `--s-panel-h` on the page, which the
  * map controls and the toasts keep clear of. It pushes the view up: the
  * view's canvas ends at its top (the view reads its size from the canvas),
  * while the docks keep their height. */
@@ -1985,23 +2177,12 @@ body[data-view="3d"] #view3d .view3d-canvas {
   display: none;
 }
 
-/* Spanned, it runs under every dock, the asset shelf's too (each ends at
- * its top), so no strip of the view is left below the shelf. */
-#shell-panel.span {
-  right: 0;
-}
-
-#shell-tree:not([hidden], .collapsed) ~ #shell-panel:not(.span) {
+#shell-tree:not([hidden], .collapsed) ~ #shell-panel {
   left: var(--s-tree-w);
 }
 
-#shell-inspector:not([hidden], .collapsed) ~ #shell-panel:not(.span) {
+#shell-inspector:not([hidden], .collapsed) ~ #shell-panel {
   right: calc(var(--s-insp-w) + var(--s-shelf-cur, 0px));
-}
-
-#view3d.panel-span .dock:not(.collapsed) {
-  bottom: max(var(--s-panel-h, 0px), var(--s-keyboard-foot));
-  border-bottom: 1px solid var(--s-line);
 }
 
 .bp-grip {
@@ -2713,8 +2894,8 @@ body[data-view="3d"] #view3d .view3d-canvas {
  * inspector ends at its top), the toggles keep their icons and badges. */
 @media (width <= 700px) {
   #shell-panel,
-  #shell-tree:not([hidden], .collapsed) ~ #shell-panel:not(.span),
-  #shell-inspector:not([hidden], .collapsed) ~ #shell-panel:not(.span) {
+  #shell-tree:not([hidden], .collapsed) ~ #shell-panel,
+  #shell-inspector:not([hidden], .collapsed) ~ #shell-panel {
     right: 0;
     left: 0;
   }
@@ -2824,14 +3005,23 @@ body[data-view="3d"] #view3d .view3d-canvas {
     bottom: auto;
   }
 
+  /* At the view's top left, beside the map controls at its top right
+   * (a compass and two zoom buttons of 38 px, 8 px apart): the gizmo in
+   * the short view below stays clear. */
+  .scene-hint {
+    left: 12px;
+    max-width: calc(100% - 24px - 3 * 38px - 1px - 8px - 8px);
+    text-align: left;
+    transform: none;
+  }
+
   #studio-list {
     display: inline-flex;
   }
 
   .tog .tl,
   .bp-tabs .tab .tl,
-  :is(#shell-panel, .dock-group-bottom) .chip .cl,
-  .bp-tools .bp-span {
+  :is(#shell-panel, .dock-group-bottom) .chip .cl {
     display: none;
   }
 
@@ -2869,8 +3059,7 @@ body[data-view="3d"] #view3d .view3d-canvas {
 }
 
 @container (width <= 540px) {
-  :is(#shell-panel, .dock-group-bottom) .chip .cl,
-  .bp-tools .bp-span {
+  :is(#shell-panel, .dock-group-bottom) .chip .cl {
     display: none;
   }
 }
@@ -2980,6 +3169,7 @@ body[data-view="3d"] #view3d .view3d-canvas {
 /* A finger's height for what is smaller for a mouse: a phone's item row. */
 @media (width <= 700px), (pointer: coarse) {
   .range input[type="range"],
+  .range .pair,
   .contents .kid,
   #add-palette .pfil .chip {
     height: 32px;
@@ -3281,13 +3471,112 @@ body[data-view="3d"] #view3d .view3d-canvas {
   }
 }
 
-/* What a choice or a quiz says: read here, not edited. */
+/* What a quiz of a typed answer says: read here, not edited. */
 .steplines {
   display: grid;
   gap: 4px;
   margin: 4px 0;
   padding: 0;
   list-style: none;
+}
+
+/* A choice's and a quiz's answers: each a row of its words and its
+   Remove (a quiz's with its right-answer radio first), a choice's in a box
+   with where it leads under them. */
+.answers > .flabel {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.optbox {
+  margin: 0 0 6px;
+  padding: 6px;
+  border: 1px solid var(--s-line);
+  border-radius: 7px;
+  background: rgb(0 0 0 / 14%);
+}
+
+.optrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px;
+}
+
+.optbox .optrow {
+  margin: 0;
+}
+
+.optrow.lead {
+  margin-top: 5px;
+}
+
+.optrow .tfield {
+  flex: 1 1 40%;
+  min-width: 0;
+}
+
+.optrow select.tfield {
+  flex: 1 1 45%;
+}
+
+.optrow .rbtn,
+.optrow .radio {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
+
+.optrow .rbtn {
+  border: 1px solid var(--s-line2);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--s-muted);
+  cursor: pointer;
+}
+
+.optrow .rbtn:hover:not(:disabled) {
+  background: var(--s-bg3);
+  color: var(--s-text);
+}
+
+.optrow .rbtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.optrow .radio input {
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  accent-color: var(--s-ok);
+}
+
+.leads {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 0 2px 0 4px;
+  color: var(--s-muted);
+  font-size: 11.5px;
+}
+
+.thenbox {
+  padding: 7px 9px;
+  border: 1px dashed var(--s-line2);
+  border-radius: 6px;
+}
+
+@media (max-width: 700px) {
+  .optrow .rbtn,
+  .optrow .radio {
+    width: 42px;
+    height: 42px;
+  }
 }
 
 /* A model's own parts in the inspector (the station blocks prototype's
@@ -4113,15 +4402,153 @@ body[data-view="3d"] #toasts {
   box-shadow: inset 0 -2px 0 var(--s-accent);
 }
 
-.dockview-theme-tour .dv-default-tab-content {
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+/* A tab (`dock-host.ts`): its panel's icon, title and count. A docked
+ * panel is shown or hidden, never closed: no close button. */
+.dockview-theme-tour .dock-tab {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  height: 100%;
+  padding: 0 10px;
 }
 
-/* A docked panel is shown or hidden, never closed: its element is the
- * page's. */
-.dockview-theme-tour .dv-tab .dv-default-tab .dv-default-tab-action {
+.dockview-theme-tour .dock-tab .i {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.dockview-theme-tour .dock-tab-title {
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.dockview-theme-tour .dock-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--s-accent-bg);
+  color: var(--s-accent-text);
+  font: 10px/1 var(--s-mono);
+}
+
+.dockview-theme-tour .dock-badge.bad {
+  background: color-mix(in srgb, var(--s-warn) 22%, transparent);
+  color: var(--s-warn);
+}
+
+/* A group folded to its rail (`dock-rail.ts`): its tab strip only, the
+ * tabs upright along a side rail, each its icon and count (its title
+ * stays its accessible name); its panel out of the page's tab order. */
+.dockview-theme-tour .dv-groupview.dock-folded > .dv-content-container {
   display: none;
+}
+
+.dockview-theme-tour .dv-groupview-header-vertical .dock-tab {
+  padding: 8px 0;
+}
+
+.dockview-theme-tour .dv-groupview-header-vertical .dock-tab .i {
+  transform: rotate(90deg);
+}
+
+.dockview-theme-tour .dv-groupview-header-vertical .dock-tab-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+/* The fold button, at the strip's end (on a side rail, its top). */
+.dockview-theme-tour .dock-acts {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 2px;
+}
+
+.dockview-theme-tour .dv-groupview-header-vertical .dock-acts {
+  height: auto;
+  padding: 2px 0;
+}
+
+.dockview-theme-tour .dock-fold {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--s-muted);
+}
+
+.dockview-theme-tour .dock-fold:hover {
+  background: var(--s-bg3);
+  color: var(--s-text);
+}
+
+.dockview-theme-tour .dock-fold:focus-visible {
+  outline: 2px solid var(--s-focus);
+  outline-offset: -2px;
+}
+
+/* For a finger: a button the rail's width, and splitters easy to find
+ * and to take - a strip 40 px wide centred on the line, a grip on it. */
+@media (pointer: coarse) {
+  .dockview-theme-tour .dock-fold {
+    width: 40px;
+    height: 40px;
+  }
+
+  .dockview-theme-tour
+    .dv-split-view-container.dv-horizontal
+    > .dv-sash-container
+    > .dv-sash:not(.dv-disabled)::before {
+    position: absolute;
+    inset: 0 -18px;
+    content: "";
+  }
+
+  .dockview-theme-tour
+    .dv-split-view-container.dv-vertical
+    > .dv-sash-container
+    > .dv-sash:not(.dv-disabled)::before {
+    position: absolute;
+    inset: -18px 0;
+    content: "";
+  }
+
+  .dockview-theme-tour
+    .dv-split-view-container
+    > .dv-sash-container
+    > .dv-sash::after {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 4px;
+    height: 28px;
+    margin: -14px 0 0 -2px;
+    border-radius: 2px;
+    background: var(--s-line2);
+    content: "";
+    pointer-events: none;
+  }
+
+  .dockview-theme-tour
+    .dv-split-view-container.dv-vertical
+    > .dv-sash-container
+    > .dv-sash::after {
+    width: 28px;
+    height: 4px;
+    margin: -2px 0 0 -14px;
+  }
 }
 
 #view3d.docked .dock-host {
@@ -4139,6 +4566,18 @@ body[data-view="3d"] #toasts {
 #view3d.docked .dock-host.keyboard-max .dock-pane,
 #view3d.docked .dock-host.keyboard-max .dock-pane * {
   scroll-padding-bottom: var(--dock-under, 0px);
+}
+/* The scrollers keep their 8 px over it, and reach that much further: a
+ * margin alone does not lengthen a scroller, so a control at its content's
+ * very end could not otherwise rise above the keyboard. */
+#view3d.docked .dock-host.keyboard-max .dock-pane :is(.dbody, .pane) {
+  scroll-padding-bottom: calc(8px + var(--dock-under, 0px));
+}
+
+#view3d.docked .dock-host.keyboard-max .dock-pane :is(.dbody, .pane)::after {
+  display: block;
+  height: var(--dock-under, 0px);
+  content: "";
 }
 /* The layout never scrolls as a whole: a focus or a scroll into view in a
  * panel would otherwise shift the view box and every group in it, the tab

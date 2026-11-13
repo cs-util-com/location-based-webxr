@@ -6,6 +6,7 @@ import {
   BUBBLE_OPEN_M,
   bubbleOpens,
   bubbleSide,
+  bubbleWanted,
   characterViewLook,
   facingDegOf,
   facingRotation,
@@ -13,7 +14,6 @@ import {
   isStageCharacterView,
   lineReadingMs,
   lineWordTimes,
-  MAX_TURN_DEG,
   scaleWordTimes,
   POPUP_CLOSE_M,
   POPUP_UNFOLD_M,
@@ -99,6 +99,30 @@ describe("the open distances", () => {
     expect(bubbleOpens(8.99)).toBe(true);
     expect(bubbleOpens(9)).toBe(false);
     expect(bubbleOpens(Number.NaN)).toBe(false);
+  });
+
+  // Why this test matters: the editor shows a character's full bubble
+  // only for the selected one or while his line plays, at any distance -
+  // a close editing camera opened every bubble at once and they covered
+  // the scene. The visitor's views keep the distance rule unchanged.
+  // Swept over 0 to 30 m in 0.25 m steps.
+  it("opens by distance for the visitor, and by selection or his voice in the editor", () => {
+    for (let d = 0; d <= 30; d += 0.25) {
+      for (const selected of [false, true]) {
+        for (const speaking of [false, true]) {
+          const input = { distanceM: d, selected, speaking };
+          expect(bubbleWanted("distance", input), `${d} m`).toBe(
+            bubbleOpens(d),
+          );
+          expect(bubbleWanted("selection", input), `${d} m`).toBe(
+            selected || speaking,
+          );
+        }
+      }
+    }
+    const far = { distanceM: Number.NaN, selected: true, speaking: false };
+    expect(bubbleWanted("distance", far)).toBe(false);
+    expect(bubbleWanted("selection", far)).toBe(true);
   });
 
   it("unfolds the pop-up within 12 m and keeps it until 16 m", () => {
@@ -202,7 +226,7 @@ describe("characterViewLook", () => {
   });
 });
 
-describe("restYawOf and facingYaw: the creator's facing and the 60 degree turn", () => {
+describe("restYawOf and facingYaw: the creator's facing and the full turn to the camera", () => {
   const yawQ = (rad: number) =>
     [0, Math.sin(rad / 2), 0, Math.cos(rad / 2)] as const;
 
@@ -225,61 +249,31 @@ describe("restYawOf and facingYaw: the creator's facing and the 60 degree turn",
     expect(restYawOf([-Math.SQRT1_2, 0, 0, Math.SQRT1_2])).toBe(0);
   });
 
-  // Why this test matters: the prototype turns him toward the visitor by
-  // at most 60 degrees from the creator's facing, so a visitor behind him
-  // sees him from the side, not a figure spinning to follow them.
-  it("turns toward the camera by at most 60 degrees, and the pop-up rests", () => {
-    const cap = (MAX_TURN_DEG * Math.PI) / 180;
-    expect(MAX_TURN_DEG).toBe(60);
-    expect(facingYaw(0, 0.5, true)).toBeCloseTo(0.5, 12);
-    expect(facingYaw(0, Math.PI / 2, true)).toBeCloseTo(cap, 12);
-    expect(facingYaw(0, -Math.PI / 2, true)).toBeCloseTo(-cap, 12);
-    // Across the wrap: rest 170 degrees, the camera at -170 is 20 away.
-    const r = (170 * Math.PI) / 180;
-    expect(facingYaw(r, -r, true)).toBeCloseTo(r + (20 * Math.PI) / 180, 12);
-    expect(facingYaw(1, 2, false)).toBe(1);
-    expect(facingYaw(Number.NaN, 0.3, true)).toBeCloseTo(0.3, 12);
-    expect(facingYaw(0.4, Number.NaN, true)).toBe(0.4);
-  });
-
-  // Why this test matters: the editor draws a character to be found and
-  // picked, so he must never stand edge-on; the visitor's 60 degree turn
-  // leaves him edge-on 150 degrees round. With `backToCamera` a camera
-  // more than 90 degrees round sees his back turned to it instead.
-  // Swept over three rests and every 5 degrees round him.
-  it("with backToCamera, never stands edge-on: from behind his back turns to the camera", () => {
-    const cap = (MAX_TURN_DEG * Math.PI) / 180;
-    for (const restDeg of [0, 70, -160]) {
+  // Why this test matters: a character is a flat cut-out, which reads
+  // squashed or from behind when seen at a slant, so every view that
+  // turns faces the camera fully, wherever it stands and whatever the
+  // creator's facing; only the pop-up, a stage set the creator turns,
+  // rests at his facing. Swept every 5 degrees round him over four rests
+  // (one across the wrap).
+  it("faces the camera fully from every heading in a turning view; the pop-up rests", () => {
+    const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+    for (const restDeg of [0, 70, -160, 170]) {
       const rest = (restDeg * Math.PI) / 180;
       for (let relDeg = -180; relDeg <= 180; relDeg += 5) {
         const toCam = rest + (relDeg * Math.PI) / 180;
-        const yaw = facingYaw(rest, toCam, true, true);
-        const square = Math.abs(Math.cos(toCam - yaw));
-        expect(square, `rest ${restDeg}, ${relDeg} deg`).toBeGreaterThanOrEqual(
-          0.85,
-        );
-        // Still never more than 60 degrees from his rest facing.
+        const yaw = facingYaw(rest, toCam, true);
         expect(
-          Math.abs(Math.atan2(Math.sin(yaw - rest), Math.cos(yaw - rest))),
-        ).toBeLessThanOrEqual(cap + 1e-9);
-        // Within 90 degrees he is the visitor's look exactly (at 90 either
-        // side is as square on, and rounding picks one).
-        const visitor = facingYaw(rest, toCam, true);
-        const sameAsVisitor = Math.abs(yaw - visitor) < 1e-12;
-        expect(sameAsVisitor || Math.abs(relDeg) >= 90, `${relDeg} deg`).toBe(
-          true,
-        );
+          Math.abs(wrap(yaw - toCam)),
+          `rest ${restDeg}, ${relDeg} deg`,
+        ).toBeLessThan(1e-12);
+        expect(facingYaw(rest, toCam, false)).toBe(rest);
       }
     }
-    // Straight behind: his back square on, at rest.
-    expect(facingYaw(0, Math.PI, true, true)).toBeCloseTo(0, 12);
-    // 150 degrees round: his back turns 30 degrees the other way.
-    expect(facingYaw(0, (150 * Math.PI) / 180, true, true)).toBeCloseTo(
-      (-30 * Math.PI) / 180,
-      12,
-    );
-    // The pop-up still rests.
-    expect(facingYaw(1, 2.9, false, true)).toBe(1);
+    // A non-finite rest reads as 0; a non-finite camera direction as no
+    // turn (he rests).
+    expect(facingYaw(Number.NaN, 0.3, true)).toBeCloseTo(0.3, 12);
+    expect(facingYaw(0.4, Number.NaN, true)).toBe(0.4);
+    expect(facingYaw(Number.NaN, Number.NaN, true)).toBe(0);
   });
 });
 

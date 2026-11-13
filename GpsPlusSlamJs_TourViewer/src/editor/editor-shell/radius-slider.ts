@@ -2,10 +2,8 @@
  * A station's radius slider, beside its number in the inspector: a drag
  * shows the radius in the number and on the 3D view's ring (`preview`)
  * and writes nothing; the release writes one edit, one undo step, when
- * the radius moved. The dock is drawn again from the store, so what the
- * slider keeps during a drag lives here, not in the elements, and a drag
- * ends at the pointer's release too: a browser fires no `change` for a
- * drag back to where it began.
+ * the radius moved. The drag rule is the inspector's one for every
+ * slider (`range-slider.ts`).
  *
  * The track covers the radii a creator sets by feel; the number takes the
  * rest of what the format allows, and the thumb rests at the nearer end of
@@ -13,6 +11,7 @@
  *
  * @see radius-slider.ts.md
  */
+import { wireRangeDrag } from "./range-slider.js";
 
 /** The track, in metres. */
 export const RADIUS_SLIDER = { min: 5, max: 100, step: 1 } as const;
@@ -58,100 +57,36 @@ export function wireRadiusSlider(deps: {
   /** Write the radius: one edit. */
   readonly write: (stationId: string, radiusM: number) => void;
 }): RadiusSlider {
-  /** The station a drag is showing, its radius before, and where it is. */
-  let drag: {
-    readonly id: string;
-    readonly radiusM: number;
-    atM: number;
-  } | null = null;
-  /** The finger on the slider: another's release is not the drag's end. */
-  let pointer: number | null = null;
-
-  const doc = deps.root.ownerDocument;
-  const sliderNow = () =>
-    deps.root.querySelector<HTMLInputElement>(`[data-act="${SLIDER_ACT}"]`);
-  const numberNow = () =>
-    sliderNow()?.parentElement?.querySelector<HTMLInputElement>(
+  const numberBeside = (slider: HTMLInputElement | null) =>
+    slider?.parentElement?.querySelector<HTMLInputElement>(
       "input[data-field]",
     ) ?? null;
-  const isDragging = (event: PointerEvent) =>
-    pointer === null || event.pointerId === pointer;
-  const released = (event: PointerEvent) => {
-    if (isDragging(event)) finish(true);
-  };
-  const cancelled = (event: PointerEvent) => {
-    if (isDragging(event)) finish(false);
-  };
-
-  /** The drag over: written or not, then the number, the thumb and the
-   *  ring as the tour has them (a write may have changed nothing). */
-  function finish(write: boolean): void {
-    if (drag === null) return;
-    const { id, radiusM, atM } = drag;
-    drag = null;
-    pointer = null;
-    doc.removeEventListener("pointerup", released, true);
-    doc.removeEventListener("pointercancel", cancelled, true);
-    const number = numberNow();
-    if (number !== null) number.value = number.defaultValue;
-    if (write && atM !== radiusM) deps.write(id, atM);
-    const station = deps.station();
-    const slider = sliderNow();
-    if (slider !== null && station?.id === id) {
-      slider.value = String(station.radiusM);
-    }
-    deps.preview(id, null);
-  }
-
-  const sliderOf = (target: EventTarget | null): HTMLInputElement | null =>
-    target instanceof HTMLInputElement && target.dataset["act"] === SLIDER_ACT
-      ? target
-      : null;
-
-  /** A press that moved nothing started no drag, so `finish` never
-   *  forgets its finger: its own release does. */
-  const pressOver = (event: PointerEvent) => {
-    if (pointer !== null && event.pointerId !== pointer) return;
-    doc.removeEventListener("pointerup", pressOver, true);
-    doc.removeEventListener("pointercancel", pressOver, true);
-    if (drag === null) pointer = null;
-  };
-
-  deps.root.addEventListener("pointerdown", (event) => {
-    if (drag === null && sliderOf(event.target) !== null) {
-      pointer = event.pointerId;
-      doc.addEventListener("pointerup", pressOver, true);
-      doc.addEventListener("pointercancel", pressOver, true);
-    }
-  });
-
-  deps.root.addEventListener("input", (event) => {
-    const slider = sliderOf(event.target);
-    if (slider === null) return;
-    const station = deps.station();
-    if (station === null) return;
-    const radiusM = Number(slider.value);
-    if (drag === null) {
-      drag = { id: station.id, radiusM: station.radiusM, atM: radiusM };
-      doc.addEventListener("pointerup", released, true);
-      doc.addEventListener("pointercancel", cancelled, true);
-    }
-    drag.atM = radiusM;
-    const number = numberNow();
-    if (number !== null) number.value = radiusM.toFixed(1);
-    deps.preview(drag.id, radiusM);
-  });
-
-  deps.root.addEventListener("change", (event) => {
-    const slider = sliderOf(event.target);
-    if (slider === null || drag === null) return;
-    drag.atM = Number(slider.value);
-    finish(true);
-  });
-
-  return {
-    cancel: () => {
-      finish(false);
+  return wireRangeDrag({
+    root: deps.root,
+    owns: (act) => act === SLIDER_ACT,
+    begin: () => {
+      const station = deps.station();
+      return station === null
+        ? null
+        : { id: station.id, before: station.radiusM };
     },
-  };
+    move: (slider, id, radiusM) => {
+      const number = numberBeside(slider);
+      if (number !== null) number.value = radiusM.toFixed(1);
+      deps.preview(id, radiusM);
+      return radiusM;
+    },
+    // The number, the thumb and the ring as the tour has them after the
+    // write (a write may have changed nothing).
+    end: (_act, slider, id, _before, at) => {
+      const number = numberBeside(slider);
+      if (number !== null) number.value = number.defaultValue;
+      if (at !== null) deps.write(id, at);
+      const station = deps.station();
+      if (slider !== null && station?.id === id) {
+        slider.value = String(station.radiusM);
+      }
+      deps.preview(id, null);
+    },
+  });
 }

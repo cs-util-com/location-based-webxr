@@ -24,6 +24,7 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   itemGeoPose,
+  tourFreeEntries,
   tourObjects,
 } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import {
@@ -34,6 +35,7 @@ import {
 import { describe, expect, it } from "vitest";
 
 import { hostedObjects } from "./authoring-draft.js";
+import { placeableOf } from "./placement/placeables.js";
 import { presentWorldBlocks } from "./shown-blocks.js";
 import { stationContent, storyOf } from "./test-support/station-content.js";
 import { tourOf } from "./test-support/tour-of.js";
@@ -644,6 +646,60 @@ describe("the visitor", () => {
   });
 });
 
+describe("the visitor, in a scaled folder", () => {
+  it("sees every item where the editor showed it and draws it as large, for factors across the allowed range", () => {
+    // Why: a folder's scale grows everything in it about its pivot: the
+    // items' distances and their drawn sizes (and, through the size, how
+    // far they are heard). The visitor composes both from the saved file
+    // (`tourFreeEntries`); the editor from its document. A factor one
+    // side read and the other did not would put a scaled folder's items
+    // elsewhere, or at another size, on the walk. Swept over the folder's
+    // turn and offset, and factors from the smallest allowed to the
+    // largest, with a nested folder inheriting the factor.
+    for (const [yawDeg, offsetM] of SWEEP) {
+      for (const factor of [0.1, 0.5, 3, 10]) {
+        const before = opened(tour(yawDeg, offsetM));
+        const state = reduce(
+          before,
+          act.folderScaled({
+            stationId: "well",
+            folderId: "outer",
+            scale: factor,
+            what: "scale",
+          }),
+        );
+        const shown = new Map(
+          documentObjects(state).map((o) => [o.object.id, o.object.geo]),
+        );
+        // The scale moved the folder's items (it is not a no-op).
+        expect(shown.get("b")).not.toEqual(
+          documentObjects(before).find((o) => o.object.id === "b")?.object.geo,
+        );
+        const file = saved(state);
+        let seen = 0;
+        for (const station of file.stations) {
+          const drawn = new Map(
+            tourFreeEntries(station).map((e) => [e.block.id, e.scale]),
+          );
+          for (const block of presentWorldBlocks(station, [])) {
+            const geo = shown.get(block.id);
+            if (geo === undefined) throw new Error(`unknown block ${block.id}`);
+            expectSameGeo(itemGeoPose(block.pose, station.geo), geo);
+            expect(drawn.get(block.id)).toBe(
+              placeableOf(file, block.id)?.inheritedScale,
+            );
+            seen += 1;
+          }
+          expect(drawn.get("a") ?? 1).toBe(station.id === "well" ? factor : 1);
+          expect(drawn.get("b") ?? 1).toBe(station.id === "well" ? factor : 1);
+          expect(drawn.get("p") ?? 1).toBe(1);
+        }
+        expect(seen).toBe(shown.size);
+      }
+    }
+  });
+});
+
 describe("an item that changes station", () => {
   // Why: a folder belongs to its station. An item that joins another
   // station, or gets a station of its own, keeping its old folder path
@@ -972,6 +1028,111 @@ describe("reordering the folders of a station", () => {
   });
 });
 
+describe("a folder's pivot put at its items' centre", () => {
+  const centred = (folderId = "outer") =>
+    act.folderPivotCentred({ stationId: "well", folderId, what: "centre" });
+
+  it("stands the pivot at the items' centre and moves nothing, in the document and in the saved file", () => {
+    // Why: "Pivot to centre" changes where the folder turns and scales
+    // about, never where its items stand. Its written items are stored
+    // relative to the folder, and its inner folder too, so a reducer that
+    // moved only the pivot would carry them all along. Swept over the
+    // folder's turn and offset; the inner folder is tilted, so a kept
+    // pose that dropped its rotation would show.
+    for (const [yawDeg, offsetM] of SWEEP) {
+      const before = opened(tour(yawDeg, offsetM));
+      const after = reduce(before, centred());
+      expect(after).not.toBe(before);
+      expectNothingMoved(before, after);
+      const file = saved(before);
+      const inStation = (id: string) => {
+        const at = placeableOf(file, id)?.inStation?.position;
+        if (at === undefined) throw new Error(`no place for ${id}`);
+        return at;
+      };
+      const pose = folderIn(saved(after), "outer")?.pose;
+      const was = folderIn(file, "outer")?.pose;
+      // North and east at the centroid of a and b, to a few steps of the
+      // saved file's single precision (about 2 micrometres at 25 m, 0.1 mm
+      // at 2 km). Height and turn kept.
+      const near = (got: number | undefined, want: number) => {
+        expect(Math.abs((got ?? Number.NaN) - want)).toBeLessThanOrEqual(
+          Math.max(1e-6, Math.abs(want) * 2 ** -21),
+        );
+      };
+      near(pose?.position[0], (inStation("a")[0] + inStation("b")[0]) / 2);
+      near(pose?.position[2], (inStation("a")[2] + inStation("b")[2]) / 2);
+      expect(pose?.position[1]).toBe(was?.position[1]);
+      expect(pose?.rotation).toEqual(was?.rotation);
+      // The visitor reads the saved file's composed poses: the same places.
+      const shown = new Map(
+        documentObjects(after).map((o) => [o.object.id, o.object.geo]),
+      );
+      for (const station of saved(after).stations) {
+        for (const block of presentWorldBlocks(station, [])) {
+          const geo = shown.get(block.id);
+          if (geo === undefined) throw new Error(`unknown block ${block.id}`);
+          expectSameGeo(itemGeoPose(block.pose, station.geo), geo);
+        }
+      }
+    }
+  });
+
+  it("keeps the inner folder where it stood, so a later move of it carries its item from there", () => {
+    // Why: the inner folder's own pose is relative to the folder around
+    // it; left unchanged it would jump with the new pivot even though its
+    // item, written where it stands, did not - and the next gesture on it
+    // would carry the item from the wrong place.
+    const before = opened(tour(45, 25));
+    const after = reduce(before, centred());
+    // The pivot did move, so the inner folder had a reason to jump.
+    expect(after).not.toBe(before);
+    const inner = (state: TourDocumentState) =>
+      placeableOf(saved(state), "folder:inner")?.geo;
+    const was = inner(before);
+    const now = inner(after);
+    if (was === undefined || now === undefined) throw new Error("no inner");
+    expectSameGeo(now, was);
+  });
+
+  it("centres a folder inside another in that folder's own frame", () => {
+    // Why: a nested folder's pose is relative to the folder around it, so
+    // its items' centre must be taken in that frame; taken in the
+    // station's, the pivot would land beside its items, the more so the
+    // further and more turned the outer folder is. The inner folder holds
+    // only b, which stands at (1, -2.5, -2) in the outer folder (the inner
+    // pose's quarter turn about east-west applied to b's (1, 2, 3), plus
+    // (0, 0.5, -4)): the pivot goes to north 1, east -2, its height kept.
+    for (const [yawDeg, offsetM] of SWEEP) {
+      const before = opened(tour(yawDeg, offsetM));
+      const after = reduce(before, centred("inner"));
+      expect(after).not.toBe(before);
+      expectNothingMoved(before, after);
+      const pose = folderIn(saved(after), "inner")?.pose;
+      // The outer folder's offset passes through the saved file's single
+      // precision: a few steps of it at that distance.
+      const bound = Math.max(1e-6, offsetM * 2 ** -20);
+      expect(
+        Math.abs((pose?.position[0] ?? Number.NaN) - 1),
+      ).toBeLessThanOrEqual(bound);
+      expect(
+        Math.abs((pose?.position[2] ?? Number.NaN) + 2),
+      ).toBeLessThanOrEqual(bound);
+      expect(pose?.position[1]).toBe(0.5);
+    }
+  });
+
+  it("is no step for a pivot already there, an empty folder or one the station lacks", () => {
+    // Why: a second press, or a folder with nothing to centre on, must
+    // not leave an empty undo step behind.
+    const once = reduce(opened(tour()), centred());
+    expect(reduce(once, centred())).toBe(once);
+    const start = opened(tour());
+    expect(reduce(start, centred("spare"))).toBe(start);
+    expect(reduce(start, centred("nowhere"))).toBe(start);
+  });
+});
+
 describe("undo and redo of every folder action", () => {
   // Why: each folder action is one undo step; an undo must give back the
   // tour as it was, and a redo the tour as the action left it - the
@@ -983,6 +1144,11 @@ describe("undo and redo of every folder action", () => {
         folderId: "outer",
         pose: { position: [-6, 2, 9], rotation: [...yaw(120)] },
         what: "move",
+      }),
+      act.folderPivotCentred({
+        stationId: "well",
+        folderId: "outer",
+        what: "centre",
       }),
       group(["p", "q"]),
       act.folderUngrouped({ stationId: "well", folderId: "outer", what: "u" }),

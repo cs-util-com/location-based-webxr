@@ -16,22 +16,24 @@ import { fakeCharacterPainters } from "../../test-support/fake-character-painter
 import type { WorldEnv, WorldMode } from "../../world-part.js";
 import { SILENT_SOUND } from "../../world-sound.js";
 import {
+  CHARACTER_CHECK_KEY,
   EDITOR_CHARACTER_VIEW,
   PICKED_CHARACTER_PARTS,
   characterWorld,
   editorCharacterView,
+  type CharacterCheck,
 } from "./world.js";
 
 /**
  * Why these tests matter: the editor's 3D view drew no character at all,
  * so a creator placing one saw nothing where he stands. He is drawn now
- * through the visitor's own look, which turns toward the camera by at most
- * 60 degrees: drawn flat at a fixed turn he would vanish edge-on from the
- * side. These hold that he stands only in the editor (the visitor's free
- * host is untouched), in the look of his view (a view this viewer does not
- * know in the default look), never edge-on from any heading round him (his
- * back turns to a camera behind him, the swing eased), and that a
- * file that cannot be read takes the part out and a dispose frees it.
+ * through the visitor's own look, which faces the camera fully: drawn flat
+ * at a fixed turn he would vanish edge-on from the side. These hold that
+ * he stands only in the editor (the visitor's free host is untouched), in
+ * the look of his view (a view this viewer does not know in the default
+ * look), square on to the camera from any heading round him (the swing
+ * eased), with his full bubble only while he is selected, and that a file
+ * that cannot be read takes the part out and a dispose frees it.
  */
 
 /** Every look the part made, with the options it was made from. */
@@ -223,15 +225,13 @@ describe("characterWorld", () => {
   });
 
   /**
-   * How squarely his figure shows to a camera `relDeg` round from his
-   * facing (|cos| of the angle between the figure's face and the camera,
-   * 1 square on, 0 edge-on), once his eased turn has settled.
+   * His part at a pose turned `poseYawDeg`, and how squarely his figure's
+   * FRONT shows to a camera `relDeg` round from that pose at `distanceM`
+   * (the cosine of the angle between the figure's face and the camera: 1
+   * square on, 0 edge-on, below 0 his back), once his eased turn has
+   * settled. One part serves every camera.
    */
-  async function squareness(
-    poseYawDeg: number,
-    relDeg: number,
-    distanceM: number,
-  ): Promise<number> {
+  async function posedAt(poseYawDeg: number) {
     const yaw = (poseYawDeg * Math.PI) / 180;
     const { part } = await standing();
     const placed = new Group();
@@ -240,67 +240,61 @@ describe("characterWorld", () => {
     // The renderer turns the part to the block's pose.
     part.object.quaternion.set(0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2));
     const camera = new PerspectiveCamera(50, 1, 0.05, 600);
-    const h = yaw + (relDeg * Math.PI) / 180;
-    camera.position.set(
-      10 + distanceM * Math.sin(h),
-      1.6,
-      -5 + distanceM * Math.cos(h),
-    );
-    camera.lookAt(10, 1.2, -5);
-    camera.updateMatrixWorld(true);
-    for (let i = 0; i < 120; i++) {
-      part.update?.({ seconds: i * 0.05, viewer: [0, 0, 0], camera });
-    }
-    placed.updateMatrixWorld(true);
-    const figure = made.at(-1)?.look.parts.figure;
-    if (figure === undefined) throw new Error("no look");
-    const normal = figure.getWorldDirection(new Vector3()).setY(0).normalize();
-    const toCamera = camera.position
-      .clone()
-      .sub(new Vector3(10, 0, -5))
-      .setY(0)
-      .normalize();
-    part.dispose();
-    return Math.abs(normal.dot(toCamera));
+    let seconds = 0;
+    const squareness = (relDeg: number, distanceM: number): number => {
+      const h = yaw + (relDeg * Math.PI) / 180;
+      camera.position.set(
+        10 + distanceM * Math.sin(h),
+        1.6,
+        -5 + distanceM * Math.cos(h),
+      );
+      camera.lookAt(10, 1.2, -5);
+      camera.updateMatrixWorld(true);
+      for (let i = 0; i < 120; i++) {
+        seconds += 0.05;
+        part.update?.({ seconds, viewer: [0, 0, 0], camera });
+      }
+      placed.updateMatrixWorld(true);
+      const figure = made.at(-1)?.look.parts.figure;
+      if (figure === undefined) throw new Error("no look");
+      const normal = figure
+        .getWorldDirection(new Vector3())
+        .setY(0)
+        .normalize();
+      const toCamera = camera.position
+        .clone()
+        .sub(new Vector3(10, 0, -5))
+        .setY(0)
+        .normalize();
+      return normal.dot(toCamera);
+    };
+    return { squareness, dispose: () => part.dispose() };
   }
 
-  // Why: the reason he is drawn through the visitor's look. Seen from in
-  // front, from either side and from straight behind (the four headings
-  // round him), his figure turns to show a face (its back from behind)
-  // at least half square on. Swept over two poses and two distances.
-  it("shows a face to the camera from four headings round him: in front, either side and behind", async () => {
-    for (const poseYawDeg of [0, 70]) {
+  // Why: in the editor he is drawn to be found and picked, and he is a
+  // flat cut-out: he shows his front square on to the camera from every
+  // heading round him, whatever his pose's facing (it turns only the
+  // pop-up stage). Swept every 5 degrees all the way round, over three
+  // poses and two distances.
+  it("shows his front square on from every heading round him", async () => {
+    for (const poseYawDeg of [0, 70, -150]) {
+      const posed = await posedAt(poseYawDeg);
       for (const distanceM of [4, 25]) {
-        for (const relDeg of [0, 90, 180, 270]) {
+        for (let relDeg = -180; relDeg <= 180; relDeg += 5) {
           expect(
-            await squareness(poseYawDeg, relDeg, distanceM),
+            posed.squareness(relDeg, distanceM),
             `pose ${poseYawDeg} deg, ${distanceM} m, ${relDeg} deg round`,
-          ).toBeGreaterThanOrEqual(0.5 - 1e-6);
+          ).toBeGreaterThan(1 - 1e-6);
         }
       }
+      posed.dispose();
     }
   });
 
-  // Why: in the editor he is drawn to be found and picked, so he must
-  // never stand edge-on. The visitor's look, turning at most 60 degrees,
-  // stands him edge-on 150 degrees round; the editor's turns his back to
-  // a camera more than 90 degrees round instead. Swept every 5 degrees
-  // all the way round, over two poses.
-  it("never stands edge-on: at least 0.85 square on from every heading round him", async () => {
-    for (const poseYawDeg of [0, 70]) {
-      for (let relDeg = -180; relDeg <= 180; relDeg += 5) {
-        expect(
-          await squareness(poseYawDeg, relDeg, 8),
-          `pose ${poseYawDeg} deg, ${relDeg} deg round`,
-        ).toBeGreaterThanOrEqual(0.85);
-      }
-    }
-  });
-
-  // Why: crossing his side, his target turn jumps from one 60 degree
-  // limit to the other (his face to his back). It must ease over several
-  // frames, not snap in one.
-  it("eases the swing as the camera crosses his side", async () => {
+  // Why: a camera that jumps round him (a framing, an orbit flick) must
+  // not snap the figure; his turn eases over several frames and settles
+  // square on.
+  it("eases the turn when the camera jumps round him", async () => {
     const { part } = await standing();
     const camera = new PerspectiveCamera(50, 1, 0.05, 600);
     const at = (relDeg: number) => {
@@ -316,24 +310,99 @@ describe("characterWorld", () => {
       const d = figure.getWorldDirection(new Vector3());
       return (Math.atan2(d.x, d.z) * 180) / Math.PI;
     };
-    at(85);
+    at(0);
     for (let i = 0; i < 120; i++) {
       part.update?.({ seconds: i * 0.05, viewer: [0, 0, 0], camera });
     }
-    const before = yaw();
-    expect(before).toBeCloseTo(60, 3);
-    at(95);
+    expect(yaw()).toBeCloseTo(0, 3);
+    at(150);
     part.update?.({ seconds: 6.05, viewer: [0, 0, 0], camera });
+    // The step from 5.95 s to 6.05 s is the look's 0.1 s clamp, so at its
+    // ease rate of 4 a second he covers at most 1 - e^-0.4 of 150 degrees.
     const after = yaw();
-    // Turning toward -60 (his back to the camera), but eased: the step
-    // from 5.95 s to 6.05 s is the look's 0.1 s clamp, so at its ease rate
-    // of 4 a second he covers at most 1 - e^-0.4 of the 120 degrees.
-    expect(after).toBeLessThan(before);
-    expect(before - after).toBeLessThan(120 * (1 - Math.exp(-0.4)) + 1);
+    expect(after).toBeGreaterThan(0);
+    expect(after).toBeLessThan(150 * (1 - Math.exp(-0.4)) + 1);
     for (let i = 2; i < 120; i++) {
       part.update?.({ seconds: 6 + i * 0.05, viewer: [0, 0, 0], camera });
     }
-    expect(yaw()).toBeCloseTo(-60, 3);
+    expect(yaw()).toBeCloseTo(150, 3);
+    part.dispose();
+  });
+
+  // Why: a close editing camera opened every character's full bubble and
+  // they covered the scene. In the editor his name tag shows, and his
+  // full bubble only while the editor's selection is him - at any
+  // distance. Swept from 2 m to 30 m.
+  it("opens his full bubble only while he is the editor's selection", async () => {
+    const { part } = await standing({ view: "speak" });
+    const look = made.at(-1)?.look;
+    if (look === undefined) throw new Error("no look");
+    const camera = new PerspectiveCamera(50, 1, 0.05, 600);
+    for (const r of [2, 5, 12, 30]) {
+      camera.position.set(0, 1.6, r);
+      camera.lookAt(0, 1.2, 0);
+      camera.updateMatrixWorld(true);
+      for (const [selected, open] of [
+        [null, false],
+        ["someone-else", false],
+        ["herald", true],
+        [undefined, false],
+      ] as const) {
+        for (let i = 0; i < 40; i++) {
+          part.update?.({
+            seconds: r * 100 + i * 0.05,
+            viewer: [0, 1.6, r],
+            camera,
+            ...(selected === undefined ? {} : { selected }),
+          });
+        }
+        expect(look.state().bubble, `${r} m, ${String(selected)}`).toBe(
+          open ? 1 : 0,
+        );
+        expect(look.state().pip, `${r} m, ${String(selected)}`).toBe(
+          open ? 0 : 1,
+        );
+      }
+    }
+    part.dispose();
+  });
+
+  // Why this test matters: the editor's e2e reads his bubble and his
+  // facing through this check; a check that read the wrong frame (his
+  // pose's rather than his look's) would pass a figure that turned away.
+  it("reports his bubble, name tag and squareness to the camera through the page's check", async () => {
+    const { part } = await standing({ view: "speak" });
+    const check = part.object.userData[
+      CHARACTER_CHECK_KEY
+    ] as () => CharacterCheck | null;
+    expect(check()).toBeNull();
+    const camera = new PerspectiveCamera(50, 1, 0.05, 600);
+    // The placed group turned 70 degrees, as the renderer places a pose.
+    part.object.rotation.y = (70 * Math.PI) / 180;
+    part.object.updateMatrixWorld(true);
+    for (let deg = 0; deg < 360; deg += 30) {
+      const a = (deg * Math.PI) / 180;
+      camera.position.set(6 * Math.sin(a), 1.6, 6 * Math.cos(a));
+      camera.lookAt(0, 1.2, 0);
+      camera.updateMatrixWorld(true);
+      for (let i = 0; i < 40; i++) {
+        part.update?.({
+          seconds: deg + i * 0.05,
+          viewer: [0, 1.6, 6],
+          camera,
+          selected: "herald",
+        });
+      }
+      const seen = check();
+      expect(seen?.squareness, String(deg)).toBeGreaterThan(1 - 1e-6);
+      expect(seen?.bubble).toBe(1);
+      expect(seen?.pip).toBe(0);
+    }
+    // Turned away by hand, the check sees it.
+    const look = made.at(-1)?.look;
+    if (look === undefined) throw new Error("no look");
+    look.root.children[0]!.rotation.y += Math.PI;
+    expect(check()?.squareness).toBeLessThan(-1 + 1e-6);
     part.dispose();
   });
 });

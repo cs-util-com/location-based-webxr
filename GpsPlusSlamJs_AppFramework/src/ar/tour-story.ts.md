@@ -36,7 +36,7 @@ reason }` for its title over its cap left out), `TourChildrenPlace` (`{ index, p
 story? }`: `path` the containers holding the child, outermost first,
   empty at the station's top; `story` the innermost one when it is a
   story),
-  `TourChoiceOption` (`{ id, label, goto? }`), `TourQuiz` (`{ question,
+  `TourChoiceOption` (`{ id, label, goto?, end? }`), `TourQuiz` (`{ question,
 points, answer }`), `TourQuizAnswer`, `TourQuizOption`, `TourStepAdvance`
   (`{ mode: 'tap' }`, `{ mode: 'auto', afterS }` or `{ mode: 'lineEnd' }`).
 - `TOUR_CHILD_KINDS` - `folder`, `choice`, `quiz`: disjoint from the block
@@ -96,8 +96,9 @@ id)` (null when no child has it).
   reading time).
 - `choice`: a non-empty prompt and at least two options with unique ids;
   an option's `goto` names a child of the same story (a skipped one
-  included), or is absent: the story continues at the next child. Anything
-  else fails, named by the choice's index in the file.
+  included), or is absent: the story continues at the next child. An
+  option with `end: true` ends the story instead; it never carries a
+  `goto`. Anything else fails, named by the choice's index in the file.
 - `quiz`: `question`, `points` (an integer >= 0) and `answer`. There is no
   `route`: answers do not branch the walk. A `route` field is an unknown
   field and ignored.
@@ -122,8 +123,8 @@ tolerance >= 0, unit? }`.
   pruned, each reported,
   and a choice left with fewer than two goes, reported, repeatedly.
 - Structural faults fail even a lenient read: an id, a duplicate, a
-  `goto` naming nothing, a story without a title or `children`, a missing
-  list.
+  `goto` naming nothing, an option's `end` other than `true` or beside a
+  `goto`, a story without a title or `children`, a missing list.
 
 ## Invariants & assumptions
 

@@ -11,7 +11,7 @@ The editor half of a kind's row. `KIND_PANELS` lists, per kind of the format, it
   - `edits`: a `Pick` of `ShellEditCommands`.
   - `loadPicture`, `say`, `changed`.
   - `pickAsked` and `focused`: the 3D view's wait and focus for a model.
-- `KIND_PANELS`: `{ shortText: null, longText, picture: null, video: null, audio: null, model, character: null }`, which `satisfies` a mapped type over `TourBlockKind`. A kind the format gains and this list lacks is a compile error.
+- `KIND_PANELS`: `{ shortText: null, longText, picture, video: null, audio: null, model, character: null }` (the picture's panel: `picture-panel.ts`, its tag edit `edits.pictureTag` when the page gives it, its alpha check through `loadPicture`), which `satisfies` a mapped type over `TourBlockKind`. A kind the format gains and this list lacks is a compile error.
 - `createKindPanels(ctx, list = KIND_PANELS): KindPanels` (`list` is for a test's fake panels):
   - `sync(model)`: every panel follows the selection, and it returns the selected item's kind's draw, or null - never another panel's, even one that draws.
   - `act(name, model, selected)`: runs a press in the selected item's kind's panel. It is false when that panel does not take it, or nothing is selected.
@@ -45,3 +45,7 @@ if (panels.act(act, model, selected)) draw();
 ## Tests
 
 `kind-panels.test.ts`: the list's keys equal `tourBlockKinds()`, routing and placement in the dock. Through the shell: `../editor-shell/editor-shell.test.ts` (model acts, the long text's preview and save while typing).
+
+## Short text
+
+`shortText` has a panel (`short-text-panel.ts`): the view, role and turn chips, writing through the shell's view and block edits.

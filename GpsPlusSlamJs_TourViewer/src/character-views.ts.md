@@ -13,10 +13,11 @@ The rules for a recurring character's five world views (`bubble`, `speak`, `two-
   - `BECKON_WITHIN_M` 14;
   - `BECKON_AFTER_MS` 6000.
 - `StageCharacterView` (the framework's `TourCharacterView`) and `isStageCharacterView(v)`, against the framework's `TOUR_CHARACTER_VIEWS` (`gps-plus-slam-app-framework/ar/tour-blocks`), the one list. `card` is no world view and is not in it.
-- `MAX_TURN_DEG` 60; `restYawOf(q)`: the yaw a quaternion `[x, y, z, w]` turns +Z to (0 for a malformed or zero quaternion, or one pointing straight up or down); `facingYaw(rest, toCamera, turns, backToCamera = false)`: `rest` turned toward the camera by at most 60 degrees, or `rest` itself when the view does not turn; with `backToCamera` (the editor) a camera more than 90 degrees round sees his back turned toward it within the same 60 degrees, so he is never edge-on (at least cos 30 square on), where the visitor's look stands edge-on 150 degrees round.
+- `restYawOf(q)`: the yaw a quaternion `[x, y, z, w]` turns +Z to (0 for a malformed or zero quaternion, or one pointing straight up or down); `facingYaw(rest, toCamera, turns)`: `toCamera` itself in a turning view (a flat figure faces the viewer fully from every heading), or `rest` when the view does not turn (the pop-up) or the bearing is no finite number; a non-finite `rest` reads as 0.
 - `facingDegOf(q)`: the heading (degrees clockwise from the station's own north, true north only while the station is not turned; 0 to 360) `restYawOf`'s yaw faces in the station frame (x north, z east); no turn faces east, 90. `facingRotation(deg)`: the turn about Up alone (unit length) that faces `deg`, so `facingDegOf` reads it back; null for a heading that is no finite number. The 3D inspector types a story character's facing with these.
 - `characterViewLook(view, noCard = false)` returns `CharacterViewLook`, with these flags: `figure`, `bubble`, `footer`, `pip`, `ring`, `portrait`, `popup`, `turns`, `beckons`. `noCard`: no card shows his line, as for a free figure, so the `portrait` view gains the bubble and its footer; the other views do not change.
 - `bubbleOpens(d)`: true when `d` is finite and under 9 m.
+- `BubbleRule` (`"distance"` | `"selection"`) and `bubbleWanted(rule, {distanceM, selected, speaking})`: under `"distance"` (the visitor) `bubbleOpens(distanceM)`; under `"selection"` (the editor) selected or speaking, whatever the distance.
 - `popupUnfolds(d, unfolded)`: true under 12 m, or under 16 m once it has unfolded.
 - `readingFloor(d)`: `max(1, d / 2.4)`; a non-finite `d` gives 1.
 - `beckonNext(walk, currentId)`: the station he beckons toward, or `null`. Under a fixed order, the first undone station after him (or before, when the visitor skipped ahead), however many remain; under any order, only when exactly one undone station is left besides his.
@@ -41,8 +42,8 @@ The rules for a recurring character's five world views (`bubble`, `speak`, `two-
 
 ## Tests
 
-- `character-views.test.ts`: the table, the distances, the side choice, the reading time, `restYawOf` and `facingYaw` (with `backToCamera` at least 0.85 square on every 5 degrees round over three rests), `facingDegOf` and `facingRotation` (the four headings, a turn about Up alone, no rotation for a heading that is no number; `character-views.property.test.ts`: any heading read back as itself, 0 to 360), and the word timing (the prototype's numbers, the active word, the mouth frames).
+- `character-views.test.ts`: the table, the distances, the side choice, the reading time, `restYawOf` and `facingYaw` (the bearing itself every 5 degrees round over four rests, the pop-up's rest), `bubbleWanted` (both rules swept over 0-30 m), `facingDegOf` and `facingRotation` (the four headings, a turn about Up alone, no rotation for a heading that is no number; `character-views.property.test.ts`: any heading read back as itself, 0 to 360), and the word timing (the prototype's numbers, the active word, the mouth frames).
 - `character-views.property.test.ts` (also: the read-along runs forward over the line's words, the mouth open only inside a word):
-  - `facingYaw` never turns more than 60 degrees from rest, and faces a camera inside that cone exactly;
+  - `facingYaw` faces the camera exactly in a turning view and keeps the rest in the pop-up;
   - the beckon only points at an undone other station;
   - the reading time and the floor are bounded.

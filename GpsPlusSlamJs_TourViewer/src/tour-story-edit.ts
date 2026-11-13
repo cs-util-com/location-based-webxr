@@ -11,7 +11,10 @@
 import { checkTourBlockText } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import {
   isStory,
+  parseTourStationChildren,
   TOUR_STORY_TITLE_RULE,
+  type TourChoice,
+  type TourQuizEntry,
   type TourStationChild,
   type TourStory,
   type TourStoryChild,
@@ -160,4 +163,67 @@ export function withoutStoryChild<H extends Holder>(
   }));
   if (frame === null) return null;
   return { frame, answers: kept.reduce((sum, k) => sum + k.answers, 0) };
+}
+
+/** What a step stands in as while another step of its story is checked:
+ *  a choice the reader takes, under the step's own id, so a jump to it
+ *  resolves. */
+function standIn(id: string): TourChoice {
+  return {
+    id,
+    kind: "choice",
+    prompt: "-",
+    options: [
+      { id: "a", label: "-" },
+      { id: "b", label: "-" },
+    ],
+  };
+}
+
+/** `step` as the format's reader keeps it in `story`, among its other
+ *  children; null when the reader refuses it - a blank text, too few
+ *  answers, a jump to no step of the story, an end beside a jump. */
+function readStep(
+  story: TourStory,
+  step: TourChoice | TourQuizEntry,
+): TourStoryChild | null {
+  const children = story.children.map((c) =>
+    c.id === step.id ? step : standIn(c.id),
+  );
+  try {
+    const read = parseTourStationChildren([{ ...story, children }], "story", {
+      assets: [],
+      lenient: false,
+      fail: (message: string): never => {
+        throw new Error(message);
+      },
+    }).children[0];
+    const kept =
+      read !== undefined && isStory(read)
+        ? read.children.find((c) => c.id === step.id)
+        : undefined;
+    return kept ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** `holder` with its story's choice or quiz `step.id` replaced by `step`
+ *  as the format's reader keeps it; null for an id no story holds, a step
+ *  of another kind there, or a step the reader refuses. */
+export function withStoryStep<H extends Holder>(
+  holder: H,
+  step: TourChoice | TourQuizEntry,
+): H | null {
+  const story = holder.children
+    .filter(isStory)
+    .find((s) => s.children.some((c) => c.id === step.id));
+  const old = story?.children.find((c) => c.id === step.id);
+  if (story === undefined || old?.kind !== step.kind) return null;
+  const kept = readStep(story, step);
+  if (kept === null) return null;
+  return withStoryChanged(holder, story.id, (s) => ({
+    ...s,
+    children: s.children.map((c) => (c.id === step.id ? kept : c)),
+  }));
 }

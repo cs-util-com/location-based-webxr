@@ -1173,6 +1173,7 @@ export async function openGlobeEditor(
         centre: cameraTour,
         selectedStation,
         stationSelected: ui.selected?.startsWith(STATION) ?? false,
+        selected: ui.selected,
         standing,
         camera: cameraTour,
         eye: camera,
@@ -1664,6 +1665,7 @@ export async function openGlobeEditor(
         editing.showSoundIcons(on);
       },
       folderOutlines: () => editing.folderOutlines(),
+      characterCheck: (id) => editing.characterCheck(id),
       modelScreenOf(id, at) {
         const p = editing.modelScreenOf(id, at);
         return p === null ? null : [p.x, p.y];

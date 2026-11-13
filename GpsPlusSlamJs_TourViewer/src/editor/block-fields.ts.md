@@ -18,7 +18,16 @@ required, prose, number }`: the block's own field name (the inspector's `data-fi
   `FieldSpec` `number`) carries its value as a decimal string and its need
   in `required`, and no `max` or `unit`: those are a text's character cap,
   and a number's bounds are the format's, refused on the write; the inspector draws it as a
-  decimal box with the unit beside it, no counter.
+  decimal box with the unit beside it, no counter. Its `number` also carries
+  `scale` (what the box shows per unit the file holds: 100 for a volume in
+  %, else 1; `value` is what the box shows), and from the `FieldSpec`
+  the `slider` track, the `low` field that is the track's lower thumb
+  (name, label, shown value) and the `curve` (`LoudnessOf`: the zone's
+  `minM`, `maxM`, `volume` as the file holds them) its row draws
+  (`editor-shell/field-sliders.ts`).
+- `shownNumber(n, scale)` / `heldNumber(n, scale)` - the box's value for a
+  held one and back, a binary fraction's noise rounded off (29 % is 0.29
+  and shows as 29 again); scale 1 is the identity.
 - `blockFields(block)` - the fields of any block (`TourObject` or
   `TourBlock`) besides a short text's caption, which the inspector's head
   types:
@@ -29,7 +38,7 @@ required, prose, number }`: the block's own field name (the inspector's `data-fi
   - video and audio: Title (40), Transcript (32 000, needed, prose);
     audio also, each only in the view that reads it (`FieldSpec`
     `views`): in `spot` Radius (1-50 m, needed); in `zone` Reach (1-200
-    m, needed), Full volume within (1-200 m) and Volume (0-1, needed). A
+    m, needed), Full volume within (1-200 m) and Volume (0-100 %, held as 0-1, needed). Radius, Reach (with Full volume within as its lower thumb) and Volume take a slider; Volume a loudness curve. A
     story's `card` sound shows none;
   - model: Title (80);
   - character: Name (80, needed), Caption (2000, needed, prose). Its
@@ -102,3 +111,7 @@ if (out.kind === "edited")
   field of every kind, story kinds included, keeps each text within its
   rule (`checkTourBlockText`), every needed field set, and the envelope
   untouched.
+
+## Choice fields
+
+`blockFields` leaves a choice field out (its panel's chips show it). `blockFieldEdit` writes one of its `choices`, refuses any other value with the choices' labels, and deletes the field on a blank value (back to the reader's default).

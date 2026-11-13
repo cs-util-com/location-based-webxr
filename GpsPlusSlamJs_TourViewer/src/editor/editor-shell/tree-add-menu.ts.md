@@ -14,8 +14,9 @@ for every row, opened under the button pressed.
 - `createTreeAddMenu({ body, host, choose, chooseForStory })` - `openFor` for a
   station (its `choose` gets a kind or `"story"`: the Story item, behind a
   line, a station's alone), `openForStory` for a story ("Add to the story
-  "<name>"", `chooseForStory`, no Story item). The focus returns to that row's
-  "+".
+  "<name>"", `chooseForStory`, no Story item, and behind a line Choice
+  and Quiz - steps of a story only, hidden on a station's menu, so
+  `choose` never gets them). The focus returns to that row's "+".
 
 - The menu's lines are `ADD_CHOICES` of the editor's list of kinds
   (`../../kinds/edit-kinds.ts`), in its order, `{ kind, label, hint, words,

@@ -19,6 +19,8 @@ import {
   blockFieldEdit,
   blockFieldPlaceholder,
   blockFields,
+  heldNumber,
+  shownNumber,
   storyBlockFields,
 } from "./block-fields.js";
 
@@ -103,6 +105,10 @@ describe("blockFields", () => {
       ["title", "Title", 40, false],
       ["caption", "Caption", 1200, true],
       ["alt", "Alt text", 300, true],
+      // A picture's credit and year: the framed print's plate and the
+      // picture's sheet show them.
+      ["credit", "Credit", 200, false],
+      ["year", "Year", 24, false],
     ]);
     expect(blockFields(PICTURE)[1]?.value).toBe("The gate in 1870");
     expect(blockFields(MODEL).map((f) => [f.name, f.max])).toEqual([
@@ -376,8 +382,58 @@ describe("number fields", () => {
     expect(numbers(ZONE)).toEqual([
       ["maxM", "20", true, "m"],
       ["minM", "", false, "m"],
-      ["volume", "0.5", true, ""],
+      ["volume", "50", true, "%"],
     ]);
+  });
+
+  // Why: a creator sets a sound by feel: each number a slider moves names
+  // its track, the reach names the full volume's edge as its lower thumb,
+  // and the volume carries what its loudness curve is drawn from.
+  it("names each slider's track, the reach's lower thumb and the curve", () => {
+    const byName = (b: TourObject, name: string) =>
+      blockFields(b).find((f) => f.name === name);
+    const radius = byName(SPOT, "radiusM");
+    expect(radius?.number?.slider).toEqual({ min: 2, max: 15, step: 0.5 });
+    const calm = { ...ZONE, minM: 4 } as unknown as TourObject;
+    const [reach, within, volume] = ["maxM", "minM", "volume"].map((n) =>
+      byName(calm, n),
+    );
+    expect(reach?.number?.slider).toEqual({ min: 1, max: 60, step: 1 });
+    expect(reach?.number?.low).toEqual({
+      name: "minM",
+      label: "Full volume within",
+      value: "4",
+    });
+    expect(within?.number?.slider).toBeUndefined();
+    expect(volume?.number?.slider).toEqual({ min: 0, max: 100, step: 1 });
+    expect(volume?.number?.curve).toEqual({ minM: 4, maxM: 20, volume: 0.5 });
+  });
+
+  // Why: the file keeps a volume from 0 to 1 and the creator types a
+  // percentage; what is typed is what is held, a hundredth of it.
+  it("writes a volume typed in percent as the file's fraction", () => {
+    expect(blockFieldEdit(ZONE, "volume", "29")).toEqual({
+      kind: "edited",
+      after: { ...ZONE, volume: 0.29 },
+    });
+    expect(blockFieldEdit(ZONE, "volume", "50,0")).toEqual({
+      kind: "unchanged",
+    });
+  });
+
+  // Why a property: a value shown in the box and written back is the one
+  // that was shown (no 28.999... for 29 %), whatever the scale.
+  it("shows again exactly what was written, at any scale", () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 10000 }),
+        fc.constantFrom(1, 100),
+        (hundredths, scale) => {
+          const shown = hundredths / 100;
+          expect(shownNumber(heldNumber(shown, scale), scale)).toBe(shown);
+        },
+      ),
+    );
   });
 
   // Why: `max` and `unit` mean a text's character cap; a number field
@@ -416,9 +472,9 @@ describe("number fields", () => {
       kind: "refused",
       reason: "Radius cannot be empty.",
     });
-    expect(blockFieldEdit(ZONE, "volume", "1.5")).toEqual({
+    expect(blockFieldEdit(ZONE, "volume", "150")).toEqual({
       kind: "refused",
-      reason: "Volume takes a number from 0 to 1.",
+      reason: "Volume takes a number from 0 to 100 %.",
     });
     expect(blockFieldEdit(ZONE, "minM", "20")).toEqual({
       kind: "refused",
@@ -462,5 +518,36 @@ describe("number fields", () => {
         },
       ),
     );
+  });
+});
+
+describe("choice fields", () => {
+  // Why: a short text's role and turn are chosen on chips, never typed;
+  // the edit must write only a choice of the kind's row, so a file the
+  // editor saves always reads back with them, and a blank one returns
+  // to the reader's default rather than writing an empty word.
+  it("are not boxes to type in", () => {
+    const names = blockFields(PIN).map((f) => f.name);
+    expect(names).not.toContain("role");
+    expect(names).not.toContain("orientation");
+  });
+
+  it("write a choice, refuse anything else, and clear on a blank", () => {
+    const chose = blockFieldEdit(PIN, "role", "warning");
+    expect(chose).toMatchObject({ kind: "edited", after: { role: "warning" } });
+    if (chose.kind !== "edited") throw new Error("not edited");
+    expect(blockFieldEdit(chose.after, "role", "warning")).toEqual({
+      kind: "unchanged",
+    });
+    expect(blockFieldEdit(PIN, "role", "shout")).toMatchObject({
+      kind: "refused",
+    });
+    const cleared = blockFieldEdit(chose.after, "role", "");
+    expect(cleared.kind).toBe("edited");
+    if (cleared.kind !== "edited") throw new Error("not edited");
+    expect("role" in cleared.after).toBe(false);
+    expect(blockFieldEdit(PIN, "orientation", "")).toEqual({
+      kind: "unchanged",
+    });
   });
 });

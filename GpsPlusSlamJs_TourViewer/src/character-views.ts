@@ -2,8 +2,7 @@
  * The RULES of a character's five world views (`bubble`, `speak`,
  * `two-stations`, `portrait`, `popup`), kept pure so the three.js look
  * (`character-look.ts`) and its tests read one table: which parts a view
- * draws, the distances it opens at, how far he turns from the creator's
- * facing, when he beckons and how long a line takes to read. The numbers
+ * draws, the distances it opens at, where he faces, when he beckons and how long a line takes to read. The numbers
  * are the station-blocks-7 prototype's
  * (`public/prototypes/station-blocks-7-character/`).
  *
@@ -37,13 +36,6 @@ export function isStageCharacterView(
 ): view is StageCharacterView {
   return (TOUR_CHARACTER_VIEWS as readonly unknown[]).includes(view);
 }
-
-/** How far (degrees) he turns from the creator's facing toward the
- *  visitor, as in the prototype. */
-export const MAX_TURN_DEG = 60;
-const MAX_TURN_RAD = (MAX_TURN_DEG * Math.PI) / 180;
-
-const wrapAngle = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));
 
 /**
  * The creator's facing of a block whose rotation (a quaternion [x, y, z, w]
@@ -90,29 +82,20 @@ export function facingRotation(
 }
 
 /**
- * Where he faces (rad, about Up, 0 facing +Z): from his rest facing toward
- * the camera's direction, by at most {@link MAX_TURN_DEG}; a view that does
- * not turn (the pop-up) stays at rest. A non-finite rest reads as 0, a
- * non-finite camera direction as no turn.
- *
- * With `backToCamera` (the editor's look) a camera more than 90 degrees
- * round from his rest sees his back turned toward it, by the same 60
- * degree limit, so he is never edge-on (at least cos 30 square on);
- * without it (the visitor's look) he stands edge-on 150 degrees round.
+ * Where he faces (rad, about Up, 0 facing +Z): a view that turns faces the
+ * camera's direction fully, from any heading round him - he is a flat
+ * cut-out, which reads squashed or from behind at a slant; a view that
+ * does not turn (the pop-up stage) rests at the creator's facing. A
+ * non-finite rest reads as 0, a non-finite camera direction as no turn.
  */
 export function facingYaw(
   restYaw: number,
   toCamera: number,
   turns: boolean,
-  backToCamera = false,
 ): number {
   const rest = Number.isFinite(restYaw) ? restYaw : 0;
   if (!turns || !Number.isFinite(toCamera)) return rest;
-  let rel = wrapAngle(toCamera - rest);
-  if (backToCamera && Math.abs(rel) > Math.PI / 2) {
-    rel -= Math.PI * Math.sign(rel);
-  }
-  return rest + Math.min(MAX_TURN_RAD, Math.max(-MAX_TURN_RAD, rel));
+  return toCamera;
 }
 
 /** Which parts one view draws. */
@@ -184,6 +167,33 @@ export function characterViewLook(
 /** The bubble is open at this distance (a non-finite one is far). */
 export function bubbleOpens(distanceM: number): boolean {
   return Number.isFinite(distanceM) && distanceM < BUBBLE_OPEN_M;
+}
+
+/**
+ * What opens a character's bubble: `distance`, the visitor's rule (within
+ * {@link BUBBLE_OPEN_M} of the camera), or `selection`, the editor's (while
+ * he is selected or his line plays, at any distance: a close editing
+ * camera would open every bubble at once).
+ */
+export type BubbleRule = "distance" | "selection";
+
+export interface BubbleWantedInput {
+  /** The horizontal distance to the camera (m). */
+  readonly distanceM: number;
+  /** He is the editor's selection. */
+  readonly selected: boolean;
+  /** His line plays. */
+  readonly speaking: boolean;
+}
+
+/** Whether his bubble wants to be open under `rule` (the view's own
+ *  parts and a tap that shut it are the look's). */
+export function bubbleWanted(
+  rule: BubbleRule,
+  input: BubbleWantedInput,
+): boolean {
+  if (rule === "selection") return input.selected || input.speaking;
+  return bubbleOpens(input.distanceM);
 }
 
 /** The pop-up is (or stays) unfolded at this distance. */

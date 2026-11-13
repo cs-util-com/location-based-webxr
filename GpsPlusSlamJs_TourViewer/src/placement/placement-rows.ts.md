@@ -46,15 +46,17 @@ view would be the first such kind).
 - `shortText`: `pin` posed, facing (the label faces the camera); `card` poseless.
 - `longText`: `lectern` posed, turning (the stand keeps its turn about up);
   `reading` posed, facing (the plate turns to the viewer); `card` poseless.
-- `picture`: `plane` posed, turning, `size` on `widthM`
+- `picture`: every standing view (`plane`, `framed`, `cutout` and the viewpoint views, which are drawn as a plane at the pose until their overlays stand) posed, turning, `size` on `widthM`
   (`TOUR_PICTURE_MIN_WIDTH_M` to `TOUR_PICTURE_MAX_WIDTH_M`); `card` poseless.
 - `video`: `card` poseless (no world view yet).
 - `audio`: `spot` and `zone` posed, facing, no dots (a sound's reach is
   set in the inspector); `card` poseless.
 - `model`: every world view posed, turning, `size` on `sizeM`
   (`TOUR_MODEL_MIN_SIZE_M` to `TOUR_MODEL_MAX_SIZE_M`); `card` poseless.
-- `character`: every figure view posed and turning (he turns toward the
-  camera by at most 60 degrees from his facing, so the facing shows);
+- `character`: every figure view posed; the flat-figure views (bubble,
+  speak, two-stations, portrait) facing (he faces the camera fully, so a
+  turn shows nothing: no knob, no Heading field), the pop-up turning (the
+  stage set keeps his facing);
   `card` poseless.
 - Every posed block lifts.
 
@@ -81,3 +83,7 @@ view would be the first such kind).
 - `list-rows.contract.test.ts` - every item of a document holding every
   (kind, view), free, in nested plain folders and in a story, has exactly
   one row in the tree, and every free one exactly one in the object list.
+
+## Short text views
+
+`sign` turns (its heading is the creator's, a turning gizmo); `edgeHint` faces the camera like a pin.

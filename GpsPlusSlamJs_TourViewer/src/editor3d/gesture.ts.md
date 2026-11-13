@@ -28,7 +28,9 @@ dots, and the dots' bounds, are its placement row's
     the level plane, whole degrees (15 with Shift).
   - `dot`: a reach (a station's found radius, `draggedRadiusM`) or a size
     or a factor (`draggedSizeM`), within the bounds of the target's
-    extent.
+    extent; a group's (a folder's) factor within `groupScaleBounds`
+    (0.2-5 by a drag, a factor beyond them kept as it was; the format
+    itself accepts 0.1-10).
   - Methods `move(pointer, fine)`, `retry()`, `waiting()`, `preview()`,
     `edit()` (null when nothing changed: no empty undo step).
 - `startKeyGesture(target, world)` -> `KeyGesture`: `press(key)` applies a
@@ -39,9 +41,13 @@ dots, and the dots' bounds, are its placement row's
 - `poseLocked(target)`: the target's `locked`.
 - `gestureTargetOf(placeable, centre)` -> `GestureTarget`: a placeable
   as a gesture reads it, with every dot its row gives (a station's reach,
-  a model's size, a picture's width).
-- `gizmoSubjectOf(target, now, centre)` -> `GizmoSubject`: what the
-  gizmo is drawn for, the target as a preview (or its rest) shows it.
+  a model's size, a picture's width); a group's (a folder's) carries its
+  `members` (their bodies are its grips, and a click on one picks it
+  alone, `editor3d-input.ts`).
+- `gizmoSubjectOf(target, now, centre, spanM?)` -> `GizmoSubject`: what
+  the gizmo is drawn for, the target as a preview (or its rest) shows it;
+  a group's with its members' reach (0 before they are drawn), which the
+  scene measures from their drawings.
 - Types `GroundUnder` (a point, or a miss: `not-loaded`, `below-start`,
   `out-of-reach`, `above`), `GestureWorld` (`groundUnder`, `planeUnder`,
   `placeOf(at: WorldPoint)`, `groundAt(place)` in ellipsoidal metres),
@@ -81,7 +87,8 @@ and a model's size dragged alike end at their own bounds); a press that
 moved nothing writes nothing; a key hold adds its presses up into one
 edit, leaves a station's height and a pin's heading alone, and writes
 nothing for presses that cancel out; a locked station: no move, no turn,
-and its radius drag. The property tests live with `place-edits.ts`.
+and its radius drag; a folder's scale drag held between 0.2 and 5 and
+a factor beyond them kept. The property tests live with `place-edits.ts`.
 `gizmo-equivalence.test.ts`: every row's gizmo, through
 `gestureTargetOf`, `gizmoSubjectOf` and `gizmoLayout`, equals the
 layout the editor drew before the placement rows (a frozen copy of it)

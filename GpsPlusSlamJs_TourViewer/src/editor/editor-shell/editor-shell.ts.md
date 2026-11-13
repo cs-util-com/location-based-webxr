@@ -10,7 +10,9 @@ zoom buttons at the bottom right, the bottom bar's toggles and the
 bottom panel they open (`bottom-panel.ts`: the tour's problems from
 `tour-problems.ts` on each draw, the edit history, and on the readout's
 tick the street map's loading and the view's frame times), and in the help
-a line naming the selection's handles (`inspectorHint`). The panel takes
+a line naming the selection's handles (`inspectorHint`); for a selected
+folder a line over the 3D view (`#shell-scene-hint`, `sceneHint`) names
+it and says its items move, turn and scale together. The panel takes
 its keys from the shell's key handler (Ctrl+J, Ctrl+Shift+M, Escape inside
 it), its Escape going no further. The page's own controls (the File menu, the
 view switch, Show debug data, the save status and the unsaved mark) stay
@@ -54,8 +56,13 @@ keeps the list, its band and the 3D handles), each with a grip
 (drag to resize, down past the floor to dismiss). The share of the page
 is one CSS number on the body (`--s-sheet-share`), which the canvas reads
 too, so the map ends where the sheet begins and is told of its new size
-on release only. The head of the details has a back arrow to the list
-(`act` "back", `showList`: the selection goes, the list shows) beside
+on release only. The head of the details has a back arrow that goes one
+level up, editor-wide (`act` "back": a story's step to its story, the
+story or a free item to its station, an item in a plain folder to its
+folder, the station to the list - `showList`: the selection goes, the
+list shows); the crumb over the details (`nav:<selection>`) goes to any
+level above at once. Both read `inspectorCrumb`, built only while a
+selection shows (nothing selected builds no tour). The arrow sits beside
 its close button, and `#studio-list` in the top bar brings a dismissed
 list back. An open bottom panel stays at the foot and the sheet stands
 on it, taking its share of what is left, so Problems and History still
@@ -64,6 +71,8 @@ phone wider than 700 px keeps the two docks, and turning one with
 something selected unfolds the list the details covered. The on-screen keyboard
 (`phone-keyboard.ts`) is `--s-keyboard-h` on the page; at every width a
 panel stands on the keyboard, so a focused field can scroll above it.
+The watcher is hosted by the 3D view, which holds every panel wherever
+it sits (docked, each in a pane of its own).
 Docked, the layout is told the keyboard's height on every change and,
 when it is docked while a keyboard is up, at once.
 
@@ -87,6 +96,13 @@ items on the ground, the card's picture, and a story
 character's view and advance chips (`characterChipEdit`: his station's
 `StationEdit.character`; the chip already pressed writes nothing).
 
+A story's choice or quiz is edited in its inspector: each control writes
+the whole step through `deps.edits.storyStep(step)` - a typed field on
+focusout or Enter (`inspector-edits.ts`), the jump picker on `change`
+(`stepWithGoto`), Add, Remove and the right answer on a click
+(`stepActEdit`, `../story-step-edits.ts`) - one undo step each. The story
+menu's Choice and Quiz call `deps.edits.addStepToStory(storyId, kind)`.
+
 A story is a folder of the tree: its arrow folds it (`storyFolded`), its name
 selects it, its "+" and its empty line open the type menu for it, a click
 unfolds what holds a row. The inspector's `goto:` reveals the entry's folder,
@@ -106,9 +122,15 @@ to a station, a story's name in the head takes the focus, selected.
   - `deps.dock?()` - loads `dock-host.ts` (a dynamic import); absent, the
     panels never dock. From `DOCK_MIN_PX` (701 px) wide, while the view
     shows, the panels dock around it; narrower, or on `hide()`, they
-    undock. The folds stay the store's (`foldedDocks`): a folded side
-    hides its group and shows its folded head over the view, so the dock
-    rule and the approach fold keep working. Docked, a selection that
+    undock. A fold is the store's (`foldedDocks`) and the docking's
+    at once: the list's and the details' folds are carried to the groups
+    holding them (`dock-host.ts`'s `fold`, a rail) and back from them
+    (`syncFromDock`), each side hearing only the other's changes, so
+    two panels dragged into one group (one fold for both) never undo
+    each other, and the approach fold keeps working. An unfold from a rail
+    counts as the creator's for the approach. Docked, the dock rule
+    folds no side for the other (the 3D view gives way); only a phone
+    turned sideways still unfolds the list. Docked, a selection that
     appears shows Details over Files, and the Details panel says "Select
     a station or an item, in the list or in the view." while nothing is
     selected;
@@ -164,8 +186,12 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   rule, and after a takeover the folded tree is what they left.
 - `EditorShell.docked()` - whether the panels are docked now;
   `EditorShell.reveal(id)` - docked, shows a panel (`dock-layout.ts`'s ids),
-  unfolding its side in the store first; undocked, nothing (the asset
+  its group unfolded (the store follows); undocked, nothing (the asset
   shelf's toggle reveals the Files panel through it).
+  `EditorShell.badge(id, badge | null)` - the count on a docked panel's
+  tab (the shelf's Files count), kept for when the panels dock.
+  `EditorShell.conceal(id, instead?)` - docked, takes a shown panel out of
+  sight (`dock-host.ts`'s `conceal`); the shelf's toggle pressed again.
   `EditorShell.filesShown()` - docked, whether the Files panel shows (its
   group shown, it the shown tab); undocked, false.
 - `EditorShell.clearSearch()` - empties the tree's search, and draws the tree
@@ -193,16 +219,23 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   takes draws again and ends there; `flush` writes pending typing before a
   selection change or a save. A long text's panel is its dock
   (`../long-text/long-text-dock.ts`, body through `edits.block(id, "body",
-...)`, view through `edits.view`); a model's answers its part buttons,
+...)`, view through `edits.view`); a picture's writes its view through
+  `edits.view` and its tag through the optional `edits.pictureTag`; a model's answers its part buttons,
   the 3D view's wait and focus going to `modelPickAsked` and
   `modelFocused`. The shell's generic field input skips a writer's fields:
   only an input drawn under a field name (`data-field`) is written by
   the shell.
 - The inspector's station extras: `contents` folds Contents (kept across
   selections), `add-content` opens the tree's type menu for the station,
-  `goto:<id>` selects and flies as a tree row does, and the radius slider
+  `goto:<id>` selects and flies as a tree row does, an item's
+  `select:<selection>` ("Select the folder") selects without flying, a
+  folder's `pivot-centre` asks the folder commands' `pivotToCentre` and
+  its `select-items` picks its items as the tree's rows would, and the radius slider
   (`radius-slider.ts`) previews through `view.previewRadius` and is
-  cancelled when the selection goes or the shell hides.
+  cancelled when the selection goes or the shell hides. A block's number
+  sliders (`field-sliders.ts`) write through `commitField`, as the number
+  typed, so one drag is one undo step; they have no 3D preview and are
+  cancelled with the radius slider.
 
 - Plain folders in the tree (the chosen tree-first prototype):
   - **Multi-select.** Ctrl (or Cmd) + click on an item's or a folder's row
@@ -358,8 +391,7 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   only (`.said`), the bar's other parts after the credits: the
   selection's actions, then the panel's toggles flush at the right edge.
   The bottom panel sits at the view's foot and pushes the view up (the
-  view's canvas ends at its top), between the open docks (or under both,
-  spanned), its height in `--s-panel-h` on the page, which the map
+  view's canvas ends at its top), between the open docks, its height in `--s-panel-h` on the page, which the map
   controls and the toasts stand above; at 700 px or less it takes
   the width, the inspector ending at its top. Every top-bar
   control keeps its words at every width; the tour's name keeps a floor
@@ -473,7 +505,9 @@ else shell.hide();
   click swallowed; a tap on a station's row ending the Select mode;
   Ctrl+G with nothing picked; the name field's cap, and a redraw while
   typing (its focus loss reported, as Chromium does) keeping the typed
-  name, the focus and the caret, nothing written until Enter. In a
+  name, the focus and the caret, nothing written until Enter; a selected
+  folder's line over the view, its "Pivot to centre" reaching the folder
+  commands and "Select its items" picking its items. In a
   browser: `playwright-tests/editor3d-folders.spec.js` (a folder's drag
   among its station's folders too).
 
@@ -498,8 +532,7 @@ unfolding and flying, a double click not toggling, a later click
 deselecting and folding, the folds and a layer kept across a trip to the
 map, Top view from View and by T, the zoom steps and the Performance
 tab's view and draw calls, the bottom panel's toggles and panel at a
-phone, a phone in landscape and a desktop (positions and gaps, spanned
-too, Ctrl+J),
+phone, a phone in landscape and a desktop (positions and gaps, Ctrl+J),
 and on a phone the folded tree's "Stations" header unfolding the dock
 with its stations shown.
 

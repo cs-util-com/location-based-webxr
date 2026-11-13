@@ -44,6 +44,7 @@ import {
   type ShellLayer,
 } from "../editor/editor-view.js";
 import type { GroundPlace } from "gps-plus-slam-editor-kit/chrome";
+import type { FolderOutlineShown } from "./folder-outline.js";
 import type {
   OsmMapLoad,
   OsmMapTile,
@@ -91,6 +92,7 @@ import {
 } from "./editor3d-editing.js";
 import type { InputPage } from "./editor3d-input.js";
 import type { ModelEdit } from "../editor/model-edits.js";
+import type { CharacterCheck } from "../kinds/character/world.js";
 import { createEditorTerrain, reliefDeviceClass } from "./editor3d-terrain.js";
 import { mountCredits } from "./editor3d-credits.js";
 import {
@@ -268,15 +270,17 @@ export interface Editor3dView {
   /** Show (true) or hide every sound's speaker icon (the page's checks:
    *  the same pixels with the icon and without it). */
   showSoundIcons(on: boolean): void;
-  /** How many items of a selected plain folder show their outline box
-   *  (the page's checks). */
-  folderOutlines(): number;
+  /** How many items of a selected plain folder show their outline box,
+   *  and its dashed outline and name tag (the page's checks). */
+  folderOutlines(): FolderOutlineShown;
   /** Where a point of a drawn model (its own space) is on the canvas
    *  (CSS px), or null until it is drawn (the page's checks). */
   modelScreenOf(
     id: string,
     at: readonly [number, number, number],
   ): readonly [number, number] | null;
+  /** What a drawn character shows now, or null (the page's checks). */
+  characterCheck(id: string): CharacterCheck | null;
 }
 
 /** The camera, the drawing and the street map's loading, for the shell's
@@ -747,6 +751,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
         centre: controls.target,
         selectedStation: selectedStationOf(ui.selected, tourNow),
         stationSelected: ui.selected?.startsWith(STATION) ?? false,
+        selected: ui.selected,
         standing,
         camera: camera.position,
         eye: camera,
@@ -890,6 +895,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
         editing.showSoundIcons(on);
       },
       folderOutlines: () => editing.folderOutlines(),
+      characterCheck: (id) => editing.characterCheck(id),
       modelScreenOf(id, at) {
         const p = editing.modelScreenOf(id, at);
         return p === null ? null : [p.x, p.y];

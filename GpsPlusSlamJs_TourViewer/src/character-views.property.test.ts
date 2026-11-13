@@ -10,7 +10,6 @@ import {
   lineReadingMs,
   lineWordTimes,
   talkFrameAt,
-  MAX_TURN_DEG,
   readingFloor,
 } from "./character-views";
 
@@ -70,11 +69,11 @@ describe("character views (properties)", () => {
 
   /**
    * Why this property matters: whatever the creator's facing and wherever
-   * the visitor stands, he turns at most 60 degrees from that facing, and
-   * a visitor inside that cone is faced exactly (the prototype's rule).
+   * the camera stands, a turning view faces the camera exactly (a flat
+   * cut-out seen at a slant reads squashed), and the pop-up keeps the
+   * creator's facing.
    */
-  it("never turns more than 60 degrees from rest, and faces a camera inside the cone exactly", () => {
-    const cap = (MAX_TURN_DEG * Math.PI) / 180;
+  it("faces the camera exactly in a turning view, and keeps the rest in the pop-up", () => {
     const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
     fc.assert(
       fc.property(
@@ -82,10 +81,7 @@ describe("character views (properties)", () => {
         fc.double({ min: -10, max: 10, noNaN: true }),
         (rest, toCam) => {
           const yaw = facingYaw(rest, toCam, true);
-          expect(Math.abs(wrap(yaw - rest))).toBeLessThanOrEqual(cap + 1e-9);
-          const inside = Math.abs(wrap(toCam - rest)) <= cap - 1e-9;
-          const faced = Math.abs(wrap(yaw - toCam)) < 1e-9;
-          expect(!inside || faced).toBe(true);
+          expect(Math.abs(wrap(yaw - toCam))).toBeLessThan(1e-9);
           expect(facingYaw(rest, toCam, false)).toBe(rest);
         },
       ),

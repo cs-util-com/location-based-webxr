@@ -338,6 +338,33 @@ export function createSceneInput(input: {
     surface.style.cursor = "grabbing";
   };
 
+  /** A press that went the click distance (a finger's tap distance) from
+   *  where it began is no click any more. */
+  const travelled = (p: Press, at: ScreenPoint) => {
+    const d = Math.hypot(at.x - p.at.x, at.y - p.at.y);
+    if (d >= (p.touch ? INPUT.tapPx : clickPx)) p.moved = true;
+  };
+
+  /** A drag of a group's grip that ended as a click (it never went the
+   *  click distance) on one of its members: that member, to select alone;
+   *  null otherwise. */
+  const memberClicked = (event: PointerEvent): string | null => {
+    const p = press;
+    const members = drag?.gesture.target.members;
+    if (
+      members === undefined ||
+      p === null ||
+      event.pointerId !== p.id ||
+      event.type !== "pointerup" ||
+      p.moved ||
+      p.multi
+    ) {
+      return null;
+    }
+    const hit = scene.pickAt(p.at);
+    return hit !== null && members.includes(hit) ? hit : null;
+  };
+
   const onMove = (event: PointerEvent) => {
     const at = pointOf(event);
     if (event.pointerType === "touch" && fingers.has(event.pointerId)) {
@@ -356,12 +383,11 @@ export function createSceneInput(input: {
     if (drag !== null && event.pointerId === drag.pointerId) {
       drag.gesture.move(at, event.shiftKey);
       scene.preview(drag.gesture.target, drag.gesture.preview());
-      if (press !== null) press.moved = true;
+      if (press !== null) travelled(press, at);
       return;
     }
     if (press !== null && event.pointerId === press.id) {
-      const d = Math.hypot(at.x - press.at.x, at.y - press.at.y);
-      if (d >= (press.touch ? INPUT.tapPx : clickPx)) press.moved = true;
+      travelled(press, at);
       return;
     }
     // A mouse over the scene (not a dock): the handle under it drawn
@@ -398,7 +424,11 @@ export function createSceneInput(input: {
       }
     }
     const wasDrag = drag !== null && event.pointerId === drag.pointerId;
-    if (wasDrag) endDrag(event.type === "pointerup");
+    // A click on a group's member picks that member alone: the drag its
+    // press began writes nothing.
+    const member = wasDrag ? memberClicked(event) : null;
+    if (wasDrag) endDrag(event.type === "pointerup" && member === null);
+    if (member !== null) page.select(member);
     const p = press;
     if (p === null || event.pointerId !== p.id) return;
     press = null;

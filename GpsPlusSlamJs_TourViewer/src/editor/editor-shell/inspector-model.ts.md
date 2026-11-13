@@ -19,6 +19,14 @@ edit. The DOM is `shell-inspector.ts`'s; what a typed value writes is
   story for a free item whose file the tour on disk lacks
   (`selectedFileUnsaved`, from `freeItemUnsaved`: the move would be
   refused).
+- `inspectorCrumb({ selected, stations, codes })` -> `InspectorCrumb[]`
+  (`{ label, select }`): where the selection stands, from the tour
+  (`{ label: "Tour", select: null }`) through its station ("2 The gate",
+  `station:<id>`), the stories and plain folders holding it (`story:<id>`,
+  `folder:<id>`) to itself (a story's step is "Step n"; a code goes
+  straight under the tour). The last-but-one part is the selection's way
+  up, which the details' Back takes. Nothing selected, or a selection the
+  tour lacks: the tour alone.
 - `buildInspector({ selected, stations, assets, codes, unlockedStations?,
 origin?, groundAt? })` ->
   `InspectorModel | null`:
@@ -47,21 +55,29 @@ origin?, groundAt? })` ->
     in its station's frame, its holders composed in), `groundOffM`,
     `phoneDetails: false` (a phone shows no details sheet for it: a tap
     keeps the list and the folder's band, and the 3D handles move, turn
-    and scale it; its typed fields are for a wider window); read
-    through `placeableOf`, so it shows what the gizmo moves;
+    and scale it; its typed fields are for a wider window), `items`
+    (its items at any depth as `StationContent` rows, in the station's
+    order); read through `placeableOf`, so it shows what the gizmo moves;
   - `StoryInspector` - `kind: "story"` (selection `story:<id>`), `storyId`,
-    `stationId`, `title`, `sub` ("2 The gate / Story") and `entries`
+    `stationId`, `title`, `sub` ("Story"; where it stands is the crumb's)
+    and `entries`
     (`storyRows` of `tree-model.ts`: `{ id, kind, title, place }`);
   - `StoryEntryInspector` - `kind: "storyEntry"`, a block of a story: `id`,
-    `stationId`, `rowKind`, `title`, `sub` ("2 The gate / The legend / Long
-    text, entry 1"), `block` (`InspectorStoryBlock { id, kind, title, fields,
+    `stationId`, `rowKind`, `title`, `sub` ("Long text, entry 1"), `block`
+    (`InspectorStoryBlock { id, kind, title, fields,
 character? }`, `kind` in the block model's words, `title` by `objectTitle`,
     `fields` by `storyBlockFields`; a character carries `InspectorCharacter {
 view, advance, facingDeg }`) and `advance { mode, afterS }`;
   - `StoryStepInspector` - `kind: "storyStep"`, `stepKind` "choice" or "quiz",
     `id`, `stationId`, `title`, `sub`, `heading` and `lines`: where each answer
-    leads, or a quiz's points and its answers with the right one said (a typed
-    answer's check is not said);
+    leads ("plays on", "goes to <entry>" or "ends the story"), or a quiz's
+    points and its answers with the right one said (a typed answer's check is
+    not said); `form?: InspectorStepForm` for a choice and a single-answer
+    quiz: `{ step, prompt, answers, ways, canAdd, canRemove, points, then }`,
+    each `InspectorAnswer { id, label, way, jump, back, right }` with its jump
+    picker's value (`gotoValue`), its chip words and whether it goes back;
+    `ways` the picker's `GotoChoice`s (`../story-steps.ts`); a quiz's
+    `then` says where the story goes on, without a closing stop;
   - `ItemInspector` - `kind: "item"`, every free block (a video and a
     free character too), `itemKind`, title, `sub` naming
     its kind in the one word every creator page uses and its station ("Pin in
@@ -72,15 +88,19 @@ view, advance, facingDeg }`) and `advance { mode, afterS }`;
     `meaning`, the tour's `value`, `min`, `max`; a model's Size, a
     picture's Width; null for an item with none), `fields` (its
     other text fields to type, `blockFields` of `../block-fields.ts`:
-    a short text's description, a picture's title, caption and alt text,
+    a short text's description, a picture's title, caption, alt text, credit and year,
     a model's title), `offset`
     (`northM`, `upM`, `eastM` in the station's frame, its folders composed
     in; null for a block with no place in the world, a video),
     `headingDeg` (in the same frame; null with no place), `turns` (its
-    placement row's: its gizmo has the round arrow), and `groundOffM` (the height
+    placement row's: its gizmo has the round arrow), `folder` (the plain
+    folder holding it, the innermost, as `{ id, title }`; null at its
+    station's top: the 3D view's way to select a folder), and `groundOffM` (the height
     over the ground of where it stands in the world, through its
     folders, `posedEntryOf` of `../../placement/placeables.ts`; rounded as
-    the station's; null while unknown or with no place);
+    the station's; null while unknown or with no place), and for a picture
+    only `picture` (`InspectorPicture`: its view, whether its tag shows,
+    its image's tour path or null), which its panel draws;
   - `CodeInspector` - `kind: "code"`, title, `sub` (its line),
     `printSizeM`, `position` or null when it has none;
   - `InspectorPosition` - `eastM` and `northM` from `origin` when it
@@ -103,6 +123,10 @@ view, advance, facingDeg }`) and `advance { mode, afterS }`;
 - `detailsOnPhone(model)` - whether a phone shows `model` as its details
   sheet: true unless the model says `phoneDetails: false` (a folder). The
   shell asks this, never the selection's kind.
+- `sceneHint(model | null)` - the line over the 3D view for a selected
+  folder: `<name> - N items move, turn and scale together. Click one to
+move it alone.` (one item: "1 item moves, turns and scales with it.
+  Click it to move it alone."); null for any other selection.
 - `inspectorHint(model | null)` - the bottom bar's hint: the handles the
   selection's gizmo has in the 3D view (a station: move, radius dot,
   turn; an item: move and turn, a size dot where it has an `extent` (a
@@ -191,3 +215,7 @@ again under the creator's typing on every tile of finer ground.
 `InspectorModel` carries an optional `file` (`inspector-file.ts`), added
 by the shell after `buildInspector`; `buildInspector` itself never sets
 it.
+
+## Short text parts
+
+A short text's item carries `shortText: { view, role, orientation }` (role and orientation null when not written) for its kind panel.

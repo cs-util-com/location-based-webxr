@@ -30,7 +30,8 @@
  * at the ends), the card picture's choices (`image:<id>`, the shown one
  * pressed), and the selection's commands in words: a station's
  * `ground-items` and `delete`, its own `ground` under Place; an item's
- * `split` ("Move to a new station"), `ground` and `delete`; a story's
+ * `split` ("Move to a new station"), `ground` and `delete`, and one in a
+ * plain folder its `select:folder:<id>` ("Select the folder"); a story's
  * `add-entry` and `delete`; a story block's `entry-advance:<id>:<mode>` -
  * Delete last, behind a separator. A command the
  * shell is running (`busy`) shows as waiting.
@@ -47,6 +48,7 @@
  */
 import type { ShellPictures } from "./shell-pictures.js";
 import { FREE_LIST } from "../../station-children-moves.js";
+import { FOLDER_PREFIX } from "../editor-model.js";
 import { shellIcon, type ShellIcon } from "gps-plus-slam-editor-kit/chrome";
 import { fileFieldPart } from "./inspector-file.js";
 import {
@@ -58,6 +60,7 @@ import {
   CHARACTER_VIEW_CHOICES,
   ON_GROUND_M,
   type InspectorCharacter,
+  type InspectorCrumb,
   type InspectorExtent,
   type InspectorModel,
   type InspectorPosition,
@@ -82,6 +85,7 @@ import {
   entriesList,
 } from "./inspector-contents.js";
 import { radiusRange } from "./radius-slider.js";
+import { fieldRange, loudnessCurve } from "./field-sliders.js";
 import { wirePinTextCounter, wireTextCounter } from "../../pin-text.js";
 import { blockFieldPlaceholder, type BlockField } from "../block-fields.js";
 
@@ -227,14 +231,18 @@ function lockButton(locked: boolean): HTMLButtonElement {
 function blockTextField(field: BlockField): HTMLElement[] {
   const hint = blockFieldPlaceholder(field);
   if (field.number !== undefined) {
-    const row = numberField(
-      field.label,
+    const { box, input } = numberBox(
       field.name,
       field.value,
       field.number.unit,
     );
-    row.querySelector("input")?.setAttribute("placeholder", hint);
-    return [row];
+    input.setAttribute("placeholder", hint);
+    // A number set by feel takes a slider beside it (`field-sliders.ts`).
+    const row = labelled(field.label, input, fieldRange(field, box) ?? box);
+    const curve = field.number.curve;
+    return curve === undefined
+      ? [row]
+      : [row, loudnessCurve(curve, field.number.scale)];
   }
   const row = field.prose
     ? proseField(field.label, field.name, field.value, hint)
@@ -532,7 +540,8 @@ function storyBlockParts(block: StoryEntryModel["block"]): HTMLElement {
 
 /** A story character's view, how his step moves on and his facing, as a
  *  model's view is set: chips, the one in use pressed, and a number; his
- *  texts under them. */
+ *  texts under them. The facing shows in the pop-up alone: it turns only
+ *  that stage, a flat figure faces the visitor fully. */
 function characterParts(
   id: string,
   name: string,
@@ -560,15 +569,17 @@ function characterParts(
   );
   if (c.advance === "auto")
     box.append(el("div", "note", CHARACTER_AUTO_ADVANCE));
-  box.append(
-    numberField(
-      "Facing",
-      `character-facing:${id}`,
-      String(Math.round(c.facingDeg) % 360),
-      "deg",
-    ),
-    ...storyTextFields(id, fields),
-  );
+  if (c.view === "popup") {
+    box.append(
+      numberField(
+        "Facing",
+        `character-facing:${id}`,
+        String(Math.round(c.facingDeg) % 360),
+        "deg",
+      ),
+    );
+  }
+  box.append(...storyTextFields(id, fields));
   return box;
 }
 
@@ -746,20 +757,176 @@ function storyEntryParts(model: StoryEntryModel): HTMLElement[] {
   return parts;
 }
 
-/** A choice or a quiz: what it says and its Delete. */
-function storyStepParts(model: StoryStepModel): HTMLElement[] {
-  const box = el("div", "isec");
-  const list = el("ul", "steplines");
-  for (const line of model.lines) list.append(el("li", "", line));
-  box.append(el("div", "flabel", model.heading), list);
+type StepForm = NonNullable<StoryStepModel["form"]>;
+
+/** The jump picker of the answer `answer` (numbered `n`): the next
+ *  step, the steps ahead and back in their groups, the end; its own way
+ *  picked. The shell answers its change (`step-goto:<answer id>`). */
+function jumpPicker(
+  form: StepForm,
+  answer: StepForm["answers"][number],
+  n: number,
+): HTMLSelectElement {
+  const pick = el("select", "tfield");
+  pick.dataset["act"] = `step-goto:${answer.id}`;
+  pick.setAttribute("aria-label", `Where answer ${String(n)} leads`);
+  const groups = { ahead: "Jump ahead", back: "Go back" } as const;
+  let group: HTMLOptGroupElement | null = null;
+  for (const way of form.ways) {
+    const option = el("option", "", way.label);
+    option.value = way.value;
+    if (way.group === "ahead" || way.group === "back") {
+      if (group?.label !== groups[way.group]) {
+        group = el("optgroup", "");
+        group.label = groups[way.group];
+        pick.append(group);
+      }
+      group.append(option);
+    } else {
+      group = null;
+      pick.append(option);
+    }
+  }
+  pick.value = answer.way;
+  return pick;
+}
+
+/** An answer's Remove: off at the fewest answers a step takes. */
+function removeAnswer(id: string, n: number, on: boolean): HTMLButtonElement {
+  const b = el("button", "rbtn");
+  b.type = "button";
+  b.dataset["act"] = `step-remove:${id}`;
+  b.setAttribute("aria-label", `Remove answer ${String(n)}`);
+  b.title = on ? "Remove this answer" : "A step needs at least 2 answers";
+  b.disabled = !on;
+  b.append(shellIcon("close"));
+  return b;
+}
+
+/** An answer's words to type (`step:label:<id>`), named by its number. */
+function answerText(id: string, label: string, n: number): HTMLInputElement {
+  const input = typed(`step:label:${id}`, label, "tfield");
+  input.maxLength = 60;
+  input.placeholder = `Answer ${String(n)}`;
+  input.setAttribute("aria-label", `Answer ${String(n)}`);
+  return input;
+}
+
+/** A choice's or a single quiz's controls: its question, each answer
+ *  (its words, and where it leads or whether it is the right one, and its
+ *  Remove), Add, a quiz's points and where its story goes on. */
+function stepFormParts(model: StoryStepModel, form: StepForm): HTMLElement[] {
+  const quiz = model.stepKind === "quiz";
+  const question = proseField(
+    "Question",
+    "step:prompt",
+    form.prompt,
+    "What the visitor is asked",
+  );
+  const area = question.querySelector("textarea");
+  if (area !== null) area.rows = 2;
+  const answers = storyBox(
+    model.id,
+    "isec answers",
+    quiz
+      ? "Answers: tick the right one"
+      : "Answers (2 to 4), and where each one leads",
+  );
+  form.answers.forEach((answer, i) => {
+    const n = i + 1;
+    const row = el("div", "optrow");
+    if (quiz) {
+      const right = el("input", "");
+      right.type = "radio";
+      right.name = `right-${model.id}`;
+      right.checked = answer.right;
+      right.dataset["act"] = `step-right:${answer.id}`;
+      right.setAttribute("aria-label", `Answer ${String(n)} is the right one`);
+      const radio = el("label", "radio");
+      radio.title = "The right answer";
+      radio.append(right);
+      row.append(radio);
+    }
+    row.append(
+      answerText(answer.id, answer.label, n),
+      removeAnswer(answer.id, n, form.canRemove),
+    );
+    if (quiz) {
+      answers.append(row);
+      return;
+    }
+    const lead = el("div", "optrow lead");
+    const leads = el("span", "leads", "leads to");
+    lead.append(leads, jumpPicker(form, answer, n));
+    const box = el("div", "optbox");
+    box.append(row, lead);
+    answers.append(box);
+  });
+  const add = el("button", "act");
+  add.type = "button";
+  add.dataset["act"] = "step-add";
+  add.disabled = !form.canAdd;
+  add.append(
+    shellIcon("plus"),
+    el(
+      "span",
+      "lbl",
+      form.canAdd ? "Add an answer" : "Four answers is the most",
+    ),
+  );
+  answers.append(add);
+  const parts = [question, answers];
+  if (!quiz) {
+    answers.append(
+      el(
+        "p",
+        "note",
+        "An answer goes on to the next step unless you choose otherwise. It can also jump ahead, go back to an earlier step (to try again, say), or end the story.",
+      ),
+    );
+    return parts;
+  }
+  const then = el("div", "isec");
+  const said = form.then ?? "";
+  const thenBox = el("div", "thenbox", /[.?!]$/.test(said) ? said : `${said}.`);
+  then.append(
+    el("div", "flabel", "Then"),
+    thenBox,
+    el(
+      "p",
+      "note",
+      "A quiz does not branch. To lead somewhere by the visitor's wish, add a choice after it.",
+    ),
+  );
   return [
-    box,
+    question,
+    answers,
+    numberField("Points", "step:points", String(form.points ?? 0), ""),
+    then,
+  ];
+}
+
+/** A choice or a quiz: its controls (`form`) or, for a quiz the
+ *  inspector does not edit, what it says; and its Delete. */
+function storyStepParts(model: StoryStepModel): HTMLElement[] {
+  const parts: HTMLElement[] = [];
+  if (model.form !== undefined) {
+    parts.push(...stepFormParts(model, model.form));
+  } else {
+    const box = el("div", "isec");
+    const list = el("ul", "steplines");
+    for (const line of model.lines) list.append(el("li", "", line));
+    box.append(el("div", "flabel", model.heading), list);
+    parts.push(box);
+  }
+  parts.push(
     actions([
       action("delete", "trash", `Delete ${model.stepKind}`, {
         key: DELETE_KEY,
       }),
     ]),
-  ];
+  );
+  return parts;
 }
 
 /** An item's Delete, with its key. */
@@ -819,6 +986,19 @@ function itemParts(
       itemDelete(model),
     ]),
   );
+  // The 3D view's way to the folder: a click there picks its item alone.
+  if (model.folder !== null) {
+    parts.push(
+      actions([
+        action(
+          `select:${FOLDER_PREFIX}${model.folder.id}`,
+          "folder",
+          "Select the folder",
+          { note: model.folder.title },
+        ),
+      ]),
+    );
+  }
   if (fields.length > 0) {
     const section = el("div", "isec");
     section.append(...fields.flatMap(blockTextField));
@@ -868,45 +1048,53 @@ function itemParts(
   return parts;
 }
 
-/** A plain folder's parts: its scale to type, and its Place (its
- *  origin's offset, height and heading in its station's frame) folded
- *  away as an item's position is. Its items follow either. */
-function folderParts(model: FolderModel, state: InspectorState): HTMLElement[] {
+/** A plain folder's parts: its pivot, open under its own heading (its
+ *  origin's offset, height and heading in its station's frame, and its
+ *  scale to type; its items follow each), and Pivot to centre; then its
+ *  items, each a row that selects it alone, and Select its items. */
+function folderParts(model: FolderModel): HTMLElement[] {
   const o = model.offset;
   const { scale } = model;
-  const section = el("div", "isec");
-  section.append(
+  const pivot = el("div", "isec");
+  pivot.append(
+    el("div", "isec-h", "Pivot (from the station centre)"),
+    vectorField(
+      "Position",
+      [
+        ["E", "east", "east", fixed(o.eastM, 2)],
+        ["N", "north", "north", fixed(o.northM, 2)],
+      ],
+      "m",
+    ),
+    numberField("Height", "height", fixed(o.upM, 2), "m"),
+    numberField("Heading", "heading", headingText(model.headingDeg), "deg"),
     numberField(scale.label, "scale", fixed(scale.value, 2), "x"),
     el(
       "div",
       "note",
-      `${scale.meaning}, from ${String(scale.min)} to ${String(scale.max)} times. Drag a white dot to scale.`,
+      `Metres east / north of the station's anchor, in the station's frame; the height up from it; the heading relative to the station. ${scale.meaning}: typed from ${String(scale.min)} to ${String(scale.max)} times, dragged by a white dot from 0.2 to 5.`,
     ),
+    actions([action("pivot-centre", "align", "Pivot to centre")]),
   );
-  const heading = model.headingDeg === null ? "-" : fixed(model.headingDeg, 0);
+  const items = el("div", "isec");
+  items.append(
+    el("div", "isec-h", "Items (each movable alone)"),
+    model.items.length === 0
+      ? el("div", "note", "No items in it yet.")
+      : entriesList(model.items),
+  );
   return [
-    section,
-    ...disclosure(
-      state.positionOpen,
-      `${fixed(o.upM, 1)} m up  ${heading} deg`,
-      () => [
-        vectorField(
-          "Offset",
-          [
-            ["E", "east", "east", fixed(o.eastM, 2)],
-            ["N", "north", "north", fixed(o.northM, 2)],
-          ],
-          "m",
-        ),
-        numberField("Height", "height", fixed(o.upM, 2), "m"),
-        numberField("Heading", "heading", headingText(model.headingDeg), "deg"),
-        el(
-          "div",
-          "note",
-          "Where the folder's origin stands: metres east / north of its station's anchor, in the station's frame; the height up from the anchor; the heading relative to the station. Its items move with it.",
-        ),
-      ],
-      { label: "Place", title: "Position and heading of the folder" },
+    pivot,
+    items,
+    actions([
+      action("select-items", "ul", "Select its items", {
+        disabled: model.items.length === 0,
+      }),
+    ]),
+    el(
+      "div",
+      "note pad",
+      "A folder is a group in the scene: its items keep their place relative to the pivot, so moving, turning or scaling the folder carries them along. It has no order and plays nothing - that is what stories are for.",
     ),
   ];
 }
@@ -1071,6 +1259,43 @@ export interface InspectorState {
   /** A station's Contents unfolded (none said: it is). */
   readonly contentsOpen?: boolean;
   readonly busy?: string | null;
+  /** Where the selection stands (`inspectorCrumb`): drawn as buttons
+   *  over its details, its last-but-one part naming the Back button's
+   *  way up. None given: no crumb, and Back goes to the list. */
+  readonly crumb?: readonly InspectorCrumb[];
+}
+
+/** The crumb: every part a button that goes to its level
+ *  (`nav:<selection>`, `nav:` for the whole tour), the last one the
+ *  selection itself, marked current. */
+function crumbNav(crumb: readonly InspectorCrumb[]): HTMLElement {
+  const nav = el("nav", "crumbs");
+  nav.setAttribute("aria-label", "Where you are");
+  crumb.forEach((part, k) => {
+    if (k > 0) {
+      const sep = el("span", "csep", "\u203a");
+      sep.setAttribute("aria-hidden", "true");
+      nav.append(sep);
+    }
+    const b = el("button", "cb", part.label);
+    b.type = "button";
+    if (k === crumb.length - 1) {
+      b.setAttribute("aria-current", "page");
+    } else {
+      b.title = `Go to ${part.label}`;
+      b.dataset["act"] = `nav:${part.select ?? ""}`;
+    }
+    nav.append(b);
+  });
+  return nav;
+}
+
+/** The Back button's name: the level it goes up to. */
+function backLabel(crumb: readonly InspectorCrumb[] | undefined): string {
+  const up = crumb?.at(-2);
+  return up === undefined || up.select === null
+    ? "Back to the list"
+    : `Back to ${up.label}`;
 }
 
 /**
@@ -1272,7 +1497,7 @@ function partsOf(
     case "item":
       return itemParts(model, state, panel);
     case "folder":
-      return folderParts(model, state);
+      return folderParts(model);
     case "story":
       return storyParts(model, state);
     case "storyEntry":
@@ -1308,7 +1533,7 @@ function drawDock(
   const head = headTitle(model, panel);
   const count = pinCount(model, head);
   dock.head.replaceChildren(
-    iconButton("right", "Back to the list", "back"),
+    iconButton("right", backLabel(state.crumb), "back"),
     icon,
     head,
     ...(panel?.head() ?? []),
@@ -1326,7 +1551,11 @@ function drawDock(
     ...moveParts(model, sub),
     ...(model.file === undefined ? [] : [fileFieldPart(model.file)]),
   ];
-  const before = [sub, ...(count === null ? [] : [count])];
+  const before = [
+    ...(state.crumb === undefined ? [] : [crumbNav(state.crumb)]),
+    sub,
+    ...(count === null ? [] : [count]),
+  ];
   placeAround(dock.body, before, panel?.kept ?? null, parts);
 }
 

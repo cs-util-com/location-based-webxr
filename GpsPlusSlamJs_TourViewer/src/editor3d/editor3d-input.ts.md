@@ -56,6 +56,15 @@ move the camera only, and a second finger during a drag cancels it.
 
 ## Invariants & assumptions
 
+- **A click on a group's member picks it alone.** A press on a grip of a
+  group (a folder: its members' bodies are grips) starts the group's drag
+  at once; when it is released before it went the click distance (a
+  finger's tap distance) and the press lay on one of the group's
+  `members`, the drag writes nothing and that member is selected. A press
+  that went the distance writes the group's one edit and selects nothing;
+  a click of the disc over no member (or over another object) keeps the
+  group selected.
+
 - **The ground menu:** a `contextmenu` on the canvas never opens the
   browser's menu. It opens the page's ground menu (`groundMenu`) with the
   ground's place under the pointer (`GestureWorld`: the sampled ground's

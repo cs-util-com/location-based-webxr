@@ -31,6 +31,7 @@ import { documentObjects, tourDocumentActions } from "../../tour-document.js";
 import type * as TourDocument from "../../tour-document.js";
 import { createTourViewerStore } from "../../tour-viewer-session.js";
 import { editorViewActions, editorViewReducer } from "../editor-view.js";
+import type { DockHost, mountDockHost } from "./dock-host.js";
 import { createEditorShell, type EditorShellDeps } from "./editor-shell.js";
 import { createFolderCommands, NOTHING_TO_GROUP } from "../folder-commands.js";
 import {
@@ -155,9 +156,11 @@ function setUp() {
     addItem: vi.fn(),
     addStory: vi.fn(),
     addToStory: vi.fn(),
+    addStepToStory: vi.fn(),
     addCharacter: vi.fn(),
     storyTitle: vi.fn(() => "written" as const),
     storyAdvance: vi.fn(() => "written" as const),
+    storyStep: vi.fn(() => "written" as const),
     narration: vi.fn(() =>
       Promise.resolve({ kind: "refused" as const, reason: "none" }),
     ),
@@ -1240,6 +1243,29 @@ describe("a story's folder in the tree", () => {
               pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
               advance: { mode: "tap" },
             },
+            {
+              id: "c1",
+              kind: "choice",
+              prompt: "Which way?",
+              options: [
+                { id: "o1", label: "Back", goto: "l1" },
+                { id: "o2", label: "On" },
+              ],
+            },
+            {
+              id: "q1",
+              kind: "quiz",
+              question: "How old?",
+              points: 1,
+              answer: {
+                type: "single",
+                options: [
+                  { id: "a", label: "Old" },
+                  { id: "b", label: "New" },
+                ],
+                correct: "a",
+              },
+            },
           ],
           "The legend",
         ),
@@ -1271,6 +1297,27 @@ describe("a story's folder in the tree", () => {
     return found;
   };
 
+  // Why: Back goes one level up, editor-wide - from a step to its story,
+  // from the story to its station, from the station to the list - and the
+  // crumb goes to any level above at once.
+  it("goes one level up on Back, and to any level by the crumb", () => {
+    const { store, shell } = withStory();
+    const selected = () => store.getState().editorView.selected;
+    store.dispatch(editorViewActions.selected({ id: "l1" }));
+    inspectorAct("back").click();
+    expect(selected()).toBe("story:legend");
+    inspectorAct("back").click();
+    expect(selected()).toBe("station:c");
+    inspectorAct("back").click();
+    expect(selected()).toBeNull();
+    store.dispatch(editorViewActions.selected({ id: "l1" }));
+    inspectorAct("nav:station:c").click();
+    expect(selected()).toBe("station:c");
+    inspectorAct("nav:").click();
+    expect(selected()).toBeNull();
+    shell.hide();
+  });
+
   it("folds by its arrow, and selects by its name, unfolding only its holders", () => {
     const { store, shell } = withStory();
     tree('[data-select="story:legend"]').click();
@@ -1294,6 +1341,21 @@ describe("a story's folder in the tree", () => {
     menu?.querySelector<HTMLElement>('[data-kind="shortText"]')?.click();
     expect(edits.addToStory).toHaveBeenCalledWith("legend", "shortText");
     expect(edits.addItem).not.toHaveBeenCalled();
+    shell.hide();
+  });
+
+  // Why: a choice and a quiz are steps only a story holds; its menu's
+  // Choice and Quiz must reach the story's own add, never an item's.
+  it("adds a choice and a quiz from the story's menu", () => {
+    const { edits, shell } = withStory();
+    for (const kind of ["choice", "quiz"] as const) {
+      tree('[data-storyadd="legend"]').click();
+      document
+        .querySelector<HTMLElement>(`#tree-add-menu [data-kind="${kind}"]`)
+        ?.click();
+      expect(edits.addStepToStory).toHaveBeenLastCalledWith("legend", kind);
+    }
+    expect(edits.addToStory).not.toHaveBeenCalled();
     shell.hide();
   });
 
@@ -1344,6 +1406,61 @@ describe("a story's folder in the tree", () => {
       mode: "auto",
       afterS: 5,
     });
+    shell.hide();
+  });
+
+  // Why: every control of a choice's and a quiz's inspector writes the
+  // whole step through one command, so each is one undo step; a jump
+  // picked, an answer added, the right answer ticked and the points typed
+  // must each reach it as the step they make, and points that are no
+  // whole number are said and never written.
+  it("writes each control of a choice and a quiz as the whole step", () => {
+    const { edits, select, deps, shell } = withStory();
+    const last = () => edits.storyStep.mock.calls.at(-1)?.at(0) as unknown;
+    select("c1");
+    const question = document.querySelector<HTMLTextAreaElement>(
+      '#shell-inspector [data-field="step:prompt"]',
+    );
+    if (question === null) throw new Error("no question");
+    question.focus();
+    question.value = "Up or down?";
+    question.blur();
+    expect(last()).toMatchObject({ id: "c1", prompt: "Up or down?" });
+    const pick = inspectorAct("step-goto:o2") as HTMLSelectElement;
+    pick.value = ":end";
+    pick.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(last()).toMatchObject({
+      options: [
+        { id: "o1", label: "Back", goto: "l1" },
+        { id: "o2", label: "On", end: true },
+      ],
+    });
+    inspectorAct("step-add").click();
+    expect(last()).toMatchObject({
+      options: [{ id: "o1" }, { id: "o2" }, { id: "a1", label: "Answer 3" }],
+    });
+    expect((inspectorAct("step-remove:o1") as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    select("q1");
+    inspectorAct("step-right:b").click();
+    expect(last()).toMatchObject({ id: "q1", answer: { correct: "b" } });
+    const points = document.querySelector<HTMLInputElement>(
+      '#shell-inspector [data-field="step:points"]',
+    );
+    if (points === null) throw new Error("no points");
+    const calls = edits.storyStep.mock.calls.length;
+    points.focus();
+    points.value = "1.5";
+    points.blur();
+    expect(edits.storyStep.mock.calls.length).toBe(calls);
+    expect(deps.say).toHaveBeenCalledWith(
+      "Points are a whole number, 0 or more.",
+    );
+    points.focus();
+    points.value = "4";
+    points.blur();
+    expect(last()).toMatchObject({ id: "q1", points: 4 });
     shell.hide();
   });
 
@@ -2173,6 +2290,46 @@ describe("the tree's plain folders", () => {
     }
   });
 
+  // Why: a selected folder names itself above the view and says what its
+  // gizmo does; its inspector reaches the pivot's centring and picks its
+  // items in one press.
+  it("hints a selected folder, reaches its pivot's centring and selects its items", () => {
+    const { store, shell, deps } = setUpFolders();
+    const hint = document.getElementById("shell-scene-hint") as HTMLElement;
+    expect(hint.hidden).toBe(true);
+    click(row("p"));
+    click(row("r"), { ctrlKey: true });
+    bar().querySelector<HTMLElement>('[data-selbar="group"]')?.click();
+    document
+      .querySelector<HTMLInputElement>("#tree-body input.renin")
+      ?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+    const folder = store.getState().editorView.selected ?? "";
+    expect(folder.startsWith("folder:")).toBe(true);
+    expect(hint.hidden).toBe(false);
+    expect(hint.textContent).toContain("2 items move, turn and scale together");
+    const act = (name: string) => {
+      const found = document.querySelector<HTMLButtonElement>(
+        `#shell-inspector [data-act="${name}"]`,
+      );
+      if (found === null) throw new Error(`no act ${name}`);
+      return found;
+    };
+    // Grouping stood the pivot at the items' centre already: the press
+    // reaches the folder commands, which say so (the move itself is
+    // tested there).
+    act("pivot-centre").click();
+    expect(deps.say).toHaveBeenLastCalledWith(
+      'The pivot of "Folder 1" already stands at its items\' centre',
+    );
+    act("select-items").click();
+    expect(store.getState().editorView.picked).toEqual(["p", "r"]);
+    store.dispatch(editorViewActions.selected({ id: "q" }));
+    expect(hint.hidden).toBe(true);
+    shell.hide();
+  });
+
   // Why: Shift+click picks the rows between, as a file explorer does, and
   // Ungroup takes a folder apart with its items left picked.
   it("picks a range with Shift+click, and ungroups from the bar", () => {
@@ -2344,5 +2501,137 @@ describe("the add menu's Character", () => {
     });
     expect(edits.addItem).not.toHaveBeenCalled();
     expect(store.getState().editorView.openStations).toContain("b");
+  });
+});
+
+describe("a phone's keyboard over the panels", () => {
+  // Why: docked, the list sits in a pane of its own; a keyboard watcher
+  // hosted by the list's parent would not see the details' fields, and a
+  // field typed into would stay under the keyboard. The watcher is hosted
+  // by the 3D view, which holds every panel wherever it sits.
+  it("brings a details field into sight while the list sits in a pane of its own", () => {
+    const { shell, view, select } = setUp();
+    shell.hide();
+    const pane = document.createElement("div");
+    document.getElementById("view3d")?.append(pane);
+    const tree = document.getElementById("shell-tree");
+    if (tree === null) throw new Error("no tree");
+    pane.append(tree);
+    const viewport = Object.assign(new EventTarget(), {
+      height: window.innerHeight,
+      offsetTop: 0,
+      scale: 1,
+    });
+    Object.defineProperty(window, "visualViewport", {
+      value: viewport,
+      configurable: true,
+    });
+    const scrolled = vi.fn();
+    const scroll = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrolled;
+    try {
+      shell.show(view);
+      select("station:a");
+      const title = field("title");
+      title.focus();
+      viewport.height = window.innerHeight - 300;
+      viewport.dispatchEvent(new Event("resize"));
+      expect(document.body.dataset["keyboard"]).toBe("up");
+      expect(scrolled.mock.contexts).toContain(title);
+    } finally {
+      Element.prototype.scrollIntoView = scroll;
+      Reflect.deleteProperty(window, "visualViewport");
+      shell.hide();
+    }
+  });
+});
+
+describe("docked folds and counts", () => {
+  /** A docking whose list and details share one group: one fold for both,
+   *  as when a creator drags one into the other's group. */
+  function sharedGroupDock() {
+    let shut = false;
+    let onChange = () => undefined as void;
+    const host = {
+      fold: vi.fn((_id: string, folded: boolean) => {
+        if (folded === shut) return;
+        shut = folded;
+        onChange();
+      }),
+      folded: () => shut,
+      reveal: vi.fn(() => {
+        if (!shut) return;
+        shut = false;
+        onChange();
+      }),
+      badge: vi.fn(),
+      content: () => document.createElement("div"),
+      groupShown: () => !shut,
+      activeIn: () => null,
+      conceal: vi.fn(),
+      hideGroupOf: vi.fn(),
+      keyboard: vi.fn(),
+      dispose: vi.fn(),
+    } satisfies DockHost;
+    const mount: typeof mountDockHost = (deps) => {
+      onChange = deps.onChange;
+      return host;
+    };
+    return { host, load: () => Promise.resolve({ mountDockHost: mount }) };
+  }
+
+  async function docked() {
+    const made = setUp();
+    const dock = sharedGroupDock();
+    made.shell.hide();
+    Object.assign(made.deps, { dock: dock.load });
+    made.shell.show(made.view);
+    await vi.waitFor(() => {
+      expect(made.shell.docked()).toBe(true);
+    });
+    return { ...made, host: dock.host };
+  }
+
+  // Why: two panels in one group fold together. Were the store and the
+  // docking to hear their own echoes, the list's fold would fold the
+  // details, whose fold in the store would then unfold the group again -
+  // a flip-flop a creator sees as a fold that will not stay.
+  it("a fold of one panel in a shared group is the other's too, and stays", async () => {
+    const { store, host, shell } = await docked();
+    store.dispatch(
+      editorViewActions.dockFolded({ dock: "tree", folded: true }),
+    );
+    expect(store.getState().editorView.foldedDocks).toEqual({
+      tree: true,
+      inspector: true,
+    });
+    expect(host.folded()).toBe(true);
+    expect(host.fold).toHaveBeenCalledTimes(1);
+    // Revealing a panel is the one way to unfold: the store follows.
+    shell.reveal("details");
+    expect(host.reveal).toHaveBeenCalledWith("details");
+    expect(store.getState().editorView.foldedDocks).toEqual({
+      tree: false,
+      inspector: false,
+    });
+    expect(host.fold).toHaveBeenCalledTimes(1);
+    shell.hide();
+  });
+
+  // Why: the shelf hands its count to the shell before the docking has
+  // loaded; a count dropped then would leave the Files tab silent about
+  // files that failed until the next change.
+  it("keeps a tab's count for when the panels dock", async () => {
+    const made = setUp();
+    const dock = sharedGroupDock();
+    made.shell.hide();
+    const badge = { count: 2, bad: true, label: "2 files not optimized" };
+    made.shell.badge("files", badge);
+    Object.assign(made.deps, { dock: dock.load });
+    made.shell.show(made.view);
+    await vi.waitFor(() => {
+      expect(dock.host.badge).toHaveBeenCalledWith("files", badge);
+    });
+    made.shell.hide();
   });
 });

@@ -40,10 +40,12 @@ import { worldFromEcefAt } from "gps-plus-slam-globe/editor";
 
 import type { FigureSource } from "../character-canvas.js";
 import { characterWorld } from "../kinds/character/world.js";
+import { pictureWorld } from "../kinds/picture/world.js";
 import { buildLecternStand } from "../lectern-view.js";
 import { worldPartOf } from "../play-kinds.js";
 import { buildReadingSign } from "../reading-sign.js";
 import { fakeCharacterPainters } from "../test-support/fake-character-painters.js";
+import { fakePicturePainters } from "../test-support/fake-picture-painters.js";
 import {
   createStationsLayer,
   type StationsLayerDeps,
@@ -79,11 +81,20 @@ const EXPECTED: readonly (readonly [
   string | null,
 ])[] = [
   ["shortText", "pin", true, false, null],
+  ["shortText", "sign", true, true, null],
+  ["shortText", "edgeHint", true, false, null],
   ["shortText", "card", false, false, null],
   ["longText", "lectern", true, true, null],
   ["longText", "reading", true, false, null],
   ["longText", "card", false, false, null],
   ["picture", "plane", true, true, "widthM"],
+  ["picture", "framed", true, true, "widthM"],
+  ["picture", "cutout", true, true, "widthM"],
+  ["picture", "thenNow", true, true, "widthM"],
+  ["picture", "sharpen", true, true, "widthM"],
+  ["picture", "finder", true, true, "widthM"],
+  ["picture", "window", true, true, "widthM"],
+  ["picture", "viewer", true, true, "widthM"],
   ["picture", "card", false, false, null],
   ["video", "card", false, false, null],
   ["audio", "spot", true, false, null],
@@ -95,10 +106,10 @@ const EXPECTED: readonly (readonly [
   ["model", "cutaway", true, true, "sizeM"],
   ["model", "toy", true, true, "sizeM"],
   ["model", "card", false, false, null],
-  ["character", "bubble", true, true, null],
-  ["character", "speak", true, true, null],
-  ["character", "two-stations", true, true, null],
-  ["character", "portrait", true, true, null],
+  ["character", "bubble", true, false, null],
+  ["character", "speak", true, false, null],
+  ["character", "two-stations", true, false, null],
+  ["character", "portrait", true, false, null],
   ["character", "popup", true, true, null],
   ["character", "card", false, false, null],
 ];
@@ -288,7 +299,8 @@ function stationOf(children: TourStationChild[]): TourStation {
  *  is a camera-facing sprite: a drawing that turned it would show here),
  *  the stand and the sign are the page's own builders without a canvas,
  *  a model's file is a 2 x 4 x 1 m box, and a character's image a
- *  100 x 200 px figure painted without a canvas. */
+ *  100 x 200 px figure painted without a canvas, as a picture's image is
+ *  a 100 x 200 px texture. */
 function layerDeps(): StationsLayerDeps {
   const { painters } = fakeCharacterPainters();
   const decode = () =>
@@ -327,7 +339,16 @@ function layerDeps(): StationsLayerDeps {
     worldPart: (block, env) =>
       block.kind === "character"
         ? characterWorld(block, env, { decode, painters })
-        : worldPartOf(block, env),
+        : block.kind === "picture"
+          ? pictureWorld(block, env, {
+              decode: () => {
+                const texture = new THREE.Texture();
+                texture.image = { width: 100, height: 200 };
+                return Promise.resolve(texture);
+              },
+              painters: fakePicturePainters().painters,
+            })
+          : worldPartOf(block, env),
   };
 }
 
@@ -439,10 +460,8 @@ describe("the placement rows against the editor's drawing", () => {
     async (_name, kind, view, row) => {
       const still = await drawnBox(blockOf(kind, view, 0));
       expect(still, "a posed view the editor draws nothing for").not.toBeNull();
-      // Turned round in steps: a drawing that swings toward the camera (a
-      // character) follows its heading only where the camera is far
-      // enough round, so the largest change over the turns is the one
-      // that tells.
+      // Turned round in steps, the largest change over the turns is the
+      // one that tells.
       let largest = 0;
       for (let headingDeg = 30; headingDeg < 360; headingDeg += 30) {
         const turned = await drawnBox(blockOf(kind, view, headingDeg));
@@ -612,6 +631,7 @@ describe("the placeables against the old gate", () => {
           expect(p.selection).toBe(b.id);
           expect(p.stationId).toBe("a");
           expect(p.members).toEqual([b.id]);
+          expect(p.group).toBe(false);
           expect(p.locked).toBe(false);
           expect(p.inheritedScale).toBe(1);
         }

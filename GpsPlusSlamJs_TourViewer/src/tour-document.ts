@@ -30,6 +30,8 @@ import {
   TOUR_FOLDER_MIN_SCALE,
   tourStoryChildrenBlocks,
   TOUR_STORY_TITLE_RULE,
+  type TourChoice,
+  type TourQuizEntry,
   type TourStory,
   type TourStoryBlock,
   type TourStepAdvance,
@@ -42,6 +44,7 @@ import {
   withoutStoryChild,
   withStory,
   withStoryChild,
+  withStoryStep,
   withStoryTitle,
 } from "./tour-story-edit.js";
 import {
@@ -2576,6 +2579,9 @@ export interface StationEdit {
   readonly storyAdvance?: StationStoryAdvanceEdit;
   /** The file of a block the station's story shows, replaced. */
   readonly storyFile?: StationStoryFileEdit;
+  /** A choice or quiz of the station's story, written whole: its words,
+   *  its answers and where each leads (`withStoryStep`). */
+  readonly storyStep?: TourChoice | TourQuizEntry;
 }
 
 /** The story block `block` made from the file `asset` (an asset the tour
@@ -2631,7 +2637,8 @@ export type StationEditChange =
         | "character"
         | "storyText"
         | "storyAdvance"
-        | "storyFile";
+        | "storyFile"
+        | "storyStep";
     }
   | { readonly kind: "missing" };
 
@@ -2789,7 +2796,8 @@ function withStoryFile(
  * with the preload radius twice it, a description of at most 2000
  * (`checkTourDescription`), a card image naming a photo of THIS station or
  * an image asset of the tour (`stationImages`), a story character set by
- * `withCharacter`, a story block's text set by `withStoryText`.
+ * `withCharacter`, a story block's text set by `withStoryText`, a
+ * story's choice or quiz written whole by `withStoryStep`.
  */
 export function stationEditChange(
   state: TourDocumentState,
@@ -2845,6 +2853,11 @@ export function stationEditChange(
     const filed = withStoryFile(state, next, edit.storyFile);
     if (filed === null) return { kind: "refused", reason: "storyFile" };
     next = filed;
+  }
+  if (edit.storyStep !== undefined) {
+    const stepped = withStoryStep(next, edit.storyStep);
+    if (stepped === null) return { kind: "refused", reason: "storyStep" };
+    next = stepped;
   }
   return sameJson(next, frame)
     ? { kind: "unchanged" }
@@ -4116,6 +4129,109 @@ function folderScale(
   });
 }
 
+/** What `folderPivotCentred` carries: the plain folder whose pivot goes
+ *  to its items' centre. */
+interface FolderPivotPayload {
+  readonly stationId: string;
+  readonly folderId: string;
+  readonly what: string;
+}
+
+/** A folder's pose when it writes none: at its holder's origin, unturned. */
+const NO_FOLDER_POSE: TourLocalPose = {
+  position: [0, 0, 0],
+  rotation: [0, 0, 0, 1],
+};
+
+/**
+ * A plain folder's pivot moved to the centre of the items it holds (at
+ * any depth), on the ground plane of its holder: its north and east go
+ * to their centroid, its height, heading and scale stay
+ * (`folderPivotCentred`), as one step. Unlike a move, nothing else moves:
+ * every item it holds is written where it stands, and each folder
+ * directly inside it gets the pose that keeps it where it stood. `before`
+ * for a station or folder it lacks, a folder with no items, a pivot
+ * already there, or a pose the format would refuse.
+ */
+function folderPivotCentre(
+  before: TourDocumentState,
+  payload: FolderPivotPayload,
+): TourDocumentState {
+  if (before.written === null) return before;
+  const frame = before.stations.find((s) => s.id === payload.stationId);
+  if (frame === undefined) return before;
+  const chains = folderChains(frame);
+  const chain = chains.get(payload.folderId);
+  const old = chain?.at(-1);
+  if (chain === undefined || old === undefined) return before;
+  const members = documentObjects(before)
+    .map(({ object }) => object)
+    .filter(
+      (object) =>
+        object.station === frame.id &&
+        object.folder?.includes(payload.folderId) === true,
+    );
+  if (members.length === 0) return before;
+  const was = old.pose ?? NO_FOLDER_POSE;
+  // The centroid in the frame holding the folder (its station, or the
+  // folder around it).
+  const centre = decomposeTourFolderPath(chain.slice(0, -1), {
+    position: groupCentre(members, frame),
+    rotation: [0, 0, 0, 1],
+  }).position;
+  const pose = readPose({
+    ...was,
+    position: [centre[0] ?? 0, was.position[1] ?? 0, centre[2] ?? 0],
+  });
+  if (pose === null || sameJson(pose.position, was.position)) return before;
+  const pivoted: TourFolder = { ...old, pose };
+  const children: TourFolder["children"][number][] = [];
+  for (const child of old.children) {
+    if (!isTourFolder(child)) {
+      children.push(child);
+      continue;
+    }
+    // Where it stood in the folder's holder, put back in the moved folder.
+    const kept = readPose(
+      decomposeTourFolderPath(
+        [pivoted],
+        composeTourFolderPath([old], child.pose ?? NO_FOLDER_POSE),
+      ),
+    );
+    if (kept === null) return before;
+    children.push({ ...child, pose: kept });
+  }
+  const moved: StationFrame = {
+    ...frame,
+    children: withFolder(frame.children, payload.folderId, () => ({
+      ...pivoted,
+      children,
+    })),
+  };
+  const nextChains = folderChains(moved);
+  let placed = before.placed;
+  for (const object of members) {
+    const inFolder = decomposeTourFolderPath(
+      folderChainOf(object, nextChains),
+      localPoseOf(object.geo, frame.geo),
+    );
+    if (!withinFolderBound(inFolder.position)) return before;
+    // Written where it stands: a written item would otherwise follow the
+    // folder's new pivot.
+    placed = upsertPlaced(placed, { object });
+  }
+  return edited(
+    before,
+    {
+      placed,
+      stations: before.stations.map((s) => (s.id === frame.id ? moved : s)),
+      touched: { ...before.touched, stations: true },
+      framesRecorded: true,
+    },
+    payload.what,
+  );
+}
+
 /**
  * A plain folder of `payload`'s station changed by `change` (its pose or
  * its scale; null: no change), as one step: its items keep their poses in
@@ -4752,6 +4868,12 @@ const folderMoved = createAction<FolderMovePayload>("tourDocument/folderMoved");
  *  slice's actions for the same reason. */
 const folderScaled = createAction<FolderScalePayload>(
   "tourDocument/folderScaled",
+);
+
+/** A plain folder's pivot put at its items' centre, nothing moving
+ *  (`folderPivotCentre`); beside the slice's actions for the same reason. */
+const folderPivotCentred = createAction<FolderPivotPayload>(
+  "tourDocument/folderPivotCentred",
 );
 
 /** Items grouped in a new folder (`folderGroup`); beside the slice's
@@ -5739,6 +5861,9 @@ const tourDocumentSlice = createSlice({
     builder.addCase(folderScaled, (state, action) =>
       folderScale(plain(state), action.payload),
     );
+    builder.addCase(folderPivotCentred, (state, action) =>
+      folderPivotCentre(plain(state), action.payload),
+    );
     builder.addCase(folderGrouped, (state, action) =>
       folderGroup(plain(state), action.payload),
     );
@@ -5775,6 +5900,7 @@ export const tourDocumentActions = {
   assetOptimized,
   folderMoved,
   folderScaled,
+  folderPivotCentred,
   folderGrouped,
   folderUngrouped,
   objectsFoldered,
@@ -5816,6 +5942,7 @@ export const isDocumentEdit = isAnyOf(
   tourDocumentActions.narrationEdited,
   tourDocumentActions.folderMoved,
   tourDocumentActions.folderScaled,
+  tourDocumentActions.folderPivotCentred,
   tourDocumentActions.folderGrouped,
   tourDocumentActions.folderUngrouped,
   tourDocumentActions.objectsFoldered,
