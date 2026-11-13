@@ -75,7 +75,9 @@ view, advance, facingDeg }`) and `advance { mode, afterS }`;
     other text fields to type, `blockFields` of `../block-fields.ts`:
     a short text's description, a picture's title, caption and alt text,
     a model's title, a video's title, transcript and Starts within),
-    `video` (`InspectorVideo`: a free video's view and its choices -
+    `video` (`InspectorVideo`: a free video's `blockId`, its view, the
+    tour paths of its clip and poster (`clipPath`, `posterPath`, null when
+    the tour lists no such file) for the preview, and its choices -
     `blockChoices`: how it starts, its sound, a cutout's background - for
     its panel, `../kind-panels/video-panel.ts`; null for any other kind),
     `offset`

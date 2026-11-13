@@ -19,6 +19,7 @@ import { captionsStatus } from "../../kinds/video/video-captions.js";
 import { chipGroup, el } from "../editor-shell/inspector-fields.js";
 import type { InspectorVideo } from "../editor-shell/inspector-model.js";
 import type { KindPanel, KindPanelDraw } from "./kind-panel.js";
+import { videoPreview, type VideoPreview } from "./video-preview.js";
 
 export interface VideoPanelDeps {
   /** Writes a free block's view: one undo step, a refusal said by the
@@ -30,6 +31,14 @@ export interface VideoPanelDeps {
     field: string,
     value: string,
   ) => TypedEditOutcome;
+  /** A tour file by its path (the preview's clip and poster). */
+  readonly load: (path: string) => Promise<Blob>;
+  /** Makes `image` the video `itemId`'s poster: one undo step, a refusal
+   *  said by the page. */
+  readonly writePoster: (
+    itemId: string,
+    image: Blob,
+  ) => Promise<TypedEditOutcome>;
 }
 
 /** A free video's views in the inspector's words, in the format's order. */
@@ -103,13 +112,36 @@ function loopSwitch(on: boolean): HTMLElement {
 
 /** A free video's panel. */
 export function createVideoPanel(deps: VideoPanelDeps): KindPanel {
+  /** The preview of the selected clip, kept across draws; its key is the
+   *  block and the clip's path. */
+  let preview: { key: string; shown: VideoPreview } | null = null;
+  const previewOf = (video: InspectorVideo): HTMLElement | null => {
+    const key =
+      video.clipPath === null ? null : `${video.blockId}|${video.clipPath}`;
+    if (preview !== null && preview.key === key) return preview.shown.root;
+    preview?.shown.dispose();
+    preview = null;
+    if (key === null || video.clipPath === null) return null;
+    const { blockId } = video;
+    const shown = videoPreview(document, video.clipPath, video.posterPath, {
+      load: deps.load,
+      usePoster: async (image) =>
+        (await deps.writePoster(blockId, image)) === "written",
+    });
+    preview = { key, shown };
+    return shown.root;
+  };
   return {
     sync(item): KindPanelDraw | null {
       const video = item?.video ?? null;
-      if (video === null) return null;
+      if (video === null) {
+        preview?.shown.dispose();
+        preview = null;
+        return null;
+      }
       return {
         key: "",
-        kept: null,
+        kept: previewOf(video),
         ownsFields: false,
         title: () => null,
         head: () => [],

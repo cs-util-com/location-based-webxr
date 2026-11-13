@@ -41,7 +41,8 @@ keep the typed number alone.
 const drag = wireExtentSlider({
   root: inspector.root,
   item: () => ({ id: "clip", value: 2 }),
-  write: (id, value) => edits.scene({ kind: "extent", ref: { kind: "block", id }, value }),
+  write: (id, value) =>
+    edits.scene({ kind: "extent", ref: { kind: "block", id }, value }),
 });
 ```
 

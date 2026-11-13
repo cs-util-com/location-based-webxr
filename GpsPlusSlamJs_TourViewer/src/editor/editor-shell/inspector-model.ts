@@ -382,13 +382,30 @@ export interface InspectorModelParts {
   readonly pick: ModelPick | null;
 }
 
+/** The tour path of the file `id`; null for no id or a file not listed. */
+function assetPath(
+  assets: readonly TourAsset[],
+  id: string | undefined,
+): string | null {
+  return id === undefined
+    ? null
+    : (assets.find((a) => a.id === id)?.path ?? null);
+}
+
 /** A free video as its panel shows it (`kind-panels/video-panel.ts`). */
 export interface InspectorVideo {
+  /** The block's id (the poster's edit names it). */
+  readonly blockId: string;
   readonly view: string;
   /** Its choices in that view (`block-fields.ts` `blockChoices`). */
   readonly choices: readonly BlockChoice[];
   /** Its WebVTT captions as typed; "" for none. */
   readonly captions: string;
+  /** The clip's tour path, for the inspector's preview; null when the
+   *  tour lists no such file. */
+  readonly clipPath: string | null;
+  /** Its poster's tour path; null for none. */
+  readonly posterPath: string | null;
 }
 
 /** A long text as its writer shows it (`long-text-writer.ts`). */
@@ -1037,9 +1054,12 @@ export function buildInspector(input: {
       video:
         item.kind === "video"
           ? {
+              blockId: item.id,
               view: item.view,
               choices: blockChoices(item),
               captions: item.captions ?? "",
+              clipPath: assetPath(input.assets, item.video),
+              posterPath: assetPath(input.assets, item.poster),
             }
           : null,
       offset:

@@ -282,6 +282,10 @@ export interface ShellEditCommands {
   /** The largest voice file a long text takes (the page's autosave cap;
    *  none: the default cap). */
   readonly voiceMaxBytes?: number;
+  /** Makes `image` (a frame the inspector's video preview took) the free
+   *  video `itemId`'s poster: one step, a refusal said by the page; none:
+   *  the preview's "Use current frame" is refused. */
+  poster?(itemId: string, image: Blob): Promise<TypedEditOutcome>;
 }
 
 /** The page's store, as the shell reads it. */

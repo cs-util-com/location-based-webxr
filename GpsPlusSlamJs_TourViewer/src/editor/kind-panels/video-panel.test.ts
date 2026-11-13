@@ -17,6 +17,7 @@ function videoItem(
   view: string,
   choices: NonNullable<PanelItem["video"]>["choices"],
   captions = "",
+  clipPath: string | null = null,
 ): PanelItem {
   return {
     kind: "item",
@@ -29,7 +30,14 @@ function videoItem(
     fields: [],
     model: null,
     longText: null,
-    video: { view, choices, captions },
+    video: {
+      blockId: "v",
+      view,
+      choices,
+      captions,
+      clipPath,
+      posterPath: null,
+    },
     offset: { northM: 0, upM: 0, eastM: 0 },
     headingDeg: 0,
     turns: true,
@@ -69,6 +77,8 @@ function panel() {
   const deps = {
     writeView: vi.fn((): "written" => "written"),
     writeChoice: vi.fn((): "written" => "written"),
+    load: vi.fn(() => Promise.resolve(new Blob(["clip"]))),
+    writePoster: vi.fn(() => Promise.resolve<"written">("written")),
   };
   return { panel: createVideoPanel(deps), deps };
 }
@@ -152,6 +162,22 @@ describe("the video panel", () => {
     );
     expect(text("Hi")).toContain("Captions: Not read");
     expect(text("")).not.toContain("Captions:");
+  });
+
+  // Why: the preview plays and scrubs while the dock draws again, so it is
+  // one node kept across draws of the same clip, a new one for another
+  // clip, and none for a video whose file the tour does not list.
+  it("keeps one preview per clip across draws", () => {
+    const { panel: p } = panel();
+    expect(p.sync(videoItem("screen", []))?.kept).toBeNull();
+    const first = p.sync(videoItem("screen", [], "", "content/a.mp4"))?.kept;
+    expect(first?.dataset["testid"]).toBe("video-preview");
+    expect(p.sync(videoItem("screen", [], "", "content/a.mp4"))?.kept).toBe(
+      first,
+    );
+    const other = p.sync(videoItem("screen", [], "", "content/b.mp4"))?.kept;
+    expect(other).not.toBe(first);
+    expect(p.sync(null)).toBeNull();
   });
 
   it("leaves other acts and a choice of another view to the shell", () => {

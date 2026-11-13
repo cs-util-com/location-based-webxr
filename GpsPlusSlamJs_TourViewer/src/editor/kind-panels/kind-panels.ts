@@ -40,7 +40,13 @@ export interface PanelContext {
   readonly treeRoot: HTMLElement | null;
   readonly edits: Pick<
     ShellEditCommands,
-    "block" | "view" | "model" | "narration" | "editNarration" | "voiceMaxBytes"
+    | "block"
+    | "view"
+    | "model"
+    | "narration"
+    | "editNarration"
+    | "voiceMaxBytes"
+    | "poster"
   >;
   /** A tour file by its path. */
   readonly loadPicture: (path: string) => Promise<Blob>;
@@ -90,6 +96,11 @@ function video(ctx: PanelContext): KindPanel {
   return createVideoPanel({
     writeView: (id, view) => ctx.edits.view(id, view),
     writeChoice: (id, field, value) => ctx.edits.block(id, field, value),
+    load: ctx.loadPicture,
+    writePoster: (id, image) =>
+      ctx.edits.poster === undefined
+        ? Promise.resolve("refused")
+        : ctx.edits.poster(id, image),
   });
 }
 

@@ -706,6 +706,7 @@ describe("inspectorHint", () => {
               kind: "video",
               view: "screen",
               video: "v",
+              poster: "p",
               widthM: 2,
               createdAtIso: AT,
               pose: { position: [1, 1, 0], rotation: [0, 0, 0, 1] },
@@ -713,11 +714,16 @@ describe("inspectorHint", () => {
           ]),
         },
       ],
-      assets: [],
+      assets: [
+        { id: "v", path: "content/v.mp4", kind: "video" },
+        { id: "p", path: "content/p.jpg", kind: "image" },
+      ],
       codes: CODES,
       unlockedStations: [],
     });
+    // The inspector's preview reads the clip and its poster by their paths.
     expect(screen).toMatchObject({
+      video: { clipPath: "content/v.mp4", posterPath: "content/p.jpg" },
       extent: {
         field: "widthM",
         value: 2,

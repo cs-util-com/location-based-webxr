@@ -658,6 +658,9 @@ const NOT_A_MODEL_EDIT = "Only a 3D model has notes, sections and views.";
 /** Said for a file given to an item made of words. */
 const NOT_MADE_OF_A_FILE = "That item is not made from a file.";
 
+/** Said for a poster given to anything but a free video. */
+const NOT_A_FREE_VIDEO = "Only a video standing at a station takes a poster.";
+
 /** Said for a file of another kind than the item is made from. */
 const NOT_ITS_KIND = "That file is not of the kind this item is made from.";
 
@@ -1060,6 +1063,17 @@ export interface EditorSession {
     id: string,
     file: Blob,
     fileName: string,
+  ): Promise<
+    { kind: "edited" | "unchanged"; backedUp: boolean } | EditorRefusal
+  >;
+  /** The picture `image` (a frame of the clip, as the inspector's "Use
+   *  current frame" grabs it) the free video `id`'s poster from now on:
+   *  brought in as `addFile` does, then one step. Refused in words,
+   *  changing nothing, for an id that is no free video and a picture
+   *  `addFile` refuses. */
+  setVideoPoster(
+    id: string,
+    image: Blob,
   ): Promise<
     { kind: "edited" | "unchanged"; backedUp: boolean } | EditorRefusal
   >;
@@ -2021,6 +2035,40 @@ export function createEditorSession(input: {
     return set.kind === "refused" ? set : { ...set, backedUp: added.backedUp };
   }
 
+  /** `setVideoPoster`: the picture brought in, then the one edit naming
+   *  it on the video as it is after the wait. */
+  async function setVideoPoster(
+    id: string,
+    image: Blob,
+  ): Promise<
+    { kind: "edited" | "unchanged"; backedUp: boolean } | EditorRefusal
+  > {
+    const freeVideo = () => {
+      const free = fileBlockNow(id)?.free;
+      return free?.kind === "video" ? free : null;
+    };
+    const before = freeVideo();
+    if (before === null) return { kind: "refused", reason: NOT_A_FREE_VIDEO };
+    const fileName = `${objectTitle(before)} poster.jpg`;
+    const added = await addFile(image, fileName, ["image"]);
+    if (added.kind === "refused") return added;
+    const current = freeVideo();
+    if (current === null) return notInTour;
+    const after = { ...current, poster: added.asset.id };
+    if (sameJson(after, current)) {
+      return { kind: "unchanged", backedUp: added.backedUp };
+    }
+    const applied = took(() =>
+      store.dispatch(
+        tourDocumentActions.edited({
+          object: after,
+          what: `the poster of ${objectName(current)}`,
+        }),
+      ),
+    );
+    return applied ? { kind: "edited", backedUp: added.backedUp } : notApplied;
+  }
+
   const optimizers = input.optimizers ?? ASSET_OPTIMIZERS;
   const shelf = createAssetShelf({
     store,
@@ -2088,6 +2136,7 @@ export function createEditorSession(input: {
     shelf,
     addFile,
     setItemFile,
+    setVideoPoster,
     setItemAsset: (id, assetId) => {
       const asset = assetOf(assetId);
       if (asset === undefined) return notInTour;
