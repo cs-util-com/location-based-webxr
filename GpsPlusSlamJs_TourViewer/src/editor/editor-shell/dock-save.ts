@@ -13,7 +13,7 @@ import type { SerializedDockview } from "dockview";
 import { DOCK_PANELS, isDockPanelId, type DockPanelId } from "./dock-layout.js";
 
 /** The storage key's stem; one key per form factor follows it. */
-export const DOCK_SAVE_KEY = "editor-dock-layout";
+const DOCK_SAVE_KEY = "editor-dock-layout";
 
 /** The kept layout's format; another one is refused. */
 const VERSION = 1;

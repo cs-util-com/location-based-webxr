@@ -6,7 +6,7 @@ The docked layout a creator arranged, kept in the browser per form factor and re
 
 ## Public API
 
-- `DOCK_SAVE_KEY` - `"editor-dock-layout"`, the storage key's stem.
+- The storage key's stem is `"editor-dock-layout"` (module-private).
 - `DockFormFactor` - `"desk" | "sideways" | "upright"`.
 - `dockFormFactor(widthPx, heightPx)` - a phone's window is at most 700 px wide or 500 px tall: `"sideways"` when wider than tall, else `"upright"`; anything else (and a window of no size) is `"desk"`. The same split as the docking prototype's.
 - `dockSaveKey(formFactor)` - `"editor-dock-layout:<form factor>"`: each form factor keeps its own layout, so a phone held sideways never gets the desk's three columns back.
