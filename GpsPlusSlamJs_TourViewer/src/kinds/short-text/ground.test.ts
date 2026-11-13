@@ -20,8 +20,13 @@ import { describe, expect, it } from "vitest";
 import { TOUR_GROUND_STYLES } from "gps-plus-slam-app-framework/ar/tour-short-text";
 
 import { worldEnv, type WorldEnv, type WorldPart } from "../../world-part.js";
-import { GROUND_DARK_DEFAULT, groundPart } from "./ground.js";
-import { GROUND, groundLengthM, groundScale } from "./ground-route.js";
+import { groundPart } from "./ground.js";
+import {
+  GROUND,
+  GROUND_DARK_DEFAULT,
+  groundLengthM,
+  groundScale,
+} from "./ground-route.js";
 import { SHORT_TEXT_ACCENT } from "./plate.js";
 
 const none = () => Promise.reject(new Error("none"));

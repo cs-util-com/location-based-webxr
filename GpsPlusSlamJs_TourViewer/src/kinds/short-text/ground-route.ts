@@ -310,6 +310,15 @@ export function routeAt(
   };
 }
 
+/** Each style's dark colour where the record names none. */
+export const GROUND_DARK_DEFAULT: Readonly<Record<TourGroundStyle, string>> = {
+  ribbon: "#1d232b",
+  vanes: "#151a20",
+  footprints: "#151a20",
+  lights: "#2a3038",
+  floor: "#171c22",
+};
+
 /** The sun warning's rule: a dark part reads too faintly against pale
  *  paving in direct sun below this contrast ratio. */
 export const GROUND_SUN_MIN_RATIO = 3;

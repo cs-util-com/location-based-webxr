@@ -105,4 +105,4 @@ if (out.kind === "edited")
 
 ## Choice fields
 
-`blockFields` leaves a choice field out (its panel's chips show it). `blockFieldEdit` writes one of its `choices`, refuses any other value with the choices' labels, and deletes the field on a blank value (back to the reader's default).
+`blockFields` leaves a choice, a switch (`flag`) and a colour field out (its panel shows them). A switch writes true for `"true"` and is left out for anything else; a colour takes `#rrggbb` (lower-cased), refuses any other text, and is left out when blank. `blockFieldEdit` writes one of its `choices`, refuses any other value with the choices' labels, and deletes the field on a blank value (back to the reader's default).

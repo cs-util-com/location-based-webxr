@@ -194,6 +194,6 @@ it.
 
 ## Short text parts
 
-A short text's item carries `shortText: { view, role, orientation }` (role and orientation null when not written) for its kind panel.
+A short text's item carries `shortText: { view, role, orientation }` (role and orientation null when not written) for its kind panel; a ground arrow adds `ground: { id, style, floorPlacement, captionOnArrow, color, darkColor }` (null when not written, the switch false).
 
 An item's `sub` names it by `blockLabel` (`kinds/edit-kinds.ts`): a short text by its view.

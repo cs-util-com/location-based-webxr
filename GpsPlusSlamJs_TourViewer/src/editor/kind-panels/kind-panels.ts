@@ -90,6 +90,7 @@ function shortText(ctx: PanelContext): KindPanel {
   return createShortTextPanel({
     view: (id, view) => ctx.edits.view(id, view),
     block: (id, field, value) => ctx.edits.block(id, field, value),
+    changed: () => ctx.changed(),
   });
 }
 

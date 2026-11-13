@@ -356,6 +356,17 @@ interface InspectorShortText {
   readonly view: string;
   readonly role: string | null;
   readonly orientation: string | null;
+  /** A ground arrow's own look, as written (null: the reader's
+   *  default), and the block's id its colour wells write to; absent in
+   *  any other view. */
+  readonly ground?: {
+    readonly id: string;
+    readonly style: string | null;
+    readonly floorPlacement: string | null;
+    readonly captionOnArrow: boolean;
+    readonly color: string | null;
+    readonly darkColor: string | null;
+  };
 }
 
 /** A model's own parts as its inspector edits them. */
@@ -990,6 +1001,18 @@ export function buildInspector(input: {
               view: item.view,
               role: item.role ?? null,
               orientation: item.orientation ?? null,
+              ...(item.view === "ground"
+                ? {
+                    ground: {
+                      id: item.id,
+                      style: item.style ?? null,
+                      floorPlacement: item.floorPlacement ?? null,
+                      captionOnArrow: item.captionOnArrow === true,
+                      color: item.color ?? null,
+                      darkColor: item.darkColor ?? null,
+                    },
+                  }
+                : {}),
             },
           }
         : {}),

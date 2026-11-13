@@ -10,8 +10,6 @@ one of five styles, with a caption plate beside the start.
 
 - `groundPart(block, env): WorldPart` - builds the arrow. `object` holds two
   children: the marks (first) and the plate (second). No `tapTarget`.
-- `GROUND_DARK_DEFAULT` - each style's dark colour where the record names
-  none (the editor's colour fields show it as their default).
 
 ## The styles
 

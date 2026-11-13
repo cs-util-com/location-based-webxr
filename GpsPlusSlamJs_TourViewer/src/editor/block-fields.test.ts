@@ -495,3 +495,53 @@ describe("choice fields", () => {
     });
   });
 });
+
+describe("a ground arrow's own fields", () => {
+  const GROUND = {
+    ...(PIN as unknown as Record<string, unknown>),
+    view: "ground",
+  } as unknown as TourObject;
+
+  it("types its bend as a number within the format's bounds, and nothing it picks on the panel", () => {
+    // Why: the bend is a number the dock types; its style, placement,
+    // caption switch and colours are the panel's (chips, a box, colour
+    // wells), so the dock must not draw a text box for them too.
+    const names = blockFields(GROUND).map((f) => f.name);
+    expect(names).toContain("bendDeg");
+    expect(names).toContain("readAtM");
+    for (const own of ["style", "floorPlacement", "captionOnArrow", "color", "darkColor"]) {
+      expect(names).not.toContain(own);
+    }
+    expect(blockFieldEdit(GROUND, "bendDeg", "-30")).toEqual({
+      kind: "edited",
+      after: { ...GROUND, bendDeg: -30 },
+    });
+    expect(blockFieldEdit(GROUND, "bendDeg", "61").kind).toBe("refused");
+  });
+
+  it("writes the caption switch as true or leaves it out, never as a text", () => {
+    // Why: the format reads `captionOnArrow` as a boolean; the text "true"
+    // would be refused by the reader and lose the block's look.
+    const on = blockFieldEdit(GROUND, "captionOnArrow", "true");
+    expect(on).toEqual({ kind: "edited", after: { ...GROUND, captionOnArrow: true } });
+    const after = on.kind === "edited" ? on.after : GROUND;
+    expect(blockFieldEdit(after, "captionOnArrow", "")).toEqual({
+      kind: "edited",
+      after: GROUND,
+    });
+    expect(blockFieldEdit(GROUND, "captionOnArrow", "")).toEqual({ kind: "unchanged" });
+  });
+
+  it("takes a colour as #rrggbb only, and leaves it out when cleared", () => {
+    // Why: the reader takes six hex digits; anything else would be
+    // refused when the tour is read back.
+    expect(blockFieldEdit(GROUND, "color", "#5fe3c9")).toEqual({
+      kind: "edited",
+      after: { ...GROUND, color: "#5fe3c9" },
+    });
+    expect(blockFieldEdit(GROUND, "darkColor", "red").kind).toBe("refused");
+    expect(blockFieldEdit(GROUND, "color", "")).toEqual({ kind: "unchanged" });
+    const set = { ...(GROUND as unknown as Record<string, unknown>), color: "#5fe3c9" } as unknown as TourObject;
+    expect(blockFieldEdit(set, "color", "")).toEqual({ kind: "edited", after: GROUND });
+  });
+});

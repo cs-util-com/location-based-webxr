@@ -30,6 +30,8 @@ no DOM: every promise here is checked by property tests.
   target it runs straight ahead along +Z at the scale's length, with no stop.
 - `routeAt(path, s)` - position, tangent and right vector at arc length `s`
   (clamped to the path).
+- `GROUND_DARK_DEFAULT` - each style's dark colour where the record names
+  none (the part draws it, the editor's colour well shows it).
 - `GROUND_SUN_MIN_RATIO` (3) and `sunContrast(hex)` - a colour's contrast
   ratio against pale sunlit paving; NaN for a string that is no `#rrggbb`.
 - `groundFloatM(seed, t)` - a hovering piece's height

@@ -51,6 +51,7 @@ import { easeAngle } from "../../angle-easing.js";
 import { smoothingAlpha } from "../../surface-smoothing.js";
 import type { WorldEnv, WorldPart } from "../../world-part.js";
 import {
+  GROUND_DARK_DEFAULT,
   GROUND_STYLE_WIDTH,
   groundFloatM,
   groundLetterM,
@@ -70,15 +71,6 @@ import {
 } from "./plate.js";
 
 type TourShortTextBlock = TourBlockOfKind["shortText"];
-
-/** Each style's dark colour where the record names none. */
-export const GROUND_DARK_DEFAULT: Readonly<Record<TourGroundStyle, string>> = {
-  ribbon: "#1d232b",
-  vanes: "#151a20",
-  footprints: "#151a20",
-  lights: "#2a3038",
-  floor: "#171c22",
-};
 
 /** The styles' measures (m where not said). */
 const LOOK = {

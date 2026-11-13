@@ -3305,6 +3305,45 @@ body[data-view="3d"] #view3d .view3d-canvas {
   cursor: pointer;
 }
 
+/* A ground arrow's caption switch, its two colour wells with their
+ * names, and the sun warning under them. */
+.stext .chkrow,
+.stext .colwell {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.stext .chkrow {
+  margin: 6px 0 2px;
+}
+
+.stext .colrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin: 4px 0 2px;
+}
+
+.stext .colwell input {
+  width: 40px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--s-line);
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+}
+
+.stext .sunwarn {
+  padding: 6px 8px;
+  border: 1px solid var(--s-warn);
+  border-radius: 8px;
+  color: var(--s-warn);
+}
+
 /* A story character's groups of chips, apart from the next label. */
 .character > .vchips {
   margin-bottom: 8px;

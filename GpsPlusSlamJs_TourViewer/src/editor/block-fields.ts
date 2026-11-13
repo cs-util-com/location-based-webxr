@@ -106,9 +106,16 @@ function numberOf(block: AnyBlock, name: string): number | undefined {
 /** The fields the inspector types for `block`, besides a short text's
  *  caption (the head's). */
 export function blockFields(block: AnyBlock): BlockField[] {
-  // A choice is the kind's panel's, on chips: never a box to type in.
+  // A choice, a switch or a colour is the kind's panel's: never a box to
+  // type in.
   return ownFields(block)
-    .flatMap((spec) => (spec.choices === undefined ? [spec] : []))
+    .flatMap((spec) =>
+      spec.choices === undefined &&
+      spec.flag === undefined &&
+      spec.colour === undefined
+        ? [spec]
+        : [],
+    )
     .map((spec) => {
       if (spec.number !== undefined) {
         const n = numberOf(block, spec.name);
@@ -185,6 +192,10 @@ export function blockFieldEdit<B extends AnyBlock>(
   }
   if (spec.choices !== undefined) {
     return choiceFieldEdit(block, spec.label, name, spec.choices, value);
+  }
+  if (spec.flag !== undefined) return flagFieldEdit(block, name, value);
+  if (spec.colour !== undefined) {
+    return colourFieldEdit(block, spec.label, name, value);
   }
   const text = value.trim();
   if (text === textOf(block, name)) return { kind: "unchanged" };
@@ -277,6 +288,52 @@ function choiceFieldEdit<B extends AnyBlock>(
   if (was === value) return { kind: "unchanged" };
   rest[name] = value;
   return { kind: "edited", after: rest as unknown as B };
+}
+
+/** The block with `name` set to `value`, or without it (undefined). */
+function withField<B extends AnyBlock>(
+  block: B,
+  name: string,
+  value: unknown,
+):
+  | { readonly kind: "edited"; readonly after: B }
+  | { readonly kind: "unchanged" } {
+  const rest = { ...(block as unknown as Record<string, unknown>) };
+  if (rest[name] === value) return { kind: "unchanged" };
+  if (value === undefined) delete rest[name];
+  else rest[name] = value;
+  return { kind: "edited", after: rest as unknown as B };
+}
+
+/** What a switch writes (`blockFieldEdit`): "true" sets it, anything
+ *  else leaves it out (off, the reader's default). */
+function flagFieldEdit<B extends AnyBlock>(
+  block: B,
+  name: string,
+  value: string,
+):
+  | { readonly kind: "edited"; readonly after: B }
+  | { readonly kind: "unchanged" } {
+  return withField(block, name, value === "true" ? true : undefined);
+}
+
+/** What a colour writes (`blockFieldEdit`): `#rrggbb`, or none for a
+ *  blank one (the reader's default). */
+function colourFieldEdit<B extends AnyBlock>(
+  block: B,
+  label: string,
+  name: string,
+  value: string,
+):
+  | { readonly kind: "edited"; readonly after: B }
+  | { readonly kind: "unchanged" }
+  | { readonly kind: "refused"; readonly reason: string } {
+  const text = value.trim();
+  if (text === "") return withField(block, name, undefined);
+  if (!/^#[0-9a-f]{6}$/i.test(text)) {
+    return { kind: "refused", reason: `${label} is a colour such as #1d232b.` };
+  }
+  return withField(block, name, text.toLowerCase());
 }
 
 /** What a cap counts, in the refusal's words. */
