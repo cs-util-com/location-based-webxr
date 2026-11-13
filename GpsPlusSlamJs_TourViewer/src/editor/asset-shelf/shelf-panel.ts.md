@@ -16,7 +16,7 @@ shelf runner (`asset-shelf.ts`); every word comes from
 - `createShelfPanel(deps): ShelfPanel`
   - `deps.root`: the dock (`aside#shell-shelf`); its frame is built once.
   - `deps.toggle`, `deps.pill`: the bar's toggle and the phone's pill.
-  - `deps.dock?` (`ShelfDock`), one object because its four calls are
+  - `deps.dock?` (`ShelfDock`), one object because its five calls are
     right only together (an `active` without its `reveal` would make
     opening a silent no-op): while `dock.active()` the editor's panels
     are docked and the shelf is the Files panel - never a rail, its fold
@@ -27,6 +27,8 @@ shelf runner (`asset-shelf.ts`); every word comes from
     docked, asks the page to take the Files panel out of sight (Details in
     its place where they share a group, else its group's next panel, or
     its group hidden), so the toggle un-presses as it does over the rail.
+    `dock.badge(filesBadge(rows) | null)` on every docked draw: with no
+    rail of its own, the Files tab carries the count and its name.
   - `deps.host`: where the "Used in" popover goes (the page's body).
   - `deps.rows()`, `deps.subscribe(listener)`: the shelf's rows and their
     changes (the store's).

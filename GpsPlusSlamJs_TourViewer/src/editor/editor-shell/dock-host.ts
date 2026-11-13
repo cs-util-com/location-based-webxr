@@ -18,7 +18,9 @@ import {
   type DockviewApi,
   type DockviewGroupPanel,
   type IDockviewPanel,
+  type ITabRenderer,
 } from "dockview";
+import { shellIcon } from "gps-plus-slam-editor-kit/chrome";
 
 import {
   bottomStartPx,
@@ -33,6 +35,16 @@ import {
   type DockStep,
   writerWidthPx,
 } from "./dock-layout.js";
+import {
+  canFold,
+  foldAxis,
+  foldedAt,
+  prunedTo,
+  railPx,
+  railSide,
+  unfoldedAt,
+  type Folds,
+} from "./dock-rail.js";
 
 /** The parts of the view box that move with the 3D view into its panel:
  *  the canvas, the model's notes over it, the map controls. */
@@ -48,9 +60,21 @@ const FOCUSABLE =
 const MIN_WIDTH_PX = 140;
 const MIN_HEIGHT_PX = 90;
 
-/** The two side panels that fold. */
-export type FoldingPanel = "list" | "details";
-const SIDES: readonly FoldingPanel[] = ["list", "details"];
+/** The two side panels whose groups take the window's widths. */
+type SidePanel = "list" | "details";
+const SIDES: readonly SidePanel[] = ["list", "details"];
+
+/** A tab's count of what needs a look in its panel (the Files panel's
+ *  files in the works or not optimized), and what it counts in words. */
+export interface DockBadge {
+  readonly count: number;
+  /** Something failed: drawn as a warning. */
+  readonly bad: boolean;
+  readonly label: string;
+}
+
+/** The way a folded group's button points to unfold it. */
+const AWAY = { left: "right", right: "left", up: "down", down: "up" } as const;
 
 export interface DockHostDeps {
   /** The 3D view's box (`#view3d`): the layout fills it below the
@@ -62,23 +86,29 @@ export interface DockHostDeps {
 }
 
 export interface DockHost {
-  /** Shows `id`: its group made visible (and unfolded), it the group's
-   *  shown tab. */
+  /** Shows `id`: its group made visible and unfolded, it the group's
+   *  shown tab. The one way a folded group opens for the page. */
   reveal(id: DockPanelId): void;
-  /** Hides the group that holds `id`. */
+  /** Takes the group that holds `id` out of sight: hidden when it holds
+   *  only the bottom panel's panes (its toggles show it again), else
+   *  folded to its rail. */
   hideGroupOf(id: DockPanelId): void;
   /** Takes `id` out of sight when it shows: `instead` made its group's
    *  shown tab when the group holds it, else the group's next panel; alone
-   *  in its group, the group hidden. */
+   *  in its group, the group out of sight as by `hideGroupOf`. */
   conceal(id: DockPanelId, instead?: DockPanelId): void;
-  /** Whether the group holding `id` shows. */
+  /** Whether the group holding `id` shows, unfolded. */
   groupShown(id: DockPanelId): boolean;
   /** The shown tab of the group holding `id`. */
   activeIn(id: DockPanelId): DockPanelId | null;
-  /** Folds or unfolds a side panel: folded, its group hides and its
-   *  element goes back to the view box, where it shows as its folded
-   *  head. */
-  fold(id: FoldingPanel, folded: boolean): void;
+  /** Folds the group holding `id` to a rail of its tabs' icons, or
+   *  unfolds it at the size it had; the 3D view's group and a floating
+   *  one never fold. */
+  fold(id: DockPanelId, folded: boolean): void;
+  /** Whether the group holding `id` is folded to its rail. */
+  folded(id: DockPanelId): boolean;
+  /** The count on `id`'s tab (and on its rail), or none. */
+  badge(id: DockPanelId, badge: DockBadge | null): void;
   /** The element a panel's content sits in. */
   content(id: DockPanelId): HTMLElement;
   /** An on-screen keyboard of `px` (0: none) came, changed or went:
@@ -120,7 +150,17 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
 
   const homes: Home[] = [];
   const contents = new Map<DockPanelId, HTMLElement>();
-  const folded = new Set<FoldingPanel>();
+  /** Every group folded to its rail, by the docking's group id. */
+  let folds: Folds = new Map();
+  /** Each tab's count, drawn on every tab of its panel. */
+  const badges = new Map<DockPanelId, DockBadge>();
+  /** Each group's fold button, kept for the group's life: the docking
+   *  builds a group's header actions again when its tabs turn on their
+   *  side, and the same element given back keeps the focus. */
+  const folders = new Map<
+    DockviewGroupPanel,
+    { readonly element: HTMLElement; readonly update: () => void }
+  >();
   /** Groups whose first size is still to be given when they first show
    *  (the bottom group starts hidden). */
   const unsized = new Map<DockPanelId, DockStep>();
@@ -143,7 +183,7 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
   /** Side panels whose group was hidden while its width was to change
    *  (before its first layout, or over a window resize): it takes its
    *  width when it next shows. */
-  const stale = new Set<FoldingPanel>();
+  const stale = new Set<SidePanel>();
   let disposed = false;
 
   const adopt = (node: Element, into: HTMLElement, first = false) => {
@@ -249,17 +289,6 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
       if (!disposed) put();
     });
   };
-  /** An adopted element, in the page or not (a panel behind another tab
-   *  is out of it). */
-  const nodeOf = (id: DockPanelId): Element | null => {
-    const spec = dockPanel(id);
-    if (spec.element === null) return null;
-    return (
-      homes.find((h) => h.node.id === spec.element)?.node ??
-      document.getElementById(spec.element)
-    );
-  };
-
   /** The 3D view's parts into its panel (the canvas first, under the
    *  rest); also those the view adds later (a new canvas). */
   const adoptViewParts = () => {
@@ -270,6 +299,97 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
     }
   };
   const watcher = new MutationObserver(adoptViewParts);
+
+  /** A tab: its panel's icon, its title (only its accessible name on a
+   *  rail of upright tabs) and its count. A tap on a tab of a folded group
+   *  unfolds it. */
+  const makeTab = (): ITabRenderer => {
+    const element = document.createElement("div");
+    element.className = "dock-tab";
+    return {
+      element,
+      init: (params) => {
+        const id = params.api.id;
+        const title = document.createElement("span");
+        title.className = "dock-tab-title";
+        title.textContent = params.title ?? id;
+        if (!isDockPanelId(id)) {
+          element.append(title);
+          return;
+        }
+        element.dataset["panel"] = id;
+        element.append(shellIcon(dockPanel(id).icon), title);
+        drawBadge(element, badges.get(id) ?? null);
+        element.addEventListener("click", () => {
+          const group = params.api.group;
+          if (folds.has(group.id)) foldGroup(group, false);
+        });
+      },
+    };
+  };
+  const drawBadge = (tab: HTMLElement, badge: DockBadge | null) => {
+    tab.querySelector(".dock-badge")?.remove();
+    if (badge === null) return;
+    const mark = document.createElement("span");
+    mark.className = `dock-badge${badge.bad ? " bad" : ""}`;
+    // Its words are the tab's name's: the number alone says nothing.
+    mark.setAttribute("role", "img");
+    mark.setAttribute("aria-label", badge.label);
+    mark.textContent = String(badge.count);
+    tab.append(mark);
+  };
+
+  /** A group's fold button, in its tab strip: it points to the side the
+   *  group folds to, and back once folded. Drawn again only when its
+   *  look changes, so a press keeps the focus on it. */
+  const makeFolder = (group: DockviewGroupPanel) => {
+    const element = document.createElement("div");
+    element.className = "dock-acts";
+    element.hidden = true; // until first drawn
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "dock-fold";
+    element.append(button);
+    // Not a press on the strip: no drag, no group made the active one.
+    element.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
+    });
+    button.addEventListener("click", () => {
+      foldGroup(group, !folds.has(group.id));
+    });
+    let drawn = "";
+    const update = () => {
+      if (disposed || !dock.groups.includes(group)) return;
+      // The first groups are made before the 3D view is added: drawn once
+      // it is there (the next layout change).
+      const viewPanel = dock.getPanel("view");
+      if (viewPanel === undefined) return;
+      const ids = group.panels.map((p) => p.id);
+      const can = canFold(ids, group.api.location.type);
+      const shut = folds.has(group.id);
+      const side = railSide(
+        group.element.getBoundingClientRect(),
+        viewPanel.group.element.getBoundingClientRect(),
+      );
+      const title = group.activePanel?.title ?? "";
+      const key = `${String(can)}|${String(shut)}|${side}|${title}`;
+      if (key === drawn) return;
+      drawn = key;
+      element.hidden = !can;
+      const name = `${shut ? "Unfold" : "Fold"} ${title}`.trim();
+      button.title = name;
+      button.setAttribute("aria-label", name);
+      button.setAttribute("aria-expanded", String(!shut));
+      button.replaceChildren(shellIcon(shut ? AWAY[side] : side));
+    };
+    return { element, update };
+  };
+  const updateFolders = () => {
+    for (const [group, folder] of folders) {
+      if (dock.groups.includes(group)) folder.update();
+      else folders.delete(group);
+    }
+  };
 
   const dock: DockviewApi = createDockview(root, {
     theme: THEME,
@@ -284,6 +404,18 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
           scrollBack(element);
         },
       };
+    },
+    // The library asks for a tab of its own only under a name.
+    defaultTabComponent: "dock-tab",
+    createTabComponent: () => makeTab(),
+    createRightHeaderActionComponent: (group) => {
+      let made = folders.get(group);
+      if (made === undefined) {
+        made = makeFolder(group);
+        folders.set(group, made);
+      }
+      const { element, update } = made;
+      return { element, init: update, dispose: () => undefined };
     },
     // Popouts never; the 3D view is not floated.
     getTabContextMenuItems: ({ panel }) =>
@@ -315,7 +447,8 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
       group.api.setSize({ height: px });
     }
     afterLayout(() => {
-      if (disposed) return;
+      // Folded meanwhile: the rail keeps its size.
+      if (disposed || folds.has(group.id)) return;
       if (axis === "width" && !group.api.isVisible) {
         for (const side of SIDES) if (groupOf(side) === group) stale.add(side);
       }
@@ -378,11 +511,12 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
   // Nothing is dropped onto the 3D view as a tab.
   groupOf("view").api.locked = true;
   /** A group over one panel with its own head shows no tab strip; one a
-   *  tab joins gets its strip back. */
+   *  tab joins gets its strip back, and a folded one is its strip. */
   const fitStrips = () => {
     for (const group of dock.groups) {
       group.header.hidden =
-        group === maxed?.group || stripHidden(group.panels.map((p) => p.id));
+        group === maxed?.group ||
+        (stripHidden(group.panels.map((p) => p.id)) && !folds.has(group.id));
     }
     // Maximized over a keyboard, the layout may run on under it
     // (`editor-shell.css`): the docking library never lays it out under
@@ -464,13 +598,20 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
     writerPx = want;
     const px = want ?? beforeWriter;
     if (want === null) beforeWriter = null;
-    if (px !== null) group.api.setSize({ width: px });
+    if (px === null) return;
+    // Folded, the rail keeps its width and the group unfolds at this one.
+    const fold = folds.get(group.id);
+    if (fold?.axis === "width") {
+      folds = new Map(folds).set(group.id, { ...fold, prevPx: px });
+      return;
+    }
+    group.api.setSize({ width: px });
   };
   const writerWatch = new MutationObserver(fitWriter);
 
   /** A side group's width for the window: the list's or the column's,
    *  the writer's while the details hold it. */
-  const sideWidth = (side: FoldingPanel): number => {
+  const sideWidth = (side: SidePanel): number => {
     const widths = dockWidths(window.innerWidth);
     if (side === "list") return widths.list;
     return writerPx ?? widths.column;
@@ -499,6 +640,7 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
       }
       for (const side of SIDES) {
         const group = groupOf(side);
+        if (folds.has(group.id)) continue;
         if (group.api.isVisible) group.api.setSize({ width: sideWidth(side) });
         else stale.add(side);
       }
@@ -641,10 +783,17 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
   root.addEventListener("keydown", onTabKey, true);
 
   const changed = dock.onDidActivePanelChange(() => {
+    updateFolders();
     deps.onChange();
   });
   const laidOut = dock.onDidLayoutChange(() => {
+    // A group dragged empty is gone, its fold with it.
+    folds = prunedTo(
+      folds,
+      dock.groups.map((g) => g.id),
+    );
     fitStrips();
+    updateFolders();
     deps.onChange();
   });
 
@@ -674,20 +823,99 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
     }
   };
 
-  const fold = (id: FoldingPanel, shut: boolean) => {
-    const node = nodeOf(id);
-    if (shut === folded.has(id) || node === null) return;
-    const back = holdFocus([node]);
+  /** Folds `group` to its rail or unfolds it, the other docked groups
+   *  keeping their sizes along their own axes (the 3D view takes or gives
+   *  the room). A focus inside the group that the rail hides goes to its
+   *  fold button. */
+  const foldGroup = (group: DockviewGroupPanel, shut: boolean) => {
+    if (disposed || shut === folds.has(group.id)) return;
+    const ids = group.panels.map((p) => p.id);
+    if (shut && !canFold(ids, group.api.location.type)) return;
+    const layout = { width: root.clientWidth, height: root.clientHeight };
+    const centre = groupOf("view");
+    const kept = dock.groups.flatMap((g) => {
+      if (g === group || g === centre || g.api.location.type !== "grid") {
+        return [];
+      }
+      if (!g.api.isVisible) return [];
+      const size = { width: g.api.width, height: g.api.height };
+      return [
+        foldAxis(size, layout) === "width"
+          ? { g, size: { width: size.width } }
+          : { g, size: { height: size.height } },
+      ];
+    });
+    const at = document.activeElement;
+    const focusIn = at instanceof HTMLElement && group.element.contains(at);
     if (shut) {
-      folded.add(id);
-      groupOf(id).api.setVisible(false);
-      sendHome(node);
+      const next = foldedAt(
+        folds,
+        group.id,
+        { width: group.api.width, height: group.api.height },
+        layout,
+      );
+      const fold = next.get(group.id);
+      if (fold === undefined) return;
+      folds = next;
+      group.element.classList.add("dock-folded");
+      if (fold.axis === "width") group.api.setHeaderPosition("left");
+      fitStrips();
+      const px = railPx(
+        window.matchMedia?.("(pointer: coarse)").matches === true,
+      );
+      if (fold.axis === "width") {
+        group.api.setConstraints({ minimumWidth: px, maximumWidth: px });
+        group.api.setSize({ width: px });
+      } else {
+        group.api.setConstraints({ minimumHeight: px, maximumHeight: px });
+        group.api.setSize({ height: px });
+      }
     } else {
-      folded.delete(id);
-      adopt(node, contentOf(id), true);
-      showGroup(id);
+      const { folds: next, restore } = unfoldedAt(folds, group.id);
+      folds = next;
+      group.element.classList.remove("dock-folded");
+      group.api.setHeaderPosition("top");
+      fitStrips();
+      if (restore !== null) pin(group, restore.axis, restore.px);
     }
-    back();
+    afterLayout(() => {
+      if (disposed) return;
+      for (const { g, size } of kept) {
+        if (dock.groups.includes(g) && !folds.has(g.id)) g.api.setSize(size);
+      }
+    });
+    updateFolders();
+    deps.onChange();
+    if (focusIn && !(at.isConnected && at.checkVisibility())) {
+      const to = shut
+        ? folders.get(group)?.element.querySelector("button")
+        : ownFold(group);
+      to?.focus({ preventScroll: true });
+    }
+  };
+  /** The shown fold button of a panel's own head in `group`, if any. */
+  const ownFold = (group: DockviewGroupPanel): HTMLElement | null => {
+    for (const panel of group.panels) {
+      if (!isDockPanelId(panel.id)) continue;
+      const selector = dockPanel(panel.id).fold;
+      if (selector === undefined) continue;
+      const button = document.querySelector<HTMLElement>(selector);
+      if (button?.checkVisibility() === true) return button;
+    }
+    return null;
+  };
+  /** Out of sight: a group of the bottom panel's panes hidden (its
+   *  toggles bring it back), any other folded to its rail. */
+  const hideGroup = (group: DockviewGroupPanel) => {
+    if (!group.api.isVisible) return;
+    const bottom = group.panels.every(
+      (p) => isDockPanelId(p.id) && dockPanel(p.id).group === "bottom",
+    );
+    if (!bottom) {
+      foldGroup(group, true);
+      return;
+    }
+    group.api.setVisible(false);
     deps.onChange();
   };
   focusBack();
@@ -697,18 +925,15 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
       // The focus stays where it was (a row picked from the keyboard shows
       // its details): a tab made active takes it otherwise.
       const back = holdFocus([...contents.values()]);
-      if (id === "list" || id === "details") fold(id, false);
       showGroup(id);
+      foldGroup(groupOf(id), false);
       const panel = panelOf(id);
       if (panel.group.activePanel !== panel) panel.api.setActive();
       back();
       deps.onChange();
     },
     hideGroupOf(id) {
-      const group = groupOf(id);
-      if (!group.api.isVisible) return;
-      group.api.setVisible(false);
-      deps.onChange();
+      hideGroup(groupOf(id));
     },
     conceal(id, instead) {
       const group = groupOf(id);
@@ -717,22 +942,37 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
         group.panels.find((p) => p.id === instead) ??
         group.panels.find((p) => p.id !== id);
       if (other === undefined) {
-        group.api.setVisible(false);
-      } else {
-        const back = holdFocus([...contents.values()]);
-        other.api.setActive();
-        back();
+        hideGroup(group);
+        return;
       }
+      const back = holdFocus([...contents.values()]);
+      other.api.setActive();
+      back();
       deps.onChange();
     },
     groupShown(id) {
-      return groupOf(id).api.isVisible;
+      const group = groupOf(id);
+      return group.api.isVisible && !folds.has(group.id);
     },
     activeIn(id) {
       const active = groupOf(id).activePanel?.id;
       return isDockPanelId(active) ? active : null;
     },
-    fold,
+    fold(id, shut) {
+      foldGroup(groupOf(id), shut);
+    },
+    folded(id) {
+      return folds.has(groupOf(id).id);
+    },
+    badge(id, badge) {
+      if (badge === null) badges.delete(id);
+      else badges.set(id, badge);
+      for (const tab of root.querySelectorAll<HTMLElement>(
+        `.dock-tab[data-panel="${id}"]`,
+      )) {
+        drawBadge(tab, badge);
+      }
+    },
     content: contentOf,
     keyboard(px) {
       if (disposed) return;

@@ -126,13 +126,8 @@ import {
   inspectorDrawing,
 } from "./shell-inspector.js";
 import { createBottomPanel } from "./bottom-panel.js";
-import type { DockHost, mountDockHost } from "./dock-host.js";
-import {
-  dockPanel,
-  docksAt,
-  isBottomPanelId,
-  type DockPanelId,
-} from "./dock-layout.js";
+import type { DockBadge, DockHost, mountDockHost } from "./dock-host.js";
+import { docksAt, isBottomPanelId, type DockPanelId } from "./dock-layout.js";
 import { watchKeyboard } from "./phone-keyboard.js";
 import {
   SHELL_DOCK_LAYOUT,
@@ -360,6 +355,9 @@ export interface EditorShell {
   /** Docked, whether the Files panel shows: its group shown and it the
    *  group's shown tab. Undocked: false. */
   filesShown(): boolean;
+  /** The count on a docked panel's tab (null: none), kept for when the
+   *  panels dock. */
+  badge(id: DockPanelId, badge: DockBadge | null): void;
 }
 
 const BAR_ICON: Readonly<Record<BarAction, ShellIcon>> = {
@@ -855,6 +853,16 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     // Turned sideways, the list the details covered stands beside them.
     const turnedWide = change === "resized" && onPhone && !phone;
     onPhone = phone;
+    // Docked, a side never folds to make room for the other: the 3D view
+    // gives way, and each side folds only when the creator folds it.
+    if (deps.dock !== undefined && docksAt(window.innerWidth)) {
+      if (turnedWide && ui.foldedDocks.tree) {
+        store.dispatch(
+          editorViewActions.dockFolded({ dock: "tree", folded: false }),
+        );
+      }
+      return;
+    }
     const folded = {
       tree: ui.foldedDocks.tree && !turnedWide,
       // A phone's details are a whole sheet, with no head to unfold it by.
@@ -2299,10 +2307,30 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   dockEmpty.className = "dock-empty";
   dockEmpty.textContent =
     "Select a station or an item, in the list or in the view.";
-  /** The bottom panel learns what the docking's own controls did. */
+  /** Each tab's count, for the layout when it docks. */
+  const dockBadges = new Map<DockPanelId, DockBadge>();
+  /** The side folds last carried between the store and the docking: each
+   *  side hears only the other's changes, so two panels sharing a group
+   *  (one fold for both) never undo each other. */
+  let carried = { tree: false, inspector: false };
+  const FOLDING = [
+    ["tree", "list"],
+    ["inspector", "details"],
+  ] as const;
+  /** The bottom panel and the store learn what the docking's own
+   *  controls did. */
   const syncFromDock = () => {
     syncFilesShown();
     if (dockHost === null) return;
+    for (const [dock, id] of FOLDING) {
+      const folded = dockHost.folded(id);
+      if (folded === carried[dock]) continue;
+      carried = { ...carried, [dock]: folded };
+      if (dock === "tree" && !folded) creatorTouchesTree();
+      if (state().editorView.foldedDocks[dock] !== folded) {
+        store.dispatch(editorViewActions.dockFolded({ dock, folded }));
+      }
+    }
     const tab = dockHost.activeIn("problems");
     if (!dockHost.groupShown("problems")) {
       panel.docked({ open: false, tab: "problems" });
@@ -2311,9 +2339,15 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     }
   };
   const foldDocked = () => {
-    const folded = state().editorView.foldedDocks;
-    dockHost?.fold("list", folded.tree);
-    dockHost?.fold("details", folded.inspector);
+    if (dockHost === null) return;
+    for (const [dock, id] of FOLDING) {
+      // Read per side: a fold re-enters through syncFromDock (a shared
+      // group folds both panels), so a value read before it is stale.
+      const folded = state().editorView.foldedDocks[dock];
+      if (folded === carried[dock]) continue;
+      carried = { ...carried, [dock]: folded };
+      dockHost.fold(id, folded);
+    }
   };
   const mountDock = (mount: typeof mountDockHost) => {
     if (dockHost !== null || view === null || !docksAt(window.innerWidth)) {
@@ -2322,6 +2356,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     const host = mount({ box: viewBox, onChange: syncFromDock });
     dockHost = host;
     host.content("details").append(dockEmpty);
+    for (const [id, badge] of dockBadges) host.badge(id, badge);
+    carried = { tree: host.folded("list"), inspector: host.folded("details") };
     foldDocked();
     stopDockFolds = store.subscribe(foldDocked);
     panel.dock({
@@ -2375,21 +2411,13 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       dockHost?.conceal(id, instead);
     },
     reveal(id) {
-      if (dockHost === null) return;
-      const side = dockPanel(id).group;
-      const folded = state().editorView.foldedDocks;
-      if (side === "left" && folded.tree) {
-        creatorTouchesTree();
-        store.dispatch(
-          editorViewActions.dockFolded({ dock: "tree", folded: false }),
-        );
-      }
-      if (side === "right" && folded.inspector) {
-        store.dispatch(
-          editorViewActions.dockFolded({ dock: "inspector", folded: false }),
-        );
-      }
-      dockHost.reveal(id);
+      // The store learns of an unfold from the docking (`syncFromDock`).
+      dockHost?.reveal(id);
+    },
+    badge(id, badge) {
+      if (badge === null) dockBadges.delete(id);
+      else dockBadges.set(id, badge);
+      dockHost?.badge(id, badge);
     },
     show(next, options) {
       view = next;

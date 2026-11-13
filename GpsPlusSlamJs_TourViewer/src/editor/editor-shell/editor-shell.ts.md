@@ -108,9 +108,15 @@ to a station, a story's name in the head takes the focus, selected.
   - `deps.dock?()` - loads `dock-host.ts` (a dynamic import); absent, the
     panels never dock. From `DOCK_MIN_PX` (701 px) wide, while the view
     shows, the panels dock around it; narrower, or on `hide()`, they
-    undock. The folds stay the store's (`foldedDocks`): a folded side
-    hides its group and shows its folded head over the view, so the dock
-    rule and the approach fold keep working. Docked, a selection that
+    undock. A fold is the store's (`foldedDocks`) and the docking's
+    at once: the list's and the details' folds are carried to the groups
+    holding them (`dock-host.ts`'s `fold`, a rail) and back from them
+    (`syncFromDock`), each side hearing only the other's changes, so
+    two panels dragged into one group (one fold for both) never undo
+    each other, and the approach fold keeps working. An unfold from a rail
+    counts as the creator's for the approach. Docked, the dock rule
+    folds no side for the other (the 3D view gives way); only a phone
+    turned sideways still unfolds the list. Docked, a selection that
     appears shows Details over Files, and the Details panel says "Select
     a station or an item, in the list or in the view." while nothing is
     selected;
@@ -166,8 +172,10 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   rule, and after a takeover the folded tree is what they left.
 - `EditorShell.docked()` - whether the panels are docked now;
   `EditorShell.reveal(id)` - docked, shows a panel (`dock-layout.ts`'s ids),
-  unfolding its side in the store first; undocked, nothing (the asset
+  its group unfolded (the store follows); undocked, nothing (the asset
   shelf's toggle reveals the Files panel through it).
+  `EditorShell.badge(id, badge | null)` - the count on a docked panel's
+  tab (the shelf's Files count), kept for when the panels dock.
   `EditorShell.conceal(id, instead?)` - docked, takes a shown panel out of
   sight (`dock-host.ts`'s `conceal`); the shelf's toggle pressed again.
   `EditorShell.filesShown()` - docked, whether the Files panel shows (its

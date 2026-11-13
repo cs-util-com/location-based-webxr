@@ -541,6 +541,7 @@ describe("folding and the phone", () => {
         shown: () => shown,
         reveal: revealDocked,
         hide: vi.fn(),
+        badge: vi.fn(),
       },
     });
     expect($("#tog")?.getAttribute("aria-pressed")).toBe("false");
@@ -567,6 +568,7 @@ describe("folding and the phone", () => {
         shown: () => shown,
         reveal: revealDocked,
         hide: hideDocked,
+        badge: vi.fn(),
       },
     });
     expect($("#tog")?.getAttribute("aria-pressed")).toBe("true");
@@ -576,12 +578,36 @@ describe("folding and the phone", () => {
     expect($("#tog")?.getAttribute("aria-pressed")).toBe("false");
   });
 
+  // Why: docked, the shelf has no rail of its own, so the Files tab carries
+  // its news; the badge goes to the page on every draw, with its name.
+  it("docked, hands the Files tab its badge", () => {
+    rows = [row({ status: "failed", retryable: true })];
+    const badge = vi.fn();
+    const { panel: made } = panel({
+      dock: {
+        active: () => true,
+        shown: () => false,
+        reveal: vi.fn(),
+        hide: vi.fn(),
+        badge,
+      },
+    });
+    expect(badge).toHaveBeenLastCalledWith({
+      count: 1,
+      bad: true,
+      label: "1 file not optimized",
+    });
+    rows = [];
+    made.refresh();
+    expect(badge).toHaveBeenLastCalledWith(null);
+  });
+
   // Why: docked, opening the shelf only asks the page to show the Files
   // panel; a docked page that gave no way to show it would make the toggle
   // a silent no-op, so the docked calls come as one object or not at all.
   it("takes the docked calls only together", () => {
     const partial: Partial<ShelfPanelDeps> = {
-      // @ts-expect-error - docked without its reveal, shown and hide.
+      // @ts-expect-error - docked without its reveal, shown, hide and badge.
       dock: { active: () => true },
     };
     // @ts-expect-error - the docked calls are not single deps.

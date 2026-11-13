@@ -47,6 +47,9 @@ export interface DockPanelSpec {
   readonly group: DockGroup;
   /** Its icon, on its tab and on its group's rail. */
   readonly icon: ShellIcon;
+  /** Its head's own fold button, by selector, where its group shows no
+   *  tab strip unfolded: an unfold from the rail gives the focus there. */
+  readonly fold?: string;
 }
 
 /** Every docked panel, the 3D view first. */
@@ -64,6 +67,7 @@ export const DOCK_PANELS: readonly DockPanelSpec[] = [
     element: "shell-tree",
     group: "left",
     icon: "ul",
+    fold: "#tree-fold",
   },
   {
     id: "details",

@@ -4101,15 +4101,153 @@ body[data-view="3d"] #toasts {
   box-shadow: inset 0 -2px 0 var(--s-accent);
 }
 
-.dockview-theme-tour .dv-default-tab-content {
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+/* A tab (`dock-host.ts`): its panel's icon, title and count. A docked
+ * panel is shown or hidden, never closed: no close button. */
+.dockview-theme-tour .dock-tab {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  height: 100%;
+  padding: 0 10px;
 }
 
-/* A docked panel is shown or hidden, never closed: its element is the
- * page's. */
-.dockview-theme-tour .dv-tab .dv-default-tab .dv-default-tab-action {
+.dockview-theme-tour .dock-tab .i {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.dockview-theme-tour .dock-tab-title {
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.dockview-theme-tour .dock-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--s-accent-bg);
+  color: var(--s-accent-text);
+  font: 10px/1 var(--s-mono);
+}
+
+.dockview-theme-tour .dock-badge.bad {
+  background: color-mix(in srgb, var(--s-warn) 22%, transparent);
+  color: var(--s-warn);
+}
+
+/* A group folded to its rail (`dock-rail.ts`): its tab strip only, the
+ * tabs upright along a side rail, each its icon and count (its title
+ * stays its accessible name); its panel out of the page's tab order. */
+.dockview-theme-tour .dv-groupview.dock-folded > .dv-content-container {
   display: none;
+}
+
+.dockview-theme-tour .dv-groupview-header-vertical .dock-tab {
+  padding: 8px 0;
+}
+
+.dockview-theme-tour .dv-groupview-header-vertical .dock-tab .i {
+  transform: rotate(90deg);
+}
+
+.dockview-theme-tour .dv-groupview-header-vertical .dock-tab-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+/* The fold button, at the strip's end (on a side rail, its top). */
+.dockview-theme-tour .dock-acts {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 2px;
+}
+
+.dockview-theme-tour .dv-groupview-header-vertical .dock-acts {
+  height: auto;
+  padding: 2px 0;
+}
+
+.dockview-theme-tour .dock-fold {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--s-muted);
+}
+
+.dockview-theme-tour .dock-fold:hover {
+  background: var(--s-bg3);
+  color: var(--s-text);
+}
+
+.dockview-theme-tour .dock-fold:focus-visible {
+  outline: 2px solid var(--s-focus);
+  outline-offset: -2px;
+}
+
+/* For a finger: a button the rail's width, and splitters easy to find
+ * and to take - a strip 40 px wide centred on the line, a grip on it. */
+@media (pointer: coarse) {
+  .dockview-theme-tour .dock-fold {
+    width: 40px;
+    height: 40px;
+  }
+
+  .dockview-theme-tour
+    .dv-split-view-container.dv-horizontal
+    > .dv-sash-container
+    > .dv-sash:not(.dv-disabled)::before {
+    position: absolute;
+    inset: 0 -18px;
+    content: "";
+  }
+
+  .dockview-theme-tour
+    .dv-split-view-container.dv-vertical
+    > .dv-sash-container
+    > .dv-sash:not(.dv-disabled)::before {
+    position: absolute;
+    inset: -18px 0;
+    content: "";
+  }
+
+  .dockview-theme-tour
+    .dv-split-view-container
+    > .dv-sash-container
+    > .dv-sash::after {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 4px;
+    height: 28px;
+    margin: -14px 0 0 -2px;
+    border-radius: 2px;
+    background: var(--s-line2);
+    content: "";
+    pointer-events: none;
+  }
+
+  .dockview-theme-tour
+    .dv-split-view-container.dv-vertical
+    > .dv-sash-container
+    > .dv-sash::after {
+    width: 28px;
+    height: 4px;
+    margin: -2px 0 0 -14px;
+  }
 }
 
 #view3d.docked .dock-host {

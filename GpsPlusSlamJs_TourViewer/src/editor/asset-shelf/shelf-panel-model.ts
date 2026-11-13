@@ -372,6 +372,25 @@ export function shelfBadge(
   return busy > 0 ? { count: busy, bad: false } : null;
 }
 
+/** The docked Files tab's badge: shelfBadge plus an accessible name, since
+ *  a bare number says nothing to a screen reader. */
+export interface FilesBadge {
+  readonly count: number;
+  readonly bad: boolean;
+  /** "2 files not optimized" or "optimizing 1 file". */
+  readonly label: string;
+}
+
+export function filesBadge(rows: readonly ShelfRow[]): FilesBadge | null {
+  const badge = shelfBadge(rows);
+  if (badge === null) return null;
+  const files = filesWord(badge.count);
+  return {
+    ...badge,
+    label: badge.bad ? `${files} not optimized` : `optimizing ${files}`,
+  };
+}
+
 /** The phone's pill over the map while the shelf's sheet is closed:
  *  "Optimizing 2 files" while any work, else "1 not optimized"; null when
  *  there is nothing to say. */

@@ -2087,6 +2087,9 @@ function openShelfPanel(open: EditorSession): void {
       reveal: showShelfDocked,
       shown: () => shell.filesShown(),
       hide: hideShelfDocked,
+      badge: (badge) => {
+        shell.badge("files", badge);
+      },
     },
   });
 }

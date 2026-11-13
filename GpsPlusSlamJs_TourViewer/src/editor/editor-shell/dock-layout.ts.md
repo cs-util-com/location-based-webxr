@@ -21,7 +21,10 @@ group, icon }`, the 3D view first. `element` is the adopted page element's id
   (`shell-tree`, `shell-inspector`, `shell-shelf`, `shell-pane-<tab>`), null
   for the 3D view, whose canvas the host moves in. `group` is where it
   starts: `centre`, `left`, `right` or `bottom`. `icon` names the panel's
-  icon in the editor kit's shell set, on its tab and on its rail.
+  icon in the editor kit's shell set, on its tab and on its rail. `fold`
+  (the list's only, `#tree-fold`) is its head's own fold button, where
+  its group shows no tab strip unfolded: an unfold from the rail gives
+  the focus there.
 - `dockPanel(id)` - a spec by id; throws on an unknown id.
   `isDockPanelId(x)` - for ids read back from the library's events.
 - `stripHidden(panelIds)` - whether a group holding those panels hides

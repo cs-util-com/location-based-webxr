@@ -250,15 +250,23 @@ test("a phone held upright keeps its sheets; narrowing undocks", async ({
 });
 
 /**
- * Whether the focus is on the element `selector` finds.
+ * The docked group holding panel `id`'s tab (its strip hidden or not).
  * @param {import("@playwright/test").Page} page
- * @param {string} selector
+ * @param {string} id
  */
-function focusOn(page, selector) {
-  return page.evaluate(
-    (s) => document.activeElement === document.querySelector(s),
-    selector,
+function groupOf(page, id) {
+  return page.locator(
+    `.dock-host .dv-groupview:has(.dock-tab[data-panel="${id}"])`,
   );
+}
+
+/**
+ * The fold button of the group holding panel `id`.
+ * @param {import("@playwright/test").Page} page
+ * @param {string} id
+ */
+function foldOf(page, id) {
+  return groupOf(page, id).locator(".dock-fold");
 }
 
 // Why: the docking library closes a tab's panel on Delete or Backspace,
@@ -311,10 +319,11 @@ test("a docked tab's Delete and Backspace close nothing and delete nothing; the 
   await expect(page.locator(".dock-host #shell-shelf")).toBeVisible();
 });
 
-// Why: folding a side moves its element out of the layout and back; a
-// moved element loses the focus to the page, so a keyboard user would
-// start over from the top after each fold.
-test("a docked side folded and unfolded by the keyboard keeps the focus on its fold button", async ({
+// Why: folding a side to its rail takes its panel out of sight, the
+// button pressed with it; a focus left there is lost to the page, so a
+// keyboard user would start over from the top after each fold. It goes to
+// the rail's unfold button, which keeps it while it unfolds.
+test("a docked side folded and unfolded by the keyboard keeps the focus on a fold button", async ({
   page,
 }) => {
   test.setTimeout(150_000);
@@ -326,14 +335,25 @@ test("a docked side folded and unfolded by the keyboard keeps the focus on its f
     .locator(".pick")
     .click();
   await expect(page.locator("#inspector-body")).toBeVisible();
-  const fold = '#inspector-head [data-act="fold"]';
-  await page.locator(fold).focus();
-  await page.keyboard.press("Enter");
-  await expect(page.locator("#inspector-body")).toBeHidden();
-  expect(await focusOn(page, fold), "folded").toBe(true);
-  await page.keyboard.press("Enter");
-  await expect(page.locator("#inspector-body")).toBeVisible();
-  expect(await focusOn(page, fold), "unfolded").toBe(true);
+  // The list's group shows no tab strip unfolded: its own head's fold
+  // button takes the focus back.
+  for (const [own, id, body, back] of [
+    ['#inspector-head [data-act="fold"]', "details", "#inspector-body", null],
+    ["#tree-fold", "list", "#tree-body", "#tree-fold"],
+  ]) {
+    const rail = foldOf(page, id);
+    await page.locator(own).focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator(body)).toBeHidden();
+    await expect(rail, `${id} folded`).toBeFocused();
+    await expect(rail).toHaveAttribute("aria-expanded", "false");
+    await page.keyboard.press("Enter");
+    await expect(page.locator(body)).toBeVisible();
+    await expect(
+      back === null ? rail : page.locator(back),
+      `${id} unfolded`,
+    ).toBeFocused();
+  }
 });
 
 // Why: the long text writer widens the details while it is open; closed
@@ -369,7 +389,7 @@ test("the details closed out of their writer while folded unfold at the column w
   await expect.poll(async () => (await width()) ?? 0).toBeLessThan(50);
   await writer(false);
   await afterFrames(page, 3);
-  await fold.click();
+  await foldOf(page, "details").click();
   await expect(page.locator("#inspector-body")).toBeVisible();
   await expect
     .poll(async () => Math.abs(((await width()) ?? 0) - (column ?? 0)))
@@ -654,10 +674,15 @@ function dockState(page) {
           ? null
           : [r.x, r.y, r.width, r.height].map(Math.round);
     }
-    // Shown: with an area (a hidden group's strip keeps its boxes at 0).
+    // Shown: with an area and not hidden (a hidden group is sized to
+    // nothing and `visibility: hidden`, its strip keeping its box).
     const shown = (/** @type {Element} */ e) => {
       const r = e.getBoundingClientRect();
-      return r.width > 0 && r.height > 0;
+      return (
+        r.width > 0 &&
+        r.height > 0 &&
+        e.checkVisibility({ visibilityProperty: true })
+      );
     };
     // Each shown strip by its tabs' names (their count badges left out, a
     // count may come or go meanwhile), so a failure says which.
@@ -951,4 +976,281 @@ test("the docked list's head buttons stay inside the list at 210 and at 140 px",
   await page.mouse.up();
   await afterFrames(page, 3);
   expect(await overflow()).toEqual(["width 140"]);
+});
+
+/** A rail's thickness for a mouse and for a finger (`dock-rail.ts`'s
+ *  `RAIL_PX`). */
+const RAIL_PX = 34;
+const TOUCH_RAIL_PX = 44;
+
+/**
+ * Each panel's group's box, by the panel's id: the groups as laid out
+ * now, in ONE round trip.
+ * @param {import("@playwright/test").Page} page
+ * @returns {Promise<Record<string, number[]>>}
+ */
+function groupBoxes(page) {
+  return page.evaluate(() => {
+    /** @type {Record<string, number[]>} */
+    const out = {};
+    for (const tab of document.querySelectorAll(".dock-host .dock-tab")) {
+      const id = /** @type {HTMLElement} */ (tab).dataset["panel"];
+      const group = tab.closest(".dv-groupview");
+      if (id === undefined || group === null) continue;
+      const r = group.getBoundingClientRect();
+      out[id] = [r.x, r.y, r.width, r.height].map(Math.round);
+    }
+    return out;
+  });
+}
+
+/**
+ * Where Files stands against Details: "below" once dragged into a group
+ * of its own under Details, in the right column.
+ * @param {import("@playwright/test").Page} page
+ */
+async function filesBelowDetails(page) {
+  const g = await groupBoxes(page);
+  const files = g["files"];
+  const details = g["details"];
+  if (files === undefined || details === undefined) return "a group missing";
+  if (files[1] < details[1] + details[3] - SASH_PX) return "not below";
+  if (Math.abs(files[0] - details[0]) > 1) return "another column";
+  return "below";
+}
+
+for (const size of [
+  { width: 1280, height: 800 },
+  { width: 1920, height: 1080 },
+  { width: 844, height: 390 },
+]) {
+  const at = `at ${String(size.width)} x ${String(size.height)}`;
+  // Why: a creator arranges the panels by dragging their tabs - beside,
+  // below or into another group - and the 3D view stays the centre: a
+  // tab dropped onto it is refused (it would bury the view behind a
+  // tab), and whatever the arrangement the selection stays in sight.
+  test(`the panels rearrange by their tabs ${at}, the 3D view refusing a tab`, async ({
+    page,
+  }) => {
+    test.setTimeout(150_000);
+    await page.setViewportSize(size);
+    await answerHosts(page);
+    await openSampleIn3d(page);
+    await dockSettled(page, size.width);
+    const host = tabs(page);
+    const files = host.getByRole("tab", { name: "Files", exact: true });
+
+    expect((await dockState(page)).strips, `before ${at}`).toEqual([
+      "DetailsFiles",
+    ]);
+    // Onto the 3D view's middle: refused, nothing moves.
+    const view = await box(page.locator(".dock-pane-view"));
+    await files.dragTo(page.locator(".dock-pane-view"), {
+      targetPosition: { x: view.width / 2, y: view.height / 2 },
+    });
+    await afterFrames(page, 2);
+    expect((await dockState(page)).strips, at).toEqual(["DetailsFiles"]);
+
+    // Files below Details, in the right column.
+    // Details stand behind the Files tab: their group is the target.
+    const column = await box(groupOf(page, "details"));
+    // In the group's bottom zone, clear of the layout's own edge (a drop
+    // there runs Files along the whole layout's foot).
+    await files.dragTo(groupOf(page, "details"), {
+      targetPosition: { x: column.width / 2, y: column.height * 0.85 },
+    });
+    await expect.poll(() => filesBelowDetails(page), at).toBe("below");
+
+    // Problems, from the bottom group into the Details group as a tab.
+    await page.locator('#shell-toggles [data-tab="problems"]').click();
+    const problems = host.getByRole("tab", { name: "Problems" });
+    await expect(problems).toBeVisible();
+    const details = await box(groupOf(page, "details"));
+    await problems.dragTo(groupOf(page, "details"), {
+      targetPosition: { x: details.width / 2, y: details.height / 2 },
+    });
+    await expect
+      .poll(async () => (await dockState(page)).strips, at)
+      .toContain("DetailsProblems");
+    await expect(problems).toHaveAttribute("aria-selected", "true");
+
+    // The 3D view still the centre, the selection framed in its middle.
+    await page
+      .locator("#tree-body .card", { hasText: "The old gate" })
+      .locator(".pick")
+      .click();
+    await page.locator("#view3d").focus();
+    await page.keyboard.press("f");
+    await afterFrames(page, 2);
+    expect(await middleIsCanvas(page), at).toBe(true);
+    await capture(page, test.info().outputPath(`rearranged-${at}.png`));
+  });
+}
+
+for (const size of [
+  { width: 1440, height: 900 },
+  { width: 844, height: 390 },
+]) {
+  const at = `at ${String(size.width)} x ${String(size.height)}`;
+  // Why: a side folded to its rail gives its room to the 3D view - a fold
+  // that left a gap, or a view that did not grow, would leave the
+  // selection framed off its middle - and unfolds at the size it had (at
+  // least a usable one).
+  test(`each side folds to a rail and back ${at}, the 3D view taking the room`, async ({
+    page,
+  }) => {
+    test.setTimeout(150_000);
+    await page.setViewportSize(size);
+    await answerHosts(page);
+    await openSampleIn3d(page);
+    await dockSettled(page, size.width);
+    await page
+      .locator("#tree-body .card", { hasText: "The old gate" })
+      .locator(".pick")
+      .click();
+    await expect(page.locator("#inspector-body")).toBeVisible();
+    await capture(page, test.info().outputPath(`default-${at}.png`));
+    const want = widths(size.width);
+    const top = TOP_PX + LINE_PX;
+    const foot = size.height - BAR_PX;
+    const framed = async (/** @type {string} */ what) => {
+      await page.locator("#view3d").focus();
+      await page.keyboard.press("f");
+      await afterFrames(page, 2);
+      expect(await middleIsCanvas(page), `${what} ${at}`).toBe(true);
+    };
+    const sizeOf = async (
+      /** @type {string} */ id,
+      /** @type {number} */ index,
+    ) => (await groupBoxes(page))[id]?.[index] ?? 0;
+    const viewBox = () => box(page.locator(".dock-pane-view"));
+
+    // The list, by its own head's fold button: a rail at the left edge,
+    // the view from its edge.
+    await page.locator("#tree-fold").click();
+    await expect.poll(() => sizeOf("list", 2), at).toBe(RAIL_PX);
+    await expect(groupOf(page, "list").getByRole("tab")).toBeVisible();
+    await expect
+      .poll(async () => (await viewBox()).x, at)
+      .toBeLessThanOrEqual(RAIL_PX + SASH_PX);
+    await framed("list folded");
+    await capture(page, test.info().outputPath(`folded-left-${at}.png`));
+    await foldOf(page, "list").click();
+    await expect(page.locator("#tree-body")).toBeVisible();
+    await expect
+      .poll(
+        async () =>
+          Math.abs((await sizeOf("list", 2)) - Math.max(200, want.list)),
+        at,
+      )
+      .toBeLessThanOrEqual(1);
+
+    // The details, by their group's fold button: a rail at the right edge.
+    await foldOf(page, "details").click();
+    await expect(page.locator("#inspector-body")).toBeHidden();
+    await expect.poll(() => sizeOf("details", 2), at).toBe(RAIL_PX);
+    await expect
+      .poll(async () => {
+        const v = await viewBox();
+        return size.width - RAIL_PX - (v.x + v.width);
+      }, at)
+      .toBeLessThanOrEqual(SASH_PX);
+    await framed("details folded");
+    await capture(page, test.info().outputPath(`folded-right-${at}.png`));
+    await foldOf(page, "details").click();
+    await expect(page.locator("#inspector-body")).toBeVisible();
+    await expect
+      .poll(
+        async () =>
+          Math.abs((await sizeOf("details", 2)) - Math.max(200, want.column)),
+        at,
+      )
+      .toBeLessThanOrEqual(1);
+
+    // The bottom group: a rail along the bottom bar.
+    await page.locator('#shell-toggles [data-tab="problems"]').click();
+    await expect(page.locator("#shell-pane-problems")).toBeVisible();
+    const opened = await sizeOf("problems", 3);
+    await foldOf(page, "problems").click();
+    await expect(page.locator("#shell-pane-problems")).toBeHidden();
+    await expect.poll(() => sizeOf("problems", 3), at).toBe(RAIL_PX);
+    await expect
+      .poll(async () => {
+        const v = await viewBox();
+        return foot - RAIL_PX - (v.y + v.height);
+      }, at)
+      .toBeLessThanOrEqual(SASH_PX);
+    expect((await viewBox()).y, at).toBeCloseTo(top, 0);
+    await framed("bottom folded");
+    await capture(page, test.info().outputPath(`folded-bottom-${at}.png`));
+    await foldOf(page, "problems").click();
+    await expect(page.locator("#shell-pane-problems")).toBeVisible();
+    await expect
+      .poll(
+        async () =>
+          Math.abs((await sizeOf("problems", 3)) - Math.max(120, opened)),
+        at,
+      )
+      .toBeLessThanOrEqual(1);
+  });
+}
+
+test.describe("by touch", () => {
+  test.use({ hasTouch: true });
+
+  // Why: on a tablet or a phone held sideways the panels are arranged and
+  // folded by a finger: a tab dragged by touch must move, and a rail must
+  // be wide enough for a finger.
+  test("a tab dragged by touch moves, and a tap folds a side to a finger-wide rail", async ({
+    page,
+  }) => {
+    test.setTimeout(150_000);
+    const size = { width: 844, height: 390 };
+    await page.setViewportSize(size);
+    await answerHosts(page);
+    await openSampleIn3d(page);
+    await dockSettled(page, size.width);
+    expect(
+      await page.evaluate(() => matchMedia("(pointer: coarse)").matches),
+    ).toBe(true);
+    const files = await box(
+      tabs(page).getByRole("tab", { name: "Files", exact: true }),
+    );
+    const column = await box(page.locator(".dock-pane-details"));
+    const cdp = await page.context().newCDPSession(page);
+    const from = {
+      x: files.x + files.width / 2,
+      y: files.y + files.height / 2,
+    };
+    const to = {
+      x: column.x + column.width / 2,
+      y: column.y + column.height - 6,
+    };
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [from],
+    });
+    for (let step = 1; step <= 12; step++) {
+      const t = step / 12;
+      await cdp.send("Input.dispatchTouchEvent", {
+        type: "touchMove",
+        touchPoints: [
+          { x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t },
+        ],
+      });
+    }
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchEnd",
+      touchPoints: [],
+    });
+    await expect.poll(() => filesBelowDetails(page)).toBe("below");
+
+    // Half the column now, the details fold their height (a column folds
+    // its width): a rail across the column, a finger high.
+    await foldOf(page, "details").tap();
+    await expect
+      .poll(async () => (await groupBoxes(page))["details"]?.[3])
+      .toBe(TOUCH_RAIL_PX);
+    await capture(page, test.info().outputPath("touch-folded-844x390.png"));
+  });
 });

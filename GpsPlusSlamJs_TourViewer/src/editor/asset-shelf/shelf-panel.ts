@@ -33,6 +33,8 @@ import {
   shapeKey,
   SHELF_KINDS,
   shelfBadge,
+  filesBadge,
+  type FilesBadge,
   shelfChips,
   shelfSummary,
   stateLine,
@@ -169,7 +171,7 @@ export interface ShelfPanelDeps {
    *  page folds the details). */
   readonly makeRoom?: () => void;
   /** The editor's docked panels, where the shelf is the Files panel.
-   *  Absent: the panels never dock. One object, as the four calls are
+   *  Absent: the panels never dock. One object, as the five calls are
    *  right only together. */
   readonly dock?: ShelfDock;
 }
@@ -186,6 +188,9 @@ interface ShelfDock {
   /** Takes the Files panel out of sight (the pressed toggle pressed
    *  again). */
   readonly hide: () => void;
+  /** The Files tab's badge, given on every draw (null: nothing to say);
+   *  docked, the shelf has no rail of its own to carry it. */
+  readonly badge: (badge: FilesBadge | null) => void;
 }
 
 export interface ShelfPanel {
@@ -908,6 +913,7 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     const badge = badgeEl(rows);
     if (badge !== null) toggle.append(badge);
     drawPill(rows, phone);
+    if (deps.dock?.active() === true) deps.dock.badge(filesBadge(rows));
     count.textContent = rows.length > 0 ? String(rows.length) : "";
   }
 
