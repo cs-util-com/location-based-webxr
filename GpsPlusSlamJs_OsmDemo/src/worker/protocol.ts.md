@@ -38,6 +38,11 @@ target }`.
   and out of the RPC client; `failedBuildOf(error)` reads it back.
 - `isWorkerReply(value)`, `isWorkerEnvelope(value)` — guards for the two
   `message` handlers.
+- `WorkerNotice` - `{ notice: "downloadStarted" }`, the worker's one
+  unsolicited message: a tile fetch someone waits on went past the OPFS cache.
+  Never posted for a cache hit or a ring warm. It has no `id`, so
+  `isWorkerReply` rejects it; `isWorkerNotice(value)` guards it. The page's
+  loading overlay names a download only after one (`loading-announcer.ts`).
 
 ## Invariants & assumptions
 

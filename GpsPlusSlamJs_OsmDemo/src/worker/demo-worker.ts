@@ -113,6 +113,7 @@ import {
   type WorkerCallKind,
   type UpdateResult,
   type WorkerCalls,
+  type WorkerNotice,
 } from "./protocol.js";
 
 /** Everything the worker owns, built once on `init`. */
@@ -685,6 +686,12 @@ async function handle<K extends WorkerCallKind>(
       const { staticTiles } = payload as WorkerCalls["init"]["request"];
       const source = createOsmTileSource(store, {
         staticTiles: staticTiles === true,
+        // THE PAGE'S "LOADING" TEXT HANGS ON THIS. A cached tile is local
+        // work and the overlay says so; only a fetch that went past the cache
+        // (never a ring warm) is a download worth naming.
+        onForegroundDownload: () => {
+          postToMain({ notice: "downloadStarted" } satisfies WorkerNotice);
+        },
       });
       const pipeline = new DemoPipeline({ source, table: loaded.table });
       // THE SAME STORE AGAIN, third tenant: DEM tiles are keyed by their full

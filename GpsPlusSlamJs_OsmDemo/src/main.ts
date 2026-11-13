@@ -260,7 +260,10 @@ const el = <T extends HTMLElement>(id: string): T => {
  * main thread), so the tile cache moved with the fetching rather than staying
  * behind.
  */
-function createWorkerClient(onFatal: (message: string) => void) {
+function createWorkerClient(
+  onFatal: (message: string) => void,
+  onDownloadStarted: () => void,
+) {
   return createRpcClient(
     workerTransport(
       new Worker(new URL("./worker/demo-worker.ts", import.meta.url), {
@@ -268,6 +271,7 @@ function createWorkerClient(onFatal: (message: string) => void) {
       }),
       onFatal,
     ),
+    { onNotice: onDownloadStarted },
   );
 }
 
@@ -340,14 +344,22 @@ async function main(): Promise<void> {
   let reportFatal = (message: string): void => {
     status.textContent = `Failed: ${message}`;
   };
-  const worker = createWorkerClient((message) => {
-    // BOTH, and both are needed. `worker.fail` rejects every call already in
-    // flight — a dead worker replies to nothing, so without it `latestOnly` never
-    // settles, its `busy` stays true, and every cycle chaining off it stops running
-    // (raised in review on #228). `reportFatal` is what the user sees.
-    worker.fail(message);
-    reportFatal(message);
-  });
+  const worker = createWorkerClient(
+    (message) => {
+      // BOTH, and both are needed. `worker.fail` rejects every call already in
+      // flight — a dead worker replies to nothing, so without it `latestOnly` never
+      // settles, its `busy` stays true, and every cycle chaining off it stops running
+      // (raised in review on #228). `reportFatal` is what the user sees.
+      worker.fail(message);
+      reportFatal(message);
+    },
+    () => {
+      // A tile someone is waiting on is now being downloaded: the overlay may
+      // name a download from here on (until then a cached refresh says it is
+      // building the map). See `loading-announcer.ts`.
+      loadingAnnouncer.downloadStarted();
+    },
+  );
   // The rule table is loaded INSIDE the worker, so what comes back is only what
   // the UI needs: the category list for the picker and the provenance tier. The
   // table itself stays over there, next to the scorer and `explainCell`, which

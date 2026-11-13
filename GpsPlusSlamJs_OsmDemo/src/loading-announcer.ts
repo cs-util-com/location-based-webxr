@@ -69,8 +69,19 @@ export const ANNOUNCE_DELAY_MS = 1_000;
  */
 const DEFAULT_ARM_TTL_MS = 5_000;
 
-/** What the toast says. Never empty: an empty toast announces nothing to AT. */
+/**
+ * What the surface says while a tile is actually being downloaded. Never
+ * empty: an empty surface announces nothing to AT.
+ */
 export const LOADING_MESSAGE = "Loading OpenStreetMap data…";
+
+/**
+ * What it says while the refresh is only doing local work: reading and
+ * parsing a cached tile, scoring, building the mesh. A cached click outlives
+ * the delay on its own (measured 1.4-2.1 s on a desktop), and naming a
+ * download there was a claim nothing supported.
+ */
+export const BUILDING_MESSAGE = "Building the map…";
 
 export interface LoadingAnnouncerOptions {
   /** The surface to announce on. */
@@ -96,6 +107,13 @@ export interface LoadingAnnouncer {
    * silenced the longest wait in the demo.
    */
   dataArrived(): void;
+  /**
+   * A download someone is waiting on started (the worker's
+   * `downloadStarted` notice). Switches the text to {@link LOADING_MESSAGE}
+   * for the rest of this refresh. It never shows the surface on its own:
+   * WHETHER to announce is still the gesture's and the delay's decision.
+   */
+  downloadStarted(): void;
 }
 
 /**
@@ -113,6 +131,16 @@ export function createLoadingAnnouncer(
   let busy = false;
   /** Tracked rather than asked: the surface has no readable state. */
   let showing = false;
+  /** The text on the surface while `showing`. */
+  let shownMessage: string | undefined;
+  /**
+   * Whether the CURRENT busy period has started a download. Reset on both
+   * edges of `busy`, so a refresh served from the cache is never coloured by
+   * an earlier one. `latestOnly` reports no edge for a supersession, so a
+   * click made during a download keeps the loading text - which is still
+   * true at that moment.
+   */
+  let downloading = false;
   let delayTimer: ReturnType<typeof setTimeout> | undefined;
   let armTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -133,7 +161,22 @@ export function createLoadingAnnouncer(
     cancelDelay();
     if (!showing) return;
     showing = false;
+    shownMessage = undefined;
     toast.clear();
+  }
+
+  /**
+   * CLEAR THEN SHOW, ALWAYS. The surface restarts its bar on a fresh attach,
+   * so a show over an already-visible overlay would otherwise continue the
+   * previous drain instead of starting this wait's own. That includes the
+   * switch to the loading text: a download is a new wait, and the bar's
+   * length describes a download.
+   */
+  function present(message: string): void {
+    toast.clear();
+    toast.show(message);
+    showing = true;
+    shownMessage = message;
   }
 
   /**
@@ -154,12 +197,7 @@ export function createLoadingAnnouncer(
     if (delayTimer !== undefined) return;
     delayTimer = setTimeout(() => {
       delayTimer = undefined;
-      // CLEAR THEN SHOW, ALWAYS. The surface restarts its bar on a fresh
-      // attach, so a show over an already-visible overlay would otherwise
-      // continue the previous drain instead of starting this wait's own.
-      toast.clear();
-      toast.show(LOADING_MESSAGE);
-      showing = true;
+      present(downloading ? LOADING_MESSAGE : BUILDING_MESSAGE);
     }, delayMs);
   }
 
@@ -180,6 +218,7 @@ export function createLoadingAnnouncer(
 
     busyChanged(next) {
       busy = next;
+      downloading = false;
       if (next) {
         if (armed) startDelay();
         return;
@@ -194,6 +233,16 @@ export function createLoadingAnnouncer(
       // serve here - it stays true through four more rings of widening, long
       // after the map visibly filled.
       hide();
+    },
+
+    downloadStarted() {
+      // Outside a refresh nobody is waiting; the worker does not report its
+      // background warm, so this is only a guard.
+      if (!busy) return;
+      downloading = true;
+      // Once per refresh: further tiles of the same wait must not restart the
+      // bar again.
+      if (showing && shownMessage !== LOADING_MESSAGE) present(LOADING_MESSAGE);
     },
   };
 }

@@ -30,11 +30,13 @@
 
 import {
   isMeshBuildChoices,
+  isWorkerNotice,
   isWorkerReply,
   MeshBuildError,
   type WorkerCallKind,
   type WorkerCalls,
   type WorkerEnvelope,
+  type WorkerNotice,
 } from "./protocol.js";
 
 /** The minimum a message channel has to offer. `Worker` satisfies it. */
@@ -83,8 +85,16 @@ export class RpcAbortError extends Error {
   }
 }
 
+export interface RpcClientOptions {
+  /** Receives the worker's unsolicited {@link WorkerNotice}s. */
+  readonly onNotice?: (notice: WorkerNotice) => void;
+}
+
 /** Wraps a transport so calls look like ordinary async functions. */
-export function createRpcClient(transport: Transport): RpcClient {
+export function createRpcClient(
+  transport: Transport,
+  clientOptions: RpcClientOptions = {},
+): RpcClient {
   interface Pending {
     resolve(value: unknown): void;
     reject(error: Error): void;
@@ -99,6 +109,12 @@ export function createRpcClient(transport: Transport): RpcClient {
   let fatal: string | undefined;
 
   transport.listen((data) => {
+    // A notice has no id and answers no call; it is handed on and never
+    // reaches the reply bookkeeping below.
+    if (isWorkerNotice(data)) {
+      clientOptions.onNotice?.(data);
+      return;
+    }
     // GUARDED rather than cast. A worker's message channel is shared with
     // anything else that posts to it (bundler HMR pings, for one), and a reply
     // handler that assumes its own shape crashes on the first foreign message.

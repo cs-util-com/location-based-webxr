@@ -338,3 +338,24 @@ describe("createRpcClient — a fatal worker failure", () => {
     expect(fake.posted).toHaveLength(0);
   });
 });
+
+describe("createRpcClient notices", () => {
+  // WHY: the worker tells the page when a foreground download starts, so the
+  // loading overlay can say "loading" only then. The notice has no id, so it
+  // must reach the handler and leave every pending call untouched.
+  it("hands a notice to onNotice and settles no call", async () => {
+    const fake = fakeTransport();
+    const onNotice = vi.fn();
+    const client = createRpcClient(fake.transport, { onNotice });
+    const promise = client.call("explain", {
+      cell: "abc",
+      category: "walkable",
+    });
+    fake.reply({ notice: "downloadStarted" });
+    expect(onNotice).toHaveBeenCalledWith({ notice: "downloadStarted" });
+    const sent = fake.posted[0];
+    fake.reply({ id: sent?.id, ok: true, value: "done" });
+    await expect(promise).resolves.toBe("done");
+    expect(onNotice).toHaveBeenCalledTimes(1);
+  });
+});

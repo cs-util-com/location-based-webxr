@@ -8,7 +8,10 @@ cancellation that reaches the worker, and cleanup.
 
 ## Public API
 
-- `createRpcClient(transport): RpcClient`
+- `createRpcClient(transport, { onNotice? }): RpcClient`
+  - `onNotice(notice)` receives the worker's unsolicited `WorkerNotice`s
+    (see `protocol.ts.md`). A notice is checked FIRST and handed on; it has
+    no id, so it can never settle or reject a pending call.
   - `call(kind, payload, { signal? })` — resolves with the worker's value, rejects
     with `Error(message)` on `ok: false` (a `MeshBuildError` when the reply
     carries a well-formed `failedBuild`; a malformed one is dropped), rejects

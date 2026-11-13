@@ -44,6 +44,11 @@ Vite detection finds `src/main.ts` through `index.html` but does not follow
     `createOsmTileSource`), the one place the globe's arrival prefetch builds
     them too, so the prefetch warms exactly the cache this worker reads
     (round-5 plan 2026-10-01-0945 §3.6).
+  - **A foreground download is posted as it starts.** The source's
+    `onForegroundDownload` posts the `WorkerNotice` `downloadStarted`
+    (`protocol.ts.md`) whenever a fetch someone waits on goes past the cache.
+    A cache hit and a ring warm post nothing, so the page's overlay can say
+    "Building the map…" for local work and name a download only for a real one.
 - **The DEM provider is composed in [`dem-provider.ts`](../dem-provider.ts.md)**
   (Mapterhorn primary, AWS Terrarium fallback, one shared caching fetch), not
   inline in `init` — `init` needs `navigator.storage` and `OffscreenCanvas`, so

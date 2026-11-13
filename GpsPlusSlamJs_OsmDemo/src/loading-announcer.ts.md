@@ -17,6 +17,10 @@ It owns the timing only; `loading-overlay.ts` owns what the user sees.
 - `LoadingAnnouncer`
   - `arm()` - a user gesture happened.
   - `busyChanged(busy)` - wire to `latestOnly`'s `onBusyChange`.
+  - `downloadStarted()` - wire to the worker's `downloadStarted` notice
+    (via `createRpcClient`'s `onNotice`). Switches the text to
+    `LOADING_MESSAGE` for the rest of the busy period; never shows the
+    surface on its own.
   - `dataArrived()` - wire to the store's snapshot subscription, **guarded**
     (see the example): it means "the content is on screen", and the subscription
     also fires when the snapshot is blanked.
@@ -24,7 +28,7 @@ It owns the timing only; `loading-overlay.ts` owns what the user sees.
     same session: the demo creates the announcer once and never tears it down,
     so its only justification - an AR session boundary - was a scenario that
     does not occur, and its test proved an API nothing calls.
-- Exported: `ANNOUNCE_DELAY_MS` (1 s), `LOADING_MESSAGE`, and the
+- Exported: `ANNOUNCE_DELAY_MS` (1 s), `LOADING_MESSAGE`, `BUILDING_MESSAGE`, and the
   `LoadingSurface` type. The bar's duration lives in `loading-overlay.ts`, since
   it is a property of the surface rather than of this decision.
 - Module-private: `DEFAULT_ARM_TTL_MS` (5 s). Not an oversight - knip fails the
@@ -64,6 +68,23 @@ It owns the timing only; `loading-overlay.ts` owns what the user sees.
   `busy` stays true through four more rings of widening. The falling edge of
   `busy` is the only signal a FAILED refresh produces, since it publishes no
   snapshot.
+- **The text names what is happening.** A refresh that is only doing local
+  work (reading and parsing a cached tile, scoring, the mesh) says
+  `BUILDING_MESSAGE`, "Building the map…"; `LOADING_MESSAGE` appears only
+  once the worker reported a download for this busy period. Owner decision
+  after a measurement: with the area cached, a click made zero requests and
+  still read "Loading OpenStreetMap data…" for 1.4-2.1 s, because local work
+  alone outlasts the 1 s delay. The delay, the latch and both hide paths are
+  unchanged; only the text is chosen.
+  - Known before the delay fires: the loading text is shown directly.
+  - Started after it: clear, then show the loading text, once per busy
+    period. The bar starts over for the download, whose length is what it
+    describes; further tiles do not restart it again.
+  - `downloading` resets on both edges of `busy`. A supersession has no
+    edge, so a click made during a download keeps the loading text, which is
+    still true at that moment.
+  - A download never brings the surface up by itself: not in an unarmed
+    refresh, not after `dataArrived` took it down.
 - **Every show is preceded by a clear.** The surface restarts its bar on a fresh
   attach, so showing over an already-visible overlay would continue the previous
   wait's drain instead of starting this one's. The call ORDER is unit-tested
@@ -102,5 +123,9 @@ delay, silence for an unarmed (automatic) refresh, the immediate hide on data
 arrival, the hide on the busy edge for a failed refresh, no re-show across the
 four later rings, announcing a gesture made while a refresh is already running,
 one gesture never announcing two refreshes, latch expiry swept over three TTLs,
-a second gesture's latch not leaking to an automatic refresh, and the same
-behaviour at 400 / 1000 / 2000 ms.
+a second gesture's latch not leaking to an automatic refresh, the same
+behaviour at 400 / 1000 / 2000 ms, and the announced text: building for a
+cached refresh, the switch to loading when a download starts after the
+announcement, loading directly when it started before, no repeated restart
+per tile, no show from a download alone, and no carry-over to the next
+refresh.

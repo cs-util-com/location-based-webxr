@@ -16,7 +16,7 @@
     (the worker's store: it must start without OPFS). `warn` is where the
     store reports failures (the worker passes the framework logger,
     `worker/osm-store-warn.ts`; the default is `console.warn`).
-  - `createOsmTileSource(store, { fetchImpl?, staticTiles? })` -> the Osm library's
+  - `createOsmTileSource(store, { fetchImpl?, staticTiles?, onForegroundDownload? })` -> the Osm library's
     `createCityTileSource` (`CachingSource` over `OverpassSource`, the one
     construction the globe's city uses too, round-4 plan 2026-10-11-0122 §5)
     with the demo's user agent. Every OsmDemo tile fetch
@@ -24,7 +24,9 @@
     `staticTiles: true` (the worker's init, unless the URL says `tiles=off`)
     the project's static tile host `OSM_TILES_BASE_URL` is asked first and
     any refusal falls back to the race at once (the library's
-    `StaticTileSource`).
+    `StaticTileSource`). `onForegroundDownload(tile)` is told when a fetch
+    someone waits on goes past the cache (the library's `onCacheMiss`,
+    filtered): never for a cache hit, never for a speculative ring warm.
 - Invariants & assumptions:
   - The cache key is the library's `osm/v{OVERPASS_SCHEMA_VERSION}/{tile}`
     and the directory is the framework's `OSM_STORE_DIR` (`osm`). Both are
@@ -46,4 +48,5 @@
   and is the persistent one when OPFS is there (the opener's own tests moved
   to the framework's `open-osm-store.test.ts`), and the
   source writes the key OsmDemo reads while
-  sending the demo's user agent.
+  sending the demo's user agent; a foreground miss is reported, the cache hit
+  after it and a speculative fetch are not.

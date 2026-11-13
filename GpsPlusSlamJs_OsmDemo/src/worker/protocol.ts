@@ -745,6 +745,27 @@ export type WorkerReply =
     };
 
 /**
+ * The worker's one UNSOLICITED message: something the page should know while
+ * a call is still running. It carries no `id`, so `isWorkerReply` rejects it
+ * and it can never settle a pending call.
+ *
+ * `downloadStarted`: a tile fetch someone is waiting on went past the OPFS
+ * cache, so the wait now includes a download. Never posted for a cache hit or
+ * for a background ring warm. The loading overlay names a download only after
+ * this; local work (reading the cache, scoring, the mesh) is announced as
+ * building.
+ */
+export interface WorkerNotice {
+  readonly notice: "downloadStarted";
+}
+
+/** True for a {@link WorkerNotice}. Guards the page's `message` event. */
+export function isWorkerNotice(value: unknown): value is WorkerNotice {
+  if (typeof value !== "object" || value === null) return false;
+  return (value as { notice?: unknown }).notice === "downloadStarted";
+}
+
+/**
  * What the user chose to build, as the worker received it. Every switch that
  * changes the built city adds its field here; the planner keys on all of them.
  */

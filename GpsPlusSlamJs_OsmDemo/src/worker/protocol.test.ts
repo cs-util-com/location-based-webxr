@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { isWorkerEnvelope, type WorkerCallKind } from "./protocol.js";
+import {
+  isWorkerEnvelope,
+  isWorkerNotice,
+  isWorkerReply,
+  type WorkerCallKind,
+} from "./protocol.js";
 
 /**
  * Every call kind, as a `Record` over the union: a kind added to
@@ -36,5 +41,19 @@ describe("isWorkerEnvelope", () => {
     expect(isWorkerEnvelope({ id: 1, kind: "abort" })).toBe(false);
     expect(isWorkerEnvelope({ id: 1, kind: "abort", target: 3 })).toBe(true);
     expect(isWorkerEnvelope(null)).toBe(false);
+  });
+});
+
+describe("isWorkerNotice", () => {
+  // WHY: a notice is the worker's one unsolicited message (a foreground tile
+  // download started). It must never be mistaken for a reply, or it would
+  // settle some pending call, and a reply must never be mistaken for a notice.
+  it("accepts a download notice and nothing a reply could be", () => {
+    const notice = { notice: "downloadStarted" };
+    expect(isWorkerNotice(notice)).toBe(true);
+    expect(isWorkerReply(notice)).toBe(false);
+    expect(isWorkerNotice({ id: 1, ok: true, value: undefined })).toBe(false);
+    expect(isWorkerNotice({ notice: "somethingElse" })).toBe(false);
+    expect(isWorkerNotice(null)).toBe(false);
   });
 });
