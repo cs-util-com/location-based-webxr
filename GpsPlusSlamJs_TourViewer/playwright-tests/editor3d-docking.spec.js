@@ -589,12 +589,14 @@ test("a docked panel hidden by its group's other tab keeps its scroll, its half-
 
 // Why: the list shares no group at first, but a tab dragged onto it makes
 // it one tab of two; shown again after the other, the list must keep the
-// station unfolded and where it was scrolled.
+// station unfolded and where it was scrolled. A short desk window, so the
+// list scrolls: not 500 px or less, where a phone's one group holds the
+// list and Files as tabs from the start.
 test("the list made a tab beside Files keeps its folds and its scroll across a tab switch", async ({
   page,
 }) => {
   test.setTimeout(150_000);
-  await page.setViewportSize({ width: 1024, height: 480 });
+  await page.setViewportSize({ width: 1024, height: 520 });
   await answerHosts(page);
   await openSampleIn3d(page);
   const host = tabs(page);
@@ -615,7 +617,7 @@ test("the list made a tab beside Files keeps its folds and its scroll across a t
   await list.click();
   await expect(page.locator("#tree-body")).toBeVisible();
   const room = await markScroller(page, ".dock-pane-list");
-  expect(room, "the list scrolls at 1024 x 480").not.toBeNull();
+  expect(room, "the list scrolls at 1024 x 520").not.toBeNull();
   const at = await scrollProbe(page, Math.min(80, room ?? 0));
   expect(at).toBeGreaterThan(0);
 

@@ -430,12 +430,13 @@ const PHONE_GROUP =
 
 // The panel eases its width (a 0.16 s transition), so a size read a frame
 // or two after a resize can land mid-way: wait until it has no animation
-// left.
+// left. A shelf out of the page (its tab not shown) has none.
 async function shelfSettled(page) {
   await afterFrames(page, 2);
-  await page.waitForFunction(
-    () => document.getElementById("shell-shelf")?.getAnimations().length === 0,
-  );
+  await page.waitForFunction(() => {
+    const shelf = document.getElementById("shell-shelf");
+    return shelf === null || shelf.getAnimations().length === 0;
+  });
 }
 
 // The positions and gaps are the chosen prototype's

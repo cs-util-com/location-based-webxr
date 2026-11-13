@@ -516,6 +516,11 @@ test("over a keyboard every field in use stays in sight, at every size, docked",
   for (const size of KEYBOARD_SIZES) {
     await page.setViewportSize(size);
     await dockSettled(page, size.width);
+    // A turn lays the phone's layout out again: the details shown by
+    // their tab.
+    if (size.width <= 700 || size.height <= 500) {
+      await tab(page, "Details").click();
+    }
     lost.push(
       ...(await outOfSight(
         page,
@@ -552,31 +557,39 @@ test("the radius slider writes its number, one step in the history", async ({
 /**
  * A finger on the page by the browser's own touch input (CDP), so the
  * page gets real pointer events of type "touch": down at `from`, moved
- * by `dx`, `dy` in `steps`, then up. Few steps on purpose: a slow
- * machine spaces the events far apart, and a swipe must read as a scroll
- * by how far the finger moved, not by how long it took (the 250 ms hold
- * counts only the time the finger rested before it moved).
+ * by `dx`, `dy` in `steps`, then up. Each event carries its own time,
+ * `stepMs` after the one before (as a quick finger's, 16 ms): a loaded
+ * machine delivers them far apart, and the strip's rule reads the events'
+ * times (the 250 ms hold), so unstamped a busy test machine turned a quick
+ * swipe into a held drag.
  * @param {import("@playwright/test").CDPSession} cdp
  * @param {{ x: number, y: number }} from
  * @param {number} dx
  * @param {number} dy
  * @param {number} [steps]
+ * @param {number} [stepMs]
  */
-async function swipe(cdp, from, dx, dy, steps = 3) {
+async function swipe(cdp, from, dx, dy, steps = 3, stepMs = 16) {
+  // CDP takes seconds since the epoch; the page's events get these times.
+  const start = Date.now() / 1000;
+  const at = (/** @type {number} */ n) => start + (n * stepMs) / 1000;
   await cdp.send("Input.dispatchTouchEvent", {
     type: "touchStart",
     touchPoints: [from],
+    timestamp: at(0),
   });
   for (let step = 1; step <= steps; step++) {
     const t = step / steps;
     await cdp.send("Input.dispatchTouchEvent", {
       type: "touchMove",
       touchPoints: [{ x: from.x + dx * t, y: from.y + dy * t }],
+      timestamp: at(step),
     });
   }
   await cdp.send("Input.dispatchTouchEvent", {
     type: "touchEnd",
     touchPoints: [],
+    timestamp: at(steps + 1),
   });
 }
 

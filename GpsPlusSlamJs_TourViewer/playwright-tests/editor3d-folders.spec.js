@@ -438,11 +438,12 @@ for (const view of VIEWS) {
     await card
       .locator(`.gfolder[data-plainfolder="yard"] button.fname`)
       .click();
+    // A phone (upright or on its side) shows the folder's details in the
+    // list's place on a row's tap: the tree again first.
+    await unfold(page);
     await expect(
       card.locator('.kid.infolder.ctx[data-select="y"]'),
     ).toHaveCount(1);
-    // A phone shows the scene on a row's tap: the tree again.
-    await unfold(page);
     const at = await layoutOf(page, [...rows, ...icons], band);
     const [folderRow, kidRow, freeRow] = rows.map((s) => boxIn(at, s));
     const [folderIcon, kidIcon, freeIcon] = icons.map((s) => boxIn(at, s));

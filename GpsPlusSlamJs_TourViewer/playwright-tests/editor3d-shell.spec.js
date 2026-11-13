@@ -1124,10 +1124,12 @@ for (const { size, root } of [
     // new station's details cover the list, the back arrow clears the
     // selection) so the Enter makes a choice.
     await page.locator("#tree-add").click();
-    await expect(page.locator("#tree-body .card")).toHaveCount(4);
-    if (size.width <= 700) {
+    if (phone) {
+      // The new station's details stand in the list's place.
       await page.locator('#inspector-head [data-act="back"]').click();
+      await expect(page.locator("#tree-body .card")).toHaveCount(4);
     } else {
+      await expect(page.locator("#tree-body .card")).toHaveCount(4);
       await page.locator("#tree-body .card > .head").first().click();
     }
     const toggle = page.locator('#shell-toggles [data-tab="problems"]');
