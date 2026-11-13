@@ -186,12 +186,14 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
 - `EditorShell.docked()` - whether the panels are docked now;
   `EditorShell.reveal(id)` - docked, shows a panel (`dock-layout.ts`'s ids),
   its group unfolded (the store follows); undocked, nothing (the asset
-  shelf's toggle reveals the Files panel through it). The shell itself reveals the details when they come into sight and on
-  every NEW selection (one compared with the selection last drawn, so a
-  redraw of the same one leaves the creator's tab alone): on a phone the
-  list and the details share one group, so a pick in the list must bring
-  the details forward. Not while their group is folded, and not while the
-  Select mode ticks rows in the list.
+  shelf's toggle reveals the Files panel through it). The shell itself reveals the details when they come into sight, and on
+  a NEW selection (one compared with the selection last drawn, so a
+  redraw of the same one leaves the creator's tab alone) while the list is
+  the tab in front of them: on a phone the list and the details share one
+  group, so a pick in the list must bring the details forward. Another
+  tab in front (Files) stays: a new pick draws the details behind it. Not
+  while their group is folded, and not while the Select mode ticks rows
+  in the list.
   `EditorShell.badge(id, badge | null)` - the count on a docked panel's
   tab (the shelf's Files count), kept for when the panels dock.
   `EditorShell.conceal(id, instead?)` - docked, takes a shown panel out of

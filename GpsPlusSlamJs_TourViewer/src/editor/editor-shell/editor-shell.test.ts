@@ -2411,7 +2411,7 @@ describe("docked folds and counts", () => {
       badge: vi.fn(),
       content: () => document.createElement("div"),
       groupShown: () => !shut,
-      activeIn: () => null,
+      activeIn: vi.fn((_id: string): string | null => null),
       conceal: vi.fn(),
       hidePane: vi.fn(),
       restored: () => kept,
@@ -2467,15 +2467,21 @@ describe("docked folds and counts", () => {
   // group), a tap on a row must bring the details forward, and so must a
   // tap on another row while the list is the tab in front. The details'
   // own draw unhides them, so a check made after it never saw them hidden
-  // and the details stayed behind the list.
-  it("a selection, and a new one, bring the details forward", async () => {
+  // and the details stayed behind the list. Another tab in front (Files at
+  // a desk) stays there for a new selection: the picks draw the details
+  // behind it.
+  it("a selection, and a new one from the list in front, bring the details forward", async () => {
     const { host, shell, select } = await docked();
     select("station:a");
     expect(host.reveal).toHaveBeenLastCalledWith("details");
     host.reveal.mockClear();
     select("station:a");
     expect(host.reveal).not.toHaveBeenCalled();
+    host.activeIn.mockReturnValue("files");
     select("station:b");
+    expect(host.reveal).not.toHaveBeenCalled();
+    host.activeIn.mockReturnValue("list");
+    select("station:a");
     expect(host.reveal).toHaveBeenLastCalledWith("details");
     shell.hide();
   });

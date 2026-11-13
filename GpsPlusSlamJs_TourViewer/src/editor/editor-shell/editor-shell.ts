@@ -849,17 +849,19 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     // A phone ticking rows in the Select mode keeps its sheet the list.
     inspector.root.hidden =
       sheetModel(model) === null || shownSheet(model) === "tree";
-    // Docked, a selection shows its details over the files beside them
-    // (and over the list, where the two share a group: a phone's), a new
-    // one too; ticking rows in the Select mode keeps the list there.
+    // Docked, a selection shows its details over the files beside them.
+    // Where the list shares their group (a phone's) and is in front, a
+    // new selection from it does too; ticking rows in the Select mode
+    // keeps the list there. Another tab in front (Files) stays for a new
+    // selection: it draws the details behind it.
+    const listInFront =
+      dockHost !== null && dockHost.activeIn("details") === "list";
     if (
       dockHost !== null &&
-      (wasHidden || newSelection) &&
+      (wasHidden || (newSelection && listInFront)) &&
       !inspector.root.hidden &&
       !state().editorView.foldedDocks.inspector &&
-      !(
-        state().editorView.selectMode && dockHost.activeIn("details") === "list"
-      )
+      !(state().editorView.selectMode && listInFront)
     ) {
       dockHost.reveal("details");
     }
