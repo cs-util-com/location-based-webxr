@@ -759,8 +759,10 @@ test.describe("the location picker", () => {
     // the URL to remember. MapControls pans with the primary button.
     await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
     await page.mouse.down();
+    // Five intermediate moves, not twelve: each move costs several frames on a
+    // software-rendered runner, and the pan still ends at the same point.
     await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.35, {
-      steps: 12,
+      steps: 5,
     });
     await page.mouse.up();
 

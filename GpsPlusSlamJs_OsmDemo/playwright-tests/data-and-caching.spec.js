@@ -189,10 +189,13 @@ test.describe("a superseded refresh", () => {
     const drag = async () => {
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
       await page.mouse.down();
+      // Five intermediate moves, not seventeen: each move costs several
+      // frames on a software-rendered runner, and the pan still covers the
+      // same 200 px (damping carries the rest after the button is released).
       await page.mouse.move(
         box.x + box.width / 2 - 200,
         box.y + box.height / 2,
-        { steps: 17 },
+        { steps: 5 },
       );
       await page.mouse.up();
     };
