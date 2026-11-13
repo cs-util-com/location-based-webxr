@@ -289,11 +289,16 @@ export function mountedWorldParts(): WorldPart[] {
 
 const viewerLocal = new Vector3();
 
+function isCamera(object: Object3D): object is Camera {
+  return (object as Partial<Camera>).isCamera === true;
+}
+
 /**
  * Every camera frame (`main.ts`): each of `parts` shown under a
  * station's content group of `scene` (`shownIn`) and having an
  * `update` is given the page clock (`nowMs`, as seconds) and the world
- * position of `viewer` (the camera) in its object's parent frame. No
+ * position of `viewer` (the camera) in its object's parent frame, and
+ * `viewer` itself as the frame's `camera` when it is one. No
  * scene or no camera: nothing is ticked.
  */
 export function tickWorldParts(
@@ -312,6 +317,7 @@ export function tickWorldParts(
     part.update({
       seconds,
       viewer: [viewerLocal.x, viewerLocal.y, viewerLocal.z],
+      ...(isCamera(viewer) ? { camera: viewer } : {}),
     });
   }
 }

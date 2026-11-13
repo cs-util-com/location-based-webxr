@@ -88,8 +88,8 @@ afterEach(() => {
 
 describe("pictureWorld", () => {
   it("stands nothing for the views drawn elsewhere or not at all", () => {
-    // The plane is the renderer's own; the card stands nothing; the
-    // viewpoint views are drawn as a plane until their overlays stand.
+    // The plane is the renderer's own; the card stands nothing; a
+    // viewpoint view without a viewpoint is drawn as a plane.
     for (const view of [
       "plane",
       "card",

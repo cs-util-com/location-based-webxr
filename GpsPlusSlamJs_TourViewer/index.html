@@ -4220,6 +4220,42 @@
           max-width: 620px;
         }
       }
+      /* Then and now's slider (kinds/picture/then-now-slider.ts), on the
+         page's screen while a visitor stands lined up with the picture. */
+      .then-now-slider {
+        display: grid;
+        gap: 8px;
+        padding: 12px 14px;
+        border-radius: 14px;
+        background: rgb(19 16 13 / 92%);
+        color: #f4ede1;
+        box-shadow: 0 10px 28px rgb(0 0 0 / 40%);
+      }
+      .then-now-words {
+        display: flex;
+        gap: 10px;
+        align-items: baseline;
+        font-size: 0.9rem;
+        line-height: 1.35;
+      }
+      .then-now-year {
+        color: #e9b872;
+        font-weight: 600;
+        font-size: 1.1rem;
+      }
+      .then-now-row {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        gap: 10px;
+        align-items: center;
+        font-size: 0.8rem;
+        color: #bcb09c;
+      }
+      .then-now-row input {
+        width: 100%;
+        min-height: 32px;
+        accent-color: #e9b872;
+      }
     </style>
   </head>
   <body class="page">

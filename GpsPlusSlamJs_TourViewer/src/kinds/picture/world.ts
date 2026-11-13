@@ -1,7 +1,8 @@
 /**
  * A picture's part in the world, behind the one world door
  * (`world-part.ts`): a framed print (`framed.ts`) or a cut-out standing on
- * the ground (`cutout.ts`), in the editor and in play alike. A tap in play
+ * the ground (`cutout.ts`), in the editor and in play alike; a view seen
+ * from a viewpoint is `viewpoint-world.ts`'s part. A tap in play
  * opens the picture's sheet on the page's screen (`picture-sheet.ts`): a
  * framed print's with the picture, a cut-out's with its words only.
  *
@@ -14,10 +15,8 @@
  */
 
 import type { TourPictureBlock } from "gps-plus-slam-app-framework/ar/tour-kinds";
-import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
-import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
 import { disposeObject3D } from "gps-plus-slam-app-framework/visualization/three-dispose";
-import { Group, SRGBColorSpace, type Object3D, type Texture } from "three";
+import { Group, type Object3D, type Texture } from "three";
 
 import { markPlaceScale } from "../../placement/place-scale.js";
 import type { WorldEnv, WorldPart } from "../../world-part.js";
@@ -27,7 +26,9 @@ import {
   canvasPicturePainters,
   type PicturePainters,
 } from "./picture-paint.js";
+import { decodePicture, pictureAspect } from "./picture-decode.js";
 import { buildPictureSheet } from "./picture-sheet.js";
+import { viewpointWorld } from "./viewpoint-world.js";
 
 /** What the part decodes and paints with (fakes in unit tests). */
 export interface PictureWorldDeps {
@@ -37,28 +38,10 @@ export interface PictureWorldDeps {
   readonly painters?: PicturePainters;
 }
 
-async function decodePicture(blob: Blob): Promise<Texture | null> {
-  const texture = await decodeFrameTexture(blob, 2, {
-    maxPixels: TOUR_MAX_IMAGE_PIXELS,
-  });
-  if (texture !== null) texture.colorSpace = SRGBColorSpace;
-  return texture;
-}
-
-/** The texture's height over its width; 1 when it states no size. */
-function aspectOf(texture: Texture): number {
-  const image = texture.image as
-    { readonly width?: unknown; readonly height?: unknown } | null | undefined;
-  const w = image?.width;
-  const h = image?.height;
-  return typeof w === "number" && typeof h === "number" && w > 0 && h > 0
-    ? h / w
-    : 1;
-}
-
 /**
- * `block`'s part: null for a view this file does not stand (the plane,
- * which the renderer draws itself, the card, the viewpoint views). Its
+ * `block`'s part: null for a view no part stands (the plane, which the
+ * renderer draws itself, the card, a viewpoint view without a viewpoint,
+ * drawn as a plane); a viewpoint view's is `viewpointWorld`'s. Its
  * `ready` settles once the look stands and rejects when the image cannot
  * be read or decoded; the renderer then takes the part out.
  */
@@ -67,7 +50,13 @@ export function pictureWorld(
   env: WorldEnv,
   deps: PictureWorldDeps = {},
 ): WorldPart | null {
-  if (block.view !== "framed" && block.view !== "cutout") return null;
+  if (block.view !== "framed" && block.view !== "cutout") {
+    return viewpointWorld(
+      block,
+      env,
+      deps.decode === undefined ? {} : { decode: deps.decode },
+    );
+  }
   const view = block.view;
   const decode = deps.decode ?? decodePicture;
   const object = new Group();
@@ -95,7 +84,7 @@ export function pictureWorld(
         return;
       }
       const painters = deps.painters ?? canvasPicturePainters();
-      const aspect = aspectOf(texture);
+      const aspect = pictureAspect(texture);
       let built: { root: Group; tapTarget: Group };
       if (view === "framed") {
         built = buildFramedLook(

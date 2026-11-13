@@ -11,9 +11,10 @@ picture's sheet (`picture-sheet.ts`) on the page's screen.
 ## Public API
 
 - `pictureWorld(block, env, deps?) -> WorldPart | null`
-  - null for `plane` (the renderer draws it itself), `card` (stands
-    nothing) and the views shown from a viewpoint (drawn as a plane at the
-    pose until their overlays stand).
+  - the views shown from a viewpoint are `viewpoint-world.ts`'s part
+    (`viewpointWorld`); null for one without a viewpoint.
+  - null for `plane` (the renderer draws it itself) and `card` (stands
+    nothing).
   - `object` - a group the renderer places and turns at the block's pose;
     the look lands in it once the image is read and decoded, built at
     `PICTURE_REFERENCE_WIDTH_M` and scaled uniformly by

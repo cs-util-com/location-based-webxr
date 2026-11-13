@@ -440,12 +440,20 @@ const LONG_TEXT_WORLD_VIEWS: ReadonlySet<string> = new Set([
   "captions",
 ]);
 
-/** The picture views drawn as a plane at the block's pose: `plane`, and
- *  the views shown from a viewpoint, until their overlays stand. */
-const PICTURE_PLANE_VIEWS: ReadonlySet<string> = new Set([
-  "plane",
-  ...TOUR_PICTURE_VIEWPOINT_VIEWS,
-]);
+const VIEWPOINT_VIEWS: ReadonlySet<string> = new Set(
+  TOUR_PICTURE_VIEWPOINT_VIEWS,
+);
+
+/** Whether a picture in `view` is drawn as a plane at its pose: `plane`,
+ *  and a viewpoint view of a picture without a viewpoint (the format
+ *  reads one so); a viewpoint view with one goes to the world door. */
+function drawnAsPlane(block: TourBlock, view: string): boolean {
+  if (block.kind !== "picture") return false;
+  return (
+    view === "plane" ||
+    (VIEWPOINT_VIEWS.has(view) && block.viewpoint === undefined)
+  );
+}
 
 /** What a long text's world view draws: the reading sign for `reading`
  *  and a visitor's `captions` (the strip itself is the page's), the
@@ -460,9 +468,7 @@ function longTextDrawnAs(view: string): "reading" | "lectern" {
  * caller comparing two views can tell whether anything drawn changed.
  */
 export function drawnKindOf(block: TourBlock, view: string): string {
-  if (block.kind === "picture" && PICTURE_PLANE_VIEWS.has(view)) {
-    return "plane";
-  }
+  if (drawnAsPlane(block, view)) return "plane";
   return block.kind === "longText" && LONG_TEXT_WORLD_VIEWS.has(view)
     ? longTextDrawnAs(view)
     : view;
@@ -518,7 +524,7 @@ function drawnBlock(
   if (block.kind === "longText" && LONG_TEXT_WORLD_VIEWS.has(block.view)) {
     return longTextOf(block);
   }
-  if (block.kind === "picture" && PICTURE_PLANE_VIEWS.has(block.view)) {
+  if (block.kind === "picture" && drawnAsPlane(block, block.view)) {
     return {
       id: block.id,
       as: "plane",
