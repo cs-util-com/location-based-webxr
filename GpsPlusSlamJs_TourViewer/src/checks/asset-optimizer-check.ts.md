@@ -19,4 +19,4 @@
 
 ## Tests
 
-`asset-optimizer-check.test.ts`: determinism, the sound shapes, the WAV header and samples, SSIM of the same and of damaged pictures, a known shift found either way. The e2e `playwright-tests/editor-asset-optimizers.spec.js` uses them on the shipped optimizers.
+`asset-optimizer-check.test.ts`: determinism, the sound shapes, the WAV header and samples, SSIM of the same and of damaged pictures, a known shift found either way. The e2e `playwright-tests/editor-asset-optimizers.spec.js` uses them on the shipped optimizers, next to the real samples in `playwright-tests/fixtures/asset-optimizer/` (the real files carry the size and quality measurements; the generated ones pin exact lengths over sample rates and the long-input timings).
