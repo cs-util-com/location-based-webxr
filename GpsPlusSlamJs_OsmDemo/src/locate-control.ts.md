@@ -61,9 +61,9 @@ altitude, altitudeAccuracy, heading, speed, timestamp }`.
   to a screen reader and nothing on touch (where `title` never appears). The four
   states now drive THREE channels: `data-state` for the CSS (a pulsing pin is the
   in-progress state `CLAUDE.md` requires), `title` + `aria-label` + `aria-busy`
-  for the wording and for AT, and the status line for the failures. The caller toasts
-  them, so a failure is never written into something hidden (DEC-U10, which
-  retired DEC-R2-15's expanding header).
+  for the wording and for AT, and the caller's `onError` for the failures. The
+  caller toasts them, so a failure is never written into something hidden (the
+  header that once expanded on an error is gone).
 - **The old button changed SIZE when it failed** — "my location" to "location
   permission denied". A fixed square cannot.
 
