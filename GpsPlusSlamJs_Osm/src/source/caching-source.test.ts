@@ -598,6 +598,34 @@ describe("onCacheMiss - who went past the cache, and why", () => {
     expect(onCacheMiss).toHaveBeenCalledTimes(1);
   });
 
+  it("is not called for a caller aborted during the cache probe", async () => {
+    // A caller that was aborted while the store was still being read never
+    // waits on a download, so reporting it would put a notice about nobody's
+    // wait into whatever refresh comes next.
+    let releaseGet: () => void = () => {};
+    class HeldStore extends MemoryBlobStore {
+      override async get(key: string) {
+        await new Promise<void>((resolve) => {
+          releaseGet = resolve;
+        });
+        return super.get(key);
+      }
+    }
+    const onCacheMiss = vi.fn();
+    const cache = new CachingSource(new CountingSource(), new HeldStore(), {
+      onCacheMiss,
+    });
+    const controller = new AbortController();
+    const pending = cache
+      .fetchTile(TILE, { signal: controller.signal })
+      .catch(() => undefined);
+    await settle();
+    controller.abort();
+    releaseGet();
+    await pending;
+    expect(onCacheMiss).not.toHaveBeenCalled();
+  });
+
   it("a throwing listener does not cost the caller its tile", async () => {
     const cache = new CachingSource(
       new CountingSource(),

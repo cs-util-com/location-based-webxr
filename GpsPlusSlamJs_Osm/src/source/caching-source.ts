@@ -152,6 +152,20 @@ export class CachingSource implements OsmDataSource {
     });
   }
 
+  /**
+   * Tells `onCacheMiss` that a caller went past the cache. Not for a caller
+   * aborted during the probe: it never waits on the download, and its notice
+   * would land in whatever runs next.
+   */
+  private reportMiss(tile: string, options: EnsureOptions): void {
+    if (options.signal?.aborted === true) return;
+    try {
+      this.onCacheMiss?.(tile, { speculative: options.speculative === true });
+    } catch {
+      // A broken listener must not cost the caller its tile.
+    }
+  }
+
   async ensureTile(
     tile: string,
     options: EnsureOptions = {},
@@ -188,11 +202,7 @@ export class CachingSource implements OsmDataSource {
     } else {
       this.stats.misses++;
     }
-    try {
-      this.onCacheMiss?.(tile, { speculative: options.speculative === true });
-    } catch {
-      // A broken listener must not cost the caller its tile.
-    }
+    this.reportMiss(tile, options);
 
     // THIS is the layer that actually dedups in the demo's wiring, and the
     // joiner copy has to be here rather than only in the inner source. This

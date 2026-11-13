@@ -63,7 +63,9 @@ Cache-first decorator around any `OsmDataSource`, backed by an injected
   `fetchAndStore` -> the inner source.
 - **`onCacheMiss` reports a caller that goes past the cache** (missing,
   unreadable or stale tile), once per such caller and before the inner source
-  is asked, with that caller's own `speculative` flag. A foreground caller
+  is asked, with that caller's own `speculative` flag: the caller now waits
+  on the inner source. A caller whose signal was aborted during the probe is
+  not reported, because it never waits on that download. A foreground caller
   that joins a background warm already in flight is reported as foreground:
   it is waiting on that download too. Never called for a hit, so an app can
   tell a download from local work (OsmDemo's loading overlay does exactly
@@ -80,7 +82,8 @@ regression and both schema-version guards), cache-first behaviour, staleness
 policy, the rate-limit fallback and its two negative cases, five corrupt-entry
 shapes plus a throwing store, eviction, decorator transparency, and
 `onCacheMiss` (hit silent, miss before the inner call, the speculative flag, a
-foreground joiner, a stale refetch, a throwing listener).
+foreground joiner, a stale refetch, a caller aborted during the probe, a
+throwing listener).
 
 ## `timings` — and the two rules a reader would not guess
 
