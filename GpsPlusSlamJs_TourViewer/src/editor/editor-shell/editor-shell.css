@@ -3452,11 +3452,14 @@ body[data-view="3d"] #view3d .view3d-canvas {
   }
 }
 
-
 /* A story's steps as cards (the step cards prototype): a head to open the
    card in place (on a phone, to go to the step), the answers with where
    each leads as a chip, the loop warning with its fix, and the open
    card's fields under them. */
+.scards {
+  padding: 0 10px;
+}
+
 .scards > .note {
   margin: 2px 0 10px;
 }
@@ -3536,6 +3539,7 @@ body[data-view="3d"] #view3d .view3d-canvas {
 }
 
 .scard .ttl {
+  padding: 0;
   overflow: hidden;
   color: #f0f1f3;
   font-size: 13px;
@@ -3719,9 +3723,10 @@ body[data-view="3d"] #view3d .view3d-canvas {
 
 /* A story's preview (story-preview.ts): the visitor's panel in a dialog
    over the view; the whole screen on a phone. */
+/* Over the top bar and the bottom bar (900), under nothing it opens. */
 .spv {
   position: fixed;
-  z-index: 60;
+  z-index: 950;
   inset: 48px auto 24px 50%;
   display: flex;
   flex-direction: column;
@@ -3787,7 +3792,35 @@ body[data-view="3d"] #view3d .view3d-canvas {
 }
 
 .spv .stitle {
-  font-size: 18px;
+  font-family: inherit;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+/* Its buttons are the dialog's own, not the inspector's full-width rows. */
+.spv .act {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  width: auto;
+  min-height: 32px;
+  padding: 5px 12px;
+  border: 1px solid var(--s-line2);
+  border-radius: 6px;
+  background: var(--s-bg3);
+  color: var(--s-text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.spv .act:hover {
+  border-color: var(--s-muted);
+}
+
+.spv .spvacts .act[data-spv="continue"] {
+  border-color: var(--s-accent);
 }
 
 .spv .speaker {

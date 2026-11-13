@@ -112,6 +112,17 @@ for (const size of SIZES) {
       "ends the story",
     ]);
     await expect(inspector.locator(".scard.bad")).toHaveCount(0);
+    // The cards sit inside the details with a margin on both sides.
+    const panel = await inspector.boundingBox();
+    const first = await cards.nth(0).boundingBox();
+    expect(panel).not.toBeNull();
+    expect(first).not.toBeNull();
+    if (panel !== null && first !== null) {
+      expect(first.x - panel.x).toBeGreaterThanOrEqual(8);
+      expect(
+        panel.x + panel.width - (first.x + first.width),
+      ).toBeGreaterThanOrEqual(8);
+    }
 
     // A card opens in place on a desktop; on a phone it is the step.
     const storyId = await selected(page);
@@ -155,6 +166,16 @@ for (const size of SIZES) {
       expect(box.x + box.width).toBeLessThanOrEqual(size.width + 0.5);
       if (size.phone) expect(box.width).toBeCloseTo(size.width, 0);
     }
+    // Nothing of the editor covers it: its Close is what a tap there hits.
+    const close = preview.getByRole("button", { name: "Close" });
+    expect(
+      await close.evaluate((b) => {
+        const r = b.getBoundingClientRect();
+        return (
+          document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) === b
+        );
+      }),
+    ).toBe(true);
     await page.keyboard.press("Escape");
     await expect(preview).toBeHidden();
     await expect(inspector.locator('[data-act="preview-story"]')).toBeFocused();
