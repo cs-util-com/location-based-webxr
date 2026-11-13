@@ -79,10 +79,10 @@
   <body>
     <h1>Asset optimizer check</h1>
     <p>
-      Runs the editor's own picture and sound optimizers on a file you choose,
-      or on a test file, at the chosen setting and one step either side, so the
-      results can be seen and heard next to the original. The chosen setting has
-      a blue frame. Everything stays in this browser.
+      Runs the editor's own picture, sound and 3D model optimizers on a file you
+      choose, or on a test file, at the chosen setting and one step either side,
+      so the results can be seen and heard next to the original. The chosen
+      setting has a blue frame. Everything stays in this browser.
     </p>
     <p id="status" role="status" aria-live="polite"></p>
 
@@ -108,6 +108,18 @@
     <button id="sound-music" type="button">Use test music (30 s)</button>
     <div id="sound-results" class="results"></div>
 
+    <h2>3D models</h2>
+    <p>
+      Chosen: textures at most 1024 px (colour as JPEG 0.85, data maps as JPEG
+      0.92 or kept PNG), 16-bit positions, 8-bit normals, 16-bit texture
+      coordinates. Either side: 512 and 2048 px textures, and 8-bit positions
+      with a 1 % error budget. Each result is drawn by three.js from the same
+      camera as the original; SSIM (1 is identical) compares the two drawings.
+    </p>
+    <input id="model-file" type="file" accept=".glb,model/gltf-binary" />
+    <button id="model-test" type="button">Use the test rock</button>
+    <div id="model-results" class="results"></div>
+
     <script type="module">
       import { ASSET_OPTIMIZERS } from "./src/editor/asset-shelf/asset-optimizers.ts";
       import {
@@ -115,6 +127,9 @@
         spawnOptimizerWorker,
       } from "./src/editor/asset-shelf/optimizer-client.ts";
       import { OPTIMIZER_SETTINGS } from "./src/editor/asset-shelf/optimizer-settings.ts";
+      import * as THREE from "three";
+      import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+      import { checkGlbInert } from "gps-plus-slam-app-framework/ar/tour-media";
       import {
         bestLag,
         lumaOf,
@@ -156,6 +171,113 @@
           speech: { ...OPTIMIZER_SETTINGS.speech, bitsPerSecond },
           music: { ...OPTIMIZER_SETTINGS.music, bitsPerSecond },
         });
+
+      const optimizeModel = (source, model) =>
+        run("model", source, {
+          ...OPTIMIZER_SETTINGS,
+          model: { ...OPTIMIZER_SETTINGS.model, ...model },
+        });
+
+      const TEXTURE_SLOTS = [
+        "map",
+        "normalMap",
+        "roughnessMap",
+        "metalnessMap",
+        "aoMap",
+        "emissiveMap",
+      ];
+
+      /** `blob` loaded by three.js, as the tour loads it. */
+      async function loadModel(blob) {
+        const gltf = await new GLTFLoader().parseAsync(
+          await blob.arrayBuffer(),
+          "",
+        );
+        gltf.scene.updateMatrixWorld(true);
+        return gltf.scene;
+      }
+
+      /** What three.js makes of `blob`: its world box, triangles, largest
+       *  texture side, and whether the tour's own check accepts the file. */
+      async function modelFacts(blob) {
+        const scene = await loadModel(blob);
+        const box = new THREE.Box3().setFromObject(scene);
+        let triangles = 0;
+        let textureSide = 0;
+        scene.traverse((object) => {
+          if (!object.isMesh) return;
+          const geometry = object.geometry;
+          triangles +=
+            (geometry.index?.count ?? geometry.attributes.position.count) / 3;
+          for (const slot of TEXTURE_SLOTS) {
+            const image = object.material[slot]?.image;
+            if (image) {
+              textureSide = Math.max(textureSide, image.width, image.height);
+            }
+          }
+        });
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        return {
+          min: box.min.toArray(),
+          max: box.max.toArray(),
+          triangles,
+          textureSide,
+          inert: checkGlbInert(bytes).ok,
+        };
+      }
+
+      const VIEW = 256;
+      let renderer = null;
+
+      /** `blob` drawn from a camera framed on `box` (the original's): the
+       *  drawing's luma and a data URL. */
+      async function drawModel(blob, box) {
+        renderer ??= new THREE.WebGLRenderer({ preserveDrawingBuffer: true });
+        renderer.setSize(VIEW, VIEW, false);
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x808080);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+        const sun = new THREE.DirectionalLight(0xffffff, 2);
+        sun.position.set(1, 2, 1.5);
+        scene.add(sun);
+        scene.add(await loadModel(blob));
+        const min = new THREE.Vector3(...box.min);
+        const max = new THREE.Vector3(...box.max);
+        const center = min.clone().add(max).multiplyScalar(0.5);
+        const radius = max.distanceTo(min) / 2;
+        const camera = new THREE.PerspectiveCamera(
+          40,
+          1,
+          radius / 50,
+          radius * 10,
+        );
+        const away = new THREE.Vector3(1, 0.7, 1.2).normalize();
+        camera.position.copy(center).addScaledVector(away, radius * 2.6);
+        camera.lookAt(center);
+        renderer.render(scene, camera);
+        const gl = renderer.getContext();
+        const pixels = new Uint8ClampedArray(VIEW * VIEW * 4);
+        gl.readPixels(0, 0, VIEW, VIEW, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+        return { luma: lumaOf(pixels), url: renderer.domElement.toDataURL() };
+      }
+
+      /** One model run: the result, both files' facts, and the SSIM of the
+       *  two drawings. */
+      async function compareModel(source, model) {
+        const result = await optimizeModel(source, model);
+        const before = await modelFacts(source);
+        const after = await modelFacts(result.blob);
+        const drawnBefore = await drawModel(source, before);
+        const drawnAfter = await drawModel(result.blob, before);
+        return {
+          ...result,
+          before,
+          after,
+          drawnBefore: drawnBefore.url,
+          drawnAfter: drawnAfter.url,
+          ssim: ssim(drawnBefore.luma, drawnAfter.luma, VIEW, VIEW),
+        };
+      }
 
       /** A JPEG of the photo-like test picture. */
       async function testPicture(width, height, seed = 1) {
@@ -311,6 +433,51 @@
         say("Sounds done.");
       }
 
+      const MODEL_VARIANTS = [
+        { label: "1024 px, 16-bit", model: {}, chosen: true },
+        { label: "512 px textures", model: { textureMaxSidePx: 512 } },
+        { label: "2048 px textures", model: { textureMaxSidePx: 2048 } },
+        {
+          label: "8-bit positions, 1 % budget",
+          model: { positionBits: 8, maxPositionError: 0.01 },
+        },
+      ];
+
+      async function showModels(source) {
+        const out = document.getElementById("model-results");
+        out.replaceChildren();
+        for (const v of MODEL_VARIANTS) {
+          say(`Making the ${v.label} model...`);
+          const result = await compareModel(source, v.model);
+          if (out.childElementCount === 0) {
+            const original = document.createElement("img");
+            original.src = result.drawnBefore;
+            original.alt = "The original model";
+            card(out, false, original, [
+              "Original",
+              kib(source.size),
+              `${result.before.triangles} triangles`,
+              `textures up to ${result.before.textureSide} px`,
+            ]);
+          }
+          const img = document.createElement("img");
+          img.src = result.drawnAfter;
+          img.alt = `The model at ${v.label}`;
+          card(out, v.chosen === true, img, [
+            v.label,
+            kib(result.blob.size),
+            `${((100 * result.blob.size) / source.size).toFixed(0)} % of the original`,
+            `textures up to ${result.after.textureSide} px`,
+            `SSIM ${result.ssim.toFixed(4)}`,
+            `${result.ms} ms`,
+          ]);
+        }
+        say("Models done.");
+      }
+
+      const testModel = async (name = "rock") =>
+        (await fetch(`./prototypes/model-lod-1/${name}.glb`)).blob();
+
       const guard = (task) => () =>
         task().catch((error) => say(`Failed: ${error.message}`));
       document
@@ -341,6 +508,17 @@
         guard(() => showSounds(testSound("music", 30, 44100))),
       );
 
+      document
+        .getElementById("model-file")
+        .addEventListener("change", (event) => {
+          const file = event.target.files?.[0];
+          if (file) void guard(() => showModels(file))();
+        });
+      document.getElementById("model-test").addEventListener(
+        "click",
+        guard(async () => showModels(await testModel())),
+      );
+
       // For the e2e (playwright-tests/editor-asset-optimizers.spec.js).
       window.assetOptimizerCheck = {
         bestLag,
@@ -351,6 +529,10 @@
         pictureSsim,
         decode,
         durationMs,
+        optimizeModel,
+        modelFacts,
+        compareModel,
+        testModel,
       };
       say("Ready.");
     </script>

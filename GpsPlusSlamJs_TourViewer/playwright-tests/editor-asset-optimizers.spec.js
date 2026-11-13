@@ -15,6 +15,10 @@ import { expect, test } from "@playwright/test";
  *   original's number of samples, with no shift, so every caption and
  *   narration timing stays where it was; an <audio> element reports it
  *   longer by exactly the pre-skip (a property of Ogg Opus in Chromium);
+ * - a 3D model comes back as a .glb the tour accepts, smaller, with the
+ *   same triangles and box (within the position error budget) as three.js
+ *   loads it, textures at the asked side, and a drawing close to the
+ *   original's, over texture sides, qualities and position bits;
  * - a GIF is kept, and a sound that is no sound fails with words;
  * - the times stay under the thresholds set for a phone, measured here on
  *   a desktop (the phone's own measurement is still open).
@@ -232,5 +236,84 @@ test("sounds: a 3-minute voice memo under the phone's 20 s, exact in length; no 
     Math.abs(result.msAfter - result.msBefore - result.preSkip / 48),
   ).toBeLessThanOrEqual(0.5);
   expect(result.refused).toMatch(/could not be read as a sound/);
+  expect(errors).toEqual([]);
+});
+
+/** The SSIM floor of a model's drawing against the original's, from the
+ *  same camera. Measured on the repo's three scanned models in headless
+ *  Chromium: 0.9786 to 0.9999 over every variant, the lowest with 8-bit
+ *  positions; textures re-encoded at 0.75 stay at 0.9988 or above. The
+ *  floor leaves room for another GPU and still fails a model whose
+ *  geometry or textures were damaged. */
+const MODEL_SSIM_FLOOR = 0.95;
+
+test("models: a smaller .glb the tour accepts, drawn as before, over texture sizes, qualities and position bits", async ({
+  page,
+}) => {
+  test.setTimeout(600_000);
+  const errors = await openCheck(page);
+  const rows = await page.evaluate(async () => {
+    const check = /** @type {any} */ (window).assetOptimizerCheck;
+    const variants = [
+      { textureMaxSidePx: 512 },
+      { textureMaxSidePx: 1024 },
+      { textureMaxSidePx: 2048 },
+      { textureMaxSidePx: 1024, colourQuality: 0.75, dataQuality: 0.85 },
+      { textureMaxSidePx: 1024, colourQuality: 0.95, dataQuality: 0.95 },
+      { positionBits: 8, maxPositionError: 0.01 },
+    ];
+    const out = [];
+    for (const name of ["rock", "coast-rock", "boulder"]) {
+      const source = await check.testModel(name);
+      for (const model of variants) {
+        const result = await check.compareModel(source, model);
+        out.push({
+          name,
+          model,
+          originalBytes: source.size,
+          bytes: result.blob.size,
+          extension: result.extension,
+          before: result.before,
+          after: result.after,
+          ssim: result.ssim,
+          ms: result.ms,
+        });
+      }
+    }
+    return out;
+  });
+  console.log(JSON.stringify({ models: rows }));
+  for (const row of rows) {
+    const { before, after, model } = row;
+    expect(row.extension).toBe("glb");
+    expect(after.inert).toBe(true);
+    expect(after.triangles).toBe(before.triangles);
+    // The box as three.js sees it, within the position error budget (0.01 %
+    // by default, 1 % in the 8-bit variant) of the diagonal.
+    const diagonal = Math.hypot(
+      ...before.max.map(
+        (/** @type {number} */ v, /** @type {number} */ i) => v - before.min[i],
+      ),
+    );
+    const budget = model.maxPositionError ?? 0.0001;
+    for (let i = 0; i < 3; i++) {
+      expect(Math.abs(after.min[i] - before.min[i])).toBeLessThanOrEqual(
+        budget * diagonal,
+      );
+      expect(Math.abs(after.max[i] - before.max[i])).toBeLessThanOrEqual(
+        budget * diagonal,
+      );
+    }
+    const limit = model.textureMaxSidePx ?? 1024;
+    expect(after.textureSide).toBe(Math.min(before.textureSide, limit));
+    expect(row.bytes).toBeLessThan(row.originalBytes * 0.9);
+    expect(row.ssim).toBeGreaterThanOrEqual(MODEL_SSIM_FLOOR);
+  }
+  // The chosen setting under the phone's 10 s per model (a desktop is
+  // several times faster, so this is a floor, not the proof).
+  for (const row of rows.filter((r) => Object.keys(r.model).length === 1)) {
+    if (row.model.textureMaxSidePx === 1024)
+      expect(row.ms).toBeLessThan(10_000);
+  }
   expect(errors).toEqual([]);
 });
