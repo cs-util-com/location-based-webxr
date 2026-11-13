@@ -84,6 +84,16 @@
         color: var(--dim);
         font-size: 0.92rem;
       }
+      li.group {
+        grid-column: 1 / -1;
+      }
+      li.group > strong {
+        margin: 0.25rem 0 0.25rem;
+      }
+      li.group > span {
+        display: block;
+        margin-bottom: 0.75rem;
+      }
     </style>
   </head>
   <body>
@@ -1376,6 +1386,38 @@
             ></a
           >
         </li>
+        <li class="group">
+          <strong>Quiz: find, then stand at the answer (A/B/C)</strong>
+          <span
+            >Three ways to choose by standing at the answer, all on the stage&#39;s compact HUD: a pill of found-dots, the guide&#39;s line as a short toast, and the story card, Skip and the notes behind an &quot;i&quot;. A B C at the top left of each page switches between them; add ?hud=card to see the full card instead.</span
+          >
+          <ul>
+            <li>
+              <a href="quiz-world-9-ground-dwell/"
+                ><strong>A - stand in the ring</strong
+                ><span
+                  >Find the answers as on the page before, then stand still in one answer's ring on the ground until it closes; it locks in with a pulse, a short seal lets a walk away take it back, then the ring turns teal or breaks. The question lies on the ground.</span
+                ></a
+              >
+            </li>
+            <li>
+              <a href="quiz-world-10-object-charges/"
+                ><strong>B - answers that listen</strong
+                ><span
+                  >The eggs are found as on the find-then-go-back page; then the question flies into them and you answer by standing by one: it wakes, fills with light, rises and opens, and a short countdown lets a step away take it back. No rings.</span
+                ></a
+              >
+            </li>
+            <li>
+              <a href="quiz-world-11-light-pillars/"
+                ><strong>C - stand in the light</strong
+                ><span
+                  >Find the answers as on the go-back page; then the question rises as a sign in the middle and each answer stands as a pillar of light. Stand in one until the light has poured down to fill it, and the answer locks in.</span
+                ></a
+              >
+            </li>
+          </ul>
+        </li>
         <li>
           <a href="quiz-world-8-find-then-return/"
             ><strong>Quiz in 3D: find them, then go back</strong
@@ -1388,7 +1430,7 @@
           <a href="quiz-world-stage/"
             ><strong>Quiz in 3D: the shared stage</strong
             ><span
-              >The walkable place the eight quiz pages run on, with a trivial sample item, edit and play, and a cost readout.</span
+              >The walkable place the quiz pages run on, with a trivial sample item, edit and play, and a cost readout.</span
             ></a
           >
         </li>
