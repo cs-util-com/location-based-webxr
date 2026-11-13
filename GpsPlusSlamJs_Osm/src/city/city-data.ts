@@ -60,7 +60,10 @@ import { ENU_METRES_PER_DEG_LNG_EQUATOR } from "../mesh/enu.js";
 import type { LatLng, OsmFeature } from "../model/osm-feature.js";
 import { loadTiles } from "../source/area-loader.js";
 import { cellToBoundingBox } from "../source/overpass-query.js";
-import { CachingSource } from "../source/caching-source.js";
+import {
+  CachingSource,
+  type CachingSourceOptions,
+} from "../source/caching-source.js";
 import type { OsmBlobStore } from "../source/osm-blob-store.js";
 import type {
   OsmDataSource,
@@ -277,6 +280,8 @@ export function createCityTileSource(
     readonly userAgent: string;
     readonly fetchImpl?: typeof fetch;
     readonly staticTiles?: { readonly baseUrl: string };
+    /** Forwarded to the cache; see `CachingSourceOptions.onCacheMiss`. */
+    readonly onCacheMiss?: CachingSourceOptions["onCacheMiss"];
   },
 ): CachingSource {
   const seam =
@@ -290,7 +295,13 @@ export function createCityTileSource(
           fallback: race,
           ...seam,
         });
-  return new CachingSource(inner, store);
+  return new CachingSource(
+    inner,
+    store,
+    options.onCacheMiss === undefined
+      ? {}
+      : { onCacheMiss: options.onCacheMiss },
+  );
 }
 
 // --- loading ----------------------------------------------------------------

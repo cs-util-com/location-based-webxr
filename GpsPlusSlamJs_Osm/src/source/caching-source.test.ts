@@ -511,3 +511,103 @@ describe("decorator transparency", () => {
     await expect(moved).resolves.toMatchObject({ tile: TILE });
   });
 });
+
+// Why these tests matter: a page that shows "downloading" must learn when a
+// caller actually went past the cache, and only then. A cache hit is local
+// work (read and parse a blob) and must never be reported as a download; a
+// background warm must be told apart from a fetch someone is waiting on.
+describe("onCacheMiss - who went past the cache, and why", () => {
+  it("is not called for a cache hit", async () => {
+    const onCacheMiss = vi.fn();
+    const cache = new CachingSource(
+      new CountingSource(),
+      new MemoryBlobStore(),
+      { onCacheMiss },
+    );
+    await cache.fetchTile(TILE);
+    onCacheMiss.mockClear();
+    await cache.fetchTile(TILE);
+    expect(onCacheMiss).not.toHaveBeenCalled();
+  });
+
+  it("is called once per miss, before the inner source answers", async () => {
+    const order: string[] = [];
+    const inner = new CountingSource();
+    const fetchTile = inner.fetchTile.bind(inner);
+    inner.fetchTile = (tile: string) => {
+      order.push("inner");
+      return fetchTile(tile);
+    };
+    const cache = new CachingSource(inner, new MemoryBlobStore(), {
+      onCacheMiss: (tile, info) => {
+        order.push(`miss:${tile}:${String(info.speculative)}`);
+      },
+    });
+    await cache.fetchTile(TILE);
+    expect(order).toEqual([`miss:${TILE}:false`, "inner"]);
+  });
+
+  it("carries the caller's speculative flag", async () => {
+    const onCacheMiss = vi.fn();
+    const cache = new CachingSource(
+      new CountingSource(),
+      new MemoryBlobStore(),
+      { onCacheMiss },
+    );
+    await cache.fetchTile(TILE, { speculative: true });
+    expect(onCacheMiss).toHaveBeenCalledWith(TILE, { speculative: true });
+  });
+
+  it("reports a foreground caller that JOINS a speculative fetch as its own miss", async () => {
+    // The user's click can land on a tile the background warm is already
+    // downloading: that click is waiting on a download, so it is reported with
+    // its own (foreground) flag rather than hidden behind the warm's.
+    const calls: [string, boolean][] = [];
+    const cache = new CachingSource(
+      new CountingSource(),
+      new MemoryBlobStore(),
+      {
+        onCacheMiss: (tile, info) => {
+          calls.push([tile, info.speculative]);
+        },
+      },
+    );
+    await Promise.all([
+      cache.fetchTile(TILE, { speculative: true }),
+      cache.fetchTile(TILE),
+    ]);
+    expect(calls).toEqual([
+      [TILE, true],
+      [TILE, false],
+    ]);
+    expect(cache.stats.deduplicated).toBe(1);
+  });
+
+  it("reports a stale refetch as a miss", async () => {
+    let now = 1000;
+    const onCacheMiss = vi.fn();
+    const cache = new CachingSource(
+      new CountingSource(1000),
+      new MemoryBlobStore(),
+      { now: () => now, onCacheMiss },
+    );
+    await cache.ensureTile(TILE);
+    onCacheMiss.mockClear();
+    now = 10_000;
+    await cache.ensureTile(TILE, { maxAgeMs: 100 });
+    expect(onCacheMiss).toHaveBeenCalledTimes(1);
+  });
+
+  it("a throwing listener does not cost the caller its tile", async () => {
+    const cache = new CachingSource(
+      new CountingSource(),
+      new MemoryBlobStore(),
+      {
+        onCacheMiss: () => {
+          throw new Error("listener broke");
+        },
+      },
+    );
+    await expect(cache.fetchTile(TILE)).resolves.toMatchObject({ tile: TILE });
+  });
+});

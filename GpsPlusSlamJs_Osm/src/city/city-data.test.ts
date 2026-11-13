@@ -820,6 +820,29 @@ describe("createCityTileSource", () => {
       `https://tiles.example.dev/osm/v${OVERPASS_SCHEMA_VERSION}/${tile}.json.gz`,
     ]);
   });
+
+  // Why this test matters: an app tells its user "downloading" only when a
+  // tile went past the cache, so the hook must reach the cache this builds.
+  it("forwards onCacheMiss to the cache", async () => {
+    const misses: string[] = [];
+    const source = createCityTileSource(new MemoryBlobStore(), {
+      userAgent: "test-app (example.org)",
+      onCacheMiss: (tile) => {
+        misses.push(tile);
+      },
+      fetchImpl: () =>
+        Promise.resolve(
+          new Response(JSON.stringify({ version: 0.6, elements: [] }), {
+            status: 200,
+          }),
+        ),
+    });
+    const tile =
+      cityDataPlan(LUCERNE, { heights: RELIEF }).overpassTiles[0] ?? "";
+    await source.fetchTile(tile);
+    await source.fetchTile(tile);
+    expect(misses).toEqual([tile]);
+  });
 });
 
 // Keep the extent import honest: the plan's window is the library's.

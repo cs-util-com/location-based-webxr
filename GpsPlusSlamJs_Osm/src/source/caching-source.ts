@@ -32,6 +32,22 @@ export interface CachingSourceOptions {
    * the same name for why this is separate from {@link now}.
    */
   readonly monotonicNow?: () => number;
+  /**
+   * Told when a caller's tile is NOT served from the cache (missing, unreadable
+   * or stale) and the caller now waits on the inner source - that is, on a
+   * download. Called once per such caller, before the inner source is asked,
+   * with that caller's own `speculative` flag: a foreground caller that joins
+   * a background warm already in flight is reported as foreground, because it
+   * is waiting on that download too. Never called for a cache hit.
+   *
+   * For an app that must tell its user whether a wait is a download or local
+   * work. A listener that throws is ignored: it must not cost the caller its
+   * tile.
+   */
+  readonly onCacheMiss?: (
+    tile: string,
+    info: { readonly speculative: boolean },
+  ) => void;
 }
 
 export interface EnsureOptions {
@@ -70,6 +86,7 @@ export class CachingSource implements OsmDataSource {
   private readonly schemaVersion: number;
   private readonly now: () => number;
   private readonly monotonicNow: () => number;
+  private readonly onCacheMiss: CachingSourceOptions["onCacheMiss"];
   private readonly inFlight = new InFlightRequests<OsmTileResult>();
 
   readonly stats = {
@@ -108,6 +125,7 @@ export class CachingSource implements OsmDataSource {
       options.monotonicNow ??
       (() =>
         typeof performance === "undefined" ? Date.now() : performance.now());
+    this.onCacheMiss = options.onCacheMiss;
   }
 
   /**
@@ -169,6 +187,11 @@ export class CachingSource implements OsmDataSource {
       this.stats.staleRefetches++;
     } else {
       this.stats.misses++;
+    }
+    try {
+      this.onCacheMiss?.(tile, { speculative: options.speculative === true });
+    } catch {
+      // A broken listener must not cost the caller its tile.
     }
 
     // THIS is the layer that actually dedups in the demo's wiring, and the

@@ -8,6 +8,7 @@ Cache-first decorator around any `OsmDataSource`, backed by an injected
 ## Public API
 
 - `CachingSource` implementing `OsmDataSource`.
+- Options: `schemaVersion?`, `now?`, `monotonicNow?`, `onCacheMiss?(tile, { speculative })`.
 - `cacheKey(tile)` → `osm/v{schemaVersion}/{tile}`.
 - `ensureTile(tile, { signal?, maxAgeMs? })`.
 - `listCachedTiles()` → `FETCH_RES` (res-7) cell ids.
@@ -60,6 +61,14 @@ Cache-first decorator around any `OsmDataSource`, backed by an injected
   dropping the flag here would silently un-exempt every background ring warm
   and no test would fail. It travels `fetchTile` -> `EnsureOptions` ->
   `fetchAndStore` -> the inner source.
+- **`onCacheMiss` reports a caller that goes past the cache** (missing,
+  unreadable or stale tile), once per such caller and before the inner source
+  is asked, with that caller's own `speculative` flag. A foreground caller
+  that joins a background warm already in flight is reported as foreground:
+  it is waiting on that download too. Never called for a hit, so an app can
+  tell a download from local work (OsmDemo's loading overlay does exactly
+  that). A throwing listener is swallowed; it must not cost the caller its
+  tile.
 - **Eviction is never automatic.** Only the host app knows its storage budget
   and which areas the user cares about, so the library exposes
   `listCachedTiles`/`evictTile` and nothing more.
@@ -69,7 +78,9 @@ Cache-first decorator around any `OsmDataSource`, backed by an injected
 `caching-source.test.ts` — the cache key (including the 25-request walking-user
 regression and both schema-version guards), cache-first behaviour, staleness
 policy, the rate-limit fallback and its two negative cases, five corrupt-entry
-shapes plus a throwing store, eviction, and decorator transparency.
+shapes plus a throwing store, eviction, decorator transparency, and
+`onCacheMiss` (hit silent, miss before the inner call, the speculative flag, a
+foreground joiner, a stale refetch, a throwing listener).
 
 ## `timings` — and the two rules a reader would not guess
 
