@@ -65,7 +65,9 @@ Waiting for the viewpoint work: the window view, the stand-here view and
 the viewpoint fields (position, heading, field of view, "Look from
 viewpoint").
 
-Out of scope, filed as a follow-up: the prototype's creator AR mode
+Out of scope, filed as a follow-up
+([`docs/2026-11-14-0005-free-video-gaps-followups.md`](../../../docs/2026-11-14-0005-free-video-gaps-followups.md)):
+the prototype's creator AR mode
 (placing the video while standing at the station).
 
 ## Examples
