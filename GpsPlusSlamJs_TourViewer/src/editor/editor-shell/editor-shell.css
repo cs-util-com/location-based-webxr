@@ -2865,6 +2865,16 @@ body[data-view="3d"] #view3d .view3d-canvas {
     bottom: auto;
   }
 
+  /* At the view's top left, beside the map controls at its top right
+   * (a compass and two zoom buttons of 38 px, 8 px apart): the gizmo in
+   * the short view below stays clear. */
+  .scene-hint {
+    left: 12px;
+    max-width: calc(100% - 24px - 3 * 38px - 1px - 8px - 8px);
+    text-align: left;
+    transform: none;
+  }
+
   #studio-list {
     display: inline-flex;
   }
