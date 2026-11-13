@@ -1215,6 +1215,35 @@ test.describe("the geo-event", () => {
     await page.keyboard.press("?");
     await expect(page.locator("#hotkey-help")).toBeVisible();
 
+    // THE TOAST IS MEASURED BY THE PAGE, as it appears. It lingers 6 s, and the
+    // search refresh that follows it keeps the main thread busy long enough
+    // that a box read over the protocol can arrive after the toast is gone:
+    // measured shown at 17.9 s, gone at 25.8 s, and `boundingBox()` answering
+    // only at 25.8 s. So the page records the last laid-out box it showed, and
+    // the assertion below reads that record instead of racing the linger.
+    await page.evaluate(() => {
+      const root = document.getElementById("toast-root");
+      if (root === null) throw new Error("no toast root");
+      const record = () => {
+        const toast = root.querySelector(".toast");
+        if (!(toast instanceof HTMLElement) || toast.textContent === "") return;
+        const r = toast.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) return;
+        if (getComputedStyle(toast).visibility === "hidden") return;
+        /** @type {any} */ (window).__e2eToastBox = {
+          x: r.x,
+          y: r.y,
+          width: r.width,
+          height: r.height,
+        };
+      };
+      new MutationObserver(record).observe(root, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
+    });
+
     await page.locator("#geo-event").click();
     await expect(page.locator("#geo-event-picker")).toBeVisible();
 
@@ -1275,14 +1304,24 @@ test.describe("the geo-event", () => {
     //
     // The wait is generous for the same reason the sibling's is: the search
     // hits a stubbed network but still crosses the worker boundary.
-    const toast = page.locator("#toast-root .toast").first();
-    await expect(toast).toBeVisible({ timeout: 30_000 });
-
-    // MEASURED PROMPTLY, because the toast clears itself after
-    // `DEFAULT_TOAST_LINGER_MS` (6 s) — a box read after that is `null` again
-    // and the assertion would go quiet in exactly the same way.
-    const toastBox = await toast.boundingBox();
-    if (toastBox === null) throw new Error("no toast box");
+    // The box comes from the page-side record installed before the click: the
+    // toast clears itself after `DEFAULT_TOAST_LINGER_MS` (6 s), so a box read
+    // afterwards is `null` again and the assertion would go quiet the same way.
+    await expect
+      .poll(
+        () =>
+          page.evaluate(
+            () => /** @type {any} */ (window).__e2eToastBox ?? null,
+          ),
+        {
+          timeout: 30_000,
+        },
+      )
+      .not.toBeNull();
+    const toastBox = await page.evaluate(
+      () => /** @type {any} */ (window).__e2eToastBox,
+    );
+    if (toastBox == null) throw new Error("no toast box");
     expect(overlaps(pickerBox, toastBox)).toBe(false);
 
     // AND IT DOES NOT COVER THE HOTKEY LIST — the third occupant of this

@@ -2627,6 +2627,12 @@ test.describe("with shadow maps on (?shadowCheck=1)", () => {
     await test.step("a quest beacon draws", async () => {
       await page.locator("#geo-event").click();
       await expect(page.locator("#map .geo-winner")).not.toHaveCount(0);
+      // The search republishes the scene once it has found its quest, and the
+      // frame settles only after that refresh ends. The busy mark is raised in
+      // the same task that draws the marker, so it is up when the wait starts.
+      await expect(page.locator("#status")).not.toHaveClass(/is-loading/, {
+        timeout: 30_000,
+      });
       await stashStableFrame(page);
       // Clearing moves nothing but the marker, as the close-camera test above
       // explains, so the difference is the beacon: measured 248 differing
