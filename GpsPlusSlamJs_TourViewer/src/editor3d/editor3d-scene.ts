@@ -44,6 +44,7 @@ import {
   type ShellLayer,
 } from "../editor/editor-view.js";
 import type { GroundPlace } from "gps-plus-slam-editor-kit/chrome";
+import type { FolderOutlineShown } from "./folder-outline.js";
 import type {
   OsmMapLoad,
   OsmMapTile,
@@ -268,9 +269,9 @@ export interface Editor3dView {
   /** Show (true) or hide every sound's speaker icon (the page's checks:
    *  the same pixels with the icon and without it). */
   showSoundIcons(on: boolean): void;
-  /** How many items of a selected plain folder show their outline box
-   *  (the page's checks). */
-  folderOutlines(): number;
+  /** How many items of a selected plain folder show their outline box,
+   *  and its dashed outline and name tag (the page's checks). */
+  folderOutlines(): FolderOutlineShown;
   /** Where a point of a drawn model (its own space) is on the canvas
    *  (CSS px), or null until it is drawn (the page's checks). */
   modelScreenOf(

@@ -28,7 +28,8 @@ scene which items it groups and which folder the gizmo moves.
     22 px high at any distance, its left end on the outline's front-left
     corner); both hidden without `gizmo`, without a drawn item or for a
     folder the tour lacks;
-  - `count()` - how many boxes show (the page's checks read it through
+  - `count()` - how many boxes show (the page's checks read it, with
+    `hull()` and `tag()`, as a `FolderOutlineShown` through
     `__tourEditor.view3dFolderOutlines`);
   - `hull()` / `tag()` - the outline and the tag's name drawn now, or
     null (the page's checks);

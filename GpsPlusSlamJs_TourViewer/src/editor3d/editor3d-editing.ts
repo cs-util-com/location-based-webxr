@@ -52,7 +52,10 @@ import {
   type OrbitPose,
 } from "./editor3d-flight.js";
 import { createGizmo, drawGizmoPictures } from "./editor3d-gizmo.js";
-import { createFolderOutline } from "./folder-outline.js";
+import {
+  createFolderOutline,
+  type FolderOutlineShown,
+} from "./folder-outline.js";
 import {
   createModelParts,
   heldClickNext,
@@ -664,8 +667,12 @@ export function createSceneEditing(deps: SceneEditingDeps) {
       showSoundIcons(deps.scene, on);
     },
     /** For the page's checks: how many items of a selected folder show
-     *  their outline box. */
-    folderOutlines: () => outline.count(),
+     *  their outline box, and its dashed outline and name tag. */
+    folderOutlines: (): FolderOutlineShown => ({
+      boxes: outline.count(),
+      hull: outline.hull(),
+      tag: outline.tag(),
+    }),
     /** Where a point of a drawn model (its own space) is on the screen,
      *  or null (the page's checks click its surface there). */
     modelScreenOf(

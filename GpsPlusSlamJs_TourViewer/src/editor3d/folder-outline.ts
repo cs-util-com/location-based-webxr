@@ -77,6 +77,16 @@ export interface FolderGizmoAt {
   readonly spritePerPx: number;
 }
 
+/** What the outline draws now (the page's checks). */
+export interface FolderOutlineShown {
+  /** How many item boxes show. */
+  readonly boxes: number;
+  /** The dashed outline, or null. */
+  readonly hull: GroupHull | null;
+  /** The name on the tag, or null. */
+  readonly tag: string | null;
+}
+
 export interface FolderOutline {
   /** Each frame: the boxes around the items of the folder `selected`
    *  names (`folder:<id>`), none for another selection; with `gizmo`
