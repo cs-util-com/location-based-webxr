@@ -128,11 +128,11 @@ function nameFloorPx(width) {
   return 20;
 }
 
-/** The parts of the frame `expectFrame` measures. */
 /** A phone's one tabbed group (the one holding the list's tab). */
 const PHONE_GROUP =
   '.dock-host .dv-groupview:has(.dock-tab[data-panel="list"])';
 
+/** The parts of the frame `expectFrame` measures. */
 const FRAME_PARTS = [
   "#topbar",
   "#shell-bar",
