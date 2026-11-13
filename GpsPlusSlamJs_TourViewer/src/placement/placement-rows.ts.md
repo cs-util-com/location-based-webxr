@@ -83,3 +83,7 @@ view would be the first such kind).
 - `list-rows.contract.test.ts` - every item of a document holding every
   (kind, view), free, in nested plain folders and in a story, has exactly
   one row in the tree, and every free one exactly one in the object list.
+
+## Short text views
+
+`sign` turns (its heading is the creator's, a turning gizmo); `edgeHint` faces the camera like a pin.

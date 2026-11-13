@@ -34,6 +34,7 @@ import {
 import { blockBodyAssets } from './tour-body-assets.js';
 import { isTourId } from './tour-fields.js';
 import type { TourLocalPose } from './tour-items.js';
+import { shortTextLook, type TourShortTextLook } from './tour-short-text.js';
 import { tourTimingEntryName } from './tour-timing.js';
 
 /** The views a character stands in, besides `card`: a speech bubble over
@@ -76,7 +77,12 @@ const MODEL_WORLD_VIEWS: ReadonlySet<string> = new Set(TOUR_MODEL_WORLD_VIEWS);
 
 /* Each kind's views. A view joins the format with its renderer; `card` (the
  * block in the scene card) exists for every kind. */
-const SHORT_TEXT_VIEWS = ['pin', 'card'] as const;
+/* A short text stands as a pin, a sign on posts (`sign`) or a hint that
+ * keeps to the screen's edge while its spot is out of view (`edgeHint`).
+ * The ground arrow's fields are read already (`tour-short-text.ts`); its
+ * view joins with its renderer. */
+const SHORT_TEXT_WORLD_VIEWS = ['pin', 'sign', 'edgeHint'] as const;
+const SHORT_TEXT_VIEWS = [...SHORT_TEXT_WORLD_VIEWS, 'card'] as const;
 const LONG_TEXT_VIEWS = ['lectern', 'reading', 'card'] as const;
 const PICTURE_VIEWS = ['plane', 'card'] as const;
 const VIDEO_VIEWS = ['card'] as const;
@@ -182,10 +188,10 @@ interface TourBlockEnvelope<K extends string, V extends string> {
   readonly createdAtIso?: string;
 }
 
-export interface TourShortTextBlock extends TourBlockEnvelope<
-  'shortText',
-  (typeof SHORT_TEXT_VIEWS)[number]
-> {
+export interface TourShortTextBlock
+  extends
+    TourBlockEnvelope<'shortText', (typeof SHORT_TEXT_VIEWS)[number]>,
+    TourShortTextLook {
   readonly caption: string;
   readonly description?: string;
 }
@@ -756,13 +762,14 @@ export const TOUR_KINDS = {
   shortText: {
     sinceMinor: 0,
     views: SHORT_TEXT_VIEWS,
-    freeViews: ['pin'],
-    worldViews: ['pin'],
+    freeViews: SHORT_TEXT_WORLD_VIEWS,
+    worldViews: SHORT_TEXT_WORLD_VIEWS,
     floor: 'pin',
     text: SHORT_TEXT_RULES,
     read: (v, _view, ctx) => ({
       caption: requiredText(v, 'caption', SHORT_TEXT_RULES.caption, ctx),
       ...optionalText(v, 'description', SHORT_TEXT_RULES.description, ctx),
+      ...shortTextLook(v, ctx),
     }),
     refs: () => [],
   },

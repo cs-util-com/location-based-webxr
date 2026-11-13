@@ -1121,8 +1121,14 @@ hooks.tickStations = () => {
   // A model's view, its notes and its card.
   modelVisitor.tick(performance.now());
   // The free items' parts in the world: a sound's distance, a circle's
-  // inside.
-  tickWorldParts(seams.getScene(), seams.getViewerCamera(), performance.now());
+  // inside, a hint's tag on the screen (the view fills the window).
+  tickWorldParts(
+    seams.getScene(),
+    seams.getViewerCamera(),
+    performance.now(),
+    undefined,
+    window.innerHeight,
+  );
 };
 hooks.stationCodeLocked = stations.codeLocked;
 hooks.unlockStationAudio = stations.unlockAudio;

@@ -93,7 +93,9 @@ type ViewsOf<K extends TourBlockKind> = (typeof TOUR_KINDS)[K]["views"][number];
 
 /** THE block table: one row per kind and view of the format. */
 export const BLOCK_PLACEMENT = {
-  shortText: { pin: FACING, card: POSELESS },
+  // A sign keeps its pose's turn unless it is told to turn to the
+  // visitor; a hint at the edge is a ring and a tag on the screen.
+  shortText: { pin: FACING, sign: TURNING, edgeHint: FACING, card: POSELESS },
   // The stand keeps its turn about up (`uprightTurn`); the sign's plate
   // turns to the viewer as it is drawn.
   longText: { lectern: TURNING, reading: FACING, card: POSELESS },

@@ -19,6 +19,10 @@ import {
   type TourBlockKind,
 } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import type { TourAssetKind } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import {
+  TOUR_SHORT_TEXT_MAX_READ_AT_M,
+  TOUR_SHORT_TEXT_MIN_READ_AT_M,
+} from "gps-plus-slam-app-framework/ar/tour-short-text";
 
 /** A number a field takes: the format's bounds, its unit, and whether the
  *  views it shows in need it. */
@@ -46,6 +50,20 @@ interface NumberSpec {
   readonly curve?: "loudness";
 }
 
+/** A short text's roles, as its panel offers them. */
+const SHORT_TEXT_ROLES: readonly FieldChoice[] = [
+  { value: "instruction", label: "Instruction" },
+  { value: "label", label: "Label" },
+  { value: "warning", label: "Warning" },
+];
+
+/** How a sign turns, as its panel offers it. */
+const SHORT_TEXT_TURNS: readonly FieldChoice[] = [
+  { value: "world", label: "Fixed" },
+  { value: "upright", label: "Upright" },
+  { value: "face", label: "Faces you" },
+];
+
 /** One field of a kind, as the inspector draws it. */
 export interface FieldSpec {
   /** The block's own field (`data-field` in the inspector). */
@@ -57,6 +75,15 @@ export interface FieldSpec {
   readonly number?: NumberSpec;
   /** Only in these views (the ones that read it); none: in every view. */
   readonly views?: readonly string[];
+  /** One of these values, chosen on the kind's panel's chips rather than
+   *  typed (none: typed). */
+  readonly choices?: readonly FieldChoice[];
+}
+
+/** One value a choice field takes, and its chip's words. */
+export interface FieldChoice {
+  readonly value: string;
+  readonly label: string;
 }
 
 /** How a kind is added from nothing: its line in the tree's type menu (and,
@@ -178,7 +205,29 @@ export const KIND_EDIT = {
     thing: "pin",
     look: "pin",
     searchWords: "pin note short text",
-    fields: [{ name: "description", label: "Description", prose: true }],
+    fields: [
+      { name: "description", label: "Description", prose: true },
+      {
+        name: "readAtM",
+        label: "Reads at",
+        prose: false,
+        number: {
+          min: TOUR_SHORT_TEXT_MIN_READ_AT_M,
+          max: TOUR_SHORT_TEXT_MAX_READ_AT_M,
+          unit: "m",
+          required: false,
+        },
+        views: ["sign"],
+      },
+      { name: "role", label: "Role", prose: false, choices: SHORT_TEXT_ROLES },
+      {
+        name: "orientation",
+        label: "Turns",
+        prose: false,
+        choices: SHORT_TEXT_TURNS,
+        views: ["sign"],
+      },
+    ],
     add: {
       label: "Short text",
       hint: "A pin with a caption",

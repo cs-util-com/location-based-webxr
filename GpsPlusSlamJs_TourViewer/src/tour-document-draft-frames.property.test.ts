@@ -57,6 +57,7 @@ import {
   settingsRecord,
   settingsRecordText,
 } from "./tour-document-draft.js";
+import { shortTextLookArbitraries } from "gps-plus-slam-app-framework/test-utils/tour-arbitraries";
 import "./test-support/tour-of.js";
 
 const GUIDE: TourCharacter = {
@@ -278,6 +279,7 @@ const BLOCKS: Record<TourBlockKind, (id: string) => fc.Arbitrary<TourBlock>> = {
       kind: fc.constant("shortText"),
       caption: words,
       description: maybe(words),
+      ...shortTextLookArbitraries,
     }),
   longText: (id) =>
     everyField<TourLongTextBlock>({

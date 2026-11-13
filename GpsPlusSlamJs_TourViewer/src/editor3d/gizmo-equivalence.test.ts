@@ -226,6 +226,7 @@ describe("the gizmo through the placement rows against the frozen layout", () =>
       "character.speak",
       "character.two-stations",
       "longText.reading",
+      "shortText.edgeHint",
       "shortText.pin",
     ]);
     for (const { kind, view, row } of facing) {

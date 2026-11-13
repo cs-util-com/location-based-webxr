@@ -182,3 +182,7 @@ editor's reach pinned (every kind with an add line listed, the character
 through the menu's own entry, the four
 file kinds). Seen red with a
 row removed.
+
+## Choice fields
+
+A `FieldSpec` may carry `choices` (`FieldChoice`: value and label): a field chosen on chips by the kind's panel, never typed. The short text has `role` (`SHORT_TEXT_ROLES`) and, for a sign, `orientation` (`SHORT_TEXT_TURNS`), plus the number field `readAtM` (1-40 m, signs only).

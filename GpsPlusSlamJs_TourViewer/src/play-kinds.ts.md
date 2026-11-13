@@ -38,3 +38,7 @@ const files = row?.assets(block, characters) ?? [];
 - `play-kinds.test.ts`: the list has exactly the format's kinds in order; every row fills a card through `showItemCard` and reads only what its `assets` lists; a block of no known kind (`stamp`, `toString`, `__proto__`) is refused with words and reads nothing.
 - `item-contract.test.ts`: the contract over every kind through the two real hosts.
 - `scene-view.test.ts`: the per-kind behaviour in depth, unchanged by the move to rows.
+
+## Short text in the world
+
+`shortText.world` is `kinds/short-text/world.ts`: a sign or an edge hint stands in the world; a pin stays the renderer's label.

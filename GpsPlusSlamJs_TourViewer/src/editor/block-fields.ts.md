@@ -111,3 +111,7 @@ if (out.kind === "edited")
   field of every kind, story kinds included, keeps each text within its
   rule (`checkTourBlockText`), every needed field set, and the envelope
   untouched.
+
+## Choice fields
+
+`blockFields` leaves a choice field out (its panel's chips show it). `blockFieldEdit` writes one of its `choices`, refuses any other value with the choices' labels, and deletes the field on a blank value (back to the reader's default).

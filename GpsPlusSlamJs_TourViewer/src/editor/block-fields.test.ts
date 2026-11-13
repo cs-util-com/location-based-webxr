@@ -516,3 +516,34 @@ describe("number fields", () => {
     );
   });
 });
+
+describe("choice fields", () => {
+  // Why: a short text's role and turn are chosen on chips, never typed;
+  // the edit must write only a choice of the kind's row, so a file the
+  // editor saves always reads back with them, and a blank one returns
+  // to the reader's default rather than writing an empty word.
+  it("are not boxes to type in", () => {
+    const names = blockFields(PIN).map((f) => f.name);
+    expect(names).not.toContain("role");
+    expect(names).not.toContain("orientation");
+  });
+
+  it("write a choice, refuse anything else, and clear on a blank", () => {
+    const chose = blockFieldEdit(PIN, "role", "warning");
+    expect(chose).toMatchObject({ kind: "edited", after: { role: "warning" } });
+    if (chose.kind !== "edited") throw new Error("not edited");
+    expect(blockFieldEdit(chose.after, "role", "warning")).toEqual({
+      kind: "unchanged",
+    });
+    expect(blockFieldEdit(PIN, "role", "shout")).toMatchObject({
+      kind: "refused",
+    });
+    const cleared = blockFieldEdit(chose.after, "role", "");
+    expect(cleared.kind).toBe("edited");
+    if (cleared.kind !== "edited") throw new Error("not edited");
+    expect("role" in cleared.after).toBe(false);
+    expect(blockFieldEdit(PIN, "orientation", "")).toEqual({
+      kind: "unchanged",
+    });
+  });
+});

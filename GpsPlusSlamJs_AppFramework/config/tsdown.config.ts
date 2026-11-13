@@ -75,6 +75,8 @@ const entryFiles = [
   // Viewer the same way.
   'src/ar/tour-items.ts',
   'src/ar/tour-kinds.ts',
+  // A short text's look fields, read by the Tour Viewer's sign and hint.
+  'src/ar/tour-short-text.ts',
   'src/ar/tour-station-pose.ts',
   // A plain folder's pose composed and taken apart, for an editor that
   // writes folders back.

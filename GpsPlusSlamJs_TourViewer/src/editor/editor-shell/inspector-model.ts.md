@@ -198,3 +198,7 @@ again under the creator's typing on every tile of finer ground.
 `InspectorModel` carries an optional `file` (`inspector-file.ts`), added
 by the shell after `buildInspector`; `buildInspector` itself never sets
 it.
+
+## Short text parts
+
+A short text's item carries `shortText: { view, role, orientation }` (role and orientation null when not written) for its kind panel.

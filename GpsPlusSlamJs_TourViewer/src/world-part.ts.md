@@ -154,3 +154,7 @@ on, the refusal without a parser, its sound in both modes, and
 door's delegation is in `play-kinds.test.ts`, the placement (the
 pose's rotation kept, tilt included, and a part that unmounts itself in its
 own dispose still freed) in `content-placement.test.ts`.
+
+## The camera and the screen scale
+
+`tickWorldParts(scene, viewer, nowMs, parts?, viewHeightPx?)` also hands each part the `camera` when the viewer is a camera, and, with `viewHeightPx`, `metresPerPxAtOneM` (2 / (projection[5] x height)): what a part that stands on the screen (a short text's edge hint) needs to size itself in pixels. Parts that do not read them are unchanged.

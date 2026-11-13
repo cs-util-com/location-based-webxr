@@ -51,6 +51,16 @@ import {
   type TourBlockKind,
   type TourTextRule,
 } from '../ar/tour-blocks.js';
+import {
+  TOUR_GROUND_FLOOR_PLACEMENTS,
+  TOUR_GROUND_MAX_BEND_DEG,
+  TOUR_GROUND_STYLES,
+  TOUR_SHORT_TEXT_MAX_READ_AT_M,
+  TOUR_SHORT_TEXT_MIN_READ_AT_M,
+  TOUR_SHORT_TEXT_ORIENTATIONS,
+  TOUR_SHORT_TEXT_POINT_MAX_M,
+  TOUR_SHORT_TEXT_ROLES,
+} from '../ar/tour-short-text.js';
 import { TOUR_STORY_TITLE_RULE } from '../ar/tour-story.js';
 
 /** The assets every generated block names: one or two of each kind, with
@@ -209,6 +219,55 @@ function defined(record: Record<string, unknown>): Record<string, unknown> {
 
 const r = TOUR_BLOCK_TEXT_RULES;
 
+/** An optional value (absent is undefined). */
+const maybe = <T>(a: fc.Arbitrary<T>) => fc.option(a, { nil: undefined });
+
+/** JSON writes -0 as 0, so a file never holds one. */
+const noNegZero = (x: number) => (x === 0 ? 0 : x);
+
+const hexColor = fc
+  .integer({ min: 0, max: 0xffffff })
+  .map((n) => `#${n.toString(16).padStart(6, '0')}`);
+
+/** One coordinate of a short text's `pointsTo`, in metres. */
+const pointCoord = fc
+  .double({
+    min: -TOUR_SHORT_TEXT_POINT_MAX_M,
+    max: TOUR_SHORT_TEXT_POINT_MAX_M,
+    noNaN: true,
+  })
+  .map(noNegZero);
+
+/** A short text's look fields (`tour-short-text.ts`), each optional;
+ *  exported for a consumer's own every-field generator. */
+export const shortTextLookArbitraries = {
+  role: maybe(fc.constantFrom(...TOUR_SHORT_TEXT_ROLES)),
+  orientation: maybe(fc.constantFrom(...TOUR_SHORT_TEXT_ORIENTATIONS)),
+  readAtM: maybe(
+    fc.double({
+      min: TOUR_SHORT_TEXT_MIN_READ_AT_M,
+      max: TOUR_SHORT_TEXT_MAX_READ_AT_M,
+      noNaN: true,
+    })
+  ),
+  pointsTo: maybe(fc.tuple(pointCoord, pointCoord, pointCoord)),
+  lang: maybe(fc.constantFrom('en', 'de-CH', 'zh-Hant-TW')),
+  style: maybe(fc.constantFrom(...TOUR_GROUND_STYLES)),
+  bendDeg: maybe(
+    fc
+      .double({
+        min: -TOUR_GROUND_MAX_BEND_DEG,
+        max: TOUR_GROUND_MAX_BEND_DEG,
+        noNaN: true,
+      })
+      .map(noNegZero)
+  ),
+  floorPlacement: maybe(fc.constantFrom(...TOUR_GROUND_FLOOR_PLACEMENTS)),
+  captionOnArrow: maybe(fc.boolean()),
+  color: maybe(hexColor),
+  darkColor: maybe(hexColor),
+};
+
 /** Each kind's own fields for a block in `view`. */
 const KIND_FIELDS: Record<
   TourBlockKind,
@@ -218,6 +277,7 @@ const KIND_FIELDS: Record<
     fc.record({
       caption: tourTextArbitrary(r.shortText.caption),
       description: optionalText(r.shortText.description),
+      ...shortTextLookArbitraries,
     }),
   longText: () =>
     fc.record({
@@ -388,7 +448,7 @@ const modelSize = fc.double({
 export const TOUR_FREE_VIEWS: Readonly<
   Record<TourBlockKind, readonly string[]>
 > = {
-  shortText: ['pin'],
+  shortText: ['pin', 'sign', 'edgeHint'],
   longText: ['lectern', 'reading'],
   picture: ['plane'],
   video: ['card'],

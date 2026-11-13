@@ -52,7 +52,8 @@ interface WorldFrame {
   readonly viewer: readonly [number, number, number];
   /** The camera drawing the frame, for a part that turns toward it or
    *  keeps a size on the screen (the editor's marks, a character's
-   *  card); absent where the page gives none. Read, never moved. */
+   *  card, a hint's tag); absent where the page gives none. Read, never
+   *  moved. */
   readonly camera?: Camera;
   /** How many metres one CSS px covers 1 m from `camera` (its lens over
    *  the view's height): a size on the screen at a distance `d` is
@@ -298,17 +299,30 @@ const viewerLocal = new Vector3();
  * Every camera frame (`main.ts`): each of `parts` shown under a
  * station's content group of `scene` (`shownIn`) and having an
  * `update` is given the page clock (`nowMs`, as seconds) and the world
- * position of `viewer` (the camera) in its object's parent frame. No
- * scene or no camera: nothing is ticked.
+ * position of `viewer` (the camera) in its object's parent frame. A
+ * viewer that is a camera is handed on too (a hint at the screen's edge
+ * places its tag by it), with its lens over `viewHeightPx` (the view's
+ * height in CSS px) where that is given. No scene or no camera: nothing
+ * is ticked.
  */
 export function tickWorldParts(
   scene: Object3D | null,
   viewer: Object3D | null,
   nowMs: number,
   parts: readonly WorldPart[] = mountedWorldParts(),
+  viewHeightPx?: number,
 ): void {
   if (scene === null || viewer === null) return;
   const seconds = nowMs / 1000;
+  const camera = isCamera(viewer) ? viewer : undefined;
+  const lens = camera?.projectionMatrix.elements[5] ?? 0;
+  const metresPerPxAtOneM =
+    camera !== undefined &&
+    viewHeightPx !== undefined &&
+    viewHeightPx > 0 &&
+    lens > 0
+      ? 2 / (lens * viewHeightPx)
+      : undefined;
   for (const part of parts) {
     if (part.update === undefined || !shownIn(part.object, scene)) continue;
     const parent = part.object.parent;
@@ -317,8 +331,15 @@ export function tickWorldParts(
     part.update({
       seconds,
       viewer: [viewerLocal.x, viewerLocal.y, viewerLocal.z],
+      ...(camera === undefined ? {} : { camera }),
+      ...(metresPerPxAtOneM === undefined ? {} : { metresPerPxAtOneM }),
     });
   }
+}
+
+/** Whether `o` is a camera (three marks every camera so). */
+function isCamera(o: Object3D): o is Camera {
+  return (o as Partial<Camera>).isCamera === true;
 }
 
 /**
