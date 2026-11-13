@@ -479,6 +479,18 @@ function card(page, name) {
   return page.locator("#tree-body .card", { hasText: name });
 }
 
+/**
+ * The fold button of the docked group holding panel `id`'s tab: on a
+ * folded group it is the rail's unfold button.
+ * @param {import("@playwright/test").Page} page
+ * @param {string} id
+ */
+function railFold(page, id) {
+  return page
+    .locator(`.dock-host .dv-groupview:has(.dock-tab[data-panel="${id}"])`)
+    .locator(".dock-fold");
+}
+
 test("the shell's layout at a phone, a phone in landscape, a tablet and a desktop", async ({
   page,
 }) => {
@@ -515,7 +527,15 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   await page.locator('#inspector-head [data-act="fold"]').click();
   await expect(page.locator("#inspector-body")).toBeHidden();
   await expectFrame(page, landscape);
-  await page.locator('#inspector-head [data-act="fold"]').click();
+  // Folded, the details are a rail at the window's right edge, and the
+  // head's fold button goes with the panel: the rail's own button unfolds.
+  const rail = railFold(page, "details");
+  await expect(rail).toBeVisible();
+  await expect(rail).toHaveAttribute("aria-expanded", "false");
+  const railBox = await box(rail);
+  expect(railBox.x + railBox.width).toBeLessThanOrEqual(landscape.width);
+  expect(railBox.x).toBeGreaterThan(landscape.width - 60);
+  await rail.click();
   await expect(page.locator("#inspector-body")).toBeVisible();
 
   // A tablet in portrait: the labels go, the same two docks.
@@ -1495,10 +1515,10 @@ test("File's Add debug data opens the same add as the map's panel", async ({
 test("a tap on the folded tree's Stations header opens the dock with its stations shown", async ({
   page,
 }) => {
-  // Why: the folded head's "Stations" header is the larger target. A tap
-  // on it unfolded the dock and also closed the Stations section, so the
-  // tree came back with every station hidden and seemed to have collapsed;
-  // the next tap opened it. On a folded dock the header only unfolds.
+  // Why: a tap that unfolded the dock once also closed the Stations
+  // section, so the tree came back with every station hidden and seemed to
+  // have collapsed. The folded tree is now a rail, which hides the header:
+  // the rail's button unfolds it, and the Stations come back shown.
   test.setTimeout(150_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   await open3d(page);
@@ -1508,7 +1528,7 @@ test("a tap on the folded tree's Stations header opens the dock with its station
     "aria-expanded",
     "true",
   );
-  await page.locator("#tree-stations").click();
+  await railFold(page, "list").click();
   await expect(page.locator("#shell-tree")).not.toHaveClass(/\bcollapsed\b/);
   await expect(page.locator("#tree-stations")).toHaveAttribute(
     "aria-expanded",

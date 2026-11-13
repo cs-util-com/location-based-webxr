@@ -206,8 +206,13 @@ async function expectDocksAt(page, sizes) {
       /** @type {any} */ (window).__tourEditor.selected(),
     ),
   ).toBeNull();
+  // Folded, the list is a rail: its own head goes with it, and the rail's
+  // fold button unfolds it.
   if (!(await page.locator("#tree-body").isVisible())) {
-    await page.locator("#tree-fold").click();
+    await page
+      .locator('.dock-host .dv-groupview:has(.dock-tab[data-panel="list"])')
+      .locator(".dock-fold")
+      .click();
   }
   await page.locator("#tree-body .card .pick").first().click();
   await expect(page.locator("#inspector-body")).toBeVisible();

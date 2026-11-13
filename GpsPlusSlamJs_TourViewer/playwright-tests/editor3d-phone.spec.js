@@ -251,8 +251,9 @@ test("on a phone the controls smaller for a mouse take a finger", async ({
   // A row to measure, whatever the sample's station holds, then back.
   await page.locator('#inspector-body [data-act="add-content"]').click();
   await page.locator('#tree-add-menu [data-kind="shortText"]').click();
+  // Back goes one level up: from the new item to its station's details.
   await page.locator('#inspector-head [data-act="back"]').click();
-  await station(page, "The old gate").click();
+  await expect(page.locator("#inspector-head")).toContainText("The old gate");
   const row = page.locator('#inspector-body [data-act^="goto:"]').first();
   expect((await box(row)).height).toBe(32);
   await page.locator('#inspector-body [data-act="position"]').click();
