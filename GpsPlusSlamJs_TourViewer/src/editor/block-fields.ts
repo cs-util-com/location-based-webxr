@@ -19,7 +19,11 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
-import { KIND_EDIT, type FieldSpec } from "../kinds/edit-kinds.js";
+import {
+  KIND_EDIT,
+  type ChoiceSpec,
+  type FieldSpec,
+} from "../kinds/edit-kinds.js";
 
 /** One field of a block, as the inspector draws it. */
 export type BlockField = BlockTextField | BlockNumberField;
@@ -106,7 +110,9 @@ function numberOf(block: AnyBlock, name: string): number | undefined {
 /** The fields the inspector types for `block`, besides a short text's
  *  caption (the head's). */
 export function blockFields(block: AnyBlock): BlockField[] {
-  return ownFields(block).map((spec) => {
+  // A choice is the kind's panel's chips, not a box the dock types.
+  const typedSpecs = ownFields(block).filter((s) => s.choice === undefined);
+  return typedSpecs.map((spec) => {
     if (spec.number !== undefined) {
       const n = numberOf(block, spec.name);
       return {
@@ -128,6 +134,32 @@ export function blockFields(block: AnyBlock): BlockField[] {
       unit: rule.unit,
       required: rule.required,
     };
+  });
+}
+
+/** One of a block's choices (`FieldSpec` `choice`), as its kind's panel
+ *  draws it: chips, the one in use pressed. */
+export interface BlockChoice {
+  readonly name: string;
+  readonly label: string;
+  /** The value in use: the block's, or the fallback when it has none. */
+  readonly value: string;
+  readonly values: ChoiceSpec["values"];
+}
+
+/** `block`'s choices in its view, in its row's order. */
+export function blockChoices(block: AnyBlock): BlockChoice[] {
+  return ownFields(block).flatMap((spec) => {
+    if (spec.choice === undefined) return [];
+    const own = textOf(block, spec.name);
+    return [
+      {
+        name: spec.name,
+        label: spec.label,
+        value: own === "" ? spec.choice.fallback : own,
+        values: spec.choice.values,
+      },
+    ];
   });
 }
 
@@ -179,6 +211,9 @@ export function blockFieldEdit<B extends AnyBlock>(
   if (spec === undefined) return { kind: "unchanged" };
   if (spec.number !== undefined) {
     return numberFieldEdit(block, spec.label, name, spec.number, value);
+  }
+  if (spec.choice !== undefined) {
+    return choiceFieldEdit(block, spec.label, name, spec.choice, value);
   }
   const text = value.trim();
   if (text === textOf(block, name)) return { kind: "unchanged" };
@@ -240,6 +275,32 @@ function numberFieldEdit<B extends AnyBlock>(
       reason: "Full volume within must be less than the reach.",
     };
   }
+  return { kind: "edited", after: rest as unknown as B };
+}
+
+/** What pressing the chip `value` of a choice writes (`blockFieldEdit`):
+ *  the value, `unchanged` for the one in use (an absent field's fallback
+ *  among them), refused for one the choice does not offer. */
+function choiceFieldEdit<B extends AnyBlock>(
+  block: B,
+  label: string,
+  name: string,
+  choice: ChoiceSpec,
+  value: string,
+):
+  | { readonly kind: "edited"; readonly after: B }
+  | { readonly kind: "unchanged" }
+  | { readonly kind: "refused"; readonly reason: string } {
+  if (!choice.values.some((v) => v.value === value)) {
+    const words = choice.values.map((v) => v.label).join(", ");
+    return { kind: "refused", reason: `${label} is one of: ${words}.` };
+  }
+  const own = textOf(block, name);
+  if (value === (own === "" ? choice.fallback : own)) {
+    return { kind: "unchanged" };
+  }
+  const rest = { ...(block as unknown as Record<string, unknown>) };
+  rest[name] = value;
   return { kind: "edited", after: rest as unknown as B };
 }
 

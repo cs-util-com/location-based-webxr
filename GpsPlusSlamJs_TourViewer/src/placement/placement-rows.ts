@@ -89,6 +89,20 @@ const MODEL: ViewPlacement = {
   },
 };
 
+/** A picture's or a video's dots: its width (the format's bounds, which
+ *  the two kinds share). */
+const WIDE: ViewPlacement = {
+  ...TURNING,
+  extent: {
+    kind: "size",
+    field: "widthM",
+    label: "Width",
+    meaning: "Its width",
+    min: TOUR_PICTURE_MIN_WIDTH_M,
+    max: TOUR_PICTURE_MAX_WIDTH_M,
+  },
+};
+
 type ViewsOf<K extends TourBlockKind> = (typeof TOUR_KINDS)[K]["views"][number];
 
 /** THE block table: one row per kind and view of the format. */
@@ -97,21 +111,15 @@ export const BLOCK_PLACEMENT = {
   // The stand keeps its turn about up (`uprightTurn`); the sign's plate
   // turns to the viewer as it is drawn.
   longText: { lectern: TURNING, reading: FACING, card: POSELESS },
-  picture: {
-    plane: {
-      ...TURNING,
-      extent: {
-        kind: "size",
-        field: "widthM",
-        label: "Width",
-        meaning: "Its width",
-        min: TOUR_PICTURE_MIN_WIDTH_M,
-        max: TOUR_PICTURE_MAX_WIDTH_M,
-      },
-    },
+  picture: { plane: WIDE, card: POSELESS },
+  // A screen and a porthole stand at their pose; a cutout turns toward
+  // the viewer by a little from it, so its pose's turn is still its own.
+  video: {
+    screen: WIDE,
+    cutout: WIDE,
+    porthole: WIDE,
     card: POSELESS,
   },
-  video: { card: POSELESS },
   // A sound's reach has no dots: it is set in the inspector.
   audio: { spot: FACING, zone: FACING, card: POSELESS },
   model: {

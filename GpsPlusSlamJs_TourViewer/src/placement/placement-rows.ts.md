@@ -20,8 +20,8 @@ folder and a station), what the 3D editor's handles do with it:
   uniform scale of a whole frame: a folder's `scale`).
 
 The rows are per VIEW, not per kind, because a block may stand in the
-world in one view and be a card in another (a video gaining a screen
-view would be the first such kind).
+world in one view and be a card in another (a video: a screen, a cutout
+or a porthole free, a card in a story).
 
 ## Public API
 
@@ -48,7 +48,8 @@ view would be the first such kind).
   `reading` posed, facing (the plate turns to the viewer); `card` poseless.
 - `picture`: `plane` posed, turning, `size` on `widthM`
   (`TOUR_PICTURE_MIN_WIDTH_M` to `TOUR_PICTURE_MAX_WIDTH_M`); `card` poseless.
-- `video`: `card` poseless (no world view yet).
+- `video`: `screen`, `cutout` and `porthole` posed, turning, `size` on
+  `widthM` (the picture's bounds); `card` poseless.
 - `audio`: `spot` and `zone` posed, facing, no dots (a sound's reach is
   set in the inspector); `card` poseless.
 - `model`: every world view posed, turning, `size` on `sizeM`

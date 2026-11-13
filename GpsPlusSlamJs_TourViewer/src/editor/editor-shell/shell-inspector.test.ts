@@ -41,6 +41,7 @@ const NO_PLACE = {
   extent: null,
   model: null,
   longText: null,
+  video: null,
   offset: null,
   headingDeg: null,
   turns: false,

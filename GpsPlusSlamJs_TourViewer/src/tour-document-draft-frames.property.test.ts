@@ -299,12 +299,18 @@ const BLOCKS: Record<TourBlockKind, (id: string) => fc.Arbitrary<TourBlock>> = {
     }),
   video: (id) =>
     everyField<TourVideoBlock>({
-      ...envelope(id, ["card"] as const),
+      ...envelope(id, ["screen", "cutout", "porthole"] as const),
       kind: fc.constant("video"),
       video: fc.constant("clip"),
       transcript: words,
       title: maybe(words),
       poster: maybe(fc.constant("photo")),
+      // Required in every world view, and a free video always is in one.
+      widthM: fc.integer({ min: 1, max: 50 }),
+      start: maybe(fc.constantFrom("enter", "near", "look", "tap")),
+      withinM: maybe(fc.integer({ min: 1, max: 20 })),
+      sound: maybe(fc.constantFrom("on", "off")),
+      alpha: maybe(fc.constantFrom("none", "stacked")),
     }),
   audio: (id) =>
     everyField<TourAudioBlock>({

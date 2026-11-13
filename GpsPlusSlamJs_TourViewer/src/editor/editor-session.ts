@@ -534,16 +534,6 @@ const MOVE_REFUSALS: Readonly<
     "A model without a size cannot stand in the world: give it a size first.",
 };
 
-/** Said for a story's item that cannot leave its story, by its kind. */
-function cannotStandFreeRefusal(manifest: TourManifest, id: string): string {
-  const place = tourChildPlace(manifest, id);
-  const item =
-    place?.story === undefined ? undefined : place.story.children[place.index];
-  return item?.kind === "video"
-    ? "A video plays only in a story for now: it cannot stand in the world by itself."
-    : MOVE_REFUSALS.cannotStandFree;
-}
-
 /** Said for a free item whose file the tour on disk does not hold yet,
  *  naming its kind ("an audio", "a 3D model"). */
 function unsavedRefusal(manifest: TourManifest, id: string): string {
@@ -2743,9 +2733,7 @@ export function createEditorSession(input: {
           reason:
             change.reason === "unsaved"
               ? unsavedRefusal(items, id)
-              : change.reason === "cannotStandFree"
-                ? cannotStandFreeRefusal(items, id)
-                : MOVE_REFUSALS[change.reason],
+              : MOVE_REFUSALS[change.reason],
         };
       }
       const name = childCalled(items, id);

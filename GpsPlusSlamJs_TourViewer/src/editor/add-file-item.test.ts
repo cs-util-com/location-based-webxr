@@ -18,6 +18,7 @@ import { describe, expect, it, vi, type Mock } from "vitest";
 import "../test-support/tour-of.js";
 import type { FileAddKind } from "../kinds/edit-kinds.js";
 import { stationContent, storyOf } from "../test-support/station-content.js";
+import { NEW_VIDEO_WIDTH_M } from "./new-file-item.js";
 import {
   addFileItem,
   FILE_ADD_FAILED,
@@ -236,19 +237,27 @@ describe("placeFileItem", () => {
     expect(i.addEntryToStory).not.toHaveBeenCalled();
   });
 
-  it("refuses a station that is gone, and a video at a station, placing nothing", () => {
+  it("refuses a station that is gone, placing nothing", () => {
     const gone = input("audio", { kind: "station", stationId: "x" });
     expect(placeFileItem(gone)).toEqual({
       kind: "refused",
       reason: FILE_STATION_GONE,
     });
-    const video = input("video", AT_STATION);
-    expect(placeFileItem(video)).toEqual({
-      kind: "refused",
-      reason: "A video plays in a story: add it to one.",
-    });
     expect(gone.place).not.toHaveBeenCalled();
-    expect(video.place).not.toHaveBeenCalled();
+  });
+
+  // Why: a video stands free in its station as a screen, as wide as a new
+  // video starts, like a picture or a sound.
+  it("places a video at a station as a screen", () => {
+    const video = input("video", AT_STATION);
+    expect(placeFileItem(video)).toMatchObject({ kind: "added" });
+    expect(video.place).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "video",
+        view: "screen",
+        widthM: NEW_VIDEO_WIDTH_M,
+      }),
+    );
   });
 
   it("passes on the tour's refusal", () => {

@@ -52,6 +52,13 @@ import {
   type TourTextRule,
 } from '../ar/tour-blocks.js';
 import { TOUR_STORY_TITLE_RULE } from '../ar/tour-story.js';
+import {
+  TOUR_VIDEO_ALPHAS,
+  TOUR_VIDEO_MAX_WITHIN_M,
+  TOUR_VIDEO_MIN_WITHIN_M,
+  TOUR_VIDEO_SOUNDS,
+  TOUR_VIDEO_STARTS,
+} from '../ar/tour-kinds.js';
 
 /** The assets every generated block names: one or two of each kind, with
  *  ids the block id generator also produces (they may collide). */
@@ -236,12 +243,34 @@ const KIND_FIELDS: Record<
         noNaN: true,
       }),
     }),
-  video: () =>
+  video: (view) =>
     fc.record({
       video: fc.constant('clip'),
       transcript: tourTextArbitrary(r.video.transcript),
       title: optionalText(r.video.title),
       poster: fc.option(fc.constantFrom(...IMAGE_ASSETS), { nil: undefined }),
+      // Required in every world view, kept (optional) in a card.
+      widthM:
+        view === 'card'
+          ? fc.option(videoWidth, { nil: undefined })
+          : videoWidth,
+      start: fc.option(fc.constantFrom(...TOUR_VIDEO_STARTS), {
+        nil: undefined,
+      }),
+      withinM: fc.option(
+        fc.double({
+          min: TOUR_VIDEO_MIN_WITHIN_M,
+          max: TOUR_VIDEO_MAX_WITHIN_M,
+          noNaN: true,
+        }),
+        { nil: undefined }
+      ),
+      sound: fc.option(fc.constantFrom(...TOUR_VIDEO_SOUNDS), {
+        nil: undefined,
+      }),
+      alpha: fc.option(fc.constantFrom(...TOUR_VIDEO_ALPHAS), {
+        nil: undefined,
+      }),
     }),
   audio: (view) =>
     fc
@@ -377,6 +406,12 @@ function audioReaches(
 }
 const audioVolume = fc.double({ min: 0, max: 1, noNaN: true });
 
+const videoWidth = fc.double({
+  min: TOUR_PICTURE_MIN_WIDTH_M,
+  max: TOUR_PICTURE_MAX_WIDTH_M,
+  noNaN: true,
+});
+
 const modelSize = fc.double({
   min: TOUR_MODEL_MIN_SIZE_M,
   max: TOUR_MODEL_MAX_SIZE_M,
@@ -391,7 +426,7 @@ export const TOUR_FREE_VIEWS: Readonly<
   shortText: ['pin'],
   longText: ['lectern', 'reading'],
   picture: ['plane'],
-  video: ['card'],
+  video: ['screen', 'cutout', 'porthole'],
   audio: ['spot', 'zone'],
   model: TOUR_MODEL_WORLD_VIEWS,
   character: TOUR_CHARACTER_VIEWS,

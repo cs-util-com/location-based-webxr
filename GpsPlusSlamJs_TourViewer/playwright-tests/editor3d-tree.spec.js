@@ -295,8 +295,8 @@ test("a row's + adds a short or a long text in place, from the mouse and from th
   await expect(menu).toBeVisible();
   await expect(plus).toHaveAttribute("aria-expanded", "true");
   await expect(menu.locator('[data-kind="shortText"]')).toBeFocused();
-  // A video plays only in a story: off on a station's menu.
-  await expect(menu.locator('[data-kind="video"]')).toHaveAttribute(
+  // A video stands free at a station (as a screen): on in its menu.
+  await expect(menu.locator('[data-kind="video"]')).not.toHaveAttribute(
     "aria-disabled",
     "true",
   );

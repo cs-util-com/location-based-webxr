@@ -101,6 +101,7 @@ export const SPECS = {
     lane: 3,
   },
   "editor3d-tree.spec.js": { project: "webgl", area: "editor", lane: 2 },
+  "editor3d-video.spec.js": { project: "webgl", area: "editor", lane: 4 },
   "editor3d-world-marks.spec.js": {
     project: "webgl",
     area: "editor",

@@ -16,6 +16,7 @@ import { textCounterLine, wireTextCounter } from "../pin-text.js";
 import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
 
 import {
+  blockChoices,
   blockFieldEdit,
   blockFieldPlaceholder,
   blockFields,
@@ -462,5 +463,71 @@ describe("number fields", () => {
         },
       ),
     );
+  });
+});
+
+// Why: the creator sets how a free video starts, with what sound and a
+// cutout's background as chips (the kind's panel), never as a typed box;
+// a press of a value the format does not take must be refused before it
+// reaches the file, and the chip already in use (an absent field's
+// fallback among them) must write nothing, or it would be an empty undo
+// step.
+describe("choice fields", () => {
+  const SCREEN = {
+    ...VIDEO,
+    view: "screen",
+    widthM: 1.6,
+  } as unknown as TourObject;
+  const CUTOUT = {
+    ...SCREEN,
+    view: "cutout",
+    start: "near",
+    sound: "on",
+  } as unknown as TourObject;
+
+  it("lists a video's choices in its view, with their fallbacks in use", () => {
+    expect(blockChoices(SCREEN).map((c) => [c.name, c.value])).toEqual([
+      ["start", "enter"],
+      ["sound", "off"],
+    ]);
+    expect(blockChoices(CUTOUT).map((c) => [c.name, c.value])).toEqual([
+      ["start", "near"],
+      ["sound", "on"],
+      ["alpha", "none"],
+    ]);
+    // A story's card reads none of them.
+    expect(blockChoices(VIDEO)).toEqual([]);
+  });
+
+  it("keeps the choices out of the fields the dock types", () => {
+    expect(blockFields(CUTOUT).map((f) => f.name)).toEqual([
+      "title",
+      "transcript",
+      "withinM",
+    ]);
+  });
+
+  it("writes a choice, and nothing for the one in use", () => {
+    const edit = blockFieldEdit(SCREEN, "start", "look");
+    expect(edit.kind === "edited" && edit.after).toMatchObject({
+      start: "look",
+    });
+    expect(blockFieldEdit(SCREEN, "sound", "off")).toEqual({
+      kind: "unchanged",
+    });
+    expect(blockFieldEdit(CUTOUT, "sound", "on")).toEqual({
+      kind: "unchanged",
+    });
+  });
+
+  it("refuses a value the choice does not offer, and writes no choice of another view", () => {
+    expect(blockFieldEdit(SCREEN, "start", "later")).toEqual({
+      kind: "refused",
+      reason:
+        "Starts is one of: On arrival, When near, When looked at, On a tap.",
+    });
+    expect(blockFieldEdit(SCREEN, "alpha", "stacked")).toEqual({
+      kind: "unchanged",
+    });
   });
 });

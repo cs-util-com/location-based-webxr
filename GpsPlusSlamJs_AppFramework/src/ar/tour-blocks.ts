@@ -290,6 +290,9 @@ function freePlacement(read: TourBlockRead): TourBlock | string {
   if (block.kind === 'model' && block.sizeM === undefined) {
     return `block "${block.id}" stands free in its station, and a placed model needs a size`;
   }
+  if (block.kind === 'video' && block.widthM === undefined) {
+    return `block "${block.id}" stands free in its station, and a video in the world needs a width`;
+  }
   return { ...block, view: floor } as TourBlock;
 }
 

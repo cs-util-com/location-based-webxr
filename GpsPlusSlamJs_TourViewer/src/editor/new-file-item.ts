@@ -20,12 +20,13 @@ import type {
 import type { TourStoryBlock } from "gps-plus-slam-app-framework/ar/tour-story";
 
 import { NARRATION_DEFAULT_RADIUS_M } from "../kinds/audio/sound-reach.js";
+import { VIDEO_DEFAULT_WIDTH_M } from "../kinds/video/video-rules.js";
 import { KIND_EDIT, type FileAddKind } from "../kinds/edit-kinds.js";
 import { freeGeo, storyEntryShell, type NewItemInput } from "./new-pin.js";
 
 /** The view a free block of `kind` starts in: the first its kind table
  *  lets a free block hold (its floor where it lists none). */
-function freeView<K extends "picture" | "audio" | "model">(
+function freeView<K extends FileAddKind>(
   kind: K,
 ): (typeof TOUR_KINDS)[K]["floor"] {
   const row = TOUR_KINDS[kind];
@@ -45,6 +46,11 @@ export const NEW_MODEL_SIZE_M = 2;
 /** A new sound's narration circle (m): the radius a sound takes when it
  *  leaves a story for the world (`kinds/audio/sound-reach.ts`). */
 export const NEW_SOUND_RADIUS_M = NARRATION_DEFAULT_RADIUS_M;
+
+/** A new video's width (m): the width a video takes when it first
+ *  stands in the world (`kinds/video/video-rules.ts`), as one moved out
+ *  of a story does. */
+export const NEW_VIDEO_WIDTH_M = VIDEO_DEFAULT_WIDTH_M;
 
 /** What a file item is made of: the file's asset, its name (the item's
  *  title) and, for a video, its minted poster. */
@@ -75,13 +81,13 @@ export function fileItemTitle(fileName: string, kind: FileAddKind): string {
  * The item `source` makes standing free in `input.station`, at its free
  * spot on the ground (`freeGeo`): a picture as a plane `NEW_PICTURE_WIDTH_M`
  * wide, a sound as a narration circle of `NEW_SOUND_RADIUS_M`, a model
- * placed at `NEW_MODEL_SIZE_M`. Null for a video: no free host draws one,
- * so it is added to a story only.
+ * placed at `NEW_MODEL_SIZE_M`, a video as a screen `NEW_VIDEO_WIDTH_M`
+ * wide with its poster when one was minted.
  */
 export function newFileItem(
   input: NewItemInput,
   source: FileItemSource,
-): TourObject | null {
+): TourObject {
   const shared = {
     id: input.id,
     title: fileItemTitle(source.fileName, source.kind),
@@ -123,7 +129,14 @@ export function newFileItem(
         radiusM: NEW_SOUND_RADIUS_M,
       } as unknown as TourObject;
     case "video":
-      return null;
+      return {
+        ...shared,
+        kind: "video",
+        view: freeView("video"),
+        video: source.asset.id,
+        widthM: NEW_VIDEO_WIDTH_M,
+        ...(source.poster === undefined ? {} : { poster: source.poster.id }),
+      };
   }
 }
 

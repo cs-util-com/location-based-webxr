@@ -41,11 +41,14 @@ there.
     and `views?` - the views that read it, none: every view), besides a
     short text's caption, which the head types (`editor/block-fields.ts`).
     Audio lists a narration circle's radius (`spot`) and a zone's reach,
-    calm and volume (`zone`).
+    calm and volume (`zone`); a video in the world its `near` start's
+    distance. A field may instead be a `choice` (`ChoiceSpec`: its values
+    in the creator's words and the fallback an absent one means), drawn
+    as chips by the kind's panel, not typed: a video's start, its sound
+    and a cutout's background.
   - `add` - its line in the tree's add menu (`KindAdd`: `label`, `hint`,
     `words`, `addable`, and for a kind made from a file `file`: the
-    asset kind its file must be, and `storyOnly`: why it is added to a
-    story only - a video, which no free host draws); a row without one is
+    asset kind its file must be); a row without one is
     not offered at all, and one with `addable: false` is listed, says why,
     and adds nothing. The character has no add line: the add menu's own
     Character entry (`editor/editor-shell/tree-add-menu.ts`) makes him in
@@ -57,9 +60,6 @@ there.
   (`add.file`: picture, video, audio, model) and the rest (short and long
   text, made from words alone: `editor/new-pin.ts`).
 - `isFileAddKind(kind)` - type guard on `add.file`.
-- `storyOnlyReason(kind)`, `isStoryOnly(kind)` - the `add.storyOnly`
-  words, or undefined; the station's menu shows them on the kind, off,
-  and the palette (which adds at stations) leaves the kind out.
 - Whether a block stands in the world, turns and has size dots is not a
   kind's: it is its VIEW's, in `placement/placement-rows.ts` (a kind may
   stand in the world in one view and be a card in another), held to the
@@ -121,8 +121,8 @@ there.
 - Each `look` is unique (the tree tells rows apart by it).
 - What the editor can do with a kind is unchanged by this list: it only
   says it. Short and long text, picture, video, sound and 3D model are
-  addable (the four files through `editor/add-file-item.ts`), a video in a
-  story only; a character is listed off.
+  addable (the four files through `editor/add-file-item.ts`); a character
+  is listed off.
 
 ## The editor half of a row
 
@@ -162,7 +162,6 @@ KIND_EDIT.longText.label; // "Long text"
 kindWithArticle("audio"); // "an audio"
 ADD_CHOICES.filter(isAddable).map((c) => c.kind);
 // ["shortText", "longText", "picture", "video", "audio", "model"]
-storyOnlyReason("video"); // "A video plays in a story: add it to one"
 ```
 
 ## Tests

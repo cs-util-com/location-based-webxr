@@ -54,7 +54,7 @@ the reading sign (`reading-sign.ts`) are world parts too.
   narration circle's player card.
 - `WorldPart` - `object` (what stands; placed by the renderer, never by the
   part), `tapTarget?` (what a tap is cast against; none: no tap),
-  `update?({ seconds, viewer, camera?, metresPerPxAtOneM? })` (driven by
+  `update?({ seconds, viewer, facing?, camera?, metresPerPxAtOneM? })` (driven by
   `tickWorldParts` in play, by the editor's stations layer in the editor,
   which also hands the camera and its lens), `tap?()`,
   `ready?` (a promise that settles once a part that loads something
@@ -75,7 +75,9 @@ the reading sign (`reading-sign.ts`) are world parts too.
   camera frame (`main.ts` `hooks.tickStations`): each shown part with an
   `update` gets `{ seconds: nowMs / 1000, viewer }`, the camera's world
   position in the part object's parent frame (the frame its `position` is
-  in, so a part measures its distance with no matrix of its own). No scene
+  in, so a part measures its distance with no matrix of its own), and
+  `facing`, the direction the camera looks in that same frame (a unit
+  vector; a video's `look` start reads it). No scene
   or no camera: nothing is ticked. A hidden station's parts are not ticked,
   so its sounds keep their last level until it is left (and disposed).
 - `mountWorldPart(part)`, `unmountWorldPart(part)` (false when it was not

@@ -25,6 +25,7 @@ import { longTextPanel } from "../long-text/long-text-panel.js";
 import type { ModelFocus, ModelPick } from "../editor-view.js";
 import type { KindPanel, KindPanelDraw } from "./kind-panel.js";
 import { createModelPanel } from "./model-panel.js";
+import { createVideoPanel } from "./video-panel.js";
 
 /** What the shell gives a kind's panel: its page, its edits and its
  *  words. */
@@ -84,6 +85,14 @@ function model(ctx: PanelContext): KindPanel {
   });
 }
 
+/** A free video's panel: its view, how it starts, its sound. */
+function video(ctx: PanelContext): KindPanel {
+  return createVideoPanel({
+    writeView: (id, view) => ctx.edits.view(id, view),
+    writeChoice: (id, field, value) => ctx.edits.block(id, field, value),
+  });
+}
+
 /** A kind's panel maker, or null for a kind without one. */
 type KindPanelList = {
   readonly [K in TourBlockKind]: ((ctx: PanelContext) => KindPanel) | null;
@@ -94,7 +103,7 @@ export const KIND_PANELS = {
   shortText: null,
   longText,
   picture: null,
-  video: null,
+  video,
   audio: null,
   model,
   character: null,

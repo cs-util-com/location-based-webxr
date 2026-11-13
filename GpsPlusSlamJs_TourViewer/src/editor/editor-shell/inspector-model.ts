@@ -71,8 +71,10 @@ import {
 } from "../../placement/placeables.js";
 import type { ExtentSpec } from "../../placement/placement-rows.js";
 import {
+  blockChoices,
   blockFields,
   storyBlockFields,
+  type BlockChoice,
   type BlockField,
 } from "../block-fields.js";
 import { FOLDER_PREFIX, STORY_PREFIX } from "../editor-model.js";
@@ -375,6 +377,13 @@ export interface InspectorModelParts {
   readonly pick: ModelPick | null;
 }
 
+/** A free video as its panel shows it (`kind-panels/video-panel.ts`). */
+export interface InspectorVideo {
+  readonly view: string;
+  /** Its choices in that view (`block-fields.ts` `blockChoices`). */
+  readonly choices: readonly BlockChoice[];
+}
+
 /** A long text as its writer shows it (`long-text-writer.ts`). */
 export interface InspectorLongText {
   readonly blockId: string;
@@ -437,6 +446,9 @@ interface ItemInspector {
   readonly model: InspectorModelParts | null;
   /** A long text's writer's data; null for any other item. */
   readonly longText: InspectorLongText | null;
+  /** A free video's view and its choices (how it starts, its sound, a
+   *  cutout's background); null for any other item. */
+  readonly video: InspectorVideo | null;
   /** In its station's frame (m), its folders composed in: where it stands
    *  from the anchor; null for an item with no place in the world (a
    *  video). */
@@ -1014,6 +1026,10 @@ export function buildInspector(input: {
               over: readingSheetContent(stations, item).over,
               pictures: textPictures(input.assets),
             }
+          : null,
+      video:
+        item.kind === "video"
+          ? { view: item.view, choices: blockChoices(item) }
           : null,
       offset:
         inStation === null

@@ -20,7 +20,7 @@ where, best first; Enter adds the first.
   by the labels of the rows, in their order.
 - `paletteRows(query, stations, selectedStationId, kind = null)` ->
   `PaletteRow[]`:
-  - candidates: every addable kind of `ADD_CHOICES` (`../../kinds/edit-kinds.ts`) that is not story-only
+  - candidates: every addable kind of `ADD_CHOICES` (`../../kinds/edit-kinds.ts`)
     in every station, then a new station;
   - an empty query lists the default place's rows only: the selected
     station's (else the first station's) kinds and the new station;
@@ -42,9 +42,9 @@ where, best first; Enter adds the first.
 
 ## Invariants & assumptions
 
-- A character (`addable: false`) is never offered, nor a video
-  (`storyOnly`: the palette adds at stations, and a video plays only in a
-  story). A picture, a sound and a 3D model are, opening the file picker.
+- A character (`addable: false`) is never offered. A picture, a video,
+  a sound and a 3D model are, opening the file picker (a video stands at
+  the station as a screen).
 - A selected id that is not among `stations` counts as no selection.
 - No row is listed twice; a word matching nothing lists nothing (no
   fallback to the default place).
@@ -63,7 +63,7 @@ paletteRows("long steps", stations, "gate");
 the first station, kind and place in one query, an exact station
 number over the selection among 12 stations, a query in another
 Unicode form, the label's rank, no
-match and no video or character, the file kinds found by their words, a tour without stations, case and spaces, and a
+match and no character, a video found by its words, the file kinds found by their words, a tour without stations, case and spaces, and a
 property over 30 stations (each row once, the cap, a kind alone first at
 the selection); the kind filter, and `highlightParts` with overlaps, a
 single letter, a query in another Unicode form and a query full of

@@ -175,11 +175,9 @@ describe("KIND_EDIT", () => {
   it("offers in the add menu and the palette exactly the rows that say they are addable", () => {
     const listed = tourBlockKinds().filter((k) => rowOf(k).add !== undefined);
     const addable = listed.filter((k) => rowOf(k).add?.addable === true);
-    // A video is added in a story only: off on a station's menu, not in
-    // the palette, which adds at stations.
-    const atStation = addable.filter(
-      (k) => rowOf(k).add?.storyOnly === undefined,
-    );
+    // Every addable kind is on at a station as in a story: a video stands
+    // free as a screen, a cutout or a porthole.
+    const atStation = addable;
     document.body.replaceChildren();
     const menu = createTreeAddMenu({
       body: document.createElement("div"),

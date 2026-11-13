@@ -24,6 +24,7 @@ import { CHARACTER_PLAY } from "./character-card.js";
 import { AUDIO_PLAY } from "./kinds/audio/play.js";
 import type { ItemCardHost } from "./item-card.js";
 import { modelWorld } from "./kinds/model/world.js";
+import { videoWorld } from "./kinds/video/video-world.js";
 import type { WorldEnv, WorldPart } from "./world-part.js";
 
 /** What one kind does for a visitor. */
@@ -146,6 +147,8 @@ export const PLAY_KINDS = {
     },
     assets: (block) =>
       block.poster === undefined ? [block.video] : [block.video, block.poster],
+    // Stands free in the station as a screen, a cutout or a porthole.
+    world: (block, env) => videoWorld(block, env),
   },
   audio: AUDIO_PLAY,
   model: {

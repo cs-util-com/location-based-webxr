@@ -1,8 +1,8 @@
 /**
  * The Ctrl+K palette's rows, pure: what a typed query adds where. Each
  * row is a kind the editor can add to a station (its row says it is
- * addable and not to a story only: `KIND_EDIT` - a short or long text, a
- * picture, a sound, a 3D model) in one station, or a new station; a query names
+ * addable: `KIND_EDIT` - a short or long text, a picture, a video, a
+ * sound, a 3D model) in one station, or a new station; a query names
  * the kind and the place in one go ("long gate", "pin 2"), every word of
  * it found in the row's kind words (as a word's start) or in its place
  * (anywhere in it). An empty query lists what adds to the default place:
@@ -51,11 +51,8 @@ export interface PaletteRow {
 /** A kind a chip narrows the rows to. */
 export type PaletteKind = PaletteAdd["kind"];
 
-/** The kinds a station takes from the palette: addable, and not added to
- *  a story only (a video: the palette adds to stations). */
-const STATION_KINDS = ADD_CHOICES.filter(isAddable).filter(
-  (c) => c.storyOnly === undefined,
-);
+/** The kinds a station takes from the palette: the addable ones. */
+const STATION_KINDS = ADD_CHOICES.filter(isAddable);
 
 /** The chips, in their order: a kind that adds, then a new station. */
 export const PALETTE_KINDS: readonly {

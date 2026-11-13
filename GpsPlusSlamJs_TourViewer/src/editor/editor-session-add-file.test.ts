@@ -235,22 +235,20 @@ describe("adding an item from a file", () => {
     await session.close();
   });
 
-  it("refuses a video at a station with words, and takes it at the end of a story", async () => {
+  it("places a video at a station, and takes one at the end of a story", async () => {
     const session = await openedTour();
     const { editor, add, childIds } = setup(session);
     const video = new Blob(["fake-mp4-bytes"]);
-    const refused = await add(
-      "video",
-      { kind: "station", stationId: STATION },
-      video,
-      "flood.mp4",
-      "vid",
-    );
-    expect(refused).toEqual({
-      kind: "refused",
-      reason: "A video plays in a story: add it to one.",
-    });
-    expect(childIds()).not.toContain("vid");
+    expect(
+      await add(
+        "video",
+        { kind: "station", stationId: STATION },
+        video,
+        "flood.mp4",
+        "free-vid",
+      ),
+    ).toEqual({ kind: "added", id: "free-vid" });
+    expect(childIds()).toContain("free-vid");
     const story = editor.addStory(STATION);
     if (story.kind !== "added") throw new Error("no story");
     expect(

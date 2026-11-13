@@ -73,9 +73,13 @@ view, advance, facingDeg }`) and `advance { mode, afterS }`;
     picture's Width; null for an item with none), `fields` (its
     other text fields to type, `blockFields` of `../block-fields.ts`:
     a short text's description, a picture's title, caption and alt text,
-    a model's title), `offset`
+    a model's title, a video's title, transcript and Starts within),
+    `video` (`InspectorVideo`: a free video's view and its choices -
+    `blockChoices`: how it starts, its sound, a cutout's background - for
+    its panel, `../kind-panels/video-panel.ts`; null for any other kind),
+    `offset`
     (`northM`, `upM`, `eastM` in the station's frame, its folders composed
-    in; null for a block with no place in the world, a video),
+    in; null for a block with no place in the world),
     `headingDeg` (in the same frame; null with no place), `turns` (its
     placement row's: its gizmo has the round arrow), and `groundOffM` (the height
     over the ground of where it stands in the world, through its
@@ -162,8 +166,8 @@ one; a station's, an item's and a code's fields (and a code without a
 position); a station east and north of the tour's centre in metres;
 `headingOfRotation` for turns about up, and none for a forward turned
 straight up or down; `inspectorHint` for each kind and for none (a pin
-with no round arrow, a video with no place); a video as an item with no
-place; a free character as an item with its place and turn; an item in
+with no round arrow); a free video as an item with its place and its
+choices; a free character as an item with its place and turn; an item in
 a turned folder with its offset in the station's frame and its height
 off the ground where it stands.
 

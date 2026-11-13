@@ -562,6 +562,7 @@ describe("buildInspector", () => {
       model: null,
       // Only a free long text has the writer.
       longText: null,
+      video: null,
       // B2c: its other text fields, by the format's caps.
       fields: [
         {
