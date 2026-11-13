@@ -381,3 +381,20 @@ describe("options", () => {
     expect(counts[2]! / 800).toBeCloseTo(1, 0);
   });
 });
+
+describe("a wood larger than a spread can carry", () => {
+  // WHY THIS TEST MATTERS. The candidates of one wood used to be appended
+  // with `push(...candidates)`, which passes one argument per element and
+  // throws `RangeError: Maximum call stack size exceeded` above roughly
+  // 100-125 k of them. A forest relation covering the OSM demo's drawn
+  // window at Heidelberg reached that, and every rebuild after the full load
+  // failed (colour schemes plan 2026-11-10-0841, S6). 300 k candidates is
+  // well past the limit of every engine; the cap keeps the result small.
+  it("places the capped trees of a wood with 300 000 candidate cells", () => {
+    const trees = build([wood(square(0, 0, 1000, 1000))], {
+      densityPerM2: 0.3,
+      cap: 10,
+    });
+    expect(trees).toHaveLength(10);
+  });
+});
