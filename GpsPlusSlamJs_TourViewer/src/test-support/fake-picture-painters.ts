@@ -8,7 +8,7 @@ import type {
 } from "../kinds/picture/picture-paint.js";
 
 /** A plate's fixed height (m) in these tests. */
-export const FAKE_PLATE_HEIGHT_M = 0.3;
+const FAKE_PLATE_HEIGHT_M = 0.3;
 
 export function fakePicturePainters(): {
   painters: PicturePainters;

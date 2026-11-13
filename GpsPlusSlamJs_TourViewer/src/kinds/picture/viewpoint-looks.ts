@@ -41,13 +41,13 @@ const PAPER = 0xf4ede1;
 const INK_DARK = 0x14110d;
 
 /** The viewpoint's turn as a three quaternion. */
-export function viewpointTurn(viewpoint: TourPictureViewpoint): Quaternion {
+function viewpointTurn(viewpoint: TourPictureViewpoint): Quaternion {
   return new Quaternion(...viewpoint.rotation).normalize();
 }
 
 /** The viewpoint's heading on the ground: the turn about up that points
  *  a group's local -Z the way the viewpoint looks. */
-export function viewpointYaw(viewpoint: TourPictureViewpoint): number {
+function viewpointYaw(viewpoint: TourPictureViewpoint): number {
   const f = new Vector3(0, 0, -1).applyQuaternion(viewpointTurn(viewpoint));
   return Math.atan2(-f.x, -f.z);
 }
@@ -344,7 +344,7 @@ export const FINDER_INK_COLOR = PAPER;
 /** The standing frame: 1 m wide, 1.5 m ahead of the spot, a 6 cm border,
  *  4 cm deep, a 16 cm reveal behind its opening. The prototype's chosen
  *  default of its sweep (widths 0.8, 1.0, 1.4 by distances 1, 1.5, 2.5). */
-export const PORTAL_FRAME = {
+const PORTAL_FRAME = {
   widthM: 1,
   aheadM: 1.5,
   borderM: 0.06,
@@ -387,7 +387,7 @@ void main() {
 
 /** The picture's plane in the viewpoint's frame, as the portal's shader
  *  reads it: centre, right, up, normal (the way the camera looked). */
-export interface PortalPlane {
+interface PortalPlane {
   readonly center: Vector3;
   readonly right: Vector3;
   readonly up: Vector3;

@@ -38,7 +38,7 @@ const PLATE_GAP_M = 0.05;
 
 /** The sizes of a framed print `widthM` wide whose picture is `aspect`
  *  (height over width) tall (m). */
-export function framedSizes(widthM: number, aspect: number) {
+function framedSizes(widthM: number, aspect: number) {
   const w = widthM;
   const h = widthM * aspect;
   const mat = Math.max(0.05, w * 0.07);

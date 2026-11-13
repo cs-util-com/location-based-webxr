@@ -15,7 +15,7 @@ import { chipGroup, el } from "../editor-shell/inspector-fields.js";
 import type { KindPanel, KindPanelDraw, PanelItem } from "./kind-panel.js";
 
 /** The views a creator picks among, in the format's order. */
-export const PICTURE_VIEW_CHOICES: readonly {
+const PICTURE_VIEW_CHOICES: readonly {
   readonly view: string;
   readonly label: string;
   readonly note: string;

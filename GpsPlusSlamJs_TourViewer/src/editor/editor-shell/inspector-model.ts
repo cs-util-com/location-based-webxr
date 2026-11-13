@@ -376,7 +376,7 @@ export interface InspectorModelParts {
 }
 
 /** A picture as its panel shows it (`kind-panels/picture-panel.ts`). */
-export interface InspectorPicture {
+interface InspectorPicture {
   readonly view: string;
   /** Its tag shows (a cut-out's; `showTag` absent or true). */
   readonly showTag: boolean;
