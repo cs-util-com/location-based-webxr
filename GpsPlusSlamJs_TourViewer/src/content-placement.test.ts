@@ -431,6 +431,40 @@ describe("renderTourObjects", () => {
     ).toBe("1 placed object");
   });
 
+  it("draws a short text by its view: only a pin is a label", async () => {
+    // Why this test matters: a tour's objects carry every world view of a
+    // short text, and the creator's previews draw them through this
+    // renderer. A sign, an edge hint or a ground arrow drawn as a pin's
+    // label would show the creator something the visitor never sees; the
+    // station renderer's rules apply, and with no world door here those
+    // views are left out quietly.
+    const { scene, children } = fakeScene();
+    const pin = mintPin({
+      id: "p",
+      label: "Gate",
+      worldNuePosition: { x: 5, y: 400, z: 0 },
+      zero: ZERO,
+      nowIso: NOW,
+    })!;
+    const others: TourObject[] = (["sign", "edgeHint", "ground"] as const).map(
+      (view) => ({ ...pin, id: view, view, caption: view }),
+    );
+    const labels: string[] = [];
+    const rendered = await renderTourObjects([pin, ...others], {
+      scene,
+      zero: ZERO,
+      makeLabel: (text) => {
+        labels.push(text);
+        return { object: new Object3D(), dispose: () => undefined };
+      },
+      loadPhotoTexture: () => Promise.resolve(new Texture()),
+    });
+    expect(labels).toEqual(["Gate"]);
+    expect(rendered.count).toBe(1);
+    expect(rendered.skipped).toEqual([]);
+    expect(children[0]?.children).toHaveLength(1);
+  });
+
   it("places pins and photos at the caller's pose in the caller's frame when it passes one", async () => {
     // Why this test matters (authoring plan 2026-09-28-0953, M2c): the
     // creator's previews of the running visit go under the AR world group
