@@ -784,25 +784,46 @@ test.describe("the location picker", () => {
     // the only machine-readable statement of where it ended up looking.
     await page.reload();
     await waitForRefresh(page);
+    // THE RELOADED URL STILL CARRIES THE OLD KEYS, and the restored view
+    // writes nothing until the camera moves. So "a key is present" holds
+    // before the nudge has written anything, and a read then compares the
+    // link with itself: a restore that did nothing would pass. What is read
+    // below is the nudge's own write, observed as a change of the pair.
+    const pairNow = () => {
+      const params = new URL(page.url()).searchParams;
+      return `${params.get("clat")},${params.get("clng")}`;
+    };
+    const linked = pairNow();
     await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
     await page.mouse.down();
+    // Twenty pixels, not two: the writer skips a query that did not change,
+    // and two pixels can round to the same five decimals, so no write would
+    // come at all. Twenty is still metres, far inside the bound below.
     await page.mouse.move(
-      box.x + box.width * 0.5 + 2,
+      box.x + box.width * 0.5 + 20,
       box.y + box.height * 0.5,
       {
         steps: 2,
       },
     );
     await page.mouse.up();
-    await expect
-      .poll(() => new URL(page.url()).searchParams.get("clat"))
-      .not.toBeNull();
+    // Times out, and fails, when the nudge writes nothing.
+    await expect.poll(pairNow).not.toBe(linked);
     const back = new URL(page.url()).searchParams;
-    // A nudge of two pixels, so the target must land within a few metres of
-    // where it was. Five decimals is ~1.1 m, so 0.001° is a generous ~110 m
-    // bound that still fails outright if the restore did nothing.
-    expect(Math.abs(Number(back.get("clat")) - clat)).toBeLessThan(0.001);
-    expect(Math.abs(Number(back.get("clng")) - clng)).toBeLessThan(0.001);
+    const backLat = Number(back.get("clat"));
+    const backLng = Number(back.get("clng"));
+    // A nudge of a few metres, so the target must land near where it was.
+    // Five decimals is ~1.1 m, so 0.001° is a generous ~110 m bound.
+    expect(Math.abs(backLat - clat)).toBeLessThan(0.001);
+    expect(Math.abs(backLng - clng)).toBeLessThan(0.001);
+    // AND NEARER THE LINK THAN THE DEFAULT VIEW. The first drag moves the
+    // target by less than the bound above, so a restore that did nothing (the
+    // camera back on the fixture centre, plus the nudge) could still fit
+    // inside it. Measured against both candidates, it cannot.
+    const [fixtureLat, fixtureLng] = [50.9231, 6.9445];
+    expect(Math.hypot(backLat - clat, backLng - clng)).toBeLessThan(
+      Math.hypot(backLat - fixtureLat, backLng - fixtureLng),
+    );
   });
 });
 
