@@ -19,7 +19,7 @@ import { chipGroup, el } from "../editor-shell/inspector-fields.js";
 import type { KindPanel } from "./kind-panel.js";
 
 /** The views a creator chooses between, in the order they show. */
-export const SHORT_TEXT_VIEW_CHOICES: readonly FieldChoice[] = [
+const SHORT_TEXT_VIEW_CHOICES: readonly FieldChoice[] = [
   { value: "pin", label: "Pin" },
   { value: "sign", label: "Sign" },
   { value: "edgeHint", label: "Edge hint" },

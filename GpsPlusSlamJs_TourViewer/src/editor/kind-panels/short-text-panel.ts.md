@@ -6,7 +6,7 @@ A short text's panel in the item inspector: chips for how it shows (pin, sign, e
 
 ## Public API
 
-- `SHORT_TEXT_VIEW_CHOICES` - the view chips, in order.
+- (internal) `SHORT_TEXT_VIEW_CHOICES` - the view chips, in order.
 - `ShortTextPanelDeps` - `view(id, view)` and `block(id, field, value)`, the shell's edits.
 - `createShortTextPanel(deps): KindPanel` - draws for an item with `shortText` parts (from `inspector-model.ts`), null otherwise; acts `short-view:`, `short-role:`, `short-turn:`.
 

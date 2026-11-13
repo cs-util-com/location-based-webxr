@@ -352,7 +352,7 @@ function extentOf(
 
 /** A short text as its panel shows it: its view, and its role and turn
  *  (null: the reader's default). */
-export interface InspectorShortText {
+interface InspectorShortText {
   readonly view: string;
   readonly role: string | null;
   readonly orientation: string | null;

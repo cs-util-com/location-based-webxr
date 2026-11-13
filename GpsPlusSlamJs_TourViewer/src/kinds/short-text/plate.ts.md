@@ -12,7 +12,7 @@ The words of a short text as a picture: wraps a caption and its description, lay
 - `Measure`, `ESTIMATED_MEASURE` - how wide a text is in a font; the estimate needs no canvas (Node, tests).
 - `wrapText(text, maxW, measure)` - lines no wider than `maxW`, broken at spaces and inside a word longer than a line; never empty, never loses a character.
 - `PlateLayout`, `layoutSignPlate(caption, description, measure)` - the board's size, the caption's and the description's lines (at most six, the last ending " ..."), the icon's place.
-- `paintSignPlate(ctx, layout, role, opts)` - paints a laid-out plate.
+- (internal) `paintSignPlate(ctx, layout, role, opts)` - paints a laid-out plate.
 - `makeCanvas(w, h)` - a canvas and its 2D context, or null without a `document` or a context.
 - `canvasMeasure()` - a canvas-backed `Measure`, or the estimate without a canvas.
 - `signPlate(caption, description, role, opts)` - layout plus painted canvas (a null canvas in Node).

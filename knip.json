@@ -68,6 +68,7 @@
         "src/ar/tour-blocks.ts",
         "src/ar/tour-story.ts",
         "src/ar/tour-markdown.ts",
+        "src/ar/tour-short-text.ts",
         "config/eslint.config.mjs"
       ],
       "project": ["src/**/*.ts"],

@@ -46,10 +46,10 @@ import {
 type TourShortTextBlock = TourBlockOfKind["shortText"];
 
 /** A short text's reading distance where it names none (m). */
-export const SHORT_TEXT_DEFAULT_READ_AT_M = 4;
+const SHORT_TEXT_DEFAULT_READ_AT_M = 4;
 
 /** The sign's build, in metres. */
-export const SIGN = {
+const SIGN = {
   /** The board's bottom: this, plus `bottomPerReadM` per metre read. */
   bottomM: 0.95,
   bottomPerReadM: 0.04,

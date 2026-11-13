@@ -239,7 +239,7 @@ function paintRoleIcon(
 /** Paints `lay` onto `g` (a canvas of the layout's size): the shadowed
  *  board, its top sheen, the accent band, the rim, the icon (none where
  *  a turning glyph takes its place) and the words. */
-export function paintSignPlate(
+function paintSignPlate(
   g: Paint,
   lay: PlateLayout,
   role: TourShortTextRole,

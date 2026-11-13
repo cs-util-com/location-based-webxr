@@ -6,8 +6,8 @@ A short text's `sign` view in the world: a board on one or two posts at the item
 
 ## Public API
 
-- `SHORT_TEXT_DEFAULT_READ_AT_M` - 4 m, the reading distance of a block without one.
-- `SIGN` - the measures: board bottom 0.95 m plus 0.04 m per reading metre, wood colour, two posts above 0.9 m board width, turn and glyph easing rates.
+- (internal) `SHORT_TEXT_DEFAULT_READ_AT_M` - 4 m, the reading distance of a block without one.
+- (internal) `SIGN` - the measures: board bottom 0.95 m plus 0.04 m per reading metre, wood colour, two posts above 0.9 m board width, turn and glyph easing rates.
 - `signMeasures(readAtM, boardW)` - the board's bottom, its letter height and the posts' x positions.
 - `signPart(block, env): WorldPart` - the built sign: a turning group (board, edge, front and back plates, posts and feet, the glyph at `renderOrder 6`), `tapTarget` the board.
 
