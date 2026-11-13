@@ -13,7 +13,7 @@
  * `document` listener, so a stacked layer always answers first.
  */
 
-export interface HudPanelSpec {
+interface HudPanelSpec {
   /** The panel element; its `hidden` attribute is the open state. */
   readonly element: HTMLElement;
   /** The bar button that toggles it, told `aria-expanded`. */
