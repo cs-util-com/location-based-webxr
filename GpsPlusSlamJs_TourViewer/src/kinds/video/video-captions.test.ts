@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   CAPTION_MAX_CUE_CHARS,
+  CAPTION_MAX_CUES,
   captionAt,
   captionsStatus,
   captionTime,
@@ -98,6 +99,19 @@ describe("readCaptions", () => {
     expect(cue?.text).not.toContain("<");
     expect(cue?.text.length).toBe(CAPTION_MAX_CUE_CHARS);
   });
+
+  // Why: a tour file may carry an outsized captions text; the reader keeps
+  // the first CAPTION_MAX_CUES cues and counts the rest as left out, so the
+  // cost is bounded and the editor says what was dropped.
+  it("keeps at most CAPTION_MAX_CUES cues and counts the rest", () => {
+    const cue = (i: number) =>
+      `\n${captionStamp(i)} --> ${captionStamp(i + 1)}\nLine ${String(i)}`;
+    const cues = Array.from({ length: CAPTION_MAX_CUES + 3 }, (_, i) => cue(i));
+    const text = ["WEBVTT", ...cues].join("\n");
+    const read = readCaptions(text);
+    expect(read.cues).toHaveLength(CAPTION_MAX_CUES);
+    expect(read.skipped).toBe(3);
+  });
 });
 
 describe("captionAt", () => {
@@ -121,3 +135,9 @@ describe("captionsStatus", () => {
     expect(captionsStatus("")).toBeNull();
   });
 });
+
+/** Whole seconds `s` as a WebVTT time. */
+function captionStamp(s: number): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(Math.floor(s / 3600))}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}.000`;
+}
