@@ -220,4 +220,6 @@ The lock in the scene: `editor3d-edit.spec.js`.
 
 ## `lookFrom`
 
-- `lookFrom(selection)` flies the camera to a picture's viewpoint, looking along its line of sight (`orbitPoseOf(at, ahead)`, `FLIGHT.flyMs`); false when the selection has no viewpoint. The orbit's distance limits may stop the camera short of the viewpoint, and the editor camera keeps its own field of view rather than the viewpoint's lens.
+- `lookFrom(selection)` flies the camera to a picture's viewpoint, looking along its line of sight (`orbitPoseOf(at, ahead)`, `FLIGHT.flyMs`); false when the selection has no viewpoint. The orbit's distance limits may stop the camera short of the viewpoint.
+- While it looks from there the camera sees through the viewpoint's lens (`createLensHold`, `editor3d-lens.ts`: its horizontal field of view at the canvas's aspect, worked again each frame), so the picture's frame is in shot. The camera's own field of view (`EDITOR_CAMERA.fovDeg`) is back on the orbit's own gesture (`start`), a two-finger touch (`leaveLens`), every flight (`fly` releases before it starts, so `lookFrom` takes the lens after its own), tilt, heading and distance, and on a selection other than the picture (checked each frame). The layer's code sizing keeps reading the view's own field of view. `stats().fovDeg` gives the camera's.
+- The layer is handed `selected` each frame, for the selected picture's field-of-view lines (`editor3d-stations.ts`).

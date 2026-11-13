@@ -230,6 +230,22 @@ for (const size of SIZES) {
     expect((await view3d(page))?.camera).not.toEqual(camera);
     expect(await revision(page)).toBe(steps + 2);
 
+    // It looks through the viewpoint's lens (40 degrees wide at the
+    // canvas's aspect), and the creator's own gesture gives the view its
+    // own field of view back.
+    const own = 50;
+    const box = await page.locator(".view3d-canvas").boundingBox();
+    if (box === null) throw new Error("no 3D canvas");
+    const lensFov =
+      (2 *
+        Math.atan(Math.tan((40 * Math.PI) / 360) / (box.width / box.height)) *
+        180) /
+      Math.PI;
+    expect((await view3d(page))?.fovDeg).toBeCloseTo(lensFov, 1);
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, 120);
+    await expect.poll(async () => (await view3d(page))?.fovDeg).toBe(own);
+
     // A fresh one stands in front of the picture again.
     await inspector
       .getByRole("button", { name: "Stand in front of it again" })

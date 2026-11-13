@@ -656,6 +656,9 @@ export function orbitEditingCamera(deps: {
   endFlight(): void;
   /** Spend the orbit's coast at once: the camera stops moving. */
   dropMomentum(): void;
+  /** A two-finger touch is the creator's own camera gesture: it leaves
+   *  the lens "Look from the viewpoint" lent the camera. */
+  leaveLens?(): void;
 }): EditingCamera {
   const { controls, camera } = deps;
   controls.touches.TWO = null;
@@ -673,6 +676,7 @@ export function orbitEditingCamera(deps: {
     },
     twoFingerStart() {
       deps.endFlight();
+      deps.leaveLens?.();
     },
     twoFinger(mode, last, now, world) {
       const pose = orbitPoseOf(camera.position, controls.target);

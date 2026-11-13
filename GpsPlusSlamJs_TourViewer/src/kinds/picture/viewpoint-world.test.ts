@@ -32,6 +32,7 @@ import {
   type WorldMode,
   type WorldPart,
 } from "../../world-part.js";
+import { drawnAspect } from "./picture-decode.js";
 import { THEN_NOW_TIMING } from "./then-now-fade.js";
 import { EDITOR_PICTURE_ALPHA, viewpointWorld } from "./viewpoint-world.js";
 
@@ -179,6 +180,9 @@ describe("viewpointWorld", () => {
       );
       expect(part.object.getObjectByName(mesh), view).toBeDefined();
       expect(part.object.getObjectByName("picture-spot"), view).toBeDefined();
+      // The editor's field-of-view lines take the image's aspect from
+      // the part once it is read (the fake image is 200 x 100).
+      expect(drawnAspect(part.object), view).toBe(0.5);
       part.dispose();
     }
   });

@@ -148,3 +148,5 @@ edit, the camera and the world frame held still). The two-finger twist's directi
 and the pan on a real tablet are not covered by any test.
 
 The lock's parts are tested where they live (`gizmo-maths`, `gesture`, `editor3d-input`); the page's e2e (`editor3d-edit.spec.js`) checks the gizmo and the keys of a locked and an unlocked station.
+
+`orbitEditingCamera` takes an optional `leaveLens()`, called when a two-finger touch starts: that touch is the creator's own camera gesture, so it gives the camera its own field of view back after "Look from the viewpoint" (`editor3d-lens.ts`). A lock (a gizmo drag) does not call it: dragging the viewpoint's handle keeps the lens.

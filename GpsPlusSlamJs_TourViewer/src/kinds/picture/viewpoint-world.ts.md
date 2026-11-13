@@ -47,6 +47,9 @@ The world part of a picture in a viewpoint view (`thenNow`, `sharpen`,
 - `dispose` closes the slider and the sheet, frees the look and the
   texture (the portal's shader holds it outside any material map); a
   texture read after `dispose` is freed at once.
+- Once the image is read, the part's object keeps its aspect (height over
+  width, `markDrawnAspect` in `picture-decode.ts`): the editor's
+  field-of-view lines take it (`editor3d-stations.ts`).
 
 ## Tests
 
