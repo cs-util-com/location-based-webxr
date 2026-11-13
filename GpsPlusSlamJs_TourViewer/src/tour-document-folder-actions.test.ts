@@ -1085,6 +1085,8 @@ describe("a folder's pivot put at its items' centre", () => {
     // would carry the item from the wrong place.
     const before = opened(tour(45, 25));
     const after = reduce(before, centred());
+    // The pivot did move, so the inner folder had a reason to jump.
+    expect(after).not.toBe(before);
     const inner = (state: TourDocumentState) =>
       placeableOf(saved(state), "folder:inner")?.geo;
     const was = inner(before);
