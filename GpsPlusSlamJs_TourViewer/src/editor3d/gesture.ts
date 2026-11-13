@@ -85,7 +85,16 @@ export interface GestureWorld {
 export type GestureTarget = Pick<
   Placeable,
   "ref" | "geo" | "turns" | "lifts" | "extent" | "locked" | "bendDeg"
-> & { readonly centre: WorldPoint };
+> & {
+  readonly centre: WorldPoint;
+  /** Where it points, for a sign or a ground arrow that points: the
+   *  point in the world and the world's points in its station's frame
+   *  (m; null where none can be said). Absent: no point handle. */
+  readonly point?: {
+    readonly at: WorldPoint;
+    local(at: WorldPoint): readonly [number, number, number] | null;
+  };
+};
 
 /** What the scene shows while a gesture runs. */
 export interface GesturePreview {
@@ -94,6 +103,8 @@ export interface GesturePreview {
   readonly value: number | null;
   /** The bend, for what bends; absent otherwise. */
   readonly bendDeg?: number;
+  /** Where it points (the world), for what points; absent otherwise. */
+  readonly pointAt?: WorldPoint;
 }
 
 export interface Gesture {
@@ -163,6 +174,9 @@ export function gizmoSubjectOf(
     ...(target.bendDeg === undefined
       ? {}
       : { bendDeg: now.bendDeg ?? target.bendDeg }),
+    ...(target.point === undefined
+      ? {}
+      : { pointAt: now.pointAt ?? target.point.at }),
     locked: target.locked,
   };
 }
@@ -178,6 +192,7 @@ function restingPreview(target: GestureTarget): GesturePreview {
     geo: target.geo,
     value: target.extent?.value ?? null,
     ...(target.bendDeg === undefined ? {} : { bendDeg: target.bendDeg }),
+    ...(target.point === undefined ? {} : { pointAt: target.point.at }),
   };
 }
 
@@ -208,12 +223,17 @@ export function startGesture(
   if (handle === "dot" && extent === null) return null;
   if (handle === "turn" && !target.turns) return null;
   if (handle === "bend" && target.bendDeg === undefined) return null;
+  const point = target.point;
+  if (handle === "point" && point === undefined) return null;
   if (handle !== "dot" && poseLocked(target)) return null;
   const centre = target.centre;
+  // The point moves on its own level, so it stays at the height it has.
   const grab =
-    handle === "turn" || handle === "bend"
-      ? world.planeUnder(pressedAt, centre.y)
-      : grabPoint(world, pressedAt, centre.y);
+    handle === "point" && point !== undefined
+      ? world.planeUnder(pressedAt, point.at.y)
+      : handle === "turn" || handle === "bend"
+        ? world.planeUnder(pressedAt, centre.y)
+        : grabPoint(world, pressedAt, centre.y);
   if (grab === null) return null;
 
   const start = restingPreview(target);
@@ -265,6 +285,19 @@ export function startGesture(
       now = { ...now, geo: turnedGeo(target.geo, heading - headingStart) };
       return true;
     }
+    if (handle === "point" && point !== undefined) {
+      const p = world.planeUnder(pointer, point.at.y);
+      if (p === null) return true;
+      now = {
+        ...now,
+        pointAt: {
+          x: p.x + point.at.x - grab.x,
+          y: point.at.y,
+          z: p.z + point.at.z - grab.z,
+        },
+      };
+      return true;
+    }
     if (handle === "bend") {
       const p = world.planeUnder(pointer, centre.y);
       if (p === null) return true;
@@ -308,6 +341,16 @@ export function startGesture(
     waiting: () => pending !== null,
     preview: () => now,
     edit() {
+      if (handle === "point") {
+        const to = now.pointAt;
+        const from = start.pointAt;
+        if (to === undefined || point === undefined || from === undefined) {
+          return null;
+        }
+        if (to.x === from.x && to.y === from.y && to.z === from.z) return null;
+        const at = point.local(to);
+        return at === null ? null : { kind: "point", ref: target.ref, at };
+      }
       if (handle === "bend") {
         const deg = now.bendDeg;
         return deg === undefined || deg === start.bendDeg

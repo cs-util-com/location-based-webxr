@@ -64,3 +64,12 @@ manifest exactly.
 `editBlockField(id, "bendDeg", String(deg))`, so the knob is checked by
 the same rule as a typed bend (whole range +-60 degrees) and is one undo
 step with the same wording.
+
+## Point
+
+`{ kind: "point", ref, at }` (a short text's point, set by "Pick in 3D"
+or dragged by its handle; `at` in the station's frame, metres) goes
+through `editBlockField(id, "pointsTo", at.join(" "))`: the same path as
+the inspector's three boxes, so the format's strict reader is the only
+judge (each number within 1000 m of the station) and the refusal reads
+the same.

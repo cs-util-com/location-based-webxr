@@ -60,14 +60,15 @@ export type ShellLayer = "codes" | "names" | "walk" | "depth" | "buildings";
 const TREE_SECTIONS: readonly string[] = ["stations", "codes", "layers"];
 const SHELL_DOCKS: readonly string[] = ["tree", "inspector"];
 /** What a 3D gesture holds: the middle (a move), the turn knob, a dot (a
- *  station's radius or a model's size), the bend knob, or a held key (a nudge, a turn, a
- *  lift). */
-type GestureHandle = "move" | "turn" | "dot" | "bend" | "key";
+ *  station's radius or a model's size), the bend knob, a short text's
+ *  point, or a held key (a nudge, a turn, a lift). */
+type GestureHandle = "move" | "turn" | "dot" | "bend" | "point" | "key";
 const GESTURE_HANDLES: readonly string[] = [
   "move",
   "turn",
   "dot",
   "bend",
+  "point",
   "key",
 ];
 
@@ -162,6 +163,10 @@ export interface EditorViewState {
   /** A click on the selected model the 3D view waits for, or none;
    *  cleared with the selection, like `modelFocus`. */
   readonly modelPick: ModelPick | null;
+  /** "Pick in 3D" armed: the 3D view's next click on the ground or an
+   *  item sets where the selected short text points. Cleared with the
+   *  selection, like `modelPick`. */
+  readonly pointPick: boolean;
   /** The tree's several-row selection (Ctrl or Shift on a row, or the
    *  Select mode's ticks): item ids and plain folders (`folder:<id>`), in
    *  the order picked, `selected` the last of them. Empty while one row
@@ -197,6 +202,7 @@ export const initialEditorViewState: EditorViewState = {
   unlockedStations: [],
   modelFocus: null,
   modelPick: null,
+  pointPick: false,
   picked: [],
   selectMode: false,
   foldedFolders: [],
@@ -221,6 +227,7 @@ const editorViewSlice = createSlice({
       if (state.selected !== action.payload.id) {
         state.modelFocus = null;
         state.modelPick = null;
+        state.pointPick = false;
       }
       state.selected = action.payload.id;
       state.picked = [];
@@ -237,6 +244,8 @@ const editorViewSlice = createSlice({
         ),
       ];
       state.picked = kept;
+      // A pick of several rows has no one short text to point.
+      state.pointPick = false;
       const last = kept.at(-1);
       if (last === undefined) return;
       if (state.selected !== last) {
@@ -287,6 +296,11 @@ const editorViewSlice = createSlice({
         return;
       }
       state.modelPick = { what: pick.what };
+    },
+    /** "Pick in 3D" armed or disarmed; anything but a flag changes
+     *  nothing. */
+    pointPickAsked(state, action: PayloadAction<{ on: boolean }>) {
+      if (isFlag(action.payload.on)) state.pointPick = action.payload.on;
     },
     busyChanged(state, action: PayloadAction<{ busy: boolean }>) {
       state.busy = action.payload.busy;
@@ -434,6 +448,7 @@ const editorViewSlice = createSlice({
       unlockedStations: string[];
       modelFocus: ModelFocus | null;
       modelPick: ModelPick | null;
+      pointPick: boolean;
       picked: string[];
       selectMode: boolean;
       foldedFolders: string[];
@@ -446,6 +461,7 @@ const editorViewSlice = createSlice({
       state.unlockedStations = [];
       state.modelFocus = null;
       state.modelPick = null;
+      state.pointPick = false;
       // The tree's picking and its folded folders are the tour's too.
       state.picked = [];
       state.selectMode = false;

@@ -94,6 +94,7 @@ function context() {
     say: vi.fn(),
     changed: vi.fn(),
     pickAsked: vi.fn(),
+    pointPickAsked: vi.fn(),
     focused: vi.fn(),
   };
   return { ctx, edits };

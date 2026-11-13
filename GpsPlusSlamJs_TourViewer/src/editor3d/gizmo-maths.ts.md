@@ -119,3 +119,7 @@ bounds over random subjects and scales.
 - With a target (`pointsTo`) the arrow runs toward it, not along the
   heading, so the knob's resting spot reads against the heading; the drag
   is a sweep and writes the right bend either way.
+
+## A short text's point
+
+`GizmoSubject.pointAt` gives the layout a `pointKnob` (the point itself), null without a point or on a locked subject. `handleAt` finds it within `GIZMO.knobPx` as the handle "point", only where the subject is posable.

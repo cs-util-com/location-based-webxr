@@ -96,3 +96,7 @@ what does not turn; the dragged radius and size equal the frozen rules.
   on the level plane, it previews `bendDeg` and edits `{ kind: "bend" }` on
   release (nothing when unchanged). The drawing itself redraws the bend on
   release; while dragging, the knob shows it.
+
+## A short text's point handle
+
+`GestureTarget.point` (`{ at, local }`, a sign's or a ground arrow's `pointsTo` in the world, and how a world point reads in its station's frame) adds the handle "point". `startGesture` refuses it without a point or on a locked target; the drag runs on the horizontal plane at the point's height (the grab offset kept), so the point moves on its own level and its height is set in the y box. `edit()` gives a `PlaceEdit` "point" with `local(now)`, or null when nothing moved. `GesturePreview.pointAt` carries the point for the gizmo while it moves.

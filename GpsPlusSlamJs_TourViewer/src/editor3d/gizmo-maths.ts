@@ -116,6 +116,9 @@ export interface GizmoSubject {
   /** Its bend (degrees, clockwise) for what bends: a knob behind its
    *  start; absent: none. */
   readonly bendDeg?: number;
+  /** Where it points, in the world, for what points (a sign or a ground
+   *  arrow with a point): a handle there; absent: none. */
+  readonly pointAt?: WorldPoint;
   /** Its pose is locked: only its dots are handles. */
   readonly locked: boolean;
 }
@@ -140,6 +143,9 @@ export interface GizmoLayout {
    *  swung clockwise by the bend (a tiller); null for what does not bend
    *  and a locked placeable. */
   readonly bendKnob: GroundSpot | null;
+  /** The point handle, where the text points (in the world, its own
+   *  height); null for what points nowhere and a locked placeable. */
+  readonly pointKnob: WorldPoint | null;
   /** The stalk from the ring to the knob; null with the knob. */
   readonly bar: {
     readonly fromM: number;
@@ -222,6 +228,8 @@ export function gizmoLayout(
       subject.bendDeg === undefined || subject.locked
         ? null
         : along(subject.centre, heading + 180 + subject.bendDeg, knobM),
+    pointKnob:
+      subject.pointAt === undefined || subject.locked ? null : subject.pointAt,
     bar: subject.turns
       ? {
           fromM: radius,
@@ -233,8 +241,9 @@ export function gizmoLayout(
 }
 
 /** A part of the gizmo a pointer can take: the middle (move), the knob
- *  (turn), a dot (a placeable's extent) or the bend knob (bend). */
-export type GizmoHandle = "move" | "turn" | "dot" | "bend";
+ *  (turn), a dot (a placeable's extent), the bend knob (bend) or the
+ *  point handle (point). */
+export type GizmoHandle = "move" | "turn" | "dot" | "bend" | "point";
 
 /**
  * The handle under the pointer, by the design's order: the knob and the
@@ -254,6 +263,9 @@ export function handleAt(input: {
   readonly dots: readonly ScreenPoint[];
   /** The bend knob's centre on the screen (null or absent: not shown). */
   readonly bendKnob?: ScreenPoint | null;
+  /** The point handle's centre on the screen (null or absent: not
+   *  shown). */
+  readonly pointKnob?: ScreenPoint | null;
   /** The pointer's ray meets the move disc. */
   readonly onDisc: boolean;
   /** What object the pointer is over: the selected one, another, none. */
@@ -276,6 +288,7 @@ export function handleAt(input: {
   if (posable) {
     consider(input.knob, GIZMO.knobPx, "turn");
     consider(input.bendKnob ?? null, GIZMO.knobPx, "bend");
+    consider(input.pointKnob ?? null, GIZMO.knobPx, "point");
   }
   for (const dot of input.dots) consider(dot, GIZMO.dotPx, "dot");
   const found = best as { handle: GizmoHandle; d: number } | null;

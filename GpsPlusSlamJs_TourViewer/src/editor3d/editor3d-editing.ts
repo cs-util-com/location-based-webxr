@@ -14,7 +14,11 @@
  * A selected model's notes and sections are drawn here too
  * (`editor3d-model-parts.ts`), and the click on its surface the
  * inspector waits for is answered here: a note or a section written where
- * the ray meets the model (`SceneEditingDeps.models`).
+ * the ray meets the model (`SceneEditingDeps.models`). So is "Pick in
+ * 3D" of a sign or a ground arrow (`editorView.pointPick`): the next
+ * click sets where it points, on another item's surface or else on the
+ * ground; its point is a handle of the gizmo too, dragged on its level.
+ * Both write the point in the station's frame (`PlaceEdit` "point").
  * The camera is the view's (`EditingCamera`): the OrbitControls view's is
  * `orbitEditingCamera` (two fingers tilt, or pinch, pan and twist, and
  * OrbitControls is told to leave two fingers alone); the globe view leases
@@ -157,13 +161,22 @@ export interface SceneEditingDeps {
       readonly selected: string | null;
       readonly focus: ModelFocus | null;
       readonly pick: ModelPick | null;
+      /** "Pick in 3D" armed for the selected short text. */
+      readonly pointPick?: boolean;
     };
     edit(id: string, edit: ModelEdit): boolean;
   };
 }
 
 /** The gizmo's parts a check can ask the screen position of. */
-export type GizmoPart = "middle" | "knob" | "dot";
+export type GizmoPart = "middle" | "knob" | "dot" | "point";
+
+/** Said when "Pick in 3D" meets neither an item nor the ground. */
+const MISSED_POINT =
+  "Nothing to point to there: click the ground or an item, or press Esc.";
+
+/** `v` rounded to the centimetre (never -0). */
+const toCm = (v: number): number => Math.round(v * 100) / 100 + 0;
 
 /**
  * The gizmo and the input on the view, until `dispose`. `update` each
@@ -251,16 +264,96 @@ export function createSceneEditing(deps: SceneEditingDeps) {
     return { x: c.x, y: c.y, z: c.z };
   };
 
+  /** A world point in the stations layer's frame (a copy). */
+  const toLayer = (at: WorldPoint): THREE.Vector3 => {
+    const v = new THREE.Vector3(at.x, at.y, at.z);
+    return deps.layerToWorld === undefined
+      ? v
+      : v.applyMatrix4(deps.layerToWorld.clone().invert());
+  };
+
+  /** A sign or a ground arrow of the tour by its id (a short text that
+   *  points), or null. */
+  const pointerOf = (id: string) => {
+    for (const station of deps.tour()?.stations ?? []) {
+      const block = posedEntryOf(station, id)?.block;
+      if (block === undefined) continue;
+      return block.kind === "shortText" &&
+        (block.view === "sign" || block.view === "ground")
+        ? block
+        : null;
+    }
+    return null;
+  };
+
+  /** Item `id`'s station frame read both ways: a point of it in the
+   *  world, and a world point in it (m, to the centimetre); null for an
+   *  item the layer does not hold. */
+  const stationFrame = (id: string) => {
+    const frame = layer.stationFrameOf(id);
+    if (frame === null) return null;
+    const back = frame.clone().invert();
+    return {
+      world: (local: readonly [number, number, number]): WorldPoint => {
+        const w = fromLayer(new THREE.Vector3(...local).applyMatrix4(frame));
+        return { x: w.x, y: w.y, z: w.z };
+      },
+      local: (at: WorldPoint): readonly [number, number, number] => {
+        const v = toLayer(at).applyMatrix4(back);
+        return [toCm(v.x), toCm(v.y), toCm(v.z)];
+      },
+    };
+  };
+
   /** The selection as a gesture's target, read as a placeable (its
-   *  handles are its row's); null for a code, a card or one the tour
-   *  lacks. */
+   *  handles are its row's, and a sign's or a ground arrow's point);
+   *  null for a code, a card or one the tour lacks. */
   const targetOf = (selection: string): GestureTarget | null => {
     const tour = deps.tour();
     if (tour === null) return null;
     const p = placeableOf(tour, selection, {
       stationLocked: (id) => deps.stationLocked(id),
     });
-    return p === null ? null : gestureTargetOf(p, centreOf(p.ref, p.geo));
+    if (p === null) return null;
+    const target = gestureTargetOf(p, centreOf(p.ref, p.geo));
+    const at = p.ref.kind === "block" ? pointerOf(p.ref.id)?.pointsTo : null;
+    const frame = at == null ? null : stationFrame(p.ref.id);
+    return at == null || frame === null
+      ? target
+      : { ...target, point: { at: frame.world(at), local: frame.local } };
+  };
+
+  /** Whether "Pick in 3D" waits for a click on the selection's behalf. */
+  const pointPickWaits = (): boolean => {
+    const { selected, pointPick } = deps.models.view();
+    return (
+      pointPick === true && selected !== null && pointerOf(selected) !== null
+    );
+  };
+
+  /** "Pick in 3D" answered: where the click meets another item, else the
+   *  ground, written as the selection's point in its station's frame
+   *  (the page judges it); the pick then ends. A click on neither is
+   *  said, and the pick stays armed. */
+  const answerPointClick = (pointer: ScreenPoint) => {
+    const { selected } = deps.models.view();
+    if (selected === null) return;
+    const ray = rayAt(pointer);
+    const onItem = layer.surfaceHit(ray, selected);
+    const under = onItem === null ? groundHit(ground.terrain, ray.ray) : null;
+    const at =
+      onItem ?? (under !== null && under.miss === null ? under.point : null);
+    const frame = stationFrame(selected);
+    if (at === null || frame === null) {
+      deps.page.say(MISSED_POINT);
+      return;
+    }
+    deps.page.commit({
+      kind: "point",
+      ref: { kind: "block", id: selected },
+      at: frame.local({ x: at.x, y: at.y, z: at.z }),
+    });
+    deps.page.dispatch(editorViewActions.pointPickAsked({ on: false }));
   };
 
   /** A model of the tour by its id, or null. */
@@ -301,6 +394,10 @@ export function createSceneEditing(deps: SceneEditingDeps) {
    *  loading again after an edit) holds the click until it is
    *  (`heldClickNext`). */
   const answerClick = (pointer: ScreenPoint) => {
+    if (pointPickWaits()) {
+      answerPointClick(pointer);
+      return;
+    }
     held = null;
     const { selected, pick } = deps.models.view();
     if (selected === null || pick === null) return;
@@ -372,6 +469,9 @@ export function createSceneEditing(deps: SceneEditingDeps) {
         ...(preview.now.bendDeg === undefined
           ? {}
           : { bendDeg: preview.now.bendDeg }),
+        ...(preview.now.pointAt === undefined
+          ? {}
+          : { pointAt: preview.now.pointAt }),
       };
       centre = centreOf(ref, now.geo);
     }
@@ -408,6 +508,9 @@ export function createSceneEditing(deps: SceneEditingDeps) {
           : null,
         bendKnob: gizmo.parts.bend.visible
           ? screenOf(gizmo.parts.bend.position)
+          : null,
+        pointKnob: gizmo.parts.point.visible
+          ? screenOf(gizmo.parts.point.position)
           : null,
         dots: gizmo.parts.dots
           .filter((d) => d.visible)
@@ -459,6 +562,7 @@ export function createSceneEditing(deps: SceneEditingDeps) {
       deps.frame(selection);
     },
     clickWaited() {
+      if (pointPickWaits()) return true;
       const { selected, pick } = deps.models.view();
       return pick !== null && selected !== null && modelOf(selected) !== null;
     },
@@ -598,7 +702,9 @@ export function createSceneEditing(deps: SceneEditingDeps) {
           ? gizmo.parts.disc
           : part === "knob"
             ? gizmo.parts.knob
-            : gizmo.parts.dots[0];
+            : part === "point"
+              ? gizmo.parts.point
+              : gizmo.parts.dots[0];
       return o?.visible === true ? screenOf(o.position) : null;
     },
     /** The gizmo's drawn sizes on the screen (px), for the layout checks:

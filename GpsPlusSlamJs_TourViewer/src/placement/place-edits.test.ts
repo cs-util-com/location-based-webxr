@@ -102,6 +102,26 @@ describe("a placement edit", () => {
     expect(s.moveStation).toHaveBeenCalledWith("st", GEO);
   });
 
+  // Why: a short text's point set in the 3D view (a pick or its handle)
+  // must be judged by the same strict reader as the typed boxes, so it
+  // travels as the field's text through the block's field edit; a
+  // value the view rounded to the centimetre must reach it unchanged.
+  it("writes a point through the block's field edit as three numbers", () => {
+    const s = fakeSession();
+    applyPlaceEdit(asSession(s), {
+      kind: "point",
+      ref: BLOCK,
+      at: [2, 1.25, -19.6],
+    });
+    expect(s.editBlockField).toHaveBeenCalledWith(
+      "p",
+      "pointsTo",
+      "2 1.25 -19.6",
+    );
+    expect(s.editBlockField).toHaveBeenCalledTimes(1);
+    expect(s.pose).not.toHaveBeenCalled();
+  });
+
   it("passes a refusal on with its words", () => {
     const s = fakeSession(true);
     const edits: readonly PlaceEdit[] = [
@@ -112,6 +132,7 @@ describe("a placement edit", () => {
       { kind: "pose", ref: FOLDER, geo: GEO },
       { kind: "extent", ref: FOLDER, value: 3 },
       { kind: "bend", ref: BLOCK, deg: 10 },
+      { kind: "point", ref: BLOCK, at: [1, 0, 1] },
     ];
     for (const edit of edits) {
       expect(applyPlaceEdit(asSession(s), edit)).toEqual({

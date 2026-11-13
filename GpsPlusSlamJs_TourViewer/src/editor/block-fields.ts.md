@@ -109,7 +109,7 @@ if (out.kind === "edited")
 
 ## Typed fields (a point, a language)
 
-A `FieldSpec` with `typed` is drawn as one line with no counter (`BlockField` `typed: { example }`; its hint is "Optional, such as" the example) and written by `typedFieldEdit`:
+A `FieldSpec` with `typed` is written by `typedFieldEdit` whoever sends the text. The language is drawn in the dock as one line with no counter; the point is not in `blockFields` at all, because the short text panel draws it as three boxes with a pick and a clear (`short-text-panel.ts.md`) and sends the composed line here. In the dock a typed field is one line with no counter (`BlockField` `typed: { example }`, its hint "Optional, such as" the example). The rules:
 
 - `point` (a short text's `pointsTo`, signs and ground arrows): three numbers in metres in the station's frame, parted by spaces, `;` or `, ` (a comma alone is a decimal point, as in every number box), so `2 1.2 -19.6`, `2, 1.2, -19.6` and `1,5 0 -3` all read. A coordinate may carry an exponent, because the box shows a written point by `String` and must read every value it shows back unchanged (`1e-7`).
 - `tag` (a short text's `lang`, every view): the trimmed text.

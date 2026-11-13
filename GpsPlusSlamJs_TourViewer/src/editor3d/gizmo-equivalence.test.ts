@@ -80,6 +80,8 @@ function oldLayout(subject: OldSubject, metresPerPx: number): GizmoLayout {
     knob: along(subject.centre, heading, reach),
     // The old gizmo had no bend knob (nothing bent).
     bendKnob: null,
+    // Nor a point handle (nothing pointed).
+    pointKnob: null,
     bar: {
       fromM: radius,
       lengthM: reach - radius,

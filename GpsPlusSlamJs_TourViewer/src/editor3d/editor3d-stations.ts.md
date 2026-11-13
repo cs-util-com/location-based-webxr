@@ -334,3 +334,8 @@ canvas at four window sizes (12 px; the sweep's three sizes are
 above): `playwright-tests/editor3d-edit.spec.js`. The found radius over a
 relief standing above its station:
 `playwright-tests/editor3d-station-ring.spec.js`.
+
+## Pointing
+
+- `surfaceHit(raycaster, except)` - where the ray first meets a drawn item other than `except`, in the world, or null. Interface parts (billboards, icons), rings and poles are no surface.
+- `stationFrameOf(id)` - the matrix from the frame of the station holding free item `id` to the layer's frame (the same frame as `itemPointOf`), or null for an id no station holds.

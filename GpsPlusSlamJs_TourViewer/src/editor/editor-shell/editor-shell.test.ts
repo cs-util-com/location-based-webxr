@@ -719,6 +719,28 @@ describe("the inspector's typed fields", () => {
     }
   });
 
+  // Why: Enter commits a field and leaving it commits it again. A
+  // refused text stays in the field, so the second commit sent the same
+  // refused text a second time and the creator read the same refusal
+  // twice. A refusal is said once; a changed text is sent again.
+  it("send a refused text once when Enter is followed by leaving the field", () => {
+    const { select, edits, shell } = setUp();
+    edits.text.mockReturnValue("refused");
+    select("pb");
+    const input = typeInto("title", "A pin text the page refuses");
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+    input.blur();
+    expect(edits.text).toHaveBeenCalledTimes(1);
+    expect(input.value).toBe("A pin text the page refuses");
+    input.focus();
+    input.value = "A shorter pin text";
+    input.blur();
+    expect(edits.text).toHaveBeenCalledTimes(2);
+    shell.hide();
+  });
+
   it("show the tour's value again when the page writes the edit", () => {
     const { select, edits, shell } = setUp();
     edits.block.mockReturnValue("written");

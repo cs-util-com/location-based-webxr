@@ -17,6 +17,7 @@ import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { describe, expect, it } from "vitest";
 
 import { blockFieldEdit, blockFields } from "./block-fields.js";
+import { composedPoint } from "./kind-panels/short-text-panel.js";
 
 const GEO = { lat: 48.1, lon: 11.5, alt: 520, headingDeg: 0 };
 const BLOCKS = [
@@ -145,17 +146,18 @@ describe("a short text's point and language edits", () => {
     );
   });
 
-  it("show a written point so that typing it back changes nothing", () => {
-    // Why: the box is redrawn from the block after every write; a shown
-    // value that read back differently would edit the block on blur.
+  it("show a written point so that sending it back changes nothing", () => {
+    // Why: the panel's boxes are redrawn from the block after every
+    // write; a shown value that read back differently would edit the
+    // block on the next change of any box.
     fc.assert(
       fc.property(within, within, within, (x, y, z) => {
         const set = {
           ...(SIGN as unknown as Record<string, unknown>),
           pointsTo: [x, y, z],
         } as unknown as TourObject;
-        const shown = blockFields(set).find((f) => f.name === "pointsTo");
-        expect(blockFieldEdit(set, "pointsTo", shown!.value)).toEqual({
+        const shown = composedPoint([x, y, z].map(String));
+        expect(blockFieldEdit(set, "pointsTo", shown!)).toEqual({
           kind: "unchanged",
         });
       }),

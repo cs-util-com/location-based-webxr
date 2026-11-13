@@ -2686,6 +2686,11 @@ document.addEventListener("keydown", (event) => {
     cancelMove();
     return;
   }
+  // "Pick in 3D" armed: Escape disarms it and keeps the selection.
+  if (ui().pointPick) {
+    store.dispatch(editorViewActions.pointPickAsked({ on: false }));
+    return;
+  }
   if (!modal.hidden && session !== null && !ui().busy) showModal(false);
   else select(null);
 });

@@ -240,6 +240,48 @@ describe("a ground arrow's gizmo", () => {
     ).toBeNull();
   });
 
+  it("puts the point handle where the text points, and none for a locked one or none", () => {
+    // Why: the handle is drawn where the format's point is; on a locked
+    // station's text it would be a handle that refuses every drag.
+    const point = { x: 4, y: 1.5, z: -9 };
+    expect(
+      gizmoLayout({ ...arrow(6), pointAt: point }, 1e-4).pointKnob,
+    ).toEqual(point);
+    expect(gizmoLayout(arrow(6), 1e-4).pointKnob).toBeNull();
+    expect(
+      gizmoLayout({ ...arrow(6), pointAt: point, locked: true }, 1e-4)
+        .pointKnob,
+    ).toBeNull();
+  });
+
+  it("is the point handle under the pointer, the nearest of the knobs winning", () => {
+    const base = {
+      knob: null,
+      dots: [],
+      onDisc: true,
+      underPointer: "other",
+    } as const;
+    expect(
+      handleAt({ ...base, pointer: { x: 3, y: 0 }, pointKnob: { x: 0, y: 0 } }),
+    ).toBe("point");
+    expect(
+      handleAt({
+        ...base,
+        pointer: { x: 3, y: 0 },
+        pointKnob: { x: 0, y: 0 },
+        bendKnob: { x: 5, y: 0 },
+      }),
+    ).toBe("bend");
+    expect(
+      handleAt({
+        ...base,
+        pointer: { x: 3, y: 0 },
+        pointKnob: { x: 0, y: 0 },
+        posable: false,
+      }),
+    ).toBeNull();
+  });
+
   it("sets the scale from the dot's distance: whole units, tenths with Shift, 1 to 40", () => {
     const B = { min: 1, max: 40 };
     expect(draggedScale(0.75, false, RING, B)).toBe(6);

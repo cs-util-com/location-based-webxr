@@ -49,3 +49,7 @@ if (panels.act(act, model, selected)) draw();
 ## Short text
 
 `shortText` has a panel (`short-text-panel.ts`): the view, role and turn chips, writing through the shell's view and block edits.
+
+## Points to
+
+`PanelContext.pointPickAsked(on)` arms or disarms "Pick in 3D"; the short text panel gets it as `pointPick`. The shell dispatches `editorView.pointPickAsked`.

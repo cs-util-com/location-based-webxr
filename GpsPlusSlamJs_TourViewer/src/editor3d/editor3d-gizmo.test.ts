@@ -21,6 +21,7 @@ const PICTURES = {
   knob: new THREE.Texture(),
   bend: new THREE.Texture(),
   move: new THREE.Texture(),
+  point: new THREE.Texture(),
 };
 
 const STATION: GizmoSubject = {
@@ -47,7 +48,10 @@ const PIN: GizmoSubject = { ...LECTERN, turns: false };
 const M_PER_PX = 0.05;
 const SPRITE_PER_PX = 0.002;
 
-function frame(subject: GizmoSubject, hovered: "move" | "turn" | "dot" | null) {
+function frame(
+  subject: GizmoSubject,
+  hovered: "move" | "turn" | "dot" | "point" | null,
+) {
   return {
     layout: gizmoLayout(subject, M_PER_PX),
     spritePerPx: SPRITE_PER_PX,
@@ -145,13 +149,39 @@ describe("createGizmo", () => {
     expect(bar.visible).toBe(false);
   });
 
+  // Why: the point handle is grabbed where it is drawn, at the point's
+  // own height (not on the ground under it, as the knobs are), and the
+  // dashed line shows which text it belongs to; a locked text has none.
+  it("draws the point handle at the point with a line from the text, larger when held", () => {
+    const gizmo = createGizmo(new THREE.Scene(), PICTURES);
+    const pointAt = { x: 6, y: 503, z: -8 };
+    gizmo.update(frame({ ...LECTERN, pointAt }, "point"));
+    const { point, pointLine } = gizmo.parts;
+    expect(point.visible).toBe(true);
+    expect(point.position.toArray()).toEqual([6, 503, -8]);
+    expect(point.scale.x).toBeCloseTo(
+      GIZMO.knobPx * SPRITE_PER_PX * GIZMO.hoverScale,
+      12,
+    );
+    expect(point.renderOrder).toBeGreaterThan(RING_RENDER_ORDER);
+    expect(pointLine.visible).toBe(true);
+    const ends = pointLine.geometry.getAttribute("position");
+    expect([ends.getX(1), ends.getY(1), ends.getZ(1)]).toEqual([6, 503, -8]);
+    expect([ends.getX(0), ends.getZ(0)]).toEqual([0, 0]);
+    gizmo.update(frame({ ...LECTERN, pointAt, locked: true }, null));
+    expect(point.visible).toBe(false);
+    expect(pointLine.visible).toBe(false);
+    gizmo.update(frame(LECTERN, null));
+    expect(point.visible).toBe(false);
+  });
+
   it("hides everything without a selection, and leaves the scene when disposed", () => {
     const parent = new THREE.Scene();
     const gizmo = createGizmo(parent, PICTURES);
     gizmo.update(frame(STATION, null));
     gizmo.update(null);
-    const { knob, dots, ring, disc, bar } = gizmo.parts;
-    for (const part of [knob, ...dots, ring, disc, bar]) {
+    const { knob, dots, ring, disc, bar, point, pointLine } = gizmo.parts;
+    for (const part of [knob, ...dots, ring, disc, bar, point, pointLine]) {
       expect(part.visible).toBe(false);
     }
     gizmo.dispose();

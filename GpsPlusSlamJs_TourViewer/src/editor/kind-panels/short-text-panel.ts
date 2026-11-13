@@ -7,8 +7,13 @@
  * (`editBlockView`); a role or turn chip writes that field through the
  * block's field edit (`block-fields.ts`, its `choices` from the kind's
  * row in `kinds/edit-kinds.ts`), so the choices and their words live in
- * one place. Its typed fields (the description, the reading distance)
- * stay the dock's.
+ * one place. For a sign or a ground arrow it also holds where the text
+ * points: three boxes x, y and z (the station's frame, metres), "Pick in
+ * 3D" (the 3D view's next click sets it) and "Clear". The boxes send
+ * their text as typed through the same field edit, so the format's
+ * strict reader is the only judge of a point. Its other typed fields
+ * (the description, the reading distance, the language) stay the
+ * dock's.
  *
  * @see short-text-panel.ts.md
  */
@@ -64,8 +69,21 @@ function choicesOf(name: string): readonly FieldChoice[] {
  *  a write that came from no press (a switch, a colour well). */
 export interface ShortTextPanelDeps {
   readonly view: (id: string, view: string) => unknown;
+  /** A field's edit; `"refused"` when the page refused it (and said
+   *  why). */
   readonly block: (id: string, field: string, value: string) => unknown;
   readonly changed?: () => void;
+  /** "Pick in 3D" armed (true) or disarmed. */
+  readonly pointPick?: (on: boolean) => void;
+}
+
+/** The point field's text from its three boxes: the three as typed,
+ *  space separated; "" (no point) when all three are empty; null while
+ *  only some are filled (not yet a point to send). */
+export function composedPoint(boxes: readonly string[]): string | null {
+  const typed = boxes.map((b) => b.trim());
+  if (typed.every((b) => b === "")) return "";
+  return typed.some((b) => b === "") ? null : typed.join(" ");
 }
 
 /** The chips' acts: `short-view:`, `short-role:`, `short-turn:`,
@@ -79,6 +97,75 @@ const ACTS = {
 } as const;
 
 type GroundLook = NonNullable<NonNullable<PanelItem["shortText"]>["ground"]>;
+type PointLook = NonNullable<NonNullable<PanelItem["shortText"]>["point"]>;
+
+const AXES = ["x", "y", "z"] as const;
+
+/** A small button of the point (`data-act`). */
+function pointButton(act: string, label: string): HTMLButtonElement {
+  const b = el("button", "mini", label);
+  b.type = "button";
+  b.dataset["act"] = act;
+  return b;
+}
+
+/** Where a sign or a ground arrow points: its three boxes, "Pick in 3D"
+ *  and "Clear". A box writes on change (and on Enter) once all three
+ *  are filled, or all three emptied; the same text is not sent twice
+ *  until a box is typed in again, so a refusal is said once. */
+function pointParts(point: PointLook, deps: ShortTextPanelDeps): HTMLElement[] {
+  const head = el("span", "flabel ptlabel", "Points to ");
+  head.append(
+    el("span", "pthint", point.at === null ? "none" : "local point, m"),
+  );
+  const shown = point.at === null ? ["", "", ""] : point.at.map(String);
+  const shownText = composedPoint(shown);
+  let sent: string | null = null;
+  const inputs: HTMLInputElement[] = [];
+  const send = () => {
+    const text = composedPoint(inputs.map((i) => i.value));
+    if (text === null || text === shownText || text === sent) return;
+    sent = text;
+    if (deps.block(point.id, "pointsTo", text) !== "refused") {
+      deps.changed?.();
+    }
+  };
+  const grid = el("div", "xyz");
+  AXES.forEach((axis, i) => {
+    const label = el("label", "");
+    const input = el("input", "");
+    input.type = "text";
+    input.inputMode = "decimal";
+    input.defaultValue = shown[i] ?? "";
+    input.setAttribute("aria-label", `Points to ${axis}`);
+    // Named for the dock's focus keeping across a draw; no press of the
+    // panel answers it.
+    input.dataset["act"] = `short-point-${axis}`;
+    input.addEventListener("input", () => {
+      sent = null;
+    });
+    input.addEventListener("change", send);
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.isComposing) send();
+    });
+    inputs.push(input);
+    label.append(axis, input);
+    grid.append(label);
+  });
+  const pick = pointButton(
+    "short-point:pick",
+    point.picking ? "Click the ground or an item..." : "Pick in 3D",
+  );
+  pick.setAttribute("aria-pressed", String(point.picking));
+  if (point.picking) pick.classList.add("on");
+  const clear = pointButton("short-point:clear", "Clear");
+  clear.disabled = point.at === null;
+  const row = el("div", "ptbtns");
+  row.append(pick, clear);
+  const out: HTMLElement[] = [head, grid, row];
+  if (point.picking) out.push(el("div", "note", "Esc cancels."));
+  return out;
+}
 
 /** The sun check of `dark` on the part it paints, in words. */
 function sunLine(dark: string, part: string): HTMLElement {
@@ -210,15 +297,27 @@ export function createShortTextPanel(deps: ShortTextPanelDeps): KindPanel {
               ),
             );
           }
+          // After the turn, as the prototype's sign editor has it.
+          if (parts.point !== undefined) {
+            box.append(...pointParts(parts.point, deps));
+          }
           return [box];
         },
       };
     },
-    act(name, _item, selected) {
+    act(name, item, selected) {
       const colon = name.indexOf(":");
       if (colon < 0) return false;
       const act = name.slice(0, colon);
       const value = name.slice(colon + 1);
+      if (name === "short-point:pick") {
+        deps.pointPick?.(item.shortText?.point?.picking !== true);
+        return true;
+      }
+      if (name === "short-point:clear") {
+        deps.block(selected, "pointsTo", "");
+        return true;
+      }
       if (name === "short-colours:reset") {
         deps.block(selected, "color", "");
         deps.block(selected, "darkColor", "");

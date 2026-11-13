@@ -579,15 +579,14 @@ describe("a short text's point and language", () => {
     return out.after as unknown as Record<string, unknown>;
   };
 
-  it("types the point in the views that point, and the language in every view", () => {
-    // Why: only a sign and a ground arrow draw toward `pointsTo`; a pin
-    // and an edge hint would offer a field that changes nothing. The
-    // language matters to every view's line breaking and font.
+  it("leaves the point to the panel's boxes, and types the language in every view", () => {
+    // Why: the point is typed in the short text's panel as three boxes
+    // x, y and z (`kind-panels/short-text-panel.ts`), as the chosen
+    // prototype has it; a dock line as well would be a second place to
+    // type it. The language matters to every view's line breaking and
+    // font.
     const names = (v: string) => blockFields(view(v)).map((f) => f.name);
-    for (const v of ["sign", "ground"]) {
-      expect(names(v)).toContain("pointsTo");
-    }
-    for (const v of ["pin", "edgeHint"]) {
+    for (const v of ["pin", "sign", "edgeHint", "ground"]) {
       expect(names(v)).not.toContain("pointsTo");
     }
     for (const v of ["pin", "sign", "edgeHint", "ground"]) {
@@ -595,10 +594,11 @@ describe("a short text's point and language", () => {
     }
   });
 
-  it("writes a point typed as three numbers, and shows it back the same way", () => {
+  it("writes a point given as three numbers", () => {
     // Why: the format stores three numbers in the station's frame; the
-    // inspector types them on one line, separated by spaces or ", ", a
-    // comma alone still being a decimal point as in every number box.
+    // panel's boxes and the 3D view's pick send them as one text,
+    // separated by spaces (", " read too), a comma alone still being a
+    // decimal point as in every number box.
     const sign = view("sign");
     expect(
       edited(blockFieldEdit(sign, "pointsTo", "2 1.2 -19.6")).pointsTo,
@@ -610,9 +610,6 @@ describe("a short text's point and language", () => {
       edited(blockFieldEdit(sign, "pointsTo", "1,5 0 -3")).pointsTo,
     ).toEqual([1.5, 0, -3]);
     const set = view("sign", { pointsTo: [2, 1.2, -19.6] });
-    expect(blockFields(set).find((f) => f.name === "pointsTo")?.value).toBe(
-      "2 1.2 -19.6",
-    );
     expect(blockFieldEdit(set, "pointsTo", "2 1.2 -19.6")).toEqual({
       kind: "unchanged",
     });
@@ -665,13 +662,12 @@ describe("a short text's point and language", () => {
     expect(blockFieldEdit(set, "lang", "de")).toEqual({ kind: "unchanged" });
   });
 
-  it("hints at what to type in the empty point and language fields", () => {
-    // Why: neither field says on its own how it is written; the hint is
-    // the one place that does.
+  it("hints at what to type in the empty language field", () => {
+    // Why: the field does not say on its own how a tag is written; the
+    // hint is the one place that does.
     const fields = blockFields(view("sign"));
     const hint = (n: string) =>
       blockFieldPlaceholder(fields.find((f) => f.name === n)!);
-    expect(hint("pointsTo")).toMatch(/^Optional, such as /);
     expect(hint("lang")).toMatch(/^Optional, such as /);
   });
 });

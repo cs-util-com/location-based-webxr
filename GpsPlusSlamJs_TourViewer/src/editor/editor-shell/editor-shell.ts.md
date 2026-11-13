@@ -385,6 +385,10 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   the page refuses (over the format's cap; its station, pin text and
   block commands return `TypedEditOutcome`, `"refused"`) is said by the
   page and put back in the field, so the typing is kept to be shortened.
+  The same text in the same field of the same selection is not sent again
+  until it changes (the shell remembers the last refusal, so a draw in
+  between does not forget it): Enter and then leaving the field say the
+  refusal once.
   That text lasts only until the inspector is drawn again: a refusal on
   Enter keeps the focus in the field, and a draw carries focused, typed
   text over; a refusal when the field is left lets the focus go where it

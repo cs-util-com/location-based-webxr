@@ -1113,6 +1113,43 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       }
       return top?.pick ?? nearest;
     },
+    /** Where the ray first meets a drawn item other than `except` (an
+     *  item's id), in the world (the scene's), or null: what "Pick in 3D"
+     *  points at. What is drawn over everything (`isInterfacePart`: a
+     *  billboard, a sound's icon) is no surface, nor a ring or a pole. */
+    surfaceHit(
+      raycaster: THREE.Raycaster,
+      except: string,
+    ): THREE.Vector3 | null {
+      group.updateMatrixWorld();
+      for (const hit of raycaster.intersectObject(group, true)) {
+        if (!drawnInGroup(hit.object, group)) continue;
+        if (isInterfacePart(hit.object)) continue;
+        const pick = pickOf(hit.object);
+        if (pick === null || pick === except) continue;
+        return hit.point.clone();
+      }
+      return null;
+    },
+    /** The frame of the station that holds free item `id` (its pose and
+     *  where it points are in it, m) as a matrix to the layer's frame;
+     *  null for an id no station holds. The same frame as
+     *  `itemPointOf`'s. */
+    stationFrameOf(id: string): THREE.Matrix4 | null {
+      for (const entry of stations.values()) {
+        if (!tourFreeBlocks(entry.station).some((i) => i.id === id)) continue;
+        const { geo } = entry.station;
+        const frame = objectPoseNue(geo, { lat: geo.lat, lon: geo.lon });
+        return new THREE.Matrix4()
+          .compose(
+            new THREE.Vector3(...frame.positionNue),
+            new THREE.Quaternion(...frame.rotationNue),
+            new THREE.Vector3(1, 1, 1),
+          )
+          .premultiply(entry.root.matrix);
+      }
+      return null;
+    },
     /** For the page's checks: the stations and what is drawn. */
     stats() {
       return {

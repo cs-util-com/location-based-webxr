@@ -121,13 +121,14 @@ function numberOf(block: AnyBlock, name: string): number | undefined {
 /** The fields the inspector types for `block`, besides a short text's
  *  caption (the head's). */
 export function blockFields(block: AnyBlock): BlockField[] {
-  // A choice, a switch or a colour is the kind's panel's: never a box to
-  // type in.
+  // A choice, a switch, a colour or a point is the kind's panel's (a
+  // point is its three boxes there): never a line of the dock.
   return ownFields(block)
     .flatMap((spec) =>
       spec.choices === undefined &&
       spec.flag === undefined &&
-      spec.colour === undefined
+      spec.colour === undefined &&
+      spec.typed !== "point"
         ? [spec]
         : [],
     )

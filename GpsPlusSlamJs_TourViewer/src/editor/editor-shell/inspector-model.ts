@@ -367,6 +367,14 @@ interface InspectorShortText {
     readonly color: string | null;
     readonly darkColor: string | null;
   };
+  /** Where a sign or a ground arrow points (the station's frame, m;
+   *  null: nowhere), the block's id its boxes write to, and whether
+   *  "Pick in 3D" is armed; absent in a view that points nowhere. */
+  readonly point?: {
+    readonly id: string;
+    readonly at: readonly [number, number, number] | null;
+    readonly picking: boolean;
+  };
 }
 
 /** A model's own parts as its inspector edits them. */
@@ -925,6 +933,8 @@ export function buildInspector(input: {
    *  none. */
   readonly modelFocus?: ModelFocus | null;
   readonly modelPick?: ModelPick | null;
+  /** "Pick in 3D" armed for the selected short text. */
+  readonly pointPick?: boolean;
   /** Changes whenever the tour's read-along texts do; none given: "". */
   readonly timingsStamp?: string;
   /** The selected free item's file is not in the tour on disk yet, so it
@@ -1010,6 +1020,15 @@ export function buildInspector(input: {
                       captionOnArrow: item.captionOnArrow === true,
                       color: item.color ?? null,
                       darkColor: item.darkColor ?? null,
+                    },
+                  }
+                : {}),
+              ...(item.view === "sign" || item.view === "ground"
+                ? {
+                    point: {
+                      id: item.id,
+                      at: item.pointsTo ?? null,
+                      picking: input.pointPick === true,
                     },
                   }
                 : {}),
