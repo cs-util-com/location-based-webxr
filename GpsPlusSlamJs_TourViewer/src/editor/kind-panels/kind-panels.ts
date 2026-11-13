@@ -17,6 +17,7 @@
  */
 import type { TourBlockKind } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import { tourBlockKinds } from "gps-plus-slam-app-framework/ar/tour-kinds";
+import type { TourPictureViewpoint } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import type { ShellEditCommands } from "../editor-shell/editor-shell.js";
 import type { InspectorModel } from "../editor-shell/inspector-model.js";
 import { createKeptStore } from "../long-text/kept-store.js";
@@ -48,6 +49,7 @@ export interface PanelContext {
     | "editNarration"
     | "voiceMaxBytes"
     | "pictureTag"
+    | "pictureViewpoint"
   >;
   /** A tour file by its path. */
   readonly loadPicture: (path: string) => Promise<Blob>;
@@ -92,14 +94,22 @@ function model(ctx: PanelContext): KindPanel {
   });
 }
 
-/** A picture's panel: its view, its tag, the cut-out's alpha warning. */
+/** A picture's panel: its view, its tag, the cut-out's alpha warning, its
+ *  viewpoint. */
 function picture(ctx: PanelContext): KindPanel {
   const tag = ctx.edits.pictureTag;
+  const viewpoint = ctx.edits.pictureViewpoint;
   return createPicturePanel({
     setView: (id, view) => ctx.edits.view(id, view),
     ...(tag === undefined
       ? {}
       : { setTag: (id: string, shown: boolean) => tag(id, shown) }),
+    ...(viewpoint === undefined
+      ? {}
+      : {
+          setViewpoint: (id: string, vp: TourPictureViewpoint | null) =>
+            viewpoint(id, vp),
+        }),
     seeThrough: async (path) => pictureSeeThrough(await ctx.loadPicture(path)),
     changed: ctx.changed,
   });

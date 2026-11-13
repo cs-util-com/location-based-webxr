@@ -9,7 +9,12 @@ The world part of a picture in a viewpoint view (`thenNow`, `sharpen`,
 ## Public API
 
 - `viewpointWorld(block, env, { decode? })`: the part, or null for another
-  view or a block without a viewpoint (the renderer draws that as a plane).
+  view or a block without a viewpoint (the renderer draws that as a plain
+  plane at the block's pose, sized by its width). This is a deliberate
+  fallback, not the prototype's behaviour: a tour file may carry a
+  viewpoint view without a viewpoint, and it should still show the
+  picture. The editor never leaves one so: switching to a viewpoint view
+  stands a viewpoint in front of the picture (`editor/editor-session.ts`).
   `ready` rejects when the image cannot be read or decoded.
 - `EDITOR_PICTURE_ALPHA` (0.55): how much of a fading picture the editor
   shows, to place it by.

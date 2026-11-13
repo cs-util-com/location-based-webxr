@@ -47,7 +47,17 @@ import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-item
 import {
   TOUR_NARRATION_MAX_DURATION_MS,
   TOUR_FREE_BLOCK_VIEWS,
+  TOUR_PICTURE_VIEWPOINT_VIEWS,
+  type TourPictureViewpoint,
 } from "gps-plus-slam-app-framework/ar/tour-blocks";
+import {
+  TOUR_PICTURE_MAX_DISTANCE_M,
+  TOUR_PICTURE_MAX_HFOV_DEG,
+  TOUR_PICTURE_MIN_DISTANCE_M,
+  TOUR_PICTURE_MIN_HFOV_DEG,
+} from "gps-plus-slam-app-framework/ar/tour-kinds";
+import { posedEntryOf } from "../placement/placeables.js";
+import { mintViewpoint } from "./picture-viewpoint.js";
 import {
   TOUR_DESCRIPTION_MAX_CHARS,
   TOUR_TITLE_MAX_CHARS,
@@ -678,6 +688,31 @@ const MODEL_VIEW_ELSEWHERE = "A 3D model's view is set in its own fields.";
 /** Said when a tag is asked of a block that is no picture. */
 const ONLY_A_PICTURE_TAG = "Only a picture has a tag.";
 
+const ONLY_A_PICTURE_VIEWPOINT = "Only a picture has a viewpoint.";
+
+const NOT_A_VIEWPOINT =
+  "A viewpoint needs a place, a turn, a lens of 10 to 120 degrees and a depth of 1 to 500 m.";
+
+const VIEWPOINT_VIEWS: ReadonlySet<string> = new Set(
+  TOUR_PICTURE_VIEWPOINT_VIEWS,
+);
+
+/** Whether the format keeps `vp`: finite numbers, a turn of some length,
+ *  its lens and depth in their bounds. */
+function keptViewpoint(vp: TourPictureViewpoint): boolean {
+  const numbers = [...vp.position, ...vp.rotation, vp.hfovDeg, vp.distanceM];
+  return (
+    vp.position.length === 3 &&
+    vp.rotation.length === 4 &&
+    numbers.every(Number.isFinite) &&
+    Math.hypot(...vp.rotation) > 1e-6 &&
+    vp.hfovDeg >= TOUR_PICTURE_MIN_HFOV_DEG &&
+    vp.hfovDeg <= TOUR_PICTURE_MAX_HFOV_DEG &&
+    vp.distanceM >= TOUR_PICTURE_MIN_DISTANCE_M &&
+    vp.distanceM <= TOUR_PICTURE_MAX_DISTANCE_M
+  );
+}
+
 /** Said for a size out of its row's bounds. */
 function extentRange(spec: ExtentSpec): string {
   return `Its ${spec.label.toLowerCase()} must be from ${String(spec.min)} m to ${String(spec.max)} m.`;
@@ -839,6 +874,15 @@ export interface EditorSession {
   editBlockView(
     id: string,
     view: string,
+  ): { kind: "edited" | "unchanged" } | EditorRefusal;
+  /** Set a picture's viewpoint (`viewpoint`; null: a fresh one in front
+   *  of the picture, `mintViewpoint`): one step. A switch to a view seen
+   *  from a viewpoint (`editBlockView`) gives a picture without one its
+   *  first. Refused in words for an id the tour does not carry, a block
+   *  that is no picture and a viewpoint the format would not keep. */
+  editPictureViewpoint(
+    id: string,
+    viewpoint: TourPictureViewpoint | null,
   ): { kind: "edited" | "unchanged" } | EditorRefusal;
   /** Show or hide a picture's tag (a cut-out's, `showTag`): one step;
    *  shown is the field's absence. Refused in words for an id the tour
@@ -1389,6 +1433,19 @@ export function createEditorSession(input: {
    *  the rule. A view chosen - the chip already pressed too - takes a model
    *  out for good; an undo does not put it back. */
   const defaultViews = new Set<string>();
+
+  /** Where the item `id` stands in its station's frame (its folders
+   *  composed in); the station's anchor for one the stations lack. */
+  function stationPoseOf(id: string): {
+    readonly position: readonly number[];
+    readonly rotation: readonly number[];
+  } {
+    for (const station of now().stations) {
+      const place = posedEntryOf(station, id)?.place.inStation;
+      if (place !== undefined && place !== null) return place;
+    }
+    return { position: [0, 0, 0], rotation: [0, 0, 0, 1] };
+  }
 
   /** Undefined for an id the tour no longer carries, or a tour no longer
    *  open: a page holding an older card gets a refusal, never a throw (E2c
@@ -2436,12 +2493,45 @@ export function createEditorSession(input: {
         return { kind: "refused", reason: NOT_ITS_VIEW };
       }
       if (object.view === view) return { kind: "unchanged" };
-      const after = { ...object, view } as typeof object;
+      // A picture switched to a view seen from a viewpoint gets its first
+      // one, standing in front of it, so the view shows at once.
+      const minted =
+        object.kind === "picture" &&
+        VIEWPOINT_VIEWS.has(view) &&
+        object.viewpoint === undefined
+          ? { viewpoint: mintViewpoint(stationPoseOf(id)) }
+          : {};
+      const after = { ...object, view, ...minted } as typeof object;
       const applied = took(() =>
         store.dispatch(
           tourDocumentActions.edited({
             object: after,
             what: `the view of ${objectName(object)}`,
+          }),
+        ),
+      );
+      return applied ? { kind: "edited" } : notApplied;
+    },
+    editPictureViewpoint(id, viewpoint) {
+      const found = find(id);
+      if (found === undefined) return notInTour;
+      const object = found.object;
+      if (object.kind !== "picture") {
+        return { kind: "refused", reason: ONLY_A_PICTURE_VIEWPOINT };
+      }
+      const next = viewpoint ?? mintViewpoint(stationPoseOf(id));
+      if (!keptViewpoint(next)) {
+        return { kind: "refused", reason: NOT_A_VIEWPOINT };
+      }
+      if (sameJson(object.viewpoint ?? null, next)) {
+        return { kind: "unchanged" };
+      }
+      const after: typeof object = { ...object, viewpoint: next };
+      const applied = took(() =>
+        store.dispatch(
+          tourDocumentActions.edited({
+            object: after,
+            what: `the viewpoint of ${objectName(object)}`,
           }),
         ),
       );

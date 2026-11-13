@@ -41,6 +41,7 @@ import {
   isTourFolder,
   tourChildPlace,
 } from "gps-plus-slam-app-framework/ar/tour-story";
+import type { TourPictureViewpoint } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import type { UnknownAction } from "@reduxjs/toolkit";
 
 import type { Editor3dView } from "../../editor3d/editor3d-scene.js";
@@ -237,6 +238,12 @@ export interface ShellEditCommands {
   /** A picture's tag shown or hidden (a cut-out's); absent: the page
    *  has no such edit and the switch is not drawn. */
   pictureTag?(itemId: string, shown: boolean): TypedEditOutcome;
+  /** A picture's viewpoint set (null: a fresh one in front of it);
+   *  absent: the page has no such edit and its fields are not drawn. */
+  pictureViewpoint?(
+    itemId: string,
+    viewpoint: TourPictureViewpoint | null,
+  ): TypedEditOutcome;
   /** One of a model's own edits (`model-edits.ts`): its view, a note,
    *  a section, its clip. */
   model(itemId: string, edit: ModelEdit): TypedEditOutcome;
@@ -1122,6 +1129,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     else if (edit.kind === "turn") view?.turn(edit.selection, edit.deg);
     else if (edit.kind === "height") {
       deps.edits.groundItems([{ id: edit.id, alt: edit.alt }]);
+    } else if (edit.kind === "viewpoint") {
+      outcome =
+        deps.edits.pictureViewpoint?.(edit.id, edit.viewpoint) ?? "refused";
     }
     if (outcome === "refused") input.value = value;
   };

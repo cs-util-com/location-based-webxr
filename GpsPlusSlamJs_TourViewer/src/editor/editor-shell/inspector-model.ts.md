@@ -81,7 +81,8 @@ view, advance, facingDeg }`) and `advance { mode, afterS }`;
     over the ground of where it stands in the world, through its
     folders, `posedEntryOf` of `../../placement/placeables.ts`; rounded as
     the station's; null while unknown or with no place), and for a picture
-    only `picture` (`InspectorPicture`: its view, whether its tag shows,
+    only `picture` (`InspectorPicture`: its view, its viewpoint's facts
+    or null (`../picture-viewpoint.ts`), whether its tag shows,
     its image's tour path or null), which its panel draws;
   - `CodeInspector` - `kind: "code"`, title, `sub` (its line),
     `printSizeM`, `position` or null when it has none;

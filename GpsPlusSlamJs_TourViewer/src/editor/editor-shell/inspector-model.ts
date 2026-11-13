@@ -76,6 +76,7 @@ import {
   type BlockField,
 } from "../block-fields.js";
 import { FOLDER_PREFIX, STORY_PREFIX } from "../editor-model.js";
+import { viewpointFacts, type ViewpointFacts } from "../picture-viewpoint.js";
 import { folderName } from "../folder-commands.js";
 import {
   FREE_LIST,
@@ -382,6 +383,8 @@ interface InspectorPicture {
   readonly showTag: boolean;
   /** Its image's tour path; null when the tour lacks the asset. */
   readonly imagePath: string | null;
+  /** Its viewpoint as the panel types it; null: it has none. */
+  readonly viewpoint: ViewpointFacts | null;
 }
 
 /** A long text as its writer shows it (`long-text-writer.ts`). */
@@ -1045,6 +1048,10 @@ export function buildInspector(input: {
               showTag: item.showTag !== false,
               imagePath:
                 input.assets.find((a) => a.id === item.image)?.path ?? null,
+              viewpoint:
+                item.viewpoint === undefined
+                  ? null
+                  : viewpointFacts(item.viewpoint),
             },
           }
         : {}),
