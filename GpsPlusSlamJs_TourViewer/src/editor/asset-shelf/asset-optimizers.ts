@@ -16,6 +16,7 @@
 import type { TourAssetKind } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import type { OptimizerSettings } from "./optimizer-settings.js";
+import { SOUND_DECODER, soundOptimizer } from "./sound-optimizer.js";
 
 /** What an optimizer made of a file. */
 export type OptimizeOutcome =
@@ -43,13 +44,16 @@ export interface OptimizeControl {
 
 /** The Worker that does an optimizer's heavy part (`optimizer-client.ts`).
  *  `run` rejects with `OptimizerCrashed` when the Worker died under it,
- *  and with an `AbortError` once `signal` aborted. */
+ *  and with an `AbortError` once `signal` aborted. `transfer` moves
+ *  buffers of `payload` to the Worker instead of copying them (a
+ *  sound's decoded samples); they are unusable on the page afterwards. */
 export interface OptimizerHost {
   run(
     kind: TourAssetKind,
     payload: unknown,
     settings: OptimizerSettings,
     control: OptimizeControl,
+    transfer?: readonly Transferable[],
   ): Promise<OptimizeOutcome>;
   /** Stop every run and the Worker. */
   close(): void;
@@ -70,12 +74,19 @@ export type OptimizerTable = Readonly<
   Record<TourAssetKind, AssetOptimizer | null>
 >;
 
-/** The optimizers this build has: none yet. Pictures, sounds and model
- *  textures each get their row in a milestone of their own; video stays
- *  without one (no transcode in the first version). */
+/** A picture's whole optimization runs in the Worker
+ *  (`picture-step.ts`): the page hands over the file as it is. */
+const PICTURE_OPTIMIZER: AssetOptimizer = {
+  optimize: (source, ctx) => ctx.host.run("image", source, ctx.settings, ctx),
+};
+
+/** The optimizers this build has: pictures (WebP, in the Worker) and
+ *  sounds (decoded on the page, Ogg Opus in the Worker). Model textures
+ *  get their row in a milestone of their own; video stays without one
+ *  (no transcode in the first version). */
 export const ASSET_OPTIMIZERS: OptimizerTable = {
-  image: null,
-  audio: null,
+  image: PICTURE_OPTIMIZER,
+  audio: soundOptimizer(SOUND_DECODER),
   video: null,
   model: null,
 };

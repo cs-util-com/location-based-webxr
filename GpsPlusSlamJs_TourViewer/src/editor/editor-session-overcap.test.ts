@@ -63,6 +63,8 @@ function editorOf(session: TourSession): EditorSession {
     levels: new Map(),
     store: editorStore(),
     fileReaders: { limits: LIMITS, shrinks: (kind) => kind === "audio" },
+    // Nothing makes a sound smaller here: the large file has no job.
+    optimizers: { ...ASSET_OPTIMIZERS, audio: null },
   });
 }
 

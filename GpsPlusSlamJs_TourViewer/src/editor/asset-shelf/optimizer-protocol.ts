@@ -91,3 +91,20 @@ interface FailedMessage {
 
 export type OptimizerOutbound =
   ProgressMessage | DoneMessage | KeptMessage | FailedMessage;
+
+/** What one kind's step in the Worker answers, without the job id: the
+ *  smaller file, or the original kept with words. A failure is a throw. */
+export type WorkerStepAnswer =
+  Omit<DoneMessage, "job"> | Omit<KeptMessage, "job">;
+
+/** How a Worker step is told to stop and reports how far it is. */
+export interface WorkerStepControl {
+  readonly signal: AbortSignal;
+  /** 0..1. */
+  readonly progress: (fraction: number) => void;
+}
+
+/** What a step throws once its run was stopped. */
+export function stoppedError(): DOMException {
+  return new DOMException("the optimization was stopped", "AbortError");
+}

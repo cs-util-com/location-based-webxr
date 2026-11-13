@@ -40,7 +40,6 @@
 
 ## Not here yet
 
-- Real optimizers: every row of `ASSET_OPTIMIZERS` is null in this build.
 - The shelf's panel.
 
 ## Tests

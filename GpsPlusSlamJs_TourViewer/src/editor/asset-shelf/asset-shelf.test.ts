@@ -273,7 +273,11 @@ describe("the shelf's runner", () => {
   });
 
   it("a kind without an optimizer comes in kept, with words", () => {
-    const { shelf, row } = setup({ optimizers: ASSET_OPTIMIZERS });
+    // Models have no optimizer in this build; an image row taken away
+    // stands for any kind without one.
+    const { shelf, row } = setup({
+      optimizers: { ...ASSET_OPTIMIZERS, image: null },
+    });
     shelf.add(image(A), "a.png", 1000, "added");
     expect(row(A)).toMatchObject({ status: "kept", reason: NO_OPTIMIZER });
   });
