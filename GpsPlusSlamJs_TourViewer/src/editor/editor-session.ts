@@ -908,23 +908,27 @@ export interface EditorSession {
   duplicateStory(
     storyId: string,
   ): { kind: "duplicated"; id: string } | EditorRefusal;
-  /** A new entry at the end of a story: one step. */
+  /** A new entry at the end of a story, or before its child at `at`
+   *  (0-based): one step. */
   addToStory(
     storyId: string,
     kind: TextAddKind,
+    at?: number,
   ): { kind: "added"; id: string } | EditorRefusal;
-  /** A made entry at the end of a story (a file's, `new-file-item.ts`):
-   *  one step. Refused for a story the tour does not carry and for an id
-   *  it carries already. */
+  /** A made entry at the end of a story (a file's, `new-file-item.ts`),
+   *  or before its child at `at`: one step. Refused for a story the
+   *  tour does not carry and for an id it carries already. */
   addEntryToStory(
     storyId: string,
     child: TourStoryChild,
+    at?: number,
   ): { kind: "added"; id: string } | EditorRefusal;
-  /** A new choice or quiz at the end of a story (`newStoryStep`): one
-   *  step. */
+  /** A new choice or quiz at the end of a story (`newStoryStep`), or
+   *  before its child at `at`: one step. */
   addStepToStory(
     storyId: string,
     kind: StepKind,
+    at?: number,
   ): { kind: "added"; id: string } | EditorRefusal;
   /** Delete a story's child: one step; `answers` says how many answers
    *  that led to it now go on to the next child. */
@@ -1598,10 +1602,12 @@ export function createEditorSession(input: {
     return null;
   }
 
-  /** `child` at the end of the story `storyId`: one step. */
+  /** `child` at the end of the story `storyId`, or before its child at
+   *  `at`: one step. */
   function addEntryToStory(
     storyId: string,
     child: TourStoryChild,
+    at?: number,
   ): { kind: "added"; id: string } | EditorRefusal {
     const state = mine();
     if (state === null) return notInTour;
@@ -1617,6 +1623,7 @@ export function createEditorSession(input: {
           story: storyId,
           child,
           what: `the new entry "${storyChildName(child)}"`,
+          at,
         }),
       ),
     )
@@ -2679,7 +2686,7 @@ export function createEditorSession(input: {
           }
         : notApplied;
     },
-    addToStory(storyId, kind) {
+    addToStory(storyId, kind, at) {
       const state = mine();
       if (state === null) return notInTour;
       const station = manifestNow(state)?.stations.find((s) =>
@@ -2692,11 +2699,12 @@ export function createEditorSession(input: {
       return addEntryToStory(
         storyId,
         newStoryEntry(station, story, kind, newObjectId()),
+        at,
       );
     },
     addEntryToStory,
-    addStepToStory(storyId, kind) {
-      return addEntryToStory(storyId, newStoryStep(kind, newObjectId()));
+    addStepToStory(storyId, kind, at) {
+      return addEntryToStory(storyId, newStoryStep(kind, newObjectId()), at);
     },
     deleteStoryChild(id) {
       const state = mine();

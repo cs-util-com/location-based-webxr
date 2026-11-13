@@ -368,6 +368,30 @@ describe("drawInspector", () => {
     ).toBe(false);
   });
 
+  // Why: a step can go between two others: on a desktop a gap above each
+  // card adds before it, named by the step it comes before; a phone has
+  // no hover, and adds at the end.
+  it("draws a gap to insert a step above each card on a desktop only", () => {
+    drawInspector(dock, STORY, FOLD, pictures);
+    expect(
+      [...dock.body.querySelectorAll<HTMLElement>(".gap .insert")].map((b) => [
+        b.dataset["act"],
+        b.getAttribute("aria-label"),
+        b.nextElementSibling,
+      ]),
+    ).toEqual([
+      ["insert:0", "Insert a step before step 1", null],
+      ["insert:1", "Insert a step before step 2", null],
+    ]);
+    expect(
+      dock.body.querySelector(".gap")?.nextElementSibling?.getAttribute(
+        "data-card",
+      ),
+    ).toBe("intro");
+    drawInspector(dock, STORY, { ...FOLD, drill: true }, pictures);
+    expect(dock.body.querySelector(".gap")).toBeNull();
+  });
+
   // Why: the loop warning is said on every step of the loop, and only the
   // loop's last choice carries the one-click fix, named by the answer it
   // changes; a card open in place draws its step's own controls inside

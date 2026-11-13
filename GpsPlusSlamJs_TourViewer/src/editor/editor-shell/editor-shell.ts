@@ -260,11 +260,12 @@ export interface ShellEditCommands {
   addItem(stationId: string, kind: AddKind): void;
   /** A new story in the station, selected, one undo step. */
   addStory(stationId: string): void;
-  /** A new entry of `kind` in the story, selected, one undo step. */
-  addToStory(storyId: string, kind: AddKind): void;
-  /** A new choice or quiz at the end of the story, selected, one undo
-   *  step. */
-  addStepToStory(storyId: string, kind: StepKind): void;
+  /** A new entry of `kind` in the story, at its end or before its child
+   *  at `at` (0-based), selected, one undo step. */
+  addToStory(storyId: string, kind: AddKind, at?: number): void;
+  /** A new choice or quiz at the end of the story, or before its child
+   *  at `at`, selected, one undo step. */
+  addStepToStory(storyId: string, kind: StepKind, at?: number): void;
   /** The add menu's Character: the character maker opens on a new
    *  character, which is then added to the station (standing free) or to
    *  the end of the story. */
@@ -542,7 +543,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         focusControl(inspector.root, '[data-act="close"]');
       }
     },
-    chooseForStory: (id, kind) => {
+    chooseForStory: (id, kind, at) => {
+      // A character goes to the story's end: the character maker adds it
+      // once it is made, and takes no place.
       if (kind === "character") {
         clearSearch();
         revealStory(id);
@@ -553,9 +556,12 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       clearSearch();
       revealStory(id);
       if (kind === "choice" || kind === "quiz") {
-        deps.edits.addStepToStory(id, kind);
-      } else {
+        if (at === undefined) deps.edits.addStepToStory(id, kind);
+        else deps.edits.addStepToStory(id, kind, at);
+      } else if (at === undefined) {
         deps.edits.addToStory(id, kind);
+      } else {
+        deps.edits.addToStory(id, kind, at);
       }
       if (document.activeElement === document.body) {
         focusControl(inspector.root, '[data-act="close"]');
@@ -2161,6 +2167,16 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       const model = inspectorModel(state().editorView);
       if (button !== null && model?.kind === "story") {
         addMenu.openForStory(button, model.storyId, model.title);
+      }
+    }
+    if (act?.startsWith("insert:") === true) {
+      const button = (event.target as Element).closest<HTMLElement>(
+        "[data-act]",
+      );
+      const model = inspectorModel(state().editorView);
+      const at = Number(act.slice("insert:".length));
+      if (button !== null && model?.kind === "story" && Number.isInteger(at)) {
+        addMenu.openForStory(button, model.storyId, model.title, at);
       }
     }
     if (act?.startsWith("goto:") === true) {

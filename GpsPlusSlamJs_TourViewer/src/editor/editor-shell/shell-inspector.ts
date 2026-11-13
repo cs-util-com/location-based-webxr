@@ -790,7 +790,8 @@ function storyParts(model: StoryModel, state: InspectorState): HTMLElement[] {
           : "What the visitor meets in this story, in order. Open a card to edit it; open several to compare them.",
     ),
   );
-  for (const card of model.cards) {
+  for (const [at, card] of model.cards.entries()) {
+    if (!drill) list.append(insertGap(at));
     const opened = drill
       ? undefined
       : model.opened?.find(
@@ -812,6 +813,19 @@ function storyParts(model: StoryModel, state: InspectorState): HTMLElement[] {
       ),
     ]),
   ];
+}
+
+/** The gap above the card at `at` (0-based) on a desktop: a button,
+ *  shown on hover or focus, that adds a step before it (`insert:<at>`). */
+function insertGap(at: number): HTMLElement {
+  const gap = el("div", "gap");
+  const b = el("button", "insert");
+  b.type = "button";
+  b.dataset["act"] = `insert:${String(at)}`;
+  b.setAttribute("aria-label", `Insert a step before step ${String(at + 1)}`);
+  b.append(shellIcon("plus"), el("span", "", "Insert step"));
+  gap.append(b);
+  return gap;
 }
 
 /** What a chip of how a block moves on says. */

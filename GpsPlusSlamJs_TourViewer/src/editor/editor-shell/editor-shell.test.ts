@@ -1379,6 +1379,28 @@ describe("a story's folder in the tree", () => {
     shell.hide();
   });
 
+  // Why: a step can go between two others: the gap before a card opens
+  // the story's menu for that place, and its add carries the place.
+  it("inserts a step before a card from the gap above it", () => {
+    vi.stubGlobal("innerWidth", 1280);
+    const { edits, select, shell } = withStory();
+    select("story:legend");
+    inspectorAct("insert:1").click();
+    expect(
+      document.querySelector("#tree-add-menu .mhead")?.textContent,
+    ).toContain("as step 2");
+    document
+      .querySelector<HTMLElement>('#tree-add-menu [data-kind="quiz"]')
+      ?.click();
+    expect(edits.addStepToStory).toHaveBeenLastCalledWith("legend", "quiz", 1);
+    inspectorAct("insert:0").click();
+    document
+      .querySelector<HTMLElement>('#tree-add-menu [data-kind="longText"]')
+      ?.click();
+    expect(edits.addToStory).toHaveBeenLastCalledWith("legend", "longText", 0);
+    shell.hide();
+  });
+
   // Why: on a phone (700 px or less) a step's card is the way into its
   // step, as the entries' rows were: a press selects the step, unfolding
   // its folder, and Back comes up to the story again.

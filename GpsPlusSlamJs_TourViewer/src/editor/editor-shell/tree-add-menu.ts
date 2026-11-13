@@ -38,8 +38,15 @@ export interface TreeAddMenu {
    *  focus on its first item. */
   openFor(anchor: HTMLElement, stationId: string, title: string): void;
   /** Open under `anchor` for the story `storyId`, named `title`, the focus
-   *  on its first item; a story is not offered. */
-  openForStory(anchor: HTMLElement, storyId: string, title: string): void;
+   *  on its first item; a story is not offered. With `at` (0-based) what
+   *  is chosen goes before the story's child there, its head saying which
+   *  step it becomes. */
+  openForStory(
+    anchor: HTMLElement,
+    storyId: string,
+    title: string,
+    at?: number,
+  ): void;
   close(returnFocus: boolean): void;
   isOpen(): boolean;
 }
@@ -98,10 +105,12 @@ export function createTreeAddMenu(deps: {
     stationId: string,
     kind: Exclude<TreeAddChoice, StepKind>,
   ) => void;
-  /** Add `kind` to the story; run after the menu closed. */
+  /** Add `kind` to the story, before its child at `at` when the menu
+   *  was opened with one (passed only then); run after the menu closed. */
   readonly chooseForStory: (
     storyId: string,
     kind: Exclude<TreeAddChoice, "story">,
+    at?: number,
   ) => void;
 }): TreeAddMenu {
   const menu = document.createElement("div");
@@ -187,7 +196,11 @@ export function createTreeAddMenu(deps: {
   );
   menu.append(storyPart);
   deps.host.append(menu);
-  let target: { kind: "station" | "story"; id: string } | null = null;
+  let target: {
+    kind: "station" | "story";
+    id: string;
+    at?: number | undefined;
+  } | null = null;
   /** The button it opened from, which says it is open (`aria-expanded`). */
   let opener: HTMLElement | null = null;
 
@@ -225,7 +238,7 @@ export function createTreeAddMenu(deps: {
 
   function open(
     anchor: HTMLElement,
-    to: { kind: "station" | "story"; id: string },
+    to: { kind: "station" | "story"; id: string; at?: number | undefined },
     words: string,
   ): void {
     if (isOpen()) close(false);
@@ -283,7 +296,9 @@ export function createTreeAddMenu(deps: {
     const kind = item.dataset["kind"] as TreeAddChoice;
     close(true);
     if (from.kind === "story") {
-      if (kind !== "story") deps.chooseForStory(from.id, kind);
+      if (kind === "story") return;
+      if (from.at === undefined) deps.chooseForStory(from.id, kind);
+      else deps.chooseForStory(from.id, kind, from.at);
     } else if (kind !== "choice" && kind !== "quiz") {
       deps.choose(from.id, kind);
     }
@@ -293,11 +308,13 @@ export function createTreeAddMenu(deps: {
     openFor(anchor, stationId, title) {
       open(anchor, { kind: "station", id: stationId }, `Add to ${title}`);
     },
-    openForStory(anchor, storyId, title) {
+    openForStory(anchor, storyId, title, at) {
       open(
         anchor,
-        { kind: "story", id: storyId },
-        `Add to the story "${title}"`,
+        { kind: "story", id: storyId, at },
+        at === undefined
+          ? `Add to the story "${title}"`
+          : `Add to the story "${title}" as step ${String(at + 1)}`,
       );
     },
     close,

@@ -3711,6 +3711,44 @@ body[data-view="3d"] #view3d .view3d-canvas {
   border-top: 1px solid var(--s-line);
 }
 
+/* The gap above a card (a desktop's): "Insert step", seen on hover or
+   focus. */
+.scards .gap {
+  position: relative;
+  height: 0;
+  margin: -4px 0 4px;
+}
+
+.scards .gap .insert {
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 10px;
+  border: 1px dashed var(--s-line2);
+  border-radius: 999px;
+  background: var(--s-bg1);
+  color: var(--s-muted);
+  font-size: 11px;
+  opacity: 0;
+  transform: translateX(-50%);
+  transition: opacity 0.12s;
+}
+
+.scards .gap:hover .insert,
+.scards .gap .insert:focus-visible {
+  opacity: 1;
+}
+
+.scards .gap .insert:hover {
+  border-color: var(--s-accent-line);
+  color: var(--s-accent-text);
+}
+
 .scards .endmark {
   display: flex;
   align-items: center;

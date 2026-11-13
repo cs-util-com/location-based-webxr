@@ -97,7 +97,9 @@ content` (Chromium, the editor's browser; elsewhere it stays three
     `card-show:<id>` for a step, words for the end or a gone step; a
     quiz's right mark and "After the answer"), the loop warning with,
     on the loop's last choice, its fix (`card-fix:<id>`), and, open in
-    place (`opened`), the step's own parts in `.cbody`. `controlName`
+    place (`opened`), the step's own parts in `.cbody`. On a desktop a
+    gap above each card holds "Insert step" (`insert:<n>`, shown on hover
+    or focus, labelled "Insert a step before step <n + 1>"). `controlName`
     prefixes a control inside a card with its card, as open cards draw
     the same fields.
   - A story's block: its texts and, unless a character's, "Moves on" chips

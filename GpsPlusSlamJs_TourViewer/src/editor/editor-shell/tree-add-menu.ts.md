@@ -16,7 +16,9 @@ for every row, opened under the button pressed.
   line, a station's alone), `openForStory` for a story ("Add to the story
   "<name>"", `chooseForStory`, no Story item, and behind a line Choice
   and Quiz - steps of a story only, hidden on a station's menu, so
-  `choose` never gets them). The focus returns to that row's "+".
+  `choose` never gets them; opened with `at`, as a story's "Insert step"
+  does, the head says "... as step <at + 1>" and `chooseForStory` gets
+  the `at` too). The focus returns to that row's "+".
 
 - The menu's lines are `ADD_CHOICES` of the editor's list of kinds
   (`../../kinds/edit-kinds.ts`), in its order, `{ kind, label, hint, words,
