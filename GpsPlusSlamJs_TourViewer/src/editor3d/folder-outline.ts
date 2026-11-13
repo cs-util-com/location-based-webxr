@@ -13,7 +13,7 @@ import { tourFreeEntries } from "gps-plus-slam-app-framework/ar/tour-station-pos
 
 import { FOLDER_PREFIX } from "../editor/editor-model.js";
 import { folderName } from "../editor/folder-commands.js";
-import { folderChains } from "../tour-content.js";
+import { folderChains } from "../tour-document.js";
 import {
   groupHull,
   type Footprint,
