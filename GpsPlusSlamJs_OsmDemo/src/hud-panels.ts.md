@@ -15,8 +15,10 @@ control inside the closed drawer is still doing.
     `aria-expanded`.
   - `onChange(open)`: called after every change with the open panel's name,
     or `undefined`.
-  - `HudPanels`: `open`, `show(name)`, `hide(name)`, `toggle(name)`,
-    `hideAll()`, `dispose()`.
+  - `HudPanels`: `hide(name)` (closes the named panel if it is the open
+    one; the drawer's own close button), `dispose()`. Panels open and close
+    from their openers and Escape; the page reads the open one through
+    `onChange` or the DOM.
   - Throws on an empty panel set and on an unknown panel name.
 - `attachBusyMark({ root, mark }): () => void`
   - Sets `mark.dataset.busy` to `"true"` while `root` holds a `.layer-busy`
@@ -33,6 +35,10 @@ control inside the closed drawer is still doing.
   `defaultPrevented` is set. The light dialog stacks over the drawer and
   answers its own Escape on `document` with `preventDefault`, so the first
   Escape closes the dialog and the second the drawer.
+- **Opening moves focus into the panel.** The panel element itself gets
+  `tabIndex = -1` and focus (`preventScroll`), because the panels come after
+  the map and the scene in the page: without it Tab would walk every map
+  control before reaching the panel a keyboard user just opened.
 - **Focus returns to the opener** when it was inside the closing panel (or
   nowhere); focus that moved elsewhere on the page is left alone.
 - **Errors never open a panel.** Every reporter toasts (`toast.ts`); nothing
@@ -54,16 +60,17 @@ const hud = attachHudPanels({
   },
 });
 attachBusyMark({ root: el("settings-drawer"), mark: el("settings-open") });
-hud.hideAll();
+hud.hide("settings");
 ```
 
 ## Tests
 
 - `hud-panels.test.ts` (jsdom): starting closed, one open at a time, the
-  opener toggling, Escape with focus return, focus left elsewhere, a stacked
+  opener toggling, focus moved into the opened panel, `hide` with its
+  `onChange` and on a closed panel, Escape with focus return, focus left elsewhere, a stacked
   layer's handled Escape left alone, other keys, bad names, dispose, a
   property over random action sequences (at most one visible, matching
-  `open` and every `aria-expanded`), and the busy mark on and off for both
+  the last `onChange` and every `aria-expanded`), and the busy mark on and off for both
   cues plus dispose.
 - The e2e suite drives the panels through `playwright-tests/fixtures.js`
   (`setting()` opens the drawer and the section, acts, closes) and holds the

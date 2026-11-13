@@ -23,6 +23,7 @@ import {
   AT_FIXTURE,
   enableCellLayer,
   expectCanvasFillsContainer,
+  focusPageForHotkeys,
   stubNetwork,
   SUN_PIN_DATE,
   waitForRefresh,
@@ -149,6 +150,43 @@ const showTransients = (page) =>
     offer.hidden = false;
   });
 
+/**
+ * Shows the cell details panel filled to its height cap, as a cell with a
+ * long attribute list fills it; an empty panel would measure only its padding.
+ */
+const showDetails = (page) =>
+  page.evaluate(() => {
+    const details = document.querySelector("#details");
+    if (!(details instanceof HTMLElement)) throw new Error("no details panel");
+    details.replaceChildren(
+      ...Array.from({ length: 60 }, (_, i) => {
+        const line = document.createElement("p");
+        line.textContent = `attribute ${i}`;
+        return line;
+      }),
+    );
+    details.hidden = false;
+  });
+
+const hideDetails = (page) =>
+  page.evaluate(() => {
+    const details = document.querySelector("#details");
+    if (!(details instanceof HTMLElement)) return;
+    details.hidden = true;
+    details.replaceChildren();
+  });
+
+/** Opens the light dialog from its button in the drawer's sun section. */
+async function openLightDialog(page) {
+  if (!(await page.locator("#settings-drawer").isVisible()))
+    await page.locator("#settings-open").click();
+  const group = page.locator("#sun-group");
+  if ((await group.getAttribute("open")) === null)
+    await group.locator(":scope > summary").click();
+  await page.locator("#light-open").click();
+  await expect(page.locator("#light-dialog")).toBeVisible();
+}
+
 const hideTransients = (page) =>
   page.evaluate(() => {
     document.querySelector("#toast-root .toast")?.remove();
@@ -249,26 +287,66 @@ for (const { name, viewport, maxCoverage } of [
           await page.locator(opener).click();
           await expect(page.locator(panel)).toBeHidden();
         }
+
+        // The light dialog stacks over the drawer's place; the details
+        // panel floats over the panes. Neither resizes the canvas, and
+        // neither may hide the toast, the error channel.
+        await openLightDialog(page);
+        const others = FLOATING.filter((s) => s !== "#ar-offer");
+        expect(
+          overlaps(
+            await boxes(page, ["#light-dialog", ...others]),
+            others.map((s) => ["#light-dialog", s]),
+          ),
+          "light dialog overlaps",
+        ).toEqual([]);
+        expect(await page.locator("#scene canvas").boundingBox()).toEqual(rest);
+        await page.locator("#settings-open").click();
+        await expect(page.locator("#light-dialog")).toBeHidden();
+
+        await showDetails(page);
+        const withDetails = await boxes(page, [
+          "#details",
+          "#command-bar",
+          "#toast-root .toast",
+        ]);
+        expect(Object.keys(withDetails)).toContain("#details");
+        expect(
+          overlaps(withDetails, [
+            ["#details", "#command-bar"],
+            ["#details", "#toast-root .toast"],
+          ]),
+        ).toEqual([]);
+        expect(await page.locator("#scene canvas").boundingBox()).toEqual(rest);
+        await hideDetails(page);
         await hideTransients(page);
       });
 
-      await test.step("the AR offer stacks above an open drawer", async () => {
-        await page.locator("#settings-open").click();
-        await page.evaluate(() => {
-          const offer = document.querySelector("#ar-offer");
-          if (offer instanceof HTMLElement) offer.hidden = false;
+      // Only where the two share a place: on a desktop the offer sits in the
+      // 3D view, away from the drawer, and the check would prove nothing.
+      if (viewport.width <= 860)
+        await test.step("the AR offer stacks above an open drawer", async () => {
+          await page.locator("#settings-open").click();
+          await page.evaluate(() => {
+            const offer = document.querySelector("#ar-offer");
+            if (offer instanceof HTMLElement) offer.hidden = false;
+          });
+          const shared = await boxes(page, ["#ar-offer", "#settings-drawer"]);
+          expect(
+            overlaps(shared, [["#ar-offer", "#settings-drawer"]]),
+            "the offer shares the drawer's place",
+          ).not.toEqual([]);
+          const box = await page.locator("#ar-offer-enter").boundingBox();
+          if (box === null) throw new Error("no box for the offer's button");
+          const onTop = await page.evaluate(
+            ({ x, y }) =>
+              document.elementFromPoint(x, y)?.closest("#ar-offer") !== null,
+            { x: box.x + box.width / 2, y: box.y + box.height / 2 },
+          );
+          expect(onTop).toBe(true);
+          await hideTransients(page);
+          await page.locator("#settings-open").click();
         });
-        const box = await page.locator("#ar-offer-enter").boundingBox();
-        if (box === null) throw new Error("no box for the offer's button");
-        const onTop = await page.evaluate(
-          ({ x, y }) =>
-            document.elementFromPoint(x, y)?.closest("#ar-offer") !== null,
-          { x: box.x + box.width / 2, y: box.y + box.height / 2 },
-        );
-        expect(onTop).toBe(true);
-        await hideTransients(page);
-        await page.locator("#settings-open").click();
-      });
 
       await test.step("every bar and panel target is at least 44 px", async () => {
         await page.locator("#settings-open").click();
@@ -301,12 +379,124 @@ for (const { name, viewport, maxCoverage } of [
         const rest = await page.locator("#scene canvas").boundingBox();
         await enableCellLayer(page);
         expect(await page.locator("#scene canvas").boundingBox()).toEqual(rest);
+        // With the cells on, the legend plate is in view: the at-rest
+        // overlap check again, with the plate measured.
+        await showTransients(page);
+        const measured = await boxes(page, FLOATING);
+        expect(Object.keys(measured)).toEqual(
+          expect.arrayContaining(["#legend-plate", "#toast-root .toast"]),
+        );
+        expect(overlaps(measured, allPairs(FLOATING))).toEqual([]);
+        await hideTransients(page);
         await page.locator("#layer-cells").uncheck();
         expect(await page.locator("#scene canvas").boundingBox()).toEqual(rest);
       });
     });
   });
 }
+
+/**
+ * Every control the bar holds, by box: the bar is a fixed-height strip, so a
+ * control that wraps onto a second line is drawn below the bar's own box, over
+ * the map zoom, the toast and the panels, while the bar's box still measures
+ * as it should. Measuring the bar alone cannot see that; measuring what it
+ * holds can. The quest readout is left out on purpose: it hangs below its
+ * button by design and holds no control.
+ */
+const barChildrenOutside = (page) =>
+  page.evaluate(() => {
+    const bar = document.querySelector("#command-bar");
+    if (bar === null) throw new Error("no command bar");
+    const b = bar.getBoundingClientRect();
+    const width = document.documentElement.clientWidth;
+    const out = [];
+    const children = bar.querySelectorAll(
+      ".bar-group > :not(.bar-analysis), .bar-analysis > *",
+    );
+    for (const child of children) {
+      if (!(child instanceof HTMLElement)) continue;
+      if (getComputedStyle(child).display === "none") continue;
+      const r = child.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) continue;
+      const name = child.id || child.className;
+      if (r.top < b.top - 0.5 || r.bottom > b.bottom + 0.5)
+        out.push(
+          `${name}: y ${r.top.toFixed(0)}-${r.bottom.toFixed(0)} outside the bar ${b.top.toFixed(0)}-${b.bottom.toFixed(0)}`,
+        );
+      if (r.left < -0.5 || r.right > width + 0.5)
+        out.push(
+          `${name}: x ${r.left.toFixed(0)}-${r.right.toFixed(0)} outside the viewport 0-${width}`,
+        );
+    }
+    if (children.length < 7) out.push(`only ${children.length} bar controls`);
+    return out;
+  });
+
+test.describe("the command bar between the phone and the desktop", () => {
+  test.use({ viewport: { width: 1280, height: 720 } });
+
+  test("holds every control inside its own box and the viewport at every width", async ({
+    page,
+  }) => {
+    // WHY: the bar's height is one token, and every panel, the toast and the
+    // map zoom are placed below it by that token. A width where the controls
+    // wrap draws a second line over all of them, invisible to any measurement
+    // of the bar's own box. One boot, resized: the layout is CSS only.
+    // The toast is the error channel, so it stays clear of the drawer and
+    // the details panel at every width, the narrow desktops included.
+    await bootWithEveryFloat(page);
+    await showTransients(page);
+    await showDetails(page);
+    for (const viewport of [
+      { width: 390, height: 844 },
+      { width: 601, height: 720 },
+      { width: 760, height: 720 },
+      { width: 761, height: 720 },
+      { width: 640, height: 720 },
+      { width: 768, height: 720 },
+      { width: 844, height: 390 },
+      { width: 861, height: 720 },
+      { width: 900, height: 720 },
+      { width: 976, height: 720 },
+      { width: 1280, height: 720 },
+    ]) {
+      const at = `at ${viewport.width} x ${viewport.height}`;
+      await page.setViewportSize(viewport);
+      expect(await barChildrenOutside(page), at).toEqual([]);
+      // The quests button keeps one width whichever of its two labels it
+      // shows, so a search does not shift the bar under the user's finger.
+      const widths = await page.locator("#geo-event").evaluate((button) => {
+        const label = button.textContent ?? "";
+        const width = () => button.getBoundingClientRect().width;
+        const idle = width();
+        button.textContent = "Finding…";
+        const busy = width();
+        button.textContent = label;
+        return { idle, busy };
+      });
+      expect(
+        Math.abs(widths.busy - widths.idle),
+        `${at}, quests width`,
+      ).toBeLessThan(0.5);
+      const toast = "#toast-root .toast";
+      expect(
+        overlaps(await boxes(page, [toast, "#details", "#command-bar"]), [
+          [toast, "#details"],
+          [toast, "#command-bar"],
+        ]),
+        `${at}, details shown`,
+      ).toEqual([]);
+      await page.locator("#settings-open").click();
+      expect(
+        overlaps(await boxes(page, [toast, "#settings-drawer"]), [
+          [toast, "#settings-drawer"],
+        ]),
+        `${at}, drawer open`,
+      ).toEqual([]);
+      await page.locator("#settings-open").click();
+    }
+  });
+});
 
 test.describe("the command bar at 1280 x 720", () => {
   test.use({ viewport: { width: 1280, height: 720 } });
@@ -380,8 +570,60 @@ test.describe("the command bar at 1280 x 720", () => {
     await expect(page.locator("#layer-cells")).toBeChecked();
     // The switch stays disabled while the cells it asked for are built.
     await expect(page.locator("#layer-cells")).toBeEnabled({ timeout: 60_000 });
-    await page.locator("#layer-cells").click({ timeout: 5000 });
+    // The quests button's press opens its time picker on the same press.
     await page.locator("#geo-event").click({ timeout: 5000 });
+    await expect(page.locator("#geo-event-picker")).toBeVisible();
+    await expect(page.locator("#geo-event")).toBeEnabled({ timeout: 30_000 });
+    // Clear closes the picker; nothing else but its own buttons does.
+    await page.locator("#geo-event-clear").click();
+    await expect(page.locator("#geo-event-picker")).toBeHidden();
+
+    // EVERY CONTROL KEEPS ITS ACCESSIBLE NAME: the suite addresses controls
+    // by id, so a renamed label would pass every other test while a screen
+    // reader or voice control no longer finds it. Cells on, so the switch
+    // that only shows with them is in the tree; every section unfolded.
+    await enableCellLayer(page);
+    await page.locator("#settings-open").click();
+    await page.locator("#settings-drawer details").evaluateAll((sections) => {
+      for (const section of sections) section.setAttribute("open", "");
+    });
+    /** @type {[Parameters<import('@playwright/test').Page["getByRole"]>[0], string | RegExp, string][]} */
+    const named = [
+      ["combobox", "location", "site"],
+      ["combobox", "category", "category"],
+      ["button", "Show Quests", "geo-event"],
+      ["button", /^Sun time \d{2}:\d{2}$/, "sun-chip"],
+      ["button", "Status", "info-open"],
+      ["button", "Settings", "settings-open"],
+      ["button", "Hide settings", "settings-hide"],
+      ["button", "Light", "light-open"],
+      ["slider", "Sun time of day, dawn to dusk", "sun-time"],
+      ["checkbox", "below threshold", "show-below"],
+      ["checkbox", "cells", "layer-cells"],
+      ["checkbox", "areas", "layer-areas"],
+      ["checkbox", "buildings", "layer-buildings"],
+      ["checkbox", "trees", "layer-trees"],
+      ["checkbox", "woods", "layer-woods"],
+      ["checkbox", "furniture", "layer-furniture"],
+      ["checkbox", "landuse", "layer-plates"],
+      ["checkbox", "land-use colours", "layer-tint"],
+      ["checkbox", "roads", "layer-roads"],
+      ["checkbox", "POI", "layer-poi"],
+      ["checkbox", "underground", "layer-underground"],
+    ];
+    for (const [role, name, id] of named) {
+      await expect(
+        page.getByRole(role, { name, exact: true }),
+        `${role} "${name}"`,
+      ).toHaveId(id);
+    }
+    await expect(page.locator("#sun-date")).toHaveAccessibleName("Sun date");
+    await page.locator("#settings-open").click();
+    await page.locator("#sun-chip").click();
+    await expect(
+      page.getByRole("slider", { name: "Quick sun time", exact: true }),
+    ).toHaveId("sun-time-quick");
+    await page.locator("#sun-chip").click();
   });
 
   test("Escape closes the top layer and hands focus back to its opener", async ({
@@ -403,9 +645,79 @@ test.describe("the command bar at 1280 x 720", () => {
     await page.keyboard.press("Escape");
     await expect(page.locator("#settings-drawer")).toBeHidden();
     await expect(page.locator("#settings-open")).toBeFocused();
+
+    // The popovers answer Escape the same way, and opening one moves focus
+    // into it, so Tab reaches its controls before the map's.
+    for (const [opener, panel, inner] of [
+      ["#info-open", "#info-panel", null],
+      ["#sun-chip", "#sun-pop", "#sun-time-quick"],
+    ]) {
+      await page.locator(opener).click();
+      await expect(page.locator(panel)).toBeFocused();
+      if (inner) {
+        await page.keyboard.press("Tab");
+        await expect(page.locator(inner)).toBeFocused();
+      }
+      await page.keyboard.press("Escape");
+      await expect(page.locator(panel)).toBeHidden();
+      await expect(page.locator(opener)).toBeFocused();
+    }
   });
 
-  test("an error toasts and never opens a panel; a drawer switch still applying shows on the bar", async ({
+  test("the panel just opened is the top layer at its own centre", async ({
+    page,
+  }) => {
+    // WHY: the light dialog sits in the drawer's place above every panel.
+    // Left open under a popover it hid the popover's controls, and left open
+    // over a closed drawer it floated alone. A visible-and-inside check
+    // passes both; only the element under the panel's centre tells.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+    const dialog = page.locator("#light-dialog");
+    const topAtCentre = (selector) =>
+      page.locator(selector).evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const hit = document.elementFromPoint(
+          r.left + r.width / 2,
+          r.top + r.height / 2,
+        );
+        return hit !== null && el.contains(hit);
+      });
+    const openLight = async () => {
+      await openLightDialog(page);
+      expect(await topAtCentre("#light-dialog")).toBe(true);
+    };
+
+    for (const [opener, panel] of [
+      ["#info-open", "#info-panel"],
+      ["#sun-chip", "#sun-pop"],
+    ]) {
+      await openLight();
+      await page.locator(opener).click();
+      await expect(page.locator(panel)).toBeVisible();
+      await expect(dialog).toBeHidden();
+      expect(await topAtCentre(panel)).toBe(true);
+      await page.locator(opener).click();
+      await expect(page.locator(panel)).toBeHidden();
+    }
+
+    // Closing the drawer closes the dialog stacked over it.
+    await openLight();
+    await page.locator("#settings-open").click();
+    await expect(page.locator("#settings-drawer")).toBeHidden();
+    await expect(dialog).toBeHidden();
+
+    // The hotkey opens the dialog over a popover by closing the popover.
+    await page.locator("#info-open").click();
+    await focusPageForHotkeys(page);
+    await page.keyboard.press("l");
+    await expect(dialog).toBeVisible();
+    await expect(page.locator("#info-panel")).toBeHidden();
+    expect(await topAtCentre("#light-dialog")).toBe(true);
+  });
+
+  test("an error toasts and never opens a panel; a refresh and a drawer switch still applying show on the bar", async ({
     page,
   }) => {
     await page.addInitScript(() => {
@@ -422,9 +734,24 @@ test.describe("the command bar at 1280 x 720", () => {
         },
       });
     });
-    await stubNetwork(page);
+    // The map's refresh shows on the bar's info button, behind which its
+    // status line lives: held open here, so the busy state cannot be missed.
+    const counts = await stubNetwork(page);
+    counts.holdOverpass();
     await page.goto(AT_FIXTURE);
+    await expect(page.locator("#info-open")).toHaveAttribute(
+      "data-busy",
+      "true",
+      { timeout: 30_000 },
+    );
+    await expect(page.locator("#info-panel")).toBeHidden();
+    counts.releaseOverpass();
     await waitForRefresh(page);
+    await expect(page.locator("#info-open")).toHaveAttribute(
+      "data-busy",
+      "false",
+      { timeout: 60_000 },
+    );
 
     await page.locator(".locate-button").click();
     await expect(page.locator("#toast-root .toast")).toHaveText(/./, {

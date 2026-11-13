@@ -319,8 +319,12 @@ async function main(): Promise<void> {
    * every update, which would delete a child node. The dot is a pseudo-element
    * of `.is-loading`, which survives the text being replaced.
    */
+  const statusOpener = el("info-open");
   const setRefreshBusy = (busy: boolean): void => {
     status.classList.toggle("is-loading", busy);
+    // The status line sits behind the bar's info button, so the button
+    // carries the same mark: a refresh stays visible with the panel closed.
+    statusOpener.dataset["busy"] = String(busy);
     loadingAnnouncer.busyChanged(busy);
   };
 
@@ -583,7 +587,7 @@ async function main(): Promise<void> {
   });
 
   // THE TIME OF DAY (§1, DEC-R6-3). A HOTKEY rather than a control in the
-  // header, and the reason is the header itself: round 5's feedback already
+  // old header, and the reason was the header itself: round 5's feedback already
   // calls it busy, and DEC-R6-16 has just committed to a seven-entry ground
   // picker there. A shortcut costs no layout.
   //
@@ -724,25 +728,38 @@ async function main(): Promise<void> {
     description: "step the sun back",
     handler: () => moveSun(stepSun(sunInstant, sunPlace, -1)),
   });
-  lightOpen.addEventListener("click", () => lightDialog.toggle());
-  hotkeys.add({
-    key: "l",
-    description: "open or close the light settings",
-    handler: () => lightDialog.toggle(),
-  });
   // THE COMMAND BAR'S PANELS: the settings drawer, the status and the quick
   // sun slider share one place, so at most one is open; open/closed is view
   // state and every load starts with all of them closed. Escape closes the
   // open one; the light dialog stacked over the drawer answers its own
   // Escape first (see `hud-panels.ts`).
+  //
+  // THE LIGHT DIALOG IS THE TOP LAYER OF THAT PLACE, so it never outlives a
+  // change under it: opening any panel closes it (a panel opened beneath it
+  // would be invisible), and so does closing the drawer it stacks over.
+  // Opening it closes the popovers it would cover; the drawer stays.
   const settingsDrawer = el("settings-drawer");
   const settingsOpen = el("settings-open");
   const hudPanels = attachHudPanels({
     panels: {
       settings: { element: settingsDrawer, opener: settingsOpen },
-      info: { element: el("info-panel"), opener: el("info-open") },
+      info: { element: el("info-panel"), opener: statusOpener },
       sun: { element: el("sun-pop"), opener: el("sun-chip") },
     },
+    onChange: () => lightDialog.close(),
+  });
+  const toggleLight = () => {
+    if (!lightDialog.open) {
+      hudPanels.hide("info");
+      hudPanels.hide("sun");
+    }
+    lightDialog.toggle();
+  };
+  lightOpen.addEventListener("click", toggleLight);
+  hotkeys.add({
+    key: "l",
+    description: "open or close the light settings",
+    handler: toggleLight,
   });
   el("settings-hide").addEventListener("click", () =>
     hudPanels.hide("settings"),
@@ -2632,7 +2649,7 @@ async function main(): Promise<void> {
   // THE SAME FIRST-PAINT GAP AS `paintShowBelow`, one control over. The readout
   // is written only by `paintGeoEventButton`, which is reached from
   // change-subscribers and from `setBusy` — so before the first press it was
-  // present, empty and visible, holding open a gap in the header's flex row.
+  // present, empty and visible, holding open a gap in the bar's flex row.
   paintGeoEventButton();
 
   // --- state out ----------------------------------------------------------

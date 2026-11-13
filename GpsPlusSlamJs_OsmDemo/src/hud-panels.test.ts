@@ -14,6 +14,13 @@
  * - The light dialog stacks over the drawer and answers its own Escape; if
  *   the drawer also closed on that key, one press would close two layers and
  *   focus would return to a button inside a hidden drawer.
+ * - Opening moves focus into the panel: the panels come after the map and
+ *   the scene in the page, so without it Tab would walk every map control
+ *   before reaching the panel a keyboard user just opened.
+ *
+ * The controller is driven the way the page drives it, by its openers and
+ * Escape, and observed through the DOM: `hide` (the drawer's own close
+ * button) is the one method the page calls.
  */
 import fc from "fast-check";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -41,6 +48,10 @@ function build(names: readonly string[]) {
   return panels;
 }
 
+/** The open panel's name, read from the DOM, or undefined. */
+const openOf = (panels: Record<string, { element: HTMLElement }>) =>
+  Object.keys(panels).find((name) => !panels[name]!.element.hidden);
+
 const escape = () =>
   window.dispatchEvent(
     new KeyboardEvent("keydown", { key: "Escape", cancelable: true }),
@@ -53,7 +64,7 @@ describe("attachHudPanels", () => {
   it("starts with every panel closed and its opener collapsed", () => {
     const panels = build(["drawer", "info"]);
     hud = attachHudPanels({ panels });
-    expect(hud.open).toBeUndefined();
+    expect(openOf(panels)).toBeUndefined();
     for (const { element, opener } of Object.values(panels)) {
       expect(element.hidden).toBe(true);
       expect(opener.getAttribute("aria-expanded")).toBe("false");
@@ -66,9 +77,9 @@ describe("attachHudPanels", () => {
     const onChange = vi.fn();
     hud = attachHudPanels({ panels, onChange });
     panels["drawer"]!.opener.click();
-    expect(hud.open).toBe("drawer");
+    expect(openOf(panels)).toBe("drawer");
     panels["info"]!.opener.click();
-    expect(hud.open).toBe("info");
+    expect(openOf(panels)).toBe("info");
     expect(panels["drawer"]!.element.hidden).toBe(true);
     expect(panels["drawer"]!.opener.getAttribute("aria-expanded")).toBe(
       "false",
@@ -82,17 +93,41 @@ describe("attachHudPanels", () => {
     hud = attachHudPanels({ panels });
     panels["drawer"]!.opener.click();
     panels["drawer"]!.opener.click();
-    expect(hud.open).toBeUndefined();
+    expect(openOf(panels)).toBeUndefined();
     expect(panels["drawer"]!.element.hidden).toBe(true);
+  });
+
+  it("moves focus into the panel it opens, and the panel can hold it", () => {
+    const panels = build(["drawer", "info"]);
+    hud = attachHudPanels({ panels });
+    panels["info"]!.opener.click();
+    expect(document.activeElement).toBe(panels["info"]!.element);
+    expect(panels["info"]!.element.tabIndex).toBe(-1);
+    panels["drawer"]!.opener.click();
+    expect(document.activeElement).toBe(panels["drawer"]!.element);
+  });
+
+  it("closes from hide with an onChange, and ignores a panel already closed", () => {
+    const panels = build(["drawer", "info"]);
+    const onChange = vi.fn();
+    hud = attachHudPanels({ panels, onChange });
+    hud.hide("drawer");
+    expect(onChange).not.toHaveBeenCalled();
+    panels["drawer"]!.opener.click();
+    hud.hide("info");
+    expect(openOf(panels)).toBe("drawer");
+    hud.hide("drawer");
+    expect(openOf(panels)).toBeUndefined();
+    expect(onChange.mock.calls).toEqual([["drawer"], [undefined]]);
   });
 
   it("closes on Escape and returns focus to the opener", () => {
     const panels = build(["drawer"]);
     hud = attachHudPanels({ panels });
-    hud.show("drawer");
+    panels["drawer"]!.opener.click();
     panels["drawer"]!.element.querySelector("input")!.focus();
     escape();
-    expect(hud.open).toBeUndefined();
+    expect(openOf(panels)).toBeUndefined();
     expect(document.activeElement).toBe(panels["drawer"]!.opener);
   });
 
@@ -101,7 +136,7 @@ describe("attachHudPanels", () => {
     const other = document.createElement("input");
     document.body.append(other);
     hud = attachHudPanels({ panels });
-    hud.show("drawer");
+    panels["drawer"]!.opener.click();
     other.focus();
     hud.hide("drawer");
     expect(document.activeElement).toBe(other);
@@ -112,7 +147,7 @@ describe("attachHudPanels", () => {
     // `window`, and it marks the key as handled.
     const panels = build(["drawer"]);
     hud = attachHudPanels({ panels });
-    hud.show("drawer");
+    panels["drawer"]!.opener.click();
     const stacked = (event: KeyboardEvent) => event.preventDefault();
     document.addEventListener("keydown", stacked);
     document.dispatchEvent(
@@ -123,7 +158,7 @@ describe("attachHudPanels", () => {
       }),
     );
     document.removeEventListener("keydown", stacked);
-    expect(hud.open).toBe("drawer");
+    expect(openOf(panels)).toBe("drawer");
   });
 
   it("ignores keys other than Escape and Escape with nothing open", () => {
@@ -131,15 +166,15 @@ describe("attachHudPanels", () => {
     hud = attachHudPanels({ panels });
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "a" }));
     escape();
-    hud.show("drawer");
+    panels["drawer"]!.opener.click();
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "a" }));
-    expect(hud.open).toBe("drawer");
+    expect(openOf(panels)).toBe("drawer");
   });
 
   it("rejects an unknown panel name and an empty panel set", () => {
     const panels = build(["drawer"]);
     hud = attachHudPanels({ panels });
-    expect(() => hud!.show("nope")).toThrow(/unknown panel/);
+    expect(() => hud!.hide("nope")).toThrow(/unknown panel/);
     expect(() => attachHudPanels({ panels: {} })).toThrow(/no panels/);
   });
 
@@ -152,34 +187,37 @@ describe("attachHudPanels", () => {
   });
 
   it("keeps the DOM and its own state in step for any sequence of actions", () => {
-    // Property: whatever is pressed, at most one panel is visible, it is the
-    // one `open` names, and every opener's aria-expanded says the same.
+    // Property: whatever is pressed, at most one panel is visible, every
+    // opener's aria-expanded says whether its own panel is, and the last
+    // onChange names the visible one.
     const names = ["drawer", "info", "sun"] as const;
     const action = fc.oneof(
       fc.record({
-        kind: fc.constantFrom("show", "hide", "toggle", "click"),
+        kind: fc.constantFrom("hide", "click"),
         name: fc.constantFrom(...names),
       }),
-      fc.record({ kind: fc.constantFrom("escape", "hideAll") }),
+      fc.record({ kind: fc.constant("escape") }),
     );
     fc.assert(
       fc.property(fc.array(action, { maxLength: 30 }), (actions) => {
         const panels = build(names);
-        const local = attachHudPanels({ panels });
+        let reported: string | undefined;
+        const local = attachHudPanels({
+          panels,
+          onChange: (open) => (reported = open),
+        });
         try {
           for (const a of actions) {
-            if (!("name" in a)) {
-              if (a.kind === "escape") escape();
-              else local.hideAll();
-            } else if (a.kind === "click") panels[a.name]!.opener.click();
-            else local[a.kind](a.name);
+            if (!("name" in a)) escape();
+            else if (a.kind === "click") panels[a.name]!.opener.click();
+            else local.hide(a.name);
           }
           const visible = names.filter((n) => !panels[n]!.element.hidden);
           expect(visible.length).toBeLessThanOrEqual(1);
-          expect(visible[0]).toBe(local.open);
+          expect(visible[0]).toBe(reported);
           for (const n of names) {
             expect(panels[n]!.opener.getAttribute("aria-expanded")).toBe(
-              String(local.open === n),
+              String(visible[0] === n),
             );
           }
         } finally {

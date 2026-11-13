@@ -305,8 +305,8 @@
          rule someone has to remember.
 
          IN THE DOCK above the legend plate on a phone (see `.hud-dock`),
-         below the bar at the 3D view's top-left on a desktop and a phone on
-         its side: the locate and AR controls sit bottom-right (F3a), and so
+         below the bar at the map's top-left on a desktop and at the
+         window's top-left on a phone on its side: the locate and AR controls sit bottom-right (F3a), and so
          does Leaflet's attribution. */
       #toast-root {
         pointer-events: none;
@@ -730,26 +730,6 @@
         white-space: nowrap;
       }
 
-      /* The light dialog's opener and Show Quests share one button look, not
-         the design system's tall panel buttons. */
-      .geo-event-button,
-      #light-open {
-        font: inherit;
-        color: #e6e8ef;
-        background: #2a2f3d;
-        border: 1px solid #3a4152;
-        border-radius: 4px;
-        padding: 0.15rem 0.5rem;
-        cursor: pointer;
-      }
-      .geo-event-button {
-        /* CONSTANT LABEL AND A FLOOR ON THE WIDTH (F4a). The label is one of
-           two constants now, but `Show Quests` and `Finding...` are
-           different lengths -- so without this the button still resizes on
-           every press, which is the reported defect with a smaller
-           amplitude. Wide enough for the longer of the two. */
-        min-width: 7.5rem;
-      }
       .geo-event-button:disabled {
         opacity: 0.6;
         cursor: progress;
@@ -986,11 +966,13 @@
         }
         /* Slides up from the bottom over the map, rather than sitting in the
            top-right corner as it does on desktop. */
+        /* Inside the sheet, so the toast docked above the sheet stays
+           readable while a cell's details are open. */
         #details {
           inset: auto 0.5rem 0.5rem;
           width: auto;
           max-width: none;
-          max-height: 55%;
+          max-height: calc(var(--sheet-height, 45%) - 1rem);
         }
       }
       /* The site-wide legal notice and privacy page: a small fixed link in
@@ -1035,7 +1017,7 @@
         inset: 0 0 auto;
         z-index: 1100;
         display: flex;
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
         align-items: center;
         gap: 4px 8px;
         height: var(--hud-bar-h);
@@ -1075,8 +1057,14 @@
         gap: 6px;
         white-space: nowrap;
       }
+      /* The two pickers give up width before the bar would wrap: the bar is
+         one row of a fixed height that everything below it is placed by. */
       #site {
         max-width: 11rem;
+        min-width: 7rem;
+      }
+      #category {
+        min-width: 7rem;
       }
       .bar-btn {
         display: inline-flex;
@@ -1098,6 +1086,15 @@
         text-transform: uppercase;
         white-space: nowrap;
         cursor: pointer;
+      }
+      /* CONSTANT LABEL AND A FLOOR ON THE WIDTH (F4a). The label is one of
+         two constants, but `Show Quests` and `Finding...` are different
+         lengths, so without a floor the button resizes on every press.
+         In `em` of the button's own font, wide enough for the longer label
+         in the widest fallback font the suite meets (DejaVu Sans on Linux),
+         and after `.bar-btn`, whose 44 px floor would otherwise win. */
+      .bar-btn.geo-event-button {
+        min-width: 11.5em;
       }
       .bar-btn[aria-expanded="true"] {
         background: var(--hud-accent);
@@ -1144,10 +1141,13 @@
         border-radius: 50%;
         animation: bar-spin 0.8s linear infinite;
       }
-      .bar-settings[data-busy="true"] .bar-gear {
+      /* A busy button swaps its icon for the spinner: the settings button
+         while a drawer switch applies, the info button while the map
+         refreshes. */
+      .bar-btn[data-busy="true"] > svg {
         display: none;
       }
-      .bar-settings[data-busy="true"] .bar-spinner {
+      .bar-btn[data-busy="true"] > .bar-spinner {
         display: block;
       }
 
@@ -1323,16 +1323,17 @@
       body:has(#layer-cells:not(:checked)) .legend-plate {
         display: none;
       }
-      /* Desktop: the toast drops from the bar into the 3D view's top-left,
-         clear of the legend below, the AR offer above it and the popovers
-         at the top-right. */
+      /* Desktop: the toast drops from the bar into the MAP's top-left,
+         right of the zoom buttons. The 3D view's right side holds the
+         drawer, the popovers and the cell details, and on a narrow desktop
+         they reach across most of that pane; the toast is the error
+         channel, so it sits where none of them can cover it. */
       @media (width > 860px) {
         #toast-root {
           position: fixed;
           top: calc(var(--hud-bar-h) + 8px);
-          left: calc(50% + 8px);
-          width: calc(50% - 332px);
-          min-width: 160px;
+          left: 56px;
+          width: calc(50% - 64px);
           max-width: 300px;
         }
         /* Its own 21rem cap holds: half a pane this wide is always more. */
@@ -1348,6 +1349,19 @@
          It leaves the map's right column free, so locate and AR stay
          reachable while a panel is open. */
       @media (width <= 860px) {
+        /* The settings button keeps its name for assistive technology and
+           shows only its gear: the word costs the width a phone lacks. */
+        .bar-settings .bar-label {
+          position: absolute;
+          width: 1px;
+          height: 1px;
+          overflow: hidden;
+          clip-path: inset(50%);
+          white-space: nowrap;
+        }
+        .bar-settings {
+          padding: 0;
+        }
         .hud-slot,
         #light-dialog {
           inset: auto var(--hud-map-column) var(--hud-foot) 0;
@@ -1398,12 +1412,16 @@
         }
       }
       /* Narrow: the bar takes two rows, where (place, category, cells) and
-         do (quests, sun, status, settings). */
-      @media (width <= 600px) {
+         do (quests, sun, status, settings). The breakpoint is where one row
+         stops fitting with the pickers at their floor and the widest
+         fallback font: below it the controls would wrap anyway, onto a line
+         the bar's height token does not know about. */
+      @media (width <= 760px) {
         :root {
           --hud-bar-h: 100px;
         }
         .command-bar {
+          flex-wrap: wrap;
           gap: 4px;
         }
         .bar-where,
@@ -1423,9 +1441,6 @@
         #category {
           min-width: 0;
           max-width: 9.5rem;
-        }
-        .command-bar .geo-event-button {
-          min-width: 0;
         }
       }
       /* Phone landscape: one bar row, the slot comes from the right. */
@@ -1496,8 +1511,11 @@
           type="button"
           id="sun-chip"
           class="bar-btn bar-chip"
-          aria-label="Sun time"
+          aria-labelledby="sun-chip-label sun-chip-time"
         >
+          <!-- Named by its readout: the name a voice user says is the one
+               on screen, "Sun time" and the time it shows. -->
+          <span id="sun-chip-label" hidden>Sun time</span>
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <circle cx="12" cy="12" r="4.5" fill="currentColor" />
             <path
@@ -1532,6 +1550,7 @@
             />
             <circle cx="12" cy="7.3" r="1.4" fill="currentColor" />
           </svg>
+          <span class="bar-spinner" aria-hidden="true"></span>
         </button>
         <!-- `data-busy` is set while any drawer control is applying, so an
              async state stays visible with the drawer closed. -->
@@ -1549,7 +1568,7 @@
             />
           </svg>
           <span class="bar-spinner" aria-hidden="true"></span>
-          <span>Settings</span>
+          <span class="bar-label">Settings</span>
         </button>
       </div>
     </header>
@@ -1753,7 +1772,7 @@
               aria-label="Sun time of day, dawn to dusk"
             />
             <span id="sun-readout"></span>
-            <button type="button" id="light-open">Light</button>
+            <button type="button" id="light-open" class="bar-btn">Light</button>
           </details>
         </div>
       </aside>

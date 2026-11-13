@@ -6,6 +6,10 @@
  * starts with all panels closed, and no control's VALUE passes through here
  * (the drawer moves controls, the store keeps their values).
  *
+ * Opening moves focus to the panel itself (it is made focusable for that):
+ * the panels sit after the map and the scene in the page, so Tab from the
+ * opener would otherwise walk every map control before reaching them.
+ *
  * Escape closes the open panel and hands focus back to its opener. A panel
  * that something else already answered (a dialog stacked over it calls
  * `preventDefault` on its own Escape) is left open, so one Escape closes one
@@ -27,12 +31,8 @@ export interface HudPanelsOptions {
 }
 
 export interface HudPanels {
-  /** The open panel's name, or undefined. */
-  readonly open: string | undefined;
-  show(name: string): void;
+  /** Closes the named panel if it is the open one (the drawer's own close button). */
   hide(name: string): void;
-  toggle(name: string): void;
-  hideAll(): void;
   dispose(): void;
 }
 
@@ -73,6 +73,7 @@ export function attachHudPanels(options: HudPanelsOptions): HudPanels {
     if (current !== undefined) paint(current, false);
     paint(name, true);
     current = name;
+    spec(name).element.focus({ preventScroll: true });
     options.onChange?.(name);
   };
 
@@ -93,18 +94,13 @@ export function attachHudPanels(options: HudPanelsOptions): HudPanels {
   };
   window.addEventListener("keydown", onKey);
 
-  for (const [name] of entries) paint(name, false);
+  for (const [name, { element }] of entries) {
+    paint(name, false);
+    element.tabIndex = -1;
+  }
 
   return {
-    get open() {
-      return current;
-    },
-    show,
     hide,
-    toggle,
-    hideAll() {
-      if (current !== undefined) hide(current);
-    },
     dispose() {
       window.removeEventListener("keydown", onKey);
       for (const off of clicks) off();

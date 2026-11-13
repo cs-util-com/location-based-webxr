@@ -1289,7 +1289,12 @@ export async function setting(page, selector, act) {
       await opener.click();
       await expect(dialog).toBeVisible();
     }
-    if (await drawer.isVisible()) await page.locator("#settings-open").click();
+    // Closing the drawer closes the light dialog stacked over it, so a
+    // dialog that is open now (reopened above, or opened by `act`) keeps
+    // its drawer.
+    if ((await drawer.isVisible()) && !(await dialog.isVisible())) {
+      await page.locator("#settings-open").click();
+    }
   }
 }
 

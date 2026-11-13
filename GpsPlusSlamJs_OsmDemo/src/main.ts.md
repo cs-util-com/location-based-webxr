@@ -217,10 +217,15 @@ None. Entry point only, loaded by `index.html`.
   button. `attachHudPanels` owns three panels (`settings` = `#settings-drawer`,
   `info` = `#info-panel` holding `#status`, `sun` = `#sun-pop` with the quick
   sun slider); at most one is open, none at boot, none stored. Escape closes
-  the open one and focus returns to its opener; the light dialog stacks over
-  the drawer and answers its own Escape first. `attachBusyMark` keeps
-  `data-busy` on `#settings-open` while a drawer switch is applying, so the
-  wait is visible with the drawer closed. Errors toast; nothing here opens a
+  the open one and focus returns to its opener; opening moves focus into the
+  panel. The light dialog stacks over the drawer and answers its own Escape
+  first. It is the top layer of the drawer's place, so any panel change
+  (another panel opening, the drawer closing) closes it, and opening it closes
+  the info and sun popovers that share its corner: two layers never stack
+  half-hidden. `attachBusyMark` keeps `data-busy` on `#settings-open` while a
+  drawer switch is applying, and a map refresh sets the same mark on
+  `#info-open` (the status line lives behind it), so both waits stay visible
+  with their panel closed. Errors toast; nothing here opens a
   panel on its own.
 - **`#sun-time` is the canonical sun slider.** `#sun-time-quick` in the sun
   popover mirrors it: `showSunControl` paints both and the chip's
