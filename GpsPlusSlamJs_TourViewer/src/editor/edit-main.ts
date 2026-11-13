@@ -2125,6 +2125,8 @@ async function addFromFile(
     return;
   }
   select(outcome.id);
+  // Where a file lands may be off screen: the view frames it, as a choice in the tree does.
+  shell.frame(outcome.id);
   sayAdded(kind, at, outcome.fileName);
   if (!outcome.backedUp) toast(FILE_NOT_KEPT);
   tourChanged();
@@ -2210,6 +2212,7 @@ function useShelfFileIn(
     return;
   }
   select(placed.id);
+  shell.frame(placed.id);
   sayAdded(kind, chosen, fileName);
   tourChanged();
 }

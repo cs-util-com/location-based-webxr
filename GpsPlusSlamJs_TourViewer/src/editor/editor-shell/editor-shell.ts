@@ -333,6 +333,9 @@ export interface EditorShell {
    *  until `approachEnded`. */
   show(view: ShellView, options?: { readonly approach?: boolean }): void;
   hide(): void;
+  /** Flies the view to an item the page just made, as choosing it in the
+   *  tree does (else to its station); nothing while no view shows. */
+  frame(id: string): void;
   /** The approach's bar went. After a landing the tree folded for it
    *  unfolds (animated, unless reduced motion), as the dock rule allows at
    *  this width; after a takeover it stays a tab for the creator to open.
@@ -2424,6 +2427,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       const pending = typedField();
       if (pending !== null) commitField(pending, lastSelected);
       panels.flush();
+    },
+    frame(id) {
+      flyToSelection(id);
     },
     hide() {
       // Closed mid-approach: the fold was the approach's, so the tree

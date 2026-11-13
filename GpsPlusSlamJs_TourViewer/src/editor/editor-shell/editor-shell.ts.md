@@ -153,6 +153,9 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   per approach, and not at all after the creator folded or unfolded the
   tree during the flight; nothing folds the tree again afterwards (no
   zoom-out rule exists).
+- `EditorShell.frame(id)` - flies the view to an item the page just made
+  (a file added or placed from the shelf), as choosing it in the tree
+  does: on the item, else on its station; nothing while no view shows.
 - `EditorShell.hide()` - stops all of that and lets the pictures go
   (each draw also sweeps the cards a redraw replaced). Closed mid-approach
   it gives the tree back the fold it had at `show` (folded or not), so the
