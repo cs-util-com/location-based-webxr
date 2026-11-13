@@ -84,6 +84,7 @@ import {
   entriesList,
 } from "./inspector-contents.js";
 import { radiusRange } from "./radius-slider.js";
+import { fieldRange, loudnessCurve } from "./field-sliders.js";
 import { wirePinTextCounter, wireTextCounter } from "../../pin-text.js";
 import { blockFieldPlaceholder, type BlockField } from "../block-fields.js";
 
@@ -229,14 +230,18 @@ function lockButton(locked: boolean): HTMLButtonElement {
 function blockTextField(field: BlockField): HTMLElement[] {
   const hint = blockFieldPlaceholder(field);
   if (field.number !== undefined) {
-    const row = numberField(
-      field.label,
+    const { box, input } = numberBox(
       field.name,
       field.value,
       field.number.unit,
     );
-    row.querySelector("input")?.setAttribute("placeholder", hint);
-    return [row];
+    input.setAttribute("placeholder", hint);
+    // A number set by feel takes a slider beside it (`field-sliders.ts`).
+    const row = labelled(field.label, input, fieldRange(field, box) ?? box);
+    const curve = field.number.curve;
+    return curve === undefined
+      ? [row]
+      : [row, loudnessCurve(curve, field.number.scale)];
   }
   const row = field.prose
     ? proseField(field.label, field.name, field.value, hint)

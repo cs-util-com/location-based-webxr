@@ -23,11 +23,27 @@ import type { TourAssetKind } from "gps-plus-slam-app-framework/ar/tour-manifest
 /** A number a field takes: the format's bounds, its unit, and whether the
  *  views it shows in need it. */
 interface NumberSpec {
+  /** The bounds, in what the box shows. */
   readonly min: number;
   readonly max: number;
   /** Shown beside the box ("m"; "" for none). */
   readonly unit: string;
   readonly required: boolean;
+  /** The box shows `scale` times what the file holds (a volume of 0.5 is
+   *  50 %); none: as the file holds it. */
+  readonly scale?: number;
+  /** A slider beside the box over the values set by feel, in what the box
+   *  shows; the box takes the rest of the bounds. */
+  readonly slider?: {
+    readonly min: number;
+    readonly max: number;
+    readonly step: number;
+  };
+  /** The field this slider shares its track with as the lower thumb: one
+   *  track, two thumbs that never cross. */
+  readonly low?: string;
+  /** Drawn under it: the zone's loudness over distance. */
+  readonly curve?: "loudness";
 }
 
 /** One field of a kind, as the inspector draws it. */
@@ -91,6 +107,10 @@ const TRANSCRIPT = {
   prose: true,
 } as const;
 
+/** The reach's track, its two thumbs the full volume's edge and the
+ *  reach (m). */
+const REACH_SLIDER = { min: 1, max: 60, step: 1 } as const;
+
 /** A sound's world fields, each in the view that reads it, bounded as
  *  the format bounds them (`tour-kinds.ts` `audioWorld`). */
 const AUDIO_WORLD: readonly FieldSpec[] = [
@@ -104,6 +124,7 @@ const AUDIO_WORLD: readonly FieldSpec[] = [
       max: TOUR_AUDIO_MAX_RADIUS_M,
       unit: "m",
       required: true,
+      slider: { min: 2, max: 15, step: 0.5 },
     },
   },
   {
@@ -116,6 +137,8 @@ const AUDIO_WORLD: readonly FieldSpec[] = [
       max: TOUR_AUDIO_MAX_REACH_M,
       unit: "m",
       required: true,
+      slider: REACH_SLIDER,
+      low: "minM",
     },
   },
   {
@@ -135,7 +158,15 @@ const AUDIO_WORLD: readonly FieldSpec[] = [
     label: "Volume",
     prose: false,
     views: ["zone"],
-    number: { min: 0, max: 1, unit: "", required: true },
+    number: {
+      min: 0,
+      max: 100,
+      unit: "%",
+      required: true,
+      scale: 100,
+      slider: { min: 0, max: 100, step: 1 },
+      curve: "loudness",
+    },
   },
 ];
 

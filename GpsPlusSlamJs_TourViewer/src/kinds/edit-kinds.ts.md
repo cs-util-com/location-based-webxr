@@ -37,11 +37,17 @@ there.
     its name (the 2D rail's search reads the pin's and the photo's).
   - `fields` - its fields in the inspector's order (`FieldSpec`:
     `name`, `label`, `prose`, `number?` - a number's bounds, unit and
-    need, the bounds the format's (`tour-kinds.ts` `TOUR_AUDIO_*`) -
+    need, the bounds the format's (`tour-kinds.ts` `TOUR_AUDIO_*`), and
+    optionally its `scale` (the box shows that many times what the file
+    holds: a volume in %), a `slider` track (the values set by feel; the
+    box takes the rest), the `low` field that shares the track as its
+    lower thumb, and a `curve` drawn under it -
     and `views?` - the views that read it, none: every view), besides a
     short text's caption, which the head types (`editor/block-fields.ts`).
-    Audio lists a narration circle's radius (`spot`) and a zone's reach,
-    calm and volume (`zone`).
+    Audio lists a narration circle's radius (`spot`, slider 2-15 m by
+    0.5) and a zone's reach, calm and volume (`zone`: the reach's slider
+    1-60 m with the calm as its lower thumb, the volume 0-100 % with the
+    loudness curve).
   - `add` - its line in the tree's add menu (`KindAdd`: `label`, `hint`,
     `words`, `addable`, and for a kind made from a file `file`: the
     asset kind its file must be, and `storyOnly`: why it is added to a

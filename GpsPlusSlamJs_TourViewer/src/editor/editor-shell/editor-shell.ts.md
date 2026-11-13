@@ -219,7 +219,10 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   folder's `pivot-centre` asks the folder commands' `pivotToCentre` and
   its `select-items` picks its items as the tree's rows would, and the radius slider
   (`radius-slider.ts`) previews through `view.previewRadius` and is
-  cancelled when the selection goes or the shell hides.
+  cancelled when the selection goes or the shell hides. A block's number
+  sliders (`field-sliders.ts`) write through `commitField`, as the number
+  typed, so one drag is one undo step; they have no 3D preview and are
+  cancelled with the radius slider.
 
 - Plain folders in the tree (the chosen tree-first prototype):
   - **Multi-select.** Ctrl (or Cmd) + click on an item's or a folder's row

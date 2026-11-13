@@ -71,6 +71,11 @@ export default defineConfig({
         lecternCheck: fileURLToPath(
           new URL("lectern-check.html", import.meta.url),
         ),
+        // A narration circle in its look without an AR session
+        // (`narration-look-check.html.md`), linked from nothing.
+        narrationLookCheck: fileURLToPath(
+          new URL("narration-look-check.html", import.meta.url),
+        ),
         // A long text in its reading sheet without an AR session
         // (`long-text-check.html.md`), linked from nothing.
         longTextCheck: fileURLToPath(

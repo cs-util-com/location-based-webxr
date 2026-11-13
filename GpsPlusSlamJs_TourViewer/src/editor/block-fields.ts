@@ -20,6 +20,7 @@ import {
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import { KIND_EDIT, type FieldSpec } from "../kinds/edit-kinds.js";
+import type { SliderTrack } from "./editor-shell/range-slider.js";
 
 /** One field of a block, as the inspector draws it. */
 export type BlockField = BlockTextField | BlockNumberField;
@@ -47,9 +48,25 @@ interface BlockTextField extends BlockFieldBase {
 }
 
 /** A number to type, with its unit (`FieldSpec` `number`). No cap: its
- *  bounds are the format's, refused on the write (`blockFieldEdit`). */
-interface BlockNumberField extends BlockFieldBase {
-  readonly number: { readonly unit: string };
+ *  bounds are the format's, refused on the write (`blockFieldEdit`). Its
+ *  `value` is what the box shows (a volume in %). */
+export interface BlockNumberField extends BlockFieldBase {
+  readonly number: {
+    readonly unit: string;
+    /** What the box shows per unit the file holds (`FieldSpec`): 1, or
+     *  100 for a volume in %. */
+    readonly scale: number;
+    /** A slider beside the box, over this track (`FieldSpec`). */
+    readonly slider?: SliderTrack;
+    /** The field that is the track's lower thumb, and what it shows. */
+    readonly low?: {
+      readonly name: string;
+      readonly label: string;
+      readonly value: string;
+    };
+    /** The zone's loudness curve under it, from what the file holds. */
+    readonly curve?: LoudnessOf;
+  };
   readonly max?: undefined;
   readonly unit?: undefined;
 }
@@ -103,20 +120,77 @@ function numberOf(block: AnyBlock, name: string): number | undefined {
   return typeof value === "number" ? value : undefined;
 }
 
+/** A zone's reach as its loudness curve reads it. */
+export interface LoudnessOf {
+  readonly minM?: number;
+  readonly maxM: number;
+  readonly volume: number;
+}
+
+/** What the box shows for `n` held in the file: `scale` times it, with
+ *  a binary fraction's noise rounded off (0.29 is 29, not 28.999...). */
+export function shownNumber(n: number, scale = 1): number {
+  return scale === 1 ? n : Number((n * scale).toFixed(6));
+}
+
+/** What the file holds for `n` shown in the box. */
+export function heldNumber(n: number, scale = 1): number {
+  return scale === 1 ? n : Number((n / scale).toFixed(9));
+}
+
+function shownText(block: AnyBlock, spec: FieldSpec | undefined): string {
+  if (spec?.number === undefined) return "";
+  const n = numberOf(block, spec.name);
+  return n === undefined ? "" : String(shownNumber(n, spec.number.scale));
+}
+
+function numberFieldOf(
+  block: AnyBlock,
+  spec: FieldSpec & { readonly number: NonNullable<FieldSpec["number"]> },
+  own: readonly FieldSpec[],
+): BlockNumberField {
+  const { unit, required, slider, low, curve, scale = 1 } = spec.number;
+  const lowSpec = own.find((f) => f.name === low);
+  return {
+    name: spec.name,
+    label: spec.label,
+    prose: false,
+    value: shownText(block, spec),
+    required,
+    number: {
+      unit,
+      scale,
+      ...(slider === undefined ? {} : { slider }),
+      ...(lowSpec === undefined
+        ? {}
+        : {
+            low: {
+              name: lowSpec.name,
+              label: lowSpec.label,
+              value: shownText(block, lowSpec),
+            },
+          }),
+      ...(curve === undefined ? {} : { curve: loudnessOf(block) }),
+    },
+  };
+}
+
+function loudnessOf(block: AnyBlock): LoudnessOf {
+  const minM = numberOf(block, "minM");
+  return {
+    ...(minM === undefined ? {} : { minM }),
+    maxM: numberOf(block, "maxM") ?? 0,
+    volume: numberOf(block, "volume") ?? 0,
+  };
+}
+
 /** The fields the inspector types for `block`, besides a short text's
  *  caption (the head's). */
 export function blockFields(block: AnyBlock): BlockField[] {
-  return ownFields(block).map((spec) => {
+  const own = ownFields(block);
+  return own.map((spec) => {
     if (spec.number !== undefined) {
-      const n = numberOf(block, spec.name);
-      return {
-        name: spec.name,
-        label: spec.label,
-        prose: false,
-        value: n === undefined ? "" : String(n),
-        required: spec.number.required,
-        number: { unit: spec.number.unit },
-      };
+      return numberFieldOf(block, { ...spec, number: spec.number }, own);
     }
     const rule = ruleOf(block.kind, spec.name);
     return {
@@ -231,8 +305,9 @@ function numberFieldEdit<B extends AnyBlock>(
       reason: `${label} takes a number from ${String(bounds.min)} to ${String(bounds.max)}${unit}.`,
     };
   }
-  if (n === numberOf(block, name)) return { kind: "unchanged" };
-  rest[name] = n;
+  const held = heldNumber(n, bounds.scale);
+  if (held === numberOf(block, name)) return { kind: "unchanged" };
+  rest[name] = held;
   const { minM, maxM } = rest;
   if (typeof minM === "number" && typeof maxM === "number" && minM >= maxM) {
     return {

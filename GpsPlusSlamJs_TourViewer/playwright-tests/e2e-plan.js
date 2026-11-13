@@ -100,6 +100,11 @@ export const SPECS = {
   "editor3d-phone.spec.js": { project: "webgl", area: "editor", lane: 3 },
   "editor3d-shelf.spec.js": { project: "webgl", area: "editor", lane: 3 },
   "editor3d-shell.spec.js": { project: "webgl", area: "editor", lane: 2 },
+  "editor3d-sound-sliders.spec.js": {
+    project: "webgl",
+    area: "editor",
+    lane: 4,
+  },
   "editor3d-station-ring.spec.js": {
     project: "webgl",
     area: "editor",

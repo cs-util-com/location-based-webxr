@@ -27,6 +27,7 @@ import { inheritedScaleOf } from "../../placement/place-scale.js";
 import type { WorldEnv, WorldPart } from "../../world-part.js";
 import type { SoundHandle } from "../../world-sound.js";
 import { soundIcon } from "./sound-icon.js";
+import { WARM_GLOW } from "./warm-glow.js";
 import {
   AMBIENT_DEFAULT_MAX_M,
   zoneGain,
@@ -62,6 +63,7 @@ function zoneGlow(reach: ZoneReach): {
       uMin: { value: Math.min(reach.minM ?? 0, reach.maxM) },
       uMax: { value: reach.maxM },
       uAlpha: { value: GLOW_ALPHA },
+      uColor: { value: new Vector3(...WARM_GLOW.glow) },
     },
     vertexShader: /* glsl */ `
       varying vec2 vPos;
@@ -73,11 +75,12 @@ function zoneGlow(reach: ZoneReach): {
       uniform float uMin;
       uniform float uMax;
       uniform float uAlpha;
+      uniform vec3 uColor;
       varying vec2 vPos;
       void main() {
         float d = length(vPos);
         float g = 1.0 - clamp((d - uMin) / max(uMax - uMin, 1e-3), 0.0, 1.0);
-        gl_FragColor = vec4(1.0, 0.82, 0.45, g * uAlpha);
+        gl_FragColor = vec4(uColor, g * uAlpha);
       }`,
   });
   const disc = new Mesh(geometry, material);
@@ -155,6 +158,7 @@ function rangeRing(maxM: number): {
     uniforms: {
       uOuter: { value: maxM },
       uWidth: { value: RANGE_RING.minWidthM },
+      uColor: { value: new Vector3(...WARM_GLOW.rim) },
     },
     vertexShader: /* glsl */ `
       varying vec2 vPos;
@@ -165,10 +169,11 @@ function rangeRing(maxM: number): {
     fragmentShader: /* glsl */ `
       uniform float uOuter;
       uniform float uWidth;
+      uniform vec3 uColor;
       varying vec2 vPos;
       void main() {
         if (length(vPos) < uOuter - uWidth) discard;
-        gl_FragColor = vec4(1.0, 0.75, 0.32, 0.9);
+        gl_FragColor = vec4(uColor, 0.9);
       }`,
   });
   const ring = new Mesh(geometry, material);

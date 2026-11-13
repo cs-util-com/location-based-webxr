@@ -196,6 +196,9 @@ content` (Chromium, the editor's browser; elsewhere it stays three
   `contentsOpen` is false): its items (`inspector-contents.ts`) and Add
   content (`data-act="add-content"`). Its radius has a slider beside the
   number (`radius-slider.ts`).
+- A block's number field with a `slider` track draws the slider beside
+  its box, a pair as two thumbs on one track, and a `curve` under it
+  (`field-sliders.ts`).
 
 ## Invariants & assumptions
 
