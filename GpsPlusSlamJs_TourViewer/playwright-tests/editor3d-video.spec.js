@@ -18,7 +18,10 @@ import { stationBlocks } from "./tour-fixture.mjs";
  * video panel. Only the page shows the station's "+" menu, the file
  * picker, the add, the selection, the panel's chips and the undo working
  * together: a video was refused at a station until it had a free look, so
- * the add itself is the first thing that could break.
+ * the add itself is the first thing that could break. The loop switch, the
+ * typed captions, the width slider and the preview's "Use current frame"
+ * each reach the tour only through the page's own wiring, and the preview
+ * must read a browser-recorded clip that states no length.
  */
 
 // One worker for the file: software-drawn 3D views side by side are
@@ -104,10 +107,14 @@ test("a video added at a station stands there as a screen, and its panel sets it
   await expect(chip(page, "video-set:alpha:stacked")).toHaveCount(0);
   await capture(page, testInfo.outputPath("video-1280x800.png"));
 
-  // The start: one step; the chip in use writes nothing.
+  // The start: one step; the chip in use writes nothing. "Starts within"
+  // is a near start's distance, so it is listed only once the start is near.
+  const within = page.locator('#shell-inspector [data-field="withinM"]');
+  await expect(within).toHaveCount(0);
   const start = await revision(page);
   await chip(page, "video-set:start:near").click();
   await expect.poll(async () => (await gateVideo(page))?.start).toBe("near");
+  await expect(within).toHaveCount(1);
   expect(await revision(page)).toBe(start + 1);
   await chip(page, "video-set:start:near").click();
   expect(await revision(page)).toBe(start + 1);
@@ -134,6 +141,55 @@ test("a video added at a station stands there as a screen, and its panel sets it
   const undone = await gateVideo(page);
   expect(undone.view).toBe("cutout");
   expect(undone.start).toBe("near");
+
+  // The loop: one switch, its press writing the other value.
+  const loop = page.locator('#shell-inspector .isec.video [role="switch"]');
+  await expect(loop).toHaveAttribute("aria-checked", "false");
+  await loop.click();
+  await expect.poll(async () => (await gateVideo(page))?.loop).toBe("on");
+  await expect(loop).toHaveAttribute("aria-checked", "true");
+
+  // Captions typed as WebVTT: the panel says what was read.
+  const captions = page.locator('#shell-inspector [data-field="captions"]');
+  await captions.fill(
+    "WEBVTT\n\n00:00.000 --> 00:01.000\nThe old gate.\n\n00:01.000 --> 00:02.000\nIts arch.\n",
+  );
+  await captions.press("Tab");
+  await expect
+    .poll(async () => (await gateVideo(page))?.captions)
+    .toContain("The old gate.");
+  await expect(
+    page.locator("#shell-inspector .isec.video .note", {
+      hasText: "Captions:",
+    }),
+  ).toContainText("2 cues");
+
+  // The width slider beside the number: the keyboard's End is its 6 m.
+  const width = page.locator(
+    '#shell-inspector input[type="range"][data-act="extent-slider"]',
+  );
+  await width.focus();
+  await page.keyboard.press("End");
+  await expect.poll(async () => (await gateVideo(page))?.widthM).toBe(6);
+
+  // The preview reads the recorded clip's length and size, and makes the
+  // frame shown the poster.
+  const preview = page.locator(
+    '#shell-inspector [data-testid="video-preview"]',
+  );
+  await expect(preview.locator(".vprev-facts")).toHaveText(/^\d+:\d\d · /, {
+    timeout: 15_000,
+  });
+  const posterBefore = (await gateVideo(page)).poster;
+  await preview.locator(".vprev-frame").click();
+  await expect(preview.locator(".vprev-note")).toHaveText(
+    "This frame is the poster now.",
+    { timeout: 15_000 },
+  );
+  const withPoster = await gateVideo(page);
+  expect(withPoster.poster).toBeDefined();
+  expect(withPoster.poster).not.toBe(posterBefore);
+  await capture(page, testInfo.outputPath("video-panel-1280x800.png"));
 
   if (capturing) {
     for (const [width, height] of [
