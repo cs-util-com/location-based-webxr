@@ -256,7 +256,7 @@ export interface OverpassStats {
  * too tight and 60-75 s is right. Three samples per host cannot settle that -
  * re-measure with `scripts/benchmark-endpoints.mjs` before trusting it further.
  */
-const DEFAULT_REQUEST_TIMEOUT_MS = 45_000;
+export const DEFAULT_REQUEST_TIMEOUT_MS = 45_000;
 
 /**
  * What the opening race produced.

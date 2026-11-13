@@ -12,6 +12,9 @@ and the home of every item of the plan's §5.3 network discipline.
   `fetchImpl`, `maxConcurrent`, `maxRetries`, `timeoutSeconds`, `backoff`,
   `random`, `now`, `monotonicNow`, `sleepImpl`, `selectKeys`, `budget`,
   `maxAttemptLog`.
+- `DEFAULT_REQUEST_TIMEOUT_MS` (45 s) - the per-attempt deadline; also the
+  static tile host's per-request limit (`static-tile-source.ts`), so the host
+  never gives up on a download the race would still wait for.
 - `DEFAULT_OVERPASS_ENDPOINTS`.
 - `PermanentOverpassError`.
 - `stats` — `{ requests, retries, deduplicated }`, for the demo app's
