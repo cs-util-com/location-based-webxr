@@ -111,7 +111,8 @@ to a station, a story's name in the head takes the focus, selected.
     undock. A fold is the store's (`foldedDocks`) and the docking's
     at once: the list's and the details' folds are carried to the groups
     holding them (`dock-host.ts`'s `fold`, a rail) and back from them
-    (`syncFromDock`), each side hearing only the other's changes, so
+    (`syncFromDock`), each side hearing only the other's changes (the bottom panel's panes
+    in sight too: `docked({ shown })`, a toggle's hide is `hidePane`), so
     two panels dragged into one group (one fold for both) never undo
     each other, and the approach fold keeps working. An unfold from a rail
     counts as the creator's for the approach. Docked, the dock rule

@@ -4118,9 +4118,28 @@ body[data-view="3d"] #toasts {
 }
 
 .dockview-theme-tour .dock-tab-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   white-space: nowrap;
+}
+
+/* A narrow strip (a group under the view between two columns): its tabs
+ * give up their titles first, down to the icon, before any tab is pushed
+ * into the docking's overflow menu, where a creator would not look for
+ * it. A tab's title stays its tooltip and its accessible name. */
+.dockview-theme-tour
+  .dv-tabs-container:not(.dv-tabs-container-vertical)
+  > .dv-tab {
+  flex-shrink: 1;
+  min-width: 34px;
+  overflow: hidden;
+}
+
+.dockview-theme-tour .dock-tab .dock-badge {
+  flex: none;
 }
 
 .dockview-theme-tour .dock-badge {

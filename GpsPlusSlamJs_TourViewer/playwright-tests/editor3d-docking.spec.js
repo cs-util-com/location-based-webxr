@@ -1074,6 +1074,32 @@ for (const size of [
       .toContain("DetailsProblems");
     await expect(problems).toHaveAttribute("aria-selected", "true");
 
+    // The bottom group left under the view, narrow between two columns:
+    // its tabs shorten rather than spill into the overflow menu, and the
+    // pane it shows is drawn though Problems now shows elsewhere.
+    const bottom = groupOf(page, "perf");
+    await expect
+      .poll(
+        () =>
+          bottom
+            .locator(".dv-tabs-container")
+            .evaluate((e) => e.scrollWidth - e.clientWidth),
+        at,
+      )
+      .toBeLessThanOrEqual(0);
+    await expect(bottom.locator("#shell-pane-perf .nums"), at).toBeVisible();
+    // Problems' toggle takes Problems out of sight, not its new group:
+    // Details shows again there, at its width.
+    const toggleProblems = page.locator('#shell-toggles [data-tab="problems"]');
+    await expect(toggleProblems).toHaveAttribute("aria-pressed", "true");
+    const columnWidth = (await groupBoxes(page))["details"]?.[2] ?? 0;
+    await toggleProblems.click();
+    await expect(
+      host.getByRole("tab", { name: "Details", exact: true }),
+    ).toHaveAttribute("aria-selected", "true");
+    await expect(toggleProblems).toHaveAttribute("aria-pressed", "false");
+    expect((await groupBoxes(page))["details"]?.[2], at).toBe(columnWidth);
+
     // The 3D view still the centre, the selection framed in its middle.
     await page
       .locator("#tree-body .card", { hasText: "The old gate" })

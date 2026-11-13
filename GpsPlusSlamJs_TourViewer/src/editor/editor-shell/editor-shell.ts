@@ -127,7 +127,7 @@ import {
 } from "./shell-inspector.js";
 import { createBottomPanel } from "./bottom-panel.js";
 import type { DockBadge, DockHost, mountDockHost } from "./dock-host.js";
-import { docksAt, isBottomPanelId, type DockPanelId } from "./dock-layout.js";
+import { BOTTOM_PANEL_IDS, docksAt, type DockPanelId } from "./dock-layout.js";
 import { watchKeyboard } from "./phone-keyboard.js";
 import {
   SHELL_DOCK_LAYOUT,
@@ -2331,12 +2331,13 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         store.dispatch(editorViewActions.dockFolded({ dock, folded }));
       }
     }
-    const tab = dockHost.activeIn("problems");
-    if (!dockHost.groupShown("problems")) {
-      panel.docked({ open: false, tab: "problems" });
-    } else if (tab !== null && isBottomPanelId(tab)) {
-      panel.docked({ open: true, tab });
-    }
+    // Each bottom pane in sight, wherever it was dragged.
+    const host = dockHost;
+    panel.docked({
+      shown: BOTTOM_PANEL_IDS.filter(
+        (id) => host.groupShown(id) && host.activeIn(id) === id,
+      ),
+    });
   };
   const foldDocked = () => {
     if (dockHost === null) return;
@@ -2364,8 +2365,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       show: (tab) => {
         host.reveal(tab);
       },
-      hide: () => {
-        host.hideGroupOf("problems");
+      hide: (tab) => {
+        host.hidePane(tab);
       },
     });
     if (keyboardPx > 0) host.keyboard(keyboardPx);

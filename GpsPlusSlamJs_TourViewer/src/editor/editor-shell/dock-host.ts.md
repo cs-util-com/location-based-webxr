@@ -23,14 +23,15 @@ are not part of the page's first load.
   - `reveal(id)` - shows a panel: its group visible and unfolded, the
     panel its group's shown tab. The page's one way to unfold a group:
     the store learns of it through `onChange` (`editor-shell.ts`).
-  - `hideGroupOf(id)` - the group holding `id` out of sight: hidden when
-    it holds only the bottom panel's panes (its toggles show it again),
-    else folded to its rail, so a group dragged anywhere stays reachable.
+  - `hidePane(id)` - `id` out of sight: its group hidden when it holds
+    only the bottom panel's panes (their toggles show it again), else
+    `id` concealed as by `conceal` (a pane dragged into another group
+    takes only itself away; alone there, its group folds to its rail).
   - `groupShown(id)` - the group holding `id` shows, unfolded.
   - `conceal(id, instead?)` - takes a shown panel out of sight: `instead`
     shown in its place when its group holds it, else the group's next
     panel; alone in its group, the group out of sight as by
-    `hideGroupOf`. The shelf's toggle pressed again uses it with Files
+    the group hidden (only bottom panes) or folded to its rail. The shelf's toggle pressed again uses it with Files
     and Details, wherever Files was dragged.
   - `activeIn(id)` - the shown tab of the group holding `id`.
   - `fold(id, folded)` / `folded(id)` - the group holding `id` folded to

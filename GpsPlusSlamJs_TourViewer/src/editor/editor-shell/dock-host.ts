@@ -89,13 +89,14 @@ export interface DockHost {
   /** Shows `id`: its group made visible and unfolded, it the group's
    *  shown tab. The one way a folded group opens for the page. */
   reveal(id: DockPanelId): void;
-  /** Takes the group that holds `id` out of sight: hidden when it holds
-   *  only the bottom panel's panes (its toggles show it again), else
-   *  folded to its rail. */
-  hideGroupOf(id: DockPanelId): void;
+  /** Takes `id` out of sight: its group hidden when it holds only the
+   *  bottom panel's panes (their toggles show it again), else `id`
+   *  concealed (`conceal`), so a pane dragged into another group takes
+   *  only itself away. */
+  hidePane(id: DockPanelId): void;
   /** Takes `id` out of sight when it shows: `instead` made its group's
    *  shown tab when the group holds it, else the group's next panel; alone
-   *  in its group, the group out of sight as by `hideGroupOf`. */
+   *  in its group, the group hidden (only bottom panes) or folded. */
   conceal(id: DockPanelId, instead?: DockPanelId): void;
   /** Whether the group holding `id` shows, unfolded. */
   groupShown(id: DockPanelId): boolean;
@@ -313,6 +314,8 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
         const title = document.createElement("span");
         title.className = "dock-tab-title";
         title.textContent = params.title ?? id;
+        // Its whole title on hover, where a narrow strip shortens it.
+        element.title = title.textContent;
         if (!isDockPanelId(id)) {
           element.append(title);
           return;
@@ -906,12 +909,13 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
   };
   /** Out of sight: a group of the bottom panel's panes hidden (its
    *  toggles bring it back), any other folded to its rail. */
-  const hideGroup = (group: DockviewGroupPanel) => {
-    if (!group.api.isVisible) return;
-    const bottom = group.panels.every(
+  const onlyBottom = (group: DockviewGroupPanel) =>
+    group.panels.every(
       (p) => isDockPanelId(p.id) && dockPanel(p.id).group === "bottom",
     );
-    if (!bottom) {
+  const hideGroup = (group: DockviewGroupPanel) => {
+    if (!group.api.isVisible) return;
+    if (!onlyBottom(group)) {
       foldGroup(group, true);
       return;
     }
@@ -920,7 +924,7 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
   };
   focusBack();
 
-  return {
+  const host: DockHost = {
     reveal(id) {
       // The focus stays where it was (a row picked from the keyboard shows
       // its details): a tab made active takes it otherwise.
@@ -932,8 +936,10 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
       back();
       deps.onChange();
     },
-    hideGroupOf(id) {
-      hideGroup(groupOf(id));
+    hidePane(id) {
+      const group = groupOf(id);
+      if (onlyBottom(group)) hideGroup(group);
+      else host.conceal(id);
     },
     conceal(id, instead) {
       const group = groupOf(id);
@@ -1012,4 +1018,5 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
       back();
     },
   };
+  return host;
 }

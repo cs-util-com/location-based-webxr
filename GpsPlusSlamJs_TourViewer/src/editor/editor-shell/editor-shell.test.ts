@@ -2413,7 +2413,7 @@ describe("docked folds and counts", () => {
       groupShown: () => !shut,
       activeIn: () => null,
       conceal: vi.fn(),
-      hideGroupOf: vi.fn(),
+      hidePane: vi.fn(),
       keyboard: vi.fn(),
       dispose: vi.fn(),
     } satisfies DockHost;
