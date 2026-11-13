@@ -112,7 +112,12 @@ export function createRpcClient(
     // A notice has no id and answers no call; it is handed on and never
     // reaches the reply bookkeeping below.
     if (isWorkerNotice(data)) {
-      clientOptions.onNotice?.(data);
+      try {
+        clientOptions.onNotice?.(data);
+      } catch {
+        // A broken subscriber must not break the listener every reply
+        // arrives through.
+      }
       return;
     }
     // GUARDED rather than cast. A worker's message channel is shared with

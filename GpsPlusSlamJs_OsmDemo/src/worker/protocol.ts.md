@@ -41,8 +41,13 @@ target }`.
 - `WorkerNotice` - `{ notice: "downloadStarted" }`, the worker's one
   unsolicited message: a tile fetch someone waits on went past the OPFS cache.
   Never posted for a cache hit or a ring warm. It has no `id`, so
-  `isWorkerReply` rejects it; `isWorkerNotice(value)` guards it. The page's
-  loading overlay names a download only after one (`loading-announcer.ts`).
+  `isWorkerReply` rejects it; `isWorkerNotice(value)` guards it and rejects
+  anything carrying an `id`, so a reply with a stray `notice` field is never
+  swallowed. The page's loading overlay names a download only after one
+  (`loading-announcer.ts`). It is the protocol's one push and exists only for
+  live wait state that cannot ride a reply; the terrain flows still answer on
+  replies (`meshOutdated`, the `terrainUpgrade` call), because a result the page
+  must apply belongs on the call that asked for it.
 
 ## Invariants & assumptions
 

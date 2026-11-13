@@ -323,10 +323,11 @@ export interface TerrainResult {
    * source of truth for "what is the geometry standing on", which is the
    * divergence `worker/terrain-gate.ts` exists to prevent.
    *
-   * **It rides this reply rather than a push**, because the protocol is
-   * strictly request/reply keyed on `id` (`isWorkerReply` rejects anything
-   * without one), and a new envelope type is real surface to add for a
-   * boolean that already has a message going the right way.
+   * **It rides this reply rather than a push**, because calls are
+   * request/reply keyed on `id` (`isWorkerReply` rejects anything without
+   * one) and this boolean already has a message going the right way. The one
+   * push that exists, {@link WorkerNotice}, carries live wait state that no
+   * reply could deliver in time; this answer is part of the reply itself.
    *
    * `true` means "please refresh"; the page still declines while a refresh is
    * in flight. See `worker/terrain-arrival.ts` for why the decision is biased
@@ -659,11 +660,13 @@ export interface WorkerCalls {
    * "The better DEM has landed — apply it and tell me."
    *
    * WHY A SECOND RPC AND NOT A PUSH. The loser of the DEM race settles AFTER
-   * the `terrain` reply has already been sent, and there is no unsolicited
-   * worker→page channel to announce it on: the protocol is strictly
-   * request/reply keyed on `id` and {@link isWorkerReply} rejects anything
-   * without an `id`/`ok` pair. Adding a push envelope would be real protocol
-   * surface for one boolean. So the page ASKS, and it knows to ask because
+   * the `terrain` reply has already been sent. The one unsolicited
+   * worker→page message, {@link WorkerNotice}, exists only for live wait
+   * state that cannot ride a reply (a download starting mid-call), and it
+   * settles nothing: calls stay request/reply keyed on `id`, and
+   * {@link isWorkerReply} rejects anything without an `id`/`ok` pair. A result
+   * the page must apply belongs on a reply, and a push for it would be real
+   * protocol surface for one boolean. So the page ASKS, and it knows to ask because
    * {@link TerrainResult.upgradePending} told it to.
    *
    * WHY NOT REUSE `terrain`. That call starts a fresh load and would cancel
@@ -759,9 +762,16 @@ export interface WorkerNotice {
   readonly notice: "downloadStarted";
 }
 
-/** True for a {@link WorkerNotice}. Guards the page's `message` event. */
+/**
+ * True for a {@link WorkerNotice}. Guards the page's `message` event.
+ *
+ * Anything with an `id` is a reply, even with a stray `notice` field: the
+ * client checks notices first, so taking one here would swallow the reply and
+ * leave its call pending forever.
+ */
 export function isWorkerNotice(value: unknown): value is WorkerNotice {
   if (typeof value !== "object" || value === null) return false;
+  if ("id" in value) return false;
   return (value as { notice?: unknown }).notice === "downloadStarted";
 }
 

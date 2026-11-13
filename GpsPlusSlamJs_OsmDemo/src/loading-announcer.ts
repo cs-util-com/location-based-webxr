@@ -134,11 +134,11 @@ export function createLoadingAnnouncer(
   /** The text on the surface while `showing`. */
   let shownMessage: string | undefined;
   /**
-   * Whether the CURRENT busy period has started a download. Reset on both
-   * edges of `busy`, so a refresh served from the cache is never coloured by
-   * an earlier one. `latestOnly` reports no edge for a supersession, so a
-   * click made during a download keeps the loading text - which is still
-   * true at that moment.
+   * Whether the CURRENT run has started a download. Reset on both edges of
+   * `busy`, so a refresh served from the cache is never coloured by an
+   * earlier one, and by a gesture made while busy: `latestOnly` reports no
+   * edge when that gesture supersedes the run in flight, so the old run's
+   * download would otherwise colour the new run's purely local work.
    */
   let downloading = false;
   let delayTimer: ReturnType<typeof setTimeout> | undefined;
@@ -213,7 +213,12 @@ export function createLoadingAnnouncer(
       // supersession, so a click landing 20 s into a fetch would otherwise get
       // no feedback at all - the case where the user is most likely to think
       // the app ignored them.
-      if (busy) startDelay();
+      if (busy) {
+        // The gesture supersedes the run in flight, and that run's download
+        // is not this one's; the new run reports its own misses.
+        downloading = false;
+        startDelay();
+      }
     },
 
     busyChanged(next) {
@@ -236,8 +241,10 @@ export function createLoadingAnnouncer(
     },
 
     downloadStarted() {
-      // Outside a refresh nobody is waiting; the worker does not report its
-      // background warm, so this is only a guard.
+      // A GUARD, NOT THE MECHANISM: the rising edge of `busy` resets the flag
+      // anyway, so a stray notice outside a refresh could not colour the next
+      // one. It only keeps the flag honest while idle (the worker does not
+      // report its background warm, so none is expected).
       if (!busy) return;
       downloading = true;
       // Once per refresh: further tiles of the same wait must not restart the

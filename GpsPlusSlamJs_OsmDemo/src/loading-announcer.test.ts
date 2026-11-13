@@ -420,4 +420,25 @@ describe("the announced text", () => {
 
     expect(show.mock.calls).toEqual([[BUILDING_MESSAGE]]);
   });
+
+  it("a gesture that supersedes a downloading refresh is not coloured by its download", () => {
+    // Why this test matters: `latestOnly` reports no busy edge when a newer
+    // gesture aborts the run in flight, so the busy edges alone never reset
+    // the flag there. A click on a cached spot made during the widening tail
+    // of an earlier download would then read "Loading OpenStreetMap data…"
+    // for purely local work. The new run reports its own misses, if any.
+    const { toast, show } = recordingToast();
+    const announcer = createLoadingAnnouncer({ toast });
+
+    announcer.busyChanged(true);
+    announcer.downloadStarted();
+    announcer.arm();
+    vi.advanceTimersByTime(ANNOUNCE_DELAY_MS);
+
+    expect(show.mock.calls).toEqual([[BUILDING_MESSAGE]]);
+
+    // And its own miss still switches the text.
+    announcer.downloadStarted();
+    expect(show.mock.calls).toEqual([[BUILDING_MESSAGE], [LOADING_MESSAGE]]);
+  });
 });

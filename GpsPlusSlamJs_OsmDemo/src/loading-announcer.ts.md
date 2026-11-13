@@ -80,9 +80,11 @@ It owns the timing only; `loading-overlay.ts` owns what the user sees.
   - Started after it: clear, then show the loading text, once per busy
     period. The bar starts over for the download, whose length is what it
     describes; further tiles do not restart it again.
-  - `downloading` resets on both edges of `busy`. A supersession has no
-    edge, so a click made during a download keeps the loading text, which is
-    still true at that moment.
+  - `downloading` resets on both edges of `busy`, and on a gesture made while
+    busy. A supersession has no busy edge, so without that third reset a
+    click on a cached spot during the widening tail of an earlier download
+    would read the loading text for purely local work; the new run reports
+    its own misses.
   - A download never brings the surface up by itself: not in an unarmed
     refresh, not after `dataArrived` took it down.
 - **Every show is preceded by a clear.** The surface restarts its bar on a fresh

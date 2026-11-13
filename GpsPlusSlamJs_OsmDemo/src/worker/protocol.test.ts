@@ -55,5 +55,16 @@ describe("isWorkerNotice", () => {
     expect(isWorkerNotice({ id: 1, ok: true, value: undefined })).toBe(false);
     expect(isWorkerNotice({ notice: "somethingElse" })).toBe(false);
     expect(isWorkerNotice(null)).toBe(false);
+    // A reply that carries a stray `notice` field is still a reply: the
+    // client checks notices first, so accepting it here would swallow the
+    // reply and leave its call pending forever.
+    const replyWithNotice = {
+      id: 1,
+      ok: true,
+      value: undefined,
+      notice: "downloadStarted",
+    };
+    expect(isWorkerReply(replyWithNotice)).toBe(true);
+    expect(isWorkerNotice(replyWithNotice)).toBe(false);
   });
 });

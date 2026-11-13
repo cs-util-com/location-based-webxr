@@ -49,6 +49,8 @@ Vite detection finds `src/main.ts` through `index.html` but does not follow
     (`protocol.ts.md`) whenever a fetch someone waits on goes past the cache.
     A cache hit and a ring warm post nothing, so the page's overlay can say
     "Building the map…" for local work and name a download only for a real one.
+    It is posted for any foreground OSM fetch through that source, a geo-event
+    fetch included, not only `update`'s.
 - **The DEM provider is composed in [`dem-provider.ts`](../dem-provider.ts.md)**
   (Mapterhorn primary, AWS Terrarium fallback, one shared caching fetch), not
   inline in `init` — `init` needs `navigator.storage` and `OffscreenCanvas`, so

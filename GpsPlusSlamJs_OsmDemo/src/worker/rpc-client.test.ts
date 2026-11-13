@@ -358,4 +358,26 @@ describe("createRpcClient notices", () => {
     await expect(promise).resolves.toBe("done");
     expect(onNotice).toHaveBeenCalledTimes(1);
   });
+
+  it("a throwing notice subscriber does not break replies", async () => {
+    // WHY: the notice handler runs inside the transport listener. A throw
+    // escaping it would abort that message's handling and surface as an
+    // uncaught error in the page, for a purely cosmetic overlay text.
+    const fake = fakeTransport();
+    const client = createRpcClient(fake.transport, {
+      onNotice: () => {
+        throw new Error("subscriber broke");
+      },
+    });
+    const promise = client.call("explain", {
+      cell: "abc",
+      category: "walkable",
+    });
+    expect(() => {
+      fake.reply({ notice: "downloadStarted" });
+    }).not.toThrow();
+    const sent = fake.posted[0];
+    fake.reply({ id: sent?.id, ok: true, value: "done" });
+    await expect(promise).resolves.toBe("done");
+  });
 });
