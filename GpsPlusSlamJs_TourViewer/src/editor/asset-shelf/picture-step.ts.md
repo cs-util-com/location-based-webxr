@@ -6,10 +6,11 @@
 
 - `GIF_KEPT`: the words a GIF is kept with (a canvas keeps only an animation's first frame).
 - `DecodedPicture`: `{ width, height, close() }`.
-- `PictureDevice<P>`: `decode(blob)` and `encode(picture, width, height, quality)`; injected so the step's rules are unit-tested.
+- `PictureFormat`: `{ type: "image/webp" | "image/jpeg" | "image/png", quality }`; `PicturePurpose`: `"photo"` (the default) or `"texture"`.
+- `PictureDevice<P>`: `decode(blob, purpose?)` and `encode(picture, width, height, format)`; injected so the step's rules are unit-tested. The model step (`model-textures.ts`) uses the same device for a model's textures, as JPEG or PNG.
 - `fitWithin(width, height, maxSide)`: the size that fits `maxSide` with the proportions kept; never larger than the picture, no side under 1. Throws for sizes that are no positive whole numbers.
 - `optimizePicture(payload, settings, control, device)`: `{ type: "done", blob, extension: "webp", width, height }` or `{ type: "kept", reason: GIF_KEPT }`.
-- `PICTURE_DEVICE`: the browser's: `createImageBitmap` with `imageOrientation: "from-image"` (a phone photo stands the way it was taken), a resize with `resizeQuality: "high"`, `OffscreenCanvas.convertToBlob` as `image/webp` at `settings.picture.quality`.
+- `PICTURE_DEVICE`: the browser's: `createImageBitmap` with `imageOrientation: "from-image"` (a phone photo stands the way it was taken), a resize with `resizeQuality: "high"` and `premultiplyAlpha: "none"`, `OffscreenCanvas.convertToBlob` in the asked format and quality. A `"texture"` is decoded with `colorSpaceConversion: "none"` and `premultiplyAlpha: "none"`, as three.js decodes it, so a normal map's or roughness map's values are not changed by a colour profile or by alpha.
 
 ## Invariants
 
@@ -21,6 +22,6 @@
 
 ## Tests
 
-- `picture-step.test.ts`: the size and quality asked of the device, never enlarging, GIF kept, the WebP check, unreadable bytes, a payload that is no file, a stop.
+- `picture-step.test.ts`: the size, format and quality asked of the device, never enlarging, GIF kept, the WebP check, unreadable bytes, a payload that is no file, a stop.
 - `picture-step.property.test.ts`: `fitWithin` over random sizes and limits.
 - The real device runs in the shelf's optimizer e2e (`playwright-tests/editor-asset-optimizers.spec.js`).

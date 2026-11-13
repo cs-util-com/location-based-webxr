@@ -28,15 +28,28 @@ export interface DecodedPicture {
   close(): void;
 }
 
+/** What a picture is written as: its MIME type, and the encoder's
+ *  quality 0..1 (PNG ignores it). */
+export interface PictureFormat {
+  readonly type: "image/webp" | "image/jpeg" | "image/png";
+  readonly quality: number;
+}
+
+/** How a picture is decoded: a `photo` as a viewer shows it; a
+ *  `texture` (a 3D model's) as three.js reads one - no colour profile
+ *  applied and its alpha not premultiplied, so the numbers a shader reads
+ *  stay what the file holds. */
+export type PicturePurpose = "photo" | "texture";
+
 /** The browser's part: decode, then resize and encode. */
 export interface PictureDevice<P extends DecodedPicture = DecodedPicture> {
-  decode(source: Blob): Promise<P>;
-  /** `picture` at `width` x `height`, as WebP of `quality` (0..1). */
+  decode(source: Blob, purpose?: PicturePurpose): Promise<P>;
+  /** `picture` at `width` x `height`, written as `format`. */
   encode(
     picture: P,
     width: number,
     height: number,
-    quality: number,
+    format: PictureFormat,
   ): Promise<Blob>;
 }
 
@@ -86,12 +99,10 @@ export async function optimizePicture<P extends DecodedPicture>(
     control.progress(0.3);
     const { picture: wanted } = settings;
     const size = fitWithin(picture.width, picture.height, wanted.maxSidePx);
-    const blob = await device.encode(
-      picture,
-      size.width,
-      size.height,
-      wanted.quality,
-    );
+    const blob = await device.encode(picture, size.width, size.height, {
+      type: wanted.type,
+      quality: wanted.quality,
+    });
     if (blob.type !== wanted.type) {
       throw new Error("this browser cannot write WebP pictures");
     }
@@ -102,16 +113,27 @@ export async function optimizePicture<P extends DecodedPicture>(
   }
 }
 
+/** `createImageBitmap`'s options for a purpose: the file's own
+ *  orientation always (three.js's loader keeps the browser's default,
+ *  which applies it); for a texture also its raw colours and alpha. */
+function decodeOptions(purpose: PicturePurpose): ImageBitmapOptions {
+  return purpose === "texture"
+    ? {
+        imageOrientation: "from-image",
+        colorSpaceConversion: "none",
+        premultiplyAlpha: "none",
+      }
+    : { imageOrientation: "from-image" };
+}
+
 /** The real device: `createImageBitmap` (the photo's orientation applied,
  *  resized with high quality) and an `OffscreenCanvas`, both available in
  *  a Worker. Not unit-tested (it needs a browser); the e2e runs it. */
 export const PICTURE_DEVICE: PictureDevice<
   DecodedPicture & { readonly bitmap: ImageBitmap }
 > = {
-  async decode(source) {
-    const bitmap = await createImageBitmap(source, {
-      imageOrientation: "from-image",
-    });
+  async decode(source, purpose = "photo") {
+    const bitmap = await createImageBitmap(source, decodeOptions(purpose));
     return {
       width: bitmap.width,
       height: bitmap.height,
@@ -119,7 +141,7 @@ export const PICTURE_DEVICE: PictureDevice<
       bitmap,
     };
   },
-  async encode({ bitmap }, width, height, quality) {
+  async encode({ bitmap }, width, height, { type, quality }) {
     const resized =
       width === bitmap.width && height === bitmap.height
         ? null
@@ -127,13 +149,14 @@ export const PICTURE_DEVICE: PictureDevice<
             resizeWidth: width,
             resizeHeight: height,
             resizeQuality: "high",
+            premultiplyAlpha: "none",
           });
     try {
       const canvas = new OffscreenCanvas(width, height);
       const context = canvas.getContext("2d");
       if (context === null) throw new Error("no 2D canvas in this browser");
       context.drawImage(resized ?? bitmap, 0, 0);
-      return await canvas.convertToBlob({ type: "image/webp", quality });
+      return await canvas.convertToBlob({ type, quality });
     } finally {
       resized?.close();
     }
