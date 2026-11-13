@@ -116,7 +116,22 @@ are not part of the page's first load.
   is the library's `moveTo`; the panel is then revealed and the focus put
   on its tab. The library's own context menu, which the key would also
   open, is suppressed for a moment.
-- The default layout is `defaultDockLayout` (`dock-layout.ts`). The 3D
+- The default layout is `defaultDockLayout` (`dock-layout.ts`) at a desk
+  and `phoneDockLayout` on a phone (upright or sideways): the 3D view and
+  one tabbed group of all seven panels, below the view upright and beside
+  it sideways, the list shown. The host marks its root `dock-phone` (and
+  `dock-upright`) for the styles' finger sizes. On a phone the layout is
+  not refitted after a resize (no side columns to keep at a width): the
+  library keeps each group's share.
+- On a phone each group in the grid has a Float button beside its fold
+  (`moveOf`, `dock-rail.ts`): the group floats over the 3D view; a
+  floating group's Dock button docks it back below the view (upright) or
+  beside it (sideways). The desk's strips are unchanged.
+- Every horizontal tab strip scrolls sideways when its tabs do not fit
+  (`dock-strip.ts`: a swipe scrolls, a tap shows, a pull across or a move
+  after a hold drags; the library's overflow list is off). The shown tab
+  is scrolled into sight whenever it changes (a frame after the layout),
+  and a tab the keyboard focuses at once. The 3D
   view is added with `renderer: "always"`, so it keeps its canvas and
   drawing context whatever shows. Every other panel is added with
   `renderer: "onlyWhenVisible"`: its content stands inside its group,
@@ -201,7 +216,13 @@ are not part of the page's first load.
 - During a splitter drag the canvas is held at its size in px and fitted
   once on release (each resize reallocates the drawing buffers).
 - A group's fold button is drawn once the 3D view is in the layout (the
-  first groups are made before it), hidden until then.
+  first groups are made before it), hidden until then. A group's buttons
+  are drawn as it is made, before its panels are in it, so every layout
+  change (`settle`) draws them again.
+- The tab handlers (`tabOf`, `showTabSoon`) are set up before the
+  docking's change handlers: the docking may change its active panel while
+  the layout is still being made, and a handler reaching an uninitialized
+  binding would throw out of the mount.
 - Defensive: an unknown panel id throws; a fold of a group already in
   that state, of the 3D view's or a floating group, or of one whose size
   is unknown, does nothing; `dispose` is idempotent.

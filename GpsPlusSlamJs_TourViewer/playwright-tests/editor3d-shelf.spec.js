@@ -12,7 +12,9 @@ import {
   answerHosts,
   boxIn,
   capture,
+  DOCK_PHONE_TABS_PX,
   DOCK_TABS_PX,
+  dockPhoneGroupPx,
   dockSettled,
   layoutOf,
   openSampleIn3d,
@@ -422,6 +424,10 @@ const SHELF_PARTS = [
   "#shell-bar",
 ];
 
+/** A phone's one tabbed group (the one holding the list's tab). */
+const PHONE_GROUP =
+  '.dock-host .dv-groupview:has(.dock-tab[data-panel="list"])';
+
 // The panel eases its width (a 0.16 s transition), so a size read a frame
 // or two after a resize can land mid-way: wait until it has no animation
 // left.
@@ -436,9 +442,13 @@ async function shelfSettled(page) {
 // (public/prototypes/asset-shelf-2), read from it at the same three sizes:
 // a 300 px dock at the right edge on a desktop, cards 8 px in from the
 // panel and 6 px apart (4 px in landscape), the foot only where the window
-// is tall, and on a phone a sheet across the whole width that ends on the
-// bottom bar. Docked (above 700 px) the shelf is the right column's Files
-// tab, so a phone in landscape takes that column's 268 px.
+// is tall. On a phone the shelf is the Files tab of the phone's one group:
+// that group's width at the window's right in landscape, and upright the
+// window's width under the 3D view, down to the bottom bar. (Until the
+// panels docked on a phone, landscape docked it in a 268 px right column,
+// and upright it was a sheet of its own whose top stood about a third
+// down, as the prototype's: upright the group's top is where the creator
+// sized it, so that third has no docked counterpart.)
 test("the Assets panel sits where the chosen prototype puts it, on a desktop, a phone in landscape and a phone", async ({
   page,
 }) => {
@@ -475,7 +485,7 @@ test("the Assets panel sits where the chosen prototype puts it, on a desktop, a 
   // foot.
   let layout = await layoutOf(page, SHELF_PARTS);
   let shelf = boxIn(layout, "#shell-shelf");
-  let tree = boxIn(layout, "#shell-tree");
+  const tree = boxIn(layout, "#shell-tree");
   expect(shelf.width).toBe(300);
   expect(shelf.x + shelf.width).toBe(1440);
   expect(shelf.y).toBe(tree.y + DOCK_TABS_PX);
@@ -491,38 +501,44 @@ test("the Assets panel sits where the chosen prototype puts it, on a desktop, a 
   expect(foot.y + foot.height).toBeCloseTo(shelf.y + shelf.height, 0);
   await capture(page, "test-results/shelf-layout-desktop.png");
 
-  // A phone in landscape: the docked column's 268 px, denser, no foot.
+  // A phone in landscape: the group's width at the window's right,
+  // denser, no foot; its Files tab shown by the bar's toggle.
   await page.setViewportSize({ width: 844, height: 390 });
   await dockSettled(page, 844);
+  if (!(await page.locator("#shell-shelf").isVisible())) {
+    await page.locator("#shelf-toggle").click();
+  }
+  await expect(page.locator("#shell-shelf")).toBeVisible();
   await shelfSettled(page);
-  layout = await layoutOf(page, SHELF_PARTS);
+  layout = await layoutOf(page, [...SHELF_PARTS, PHONE_GROUP]);
   shelf = boxIn(layout, "#shell-shelf");
-  tree = boxIn(layout, "#shell-tree");
-  expect(shelf.width).toBe(268);
+  let group = boxIn(layout, PHONE_GROUP);
+  expect(shelf.width).toBe(dockPhoneGroupPx(844, 390));
   expect(shelf.x + shelf.width).toBe(844);
-  expect(shelf.y).toBe(tree.y + DOCK_TABS_PX);
+  expect(shelf.y).toBe(group.y + DOCK_PHONE_TABS_PX);
   card = boxIn(layout, "#shell-shelf .as-card", 0);
   expect(card.x - shelf.x).toBe(6); // 6 px in
   for (const gap of cardGaps(layout)) expect(gap).toBeCloseTo(4, 0);
   expect(shownIn(layout, "#shell-shelf .as-foot")).toBe(false);
   await capture(page, "test-results/shelf-layout-landscape.png");
 
-  // A phone: closed until asked for, then a sheet of its own.
+  // A phone: not shown until asked for, then its tab in the group under
+  // the 3D view, the map above it in view.
   await page.setViewportSize({ width: 390, height: 844 });
+  await dockSettled(page, 390);
   await shelfSettled(page);
   await expect(page.locator("#shell-shelf")).toBeHidden();
   await page.locator("#shelf-toggle").click();
   await expect(page.locator("#shell-shelf")).toBeVisible();
-  layout = await layoutOf(page, SHELF_PARTS);
+  await shelfSettled(page);
+  layout = await layoutOf(page, [...SHELF_PARTS, PHONE_GROUP]);
   shelf = boxIn(layout, "#shell-shelf");
+  group = boxIn(layout, PHONE_GROUP);
   const bar = boxIn(layout, "#shell-bar");
   expect(shelf.x).toBe(0);
   expect(shelf.width).toBe(390);
   expect(shelf.y + shelf.height).toBeCloseTo(bar.y, 0);
-  // Its top about a third down, the map above it in view (the
-  // prototype's at 276 px of 844).
-  expect(shelf.y).toBeGreaterThan(844 * 0.25);
-  expect(shelf.y).toBeLessThan(844 * 0.4);
+  expect(shelf.y).toBe(group.y + DOCK_PHONE_TABS_PX);
   card = boxIn(layout, "#shell-shelf .as-card", 0);
   expect(card.x).toBe(8);
   expect(card.width).toBe(374);

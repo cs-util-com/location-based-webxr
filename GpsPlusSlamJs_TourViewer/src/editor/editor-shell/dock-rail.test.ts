@@ -4,6 +4,7 @@ import {
   canFold,
   foldAxis,
   foldedAt,
+  moveOf,
   prunedTo,
   RAIL_PX,
   railPx,
@@ -38,6 +39,18 @@ describe("which way a group folds", () => {
   it("takes 55 % of the layout's height as tall", () => {
     expect(foldAxis({ width: 300, height: 459 }, LAYOUT)).toBe("width");
     expect(foldAxis({ width: 300, height: 457 }, LAYOUT)).toBe("height");
+  });
+
+  // Why: a phone held upright docks its group across the window's whole
+  // width, under the 3D view; dragged taller than 55 %, folding its width
+  // squeezed the 3D view to a sliver beside a tall rail. A group as wide as
+  // the layout has no side to fold to, so it folds its height, however tall.
+  it("folds the height of a group as wide as the layout, however tall", () => {
+    const phone = { width: 390, height: 777 };
+    expect(foldAxis({ width: 390, height: 457 }, phone)).toBe("height");
+    expect(foldAxis({ width: 390, height: 700 }, phone)).toBe("height");
+    expect(foldAxis({ width: 389, height: 457 }, phone)).toBe("width");
+    expect(foldAxis({ width: 1440, height: 600 }, LAYOUT)).toBe("height");
   });
 
   // Why: sizes come from the page's boxes; a box not laid out yet must not
@@ -145,5 +158,26 @@ describe("the side a group folds towards", () => {
         { ...view, y: 145, height: 731 },
       ),
     ).toBe("up");
+  });
+});
+
+describe("a group's float and dock button", () => {
+  // Why: the docking floats a group only by Shift-drag or its tab menu,
+  // neither of which a finger finds; on a phone a docked group gets a
+  // Float button and a floating one a Dock button (the prototype's). A
+  // desk keeps its strips as they were.
+  it("floats a docked group and docks a floating one, on a phone", () => {
+    expect(moveOf("upright", "grid", false)).toBe("float");
+    expect(moveOf("sideways", "grid", false)).toBe("float");
+    expect(moveOf("upright", "floating", false)).toBe("dock");
+  });
+
+  it("is not there at a desk, on the 3D view's or a folded group", () => {
+    expect(moveOf(null, "grid", false)).toBeNull();
+    expect(moveOf(null, "floating", false)).toBeNull();
+    expect(moveOf("upright", "grid", true)).toBeNull();
+    expect(moveOf("sideways", "floating", true)).toBeNull();
+    expect(moveOf("upright", "edge", false)).toBeNull();
+    expect(moveOf("upright", "popout", false)).toBeNull();
   });
 });

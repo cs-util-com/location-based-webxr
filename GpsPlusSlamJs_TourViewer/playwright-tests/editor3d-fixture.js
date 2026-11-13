@@ -7,8 +7,8 @@ import {
 } from "../../scripts/e2e/terrarium-png.mjs";
 import {
   bottomStartPx,
-  DOCK_MIN_PX as DOCK_MIN,
   dockWidths,
+  phoneGroupPx,
 } from "../src/editor/editor-shell/dock-layout.ts";
 import { startOnMap } from "./editor-menus.js";
 
@@ -467,12 +467,27 @@ export function styleIn(layout, selector, property, index = 0) {
   return layout[selector]?.[index]?.styles[property] ?? "";
 }
 
-/** From this window width the editor's panels dock around the 3D view
- *  (`dock-layout.ts`); below it the phone's sheets show them. */
-export const DOCK_MIN_PX = DOCK_MIN;
-
 /** The docking's tab strip over a group (`editor-shell.css`'s theme). */
 export const DOCK_TABS_PX = 30;
+
+/** A phone's docked tab strip (`editor-shell.css`'s `.dock-phone`). */
+export const DOCK_PHONE_TABS_PX = 44;
+
+/**
+ * A phone's one docked group's first size in a window (`dock-layout.ts`'s
+ * `phoneGroupPx`): its height held upright, its width held sideways, of
+ * the layout below the top bar and its line and above the bottom bar
+ * (40, 3 and 24 px).
+ * @param {number} width the window's
+ * @param {number} height the window's
+ */
+export function dockPhoneGroupPx(width, height) {
+  return phoneGroupPx(
+    width > height ? "sideways" : "upright",
+    width,
+    height - 40 - 3 - 24,
+  );
+}
 
 /**
  * The docked list's and right column's first widths at a window width
@@ -496,18 +511,12 @@ export function dockBottomPx(height) {
 /**
  * Waits after a window resize until the docked layout fills the new
  * window (the docking lays its groups out a frame later, and its side
- * groups take their widths a frame after that); below `DOCK_MIN_PX`,
- * until the layout is gone (it is taken down a frame or two after the
- * resize, its panels put back where they were).
+ * groups take their widths a frame after that). The panels dock at every
+ * width, a phone's included.
  * @param {import("@playwright/test").Page} page
  * @param {number} width the window's
  */
 export async function dockSettled(page, width) {
-  if (width < DOCK_MIN_PX) {
-    await expect(page.locator(".dock-host")).toHaveCount(0);
-    await afterFrames(page, 3);
-    return;
-  }
   await expect
     .poll(() =>
       page.evaluate(() =>

@@ -13,10 +13,13 @@ import {
 } from "./editor3d-fixture.js";
 
 /**
- * The editor's panels docked around the 3D view, from 701 px wide: the
- * list at the left, Details with Files as its second tab at the right,
- * the bottom panel's four tabs below the view when asked for. Found by
- * role (the docking's tabs), measured by their boxes.
+ * The editor's panels docked around the 3D view at a desk: the list at
+ * the left, Details with Files as its second tab at the right, the bottom
+ * panel's four tabs below the view when asked for. Found by role (the
+ * docking's tabs), measured by their boxes. A phone (at most 700 px wide
+ * or 500 px high) docks too, as the 3D view and one tabbed group:
+ * `editor3d-phone.spec.js` pins that layout; here only what crosses
+ * between the two (a turn, a kept layout, a keyboard).
  */
 
 // One worker for the file, its tests in order: software-drawn 3D views
@@ -28,6 +31,9 @@ const BAR_PX = 24;
 const LINE_PX = 3;
 /** At most this far apart: two panels beside a splitter. */
 const SASH_PX = 2;
+/** A phone's one group's strip by its tabs' names, as `dockState` reads
+ *  it (the inactive tabs' titles are hidden from sight, not from it). */
+const PHONE_STRIP = "ListDetailsFilesProblemsHistoryMap loadingPerformance";
 
 /** @param {import("@playwright/test").Locator} locator */
 async function box(locator) {
@@ -86,7 +92,9 @@ const SIZES = [
   { width: 1280, height: 800 },
   { width: 1440, height: 900 },
   { width: 1920, height: 1080 },
-  { width: 844, height: 390 },
+  // A phone held sideways (844 x 390) docks as one group beside the view:
+  // `editor3d-phone.spec.js`.
+  { width: 1024, height: 600 },
 ];
 
 for (const size of SIZES) {
@@ -222,31 +230,41 @@ for (const size of SIZES) {
   });
 }
 
-// Why: below 701 px the phone's sheets stay as they were - nothing docks,
-// and a window narrowed from a docked width gives every panel back.
-test("a phone held upright keeps its sheets; narrowing undocks", async ({
+// Why: this test said the opposite until the panels docked on a phone:
+// "a phone held upright keeps its sheets; narrowing undocks". Now a phone
+// held upright docks its panels too, and a window narrowed from a desk's
+// width keeps them docked, laid out anew as the phone's one group under
+// the 3D view (`editor3d-phone.spec.js` pins that layout). The phone's
+// sheets are only the fallback while the docking loads or when it failed
+// to, so no panel goes back into the view.
+test("a phone held upright docks its panels; narrowing keeps them docked", async ({
   page,
 }) => {
   test.setTimeout(150_000);
-  await page.setViewportSize({ width: 844, height: 390 });
+  await page.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(page);
   await openSampleIn3d(page);
   await expect(page.locator(".dock-host")).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.locator(".dock-host")).toHaveCount(0);
-  await expect(page.locator("#view3d")).not.toHaveClass(/docked/);
+  await dockSettled(page, 390);
+  await expect(page.locator(".dock-host")).toHaveCount(1);
+  await expect(page.locator("#view3d")).toHaveClass(/docked/);
   for (const id of ["#shell-tree", "#shell-inspector", "#shell-shelf"]) {
     await expect(
       page.locator(`#view3d > ${id}`),
-      `${id} back in the view`,
-    ).toHaveCount(1);
+      `${id} not back in the view`,
+    ).toHaveCount(0);
   }
-  await expect(page.locator("#view3d > canvas.view3d-canvas")).toHaveCount(1);
-  await expect(page.locator("#shell-panel #shell-pane-problems")).toHaveCount(
-    1,
-  );
+  await expect(page.locator(".dock-host #shell-tree")).toHaveCount(1);
+  await expect(
+    page.locator(".dock-host .dock-pane-view canvas.view3d-canvas"),
+  ).toHaveCount(1);
+  await expect(page.locator("#shell-panel")).toBeHidden();
   await expect(page.locator("#tree-body")).toBeVisible();
-  await capture(page, test.info().outputPath("undocked-390x844.png"));
+  await expect
+    .poll(async () => (await dockState(page)).strips)
+    .toEqual([PHONE_STRIP]);
+  await capture(page, test.info().outputPath("docked-390x844.png"));
 });
 
 /**
@@ -396,9 +414,10 @@ test("the details closed out of their writer while folded unfold at the column w
     .toBeLessThanOrEqual(1);
 });
 
-// Why: a phone turned between upright and sideways docks or undocks its
-// panels, which moves the field in use; its focus (and with it the
-// keyboard) must stay on it.
+// Why: a phone turned between upright and sideways lays its panels out
+// anew (each held its own way), which moves the field in use; its focus
+// (and with it the keyboard) must stay on it, so the details stay the
+// shown tab through the turn.
 test("a field in use keeps the focus while a phone turns sideways and back", async ({
   page,
 }) => {
@@ -422,8 +441,9 @@ test("a field in use keeps the focus while a phone turns sideways and back", asy
     });
   expect(await fieldIs(), "docked").toBe(true);
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.locator(".dock-host")).toHaveCount(0);
-  expect(await fieldIs(), "upright").toBe(true);
+  await dockSettled(page, 390);
+  await expect(page.locator(".dock-host #shell-inspector")).toHaveCount(1);
+  await expect.poll(fieldIs, { message: "upright" }).toBe(true);
   await page.setViewportSize({ width: 844, height: 390 });
   await expect(page.locator(".dock-host #shell-inspector")).toHaveCount(1);
   await expect.poll(fieldIs, { message: "sideways again" }).toBe(true);
@@ -736,86 +756,99 @@ async function keyboardOf(page, px) {
 // goes, the layout must come back as it was (sizes, shown tabs, tab
 // strips), or a creator who typed one word is left with a rearranged
 // editor. The maximized panel's head (its back and fold buttons) stays in
-// reach under the largest keyboard.
-test("a keyboard maximizes the docked group in use, its head in reach, and gives the layout back when it goes", async ({
-  page,
-}) => {
-  test.setTimeout(150_000);
-  const size = { width: 844, height: 390 };
-  await page.setViewportSize(size);
-  await answerHosts(page);
-  await openSampleIn3d(page);
-  await dockSettled(page, size.width);
-  await page.addStyleTag({ content: ".toast { display: none; }" });
-  await page
-    .locator("#tree-body .card", { hasText: "The old gate" })
-    .locator(".pick")
-    .click();
-  await page.locator('#shell-toggles [data-tab="problems"]').click();
-  await expect(page.locator("#shell-pane-problems")).toBeVisible();
-  await afterFrames(page, 3);
-  const before = await dockState(page);
-  expect(before.max).toBe(false);
-  expect(before.boxes["problems"]).not.toBeNull();
-
-  // The largest keyboard the keyboard e2e uses here: the bar and one
-  // field's row left.
-  const kb = size.height - 116;
-  await page.locator('#inspector-body [data-field="title"]').focus();
-  await keyboardOf(page, kb);
-  const up = await dockState(page);
-  expect(up.max).toBe(true);
-  expect(up.strips).toEqual([]);
-  expect(up.boxes["details"]).not.toBeNull();
-  for (const id of ["list", "problems"]) expect(up.boxes[id], id).toBeNull();
-  // The head's fold button in sight: below the top bar, above the
-  // keyboard, nothing over it.
-  const reach = await page.evaluate((px) => {
-    const b = document.querySelector('#inspector-head [data-act="fold"]');
-    if (b === null) return "no fold button";
-    const r = b.getBoundingClientRect();
-    const x = r.x + r.width / 2;
-    const y = r.y + r.height / 2;
-    if (y < 43 || y > innerHeight - px) return `at ${String(Math.round(y))}`;
-    const hit = document.elementFromPoint(x, y);
-    return hit !== null && b.contains(hit)
-      ? "ok"
-      : `under ${String(hit?.className)}`;
-  }, kb);
-  expect(reach).toBe("ok");
-
-  // Maximized, the other groups are hidden and their panels out of the
-  // page (they render only while shown), so no field of another group can
-  // take the focus: the list's search cannot. Should the panels render
-  // always again, this fails, and the move to that group is to be tested.
-  const moved = await page.evaluate(() => {
-    const search = /** @type {HTMLElement | null} */ (
-      document.querySelector("#shell-tree .tsearch input")
-    );
-    search?.focus();
-    return document.activeElement === search;
-  });
-  expect(moved).toBe(false);
-
-  await keyboardOf(page, 0);
-  await expect.poll(async () => (await dockState(page)).max).toBe(false);
-  await afterFrames(page, 3);
-  const after = await dockState(page);
-  expect(after.strips).toEqual(before.strips);
-  expect(after.selected).toEqual(before.selected);
-  for (const id of ["view", "list", "details", "problems"]) {
-    const was = before.boxes[id];
-    const now = after.boxes[id];
-    expect(now === null, id).toBe(was === null);
-    if (was === null || now === null) continue;
-    for (const [i, v] of was.entries()) {
-      expect(
-        Math.abs((now[i] ?? 0) - v),
-        `${id} [${String(i)}]`,
-      ).toBeLessThanOrEqual(1);
+// reach under the largest keyboard. Measured at a small tablet with the
+// bottom group shown, and at a phone held sideways, whose one group
+// holds the details (the phone's keyboard, docked).
+for (const size of [
+  { width: 1024, height: 600 },
+  { width: 844, height: 390 },
+]) {
+  const phone = size.height <= 500;
+  const at = `at ${String(size.width)} x ${String(size.height)}`;
+  test(`a keyboard maximizes the docked group in use, its head in reach, and gives the layout back when it goes ${at}`, async ({
+    page,
+  }) => {
+    test.setTimeout(150_000);
+    await page.setViewportSize(size);
+    await answerHosts(page);
+    await openSampleIn3d(page);
+    await dockSettled(page, size.width);
+    await page.addStyleTag({ content: ".toast { display: none; }" });
+    await page
+      .locator("#tree-body .card", { hasText: "The old gate" })
+      .locator(".pick")
+      .click();
+    // On a phone the bottom panel's tabs share the details' group: shown,
+    // they would take the details out of the page.
+    if (!phone) {
+      await page.locator('#shell-toggles [data-tab="problems"]').click();
+      await expect(page.locator("#shell-pane-problems")).toBeVisible();
     }
-  }
-});
+    await expect(page.locator("#inspector-body")).toBeVisible();
+    await afterFrames(page, 3);
+    const before = await dockState(page);
+    expect(before.max).toBe(false);
+    expect(before.boxes["problems"] === null).toBe(phone);
+
+    // The largest keyboard the keyboard e2e uses here: the bar and one
+    // field's row left.
+    const kb = size.height - 116;
+    await page.locator('#inspector-body [data-field="title"]').focus();
+    await keyboardOf(page, kb);
+    const up = await dockState(page);
+    expect(up.max).toBe(true);
+    expect(up.strips).toEqual([]);
+    expect(up.boxes["details"]).not.toBeNull();
+    for (const id of ["list", "problems"]) expect(up.boxes[id], id).toBeNull();
+    // The head's fold button in sight: below the top bar, above the
+    // keyboard, nothing over it.
+    const reach = await page.evaluate((px) => {
+      const b = document.querySelector('#inspector-head [data-act="fold"]');
+      if (b === null) return "no fold button";
+      const r = b.getBoundingClientRect();
+      const x = r.x + r.width / 2;
+      const y = r.y + r.height / 2;
+      if (y < 43 || y > innerHeight - px) return `at ${String(Math.round(y))}`;
+      const hit = document.elementFromPoint(x, y);
+      return hit !== null && b.contains(hit)
+        ? "ok"
+        : `under ${String(hit?.className)}`;
+    }, kb);
+    expect(reach).toBe("ok");
+
+    // Maximized, the other groups are hidden and their panels out of the
+    // page (they render only while shown), so no field of another group can
+    // take the focus: the list's search cannot. Should the panels render
+    // always again, this fails, and the move to that group is to be tested.
+    const moved = await page.evaluate(() => {
+      const search = /** @type {HTMLElement | null} */ (
+        document.querySelector("#shell-tree .tsearch input")
+      );
+      search?.focus();
+      return document.activeElement === search;
+    });
+    expect(moved).toBe(false);
+
+    await keyboardOf(page, 0);
+    await expect.poll(async () => (await dockState(page)).max).toBe(false);
+    await afterFrames(page, 3);
+    const after = await dockState(page);
+    expect(after.strips).toEqual(before.strips);
+    expect(after.selected).toEqual(before.selected);
+    for (const id of ["view", "list", "details", "problems"]) {
+      const was = before.boxes[id];
+      const now = after.boxes[id];
+      expect(now === null, id).toBe(was === null);
+      if (was === null || now === null) continue;
+      for (const [i, v] of was.entries()) {
+        expect(
+          Math.abs((now[i] ?? 0) - v),
+          `${id} [${String(i)}]`,
+        ).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+}
 
 // Why: maximized over a keyboard, a panel's scrollers keep the 8 px they
 // leave below a field brought into sight, and where the layout runs on
@@ -1019,10 +1052,13 @@ async function filesBelowDetails(page) {
   return "below";
 }
 
+// At a desk; a phone's one group rearranges by the same drags (a tab
+// pulled out of it: `editor3d-phone.spec.js`), but has no Details group
+// to drop below and no bottom group to take Problems from.
 for (const size of [
   { width: 1280, height: 800 },
   { width: 1920, height: 1080 },
-  { width: 844, height: 390 },
+  { width: 1024, height: 600 },
 ]) {
   const at = `at ${String(size.width)} x ${String(size.height)}`;
   // Why: a creator arranges the panels by dragging their tabs - beside,
@@ -1113,9 +1149,11 @@ for (const size of [
   });
 }
 
+// At a desk; a phone's one group folds by its strip's fold button
+// (`editor3d-phone.spec.js`): it has no list or details side of its own.
 for (const size of [
   { width: 1440, height: 900 },
-  { width: 844, height: 390 },
+  { width: 1024, height: 600 },
 ]) {
   const at = `at ${String(size.width)} x ${String(size.height)}`;
   // Why: a side folded to its rail gives its room to the 3D view - a fold
@@ -1224,14 +1262,15 @@ for (const size of [
 test.describe("by touch", () => {
   test.use({ hasTouch: true });
 
-  // Why: on a tablet or a phone held sideways the panels are arranged and
-  // folded by a finger: a tab dragged by touch must move, and a rail must
-  // be wide enough for a finger.
+  // Why: on a tablet the panels are arranged and folded by a finger: a
+  // tab dragged by touch must move, and a rail must be wide enough for a
+  // finger. (A phone's tab pulled out of its group by touch:
+  // `editor3d-phone.spec.js`.)
   test("a tab dragged by touch moves, and a tap folds a side to a finger-wide rail", async ({
     page,
   }) => {
     test.setTimeout(150_000);
-    const size = { width: 844, height: 390 };
+    const size = { width: 1024, height: 600 };
     await page.setViewportSize(size);
     await answerHosts(page);
     await openSampleIn3d(page);
@@ -1277,7 +1316,7 @@ test.describe("by touch", () => {
     await expect
       .poll(async () => (await groupBoxes(page))["details"]?.[3])
       .toBe(TOUCH_RAIL_PX);
-    await capture(page, test.info().outputPath("touch-folded-844x390.png"));
+    await capture(page, test.info().outputPath("touch-folded-1024x600.png"));
   });
 });
 
@@ -1340,7 +1379,8 @@ test("a rearranged layout comes back when the editor opens again, a broken one g
 
 // Why: a desk's three columns do not fit a phone held sideways, nor its
 // arrangement the desk: each form factor keeps its own layout, and the
-// window turning from one to the other swaps them.
+// window turning from one to the other swaps them (the phone's default
+// is its one group).
 test("the desk and a phone held sideways keep their own layouts", async ({
   page,
 }) => {
@@ -1355,7 +1395,7 @@ test("the desk and a phone held sideways keep their own layouts", async ({
   await page.setViewportSize({ width: 844, height: 390 });
   await expect
     .poll(async () => (await dockState(page)).strips)
-    .toEqual(["DetailsFiles"]);
+    .toEqual([PHONE_STRIP]);
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect.poll(() => filesBelowDetails(page)).toBe("below");
@@ -1534,7 +1574,7 @@ test("a change made just before the window turns is kept for the form factor it 
   await page.setViewportSize({ width: 844, height: 390 });
   await expect
     .poll(async () => (await dockState(page)).strips)
-    .toEqual(["DetailsFiles"]);
+    .toEqual([PHONE_STRIP]);
   expect(await keptFilesAlone(page, "desk")).toBe(true);
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect.poll(() => filesBelowDetails(page)).toBe("below");

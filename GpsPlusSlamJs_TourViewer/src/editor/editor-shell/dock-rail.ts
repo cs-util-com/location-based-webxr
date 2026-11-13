@@ -47,9 +47,11 @@ export function railPx(coarse: boolean): number {
   return coarse ? RAIL_PX.touch : RAIL_PX.mouse;
 }
 
-/** The axis `group` folds along inside a layout of `layout`: its width
- *  when it is at least 55 % of the layout's height, else its height. A
- *  size that is not a positive number folds the width. */
+/** The axis `group` folds along inside a layout of `layout`: its height
+ *  when it is as wide as the layout (no side to fold to: a phone's group
+ *  held upright), else its width when it is at least 55 % of the layout's
+ *  height, else its height. A height that is not a positive number folds
+ *  the width. */
 export function foldAxis(group: Size, layout: Size): RailAxis {
   if (
     !(group.height > 0) ||
@@ -59,6 +61,7 @@ export function foldAxis(group: Size, layout: Size): RailAxis {
   ) {
     return "width";
   }
+  if (layout.width > 0 && group.width >= layout.width) return "height";
   return group.height >= layout.height * TALL_SHARE ? "width" : "height";
 }
 
@@ -128,4 +131,19 @@ export function railSide(
   if (group.x >= view.x + view.width - 1) return "right";
   if (group.y + group.height <= view.y + 1) return "up";
   return "down";
+}
+
+/** The button that moves a group whose `location` is the docking's
+ *  ("grid", "floating", ...): on a phone (`shape`, null at a desk) a
+ *  docked group floats and a floating one docks; none at a desk, nor on
+ *  a group that is `fixed` (the 3D view's, or one folded to its rail). */
+export function moveOf(
+  shape: "upright" | "sideways" | null,
+  location: string,
+  fixed: boolean,
+): "float" | "dock" | null {
+  if (shape === null || fixed) return null;
+  if (location === "grid") return "float";
+  if (location === "floating") return "dock";
+  return null;
 }

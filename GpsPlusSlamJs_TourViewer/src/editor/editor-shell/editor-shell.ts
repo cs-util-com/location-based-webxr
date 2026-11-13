@@ -823,10 +823,17 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       ? null
       : model;
 
+  /** The selection the details were last drawn for (`JSON` of it). */
+  let drawnSelection = "null";
   /** The inspector drawn from the store and the ground now (a draw that
    *  changes nothing is skipped): also each readout tick, so the ground
    *  arriving shows. */
   const drawInspectorNow = (model: InspectorModel | null) => {
+    // Read before the draw, which shows the details for any selection.
+    const wasHidden = inspector.root.hidden;
+    const selection = JSON.stringify(state().editorView.selected);
+    const newSelection = selection !== drawnSelection;
+    drawnSelection = selection;
     drawInspector(
       inspector,
       model,
@@ -840,15 +847,19 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       panels.sync(model),
     );
     // A phone ticking rows in the Select mode keeps its sheet the list.
-    const wasHidden = inspector.root.hidden;
     inspector.root.hidden =
       sheetModel(model) === null || shownSheet(model) === "tree";
-    // Docked, a selection shows its details over the files beside them.
+    // Docked, a selection shows its details over the files beside them
+    // (and over the list, where the two share a group: a phone's), a new
+    // one too; ticking rows in the Select mode keeps the list there.
     if (
       dockHost !== null &&
-      wasHidden &&
+      (wasHidden || newSelection) &&
       !inspector.root.hidden &&
-      !state().editorView.foldedDocks.inspector
+      !state().editorView.foldedDocks.inspector &&
+      !(
+        state().editorView.selectMode && dockHost.activeIn("details") === "list"
+      )
     ) {
       dockHost.reveal("details");
     }
@@ -914,25 +925,28 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   };
 
   /** The sheet a phone shows now: the details over the list, except in
-   *  the Select mode, whose ticks need the list. `model` is the
-   *  inspector's, when the caller has it built. */
+   *  the Select mode, whose ticks need the list; none while the panels
+   *  are docked (the sheets are the phone's panels only while the docking
+   *  loads, or when it failed to). `model` is the inspector's, when the
+   *  caller has it built. */
   const shownSheet = (
     model: InspectorModel | null = inspectorModel(state().editorView),
   ): SheetKind | null => {
     const ui = state().editorView;
-    if (!phoneSheets(window.innerWidth)) return null;
+    if (dockHost !== null || !phoneSheets(window.innerWidth)) return null;
     if (ui.selectMode) return "tree";
     if (sheetModel(model) !== null) return "details";
     return ui.foldedDocks.tree ? null : "tree";
   };
   /** The selection let go and the list shown: on a phone, the way back
-   *  from the details. */
+   *  from the details (docked, the list's tab beside them). */
   const showList = () => {
     creatorTouchesTree();
     if (state().editorView.selected !== null) deps.select(null);
     store.dispatch(
       editorViewActions.dockFolded({ dock: "tree", folded: false }),
     );
+    dockHost?.reveal("list");
   };
   const sheets = wirePhoneSheets({
     tree: tree.root,
@@ -2316,10 +2330,18 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   };
 
   // --- the docked layout ---------------------------------------------------
-  // From `DOCK_MIN_PX` wide the panels dock around the 3D view (the
-  // docking library loaded with it, `dock-host.ts`); narrower, they are
-  // today's docks and a phone's sheets. The folds stay the store's: a
-  // folded side hides its group, its folded head back over the view.
+  // At every width the panels dock around the 3D view (the docking
+  // library loaded with it, `dock-host.ts`); until it has loaded, or when
+  // it failed to, they are the undocked docks and a phone's sheets. The
+  // folds stay the store's: a folded side hides its group, its folded
+  // head back over the view.
+  /** The inspector and the phone's sheets drawn again for a docking that
+   *  came or went: docked, no sheet shows. */
+  const drawSheets = () => {
+    const model = inspectorModel(state().editorView);
+    drawInspectorNow(model);
+    sheets.sync(shownSheet(model));
+  };
   let dockLoading = false;
   /** The docking failed to load: said once, not tried again on every
    *  resize (a module that failed to load fails again at once). */
@@ -2418,6 +2440,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       },
     });
     if (keyboardPx > 0) host.keyboard(keyboardPx);
+    drawSheets();
     deps.onDocked?.(true);
   };
   const syncDock = () => {
@@ -2448,6 +2471,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     dockEmpty.remove();
     dockHost.dispose();
     dockHost = null;
+    drawSheets();
     syncFilesShown();
     deps.onDocked?.(false);
   };

@@ -2,8 +2,11 @@
 
 ## Purpose
 
-The editor's panels on a phone: the tree and the details as sheets over the
-map, each with a drag grip, and the map's canvas ending at a sheet's top.
+The editor's panels on a phone while they are not docked: the tree and the
+details as sheets over the map, each with a drag grip, and the map's canvas
+ending at a sheet's top. Since the panels dock at every width
+(`dock-host.ts`'s phone layout), the sheets show only while the docking
+loads or when it failed to load; docked, `editor-shell.ts` syncs no sheet.
 
 ## Public API
 

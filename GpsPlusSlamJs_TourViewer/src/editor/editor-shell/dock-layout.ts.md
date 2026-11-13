@@ -8,10 +8,10 @@ library: `dock-host.ts` applies it.
 
 ## Public API
 
-- `DOCK_MIN_PX` (701) and `docksAt(widthPx)` - from this window width up
-  the panels dock (a phone held sideways, 844 px, included); below it the
-  phone's sheets (`phone-sheet.ts`, `PHONE_SHEET_PX` = 700) show them. A
-  non-finite width never docks.
+- `docksAt(widthPx)` - the panels dock at every window width, a phone's
+  included; a width that is not a positive number never docks (the
+  phone's sheets, `phone-sheet.ts`, then show the panels, as while the
+  docking loads or when it failed to).
 - `BOTTOM_PANEL_IDS` (`problems`, `history`, `tiles`, `perf`), the bottom
   panel's tabs in its order (`bottom-panel-model.ts`'s `PANEL_TABS`), and
   `isBottomPanelId(x)`.
@@ -44,11 +44,25 @@ group, icon }`, the 3D view first. `element` is the adopted page element's id
 - `defaultDockLayout(widthPx, heightPx)` - `DockStep[]`: the 3D view; the
   list left of it; Details right of it with Files as its second tab
   (inactive); Problems below the view with History, Map loading and
-  Performance as its further tabs (inactive).
+  Performance as its further tabs (inactive). The desk's layout.
+- `PhoneShape` - `upright` or `sideways` (`dock-save.ts`'s phone form
+  factors).
+- `phoneGroupPx(shape, widthPx, heightPx)` - the phone's one group's first
+  size: upright 46 % of the layout's height, sideways 38 % of its width and
+  at most 320 px (the docking prototype's); 0 for an axis that is not a
+  positive number.
+- `phoneDockLayout(shape, widthPx, heightPx, shown = "list")` -
+  `DockStep[]`: the 3D view, then the list below it (upright, `heightPx`)
+  or right of it (sideways, `widthPx`), and Details, Files, Problems,
+  History, Map loading and Performance as the list's further tabs: one
+  tabbed group. The list is the shown tab; `shown` "details" shows the
+  details instead (`dock-host.ts` asks for it when a phone turns while
+  the details are shown, so a field in use keeps its focus).
 
 ## Invariants & assumptions
 
-- Every panel appears exactly once in the default layout, the 3D view
+- Every panel appears exactly once in the default layout (the desk's and
+  the phone's), the 3D view
   first and without an `against`; every other step is placed against a
   panel added before it.
 - The side panels' first widths leave the 3D view at least 220 px at any
@@ -70,7 +84,11 @@ group, icon }`, the 3D view first. `element` is the adopted page element's id
 
 ```ts
 if (docksAt(window.innerWidth)) {
-  for (const step of defaultDockLayout(window.innerWidth, hostHeight)) {
+  const steps =
+    shape === null
+      ? defaultDockLayout(window.innerWidth, hostHeight)
+      : phoneDockLayout(shape, hostWidth, hostHeight);
+  for (const step of steps) {
     // add dockPanel(step.id) beside step.against, at step.widthPx ...
   }
 }
@@ -78,9 +96,11 @@ if (docksAt(window.innerWidth)) {
 
 ## Tests
 
-- `dock-layout.test.ts` - the threshold against the phone's sheets, the
-  adopted elements, the ids, the exact default layout at 1440 x 900, the
-  width steps, the bottom start heights and when a keyboard maximizes.
+- `dock-layout.test.ts` - docking at every width, the adopted elements, the ids, the exact default layout at 1440 x 900, the
+  width steps, the bottom start heights, when a keyboard maximizes, and
+  the phone's layout upright and sideways with its group's first sizes.
 - `dock-layout.property.test.ts` - over windows from 701 x 300 to
   4000 x 3000: every panel once, placed against an earlier one, the view
-  keeps 220 px, the bottom group at most a third of the height.
+  keeps 220 px, the bottom group at most a third of the height; and at
+  any phone, its layout has every panel once and a group under half the
+  axis it takes.

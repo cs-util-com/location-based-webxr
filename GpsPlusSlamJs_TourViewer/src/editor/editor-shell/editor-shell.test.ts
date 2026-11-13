@@ -2463,6 +2463,23 @@ describe("docked folds and counts", () => {
     shell.hide();
   });
 
+  // Why: where the details share a group with the list (a phone's one
+  // group), a tap on a row must bring the details forward, and so must a
+  // tap on another row while the list is the tab in front. The details'
+  // own draw unhides them, so a check made after it never saw them hidden
+  // and the details stayed behind the list.
+  it("a selection, and a new one, bring the details forward", async () => {
+    const { host, shell, select } = await docked();
+    select("station:a");
+    expect(host.reveal).toHaveBeenLastCalledWith("details");
+    host.reveal.mockClear();
+    select("station:a");
+    expect(host.reveal).not.toHaveBeenCalled();
+    select("station:b");
+    expect(host.reveal).toHaveBeenLastCalledWith("details");
+    shell.hide();
+  });
+
   // Why: the shelf hands its count to the shell before the docking has
   // loaded; a count dropped then would leave the Files tab silent about
   // files that failed until the next change.

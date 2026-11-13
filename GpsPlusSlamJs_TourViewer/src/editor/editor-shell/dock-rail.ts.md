@@ -9,11 +9,12 @@ The docked editor's groups fold to rails, and this module is the fold as data: w
 - `RAIL_PX` - `{ mouse: 34, touch: 44 }`, the rail's thickness in px. A rail is a row of buttons: 44 px fits a finger, and 34 px leaves the 3D view more room under a mouse.
 - `railPx(coarse)` - the rail thickness for a coarse pointer (`true`) or a fine one.
 - `UNFOLD_MIN_PX` - `{ width: 200, height: 120 }`, the least size a group unfolds to.
-- `foldAxis(group, layout)` - `"width"` when the group is at least 55 % of the layout's height (a side column), else `"height"` (a group above or below the 3D view). A height that is not a positive finite number gives `"width"`.
+- `foldAxis(group, layout)` - `"height"` when the group is as wide as the layout (it has no side to fold to: a phone's group held upright, however tall it was dragged); else `"width"` when the group is at least 55 % of the layout's height (a side column), else `"height"` (a group above or below the 3D view). A height that is not a positive finite number gives `"width"`.
 - `canFold(panelIds, location)` - true only for a group in the grid (`location === "grid"`) that holds at least one panel and not the 3D view (`"view"`).
 - `foldedAt(folds, id, group, layout)` - a new `Folds` with `id` folded at its present size along its axis. Returns the same map when `id` is folded already (the rail's own size must never become the size to give back) or the size is not a finite number of at least 0.
 - `unfoldedAt(folds, id)` - `{ folds, restore }`, where `restore` is `{ axis, px: max(UNFOLD_MIN_PX[axis], prevPx) }`, or `null` with the same map when `id` was not folded.
 - `prunedTo(folds, live)` - the folds of the groups still in `live`. Returns the same map when nothing is dropped.
+- `moveOf(shape, location, fixed)` - the move a group's Float/Dock button offers: `"float"` for a group in the grid, `"dock"` for a floating one, null at a desk (`shape` null), for a `fixed` group (folded, or the 3D view's) and for any other location. A phone only: the desk keeps its strips as they were.
 - `railSide(groupBox, viewBox)` - `"left" | "right" | "up" | "down"`: where the group lies against the 3D view, which is the direction its fold chevron points. The boxes are page rectangles, with 1 px of slack for sub-pixel edges.
 
 ## Invariants and assumptions
@@ -34,5 +35,5 @@ if (restore) group.api.setSize({ [restore.axis]: restore.px });
 
 ## Tests
 
-- `dock-rail.test.ts` - the rail sizes, the 55 % axis threshold on both sides of it, non-numeric sizes, which groups fold, the fold/unfold round trip, the least unfold size, a repeated fold, pruning and the four rail sides.
+- `dock-rail.test.ts` - the rail sizes, the 55 % axis threshold on both sides of it, a group as wide as the layout folding its height (also a property in `dock-rail.property.test.ts`), non-numeric sizes, which groups fold, the fold/unfold round trip, the least unfold size, a repeated fold, pruning, the four rail sides and the Float/Dock button's move.
 - `dock-rail.property.test.ts` - over any sizes: fold then unfold gives back the size along the folded axis (at least the least size) and leaves no fold behind, and pruning keeps exactly the live groups' folds.

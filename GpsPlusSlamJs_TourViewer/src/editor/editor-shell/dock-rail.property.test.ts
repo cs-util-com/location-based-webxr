@@ -16,6 +16,24 @@ const size = fc.record({
 });
 
 describe("the fold's states over any sizes", () => {
+  // Why: a group spanning the layout's width (a phone's, upright) folds
+  // its height whatever its height; the 55 % rule decides only for one
+  // narrower than the layout.
+  it("a group as wide as the layout always folds its height", () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 4000 }),
+        fc.integer({ min: 1, max: 3000 }),
+        fc.integer({ min: 1, max: 3000 }),
+        (width, height, layoutHeight) => {
+          expect(
+            foldAxis({ width, height }, { width, height: layoutHeight }),
+          ).toBe("height");
+        },
+      ),
+    );
+  });
+
   // Why: whatever size a group was folded at, unfolding gives back that
   // size (or the least usable one) along the axis it folded, and leaves no
   // trace; a second fold never overwrites the size to give back.

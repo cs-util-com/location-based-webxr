@@ -3,7 +3,10 @@
  * (the list, the details, the asset shelf, the bottom panel's four panes)
  * adopted as panels of a docking layout, the 3D view's canvas in its
  * centre. The layout's state is the docking library's alone; this module
- * is the one place that shows a panel, hides a group or folds one.
+ * is the one place that shows a panel, hides a group or folds one. On a
+ * phone (upright or sideways) the default is the 3D view and one group
+ * of every other panel, which a button floats over the view and docks
+ * back.
  *
  * Loaded by a dynamic `import()` with the 3D view (`editor-shell.ts`), so
  * the docking library and its stylesheet stay out of the page's first
@@ -30,15 +33,19 @@ import {
   dockWidths,
   isDockPanelId,
   keyboardMaximizes,
+  phoneDockLayout,
+  phoneGroupPx,
   stripHidden,
   type DockPanelId,
   type DockStep,
+  type PhoneShape,
   writerWidthPx,
 } from "./dock-layout.js";
 import {
   canFold,
   foldAxis,
   foldedAt,
+  moveOf,
   prunedTo,
   railPx,
   railSide,
@@ -46,6 +53,7 @@ import {
   type Folds,
 } from "./dock-rail.js";
 import { moveTargets, showMoveMenu, type MoveTarget } from "./dock-move.js";
+import { showTab, wireStripScroll } from "./dock-strip.js";
 import {
   createDockKeeper,
   dockFormFactor,
@@ -372,8 +380,9 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
   };
 
   /** A group's fold button, in its tab strip: it points to the side the
-   *  group folds to, and back once folded. Drawn again only when its
-   *  look changes, so a press keeps the focus on it. */
+   *  group folds to, and back once folded; on a phone also its Float
+   *  button (Dock, on a floating group). Drawn again only when its look
+   *  changes, so a press keeps the focus on it. */
   const makeFolder = (group: DockviewGroupPanel) => {
     const element = document.createElement("div");
     element.className = "dock-acts";
@@ -381,7 +390,14 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "dock-fold";
-    element.append(button);
+    const mover = document.createElement("button");
+    mover.type = "button";
+    mover.className = "dock-float";
+    element.append(button, mover);
+    mover.addEventListener("click", () => {
+      if (group.api.location.type === "floating") dockGroup(group);
+      else floatGroup(group);
+    });
     // Not a press on the strip: no drag, no group made the active one.
     element.addEventListener("pointerdown", (event) => {
       event.stopPropagation();
@@ -397,22 +413,35 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
       const viewPanel = dock.getPanel("view");
       if (viewPanel === undefined) return;
       const ids = group.panels.map((p) => p.id);
-      const can = canFold(ids, group.api.location.type);
+      const where = group.api.location.type;
+      const can = canFold(ids, where);
       const shut = folds.has(group.id);
       const side = railSide(
         group.element.getBoundingClientRect(),
         viewPanel.group.element.getBoundingClientRect(),
       );
       const title = group.activePanel?.title ?? "";
-      const key = `${String(can)}|${String(shut)}|${side}|${title}`;
+      const shape = phoneShape();
+      const move = moveOf(shape, where, shut || ids.includes("view"));
+      const key = [can, shut, side, title, move, shape].map(String).join("|");
       if (key === drawn) return;
       drawn = key;
-      element.hidden = !can;
+      element.hidden = !can && move === null;
+      button.hidden = !can;
       const name = `${shut ? "Unfold" : "Fold"} ${title}`.trim();
       button.title = name;
       button.setAttribute("aria-label", name);
       button.setAttribute("aria-expanded", String(!shut));
       button.replaceChildren(shellIcon(shut ? AWAY[side] : side));
+      mover.hidden = move === null;
+      if (move === null) return;
+      mover.title =
+        move === "float"
+          ? "Float over the 3D view"
+          : `Dock ${shape === "upright" ? "below" : "beside"} the 3D view`;
+      const moveName = `${move === "dock" ? "Dock" : "Float"} ${title}`;
+      mover.setAttribute("aria-label", moveName.trim());
+      mover.replaceChildren(shellIcon(move));
     };
     return { element, update };
   };
@@ -465,6 +494,9 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
           ],
     floatingGroupBounds: "boundedWithinViewport",
     noPanelsOverlay: "emptyGroup",
+    // A strip whose tabs do not fit scrolls (`dock-strip.ts`); the
+    // library's list of the tabs out of sight is not used.
+    disableTabsOverflowList: true,
   });
 
   const panelOf = (id: DockPanelId): IDockviewPanel => {
@@ -492,7 +524,7 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
     afterLayout(() => {
       // Folded meanwhile: the rail keeps its size.
       if (disposed || folds.has(group.id)) return;
-      if (axis === "width" && !group.api.isVisible) {
+      if (axis === "width" && !group.api.isVisible && phoneShape() === null) {
         for (const side of SIDES) if (groupOf(side) === group) stale.add(side);
       }
       group.api.setConstraints(
@@ -519,6 +551,16 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
     window.innerWidth,
     window.innerHeight,
   );
+  /** The phone's shape, or null at a desk. */
+  const phoneShape = (): PhoneShape | null =>
+    formFactor === "desk" ? null : formFactor;
+  /** The styles' phone measures (`editor-shell.css`): a finger's tabs,
+   *  buttons and splitters. */
+  const markShape = () => {
+    root.classList.toggle("dock-phone", formFactor !== "desk");
+    root.classList.toggle("dock-upright", formFactor === "upright");
+  };
+  markShape();
   /** The kept layout shown, its folds still to give back; none: the
    *  default. */
   let restoredFrom: SavedDock | null = null;
@@ -561,8 +603,29 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
     }
     return true;
   };
+  /** Whether the details show a selection: the inspector's element,
+   *  in the page or held in its panel while another tab shows. */
+  const detailsShown = (): boolean => {
+    const id = dockPanel("details").element;
+    if (id === null) return false;
+    const node =
+      contentOf("details").querySelector(`#${id}`) ??
+      document.getElementById(id);
+    return node instanceof HTMLElement && !node.hidden;
+  };
   const addDefault = (): readonly DockStep[] => {
-    const steps = defaultDockLayout(window.innerWidth, root.clientHeight);
+    const shape = phoneShape();
+    // A phone's one group shows the list, or the details when something
+    // is selected (a phone turned while a field is typed in keeps it).
+    const steps =
+      shape === null
+        ? defaultDockLayout(window.innerWidth, root.clientHeight)
+        : phoneDockLayout(
+            shape,
+            root.clientWidth,
+            root.clientHeight,
+            detailsShown() ? "details" : "list",
+          );
     for (const step of steps) addStep(step);
     return steps;
   };
@@ -634,6 +697,11 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
           );
     root.style.setProperty("--dock-under", `${String(under)}px`);
   };
+  /** Whether `group` holds only the bottom panel's panes. */
+  const onlyBottom = (group: DockviewGroupPanel) =>
+    group.panels.every(
+      (p) => isDockPanelId(p.id) && dockPanel(p.id).group === "bottom",
+    );
   /** The layout laid out at the box, the default's first sizes given. */
   const settle = (toSize: readonly DockStep[]) => {
     // Nothing is dropped onto the 3D view as a tab.
@@ -649,8 +717,15 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
       sizeFirst(step);
     }
     // The default's bottom group shows when asked for (the bar's toggles,
-    // its keys); a kept layout shows what it showed.
-    if (restoredFrom === null) groupOf("problems").api.setVisible(false);
+    // its keys); a kept layout shows what it showed, and a phone's one
+    // group, which holds them with the rest, shows.
+    const bottom = groupOf("problems");
+    if (restoredFrom === null && onlyBottom(bottom)) {
+      bottom.api.setVisible(false);
+    }
+    // A group's buttons are drawn as it is made, before its panels are
+    // in it: drawn again with them.
+    updateFolders();
   };
   settle(steps);
 
@@ -687,7 +762,8 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
   let beforeWriter: number | null = null;
   let writerPx: number | null = null;
   const fitWriter = () => {
-    if (detailsNode === null || disposed) return;
+    // On a phone the writer takes the group's size as it is.
+    if (detailsNode === null || disposed || phoneShape() !== null) return;
     const group = groupOf("details");
     const holds = detailsNode.classList.contains("lw");
     const want = holds
@@ -727,7 +803,9 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
    *  at its widths (a hidden one when it shows), the bottom panel's group
    *  at its first height (a hidden one when it shows). */
   const refit = () => {
-    if (disposed) return;
+    // A phone's window changes size within its form factor only by its
+    // browser's bars: the docking's own proportional layout keeps it.
+    if (disposed || phoneShape() !== null) return;
     if (maxed !== null) {
       // Given back with the layout, at the new window's widths.
       for (const side of SIDES) stale.add(side);
@@ -946,8 +1024,27 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
     keeper.soon(dockSaveKey(formFactor), writeSavedDock(dock.toJSON(), kept));
   };
 
-  const changed = dock.onDidActivePanelChange(() => {
+  // Before the handlers below: the docking may change its active panel
+  // while the layout is still being made.
+  /** The tab of panel `id`, the docking's focusable element. */
+  const tabOf = (id: DockPanelId): HTMLElement | null =>
+    root
+      .querySelector(`.dock-tab[data-panel="${id}"]`)
+      ?.closest<HTMLElement>(".dv-tab") ?? null;
+  /** The shown tab of `id`'s group in sight in its strip once laid out:
+   *  the docking scrolls it there at once, before a group just shown or
+   *  unfolded has its width. */
+  const showTabSoon = (id: string) => {
+    afterLayout(() => {
+      if (disposed || !isDockPanelId(id)) return;
+      const tab = tabOf(id);
+      if (tab !== null) showTab(tab);
+    });
+  };
+
+  const changed = dock.onDidActivePanelChange((panel) => {
     if (laying) return;
+    if (panel !== undefined) showTabSoon(panel.id);
     updateFolders();
     keepSoon();
     deps.onChange();
@@ -1074,10 +1171,6 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
   };
   /** Out of sight: a group of the bottom panel's panes hidden (its
    *  toggles bring it back), any other folded to its rail. */
-  const onlyBottom = (group: DockviewGroupPanel) =>
-    group.panels.every(
-      (p) => isDockPanelId(p.id) && dockPanel(p.id).group === "bottom",
-    );
   const hideGroup = (group: DockviewGroupPanel) => {
     if (!group.api.isVisible) return;
     if (!onlyBottom(group)) {
@@ -1122,6 +1215,7 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
     const back = holdFocus([...contents.values()]);
     laying = true;
     formFactor = next;
+    markShape();
     dock.clear();
     folds = new Map();
     folders.clear();
@@ -1142,11 +1236,6 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
   };
 
   // --- "Move to..." ------------------------------------------------------
-  /** The tab of panel `id`, the docking's focusable element. */
-  const tabOf = (id: DockPanelId): HTMLElement | null =>
-    root
-      .querySelector(`.dock-tab[data-panel="${id}"]`)
-      ?.closest<HTMLElement>(".dv-tab") ?? null;
   /** Offers where panel `id` can move, below its tab. */
   const openMove = (id: DockPanelId) => {
     const anchor = tabOf(id);
@@ -1185,6 +1274,57 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
     });
   };
 
+  // --- floating on a phone -------------------------------------------------
+  /** Floats `group` over the 3D view's top right corner (the prototype's
+   *  size: at most 300 x 360 px, 60 % x 70 % of the layout). */
+  const floatGroup = (group: DockviewGroupPanel) => {
+    if (disposed || group.api.location.type !== "grid") return;
+    if (group.panels.some((p) => p.id === "view")) return;
+    const back = holdFocus([...contents.values()]);
+    if (folds.has(group.id)) foldGroup(group, false);
+    const box = root.getBoundingClientRect();
+    const at = groupOf("view").element.getBoundingClientRect();
+    const width = Math.round(Math.min(300, box.width * 0.6));
+    const height = Math.round(Math.min(360, box.height * 0.7));
+    dock.addFloatingGroup(group, {
+      x: Math.max(8, Math.round(at.right - box.left - width - 12)),
+      y: Math.max(8, Math.round(at.top - box.top + 12)),
+      width,
+      height,
+    });
+    updateFolders();
+    back();
+    deps.onChange();
+  };
+  /** Docks floating `group` back where a phone's group starts: below the
+   *  3D view held upright, beside it held sideways, at its first size. */
+  const dockGroup = (group: DockviewGroupPanel) => {
+    const shape = phoneShape();
+    if (disposed || shape === null) return;
+    if (group.api.location.type !== "floating") return;
+    const first = group.panels.map((p) => p.id).find(isDockPanelId);
+    if (first === undefined) return;
+    const back = holdFocus([...contents.values()]);
+    group.api.moveTo({
+      group: groupOf("view"),
+      position: shape === "upright" ? "bottom" : "right",
+    });
+    const px = phoneGroupPx(shape, root.clientWidth, root.clientHeight);
+    const axis = shape === "upright" ? "height" : "width";
+    if (px > 0) pin(groupOf(first), axis, px);
+    updateFolders();
+    back();
+    deps.onChange();
+  };
+
+  // --- tab strips that scroll ----------------------------------------------
+  /** A tap on a tab of a strip that scrolls shows its panel (the strip's
+   *  own press does not, so a swipe shows nothing). */
+  const stopStrips = wireStripScroll(root, (tab) => {
+    const id = tab.querySelector<HTMLElement>(".dock-tab")?.dataset["panel"];
+    if (isDockPanelId(id)) host.reveal(id);
+  });
+
   focusBack();
 
   const host: DockHost = {
@@ -1196,6 +1336,7 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
       foldGroup(groupOf(id), false);
       const panel = panelOf(id);
       if (panel.group.activePanel !== panel) panel.api.setActive();
+      showTabSoon(id);
       back();
       deps.onChange();
     },
@@ -1261,6 +1402,7 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
       paneWatch.disconnect();
       root.removeEventListener("keydown", onTabKey, true);
       root.removeEventListener("contextmenu", onTabMenu, true);
+      stopStrips();
       // A change still to keep is kept before the layout goes.
       keeper.flush();
       unmaxed.dispose();

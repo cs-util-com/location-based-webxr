@@ -7,7 +7,9 @@ import {
   answerHosts,
   boxIn,
   capture,
+  DOCK_PHONE_TABS_PX,
   DOCK_TABS_PX,
+  dockPhoneGroupPx,
   dockWidthsAt,
   keepRejections,
   layoutOf,
@@ -193,10 +195,12 @@ async function expectLineAt(page, sizes) {
  * inspector shows). Nothing may be selected yet: a pick of the selected
  * station deselects it and folds, so a test calls this once. Each shown
  * dock flush with its side, hanging from the line with no gap and running
- * down to the bottom bar. Above 700 px the panels dock: the list hangs from
+ * down to the bottom bar. At a desk the panels dock apart: the list hangs from
  * the line itself (its group shows no tab strip), the details from their
  * group's tab strip, which hangs from the line; both at their docked
- * widths (`dock-layout.ts`). A phone shows one sheet.
+ * widths (`dock-layout.ts`). A phone shows one panel, the details, in
+ * its one tabbed group: the window's width under the 3D view upright,
+ * the group's width at the window's right under its strip sideways.
  * @param {import("@playwright/test").Page} page
  * @param {{ width: number, height: number }[]} sizes
  */
@@ -216,22 +220,24 @@ async function expectDocksAt(page, sizes) {
     await dockSettled(page, width);
     await afterFrames(page, 2);
     const bar = { x: 0, y: TOP_PX, width, height: LINE_PX };
-    // A phone's sheets take the width; both docks stand above 700 px.
-    const sheet = width <= 700;
+    // A phone's group holds both docks as tabs; a desk shows both.
+    const sheet = width <= 700 || height <= 500;
+    const upright = sheet && height > width;
+    const phonePx = upright ? width : dockPhoneGroupPx(width, height);
     const docked = dockWidthsAt(width);
     const docks = [
       {
         id: "#shell-tree",
         body: "#tree-body",
         left: true,
-        widthPx: sheet ? width : docked.list,
+        widthPx: sheet ? phonePx : docked.list,
         tabsPx: 0,
       },
       {
         id: "#shell-inspector",
         body: "#inspector-body",
         left: false,
-        widthPx: sheet ? width : docked.column,
+        widthPx: sheet ? phonePx : docked.column,
         tabsPx: DOCK_TABS_PX,
       },
     ];
@@ -242,27 +248,32 @@ async function expectDocksAt(page, sizes) {
       [...docks.flatMap((dock) => [dock.id, dock.body]), "#shell-shelf"],
       ["border-top-left-radius", "border-top-right-radius"],
     );
-    // Docked, the asset shelf is the details' other tab: never shown
-    // beside them (a phone's shelf is a sheet of its own).
+    // The asset shelf is another tab of the details' group: never shown
+    // beside them. (Until the panels docked on a phone, its shelf was a
+    // sheet of its own.)
     const right = width;
-    if (!sheet) {
-      expect(shownIn(l, "#shell-shelf"), `the shelf at ${String(width)}`).toBe(
-        false,
-      );
-    }
+    expect(shownIn(l, "#shell-shelf"), `the shelf at ${String(width)}`).toBe(
+      false,
+    );
     let shown = 0;
     for (const dock of docks) {
       if (!shownIn(l, dock.body)) continue;
       shown++;
       const at = `${dock.id} at ${String(width)}x${String(height)}`;
       const d = boxIn(l, dock.id);
-      if (dock.left) expect(d.x, at).toBe(0);
+      if (dock.left && !sheet) expect(d.x, at).toBe(0);
       else expect(d.x + d.width, at).toBeCloseTo(right, 0);
       expect(d.y + d.height, at).toBeCloseTo(height - BOTTOM_PX, 0);
       expect(d.width, at).toBeCloseTo(dock.widthPx, 0);
       expect(overlaps(d, bar), at).toBe(false);
-      // A sheet stands on the bottom bar with the map above it.
-      if (sheet) continue;
+      // A phone's group stands on the bottom bar, the map above it
+      // upright; sideways it hangs from the line under its strip.
+      if (sheet) {
+        if (!upright) {
+          expect(d.y, at).toBe(bar.y + bar.height + DOCK_PHONE_TABS_PX);
+        }
+        continue;
+      }
       // No gap: the dock's top (or its group's tab strip's) is the
       // line's bottom.
       expect(d.y, at).toBe(bar.y + bar.height + dock.tabsPx);
@@ -275,7 +286,7 @@ async function expectDocksAt(page, sizes) {
         at,
       ).toEqual(["0px", "0px"]);
     }
-    // Both above 700 px (the dock rule's side by side), else one sheet.
+    // Both at a desk (the dock rule's side by side), else one tab shown.
     expect(shown, `${String(width)}x${String(height)}`).toBe(sheet ? 1 : 2);
   }
 }
